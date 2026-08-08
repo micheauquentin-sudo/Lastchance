@@ -19,6 +19,7 @@ import {
 } from "@/components/dashboard/atelier-loyalty-etapes";
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierVerificationFidelite } from "@/components/dashboard/atelier-loyalty-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import {
   AtelierNavigationEtape,
   AtelierStepper,
@@ -29,6 +30,9 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
+import { construireVerificationFidelite } from "@/lib/activation/loyalty";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import {
   conclusionAventure,
   construireEtapesAventure,
@@ -260,6 +264,26 @@ export default async function LoyaltyDetailPage({
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
+  // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT : la vue suivi
+  // en tire le verdict de ses tuiles, l'atelier la donne à son étape « La
+  // vérification ». Paliers et roues sont déjà chargés — aucune requête de plus.
+  const entreeVerification = {
+    programId: p.id,
+    paliers: milestones.map((m) => ({
+      id: m.id,
+      visitCount: m.visit_count,
+      rewardType: m.reward_type,
+      rewardLabel: m.reward_label,
+      rewardStock: m.reward_stock,
+      targetWheelId: m.target_wheel_id,
+    })),
+    roues: wheels,
+  };
+  const tuiles = tuilesDuModule(
+    "fidelite",
+    construireVerificationFidelite(entreeVerification).controles,
+  );
+
   const cleCourante: EtapeFidelite = etape ?? ETAPES_FIDELITE[0].cle;
   const definition = definitionEtapeFidelite(cleCourante);
   const numero = numeroEtape(ETAPES_FIDELITE, cleCourante);
@@ -305,22 +329,33 @@ export default async function LoyaltyDetailPage({
             conclusion={conclusion}
           />
 
-          <div id="statut" className="scroll-mt-24">
+          {/* Les deux blocs qui décident — publier, préparer — restent OUVERTS ;
+              les trois qui se consultent naissent repliés. L'ancre rouvre le
+              bloc qu'elle vise (voir `carte-repliable.tsx`). */}
+          <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
-          </div>
+          </CarteRepliable>
 
-          <CarteEntreeAtelier programId={p.id} />
+          <CarteRepliable {...carteTuile(tuiles, "atelier")}>
+            <CarteEntreeAtelier programId={p.id} />
+          </CarteRepliable>
 
           {canViewStats && (
-            <Card>
-              <h2 className="font-semibold mb-4">En un coup d&apos;œil</h2>
-              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat label="Paliers" value={milestones.length} />
-                <Stat label="Passeports" value={passports} />
-                <Stat label="Récompenses" value={rewardsEarned} />
-                <Stat label="Lots remis" value={rewardsRedeemed} />
-              </dl>
-            </Card>
+            <CarteRepliable
+              {...carteTuile(tuiles, "apercu")}
+              defaultOuvert={false}
+              resume={`${milestones.length} palier${milestones.length > 1 ? "s" : ""} — ${passports} passeport${passports > 1 ? "s" : ""}`}
+            >
+              <Card>
+                <h2 className="font-semibold mb-4">En un coup d&apos;œil</h2>
+                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <Stat label="Paliers" value={milestones.length} />
+                  <Stat label="Passeports" value={passports} />
+                  <Stat label="Récompenses" value={rewardsEarned} />
+                  <Stat label="Lots remis" value={rewardsRedeemed} />
+                </dl>
+              </Card>
+            </CarteRepliable>
           )}
 
           {/* §4 du cahier : chaque expérience joueur publiable propose un QR et
@@ -328,55 +363,75 @@ export default async function LoyaltyDetailPage({
               garde exacte de `loadLoyaltyContext` (statut ≠ active → 404), et un
               QR imprimé puis collé en vitrine survit à la page qui l'a produit
               là où un bandeau d'avertissement, non. */}
-          <Card id="suivi" className="scroll-mt-24">
-            <h2 className="font-semibold mb-1">QR code et lien du passeport</h2>
-            {p.status === "active" ? (
-              <>
-                <p className="text-sm text-zinc-500 mb-3">
-                  Affichez le QR code en boutique ou partagez le lien : vos
-                  clients ouvrent leur passeport de fidélité depuis leur
-                  téléphone.
+          <CarteRepliable
+            {...carteTuile(tuiles, "partage")}
+            defaultOuvert={false}
+            resume={
+              p.status === "active"
+                ? `${openCount} ouverture${openCount > 1 ? "s" : ""} de la page publique`
+                : "Programme non actif — pas encore de QR code"
+            }
+          >
+            <Card>
+              <h2 className="font-semibold mb-1">QR code et lien du passeport</h2>
+              {p.status === "active" ? (
+                <>
+                  <p className="text-sm text-zinc-500 mb-3">
+                    Affichez le QR code en boutique ou partagez le lien : vos
+                    clients ouvrent leur passeport de fidélité depuis leur
+                    téléphone.
+                  </p>
+                  <PublicShare
+                    url={publicUrl}
+                    fileName={`passeport-${p.id}`}
+                    qrLabel={p.name}
+                    openCount={openCount}
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-zinc-500">
+                  Activez le programme pour obtenir son QR code et son lien :
+                  tant qu&apos;il n&apos;est pas actif, la page publique reste
+                  fermée aux clients.
                 </p>
-                <PublicShare
-                  url={publicUrl}
-                  fileName={`passeport-${p.id}`}
-                  qrLabel={p.name}
-                  openCount={openCount}
-                />
-              </>
-            ) : (
-              <p className="text-sm text-zinc-500">
-                Activez le programme pour obtenir son QR code et son lien : tant
-                qu&apos;il n&apos;est pas actif, la page publique reste fermée aux
-                clients.
-              </p>
-            )}
-          </Card>
+              )}
+            </Card>
+          </CarteRepliable>
 
           {p.validation_mode === "rotating_code" && (
-            <Card className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black mb-1">
-                  Écran comptoir
-                </h2>
-                <p className="text-sm text-zinc-500">
-                  Affichez le code tournant face aux clients pour qu&apos;ils
-                  valident leur visite.
-                </p>
-              </div>
-              <Link
-                href={`/dashboard/loyalty/${p.id}/comptoir`}
-                className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-bold text-k-ink"
-              >
-                Ouvrir l&apos;écran comptoir →
-              </Link>
-            </Card>
+            <CarteRepliable
+              {...carteTuile(tuiles, "comptoir")}
+              defaultOuvert={false}
+              resume="Le code tournant à afficher face aux clients"
+            >
+              <Card className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black mb-1">
+                    Écran comptoir
+                  </h2>
+                  <p className="text-sm text-zinc-500">
+                    Affichez le code tournant face aux clients pour qu&apos;ils
+                    valident leur visite.
+                  </p>
+                </div>
+                <Link
+                  href={`/dashboard/loyalty/${p.id}/comptoir`}
+                  className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-bold text-k-ink"
+                >
+                  Ouvrir l&apos;écran comptoir →
+                </Link>
+              </Card>
+            </CarteRepliable>
           )}
 
           <RelanceErreur message={relanceError} />
 
           {capacites.canExplore && (
-            <div id="relance" className="scroll-mt-24">
+            <CarteRepliable
+              {...carteTuile(tuiles, "relance")}
+              defaultOuvert={false}
+              resume="Repartir de ce programme pour en créer un nouveau"
+            >
               <RelaunchFormulaCard
                 sourceName={p.name}
                 sourceState={etatSourceRelance("loyalty", marqueurs)}
@@ -384,7 +439,7 @@ export default async function LoyaltyDetailPage({
                 isSupported
                 action={<RelaunchFormulaAction kind="loyalty" sourceId={p.id} />}
               />
-            </div>
+            </CarteRepliable>
           )}
         </>
       ) : (
@@ -445,18 +500,7 @@ export default async function LoyaltyDetailPage({
             {etape === "verification" && (
               <AtelierVerificationFidelite
                 modeValidation={p.validation_mode}
-                entree={{
-                  programId: p.id,
-                  paliers: milestones.map((m) => ({
-                    id: m.id,
-                    visitCount: m.visit_count,
-                    rewardType: m.reward_type,
-                    rewardLabel: m.reward_label,
-                    rewardStock: m.reward_stock,
-                    targetWheelId: m.target_wheel_id,
-                  })),
-                  roues: wheels,
-                }}
+                entree={entreeVerification}
               />
             )}
           </section>

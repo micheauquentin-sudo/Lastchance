@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import {
   createLoyaltyMilestone,
   deleteLoyaltyMilestone,
@@ -9,6 +9,7 @@ import {
   updateLoyaltyMilestone,
   updateLoyaltyProgram,
 } from "@/actions/loyalty";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -18,6 +19,7 @@ import {
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import {
   LOYALTY_MILESTONE_LOSS_HINT,
   LOYALTY_PROGRAM_LOSS_HINT,
@@ -71,9 +73,16 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
   // champs non contrôlés dont le `defaultValue` reste celui d'avant
   // l'enregistrement jusqu'à l'atterrissage de `router.refresh()` — les vider
   // ferait réapparaître les anciennes valeurs à l'écran.
+  //
+  // ENREGISTREMENT AUTOMATIQUE. `useAutoSave` s'ajoute À CÔTÉ de `useActionForm`
+  // — jamais autour : deux gardes mécaniques du dépôt cherchent l'appel
+  // littéral. Le bouton et le « Enregistré. » restent en place.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateLoyaltyProgram, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
 
   // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
   // impose un intervalle d'au moins max(rotation, 5 min). On garde donc ces
@@ -102,7 +111,7 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
         Nom, façon de valider une visite, niveaux et fréquence des visites.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={program.id} />
 
         <div className="max-w-sm">
@@ -287,6 +296,13 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
           )}
+          {/* Le silence de validation se VOIT : sans cette ligne, un seuil vidé
+              arrêterait l'enregistrement automatique sans que rien ne le dise. */}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : le nom ou un seuil de niveau est vide."
+          />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
@@ -661,13 +677,19 @@ function MilestoneRow({
   // porte le sien, rien n'est partagé entre les lignes.
   // Pas de `resetOnSuccess` sur l'édition : les champs non contrôlés
   // repartiraient sur le `defaultValue` d'avant l'enregistrement.
+  // UN ENREGISTREMENT AUTOMATIQUE PAR LIGNE : chaque palier est son propre
+  // `<form>`, donc son propre `requestSubmit`. La suppression, formulaire frère,
+  // n'est pas concernée — rien d'automatique ne détruit.
+  const formRef = useRef<HTMLFormElement>(null);
   const {
     state: updateState,
     pending: updatePending,
     onSubmit: updateSubmit,
   } = useActionForm(updateLoyaltyMilestone, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const {
     state: deleteState,
     pending: deletePending,
@@ -679,7 +701,11 @@ function MilestoneRow({
   return (
     <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
       <div className="flex items-start gap-3">
-        <form onSubmit={updateSubmit} className="min-w-0 flex-1 space-y-3">
+        <form
+          ref={formRef}
+          onSubmit={updateSubmit}
+          className="min-w-0 flex-1 space-y-3"
+        >
           <input type="hidden" name="id" value={milestone.id} />
           <VisitCountField
             id={`ms-visits-${milestone.id}`}
@@ -704,6 +730,11 @@ function MilestoneRow({
             {updateState?.ok && (
               <span className="text-sm font-medium text-emerald-600">✓</span>
             )}
+            <AutoSaveEtat
+              enAttente={enAttente}
+              bloqueParValidation={bloqueParValidation}
+              messageBloque="Non enregistré : un champ de ce palier est vide ou mal rempli."
+            />
           </div>
           <FieldError
             message={updateState && !updateState.ok ? updateState.error : undefined}

@@ -18,6 +18,7 @@ import {
 } from "@/components/dashboard/atelier-hunt-etapes";
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierVerificationChasse } from "@/components/dashboard/atelier-hunt-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import {
   AtelierNavigationEtape,
   AtelierStepper,
@@ -35,6 +36,9 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
+import { construireVerificationChasse } from "@/lib/activation/hunts";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import {
   conclusionAventure,
   construireEtapesAventure,
@@ -179,6 +183,24 @@ export default async function HuntDetailPage({
   });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
+  // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT. Les deux
+  // visages en vivent : la vue suivi en tire le verdict de ses tuiles, l'atelier
+  // la donne à son étape « La vérification ». Deux appels auraient été deux
+  // vérités sur une même chasse — et `hunts` / `hunt_steps` sont déjà chargés
+  // inconditionnellement, donc ce calcul n'ajoute aucune requête.
+  const entreeVerification = {
+    huntId: h.id,
+    rewardLabel: h.reward_label,
+    rewardStock: h.reward_stock,
+    rewardClaimedCount: h.reward_claimed_count,
+    stepCount: steps.length,
+    endsAt: h.ends_at,
+  };
+  const tuiles = tuilesDuModule(
+    "chasse",
+    construireVerificationChasse(entreeVerification).controles,
+  );
+
   const cleCourante: EtapeChasse = etape ?? ETAPES_CHASSE[0].cle;
   const definition = definitionEtapeChasse(cleCourante);
   const numero = numeroEtape(ETAPES_CHASSE, cleCourante);
@@ -225,55 +247,71 @@ export default async function HuntDetailPage({
             conclusion={conclusion}
           />
 
-          <div id="statut" className="scroll-mt-24">
+          {/* Les deux blocs qui décident — publier, préparer — restent OUVERTS.
+              Les deux qui se consultent (le suivi, la relance) naissent repliés :
+              c'est ce qui rend la page lisible d'un coup d'œil, et l'ancre les
+              rouvre d'elle-même (voir `carte-repliable.tsx`). */}
+          <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <HuntStatusControls hunt={h} stepCount={steps.length} />
-          </div>
+          </CarteRepliable>
 
-          <CarteEntreeAtelier huntId={h.id} />
+          <CarteRepliable {...carteTuile(tuiles, "atelier")}>
+            <CarteEntreeAtelier huntId={h.id} />
+          </CarteRepliable>
 
-          <Card id="suivi" className="scroll-mt-24">
-            <h2 className="font-semibold mb-1">Ce que font vos joueurs</h2>
-            <p className="text-sm text-zinc-500 mb-4">
-              Vos {steps.length} affiche{steps.length > 1 ? "s" : ""} ont été
-              ouverte{totalOpens > 1 ? "s" : ""} {totalOpens} fois au total.
-              Chaque chargement compte, y compris un rechargement ou un lien
-              partagé : ce n&apos;est donc pas un nombre de visiteurs distincts.
-            </p>
+          <CarteRepliable
+            {...carteTuile(tuiles, "suivi")}
+            defaultOuvert={false}
+            resume={`${steps.length} étape${steps.length > 1 ? "s" : ""} — ${totalOpens} ouverture${totalOpens > 1 ? "s" : ""}`}
+          >
+            <Card>
+              <h2 className="font-semibold mb-1">Ce que font vos joueurs</h2>
+              <p className="text-sm text-zinc-500 mb-4">
+                Vos {steps.length} affiche{steps.length > 1 ? "s" : ""} ont été
+                ouverte{totalOpens > 1 ? "s" : ""} {totalOpens} fois au total.
+                Chaque chargement compte, y compris un rechargement ou un lien
+                partagé : ce n&apos;est donc pas un nombre de visiteurs distincts.
+              </p>
 
-            {canViewPlayers && (
-              <>
-                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <Stat label="Étapes" value={steps.length} />
-                  <Stat label="Joueurs" value={players} />
-                  <Stat label="Lots gagnés" value={h.reward_claimed_count} />
-                  <Stat label="Lots remis" value={redeemed} />
-                </dl>
-                {remainingStock !== null && (
-                  <p className="mt-4 text-sm text-zinc-500">
-                    Stock restant :{" "}
-                    <span className="font-semibold text-zinc-900">
-                      {remainingStock}
-                    </span>{" "}
-                    lot{remainingStock > 1 ? "s" : ""}
-                  </p>
-                )}
-              </>
-            )}
+              {canViewPlayers && (
+                <>
+                  <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <Stat label="Étapes" value={steps.length} />
+                    <Stat label="Joueurs" value={players} />
+                    <Stat label="Lots gagnés" value={h.reward_claimed_count} />
+                    <Stat label="Lots remis" value={redeemed} />
+                  </dl>
+                  {remainingStock !== null && (
+                    <p className="mt-4 text-sm text-zinc-500">
+                      Stock restant :{" "}
+                      <span className="font-semibold text-zinc-900">
+                        {remainingStock}
+                      </span>{" "}
+                      lot{remainingStock > 1 ? "s" : ""}
+                    </p>
+                  )}
+                </>
+              )}
 
-            <p className="mt-4 text-sm">
-              <Link
-                href={hrefEtapeChasse(h.id, "affiches")}
-                className="font-bold text-k-ink underline underline-offset-2"
-              >
-                Voir et imprimer les affiches QR, étape par étape →
-              </Link>
-            </p>
-          </Card>
+              <p className="mt-4 text-sm">
+                <Link
+                  href={hrefEtapeChasse(h.id, "affiches")}
+                  className="font-bold text-k-ink underline underline-offset-2"
+                >
+                  Voir et imprimer les affiches QR, étape par étape →
+                </Link>
+              </p>
+            </Card>
+          </CarteRepliable>
 
           <RelanceErreur message={relanceError} />
 
           {capacites.canExplore && (
-            <div id="relance" className="scroll-mt-24">
+            <CarteRepliable
+              {...carteTuile(tuiles, "relance")}
+              defaultOuvert={false}
+              resume="Repartir d'une chasse existante pour en créer une nouvelle"
+            >
               <RelaunchFormulaCard
                 sourceName={h.name}
                 sourceState={etatSourceRelance("hunt", marqueurs)}
@@ -281,7 +319,7 @@ export default async function HuntDetailPage({
                 isSupported
                 action={<RelaunchFormulaAction kind="hunt" sourceId={h.id} />}
               />
-            </div>
+            </CarteRepliable>
           )}
         </>
       ) : (
@@ -330,16 +368,7 @@ export default async function HuntDetailPage({
             )}
 
             {etape === "verification" && (
-              <AtelierVerificationChasse
-                entree={{
-                  huntId: h.id,
-                  rewardLabel: h.reward_label,
-                  rewardStock: h.reward_stock,
-                  rewardClaimedCount: h.reward_claimed_count,
-                  stepCount: steps.length,
-                  endsAt: h.ends_at,
-                }}
-              />
+              <AtelierVerificationChasse entree={entreeVerification} />
             )}
           </section>
 
