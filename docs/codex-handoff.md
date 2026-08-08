@@ -57,7 +57,7 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-08 — Partage après jeu : un réglage par surface — **à relire**
+### 2026-08-08 — Partage après jeu : un réglage par surface — **terminé**
 
 - **Lot et objectif** : le propriétaire décoche « Activer le parrainage sur
   cette campagne » et voit toujours côté joueur « Faites gagner vos proches /
@@ -90,8 +90,11 @@
   `20260920120000` ; sql:check et casts:check ok ; E2E WSL desktop-smoke
   15/15 (player-win 5, skill-games 3, quiz 1, campaign-templates 1,
   auth.setup 4) + re-run `referral.spec.ts` 4/4 réellement joué sur
-  mobile-chrome et campaign-templates 1/1. CI GitHub de la PR : non encore
-  jouée au moment de l'écriture, fusion sur l'ordre permanent dès verte.
+  mobile-chrome et campaign-templates 1/1. CI GitHub de la PR #134 :
+  intégralement verte (E2E Chromium+WebKit, pgTAP/ACL/RLS, CodeQL,
+  typecheck/lint/Vitest/build, site, audit) ; fusion squash `10821b9` sur
+  l'ordre permanent du propriétaire, puis CI `main` et « Santé après
+  déploiement » verts sur ce SHA — migrations appliquées en production.
 - **Risque/blocage** : revue sécurité dédiée GO, 0 critique/élevé ; 1 MOYEN
   fermé avant PR (`58c487e` : les actions campagne partage et prejeu
   refusaient un update à 0 ligne sans le signaler — refus honnête via
@@ -103,9 +106,9 @@
   colonnes writables ; ligues de pronostics sans réglage commerçant sur leurs
   codes d'invitation ; aucun test comportemental sur `share_enabled=false`
   (couverture structurelle) ; `referral.spec.ts` sans tag `@smoke`.
-- **Prochaine action** : ouvrir la PR vers `main`, fusion sur l'ordre
-  permanent du propriétaire dès CI verte. Aucune autre action côté Claude
-  après fusion.
+- **Prochaine action** : aucune — PR #134 fusionnée et déployée, santé
+  post-déploiement verte. Les reliquats sans action vivent dans
+  `docs/bugs.md`.
 
 ### 2026-08-08 — Correctif V1.51.1 : trois états de tuile, tout se replie — **à relire**
 
