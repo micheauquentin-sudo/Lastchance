@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createQuizQuestion,
@@ -41,6 +41,9 @@ import {
 import { QUIZ_DELETE_LOSS_HINT } from "@/lib/validations/quiz";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { useAutoSaveManuel } from "@/lib/use-auto-save-manuel";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import type { ActionResult } from "@/lib/utils";
 import {
   QUIZ_PRESET_INFOS,
@@ -324,7 +327,15 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
   // est le comportement voulu.
   const { state, pending, onSubmit } = useActionForm(updateQuiz, {
     networkError: "Enregistrement impossible, réessayez.",
+    // Sans bouton à regarder, le résultat d'un enregistrement automatique doit
+    // s'annoncer ailleurs : le « Enregistré. » ci-dessous reste, le bandeau
+    // global le double pour la sauvegarde qui part toute seule.
+    toastOnSuccess: "Enregistré.",
   });
+  // À CÔTÉ de `useActionForm`, jamais autour : deux gardes mécaniques du dépôt
+  // cherchent l'appel littéral dans les `.tsx`.
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   // Le réglage vit dans le formulaire de RÉGLAGES (`updateQuizSchema`) et non
   // dans celui de la dotation : c'est le quiz qui porte la colonne, et le
   // formulaire de dotation n'a pas le droit d'y toucher — s'il portait le
@@ -340,7 +351,7 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
         Nom, habillage, adresse publique et consigne d&apos;accueil.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={quiz.id} />
 
         <div className="max-w-sm">
@@ -408,13 +419,17 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
           emissionHint="Délai laissé au joueur pour présenter son code QUIZ- en caisse, à partir du moment où le lot lui est attribué (fin du quiz, ou tirage pour les modes différés)."
         />
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" variant="secondary" disabled={pending}>
             {pending ? "…" : "Enregistrer"}
           </Button>
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
           )}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+          />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
@@ -510,37 +525,59 @@ export function QuizRewardEditor({
   const issue =
     wheelAllowed && wheelId ? spinWheelIssue(selectedWheel) : "none";
 
-  const save = () => {
-    if (pending) return;
+  const enregistrer = async (): Promise<boolean> => {
     setPending(true);
     setResult(null);
-    void (async () => {
-      try {
-        // Chaque mode ne porte QUE ses propres champs : les autres partent vides,
-        // sinon le superRefine (miroir des CHECK SQL) refuse la mise à jour.
-        const res = await updateQuizReward({
-          id: quiz.id,
-          rewardMode: mode,
-          rewardThreshold: mode === "threshold" ? threshold : "",
-          drawTopN: mode === "draw" ? drawTopN : "",
-          rewardLabel: emits ? label : "",
-          rewardDetails: emits ? details : "",
-          rewardStock: emits ? stock : 0,
-          targetWheelId: wheelAllowed ? wheelId : "",
-        });
-        setResult(res);
-        if (res.ok) router.refresh();
-      } catch {
-        // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
-        setResult({ ok: false, error: "Enregistrement impossible, réessayez." });
-      } finally {
-        setPending(false);
-      }
-    })();
+    try {
+      // Chaque mode ne porte QUE ses propres champs : les autres partent vides,
+      // sinon le superRefine (miroir des CHECK SQL) refuse la mise à jour.
+      const res = await updateQuizReward({
+        id: quiz.id,
+        rewardMode: mode,
+        rewardThreshold: mode === "threshold" ? threshold : "",
+        drawTopN: mode === "draw" ? drawTopN : "",
+        rewardLabel: emits ? label : "",
+        rewardDetails: emits ? details : "",
+        rewardStock: emits ? stock : 0,
+        targetWheelId: wheelAllowed ? wheelId : "",
+      });
+      setResult(res);
+      if (res.ok) router.refresh();
+      return res.ok;
+    } catch {
+      // Réseau coupé : le dire, plutôt que de laisser le bouton tourner.
+      setResult({ ok: false, error: "Enregistrement impossible, réessayez." });
+      return false;
+    } finally {
+      setPending(false);
+    }
   };
 
+  /**
+   * ENREGISTREMENT AUTOMATIQUE — à la main, faute de `<form>` : l'action prend
+   * un objet typé et le bouton est un `type="button"`.
+   *
+   * Le bouton passe par le MÊME chemin (`declencher`), sans le délai : un seul
+   * verrou, une seule file, donc aucun vol parallèle entre un clic et un
+   * minuteur qui arrive. C'est ce que l'ancien `if (pending) return;` faisait
+   * en JETANT la seconde — perte silencieuse dès qu'on tape après un départ.
+   */
+  const carteRef = useRef<HTMLDivElement>(null);
+  const { enAttente, declencher } = useAutoSaveManuel(carteRef, {
+    signature: JSON.stringify([
+      mode,
+      threshold,
+      drawTopN,
+      label,
+      details,
+      stock,
+      wheelId,
+    ]),
+    enregistrer,
+  });
+
   return (
-    <Card>
+    <Card ref={carteRef}>
       <h2 className="font-semibold mb-1">Dotation</h2>
       <p className="text-sm text-zinc-500 mb-5">
         Ce que le joueur gagne, et à quelle condition. Le lot se retire en caisse
@@ -729,13 +766,19 @@ export function QuizRewardEditor({
         </div>
       )}
 
-      <div className="mt-5 flex items-center gap-2">
-        <Button type="button" variant="secondary" onClick={save} disabled={pending}>
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={declencher}
+          disabled={pending}
+        >
           {pending ? "…" : "Enregistrer la dotation"}
         </Button>
         {result?.ok && (
           <span className="text-sm font-medium text-emerald-600">Enregistré.</span>
         )}
+        <AutoSaveEtat enAttente={enAttente} bloqueParValidation={false} />
       </div>
       <FieldError message={result && !result.ok ? result.error : undefined} />
 
@@ -980,6 +1023,7 @@ function QuestionForm({
   onCancel: () => void;
 }) {
   const editing = question !== undefined;
+  const router = useRouter();
 
   const [preset, setPreset] = useState(question?.preset ?? "multiple_choice");
   const [questionType, setQuestionType] = useState<QuizQuestionType>(
@@ -1081,6 +1125,83 @@ function QuestionForm({
     (!shape.imageFeatured || imageUrl.trim() !== "") &&
     (!timerOn || timeLimit.trim() !== "");
 
+  /** Ce que les deux chemins d'enregistrement postent, à la lettre près. */
+  const charge = (correctAnswer: QuizSolutionInput) => ({
+    questionType,
+    preset,
+    prompt,
+    options: shape.showOptions ? rankingOptions : [],
+    correctAnswer,
+    imageUrl: imageUrl.trim(),
+    timeLimitSeconds: timerOn ? timeLimit : "",
+    points,
+    tolerance: shape.showTolerance ? tolerance : "",
+    rankingSize: shape.showRankingSize ? rankingSize : "",
+  });
+
+  /**
+   * ENREGISTREMENT AUTOMATIQUE — seulement en ÉDITION, jamais en création.
+   *
+   * Créer est un geste qui INSÈRE : une question à demi saisie partirait en
+   * base à la première frappe, puis une deuxième au mot suivant. Le formulaire
+   * de création garde donc son seul bouton, qui est aussi ce que le commerçant
+   * attend (« + Ajouter la question »).
+   *
+   * En édition, on ne recharge PAS et on ne referme PAS le formulaire, à la
+   * différence du bouton : ce serait arracher l'écran des mains de quelqu'un
+   * qui est en train d'écrire. `router.refresh()` suffit à remettre la liste
+   * au propre derrière lui.
+   */
+  const enregistrerAuto = async (): Promise<boolean> => {
+    const correctAnswer = solution();
+    if (!correctAnswer || !question) return false;
+    setPending(true);
+    try {
+      const res = await updateQuizQuestion({
+        id: question.id,
+        ...charge(correctAnswer),
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return false;
+      }
+      setError(null);
+      router.refresh();
+      return true;
+    } catch {
+      setError("Enregistrement impossible, réessayez.");
+      return false;
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const blocRef = useRef<HTMLDivElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSaveManuel(blocRef, {
+    signature: JSON.stringify([
+      preset,
+      questionType,
+      prompt,
+      rows,
+      choiceId,
+      numberValue,
+      order,
+      variants,
+      imageUrl,
+      timerOn,
+      timeLimit,
+      points,
+      tolerance,
+      rankingSize,
+    ]),
+    enregistrer: enregistrerAuto,
+    // La même condition que le bouton : une question incomplète ne part pas, et
+    // le dit — sans quoi la saisie cesserait d'être enregistrée en silence,
+    // exactement au moment où elle est la plus fragile.
+    valide: () => ready,
+    actif: editing,
+  });
+
   const save = () => {
     // Pré-validation : hors du try/catch réseau, elle sort avant tout appel.
     const correctAnswer = solution();
@@ -1093,18 +1214,7 @@ function QuestionForm({
     setPending(true);
     void (async () => {
       try {
-        const payload = {
-          questionType,
-          preset,
-          prompt,
-          options: shape.showOptions ? rankingOptions : [],
-          correctAnswer,
-          imageUrl: imageUrl.trim(),
-          timeLimitSeconds: timerOn ? timeLimit : "",
-          points,
-          tolerance: shape.showTolerance ? tolerance : "",
-          rankingSize: shape.showRankingSize ? rankingSize : "",
-        };
+        const payload = charge(correctAnswer);
         const res = editing
           ? await updateQuizQuestion({ id: question.id, ...payload })
           : await createQuizQuestion({ quizId, ...payload });
@@ -1151,7 +1261,10 @@ function QuestionForm({
   const prefix = `qform-${question?.id ?? "new"}`;
 
   return (
-    <div className="rounded-xl border-2 border-k-ink/15 bg-zinc-50/60 p-4">
+    <div
+      ref={blocRef}
+      className="rounded-xl border-2 border-k-ink/15 bg-zinc-50/60 p-4"
+    >
       <div className="space-y-4">
         {/* ── Modèle de question : pilote tout le formulaire ── */}
         <fieldset>
@@ -1593,6 +1706,15 @@ function QuestionForm({
           >
             Annuler
           </Button>
+          {/* En création, rien ne s'enregistre tout seul : le dire serait
+              faux. */}
+          {editing && (
+            <AutoSaveEtat
+              enAttente={enAttente}
+              bloqueParValidation={bloqueParValidation}
+              messageBloque="Non enregistré : complétez la question et son résultat officiel."
+            />
+          )}
         </div>
         <FieldError message={error ?? undefined} />
       </div>

@@ -7,7 +7,7 @@ import {
 import {
   construireVerificationFidelite,
   type EntreeVerificationFidelite,
-} from "@/components/dashboard/atelier-loyalty-verification-state";
+} from "@/lib/activation/loyalty";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 
 /**

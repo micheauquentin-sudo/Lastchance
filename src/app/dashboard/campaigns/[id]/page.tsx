@@ -32,6 +32,9 @@ import {
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
 import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { construireVerification } from "@/components/dashboard/atelier-verification-state";
+import type { ControleBrut } from "@/lib/checklist/controles";
+import { tuilesDuModule, type TuileRendue } from "@/lib/checklist/tuiles";
 import { campaignWindowState } from "@/lib/campaign-window";
 import {
   conclusionAventure,
@@ -40,7 +43,7 @@ import {
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
-import type { Campaign, QrCode, Wheel } from "@/types/database";
+import type { Campaign, Prize, QrCode, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "Campagne" };
 
@@ -75,9 +78,13 @@ export default async function CampaignDetailPage({
       .eq("id", id)
       .eq("organization_id", organization!.id)
       .maybeSingle(),
+    // Les lots partent DANS la même requête que les roues (FK
+    // prizes→wheels) : la checklist de la page a besoin d'eux pour dire si un
+    // lot gagnant est encore tirable, et un second aller-retour coûterait plus
+    // cher que les quelques lignes embarquées.
     supabase
       .from("wheels")
-      .select("*")
+      .select("*, prizes!prizes_wheel_id_fkey(*)")
       .eq("campaign_id", id)
       .eq("organization_id", organization!.id)
       .order("position", { ascending: true })
@@ -123,7 +130,14 @@ export default async function CampaignDetailPage({
   if (!campaign) notFound();
 
   const c = campaign as Campaign;
-  const wheelList = (wheels ?? []) as Wheel[];
+  const wheelsAvecLots = (wheels ?? []) as (Wheel & { prizes: Prize[] })[];
+  // Les lots ne franchissent pas la frontière client : `CampaignWheels` est un
+  // composant client et n'en a pas l'usage.
+  const wheelList: Wheel[] = wheelsAvecLots.map((roue) => {
+    const sansLots: Wheel & { prizes?: Prize[] } = { ...roue };
+    delete sansLots.prizes;
+    return sansLots;
+  });
   const perfRows = (perf ?? []) as PrizePerformanceRow[];
   const qrCodes = (qrRows ?? []) as QrCode[];
   // Aperçu live : quelle roue /play servirait à l'instant présent
@@ -171,6 +185,59 @@ export default async function CampaignDetailPage({
   // où vit « Dupliquer cette campagne ».
   const conclusion = conclusionAventure(etapes, { relanceHref: "#reglages" });
 
+  // ── LA CHECKLIST DE LA PAGE ──
+  //
+  // Elle se calcule sur la MÊME roue que celle qu'ouvre « Régler le jeu et les
+  // lots » : l'atelier sans `?wheel=` retient `wheels[0]` (page `/wheel`, tri
+  // position puis created_at), donc la première de cette liste, déjà triée
+  // pareil. Numéroter des blocs d'après une roue que le CTA n'ouvre pas ferait
+  // pointer un point rouge sur un écran où il n'y a rien à corriger.
+  //
+  // `construireVerification` est la fonction pure de l'étape « Vérification »
+  // de l'atelier : la page ne redécide donc jamais elle-même ce qui manque.
+  const roueVisee = wheelsAvecLots[0] ?? null;
+  const controles: ControleBrut[] = roueVisee
+    ? construireVerification({
+        campaignId: c.id,
+        gameType: roueVisee.game_type ?? "wheel",
+        skillConfig: (roueVisee as { skill_config?: unknown }).skill_config,
+        prizes: (roueVisee.prizes ?? []).map((p) => ({
+          is_active: p.is_active,
+          is_losing: p.is_losing,
+          weight: p.weight,
+          stock: p.stock,
+        })),
+        qrExistant: qrCodes.length > 0,
+        campagne: c,
+      }).controles
+    : // Aucune roue : `construireVerification` en exige une. Le seul point qui
+      // vaille est alors celui-là, et il est bloquant.
+      [
+        {
+          cle: "mecanique",
+          ok: false,
+          titre: "La mécanique est choisie",
+          detail: "Aucun jeu n'existe encore : il n'y a rien à faire tourner.",
+        },
+      ];
+  const tuiles = new Map<string, TuileRendue>(
+    tuilesDuModule("roue", controles).map((t) => [t.tuile.cle, t]),
+  );
+  /** Le detail du premier contrôle rouge d'une tuile — sinon le fait fourni. */
+  const resumeTuile = (cle: string, defaut: string): string => {
+    const tuile = tuiles.get(cle);
+    const rouge = tuile
+      ? controles.find((k) => tuile.tuile.controles.includes(k.cle) && !k.ok)
+      : undefined;
+    return rouge?.detail ?? defaut;
+  };
+  /** Numéro + statut d'une tuile, à étaler sur `CarteRepliable`. */
+  const marques = (cle: string) => ({
+    numero: tuiles.get(cle)?.numero,
+    statut: tuiles.get(cle)?.statut,
+  });
+  const nbQr = qrCodes.length;
+
   return (
     <div>
       <Link
@@ -209,25 +276,46 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="mb-6">
-        {wheelList.length > 0 ? (
-          <CampaignWheels
-            campaignId={c.id}
-            wheels={wheelList}
-            activeWheelId={activeWheelId}
-          />
-        ) : (
-          <Card>
-            <h2 className="font-semibold mb-1">Vos jeux</h2>
-            <p className="text-sm text-red-600">Roue manquante</p>
-          </Card>
-        )}
+        <CarteRepliable
+          titre="Vos jeux"
+          defaultOuvert={false}
+          {...marques("jeux")}
+          resume={resumeTuile(
+            "jeux",
+            wheelList.length > 1
+              ? `${wheelList.length} jeux configurés.`
+              : "Le jeu est prêt à tourner.",
+          )}
+        >
+          {wheelList.length > 0 ? (
+            <CampaignWheels
+              campaignId={c.id}
+              wheels={wheelList}
+              activeWheelId={activeWheelId}
+            />
+          ) : (
+            <Card>
+              <h2 className="font-semibold mb-1">Vos jeux</h2>
+              <p className="text-sm text-red-600">Roue manquante</p>
+            </Card>
+          )}
+        </CarteRepliable>
       </div>
 
       {/* Le bloc QR sort de l'ancienne grille deux colonnes : il porte
           désormais des vignettes et un formulaire, une demi-colonne ne les
           tenait plus. */}
       <div className="mb-6">
-        <CarteRepliable titre="QR codes" id="qr">
+        <CarteRepliable
+          titre="QR codes"
+          id="qr"
+          defaultOuvert={false}
+          {...marques("qr")}
+          resume={resumeTuile(
+            "qr",
+            `${nbQr} QR code${nbQr > 1 ? "s" : ""} pour ce jeu.`,
+          )}
+        >
         <Card>
           <h2 className="mb-1 font-black text-k-ink">QR codes</h2>
           <p className="mb-4 text-sm font-bold text-k-body">
@@ -292,17 +380,43 @@ export default async function CampaignDetailPage({
         </CarteRepliable>
       </div>
 
-      {/* Les six blocs de réglage se replient. Ils restent OUVERTS par défaut :
-          les ancres `#suivi` et `#reglages` doivent mener à du contenu visible,
-          et les parcours E2E cliquent dedans sans les déplier. */}
+      {/* LES BLOCS NAISSENT REPLIÉS, ET CE N'EST PLUS UN RISQUE POUR LES ANCRES.
+          `CarteRepliable` rouvre le bloc que vise `#qr`, `#suivi` ou
+          `#reglages` — au montage ET à chaque `hashchange` : sauter dessus
+          montre toujours du contenu. Ce qui reste ouvert au-dessus, c'est ce
+          qui se lit sans être cherché : le titre, la bannière d'état, la Carte
+          de l'Aventure et le bloc `#statut`, seul endroit qui publie.
+          En revanche les parcours E2E qui cliquaient DANS un bloc sans le
+          déplier doivent désormais l'ouvrir (voir le rapport de ce lot). */}
       <div className="mb-6">
-        <CarteRepliable titre="Performance par lot" id="suivi">
+        <CarteRepliable
+          titre="Performance par lot"
+          id="suivi"
+          defaultOuvert={false}
+          {...marques("performance")}
+          resume={resumeTuile(
+            "performance",
+            perfRows.length > 0
+              ? `${perfRows.length} lot${perfRows.length > 1 ? "s" : ""} suivi${perfRows.length > 1 ? "s" : ""}.`
+              : "Aucune partie jouée pour l'instant.",
+          )}
+        >
           <PrizePerformance rows={perfRows} />
         </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <CarteRepliable titre="Avant de jouer">
+        <CarteRepliable
+          titre="Avant de jouer"
+          defaultOuvert={false}
+          {...marques("prejeu")}
+          resume={resumeTuile(
+            "prejeu",
+            c.prejeu_invitation
+              ? "Proposé à vos clients avant la partie."
+              : "Rien n'est proposé avant la partie.",
+          )}
+        >
           <CampaignPrejeuInvitation
             campaignId={c.id}
             enabled={c.prejeu_invitation}
@@ -312,13 +426,40 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="mb-6">
-        <CarteRepliable titre="Après le gain">
+        <CarteRepliable
+          titre="Après le gain"
+          defaultOuvert={false}
+          {...marques("gain")}
+          resume={resumeTuile(
+            "gain",
+            c.collect_email || c.collect_phone
+              ? `Demandé au gagnant : ${[
+                  c.collect_email ? "email" : null,
+                  c.collect_phone ? "téléphone" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" et ")}.`
+              : "Le code s'affiche directement, sans rien demander.",
+          )}
+        >
           <CampaignClaimSettings campaign={c} />
         </CarteRepliable>
       </div>
 
       <div className="mb-6">
-        <CarteRepliable titre="Programmation et budget">
+        <CarteRepliable
+          titre="Programmation et budget"
+          defaultOuvert={false}
+          {...marques("programmation")}
+          resume={resumeTuile(
+            "programmation",
+            c.auto_schedule
+              ? "Ouverture et pause automatiques selon les dates."
+              : c.budget_cents != null
+                ? "Plafond de dépense en gains actif."
+                : "Ni programmation ni plafond de dépense.",
+          )}
+        >
           <CampaignAutomationSettings
             campaign={c}
             timeZone={organization!.timezone}
@@ -327,7 +468,17 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="mb-6">
-        <CarteRepliable titre="Parrainage ludique">
+        <CarteRepliable
+          titre="Parrainage ludique"
+          defaultOuvert={false}
+          {...marques("parrainage")}
+          resume={resumeTuile(
+            "parrainage",
+            (referralProgram as ReferralProgramRow | null)?.enabled
+              ? "Vos joueurs peuvent parrainer leurs proches."
+              : "Le parrainage est désactivé.",
+          )}
+        >
           <ReferralProgramSettings
             campaignId={c.id}
             program={(referralProgram as ReferralProgramRow | null) ?? null}
@@ -337,12 +488,26 @@ export default async function CampaignDetailPage({
       </div>
 
       <div className="mb-6">
-        <CarteRepliable titre="Enregistrer comme modèle">
+        <CarteRepliable
+          titre="Enregistrer comme modèle"
+          defaultOuvert={false}
+          {...marques("modele")}
+          resume={resumeTuile(
+            "modele",
+            "Rejouez ce jeu plus tard, sans tout reconfigurer.",
+          )}
+        >
           <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
         </CarteRepliable>
       </div>
 
-      <CarteRepliable titre="Réglages" id="reglages">
+      <CarteRepliable
+        titre="Réglages"
+        id="reglages"
+        defaultOuvert={false}
+        {...marques("reglages")}
+        resume={resumeTuile("reglages", "Renommer, dupliquer, supprimer.")}
+      >
         <CampaignSettings campaign={c} />
       </CarteRepliable>
     </div>

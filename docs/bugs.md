@@ -3382,6 +3382,24 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Tuiles checklist + autosave — hors périmètre assumé (2026-08-08,
+  `chantier/tuiles-checklist-autosave`)** :
+  - **État de repli non persisté** : chaque tuile repliée revient à son état
+    fermé par défaut à chaque visite de page, comme les `<details>` du
+    produit avant ce chantier ; aucune persistance côté client ou serveur.
+  - **`useAutoSave` n'annule pas la perte sur navigation sans `blur`** : le
+    minuteur de debounce (800 ms) est annulé au démontage du composant ; une
+    navigation qui interrompt la page avant l'échéance et sans passage par un
+    `blur` de champ peut perdre la dernière frappe non enregistrée. Borné par
+    le flush systématique à la sortie de champ, non éliminé.
+  - **`reloadOnSuccess` et `toastOnSuccess` incompatibles** dans
+    `useActionForm` : aucun appelant actuel ne combine les deux options ; la
+    combinaison n'est pas gardée mécaniquement si un futur appelant le
+    faisait.
+  - Impact : aucun de ces trois points n'a de conséquence observée en
+    production (1 org de test) ; consignés pour éviter qu'un futur chantier
+    les redécouvre comme des bugs.
+
 - **Fonds thématiques cartoon — 3 INFO de la revue sécurité laissées en
   suivi (2026-08-07, `chantier/themes-cartoon`)** — revue dédiée : GO, 0
   critique/élevé/moyen/faible, 4 INFO (INFO-1 corrigée avant fusion, voir
@@ -4029,3 +4047,14 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   `revalidate-coverage.test.ts`) ; (3) une durée de vie maximale par entrée
   non close (ex. 30 jours) après laquelle la CI exige une reconfirmation
   explicite plutôt que de laisser une affirmation vieillir sans relecture.
+
+- **E2E calendrier « Pas de chance » en fixme — isolation de seed à faire
+  (2026-08-08, `chantier/tuiles-checklist-autosave`)** — le scénario est vert
+  au premier passage et faux aux suivants : l'ouverture de la case 1 par le
+  passage précédent persiste dans le seed partagé et le joueur suivant reçoit
+  l'ancien contenu au lieu de l'écran perdant, base pourtant prouvée vide.
+  Pas un défaut produit (sonde : le vide persiste en base depuis la refonte
+  du hook signature ; écran perdant couvert en unitaire). Réactivation :
+  case dédiée jamais ouverte ou purge des calendar_openings du seed entre
+  projets. L'enquête complète vit dans les messages des commits 4d9afe6,
+  8019e88, 2d20552 et dans le commentaire du test.

@@ -18,7 +18,12 @@ import { CarteRepliable } from "@/components/dashboard/carte-repliable";
  *    deviendrait ambigu.
  */
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // L'ancre est un état GLOBAL : un test qui la laisse traîner rouvrirait le
+  // bloc du suivant, et l'échec se lirait à trois tests de sa cause.
+  window.location.hash = "";
+});
 
 describe("CarteRepliable", () => {
   it("rend son contenu déplié par défaut, avec un bouton « Réduire »", () => {
@@ -112,5 +117,105 @@ describe("CarteRepliable", () => {
         .getByRole("button", { name: "Développer « Enregistrer comme modèle »" })
         .getAttribute("aria-expanded"),
     ).toBe("false");
+  });
+
+  it("rend le numéro dans les deux états", () => {
+    render(
+      <CarteRepliable titre="Dotation" numero={3}>
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.getByText("3")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Réduire/ }));
+    expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("dit le statut dans l'aria-label, jamais par la seule couleur", () => {
+    const { rerender } = render(
+      <CarteRepliable titre="Dotation" numero={3} statut="complet">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Réduire « 3. Dotation — complet »" }),
+    ).toBeTruthy();
+
+    rerender(
+      <CarteRepliable titre="Dotation" numero={3} statut="incomplet">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Réduire « 3. Dotation — il manque quelque chose »",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("garde l'aria-label historique quand ni numéro ni statut ne sont fournis", () => {
+    render(
+      <CarteRepliable titre="Réglages">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Réduire « Réglages »" }),
+    ).toBeTruthy();
+  });
+
+  it("n'affiche le résumé QUE replié", () => {
+    render(
+      <CarteRepliable titre="Dotation" resume="4 lots, 120 en stock">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.queryByText("4 lots, 120 en stock")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Réduire/ }));
+    expect(screen.getByText("4 lots, 120 en stock")).toBeTruthy();
+  });
+
+  it("s'ouvre au montage quand l'ancre de l'URL est la sienne", () => {
+    window.location.hash = "#reglages";
+
+    render(
+      <CarteRepliable titre="Réglages" id="reglages" defaultOuvert={false}>
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.getByText("Contenu du bloc")).toBeTruthy();
+  });
+
+  it("ne s'ouvre pas pour l'ancre d'un autre bloc", () => {
+    window.location.hash = "#suivi";
+
+    render(
+      <CarteRepliable titre="Réglages" id="reglages" defaultOuvert={false}>
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.queryByText("Contenu du bloc")).toBeNull();
+  });
+
+  it("rouvre un bloc replié à la main quand on resaute sur son ancre", () => {
+    render(
+      <CarteRepliable titre="Réglages" id="reglages">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Réduire « Réglages »" }));
+    expect(screen.queryByText("Contenu du bloc")).toBeNull();
+
+    window.location.hash = "#reglages";
+    fireEvent(window, new Event("hashchange"));
+
+    expect(screen.getByText("Contenu du bloc")).toBeTruthy();
   });
 });

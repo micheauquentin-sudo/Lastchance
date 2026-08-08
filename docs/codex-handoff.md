@@ -57,6 +57,45 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Tuiles checklist + autosave — **à relire**
+
+- **Lot et objectif** : demande propriétaire — sur chaque page de jeu, toutes
+  les tuiles refermées par défaut, numérotées dans l'ordre des tâches,
+  pastille rouge (obligatoire manquant) / verte (complet — vide-mais-optionnel
+  valide) ; tout réglage s'enregistre automatiquement, notification en haut à
+  droite.
+- **Branche/commits** : `chantier/tuiles-checklist-autosave`, 9 commits
+  au-dessus de `main` (`8c1ca75`) — `269cbc4` (socle checklist), `a9b2913`
+  (socle autosave), `d77e751` (M1 campagnes+roue), `edf5690` (M3
+  chasse+fidélité+jackpot), `3685e3a` (M4 événements+pronostics), `c944520`
+  (M2 quiz+calendrier), `9d8b5d3`+`f858127` (réparation E2E). PR à ouvrir vers
+  `main` (**non fusionnée**, fusion prévue sur l'ordre permanent du
+  propriétaire dès la CI verte). Sans migration.
+- **Faits** : `src/lib/checklist/` mappe les contrôles d'activation V1.47 vers
+  des tuiles ordonnées par page (défauts `bloquant` tranchés par module) ;
+  `CarteRepliable` numérote/statue/résume et rouvre par ancre ; `useAutoSave`
+  (debounce 800 ms, jamais au montage, flush sortie de champ) + toast global
+  (bus sans `Provider`) déployés sur 8 pages détail et ~25 formulaires ;
+  correctif de la file dans `useActionForm` (perte silencieuse de la dernière
+  frappe en resoumission rapprochée) ; exclusions actées (statuts,
+  publication, zones dangereuses, créations, finalize/tirage/résultats,
+  motif de verrouillage, uploads) et protections spécifiques conservées
+  (`day_count` calendrier, `PrizeRow` compare-and-swap, `ContestEventCard`
+  manuelle). Voir ADR-096, roadmap V1.51.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **256 fichiers /
+  4029 tests** ; build vert (via `run-e2e-local` WSL) ; migrations inchangées
+  (122, tête `20260918120000`), sql:check ok ; E2E WSL desktop-smoke ciblé
+  (pronostics+referral+campaign-templates 9 ✓, calendar+atelier-modules
+  15 ✓, wheel-wizard+quiz 6 ✓, referral mobile-chrome 8 ✓). CI de la PR au
+  moment de l'écriture : à venir.
+- **Risque/blocage** : aucun bloquant identifié. État de repli des tuiles non
+  persisté, `useAutoSave` peut perdre la dernière frappe sur navigation sans
+  `blur` avant l'échéance du debounce (borné par le flush sortie de champ) —
+  consignés dans `docs/bugs.md`, non corrigés (impact nul en prod, 1 org de
+  test).
+- **Prochaine action** : PR ouverte, fusion sur l'ordre permanent dès CI
+  verte ; matrice E2E mobile complète en reliquat CI.
+
 ### 2026-08-08 — Correctif V1.50.1 : l'aperçu suit le clic, émojis de nav — **à relire**
 
 - **Lot et objectif** : retour propriétaire immédiat après V1.50 — « quand je

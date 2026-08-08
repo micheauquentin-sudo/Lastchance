@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
 import type { Campaign, CampaignStatus } from "@/types/database";
 
@@ -101,7 +102,15 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
     onSubmit: renameSubmit,
   } = useActionForm(updateCampaign, {
     networkError: "Renommage impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  // ENREGISTREMENT AUTOMATIQUE — sur le RENOMMAGE SEUL. Il s'arrête là, et de
+  // façon délibérée : « Dupliquer » crée une campagne, « Supprimer » est
+  // irréversible, et rien de tout cela ne doit partir d'une frappe au clavier.
+  // Le champ est `required` : une saisie effacée fait afficher le refus de
+  // validation plutôt que d'enregistrer un nom vide.
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const [deleteState, deleteAction, deletePending] = useActionState(
     deleteCampaign,
     null,
@@ -116,7 +125,11 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
       <Card>
         <h2 className="font-semibold mb-4">Réglages</h2>
 
-        <form onSubmit={renameSubmit} className="flex items-end gap-2 mb-6">
+        <form
+          ref={formRef}
+          onSubmit={renameSubmit}
+          className="flex items-end gap-2 mb-6"
+        >
           <input type="hidden" name="id" value={campaign.id} />
           <div className="flex-1 max-w-xs">
             <Label htmlFor="campaign-name">Nom de la campagne</Label>
@@ -132,6 +145,16 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
             {renamePending ? "…" : "Renommer"}
           </Button>
         </form>
+        {enAttente && !renamePending && (
+          <p className="text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {bloqueParValidation && (
+          <p role="alert" className="text-sm font-semibold text-red-700">
+            Non enregistré : le nom de la campagne ne peut pas être vide.
+          </p>
+        )}
         <FieldError
           message={renameState && !renameState.ok ? renameState.error : undefined}
         />

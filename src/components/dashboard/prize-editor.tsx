@@ -142,6 +142,19 @@ function PrizeRow({
   // router.refresh() n'ait livré celles du serveur. Contrepartie assumée : les
   // valeurs normalisées (coût et valeur reformatés, stock vidé) ne se
   // réaffichent plus qu'au prochain rendu serveur.
+  //
+  // ── ET PAS D'ENREGISTREMENT AUTOMATIQUE NON PLUS, ICI SEULEMENT ──
+  //
+  // Cette ligne poste `stock_seen` : un COMPARE-AND-SWAP (`src/actions/
+  // prizes.ts`, `updatePrize`). Le serveur n'écrit le stock que si celui qu'il
+  // lit est encore celui que cet écran affichait — c'est ce qui empêche deux
+  // employés d'écraser mutuellement leur décompte. Or `stock_seen` est un champ
+  // caché rendu depuis la prop `prize` : deux enregistrements automatiques
+  // rapprochés partiraient avec le MÊME témoin, et le second serait refusé
+  // alors que rien de concurrent ne s'est produit — le commerçant verrait
+  // « le stock a changé entre-temps » en tapant tout seul dans son champ.
+  // Le bouton « Enregistrer » de la ligne reste donc le seul déclencheur, le
+  // temps qu'une frappe laisse au rendu serveur de rafraîchir le témoin.
   const {
     state: updateState,
     pending: updatePending,

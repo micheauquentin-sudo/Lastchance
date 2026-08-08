@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createHuntStep,
@@ -11,6 +11,7 @@ import {
   updateHunt,
   updateHuntStep,
 } from "@/actions/hunts";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -22,6 +23,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import {
   HUNT_DELETE_LOSS_HINT,
   HUNT_STEP_LOSS_HINT,
@@ -51,9 +53,18 @@ export function HuntSettings({
 }) {
   // Pas de `resetOnSuccess` : les deux datetime-local sont contrôlés par l'état
   // `dates` ci-dessous, qu'un reset ne remettrait pas dans l'état serveur.
+  //
+  // ENREGISTREMENT AUTOMATIQUE. `useAutoSave` s'ajoute À CÔTÉ de `useActionForm`
+  // — jamais autour : deux gardes mécaniques du dépôt cherchent l'appel littéral
+  // (`use-action-form-bascule`, `use-action-form-coverage`). Le bouton et le
+  // « Enregistré. » RESTENT : le clavier, le sans-JS partiel et l'habitude s'y
+  // appuient, et le toast n'est qu'une annonce de plus.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateHunt, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const [dates, setDates] = useState(() => ({
     starts: isoToZonedDateTimeInput(hunt.starts_at, timeZone),
     ends: isoToZonedDateTimeInput(hunt.ends_at, timeZone),
@@ -69,7 +80,7 @@ export function HuntSettings({
         Nom, ordre des étapes, fenêtre de jeu et lot final remis en caisse.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={hunt.id} />
 
         <div className="max-w-sm">
@@ -251,6 +262,14 @@ export function HuntSettings({
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
           )}
+          {/* Un enregistrement automatique silencieusement inopérant est pire
+              que pas d'enregistrement du tout : sans cette ligne, un nom vidé
+              ferait partir le commerçant en croyant son travail sauvé. */}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : le nom de la chasse est vide."
+          />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
@@ -411,13 +430,21 @@ function HuntStepRow({
   reorderPending: boolean;
   onMove: (index: number, direction: -1 | 1) => void;
 }) {
+  // UN ENREGISTREMENT AUTOMATIQUE PAR LIGNE, et pas un pour la liste : chaque
+  // étape est SON PROPRE `<form>`, donc son propre `requestSubmit`. Deux lignes
+  // éditées coup sur coup partent séparément, et la frappe d'une ligne ne
+  // déclenche jamais la soumission de sa voisine. La suppression (formulaire
+  // frère) n'est PAS concernée : rien d'automatique ne détruit.
+  const formRef = useRef<HTMLFormElement>(null);
   const {
     state: updateState,
     pending: updatePending,
     onSubmit: updateSubmit,
   } = useActionForm(updateHuntStep, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const {
     state: deleteState,
     pending: deletePending,
@@ -453,7 +480,11 @@ function HuntStepRow({
           </button>
         </div>
 
-        <form onSubmit={updateSubmit} className="min-w-0 flex-1 space-y-2">
+        <form
+          ref={formRef}
+          onSubmit={updateSubmit}
+          className="min-w-0 flex-1 space-y-2"
+        >
           <input type="hidden" name="id" value={step.id} />
           <div>
             <Label htmlFor={`step-label-${step.id}`}>Libellé de l&apos;étape</Label>
@@ -485,6 +516,11 @@ function HuntStepRow({
             {updateState?.ok && (
               <span className="text-sm font-medium text-emerald-600">✓</span>
             )}
+            <AutoSaveEtat
+              enAttente={enAttente}
+              bloqueParValidation={bloqueParValidation}
+              messageBloque="Non enregistré : le libellé de l'étape est vide."
+            />
           </div>
           <FieldError
             message={updateState && !updateState.ok ? updateState.error : undefined}

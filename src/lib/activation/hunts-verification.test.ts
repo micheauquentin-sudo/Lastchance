@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   construireVerificationChasse,
   type EntreeVerificationChasse,
-} from "@/components/dashboard/atelier-hunt-verification-state";
+} from "@/lib/activation/hunts";
 
 const MAINTENANT = new Date("2026-08-07T12:00:00.000Z");
 

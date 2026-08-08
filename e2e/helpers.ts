@@ -19,3 +19,20 @@ export async function login(page: Page, email: string) {
   await page.getByRole("button", { name: "Se connecter" }).click();
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 }
+
+/**
+ * Ouvre une tuile CarteRepliable repliée par défaut (chantier
+ * tuiles-checklist) si elle l'est encore. Le bouton de repli porte
+ * l'aria-label « Développer « N. Titre — … » » ; certaines tuiles
+ * (#statut, portes d'atelier, GuidedJourney) restent ouvertes et n'ont
+ * pas ce bouton — dans ce cas on ne fait rien, la tuile est déjà là.
+ */
+export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
+  const bouton = page.getByRole("button", { name: motifTitre });
+  // `click()` avec un timeout COURT plutôt que `isVisible()` (instantané,
+  // sans attente) : sur une page qui hydrate encore, `isVisible()` répond
+  // `false` avant que le bouton soit attaché et le dépli est sauté en
+  // silence. `click()` patiente son actionabilité ; l'échec (tuile déjà
+  // ouverte — bouton « Réduire … » à la place — ou absente) est toléré.
+  await bouton.click({ timeout: 5_000 }).catch(() => {});
+}

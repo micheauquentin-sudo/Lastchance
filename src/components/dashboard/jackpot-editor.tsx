@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import {
   deleteJackpotCampaign,
   setJackpotCampaignStatus,
   updateJackpotCampaign,
 } from "@/actions/jackpot";
 import Link from "next/link";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -18,6 +19,7 @@ import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes"
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import type {
   JackpotCampaign,
   JackpotDrawMode,
@@ -68,8 +70,23 @@ export function JackpotSettings({
   // suivre leur `defaultValue` rafraîchi ; sur un champ que le commerçant a
   // effectivement saisi, sa frappe reste affichée telle quelle — écart assumé,
   // borné à la normalisation serveur (trim des libellés).
+  //
+  // ENREGISTREMENT AUTOMATIQUE, avec un délai PLUS LONG que le défaut (800 ms).
+  // C'est la plus grosse carte du produit — quinze champs, dont deux zones de
+  // texte libre (détails du lot, contenu commerçant) où l'on écrit des phrases.
+  // Au délai par défaut, une pause de frappe au milieu d'une phrase partirait
+  // au serveur ; à 1,5 s, on n'enregistre plus qu'une fois la main levée. La
+  // sortie de champ, elle, envoie tout de suite dans les deux cas.
+  //
+  // `useAutoSave` s'ajoute À CÔTÉ de `useActionForm`, jamais autour : deux
+  // gardes mécaniques du dépôt cherchent l'appel littéral.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateJackpotCampaign, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
+  });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef, {
+    delai: 1500,
   });
 
   // Mode, rotation et fréquence sont liés : en « Code au comptoir » la base
@@ -97,7 +114,7 @@ export function JackpotSettings({
         Nom, façon de participer, mode de tirage, lot et montant d&apos;affichage.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={campaign.id} />
 
         <div className="max-w-sm">
@@ -466,6 +483,14 @@ export function JackpotSettings({
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
           )}
+          {/* Quinze champs, dont plusieurs requis : sans cette ligne, un nom
+              vidé arrêterait TOUT l'enregistrement automatique de la carte en
+              silence, et le reste semblerait pourtant se sauver tout seul. */}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : un champ de la carte est vide ou mal rempli."
+          />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>

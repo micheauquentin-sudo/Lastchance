@@ -41,9 +41,16 @@ import {
 } from "@/components/dashboard/atelier-stepper";
 import { AtelierEntreeCalendrier } from "@/components/dashboard/atelier-calendar-entree";
 import { AtelierCalendrierVerification } from "@/components/dashboard/atelier-calendar-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
-import { caseVide, casesIncompletes } from "@/lib/activation/calendar";
+import {
+  caseVide,
+  casesIncompletes,
+  verificationCalendrier,
+} from "@/lib/activation/calendar";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import type { Calendar, CalendarDay } from "@/types/database";
 
@@ -224,6 +231,20 @@ export default async function CalendarDetailPage({
   const garnies =
     days.length - casesIncompletes(casesVerification).length - vides;
 
+  // LES MÊMES CONTRÔLES POUR LES DEUX VUES, calculés UNE fois : l'étape « La
+  // vérification » les raconte, le suivi n'en garde que le verdict, en pastille
+  // sur chaque bloc. Deux calculs feraient deux vérités sur ce qui manque.
+  const entreeVerification = {
+    dayCount: c.day_count,
+    cases: casesVerification,
+    completionRewardLabel: c.completion_reward_label ?? "",
+    completionRewardStock: c.completion_reward_stock,
+  };
+  const tuiles = tuilesDuModule(
+    "calendrier",
+    verificationCalendrier(entreeVerification).controles,
+  );
+
   const enTete = (
     <div>
       <Link
@@ -295,12 +316,7 @@ export default async function CalendarDetailPage({
             {etape === "verification" && (
               <AtelierCalendrierVerification
                 calendarId={c.id}
-                entree={{
-                  dayCount: c.day_count,
-                  cases: casesVerification,
-                  completionRewardLabel: c.completion_reward_label ?? "",
-                  completionRewardStock: c.completion_reward_stock,
-                }}
+                entree={entreeVerification}
               />
             )}
           </section>
@@ -334,49 +350,84 @@ export default async function CalendarDetailPage({
         conclusion={conclusion}
       />
 
-      <div id="statut" className="scroll-mt-24">
+      {/* ── LA CHECKLIST ──
+          Même règle que sur le quiz : l'état du calendrier et la porte de
+          l'atelier restent OUVERTS (sans eux, un commerçant qui n'a rien
+          préparé ne verrait plus par où commencer) ; le partage et la relance
+          naissent repliés, ils ne servent qu'une fois la grille garnie. */}
+      <CarteRepliable
+        {...carteTuile(tuiles, "statut")}
+        resume={
+          c.status === "active"
+            ? "Ouvert aux joueurs."
+            : c.status === "archived"
+              ? "Archivé."
+              : "Brouillon : la page publique reste fermée."
+        }
+      >
         <CalendarStatusControls calendar={c} />
-      </div>
+      </CarteRepliable>
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le calendrier est publié — un QR imprimé
           et collé en vitrine survit à la page qui l'a produit, alors qu'un
           bandeau d'avertissement, non. */}
-      <Card id="suivi" className="scroll-mt-24">
-        <h2 className="font-semibold mb-1">QR code et lien du calendrier</h2>
-        {c.status === "active" ? (
-          <>
-            <p className="text-sm text-zinc-500 mb-3">
-              Affichez le QR code en boutique ou partagez le lien : vos clients
-              ouvrent leur case du jour depuis leur téléphone.
+      <CarteRepliable
+        {...carteTuile(tuiles, "partage")}
+        defaultOuvert={false}
+        resume={
+          c.status === "active"
+            ? `${openCount} ouverture${openCount > 1 ? "s" : ""} de la page publique.`
+            : "Disponible une fois le calendrier publié."
+        }
+      >
+        <Card>
+          <h2 className="font-semibold mb-1">
+            QR code et lien du calendrier
+          </h2>
+          {c.status === "active" ? (
+            <>
+              <p className="text-sm text-zinc-500 mb-3">
+                Affichez le QR code en boutique ou partagez le lien : vos
+                clients ouvrent leur case du jour depuis leur téléphone.
+              </p>
+              <PublicShare
+                url={publicUrl}
+                fileName={`calendrier-${c.public_slug}`}
+                qrLabel={c.name}
+                openCount={openCount}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Publiez le calendrier pour obtenir son QR code et son lien : tant
+              qu&apos;il n&apos;est pas actif, la page publique reste fermée aux
+              joueurs.
             </p>
-            <PublicShare
-              url={publicUrl}
-              fileName={`calendrier-${c.public_slug}`}
-              qrLabel={c.name}
-              openCount={openCount}
-            />
-          </>
-        ) : (
-          <p className="text-sm text-zinc-500">
-            Publiez le calendrier pour obtenir son QR code et son lien : tant
-            qu&apos;il n&apos;est pas actif, la page publique reste fermée aux
-            joueurs.
-          </p>
-        )}
-      </Card>
+          )}
+        </Card>
+      </CarteRepliable>
 
-      <AtelierEntreeCalendrier
-        calendarId={c.id}
-        garnies={garnies}
-        vides={vides}
-        total={days.length}
-      />
+      <CarteRepliable
+        {...carteTuile(tuiles, "atelier")}
+        resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length}.`}
+      >
+        <AtelierEntreeCalendrier
+          calendarId={c.id}
+          garnies={garnies}
+          vides={vides}
+          total={days.length}
+        />
+      </CarteRepliable>
 
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <div id="relance" className="scroll-mt-24">
+        <CarteRepliable
+          {...carteTuile(tuiles, "relance")}
+          defaultOuvert={false}
+          resume="Repartir de ce calendrier pour la prochaine saison."
+        >
           <RelaunchFormulaCard
             sourceName={c.name}
             occasionLabel="la prochaine saison"
@@ -385,7 +436,7 @@ export default async function CalendarDetailPage({
             isSupported
             action={<RelaunchFormulaAction kind="calendar" sourceId={c.id} />}
           />
-        </div>
+        </CarteRepliable>
       )}
     </div>
   );

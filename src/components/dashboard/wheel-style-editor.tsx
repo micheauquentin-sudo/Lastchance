@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { updateWheelStyle } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
 import { contrastRatio } from "@/lib/contrast";
 import type { GameType } from "@/types/database";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import {
   HUB_STYLES,
   PAGE_THEMES,
@@ -171,9 +172,28 @@ export function WheelStyleEditor({
   );
   // `useActionForm` et non `useActionState` : l'état de chargement doit
   // retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
-  const { state, pending, onSubmit } = useActionForm(updateWheelStyle);
+  const { state, pending, onSubmit } = useActionForm(updateWheelStyle, {
+    toastOnSuccess: "Enregistré.",
+  });
   const [dirty, setDirty] = useState(false);
   const portee = porteeHabillage(gameType);
+
+  /**
+   * ENREGISTREMENT AUTOMATIQUE — via un `input` ÉMIS, faute de champ à écouter.
+   *
+   * Les vingt contrôles d'habillage vivent HORS du `<form>` : celui-ci ne porte
+   * que deux champs cachés (`id` et le style sérialisé). Aucun événement de
+   * saisie ne l'atteint donc jamais, et `useAutoSave` — qui écoute le
+   * formulaire — n'aurait rien vu. On lui en émet un, depuis le formulaire
+   * lui-même, à chaque modification du style.
+   *
+   * `dirty` est le garde-fou du montage, exigé par le contrat de `useAutoSave` :
+   * il est FAUX tant que personne n'a rien touché, donc le premier rendu ne
+   * poste rien. Enregistrer remet `dirty` à faux (bouton) ; la modification
+   * suivante le relève.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
 
   /**
    * Un preset REMPLACE les vingt champs d'un coup. Tant qu'il n'y a rien à
@@ -195,6 +215,12 @@ export function WheelStyleEditor({
 
   // Recalculé à chaque frappe de couleur : l'avertissement suit l'aperçu.
   const avertissement = playContrastWarning(style);
+
+  const styleSerialise = JSON.stringify(style);
+  useEffect(() => {
+    if (!dirty) return;
+    formRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
+  }, [styleSerialise, dirty]);
 
   // Réglages « Ce jeu » : la couche à gratter (trois arrêts, défauts résolus
   // à la lecture) et la couleur de l'objet, `undefined` tant que le
@@ -606,9 +632,9 @@ export function WheelStyleEditor({
       </div>
 
       {/* Sauvegarde */}
-      <form onSubmit={onSubmit} className="mt-5">
+      <form ref={formRef} onSubmit={onSubmit} className="mt-5">
         <input type="hidden" name="id" value={wheelId} />
-        <input type="hidden" name="style" value={JSON.stringify(style)} />
+        <input type="hidden" name="style" value={styleSerialise} />
         <Button
           type="submit"
           disabled={pending}
@@ -620,6 +646,19 @@ export function WheelStyleEditor({
         {state?.ok && !dirty && (
           <p className="mt-2 text-center text-sm text-emerald-600">
             Style enregistré — vos clients le voient dès maintenant.
+          </p>
+        )}
+        {enAttente && !pending && (
+          <p className="mt-2 text-center text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {/* Ce formulaire n'a que deux champs cachés : la validation ne peut
+            pas le refuser. Le message est là quand même — le jour où un champ
+            visible y entre, le silence serait pire que le message. */}
+        {bloqueParValidation && (
+          <p role="alert" className="mt-2 text-sm font-semibold text-red-700">
+            Non enregistré : un champ requis est vide ou invalide.
           </p>
         )}
         <FieldError message={state && !state.ok ? state.error : undefined} />

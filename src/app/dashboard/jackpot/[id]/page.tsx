@@ -30,6 +30,10 @@ import {
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierJackpotComptoir } from "@/components/dashboard/atelier-jackpot-comptoir";
 import { AtelierJackpotVerification } from "@/components/dashboard/atelier-jackpot-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { construireActivationJackpot } from "@/lib/activation/jackpot";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import {
   JackpotSettings,
@@ -144,6 +148,27 @@ export default async function JackpotDetailPage({
     relanceHref: null,
   });
 
+  // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT : la vue suivi
+  // en tire le verdict de ses tuiles, l'atelier la donne à son étape « La
+  // vérification ». Les cinq contrôles pointent tous l'étape « reglages » — mais
+  // le BLOC qui les porte est la carte d'entrée de l'atelier, et c'est
+  // `TUILES_JACKPOT` qui le dit : une étape d'atelier n'est pas une tuile.
+  const entreeVerification = {
+    draw_mode: c.draw_mode,
+    threshold: c.threshold,
+    draw_at: c.draw_at,
+    reward_stock: c.reward_stock,
+    reward_label: c.reward_label,
+    status: c.status,
+    validation_mode: c.validation_mode,
+    public_slug: c.public_slug,
+    code_ttl_days: c.code_ttl_days,
+  };
+  const tuiles = tuilesDuModule(
+    "jackpot",
+    construireActivationJackpot(entreeVerification).controles,
+  );
+
   const numero = etape ? numeroEtape(etapesAtelier, etape) : 0;
   const titreEtape = etape ? titreEtapeJackpot(etapesAtelier, etape) : "";
 
@@ -185,84 +210,117 @@ export default async function JackpotDetailPage({
             conclusion={conclusion}
           />
 
-          <div id="statut" className="scroll-mt-24">
+          {/* Le bloc qui décide — publier — reste OUVERT, comme la porte de
+              l'atelier plus bas ; les trois qui se consultent naissent repliés.
+              L'ancre rouvre le bloc qu'elle vise (voir `carte-repliable.tsx`). */}
+          <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <JackpotStatusControls campaign={c} />
-          </div>
+          </CarteRepliable>
 
           {canViewStats && (
-            <Card>
-              <h2 className="font-semibold mb-4">En un coup d&apos;œil</h2>
-              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat label="Objectif" value={c.threshold} />
-                <Stat label="Participations (cycle)" value={c.current_count} />
-                <Stat
-                  label={`Gagnants / ${c.reward_stock}`}
-                  value={c.reward_claimed_count}
-                />
-                <Stat label="Lots remis" value={redeemed} />
-              </dl>
-            </Card>
+            <CarteRepliable
+              {...carteTuile(tuiles, "apercu")}
+              defaultOuvert={false}
+              resume={`${c.current_count} / ${c.threshold} participations sur ce cycle`}
+            >
+              <Card>
+                <h2 className="font-semibold mb-4">En un coup d&apos;œil</h2>
+                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <Stat label="Objectif" value={c.threshold} />
+                  <Stat label="Participations (cycle)" value={c.current_count} />
+                  <Stat
+                    label={`Gagnants / ${c.reward_stock}`}
+                    value={c.reward_claimed_count}
+                  />
+                  <Stat label="Lots remis" value={redeemed} />
+                </dl>
+              </Card>
+            </CarteRepliable>
           )}
 
           {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
               donc le QR et le lien QUE si la cagnotte est publiée — un QR imprimé
               et collé en vitrine survit à la page qui l'a produit, alors qu'un
               bandeau d'avertissement, non. */}
-          <Card id="suivi" className="scroll-mt-24">
-            <h2 className="font-semibold mb-1">QR code et lien de la cagnotte</h2>
-            {c.status === "active" ? (
-              <>
-                <p className="text-sm text-zinc-500 mb-3">
-                  Affichez le QR code en boutique ou partagez le lien : vos
-                  clients suivent la jauge et participent depuis leur téléphone.
+          <CarteRepliable
+            {...carteTuile(tuiles, "partage")}
+            defaultOuvert={false}
+            resume={
+              c.status === "active"
+                ? `${openCount} ouverture${openCount > 1 ? "s" : ""} de la page publique`
+                : "Cagnotte non publiée — pas encore de QR code"
+            }
+          >
+            <Card>
+              <h2 className="font-semibold mb-1">
+                QR code et lien de la cagnotte
+              </h2>
+              {c.status === "active" ? (
+                <>
+                  <p className="text-sm text-zinc-500 mb-3">
+                    Affichez le QR code en boutique ou partagez le lien : vos
+                    clients suivent la jauge et participent depuis leur
+                    téléphone.
+                  </p>
+                  <PublicShare
+                    url={publicUrl}
+                    fileName={`jackpot-${c.public_slug ?? c.id}`}
+                    qrLabel={c.name}
+                    openCount={openCount}
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-zinc-500">
+                  Publiez la cagnotte pour obtenir son QR code et son lien : tant
+                  qu&apos;elle n&apos;est pas active, la page publique reste
+                  fermée aux joueurs.
                 </p>
-                <PublicShare
-                  url={publicUrl}
-                  fileName={`jackpot-${c.public_slug ?? c.id}`}
-                  qrLabel={c.name}
-                  openCount={openCount}
-                />
-              </>
-            ) : (
-              <p className="text-sm text-zinc-500">
-                Publiez la cagnotte pour obtenir son QR code et son lien : tant
-                qu&apos;elle n&apos;est pas active, la page publique reste fermée
-                aux joueurs.
-              </p>
-            )}
-          </Card>
+              )}
+            </Card>
+          </CarteRepliable>
 
           {/* L'écran comptoir n'a de sens qu'en « Code au comptoir » : en
               validation caisse, `getJackpotCounterCode` rend `code: null` et
               cette carte proposait un geste qui ne produit rien. */}
           {c.validation_mode === "rotating_code" && (
-            <Card className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black mb-1">
-                  Écran comptoir
-                </h2>
-                <p className="text-sm text-zinc-500">
-                  Affichez la jauge géante et le code tournant face aux clients.
-                </p>
-              </div>
-              <Link
-                href={`/dashboard/jackpot/${c.id}/comptoir`}
-                className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-bold text-k-ink"
-              >
-                Ouvrir l&apos;écran comptoir →
-              </Link>
-            </Card>
+            <CarteRepliable
+              {...carteTuile(tuiles, "comptoir")}
+              defaultOuvert={false}
+              resume="La jauge géante et le code tournant à afficher au comptoir"
+            >
+              <Card className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black mb-1">
+                    Écran comptoir
+                  </h2>
+                  <p className="text-sm text-zinc-500">
+                    Affichez la jauge géante et le code tournant face aux
+                    clients.
+                  </p>
+                </div>
+                <Link
+                  href={`/dashboard/jackpot/${c.id}/comptoir`}
+                  className="k-btn-sm inline-flex items-center gap-2 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2.5 text-sm font-bold text-k-ink"
+                >
+                  Ouvrir l&apos;écran comptoir →
+                </Link>
+              </Card>
+            </CarteRepliable>
           )}
 
-          {/* LA PORTE D'ENTRÉE DE L'ATELIER. Les cartes de réglage ont quitté
-              cette vue : sans ce bloc, le commerçant n'aurait plus aucun chemin
-              vers elles depuis la page qu'il consulte le plus. */}
-          <AtelierEntree
-            etapes={etapesAtelier}
-            hrefPour={hrefPour}
-            titre="L'atelier de la cagnotte"
-            sousTitre="Tout ce qui se règle avant l'ouverture, une étape à la fois. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
-          />
+          {/* LA PORTE D'ENTRÉE DE L'ATELIER, ouverte par défaut. Les cartes de
+              réglage ont quitté cette vue : sans ce bloc, le commerçant
+              n'aurait plus aucun chemin vers elles depuis la page qu'il
+              consulte le plus — la replier d'office le lui cacherait deux fois.
+              C'est aussi la tuile qui porte les cinq contrôles d'ouverture. */}
+          <CarteRepliable {...carteTuile(tuiles, "atelier")}>
+            <AtelierEntree
+              etapes={etapesAtelier}
+              hrefPour={hrefPour}
+              titre="L'atelier de la cagnotte"
+              sousTitre="Tout ce qui se règle avant l'ouverture, une étape à la fois. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+            />
+          </CarteRepliable>
         </>
       ) : (
         <>
@@ -294,17 +352,7 @@ export default async function JackpotDetailPage({
               <AtelierJackpotVerification
                 campaignId={c.id}
                 etapes={etapesAtelier}
-                entree={{
-                  draw_mode: c.draw_mode,
-                  threshold: c.threshold,
-                  draw_at: c.draw_at,
-                  reward_stock: c.reward_stock,
-                  reward_label: c.reward_label,
-                  status: c.status,
-                  validation_mode: c.validation_mode,
-                  public_slug: c.public_slug,
-                  code_ttl_days: c.code_ttl_days,
-                }}
+                entree={entreeVerification}
               />
             )}
           </section>

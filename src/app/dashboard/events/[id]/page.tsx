@@ -32,6 +32,10 @@ import {
 } from "@/components/dashboard/atelier-stepper";
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierEventVerification } from "@/components/dashboard/atelier-event-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { construireActivationEvent } from "@/lib/activation/events";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import {
   EventGameSettings,
@@ -221,6 +225,38 @@ export default async function EventGamePage({
 
   const numero = etape ? numeroEtape(ETAPES_EVENEMENT, etape) : 0;
 
+  /**
+   * LA VÉRIFICATION, CALCULÉE UNE FOIS — POUR LES DEUX VISAGES.
+   *
+   * L'étape « La vérification » la rendait déjà ; la vue suivi en a désormais
+   * besoin elle aussi, pour statuer ses tuiles. Un seul objet d'entrée, hissé
+   * au-dessus du branchement : deux constructions séparées finiraient par
+   * diverger, et la page dirait « tout est prêt » d'un côté pendant que
+   * l'atelier dirait le contraire.
+   */
+  const entreeActivation = {
+    nombreQuestions: questions.length,
+    status,
+    salles: sessions.map((s) => ({
+      label: s.label,
+      joinCode: s.joinCode,
+      rewardLabel: s.rewardLabel,
+      rewardStock: s.rewardStock,
+      codeTtlDays: s.codeTtlDays,
+    })),
+  };
+  const tuiles = tuilesDuModule(
+    "evenement",
+    construireActivationEvent(entreeActivation).controles,
+  );
+  /**
+   * Titre, ancre, rang et verdict d'un bloc — TOUS pris dans
+   * `checklist/tuiles.ts`. La page ne renomme ni ne renumérote rien :
+   * réordonner la checklist réordonne les pastilles, et c'est le seul endroit
+   * à toucher.
+   */
+  const bloc = (cle: string) => carteTuile(tuiles, cle);
+
   // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
   // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
   // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
@@ -259,28 +295,50 @@ export default async function EventGamePage({
             conclusion={conclusion}
           />
 
-          <div id="statut" className="scroll-mt-24">
+          {/* OUVERT : c'est le geste de publication, et la Carte de
+              l'Aventure y renvoie. */}
+          <CarteRepliable {...bloc("statut")}>
             <EventGameStatusControls gameId={game.id} status={status} />
-          </div>
+          </CarteRepliable>
 
-          <div id="suivi" className="scroll-mt-24">
+          {/* REPLIÉ : ce qui s'ANIME le soir venu, pas ce qui se prépare. Le
+              résumé dit combien de salles attendent, l'ancre `#suivi` rouvre
+              le bloc quand la Carte de l'Aventure y saute. */}
+          <CarteRepliable
+            {...bloc("suivi")}
+            defaultOuvert={false}
+            resume={
+              sessions.length === 0
+                ? "Aucune session préparée"
+                : `${sessions.length} session${sessions.length > 1 ? "s" : ""}`
+            }
+          >
             <EventSessionsSection sessions={sessions} />
-          </div>
+          </CarteRepliable>
 
           {/* LA PORTE D'ENTRÉE DE L'ATELIER. Les cartes de préparation ont
               quitté cette vue : sans ce bloc, le commerçant n'aurait plus aucun
               chemin vers elles depuis la page qu'il consulte le plus. */}
-          <AtelierEntree
-            etapes={ETAPES_EVENEMENT}
-            hrefPour={hrefPour}
-            titre="L'atelier de la soirée"
-            sousTitre="Le nom du jeu, ses manches et le lot de chaque session. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
-          />
+          <CarteRepliable {...bloc("atelier")}>
+            <AtelierEntree
+              etapes={ETAPES_EVENEMENT}
+              hrefPour={hrefPour}
+              titre="L'atelier de la soirée"
+              sousTitre="Le nom du jeu, ses manches et le lot de chaque session. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+            />
+          </CarteRepliable>
 
           <RelanceErreur message={relanceError} />
 
+          {/* REPLIÉ : on relance une formule APRÈS la soirée, pas pendant
+              qu'on la prépare. Le lien « Relancer » de la conclusion vise
+              `#relance`, qui rouvre le bloc. */}
           {capacites.canExplore && (
-            <div id="relance" className="scroll-mt-24">
+            <CarteRepliable
+              {...bloc("relance")}
+              defaultOuvert={false}
+              resume="Repartir de ce jeu pour la prochaine soirée"
+            >
               <RelaunchFormulaCard
                 sourceName={game.name}
                 occasionLabel="la prochaine soirée"
@@ -289,7 +347,7 @@ export default async function EventGamePage({
                 isSupported
                 action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
               />
-            </div>
+            </CarteRepliable>
           )}
         </>
       ) : (
@@ -324,17 +382,7 @@ export default async function EventGamePage({
             {etape === "verification" && (
               <AtelierEventVerification
                 gameId={game.id}
-                entree={{
-                  nombreQuestions: questions.length,
-                  status,
-                  salles: sessions.map((s) => ({
-                    label: s.label,
-                    joinCode: s.joinCode,
-                    rewardLabel: s.rewardLabel,
-                    rewardStock: s.rewardStock,
-                    codeTtlDays: s.codeTtlDays,
-                  })),
-                }}
+                entree={entreeActivation}
               />
             )}
           </section>

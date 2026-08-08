@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
 
 /**
@@ -400,6 +400,42 @@ test.describe("Calendrier — vérification : une case vide est signalée, pas b
 test.describe("Cagnotte — le stepper suit le mode de validation", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
+  const BASE_CAGNOTTE = "/dashboard/jackpot/e2ec0000-0000-4000-8000-000000000001";
+
+  /**
+   * Amène la cagnotte seedée dans un mode de validation donné et PROUVE le
+   * résultat au compte de pastilles. Idempotente : si le mode est déjà le
+   * bon, elle ne poste rien. Le signal de fin d'enregistrement est le TOAST
+   * (« Enregistré. ») — pas le libellé du bouton : depuis l'autosave, un
+   * check() suivi d'un clic peut produire DEUX soumissions de même valeur,
+   * et le bouton repasse par son état de repos entre les deux.
+   */
+  async function basculerModeValidation(
+    page: Page,
+    nomRadio: RegExp,
+    pastillesAttendues: number,
+  ) {
+    await page.goto(`${BASE_CAGNOTTE}?etape=reglages`);
+    const radio = page.getByRole("radio", { name: nomRadio });
+    await expect(radio).toBeVisible();
+    if (!(await radio.isChecked())) {
+      await radio.check();
+      await page.getByRole("button", { name: "Enregistrer" }).click();
+      await expect(
+        page.locator('[role="status"]', { hasText: "Enregistré." }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      // absorbe l'éventuelle seconde soumission (file d'autosave) avant de
+      // naviguer — sinon elle part sur une page en cours de déchargement.
+      await page.waitForLoadState("networkidle");
+    }
+    await page.goto(`${BASE_CAGNOTTE}?etape=reglages`);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Étapes de l'atelier" })
+        .getByRole("listitem"),
+    ).toHaveCount(pastillesAttendues);
+  }
+
   test.beforeEach(({}, testInfo) => {
     test.skip(
       testInfo.project.name !== "desktop-smoke",
@@ -407,39 +443,24 @@ test.describe("Cagnotte — le stepper suit le mode de validation", () => {
     );
   });
 
+  // Restauration IDEMPOTENTE, même après un échec en cours de test : sans
+  // elle, une tentative tombée en mode « code tournant » laissait la donnée
+  // seedée polluée, et le retry mourait dès son toHaveCount(2) d'entrée —
+  // c'est exactement la panne vue en CI.
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.project.name !== "desktop-smoke") return;
+    await basculerModeValidation(page, /Validation en caisse/, 2).catch(
+      () => {},
+    );
+  });
+
   test("mode staff : 2 pastilles ; passage en code tournant : 3 pastilles @smoke", async ({
     page,
   }) => {
-    const base = "/dashboard/jackpot/e2ec0000-0000-4000-8000-000000000001";
-    await page.goto(`${base}?etape=reglages`);
-
-    const stepper = page.getByRole("navigation", {
-      name: "Étapes de l'atelier",
-    });
-    await expect(stepper.getByRole("listitem")).toHaveCount(2);
-
-    const radioCodeComptoir = page.getByRole("radio", {
-      name: /Code au comptoir/,
-    });
-    const boutonEnregistrer = page.getByRole("button", { name: "Enregistrer" });
-
-    await expect(radioCodeComptoir).toBeVisible();
-    await radioCodeComptoir.check();
-    await boutonEnregistrer.click();
-    // La réponse HTTP est arrivée quand le bouton reprend son libellé de
-    // repos (pending → false dans le `finally` de useActionForm) — naviguer
-    // avant annulerait la requête en vol côté navigateur.
-    await expect(boutonEnregistrer).toHaveText("Enregistrer");
-
-    await page.goto(`${base}?etape=reglages`);
-    await expect(stepper.getByRole("listitem")).toHaveCount(3);
-
-    // On remet le mode d'origine pour ne pas polluer les autres runs.
-    await page.getByRole("radio", { name: /Validation en caisse/ }).check();
-    const boutonRestaure = page.getByRole("button", { name: "Enregistrer" });
-    await boutonRestaure.click();
-    await expect(boutonRestaure).toHaveText("Enregistrer");
-    await page.goto(`${base}?etape=reglages`);
-    await expect(stepper.getByRole("listitem")).toHaveCount(2);
+    // Entrée AUTO-RÉPARANTE : on force l'état de départ au lieu de le
+    // supposer — un run précédent interrompu ne peut plus faire mourir
+    // celui-ci à l'entrée.
+    await basculerModeValidation(page, /Validation en caisse/, 2);
+    await basculerModeValidation(page, /Code au comptoir/, 3);
   });
 });

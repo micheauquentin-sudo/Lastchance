@@ -285,6 +285,57 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.51 — Tuiles checklist + autosave (✅ 2026-08-08, branche `chantier/tuiles-checklist-autosave`, PR à ouvrir, sans migration)
+
+**Objectif** : demande propriétaire — sur chaque page de jeu, toutes les
+tuiles refermées par défaut, numérotées dans l'ordre des tâches, pastille
+rouge (obligatoire manquant) / verte (complet — vide-mais-optionnel valide) ;
+tout réglage s'enregistre automatiquement, notification en haut à droite.
+
+**Livré** (9 commits) :
+- **Socle checklist** (`269cbc4`) : `CarteRepliable` gagne numéro/statut/résumé
+  (sens porté dans l'`aria-label`), auto-ouverture par ancre
+  (`#statut`/`#suivi`/`#reglages`) au montage et sur `hashchange`.
+  `src/lib/checklist/` mappe les contrôles d'activation V1.47 vers les tuiles
+  ordonnées de chaque page ; table des défauts `bloquant` tranchée par
+  module (pronostics : rien ne bloque côté serveur, pastilles vertes
+  honnêtes) ; test de couverture double-sens (aucun contrôle orphelin, aucune
+  clé fantôme).
+- **Socle autosave** (`a9b2913`) : correctif de la file dans `useActionForm`
+  (drop silencieux de la dernière frappe en resoumission rapprochée, rejeu
+  par `requestSubmit` relisant l'état frais) ; `useAutoSave` (debounce
+  800 ms, jamais au montage, flush à la sortie de champ) à côté du hook
+  littéral ; `useAutoSaveManuel` pour les gestes hors formulaire ; toast
+  global (bus sans `Provider`, rôle `status`/`alert`, pile de 3).
+- **Déploiement 8 pages** (`d77e751`, `edf5690`, `3685e3a`, `c944520`) :
+  campagnes, roue, quiz, calendrier, chasse, fidélité, jackpot, événements,
+  pronostics — statut/porte d'atelier/Carte de l'Aventure restent visibles,
+  le reste se replie numéroté avec résumé d'une ligne. Vérification calculée
+  une fois au-dessus du branchement, servie à la vue nue et à l'étape
+  vérification. Autosave + toast sur ~25 formulaires.
+- **Protections spécifiques conservées** : `day_count` du calendrier
+  désactive l'autosave dès valeur différente de l'initiale et rend la main
+  au bouton (poignée `confirm_day_loss` testée 4 cas) ; `PrizeRow` sans
+  autosave (compare-and-swap `stock_seen`) ; `ContestEventCard` manuelle ;
+  `wheel-settings` ne navigue plus dans `onSuccess` ; exclusions absolues :
+  statuts/publication, zones dangereuses, créations,
+  finalize/tirage/résultats, motif de verrouillage, uploads.
+- **E2E réparé** (`9d8b5d3`, `f858127`) : helper `ouvrirTuile`, specs
+  referral/campaign-templates/pronostics remises à niveau pour des tuiles
+  repliées par défaut.
+
+Preuve : typecheck 0, lint 0, Vitest **256 fichiers / 4029 tests**, build
+vert, migrations inchangées (122, tête `20260918120000`), sql:check ok,
+E2E WSL desktop-smoke ciblé (pronostics+referral+campaign-templates,
+calendar+atelier-modules, wheel-wizard+quiz, referral mobile-chrome) vert.
+ADR-096.
+
+**Reste ouvert** : état de repli des tuiles non persisté entre visites ;
+`useAutoSave` annule son minuteur au démontage (navigation sans `blur` avant
+l'échéance du debounce peut perdre la dernière frappe, borné par le flush
+sortie de champ) ; `reloadOnSuccess`/`toastOnSuccess` incompatibles (aucun
+appelant ne les combine) ; matrice E2E mobile complète en reliquat CI.
+
 ## V1.50 — Retours propriétaire : six demandes sur V1.48/V1.49 (✅ 2026-08-08, branche `chantier/retours-proprietaire`, PR à ouvrir, migration `20260918120000`)
 
 **Objectif** : six retours propriétaire directs sur les livraisons V1.48/V1.49
