@@ -77,6 +77,7 @@ import {
   updateQuizQuestionSchema,
   updateQuizRewardSchema,
   updateQuizSchema,
+  updateQuizShareInviteSchema,
 } from "@/lib/validations/quiz";
 
 /** Durée de vie du cookie joueur d'un quiz (180 j, comme le calendrier). */
@@ -985,6 +986,59 @@ export async function updateQuiz(
   }
 
   revalidatePath("/dashboard/quiz");
+  revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Partage après-partie : les boutons « Défier un ami » / « Partager mon score »
+ * de la fin de parcours. Booléen sec, jumeau d'`updateCampaignShareInvite`
+ * (src/actions/campaigns.ts) — le joueur voit le même geste au même moment,
+ * qu'il sorte d'une roue ou d'un quiz, et le commerçant l'éteint de la même
+ * façon des deux côtés.
+ *
+ * CHAMP POSTÉ : `"on"` (case cochée d'un formulaire natif) comme `"true"`
+ * (sentinelle explicite d'un champ caché) valent VRAI ; tout le reste, absence
+ * comprise, vaut FAUX — la carte rendant toujours sa case, c'est la seule
+ * lecture possible.
+ *
+ * AUCUNE PURGE DE LA PAGE PUBLIQUE, et c'est volontaire : `/quiz/[slug]` est en
+ * `force-dynamic` (src/app/quiz/[slug]/page.tsx), à la différence de /play qui
+ * est en ISR 30 s et que son action jumelle doit donc purger. Le réglage est
+ * visible au rechargement suivant, sans rien à invalider.
+ */
+export async function updateQuizShareInvite(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const coche = formData.get("share_enabled");
+  const parsed = updateQuizShareInviteSchema.safeParse({
+    id: formData.get("id"),
+    share_enabled: coche === "on" || coche === "true",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("quizzes")
+    .update({
+      share_enabled: parsed.data.share_enabled,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    console.error("[quiz] update share invite:", error.message);
+    return { ok: false, error: "Mise à jour impossible" };
+  }
+
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
   return { ok: true, data: undefined };
 }

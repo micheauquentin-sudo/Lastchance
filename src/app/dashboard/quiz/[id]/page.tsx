@@ -10,6 +10,7 @@ import {
   QuizQuestionsEditor,
   QuizRewardEditor,
   QuizSettings,
+  QuizShareSettings,
   QuizStatusControls,
   type DashboardQuiz,
   type DashboardQuizQuestion,
@@ -57,7 +58,7 @@ import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
 export const metadata: Metadata = { title: "Quiz" };
 
 const QUIZ_COLUMNS =
-  "id, name, theme, status, public_slug, intro_text, reward_mode, reward_threshold, draw_top_n, draw_state, drawn_at, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id, code_ttl_days";
+  "id, name, theme, status, public_slug, intro_text, reward_mode, reward_threshold, draw_top_n, draw_state, drawn_at, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id, code_ttl_days, share_enabled";
 
 interface QuizRow {
   id: string;
@@ -77,6 +78,7 @@ interface QuizRow {
   reward_claimed_count: number;
   target_wheel_id: string | null;
   code_ttl_days: number | null;
+  share_enabled: boolean;
 }
 
 interface QuestionRow {
@@ -225,6 +227,7 @@ export default async function QuizDetailPage({
     drawState: row.draw_state,
     drawnAt: row.drawn_at,
     codeTtlDays: row.code_ttl_days,
+    shareEnabled: row.share_enabled,
   };
 
   const questions: DashboardQuizQuestion[] = (
@@ -362,7 +365,18 @@ export default async function QuizDetailPage({
           <section
             aria-label={`Étape ${numero} sur ${ETAPES_QUIZ.length} — ${definition.titre}`}
           >
-            {etape === "quiz" && <QuizSettings quiz={quiz} />}
+            {etape === "quiz" && (
+              <div className="space-y-6">
+                <QuizSettings quiz={quiz} />
+                {/* Le partage du quiz PAR LE JOUEUR se règle ici, à côté des
+                    réglages d'affichage : c'est ce que verront ses
+                    participants. Le QR et le lien du commerçant, eux, restent
+                    sur la tuile « Partage » du suivi. Formulaire SÉPARÉ de
+                    `updateQuiz` : enregistrer les réglages ne doit pas
+                    réécrire ce drapeau, ni l'inverse. */}
+                <QuizShareSettings quiz={quiz} />
+              </div>
+            )}
 
             {etape === "questions" && (
               <QuizQuestionsEditor quizId={quiz.id} questions={questions} />

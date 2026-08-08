@@ -68,6 +68,26 @@ export const updateCampaignPrejeuInvitationSchema = z.object({
   prejeu_invitation: z.boolean(),
 });
 
+/**
+ * Partage APRÈS jeu, par campagne : proposer au joueur, une fois sa partie
+ * finie, de défier un ami ou de publier son résultat (bloc `ShareInvite` de
+ * /play).
+ *
+ * Booléen sec, exactement comme l'invitation avant-jeu ci-dessus et pour la
+ * même raison : le bloc ne porte AUCUNE URL propre — il compose le lien public
+ * du jeu déjà connu du serveur —, il n'y a donc rien d'autre à régler que « je
+ * le propose » ou non. Aucune liste blanche d'hôtes à tenir, aucun champ libre.
+ *
+ * Colonne `campaigns.share_enabled` (migration 20260919120000), NOT NULL
+ * DEFAULT true : le bloc existait déjà sans réglage possible, et le défaut
+ * reconduit donc à l'identique ce qui tourne aujourd'hui — activer ce chantier
+ * ne débranche le partage de personne.
+ */
+export const updateCampaignShareInviteSchema = z.object({
+  id: z.string().uuid(),
+  share_enabled: z.boolean(),
+});
+
 /** Budget en euros saisi librement (« 250 », « 99,90 ») → centimes, '' → null (sans plafond). */
 const budgetEurosToCents = z
   .union([

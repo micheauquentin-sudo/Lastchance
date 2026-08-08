@@ -285,6 +285,52 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.52 — Partage après jeu : un réglage par surface (✅ 2026-08-08, branche `chantier/partage-apres-jeu`, PR à ouvrir, migrations `20260919120000`/`20260920120000`)
+
+**Objectif** : le propriétaire avait décoché « Activer le parrainage sur
+cette campagne » et voyait toujours « Faites gagner vos proches / Partager
+sur WhatsApp / Copier le lien » côté joueur. Cause identifiée : deux widgets
+distincts — `ReferralPanel` (parrainage récompensé, correctement gaté) et
+`ShareInvite` (partage générique post-partie, rendu sans aucun réglage sur
+les 4 coquilles de `/play` : roue, jeux de révélation, grattage, défis
+skill-gated). Audit de 8 surfaces publiques en parallèle : le quiz portait le
+même défaut (« Défier un ami » / « Partager mon score » inconditionnels) ; le
+calendrier était déjà correct (partage par case `is_special`) ; chasse,
+fidélité, jackpot, événement, portefeuille et commande étaient propres (leurs
+boutons ne diffusent que le code de retrait du joueur).
+
+**Livré** (8 commits) :
+- **DB** : `campaigns.share_enabled` et `quizzes.share_enabled`, boolean not
+  null **default true** (comportement historique conservé), grants additifs
+  par colonne, assertions pgTAP dédiées.
+- **Backend** : `updateCampaignShareInvite` et `updateQuizShareInvite`,
+  schémas Zod, `QuizPublicContext.shareEnabled` (lu `!== false`).
+- **Frontend** : prop `shareEnabled` requise enfilée de `/play` à travers les
+  13 wrappers jusqu'aux 4 coquilles ; quiz gaté pareil ; nouvelle case
+  d'atelier dans la tuile campagne renommée « Partage et parrainage » et dans
+  les réglages quiz.
+- **Revue sécurité dédiée : GO, 0 critique/élevé**, 1 MOYEN fermé avant PR
+  (les deux actions campagne — partage et prejeu — refusaient un update à 0
+  ligne sans le signaler ; refus honnête ajouté via `.select("id")`) et 1
+  FAIBLE fermé (défaut d'absence de colonne aligné entre `/play` et le quiz,
+  fail-open sur les deux surfaces).
+
+Preuve : typecheck 0, lint 0, Vitest **259 fichiers / 4085 tests**, build
+vert (46 pages), pgTAP **56 fichiers / 3203 assertions** PASS vide et semée,
+migrations:check 124/tête `20260920120000`, sql:check et casts:check ok, E2E
+WSL desktop-smoke 15/15 ciblé + `referral.spec.ts` 4/4 rejoué sur
+mobile-chrome. ADR-097.
+
+**Reste ouvert** : `?ref=share` reste accepté par les mécaniques
+d'acquisition même partage décoché (préexistant, question produit) ; la
+suite ACL n'a pas d'assertion de liste fermée des colonnes écrivables ; les
+ligues de pronostics n'ont aucun réglage commerçant sur leurs codes
+d'invitation ; aucun test comportemental ne prouve que `share_enabled=false`
+masque le bloc (couverture structurelle par le typecheck) ;
+`referral.spec.ts` n'a aucun test tagué `@smoke`. Détails dans
+`docs/bugs.md`. PR à ouvrir vers `main`, fusion sur l'ordre permanent dès CI
+verte.
+
 ## V1.51 — Tuiles checklist + autosave (✅ 2026-08-08, branche `chantier/tuiles-checklist-autosave`, PR à ouvrir, sans migration)
 
 **Objectif** : demande propriétaire — sur chaque page de jeu, toutes les

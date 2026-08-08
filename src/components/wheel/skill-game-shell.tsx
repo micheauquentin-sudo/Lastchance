@@ -55,6 +55,7 @@ export function SkillGameShell({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
   gameType,
   renderChallenge,
 }: {
@@ -65,6 +66,12 @@ export function SkillGameShell({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /**
+   * Le commerçant propose-t-il le partage du jeu après la partie ?
+   * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
+   * `campaigns.share_enabled`.
+   */
+  shareEnabled: boolean;
   /**
    * Mécanique jouée : l'emoji, le verbe du bouton et l'accroche par défaut en
    * découlent (`gameIdle`), comme pour GameShell.
@@ -317,7 +324,9 @@ export function SkillGameShell({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
@@ -329,7 +338,9 @@ export function SkillGameShell({
           <p className={playText.body(kermesse)}>
             Le défi n&apos;est pas passé cette fois. La chance tourne, revenez bientôt !
           </p>
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}

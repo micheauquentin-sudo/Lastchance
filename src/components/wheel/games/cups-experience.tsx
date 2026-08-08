@@ -23,6 +23,7 @@ export function CupsExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -30,6 +31,8 @@ export function CupsExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /** Le commerçant propose-t-il le partage du jeu après la partie ? */
+  shareEnabled: boolean;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const kermesse = playOnLightSurface(style);
@@ -42,6 +45,7 @@ export function CupsExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
+      shareEnabled={shareEnabled}
       gameType="cups"
       renderReveal={(outcome, onRevealed) => (
         <CupsReveal

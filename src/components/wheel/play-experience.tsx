@@ -71,6 +71,7 @@ export function PlayExperience({
   style: rawStyle,
   referral = null,
   organizationId = null,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -87,6 +88,13 @@ export function PlayExperience({
    * non secret (déjà porté par le contexte de jeu) ; null = panneau masqué.
    */
   organizationId?: string | null;
+  /**
+   * Le commerçant propose-t-il le partage du jeu après la partie ?
+   * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
+   * `campaigns.share_enabled`. Distinct du parrainage récompensé
+   * (`referral`), qui garde sa propre case.
+   */
+  shareEnabled: boolean;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const isCartoon = style.cartoonAnimations;
@@ -363,7 +371,9 @@ export function PlayExperience({
           {!outcome.claimToken && organizationId && (
             <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           {showReferral && referral && (
             <ReferralPanel
               slug={slug}
@@ -399,7 +409,9 @@ export function PlayExperience({
           {organizationId && (
             <ProposerPasseport organizationId={organizationId} kermesse={kermesse} />
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           {showReferral && referral && (
             <ReferralPanel
               slug={slug}

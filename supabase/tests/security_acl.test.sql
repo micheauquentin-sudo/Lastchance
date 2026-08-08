@@ -62,6 +62,12 @@ select ok(not has_column_privilege('authenticated', 'public.organizations', 'tik
 -- neuve n'y entre pas toute seule, d'où cette assertion.
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'SELECT'), 'merchant can read the pre-game invitation toggle');
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'prejeu_invitation', 'UPDATE'), 'merchant can toggle the pre-game invitation');
+-- Partage après jeu (20260919120000). Même mécanique de droits que ci-dessus,
+-- et même raison de l'asserter : la liste blanche de colonnes n'accueille pas
+-- une colonne neuve toute seule. Sans le grant, l'interrupteur du dashboard
+-- échouerait silencieusement à l'enregistrement.
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'share_enabled', 'SELECT'), 'merchant can read the post-game share toggle');
+select ok(has_column_privilege('authenticated', 'public.campaigns', 'share_enabled', 'UPDATE'), 'merchant can toggle the post-game share block');
 select ok(not has_table_privilege('authenticated', 'public.merchant_deletion_jobs', 'SELECT'), 'merchant cannot read deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'INSERT'), 'server can create deletion jobs');
 select ok(has_table_privilege('service_role', 'public.merchant_deletion_jobs', 'UPDATE'), 'server can advance deletion jobs');
@@ -365,6 +371,37 @@ select ok(not has_column_privilege('authenticated', 'public.quizzes', 'draw_stat
 select ok(not has_column_privilege('authenticated', 'public.quizzes', 'drawn_at', 'UPDATE'), 'the quiz draw timestamp is RPC-managed');
 select ok(has_column_privilege('authenticated', 'public.quizzes', 'reward_stock', 'UPDATE'), 'editor can still set the quiz reward stock');
 select ok(has_column_privilege('authenticated', 'public.quizzes', 'name', 'UPDATE'), 'editor can still rename a quiz');
+-- Partage du lien public du quiz (20260920120000), miroir de
+-- campaigns.share_enabled. TROIS assertions et non deux comme pour les
+-- campagnes, parce que le régime de droits de `quizzes` diffère : ici INSERT
+-- ET UPDATE sont en listes blanches de colonnes (sur `campaigns`, seul
+-- l'UPDATE l'est), et une colonne neuve n'entre dans aucune des deux toute
+-- seule. Sans ces grants, l'interrupteur du dashboard échouerait
+-- silencieusement à l'enregistrement.
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'SELECT'), 'merchant can read the quiz share toggle');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'UPDATE'), 'merchant can toggle the quiz share buttons');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'INSERT'), 'merchant can set the quiz share toggle at creation');
+-- Le défaut est ALLUMÉ, et l'assertion tient à ce que ça reste vrai : les
+-- boutons « Défier un ami » et « Partager mon score » s'affichaient sur tous
+-- les quiz avant d'être réglables, un `default false` les aurait retirés en
+-- silence de la production le jour du déploiement.
+--
+-- Assertion sur le CATALOGUE et non sur une ligne, à la différence de son
+-- miroir campagne : ce fichier ne crée aucun quiz de test, et le défaut doit
+-- être vérifié aussi bien sur base VIDE que SEMÉE.
+--
+-- `col_default_is` et non `results_eq` sur le catalogue : les deux formulations
+-- ont été essayées, et results_eq ÉCHOUE ici quelle que soit la source —
+-- information_schema comme pg_attrdef — sur « could not determine which
+-- collation to use for string comparison », levé par sa propre comparaison de
+-- records (results_eq(refcursor,refcursor,text) l. 17) parce que ni
+-- `character_data` ni le retour de `pg_get_expr` ne porte de collation
+-- déterminable. Le helper natif de pgTAP compare la valeur, pas un record :
+-- c'est le seul des deux qui passe. Ne pas le « rétablir » en results_eq.
+select col_default_is(
+  'public', 'quizzes', 'share_enabled', 'true',
+  'a quiz keeps offering its share buttons by default'
+);
 -- Parcours joueur : service_role only.
 select ok(has_function_privilege('service_role', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'only server can join a quiz');
 select ok(not has_function_privilege('authenticated', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'merchant cannot impersonate a joining quiz player');
@@ -839,6 +876,16 @@ select results_eq(
      where id = '30000000-0000-4000-8000-000000000001'$$,
   array[false],
   'a campaign does not invite before the game unless asked'
+);
+-- Le partage après jeu, lui, est ALLUMÉ par défaut, et l'assertion tient à ce
+-- que ça reste vrai : le bloc s'affichait partout avant d'être réglable, un
+-- `default false` l'aurait retiré en silence de toutes les campagnes en
+-- production le jour du déploiement.
+select results_eq(
+  $$select share_enabled from public.campaigns
+     where id = '30000000-0000-4000-8000-000000000001'$$,
+  array[true],
+  'a campaign keeps offering the post-game share block by default'
 );
 
 set local role authenticated;

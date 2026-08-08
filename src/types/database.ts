@@ -1082,6 +1082,14 @@ export interface Campaign {
    * renseigné côté organisation, l'activation n'affiche rien.
    */
   prejeu_invitation: boolean;
+  /**
+   * Affiche le bloc de partage générique « Faites gagner vos proches »
+   * (ShareInvite) APRÈS la partie, sur toutes les mécaniques. À ne pas
+   * confondre avec le parrainage récompensé (ReferralProgram.enabled) :
+   * ici rien n'est suivi ni octroyé, c'est un réglage d'affichage.
+   * `true` par défaut — le bloc s'affichait partout avant ce réglage.
+   */
+  share_enabled: boolean;
   created_at: string;
 }
 

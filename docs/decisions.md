@@ -6198,3 +6198,58 @@ explicite, jamais un débounce silencieux.
 - commits `269cbc4`, `a9b2913`, `d77e751`, `edf5690`, `3685e3a`, `c944520`,
   `9d8b5d3`, `f858127`
 - roadmap V1.51
+
+## ADR-097 : Le partage générique post-jeu devient un réglage par surface, distinct du parrainage récompensé
+
+**Date** : 2026-08-08
+**Statut** : Accepté
+
+**Contexte**. Le propriétaire décoche « Activer le parrainage sur cette
+campagne » et voit toujours, côté joueur, « Faites gagner vos proches /
+Partager sur WhatsApp / Copier le lien ». Deux widgets distincts coexistent
+sous l'apparence d'un seul réglage : `ReferralPanel` (parrainage récompensé,
+gaté par `referral_programs.enabled` + addon) et `ShareInvite` (partage
+générique post-partie — pas de récompense, juste un lien), rendu SANS AUCUN
+réglage sur les 4 coquilles de `/play` (roue, jeux de révélation via
+`GameShell`, grattage, défis skill-gated via `SkillGameShell`), écrans gagné
+ET perdu. Un audit des 8 surfaces publiques a trouvé le même défaut sur le
+quiz (« Défier un ami » / « Partager mon score », inconditionnels) ; le
+calendrier était déjà correct (partage conditionné à la case `is_special`) ;
+chasse, fidélité, jackpot, événement, portefeuille et commande ne diffusent
+que le code de retrait du joueur et n'avaient donc rien à gater.
+
+**Décision**. Le partage générique post-jeu devient un réglage explicite par
+surface — `campaigns.share_enabled` et `quizzes.share_enabled`, boolean not
+null, **défaut `true`** pour préserver le comportement historique sans
+migration de données. Il reste structurellement distinct du parrainage
+récompensé : deux colonnes, deux actions (`updateCampaignShareInvite`,
+`updateQuizShareInvite`), deux cases d'atelier, jamais un seul interrupteur
+qui gouvernerait les deux mécaniques. Le défaut d'absence de colonne (lecture
+`!== false`) est aligné entre `/play` et le quiz : les deux fail-open de la
+même façon si la colonne n'est pas encore chargée dans le contexte.
+
+**Justification**. Un défaut `true` évite de faire disparaître un widget que
+tous les commerçants existants voyaient la veille sans qu'ils aient rien
+demandé. Séparer les deux mécaniques évite la confusion que le propriétaire
+a lui-même signalée : décocher une récompense ne doit pas être le seul levier
+pour arrêter une diffusion non récompensée, et inversement.
+
+**Conséquences**. En corrigeant le refus silencieux sur les deux nouvelles
+actions, la revue sécurité a retrouvé le même défaut sur l'action de
+parrainage prejeu existante : un update à 0 ligne (RLS qui refuse) rendait
+un succès muet côté UI. Les trois actions campagne concernées (partage,
+prejeu, et par cohérence le refus déjà présent ailleurs) refusent désormais
+explicitement via `.select("id")`, avec un message fondu anti-oracle
+(« Campagne introuvable ou droits insuffisants ») pour ne pas distinguer
+« n'existe pas » de « pas les droits ».
+
+**References** :
+- `supabase/migrations/20260919120000_partage_apres_jeu.sql`,
+  `supabase/migrations/20260920120000_partage_apres_jeu_quiz.sql`
+- `src/actions/campaigns.ts` (`updateCampaignShareInvite`), `src/actions/quiz.ts`
+  (`updateQuizShareInvite`)
+- `src/components/dashboard/campaign-share-settings.tsx`, éditeur quiz
+  `QuizShareSettings`
+- commits `4baff77`, `f56e81c`, `f0e51d0`, `404f771`, `0f83ebc`, `944a031`,
+  `58c487e`, `c6ad6d9`
+- roadmap V1.52

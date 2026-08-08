@@ -29,6 +29,7 @@ import {
   updateCampaignClaimSchema,
   updateCampaignPrejeuInvitationSchema,
   updateCampaignSchema,
+  updateCampaignShareInviteSchema,
 } from "@/lib/validations/campaigns";
 import type { ActionResult } from "@/lib/utils";
 import type {
@@ -262,6 +263,33 @@ export async function updateCampaign(
 }
 
 /**
+ * Refus des deux réglages « booléen sec » ci-dessous quand l'écriture n'a
+ * atteint AUCUNE ligne.
+ *
+ * NON EXPORTÉE (ce module est `"use server"`, tout export y devient un endpoint).
+ *
+ * ── POURQUOI CE REFUS EXISTE ──
+ *
+ * `.update()` sans `.select()` ne distingue pas « une ligne modifiée » de
+ * « zéro ligne vue » : la RLS FILTRE, elle ne lève pas d'erreur. Ces deux
+ * actions annonçaient donc « Enregistré. » à un caissier qui poste l'action en
+ * direct, et à un membre visant la campagne d'une autre organisation — pour une
+ * écriture qui n'a jamais eu lieu. Le pire des retours : le refus est réel,
+ * seule sa restitution mentait, et le commerçant serait reparti convaincu
+ * d'avoir coupé son partage.
+ *
+ * ── POURQUOI UN SEUL MESSAGE POUR DEUX CAUSES ──
+ *
+ * « Campagne inexistante » et « campagne d'un autre commerce » sont FONDUES
+ * exprès : les distinguer ferait de cette action un oracle d'existence
+ * inter-tenant (« cet UUID appartient à quelqu'un »). Le vocabulaire reprend
+ * celui du fichier — « Campagne introuvable » (resumeCampaignAfterBudget,
+ * duplicateCampaign) et « Action non autorisée » (updateCampaign) —, réunis
+ * parce que le serveur, ici, ne SAIT pas laquelle des deux s'applique.
+ */
+const AUCUNE_LIGNE_ATTEINTE = "Campagne introuvable ou droits insuffisants";
+
+/**
  * Invitation avant-jeu : proposer au joueur, AVANT le jeu et SANS le bloquer,
  * les comptes de la maison (avis Google, Instagram, TikTok). Les liens sont
  * ceux de l'ORGANISATION (`updateOrganizationSocialLinks`) ; la campagne ne
@@ -293,15 +321,81 @@ export async function updateCampaignPrejeuInvitation(
 
   const { id, prejeu_invitation } = parsed.data;
   const supabase = await createClient();
-  const { error } = await supabase
+  // `.select("id")` : sans lui, la RLS filtre en SILENCE et l'action rend un
+  // succès pour zéro ligne écrite (voir AUCUNE_LIGNE_ATTEINTE).
+  const { data, error } = await supabase
     .from("campaigns")
     .update({ prejeu_invitation })
     .eq("id", id)
-    .eq("organization_id", organization.id);
+    .eq("organization_id", organization.id)
+    .select("id");
 
   if (error) {
     reportError("campaigns.prejeu-invitation", error.message);
     return { ok: false, error: "Enregistrement impossible" };
+  }
+  if ((data?.length ?? 0) === 0) {
+    return { ok: false, error: AUCUNE_LIGNE_ATTEINTE };
+  }
+
+  revalidatePath(`/dashboard/campaigns/${id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: id });
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Partage APRÈS jeu : le bloc de fin de partie qui propose au joueur de défier
+ * un ami ou de publier son résultat. Symétrique de l'invitation avant-jeu
+ * ci-dessus — même booléen sec, mêmes gardes, même purge —, à l'autre bout de
+ * la partie.
+ *
+ * Le bloc était RENDU SANS RÉGLAGE POSSIBLE depuis sa livraison : un commerçant
+ * qui ne veut pas de partage n'avait aucun moyen de l'éteindre. La colonne
+ * `campaigns.share_enabled` (NOT NULL DEFAULT true) lui donne l'interrupteur
+ * sans rien changer pour ceux qui n'y toucheront jamais.
+ *
+ * CHAMP POSTÉ : la même case à cocher que le prejeu. `"on"` (case cochée d'un
+ * formulaire natif) comme `"true"` (sentinelle explicite d'un champ caché)
+ * valent VRAI ; tout le reste, absence comprise, vaut FAUX.
+ *
+ * LA PURGE ISR N'EST PAS DÉCORATIVE : /play est servie en ISR 30 s, c'est
+ * `revalidatePlaySlugs` qui fait que le commerçant voit son réglage sur le
+ * téléphone qu'il a en main plutôt qu'à l'expiration du cache.
+ */
+export async function updateCampaignShareInvite(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const coche = formData.get("share_enabled");
+  const parsed = updateCampaignShareInviteSchema.safeParse({
+    id: formData.get("id"),
+    share_enabled: coche === "on" || coche === "true",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const { id, share_enabled } = parsed.data;
+  const supabase = await createClient();
+  // `.select("id")` : même raison qu'au prejeu ci-dessus — la RLS filtre sans
+  // lever d'erreur, et un succès annoncé sur zéro ligne ferait croire au
+  // commerçant qu'il a coupé son partage.
+  const { data, error } = await supabase
+    .from("campaigns")
+    .update({ share_enabled })
+    .eq("id", id)
+    .eq("organization_id", organization.id)
+    .select("id");
+
+  if (error) {
+    reportError("campaigns.share-invite", error.message);
+    return { ok: false, error: "Enregistrement impossible" };
+  }
+  if ((data?.length ?? 0) === 0) {
+    return { ok: false, error: AUCUNE_LIGNE_ATTEINTE };
   }
 
   revalidatePath(`/dashboard/campaigns/${id}`);
