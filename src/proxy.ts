@@ -76,6 +76,41 @@ export default async function proxy(request: NextRequest) {
   }
   const nextResponse = () => NextResponse.next({ request: { headers: requestHeaders } });
 
+  // ── PARCOURS PUBLICS : le nonce OUI, l'authentification NON ──────────
+  //
+  // Sur ces sept expériences, le joueur est un COOKIE ANONYME — jamais un
+  // utilisateur Supabase. Le `user` calculé plus bas n'y est lu par personne :
+  // il ne sert qu'aux préfixes protégés, aux pages d'authentification et à
+  // l'hôte admin. On payait donc, à chaque requête, l'instanciation d'un client
+  // Supabase et un `auth.getUser()` dont le résultat était jeté.
+  //
+  // Ce n'est pas gratuit, et le pire cas n'est pas l'anonyme : dès qu'un cookie
+  // de session EXISTE, `getUser()` va valider le jeton chez Supabase par le
+  // RÉSEAU. Un organisateur qui regarde l'écran de sa propre soirée déclenchait
+  // ainsi un aller-retour d'authentification à CHAQUE rafraîchissement.
+  //
+  // POURQUOI NE PAS SIMPLEMENT LES RETIRER DU MATCHER, comme `/play` et
+  // `/pronos` : parce qu'elles sont dans `PUBLIC_NONCE_PREFIXES` et perdraient
+  // leur CSP à nonce pour retomber en régime `static`, donc sous
+  // `'unsafe-inline'`. Le durcissement obtenu partout ailleurs serait perdu sur
+  // elles seules — une dégradation silencieuse, que `security-headers.ts`
+  // nomme déjà. On sort donc l'authentification, pas la route.
+  //
+  // La portée est délibérément ÉTROITE : partout ailleurs (accueil, tarifs,
+  // portefeuille, pages légales), le rafraîchissement de session continue, car
+  // un commerçant qui y navigue longtemps doit garder sa session vivante.
+  if (surface === "public") {
+    const reponsePublique = nextResponse();
+    if (nonce) {
+      reponsePublique.headers.set("Content-Security-Policy", policy);
+    }
+    const endpointsPublics = buildReportingEndpointsHeader();
+    if (endpointsPublics) {
+      reponsePublique.headers.set("Reporting-Endpoints", endpointsPublics);
+    }
+    return reponsePublique;
+  }
+
   // Rafraîchissement de session (client ET admin s'appuient sur Supabase).
   let response = nextResponse();
   const supabase = createServerClient(
