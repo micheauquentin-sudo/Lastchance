@@ -5346,6 +5346,7 @@ export type Database = {
           reward_mode: string
           reward_stock: number
           reward_threshold: number | null
+          share_enabled: boolean
           status: string
           target_wheel_id: string | null
           theme: string
@@ -5368,6 +5369,7 @@ export type Database = {
           reward_mode?: string
           reward_stock?: number
           reward_threshold?: number | null
+          share_enabled?: boolean
           status?: string
           target_wheel_id?: string | null
           theme?: string
@@ -5390,6 +5392,7 @@ export type Database = {
           reward_mode?: string
           reward_stock?: number
           reward_threshold?: number | null
+          share_enabled?: boolean
           status?: string
           target_wheel_id?: string | null
           theme?: string

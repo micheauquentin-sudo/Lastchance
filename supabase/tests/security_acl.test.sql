@@ -388,13 +388,18 @@ select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled
 --
 -- Assertion sur le CATALOGUE et non sur une ligne, à la différence de son
 -- miroir campagne : ce fichier ne crée aucun quiz de test, et le défaut doit
--- être vérifié aussi bien sur base VIDE que SEMÉE. Cast explicite parce que
--- information_schema expose des DOMAINES, pas des types de base.
-select results_eq(
-  $$select column_default::text from information_schema.columns
-     where table_schema = 'public' and table_name = 'quizzes'
-       and column_name = 'share_enabled'$$,
-  array['true'::text],
+-- être vérifié aussi bien sur base VIDE que SEMÉE.
+--
+-- `col_default_is` et non `results_eq` sur le catalogue : les deux formulations
+-- ont été essayées, et results_eq ÉCHOUE ici quelle que soit la source —
+-- information_schema comme pg_attrdef — sur « could not determine which
+-- collation to use for string comparison », levé par sa propre comparaison de
+-- records (results_eq(refcursor,refcursor,text) l. 17) parce que ni
+-- `character_data` ni le retour de `pg_get_expr` ne porte de collation
+-- déterminable. Le helper natif de pgTAP compare la valeur, pas un record :
+-- c'est le seul des deux qui passe. Ne pas le « rétablir » en results_eq.
+select col_default_is(
+  'public', 'quizzes', 'share_enabled', 'true',
   'a quiz keeps offering its share buttons by default'
 );
 -- Parcours joueur : service_role only.
