@@ -127,6 +127,7 @@ import {
   duplicateCampaign,
   updateCampaign,
   updateCampaignPrejeuInvitation,
+  updateCampaignShareInvite,
 } from "./campaigns";
 
 /** Organisation active, telle que `getUserAndOrg` la rend. */
@@ -413,6 +414,106 @@ describe("updateCampaignPrejeuInvitation — le booléen et rien d'autre", () =>
     fd.set("prejeu_invitation", "on");
 
     const res = await updateCampaignPrejeuInvitation(null, fd);
+
+    expect(res.ok).toBe(false);
+    expect(updates()).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 4 — le partage APRÈS jeu (l'autre bout de la partie)
+//
+// Le bloc « Défier un ami / Partager mon score » de la fin de partie était rendu
+// SANS aucun réglage : un commerçant qui n'en voulait pas n'avait pas
+// d'interrupteur. `campaigns.share_enabled` (NOT NULL DEFAULT true) le lui
+// donne sans rien changer pour les autres.
+//
+// Mêmes invariants que l'invitation avant-jeu ci-dessus, et pour les mêmes
+// raisons : le tenant est dans le FILTRE et vient de la SESSION ; l'écriture ne
+// touche QUE sa colonne ; un identifiant invalide n'écrit rien.
+// ────────────────────────────────────────────────────────────
+
+describe("updateCampaignShareInvite — le booléen et rien d'autre", () => {
+  function shareForm(valeur?: string): FormData {
+    const fd = new FormData();
+    fd.set("id", CAMPAIGN_ID);
+    if (valeur !== undefined) fd.set("share_enabled", valeur);
+    return fd;
+  }
+
+  function updates() {
+    return callsTo("campaigns").filter((c) => c.op === "update");
+  }
+
+  it("case cochée : laisse le partage proposé, scopé à l'organisation active", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignShareInvite(null, shareForm("on"));
+
+    expect(res.ok).toBe(true);
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0].payload).toEqual({ share_enabled: true });
+    expect(updates()[0].filters).toEqual({
+      id: CAMPAIGN_ID,
+      organization_id: ORG_ID,
+    });
+  });
+
+  it("sentinelle explicite « true » : même effet qu'une case cochée", async () => {
+    // La carte POSTE son état voulu par un champ caché plutôt que de le laisser
+    // déduire d'une présence : sans cette lecture, l'autosave enregistrerait
+    // « partage coupé » sans que personne ne l'ait demandé.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignShareInvite(null, shareForm("true"));
+
+    expect(res.ok).toBe(true);
+    expect(updates()[0].payload).toEqual({ share_enabled: true });
+  });
+
+  it("case décochée (champ absent) : coupe le partage, sans toucher un autre réglage", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignShareInvite(null, shareForm());
+
+    expect(res.ok).toBe(true);
+    // Égalité STRICTE : ni `prejeu_invitation`, ni `collect_email`, ni rien
+    // d'autre — une action « booléen sec » qui emporterait un voisin réécrirait
+    // des réglages que personne n'a ouverts.
+    expect(updates()[0].payload).toEqual({ share_enabled: false });
+  });
+
+  it("une valeur inattendue vaut FAUX, jamais une erreur SQL", async () => {
+    // `"off"` est ce qu'envoie un `<select>` mal câblé, `"1"` ce qu'envoie une
+    // case bricolée à la main. Les deux doivent se lire, et se lire fermé —
+    // c'est la lecture booléenne, pas la base, qui tranche.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    await updateCampaignShareInvite(null, shareForm("off"));
+
+    expect(updates()[0].payload).toEqual({ share_enabled: false });
+  });
+
+  it("l'organisation vient de la SESSION, jamais du formulaire", async () => {
+    // Le refus « non-membre » se joue ici : une campagne d'un autre commerce
+    // postée avec son `organization_id` ne doit pas être atteinte. Le filtre
+    // porte l'organisation active, la RLS finit le travail.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    const fd = shareForm("on");
+    fd.set("organization_id", "00000000-0000-4000-8000-0000000000ff");
+
+    await updateCampaignShareInvite(null, fd);
+
+    expect(updates()[0].filters.organization_id).toBe(ORG_ID);
+  });
+
+  it("un identifiant qui n'est pas un UUID n'écrit rien", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    const fd = new FormData();
+    fd.set("id", "../autre-campagne");
+    fd.set("share_enabled", "on");
+
+    const res = await updateCampaignShareInvite(null, fd);
 
     expect(res.ok).toBe(false);
     expect(updates()).toEqual([]);

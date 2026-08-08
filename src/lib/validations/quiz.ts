@@ -191,6 +191,26 @@ export const updateQuizSchema = z.object({
 });
 
 /**
+ * Partage après-partie, par quiz : les boutons « Défier un ami » / « Partager
+ * mon score » de la fin de parcours.
+ *
+ * Schéma SÉPARÉ d'`updateQuizSchema`, et non un champ de plus dedans : le bloc
+ * de partage est rendu par sa propre carte, qui s'enregistre seule (autosave).
+ * Le fondre dans les réglages généraux ferait réécrire nom, thème, slug et
+ * consigne à chaque bascule d'un interrupteur — et un slug public réécrit, même
+ * à l'identique, est un aller-retour vers la contrainte d'unicité que personne
+ * n'a demandé.
+ *
+ * Colonne `quizzes.share_enabled` (migration 20260920120000), NOT NULL DEFAULT
+ * true : les boutons existaient déjà sans réglage possible, le défaut reconduit
+ * donc le comportement livré. Miroir exact d'`updateCampaignShareInviteSchema`.
+ */
+export const updateQuizShareInviteSchema = z.object({
+  id: uuid,
+  share_enabled: z.boolean(),
+});
+
+/**
  * Mode de récompense + dotation. Miroir des CHECK SQL :
  *  · quizzes_reward_mode_fields_check : threshold ⇒ seuil seul ; draw ⇒ vivier
  *    seul ; les autres modes ne portent ni l'un ni l'autre ;

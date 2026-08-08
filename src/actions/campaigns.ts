@@ -29,6 +29,7 @@ import {
   updateCampaignClaimSchema,
   updateCampaignPrejeuInvitationSchema,
   updateCampaignSchema,
+  updateCampaignShareInviteSchema,
 } from "@/lib/validations/campaigns";
 import type { ActionResult } from "@/lib/utils";
 import type {
@@ -301,6 +302,59 @@ export async function updateCampaignPrejeuInvitation(
 
   if (error) {
     reportError("campaigns.prejeu-invitation", error.message);
+    return { ok: false, error: "Enregistrement impossible" };
+  }
+
+  revalidatePath(`/dashboard/campaigns/${id}`);
+  await revalidatePlaySlugs(supabase, { campaignId: id });
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Partage APRÈS jeu : le bloc de fin de partie qui propose au joueur de défier
+ * un ami ou de publier son résultat. Symétrique de l'invitation avant-jeu
+ * ci-dessus — même booléen sec, mêmes gardes, même purge —, à l'autre bout de
+ * la partie.
+ *
+ * Le bloc était RENDU SANS RÉGLAGE POSSIBLE depuis sa livraison : un commerçant
+ * qui ne veut pas de partage n'avait aucun moyen de l'éteindre. La colonne
+ * `campaigns.share_enabled` (NOT NULL DEFAULT true) lui donne l'interrupteur
+ * sans rien changer pour ceux qui n'y toucheront jamais.
+ *
+ * CHAMP POSTÉ : la même case à cocher que le prejeu. `"on"` (case cochée d'un
+ * formulaire natif) comme `"true"` (sentinelle explicite d'un champ caché)
+ * valent VRAI ; tout le reste, absence comprise, vaut FAUX.
+ *
+ * LA PURGE ISR N'EST PAS DÉCORATIVE : /play est servie en ISR 30 s, c'est
+ * `revalidatePlaySlugs` qui fait que le commerçant voit son réglage sur le
+ * téléphone qu'il a en main plutôt qu'à l'expiration du cache.
+ */
+export async function updateCampaignShareInvite(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const coche = formData.get("share_enabled");
+  const parsed = updateCampaignShareInviteSchema.safeParse({
+    id: formData.get("id"),
+    share_enabled: coche === "on" || coche === "true",
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const { id, share_enabled } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("campaigns")
+    .update({ share_enabled })
+    .eq("id", id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    reportError("campaigns.share-invite", error.message);
     return { ok: false, error: "Enregistrement impossible" };
   }
 

@@ -218,6 +218,7 @@ function quiz(over: Over = {}) {
     status: "active",
     public_slug: SLUG,
     reward_mode: "threshold",
+    share_enabled: true,
     organizations: org(),
     ...over,
   };
@@ -727,6 +728,58 @@ describe("loadQuizPublicContext — non-fuite de la bonne réponse", () => {
 
     if (!ctx.ok) throw new Error(ctx.error);
     expect(ctx.publicState.questions.map((q) => q.position)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 4 bis. Le partage de fin de partie — un réglage du commerçant
+//
+// Les boutons « Défier un ami » / « Partager mon score » étaient rendus sans
+// qu'aucun réglage ne puisse les éteindre. `quizzes.share_enabled` les met
+// entre les mains du commerçant ; ce qui doit rester vrai, c'est que le
+// drapeau VOYAGE bien jusqu'à la page — un contexte qui l'oublierait laisserait
+// l'interrupteur du dashboard sans effet visible, et le commerçant croirait
+// avoir coupé quelque chose.
+// ────────────────────────────────────────────────────────────
+describe("loadQuizPublicContext — partage en fin de partie", () => {
+  it("le réglage du commerçant traverse jusqu'au contexte", async () => {
+    db.quizzes = [quiz({ share_enabled: false })];
+
+    const ctx = await loadQuizPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.shareEnabled).toBe(false);
+  });
+
+  it("partage laissé actif : le contexte le dit", async () => {
+    // Contrôle positif : sans lui, un `shareEnabled: false` écrit en dur
+    // passerait le test précédent en éteignant le partage partout.
+    const ctx = await loadQuizPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.shareEnabled).toBe(true);
+  });
+
+  it("colonne absente de la ligne : le partage RESTE proposé", async () => {
+    // La ligne est castée depuis `unknown` : rien ne garantit la présence du
+    // champ au typage. Le repli doit reconduire le comportement LIVRÉ (partage
+    // proposé) et non l'éteindre en silence chez tous les commerçants — c'est
+    // pourquoi la lecture est `!== false` et non `Boolean(...)`.
+    db.quizzes = [quiz({ share_enabled: null })];
+
+    const ctx = await loadQuizPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.shareEnabled).toBe(true);
+  });
+
+  it("le drapeau est lu par la MÊME requête, sans aller-retour supplémentaire", async () => {
+    // Chemin ouvert à Internet : rouge si quelqu'un ajoutait une lecture
+    // dédiée au partage plutôt que de l'inscrire dans la projection.
+    await loadQuizPublicContext(SLUG);
+
+    expect(db.queries).toHaveLength(1);
+    expect(db.queries[0].columns).toContain("share_enabled");
   });
 });
 

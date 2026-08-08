@@ -45,7 +45,15 @@ const ORG_COLUMNS =
 // `reward_mode` fait partie de la MÊME requête (aucune lecture supplémentaire sur
 // un chemin public) : il décide du challenge anti-robot de la clôture, et il est
 // déjà public de toute façon (`quiz_public_state` le sert à la page).
-const QUIZ_COLUMNS = "id, organization_id, status, public_slug, reward_mode";
+// `share_enabled` voyage dans la MÊME requête, pour la même raison que
+// `reward_mode` : il décide de l'affichage du bloc de partage en fin de partie,
+// il est déjà public par nature (le lien qu'il propose est celui de cette page)
+// et le lire à part coûterait un second aller-retour sur un chemin ouvert à
+// Internet. Il n'est PAS passé par `quiz_public_state` : la RPC sert l'état du
+// JOUEUR, ce drapeau est un réglage du commerçant, et l'élargir aurait demandé
+// une migration pour une donnée que ce select rapporte déjà.
+const QUIZ_COLUMNS =
+  "id, organization_id, status, public_slug, reward_mode, share_enabled";
 
 /**
  * Le module Créateur de quiz est-il utilisable par cette organisation ?
@@ -80,6 +88,13 @@ interface QuizRow {
   status: string;
   public_slug: string;
   reward_mode: string;
+  /**
+   * Lu depuis une ligne castée en `unknown` : le typage ne garantit rien ici,
+   * d'où la normalisation `!== false` à l'usage. `boolean | null` et non
+   * `boolean` pour que cette incertitude reste visible dans le type plutôt que
+   * dans un commentaire.
+   */
+  share_enabled: boolean | null;
   organizations: PublicQuizOrganization | null;
 }
 
@@ -94,6 +109,12 @@ export type QuizPublicContext =
       publicState: QuizPublicState;
       /** Le visiteur a-t-il déjà une identité de joueur sur ce quiz ? */
       hasIdentity: boolean;
+      /**
+       * Le commerçant propose-t-il le partage en fin de partie ? Réglage de
+       * `quizzes.share_enabled` (NOT NULL DEFAULT true) : le défaut reconduit
+       * le comportement livré, où les boutons étaient rendus sans réglage.
+       */
+      shareEnabled: boolean;
     };
 
 /**
@@ -161,6 +182,12 @@ export async function loadQuizPublicContext(
     organization: org,
     publicState,
     hasIdentity: Boolean(token),
+    // `!== false` et non `Boolean(...)` : la colonne est NOT NULL DEFAULT true,
+    // mais la ligne arrive castée depuis `unknown`. Une absence (colonne non
+    // encore migrée sur un environnement en retard, projection modifiée) doit
+    // rendre le comportement LIVRÉ — le partage proposé — et non l'éteindre en
+    // silence chez tous les commerçants à la fois.
+    shareEnabled: row.share_enabled !== false,
   };
 }
 
