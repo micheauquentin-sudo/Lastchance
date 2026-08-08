@@ -57,6 +57,24 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Correctif V1.50.1 : l'aperçu suit le clic, émojis de nav — **à relire**
+
+- **Lot et objectif** : retour propriétaire immédiat après V1.50 — « quand je
+  sélectionne le jeu à gratter, l'aperçu montre toujours la roue » + émojis
+  demandés dans la barre latérale. Cause reproduite : l'étape « Le jeu »
+  n'avait aucun aperçu et L'habillage lit la mécanique ENREGISTRÉE (naviguer
+  au stepper sans Enregistrer montrait l'ancienne).
+- **Branche/commit** : `chantier/apercu-vivant`, `2bea98f`, aucune migration.
+- **Faits** : aperçu vivant à l'étape « Le jeu » (ApercuAccueilJeu extrait de
+  l'éditeur d'habillage, piloté par la sélection AU CLIC, avant enregistrement) ;
+  carte « Roues du jeu » → « Vos jeux », étiquettes des 15 mécaniques par le
+  catalogue (un memory n'est plus une « Roue ») ; émojis de nav en span
+  aria-hidden (noms accessibles inchangés, aucun locator E2E touché).
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **248 fichiers /
+  3931 tests** (5 nouveaux) ; build vert. CI de la PR au moment de l'écriture :
+  à venir (fusion sur l'ordre permanent dès verte).
+- **Prochaine action** : aucune côté Claude après fusion.
+
 ### 2026-08-08 — Retours propriétaire : six demandes sur V1.48/V1.49 — **à relire**
 
 - **Lot et objectif** : six retours directs du propriétaire sur les

@@ -11,9 +11,11 @@ import {
   SwatchButton,
 } from "@/components/dashboard/editor-controls";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import { KermesseStripe } from "@/components/wheel/play-theme";
-import { GameIdleScreen } from "@/components/wheel/game-idle-screen";
-import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
+import type { WheelSegment } from "@/components/wheel/wheel-svg";
+import {
+  ApercuAccueilJeu,
+  SEGMENTS_APERCU,
+} from "@/components/dashboard/apercu-accueil-jeu";
 import {
   porteeHabillage,
   type MecaniqueReglable,
@@ -31,16 +33,12 @@ import {
   SLOT_SYMBOL_SET_KEYS,
   WHEEL_PRESETS,
   playContrastWarning,
-  playDecor,
-  playOnLightSurface,
-  playSurface,
   resolveWheelStyle,
   scratchCover,
   type GameObjectKey,
   type SlotSymbolSet,
   type WheelStyle,
 } from "@/lib/wheel-style";
-import { ThemeDecor } from "@/components/ui/theme-decor";
 
 const RING_LABELS: Record<(typeof RING_STYLES)[number], string> = {
   classic: "Classique",
@@ -229,15 +227,10 @@ export function WheelStyleEditor({
     setDirty(true);
   }
 
+  // Les quatre segments de démonstration vivent avec l'aperçu qui les dessine
+  // (`apercu-accueil-jeu.tsx`) : ils servent aussi l'étape « Le jeu ».
   const previewSegments: WheelSegment[] =
-    segments.length > 0
-      ? segments
-      : [
-          { id: "a", label: "Café offert", color: "#7c3aed" },
-          { id: "b", label: "-10 %", color: "#d946ef" },
-          { id: "c", label: "Perdu", color: "#3f3f46" },
-          { id: "d", label: "Dessert", color: "#f59e0b" },
-        ];
+    segments.length > 0 ? segments : [...SEGMENTS_APERCU];
 
   // Lisibilité : segments sur lesquels la couleur de texte explicite
   // passe sous 3:1 (seuil WCAG du grand texte). Jamais bloquant — simple
@@ -263,55 +256,16 @@ export function WheelStyleEditor({
           cadre pose la MÊME surface que `PlayShell` (playSurface, décor,
           bandeau) et monte le MÊME composant que le joueur reçoit
           (`GameIdleScreen`), avec l'emoji, l'accroche et le verbe de SA
-          mécanique. Il ne restait ici, avant, qu'un 🎁 en dur et un « Jouer »
-          générique pour quatorze jeux sur quinze. */}
-      {(() => {
-        const surface = playSurface(style);
-        return (
-          <div
-            className={`relative rounded-xl mb-5 text-center overflow-hidden ${surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""}`}
-            // Même précaution que la page /play : la shorthand `background`
-            // remet `background-color` à `transparent`, la couleur pleine du
-            // commerçant est reposée derrière le dégradé.
-            style={
-              surface.background
-                ? { background: surface.background, backgroundColor: style.bgTo }
-                : undefined
-            }
-          >
-            {/* Le décor n'existe que sur l'habillage kermesse — exactement
-                comme dans `PlayShell`. Le rendre sous le thème « nuit »
-                promettrait un fond que la page ne peint pas. */}
-            {surface.kermesse && (
-              <ThemeDecor decor={playDecor(style)} variant="apercu" />
-            )}
-            {surface.kermesse && <KermesseStripe className="relative h-3" />}
-            <GameIdleScreen
-              variant="apercu"
-              style={style}
-              organizationName={organizationName}
-              emoji={portee.emoji}
-              title={style.title || portee.accroche}
-              buttonLabel={portee.libelleBouton}
-              /* `playOnLightSurface` et NON `surface.kermesse` : c'est la
-                 clarté du fond RÉELLEMENT peint qui décide de la palette de
-                 texte, et c'est ce que fait /play. L'aperçu lisait ici
-                 `pageTheme`, donc annonçait un titre blanc sur les presets
-                 « Pastel » et « Cartoon » — dont le fond est clair et dont la
-                 page rend, elle, un titre en encre sombre. */
-              kermesse={playOnLightSurface(style)}
-              visuel={
-                portee.apercuRoue ? (
-                  <div className="relative mx-auto max-w-56">
-                    <WheelPointer color={style.pointerColor} variant={style.pointer} />
-                    <WheelSvg segments={previewSegments} style={style} />
-                  </div>
-                ) : undefined
-              }
-            />
-          </div>
-        );
-      })()}
+          mécanique. Le bloc vivait inline ici ; il est extrait dans
+          `ApercuAccueilJeu` pour que l'étape « Le jeu » montre EXACTEMENT le
+          même aperçu, sans en recopier une seconde version. */}
+      <ApercuAccueilJeu
+        style={style}
+        organizationName={organizationName}
+        gameType={gameType}
+        segments={previewSegments}
+        className="mb-5"
+      />
 
       {/* Presets */}
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600 mb-2">

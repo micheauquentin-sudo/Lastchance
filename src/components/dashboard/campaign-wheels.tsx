@@ -6,6 +6,7 @@ import { createWheel, deleteWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input } from "@/components/ui/input";
+import { trouverMecanique } from "@/components/dashboard/atelier-mecaniques";
 import { useActionForm } from "@/lib/use-action-form";
 import { WHEEL_OUTSTANDING_LOSS_HINT } from "@/lib/validations/prizes";
 import { describeSchedule } from "@/lib/wheel-schedule";
@@ -65,14 +66,22 @@ export function CampaignWheels({
 
   return (
     <Card>
-      <h2 className="font-semibold mb-1">Roues du jeu</h2>
+      {/* « Roues du jeu » nommait la seule mécanique d'origine : la carte de
+          cette campagne peut porter un memory ou une machine à sous. */}
+      <h2 className="font-semibold mb-1">Vos jeux</h2>
       <p className="text-sm text-zinc-500 mb-4">
-        Plusieurs roues par campagne : planifiez des créneaux (happy hour,
-        week-end…). La roue sans créneau reste active par défaut.
+        Plusieurs jeux par campagne : planifiez des créneaux (happy hour,
+        week-end…). Le jeu sans créneau reste actif par défaut.
       </p>
 
       <ul className="space-y-2 mb-5">
-        {wheels.map((w) => (
+        {wheels.map((w) => {
+          // LE CATALOGUE, PAS UN TERNAIRE. Cette ligne disait « Carte à
+          // gratter » ou « Roue » : un memory, une machine à sous et un dé y
+          // étaient tous étiquetés « Roue ». `trouverMecanique` est la source
+          // que l'étape « Le jeu » et l'aperçu lisent déjà.
+          const mecanique = trouverMecanique(w.game_type);
+          return (
           <li
             key={w.id}
             className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 px-3 py-2.5"
@@ -89,7 +98,7 @@ export function CampaignWheels({
               </p>
               <p className="text-xs text-zinc-500">
                 {describeSchedule(w)} ·{" "}
-                {w.game_type === "scratch" ? "Carte à gratter" : "Roue"}
+                <span aria-hidden>{mecanique.emoji}</span> {mecanique.label}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -102,7 +111,7 @@ export function CampaignWheels({
                 href={`/dashboard/campaigns/${campaignId}/wheel?wheel=${w.id}`}
                 className="k-btn-sm inline-flex shrink-0 items-center rounded-xl border-2 border-k-ink bg-k-yellow px-3 py-2 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
               >
-                Régler la roue et les lots
+                Régler le jeu et les lots
               </Link>
               {canDelete && (
                 <form
@@ -148,7 +157,8 @@ export function CampaignWheels({
               )}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
       <FieldError
         message={deleteState && !deleteState.ok ? deleteState.error : undefined}
