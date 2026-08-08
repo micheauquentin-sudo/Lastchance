@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useRef, useState } from "react";
 import { updateWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
 } from "@/components/dashboard/atelier-mecaniques";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { cn } from "@/lib/utils";
 import { isSecretSkillGameType, isSkillGameType } from "@/lib/validations/skill";
 import type { GameType, PlayLimit, Wheel } from "@/types/database";
@@ -137,17 +138,27 @@ export function WheelSettings({
   /** Lots actifs, pour que l'aperçu de la roue montre les vrais segments. */
   segments?: WheelSegment[];
 }) {
-  const router = useRouter();
   const mecaniqueInitiale: GameType = wheel.game_type ?? "wheel";
   const rawInitial = readRaw(wheel);
 
+  // ENREGISTREMENT AUTOMATIQUE. `useAutoSave` s'ajoute À CÔTÉ de
+  // `useActionForm` — jamais autour : deux gardes mécaniques du dépôt cherchent
+  // l'appel littéral.
+  //
+  // ── POURQUOI L'ENREGISTREMENT NE NAVIGUE PLUS ──
+  //
+  // Cette étape enchaînait sur « Les lots » depuis `onSuccess`. Avec un
+  // enregistrement à la frappe, cet enchaînement partirait 800 ms après la
+  // première lettre d'un mot mystère : le commerçant se retrouverait sur
+  // l'écran des lots au milieu de sa saisie. Le passage à l'étape suivante
+  // redevient donc ce qu'il aurait toujours dû être — un lien qu'on clique
+  // quand on a fini, à côté du bouton d'enregistrement, qui reste.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateWheel, {
     networkError: "Enregistrement impossible, réessayez.",
-    // Une étape enregistrée mène à la suivante : c'est ce qui fait de l'écran
-    // un parcours et non cinq formulaires côte à côte.
-    onSuccess: () =>
-      router.push(hrefEtapeRoue(campaignId, "lots", wheel.id)),
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
 
   const [gameType, setGameType] = useState<GameType>(mecaniqueInitiale);
   const [defi, setDefi] = useState<EtatDefi>(() =>
@@ -224,7 +235,7 @@ export function WheelSettings({
         chance.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-5">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-5">
         <input type="hidden" name="id" value={wheel.id} />
         <input type="hidden" name="skill_config" value={skillConfigValue()} />
 
@@ -517,9 +528,33 @@ export function WheelSettings({
         </div>
 
         <FieldError message={state && !state.ok ? state.error : undefined} />
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "…" : "Enregistrer et continuer"}
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button type="submit" disabled={pending} className="w-full sm:flex-1">
+            {pending ? "…" : "Enregistrer"}
+          </Button>
+          <Link
+            href={hrefEtapeRoue(campaignId, "lots", wheel.id)}
+            className="rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-center text-sm font-black text-k-ink transition-colors hover:bg-k-yellow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-k-ink focus-visible:ring-offset-2"
+          >
+            Continuer vers « Les lots » →
+          </Link>
+        </div>
+        {state?.ok && (
+          <p className="text-center text-sm text-emerald-600">Enregistré.</p>
+        )}
+        {enAttente && !pending && (
+          <p className="text-center text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {/* Un enregistrement automatique silencieusement inopérant est pire que
+            pas d'enregistrement du tout : le mot mystère et le nombre cible
+            sont `required`, un champ vidé ne partirait jamais. */}
+        {bloqueParValidation && (
+          <p role="alert" className="text-sm font-semibold text-red-700">
+            Non enregistré : un champ requis est vide ou invalide.
+          </p>
+        )}
       </form>
     </Card>
   );

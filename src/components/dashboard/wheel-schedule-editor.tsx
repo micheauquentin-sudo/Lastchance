@@ -1,11 +1,13 @@
 "use client";
 
+import { useRef } from "react";
 import { updateWheelSchedule } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import type { Wheel } from "@/types/database";
 
 // 0=dimanche..6=samedi (comme Date.getDay()), affichés Lun→Dim.
@@ -36,7 +38,14 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
 export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
   const { state, pending, onSubmit } = useActionForm(updateWheelSchedule, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  // Cocher un jour ou choisir une heure enregistre tout seul : ce formulaire
+  // n'a que des cases et des listes, aucune saisie libre à laisser en plan.
+  // Le bouton reste — il est le recours quand la validation du navigateur
+  // refuse l'envoi, et plusieurs parcours l'utilisent encore.
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const activeDays = wheel.schedule_days ?? [];
 
   return (
@@ -46,7 +55,7 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
         Laissez vide pour une roue toujours active. Sinon, elle ne tourne
         que sur le créneau choisi (heure locale).
       </p>
-      <form onSubmit={onSubmit} className="space-y-4">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
         <input type="hidden" name="id" value={wheel.id} />
 
         <div>
@@ -146,6 +155,18 @@ export function WheelScheduleEditor({ wheel }: { wheel: Wheel }) {
         {state?.ok && (
           <p className="text-center text-sm text-emerald-600">
             Créneau enregistré.
+          </p>
+        )}
+        {enAttente && !pending && (
+          <p className="text-center text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {/* Un enregistrement automatique silencieusement inopérant est pire que
+            pas d'enregistrement du tout. */}
+        {bloqueParValidation && (
+          <p role="alert" className="text-sm font-semibold text-red-700">
+            Non enregistré : un champ requis est vide ou invalide.
           </p>
         )}
       </form>

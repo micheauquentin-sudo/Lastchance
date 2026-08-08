@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { updateCampaignClaim } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import type { Campaign } from "@/types/database";
 
 /*
@@ -27,9 +29,15 @@ import type { Campaign } from "@/types/database";
  * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
 export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
+  // ENREGISTREMENT AUTOMATIQUE. `useAutoSave` s'ajoute À CÔTÉ de
+  // `useActionForm` — jamais autour : deux gardes mécaniques du dépôt cherchent
+  // l'appel littéral. Le bouton et le « Configuration enregistrée. » RESTENT.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateCampaignClaim, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
 
   return (
     <Card>
@@ -39,7 +47,7 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
         code. Rien de coché = le code s&apos;affiche directement.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-5">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-5">
         <input type="hidden" name="id" value={campaign.id} />
 
         <label className="flex items-start gap-3 text-sm">
@@ -104,6 +112,19 @@ export function CampaignClaimSettings({ campaign }: { campaign: Campaign }) {
         {state?.ok && (
           <p className="text-sm text-emerald-600 text-center">
             Configuration enregistrée.
+          </p>
+        )}
+        {enAttente && !pending && (
+          <p className="text-center text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {/* Un enregistrement automatique silencieusement inopérant est pire que
+            pas d'enregistrement du tout : le délai de retrait est borné (10 à
+            600 s), et une valeur hors bornes ne partirait jamais. */}
+        {bloqueParValidation && (
+          <p role="alert" className="text-sm font-semibold text-red-700">
+            Non enregistré : un champ requis est vide ou invalide.
           </p>
         )}
       </form>

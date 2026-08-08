@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   resumeCampaignAfterBudget,
   updateCampaignAutomation,
@@ -11,6 +11,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import type { CampaignWindowState } from "@/lib/campaign-window";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
 import { formatDate } from "@/lib/utils";
 import type { Campaign } from "@/types/database";
 
@@ -38,9 +39,17 @@ export function CampaignAutomationSettings({
   campaign: Campaign;
   timeZone: string;
 }) {
+  // ENREGISTREMENT AUTOMATIQUE. `useAutoSave` s'ajoute À CÔTÉ de
+  // `useActionForm` — jamais autour : deux gardes mécaniques du dépôt cherchent
+  // l'appel littéral. Il ne couvre QUE cette carte de réglages ; la bannière
+  // ci-dessous (`resumeCampaignAfterBudget`) rouvre le jeu aux clients et
+  // restera toujours un geste cliqué.
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useActionForm(updateCampaignAutomation, {
     networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
   });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
   const [dates, setDates] = useState(() => ({
     starts: isoToZonedDateTimeInput(campaign.starts_at, timeZone),
     ends: isoToZonedDateTimeInput(campaign.ends_at, timeZone),
@@ -61,7 +70,7 @@ export function CampaignAutomationSettings({
         fin, et plafond de dépense en gains.
       </p>
 
-      <form onSubmit={onSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
         <input type="hidden" name="id" value={campaign.id} />
 
         <fieldset className="space-y-4">
@@ -176,7 +185,19 @@ export function CampaignAutomationSettings({
           {state?.ok && (
             <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
           )}
+          {enAttente && !pending && (
+            <p className="text-sm font-semibold text-k-body">
+              Modification en attente d&apos;enregistrement…
+            </p>
+          )}
         </div>
+        {/* Un enregistrement automatique silencieusement inopérant est pire que
+            pas d'enregistrement du tout. */}
+        {bloqueParValidation && (
+          <p role="alert" className="text-sm font-semibold text-red-700">
+            Non enregistré : un champ requis est vide ou invalide.
+          </p>
+        )}
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
     </Card>
