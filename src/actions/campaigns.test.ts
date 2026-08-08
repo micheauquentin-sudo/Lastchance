@@ -24,6 +24,8 @@ interface DbCall {
   op: "select" | "insert" | "update" | "delete";
   payload: unknown;
   filters: Record<string, unknown>;
+  /** `.select()` chaîné : l'écriture demande-t-elle les lignes touchées ? */
+  returning: boolean;
 }
 
 const { state, makeClient } = vi.hoisted(() => {
@@ -33,12 +35,23 @@ const { state, makeClient } = vi.hoisted(() => {
       op: "select" | "insert" | "update" | "delete";
       payload: unknown;
       filters: Record<string, unknown>;
+      returning: boolean;
     }>,
     /** Ligne rendue par le select sur `campaigns` (source de la copie). */
     sourceCampaign: null as unknown,
+    /**
+     * Lignes rendues par `.update(…).select("id")` — c'est-à-dire celles que
+     * l'écriture a RÉELLEMENT touchées. Un tableau VIDE n'est pas une erreur
+     * mais l'état normal d'un refus RLS : la policy filtre en silence, sans
+     * jamais lever. C'est ce que le harnais doit savoir simuler, sans quoi
+     * « zéro ligne » reste intestable et l'action peut annoncer un succès pour
+     * une écriture qui n'a pas eu lieu.
+     */
+    updatedRows: [{ id: "campagne-touchee" }] as Array<{ id: string }>,
     reset() {
       state.calls = [];
       state.sourceCampaign = null;
+      state.updatedRows = [{ id: "campagne-touchee" }];
     },
   };
 
@@ -50,6 +63,14 @@ const { state, makeClient } = vi.hoisted(() => {
           op: "select" as "select" | "insert" | "update" | "delete",
           payload: undefined as unknown,
           filters: {} as Record<string, unknown>,
+          /**
+           * `.select()` a-t-il été chaîné ? PostgREST ne rend les lignes
+           * touchées QUE dans ce cas — sans lui, `data` vaut `null`. Le harnais
+           * doit reproduire cette règle, sinon un test « zéro ligne » resterait
+           * vert sur une action qui a oublié le `.select("id")` et qui, en
+           * production, ne saurait toujours pas ce qu'elle a écrit.
+           */
+          returning: false,
         };
         state.calls.push(call);
 
@@ -61,13 +82,22 @@ const { state, makeClient } = vi.hoisted(() => {
             if (table === "wheels") return { data: { id: "wheel-copie" }, error: null };
             return { data: null, error: null };
           }
+          if (call.op === "update") {
+            return {
+              data: call.returning ? state.updatedRows : null,
+              error: null,
+            };
+          }
           if (call.op !== "select") return { data: null, error: null };
           if (table === "campaigns") return { data: state.sourceCampaign, error: null };
           return { data: null, error: null };
         };
 
         const builder = {
-          select: () => builder,
+          select: () => {
+            call.returning = true;
+            return builder;
+          },
           insert: (payload: unknown) => {
             call.op = "insert";
             call.payload = payload;
@@ -418,6 +448,33 @@ describe("updateCampaignPrejeuInvitation — le booléen et rien d'autre", () =>
     expect(res.ok).toBe(false);
     expect(updates()).toEqual([]);
   });
+
+  it("ZÉRO LIGNE TOUCHÉE : refus, jamais un « enregistré » de complaisance", async () => {
+    // LE DÉFAUT, relevé en revue de sécurité. La RLS FILTRE, elle ne lève pas :
+    // `.update()` sans `.select()` rend la même chose pour une ligne écrite et
+    // pour zéro. Un caissier postant l'action en direct, ou un membre visant la
+    // campagne d'un autre commerce, lisait donc « Enregistré. » — le refus
+    // était réel, seule sa restitution mentait, et le commerçant repartait
+    // convaincu d'avoir changé un réglage.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    state.updatedRows = [];
+
+    const res = await updateCampaignPrejeuInvitation(null, invitationForm("on"));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/introuvable ou droits insuffisants/);
+  });
+
+  it("l'action DEMANDE les lignes touchées (`.select`), sans quoi elle ne peut pas savoir", async () => {
+    // Rouge si quelqu'un retirait le `.select("id")` : le harnais rend alors
+    // `data: null`, exactement comme PostgREST. Sans cette assertion, le test
+    // ci-dessus resterait vert sur une action redevenue aveugle.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    await updateCampaignPrejeuInvitation(null, invitationForm("on"));
+
+    expect(updates()[0].returning).toBe(true);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -517,6 +574,28 @@ describe("updateCampaignShareInvite — le booléen et rien d'autre", () => {
 
     expect(res.ok).toBe(false);
     expect(updates()).toEqual([]);
+  });
+
+  it("ZÉRO LIGNE TOUCHÉE : refus, jamais un « enregistré » de complaisance", async () => {
+    // Même défaut hérité, même correctif que le prejeu ci-dessus : la RLS
+    // filtre en silence, et c'est le tableau rendu par `.select("id")` — vide —
+    // qui est le seul signal disponible. Le jumeau quiz, lui, n'a jamais eu ce
+    // trou : sa garde `NOT_EDITOR` refuse avant d'écrire.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    state.updatedRows = [];
+
+    const res = await updateCampaignShareInvite(null, shareForm("on"));
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/introuvable ou droits insuffisants/);
+  });
+
+  it("l'action DEMANDE les lignes touchées (`.select`), sans quoi elle ne peut pas savoir", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    await updateCampaignShareInvite(null, shareForm("on"));
+
+    expect(updates()[0].returning).toBe(true);
   });
 });
 
