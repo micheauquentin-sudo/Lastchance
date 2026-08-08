@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { FONT_KEYS, type FontKey } from "@/lib/fonts";
+import { FOND_KEYS } from "@/lib/fonds-ecran";
 // Import de TYPE uniquement : aucun composant React n'entre ici, ce fichier
 // reste une table pure lisible côté serveur comme côté client.
 import type { DecorKey } from "@/components/ui/theme-decor";
@@ -173,6 +174,26 @@ export const wheelStyleSchema = z.object({
   cartoonAnimations: z.boolean().default(false),
 
   /**
+   * Fond d'écran thématique de la page /play — CHOIX EXPLICITE du commerçant.
+   *
+   * Contrairement au `decor` (scène cartoon), qui reste porté par le PRESET et
+   * n'existe donc pas dans ce schéma : le décor est une conséquence de
+   * l'ambiance choisie, le fond est un réglage à part entière — on le choisit
+   * pour ce qu'il montre (un stade, une salle de restaurant), pas pour aller
+   * avec des couleurs. Il vit ici, dans le jsonb, et reste OPTIONNEL : aucune
+   * migration, et les styles déjà enregistrés n'ont pas de fond, ce qui est
+   * exactement leur rendu actuel.
+   *
+   * `.catch(undefined)`, dans l'esprit de `games` ci-dessous, et POUR LA
+   * LECTURE SEULEMENT : une clé retirée du catalogue et relue en base doit
+   * rendre une page SANS fond, jamais faire échouer la validation de tout le
+   * style — le commerçant perdrait ses vingt couleurs à cause d'une image
+   * disparue. À l'ÉCRITURE, une clé inconnue est REFUSÉE : voir
+   * `wheelStyleWriteSchema`, plus bas, seul endroit où les deux sens divergent.
+   */
+  fond: z.enum(FOND_KEYS).optional().catch(undefined),
+
+  /**
    * Réglages propres à la mécanique choisie (voir ci-dessus).
    *
    * `.catch(undefined)` et non un simple `.optional()` : sans lui, un
@@ -185,6 +206,31 @@ export const wheelStyleSchema = z.object({
 });
 
 export type WheelStyle = z.infer<typeof wheelStyleSchema>;
+
+/**
+ * Le MÊME style, validé pour l'ÉCRITURE — `fond` privé de son `.catch`.
+ *
+ * ── Pourquoi deux schémas là où un seul suffisait ──
+ *
+ * `.catch(undefined)` est une tolérance de LECTURE : elle sauve un style relu
+ * dont une clé a disparu du catalogue. Appliquée à une SAISIE, elle fait
+ * exactement ce que la doctrine du dépôt interdit deux fois par écrit
+ * (`seasonal-theme.ts`, `fonds-ecran.ts`) : un POST `{"fond":"../../x"}` était
+ * acquitté « Enregistré » et la valeur jetée en silence — le commerçant croyait
+ * avoir choisi un fond qu'il ne reverrait jamais, sans un mot pour le lui dire.
+ * C'est ici, et nulle part ailleurs, que les deux sens divergent.
+ *
+ * `.extend` et non un second `z.object` recopié : tous les autres champs
+ * restent définis UNE fois, et un champ ajouté au schéma de lecture est gardé à
+ * l'écriture sans qu'on y pense.
+ *
+ * `games` conserve son `.catch(undefined)` DES DEUX CÔTÉS, délibérément : la
+ * dégradation y est locale à un sous-objet construit par l'éditeur, et l'y
+ * retirer changerait le comportement d'un champ que cette revue n'a pas visé.
+ */
+export const wheelStyleWriteSchema = wheelStyleSchema.extend({
+  fond: z.enum(FOND_KEYS).optional(),
+});
 
 /** Style complet avec défauts appliqués — sûr même sur jsonb corrompu. */
 export function resolveWheelStyle(raw: unknown): WheelStyle {

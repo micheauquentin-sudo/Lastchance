@@ -6,6 +6,7 @@ import {
   type WheelSegment,
 } from "@/components/wheel/wheel-svg";
 import { ThemeDecor } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
 import { porteeHabillage } from "@/components/dashboard/wheel-style-scope";
 import { playDecor, playOnLightSurface, playSurface } from "@/lib/wheel-style";
 import type { WheelStyle } from "@/lib/wheel-style";
@@ -58,6 +59,12 @@ export function ApercuAccueilJeu({
 
   return (
     <div
+      /* Ancre de test : le sélecteur de fond d'écran affiche onze vignettes
+         qui portent le même `data-fond` que l'aperçu. Sans cette prise, une
+         assertion « l'aperçu montre le fond » se satisferait d'une vignette
+         du sélecteur — elle passerait sans que l'aperçu ait bougé, ce qui est
+         exactement le défaut qu'elle doit attraper. */
+      data-apercu="accueil-jeu"
       className={`relative overflow-hidden rounded-xl text-center ${
         surface.kermesse ? "border-2 border-k-ink bg-k-bg" : ""
       } ${className}`}
@@ -70,6 +77,19 @@ export function ApercuAccueilJeu({
           : undefined
       }
     >
+      {/* Le fond d'écran, LUI, existe sur les DEUX ambiances — c'est /play qui
+          en décide, et /play le rend partout. Premier enfant du conteneur
+          `relative`, donc sous le décor et sous l'écran de jeu : même
+          empilement par ordre du DOM que la page réelle, aucun z-index.
+          Le voile suit la surface, sinon la maquette mentirait sur la teinte
+          que verra le joueur. */}
+      {style.fond && (
+        <FondEcran
+          fond={style.fond}
+          variant="apercu"
+          voile={surface.kermesse ? "creme" : "nuit"}
+        />
+      )}
       {/* Le décor n'existe que sur l'habillage kermesse — exactement comme
           dans `PlayShell`. Le rendre sous le thème « nuit » promettrait un
           fond que la page ne peint pas. */}

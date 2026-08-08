@@ -8,7 +8,7 @@ import type { SeasonalTheme } from "@/types/database";
 
 /** Miroir des assertions de `calendar-state.test.ts` sur la table sœur. */
 describe("contestThemeTokens", () => {
-  it("expose les 6 thèmes avec des accents distincts", () => {
+  it("expose les 11 thèmes avec des accents distincts", () => {
     const jauges = new Set(
       CONTEST_THEME_ORDER.map((t) => contestThemeTokens(t).progressFill),
     );
@@ -17,9 +17,12 @@ describe("contestThemeTokens", () => {
         JSON.stringify(contestThemeTokens(t).pageStyle),
       ),
     );
-    expect(CONTEST_THEME_ORDER).toHaveLength(6);
-    expect(jauges.size).toBe(6);
-    expect(fonds.size).toBe(6);
+    // 11 depuis les fonds d'écran thématiques : les cinq nouveaux thèmes
+    // (prairie, musique, football, restaurant, espace) sortent du même enum
+    // SQL que les six saisons.
+    expect(CONTEST_THEME_ORDER).toHaveLength(11);
+    expect(jauges.size).toBe(11);
+    expect(fonds.size).toBe(11);
   });
 
   it("renvoie la clé demandée et un libellé non vide", () => {

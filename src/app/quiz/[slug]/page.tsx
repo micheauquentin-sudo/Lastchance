@@ -7,6 +7,7 @@ import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { loadQuizPublicContext } from "@/lib/quiz-context";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { fondPourQuizTheme } from "@/lib/fonds-ecran";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { QuizExperience } from "@/components/quiz/quiz-experience";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
@@ -89,7 +90,11 @@ export default async function QuizPage({
   const tokens = quizThemeTokens(quiz.theme);
 
   return (
-    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+    <PlayerPageShell
+      pageStyle={tokens.pageStyle}
+      decor={tokens.decor}
+      fond={fondPourQuizTheme(tokens.key)}
+    >
       <PageOpenBeacon module="quiz" publicId={ctx.publicSlug} />
       <QuizExperience
         quizId={ctx.quizId}

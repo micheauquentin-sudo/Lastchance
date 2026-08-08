@@ -835,14 +835,19 @@ describe("updateContest — theme", () => {
     expect(sentPayload()).toMatchObject({ name: "Pronos" });
   });
 
-  it("les six clés de la palette sont écrites telles quelles", async () => {
+  it("les onze clés de la palette sont écrites telles quelles", async () => {
     for (const theme of [
+      "neutre",
       "noel",
       "saint_valentin",
       "anniversaire",
       "soldes",
       "festival",
-      "neutre",
+      "prairie",
+      "musique",
+      "football",
+      "restaurant",
+      "espace",
     ]) {
       state.updates.length = 0;
       const res = await updateContest(null, contestForm({ id: ID, theme }));

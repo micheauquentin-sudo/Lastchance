@@ -56,6 +56,8 @@ import {
 } from "@/components/quiz/quiz-presets";
 import { QUIZ_THEME_ORDER, quizThemeTokens } from "@/components/quiz/quiz-theme";
 import { ThemeDecor } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import { fondPourQuizTheme } from "@/lib/fonds-ecran";
 import { spinWheelIssue, type SpinWheelPrizes } from "./loyalty-settings-presets";
 
 /* Éditeur commerçant du Créateur de quiz. Trois cartes, dans l'ordre du travail
@@ -270,6 +272,7 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {QUIZ_THEME_ORDER.map((key) => {
           const tokens = quizThemeTokens(key);
+          const fond = fondPourQuizTheme(key);
           const active = key === theme;
           return (
             <label
@@ -296,6 +299,11 @@ function ThemeSelector({ value }: { value: QuizTheme }) {
                 className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
                 style={tokens.pageStyle}
               >
+                {/* Le fond d'écran du thème, quand il en a un : la vignette
+                    montre au commerçant l'image que verra son client, pas
+                    seulement le décor. Premier enfant, donc SOUS le décor
+                    SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                {fond && <FondEcran fond={fond} variant="vignette" />}
                 <ThemeDecor decor={tokens.decor} variant="vignette" />
                 <span
                   className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}

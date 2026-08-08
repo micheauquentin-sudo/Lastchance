@@ -14,14 +14,22 @@ import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 const uuid = z.string().uuid("Identifiant invalide");
 
-/** Thème saisonnier (miroir du CHECK SQL `calendars_theme_check`). */
+/**
+ * Habillage — saison ou univers (miroir du CHECK SQL `calendars_theme_check`).
+ * La parité avec `SEASONAL_THEMES` est tenue par `lib/seasonal-theme.test.ts`.
+ */
 export const calendarThemeSchema = z.enum([
+  "neutre",
   "noel",
   "saint_valentin",
   "anniversaire",
   "soldes",
   "festival",
-  "neutre",
+  "prairie",
+  "musique",
+  "football",
+  "restaurant",
+  "espace",
 ]);
 
 /** Usage d'une case (miroir de l'enum SQL). */

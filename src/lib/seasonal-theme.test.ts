@@ -7,6 +7,9 @@ import {
 } from "./seasonal-theme";
 import { calendarThemeSchema } from "./validations/calendar";
 import { updateContestSchema } from "./validations/pronostics";
+import { calendarBlueprintSchema } from "@/platform/experiences/templates/schemas";
+import { CALENDAR_THEME_ORDER } from "@/components/calendar/calendar-theme";
+import { CONTEST_THEME_ORDER } from "@/components/pronos/contest-theme";
 
 const ID = "00000000-0000-4000-8000-0000000000cc";
 
@@ -16,14 +19,19 @@ function champs(theme: unknown) {
 }
 
 describe("SEASONAL_THEMES — une palette, plusieurs recopies", () => {
-  it("porte les six clés du CHECK SQL (contests + calendars)", () => {
+  it("porte les onze clés du CHECK SQL (contests + calendars)", () => {
     expect([...SEASONAL_THEMES]).toEqual([
+      "neutre",
       "noel",
       "saint_valentin",
       "anniversaire",
       "soldes",
       "festival",
-      "neutre",
+      "prairie",
+      "musique",
+      "football",
+      "restaurant",
+      "espace",
     ]);
   });
 
@@ -37,13 +45,39 @@ describe("SEASONAL_THEMES — une palette, plusieurs recopies", () => {
     expect([...SEASONAL_THEMES].sort()).toEqual([...calendarThemeSchema.options].sort());
   });
 
+  /**
+   * TROISIÈME recopie, et la plus exposée : `calendarBlueprintSchema` valide
+   * les blueprints de la place de marché. Elle était ORPHELINE — aucun test ne
+   * la croisait — donc une clé ajoutée partout ailleurs y aurait fait échouer
+   * l'import d'un modèle en produisant un message d'enum, à distance de la
+   * cause.
+   */
+  it("ne diverge pas de l'énumération des blueprints", () => {
+    expect([...SEASONAL_THEMES].sort()).toEqual(
+      [...calendarBlueprintSchema.shape.theme.options].sort(),
+    );
+  });
+
+  /**
+   * Les deux listes ORDONNÉES des sélecteurs. Elles décident de ce que le
+   * commerçant peut CHOISIR : une clé validée par les schémas mais absente
+   * d'un `_THEME_ORDER` est un habillage livré que personne ne peut jamais
+   * sélectionner — un défaut muet, invisible en typecheck (les deux listes
+   * sont des `readonly SeasonalTheme[]`, pas des Record exhaustifs).
+   */
+  it("ne diverge pas des sélecteurs calendrier et pronostics", () => {
+    const attendu = [...SEASONAL_THEMES].sort();
+    expect([...CALENDAR_THEME_ORDER].sort()).toEqual(attendu);
+    expect([...CONTEST_THEME_ORDER].sort()).toEqual(attendu);
+  });
+
   it("le défaut fait partie de la palette", () => {
     expect(SEASONAL_THEMES).toContain(DEFAULT_SEASONAL_THEME);
   });
 });
 
 describe("asSeasonalTheme — repli de LECTURE", () => {
-  it("laisse passer les six clés telles quelles", () => {
+  it("laisse passer les onze clés telles quelles", () => {
     for (const theme of SEASONAL_THEMES) {
       expect(asSeasonalTheme(theme)).toBe(theme);
     }
@@ -80,7 +114,7 @@ describe("updateContestSchema.theme — optionnel-préservant", () => {
     expect(sansCle.theme).toBe(updateContestSchema.parse(champs(null)).theme);
   });
 
-  it("les six valeurs de la palette passent", () => {
+  it("les onze valeurs de la palette passent", () => {
     for (const theme of SEASONAL_THEMES) {
       expect(updateContestSchema.parse(champs(theme)).theme).toBe(theme);
     }

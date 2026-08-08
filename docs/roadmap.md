@@ -285,6 +285,62 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.53 — Fonds d'écran thématiques (✅ 2026-08-08, branche `chantier/fonds-ecran-themes`, PR à ouvrir, migration `20260921120000`)
+
+**Objectif** : la palette d'habillage saisonnier passait de 6 à 11 clés
+(univers non saisonniers en plus des fêtes) et gagnait un fond d'écran
+image sur les surfaces joueur, plus un choix explicite de fond pour la roue.
+
+**Livré** (6 commits) :
+- **Assets** : 40 fichiers WebP dans `public/fonds` (10 univers × 4
+  déclinaisons), générés par `scripts/optimiser-fonds.mjs`
+  (`npm run assets:fonds`) depuis des sources 1672×941 non versionnées, même
+  chaîne d'optimisation (« lumoz ») que les décors thématiques existants.
+- **Palette** : `SeasonalTheme` passe de 6 à 11 clés dans les 5 recopies
+  (calendrier, pronostics, quiz, roue, tests de parité), requalifiée
+  « habillage saisonnier ou d'univers » ; module `src/lib/fonds-ecran.ts`
+  (source unique FondKey ↔ asset) ; `wheelStyleSchema.fond` en JSONB, choix
+  explicite du commerçant (le décor de la roue reste au preset, contrairement
+  au calendrier/pronostics/quiz qui suivent le thème choisi).
+- **DB** : migration `20260921120000_habillages_univers.sql` — les 2 CHECK à
+  11 clés (`calendars.theme`, `contests.theme`), commentaires de colonne mis
+  à jour, pgTAP `themes_saisonniers` 29 → 41 assertions.
+- **Frontend** : composant `FondEcran` (image + voile de lisibilité + dérive
+  lente), `/play` (2 ambiances), `PlayerPageShell` → calendrier, quiz,
+  pronostics (×2 surfaces) ; vignettes-image dans les 3 sélecteurs de thème
+  (calendar-editor, contest-settings, quiz-editor) ; section « Fond d'écran »
+  de l'atelier roue avec aperçu au clic via `ApercuAccueilJeu`, `setFond`
+  préservant le preset en cours.
+- **Durcissement** : `Object.hasOwn` sur les 2 mappings restants contre une
+  clé héritée du prototype ; `wheelStyleWriteSchema` refuse désormais un
+  fond inconnu **à l'écriture** (la lecture reste tolérante, repli neutre) ;
+  helper `asFondKey` devenu sans appelant, retiré.
+- **E2E** : la radio `sr-only` 1×1 px des 3 sélecteurs de thème devient une
+  couche cliquable pleine tuile (vignette `pointer-events-none`, focus-within
+  visible) — cause du flake identifiée : `scroll-behavior: smooth` sur
+  `html` déplace la cible pendant le défilement, un clic sur un point 1×1
+  arrivait périmé.
+
+**Revue sécurité dédiée : GO, 0 critique/élevé/moyen**, 3 INFO fermés avant
+PR (voir ADR-098).
+
+Preuve : typecheck 0, lint 0, Vitest **260 fichiers / 4108 tests** (+ re-runs
+ciblés après les 2 commits correctifs, 154 puis 297 tests), build vert,
+pgTAP **56 fichiers / 3215 assertions** PASS vide et semée, migrations:check
+125/tête `20260921120000`, sql:check et casts:check ok, E2E WSL mobile-chrome
+(calendar, player-win, pronostics, quiz, wheel-wizard) — tous les scans axe
+verts sans retoucher le voile ; wheel-wizard 12/12 après correctif, sélecteur
+rejoué ×3 vert. ADR-098.
+
+**Reste ouvert** : `games.style` garde un `.catch(undefined)` aussi à
+l'écriture (même forme que l'INFO fermée sur `wheelStyleSchema`, à trancher
+un jour) ; `wheelStyleSchema.partial()` des modèles de campagne tolère un
+fond inconnu (défendable — un blueprint est lu des deux bouts — mais
+désormais écrit explicitement) ; fonds natifs 1672 px, léger étirement
+assumé au-delà ; `espace` partage son `accentChip` avec `festival`. Détails
+dans `docs/bugs.md`. PR à ouvrir vers `main`, fusion sur l'ordre permanent
+dès CI verte.
+
 ## V1.52 — Partage après jeu : un réglage par surface (✅ 2026-08-08, branche `chantier/partage-apres-jeu`, PR à ouvrir, migrations `20260919120000`/`20260920120000`)
 
 **Objectif** : le propriétaire avait décoché « Activer le parrainage sur

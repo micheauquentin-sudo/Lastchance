@@ -36,6 +36,8 @@ import {
   contestThemeTokens,
 } from "@/components/pronos/contest-theme";
 import { ThemeDecor } from "@/components/ui/theme-decor";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import { fondPourTheme } from "@/lib/fonds-ecran";
 import type {
   Contest,
   ContestAward,
@@ -244,6 +246,7 @@ function ThemeSelector({ contest }: { contest: Contest }) {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {CONTEST_THEME_ORDER.map((key) => {
             const tokens = contestThemeTokens(key);
+            const fond = fondPourTheme(key);
             const active = key === theme;
             return (
               <label
@@ -267,6 +270,11 @@ function ThemeSelector({ contest }: { contest: Contest }) {
                   className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
                   style={tokens.pageStyle}
                 >
+                  {/* Le fond d'écran du thème, quand il en a un : la vignette
+                      montre au commerçant l'image que verra son client, pas
+                      seulement le décor. Premier enfant, donc SOUS le décor
+                      SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                  {fond && <FondEcran fond={fond} variant="vignette" />}
                   <ThemeDecor decor={tokens.decor} variant="vignette" />
                   <span
                     className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}

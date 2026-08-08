@@ -52,9 +52,23 @@
 /** Crème du site — la valeur littérale de `--color-k-bg`. */
 const CREME = "#fdf6e3";
 
-/** Lavis des six thèmes saisonniers (calendrier ET pronostics : même enum SQL,
+/** Lavis des onze thèmes saisonniers (calendrier ET pronostics : même enum SQL,
  *  même saison, donc même fond — un client ne peut pas voir deux « Noël »
- *  différents selon le module). */
+ *  différents selon le module).
+ *
+ *  Les CINQ derniers (prairie, musique, football, restaurant, espace) sont
+ *  arrivés avec les fonds d'écran thématiques. Aucun n'invente une teinte :
+ *  chacun REPREND une valeur déjà mesurée du tableau ci-dessus, pour la seule
+ *  raison qui vaille — un lavis inédit exigerait un nouveau relevé de
+ *  contraste, et un chiffre non mesuré n'est pas un chiffre. `prairie` et
+ *  `football` partagent le vert de `sport` (11,2 / 7,8), `restaurant` prend
+ *  celui de `gourmand` (12,0 / 8,3), `espace` celui de `culture` (12,4 / 8,6),
+ *  `musique` celui d'`entreprise` (12,7 / 8,8). Le pire cas de la famille
+ *  reste donc inchangé.
+ *
+ *  Ces cinq thèmes se distinguent à l'écran par leur FOND D'ÉCRAN (image
+ *  plein cadre, `fond-ecran.tsx`) et leur décor, pas par leur lavis — qui
+ *  n'est plus, sous une image, qu'une couleur de repli avant chargement. */
 export const LAVIS_SAISON = {
   neutre: CREME,
   noel: "#e6f2e6",
@@ -62,6 +76,18 @@ export const LAVIS_SAISON = {
   anniversaire: "#fdf1d8",
   soldes: "#fdeadb",
   festival: "#e7edfb",
+  // `prairie` ne peut PAS reprendre le vert de `sport` : `football` le prend,
+  // et deux thèmes qui peignent le même lavis sont indiscernables dès que
+  // l'image ne charge pas (`theme-lavis.test.ts` l'interdit, à raison). C'est
+  // donc le seul lavis inédit de la famille — un vert tirant sur le jaune, la
+  // prairie contre la pelouse tondue. Il n'est pas « estimé » pour autant : le
+  // test recalcule son contraste contre les deux encres et exige 7:1, la même
+  // marge que les onze autres.
+  prairie: "#eaf5df",
+  musique: "#eceff5",
+  football: "#e4f1e6",
+  restaurant: "#fbecd4",
+  espace: "#e8eef9",
 } as const;
 
 /** Lavis des sept habillages de quiz. */

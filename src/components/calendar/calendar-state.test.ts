@@ -158,12 +158,15 @@ describe("formatCalendarUnlock", () => {
 });
 
 describe("calendarThemeTokens", () => {
-  it("expose les 6 thèmes avec des accents distincts", () => {
+  it("expose les 11 thèmes avec des accents distincts", () => {
     const fills = new Set(
       CALENDAR_THEME_ORDER.map((t) => calendarThemeTokens(t).progressFill),
     );
-    expect(CALENDAR_THEME_ORDER).toHaveLength(6);
-    expect(fills.size).toBe(6);
+    // 11 depuis les fonds d'écran thématiques (prairie, musique, football,
+    // restaurant, espace). La jauge reste la pièce colorée que le joueur
+    // regarde en continu : deux thèmes ne peuvent pas la partager.
+    expect(CALENDAR_THEME_ORDER).toHaveLength(11);
+    expect(fills.size).toBe(11);
   });
 
   it("renvoie la clé demandée et un libellé non vide", () => {

@@ -22,7 +22,7 @@ import {
   updateWheelScheduleSchema,
   WHEEL_OUTSTANDING_LOSS_HINT,
 } from "@/lib/validations/prizes";
-import { wheelStyleSchema } from "@/lib/wheel-style";
+import { wheelStyleWriteSchema } from "@/lib/wheel-style";
 import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
 import type { ActionResult } from "@/lib/utils";
 
@@ -564,7 +564,10 @@ export async function updateWheelStyle(
     return { ok: false, error: "Style illisible" };
   }
 
-  const parsed = wheelStyleSchema.safeParse(candidate);
+  // Schéma d'ÉCRITURE : un `fond` hors catalogue est refusé, pas replié. Le
+  // schéma de lecture le tolère (voir `wheelStyleWriteSchema`), et le tolérer
+  // ici acquitterait « Enregistré » une valeur jetée en silence.
+  const parsed = wheelStyleWriteSchema.safeParse(candidate);
   if (!parsed.success) return { ok: false, error: firstError(parsed.error.issues) };
 
   const organization = await requireOrg();

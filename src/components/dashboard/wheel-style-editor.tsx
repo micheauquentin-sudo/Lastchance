@@ -22,6 +22,8 @@ import {
 } from "@/components/dashboard/wheel-style-scope";
 import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
 import { contrastRatio } from "@/lib/contrast";
+import { FondEcran } from "@/components/ui/fond-ecran";
+import { FOND_KEYS, FOND_LABELS, type FondKey } from "@/lib/fonds-ecran";
 import type { GameType } from "@/types/database";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
@@ -113,6 +115,98 @@ function Row({
       )}
       <div className="flex items-center gap-2">{children}</div>
     </div>
+  );
+}
+
+/**
+ * Une tuile du sélecteur de fond d'écran — la vignette RÉELLE du fond, en 16/9,
+ * avec son libellé dessous.
+ *
+ * Le patron (label cliquable + radio invisible + cadre `border-2 border-k-ink`
+ * quand l'option est retenue) est celui des trois sélecteurs de thème du
+ * dépôt — `calendar-editor.tsx`, `contest-settings.tsx`, `quiz-editor.tsx`. Il
+ * est repris volontairement : un quatrième sélecteur d'apparence qui se
+ * manipulerait autrement ferait douter que ce soit le même geste.
+ *
+ * ── LE RADIO A UNE SURFACE, ET C'EST LA TUILE ENTIÈRE ──
+ *
+ * Seul écart avec les trois autres, et il est payé : le radio n'est pas
+ * `sr-only` mais une couche transparente `absolute inset-0`. `sr-only` réduit
+ * le contrôle à une boîte de 1×1 px rognée (`clip: rect(0,0,0,0)`), posée au
+ * coin haut-gauche du contenu. Une cible d'un pixel n'a AUCUNE tolérance :
+ * il suffit que la page ait glissé d'une fraction de pixel entre le calcul du
+ * point et le clic pour que celui-ci tombe à côté — sur le label, ou sur la
+ * tuile voisine. Or `globals.css` pose `scroll-behavior: smooth` sur `html`
+ * (hors `prefers-reduced-motion`) : tout défilement PROGRAMMÉ vers cette
+ * section, longue et basse dans la page, est une glissade animée. Un pilote
+ * qui fait défiler puis clique — Playwright, mais aussi les logiciels de
+ * commande vocale qui visent la boîte du contrôle — tape dans le vide tant que
+ * la glissade dure. Symptôme observé : `check()` en échec pendant 90 s,
+ * alternant « label intercepte » et « hors du cadre », sans jamais converger.
+ *
+ * Avec la couche pleine tuile, la cible mesure ~170×130 px : la même glissade
+ * de quelques pixels tombe toujours dans le contrôle. Le radio reste invisible
+ * (`opacity-0`, jamais `hidden`), donc toujours dans l'arbre d'accessibilité,
+ * nommé par le texte du label — comme avec `sr-only`.
+ *
+ * Corollaire obligatoire : la vignette décorative est `pointer-events-none`.
+ * Elle est `relative` et vient APRÈS le radio dans le DOM ; deux boîtes
+ * positionnées se départagent à l'ordre du DOM, elle recouvrirait donc la
+ * couche de clic. Elle est `aria-hidden` : elle n'a rien à intercepter.
+ *
+ * `focus-within` sur le label : le contrôle n'étant pas peint, c'est la tuile
+ * qui doit montrer le focus clavier. Elle ne le montrait pas du tout avant.
+ *
+ * `fond` absent = la tuile « Aucun ». Elle ne montre pas un cadre vide mais le
+ * crème rayé du site : le commerçant doit voir ce qu'il obtient en n'en
+ * choisissant pas, pas un trou.
+ */
+function TuileFond({
+  label,
+  fond,
+  active,
+  onSelect,
+}: {
+  label: string;
+  fond?: FondKey;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <label
+      className={`relative cursor-pointer rounded-2xl border-2 p-2 transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-k-ink ${
+        active
+          ? "border-k-ink bg-k-yellow/20 shadow-[3px_3px_0_var(--color-k-ink)]"
+          : "border-k-ink/20 bg-white hover:border-k-ink/50"
+      }`}
+    >
+      <input
+        type="radio"
+        name="style-fond"
+        value={fond ?? ""}
+        checked={active}
+        onChange={onSelect}
+        className="absolute inset-0 cursor-pointer appearance-none opacity-0"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none relative aspect-video overflow-hidden rounded-lg border-2 border-k-ink bg-k-bg"
+        style={
+          fond
+            ? undefined
+            : {
+                backgroundImage:
+                  "repeating-linear-gradient(135deg,#f3ead3 0 10px,#fdf6e3 10px 20px)",
+              }
+        }
+      >
+        {fond && <FondEcran fond={fond} variant="vignette" />}
+      </div>
+      <p className="mt-1.5 flex items-center justify-between gap-1 text-xs font-black text-k-ink">
+        <span>{label}</span>
+        {active && <span className="text-k-green">✓</span>}
+      </p>
+    </label>
   );
 }
 
@@ -248,6 +342,18 @@ export function WheelStyleEditor({
    *    puis revient doit retrouver son rouge : un contrôle masqué n'efface
    *    jamais sa valeur, et le formulaire poste le style COMPLET.
    */
+  /**
+   * Fond d'écran — `set` NE CONVIENT PAS ici, pour la même raison que `setJeu` :
+   * il efface `preset`, et `playDecor` lit le DÉCOR sur `style.preset`. Choisir
+   * une photo de fond ferait alors retomber la scène cartoon sur les confettis,
+   * ce que le commerçant n'a pas demandé. L'image est une couche EN PLUS du
+   * style, pas une sortie du style.
+   */
+  function setFond(fond: FondKey | undefined) {
+    setStyle((s) => ({ ...s, fond }));
+    setDirty(true);
+  }
+
   function setJeu(maj: (games: NonNullable<WheelStyle["games"]>) => NonNullable<WheelStyle["games"]>) {
     setStyle((s) => ({ ...s, games: maj(s.games ?? {}) }));
     setDirty(true);
@@ -309,6 +415,47 @@ export function WheelStyleEditor({
           />
         ))}
       </div>
+
+      {/* ────────────────────────────────────────────────────────────
+          FOND D'ÉCRAN — dix images cartoon plein cadre, plus « Aucun ».
+
+          Le sélecteur montre les VRAIES vignettes, pas des pastilles de
+          couleur : un fond d'écran ne se décrit pas, il se voit. Et le clic
+          repeint l'aperçu ci-dessus IMMÉDIATEMENT, avant tout enregistrement —
+          c'est le patron `ApercuAccueilJeu` : le commerçant juge sur ce que
+          verra son client, pas sur un libellé.
+
+          `fieldset`/`legend` et des radios en `sr-only` sous des `label` :
+          l'ensemble reste un groupe de boutons radio pour un lecteur d'écran,
+          navigable aux flèches, alors qu'il se lit comme une planche
+          d'images. Les vignettes elles-mêmes sont `aria-hidden` (le composant
+          `FondEcran` s'en charge) — c'est le LIBELLÉ qui nomme le choix.
+          ──────────────────────────────────────────────────────────── */}
+      <fieldset className="mb-5">
+        <legend className="text-xs font-semibold uppercase tracking-wide text-zinc-600 mb-2">
+          Fond d&apos;écran
+        </legend>
+        <p className="mb-2.5 text-xs text-zinc-500">
+          Une grande image derrière le jeu. Elle s&apos;affiche sur les deux
+          ambiances, adoucie pour que les textes restent lisibles.
+        </p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          <TuileFond
+            label="Aucun"
+            active={!style.fond}
+            onSelect={() => setFond(undefined)}
+          />
+          {FOND_KEYS.map((cle) => (
+            <TuileFond
+              key={cle}
+              label={FOND_LABELS[cle]}
+              fond={cle}
+              active={style.fond === cle}
+              onSelect={() => setFond(cle)}
+            />
+          ))}
+        </div>
+      </fieldset>
 
       {/* Réglages détaillés */}
       <div className="space-y-5">

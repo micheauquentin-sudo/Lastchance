@@ -161,6 +161,113 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
     accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
     progressFill: "bg-k-blue",
   },
+
+  // ── Les cinq thèmes « fond d'écran » ──
+  //
+  // Ils n'apportent AUCUNE scène SVG nouvelle : chacun réemploie un décor
+  // existant (`theme-decor.tsx` en compte quinze, largement de quoi couvrir
+  // cinq univers de plus). Ce qui les distingue vraiment, c'est l'IMAGE de
+  // fond plein cadre que `fondPourTheme` leur associe — le motif CSS ci-dessous
+  // n'est plus qu'un repli, visible le temps du chargement de la photo puis
+  // recouvert par elle. Il reste néanmoins dessiné, et pas laissé en aplat :
+  // une image qui ne charge pas (réseau de boutique) ne doit pas rendre la
+  // page indistincte du thème neutre.
+  prairie: {
+    key: "prairie",
+    label: "Prairie",
+    decor: "confetti",
+    titleEmoji: "🍀",
+    faceEmoji: "🌼",
+    pageStyle: {
+      backgroundColor: LAVIS.prairie,
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(92,185,138,.22) 0 16px,transparent 16px 32px)",
+    },
+    availableCell: `${BASE_AVAILABLE} bg-k-green/25`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-green/25 text-k-ink",
+    progressFill: "bg-k-green/50",
+  },
+  musique: {
+    key: "musique",
+    label: "Musique",
+    decor: "fanions",
+    titleEmoji: "🎵",
+    faceEmoji: "🎧",
+    pageStyle: {
+      backgroundColor: LAVIS.musique,
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(183,155,240,.30) 0 6px,transparent 6px 24px)",
+    },
+    // Pas de jeton `k-violet` dans la palette Kermesse — le violet du motif
+    // ci-dessus est un littéral de `theme-decor.tsx`, pas une variable CSS.
+    // Les cases reprennent donc le jaune, atténué pour ne pas se confondre
+    // avec `neutre` (jaune plein).
+    availableCell: `${BASE_AVAILABLE} bg-k-yellow/50`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-yellow/50 text-k-ink",
+    progressFill: "bg-k-yellow/60",
+  },
+  football: {
+    key: "football",
+    label: "Football",
+    decor: "sport",
+    titleEmoji: "⚽",
+    faceEmoji: "🥅",
+    pageStyle: {
+      backgroundColor: LAVIS.football,
+      // Bandes de pelouse tondue : le seul motif de cette famille qui NOMME
+      // son thème sans dessiner quoi que ce soit.
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(38,127,83,.16) 0 28px,transparent 28px 56px)",
+    },
+    availableCell: `${BASE_AVAILABLE} bg-k-green/25`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-green/40 text-k-ink",
+    progressFill: "bg-k-green/75",
+  },
+  restaurant: {
+    key: "restaurant",
+    label: "Restaurant",
+    decor: "gourmand",
+    titleEmoji: "🍽️",
+    faceEmoji: "🥐",
+    pageStyle: {
+      backgroundColor: LAVIS.restaurant,
+      // Nappe à carreaux — deux passes croisées, l'intersection s'assombrit
+      // d'elle-même par superposition d'alpha.
+      backgroundImage:
+        "repeating-linear-gradient(0deg,rgba(245,121,59,.18) 0 12px,transparent 12px 24px),repeating-linear-gradient(90deg,rgba(245,121,59,.18) 0 12px,transparent 12px 24px)",
+    },
+    availableCell: `${BASE_AVAILABLE} bg-k-orange/30`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-orange/30 text-k-ink",
+    progressFill: "bg-k-orange/60",
+  },
+  espace: {
+    key: "espace",
+    label: "Espace",
+    decor: "etoiles",
+    titleEmoji: "🚀",
+    faceEmoji: "🛸",
+    pageStyle: {
+      backgroundColor: LAVIS.espace,
+      // Semis d'étoiles : deux trames de points décalées, pas une rayure.
+      backgroundImage:
+        "radial-gradient(rgba(124,58,237,.30) 1.6px,transparent 1.6px),radial-gradient(rgba(153,183,245,.34) 1.2px,transparent 1.2px)",
+      backgroundSize: "34px 34px, 22px 22px",
+      backgroundPosition: "0 0, 11px 13px",
+    },
+    availableCell: `${BASE_AVAILABLE} bg-k-blue/40`,
+    lockedCell: BASE_LOCKED,
+    openedCell: BASE_OPENED,
+    accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
+    progressFill: "bg-k-blue/70",
+  },
 };
 
 /** Liste ordonnée des thèmes (sélecteur d'éditeur avec aperçu). */
@@ -171,6 +278,11 @@ export const CALENDAR_THEME_ORDER: readonly CalendarTheme[] = [
   "anniversaire",
   "soldes",
   "festival",
+  "prairie",
+  "musique",
+  "football",
+  "restaurant",
+  "espace",
 ];
 
 /**

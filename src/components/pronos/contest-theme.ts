@@ -119,6 +119,82 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
     accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
     progressFill: "bg-k-blue",
   },
+
+  // ── Les cinq thèmes « fond d'écran » ──
+  //
+  // Miroir EXACT des cinq entrées ajoutées à `calendar-theme.ts` : mêmes
+  // clés, mêmes lavis, mêmes décors, mêmes motifs de repli. C'est la règle
+  // déjà posée en tête de ce fichier — un client ne peut pas voir deux
+  // « Football » différents selon le module. Ce qui les distingue vraiment est
+  // l'IMAGE de fond que `fondPourTheme` leur associe ; le motif CSS n'est plus
+  // qu'un repli, le temps que la photo charge.
+  prairie: {
+    key: "prairie",
+    label: "Prairie",
+    decor: "confetti",
+    titleEmoji: "🍀",
+    pageStyle: {
+      backgroundColor: LAVIS.prairie,
+      backgroundImage:
+        "repeating-linear-gradient(135deg,rgba(92,185,138,.22) 0 16px,transparent 16px 32px)",
+    },
+    accentChip: "border-2 border-k-ink bg-k-green/25 text-k-ink",
+    progressFill: "bg-k-green/50",
+  },
+  musique: {
+    key: "musique",
+    label: "Musique",
+    decor: "fanions",
+    titleEmoji: "🎵",
+    pageStyle: {
+      backgroundColor: LAVIS.musique,
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(183,155,240,.30) 0 6px,transparent 6px 24px)",
+    },
+    accentChip: "border-2 border-k-ink bg-k-yellow/50 text-k-ink",
+    progressFill: "bg-k-yellow/60",
+  },
+  football: {
+    key: "football",
+    label: "Football",
+    decor: "sport",
+    titleEmoji: "⚽",
+    pageStyle: {
+      backgroundColor: LAVIS.football,
+      backgroundImage:
+        "repeating-linear-gradient(90deg,rgba(38,127,83,.16) 0 28px,transparent 28px 56px)",
+    },
+    accentChip: "border-2 border-k-ink bg-k-green/40 text-k-ink",
+    progressFill: "bg-k-green/75",
+  },
+  restaurant: {
+    key: "restaurant",
+    label: "Restaurant",
+    decor: "gourmand",
+    titleEmoji: "🍽️",
+    pageStyle: {
+      backgroundColor: LAVIS.restaurant,
+      backgroundImage:
+        "repeating-linear-gradient(0deg,rgba(245,121,59,.18) 0 12px,transparent 12px 24px),repeating-linear-gradient(90deg,rgba(245,121,59,.18) 0 12px,transparent 12px 24px)",
+    },
+    accentChip: "border-2 border-k-ink bg-k-orange/30 text-k-ink",
+    progressFill: "bg-k-orange/60",
+  },
+  espace: {
+    key: "espace",
+    label: "Espace",
+    decor: "etoiles",
+    titleEmoji: "🚀",
+    pageStyle: {
+      backgroundColor: LAVIS.espace,
+      backgroundImage:
+        "radial-gradient(rgba(124,58,237,.30) 1.6px,transparent 1.6px),radial-gradient(rgba(153,183,245,.34) 1.2px,transparent 1.2px)",
+      backgroundSize: "34px 34px, 22px 22px",
+      backgroundPosition: "0 0, 11px 13px",
+    },
+    accentChip: "border-2 border-k-ink bg-k-blue/40 text-k-ink",
+    progressFill: "bg-k-blue/70",
+  },
 };
 
 /** Liste ordonnée des thèmes (sélecteur d'éditeur avec aperçu). */
@@ -129,6 +205,11 @@ export const CONTEST_THEME_ORDER: readonly SeasonalTheme[] = [
   "anniversaire",
   "soldes",
   "festival",
+  "prairie",
+  "musique",
+  "football",
+  "restaurant",
+  "espace",
 ];
 
 /**

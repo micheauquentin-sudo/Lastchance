@@ -3,6 +3,7 @@ import Link from "next/link";
 import { loadContestContext } from "@/lib/pronostics-context";
 import { RecoveryConfirm } from "@/components/pronos/contest-experience";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { fondPourTheme } from "@/lib/fonds-ecran";
 import { contestThemeTokens } from "@/components/pronos/contest-theme";
 
 /**
@@ -35,7 +36,11 @@ export default async function RecoverPage({
   const tokens = contestThemeTokens(ctx.ok ? ctx.contest.theme : null);
 
   return (
-    <PlayerPageShell pageStyle={tokens.pageStyle} decor={tokens.decor}>
+    <PlayerPageShell
+      pageStyle={tokens.pageStyle}
+      decor={tokens.decor}
+      fond={fondPourTheme(tokens.key)}
+    >
       <div className="mx-auto max-w-md px-6 py-16">
         <div className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]">
           <div className="text-5xl mb-4">🔑</div>

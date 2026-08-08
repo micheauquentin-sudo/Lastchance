@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FOND_KEYS } from "./fonds-ecran";
 import {
   GAME_OBJECT_KEYS,
   SCRATCH_COVER_DEFAULT,
@@ -13,6 +14,7 @@ import {
   scratchCover,
   slotSymbols,
   wheelStyleSchema,
+  wheelStyleWriteSchema,
 } from "./wheel-style";
 
 describe("resolveWheelStyle — lecture tolérante du jsonb", () => {
@@ -71,6 +73,87 @@ describe("wheelStyleSchema — validation à l'écriture", () => {
     expect(
       wheelStyleSchema.safeParse({ hubColor: "#a1B2c3" }).success,
     ).toBe(true);
+  });
+});
+
+/**
+ * Le fond d'écran est le seul champ VISUEL du schéma que le commerçant choisit
+ * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs. Il vit
+ * donc dans le jsonb, contrairement au `decor` porté par le preset.
+ */
+describe("wheelStyleSchema.fond — fond d'écran thématique", () => {
+  it("absent par défaut : les styles déjà enregistrés n'en ont pas", () => {
+    expect(resolveWheelStyle({}).fond).toBeUndefined();
+    expect(resolveWheelStyle(null).fond).toBeUndefined();
+  });
+
+  it("accepte les dix clés du catalogue", () => {
+    for (const cle of FOND_KEYS) {
+      expect(resolveWheelStyle({ fond: cle }).fond).toBe(cle);
+    }
+  });
+
+  /**
+   * `.catch(undefined)` : une clé retirée du catalogue et relue en base rend
+   * une page SANS fond — jamais une validation en échec qui ferait perdre au
+   * commerçant ses vingt couleurs à cause d'une image disparue.
+   */
+  it("replie une clé inconnue SANS emporter le reste du style", () => {
+    const s = resolveWheelStyle({ fond: "halloween", pointerColor: "#ff0000" });
+    expect(s.fond).toBeUndefined();
+    expect(s.pointerColor).toBe("#ff0000");
+    expect(resolveWheelStyle({ fond: 42 }).fond).toBeUndefined();
+  });
+
+  it("aucun preset n'écrit de fond — le choix reste au commerçant", () => {
+    for (const p of WHEEL_PRESETS) {
+      expect(p.style.fond).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * La tolérance porte sur ce qu'on RELIT, jamais sur ce qu'on ÉCRIT.
+ *
+ * Avec un seul schéma, un POST `{"fond":"../../x"}` passait la validation, la
+ * valeur était jetée par le `.catch` et l'action répondait « Enregistré » : le
+ * commerçant croyait avoir choisi un fond qu'il ne reverrait jamais.
+ */
+describe("wheelStyleWriteSchema — l'écriture ne replie rien", () => {
+  it("REFUSE un fond hors catalogue au lieu de le jeter en silence", () => {
+    for (const inconnu of ["halloween", "../../x", "constructor", 42, ""]) {
+      expect(
+        wheelStyleWriteSchema.safeParse({ fond: inconnu }).success,
+        `fond ${JSON.stringify(inconnu)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("accepte les dix clés du catalogue, et l'absence de fond", () => {
+    for (const cle of FOND_KEYS) {
+      const parsed = wheelStyleWriteSchema.safeParse({ fond: cle });
+      expect(parsed.success, cle).toBe(true);
+      expect(parsed.success && parsed.data.fond).toBe(cle);
+    }
+    expect(wheelStyleWriteSchema.safeParse({}).success).toBe(true);
+  });
+
+  /** La divergence est LOCALE au champ `fond` : tout le reste est identique. */
+  it("garde toutes les autres règles du schéma de lecture", () => {
+    expect(wheelStyleWriteSchema.safeParse({ labelColor: "red" }).success).toBe(
+      false,
+    );
+    expect(wheelStyleWriteSchema.parse({}).ring).toBe("classic");
+    expect(wheelStyleWriteSchema.parse({}).pageTheme).toBe("nuit");
+    expect(wheelStyleWriteSchema.parse({ pointerColor: "#ff0000" })).toEqual(
+      wheelStyleSchema.parse({ pointerColor: "#ff0000" }),
+    );
+  });
+
+  /** Contrôle négatif : la LECTURE, elle, replie toujours. */
+  it("le schéma de LECTURE continue de replier la même valeur", () => {
+    expect(wheelStyleSchema.safeParse({ fond: "halloween" }).success).toBe(true);
+    expect(resolveWheelStyle({ fond: "halloween" }).fond).toBeUndefined();
   });
 });
 
