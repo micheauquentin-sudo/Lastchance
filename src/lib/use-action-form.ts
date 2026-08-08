@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { annoncerToast } from "@/lib/toast-bus";
 import type { ActionResult } from "@/lib/utils";
 
 /**
@@ -121,26 +122,76 @@ export function useActionForm<T = void>(
      * Sans effet si `reloadOnSuccess` n'est pas posé.
      */
     reloadWith?: Record<string, string>;
+    /**
+     * Message poussé dans le bandeau global (`ToastEnregistrement`) après un
+     * succès. Ne remplace PAS `state` : les messages rendus par le composant
+     * restent la source de vérité locale, ce toast n'est qu'une annonce.
+     *
+     * Sa raison d'être est l'enregistrement AUTOMATIQUE, où il n'y a plus de
+     * bouton sur lequel lire un résultat. Sur un formulaire à bouton, le
+     * « Enregistré. » du composant suffit déjà.
+     */
+    toastOnSuccess?: string;
   } = {},
 ) {
   const router = useRouter();
   const [state, setState] = useState<ActionResult<T> | null>(null);
   const [pending, setPending] = useState(false);
+  /**
+   * ─── POURQUOI UNE FILE, ET POURQUOI UN `ref` PLUTÔT QUE `pending` ───
+   *
+   * Ce garde-fou jetait purement et simplement toute soumission arrivée
+   * pendant qu'une autre volait (`if (pending) return;`). Avec un bouton c'est
+   * défendable : le second clic est un doublon. Avec l'enregistrement
+   * automatique, c'est un défaut de perte de données — la frappe qui suit le
+   * départ d'une sauvegarde est SILENCIEUSEMENT abandonnée, et l'écran affiche
+   * « Enregistré. » pour la valeur PRÉCÉDENTE. Le commerçant lit un accusé de
+   * réception exact sur un contenu qui n'est pas le sien.
+   *
+   * D'où une file d'UNE place : la soumission concurrente n'est pas jetée,
+   * elle est rejouée à l'atterrissage de la première. Une place suffit —
+   * ce qui compte n'est pas de rejouer chaque frappe, mais de finir sur la
+   * DERNIÈRE valeur, et la re-soumission relit le formulaire au moment où
+   * elle part.
+   *
+   * Le verrou est un `ref` et non `pending` : `pending` est un état, donc deux
+   * soumissions du même tick le lisent toutes les deux à `false` et partent
+   * ensemble. Un `ref` bascule dans l'instruction même.
+   */
+  const enVol = useRef(false);
+  const formEnVol = useRef<HTMLFormElement | null>(null);
+  const resoumettreApres = useRef(false);
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending) return;
     const form = event.currentTarget;
+    if (enVol.current) {
+      formEnVol.current = form;
+      resoumettreApres.current = true;
+      return;
+    }
+    enVol.current = true;
+    formEnVol.current = form;
     const formData = new FormData(form);
     setPending(true);
     setState(null);
     void (async () => {
+      // Le formulaire a-t-il été VIDÉ sur ce tour ? Rejouer par-dessus un
+      // `form.reset()` posterait un formulaire vide — et détruirait ce que la
+      // soumission en attente cherchait précisément à sauver.
+      let reinitialise = false;
       try {
         const result = await action(null, formData);
         setState(result);
         if (result.ok) {
-          if (options.resetOnSuccess) form.reset();
+          if (options.resetOnSuccess) {
+            form.reset();
+            reinitialise = true;
+          }
           options.onSuccess?.(result.data);
+          if (options.toastOnSuccess) {
+            annoncerToast({ message: options.toastOnSuccess, ton: "succes" });
+          }
           if (options.reloadOnSuccess) rechargerAvec(options.reloadWith);
           else router.refresh();
         }
@@ -152,7 +203,15 @@ export function useActionForm<T = void>(
           error: options.networkError ?? "Action impossible, réessayez.",
         });
       } finally {
+        enVol.current = false;
         setPending(false);
+        const aRejouer = resoumettreApres.current;
+        resoumettreApres.current = false;
+        // `requestSubmit` et non un appel direct : il repasse par le
+        // gestionnaire du formulaire, donc par une NOUVELLE lecture de
+        // `FormData` — c'est ce qui garantit que le rejeu porte la dernière
+        // valeur saisie, et non celle qu'on avait capturée en partant.
+        if (aRejouer && !reinitialise) formEnVol.current?.requestSubmit();
       }
     })();
   }

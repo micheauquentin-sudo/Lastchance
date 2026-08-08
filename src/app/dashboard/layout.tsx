@@ -23,6 +23,7 @@ import { DashboardNav } from "@/components/dashboard/nav";
 import { OrganizationSwitcher } from "@/components/dashboard/organization-switcher";
 import { RappelFermable } from "@/components/dashboard/rappel-fermable";
 import { SkipLink } from "@/components/ui/skip-link";
+import { ToastEnregistrement } from "@/components/ui/toast-enregistrement";
 import { activeExperienceKinds } from "@/platform/experiences/catalog";
 
 /* DA « La Kermesse » (version sobre) : Lilita One pour le logo,
@@ -117,6 +118,11 @@ export default async function DashboardLayout({
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
       <SkipLink />
+      {/* Îlot client monté UNE fois pour tout le panel : ce layout reste un
+          Server Component (il lit cookies, organisation et abonnement), et
+          l'émetteur de toasts est un magasin de module — donc aucun Provider
+          à poser ici. Voir `src/lib/toast-bus.ts`. */}
+      <ToastEnregistrement />
       {/* `lg:overflow-y-auto` S'AJOUTE À `lg:h-screen` : collée
           en haut sur toute la hauteur de l'écran et sans défilement propre, la
           colonne perdait son bas dès que le menu dépassait 100 vh — le bouton
