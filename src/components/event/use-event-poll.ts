@@ -77,12 +77,18 @@ export function useEventPoll(
       if (disposed) return;
 
       const phase = stateRef.current.session?.phase ?? "lobby";
+      // La jauge pilote la cadence du lobby : une salle vendue pour 1 000 ne
+      // peut pas se rafraîchir au même rythme qu'une salle de 100 sans saturer
+      // la pile (`docs/perf-report.md` §7). 100 par défaut = comportement
+      // historique tant que l'état n'est pas encore chargé.
+      const jauge = stateRef.current.session?.maxParticipants ?? 100;
       const delay = immediate
         ? 0
         : eventPollDelay(
             phase,
             realtimeConnectedRef.current,
             failureCountRef.current,
+            jauge,
           );
       pollTimerRef.current = window.setTimeout(async () => {
         pollTimerRef.current = null;

@@ -220,6 +220,8 @@ export interface EventPublicSession {
   rewardLabel: string;
   rewardStock: number;
   rewardClaimedCount: number;
+  /** Jauge vendue (100 / 500 / 1000) — pilote la cadence de poll du lobby. */
+  maxParticipants: number;
 }
 
 export interface EventPublicState {
@@ -307,6 +309,11 @@ export function mapEventPublicState(raw: unknown): EventPublicState {
     rewardLabel: asString(sessionRec.reward_label) ?? "",
     rewardStock: asInt(sessionRec.reward_stock) ?? 0,
     rewardClaimedCount: asInt(sessionRec.reward_claimed_count) ?? 0,
+    // La JAUGE, et non l'occupation : elle sert au client à choisir sa cadence
+    // de rafraîchissement du lobby (`eventLobbyDelay`). 100 par défaut, comme
+    // la colonne en base — un état tronqué ne doit pas produire une salle qui
+    // se rafraîchit trente fois plus vite que prévu.
+    maxParticipants: asInt(sessionRec.max_participants) ?? 100,
   };
 
   const distributionRaw = root.distribution;
