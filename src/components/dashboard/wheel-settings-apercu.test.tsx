@@ -38,6 +38,8 @@ const ROUE = {
   style: {},
   position: 0,
   created_at: "2026-08-01T10:00:00.000Z",
+  // unsafe-cast-justification: fixture de test partielle — seuls les champs
+  // lus par l'étape « Le jeu » sont posés, le reste du type Wheel est inutile ici
 } as unknown as Wheel;
 
 function monter(wheel: Wheel = ROUE) {
@@ -81,6 +83,7 @@ describe("Étape « Le jeu » — l'aperçu vivant", () => {
     monter({
       ...ROUE,
       style: { title: "Un café offert vous attend" },
+      // unsafe-cast-justification: même fixture partielle que ROUE, style surchargé
     } as unknown as Wheel);
     expect(screen.getByText("Un café offert vous attend")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /Carte à gratter/ }));
