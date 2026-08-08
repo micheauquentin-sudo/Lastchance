@@ -38,8 +38,7 @@ const ROUE = {
   style: {},
   position: 0,
   created_at: "2026-08-01T10:00:00.000Z",
-  // unsafe-cast-justification: fixture de test partielle — seuls les champs
-  // lus par l'étape « Le jeu » sont posés, le reste du type Wheel est inutile ici
+  // unsafe-cast-justification: fixture de test partielle — seuls les champs lus par l'étape « Le jeu » sont posés
 } as unknown as Wheel;
 
 function monter(wheel: Wheel = ROUE) {
