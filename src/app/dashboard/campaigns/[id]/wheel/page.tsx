@@ -186,7 +186,22 @@ export default async function WheelConfigPage({
       <section
         aria-label={`Étape ${numero} sur ${ETAPES_ROUE.length} — ${definition.titre}`}
       >
-        {etape === "jeu" && <WheelSettings wheel={w} campaignId={id} />}
+        {/* `organizationName` et les lots ne servent qu'à l'APERÇU VIVANT de
+            l'étape : le nom du commerce en kicker, les vrais segments quand la
+            mécanique choisie est la roue — exactement ce que reçoit l'aperçu de
+            l'étape « L'habillage ». */}
+        {etape === "jeu" && (
+          <WheelSettings
+            wheel={w}
+            campaignId={id}
+            organizationName={organization!.name}
+            segments={activePrizes.map((p) => ({
+              id: p.id,
+              label: p.label,
+              color: p.color,
+            }))}
+          />
+        )}
 
         {etape === "lots" && (
           <PrizeEditor

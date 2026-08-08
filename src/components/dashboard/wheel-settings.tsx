@@ -1,12 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { updateWheel } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { ApercuAccueilJeu } from "@/components/dashboard/apercu-accueil-jeu";
 import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
+import type { WheelSegment } from "@/components/wheel/wheel-svg";
+import { resolveWheelStyle } from "@/lib/wheel-style";
 import {
   MECANIQUES_DEFI,
   MECANIQUES_HASARD,
@@ -124,9 +127,15 @@ function defautsDefi(gameType: GameType, raw: RawSkillConfig): EtatDefi {
 export function WheelSettings({
   wheel,
   campaignId,
+  organizationName,
+  segments = [],
 }: {
   wheel: Wheel;
   campaignId: string;
+  /** Nom du commerce — le kicker de l'écran d'accueil, comme sur /play. */
+  organizationName: string;
+  /** Lots actifs, pour que l'aperçu de la roue montre les vrais segments. */
+  segments?: WheelSegment[];
 }) {
   const router = useRouter();
   const mecaniqueInitiale: GameType = wheel.game_type ?? "wheel";
@@ -145,6 +154,12 @@ export function WheelSettings({
     defautsDefi(mecaniqueInitiale, rawInitial),
   );
   const [playLimit, setPlayLimit] = useState<PlayLimit>(wheel.play_limit);
+  // Le style ENREGISTRÉ de la roue : cette étape ne le modifie pas, elle s'en
+  // sert pour que l'aperçu porte les vraies couleurs et la vraie police.
+  const style = useMemo(
+    () => resolveWheelStyle(wheel.style as Record<string, unknown>),
+    [wheel.style],
+  );
 
   const isSkill = isSkillGameType(gameType);
   const aSecret = isSecretSkillGameType(gameType);
@@ -241,6 +256,28 @@ export function WheelSettings({
             onChoisir={choisirMecanique}
           />
         </fieldset>
+
+        {/* L'APERÇU VIVANT — piloté par l'ÉTAT LOCAL `gameType`, donc il change
+            AU CLIC, avant tout enregistrement. C'est le manque exact que le
+            commerçant décrivait : il choisissait « Carte à gratter » et ne
+            voyait sa mécanique nulle part, l'étape suivante lisant la valeur
+            déjà en base. Même composant que l'aperçu de l'étape « L'habillage »
+            (`ApercuAccueilJeu`) : les deux écrans ne peuvent pas diverger. */}
+        <div>
+          <p className="mb-2 text-xs font-black uppercase tracking-wide text-k-orange-text">
+            Aperçu — ce que verra votre client
+          </p>
+          <ApercuAccueilJeu
+            style={style}
+            organizationName={organizationName}
+            gameType={gameType}
+            segments={segments}
+            className="mx-auto max-w-xs"
+          />
+          <p className="mt-2 text-xs font-semibold text-k-body">
+            L&apos;habillage complet se règle à l&apos;étape «&nbsp;L&apos;habillage&nbsp;».
+          </p>
+        </div>
 
         {isSkill && (
           <fieldset className="space-y-3 rounded-xl border border-orange-200 bg-orange-50/40 p-3">

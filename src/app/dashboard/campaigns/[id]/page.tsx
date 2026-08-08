@@ -217,7 +217,7 @@ export default async function CampaignDetailPage({
           />
         ) : (
           <Card>
-            <h2 className="font-semibold mb-1">Roues du jeu</h2>
+            <h2 className="font-semibold mb-1">Vos jeux</h2>
             <p className="text-sm text-red-600">Roue manquante</p>
           </Card>
         )}
