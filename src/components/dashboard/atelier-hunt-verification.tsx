@@ -7,7 +7,7 @@ import {
 import {
   construireVerificationChasse,
   type EntreeVerificationChasse,
-} from "@/components/dashboard/atelier-hunt-verification-state";
+} from "@/lib/activation/hunts";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 
 /**

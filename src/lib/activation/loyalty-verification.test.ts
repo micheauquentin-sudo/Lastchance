@@ -4,7 +4,7 @@ import {
   type EntreeVerificationFidelite,
   type PalierVerification,
   type RoueVerification,
-} from "@/components/dashboard/atelier-loyalty-verification-state";
+} from "@/lib/activation/loyalty";
 
 function palier(partiel: Partial<PalierVerification> = {}): PalierVerification {
   return {

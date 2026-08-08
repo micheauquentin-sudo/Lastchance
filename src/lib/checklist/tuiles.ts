@@ -1,0 +1,327 @@
+/**
+ * LES BLOCS D'UNE PAGE DÉTAIL, DANS L'ORDRE, ET CE QU'ILS DOIVENT PROUVER.
+ *
+ * Chaque page détail empile des blocs pleine largeur ; le commerçant ne sait
+ * pas lesquels sont finis. Une tuile = UN bloc de la page, avec son rang
+ * (index + 1) et son verdict. Le rang n'est pas stocké : il se lit de l'ordre
+ * de la liste, qui est celui du rendu. Réordonner la page, c'est réordonner
+ * ici — et rien d'autre à mettre à jour.
+ *
+ * ── CE QU'UNE TUILE N'EST PAS ──
+ *
+ * Ce n'est PAS une étape d'atelier. Le champ `etape` des modules d'activation
+ * désigne l'étape qui CORRIGE un point (les cinq contrôles du jackpot pointent
+ * tous « reglages »), pas le bloc qui l'affiche. Les deux notions coïncident
+ * rarement : elles restent séparées.
+ *
+ * ── LES TUILES SANS CONTRÔLE ──
+ *
+ * La plupart des blocs (QR, classement, écran comptoir, relance) ne portent
+ * aucun contrôle et sont donc « complet ». C'est voulu : optionnel et vide
+ * reste valide. Une tuile ne devient « incomplet » que si un contrôle
+ * BLOQUANT lui est rattaché et qu'il est rouge.
+ */
+import {
+  normaliserControles,
+  type ControleBrut,
+  type ControleNormalise,
+  type ModuleChecklist,
+} from "@/lib/checklist/controles";
+
+export interface TuileChecklist {
+  /** Identifiant stable de la tuile — jamais rendu, sert aux tests et aux clés. */
+  cle: string;
+  /** Nom du bloc, tel qu'il est déjà titré sur la page. */
+  titre: string;
+  /** Ancre de la page quand le bloc en porte une (`statut`, `suivi`, …). */
+  ancre?: string;
+  /** Clés des contrôles du module qui décident du verdict de ce bloc. */
+  controles: readonly string[];
+}
+
+/**
+ * LA ROUE — `src/app/dashboard/campaigns/[id]/page.tsx`.
+ *
+ * Les quatre contrôles de mécanique et de lots se corrigent dans l'éditeur de
+ * roue, atteint depuis le bloc « Vos jeux » : c'est donc lui qui les porte.
+ * `fenetre` (les dates de la campagne) va aux Réglages, où vit son formulaire.
+ */
+export const TUILES_ROUE: readonly TuileChecklist[] = [
+  { cle: "statut", titre: "Statut", ancre: "statut", controles: [] },
+  {
+    cle: "jeux",
+    titre: "Vos jeux",
+    controles: ["mecanique", "defi", "lot-gagnant", "poids"],
+  },
+  { cle: "qr", titre: "QR codes", ancre: "qr", controles: ["qr"] },
+  {
+    cle: "performance",
+    titre: "Performance par lot",
+    ancre: "suivi",
+    controles: [],
+  },
+  { cle: "prejeu", titre: "Avant de jouer", controles: [] },
+  { cle: "gain", titre: "Après le gain", controles: [] },
+  { cle: "programmation", titre: "Programmation et budget", controles: [] },
+  { cle: "parrainage", titre: "Parrainage ludique", controles: [] },
+  { cle: "modele", titre: "Enregistrer comme modèle", controles: [] },
+  {
+    cle: "reglages",
+    titre: "Réglages",
+    ancre: "reglages",
+    controles: ["fenetre"],
+  },
+];
+
+/**
+ * LE QUIZ — `src/app/dashboard/quiz/[id]/page.tsx`, vue suivi (URL nue).
+ *
+ * Tout ce qui se règle vit dans l'atelier : sa carte d'entrée porte donc les
+ * sept contrôles de préparation. `tirage` est le seul qui appartienne à un
+ * autre bloc — c'est un geste d'exploitation, définitif, sur le suivi.
+ */
+export const TUILES_QUIZ: readonly TuileChecklist[] = [
+  { cle: "statut", titre: "Statut du quiz", ancre: "statut", controles: [] },
+  {
+    cle: "partage",
+    titre: "QR code et lien du quiz",
+    ancre: "suivi",
+    controles: [],
+  },
+  { cle: "tirage", titre: "Le tirage au sort", controles: ["tirage"] },
+  {
+    cle: "atelier",
+    titre: "L'atelier du quiz",
+    controles: [
+      "questions",
+      "dotation",
+      "lot",
+      "stock",
+      "stock-epuise",
+      "roue-absente",
+      "roue-tirable",
+    ],
+  },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+/** LE CALENDRIER — `src/app/dashboard/calendar/[id]/page.tsx`, vue suivi. */
+export const TUILES_CALENDRIER: readonly TuileChecklist[] = [
+  {
+    cle: "statut",
+    titre: "Statut du calendrier",
+    ancre: "statut",
+    controles: [],
+  },
+  {
+    cle: "partage",
+    titre: "QR code et lien du calendrier",
+    ancre: "suivi",
+    controles: [],
+  },
+  {
+    cle: "atelier",
+    titre: "L'atelier du calendrier",
+    controles: [
+      "grille",
+      "cases",
+      "cases-vides",
+      "aucun-gain",
+      "cases-en-pause",
+      "roues",
+      "assiduite",
+    ],
+  },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+/** LA CHASSE — `src/app/dashboard/hunts/[id]/page.tsx`, vue suivi. */
+export const TUILES_CHASSE: readonly TuileChecklist[] = [
+  { cle: "statut", titre: "Statut de la chasse", ancre: "statut", controles: [] },
+  {
+    cle: "atelier",
+    titre: "L'atelier de la chasse",
+    controles: ["parcours", "lot", "stock", "fenetre"],
+  },
+  {
+    cle: "suivi",
+    titre: "Ce que font vos joueurs",
+    ancre: "suivi",
+    controles: [],
+  },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+/** LE PASSEPORT — `src/app/dashboard/loyalty/[id]/page.tsx`, vue suivi. */
+export const TUILES_FIDELITE: readonly TuileChecklist[] = [
+  {
+    cle: "statut",
+    titre: "Statut du programme",
+    ancre: "statut",
+    controles: [],
+  },
+  {
+    cle: "atelier",
+    titre: "L'atelier du passeport",
+    controles: ["paliers", "stock", "roues"],
+  },
+  { cle: "apercu", titre: "En un coup d'œil", controles: [] },
+  {
+    cle: "partage",
+    titre: "QR code et lien du passeport",
+    ancre: "suivi",
+    controles: [],
+  },
+  { cle: "comptoir", titre: "Écran comptoir", controles: [] },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+/** LA CAGNOTTE — `src/app/dashboard/jackpot/[id]/page.tsx`, vue suivi. */
+export const TUILES_JACKPOT: readonly TuileChecklist[] = [
+  {
+    cle: "statut",
+    titre: "Statut de la cagnotte",
+    ancre: "statut",
+    controles: [],
+  },
+  { cle: "apercu", titre: "En un coup d'œil", controles: [] },
+  {
+    cle: "partage",
+    titre: "QR code et lien de la cagnotte",
+    ancre: "suivi",
+    controles: [],
+  },
+  { cle: "comptoir", titre: "Écran comptoir", controles: [] },
+  {
+    cle: "atelier",
+    titre: "L'atelier de la cagnotte",
+    controles: ["lot", "stock", "objectif", "tirage", "url"],
+  },
+];
+
+/** LA SOIRÉE — `src/app/dashboard/events/[id]/page.tsx`, vue suivi. */
+export const TUILES_EVENEMENT: readonly TuileChecklist[] = [
+  { cle: "statut", titre: "Statut du jeu", ancre: "statut", controles: [] },
+  { cle: "suivi", titre: "Les sessions", ancre: "suivi", controles: [] },
+  {
+    cle: "atelier",
+    titre: "L'atelier de la soirée",
+    controles: ["questions", "salle", "stock", "actif"],
+  },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+/** LE CHAMPIONNAT — `src/app/dashboard/pronostics/[id]/page.tsx`, vue nue. */
+export const TUILES_PRONOSTICS: readonly TuileChecklist[] = [
+  {
+    cle: "statut",
+    titre: "Statut du championnat",
+    ancre: "statut",
+    controles: [],
+  },
+  {
+    cle: "atelier",
+    titre: "L'atelier du championnat",
+    controles: [
+      "matiere",
+      "recompenses",
+      "echeances",
+      "subsidiaire",
+      "contact",
+    ],
+  },
+  { cle: "partage", titre: "QR code et lien à partager", controles: [] },
+  { cle: "suivi", titre: "Classement", ancre: "suivi", controles: [] },
+  { cle: "palmares", titre: "Le palmarès", controles: [] },
+  { cle: "cloture", titre: "Clôturer le championnat", controles: [] },
+  { cle: "danger", titre: "Zone de danger", controles: [] },
+  {
+    cle: "relance",
+    titre: "Relancer la formule",
+    ancre: "relance",
+    controles: [],
+  },
+];
+
+export const TUILES_PAR_MODULE: Record<
+  ModuleChecklist,
+  readonly TuileChecklist[]
+> = {
+  roue: TUILES_ROUE,
+  quiz: TUILES_QUIZ,
+  calendrier: TUILES_CALENDRIER,
+  chasse: TUILES_CHASSE,
+  fidelite: TUILES_FIDELITE,
+  jackpot: TUILES_JACKPOT,
+  evenement: TUILES_EVENEMENT,
+  pronostics: TUILES_PRONOSTICS,
+};
+
+export type StatutTuile = "complet" | "incomplet";
+
+/**
+ * Le verdict d'une tuile : « incomplet » ssi au moins un de ses contrôles est
+ * à la fois BLOQUANT et rouge.
+ *
+ * Une tuile sans contrôle rattaché — ou dont les contrôles n'ont pas été
+ * produits par le module (un contrôle conditionnel, par exemple `roues` sur un
+ * passeport sans tour de roue offert) — est « complet ». Optionnel et vide est
+ * valide, et rien ne doit teinter en rouge un bloc qui n'a rien à corriger.
+ */
+export function statutTuile(
+  tuile: TuileChecklist,
+  controles: readonly ControleNormalise[],
+): StatutTuile {
+  const vises = new Set(tuile.controles);
+  return controles.some((c) => vises.has(c.cle) && c.bloquant && !c.ok)
+    ? "incomplet"
+    : "complet";
+}
+
+export interface TuileRendue {
+  tuile: TuileChecklist;
+  /** Rang affiché en pastille — l'index dans la liste, à partir de 1. */
+  numero: number;
+  statut: StatutTuile;
+}
+
+/**
+ * La liste prête à rendre : normalisation, rangs et verdicts en un appel.
+ * C'est le seul point d'entrée dont une page détail a besoin.
+ */
+export function tuilesDuModule(
+  module: ModuleChecklist,
+  controles: readonly ControleBrut[],
+): TuileRendue[] {
+  const normalises = normaliserControles(module, controles);
+  return TUILES_PAR_MODULE[module].map((tuile, index) => ({
+    tuile,
+    numero: index + 1,
+    statut: statutTuile(tuile, normalises),
+  }));
+}
