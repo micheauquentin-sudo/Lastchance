@@ -111,6 +111,14 @@ export function useAutoSaveManuel(
     }
   }, []);
 
+  /**
+   * Indirection pour le REJEU : `soumettre` doit se rappeler lui-même à
+   * l'atterrissage d'une soumission en vol, mais une `useCallback` ne peut
+   * pas se référencer pendant sa propre déclaration (TDZ, refusée par le
+   * lint). La ref est posée juste sous la déclaration.
+   */
+  const soumettreRef = useRef<(force?: boolean) => void>(() => {});
+
   const soumettre = useCallback(
     (force = false) => {
       annuler();
@@ -146,12 +154,18 @@ export function useAutoSaveManuel(
         }
         if (rejouer.current) {
           rejouer.current = false;
-          soumettre();
+          soumettreRef.current();
         }
       })();
     },
     [annuler],
   );
+  // Posée en layout effect (écrire une ref pendant le rendu est refusé par le
+  // lint) : synchrone après commit, donc fraîche bien avant tout atterrissage
+  // asynchrone d'une soumission en vol.
+  useLayoutEffect(() => {
+    soumettreRef.current = soumettre;
+  }, [soumettre]);
 
   /**
    * LE DÉCLENCHEUR : la signature a changé depuis le dernier enregistrement.
