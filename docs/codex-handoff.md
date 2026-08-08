@@ -57,7 +57,7 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-08 — Fonds d'écran thématiques — **terminé, PR à ouvrir** (état à relire)
+### 2026-08-08 — Fonds d'écran thématiques — **terminé**
 
 - **Lot et objectif** : palette d'habillage saisonnière partagée
   (calendrier/pronostics/quiz/roue) élargie de 6 à 11 clés — univers non
@@ -82,20 +82,23 @@
   `20260921120000` ; sql:check, casts:check ok ; E2E WSL mobile-chrome
   (calendar, player-win, pronostics, quiz, wheel-wizard) — tous les scans
   axe verts sans retoucher le voile ; wheel-wizard 12/12 après correctif,
-  sélecteur rejoué ×3 vert. Revue sécurité dédiée : **GO, 0
-  critique/élevé/moyen, 3 INFO fermés avant PR**. CI GitHub : **non jouée au
-  moment de l'écriture** — la PR la jouera, fusion sur l'ordre permanent dès
-  verte.
+  sélecteur rejoué ×3 vert ; suite complète rejouée sur l'arbre final
+  (docs comprises) : **261 fichiers / 4117 tests**. Revue sécurité dédiée :
+  **GO, 0 critique/élevé/moyen, 3 INFO fermés avant PR**. CI GitHub de la
+  PR #135 : intégralement verte (E2E Chromium+WebKit, pgTAP/ACL/RLS, CodeQL,
+  typecheck/lint/Vitest/build, site, audit) ; fusion squash `c955108` sur
+  l'ordre permanent du propriétaire, puis CI `main` et « Santé après
+  déploiement » verts sur ce SHA — migration `20260921120000` appliquée en
+  production.
 - **Reste ouvert** : `games.style` garde un `.catch(undefined)` aussi à
   l'écriture (même forme que l'INFO fermée) ; `wheelStyleSchema.partial()`
   des modèles de campagne tolère un fond inconnu à l'écriture (défendable,
   désormais écrit) ; `scroll-behavior: smooth` reste un piège pour tout
   futur `click()` E2E sur cible petite et basse ; fonds natifs 1672 px,
   léger étirement assumé au-delà ; `espace` partage l'`accentChip` de
-  `festival`. Détails dans `docs/bugs.md`. ADR-098, roadmap V1.53. PR à
-  ouvrir vers `main`, fusion sur l'ordre permanent dès CI verte — **état à
-  relire à la prochaine session**, la CI de cette PR n'avait pas encore
-  tourné.
+  `festival`. Détails dans `docs/bugs.md`. ADR-098, roadmap V1.53.
+  **Prochaine action : aucune** — PR #135 fusionnée et déployée, santé
+  post-déploiement verte.
 
 ### 2026-08-08 — Partage après jeu : un réglage par surface — **terminé**
 
