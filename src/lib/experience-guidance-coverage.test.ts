@@ -68,10 +68,14 @@ function lire(chemin: string): string {
 
 describe("Carte de l'Aventure — montée sur les huit pages de détail", () => {
   for (const [kind, chemin] of Object.entries(PAGES_CARTE)) {
-    it(`${kind} construit ses étapes et rend GuidedJourney`, () => {
+    it(`${kind} construit ses étapes et rend la Carte de l'Aventure`, () => {
       const source = lire(chemin);
       expect(source).toContain("construireEtapesAventure");
-      expect(source).toContain("<GuidedJourney");
+      // Depuis que la carte naît repliée, les pages ne montent plus
+      // `GuidedJourney` en direct : elles montent `CarteAventure`, qui pose la
+      // barre repliable ET rend `GuidedJourney` à l'intérieur — le chemin
+      // module → écran est le même, il passe par une enveloppe de plus.
+      expect(source).toContain("<CarteAventure");
       // Le kind passé doit être CELUI du module : une page qui construirait
       // les marqueurs d'un autre afficherait une clôture qui n'est pas la
       // sienne, sans erreur de compilation puisque l'union les accepte tous.

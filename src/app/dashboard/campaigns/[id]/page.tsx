@@ -31,7 +31,7 @@ import {
   type ReferralProgramRow,
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { construireVerification } from "@/components/dashboard/atelier-verification-state";
 import type { ControleBrut } from "@/lib/checklist/controles";
 import { tuilesDuModule, type TuileRendue } from "@/lib/checklist/tuiles";
@@ -263,16 +263,15 @@ export default async function CampaignDetailPage({
         </div>
       )}
 
-      <div className="mb-6">
-        <GuidedJourney
-          steps={etapes}
-          title="Carte de l'Aventure"
-          conclusion={conclusion}
-        />
-      </div>
-
       <div id="statut" className="mb-6 scroll-mt-24">
         <CampaignStatusControls campaign={c} />
+      </div>
+
+      {/* La Carte de l'Aventure vient APRÈS le statut : ce qui décide de
+          l'ouverture aux joueurs reste le premier bloc lisible, la boussole se
+          consulte ensuite — et repliée, comme tout le reste de la page. */}
+      <div className="mb-6">
+        <CarteAventure steps={etapes} conclusion={conclusion} />
       </div>
 
       <div className="mb-6">

@@ -66,7 +66,7 @@ import {
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
@@ -521,21 +521,21 @@ export default async function ContestDetailPage({
         </>
       ) : (
         <>
-      <GuidedJourney
-        steps={etapes}
-        title="Carte de l'Aventure"
-        conclusion={conclusion}
-      />
-
       {/* OUVERT : c'est le geste de publication, et la Carte de l'Aventure y
-          renvoie. */}
+          renvoie. Seul bloc de la page à le rester. */}
       <CarteRepliable {...bloc("statut")}>
         <ContestStatusControls contest={c} />
       </CarteRepliable>
 
-      {/* OUVERT : la porte de l'atelier est le seul chemin vers tout ce qui se
-          règle. */}
-      <CarteRepliable {...bloc("atelier")}>
+      <CarteAventure steps={etapes} conclusion={conclusion} />
+
+      {/* REPLIÉ comme le reste : la porte de l'atelier est le seul chemin vers
+          ce qui se règle, son résumé dit donc ce qui attend derrière. */}
+      <CarteRepliable
+        {...bloc("atelier")}
+        defaultOuvert={false}
+        resume={`${ETAPES_CONTEST.length} étapes de préparation.`}
+      >
         <AtelierContestEntree
           contestId={c.id}
           locked={locked}

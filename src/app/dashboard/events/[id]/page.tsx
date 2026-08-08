@@ -6,7 +6,7 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
@@ -289,17 +289,13 @@ export default async function EventGamePage({
 
       {etape === null ? (
         <>
-          <GuidedJourney
-            steps={etapesAventure}
-            title="Carte de l'Aventure"
-            conclusion={conclusion}
-          />
-
           {/* OUVERT : c'est le geste de publication, et la Carte de
-              l'Aventure y renvoie. */}
+              l'Aventure y renvoie. Seul bloc de la page à le rester. */}
           <CarteRepliable {...bloc("statut")}>
             <EventGameStatusControls gameId={game.id} status={status} />
           </CarteRepliable>
+
+          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
 
           {/* REPLIÉ : ce qui s'ANIME le soir venu, pas ce qui se prépare. Le
               résumé dit combien de salles attendent, l'ancre `#suivi` rouvre
@@ -316,10 +312,14 @@ export default async function EventGamePage({
             <EventSessionsSection sessions={sessions} />
           </CarteRepliable>
 
-          {/* LA PORTE D'ENTRÉE DE L'ATELIER. Les cartes de préparation ont
-              quitté cette vue : sans ce bloc, le commerçant n'aurait plus aucun
-              chemin vers elles depuis la page qu'il consulte le plus. */}
-          <CarteRepliable {...bloc("atelier")}>
+          {/* LA PORTE D'ENTRÉE DE L'ATELIER, repliée comme le reste. Les cartes
+              de préparation ont quitté cette vue : c'est le seul chemin vers
+              elles, d'où le résumé qui annonce ce qui attend derrière. */}
+          <CarteRepliable
+            {...bloc("atelier")}
+            defaultOuvert={false}
+            resume={`${ETAPES_EVENEMENT.length} étapes de préparation.`}
+          >
             <AtelierEntree
               etapes={ETAPES_EVENEMENT}
               hrefPour={hrefPour}

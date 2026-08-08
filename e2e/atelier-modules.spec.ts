@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { ouvrirTuile } from "./helpers";
 
 /**
  * Le filet des SEPT ateliers non couverts jusqu'ici (quiz, calendrier,
@@ -98,11 +99,23 @@ test.describe("Ateliers des 7 modules — navigation par étape @smoke", () => {
       page,
     }) => {
       // ── URL nue → vue SUIVI ──
+      //
+      // Depuis « tout replié », seul le Statut s'ouvre de lui-même : la Carte
+      // de l'Aventure et la porte de l'atelier naissent en barre repliée. On
+      // déplie donc avant d'exiger leur contenu — ce qui vérifie AUSSI que la
+      // barre existe, puisque `ouvrirTuile` cliquerait dans le vide sinon.
       await page.goto(mod.base);
+      await expect(page.locator("#statut")).toBeVisible();
+
+      await ouvrirTuile(page, /Développer «.*Carte de l'Aventure/);
       await expect(
         page.getByRole("heading", { name: "Carte de l'Aventure" }),
       ).toBeVisible();
-      await expect(page.locator("#statut")).toBeVisible();
+
+      await ouvrirTuile(
+        page,
+        new RegExp(`Développer «.*${mod.titreAtelier}`),
+      );
       await expect(
         page.getByRole("heading", { name: mod.titreAtelier }),
       ).toBeVisible();

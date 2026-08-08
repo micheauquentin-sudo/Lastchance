@@ -6,7 +6,7 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
@@ -344,17 +344,10 @@ export default async function CalendarDetailPage({
       {enTete}
       {bandeauModule}
 
-      <GuidedJourney
-        steps={etapes}
-        title="Carte de l'Aventure"
-        conclusion={conclusion}
-      />
-
       {/* ── LA CHECKLIST ──
-          Même règle que sur le quiz : l'état du calendrier et la porte de
-          l'atelier restent OUVERTS (sans eux, un commerçant qui n'a rien
-          préparé ne verrait plus par où commencer) ; le partage et la relance
-          naissent repliés, ils ne servent qu'une fois la grille garnie. */}
+          Même règle que sur le quiz : tout naît replié, seul le Statut reste
+          ouvert — c'est lui qui ouvre la page publique. La Carte de l'Aventure
+          le suit, repliée et sans rang (voir `carte-aventure.tsx`). */}
       <CarteRepliable
         {...carteTuile(tuiles, "statut")}
         resume={
@@ -367,6 +360,8 @@ export default async function CalendarDetailPage({
       >
         <CalendarStatusControls calendar={c} />
       </CarteRepliable>
+
+      <CarteAventure steps={etapes} conclusion={conclusion} />
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le calendrier est publié — un QR imprimé
@@ -410,6 +405,7 @@ export default async function CalendarDetailPage({
 
       <CarteRepliable
         {...carteTuile(tuiles, "atelier")}
+        defaultOuvert={false}
         resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length}.`}
       >
         <AtelierEntreeCalendrier

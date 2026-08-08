@@ -37,7 +37,7 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { GuidedJourney } from "@/components/dashboard/guided-journey";
+import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
@@ -403,18 +403,11 @@ export default async function QuizDetailPage({
       {enTete}
       {bandeauModule}
 
-      <GuidedJourney
-        steps={etapes}
-        title="Carte de l'Aventure"
-        conclusion={conclusion}
-      />
-
       {/* ── LA CHECKLIST ──
-          Chaque bloc porte son rang et son verdict, et se replie. Restent
-          OUVERTS les deux blocs dont dépend la suite du travail : l'état du
-          quiz, et la porte de l'atelier — un commerçant qui n'a rien préparé
-          ne doit pas avoir à déplier pour trouver par où commencer. Les trois
-          autres naissent repliés : ils ne servent qu'une fois le quiz prêt. */}
+          Chaque bloc porte son rang et son verdict, et TOUT naît replié : seul
+          le Statut reste ouvert, parce qu'il porte le geste qui ouvre le jeu
+          aux joueurs. La Carte de l'Aventure se glisse juste après lui, sans
+          rang ni verdict (voir `carte-aventure.tsx`). */}
       <CarteRepliable
         {...carteTuile(tuiles, "statut")}
         resume={
@@ -427,6 +420,8 @@ export default async function QuizDetailPage({
       >
         <QuizStatusControls quiz={quiz} />
       </CarteRepliable>
+
+      <CarteAventure steps={etapes} conclusion={conclusion} />
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le quiz est publié — un QR imprimé et
@@ -490,6 +485,7 @@ export default async function QuizDetailPage({
 
       <CarteRepliable
         {...carteTuile(tuiles, "atelier")}
+        defaultOuvert={false}
         resume={`${ETAPES_QUIZ.length} étapes de préparation.`}
       >
         <AtelierEntreeQuiz quizId={quiz.id} />
