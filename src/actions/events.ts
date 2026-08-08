@@ -20,6 +20,7 @@ import {
   eventTokenCookieName,
   loadEventActionContext,
 } from "@/lib/event-context";
+import { etatPartageAvecCache } from "@/lib/event-etat-cache";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
 import {
   COMPTAGE_INDISPONIBLE,
@@ -350,15 +351,75 @@ export async function getEventState(input: {
   const token = store.get(eventTokenCookieName(parsed.data.sessionId))?.value;
   const tokenHash = token ? hashPlayerToken(token) : undefined;
 
-  const { data, error } = await ctx.admin.rpc("event_public_state", {
-    p_session_id: parsed.data.sessionId,
-    p_player_token_hash: tokenHash,
-  });
-  if (error) {
-    reportError("event.state", error.message);
+  // ── L'état se lit en DEUX morceaux, et c'est ce qui le rend tenable ──
+  //
+  // Le morceau COMMUN (session, question, répartition, top 50) est identique
+  // pour toute la salle à la même seconde : mille joueurs le faisaient
+  // recalculer mille fois. Il passe par un cache d'une seconde, plus court que
+  // la cadence de poll (2 500 ms) — donc invisible pour un joueur.
+  //
+  // Le morceau PERSONNEL (score, rang, code gagné) n'est cacheable par
+  // personne : le rang est un `count` sur tous les joueurs de la session. Il
+  // reste calculé à chaque appel, et n'est demandé que si le joueur a un
+  // cookie — un spectateur ne paie pas ce qu'il ne reçoit pas.
+  //
+  // La séparation vient du SQL (`event_etat_partage` ne prend aucun jeton) :
+  // c'est elle qui garantit qu'une réponse partagée ne peut rien contenir de
+  // personnel. Voir `src/lib/event-etat-cache.ts`.
+  const [partageResult, joueurResult] = await Promise.all([
+    etatPartageAvecCache(parsed.data.sessionId, async () => {
+      const { data, error } = await ctx.admin.rpc("event_etat_partage", {
+        p_session_id: parsed.data.sessionId,
+      });
+      if (error) throw new Error(error.message);
+      return data;
+    }).then(
+      (data) => ({ ok: true as const, data }),
+      (err: unknown) => ({
+        ok: false as const,
+        message: err instanceof Error ? err.message : "état partagé indisponible",
+      }),
+    ),
+    tokenHash
+      ? ctx.admin
+          .rpc("event_etat_joueur", {
+            p_session_id: parsed.data.sessionId,
+            p_player_token_hash: tokenHash,
+          })
+          .then(({ data, error }) =>
+            error
+              ? { ok: false as const, message: error.message }
+              : { ok: true as const, data },
+          )
+      : Promise.resolve({ ok: true as const, data: null }),
+  ]);
+
+  if (!partageResult.ok) {
+    reportError("event.state", partageResult.message);
     return mapEventPublicState(null);
   }
-  return mapEventPublicState(data);
+  // Un échec de la seule vue personnelle ne doit PAS effacer l'état de la
+  // salle : le joueur perdrait la question en cours pour un rang manquant.
+  if (!joueurResult.ok) {
+    reportError("event.state.joueur", joueurResult.message);
+  }
+
+  const partage = partageResult.data;
+  if (
+    partage === null
+    || typeof partage !== "object"
+    || (partage as { state?: unknown }).state !== "ok"
+  ) {
+    return mapEventPublicState(partage);
+  }
+
+  // La clé est `you` — celle que lit `mapEventPublicState`. Le nom compte :
+  // avec `your`, la vue personnelle disparaîtrait silencieusement pour tout le
+  // monde, sans erreur ni test rouge évident.
+  return mapEventPublicState({
+    ...(partage as Record<string, unknown>),
+    you: joueurResult.ok ? joueurResult.data : null,
+  });
 }
 
 // ════════════════════════════════════════════════════════════
