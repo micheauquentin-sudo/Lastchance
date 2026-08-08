@@ -144,6 +144,24 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
       const bouton = case1.getByRole("button", { name: "Enregistrer la case" });
       await bouton.click();
       await expect(bouton).toHaveText("Enregistrer la case");
+      // PREUVE que le vide a atterri AVANT d'ouvrir le joueur : le fill() a
+      // aussi armé l'autosave de la ligne (course possible avec le clic), et
+      // sous WebKit le joueur pouvait ouvrir une case encore garnie — d'où le
+      // « Le mot du jour » à la place de « Pas de chance ». Un rechargement du
+      // dashboard qui relit la base tranche : la valeur rendue est celle
+      // réellement enregistrée.
+      await expect
+        .poll(
+          async () => {
+            await page.reload();
+            return page
+              .locator("#case-1")
+              .getByLabel(/Message affiché à l'ouverture/)
+              .inputValue();
+          },
+          { timeout: 15_000 },
+        )
+        .toBe("");
 
       const player = await browser.newContext();
       const playerPage = await player.newPage();
