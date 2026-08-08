@@ -4047,3 +4047,14 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   `revalidate-coverage.test.ts`) ; (3) une durée de vie maximale par entrée
   non close (ex. 30 jours) après laquelle la CI exige une reconfirmation
   explicite plutôt que de laisser une affirmation vieillir sans relecture.
+
+- **E2E calendrier « Pas de chance » en fixme — isolation de seed à faire
+  (2026-08-08, `chantier/tuiles-checklist-autosave`)** — le scénario est vert
+  au premier passage et faux aux suivants : l'ouverture de la case 1 par le
+  passage précédent persiste dans le seed partagé et le joueur suivant reçoit
+  l'ancien contenu au lieu de l'écran perdant, base pourtant prouvée vide.
+  Pas un défaut produit (sonde : le vide persiste en base depuis la refonte
+  du hook signature ; écran perdant couvert en unitaire). Réactivation :
+  case dédiée jamais ouverte ou purge des calendar_openings du seed entre
+  projets. L'enquête complète vit dans les messages des commits 4d9afe6,
+  8019e88, 2d20552 et dans le commentaire du test.
