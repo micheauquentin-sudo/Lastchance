@@ -188,13 +188,31 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
         await player.close();
       }
     } finally {
-      await textarea.fill(originalText);
-      const boutonRestore = case1.getByRole("button", {
-        name: "Enregistrer la case",
-      });
-      await boutonRestore.click();
-      await expect(boutonRestore).toHaveText("Enregistrer la case");
-      await expect(textarea).toHaveValue(originalText);
+      // Restauration PROUVÉE EN BASE, pas seulement à l'écran : un fill WebKit
+      // a déjà été observé tronquant son premier caractère (« ienvenue… ») —
+      // la vérification DOM passait, la répétition suivante héritait d'une
+      // base empoisonnée. On boucle : remplir, enregistrer, RECHARGER et
+      // relire la valeur réellement servie par le serveur.
+      for (let essai = 0; essai < 3; essai++) {
+        const champ = page
+          .locator("#case-1")
+          .getByLabel(/Message affiché à l'ouverture/);
+        await champ.fill(originalText);
+        const boutonRestore = page
+          .locator("#case-1")
+          .getByRole("button", { name: "Enregistrer la case" });
+        await boutonRestore.click();
+        await expect(boutonRestore).toHaveText("Enregistrer la case");
+        await page.reload();
+        const enBase = await page
+          .locator("#case-1")
+          .getByLabel(/Message affiché à l'ouverture/)
+          .inputValue();
+        if (enBase === originalText) break;
+      }
+      await expect(
+        page.locator("#case-1").getByLabel(/Message affiché à l'ouverture/),
+      ).toHaveValue(originalText);
     }
   });
 });
