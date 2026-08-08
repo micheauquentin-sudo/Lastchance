@@ -55,6 +55,10 @@ import {
 } from "@/components/dashboard/atelier-contest-etapes";
 import { AtelierContestEntree } from "@/components/dashboard/atelier-contest-entree";
 import { AtelierContestVerification } from "@/components/dashboard/atelier-contest-verification";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { construireVerificationContest } from "@/lib/activation/pronostics";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
 import {
   AtelierNavigationEtape,
   AtelierStepper,
@@ -317,6 +321,42 @@ export default async function ContestDetailPage({
   // jamais : mieux vaut renvoyer là où la matière se crée.
   const baremeAMatiere = rows.length > 0 || isFootball;
 
+  /**
+   * LA VÉRIFICATION, CALCULÉE UNE FOIS — POUR LES DEUX VISAGES.
+   *
+   * L'étape « La vérification » la rendait déjà ; la vue nue en a désormais
+   * besoin pour statuer ses tuiles. Un seul objet d'entrée, hissé au-dessus du
+   * branchement : deux constructions séparées finiraient par diverger.
+   *
+   * RAPPEL SUR LES PASTILLES DE CE MODULE : aucun de ces cinq contrôles n'est
+   * bloquant (`src/lib/checklist/controles.ts` — les pronostics n'ont AUCUNE
+   * précondition d'ouverture côté serveur). Les tuiles y seront donc vertes
+   * même sur un championnat vide. Ce n'est pas un bug : c'est le seul verdict
+   * honnête tant que rien n'empêche la publication, et ce module a déjà été
+   * corrigé une fois pour avoir laissé croire le contraire.
+   */
+  const entreeVerification = {
+    contestId: c.id,
+    autoCompetition,
+    nbMatchs: matchList.length,
+    nbQuestions: questions.length,
+    echeances: questions.map((q) => q.locksAt),
+    nbRecompenses: rewards.length,
+    tiebreakerQuestion: c.tiebreaker_question,
+    tiebreakerAnswer: c.tiebreaker_answer,
+    collectEmail: c.collect_email,
+    collectPhone: c.collect_phone,
+  };
+  const tuiles = tuilesDuModule(
+    "pronostics",
+    construireVerificationContest(entreeVerification).controles,
+  );
+  /**
+   * Titre, ancre, rang et verdict d'un bloc — TOUS pris dans
+   * `checklist/tuiles.ts`. La page ne renomme ni ne renumérote rien.
+   */
+  const bloc = (cle: string) => carteTuile(tuiles, cle);
+
   // Le bandeau d'offre se lit sur LES DEUX VUES, comme sur le quiz et le
   // calendrier. Il ne vivait que dans l'atelier : sans add-on, la vue suivi
   // portait « Ouvrir aux joueurs » sans un mot sur la raison du refus à venir.
@@ -460,20 +500,7 @@ export default async function ContestDetailPage({
             )}
 
             {etape === "verification" && (
-              <AtelierContestVerification
-                entree={{
-                  contestId: c.id,
-                  autoCompetition,
-                  nbMatchs: matchList.length,
-                  nbQuestions: questions.length,
-                  echeances: questions.map((q) => q.locksAt),
-                  nbRecompenses: rewards.length,
-                  tiebreakerQuestion: c.tiebreaker_question,
-                  tiebreakerAnswer: c.tiebreaker_answer,
-                  collectEmail: c.collect_email,
-                  collectPhone: c.collect_phone,
-                }}
-              />
+              <AtelierContestVerification entree={entreeVerification} />
             )}
           </section>
 
@@ -500,33 +527,57 @@ export default async function ContestDetailPage({
         conclusion={conclusion}
       />
 
-      <div id="statut" className="scroll-mt-24">
+      {/* OUVERT : c'est le geste de publication, et la Carte de l'Aventure y
+          renvoie. */}
+      <CarteRepliable {...bloc("statut")}>
         <ContestStatusControls contest={c} />
-      </div>
+      </CarteRepliable>
 
-      <AtelierContestEntree
-        contestId={c.id}
-        locked={locked}
-        finalized={finalized}
-      />
+      {/* OUVERT : la porte de l'atelier est le seul chemin vers tout ce qui se
+          règle. */}
+      <CarteRepliable {...bloc("atelier")}>
+        <AtelierContestEntree
+          contestId={c.id}
+          locked={locked}
+          finalized={finalized}
+        />
+      </CarteRepliable>
 
       {c.status !== "draft" && (
-        <Card>
-          <h2 className="font-semibold mb-2">QR code et lien à partager</h2>
-          <p className="text-sm text-zinc-500 mb-3">
-            Affichez le QR code au comptoir ou envoyez le lien à vos clients :
-            ils s&apos;inscrivent et pronostiquent depuis leur téléphone.
-          </p>
-          <PublicShare
-            url={publicUrl}
-            fileName={`pronostics-${c.slug}`}
-            qrLabel={c.name}
+        <CarteRepliable
+          {...bloc("partage")}
+          defaultOuvert={false}
+          resume="QR à afficher au comptoir et lien à envoyer"
+        >
+          <Card>
+            <h2 className="font-semibold mb-2">QR code et lien à partager</h2>
+            <p className="text-sm text-zinc-500 mb-3">
+              Affichez le QR code au comptoir ou envoyez le lien à vos clients :
+              ils s&apos;inscrivent et pronostiquent depuis leur téléphone.
+            </p>
+            <PublicShare
+              url={publicUrl}
+              fileName={`pronostics-${c.slug}`}
+              qrLabel={c.name}
               openCount={openCount}
-          />
-        </Card>
+            />
+          </Card>
+        </CarteRepliable>
       )}
 
-      <Card id="suivi" className="scroll-mt-24">
+      {/* REPLIÉ : on consulte le classement, on ne le règle pas. L'ancre
+          `#suivi` le rouvre — c'est la cible de la Carte de l'Aventure et de
+          la pagination. */}
+      <CarteRepliable
+        {...bloc("suivi")}
+        defaultOuvert={false}
+        resume={
+          canViewPlayers
+            ? `${totalPlayers} joueur${totalPlayers > 1 ? "s" : ""} inscrit${totalPlayers > 1 ? "s" : ""}`
+            : "Réservé au propriétaire"
+        }
+      >
+      <Card>
         <h2 className="font-semibold mb-1">Classement</h2>
         {!canViewPlayers ? (
           <p className="text-sm text-zinc-500">
@@ -614,25 +665,57 @@ export default async function ContestDetailPage({
           </>
         )}
       </Card>
+      </CarteRepliable>
 
       {canViewPlayers && finalized && awards.length > 0 && (
-        <ContestAwardsList
-          contestId={c.id}
-          awards={awards}
-          redeemers={redeemers}
-        />
+        <CarteRepliable
+          {...bloc("palmares")}
+          defaultOuvert={false}
+          resume={`${awards.length} récompense${awards.length > 1 ? "s" : ""} attribuée${awards.length > 1 ? "s" : ""}`}
+        >
+          <ContestAwardsList
+            contestId={c.id}
+            awards={awards}
+            redeemers={redeemers}
+          />
+        </CarteRepliable>
       )}
 
+      {/* REPLIÉ, MAIS PAS ESCAMOTÉ. La clôture reste un geste MANUEL et
+          DÉFINITIF : replier évite qu'on la croise en défilant, et son
+          caractère irréversible se lit intégralement dès l'ouverture — la
+          carte n'est pas modifiée d'un mot. */}
       {canViewPlayers && !finalized && c.status !== "draft" && (
-        <ContestFinalizeCard contest={c} />
+        <CarteRepliable
+          {...bloc("cloture")}
+          defaultOuvert={false}
+          resume="Geste définitif : fige le classement et attribue les lots"
+        >
+          <ContestFinalizeCard contest={c} />
+        </CarteRepliable>
       )}
 
-      <ContestDangerZone contest={c} />
+      {/* SANS PASTILLE DE STATUT (`statut={undefined}`, posé APRÈS le spread) :
+          une pastille verte sur une zone de danger dirait « tout va bien » du
+          bloc qui supprime le championnat. Le rang, lui, reste — il situe le
+          bloc dans la page. */}
+      <CarteRepliable
+        {...bloc("danger")}
+        statut={undefined}
+        defaultOuvert={false}
+        resume="Supprimer définitivement ce championnat"
+      >
+        <ContestDangerZone contest={c} />
+      </CarteRepliable>
 
       <RelanceErreur message={relanceError} />
 
       {capacites.canExplore && (
-        <div id="relance" className="scroll-mt-24">
+        <CarteRepliable
+          {...bloc("relance")}
+          defaultOuvert={false}
+          resume="Repartir de ce championnat pour la prochaine journée"
+        >
           <RelaunchFormulaCard
             sourceName={c.name}
             occasionLabel="la prochaine journée"
@@ -641,7 +724,7 @@ export default async function ContestDetailPage({
             isSupported
             action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
           />
-        </div>
+        </CarteRepliable>
       )}
         </>
       )}

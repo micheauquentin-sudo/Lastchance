@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import Link from "next/link";
 import {
   createEventQuestion,
@@ -24,6 +24,8 @@ import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes"
 import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import {
   EVENT_ANSWER_MEANING_HINT,
   EVENT_SESSION_LOSS_HINT,
@@ -175,7 +177,16 @@ export function EventGameSettings({
     onSubmit: nameSubmit,
   } = useActionForm(updateEventGame, {
     networkError: "Enregistrement impossible, réessayez.",
+    // Sans bouton à regarder, l'accusé de réception d'un enregistrement
+    // automatique n'a plus d'autre endroit où vivre.
+    toastOnSuccess: "Enregistré.",
   });
+  /**
+   * Le NOM SEULEMENT. La suppression du jeu, juste en dessous, garde son
+   * double geste manuel : rien de destructif ne part sur un délai.
+   */
+  const nameFormRef = useRef<HTMLFormElement>(null);
+  const nameAutoSave = useAutoSave(nameFormRef);
   /**
    * `deleteEventGame` RESTE en `useActionState` : l'action se termine par un
    * `redirect("/dashboard/events")`. Appelée impérativement, le `NEXT_REDIRECT`
@@ -192,7 +203,11 @@ export function EventGameSettings({
 
   return (
     <Card className="space-y-6">
-      <form onSubmit={nameSubmit} className="flex flex-wrap items-end gap-3">
+      <form
+        ref={nameFormRef}
+        onSubmit={nameSubmit}
+        className="flex flex-wrap items-end gap-3"
+      >
         <input type="hidden" name="id" value={gameId} />
         <div className="max-w-sm">
           <Label htmlFor="event-game-name">Nom du jeu</Label>
@@ -210,6 +225,10 @@ export function EventGameSettings({
         {nameState?.ok && (
           <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
         )}
+        <AutoSaveEtat
+          {...nameAutoSave}
+          messageBloque="Non enregistré : le nom du jeu ne peut pas être vide."
+        />
         <FieldError message={nameState && !nameState.ok ? nameState.error : undefined} />
       </form>
 

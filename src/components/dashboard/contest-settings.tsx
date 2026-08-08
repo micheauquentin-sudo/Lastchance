@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   deleteContest,
   finalizeContest,
@@ -21,6 +21,8 @@ import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useActionForm } from "@/lib/use-action-form";
+import { useAutoSave } from "@/lib/use-auto-save";
+import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -82,6 +84,24 @@ export function LockedNotice({ finalized }: { finalized: boolean }) {
     </p>
   );
 }
+
+/**
+ * HUIT DES NEUF PETITS FORMULAIRES DE CE FICHIER S'ENREGISTRENT SEULS.
+ *
+ * Aucun d'eux n'affichait quoi que ce soit en cas de succès : le toast global
+ * (`toastOnSuccess`) et le `<AutoSaveEtat>` posé sous chacun sont leur tout
+ * premier retour. Les boutons RESTENT — l'enregistrement automatique n'est pas
+ * un remplacement, c'est un filet.
+ *
+ * L'exception est `ContestEventCard` : voir son en-tête, elle porte le seul
+ * champ dont un état transitoire vide EFFACE en base.
+ *
+ * Deux autres exclusions, plus locales : un formulaire CLÔTURÉ (`finalized`)
+ * n'a plus de bouton, donc plus aucun chemin d'écriture ; un formulaire
+ * VERROUILLÉ (`locked`) réclame un motif journalisé de dix caractères, qui se
+ * tape d'un trait et non par tranches de 800 ms. Les deux se disent par
+ * `useAutoSave(ref, { actif })`.
+ */
 
 /** Champ motif (min. 10 caractères — même règle que la base). */
 function ReasonInput({ id }: { id: string }) {
@@ -196,13 +216,21 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
  * `neutre` plutôt que sur `undefined`, qui ne cocherait aucune vignette.
  */
 function ThemeSelector({ contest }: { contest: Contest }) {
-  const { state, pending, onSubmit } = useActionForm(updateContest);
+  const { state, pending, onSubmit } = useActionForm(updateContest, {
+    toastOnSuccess: "Enregistré.",
+  });
+  const formRef = useRef<HTMLFormElement>(null);
+  const autoSave = useAutoSave(formRef);
   const [theme, setTheme] = useState<SeasonalTheme>(
     () => contestThemeTokens(contest.theme).key,
   );
 
   return (
-    <form onSubmit={onSubmit} className="mt-5 border-t border-zinc-100 pt-4">
+    <form
+      ref={formRef}
+      onSubmit={onSubmit}
+      className="mt-5 border-t border-zinc-100 pt-4"
+    >
       <input type="hidden" name="id" value={contest.id} />
       <input type="hidden" name="theme" value={theme} />
       <fieldset>
@@ -266,14 +294,19 @@ function ThemeSelector({ contest }: { contest: Contest }) {
       >
         {pending ? "…" : "Enregistrer le thème"}
       </Button>
+      <AutoSaveEtat {...autoSave} />
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </form>
   );
 }
 
 export function ContestIdentityCard({ contest }: { contest: Contest }) {
-  const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest);
-  const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest);
+  const { state: renameState, pending: renamePending, onSubmit: renameSubmit } = useActionForm(updateContest, { toastOnSuccess: "Enregistré." });
+  const { state: collectState, pending: collectPending, onSubmit: collectSubmit } = useActionForm(updateContest, { toastOnSuccess: "Enregistré." });
+  const renameFormRef = useRef<HTMLFormElement>(null);
+  const renameAutoSave = useAutoSave(renameFormRef);
+  const collectFormRef = useRef<HTMLFormElement>(null);
+  const collectAutoSave = useAutoSave(collectFormRef);
 
   return (
     <Card>
@@ -284,7 +317,11 @@ export function ContestIdentityCard({ contest }: { contest: Contest }) {
         reste valable.
       </p>
 
-      <form onSubmit={renameSubmit} className="flex items-end gap-2">
+      <form
+        ref={renameFormRef}
+        onSubmit={renameSubmit}
+        className="flex items-end gap-2"
+      >
         <input type="hidden" name="id" value={contest.id} />
         <div className="flex-1 max-w-xs">
           <Label htmlFor="contest-name">Nom du championnat</Label>
@@ -300,11 +337,16 @@ export function ContestIdentityCard({ contest }: { contest: Contest }) {
           {renamePending ? "…" : "Renommer"}
         </Button>
       </form>
+      <AutoSaveEtat {...renameAutoSave} />
       <FieldError
         message={renameState && !renameState.ok ? renameState.error : undefined}
       />
 
-      <form onSubmit={collectSubmit} className="mt-5 border-t border-zinc-100 pt-4">
+      <form
+        ref={collectFormRef}
+        onSubmit={collectSubmit}
+        className="mt-5 border-t border-zinc-100 pt-4"
+      >
         <input type="hidden" name="id" value={contest.id} />
         <input type="hidden" name="collection_settings" value="1" />
         <p className="text-sm font-bold text-k-ink mb-2">
@@ -333,6 +375,7 @@ export function ContestIdentityCard({ contest }: { contest: Contest }) {
             {collectPending ? "…" : "Enregistrer"}
           </Button>
         </div>
+        <AutoSaveEtat {...collectAutoSave} />
         <FieldError
           message={collectState && !collectState.ok ? collectState.error : undefined}
         />
@@ -439,7 +482,10 @@ function formatTtlSeconds(total: number): string {
  * que les championnats clôturés ensuite, jamais les codes déjà distribués.
  */
 function CodeExpirySection({ contest }: { contest: Contest }) {
-  const { state, pending, onSubmit } = useActionForm(updateContest);
+  const { state, pending, onSubmit } = useActionForm(updateContest, {
+    toastOnSuccess: "Enregistré.",
+  });
+  const formRef = useRef<HTMLFormElement>(null);
   const stored = contest.code_ttl_seconds;
   // Seul un multiple EXACT de 86 400, dans les bornes du champ, se laisse
   // écrire en jours entiers sans perte.
@@ -455,6 +501,16 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
   const [days, setDays] = useState(() =>
     storedDays === null ? "" : String(storedDays),
   );
+  /**
+   * L'ENREGISTREMENT AUTOMATIQUE S'ÉTEINT AVEC LE CHAMP.
+   *
+   * En lecture seule, il n'y a ni formulaire, ni champ caché, ni bouton :
+   * l'invariant ci-dessus dit que RIEN ne doit être soumis, sous peine
+   * d'écraser une durée que ce formulaire ne sait pas représenter. Un
+   * enregistrement automatique actif serait précisément la façon de le trahir
+   * sans qu'un clic ait eu lieu.
+   */
+  const autoSave = useAutoSave(formRef, { actif: editable });
 
   const trimmed = days.trim();
   const parsed = Number(trimmed);
@@ -473,7 +529,7 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
         la clôture du championnat. Les codes déjà émis gardent leur échéance.
       </p>
       {editable ? (
-        <form onSubmit={onSubmit}>
+        <form ref={formRef} onSubmit={onSubmit}>
           <input type="hidden" name="id" value={contest.id} />
           <input type="hidden" name="code_ttl_seconds" value={seconds} />
           <div className="flex flex-wrap items-end gap-2">
@@ -500,6 +556,7 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
             Laisser vide = pas d&apos;expiration ; sinon entre{" "}
             {CODE_TTL_MIN_DAYS} et {CODE_TTL_MAX_DAYS} jours.
           </p>
+          <AutoSaveEtat {...autoSave} />
           <FieldError message={state && !state.ok ? state.error : undefined} />
         </form>
       ) : (
@@ -550,6 +607,17 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
  * native de `datetime-local` : une date posée en SQL avec des secondes non
  * nulles serait tronquée à la minute en repassant par ce formulaire. C'est
  * strictement mieux que de l'effacer.)
+ *
+ * ── AUCUN ENREGISTREMENT AUTOMATIQUE ICI, ET C'EST DÉLIBÉRÉ ──
+ *
+ * Les huit autres petits formulaires de ce fichier s'enregistrent tout seuls.
+ * Celui-ci reste 100 % manuel : il porte le seul champ du dépôt dont un état
+ * transitoire VIDE vaut « efface » côté RPC — l'incident raconté juste
+ * au-dessus. Un `datetime-local` passe par des valeurs incomplètes pendant
+ * qu'on le saisit (« 12/0 »), et un débounce de 800 ms tombe pile dedans : la
+ * date effacée, toutes les questions rouvertes, sans un clic. Le bouton est la
+ * garantie que l'écriture est voulue. Ne pas « harmoniser » sans avoir d'abord
+ * rendu la RPC conditionnelle.
  */
 export function ContestEventCard({
   contest,
@@ -734,9 +802,16 @@ export function ContestTiebreakerCard({
   contest: Contest;
   locked: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(updateContestTiebreaker);
+  const { state, pending, onSubmit } = useActionForm(updateContestTiebreaker, {
+    toastOnSuccess: "Enregistré.",
+  });
   const finalized = contest.finalized_at !== null;
   const questionFrozen = locked || finalized;
+  const formRef = useRef<HTMLFormElement>(null);
+  // Clôturé : le bouton disparaît, donc plus rien ne doit partir non plus —
+  // un enregistrement automatique serait le seul chemin d'écriture restant sur
+  // un championnat déclaré définitif.
+  const autoSave = useAutoSave(formRef, { actif: !finalized });
 
   return (
     <Card>
@@ -747,7 +822,7 @@ export function ContestTiebreakerCard({
         premier pronostic.
       </p>
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
-      <form onSubmit={onSubmit}>
+      <form ref={formRef} onSubmit={onSubmit}>
       <input type="hidden" name="id" value={contest.id} />
       <div className="space-y-3">
         <div>
@@ -796,6 +871,7 @@ export function ContestTiebreakerCard({
           )}
         </div>
       </div>
+      <AutoSaveEtat {...autoSave} />
       <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
 
@@ -905,8 +981,21 @@ export function ContestScoringForm({
   locked?: boolean;
   finalized?: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(updateContestScoring);
-  const { state: genericState, pending: genericPending, onSubmit: genericSubmit } = useActionForm(updateContestGenericScoring);
+  const { state, pending, onSubmit } = useActionForm(updateContestScoring, { toastOnSuccess: "Enregistré." });
+  const { state: genericState, pending: genericPending, onSubmit: genericSubmit } = useActionForm(updateContestGenericScoring, { toastOnSuccess: "Enregistré." });
+  const scoreFormRef = useRef<HTMLFormElement>(null);
+  /**
+   * DEUX RAISONS DE SE TAIRE, ET ELLES NE SE VALENT PAS.
+   *
+   * `finalized` : le bouton n'existe plus, donc l'écriture non plus.
+   * `locked` : le formulaire réclame alors un MOTIF journalisé d'au moins dix
+   * caractères. Un débounce l'enverrait à la dixième frappe, au milieu d'une
+   * phrase — un motif d'audit tronqué vaut moins que pas de motif du tout.
+   * Dans les deux cas le geste redevient un clic, volontaire.
+   */
+  const scoreAutoSave = useAutoSave(scoreFormRef, {
+    actif: !locked && !finalized,
+  });
 
   const fields: Array<{ name: "exact" | "diff" | "winner"; label: string; hint: string }> = [
     { name: "exact", label: "Score exact", hint: "Ex : prono 2-1, résultat 2-1" },
@@ -932,7 +1021,7 @@ export function ContestScoringForm({
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
 
       {showScore && (
-        <form onSubmit={onSubmit} className="space-y-3">
+        <form ref={scoreFormRef} onSubmit={onSubmit} className="space-y-3">
           <input type="hidden" name="id" value={contestId} />
           {fields.map((f) => (
             <div key={f.name} className="flex items-center gap-3">
@@ -959,6 +1048,7 @@ export function ContestScoringForm({
               {pending ? "…" : "Enregistrer le barème"}
             </Button>
           )}
+          <AutoSaveEtat {...scoreAutoSave} />
           <FieldError message={state && !state.ok ? state.error : undefined} />
         </form>
       )}
@@ -1040,6 +1130,14 @@ function GenericScoringForm({
     }
     return initial;
   });
+  /**
+   * Le `<form>` vit ICI, l'action vit chez le parent : l'enregistrement
+   * automatique s'attache donc au formulaire de ce composant, avec les deux
+   * mêmes exclusions que le barème des scores (clôturé = plus de bouton ;
+   * verrouillé = motif journalisé à taper d'un trait).
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const autoSave = useAutoSave(formRef, { actif: !locked && !finalized });
 
   const prefilled = blocks.some((block) =>
     block.fields.some(
@@ -1061,6 +1159,7 @@ function GenericScoringForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={onSubmit}
       className={separated ? "mt-5 space-y-3 border-t border-zinc-100 pt-4" : "space-y-3"}
     >
@@ -1107,6 +1206,7 @@ function GenericScoringForm({
           {pending ? "…" : "Enregistrer les paliers"}
         </Button>
       )}
+      <AutoSaveEtat {...autoSave} />
       <FieldError message={error} />
     </form>
   );
@@ -1129,7 +1229,13 @@ export function ContestRewardsEditor({
   const [rows, setRows] = useState<ContestReward[]>(
     rewards.length > 0 ? rewards : [{ from: 1, to: 1, label: "" }],
   );
-  const { state, pending, onSubmit } = useActionForm(updateContestRewards);
+  const { state, pending, onSubmit } = useActionForm(updateContestRewards, {
+    toastOnSuccess: "Enregistré.",
+  });
+  // Mêmes exclusions que le barème : clôturé (plus de bouton) et verrouillé
+  // (un motif journalisé se tape d'un trait, pas par tranches de 800 ms).
+  const formRef = useRef<HTMLFormElement>(null);
+  const autoSave = useAutoSave(formRef, { actif: !locked && !finalized });
 
   const update = (i: number, patch: Partial<ContestReward>) => {
     setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -1145,7 +1251,7 @@ export function ContestRewardsEditor({
         Ce que gagnent vos clients selon leur rang au classement final.
       </p>
       {(locked || finalized) && <LockedNotice finalized={finalized} />}
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-3">
         <input type="hidden" name="id" value={contestId} />
         <input type="hidden" name="rewards" value={payload} />
         {rows.map((r, i) => (
@@ -1222,6 +1328,7 @@ export function ContestRewardsEditor({
             </Button>
           )}
         </div>
+        <AutoSaveEtat {...autoSave} />
         <FieldError message={state && !state.ok ? state.error : undefined} />
       </form>
     </Card>
