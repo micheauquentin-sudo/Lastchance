@@ -57,6 +57,46 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Fonds d'écran thématiques — **terminé, PR à ouvrir** (état à relire)
+
+- **Lot et objectif** : palette d'habillage saisonnière partagée
+  (calendrier/pronostics/quiz/roue) élargie de 6 à 11 clés — univers non
+  saisonniers en plus des fêtes — et fond d'écran image sur les surfaces
+  joueur, plus un choix explicite de fond pour la roue (le décor de roue
+  reste au preset, contrairement aux 3 autres surfaces qui suivent le thème
+  choisi).
+- **Branche/commits** : `chantier/fonds-ecran-themes`, 6 commits au-dessus
+  de `origin/main` — `95c32de` (40 WebP dans `public/fonds` +
+  `scripts/optimiser-fonds.mjs`), `815459e` (palette 6→11 dans 5 recopies,
+  `src/lib/fonds-ecran.ts`, `wheelStyleSchema.fond`), `7a158a8` (migration
+  `20260921120000_habillages_univers.sql`, pgTAP 29→41 assertions),
+  `b3d218d` (composant `FondEcran`, 4 surfaces joueur, atelier roue),
+  `b63fed1` (3 INFO revue fermés : `Object.hasOwn`, `wheelStyleWriteSchema`
+  qui refuse un fond inconnu à l'écriture, `asFondKey` retiré), `c7214bd`
+  (E2E : radio sr-only 1×1 px devenue couche cliquable pleine tuile, cause
+  du flake = `scroll-behavior: smooth`).
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **260 fichiers /
+  4108 tests** (campagne QA complète) + re-runs ciblés verts après les 2
+  commits correctifs (154 et 297 tests) ; build vert ; pgTAP **56 fichiers /
+  3215 assertions** PASS vide et semée ; migrations:check 125/tête
+  `20260921120000` ; sql:check, casts:check ok ; E2E WSL mobile-chrome
+  (calendar, player-win, pronostics, quiz, wheel-wizard) — tous les scans
+  axe verts sans retoucher le voile ; wheel-wizard 12/12 après correctif,
+  sélecteur rejoué ×3 vert. Revue sécurité dédiée : **GO, 0
+  critique/élevé/moyen, 3 INFO fermés avant PR**. CI GitHub : **non jouée au
+  moment de l'écriture** — la PR la jouera, fusion sur l'ordre permanent dès
+  verte.
+- **Reste ouvert** : `games.style` garde un `.catch(undefined)` aussi à
+  l'écriture (même forme que l'INFO fermée) ; `wheelStyleSchema.partial()`
+  des modèles de campagne tolère un fond inconnu à l'écriture (défendable,
+  désormais écrit) ; `scroll-behavior: smooth` reste un piège pour tout
+  futur `click()` E2E sur cible petite et basse ; fonds natifs 1672 px,
+  léger étirement assumé au-delà ; `espace` partage l'`accentChip` de
+  `festival`. Détails dans `docs/bugs.md`. ADR-098, roadmap V1.53. PR à
+  ouvrir vers `main`, fusion sur l'ordre permanent dès CI verte — **état à
+  relire à la prochaine session**, la CI de cette PR n'avait pas encore
+  tourné.
+
 ### 2026-08-08 — Partage après jeu : un réglage par surface — **terminé**
 
 - **Lot et objectif** : le propriétaire décoche « Activer le parrainage sur

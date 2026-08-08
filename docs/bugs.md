@@ -3382,6 +3382,37 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Fonds d'écran thématiques — consigné sans action (2026-08-08,
+  `chantier/fonds-ecran-themes`)** : revue sécurité dédiée GO, 0
+  critique/élevé/moyen, 3 INFO fermés avant PR (voir ADR-098). Six points
+  consignés sans correction :
+  - **`games.style` garde un `.catch(undefined)` aussi à l'écriture**, même
+    forme que l'INFO fermée sur `wheelStyleSchema` dans ce chantier — la
+    même dette existe côté jeux de révélation/skill-gated, non retenue dans
+    ce lot. À trancher un jour, même geste que celui déjà appliqué à
+    `wheelStyleWriteSchema`.
+  - **`wheelStyleSchema.partial()` des modèles de campagne tolère un fond
+    inconnu à l'écriture.** Défendable — un blueprint de modèle est lu des
+    deux bouts, jamais exposé à un formulaire commerçant direct — mais
+    désormais écrit noir sur blanc plutôt qu'implicite.
+  - **Les 3 sélecteurs de thème frères (calendar-editor, contest-settings,
+    quiz-editor) gardaient une radio `sr-only` 1×1 px sans surface
+    cliquable réelle ni focus visible** — corrigé dans ce chantier (couche
+    cliquable pleine tuile, vignette `pointer-events-none`, focus-within
+    visible) après un flake E2E ; consigné ici comme rappel du défaut de
+    classe pour tout futur sélecteur similaire non encore construit sur ce
+    patron.
+  - **`scroll-behavior: smooth` sur `html` (`globals.css:49`) est un piège
+    pour tout futur `click()` E2E sur une cible petite et basse dans la
+    page** : le défilement fluide déplace la cible pendant l'animation, un
+    clic sur un point 1×1 arrive périmé. Cause du flake fermé dans ce
+    chantier ; le piège lui-même reste dans le CSS global, non retiré (effet
+    visuel voulu ailleurs).
+  - **Fonds natifs 1672×941** : léger étirement assumé au-delà de cette
+    résolution, non testé sur écrans très larges.
+  - **`espace` partage l'`accentChip` de `festival`** dans la palette de
+    tokens — deux univers distincts, un seul accent visuel, non corrigé.
+
 - **Tuiles checklist + autosave — hors périmètre assumé (2026-08-08,
   `chantier/tuiles-checklist-autosave`)** :
   - **État de repli non persisté** : chaque tuile repliée revient à son état

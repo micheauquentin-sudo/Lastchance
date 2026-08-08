@@ -6253,3 +6253,74 @@ explicitement via `.select("id")`, avec un message fondu anti-oracle
 - commits `4baff77`, `f56e81c`, `f0e51d0`, `404f771`, `0f83ebc`, `944a031`,
   `58c487e`, `c6ad6d9`
 - roadmap V1.52
+
+## ADR-098 : Fonds d'écran thématiques — images statiques optimisées, palette élargie, fond de roue en choix explicite
+
+**Date** : 2026-08-08
+**Statut** : Accepté
+
+**Contexte**. La palette d'habillage partagée entre calendrier, pronostics,
+quiz et roue portait 6 clés, toutes saisonnières (Noël, Saint-Valentin…). Le
+propriétaire voulait des univers non saisonniers en plus (restaurant,
+football, festival…) et un vrai fond d'écran image sur les surfaces joueur,
+pas seulement des motifs SVG sur fond de couleur. Le fond de roue posait une
+question distincte : le décor de la roue (couleurs, style) obéit à un preset
+choisi par le commerçant, indépendant du thème saisonnier de la campagne.
+
+**Décision**.
+1. **Images statiques optimisées, pas `next/image`.** 40 fichiers WebP
+   (10 univers × 4 déclinaisons) générés hors requête par
+   `scripts/optimiser-fonds.mjs`, servis en CDN statique — la même chaîne
+   d'optimisation (« lumoz ») que les décors thématiques existants, choisie
+   pour rester hors du chemin SSR et éviter le coût de transformation à la
+   volée sur des assets qui ne changent jamais par requête.
+2. **`FondKey` découplé de `SeasonalTheme`.** Le vocabulaire d'habillage
+   (`SeasonalTheme`, 6 → 11 clés) et le vocabulaire de fond d'écran
+   (`FondKey`, `src/lib/fonds-ecran.ts`) restent deux types distincts reliés
+   par une fonction de correspondance (`fondPourTheme`), pas un alias : le
+   quiz continue de choisir son thème par usage (gourmand → restaurant,
+   sport → football) sans que la palette d'habillage ait besoin de connaître
+   cette correspondance.
+3. **Palette élargie à 11, requalifiée « habillage saisonnier ou
+   d'univers ».** Les commentaires de colonne (`calendars.theme`,
+   `contests.theme`) et les 5 recopies TypeScript sont mis à jour ensemble ;
+   un test de parité SQL↔TS neuf compare le `CHECK` au catalogue exporté
+   (dette INFO-3 du chantier fonds thématiques cartoon, fermée ici).
+4. **Fond de roue en JSONB, choix explicite.** `wheelStyleSchema.fond` est
+   un choix posé par le commerçant, jamais dérivé automatiquement du thème
+   de la campagne — le décor de la roue reste au preset en cours
+   (`setFond` le préserve). Différent des 3 autres surfaces, qui suivent le
+   thème choisi sans réglage séparé.
+5. **Voile de lisibilité mesuré, pas estimé.** L'opacité du voile posé
+   au-dessus de l'image (`FondEcran`) est calibrée par scan axe-core sur
+   chaque univers plutôt que fixée à une valeur unique supposée suffisante.
+6. **Dissymétrie lecture/écriture assumée sur `wheelStyleWriteSchema`.** Le
+   schéma de lecture reste tolérant à une clé de fond inconnue (repli
+   neutre, pour ne pas faire échouer l'affichage d'une roue existante) ; le
+   schéma d'écriture refuse désormais explicitement un fond hors palette —
+   fermé en INFO de revue avant la PR, pour ne pas laisser une valeur
+   invalide s'écrire à la faveur d'un futur appelant moins prudent.
+
+**Justification**. Découpler `FondKey` de `SeasonalTheme` évite de figer les
+usages du quiz (7 thèmes d'usage, jamais saisonniers) derrière un vocabulaire
+qui grossit pour d'autres raisons. Le choix explicite sur la roue respecte
+l'architecture déjà en place (ADR-093) : le décor suit un preset choisi, la
+roue n'a jamais suivi le thème de campagne automatiquement.
+
+**Conséquences**. Trois dettes restent en suivi (`docs/bugs.md`) : `games.style`
+garde le même `.catch(undefined)` en écriture que celui fermé sur
+`wheelStyleSchema` ; `wheelStyleSchema.partial()` des modèles de campagne
+tolère un fond inconnu (lu des deux bouts, désormais écrit) ; les 3
+sélecteurs de thème frères gardaient une radio `sr-only` 1×1 px sans surface
+cliquable réelle — corrigé dans ce chantier après un flake E2E causé par
+`scroll-behavior: smooth`, qui reste un piège pour tout futur `click()` sur
+une cible petite et basse dans la page.
+
+**References** :
+- `scripts/optimiser-fonds.mjs`, `public/fonds/`
+- `src/lib/fonds-ecran.ts`, `src/lib/wheel-style.ts`
+  (`wheelStyleSchema`/`wheelStyleWriteSchema`)
+- `supabase/migrations/20260921120000_habillages_univers.sql`
+- `src/components/*/fond-ecran.tsx`, `src/components/dashboard/wheel-style-editor.tsx`
+- commits `95c32de`, `815459e`, `7a158a8`, `b3d218d`, `b63fed1`, `c7214bd`
+- roadmap V1.53
