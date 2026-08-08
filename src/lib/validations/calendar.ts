@@ -106,8 +106,9 @@ const rewardDetailsSchema = texteOptionnel(
 );
 
 /**
- * Message d'une case `content` — borné 0..2000 (miroir CHECK SQL). Requis (non
- * vide) à l'activation pour une case `content`, vérifié par refineDay.
+ * Message d'une case `content` — borné 0..2000 (miroir CHECK SQL, où la colonne
+ * est NULLABLE). FACULTATIF : une case `content` laissée vide est légale et
+ * signifie « perdu » pour le client ce jour-là (voir refineDay).
  */
 const contentTextSchema = z
   .string()
@@ -220,9 +221,15 @@ export const deleteCalendarSchema = z.object({
  * Cohérence usage ↔ champs (miroir des CHECK SQL calendar_days_lot_stock_check /
  * calendar_days_spin_wheel_check) :
  *  · lot     ⇒ stock FINI obligatoire (verrou économique ADR-031) ;
- *  · spin    ⇒ roue cible désignée ;
- *  · content ⇒ message présent (cohérence d'affichage, non vide).
+ *  · spin    ⇒ roue cible désignée.
  * Sans ces refine, le commerçant récolterait une erreur SQL brute 23514.
+ *
+ * `content` N'EST PLUS REFUSÉ SANS TEXTE. Une case `content` vide est légale en
+ * base (`content_text is null or …`, 20260728120000:150-151) et signifie
+ * désormais « perdu » : le client l'ouvre, ne gagne rien ce jour-là, et son
+ * ouverture COMPTE quand même dans l'assiduité. C'était le dernier refus
+ * applicatif qui n'avait AUCUN CHECK SQL derrière lui — il obligeait le
+ * commerçant à garnir 24 cases pour publier.
  */
 function refineDay(
   d: {
@@ -256,13 +263,6 @@ function refineDay(
       code: "custom",
       path: ["target_wheel_id"],
       message: "Choisissez la roue offerte pour cette case",
-    });
-  }
-  if (d.content_type === "content" && !d.content_text.trim()) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["content_text"],
-      message: "Saisissez le message affiché à l'ouverture de cette case",
     });
   }
 }

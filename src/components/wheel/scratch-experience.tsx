@@ -11,14 +11,20 @@ import { capturePlayEvent } from "@/components/analytics";
 import { ClaimForm, type ClaimConfig } from "./claim-form";
 import { Countdown } from "./countdown";
 import { DiscoverFooter } from "./discover-footer";
-import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
+import { GameIdleScreen } from "./game-idle-screen";
+import { playText } from "./play-theme";
 import { ScratchCard } from "./scratch-card";
 import { ShareInvite } from "./share-invite";
 import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
-import { fontFamily } from "@/lib/fonts";
+import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  playOnLightSurface,
+  resolveWheelStyle,
+  scratchCover,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 
 type Phase = "idle" | "scratching" | "won" | "lost" | "blocked";
 
@@ -115,12 +121,7 @@ export function ScratchExperience({
     // de rentrée à chaque appui. Aucun message, aucune sortie.
     let result;
     try {
-      result = await spinWheel(
-        slug,
-        null,
-        captchaToken ?? undefined,
-        readShareSource(),
-      );
+      result = await spinWheel(slug, captchaToken ?? undefined, readShareSource());
     } catch {
       requestingRef.current = false;
       setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
@@ -157,67 +158,27 @@ export function ScratchExperience({
     setPhase(outcome.isLosing ? "lost" : "won");
   }
 
+  // Son écran d'accueil « propre » a disparu : il rendait exactement la même
+  // chose que `GameIdleScreen`, à un emoji près (🎟️ contre le 🪙 annoncé au
+  // commerçant) et à un saut de ligne près dans l'accroche. Une quinzième
+  // copie de la même mise en page n'apportait que sa dérive.
+  const idle = gameIdle("scratch");
+  const cover = scratchCover(style);
+
   return (
     <div className="w-full max-w-sm mx-auto px-6 py-8 flex flex-col items-center min-h-full justify-center">
       {phase === "idle" && (
-        <div className="play-in w-full text-center" style={{ fontFamily: fontFamily(style.font) }}>
-          {logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt={organizationName}
-              className="mx-auto mb-3 h-16 max-w-40 object-contain"
-            />
-          )}
-          {returningName && (
-            <p className={`text-sm font-semibold mb-1 ${kermesse ? "text-k-green" : "text-emerald-400"}`}>
-              Bon retour, {returningName} ! 👋
-            </p>
-          )}
-          <p className={`text-xs font-semibold uppercase tracking-[0.25em] mb-2 ${playText.kicker(kermesse)}`}>
-            {organizationName}
-          </p>
-          <h1 className={`text-3xl font-extrabold mb-8 leading-tight ${playText.title(kermesse)}`}>
-            {style.title || (
-              <>
-                Grattez la carte,
-                <br />
-                tentez votre chance !
-              </>
-            )}
-          </h1>
-
-          <div
-            className={
-              kermesse
-                ? "mx-auto flex aspect-[8/5] w-full max-w-[320px] items-center justify-center rounded-3xl border-2 border-dashed border-k-ink/40 bg-white"
-                : "mx-auto flex aspect-[8/5] w-full max-w-[320px] items-center justify-center rounded-3xl border-2 border-dashed border-white/20 bg-white/5"
-            }
-          >
-            <span className="text-5xl">🎟️</span>
-          </div>
-
-          <button
-            onClick={handleStart}
-            aria-label="Gratter la carte"
-            style={
-              kermesse
-                ? { backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})` }
-                : {
-                    backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
-                    boxShadow: `0 12px 34px color-mix(in srgb, ${style.buttonFrom} 45%, transparent)`,
-                  }
-            }
-            className={`relative overflow-hidden w-full mt-9 rounded-2xl px-6 py-4 text-lg font-extrabold uppercase tracking-wider transition-all duration-100 ${
-              kermesse ? SPIN_BUTTON_KERMESSE : "text-white"
-            }`}
-          >
-            <span
-              aria-hidden
-              className="play-shine absolute top-0 left-0 h-full w-2/5 bg-gradient-to-r from-transparent via-white/35 to-transparent"
-            />
-            Gratter la carte
-          </button>
+        <GameIdleScreen
+          style={style}
+          organizationName={organizationName}
+          logoUrl={logoUrl}
+          emoji={idle.emoji}
+          title={style.title || idle.accroche}
+          buttonLabel={idle.buttonLabel}
+          kermesse={kermesse}
+          returningName={returningName}
+          onStart={handleStart}
+        >
           <TurnstileGate
             onToken={handleCaptchaToken}
             conseil="Si le message revient, désactivez votre bloqueur de publicités le temps de gratter, ou signalez-le au comptoir."
@@ -233,7 +194,7 @@ export function ScratchExperience({
             Résultat calculé côté serveur · un jeu par personne
           </p>
           <DiscoverFooter kermesse={kermesse} />
-        </div>
+        </GameIdleScreen>
       )}
 
       {phase === "scratching" && outcome && (
@@ -245,6 +206,7 @@ export function ScratchExperience({
             isLosing={outcome.isLosing}
             buttonFrom={style.buttonFrom}
             buttonTo={style.buttonTo}
+            cover={cover}
             onRevealed={handleRevealed}
           />
         </div>

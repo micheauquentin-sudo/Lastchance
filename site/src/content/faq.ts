@@ -29,7 +29,7 @@ export const FAQ_ITEMS: FaqItem[] = [
   {
     question: "Et les avis Google ?",
     answer:
-      "LastChance respecte les règles de Google : le gain n'est jamais conditionné à un avis. Vous pouvez proposer plusieurs actions au choix avant de jouer (newsletter, Instagram, TikTok, avis) — le client choisit librement.",
+      "LastChance respecte les règles de Google : le gain n'est jamais conditionné à un avis, et rien ne se débloque en échange d'une action. Avant la partie, vous pouvez simplement proposer vos liens (avis Google, Instagram, TikTok) : l'écran est facultatif, le bouton « Continuer vers le jeu » est toujours là, et le tirage est identique que le client clique ou non.",
   },
   {
     question: "Comment mes clients récupèrent-ils leur gain ?",

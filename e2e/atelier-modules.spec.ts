@@ -288,33 +288,31 @@ test.describe("Championnat — étape « Les matchs » : la date de verrouillage
 });
 
 /**
- * Calendrier — étape « La vérification » : la case fautive est NOMMÉE.
+ * Calendrier — étape « La vérification » : une case vide est SIGNALÉE, pas
+ * BLOQUÉE — et son lien nomme quand même la case.
  *
- * PREUVE #1 (échec CI tour 1) : `getByRole('link', { name: /case \d+/ })`
- * introuvable — `refusCase()` (src/lib/activation/calendar.ts) ne regarde QUE
- * le contenu de la case, jamais `unlock_at` : la case 3 du seed, verrouillée
- * (ouverture future), porte déjà un `content_text` non vide et compte donc
- * comme COMPLÈTE. Les trois cases seedées sont toutes complètes — aucun ✗
- * n'existe jamais sur ce calendrier tel que semé.
- *
- * PREUVE #2 (échec CI tour 2, tentative « vider la case 3 ») : ce chemin ne
- * pouvait PAS marcher — `updateCalendarDaySchema` (src/lib/validations/
- * calendar.ts:260) REFUSE déjà côté serveur un `content_text` vide sur une
- * case `content` (même condition que `refusCase`) : l'enregistrement
- * échouait silencieusement, la case restait complète. Vider une case n'est
- * donc atteignable NULLE PART dans l'UI — c'est une propriété voulue, pas un
- * trou à exploiter pour le test.
+ * L'invariant qu'un tour précédent de ce test vérifiait (« une case `content`
+ * sans texte est une case FAUTIVE, bloquante ») a été RETIRÉ par le chantier
+ * « retours propriétaire » : `refusCase()` (src/lib/activation/calendar.ts)
+ * ne regarde plus le texte d'une case `content` du tout. Une case vide est
+ * désormais légale — elle signifie « pas de chance » pour le joueur — et
+ * n'apparaît que dans le contrôle NON bloquant `cases-vides`. Le seul chemin
+ * bloquant restant (`cases`) est réservé aux cases `lot` sans stock/libellé
+ * et `spin` sans roue, qu'aucune action de ce test ne peut produire sans
+ * toucher une autre organisation du seed.
  *
  * Chemin retenu : AUGMENTER `day_count` de 3 à 4 sur l'étape « Les réglages ».
  * `syncCalendarDays` (src/actions/calendar.ts:684) insère alors la case 4 en
- * INSERT brut — `content_type: "content"` SANS `content_text` — qui ne passe
- * PAS par cette validation et est donc, par construction, une case
- * incomplète. On restaure `day_count=3` dans un `finally` : la RÉDUCTION,
- * elle, déclenche le garde-fou `confirm_day_loss` (case à cocher après un
- * premier refus nommé) — la mini-preuve que ce garde-fou fonctionne dans
- * l'autre sens.
+ * INSERT brut — `content_type: "content"` SANS `content_text` — qui atterrit
+ * dans le contrôle `cases-vides` : signalée en orange, son lien nomme la case
+ * (regex `/case \d+/` matche aussi bien « Aller à la case 4 » que l'ancien
+ * libellé bloquant), et la publication reste possible (« Tout est prêt »
+ * visible, `toutPret` vrai). On restaure `day_count=3` dans un `finally` : la
+ * RÉDUCTION, elle, déclenche le garde-fou `confirm_day_loss` (case à cocher
+ * après un premier refus nommé) — la mini-preuve que ce garde-fou fonctionne
+ * dans l'autre sens.
  */
-test.describe("Calendrier — vérification : le lien vers la case fautive est nommé", () => {
+test.describe("Calendrier — vérification : une case vide est signalée, pas bloquée", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
   test.beforeEach(({}, testInfo) => {
@@ -324,7 +322,7 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
     );
   });
 
-  test("une case incomplète porte un lien « case N » vers l'étape « Les cases » @smoke", async ({
+  test("une case vide porte un lien « case N » vers l'étape « Les cases » et n'empêche pas la publication @smoke", async ({
     page,
   }) => {
     const calendarId = "e2ee0000-0000-4000-8000-000000000001";
@@ -334,7 +332,7 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
     await expect(dayCount).toHaveValue("3");
 
     try {
-      // ── 3 → 4 cases : la case 4, neuve, est incomplète par construction ──
+      // ── 3 → 4 cases : la case 4, neuve, est vide par construction ──
       await dayCount.fill("4");
       const bouton = page.getByRole("button", { name: "Enregistrer" });
       await bouton.click();
@@ -345,9 +343,20 @@ test.describe("Calendrier — vérification : le lien vers la case fautive est n
         page.getByRole("heading", { name: "Tout est-il prêt ?" }),
       ).toBeVisible();
 
+      // Signalée (orange), pas bloquante : le contrôle « cases-vides » nomme
+      // la case 4 et propose le même lien qu'un contrôle bloquant.
+      await expect(
+        page.getByText(/case.*sans rien à gagner/i),
+      ).toBeVisible();
+
       const lien = page.getByRole("link", { name: /case \d+/ }).first();
       await expect(lien).toBeVisible();
       await expect(lien).toHaveAttribute("href", /etape=cases/);
+
+      // Non bloquant : la publication reste proposée malgré la case vide.
+      await expect(
+        page.getByText("Rien ne manque. Il ne reste qu'à ouvrir le calendrier à vos clients."),
+      ).toBeVisible();
     } finally {
       // ── Restaurer 4 → 3 : la réduction est un refus NOMMÉ puis une
       // confirmation explicite — le garde-fou attendu au retour aussi.

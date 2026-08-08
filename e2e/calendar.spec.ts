@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
+import { E2E_USERS, login } from "./helpers";
 
 /**
  * Parcours joueur SUIVABLE du Calendrier / campagne quotidienne (seed
@@ -112,5 +113,66 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
     // (slug inconnu, archivé, module coupé, abonnement inactif…).
     const response = await page.goto("/calendar/slug-inexistant-e2e");
     expect(response?.status()).toBe(404);
+  });
+
+  /**
+   * Case `content` VIDÉE (chantier « retours propriétaire ») : plus une
+   * anomalie remplie de texte de secours, une vraie issue perdante — « Pas de
+   * chance aujourd'hui ! » + 🍂. On vide la case 1 (seule case `content`
+   * déverrouillée du seed) depuis le dashboard, on l'ouvre côté joueur dans un
+   * contexte NEUF (cookie vierge, comme le fait la caisse) et on restaure le
+   * texte d'origine dans un `finally` : le test précédent de ce fichier
+   * («... révèle son contenu du jour ») dépend du même texte seedé et tourne
+   * dans le même worker (fichier non `fullyParallel`), donc APRÈS celui-ci
+   * dans l'ordre de déclaration.
+   */
+  test("une case message laissée vide ouvre sur « Pas de chance aujourd'hui ! »", async ({
+    page,
+    browser,
+  }) => {
+    const calendarId = "e2ee0000-0000-4000-8000-000000000001";
+    const originalText = "Bienvenue ! -10 % sur votre café aujourd'hui.";
+
+    await login(page, E2E_USERS.owner);
+    await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
+    const case1 = page.locator("#case-1");
+    const textarea = case1.getByLabel(/Message affiché à l'ouverture/);
+    await expect(textarea).toHaveValue(originalText);
+
+    try {
+      await textarea.fill("");
+      const bouton = case1.getByRole("button", { name: "Enregistrer la case" });
+      await bouton.click();
+      await expect(bouton).toHaveText("Enregistrer la case");
+
+      const player = await browser.newContext();
+      const playerPage = await player.newPage();
+      try {
+        await playerPage.goto(`/calendar/${CALENDAR_SLUG}`);
+        const openBox1 = playerPage.getByRole("button", {
+          name: "Ouvrir la case 1",
+          exact: true,
+        });
+        await expect(openBox1).toBeVisible({ timeout: 30_000 });
+        await openBox1.click();
+
+        const dialog = playerPage.getByRole("dialog");
+        await expect(dialog).toBeVisible({ timeout: 30_000 });
+        await expect(
+          dialog.getByRole("heading", { name: "Pas de chance aujourd'hui !" }),
+        ).toBeVisible();
+        await expect(dialog.getByText("🍂")).toBeVisible();
+      } finally {
+        await player.close();
+      }
+    } finally {
+      await textarea.fill(originalText);
+      const boutonRestore = case1.getByRole("button", {
+        name: "Enregistrer la case",
+      });
+      await boutonRestore.click();
+      await expect(boutonRestore).toHaveText("Enregistrer la case");
+      await expect(textarea).toHaveValue(originalText);
+    }
   });
 });

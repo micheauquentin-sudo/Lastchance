@@ -46,6 +46,7 @@ export function MemoryReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  objectColor,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -54,6 +55,12 @@ export function MemoryReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Couleur du DOS des cartes — la face retournée garde son jeton de thème,
+   * c'est elle qui signale « cette carte est ouverte ». ABSENTE = habillage
+   * du thème ; voir « Absence ≠ valeur » dans `wheel-style.ts`.
+   */
+  objectColor?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const [flipped, setFlipped] = useState<number[]>([]);
@@ -107,6 +114,11 @@ export function MemoryReveal({
               onClick={() => flip(i)}
               aria-disabled={matched || isUp || undefined}
               aria-label={isUp ? `Carte ${i + 1}, retournée` : `Carte ${i + 1}`}
+              style={
+                objectColor && !isUp
+                  ? { backgroundColor: objectColor }
+                  : undefined
+              }
               className={`flex aspect-[3/4] items-center justify-center rounded-2xl border-2 text-3xl outline-none transition-all focus-visible:ring-4 focus-visible:ring-offset-2 ${
                 matched || isUp ? "cursor-default" : "cursor-pointer"
               } ${

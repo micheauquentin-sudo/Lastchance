@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { CampaignPrejeuInvitation } from "@/components/dashboard/campaign-prejeu-invitation";
 import { NewQrForm } from "@/components/dashboard/qr-forms";
 import { QrCodeCard } from "@/components/dashboard/qr-code-card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
@@ -66,6 +67,7 @@ export default async function CampaignDetailPage({
     { count: shareCount },
     { data: referralProgram },
     { data: qrRows },
+    { data: liensOrg },
   ] = await Promise.all([
     supabase
       .from("campaigns")
@@ -106,6 +108,16 @@ export default async function CampaignDetailPage({
       .eq("campaign_id", id)
       .order("created_at", { ascending: false })
       .limit(6),
+    // Les trois liens sociaux de la maison — lus ICI et non via `getUserAndOrg` :
+    // seul le bloc « Avant de jouer » s'en sert, et il n'a besoin que de savoir
+    // s'il en existe AU MOINS UN. Trois colonnes de plus dans le `select` du
+    // layout seraient payées par tout le dashboard. Grant `select` explicite
+    // accordé à `authenticated` (migration 20260918120000).
+    supabase
+      .from("organizations")
+      .select("google_review_url, instagram_url, tiktok_url")
+      .eq("id", organization!.id)
+      .maybeSingle(),
   ]);
 
   if (!campaign) notFound();
@@ -121,6 +133,11 @@ export default async function CampaignDetailPage({
   // Server Component, donc `new Date()` au rendu ne risque aucun décalage
   // d'hydratation.
   const windowState = campaignWindowState(c);
+  // Au moins un lien social renseigné ? Sans quoi cocher « Avant de jouer »
+  // n'afficherait rien au joueur — le bloc renvoie alors vers les Réglages.
+  const aDesLiens = Boolean(
+    liensOrg?.google_review_url || liensOrg?.instagram_url || liensOrg?.tiktok_url,
+  );
 
   // Carte de l'Aventure seule : une campagne se recopie déjà par « Dupliquer »
   // et par les modèles, qui emportent la roue, ses lots et son style — ce que
@@ -281,6 +298,16 @@ export default async function CampaignDetailPage({
       <div className="mb-6">
         <CarteRepliable titre="Performance par lot" id="suivi">
           <PrizePerformance rows={perfRows} />
+        </CarteRepliable>
+      </div>
+
+      <div className="mb-6">
+        <CarteRepliable titre="Avant de jouer">
+          <CampaignPrejeuInvitation
+            campaignId={c.id}
+            enabled={c.prejeu_invitation}
+            aDesLiens={aDesLiens}
+          />
         </CarteRepliable>
       </div>
 

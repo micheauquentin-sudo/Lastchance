@@ -11,27 +11,33 @@ import {
   SwatchButton,
 } from "@/components/dashboard/editor-controls";
 import { FieldError, Input, Label } from "@/components/ui/input";
-import {
-  KermesseStripe,
-  SPIN_BUTTON_KERMESSE,
-  playText,
-} from "@/components/wheel/play-theme";
+import { KermesseStripe } from "@/components/wheel/play-theme";
+import { GameIdleScreen } from "@/components/wheel/game-idle-screen";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
-import { porteeHabillage } from "@/components/dashboard/wheel-style-scope";
+import {
+  porteeHabillage,
+  type MecaniqueReglable,
+} from "@/components/dashboard/wheel-style-scope";
+import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
 import { contrastRatio } from "@/lib/contrast";
 import type { GameType } from "@/types/database";
-import { fontFamily } from "@/lib/fonts";
 import { useActionForm } from "@/lib/use-action-form";
 import {
   HUB_STYLES,
   PAGE_THEMES,
   POINTER_STYLES,
   RING_STYLES,
+  SLOT_SYMBOL_SETS,
+  SLOT_SYMBOL_SET_KEYS,
   WHEEL_PRESETS,
   playContrastWarning,
   playDecor,
+  playOnLightSurface,
   playSurface,
   resolveWheelStyle,
+  scratchCover,
+  type GameObjectKey,
+  type SlotSymbolSet,
   type WheelStyle,
 } from "@/lib/wheel-style";
 import { ThemeDecor } from "@/components/ui/theme-decor";
@@ -58,6 +64,29 @@ const POINTER_LABELS: Record<(typeof POINTER_STYLES)[number], string> = {
   pin: "Épingle",
   arrow: "Flèche",
 };
+
+/** Réglages propres à la mécanique — libellés côté commerçant. */
+const SLOT_SYMBOL_LABELS: Record<SlotSymbolSet, string> = {
+  fruits: "Fruits",
+  fete: "Fête foraine",
+  bijoux: "Trésors",
+};
+const OBJET_LABELS: Record<GameObjectKey, string> = {
+  dice: "Couleur du dé",
+  flip_card: "Dos de la carte",
+  draw_card: "Dos de la carte",
+  cups: "Couleur des gobelets",
+  chest: "Couleur des coffres",
+  memory: "Dos des cartes",
+};
+const COUCHE_TITRES = ["Début du dégradé", "Milieu", "Fin du dégradé"] as const;
+
+/** La mécanique en cours a-t-elle un OBJET colorable (par opposition à scratch/slot) ? */
+function objetColorable(
+  reglage: MecaniqueReglable | null,
+): GameObjectKey | null {
+  return reglage && reglage !== "scratch" && reglage !== "slot" ? reglage : null;
+}
 
 /**
  * Le libellé de gauche EST l'étiquette du contrôle : passer `htmlFor` le
@@ -169,8 +198,34 @@ export function WheelStyleEditor({
   // Recalculé à chaque frappe de couleur : l'avertissement suit l'aperçu.
   const avertissement = playContrastWarning(style);
 
+  // Réglages « Ce jeu » : la couche à gratter (trois arrêts, défauts résolus
+  // à la lecture) et la couleur de l'objet, `undefined` tant que le
+  // commerçant n'en a pas posé — auquel cas le jeu garde l'habillage du thème.
+  const couche = scratchCover(style);
+  const objetKey = objetColorable(portee.reglagesDuJeu);
+  const objetColor = objetKey ? style.games?.[objetKey]?.color : undefined;
+
   function set<K extends keyof WheelStyle>(key: K, value: WheelStyle[K]) {
     setStyle((s) => ({ ...s, [key]: value, preset: undefined }));
+    setDirty(true);
+  }
+
+  /**
+   * Réglages propres à la mécanique. Deux différences avec `set`, toutes deux
+   * délibérées :
+   *
+   * 1. `preset` N'EST PAS effacé. Les presets ne touchent pas au sous-objet
+   *    `games` (wheel-style.ts le dit et wheel-style.test.ts le tient) :
+   *    recolorer un gobelet ne « sort » donc pas du style choisi, et l'effacer
+   *    ferait au passage retomber le DÉCOR de la page sur les confettis —
+   *    `playDecor` le lit sur `style.preset`.
+   * 2. Les clés des AUTRES mécaniques sont conservées telles quelles. Un
+   *    commerçant qui essaie « Memory », choisit un dos rouge, repasse au dé
+   *    puis revient doit retrouver son rouge : un contrôle masqué n'efface
+   *    jamais sa valeur, et le formulaire poste le style COMPLET.
+   */
+  function setJeu(maj: (games: NonNullable<WheelStyle["games"]>) => NonNullable<WheelStyle["games"]>) {
+    setStyle((s) => ({ ...s, games: maj(s.games ?? {}) }));
     setDirty(true);
   }
 
@@ -204,9 +259,12 @@ export function WheelStyleEditor({
         est exactement ce que verront vos clients.
       </p>
 
-      {/* Aperçu fidèle — mêmes jetons de thème que la page /play
-          (playSurface, KermesseStripe, playText, bouton kermesse) :
-          aucune classe recopiée, la fidélité est structurelle. */}
+      {/* Aperçu fidèle. La phrase ci-dessus n'est plus une intention : le
+          cadre pose la MÊME surface que `PlayShell` (playSurface, décor,
+          bandeau) et monte le MÊME composant que le joueur reçoit
+          (`GameIdleScreen`), avec l'emoji, l'accroche et le verbe de SA
+          mécanique. Il ne restait ici, avant, qu'un 🎁 en dur et un « Jouer »
+          générique pour quatorze jeux sur quinze. */}
       {(() => {
         const surface = playSurface(style);
         return (
@@ -224,52 +282,33 @@ export function WheelStyleEditor({
             {/* Le décor n'existe que sur l'habillage kermesse — exactement
                 comme dans `PlayShell`. Le rendre sous le thème « nuit »
                 promettrait un fond que la page ne peint pas. */}
-            {surface.kermesse && <ThemeDecor decor={playDecor(style)} />}
+            {surface.kermesse && (
+              <ThemeDecor decor={playDecor(style)} variant="apercu" />
+            )}
             {surface.kermesse && <KermesseStripe className="relative h-3" />}
-            <div
-              className="relative px-6 pt-6 pb-5"
-              style={{ fontFamily: fontFamily(style.font) }}
-            >
-              <p className={`text-[10px] font-semibold uppercase tracking-[0.25em] mb-1 ${playText.kicker(surface.kermesse)}`}>
-                {organizationName}
-              </p>
-              <p className={`text-lg font-extrabold mb-4 leading-tight ${playText.title(surface.kermesse)}`}>
-                {style.title || "Tournez la roue, tentez votre chance !"}
-              </p>
-              {portee.apercuRoue ? (
-                <div className="relative mx-auto max-w-56">
-                  <WheelPointer color={style.pointerColor} variant={style.pointer} />
-                  <WheelSvg segments={previewSegments} style={style} />
-                </div>
-              ) : (
-                /* Aperçu NEUTRE — mêmes proportions que le cadre pointillé de
-                   `game-shell.tsx` : sur ces mécaniques le joueur ne voit ni
-                   roue ni segments, seulement le fond, l'accroche et le
-                   bouton. Dessiner une roue ici serait reconduire le mensonge
-                   qu'on ferme. */
-                <div
-                  className={`mx-auto flex aspect-[8/5] w-full max-w-56 items-center justify-center rounded-2xl border-2 border-dashed ${
-                    surface.kermesse
-                      ? "border-k-ink/40 bg-white"
-                      : "border-white/20 bg-white/5"
-                  }`}
-                >
-                  <span aria-hidden className="text-4xl">
-                    🎁
-                  </span>
-                </div>
-              )}
-              <div
-                className={`mt-4 rounded-xl px-4 py-2.5 text-sm font-extrabold uppercase tracking-wider ${
-                  surface.kermesse ? SPIN_BUTTON_KERMESSE : "text-white"
-                }`}
-                style={{
-                  backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})`,
-                }}
-              >
-                {portee.libelleBouton}
-              </div>
-            </div>
+            <GameIdleScreen
+              variant="apercu"
+              style={style}
+              organizationName={organizationName}
+              emoji={portee.emoji}
+              title={style.title || portee.accroche}
+              buttonLabel={portee.libelleBouton}
+              /* `playOnLightSurface` et NON `surface.kermesse` : c'est la
+                 clarté du fond RÉELLEMENT peint qui décide de la palette de
+                 texte, et c'est ce que fait /play. L'aperçu lisait ici
+                 `pageTheme`, donc annonçait un titre blanc sur les presets
+                 « Pastel » et « Cartoon » — dont le fond est clair et dont la
+                 page rend, elle, un titre en encre sombre. */
+              kermesse={playOnLightSurface(style)}
+              visuel={
+                portee.apercuRoue ? (
+                  <div className="relative mx-auto max-w-56">
+                    <WheelPointer color={style.pointerColor} variant={style.pointer} />
+                    <WheelSvg segments={previewSegments} style={style} />
+                  </div>
+                ) : undefined
+              }
+            />
           </div>
         );
       })()}
@@ -431,6 +470,96 @@ export function WheelStyleEditor({
             />
           </Row>
         </section>
+        )}
+
+        {/* « Ce jeu » — rendu POUR LA SEULE mécanique en cours. Huit des
+            quinze en ont un ; les six jeux de défi et la roue n'ont pas
+            d'objet à recolorer, la section disparaît alors entièrement plutôt
+            que d'afficher une rubrique vide. */}
+        {portee.reglagesDuJeu && (
+          <section className="space-y-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+              Ce jeu — {libelleMecanique(gameType)}
+            </p>
+
+            {portee.reglagesDuJeu === "scratch" && (
+              <>
+                <Row label="Couche à gratter">
+                  {([0, 1, 2] as const).map((i) => (
+                    <ColorInput
+                      key={i}
+                      value={couche[i]}
+                      onChange={(v) =>
+                        setJeu((g) => {
+                          const c = [...couche] as [string, string, string];
+                          c[i] = v;
+                          return {
+                            ...g,
+                            scratch: { coverFrom: c[0], coverMid: c[1], coverTo: c[2] },
+                          };
+                        })
+                      }
+                      title={COUCHE_TITRES[i]}
+                    />
+                  ))}
+                </Row>
+                <p className="text-xs text-zinc-500">
+                  Les trois teintes du dégradé que votre client efface au
+                  doigt. La consigne « Grattez ici » choisit seule son encre
+                  pour rester lisible dessus.
+                </p>
+              </>
+            )}
+
+            {portee.reglagesDuJeu === "slot" && (
+              <Row label="Symboles des rouleaux" htmlFor="style-slot-symbols">
+                <MiniSelect
+                  id="style-slot-symbols"
+                  value={style.games?.slot?.symbols ?? "fruits"}
+                  options={SLOT_SYMBOL_SET_KEYS}
+                  labels={SLOT_SYMBOL_LABELS}
+                  onChange={(v: SlotSymbolSet) =>
+                    setJeu((g) => ({ ...g, slot: { symbols: v } }))
+                  }
+                />
+                <span aria-hidden className="text-lg">
+                  {SLOT_SYMBOL_SETS[style.games?.slot?.symbols ?? "fruits"]
+                    .slice(0, 3)
+                    .join(" ")}
+                </span>
+              </Row>
+            )}
+
+            {objetKey && (
+              <Row label={OBJET_LABELS[objetKey]}>
+                <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+                  <input
+                    type="checkbox"
+                    checked={objetColor !== undefined}
+                    onChange={(e) =>
+                      setJeu((g) => ({
+                        ...g,
+                        [objetKey]: e.target.checked
+                          ? { color: "#ffffff" }
+                          : undefined,
+                      }))
+                    }
+                    className="h-4 w-4 accent-orange-600"
+                  />
+                  Couleur personnalisée
+                </label>
+                {objetColor !== undefined && (
+                  <ColorInput
+                    value={objetColor}
+                    onChange={(v) =>
+                      setJeu((g) => ({ ...g, [objetKey]: { color: v } }))
+                    }
+                    title={OBJET_LABELS[objetKey]}
+                  />
+                )}
+              </Row>
+            )}
+          </section>
         )}
 
         <section className="space-y-2.5">

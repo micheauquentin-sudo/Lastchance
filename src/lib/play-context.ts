@@ -5,6 +5,7 @@ import { campaignWindowState } from "@/lib/campaign-window";
 import { hasActiveAccess } from "@/lib/subscription";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
 import { isConsistentPlayResourceChain } from "@/lib/public-resource-guards";
+import { estLienInvitationSur } from "@/lib/validations/organizations";
 import type { Campaign, Organization, Prize, Wheel } from "@/types/database";
 
 type PublicPlayOrganization = Pick<
@@ -19,6 +20,60 @@ type PublicPlayOrganization = Pick<
   | "comp_access_until"
   | "timezone"
 >;
+
+/** Les trois liens de l'organisation, tels qu'ils arrivent de la base. */
+type LiensInvitation = Pick<
+  Organization,
+  "google_review_url" | "instagram_url" | "tiktok_url"
+>;
+
+/**
+ * L'invitation avant-jeu servie au joueur — CONTRAT RENDU AU CLIENT.
+ *
+ * Une clé n'est présente QUE si le lien correspondant est renseigné ET a passé
+ * la revalidation de forme. Un objet sans aucune clé n'est jamais rendu :
+ * `invitationAvantJeu` vaut alors `null`, ce qui dit à l'écran « rien à
+ * proposer » sans qu'il ait à compter des clés.
+ */
+export interface InvitationAvantJeu {
+  /** Page d'avis Google de l'établissement. */
+  google?: string;
+  instagram?: string;
+  tiktok?: string;
+}
+
+/**
+ * Ce que le joueur peut se voir proposer AVANT de jouer — jamais une porte.
+ *
+ * DEUX CONDITIONS, toutes deux nécessaires : la campagne l'active
+ * (`prejeu_invitation`) et l'organisation a renseigné au moins un lien. Sans
+ * quoi `null`, et l'écran ne rend rien.
+ *
+ * LA REVALIDATION DE FORME EST REFAITE ICI, alors que le schéma d'écriture l'a
+ * déjà imposée : défense en profondeur, même patron de repli SILENCIEUX que
+ * `asSeasonalTheme`. Une valeur écrite avant que la liste blanche n'existe, ou
+ * posée par un chemin qui l'ignorerait, ne doit pas atteindre l'écran d'un
+ * joueur anonyme — et ici, contrairement à l'écriture, le repli est muet :
+ * personne n'attend de message d'erreur sur une lecture publique.
+ */
+function invitationAvantJeu(
+  campaign: Pick<Campaign, "prejeu_invitation">,
+  org: LiensInvitation,
+): InvitationAvantJeu | null {
+  if (!campaign.prejeu_invitation) return null;
+  const sur = (valeur: unknown): string | null =>
+    typeof valeur === "string" && estLienInvitationSur(valeur) ? valeur : null;
+
+  const invitation: InvitationAvantJeu = {};
+  const google = sur(org.google_review_url);
+  if (google) invitation.google = google;
+  const instagram = sur(org.instagram_url);
+  if (instagram) invitation.instagram = instagram;
+  const tiktok = sur(org.tiktok_url);
+  if (tiktok) invitation.tiktok = tiktok;
+
+  return Object.keys(invitation).length > 0 ? invitation : null;
+}
 
 export type PlayContext =
   | {
@@ -37,6 +92,16 @@ export type PlayContext =
       organization: PublicPlayOrganization;
       wheel: Wheel;
       prizes: Prize[];
+      /**
+       * Invitation avant-jeu, déjà tranchée et refermée (voir
+       * `invitationAvantJeu`). `null` = rien à proposer.
+       *
+       * C'est le SEUL chemin par lequel les liens de l'organisation
+       * atteignent l'écran : ils sont retirés d'`organization` juste avant le
+       * retour, pour qu'aucune URL non revalidée ne puisse voyager par le
+       * simple fait qu'un composant sérialise l'objet organisation.
+       */
+      invitationAvantJeu: InvitationAvantJeu | null;
     };
 
 /** Ligne renvoyée par la requête imbriquée (embeds PostgREST). */
@@ -44,7 +109,7 @@ interface PlayContextRow {
   id: string;
   campaign_id: string;
   organization_id: string;
-  organizations: PublicPlayOrganization | null;
+  organizations: (PublicPlayOrganization & LiensInvitation) | null;
   campaigns: (Campaign & { wheels: (Wheel & { prizes: Prize[] })[] }) | null;
 }
 
@@ -124,7 +189,7 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { data } = await admin
     .from("qr_codes")
     .select(
-      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until, timezone), campaigns!qr_codes_campaign_id_fkey(*, wheels!wheels_campaign_id_fkey(*, prizes!prizes_wheel_id_fkey(*)))",
+      "id, campaign_id, organization_id, organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until, timezone, google_review_url, instagram_url, tiktok_url), campaigns!qr_codes_campaign_id_fkey(*, wheels!wheels_campaign_id_fkey(*, prizes!prizes_wheel_id_fkey(*)))",
     )
     .eq("slug", slug)
     .maybeSingle();
@@ -207,13 +272,27 @@ export async function loadPlayContext(slug: string): Promise<PlayContext> {
   const { prizes: _prizes, ...wheel } = embeddedWheel;
   void _prizes;
 
+  // Les trois URL brutes SORTENT de l'objet organisation : elles ne franchissent
+  // la frontière que par `invitationAvantJeu`, où elles sont revalidées et
+  // conditionnées à l'activation de la campagne.
+  const {
+    google_review_url: _google,
+    instagram_url: _instagram,
+    tiktok_url: _tiktok,
+    ...organization
+  } = org;
+  void _google;
+  void _instagram;
+  void _tiktok;
+
   return {
     ok: true,
     admin,
     qr,
     campaign: c,
-    organization: org,
+    organization,
     wheel,
     prizes,
+    invitationAvantJeu: invitationAvantJeu(c, org),
   };
 }

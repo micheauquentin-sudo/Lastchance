@@ -13,6 +13,7 @@
 import type { CSSProperties } from "react";
 import type { QuizTheme } from "@/lib/quiz";
 import type { DecorKey } from "@/components/ui/theme-decor";
+import { LAVIS_QUIZ as LAVIS } from "@/components/ui/theme-lavis";
 
 export interface QuizThemeTokens {
   key: QuizTheme;
@@ -56,7 +57,7 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "❓",
     faceEmoji: "🧠",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.neutre,
       backgroundImage:
         "repeating-linear-gradient(135deg,#f3ead3 0 14px,#fdf6e3 14px 28px)",
     },
@@ -73,9 +74,9 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "🍽️",
     faceEmoji: "👨‍🍳",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.gourmand,
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(245,121,59,.14) 0 16px,transparent 16px 32px)",
+        "repeating-linear-gradient(135deg,rgba(245,121,59,.22) 0 16px,transparent 16px 32px)",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-orange/30`,
     optionIdle: OPTION_IDLE,
@@ -90,10 +91,10 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "🍷",
     faceEmoji: "🍇",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.degustation,
       backgroundImage:
-        "radial-gradient(rgba(242,150,189,.26) 2px,transparent 2px)",
-      backgroundSize: "22px 22px",
+        "radial-gradient(rgba(140,59,87,.20) 2.4px,transparent 2.4px)",
+      backgroundSize: "20px 20px",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-pink/40`,
     optionIdle: OPTION_IDLE,
@@ -108,9 +109,9 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "🏛️",
     faceEmoji: "🖼️",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.culture,
       backgroundImage:
-        "repeating-linear-gradient(90deg,rgba(153,183,245,.18) 0 18px,transparent 18px 36px)",
+        "repeating-linear-gradient(90deg,rgba(153,183,245,.30) 0 18px,transparent 18px 36px)",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-blue/40`,
     optionIdle: OPTION_IDLE,
@@ -125,9 +126,9 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "🏷️",
     faceEmoji: "🛍️",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.produit,
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(252,202,89,.22) 0 16px,transparent 16px 32px)",
+        "repeating-linear-gradient(135deg,rgba(252,202,89,.45) 0 16px,transparent 16px 32px)",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-yellow`,
     optionIdle: OPTION_IDLE,
@@ -142,9 +143,9 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "🏆",
     faceEmoji: "⚽",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.sport,
       backgroundImage:
-        "repeating-linear-gradient(135deg,rgba(38,127,83,.12) 0 16px,transparent 16px 32px)",
+        "repeating-linear-gradient(135deg,rgba(38,127,83,.20) 0 16px,transparent 16px 32px)",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-green/25`,
     optionIdle: OPTION_IDLE,
@@ -159,9 +160,9 @@ const THEMES: Record<QuizTheme, QuizThemeTokens> = {
     titleEmoji: "💼",
     faceEmoji: "🤝",
     pageStyle: {
-      backgroundColor: "var(--color-k-bg)",
+      backgroundColor: LAVIS.entreprise,
       backgroundImage:
-        "repeating-linear-gradient(90deg,rgba(153,183,245,.16) 0 18px,rgba(252,202,89,.16) 18px 36px)",
+        "repeating-linear-gradient(90deg,rgba(153,183,245,.26) 0 18px,rgba(252,202,89,.22) 18px 36px)",
     },
     optionActive: `${OPTION_ACTIVE_BASE} bg-k-blue/40`,
     optionIdle: OPTION_IDLE,

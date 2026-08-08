@@ -44,6 +44,7 @@ export function CupsReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  objectColor,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -52,6 +53,11 @@ export function CupsReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Couleur des gobelets. ABSENTE = habillage du thème (blanc sur kermesse,
+   * translucide sur nuit) — voir « Absence ≠ valeur » dans `wheel-style.ts`.
+   */
+  objectColor?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const [picked, setPicked] = useState<number | null>(null);
@@ -91,6 +97,7 @@ export function CupsReveal({
               style={{
                 transform: chosen ? "translateY(-18px)" : "translateY(0)",
                 transitionDuration: `${duration}ms`,
+                ...(objectColor ? { backgroundColor: objectColor } : {}),
               }}
               className={`flex aspect-square w-20 items-center justify-center rounded-2xl border-2 outline-none transition-all focus-visible:ring-4 focus-visible:ring-offset-2 sm:w-24 ${
                 picked === null ? "cursor-pointer" : "cursor-default"

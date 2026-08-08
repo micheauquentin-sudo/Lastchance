@@ -193,12 +193,7 @@ export function PlayExperience({
     // rechargement qui aurait aidé — le joueur croyait le jeu cassé.
     let result;
     try {
-      result = await spinWheel(
-        slug,
-        null,
-        captchaToken ?? undefined,
-        readShareSource(),
-      );
+      result = await spinWheel(slug, captchaToken ?? undefined, readShareSource());
     } catch {
       // On reste en phase « idle » : le bouton y est rendu, et le message
       // d'erreur juste au-dessus. Le tour est rejouable — le serveur n'a rien

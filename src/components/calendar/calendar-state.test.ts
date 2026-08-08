@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   calendarBoxState,
+  calendarConsolation,
+  calendarDaySansGain,
   calendarProgress,
   formatCalendarUnlock,
 } from "./calendar-state";
@@ -79,6 +81,61 @@ describe("calendarProgress", () => {
     expect(over.remaining).toBe(0);
     const neg = calendarProgress(-4, 10);
     expect(neg.openedCount).toBe(0);
+  });
+});
+
+describe("calendarDaySansGain", () => {
+  it("tient une case message sans texte pour un « pas de chance »", () => {
+    expect(
+      calendarDaySansGain({ contentType: "content", contentText: null }),
+    ).toBe(true);
+    expect(calendarDaySansGain({ contentType: "content", contentText: "" })).toBe(
+      true,
+    );
+    // Des espaces ne sont pas un message : même règle que `caseVide` côté serveur.
+    expect(
+      calendarDaySansGain({ contentType: "content", contentText: "   \n " }),
+    ).toBe(true);
+  });
+
+  it("laisse une case message GARNIE en « mot du jour »", () => {
+    expect(
+      calendarDaySansGain({
+        contentType: "content",
+        contentText: "Joyeuses fêtes !",
+      }),
+    ).toBe(false);
+  });
+
+  it("ne touche ni aux lots ni aux tours de roue, même sans texte", () => {
+    expect(calendarDaySansGain({ contentType: "lot", contentText: null })).toBe(
+      false,
+    );
+    expect(calendarDaySansGain({ contentType: "spin", contentText: null })).toBe(
+      false,
+    );
+  });
+});
+
+describe("calendarConsolation", () => {
+  it("salue l'assiduité quand tout est ouvert", () => {
+    expect(calendarConsolation(calendarProgress(24, 24))).toContain(
+      "assiduité",
+    );
+  });
+
+  it("accorde le singulier sur la dernière case", () => {
+    const texte = calendarConsolation(calendarProgress(23, 24));
+    expect(texte).toContain("1 case");
+    expect(texte).not.toContain("1 cases");
+  });
+
+  it("chiffre les cases restantes au pluriel", () => {
+    expect(calendarConsolation(calendarProgress(20, 24))).toContain("4 cases");
+  });
+
+  it("reste dicible sur une grille vide (jamais « 0 cases »)", () => {
+    expect(calendarConsolation(calendarProgress(0, 0))).toBe("Revenez demain !");
   });
 });
 

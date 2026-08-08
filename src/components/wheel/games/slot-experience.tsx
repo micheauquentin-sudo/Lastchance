@@ -1,6 +1,11 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import {
+  playOnLightSurface,
+  resolveWheelStyle,
+  slotSymbols,
+  type WheelStyle,
+} from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
 import { SlotReveal } from "./slot-reveal";
@@ -36,7 +41,7 @@ export function SlotExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "🎰", buttonLabel: "Lancer la machine" }}
+      gameType="slot"
       renderReveal={(outcome, onRevealed) => (
         <SlotReveal
           outcome={outcome}
@@ -44,6 +49,7 @@ export function SlotExperience({
           kermesse={kermesse}
           buttonFrom={style.buttonFrom}
           buttonTo={style.buttonTo}
+          symbols={slotSymbols(style)}
         />
       )}
     />

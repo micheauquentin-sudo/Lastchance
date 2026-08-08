@@ -13,6 +13,7 @@ import * as jackpot from "./jackpot";
 import * as loyalty from "./loyalty";
 import * as metaProgression from "./meta-progression";
 import * as newsletter from "./newsletter";
+import * as organizations from "./organizations";
 import * as play from "./play";
 import * as privacy from "./privacy";
 import * as prizes from "./prizes";
@@ -289,6 +290,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   loyalty,
   "meta-progression": metaProgression,
   newsletter,
+  organizations,
   play,
   privacy,
   prizes,

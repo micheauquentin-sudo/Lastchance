@@ -37,7 +37,7 @@ export function RpsExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
-      idle={{ emoji: "✊", buttonLabel: "Jouer à pierre-feuille-ciseaux" }}
+      gameType="rps"
       renderChallenge={(_challenge, submit, pending) => (
         <RpsChallenge onSubmit={submit} pending={pending} kermesse={kermesse} />
       )}

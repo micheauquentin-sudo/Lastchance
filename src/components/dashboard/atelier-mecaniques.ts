@@ -1,3 +1,4 @@
+import { gameIdle } from "@/lib/game-idle";
 import type { GameType } from "@/types/database";
 
 /**
@@ -21,27 +22,43 @@ export interface Mecanique {
   label: string;
   hint: string;
   famille: FamilleMecanique;
-  /** L'emoji que le joueur voit sur l'écran d'accueil de /play. */
+  /**
+   * L'emoji que le joueur voit sur l'écran d'accueil de /play.
+   *
+   * LU DEPUIS `game-idle.ts`, jamais réécrit ici : cette table en portait sa
+   * propre copie, et elle avait divergé — elle annonçait 🪙 au commerçant
+   * pour la carte à gratter là où le joueur voyait 🎟️. Un emoji promis dans
+   * le sélecteur doit être celui qui s'affiche après le scan.
+   */
   emoji: string;
 }
 
+function mecanique(
+  value: GameType,
+  label: string,
+  hint: string,
+  famille: FamilleMecanique,
+): Mecanique {
+  return { value, label, hint, famille, emoji: gameIdle(value).emoji };
+}
+
 export const MECANIQUES: readonly Mecanique[] = [
-  { value: "wheel", label: "Roue", hint: "Le client tourne la roue", famille: "hasard", emoji: "🎡" },
-  { value: "scratch", label: "Carte à gratter", hint: "Le client gratte l'écran", famille: "hasard", emoji: "🪙" },
-  { value: "flip_card", label: "Carte retournée", hint: "Le client retourne une carte", famille: "hasard", emoji: "🃏" },
-  { value: "cups", label: "Bonneteau (3 gobelets)", hint: "Le client choisit un gobelet", famille: "hasard", emoji: "🥤" },
-  { value: "slot", label: "Machine à sous", hint: "Rouleaux qui s'alignent", famille: "hasard", emoji: "🎰" },
-  { value: "memory", label: "Memory", hint: "Retrouver la paire", famille: "hasard", emoji: "🧠" },
-  { value: "chest", label: "Coffre à choisir", hint: "Le client ouvre un coffre", famille: "hasard", emoji: "🎁" },
-  { value: "dice", label: "Lancer de dé", hint: "Le client lance le dé", famille: "hasard", emoji: "🎲" },
-  { value: "draw_card", label: "Tirage d'une carte", hint: "Le client pioche une carte", famille: "hasard", emoji: "🃏" },
+  mecanique("wheel", "Roue", "Le client tourne la roue", "hasard"),
+  mecanique("scratch", "Carte à gratter", "Le client gratte l'écran", "hasard"),
+  mecanique("flip_card", "Carte retournée", "Le client retourne une carte", "hasard"),
+  mecanique("cups", "Bonneteau (3 gobelets)", "Le client choisit un gobelet", "hasard"),
+  mecanique("slot", "Machine à sous", "Rouleaux qui s'alignent", "hasard"),
+  mecanique("memory", "Memory", "Retrouver la paire", "hasard"),
+  mecanique("chest", "Coffre à choisir", "Le client ouvre un coffre", "hasard"),
+  mecanique("dice", "Lancer de dé", "Le client lance le dé", "hasard"),
+  mecanique("draw_card", "Tirage d'une carte", "Le client pioche une carte", "hasard"),
   // Jeux de DÉFI *skill-gated* : réussir l'épreuve conditionne le tirage.
-  { value: "rps", label: "Pierre-feuille-ciseaux", hint: "Battre la machine — l'égalité compte comme un échec", famille: "defi", emoji: "✊" },
-  { value: "reflex", label: "Jeu de réflexe", hint: "Agir dans le temps imparti", famille: "defi", emoji: "⚡" },
-  { value: "gauge", label: "Jauge à arrêter", hint: "Stopper la jauge sur la zone verte", famille: "defi", emoji: "🎯" },
-  { value: "puzzle", label: "Puzzle simple", hint: "Remettre les fragments en ordre", famille: "defi", emoji: "🧩" },
-  { value: "mystery_word", label: "Mot mystère", hint: "Deviner le mot caché", famille: "defi", emoji: "🔤" },
-  { value: "estimate", label: "Estimation d'un nombre", hint: "Approcher le bon nombre", famille: "defi", emoji: "🔢" },
+  mecanique("rps", "Pierre-feuille-ciseaux", "Battre la machine — l'égalité compte comme un échec", "defi"),
+  mecanique("reflex", "Jeu de réflexe", "Agir dans le temps imparti", "defi"),
+  mecanique("gauge", "Jauge à arrêter", "Stopper la jauge sur la zone verte", "defi"),
+  mecanique("puzzle", "Puzzle simple", "Remettre les fragments en ordre", "defi"),
+  mecanique("mystery_word", "Mot mystère", "Deviner le mot caché", "defi"),
+  mecanique("estimate", "Estimation d'un nombre", "Approcher le bon nombre", "defi"),
 ] as const;
 
 export const MECANIQUES_HASARD = MECANIQUES.filter((m) => m.famille === "hasard");

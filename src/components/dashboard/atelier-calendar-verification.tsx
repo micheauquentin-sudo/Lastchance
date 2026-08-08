@@ -6,6 +6,7 @@ import {
 } from "@/components/dashboard/atelier-calendar-etapes";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import {
+  caseVide,
   verificationCalendrier,
   type EntreeVerificationCalendrier,
 } from "@/lib/activation/calendar";
@@ -26,15 +27,27 @@ export function AtelierCalendrierVerification({
   entree: EntreeVerificationCalendrier;
 }) {
   const etat = verificationCalendrier(entree);
+  // `etat.garnies` compte « complètes POUR LEUR USAGE » : depuis qu'une case
+  // message vide est légale, elle y entre. Ce n'est pas faux, mais ce n'est pas
+  // ce que le commerçant lit dans « garnies » — on retranche les vides et on
+  // les nomme, avec le prédicat partagé plutôt qu'une règle recopiée.
+  const vides = entree.cases.filter(caseVide).length;
+  const garnies = etat.garnies - vides;
 
   return (
     <Card className="space-y-4">
       <div>
         <h2 className="text-lg font-black text-k-ink">Tout est-il prêt ?</h2>
         <p className="mt-1 text-sm font-semibold text-k-body">
-          {etat.garnies} case{etat.garnies > 1 ? "s" : ""} garnie
-          {etat.garnies > 1 ? "s" : ""} sur {entree.cases.length}. Chaque point
-          en rouge nomme la case à corriger et y mène.
+          {garnies} case{garnies > 1 ? "s" : ""} garnie
+          {garnies > 1 ? "s" : ""} sur {entree.cases.length}
+          {vides > 0 && (
+            <>
+              , {vides} qui s&apos;ouvrira{vides > 1 ? "ont" : ""} sur un « pas
+              de chance »
+            </>
+          )}
+          . Chaque point en rouge nomme la case à corriger et y mène.
         </p>
       </div>
 
@@ -104,10 +117,13 @@ export function AtelierCalendrierVerification({
         resume="Qu'est-ce qui empêche vraiment d'ouvrir ?"
       >
         Les points en rouge, et eux seuls : le serveur refuse l&apos;ouverture
-        tant qu&apos;une case n&apos;est pas complète pour son usage (un lot sans
-        stock ni libellé, un tour de roue sans roue, un message vide). Les points
-        orange n&apos;empêchent rien — ils décrivent ce que vos clients
-        rencontreraient si vous ouvriez malgré tout.
+        tant qu&apos;une case promet quelque chose sans pouvoir le tenir — un lot
+        sans stock ni libellé, un tour de roue sans roue. Une case message
+        laissée vide n&apos;est PAS un défaut : c&apos;est un choix, elle
+        s&apos;ouvrira sur un « pas de chance », comptera dans l&apos;assiduité
+        et n&apos;empêche pas d&apos;ouvrir. Les points orange n&apos;empêchent
+        rien non plus — ils décrivent ce que vos clients rencontreraient si vous
+        ouvriez tel quel.
       </InfoBulle>
 
       {etat.toutPret ? (

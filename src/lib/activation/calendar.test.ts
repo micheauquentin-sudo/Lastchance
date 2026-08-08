@@ -4,7 +4,6 @@ import {
   CALENDRIER_BLOCAGE_GRILLE,
   CALENDRIER_BLOCAGE_LOT_SANS_LIBELLE,
   CALENDRIER_BLOCAGE_LOT_SANS_STOCK,
-  CALENDRIER_BLOCAGE_MESSAGE_VIDE,
   CALENDRIER_BLOCAGE_SANS_CASE,
   CALENDRIER_BLOCAGE_SPIN_SANS_ROUE,
   casesIncompletes,
@@ -62,7 +61,7 @@ describe("blocageActivationCalendrier — comportement IDENTIQUE à l'action", (
     ).toBe(CALENDRIER_BLOCAGE_LOT_SANS_STOCK);
   });
 
-  it("couvre les quatre refus de case, aux mêmes conditions qu'avant", () => {
+  it("couvre les TROIS refus de case — ceux qu'un CHECK SQL appuie", () => {
     expect(blocageActivationCalendrier(1, [lot(1, null)])).toBe(
       CALENDRIER_BLOCAGE_LOT_SANS_STOCK,
     );
@@ -74,13 +73,21 @@ describe("blocageActivationCalendrier — comportement IDENTIQUE à l'action", (
         { ...message(1, ""), content_type: "spin", content_text: null },
       ]),
     ).toBe(CALENDRIER_BLOCAGE_SPIN_SANS_ROUE);
-    expect(blocageActivationCalendrier(1, [message(1, "  ")])).toBe(
-      CALENDRIER_BLOCAGE_MESSAGE_VIDE,
-    );
   });
 
   it("accepte un stock à ZÉRO — c'est une case en pause, pas un refus", () => {
     expect(blocageActivationCalendrier(1, [lot(1, 0)])).toBeNull();
+  });
+
+  it("accepte une case message VIDE — c'est un « perdu », pas un refus", () => {
+    expect(blocageActivationCalendrier(1, [message(1, "  ")])).toBeNull();
+    expect(
+      blocageActivationCalendrier(1, [{ ...message(1, ""), content_text: null }]),
+    ).toBeNull();
+    // Et une grille entièrement vide s'ouvre : plus rien à garnir pour publier.
+    expect(
+      blocageActivationCalendrier(3, [message(1, ""), message(2, ""), message(3, "")]),
+    ).toBeNull();
   });
 
   it("rend le day_index quand l'appelant le fournit, null sinon", () => {
@@ -109,11 +116,12 @@ describe("verificationCalendrier — l'apport : NOMMER la case", () => {
 
   it("compte les cases garnies et énumère les fautives", () => {
     const etat = verificationCalendrier(entree);
-    expect(etat.garnies).toBe(2);
+    // La case 3 est VIDE, plus fautive : elle compte comme garnie (« perdu »).
+    expect(etat.garnies).toBe(3);
     const cases = etat.controles.find((c) => c.cle === "cases");
     expect(cases?.ok).toBe(false);
-    expect(cases?.casesLiees).toEqual([2, 3]);
-    expect(cases?.detail).toContain("2 et 3");
+    expect(cases?.casesLiees).toEqual([2]);
+    expect(cases?.detail).toContain("case 2");
     expect(etat.toutPret).toBe(false);
   });
 
@@ -137,6 +145,64 @@ describe("verificationCalendrier — l'apport : NOMMER la case", () => {
     expect(pause).toMatchObject({ ok: false, bloquant: false });
     expect(pause?.casesLiees).toEqual([1, 2]);
     expect(etat.toutPret).toBe(true);
+  });
+
+  it("signale les cases vides sans empêcher l'ouverture", () => {
+    const etat = verificationCalendrier({
+      ...entree,
+      cases: [message(1, ""), lot(2, 4), message(3, "   "), message(4, "Merci")],
+    });
+    const vides = etat.controles.find((c) => c.cle === "cases-vides");
+    expect(vides).toMatchObject({ ok: false, bloquant: false });
+    expect(vides?.titre).toBe("2 cases sans rien à gagner");
+    expect(vides?.casesLiees).toEqual([1, 3]);
+    expect(vides?.detail).toContain("pas de chance");
+    // Une seule case vide : le titre reste au singulier.
+    const une = verificationCalendrier({
+      ...entree,
+      cases: [message(1, ""), lot(2, 4)],
+    }).controles.find((c) => c.cle === "cases-vides");
+    expect(une?.titre).toBe("1 case sans rien à gagner");
+    expect(etat.toutPret).toBe(true);
+    // Aucune case vide → aucun contrôle.
+    expect(
+      verificationCalendrier({ ...entree, cases: [lot(1, 4)] }).controles.find(
+        (c) => c.cle === "cases-vides",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("alerte quand AUCUNE case ne donne quoi que ce soit, sans bloquer", () => {
+    const toutesVides = [message(1, ""), message(2, "   ")];
+    const sansCadeau = verificationCalendrier({
+      ...entree,
+      cases: toutesVides,
+      completionRewardLabel: "",
+      completionRewardStock: 0,
+    });
+    const aucun = sansCadeau.controles.find((c) => c.cle === "aucun-gain");
+    expect(aucun).toMatchObject({ ok: false, bloquant: false });
+    expect(aucun?.titre).toBe("Aucune case ne donne quoi que ce soit");
+    expect(aucun?.detail).toContain("personne ne peut rien gagner");
+    expect(aucun?.casesLiees).toEqual([1, 2]);
+    expect(sansCadeau.toutPret).toBe(true);
+
+    // Un cadeau d'assiduité approvisionné change le propos, pas le verdict.
+    const avecCadeau = verificationCalendrier({
+      ...entree,
+      cases: toutesVides,
+      completionRewardLabel: "Un bon de 20 €",
+      completionRewardStock: 3,
+    }).controles.find((c) => c.cle === "aucun-gain");
+    expect(avecCadeau?.detail).toContain("seul le cadeau d'assiduité");
+
+    // Une seule case garnie suffit à retirer l'alerte (mais pas cases-vides).
+    const partiel = verificationCalendrier({
+      ...entree,
+      cases: [message(1, ""), lot(2, 4)],
+    });
+    expect(partiel.controles.find((c) => c.cle === "aucun-gain")).toBeUndefined();
+    expect(partiel.controles.find((c) => c.cle === "cases-vides")).toBeDefined();
   });
 
   it("signale une roue de case supprimée ou incapable de distribuer", () => {

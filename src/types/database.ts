@@ -104,6 +104,16 @@ export interface Organization {
   comp_access_until: string | null;
   /** Motif interne de l'accès offert. */
   comp_access_note: string;
+  /**
+   * Lien vers la page d'avis Google, affiché au joueur avant un jeu instantané
+   * si la campagne l'active (Campaign.prejeu_invitation). Invitation NON
+   * bloquante. '' = non renseigné. Écriture serveur après garde owner.
+   */
+  google_review_url: string;
+  /** Compte Instagram, mêmes règles que google_review_url. '' = non renseigné. */
+  instagram_url: string;
+  /** Compte TikTok, mêmes règles que google_review_url. '' = non renseigné. */
+  tiktok_url: string;
   created_at: string;
 }
 
@@ -1064,6 +1074,14 @@ export interface Campaign {
   collect_phone: boolean;
   /** Compte à rebours (secondes) avant masquage de l'écran du code. null = jamais. */
   code_ttl_seconds: number | null;
+  /**
+   * Proposer au joueur, AVANT le jeu, de noter la page Google et/ou de suivre
+   * les comptes sociaux de l'établissement (Organization.google_review_url /
+   * instagram_url / tiktok_url). Invitation NON bloquante : à ne pas confondre
+   * avec `engagement`, qui est une PORTE conditionnant le lancement. Sans lien
+   * renseigné côté organisation, l'activation n'affiche rien.
+   */
+  prejeu_invitation: boolean;
   created_at: string;
 }
 

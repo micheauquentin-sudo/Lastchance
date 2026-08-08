@@ -43,7 +43,7 @@ import { AtelierEntreeCalendrier } from "@/components/dashboard/atelier-calendar
 import { AtelierCalendrierVerification } from "@/components/dashboard/atelier-calendar-verification";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
-import { casesIncompletes } from "@/lib/activation/calendar";
+import { caseVide, casesIncompletes } from "@/lib/activation/calendar";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import type { Calendar, CalendarDay } from "@/types/database";
 
@@ -216,7 +216,13 @@ export default async function CalendarDetailPage({
             : { nom: roue.name, probleme: spinWheelIssue(roue) },
     };
   });
-  const garnies = days.length - casesIncompletes(casesVerification).length;
+  // « Garnies » au sens du commerçant : complètes ET donnant quelque chose. Une
+  // case message vide est légale (elle s'ouvrira sur un « pas de chance »),
+  // donc jamais « à compléter » — mais la compter comme garnie ferait afficher
+  // « 24 cases garnies » sur un calendrier qui vient d'être créé.
+  const vides = casesVerification.filter(caseVide).length;
+  const garnies =
+    days.length - casesIncompletes(casesVerification).length - vides;
 
   const enTete = (
     <div>
@@ -363,6 +369,7 @@ export default async function CalendarDetailPage({
       <AtelierEntreeCalendrier
         calendarId={c.id}
         garnies={garnies}
+        vides={vides}
         total={days.length}
       />
 

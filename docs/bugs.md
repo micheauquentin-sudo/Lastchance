@@ -3874,6 +3874,30 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   (`Referrer-Policy` strict, motif déjà en place sur les autres liens à
   jeton du produit).
 
+- **Retours propriétaire — hors périmètre assumé et dette documentée
+  (2026-08-08, `chantier/retours-proprietaire`)** :
+  - **Mode TV pronostics sans thème** : `loadContestTvContext` n'expose pas
+    `theme` (déjà noté V1.49) — non repris par ce chantier.
+  - **Branche « nuit » de `/play` sans décor ni lavis** : seul le décor par
+    preset kermesse a été livré ; un lavis de fond pour la variante nuit
+    reste à arbitrer côté produit.
+  - **Préférence d'invitation avant-jeu par navigateur (`sessionStorage`),
+    pas par joueur identifié** : un même joueur sur deux appareils revoit la
+    carte d'invitation sur chacun ; assumé, cohérent avec la nature
+    non bloquante de la mécanique.
+  - **Valeurs de lien déjà en base hors de la nouvelle liste blanche
+    d'hôtes** cessent d'être servies publiquement dès ce chantier (revalidées
+    à la lecture, voir ADR-094) sans avertissement au commerçant qui les
+    aurait saisies avant le resserrement. Impact nul mesuré : la production
+    ne compte qu'une organisation de test.
+  - **Dette `TRUNCATE` table-level héritée de la migration `00018`** :
+    relevée en INFO par la revue sécurité de ce chantier lors de l'examen de
+    `20260918120000_invitation_prejeu.sql`, préexistante et hors de son
+    périmètre. Un `TRUNCATE` sur une table portée par cette migration
+    ancienne agit au niveau table plutôt que ligne — à vérifier par
+    `db-supabase` (impact potentiel : cascade ou perte de granularité RLS
+    selon la table visée, non caractérisé plus finement ici).
+
 ## Tracking Process
 
 ### When a bug is found:

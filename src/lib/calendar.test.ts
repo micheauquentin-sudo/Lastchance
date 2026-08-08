@@ -490,9 +490,12 @@ describe("updateCalendarDaySchema — cohérence usage ↔ champs", () => {
   };
   const parse = (o: Record<string, unknown>) => updateCalendarDaySchema.safeParse({ ...base, ...o });
 
-  it("content : message obligatoire", () => {
+  it("content : message OPTIONNEL — une case vide est un « perdu » légal", () => {
     expect(parse({ content_type: "content", content_text: "Coucou" }).success).toBe(true);
-    expect(parse({ content_type: "content", content_text: "" }).success).toBe(false);
+    // Le refus applicatif a été retiré : aucun CHECK SQL ne l'appuyait, et il
+    // obligeait à garnir les 24 cases pour publier. Vide = pas de chance.
+    expect(parse({ content_type: "content", content_text: "" }).success).toBe(true);
+    expect(parse({ content_type: "content", content_text: "   " }).success).toBe(true);
   });
 
   it("lot : stock FINI obligatoire (verrou économique) + libellé", () => {

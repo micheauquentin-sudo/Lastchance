@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  GAME_OBJECT_KEYS,
+  SCRATCH_COVER_DEFAULT,
+  SLOT_SYMBOL_SETS,
+  SLOT_SYMBOL_SET_KEYS,
   WHEEL_PRESETS,
+  gameObjectColor,
   getPreset,
   playBackground,
   playSurface,
   resolveWheelStyle,
+  scratchCover,
+  slotSymbols,
   wheelStyleSchema,
 } from "./wheel-style";
 
@@ -118,5 +125,84 @@ describe("playSurface — habillage partagé page /play ↔ aperçu éditeur", (
     const surface = playSurface(s);
     expect(surface.kermesse).toBe(false);
     expect(surface.background).toBe(playBackground(s));
+  });
+});
+
+describe("games — personnalisation par mécanique", () => {
+  it("est absent par défaut : un style vierge n'écrit rien en base", () => {
+    expect(resolveWheelStyle({}).games).toBeUndefined();
+    // Ce que le jsonb reçoit réellement : `undefined` disparaît à la
+    // sérialisation, aucune migration, aucun champ requis ajouté.
+    expect(JSON.stringify(resolveWheelStyle({}))).not.toContain("games");
+  });
+
+  /**
+   * PROPRIÉTÉ DES PRESETS : ils décrivent une ambiance de PAGE, appliquée
+   * avant même que le commerçant ait choisi sa mécanique. Aucun ne doit
+   * écrire dans `games` — sinon appliquer « Néon » recolorerait les gobelets.
+   */
+  it("aucun preset n'écrit le sous-objet", () => {
+    for (const p of WHEEL_PRESETS) {
+      expect(p.style.games, p.key).toBeUndefined();
+    }
+  });
+
+  it("conserve les réglages valides, mécanique par mécanique", () => {
+    const s = resolveWheelStyle({
+      games: {
+        scratch: { coverFrom: "#111111", coverMid: "#222222", coverTo: "#333333" },
+        slot: { symbols: "bijoux" },
+        cups: { color: "#ff0000" },
+      },
+    });
+    expect(scratchCover(s)).toEqual(["#111111", "#222222", "#333333"]);
+    expect(slotSymbols(s)).toEqual(SLOT_SYMBOL_SETS.bijoux);
+    expect(gameObjectColor(s, "cups")).toBe("#ff0000");
+  });
+
+  it("défauts à la LECTURE : couche métallisée, symboles fruits, objets sans couleur", () => {
+    const s = resolveWheelStyle({});
+    expect(scratchCover(s)).toEqual([...SCRATCH_COVER_DEFAULT]);
+    expect(slotSymbols(s)).toEqual(SLOT_SYMBOL_SETS.fruits);
+    for (const k of GAME_OBJECT_KEYS) {
+      // ABSENCE ≠ VALEUR : sans couleur, le composant garde l'habillage du
+      // thème (blanc sur kermesse, translucide sur nuit). Un hex par défaut
+      // figerait l'un des deux.
+      expect(gameObjectColor(s, k), k).toBeUndefined();
+    }
+  });
+
+  /**
+   * Un sous-objet corrompu ne doit pas emporter les vingt autres champs :
+   * sans le `.catch(undefined)`, `resolveWheelStyle` renvoyait tous les
+   * défauts et le commerçant perdait ses couleurs de page à cause d'une
+   * couleur de gobelet.
+   */
+  it("un games corrompu dégrade LOCALEMENT, sans effacer le reste du style", () => {
+    const s = resolveWheelStyle({
+      bgFrom: "#123456",
+      ring: "gold",
+      games: { cups: { color: "javascript:alert(1)" } },
+    });
+    expect(s.bgFrom).toBe("#123456");
+    expect(s.ring).toBe("gold");
+    expect(s.games).toBeUndefined();
+    expect(gameObjectColor(s, "cups")).toBeUndefined();
+  });
+
+  it("les trois jeux de symboles ont six symboles chacun et des clés stables", () => {
+    for (const k of SLOT_SYMBOL_SET_KEYS) {
+      expect(SLOT_SYMBOL_SETS[k], k).toHaveLength(6);
+    }
+    // Référence STABLE : SlotReveal la met dans les dépendances de `start`.
+    const s = resolveWheelStyle({ games: { slot: { symbols: "fete" } } });
+    expect(slotSymbols(s)).toBe(slotSymbols(s));
+  });
+
+  it("un style complet reste sérialisable et relisable à l'identique", () => {
+    const s = resolveWheelStyle({
+      games: { dice: { color: "#abc" }, memory: { color: "#001122" } },
+    });
+    expect(resolveWheelStyle(JSON.parse(JSON.stringify(s)))).toEqual(s);
   });
 });

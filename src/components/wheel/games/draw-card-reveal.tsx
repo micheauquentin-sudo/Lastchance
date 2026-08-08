@@ -43,6 +43,7 @@ export function DrawCardReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  objectColor,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -51,6 +52,12 @@ export function DrawCardReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Couleur du DOS de la carte piochée — la face révélée porte le dégradé
+   * marchand. ABSENTE = habillage du thème ; voir « Absence ≠ valeur » dans
+   * `wheel-style.ts`.
+   */
+  objectColor?: string;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const [drawn, setDrawn] = useState(false);
@@ -114,7 +121,11 @@ export function DrawCardReveal({
           >
             {/* Dos de la carte */}
             <div
-              style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}
+              style={{
+                backfaceVisibility: "hidden",
+                WebkitBackfaceVisibility: "hidden",
+                ...(objectColor ? { backgroundColor: objectColor } : {}),
+              }}
               className={`absolute inset-0 flex flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 shadow-2xl ${
                 kermesse ? "border-k-ink/40 bg-white" : "border-white/20 bg-white/5"
               }`}

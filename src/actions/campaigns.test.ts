@@ -123,7 +123,11 @@ vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 
-import { duplicateCampaign, updateCampaign } from "./campaigns";
+import {
+  duplicateCampaign,
+  updateCampaign,
+  updateCampaignPrejeuInvitation,
+} from "./campaigns";
 
 /** Organisation active, telle que `getUserAndOrg` la rend. */
 function org(overrides: Record<string, unknown> = {}) {
@@ -338,3 +342,80 @@ describe("duplicateCampaign — le plafond de dépense suit la copie", () => {
     expect(payload.ends_at).toBeUndefined();
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// 3 — l'invitation avant-jeu (booléen sec, jamais une porte)
+//
+// Elle remplace `updateCampaignEngagement`, supprimée avec le module
+// `lib/engagement.ts` : l'invitation PROPOSE les comptes de la maison, elle ne
+// conditionne plus le lancement du jeu. Ce qui doit rester vrai :
+//   · le tenant est dans le FILTRE, jamais seulement dans le formulaire ;
+//   · l'écriture ne touche QUE sa colonne (une action « booléen sec » qui
+//     emporterait un voisin réécrirait des réglages que personne n'a ouverts) ;
+//   · un identifiant invalide n'écrit rien du tout.
+// ────────────────────────────────────────────────────────────
+
+describe("updateCampaignPrejeuInvitation — le booléen et rien d'autre", () => {
+  function invitationForm(valeur?: string): FormData {
+    const fd = new FormData();
+    fd.set("id", CAMPAIGN_ID);
+    if (valeur !== undefined) fd.set("prejeu_invitation", valeur);
+    return fd;
+  }
+
+  function updates() {
+    return callsTo("campaigns").filter((c) => c.op === "update");
+  }
+
+  it("case cochée : active l'invitation, scopée à l'organisation active", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignPrejeuInvitation(null, invitationForm("on"));
+
+    expect(res.ok).toBe(true);
+    expect(updates()).toHaveLength(1);
+    expect(updates()[0].payload).toEqual({ prejeu_invitation: true });
+    expect(updates()[0].filters).toEqual({
+      id: CAMPAIGN_ID,
+      organization_id: ORG_ID,
+    });
+  });
+
+  it("sentinelle explicite « true » : même effet qu'une case cochée", async () => {
+    // Une carte qui POSTE son état voulu (champ caché) plutôt que de le laisser
+    // déduire de la présence doit marcher aussi — sans quoi le formulaire
+    // enregistrerait « désactivé » sans que personne ne l'ait demandé.
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignPrejeuInvitation(
+      null,
+      invitationForm("true"),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(updates()[0].payload).toEqual({ prejeu_invitation: true });
+  });
+
+  it("case décochée (champ absent) : désactive, sans toucher un autre réglage", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+
+    const res = await updateCampaignPrejeuInvitation(null, invitationForm());
+
+    expect(res.ok).toBe(true);
+    // Égalité STRICTE : ni `engagement`, ni `collect_email`, ni rien d'autre.
+    expect(updates()[0].payload).toEqual({ prejeu_invitation: false });
+  });
+
+  it("un identifiant qui n'est pas un UUID n'écrit rien", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    const fd = new FormData();
+    fd.set("id", "../autre-campagne");
+    fd.set("prejeu_invitation", "on");
+
+    const res = await updateCampaignPrejeuInvitation(null, fd);
+
+    expect(res.ok).toBe(false);
+    expect(updates()).toEqual([]);
+  });
+});
+

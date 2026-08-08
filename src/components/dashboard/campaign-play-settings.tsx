@@ -1,143 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import {
-  updateCampaignClaim,
-  updateCampaignEngagement,
-} from "@/actions/campaigns";
+import { updateCampaignClaim } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
-import type { Campaign, EngagementAction } from "@/types/database";
+import type { Campaign } from "@/types/database";
 
-const ACTIONS: Array<{
-  action: EngagementAction;
-  label: string;
-  hint: string;
-  urlLabel?: string;
-  urlPlaceholder?: string;
-}> = [
-  {
-    action: "newsletter",
-    label: "Inscription à votre newsletter",
-    hint: "Le client laisse son email avant de jouer — récupérable dans Participations.",
-  },
-  {
-    action: "instagram",
-    label: "S'abonner à votre Instagram",
-    hint: "Le client ouvre votre profil avant de jouer.",
-    urlLabel: "Lien de votre profil Instagram",
-    urlPlaceholder: "https://instagram.com/votre-compte",
-  },
-  {
-    action: "tiktok",
-    label: "S'abonner à votre TikTok",
-    hint: "Le client ouvre votre profil avant de jouer.",
-    urlLabel: "Lien de votre profil TikTok",
-    urlPlaceholder: "https://tiktok.com/@votre-compte",
-  },
-];
-
-/**
- * Carte campagne : actions proposées au joueur AVANT de lancer la roue.
- * Si au moins une action est cochée, le joueur doit en choisir une pour
- * débloquer la roue.
- *
- * `useActionForm` et non `useActionState` : l'état de chargement doit
- * retomber même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+/*
+ * `CampaignEngagementSettings` VIVAIT ICI — la carte « Actions avant de jouer »,
+ * qui conditionnait le lancement du jeu à une action du joueur (newsletter,
+ * Instagram, TikTok, avis Google). Elle n'était plus rendue par aucune page et
+ * son action serveur était gelée depuis des semaines ; elle est supprimée avec
+ * `updateCampaignEngagement`. Ce qui la remplace n'est PAS une porte :
+ * `updateCampaignPrejeuInvitation` propose les comptes de la maison sans jamais
+ * bloquer le jeu, et les liens sont réglés une fois pour toutes côté
+ * organisation (`updateOrganizationSocialLinks`).
  */
-export function CampaignEngagementSettings({
-  campaign,
-}: {
-  campaign: Campaign;
-}) {
-  const { state, pending, onSubmit } = useActionForm(updateCampaignEngagement, {
-    networkError: "Enregistrement impossible, réessayez.",
-  });
-  const config = campaign.engagement ?? {};
-  const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(
-      ACTIONS.map((a) => [a.action, config[a.action]?.enabled ?? false]),
-    ),
-  );
-
-  return (
-    <Card>
-      <h2 className="font-semibold mb-1">Actions avant de jouer</h2>
-      <p className="text-sm text-zinc-500 mb-5">
-        Proposez à vos clients une action au choix pour débloquer la roue.
-        Aucune action cochée = la roue est jouable directement.
-      </p>
-
-      <form onSubmit={onSubmit} className="space-y-5">
-        <input type="hidden" name="id" value={campaign.id} />
-        {ACTIONS.map((a) => (
-          <div key={a.action}>
-            <label className="flex items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                name={a.action}
-                checked={enabled[a.action]}
-                onChange={(e) =>
-                  setEnabled((prev) => ({
-                    ...prev,
-                    [a.action]: e.target.checked,
-                  }))
-                }
-                className="mt-0.5 h-4 w-4 shrink-0 accent-orange-600"
-              />
-              <span>
-                <span className="font-medium text-zinc-900">{a.label}</span>
-                <span className="block text-xs text-zinc-500 mt-0.5">
-                  {a.hint}
-                </span>
-              </span>
-            </label>
-            {a.urlLabel &&
-              (enabled[a.action] ? (
-                <div className="mt-2 ml-7">
-                  <Label htmlFor={`${a.action}_url`}>{a.urlLabel}</Label>
-                  <Input
-                    id={`${a.action}_url`}
-                    name={`${a.action}_url`}
-                    type="url"
-                    defaultValue={config[a.action]?.url ?? ""}
-                    placeholder={a.urlPlaceholder}
-                    required
-                  />
-                </div>
-              ) : (
-                // Conserve l'URL déjà saisie quand l'action est décochée.
-                <input
-                  type="hidden"
-                  name={`${a.action}_url`}
-                  value={config[a.action]?.url ?? ""}
-                />
-              ))}
-          </div>
-        ))}
-
-        <p className="text-xs text-zinc-400">
-          Le suivi et l&apos;avis sont déclaratifs (non vérifiables
-          techniquement). Attention : Google déconseille les avis obtenus
-          contre récompense — l&apos;action reste un choix parmi d&apos;autres,
-          jamais une obligation.
-        </p>
-
-        <FieldError message={state && !state.ok ? state.error : undefined} />
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "…" : "Enregistrer"}
-        </Button>
-        {state?.ok && (
-          <p className="text-sm text-emerald-600 text-center">
-            Configuration enregistrée.
-          </p>
-        )}
-      </form>
-    </Card>
-  );
-}
 
 /**
  * Carte campagne : ce qui est demandé au gagnant avant d'afficher le

@@ -10,7 +10,7 @@ import {
 } from "@/actions/calendar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { casesIncompletes } from "@/lib/activation/calendar";
+import { caseVide, casesIncompletes } from "@/lib/activation/calendar";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
@@ -399,18 +399,23 @@ export function CalendarDaysEditor({
   const ordered = [...days].sort((a, b) => a.day_index - b.day_index);
   // Le compteur que la grille ne donnait pas : sur 24 à 60 cases, « il en reste
   // combien ? » était une question qu'on ne pouvait résoudre qu'en déroulant
-  // tout l'écran. Même règle que le refus d'activation (module partagé).
-  const restantes = casesIncompletes(
-    ordered.map((d) => ({
-      day_index: d.day_index,
-      content_type: d.content_type,
-      reward_stock: d.reward_stock,
-      reward_label: d.reward_label ?? "",
-      target_wheel_id: d.target_wheel_id,
-      content_text: d.content_text,
-    })),
-  );
-  const garnies = ordered.length - restantes.length;
+  // tout l'écran. Même règle que le refus d'activation (module partagé), et
+  // même prédicat que lui pour les cases vides : `caseVide`, jamais une copie
+  // locale de la règle.
+  const pourActivation = ordered.map((d) => ({
+    day_index: d.day_index,
+    content_type: d.content_type,
+    reward_stock: d.reward_stock,
+    reward_label: d.reward_label ?? "",
+    target_wheel_id: d.target_wheel_id,
+    content_text: d.content_text,
+  }));
+  const restantes = casesIncompletes(pourActivation);
+  // Une case `content` sans texte ne bloque plus rien : elle s'ouvrira sur un
+  // « pas de chance ». Elle n'est donc PAS « à compléter » — mais elle n'est
+  // pas garnie non plus, et le commerçant a le droit de savoir combien il en a.
+  const vides = pourActivation.filter(caseVide).length;
+  const garnies = ordered.length - restantes.length - vides;
 
   return (
     <Card>
@@ -425,13 +430,20 @@ export function CalendarDaysEditor({
 
       {ordered.length > 0 && (
         <p
-          className={`mb-4 inline-flex rounded-xl border-2 px-3 py-1.5 text-sm font-black ${
+          className={`mb-4 inline-flex flex-wrap rounded-xl border-2 px-3 py-1.5 text-sm font-black ${
             restantes.length === 0
               ? "border-k-ink bg-k-green/30 text-k-ink"
               : "border-k-ink/25 bg-k-bg text-k-body"
           }`}
         >
-          Garnies : {garnies}/{ordered.length}
+          {garnies} case{garnies > 1 ? "s" : ""} garnie
+          {garnies > 1 ? "s" : ""} sur {ordered.length}
+          {vides > 0 && (
+            <>
+              , {vides} vide{vides > 1 ? "s" : ""} — {vides > 1 ? "elles" : "elle"}{" "}
+              s&apos;ouvrira{vides > 1 ? "ont" : ""} sur un « pas de chance »
+            </>
+          )}
           {restantes.length > 0 && (
             <>
               {" "}
@@ -460,10 +472,13 @@ export function CalendarDaysEditor({
         className="mt-4"
       >
         Parce qu&apos;une case s&apos;enregistre seule, sans toucher aux autres :
-        vous pouvez en garnir trois aujourd&apos;hui et revenir demain. Une case
-        incomplète pour son usage (un lot sans stock, un message vide) est
-        refusée dès l&apos;enregistrement — et tant qu&apos;il en reste une, le
-        calendrier ne peut pas s&apos;ouvrir aux joueurs.
+        vous pouvez en garnir trois aujourd&apos;hui et revenir demain. Vous
+        n&apos;avez pas besoin de toutes les garnir pour ouvrir : une case
+        message laissée vide s&apos;ouvrira sur un « pas de chance », elle
+        compte dans l&apos;assiduité et n&apos;empêche pas la publication. Seule
+        une case promettant quelque chose sans pouvoir le tenir (un lot sans
+        stock ni libellé, un tour de roue sans roue) bloque
+        l&apos;enregistrement, puis l&apos;ouverture.
       </InfoBulle>
     </Card>
   );
@@ -561,6 +576,20 @@ function DayRow({
               Ouvre le {unlockLabel}
             </span>
           )}
+          {/* Repère, pas une erreur : une case vide est un choix légal. Le
+              prédicat vient du module d'activation — pas de règle recopiée —
+              et suit la saisie en cours, pas seulement l'enregistré. */}
+          {caseVide({
+            content_type: type,
+            content_text: contentText,
+            reward_stock: null,
+            reward_label: "",
+            target_wheel_id: null,
+          }) && (
+            <span className="rounded-full border-2 border-k-ink/25 bg-k-bg px-2 py-0.5 text-[11px] font-bold text-k-body">
+              🍂 pas de chance
+            </span>
+          )}
         </span>
         <label className="flex items-center gap-1.5 text-xs font-bold text-k-ink">
           <input
@@ -599,7 +628,10 @@ function DayRow({
 
       {type === "content" && (
         <div>
-          <Label htmlFor={`${prefix}-text`}>Message affiché à l&apos;ouverture</Label>
+          <Label htmlFor={`${prefix}-text`}>
+            Message affiché à l&apos;ouverture — laissez vide pour une case sans
+            gain
+          </Label>
           <textarea
             id={`${prefix}-text`}
             value={contentText}
@@ -784,8 +816,10 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
 
       {calendar.status !== "active" && (
         <p className="mt-3 text-sm text-zinc-500">
-          Pour ouvrir aux joueurs : chaque case doit être correctement renseignée (message
-          non vide, lot avec stock, ou roue choisie).
+          Pour ouvrir aux joueurs : chaque case qui promet quelque chose doit
+          pouvoir le tenir (un lot avec son libellé et son stock, un tour de
+          roue avec sa roue). Une case message laissée vide ne bloque rien —
+          elle s&apos;ouvrira sur un « pas de chance ».
         </p>
       )}
       <FieldError

@@ -17,11 +17,14 @@ import {
 export function AtelierEntreeCalendrier({
   calendarId,
   garnies,
+  vides = 0,
   total,
 }: {
   calendarId: string;
-  /** Cases complètes pour leur usage — le chiffre que la grille ne dit pas. */
+  /** Cases complètes ET donnant quelque chose — le chiffre que la grille ne dit pas. */
   garnies: number;
+  /** Cases message laissées vides : légales, elles s'ouvrent sur un « pas de chance ». */
+  vides?: number;
   total: number;
 }) {
   return (
@@ -37,6 +40,13 @@ export function AtelierEntreeCalendrier({
               {garnies} case{garnies > 1 ? "s" : ""} garnie
               {garnies > 1 ? "s" : ""} sur {total}
             </strong>
+            {vides > 0 && (
+              <>
+                {" "}
+                ({vides} vide{vides > 1 ? "s" : ""}, {vides > 1 ? "elles" : "elle"}{" "}
+                s&apos;ouvrira{vides > 1 ? "ont" : ""} sur un « pas de chance »)
+              </>
+            )}
             . La préparation se fait en trois étapes, chacune s&apos;enregistre
             pour elle-même.
           </>

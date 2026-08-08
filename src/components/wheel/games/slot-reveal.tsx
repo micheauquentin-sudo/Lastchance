@@ -8,9 +8,14 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { SpinOutcome } from "@/actions/play";
+import { SLOT_SYMBOL_SETS } from "@/lib/wheel-style";
 
-/** Symboles cosmétiques des rouleaux — aucune valeur, pur habillage. */
-const SYMBOLS = ["🍒", "🍋", "🔔", "⭐", "🍀", "💎"];
+/**
+ * Jeu de symboles par défaut — aucune valeur, pur habillage. Les rouleaux
+ * étant purement cosmétiques (le lot vient du serveur), le commerçant peut
+ * en choisir un autre jeu sans toucher à l'économie du tirage.
+ */
+const SYMBOLS = SLOT_SYMBOL_SETS.fruits;
 /** Instant d'arrêt (ms) de chaque rouleau — arrêt échelonné, gauche→droite. */
 const REEL_STOP_MS = [800, 1150, 1500];
 /** Pas de défilement (ms). */
@@ -50,6 +55,7 @@ export function SlotReveal({
   kermesse = false,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
+  symbols = SYMBOLS,
 }: {
   outcome: SpinOutcome;
   onRevealed: () => void;
@@ -58,9 +64,15 @@ export function SlotReveal({
   /** Couleurs marchandes de la face gagnante (défauts orange→rose). */
   buttonFrom?: string;
   buttonTo?: string;
+  /**
+   * Jeu de symboles des rouleaux. Référence STABLE attendue — les valeurs de
+   * `SLOT_SYMBOL_SETS` sont des constantes de module, et celle-ci entre dans
+   * les dépendances de `start`.
+   */
+  symbols?: readonly string[];
 }) {
   const reducedMotion = usePrefersReducedMotion();
-  const [reels, setReels] = useState<string[]>(["🍒", "🍋", "🔔"]);
+  const [reels, setReels] = useState<string[]>(() => symbols.slice(0, 3));
   const [spinning, setSpinning] = useState(false);
   const [done, setDone] = useState(false);
   const startedRef = useRef(false);
@@ -86,7 +98,9 @@ export function SlotReveal({
     if (startedRef.current) return;
     startedRef.current = true;
     // Symboles finaux cosmétiques : alignés = gagné, dépareillés = perdu.
-    const final = isLosing ? ["🍒", "🍋", "🔔"] : ["🍒", "🍒", "🍒"];
+    const final = isLosing
+      ? symbols.slice(0, 3)
+      : [symbols[0], symbols[0], symbols[0]];
 
     if (reducedMotion) {
       setReels(final);
@@ -100,7 +114,9 @@ export function SlotReveal({
     intervalRef.current = window.setInterval(() => {
       setReels((prev) =>
         prev.map((s, i) =>
-          stopped[i] ? s : SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
+          stopped[i]
+            ? s
+            : symbols[Math.floor(Math.random() * symbols.length)],
         ),
       );
     }, TICK_MS);
@@ -119,7 +135,7 @@ export function SlotReveal({
       }, ms);
       timersRef.current.push(t);
     });
-  }, [reducedMotion, isLosing]);
+  }, [reducedMotion, isLosing, symbols]);
 
   const busy = spinning || done;
 

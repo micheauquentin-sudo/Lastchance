@@ -100,6 +100,9 @@ function org(over: Over = {}) {
     comp_access: false,
     comp_access_until: null,
     timezone: "Europe/Paris",
+    google_review_url: "",
+    instagram_url: "",
+    tiktok_url: "",
     ...over,
   };
 }
@@ -163,6 +166,7 @@ function campaign(over: Over = {}) {
     collect_email: false,
     collect_phone: false,
     code_ttl_seconds: null,
+    prejeu_invitation: false,
     created_at: "2026-01-01T00:00:00.000Z",
     wheels: [wheel()],
     ...over,
@@ -438,7 +442,7 @@ describe("loadPlayContext — ce qui franchit la frontière", () => {
 
     const select = h.selects[0];
     expect(select).toContain(
-      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until, timezone)",
+      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, comp_access, comp_access_until, timezone, google_review_url, instagram_url, tiktok_url)",
     );
     expect(select).not.toContain("organizations(*");
     expect(select).not.toMatch(/webhook_secret|stripe_customer_id|webhook_url/);
@@ -575,5 +579,111 @@ describe("loadPlayContext — cas nominal", () => {
 
     if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
     expect(ctx.wheel.id).toBe("wheel-toujours");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// 5. Invitation avant-jeu — ce qui est proposé au joueur, et ce qui ne l'est pas
+//
+// Le chargeur porte ici DEUX responsabilités que rien d'autre ne rattrape :
+//   · la DÉCISION (campagne active × au moins un lien) — l'écran ne doit avoir
+//     aucun calcul à refaire, il rend ce qu'on lui donne ou rien ;
+//   · la REVALIDATION DE FORME à la lecture. Le schéma d'écriture l'impose
+//     déjà : ce second passage n'existe que pour les valeurs écrites AVANT lui,
+//     et il doit être MUET (aucun message, aucune erreur — un joueur anonyme
+//     n'a rien à apprendre d'un réglage fautif du commerçant).
+// ────────────────────────────────────────────────────────────
+describe("loadPlayContext — invitation avant-jeu", () => {
+  const GOOGLE = "https://g.page/r/CxAbCdEf/review";
+  const INSTAGRAM = "https://www.instagram.com/chez-marcel";
+  const TIKTOK = "https://tiktok.com/@chezmarcel";
+
+  it("rend null quand la campagne n'active pas l'invitation", async () => {
+    // Les liens de la maison sont renseignés : c'est la campagne qui décide.
+    h.row = row({
+      organizations: org({
+        google_review_url: GOOGLE,
+        instagram_url: INSTAGRAM,
+      }),
+      campaigns: campaign({ prejeu_invitation: false }),
+    });
+
+    const ctx = await loadPlayContext("slug-1");
+
+    if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
+    expect(ctx.invitationAvantJeu).toBeNull();
+  });
+
+  it("rend null quand l'invitation est active mais qu'aucun lien n'est renseigné", async () => {
+    // Le commerçant a coché sans jamais remplir ses réglages : rien à montrer,
+    // et surtout pas un encart vide.
+    h.row = row({ campaigns: campaign({ prejeu_invitation: true }) });
+
+    const ctx = await loadPlayContext("slug-1");
+
+    if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
+    expect(ctx.invitationAvantJeu).toBeNull();
+  });
+
+  it("ne porte que les liens renseignés, sous les clés du contrat", async () => {
+    h.row = row({
+      organizations: org({
+        google_review_url: GOOGLE,
+        instagram_url: "",
+        tiktok_url: TIKTOK,
+      }),
+      campaigns: campaign({ prejeu_invitation: true }),
+    });
+
+    const ctx = await loadPlayContext("slug-1");
+
+    if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
+    // Égalité STRUCTURELLE : la clé `instagram` doit être ABSENTE, pas posée à
+    // `undefined` — l'écran teste la présence de la clé.
+    expect(ctx.invitationAvantJeu).toEqual({ google: GOOGLE, tiktok: TIKTOK });
+    expect(Object.keys(ctx.invitationAvantJeu ?? {})).toEqual([
+      "google",
+      "tiktok",
+    ]);
+  });
+
+  it("écarte silencieusement un lien hors liste blanche relu en base", async () => {
+    // DÉFENSE EN PROFONDEUR. Ces deux valeurs ne peuvent plus être ÉCRITES,
+    // mais elles peuvent avoir été écrites hier — et `instagram.com.evil.com`
+    // est le piège exact que la comparaison par suffixe de point ferme.
+    h.row = row({
+      organizations: org({
+        google_review_url: "https://evil.com/avis",
+        instagram_url: "https://instagram.com.evil.com/chez-marcel",
+        tiktok_url: TIKTOK,
+      }),
+      campaigns: campaign({ prejeu_invitation: true }),
+    });
+
+    const ctx = await loadPlayContext("slug-1");
+
+    // Le contexte reste OUVERT : un lien fautif n'a jamais fermé un jeu.
+    if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
+    expect(ctx.invitationAvantJeu).toEqual({ tiktok: TIKTOK });
+  });
+
+  it("n'expose jamais les URL brutes sur l'objet organisation", async () => {
+    // L'organisation traverse la frontière serveur → client en entier dans
+    // plusieurs écrans. Les trois colonnes n'ont donc PAS le droit d'y rester :
+    // le seul chemin est `invitationAvantJeu`, où elles sont revalidées et
+    // conditionnées. Rouge si quelqu'un supprimait le détachement « pour
+    // simplifier ».
+    h.row = row({
+      organizations: org({ google_review_url: "https://evil.com/avis" }),
+      campaigns: campaign({ prejeu_invitation: true }),
+    });
+
+    const ctx = await loadPlayContext("slug-1");
+
+    if (!ctx.ok) throw new Error(`contexte fermé : ${ctx.error}`);
+    expect(Object.keys(ctx.organization)).not.toContain("google_review_url");
+    expect(Object.keys(ctx.organization)).not.toContain("instagram_url");
+    expect(Object.keys(ctx.organization)).not.toContain("tiktok_url");
+    expect(JSON.stringify(ctx.organization)).not.toContain("evil.com");
   });
 });
