@@ -20,6 +20,7 @@ import {
   eventTokenCookieName,
   loadEventActionContext,
 } from "@/lib/event-context";
+import { optionalEnv } from "@/lib/env";
 import { etatPartageAvecCache } from "@/lib/event-etat-cache";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
 import {
@@ -350,6 +351,27 @@ export async function getEventState(input: {
   const store = await cookies();
   const token = store.get(eventTokenCookieName(parsed.data.sessionId))?.value;
   const tokenHash = token ? hashPlayerToken(token) : undefined;
+
+  // INTERRUPTEUR DE COMPARAISON — `EVENT_ETAT_CACHE=off` rend le chemin
+  // historique (un seul appel `event_public_state`). Il existe pour une raison
+  // précise : sans lui, comparer « avant » et « après » demande deux builds sur
+  // une machine qui dérive entre les deux, et l'on attribue au correctif ce qui
+  // revient à la fatigue de la machine. Avec lui, les deux chemins se mesurent
+  // dos à dos dans le MÊME processus, à la même seconde.
+  //
+  // Il vaut aussi comme interrupteur d'exploitation : un cache qui se révélerait
+  // néfaste se coupe par une variable, sans redéploiement de code.
+  if (optionalEnv("EVENT_ETAT_CACHE") === "off") {
+    const { data, error } = await ctx.admin.rpc("event_public_state", {
+      p_session_id: parsed.data.sessionId,
+      p_player_token_hash: tokenHash,
+    });
+    if (error) {
+      reportError("event.state", error.message);
+      return mapEventPublicState(null);
+    }
+    return mapEventPublicState(data);
+  }
 
   // ── L'état se lit en DEUX morceaux, et c'est ce qui le rend tenable ──
   //
