@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { FONT_KEYS, type FontKey } from "@/lib/fonts";
+import { FOND_KEYS } from "@/lib/fonds-ecran";
 // Import de TYPE uniquement : aucun composant React n'entre ici, ce fichier
 // reste une table pure lisible côté serveur comme côté client.
 import type { DecorKey } from "@/components/ui/theme-decor";
@@ -171,6 +172,24 @@ export const wheelStyleSchema = z.object({
 
   // Animations Cartoon
   cartoonAnimations: z.boolean().default(false),
+
+  /**
+   * Fond d'écran thématique de la page /play — CHOIX EXPLICITE du commerçant.
+   *
+   * Contrairement au `decor` (scène cartoon), qui reste porté par le PRESET et
+   * n'existe donc pas dans ce schéma : le décor est une conséquence de
+   * l'ambiance choisie, le fond est un réglage à part entière — on le choisit
+   * pour ce qu'il montre (un stade, une salle de restaurant), pas pour aller
+   * avec des couleurs. Il vit ici, dans le jsonb, et reste OPTIONNEL : aucune
+   * migration, et les styles déjà enregistrés n'ont pas de fond, ce qui est
+   * exactement leur rendu actuel.
+   *
+   * `.catch(undefined)`, dans l'esprit de `games` ci-dessous : une clé retirée
+   * du catalogue et relue en base doit rendre une page SANS fond, jamais faire
+   * échouer la validation de tout le style — le commerçant perdrait ses vingt
+   * couleurs à cause d'une image disparue.
+   */
+  fond: z.enum(FOND_KEYS).optional().catch(undefined),
 
   /**
    * Réglages propres à la mécanique choisie (voir ci-dessus).

@@ -110,13 +110,22 @@ export const huntBlueprintSchema = z
 export const calendarBlueprintSchema = z
   .object({
     name: shortText,
+    // Recopie littérale de la palette partagée (`lib/seasonal-theme.ts`) — la
+    // parité est tenue par `seasonal-theme.test.ts`, qui compare ces `options`
+    // à `SEASONAL_THEMES` : un blueprint ne peut pas proposer un habillage que
+    // le calendrier refuserait à l'enregistrement.
     theme: z.enum([
+      "neutre",
       "noel",
       "saint_valentin",
       "anniversaire",
       "soldes",
       "festival",
-      "neutre",
+      "prairie",
+      "musique",
+      "football",
+      "restaurant",
+      "espace",
     ]),
     start_offset_days: z.number().int().min(0).max(365).default(0),
     merchant_content: z.string().trim().max(4_000).optional(),

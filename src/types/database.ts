@@ -792,23 +792,36 @@ export type EventTransitionState =
 export type CalendarStatus = "draft" | "active" | "archived";
 
 /**
- * Palette saisonnière PARTAGÉE par le calendrier et les pronostics — un seul
+ * Palette d'HABILLAGE PARTAGÉE par le calendrier et les pronostics — un seul
  * domaine, deux CHECK identiques en base (`calendars_theme_check` et
  * `contests_theme_check`, migration 20260917120000). Toute clé ajoutée ici
  * doit l'être des DEUX côtés en SQL, sans quoi un module proposerait un thème
  * que l'autre refuse.
  *
+ * Le nom dit « saisonnier » pour des raisons d'histoire ; le contrat, lui, est
+ * plus large depuis les fonds d'écran thématiques : une clé nomme un HABILLAGE
+ * SAISONNIER (noel, saint_valentin, soldes…) **ou un UNIVERS** (musique,
+ * football, restaurant, espace, prairie). Le critère d'appartenance n'est donc
+ * pas « est-ce une saison ? » mais « existe-t-il un habillage complet pour
+ * cette clé — jetons de couleur ET fond d'écran ? » (voir `lib/fonds-ecran.ts`).
+ *
  * À ne pas confondre avec le thème du quiz, qui nomme un USAGE MÉTIER
- * (gourmand, dégustation, culture…) et non une saison : les deux domaines se
- * ressemblent mais ne se mélangent pas.
+ * (gourmand, dégustation, culture…) : ce vocabulaire-là reste à SEPT clés et ne
+ * suit pas cette palette — les deux domaines se ressemblent mais ne se
+ * mélangent pas.
  */
 export type SeasonalTheme =
+  | "neutre"
   | "noel"
   | "saint_valentin"
   | "anniversaire"
   | "soldes"
   | "festival"
-  | "neutre";
+  | "prairie"
+  | "musique"
+  | "football"
+  | "restaurant"
+  | "espace";
 
 /** Thème d'un calendrier — nom historique de la palette partagée. */
 export type CalendarTheme = SeasonalTheme;

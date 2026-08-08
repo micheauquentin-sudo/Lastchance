@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FOND_KEYS } from "./fonds-ecran";
 import {
   GAME_OBJECT_KEYS,
   SCRATCH_COVER_DEFAULT,
@@ -71,6 +72,42 @@ describe("wheelStyleSchema — validation à l'écriture", () => {
     expect(
       wheelStyleSchema.safeParse({ hubColor: "#a1B2c3" }).success,
     ).toBe(true);
+  });
+});
+
+/**
+ * Le fond d'écran est le seul champ VISUEL du schéma que le commerçant choisit
+ * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs. Il vit
+ * donc dans le jsonb, contrairement au `decor` porté par le preset.
+ */
+describe("wheelStyleSchema.fond — fond d'écran thématique", () => {
+  it("absent par défaut : les styles déjà enregistrés n'en ont pas", () => {
+    expect(resolveWheelStyle({}).fond).toBeUndefined();
+    expect(resolveWheelStyle(null).fond).toBeUndefined();
+  });
+
+  it("accepte les dix clés du catalogue", () => {
+    for (const cle of FOND_KEYS) {
+      expect(resolveWheelStyle({ fond: cle }).fond).toBe(cle);
+    }
+  });
+
+  /**
+   * `.catch(undefined)` : une clé retirée du catalogue et relue en base rend
+   * une page SANS fond — jamais une validation en échec qui ferait perdre au
+   * commerçant ses vingt couleurs à cause d'une image disparue.
+   */
+  it("replie une clé inconnue SANS emporter le reste du style", () => {
+    const s = resolveWheelStyle({ fond: "halloween", pointerColor: "#ff0000" });
+    expect(s.fond).toBeUndefined();
+    expect(s.pointerColor).toBe("#ff0000");
+    expect(resolveWheelStyle({ fond: 42 }).fond).toBeUndefined();
+  });
+
+  it("aucun preset n'écrit de fond — le choix reste au commerçant", () => {
+    for (const p of WHEEL_PRESETS) {
+      expect(p.style.fond).toBeUndefined();
+    }
   });
 });
 

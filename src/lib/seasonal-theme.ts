@@ -27,12 +27,19 @@ import type { SeasonalTheme } from "@/types/database";
  * qu'on lit, jamais sur ce qu'on écrit.
  */
 export const SEASONAL_THEMES = [
+  // Neutre d'abord (le défaut), puis les saisons, puis les univers — le même
+  // ordre que `CALENDAR_THEME_ORDER` / `CONTEST_THEME_ORDER` côté sélecteurs.
+  "neutre",
   "noel",
   "saint_valentin",
   "anniversaire",
   "soldes",
   "festival",
-  "neutre",
+  "prairie",
+  "musique",
+  "football",
+  "restaurant",
+  "espace",
 ] as const satisfies readonly SeasonalTheme[];
 
 /** Le thème servi quand la valeur relue est hors vocabulaire ou absente. */
