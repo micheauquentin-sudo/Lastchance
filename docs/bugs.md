@@ -4058,3 +4058,33 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   case dédiée jamais ouverte ou purge des calendar_openings du seed entre
   projets. L'enquête complète vit dans les messages des commits 4d9afe6,
   8019e88, 2d20552 et dans le commentaire du test.
+
+- **Constats d'audit et de revue — partage après jeu (2026-08-08,
+  `chantier/partage-apres-jeu`)** — consignés sans action, décisions produit
+  en suspens ou hors périmètre du chantier :
+  - `?ref=share` reste accepté et compté par les mécaniques d'acquisition
+    même quand le commerçant a décoché le partage sur la campagne
+    (préexistant à ce chantier — le paramètre d'URL n'est pas conditionné à
+    `share_enabled`). Question produit à trancher : le lien déjà en
+    circulation doit-il continuer à créditer l'acquisition, ou le retrait du
+    partage doit-il aussi couper le tracking ?
+  - La suite `security_acl.test.sql` n'a pas d'assertion de liste **fermée**
+    des colonnes writables sur `campaigns`/`quizzes` : un grant additif futur
+    peut élargir silencieusement la surface UPDATE sans qu'un test rouge le
+    signale.
+  - Les ligues de pronostics n'ont aucun réglage commerçant sur leurs codes
+    d'invitation (ni activation, ni expiration, ni limite) — relevé pendant
+    l'audit des 8 surfaces publiques, hors périmètre de ce chantier.
+  - Les boutons « Partager » du code de retrait (calendrier, jackpot,
+    événement, quiz) restent inconditionnels — assumé : ils ne diffusent que
+    le code de retrait du joueur, jamais un lien d'acquisition, donc aucun
+    réglage commerçant ne les gate.
+  - Aucun test comportemental (E2E ou intégration) ne prouve que
+    `share_enabled=false` masque effectivement le bloc `ShareInvite` côté
+    joueur ; la couverture actuelle est structurelle (la prop `shareEnabled`
+    est requise par le typage, sans défaut composant), choix QA motivé par
+    le volume de surfaces à instrumenter plutôt qu'un oubli.
+  - `e2e/referral.spec.ts` n'a aucun test tagué `@smoke` : il est donc
+    silencieusement absent du projet Playwright `desktop-smoke`, piège de
+    filtrage relevé par QA — le fichier a dû être rejoué explicitement hors
+    du projet smoke pour être exécuté dans ce chantier.

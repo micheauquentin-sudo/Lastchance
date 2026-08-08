@@ -61,7 +61,7 @@ Docker — l'exécuter.
 | Distro | WSL2 `Ubuntu` 26.04 LTS, noyau 6.18, **systemd actif** |
 | Docker | Engine **29.6.2** natif Linux + Compose v5.3.1 (pas Docker Desktop) |
 | Node | **v22.22.1** / npm 10.9.4, dans `~/.local/bin` |
-| Stack Supabase locale | démarrée, Postgres 15.8, projet `lastchance` — pour la migration en tête, lire `EXPECTED_MIGRATION` dans `src/lib/release.ts`, pas ce tableau (le chiffre qui figurait ici était périmé de trois migrations) |
+| Stack Supabase locale | démarrée, Postgres 15.8, projet `lastchance` — pour la migration en tête, lire `EXPECTED_MIGRATION` dans `src/lib/release.ts`, pas ce tableau (le chiffre qui figurait ici était périmé de trois migrations) ; pgTAP vérifié le 2026-08-08 à **56 fichiers / 3203 assertions** PASS (le compte « 22 fichiers, 1804 assertions » plus bas dans ce document date du 2026-07-28 et est périmé) |
 | Playwright | **chromium + WebKit 26.5** (+ headless shell, ffmpeg) — les trois projets `mobile-chrome`, `mobile-safari` et `desktop-smoke` sont jouables en local |
 
 ### Dépôt de travail Linux
@@ -140,7 +140,7 @@ wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supaba
 ```
 
 ```powershell
-# pgTAP complet — 22 fichiers, 1804 assertions, ~10 s (prouvé le 2026-07-28)
+# pgTAP complet — 56 fichiers, 3203 assertions PASS (vérifié le 2026-08-08)
 wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supabase test db"
 # Docker depuis PowerShell : le shim %APPDATA%\npm\docker.cmd relaie vers WSL
 docker ps
@@ -153,9 +153,10 @@ minimal alors que `node`/`npx` vivent dans `~/.local/bin`, et le navigateur doit
 être installé **en tant qu'utilisateur** sinon son cache atterrit dans
 `/root/.cache` où Playwright ne le cherche pas.
 
-**Vérifié le 2026-07-28 dans `~/workspaces/lastchance`** : `supabase test db`
-→ 22 fichiers / **1804 assertions PASS** (10 s) ; `npm run typecheck` → 0 ;
-`npm test` → **83 fichiers, 1318 tests verts** (55 s) ; Playwright 1.61.1.
+**Vérifié le 2026-07-28 dans `~/workspaces/lastchance`** : `npm run typecheck`
+→ 0 ; `npm test` → **83 fichiers, 1318 tests verts** (55 s) ; Playwright
+1.61.1. Le compte pgTAP a évolué depuis : **56 fichiers / 3203 assertions
+PASS**, vérifié le 2026-08-08 (chantier « Partage après jeu »).
 
 ## Development Guidelines
 - Travailler sur la branche explicitement demandée pour la tâche en cours
@@ -269,8 +270,8 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-08-08
-- **Dernier chantier**: **Tuiles checklist + autosave** (branche `chantier/tuiles-checklist-autosave`, 9 commits au-dessus de `main` — PR à ouvrir, fusion sur l'ordre permanent du propriétaire dès CI verte —, sans migration), 2026-08-08. Demande propriétaire : sur chaque page de jeu, toutes les tuiles refermées par défaut, numérotées dans l'ordre des tâches, pastille rouge (obligatoire manquant) / verte (complet — vide-mais-optionnel valide) ; tout réglage s'enregistre automatiquement, notification en haut à droite. **Checklist** : `src/lib/checklist/` mappe les VRAIS contrôles d'activation V1.47 vers des tuiles ordonnées par page, table des défauts `bloquant` tranchée PAR module (pronostics : rien ne bloque côté serveur, pastilles vertes honnêtes) ; une clé hors table ne rougit jamais un écran non relu ; `CarteRepliable` numérote/statue/résume et rouvre par ancre `#statut`/`#suivi`/`#reglages`. **Autosave** : correctif de la file dans `useActionForm` (perte silencieuse de la dernière frappe en resoumission rapprochée, rejeu par `requestSubmit` relisant l'état frais) ; `useAutoSave` (debounce 800 ms, jamais au montage, flush sortie de champ) à côté du hook littéral ; `useAutoSaveManuel` pour les gestes hors formulaire ; toast global (bus sans `Provider`, rôle `status`/`alert`, pile de 3). Déployé sur 8 pages détail (campagnes, roue, quiz, calendrier, chasse, fidélité, jackpot, événements, pronostics) et ~25 formulaires, boutons « Enregistrer » conservés partout. **Protections spécifiques conservées** : `day_count` calendrier désactive l'autosave dès valeur différente de l'initiale (poignée `confirm_day_loss` testée 4 cas) ; `PrizeRow` sans autosave (compare-and-swap `stock_seen`) ; `ContestEventCard` manuelle ; exclusions absolues (statuts/publication, zones dangereuses, créations, finalize/tirage/résultats, motif de verrouillage, uploads). E2E réparé (helper `ouvrirTuile`, specs referral/campaign-templates/pronostics). Preuve : typecheck 0, lint 0, **256 fichiers / 4029 tests**, build vert, migrations inchangées (122, tête `20260918120000`), sql:check ok, E2E WSL desktop-smoke ciblé vert (pronostics+referral+campaign-templates, calendar+atelier-modules, wheel-wizard+quiz, referral mobile-chrome). ADR-096, roadmap V1.51.
-  **Reste ouvert** : PR à ouvrir vers `main`, fusion sur l'ordre permanent dès CI verte (CI de la PR non encore jouée au moment de l'écriture). État de repli des tuiles non persisté entre visites ; `useAutoSave` peut perdre la dernière frappe sur navigation sans `blur` avant l'échéance du debounce (borné par le flush sortie de champ) ; `reloadOnSuccess`/`toastOnSuccess` incompatibles (aucun appelant ne les combine) ; matrice E2E mobile complète en reliquat CI. Deux gestes propriétaire restent : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
+- **Dernier chantier**: **Partage après jeu** (branche `chantier/partage-apres-jeu`, 8 commits au-dessus de `origin/main` — PR à ouvrir, fusion sur l'ordre permanent du propriétaire dès CI verte —, migrations `20260919120000`/`20260920120000`), 2026-08-08. Origine : le propriétaire décoche « Activer le parrainage sur cette campagne » et voit toujours côté joueur « Faites gagner vos proches / Partager sur WhatsApp / Copier le lien ». Cause : deux widgets distincts — `ReferralPanel` (parrainage récompensé, correctement gaté) et `ShareInvite` (partage générique post-partie, rendu SANS AUCUN réglage sur les 4 coquilles de `/play` : roue, révélation, grattage, défis skill-gated, écrans gagné et perdu). Audit de 8 surfaces publiques en parallèle : même défaut sur le quiz (« Défier un ami » / « Partager mon score » inconditionnels) ; calendrier déjà correct (partage par case `is_special`) ; chasse/fidélité/jackpot/événement/portefeuille/commande propres. **Livré** : `campaigns.share_enabled` + `quizzes.share_enabled` (boolean not null default true, grants additifs), actions `updateCampaignShareInvite`/`updateQuizShareInvite`, `QuizPublicContext.shareEnabled` (`!== false`), prop `shareEnabled` requise enfilée de `/play` à travers 13 wrappers, case d'atelier dans la tuile campagne renommée « Partage et parrainage » et dans les réglages quiz. **Revue sécurité dédiée : GO, 0 critique/élevé**, 1 MOYEN fermé avant PR (les actions campagne partage et prejeu refusaient un update à 0 ligne sans le signaler ; refus honnête via `.select("id")`, message fondu anti-oracle) et 1 FAIBLE fermé (défaut d'absence de colonne aligné entre `/play` et le quiz). Preuve : typecheck 0, lint 0, Vitest **259 fichiers / 4085 tests**, build vert (46 pages), pgTAP **56 fichiers / 3203 assertions** PASS vide+semée, migrations:check 124/tête `20260920120000`, sql:check/casts:check ok, E2E WSL desktop-smoke 15/15 + `referral.spec.ts` 4/4 rejoué sur mobile-chrome. ADR-097, roadmap V1.52.
+  **Reste ouvert** : PR à ouvrir vers `main`, fusion sur l'ordre permanent dès CI verte (CI de la PR non encore jouée au moment de l'écriture). `?ref=share` reste accepté par les mécaniques d'acquisition même partage décoché (question produit) ; suite ACL sans assertion de liste fermée des colonnes writables ; ligues de pronostics sans réglage commerçant sur leurs codes d'invitation ; aucun test comportemental ne prouve que `share_enabled=false` masque le bloc (couverture structurelle) ; `referral.spec.ts` sans tag `@smoke` (absent du projet desktop-smoke). Deux gestes propriétaire restent : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

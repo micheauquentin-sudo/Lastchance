@@ -57,6 +57,56 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-08 — Partage après jeu : un réglage par surface — **à relire**
+
+- **Lot et objectif** : le propriétaire décoche « Activer le parrainage sur
+  cette campagne » et voit toujours côté joueur « Faites gagner vos proches /
+  Partager sur WhatsApp / Copier le lien ». Cause identifiée : deux widgets
+  distincts — `ReferralPanel` (parrainage récompensé, correctement gaté) et
+  `ShareInvite` (partage générique post-partie, rendu sans aucun réglage sur
+  les 4 coquilles de `/play`). Audit de 8 surfaces publiques en parallèle :
+  même défaut sur le quiz ; calendrier déjà correct ; chasse, fidélité,
+  jackpot, événement, portefeuille et commande propres.
+- **Branche/commits** : `chantier/partage-apres-jeu`, 8 commits au-dessus de
+  `origin/main` — `4baff77` (DB campagne), `f56e81c` (types), `f0e51d0` (DB
+  quiz), `404f771` (types), `0f83ebc` (frontend), `944a031` (backend),
+  `58c487e` (revue sécurité : refus honnête à 0 ligne), `c6ad6d9` (revue
+  sécurité : défaut `!== false` aligné sur `/play`). Migrations
+  `20260919120000_partage_apres_jeu.sql` et
+  `20260920120000_partage_apres_jeu_quiz.sql`.
+- **Faits et fichiers touchés** : `campaigns.share_enabled` et
+  `quizzes.share_enabled` (boolean not null default true, grants additifs) ;
+  `updateCampaignShareInvite` (`src/actions/campaigns.ts`),
+  `updateQuizShareInvite` (`src/actions/quiz.ts`) ; `QuizPublicContext.shareEnabled`
+  (lu `!== false`) ; prop `shareEnabled` requise enfilée de `/play` à travers
+  13 wrappers jusqu'aux 4 coquilles ; case « Proposer le partage du jeu après
+  une partie » dans la tuile campagne renommée « Partage et parrainage »
+  (`campaign-share-settings.tsx`, autosave) ; `QuizShareSettings` dans
+  l'éditeur quiz.
+- **Validations exécutées** : typecheck 0 ; lint 0 ; Vitest **259 fichiers /
+  4085 tests** (puis re-run ciblé 80 tests incluant les 4 nouveaux des
+  correctifs de revue) ; build vert (46 pages) ; pgTAP **56 fichiers / 3203
+  assertions** PASS base vide et semée ; migrations:check 124/tête
+  `20260920120000` ; sql:check et casts:check ok ; E2E WSL desktop-smoke
+  15/15 (player-win 5, skill-games 3, quiz 1, campaign-templates 1,
+  auth.setup 4) + re-run `referral.spec.ts` 4/4 réellement joué sur
+  mobile-chrome et campaign-templates 1/1. CI GitHub de la PR : non encore
+  jouée au moment de l'écriture, fusion sur l'ordre permanent dès verte.
+- **Risque/blocage** : revue sécurité dédiée GO, 0 critique/élevé ; 1 MOYEN
+  fermé avant PR (`58c487e` : les actions campagne partage et prejeu
+  refusaient un update à 0 ligne sans le signaler — refus honnête via
+  `.select("id")`, message fondu anti-oracle, harnais de mock durci) ; 1
+  FAIBLE fermé (`c6ad6d9` : défaut d'absence de colonne aligné entre `/play`
+  et le quiz). Reliquats consignés sans action dans `docs/bugs.md` :
+  `?ref=share` reste accepté par les mécaniques d'acquisition même partage
+  décoché (question produit) ; suite ACL sans assertion de liste fermée des
+  colonnes writables ; ligues de pronostics sans réglage commerçant sur leurs
+  codes d'invitation ; aucun test comportemental sur `share_enabled=false`
+  (couverture structurelle) ; `referral.spec.ts` sans tag `@smoke`.
+- **Prochaine action** : ouvrir la PR vers `main`, fusion sur l'ordre
+  permanent du propriétaire dès CI verte. Aucune autre action côté Claude
+  après fusion.
+
 ### 2026-08-08 — Correctif V1.51.1 : trois états de tuile, tout se replie — **à relire**
 
 - **Lot et objectif** : retour propriétaire immédiat après V1.51, capture à
