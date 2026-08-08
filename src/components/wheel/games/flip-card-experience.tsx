@@ -24,6 +24,7 @@ export function FlipCardExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -31,6 +32,8 @@ export function FlipCardExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /** Le commerçant propose-t-il le partage du jeu après la partie ? */
+  shareEnabled: boolean;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const kermesse = playOnLightSurface(style);
@@ -43,6 +46,7 @@ export function FlipCardExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
+      shareEnabled={shareEnabled}
       gameType="flip_card"
       renderReveal={(outcome, onRevealed) => (
         <FlipCardReveal

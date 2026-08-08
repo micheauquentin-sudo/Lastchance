@@ -44,6 +44,7 @@ export function GameShell({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
   gameType,
   renderReveal,
 }: {
@@ -54,6 +55,13 @@ export function GameShell({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /**
+   * Le commerçant propose-t-il le partage du jeu après la partie ?
+   * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
+   * `campaigns.share_enabled` — un défaut dans le composant masquerait un
+   * oubli de câblage en faisant réapparaître le bloc décoché.
+   */
+  shareEnabled: boolean;
   /**
    * Mécanique jouée. L'emoji, le verbe du bouton et l'accroche par défaut en
    * découlent (`gameIdle`) : les treize wrappers ne portent plus leurs propres
@@ -244,7 +252,9 @@ export function GameShell({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
@@ -256,7 +266,9 @@ export function GameShell({
           <p className={playText.body(kermesse)}>
             Rien pour vous aujourd&apos;hui. La chance tourne, revenez bientôt !
           </p>
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}

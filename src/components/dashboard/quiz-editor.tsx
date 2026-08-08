@@ -12,6 +12,7 @@ import {
   updateQuiz,
   updateQuizQuestion,
   updateQuizReward,
+  updateQuizShareInvite,
   type QuizDrawActionResult,
 } from "@/actions/quiz";
 import { Button } from "@/components/ui/button";
@@ -102,6 +103,12 @@ export interface DashboardQuiz {
   drawnAt: string | null;
   /** Validité du code QUIZ- émis, en jours (null = sans limite). */
   codeTtlDays: number | null;
+  /**
+   * Le quiz propose-t-il à ses joueurs de le partager (`quizzes.share_enabled`,
+   * `true` par défaut en base) ? Gate « 📣 Défier un ami » et « Partager mon
+   * score » côté joueur — jamais le partage du code de retrait.
+   */
+  shareEnabled: boolean;
 }
 
 export interface DashboardQuizQuestion {
@@ -432,6 +439,54 @@ export function QuizSettings({ quiz }: { quiz: DashboardQuiz }) {
           />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
+      </form>
+    </Card>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Partage du quiz par les joueurs
+// ────────────────────────────────────────────────────────────
+
+/**
+ * L'interrupteur « partage du quiz » — miroir de `CampaignShareSettings` côté
+ * campagne. Formulaire À PART d'`updateQuiz` : les deux écrivent la même ligne
+ * `quizzes`, et un champ commun ferait qu'enregistrer les réglages réécrirait
+ * ce drapeau (ou l'inverse) selon celui qui poste en dernier.
+ */
+export function QuizShareSettings({ quiz }: { quiz: DashboardQuiz }) {
+  const { state, onSubmit } = useActionForm(updateQuizShareInvite, {
+    networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
+  });
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-1">Partage du quiz</h2>
+      <p className="text-sm text-zinc-500 mb-4">
+        Vos joueurs peuvent défier leurs proches et partager leur score. Rien
+        n&apos;est récompensé : c&apos;est une invitation, pas un parrainage.
+      </p>
+
+      <form onSubmit={onSubmit} className="space-y-3">
+        <input type="hidden" name="id" value={quiz.id} />
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            name="share_enabled"
+            defaultChecked={quiz.shareEnabled}
+            onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
+          />
+          <span className="text-sm text-zinc-700">
+            Proposer le partage du quiz aux joueurs
+          </span>
+        </label>
+
+        <FieldError message={state && !state.ok ? state.error : undefined} />
+        {state?.ok && (
+          <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+        )}
       </form>
     </Card>
   );

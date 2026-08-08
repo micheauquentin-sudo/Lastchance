@@ -159,7 +159,7 @@ test.describe("parrainage — éditeur & caisse (owner)", () => {
     page,
   }) => {
     await page.goto(`/dashboard/campaigns/${CAMPAIGN_ID}`);
-    await ouvrirTuile(page, /Développer «.*Parrainage ludique/);
+    await ouvrirTuile(page, /Développer «.*Partage et parrainage/);
 
     // Section scopée à sa carte (évite tout « Enregistrer » d'une autre section).
     // Ancrée sur DEUX repères sémantiques — le titre de la carte et sa case

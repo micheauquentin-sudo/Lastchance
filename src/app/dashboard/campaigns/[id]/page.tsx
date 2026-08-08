@@ -7,6 +7,7 @@ import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { CampaignPrejeuInvitation } from "@/components/dashboard/campaign-prejeu-invitation";
+import { CampaignShareSettings } from "@/components/dashboard/campaign-share-settings";
 import { NewQrForm } from "@/components/dashboard/qr-forms";
 import { QrCodeCard } from "@/components/dashboard/qr-code-card";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
@@ -468,21 +469,25 @@ export default async function CampaignDetailPage({
 
       <div className="mb-6">
         <CarteRepliable
-          titre="Parrainage ludique"
+          titre="Partage et parrainage"
           defaultOuvert={false}
           {...marques("parrainage")}
           resume={resumeTuile(
             "parrainage",
-            (referralProgram as ReferralProgramRow | null)?.enabled
-              ? "Vos joueurs peuvent parrainer leurs proches."
-              : "Le parrainage est désactivé.",
+            resumePartageParrainage(
+              c.share_enabled,
+              (referralProgram as ReferralProgramRow | null)?.enabled === true,
+            ),
           )}
         >
-          <ReferralProgramSettings
-            campaignId={c.id}
-            program={(referralProgram as ReferralProgramRow | null) ?? null}
-            hasAccess={hasReferralAccess(organization!)}
-          />
+          <CampaignShareSettings campaignId={c.id} enabled={c.share_enabled} />
+          <div className="mt-6">
+            <ReferralProgramSettings
+              campaignId={c.id}
+              program={(referralProgram as ReferralProgramRow | null) ?? null}
+              hasAccess={hasReferralAccess(organization!)}
+            />
+          </div>
         </CarteRepliable>
       </div>
 
@@ -511,4 +516,21 @@ export default async function CampaignDetailPage({
       </CarteRepliable>
     </div>
   );
+}
+
+/**
+ * Résumé de la tuile « Partage et parrainage ». Les DEUX réglages sont
+ * indépendants — un résumé qui n'en nommerait qu'un a déjà fait croire que
+ * décocher le parrainage masquait le bloc de partage.
+ */
+function resumePartageParrainage(
+  partage: boolean,
+  parrainage: boolean,
+): string {
+  if (partage && parrainage) {
+    return "Partage et parrainage proposés après la partie.";
+  }
+  if (partage) return "Le partage du jeu est proposé après la partie.";
+  if (parrainage) return "Parrainage actif, partage simple masqué.";
+  return "Aucune invitation au partage après la partie.";
 }

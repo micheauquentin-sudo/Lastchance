@@ -100,6 +100,7 @@ export default async function QuizPage({
         initialState={ctx.publicState}
         initialLeaderboard={leaderboard}
         initialSpinBundle={spinBundle}
+        shareEnabled={ctx.shareEnabled}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

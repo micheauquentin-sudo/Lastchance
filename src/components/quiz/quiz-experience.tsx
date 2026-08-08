@@ -152,6 +152,13 @@ export interface QuizExperienceProps {
   initialLeaderboard: QuizLeaderboardEntry[];
   /** Roue d'un tour offert DÉJÀ acquis et non consommé (reprise de session). */
   initialSpinBundle: QuizSpinBundle | null;
+  /**
+   * Le commerçant propose-t-il le partage du quiz (`quizzes.share_enabled`,
+   * `true` par défaut en base) ? Gate « 📣 Défier un ami » ET « Partager mon
+   * score » — deux INVITATIONS. Le partage du CODE de retrait (RewardPanel)
+   * n'en dépend pas : c'est le gain du joueur, pas une invitation.
+   */
+  shareEnabled: boolean;
 }
 
 export function QuizExperience({
@@ -163,6 +170,7 @@ export function QuizExperience({
   initialState,
   initialLeaderboard,
   initialSpinBundle,
+  shareEnabled,
 }: QuizExperienceProps) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<QuizPublicState>(initialState);
@@ -564,6 +572,7 @@ export function QuizExperience({
           spinBundle={spinBundle}
           publicSlug={publicSlug}
           organizationId={organizationId}
+          shareEnabled={shareEnabled}
           onSpin={(grantToken, bundle) => setActiveSpin({ grantToken, bundle })}
         />
       )}
@@ -644,7 +653,9 @@ export function QuizExperience({
         />
       )}
 
-      <SharePanel publicSlug={publicSlug} quizName={quiz.name} />
+      {shareEnabled && (
+        <SharePanel publicSlug={publicSlug} quizName={quiz.name} />
+      )}
     </div>
   );
 }
@@ -1286,6 +1297,7 @@ function ResultPanel({
   spinBundle,
   publicSlug,
   organizationId = null,
+  shareEnabled,
   onSpin,
 }: {
   quiz: QuizInfo;
@@ -1297,6 +1309,11 @@ function ResultPanel({
   spinBundle: QuizSpinBundle | null;
   publicSlug: string;
   organizationId?: string | null;
+  /**
+   * Gate « Partager mon score » (une invitation). Le partage du CODE de
+   * retrait, plus bas dans RewardPanel, n'en dépend PAS.
+   */
+  shareEnabled: boolean;
   onSpin: (grantToken: string, bundle: QuizSpinBundle) => void;
 }) {
   const canShare = useCanShare();
@@ -1359,7 +1376,7 @@ function ResultPanel({
             sans réponse.
           </p>
         )}
-        {canShare && (
+        {shareEnabled && canShare && (
           <button
             type="button"
             onClick={shareScore}

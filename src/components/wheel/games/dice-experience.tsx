@@ -22,6 +22,7 @@ export function DiceExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -29,6 +30,8 @@ export function DiceExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /** Le commerçant propose-t-il le partage du jeu après la partie ? */
+  shareEnabled: boolean;
 }) {
   const style = resolveWheelStyle(rawStyle);
   const kermesse = playOnLightSurface(style);
@@ -41,6 +44,7 @@ export function DiceExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
+      shareEnabled={shareEnabled}
       gameType="dice"
       renderReveal={(outcome, onRevealed) => (
         <DiceReveal

@@ -53,6 +53,13 @@ interface RevealExperienceProps {
   logoUrl: string | null;
   claimConfig: ClaimConfig;
   style: WheelStyle;
+  /**
+   * Le commerçant propose-t-il le partage du jeu après la partie ?
+   * (`campaigns.share_enabled`, `true` par défaut en base). Gate le bloc
+   * « Faites gagner vos proches » — le parrainage RÉCOMPENSÉ reste gaté par
+   * son propre programme.
+   */
+  shareEnabled: boolean;
 }
 
 /**
@@ -183,6 +190,7 @@ export default async function PlayPage({
       logoUrl={ctx.organization.logo_url}
       claimConfig={claimConfig}
       style={style}
+      shareEnabled={ctx.campaign.share_enabled}
     />
   ) : (
     // Roue (ou game_type inconnu) : parcours par défaut.
@@ -195,6 +203,7 @@ export default async function PlayPage({
       style={style}
       referral={referral}
       organizationId={ctx.organization.id}
+      shareEnabled={ctx.campaign.share_enabled}
     />
   );
 

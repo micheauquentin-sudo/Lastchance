@@ -41,6 +41,7 @@ export function ScratchExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -49,6 +50,12 @@ export function ScratchExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /**
+   * Le commerçant propose-t-il le partage du jeu après la partie ?
+   * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
+   * `campaigns.share_enabled`.
+   */
+  shareEnabled: boolean;
 }) {
   const style = resolveWheelStyle(rawStyle);
   // Thème « kermesse » : même bascule de classes que PlayExperience.
@@ -224,7 +231,9 @@ export function ScratchExperience({
               Présentez cet écran au comptoir pour récupérer votre gain.
             </p>
           )}
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}
@@ -237,7 +246,9 @@ export function ScratchExperience({
             La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,
             revenez bientôt !
           </p>
-          <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          {shareEnabled && (
+            <ShareInvite slug={slug} organizationName={organizationName} kermesse={kermesse} />
+          )}
           <DiscoverFooter kermesse={kermesse} />
         </div>
       )}

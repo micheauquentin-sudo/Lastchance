@@ -19,6 +19,7 @@ export function RpsExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -26,6 +27,8 @@ export function RpsExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /** Le commerçant propose-t-il le partage du jeu après la partie ? */
+  shareEnabled: boolean;
 }) {
   const kermesse = playOnLightSurface(resolveWheelStyle(rawStyle));
 
@@ -37,6 +40,7 @@ export function RpsExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
+      shareEnabled={shareEnabled}
       gameType="rps"
       renderChallenge={(_challenge, submit, pending) => (
         <RpsChallenge onSubmit={submit} pending={pending} kermesse={kermesse} />

@@ -64,7 +64,7 @@ export const TUILES_ROUE: readonly TuileChecklist[] = [
   { cle: "prejeu", titre: "Avant de jouer", controles: [] },
   { cle: "gain", titre: "Après le gain", controles: [] },
   { cle: "programmation", titre: "Programmation et budget", controles: [] },
-  { cle: "parrainage", titre: "Parrainage ludique", controles: [] },
+  { cle: "parrainage", titre: "Partage et parrainage", controles: [] },
   { cle: "modele", titre: "Enregistrer comme modèle", controles: [] },
   {
     cle: "reglages",

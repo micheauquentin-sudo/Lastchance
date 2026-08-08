@@ -18,6 +18,7 @@ export function GaugeExperience({
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style: rawStyle,
+  shareEnabled,
 }: {
   slug: string;
   organizationName: string;
@@ -25,6 +26,8 @@ export function GaugeExperience({
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
   style?: Partial<WheelStyle>;
+  /** Le commerçant propose-t-il le partage du jeu après la partie ? */
+  shareEnabled: boolean;
 }) {
   const kermesse = playOnLightSurface(resolveWheelStyle(rawStyle));
 
@@ -36,6 +39,7 @@ export function GaugeExperience({
       logoUrl={logoUrl}
       claimConfig={claimConfig}
       style={rawStyle}
+      shareEnabled={shareEnabled}
       gameType="gauge"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "gauge" ? (
