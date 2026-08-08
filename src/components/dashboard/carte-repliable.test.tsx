@@ -131,7 +131,7 @@ describe("CarteRepliable", () => {
     expect(screen.getByText("3")).toBeTruthy();
   });
 
-  it("dit le statut dans l'aria-label, jamais par la seule couleur", () => {
+  it("dit les TROIS statuts dans l'aria-label, jamais par la seule couleur", () => {
     const { rerender } = render(
       <CarteRepliable titre="Dotation" numero={3} statut="complet">
         <p>Contenu du bloc</p>
@@ -143,6 +143,18 @@ describe("CarteRepliable", () => {
     ).toBeTruthy();
 
     rerender(
+      <CarteRepliable titre="Dotation" numero={3} statut="attention">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Réduire « 3. Dotation — à compléter »",
+      }),
+    ).toBeTruthy();
+
+    rerender(
       <CarteRepliable titre="Dotation" numero={3} statut="incomplet">
         <p>Contenu du bloc</p>
       </CarteRepliable>,
@@ -150,8 +162,62 @@ describe("CarteRepliable", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Réduire « 3. Dotation — il manque quelque chose »",
+        name: "Réduire « 3. Dotation — obligatoire manquant »",
       }),
+    ).toBeTruthy();
+  });
+
+  it("affiche un badge LISIBLE dans les deux états, pas un point nu", () => {
+    render(
+      <CarteRepliable titre="QR codes" numero={3} statut="attention">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.getByText("À compléter")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Réduire/ }));
+    expect(screen.getByText("À compléter")).toBeTruthy();
+  });
+
+  it("écrit le bon libellé pour chacun des trois verdicts", () => {
+    const { rerender } = render(
+      <CarteRepliable titre="Vos jeux" statut="complet">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+    expect(screen.getByText("Complet")).toBeTruthy();
+
+    rerender(
+      <CarteRepliable titre="Vos jeux" statut="incomplet">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+    expect(screen.getByText("Obligatoire manquant")).toBeTruthy();
+    expect(screen.queryByText("Complet")).toBeNull();
+  });
+
+  it("n'affiche aucun badge sans statut — « Zone dangereuse » reste nue", () => {
+    render(
+      <CarteRepliable titre="Zone de danger">
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    expect(screen.queryByText("Complet")).toBeNull();
+    expect(screen.queryByText("À compléter")).toBeNull();
+    expect(screen.queryByText("Obligatoire manquant")).toBeNull();
+  });
+
+  it("le suffixe de statut vient APRÈS le titre — motif ouvrirTuile intact", () => {
+    render(
+      <CarteRepliable titre="Vos jeux" numero={2} statut="incomplet" defaultOuvert={false}>
+        <p>Contenu du bloc</p>
+      </CarteRepliable>,
+    );
+
+    // Le motif exact de `e2e/campaign-templates.spec.ts` via helpers.ouvrirTuile.
+    expect(
+      screen.getByRole("button", { name: /Développer «.*Vos jeux/ }),
     ).toBeTruthy();
   });
 

@@ -2,6 +2,54 @@
 
 import { useEffect, useState } from "react";
 
+import type { StatutTuile } from "@/lib/checklist/tuiles";
+
+/**
+ * LES TROIS TONS DU VERDICT, ÉCRITS UNE FOIS.
+ *
+ * Le fond est PASTEL et l'encre reste `k-ink` (#211d16) — le patron de
+ * `src/components/ui/status-badge.tsx` : il tient AA très largement sur les
+ * trois fonds. Le point plein et le liseré gauche, eux, portent la couleur
+ * franche : décoratifs et `aria-hidden`, aucun seuil de texte ne s'y applique.
+ *
+ * Les trois libellés sont écrits DU POINT DE VUE DU COMMERÇANT, pas du calcul :
+ * « Obligatoire manquant » dit qu'on ne peut pas ouvrir aux joueurs, « À
+ * compléter » qu'il reste quelque chose à regarder sans que cela empêche quoi
+ * que ce soit.
+ */
+const TONS: Record<
+  StatutTuile,
+  {
+    libelle: string;
+    suffixe: string;
+    fond: string;
+    point: string;
+    lisere: string;
+  }
+> = {
+  complet: {
+    libelle: "Complet",
+    suffixe: "complet",
+    fond: "bg-k-green/25",
+    point: "bg-k-green",
+    lisere: "border-l-k-green",
+  },
+  attention: {
+    libelle: "À compléter",
+    suffixe: "à compléter",
+    fond: "bg-amber-100",
+    point: "bg-k-orange",
+    lisere: "border-l-k-orange",
+  },
+  incomplet: {
+    libelle: "Obligatoire manquant",
+    suffixe: "obligatoire manquant",
+    fond: "bg-red-100",
+    point: "bg-red-600",
+    lisere: "border-l-red-600",
+  },
+};
+
 /**
  * UN BLOC DE LA PAGE DÉTAIL, REPLIABLE — SANS TOUCHER À SON CONTENU.
  *
@@ -24,10 +72,13 @@ import { useEffect, useState } from "react";
  * 3. **Le titre replié est un `<span>`, jamais un `<h2>`.** Le bloc enveloppé
  *    porte déjà son `<h2>` du même nom ; deux headings identiques feraient
  *    échouer les locators par nom accessible dès que le bloc est ouvert.
- * 4. **Le statut ne se lit JAMAIS à la seule couleur.** La pastille verte ou
- *    rouge est `aria-hidden` ; le sens (« complet » / « il manque quelque
- *    chose ») vit dans l'`aria-label` du bouton. Un emoji nu ou un point coloré
- *    seul est exactement ce que le scan axe d'`atelier-modules.spec.ts` refuse.
+ * 4. **Le statut ne se lit JAMAIS à la seule couleur.** Il s'écrit en toutes
+ *    lettres dans un badge (« Complet » / « À compléter » / « Obligatoire
+ *    manquant ») ET dans l'`aria-label` du bouton ; seuls le point coloré du
+ *    badge et le liseré gauche sont décoratifs, donc `aria-hidden`. Un point
+ *    coloré seul est exactement ce que le scan axe d'`atelier-modules.spec.ts`
+ *    refuse — et un point vert seul est ce qui a fait afficher « complet » sur
+ *    une campagne sans le moindre QR code.
  *
  * ── L'ANCRE ROUVRE LE BLOC ──
  *
@@ -57,8 +108,8 @@ export function CarteRepliable({
   id?: string;
   /** Rang du bloc dans la checklist de la page, affiché en pastille. */
   numero?: number;
-  /** Verdict de la tuile — rendu en pastille ET dit dans l'`aria-label`. */
-  statut?: "complet" | "incomplet";
+  /** Verdict de la tuile — rendu en badge ET dit dans l'`aria-label`. */
+  statut?: StatutTuile;
   /** Résumé d'une ligne, visible UNIQUEMENT quand le bloc est replié. */
   resume?: React.ReactNode;
   children: React.ReactNode;
@@ -76,17 +127,13 @@ export function CarteRepliable({
     return () => window.removeEventListener("hashchange", ouvrirSiVise);
   }, [id]);
 
-  // Le nom accessible du bouton porte TOUT ce que la pastille dit en couleur :
-  // « 3. Dotation — complet ». C'est la seule version lisible au lecteur
-  // d'écran, les deux pastilles étant `aria-hidden`.
+  // Le nom accessible du bouton porte TOUT ce que le badge dit en couleur :
+  // « 3. Dotation — complet ». Le suffixe vient APRÈS le titre : les motifs
+  // E2E (`/Développer «.*Vos jeux/`, helpers.ouvrirTuile) n'en dépendent pas.
   const nomAccessible = [
     numero !== undefined ? `${numero}. ` : "",
     titre,
-    statut === "complet"
-      ? " — complet"
-      : statut === "incomplet"
-        ? " — il manque quelque chose"
-        : "",
+    statut ? ` — ${TONS[statut].suffixe}` : "",
   ].join("");
 
   const pastilleNumero =
@@ -99,15 +146,26 @@ export function CarteRepliable({
       </span>
     );
 
-  const pastilleStatut =
+  // Le badge : point plein DÉCORATIF + libellé LU. C'est le seul endroit où le
+  // verdict est visible sans survol ni dépli — un point de 12 px isolé ne l'a
+  // jamais été.
+  const badgeStatut =
     statut === undefined ? null : (
       <span
-        aria-hidden
-        className={`h-3 w-3 shrink-0 rounded-full border-2 border-k-ink ${
-          statut === "complet" ? "bg-k-green" : "bg-k-orange"
-        }`}
-      />
+        className={`flex shrink-0 items-center gap-1.5 rounded-full border-2 border-k-ink px-2.5 py-0.5 text-xs font-black text-k-ink ${TONS[statut].fond}`}
+      >
+        <span
+          aria-hidden
+          className={`h-2 w-2 shrink-0 rounded-full ${TONS[statut].point}`}
+        />
+        {TONS[statut].libelle}
+      </span>
     );
+
+  // Le liseré gauche : la même information, en périphérie, pour repérer d'un
+  // coup d'œil les blocs à traiter dans une page qui en empile dix. Toujours
+  // posé — transparent sans statut — pour que les blocs restent alignés.
+  const lisere = statut ? TONS[statut].lisere : "border-l-transparent";
 
   if (!ouvert) {
     return (
@@ -117,11 +175,10 @@ export function CarteRepliable({
           aria-expanded={false}
           aria-label={`Développer « ${nomAccessible} »`}
           onClick={() => setOuvert(true)}
-          className="flex w-full items-center justify-between gap-3 rounded-2xl border-2 border-k-ink bg-white px-6 py-3 text-left shadow-[4px_4px_0_rgba(33,29,22,0.9)] transition-colors hover:bg-k-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-k-ink focus-visible:ring-offset-2"
+          className={`flex w-full items-center justify-between gap-3 rounded-2xl border-2 border-l-4 border-k-ink bg-white px-6 py-3 text-left shadow-[4px_4px_0_rgba(33,29,22,0.9)] transition-colors hover:bg-k-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-k-ink focus-visible:ring-offset-2 ${statut ? TONS[statut].lisere : "border-l-k-ink"}`}
         >
           <span className="flex min-w-0 items-center gap-3">
             {pastilleNumero}
-            {pastilleStatut}
             <span className="flex min-w-0 flex-col">
               <span className="truncate font-black text-k-ink">{titre}</span>
               {resume ? (
@@ -131,8 +188,11 @@ export function CarteRepliable({
               ) : null}
             </span>
           </span>
-          <span aria-hidden className="shrink-0 text-lg font-black text-k-ink">
-            +
+          <span className="flex shrink-0 items-center gap-3">
+            {badgeStatut}
+            <span aria-hidden className="text-lg font-black text-k-ink">
+              +
+            </span>
           </span>
         </button>
       </div>
@@ -140,16 +200,21 @@ export function CarteRepliable({
   }
 
   return (
-    <div id={id} className="relative scroll-mt-24">
+    <div id={id} className={`relative scroll-mt-24 border-l-4 ${lisere}`}>
       {/* EN DÉBORD du coin haut-gauche, jamais DANS la marge `p-6` : le bloc
           enveloppé y place déjà son `<h2>` (24 px du bord, 28 px de haut) et
           une pastille posée dans la marge le chevaucherait. Le débord de 8 px
           la met devant le titre sans rien déplacer ni recouvrir. */}
-      {(pastilleNumero || pastilleStatut) && (
+      {pastilleNumero && (
         <span className="absolute -left-2 -top-2 z-10 flex items-center gap-2">
           {pastilleNumero}
-          {pastilleStatut}
         </span>
+      )}
+      {/* À DROITE DU TITRE : le `<h2>` du bloc enveloppé occupe la première
+          ligne, le badge se pose sur la même, décalé de la place du bouton de
+          repli (32 px + gouttière). */}
+      {badgeStatut && (
+        <span className="absolute right-14 top-3 z-10">{badgeStatut}</span>
       )}
       {children}
       <button

@@ -40,6 +40,19 @@ describe("carteTuile", () => {
     expect(carteTuile(enDefaut, "statut").statut).toBe("complet");
   });
 
+  it("transmet le troisième état : un contrôle rouge non bloquant → attention", () => {
+    const enAlerte = tuilesDuModule("quiz", [
+      {
+        cle: "stock-epuise",
+        ok: false,
+        bloquant: false,
+        titre: "Un lot est en rupture",
+        detail: "…",
+      },
+    ]);
+    expect(carteTuile(enAlerte, "atelier").statut).toBe("attention");
+  });
+
   it("une clé inconnue rend une carte NUE plutôt que de lever", () => {
     expect(carteTuile(tuilesQuiz, "inexistante")).toEqual({
       titre: "inexistante",

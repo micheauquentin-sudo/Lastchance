@@ -299,10 +299,28 @@ describe("statutTuile", () => {
     ).toBe("incomplet");
   });
 
-  it("reste « complet » sur un contrôle rouge NON bloquant", () => {
+  it("est « attention » sur un contrôle rouge NON bloquant", () => {
     expect(
       statutTuile(tuile, [
         { cle: "a", ok: false, titre: "", detail: "", bloquant: false },
+      ]),
+    ).toBe("attention");
+  });
+
+  it("le bloquant l'emporte : rouge bloquant + rouge non bloquant = incomplet", () => {
+    expect(
+      statutTuile(tuile, [
+        { cle: "a", ok: false, titre: "", detail: "", bloquant: false },
+        { cle: "b", ok: false, titre: "", detail: "", bloquant: true },
+      ]),
+    ).toBe("incomplet");
+  });
+
+  it("est « complet » quand tous les contrôles visés sont verts", () => {
+    expect(
+      statutTuile(tuile, [
+        { cle: "a", ok: true, titre: "", detail: "", bloquant: true },
+        { cle: "b", ok: true, titre: "", detail: "", bloquant: false },
       ]),
     ).toBe("complet");
   });
@@ -315,7 +333,7 @@ describe("statutTuile", () => {
     ).toBe("complet");
   });
 
-  it("une tuile sans contrôle est complète — optionnel et vide reste valide", () => {
+  it("une tuile sans contrôle est complète — un choix assumé n'est pas un oubli", () => {
     expect(
       statutTuile({ cle: "t", titre: "T", controles: [] }, [
         { cle: "a", ok: false, titre: "", detail: "", bloquant: true },
@@ -344,7 +362,7 @@ describe("tuilesDuModule", () => {
     expect(ancres).toEqual(["statut", "qr", "suivi", "reglages"]);
   });
 
-  it("applique la table des bloquants : le QR rouge ne rougit pas sa tuile", () => {
+  it("applique la table des bloquants : le QR rouge alerte sans rougir", () => {
     const rendues = tuilesDuModule("roue", [
       { cle: "qr", ok: false, titre: "", detail: "" },
       { cle: "poids", ok: false, titre: "", detail: "" },
@@ -352,19 +370,43 @@ describe("tuilesDuModule", () => {
     const statut = (cle: string) =>
       rendues.find((r) => r.tuile.cle === cle)!.statut;
 
-    expect(statut("qr")).toBe("complet");
+    // Le bug de V1.51 : sans le moindre QR code, cette tuile s'affichait VERTE
+    // sous un résumé qui disait « personne ne peut la scanner ».
+    expect(statut("qr")).toBe("attention");
     expect(statut("jeux")).toBe("incomplet");
+    // Un bloc sans contrôle rattaché ne devient pas orange par contagion.
+    expect(statut("prejeu")).toBe("complet");
   });
 
-  it("un championnat rouge de partout reste complet — rien n'y bloque", () => {
+  it("un championnat rouge de partout alerte sans jamais bloquer", () => {
     const controles = CONTROLES_REELS.pronostics
       .flat()
       .map((c) => ({ ...c, ok: false }));
-    expect(
-      tuilesDuModule("pronostics", controles).every(
-        (r) => r.statut === "complet",
-      ),
-    ).toBe(true);
+    const rendues = tuilesDuModule("pronostics", controles);
+
+    expect(rendues.some((r) => r.statut === "incomplet")).toBe(false);
+    expect(rendues.find((r) => r.tuile.cle === "atelier")!.statut).toBe(
+      "attention",
+    );
+    // Les blocs sans contrôle rattaché restent verts, même ici.
+    expect(rendues.find((r) => r.tuile.cle === "suivi")!.statut).toBe(
+      "complet",
+    );
+  });
+
+  it("les cases vides d'un calendrier alertent, sans empêcher d'ouvrir", () => {
+    const rendues = tuilesDuModule("calendrier", [
+      {
+        cle: "cases-vides",
+        ok: false,
+        bloquant: false,
+        titre: "",
+        detail: "",
+      },
+    ]);
+    expect(rendues.find((r) => r.tuile.cle === "atelier")!.statut).toBe(
+      "attention",
+    );
   });
 
   it("rend une tuile par bloc, pour les huit modules", () => {
