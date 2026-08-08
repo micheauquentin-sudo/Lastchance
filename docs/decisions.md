@@ -6129,3 +6129,72 @@ le calcul d'assiduité, elle ne se soustrait pas au parcours.
 - `supabase/tests/calendar.test.sql` (9 assertions neuves)
 - commits `a94d976`, `afd53b4`
 - roadmap V1.50
+
+## ADR-096 : Checklist par mappage des contrôles d'activation, autosave par file/débounce à côté du hook
+
+**Date** : 2026-08-08
+**Statut** : Accepté
+**Contexte** : `chantier/tuiles-checklist-autosave`. Demande propriétaire : sur
+chaque page de jeu, toutes les tuiles refermées par défaut, numérotées dans
+l'ordre des tâches, pastille rouge (obligatoire manquant) / verte (complet —
+vide-mais-optionnel compte comme valide) ; et tout réglage s'enregistre
+automatiquement, avec une notification en haut à droite.
+
+### La vérité des pastilles est mappée depuis les contrôles d'activation, jamais recalculée
+
+`src/lib/checklist/` ne réévalue pas ce qu'est un module « complet » : il fait
+correspondre les tuiles ordonnées de chaque page aux VRAIS contrôles
+d'activation posés en V1.47 (`src/lib/activation/`), module par module. La
+table des défauts `bloquant` est tranchée **par module** — les pronostics
+n'ont aucune précondition bloquante côté serveur, donc leurs pastilles sont
+vertes honnêtement plutôt que rougies par une règle générique. Une clé de
+contrôle absente de la table ne fait jamais rougir un écran qui n'a pas été
+relu pour ce chantier ; un test de couverture double-sens vérifie qu'aucun
+contrôle n'est orphelin et qu'aucune clé de la table n'est fantôme.
+
+### L'autosave vit à côté du hook `useActionForm`, pas dedans
+
+`useAutoSave` (debounce 800 ms, jamais déclenché au montage, flush forcé à la
+sortie de champ) est un hook séparé qui appelle le même point d'entrée que le
+bouton « Enregistrer » manuel — il ne remplace pas `useActionForm`, il le
+pilote depuis l'extérieur. Un correctif préalable dans `useActionForm`
+lui-même s'est avéré nécessaire : la file de soumissions (ligne ~132) perdait
+silencieusement la dernière frappe en cas de resoumission rapprochée ; elle
+rejoue désormais par un `requestSubmit` qui relit l'état frais, et le rejeu est
+abandonné après un `resetOnSuccess`. `useAutoSaveManuel` couvre les gestes qui
+n'ont pas de formulaire (ex. `QuestionForm` en édition, `DayRow`) avec la même
+garde anti-no-op et une file d'une place. Le toast de confirmation est un bus
+de module sans `Provider` React (rôle `status`/`alert`, pile de 3 messages
+maximum) pour rester appelable depuis des composants qui ne partagent pas un
+arbre commun.
+
+### Exclusions autosave, actées et non une omission
+
+Restent volontairement sur bouton « Enregistrer » manuel, jamais sur
+debounce : statuts et publication, zones dangereuses, toute création,
+finalisation/tirage/résultats, le motif de verrouillage (un debounce
+enverrait un motif tronqué dans l'audit), les uploads. `PrizeRow` reste sans
+autosave (comparaison `stock_seen` avant écriture). `day_count` du calendrier
+désactive son autosave dès que la valeur diffère de l'initiale et rend la
+main au bouton — la confirmation `confirm_day_loss` doit rester un geste
+explicite, jamais un débounce silencieux.
+
+**Conséquences** :
+- 8 pages détail (campagnes, roue, quiz, calendrier, chasse, fidélité,
+  jackpot, événements, pronostics) passent en checklist repliée par défaut,
+  auto-ouverture par ancre `#statut`/`#suivi`/`#reglages` conservée.
+- Zéro migration, zéro nouvelle action serveur : chaque étape poste une
+  action existante complète.
+- État de repli non persisté entre visites (assumé, hors périmètre) ;
+  `useAutoSave` annule son minuteur au démontage — une navigation sans
+  `blur` avant l'échéance du debounce peut perdre la dernière frappe, borné
+  par le flush à la sortie de champ.
+
+**References** :
+- `src/lib/checklist/controles.ts`, `src/lib/checklist/tuiles.ts`
+- `src/lib/use-auto-save.ts`, `src/lib/use-auto-save-manuel.ts`,
+  `src/lib/use-action-form.ts`, `src/lib/toast-bus.ts`
+- `src/components/dashboard/carte-repliable.tsx`
+- commits `269cbc4`, `a9b2913`, `d77e751`, `edf5690`, `3685e3a`, `c944520`,
+  `9d8b5d3`, `f858127`
+- roadmap V1.51
