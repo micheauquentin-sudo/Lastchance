@@ -338,16 +338,70 @@ O(participants). Mais une salle QUASI VIDE plafonne déjà à ~50 req/s : le gro
 de l'écart vient du **coût de base de `getEventState`**, pas de l'agrégation du
 classement.
 
+### ⚠️ CES CHIFFRES ABSOLUS NE SONT PAS COMPARABLES ENTRE DEUX RUNS (2026-08-08)
+
+Le tableau ci-dessus a été mesuré un soir donné. Le lendemain, **le même code
+sur la même session de 1 000 joueurs rend 54 à 61 req/s** au lieu de 26. Rien
+n'avait changé dans l'application : seule la machine avait changé d'état
+(builds, resets et bancs enchaînés pendant des heures, mémoire disponible
+passée de 5,0 à 3,1 Go).
+
+**Conséquence de méthode, à retenir avant tout le reste** : sur cette machine,
+un écart d'un facteur deux entre deux campagnes ne prouve rien. Seule une
+comparaison **dos à dos** — un seul build, un seul état de base, deux serveurs
+successifs dans la même minute — permet d'attribuer un écart à un correctif.
+Les conclusions tirées de deux runs distants dans le temps sont à jeter.
+
+C'est ce qui a été fait pour évaluer le cache d'état partagé ci-dessous, et ce
+qui a évité d'attribuer au correctif ce qui revenait à la fatigue de la machine
+(un premier essai concluait à une DÉGRADATION de moitié ; l'A/B a montré
+l'inverse).
+
+### Le cache d'état partagé : gain RÉEL mais MODESTE
+
+Découpage `event_etat_partage` (commun à la salle, cacheable 1 s) /
+`event_etat_joueur` (personnel, jamais cacheable) — migration `20260919120000`.
+Équivalence prouvée : `partagé + personnel` reproduit exactement
+`event_public_state`, avec jeton et sans jeton.
+
+A/B dos à dos, 1 000 joueurs, phase question, le chemin historique passant en
+PREMIER (donc avantagé par une machine plus fraîche) :
+
+| Connexions | Sans cache | Avec cache | Écart |
+|---|---|---|---|
+| 20 | 54 req/s · p50 365 ms | **63 req/s · p50 299 ms** | +17 % |
+| 60 | 61 req/s · p50 920 ms | **62 req/s · p50 874 ms** | +2 % |
+
+**Le classement n'était donc pas le goulot.** Le cache supprime un des trois
+allers-retours base par poll et ne gagne que ~10 % : le coût dominant est
+ailleurs — `loadEventActionContext`, l'écriture du compteur de pression
+(`observeEventPressure` écrit en base à CHAQUE poll), et l'enveloppe de la
+server action elle-même.
+
 ### Verdict par palier
 
 Transposition vers la production au rapport observé sur le chemin d'écriture
 (local 160 → prod 409, soit ×2,5) :
 
-| Offre | Jauge | Besoin | Disponible (estimé prod) | Verdict |
+Sur la meilleure mesure disponible (A/B du 2026-08-08 : **61 req/s** local),
+transposée à la production au rapport observé sur le chemin d'écriture
+(local 160 → prod 409, soit ×2,5) : **~150 req/s** pour `getEventState`.
+
+| Offre | Jauge | Besoin (Realtime coupé) | Disponible (estimé prod) | Verdict |
 |---|---|---|---|---|
-| Coup d'envoi / Le Club | 100 | 40 req/s | ~65-125 req/s | **tient** |
-| Le Grand Jeu | 500 | 200 req/s | ~65 req/s | **ne tient pas** |
-| La Totale | 1 000 | 400 req/s | ~65 req/s | **ne tient pas** |
+| Coup d'envoi / Le Club | 100 | 40 req/s | ~150 req/s | **tient** |
+| Le Grand Jeu | 500 | 200 req/s | ~150 req/s | **limite** |
+| La Totale | 1 000 | 400 req/s | ~150 req/s | **ne tient pas** |
+
+**Avec Realtime connecté**, la cadence passe de 2 500 à 30 000 ms et le besoin
+est divisé par douze : 1 000 joueurs ne demandent plus que **33 req/s**, ce qui
+passe très largement. **Le levier n'est donc pas l'optimisation de l'endpoint —
+c'est Realtime**, déjà écrit, testé, avec repli par polling, et qu'il suffit
+d'activer (`EVENTS_REALTIME_ENABLED`).
+
+Le plafond se déplace alors sur les **connexions Realtime simultanées** :
+200 sur Supabase Free, 500 sur Pro. Une salle de 1 000 les dépasse encore — et
+c'est là, pas dans le SQL, que se joue la faisabilité de la jauge vendue.
 
 ### Le levier existe déjà, et il est à moitié posé
 
