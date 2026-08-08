@@ -371,6 +371,32 @@ select ok(not has_column_privilege('authenticated', 'public.quizzes', 'draw_stat
 select ok(not has_column_privilege('authenticated', 'public.quizzes', 'drawn_at', 'UPDATE'), 'the quiz draw timestamp is RPC-managed');
 select ok(has_column_privilege('authenticated', 'public.quizzes', 'reward_stock', 'UPDATE'), 'editor can still set the quiz reward stock');
 select ok(has_column_privilege('authenticated', 'public.quizzes', 'name', 'UPDATE'), 'editor can still rename a quiz');
+-- Partage du lien public du quiz (20260920120000), miroir de
+-- campaigns.share_enabled. TROIS assertions et non deux comme pour les
+-- campagnes, parce que le régime de droits de `quizzes` diffère : ici INSERT
+-- ET UPDATE sont en listes blanches de colonnes (sur `campaigns`, seul
+-- l'UPDATE l'est), et une colonne neuve n'entre dans aucune des deux toute
+-- seule. Sans ces grants, l'interrupteur du dashboard échouerait
+-- silencieusement à l'enregistrement.
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'SELECT'), 'merchant can read the quiz share toggle');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'UPDATE'), 'merchant can toggle the quiz share buttons');
+select ok(has_column_privilege('authenticated', 'public.quizzes', 'share_enabled', 'INSERT'), 'merchant can set the quiz share toggle at creation');
+-- Le défaut est ALLUMÉ, et l'assertion tient à ce que ça reste vrai : les
+-- boutons « Défier un ami » et « Partager mon score » s'affichaient sur tous
+-- les quiz avant d'être réglables, un `default false` les aurait retirés en
+-- silence de la production le jour du déploiement.
+--
+-- Assertion sur le CATALOGUE et non sur une ligne, à la différence de son
+-- miroir campagne : ce fichier ne crée aucun quiz de test, et le défaut doit
+-- être vérifié aussi bien sur base VIDE que SEMÉE. Cast explicite parce que
+-- information_schema expose des DOMAINES, pas des types de base.
+select results_eq(
+  $$select column_default::text from information_schema.columns
+     where table_schema = 'public' and table_name = 'quizzes'
+       and column_name = 'share_enabled'$$,
+  array['true'::text],
+  'a quiz keeps offering its share buttons by default'
+);
 -- Parcours joueur : service_role only.
 select ok(has_function_privilege('service_role', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'only server can join a quiz');
 select ok(not has_function_privilege('authenticated', 'public.join_quiz(text,text,text,text,text,boolean)', 'EXECUTE'), 'merchant cannot impersonate a joining quiz player');
