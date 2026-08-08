@@ -182,6 +182,9 @@ export default async function PlayPage({
       ? null
       : await loadPlayReferral(ctx.admin, ctx.campaign.id);
 
+  // `!== false` et non le booléen brut : si le code arrive avant la migration
+  // (colonne absente → undefined), le partage doit rester affiché — même
+  // défaut d'absence que `quiz-context.ts`, jamais fail-closed d'un seul côté.
   const jeu = RevealExperience ? (
     <RevealExperience
       slug={slug}
@@ -190,7 +193,7 @@ export default async function PlayPage({
       logoUrl={ctx.organization.logo_url}
       claimConfig={claimConfig}
       style={style}
-      shareEnabled={ctx.campaign.share_enabled}
+      shareEnabled={ctx.campaign.share_enabled !== false}
     />
   ) : (
     // Roue (ou game_type inconnu) : parcours par défaut.
@@ -203,7 +206,7 @@ export default async function PlayPage({
       style={style}
       referral={referral}
       organizationId={ctx.organization.id}
-      shareEnabled={ctx.campaign.share_enabled}
+      shareEnabled={ctx.campaign.share_enabled !== false}
     />
   );
 
