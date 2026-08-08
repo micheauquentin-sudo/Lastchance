@@ -122,11 +122,40 @@ function Row({
  * Une tuile du sélecteur de fond d'écran — la vignette RÉELLE du fond, en 16/9,
  * avec son libellé dessous.
  *
- * Le patron (label cliquable + radio `sr-only` + cadre `border-2 border-k-ink`
+ * Le patron (label cliquable + radio invisible + cadre `border-2 border-k-ink`
  * quand l'option est retenue) est celui des trois sélecteurs de thème du
  * dépôt — `calendar-editor.tsx`, `contest-settings.tsx`, `quiz-editor.tsx`. Il
- * est repris tel quel volontairement : un quatrième sélecteur d'apparence qui
- * se manipulerait autrement ferait douter que ce soit le même geste.
+ * est repris volontairement : un quatrième sélecteur d'apparence qui se
+ * manipulerait autrement ferait douter que ce soit le même geste.
+ *
+ * ── LE RADIO A UNE SURFACE, ET C'EST LA TUILE ENTIÈRE ──
+ *
+ * Seul écart avec les trois autres, et il est payé : le radio n'est pas
+ * `sr-only` mais une couche transparente `absolute inset-0`. `sr-only` réduit
+ * le contrôle à une boîte de 1×1 px rognée (`clip: rect(0,0,0,0)`), posée au
+ * coin haut-gauche du contenu. Une cible d'un pixel n'a AUCUNE tolérance :
+ * il suffit que la page ait glissé d'une fraction de pixel entre le calcul du
+ * point et le clic pour que celui-ci tombe à côté — sur le label, ou sur la
+ * tuile voisine. Or `globals.css` pose `scroll-behavior: smooth` sur `html`
+ * (hors `prefers-reduced-motion`) : tout défilement PROGRAMMÉ vers cette
+ * section, longue et basse dans la page, est une glissade animée. Un pilote
+ * qui fait défiler puis clique — Playwright, mais aussi les logiciels de
+ * commande vocale qui visent la boîte du contrôle — tape dans le vide tant que
+ * la glissade dure. Symptôme observé : `check()` en échec pendant 90 s,
+ * alternant « label intercepte » et « hors du cadre », sans jamais converger.
+ *
+ * Avec la couche pleine tuile, la cible mesure ~170×130 px : la même glissade
+ * de quelques pixels tombe toujours dans le contrôle. Le radio reste invisible
+ * (`opacity-0`, jamais `hidden`), donc toujours dans l'arbre d'accessibilité,
+ * nommé par le texte du label — comme avec `sr-only`.
+ *
+ * Corollaire obligatoire : la vignette décorative est `pointer-events-none`.
+ * Elle est `relative` et vient APRÈS le radio dans le DOM ; deux boîtes
+ * positionnées se départagent à l'ordre du DOM, elle recouvrirait donc la
+ * couche de clic. Elle est `aria-hidden` : elle n'a rien à intercepter.
+ *
+ * `focus-within` sur le label : le contrôle n'étant pas peint, c'est la tuile
+ * qui doit montrer le focus clavier. Elle ne le montrait pas du tout avant.
  *
  * `fond` absent = la tuile « Aucun ». Elle ne montre pas un cadre vide mais le
  * crème rayé du site : le commerçant doit voir ce qu'il obtient en n'en
@@ -145,7 +174,7 @@ function TuileFond({
 }) {
   return (
     <label
-      className={`cursor-pointer rounded-2xl border-2 p-2 transition-colors ${
+      className={`relative cursor-pointer rounded-2xl border-2 p-2 transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-k-ink ${
         active
           ? "border-k-ink bg-k-yellow/20 shadow-[3px_3px_0_var(--color-k-ink)]"
           : "border-k-ink/20 bg-white hover:border-k-ink/50"
@@ -157,11 +186,11 @@ function TuileFond({
         value={fond ?? ""}
         checked={active}
         onChange={onSelect}
-        className="sr-only"
+        className="absolute inset-0 cursor-pointer appearance-none opacity-0"
       />
       <div
         aria-hidden
-        className="relative aspect-video overflow-hidden rounded-lg border-2 border-k-ink bg-k-bg"
+        className="pointer-events-none relative aspect-video overflow-hidden rounded-lg border-2 border-k-ink bg-k-bg"
         style={
           fond
             ? undefined
