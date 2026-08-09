@@ -117,6 +117,42 @@ export interface FilterBuilderLike {
 const AUCUN_LOT = "00000000-0000-0000-0000-000000000000";
 
 /**
+ * Applique une borne de date, ou l'abandonne si la conversion vers l'instant
+ * absolu échoue (heure inexistante à cause d'un changement d'heure).
+ *
+ * `borneApplicable` (exportée pour le test) répond à la même question sans
+ * toucher à la requête.
+ */
+function borner(valeur: string | undefined, appliquer: (v: string) => void): void {
+  if (!valeur) return;
+  try {
+    appliquer(valeur);
+  } catch {
+    // Volontairement muet : la borne disparaît, la liste reste servie. Le
+    // commerçant voit un champ date rempli sans effet plutôt qu'une page morte.
+  }
+}
+
+/**
+ * Une borne de période est-elle convertible dans ce fuseau ? Faux uniquement
+ * pour les dates dont le minuit (ou la fin de journée) n'existe pas à cause
+ * d'un changement d'heure.
+ */
+export function borneApplicable(
+  valeur: string,
+  fuseau: string,
+  cote: "du" | "au",
+): boolean {
+  try {
+    if (cote === "du") startOfLocalDayToIso(valeur, fuseau);
+    else endOfLocalDayToIso(valeur, fuseau);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Applique les filtres à une requête `participations`.
  *
  * @param fuseau  Fuseau de l'établissement. Les bornes `du`/`au` désignent des
@@ -152,10 +188,20 @@ export function applyParticipationFilters(
     }
   }
 
-  if (f.du) query.gte("created_at", startOfLocalDayToIso(f.du, fuseau));
   // `lte` sur la FIN du jour civil (23:59:59.999) : le jour saisi dans « au »
   // est inclus, comme le lit n'importe quel commerçant.
-  if (f.au) query.lte("created_at", endOfLocalDayToIso(f.au, fuseau));
+  //
+  // Les DEUX conversions sont gardées, et ce n'est pas de la prudence de
+  // principe : `endOfLocalDayToIso` LÈVE quand minuit n'existe pas dans le
+  // fuseau — le cas se produit dans les fuseaux qui avancent l'heure À MINUIT
+  // (America/Santiago, America/Havana, Asia/Beirut), tous acceptables comme
+  // fuseau d'établissement. Une date parfaitement légitime saisie par un
+  // commerçant de Santiago rendait alors une 500 sur l'écran ET sur l'export.
+  // La borne fautive est abandonnée en silence, même politique de repli que le
+  // statut inconnu et que `p_tri` en base : un filtre de liste ne doit jamais
+  // rendre la page inaccessible.
+  borner(f.du, (v) => query.gte("created_at", startOfLocalDayToIso(v, fuseau)));
+  borner(f.au, (v) => query.lte("created_at", endOfLocalDayToIso(v, fuseau)));
 
   if (prizeIds) query.in("prize_id", prizeIds.length > 0 ? prizeIds : [AUCUN_LOT]);
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyParticipationFilters,
+  borneApplicable,
   parseParticipationFilters,
   participationFiltresActifs,
   participationSearchParams,
@@ -104,6 +105,30 @@ describe("applyParticipationFilters — période", () => {
       "gte:created_at:2026-07-31T22:00:00.000Z",
       "lte:created_at:2026-08-05T21:59:59.999Z",
     ]);
+  });
+
+  it("abandonne la borne dont le minuit n'existe pas, au lieu de rendre une 500", () => {
+    // Santiago avance l'heure À MINUIT : dans la nuit du 5 au 6 septembre 2026,
+    // 00:00 n'existe pas. `endOfLocalDayToIso("2026-09-05")` vise le minuit du
+    // 6 et LÈVE — une date parfaitement légitime, saisie par un commerçant
+    // chilien, faisait tomber l'écran ET l'export.
+    expect(borneApplicable("2026-09-05", "America/Santiago", "au")).toBe(false);
+    // La borne de début, elle, converge sur le premier instant réel du jour.
+    expect(borneApplicable("2026-09-06", "America/Santiago", "du")).toBe(true);
+
+    const { builder, appels } = fauxBuilder();
+    expect(() =>
+      applyParticipationFilters(
+        builder,
+        parseParticipationFilters({ du: "2026-09-01", au: "2026-09-05" }),
+        "America/Santiago",
+        undefined,
+        MAINTENANT,
+      ),
+    ).not.toThrow();
+    // La borne fautive disparaît EN SILENCE ; l'autre est appliquée, la liste
+    // reste servie. Même politique de repli que le statut inconnu.
+    expect(appels).toEqual(["gte:created_at:2026-09-01T04:00:00.000Z"]);
   });
 
   it("suit un autre fuseau d'établissement", () => {
