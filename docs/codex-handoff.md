@@ -57,6 +57,35 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-09 — Correctif V1.54.1 : bouton « Voir le jeu » sur les tuiles Statut — **à relire**
+
+- **Lot et objectif** : demande propriétaire immédiate après V1.54 — accéder
+  au jeu côté joueur depuis le haut de la page, à côté du raccourci
+  « 🛠️ Modifier dans l'atelier ».
+- **Branche/commit** : `chantier/bouton-voir-le-jeu`, 1 commit `2dfe831`
+  au-dessus de `origin/main`. PR à ouvrir vers `main`, fusion sur l'ordre
+  permanent dès CI verte.
+- **Faits et fichiers** : composant frère `VoirLeJeu` dans
+  `src/components/dashboard/atelier-raccourci.tsx` (classes factorisées avec
+  le raccourci atelier) — bouton « 👀 Voir le jeu » (`target=_blank
+  rel=noopener`) à côté de « 🛠️ Modifier dans l'atelier » dans les 8 tuiles
+  Statut, masqué (`null`) tant que le jeu n'est pas accessible. Les 8 pages
+  (`calendar`, `campaigns`, `events`, `hunts`, `jackpot`, `loyalty`,
+  `pronostics`, `quiz`) passent `hrefJeu` = exactement l'expression de leur
+  lien `apercu` existant, aucune règle recalculée. Roue : `/play/<slug>` du
+  premier QR de la liste déjà chargée, sans QR pas de bouton. 3 tests
+  unitaires nouveaux + assertion E2E dans `atelier-modules.spec.ts`.
+- **Validations réellement exécutées** : typecheck 0, lint 0, Vitest suite
+  complète 261 fichiers / 4131 tests, build vert, E2E WSL mobile-chrome
+  atelier-modules + campaign-templates 26 passed / 3 skipped
+  (`.last-run.json` passed). Aucune migration. CI GitHub : non exécutée —
+  la PR la jouera.
+- **Risque/blocage** : aucun changement serveur ni auth/RLS/endpoint
+  public/webhook/token — revue sécurité non requise selon la règle du
+  dépôt (décision explicite, pas une omission).
+- **État** : à relire. Prochaine action : ouvrir la PR vers `main`, fusion
+  sur l'ordre permanent dès CI verte. Roadmap V1.54.1.
+
 ### 2026-08-09 — Sept retours propriétaire — **terminé**
 
 - **Lot et objectif** : sept demandes ponctuelles du propriétaire après

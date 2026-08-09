@@ -285,6 +285,25 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.54.1 — Bouton « Voir le jeu » sur les tuiles Statut (✅ 2026-08-09, branche `chantier/bouton-voir-le-jeu`, PR à ouvrir, sans migration)
+
+**Objectif** : demande propriétaire immédiate après V1.54 — accéder au jeu
+côté joueur depuis le haut de la page, à côté du raccourci atelier.
+
+- [x] Composant frère `VoirLeJeu` (`src/components/dashboard/atelier-raccourci.tsx`,
+      classes factorisées avec le raccourci atelier existant) : bouton
+      « 👀 Voir le jeu » (`target=_blank rel=noopener`) dans les 8 tuiles
+      Statut, masqué (`null`) tant que le jeu n'est pas accessible.
+- [x] Les 8 pages passent `hrefJeu` = exactement l'expression de leur lien
+      `apercu` déjà existant — aucune règle recalculée. Roue : `/play/<slug>`
+      du premier QR, pas de bouton sans QR.
+
+Preuve : typecheck 0, lint 0, Vitest **261 fichiers / 4131 tests**, build
+vert, E2E WSL mobile-chrome atelier-modules + campaign-templates 26 passed /
+3 skipped. Aucune migration. Pas de revue sécurité (rien d'auth/RLS/public/
+webhook/token touché — décision explicite). CI GitHub : non jouée, la PR la
+jouera.
+
 ## V1.54 — Sept retours propriétaire (✅ 2026-08-09, branche `chantier/sept-retours-proprietaire`, PR à ouvrir, sans migration)
 
 **Objectif** : sept demandes ponctuelles du propriétaire sur l'atelier, le QR
