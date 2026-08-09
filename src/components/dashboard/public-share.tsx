@@ -18,7 +18,12 @@ import type { QrStyle } from "@/types/database";
 
 // Même style que les affiches de chasse : encre franche sur blanc, bannière
 // « SCANNEZ-MOI » — lisible collé sur une vitrine.
-const SHARE_QR_STYLE: QrStyle = {
+//
+// EXPORTÉ, et non recopié : le hub QR (`jeu-lien-card.tsx`) rend l'aperçu du
+// même lien public que ce composant. Deux littéraux jumeaux auraient divergé
+// au premier changement de goût, et l'aperçu du hub n'aurait plus ressemblé au
+// QR effectivement téléchargé depuis la page du module.
+export const SHARE_QR_STYLE: QrStyle = {
   dark: "#211d16",
   light: "#ffffff",
   pattern: "square",

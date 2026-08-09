@@ -120,6 +120,21 @@ const EMOJIS: Record<IconKey, string> = {
 };
 
 /**
+ * L'emoji d'un type d'expérience, lu sur la table du menu plutôt que recopié :
+ * le hub QR (`jeu-lien-card.tsx`) badge ses cartes avec le MÊME glyphe que
+ * l'entrée de menu qui mène au module. Une seconde table aurait fait dire
+ * « 🎡 » au menu et « 🎯 » à la carte pour la même campagne.
+ *
+ * Rend une chaîne vide pour un `kind` sans pictogramme (aujourd'hui
+ * `referral`, qui n'a pas d'entrée de menu propre) : l'appelant rend alors le
+ * libellé seul, jamais un carré vide.
+ */
+export function emojiExperience(kind: ExperienceKind): string {
+  const icone = EXPERIENCE_ICONS[kind];
+  return icone ? EMOJIS[icone] : "";
+}
+
+/**
  * LES QUATRE FAMILLES DU MENU — elles existaient déjà dans le code (quatre
  * tableaux concaténés), elles n'étaient simplement jamais dites à l'écran :
  * onze à dix-huit entrées de même taille, sans titre ni séparateur. Le
