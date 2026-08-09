@@ -57,14 +57,15 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-09 — Correctif V1.54.1 : bouton « Voir le jeu » sur les tuiles Statut — **à relire**
+### 2026-08-09 — Correctif V1.54.1 : bouton « Voir le jeu » sur les tuiles Statut — **terminé**
 
 - **Lot et objectif** : demande propriétaire immédiate après V1.54 — accéder
   au jeu côté joueur depuis le haut de la page, à côté du raccourci
   « 🛠️ Modifier dans l'atelier ».
 - **Branche/commit** : `chantier/bouton-voir-le-jeu`, 1 commit `2dfe831`
-  au-dessus de `origin/main`. PR à ouvrir vers `main`, fusion sur l'ordre
-  permanent dès CI verte.
+  au-dessus de `origin/main`. PR #137 fusionnée en squash `8a88812` après
+  CI intégralement verte ; CI `main` et « Santé après déploiement » verts
+  sur ce SHA.
 - **Faits et fichiers** : composant frère `VoirLeJeu` dans
   `src/components/dashboard/atelier-raccourci.tsx` (classes factorisées avec
   le raccourci atelier) — bouton « 👀 Voir le jeu » (`target=_blank
@@ -78,13 +79,12 @@
 - **Validations réellement exécutées** : typecheck 0, lint 0, Vitest suite
   complète 261 fichiers / 4131 tests, build vert, E2E WSL mobile-chrome
   atelier-modules + campaign-templates 26 passed / 3 skipped
-  (`.last-run.json` passed). Aucune migration. CI GitHub : non exécutée —
-  la PR la jouera.
+  (`.last-run.json` passed). Aucune migration. CI GitHub de la PR #137 :
+  intégralement verte.
 - **Risque/blocage** : aucun changement serveur ni auth/RLS/endpoint
   public/webhook/token — revue sécurité non requise selon la règle du
   dépôt (décision explicite, pas une omission).
-- **État** : à relire. Prochaine action : ouvrir la PR vers `main`, fusion
-  sur l'ordre permanent dès CI verte. Roadmap V1.54.1.
+- **État** : terminé, déployé. Prochaine action : aucune. Roadmap V1.54.1.
 
 ### 2026-08-09 — Sept retours propriétaire — **terminé**
 
