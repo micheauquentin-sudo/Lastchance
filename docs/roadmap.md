@@ -285,6 +285,45 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.55 — Hub QR par type de jeu (✅ 2026-08-09, branche `chantier/qr-hub-types`, PR à ouvrir, sans migration)
+
+**Objectif** : la page `/dashboard/qr-codes` n'affichait que les QR/liens des
+campagnes. Sept autres modules (roue seule via QR direct exclue, chasse,
+événement, jackpot, fidélité, calendrier, quiz, parrainage, pronostics) sans
+support QR propre restaient invisibles depuis ce hub, obligeant à retrouver
+chaque lien module par module.
+
+**Livré** (6 commits) :
+- **RPC `org_qr_hub`** (`security definer`) : union des QR et liens des
+  8 types de jeux en un seul aller-retour, garde `is_org_editor` calquée sur
+  la RLS vivante (pas sur la migration d'origine), `ilike` échappé, `limit`
+  plafonné à 100. pgTAP dédié (51 assertions, `qr_hub.test.sql`), CI.
+- **Page `/dashboard/qr-codes` réécrite** : sélecteur « Type de jeu » aux
+  libellés du catalogue, filtré par les modules actifs de l'organisation.
+  Les cartes campagne restent inchangées (studio, style persisté). Nouvelles
+  cartes `jeu-lien-card.tsx` pour les autres modules : QR au style
+  `PublicShare` déjà utilisé ailleurs, lien copiable, badges de statut, la
+  chasse affiche « N affiches », l'événement « N salles ». Écran dédié pour
+  le rôle caisse. Pagination par débordement. Le filtre par campagne existant
+  est conservé via l'ancienne requête.
+- **Accessibilité** : premier scan axe de cette page — 40 nœuds
+  `color-contrast` sérieux fermés dans `QrCodeCard` via le token
+  `--color-k-orange-text`.
+- **Revue sécurité dédiée** : GO, 0 critique/élevé/moyen, 3 INFO — 2 fermées
+  avant la PR (l'échec RPC n'est plus avalé silencieusement, reportError
+  ajouté sans changer l'écran affiché ; assertion pgTAP sur `prosecdef`), 1
+  consignée sans action dans `docs/bugs.md`.
+
+Preuve : typecheck 0, lint 0, `casts:check` 0, Vitest **262 fichiers /
+4131 tests**, build vert, pgTAP **57 fichiers / 3266 assertions** PASS
+(base vide puis semée, dont les 51 de `qr_hub.test.sql`), `migrations:check`
+126 fichiers / tête `20260922120000` (inchangée, sans migration pour ce
+chantier), E2E WSL 3 projets — qr-hub + campaign-templates + atelier-modules,
+**61 passed / 6 skipped**. Piège attrapé par pgTAP : `module_page_opens.
+resource_id` n'est pas au grain du module (événement → sessions, chasse →
+étapes) ; la RPC doit sommer, prouvé sur un cas 3+4=7. ADR-100, `docs/bugs.md`
+(2 entrées consignées sans action).
+
 ## V1.54.1 — Bouton « Voir le jeu » sur les tuiles Statut (✅ 2026-08-09, branche `chantier/bouton-voir-le-jeu`, PR à ouvrir, sans migration)
 
 **Objectif** : demande propriétaire immédiate après V1.54 — accéder au jeu
