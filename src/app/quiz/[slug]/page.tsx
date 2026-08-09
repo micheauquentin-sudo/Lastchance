@@ -92,7 +92,6 @@ export default async function QuizPage({
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
-      decor={tokens.decor}
       fond={fondPourQuizTheme(tokens.key)}
     >
       <PageOpenBeacon module="quiz" publicId={ctx.publicSlug} />

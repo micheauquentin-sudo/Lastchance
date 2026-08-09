@@ -35,7 +35,6 @@ import {
   CONTEST_THEME_ORDER,
   contestThemeTokens,
 } from "@/components/pronos/contest-theme";
-import { ThemeDecor } from "@/components/ui/theme-decor";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import { fondPourTheme } from "@/lib/fonds-ecran";
 import type {
@@ -271,11 +270,10 @@ function ThemeSelector({ contest }: { contest: Contest }) {
                   style={tokens.pageStyle}
                 >
                   {/* Le fond d'écran du thème, quand il en a un : la vignette
-                      montre au commerçant l'image que verra son client, pas
-                      seulement le décor. Premier enfant, donc SOUS le décor
-                      SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                      montre au commerçant l'image que verra son client.
+                      Premier enfant, donc SOUS les pastilles — ordre du DOM,
+                      aucun z-index. */}
                   {fond && <FondEcran fond={fond} variant="vignette" />}
-                  <ThemeDecor decor={tokens.decor} variant="vignette" />
                   <span
                     className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}
                   >

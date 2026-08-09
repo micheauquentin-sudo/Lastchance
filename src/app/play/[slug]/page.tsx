@@ -4,14 +4,12 @@ import { loadPlayContext, type PlayContext } from "@/lib/play-context";
 import { fontGoogleHref } from "@/lib/fonts";
 import { hasReferralAccess } from "@/lib/referral-context";
 import {
-  playDecor,
   playOnLightSurface,
   playSurface,
   resolveWheelStyle,
   type WheelStyle,
 } from "@/lib/wheel-style";
 import { KermesseStripe, playText } from "@/components/wheel/play-theme";
-import { ThemeDecor, type DecorKey } from "@/components/ui/theme-decor";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import type { FondKey } from "@/lib/fonds-ecran";
 import { InvitationAvantJeu } from "@/components/wheel/invitation-avant-jeu";
@@ -111,7 +109,6 @@ export default async function PlayPage({
         background={errorSurface.background}
         backdrop={errorStyle.bgTo}
         kermesse={errorSurface.kermesse}
-        decor={playDecor(errorStyle)}
         fond={errorStyle.fond ?? null}
       >
         <div className="play-in text-center px-8">
@@ -218,7 +215,6 @@ export default async function PlayPage({
       background={surface.background}
       backdrop={style.bgTo}
       kermesse={surface.kermesse}
-      decor={playDecor(style)}
       fond={style.fond ?? null}
     >
       {fontHref && (
@@ -323,7 +319,6 @@ function PlayShell({
   background = "radial-gradient(circle at 50% -10%, #2e1065, #0c0118 60%, #000)",
   backdrop = "#000000",
   kermesse = false,
-  decor = "aucun",
   fond = null,
 }: {
   children: React.ReactNode;
@@ -332,8 +327,6 @@ function PlayShell({
   backdrop?: string;
   /** Thème « kermesse » : crème + bandeau rayé, même univers que le site. */
   kermesse?: boolean;
-  /** Décor cartoon de gouttière — rendu sur la SEULE branche kermesse. */
-  decor?: DecorKey;
   /**
    * Image de fond plein cadre choisie par le commerçant (`style.fond`), ou
    * `null` — auquel cas RIEN ne change : la page reste exactement celle
@@ -344,17 +337,14 @@ function PlayShell({
 }) {
   if (kermesse) {
     return (
-      // `relative` : ancre le décor absolu ci-dessous. Le bandeau est déjà
+      // Le fond d'écran est une couche absolue ancrée ici. Le bandeau est déjà
       // positionné (`sticky z-10`), `<main>` prend `relative` pour passer
-      // devant le décor par l'ORDRE DU DOM — pas par un z-index, qui créerait
+      // devant l'image par l'ORDRE DU DOM — pas par un z-index, qui créerait
       // un contexte d'empilement (voir `play-backdrop.tsx`).
       <div className="fixed inset-0 overflow-y-auto overscroll-contain bg-k-bg">
         <PlayBackdrop color="var(--color-k-bg)" />
         <SkipLink />
-        {/* L'image passe SOUS le décor SVG : la scène cartoon devient un
-            bonus par-dessus la photo, elle ne la remplace pas. */}
         {fond && <FondEcran fond={fond} voile="creme" />}
-        <ThemeDecor decor={decor} />
         <KermesseStripe className="sticky top-0 z-10 h-3" />
         <main
           id="contenu"
@@ -366,11 +356,9 @@ function PlayShell({
       </div>
     );
   }
-  // BRANCHE « NUIT » — AUCUN DÉCOR, et c'est un choix, pas un oubli. Le fond
-  // y est un dégradé LIBRE du commerçant (`bgFrom`/`bgTo`, deux champs de
-  // couleur sans contrainte) : une scène cartoon calée sur la palette crème
-  // du site n'y a aucune garantie de lisibilité ni d'accord de couleurs. Un
-  // décor par ambiance sombre est une V2, pas une extension gratuite.
+  // BRANCHE « NUIT » — le fond y est un dégradé LIBRE du commerçant
+  // (`bgFrom`/`bgTo`, deux champs de couleur sans contrainte), que son image
+  // de fond recouvre s'il en a choisi une.
   return (
     // `background` est une SHORTHAND : le dégradé part en `background-image`
     // et remet `background-color` à `transparent`. La seule peinture opaque

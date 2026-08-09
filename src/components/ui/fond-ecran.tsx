@@ -3,9 +3,9 @@ import { fondSrc, fondSrcSet, type FondKey } from "@/lib/fonds-ecran";
 
 /**
  * FOND D'ÉCRAN THÉMATIQUE — l'image cartoon plein cadre qui habille une page
- * joueur, sous le décor SVG et sous le contenu.
+ * joueur, sous le contenu.
  *
- * ── Le contrat de montage, identique à `ThemeDecor` ──
+ * ── Le contrat de montage ──
  *
  * Ce composant rend UNE couche `absolute inset-0`, sans `z-index`. Il doit
  * donc être posé en PREMIER ENFANT d'un conteneur `position: relative`, et le
@@ -24,11 +24,11 @@ import { fondSrc, fondSrcSet, type FondKey } from "@/lib/fonds-ecran";
  *
  * ── LE VOILE EST CE QUI TIENT LA LISIBILITÉ ──
  *
- * `ThemeDecor` protégeait le texte par la CARTE DES EMPLACEMENTS : les deux
- * couloirs non encartés des pages joueur (l'en-tête et le pied de page, tous
- * deux centrés) restaient vides de motifs. Une photo plein cadre rend cette
- * méthode caduque : elle couvre tout, on ne peut pas « ne pas peindre » sous
- * l'en-tête.
+ * Le décor SVG qui précédait ces images protégeait le texte par une CARTE DES
+ * EMPLACEMENTS : les deux couloirs non encartés des pages joueur (l'en-tête et
+ * le pied de page, tous deux centrés) restaient vides de motifs. Une photo
+ * plein cadre rend cette méthode caduque : elle couvre tout, on ne peut pas
+ * « ne pas peindre » sous l'en-tête.
  *
  * D'où le voile, un dégradé vertical à alpha posé PAR-DESSUS l'image dans la
  * même couche. Il est RENFORCÉ EN HAUT ET EN BAS — exactement les deux
@@ -71,8 +71,7 @@ const VOILES: Record<VoileFond, string> = {
  * VIGNETTE — voile uniforme et léger. Aucun texte ne repose dessus (le libellé
  * du thème est SOUS la vignette), et une pastille de 40 px de haut n'a que
  * l'image pour dire de quel fond il s'agit : la voiler comme une page la
- * rendrait indistincte de ses neuf voisines. Même raisonnement que
- * `ALPHA_VIGNETTE` dans `theme-decor.tsx`.
+ * rendrait indistincte de ses neuf voisines.
  */
 const VOILES_VIGNETTE: Record<VoileFond, string> = {
   creme: "rgba(253,246,227,.25)",

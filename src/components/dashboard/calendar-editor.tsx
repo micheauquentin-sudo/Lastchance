@@ -40,7 +40,6 @@ import {
   CALENDAR_THEME_ORDER,
   calendarThemeTokens,
 } from "@/components/calendar/calendar-theme";
-import { ThemeDecor } from "@/components/ui/theme-decor";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import { fondPourTheme } from "@/lib/fonds-ecran";
 import { formatCalendarUnlock } from "@/components/calendar/calendar-state";
@@ -93,20 +92,19 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
                 onChange={() => setTheme(key)}
                 className="sr-only"
               />
-              {/* `relative` + décor en premier enfant : même empilement que la
+              {/* `relative` + fond en premier enfant : même empilement que la
                   page publique (ordre du DOM, aucun z-index) — la vignette
-                  montre le décor que verront vraiment les clients. */}
+                  montre ce que verront vraiment les clients. */}
               <div
                 aria-hidden
                 className="relative mb-2 flex items-center gap-1.5 overflow-hidden rounded-lg border-2 border-k-ink p-1.5"
                 style={tokens.pageStyle}
               >
                 {/* Le fond d'écran du thème, quand il en a un : la vignette
-                    montre au commerçant l'image que verra son client, pas
-                    seulement le décor. Premier enfant, donc SOUS le décor
-                    SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                    montre au commerçant l'image que verra son client.
+                    Premier enfant, donc SOUS les pastilles — ordre du DOM,
+                    aucun z-index. */}
                 {fond && <FondEcran fond={fond} variant="vignette" />}
-                <ThemeDecor decor={tokens.decor} variant="vignette" />
                 <span
                   className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.availableCell}`}
                 >

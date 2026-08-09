@@ -335,8 +335,7 @@ export function WheelStyleEditor({
    * 1. `preset` N'EST PAS effacé. Les presets ne touchent pas au sous-objet
    *    `games` (wheel-style.ts le dit et wheel-style.test.ts le tient) :
    *    recolorer un gobelet ne « sort » donc pas du style choisi, et l'effacer
-   *    ferait au passage retomber le DÉCOR de la page sur les confettis —
-   *    `playDecor` le lit sur `style.preset`.
+   *    ferait perdre au commerçant la vignette qui lui rappelle d'où il part.
    * 2. Les clés des AUTRES mécaniques sont conservées telles quelles. Un
    *    commerçant qui essaie « Memory », choisit un dos rouge, repasse au dé
    *    puis revient doit retrouver son rouge : un contrôle masqué n'efface
@@ -344,10 +343,9 @@ export function WheelStyleEditor({
    */
   /**
    * Fond d'écran — `set` NE CONVIENT PAS ici, pour la même raison que `setJeu` :
-   * il efface `preset`, et `playDecor` lit le DÉCOR sur `style.preset`. Choisir
-   * une photo de fond ferait alors retomber la scène cartoon sur les confettis,
-   * ce que le commerçant n'a pas demandé. L'image est une couche EN PLUS du
-   * style, pas une sortie du style.
+   * il efface `preset`, et le commerçant perdrait la vignette qui lui rappelle
+   * de quel style il part alors qu'il n'en a changé aucune couleur. L'image est
+   * une couche EN PLUS du style, pas une sortie du style.
    */
   function setFond(fond: FondKey | undefined) {
     setStyle((s) => ({ ...s, fond }));

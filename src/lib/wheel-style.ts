@@ -11,9 +11,6 @@
 import { z } from "zod";
 import { FONT_KEYS, type FontKey } from "@/lib/fonts";
 import { FOND_KEYS } from "@/lib/fonds-ecran";
-// Import de TYPE uniquement : aucun composant React n'entre ici, ce fichier
-// reste une table pure lisible côté serveur comme côté client.
-import type { DecorKey } from "@/components/ui/theme-decor";
 
 const hexColor = z
   .string()
@@ -176,13 +173,12 @@ export const wheelStyleSchema = z.object({
   /**
    * Fond d'écran thématique de la page /play — CHOIX EXPLICITE du commerçant.
    *
-   * Contrairement au `decor` (scène cartoon), qui reste porté par le PRESET et
-   * n'existe donc pas dans ce schéma : le décor est une conséquence de
-   * l'ambiance choisie, le fond est un réglage à part entière — on le choisit
-   * pour ce qu'il montre (un stade, une salle de restaurant), pas pour aller
-   * avec des couleurs. Il vit ici, dans le jsonb, et reste OPTIONNEL : aucune
-   * migration, et les styles déjà enregistrés n'ont pas de fond, ce qui est
-   * exactement leur rendu actuel.
+   * C'est un réglage à part entière : on le choisit pour ce qu'il MONTRE (un
+   * stade, une salle de restaurant), pas pour aller avec des couleurs. Il vit
+   * ici, dans le jsonb, et reste OPTIONNEL : aucune migration, et les styles
+   * déjà enregistrés n'ont pas de fond, ce qui est exactement leur rendu
+   * actuel. Un preset d'UNIVERS en pose un par-dessus ses couleurs (voir
+   * `WHEEL_PRESETS`) ; un preset d'AMBIANCE laisse le choix intact.
    *
    * `.catch(undefined)`, dans l'esprit de `games` ci-dessous, et POUR LA
    * LECTURE SEULEMENT : une clé retirée du catalogue et relue en base doit
@@ -282,16 +278,6 @@ export interface WheelPreset {
   label: string;
   /** Couleurs représentatives pour la vignette de l'éditeur. */
   swatch: [string, string, string];
-  /**
-   * Scène cartoon du fond de /play (voir `components/ui/theme-decor.tsx`).
-   *
-   * PORTÉE PAR LE PRESET, DÉLIBÉRÉMENT — et non par `wheelStyleSchema`. Le
-   * schéma décrit le jsonb `wheels.style` : y ajouter un champ le ferait
-   * écrire en base pour toutes les roues, alors que le décor est une
-   * conséquence du style choisi, pas un réglage indépendant. Rien à migrer,
-   * rien à valider à la lecture.
-   */
-  decor: DecorKey;
   style: WheelStyle;
 }
 
@@ -299,14 +285,12 @@ function preset(
   key: string,
   label: string,
   swatch: [string, string, string],
-  decor: DecorKey,
   overrides: Partial<WheelStyle>,
 ): WheelPreset {
   return {
     key,
     label,
     swatch,
-    decor,
     style: wheelStyleSchema.parse({ ...overrides, preset: key }),
   };
 }
@@ -316,7 +300,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
   // bordures franches, ampoules chaudes, bouton orange→jaune. Avec le
   // thème de page assorti, le joueur arrive sur le même univers que le
   // site Lastchance (fond crème, bandeau rayé, ombres dures encre).
-  preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], "confetti", {
+  preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], {
     pageTheme: "kermesse",
     ring: "classic",
     ringColor: "#fcca59",
@@ -337,8 +321,8 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#f5793b",
     buttonTo: "#fcca59",
   }),
-  preset("classic", "Classique", ["#7c3aed", "#d946ef", "#ffd34d"], "etoiles", {}),
-  preset("neon", "Néon", ["#22d3ee", "#f0abfc", "#0f172a"], "eclairs", {
+  preset("classic", "Classique", ["#7c3aed", "#d946ef", "#ffd34d"], {}),
+  preset("neon", "Néon", ["#22d3ee", "#f0abfc", "#0f172a"], {
     ring: "neon",
     ringColor: "#22d3ee",
     lights: true,
@@ -356,7 +340,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#06b6d4",
     buttonTo: "#d946ef",
   }),
-  preset("luxe", "Luxe", ["#ca8a04", "#1c1917", "#f5e6c4"], "diamants", {
+  preset("luxe", "Luxe", ["#ca8a04", "#1c1917", "#f5e6c4"], {
     ring: "gold",
     lights: false,
     segmentBorderColor: "#ca8a04",
@@ -373,7 +357,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ca8a04",
     buttonTo: "#92400e",
   }),
-  preset("candy", "Pastel", ["#f9a8d4", "#fde68a", "#ffffff"], "sucreries", {
+  preset("candy", "Pastel", ["#f9a8d4", "#fde68a", "#ffffff"], {
     ring: "minimal",
     ringColor: "#ffffff",
     lights: false,
@@ -391,7 +375,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ec4899",
     buttonTo: "#f97316",
   }),
-  preset("minimal", "Minimal", ["#18181b", "#e4e4e7", "#ffffff"], "aucun", {
+  preset("minimal", "Minimal", ["#18181b", "#e4e4e7", "#ffffff"], {
     ring: "none",
     lights: false,
     segmentBorderColor: "#ffffff",
@@ -407,7 +391,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#18181b",
     buttonTo: "#3f3f46",
   }),
-  preset("fiesta", "Festif", ["#ef4444", "#facc15", "#22c55e"], "fanions", {
+  preset("fiesta", "Festif", ["#ef4444", "#facc15", "#22c55e"], {
     ring: "classic",
     ringColor: "#facc15",
     lights: true,
@@ -425,7 +409,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ef4444",
     buttonTo: "#f97316",
   }),
-  preset("cartoon", "Cartoon", ["#facc15", "#ef4444", "#3b82f6"], "etoiles", {
+  preset("cartoon", "Cartoon", ["#facc15", "#ef4444", "#3b82f6"], {
     ring: "classic",
     ringColor: "#ef4444",
     lights: true,
@@ -450,24 +434,6 @@ export const WHEEL_PRESETS: WheelPreset[] = [
 
 export function getPreset(key: string): WheelPreset | undefined {
   return WHEEL_PRESETS.find((p) => p.key === key);
-}
-
-/**
- * Décor de fond de /play pour un style donné.
- *
- * Il se lit sur le PRESET de départ (`style.preset`), pas sur le style
- * résolu : le commerçant peut ensuite recolorer chaque détail, le décor suit
- * l'ambiance qu'il a choisie au départ. Un style vierge ou un preset disparu
- * du catalogue retombe sur les confettis — jamais rien, pour ne pas rendre
- * « fade » la page d'une roue jamais personnalisée.
- *
- * Le décor n'est RENDU que sur l'habillage « kermesse » : le thème « nuit »
- * porte un dégradé libre du commerçant, sur lequel une scène cartoon calée
- * sur une palette crème n'a aucune garantie de lisibilité ni de goût. Voir
- * `PlayShell` dans `app/play/[slug]/page.tsx`.
- */
-export function playDecor(style: WheelStyle): DecorKey {
-  return (style.preset && getPreset(style.preset)?.decor) || "confetti";
 }
 
 /** Dégradé radial du fond de la page /play. */

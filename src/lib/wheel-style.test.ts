@@ -78,8 +78,7 @@ describe("wheelStyleSchema — validation à l'écriture", () => {
 
 /**
  * Le fond d'écran est le seul champ VISUEL du schéma que le commerçant choisit
- * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs. Il vit
- * donc dans le jsonb, contrairement au `decor` porté par le preset.
+ * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs.
  */
 describe("wheelStyleSchema.fond — fond d'écran thématique", () => {
   it("absent par défaut : les styles déjà enregistrés n'en ont pas", () => {
