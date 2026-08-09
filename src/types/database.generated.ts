@@ -7329,6 +7329,31 @@ export type Database = {
         Args: { p_organization_id: string }
         Returns: Json
       }
+      org_qr_hub: {
+        Args: {
+          p_kind?: string
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_q?: string
+        }
+        Returns: {
+          created_at: string
+          extra_count: number
+          item_id: string
+          kind: string
+          name: string
+          open_count: number
+          qr_id: string
+          qr_label: string
+          qr_slug: string
+          qr_style: Json
+          scan_count: number
+          status: string
+          total_count: number
+          url_path: string
+        }[]
+      }
       org_reengagement_targets: {
         Args: {
           p_cooldown_days?: number
