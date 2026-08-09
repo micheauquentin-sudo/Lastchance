@@ -57,7 +57,7 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-09 — Tris et filtres partout — **à relire**
+### 2026-08-09 — Tris et filtres partout — **terminé**
 
 - **Lot et objectif** : quatre propositions retenues par le propriétaire (2,
   3, 4, 6) parmi une liste de six — recherche/filtre/tri sur Clients et
@@ -85,9 +85,12 @@
 - **Risque/blocage** : revue sécurité GO, 2 MOYEN fermés avant la PR (500 sur
   les participations aux bascules DST à minuit ; export clients mal borné,
   troncature désormais explicite), 4 INFO consignés sans action dans
-  `docs/bugs.md`. Aucun blocage technique ; la PR reste à ouvrir et fusionner.
-- **État** : à relire. Prochaine action : ouvrir la PR, vérifier la CI, fusionner
-  sur l'ordre permanent. Roadmap V1.56, ADR-101.
+  `docs/bugs.md`. Aucun blocage technique. CI GitHub de la PR #139 :
+  intégralement verte ; fusion squash `379471c` sur l'ordre permanent, puis
+  CI `main` et « Santé après déploiement » verts sur ce SHA — migration
+  `20260923120000` appliquée en production.
+- **État** : terminé, déployé. Prochaine action : aucune. Roadmap V1.56,
+  ADR-101.
 
 ### 2026-08-09 — Hub QR par type de jeu — **terminé**
 
