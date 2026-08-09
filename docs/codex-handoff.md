@@ -57,7 +57,7 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-09 — Hub QR par type de jeu — **à relire**
+### 2026-08-09 — Hub QR par type de jeu — **terminé**
 
 - **Lot et objectif** : `/dashboard/qr-codes` n'affichait que les QR de
   campagne ; sept autres modules (chasse, événement, jackpot, fidélité,
@@ -80,14 +80,16 @@
   0, Vitest suite complète 262 fichiers / 4131 tests, build vert, pgTAP 57
   fichiers / 3266 assertions PASS (vide puis semée), `migrations:check` 126
   fichiers / tête `20260922120000`, E2E WSL 3 projets (qr-hub +
-  campaign-templates + atelier-modules) 61 passed / 6 skipped. CI GitHub :
-  non exécutée (la PR la jouera).
+  campaign-templates + atelier-modules) 61 passed / 6 skipped. CI GitHub de
+  la PR #138 : intégralement verte ; fusion squash `0ce78ae` sur l'ordre
+  permanent, puis CI `main` et « Santé après déploiement » verts sur ce
+  SHA — migration `20260922120000` appliquée en production.
 - **Risque/blocage** : revue sécurité dédiée GO, 0 critique/élevé/moyen,
   3 INFO — 2 fermées avant PR, 1 consignée sans action dans `docs/bugs.md`
   (repli du filtre type + octrois datés absents des options ; modules hors
   campagne sans style QR persisté). Aucun blocage.
-- **État** : à relire. Prochaine action : ouvrir la PR, fusion sur l'ordre
-  permanent dès CI verte. Roadmap V1.55, ADR-100.
+- **État** : terminé, déployé. Prochaine action : aucune. Roadmap V1.55,
+  ADR-100.
 
 ### 2026-08-09 — Correctif V1.54.1 : bouton « Voir le jeu » sur les tuiles Statut — **terminé**
 
