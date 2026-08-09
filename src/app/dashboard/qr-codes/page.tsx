@@ -490,10 +490,12 @@ export default async function QrCodesPage({
         >
           Filtrer
         </button>
+        {/* `text-k-body` : même correction de contraste que les sept listes de
+            modules — sur le crème `k-bg`, `text-zinc-500` tombe sous AA. */}
         {filtreActif && (
           <Link
             href="/dashboard/qr-codes"
-            className="self-center text-sm text-zinc-500 hover:text-zinc-900"
+            className="self-center text-sm font-bold text-k-body hover:text-k-ink"
           >
             Réinitialiser
           </Link>

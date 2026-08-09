@@ -153,9 +153,14 @@ export function ModuleListFilters({
       {filtres.actif && (
         // `?` seul : le formulaire est sur la page qu'il filtre, la remise à
         // zéro n'a donc pas besoin de connaître son propre chemin.
+        //
+        // `text-k-body` et NON `text-zinc-500` : le fond de ces pages est le
+        // crème `k-bg` (#fdf6e3), sur lequel #71717a tombe à ~4,4:1 — sous le
+        // seuil AA. axe l'a relevé au premier rendu filtré (le lien n'existe
+        // pas sans filtre, ce qui l'avait tenu hors de portée des scans).
         <Link
           href="?"
-          className="self-center text-sm text-zinc-500 hover:text-zinc-900"
+          className="self-center text-sm font-bold text-k-body hover:text-k-ink"
         >
           Réinitialiser
         </Link>
