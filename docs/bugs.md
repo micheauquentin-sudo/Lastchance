@@ -3927,9 +3927,11 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   (2026-08-08, `chantier/retours-proprietaire`)** :
   - **Mode TV pronostics sans thème** : `loadContestTvContext` n'expose pas
     `theme` (déjà noté V1.49) — non repris par ce chantier.
-  - **Branche « nuit » de `/play` sans décor ni lavis** : seul le décor par
-    preset kermesse a été livré ; un lavis de fond pour la variante nuit
-    reste à arbitrer côté produit.
+  - **✅ Caduc (V1.54, 2026-08-09)** — **Branche « nuit » de `/play` sans
+    décor ni lavis** : seul le décor par preset kermesse avait été livré ; un
+    lavis de fond pour la variante nuit restait à arbitrer côté produit. Sans
+    objet depuis le retrait complet de `ThemeDecor` en V1.54 (ADR-099) — il
+    n'existe plus de décor sur aucune branche, la question ne se pose plus.
   - **Préférence d'invitation avant-jeu par navigateur (`sessionStorage`),
     pas par joueur identifié** : un même joueur sur deux appareils revoit la
     carte d'invitation sur chacun ; assumé, cohérent avec la nature
@@ -3946,6 +3948,21 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     ancienne agit au niveau table plutôt que ligne — à vérifier par
     `db-supabase` (impact potentiel : cascade ou perte de granularité RLS
     selon la table visée, non caractérisé plus finement ici).
+
+- **Sept retours propriétaire — deux INFO consignés sans action
+  (2026-08-09, `chantier/sept-retours-proprietaire`)** :
+  - **`sanitizeSearchTerm` laisse passer `*`** (`src/lib/utils.ts:92-93`) —
+    la fonction neutralise `% , ( ) \` mais pas `*`, un joker PostgREST.
+    Élargit la recherche au périmètre déjà visible du rôle (RLS reste la
+    barrière réelle), défaut préexistant et partagé avec `participations`
+    (`src/app/dashboard/participations/page.tsx`), pas introduit par ce
+    chantier — relevé à l'occasion du filtre ajouté à la page QR codes
+    (`src/app/dashboard/qr-codes/page.tsx`).
+  - **`qrQuery.error` non inspecté sur la page QR codes**
+    (`src/app/dashboard/qr-codes/page.tsx:47-73`) — en cas d'échec de la
+    requête, `qrQuery.data ?? []` retombe silencieusement sur une liste
+    vide : l'écran reste honnête (pas de faux résultat) mais ne dit rien de
+    la cause à l'opérateur qui débogue un incident.
 
 ## Tracking Process
 

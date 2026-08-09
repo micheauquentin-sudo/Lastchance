@@ -38,7 +38,6 @@ export default async function RecoverPage({
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
-      decor={tokens.decor}
       fond={fondPourTheme(tokens.key)}
     >
       <div className="mx-auto max-w-md px-6 py-16">

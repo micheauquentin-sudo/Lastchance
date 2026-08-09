@@ -4,6 +4,8 @@ import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
@@ -44,7 +46,19 @@ const STATUS_ACTIONS: Array<{
  * juste sous la Carte de l'Aventure, comme partout ailleurs — le reste des
  * réglages (renommer, dupliquer, supprimer) n'a pas cette urgence et reste bas.
  */
-export function CampaignStatusControls({ campaign }: { campaign: Campaign }) {
+export function CampaignStatusControls({
+  campaign,
+  wheelId,
+}: {
+  campaign: Campaign;
+  /**
+   * Roue que la page a retenue pour sa checklist. Le raccourci d'atelier vise
+   * LA MÊME : ouvrir l'atelier sur une autre roue que celle dont la tuile
+   * annonce les manques enverrait corriger un écran où il n'y a rien à
+   * corriger. `null` accepté — la page sans roue laisse l'atelier choisir.
+   */
+  wheelId?: string | null;
+}) {
   const {
     state: statusState,
     pending: statusPending,
@@ -86,6 +100,9 @@ export function CampaignStatusControls({ campaign }: { campaign: Campaign }) {
           Ouverte aux joueurs — un client qui scanne le QR code peut jouer.
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />
@@ -121,71 +138,76 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
   );
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <h2 className="font-semibold mb-4">Réglages</h2>
+    /* UNE SEULE Card, et c'est la racine du composant. Il en rendait DEUX
+       (« Réglages » puis « Zone dangereuse ») dans un `space-y-4` ; la tuile
+       repliable qui l'enveloppe n'encadre rien — elle pose un liseré à gauche
+       et suppose une carte unique — si bien que la carte rouge sortait du
+       cadre, seule au milieu de la page. La zone dangereuse devient une
+       SECTION séparée par un filet, comme les six autres modules ; le filet
+       reste rouge, c'est lui qui porte l'avertissement. */
+    <Card>
+      <h2 className="font-semibold mb-4">Réglages</h2>
 
-        <form
-          ref={formRef}
-          onSubmit={renameSubmit}
-          className="flex items-end gap-2 mb-6"
-        >
-          <input type="hidden" name="id" value={campaign.id} />
-          <div className="flex-1 max-w-xs">
-            <Label htmlFor="campaign-name">Nom de la campagne</Label>
-            <Input
-              id="campaign-name"
-              name="name"
-              defaultValue={campaign.name}
-              required
-              maxLength={120}
-            />
-          </div>
-          <Button type="submit" variant="secondary" disabled={renamePending}>
-            {renamePending ? "…" : "Renommer"}
-          </Button>
-        </form>
-        {enAttente && !renamePending && (
-          <p className="text-sm font-semibold text-k-body">
-            Modification en attente d&apos;enregistrement…
-          </p>
-        )}
-        {bloqueParValidation && (
-          <p role="alert" className="text-sm font-semibold text-red-700">
-            Non enregistré : le nom de la campagne ne peut pas être vide.
-          </p>
-        )}
-        <FieldError
-          message={renameState && !renameState.ok ? renameState.error : undefined}
-        />
-
-        <div className="mt-4 pt-4 border-t border-zinc-100">
-          <form action={duplicateAction}>
-            <input type="hidden" name="id" value={campaign.id} />
-            <Button type="submit" variant="secondary" disabled={duplicatePending}>
-              {duplicatePending ? "Duplication…" : "Dupliquer cette campagne"}
-            </Button>
-          </form>
-          <p className="mt-2 text-xs text-zinc-500">
-            Crée une copie en brouillon (roues, lots, réglages) — utile pour
-            relancer un jeu saisonnier.
-          </p>
-          <FieldError
-            message={
-              duplicateState && !duplicateState.ok ? duplicateState.error : undefined
-            }
+      <form
+        ref={formRef}
+        onSubmit={renameSubmit}
+        className="flex items-end gap-2 mb-6"
+      >
+        <input type="hidden" name="id" value={campaign.id} />
+        <div className="flex-1 max-w-xs">
+          <Label htmlFor="campaign-name">Nom de la campagne</Label>
+          <Input
+            id="campaign-name"
+            name="name"
+            defaultValue={campaign.name}
+            required
+            maxLength={120}
           />
         </div>
-      </Card>
+        <Button type="submit" variant="secondary" disabled={renamePending}>
+          {renamePending ? "…" : "Renommer"}
+        </Button>
+      </form>
+      {enAttente && !renamePending && (
+        <p className="text-sm font-semibold text-k-body">
+          Modification en attente d&apos;enregistrement…
+        </p>
+      )}
+      {bloqueParValidation && (
+        <p role="alert" className="text-sm font-semibold text-red-700">
+          Non enregistré : le nom de la campagne ne peut pas être vide.
+        </p>
+      )}
+      <FieldError
+        message={renameState && !renameState.ok ? renameState.error : undefined}
+      />
 
-      <Card className="border-red-200">
-        {/* Seul titre qui échappe au jaune Kermesse : un trait de fête sous un
-            avertissement rouge dit le contraire de la carte. Le `!` est requis —
-            la variante `[&>h2]:border-k-yellow` de Card est plus spécifique
-            qu'une classe posée sur l'élément. */}
-        <h2 className="font-semibold text-red-700 mb-1 border-red-300!">
-          Zone dangereuse
-        </h2>
+      <div className="mt-4 pt-4 border-t border-zinc-100">
+        <form action={duplicateAction}>
+          <input type="hidden" name="id" value={campaign.id} />
+          <Button type="submit" variant="secondary" disabled={duplicatePending}>
+            {duplicatePending ? "Duplication…" : "Dupliquer cette campagne"}
+          </Button>
+        </form>
+        <p className="mt-2 text-xs text-zinc-500">
+          Crée une copie en brouillon (roues, lots, réglages) — utile pour
+          relancer un jeu saisonnier.
+        </p>
+        <FieldError
+          message={
+            duplicateState && !duplicateState.ok ? duplicateState.error : undefined
+          }
+        />
+      </div>
+
+      {/* ZONE DANGEREUSE — une section, plus une carte. Le filet est rouge et
+          doublé : c'est lui qui dit « on change de registre », sans avoir à
+          sortir un second cadre de la tuile. Le titre passe en `<h3>` — il
+          échappe ainsi naturellement au trait de marqueur jaune que `Card`
+          pose sur ses `<h2>` directs, et le hack `!` qu'il fallait pour
+          l'annuler disparaît. */}
+      <div className="mt-5 border-t-2 border-red-200 pt-4">
+        <h3 className="font-black text-red-700 mb-1">Zone dangereuse</h3>
         <p className="text-sm text-zinc-500 mb-4">
           Supprime la campagne, sa roue, ses lots, ses QR codes et ses
           participations. Irréversible.
@@ -226,7 +248,7 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
         <FieldError
           message={deleteState && !deleteState.ok ? deleteState.error : undefined}
         />
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 }

@@ -21,6 +21,7 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
@@ -155,6 +156,9 @@ export function EventGameStatusControls({
           </Link>
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeEvenement(gameId, "jeu")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />

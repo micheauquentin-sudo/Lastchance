@@ -8,6 +8,7 @@ import { useActionForm } from "@/lib/use-action-form";
 export function NewQrForm({
   campaigns,
   defaultCampaignId,
+  defaultLabel,
   campagneFigee = false,
   instanceId,
 }: {
@@ -20,6 +21,16 @@ export function NewQrForm({
    * c'est un piège à clic.
    */
   campagneFigee?: boolean;
+  /**
+   * Libellé pré-rempli. Servi depuis la page d'un jeu, le QR naît nommé comme
+   * le jeu qu'il ouvre — le commerçant qui en génère trois pour trois tables
+   * n'a plus qu'à préciser, au lieu de tout retaper. La colonne `label` est
+   * bornée à 120 comme `campaigns.name` : aucune troncature possible.
+   *
+   * Le reset après succès repose ce défaut : la deuxième création repart du
+   * même nom, ce qui est exactement ce qu'on veut ici.
+   */
+  defaultLabel?: string;
   /**
    * Suffixe des `id` de champs. Le formulaire est monté sur DEUX pages ; sans
    * lui, deux instances sur un même écran partageraient `qr-campaign` et
@@ -68,6 +79,7 @@ export function NewQrForm({
         <Input
           id={idLibelle}
           name="label"
+          defaultValue={defaultLabel}
           maxLength={120}
           placeholder="Ex : Table 4, Comptoir…"
           className="w-48"

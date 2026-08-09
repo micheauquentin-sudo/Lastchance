@@ -14,7 +14,11 @@ import {
   PosterImageError,
 } from "@/lib/poster-storage";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { qrStyleDuJeu } from "@/lib/qr-style-du-jeu";
+import { resolveWheelStyle } from "@/lib/wheel-style";
+import { selectActiveWheel } from "@/lib/wheel-schedule";
 import { randomCode, type ActionResult } from "@/lib/utils";
+import type { Wheel } from "@/types/database";
 
 const createQrSchema = z.object({
   campaign_id: z.string().uuid("Campagne invalide"),
@@ -87,11 +91,48 @@ export async function createQrCode(
     .maybeSingle();
   if (!campaign) return { ok: false, error: "Campagne introuvable" };
 
+  // Le QR naît habillé comme le jeu qu'il ouvre (voir `lib/qr-style-du-jeu.ts`).
+  // Dérivation 100 % SERVEUR : aucun champ de style n'entre par le formulaire,
+  // `createQrSchema` ne prend toujours que `campaign_id` et `label`.
+  const { data: wheelRows } = await supabase
+    .from("wheels")
+    .select(
+      "id, position, created_at, schedule_start_hour, schedule_end_hour, schedule_days, style",
+    )
+    .eq("campaign_id", campaign.id)
+    .eq("organization_id", organization.id)
+    .order("position", { ascending: true });
+
+  type RoueStylable = Pick<
+    Wheel,
+    | "id"
+    | "position"
+    | "created_at"
+    | "schedule_start_hour"
+    | "schedule_end_hour"
+    | "schedule_days"
+    | "style"
+  >;
+  const roues = (wheelRows ?? []) as RoueStylable[];
+  // Hors créneau, `selectActiveWheel` ne rend rien — c'est juste pour /play, où
+  // un horaire ne doit jamais être contourné. Un QR, lui, est imprimé une fois
+  // et vaut pour toutes les heures : on retombe sur la première roue (l'ordre
+  // du commerçant) plutôt que de le faire naître en noir et blanc parce qu'il a
+  // été créé un mardi matin.
+  const roue =
+    selectActiveWheel(roues, new Date(), organization.timezone || "Europe/Paris") ??
+    roues[0] ??
+    null;
+  const style = roue ? qrStyleDuJeu(resolveWheelStyle(roue.style)) : null;
+
   const { error } = await supabase.from("qr_codes").insert({
     organization_id: organization.id,
     campaign_id: campaign.id,
     slug: randomCode(8),
     label: parsed.data.label,
+    // Absent quand il n'y a rien à dériver : le jsonb garde son défaut `'{}'`,
+    // c'est-à-dire exactement le rendu d'avant ce chantier.
+    ...(style ? { style } : {}),
   });
 
   if (error) {

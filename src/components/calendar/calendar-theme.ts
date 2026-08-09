@@ -9,19 +9,12 @@
 
 import type { CSSProperties } from "react";
 import type { CalendarTheme } from "@/types/database";
-import type { DecorKey } from "@/components/ui/theme-decor";
 import { LAVIS_SAISON as LAVIS } from "@/components/ui/theme-lavis";
 
 export interface CalendarThemeTokens {
   key: CalendarTheme;
   /** Libellé lisible (sélecteur d'éditeur). */
   label: string;
-  /**
-   * Scène cartoon dessinée en gouttière de la page joueur. SCALAIRE, jamais
-   * du JSX : ce fichier est un cœur PUR, la résolution clé → dessin vit dans
-   * `components/ui/theme-decor.tsx`.
-   */
-  decor: DecorKey;
   /** Emoji décoratif d'en-tête (jamais porteur d'information). */
   titleEmoji: string;
   /** Frimousse d'une case fermée (avant ouverture). */
@@ -50,7 +43,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   neutre: {
     key: "neutre",
     label: "Carton standard",
-    decor: "confetti",
     titleEmoji: "✨",
     faceEmoji: "🎁",
     pageStyle: {
@@ -67,7 +59,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   noel: {
     key: "noel",
     label: "Noël",
-    decor: "noel",
     titleEmoji: "🎄",
     faceEmoji: "❄️",
     pageStyle: {
@@ -94,7 +85,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   saint_valentin: {
     key: "saint_valentin",
     label: "Saint-Valentin",
-    decor: "coeurs",
     titleEmoji: "💘",
     faceEmoji: "💌",
     pageStyle: {
@@ -112,7 +102,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   anniversaire: {
     key: "anniversaire",
     label: "Anniversaire",
-    decor: "ballons",
     titleEmoji: "🎉",
     faceEmoji: "🎈",
     pageStyle: {
@@ -130,7 +119,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   soldes: {
     key: "soldes",
     label: "Soldes",
-    decor: "etiquettes",
     titleEmoji: "💯",
     faceEmoji: "🏷️",
     pageStyle: {
@@ -147,7 +135,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   festival: {
     key: "festival",
     label: "Festival",
-    decor: "fanions",
     titleEmoji: "🎊",
     faceEmoji: "🎪",
     pageStyle: {
@@ -164,9 +151,7 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
 
   // ── Les cinq thèmes « fond d'écran » ──
   //
-  // Ils n'apportent AUCUNE scène SVG nouvelle : chacun réemploie un décor
-  // existant (`theme-decor.tsx` en compte quinze, largement de quoi couvrir
-  // cinq univers de plus). Ce qui les distingue vraiment, c'est l'IMAGE de
+  // Ce qui les distingue vraiment, c'est l'IMAGE de
   // fond plein cadre que `fondPourTheme` leur associe — le motif CSS ci-dessous
   // n'est plus qu'un repli, visible le temps du chargement de la photo puis
   // recouvert par elle. Il reste néanmoins dessiné, et pas laissé en aplat :
@@ -175,7 +160,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   prairie: {
     key: "prairie",
     label: "Prairie",
-    decor: "confetti",
     titleEmoji: "🍀",
     faceEmoji: "🌼",
     pageStyle: {
@@ -192,7 +176,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   musique: {
     key: "musique",
     label: "Musique",
-    decor: "fanions",
     titleEmoji: "🎵",
     faceEmoji: "🎧",
     pageStyle: {
@@ -201,9 +184,9 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
         "repeating-linear-gradient(90deg,rgba(183,155,240,.30) 0 6px,transparent 6px 24px)",
     },
     // Pas de jeton `k-violet` dans la palette Kermesse — le violet du motif
-    // ci-dessus est un littéral de `theme-decor.tsx`, pas une variable CSS.
-    // Les cases reprennent donc le jaune, atténué pour ne pas se confondre
-    // avec `neutre` (jaune plein).
+    // ci-dessus est un littéral, pas une variable CSS. Les cases reprennent
+    // donc le jaune, atténué pour ne pas se confondre avec `neutre` (jaune
+    // plein).
     availableCell: `${BASE_AVAILABLE} bg-k-yellow/50`,
     lockedCell: BASE_LOCKED,
     openedCell: BASE_OPENED,
@@ -213,7 +196,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   football: {
     key: "football",
     label: "Football",
-    decor: "sport",
     titleEmoji: "⚽",
     faceEmoji: "🥅",
     pageStyle: {
@@ -232,7 +214,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   restaurant: {
     key: "restaurant",
     label: "Restaurant",
-    decor: "gourmand",
     titleEmoji: "🍽️",
     faceEmoji: "🥐",
     pageStyle: {
@@ -251,7 +232,6 @@ const THEMES: Record<CalendarTheme, CalendarThemeTokens> = {
   espace: {
     key: "espace",
     label: "Espace",
-    decor: "etoiles",
     titleEmoji: "🚀",
     faceEmoji: "🛸",
     pageStyle: {

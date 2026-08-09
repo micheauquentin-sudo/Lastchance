@@ -442,7 +442,6 @@ function Shell({
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
-      decor={tokens.decor}
       fond={fondPourTheme(tokens.key)}
     >
       {children}

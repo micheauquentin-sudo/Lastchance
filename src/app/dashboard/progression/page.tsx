@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ProgressionNewSeasonForm } from "@/components/dashboard/progression-new-season";
 import { ProgressionSeasonCard } from "@/components/dashboard/progression-season-card";
 
-export const metadata: Metadata = { title: "Progression" };
+export const metadata: Metadata = { title: "Missions & coffres" };
 
 /**
  * Éditeur de méta-progression. Route figée à `/dashboard/progression` : c'est le
@@ -41,8 +41,8 @@ export default async function ProgressionPage() {
   return (
     <div>
       <PageHeader
-        surtitre="Outils"
-        titre="Progression"
+        surtitre="Vos animations"
+        titre="Missions & coffres"
         sousTitre="Une saison, des missions qui avancent toutes seules au fil des parties, et des clés qui ouvrent des coffres. Vos joueurs n'ont rien à presser : tout se déclenche depuis les expériences déjà en place."
       />
 

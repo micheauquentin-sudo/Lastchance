@@ -51,13 +51,27 @@ const EXPERIENCE_ICONS: Partial<Record<ExperienceKind, IconKey>> = {
 };
 
 /**
- * Outils TRANSVERSES, servis après les expériences. La méta-progression n'est
- * pas une expérience du catalogue : elle est scopée par ORGANISATION et se nourrit
- * de toutes les expériences à la fois. Aucun `addon_progression` n'existe en base,
- * elle n'est donc pas filtrée par `activeExperiences` — comme « Découvrir ».
+ * LA MÉTA-PROGRESSION EST UNE ANIMATION, PAS UN OUTIL — elle a donc quitté
+ * « Outils » pour la fin du groupe « Vos animations » : le commerçant y cherche
+ * ce qui fait jouer ses clients, et des missions qui paient en clés puis en
+ * coffres en font partie. Le libellé le dit désormais en toutes lettres.
+ *
+ * Elle est ajoutée À LA MAIN à la fin du groupe, JAMAIS via `EXPERIENCE_CATALOG` :
+ * ce dernier est filtré par `activeExperiences` et aucun `addon_progression`
+ * n'existe en base — passer par le catalogue la ferait purement disparaître du
+ * menu (même piège que « Découvrir », voir le commentaire du filtre plus bas).
+ */
+const PROGRESSION_LINK: DashboardLink = {
+  href: "/dashboard/progression",
+  label: "Missions & coffres",
+  icon: "progression",
+};
+
+/**
+ * Outils TRANSVERSES, servis après les expériences. Ils ne dépendent d'aucun
+ * addon et ne sont donc pas filtrés par `activeExperiences`.
  */
 const EDITOR_TOOL_LINKS: DashboardLink[] = [
-  { href: "/dashboard/progression", label: "Progression", icon: "progression" },
   { href: "/dashboard/discover", label: "Découvrir", icon: "discover" },
   { href: "/dashboard/qr-codes", label: "QR codes", icon: "qr" },
 ];
@@ -93,7 +107,9 @@ const EMOJIS: Record<IconKey, string> = {
   event: "🎤",
   calendar: "🗓️",
   quiz: "❓",
-  progression: "📈",
+  // 🗝️ et non 📈 : la courbe disait « statistiques » alors que la page ouvre
+  // des coffres avec des clés. Le libellé et le glyphe disent la même chose.
+  progression: "🗝️",
   discover: "🧭",
   qr: "📱",
   list: "📋",
@@ -181,7 +197,11 @@ export function DashboardNav({
     role === "owner" || role === "editor"
       ? [
           { titre: "Au quotidien", cle: "quotidien", links: EDITOR_BASE_LINKS },
-          { titre: "Vos animations", cle: "animations", links: experienceLinks },
+          {
+            titre: "Vos animations",
+            cle: "animations",
+            links: [...experienceLinks, PROGRESSION_LINK],
+          },
           { titre: "Outils", cle: "outils", links: EDITOR_TOOL_LINKS },
           ...(role === "owner"
             ? [{ titre: "Gestion", cle: "gestion", links: OWNER_ONLY_LINKS }]

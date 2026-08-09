@@ -265,7 +265,7 @@ export default async function CampaignDetailPage({
       )}
 
       <div id="statut" className="mb-6 scroll-mt-24">
-        <CampaignStatusControls campaign={c} />
+        <CampaignStatusControls campaign={c} wheelId={roueVisee?.id ?? null} />
       </div>
 
       {/* La Carte de l'Aventure vient APRÈS le statut : ce qui décide de
@@ -355,6 +355,7 @@ export default async function CampaignDetailPage({
               <NewQrForm
                 campaigns={[{ id: c.id, name: c.name }]}
                 defaultCampaignId={c.id}
+                defaultLabel={c.name}
                 campagneFigee
                 instanceId="campagne"
               />
@@ -480,14 +481,27 @@ export default async function CampaignDetailPage({
             ),
           )}
         >
-          <CampaignShareSettings campaignId={c.id} enabled={c.share_enabled} />
-          <div className="mt-6">
-            <ReferralProgramSettings
-              campaignId={c.id}
-              program={(referralProgram as ReferralProgramRow | null) ?? null}
-              hasAccess={hasReferralAccess(organization!)}
-            />
-          </div>
+          {/* UNE SEULE Card pour la tuile. Elle en rendait DEUX (partage,
+              parrainage) dans une `CarteRepliable` qui n'encadre rien et
+              suppose un unique enfant : la seconde flottait hors du liseré.
+              Les deux blocs deviennent des sections `<h3>` séparées par un
+              filet, comme les six autres modules. */}
+          <Card>
+            <h2 className="mb-1 font-black text-k-ink">Partage et parrainage</h2>
+            <div className="mt-4">
+              <CampaignShareSettings
+                campaignId={c.id}
+                enabled={c.share_enabled}
+              />
+            </div>
+            <div className="mt-5 border-t border-zinc-100 pt-4">
+              <ReferralProgramSettings
+                campaignId={c.id}
+                program={(referralProgram as ReferralProgramRow | null) ?? null}
+                hasAccess={hasReferralAccess(organization!)}
+              />
+            </div>
+          </Card>
         </CarteRepliable>
       </div>
 

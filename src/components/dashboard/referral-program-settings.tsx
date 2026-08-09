@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { saveReferralProgram } from "@/actions/referral";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
@@ -78,6 +77,12 @@ function initReward(
  * éditeur) — l'activation exige l'addon actif, sinon message clair côté action.
  * `pending` manuel et non `useTransition` : l'état de chargement doit retomber
  * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
+ *
+ * PLUS DE `Card` PROPRE : ce bloc est la seconde section de la tuile « Partage
+ * et parrainage », qui n'en rend qu'UNE. Deux cartes empilées dans une
+ * `CarteRepliable` sortaient de son cadre. Le titre reste « Parrainage ludique »
+ * — il est asserté par `e2e/referral.spec.ts` — mais passe en `<h3>`, sous le
+ * `<h2>` de la carte englobante.
  */
 export function ReferralProgramSettings({
   campaignId,
@@ -163,8 +168,8 @@ export function ReferralProgramSettings({
   };
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-1">Parrainage ludique</h2>
+    <>
+      <h3 className="font-black text-k-ink mb-1">Parrainage ludique</h3>
       <p className="text-sm text-zinc-500 mb-5">
         Un client qui vient de jouer invite ses amis. Quand un ami joue vraiment
         (pas un simple clic), l&apos;équipe progresse : jauge collective, coffre
@@ -318,7 +323,7 @@ export function ReferralProgramSettings({
           )}
         </div>
       </div>
-    </Card>
+    </>
   );
 }
 

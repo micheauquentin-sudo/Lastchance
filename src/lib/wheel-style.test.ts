@@ -6,6 +6,8 @@ import {
   SLOT_SYMBOL_SETS,
   SLOT_SYMBOL_SET_KEYS,
   WHEEL_PRESETS,
+  WHEEL_PRESETS_AMBIANCE,
+  WHEEL_PRESETS_UNIVERS,
   gameObjectColor,
   getPreset,
   playBackground,
@@ -78,8 +80,7 @@ describe("wheelStyleSchema — validation à l'écriture", () => {
 
 /**
  * Le fond d'écran est le seul champ VISUEL du schéma que le commerçant choisit
- * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs. Il vit
- * donc dans le jsonb, contrairement au `decor` porté par le preset.
+ * pour ce qu'il MONTRE (un stade, une salle) et non pour ses couleurs.
  */
 describe("wheelStyleSchema.fond — fond d'écran thématique", () => {
   it("absent par défaut : les styles déjà enregistrés n'en ont pas", () => {
@@ -105,10 +106,35 @@ describe("wheelStyleSchema.fond — fond d'écran thématique", () => {
     expect(resolveWheelStyle({ fond: 42 }).fond).toBeUndefined();
   });
 
-  it("aucun preset n'écrit de fond — le choix reste au commerçant", () => {
-    for (const p of WHEEL_PRESETS) {
-      expect(p.style.fond).toBeUndefined();
+  /**
+   * LA RÈGLE A DEUX MOITIÉS, et c'est la frontière entre les deux familles.
+   *
+   * Une AMBIANCE n'est qu'un jeu de couleurs : lui faire écrire `fond`
+   * effacerait l'image que le commerçant avait posée pour ce qu'elle montre.
+   * Un UNIVERS promet une occasion complète — un « Noël » sans son
+   * illustration ne serait qu'un vert et un rouge.
+   *
+   * La clé de l'univers EST celle de son fond : sans cette égalité, un preset
+   * pourrait poser une image qui ne correspond pas à son nom, et rien ne
+   * l'attraperait à l'œil.
+   */
+  it("aucune AMBIANCE n'écrit de fond — le choix reste au commerçant", () => {
+    for (const p of WHEEL_PRESETS_AMBIANCE) {
+      expect(p.style.fond, p.key).toBeUndefined();
     }
+  });
+
+  it("chaque UNIVERS porte le fond de son propre nom", () => {
+    expect(WHEEL_PRESETS_UNIVERS).toHaveLength(10);
+    for (const p of WHEEL_PRESETS_UNIVERS) {
+      expect(p.style.fond, p.key).toBe(p.key);
+      expect(FOND_KEYS, p.key).toContain(p.style.fond);
+    }
+    // …et les dix fonds du catalogue ont tous leur univers : un fond livré
+    // sans preset serait invisible à qui ne fouille pas le sélecteur d'images.
+    expect(new Set(WHEEL_PRESETS_UNIVERS.map((p) => p.style.fond))).toEqual(
+      new Set(FOND_KEYS),
+    );
   });
 });
 
@@ -168,9 +194,32 @@ describe("presets", () => {
 
   it("les clés de presets sont uniques et retrouvables", () => {
     const keys = WHEEL_PRESETS.map((p) => p.key);
+    expect(keys).toHaveLength(18);
     expect(new Set(keys).size).toBe(keys.length);
     expect(getPreset("neon")?.label).toBe("Néon");
+    expect(getPreset("espace")?.label).toBe("Espace");
     expect(getPreset("inexistant")).toBeUndefined();
+    // La table publique EST la concaténation des deux familles, dans l'ordre :
+    // l'éditeur les affiche en deux sous-groupes et ne doit rien en perdre.
+    expect(keys).toEqual([
+      ...WHEEL_PRESETS_AMBIANCE.map((p) => p.key),
+      ...WHEEL_PRESETS_UNIVERS.map((p) => p.key),
+    ]);
+  });
+
+  /**
+   * Un `swatch` de trois couleurs, exactement : la vignette de l'éditeur en
+   * dessine trois. Un quatrième hex serait silencieusement invisible, un
+   * troisième manquant laisserait un trou dans la rangée.
+   */
+  it("chaque preset porte trois couleurs de vignette valides", () => {
+    for (const p of WHEEL_PRESETS) {
+      expect(p.swatch, p.key).toHaveLength(3);
+      for (const c of p.swatch) {
+        expect(c, `${p.key} — ${c}`).toMatch(/^#[0-9a-f]{6}$/);
+      }
+      expect(p.label.length, p.key).toBeGreaterThan(0);
+    }
   });
 
   it("le preset maison « kermesse » active le thème de page assorti", () => {

@@ -17,6 +17,8 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeFidelite } from "@/components/dashboard/atelier-loyalty-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
@@ -906,6 +908,9 @@ export function LoyaltyStatusControls({
           Pour ouvrir aux joueurs, ajoutez au moins un palier.
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeFidelite(program.id, "programme")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />

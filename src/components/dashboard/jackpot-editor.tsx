@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
@@ -577,6 +578,9 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
           </Link>
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeJackpot(campaign.id, "reglages")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />

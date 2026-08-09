@@ -19,15 +19,12 @@
 
 import type { CSSProperties } from "react";
 import type { SeasonalTheme } from "@/types/database";
-import type { DecorKey } from "@/components/ui/theme-decor";
 import { LAVIS_SAISON as LAVIS } from "@/components/ui/theme-lavis";
 
 export interface ContestThemeTokens {
   key: SeasonalTheme;
   /** Libellé lisible (sélecteur d'éditeur). */
   label: string;
-  /** Scène cartoon dessinée en gouttière de la page joueur. */
-  decor: DecorKey;
   /** Emoji décoratif (jamais porteur d'information). */
   titleEmoji: string;
   /** Motif de fond de la page publique (inline style, très léger). */
@@ -42,7 +39,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   neutre: {
     key: "neutre",
     label: "Carton standard",
-    decor: "confetti",
     titleEmoji: "⚽",
     pageStyle: {
       backgroundColor: LAVIS.neutre,
@@ -55,7 +51,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   noel: {
     key: "noel",
     label: "Noël",
-    decor: "noel",
     titleEmoji: "🎄",
     pageStyle: {
       backgroundColor: LAVIS.noel,
@@ -68,7 +63,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   saint_valentin: {
     key: "saint_valentin",
     label: "Saint-Valentin",
-    decor: "coeurs",
     titleEmoji: "💘",
     pageStyle: {
       backgroundColor: LAVIS.saint_valentin,
@@ -82,7 +76,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   anniversaire: {
     key: "anniversaire",
     label: "Anniversaire",
-    decor: "ballons",
     titleEmoji: "🎉",
     pageStyle: {
       backgroundColor: LAVIS.anniversaire,
@@ -96,7 +89,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   soldes: {
     key: "soldes",
     label: "Soldes",
-    decor: "etiquettes",
     titleEmoji: "💯",
     pageStyle: {
       backgroundColor: LAVIS.soldes,
@@ -109,7 +101,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   festival: {
     key: "festival",
     label: "Festival",
-    decor: "fanions",
     titleEmoji: "🎊",
     pageStyle: {
       backgroundColor: LAVIS.festival,
@@ -123,7 +114,7 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   // ── Les cinq thèmes « fond d'écran » ──
   //
   // Miroir EXACT des cinq entrées ajoutées à `calendar-theme.ts` : mêmes
-  // clés, mêmes lavis, mêmes décors, mêmes motifs de repli. C'est la règle
+  // clés, mêmes lavis, mêmes motifs de repli. C'est la règle
   // déjà posée en tête de ce fichier — un client ne peut pas voir deux
   // « Football » différents selon le module. Ce qui les distingue vraiment est
   // l'IMAGE de fond que `fondPourTheme` leur associe ; le motif CSS n'est plus
@@ -131,7 +122,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   prairie: {
     key: "prairie",
     label: "Prairie",
-    decor: "confetti",
     titleEmoji: "🍀",
     pageStyle: {
       backgroundColor: LAVIS.prairie,
@@ -144,7 +134,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   musique: {
     key: "musique",
     label: "Musique",
-    decor: "fanions",
     titleEmoji: "🎵",
     pageStyle: {
       backgroundColor: LAVIS.musique,
@@ -157,7 +146,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   football: {
     key: "football",
     label: "Football",
-    decor: "sport",
     titleEmoji: "⚽",
     pageStyle: {
       backgroundColor: LAVIS.football,
@@ -170,7 +158,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   restaurant: {
     key: "restaurant",
     label: "Restaurant",
-    decor: "gourmand",
     titleEmoji: "🍽️",
     pageStyle: {
       backgroundColor: LAVIS.restaurant,
@@ -183,7 +170,6 @@ const THEMES: Record<SeasonalTheme, ContestThemeTokens> = {
   espace: {
     key: "espace",
     label: "Espace",
-    decor: "etoiles",
     titleEmoji: "🚀",
     pageStyle: {
       backgroundColor: LAVIS.espace,

@@ -57,6 +57,40 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-09 — Sept retours propriétaire — **à relire**
+
+- **Lot et objectif** : sept demandes ponctuelles du propriétaire après
+  capture d'écran et test à la main de V1.53 (fonds d'écran thématiques).
+- **Branche/commits** : `chantier/sept-retours-proprietaire`, 9 commits
+  au-dessus de `main` (`500ecd4`, `d1fb464`, `abfc131`, `467791b`, `42b539e`,
+  `e6d9c67`, `67f6f0b`, `f27b01f`, `b957f19`) — PR à ouvrir, fusion sur
+  l'ordre permanent dès CI verte. Sans migration.
+- **Faits et fichiers** : retrait complet de `ThemeDecor` (945 lignes + test,
+  champ `decor` retiré des 3 tables de tokens et des presets, `playDecor` et
+  classes `decor-float` purgés) — voir ADR-099, qui inverse partiellement
+  ADR-093 sur décision propriétaire. 18 presets d'habillage en deux familles
+  (« Ambiances » n'écrasent plus le fond choisi, « Univers » posent couleurs
+  ET fond, le fond porté par l'objet style et non le preset — OPTION A).
+  `src/lib/qr-style-du-jeu.ts` dérive le style d'un QR créé depuis la page du
+  jeu (lavis d'univers + accent, 100 % serveur), libellé prérempli avec le
+  nom du jeu. « Progression » renommée « Missions & coffres » (🗝️), déplacée
+  d'Outils vers la fin de « Vos animations », route inchangée. Zone
+  dangereuse et Partage/parrainage rentrent dans une Card unique par tuile
+  (capture propriétaire fermée). Page QR codes : recherche, filtre campagne,
+  Réinitialiser, jointure du nom de campagne. Bouton « 🛠️ Modifier dans
+  l'atelier » dans les 8 tuiles Statut (`atelier-raccourci.tsx`).
+- **Validations réellement exécutées** : typecheck 0, lint 0, casts:check ok,
+  Vitest 261 fichiers / 4128 tests, build vert, aucune migration (tête
+  inchangée `20260921120000`), E2E WSL : wheel-wizard+calendar 16 ✓ (scans
+  axe Habillage 18 boutons + page joueur sans décor), referral 4/4 +
+  progression 4/4 + atelier-modules 26 ✓ mobile-chrome et 14/14
+  desktop-smoke + campaign-templates 1/1, puis quiz 1 + pronostics 2 +
+  player-win 7 (scans axe post-retrait) — 0 rouge au total. Revue sécurité
+  dédiée exécutée : GO, 0 critique/élevé/moyen, 2 INFO consignés sans action
+  dans `docs/bugs.md`. CI GitHub Actions **non jouée** au moment de
+  l'écriture de cette entrée — la PR la jouera dès son ouverture.
+- **État** : à relire. Roadmap V1.54, ADR-099.
+
 ### 2026-08-08 — Fonds d'écran thématiques — **terminé**
 
 - **Lot et objectif** : palette d'habillage saisonnière partagée
@@ -307,7 +341,10 @@
 - **Faits et fichiers** : `contests.theme` reçoit la même palette 6 clés
   que `calendars.theme` (aucune deuxième enum). `updateContest` accepte
   `theme` en optionnel-préservant. `src/lib/seasonal-theme.ts` devient la
-  source unique de l'enum. `ThemeDecor` (16 scènes, 28 motifs cartoon,
+  source unique de l'enum. **`ThemeDecor` a été entièrement retiré en V1.54
+  (2026-08-09), sur décision propriétaire — voir ADR-099 ; la description
+  ci-dessous reste celle du composant tel qu'il a existé du 2026-08-07 au
+  2026-08-09.** `ThemeDecor` (16 scènes, 28 motifs cartoon,
   13 emplacements déterministes) posé sur `PlayerPageShell` (les 4 shells
   joueur factorisés), `/play`, et les 3 aperçus éditeurs (calendrier, quiz,
   roue). Pronostics gagne un sélecteur 6 vignettes et une Saint-Valentin

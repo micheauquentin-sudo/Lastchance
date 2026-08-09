@@ -25,6 +25,8 @@ import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
   EVENT_KINDS,
@@ -35,7 +37,6 @@ import {
   CONTEST_THEME_ORDER,
   contestThemeTokens,
 } from "@/components/pronos/contest-theme";
-import { ThemeDecor } from "@/components/ui/theme-decor";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import { fondPourTheme } from "@/lib/fonds-ecran";
 import type {
@@ -184,6 +185,9 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
           ))}
         </div>
       </div>
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />
@@ -271,11 +275,10 @@ function ThemeSelector({ contest }: { contest: Contest }) {
                   style={tokens.pageStyle}
                 >
                   {/* Le fond d'écran du thème, quand il en a un : la vignette
-                      montre au commerçant l'image que verra son client, pas
-                      seulement le décor. Premier enfant, donc SOUS le décor
-                      SVG et sous les pastilles — ordre du DOM, aucun z-index. */}
+                      montre au commerçant l'image que verra son client.
+                      Premier enfant, donc SOUS les pastilles — ordre du DOM,
+                      aucun z-index. */}
                   {fond && <FondEcran fond={fond} variant="vignette" />}
-                  <ThemeDecor decor={tokens.decor} variant="vignette" />
                   <span
                     className={`relative flex h-7 w-7 items-center justify-center rounded-md text-sm ${tokens.accentChip}`}
                   >

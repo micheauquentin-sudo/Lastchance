@@ -5,10 +5,9 @@ import {
   WheelSvg,
   type WheelSegment,
 } from "@/components/wheel/wheel-svg";
-import { ThemeDecor } from "@/components/ui/theme-decor";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import { porteeHabillage } from "@/components/dashboard/wheel-style-scope";
-import { playDecor, playOnLightSurface, playSurface } from "@/lib/wheel-style";
+import { playOnLightSurface, playSurface } from "@/lib/wheel-style";
 import type { WheelStyle } from "@/lib/wheel-style";
 import type { GameType } from "@/types/database";
 
@@ -16,7 +15,7 @@ import type { GameType } from "@/types/database";
  * L'APERÇU DE L'ÉCRAN D'ACCUEIL — composant présentationnel pur, DEUX appelants.
  *
  * Il vivait en bloc inline dans `wheel-style-editor.tsx` : surface `playSurface`,
- * décor, bandeau kermesse, puis le `GameIdleScreen` que le joueur reçoit
+ * fond d'écran, bandeau kermesse, puis le `GameIdleScreen` que le joueur reçoit
  * vraiment. L'étape « Le jeu », elle, ne montrait RIEN — le commerçant
  * choisissait « Carte à gratter » et ne voyait sa mécanique nulle part avant
  * d'enregistrer puis de passer à l'étape suivante, laquelle lit la valeur
@@ -77,9 +76,9 @@ export function ApercuAccueilJeu({
           : undefined
       }
     >
-      {/* Le fond d'écran, LUI, existe sur les DEUX ambiances — c'est /play qui
-          en décide, et /play le rend partout. Premier enfant du conteneur
-          `relative`, donc sous le décor et sous l'écran de jeu : même
+      {/* Le fond d'écran existe sur les DEUX ambiances — c'est /play qui en
+          décide, et /play le rend partout. Premier enfant du conteneur
+          `relative`, donc sous l'écran de jeu : même
           empilement par ordre du DOM que la page réelle, aucun z-index.
           Le voile suit la surface, sinon la maquette mentirait sur la teinte
           que verra le joueur. */}
@@ -90,10 +89,6 @@ export function ApercuAccueilJeu({
           voile={surface.kermesse ? "creme" : "nuit"}
         />
       )}
-      {/* Le décor n'existe que sur l'habillage kermesse — exactement comme
-          dans `PlayShell`. Le rendre sous le thème « nuit » promettrait un
-          fond que la page ne peint pas. */}
-      {surface.kermesse && <ThemeDecor decor={playDecor(style)} variant="apercu" />}
       {surface.kermesse && <KermesseStripe className="relative h-3" />}
       <GameIdleScreen
         variant="apercu"

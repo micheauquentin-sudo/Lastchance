@@ -11,9 +11,6 @@
 import { z } from "zod";
 import { FONT_KEYS, type FontKey } from "@/lib/fonts";
 import { FOND_KEYS } from "@/lib/fonds-ecran";
-// Import de TYPE uniquement : aucun composant React n'entre ici, ce fichier
-// reste une table pure lisible côté serveur comme côté client.
-import type { DecorKey } from "@/components/ui/theme-decor";
 
 const hexColor = z
   .string()
@@ -176,13 +173,12 @@ export const wheelStyleSchema = z.object({
   /**
    * Fond d'écran thématique de la page /play — CHOIX EXPLICITE du commerçant.
    *
-   * Contrairement au `decor` (scène cartoon), qui reste porté par le PRESET et
-   * n'existe donc pas dans ce schéma : le décor est une conséquence de
-   * l'ambiance choisie, le fond est un réglage à part entière — on le choisit
-   * pour ce qu'il montre (un stade, une salle de restaurant), pas pour aller
-   * avec des couleurs. Il vit ici, dans le jsonb, et reste OPTIONNEL : aucune
-   * migration, et les styles déjà enregistrés n'ont pas de fond, ce qui est
-   * exactement leur rendu actuel.
+   * C'est un réglage à part entière : on le choisit pour ce qu'il MONTRE (un
+   * stade, une salle de restaurant), pas pour aller avec des couleurs. Il vit
+   * ici, dans le jsonb, et reste OPTIONNEL : aucune migration, et les styles
+   * déjà enregistrés n'ont pas de fond, ce qui est exactement leur rendu
+   * actuel. Un preset d'UNIVERS en pose un par-dessus ses couleurs (voir
+   * `WHEEL_PRESETS`) ; un preset d'AMBIANCE laisse le choix intact.
    *
    * `.catch(undefined)`, dans l'esprit de `games` ci-dessous, et POUR LA
    * LECTURE SEULEMENT : une clé retirée du catalogue et relue en base doit
@@ -275,6 +271,27 @@ export function gameObjectColor(
 /* ────────────────────────────────────────────────────────────
  * Presets — points de départ complets, mélangeables ensuite
  * champ par champ dans l'éditeur.
+ *
+ * DEUX FAMILLES, et la différence tient en un champ.
+ *
+ * · Les AMBIANCES (`WHEEL_PRESETS_AMBIANCE`) ne décrivent que des couleurs :
+ *   « Néon », « Luxe », « Pastel ». Elles n'écrivent PAS `fond` — le fond
+ *   d'écran est un choix orthogonal, et l'appliquer effacerait une image que
+ *   le commerçant avait posée pour ce qu'elle montre.
+ * · Les UNIVERS (`WHEEL_PRESETS_UNIVERS`) décrivent une OCCASION : Noël, la
+ *   Saint-Valentin, un match. Un univers sans son image serait le contraire
+ *   de ce qu'il promet — un « Noël » en vert et rouge sur un fond vide. Ils
+ *   portent donc `fond` dans leurs overrides.
+ *
+ * ── Pourquoi `fond` vit dans `p.style` et pas à côté ──
+ *
+ * `fond` est DÉJÀ un champ du jsonb (`wheelStyleSchema`) : le poser dans les
+ * overrides de `preset()` ne demande aucun code ailleurs. L'éditeur écrit le
+ * style entier, `blueprintToDraft` (campagnes modèles) l'hérite sans une ligne,
+ * et la relecture le valide comme n'importe quel autre champ. Un second canal
+ * — un `fond` porté par l'objet preset, à côté de `style` — aurait redemandé
+ * un branchement à chaque appelant : c'est exactement ce que le `decor` faisait,
+ * et il vient d'être retiré pour ça.
  * ──────────────────────────────────────────────────────────── */
 
 export interface WheelPreset {
@@ -282,16 +299,6 @@ export interface WheelPreset {
   label: string;
   /** Couleurs représentatives pour la vignette de l'éditeur. */
   swatch: [string, string, string];
-  /**
-   * Scène cartoon du fond de /play (voir `components/ui/theme-decor.tsx`).
-   *
-   * PORTÉE PAR LE PRESET, DÉLIBÉRÉMENT — et non par `wheelStyleSchema`. Le
-   * schéma décrit le jsonb `wheels.style` : y ajouter un champ le ferait
-   * écrire en base pour toutes les roues, alors que le décor est une
-   * conséquence du style choisi, pas un réglage indépendant. Rien à migrer,
-   * rien à valider à la lecture.
-   */
-  decor: DecorKey;
   style: WheelStyle;
 }
 
@@ -299,24 +306,23 @@ function preset(
   key: string,
   label: string,
   swatch: [string, string, string],
-  decor: DecorKey,
   overrides: Partial<WheelStyle>,
 ): WheelPreset {
   return {
     key,
     label,
     swatch,
-    decor,
     style: wheelStyleSchema.parse({ ...overrides, preset: key }),
   };
 }
 
-export const WHEEL_PRESETS: WheelPreset[] = [
+/** Les huit ambiances historiques — des couleurs, jamais un fond d'écran. */
+export const WHEEL_PRESETS_AMBIANCE: WheelPreset[] = [
   // Style maison — reprend la DA « La Kermesse » du site : crème + encre,
   // bordures franches, ampoules chaudes, bouton orange→jaune. Avec le
   // thème de page assorti, le joueur arrive sur le même univers que le
   // site Lastchance (fond crème, bandeau rayé, ombres dures encre).
-  preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], "confetti", {
+  preset("kermesse", "Kermesse", ["#fcca59", "#f296bd", "#211d16"], {
     pageTheme: "kermesse",
     ring: "classic",
     ringColor: "#fcca59",
@@ -337,8 +343,8 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#f5793b",
     buttonTo: "#fcca59",
   }),
-  preset("classic", "Classique", ["#7c3aed", "#d946ef", "#ffd34d"], "etoiles", {}),
-  preset("neon", "Néon", ["#22d3ee", "#f0abfc", "#0f172a"], "eclairs", {
+  preset("classic", "Classique", ["#7c3aed", "#d946ef", "#ffd34d"], {}),
+  preset("neon", "Néon", ["#22d3ee", "#f0abfc", "#0f172a"], {
     ring: "neon",
     ringColor: "#22d3ee",
     lights: true,
@@ -356,7 +362,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#06b6d4",
     buttonTo: "#d946ef",
   }),
-  preset("luxe", "Luxe", ["#ca8a04", "#1c1917", "#f5e6c4"], "diamants", {
+  preset("luxe", "Luxe", ["#ca8a04", "#1c1917", "#f5e6c4"], {
     ring: "gold",
     lights: false,
     segmentBorderColor: "#ca8a04",
@@ -373,7 +379,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ca8a04",
     buttonTo: "#92400e",
   }),
-  preset("candy", "Pastel", ["#f9a8d4", "#fde68a", "#ffffff"], "sucreries", {
+  preset("candy", "Pastel", ["#f9a8d4", "#fde68a", "#ffffff"], {
     ring: "minimal",
     ringColor: "#ffffff",
     lights: false,
@@ -391,7 +397,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ec4899",
     buttonTo: "#f97316",
   }),
-  preset("minimal", "Minimal", ["#18181b", "#e4e4e7", "#ffffff"], "aucun", {
+  preset("minimal", "Minimal", ["#18181b", "#e4e4e7", "#ffffff"], {
     ring: "none",
     lights: false,
     segmentBorderColor: "#ffffff",
@@ -407,7 +413,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#18181b",
     buttonTo: "#3f3f46",
   }),
-  preset("fiesta", "Festif", ["#ef4444", "#facc15", "#22c55e"], "fanions", {
+  preset("fiesta", "Festif", ["#ef4444", "#facc15", "#22c55e"], {
     ring: "classic",
     ringColor: "#facc15",
     lights: true,
@@ -425,7 +431,7 @@ export const WHEEL_PRESETS: WheelPreset[] = [
     buttonFrom: "#ef4444",
     buttonTo: "#f97316",
   }),
-  preset("cartoon", "Cartoon", ["#facc15", "#ef4444", "#3b82f6"], "etoiles", {
+  preset("cartoon", "Cartoon", ["#facc15", "#ef4444", "#3b82f6"], {
     ring: "classic",
     ringColor: "#ef4444",
     lights: true,
@@ -448,26 +454,129 @@ export const WHEEL_PRESETS: WheelPreset[] = [
   }),
 ];
 
+/**
+ * Les dix univers — couleurs RELEVÉES SUR L'IMAGE de fond qu'ils posent.
+ *
+ * Chacun porte la clé de `FOND_KEYS` du même nom : la page du joueur montre
+ * l'illustration, la roue en reprend les teintes dominantes. Les palettes ne
+ * sont pas inventées, elles sont échantillonnées sur les vignettes — c'est ce
+ * qui fait qu'une roue « Football » ne détonne pas sur son terrain.
+ *
+ * Tous en ambiance « kermesse » SAUF `espace` : ses fonds sont nocturnes, le
+ * crème du site y jurerait. C'est donc le seul soumis à la garde de contraste
+ * de `play-contrast.test.ts` (les kermesse la court-circuitent), et ses deux
+ * teintes passent largement — 15,2:1 pour le titre.
+ */
+export const WHEEL_PRESETS_UNIVERS: WheelPreset[] = [
+  preset("noel", "Noël", ["#2b6b47", "#c33b34", "#f2c14e"], {
+    pageTheme: "kermesse",
+    fond: "noel",
+    ringColor: "#f2c14e",
+    pointerColor: "#c33b34",
+    buttonFrom: "#c33b34",
+    buttonTo: "#2b6b47",
+    bgFrom: "#e6f2e6",
+    bgTo: "#bcd9c6",
+  }),
+  preset("saint_valentin", "Saint-Valentin", ["#f7c6d9", "#d94a6a", "#5aa15f"], {
+    pageTheme: "kermesse",
+    fond: "saint_valentin",
+    pointerColor: "#d94a6a",
+    buttonFrom: "#d94a6a",
+    buttonTo: "#f296bd",
+    bgFrom: "#fdeaf0",
+    bgTo: "#f7c0c6",
+  }),
+  preset("anniversaire", "Anniversaire", ["#7cb342", "#f7ea9e", "#f28fa8"], {
+    pageTheme: "kermesse",
+    fond: "anniversaire",
+    ringColor: "#f296bd",
+    pointerColor: "#e14b3b",
+    buttonFrom: "#f296bd",
+    buttonTo: "#fcca59",
+    bgFrom: "#fdf1d8",
+    bgTo: "#f9cece",
+  }),
+  preset("soldes", "Soldes", ["#f5793b", "#c0392b", "#f0b429"], {
+    pageTheme: "kermesse",
+    fond: "soldes",
+    pointerColor: "#c0392b",
+    buttonFrom: "#f5793b",
+    buttonTo: "#f0b429",
+    bgFrom: "#fdeadb",
+    bgTo: "#fbcfb5",
+  }),
+  preset("festival", "Fête foraine", ["#d9534f", "#f2c94c", "#6fae3f"], {
+    pageTheme: "kermesse",
+    fond: "festival",
+    lights: true,
+    lightColorA: "#fdf6e3",
+    lightColorB: "#f2c94c",
+    pointerColor: "#d9534f",
+    buttonFrom: "#d9534f",
+    buttonTo: "#f2c94c",
+    bgFrom: "#e7edfb",
+    bgTo: "#d0ddf9",
+  }),
+  preset("musique", "Musique", ["#b79bf0", "#e0a92a", "#6aa84f"], {
+    pageTheme: "kermesse",
+    fond: "musique",
+    pointerColor: "#b79bf0",
+    buttonFrom: "#b79bf0",
+    buttonTo: "#e0a92a",
+    bgFrom: "#eceff5",
+    bgTo: "#d6e0f5",
+  }),
+  preset("football", "Football", ["#267f53", "#e8a020", "#ffffff"], {
+    pageTheme: "kermesse",
+    fond: "football",
+    segmentBorderColor: "#ffffff",
+    pointerColor: "#e8a020",
+    buttonFrom: "#267f53",
+    buttonTo: "#4f9e3f",
+    bgFrom: "#e4f1e6",
+    bgTo: "#bedac9",
+  }),
+  preset("restaurant", "Restaurant", ["#c0392b", "#f0c14b", "#4f8f3f"], {
+    pageTheme: "kermesse",
+    fond: "restaurant",
+    pointerColor: "#c0392b",
+    buttonFrom: "#c0392b",
+    buttonTo: "#f5793b",
+    bgFrom: "#fbecd4",
+    bgTo: "#fad3b2",
+  }),
+  // Le SEUL univers en ambiance « nuit » — voir l'en-tête de cette table.
+  preset("espace", "Espace", ["#7b3fa0", "#f5d547", "#1b1246"], {
+    pageTheme: "nuit",
+    fond: "espace",
+    ring: "neon",
+    ringColor: "#9b4dca",
+    pointerColor: "#f5d547",
+    buttonFrom: "#7b3fa0",
+    buttonTo: "#d9a441",
+    bgFrom: "#2e1065",
+    bgTo: "#0b0620",
+  }),
+  preset("prairie", "Prairie", ["#7cbf4a", "#f5efc0", "#f2c14e"], {
+    pageTheme: "kermesse",
+    fond: "prairie",
+    pointerColor: "#f2c14e",
+    buttonFrom: "#4f9c3a",
+    buttonTo: "#7cbf4a",
+    bgFrom: "#eaf5df",
+    bgTo: "#cfe6b6",
+  }),
+];
+
+/** Les dix-huit presets, dans l'ordre où l'éditeur les propose. */
+export const WHEEL_PRESETS: WheelPreset[] = [
+  ...WHEEL_PRESETS_AMBIANCE,
+  ...WHEEL_PRESETS_UNIVERS,
+];
+
 export function getPreset(key: string): WheelPreset | undefined {
   return WHEEL_PRESETS.find((p) => p.key === key);
-}
-
-/**
- * Décor de fond de /play pour un style donné.
- *
- * Il se lit sur le PRESET de départ (`style.preset`), pas sur le style
- * résolu : le commerçant peut ensuite recolorer chaque détail, le décor suit
- * l'ambiance qu'il a choisie au départ. Un style vierge ou un preset disparu
- * du catalogue retombe sur les confettis — jamais rien, pour ne pas rendre
- * « fade » la page d'une roue jamais personnalisée.
- *
- * Le décor n'est RENDU que sur l'habillage « kermesse » : le thème « nuit »
- * porte un dégradé libre du commerçant, sur lequel une scène cartoon calée
- * sur une palette crème n'a aucune garantie de lisibilité ni de goût. Voir
- * `PlayShell` dans `app/play/[slug]/page.tsx`.
- */
-export function playDecor(style: WheelStyle): DecorKey {
-  return (style.preset && getPreset(style.preset)?.decor) || "confetti";
 }
 
 /** Dégradé radial du fond de la page /play. */

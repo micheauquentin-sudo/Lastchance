@@ -5989,6 +5989,11 @@ d'écrire un 4e formulaire.
 
 ### Décors par tables de tokens pures, un seul composant
 
+**Retiré en V1.54 (2026-08-09)** : `ThemeDecor` a été entièrement supprimé
+sur décision explicite du propriétaire, les fonds image de V1.53 rendant les
+motifs cartoon redondants — voir ADR-099. Le paragraphe qui suit décrit ce
+qui a existé entre le 2026-08-07 et le 2026-08-09.
+
 `ThemeDecor` peint 16 scènes cartoon (28 motifs, facture contour encre /
 aplats pastel) à partir de tables de tokens pures et testées
 (`contest-theme.ts` sur le patron de `calendar-theme.ts` / `quiz-theme.ts`),
@@ -6324,3 +6329,62 @@ une cible petite et basse dans la page.
 - `src/components/*/fond-ecran.tsx`, `src/components/dashboard/wheel-style-editor.tsx`
 - commits `95c32de`, `815459e`, `7a158a8`, `b3d218d`, `b63fed1`, `c7214bd`
 - roadmap V1.53
+
+## ADR-099 : Les fonds image remplacent les décors SVG ; le style d'un QR se dérive au moment de sa naissance
+
+**Date** : 2026-08-09
+**Statut** : Accepté
+
+**Contexte**. Après test à la main de V1.53, le propriétaire a demandé sept
+retours ponctuels. Deux touchent des choix d'architecture pris pour l'habillage :
+`ThemeDecor` (16 scènes cartoon SVG, ADR-093) coexistait avec les fonds image
+livrés une itération plus tard (V1.53, ADR-098) — les deux couches
+d'habillage se superposaient sur les mêmes surfaces joueur, et le propriétaire
+a jugé les motifs cartoon redondants une fois le fond image en place. Par
+ailleurs, un QR créé depuis la page d'un jeu ne portait aucun style : il
+fallait rouvrir l'éditeur QR pour l'assortir à l'univers du jeu.
+
+**Décision**.
+1. **Retrait complet de `ThemeDecor`**, pas une désactivation. Le composant
+   (945 lignes + test), le champ `decor` dans les 3 tables de tokens (pronos,
+   calendrier, quiz) et dans les presets, `playDecor`, et les classes CSS
+   `decor-float` sont supprimés — pas de flag mort, pas de code inatteignable.
+   C'est une **inversion partielle assumée d'ADR-093** : la décision d'alors
+   (« décors par tables de tokens pures ») reste valide dans son principe,
+   mais son objet (le rendu SVG cartoon) est retiré sur arbitrage produit du
+   propriétaire, une fois le fond image reconnu comme suffisant. Le
+   vocabulaire `DecorKey` disparaît du projet.
+2. **Les 18 presets d'habillage portent leur fond sur l'OBJET STYLE, pas sur
+   l'objet preset** (« OPTION A », tranchée en amont du code). Les 10 nouveaux
+   presets « Univers » écrivent leur `FondKey` dans le même style que celui
+   qu'édite le commerçant, au lieu d'un champ séparé sur la structure de
+   preset. Deux gains : héritage gratuit par les blueprints de campagne (qui
+   copient déjà l'objet style sans connaître la notion de preset), et survie
+   automatique au retrait de `decor` — un champ qui n'existe plus dans le
+   style ne peut pas laisser une clé orpheline sur les presets qui le
+   référençaient.
+3. **Le style d'un QR créé depuis la page du jeu se dérive 100 % côté
+   serveur**, au moment de sa création (`src/lib/qr-style-du-jeu.ts`) : lavis
+   de l'univers du jeu + couleur d'accent du jeu. Aucun nouveau champ de
+   schéma — la fonction lit le style déjà en base et projette un style QR
+   valide. Testé sur 10 fonds × 7 accents × 2 ambiances, échec fermé sur le
+   style par défaut d'avant cette fonctionnalité.
+
+**Justification**. Un composant retiré plutôt que désactivé ne laisse pas de
+code mort à réexpliquer au prochain chantier. Porter le fond sur le style
+plutôt que sur le preset évite une deuxième source de vérité qui aurait dû
+être tenue synchrone avec les blueprints et aurait cassé silencieusement au
+retrait de `decor` ; la dérivation serveur du style QR évite de dupliquer la
+logique de correspondance univers→couleur côté client.
+
+**Conséquences**. Toute description antérieure de `ThemeDecor` comme livré
+(roadmap V1.53, ADR-093, `docs/codex-handoff.md`) est désormais périmée et
+annotée en ce sens plutôt que réécrite. Aucune migration : le retrait de
+`decor` ne touche que des colonnes JSONB (tokens applicatifs), pas de colonne
+SQL dédiée.
+
+**References** :
+- commits `500ecd4` (retrait ThemeDecor), `d1fb464`/`abfc131` (18 presets en
+  2 familles), `467791b` (dérivation style QR)
+- `src/lib/qr-style-du-jeu.ts`, `src/lib/qr-style-du-jeu.test.ts`
+- roadmap V1.54
