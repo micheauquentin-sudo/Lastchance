@@ -4,6 +4,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { APP_URL } from "@/lib/env";
 import { hasCompAccess } from "@/lib/subscription";
+import { reportError } from "@/lib/monitoring";
 import { sanitizeSearchTerm } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -253,13 +254,16 @@ export default async function QrCodesPage({
     // à savoir s'il y a une suite, sans dépendre de `total_count` — lequel est
     // absent quand la fenêtre est vide (zéro ligne, donc zéro `total_count`,
     // donc « pas de suivant », ce que la même règle donne déjà).
-    const { data } = await supabase.rpc("org_qr_hub", {
+    const { data, error } = await supabase.rpc("org_qr_hub", {
       p_organization_id: organization!.id,
       p_kind: typeFilter || undefined,
       p_q: terme || undefined,
       p_limit: PAGE_SIZE + 1,
       p_offset: (page - 1) * PAGE_SIZE,
     });
+    // Fail-closed à l'écran (liste vide), mais jamais muet côté exploitation :
+    // sans ce report, une panne base rend le même écran qu'« aucun QR ».
+    if (error) reportError("qr-hub", error);
     const rows: LigneHub[] = data ?? [];
     const suite = rows.length > PAGE_SIZE;
     if (suite) rows.pop();
