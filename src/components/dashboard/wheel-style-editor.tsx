@@ -34,7 +34,8 @@ import {
   RING_STYLES,
   SLOT_SYMBOL_SETS,
   SLOT_SYMBOL_SET_KEYS,
-  WHEEL_PRESETS,
+  WHEEL_PRESETS_AMBIANCE,
+  WHEEL_PRESETS_UNIVERS,
   playContrastWarning,
   resolveWheelStyle,
   scratchCover,
@@ -293,6 +294,19 @@ export function WheelStyleEditor({
    * Un preset REMPLACE les vingt champs d'un coup. Tant qu'il n'y a rien à
    * écraser, c'est un raccourci ; après dix minutes de réglage fin, c'était
    * une perte sèche sur un clic de curiosité, sans un mot. On demande.
+   *
+   * ── LE FOND D'ÉCRAN SURVIT AUX AMBIANCES ──
+   *
+   * `setStyle(presetStyle)` nu effaçait `fond` en silence : les huit ambiances
+   * n'en portent pas, et le champ absent du style de remplacement valait
+   * suppression. Le commerçant choisissait son image, essayait « Néon » par
+   * curiosité, et la photo disparaissait sans un mot — un geste de couleurs
+   * annulait un choix qui n'en est pas un.
+   *
+   * D'où le `??` : une AMBIANCE (pas de `fond` dans ses overrides) garde
+   * l'image en place, un UNIVERS impose la sienne — c'est justement ce qu'il
+   * promet. La règle tient sans liste à maintenir : elle se lit sur le style
+   * du preset lui-même.
    */
   function appliquerPreset(presetStyle: WheelStyle) {
     if (
@@ -303,7 +317,7 @@ export function WheelStyleEditor({
     ) {
       return;
     }
-    setStyle(presetStyle);
+    setStyle((s) => ({ ...presetStyle, fond: presetStyle.fond ?? s.fond }));
     setDirty(true);
   }
 
@@ -397,21 +411,66 @@ export function WheelStyleEditor({
         className="mb-5"
       />
 
-      {/* Presets */}
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600 mb-2">
-        Styles prêts à l&apos;emploi
-      </p>
-      <div className="flex flex-wrap gap-2 mb-5">
-        {WHEEL_PRESETS.map((p) => (
-          <SwatchButton
-            key={p.key}
-            label={p.label}
-            swatch={p.swatch}
-            selected={style.preset === p.key}
-            className="px-3 py-1.5"
-            onClick={() => appliquerPreset(p.style)}
-          />
-        ))}
+      {/* ────────────────────────────────────────────────────────────
+          STYLES PRÊTS À L'EMPLOI — DEUX SOUS-GROUPES, et le titre n'est pas
+          décoratif : les deux familles ne font pas la même chose. Une
+          AMBIANCE ne touche qu'aux couleurs et laisse le fond d'écran en
+          place ; un UNIVERS pose AUSSI l'image assortie. Mélangés dans une
+          seule bande de dix-huit pastilles, le commerçant ne pouvait pas
+          savoir lequel des deux il venait de cliquer.
+
+          `fieldset`/`legend` par famille, et `aria-pressed` sur chaque
+          bouton : à dix-huit boutons mutuellement exclusifs, une rangée de
+          `<button>` nus ne dit ni le regroupement ni l'état retenu. Le
+          patron radio du sélecteur de fond aurait convenu aussi ; le bouton
+          à bascule est gardé parce que ces pastilles ACTIONNENT (elles
+          écrasent vingt champs, avec confirmation) là où le fond se
+          SÉLECTIONNE.
+          ──────────────────────────────────────────────────────────── */}
+      <div className="mb-5 space-y-4">
+        <fieldset>
+          <legend className="text-xs font-semibold uppercase tracking-wide text-zinc-600 mb-2">
+            Ambiances
+          </legend>
+          <p className="mb-2 text-xs text-zinc-500">
+            Un jeu de couleurs pour la roue et la page. Votre fond d&apos;écran
+            reste celui que vous avez choisi.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {WHEEL_PRESETS_AMBIANCE.map((p) => (
+              <SwatchButton
+                key={p.key}
+                label={p.label}
+                swatch={p.swatch}
+                selected={style.preset === p.key}
+                className="px-3 py-1.5"
+                onClick={() => appliquerPreset(p.style)}
+              />
+            ))}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend className="text-xs font-semibold uppercase tracking-wide text-zinc-600 mb-2">
+            Univers
+          </legend>
+          <p className="mb-2 text-xs text-zinc-500">
+            Une occasion complète : les couleurs de la roue{" "}
+            <strong className="font-semibold">et</strong> le fond d&apos;écran
+            assorti, posés ensemble.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {WHEEL_PRESETS_UNIVERS.map((p) => (
+              <SwatchButton
+                key={p.key}
+                label={p.label}
+                swatch={p.swatch}
+                selected={style.preset === p.key}
+                className="px-3 py-1.5"
+                onClick={() => appliquerPreset(p.style)}
+              />
+            ))}
+          </div>
+        </fieldset>
       </div>
 
       {/* ────────────────────────────────────────────────────────────

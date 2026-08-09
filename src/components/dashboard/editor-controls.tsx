@@ -65,7 +65,14 @@ export function ColorField({
   );
 }
 
-/** Bouton de preset : pastilles de couleurs + libellé, état sélectionné. */
+/**
+ * Bouton de preset : pastilles de couleurs + libellé, état sélectionné.
+ *
+ * `aria-pressed` porte cet état : la sélection n'était dite que par la
+ * couleur du cadre (orange contre zinc), invisible à un lecteur d'écran et
+ * au seul repère possible pour qui ne distingue pas ces deux teintes. Les
+ * pastilles restent `aria-hidden` — c'est le LIBELLÉ qui nomme le style.
+ */
 export function SwatchButton({
   label,
   swatch,
@@ -82,6 +89,7 @@ export function SwatchButton({
   return (
     <button
       type="button"
+      aria-pressed={selected}
       onClick={onClick}
       className={cn(
         "flex items-center gap-2 rounded-lg border text-sm font-medium transition-colors",
@@ -91,7 +99,7 @@ export function SwatchButton({
           : "border-zinc-300 bg-white text-zinc-700 hover:border-orange-300",
       )}
     >
-      <span className="flex gap-0.5">
+      <span aria-hidden className="flex gap-0.5">
         {swatch.map((c, i) => (
           <span
             key={i}
