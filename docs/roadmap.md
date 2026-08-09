@@ -285,6 +285,57 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.54 — Sept retours propriétaire (✅ 2026-08-09, branche `chantier/sept-retours-proprietaire`, PR à ouvrir, sans migration)
+
+**Objectif** : sept demandes ponctuelles du propriétaire sur l'atelier, le QR
+et l'habillage, après capture d'écran et test à la main de V1.53.
+
+**Livré** (9 commits) :
+- **Retrait complet des décors SVG flottants** : `ThemeDecor` (945 lignes +
+  test) supprimé, champ `decor` retiré des 3 tables de tokens (pronos,
+  calendrier, quiz) et des presets, `playDecor` supprimé, classes
+  `decor-float` purgées de `globals.css`. Demande explicite du propriétaire :
+  les fonds image de V1.53 rendent les motifs cartoon redondants. Inverse
+  partiellement ADR-093 — voir ADR-099.
+- **18 presets d'habillage en deux familles** dans l'étape Habillage :
+  « Ambiances » (8 existants, n'écrasent plus le fond déjà choisi — défaut
+  d'effacement silencieux fermé) et « Univers » (10 nouveaux, palettes
+  relevées sur les vignettes, posent couleurs ET fond ensemble ; `espace`
+  reste seul en nuit). A11y : fieldset/legend + `aria-pressed` sur les
+  pastilles.
+- **QR habillé comme le jeu** : un QR créé depuis la page du jeu naît avec un
+  style assorti (`src/lib/qr-style-du-jeu.ts` — lavis de l'univers + accent
+  du jeu, dérivation 100 % serveur, schéma inchangé), invariant scannable
+  prouvé sur 10 fonds × 7 accents × 2 ambiances, échec fermé sur le défaut
+  d'avant. Le champ libellé du QR est prérempli avec le nom du jeu.
+- **« Progression » renommée « Missions & coffres » (🗝️)** et déplacée
+  d'Outils vers la fin de « Vos animations » (route `/dashboard/progression`
+  inchangée) ; titre/surtitre de page alignés.
+- **Capture propriétaire fermée** : la Zone dangereuse rentre dans la Card
+  unique de la tuile Réglages (filet rouge, `h3`) ; même défaut fermé sur la
+  tuile « Partage et parrainage » (2 Cards → 1).
+- **Page QR codes** : recherche libre (label/slug, sanitizée), filtre par
+  campagne, bouton Réinitialiser ; jointure du nom de campagne — fin du faux
+  « Campagne supprimée » sur les jeux archivés.
+- **Raccourci atelier** : bouton « 🛠️ Modifier dans l'atelier » dans les 8
+  tuiles Statut (`atelier-raccourci.tsx`, hrefs des premières étapes).
+
+**Revue sécurité dédiée : GO, 0 critique/élevé/moyen, 2 INFO consignés sans
+action** (voir `docs/bugs.md`).
+
+Preuve : typecheck 0, lint 0, casts:check ok, Vitest **261 fichiers / 4128
+tests**, build vert, **aucune migration** (tête inchangée `20260921120000`),
+E2E WSL : wheel-wizard+calendar 16 ✓ (scans axe de l'étape Habillage à 18
+boutons + page joueur sans décor), referral 4/4 + progression 4/4 +
+atelier-modules 26 ✓ mobile-chrome et 14/14 desktop-smoke +
+campaign-templates 1/1, puis quiz 1 + pronostics 2 + player-win 7 (scans axe
+post-retrait) — 0 rouge au total. ADR-099.
+
+**Reste ouvert** : `sanitizeSearchTerm` laisse passer `*` (joker PostgREST) ;
+`qrQuery.error` non inspecté sur la page QR (écran honnête mais muet sur la
+cause). Détails dans `docs/bugs.md`. PR à ouvrir vers `main`, fusion sur
+l'ordre permanent dès CI verte.
+
 ## V1.53 — Fonds d'écran thématiques (✅ 2026-08-08, branche `chantier/fonds-ecran-themes`, PR à ouvrir, migration `20260921120000`)
 
 **Objectif** : la palette d'habillage saisonnier passait de 6 à 11 clés
@@ -529,7 +580,8 @@ surfaces et aussi pour les pronostics.
   unique de l'enum saisonnière (repli neutre en lecture, refus en saisie) ;
   `lib/calendar.ts` la consomme au lieu de sa copie locale. Le contexte public
   `/pronos` expose `theme`, refermé par `asSeasonalTheme`.
-- **Frontend** : `ThemeDecor` — 16 scènes cartoon, 28 motifs (contour encre,
+- **Frontend** : `ThemeDecor` (**retiré en V1.54, 2026-08-09** — les fonds
+  image de V1.53 l'ont rendu redondant) — 16 scènes cartoon, 28 motifs (contour encre,
   aplats pastel), 13 emplacements déterministes (zéro `Math.random`, zéro id
   SVG), alpha sous les rayures existantes, animations dans la liste
   `prefers-reduced-motion`, aucun contexte d'empilement. `PlayerPageShell`

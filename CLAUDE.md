@@ -75,7 +75,7 @@ Docker — l'exécuter.
   le point d'entrée de session, mais peut être en retard sur `origin/main`.
   Vérifier avant d'agir.
 
-### Cinq pièges, appris à la dure
+### Douze pièges, appris à la dure
 1. **`bash -l` obligatoire.** Node vit dans `~/.local/bin`, absent du PATH d'un
    shell non-login : `npx` retombe alors sur le `npx.cmd` **Windows** via
    l'interop et échoue sur « chemins UNC non pris en charge ».
@@ -129,6 +129,18 @@ Docker — l'exécuter.
    pratique adoptée** : local d'abord — pgTAP (~15 s) et l'E2E **ciblé**
    via `scripts/run-e2e-local.sh` (6 Go WSL + swap le rendent jouable) ; la
    CI distante en recours (suite E2E complète, build lourd, ou gel WSL).
+10. **Un `| tail` en fin de script E2E WSL simule un gel** (2026-08-09) — le
+    tube reste tenu par `next-server`, vivant après la fin du run : le
+    script ne rend jamais la main bien que la suite ait fini. Écrire dans
+    un **fichier**, juger par `test-results/.last-run.json`, jamais par un
+    pipe.
+11. **`/tmp` de la distro est VIDÉ à chaque coupure entre invocations
+    `wsl`** (2026-08-09, conséquence du piège 2) — loger sous `/mnt/c/...`
+    ou le dépôt, jamais `/tmp`.
+12. **Jamais deux runs Vitest concurrents sur le même arbre Windows**
+    (2026-08-09) — cache `.vite` corrompu : **261 fichiers « no tests »**
+    alors que la suite est verte isolément. Un seul run à la fois sur cet
+    arbre ; en parallèle, utiliser la copie WSL.
 
 ### Commandes de référence
 
@@ -269,9 +281,9 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-08-08
-- **Dernier chantier**: **Fonds d'écran thématiques** (PR #135 **fusionnée en squash `c955108` et déployée** — CI de la PR verte, puis CI `main` et « Santé après déploiement » verts sur ce SHA, migration `20260921120000` appliquée en production), 2026-08-09. Palette d'habillage partagée (calendrier/pronostics/quiz/roue) 6→11 clés — univers non saisonniers en plus des fêtes — et fond d'écran image sur les surfaces joueur. **Livré** : 40 WebP dans `public/fonds` (`scripts/optimiser-fonds.mjs`, chaîne « lumoz », hors SSR) ; `FondKey` découplé de `SeasonalTheme` (`src/lib/fonds-ecran.ts`) ; `wheelStyleSchema.fond` en JSONB, choix explicite du commerçant (décor de roue reste au preset, contrairement aux 3 autres surfaces qui suivent le thème) ; migration (2 CHECK à 11 clés, pgTAP 29→41) ; composant `FondEcran` (image+voile mesuré par axe+dérive lente) sur `/play` et 4 surfaces joueur ; vignettes-image dans les 3 sélecteurs, section « Fond d'écran » de l'atelier roue. **Durcissement** : `Object.hasOwn` sur les 2 mappings, `wheelStyleWriteSchema` refuse un fond inconnu à l'écriture (lecture tolérante), `asFondKey` retiré. **E2E** : radio sr-only 1×1 px des 3 sélecteurs devenue couche cliquable pleine tuile — flake causé par `scroll-behavior: smooth` déplaçant la cible pendant le défilement. **Revue sécurité dédiée : GO, 0 critique/élevé/moyen, 3 INFO fermés avant PR**. Preuve : typecheck 0, lint 0, Vitest **260 fichiers / 4108 tests**, build vert, pgTAP **56 fichiers / 3215 assertions** PASS vide+semée, migrations:check 125/tête `20260921120000`, sql:check/casts:check ok, E2E WSL mobile-chrome (calendar, player-win, pronostics, quiz, wheel-wizard) — scans axe verts ; wheel-wizard 12/12, sélecteur rejoué ×3 vert. ADR-098, roadmap V1.53.
-  **Reste ouvert** : `games.style` garde un `.catch(undefined)` aussi à l'écriture (même forme que l'INFO fermée) ; `wheelStyleSchema.partial()` des modèles de campagne tolère un fond inconnu à l'écriture (désormais écrit) ; `scroll-behavior: smooth` reste un piège pour tout futur `click()` E2E sur cible petite ; fonds natifs 1672 px, léger étirement assumé au-delà ; `espace` partage l'`accentChip` de `festival`. Détails `docs/bugs.md`. Deux gestes propriétaire : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
+- **Date**: 2026-08-09
+- **Dernier chantier**: **Sept retours propriétaire** (branche `chantier/sept-retours-proprietaire`, 9 commits au-dessus de `main` — PR à ouvrir, fusion sur l'ordre permanent dès CI verte —, sans migration), 2026-08-09. Sept demandes ponctuelles après test à la main de V1.53. **Retrait complet des décors SVG flottants** : `ThemeDecor` supprimé (945 l. + test, champ `decor` retiré des 3 tables de tokens et des presets) — inversion partielle assumée d'ADR-093, les fonds image V1.53 les rendaient redondants. **18 presets en deux familles** dans Habillage : « Ambiances » (8, n'écrasent plus le fond choisi) et « Univers » (10 nouveaux, posent couleurs ET fond, porté par le style, pas le preset). **QR habillé comme le jeu** : `src/lib/qr-style-du-jeu.ts` dérive 100 % serveur le style d'un QR créé depuis la page du jeu, libellé prérempli. « Progression » → **« Missions & coffres »** (🗝️), déplacée vers la fin de « Vos animations ». Zone dangereuse et Partage/parrainage rentrent dans une Card unique par tuile. Page QR codes : recherche + filtre campagne + Réinitialiser. Bouton « 🛠️ Modifier dans l'atelier » sur les 8 tuiles Statut. Revue sécurité dédiée : GO, 2 INFO sans action. Preuve : typecheck 0, lint 0, Vitest **261 fichiers / 4128 tests**, build vert, aucune migration (tête `20260921120000`), E2E WSL 60+ tests verts. ADR-099, roadmap V1.54.
+  **Reste ouvert** : PR à ouvrir, fusion dès CI verte. 2 INFO dans `docs/bugs.md`. Deux gestes propriétaire : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
