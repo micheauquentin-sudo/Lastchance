@@ -129,6 +129,10 @@ Docker — l'exécuter.
    pratique adoptée** : local d'abord — pgTAP (~15 s) et l'E2E **ciblé**
    via `scripts/run-e2e-local.sh` (6 Go WSL + swap le rendent jouable) ; la
    CI distante en recours (suite E2E complète, build lourd, ou gel WSL).
+   **Le clone `~/workspaces/lastchance` n'admet qu'un seul run E2E à la
+   fois** (2026-08-09) : deux agents télescopés, builds concurrents sur le
+   même `.next` — `ENOENT _buildManifest`, `TurbopackInternalError`. Comme
+   le piège 12 côté Windows : jamais deux agents E2E en parallèle dessus.
 10. **Un `| tail` en fin de script E2E WSL simule un gel** (2026-08-09) — le
     tube reste tenu par `next-server`, vivant après la fin du run : le
     script ne rend jamais la main bien que la suite ait fini. Écrire dans
@@ -285,8 +289,8 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-08-09
-- **Dernier chantier**: **Hub QR par type de jeu** (PR #138 **fusionnée en squash `0ce78ae` et déployée** — CI de la PR verte, puis CI `main` et « Santé après déploiement » verts sur ce SHA, migration `20260922120000` appliquée en production), 2026-08-09. `/dashboard/qr-codes` n'affichait que les QR de campagne ; sept autres modules (chasse, événement, jackpot, fidélité, calendrier, quiz, parrainage, pronostics) restaient invisibles depuis ce hub. **RPC `org_qr_hub`** : union des QR/liens des 8 types de jeux en un aller-retour, garde `is_org_editor` calquée sur la RLS vivante, `ilike` échappé, `limit` plafonné 100, pgTAP dédié (51 assertions). **Page réécrite** : sélecteur « Type de jeu » filtré par modules actifs, cartes campagne inchangées (studio), nouvelles cartes `jeu-lien-card.tsx` pour les autres modules (QR au style `PublicShare`, lien copiable, badges de statut), écran dédié caisse, pagination par débordement, filtre campagne conservé. Premier scan axe de cette page : 40 nœuds `color-contrast` fermés. Revue sécurité dédiée : GO, 3 INFO — 2 fermées avant PR (reportError sur l'échec RPC, assertion pgTAP `prosecdef`), 1 sans action. Preuve : typecheck 0, lint 0, casts:check 0, Vitest **262 fichiers / 4131 tests**, build vert, pgTAP **57 fichiers / 3266 assertions** PASS vide+semée, migrations:check 126/tête `20260922120000` (nouvelle migration du chantier), E2E WSL 3 projets **61 passed / 6 skipped**. ADR-100, roadmap V1.55.
-  **Reste ouvert** : 1 INFO dans `docs/bugs.md` (repli du filtre type + octrois datés absents des options ; modules hors campagne sans style QR persisté). Deux gestes propriétaire hérités : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
+- **Dernier chantier**: **Tris et filtres partout** (branche `chantier/tris-filtres-partout`, 14 commits, PR à ouvrir, migration `20260923120000`), 2026-08-09. Quatre propositions retenues par le propriétaire (2, 3, 4, 6). **DB** : `org_qr_hub` gagne `p_etat`+`p_jamais_scanne` ; `org_customer_profiles_page` gagne `p_q`/`p_segment`/`p_tri` avec `customer_segment_matches` factorisée (parité compteur/liste prouvée pgTAP) ; 3 défauts latents corrigés (pagination sans départage, plafond contournable par null, prénom masqué par un NULL récent). **Clients** : recherche/segment/tri, export CSV fidèle aux filtres, téléphone jamais affiché ni exporté (RGPD). **Participations** : période au fuseau local, 4 statuts filtrables (« À valider » avalait annulées/expirées), filtre par lot ; **l'export ne filtrait rien avant ce chantier — corrigé**. **Hub QR** : select État + « Jamais scannés ». **Vue d'ensemble** : 3 tuiles vers des listes pré-filtrées aux libellés honnêtes ; 7 listes de modules gagnent recherche/statut/pagination via `module-list-filters.tsx` (chargeaient tout sans plafond). Sécurité : GO, 2 MOYEN fermés avant PR (500 sur DST minuit, export mal borné), 4 INFO sans action. Preuve : typecheck/lint/casts:check 0, Vitest 264f/4161, build vert, pgTAP 58f/3359 PASS, migrations 127/tête `20260923120000`, E2E WSL verts. ADR-101, roadmap V1.56.
+  **Reste ouvert** : 4 INFO dans `docs/bugs.md`. Deux gestes propriétaire hérités : révoquer `rk_live_` et le jeton Vercel. PR à ouvrir et fusionner.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

@@ -3382,6 +3382,32 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Tris et filtres partout — consigné sans action (2026-08-09,
+  `chantier/tris-filtres-partout`)** : revue sécurité dédiée GO, 2 MOYEN
+  fermés avant la PR (borne de date DST sur les participations, pagination
+  de l'export clients). 4 INFO consignés sans correction :
+  - **Les types Supabase régénérés proposent `customer_segment_matches` comme
+    appelable côté client** alors que la fonction est réservée à
+    `service_role` et rend 403 sur tout appel direct — l'ACL réelle est dans
+    la policy, pas dans les types ; source d'un faux positif si un futur appel
+    est écrit sans relire la garde SQL.
+  - **La parité d'assertions pgTAP entre le hub QR et la liste clients est
+    incomplète** : `org_qr_hub` a sa suite dédiée (`qr_hub.test.sql`), mais
+    aucun test ne compare explicitement, ligne à ligne, le compteur et la
+    liste de `org_customer_profiles_page` au-delà des cas couverts dans ce
+    chantier — la parité tient par construction (fonction partagée), pas par
+    une assertion croisée exhaustive.
+  - **L'export CSV participations garde le téléphone client** — décision
+    d'écran assumée (le rôle qui exporte les participations est déjà celui
+    qui valide les gains en caisse et voit le téléphone à ce titre), à ne pas
+    confondre avec l'export clients qui, lui, l'exclut par principe RGPD
+    (ADR-101). Le contraste entre les deux exports est désormais écrit plutôt
+    qu'implicite.
+  - **`campaign_id` n'est pas validé comme UUID avant d'être passé au filtre
+    par lot des participations** : une valeur malformée rend une liste vide
+    silencieuse plutôt qu'une erreur explicite — préexistant à ce chantier,
+    non introduit par lui, non corrigé ici.
+
 - **Hub QR par type de jeu — consigné sans action (2026-08-09,
   `chantier/qr-hub-types`)** : revue sécurité dédiée GO, 0
   critique/élevé/moyen, 3 INFO — 2 fermées avant la PR (reportError sur
