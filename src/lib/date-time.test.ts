@@ -4,8 +4,41 @@ import {
   isoToZonedDateTimeInput,
   isValidDateOnly,
   localDateKey,
+  startOfLocalDayToIso,
   zonedDateTimeToIso,
 } from "./date-time";
+
+describe("startOfLocalDayToIso", () => {
+  it("prend le minuit du fuseau, pas celui d'UTC", () => {
+    expect(startOfLocalDayToIso("2026-08-01", "Europe/Paris")).toBe(
+      "2026-07-31T22:00:00.000Z",
+    );
+    expect(startOfLocalDayToIso("2026-01-15", "Europe/Paris")).toBe(
+      "2026-01-14T23:00:00.000Z",
+    );
+    expect(startOfLocalDayToIso("2026-08-01", "Pacific/Noumea")).toBe(
+      "2026-07-31T13:00:00.000Z",
+    );
+  });
+
+  it("encadre exactement une journée avec endOfLocalDayToIso", () => {
+    const debut = new Date(startOfLocalDayToIso("2026-08-01", "Europe/Paris"));
+    const fin = new Date(endOfLocalDayToIso("2026-08-01", "Europe/Paris"));
+    // 24 h moins la milliseconde que `endOfLocalDayToIso` retranche.
+    expect(fin.getTime() - debut.getTime()).toBe(24 * 3_600_000 - 1);
+  });
+
+  it("couvre le jour du passage à l'heure d'été (23 h de long)", () => {
+    const debut = new Date(startOfLocalDayToIso("2026-03-29", "Europe/Paris"));
+    const fin = new Date(endOfLocalDayToIso("2026-03-29", "Europe/Paris"));
+    expect(debut.toISOString()).toBe("2026-03-28T23:00:00.000Z");
+    expect(fin.getTime() - debut.getTime()).toBe(23 * 3_600_000 - 1);
+  });
+
+  it("rejette une date de calendrier impossible", () => {
+    expect(() => startOfLocalDayToIso("2026-02-31", "Europe/Paris")).toThrow();
+  });
+});
 
 describe("dates locales d'accès offert", () => {
   it("rejette les dates calendaires impossibles", () => {

@@ -6432,3 +6432,57 @@ prouvé sur un cas 3+4=7 (51 assertions, `qr_hub.test.sql`).
 - ADR-085 (RPC unique pour le Centre d'animation, même doctrine)
 - roadmap V1.55
 - roadmap V1.54
+
+---
+
+## ADR-101 : Les filtres descendent dans les RPC, pas dans le rendu de page
+
+**Date** : 2026-08-09
+**Statut** : Accepté
+**Contexte** : `chantier/tris-filtres-partout` — quatre demandes propriétaire
+(recherche/filtre/tri sur Clients et Participations, filtre État + « jamais
+scanné » sur le hub QR, pagination sur les sept listes de modules de la Vue
+d'ensemble) parmi une liste de six propositions.
+
+**Décision**.
+1. **Les filtres et la pagination descendent dans les RPC** (`org_qr_hub`,
+   `org_customer_profiles_page`) plutôt que d'être appliqués côté page sur un
+   résultat déjà chargé — sinon la pagination n'est juste que sur la page
+   courante, pas sur l'ensemble filtré.
+2. **Le compteur et la liste partagent le même prédicat**, factorisé en une
+   fonction SQL unique (`customer_segment_matches`) plutôt que dupliqué en
+   deux endroits qui peuvent diverger avec le temps. Parité prouvée par
+   pgTAP, pas supposée.
+3. **Les libellés de tuile ne promettent jamais le chiffre de la liste vers
+   laquelle elles pointent.** La tuile de la Vue d'ensemble compte des
+   ressources (grain module, 9 catégories) ; la liste qu'elle ouvre compte
+   des affiches (grain différent, 8 modules). Les deux univers ne coïncident
+   pas structurellement — le libellé dit « voir les affiches concernées »,
+   jamais un nombre. Un test refuse tout chiffre dans ces descriptions.
+4. **Les exports appliquent les mêmes filtres que l'écran**, via le même
+   composant/la même requête partagée par module — jamais une requête
+   d'export séparée qui peut dériver de ce que l'utilisateur voit (c'était le
+   cas de l'export participations avant ce chantier, corrigé ici).
+5. **Le téléphone client reste hors de l'écran et de l'export CSV** — décision
+   RGPD déjà en vigueur, désormais écrite explicitement plutôt qu'implicite
+   dans le code.
+
+**Justification**. Un filtre appliqué après le chargement complet reproduit
+le défaut déjà corrigé sur les sept listes de modules (tout chargé sans
+plafond) ; un prédicat dupliqué entre compteur et liste dérive silencieusement
+dès que l'un des deux est modifié sans l'autre — la revue sécurité a
+d'ailleurs fermé deux défauts de ce type avant la PR (borne de date DST sur
+les participations, pagination d'export mal bornée).
+
+**Conséquences** : trois défauts latents ont été corrigés en écrivant la
+pagination dans les RPC plutôt qu'en la supposant correcte : départage
+manquant pouvant répéter ou faire disparaître une ligne entre deux pages,
+plafond de page contournable par un `null`, prénom masqué par une valeur
+récente `NULL`.
+
+**References** :
+- RPC `org_qr_hub` (`p_etat`, `p_jamais_scanne`), `org_customer_profiles_page`
+  (`p_q`/`p_segment`/`p_tri`), `customer_segment_matches`
+- `src/components/dashboard/module-list-filters.tsx`
+- `/dashboard/customers/export`
+- roadmap V1.56

@@ -51,13 +51,20 @@ export function getAnimationCenterMetrics(
   return [
     {
       key: "drafts",
-      // La tuile N'EST PLUS UN LIEN vers « Découvrir » : cette page est un
-      // catalogue de modules par objectif, pas une liste de brouillons — le
-      // commerçant cliquait sur « 3 brouillons » et atterrissait sur une
-      // vitrine. Sans destination honnête, la tuile redevient un repère
-      // chiffré, et sa description dit où les retrouver.
+      // La tuile a retrouvé une destination — le hub QR filtré sur l'état
+      // « brouillon » —, après avoir perdu la précédente : « Découvrir » est un
+      // catalogue de modules par objectif et ne contient aucun brouillon.
+      //
+      // MAIS ELLE NE MÈNE PAS À SON PROPRE CHIFFRE, et la description le dit.
+      // Les deux comptent à un grain différent, et aucun paramètre ne les
+      // réconcilie (migration 20260923120000) : ce compteur compte des
+      // RESSOURCES sur NEUF modules — le parrainage inclus —, le hub rend une
+      // LIGNE PAR AFFICHE sur huit. Une campagne brouillon sans QR vaut 1 ici
+      // et 0 là-bas ; à trois affiches, 1 ici et 3 là-bas. « Voir les affiches
+      // concernées » est donc une promesse tenable ; « voir les 3 » ne le
+      // serait pas.
       label: "Brouillons",
-      description: "à terminer, dans la page de chaque module",
+      description: "à terminer — voir les affiches concernées",
       count: drafts,
       tone: "calm",
     },
@@ -71,7 +78,10 @@ export function getAnimationCenterMetrics(
     {
       key: "liveExperiences",
       label: "En cours",
-      description: "animations ouvertes aux joueurs",
+      // Même écart de grain que « Brouillons », donc même prudence de libellé :
+      // la destination est le hub filtré sur `etat=actif`, qui rend des
+      // affiches, pas les ressources que ce compteur additionne.
+      description: "ouvertes aux joueurs — voir les affiches concernées",
       count: liveExperiences,
       tone: "live",
     },

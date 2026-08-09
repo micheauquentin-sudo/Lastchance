@@ -57,6 +57,38 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-09 — Tris et filtres partout — **à relire**
+
+- **Lot et objectif** : quatre propositions retenues par le propriétaire (2,
+  3, 4, 6) parmi une liste de six — recherche/filtre/tri sur Clients et
+  Participations avec export fidèle, filtre État + « jamais scanné » sur le
+  hub QR, pagination sur les sept listes de modules de la Vue d'ensemble.
+- **Branche/commits** : `chantier/tris-filtres-partout`, 14 commits
+  au-dessus de `origin/main` (`b441672` … `d9c8704`). PR non encore ouverte.
+  Migration `20260923120000`.
+- **Faits et fichiers** : `org_qr_hub` (`p_etat`, `p_jamais_scanne`) et
+  `org_customer_profiles_page` (`p_q`/`p_segment`/`p_tri`,
+  `customer_segment_matches` factorisée) ; page Clients (recherche, segment,
+  tri, export CSV, téléphone exclu) ; Participations (période au fuseau
+  local, 4 statuts, filtre par lot, export désormais filtré comme l'écran —
+  il ne l'était pas avant) ; hub QR (select État + case « jamais scannés ») ;
+  3 tuiles de la Vue d'ensemble cliquables vers des listes pré-filtrées ; les
+  7 listes de modules gagnent `module-list-filters.tsx` (recherche, statut,
+  pagination, elles chargeaient tout sans plafond).
+- **Validations réellement exécutées** : typecheck 0, lint 0, `casts:check`
+  0, Vitest 264 fichiers / 4161 tests, build vert (47 pages), pgTAP 58
+  fichiers / 3359 assertions PASS (vide puis semée, ×2), `migrations:check`
+  127 fichiers / tête `20260923120000`, E2E WSL mobile-chrome verts
+  (customers, qr-hub, dashboard-home, module-list-filters,
+  campaign-templates). CI GitHub de la PR : non exécutée, PR pas encore
+  ouverte.
+- **Risque/blocage** : revue sécurité GO, 2 MOYEN fermés avant la PR (500 sur
+  les participations aux bascules DST à minuit ; export clients mal borné,
+  troncature désormais explicite), 4 INFO consignés sans action dans
+  `docs/bugs.md`. Aucun blocage technique ; la PR reste à ouvrir et fusionner.
+- **État** : à relire. Prochaine action : ouvrir la PR, vérifier la CI, fusionner
+  sur l'ordre permanent. Roadmap V1.56, ADR-101.
+
 ### 2026-08-09 — Hub QR par type de jeu — **terminé**
 
 - **Lot et objectif** : `/dashboard/qr-codes` n'affichait que les QR de

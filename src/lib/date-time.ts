@@ -167,6 +167,45 @@ export function localDateKey(now: Date, timeZone: string): string {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
 }
 
+/**
+ * Convertit une date de calendrier en DÉBUT de journée dans le fuseau IANA.
+ *
+ * Jumeau exact d'`endOfLocalDayToIso`, et les deux sont nécessaires ensemble :
+ * un filtre « du 3 au 5 » saisi par un commerçant désigne trois jours CIVILS de
+ * son établissement. Borné en UTC, le même filtre décale de une à douze heures
+ * et fait disparaître les participations du petit matin ou de la fin de soirée.
+ *
+ * La convergence itérative est celle d'`endOfLocalDayToIso` : on vise minuit
+ * civil, on mesure l'écart réel dans le fuseau, on corrige — robuste aux
+ * changements d'heure, dont l'offset n'est pas connu d'avance.
+ */
+export function startOfLocalDayToIso(value: string, timeZone: string): string {
+  const selected = parseDateOnly(value);
+  const desired: DateParts = {
+    year: selected.year,
+    month: selected.month,
+    day: selected.day,
+    hour: 0,
+    minute: 0,
+    second: 0,
+  };
+
+  let candidate = asUtc(desired);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const delta = asUtc(desired) - asUtc(zonedParts(new Date(candidate), timeZone));
+    candidate += delta;
+    if (delta === 0) break;
+  }
+
+  // Contrairement à `endOfLocalDayToIso`, on ne LÈVE PAS si minuit n'existe pas
+  // (certains fuseaux ont avancé l'heure à 00:00 — Sao_Paulo des années durant).
+  // L'itération converge alors sur le premier instant réel du jour civil, ce qui
+  // est exactement la borne voulue. Un filtre de liste ne cache aucune donnée :
+  // il doit rester utilisable, là où une date de fin de campagne doit être
+  // refusée si elle est ambiguë.
+  return new Date(candidate).toISOString();
+}
+
 /** Convertit une date de calendrier en fin de journée dans le fuseau IANA. */
 export function endOfLocalDayToIso(value: string, timeZone: string): string {
   const selected = parseDateOnly(value);

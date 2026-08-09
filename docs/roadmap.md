@@ -285,6 +285,66 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.56 — Tris et filtres partout (✅ 2026-08-09, branche `chantier/tris-filtres-partout`, PR à ouvrir, migration `20260923120000`)
+
+**Objectif** : quatre demandes propriétaire retenues parmi une liste de
+propositions (2, 3, 4 et 6) — recherche/filtre/tri sur la page Clients et sur
+Participations avec export fidèle aux filtres, filtre État + « jamais
+scanné » sur le hub QR, et les sept listes de modules de la Vue d'ensemble
+dotées de recherche/pagination au lieu de tout charger sans plafond.
+
+**Livré** (14 commits) :
+- **DB** (`b441672` + `3ea8e1c`) : `org_qr_hub` gagne `p_etat` (normalisé
+  brouillon\|actif\|en_pause\|termine, colonne `etat` ajoutée) et
+  `p_jamais_scanne` (prouvé identique au compteur de la tuile) ;
+  `org_customer_profiles_page` gagne `p_q`/`p_segment`/`p_tri`, avec
+  `customer_segment_matches` factorisée pour que le compteur et la liste
+  appliquent exactement le même prédicat (parité prouvée par pgTAP, ACL
+  `service_role` seulement). Trois défauts latents corrigés au passage :
+  pagination sans départage (deux lignes à égalité pouvaient se répéter ou
+  disparaître d'une page à l'autre), plafond de page contournable par un
+  `null`, prénom masqué par une valeur récente `NULL`. Types Supabase
+  régénérés pour les nouvelles signatures. pgTAP **58 fichiers / 3359
+  assertions** ×2 (vide puis semée).
+- **Frontend A** (`337945f`, `69aedf8`, `bf95f86`) : page Clients — recherche
+  prénom/email, filtre segment, tris, export CSV owner via
+  `/dashboard/customers/export` ; la pastille de segment n'est plus exclusive
+  (le SQL fait foi, l'affichage suit) ; le téléphone n'est jamais affiché ni
+  exporté (décision RGPD, écrite dans l'ADR). Participations — période au
+  fuseau de l'établissement, 4 statuts filtrables (le filtre « À valider »
+  avalait à tort les annulées/expirées, corrigé), filtre par lot via
+  `prize_id`. **L'export CSV participations n'appliquait aucun filtre avant
+  ce chantier — corrigé : écran et export partagent désormais les mêmes
+  filtres.**
+- **Frontend B** (`d82d8b0` … `cc16a9b`, 6 commits) : hub QR — select État +
+  case « Jamais scannés », vocabulaire unique des pastilles (la table locale
+  qui gardait un statut fantôme `scheduled` est supprimée). Trois tuiles de
+  la Vue d'ensemble deviennent cliquables vers une liste pré-filtrée, avec
+  des libellés qui ne promettent pas le chiffre de la tuile (« voir les
+  affiches concernées ») — un test refuse tout chiffre dans ces
+  descriptions, la tuile compte des ressources (9 modules) et la liste des
+  affiches (8 modules), les deux univers ne coïncident pas. Les 7 listes de
+  modules gagnent recherche + filtre statut + pagination via un composant
+  partagé, `module-list-filters.tsx` — elles chargeaient tout sans plafond
+  auparavant. Deux défauts corrigés en route : contraste AA de la pagination
+  et des liens, « Réinitialiser » qui gardait l'ancienne valeur du select.
+- **QA** (`5e02f9f`) : contraste AA de la page Clients (premier scan axe de
+  cette page).
+- **Revue sécurité** : GO. 2 MOYEN fermés avant la PR — une date légitime
+  provoquait une 500 sur les participations aux bascules DST à minuit (repli
+  silencieux de la borne, `99827a0`) ; l'export clients bornait mal sa boucle
+  de pagination (nombre réel de pages via `total_count`, troncature écrite
+  dans le CSV plutôt que silencieuse, `d9c8704`). 4 INFO consignés sans
+  action dans `docs/bugs.md`.
+
+Preuve : typecheck 0, lint 0, `casts:check` 0, Vitest **264 fichiers / 4161
+tests** (arbre final), build vert (47 pages), pgTAP **58 fichiers / 3359
+assertions** PASS (vide puis semée), `migrations:check` 127 fichiers / tête
+`20260923120000`, E2E WSL mobile-chrome : customers 1/1 (+4 setup, rejoué
+5/5 après le fix de contraste), qr-hub 3/3, dashboard-home 3/3,
+module-list-filters 1/1, campaign-templates 1/1. ADR-101, `docs/bugs.md`
+(4 entrées consignées sans action).
+
 ## V1.55 — Hub QR par type de jeu (✅ 2026-08-09, branche `chantier/qr-hub-types`, PR à ouvrir, sans migration)
 
 **Objectif** : la page `/dashboard/qr-codes` n'affichait que les QR/liens des

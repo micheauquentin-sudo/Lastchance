@@ -2,11 +2,19 @@ import { NextResponse } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvCell } from "@/lib/csv";
+import {
+  applyParticipationFilters,
+  parseParticipationFilters,
+  resolvePrizeIds,
+} from "../filters";
 
 /**
  * Export CSV (RLS : limité à l'org du commerçant).
- * - défaut : participations
- * - ?type=newsletter : abonnés newsletter collectés avant le jeu
+ * - défaut : participations, AVEC les filtres de l'écran (recherche, statut,
+ *   campagne, lot, période) — le lien est posé sous une liste filtrée, un
+ *   fichier qui contiendrait tout le reste serait un piège silencieux.
+ * - ?type=newsletter : abonnés newsletter collectés avant le jeu (population
+ *   distincte : les filtres de la liste ne s'y appliquent pas).
  */
 export async function GET(request: Request) {
   const { user, organization, role } = await getUserAndOrg();
@@ -16,7 +24,8 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
 
-  const type = new URL(request.url).searchParams.get("type");
+  const url = new URL(request.url);
+  const type = url.searchParams.get("type");
   if (type === "newsletter") {
     const { data: subs, error } = await supabase
       .from("newsletter_subscribers")
@@ -48,7 +57,23 @@ export async function GET(request: Request) {
       },
     });
   }
-  const { data: rows, error } = await supabase
+  const filtres = parseParticipationFilters({
+    campaign: url.searchParams.get("campaign") ?? undefined,
+    q: url.searchParams.get("q") ?? undefined,
+    statut: url.searchParams.get("statut") ?? undefined,
+    du: url.searchParams.get("du") ?? undefined,
+    au: url.searchParams.get("au") ?? undefined,
+    lot: url.searchParams.get("lot") ?? undefined,
+  });
+  // Fuseau de l'établissement : les bornes `du`/`au` sont des jours CIVILS.
+  // L'export doit les interpréter comme la page, sinon il rendrait un jour de
+  // décalage sur les lignes de fin de soirée.
+  const fuseau = organization.timezone ?? "Europe/Paris";
+  const prizeIds = filtres.lot
+    ? await resolvePrizeIds(supabase, organization.id, filtres.lot)
+    : undefined;
+
+  const query = supabase
     .from("participations")
     .select(
       "created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
@@ -56,6 +81,9 @@ export async function GET(request: Request) {
     .eq("organization_id", organization.id)
     .order("created_at", { ascending: false })
     .limit(10000);
+  // Effet de bord assumé : le builder PostgREST mute et se rend lui-même.
+  applyParticipationFilters(query, filtres, fuseau, prizeIds);
+  const { data: rows, error } = await query;
 
   if (error) {
     console.error("[participations] export:", error.message);

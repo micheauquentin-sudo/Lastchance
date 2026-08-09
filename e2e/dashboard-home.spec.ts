@@ -70,6 +70,19 @@ test.describe("dashboard — vue d'ensemble", () => {
         tuiles.locator("li", { hasText: "Gains à remettre" }).locator("a"),
       ).toHaveCount(1);
 
+      // 3 bis. Les trois tuiles qui mènent au hub QR y mènent FILTRÉES : une
+      //        tuile qui compte puis renvoie sur la liste entière fait
+      //        recommencer à la main le tri qu'elle vient de faire.
+      for (const [label, motif] of [
+        ["Brouillons", "etat=brouillon"],
+        ["QR jamais scannés", "scans=jamais"],
+        ["En cours", "etat=actif"],
+      ] as const) {
+        await expect(
+          tuiles.locator("li", { hasText: label }).locator("a"),
+        ).toHaveAttribute("href", new RegExp(`/dashboard/qr-codes\\?.*${motif}`));
+      }
+
       // 4. Les repères ne disparaissent plus au premier événement mesuré.
       const resultats = page.getByRole("region", { name: "Vos résultats" });
       await expect(resultats).toBeVisible();
@@ -90,6 +103,15 @@ test.describe("dashboard — vue d'ensemble", () => {
       }
 
       await expectNoA11yViolations(page, testInfo);
+
+      // 5. Et le lien ARRIVE là où il promet : on le suit pour de bon, en
+      //    dernier — la case du hub revient cochée, donc le filtre a été lu.
+      await tuiles
+        .locator("li", { hasText: "QR jamais scannés" })
+        .locator("a")
+        .click();
+      await expect(page).toHaveURL(/\/dashboard\/qr-codes\?/);
+      await expect(page.getByLabel("Jamais scannés")).toBeChecked();
     });
   });
 
@@ -121,16 +143,24 @@ test.describe("dashboard — vue d'ensemble", () => {
       await expect(tile).toContainText("retraits en attente en boutique");
       await expect(tile.locator("a")).toHaveCount(0);
 
-      // « Brouillons » n'est plus un lien NON PLUS, et pour une autre raison :
-      // sa seule destination était « Découvrir », un catalogue de modules qui
-      // ne contient aucun brouillon. Sans destination honnête, elle redevient
-      // un repère chiffré — et le dit.
+      // « Brouillons » a RETROUVÉ un lien — le hub QR filtré sur l'état —
+      // après avoir perdu le précédent (« Découvrir », un catalogue de modules
+      // sans un seul brouillon). Le hub n'est pas réservé au propriétaire :
+      // l'éditeur l'ouvre, la tuile reste donc cliquable pour lui.
+      //
+      // Sa description ne promet PAS le même nombre, et c'est le point : la
+      // tuile compte des ressources sur neuf modules, la liste rend des
+      // affiches sur huit. « voir les affiches concernées », jamais « voir
+      // les 3 ».
       const brouillons = tuiles.locator("li", { hasText: "Brouillons" });
-      await expect(brouillons).toContainText("dans la page de chaque module");
-      await expect(brouillons.locator("a")).toHaveCount(0);
+      await expect(brouillons).toContainText("voir les affiches concernées");
+      await expect(brouillons.locator("a")).toHaveAttribute(
+        "href",
+        /\/dashboard\/qr-codes\?.*etat=brouillon/,
+      );
 
-      // Une tuile ni réservée ni sans destination reste un lien pour
-      // l'éditeur : preuve que les absences ci-dessus sont ciblées.
+      // Une tuile non réservée reste un lien pour l'éditeur : preuve que
+      // l'absence ci-dessus est ciblée sur la destination, pas générale.
       await expect(
         tuiles.locator("li", { hasText: "QR jamais scannés" }).locator("a"),
       ).toHaveCount(1);

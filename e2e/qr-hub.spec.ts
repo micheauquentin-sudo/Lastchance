@@ -56,4 +56,72 @@ test.describe("hub QR par type de jeu", () => {
       page.getByRole("button", { name: "Personnaliser" }),
     ).toHaveCount(0);
   });
+
+  /**
+   * Le filtre par ÉTAT, ajouté avec `p_etat` (migration 20260923120000).
+   *
+   * Il est vérifié sur le seul état dont le seed garantit à la fois un présent
+   * ET un absent : `en_pause` ne contient QUE « E2E En pause », et les
+   * campagnes actives (« E2E Gagnante » et les autres) doivent en disparaître.
+   * `brouillon` est vérifié en négatif seulement — le seed n'a pas de campagne
+   * brouillon, et en inventer une pour la spec ferait porter au seed le poids
+   * d'un test plutôt que d'un parcours.
+   *
+   * Le vocabulaire du `<select>` est celui des PASTILLES (`status-badge.tsx`),
+   * pas celui de la colonne SQL : le commerçant lit « Ouverte aux joueurs »,
+   * jamais « actif ».
+   */
+  test("le hub filtre par état, avec le vocabulaire des pastilles", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/qr-codes");
+
+    const etats = page.getByLabel("État");
+    await expect(etats).toBeVisible();
+    for (const libelle of [
+      "Tous les états",
+      "Brouillon",
+      "Ouverte aux joueurs",
+      "En pause",
+      "Clôturée",
+    ]) {
+      await expect(etats.locator("option", { hasText: libelle })).toHaveCount(1);
+    }
+
+    // Sans filtre, les deux campagnes du seed sont là.
+    await expect(
+      page.locator("li", { hasText: "E2E En pause" }).first(),
+    ).toBeVisible();
+
+    // `en_pause` garde la campagne en pause et écarte les actives.
+    await page.goto("/dashboard/qr-codes?etat=en_pause");
+    await expect(
+      page.locator("li", { hasText: "E2E En pause" }).first(),
+    ).toBeVisible();
+    await expect(page.locator("li", { hasText: "E2E Gagnante" })).toHaveCount(0);
+
+    // `brouillon` n'en rend aucune : le seed n'a pas de campagne brouillon.
+    await page.goto("/dashboard/qr-codes?etat=brouillon");
+    await expect(page.locator("li", { hasText: "E2E En pause" })).toHaveCount(0);
+    await expect(page.locator("li", { hasText: "E2E Gagnante" })).toHaveCount(0);
+  });
+
+  /**
+   * « Jamais scannés » : la case n'a de sens que pour les affiches de campagne —
+   * les sept autres modules n'ont pas de compteur de scans. Elle disparaît donc
+   * dès qu'un autre type est sélectionné, au lieu d'offrir une commande qui
+   * viderait la liste sans dire pourquoi.
+   */
+  test("la case « Jamais scannés » ne s'offre que là où elle veut dire quelque chose", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/qr-codes");
+    await expect(page.getByLabel("Jamais scannés")).toBeVisible();
+
+    await page.goto("/dashboard/qr-codes?type=campaign&scans=jamais");
+    await expect(page.getByLabel("Jamais scannés")).toBeChecked();
+
+    await page.goto("/dashboard/qr-codes?type=pronostics");
+    await expect(page.getByLabel("Jamais scannés")).toHaveCount(0);
+  });
 });

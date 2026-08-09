@@ -8,31 +8,27 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import type { CustomerProfile } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
+import {
+  CUSTOMER_PAGE_SIZE,
+  SEGMENTS,
+  TRIS,
+  customerBadges,
+  customerFiltersActifs,
+  customerSearchParams,
+  parseCustomerFilters,
+} from "./filters";
 
 export const metadata: Metadata = { title: "Clients" };
 
-const DAY_MS = 86_400_000;
-const INACTIVE_AFTER_DAYS = 60;
-const LOYAL_FROM_WINS = 3;
-
-function segment(profile: CustomerProfile): { label: string; className: string } | null {
-  const daysSinceLastWin = (Date.now() - new Date(profile.last_win).getTime()) / DAY_MS;
-  if (daysSinceLastWin > INACTIVE_AFTER_DAYS) {
-    return { label: "À relancer", className: "bg-amber-50 text-amber-700" };
-  }
-  if (profile.wins >= LOYAL_FROM_WINS) {
-    return { label: "Fidèle", className: "bg-orange-50 text-orange-700" };
-  }
-  if (profile.wins === 1) {
-    return { label: "Nouveau", className: "bg-sky-50 text-sky-700" };
-  }
-  return null;
-}
-
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
-  const { page: rawPage } = await searchParams;
+export default async function CustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; q?: string; segment?: string; tri?: string }>;
+}) {
+  const { page: rawPage, q, segment, tri } = await searchParams;
   const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
-  const pageSize = 50;
+  const filtres = parseCustomerFilters({ q, segment, tri });
+  const pageSize = CUSTOMER_PAGE_SIZE;
   const { organization, role } = await getUserAndOrg();
   // Fuseau de l'établissement : sans lui, l'affichage retombe sur celui du
   // serveur (UTC en production) et montre souvent le mauvais jour.
@@ -45,6 +41,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       p_organization_id: organization!.id,
       p_offset: (page - 1) * pageSize,
       p_limit: pageSize,
+      p_q: filtres.q,
+      p_segment: filtres.segment,
+      p_tri: filtres.tri,
     }),
     supabase.rpc("org_segment_counts", { p_organization_id: organization!.id }),
   ]);
@@ -52,8 +51,19 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   const profiles = (data ?? []) as (CustomerProfile & { total_count: number })[];
   const totalCount = profiles[0]?.total_count ?? 0;
-  const rows = profiles.map((p) => ({ profile: p, segment: segment(p) }));
-  const inactiveCount = ((segmentData ?? [])[0] as { inactive_count?: number } | undefined)?.inactive_count ?? 0;
+  const rows = profiles.map((p) => ({ profile: p, badges: customerBadges(p) }));
+  // ⚠ Ce compteur porte sur une AUTRE population que la liste : il compte des
+  // ABONNÉS newsletter à relancer, là où le tableau liste des JOUEURS ayant
+  // gagné. Les deux nombres n'ont aucune raison d'être égaux (un joueur non
+  // abonné est dans la liste et hors du compteur, un abonné qui n'a jamais joué
+  // l'inverse) — le libellé doit donc dire « abonnés », jamais « clients », et
+  // ce chiffre n'est en aucun cas le total de la liste filtrée.
+  const inactiveCount =
+    ((segmentData ?? [])[0] as { inactive_count?: number } | undefined)?.inactive_count ?? 0;
+  const params = customerSearchParams(filtres);
+  const exportQuery = new URLSearchParams(
+    Object.entries(params).filter((entry): entry is [string, string] => Boolean(entry[1])),
+  ).toString();
 
   return (
     <div>
@@ -62,22 +72,90 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         titre="Clients"
         sousTitre="Les joueurs identifiés lors d'un gain (coordonnées collectées)."
         actions={
-          inactiveCount > 0 ? (
-            <Link
-              href="/dashboard/newsletter"
-              className="text-sm font-semibold text-orange-600 hover:underline"
+          <div className="flex flex-wrap items-center gap-4">
+            <a
+              href={`/dashboard/customers/export${exportQuery ? `?${exportQuery}` : ""}`}
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
-              {inactiveCount} client{inactiveCount > 1 ? "s" : ""} à relancer →
-            </Link>
-          ) : null
+              Exporter en CSV
+            </a>
+            {inactiveCount > 0 && (
+              <Link
+                href="/dashboard/newsletter"
+                className="text-sm font-semibold text-k-orange-text hover:underline"
+              >
+                {inactiveCount} abonné{inactiveCount > 1 ? "s" : ""} newsletter à
+                relancer →
+              </Link>
+            )}
+          </div>
         }
       />
+
+      <form method="get" className="flex flex-wrap gap-3 mb-6">
+        <label className="sr-only" htmlFor="clients-q">
+          Rechercher un client
+        </label>
+        <input
+          id="clients-q"
+          name="q"
+          defaultValue={filtres.q ?? ""}
+          placeholder="Prénom, email ou téléphone…"
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-500"
+        />
+        <label className="sr-only" htmlFor="clients-segment">
+          Segment
+        </label>
+        <select
+          id="clients-segment"
+          name="segment"
+          defaultValue={filtres.segment ?? ""}
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+        >
+          <option value="">Tous les segments</option>
+          {SEGMENTS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <label className="sr-only" htmlFor="clients-tri">
+          Trier par
+        </label>
+        <select
+          id="clients-tri"
+          name="tri"
+          defaultValue={filtres.tri}
+          className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+        >
+          {TRIS.map((t) => (
+            <option key={t.value} value={t.value}>
+              Trier par : {t.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          className="rounded-lg bg-zinc-900 text-white text-sm font-semibold px-4 py-2.5 hover:bg-zinc-700"
+        >
+          Filtrer
+        </button>
+        {customerFiltersActifs(filtres) && (
+          <Link
+            href="/dashboard/customers"
+            className="self-center text-sm font-bold text-k-body hover:text-k-ink"
+          >
+            Réinitialiser
+          </Link>
+        )}
+      </form>
 
       {profiles.length === 0 ? (
         <Card className="text-center py-12">
           <p className="text-zinc-500">
-            Aucun client identifié pour l&apos;instant — dès qu&apos;un joueur
-            gagne et laisse son email, il apparaît ici.
+            {customerFiltersActifs(filtres)
+              ? "Aucun client ne correspond à ces filtres."
+              : "Aucun client identifié pour l'instant — dès qu'un joueur gagne et laisse son email, il apparaît ici."}
           </p>
         </Card>
       ) : (
@@ -94,7 +172,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ profile: p, segment: s }) => (
+              {rows.map(({ profile: p, badges }) => (
                 <tr key={p.email} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3">
                     <p className="font-medium text-zinc-900">{p.first_name || "—"}</p>
@@ -105,11 +183,16 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                   <td className="px-4 py-3 text-zinc-500">{formatDate(p.first_win, fuseau)}</td>
                   <td className="px-4 py-3 text-zinc-500">{formatDate(p.last_win, fuseau)}</td>
                   <td className="px-4 py-3">
-                    {s && (
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${s.className}`}>
-                        {s.label}
-                      </span>
-                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {badges.map((b) => (
+                        <span
+                          key={b.label}
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${b.className}`}
+                        >
+                          {b.label}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -117,7 +200,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           </table>
         </div>
       )}
-      <Pagination page={page} hasNext={totalCount > page * pageSize} />
+      <Pagination page={page} hasNext={totalCount > page * pageSize} params={params} />
     </div>
   );
 }

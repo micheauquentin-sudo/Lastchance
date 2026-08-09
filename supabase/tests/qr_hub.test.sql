@@ -31,10 +31,24 @@
 --  8. La pagination : `total_count` est le total AVANT limite, et le tri est
 --     total (trois clés) — sans départage, une ligne pourrait être vue deux fois
 --     ou jamais entre deux pages.
+--  9. `p_etat` NORMALISE des vocabulaires qui divergent (20260923120000). Les
+--     huit tables n'ont pas les mêmes statuts : `paused` n'existe QUE sur
+--     `campaigns`, `finished` QUE sur `contests`, et `termine` recouvre à la
+--     fois `archived` et `finished`. C'est pour cela que les fixtures portent
+--     une campagne EN PAUSE et un quiz ARCHIVÉ : sans ces deux lignes, les deux
+--     seules branches de mapping non triviales ne seraient jamais exécutées et
+--     le test verdirait sur sept `case` identiques.
+--     La colonne `status` doit rester le vocable BRUT — le front la mappe déjà.
+-- 10. `p_jamais_scanne` désigne EXACTEMENT l'ensemble que compte
+--     `org_animation_center_counts.qr_never_scanned`. L'assertion qui compte
+--     n'est pas « la liste rend 2 lignes » — elle est la COMPARAISON des deux
+--     fonctions sur les mêmes fixtures : si l'un des deux prédicats bouge seul,
+--     la tuile mènerait à une liste qui ne la confirme pas, et rien d'autre
+--     dans la suite ne le verrait.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(51);
+select plan(85);
 
 -- ════════════════════════════════════════════════════════════
 -- PRÉAMBULE — CATALOGUE ET ACL (ADR-082)
@@ -65,21 +79,24 @@ select is(
 
 select is(
   has_function_privilege('anon',
-    'public.org_qr_hub(uuid, text, text, integer, integer)', 'execute'),
+    'public.org_qr_hub(uuid, text, text, text, boolean, integer, integer)',
+    'execute'),
   false,
   'anon ne peut pas executer org_qr_hub'
 );
 
 select is(
   has_function_privilege('authenticated',
-    'public.org_qr_hub(uuid, text, text, integer, integer)', 'execute'),
+    'public.org_qr_hub(uuid, text, text, text, boolean, integer, integer)',
+    'execute'),
   true,
   'authenticated peut l''executer — la garde interne fait le reste'
 );
 
 select is(
   has_function_privilege('service_role',
-    'public.org_qr_hub(uuid, text, text, integer, integer)', 'execute'),
+    'public.org_qr_hub(uuid, text, text, text, boolean, integer, integer)',
+    'execute'),
   true,
   'service_role peut l''executer'
 );
@@ -141,18 +158,30 @@ insert into public.organization_members (organization_id, user_id, role) values
    'ab000000-0000-4000-8000-0000000000a3', 'cashier');
 -- `ab…a4` n'est membre de rien : le non-membre.
 
--- ── A · roue : DEUX campagnes, TROIS QR ─────────────────────
+-- ── A · roue : TROIS campagnes, QUATRE QR ───────────────────
 -- Une ligne par QR, pas par campagne : « Roue A » en porte deux (la vitrine et
 -- le comptoir), ce qui est le cas d'usage réel.
 -- « Promo 50% remise » porte le `%` littéral dont dépend le test d'échappement.
+--
+-- « Roue en pause » porte le SEUL statut `paused` du schéma : aucune des sept
+-- autres tables du hub ne connaît ce vocable, c'est donc la seule fixture qui
+-- puisse exercer la branche `paused → en_pause`. Elle est datée du 2026-08-31,
+-- soit AVANT toutes les autres, pour se ranger en fin de tri et laisser
+-- intactes les assertions de première page.
 insert into public.campaigns (id, organization_id, name, status, created_at) values
   ('ab000000-0000-4000-8000-000000000101',
    'ab000000-0000-4000-8000-000000000001', 'Roue A', 'active',
    '2026-09-13 10:00:00+00'),
   ('ab000000-0000-4000-8000-000000000102',
    'ab000000-0000-4000-8000-000000000001', 'Promo 50% remise', 'draft',
-   '2026-09-11 10:00:00+00');
+   '2026-09-11 10:00:00+00'),
+  ('ab000000-0000-4000-8000-000000000103',
+   'ab000000-0000-4000-8000-000000000001', 'Roue en pause', 'paused',
+   '2026-08-31 10:00:00+00');
 
+-- `tap-hub-pause` est le SECOND QR à zéro scan (avec « Comptoir ») : les deux
+-- ensemble font la liste que `p_jamais_scanne` doit rendre, et le nombre que
+-- `org_animation_center_counts.qr_never_scanned` doit compter.
 insert into public.qr_codes
   (id, organization_id, campaign_id, slug, label, scan_count, created_at) values
   ('ab000000-0000-4000-8000-000000000111',
@@ -166,9 +195,16 @@ insert into public.qr_codes
   ('ab000000-0000-4000-8000-000000000113',
    'ab000000-0000-4000-8000-000000000001',
    'ab000000-0000-4000-8000-000000000102',
-   'tap-hub-promo', 'Affiche promo', 3, '2026-09-11 10:00:00+00');
+   'tap-hub-promo', 'Affiche promo', 3, '2026-09-11 10:00:00+00'),
+  ('ab000000-0000-4000-8000-000000000114',
+   'ab000000-0000-4000-8000-000000000001',
+   'ab000000-0000-4000-8000-000000000103',
+   'tap-hub-pause', 'Affiche en pause', 0, '2026-08-31 10:00:00+00');
 
--- ── A · quiz : un publié (avec compteur), un brouillon ───────
+-- ── A · quiz : un publié (avec compteur), un brouillon, un archivé ──
+-- « Quiz archive » est la seule fixture `archived` du fichier : c'est elle qui
+-- prouve que `archived` et le `finished` des pronostics tombent bien tous deux
+-- sur `termine`, alors qu'aucune table ne porte les deux vocables.
 insert into public.quizzes
   (id, organization_id, name, status, public_slug, created_at) values
   ('ab000000-0000-4000-8000-000000000201',
@@ -176,7 +212,10 @@ insert into public.quizzes
    'tap-hub-quiz', '2026-09-10 10:00:00+00'),
   ('ab000000-0000-4000-8000-000000000202',
    'ab000000-0000-4000-8000-000000000001', 'Quiz brouillon', 'draft',
-   'tap-hub-quiz-brouillon', '2026-09-09 10:00:00+00');
+   'tap-hub-quiz-brouillon', '2026-09-09 10:00:00+00'),
+  ('ab000000-0000-4000-8000-000000000203',
+   'ab000000-0000-4000-8000-000000000001', 'Quiz archive', 'archived',
+   'tap-hub-quiz-archive', '2026-08-30 10:00:00+00');
 
 insert into public.module_page_opens
   (organization_id, module, resource_id, open_count) values
@@ -312,15 +351,17 @@ insert into public.quizzes
 -- Le résultat complet transite par un `jsonb` — un scalaire, donc une variable
 -- plpgsql ordinaire — puis est redéployé en lignes typées après `reset role`.
 -- ════════════════════════════════════════════════════════════
+-- `etat` est adossé à `status`, pas à sa place : les deux colonnes coexistent
+-- et le fichier assert les DEUX (le vocable brut ET sa normalisation).
 create temporary table tap_hub_a (
-  kind text, item_id uuid, name text, status text, url_path text,
+  kind text, item_id uuid, name text, status text, etat text, url_path text,
   open_count bigint, qr_id uuid, qr_slug text, qr_label text, qr_style jsonb,
   scan_count bigint, extra_count integer, created_at timestamptz,
   total_count bigint
 ) on commit drop;
 
 create temporary table tap_hub_b (
-  kind text, item_id uuid, name text, status text, url_path text,
+  kind text, item_id uuid, name text, status text, etat text, url_path text,
   open_count bigint, qr_id uuid, qr_slug text, qr_label text, qr_style jsonb,
   scan_count bigint, extra_count integer, created_at timestamptz,
   total_count bigint
@@ -332,8 +373,17 @@ create temporary table tap_hub_err (
 
 -- `premier` porte le `name` de la première ligne rendue : c'est ce qui permet
 -- d'asserter le TRI et l'absence de recouvrement entre deux pages.
+-- `kinds` et `scans` servent aux scénarios de `p_jamais_scanne` : ils disent
+-- respectivement quels types et quels compteurs de scan la page a rendus, ce
+-- qu'un simple compte de lignes ne dirait pas.
 create temporary table tap_hub_filtre (
-  cas text, n integer, total bigint, premier text
+  cas text, n integer, total bigint, premier text, kinds text, scans text
+) on commit drop;
+
+-- Relevé de la PARITÉ avec le Centre d'animation : une ligne, deux nombres qui
+-- doivent être égaux.
+create temporary table tap_hub_parite (
+  hub integer, tuile integer
 ) on commit drop;
 
 do $sonde$
@@ -351,12 +401,12 @@ begin
 
   select jsonb_agg(to_jsonb(t)) into v_a
     from public.org_qr_hub(
-      'ab000000-0000-4000-8000-000000000001', null, null, 100, 0) t;
+      'ab000000-0000-4000-8000-000000000001', null, null, null, false, 100, 0) t;
 
   -- ── Le même, chez B : refusé ──────────────────────────────
   begin
     perform 1 from public.org_qr_hub(
-      'ab000000-0000-4000-8000-000000000002', null, null, 100, 0);
+      'ab000000-0000-4000-8000-000000000002', null, null, null, false, 100, 0);
     v_err_ab := 'AUCUNE ERREUR — le hub du voisin est lisible';
   exception when others then
     v_err_ab := sqlerrm;
@@ -369,7 +419,7 @@ begin
     '{"role":"authenticated","sub":"ab000000-0000-4000-8000-0000000000a3"}', true);
   begin
     perform 1 from public.org_qr_hub(
-      'ab000000-0000-4000-8000-000000000001', null, null, 100, 0);
+      'ab000000-0000-4000-8000-000000000001', null, null, null, false, 100, 0);
     v_err_caissier := 'AUCUNE ERREUR — un caissier lit les slugs et statuts du patron';
   exception when others then
     v_err_caissier := sqlerrm;
@@ -380,7 +430,7 @@ begin
     '{"role":"authenticated","sub":"ab000000-0000-4000-8000-0000000000a4"}', true);
   begin
     perform 1 from public.org_qr_hub(
-      'ab000000-0000-4000-8000-000000000001', null, null, 100, 0);
+      'ab000000-0000-4000-8000-000000000001', null, null, null, false, 100, 0);
     v_err_inconnu := 'AUCUNE ERREUR — un non-membre lit le hub';
   exception when others then
     v_err_inconnu := sqlerrm;
@@ -391,7 +441,7 @@ begin
     '{"role":"authenticated","sub":"ab000000-0000-4000-8000-0000000000a2"}', true);
   select jsonb_agg(to_jsonb(t)) into v_b
     from public.org_qr_hub(
-      'ab000000-0000-4000-8000-000000000002', null, null, 100, 0) t;
+      'ab000000-0000-4000-8000-000000000002', null, null, null, false, 100, 0) t;
 
   -- ── Retour chez A pour les filtres et la pagination ───────
   perform set_config('request.jwt.claims',
@@ -421,6 +471,8 @@ declare
   v_n integer;
   v_total bigint;
   v_premier text;
+  v_kinds text;
+  v_scans text;
   v_scenario record;
   -- Même discipline que le bloc précédent : on ACCUMULE dans un scalaire jsonb
   -- et on n'écrit qu'après `reset role`. Une table temporaire de travail créée
@@ -434,28 +486,56 @@ begin
 
   for v_scenario in
     select * from (values
-      ('kind pronostics', 'pronostics', null::text,      100, 0),
-      ('kind campaign',   'campaign',   null,            100, 0),
-      ('kind inconnu',    'zzz',        null,            100, 0),
-      ('q sur nom',       null,         'Passeport',     100, 0),
-      ('q sur qr_label',  null,         'Vitrine',       100, 0),
-      ('q sur qr_slug',   null,         'tap-hub-promo', 100, 0),
-      ('q joker pourcent',null,         '%',             100, 0),
-      ('q joker souligne',null,         '_',             100, 0),
-      ('page 1',          null,         null,            5,   0),
-      ('page 3',          null,         null,            5,   10)
-    ) as s(cas, kind, q, lim, dep)
+      ('kind pronostics', 'pronostics', null::text,      null::text,   false, 100, 0),
+      ('kind campaign',   'campaign',   null,            null,         false, 100, 0),
+      ('kind inconnu',    'zzz',        null,            null,         false, 100, 0),
+      ('q sur nom',       null,         'Passeport',     null,         false, 100, 0),
+      ('q sur qr_label',  null,         'Vitrine',       null,         false, 100, 0),
+      ('q sur qr_slug',   null,         'tap-hub-promo', null,         false, 100, 0),
+      ('q joker pourcent',null,         '%',             null,         false, 100, 0),
+      ('q joker souligne',null,         '_',             null,         false, 100, 0),
+      ('page 1',          null,         null,            null,         false, 5,   0),
+      ('page 3',          null,         null,            null,         false, 5,   10),
+      -- ── `p_etat` : les quatre valeurs normalisées, plus le hors-vocabulaire
+      ('etat brouillon',  null,         null,            'brouillon',  false, 100, 0),
+      ('etat actif',      null,         null,            'actif',      false, 100, 0),
+      ('etat en_pause',   null,         null,            'en_pause',   false, 100, 0),
+      ('etat termine',    null,         null,            'termine',    false, 100, 0),
+      ('etat inconnu',    null,         null,            'zzz',        false, 100, 0),
+      -- Le vocable BRUT ne doit PAS être accepté par `p_etat` : c'est ce qui
+      -- distingue une vraie normalisation d'un `p_etat` qui laisserait passer
+      -- les deux et masquerait un mapping oublié sur une branche.
+      ('etat brut draft', null,         null,            'draft',      false, 100, 0),
+      -- Combinaisons : le filtre d'état s'ajoute aux autres, il ne les remplace pas.
+      ('etat+kind quiz',  'quiz',       null,            'termine',    false, 100, 0),
+      ('etat+kind campagne','campaign', null,            'brouillon',  false, 100, 0),
+      ('etat+q',          null,         'Pronos',        'termine',    false, 100, 0),
+      -- ── `p_jamais_scanne`
+      ('jamais scanne',   null,         null,            null,         true,  100, 0),
+      ('jamais scanne faux',null,       null,            null,         false, 100, 0),
+      -- Un module sans affiche ne peut pas être « jamais scanné » : la
+      -- combinaison doit rendre ZÉRO, pas la liste des quiz.
+      ('jamais+kind quiz','quiz',       null,            null,         true,  100, 0),
+      ('jamais+kind campagne','campaign',null,           null,         true,  100, 0),
+      ('jamais+q',        null,         'Comptoir',      null,         true,  100, 0),
+      ('jamais+etat actif',null,        null,            'actif',      true,  100, 0)
+    ) as s(cas, kind, q, etat, jamais, lim, dep)
   loop
     select count(*)::integer,
            max(t.total_count),
-           (array_agg(t.name order by t.created_at desc))[1]
-      into v_n, v_total, v_premier
+           (array_agg(t.name order by t.created_at desc))[1],
+           coalesce(string_agg(distinct t.kind, ',' order by t.kind), '(rien)'),
+           coalesce(string_agg(distinct t.scan_count::text, ','
+                               order by t.scan_count::text), '(rien)')
+      into v_n, v_total, v_premier, v_kinds, v_scans
       from public.org_qr_hub(
         'ab000000-0000-4000-8000-000000000001',
-        v_scenario.kind, v_scenario.q, v_scenario.lim, v_scenario.dep) t;
+        v_scenario.kind, v_scenario.q, v_scenario.etat, v_scenario.jamais,
+        v_scenario.lim, v_scenario.dep) t;
 
     v_releve := v_releve || jsonb_build_object(
-      'cas', v_scenario.cas, 'n', v_n, 'total', v_total, 'premier', v_premier);
+      'cas', v_scenario.cas, 'n', v_n, 'total', v_total, 'premier', v_premier,
+      'kinds', v_kinds, 'scans', v_scans);
   end loop;
 
   reset role;
@@ -465,6 +545,45 @@ begin
   select * from jsonb_populate_recordset(null::tap_hub_filtre, v_releve);
 end
 $filtres$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════
+-- LA PARITÉ AVEC LE CENTRE D'ANIMATION
+--
+-- Les deux fonctions sont interrogées SOUS LA MÊME IDENTITÉ et sur la MÊME
+-- organisation, dans le même bloc — c'est la condition pour que la comparaison
+-- prouve quelque chose. Toutes deux sont gardées par `is_org_editor`, donc
+-- l'éditeur de A les atteint l'une comme l'autre.
+--
+-- Ce qu'on compare : le NOMBRE DE LIGNES rendues par `p_jamais_scanne = true`
+-- et le compteur `qr_never_scanned` de la tuile. Les deux valent 2 sur ces
+-- fixtures (« Comptoir » et « Affiche en pause »), mais le chiffre importe
+-- moins que l'égalité : c'est elle qui casse le jour où l'un des deux
+-- prédicats bouge seul.
+-- ════════════════════════════════════════════════════════════
+do $parite$
+declare
+  v_hub integer;
+  v_tuile integer;
+begin
+  perform set_config('request.jwt.claims',
+    '{"role":"authenticated","sub":"ab000000-0000-4000-8000-0000000000a1"}', true);
+  set local role authenticated;
+
+  select count(*)::integer into v_hub
+    from public.org_qr_hub(
+      'ab000000-0000-4000-8000-000000000001', null, null, null, true, 100, 0) t;
+
+  select c.qr_never_scanned into v_tuile
+    from public.org_animation_center_counts(
+      'ab000000-0000-4000-8000-000000000001') c;
+
+  reset role;
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+  insert into tap_hub_parite (hub, tuile) values (v_hub, v_tuile);
+end
+$parite$;
 reset role;
 
 -- ════════════════════════════════════════════════════════════
@@ -508,14 +627,14 @@ select is(
 -- ════════════════════════════════════════════════════════════
 select is(
   (select count(*)::int from tap_hub_a),
-  13,
-  'A voit 13 lignes : 3 QR de roue + 2 quiz + 1 calendrier + 3 pronostics + 1 jackpot + 1 fidelite + 1 evenement + 1 chasse'
+  15,
+  'A voit 15 lignes : 4 QR de roue + 3 quiz + 1 calendrier + 3 pronostics + 1 jackpot + 1 fidelite + 1 evenement + 1 chasse'
 );
 
 select is(
   (select max(total_count) from tap_hub_a),
-  13::bigint,
-  'total_count vaut 13 sur chaque ligne — le total AVANT pagination'
+  15::bigint,
+  'total_count vaut 15 sur chaque ligne — le total AVANT pagination'
 );
 
 select is(
@@ -529,8 +648,8 @@ select is(
 -- ════════════════════════════════════════════════════════════
 select is(
   (select count(*)::int from tap_hub_a where kind = 'campaign'),
-  3,
-  'trois lignes de roue pour DEUX campagnes : une par QR'
+  4,
+  'quatre lignes de roue pour TROIS campagnes : une par QR'
 );
 
 select is(
@@ -688,8 +807,8 @@ select is(
 
 select is(
   (select n from tap_hub_filtre where cas = 'kind campaign'),
-  3,
-  'p_kind = campaign : les trois QR'
+  4,
+  'p_kind = campaign : les quatre QR'
 );
 
 select is(
@@ -746,14 +865,14 @@ select is(
 
 select is(
   (select total from tap_hub_filtre where cas = 'page 1'),
-  13::bigint,
-  'total_count reste 13 malgre la limite — c''est le total AVANT pagination'
+  15::bigint,
+  'total_count reste 15 malgre la limite — c''est le total AVANT pagination'
 );
 
 select is(
   (select n from tap_hub_filtre where cas = 'page 3'),
-  3,
-  'page 3 (offset 10) : les trois dernieres lignes'
+  5,
+  'page 3 (offset 10) : les cinq dernieres lignes'
 );
 
 select is(
@@ -766,6 +885,267 @@ select is(
   (select premier from tap_hub_filtre where cas = 'page 3'),
   'Passeport A',
   'la page 3 reprend ou la 2 s''arrete, sans recouvrement'
+);
+
+-- ════════════════════════════════════════════════════════════
+-- 9. `etat` — LA NORMALISATION, BRANCHE PAR BRANCHE
+--
+-- Le mapping est écrit huit fois dans la RPC, une par branche de l'union. Sept
+-- de ces huit sont identiques (`draft`/`active`/`archived`) ; les assertions
+-- qui comptent vraiment sont donc les DEUX autres, `paused` et `finished`, et
+-- elles n'existent chacune que sur UNE table. Un fichier qui ne les couvrirait
+-- pas verdirait sur un mapping recopié de travers.
+-- ════════════════════════════════════════════════════════════
+select is(
+  (select etat from tap_hub_a where qr_slug = 'tap-hub-roue-1'),
+  'actif',
+  'campagne active → etat actif'
+);
+
+select is(
+  (select etat from tap_hub_a where qr_slug = 'tap-hub-promo'),
+  'brouillon',
+  'campagne draft → etat brouillon'
+);
+
+-- LE cas propre à `campaigns` : aucune des sept autres tables ne connaît
+-- `paused`, c'est la seule ligne du fichier qui puisse exercer cette branche.
+select is(
+  (select etat from tap_hub_a where qr_slug = 'tap-hub-pause'),
+  'en_pause',
+  'campagne paused → etat en_pause (statut propre a campaigns)'
+);
+
+select is(
+  (select etat from tap_hub_a where name = 'Quiz publie'),
+  'actif',
+  'quiz active → etat actif'
+);
+
+select is(
+  (select etat from tap_hub_a where name = 'Quiz brouillon'),
+  'brouillon',
+  'quiz draft → etat brouillon'
+);
+
+select is(
+  (select etat from tap_hub_a where name = 'Quiz archive'),
+  'termine',
+  'quiz archived → etat termine'
+);
+
+select is(
+  (select etat from tap_hub_a where name = 'Pronos actif'),
+  'actif',
+  'pronostic active → etat actif'
+);
+
+-- L'AUTRE cas propre : `contests` est la seule table à porter `finished`, et
+-- elle n'a pas d'`archived`. Les deux vocables tombent sur `termine`, ce qui
+-- est tout l'intérêt de la normalisation — et tout son risque.
+select is(
+  (select etat from tap_hub_a where name = 'Pronos termine'),
+  'termine',
+  'pronostic finished → etat termine, comme archived ailleurs'
+);
+
+select is(
+  (select etat from tap_hub_a where name = 'Pronos brouillon'),
+  'brouillon',
+  'pronostic draft → etat brouillon'
+);
+
+select is(
+  (select string_agg(distinct kind || ':' || etat, ','
+                     order by kind || ':' || etat)
+     from tap_hub_a
+    where kind in ('calendar', 'jackpot', 'loyalty', 'event', 'hunt')),
+  'calendar:actif,event:actif,hunt:actif,jackpot:actif,loyalty:actif',
+  'les cinq branches restantes mappent active → actif'
+);
+
+-- `etat` s'AJOUTE, il ne remplace pas : le front mappe déjà `status` pour ses
+-- pastilles, et une normalisation qui écraserait le vocable brut casserait cet
+-- affichage sans qu'aucune autre assertion ne le voie.
+select is(
+  (select string_agg(status || '/' || etat, ' ' order by name)
+     from tap_hub_a
+    where name in ('Roue en pause', 'Pronos termine')),
+  'finished/termine paused/en_pause',
+  'status reste le vocable BRUT a cote de etat — les deux colonnes coexistent'
+);
+
+select is(
+  (select count(*)::int from tap_hub_a where etat is null),
+  0,
+  'aucune ligne ne sort avec un etat NULL — les huit branches mappent toutes'
+);
+
+-- Le vocabulaire est FERMÉ : les quatre valeurs sont présentes, et rien
+-- d'autre. Une branche qui laisserait fuir son vocable brut (`archived`,
+-- `finished`, `draft`) casserait ici, même si sa ligne était bien mappée
+-- ailleurs.
+select is(
+  (select string_agg(distinct etat, ',' order by etat) from tap_hub_a),
+  'actif,brouillon,en_pause,termine',
+  'le vocabulaire normalise est ferme : ces quatre valeurs, et aucune autre'
+);
+
+-- ════════════════════════════════════════════════════════════
+-- 10. `p_etat` — LE FILTRE
+-- ════════════════════════════════════════════════════════════
+select is(
+  (select n from tap_hub_filtre where cas = 'etat brouillon'),
+  3,
+  'p_etat = brouillon : le QR de la campagne draft + le quiz + le pronostic'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat actif'),
+  9,
+  'p_etat = actif : 2 QR de Roue A + quiz + calendrier + pronos + jackpot + fidelite + event + chasse'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat en_pause'),
+  1,
+  'p_etat = en_pause : la seule affiche de la campagne en pause'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat termine'),
+  2,
+  'p_etat = termine : le quiz ARCHIVE et le pronostic FINISHED, deux vocables pour un etat'
+);
+
+-- 3 + 9 + 1 + 2 = 15 : la partition est complete et sans recouvrement. Sans
+-- cette assertion, quatre filtres pourraient chacun rendre un sous-ensemble
+-- plausible tout en oubliant des lignes au passage.
+select is(
+  (select sum(n)::int from tap_hub_filtre
+    where cas in ('etat brouillon', 'etat actif', 'etat en_pause', 'etat termine')),
+  15,
+  'les quatre etats PARTITIONNENT les 15 lignes : aucune oubliee, aucune comptee deux fois'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat inconnu'),
+  0,
+  'un p_etat hors vocabulaire rend zero ligne, sans lever — comme p_kind'
+);
+
+-- La distinction que ce fichier doit protéger : `p_etat` prend le vocabulaire
+-- NORMALISÉ, jamais le brut. S'il acceptait « draft », la normalisation serait
+-- décorative et une branche non mappée passerait inaperçue.
+select is(
+  (select n from tap_hub_filtre where cas = 'etat brut draft'),
+  0,
+  'p_etat n''accepte PAS le vocable brut « draft » — il prend l''etat normalise'
+);
+
+select is(
+  (select total from tap_hub_filtre where cas = 'etat actif'),
+  9::bigint,
+  'total_count suit p_etat — il vaut 9, pas 15'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat+kind quiz'),
+  1,
+  'p_etat et p_kind se CUMULENT : quiz + termine = le seul quiz archive'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat+kind campagne'),
+  1,
+  'campaign + brouillon : l''affiche de « Promo 50% remise », pas les quatre QR'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'etat+q'),
+  1,
+  'p_etat et p_q se cumulent aussi : « Pronos » + termine = une seule ligne sur trois'
+);
+
+-- ════════════════════════════════════════════════════════════
+-- 11. `p_jamais_scanne`
+-- ════════════════════════════════════════════════════════════
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais scanne'),
+  2,
+  'p_jamais_scanne : « Comptoir » et « Affiche en pause », les deux QR a zero scan'
+);
+
+-- Les sept autres modules n'ont pas de `scan_count` : ils doivent disparaître
+-- ENTIÈREMENT, et pas seulement « ne pas gêner ».
+select is(
+  (select kinds from tap_hub_filtre where cas = 'jamais scanne'),
+  'campaign',
+  'p_jamais_scanne ne rend QUE des lignes campaign — les sept autres modules sortent'
+);
+
+select is(
+  (select scans from tap_hub_filtre where cas = 'jamais scanne'),
+  '0',
+  'toutes les lignes rendues ont scan_count = 0, aucune autre valeur'
+);
+
+-- Le contre-exemple sans lequel les trois assertions ci-dessus seraient
+-- indistinguables d'un filtre qui viderait tout : à faux, rien n'est filtré.
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais scanne faux'),
+  15,
+  'p_jamais_scanne = false ne filtre RIEN — les 15 lignes reviennent'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais+kind quiz'),
+  0,
+  'p_jamais_scanne + kind quiz : zero — un quiz n''a pas d''affiche a scanner'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais+kind campagne'),
+  2,
+  'p_jamais_scanne + kind campaign : les deux memes lignes, le kind est redondant'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais+q'),
+  1,
+  'p_jamais_scanne + p_q « Comptoir » : une seule des deux affiches a zero scan'
+);
+
+-- Les deux QR à zéro scan appartiennent à des campagnes d'états DIFFÉRENTS
+-- (« Roue A » active, « Roue en pause » en pause) : la combinaison prouve donc
+-- que les deux filtres se cumulent au lieu que l'un écrase l'autre.
+select is(
+  (select n from tap_hub_filtre where cas = 'jamais+etat actif'),
+  1,
+  'p_jamais_scanne + p_etat actif : « Comptoir » seul, « Affiche en pause » est en_pause'
+);
+
+-- ════════════════════════════════════════════════════════════
+-- 12. LA PARITÉ AVEC LA TUILE DU CENTRE D'ANIMATION
+--
+-- C'est l'assertion pour laquelle ce chantier existe : une tuile qui compte 2
+-- et une liste qui en montre 3 est un compteur menteur, et rien d'autre dans
+-- la suite ne verrait la divergence — les deux fonctions sont testées dans des
+-- fichiers séparés, sur des fixtures séparées, et resteraient vertes chacune
+-- de son côté.
+-- ════════════════════════════════════════════════════════════
+select is(
+  (select hub from tap_hub_parite),
+  (select tuile from tap_hub_parite),
+  'org_qr_hub(p_jamais_scanne) rend EXACTEMENT ce que qr_never_scanned compte'
+);
+
+-- Le contre-exemple indispensable : sans lui, « hub = tuile » verdirait sur
+-- 0 = 0, c'est-à-dire sur deux fonctions cassées de la même façon.
+select is(
+  (select tuile from tap_hub_parite),
+  2,
+  'et ce nombre commun vaut bien 2 — l''egalite ci-dessus n''est pas 0 = 0'
 );
 
 select * from finish();

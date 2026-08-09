@@ -11,9 +11,25 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { NewQuizForm } from "@/components/dashboard/new-quiz-form";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
+import { Pagination } from "@/components/dashboard/pagination";
+import {
+  couperPage,
+  litFiltresModule,
+  ModuleListAucunResultat,
+  ModuleListFilters,
+  paramsPagination,
+  type StatutModule,
+} from "@/components/dashboard/module-list-filters";
 import type { QuizStatus, QuizTheme } from "@/lib/quiz";
 
 export const metadata: Metadata = { title: "Quiz" };
+
+/** Le `check` de `quizzes.status` : trois valeurs, pas de `paused`. */
+const STATUTS: readonly StatutModule[] = [
+  { value: "draft", etat: "brouillon" },
+  { value: "active", etat: "ouverte" },
+  { value: "archived", etat: "cloturee" },
+];
 
 interface QuizListRow {
   id: string;
@@ -26,7 +42,12 @@ interface QuizListRow {
   created_at: string;
 }
 
-export default async function QuizListPage() {
+export default async function QuizListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; statut?: string; page?: string }>;
+}) {
+  const filtres = litFiltresModule(await searchParams, STATUTS);
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3).
@@ -34,21 +55,28 @@ export default async function QuizListPage() {
   if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
+  let requete = supabase
+    .from("quizzes")
+    .select(
+      "id, name, status, theme, reward_mode, reward_claimed_count, reward_stock, created_at",
+    )
+    .eq("organization_id", organization!.id)
+    .order("created_at", { ascending: false })
+    .range(filtres.from, filtres.to);
+  if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
+  if (filtres.statut) requete = requete.eq("status", filtres.statut);
+
   const [{ data: quizzes }, { data: questionRows }] = await Promise.all([
-    supabase
-      .from("quizzes")
-      .select(
-        "id, name, status, theme, reward_mode, reward_claimed_count, reward_stock, created_at",
-      )
-      .eq("organization_id", organization!.id)
-      .order("created_at", { ascending: false }),
+    requete,
     supabase
       .from("quiz_questions")
       .select("quiz_id")
       .eq("organization_id", organization!.id),
   ]);
 
-  const quizList = (quizzes ?? []) as QuizListRow[];
+  const { lignes: quizList, hasNext } = couperPage(
+    (quizzes ?? []) as QuizListRow[],
+  );
   const questionCounts = new Map<string, number>();
   for (const row of (questionRows ?? []) as Array<{ quiz_id: string }>) {
     questionCounts.set(row.quiz_id, (questionCounts.get(row.quiz_id) ?? 0) + 1);
@@ -69,19 +97,34 @@ export default async function QuizListPage() {
         classement public et remise en caisse.
       </ModuleCapabilityNotice>
 
+      <ModuleListFilters
+        idPrefix="quiz-filtre"
+        filtres={filtres}
+        statuts={STATUTS}
+        placeholder="Nom du quiz…"
+      />
+
       {!quizList.length ? (
         <Card className="text-center py-12">
-          <p className="text-zinc-500">
-            Aucun quiz pour l&apos;instant. Créez le premier !
-          </p>
-          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
-              cliquer laissait le seul bouton en haut d'écran, hors du regard
-              de celui qui vient de lire la phrase. */}
-          {capacites.canEditDraft ? (
-            <div className="mt-4 flex justify-center">
-              <NewQuizForm instanceId="-vide" />
-            </div>
-          ) : null}
+          {filtres.actif ? (
+            <ModuleListAucunResultat quoi="quiz" />
+          ) : (
+            <>
+              <p className="text-zinc-500">
+                Aucun quiz pour l&apos;instant. Créez le premier !
+              </p>
+              {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+                  cliquer laissait le seul bouton en haut d'écran, hors du
+                  regard de celui qui vient de lire la phrase. Il ne s'affiche
+                  PAS derrière un filtre : le module n'y est pas vide, il est
+                  masqué — proposer d'en créer un ferait naître un doublon. */}
+              {capacites.canEditDraft ? (
+                <div className="mt-4 flex justify-center">
+                  <NewQuizForm instanceId="-vide" />
+                </div>
+              ) : null}
+            </>
+          )}
         </Card>
       ) : (
         <ul className="space-y-3">
@@ -126,6 +169,11 @@ export default async function QuizListPage() {
           })}
         </ul>
       )}
+      <Pagination
+        page={filtres.page}
+        hasNext={hasNext}
+        params={paramsPagination(filtres)}
+      />
     </div>
   );
 }

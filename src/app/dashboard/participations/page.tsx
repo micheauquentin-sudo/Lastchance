@@ -3,13 +3,21 @@ import Link from "next/link";
 import { getUserAndOrg } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, sanitizeSearchTerm } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { CancelParticipationButton } from "@/components/dashboard/cancel-participation";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
+import {
+  STATUTS,
+  applyParticipationFilters,
+  parseParticipationFilters,
+  participationFiltresActifs,
+  participationSearchParams,
+  resolvePrizeIds,
+} from "./filters";
 
 export const metadata: Metadata = { title: "Participations" };
 
@@ -62,13 +70,20 @@ const isCodeExpired = (row: Pick<ParticipationRow, "redeem_expires_at">) =>
 export default async function ParticipationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campaign?: string; q?: string; statut?: string; page?: string }>;
+  searchParams: Promise<{
+    campaign?: string;
+    q?: string;
+    statut?: string;
+    du?: string;
+    au?: string;
+    lot?: string;
+    page?: string;
+  }>;
 }) {
-  const { campaign: campaignFilter, q, statut, page: rawPage } = await searchParams;
-  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const brut = await searchParams;
+  const page = Math.max(1, Number.parseInt(brut.page ?? "1", 10) || 1);
   const pageSize = 50;
-  const statusFilter =
-    statut === "a-valider" || statut === "recuperes" ? statut : undefined;
+  const filtres = parseParticipationFilters(brut);
   const { organization, role } = await getUserAndOrg();
   // Fuseau de l'établissement : sans lui, l'affichage retombe sur celui du
   // serveur (UTC en production) et montre souvent le mauvais jour.
@@ -76,7 +91,16 @@ export default async function ParticipationsPage({
   if (role !== "owner") redirect("/dashboard/redeem");
   const supabase = await createClient();
 
-  let query = supabase
+  // Le filtre porte sur le LIBELLÉ du lot — ce que le commerçant lit dans la
+  // colonne « Lot » — et un même libellé existe en autant de lignes `prizes`
+  // qu'il y a de roues : il faut donc résoudre ses identifiants avant de
+  // construire la requête. Une seule requête bornée, et seulement si le filtre
+  // est actif.
+  const prizeIds = filtres.lot
+    ? await resolvePrizeIds(supabase, organization!.id, filtres.lot)
+    : undefined;
+
+  const query = supabase
     .from("participations")
     .select(
       "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, redeem_expires_at, cancelled_at, basket_cents, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
@@ -85,18 +109,9 @@ export default async function ParticipationsPage({
     .eq("organization_id", organization!.id)
     .order("created_at", { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
-
-  if (campaignFilter) query = query.eq("campaign_id", campaignFilter);
-  if (q) {
-    const term = sanitizeSearchTerm(q);
-    if (term) {
-      query = query.or(
-        `redeem_code.ilike.%${term}%,first_name.ilike.%${term}%,email.ilike.%${term}%`,
-      );
-    }
-  }
-  if (statusFilter === "a-valider") query = query.is("redeemed_at", null);
-  if (statusFilter === "recuperes") query = query.not("redeemed_at", "is", null);
+  // Effet de bord assumé : le builder PostgREST mute et se rend lui-même (voir
+  // le commentaire d'`applyParticipationFilters`). `query` reste la requête.
+  applyParticipationFilters(query, filtres, fuseau, prizeIds);
 
   // Les requêtes sont indépendantes : un seul aller-retour de latence.
   const [
@@ -104,6 +119,7 @@ export default async function ParticipationsPage({
     { data, count },
     { count: newsletterCount },
     { data: funnelRows },
+    { data: lotRows },
   ] = await Promise.all([
     supabase
       .from("campaigns")
@@ -121,10 +137,30 @@ export default async function ParticipationsPage({
       p_organization_id: organization!.id,
       p_days: 30,
     }),
+    // Libellés de lots proposés au filtre. Un SELECT de libellés, borné et
+    // dédoublonné côté client — et non un champ texte libre : le commerçant
+    // choisit dans ce qu'il a créé, il ne devine pas l'orthographe exacte. Le
+    // volume le permet (un lot par segment de roue, quelques dizaines de
+    // lignes) ; la borne de 500 est là pour l'organisation pathologique, qui
+    // verra une liste tronquée plutôt qu'une page lente.
+    supabase
+      .from("prizes")
+      .select("label")
+      .eq("organization_id", organization!.id)
+      .order("label", { ascending: true })
+      .limit(500),
   ]);
 
   const rows = (data ?? []) as unknown as ParticipationRow[];
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
+  const lotLabels = [...new Set((lotRows ?? []).map((p) => p.label))];
+  // L'export reprend les filtres de l'écran : sans eux, le lien « Exporter en
+  // CSV » posé sous une liste filtrée rendait un fichier de TOUT, sans le dire.
+  const exportQuery = new URLSearchParams(
+    Object.entries(participationSearchParams(filtres)).filter(
+      (entry): entry is [string, string] => Boolean(entry[1]),
+    ),
+  ).toString();
   const funnel = ((funnelRows ?? []) as FunnelRow[])[0] ?? null;
   // Un caissier n'a pas accès aux montants : la RPC les rend `null`. On masque
   // alors la tuile économique au lieu d'afficher un « 0,00 € » trompeur.
@@ -150,7 +186,7 @@ export default async function ParticipationsPage({
         sousTitre="Vérifiez un code et validez la remise du gain."
         actions={
           <a
-            href="/dashboard/participations/export"
+            href={`/dashboard/participations/export${exportQuery ? `?${exportQuery}` : ""}`}
             className="text-sm font-semibold text-orange-600 hover:underline"
           >
             Exporter en CSV
@@ -236,25 +272,40 @@ export default async function ParticipationsPage({
         </Card>
       )}
 
-      <form method="get" className="flex flex-wrap gap-3 mb-6">
+      <form method="get" className="flex flex-wrap items-center gap-3 mb-6">
+        <label className="sr-only" htmlFor="parts-q">
+          Rechercher une participation
+        </label>
         <input
+          id="parts-q"
           name="q"
-          defaultValue={q ?? ""}
+          defaultValue={filtres.q ?? ""}
           placeholder="Code, prénom ou email…"
           className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
+        <label className="sr-only" htmlFor="parts-statut">
+          Statut
+        </label>
         <select
+          id="parts-statut"
           name="statut"
-          defaultValue={statusFilter ?? ""}
+          defaultValue={filtres.statut ?? ""}
           className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           <option value="">Tous les statuts</option>
-          <option value="a-valider">À valider</option>
-          <option value="recuperes">Récupérés</option>
+          {STATUTS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
         </select>
+        <label className="sr-only" htmlFor="parts-campaign">
+          Campagne
+        </label>
         <select
+          id="parts-campaign"
           name="campaign"
-          defaultValue={campaignFilter ?? ""}
+          defaultValue={filtres.campaign ?? ""}
           className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           <option value="">Toutes les campagnes</option>
@@ -264,13 +315,51 @@ export default async function ParticipationsPage({
             </option>
           ))}
         </select>
+        {lotLabels.length > 0 && (
+          <>
+            <label className="sr-only" htmlFor="parts-lot">
+              Lot
+            </label>
+            <select
+              id="parts-lot"
+              name="lot"
+              defaultValue={filtres.lot ?? ""}
+              className="rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="">Tous les lots</option>
+              {lotLabels.map((label) => (
+                <option key={label} value={label}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
+        <span className="flex items-center gap-2 text-sm text-zinc-500">
+          <label htmlFor="parts-du">Du</label>
+          <input
+            id="parts-du"
+            type="date"
+            name="du"
+            defaultValue={filtres.du ?? ""}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+          <label htmlFor="parts-au">au</label>
+          <input
+            id="parts-au"
+            type="date"
+            name="au"
+            defaultValue={filtres.au ?? ""}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+        </span>
         <button
           type="submit"
           className="rounded-lg bg-zinc-900 text-white text-sm font-semibold px-4 py-2.5 hover:bg-zinc-700"
         >
           Filtrer
         </button>
-        {(q || campaignFilter || statusFilter) && (
+        {participationFiltresActifs(filtres) && (
           <Link
             href="/dashboard/participations"
             className="self-center text-sm text-zinc-500 hover:text-zinc-900"
@@ -361,7 +450,7 @@ export default async function ParticipationsPage({
       <Pagination
         page={page}
         hasNext={(count ?? 0) > page * pageSize}
-        params={{ campaign: campaignFilter, q, statut: statusFilter }}
+        params={participationSearchParams(filtres)}
       />
     </div>
   );

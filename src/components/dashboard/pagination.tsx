@@ -20,7 +20,11 @@ export function Pagination({
   return (
     <nav aria-label="Pagination" className="mt-6 flex items-center justify-between gap-4">
       {page > 1 ? <Link href={href(page - 1)} className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold hover:border-orange-300">← Précédent</Link> : <span />}
-      <span className="text-sm text-zinc-500">Page {page}</span>
+      {/* `text-k-body` : ces contrôles vivent sur le crème `k-bg` (#fdf6e3),
+          où `text-zinc-500` (#71717a) tombe à ~4,4:1 — sous le seuil AA. Le
+          défaut était latent tant que la pagination ne s'affichait que sur
+          deux écrans ; sept listes de modules la portent désormais. */}
+      <span className="text-sm font-bold text-k-body">Page {page}</span>
       {hasNext ? <Link href={href(page + 1)} className="rounded-lg border bg-white px-4 py-2 text-sm font-semibold hover:border-orange-300">Suivant →</Link> : <span />}
     </nav>
   );
