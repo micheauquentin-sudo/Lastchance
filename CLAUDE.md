@@ -140,7 +140,10 @@ Docker — l'exécuter.
 12. **Jamais deux runs Vitest concurrents sur le même arbre Windows**
     (2026-08-09) — cache `.vite` corrompu : **261 fichiers « no tests »**
     alors que la suite est verte isolément. Un seul run à la fois sur cet
-    arbre ; en parallèle, utiliser la copie WSL.
+    arbre ; en parallèle, utiliser la copie WSL. Le symptôme est réapparu
+    le 2026-08-09 après-midi **sans run concurrent** : au moindre
+    « no tests », purger `node_modules/.vite` et rejouer avant de conclure
+    quoi que ce soit sur l'état de la suite.
 
 ### Commandes de référence
 
@@ -282,8 +285,8 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-08-09
-- **Dernier chantier**: **Sept retours propriétaire** (PR #136 **fusionnée en squash `de3ccd2` et déployée** — CI de la PR verte, puis CI `main` et « Santé après déploiement » verts sur ce SHA —, sans migration), 2026-08-09. Sept demandes ponctuelles après test à la main de V1.53. **Retrait complet des décors SVG flottants** : `ThemeDecor` supprimé (945 l. + test, champ `decor` retiré des 3 tables de tokens et des presets) — inversion partielle assumée d'ADR-093, les fonds image V1.53 les rendaient redondants. **18 presets en deux familles** dans Habillage : « Ambiances » (8, n'écrasent plus le fond choisi) et « Univers » (10 nouveaux, posent couleurs ET fond, porté par le style, pas le preset). **QR habillé comme le jeu** : `src/lib/qr-style-du-jeu.ts` dérive 100 % serveur le style d'un QR créé depuis la page du jeu, libellé prérempli. « Progression » → **« Missions & coffres »** (🗝️), déplacée vers la fin de « Vos animations ». Zone dangereuse et Partage/parrainage rentrent dans une Card unique par tuile. Page QR codes : recherche + filtre campagne + Réinitialiser. Bouton « 🛠️ Modifier dans l'atelier » sur les 8 tuiles Statut. Revue sécurité dédiée : GO, 2 INFO sans action. Preuve : typecheck 0, lint 0, Vitest **261 fichiers / 4128 tests**, build vert, aucune migration (tête `20260921120000`), E2E WSL 60+ tests verts. ADR-099, roadmap V1.54.
-  **Reste ouvert** : 2 INFO dans `docs/bugs.md`. Deux gestes propriétaire : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
+- **Dernier chantier**: **Correctif V1.54.1 — bouton « Voir le jeu »** (branche `chantier/bouton-voir-le-jeu`, commit `2dfe831`, PR à ouvrir, sans migration), 2026-08-09. Demande propriétaire immédiate après V1.54 : accéder au jeu côté joueur depuis le haut de la page. Composant frère `VoirLeJeu` dans `src/components/dashboard/atelier-raccourci.tsx` — bouton « 👀 Voir le jeu » à côté de « 🛠️ Modifier dans l'atelier » dans les 8 tuiles Statut, masqué tant que le jeu n'est pas accessible ; les 8 pages passent `hrefJeu` = leur lien `apercu` existant (aucune règle recalculée) ; roue = `/play/<slug>` du premier QR. Pas de revue sécurité : rien d'auth/RLS/public/webhook/token touché (décision explicite). Preuve : typecheck 0, lint 0, Vitest **261 fichiers / 4131 tests**, build vert, E2E WSL atelier-modules + campaign-templates 26 passed / 3 skipped. Roadmap V1.54.1.
+  **Reste ouvert** : PR à ouvrir vers `main`, fusion sur l'ordre permanent dès CI verte. Deux gestes propriétaire hérités : révoquer la clé `rk_live_` et le jeton de contournement Vercel.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

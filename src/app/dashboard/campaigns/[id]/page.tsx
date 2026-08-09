@@ -265,7 +265,15 @@ export default async function CampaignDetailPage({
       )}
 
       <div id="statut" className="mb-6 scroll-mt-24">
-        <CampaignStatusControls campaign={c} wheelId={roueVisee?.id ?? null} />
+        <CampaignStatusControls
+          campaign={c}
+          wheelId={roueVisee?.id ?? null}
+          // Une campagne n'a pas d'URL publique à elle : le joueur entre par un
+          // QR. On ouvre donc le PREMIER de la liste déjà chargée (la plus
+          // récente d'abord, même ordre que le bloc QR ci-dessous) ; sans QR,
+          // il n'y a encore aucune porte à montrer.
+          hrefJeu={qrCodes[0] ? `${APP_URL}/play/${qrCodes[0].slug}` : null}
+        />
       </div>
 
       {/* La Carte de l'Aventure vient APRÈS le statut : ce qui décide de

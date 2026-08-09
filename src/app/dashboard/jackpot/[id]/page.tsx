@@ -208,7 +208,10 @@ export default async function JackpotDetailPage({
               replié, Carte de l'Aventure et porte de l'atelier comprises.
               L'ancre rouvre le bloc qu'elle vise (voir `carte-repliable.tsx`). */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
-            <JackpotStatusControls campaign={c} />
+            <JackpotStatusControls
+              campaign={c}
+              hrefJeu={c.status === "active" ? publicUrl : null}
+            />
           </CarteRepliable>
 
           <CarteAventure steps={etapesAventure} conclusion={conclusion} />

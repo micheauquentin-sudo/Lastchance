@@ -432,7 +432,10 @@ export default async function QuizDetailPage({
               : "Brouillon : la page publique reste fermée."
         }
       >
-        <QuizStatusControls quiz={quiz} />
+        <QuizStatusControls
+          quiz={quiz}
+          hrefJeu={quiz.status === "active" ? publicUrl : null}
+        />
       </CarteRepliable>
 
       <CarteAventure steps={etapes} conclusion={conclusion} />

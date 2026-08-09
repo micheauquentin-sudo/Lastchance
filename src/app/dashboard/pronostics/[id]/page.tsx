@@ -524,7 +524,10 @@ export default async function ContestDetailPage({
       {/* OUVERT : c'est le geste de publication, et la Carte de l'Aventure y
           renvoie. Seul bloc de la page à le rester. */}
       <CarteRepliable {...bloc("statut")}>
-        <ContestStatusControls contest={c} />
+        <ContestStatusControls
+          contest={c}
+          hrefJeu={c.status !== "draft" ? publicUrl : null}
+        />
       </CarteRepliable>
 
       <CarteAventure steps={etapes} conclusion={conclusion} />

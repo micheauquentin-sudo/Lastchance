@@ -17,7 +17,7 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeFidelite } from "@/components/dashboard/atelier-loyalty-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
@@ -841,9 +841,12 @@ function AddMilestoneForm({
 export function LoyaltyStatusControls({
   program,
   milestoneCount,
+  hrefJeu = null,
 }: {
   program: LoyaltyProgram;
   milestoneCount: number;
+  /** Page publique du passeport, `null` tant qu'il n'est pas ouvert. */
+  hrefJeu?: string | null;
 }) {
   // Les deux formulaires de statut sont MUTUELLEMENT EXCLUSIFS (« Ouvrir aux joueurs » ou
   // « Clôturer », jamais les deux montés ensemble) : un seul jeu d'état suffit.
@@ -908,8 +911,9 @@ export function LoyaltyStatusControls({
           Pour ouvrir aux joueurs, ajoutez au moins un palier.
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeFidelite(program.id, "programme")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
