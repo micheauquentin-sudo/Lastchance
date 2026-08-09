@@ -34,11 +34,27 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(50);
+select plan(51);
 
 -- ════════════════════════════════════════════════════════════
 -- PRÉAMBULE — CATALOGUE ET ACL (ADR-082)
 -- ════════════════════════════════════════════════════════════
+-- `security definer` est la PRÉMISSE de tout le reste de ce fichier : c'est lui
+-- qui fait tomber la RLS des onze tables lues, donc lui qui rend la garde
+-- `is_org_editor` nécessaire plutôt que décorative. Si la fonction repassait un
+-- jour en `security invoker`, le refus du caissier (assertion 8) verdirait
+-- encore — mais pour une raison entièrement différente, la RLS le bloquant à la
+-- place de la garde — et l'on perdrait sans le voir la couverture du cas qui
+-- compte. On lit donc la porte dans le catalogue, comme le jumeau
+-- `animation_center_counts.test.sql`.
+select is(
+  (select p.prosecdef from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'org_qr_hub'),
+  true,
+  'org_qr_hub est security definer'
+);
+
 select is(
   (select pg_catalog.array_to_string(p.proconfig, ',') from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
