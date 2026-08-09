@@ -255,6 +255,50 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     // Repeint au clic, sans avoir rien enregistré.
     await expect(fondApercu).toHaveAttribute("data-fond", "noel");
   });
+
+  /**
+   * LES DEUX MOITIÉS DE LA RÈGLE DES PRESETS, dans un seul parcours.
+   *
+   * Un UNIVERS pose son fond d'écran en même temps que ses couleurs — c'est
+   * ce que sa légende promet au commerçant, et rien d'autre ne le vérifie
+   * (les tests unitaires lisent la table, pas l'écran).
+   *
+   * Une AMBIANCE, cliquée ensuite, ne doit PAS l'effacer. C'était le défaut :
+   * `setStyle(preset)` nu supprimait `fond` puisque les ambiances n'en
+   * portent pas. Le commerçant perdait sa photo sur un clic de curiosité,
+   * sans un mot. L'ordre des deux clics EST le test.
+   */
+  test("étape « L'habillage » : un univers pose son fond, une ambiance ne l'efface pas", async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      !testInfo.project.name.startsWith("mobile"),
+      "Interaction d'éditeur, un seul contexte suffit",
+    );
+
+    await page.goto(
+      `/dashboard/campaigns/${CAMPAIGN_GAGNANTE}/wheel?wheel=${WHEEL_GAGNANTE}&etape=habillage`,
+    );
+
+    const univers = page.getByRole("group", { name: "Univers" });
+    const ambiances = page.getByRole("group", { name: "Ambiances" });
+    const fondApercu = page.locator("[data-apercu='accueil-jeu'] [data-fond]");
+
+    await expect(fondApercu).toHaveCount(0);
+
+    await univers.getByRole("button", { name: "Football" }).click();
+    await expect(fondApercu).toHaveAttribute("data-fond", "football");
+    await expect(
+      univers.getByRole("button", { name: "Football" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // Une ambiance change les couleurs et LAISSE l'image en place. Le style
+    // est « sale » depuis le premier clic : la confirmation d'écrasement est
+    // acceptée, sinon le second clic ne ferait rien du tout.
+    page.once("dialog", (d) => d.accept());
+    await ambiances.getByRole("button", { name: "Néon" }).click();
+    await expect(fondApercu).toHaveAttribute("data-fond", "football");
+  });
 });
 
 test.describe("Atelier du jeu — création d'une campagne", () => {
