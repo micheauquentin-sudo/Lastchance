@@ -10,6 +10,14 @@ import type { QrStyle } from "@/types/database";
 /**
  * Carte d'un QR code : vignette fidèle au style enregistré, stats et
  * actions. « Personnaliser » ouvre le studio QR (fenêtre dédiée).
+ *
+ * LES ORANGES SONT DES `k-orange-text`, PAS DES `k-orange` — le premier scan
+ * axe de cette page (spec `qr-hub`) a levé 40 nœuds `color-contrast` en
+ * `serious`, tous ici : `#f5793b` sur blanc plafonne à ~2,5:1 et
+ * `text-zinc-400` à ~2,3:1. Le token `--color-k-orange-text` (#b45309) existe
+ * dans `globals.css` depuis longtemps pour exactement ce cas, et le reste du
+ * dashboard l'emploie déjà ; cette carte était simplement restée en arrière,
+ * jamais scannée parce que la page qui la porte ne l'était pas.
  */
 export function QrCodeCard({
   id,
@@ -71,7 +79,7 @@ export function QrCodeCard({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 truncate text-xs font-bold text-k-orange hover:underline"
+            className="mt-1 truncate text-xs font-bold text-k-orange-text hover:underline"
           >
             {url}
           </a>
@@ -81,7 +89,7 @@ export function QrCodeCard({
               est livrée), le mot affiché non — un commerçant qui lit « 40
               scans » croit à 40 personnes devant sa vitrine. */}
           <p
-            className="mt-1 text-xs font-bold text-zinc-400"
+            className="mt-1 text-xs font-bold text-zinc-500"
             title="Chaque chargement de la page compte, y compris un rechargement ou un lien partagé : ce n'est pas un nombre de visiteurs distincts."
           >
             {scanCount} ouverture{scanCount > 1 ? "s" : ""}
@@ -99,7 +107,7 @@ export function QrCodeCard({
                 href={posterHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-bold text-k-orange hover:underline"
+                className="text-sm font-bold text-k-orange-text hover:underline"
               >
                 Créer l&apos;affiche
               </a>
@@ -109,7 +117,7 @@ export function QrCodeCard({
                 href={testHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm font-bold text-k-orange hover:underline"
+                className="text-sm font-bold text-k-orange-text hover:underline"
               >
                 Tester les styles
               </a>
@@ -117,7 +125,7 @@ export function QrCodeCard({
             <button
               type="button"
               onClick={handleDownload}
-              className="text-sm font-bold text-k-orange hover:underline"
+              className="text-sm font-bold text-k-orange-text hover:underline"
             >
               Télécharger PNG
             </button>
