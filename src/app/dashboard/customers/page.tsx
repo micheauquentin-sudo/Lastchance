@@ -75,14 +75,14 @@ export default async function CustomersPage({
           <div className="flex flex-wrap items-center gap-4">
             <a
               href={`/dashboard/customers/export${exportQuery ? `?${exportQuery}` : ""}`}
-              className="text-sm font-semibold text-orange-600 hover:underline"
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
               Exporter en CSV
             </a>
             {inactiveCount > 0 && (
               <Link
                 href="/dashboard/newsletter"
-                className="text-sm font-semibold text-orange-600 hover:underline"
+                className="text-sm font-semibold text-k-orange-text hover:underline"
               >
                 {inactiveCount} abonné{inactiveCount > 1 ? "s" : ""} newsletter à
                 relancer →
@@ -143,7 +143,7 @@ export default async function CustomersPage({
         {customerFiltersActifs(filtres) && (
           <Link
             href="/dashboard/customers"
-            className="self-center text-sm text-zinc-500 hover:text-zinc-900"
+            className="self-center text-sm font-bold text-k-body hover:text-k-ink"
           >
             Réinitialiser
           </Link>
