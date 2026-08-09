@@ -11,9 +11,25 @@ import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewCalendarForm } from "@/components/dashboard/new-calendar-form";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
+import { Pagination } from "@/components/dashboard/pagination";
+import {
+  couperPage,
+  litFiltresModule,
+  ModuleListAucunResultat,
+  ModuleListFilters,
+  paramsPagination,
+  type StatutModule,
+} from "@/components/dashboard/module-list-filters";
 import type { Calendar } from "@/types/database";
 
 export const metadata: Metadata = { title: "Calendrier" };
+
+/** Le `check` de `calendars.status` : trois valeurs, pas de `paused`. */
+const STATUTS: readonly StatutModule[] = [
+  { value: "draft", etat: "brouillon" },
+  { value: "active", etat: "ouverte" },
+  { value: "archived", etat: "cloturee" },
+];
 
 type CalendarRow = Pick<
   Calendar,
@@ -27,7 +43,12 @@ type CalendarRow = Pick<
   | "created_at"
 >;
 
-export default async function CalendarListPage() {
+export default async function CalendarListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; statut?: string; page?: string }>;
+}) {
+  const filtres = litFiltresModule(await searchParams, STATUTS);
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3) : la page ne se referme plus
@@ -37,15 +58,21 @@ export default async function CalendarListPage() {
   if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
-  const { data: calendars } = await supabase
+  let requete = supabase
     .from("calendars")
     .select(
       "id, name, status, theme, day_count, completion_reward_claimed_count, completion_reward_stock, created_at",
     )
     .eq("organization_id", organization!.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(filtres.from, filtres.to);
+  if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
+  if (filtres.statut) requete = requete.eq("status", filtres.statut);
+  const { data: calendars } = await requete;
 
-  const calendarList = (calendars ?? []) as CalendarRow[];
+  const { lignes: calendarList, hasNext } = couperPage(
+    (calendars ?? []) as CalendarRow[],
+  );
 
   return (
     <div>
@@ -61,19 +88,32 @@ export default async function CalendarListPage() {
         d&apos;assiduité et page installable par vos clients.
       </ModuleCapabilityNotice>
 
+      <ModuleListFilters
+        idPrefix="calendar-filtre"
+        filtres={filtres}
+        statuts={STATUTS}
+        placeholder="Nom du calendrier…"
+      />
+
       {!calendarList.length ? (
         <Card className="text-center py-12">
-          <p className="text-zinc-500">
-            Aucun calendrier pour l&apos;instant. Créez le premier !
-          </p>
-          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
-              cliquer laissait le seul bouton en haut d'écran, hors du regard
-              de celui qui vient de lire la phrase. */}
-          {capacites.canEditDraft ? (
-            <div className="mt-4 flex justify-center">
-              <NewCalendarForm instanceId="-vide" />
-            </div>
-          ) : null}
+          {filtres.actif ? (
+            <ModuleListAucunResultat quoi="calendrier" />
+          ) : (
+            <>
+              <p className="text-zinc-500">
+                Aucun calendrier pour l&apos;instant. Créez le premier !
+              </p>
+              {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+                  cliquer laissait le seul bouton en haut d'écran, hors du
+                  regard de celui qui vient de lire la phrase. */}
+              {capacites.canEditDraft ? (
+                <div className="mt-4 flex justify-center">
+                  <NewCalendarForm instanceId="-vide" />
+                </div>
+              ) : null}
+            </>
+          )}
         </Card>
       ) : (
         <ul className="space-y-3">
@@ -116,6 +156,11 @@ export default async function CalendarListPage() {
           })}
         </ul>
       )}
+      <Pagination
+        page={filtres.page}
+        hasNext={hasNext}
+        params={paramsPagination(filtres)}
+      />
     </div>
   );
 }

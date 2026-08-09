@@ -10,9 +10,25 @@ import { PageHeader } from "@/components/ui/page-header";
 import { JackpotStatusBadge } from "@/components/dashboard/jackpot-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewJackpotForm } from "@/components/dashboard/new-jackpot-form";
+import { Pagination } from "@/components/dashboard/pagination";
+import {
+  couperPage,
+  litFiltresModule,
+  ModuleListAucunResultat,
+  ModuleListFilters,
+  paramsPagination,
+  type StatutModule,
+} from "@/components/dashboard/module-list-filters";
 import type { JackpotCampaign } from "@/types/database";
 
 export const metadata: Metadata = { title: "Jackpot collectif" };
+
+/** Le `check` de `jackpot_campaigns.status` : trois valeurs, pas de `paused`. */
+const STATUTS: readonly StatutModule[] = [
+  { value: "draft", etat: "brouillon" },
+  { value: "active", etat: "ouverte" },
+  { value: "archived", etat: "cloturee" },
+];
 
 const MODE_LABEL = {
   rotating_code: "Code au comptoir",
@@ -32,7 +48,12 @@ type CampaignRow = Pick<
   | "created_at"
 >;
 
-export default async function JackpotPage() {
+export default async function JackpotPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; statut?: string; page?: string }>;
+}) {
+  const filtres = litFiltresModule(await searchParams, STATUTS);
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3).
@@ -40,15 +61,21 @@ export default async function JackpotPage() {
   if (!capacites.canExplore) notFound();
 
   const supabase = await createClient();
-  const { data: campaigns } = await supabase
+  let requete = supabase
     .from("jackpot_campaigns")
     .select(
       "id, name, status, validation_mode, current_count, threshold, reward_claimed_count, reward_stock, created_at",
     )
     .eq("organization_id", organization!.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .range(filtres.from, filtres.to);
+  if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
+  if (filtres.statut) requete = requete.eq("status", filtres.statut);
+  const { data: campaigns } = await requete;
 
-  const campaignList = (campaigns ?? []) as CampaignRow[];
+  const { lignes: campaignList, hasNext } = couperPage(
+    (campaigns ?? []) as CampaignRow[],
+  );
 
   return (
     <div>
@@ -64,19 +91,32 @@ export default async function JackpotPage() {
         fini et montant d&apos;affichage croissant personnalisables.
       </ModuleCapabilityNotice>
 
+      <ModuleListFilters
+        idPrefix="jackpot-filtre"
+        filtres={filtres}
+        statuts={STATUTS}
+        placeholder="Nom du jackpot…"
+      />
+
       {!campaignList.length ? (
         <Card className="text-center py-12">
-          <p className="text-zinc-500">
-            Aucun jackpot pour l&apos;instant. Créez le premier !
-          </p>
-          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
-              cliquer laissait le seul bouton en haut d'écran, hors du regard
-              de celui qui vient de lire la phrase. */}
-          {capacites.canEditDraft ? (
-            <div className="mt-4 flex justify-center">
-              <NewJackpotForm instanceId="-vide" />
-            </div>
-          ) : null}
+          {filtres.actif ? (
+            <ModuleListAucunResultat quoi="jackpot" />
+          ) : (
+            <>
+              <p className="text-zinc-500">
+                Aucun jackpot pour l&apos;instant. Créez le premier !
+              </p>
+              {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+                  cliquer laissait le seul bouton en haut d'écran, hors du
+                  regard de celui qui vient de lire la phrase. */}
+              {capacites.canEditDraft ? (
+                <div className="mt-4 flex justify-center">
+                  <NewJackpotForm instanceId="-vide" />
+                </div>
+              ) : null}
+            </>
+          )}
         </Card>
       ) : (
         <ul className="space-y-3">
@@ -126,6 +166,11 @@ export default async function JackpotPage() {
           })}
         </ul>
       )}
+      <Pagination
+        page={filtres.page}
+        hasNext={hasNext}
+        params={paramsPagination(filtres)}
+      />
     </div>
   );
 }

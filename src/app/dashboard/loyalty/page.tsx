@@ -10,16 +10,37 @@ import { PageHeader } from "@/components/ui/page-header";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewLoyaltyForm } from "@/components/dashboard/new-loyalty-form";
+import { Pagination } from "@/components/dashboard/pagination";
+import {
+  couperPage,
+  litFiltresModule,
+  ModuleListAucunResultat,
+  ModuleListFilters,
+  paramsPagination,
+  type StatutModule,
+} from "@/components/dashboard/module-list-filters";
 import type { LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Passeport fidélité" };
+
+/** Le `check` de `loyalty_programs.status` : trois valeurs, pas de `paused`. */
+const STATUTS: readonly StatutModule[] = [
+  { value: "draft", etat: "brouillon" },
+  { value: "active", etat: "ouverte" },
+  { value: "archived", etat: "cloturee" },
+];
 
 const MODE_LABEL = {
   rotating_code: "Code au comptoir",
   staff: "Validation en caisse",
 } as const;
 
-export default async function LoyaltyPage() {
+export default async function LoyaltyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; statut?: string; page?: string }>;
+}) {
+  const filtres = litFiltresModule(await searchParams, STATUTS);
   const { organization, role } = await getUserAndOrg();
   const supabase = await createClient();
 
@@ -27,15 +48,20 @@ export default async function LoyaltyPage() {
   const capacites = await capacitesDuModule("loyalty");
   if (!capacites.canExplore) notFound();
 
+  let requete = supabase
+    .from("loyalty_programs")
+    .select(
+      "id, name, status, validation_mode, silver_threshold, gold_threshold, created_at",
+    )
+    .eq("organization_id", organization!.id)
+    .order("created_at", { ascending: false })
+    .range(filtres.from, filtres.to);
+  if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
+  if (filtres.statut) requete = requete.eq("status", filtres.statut);
+
   const [{ data: programs }, { data: milestoneRows }, { data: memberRows }] =
     await Promise.all([
-      supabase
-        .from("loyalty_programs")
-        .select(
-          "id, name, status, validation_mode, silver_threshold, gold_threshold, created_at",
-        )
-        .eq("organization_id", organization!.id)
-        .order("created_at", { ascending: false }),
+      requete,
       supabase
         .from("loyalty_milestones")
         .select("program_id")
@@ -50,12 +76,14 @@ export default async function LoyaltyPage() {
           }),
     ]);
 
-  const programList = (programs ?? []) as Array<
-    Pick<
-      LoyaltyProgram,
-      "id" | "name" | "status" | "validation_mode" | "created_at"
-    >
-  >;
+  const { lignes: programList, hasNext } = couperPage(
+    (programs ?? []) as Array<
+      Pick<
+        LoyaltyProgram,
+        "id" | "name" | "status" | "validation_mode" | "created_at"
+      >
+    >,
+  );
 
   const milestoneCount = new Map<string, number>();
   for (const row of milestoneRows ?? []) {
@@ -84,19 +112,32 @@ export default async function LoyaltyPage() {
         et paliers personnalisables.
       </ModuleCapabilityNotice>
 
+      <ModuleListFilters
+        idPrefix="loyalty-filtre"
+        filtres={filtres}
+        statuts={STATUTS}
+        placeholder="Nom du programme…"
+      />
+
       {!programList.length ? (
         <Card className="text-center py-12">
-          <p className="text-zinc-500">
-            Aucun programme pour l&apos;instant. Créez le premier !
-          </p>
-          {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
-              cliquer laissait le seul bouton en haut d'écran, hors du regard
-              de celui qui vient de lire la phrase. */}
-          {capacites.canEditDraft ? (
-            <div className="mt-4 flex justify-center">
-              <NewLoyaltyForm instanceId="-vide" />
-            </div>
-          ) : null}
+          {filtres.actif ? (
+            <ModuleListAucunResultat quoi="programme" />
+          ) : (
+            <>
+              <p className="text-zinc-500">
+                Aucun programme pour l&apos;instant. Créez le premier !
+              </p>
+              {/* LE BOUTON EST ICI AUSSI : « créez le premier » sans rien à
+                  cliquer laissait le seul bouton en haut d'écran, hors du
+                  regard de celui qui vient de lire la phrase. */}
+              {capacites.canEditDraft ? (
+                <div className="mt-4 flex justify-center">
+                  <NewLoyaltyForm instanceId="-vide" />
+                </div>
+              ) : null}
+            </>
+          )}
         </Card>
       ) : (
         <ul className="space-y-3">
@@ -151,6 +192,11 @@ export default async function LoyaltyPage() {
           })}
         </ul>
       )}
+      <Pagination
+        page={filtres.page}
+        hasNext={hasNext}
+        params={paramsPagination(filtres)}
+      />
     </div>
   );
 }
