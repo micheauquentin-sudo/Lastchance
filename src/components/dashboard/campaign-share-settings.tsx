@@ -1,7 +1,6 @@
 "use client";
 
 import { updateCampaignShareInvite } from "@/actions/campaigns";
-import { Card } from "@/components/ui/card";
 import { FieldError } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 
@@ -13,6 +12,13 @@ import { useActionForm } from "@/lib/use-action-form";
  * quinze mécaniques. Le PARRAINAGE RÉCOMPENSÉ, juste en dessous, garde sa
  * propre case : décocher le parrainage ne masquait pas ce bloc-ci — c'est
  * précisément la confusion que ce réglage lève.
+ *
+ * CE COMPOSANT NE PORTE PLUS SA PROPRE `Card` : il est une SECTION de la tuile
+ * « Partage et parrainage », qui n'en rend qu'une seule. Deux Cards dans une
+ * tuile repliable débordaient de son cadre (le liseré gauche n'entoure rien et
+ * suppose un unique enfant carte) — même défaut que la « Zone dangereuse » des
+ * Réglages, fermé dans le même lot. Son titre passe donc en `<h3>` : le `<h2>`
+ * de la tuile est celui de la carte englobante.
  */
 export function CampaignShareSettings({
   campaignId,
@@ -26,8 +32,8 @@ export function CampaignShareSettings({
   });
 
   return (
-    <Card>
-      <h2 className="mb-1 font-black text-k-ink">Partage du jeu</h2>
+    <>
+      <h3 className="mb-1 font-black text-k-ink">Partage du jeu</h3>
       <p className="mb-4 text-sm font-bold text-k-body">
         Après leur partie, gagnée ou perdue, vos clients peuvent partager le
         lien du jeu à leurs proches. C&apos;est gratuit pour vous : ce partage
@@ -55,6 +61,6 @@ export function CampaignShareSettings({
           <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
         )}
       </form>
-    </Card>
+    </>
   );
 }
