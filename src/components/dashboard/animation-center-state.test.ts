@@ -92,6 +92,35 @@ describe("getAnimationCenterMetrics", () => {
     // parenthèse, un zéro rassurerait à tort sur un calendrier ou une chasse.
     expect(label("lowStockPrizes")).toBe("Stocks faibles (roue)");
   });
+
+  /**
+   * Les deux tuiles qui mènent au hub QR sans y retrouver leur propre chiffre.
+   *
+   * `drafts` et `liveExperiences` comptent des RESSOURCES sur neuf modules ; le
+   * hub rend une LIGNE PAR AFFICHE sur huit. Une campagne brouillon sans QR
+   * vaut 1 ici et 0 là-bas. L'écart est irréductible (migration
+   * 20260923120000), donc c'est la DESCRIPTION qui doit ne pas promettre
+   * l'égalité — et rien d'autre ne l'en empêche.
+   */
+  it("n'annonce jamais un nombre de destination que la liste ne rendra pas", () => {
+    const metrics = getAnimationCenterMetrics({
+      drafts: 3,
+      qrToTest: 0,
+      liveExperiences: 2,
+      lowStockPrizes: 0,
+      rewardsToHandOver: 0,
+      teamTasks: 0,
+    });
+    const description = (key: string) =>
+      metrics.find((m) => m.key === key)?.description ?? "";
+
+    for (const key of ["drafts", "liveExperiences"]) {
+      // Ce qu'elles promettent : une liste d'affiches, pas un décompte.
+      expect(description(key)).toContain("voir les affiches concernées");
+      // Ce qu'elles ne peuvent pas promettre : leur propre chiffre.
+      expect(description(key)).not.toMatch(/\d/);
+    }
+  });
 });
 
 /**

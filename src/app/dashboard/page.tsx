@@ -128,16 +128,31 @@ export default async function DashboardPage() {
    * lien mort renverrait l'éditeur sur « Vue d'ensemble » sans un mot — le
    * défaut que `liens-proprietaire.ts` existe pour éviter.
    *
-   * `drafts` n'a PLUS de destination : elle pointait sur « Découvrir », qui est
-   * un catalogue de modules par objectif et ne contient aucun brouillon. Le
-   * commerçant cliquait sur « 3 brouillons » et atterrissait sur une vitrine.
+   * TROIS TUILES MÈNENT DÉSORMAIS AU HUB QR FILTRÉ, et une seule des trois
+   * mène à sa propre mesure.
+   *
+   * `qrToTest` est exacte : `?type=campaign&scans=jamais` applique le prédicat
+   * de `qr_never_scanned` — celui-là même qui a produit le chiffre —, et un
+   * test pgTAP compare les deux fonctions sur les mêmes fixtures.
+   *
+   * `drafts` et `liveExperiences` ne le sont PAS, et c'est irréductible : elles
+   * comptent des RESSOURCES sur neuf modules (le parrainage compris), le hub
+   * rend une LIGNE PAR AFFICHE sur huit. Une campagne brouillon sans QR vaut 1
+   * dans la tuile et 0 dans la liste. Le lien reste le bon geste — c'est bien
+   * là qu'on va agir —, mais la description des tuiles dit « voir les affiches
+   * concernées » et jamais « voir les N » : c'est dans
+   * `animation-center-state.ts` que cette promesse est tenue.
+   *
+   * `drafts` avait perdu sa destination (« Découvrir », un catalogue de modules
+   * sans un seul brouillon) ; elle en retrouve une honnête.
    * `teamTasks` n'en a jamais eu : ses tâches sont juste en dessous, dans la
    * même carte, chacune avec son propre lien déjà filtré.
    */
   const centreLiens: AnimationCenterLinks = {};
   const raccourcisCentre = {
-    qrToTest: "/dashboard/qr-codes",
-    liveExperiences: "/dashboard/campaigns",
+    drafts: "/dashboard/qr-codes?etat=brouillon",
+    qrToTest: "/dashboard/qr-codes?type=campaign&scans=jamais",
+    liveExperiences: "/dashboard/qr-codes?etat=actif",
     lowStockPrizes: "/dashboard/campaigns",
   } as const;
   for (const [cle, href] of Object.entries(raccourcisCentre)) {
