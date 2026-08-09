@@ -6894,6 +6894,10 @@ export type Database = {
       }
       current_jackpot_code: { Args: { p_campaign_id: string }; Returns: string }
       current_loyalty_code: { Args: { p_program_id: string }; Returns: string }
+      customer_segment_matches: {
+        Args: { p_last_win: string; p_segment: string; p_wins: number }
+        Returns: boolean
+      }
       debit_sms_credit: {
         Args: {
           p_destination_country?: string
@@ -7263,7 +7267,14 @@ export type Database = {
         }[]
       }
       org_customer_profiles_page: {
-        Args: { p_limit?: number; p_offset?: number; p_organization_id: string }
+        Args: {
+          p_limit?: number
+          p_offset?: number
+          p_organization_id: string
+          p_q?: string
+          p_segment?: string
+          p_tri?: string
+        }
         Returns: {
           email: string
           first_name: string
@@ -7331,6 +7342,8 @@ export type Database = {
       }
       org_qr_hub: {
         Args: {
+          p_etat?: string
+          p_jamais_scanne?: boolean
           p_kind?: string
           p_limit?: number
           p_offset?: number
@@ -7339,6 +7352,7 @@ export type Database = {
         }
         Returns: {
           created_at: string
+          etat: string
           extra_count: number
           item_id: string
           kind: string
