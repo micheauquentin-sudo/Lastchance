@@ -355,6 +355,7 @@ export default async function CampaignDetailPage({
               <NewQrForm
                 campaigns={[{ id: c.id, name: c.name }]}
                 defaultCampaignId={c.id}
+                defaultLabel={c.name}
                 campagneFigee
                 instanceId="campagne"
               />
