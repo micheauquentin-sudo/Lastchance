@@ -83,7 +83,7 @@ test.describe("méta-progression — rendu non-éditeur", () => {
   }) => {
     await page.goto("/dashboard/progression");
     await expect(
-      page.getByRole("heading", { name: "Progression", exact: true }),
+      page.getByRole("heading", { name: "Missions & coffres", exact: true }),
     ).toBeVisible({ timeout: 30_000 });
 
     // Les 4 tuiles d'agrégats restent visibles pour tout rôle.
@@ -135,7 +135,7 @@ test.describe("méta-progression — éditeur", () => {
     );
     await page.goto("/dashboard/progression");
     await expect(
-      page.getByRole("heading", { name: "Progression", exact: true }),
+      page.getByRole("heading", { name: "Missions & coffres", exact: true }),
     ).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole("button", { name: "+ Nouvelle saison" }).click();
