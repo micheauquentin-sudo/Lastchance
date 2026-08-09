@@ -107,7 +107,25 @@ export function ModuleListFilters({
   placeholder?: string;
 }) {
   return (
-    <form method="get" className="mb-6 flex flex-wrap items-end gap-3">
+    /**
+     * LA `key` N'EST PAS DÉCORATIVE : sans elle, « Réinitialiser » ment.
+     *
+     * Les deux champs sont NON CONTRÔLÉS (`defaultValue`), et « Réinitialiser »
+     * est un `<Link>` — donc une navigation douce, qui rerend le même arbre
+     * React sans remonter les nœuds. React ne réapplique pas `defaultValue` sur
+     * un rerendu : la liste redevenait complète pendant que le `<select>`
+     * affichait toujours « Brouillon ». Deux commandes qui se contredisent à
+     * l'écran, ce que ce formulaire existe précisément pour éviter.
+     *
+     * Changer la `key` avec les filtres force le remontage, donc la relecture
+     * des `defaultValue`. Un test E2E le tient (`module-list-filters.spec.ts`) :
+     * c'est lui qui l'a trouvé.
+     */
+    <form
+      key={`${filtres.q}|${filtres.statut}`}
+      method="get"
+      className="mb-6 flex flex-wrap items-end gap-3"
+    >
       <div>
         <label
           htmlFor={`${idPrefix}-recherche`}

@@ -389,7 +389,16 @@ export default async function QrCodesPage({
       {/* Le filtre par campagne existait DÉJÀ côté requête — « Gérer tous les
           QR codes » y menait avec `?campaign=…` — mais sans aucune commande à
           l'écran : on ne pouvait ni le changer ni le lever. */}
-      <form method="get" className="mb-6 flex flex-wrap items-end gap-3">
+      {/* `key` : les champs sont non contrôlés et « Réinitialiser » est un
+          `<Link>` — une navigation douce ne réapplique pas `defaultValue`, et
+          les sélecteurs resteraient sur l'ancien filtre pendant que la liste,
+          elle, redevient complète. Même correction que les sept listes de
+          modules (`module-list-filters.tsx`). */}
+      <form
+        key={`${campaignFilter ?? ""}|${typeFilter}|${q ?? ""}|${etatFilter ?? ""}|${jamaisScanne}`}
+        method="get"
+        className="mb-6 flex flex-wrap items-end gap-3"
+      >
         <div>
           <label
             htmlFor="qr-filtre-recherche"
