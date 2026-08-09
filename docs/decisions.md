@@ -6387,4 +6387,48 @@ SQL dédiée.
 - commits `500ecd4` (retrait ThemeDecor), `d1fb464`/`abfc131` (18 presets en
   2 familles), `467791b` (dérivation style QR)
 - `src/lib/qr-style-du-jeu.ts`, `src/lib/qr-style-du-jeu.test.ts`
+
+## ADR-100 : Le hub QR unionne les huit modules par une RPC, pas par huit requêtes de page
+
+**Date** : 2026-08-09
+**Statut** : Accepté
+**Contexte** : `chantier/qr-hub-types` — `/dashboard/qr-codes` ne listait que
+les QR de campagne ; sept autres modules (chasse, événement, jackpot,
+fidélité, calendrier, quiz, parrainage, pronostics) n'avaient aucune vitrine
+de leurs QR/liens dans ce hub.
+
+**Décision**.
+1. **Une RPC d'union, `org_qr_hub`**, plutôt que huit requêtes déclenchées
+   depuis la page. Même doctrine que `org_animation_center_counts`
+   (ADR-085, migration `20260914120000`) : un aller-retour, `security
+   definer`, garde d'autorisation en premier geste, prouvé par pgTAP plutôt
+   que supposé.
+2. **La garde reprend `is_org_editor`, calquée sur la RLS vivante** — pas
+   recopiée depuis la migration d'origine des tables sources. Un non-membre
+   ne doit rien voir ; un caissier ne doit pas obtenir par cette RPC un accès
+   qu'il n'a pas sur les pages module elles-mêmes. Parité avec la RLS plutôt
+   qu'une règle d'accès dupliquée et divergente.
+3. **Les cartes des modules hors campagne sont en lecture seule** : QR au
+   style `PublicShare` déjà utilisé ailleurs, lien copiable, mais aucun style
+   persisté propre à ces cartes. Écart assumé et consigné dans
+   `docs/bugs.md` plutôt que corrigé dans ce lot — le studio de style ne
+   s'applique aujourd'hui qu'aux QR de campagne, et étendre la persistance de
+   style aux sept autres modules est un chantier séparé, pas un sous-effet
+   du hub.
+
+**Justification**. La RPC unique évite huit allers-retours réseau et huit
+points de garde à maintenir synchrones ; calquer la garde sur la RLS vivante
+plutôt que sur la migration d'origine évite qu'un octroi de rôle ajouté après
+coup (caisse, éditeur) laisse la RPC désynchronisée de la politique réelle.
+
+**Conséquences** : pgTAP a révélé que `module_page_opens.resource_id` n'est
+pas au même grain selon le module (événement → sessions, chasse → étapes) ;
+la RPC doit sommer côté SQL plutôt que compter une ligne par ressource,
+prouvé sur un cas 3+4=7 (51 assertions, `qr_hub.test.sql`).
+
+**References** :
+- RPC `org_qr_hub`, `src/app/dashboard/qr-codes/`, `jeu-lien-card.tsx`
+- `supabase/tests/qr_hub.test.sql`
+- ADR-085 (RPC unique pour le Centre d'animation, même doctrine)
+- roadmap V1.55
 - roadmap V1.54

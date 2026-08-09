@@ -57,6 +57,38 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-09 — Hub QR par type de jeu — **à relire**
+
+- **Lot et objectif** : `/dashboard/qr-codes` n'affichait que les QR de
+  campagne ; sept autres modules (chasse, événement, jackpot, fidélité,
+  calendrier, quiz, parrainage, pronostics) sans support QR propre restaient
+  invisibles depuis ce hub.
+- **Branche/commits** : `chantier/qr-hub-types`, 6 commits au-dessus de
+  `origin/main` (`dbb6d8b`, `047dfbc`, `95a4f01`, `26a2e4d`, `d55aae0`,
+  `53f89cf`). PR non encore ouverte. Sans migration.
+- **Faits et fichiers** : RPC `org_qr_hub` (union des QR/liens des 8 types
+  de jeux, garde `is_org_editor` calquée sur la RLS vivante, `ilike`
+  échappé, `limit` plafonné 100) et son pgTAP dédié
+  (`supabase/tests/qr_hub.test.sql`, 51 assertions) ; types régénérés ;
+  page `/dashboard/qr-codes` réécrite (sélecteur « Type de jeu » filtré par
+  modules actifs, cartes campagne inchangées, nouvelles cartes
+  `jeu-lien-card.tsx` pour les autres modules, écran dédié caisse,
+  pagination par débordement, filtre campagne conservé) ; scan axe fermant
+  40 nœuds `color-contrast` sur `QrCodeCard` ; correctifs post-revue
+  sécurité (reportError sur l'échec RPC, assertion `prosecdef`).
+- **Validations réellement exécutées** : typecheck 0, lint 0, `casts:check`
+  0, Vitest suite complète 262 fichiers / 4131 tests, build vert, pgTAP 57
+  fichiers / 3266 assertions PASS (vide puis semée), `migrations:check` 126
+  fichiers / tête `20260922120000`, E2E WSL 3 projets (qr-hub +
+  campaign-templates + atelier-modules) 61 passed / 6 skipped. CI GitHub :
+  non exécutée (la PR la jouera).
+- **Risque/blocage** : revue sécurité dédiée GO, 0 critique/élevé/moyen,
+  3 INFO — 2 fermées avant PR, 1 consignée sans action dans `docs/bugs.md`
+  (repli du filtre type + octrois datés absents des options ; modules hors
+  campagne sans style QR persisté). Aucun blocage.
+- **État** : à relire. Prochaine action : ouvrir la PR, fusion sur l'ordre
+  permanent dès CI verte. Roadmap V1.55, ADR-100.
+
 ### 2026-08-09 — Correctif V1.54.1 : bouton « Voir le jeu » sur les tuiles Statut — **terminé**
 
 - **Lot et objectif** : demande propriétaire immédiate après V1.54 — accéder

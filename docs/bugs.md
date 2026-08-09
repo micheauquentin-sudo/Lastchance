@@ -3382,6 +3382,23 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Hub QR par type de jeu — consigné sans action (2026-08-09,
+  `chantier/qr-hub-types`)** : revue sécurité dédiée GO, 0
+  critique/élevé/moyen, 3 INFO — 2 fermées avant la PR (reportError sur
+  l'échec RPC, assertion pgTAP `prosecdef`). Deux points consignés sans
+  correction :
+  - **Le filtre « Type de jeu » retombe sur la liste complète si la valeur
+    est inconnue ou absente**, et les octrois `live_module_grants` datés
+    (accès temporaire à un module) ne nourrissent pas ses options — conforme
+    à la convention déjà en place sur les autres menus du dashboard, non
+    spécifique à ce chantier, mais non corrigé ici.
+  - **Les modules hors campagne (chasse, événement, jackpot, fidélité,
+    calendrier, quiz, parrainage, pronostics) n'ont pas de style QR
+    persisté** : leurs cartes affichent un QR au style `PublicShare`
+    générique, le studio de style ne s'applique qu'aux QR de campagne.
+    Étendre la persistance de style à ces sept modules est un chantier
+    séparé (ADR-100).
+
 - **Fonds d'écran thématiques — consigné sans action (2026-08-08,
   `chantier/fonds-ecran-themes`)** : revue sécurité dédiée GO, 0
   critique/élevé/moyen, 3 INFO fermés avant PR (voir ADR-098). Six points
