@@ -292,7 +292,11 @@ export default async function EventGamePage({
           {/* OUVERT : c'est le geste de publication, et la Carte de
               l'Aventure y renvoie. Seul bloc de la page à le rester. */}
           <CarteRepliable {...bloc("statut")}>
-            <EventGameStatusControls gameId={game.id} status={status} />
+            <EventGameStatusControls
+              gameId={game.id}
+              status={status}
+              hrefJeu={sessions[0]?.publicUrl ?? null}
+            />
           </CarteRepliable>
 
           <CarteAventure steps={etapesAventure} conclusion={conclusion} />

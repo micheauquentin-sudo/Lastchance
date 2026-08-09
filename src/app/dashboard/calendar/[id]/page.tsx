@@ -358,7 +358,10 @@ export default async function CalendarDetailPage({
               : "Brouillon : la page publique reste fermée."
         }
       >
-        <CalendarStatusControls calendar={c} />
+        <CalendarStatusControls
+          calendar={c}
+          hrefJeu={c.status === "active" ? publicUrl : null}
+        />
       </CarteRepliable>
 
       <CarteAventure steps={etapes} conclusion={conclusion} />

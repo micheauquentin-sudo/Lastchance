@@ -16,7 +16,7 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeCalendrier } from "@/components/dashboard/atelier-calendar-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import type {
@@ -848,7 +848,14 @@ function DayRow({
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
-export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
+export function CalendarStatusControls({
+  calendar,
+  hrefJeu = null,
+}: {
+  calendar: Calendar;
+  /** Page publique du calendrier, `null` tant qu'il n'est pas ouvert. */
+  hrefJeu?: string | null;
+}) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   //
@@ -918,8 +925,9 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
           elle s&apos;ouvrira sur un « pas de chance ».
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeCalendrier(calendar.id, "reglages")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

@@ -4,7 +4,7 @@ import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
@@ -49,6 +49,7 @@ const STATUS_ACTIONS: Array<{
 export function CampaignStatusControls({
   campaign,
   wheelId,
+  hrefJeu = null,
 }: {
   campaign: Campaign;
   /**
@@ -58,6 +59,8 @@ export function CampaignStatusControls({
    * corriger. `null` accepté — la page sans roue laisse l'atelier choisir.
    */
   wheelId?: string | null;
+  /** URL joueur du premier QR de la campagne, `null` s'il n'y en a aucun. */
+  hrefJeu?: string | null;
 }) {
   const {
     state: statusState,
@@ -100,8 +103,9 @@ export function CampaignStatusControls({
           Ouverte aux joueurs — un client qui scanne le QR code peut jouer.
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

@@ -328,7 +328,11 @@ export default async function LoyaltyDetailPage({
               comprises ; l'ancre rouvre le bloc qu'elle vise (voir
               `carte-repliable.tsx`). */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
-            <LoyaltyStatusControls program={p} milestoneCount={milestones.length} />
+            <LoyaltyStatusControls
+              program={p}
+              milestoneCount={milestones.length}
+              hrefJeu={p.status === "active" ? publicUrl : null}
+            />
           </CarteRepliable>
 
           <CarteAventure steps={etapesAventure} conclusion={conclusion} />

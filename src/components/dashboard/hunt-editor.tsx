@@ -19,7 +19,7 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeChasse } from "@/components/dashboard/atelier-hunt-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
@@ -633,7 +633,16 @@ function AddStepForm({ huntId }: { huntId: string }) {
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
-export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount: number }) {
+export function HuntStatusControls({
+  hunt,
+  stepCount,
+  hrefJeu = null,
+}: {
+  hunt: Hunt;
+  stepCount: number;
+  /** QR de la première étape — ce que le joueur scanne en premier ; `null` sans étape. */
+  hrefJeu?: string | null;
+}) {
   const {
     state: statusState,
     pending: statusPending,
@@ -695,8 +704,9 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
           Pour ouvrir aux joueurs, il vous faut encore : {missing.join(" et ")}.
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeChasse(hunt.id, "chasse")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

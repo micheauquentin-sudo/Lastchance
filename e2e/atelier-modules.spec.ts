@@ -123,6 +123,18 @@ test.describe("Ateliers des 7 modules — navigation par étape @smoke", () => {
         page.getByRole("link", { name: "Ouvrir l'atelier" }).first(),
       ).toBeVisible();
 
+      // ── Le jeu tel que le joueur le voit, depuis la tuile « Statut » ──
+      //
+      // Les sept fixtures sont seedées ACTIVES (et la soirée a une session) :
+      // l'URL joueur existe donc pour chacune, et le bouton doit être là. Il
+      // ouvre un onglet — on n'y navigue pas, on vérifie qu'il est bien
+      // externalisé et distinct de « Modifier dans l'atelier ».
+      const voirLeJeu = page
+        .locator("#statut")
+        .getByRole("link", { name: "Voir le jeu" });
+      await expect(voirLeJeu).toBeVisible();
+      await expect(voirLeJeu).toHaveAttribute("target", "_blank");
+
       // ── Chaque étape se rend, landmark numéroté commun ──
       for (const etape of mod.etapes) {
         await page.goto(`${mod.base}?etape=${etape}`);

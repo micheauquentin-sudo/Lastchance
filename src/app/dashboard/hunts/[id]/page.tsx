@@ -246,7 +246,11 @@ export default async function HuntDetailPage({
               l'Aventure et la porte de l'atelier — l'ancre rouvre d'elle-même
               le bloc qu'elle vise (voir `carte-repliable.tsx`). */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
-            <HuntStatusControls hunt={h} stepCount={steps.length} />
+            <HuntStatusControls
+              hunt={h}
+              stepCount={steps.length}
+              hrefJeu={posterSteps[0]?.url ?? null}
+            />
           </CarteRepliable>
 
           <CarteAventure steps={etapesAventure} conclusion={conclusion} />

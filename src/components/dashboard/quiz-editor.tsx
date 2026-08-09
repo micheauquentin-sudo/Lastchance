@@ -22,7 +22,7 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker } from "@/components/ui/ranking-picker";
@@ -134,7 +134,14 @@ export interface DashboardQuizQuestion {
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
-export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
+export function QuizStatusControls({
+  quiz,
+  hrefJeu = null,
+}: {
+  quiz: DashboardQuiz;
+  /** Page publique du quiz, `null` tant qu'il n'est pas ouvert aux joueurs. */
+  hrefJeu?: string | null;
+}) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   const {
@@ -196,8 +203,9 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
           lot — un lot nommé (ou une roue offerte) avec son stock.
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeQuiz(quiz.id, "quiz")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       {/* Le refus d'activation vient du serveur : on affiche SON message tel quel. */}
       <FieldError

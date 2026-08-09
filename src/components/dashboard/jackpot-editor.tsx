@@ -16,7 +16,7 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { useActionForm } from "@/lib/use-action-form";
@@ -503,7 +503,14 @@ export function JackpotSettings({
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
-export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign }) {
+export function JackpotStatusControls({
+  campaign,
+  hrefJeu = null,
+}: {
+  campaign: JackpotCampaign;
+  /** Page publique de la cagnotte, `null` tant qu'elle n'est pas ouverte. */
+  hrefJeu?: string | null;
+}) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   // Champs exclusivement cachés (id + status) : rien ne dépend ici du reset
@@ -578,8 +585,9 @@ export function JackpotStatusControls({ campaign }: { campaign: JackpotCampaign 
           </Link>
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeJackpot(campaign.id, "reglages")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

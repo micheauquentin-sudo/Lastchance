@@ -25,7 +25,7 @@ import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
@@ -132,7 +132,14 @@ function ReasonInput({ id }: { id: string }) {
  * juste sous la Carte de l'Aventure ; « Réglages » garde le renommage, les
  * données demandées à l'inscription et la suppression.
  */
-export function ContestStatusControls({ contest }: { contest: Contest }) {
+export function ContestStatusControls({
+  contest,
+  hrefJeu = null,
+}: {
+  contest: Contest;
+  /** Page publique du championnat, `null` tant qu'il est en brouillon. */
+  hrefJeu?: string | null;
+}) {
   const { state: statusState, pending: statusPending, onSubmit: statusSubmit } =
     useActionForm(updateContest, {
       // `reloadOnSuccess` : la pastille de statut et la liste des transitions
@@ -185,8 +192,9 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
           ))}
         </div>
       </div>
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

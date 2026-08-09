@@ -21,7 +21,7 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
-import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
@@ -99,9 +99,12 @@ export interface EditorSession {
 export function EventGameStatusControls({
   gameId,
   status,
+  hrefJeu = null,
 }: {
   gameId: string;
   status: EventGameStatus;
+  /** Salle la plus récente côté joueur, `null` si aucune session. */
+  hrefJeu?: string | null;
 }) {
   const {
     state: statusState,
@@ -156,8 +159,9 @@ export function EventGameStatusControls({
           </Link>
         </p>
       )}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap gap-2">
         <RaccourciAtelier href={hrefEtapeEvenement(gameId, "jeu")} />
+        <VoirLeJeu href={hrefJeu} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
