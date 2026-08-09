@@ -57,14 +57,15 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-09 — Sept retours propriétaire — **à relire**
+### 2026-08-09 — Sept retours propriétaire — **terminé**
 
 - **Lot et objectif** : sept demandes ponctuelles du propriétaire après
   capture d'écran et test à la main de V1.53 (fonds d'écran thématiques).
 - **Branche/commits** : `chantier/sept-retours-proprietaire`, 9 commits
   au-dessus de `main` (`500ecd4`, `d1fb464`, `abfc131`, `467791b`, `42b539e`,
-  `e6d9c67`, `67f6f0b`, `f27b01f`, `b957f19`) — PR à ouvrir, fusion sur
-  l'ordre permanent dès CI verte. Sans migration.
+  `e6d9c67`, `67f6f0b`, `f27b01f`, `b957f19`) — PR #136 fusionnée en squash
+  `de3ccd2` sur l'ordre permanent après CI intégralement verte ; CI `main` et
+  « Santé après déploiement » verts sur ce SHA. Sans migration.
 - **Faits et fichiers** : retrait complet de `ThemeDecor` (945 lignes + test,
   champ `decor` retiré des 3 tables de tokens et des presets, `playDecor` et
   classes `decor-float` purgés) — voir ADR-099, qui inverse partiellement
@@ -87,9 +88,12 @@
   desktop-smoke + campaign-templates 1/1, puis quiz 1 + pronostics 2 +
   player-win 7 (scans axe post-retrait) — 0 rouge au total. Revue sécurité
   dédiée exécutée : GO, 0 critique/élevé/moyen, 2 INFO consignés sans action
-  dans `docs/bugs.md`. CI GitHub Actions **non jouée** au moment de
-  l'écriture de cette entrée — la PR la jouera dès son ouverture.
-- **État** : à relire. Roadmap V1.54, ADR-099.
+  dans `docs/bugs.md`. CI GitHub de la PR #136 : intégralement verte (E2E
+  Chromium+WebKit, pgTAP/ACL/RLS, CodeQL, typecheck/lint/Vitest/build, site,
+  audit) ; fusion squash `de3ccd2` sur l'ordre permanent, puis CI `main` et
+  « Santé après déploiement » verts sur ce SHA.
+- **État** : terminé, déployé. Roadmap V1.54, ADR-099. Prochaine action :
+  aucune.
 
 ### 2026-08-08 — Fonds d'écran thématiques — **terminé**
 
