@@ -25,6 +25,8 @@ import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
   EVENT_KINDS,
@@ -182,6 +184,9 @@ export function ContestStatusControls({ contest }: { contest: Contest }) {
             </form>
           ))}
         </div>
+      </div>
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />
       </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

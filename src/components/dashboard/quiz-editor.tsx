@@ -22,6 +22,8 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker } from "@/components/ui/ranking-picker";
 import {
@@ -194,6 +196,9 @@ export function QuizStatusControls({ quiz }: { quiz: DashboardQuiz }) {
           lot — un lot nommé (ou une roue offerte) avec son stock.
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeQuiz(quiz.id, "quiz")} />
+      </div>
       {/* Le refus d'activation vient du serveur : on affiche SON message tel quel. */}
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}

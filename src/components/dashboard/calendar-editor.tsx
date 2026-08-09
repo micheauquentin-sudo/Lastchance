@@ -16,6 +16,8 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeCalendrier } from "@/components/dashboard/atelier-calendar-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import type {
   Calendar,
@@ -916,6 +918,9 @@ export function CalendarStatusControls({ calendar }: { calendar: Calendar }) {
           elle s&apos;ouvrira sur un « pas de chance ».
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeCalendrier(calendar.id, "reglages")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />

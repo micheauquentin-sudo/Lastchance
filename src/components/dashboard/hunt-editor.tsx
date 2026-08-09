@@ -19,6 +19,8 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeChasse } from "@/components/dashboard/atelier-hunt-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import { cleOrdre, ordreAffiche, type OrdreLocal } from "@/lib/ordre-optimiste";
@@ -693,6 +695,9 @@ export function HuntStatusControls({ hunt, stepCount }: { hunt: Hunt; stepCount:
           Pour ouvrir aux joueurs, il vous faut encore : {missing.join(" et ")}.
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeChasse(hunt.id, "chasse")} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />

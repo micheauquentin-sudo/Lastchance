@@ -265,7 +265,7 @@ export default async function CampaignDetailPage({
       )}
 
       <div id="statut" className="mb-6 scroll-mt-24">
-        <CampaignStatusControls campaign={c} />
+        <CampaignStatusControls campaign={c} wheelId={roueVisee?.id ?? null} />
       </div>
 
       {/* La Carte de l'Aventure vient APRÈS le statut : ce qui décide de

@@ -4,6 +4,8 @@ import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { RaccourciAtelier } from "@/components/dashboard/atelier-raccourci";
+import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
@@ -44,7 +46,19 @@ const STATUS_ACTIONS: Array<{
  * juste sous la Carte de l'Aventure, comme partout ailleurs — le reste des
  * réglages (renommer, dupliquer, supprimer) n'a pas cette urgence et reste bas.
  */
-export function CampaignStatusControls({ campaign }: { campaign: Campaign }) {
+export function CampaignStatusControls({
+  campaign,
+  wheelId,
+}: {
+  campaign: Campaign;
+  /**
+   * Roue que la page a retenue pour sa checklist. Le raccourci d'atelier vise
+   * LA MÊME : ouvrir l'atelier sur une autre roue que celle dont la tuile
+   * annonce les manques enverrait corriger un écran où il n'y a rien à
+   * corriger. `null` accepté — la page sans roue laisse l'atelier choisir.
+   */
+  wheelId?: string | null;
+}) {
   const {
     state: statusState,
     pending: statusPending,
@@ -86,6 +100,9 @@ export function CampaignStatusControls({ campaign }: { campaign: Campaign }) {
           Ouverte aux joueurs — un client qui scanne le QR code peut jouer.
         </p>
       )}
+      <div className="mt-4">
+        <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+      </div>
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />
