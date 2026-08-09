@@ -72,6 +72,100 @@ export function customerFiltersActifs(f: CustomerFilters): boolean {
   return Boolean(f.q || f.segment || f.tri !== TRI_DEFAUT);
 }
 
+// ── Export CSV ───────────────────────────────────────────────
+
+/** Plafond dur de la RPC : au-delà elle lève « invalid pagination ». */
+export const EXPORT_PAGE_SIZE = 100;
+/** Même borne que l'export des participations. */
+export const EXPORT_MAX_ROWS = 10_000;
+
+export interface ProfilExport {
+  email: string;
+  first_name: string | null;
+  wins: number;
+  redeemed: number;
+  first_win: string;
+  last_win: string;
+  /** Total AVANT pagination, rendu en fenêtre sur chaque ligne par la RPC. */
+  total_count: number;
+}
+
+/**
+ * Collecte les profils à exporter en paginant la RPC.
+ *
+ * Deux corrections par rapport à la boucle naïve, qui partait pour CENT appels
+ * séquentiels — chacun un `group by` complet plus un `count` en fenêtre :
+ *
+ *  - la boucle est bornée par le `total_count` LU AU PREMIER APPEL, donc par le
+ *    nombre de pages réel. Une organisation de trois cents clients coûte trois
+ *    appels, pas cent ;
+ *  - la troncature à dix mille lignes est RENDUE à l'appelant au lieu d'être
+ *    silencieuse. Un fichier amputé sans le dire est pire qu'un refus : le
+ *    commerçant croit tenir sa base.
+ */
+export async function collecterProfilsExport(
+  lirePage: (offset: number, limit: number) => Promise<ProfilExport[]>,
+): Promise<{ rows: ProfilExport[]; total: number; tronque: boolean }> {
+  const premiere = await lirePage(0, EXPORT_PAGE_SIZE);
+  const total = premiere[0]?.total_count ?? 0;
+  const cible = Math.min(total, EXPORT_MAX_ROWS);
+  const rows = premiere.slice(0, cible);
+
+  while (rows.length < cible && premiere.length === EXPORT_PAGE_SIZE) {
+    const suite = await lirePage(rows.length, EXPORT_PAGE_SIZE);
+    if (suite.length === 0) break; // Filet : la liste a rétréci entre deux appels.
+    rows.push(...suite.slice(0, cible - rows.length));
+    if (suite.length < EXPORT_PAGE_SIZE) break;
+  }
+
+  return { rows, total, tronque: total > rows.length };
+}
+
+/**
+ * Sérialise l'export. Le TÉLÉPHONE n'y figure pas, comme il ne figure pas à
+ * l'écran : la RPC le cherche sans le rendre, décision d'exposition prise en
+ * base (20260923120000).
+ */
+export function csvClients(
+  rows: ProfilExport[],
+  etat: { total: number; tronque: boolean },
+  csvCell: (v: string | number | null | undefined) => string,
+): string {
+  const header = [
+    "email",
+    "prenom",
+    "gains",
+    "recuperes",
+    "premier_gain",
+    "dernier_gain",
+  ].join(";");
+
+  const lines = rows.map((r) =>
+    [
+      csvCell(r.email),
+      csvCell(r.first_name ?? ""),
+      csvCell(r.wins),
+      csvCell(r.redeemed),
+      csvCell(r.first_win),
+      csvCell(r.last_win),
+    ].join(";"),
+  );
+
+  // La troncature est DITE, dans le fichier lui-même : c'est le seul endroit
+  // que le commerçant regardera. Une ligne de commentaire en fin de CSV plutôt
+  // qu'un en-tête HTTP, qu'aucun tableur n'affiche.
+  if (etat.tronque) {
+    lines.push(
+      csvCell(
+        `Export tronqué à ${rows.length} lignes sur ${etat.total} — affinez les filtres pour exporter le reste.`,
+      ),
+    );
+  }
+
+  // BOM UTF-8 pour Excel
+  return "﻿" + [header, ...lines].join("\n");
+}
+
 /**
  * Pastilles d'un client — NON EXCLUSIVES, contrairement à la version d'origine
  * de cette page qui rendait « À relancer » en premier avec un `return`.

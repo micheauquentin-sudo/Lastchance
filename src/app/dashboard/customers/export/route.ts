@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { csvCell } from "@/lib/csv";
-import { parseCustomerFilters } from "../filters";
+import {
+  collecterProfilsExport,
+  csvClients,
+  parseCustomerFilters,
+} from "../filters";
 
 /**
  * Export CSV de la liste Clients — miroir de
@@ -18,8 +22,6 @@ import { parseCustomerFilters } from "../filters";
  * cherche (`p_q`) sans le rendre, c'est une décision d'exposition de données
  * personnelles prise en base (20260923120000), pas un oubli.
  */
-const RPC_MAX_LIMIT = 100; // plafond dur de la RPC : au-delà elle lève.
-const MAX_ROWS = 10_000; // même borne que l'export des participations.
 
 export async function GET(request: Request) {
   const { user, organization, role } = await getUserAndOrg();
@@ -36,58 +38,34 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
 
-  // La RPC plafonne à cent lignes par appel : on pagine jusqu'à la borne
-  // d'export, dans l'ordre du tri demandé (départage par e-mail en base, donc
-  // la pagination est stable — aucune ligne vue deux fois ni sautée).
-  const rows: {
-    email: string;
-    first_name: string | null;
-    wins: number;
-    redeemed: number;
-    first_win: string;
-    last_win: string;
-  }[] = [];
-
-  for (let offset = 0; offset < MAX_ROWS; offset += RPC_MAX_LIMIT) {
-    const { data, error } = await supabase.rpc("org_customer_profiles_page", {
-      p_organization_id: organization.id,
-      p_offset: offset,
-      p_limit: RPC_MAX_LIMIT,
-      p_q: filtres.q,
-      p_segment: filtres.segment,
-      p_tri: filtres.tri,
-    });
-    if (error) {
-      console.error("[customers] export:", error.message);
-      return NextResponse.json({ error: "Export impossible" }, { status: 500 });
-    }
-    const batch = data ?? [];
-    rows.push(...batch);
-    if (batch.length < RPC_MAX_LIMIT) break;
+  // La RPC plafonne à cent lignes par appel : on pagine dans l'ordre du tri
+  // demandé (départage par e-mail en base, donc la pagination est stable —
+  // aucune ligne vue deux fois ni sautée). Le nombre de pages est borné par le
+  // `total_count` lu au premier appel, pas par le plafond d'export.
+  let echec = false;
+  const { rows, total, tronque } = await collecterProfilsExport(
+    async (offset, limit) => {
+      const { data, error } = await supabase.rpc("org_customer_profiles_page", {
+        p_organization_id: organization.id,
+        p_offset: offset,
+        p_limit: limit,
+        p_q: filtres.q,
+        p_segment: filtres.segment,
+        p_tri: filtres.tri,
+      });
+      if (error) {
+        console.error("[customers] export:", error.message);
+        echec = true;
+        return [];
+      }
+      return data ?? [];
+    },
+  );
+  if (echec) {
+    return NextResponse.json({ error: "Export impossible" }, { status: 500 });
   }
 
-  const header = [
-    "email",
-    "prenom",
-    "gains",
-    "recuperes",
-    "premier_gain",
-    "dernier_gain",
-  ].join(";");
-
-  const lines = rows.map((r) =>
-    [
-      csvCell(r.email),
-      csvCell(r.first_name ?? ""),
-      csvCell(r.wins),
-      csvCell(r.redeemed),
-      csvCell(r.first_win),
-      csvCell(r.last_win),
-    ].join(";"),
-  );
-
-  // BOM UTF-8 pour Excel
-  const csv = "﻿" + [header, ...lines].join("\n");
+  const csv = csvClients(rows, { total, tronque }, csvCell);
 
   return new NextResponse(csv, {
     headers: {
