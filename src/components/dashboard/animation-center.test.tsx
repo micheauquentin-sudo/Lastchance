@@ -108,10 +108,14 @@ describe("AnimationCenter — ce que le commerçant voit", () => {
     expect(screen.getAllByRole("region")).toHaveLength(1);
   });
 
-  it("la tuile « Brouillons » dit où les retrouver au lieu de mentir sur sa destination", () => {
-    render(<AnimationCenter counts={counts} />);
-    expect(
-      screen.getByText("à terminer, dans la page de chaque module"),
-    ).toBeTruthy();
+  it("la tuile « Brouillons » annonce une liste, jamais un nombre qu'elle ne tiendra pas", () => {
+    // Elle a retrouvé une destination — le hub QR filtré sur l'état — mais pas
+    // l'égalité des chiffres : elle compte des ressources sur neuf modules, le
+    // hub rend des affiches sur huit. « voir les affiches concernées » est
+    // tenable ; « voir les 3 » ne le serait pas.
+    render(<AnimationCenter counts={counts} links={{ drafts: "/dashboard/qr-codes?etat=brouillon" }} />);
+    const lien = screen.getByRole("link", { name: /Brouillons/ });
+    expect(lien.getAttribute("href")).toBe("/dashboard/qr-codes?etat=brouillon");
+    expect(lien.textContent).toContain("voir les affiches concernées");
   });
 });
