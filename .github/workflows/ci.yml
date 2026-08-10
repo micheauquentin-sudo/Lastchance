@@ -324,7 +324,7 @@ jobs:
       # 64 % du temps était déjà de la mise en place et 36 % seulement du test.
       - name: Cache des navigateurs Playwright
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
