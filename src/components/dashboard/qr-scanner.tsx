@@ -129,6 +129,23 @@ export function QrScanner({
   // Démontage : caméra ET boucle de détection arrêtées.
   useEffect(() => stop, []);
 
+  // Le <video> n'existe dans le DOM qu'une fois `scanning` à true : attacher
+  // le flux depuis start() viserait une ref encore nulle — aperçu noir, et
+  // videoWidth à 0 donc plus aucune détection possible. On l'attache APRÈS
+  // le rendu, quand l'élément existe réellement.
+  useEffect(() => {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!scanning || !video || !stream) return;
+    video.srcObject = stream;
+    // muted + playsInline : l'autoplay est autorisé, iOS compris.
+    void video.play().catch((err) => {
+      console.warn("[scanner] lecture de l'aperçu impossible :", err);
+      setError("Aperçu caméra indisponible — réessayez.");
+      stop();
+    });
+  }, [scanning]);
+
   async function start() {
     if (startingRef.current || scanning) return; // double-clic sur Démarrer
     startingRef.current = true;
@@ -140,10 +157,7 @@ export function QrScanner({
         video: { facingMode: "environment" },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      // L'aperçu est branché par l'effet ci-dessus, une fois le <video> monté.
       setScanning(true);
 
       intervalRef.current = window.setInterval(async () => {
@@ -191,6 +205,7 @@ export function QrScanner({
         <div className="overflow-hidden rounded-xl border border-zinc-300 bg-black">
           <video
             ref={videoRef}
+            autoPlay
             muted
             playsInline
             aria-label={videoLabel}
