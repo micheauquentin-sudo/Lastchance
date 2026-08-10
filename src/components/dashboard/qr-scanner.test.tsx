@@ -23,6 +23,7 @@ function fakeStream() {
   // srcObject) mais pas getTracks : on le pose à la main.
   Object.defineProperty(stream, "getTracks", {
     configurable: true,
+    // unsafe-cast-justification: le composant n'appelle que `stop()` sur les pistes ; un vrai MediaStreamTrack demanderait une caméra.
     value: () => [track as unknown as MediaStreamTrack],
   });
   return Object.assign(stream, { _track: track });
