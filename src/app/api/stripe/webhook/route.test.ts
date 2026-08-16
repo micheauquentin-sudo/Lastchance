@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   constructEvent: vi.fn(),
   retrieve: vi.fn(),
+  /**
+   * `checkout.sessions.list` — LA TRADUCTION QUI MANQUAIT (SD-2).
+   *
+   * Un `charge.refunded` porte une charge et un payment intent ; les deux RPC
+   * de reprise s'apparient sur l'identifiant de SESSION. Sans cet appel, elles
+   * rendraient zéro ligne — « rien à reprendre » — sur un remboursement bien
+   * réel, en silence. Le stub existe donc pour que le test puisse prouver que
+   * la traduction est faite, et non seulement que la route rend 200.
+   */
+  sessionsList: vi.fn(),
   rpc: vi.fn(),
   resolveStripeEntitlements: vi.fn(),
   reportError: vi.fn(),
@@ -75,6 +85,9 @@ vi.mock("@/lib/stripe", async () => {
     getStripe: () => ({
       webhooks: { constructEvent: mocks.constructEvent },
       subscriptions: { retrieve: mocks.retrieve },
+      checkout: {
+        sessions: { list: (...args: unknown[]) => mocks.sessionsList(...args) },
+      },
     }),
     mapStripeStatus: (status: string) => status,
     resolveStripeEntitlements: (...args: unknown[]) =>
@@ -313,6 +326,7 @@ beforeEach(() => {
     ],
     error: null,
   });
+  mocks.sessionsList.mockResolvedValue({ data: [] });
 });
 
 describe("webhook Stripe — droits", () => {
@@ -1336,5 +1350,283 @@ describe("échéance d'un add-on mensuel impayé", () => {
 
     expect((await POST(request())).status).toBe(200);
     expect(ligne("g4")?.ends_at).toBeNull();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-6 — LA QUATRIÈME ISSUE : `reactivated`
+ *
+ * La migration 20260925120000 fait lever la grâce d'un octroi récurrent au
+ * lieu d'en créer un second que la levée ferait ensuite violer l'index
+ * d'unicité. Le webhook, lui, ne connaissait que trois issues : un rachat
+ * parfaitement réussi sortait par le chemin d'alerte et n'écrivait AUCUNE trace
+ * d'audit — le droit rouvert n'aurait figuré nulle part.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — rachat pendant la grâce d'impayé", () => {
+  beforeEach(() => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-9", outcome: "reactivated" }], error: null }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "loyalty",
+        },
+      }),
+    );
+  });
+
+  it("journalise la réactivation au lieu de crier à l'issue inconnue", async () => {
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "module_grant.reactivated",
+        metadata: expect.objectContaining({ grant_id: "grant-9" }),
+      }),
+    );
+    // ROUGE AVANT LE CORRECTIF, et c'est l'assertion qui compte : la route
+    // sortait par `stripe.module-grant-outcome` sans écrire d'audit.
+    expect(mocks.reportError).not.toHaveBeenCalledWith(
+      "stripe.module-grant-outcome",
+      expect.anything(),
+    );
+  });
+
+  it("TÉMOIN : une issue vraiment inconnue crie toujours et n'écrit rien", async () => {
+    // Sans lui, accepter n'importe quel mot passerait le test précédent — et
+    // rouvrirait le silence que ce garde-fou existe pour fermer.
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-9", outcome: "teleporte" }], error: null }
+        : { data: null, error: null },
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.module-grant-outcome",
+      expect.stringContaining("teleporte"),
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-5 — LE PASS DE PRONOSTICS EST BORNÉ À SA COMPÉTITION
+ *
+ * `p_resource_id` était `null` EN DUR : un pass à 39 € vendu pour une
+ * compétition ouvrait le module entier, douze mois durant.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — la compétition d'une Saison de pronostics", () => {
+  const CONTEST = "bbbb0000-0000-4000-8000-000000000009";
+
+  beforeEach(() => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-p", outcome: "created" }], error: null }
+        : { data: null, error: null },
+    );
+  });
+
+  it("transmet le contest_id à la RPC d'octroi", async () => {
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "pronostics",
+          resource_id: CONTEST,
+        },
+      }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    const args = octroiCalls()[0][1] as Record<string, unknown>;
+    expect(args.p_module).toBe("pronostics");
+    expect(args.p_resource_id).toBe(CONTEST);
+  });
+
+  it("les autres add-ons continuent d'ouvrir leur module ENTIER", async () => {
+    // TÉMOIN. Borner un pass Chasse à une ressource le rendrait inopérant :
+    // `org_has_live_module_grant` exige désormais `resource_id is null`.
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    await POST(request());
+
+    const args = octroiCalls()[0][1] as Record<string, unknown>;
+    expect(args.p_resource_id).toBeNull();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-2 — REPRENDRE CE QUI A ÉTÉ REMBOURSÉ OU CONTESTÉ
+ *
+ * Le piège central, et la raison d'être de la moitié de ces assertions : les
+ * deux RPC s'apparient sur la référence D'ACHAT (identifiant de session, et
+ * `stripe:<session>` pour le grand livre SMS), alors qu'un `charge.refunded`
+ * porte une charge et un payment intent. Leur passer l'identifiant de charge
+ * ne lèverait AUCUNE erreur — elles rendraient zéro ligne, donc « rien à
+ * reprendre », et le module resterait ouvert. Le défaut serait silencieux.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — remboursements et litiges", () => {
+  const SESSION = "cs_rembourse_1";
+
+  function remboursementEvent(over: Record<string, unknown> = {}) {
+    return {
+      id: "evt_refund_1",
+      type: "charge.refunded",
+      created: 1_700_000_900,
+      data: {
+        object: {
+          id: "ch_1",
+          payment_intent: "pi_1",
+          amount: 3900,
+          amount_refunded: 3900,
+          ...over,
+        },
+      },
+    };
+  }
+
+  const appels = (nom: string) =>
+    mocks.rpc.mock.calls.filter((call) => call[0] === nom);
+
+  beforeEach(() => {
+    mocks.sessionsList.mockResolvedValue({
+      data: [{ id: SESSION, client_reference_id: "org-1", metadata: {} }],
+    });
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === "revoke_grant_for_refund") {
+        return {
+          data: [{ grant_id: "grant-r", grant_module: "hunts", revoked: true }],
+          error: null,
+        };
+      }
+      if (name === "debit_sms_balance_for_refund") {
+        return {
+          data: [{ org_id: "org-1", debited_units: 100, entry_id: "entry-9" }],
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+  });
+
+  it("traduit la charge en SESSION avant d'appeler les deux reprises", async () => {
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    // La traduction elle-même : c'est le payment intent qui est interrogé.
+    expect(mocks.sessionsList).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: "pi_1" }),
+    );
+    // L'OCTROI s'apparie sur la référence NUE de la session…
+    expect(appels("revoke_grant_for_refund")[0][1]).toMatchObject({
+      p_source_reference: SESSION,
+    });
+    // …et le grand livre SMS sur la même référence PRÉFIXÉE, celle que
+    // `creditSmsPack` a écrite. La passer nue rendrait zéro ligne en silence.
+    expect(appels("debit_sms_balance_for_refund")[0][1]).toMatchObject({
+      p_source_reference: `stripe:${SESSION}`,
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.revoked" }),
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "sms_credit.refunded" }),
+    );
+  });
+
+  it("un litige emprunte le même chemin, en entier", async () => {
+    mocks.constructEvent.mockReturnValue({
+      id: "evt_dispute_1",
+      type: "charge.dispute.created",
+      created: 1_700_000_950,
+      data: { object: { id: "dp_1", charge: "ch_1", payment_intent: "pi_1" } },
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(1);
+  });
+
+  it("REJEU : les RPC sont rappelées et ne rendent plus rien — 200, sans audit", async () => {
+    // L'idempotence vit ENTIÈREMENT dans les deux RPC (octroi déjà révoqué non
+    // retouché, index de débit unique). Le webhook n'a donc pas à se souvenir :
+    // il rappelle, et zéro ligne veut dire « déjà fait », jamais « échec ».
+    mocks.rpc.mockImplementation(() => ({ data: [], error: null }));
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ revoked: 0, sms_debited: 0 });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("REMBOURSEMENT PARTIEL : signalé, RIEN n'est repris", async () => {
+    // Rembourser 10 € sur un pass à 39 € ne dit pas si le droit doit tomber.
+    // Le deviner couperait un client servi ; on acquitte et un humain tranche.
+    mocks.constructEvent.mockReturnValue(
+      remboursementEvent({ amount: 3900, amount_refunded: 1000 }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+    expect(appels("debit_sms_balance_for_refund")).toHaveLength(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.remboursement-partiel",
+      expect.stringContaining("ch_1"),
+    );
+  });
+
+  it("AUCUNE SESSION : rien à reprendre, et surtout aucune RPC à l'aveugle", async () => {
+    // Facture d'abonnement, paiement hors tunnel. Appeler les RPC avec une
+    // référence qu'elles ne connaissent pas ne casserait rien — c'est bien le
+    // problème : ça classerait l'événement traité sans rien avoir fait.
+    mocks.sessionsList.mockResolvedValue({ data: [] });
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+  });
+
+  it("STRIPE INJOIGNABLE pendant la traduction : 500, pour que le rejeu reprenne", async () => {
+    mocks.sessionsList.mockRejectedValue(new Error("Stripe indisponible"));
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+  });
+
+  it("PANNE DE LA RPC : 500 assumé, le rejeu ne reprend rien deux fois", async () => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "revoke_grant_for_refund"
+        ? { data: null, error: { message: "boom" } }
+        : { data: [], error: null },
+    );
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
   });
 });

@@ -40,7 +40,14 @@ import { requiredEnv } from "@/lib/env";
  *   checkout.session.completed,
  *   checkout.session.async_payment_succeeded,
  *   checkout.session.async_payment_failed,
- *   customer.subscription.created / updated / deleted
+ *   customer.subscription.created / updated / deleted,
+ *   charge.refunded,
+ *   charge.dispute.created
+ *
+ * LES DEUX DERNIERS SONT NEUFS (SD-2) et ne sont pas facultatifs non plus :
+ * sans eux, un add-on remboursé reste ouvert jusqu'à son terme et des crédits
+ * SMS remboursés restent dépensables. Ne pas les activer ne produit aucune
+ * erreur visible — c'est précisément ce qui rend l'oubli coûteux.
  *
  * ⚠️ LES DEUX `async_payment_*` NE SONT PAS FACULTATIFS. `createSmsCredit
  * CheckoutSession` ne fixe aucun `payment_method_types` : les moyens de
@@ -298,6 +305,40 @@ async function handleWebhook(request: Request) {
           `[stripe] checkout complété pour customer ${session.customer}`,
         );
         break;
+      }
+
+      // ── CE QUI A ÉTÉ REMBOURSÉ SE REPREND (SD-2) ────────────
+      //
+      // Les deux événements partagent un seul chemin parce qu'ils décrivent le
+      // même fait pour nous : l'argent est reparti. Un litige suit d'ailleurs
+      // souvent un remboursement sur la même charge, et les deux RPC sont
+      // idempotentes sur la référence d'achat — rejouer l'un après l'autre ne
+      // reprend rien deux fois.
+      case "charge.refunded": {
+        const charge = event.data.object;
+        return await reprendreApresRemboursement(admin, stripe, event, {
+          paymentIntentId: idDe(charge.payment_intent),
+          chargeId: charge.id,
+          // `charge.refunded` est émis pour un remboursement PARTIEL comme pour
+          // un total. Seul le total est traité — voir le corps.
+          integral: charge.amount_refunded >= charge.amount,
+          motif: `stripe: charge ${charge.id} remboursée`,
+        });
+      }
+
+      case "charge.dispute.created": {
+        const dispute = event.data.object;
+        return await reprendreApresRemboursement(admin, stripe, event, {
+          paymentIntentId: idDe(dispute.payment_intent),
+          chargeId: idDe(dispute.charge),
+          // UN LITIGE EST TOUJOURS TRAITÉ EN ENTIER. Stripe retire les fonds
+          // dès son ouverture ; attendre l'issue laisserait le module ouvert
+          // pendant les semaines d'instruction. Si le commerçant gagne, le
+          // droit se rétablit par un nouvel achat — et c'est le bon sens de
+          // l'erreur, l'inverse offrant le service à qui a repris son argent.
+          integral: true,
+          motif: `stripe: litige sur la charge ${idDe(dispute.charge) ?? "inconnue"}`,
+        });
       }
 
       default:
@@ -658,7 +699,13 @@ async function octroyerModule(
     p_ends_at: verdict.termes.ends_at,
     p_activate_by: verdict.termes.activate_by,
     p_capacity: verdict.termes.capacity,
-    p_resource_id: null,
+    // LA RESSOURCE BORNANTE, et non plus `null` en dur (SD-5). Elle vient de la
+    // metadata de session, seul endroit où le CHOIX du commerçant puisse
+    // voyager — `createAddonCheckoutSession` a vérifié avant le paiement que la
+    // compétition lui appartient, et `readModuleGrantPurchase` en revérifie la
+    // forme. Non nulle uniquement pour une Saison de pronostics ; les sept
+    // autres add-ons ouvrent leur module entier et rendent `null` comme avant.
+    p_resource_id: achat.resourceId,
   });
 
   if (error) {
@@ -725,37 +772,268 @@ async function octroyerModule(
    * littéral renommé — se serait donc journalisée « déjà octroyé » et acquittée
    * en silence, ce qui est exactement le silence que ce lot cherche à fermer.
    *
-   * Ici les deux issues nominales sont NOMMÉES, et tout le reste crie. On
+   * Ici les trois issues nominales sont NOMMÉES, et tout le reste crie. On
    * acquitte quand même : la RPC a fait ce qu'elle avait à faire, seul son
    * verdict nous échappe, et un 500 ferait retenter Stripe pour rien.
+   *
+   * ── ET LA TROISIÈME EST ARRIVÉE, EXACTEMENT COMME ANNONCÉ ───
+   *
+   * La migration 20260925120000 ajoute `reactivated` (SD-6) : un rachat pendant
+   * la grâce d'impayé LÈVE l'échéance de l'octroi existant au lieu d'en créer un
+   * second que la levée ferait ensuite violer l'index d'unicité. Le paragraphe
+   * ci-dessus décrivait ce scénario au futur — « une quatrième issue ajoutée un
+   * jour en base » —, et sans le mot `reactivated` dans cette liste, un rachat
+   * parfaitement réussi serait sorti par le chemin d'alerte, SANS écrire la
+   * moindre trace d'audit. Le droit rouvert n'aurait figuré nulle part.
    */
-  if (ligne?.outcome !== "created" && ligne?.outcome !== "replayed") {
+  const NOMINALES = ["created", "replayed", "reactivated"] as const;
+  type IssueNominale = (typeof NOMINALES)[number];
+  if (!(NOMINALES as readonly string[]).includes(ligne?.outcome ?? "")) {
     reportError(
       "stripe.module-grant-outcome",
       `issue inattendue « ${ligne?.outcome ?? "aucune ligne rendue"} » de grant_module_from_payment pour la session ${sessionId}`,
     );
     return NextResponse.json({ received: true });
   }
+  const issue = ligne.outcome as IssueNominale;
+
+  // TROIS ACTIONS D'AUDIT ET NON DEUX. Une table plutôt qu'un ternaire imbriqué :
+  // le vocabulaire est celui déjà posé par ce fichier (`module_grant.granted`,
+  // `module_grant.replayed`), et l'exhaustivité est tenue par le type — une
+  // cinquième issue ne compilerait pas tant qu'elle n'a pas son nom ici.
+  const ACTION_AUDIT: Record<IssueNominale, string> = {
+    created: "module_grant.granted",
+    replayed: "module_grant.replayed",
+    // Le mot dit ce qui s'est passé : rien n'a été créé, une échéance d'impayé
+    // a été levée sur un octroi qui n'avait jamais cessé d'exister.
+    reactivated: "module_grant.reactivated",
+  };
 
   await writeAuditLog({
     organizationId: achat.organizationId,
     actor: "stripe",
-    action:
-      ligne.outcome === "created"
-        ? "module_grant.granted"
-        : "module_grant.replayed",
+    action: ACTION_AUDIT[issue],
     metadata: {
       session_id: sessionId,
       event: event.id,
       module: achat.entitlement,
-      // Non-null sur ces deux issues-là : `created` le rend depuis le
-      // `returning`, `replayed` le relit sur la ligne en conflit. Le seul cas
-      // où il manque est `refused`, sorti plus haut.
+      // Non-null sur ces trois issues-là : `created` le rend depuis le
+      // `returning`, `replayed` le relit sur la ligne en conflit, `reactivated`
+      // rend celle qu'il vient de rouvrir. Le seul cas où il manque est
+      // `refused`, sorti plus haut.
       grant_id: ligne.grant_id,
     },
   });
 
   return NextResponse.json({ received: true });
+}
+
+/** L'identifiant d'un champ Stripe expansible, qu'il soit rendu nu ou déplié. */
+function idDe(champ: string | { id: string } | null | undefined): string | null {
+  if (!champ) return null;
+  return typeof champ === "string" ? champ : champ.id;
+}
+
+interface ContexteReprise {
+  /** Le paiement, seul lien entre une charge et la session qui l'a créée. */
+  paymentIntentId: string | null;
+  chargeId: string | null;
+  /** Faux pour un remboursement partiel : signalé, jamais deviné. */
+  integral: boolean;
+  /** Motif écrit sur l'octroi révoqué. Tronqué à 300 par la RPC. */
+  motif: string;
+}
+
+/* ════════════════════════════════════════════════════════════
+ * REPRENDRE CE QUI A ÉTÉ REMBOURSÉ OU CONTESTÉ (SD-2)
+ *
+ * ── LE PIÈGE CENTRAL : DEUX IDENTIFIANTS QUI NE SE PARLENT PAS ──
+ *
+ * Les deux RPC s'apparient sur la référence D'ACHAT — `source_reference` d'un
+ * octroi et `reference` d'un mouvement de crédit SMS valent toutes deux
+ * l'identifiant de la SESSION DE CHECKOUT (la seconde préfixée `stripe:`).
+ * Or un `charge.refunded` ne porte ni l'un ni l'autre : il porte une charge et
+ * un payment intent, que la base n'a jamais vus. Leur passer l'identifiant de
+ * charge « parce qu'il est là » ne lèverait aucune erreur : les deux rendraient
+ * ZÉRO LIGNE, c'est-à-dire « rien à reprendre », et le remboursement serait
+ * classé traité en laissant le module ouvert. Le silence est ici le défaut, pas
+ * l'exception.
+ *
+ * La traduction se demande donc à Stripe — `checkout.sessions.list({
+ * payment_intent })` — avec le même client que le reste de la route.
+ *
+ * ── CE QUE CE CHEMIN NE COUVRE PAS, ET C'EST ÉCRIT PLUTÔT QUE DÉCOUVERT ──
+ *
+ *   * LE REMBOURSEMENT PARTIEL. Rembourser 10 € sur un pass à 39 € ne dit pas
+ *     si le droit doit tomber ; reprendre la moitié d'un octroi n'existe pas, et
+ *     reprendre le tout sur un geste commercial couperait un client servi. On
+ *     signale et on acquitte.
+ *   * LES FACTURES D'ABONNEMENT (offre mensuelle, pass récurrent). Leur charge
+ *     n'est rattachée à aucune session de checkout — `session.payment_intent`
+ *     est null en mode `subscription` —, donc la recherche ci-dessous ne rend
+ *     rien. Ce n'est pas un trou béant : la résiliation Stripe, elle, révoque
+ *     déjà l'octroi récurrent par `traiterAbonnementDePass`. Ce qui manque est
+ *     le remboursement SANS résiliation, qui reste à traiter à la main.
+ *
+ * ── IDEMPOTENCE ──
+ *
+ * Entièrement portée par les deux RPC : un octroi déjà révoqué n'est pas
+ * retouché et ne figure pas dans leur retour, et le débit SMS est gardé par
+ * l'index `sms_credit_entries_one_refund_debit`. Ce chemin ne prend donc PAS
+ * l'événement (`claimStripeEvent`), pour la raison écrite plus haut à propos
+ * d'`octroyerModule` : une prise réussie suivie d'une écriture échouée ferait
+ * avaler le rejeu comme un doublon. Un 500 est ici toujours sûr.
+ * ════════════════════════════════════════════════════════════ */
+async function reprendreApresRemboursement(
+  admin: AdminClient,
+  stripe: Stripe,
+  event: Stripe.Event,
+  ctx: ContexteReprise,
+): Promise<NextResponse> {
+  if (!ctx.integral) {
+    // SIGNALÉ, PAS DEVINÉ. Un humain tranche ce que le code ne peut pas.
+    reportError(
+      "stripe.remboursement-partiel",
+      `remboursement partiel sur la charge ${ctx.chargeId ?? "inconnue"} : aucune reprise automatique, à trancher à la main`,
+    );
+    return NextResponse.json({ received: true, partial: true });
+  }
+
+  if (!ctx.paymentIntentId) {
+    reportError(
+      "stripe.remboursement-sans-paiement",
+      `charge ${ctx.chargeId ?? "inconnue"} sans payment_intent : impossible de retrouver la session d'achat`,
+    );
+    return NextResponse.json({ received: true });
+  }
+
+  let sessions: Stripe.ApiList<Stripe.Checkout.Session>;
+  try {
+    sessions = await stripe.checkout.sessions.list({
+      payment_intent: ctx.paymentIntentId,
+      limit: 2,
+    });
+  } catch (err) {
+    // 500 ASSUMÉ : c'est une panne de lecture, pas un verdict. Stripe rejouera,
+    // et le rejeu ne peut rien reprendre deux fois.
+    reportError("stripe.remboursement-session", err);
+    return NextResponse.json({ error: "Reprise impossible" }, { status: 500 });
+  }
+
+  const session = sessions.data[0] ?? null;
+  if (!session) {
+    // Ni octroi ni crédit sous ce paiement : facture d'abonnement, paiement
+    // hors tunnel, ou achat antérieur au marqueur de metadata. Rien à reprendre
+    // n'est un état normal, il se journalise sans crier.
+    console.log(
+      `[stripe] remboursement ${ctx.paymentIntentId} : aucune session de checkout, rien à reprendre`,
+    );
+    return NextResponse.json({ received: true });
+  }
+  if (sessions.data.length > 1) {
+    // Inatteignable depuis l'application (un paiement, une session), mais le
+    // constater coûte une ligne et sa découverte en produirait un mystère.
+    reportError(
+      "stripe.remboursement-sessions-multiples",
+      `plusieurs sessions pour le paiement ${ctx.paymentIntentId}, seule ${session.id} est reprise`,
+    );
+  }
+
+  // L'organisation vient de la SESSION, seul endroit où les deux reprises
+  // puissent la lire : `revoke_grant_for_refund` ne la rend pas, et une reprise
+  // qui ne rendrait rien laisserait l'audit sans destinataire.
+  const organizationId =
+    (session.client_reference_id ?? session.metadata?.organization_id ?? "").trim()
+    || null;
+
+  const { data: octrois, error: erreurOctrois } = await rpcStrict(
+    admin,
+    "revoke_grant_for_refund",
+    { p_source_reference: session.id, p_reason: ctx.motif },
+  );
+  if (erreurOctrois) {
+    reportError("stripe.remboursement-octroi", erreurOctrois.message);
+    return NextResponse.json({ error: "Reprise impossible" }, { status: 500 });
+  }
+
+  const { data: sms, error: erreurSms } = await rpcStrict(
+    admin,
+    "debit_sms_balance_for_refund",
+    // ⚠️ LE PRÉFIXE N'EST PAS DÉCORATIF. `creditSmsPack` écrit la référence
+    // d'achat `stripe:<session>` au grand livre ; la passer NUE ici ferait
+    // rendre zéro ligne à la RPC — donc « rien à reprendre » — sur un achat de
+    // crédits parfaitement remboursé.
+    { p_source_reference: `stripe:${session.id}` },
+  );
+  if (erreurSms) {
+    // Les octrois ont pu être révoqués juste au-dessus : le 500 les rejouera,
+    // et la RPC d'octroi ne re-révoque pas ce qui l'est déjà. C'est exactement
+    // ce que l'idempotence achète — on peut échouer franchement.
+    reportError("stripe.remboursement-sms", erreurSms.message);
+    return NextResponse.json({ error: "Reprise impossible" }, { status: 500 });
+  }
+
+  const revoques = (octrois ?? []) as Array<{
+    grant_id: string;
+    grant_module: string;
+  }>;
+  const debit = ((sms ?? []) as Array<{
+    org_id: string;
+    debited_units: number;
+    entry_id: string;
+  }>)[0];
+
+  for (const octroi of revoques) {
+    await writeAuditLog({
+      organizationId,
+      actor: "stripe",
+      action: "module_grant.revoked",
+      metadata: {
+        event: event.id,
+        session_id: session.id,
+        charge_id: ctx.chargeId,
+        module: octroi.grant_module,
+        grant_id: octroi.grant_id,
+        reason: "refund",
+      },
+    });
+    reportSecurityEvent("module_grant_revoked", {
+      organization_id: organizationId,
+      module: octroi.grant_module,
+    });
+  }
+
+  if (debit) {
+    await writeAuditLog({
+      // L'organisation rendue par la RPC prime : elle vient de la ligne du
+      // grand livre effectivement débitée, pas d'une metadata de session.
+      organizationId: debit.org_id,
+      actor: "stripe",
+      action: "sms_credit.refunded",
+      metadata: {
+        event: event.id,
+        session_id: session.id,
+        charge_id: ctx.chargeId,
+        units: debit.debited_units,
+        entry_id: debit.entry_id,
+      },
+    });
+  }
+
+  if (revoques.length === 0 && !debit) {
+    // Rejeu, ou remboursement d'un achat qui n'ouvrait aucun droit. Les deux se
+    // ressemblent ici et c'est sans conséquence : dans les deux cas il n'y a
+    // rien à reprendre. Visible plutôt que muet.
+    console.log(
+      `[stripe] remboursement de la session ${session.id} : rien à reprendre (déjà fait, ou achat sans droit)`,
+    );
+  }
+
+  return NextResponse.json({
+    received: true,
+    revoked: revoques.length,
+    sms_debited: debit?.debited_units ?? 0,
+  });
 }
 
 /**
