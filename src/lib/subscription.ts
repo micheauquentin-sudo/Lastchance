@@ -136,6 +136,40 @@ export function hasActiveAccess(org: OrgAccessFields, now = new Date()): boolean
   // le socle retombe sur l'abonnement — qui refusera s'il n'y en a pas. Aucune
   // écriture, donc aucune prolongation possible par panne.
   if ((org.live_module_grants?.length ?? 0) > 0) return true;
+  return hasSubscriptionAccess(org, now);
+}
+
+/**
+ * L'ORGANISATION A-T-ELLE UNE OFFRE VIVANTE ? Port de
+ * `org_has_subscription_access` (migration 20260925120000).
+ *
+ * ── POURQUOI CETTE FONCTION EXISTE, ET CE QU'ELLE RÉPARE ──
+ *
+ * `hasActiveAccess` répond « ce commerçant a-t-il un droit payant QUELCONQUE ? »
+ * — octroi de module compris. C'est la bonne question pour le socle, ce n'était
+ * pas la bonne pour un module : jusqu'au 2026-08-16, un pass Chasse à 29 € y
+ * répondait vrai, donc ouvrait la roue et les campagnes, c'est-à-dire l'offre
+ * mensuelle qu'il coûte (SD-4). La décision produit du 2026-08-04 est explicite :
+ * « un pass n'ouvre QUE son module ».
+ *
+ * Le corps ci-dessous est celui de `hasActiveAccess` MOINS sa branche d'octrois,
+ * et `hasActiveAccess` l'appelle désormais plutôt que de le recopier — exactement
+ * le partage que la migration a fait côté SQL, où `org_has_active_access` appelle
+ * `org_has_subscription_access`. Deux écritures d'une même règle de grâce, c'est
+ * deux règles qui divergeront.
+ *
+ * ── CE QU'ELLE NE REGARDE PAS, ET C'EST SA RAISON D'ÊTRE ──
+ *
+ * `live_module_grants`. Un appelant qui veut « un droit payant quelconque »
+ * doit garder `hasActiveAccess` ; celui qui décide d'un MODULE passe par
+ * `droitEffectifModule`, qui interroge l'octroi de CE module en premier puis
+ * cette fonction. La parité des deux est gardée par
+ * `supabase/tests/access_parity.test.sql` et `src/lib/subscription.test.ts`.
+ */
+export function hasSubscriptionAccess(
+  org: Omit<OrgAccessFields, "live_module_grants">,
+  now = new Date(),
+): boolean {
   // Accès offert par le back-office : prime sur l'état Stripe.
   if (hasCompAccess(org, now)) return true;
   if (org.subscription_status === "active") return true;
@@ -225,6 +259,19 @@ export type ChampsModule<M extends GrantableModule> =
  * booléen `addon_*`. La pause à l'échéance opère par ABSENCE — passé `ends_at`
  * l'octroi n'est plus vivant, cette branche cesse de répondre, et le module
  * retombe sur l'abonnement qui refusera s'il n'y en a pas.
+ *
+ * ── LA SECONDE BRANCHE EXIGE UNE OFFRE, PAS « UN DROIT QUELCONQUE » ──
+ *
+ * `hasSubscriptionAccess` et NON `hasActiveAccess`, depuis la migration
+ * 20260925120000 qui fait exactement ce remplacement dans
+ * `org_has_module_access`. La différence tient à une seule branche et elle vaut
+ * le prix d'un abonnement : `hasActiveAccess` rend vrai sur N'IMPORTE QUEL
+ * octroi vivant, si bien qu'un pass Chasse à 29 € faisait répondre `true` à
+ * `droitEffectifModule("wheel", …)` — dont aucune colonne `addon_*` ne
+ * conditionne la ligne — donc ouvrait la roue, les campagnes et leur
+ * publication. Le laisser ici pendant que la base l'a fermé donnerait le pire
+ * des deux : le dashboard montrerait la roue ouverte à un porteur de pass que
+ * `org_has_module_access` refuse au moment d'agir.
  */
 export function droitEffectifModule<M extends GrantableModule>(
   module: M,
@@ -232,7 +279,7 @@ export function droitEffectifModule<M extends GrantableModule>(
   now = new Date(),
 ): boolean {
   if (hasLiveModuleGrant(org, module)) return true;
-  if (!hasActiveAccess(org, now)) return false;
+  if (!hasSubscriptionAccess(org, now)) return false;
 
   const colonne = MODULE_ADDON_COLUMN[module];
   // `wheel` : aucun add-on ne la conditionne, l'accès actif suffit.

@@ -62,6 +62,13 @@ export async function chargerOctroisVivants(
     .from("organization_module_grants")
     .select("module")
     .eq("organization_id", organizationId)
+    // LE MIROIR DU CORRECTIF SD-5 (migration 20260925120000). Un octroi porteur
+    // d'un `resource_id` est vendu pour UNE ressource — une compétition de
+    // pronostics — et n'ouvre pas le module entier : c'est ce que
+    // `org_has_live_module_grant` dit désormais côté SQL. Sans cette ligne, le
+    // chargeur rendrait `pronostics` pour un pass borné à un championnat, et
+    // l'écran ouvrirait tous les autres.
+    .is("resource_id", null)
     .is("revoked_at", null)
     .not("starts_at", "is", null)
     .lte("starts_at", iso)

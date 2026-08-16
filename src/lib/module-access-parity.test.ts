@@ -36,11 +36,21 @@ import {
  * fait rien exécuter.
  */
 
+/**
+ * L'ANCRE SUIT LA DÉFINITION VIVANTE, PAS SA PREMIÈRE ÉCRITURE.
+ *
+ * Elle a pointé `20260907120000_p0_lot2_octrois_dates.sql` jusqu'au 2026-08-16 :
+ * `org_has_module_access` y a été créée, puis REDÉFINIE par
+ * `20260925120000_droits_stripe.sql` (SD-4). La garde continuait de comparer la
+ * constante à une version que Postgres n'exécute plus — c'est-à-dire qu'elle
+ * gardait du mort, exactement le piège « lire le catalogue vivant, pas la
+ * migration d'origine » déjà payé deux fois sur ce dépôt.
+ */
 const MIGRATION = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20260907120000_p0_lot2_octrois_dates.sql",
+  "20260925120000_droits_stripe.sql",
 );
 
 /**

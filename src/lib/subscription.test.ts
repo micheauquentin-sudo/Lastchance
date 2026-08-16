@@ -5,8 +5,10 @@ import {
   billingButtonsToShow,
   CHECKOUT_REFUS_ABONNEMENT_VIVANT,
   displaySubscriptionStatus,
+  droitEffectifModule,
   hasActiveAccess,
   hasCompAccess,
+  hasSubscriptionAccess,
   isTrialExpired,
   PAST_DUE_GRACE_DAYS,
   hasCalendarAccess,
@@ -694,5 +696,82 @@ describe("octroi daté de module (lot 2)", () => {
     expect(hasLiveModuleGrant({}, "hunts")).toBe(false);
     expect(hasLiveModuleGrant({ live_module_grants: ["quiz"] }, "hunts")).toBe(false);
     expect(hasLiveModuleGrant({ live_module_grants: ["quiz"] }, "quiz")).toBe(true);
+  });
+
+  /* ── SD-4 : UN PASS N'OUVRE QUE SON MODULE ────────────────
+   *
+   * Le test « il n'ouvre que lui » juste au-dessus était vert AVANT ce
+   * correctif, et il ne pouvait pas attraper le défaut : les trois modules
+   * qu'il interroge ont tous une colonne `addon_*` à `false`, si bien que la
+   * seconde branche refusait pour la BONNE raison par accident.
+   *
+   * `wheel` est le seul module dont la ligne du `case` SQL vaut `true` sans
+   * condition. Il était donc le seul à ne dépendre QUE du socle — et le socle,
+   * `hasActiveAccess`, rendait vrai sur n'importe quel octroi vivant. Un pass
+   * Chasse à 29 € ouvrait la roue et les campagnes, c'est-à-dire l'offre
+   * mensuelle qu'il coûte : le catalogue se sous-vendait lui-même.
+   */
+  it("SD-4 : un pass Chasse n'ouvre PAS la roue", () => {
+    const o = { ...resilie, addon_hunts: false, live_module_grants: ["hunts"] as const };
+    expect(droitEffectifModule("hunts", o, NOW)).toBe(true);
+    // ROUGE AVANT LE CORRECTIF : `hasActiveAccess` répondait vrai sur l'octroi
+    // de `hunts`, et `wheel` n'a aucun addon à opposer.
+    expect(droitEffectifModule("wheel", o, NOW)).toBe(false);
+  });
+
+  it("SD-4 : un addon resté allumé par une offre RÉSILIÉE ne rouvre rien", () => {
+    // Même défaut, une table plus loin : le booléen `addon_calendar` survit à
+    // la résiliation, et la seconde branche ne demandait qu'« un droit payant
+    // quelconque » — que le pass Chasse fournissait.
+    const o = {
+      ...resilie,
+      addon_hunts: false,
+      addon_calendar: true,
+      live_module_grants: ["hunts"] as const,
+    };
+    expect(droitEffectifModule("calendar", o, NOW)).toBe(false);
+  });
+
+  it("TÉMOIN : l'abonné garde tout ce qu'il payait", () => {
+    // Sans lui, une seconde branche devenue toujours fausse passerait les deux
+    // tests ci-dessus en coupant le service de tous les abonnés.
+    const abonne = {
+      subscription_status: "active" as SubscriptionStatus,
+      trial_ends_at: "2020-01-01T00:00:00Z",
+      past_due_since: null,
+      comp_access: false,
+      comp_access_until: null,
+      addon_calendar: true,
+    };
+    expect(droitEffectifModule("wheel", abonne, NOW)).toBe(true);
+    expect(droitEffectifModule("calendar", abonne, NOW)).toBe(true);
+  });
+
+  it("hasSubscriptionAccess ignore les octrois, hasActiveAccess les compte", () => {
+    // Le partage exact de la migration : `org_has_active_access` = octroi OU
+    // `org_has_subscription_access`. Les confondre est le défaut SD-4 lui-même.
+    const o = { ...resilie, live_module_grants: ["hunts"] as const };
+    expect(hasActiveAccess(o, NOW)).toBe(true);
+    expect(hasSubscriptionAccess(o, NOW)).toBe(false);
+  });
+
+  it("hasSubscriptionAccess garde la grâce d'impayé et l'accès offert", () => {
+    // Le corps a été DÉPLACÉ, pas réécrit : les deux branches délicates
+    // doivent répondre exactement comme `hasActiveAccess` le faisait.
+    const impaye = {
+      ...resilie,
+      subscription_status: "past_due" as SubscriptionStatus,
+      past_due_since: "2026-07-01T12:00:00Z",
+    };
+    expect(hasSubscriptionAccess(impaye, NOW)).toBe(true);
+    expect(
+      hasSubscriptionAccess(
+        { ...impaye, past_due_since: "2026-06-01T12:00:00Z" },
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      hasSubscriptionAccess({ ...resilie, comp_access: true }, NOW),
+    ).toBe(true);
   });
 });
