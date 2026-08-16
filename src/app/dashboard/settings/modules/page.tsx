@@ -17,12 +17,14 @@ import {
   type AddonBilling,
   type AddonOffer,
 } from "@/lib/plans";
+import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   AchatAddon,
   DemarrerAddon,
+  type RessourceAchat,
 } from "@/components/dashboard/addon-purchase";
 
 export const metadata: Metadata = { title: "Options" };
@@ -75,6 +77,25 @@ export default async function ModulesSettingsPage({
         : null;
     })
     .filter((x) => x !== null);
+
+  // LES COMPÉTITIONS ACHETABLES. Une Saison de pronostics se vend « pour une
+  // compétition identifiée, un seul contest_id » (catalogue) : l'écran doit
+  // donc faire choisir, sans quoi l'action refuse — et l'octroi, avant ce lot,
+  // ouvrait le module entier. Lu par le client RLS : un propriétaire ne voit
+  // que les siennes, et l'action revérifie l'appartenance côté serveur.
+  const competitions: RessourceAchat[] = [];
+  if (proprietaire) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("contests")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    for (const ligne of (data ?? []) as Array<{ id: string; name: string }>) {
+      competitions.push({ id: ligne.id, nom: ligne.name });
+    }
+  }
 
   return (
     <div>
@@ -163,6 +184,7 @@ export default async function ModulesSettingsPage({
             offre={offre}
             ouvert={(ouverts as readonly string[]).includes(offre.entitlement)}
             proprietaire={proprietaire}
+            competitions={competitions}
           />
         ))}
 
@@ -183,16 +205,24 @@ function CarteAddon({
   offre,
   ouvert,
   proprietaire,
+  competitions,
 }: {
   offre: AddonOffer;
   ouvert: boolean;
   proprietaire: boolean;
+  /** Compétitions du commerçant, pour le seul pass borné à l'une d'elles. */
+  competitions: readonly RessourceAchat[];
 }) {
   const achetable = addonAchetableEnLigne(offre.entitlement);
   const paliers =
     offre.billing.model === "capacity-pass"
       ? paliersDisponibles(offre.entitlement)
       : undefined;
+  // `single-competition` et non `entitlement === "pronostics"` : c'est le
+  // MODÈLE de facturation qui exige une ressource, et un second produit vendu
+  // ainsi hériterait du choix sans qu'on y pense.
+  const ressources =
+    offre.billing.model === "single-competition" ? competitions : undefined;
 
   return (
     <Card>
@@ -222,6 +252,8 @@ function CarteAddon({
           entitlement={offre.entitlement}
           price={prixAffiche(offre.billing)}
           paliers={paliers}
+          ressources={ressources}
+          libelleRessource="la compétition"
         />
       ) : (
         // Le message dit quoi FAIRE. « Prix Stripe non configuré » n'apprend

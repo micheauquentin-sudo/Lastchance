@@ -179,3 +179,75 @@ describe("readModuleGrantPurchase — la date de création", () => {
     }
   });
 });
+
+/* ════════════════════════════════════════════════════════════
+ * SD-5 — LA RESSOURCE BORNANTE D'UNE SAISON DE PRONOSTICS
+ *
+ * « Une seule compétition identifiée, un seul contest_id » (catalogue). La
+ * colonne `resource_id` existait depuis le lot 2 et n'était écrite par
+ * personne : le webhook posait `p_resource_id: null` en dur, donc un pass à
+ * 39 € vendu POUR une compétition ouvrait le module entier — toutes les
+ * compétitions, pendant les douze mois du plafond dur.
+ * ════════════════════════════════════════════════════════════ */
+describe("readModuleGrantPurchase — la ressource bornante", () => {
+  const CONTEST = "bbbb0000-0000-4000-8000-000000000009";
+
+  function saison(resource?: string | null) {
+    return session({
+      metadata: {
+        purchase: MODULE_GRANT_PURCHASE,
+        organization_id: ORG,
+        entitlement: "pronostics",
+        ...(resource === undefined ? {} : { resource_id: resource }),
+      },
+    });
+  }
+
+  it("transporte le contest_id d'une Saison de pronostics", () => {
+    const r = readModuleGrantPurchase(saison(CONTEST));
+    expect(r.kind).toBe("grant");
+    if (r.kind === "grant") expect(r.resourceId).toBe(CONTEST);
+  });
+
+  it("normalise la casse : un uuid est le même en majuscules", () => {
+    const r = readModuleGrantPurchase(saison(CONTEST.toUpperCase()));
+    if (r.kind === "grant") expect(r.resourceId).toBe(CONTEST);
+  });
+
+  it("REFUSE un identifiant malformé plutôt que de le passer à Postgres", () => {
+    // Un cast raté dans `grant_module_from_payment` lèverait, donc 500 en
+    // boucle sur un événement que rien ne réparera. `invalid` acquitte et crie.
+    for (const brut of ["pas-un-uuid", "42", "'; drop table --"]) {
+      expect(readModuleGrantPurchase(saison(brut)).kind, brut).toBe("invalid");
+    }
+  });
+
+  it("SANS ressource : octroie quand même, module entier, comme avant", () => {
+    // Ne peut venir que d'une session antérieure à ce lot ou d'un lien posé à
+    // la main — l'action l'exige désormais. Rendre `invalid` encaisserait sans
+    // rien ouvrir ; le webhook, lui, signale. La fenêtre se referme seule.
+    for (const absente of [undefined, "", "   "]) {
+      const r = readModuleGrantPurchase(saison(absente));
+      expect(r.kind, String(absente)).toBe("grant");
+      if (r.kind === "grant") expect(r.resourceId).toBeNull();
+    }
+  });
+
+  it("les sept autres add-ons ne portent JAMAIS de ressource", () => {
+    // Une ressource glissée sur un pass qui ouvre son module entier serait un
+    // identifiant gelé en base que rien ne lit — et qui bornerait le droit le
+    // jour où quelqu'un le lirait.
+    const r = readModuleGrantPurchase(
+      session({
+        metadata: {
+          purchase: MODULE_GRANT_PURCHASE,
+          organization_id: ORG,
+          entitlement: "hunts",
+          resource_id: CONTEST,
+        },
+      }),
+    );
+    expect(r.kind).toBe("grant");
+    if (r.kind === "grant") expect(r.resourceId).toBeNull();
+  });
+});

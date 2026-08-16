@@ -27,16 +27,31 @@ export interface PalierAchat {
   price: number;
 }
 
+/** Une ressource à laquelle l'achat peut être borné (une compétition). */
+export interface RessourceAchat {
+  id: string;
+  nom: string;
+}
+
 export function AchatAddon({
   entitlement,
   price,
   paliers,
+  ressources,
+  libelleRessource,
 }: {
   entitlement: string;
   /** Prix affiché hors pass à jauge, en euros. */
   price?: number;
   /** Paliers réellement vendus, pour un pass à jauge. */
   paliers?: readonly PalierAchat[];
+  /**
+   * Ressources sélectionnables, pour un pass BORNÉ à une seule d'entre elles.
+   * Absent = le pass ouvre son module entier et ne demande aucun choix.
+   */
+  ressources?: readonly RessourceAchat[];
+  /** Comment nommer ce choix au commerçant (« la compétition »). */
+  libelleRessource?: string;
 }) {
   const [state, action, pending] = useActionState(
     createAddonCheckoutSession,
@@ -51,14 +66,53 @@ export function AchatAddon({
         }))
       : [{ capacity: undefined, label: price ? `Acheter — ${price} €` : "Acheter" }];
 
+  // UN PASS BORNÉ SANS AUCUNE RESSOURCE N'EST PAS ACHETABLE, et le dire vaut
+  // mieux qu'un bouton qui mène au refus de l'action : « ce qui est proposé est
+  // ce qui aboutit » est la règle de cet écran. Le commerçant apprend du même
+  // coup le geste qui débloque — créer le brouillon, ce qui ne coûte rien.
+  if (ressources && ressources.length === 0) {
+    return (
+      <p className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+        Cette option s&apos;achète pour <strong>{libelleRessource ?? "une ressource"}</strong>.
+        Créez-la d&apos;abord — un brouillon suffit —, puis revenez ici pour
+        l&apos;acheter.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {boutons.map((bouton) => (
-          <form key={bouton.label} action={action}>
+          // LE CHOIX EST DANS LE FORMULAIRE, un par bouton : chaque `<form>` ne
+          // poste que ses propres champs. Un `select` hissé au-dessus de la
+          // boucle ne serait envoyé par aucun d'eux.
+          <form key={bouton.label} action={action} className="space-y-2">
             <input type="hidden" name="addon" value={entitlement} />
             {bouton.capacity !== undefined && (
               <input type="hidden" name="capacity" value={bouton.capacity} />
+            )}
+            {ressources && (
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium text-zinc-700">
+                  Pour {libelleRessource ?? "cette ressource"}
+                </span>
+                <select
+                  name="resource"
+                  required
+                  defaultValue=""
+                  className="w-full rounded-xl border-2 border-zinc-300 px-3 py-2"
+                >
+                  <option value="" disabled>
+                    Choisissez…
+                  </option>
+                  {ressources.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.nom}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             <Button type="submit" variant="secondary" disabled={pending}>
               {pending ? "Redirection…" : bouton.label}
