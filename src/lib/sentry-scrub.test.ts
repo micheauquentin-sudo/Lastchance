@@ -249,3 +249,60 @@ describe("scrubSentryBreadcrumb", () => {
     expect(crumb.category).toBe("console");
   });
 });
+
+describe("jetons porteurs dans le CHEMIN (/commande, /hunt)", () => {
+  const JETON_CHEMIN = "a91f3c7e-QRCODE-42";
+
+  it("masque le jeton d'une URL de requête, sans perdre la route", () => {
+    // L'expurgation par nom de paramètre ne regarde QUE la query : le chemin
+    // passait intact, avec son secret dedans. La route reste lisible — c'est
+    // elle qui permet de regrouper les incidents.
+    const event = scrubSentryEvent({
+      request: {
+        url: `https://app.lastchance.fr/commande/${JETON_CHEMIN}?src=qr`,
+        method: "GET",
+      },
+    });
+
+    expect(event.request?.url).toContain("/commande/[jeton]");
+    expect(event.request?.url).toContain("src=qr");
+    expect(event.request?.url).not.toContain(JETON_CHEMIN);
+  });
+
+  it("masque le jeton dans le NOM DE TRANSACTION, chemin nu", () => {
+    // Une transaction de performance nomme un chemin sans schéma ni hôte :
+    // aucun motif d'URL ne la reconnaît, seul le balayage de toute chaîne
+    // l'attrape. C'est ce que voient `beforeSendTransaction` des trois runtimes.
+    const event = scrubSentryEvent({
+      transaction: `/hunt/${JETON_CHEMIN}`,
+    });
+
+    expect(event.transaction).toBe("/hunt/[jeton]");
+  });
+
+  it("masque le jeton dans le fil d'Ariane fetch ET dans son message", () => {
+    const crumb = scrubSentryBreadcrumb({
+      category: "fetch",
+      message: `GET /commande/${JETON_CHEMIN} 500`,
+      data: {
+        url: `https://app.lastchance.fr/commande/${JETON_CHEMIN}`,
+        status_code: 500,
+      },
+    });
+
+    expect(JSON.stringify(crumb)).not.toContain(JETON_CHEMIN);
+    expect(crumb.data?.status_code).toBe(500);
+  });
+
+  it("masque le jeton dans le texte d'une exception", () => {
+    expect(scrubText(`Failed to load /hunt/${JETON_CHEMIN}`)).toBe(
+      "Failed to load /hunt/[jeton]",
+    );
+  });
+
+  it("ne touche à aucune autre route", () => {
+    expect(scrubText("GET /dashboard/hunts/8f1c-2ab3 200")).toBe(
+      "GET /dashboard/hunts/8f1c-2ab3 200",
+    );
+  });
+});

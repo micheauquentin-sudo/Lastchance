@@ -1,4 +1,5 @@
 import type { Breadcrumb, Event } from "@sentry/nextjs";
+import { masquerJetonUrl } from "./masquer-jeton-url";
 
 /**
  * Assainissement CENTRAL des charges envoyées à Sentry.
@@ -16,6 +17,9 @@ import type { Breadcrumb, Event } from "@sentry/nextjs";
  *  - URLS SIGNÉES : le chemin est conservé, seule la valeur des
  *    paramètres sensibles (`token`, `signature`, `X-Amz-Credential`, `sig`…)
  *    est remplacée — une URL de stockage reste identifiable sans être rejouable ;
+ *  - JETONS DE CHEMIN : `/commande/<jeton>` et `/hunt/<jeton>` portent leur
+ *    secret DANS le chemin, là où l'expurgation par nom de paramètre ci-dessus
+ *    ne va pas voir (src/lib/masquer-jeton-url.ts) ;
  *  - email, téléphone et clés porteuses de données personnelles
  *    (`email`, `first_name`, `player_key`, `ip_address`, cookies…).
  *
@@ -194,7 +198,15 @@ function scrubUrl(raw: string): string {
 /** Assainit un texte libre : message d'erreur, ligne de log, fil d'Ariane. */
 export function scrubText(input: string): string {
   if (!input) return input;
-  return input
+  return (
+    // EN PREMIER, et sur TOUTE chaîne — pas seulement sur celles reconnues
+    // comme des URLs. Un jeton de chemin arrive par trois portes qui ne
+    // passent pas par `scrubUrl` : le nom de transaction (`/commande/abc`,
+    // chemin nu), le fil d'Ariane `fetch` (« GET /hunt/xyz 404 ») et le texte
+    // d'une exception Next. La liste des préfixes est fermée, le passage est
+    // donc un no-op sur tout le reste.
+    masquerJetonUrl(input)
+  )
     .replace(REDEEM_CODE_PATTERN, REDEEM_CODE_PLACEHOLDER)
     .replace(JWT_PATTERN, TOKEN_PLACEHOLDER)
     .replace(BEARER_PATTERN, (_match, scheme: string) =>

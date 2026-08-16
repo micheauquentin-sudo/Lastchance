@@ -20,6 +20,10 @@ Sentry.init({
   sendDefaultPii: false,
   beforeSend: (event) => scrubSentryEvent(event),
   beforeBreadcrumb: (breadcrumb) => scrubSentryBreadcrumb(breadcrumb),
+  // Le navigateur est le seul runtime à VISITER `/commande/<jeton>` et
+  // `/hunt/<jeton>` : ses transactions de navigation en portent l'URL, et
+  // `beforeSend` ne les intercepte pas.
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
 });
 
 /** Trace les navigations du routeur App Router. */

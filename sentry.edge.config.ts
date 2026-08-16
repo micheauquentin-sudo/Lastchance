@@ -14,4 +14,6 @@ Sentry.init({
   sendDefaultPii: false,
   beforeSend: (event) => scrubSentryEvent(event),
   beforeBreadcrumb: (breadcrumb) => scrubSentryBreadcrumb(breadcrumb),
+  // Les transactions échappent à `beforeSend` : même barrière, explicitement.
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
 });
