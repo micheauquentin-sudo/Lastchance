@@ -95,9 +95,15 @@
 -- ============================================================
 
 -- ── 1. `audit_logs` : le journal d'un locataire ne sort pas de chez lui ──
+-- `to authenticated` est EXPLICITE, et ce n'est pas décoratif : 00017 avait
+-- créé cette policy sans clause `to`, donc pour `public`, et 00020 l'a
+-- re-scopée après coup par une boucle sur `pg_policies`. Recréer la policy
+-- sans le dire la rendrait de nouveau évaluable par `anon`, dont l'EXECUTE sur
+-- les helpers `is_org_*` est révoqué : PostgreSQL lèverait une erreur au lieu
+-- de masquer les lignes. La forme vivante est au catalogue, pas dans 00017.
 drop policy if exists "audit: owner select" on public.audit_logs;
 create policy "audit: owner select" on public.audit_logs
-  for select using (
+  for select to authenticated using (
     organization_id is not null and public.is_org_owner(organization_id)
   );
 

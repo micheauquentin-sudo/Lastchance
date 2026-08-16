@@ -99,11 +99,11 @@ insert into public.participations (id, organization_id, campaign_id, wheel_id, f
 values
   ('dd000000-0000-4000-8000-000000000041', 'dd000000-0000-4000-8000-000000000001',
    'dd000000-0000-4000-8000-000000000011', 'dd000000-0000-4000-8000-000000000021',
-   'Ancienne', 'ancienne@tap-purge.local', true, 'PURGE-ANCIENNE',
+   'Ancienne', 'ancienne@tap-purge.local', true, 'GAIN-PURGEANCIENNE',
    repeat('b', 64), now() - interval '12 months'),
   ('dd000000-0000-4000-8000-000000000042', 'dd000000-0000-4000-8000-000000000001',
    'dd000000-0000-4000-8000-000000000011', 'dd000000-0000-4000-8000-000000000021',
-   'Recente', 'recente@tap-purge.local', true, 'PURGE-RECENTE',
+   'Recente', 'recente@tap-purge.local', true, 'GAIN-PURGERECENTE',
    repeat('a', 64), now() - interval '1 month');
 
 select public.purge_expired_personal_data();
