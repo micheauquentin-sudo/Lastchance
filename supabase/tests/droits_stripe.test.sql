@@ -490,11 +490,20 @@ insert into public.organizations (id, name, slug, subscription_status, trial_end
 values ('d4000000-0000-4000-8000-000000000001', 'Rembourse', 'tap-ds-remb', 'canceled',
         (select v from t0) - interval '60 days');
 
+-- ⚠️ CETTE SECTION EST DATÉE EN RELATIF À `now()`, ET NON CONTRE `t0`.
+-- `revoke_grant_for_refund` n'accepte AUCUN instant de référence, et c'est
+-- délibéré : son seul appelant est un webhook, qui s'exécute maintenant. Lui
+-- ouvrir un `p_now` donnerait à une porte de service le moyen de déclarer échu
+-- ce qui ne l'est pas. La conséquence pour ce fichier est qu'un octroi daté
+-- depuis `t0` (15 juin) serait DÉJÀ ÉCHU pour la fonction dès la mi-juillet —
+-- elle le laisserait tranquille, à raison, et l'assertion aurait basculé toute
+-- seule un beau matin. C'est le défaut que ces trois assertions ont réellement
+-- eu, et il est corrigé ici, pas contourné.
 select is(
   (select outcome from public.grant_module_from_payment(
      'd4000000-0000-4000-8000-000000000001'::uuid,
      'hunts', 'pass', 'cs_remb_1',
-     (select v from t0), (select v from t0) + interval '30 days', null, null, null)),
+     pg_catalog.now(), pg_catalog.now() + interval '30 days', null, null, null)),
   'created',
   'SD-2 (montage) un pass Chasse acheté'
 );
@@ -507,7 +516,7 @@ select is(
 );
 select is(
   public.org_has_module_access(
-    'd4000000-0000-4000-8000-000000000001'::uuid, 'hunts', (select v from t0)),
+    'd4000000-0000-4000-8000-000000000001'::uuid, 'hunts', pg_catalog.now()),
   false,
   'SD-2 et le module se referme aussitôt'
 );
@@ -530,7 +539,7 @@ select is(
 insert into public.organization_module_grants
   (organization_id, module, kind, source, source_reference, starts_at, ends_at)
 values ('d4000000-0000-4000-8000-000000000001', 'quiz', 'pass', 'stripe', 'cs_remb_vieux',
-        (select v from t0) - interval '40 days', (select v from t0) - interval '10 days');
+        pg_catalog.now() - interval '40 days', pg_catalog.now() - interval '10 days');
 
 select is(
   (select pg_catalog.count(*)::int
