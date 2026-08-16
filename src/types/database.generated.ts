@@ -5632,7 +5632,6 @@ export type Database = {
           filleul_email: string | null
           filleul_key: string
           id: string
-          ip: string | null
           organization_id: string
           proof_spin_id: string
           sponsor_id: string
@@ -5643,7 +5642,6 @@ export type Database = {
           filleul_email?: string | null
           filleul_key: string
           id?: string
-          ip?: string | null
           organization_id: string
           proof_spin_id: string
           sponsor_id: string
@@ -5654,7 +5652,6 @@ export type Database = {
           filleul_email?: string | null
           filleul_key?: string
           id?: string
-          ip?: string | null
           organization_id?: string
           proof_spin_id?: string
           sponsor_id?: string
