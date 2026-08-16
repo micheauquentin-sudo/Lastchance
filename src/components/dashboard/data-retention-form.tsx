@@ -28,29 +28,47 @@ export function DataRetentionForm({ months }: { months: number | null }) {
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex items-end gap-2">
-      <div className="flex-1 max-w-xs">
-        <Label htmlFor="retention-months">Conserver les données personnelles</Label>
-        <select
-          id="retention-months"
-          name="months"
-          defaultValue={months != null ? String(months) : ""}
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        >
-          {OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+    <form onSubmit={onSubmit} className="space-y-2">
+      <div className="flex items-end gap-2">
+        <div className="flex-1 max-w-xs">
+          <Label htmlFor="retention-months">
+            Conserver les données personnelles
+          </Label>
+          <select
+            id="retention-months"
+            name="months"
+            aria-describedby="retention-anonymisation"
+            defaultValue={months != null ? String(months) : ""}
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+          >
+            {OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button type="submit" variant="secondary" disabled={pending}>
+          {pending ? "…" : "Enregistrer"}
+        </Button>
+        {state?.ok && (
+          <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+        )}
+        <FieldError message={state && !state.ok ? state.error : undefined} />
       </div>
-      <Button type="submit" variant="secondary" disabled={pending}>
-        {pending ? "…" : "Enregistrer"}
-      </Button>
-      {state?.ok && (
-        <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
-      )}
-      <FieldError message={state && !state.ok ? state.error : undefined} />
+      {/*
+        CE RÉGLAGE A UNE CONSÉQUENCE QUE PERSONNE NE DEVINE : la purge
+        anonymise les participations, or c'est sur elles que repose la limite
+        « une seule fois par personne » d'une roue. Passé le délai, un joueur
+        déjà venu redevient inconnu et rejoue. Le commerçant qui règle 12 mois
+        croit régler une durée d'archivage ; il règle aussi la mémoire de ses
+        propres limites de jeu. Le dire ici coûte une ligne.
+      */}
+      <p id="retention-anonymisation" className="max-w-prose text-xs text-zinc-500">
+        Au-delà de cette durée, les parties sont anonymisées : les limites « une
+        seule fois par personne » repartent de zéro pour un joueur qui revient
+        après ce délai.
+      </p>
     </form>
   );
 }

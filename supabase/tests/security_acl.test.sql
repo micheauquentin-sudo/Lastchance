@@ -888,9 +888,20 @@ select results_eq(
   'a campaign keeps offering the post-game share block by default'
 );
 
+-- Une ligne d'audit SANS organisation : c'est exactement ce que le webhook
+-- Stripe écrit à chaque synchronisation d'abonnement, identifiant client dans
+-- `metadata`. La policy de 00017 la donnait à lire à TOUT compte connecté, de
+-- n'importe quel locataire — son premier terme, `organization_id is null or …`,
+-- n'était gardé par rien. 20260924120000 le retourne en `is not null and …`.
+-- L'insertion se fait ici, hors du bloc `authenticated`, sinon elle serait
+-- refusée avant d'avoir rien prouvé.
+insert into public.audit_logs (organization_id, actor, action, metadata)
+values (null, 'stripe', 'subscription.sync', '{"customer_id":"cus_TESTACL"}'::jsonb);
+
 set local role authenticated;
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000003';
 select results_eq('select count(*) from public.campaigns', array[0::bigint], 'cashier cannot enumerate campaigns');
+select results_eq($$select count(*) from public.audit_logs where organization_id is null$$, array[0::bigint], 'cashier cannot read the tenant-less audit trail');
 select results_eq('select count(*) from public.participations', array[0::bigint], 'cashier cannot enumerate PII');
 select results_eq('select count(*) from public.newsletter_subscribers', array[0::bigint], 'cashier cannot enumerate newsletter');
 select results_eq('select count(*) from public.contest_players', array[0::bigint], 'cashier cannot enumerate contest PII');
@@ -937,6 +948,11 @@ select results_eq('select count(*) from public.participations', array[1::bigint]
 select results_eq('select count(*) from public.newsletter_subscribers', array[1::bigint], 'owner can read newsletter');
 select results_eq('select count(*) from public.contest_players', array[1::bigint], 'owner can read contest players');
 select results_eq($$select count(*) from public.audit_logs where action = 'campaigns.update'$$, array[1::bigint], 'direct editor mutation is audited for owner');
+-- L'owner lit le journal de SON organisation (assertion ci-dessus) et rien
+-- d'autre : les lignes sans organisation ne lui appartiennent pas davantage
+-- qu'au caissier. C'est le cas le plus fort — si le rôle le plus privilégié du
+-- locataire ne les voit pas, personne dans ce locataire ne les voit.
+select results_eq($$select count(*) from public.audit_logs where organization_id is null$$, array[0::bigint], 'not even an owner reads the tenant-less billing audit');
 select results_eq(
   $$select points from public.contest_predictions where match_id = '71000000-0000-4000-8000-000000000001'$$,
   array[2], 'scoring update recalculates a finished prediction'

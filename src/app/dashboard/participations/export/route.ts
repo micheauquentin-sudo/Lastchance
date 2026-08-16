@@ -14,7 +14,8 @@ import {
  *   campagne, lot, période) — le lien est posé sous une liste filtrée, un
  *   fichier qui contiendrait tout le reste serait un piège silencieux.
  * - ?type=newsletter : abonnés newsletter collectés avant le jeu (population
- *   distincte : les filtres de la liste ne s'y appliquent pas).
+ *   distincte : les filtres de la liste ne s'y appliquent pas), DÉSINSCRITS
+ *   EXCLUS — voir le filtre `is(unsubscribed_at, null)` plus bas.
  */
 export async function GET(request: Request) {
   const { user, organization, role } = await getUserAndOrg();
@@ -27,10 +28,18 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const type = url.searchParams.get("type");
   if (type === "newsletter") {
+    // `is(unsubscribed_at, null)` — LE filtre de consentement. La
+    // désinscription ne supprime pas la ligne, elle horodate `unsubscribed_at`
+    // (cf. /api/newsletter/unsubscribe) : sans ce prédicat, l'export rendait un
+    // fichier où les désinscrits sont indiscernables des abonnés, prêt à être
+    // reversé dans un outil d'emailing. Le compteur de l'écran (page.tsx) et la
+    // sélection des automatisations filtrent tous les deux — l'export était le
+    // seul chemin à ne pas le faire.
     const { data: subs, error } = await supabase
       .from("newsletter_subscribers")
       .select("created_at, email, source")
       .eq("organization_id", organization.id)
+      .is("unsubscribed_at", null)
       .order("created_at", { ascending: false })
       .limit(10000);
 

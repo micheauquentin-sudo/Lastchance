@@ -6486,3 +6486,39 @@ récente `NULL`.
 - `src/components/dashboard/module-list-filters.tsx`
 - `/dashboard/customers/export`
 - roadmap V1.56
+
+## ADR-102 : La purge anonymise les spins, et « une seule fois » devient « une seule fois par période de conservation »
+
+**Date** : 2026-08-16
+**Statut** : Accepté
+**Contexte** : audit transverse du 2026-08-16, constat RET-1 —
+`spins.player_key` n'était jamais purgé. C'est la clé qui relie entre elles
+toutes les parties jouées par une même personne (cookie joueur), et elle
+survivait indéfiniment à la fenêtre de rétention RGPD que
+`purge_expired_personal_data` applique déjà à d'autres tables. Le wagon 1 du
+train de correction (`chantier/audit-p0-sorties`, PR #146) devait fermer ce
+constat.
+
+**Décision**. `purge_expired_personal_data` anonymise désormais
+`spins.player_key` en `'purge:'||id` pour toute ligne dépassant la période de
+conservation configurée. Aucune empreinte stable n'est conservée au-delà de
+cette fenêtre — ce serait précisément ce que la purge existe pour interdire.
+
+**Conséquence assumée**. La garde `play_limit = 'once'` de
+`perform_atomic_spin` teste l'existence d'un spin par `player_key` sur toute
+la vie de la campagne. Après anonymisation, un même joueur qui revient après
+la fenêtre de rétention peut donc rejouer une campagne « une seule fois ».
+La promesse devient de fait « une seule fois par période de conservation » —
+la fenêtre réelle est bornée par le cookie joueur (365 jours) contre la
+rétention configurée (1 à 60 mois selon l'organisation). C'est un
+sous-produit assumé de la purge RGPD, pas un défaut à corriger : conserver
+une empreinte stable au-delà de la rétention pour préserver la garde
+« une seule fois » irait à l'encontre de l'anonymisation elle-même. La
+vérité est désormais écrite sous le réglage de rétention plutôt que laissée
+implicite.
+
+**References** :
+- `purge_expired_personal_data`, migration `20260924120000_sorties_rgpd.sql`
+- `supabase/tests/sorties_rgpd.test.sql`
+- `perform_atomic_spin` (garde `play_limit = 'once'`)
+- roadmap V1.57 ; `docs/bugs.md` (MOYEN 1, wagon 1)

@@ -74,6 +74,26 @@ const walletSecurityHeaders = [
   { key: "Vary", value: "Cookie" },
 ];
 
+// LES PAGES DONT L'URL EST LE SECRET — `/commande/<jeton>` (QR de commande à
+// usage unique) et `/hunt/<jeton>` (étape de chasse). Qui détient l'URL détient
+// le droit : c'est exactement la propriété qui rend le referer et le cache
+// dangereux ici, alors qu'ils sont anodins sur une page ordinaire.
+//
+// Le même raisonnement que pour `/admin` et `/portefeuille`, appliqué à des
+// pages qui n'ont même pas de cookie à protéger — leur jeton est dans le
+// CHEMIN, donc dans tout ce qui recopie une URL :
+//  - `Referrer-Policy: no-referrer` — sans lui, le moindre lien ou asset
+//    tiers chargé depuis ces pages emporte le jeton dans son `Referer` ;
+//  - `Cache-Control: no-store` — pas d'écriture sur disque partagé, ni de
+//    réapparition par l'historique avant-arrière sur une tablette de comptoir ;
+//  - `X-Robots-Tag: noindex` — un jeton indexé est un jeton public, et ces
+//    URLs circulent par QR et par SMS, donc parfois via des aperçus.
+const tokenPathSecurityHeaders = [
+  { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "Cache-Control", value: "no-store, max-age=0" },
+];
+
 const nextConfig: NextConfig = {
   async headers() {
     return [
@@ -88,6 +108,20 @@ const nextConfig: NextConfig = {
       {
         source: "/portefeuille",
         headers: walletSecurityHeaders,
+      },
+      {
+        source: "/commande/:path*",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
+        source: "/hunt/:path*",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
+        // Jeton d'invitation d'équipe : même classe de porteur que
+        // /commande et /hunt (revue du wagon 1, FAIBLE 3) — même durcissement.
+        source: "/invite/:path*",
+        headers: tokenPathSecurityHeaders,
       },
       // /play (ISR) et /pronos (hors matcher du proxy) ne reçoivent
       // jamais de nonce : ce sont les seules surfaces publiques où

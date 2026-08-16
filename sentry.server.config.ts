@@ -24,4 +24,9 @@ Sentry.init({
   // codes, durées, identifiants techniques — est conservé.
   beforeSend: (event) => scrubSentryEvent(event),
   beforeBreadcrumb: (breadcrumb) => scrubSentryBreadcrumb(breadcrumb),
+
+  // `beforeSend` ne voit PAS les transactions de performance. Elles portent
+  // pourtant `request.url` et un nom de transaction — donc, sur les routes
+  // `/commande/<jeton>` et `/hunt/<jeton>`, un jeton porteur rejouable.
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
 });

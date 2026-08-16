@@ -265,7 +265,11 @@ async function validateInner(
       p_filleul_key: deviceKey,
       p_proof_spin_id: parsed.proofSpinId,
       p_filleul_email: parsed.email ?? undefined,
-      p_ip: ip,
+      // `p_ip` n'est PLUS transmis : la fonction SQL l'ignore depuis qu'elle ne
+      // journalise plus l'adresse. Continuer à l'envoyer ferait traverser une
+      // donnée personnelle jusqu'à la base pour rien — et la première personne
+      // qui rebrancherait un `insert` dessus le ferait sans s'en apercevoir.
+      // La pression par IP reste mesurée EN MÉMOIRE, juste au-dessus.
     });
     if (error) {
       reportError("referral.validate", error.message);

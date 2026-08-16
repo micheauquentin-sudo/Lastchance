@@ -92,3 +92,54 @@ describe("/portefeuille — jamais de cache", () => {
     expect(blocPour("/admin/:path*")).toContain("adminSecurityHeaders");
   });
 });
+
+/**
+ * LES PAGES DONT L'URL EST LE SECRET — `/commande/<jeton>` et `/hunt/<jeton>`.
+ *
+ * Ailleurs dans le produit, une URL désigne une ressource et l'autorisation se
+ * joue ailleurs. Ici l'URL EST l'autorisation : le jeton est dans le chemin,
+ * donc dans tout ce qui recopie une URL — le `Referer` d'un asset tiers, un
+ * cache partagé, un index de moteur. `src/lib/masquer-jeton-url.ts` ferme la
+ * fuite vers PostHog et Sentry ; ces en-têtes ferment celle du navigateur.
+ */
+describe("pages à jeton dans le chemin — ni referer, ni cache, ni index", () => {
+  const bloc = () => {
+    const src = source();
+    const i = src.indexOf("const tokenPathSecurityHeaders");
+    expect(i, "tokenPathSecurityHeaders introuvable").toBeGreaterThan(-1);
+    return src.slice(i, i + 400);
+  };
+
+  it.each(["/commande/:path*", "/hunt/:path*", "/invite/:path*"])(
+    "%s a bien son entrée d'en-têtes",
+    (route) => {
+      expect(blocPour(route)).toContain("tokenPathSecurityHeaders");
+    },
+  );
+
+  it("n'émet aucun referer", () => {
+    // Le défaut global (`strict-origin-when-cross-origin`) laisse partir le
+    // chemin COMPLET vers la même origine : sur ces pages, ce chemin est le
+    // secret. `no-referrer` est la seule valeur qui ne le laisse jamais sortir.
+    expect(bloc()).toMatch(/"Referrer-Policy"[\s\S]{0,40}"no-referrer"/);
+  });
+
+  it("interdit la mise en cache", () => {
+    // Tablette de comptoir, proxy d'entreprise, historique avant-arrière : une
+    // page de commande rejouable n'a rien à faire dans un stockage partagé.
+    expect(bloc()).toContain("no-store");
+  });
+
+  it("n'est pas indexable", () => {
+    // Ces URLs circulent par QR et par SMS : un jeton indexé est un jeton public.
+    expect(bloc()).toContain("noindex");
+  });
+
+  it("CONTRÔLE NÉGATIF : le portefeuille garde son bloc à lui", () => {
+    // Trois blocs voisins, trois besoins distincts : `Vary: Cookie` et
+    // `private` n'ont de sens que là où la réponse dépend d'un cookie. Les
+    // fusionner en un seul « bloc sensible » ferait tomber cette assertion —
+    // et c'est voulu : la ressemblance n'est pas l'identité.
+    expect(blocPour("/portefeuille")).toContain("walletSecurityHeaders");
+  });
+});
