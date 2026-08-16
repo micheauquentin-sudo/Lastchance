@@ -72,21 +72,38 @@
   du 2026-08-04 (un pass n'ouvre que son module).
 - **Branche/commits** : suivi wagon par wagon dans
   `docs/chantier-audit-2026-08-16.md` (tableau + journal des fusions), mis à
-  jour à chaque fusion. Wagon 1 : `chantier/audit-p0-sorties`.
+  jour à chaque fusion. Wagon 1 : `chantier/audit-p0-sorties`, PR #146.
 - **Faits** : composition des 7 wagons — (1) sorties de données P0
   (export newsletter, policy `audit_logs`, jetons dans PostHog/Sentry, IP
   parrainage, purge `spins`, privacy Brevo/Upstash) ; (2) alignement
   catalogue Stripe P0 ; (3) boucle joueur→gain P0 ; (4) contrôle des
   publications + chiffres justes P1 ; (5) capacité live P1 ; (6) poids
   client + états UI + a11y P2 ; (7) workers, surface publique, capteurs de
-  test P2/P3.
-- **Validations** : par wagon — `verif-complete.sh` (WSL) + CI complète de
-  PR ; revue sécurité dédiée sur les wagons 1 à 5 et 7.
-- **Risque/blocage** : aucun à l'ouverture. Les 4 INCERTAINS de l'audit et
-  les gestes propriétaire (rk_live_, jeton Vercel, Brevo/AF2M, prix Stripe)
-  restent hors train, consignés dans le suivi.
-- **Prochaine action** : dérouler les wagons ; ce journal reçoit une entrée
-  de clôture quand le train est terminé.
+  test P2/P3. **Wagon 1 livré** : export CSV newsletter exclut les
+  désinscrits ; policy `audit_logs` ferme l'échappatoire
+  `organization_id is null` (faille réelle confirmée) ; jetons porteurs
+  `/commande`, `/hunt`, `/invite` et `next` masqués dans PostHog
+  (`before_send`, session recording désactivé) et Sentry (`scrubText` +
+  `beforeSendTransaction` sur les 3 runtimes), `p_ip` retiré, en-têtes
+  no-referrer/no-store/noindex ; `referral_signups.ip` supprimée ;
+  `purge_expired_personal_data` anonymise `spins.player_key` au-delà de la
+  rétention (migration `20260924120000`, ADR-102 sur la conséquence
+  assumée : « une seule fois » devient « une seule fois par période de
+  conservation ») ; privacy déclare Brevo/Upstash.
+- **Validations** : wagon 1 — pgTAP 59 fichiers/3372 assertions (vide+semée),
+  `verif-complete.sh --rapide` 0 échec, E2E local mobile-chrome passed, CI
+  11/11 verte, revue sécurité GO (2 MOYEN/1 FAIBLE/3 INFO — MOYEN 2, FAIBLE
+  3, INFO 4 et 6 fermés avant fusion ; MOYEN 1 documenté ADR-102 ; INFO 5
+  consigné `docs/bugs.md`). Wagons suivants : `verif-complete.sh` (WSL) + CI
+  complète de PR par wagon ; revue sécurité dédiée prévue sur les wagons 1 à
+  5 et 7.
+- **Risque/blocage** : aucun sur le wagon 1 — PR #146 verte, fusion
+  imminente sur l'ordre permanent. Les 4 INCERTAINS de l'audit et les gestes
+  propriétaire (rk_live_, jeton Vercel, Brevo/AF2M, prix Stripe) restent hors
+  train, consignés dans le suivi.
+- **Prochaine action** : fusionner la PR #146 (wagon 1), puis dérouler les
+  wagons 2 à 7 ; ce journal reçoit une entrée de clôture quand le train est
+  terminé.
 
 ### 2026-08-16 — Boucles d'outillage : script de vérif, hooks, babysit CI — **terminé**
 

@@ -3382,6 +3382,22 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## Low Priority
 
+- **Sorties de données, wagon 1 — consigné sans action (2026-08-16,
+  `chantier/audit-p0-sorties`, PR #146)** : revue sécurité dédiée GO, 2
+  MOYEN, 1 FAIBLE, 3 INFO — MOYEN 2, FAIBLE 3, INFO 4 et INFO 6 fermés avant
+  la PR. Deux points consignés sans correctif :
+  - **INFO 5 — l'`UPDATE` d'anonymisation de `spins.player_key` n'est pas
+    borné par lots** et s'exécute dans la même transaction que le reste de
+    `purge_expired_personal_data`. Sans conséquence mesurée tant que le volume
+    de spins expirés reste modeste (une organisation de test en production à
+    ce jour) ; à surveiller via `ops_worker_runs` au premier run réel, et à
+    borner par lots si la durée ou le volume le justifient.
+  - **MOYEN 1 — pas un correctif en attente, un arbitrage tranché** : la
+    purge rend la garde « une seule fois » (`play_limit = 'once'`) caduque
+    au-delà de la fenêtre de rétention, puisqu'elle anonymise la clé qui
+    portait cette garde. Assumé et documenté en ADR-102 plutôt que corrigé —
+    conserver la clé irait à l'encontre de l'anonymisation elle-même.
+
 - **Tris et filtres partout — consigné sans action (2026-08-09,
   `chantier/tris-filtres-partout`)** : revue sécurité dédiée GO, 2 MOYEN
   fermés avant la PR (borne de date DST sur les participations, pagination

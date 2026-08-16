@@ -285,6 +285,50 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
+
+**Objectif** : premier wagon du train de correction issu de l'audit transverse
+du 2026-08-16 (`docs/audit-transverse-2026-08-16.md`, `docs/chantier-audit-2026-08-16.md`)
+— fermer ce qui sort où ça ne devrait pas : export CSV, policy `audit_logs`,
+jetons porteurs dans les outils d'observabilité, IP jamais lue, purge RGPD
+incomplète, politique de confidentialité incomplète.
+
+**Livré** :
+- Export CSV newsletter : les désinscrits (`unsubscribed_at` non nul) sont
+  désormais exclus — bloquant n°1 de l'audit transverse.
+- Policy `audit_logs` : l'échappatoire `organization_id is null` est fermée
+  (`is not null and is_org_owner`, `to authenticated` explicite). La faille
+  était réelle : tout compte connecté pouvait lire les lignes
+  `subscription.sync` à organisation nulle (le `customer_id` Stripe y était en
+  métadonnée).
+- Jetons porteurs `/commande/<token>`, `/hunt/<token>` et `/invite/<token>`,
+  ainsi que le paramètre `next` encodé, masqués avant PostHog (`before_send`,
+  `disable_session_recording: true`) et avant Sentry (`scrubText` +
+  `beforeSendTransaction` sur les trois runtimes — `beforeSend` seul ne voit
+  pas les transactions). `p_ip` n'est plus transmis à ces surfaces. En-têtes
+  no-referrer / no-store / noindex ajoutés sur `/commande` et `/hunt`.
+- `referral_signups.ip` : colonne supprimée (écrite mais jamais lue).
+- `purge_expired_personal_data` : anonymise désormais `spins.player_key`
+  (`'purge:'||id`) au-delà de la fenêtre de rétention — migration
+  `20260924120000_sorties_rgpd.sql`, suite pgTAP `sorties_rgpd.test.sql` (11
+  assertions), enregistrée au job CI après correction du garde
+  `pgtap-coverage`. Phrase d'aide honnête ajoutée sous le réglage de
+  rétention (voir ADR-102).
+- Politique de confidentialité : Brevo (SMS, téléphone) et Upstash
+  (anti-abus, IP) déclarés.
+
+**Revue sécurité** : GO — 2 MOYEN, 1 FAIBLE, 3 INFO. MOYEN 2 et FAIBLE 3
+fermés avant la PR ; INFO 4 et INFO 6 fermés avant la PR ; MOYEN 1 documenté
+(ADR-102, pas un correctif en attente) ; INFO 5 consigné dans `docs/bugs.md`
+(UPDATE d'anonymisation non borné par lots).
+
+Preuve : pgTAP **59 fichiers / 3372 assertions** (vide puis semée),
+`verif-complete.sh --rapide` 0 échec, E2E local `mobile-chrome` passed, CI
+11/11 verte.
+
+**Suite du train** : wagons 2 à 7 listés dans
+`docs/chantier-audit-2026-08-16.md`.
+
 ## V1.56 — Tris et filtres partout (✅ 2026-08-09, branche `chantier/tris-filtres-partout`, PR à ouvrir, migration `20260923120000`)
 
 **Objectif** : quatre demandes propriétaire retenues parmi une liste de
