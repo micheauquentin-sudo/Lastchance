@@ -128,10 +128,27 @@ select is(
   false,
   'un octroi de hunts n''ouvre PAS quiz — « sans déverrouiller les autres modules »'
 );
+-- ⚠️ ASSERTION INVERSÉE LE 2026-08-16 (migration 20260925120000), et c'est une
+-- DÉCISION PRODUIT, pas une correction de test. Elle disait « la roue suit le
+-- socle : elle n'a pas d'addon propre, et le socle est acquis » — ce qui était
+-- vrai du code et faux du catalogue : le pass Chasse à 29 EUR / 30 jours
+-- ouvrait alors roue, campagnes et publication, c'est-à-dire l'offre mensuelle
+-- au même prix. Le propriétaire a tranché (2026-08-04, confirmé le 2026-08-16) :
+-- « un pass n'ouvre QUE son module ; la roue ne s'ouvre que par une OFFRE
+-- d'abonnement ou un octroi explicitement `wheel` ».
 select is(
   public.org_has_module_access((select id from ids where nom = 'seule'), 'wheel', (select v from t0)),
-  true,
-  'la roue suit le socle : elle n''a pas d''addon propre, et le socle est acquis'
+  false,
+  'un octroi de hunts n''ouvre PAS la roue : elle exige une OFFRE, ou un octroi wheel'
+);
+
+-- Le socle, lui, reste acquis — et c'est le point du partage introduit par
+-- 20260925120000 : « cette organisation paie-t-elle quelque chose ? » et
+-- « a-t-elle une offre ? » sont deux questions, et une seule décide de la roue.
+select is(
+  public.org_has_subscription_access((select id from ids where nom = 'seule'), (select v from t0)),
+  false,
+  'et la raison est là : ce porteur de pass n''a AUCUNE offre d''abonnement'
 );
 
 select is(
