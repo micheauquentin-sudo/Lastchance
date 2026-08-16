@@ -22,8 +22,8 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 
 | # | Wagon | Branche | Contenu (IDs de l'audit) | État |
 |---|---|---|---|---|
-| 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | **PR #146, CI verte, revue GO, fusion imminente** |
-| 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | à venir |
+| 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | ✅ **fusionné `585d0e7`, déployé, santé verte** |
+| 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | **en cours (volet DB)** |
 | 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | à venir |
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | à venir |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
@@ -57,5 +57,6 @@ attribués à l'ouverture de la PR, jamais avant.
   FAIBLE/3 INFO — MOYEN 2, FAIBLE 3, INFO 4 et 6 fermés avant fusion ; MOYEN 1
   documenté en ADR-102 ; INFO 5 consigné dans `docs/bugs.md`). pgTAP 59
   fichiers / 3372 assertions, `verif-complete.sh --rapide` 0 échec, E2E local
-  `mobile-chrome` passed. Roadmap V1.57. Squash SHA et santé post-déploiement
-  à compléter au moment de la fusion effective.
+  `mobile-chrome` passed. Roadmap V1.57. **Fusion squash `585d0e7` le
+  2026-08-16 ; CI `main` success ; « Santé après déploiement » success —
+  migration `20260924120000` appliquée en production.**
