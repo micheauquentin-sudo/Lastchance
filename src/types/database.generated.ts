@@ -6496,10 +6496,19 @@ export type Database = {
         Args: { p_actor_id: string; p_organization_id: string }
         Returns: undefined
       }
-      assert_module_publish_allowed: {
-        Args: { p_module: string; p_organization_id: string }
-        Returns: undefined
-      }
+      assert_module_publish_allowed:
+        | {
+            Args: { p_module: string; p_organization_id: string }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_module: string
+              p_organization_id: string
+              p_resource_id: string
+            }
+            Returns: undefined
+          }
       automation_birthday_targets: {
         Args: { p_limit?: number; p_organization_id: string }
         Returns: {
@@ -6894,6 +6903,14 @@ export type Database = {
       customer_segment_matches: {
         Args: { p_last_win: string; p_segment: string; p_wins: number }
         Returns: boolean
+      }
+      debit_sms_balance_for_refund: {
+        Args: { p_source_reference: string }
+        Returns: {
+          debited_units: number
+          entry_id: string
+          org_id: string
+        }[]
       }
       debit_sms_credit: {
         Args: {
@@ -7304,8 +7321,30 @@ export type Database = {
         Args: { p_module: string; p_now?: string; p_organization_id: string }
         Returns: boolean
       }
+      org_has_live_resource_grant: {
+        Args: {
+          p_module: string
+          p_now?: string
+          p_organization_id: string
+          p_resource_id: string
+        }
+        Returns: boolean
+      }
       org_has_module_access: {
         Args: { p_module: string; p_now?: string; p_organization_id: string }
+        Returns: boolean
+      }
+      org_has_module_access_for_resource: {
+        Args: {
+          p_module: string
+          p_now?: string
+          p_organization_id: string
+          p_resource_id: string
+        }
+        Returns: boolean
+      }
+      org_has_subscription_access: {
+        Args: { p_now?: string; p_organization_id: string }
         Returns: boolean
       }
       org_module_grant_state: {
@@ -7830,6 +7869,14 @@ export type Database = {
           p_session_id: string
         }
         Returns: Json
+      }
+      revoke_grant_for_refund: {
+        Args: { p_reason: string; p_source_reference: string }
+        Returns: {
+          grant_id: string
+          grant_module: string
+          revoked: boolean
+        }[]
       }
       revoke_sms_consent: {
         Args: { p_organization_id: string; p_phone: string; p_reason?: string }
