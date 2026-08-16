@@ -1,0 +1,17 @@
+# Le depot stocke du LF partout — verifie le 2026-08-16 en lisant les blobs
+# bruts (`git cat-file blob`, aucune conversion). Ce n'est donc PAS un correctif
+# de depot : c'est une regle d'arbre de travail.
+#
+# Ce qu'elle change : `core.autocrlf = true` sur ce poste Windows fait ressortir
+# du checkout des .sh en CRLF. Le clone Linux ~/workspaces/lastchance, lui,
+# recoit du LF — c'est pourquoi les scripts y fonctionnent et que rien n'a
+# jamais casse. Le seul cas qui casse est un `bash /mnt/c/.../scripts/xxx.sh`
+# lance depuis WSL sur l'arbre Windows : il echoue sur
+# « bad interpreter: /usr/bin/env bash^M », message qui ne designe pas sa cause.
+# Le CLAUDE.md deconseille deja cet usage ; cette regle le rend inoffensif au
+# lieu de compter dessus.
+#
+# Le SQL n'est volontairement pas normalise ici : les blobs sont deja en LF, et
+# poser la regle rebrasserait les 127 migrations au prochain checkout pour un
+# gain nul.
+*.sh text eol=lf

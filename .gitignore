@@ -65,8 +65,9 @@ Input/
 # Skills installees par un plugin (Stripe et autres). Reinstallables a la
 # demande et versionnees par leur fournisseur : les suivre ici ferait entrer
 # dans le depot du code qu'on ne relit pas et qu'on ne corrige pas.
-# `.claude/agents/` et `.claude/hooks/`, eux, RESTENT suivis : ils sont ecrits
-# pour ce projet et leur perte serait une perte de travail.
+# `.claude/agents/`, `.claude/hooks/` et `.claude/commands/`, eux, RESTENT
+# suivis : ils sont ecrits pour ce projet et leur perte serait une perte de
+# travail.
 .agents/
 .claude/skills/
 skills-lock.json

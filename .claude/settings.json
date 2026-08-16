@@ -42,13 +42,57 @@
       "PowerShell(& \"C:\\\\Users\\\\MISHOW\\\\AppData\\\\Local\\\\Programs\\\\gh\\\\bin\\\\gh.exe\" auth status)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr merge *)",
+      "Bash(./scripts/verif-complete.sh*)"
     ],
     "allow_git_operations": true,
     "allow_file_modifications": true,
     "allow_commits": true,
     "allow_push_to_branch": "claude/project-template-init-gvkmn5",
     "require_confirmation_for_main": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [".claude/hooks/apres-ecriture.mjs"],
+            "timeout": 60,
+            "statusMessage": "Gardes SQL et rappel des types…"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [".claude/hooks/apres-bash.mjs"],
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [".claude/hooks/fin-de-tour.mjs"],
+            "timeout": 20
+          }
+        ]
+      }
+    ]
   },
   "project_name": "Lastchance",
   "description": "A foundational project with context-aware development system",
