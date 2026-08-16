@@ -57,6 +57,60 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-16 — Boucles d'outillage : script de vérif, hooks, babysit CI — **terminé**
+
+- **Lot et objectif** : demande du propriétaire — créer des « boucles » pour
+  faciliter le développement. Quatre mécanismes distingués d'abord, parce que
+  les confondre est l'erreur habituelle : boucle de session (`/loop`), cron
+  cloud (qui ne voit pas la machine, donc ni pgTAP ni E2E), hooks d'événement,
+  et script déterministe. Trois retenus par le propriétaire ; la veille
+  quotidienne en cron cloud a été écartée.
+- **Branche/commits** : `chantier/boucles-outillage`, 1 commit `f532db1`,
+  PR #144 fusionnée en squash **`a63ef55`** sur l'ordre permanent. Aucune
+  migration.
+- **Faits et fichiers** : `scripts/verif-complete.sh` (313 lignes) encode six
+  pièges du CLAUDE.md — seed explicite (4), attendre un Postgres qui *répond*
+  (5), purge des `pg_prove` orphelins (6), pgTAP vide **et** semée (7), sortie
+  en fichier jamais en tube (10), parade du cache `.vite` (12) — plus la garde
+  qui manquait en local, la **dérive des types**, que seule la CI voyait à huit
+  minutes d'aller-retour ; verrou `flock` ; options `--rapide`, `--db-seul`,
+  `--continuer`, `--e2e`. `.claude/hooks/` : `apres-ecriture.mjs` (les 2 gardes
+  SQL jouées à l'écriture d'une migration + rappel
+  `generate-db-types.mjs --local`, et non `--linked` qui interroge la
+  production), `apres-bash.mjs` (interdit de conclure sur un « no tests » avant
+  purge de `.vite` et rejeu), `fin-de-tour.mjs` (rappel de ce journal).
+  `.claude/commands/babysit-ci.md`. `.gitattributes` (`*.sh text eol=lf`).
+  `.claude/settings.json` : bloc `hooks` + 5 permissions.
+- **Validations réellement exécutées** : `--rapide` dans le clone WSL —
+  13 étapes, 0 échec, 7 min 43 s ; `--db-seul` — 9 étapes, 0 échec, 1 min 25 s,
+  avec pgTAP **58 fichiers / 3359 assertions PASS deux fois** (base vide puis
+  semée) et dérive des types nulle ; verrou prouvé par deux runs concurrents,
+  le second refusé ; les trois hooks testés au tuyau dans les deux sens, celui
+  sur `Bash` vu se déclencher en direct ; `fin-de-tour.mjs` élargi puis retesté
+  sur 5 cas. CI de la PR #144 : 9 checks verts, sur le SHA de tête **vérifié
+  identique** au `headRefOid`. CI `main` sur `a63ef55` : 6 jobs verts.
+  « Santé après déploiement » : job **réellement exécuté** (« Healthcheck
+  bloquant » `success`), et non ignoré — vérifié, un workflow dont l'unique job
+  est sauté rapporte `success` lui aussi.
+- **Non exécuté, explicitement** : l'enchaînement `--e2e` de
+  `verif-complete.sh` vers `run-e2e-local.sh`. Revue sécurité non requise selon
+  la règle du dépôt (aucune migration, route, auth, RLS, webhook ni token) —
+  décision explicite, pas une omission.
+- **Risque/blocage** : `Bash(gh pr merge *)` entre dans l'allowlist du projet,
+  sans quoi la boucle CI s'arrête sur une confirmation à l'instant précis où
+  elle doit fusionner. À retirer si l'autonomie doit être réduite. Le hook
+  `fin-de-tour.mjs` a d'abord été livré avec un angle mort — il ne regardait que
+  les commits *au-dessus* de la base et se taisait donc juste après une fusion ;
+  élargi le jour même au dernier commit récent, avec une fenêtre de 12 h pour
+  qu'un rappel ne devienne pas du harcèlement.
+- **Prochaine action** : aucune côté Claude. Le clone de référence WSL a été
+  remis sur `main` (`a63ef55`) ; deux fichiers non commités y ont été **mis de
+  côté sans perte** dans `stash@{0}` — dont un correctif de contraste réel sur
+  `src/app/dashboard/customers/page.tsx` (`text-orange-600` →
+  `text-k-orange-text`, lien `zinc-500` → `text-k-body`/`text-k-ink`), qui
+  relève de la dette d'accessibilité déjà consignée : à arbitrer par le
+  propriétaire.
+
 ### 2026-08-09 — Tris et filtres partout — **terminé**
 
 - **Lot et objectif** : quatre propositions retenues par le propriétaire (2,
@@ -1009,6 +1063,7 @@ pas des lots autorises.
 
 | Date | Type | Décision / proposition | État |
 | --- | --- | --- | --- |
+| 2026-08-10 | Audit Codex ciblé, lecture seule — expériences joueur, frontend et backend | **Constats P0/P1 vérifiés :** (1) la formule live 1 000 participants n'est pas qualifiée sans Realtime : le rapport mesure ~400 polls/s et conclut que la pile ne tient pas ; bloquer cette capacité ou activer puis rebench Realtime avant vente. (2) `set_contest_status` et `set_campaign_status` n'imposent pas encore les prérequis métier de publication : une expérience vide/non distribuable peut devenir publique. (3) Réflexe/Jauge acceptent un succès déclaré par le navigateur : ne pas les associer à un gain de valeur avant protocole vérifiable serveur. **Lots P1 à arbitrer :** reprise idempotente des mini-jeux après coupure, indicateur de synchronisation live, garde RLS des jetons de chasse face au rôle caisse, exactitude de « Scans QR » (actuellement ouvertures de pages), E2E complet live et calendrier. Aucun code, migration, commit, push ou déploiement effectué. | Décision utilisateur attendue : choisir un lot, en commençant par capacité live ou gardes de publication/équité. |
 | 2026-08-06 | Audit Codex complet, lecture seule | **P0.1 à P0.5, QR universel, dashboard guidé et Passeport/QR commande sont intégrés à `main`** ; le seul lot hors `main` est `chantier/conseiller-gratuit`, 7 commits devant (`896c4af`), sans migration. Retrait Anthropic et conseiller gratuit confirmés ; contrôles locaux typecheck, migrations, casts et SQL verts. **CI de ce SHA rouge** : 5 E2E `dashboard-home` échouent car le nouveau conseil duplique le texte visé par un sélecteur générique ; ne pas fusionner avant correction et CI complète verte. pgtap/RLS et build CI sont verts ; CodeQL a échoué sur indisponibilité GitHub, sans analyse ; audit/site ont été annulés. Restes produit réels : paiement Stripe de bout en bout, décision RLS sur lecture des jetons de chasse par caisse, capacité live mesurée. | Bloqué avant PR/fusion |
 | 2026-07-28 | Gouvernance | Audits complets menés avec les agents Codex pertinents ; propositions filtrées par impact client, preuve, risque et coût. | Actif |
 
