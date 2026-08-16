@@ -2,6 +2,9 @@ import "server-only";
 
 import Stripe from "stripe";
 import { optionalEnv, requiredEnv } from "@/lib/env";
+// La grammaire des prix de pass vit dans `octroi-checkout` et NULLE PART
+// ailleurs (voir son en-tête) : on l'importe, on ne la recopie pas.
+import { partitionnerPrix } from "@/lib/octroi-checkout";
 import { PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 // Le plafond est celui du geste manuel, et il est repris ici volontairement :
@@ -216,6 +219,58 @@ export async function hasLiveStripeSubscription(
     limit: 100,
   })) {
     if (!isTerminalSubscriptionStatus(subscription.status)) return true;
+  }
+  return false;
+}
+
+/**
+ * Ce client a-t-il encore, chez Stripe, un abonnement D'OFFRE vivant ?
+ *
+ * ── LE DÉFAUT QUE CETTE FONCTION FERME (SD-3) ──
+ *
+ * `hasLiveStripeSubscription` compte TOUS les abonnements du client, et depuis
+ * le lot P0.5 un add-on mensuel — Passeport des habitués à 19 €, Parrainage à
+ * 12 € — crée chez Stripe un abonnement SÉPARÉ. Un commerçant qui achetait un
+ * pass mensuel AVANT de souscrire une offre se retrouvait donc définitivement
+ * enfermé : le bouton « Démarrer mon abonnement » restait affiché, et chaque
+ * clic rendait « Un abonnement est déjà ouvert pour ce compte » — en le
+ * renvoyant vers un portail qui ne sait pas créer d'abonnement. Le seul
+ * chemin de vente de l'offre était fermé par un produit à 12 €.
+ *
+ * ── CE QU'ELLE BLOQUE ENCORE, ET POURQUOI ──
+ *
+ * Un abonnement dont AU MOINS UN item n'est pas un prix de pass. C'est la garde
+ * anti-double-facturation d'origine, intacte : deux abonnements d'offre en
+ * parallèle se prélèvent tous les deux. Un abonnement 100 % pass, lui, ne dit
+ * rien de l'offre — il ne doit donc rien en décider.
+ *
+ * Le tri est celui de `partitionnerPrix`, le même que le webhook applique pour
+ * aiguiller ces abonnements hors de la synchronisation d'offre. Les deux
+ * questions — « faut-il synchroniser cet abonnement ? » et « interdit-il d'en
+ * ouvrir un nouveau ? » — doivent répondre pareil sous peine de coûter de
+ * l'argent dans un sens ou dans l'autre.
+ *
+ * ── LES DEUX PRUDENCES ──
+ *
+ * Un abonnement SANS aucun item lisible, ou dont la liste d'items est PAGINÉE
+ * (`has_more`), bloque : on ne conclut pas « pur pass » sur une photographie
+ * tronquée. Et un prix inconnu tombe dans `autres`, donc bloque aussi — un
+ * catalogue incomplet ne doit jamais ouvrir un second prélèvement.
+ */
+export async function hasLiveOfferSubscription(
+  stripe: Stripe,
+  customerId: string,
+): Promise<boolean> {
+  for await (const subscription of stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  })) {
+    if (isTerminalSubscriptionStatus(subscription.status)) continue;
+    const items = subscription.items?.data ?? [];
+    if (items.length === 0 || subscription.items?.has_more) return true;
+    const { autres } = partitionnerPrix(items.map((item) => item.price.id));
+    if (autres.length > 0) return true;
   }
   return false;
 }

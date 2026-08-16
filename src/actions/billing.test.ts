@@ -22,8 +22,17 @@ const ORG_ID = "40000000-0000-4000-8000-000000000001";
 
 const { state } = vi.hoisted(() => ({
   state: {
-    /** Abonnements que Stripe déclare pour ce client. */
-    subscriptions: [] as Array<{ id: string; status: string }>,
+    /**
+     * Abonnements que Stripe déclare pour ce client.
+     *
+     * `items` est OPTIONNEL et son absence a un sens testé : elle décrit une
+     * photographie qu'on ne sait pas lire, sur laquelle la garde se ferme.
+     */
+    subscriptions: [] as Array<{
+      id: string;
+      status: string;
+      items?: { data: Array<{ price: { id: string } }>; has_more?: boolean };
+    }>,
     /** Panne de l'API Stripe au moment de lister. */
     listFails: false,
     /** Sessions de paiement réellement créées — doit rester vide sur refus. */
@@ -228,5 +237,127 @@ describe("createCheckoutSession — garde anti-double abonnement", () => {
 
     expect(outcome).toHaveProperty("refused");
     expect(state.created).toEqual([]);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-3 — UN PASS MENSUEL NE DOIT PAS FERMER LA VENTE DE L'OFFRE
+ *
+ * Depuis le lot P0.5, un add-on mensuel acheté seul (Passeport 19 €,
+ * Parrainage 12 €) crée chez Stripe un abonnement SÉPARÉ. La garde comptait
+ * TOUS les abonnements du client : le commerçant qui prenait un pass avant de
+ * s'abonner se retrouvait enfermé — bouton « Démarrer mon abonnement » affiché,
+ * refus à chaque clic, et renvoi vers un portail qui ne sait pas créer
+ * d'abonnement. Un produit à 12 € fermait le seul chemin de vente de l'offre.
+ * ════════════════════════════════════════════════════════════ */
+describe("createCheckoutSession — le pass mensuel n'est pas une offre", () => {
+  const PRIX_PASS = "price_pass_loyalty_test";
+
+  beforeEach(() => {
+    // Le prix DOIT être configuré pour que `passDepuisPrix` le reconnaisse :
+    // c'est la variable d'environnement qui fait exister le produit.
+    vi.stubEnv("STRIPE_PRICE_ID_PASS_LOYALTY", PRIX_PASS);
+  });
+
+  it("ABONNEMENT 100 % PASS : le checkout d'offre reste ouvert", async () => {
+    // LE FINDING. Rouge avant le correctif : la garde voyait « un abonnement
+    // vivant » et refusait.
+    state.subscriptionStatus = "canceled";
+    state.subscriptions = [
+      {
+        id: "sub_pass",
+        status: "active",
+        items: { data: [{ price: { id: PRIX_PASS } }], has_more: false },
+      },
+    ];
+
+    const outcome = await checkout();
+
+    expect(outcome).toEqual({
+      redirectedTo: "https://checkout.stripe.test/session",
+    });
+    expect(state.created).toHaveLength(1);
+  });
+
+  it("ABONNEMENT D'OFFRE : refusé comme avant", async () => {
+    // TÉMOIN INDISPENSABLE. Sans lui, une garde qui laisserait TOUT passer
+    // rendrait le test précédent vert en rouvrant le double prélèvement.
+    state.subscriptionStatus = "active";
+    state.subscriptions = [
+      {
+        id: "sub_offre",
+        status: "active",
+        items: { data: [{ price: { id: "price_core_test" } }], has_more: false },
+      },
+    ];
+
+    const outcome = await checkout();
+
+    expect(outcome).toHaveProperty("refused");
+    expect(state.created).toEqual([]);
+  });
+
+  it("ABONNEMENT MIXTE : un seul item d'offre suffit à refuser", async () => {
+    state.subscriptionStatus = "active";
+    state.subscriptions = [
+      {
+        id: "sub_mixte",
+        status: "active",
+        items: {
+          data: [{ price: { id: PRIX_PASS } }, { price: { id: "price_core_test" } }],
+          has_more: false,
+        },
+      },
+    ];
+
+    const outcome = await checkout();
+
+    expect(outcome).toHaveProperty("refused");
+    expect(state.created).toEqual([]);
+  });
+
+  it("PHOTOGRAPHIE TRONQUÉE OU VIDE : fermé par défaut", async () => {
+    // Une liste d'items paginée, ou absente, ne prouve PAS « pur pass ». On ne
+    // conclut pas sur ce qu'on n'a pas lu — même sens que la panne Stripe.
+    for (const items of [
+      { data: [{ price: { id: PRIX_PASS } }], has_more: true },
+      { data: [] },
+      undefined,
+    ]) {
+      state.created = [];
+      state.subscriptionStatus = "canceled";
+      state.subscriptions = [{ id: "sub_tronque", status: "active", items }];
+
+      const outcome = await checkout();
+
+      expect(outcome, JSON.stringify(items)).toHaveProperty("refused");
+      expect(state.created).toEqual([]);
+    }
+  });
+
+  it("UN PASS VIVANT ET UNE OFFRE RÉSILIÉE : le réabonnement reste ouvert", async () => {
+    // Le cas réel du commerçant qui a arrêté son offre mais garde son
+    // Parrainage. L'abonnement mort est ignoré (statut terminal), celui qui
+    // reste est un pass : rien ne doit l'empêcher de revenir.
+    state.subscriptionStatus = "canceled";
+    state.subscriptions = [
+      {
+        id: "sub_offre_morte",
+        status: "canceled",
+        items: { data: [{ price: { id: "price_core_test" } }] },
+      },
+      {
+        id: "sub_pass",
+        status: "active",
+        items: { data: [{ price: { id: PRIX_PASS } }] },
+      },
+    ];
+
+    const outcome = await checkout();
+
+    expect(outcome).toEqual({
+      redirectedTo: "https://checkout.stripe.test/session",
+    });
+    expect(state.created).toHaveLength(1);
   });
 });
