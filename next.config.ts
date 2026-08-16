@@ -117,6 +117,12 @@ const nextConfig: NextConfig = {
         source: "/hunt/:path*",
         headers: tokenPathSecurityHeaders,
       },
+      {
+        // Jeton d'invitation d'équipe : même classe de porteur que
+        // /commande et /hunt (revue du wagon 1, FAIBLE 3) — même durcissement.
+        source: "/invite/:path*",
+        headers: tokenPathSecurityHeaders,
+      },
       // /play (ISR) et /pronos (hors matcher du proxy) ne reçoivent
       // jamais de nonce : ce sont les seules surfaces publiques où
       // 'unsafe-inline' reste appliqué. Le canal Report-Only y mesure la

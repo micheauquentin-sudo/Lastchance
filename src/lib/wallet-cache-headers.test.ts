@@ -110,7 +110,7 @@ describe("pages à jeton dans le chemin — ni referer, ni cache, ni index", () 
     return src.slice(i, i + 400);
   };
 
-  it.each(["/commande/:path*", "/hunt/:path*"])(
+  it.each(["/commande/:path*", "/hunt/:path*", "/invite/:path*"])(
     "%s a bien son entrée d'en-têtes",
     (route) => {
       expect(blocPour(route)).toContain("tokenPathSecurityHeaders");
