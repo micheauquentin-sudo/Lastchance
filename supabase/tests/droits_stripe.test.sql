@@ -344,10 +344,14 @@ insert into public.event_games (id, organization_id, name, status)
 values ('d2000000-0000-4000-8000-0000000000e1',
         'd2000000-0000-4000-8000-000000000001', 'Quiz de la soiree', 'active');
 
-insert into public.event_sessions (id, game_id, organization_id, join_code, status)
+-- `reward_stock` est NOT NULL sans défaut (ADR-031, verrou économique : le stock
+-- d'un lot est fini et obligatoire). 0 = podium seul, aucun code émis — c'est ce
+-- que veut ce test, qui n'éprouve que la jauge de participants.
+insert into public.event_sessions
+  (id, game_id, organization_id, join_code, status, reward_stock)
 values ('d2000000-0000-4000-8000-0000000000e2',
         'd2000000-0000-4000-8000-0000000000e1',
-        'd2000000-0000-4000-8000-000000000001', 'ABC234', 'draft');
+        'd2000000-0000-4000-8000-000000000001', 'ABC234', 'draft', 0);
 
 select is(
   (select s.max_participants from public.event_sessions s
