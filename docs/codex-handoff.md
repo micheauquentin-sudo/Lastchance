@@ -57,6 +57,37 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-16 — Train de correction de l'audit transverse (7 wagons) — **en cours**
+
+- **Lot et objectif** : ordre direct du propriétaire — s'approprier l'audit
+  transverse du 2026-08-16 (`docs/audit-transverse-2026-08-16.md` : 99
+  constats, 94 confirmés après contre-expertise, dont les 8 constats Codex du
+  2026-08-10 tous confirmés) et **tout régler en un seul train**, sans
+  relance : chaque PR verte est fusionnée sur `main` sur l'ordre permanent et
+  le wagon suivant s'enchaîne. Quatre arbitrages produit tranchés par le
+  propriétaire le 2026-08-16 : écran caisse jackpot écrit (pas de retrait du
+  mode staff) ; Réflexe/Jauge durcis + mention honnête (pas de retrait) ;
+  reprise de gain alignée sur la fenêtre de rejeu et affichée d'elle-même
+  (pas d'émission au registre) ; périmètre add-on appliqué selon la décision
+  du 2026-08-04 (un pass n'ouvre que son module).
+- **Branche/commits** : suivi wagon par wagon dans
+  `docs/chantier-audit-2026-08-16.md` (tableau + journal des fusions), mis à
+  jour à chaque fusion. Wagon 1 : `chantier/audit-p0-sorties`.
+- **Faits** : composition des 7 wagons — (1) sorties de données P0
+  (export newsletter, policy `audit_logs`, jetons dans PostHog/Sentry, IP
+  parrainage, purge `spins`, privacy Brevo/Upstash) ; (2) alignement
+  catalogue Stripe P0 ; (3) boucle joueur→gain P0 ; (4) contrôle des
+  publications + chiffres justes P1 ; (5) capacité live P1 ; (6) poids
+  client + états UI + a11y P2 ; (7) workers, surface publique, capteurs de
+  test P2/P3.
+- **Validations** : par wagon — `verif-complete.sh` (WSL) + CI complète de
+  PR ; revue sécurité dédiée sur les wagons 1 à 5 et 7.
+- **Risque/blocage** : aucun à l'ouverture. Les 4 INCERTAINS de l'audit et
+  les gestes propriétaire (rk_live_, jeton Vercel, Brevo/AF2M, prix Stripe)
+  restent hors train, consignés dans le suivi.
+- **Prochaine action** : dérouler les wagons ; ce journal reçoit une entrée
+  de clôture quand le train est terminé.
+
 ### 2026-08-16 — Boucles d'outillage : script de vérif, hooks, babysit CI — **terminé**
 
 - **Lot et objectif** : demande du propriétaire — créer des « boucles » pour
