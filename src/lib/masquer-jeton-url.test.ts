@@ -3,8 +3,8 @@ import { masquerJetonUrl } from "./masquer-jeton-url";
 
 /**
  * Deux exigences opposées se rencontrent ici, et le test les tient toutes deux :
- *  - AUCUNE forme d'URL portant `/commande/<jeton>` ou `/hunt/<jeton>` ne doit
- *    ressortir intacte — c'est un secret rejouable ;
+ *  - AUCUNE forme d'URL portant `/commande/<jeton>`, `/hunt/<jeton>` ou
+ *    `/invite/<jeton>` ne doit ressortir intacte — c'est un secret rejouable ;
  *  - RIEN d'autre ne doit changer — masquer large rendrait les journaux
  *    illisibles et le premier incident de production indéchiffrable.
  */
@@ -15,6 +15,10 @@ describe("masquerJetonUrl — ce qui doit disparaître", () => {
   it.each([
     ["chemin relatif de commande", `/commande/${JETON}`, "/commande/[jeton]"],
     ["chemin relatif de chasse", `/hunt/${JETON}`, "/hunt/[jeton]"],
+    // L'invitation d'équipe : qui ouvre ce lien rejoint l'organisation avec
+    // le rôle inscrit dans le jeton. Sept jours de validité, donc sept jours
+    // pendant lesquels une ligne de journal chez un tiers vaut un accès.
+    ["invitation d'équipe", `/invite/${JETON}`, "/invite/[jeton]"],
     [
       "URL absolue",
       `https://app.lastchance.fr/commande/${JETON}`,
@@ -79,6 +83,59 @@ describe("masquerJetonUrl — ce qui doit disparaître", () => {
   });
 });
 
+describe("masquerJetonUrl — le jeton qui voyage ENCODÉ dans ?next=", () => {
+  /**
+   * `/invite/<jeton>` redirige un visiteur non connecté vers /login et /signup
+   * en emportant sa destination : `?next=%2Finvite%2F…`. Les `/` y sont
+   * percent-encodés, donc le masquage de CHEMIN ne voit rien — et ces deux
+   * pages-là sont vues par tout le monde, tout le temps.
+   */
+  it("masque l'invitation encodée vers /login", () => {
+    expect(masquerJetonUrl(`/login?next=%2Finvite%2F${JETON}`)).toBe(
+      "/login?next=%2Finvite%2F[jeton]",
+    );
+  });
+
+  it("masque sans toucher aux autres paramètres ni à leur ordre", () => {
+    expect(
+      masquerJetonUrl(`/signup?src=email&next=%2Finvite%2F${JETON}&plan=pro`),
+    ).toBe("/signup?src=email&next=%2Finvite%2F[jeton]&plan=pro");
+  });
+
+  it("couvre aussi les deux autres préfixes porteurs", () => {
+    expect(masquerJetonUrl(`/login?next=%2Fcommande%2F${JETON}`)).toBe(
+      "/login?next=%2Fcommande%2F[jeton]",
+    );
+  });
+
+  it("masque la forme NON encodée, déjà couverte par le chemin", () => {
+    expect(masquerJetonUrl(`/login?next=/invite/${JETON}`)).toBe(
+      "/login?next=/invite/[jeton]",
+    );
+  });
+
+  it("laisse une destination inoffensive OCTET POUR OCTET", () => {
+    // Ré-encoder pour rien changerait la forme des URLs de tout le monde —
+    // `%2F` deviendrait `%2F` mais l'accent ou l'espace, eux, se
+    // normaliseraient — et casserait le regroupement des pageviews /login.
+    const url = "/login?next=%2Fdashboard%2Fparticipations%3Fpage%3D2";
+    expect(masquerJetonUrl(url)).toBe(url);
+  });
+
+  it("ne lève pas sur une séquence % invalide", () => {
+    // `decodeURIComponent` jette sur `%zz`. Ce module tourne dans `before_send`
+    // de PostHog, sur CHAQUE événement : lever ici casserait toute la capture.
+    const url = "/login?next=%zz%2Finvite";
+    expect(masquerJetonUrl(url)).toBe(url);
+  });
+
+  it("est idempotent sur une valeur déjà masquée", () => {
+    expect(masquerJetonUrl("/login?next=%2Finvite%2F[jeton]")).toBe(
+      "/login?next=%2Finvite%2F[jeton]",
+    );
+  });
+});
+
 describe("masquerJetonUrl — ce qui doit rester intact", () => {
   it.each([
     ["chaîne vide", ""],
@@ -86,6 +143,7 @@ describe("masquerJetonUrl — ce qui doit rester intact", () => {
     ["page publique", "/privacy"],
     ["dashboard", "/dashboard/participations?statut=a-valider"],
     ["liste des chasses, au PLURIEL", "/dashboard/hunts/8f1c-2ab3"],
+    ["mot commençant par le préfixe d'invitation", "/dashboard/invitations/12"],
     ["préfixe sans jeton", "/commande/"],
     ["préfixe seul, sans slash final", "/commande"],
     ["segment homonyme au milieu d'un mot", "/mes-commandes/12"],
