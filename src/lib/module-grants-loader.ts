@@ -1,5 +1,6 @@
 import "server-only";
 
+import { LIBELLE_ETAT, type EtatOctroi } from "@/lib/admin/module-grants";
 import { reportError } from "@/lib/monitoring";
 import { GRANTABLE_MODULES, type GrantableModule } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -166,6 +167,95 @@ export async function octroiRecurrentVivant(
     return "indetermine";
   }
   return (data ?? []).length > 0 ? "actif" : "aucun";
+}
+
+/** L'état du module et les deux dates qui l'expliquent. */
+export interface EtatOctroiModule {
+  etat: EtatOctroi;
+  /** Fin de la fenêtre de jeu, `null` si l'octroi n'a pas de terme connu. */
+  endsAt: string | null;
+  /** Dernier instant où l'octroi pouvait démarrer, `null` si sans limite. */
+  activateBy: string | null;
+}
+
+/**
+ * Les six états connus, DÉRIVÉS du `Record` exhaustif du back-office et non
+ * recopiés : un septième état ajouté à `EtatOctroi` fait échouer `tsc` sur
+ * `LIBELLE_ETAT` avant d'arriver ici, et cette liste suit sans qu'on y pense.
+ * Une liste recopiée aurait laissé passer l'état neuf comme un état inconnu.
+ */
+const ETATS_CONNUS: ReadonlySet<string> = new Set(Object.keys(LIBELLE_ETAT));
+
+/**
+ * POURQUOI CE MODULE EST FERMÉ — la raison, pas le verdict.
+ *
+ * Les deux chargeurs voisins répondent « qu'est-ce qui est ouvert ? » ; celui-ci
+ * répond « et sinon, pourquoi pas ? ». Il existe parce que « aucun droit » et
+ * « le pass que vous avez payé s'est terminé le 3 mars » sont deux vécus
+ * distincts qu'un booléen confond : le commerçant qui a payé et dont la fenêtre
+ * s'est refermée voyait exactement le même écran que celui qui n'a jamais rien
+ * acheté — donc une invitation à découvrir, là où il attendait une explication.
+ *
+ * ── CE N'EST PAS UNE GARDE, ET LE SENS DE L'ERREUR LE DIT ──
+ *
+ * Aucun appelant ne doit décider d'un DROIT là-dessus : le droit se décide dans
+ * `droitEffectifModule` (miroir d'`org_has_module_access`) et en base. Ce que
+ * cette fonction alimente est une PHRASE. D'où une panne qui rend `null`, comme
+ * l'absence d'octroi : le message retombe sur le générique — on dégrade vers le
+ * vague, jamais vers le faux, et jamais vers un droit accordé.
+ *
+ * ── L'ADMIN CLIENT, POUR LA MÊME RAISON QUE SES VOISINS ──
+ *
+ * `org_module_grant_state` est révoquée à `authenticated` : elle est `security
+ * definer` et lit une table dont la RLS ne s'ouvre pas au commerçant. Le client
+ * RLS obtiendrait un refus de permission, pas une liste vide — c'est-à-dire un
+ * message dégradé pour tout le monde.
+ *
+ * La RPC ne rend qu'UNE ligne (`limit 1`), l'octroi le plus favorable au client :
+ * un pass terminé posé par-dessus un récurrent vivant rend `live`, jamais
+ * `expired`. C'est ce qui empêche cette fonction de contredire le droit.
+ */
+export async function etatOctroiModule(
+  organizationId: string,
+  module: GrantableModule,
+  maintenant = new Date(),
+): Promise<EtatOctroiModule | null> {
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("org_module_grant_state", {
+    p_organization_id: organizationId,
+    p_module: module,
+    p_now: maintenant.toISOString(),
+  });
+
+  if (error) {
+    reportError("module-grants-loader", error);
+    return null;
+  }
+
+  const ligne = (data ?? [])[0];
+  // Aucune ligne : cette organisation n'a JAMAIS rien acheté sur ce module.
+  if (!ligne) return null;
+
+  if (!ETATS_CONNUS.has(ligne.state)) {
+    // Un état que le TypeScript ne sait pas nommer ne doit pas devenir une
+    // phrase : le rendre ferait écrire au commerçant un mot de vocabulaire
+    // Postgres, ou pire, une branche de message choisie au hasard.
+    reportError(
+      "module-grants-loader",
+      new Error(`état d'octroi inconnu : ${ligne.state}`),
+    );
+    return null;
+  }
+
+  return {
+    etat: ligne.state as EtatOctroi,
+    // `?? null` malgré des types générés non nullables : les colonnes le sont
+    // en base (`returns table` ne porte pas la nullabilité), et un `undefined`
+    // qui traverse jusqu'à `formatDate` rendrait « Invalid Date ».
+    endsAt: ligne.ends_at ?? null,
+    activateBy: ligne.activate_by ?? null,
+  };
 }
 
 /** Un pass payé, pas encore démarré. */

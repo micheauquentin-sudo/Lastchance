@@ -43,6 +43,20 @@ export function messageAccesCampagne(input: {
    * budget saisis dans le même panneau ne sont pas enregistrés non plus. La
    * phrase d'`activation` le tairait, et le commerçant repartirait en croyant
    * son budget en base.
+   *
+   * ── ET SI LE DROIT TOMBE APRÈS L'ARMEMENT ? C'EST COUVERT DEPUIS SD-9 ──
+   *
+   * Ce paragraphe décrivait le cas comme non couvert : la programmation armée
+   * pendant un droit valide continuait d'ouvrir la roue une fois ce droit
+   * terminé, parce que le cron ne lisait aucun droit et que le trigger de
+   * publication ne le voyait pas passer (`auth.role()` est NULL sous le
+   * propriétaire de la base). La migration `20260926120000` l'a fermé :
+   * `run_campaign_schedule` est gardée par `org_has_module_access(org,
+   * 'wheel')`, la campagne retombe en `paused` / `paused_reason =
+   * 'droit_expire'`, une ligne `campaign.schedule.blocked` est journalisée et un
+   * job `automation.schedule-blocked` prévient le propriétaire
+   * (`processScheduleBlockedJob`, src/lib/automations.ts). Rien à dire ici : ce
+   * refus-là n'a pas de formulaire devant lui, il a un e-mail derrière.
    */
   geste: "activation" | "relance" | "programmation";
 }): string {

@@ -7,9 +7,12 @@ import {
   capacitesModule,
   type CapacitesModule,
 } from "@/lib/module-capabilities";
+import { etatOctroiModule } from "@/lib/module-grants-loader";
 import { RESSOURCE_MODULE, publicationBooleenne } from "@/lib/module-resources";
 import { droitEffectifModule, type GrantableModule } from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
+import { formatDate } from "@/lib/utils";
+import type { MemberRole } from "@/types/database";
 
 /**
  * LE PONT — assemble l'organisation active, son droit effectif et son compte
@@ -47,7 +50,50 @@ export async function capacitesDuModule(
     ? 0
     : await compterBrouillons(module, organization.id);
 
-  return capacitesModule({ module, role, droitEffectif, brouillonsExistants });
+  return capacitesModule({
+    module,
+    role,
+    droitEffectif,
+    brouillonsExistants,
+    passTermineLe: await finDuPassExpire(module, organization, droitEffectif, role),
+  });
+}
+
+/**
+ * LE PASS EST-IL TERMINÉ, ET QUAND — la nuance que le refus taisait.
+ *
+ * Sans cette lecture, un commerçant dont le pass s'est refermé lisait la phrase
+ * écrite pour celui qui n'a jamais rien acheté : « Préparez … librement. » Il
+ * avait payé, ses campagnes programmées venaient de retomber en pause
+ * (`paused_reason = 'droit_expire'`, migration 20260926120000) et l'écran lui
+ * proposait de découvrir. La date est ce qui transforme ce refus en information.
+ *
+ * ── TROIS GARDES AVANT LA REQUÊTE, ET CHACUNE ÉCONOMISE UN APPEL ──
+ *
+ * Un module PAYÉ n'a rien à expliquer ; un CAISSIER est refusé sur son rôle
+ * avant que l'argent n'entre en jeu ; et un état d'octroi autre qu'`expired`
+ * n'écrit aucune phrase. Même discipline que `compterBrouillons` juste en
+ * dessous : la lecture n'est demandée que si elle peut changer ce qui s'affiche.
+ *
+ * ── `revoked` N'EST PAS `expired`, DÉLIBÉRÉMENT ──
+ *
+ * Un octroi révoqué (résiliation, remboursement) reste un `droit_absent` sans
+ * message particulier : « votre pass s'est terminé le … » raconterait une fin
+ * naturelle là où il y a eu un geste — le plus souvent celui du commerçant
+ * lui-même — et la date de fin d'un octroi révoqué n'est pas celle de sa
+ * révocation. Seule une FENÊTRE ARRIVÉE À TERME se raconte ici.
+ */
+async function finDuPassExpire(
+  module: GrantableModule,
+  organization: { id: string; timezone: string | null },
+  droitEffectif: boolean,
+  role: MemberRole,
+): Promise<string | null> {
+  if (droitEffectif || role === "cashier") return null;
+
+  const etat = await etatOctroiModule(organization.id, module);
+  if (!etat || etat.etat !== "expired" || !etat.endsAt) return null;
+  return formatDate(etat.endsAt, organization.timezone ?? undefined);
 }
 
 /**

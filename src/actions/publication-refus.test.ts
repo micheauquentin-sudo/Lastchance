@@ -380,7 +380,9 @@ describe("le refus de droit de la base arrive à l'écran, module par module", (
   it("campagne : ARMER la programmation automatique parle d'abonnement, pas d'enregistrement", async () => {
     // Le trigger `campaigns_guard_auto_schedule` (20260906120000) refuse la
     // transition vers `auto_schedule = true`, parce que c'est le cron qui
-    // publiera ensuite sans lire aucun droit. C'est le SEUL des cinq appels au
+    // publiera ensuite en `service_role` (il lit le droit lui aussi depuis
+    // `20260926120000`, mais après coup : sa réponse est un e-mail, pas un
+    // message de formulaire). C'est le SEUL des cinq appels au
     // vocabulaire de campagne qui n'a aucune garde applicative en face : la
     // phrase ne peut venir que d'ici.
     state.tables.campaigns = {
