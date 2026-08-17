@@ -1198,6 +1198,7 @@ export async function setQuizStatus(
         introuvable: "Quiz introuvable",
         module: "Le module Quiz n'est pas activé sur votre compte.",
         role: NOT_EDITOR,
+        transition: "Ce changement de statut n'est pas permis.",
         echec: "Mise à jour impossible",
       },
     );

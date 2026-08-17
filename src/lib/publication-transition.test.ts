@@ -23,6 +23,7 @@ const TEXTES: TextesTransition = {
   introuvable: "INTROUVABLE",
   module: "MODULE",
   role: "ROLE",
+  transition: "TRANSITION",
   echec: "ECHEC",
 };
 
@@ -68,6 +69,20 @@ describe("classerTransition", () => {
     expect(
       classerTransition({ data: null, error: { message: "not authorized" } }),
     ).toBe("role");
+  });
+
+  it("un refus de MATRICE se distingue d'une panne", () => {
+    // `set_campaign_status` refuse `archived → active` depuis le wagon 4, et
+    // `set_contest_status` le faisait déjà : le message est `invalid
+    // transition`. Sans cette classe il retombait dans `echec`, donc « Mise à
+    // jour impossible » — une RÈGLE affichée comme un incident, qui envoie le
+    // commerçant chercher une panne au lieu du bouton d'à côté.
+    expect(
+      classerTransition({
+        data: null,
+        error: { message: "invalid transition" },
+      }),
+    ).toBe("transition");
   });
 
   it("tout le reste tombe dans « échec », y compris un statut hors vocabulaire", () => {
@@ -117,6 +132,12 @@ describe("refusTransition", () => {
     expect(
       refusTransition({ data: null, error: { message: "not authorized" } }, TEXTES),
     ).toBe("ROLE");
+    expect(
+      refusTransition(
+        { data: null, error: { message: "invalid transition" } },
+        TEXTES,
+      ),
+    ).toBe("TRANSITION");
     expect(
       refusTransition({ data: null, error: { message: "42501" } }, TEXTES),
     ).toBe("ECHEC");
