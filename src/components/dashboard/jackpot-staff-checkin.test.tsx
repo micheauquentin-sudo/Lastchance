@@ -257,13 +257,18 @@ describe("La page joueur du jackpot expose le code en texte", () => {
     "utf8",
   );
 
-  it("offre un pli « Afficher le code » sous le QR", () => {
-    expect(SOURCE).toContain("Afficher le code");
+  it("offre le pli du code juste sous le QR", () => {
+    const carte = SOURCE.slice(SOURCE.indexOf("<CheckinQr value={token} />"));
+    expect(carte.slice(0, 500)).toContain("<CheckinTokenReveal token={token} />");
   });
 
-  it("y rend le jeton lui-même, sélectionnable", () => {
-    const pli = SOURCE.slice(SOURCE.indexOf("Afficher le code"));
-    expect(pli.slice(0, 600)).toContain("{token}");
-    expect(pli.slice(0, 600)).toContain("select-all");
+  /**
+   * Le COMPORTEMENT du pli (jeton absent du DOM tant qu'il est fermé, INFO-1)
+   * est tenu par un test de rendu : `checkin-token-reveal.test.tsx`. Ici on ne
+   * garde que le câblage, que ce test de rendu ne peut pas voir.
+   */
+  it("ne rend pas le jeton en clair dans la carte elle-même", () => {
+    const carte = SOURCE.slice(SOURCE.indexOf("function StaffCheckinCard"));
+    expect(carte.slice(0, 3000)).not.toContain("select-all");
   });
 });
