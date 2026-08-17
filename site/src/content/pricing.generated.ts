@@ -145,7 +145,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Accès à tout nouveau module inclus"
     ],
     "limits": [
-      "1000 participants par session live"
+      "500 participants par session live"
     ]
   }
 ];
