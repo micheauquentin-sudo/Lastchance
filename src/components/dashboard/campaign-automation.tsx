@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import {
   resumeCampaignAfterBudget,
@@ -206,7 +207,7 @@ export function CampaignAutomationSettings({
 
 /**
  * Bannière d'état d'une campagne mise en pause automatiquement (budget
- * atteint ou fin de programmation). `interactive` ajoute le bouton
+ * atteint, fin de programmation, ou droit expiré). `interactive` ajoute le bouton
  * « Reprendre la campagne » (page détail) — la variante liste reste purement textuelle
  * (elle vit dans un lien).
  *
@@ -288,6 +289,39 @@ export function CampaignStateBanner({
         Campagne terminée
         {campaign.ends_at ? ` le ${formatDate(campaign.ends_at)}` : ""} (programmation
         automatique).
+      </div>
+    );
+  }
+
+  // LE DROIT QUI OUVRE LA ROUE EST TERMINÉ (pass expiré, abonnement clos).
+  //
+  // Cette branche précède le repli budget, et ce n'est pas un détail d'ordre :
+  // sans elle, une pause `droit_expire` tombait sur la bannière budget et
+  // annonçait « budget de gains atteint (0,00 €) » à un commerçant dont le
+  // budget n'y était pour rien. Il cherchait un plafond introuvable au lieu de
+  // renouveler son option.
+  //
+  // Aucun bouton « Reprendre » ici : le cron réactive la campagne de lui-même
+  // dès qu'une offre redevient active — proposer un geste manuel qui échouera
+  // en base (`assert_module_publish_allowed`) serait pire que ne rien proposer.
+  // Aucune date non plus : la fin du droit se lit dans le bandeau de capacités,
+  // seul endroit qui connaisse l'octroi.
+  if (campaign.paused_reason === "droit_expire") {
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <p className="font-medium">
+          Campagne en pause : l&apos;option qui ouvre la roue est terminée.
+        </p>
+        <p className="mt-1">
+          Dès qu&apos;une offre est active, la programmation rouvre la campagne
+          d&apos;elle-même — vous n&apos;avez rien à relancer à la main.
+        </p>
+        <Link
+          href="/dashboard/settings/modules"
+          className="mt-2 inline-block rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+        >
+          Voir les offres
+        </Link>
       </div>
     );
   }
