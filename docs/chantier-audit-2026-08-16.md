@@ -24,8 +24,8 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 |---|---|---|---|---|
 | 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | ✅ **fusionné `585d0e7`, déployé, santé verte** |
 | 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | ✅ **fusionné `7db27ee`, déployé, santé verte** |
-| 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | PR ouverte, CI en cours |
-| 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | à venir |
+| 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | ✅ **fusionné `4b9499b`, déployé, santé verte** |
+| 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | **en cours** — brief [`wagon-4-brief.md`](./wagon-4-brief.md), les 7 arbitrages rendus le 2026-08-17 (2 : les deux gardes ; 4 : refus sec ; 6 : 500 pages, repli silencieux ; 7 : motif `events`) |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
 | 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 (+ le correctif de contraste en `stash@{0}` du clone WSL) | à venir |
 | 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | à venir |
@@ -36,6 +36,61 @@ backend + frontend en parallèle sur dossiers disjoints, `qa-verify` +
 (CI verte sur le SHA de tête → squash → santé post-déploiement), wagon suivant.
 Chaque correctif embarque un test qui échoue sans lui. Versions et ADR
 attribués à l'ouverture de la PR, jamais avant.
+
+## Coordination entre sessions — 2026-08-17
+
+**Deux sessions travaillent en même temps, dans le même arbre Windows**
+(`C:\Users\MISHOW\Documents\LastChance\Lastchance`). Ce n'est pas un problème de
+branches : c'est un problème de **ressources uniques**.
+
+| Session | Périmètre | Écrit ? |
+|---|---|---|
+| A | Wagon 3 — PR #150, boucle babysit-CI jusqu'à la fusion | oui, sur `chantier/audit-p0-joueur` |
+| B | Wagon 4 — **brief d'exécution uniquement** | non : lecture seule, aucun code, aucune branche |
+
+**Avant de démarrer l'écriture du wagon 4, lire
+[`wagon-4-brief.md`](./wagon-4-brief.md)** (rendu le 2026-08-17) : les 13
+constats y sont cartographiés puis **contre-vérifiés une seconde fois dans
+l'arbre du jour**, avec les chemins exacts, le découpage en lots disjoints par
+agent et les frontières entre lots.
+
+Deux résultats de cette contre-vérification, à connaître avant d'ouvrir quoi que
+ce soit :
+
+1. **Aucun constat n'est tombé** — 12 TIENT, 1 PARTIEL (FIA-2), 0 déjà corrigé.
+   Le wagon 4 garde son périmètre entier. Ce sont les **chemins** de l'audit qui
+   ont bougé, pas les défauts : six références de
+   `docs/audit-transverse-2026-08-16.md` pointent une définition morte ou un
+   défaut inexistant (détail en section « Corrections à l'audit » du brief).
+   Suivre l'audit à la lettre ferait éditer du SQL qui n'est plus en vigueur —
+   `run_campaign_schedule` (FIA-3) et `set_contest_status` (FIA-2) ont été
+   redéfinies par le wagon 2.
+2. **Les trois arbitrages structurants sont tranchés** (propriétaire,
+   2026-08-17) : FIA-2 → gardes **applicatives** + ADR qui l'assume, la branche
+   SQL est écartée ; FIA-3 → **branche A**, `set_campaign_status` désarme
+   `auto_schedule` ; NUM-1 → **dater les clés**, rupture de série assumée et
+   écrite en tête de migration. Ils sont consignés en tête du brief et **ne se
+   rejouent pas**.
+3. **Quatre arbitrages bloquants restent ouverts** (questions 2, 4, 6 et 7 du
+   brief : périmètre du prédicat campagne, refus sec ou surmontable sur FIA-5,
+   valeur du plafond de page, RPC de comptage ou motif `events`). **L'écriture
+   des lots concernés ne commence pas avant réponse** : un fan-out sur un
+   arbitrage en suspens multiplie la mauvaise réponse par N au lieu de la
+   corriger une fois.
+
+**La règle des ressources uniques**, apprise aux pièges 9 et 12 du CLAUDE.md :
+une seule stack Supabase locale, un seul cache Vitest par arbre, un seul `.next`
+dans le clone WSL. **Jamais deux campagnes de vérification en parallèle** — un
+`supabase db reset` lancé pour un wagon détruit le pgTAP ou l'E2E de l'autre, et
+deux Vitest concurrents rendent « 261 fichiers, no tests » sur une suite verte.
+Tant que la session A tient la CI de la PR #150, la session B ne lance ni test,
+ni build, ni migration : elle lit.
+
+**Wagon 4 : l'écriture ne commence qu'après la fusion du wagon 3**, sur une
+branche partie de `main` à jour. Les deux wagons se croisent sur les fichiers de
+couture — `src/lib/release.ts` (`EXPECTED_MIGRATION` + version),
+`src/types/database.generated.ts`, `.github/workflows/ci.yml`, les `docs/` — où
+partir d'un `main` en retard fabrique un conflit gratuit.
 
 ## Hors périmètre du train (constaté, non traité ici)
 
@@ -75,6 +130,10 @@ attribués à l'ouverture de la PR, jamais avant.
   + 1 FAIBLE + 5 INFO, les 3 MOYEN et l'INFO-1 fermés avant PR). pgTAP 61
   fichiers / 3522 assertions (vide et semée), typecheck/lint/build verts,
   E2E local WSL — spec caisse jackpot staff neuve verte, non-régression
-  verte, `wheel-wizard` 23/23 en run isolé. Roadmap V1.59, ADR-104. **PR à
-  ouvrir ; fusion et santé post-déploiement à consigner ici une fois
-  connues.**
+  verte, `wheel-wizard` 23/23 en run isolé. Roadmap V1.59, ADR-104. **PR #150
+  ouverte puis verte sur le SHA de tête `0d70e83` (l'unique rouge du parcours,
+  deux casts de test sans justification pour `casts:check`, corrigé en
+  `0d70e83`). Fusion squash `4b9499b` sur l'ordre permanent le 2026-08-17 ;
+  CI `main` success sur `4b9499b` ; « Santé après déploiement » success, job
+  « Base · Workers · Sécurité » réellement exécuté (16:53:53→16:54:00 UTC,
+  pas sauté) — migration `20260927120000` appliquée en production.**
