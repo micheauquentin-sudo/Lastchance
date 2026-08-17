@@ -44,6 +44,9 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
     // Contexte championnat (peuplé par reset() : littéraux hors hoist).
     contest: null as Record<string, unknown> | null,
     matches: [] as Array<Record<string, unknown>>,
+    /** Lignes `contest_matches`, par famille — la garde d'ouverture (FIA-2). */
+    nbMatchs: 1,
+    nbQuestions: 0,
     reset() {
       state.counters = new Map();
       state.rateLimitCalls = [];
@@ -65,6 +68,10 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       state.recoverPlayer = { id: "player-1", first_name: "Alice" };
       state.consumed = { player_id: "player-1" };
       state.predictSaved = true;
+      // Un match par défaut : les tests existants d'`updateContest` ne parlent
+      // pas d'ouverture et ne doivent pas se mettre à buter sur la garde.
+      state.nbMatchs = 1;
+      state.nbQuestions = 0;
       state.contest = {
         id: "contest-1",
         organization_id: "org-1",
@@ -165,7 +172,9 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       },
       from(table: string) {
         let op = "select";
-        const builder = {
+        /** Filtres posés sur la chaîne — seul `question_type` est lu ici. */
+        const filtres: Record<string, unknown> = {};
+        const builder: Record<string, unknown> = {
           insert: (payload: Record<string, unknown>) => {
             op = "insert";
             state.inserts.push({ table, payload });
@@ -176,8 +185,38 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
             state.updates.push({ table, payload });
             return builder;
           },
-          select: () => builder,
-          eq: () => builder,
+          /**
+           * Un COMPTAGE (`{ count: "exact", head: true }`) se résout par un
+           * `await` direct sur la chaîne : elle doit devenir thenable, et elle
+           * ne le devient QUE dans ce cas — les lectures ordinaires gardent
+           * exactement le comportement qu'elles avaient.
+           */
+          select: (
+            _colonnes?: string,
+            options?: { count?: string; head?: boolean },
+          ) => {
+            if (options?.count) {
+              builder.then = (ok: (v: unknown) => unknown) =>
+                Promise.resolve({
+                  count:
+                    table === "contest_matches"
+                      ? filtres.question_type === "score"
+                        ? state.nbMatchs
+                        : state.nbQuestions
+                      : 0,
+                  error: null,
+                }).then(ok);
+            }
+            return builder;
+          },
+          eq: (colonne?: string, valeur?: unknown) => {
+            if (colonne) filtres[colonne] = valeur;
+            return builder;
+          },
+          // `.neq("question_type", "score")` : la branche « questions
+          // génériques ». Elle ne pose pas `question_type` dans `filtres`,
+          // c'est ce qui la distingue de la branche « matchs ».
+          neq: () => builder,
           single: () =>
             Promise.resolve({ data: { id: "contest-1" }, error: null }),
           maybeSingle: () =>
@@ -862,5 +901,87 @@ describe("updateContest — theme", () => {
       expect(res.ok).toBe(false);
     }
     expect(state.updates).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// updateContest — LA GARDE D'OUVERTURE QUI MANQUAIT (FIA-2)
+//
+// Pronostics était le seul des huit modules à n'opposer AUCUNE précondition
+// métier à la publication : `set_contest_status` ne contrôle que le rôle, la
+// matrice de transitions et le droit du module. On ouvrait donc aux joueurs un
+// championnat à zéro match et zéro question, et /pronos/<slug> affichait une
+// page sans rien à pronostiquer — pendant que l'étape « Vérification » de
+// l'atelier promettait le contraire, et le promettait BLOQUANT.
+// ────────────────────────────────────────────────────────────
+
+describe("updateContest — un championnat vide ne s'ouvre plus aux joueurs", () => {
+  const ID = "00000000-0000-4000-8000-0000000000ce";
+
+  it("zéro match et zéro question : refus, et la RPC n'est JAMAIS appelée", async () => {
+    state.nbMatchs = 0;
+    state.nbQuestions = 0;
+
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, status: "active" }),
+    );
+
+    expect(res.ok).toBe(false);
+    // La phrase du contrôle `matiere`, mot pour mot — c'est la fonction pure
+    // que l'atelier consomme aussi, pas une seconde formulation.
+    expect(res.ok === false && res.error).toBe(
+      "Ni match ni question : ouvert maintenant, le championnat afficherait une page vide à vos clients.",
+    );
+    // LE POINT DE LA GARDE : elle passe AVANT la transition. Sans cette
+    // assertion, un refus rendu APRÈS l'écriture laisserait le championnat
+    // ouvert en base avec un message d'erreur à l'écran.
+    expect(state.rpcCalls.map((c) => c.name)).not.toContain(
+      "set_contest_status",
+    );
+    expect(state.updates).toEqual([]);
+  });
+
+  it("une seule question générique suffit : le refus ne se déclenche plus", async () => {
+    // CONTRÔLE INVERSE. Sans lui, une garde qui refuserait toute ouverture
+    // laisserait le test ci-dessus vert et fermerait le module.
+    state.nbMatchs = 0;
+    state.nbQuestions = 1;
+
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, status: "active" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.rpcCalls.map((c) => c.name)).toContain("set_contest_status");
+  });
+
+  it("la garde ne regarde QUE l'ouverture : fermer reste toujours possible", async () => {
+    // On ne bloque pas quelqu'un qui veut cesser. Un championnat vide doit
+    // pouvoir être remis en brouillon ou clôturé — l'en empêcher serait un
+    // enfermement, exactement ce que `setHuntStatus` documente déjà.
+    state.nbMatchs = 0;
+    state.nbQuestions = 0;
+
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, status: "draft" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.rpcCalls.map((c) => c.name)).toContain("set_contest_status");
+  });
+
+  it("un simple renommage n'est jamais soumis à la garde", async () => {
+    state.nbMatchs = 0;
+    state.nbQuestions = 0;
+
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, name: "Coupe du comptoir" }),
+    );
+
+    expect(res.ok).toBe(true);
   });
 });

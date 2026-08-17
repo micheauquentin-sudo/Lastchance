@@ -378,16 +378,22 @@ describe("tuilesDuModule", () => {
     expect(statut("prejeu")).toBe("complet");
   });
 
-  it("un championnat rouge de partout alerte sans jamais bloquer", () => {
+  it("un championnat rouge de partout ne bloque que sur la matière", () => {
+    // Ce test affirmait « sans JAMAIS bloquer », et c'était exact tant qu'aucun
+    // serveur n'opposait de précondition (défaut FIA-2). Depuis que
+    // `updateContest` refuse un championnat sans un match ni une question, la
+    // tuile qui porte `matiere` doit rougir — sinon l'écran promettrait encore
+    // qu'on peut ouvrir.
     const controles = CONTROLES_REELS.pronostics
       .flat()
       .map((c) => ({ ...c, ok: false }));
     const rendues = tuilesDuModule("pronostics", controles);
 
-    expect(rendues.some((r) => r.statut === "incomplet")).toBe(false);
-    expect(rendues.find((r) => r.tuile.cle === "atelier")!.statut).toBe(
-      "attention",
-    );
+    const incompletes = rendues
+      .filter((r) => r.statut === "incomplet")
+      .map((r) => r.tuile.cle);
+    // Une seule tuile rougit, celle qui porte `matiere` — pas toutes.
+    expect(incompletes).toEqual(["atelier"]);
     // Les blocs sans contrôle rattaché restent verts, même ici.
     expect(rendues.find((r) => r.tuile.cle === "suivi")!.statut).toBe(
       "complet",

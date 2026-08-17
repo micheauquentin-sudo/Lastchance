@@ -51,14 +51,16 @@ describe("normaliserContrôles — les modules dont la table décide", () => {
     expect(bloquantDe("fidelite", brut("roues"))).toBe(false);
   });
 
-  it("les pronostics ne bloquent RIEN — aucune précondition serveur n'existe", () => {
-    for (const cle of [
-      "matiere",
-      "recompenses",
-      "echeances",
-      "subsidiaire",
-      "contact",
-    ]) {
+  it("les pronostics ne bloquent que sur la MATIÈRE à pronostiquer", () => {
+    // Cette assertion disait l'inverse — « les pronostics ne bloquent RIEN,
+    // aucune précondition serveur n'existe » — et c'était vrai : c'était le
+    // défaut FIA-2 du wagon 4. `updateContest` oppose désormais
+    // `blocageActivationContest` avant `set_contest_status` ; la table le suit,
+    // et ce test épingle la nouvelle frontière plutôt que l'ancienne absence.
+    expect(bloquantDe("pronostics", brut("matiere"))).toBe(true);
+    // Les quatre autres AVERTISSENT toujours : un championnat sans palier de
+    // récompense, sans subsidiaire ou sans email est un réglage légitime.
+    for (const cle of ["recompenses", "echeances", "subsidiaire", "contact"]) {
       expect(bloquantDe("pronostics", brut(cle))).toBe(false);
     }
   });

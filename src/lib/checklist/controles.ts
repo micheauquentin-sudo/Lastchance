@@ -3,10 +3,8 @@
  *
  * Les huit calculs « peut-on ouvrir ? » ne rendent pas la même chose :
  *  · quiz, calendrier, jackpot, événement portent un champ `bloquant` ;
- *  · pronostics n'en porte AUCUN, et le documente (src/lib/activation/
- *    pronostics.ts, en-tête de `ControleContest`) : il n'existe pas de
- *    précondition d'ouverture côté serveur, donc rien n'y bloque ;
- *  · roue, chasse et fidélité rendent `{cle, ok, titre, detail}` sans plus.
+ *  · roue, chasse, fidélité et pronostics rendent `{cle, ok, titre, detail}`
+ *    sans plus — leur caractère bloquant est tranché par la table ci-dessous.
  *
  * Une tuile de page doit pourtant dire « complet » ou « il manque quelque
  * chose », et ce verdict n'a de sens que si l'on sait CE QUI BLOQUE. Recopier
@@ -104,11 +102,18 @@ const DEFAUTS_BLOQUANT: Record<
     roues: false,
   },
 
-  // Les pronostics ne bloquent RIEN : aucune précondition d'ouverture n'existe
-  // côté serveur (documenté dans src/lib/activation/pronostics.ts), et ce
-  // module a précisément été corrigé une fois pour avoir laissé croire le
-  // contraire. La table vide n'est pas un oubli : c'est le fait.
-  pronostics: {},
+  // Les pronostics : la matière est le seul refus de `updateContest` depuis le
+  // wagon 4 (`blocageActivationContest`) — ouvert sans un match ni une
+  // question, /pronos/<slug> affiche une page vide. Les quatre autres points
+  // (récompenses, échéances, subsidiaire, contact) avertissent : un
+  // championnat sans palier de récompense reste un réglage légitime.
+  //
+  // Cette table a longtemps été VIDE, et le commentaire disait pourquoi :
+  // « aucune précondition d'ouverture n'existe côté serveur ». C'était le fait,
+  // et c'était le défaut FIA-2 — il est fermé, la table le suit.
+  pronostics: {
+    matiere: true,
+  },
 };
 
 export function normaliserControles(

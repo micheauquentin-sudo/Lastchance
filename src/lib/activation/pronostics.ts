@@ -4,20 +4,25 @@ import type { PointControle } from "./controle";
 /**
  * L'ÉTAPE « VÉRIFICATION » DES PRONOSTICS, EN FONCTION PURE.
  *
- * ── CE QUE LE SERVEUR NE VÉRIFIE PAS ──
+ * ── CE QUE LE SERVEUR VÉRIFIE, ET DEPUIS QUAND ──
  *
- * Contrairement aux six autres modules, il n'existe AUCUNE précondition métier
- * à l'ouverture d'un championnat : `set_contest_status` ne contrôle que le rôle
- * (`is_org_editor`), la matrice de transitions et le droit module
- * (`assert_module_publish_allowed`). On peut donc ouvrir aux joueurs un
- * championnat à zéro match, zéro question et zéro récompense — /pronos/<slug>
- * affiche alors une page sans rien à pronostiquer et sans lot.
+ * Ce module a longtemps porté l'inverse de cette phrase : « il n'existe AUCUNE
+ * précondition métier à l'ouverture d'un championnat ». C'était vrai, et c'était
+ * le défaut FIA-2 du wagon 4 — on ouvrait aux joueurs un championnat à zéro
+ * match et zéro question, et /pronos/<slug> affichait une page sans rien à
+ * pronostiquer, pendant que l'écran promettait le contraire.
  *
- * Il n'y a donc RIEN à extraire d'une action : il n'existe pas d'`activationBlocker`
- * côté pronostics. Ce module n'a qu'un seul lecteur, l'écran, et c'est assumé —
- * il ne referme pas le trou, il le RACONTE avant le geste, et renvoie sur
- * l'étape qui le corrige. Refermer côté base serait une décision de produit,
- * pas une décision d'atelier.
+ * Depuis, `blocageActivationContest` ci-dessous est opposé par `updateContest`
+ * AVANT `set_contest_status` — exactement comme `blocageActivationEvent` l'est
+ * par `setEventGameStatus`. La règle reste APPLICATIVE et non SQL (arbitrage du
+ * 2026-08-17, ADR du wagon 4) : `set_contest_status` ne contrôle toujours que
+ * le rôle (`is_org_editor`), la matrice de transitions et le droit module
+ * (`assert_module_publish_allowed`).
+ *
+ * Les QUATRE autres contrôles de cette liste (récompenses, échéances,
+ * subsidiaire, contact) ne bloquent toujours rien : ils avertissent. Un
+ * championnat sans palier de récompense est un réglage légitime, pas une page
+ * vide.
  *
  * Il est PUR et testé : aucun réseau, aucune date implicite (`now` est un
  * paramètre — sans quoi le test « échéance déjà passée » ne serait pas
@@ -50,9 +55,10 @@ export interface EntreeVerificationContest {
 
 /**
  * Un point de vérification d'un championnat : le tronc commun, SANS
- * `bloquant` — aucun contrôle n'y bloque quoi que ce soit, puisqu'il n'existe
- * pas de précondition d'ouverture côté serveur (voir l'en-tête) — et avec une
- * `etape` REQUISE : ici, chaque point sait où il se corrige.
+ * `bloquant` — le caractère bloquant du seul contrôle qui l'est (`matiere`) est
+ * porté par la table de `checklist/controles.ts`, comme pour la roue, la chasse
+ * et la fidélité — et avec une `etape` REQUISE : ici, chaque point sait où il se
+ * corrige.
  */
 export interface ControleContest extends PointControle<EtapeContest> {
   /** Étape de l'Atelier qui corrige ce point. */
@@ -64,6 +70,30 @@ export interface EtatVerificationContest {
   toutPret: boolean;
   /** Le SEUL endroit qui publie : la vue suivi, ancre `#statut`. */
   ctaHref: string;
+}
+
+/**
+ * Championnat prêt à l'ouverture ? Message de refus sinon (`null` = OK).
+ *
+ * Miroir EXACT du contrôle `matiere` ci-dessous : même seuil (au moins une
+ * ligne de `contest_matches`, match ou question générique), mêmes phrases. Le
+ * contrôle de l'atelier le CONSOMME — les deux ne peuvent donc pas diverger,
+ * ce qui est tout l'objet de l'extraction : l'écran promettait un refus que le
+ * serveur ne prononçait pas.
+ *
+ * `autoCompetition` change le geste à faire, pas la règle : sur un calendrier
+ * synchronisé, la matière ne se saisit pas à la main, elle se resynchronise.
+ * Le seuil est le même dans les deux cas.
+ */
+export function blocageActivationContest(entree: {
+  nbMatchs: number;
+  nbQuestions: number;
+  autoCompetition: boolean;
+}): string | null {
+  if (entree.nbMatchs + entree.nbQuestions > 0) return null;
+  return entree.autoCompetition
+    ? "Le calendrier synchronisé n'a encore remonté aucun match : ouvert maintenant, le championnat afficherait une page vide. Relancez la synchronisation ou ajoutez une question."
+    : "Ni match ni question : ouvert maintenant, le championnat afficherait une page vide à vos clients.";
 }
 
 /** Combien de questions ferment déjà avant même l'ouverture ? */
@@ -97,18 +127,20 @@ export function construireVerificationContest(
 
   const controles: ControleContest[] = [];
 
-  // 1. De la matière à pronostiquer. Un championnat vide s'ouvre sans broncher.
-  const total = nbMatchs + nbQuestions;
+  // 1. De la matière à pronostiquer — le SEUL contrôle bloquant, et celui que
+  //    `updateContest` oppose désormais avant d'appeler `set_contest_status`.
+  const blocage = blocageActivationContest({
+    nbMatchs,
+    nbQuestions,
+    autoCompetition,
+  });
   controles.push({
     cle: "matiere",
-    ok: total > 0,
+    ok: blocage === null,
     titre: "Il y a quelque chose à pronostiquer",
     detail:
-      total > 0
-        ? `${nbMatchs} match${nbMatchs > 1 ? "s" : ""} et ${nbQuestions} question${nbQuestions > 1 ? "s" : ""} — vos joueurs ont de quoi jouer.`
-        : autoCompetition
-          ? "Le calendrier synchronisé n'a encore remonté aucun match : ouvert maintenant, le championnat afficherait une page vide. Relancez la synchronisation ou ajoutez une question."
-          : "Ni match ni question : ouvert maintenant, le championnat afficherait une page vide à vos clients.",
+      blocage ??
+      `${nbMatchs} match${nbMatchs > 1 ? "s" : ""} et ${nbQuestions} question${nbQuestions > 1 ? "s" : ""} — vos joueurs ont de quoi jouer.`,
     etape: autoCompetition ? "matchs" : "questions",
   });
 
