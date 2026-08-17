@@ -58,7 +58,21 @@ export function ExperienceAnalytics({
   analytics: ExperienceAnalyticsSnapshot;
 }) {
   const { summary } = analytics;
-  const abandonment = Math.max(0, summary.starts - summary.completions);
+  /**
+   * DES PERSONNES, PAS DES ÉVÉNEMENTS.
+   *
+   * Les quatre premières tuiles divisaient des `count(*)` d'événements par
+   * d'autres `count(*)` d'événements, sous des libellés qui promettaient des
+   * gens (« Personnes ayant vu un jeu »). Une même personne qui ouvrait la page
+   * trois fois comptait pour trois, et le taux de départ tombait sans que rien
+   * n'ait changé dans la boutique. Les compteurs distincts existent désormais
+   * en base : ce sont eux qui répondent aux libellés. `views` reste affiché,
+   * mais comme ce qu'il est — un cumul d'ouvertures, en indice.
+   */
+  const abandonment = Math.max(
+    0,
+    summary.uniqueStarters - summary.uniqueFinishers,
+  );
 
   return (
     <details className="mb-8 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]">
@@ -73,23 +87,23 @@ export function ExperienceAnalytics({
         {[
           [
             "Personnes ayant vu un jeu",
-            summary.views,
-            `Sur ${analytics.periodDays} jours`,
+            summary.uniqueViewers,
+            `Sur ${analytics.periodDays} jours · ${summary.views} ouvertures cumulées`,
           ],
           [
-            "Parties commencées",
-            summary.starts,
-            `${percent(summary.starts, summary.views)} des personnes`,
+            "Joueurs ayant joué",
+            summary.uniqueStarters,
+            `${percent(summary.uniqueStarters, summary.uniqueViewers)} des personnes`,
           ],
           [
-            "Parties terminées",
-            summary.completions,
-            `${percent(summary.completions, summary.starts)} des parties commencées`,
+            "Joueurs ayant terminé",
+            summary.uniqueFinishers,
+            `${percent(summary.uniqueFinishers, summary.uniqueStarters)} des joueurs ayant joué`,
           ],
           [
-            "Parties abandonnées",
+            "Joueurs partis en cours de route",
             abandonment,
-            `${percent(abandonment, summary.starts)} des parties commencées`,
+            `${percent(abandonment, summary.uniqueStarters)} des joueurs ayant joué`,
           ],
           [
             "Lots retirés en boutique",
@@ -178,8 +192,8 @@ export function ExperienceAnalytics({
                 <tr>
                   <th className="px-5 py-3">Animation</th>
                   <th className="px-3 py-3">Personnes</th>
-                  <th className="px-3 py-3">Parties commencées</th>
-                  <th className="px-3 py-3">Parties terminées</th>
+                  <th className="px-3 py-3">Joueurs ayant joué</th>
+                  <th className="px-3 py-3">Joueurs ayant terminé</th>
                   <th className="px-3 py-3">Joueurs revenus</th>
                   <th className="px-3 py-3">Lots retirés</th>
                   <th className="px-3 py-3">Ventes</th>
@@ -195,12 +209,16 @@ export function ExperienceAnalytics({
                         {kindLabel[row.experienceKind] ?? row.experienceKind}
                       </p>
                     </td>
-                    <td className="px-3 py-3 tabular-nums">{row.views}</td>
                     <td className="px-3 py-3 tabular-nums">
-                      {row.starts} · {percent(row.starts, row.views)}
+                      {row.uniqueViewers}
                     </td>
                     <td className="px-3 py-3 tabular-nums">
-                      {row.completions} · {percent(row.completions, row.starts)}
+                      {row.uniqueStarters} ·{" "}
+                      {percent(row.uniqueStarters, row.uniqueViewers)}
+                    </td>
+                    <td className="px-3 py-3 tabular-nums">
+                      {row.uniqueFinishers} ·{" "}
+                      {percent(row.uniqueFinishers, row.uniqueStarters)}
                     </td>
                     <td className="px-3 py-3 tabular-nums">
                       {row.returningPlayers}
