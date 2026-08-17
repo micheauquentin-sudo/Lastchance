@@ -29,8 +29,8 @@ const { etat } = vi.hoisted(() => ({
     gain: null as { drawn_at: string } | null,
     /** La lecture de `jackpot_wins` lève. */
     lectureLeve: false,
-    /** Départs du compteur de pression observés. */
-    pressions: 0,
+    /** Seaux d'observation touchés, avec leur règle. */
+    pressions: [] as Array<{ parts: unknown[]; evenement: string; limit: number }>,
   },
 }));
 
@@ -60,10 +60,17 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) })
 vi.mock("@/lib/request-ip", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/request-ip")>()),
   clientIpFromHeaders: vi.fn(() => "198.51.100.4"),
-  observerPressionIp: vi.fn(() => {
-    etat.pressions += 1;
-    return Promise.resolve();
-  }),
+  observerPressionIp: vi.fn(
+    (
+      parts: unknown[],
+      _ip: string,
+      rule: { limit: number },
+      evenement: string,
+    ) => {
+      etat.pressions.push({ parts, evenement, limit: rule.limit });
+      return Promise.resolve();
+    },
+  ),
 }));
 
 /** Campagne publique minimale — les seules colonnes que la jauge projette. */
@@ -121,14 +128,18 @@ vi.mock("@/lib/jackpot-context", async (importOriginal) => {
   };
 });
 
+// Imports DYNAMIQUES, après les mocks : `@/lib/rate-limit` importe
+// `@/lib/monitoring`, dont la fabrique de mock référence `reportErrorMock`. Un
+// import statique le chargerait avant l'initialisation de cette constante.
 const { getJackpotState } = await import("./jackpot");
+const { RATE_LIMITS } = await import("@/lib/rate-limit");
 
 beforeEach(() => {
   etat.contexteOk = true;
   etat.drawMode = "threshold";
   etat.gain = null;
   etat.lectureLeve = false;
-  etat.pressions = 0;
+  etat.pressions = [];
   reportErrorMock.mockClear();
 });
 
@@ -157,11 +168,23 @@ describe("getJackpotState — la jauge partagée", () => {
     expect(res.gauge?.drawnAt).toBe("2026-09-01T18:00:03.000Z");
   });
 
-  it("laisse partir le compteur d'observabilité, qui ne refuse jamais", async () => {
+  it("verse dans SON seau d'observation, pas dans celui des participations", async () => {
     const res = await getJackpotState({ campaignId: CAMPAIGN_ID });
 
-    expect(etat.pressions).toBe(1);
     expect(res.state).toBe("ok");
+    expect(etat.pressions).toHaveLength(1);
+    // L'ASSERTION QUI PORTE LE CORRECTIF : trente écrans laissés ouverts dans
+    // un lieu produisent un débit de LECTURE normal. Versé dans le seau des
+    // participations (`jackpot:participate:ip`, 1200/10 min), il en aurait
+    // dépassé le seuil sans qu'une seule participation ait eu lieu — l'alerte
+    // d'abus de la jauge se serait noyée dans le bruit des écrans.
+    expect(etat.pressions[0].parts).toEqual(["jackpot:state:ip", CAMPAIGN_ID]);
+    expect(etat.pressions[0].evenement).toBe("jackpot_state_pressure");
+    expect(etat.pressions[0].limit).toBe(RATE_LIMITS.jackpotStateIp.limit);
+    // Un sondage n'est pas une participation : les deux seuils diffèrent.
+    expect(RATE_LIMITS.jackpotStateIp.limit).not.toBe(
+      RATE_LIMITS.jackpotParticipateIp.limit,
+    );
   });
 });
 
@@ -173,14 +196,14 @@ describe("getJackpotState — toute panne rend `unavailable`", () => {
 
     expect(res).toEqual({ state: "unavailable", gauge: null });
     // Rien n'est mesuré sur une campagne qu'on ne sert pas.
-    expect(etat.pressions).toBe(0);
+    expect(etat.pressions).toEqual([]);
   });
 
   it("identifiant invalide : refusé avant toute lecture", async () => {
     const res = await getJackpotState({ campaignId: "pas-un-uuid" });
 
     expect(res).toEqual({ state: "unavailable", gauge: null });
-    expect(etat.pressions).toBe(0);
+    expect(etat.pressions).toEqual([]);
   });
 
   it("une exception en cours de lecture ne remonte JAMAIS", async () => {

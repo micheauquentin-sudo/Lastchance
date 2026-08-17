@@ -30,13 +30,30 @@ import { createAdminClient } from "@/lib/supabase/admin";
  *
  * ── L'ÉTAT VIT EN MÉMOIRE, PAR INSTANCE, ET C'EST ASSUMÉ ──
  *
- * Calque exact du modèle documenté de `dernieresTraces`
- * (src/lib/player-identity.ts:155-180) : la cardinalité est BORNÉE par les
- * sessions vivantes — aucune saisie n'entre dans la clé, c'est un UUID de
- * session déjà résolu —, les entrées périmées sont purgées au passage, et
- * l'état n'est pas partagé entre instances. Fluid Compute réutilise les
- * instances : c'est précisément ce qui rend le gain réel. Une instance froide
- * paie un appel de plus, ce qui est le comportement d'avant.
+ * Calque du modèle documenté de `dernieresTraces`
+ * (src/lib/player-identity.ts:155-180) : les entrées périmées sont purgées au
+ * passage, et l'état n'est pas partagé entre instances. Fluid Compute réutilise
+ * les instances : c'est précisément ce qui rend le gain réel. Une instance
+ * froide paie un appel de plus, ce qui est le comportement d'avant.
+ *
+ * ── CE QUE LA CLÉ EST, ET CE QU'ELLE N'EST PAS ──
+ *
+ * Une version antérieure de cet en-tête affirmait la cardinalité « bornée par
+ * les sessions vivantes, la clé étant un UUID déjà résolu ». C'était faux du
+ * chemin ACTION : `getEventState` n'a plus de lecture préalable, son argument
+ * n'est qu'un UUID VALIDÉ — pas un UUID EXISTANT. Mille UUID v4 forgés
+ * auraient donc écrit mille entrées.
+ *
+ * La borne réelle est ailleurs, et elle est stricte : SEULS les états
+ * `state === "ok"` sont mis en cache. Un UUID inexistant, une session en
+ * brouillon, un module fermé — tout ce que la RPC refuse — ne laisse aucune
+ * trace en mémoire. La cardinalité est donc bien celle des sessions réellement
+ * servies, mais parce que le refus n'est pas caché, pas parce que la clé
+ * serait résolue.
+ *
+ * Effet de bord de cette règle, et il est BON : publier une session
+ * (draft → lobby) n'attend plus l'expiration d'un refus caché. La première
+ * lecture après la transition sert l'état neuf, sans délai.
  */
 
 /** Fenêtre de validité de la part partagée. Voir l'en-tête. */
@@ -63,10 +80,18 @@ function partagePorteUnEtat(partage: unknown): boolean {
 }
 
 /**
- * Part partagée d'une session, servie par le cache d'une seconde. `null` en cas
- * de panne de lecture — un échec n'est JAMAIS mis en cache, sans quoi une
- * seconde de base indisponible se prolongerait en une seconde de refus
- * fabriqué par nous.
+ * Part partagée d'une session, servie par le cache d'une seconde.
+ *
+ * SEUL un état `ok` entre en cache. Les deux autres issues en sont exclues, et
+ * pour deux raisons différentes :
+ *
+ *  · une PANNE de lecture (`null`) — la cacher prolongerait une seconde de base
+ *    indisponible en une seconde de refus fabriqué par nous ;
+ *  · un REFUS de la RPC (`{"state":"unavailable"}`) — le cacher ferait écrire
+ *    une entrée par UUID forgé, alors que rien n'a été résolu en amont, et
+ *    ferait attendre jusqu'à une seconde la publication d'une session
+ *    (draft → lobby) pour ne rien économiser : ce refus ne coûte pas un
+ *    classement, il coûte une ligne.
  */
 async function lirePartPartagee(
   admin: ReturnType<typeof createAdminClient>,
@@ -75,7 +100,7 @@ async function lirePartPartagee(
   const maintenant = Date.now();
 
   // Purge au passage : la carte ne garde que ce qui a moins d'une seconde,
-  // donc au plus les sessions réellement sondées dans cette fenêtre.
+  // donc au plus les sessions réellement servies dans cette fenêtre.
   for (const [cle, entree] of partagesRecents) {
     if (maintenant - entree.at >= TTL_PARTAGE_MS) partagesRecents.delete(cle);
   }
@@ -91,7 +116,9 @@ async function lirePartPartagee(
     return null;
   }
 
-  partagesRecents.set(sessionId, { at: maintenant, partage: data });
+  if (partagePorteUnEtat(data)) {
+    partagesRecents.set(sessionId, { at: maintenant, partage: data });
+  }
   return data;
 }
 

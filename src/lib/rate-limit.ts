@@ -380,6 +380,21 @@ export const RATE_LIMITS = {
   /** Lecture du code tournant au comptoir par membre et campagne — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   jackpotCounter: { limit: 60, windowSeconds: 60 },
+  /** SONDAGE de la jauge publique par campagne et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (ADR-032, comme tous les seaux à clé
+   *  partagée de ce module).
+   *
+   *  POURQUOI UN SEAU À PART, et non `jackpotParticipateIp` : un sondage n'est
+   *  pas une participation. Trente écrans laissés ouverts dans un lieu
+   *  produisent un débit de LECTURE parfaitement normal qui, versé dans le seau
+   *  des participations, en aurait fait dépasser le seuil sans qu'une seule
+   *  participation ait eu lieu — l'alerte d'abus de la jauge se serait noyée
+   *  dans le bruit des écrans, exactement là où elle doit rester lisible.
+   *
+   *  Plus généreux que le seau de participation, et c'est cohérent : lire ne
+   *  fait rien avancer. À 3000/10 min (~5 req/s en continu depuis une même IP)
+   *  le seuil reste un signal, pas une porte. Ne PAS repasser en `failClosed`. */
+  jackpotStateIp: { limit: 3000, windowSeconds: 600 },
   /** PRESSION du parcours public d'un événement par session et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus (miroir jackpotParticipateIp).
    *

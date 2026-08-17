@@ -953,10 +953,17 @@ export async function getJackpotState(input: {
     if (!ctx.ok) return JACKPOT_INDISPONIBLE;
 
     // Observabilité seule (clé partagée, jamais un refus) : le poll est
-    // fréquent et légitime, on ne le bride pas.
-    await observePublicPressure(
-      ctx.campaign.id,
+    // fréquent et légitime, on ne le bride pas — et il a son PROPRE seau.
+    // Le verser dans celui des participations aurait fait de trente écrans
+    // laissés ouverts un dépassement du seuil d'abus, sans qu'une seule
+    // participation ait eu lieu : le signal se serait noyé dans le bruit des
+    // écrans. Un sondage n'est pas une participation.
+    await observerPressionIp(
+      ["jackpot:state:ip", ctx.campaign.id],
       clientIpFromHeaders(await headers()),
+      RATE_LIMITS.jackpotStateIp,
+      "jackpot_state_pressure",
+      { campaign_id: ctx.campaign.id },
     );
 
     return { state: "ok", gauge: await loadJackpotGauge(ctx.admin, ctx.campaign) };

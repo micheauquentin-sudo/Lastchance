@@ -33,6 +33,8 @@ const { etat } = vi.hoisted(() => ({
     pressionBloquee: false,
     /** La mesure de pression rejette. */
     pressionRejette: false,
+    /** Tâches confiées à `after()` — le runtime les retient après la réponse. */
+    taches: [] as Array<Promise<unknown>>,
   },
 }));
 
@@ -53,6 +55,15 @@ vi.mock("next/headers", () => ({
         : undefined,
     set: vi.fn(),
   })),
+}));
+/**
+ * `after()` : le runtime retient la tâche jusqu'à son terme, APRÈS la réponse.
+ * Le mock la déclenche et garde sa promesse — c'est ce que le test observe.
+ */
+vi.mock("next/server", () => ({
+  after: (fn: () => unknown) => {
+    etat.taches.push(Promise.resolve().then(fn));
+  },
 }));
 vi.mock("@/lib/auth", () => ({
   getUserAndOrg: vi.fn(async () => ({ user: null, organization: null, role: null })),
@@ -139,6 +150,7 @@ beforeEach(() => {
   etat.pressions = 0;
   etat.pressionBloquee = false;
   etat.pressionRejette = false;
+  etat.taches = [];
   reportErrorMock.mockClear();
 });
 
@@ -209,7 +221,19 @@ describe("getEventState — la mesure de pression est hors du chemin critique", 
     // Attendue, cette mesure ajoutait sa latence à chaque tour de sondage de
     // chaque téléphone de la salle.
     expect(gagnant).toBe("état");
-    // L'observabilité reste : elle est PARTIE, elle n'est pas supprimée.
+  });
+
+  it("confie la mesure à after(), et non à une promesse orpheline", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = partagePlein(sessionId);
+
+    await getEventState({ sessionId });
+    await Promise.all(etat.taches);
+
+    // Un `void promise` n'est rattaché à rien : sous Fluid Compute l'instance
+    // peut geler dès la réponse rendue, et la mesure disparaîtrait — or c'est
+    // le SEUL signal d'abus de ce chemin, aucun refus n'y étant opposé.
+    expect(etat.taches).toHaveLength(1);
     expect(etat.pressions).toBe(1);
   });
 
@@ -219,14 +243,33 @@ describe("getEventState — la mesure de pression est hors du chemin critique", 
     etat.pressionRejette = true;
 
     const res = await getEventState({ sessionId });
-    // Laisser le temps au `.catch` de s'exécuter.
-    await Promise.resolve();
-    await Promise.resolve();
+    // La tâche `after` doit se résoudre, jamais rejeter : son `.catch` interne
+    // est ce qui empêche un rejet non géré de faire tomber le processus.
+    await expect(Promise.all(etat.taches)).resolves.toBeDefined();
 
     expect(res.state).toBe("ok");
     expect(reportErrorMock).toHaveBeenCalledWith(
       "event.state-pressure",
       expect.any(Error),
     );
+  });
+});
+
+describe("getEventState — rien n'est mesuré sur une session qui n'existe pas", () => {
+  it("un verdict `unavailable` n'écrit AUCUN compteur", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = { state: "unavailable" };
+
+    const res = await getEventState({ sessionId });
+    await Promise.all(etat.taches);
+
+    expect(res.state).toBe("unavailable");
+    // L'ASSERTION QUI PORTE LE CORRECTIF : mesurer AVANT le verdict faisait
+    // créer une clé Redis neuve (TTL 660 s) à chaque UUID v4 forgé posté en
+    // direct — on payait le stockage de l'abus qu'on prétendait mesurer, et le
+    // signal se noyait dans des sessions qui n'existent pas. `main` ne le
+    // faisait pas : `loadEventActionContext` refusait avant la mesure.
+    expect(etat.pressions).toBe(0);
+    expect(etat.taches).toHaveLength(0);
   });
 });

@@ -181,6 +181,33 @@ describe("chargerEtatLive — cache d'une seconde de la part partagée", () => {
     expect(partages()).toBe(2);
     expect(retabli.state).toBe("ok");
   });
+
+  it("ne met JAMAIS un REFUS de la RPC en cache", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = { state: "unavailable" };
+
+    await chargerEtatLive(sessionId);
+    await chargerEtatLive(sessionId);
+
+    // Deux raisons, et elles se cumulent. (a) `getEventState` n'a plus de
+    // lecture préalable : son argument est un UUID VALIDÉ, pas un UUID
+    // EXISTANT. Cacher les refus ferait écrire une entrée par UUID v4 forgé —
+    // on paierait la mémoire de l'abus qu'on prétend mesurer. (b) Publier une
+    // session (draft → lobby) attendrait l'expiration d'un refus caché, pour
+    // n'économiser qu'une ligne : ce refus ne coûte pas un classement.
+    expect(partages()).toBe(2);
+  });
+
+  it("publier une session est vu immédiatement, sans attendre le TTL", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = { state: "unavailable" };
+    expect((await chargerEtatLive(sessionId)).state).toBe("unavailable");
+
+    // Le commerçant lance sa soirée. Même instant, aucun temps écoulé.
+    etat.partage = partagePlein(sessionId);
+
+    expect((await chargerEtatLive(sessionId)).state).toBe("ok");
+  });
 });
 
 describe("chargerEtatLive — part propre au joueur", () => {

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { blocageActivationEvent } from "@/lib/activation/events";
 import { getUserAndOrg } from "@/lib/auth";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
@@ -347,26 +348,40 @@ export async function getEventState(input: {
   const parsed = eventStateSchema.safeParse(input);
   if (!parsed.success) return mapEventPublicState(null);
 
-  // ── LA MESURE NE FAIT PLUS ATTENDRE LA SALLE ──
-  //
-  // Observabilité seule (clé partagée, jamais un refus) : le poll est fréquent
-  // et légitime, on ne le bride pas. Elle n'est donc plus ATTENDUE non plus —
-  // c'est une écriture de compteur, et la faire précéder l'état ajoutait sa
-  // latence à chaque tour de sondage de chaque téléphone de la salle.
-  // Tir-et-oublie avec un `.catch` explicite : un rejet non géré ferait tomber
-  // le processus, ce qu'aucun compteur ne vaut.
-  void observeEventPressure(
-    parsed.data.sessionId,
-    clientIpFromHeaders(await headers()),
-  ).catch((err) => reportError("event.state-pressure", err));
-
   const store = await cookies();
   const token = store.get(eventTokenCookieName(parsed.data.sessionId))?.value;
 
-  return chargerEtatLive(
+  const etat = await chargerEtatLive(
     parsed.data.sessionId,
     token ? hashPlayerToken(token) : undefined,
   );
+
+  // ── LA MESURE VIENT APRÈS LE VERDICT, ET SURVIT À LA RÉPONSE ──
+  //
+  // APRÈS, d'abord. `loadEventActionContext` refusait une session inconnue
+  // avant d'atteindre le compteur ; sa disparition avait déplacé la mesure en
+  // TÊTE, si bien qu'un POST direct avec des UUID v4 forgés créait une clé
+  // Redis neuve à chaque appel (TTL 660 s) — on payait le stockage de l'abus
+  // qu'on prétendait mesurer, et le signal se noyait dans des sessions qui
+  // n'existent pas. On n'observe donc que ce qui a répondu `ok`, comme le font
+  // `getCalendarState` et `getJackpotState`.
+  //
+  // SURVIT, ensuite. Un `void promise` n'est rattaché à rien : sous Fluid
+  // Compute l'instance peut geler dès la réponse rendue, et la mesure
+  // disparaîtrait — or ADR-032 fait de ce compteur le SEUL signal d'abus de ce
+  // chemin, puisqu'aucun refus n'y est opposé. `after()` demande au runtime de
+  // la retenir jusqu'à son terme. Le `.catch` reste : un rejet non géré ne vaut
+  // jamais un compteur.
+  if (etat.state === "ok") {
+    const ip = clientIpFromHeaders(await headers());
+    after(() =>
+      observeEventPressure(parsed.data.sessionId, ip).catch((err) =>
+        reportError("event.state-pressure", err),
+      ),
+    );
+  }
+
+  return etat;
 }
 
 // ════════════════════════════════════════════════════════════
