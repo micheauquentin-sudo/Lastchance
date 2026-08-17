@@ -91,24 +91,28 @@ export default async function ModulesSettingsPage({
   // section « Prêt à démarrer » ci-dessus, `revoked` relève du remboursement
   // et se traite hors écran. Un pass expiré est le seul cas où le silence
   // laissait le commerçant sans explication.
+  // Et jamais au caissier : même règle que `finDuPassExpire` côté capacités —
+  // il n'a pas à savoir de quoi l'établissement est équipé ni jusqu'à quand.
   const finsDePass = new Map<string, string>();
-  await Promise.all(
-    ADDON_OFFERS.filter(
-      (offre) => !(ouverts as readonly string[]).includes(offre.entitlement),
-    ).map(async (offre) => {
-      const etat = await etatOctroiModule(
-        organization.id,
-        offre.entitlement,
-        maintenant,
-      );
-      if (etat?.etat === "expired" && etat.endsAt) {
-        finsDePass.set(
+  if (role !== "cashier") {
+    await Promise.all(
+      ADDON_OFFERS.filter(
+        (offre) => !(ouverts as readonly string[]).includes(offre.entitlement),
+      ).map(async (offre) => {
+        const etat = await etatOctroiModule(
+          organization.id,
           offre.entitlement,
-          formatDate(etat.endsAt, organization.timezone),
+          maintenant,
         );
-      }
-    }),
-  );
+        if (etat?.etat === "expired" && etat.endsAt) {
+          finsDePass.set(
+            offre.entitlement,
+            formatDate(etat.endsAt, organization.timezone),
+          );
+        }
+      }),
+    );
+  }
 
   // LES COMPÉTITIONS ACHETABLES. Une Saison de pronostics se vend « pour une
   // compétition identifiée, un seul contest_id » (catalogue) : l'écran doit

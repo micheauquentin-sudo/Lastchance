@@ -57,4 +57,18 @@ describe("La page des options dit qu'un pass est terminé", () => {
       "!(ouverts as readonly string[]).includes(offre.entitlement)",
     );
   });
+
+  /**
+   * Même règle que `finDuPassExpire` côté capacités : le caissier n'a pas à
+   * savoir de quoi l'établissement est équipé ni jusqu'à quand. Sans cette
+   * garde, la page édictait une règle et la contredisait deux fichiers plus
+   * loin (revue sécurité du wagon 2, FAIBLE 1).
+   */
+  it("ne calcule rien pour le caissier", () => {
+    const appel = SOURCE.slice(0, SOURCE.indexOf("etatOctroiModule("));
+    const garde = appel.lastIndexOf('if (role !== "cashier")');
+    const filtre = appel.lastIndexOf("ADDON_OFFERS.filter(");
+    expect(garde).toBeGreaterThan(-1);
+    expect(garde).toBeLessThan(filtre);
+  });
 });
