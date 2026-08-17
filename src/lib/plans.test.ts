@@ -263,8 +263,10 @@ describe("projection d'affichage", () => {
     expect(describeTier(tier("live")).limits).toEqual([
       "500 participants par session live",
     ]);
+    // VEN-1 : La Totale annonce 500 et non plus 1000 — la jauge vendue ne
+    // dépasse pas le plus haut palier prouvé.
     expect(describeTier(tier("full")).limits).toEqual([
-      "1000 participants par session live",
+      "500 participants par session live",
     ]);
   });
 
@@ -282,23 +284,31 @@ describe("projection d'affichage", () => {
  */
 describe("limites — miroir du SQL", () => {
   it("aligne le catalogue sur event_participant_capacity()", () => {
+    // La DERNIÈRE migration qui redéfinit la fonction fait foi :
+    // `create or replace` remplace le corps entier, donc lire l'ancienne
+    // (20260805190000) mesurerait un texte que la base n'exécute plus.
     const sql = readFileSync(
       join(
         process.cwd(),
         "supabase",
         "migrations",
-        "20260805190000_security_equity.sql",
+        "20260929120000_soiree_live.sql",
       ),
       "utf8",
     );
     const body = sql.slice(sql.indexOf("function public.event_participant_capacity"));
     const capacity = body.slice(0, body.indexOf("$$", body.indexOf("$$") + 2));
 
-    expect(capacity).toContain("o.plan = 'full' then 1000");
+    expect(capacity).toContain("when o.plan = 'full' then 500");
     expect(capacity).toContain("o.plan = 'live' then 500");
     expect(capacity).toContain("else 100");
+    // VEN-1 : 1000 SURVIT en base, mais sur la seule branche `comp_access`.
+    // Un accès offert n'est pas une vente — c'est toute la distinction, et
+    // c'est aussi pourquoi `PlanLimits` ne sait plus exprimer 1000.
+    expect(capacity).toContain("then 1000");
+    expect(capacity).toContain("o.comp_access");
 
-    expect(tier("full").limits.eventParticipants).toBe(1000);
+    expect(tier("full").limits.eventParticipants).toBe(500);
     expect(tier("live").limits.eventParticipants).toBe(500);
     // Les offres non citées par le SQL tombent dans le `else`.
     expect(tier("core").limits.eventParticipants).toBe(100);
