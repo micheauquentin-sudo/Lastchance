@@ -100,7 +100,25 @@ pg_file supabase/seed.sql >/dev/null
 
 # 4. Environnement de l'app : clés du Supabase local + secrets factices,
 #    à l'identique du job CI e2e (STRIPE_API_BASE/RESEND_BASE_URL → stubs locaux).
-eval "$(npx --no-install supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+#
+# `supabase status` a son propre critère de disponibilité, plus strict que le
+# `select 1` d'`attendre_pg` : juste après un `start`/reset, il peut encore
+# sortir en erreur (« container is not ready: starting »). Sans garde, la
+# sortie vide traverse le `grep` puis l'`eval` sans rien faire, et `API_URL`
+# reste non défini — sous `set -u` le script meurt sur « unbound variable »,
+# à des kilomètres de la vraie cause. On reprend comme pour `supabase start`.
+STATUS_ENV=""
+for tentative in 1 2 3 4 5; do
+  STATUS_ENV="$(npx --no-install supabase status -o env 2>/dev/null | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' || true)"
+  [ -n "$STATUS_ENV" ] && break
+  echo "supabase status pas encore prêt (tentative $tentative/5) — pause avant reprise"
+  sleep 5
+done
+if [ -z "$STATUS_ENV" ]; then
+  echo "✗ « supabase status -o env » ne rend toujours pas API_URL/ANON_KEY/SERVICE_ROLE_KEY après 5 tentatives."
+  exit 1
+fi
+eval "$STATUS_ENV"
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
