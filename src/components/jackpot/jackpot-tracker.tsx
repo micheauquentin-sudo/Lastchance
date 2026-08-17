@@ -17,6 +17,7 @@ import {
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { CheckinTokenReveal } from "./checkin-token-reveal";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import type { JackpotDrawMode, JackpotValidationMode } from "@/types/database";
 import {
@@ -1007,6 +1008,11 @@ function StaffCheckinCard({ campaignId }: { campaignId: string }) {
         {token ? (
           <>
             <CheckinQr value={token} />
+            {/* LE CODE EN TEXTE, sous un pli — et monté SEULEMENT une fois le
+                pli ouvert : un `<details>` fermé garderait le jeton dans le DOM,
+                là où le QR ne vit qu'en dataURL (INFO-1 de la revue sécurité).
+                Voir `checkin-token-reveal.tsx` pour le raisonnement complet. */}
+            <CheckinTokenReveal token={token} />
             <p className="mt-3 text-xs text-k-body/70">
               Ce code se renouvelle automatiquement : gardez simplement cet écran
               ouvert, inutile de le photographier.

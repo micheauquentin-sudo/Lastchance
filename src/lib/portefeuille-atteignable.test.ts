@@ -135,3 +135,84 @@ describe("le portefeuille est atteignable depuis les écrans de gain", () => {
     expect(src).not.toMatch(/href=\{[^}]*portefeuille[^}]*\$\{/);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// L'ÉCRAN DE BLOCAGE — le seul écran de gain qui n'en avait pas l'air
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * LE JOUEUR BLOQUÉ AVEC UN LOT EN BASE DOIT POUVOIR LE REJOINDRE.
+ *
+ * Les quatre coques de jeu (roue, révélation, grattage, défi) rendent un écran
+ * `blocked` — 🔒 « Impossible de jouer » — quand le serveur refuse le tour. Or
+ * ce refus est le cas ORDINAIRE du joueur qui a DÉJÀ gagné : `play_limit` vaut
+ * « weekly » par défaut, donc revenir dans la semaine se solde par un refus, et
+ * c'est exactement la situation où un lot non réclamé existe à son nom. L'écran
+ * ne portait alors AUCUNE sortie : ni bouton, ni lien, ni retour. Le lot était
+ * décrémenté du stock, le client ne pouvait plus l'atteindre depuis nulle part.
+ *
+ * La reprise (`recoverPendingWin`) couvre le cas où elle répond ; elle peut
+ * précisément ne pas répondre — c'est le drapeau `repriseIndisponible` — et
+ * c'est alors le portefeuille qui reste le seul chemin vers le lot.
+ *
+ * Cette garde vise le BLOC RENDU, pas le fichier : un import en tête satisfait
+ * une recherche textuelle même si le lien n'est posé que sur l'écran gagnant.
+ * La population se dérive du système de fichiers, comme au-dessus.
+ */
+
+/** Corps de l'expression JSX `{phase === "blocked" && ( … )}`, par comptage. */
+function blocDuBlocage(src: string): string {
+  const marqueur = src.indexOf('phase === "blocked"');
+  if (marqueur === -1) return "";
+  const ouvrant = src.lastIndexOf("{", marqueur);
+  let profondeur = 0;
+  for (let i = ouvrant; i < src.length; i += 1) {
+    if (src[i] === "{") profondeur += 1;
+    else if (src[i] === "}") {
+      profondeur -= 1;
+      if (profondeur === 0) return src.slice(ouvrant, i + 1);
+    }
+  }
+  return src.slice(ouvrant);
+}
+
+/** Toute coque de jeu qui peut BASCULER un joueur sur l'écran de blocage. */
+const COQUES_BLOQUANTES = fichiersSous(COMPOSANTS, ".tsx")
+  .filter((f) => readFileSync(f, "utf8").includes('setPhase("blocked")'))
+  .map((f) => f.slice(COMPOSANTS.length + 1).replace(/\\/g, "/"))
+  .sort();
+
+describe("l'écran de blocage offre une sortie vers le portefeuille", () => {
+  it("les quatre coques de jeu sont bien la population", () => {
+    // Épinglé pour qu'une cinquième coque n'échappe pas à la garde en silence,
+    // et pour qu'un renommage de la phase ne vide pas la population sans bruit.
+    expect(COQUES_BLOQUANTES).toEqual([
+      "wheel/game-shell.tsx",
+      "wheel/play-experience.tsx",
+      "wheel/scratch-experience.tsx",
+      "wheel/skill-game-shell.tsx",
+    ]);
+  });
+
+  it.each(COQUES_BLOQUANTES)("%s rend le lien DANS le bloc bloqué", (relatif) => {
+    const src = readFileSync(join(COMPOSANTS, relatif), "utf8");
+    const bloc = blocDuBlocage(src);
+
+    expect(bloc, "le bloc rendu doit être trouvable").not.toBe("");
+    expect(bloc).toContain("<LienPortefeuille");
+    // Le composant doit être réellement importé, pas seulement nommé.
+    expect(src).toContain(LIEN);
+  });
+
+  it.each(COQUES_BLOQUANTES)(
+    "%s avoue une reprise impossible plutôt que de se taire",
+    (relatif) => {
+      const src = readFileSync(join(COMPOSANTS, relatif), "utf8");
+      // Le drapeau n'existe QUE pour cet écran : posé quand les deux tentatives
+      // de `recoverPendingWin` ont échoué, il évite d'affirmer « impossible de
+      // jouer » à un joueur dont on n'a simplement pas pu lire le gain.
+      expect(src).toContain("setRepriseIndisponible(true)");
+      expect(blocDuBlocage(src)).toContain("repriseIndisponible");
+    },
+  );
+});

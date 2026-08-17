@@ -84,25 +84,34 @@ export async function prepareAnonymousPlayer(): Promise<void> {
   await anonymousPlayerKey();
 }
 
-/** Récupère un gain récent si la réponse réseau ou la page a été perdue. */
+/**
+ * Récupère un gain récent si la réponse réseau ou la page a été perdue.
+ *
+ * La fenêtre de reprise est celle du `play_limit` de la roue, calculée DANS la
+ * base (`recover_pending_spin`) : un cutoff fixe côté TypeScript — 30 min —
+ * laissait le joueur sans son code dès que la limite était plus large (une
+ * partie par jour, par semaine, une seule à vie), alors que la base tenait
+ * toujours le spin non réclamé et refusait tout nouveau tour. Le gain était
+ * gagné, enregistré, et irrécupérable.
+ */
 export async function recoverPendingWin(slug: string): Promise<SpinOutcome | null> {
   const ctx = await loadPlayContext(String(slug));
   if (!ctx.ok) return null;
   const playerKey = await anonymousPlayerKey();
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  const { data: spin } = await ctx.admin
-    .from("spins")
-    .select("id, prize_id")
-    .eq("wheel_id", ctx.wheel.id)
-    .eq("player_key", playerKey)
-    .eq("is_losing", false)
-    .eq("claimed", false)
-    .gte("created_at", cutoff)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: rows } = await ctx.admin.rpc("recover_pending_spin", {
+    p_wheel_id: ctx.wheel.id,
+    p_player_key: playerKey,
+  });
+  const spin = (rows as Array<{
+    spin_id: string;
+    prize_id: string | null;
+    created_at: string;
+  }> | null)?.[0];
   if (!spin?.prize_id) return null;
   const prizeIndex = ctx.prizes.findIndex((prize) => prize.id === spin.prize_id);
+  // Lot retiré ou désactivé depuis le tirage : rien à rendre au joueur ici (le
+  // spin reste en base, le commerçant le voit) — le shell public ne saurait pas
+  // animer un segment absent de sa liste.
   if (prizeIndex < 0) return null;
   const prize = ctx.prizes[prizeIndex];
   return {
@@ -110,8 +119,8 @@ export async function recoverPendingWin(slug: string): Promise<SpinOutcome | nul
     label: prize.label,
     description: prize.description,
     isLosing: false,
-    claimToken: signClaimToken(spin.id),
-    spinId: spin.id,
+    claimToken: signClaimToken(spin.spin_id),
+    spinId: spin.spin_id,
   };
 }
 

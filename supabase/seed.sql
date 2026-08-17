@@ -424,6 +424,34 @@ values (
 )
 on conflict (id) do nothing;
 
+-- ── Jackpot collectif nº2 : RÉSERVÉ AU PARCOURS CAISSE E2E ────
+-- Même org, même mode staff, mêmes ordres de grandeur — et une SECONDE
+-- campagne, parce que les deux specs veulent deux choses incompatibles sur une
+-- seule ligne. Celle du dessus est ASSERTÉE À « 0 / 5 » (affichage d'un cycle
+-- neuf, cagnotte à 50 €) : une spec caisse qui valide une participation ferait
+-- passer sa jauge à 1 / 5 et casserait l'autre, au premier passage et sans
+-- rapport visible avec ce qu'elle testait. La première reste donc FIGÉE à zéro
+-- participation ; toute spec qui ÉCRIT (validation comptoir, incrément de
+-- jauge, tirage au seuil) travaille sur celle-ci.
+-- Nom volontairement SANS le libellé « Jackpot E2E » : les specs existantes
+-- ciblent leur titre par correspondance de sous-chaîne (`getByRole` avec
+-- `name`), qu'un « Jackpot E2E caisse » rendrait ambigu.
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, public_slug, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, reward_stock,
+  reward_label, reward_details, display_base_cents, display_increment_cents,
+  merchant_content
+)
+values (
+  'e2ec0000-0000-4000-8000-000000000002',
+  'e2e10000-0000-4000-8000-000000000001',
+  'Cagnotte comptoir E2E', 'active', 'e2e-jackpot-staff', 'staff', 300,
+  'threshold_draw', 5, 20,
+  'Le panier du comptoir E2E', 'Tiré au sort tous les 5 passages.', 5000, 200,
+  'Passez au comptoir : l''équipe valide votre passage.'
+)
+on conflict (id) do nothing;
+
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
 -- L'échéance serveur est dépassée : la caisse doit refuser le retrait
 -- (badge « Code expiré », pas de bouton) — le compte à rebours client

@@ -165,6 +165,35 @@ describe("temps minimal signé · reflex / gauge", () => {
     ).toBe(true);
   });
 
+  it("une tolérance large ne ramène JAMAIS le plancher à zéro", () => {
+    // Régression fermée ici (SEC-2) : à tolerancePct = 50 la cible est
+    // atteignable dès 0 % du balayage, la borne dérivée tombait donc à 0 ms —
+    // un script pouvait déclarer « réussi » dans la milliseconde suivant
+    // l'émission du jeton. Le plancher absolu (300 ms) reprend la main.
+    const attempt = { gameType: "gauge" as const, succeeded: true };
+    const config = { tolerancePct: 50 };
+    expect(minimumSkillSuccessElapsedMs("gauge", config)).toBe(300);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_299),
+    ).toBe(false);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_300),
+    ).toBe(true);
+  });
+
+  it("le plancher absolu ne mord pas sur les bornes dérivées plus hautes", () => {
+    // Non-régression : dès que la tolérance laisse la borne au-dessus de
+    // 300 ms, c'est la valeur DÉRIVÉE du balayage qui s'applique, inchangée.
+    //
+    // 389 et non 390 : 0,35 × 1 400 vaut 489,999… en binaire, et le `floor`
+    // retient 489. La milliseconde perdue est sans effet (la marge humaine en
+    // absorbe cent), mais elle est ÉPINGLÉE ici pour que le chiffre attendu
+    // reste celui que la fonction rend vraiment.
+    expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 15 })).toBe(389);
+    expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 10 })).toBe(460);
+    expect(minimumSkillSuccessElapsedMs("reflex", { durationMs: 800 })).toBe(1_400);
+  });
+
   it("ne pénalise jamais un échec rapporté", () => {
     expect(
       isSkillAttemptTimingPlausible(
@@ -235,7 +264,10 @@ const signInput = {
   wheelId: "wheel-1",
   gameType: "rps" as const,
   seed: "0123456789abcdef",
-  nonce: "fedcba9876543210",
+  // 32 hex : la forme EXACTE que `generateSkillSeed` produit, et que la
+  // vérification exige désormais (le nonce franchit la frontière SQL comme clé
+  // d'idempotence — il n'est plus un champ opaque).
+  nonce: "fedcba9876543210fedcba9876543210",
 };
 
 describe("jeton de défi", () => {
@@ -292,6 +324,30 @@ describe("jeton de défi", () => {
         .digest("base64url");
       expect(verifySkillChallenge(`${body}.${sig}`, new Date(now))).toBeNull();
     }
+  });
+
+  it("rejette un nonce difforme, signature valide ou non (MOYEN-2)", () => {
+    // Le nonce n'est plus un champ opaque : depuis JOB-8 il est la clé
+    // d'idempotence passée à `perform_atomic_spin`, sous contrainte d'unicité
+    // GLOBALE. Sa forme est donc vérifiée comme celle du seed, et pas seulement
+    // son type — la signature HMAC interdit déjà de le choisir, mais la borne ne
+    // doit pas dépendre du seul secret.
+    for (const nonce of [
+      "",
+      "pas-un-nonce",
+      // Trop court / trop long : ni l'un ni l'autre n'est émis par le serveur.
+      "fedcba9876543210",
+      "fedcba9876543210fedcba98765432100",
+      // Hors alphabet hexadécimal minuscule.
+      "FEDCBA9876543210FEDCBA9876543210",
+      "fedcba9876543210fedcba987654321;",
+    ]) {
+      // Jeton SIGNÉ pour de vrai : ce n'est pas la signature qui le refuse.
+      const token = signSkillChallenge({ ...signInput, nonce });
+      expect(verifySkillChallenge(token)).toBeNull();
+    }
+    // Témoin : la forme nominale passe toujours.
+    expect(verifySkillChallenge(signSkillChallenge(signInput))).not.toBeNull();
   });
 
   it("un claim n'est pas vérifiable comme défi (séparation de domaine)", () => {

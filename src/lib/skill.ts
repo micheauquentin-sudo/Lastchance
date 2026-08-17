@@ -44,6 +44,14 @@ export interface SkillEvaluation {
 
 /** Aller le plus rapide de la jauge visible (0 → 100 %) côté client. */
 const GAUGE_FASTEST_SWEEP_MS = 1_400;
+/**
+ * Plancher ABSOLU d'une réussite de jauge, quelle que soit la tolérance : plus
+ * rapide qu'un arrêt humain intentionnel sur un balayage de 1 400 ms. Ferme le
+ * plancher de 0 ms qu'une tolérance large produisait (à tolerancePct = 50, la
+ * cible est atteignable dès 0 % et la borne dérivée tombait à zéro — un script
+ * pouvait répondre « réussi » dans la même milliseconde que l'émission du jeton).
+ */
+const GAUGE_MIN_SUCCESS_MS = 300;
 /** Marge rendu/réseau : les bornes restent conservatrices pour un vrai joueur. */
 const HUMAN_TIMING_MARGIN_MS = 100;
 /** Le signal réflexe ne peut apparaître avant 1,5 s dans l'UI signée. */
@@ -166,6 +174,11 @@ export function evaluateSkill(
  * Borne serveur dérivée du défi signé. Elle ne prétend pas reconstruire le
  * geste du client : elle refuse seulement une réussite impossible dans l'UI
  * officielle (script qui répond avant que la cible soit atteignable).
+ *
+ * LIMITE CONNUE ET ASSUMÉE (ADR-031) : le point de mesure reste l'ÉMISSION du
+ * jeton (`iat`), pas le début du geste. Un script qui attend le plancher avant
+ * de répondre passe — reflex et gauge restent client-reported, bornés par
+ * l'économie du tirage (poids et stock), pas par cette horloge.
  */
 export function minimumSkillSuccessElapsedMs(
   gameType: SkillGameType,
@@ -177,13 +190,13 @@ export function minimumSkillSuccessElapsedMs(
   if (gameType === "gauge") {
     const tolerance = (config as GaugeConfig).tolerancePct;
     const earliestTargetPct = Math.max(0, 50 - tolerance);
-    return Math.max(
-      0,
-      Math.floor(
-        (earliestTargetPct / 100) * GAUGE_FASTEST_SWEEP_MS -
-          HUMAN_TIMING_MARGIN_MS,
-      ),
+    const derived = Math.floor(
+      (earliestTargetPct / 100) * GAUGE_FASTEST_SWEEP_MS -
+        HUMAN_TIMING_MARGIN_MS,
     );
+    // Le plancher absolu prime : une tolérance large ne doit pas ramener la
+    // borne à zéro (réussite acceptée à 0 ms de l'émission du jeton).
+    return Math.max(GAUGE_MIN_SUCCESS_MS, derived);
   }
   return 0;
 }
@@ -291,6 +304,14 @@ const PLAYER_HASH_DOMAIN = "skill-player:";
 
 const TOKEN_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const SEED_PATTERN = /^[0-9a-f]{16,64}$/;
+/**
+ * Forme EXACTE du nonce émis par `generateSkillSeed` (16 octets en hex). Vérifiée
+ * au même titre que le seed : depuis JOB-8 ce champ franchit la frontière SQL
+ * comme clé d'idempotence de `perform_atomic_spin` (`skill:<nonce>`), sous
+ * contrainte d'unicité globale. La signature HMAC interdit déjà de le choisir,
+ * mais la borne de forme ne dépend alors plus du seul secret.
+ */
+const NONCE_PATTERN = /^[0-9a-f]{32}$/;
 
 function hmac(data: string, secret: string): string {
   return createHmac("sha256", secret).update(data).digest("base64url");
@@ -378,6 +399,7 @@ export function verifySkillChallenge(
       typeof payload.seed !== "string" ||
       !SEED_PATTERN.test(payload.seed) ||
       typeof payload.nonce !== "string" ||
+      !NONCE_PATTERN.test(payload.nonce) ||
       typeof payload.iat !== "number" ||
       !Number.isSafeInteger(payload.iat) ||
       typeof payload.exp !== "number" ||

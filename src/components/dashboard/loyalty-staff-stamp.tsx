@@ -59,7 +59,19 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
     setPending(true);
     setError("");
     setResult(null);
-    const res = await stampLoyaltyVisitStaff({ programId, checkinToken });
+    // ENVELOPPÉ : sans ce `try`, un réseau coupé pendant l'aller-retour laisse
+    // `pending` à `true` pour toujours — « Validation en cours… » à l'écran,
+    // bouton désactivé, et plus jamais de réponse. Même défaut que les quatre
+    // écrans « tour offert » ; la caisse est l'endroit où il coûte le plus cher,
+    // un client attend devant.
+    let res;
+    try {
+      res = await stampLoyaltyVisitStaff({ programId, checkinToken });
+    } catch {
+      setPending(false);
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      return;
+    }
     setPending(false);
     if (!res.ok) {
       setError(res.error);

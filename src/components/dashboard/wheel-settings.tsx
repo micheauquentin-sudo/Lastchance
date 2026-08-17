@@ -304,6 +304,26 @@ export function WheelSettings({
               </p>
             )}
 
+            {/* LA NOTE SYMÉTRIQUE DE CELLE DES JEUX À SECRET, ET ELLE EST
+                MOINS FLATTEUSE. Réflexe et jauge n'ont AUCUN secret à garder :
+                le geste est mesuré par l'appareil du joueur, qui envoie son
+                propre verdict. Le commerçant réglait donc une « difficulté »
+                en croyant régler la rareté du gain, alors qu'elle ne pèse que
+                sur les joueurs de bonne foi. Le dire ici est le seul remède
+                honnête tant que ces deux mécaniques restent proposées : le
+                choix a été fait de les garder, pas de laisser croire qu'elles
+                sont arbitrées côté serveur. */}
+            {(gameType === "reflex" || gameType === "gauge") && (
+              <p className="rounded-lg bg-white px-3 py-2 text-xs text-zinc-600" role="note">
+                ⚠️ Ce défi est <strong>jugé sur l&apos;appareil du joueur</strong> :
+                c&apos;est lui qui mesure le geste et annonce le résultat. La
+                difficulté réglée ci-dessous est donc <strong>indicative</strong> —
+                elle vaut pour un joueur ordinaire, pas contre un appareil qui
+                triche. Le serveur, lui, borne le rythme : un plancher de temps
+                avant toute réponse et des limites de débit par appareil.
+              </p>
+            )}
+
             {gameType === "rps" && (
               <p className="text-xs text-zinc-600">
                 Aucun réglage : le joueur doit battre un coup tiré au sort côté serveur.
@@ -354,6 +374,18 @@ export function WheelSettings({
                     <>
                       la zone verte occupe donc{" "}
                       <strong>{Math.min(100, zoneVerte * 2)} % de la barre</strong>.
+                      {/* LE BOUT DE LA PLAGE MÉRITE SA PHRASE. À 50 %, la zone
+                          verte fait 100 % : le curseur ne peut plus manquer, et
+                          le commerçant croyait régler un défi « très facile »
+                          alors qu'il n'y a plus de défi du tout. */}
+                      {zoneVerte >= 50 && (
+                        <>
+                          {" "}
+                          <strong>
+                            Soit toute la jauge : le joueur gagne à coup sûr.
+                          </strong>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>la zone verte occupe deux fois cette valeur.</>

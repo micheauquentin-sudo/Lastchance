@@ -216,6 +216,59 @@ describe("submitSkillChallenge — le défi pilote le tirage", () => {
   });
 });
 
+// ────────────────────────────────────────────────────────────
+// Le NONCE du jeton se CONSOMME (JOB-8)
+//
+// Régression fermée ici : le jeton de défi vivait ~10 minutes et son nonce ne
+// servait à rien — le rejouer matérialisait un TOUR SUPPLÉMENTAIRE à chaque
+// fois que les seaux le toléraient (4 s d'écart suffisent). Le nonce devient la
+// clé d'idempotence de `perform_atomic_spin` : un même jeton rend la MÊME issue
+// au lieu de consommer une seconde participation.
+//
+// La valeur est générée SERVEUR (startSkillChallenge), signée HMAC et vérifiée
+// avant tout appel — le client ne peut donc pas la choisir — et elle ne dérive
+// d'aucune donnée personnelle (la colonne est lisible par les membres de l'org).
+// ────────────────────────────────────────────────────────────
+
+/** Relit le nonce du jeton signé (corps base64url, signature après le point). */
+function nonceDuJeton(token: string): string {
+  const body = token.slice(0, token.lastIndexOf("."));
+  return (JSON.parse(Buffer.from(body, "base64url").toString()) as { nonce: string })
+    .nonce;
+}
+
+describe("submitSkillChallenge — le nonce du jeton se consomme", () => {
+  it("passe `skill:<nonce>` en clé d'idempotence à perform_atomic_spin", async () => {
+    const token = await issueToken();
+    const nonce = nonceDuJeton(token);
+    state.reset();
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 5 casts historiques du fichier
+      estimateCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+
+    const res = await submitSkillChallenge({
+      slug: SLUG,
+      challengeToken: token,
+      attempt: { value: 50 },
+    });
+
+    expect(res.ok).toBe(true);
+    const spin = state.rpcCalls.find((c) => c.name === "perform_atomic_spin");
+    expect(spin?.args.p_idempotency_key).toBe(`skill:${nonce}`);
+    // Domaine préfixé : la clé d'un défi ne peut pas collisionner avec celle
+    // d'un autre chemin de tirage partageant la même table.
+    expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("deux jetons distincts portent deux clés d'idempotence distinctes", async () => {
+    const premier = await issueToken();
+    const second = await issueToken();
+
+    expect(nonceDuJeton(premier)).not.toBe(nonceDuJeton(second));
+  });
+});
+
 describe("submitSkillChallenge — gardes ADR-032", () => {
   it("un jeton forgé est refusé SANS consommer de seau ni appeler la RPC", async () => {
     const res = await submitSkillChallenge({

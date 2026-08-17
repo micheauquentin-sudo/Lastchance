@@ -94,7 +94,20 @@ export function CalendarSpinExperience({
     busyRef.current = true;
     setError("");
 
-    const result = await consumeCalendarSpin({ calendarId, grantToken });
+    // ENVELOPPÉ : un rejet de la promesse (réseau coupé pendant l'aller-retour)
+    // sautait tout ce qui suit, `busyRef` restait à `true` POUR TOUJOURS et le
+    // bouton devenait inerte — cliquable, mais renvoyé en silence par la garde
+    // de rentrée à chaque appui. Aucun message, aucune sortie. Même formule que
+    // `game-shell.tsx`, seul des shells à l'avoir eue d'emblée.
+    let result;
+    try {
+      result = await consumeCalendarSpin({ calendarId, grantToken });
+    } catch {
+      busyRef.current = false;
+      setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
+      setPhase("error");
+      return;
+    }
     if (!result.ok) {
       busyRef.current = false;
       setError(result.error);

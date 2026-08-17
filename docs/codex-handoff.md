@@ -57,6 +57,61 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-17 — Train de correction de l'audit transverse : wagon 3 « La boucle joueur → gain se ferme » — **terminé**
+
+- **Lot et objectif** : troisième wagon du train (voir entrée 2026-08-16
+  ci-dessous pour le cadrage complet) — fermer ce qui empêchait la boucle
+  joueur → gain d'aboutir : reprise d'un gain non réclamé trop courte,
+  écrans « tour offert » sans repli réseau ni sortie de blocage, nonce de
+  défi jamais consommé, mode caisse jackpot staff sans écran (JOU-1, UI-1,
+  UI-2, JOB-8, SEC-2 skill, MORT-1).
+- **Branche/commits** : `chantier/audit-p0-joueur`, tête `65c25e5`, arbre
+  propre, 11 commits (`git log origin/main..HEAD`). Une migration :
+  `20260927120000_boucle_joueur_gain.sql`. PR non encore ouverte.
+- **Faits** : RPC `recover_pending_spin(p_wheel_id, p_player_key)` — la
+  reprise couvre toute la fenêtre de `play_limit` au lieu d'un cutoff fixe
+  de 30 min (JOU-1), calcul de fenêtre recopié de `perform_atomic_spin`
+  (source unique SQL, aucun miroir TS — décision), prédicat élargi aux
+  spins sans clé de fenêtre (les gains de parrainage passent par la même
+  clé joueur sans `play_window_key`, trouvé pendant le chantier),
+  `unlimited` sans borne (bornée en pratique par la purge de rétention,
+  ADR-102) ; resserrement assumé : un gain sans clé à cheval sur une
+  frontière de fenêtre n'est plus repris. `perform_atomic_spin` passe à 8
+  arguments avec `p_idempotency_key` (rejeu → même issue, lookup borné au
+  joueur sous le verrou consultatif) + `spins.idempotency_key` + index
+  unique partiel ; le submit d'un défi skill-gated transmet `'skill:' +
+  nonce` en clé (SEC-2, JOB-8, le nonce se consomme enfin). Backend :
+  `recoverPendingWin` passe par la RPC, `GAUGE_MIN_SUCCESS_MS` relevé à
+  300 ms (arbitrage : durcir sans retirer). Frontend : try/catch sur les 4
+  écrans « tour offert » (calendrier, quiz, passeport, parrainage, UI-1) +
+  retentative unique de `recoverPendingWin` + lien vers le portefeuille sur
+  les 4 écrans bloqués (UI-2) ; écran caisse `jackpot-staff-checkin.tsx`
+  calqué sur le tampon fidélité, monté sur `/dashboard/redeem` —
+  `participateJackpotStaff` trouve son appelant (MORT-1, arbitrage : écrire
+  plutôt que retirer le mode) ; repli `<details>` sous le QR joueur ;
+  mention honnête dans l'atelier Réflexe/Jauge.
+- **Validations** : pgTAP 61 fichiers / 3522 assertions PASS ×2 (vide et
+  semée) avant revue ; après revue, `boucle_joueur_gain.test.sql` 28/28 et
+  `security_acl` 567 rejoués en direct, dérive de types nulle. Campagne
+  finale qa-verify sur `65c25e5` : typecheck 0, lint 0, build 47/47 pages,
+  migrations rejouées proprement ; E2E : spec caisse jackpot staff neuve
+  verte (mobile-chrome + mobile-safari), non-régression
+  `jackpot`/`player-win`/`skill-games` verte, `wheel-wizard` 23/23 en run
+  isolé (2 échecs du run groupé diagnostiqués comme pollution de fixture
+  d'un script local, pas la CI). Vitest ciblé par périmètre : backend
+  100+101, frontend 480+344. Suite Vitest complète et CI GitHub **non
+  rejouées localement en fin de chantier — la CI de PR les joue**. Revue
+  sécurité : GO (0 critique/élevé, 3 MOYEN + 1 FAIBLE + 5 INFO), les 3
+  MOYEN et l'INFO-1 fermés avant PR (commits `f0584a4`, `ab44efc`,
+  `eabde69`).
+- **Risque/blocage** : aucun bloquant. JOU-7/C4 précisé (consigné, pas un
+  bug — le démarrage d'un défi skill ne consomme rien, C4 réfuté pour les
+  mini-jeux) ; FAIBLE-1 à surveiller (`skill_impossible_timing`, plancher
+  Jauge peut faire consommer le `play_limit` à un joueur très rapide de
+  bonne foi) ; INFO-2 et INFO-4 consignés dans `docs/bugs.md`.
+- **Prochaine action** : ouvrir la PR, laisser CI + babysit-CI conclure la
+  fusion, puis dérouler le wagon 4 (`chantier/audit-p1-controle`).
+
 ### 2026-08-17 — Train de correction de l'audit transverse : wagon 2 « Le catalogue Stripe dit vrai » — **terminé**
 
 - **Lot et objectif** : deuxième wagon du train (voir entrée 2026-08-16

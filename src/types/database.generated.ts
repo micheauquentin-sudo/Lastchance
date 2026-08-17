@@ -6102,6 +6102,7 @@ export type Database = {
           created_at: string
           engagement_action: string | null
           id: string
+          idempotency_key: string | null
           is_losing: boolean
           organization_id: string
           play_window_key: string | null
@@ -6116,6 +6117,7 @@ export type Database = {
           created_at?: string
           engagement_action?: string | null
           id?: string
+          idempotency_key?: string | null
           is_losing?: boolean
           organization_id: string
           play_window_key?: string | null
@@ -6130,6 +6132,7 @@ export type Database = {
           created_at?: string
           engagement_action?: string | null
           id?: string
+          idempotency_key?: string | null
           is_losing?: boolean
           organization_id?: string
           play_window_key?: string | null
@@ -7465,6 +7468,7 @@ export type Database = {
           p_campaign_id: string
           p_engagement_action: string
           p_force_losing?: boolean
+          p_idempotency_key?: string
           p_organization_id: string
           p_player_key: string
           p_source: string
@@ -7637,6 +7641,14 @@ export type Database = {
           p_renew?: boolean
         }
         Returns: string
+      }
+      recover_pending_spin: {
+        Args: { p_player_key: string; p_wheel_id: string }
+        Returns: {
+          created_at: string
+          prize_id: string
+          spin_id: string
+        }[]
       }
       redeem_by_code: {
         Args: {

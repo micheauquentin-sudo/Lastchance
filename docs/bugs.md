@@ -4047,6 +4047,28 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     (`20 4 * * *`), contrainte de plan déjà documentée en tête de la route du
     job.
 
+- **Wagon 3 de l'audit transverse — un constat requis par l'audit et un
+  point à surveiller (2026-08-17, `chantier/audit-p0-joueur`, ADR-104)** :
+  - **JOU-7 / C4, précisé** : le démarrage d'un défi skill-gated ne consomme
+    RIEN (aucune écriture) — C4 est réfuté pour les mini-jeux. La reprise
+    manquante concernait le GAIN d'un tour, pas le démarrage d'un défi ; elle
+    est fermée par ce wagon (`recover_pending_spin`, JOU-1). Consigné pour ne
+    pas rouvrir C4 au mauvais endroit lors d'un futur audit.
+  - **FAIBLE-1 — à surveiller** : un timing jugé implausible sur la Jauge
+    (plancher `GAUGE_MIN_SUCCESS_MS = 300`) transforme la tentative en PERTE
+    qui consomme quand même le `play_limit`, plutôt qu'en refus qui le
+    préserve — un joueur très rapide de bonne foi est possible sur une jauge
+    à tolérance haute. Surveiller le compteur `skill_impossible_timing`
+    après mise en production ; si non nul, le remède est de ne pas faire
+    consommer la fenêtre de rejeu, pas de baisser le plancher.
+  - **INFO-2** : `LienPortefeuille` sur l'écran bloqué rend `/portefeuille`
+    atteignable sans avoir gagné — sur un appareil partagé (tablette
+    kiosque), le joueur suivant peut voir les codes du précédent. Indexé
+    cookie device, préexistant par nature à ce wagon.
+  - **INFO-4** : `recoverPendingWin` reste sans rate-limit ni Turnstile,
+    avec une retentative unique côté client (×2 appels au maximum) —
+    amplification bornée, préexistante, gardée en tête.
+
 ## Tracking Process
 
 ### When a bug is found:
