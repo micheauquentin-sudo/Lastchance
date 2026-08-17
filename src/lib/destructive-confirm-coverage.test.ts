@@ -5,7 +5,10 @@ import {
   CALENDAR_DELETE_LOSS_HINT,
 } from "@/lib/validations/calendar";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
-import { EVENT_SESSION_LOSS_HINT } from "@/lib/validations/events";
+import {
+  EVENT_QUESTION_LOSS_HINT,
+  EVENT_SESSION_LOSS_HINT,
+} from "@/lib/validations/events";
 import {
   HUNT_DELETE_LOSS_HINT,
   HUNT_STEP_LOSS_HINT,
@@ -175,6 +178,23 @@ const GARDES: Garde[] = [
     action: "src/actions/loyalty.ts",
     composant: "src/components/dashboard/loyalty-editor.tsx",
   },
+  {
+    // Champ DISTINCT de `confirm_outstanding`, pour la raison écrite juste
+    // au-dessus : `event-editor.tsx` porte déjà celui de la suppression de
+    // session, et `conditionAutour` remonte à la PREMIÈRE occurrence.
+    //
+    // La suppression d'une manche a DEUX refus, et un seul est ici : la garde
+    // « une soirée est en cours » est ABSOLUE — elle ne porte aucun marqueur,
+    // donc aucune case, parce qu'aucune confirmation ne rachète une question
+    // effacée de l'écran de salle en direct.
+    quoi: "supprimer une manche efface les réponses déjà données et refait le classement",
+    champ: "confirm_answers_loss",
+    marqueur: "EVENT_QUESTION_LOSS_HINT",
+    valeur: EVENT_QUESTION_LOSS_HINT,
+    module: "@/lib/validations/events",
+    action: "src/actions/events.ts",
+    composant: "src/components/dashboard/event-editor.tsx",
+  },
 ];
 
 /** Le fichier, lignes normalisées — les sources du dépôt sont en CRLF. */
@@ -245,7 +265,7 @@ describe("cases de confirmation destructives — la même forme pour toutes", ()
   );
 
   it("tous les marqueurs disent exactement la même chose au commerçant", () => {
-    // ROUGE SI : l'un d'eux dérive. Dix instructions différentes pour un même
+    // ROUGE SI : l'un d'eux dérive. Onze instructions différentes pour un même
     // geste (« cochez la case », « validez la confirmation »…) forcent le
     // commerçant à relire à chaque fois, et rendent la relecture d'un refus
     // dépendante du module où l'on se trouve.
@@ -265,11 +285,11 @@ describe("cases de confirmation destructives — la même forme pour toutes", ()
     expect(new Set(paires).size).toBe(GARDES.length);
   });
 
-  it("les gardes du registre sont bien DIX, pas neuf", () => {
+  it("les gardes du registre sont bien ONZE, pas dix", () => {
     // ROUGE SI : une garde est retirée de la table sans l'être du produit.
     // C'est le seul point où le nombre est écrit ; le laisser implicite, c'est
     // laisser une garde sortir de la couverture sans bruit.
-    expect(GARDES).toHaveLength(10);
+    expect(GARDES).toHaveLength(11);
     expect(GARDES.map((g) => g.quoi.length > 20).every(Boolean)).toBe(true);
     // Chaque marqueur est unique : deux entrées pointant la même constante
     // seraient deux tests du même code déguisés en couverture.

@@ -37,7 +37,17 @@ export type VerdictCodesEnAttente =
   /** N codes émis et non retirés : le refus doit NOMMER ce chiffre. */
   | { etat: "en-attente"; nombre: number };
 
-/** Refus commun aux huit gardes quand le comptage lui-même a échoué. */
+/**
+ * Refus commun aux gardes qui comptent des CODES quand le comptage a échoué.
+ *
+ * Elles étaient huit à l'écriture de cette ligne, elles sont onze : le nombre
+ * n'est plus écrit ici, il l'est une seule fois, dans le registre
+ * `destructive-confirm-coverage.test.ts`, où un test le fait rougir.
+ *
+ * Toutes les gardes de ce dépôt ne comptent pas des codes : la suppression
+ * d'une manche de soirée compte des RÉPONSES, et porte donc son propre message
+ * d'indisponibilité — celui-ci parle de caisse, ce qui serait faux là-bas.
+ */
 export const COMPTAGE_INDISPONIBLE =
   "Impossible de vérifier les codes encore en attente en caisse. " +
   "Réessayez dans un instant : tant que ce contrôle n'a pas abouti, " +

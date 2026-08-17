@@ -324,6 +324,27 @@ export const deleteEventSessionSchema = z.object({
 export const EVENT_SESSION_LOSS_HINT = "Cochez la case de confirmation";
 
 /**
+ * Marqueur du refus « supprimer cette manche efface les réponses déjà
+ * données ».
+ *
+ * MÊME VALEUR que `EVENT_SESSION_LOSS_HINT`, et pourtant une constante
+ * DISTINCTE : le registre `destructive-confirm-coverage.test.ts` exige que les
+ * onze marqueurs disent exactement la même chose au commerçant (une seule
+ * instruction à relire, quel que soit le module), et exige en même temps que
+ * chaque garde importe LE marqueur de SON refus. Les deux cases vivent dans le
+ * même écran (`event-editor.tsx`) : partager la constante ferait apparaître la
+ * case qui parle de codes EVENT- sous un refus qui parle de réponses, et le
+ * jour où l'une des deux phrases change, l'autre bougerait sans que rien ne
+ * rougisse.
+ *
+ * Le champ de formulaire est `confirm_answers_loss`, distinct de
+ * `confirm_outstanding` déjà porté par la suppression de session dans ce même
+ * fichier d'écran : `conditionAutour` ne sait remonter que jusqu'à la PREMIÈRE
+ * occurrence d'un nom de champ.
+ */
+export const EVENT_QUESTION_LOSS_HINT = "Cochez la case de confirmation";
+
+/**
  * Marqueur du refus « intervertir deux libellés réécrit le sens des réponses
  * déjà données ». Même doctrine que ci-dessus, et un marqueur DISTINCT de
  * `EVENT_SESSION_LOSS_HINT` : les deux refus vivent dans le même écran, et

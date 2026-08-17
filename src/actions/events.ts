@@ -49,6 +49,7 @@ import {
   deleteEventQuestionSchema,
   deleteEventSessionSchema,
   EVENT_ANSWER_MEANING_HINT,
+  EVENT_QUESTION_LOSS_HINT,
   EVENT_SESSION_LOSS_HINT,
   eventStateSchema,
   eventSessionIdSchema,
@@ -407,9 +408,36 @@ async function runTransition(
     organizationId: string,
   ) => PromiseLike<{ data: unknown; error: { message: string } | null }>,
   scope: string,
+  /**
+   * Garde MÉTIER de la transition, jouée après l'autorisation et avant la RPC.
+   * Rend la phrase de refus, ou `null` pour laisser passer.
+   *
+   * ── POURQUOI UN PARAMÈTRE, ET PAS UNE GARDE DANS `startEventSession` ──
+   *
+   * L'organisation naît dans `authorizeRemote` et n'est rendue qu'ici, par la
+   * closure `(admin, organizationId)`. Une garde écrite dans l'action
+   * appelante devrait donc rappeler `getUserAndOrg()`, ce qui doublerait la
+   * lecture de `event_sessions` que `authorizeRemote` vient de faire.
+   *
+   * ── ET PAS DANS `authorizeRemote` NON PLUS ──
+   *
+   * Les cinq transitions le partagent. Seule la PREMIÈRE — l'ouverture du
+   * lobby — a une précondition métier : les quatre autres prolongent une
+   * publication déjà autorisée, et les couper interromprait une soirée en
+   * cours (raisonnement déjà écrit en 20260905120000:596-599).
+   */
+  precondition?: (
+    admin: ReturnType<typeof createAdminClient>,
+    organizationId: string,
+  ) => Promise<string | null>,
 ): Promise<EventTransitionActionResult> {
   const guard = await authorizeRemote(sessionId);
   if (!guard.ok) return { ok: false, error: guard.error };
+
+  if (precondition) {
+    const refus = await precondition(guard.admin, guard.organizationId);
+    if (refus) return { ok: false, error: refus };
+  }
 
   try {
     const { data, error } = await run(guard.admin, guard.organizationId);
@@ -488,6 +516,47 @@ export async function startEventSession(input: {
         p_session_id: parsed.data.sessionId,
       }),
     "event.start",
+    // ── UN JEU EN BROUILLON N'OUVRE PAS SON LOBBY (FIA-1) ──
+    //
+    // `start_event_session` ne joignait JAMAIS `event_games` : une session
+    // d'un jeu encore en brouillon — donc éventuellement sans une seule
+    // question — ouvrait son lobby au public, et l'écran de salle affichait
+    // une soirée qui n'avait rien à projeter. Le lien « 🎛 Piloter » est
+    // rendu inconditionnellement, le bandeau ambre de l'éditeur n'a jamais
+    // suffi.
+    //
+    // La RPC porte désormais le même refus (`invalid_transition`, wagon 4),
+    // mais elle est le filet du POST direct : traduite par `runTransition`,
+    // elle donne « Transition impossible dans l'état actuel. », qui ne nomme
+    // aucun geste. Cette garde-ci existe pour NOMMER le geste, et elle passe
+    // avant l'appel — un refus prévisible ne mérite pas un aller-retour.
+    //
+    // On ne recompte PAS les questions : exiger `status = 'active'` rejoue par
+    // construction `blocageActivationEvent`, déjà opposé à l'activation par
+    // `setEventGameStatus`. Deux seuils pour la même règle divergeraient.
+    async (admin, organizationId) => {
+      const { data: session, error } = await admin
+        .from("event_sessions")
+        .select(
+          "event_games!event_sessions_game_id_organization_id_fkey(status)",
+        )
+        .eq("id", parsed.data.sessionId)
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      if (error) {
+        // Échoue FERMÉ : « je n'ai pas pu lire le statut du jeu » ne vaut pas
+        // « le jeu est ouvert ». L'appartenance de la session vient d'être
+        // prouvée par `authorizeRemote`, donc l'absence de ligne ici n'est
+        // pas un cas d'existence : c'est une panne de lecture.
+        reportError("event.start.precondition", error.message);
+        return GENERIC_ERROR;
+      }
+      const jeu = session?.event_games as unknown as {
+        status?: string;
+      } | null;
+      if (jeu?.status === "active") return null;
+      return "Ouvrez le jeu aux joueurs avant de lancer une session en direct.";
+    },
   );
 }
 
@@ -732,6 +801,7 @@ export async function setEventGameStatus(
       introuvable: "Jeu introuvable",
       module: "Le module Mode événement n'est pas activé sur votre compte.",
       role: NOT_EDITOR,
+      transition: "Ce changement de statut n'est pas permis.",
       echec: "Mise à jour impossible",
     },
   );
@@ -1150,6 +1220,90 @@ export async function deleteEventQuestion(
     .maybeSingle();
   if (!question) return { ok: false, error: "Question introuvable" };
 
+  // ── (a) GARDE ABSOLUE : PAS PENDANT UNE SOIRÉE EN DIRECT ──
+  //
+  // `event_sessions.current_question_id` porte `on delete set null`
+  // (20260727120000:177). Supprimer la manche projetée en salle annulerait la
+  // question EN DIRECT, devant les joueurs. Aucune case à cocher ne rachète
+  // cela : le refus est SEC et ne porte donc PAS de marqueur — proposer une
+  // confirmation ici apprendrait à cocher pour passer outre l'infaisable.
+  //
+  // `live` SEUL : `lobby` (joueurs connectés, rien de lancé) et `ended`
+  // (classement figé) passent par la garde confirmable ci-dessous, qui compte
+  // les réponses réellement perdues.
+  const { count: enDirect, error: erreurDirect } = await supabase
+    .from("event_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("game_id", question.game_id)
+    .eq("organization_id", organization.id)
+    .eq("status", "live");
+  if (erreurDirect || enDirect === null) {
+    reportError(
+      "events.delete-question-live",
+      erreurDirect?.message ?? "comptage sans résultat ni erreur",
+    );
+    return {
+      ok: false,
+      error:
+        "Impossible de vérifier si une soirée de ce jeu est en cours. " +
+        "Réessayez dans un instant : tant que ce contrôle n'a pas abouti, " +
+        "la suppression est refusée pour ne rien couper en direct.",
+    };
+  }
+  if (enDirect > 0) {
+    return {
+      ok: false,
+      error:
+        "Une soirée de ce jeu est en cours : supprimer une manche maintenant " +
+        "l'effacerait de l'écran de salle, en direct. Terminez la soirée " +
+        "avant de modifier les manches.",
+    };
+  }
+
+  // ── (b) GARDE CONFIRMABLE : les réponses déjà données ──
+  //
+  // `event_answers` cascade depuis `event_questions` (20260727120000:259-260) :
+  // la suppression partait au PREMIER CLIC et emportait, en silence, toutes les
+  // réponses de la manche — donc les points qu'elles valaient au classement.
+  //
+  // TRI-ÉTAT, jamais `?? 0` : c'est exactement le fail-open de
+  // `updateEventQuestion` juste au-dessus, qu'il ne faut pas recopier. Un
+  // comptage muet vaut « je ne sais pas », pas « il n'y a rien à perdre ».
+  const verdict = verdictCodesEnAttente(
+    await supabase
+      .from("event_answers")
+      .select("id", { count: "exact", head: true })
+      .eq("question_id", parsed.data.id)
+      .eq("organization_id", organization.id),
+  );
+
+  if (verdict.etat === "indisponible") {
+    reportError("events.delete-question-answers", verdict.motif);
+    // Message PROPRE aux réponses : `COMPTAGE_INDISPONIBLE` parle de codes
+    // encore en attente en caisse, ce qui n'est pas ce qu'on n'a pas pu lire.
+    return {
+      ok: false,
+      error:
+        "Impossible de vérifier les réponses déjà données à cette manche. " +
+        "Réessayez dans un instant : tant que ce contrôle n'a pas abouti, " +
+        "la suppression est refusée pour ne rien détruire à l'aveugle.",
+    };
+  }
+
+  if (
+    verdict.etat === "en-attente" &&
+    formData.get("confirm_answers_loss") !== "1"
+  ) {
+    return {
+      ok: false,
+      error:
+        `Cette manche a déjà reçu ${verdict.nombre} réponse(s). La supprimer ` +
+        "les effacera toutes, et le classement de la soirée sera recalculé " +
+        `sans les points qu'elles valaient. ${EVENT_QUESTION_LOSS_HINT} pour ` +
+        "supprimer quand même.",
+    };
+  }
+
   const { error } = await supabase
     .from("event_questions")
     .delete()
@@ -1172,6 +1326,13 @@ export async function deleteEventQuestion(
  * join_code, la génération étant service-authoritative. La cohérence tenant est
  * vérifiée explicitement (le game doit appartenir à l'organisation active) — la
  * service role contourne la RLS, ce contrôle n'est donc pas optionnel.
+ *
+ * ── LE STATUT DU JEU N'EST PAS VÉRIFIÉ ICI, ET C'EST VOULU ──
+ *
+ * `startEventSession` refuse depuis le wagon 4 d'ouvrir le lobby d'un jeu qui
+ * n'est pas `active`. PRÉPARER une soirée sur un brouillon reste au contraire
+ * le déroulé normal : on crée la session, son code d'accès et son lot, puis on
+ * ouvre le jeu. Fermer la création fermerait la préparation.
  */
 export async function createEventSession(
   input: {
