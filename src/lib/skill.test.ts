@@ -264,7 +264,10 @@ const signInput = {
   wheelId: "wheel-1",
   gameType: "rps" as const,
   seed: "0123456789abcdef",
-  nonce: "fedcba9876543210",
+  // 32 hex : la forme EXACTE que `generateSkillSeed` produit, et que la
+  // vérification exige désormais (le nonce franchit la frontière SQL comme clé
+  // d'idempotence — il n'est plus un champ opaque).
+  nonce: "fedcba9876543210fedcba9876543210",
 };
 
 describe("jeton de défi", () => {
@@ -321,6 +324,30 @@ describe("jeton de défi", () => {
         .digest("base64url");
       expect(verifySkillChallenge(`${body}.${sig}`, new Date(now))).toBeNull();
     }
+  });
+
+  it("rejette un nonce difforme, signature valide ou non (MOYEN-2)", () => {
+    // Le nonce n'est plus un champ opaque : depuis JOB-8 il est la clé
+    // d'idempotence passée à `perform_atomic_spin`, sous contrainte d'unicité
+    // GLOBALE. Sa forme est donc vérifiée comme celle du seed, et pas seulement
+    // son type — la signature HMAC interdit déjà de le choisir, mais la borne ne
+    // doit pas dépendre du seul secret.
+    for (const nonce of [
+      "",
+      "pas-un-nonce",
+      // Trop court / trop long : ni l'un ni l'autre n'est émis par le serveur.
+      "fedcba9876543210",
+      "fedcba9876543210fedcba98765432100",
+      // Hors alphabet hexadécimal minuscule.
+      "FEDCBA9876543210FEDCBA9876543210",
+      "fedcba9876543210fedcba987654321;",
+    ]) {
+      // Jeton SIGNÉ pour de vrai : ce n'est pas la signature qui le refuse.
+      const token = signSkillChallenge({ ...signInput, nonce });
+      expect(verifySkillChallenge(token)).toBeNull();
+    }
+    // Témoin : la forme nominale passe toujours.
+    expect(verifySkillChallenge(signSkillChallenge(signInput))).not.toBeNull();
   });
 
   it("un claim n'est pas vérifiable comme défi (séparation de domaine)", () => {

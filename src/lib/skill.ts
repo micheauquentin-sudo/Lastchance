@@ -304,6 +304,14 @@ const PLAYER_HASH_DOMAIN = "skill-player:";
 
 const TOKEN_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const SEED_PATTERN = /^[0-9a-f]{16,64}$/;
+/**
+ * Forme EXACTE du nonce émis par `generateSkillSeed` (16 octets en hex). Vérifiée
+ * au même titre que le seed : depuis JOB-8 ce champ franchit la frontière SQL
+ * comme clé d'idempotence de `perform_atomic_spin` (`skill:<nonce>`), sous
+ * contrainte d'unicité globale. La signature HMAC interdit déjà de le choisir,
+ * mais la borne de forme ne dépend alors plus du seul secret.
+ */
+const NONCE_PATTERN = /^[0-9a-f]{32}$/;
 
 function hmac(data: string, secret: string): string {
   return createHmac("sha256", secret).update(data).digest("base64url");
@@ -391,6 +399,7 @@ export function verifySkillChallenge(
       typeof payload.seed !== "string" ||
       !SEED_PATTERN.test(payload.seed) ||
       typeof payload.nonce !== "string" ||
+      !NONCE_PATTERN.test(payload.nonce) ||
       typeof payload.iat !== "number" ||
       !Number.isSafeInteger(payload.iat) ||
       typeof payload.exp !== "number" ||
