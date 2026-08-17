@@ -4,7 +4,8 @@ import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
-import { mapEventPublicState, type EventPublicState } from "@/lib/event";
+import type { EventPublicState } from "@/lib/event";
+import { chargerEtatLive } from "@/lib/event-etat";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -59,11 +60,13 @@ export type EventPublicContext =
 
 /**
  * Résout une session par son UUID ou son join_code (service role + garde
- * inter-tenant), vérifie le module + l'abonnement, puis charge l'état public via
- * event_public_state. Identité cookie PAR SESSION en LECTURE SEULE : rien n'est
- * posé ici (le cookie est écrit par joinEvent) ; s'il existe, son hash alimente
- * la vue « moi » (score/rang/code) sans jamais quitter le serveur. Réponse
- * générique unique en cas d'invalidité (404 côté page) — pas d'oracle.
+ * inter-tenant) pour en tirer l'organisation et le code d'accès, puis charge
+ * l'état public par `chargerEtatLive` — qui porte, DANS la RPC, la garde de
+ * module et le refus draft/archived (voir plus bas). Identité cookie PAR
+ * SESSION en LECTURE SEULE : rien n'est posé ici (le cookie est écrit par
+ * joinEvent) ; s'il existe, son hash alimente la vue « moi » (score/rang/code)
+ * sans jamais quitter le serveur. Réponse générique unique en cas
+ * d'invalidité (404 côté page) — pas d'oracle.
  *
  * Sessions non joignables du grand public (draft / archived) : masquées comme
  * inexistantes. lobby / live / ended restent suivables (podium à l'écran).
@@ -97,27 +100,29 @@ export async function loadEventPublicContext(
     console.error("[event-context] organisation incohérente", { joinCodeOrSessionId });
     return { ok: false, error: UNAVAILABLE };
   }
-  if (!await moduleOuvertAuJoueur("events", org)) return { ok: false, error: UNAVAILABLE };
-  if (row.status === "draft" || row.status === "archived") {
-    return { ok: false, error: UNAVAILABLE };
-  }
+  // ── LA GARDE MODULE + STATUT N'EST PLUS REJOUÉE ICI ──
+  //
+  // `moduleOuvertAuJoueur("events", org)` et le refus draft/archived vivaient
+  // à cet endroit ; ils sont descendus DANS `event_etat_partage` (migration
+  // 20260929120000), qui rend `{"state":"unavailable"}` pour ces trois causes
+  // sous une réponse indistincte, et pgTAP le prouve. Les rejouer coûtait une
+  // lecture de plus — `moduleOuvertAuJoueur` va chercher les octrois vivants
+  // quand le droit direct ne suffit pas — pour un verdict que la RPC rend de
+  // toute façon. La parité des deux gardes est déjà éprouvée par
+  // `module-access-parity.test.ts` : c'est elle qui autorise ce retrait.
+  //
+  // La lecture ci-dessus, elle, RESTE : cette page a besoin de l'organisation
+  // (nom, logo) et du `join_code`, que l'état public ne porte pas tous deux.
 
   // Identité cookie PAR SESSION, lecture seule (le hash ne quitte pas le
   // serveur ; le jeton non plus).
   const store = await cookies();
   const token = store.get(eventTokenCookieName(row.id))?.value;
-  const tokenHash = token ? hashPlayerToken(token) : undefined;
 
-  const { data: stateRaw, error } = await admin.rpc("event_public_state", {
-    p_session_id: row.id,
-    p_player_token_hash: tokenHash,
-  });
-  if (error) {
-    console.error("[event-context] public state", error.message);
-    return { ok: false, error: UNAVAILABLE };
-  }
-
-  const publicState = mapEventPublicState(stateRaw);
+  const publicState = await chargerEtatLive(
+    row.id,
+    token ? hashPlayerToken(token) : undefined,
+  );
   if (publicState.state !== "ok") return { ok: false, error: UNAVAILABLE };
 
   return {

@@ -20,6 +20,7 @@ import {
   eventTokenCookieName,
   loadEventActionContext,
 } from "@/lib/event-context";
+import { chargerEtatLive } from "@/lib/event-etat";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
 import {
   COMPTAGE_INDISPONIBLE,
@@ -329,7 +330,16 @@ async function submitInner(
  * télécommande). C'est le FILET qui fonctionne même sans Realtime — l'UI
  * l'interroge toutes les ~2-3 s ET à chaque (re)connexion. Passe le hash du
  * cookie de session, s'il existe, pour la vue « moi » (score/rang/code) ; la
- * bonne réponse n'est jamais servie hors reveal (event_public_state + mapping).
+ * bonne réponse n'est jamais servie hors reveal (RPC + mapping).
+ *
+ * ── UN SEUL VOYAGE, ET IL EST PARTAGÉ (EVT-1+EVT-2) ──
+ *
+ * `loadEventActionContext` a DISPARU de ce chemin : ses trois vérifications
+ * (session existante, module ouvert, statut ni draft ni archived) sont
+ * descendues dans `event_etat_partage` et prouvées par pgTAP. Ce qui restait
+ * de plus cher — recalculer un classement identique pour cinquante téléphones
+ * qui sondent la même soirée — est absorbé par le cache d'une seconde de
+ * `chargerEtatLive`, partagé avec le rendu serveur.
  */
 export async function getEventState(input: {
   sessionId: string;
@@ -337,29 +347,26 @@ export async function getEventState(input: {
   const parsed = eventStateSchema.safeParse(input);
   if (!parsed.success) return mapEventPublicState(null);
 
-  const ctx = await loadEventActionContext(parsed.data.sessionId);
-  if (!ctx.ok) return mapEventPublicState(null);
-
+  // ── LA MESURE NE FAIT PLUS ATTENDRE LA SALLE ──
+  //
   // Observabilité seule (clé partagée, jamais un refus) : le poll est fréquent
-  // et légitime, on ne le bride pas.
-  await observeEventPressure(
+  // et légitime, on ne le bride pas. Elle n'est donc plus ATTENDUE non plus —
+  // c'est une écriture de compteur, et la faire précéder l'état ajoutait sa
+  // latence à chaque tour de sondage de chaque téléphone de la salle.
+  // Tir-et-oublie avec un `.catch` explicite : un rejet non géré ferait tomber
+  // le processus, ce qu'aucun compteur ne vaut.
+  void observeEventPressure(
     parsed.data.sessionId,
     clientIpFromHeaders(await headers()),
-  );
+  ).catch((err) => reportError("event.state-pressure", err));
 
   const store = await cookies();
   const token = store.get(eventTokenCookieName(parsed.data.sessionId))?.value;
-  const tokenHash = token ? hashPlayerToken(token) : undefined;
 
-  const { data, error } = await ctx.admin.rpc("event_public_state", {
-    p_session_id: parsed.data.sessionId,
-    p_player_token_hash: tokenHash,
-  });
-  if (error) {
-    reportError("event.state", error.message);
-    return mapEventPublicState(null);
-  }
-  return mapEventPublicState(data);
+  return chargerEtatLive(
+    parsed.data.sessionId,
+    token ? hashPlayerToken(token) : undefined,
+  );
 }
 
 // ════════════════════════════════════════════════════════════
