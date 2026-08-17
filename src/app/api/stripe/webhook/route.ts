@@ -440,14 +440,17 @@ async function traiterAbonnementDePass(
   //
   // ON POSE UNE ÉCHÉANCE, ON NE RÉVOQUE PAS. Révoquer sur `past_due` couperait
   // sans délai un client dont la carte a simplement expiré ; laisser courir
-  // offre le service. L'octroi reçoit donc la MÊME fin que celle qu'aurait
-  // l'abonnement principal, et se referme ensuite tout seul — la pause est
-  // DÉRIVÉE de `ends_at`, aucun cron ne la prononce (migration 20260907120000).
+  // offre le service. L'octroi reçoit donc la même DURÉE de grâce que
+  // l'abonnement principal (`PAST_DUE_GRACE_DAYS`), mais datée de CET
+  // abonnement-ci et non de l'organisation — voir `echeanceImpaye`, où lire
+  // `organizations.past_due_since` était un contresens pour un pass PUR. Il se
+  // referme ensuite tout seul : la pause est DÉRIVÉE de `ends_at`, aucun cron
+  // ne la prononce (migration 20260907120000).
   //
   // ET ELLE SE LÈVE SEULE : au retour en `active`, ce même chemin efface
   // l'échéance. Un commerçant qui régularise retrouve son module sans geste.
   if (ctx.status === "past_due" || ctx.status === "active") {
-    return await echeanceImpaye(admin, ctx);
+    return await echeanceImpaye(admin, event, ctx);
   }
 
   // Rien à refermer sur les autres états vivants. L'octroi, lui, a été créé par
@@ -946,10 +949,38 @@ async function reprendreApresRemboursement(
     (session.client_reference_id ?? session.metadata?.organization_id ?? "").trim()
     || null;
 
+  if (!organizationId) {
+    // ACQUITTÉ ET CRIÉ, et c'est le prix du paramètre devenu REQUIS (MOYEN 1 de
+    // la revue). Les deux RPC ne s'apparient plus sur la seule référence de
+    // paiement : elles exigent l'organisation, faute de quoi une référence
+    // devinée pouvait leur faire reprendre un droit chez un autre tenant.
+    //
+    // Aucun achat ayant réellement ouvert un droit ne tombe ici : toute session
+    // créée par ce projet porte l'organisation DEUX FOIS
+    // (`client_reference_id` ET `metadata.organization_id`), et
+    // `readSmsCreditPurchase` comme `readModuleGrantPurchase` refusent d'écrire
+    // quoi que ce soit sans les deux. Ce qui tombe ici est un paiement hors
+    // tunnel — rien à reprendre —, et un 500 y ferait retenter Stripe trois
+    // jours sur une metadata gelée avant de désactiver le point d'entrée.
+    reportError(
+      "stripe.remboursement-organisation",
+      `session ${session.id} sans organisation : aucune reprise possible, à trancher à la main`,
+    );
+    return NextResponse.json({ received: true });
+  }
+
   const { data: octrois, error: erreurOctrois } = await rpcStrict(
     admin,
     "revoke_grant_for_refund",
-    { p_source_reference: session.id, p_reason: ctx.motif },
+    {
+      // L'ORGANISATION BORNE LA REPRISE, elle ne la désigne pas : la référence
+      // de paiement reste ce qui choisit les lignes. C'est la garde qui rend
+      // inoffensive une référence venue d'ailleurs — elle ne peut plus mordre
+      // que sur le tenant que la session nomme.
+      p_organization_id: organizationId,
+      p_source_reference: session.id,
+      p_reason: ctx.motif,
+    },
   );
   if (erreurOctrois) {
     reportError("stripe.remboursement-octroi", erreurOctrois.message);
@@ -959,11 +990,14 @@ async function reprendreApresRemboursement(
   const { data: sms, error: erreurSms } = await rpcStrict(
     admin,
     "debit_sms_balance_for_refund",
-    // ⚠️ LE PRÉFIXE N'EST PAS DÉCORATIF. `creditSmsPack` écrit la référence
-    // d'achat `stripe:<session>` au grand livre ; la passer NUE ici ferait
-    // rendre zéro ligne à la RPC — donc « rien à reprendre » — sur un achat de
-    // crédits parfaitement remboursé.
-    { p_source_reference: `stripe:${session.id}` },
+    {
+      p_organization_id: organizationId,
+      // ⚠️ LE PRÉFIXE N'EST PAS DÉCORATIF. `creditSmsPack` écrit la référence
+      // d'achat `stripe:<session>` au grand livre ; la passer NUE ici ferait
+      // rendre zéro ligne à la RPC — donc « rien à reprendre » — sur un achat de
+      // crédits parfaitement remboursé.
+      p_source_reference: `stripe:${session.id}`,
+    },
   );
   if (erreurSms) {
     // Les octrois ont pu être révoqués juste au-dessus : le 500 les rejouera,
@@ -1223,25 +1257,64 @@ async function creditSmsPack(
  * AVANT le statut d'abonnement, si bien qu'un octroi vivant court-circuite la
  * grâce bornée dont bénéficie l'abonnement principal.
  *
- * L'octroi reçoit donc exactement la fin qu'aurait l'abonnement : le premier
- * impayé + `PAST_DUE_GRACE_DAYS`. Passé ce terme, il cesse de figurer parmi les
+ * L'octroi reçoit donc la même DURÉE de grâce que l'abonnement principal
+ * (`PAST_DUE_GRACE_DAYS`). Passé ce terme, il cesse de figurer parmi les
  * octrois vivants et le module se referme — SANS CRON, par simple dérivation de
  * `ends_at`, comme le veut la migration 20260907120000.
+ *
+ * ── LA GRÂCE EST DATÉE DE L'ABONNEMENT, PLUS DE L'ORGANISATION ──
+ *
+ * Ce chemin lisait `organizations.past_due_since`, et c'était un contresens pour
+ * sa population PRINCIPALE : ce champ n'est écrit que par
+ * `apply_stripe_subscription_event_v2` (20260805170000), que l'abonnement de
+ * pass PUR ne traverse JAMAIS — il sort par `break` juste après la partition des
+ * prix. Un pass seul en `past_due` lisait donc `null`, renonçait, et le module
+ * restait ouvert indéfiniment : exactement le trou que ce bloc prétendait
+ * fermer. Par ricochet, la branche `reactivated` (SD-6), qui exige un `ends_at`
+ * posé pour rouvrir un droit, était INATTEIGNABLE pour ces mêmes clients.
+ *
+ * Pire dans le cas MIXTE : `past_due_since` peut être ANCIEN (l'offre est en
+ * impayé depuis des semaines) et rendre une fin ANTÉRIEURE au `starts_at` de
+ * l'octroi du pass, donc une violation de `grant_fin_apres_debut`
+ * (20260907120000) — donc un 500 rejoué trois jours avant que Stripe désactive
+ * le point d'entrée, l'issue que ce fichier désigne partout comme la pire.
+ *
+ * L'ancre est donc `event.created` : l'instant où CET abonnement est passé en
+ * `past_due`, seule date que l'événement porte de lui-même.
+ * (`current_period_end` aurait été l'autre ancre possible, mais depuis
+ * l'API 2025 elle a quitté l'abonnement pour ses ITEMS : il faudrait élire une
+ * période parmi plusieurs pour un seul terme, sans que le choix se justifie.)
+ *
+ * ── ET ELLE NE SE REPOUSSE PAS : L'ÉCRITURE EST MONOTONE ──
+ *
+ * `event.created` change d'un événement à l'autre, et Stripe émet un
+ * `customer.subscription.updated` à CHAQUE relance de recouvrement. Redater à
+ * chaque passage rallongerait la grâce sans fin — le défaut même que la lecture
+ * de `past_due_since` cherchait à éviter. Seuls les octrois SANS échéance sont
+ * datés : le premier impayé fixe le terme, les suivants n'y touchent plus. C'est
+ * mot pour mot le `coalesce(past_due_since, p_event_created_at)` de la RPC
+ * d'abonnement, transposé sur l'octroi.
+ *
+ * Une valeur non nulle trouvée là est forcément la nôtre : les termes d'un
+ * récurrent posent `ends_at: null` (octroi-termes.ts).
+ *
+ * ── ET LA BORNE QUI PROTÈGE LA CONTRAINTE ──
+ *
+ * `grant_fin_apres_debut` exige `ends_at > starts_at`. Une fin qui ne le
+ * respecterait pas n'est pas écrite « au plus près » : elle est SIGNALÉE et la
+ * ligne reste intacte. Même prudence que `shrink_contest_grants_on_close`
+ * (20260925120000), qui exclut de son `least` les octrois non démarrés pour ne
+ * pas faire échouer une clôture de championnat sur une contrainte.
  *
  * ── ET ELLE SE LÈVE TOUTE SEULE ──
  *
  * Au retour en `active`, `ends_at` repasse à `null`. Un commerçant qui met sa
  * carte à jour retrouve son module sans qu'un humain intervienne — c'est la
  * contrepartie qui rend l'échéance acceptable plutôt que punitive.
- *
- * ── CE QUI EST DÉLIBÉRÉMENT ABSENT ──
- *
- * Aucune garde sur `starts_at` : un octroi jamais démarré n'a pas d'`ends_at` à
- * poser, et le `where` ci-dessous l'exclut par `kind = 'recurring'` — un
- * récurrent est démarré à l'achat par construction (octroi-termes.ts).
  */
 async function echeanceImpaye(
   admin: AdminClient,
+  event: Stripe.Event,
   ctx: ContexteAbonnementPass,
 ): Promise<NextResponse | null> {
   const organizationId = await resoudreOrganisation(admin, ctx);
@@ -1250,43 +1323,121 @@ async function echeanceImpaye(
   const modules = ctx.passes.map((p) => p.entitlement);
   if (modules.length === 0) return null;
 
-  let fin: string | null = null;
-  if (ctx.status === "past_due") {
-    // La DATE de l'impayé vient de l'organisation, pas de `now()` : un webhook
-    // rejoué trois jours plus tard rallongerait sinon la grâce d'autant.
-    const { data: org } = await admin
-      .from("organizations")
-      .select("past_due_since")
-      .eq("id", organizationId)
-      .maybeSingle();
-    const depuis = (org as { past_due_since: string | null } | null)?.past_due_since;
-    // Sans date d'impayé, la transition est en cours et c'est le passage
-    // suivant qui la posera. On ne devine pas une échéance sur un état
-    // incomplet — même prudence que `hasActiveAccess`.
-    if (!depuis) return null;
-    fin = new Date(
-      new Date(depuis).getTime() + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
-    ).toISOString();
+  if (ctx.status !== "past_due") {
+    // LA LEVÉE NE LIT RIEN. La valeur posée est `null` : aucun calcul ne peut
+    // être aberrant, aucune contrainte ne peut être violée, et c'est ce qui
+    // rend la branche `reactivated` joignable dans les deux sens — l'échéance
+    // se pose sur l'impayé, se lève sur la régularisation.
+    const { error } = await admin
+      .from("organization_module_grants")
+      .update({ ends_at: null })
+      .eq("organization_id", organizationId)
+      .in("module", modules)
+      .eq("kind", "recurring")
+      .eq("source", "stripe")
+      .is("resource_id", null)
+      .is("revoked_at", null);
+
+    if (error) {
+      reportError("stripe.echeance-impaye", error.message);
+      return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
+    }
+
+    console.log(
+      `[stripe] abonnement d'add-on ${ctx.subscriptionId} = ${ctx.status} → échéance levée sur ${modules.join(", ")}`,
+    );
+    return null;
+  }
+
+  const fin = new Date(
+    event.created * 1000 + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  // LIRE AVANT D'ÉCRIRE, et c'est tout le prix de la borne : sans les
+  // `starts_at` et les échéances déjà posées, rien ne distingue « rien à
+  // faire » (rejeu) d'« échéance impossible à poser » (calcul aberrant) — et le
+  // second se tairait, ce qui est précisément le silence qu'on ferme ici.
+  const { data: candidats, error: erreurLecture } = await admin
+    .from("organization_module_grants")
+    .select("id, module, starts_at, ends_at")
+    .eq("organization_id", organizationId)
+    .in("module", modules)
+    .eq("kind", "recurring")
+    .eq("source", "stripe")
+    // LE FILTRE D'`org_has_live_module_grant` (20260925120000), et il manquait.
+    // Un octroi BORNÉ À UNE RESSOURCE — une Saison de pronostics vendue pour UNE
+    // compétition — n'est pas gouverné par l'abonnement d'un module entier : lui
+    // poser cette échéance, ou la lui lever, déciderait de la vie d'un droit que
+    // cet abonnement n'a jamais vendu.
+    .is("resource_id", null)
+    .is("revoked_at", null);
+
+  if (erreurLecture) {
+    // 500 ASSUMÉ : c'est une panne de lecture, pas un verdict. Le rejeu
+    // recommencera la lecture et retombera sur le même terme — `event.created`
+    // ne bouge pas d'un rejeu à l'autre, à la différence de `now()`.
+    reportError("stripe.echeance-impaye-lecture", erreurLecture.message);
+    return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
+  }
+
+  const lignes = (candidats ?? []) as Array<{
+    id: string;
+    module: string;
+    starts_at: string | null;
+    ends_at: string | null;
+  }>;
+
+  const finMs = Date.parse(fin);
+  // MONOTONE : une échéance déjà posée ne bouge plus (voir l'en-tête).
+  const aDater = lignes.filter((ligne) => ligne.ends_at === null);
+  const posables = aDater.filter((ligne) => {
+    const debut = ligne.starts_at === null ? NaN : Date.parse(ligne.starts_at);
+    return Number.isFinite(debut) && debut < finMs;
+  });
+
+  if (posables.length < aDater.length) {
+    // SIGNALÉ, JAMAIS FORCÉ. Écrire quand même ferait échouer la mise à jour sur
+    // `grant_fin_apres_debut`, donc répondre 500 en boucle sur un état qu'aucun
+    // rejeu ne répare. Un octroi non démarré n'a d'ailleurs pas d'accès à
+    // fermer : ne rien écrire est aussi le geste juste.
+    reportError(
+      "stripe.echeance-impaye-borne",
+      `${aDater.length - posables.length} octroi(s) sans début exploitable ou démarrant après la fin de grâce ${fin} (abonnement ${ctx.subscriptionId}) : échéance non posée`,
+    );
+  }
+
+  if (posables.length === 0) {
+    // Rejeu, ou aucun octroi datable. Visible plutôt que muet, jamais criard :
+    // c'est l'état normal du second passage d'un impayé.
+    console.log(
+      `[stripe] abonnement d'add-on ${ctx.subscriptionId} = past_due → aucune échéance à poser (déjà datée, ou rien à dater)`,
+    );
+    return null;
   }
 
   const { error } = await admin
     .from("organization_module_grants")
     .update({ ends_at: fin })
-    .eq("organization_id", organizationId)
-    .in("module", modules)
-    .eq("kind", "recurring")
-    .eq("source", "stripe")
-    .is("revoked_at", null);
+    .in(
+      "id",
+      posables.map((ligne) => ligne.id),
+    )
+    // LES DEUX GARDES SURVIVENT À LA LECTURE : entre le `select` et cet
+    // `update`, une résiliation ou un rachat a pu passer. `ends_at is null`
+    // tient la monotonie même en course, et rend le rejeu d'un 500 sans effet.
+    .is("revoked_at", null)
+    .is("ends_at", null);
 
   if (error) {
-    // 500 ASSUMÉ : Stripe rejouera, et le rejeu est inoffensif — l'écriture est
-    // idempotente (elle pose une valeur, elle ne l'incrémente pas).
+    // 500 ASSUMÉ : Stripe rejouera, et le rejeu est inoffensif — l'écriture pose
+    // une valeur, elle ne l'incrémente pas, et le terme ne dépend que de
+    // `event.created`.
     reportError("stripe.echeance-impaye", error.message);
     return NextResponse.json({ error: "Erreur interne" }, { status: 500 });
   }
 
   console.log(
-    `[stripe] abonnement d'add-on ${ctx.subscriptionId} = ${ctx.status} → ends_at ${fin ?? "levée"} sur ${modules.join(", ")}`,
+    `[stripe] abonnement d'add-on ${ctx.subscriptionId} = past_due → ends_at ${fin} sur ${posables.map((ligne) => ligne.module).join(", ")}`,
   );
   return null;
 }
