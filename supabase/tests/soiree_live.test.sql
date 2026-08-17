@@ -378,19 +378,23 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into public.organizations
   (id, name, slug, subscription_status, trial_ends_at, plan, addon_events,
    comp_access, comp_access_until)
+-- `trial_ends_at` est NOT NULL : toutes ces lignes portent un essai ÉCHU, pour
+-- qu'aucune d'elles ne doive son accès à un essai en cours. Ce qui décide est
+-- alors visible dans la ligne elle-même — `subscription_status` ou
+-- `comp_access` —, et jamais un reliquat de période d'essai.
 values
   -- Le plan le plus haut, celui qui promettait 1000.
   ('5e000000-0000-4000-8000-0000000000b1', 'Cap full', 'tap-sl-cap-full',
-   'active', null, 'full', true, false, null),
+   'active', now() - interval '60 days', 'full', true, false, null),
   -- Le plan Live : inchangé, il valait déjà 500.
   ('5e000000-0000-4000-8000-0000000000b2', 'Cap live', 'tap-sl-cap-live',
-   'active', null, 'live', true, false, null),
+   'active', now() - interval '60 days', 'live', true, false, null),
   -- Un abonnement sans la Soirée : le `else` du case.
   ('5e000000-0000-4000-8000-0000000000b3', 'Cap autre', 'tap-sl-cap-autre',
-   'active', null, 'starter', false, false, null),
+   'active', now() - interval '60 days', 'starter', false, false, null),
   -- ACCÈS OFFERT : reste à 1000, parce que rien n'y a été VENDU.
   ('5e000000-0000-4000-8000-0000000000b4', 'Cap offert', 'tap-sl-cap-offert',
-   'canceled', null, 'starter', false, true, null),
+   'canceled', now() - interval '60 days', 'starter', false, true, null),
   -- Trois porteurs de pass, sans aucune offre : les paliers du wagon 2.
   ('5e000000-0000-4000-8000-0000000000c1', 'Pass 10', 'tap-sl-pass-10',
    'canceled', now() - interval '60 days', 'starter', false, false, null),
@@ -400,7 +404,7 @@ values
    'canceled', now() - interval '60 days', 'starter', false, false, null),
   -- Plan full ET pass de 30 : c'est le plus généreux qui vaut, donc 500.
   ('5e000000-0000-4000-8000-0000000000c4', 'Full et pass', 'tap-sl-full-pass',
-   'active', null, 'full', true, false, null);
+   'active', now() - interval '60 days', 'full', true, false, null);
 
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at, capacity)
