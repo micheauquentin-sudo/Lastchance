@@ -19,6 +19,10 @@ import {
   paramsPagination,
   type StatutModule,
 } from "@/components/dashboard/module-list-filters";
+import {
+  comptesGroupes,
+  comptesParParent,
+} from "@/components/dashboard/module-list-counts";
 import type { LoyaltyProgram } from "@/types/database";
 
 export const metadata: Metadata = { title: "Passeport fidélité" };
@@ -59,22 +63,7 @@ export default async function LoyaltyPage({
   if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
   if (filtres.statut) requete = requete.eq("status", filtres.statut);
 
-  const [{ data: programs }, { data: milestoneRows }, { data: memberRows }] =
-    await Promise.all([
-      requete,
-      supabase
-        .from("loyalty_milestones")
-        .select("program_id")
-        .eq("organization_id", organization!.id),
-      role === "owner"
-        ? supabase
-            .from("loyalty_members")
-            .select("program_id, tier")
-            .eq("organization_id", organization!.id)
-        : Promise.resolve({
-            data: [] as Array<{ program_id: string; tier: string }>,
-          }),
-    ]);
+  const { data: programs } = await requete;
 
   const { lignes: programList, hasNext } = couperPage(
     (programs ?? []) as Array<
@@ -85,18 +74,41 @@ export default async function LoyaltyPage({
     >,
   );
 
-  const milestoneCount = new Map<string, number>();
-  for (const row of milestoneRows ?? []) {
-    milestoneCount.set(row.program_id, (milestoneCount.get(row.program_id) ?? 0) + 1);
-  }
-  const memberCount = new Map<string, number>();
-  const tierCount = new Map<string, number>();
-  for (const row of memberRows ?? []) {
-    memberCount.set(row.program_id, (memberCount.get(row.program_id) ?? 0) + 1);
-    if (row.tier === "silver" || row.tier === "gold") {
-      tierCount.set(row.program_id, (tierCount.get(row.program_id) ?? 0) + 1);
-    }
-  }
+  /**
+   * LES COMPTES DE LA PAGE, ET D'ELLE SEULE.
+   *
+   * Paliers et membres étaient chargés pour TOUTE l'organisation afin d'en
+   * compter vingt programmes — un passeport à vingt mille porteurs transférait
+   * vingt mille lignes par affichage. Les paliers se bornent (`in`), les
+   * MEMBRES se comptent en base : deux chiffres par programme (le total, et
+   * les niveaux argent/or que la carte affiche à part), donc deux `count exact
+   * head`. Les identifiants sont ceux d'APRÈS `couperPage`, ce qui impose
+   * l'aller-retour supplémentaire. La garde `role === "owner"` est inchangée.
+   */
+  const programIds = programList.map((p) => p.id);
+  const idsMembres = role === "owner" ? programIds : [];
+  const [milestoneCount, memberCount, tierCount] = await Promise.all([
+    comptesGroupes(programIds, "program_id", () =>
+      supabase
+        .from("loyalty_milestones")
+        .select("program_id")
+        .eq("organization_id", organization!.id),
+    ),
+    comptesParParent(idsMembres, "program_id", () =>
+      supabase
+        .from("loyalty_members")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organization!.id),
+    ),
+    // Le second chiffre de la carte : les porteurs argent et or.
+    comptesParParent(idsMembres, "program_id", () =>
+      supabase
+        .from("loyalty_members")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organization!.id)
+        .in("tier", ["silver", "gold"]),
+    ),
+  ]);
 
   return (
     <div>

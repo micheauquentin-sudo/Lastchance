@@ -20,6 +20,7 @@ import {
   paramsPagination,
   type StatutModule,
 } from "@/components/dashboard/module-list-filters";
+import { comptesGroupes } from "@/components/dashboard/module-list-counts";
 import type { QuizStatus, QuizTheme } from "@/lib/quiz";
 
 export const metadata: Metadata = { title: "Quiz" };
@@ -66,21 +67,32 @@ export default async function QuizListPage({
   if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
   if (filtres.statut) requete = requete.eq("status", filtres.statut);
 
-  const [{ data: quizzes }, { data: questionRows }] = await Promise.all([
-    requete,
-    supabase
-      .from("quiz_questions")
-      .select("quiz_id")
-      .eq("organization_id", organization!.id),
-  ]);
+  const { data: quizzes } = await requete;
 
   const { lignes: quizList, hasNext } = couperPage(
     (quizzes ?? []) as QuizListRow[],
   );
-  const questionCounts = new Map<string, number>();
-  for (const row of (questionRows ?? []) as Array<{ quiz_id: string }>) {
-    questionCounts.set(row.quiz_id, (questionCounts.get(row.quiz_id) ?? 0) + 1);
-  }
+
+  /**
+   * LES QUESTIONS DE LA PAGE, ET D'ELLE SEULE.
+   *
+   * Cette requête ramenait TOUTES les questions de l'organisation pour n'en
+   * compter que celles des vingt quiz affichés : un commerçant à trois cents
+   * quiz transférait des milliers de lignes à chaque affichage, dont il
+   * jetait 93 %. Les identifiants ne sont connus qu'APRÈS `couperPage` (la
+   * requête parente en demande une de plus pour savoir s'il y a une suite) :
+   * le `Promise.all` d'origine ne pouvait donc pas les avoir. On paie un
+   * aller-retour de latence, comme la liste des participations le fait déjà.
+   */
+  const questionCounts = await comptesGroupes(
+    quizList.map((q) => q.id),
+    "quiz_id",
+    () =>
+      supabase
+        .from("quiz_questions")
+        .select("quiz_id")
+        .eq("organization_id", organization!.id),
+  );
 
   return (
     <div>

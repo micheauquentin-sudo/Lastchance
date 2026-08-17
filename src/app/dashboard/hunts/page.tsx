@@ -19,6 +19,10 @@ import {
   paramsPagination,
   type StatutModule,
 } from "@/components/dashboard/module-list-filters";
+import {
+  comptesGroupes,
+  comptesParParent,
+} from "@/components/dashboard/module-list-counts";
 import type { Hunt } from "@/types/database";
 
 export const metadata: Metadata = { title: "Chasse au trésor" };
@@ -56,30 +60,39 @@ export default async function HuntsPage({
   if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
   if (filtres.statut) requete = requete.eq("status", filtres.statut);
 
-  const [{ data: hunts }, { data: stepRows }, { data: playerRows }] =
-    await Promise.all([
-      requete,
+  const { data: hunts } = await requete;
+
+  const { lignes: huntList, hasNext } = couperPage((hunts ?? []) as Hunt[]);
+
+  /**
+   * LES COMPTES DE LA PAGE, ET D'ELLE SEULE.
+   *
+   * Les deux requêtes ramenaient toutes les étapes ET tous les joueurs de
+   * l'organisation pour n'en compter que ceux des vingt chasses affichées —
+   * une chasse à vingt mille inscrits transférait vingt mille lignes pour
+   * afficher « 20 000 ». Les identifiants ne sont connus qu'APRÈS
+   * `couperPage` : le `Promise.all` d'origine ne pouvait pas les avoir, d'où
+   * l'aller-retour supplémentaire, assumé.
+   *
+   * Les étapes se bornent (`in`), les JOUEURS se comptent en base — un `in`
+   * ne réduirait pas le volume, seul `count exact head` ne transfère rien.
+   * La garde `role === "owner"` est inchangée.
+   */
+  const huntIds = huntList.map((h) => h.id);
+  const [stepCount, playerCount] = await Promise.all([
+    comptesGroupes(huntIds, "hunt_id", () =>
       supabase
         .from("hunt_steps")
         .select("hunt_id")
         .eq("organization_id", organization!.id),
-      role === "owner"
-        ? supabase
-            .from("hunt_players")
-            .select("hunt_id")
-            .eq("organization_id", organization!.id)
-        : Promise.resolve({ data: [] as Array<{ hunt_id: string }> }),
-    ]);
-
-  const { lignes: huntList, hasNext } = couperPage((hunts ?? []) as Hunt[]);
-  const stepCount = new Map<string, number>();
-  for (const row of stepRows ?? []) {
-    stepCount.set(row.hunt_id, (stepCount.get(row.hunt_id) ?? 0) + 1);
-  }
-  const playerCount = new Map<string, number>();
-  for (const row of playerRows ?? []) {
-    playerCount.set(row.hunt_id, (playerCount.get(row.hunt_id) ?? 0) + 1);
-  }
+    ),
+    comptesParParent(role === "owner" ? huntIds : [], "hunt_id", () =>
+      supabase
+        .from("hunt_players")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organization!.id),
+    ),
+  ]);
 
   return (
     <div>

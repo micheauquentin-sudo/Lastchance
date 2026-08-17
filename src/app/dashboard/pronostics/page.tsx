@@ -25,6 +25,7 @@ import {
   paramsPagination,
   type StatutModule,
 } from "@/components/dashboard/module-list-filters";
+import { comptesParParent } from "@/components/dashboard/module-list-counts";
 import type { Contest } from "@/types/database";
 
 export const metadata: Metadata = { title: "Pronostics" };
@@ -62,26 +63,33 @@ export default async function PronosticsPage({
   if (filtres.terme) requete = requete.ilike("name", `%${filtres.terme}%`);
   if (filtres.statut) requete = requete.eq("status", filtres.statut);
 
-  const [{ data: contests }, { data: playerCounts }] = await Promise.all([
-    requete,
-    role === "owner"
-      ? supabase
-          .from("contest_players")
-          .select("contest_id")
-          .eq("organization_id", organization!.id)
-      : Promise.resolve({ data: [] as Array<{ contest_id: string }> }),
-  ]);
+  const { data: contests } = await requete;
 
   const { lignes: contestList, hasNext } = couperPage(
     (contests ?? []) as Contest[],
   );
-  const countByContest = new Map<string, number>();
-  for (const row of playerCounts ?? []) {
-    countByContest.set(
-      row.contest_id,
-      (countByContest.get(row.contest_id) ?? 0) + 1,
-    );
-  }
+
+  /**
+   * LES INSCRITS DE LA PAGE, COMPTÉS EN BASE.
+   *
+   * Cette requête ramenait UNE LIGNE PAR INSCRIT de toute l'organisation pour
+   * n'en tirer qu'un nombre par championnat : un championnat à vingt mille
+   * pronostiqueurs transférait vingt mille lignes à chaque affichage. Un `in`
+   * sur la page ne suffirait pas (le volume est dans les joueurs, pas dans le
+   * nombre de parents) : c'est le `count exact head` par championnat, motif de
+   * la liste des événements, qui ne transfère rien. Vingt allers-retours au
+   * plus, bornés par la taille de page. La garde `role === "owner"` est
+   * inchangée, et les identifiants sont ceux d'APRÈS `couperPage`.
+   */
+  const countByContest = await comptesParParent(
+    role === "owner" ? contestList.map((c) => c.id) : [],
+    "contest_id",
+    () =>
+      supabase
+        .from("contest_players")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organization!.id),
+  );
 
   return (
     <div>
