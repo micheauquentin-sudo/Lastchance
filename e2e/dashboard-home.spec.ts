@@ -86,7 +86,12 @@ test.describe("dashboard — vue d'ensemble", () => {
       // 4. Les repères ne disparaissent plus au premier événement mesuré.
       const resultats = page.getByRole("region", { name: "Vos résultats" });
       await expect(resultats).toBeVisible();
-      for (const label of ["Scans QR", "Tours joués", "Lots gagnés", "Participations"]) {
+      for (const label of [
+        "Ouvertures de page",
+        "Tours joués",
+        "Lots gagnés",
+        "Participations",
+      ]) {
         await expect(resultats.getByText(label, { exact: true })).toBeVisible();
       }
       // La tuile doublon a disparu (même fait, autre calcul, autre nombre).
@@ -98,6 +103,9 @@ test.describe("dashboard — vue d'ensemble", () => {
         "Rédemption",
         "Marge attribuable",
         "consentement marketing",
+        // « Scans QR » promettait des personnes scannant un QR ; le compteur
+        // porte des chargements de page, et de la roue seule.
+        "Scans QR",
       ]) {
         await expect(page.getByText(interdit)).toHaveCount(0);
       }
