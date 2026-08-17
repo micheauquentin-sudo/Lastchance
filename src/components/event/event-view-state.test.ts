@@ -7,7 +7,9 @@ import type {
 import {
   appliquerModerationLocale,
   PSEUDO_MODERE,
+  EVENT_CLOCK_RESYNC_MS,
   computeCountdown,
+  serverClockOffset,
   computeDistribution,
   eventQuestionTypeMeta,
   podiumEntries,
@@ -79,6 +81,59 @@ function dist(
     votes: o.votes ?? 0,
   }));
 }
+
+describe("serverClockOffset — le chrono cesse de croire l'horloge du téléphone", () => {
+  const SERVEUR = "2026-08-17T20:00:00.000Z";
+  const serveurMs = Date.parse(SERVEUR);
+
+  it("mesure le décalage d'un téléphone en avance de 10 minutes", () => {
+    const local = serveurMs + 10 * 60_000;
+    expect(serverClockOffset(null, SERVEUR, local)).toBe(-10 * 60_000);
+  });
+
+  it("mesure le décalage d'un téléphone en retard de 10 minutes", () => {
+    const local = serveurMs - 10 * 60_000;
+    expect(serverClockOffset(null, SERVEUR, local)).toBe(10 * 60_000);
+  });
+
+  it("REND LE CHRONO JUSTE sur un téléphone déréglé de +10 min", () => {
+    // Question lancée à l'instant côté serveur, fenêtre de 30 s.
+    const startedAt = SERVEUR;
+    const local = serveurMs + 10 * 60_000;
+
+    // Sans ancrage : l'écran annonce « temps écoulé » sur une question ouverte.
+    expect(computeCountdown(startedAt, 30, local).expired).toBe(true);
+
+    // Ancré sur le serveur : 30 s restantes, question bien ouverte.
+    const offset = serverClockOffset(null, SERVEUR, local);
+    const ancre = computeCountdown(startedAt, 30, local + offset);
+    expect(ancre.expired).toBe(false);
+    expect(ancre.secondsLeft).toBe(30);
+  });
+
+  it("ne bouge PAS pour un server_now figé par le cache d'une seconde", () => {
+    const offset = serverClockOffset(null, SERVEUR, serveurMs);
+    // Une seconde plus tard, le serveur rend le MÊME instant (cache 1 s) :
+    // se ré-ancrer ferait sauter le décompte d'une seconde à chaque poll.
+    const apres = serverClockOffset(offset, SERVEUR, serveurMs + 1_000);
+    expect(apres).toBe(offset);
+  });
+
+  it("se ré-ancre quand l'écart dépasse la tolérance de cache", () => {
+    const offset = serverClockOffset(null, SERVEUR, serveurMs);
+    const derive = EVENT_CLOCK_RESYNC_MS + 500;
+    const apres = serverClockOffset(offset, SERVEUR, serveurMs + derive);
+    expect(apres).toBe(-derive);
+  });
+
+  it("conserve l'offset connu si server_now manque ou est illisible", () => {
+    expect(serverClockOffset(4_200, null, serveurMs)).toBe(4_200);
+    expect(serverClockOffset(4_200, "pas-une-date", serveurMs)).toBe(4_200);
+    // Aucun offset connu et rien à mesurer → horloge locale, comportement
+    // historique plutôt qu'un décompte fabriqué.
+    expect(serverClockOffset(null, null, serveurMs)).toBe(0);
+  });
+});
 
 describe("computeDistribution", () => {
   it("calcule les pourcentages et repère le maximum", () => {

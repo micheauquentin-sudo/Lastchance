@@ -106,6 +106,48 @@ export function computeCountdown(
 }
 
 // ────────────────────────────────────────────────────────────
+// Ancrage du chrono sur l'horloge SERVEUR
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Écart toléré entre deux mesures d'offset avant de se ré-ancrer (ms).
+ *
+ * `server_now` est servi depuis un cache d'au plus une seconde : deux lectures
+ * consécutives peuvent donc rendre des instants figés, et se ré-ancrer sur
+ * chacune ferait sauter le décompte d'une seconde en avant puis en arrière à
+ * chaque poll. On ne corrige donc que les écarts qui ne peuvent PAS venir du
+ * cache — c'est-à-dire une vraie dérive de l'horloge du téléphone.
+ */
+export const EVENT_CLOCK_RESYNC_MS = 1500;
+
+/**
+ * Décalage à ajouter à `Date.now()` pour obtenir l'heure SERVEUR.
+ *
+ * Le chrono d'une soirée live se lisait jusqu'ici sur l'horloge du téléphone,
+ * confrontée à un `started_at` serveur : un appareil réglé dix minutes en avance
+ * affichait « Temps écoulé » sur une question qui venait d'être lancée, et
+ * l'inverse laissait une barre pleine après la fermeture. La borne vient
+ * désormais des instants serveur (`serverNow` mesuré à la réception) ; seule la
+ * DÉCRUE seconde par seconde s'appuie sur l'horloge locale — même modèle que le
+ * quiz (`useRemainingMs`, `src/lib/quiz.ts`).
+ *
+ * Tolérant : un `serverNow` absent ou illisible conserve l'offset connu (0 au
+ * premier appel), donc le comportement historique plutôt qu'un écran faux.
+ */
+export function serverClockOffset(
+  current: number | null,
+  serverNow: string | null,
+  localNow: number,
+): number {
+  const serverMs = serverNow ? Date.parse(serverNow) : Number.NaN;
+  if (Number.isNaN(serverMs)) return current ?? 0;
+
+  const candidate = serverMs - localNow;
+  if (current === null) return candidate;
+  return Math.abs(candidate - current) > EVENT_CLOCK_RESYNC_MS ? candidate : current;
+}
+
+// ────────────────────────────────────────────────────────────
 // Répartition des votes (barres %) — sondage / reveal
 // ────────────────────────────────────────────────────────────
 

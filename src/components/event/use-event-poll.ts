@@ -18,12 +18,27 @@ import { createClient } from "@/lib/supabase/client";
  * Broadcast payloads are public/untrusted: they only request a coalesced re-read
  * through getEventState, which applies the server-side security boundary.
  */
+/**
+ * Nombre d'échecs consécutifs à partir duquel l'écran se DÉCLARE désynchronisé.
+ *
+ * Un échec isolé est la vie normale d'un téléphone en salle (réseau saturé) et
+ * le poll suivant le rattrape : l'annoncer serait du bruit. Deux d'affilée, en
+ * revanche, veulent dire que l'écran affiche un état périmé sans le dire — le
+ * joueur croit la question toujours ouverte alors que la salle est passée à la
+ * suivante.
+ */
+const EVENT_DESYNC_FAILURES = 2;
+
 export function useEventPoll(
   sessionId: string,
   initial: EventPublicState,
   realtimeEnabled = false,
-): { state: EventPublicState; refresh: () => void } {
+): { state: EventPublicState; refresh: () => void; desynchronise: boolean } {
   const [state, setState] = useState<EventPublicState>(initial);
+  // Miroir en STATE du compteur d'échecs : `failureCountRef` pilote la cadence
+  // du poll et ne provoque aucun rendu — un bandeau branché dessus ne
+  // s'afficherait jamais.
+  const [desynchronise, setDesynchronise] = useState(false);
   const stateRef = useRef(initial);
   const mountedRef = useRef(false);
   const inFlightRef = useRef<Promise<void> | null>(null);
@@ -34,6 +49,13 @@ export function useEventPoll(
   const pollTimerRef = useRef<number | null>(null);
   const schedulePollRef = useRef<(immediate?: boolean) => void>(() => undefined);
 
+  const noteFailure = useCallback(() => {
+    failureCountRef.current = Math.min(failureCountRef.current + 1, 4);
+    if (failureCountRef.current >= EVENT_DESYNC_FAILURES && mountedRef.current) {
+      setDesynchronise(true);
+    }
+  }, []);
+
   const fetchOnce = useCallback((): Promise<void> => {
     if (inFlightRef.current) return inFlightRef.current;
 
@@ -43,6 +65,7 @@ export function useEventPoll(
         const next = await getEventState({ sessionId });
         if (next.state === "ok") {
           failureCountRef.current = 0;
+          if (mountedRef.current) setDesynchronise(false);
           stateRef.current = next;
           const revision = next.session?.revision ?? 0;
           if (
@@ -53,10 +76,10 @@ export function useEventPoll(
           }
           if (mountedRef.current) setState(next);
         } else {
-          failureCountRef.current = Math.min(failureCountRef.current + 1, 4);
+          noteFailure();
         }
       } catch {
-        failureCountRef.current = Math.min(failureCountRef.current + 1, 4);
+        noteFailure();
       } finally {
         inFlightRef.current = null;
       }
@@ -64,7 +87,7 @@ export function useEventPoll(
 
     inFlightRef.current = task;
     return task;
-  }, [sessionId]);
+  }, [noteFailure, sessionId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -192,5 +215,5 @@ export function useEventPoll(
     void fetchOnce().finally(() => schedulePollRef.current());
   }, [fetchOnce]);
 
-  return { state, refresh };
+  return { state, refresh, desynchronise };
 }

@@ -29,6 +29,7 @@ import {
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { useEventPoll } from "./use-event-poll";
+import { useServerClockOffset } from "./use-server-clock";
 
 /**
  * Parcours joueur (téléphone) du Mode événement en direct — mobile-first : le
@@ -62,7 +63,11 @@ export function EventPlayer({
   hasIdentity: boolean;
   realtimeEnabled: boolean;
 }) {
-  const { state, refresh } = useEventPoll(sessionId, initial, realtimeEnabled);
+  const { state, refresh, desynchronise } = useEventPoll(
+    sessionId,
+    initial,
+    realtimeEnabled,
+  );
   const [joined, setJoined] = useState(hasIdentity);
 
   return (
@@ -87,6 +92,25 @@ export function EventPlayer({
         </p>
         <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">{title}</h1>
       </header>
+
+      {/* Région vivante montée en permanence : le bandeau apparaît dedans, donc
+          un lecteur d'écran annonce la perte de synchronisation. */}
+      <div role="status" aria-live="polite">
+        {desynchronise && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border-2 border-k-ink bg-k-yellow/40 px-3 py-2">
+            <p className="text-sm font-bold text-k-ink">
+              Reconnexion… l&apos;écran n&apos;est plus à jour.
+            </p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="shrink-0 rounded-xl border-2 border-k-ink bg-white px-3 py-1.5 text-sm font-black text-k-ink hover:bg-k-yellow/50 focus:outline-none focus:ring-2 focus:ring-k-ink focus:ring-offset-1"
+            >
+              Actualiser
+            </button>
+          </div>
+        )}
+      </div>
 
       {joined ? (
         <PlayingArea
@@ -414,7 +438,11 @@ function QuestionPlay({
   onAnswered: (optionId: string) => void;
 }) {
   const question = state.question;
-  const now = useNow(!locked && Boolean(question) && !myAnswer);
+  // Chrono ancré sur l'horloge SERVEUR : un téléphone mal réglé affichait
+  // « Temps écoulé » sur une question qui venait d'être lancée. Seule la décrue
+  // est locale (cf. `serverClockOffset`).
+  const clockOffset = useServerClockOffset(state.serverNow);
+  const now = useNow(!locked && Boolean(question) && !myAnswer) + clockOffset;
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
