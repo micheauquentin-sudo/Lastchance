@@ -6648,3 +6648,140 @@ de la famille caisse jackpot staff.
   `participateJackpotStaff`
 - ADR-102 (purge et fenêtre de rétention comme borne réelle)
 - roadmap V1.59 ; `docs/bugs.md` (JOU-7, FAIBLE-1, wagon 3)
+
+## ADR-105 : Le commerçant garde la main — gardes applicatives assumées, une seule campagne à matrice fermée, une mesure qui se répare vers l'avant
+
+**Date** : 2026-08-17
+**Statut** : Accepté
+**Contexte** : wagon 4 du train de correction issu de l'audit transverse du
+2026-08-16 (`docs/chantier-audit-2026-08-16.md`, FIA-1..FIA-6, EXP-2, EXP-3,
+NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1), branche `chantier/audit-p1-controle`.
+Trois arbitrages propriétaire rendus le 2026-08-17 encadrent ce wagon et ne
+se rejouent pas : FIA-2 en gardes applicatives, FIA-3 en branche A
+(désarmement par `set_campaign_status`), NUM-1 en clés datées avec rupture
+de série assumée.
+
+### FIA-2 — la garde métier reste applicative, ADR qui l'assume
+
+`docs/decisions.md` (ADR-090, section « La publication reste hors de
+l'Atelier ») laissait la question ouverte : « La garde métier réelle (le
+trou reste POSTable en direct sur `set_campaign_status`) est un arbitrage de
+base non tranché ici, consigné dans `docs/bugs.md`. » **Ce wagon la ferme** :
+la garde reste **applicative**, elle ne descend pas en base. Une
+`assert_module_publishable(module, id)` appelée par les huit RPC de
+publication (modèle `20260905120000:255-282`) coûtait une migration + pgTAP
+sur huit RPC, pour un risque d'enfermement non instruit (une campagne dont
+le dernier lot s'épuise pourrait ne plus jamais repasser `active` après une
+pause). Le geste minimal — deux gardes métier manquantes — était commun aux
+deux branches, donc réalisé dans le lot backend quelle que soit l'issue de
+l'arbitrage.
+
+Deux gardes ajoutées, toutes deux dans le prédicat campagne (périmètre
+tranché le 2026-08-17 : les **deux** promesses déjà faites par l'écran,
+`src/lib/checklist/controles.ts:82-83`) : `updateCampaign` refuse le passage
+à `active` si aucun lot gagnant n'est tirable **ou** si le poids total des
+lots est nul, via `estGagnantTirable` (`src/lib/lot-tirable.ts`, prédicat
+déplacé — pas dupliqué — hors de `atelier-verification-state.ts`, miroir de
+`perform_atomic_spin`) ; `updateContest` refuse l'ouverture d'un championnat
+sans match, via `blocageActivationContest`, extrait sur le modèle exact de
+`blocageActivationEvent`.
+
+**Ce que ça n'empêche pas, dit sans l'adoucir** : un éditeur du même tenant
+qui appelle `set_campaign_status` ou `set_contest_status` directement en
+PostgREST contourne les deux gardes — elles vivent dans l'action serveur,
+pas dans la RPC `security definer`. C'est un **contournement connu et
+assumé**, pas un oubli ; le vocabulaire retenu partout (code, tests,
+documentation) est « refusé par l'écran et l'action », **jamais**
+« impossible ». La liste des RPC contournables est tenue dans
+`docs/bugs.md` (wagon 4, F-2).
+
+### FIA-3 — branche A : `set_campaign_status` désarme, le commerçant ré-arme à la main
+
+`set_campaign_status` pose désormais `auto_schedule = false` dans le même
+`update` que le changement de statut, quand la cible est `paused`, `draft`
+ou `archived` — une pause manuelle dans sa fenêtre n'est plus réactivée par
+`run_campaign_schedule` en moins de 10 minutes. La branche B (un
+`paused_reason = 'manual'` distinct) était écartée : elle aurait exigé une
+migration de contrainte et une valeur d'énumération de plus, sans couvrir
+« Restaurer en brouillon » que la branche A couvre naturellement.
+**Conséquence produit assumée** : un commerçant qui pause une heure doit
+ré-armer la programmation à la main dans « Programmation et budget » — pas
+de raccourci ajouté depuis la carte Statut, la mention suffit (moins de
+surface, le geste existe déjà à un écran de distance).
+
+### FIA-6 — la matrice d'états ne restreint QUE la campagne
+
+`set_campaign_status` refuse désormais `archived → active` ; les sept
+autres RPC de publication (`set_hunt_status`, `set_calendar_status`,
+`set_loyalty_program_status`, `set_quiz_status`,
+`set_jackpot_campaign_status`, `set_event_game_status`,
+`set_contest_status`) restent permissives sur cette même transition, **par
+choix, pas par oubli** : six écrans offrent explicitement
+`archived → active` (`hunt-editor.tsx:677`, `calendar-editor.tsx:895`,
+`quiz-editor.tsx:175`, `loyalty-editor.tsx:884`, `jackpot-editor.tsx:546`,
+`event-editor.tsx:124`) — fermer la RPC casserait six parcours légitimes.
+Cette permissivité était affirmée par un commentaire (`20260905120000:91-95`)
+sans être vérifiée ; elle est désormais **prouvée** par une section pgTAP
+dédiée qui énumère la matrice, contrôles négatifs compris (le retour en
+arrière `archived → draft` doit rester ouvert, les six autres modules
+doivent rester permissifs sur `archived → active`).
+
+### NUM-1 — clés datées, rupture de série assumée et écrite en tête de migration
+
+Les clés d'idempotence des événements `experience_viewed` /
+`experience_started` / `experience_completed` sont désormais datées au jour
+local de l'organisation. **Rupture de série assumée, non corrigible par
+backfill** : avant ce wagon, un `start` comptait un par joueur **à vie** ;
+après, un par joueur **et par jour**. Les lignes déjà écrites gardent leur
+ancienne clé (`on conflict do nothing`) — aucune ligne historique n'est
+retraitée. Les périodes antérieures et postérieures à la migration
+`20260928120000` **ne sont pas comparables** ; c'est un fait à connaître
+avant de lire un graphique d'analytique d'expérience à cheval sur cette
+date, pas un défaut à corriger. L'alternative purement additive (compteurs
+distincts, clés inchangées) était écartée : elle aurait corrigé le libellé
+sans réparer le taux, qui continuait de s'effondrer sur les cohortes de plus
+de 30 jours.
+
+### CNT-1 — un plafond de page constant, en repli silencieux
+
+`Math.min` posé aux cinq sites TypeScript de `parsePageParam` et aux deux
+RPC PostgREST appelables directement (`org_customer_profiles_page`,
+`org_qr_hub`), sur la **même constante** — 500 pages. Au-dessus, la page est
+ramenée au plafond **sans message**, convention déjà en usage dans le dépôt
+pour un paramètre d'URL hors domaine (`module-list-filters.tsx:61-63`).
+
+### Les angles morts de l'audit qui restent des angles morts
+
+Aucun EXPLAIN ni benchmark n'a été exécuté pour IDX-1 (angle mort 4) : les
+trois index de clé étrangère ajoutés (`spins.campaign_id`, `spins.prize_id`,
+`participations.prize_id`) se justifient par lecture — un FK sans index de
+tête — jamais par un gain chiffré, qui n'a été ni mesuré ni annoncé. Le
+`max_rows` du PostgREST **hébergé** n'a pas pu être lu (angle mort 8) :
+LIST-1 est traité comme un transfert de lignes inutile, jamais comme un
+compteur qui mentirait — cette dernière affirmation n'est **pas établie** et
+n'a été écrite nulle part. EXP-2 et SCAN-1 restent des constats dérivés du
+code, aucun parcours n'a été rejoué en session réelle (angle mort 10).
+
+**Conséquences** : migration `20260928120000_controle_commercant.sql` ;
+`src/lib/lot-tirable.ts` neuf (prédicats déplacés, importés par
+`atelier-verification-state.ts`) ; `src/lib/publication-transition.ts` gagne
+la classe `transition`, distincte d'`echec`, pour que le refus de matrice
+s'affiche « Ce changement de statut n'est pas permis. » et non
+« Mise à jour impossible » ; six commentaires de code devenus faux corrigés
+dans le même lot (`src/lib/activation/pronostics.ts`,
+`src/lib/checklist/controles.ts`, `src/lib/publication-transition.ts`,
+`src/components/dashboard/atelier-verification-state.ts`,
+`supabase/migrations/20260905120000` révisé en commentaire de la migration
+neuve, `src/lib/codes-en-attente.ts`).
+
+**References** :
+- `set_campaign_status`, `set_contest_status`, `start_event_session` —
+  migration `20260928120000_controle_commercant.sql`
+- `src/lib/lot-tirable.ts`, `src/actions/campaigns.ts` (`updateCampaign`),
+  `src/actions/pronostics.ts` (`updateContest`), `src/actions/events.ts`
+  (`startEventSession`, `deleteEventQuestion`), `src/actions/prizes.ts`
+  (`deletePrize`)
+- ADR-090 (« la garde métier réelle est un arbitrage de base non tranché
+  ici » — c'est cette phrase que ce wagon ferme)
+- roadmap V1.60 ; `docs/bugs.md` (wagon 4 : sept points consignés sans
+  correctif, F-2, INFO-3, INFO-5)

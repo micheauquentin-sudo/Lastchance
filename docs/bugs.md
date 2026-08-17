@@ -1341,7 +1341,7 @@ l'étape réelle. L'écran comptoir du jackpot s'affichait quel que soit
 `validation_mode`, y compris dans un mode où il ne produit rien ; désormais
 conditionné au mode qui le produit (stepper adaptatif 2↔3 étapes).
 
-### OUVERT (2026-08-07, `chantier/atelier-modules`) — pronostics n'a AUCUNE garde de publication côté serveur
+### ✅ CLOS (2026-08-17, `chantier/audit-p1-controle`, wagon 4) — pronostics n'a AUCUNE garde de publication côté serveur
 
 Consigné en clôture de L'Atelier partout, hors périmètre assumé (design
 doc, section « Hors périmètre »). Contrairement aux six autres modules,
@@ -1349,8 +1349,14 @@ aucun `activationBlocker` n'existe côté serveur pour les pronostics : un
 championnat sans match, sans question et sans récompense reste publiable
 par appel direct à la RPC. L'étape « La vérification » de l'Atelier ne fait
 que RACONTER l'état à l'écran (matchs=0, questions=0, récompenses=0,
-échéances passées) sans rien bloquer. **À arbitrer** avec la dette voisine
-`set_campaign_status` ci-dessous : même classe de défaut, deux modules.
+échéances passées) sans rien bloquer. **Corrigé** (FIA-2, ADR-105, arbitrage
+propriétaire 2026-08-17 : gardes applicatives, pas de descente en base) :
+`blocageActivationContest({nbMatchs, nbQuestions})` extrait sur le modèle de
+`blocageActivationEvent`, opposé par `updateContest`
+(`src/actions/pronostics.ts`) avant l'appel à `set_contest_status` — un
+championnat sans match n'est plus publiable, ni par l'écran ni par appel
+direct à la RPC (refus **applicatif**, contournable par un éditeur du même
+tenant en PostgREST direct, contournement assumé et consigné ci-dessous).
 
 ### OUVERT (2026-08-07, `chantier/atelier-modules`) — dettes assumées de la découpe en étapes
 
@@ -1370,17 +1376,25 @@ n'a pas de garde de module propre (impact nul mesuré — les jetons générés
 restent inertes tant que le programme est en brouillon, mais la garde
 manque pour la cohérence avec les autres actions de création).
 
-### OUVERT (2026-08-07, `chantier/assistant-creation`) — la publication n'a pas de garde métier en base
+### ✅ CLOS (2026-08-17, `chantier/audit-p1-controle`, wagon 4) — la publication n'a pas de garde métier en base
 
 Consigné en clôture de L'Atelier du jeu, hors périmètre assumé (design doc,
 section « Hors périmètre »). `set_campaign_status` accepte l'ouverture d'une
 campagne sans lot gagnant tirable ni fenêtre valide : l'Atelier vérifie
 l'écran (étape La vérification, checklist testée) mais rien n'empêche un
 appel direct à la RPC ou une régression future d'une page qui publierait
-sans passer par l'Atelier. **À arbitrer** : une migration qui refuse le
-passage à `active` sans lot tirable, symétrique du contrôle client. Non
-fermé faute de décision produit sur le niveau de rigueur souhaité (bloquant
-en base vs. avertissement à l'écran).
+sans passer par l'Atelier. **Arbitré** (FIA-2, ADR-105, propriétaire
+2026-08-17) : la garde reste **applicative**, pas de descente en base — le
+geste minimal était commun aux deux branches et une `assert_module_publishable`
+appelée par huit RPC aurait coûté une migration + pgTAP pour un risque
+d'enfermement non instruit. **Corrigé** : `updateCampaign`
+(`src/actions/campaigns.ts`), quand `status === "active"`, relit la roue
+visée et refuse via `estGagnantTirable` (`src/lib/lot-tirable.ts`, prédicat
+déplacé hors de `atelier-verification-state.ts`, miroir de
+`perform_atomic_spin`) si aucun lot gagnant n'est tirable ou si le poids
+total est nul. Le refus est **applicatif** : un éditeur du même tenant en
+appel PostgREST direct à `set_campaign_status` le contourne toujours — c'est
+un contournement connu, assumé, consigné dans l'ADR-105 et ci-dessous.
 
 ### OUVERT (2026-08-07, `chantier/assistant-creation`) — `prizes.is_active` n'est écrit par aucune action
 
@@ -4068,6 +4082,59 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   - **INFO-4** : `recoverPendingWin` reste sans rate-limit ni Turnstile,
     avec une retentative unique côté client (×2 appels au maximum) —
     amplification bornée, préexistante, gardée en tête.
+
+- **Wagon 4 de l'audit transverse — sept points consignés sans correctif et
+  trois de la revue sécurité (2026-08-17, `chantier/audit-p1-controle`,
+  ADR-105)** : toutes les gardes neuves de ce wagon (FIA-1, FIA-2) sont
+  **applicatives**, jamais posées en base — un éditeur du même tenant qui
+  appelle la RPC en PostgREST direct les contourne. C'est un contournement
+  **connu et assumé**, pas un oubli ; il est nommé « refusé par l'écran et
+  l'action », jamais « impossible ».
+  - **FIA-1** : un jeu **archivé** dont une session est déjà en `lobby`
+    reste pilotable — la garde neuve de `start_event_session` ne porte que
+    sur `draft → lobby` (choix repris de `20260905120000:596-599`, ne pas
+    couper une soirée en cours). Décider que clôturer un jeu ferme ses
+    sessions vivantes est un **autre** geste.
+  - **FIA-4** : `campaigns.paused_reason` reste écrivable par `authenticated`
+    (grant asserté par `supabase/tests/publication_guards.test.sql:158-159`,
+    re-grant `20260905120000:296-300`). Un éditeur passant par PostgREST peut
+    effacer le motif puis appeler `set_campaign_status`. **Piège si l'on
+    révoque un jour ce grant** : l'assertion `:158-159` rougirait — elle doit
+    être retournée dans le **même** commit que la révocation, sinon celle-ci
+    se lit comme une régression.
+  - **FIA-5** : `updatePrize` (`src/actions/prizes.ts:168-215`) atteint le
+    même état injouable que `deletePrize` par `weight: 0`, `stock: 0` ou
+    « Segment perdant » (`prize-editor.tsx:361-369`), sans rien supprimer.
+    Fermer la seule porte nommée par ce wagon (`deletePrize`) laisse les
+    trois autres ouvertes.
+  - **NUM-1** : le bloc `sources` d'`org_experience_analytics` compte lui
+    aussi des `count(*)` de vues datées ; il n'a pas été touché, il ne divise
+    rien.
+  - **SCAN-1** : la famille « jamais scannés » garde son vocabulaire
+    d'événements ; élargir `org_dashboard_summary` à
+    `module_page_opens.open_count` (7 modules) est un geste SQL hors
+    périmètre qui ferait bouger un chiffre suivi dans le temps.
+  - **EXP-2** : l'éditeur voit `rien-ouvert` mais atterrit sur
+    `/dashboard/settings/modules`, dont les bascules sont réservées au
+    propriétaire (`src/app/dashboard/settings/modules/page.tsx:60`) — il lit
+    une page qu'il ne peut pas actionner ; l'alternative serait
+    `/dashboard/discover`.
+  - **EXP-3** : une question de soirée déjà jouée n'est que **supprimable**,
+    jamais retirable — le produit n'offre aucun archivage de manche.
+  - **F-2 (revue sécurité)** : les gardes FIA-1/FIA-2 étant applicatives, la
+    liste des contournements PostgREST directs doit être tenue RPC par RPC —
+    `start_event_session`, `set_contest_status`, `set_campaign_status` sont
+    listées ci-dessus et dans l'ADR-105 ; ne pas laisser cette liste se
+    périmer au prochain audit sans la revérifier.
+  - **INFO-3 (revue sécurité)** : un refus de la matrice d'états
+    (`set_campaign_status`, `archived → active`) ne laisse aucune trace
+    d'audit — l'exception `invalid transition` interrompt avant l'écriture
+    dans `audit_logs`. Un commerçant qui tente la transition interdite à
+    plusieurs reprises n'en laisse aucune preuve consultable.
+  - **INFO-5 (revue sécurité)** : `deletePrize` fail-close sur un comptage en
+    panne (`count === null`) mais reste asymétrique sur un embed `wheels`
+    absent après jointure — cas non observé en pratique (une FK garantit la
+    roue), consigné pour ne pas le supposer couvert par le même test.
 
 ## Tracking Process
 
