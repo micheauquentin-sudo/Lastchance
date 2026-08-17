@@ -1063,6 +1063,7 @@ const REPRISE_ANCIENNE = new Date(
 describe("recoverPendingWin — la reprise passe par la RPC de fenêtre", () => {
   beforeEach(() => {
     vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 4 casts historiques du fichier
       spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
     );
   });

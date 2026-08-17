@@ -243,6 +243,7 @@ describe("submitSkillChallenge — le nonce du jeton se consomme", () => {
     const nonce = nonceDuJeton(token);
     state.reset();
     vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 5 casts historiques du fichier
       estimateCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
     );
 
