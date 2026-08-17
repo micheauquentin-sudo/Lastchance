@@ -319,6 +319,11 @@ export const jackpotCounterCodeSchema = z.object({
   campaignId: jackpotCampaignIdSchema,
 });
 
+/** Repli polling : la jauge publique d'une campagne par son UUID. */
+export const getJackpotStateSchema = z.object({
+  campaignId: jackpotCampaignIdSchema,
+});
+
 /**
  * Code de retrait présenté en caisse (JACKPOT-XXXXXXXX). Casse et espaces
  * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL).
