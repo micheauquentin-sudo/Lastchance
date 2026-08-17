@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import type { CustomerProfile } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
+import { parsePageParam } from "@/lib/pagination";
 import {
   CUSTOMER_PAGE_SIZE,
   SEGMENTS,
@@ -26,7 +27,7 @@ export default async function CustomersPage({
   searchParams: Promise<{ page?: string; q?: string; segment?: string; tri?: string }>;
 }) {
   const { page: rawPage, q, segment, tri } = await searchParams;
-  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const page = parsePageParam(rawPage);
   const filtres = parseCustomerFilters({ q, segment, tri });
   const pageSize = CUSTOMER_PAGE_SIZE;
   const { organization, role } = await getUserAndOrg();

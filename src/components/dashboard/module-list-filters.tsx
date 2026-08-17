@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { parsePageParam } from "@/lib/pagination";
 import { sanitizeSearchTerm } from "@/lib/utils";
 import { libelleEtat, type EtatAnimation } from "@/components/ui/status-badge";
 
@@ -61,7 +62,11 @@ export function litFiltresModule(
   const statut = statuts.some((s) => s.value === params.statut)
     ? (params.statut as string)
     : "";
-  const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  // `parsePageParam` et non un `Math.max` local : la borne HAUTE compte autant
+  // que la basse (`?page=1000000` demandait un `range` à vingt millions), et
+  // les cinq écrans qui lisent un numéro de page doivent la partager — cinq
+  // clamps recopiés divergeraient.
+  const page = parsePageParam(params.page);
   const from = (page - 1) * MODULE_PAGE_SIZE;
   return {
     q,
@@ -87,9 +92,17 @@ export function paramsPagination(filtres: FiltresModule) {
 /**
  * Coupe la page de sa ligne excédentaire et dit s'il y a une suite.
  * `rows` est modifié en place, comme le fait déjà la page QR codes.
+ *
+ * `taille` est optionnelle et vaut la page de module : les sept listes qui
+ * l'appelaient ne changent pas. Elle existe pour la liste des participations,
+ * qui pagine par 50 et détectait sa suite par un `count: "exact"` — un balayage
+ * complet de la table à chaque affichage pour une seule comparaison.
  */
-export function couperPage<T>(rows: T[]): { lignes: T[]; hasNext: boolean } {
-  const hasNext = rows.length > MODULE_PAGE_SIZE;
+export function couperPage<T>(
+  rows: T[],
+  taille: number = MODULE_PAGE_SIZE,
+): { lignes: T[]; hasNext: boolean } {
+  const hasNext = rows.length > taille;
   if (hasNext) rows.pop();
   return { lignes: rows, hasNext };
 }
