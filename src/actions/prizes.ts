@@ -222,6 +222,7 @@ export async function updatePrize(
     return { ok: false, error: "Mise à jour impossible" };
   }
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const campaignId = (updated.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
   if (campaignId) {
@@ -270,6 +271,7 @@ export async function deletePrize(
   }
   if (!lot) return { ok: false, error: "Lot introuvable" };
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const campagne = (
     lot.wheels as unknown as {
       campaigns?: { status?: string } | null;
@@ -320,6 +322,7 @@ export async function deletePrize(
     return { ok: false, error: "Suppression impossible" };
   }
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const campaignId = (deleted?.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
   if (campaignId) {

@@ -551,6 +551,7 @@ export async function startEventSession(input: {
         reportError("event.start.precondition", error.message);
         return GENERIC_ERROR;
       }
+      // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
       const jeu = session?.event_games as unknown as {
         status?: string;
       } | null;
