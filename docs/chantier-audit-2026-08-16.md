@@ -23,7 +23,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 | # | Wagon | Branche | Contenu (IDs de l'audit) | État |
 |---|---|---|---|---|
 | 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | ✅ **fusionné `585d0e7`, déployé, santé verte** |
-| 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | **PR ouverte, CI en cours** |
+| 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | ✅ **fusionné `7db27ee`, déployé, santé verte** |
 | 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | à venir |
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | à venir |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
@@ -60,10 +60,13 @@ attribués à l'ouverture de la PR, jamais avant.
   `mobile-chrome` passed. Roadmap V1.57. **Fusion squash `585d0e7` le
   2026-08-16 ; CI `main` success ; « Santé après déploiement » success —
   migration `20260924120000` appliquée en production.**
-- **Wagon 2** : `e65b1b9` sur `chantier/audit-p0-stripe`, PR à ouvrir. Revue
-  sécurité première passe NO-GO (1 ÉLEVÉ, 2 MOYEN, 1 FAIBLE, 4 INFO), les
-  quatre corrigés dans le wagon, contre-vérification **GO** — reliquats en
-  INFO dans `docs/bugs.md`. pgTAP 60 fichiers / 3493 assertions (vide et
-  semée), typecheck/lint/build verts, E2E local WSL `mobile-chrome` 39
-  passed / 6 skipped. Roadmap V1.58, ADR-103. CI GitHub : non exécutée à
-  l'heure d'écrire cette ligne, la PR la jouera.
+- **Wagon 2 (PR #149)** : CI de la PR verte sur le SHA de tête `68343a7` (6
+  jobs). Revue sécurité première passe NO-GO (1 ÉLEVÉ, 2 MOYEN, 1 FAIBLE, 4
+  INFO), les quatre corrigés dans le wagon, contre-vérification **GO** —
+  reliquats en INFO dans `docs/bugs.md`. pgTAP 60 fichiers / 3493 assertions
+  (vide et semée), typecheck/lint/build verts, E2E local WSL `mobile-chrome`
+  39 passed / 6 skipped. Roadmap V1.58, ADR-103. **Fusion squash `7db27ee`
+  sur l'ordre permanent ; CI `main` success sur `7db27ee` ; « Santé après
+  déploiement » success sur `7db27ee`, job « Base · Workers · Sécurité »
+  réellement exécuté (13:11:49→13:12:00 UTC, pas sauté) — migrations
+  `20260925120000` et `20260926120000` appliquées en production.**

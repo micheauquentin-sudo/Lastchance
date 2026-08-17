@@ -63,10 +63,11 @@
   ci-dessous pour le cadrage complet) — aligner le catalogue Stripe sur les
   droits réellement ouverts (SD-1..SD-7, SD-9) et appliquer l'arbitrage
   produit du 2026-08-04 : un pass n'ouvre que son module (SD-4).
-- **Branche/commits** : `chantier/audit-p0-stripe`, tête `e65b1b9`, arbre
-  propre, PR à ouvrir. Deux migrations : `20260925120000_droits_stripe.sql`
-  et `20260926120000_pass_expire_lisible.sql`. `EXPECTED_MIGRATION =
-  20260926120000`.
+- **Branche/commits** : `chantier/audit-p0-stripe`, tête `68343a7`, PR #149
+  fusionnée en squash `7db27ee` sur `main` (ordre permanent). Deux
+  migrations : `20260925120000_droits_stripe.sql` et
+  `20260926120000_pass_expire_lisible.sql`. `EXPECTED_MIGRATION =
+  20260926120000`, appliquée en production.
 - **Faits** : `org_has_module_access(_for_resource)` ferme le socle roue aux
   pass (SD-4) ; Saison de pronostics bornée à une compétition, resserrée par
   trigger à la clôture (SD-5) ; capacité d'événement au `max()` des octrois
@@ -86,12 +87,14 @@
   `mobile-chrome` 39 passed / 6 skipped sur 5 specs ciblées. Revue sécurité :
   première passe NO-GO (1 ÉLEVÉ, 2 MOYEN, 1 FAIBLE, 4 INFO), les quatre
   corrigés dans le wagon, contre-vérification GO — 5 reliquats INFO
-  consignés dans `docs/bugs.md`. CI GitHub non exécutée à l'heure d'écrire
-  cette entrée, la PR la jouera.
+  consignés dans `docs/bugs.md`. CI de la PR #149 verte sur le SHA de tête
+  `68343a7` (6 jobs) ; CI `main` verte sur `7db27ee` ; workflow « Santé après
+  déploiement » vert sur `7db27ee`, job « Base · Workers · Sécurité »
+  réellement exécuté (13:11:49→13:12:00 UTC, pas sauté) — les deux
+  migrations sont appliquées en production.
 - **Risque/blocage** : aucun. Reliquats INFO sans action requise (détail
   dans `docs/bugs.md`).
-- **Prochaine action** : ouvrir la PR du wagon 2, dérouler le wagon 3
-  (`chantier/audit-p0-joueur`).
+- **Prochaine action** : dérouler le wagon 3 (`chantier/audit-p0-joueur`).
 
 ### 2026-08-16 — Train de correction de l'audit transverse (7 wagons) — **en cours**
 
