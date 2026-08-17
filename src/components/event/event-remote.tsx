@@ -42,6 +42,7 @@ export function EventRemote({
   screenUrl,
   playUrl,
   sessionTitle,
+  gameActive,
   initialStatus,
   initialPhase,
   questions,
@@ -55,6 +56,12 @@ export function EventRemote({
   screenUrl: string;
   playUrl: string;
   sessionTitle: string;
+  /**
+   * Le JEU dont dépend cette session est-il ouvert aux joueurs ? Démarrer une
+   * session ouvre le salon au public : sur un jeu encore en brouillon, le
+   * serveur refuse (action puis RPC). Le bouton cesse donc de se proposer.
+   */
+  gameActive: boolean;
   initialStatus: EventSessionStatus;
   initialPhase: EventSessionPhase;
   questions: EventRemoteQuestion[];
@@ -219,13 +226,26 @@ export function EventRemote({
           </p>
         </div>
       ) : status === "draft" ? (
-        <ControlCard title="Démarrer" hint="Ouvre le salon : les joueurs peuvent rejoindre avec le code ou le QR.">
+        <ControlCard
+          title="Démarrer"
+          hint={
+            gameActive
+              ? "Ouvre le salon : les joueurs peuvent rejoindre avec le code ou le QR."
+              : "Ce jeu n'est pas encore ouvert aux joueurs : le salon n'a personne à accueillir."
+          }
+        >
           <PrimaryButton
             busy={busy}
+            disabled={!gameActive}
             onClick={() => run(() => startEventSession({ sessionId }))}
           >
             ▶ Démarrer la session
           </PrimaryButton>
+          {!gameActive && (
+            <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+              Ouvrez le jeu aux joueurs avant de lancer une session en direct.
+            </p>
+          )}
         </ControlCard>
       ) : phase === "question_active" ? (
         <ControlCard title="Question en cours" hint="Verrouillez quand le temps est écoulé pour figer les réponses.">
