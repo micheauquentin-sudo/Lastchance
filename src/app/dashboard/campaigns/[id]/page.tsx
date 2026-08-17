@@ -33,6 +33,7 @@ import {
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
 import { CarteAventure } from "@/components/dashboard/carte-aventure";
+import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { construireVerification } from "@/components/dashboard/atelier-verification-state";
 import type { ControleBrut } from "@/lib/checklist/controles";
 import { tuilesDuModule, type TuileRendue } from "@/lib/checklist/tuiles";
@@ -252,6 +253,20 @@ export default async function CampaignDetailPage({
         <h1 className="text-2xl font-bold truncate">{c.name}</h1>
         <CampaignStatusBadge status={c.status} windowState={windowState} />
       </div>
+
+      {/* LE BANDEAU D'OFFRE — la seule page détail de module qui l'oubliait.
+          `capacitesDuModule("wheel")` était déjà lu ci-dessus pour la Carte de
+          l'Aventure, mais rien ne le RENDAIT : sans droit, cette page portait
+          « Ouvrir aux joueurs » sans un mot sur le refus à venir, et un pass
+          terminé n'y laissait aucune trace (constat SD-9). Placé comme sur les
+          sept autres — juste sous le titre, au-dessus de l'état. Il ne rend rien
+          du tout quand le module est payé (voir le composant) — d'où l'absence
+          de conteneur autour de lui : un `div` porteur de marge laisserait un
+          blanc de 24 px sur la page de tout client qui paie. */}
+      <ModuleCapabilityNotice capacites={capacites} entitlement="core">
+        Roue, carte à gratter et treize autres mécaniques, lots à stock et
+        budget, QR codes personnalisés et remise en caisse.
+      </ModuleCapabilityNotice>
 
       {((c.status === "paused" && c.paused_reason) ||
         (c.status === "active" && windowState !== "open")) && (
