@@ -176,20 +176,20 @@ as $$
   -- LA NOTIFICATION. `on conflict do nothing` et non `do update` : un job déjà
   -- déposé a peut-être déjà été traité, le réécrire le ferait repartir.
   --
-  -- ⚠️ CLÉS DE PAYLOAD EN snake_case, ET C'EST UNE DIVERGENCE À CONNAÎTRE : les
-  -- trois autres jobs déposés par la base écrivent en camelCase
-  -- (`campaignId`/`organizationId` pour `automation.budget-paused`,
-  -- `prizeId` pour `automation.low-stock`). Un handler recopié depuis
-  -- `processBudgetPausedJob` lirait donc `payload.campaignId` et trouverait
-  -- `undefined` — sans erreur, sans notification, exactement le silence que ce
-  -- lot corrige. Le nommage est celui demandé par le cahier du wagon ;
-  -- src/lib/automations.ts doit lire ces clés-ci.
+  -- CLÉS EN camelCase, comme les trois autres jobs déposés par la base
+  -- (`campaignId`/`organizationId` pour `automation.budget-paused`, `prizeId`
+  -- pour `automation.low-stock`) : `src/lib/automations.ts` les lit ainsi, et un
+  -- quatrième nommage aurait fait trouver `undefined` à un handler recopié depuis
+  -- `processBudgetPausedJob` — sans erreur et sans notification, soit exactement
+  -- le silence que ce lot corrige. NB : `audit_logs.metadata` reste en
+  -- snake_case, c'est la convention de CE journal (`campaign_id` dans
+  -- claim_winning_spin, `contest_id` dans set_contest_status).
   notifie as (
     insert into public.jobs (type, payload, organization_id, idempotency_key)
     select 'automation.schedule-blocked',
            pg_catalog.jsonb_build_object(
-             'campaign_id', b.id,
-             'organization_id', b.organization_id),
+             'campaignId', b.id,
+             'organizationId', b.organization_id),
            b.organization_id,
            'automation.schedule-blocked:' || b.id::text || ':'
              || pg_catalog.to_char(pg_catalog.now() at time zone 'UTC', 'YYYYMMDD')

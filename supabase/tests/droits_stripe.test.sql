@@ -667,11 +667,14 @@ select is(
   'SD-9 un job automation.schedule-blocked part : le refus a de quoi se dire'
 );
 select results_eq(
-  $$select payload->>'campaign_id', payload->>'organization_id' from public.jobs
+  $$select payload->>'campaignId', payload->>'organizationId' from public.jobs
      where type = 'automation.schedule-blocked'$$,
   $$values ('d5000000-0000-4000-8000-0000000000a1',
             'd5000000-0000-4000-8000-000000000001')$$,
-  'SD-9 le job porte la campagne et l''organisation — le worker n''a rien à deviner'
+  -- Les clés sont assertées NOMMÉMENT, en camelCase comme les trois autres jobs
+  -- déposés par la base : c'est ce qui empêche un futur lot de les renommer sans
+  -- que src/lib/automations.ts, qui lit `payload.campaignId`, ne s'en aperçoive.
+  'SD-9 le job porte campaignId et organizationId — mêmes clés que budget-paused'
 );
 select is(
   (select pg_catalog.count(*)::int from public.audit_logs a
