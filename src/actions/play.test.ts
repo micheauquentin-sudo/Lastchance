@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SmsSendJobPayload } from "@/lib/sms-dispatch";
 
@@ -98,6 +99,16 @@ const { state, makeAdmin } = vi.hoisted(() => {
     relectureEnPanne: false,
     /** `claim_winning_spin` refuse-t-elle, quel que soit l'état du spin ? */
     rpcEnPanne: false,
+    /**
+     * Ce que `recover_pending_spin` rend — la fenêtre de reprise est calculée
+     * DANS la base (elle suit le `play_limit`), ce double n'a donc qu'à jouer
+     * le rôle du guichet : une ligne, ou aucune.
+     */
+    recovery: null as Array<{
+      spin_id: string;
+      prize_id: string | null;
+      created_at: string;
+    }> | null,
     reset() {
       state.spins = new Map([
         [SPIN_ID, makeSpin(SPIN_ID)],
@@ -117,6 +128,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.smsSender = "MONRESTO";
       state.relectureEnPanne = false;
       state.rpcEnPanne = false;
+      state.recovery = null;
     },
   };
 
@@ -142,6 +154,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
         // ── Le canal SMS, tel que le socle le présente ──────
         // Transcription minimale, pour ce double SEUL : le produit ne
         // normalise jamais un numéro en TypeScript, il appelle la base.
+        if (name === "recover_pending_spin") {
+          return Promise.resolve({ data: state.recovery, error: null });
+        }
         if (name === "sms_phone_e164") {
           const digits = String(args.p_phone ?? "").replace(/[^0-9]/g, "");
           return Promise.resolve({
@@ -439,7 +454,7 @@ vi.mock("next/headers", () => ({
 // vitest.config), donc la garde « jeton d'abord » est réellement exercée.
 import { signClaimToken } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
-import { claimPrize, spinWheel } from "./play";
+import { claimPrize, recoverPendingWin, spinWheel } from "./play";
 
 /** Seau d'IDENTITÉ du gain (fail-closed légitime : clé d'un seul porteur). */
 const SPIN_BUCKET = (spinId: string) => `claim:spin:${spinId}`;
@@ -1022,6 +1037,91 @@ describe("spinWheel — porte skill-gated", () => {
       expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(true);
     },
   );
+});
+
+// ────────────────────────────────────────────────────────────
+// recoverPendingWin — LA FENÊTRE DE REPRISE SUIT LE `play_limit`
+//
+// Régression fermée ici : la reprise interrogeait `spins` directement avec un
+// cutoff FIXE de 30 minutes, écrit en TypeScript. Dès que la roue était réglée
+// sur une limite plus large — une partie par jour, par semaine, une seule à vie
+// —, un joueur qui perdait la réponse réseau au moment du tirage n'avait plus
+// aucun chemin vers son code : la base tenait toujours le spin non réclamé (et
+// refusait donc tout nouveau tour), mais la reprise, elle, ne le voyait plus.
+// Gain gagné, enregistré, irrécupérable.
+//
+// La fenêtre est désormais calculée DANS la base (`recover_pending_spin`, RPC
+// service_role) à partir du `play_limit` de la roue : une seule source de
+// vérité pour « ce tour compte-t-il encore ».
+// ────────────────────────────────────────────────────────────
+
+/** Trois jours en arrière : hors de portée de l'ancien cutoff de 30 minutes. */
+const REPRISE_ANCIENNE = new Date(
+  Date.now() - 3 * 24 * 60 * 60 * 1000,
+).toISOString();
+
+describe("recoverPendingWin — la reprise passe par la RPC de fenêtre", () => {
+  beforeEach(() => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+  });
+
+  it("rend un gain vieux de trois jours (l'ancien cutoff l'aurait perdu)", async () => {
+    state.recovery = [
+      { spin_id: SPIN_ID, prize_id: PRIZE_ID, created_at: REPRISE_ANCIENNE },
+    ];
+
+    const res = await recoverPendingWin(SLUG);
+
+    expect(res).not.toBeNull();
+    expect(res?.prizeIndex).toBe(0);
+    expect(res?.spinId).toBe(SPIN_ID);
+    expect(res?.isLosing).toBe(false);
+    expect(res?.claimToken).toBeTruthy();
+    // La fenêtre est demandée à la base, avec la roue et l'empreinte joueur —
+    // jamais une lecture nue de `spins` bornée côté application.
+    const appel = state.rpcCalls.find((c) => c.name === "recover_pending_spin");
+    expect(appel?.args).toEqual({
+      p_wheel_id: WHEEL_ID,
+      p_player_key: "anonymous-player-key",
+    });
+  });
+
+  it("aucun gain en attente : rien à reprendre", async () => {
+    state.recovery = [];
+
+    expect(await recoverPendingWin(SLUG)).toBeNull();
+  });
+
+  it("un tour PERDANT n'est jamais repris comme un gain", async () => {
+    // La RPC ne rend pas de perte, mais la garde reste : `prize_id` nul ne doit
+    // en aucun cas produire une issue gagnante (c'est ce qui interdit de passer
+    // une clé d'idempotence depuis la roue — un rejeu de perte reviendrait ici).
+    state.recovery = [
+      { spin_id: SPIN_ID, prize_id: null, created_at: REPRISE_ANCIENNE },
+    ];
+
+    expect(await recoverPendingWin(SLUG)).toBeNull();
+  });
+
+  it("lot retiré ou désactivé depuis le tirage : rien n'est rendu", async () => {
+    // Le shell public ne saurait pas animer un segment absent de sa liste : la
+    // garde `findIndex < 0` est conservée telle quelle.
+    state.recovery = [
+      { spin_id: SPIN_ID, prize_id: "prize-disparu", created_at: REPRISE_ANCIENNE },
+    ];
+
+    expect(await recoverPendingWin(SLUG)).toBeNull();
+  });
+
+  it("GARDE MÉCANIQUE : plus aucun cutoff de 30 minutes dans la reprise", () => {
+    const src = readFileSync("src/actions/play.ts", "utf8");
+    expect(src).toContain("recover_pending_spin");
+    // L'expression exacte de l'ancien cutoff — sa réapparition rebornerait la
+    // fenêtre côté application, en contradiction avec le `play_limit`.
+    expect(src).not.toContain("30 * 60 * 1000");
+  });
 });
 
 /* ════════════════════════════════════════════════════════════

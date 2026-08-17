@@ -165,6 +165,35 @@ describe("temps minimal signé · reflex / gauge", () => {
     ).toBe(true);
   });
 
+  it("une tolérance large ne ramène JAMAIS le plancher à zéro", () => {
+    // Régression fermée ici (SEC-2) : à tolerancePct = 50 la cible est
+    // atteignable dès 0 % du balayage, la borne dérivée tombait donc à 0 ms —
+    // un script pouvait déclarer « réussi » dans la milliseconde suivant
+    // l'émission du jeton. Le plancher absolu (300 ms) reprend la main.
+    const attempt = { gameType: "gauge" as const, succeeded: true };
+    const config = { tolerancePct: 50 };
+    expect(minimumSkillSuccessElapsedMs("gauge", config)).toBe(300);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_299),
+    ).toBe(false);
+    expect(
+      isSkillAttemptTimingPlausible("gauge", attempt, config, 2_000, 2_300),
+    ).toBe(true);
+  });
+
+  it("le plancher absolu ne mord pas sur les bornes dérivées plus hautes", () => {
+    // Non-régression : dès que la tolérance laisse la borne au-dessus de
+    // 300 ms, c'est la valeur DÉRIVÉE du balayage qui s'applique, inchangée.
+    //
+    // 389 et non 390 : 0,35 × 1 400 vaut 489,999… en binaire, et le `floor`
+    // retient 489. La milliseconde perdue est sans effet (la marge humaine en
+    // absorbe cent), mais elle est ÉPINGLÉE ici pour que le chiffre attendu
+    // reste celui que la fonction rend vraiment.
+    expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 15 })).toBe(389);
+    expect(minimumSkillSuccessElapsedMs("gauge", { tolerancePct: 10 })).toBe(460);
+    expect(minimumSkillSuccessElapsedMs("reflex", { durationMs: 800 })).toBe(1_400);
+  });
+
   it("ne pénalise jamais un échec rapporté", () => {
     expect(
       isSkillAttemptTimingPlausible(

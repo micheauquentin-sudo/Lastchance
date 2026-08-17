@@ -308,6 +308,14 @@ async function submitInner(
 
     // 7. Matérialisation : réussite → tirage normal ; échec → spin PERDANT forcé.
     //    play_limit appliqué DANS la RPC, AVANT la branche (anti-brute-force).
+    //
+    //    CLÉ D'IDEMPOTENCE : le nonce du jeton de défi, préfixé par son domaine.
+    //    Le nonce est généré SERVEUR (startSkillChallenge), signé HMAC et déjà
+    //    vérifié à l'étape 1 — le client ne peut donc pas en choisir la valeur,
+    //    et elle ne dérive d'aucune donnée personnelle (la colonne est lisible
+    //    par les membres de l'organisation). Un jeton rejoué rend la MÊME issue
+    //    au lieu de consommer un second tour : le jeton vit ~10 min et restait
+    //    utilisable autant de fois que les seaux le toléraient.
     const { data: spinRows, error: spinError } = await admin.rpc("perform_atomic_spin", {
       p_organization_id: campaign.organization_id,
       p_campaign_id: campaign.id,
@@ -316,6 +324,7 @@ async function submitInner(
       p_engagement_action: null,
       p_source: "direct",
       p_force_losing: !succeeded,
+      p_idempotency_key: `skill:${payload.nonce}`,
     });
     if (spinError) {
       reportError("skill.atomic-spin", spinError.message);
