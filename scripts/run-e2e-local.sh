@@ -101,23 +101,32 @@ pg_file supabase/seed.sql >/dev/null
 # 4. Environnement de l'app : clés du Supabase local + secrets factices,
 #    à l'identique du job CI e2e (STRIPE_API_BASE/RESEND_BASE_URL → stubs locaux).
 #
-# `supabase status` a son propre critère de disponibilité, plus strict que le
-# `select 1` d'`attendre_pg` : juste après un `start`/reset, il peut encore
-# sortir en erreur (« container is not ready: starting »). Sans garde, la
-# sortie vide traverse le `grep` puis l'`eval` sans rien faire, et `API_URL`
-# reste non défini — sous `set -u` le script meurt sur « unbound variable »,
-# à des kilomètres de la vraie cause. On reprend comme pour `supabase start`.
+# `supabase status` a son propre critère de disponibilité, et c'est celui de
+# TOUTE la stack (auth, storage, realtime…), pas seulement de Postgres : un
+# `db reset` relance ces services, et `auth` boucle en échec (« database
+# system is starting up ») 40 à 60 s avant de stabiliser — constaté sur cette
+# machine (piège voisin du 5, mais sur `status` et non sur `start`). Le
+# `select 1` d'`attendre_pg` répond bien avant que `status` n'accepte de
+# répondre. Sans garde, la sortie vide ou partielle traverse le `grep` puis
+# l'`eval` sans rien faire, et une variable manquante reste non définie — sous
+# `set -u` le script meurt sur « unbound variable », à des kilomètres de la
+# vraie cause. On reprend sur le même budget que l'attente de Postgres (120 s)
+# et on exige les TROIS clés, pas seulement une sortie non vide : un succès
+# partiel (deux clés sur trois) laissait filer la garde et faisait échouer le
+# script trois lignes plus loin.
 STATUS_ENV=""
-for tentative in 1 2 3 4 5; do
+FIN_STATUS=$((SECONDS + 120))
+while :; do
   STATUS_ENV="$(npx --no-install supabase status -o env 2>/dev/null | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' || true)"
-  [ -n "$STATUS_ENV" ] && break
-  echo "supabase status pas encore prêt (tentative $tentative/5) — pause avant reprise"
+  CLES=$(printf '%s\n' "$STATUS_ENV" | grep -cE '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')
+  [ "$CLES" -eq 3 ] && break
+  if [ "$SECONDS" -ge "$FIN_STATUS" ]; then
+    echo "✗ « supabase status -o env » ne rend toujours pas les trois clés (API_URL/ANON_KEY/SERVICE_ROLE_KEY) après 120 s."
+    exit 1
+  fi
+  echo "supabase status pas encore prêt ($CLES/3 clé(s)) — pause avant reprise"
   sleep 5
 done
-if [ -z "$STATUS_ENV" ]; then
-  echo "✗ « supabase status -o env » ne rend toujours pas API_URL/ANON_KEY/SERVICE_ROLE_KEY après 5 tentatives."
-  exit 1
-fi
 eval "$STATUS_ENV"
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
