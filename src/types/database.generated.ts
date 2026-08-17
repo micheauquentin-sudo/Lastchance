@@ -6905,7 +6905,7 @@ export type Database = {
         Returns: boolean
       }
       debit_sms_balance_for_refund: {
-        Args: { p_source_reference: string }
+        Args: { p_organization_id: string; p_source_reference: string }
         Returns: {
           debited_units: number
           entry_id: string
@@ -7871,7 +7871,11 @@ export type Database = {
         Returns: Json
       }
       revoke_grant_for_refund: {
-        Args: { p_reason: string; p_source_reference: string }
+        Args: {
+          p_organization_id: string
+          p_reason: string
+          p_source_reference: string
+        }
         Returns: {
           grant_id: string
           grant_module: string

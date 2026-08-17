@@ -20,7 +20,9 @@
 --      en silence et n'éclatait qu'au webhook SUIVANT, en 500 — donc en rejeu
 --      Stripe pendant trois jours.
 --   5. QU'UN REMBOURSEMENT REPRENNE CE QU'IL A RENDU (SD-2), sans jamais rendre
---      un solde négatif ni agir deux fois sur le même rejeu.
+--      un solde négatif, agir deux fois sur le même rejeu, NI TOUCHER UN AUTRE
+--      LOCATAIRE — les deux index qui gardent `source_reference` sont uniques
+--      par organisation, donc la référence seule ne désigne pas une ligne.
 --   6. QUE L'EXPIRATION SE VOIE (SD-9, migration 20260926120000). Le cron
 --      `run_campaign_schedule` publiait sans lire aucun droit, et le refus muet
 --      était le motif écrit de ne pas le garder (20260906120000). Il refuse
@@ -486,6 +488,59 @@ select is(
   'SD-6 hors grâce, un second achat du même mensuel reste REFUSÉ'
 );
 
+-- ── LA RÉACTIVATION NE PÊCHE PAS UN OCTROI BORNÉ (revue wagon 2, INFO 1) ──
+--
+-- `org_has_live_module_grant` exige `resource_id is null` depuis SD-5 : le
+-- module ENTIER et une ressource nommée sont deux droits distincts. La branche
+-- de réactivation doit lire la même frontière, sinon le rachat du module entier
+-- irait ressusciter un droit vendu pour UN championnat — en lui retirant sa fin
+-- par-dessus, et en lui collant la référence du nouveau paiement.
+--
+-- AUCUN MODÈLE BORNÉ N'EST RÉCURRENT AUJOURD'HUI : cette assertion garde une
+-- porte que le catalogue n'ouvre pas encore. C'est précisément pourquoi elle est
+-- écrite ici — le jour où une Saison se vendra à l'abonnement, personne ne
+-- rouvrira ce fichier pour y penser.
+insert into public.organizations (id, name, slug, subscription_status, trial_ends_at)
+values ('d3000000-0000-4000-8000-000000000003', 'Grace ter', 'tap-ds-grace3', 'canceled',
+        (select v from t0) - interval '60 days');
+
+select is(
+  (select outcome from public.grant_module_from_payment(
+     'd3000000-0000-4000-8000-000000000003'::uuid,
+     'pronostics', 'recurring', 'cs_borne_1',
+     (select v from t0), null, null, null,
+     'd3000000-0000-4000-8000-0000000000f1'::uuid)),
+  'created',
+  'INFO 1 (montage) un récurrent BORNÉ à un championnat'
+);
+
+-- Sous grâce, donc hors de l'index d'unicité : exactement l'état que la branche
+-- de réactivation va chercher.
+update public.organization_module_grants
+   set ends_at = (select v from t0) + interval '14 days'
+ where source_reference = 'cs_borne_1';
+
+select is(
+  (select outcome from public.grant_module_from_payment(
+     'd3000000-0000-4000-8000-000000000003'::uuid,
+     'pronostics', 'recurring', 'cs_module_entier',
+     (select v from t0) + interval '1 day', null, null, null, null)),
+  'created',
+  'INFO 1 le rachat du MODULE ENTIER crée son propre octroi, il ne réactive pas le borné'
+);
+select isnt(
+  (select g.ends_at from public.organization_module_grants g
+    where g.source_reference = 'cs_borne_1'),
+  null,
+  'INFO 1 et la fin du droit BORNÉ n''est pas levée — il n''a pas été repayé'
+);
+select is(
+  (select g.resource_id from public.organization_module_grants g
+    where g.source_reference = 'cs_borne_1'),
+  'd3000000-0000-4000-8000-0000000000f1'::uuid,
+  'INFO 1 il reste attaché à SON championnat, avec sa référence d''origine'
+);
+
 -- ════════════════════════════════════════════════════════════
 -- SD-2 — REPRENDRE CE QUI A ÉTÉ REMBOURSÉ
 -- ════════════════════════════════════════════════════════════
@@ -514,7 +569,9 @@ select is(
 
 select is(
   (select pg_catalog.count(*)::int
-     from public.revoke_grant_for_refund('cs_remb_1', 'charge.refunded')),
+     from public.revoke_grant_for_refund(
+       'd4000000-0000-4000-8000-000000000001'::uuid,
+       'cs_remb_1', 'charge.refunded')),
   1,
   'SD-2 le remboursement révoque l''octroi né de ce paiement'
 );
@@ -527,7 +584,9 @@ select is(
 
 select is(
   (select pg_catalog.count(*)::int
-     from public.revoke_grant_for_refund('cs_remb_1', 'dispute.created')),
+     from public.revoke_grant_for_refund(
+       'd4000000-0000-4000-8000-000000000001'::uuid,
+       'cs_remb_1', 'dispute.created')),
   0,
   'SD-2 IDEMPOTENCE : le rejeu ne révoque rien de plus — zéro ligne, pas d''erreur'
 );
@@ -547,7 +606,9 @@ values ('d4000000-0000-4000-8000-000000000001', 'quiz', 'pass', 'stripe', 'cs_re
 
 select is(
   (select pg_catalog.count(*)::int
-     from public.revoke_grant_for_refund('cs_remb_vieux', 'charge.refunded')),
+     from public.revoke_grant_for_refund(
+       'd4000000-0000-4000-8000-000000000001'::uuid,
+       'cs_remb_vieux', 'charge.refunded')),
   0,
   'SD-2 un octroi DÉJÀ ÉCHU n''est pas révoqué — rien à reprendre'
 );
@@ -572,7 +633,8 @@ insert into public.sms_credit_entries
 values ('d4000000-0000-4000-8000-000000000001', -90, 'send', 45000, 'EUR', 'tap-ds-envoi');
 
 select is(
-  (select debited_units from public.debit_sms_balance_for_refund('pi_sms_remb')),
+  (select debited_units from public.debit_sms_balance_for_refund(
+     'd4000000-0000-4000-8000-000000000001'::uuid, 'pi_sms_remb')),
   10,
   'SD-2 la reprise est BORNÉE au solde restant (10), pas au montant vendu (100)'
 );
@@ -585,7 +647,8 @@ select is(
 
 select is(
   (select pg_catalog.count(*)::int
-     from public.debit_sms_balance_for_refund('pi_sms_remb')),
+     from public.debit_sms_balance_for_refund(
+       'd4000000-0000-4000-8000-000000000001'::uuid, 'pi_sms_remb')),
   0,
   'SD-2 IDEMPOTENCE : le rejeu ne débite pas une seconde fois'
 );
@@ -598,9 +661,187 @@ select is(
 
 select is(
   (select pg_catalog.count(*)::int
-     from public.debit_sms_balance_for_refund('pi_inconnu_des_sms')),
+     from public.debit_sms_balance_for_refund(
+       'd4000000-0000-4000-8000-000000000001'::uuid, 'pi_inconnu_des_sms')),
   0,
   'SD-2 une référence qui ne désigne aucun achat SMS rend zéro ligne, sans lever'
+);
+
+-- ── LA PORTÉE D'ORGANISATION DES DEUX REPRISES (revue wagon 2, MOYEN 1) ──
+--
+-- UNE RÉFÉRENCE NE DÉSIGNE PAS UNE LIGNE À ELLE SEULE, et c'est tout l'objet de
+-- ce bloc. Les deux index qui la gardent sont uniques PAR ORGANISATION —
+-- `organization_module_grants (organization_id, source_reference)` et
+-- `sms_credit_entries_one_purchase_per_reference` — et le back-office écrit une
+-- `reference` libre dont le motif vaut `purchase` par défaut : deux locataires
+-- portant la même référence n'est pas une hypothèse. Résolue sans portée, la
+-- reprise touchait alors le mauvais : un droit fermé chez un tiers pour la
+-- révocation, un débit monétaire DÉFINITIF pour les SMS, le grand livre étant
+-- append-only.
+--
+-- LE MONTAGE EST DATÉ EXPRÈS, et c'est ce qui rend la preuve concluante plutôt
+-- que chanceuse : `now()` est l'instant de la TRANSACTION, donc deux achats
+-- créés ici porteraient le MÊME `created_at`, et `order by created_at asc limit
+-- 1` d'avant-correctif se départagerait sur l'ordre physique des lignes.
+-- L'achat du VOISIN est donc antidaté d'une heure : sous l'ancien code, c'est
+-- lui, sans ambiguïté, que la reprise de l'ACHETEUR aurait débité.
+insert into public.organizations (id, name, slug, subscription_status, trial_ends_at)
+values
+  ('d4000000-0000-4000-8000-000000000002', 'Voisin', 'tap-ds-voisin', 'canceled',
+   (select v from t0) - interval '60 days'),
+  ('d4000000-0000-4000-8000-000000000003', 'Acheteur', 'tap-ds-acheteur', 'canceled',
+   (select v from t0) - interval '60 days'),
+  ('d4000000-0000-4000-8000-000000000004', 'Tiers', 'tap-ds-tiers', 'canceled',
+   (select v from t0) - interval '60 days');
+
+-- L'ancre crée la ligne de solde du voisin : `sms_credits` n'est ouvrable que
+-- par `credit_sms_balance` (le trigger `sms_credits_balance_is_ledger_only`
+-- refuse l'insertion directe), et l'achat PARTAGÉ doit être antidaté, ce que la
+-- RPC ne permet pas. D'où les deux gestes, avec des références distinctes pour
+-- ne pas buter sur l'index d'unicité per-organisation.
+select is(
+  (select created from public.credit_sms_balance(
+     'd4000000-0000-4000-8000-000000000002'::uuid, 40, 'purchase', 45000,
+     'pi_ancre_voisin', null)),
+  true,
+  'SD-2 (montage) le voisin a 40 crédits sous SA propre référence'
+);
+insert into public.sms_credit_entries
+  (organization_id, delta_units, reason, unit_cost_micros, currency, reference,
+   created_at)
+values ('d4000000-0000-4000-8000-000000000002', 60, 'purchase', 45000, 'EUR',
+        'pi_sms_partage', pg_catalog.now() - interval '1 hour');
+
+select is(
+  (select created from public.credit_sms_balance(
+     'd4000000-0000-4000-8000-000000000003'::uuid, 60, 'purchase', 45000,
+     'pi_sms_partage', null)),
+  true,
+  'SD-2 (montage) l''acheteur porte LA MÊME référence — l''index est per-organisation'
+);
+select is(
+  (select created from public.credit_sms_balance(
+     'd4000000-0000-4000-8000-000000000004'::uuid, 25, 'purchase', 45000,
+     'pi_tiers', null)),
+  true,
+  'SD-2 (montage) un tiers avec un solde NON VIDE, pour que le refus se lise'
+);
+
+-- ── LE MONTAGE MORD-IL ENCORE ? ─────────────────────────────
+-- Ces deux gardes valent autant que les assertions qu'elles précèdent : le jour
+-- où l'une des références serait renommée, tout ce qui suit passerait au vert
+-- en ne prouvant plus rien du tout. Elles disent que l'ambiguïté est RÉELLE, et
+-- que l'ancien tri désignait bien le mauvais locataire.
+select is(
+  (select pg_catalog.count(*)::int from public.sms_credit_entries e
+    where e.reason = 'purchase' and e.reference = 'pi_sms_partage'),
+  2,
+  'MOYEN 1 (garde) DEUX locataires portent la même référence d''achat — l''index est per-organisation'
+);
+select is(
+  (select e.organization_id from public.sms_credit_entries e
+    where e.reason = 'purchase' and e.reference = 'pi_sms_partage'
+    order by e.created_at asc limit 1),
+  'd4000000-0000-4000-8000-000000000002'::uuid,
+  'MOYEN 1 (garde) et c''est le VOISIN que l''ancien `order by created_at asc limit 1` désignait'
+);
+
+-- LE DÉBIT SUIT L'ORGANISATION, PAS LA RÉFÉRENCE. Sans le paramètre, cette
+-- assertion rendait l'uuid du VOISIN — c'est ce que la garde ci-dessus établit.
+select is(
+  (select org_id from public.debit_sms_balance_for_refund(
+     'd4000000-0000-4000-8000-000000000003'::uuid, 'pi_sms_partage')),
+  'd4000000-0000-4000-8000-000000000003'::uuid,
+  'MOYEN 1 la reprise SMS débite l''organisation passée en paramètre, pas la plus ancienne'
+);
+select is(
+  (select c.balance_units from public.sms_credits c
+    where c.organization_id = 'd4000000-0000-4000-8000-000000000002'),
+  100,
+  'MOYEN 1 et le VOISIN n''est pas touché — 100 crédits intacts, référence identique'
+);
+select is(
+  (select c.balance_units from public.sms_credits c
+    where c.organization_id = 'd4000000-0000-4000-8000-000000000003'),
+  0,
+  'MOYEN 1 c''est bien l''acheteur qui a été repris, jusqu''à zéro'
+);
+
+-- ORGANISATION QUI NE CORRESPOND PAS : rien à reprendre, sans lever. Le solde du
+-- tiers est NON VIDE à dessein — sinon le zéro viendrait du garde-fou de solde
+-- et non de la portée, et l'assertion ne prouverait rien.
+select is(
+  (select pg_catalog.count(*)::int
+     from public.debit_sms_balance_for_refund(
+       'd4000000-0000-4000-8000-000000000004'::uuid, 'pi_sms_partage')),
+  0,
+  'MOYEN 1 une référence qui appartient à un AUTRE locataire ne débite rien'
+);
+select is(
+  (select c.balance_units from public.sms_credits c
+    where c.organization_id = 'd4000000-0000-4000-8000-000000000004'),
+  25,
+  'MOYEN 1 et le solde du tiers est intact — le refus n''a rien écrit'
+);
+
+select throws_ok(
+  $$select * from public.debit_sms_balance_for_refund(null::uuid, 'pi_sms_partage')$$,
+  '22023', null,
+  'MOYEN 1 l''organisation est REQUISE : null lève, il n''y a pas de repli global'
+);
+
+-- MÊME PORTÉE POUR LA RÉVOCATION, et le défaut y était plus large encore : le
+-- `where` sans organisation sélectionnait les octrois des DEUX locataires, donc
+-- un `update` de jeu — ce n'était pas « parfois le mauvais », c'était les deux.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, source_reference, starts_at, ends_at)
+values
+  ('d4000000-0000-4000-8000-000000000002', 'hunts', 'pass', 'stripe',
+   'cs_partage', pg_catalog.now() - interval '1 day',
+   pg_catalog.now() + interval '30 days'),
+  ('d4000000-0000-4000-8000-000000000003', 'hunts', 'pass', 'stripe',
+   'cs_partage', pg_catalog.now() - interval '1 day',
+   pg_catalog.now() + interval '30 days');
+
+-- MÊME GARDE : deux octrois VIVANTS sous la même référence, donc deux lignes que
+-- le `where` d'avant-correctif ramassait ensemble. Ce n'était pas « parfois le
+-- mauvais » : le `update` de jeu les révoquait tous les deux.
+select is(
+  (select pg_catalog.count(*)::int from public.organization_module_grants g
+    where g.source = 'stripe' and g.source_reference = 'cs_partage'
+      and g.revoked_at is null
+      and (g.ends_at is null or g.ends_at > pg_catalog.now())),
+  2,
+  'MOYEN 1 (garde) deux octrois VIVANTS partagent la référence — l''ancien where les prenait tous'
+);
+
+select is(
+  (select pg_catalog.count(*)::int
+     from public.revoke_grant_for_refund(
+       'd4000000-0000-4000-8000-000000000003'::uuid,
+       'cs_partage', 'charge.refunded')),
+  1,
+  'MOYEN 1 la révocation ne prend QU''UN octroi — celui du locataire remboursé'
+);
+select is(
+  (select g.revoked_at from public.organization_module_grants g
+    where g.organization_id = 'd4000000-0000-4000-8000-000000000002'
+      and g.source_reference = 'cs_partage'),
+  null,
+  'MOYEN 1 et le droit du voisin reste OUVERT — il n''a rien demandé'
+);
+select is(
+  public.org_has_module_access(
+    'd4000000-0000-4000-8000-000000000002'::uuid, 'hunts', pg_catalog.now()),
+  true,
+  'MOYEN 1 son module Chasse répond encore, ce qui est la seule preuve qui compte'
+);
+
+select throws_ok(
+  $$select * from public.revoke_grant_for_refund(
+      null::uuid, 'cs_partage', 'charge.refunded')$$,
+  '22023', null,
+  'MOYEN 1 la révocation exige aussi l''organisation, sans défaut'
 );
 
 -- ════════════════════════════════════════════════════════════
@@ -801,12 +1042,66 @@ select is(
   false, 'ACL org_has_module_access_for_resource n''est pas exposée à anon');
 select is(
   has_function_privilege('authenticated',
-    'public.revoke_grant_for_refund(text, text)', 'EXECUTE'),
+    'public.revoke_grant_for_refund(uuid, text, text)', 'EXECUTE'),
   false, 'ACL revoke_grant_for_refund n''est pas exposée à authenticated');
 select is(
   has_function_privilege('anon',
-    'public.debit_sms_balance_for_refund(text)', 'EXECUTE'),
+    'public.debit_sms_balance_for_refund(uuid, text)', 'EXECUTE'),
   false, 'ACL debit_sms_balance_for_refund n''est pas exposée à anon');
+
+-- ── L'ANCIENNE SURCHAGE NON PORTÉE A DISPARU (revue wagon 2, MOYEN 1) ──
+-- Un `create or replace` de signature différente crée une SECONDE fonction au
+-- lieu de remplacer la première : sans le `drop function if exists` de la
+-- migration, la version résolvant l'achat par la seule référence survivrait à
+-- côté de la neuve, appelable par `service_role`. Le correctif ne vaut que si
+-- l'ancienne porte est murée, et cela ne se lit pas dans le texte du fichier.
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('revoke_grant_for_refund', 'debit_sms_balance_for_refund')),
+  2,
+  'MOYEN 1 DEUX fonctions de reprise et pas quatre : l''ancienne surcharge est droppée');
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('revoke_grant_for_refund', 'debit_sms_balance_for_refund')
+      and pg_catalog.format_type(p.proargtypes[0], null) = 'uuid'),
+  2,
+  'MOYEN 1 et les deux prennent l''organisation en PREMIER argument');
+
+select is(
+  has_function_privilege('authenticated',
+    'public.org_has_live_resource_grant(uuid, text, uuid, timestamptz)', 'EXECUTE'),
+  false, 'ACL org_has_live_resource_grant n''est pas exposée à authenticated');
+select is(
+  has_function_privilege('anon',
+    'public.org_has_live_resource_grant(uuid, text, uuid, timestamptz)', 'EXECUTE'),
+  false, 'ACL org_has_live_resource_grant ni à anon — c''est elle qui borne SD-5');
+select is(
+  has_function_privilege('authenticated',
+    'public.event_participant_capacity(uuid)', 'EXECUTE'),
+  false, 'ACL event_participant_capacity n''est pas exposée à authenticated');
+select is(
+  has_function_privilege('anon',
+    'public.event_participant_capacity(uuid)', 'EXECUTE'),
+  false, 'ACL event_participant_capacity ni à anon — elle rend la jauge VENDUE');
+-- Le trigger de clôture est révoqué même à `service_role` : PostgreSQL vérifie
+-- EXECUTE à la CRÉATION du trigger, pas à chaque déclenchement, et la clôture
+-- éprouvée plus haut le prouve encore vivant. Aucun appel direct ne doit rester
+-- possible — invoquée hors trigger, la fonction lirait un `new` inexistant.
+select is(
+  has_function_privilege('authenticated',
+    'public.shrink_contest_grants_on_close()', 'EXECUTE'),
+  false, 'ACL shrink_contest_grants_on_close n''est pas exposée à authenticated');
+select is(
+  has_function_privilege('service_role',
+    'public.shrink_contest_grants_on_close()', 'EXECUTE'),
+  false, 'ACL shrink_contest_grants_on_close pas même à service_role — c''est un trigger');
+
 select is(
   has_function_privilege('authenticated',
     'public.assert_module_publish_allowed(uuid, text, uuid)', 'EXECUTE'),

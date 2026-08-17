@@ -910,6 +910,13 @@ begin
      where g.organization_id = p_organization_id
        and g.module = p_module
        and g.kind = 'recurring'
+       -- MÊME PORTÉE QUE `org_has_live_module_grant` (SD-5) : un octroi BORNÉ à
+       -- une ressource n'est pas le module entier, et le rachat du module entier
+       -- ne doit pas le réactiver. Défensif aujourd'hui — aucun modèle borné
+       -- n'est récurrent — mais le jour où l'un le devient, sans cette ligne un
+       -- rachat de module ressusciterait un droit vendu pour UN championnat, et
+       -- lui retirerait sa fin par-dessus.
+       and g.resource_id is null
        -- `source = 'stripe'` : réactiver un octroi OFFERT par le back-office et
        -- y estampiller une référence de paiement en ferait un octroi payé, que
        -- la prochaine résiliation Stripe révoquerait. Les deux portées sont
@@ -1006,7 +1013,8 @@ comment on function public.grant_module_from_payment(uuid, text, text, text, tim
   '(grant_id, outcome). QUATRE issues, portées par une VALEUR et non par une '
   'nullité : ''created'' = octroi créé ; ''replayed'' = même paiement rejoué, '
   'sans redater l''octroi existant ; ''reactivated'' = rachat d''un récurrent '
-  'SOUS GRÂCE — la fin de grâce est levée et la référence rattachée au nouveau '
+  'SOUS GRÂCE et NON BORNÉ à une ressource — la fin de grâce est levée et la '
+  'référence rattachée au nouveau '
   'paiement, au lieu de créer un second octroi que la levée de grâce ferait '
   'ensuite violer l''index (20260925120000) ; ''refused'' = un AUTRE paiement '
   'tient déjà ce module en récurrent, donc un débit sans contrepartie — '
@@ -1039,7 +1047,33 @@ grant execute on function public.grant_module_from_payment(uuid, text, text, tex
 -- qu'un litige suit souvent un remboursement sur la même charge.
 
 -- ── (a) Révoquer les octrois nés d'un paiement remboursé ─────
+--
+-- ── POURQUOI L'ORGANISATION EST UN PARAMÈTRE, ET POURQUOI IL EST REQUIS ──
+--
+-- UNE `source_reference` NE DÉSIGNE PAS UNE LIGNE À ELLE SEULE. Les deux index
+-- qui la gardent — `organization_module_grants (organization_id,
+-- source_reference)` ici, `sms_credit_entries_one_purchase_per_reference` en
+-- (b) — sont uniques PAR LOCATAIRE, jamais globalement. Deux organisations
+-- peuvent donc porter la même référence, et le back-office écrit une
+-- `reference` libre dont le motif vaut `purchase` par défaut : le cas n'est pas
+-- théorique. Une reprise résolue par la seule référence agirait alors sur le
+-- MAUVAIS locataire — un droit fermé chez un tiers ici, une écriture monétaire
+-- définitive dans un grand livre append-only en (b).
+--
+-- SANS VALEUR PAR DÉFAUT, délibérément. Un défaut à null rendrait l'oubli
+-- d'appelant silencieux, c'est-à-dire exactement le défaut qu'on ferme. Le
+-- webhook a toujours l'organisation en main (il vient de la résoudre pour
+-- décider quoi reprendre) : l'exiger ne lui coûte rien et fait de la portée une
+-- garantie de signature au lieu d'une convention d'appelant.
+--
+-- LE `drop` VISE L'ANCIENNE SURCHARGE, pas des données. Sans lui, un
+-- `create or replace` de signature différente laisserait vivre la version non
+-- portée à côté de la neuve sur toute base ayant déjà reçu cette migration —
+-- et `service_role` pourrait encore l'appeler.
+drop function if exists public.revoke_grant_for_refund(text, text);
+
 create or replace function public.revoke_grant_for_refund(
+  p_organization_id uuid,
   p_source_reference text,
   p_reason text
 )
@@ -1054,6 +1088,11 @@ begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'revoke_grant_for_refund: service_role requis'
       using errcode = '42501';
+  end if;
+
+  if p_organization_id is null then
+    raise exception 'revoke_grant_for_refund: organisation requise'
+      using errcode = '22023';
   end if;
 
   if p_source_reference is null
@@ -1074,7 +1113,11 @@ begin
   with cibles as (
     select g.id
       from public.organization_module_grants g
-     where g.source = 'stripe'
+     -- LA PORTÉE D'ABORD : l'index unique de `source_reference` est per-organisation
+     -- (voir l'en-tête), donc la référence seule peut désigner l'octroi d'un autre
+     -- locataire.
+     where g.organization_id = p_organization_id
+       and g.source = 'stripe'
        and g.source_reference = p_source_reference
        -- IDEMPOTENCE : un octroi déjà révoqué n'est pas re-révoqué, et son
        -- horodatage d'origine n'est pas réécrit. Un litige qui suit un
@@ -1097,20 +1140,23 @@ begin
 end;
 $$;
 
-comment on function public.revoke_grant_for_refund(text, text) is
+comment on function public.revoke_grant_for_refund(uuid, text, text) is
   'Révoque le ou les octrois nés d''un paiement Stripe remboursé ou contesté, '
-  'désignés par leur `source_reference` — celle-là même que '
+  'désignés par leur ORGANISATION et leur `source_reference` — celle-là même que '
   'grant_module_from_payment a reçue, jamais un identifiant de charge que la '
-  'base ne connaît pas. IDEMPOTENTE : un octroi déjà révoqué n''est pas '
+  'base ne connaît pas. L''ORGANISATION EST REQUISE, SANS DÉFAUT : l''index '
+  'unique de `source_reference` est per-organisation, donc deux locataires '
+  'peuvent porter la même référence et la référence seule désignerait parfois '
+  'l''octroi d''un tiers. IDEMPOTENTE : un octroi déjà révoqué n''est pas '
   'retouché et ne figure pas dans le retour, ce qui rend un rejeu de webhook '
   'silencieux. Ne touche pas les octrois DÉJÀ ÉCHUS — les marquer révoqués '
   'réécrirait l''histoire d''un droit qui s''est éteint de lui-même. Rend une '
   'ligne par octroi RÉELLEMENT révoqué : zéro ligne veut dire « rien à '
   'reprendre », jamais « échec ». service_role uniquement.';
 
-revoke all on function public.revoke_grant_for_refund(text, text)
+revoke all on function public.revoke_grant_for_refund(uuid, text, text)
   from public, anon, authenticated;
-grant execute on function public.revoke_grant_for_refund(text, text)
+grant execute on function public.revoke_grant_for_refund(uuid, text, text)
   to service_role;
 
 -- ── (b) Reprendre les crédits SMS d'un achat remboursé ───────
@@ -1141,7 +1187,17 @@ comment on index public.sms_credit_entries_one_refund_debit is
   'ajustements, qui sont des gestes commerciaux libres. Le grand livre étant '
   'append-only, un double débit serait irrattrapable.';
 
+-- L'ORGANISATION EST REQUISE ICI POUR LA MÊME RAISON QU'EN (a), et le dégât y
+-- est pire : `sms_credit_entries_one_purchase_per_reference` est unique sur
+-- `(organization_id, reference)`, deux locataires peuvent donc porter la même
+-- référence d'achat, et un `order by created_at asc limit 1` sur la seule
+-- référence débiterait le PREMIER inscrit — pas forcément le bon. Le grand livre
+-- étant append-only, ce débit-là serait définitif. Voir l'en-tête de (a) pour le
+-- `drop` de l'ancienne surcharge.
+drop function if exists public.debit_sms_balance_for_refund(text);
+
 create or replace function public.debit_sms_balance_for_refund(
+  p_organization_id uuid,
   p_source_reference text
 )
 returns table (org_id uuid, debited_units integer, entry_id uuid)
@@ -1159,6 +1215,11 @@ begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'debit_sms_balance_for_refund: service_role requis'
       using errcode = '42501';
+  end if;
+
+  if p_organization_id is null then
+    raise exception 'debit_sms_balance_for_refund: organisation requise'
+      using errcode = '22023';
   end if;
 
   if p_source_reference is null
@@ -1180,15 +1241,20 @@ begin
   -- « ce qui reste », on reprend CE QUI A ÉTÉ VENDU, borné au solde.
   select e.* into v_achat
     from public.sms_credit_entries e
-   where e.reason = 'purchase'
+   -- LA PORTÉE D'ABORD, avant même le motif : sans elle, l'achat retenu peut
+   -- appartenir à un autre locataire (voir l'en-tête).
+   where e.organization_id = p_organization_id
+     and e.reason = 'purchase'
      and e.reference = pg_catalog.btrim(p_source_reference)
    order by e.created_at asc
    limit 1;
 
   if not found then
-    -- Aucun achat sous cette référence : ce remboursement ne concerne pas les
-    -- SMS. Zéro ligne, pas d'exception — le webhook appelle les deux reprises
-    -- sans savoir laquelle s'applique.
+    -- Aucun achat sous cette référence POUR CETTE ORGANISATION : ce
+    -- remboursement ne concerne pas ses SMS. Zéro ligne, pas d'exception — le
+    -- webhook appelle les deux reprises sans savoir laquelle s'applique, et une
+    -- référence qui existe chez un tiers n'est pas davantage la sienne qu'une
+    -- référence inconnue.
     return;
   end if;
 
@@ -1242,19 +1308,24 @@ begin
 end;
 $$;
 
-comment on function public.debit_sms_balance_for_refund(text) is
-  'Reprend les crédits SMS d''un achat Stripe remboursé ou contesté. Le montant '
+comment on function public.debit_sms_balance_for_refund(uuid, text) is
+  'Reprend les crédits SMS d''un achat Stripe remboursé ou contesté, pour '
+  'L''ORGANISATION PASSÉE EN PARAMÈTRE — requise, sans défaut : l''index '
+  'd''unicité de la référence d''achat est per-organisation, et un débit résolu '
+  'par la seule référence pourrait tomber sur le grand livre d''un tiers, '
+  'définitivement puisqu''il est append-only. Le montant '
   'repris est celui de l''ACHAT, BORNÉ au solde courant : le solde ne devient '
   'jamais négatif, et ce qui a déjà été consommé est une perte commerciale et '
   'non une dette inscrite au commerçant. IDEMPOTENTE par index '
   '(sms_credit_entries_one_refund_debit) et non par relecture — le grand livre '
   'est append-only, un double débit serait irrattrapable. Rend zéro ligne quand '
   'il n''y a rien à reprendre : référence inconnue des SMS, solde vide, ou '
-  'reprise déjà faite. La référence attendue est celle de l''ACHAT '
+  'reprise déjà faite, ou référence appartenant à une AUTRE organisation. La '
+  'référence attendue est celle de l''ACHAT '
   '(sms_credit_entries.reference, reason = purchase), pas un identifiant de '
   'charge. service_role uniquement.';
 
-revoke all on function public.debit_sms_balance_for_refund(text)
+revoke all on function public.debit_sms_balance_for_refund(uuid, text)
   from public, anon, authenticated;
-grant execute on function public.debit_sms_balance_for_refund(text)
+grant execute on function public.debit_sms_balance_for_refund(uuid, text)
   to service_role;
