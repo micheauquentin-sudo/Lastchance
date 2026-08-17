@@ -25,7 +25,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 | 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | ✅ **fusionné `585d0e7`, déployé, santé verte** |
 | 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | ✅ **fusionné `7db27ee`, déployé, santé verte** |
 | 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | ✅ **fusionné `4b9499b`, déployé, santé verte** |
-| 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | **code terminé, PR ouverte, CI en cours** — brief [`wagon-4-brief.md`](./wagon-4-brief.md), ADR-105, roadmap V1.60, revue sécurité GO (1 MOYEN + 2 FAIBLE + 7 INFO, MOYEN et 1 FAIBLE fermés dans le wagon) |
+| 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | ✅ **fusionné `c32dfc4`, déployé, santé verte** |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
 | 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 (+ le correctif de contraste en `stash@{0}` du clone WSL) | à venir |
 | 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | à venir |
@@ -137,3 +137,14 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   CI `main` success sur `4b9499b` ; « Santé après déploiement » success, job
   « Base · Workers · Sécurité » réellement exécuté (16:53:53→16:54:00 UTC,
   pas sauté) — migration `20260927120000` appliquée en production.**
+- **Wagon 4 (PR #151)** : CI de la PR intégralement verte sur le SHA de tête
+  `bc5e209`. Revue sécurité **GO** (0 critique/élevé, 1 MOYEN + 2 FAIBLE + 7
+  INFO, le MOYEN et 1 FAIBLE fermés dans le wagon). pgTAP 62 fichiers / 3561
+  assertions PASS ×2 (vide et semée), typecheck/lint/build verts, Vitest
+  complet vert, E2E ciblé WSL `mobile-chrome` (dashboard-home,
+  atelier-modules, wheel-wizard, campaign-templates, event) 41 passed / 3
+  skipped / 0 failed. Roadmap V1.60, ADR-105. **Fusion squash `c32dfc4` sur
+  l'ordre permanent le 2026-08-17 ; CI `main` success sur `c32dfc4` ; « Santé
+  après déploiement » success sur `c32dfc4`, job « Base · Workers ·
+  Sécurité » réellement exécuté (20:13:34→20:13:42 UTC, pas sauté) —
+  migration `20260928120000` appliquée en production.**

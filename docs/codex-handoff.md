@@ -57,17 +57,20 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-17 — Train de correction de l'audit transverse : wagon 4 « Le commerçant garde la main, les chiffres disent vrai » — **code terminé, PR ouverte**
+### 2026-08-17 — Train de correction de l'audit transverse : wagon 4 « Le commerçant garde la main, les chiffres disent vrai » — **fusionné, déployé, santé verte**
 
 - **Lot et objectif** : quatrième wagon du train (brief `docs/wagon-4-brief.md`) —
   fermer les publications sans garde métier, refermer la matrice d'états de la
   campagne, réparer une mesure d'analytique d'expérience, border pagination,
   index et comptage de listes (FIA-1..FIA-6, EXP-2, EXP-3, NUM-1, SCAN-1,
   LIST-1, IDX-1, CNT-1).
-- **Branche/commits** : `chantier/audit-p1-controle`, tête `86db376`, arbre
-  propre côté code. Une migration : `20260928120000_controle_commercant.sql`.
-  PR non encore ouverte au moment de cette entrée (docs-scribe intervient
-  juste avant).
+- **Branche/commits** : `chantier/audit-p1-controle`, tête `86db376` puis
+  commit docs `bc5e209`. Une migration : `20260928120000_controle_commercant.sql`.
+  **PR #151 fusionnée en squash `c32dfc4` sur l'ordre permanent le
+  2026-08-17** : CI de la PR verte sur `bc5e209`, CI `main` verte sur
+  `c32dfc4`, « Santé après déploiement » verte sur `c32dfc4`, job
+  « Base · Workers · Sécurité » réellement exécuté (20:13:34→20:13:42 UTC,
+  pas sauté) — migration `20260928120000` appliquée en production.
 - **Arbitrages propriétaire (2026-08-17) portés par l'ADR-105** : FIA-2 en
   gardes **applicatives** (pas de descente en base — ferme l'arbitrage laissé
   ouvert par l'ADR-090), périmètre du prédicat campagne = « aucun lot gagnant
@@ -100,17 +103,15 @@
   campaign-templates, event) **41 passed / 3 skipped / 0 failed**. Revue
   sécurité : **GO, 0 critique/élevé, 1 MOYEN + 2 FAIBLE + 7 INFO** — le MOYEN
   (plafond de page manquant sur un 6ᵉ écran) et un FAIBLE fermés dans le
-  wagon. CI GitHub non encore jouée à l'heure d'écrire ces lignes — la PR la
-  déclenchera.
+  wagon. CI GitHub intégralement verte sur le SHA de tête `bc5e209`.
 - **Documentation** : ADR-105 (`docs/decisions.md`), roadmap V1.60, `docs/bugs.md`
   (deux entrées fermées — pronostics et campagne, la seconde clôturant la
   question ouverte par l'ADR-090 — dix entrées ouvertes : sept points
   consignés sans correctif du wagon + F-2/INFO-3/INFO-5 de la revue sécurité),
-  `docs/chantier-audit-2026-08-16.md` (ligne wagon 4 → code terminé, PR
-  ouverte), `CLAUDE.md` (wagon 4 remplace wagon 3, wagon 3 versé en tête de
-  `docs/journal.md`).
-- **Suite** : PR à ouvrir, boucle babysit-CI jusqu'au vert, squash sur `main`,
-  santé post-déploiement, puis wagon 5 (`chantier/audit-p1-live`).
+  `docs/chantier-audit-2026-08-16.md` (ligne wagon 4 → ✅ fusionné `c32dfc4`,
+  déployé, santé verte ; journal des fusions complété), `CLAUDE.md` (wagon 4
+  remplace wagon 3, wagon 3 versé en tête de `docs/journal.md`).
+- **Suite** : wagon 5 (`chantier/audit-p1-live`).
 
 ### 2026-08-17 — Train de correction de l'audit transverse : wagon 3 « La boucle joueur → gain se ferme » — **terminé**
 
