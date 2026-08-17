@@ -312,6 +312,91 @@ select results_eq(
   'l''origine d''acquisition portée par l''adhésion prime sur celle du spin'
 );
 
+-- ══════════════════════════════════════════════════════════════
+-- NUM-1 (wagon 4) — DEUX JOURS DE JEU NE FONT PAS DEUX JOUEURS
+-- ══════════════════════════════════════════════════════════════
+-- Avant ce lot, les clés d'idempotence de `experience_started` et
+-- `experience_completed` étaient centrées sur le joueur et l'expérience, SANS
+-- date : un joueur qui revenait tous les jours pendant un mois ne comptait
+-- qu'UNE entrée à vie, tandis que la vue — seule clé déjà datée
+-- (20260805160000:484-485) — en comptait trente. Le taux de transformation
+-- affiché s'effondrait avec l'âge de la cohorte.
+--
+-- CE TEST PASSE PAR LE TRIGGER, et c'est la condition pour qu'il prouve quelque
+-- chose : `record_experience_event` reçoit sa clé d'idempotence de l'appelant,
+-- donc l'appeler à la main ne dirait RIEN de la granularité que les triggers
+-- fabriquent. On insère de vrais `spins`, et c'est `spins_experience_analytics`
+-- qui écrit.
+--
+-- TERRAIN ISOLÉ (organisation C) parce que les deux assertions sont des
+-- comptages de `summary`, donc à l'échelle de l'ORGANISATION : les portées sur
+-- A dépendraient de tout ce que les sections précédentes y ont accumulé, et le
+-- fichier rougirait au prochain événement ajouté plus haut, pour une raison
+-- sans rapport. Fuseau posé explicitement : c'est lui qui découpe les journées.
+insert into public.organizations (id, name, slug, data_retention_months, timezone)
+values ('a1000000-0000-4000-8000-000000000003', 'Analytics C', 'tap-analytics-c',
+        6, 'Europe/Paris');
+insert into public.campaigns (id, organization_id, name, status)
+values ('a1000000-0000-4000-8000-000000000013',
+        'a1000000-0000-4000-8000-000000000003', 'Roue C', 'active');
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('a1000000-0000-4000-8000-000000000033',
+        'a1000000-0000-4000-8000-000000000003',
+        'a1000000-0000-4000-8000-000000000013', 'Roue C', 'unlimited');
+
+-- LE MÊME joueur, DEUX jours locaux distincts. `created_at` explicite : c'est
+-- lui que le trigger lit (`v_occurred_at := new.created_at`), et `now()` est
+-- constant dans la transaction — sans date posée, les deux spins tomberaient le
+-- même jour et le test ne mesurerait rien.
+insert into public.spins (
+  organization_id, campaign_id, wheel_id, prize_id,
+  is_losing, player_key, source, created_at
+) values (
+  'a1000000-0000-4000-8000-000000000003',
+  'a1000000-0000-4000-8000-000000000013',
+  'a1000000-0000-4000-8000-000000000033',
+  null, true, repeat('7', 64), 'direct', now() - interval '2 days'
+), (
+  'a1000000-0000-4000-8000-000000000003',
+  'a1000000-0000-4000-8000-000000000013',
+  'a1000000-0000-4000-8000-000000000033',
+  null, true, repeat('7', 64), 'direct', now()
+);
+
+select is(
+  (public.org_experience_analytics(
+    'a1000000-0000-4000-8000-000000000003', 30
+  ) #>> '{summary,starts}')::integer,
+  2,
+  'deux jours de jeu comptent deux fois — la cle d''idempotence porte le jour local'
+);
+select is(
+  (public.org_experience_analytics(
+    'a1000000-0000-4000-8000-000000000003', 30
+  ) #>> '{summary,unique_starters}')::integer,
+  1,
+  'un seul joueur derriere ces deux jours — le compteur de PERSONNES ne double pas'
+);
+-- Le funnel complet : le spin émet aussi `experience_completed` (v_complete),
+-- donc le même écart doit se lire au bout de la chaîne.
+select is(
+  (public.org_experience_analytics(
+    'a1000000-0000-4000-8000-000000000003', 30
+  ) #>> '{summary,unique_finishers}')::integer,
+  1,
+  'et un seul finisseur, pour deux completions'
+);
+-- Les trois compteurs vivent AUSSI dans `per_experience` : l'écran lit le
+-- `summary` pour ses tuiles et ce tableau pour ses lignes, une divergence entre
+-- les deux se lirait comme une incohérence du produit.
+select is(
+  (public.org_experience_analytics(
+    'a1000000-0000-4000-8000-000000000003', 30
+  ) #>> '{experiences,0,unique_starters}')::integer,
+  1,
+  'le tableau par experience porte les memes compteurs de personnes que le resume'
+);
+
 -- Garde réelle de l'agrégat sous le rôle marchand.
 set local role authenticated;
 select set_config(

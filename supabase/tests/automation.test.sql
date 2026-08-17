@@ -146,7 +146,24 @@ values
    'Pause budget', 'paused', true, now() - interval '1 hour', now() + interval '1 hour', 'budget_reached'),
   -- Sans auto_schedule : jamais touchée.
   ('ab000000-0000-4000-8000-000000000004', 'aa000000-0000-4000-8000-000000000001',
-   'Manuelle', 'draft', false, now() - interval '1 hour', now() + interval '1 hour', null);
+   'Manuelle', 'draft', false, now() - interval '1 hour', now() + interval '1 hour', null),
+  -- FIA-3 (wagon 4) : PROGRAMMÉE ET EN COURS. Elle part `active` parce que la
+  -- pause qu'on veut éprouver est une pause MANUELLE — celle que le commerçant
+  -- pose lui-même, par la RPC, sur une campagne qui tourne. L'insérer déjà en
+  -- `paused` ne prouverait rien : le désarmement vit dans
+  -- `set_campaign_status`, et une ligne posée directement en base ne l'a jamais
+  -- traversée. C'est le geste du commerçant qui est mesuré, pas l'état.
+  ('ab000000-0000-4000-8000-000000000005', 'aa000000-0000-4000-8000-000000000001',
+   'Pause manuelle', 'active', true, now() - interval '1 hour', now() + interval '1 hour', null);
+
+-- Le commerçant met sa campagne en pause « le temps de refaire le stock ». Sans
+-- le désarmement, elle repart au passage suivant du planificateur — dix minutes
+-- plus tard, sans que personne ne l'ait demandé.
+select ok(
+  public.set_campaign_status('aa000000-0000-4000-8000-000000000001',
+    'ab000000-0000-4000-8000-000000000005', 'paused'),
+  'le commerçant met sa campagne programmée en pause à la main'
+);
 
 select results_eq(
   $$select campaign_id, action from public.run_campaign_schedule() order by action$$,
@@ -171,6 +188,12 @@ select results_eq(
      where id = 'ab000000-0000-4000-8000-000000000003'$$,
   $$values ('paused', 'budget_reached')$$,
   'une pause budget n''est jamais réactivée par le calendrier'
+);
+select results_eq(
+  $$select status, auto_schedule, paused_reason from public.campaigns
+     where id = 'ab000000-0000-4000-8000-000000000005'$$,
+  $$values ('paused', false, null::text)$$,
+  'une pause MANUELLE reste en pause : la RPC a désarmé la programmation (FIA-3)'
 );
 select is(
   (select status from public.campaigns

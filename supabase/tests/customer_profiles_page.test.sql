@@ -54,7 +54,7 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(59);
+select plan(61);
 
 -- ════════════════════════════════════════════════════════════
 -- PRÉAMBULE — CATALOGUE ET ACL (ADR-082)
@@ -381,6 +381,8 @@ declare
   v_err_ab text;
   v_err_limite text;
   v_err_offset text;
+  v_err_offset_haut text;
+  v_err_offset_pile text;
   v_err_null text;
 begin
   perform set_config('request.jwt.claims',
@@ -415,6 +417,29 @@ begin
     v_err_offset := 'AUCUNE ERREUR — offset negatif accepte';
   exception when others then
     v_err_offset := sqlerrm;
+  end;
+
+  -- CNT-1 (wagon 4) : l'offset n'avait qu'un PLANCHER. La RPC est
+  -- `grant execute … to authenticated` : ce n'est pas l'écran qui choisit
+  -- `p_offset`, c'est le client, et un `?page=1000000` recopié dans la barre
+  -- d'adresse faisait trier puis jeter la liste entière pour rendre zéro ligne.
+  -- Le plafond est de 500 pages de la taille demandée — ici 500 × 50 = 25 000.
+  begin
+    perform 1 from public.org_customer_profiles_page(
+      'ae000000-0000-4000-8000-000000000001', 25001, 50, null, null, null);
+    v_err_offset_haut := 'AUCUNE ERREUR — offset au-dela du plafond accepte';
+  exception when others then
+    v_err_offset_haut := sqlerrm;
+  end;
+
+  -- Le contrôle qui empêche de lire l'assertion précédente à l'envers : le
+  -- plafond est une BORNE, pas un refus général. À 25 000 pile, ça passe.
+  begin
+    perform 1 from public.org_customer_profiles_page(
+      'ae000000-0000-4000-8000-000000000001', 25000, 50, null, null, null);
+    v_err_offset_pile := '(aucune)';
+  exception when others then
+    v_err_offset_pile := sqlerrm;
   end;
 
   -- … et `p_limit => null` ne le CONTOURNE plus. C'était le trou : PostgREST
@@ -461,6 +486,8 @@ begin
     ('A chez B',        v_err_ab),
     ('limite 200',      v_err_limite),
     ('offset negatif',  v_err_offset),
+    ('offset au-dela',  v_err_offset_haut),
+    ('offset pile',     v_err_offset_pile),
     ('limite null',     v_err_null),
     ('editeur A',       v_err_editeur),
     ('caissier A',      v_err_caissier);
@@ -635,6 +662,18 @@ select is(
   (select erreur from tap_cli_err where cas = 'offset negatif'),
   'invalid pagination',
   'un offset negatif est refuse'
+);
+
+select is(
+  (select erreur from tap_cli_err where cas = 'offset au-dela'),
+  'invalid pagination',
+  'un offset au-dela de 500 pages est refuse EN BASE — le clamp TypeScript ne couvre pas PostgREST'
+);
+
+select is(
+  (select erreur from tap_cli_err where cas = 'offset pile'),
+  '(aucune)',
+  'et 500 pages PILE passent : c''est une borne, pas un refus general'
 );
 
 select is(
