@@ -117,6 +117,56 @@ select results_eq(
   'pagination limit/offset stable'
 );
 
+-- ── L'OFFSET EST BORNÉ EN BASE (CNT-1, wagon 4) ─────────────
+-- La RPC est `grant execute … to authenticated` : `p_offset` n'est pas ce que
+-- l'écran envoie, c'est ce qu'un client choisit, et un offset démesuré ne
+-- sautait pas des lignes déjà là — il faisait CALCULER le classement complet,
+-- agrégats et fenêtres de rang compris, avant de tout jeter.
+--
+-- CE QUE CES ASSERTIONS PROUVENT : la fonction ne LÈVE PAS sur un offset hors
+-- domaine, elle replie en silence et rend zéro ligne. C'est délibéré et
+-- distinct du régime d'`org_customer_profiles_page`, qui lève : ce classement
+-- se lit aussi depuis une page publique, et il rend déjà zéro ligne sans rien
+-- dire pour un championnat inconnu — une exception y serait son seul message
+-- distinctif, donc un oracle. Le clamp lui-même, que le résultat ne trahit pas
+-- (borné ou non, un offset énorme rend zéro ligne), est gardé par l'assertion
+-- de source qui suit.
+select is(
+  (select count(*)
+     from public.contest_leaderboard('c0000000-0000-4000-8000-000000000002',
+                                     50, 999999)),
+  0::bigint,
+  'un offset de 999999 rend zéro ligne SANS lever'
+);
+select is(
+  (select count(*)
+     from public.contest_leaderboard('c0000000-0000-4000-8000-000000000002',
+                                     50, 25000)),
+  0::bigint,
+  'et 500 pages de 50 PILE ne lèvent pas davantage'
+);
+select ok(
+  (select p.prosrc like '%least(greatest(coalesce(p_offset, 0), 0), 500 * v_limit)%'
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'contest_leaderboard'),
+  'le clamp d''offset est TOUJOURS dans contest_leaderboard — un create or replace qui l''oublierait rougirait ici'
+);
+-- Les DEUX sorties doivent recevoir la même borne : le palmarès figé d'un
+-- championnat clôturé et le classement vivant. Une seule variable les sert,
+-- et c'est ce que cette assertion retient — recopier l'expression, c'est se
+-- donner rendez-vous avec une divergence sur la branche qu'on n'a pas relue.
+select is(
+  (select (pg_catalog.length(p.prosrc)
+           - pg_catalog.length(pg_catalog.replace(p.prosrc, 'offset v_offset', '')))
+          / pg_catalog.length('offset v_offset')
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'contest_leaderboard'),
+  2,
+  'les DEUX sorties (palmarès figé et classement vivant) partagent la même borne'
+);
+
 select is(
   (select count(*)
      from public.contest_leaderboard('c0000000-0000-4000-8000-000000000099')),

@@ -204,7 +204,10 @@ set search_path = ''
 as $$
 declare
   v_current text;
-  -- FIA-3 : vrai quand la transition demandée retire la campagne des joueurs.
+  -- FIA-3 : l'état AVANT, lu sous le même verrou que le statut.
+  v_auto_avant boolean := false;
+  -- FIA-3 : vrai quand la transition retire la campagne des joueurs ET qu'il y
+  -- avait réellement quelque chose à désarmer.
   v_desarme boolean := false;
 begin
   if coalesce(auth.role(), '') <> 'service_role'
@@ -215,7 +218,12 @@ begin
     raise exception 'invalid status';
   end if;
 
-  select c.status into v_current from public.campaigns c
+  -- `auto_schedule` lu DANS le même `select … for update` que le statut, et
+  -- pas par une seconde lecture : la valeur qui décide de l'écriture doit être
+  -- celle que le verrou protège, sinon deux transitions concurrentes
+  -- pourraient auditer un effet qu'elles n'ont pas produit.
+  select c.status, c.auto_schedule into v_current, v_auto_avant
+    from public.campaigns c
    where c.id = p_campaign_id and c.organization_id = p_organization_id
    for update;
   if not found then return false; end if;
@@ -262,7 +270,12 @@ begin
   -- valeur écrite n'est pas dans `{true}` (:160-162). Désarmer reste libre,
   -- y compris pour un commerçant dont le droit « wheel » est tombé — c'est
   -- exactement la population qui a besoin de pouvoir arrêter.
-  v_desarme := p_status in ('paused', 'draft', 'archived');
+  --
+  -- `v_auto_avant and …` et non `p_status in (…)` seul : sur une campagne dont
+  -- la programmation était DÉJÀ éteinte, la transition ne désarme rien, et la
+  -- métadonnée d'audit ci-dessous promet de dire ce qui s'est passé. Le prédicat
+  -- décrit donc l'EFFET, pas l'intention.
+  v_desarme := v_auto_avant and p_status in ('paused', 'draft', 'archived');
 
   update public.campaigns
      set status = p_status,
@@ -270,8 +283,9 @@ begin
    where id = p_campaign_id and organization_id = p_organization_id;
 
   -- `v_desarme` et non `true` en dur : la métadonnée doit dire ce qui s'est
-  -- passé. Une clé toujours vraie ne se relit pas — elle ment sur les
-  -- publications.
+  -- passé. Une clé toujours vraie ne se relit pas — elle mentirait sur les
+  -- publications, et aussi bien sur les retraits d'une campagne qui n'avait
+  -- aucune programmation à éteindre.
   insert into public.audit_logs (organization_id, actor, action, metadata)
   values (p_organization_id, coalesce(auth.uid()::text, auth.role(), 'system'),
     'campaign.status.update',
@@ -1491,8 +1505,11 @@ begin
   -- `p_offset`, c'est le client, et un `?page=1000000` recopié dans la barre
   -- d'adresse suffisait à faire trier puis jeter la liste entière.
   --
-  -- 500 est LE plafond de pages, LE MÊME que celui de `parsePageParam` côté
-  -- TypeScript et que celui d'`org_qr_hub` — trois sites, une seule valeur.
+  -- 500 est LE plafond de pages du produit, et il vaut la même chose partout :
+  -- CINQ sites en SQL — `org_qr_hub` et cette fonction, plus les trois offsets
+  -- des deux RPC de classement en section 7 — et `parsePageParam` côté
+  -- TypeScript, qui en couvre six écrans. Une valeur, six lieux, aucune
+  -- variante : c'est ce qui permet de la faire bouger d'un seul geste.
   -- Il est multiplié par la limite EFFECTIVE, déjà bornée à 100 juste
   -- au-dessous : 500 pages de la taille demandée, jamais 500 pages d'une
   -- taille imaginaire.
@@ -1608,5 +1625,296 @@ begin
      -- est la clé de regroupement : le tri devient total.
      f.email asc
    limit v_limit offset v_offset;
+end;
+$$;
+
+
+-- ════════════════════════════════════════════════════════════
+-- 7. CNT-1 (suite) · LES DEUX CLASSEMENTS AUSSI
+-- ════════════════════════════════════════════════════════════
+--
+-- Ajout de la REVUE SÉCURITÉ du wagon (M-1). Les deux RPC de pagination du hub
+-- n'étaient pas les seules à n'avoir qu'un plancher d'offset : les deux
+-- classements publics — championnat et quiz — portent exactement le même motif,
+-- `greatest(coalesce(p_offset, 0), 0)`, et sont l'un comme l'autre
+-- `grant execute … to authenticated`. Corriger la moitié d'un défaut identique
+-- sur quatre fonctions, c'est laisser deux portes ouvertes en croyant la maison
+-- fermée.
+--
+-- Ces deux-là coûtent plus cher que les précédentes à l'appel : un offset
+-- démesuré ne saute pas des lignes déjà là, il fait CALCULER le classement
+-- entier — agrégats par joueur, `rank() over`, `count(*) over` — avant de tout
+-- jeter. C'est ce calcul que la borne évite.
+--
+-- Corps repris VERBATIM des définitions VIVANTES (20260723100000:260-396 pour
+-- le championnat, cette définition-là ayant droppé la signature à trois
+-- arguments ; 20260803120000:1937-2016 pour le quiz), à une différence près :
+-- la limite et l'offset passent par deux variables calculées une seule fois.
+-- `contest_leaderboard` a DEUX sorties — le palmarès figé d'un championnat
+-- clôturé et le classement vivant — et elles doivent recevoir la même borne.
+--
+-- REPLI SILENCIEUX ici, exception dans `org_customer_profiles_page` : la
+-- différence est délibérée. Un classement se lit aussi depuis une page
+-- PUBLIQUE, sans écran de tableau de bord pour porter un « invalid
+-- pagination » ; et ces deux fonctions rendent déjà zéro ligne, sans rien dire,
+-- pour un championnat inconnu ou un appelant non habilité. Une exception y
+-- serait le seul message distinctif de la fonction, donc un oracle.
+
+
+create or replace function public.contest_leaderboard(
+  p_contest_id uuid,
+  p_limit integer default 50,
+  p_offset integer default 0,
+  p_league_id uuid default null
+)
+returns table (
+  player_id uuid,
+  first_name text,
+  avatar text,
+  email text,
+  total_points integer,
+  exact_count integer,
+  diff_count integer,
+  prediction_count integer,
+  rank bigint,
+  total_players bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_org uuid;
+  v_exact integer;
+  v_diff integer;
+  v_answer integer;
+  v_finalized timestamptz;
+  -- AJOUT DU WAGON 4 (CNT-1, moitié « classements »). La limite et l'offset
+  -- sont calculés UNE fois et servis aux DEUX sorties — le palmarès figé et le
+  -- classement vivant. Recopier l'expression à deux endroits, c'est se donner
+  -- rendez-vous avec une divergence : le correctif ne serait posé que sur la
+  -- branche qu'on avait sous les yeux.
+  v_limit integer;
+  v_offset integer;
+begin
+  select c.organization_id,
+         coalesce(nullif(c.scoring->>'exact', '')::integer, 3),
+         coalesce(nullif(c.scoring->>'diff', '')::integer, 2),
+         c.tiebreaker_answer,
+         c.finalized_at
+    into v_org, v_exact, v_diff, v_answer, v_finalized
+    from public.contests c
+   where c.id = p_contest_id;
+  if v_org is null then
+    return; -- championnat inconnu : zéro ligne, pas d'oracle d'existence
+  end if;
+
+  -- Serveur (pages publiques) ou propriétaire (dashboard) : les emails
+  -- des joueurs font partie de la réponse, réservée à ces deux rôles.
+  if not (
+    coalesce(auth.role(), '') = 'service_role'
+    or public.is_org_owner(v_org)
+  ) then
+    raise exception 'not authorized';
+  end if;
+
+  -- BORNES DE PAGINATION (CNT-1). `p_limit` était plafonné à 500 depuis
+  -- toujours, `p_offset` n'avait qu'un PLANCHER — et cette RPC est
+  -- `grant execute … to authenticated` (20260723100000:400), donc appelable
+  -- directement en PostgREST : ce n'est pas l'écran qui choisit l'offset, c'est
+  -- le client. Un `p_offset` démesuré faisait calculer le classement complet,
+  -- fenêtres de rang comprises, pour n'en rendre aucune ligne.
+  --
+  -- Calculées APRÈS la garde, comme dans `org_qr_hub` : la fonction est
+  -- `security definer`, et rien — pas même deux entiers — ne se fait avant
+  -- qu'on sache qui appelle.
+  --
+  -- 500 pages de la taille demandée, la MÊME constante que les deux RPC de
+  -- pagination du hub et que `parsePageParam` côté TypeScript. Repli
+  -- SILENCIEUX, comme `org_qr_hub` : une page demandée trop loin n'est pas une
+  -- erreur, juste une page vide — et un classement public n'a pas d'écran pour
+  -- porter une exception.
+  v_limit  := greatest(least(coalesce(p_limit, 50), 500), 0);
+  v_offset := least(greatest(coalesce(p_offset, 0), 0), 500 * v_limit);
+
+  -- Ligue inconnue ou d'un autre championnat : zéro ligne (même
+  -- politique que le championnat inconnu, pas d'oracle).
+  if p_league_id is not null and not exists (
+    select 1 from public.contest_leagues l
+     where l.id = p_league_id and l.contest_id = p_contest_id
+  ) then
+    return;
+  end if;
+
+  -- Championnat clôturé : le palmarès photographié fait foi (rangs
+  -- uniques, tirage compris) — plus aucun recalcul. En ligue, on
+  -- re-numérote ce palmarès sur les seuls membres.
+  if v_finalized is not null then
+    return query
+    select s.player_id, pl.first_name, coalesce(pl.avatar, '') as avatar,
+           pl.email, s.total_points, s.exact_count, s.diff_count,
+           (select count(pr.player_id)::integer
+              from public.contest_predictions pr
+             where pr.contest_id = p_contest_id
+               and pr.player_id = s.player_id
+               and pr.points is not null) as prediction_count,
+           case when p_league_id is null then s.rank::bigint
+                else (row_number() over (order by s.rank asc))::bigint
+           end as rank,
+           (count(*) over ())::bigint as total_players
+      from public.contest_final_standings s
+      join public.contest_players pl on pl.id = s.player_id
+     where s.contest_id = p_contest_id
+       and (p_league_id is null or exists (
+             select 1 from public.contest_league_members lm
+              where lm.league_id = p_league_id
+                and lm.player_id = s.player_id))
+     order by s.rank asc
+     limit v_limit
+    offset v_offset;
+    return;
+  end if;
+
+  return query
+  with base as (
+    select pl.id,
+           pl.first_name,
+           coalesce(pl.avatar, '') as avatar,
+           pl.email,
+           pl.created_at,
+           case
+             when v_answer is null or pl.tiebreaker_guess is null then null
+             else pg_catalog.abs(pl.tiebreaker_guess - v_answer)
+           end as tiebreaker_delta,
+           coalesce(sum(pr.points), 0)::integer as total_points,
+           (count(*) filter (where pr.points = v_exact))::integer as exact_count,
+           (count(*) filter (where pr.points = v_diff))::integer as diff_count,
+           count(pr.player_id)::integer as prediction_count
+      from public.contest_players pl
+      left join public.contest_predictions pr
+        on pr.contest_id = pl.contest_id
+       and pr.player_id = pl.id
+       and pr.points is not null
+     where pl.contest_id = p_contest_id
+       and pl.accepted_terms = true
+       and (p_league_id is null or exists (
+             select 1 from public.contest_league_members lm
+              where lm.league_id = p_league_id
+                and lm.player_id = pl.id))
+     group by pl.id, pl.first_name, pl.avatar, pl.email, pl.created_at,
+              pl.tiebreaker_guess
+  ),
+  ranked as (
+    select b.*,
+           rank() over (
+             order by b.total_points desc,
+                      b.exact_count desc,
+                      b.diff_count desc,
+                      b.tiebreaker_delta asc nulls last
+           ) as rnk,
+           count(*) over () as total
+      from base b
+  )
+  select r.id, r.first_name, r.avatar, r.email, r.total_points,
+         r.exact_count, r.diff_count, r.prediction_count, r.rnk, r.total
+    from ranked r
+   order by r.rnk asc, r.created_at asc, r.id asc
+   limit v_limit
+  offset v_offset;
+end;
+$$;
+
+create or replace function public.quiz_leaderboard(
+  p_quiz_id uuid,
+  p_limit integer default 50,
+  p_offset integer default 0
+)
+returns table(
+  player_id uuid,
+  first_name text,
+  avatar text,
+  score integer,
+  correct_count integer,
+  total_elapsed_ms bigint,
+  finished_at timestamptz,
+  rank bigint,
+  total_players bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_org uuid;
+  v_status text;
+  v_addon boolean;
+  -- AJOUT DU WAGON 4 (CNT-1, moitié « classements »).
+  v_limit integer;
+  v_offset integer;
+begin
+  select q.organization_id, q.status, o.addon_quiz
+    into v_org, v_status, v_addon
+    from public.quizzes q
+    join public.organizations o on o.id = q.organization_id
+   where q.id = p_quiz_id;
+  if v_org is null then
+    return; -- quiz inconnu : zéro ligne, pas d'oracle d'existence
+  end if;
+  -- Non habilité : ZÉRO LIGNE, comme un quiz inconnu — la réponse doit être
+  -- INDISTINGUABLE dans les deux cas, sinon une exception « not authorized »
+  -- prouverait à elle seule qu'un quiz existe sous cet id (oracle d'existence
+  -- inter-tenant).
+  if not (
+    coalesce(auth.role(), '') = 'service_role'
+    or public.is_org_member(v_org)
+  ) then
+    return;
+  end if;
+  -- Défense en profondeur du chemin PUBLIC (service_role) : le module doit être
+  -- souscrit et le quiz actif. Les appelants le vérifient déjà
+  -- (loadQuizActionContext / loadQuizPublicContext) ; on ne s'en remet pas à
+  -- eux. Un MEMBRE reste libre de consulter le classement d'un quiz en pause ou
+  -- archivé — c'est le bilan de son opération.
+  if coalesce(auth.role(), '') = 'service_role'
+     and (not coalesce(v_addon, false) or v_status <> 'active') then
+    return;
+  end if;
+
+  -- BORNES DE PAGINATION (CNT-1), jumelles de celles de `contest_leaderboard` —
+  -- ce classement-ci est d'ailleurs calqué sur l'autre, jusqu'au `rank()`. Le
+  -- plafond de `p_limit` existait, celui de `p_offset` non, et la RPC est
+  -- `grant execute … to authenticated` (20260803120000:2023). Repli SILENCIEUX,
+  -- 500 pages de la taille demandée, la même constante que partout ailleurs
+  -- dans ce wagon. Posées APRÈS les trois gardes, pour la même raison que dans
+  -- son jumeau : rien avant qu'on sache qui appelle.
+  v_limit  := greatest(least(coalesce(p_limit, 50), 500), 0);
+  v_offset := least(greatest(coalesce(p_offset, 0), 0), 500 * v_limit);
+
+  return query
+  with ranked as (
+    select p.id,
+           p.first_name,
+           p.avatar,
+           p.score,
+           p.correct_count,
+           p.total_elapsed_ms,
+           p.finished_at,
+           p.created_at,
+           pg_catalog.rank() over (
+             order by p.score desc, p.total_elapsed_ms asc
+           ) as rnk,
+           pg_catalog.count(*) over () as total
+      from public.quiz_players p
+     where p.quiz_id = p_quiz_id
+       and p.finished_at is not null
+  )
+  select r.id, r.first_name, r.avatar, r.score, r.correct_count,
+         r.total_elapsed_ms, r.finished_at, r.rnk, r.total
+    from ranked r
+   order by r.rnk asc, r.created_at asc, r.id asc
+   limit v_limit
+  offset v_offset;
 end;
 $$;

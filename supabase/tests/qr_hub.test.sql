@@ -48,7 +48,7 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(85);
+select plan(88);
 
 -- ════════════════════════════════════════════════════════════
 -- PRÉAMBULE — CATALOGUE ET ACL (ADR-082)
@@ -518,7 +518,18 @@ begin
       ('jamais+kind quiz','quiz',       null,            null,         true,  100, 0),
       ('jamais+kind campagne','campaign',null,           null,         true,  100, 0),
       ('jamais+q',        null,         'Comptoir',      null,         true,  100, 0),
-      ('jamais+etat actif',null,        null,            'actif',      true,  100, 0)
+      ('jamais+etat actif',null,        null,            'actif',      true,  100, 0),
+      -- ── CNT-1 (wagon 4) : l'offset est BORNÉ, le repli est SILENCIEUX
+      -- La RPC est `grant execute … to authenticated` : `p_offset` n'est pas
+      -- ce que l'écran envoie, c'est ce qu'un client choisit. Ces deux
+      -- scénarios traversent la MÊME boucle que les autres, et c'est le point :
+      -- si l'un d'eux levait, le bloc `do` entier échouerait et le fichier
+      -- rougirait — le repli silencieux est éprouvé par le fait même d'arriver
+      -- jusqu'aux assertions.
+      ('offset enorme',   null,         null,            null,         false, 100, 999999),
+      -- Le plafond PILE (500 pages × 100) : même issue, et il vaut mieux
+      -- l'écrire — c'est ce qui dit que la borne est bien à cet endroit-là.
+      ('offset plafond',  null,         null,            null,         false, 100, 50000)
     ) as s(cas, kind, q, etat, jamais, lim, dep)
   loop
     select count(*)::integer,
@@ -885,6 +896,43 @@ select is(
   (select premier from tap_hub_filtre where cas = 'page 3'),
   'Passeport A',
   'la page 3 reprend ou la 2 s''arrete, sans recouvrement'
+);
+
+-- ── 8bis. L'OFFSET EST BORNÉ EN BASE (CNT-1, wagon 4) ───────
+--
+-- CE QUE CES TROIS ASSERTIONS PROUVENT, ET CE QU'ELLES NE PROUVENT PAS.
+--
+-- Un `offset` démesuré ne change RIEN au résultat : borné ou non, il rend zéro
+-- ligne. Les deux premières assertions ne peuvent donc pas distinguer une
+-- fonction qui replie d'une fonction qui ne replie pas — ce qu'elles épinglent,
+-- c'est autre chose et c'est réel : la RPC ne LÈVE PAS sur un offset hors
+-- domaine. C'est la convention du dépôt pour un paramètre d'URL hors domaine,
+-- et elle DIVERGE délibérément de sa jumelle `org_customer_profiles_page`, qui
+-- lève « invalid pagination ». Transformer ce repli en exception casserait le
+-- hub sur un `?page=1000000` recopié ; ces deux assertions l'interdisent.
+--
+-- C'est la TROISIÈME qui garde le clamp lui-même. Elle lit la source de la
+-- fonction, faute de pouvoir observer son effet — même idiome que
+-- `reward_details_freeze.test.sql:238` et `reward_expiry_days.test.sql:559`,
+-- employé là aussi pour retenir un geste que le résultat ne trahit pas.
+select is(
+  (select n from tap_hub_filtre where cas = 'offset enorme'),
+  0,
+  'un offset de 999999 rend zero ligne SANS lever — le hub replie en silence'
+);
+
+select is(
+  (select n from tap_hub_filtre where cas = 'offset plafond'),
+  0,
+  'et 500 pages pile ne levent pas davantage'
+);
+
+select ok(
+  (select p.prosrc like '%least(greatest(coalesce(p_offset, 0), 0), 500 * 100)%'
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'org_qr_hub'),
+  'le clamp d''offset est TOUJOURS dans org_qr_hub — un create or replace qui l''oublierait rougirait ici'
 );
 
 -- ════════════════════════════════════════════════════════════

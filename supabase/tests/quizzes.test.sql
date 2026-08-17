@@ -807,6 +807,31 @@ select ok(not exists (
      where first_name = 'Karim'),
   'classement : participation non terminée exclue');
 
+-- ── L'OFFSET EST BORNÉ EN BASE (CNT-1, wagon 4) ─────────────
+-- Jumeau du geste posé sur `contest_leaderboard`, dont ce classement est
+-- calqué jusqu'au `rank()`. La RPC est `grant execute … to authenticated` :
+-- `p_offset` n'était borné que par un plancher, et un offset démesuré faisait
+-- calculer le classement complet avant de tout jeter.
+--
+-- Le repli est SILENCIEUX, et il le reste : cette fonction rend déjà zéro
+-- ligne, sans rien dire, pour un quiz inconnu comme pour un appelant non
+-- habilité (§ 6g juste plus bas). Une exception de pagination y serait son seul
+-- message distinctif, donc un oracle d'existence. C'est ce que les deux
+-- premières assertions retiennent ; le clamp lui-même, que le résultat ne
+-- trahit pas, est gardé par l'assertion de source.
+select is((select count(*)::int from public.quiz_leaderboard(
+    'fa000000-0000-4000-8000-000000000030', 50, 999999)),
+  0, 'classement : un offset de 999999 rend zéro ligne SANS lever');
+select is((select count(*)::int from public.quiz_leaderboard(
+    'fa000000-0000-4000-8000-000000000030', 50, 25000)),
+  0, 'classement : 500 pages de 50 PILE ne lèvent pas davantage');
+select ok(
+  (select p.prosrc like '%least(greatest(coalesce(p_offset, 0), 0), 500 * v_limit)%'
+     from pg_catalog.pg_proc p
+     join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'quiz_leaderboard'),
+  'le clamp d''offset est TOUJOURS dans quiz_leaderboard — un create or replace qui l''oublierait rougirait ici');
+
 -- Attribution au classement : top 2 dans l'ordre, puis idempotence.
 insert into tap_r select public.draw_quiz_winners(
   'fa000000-0000-4000-8000-000000000001', 'fa000000-0000-4000-8000-000000000030');
