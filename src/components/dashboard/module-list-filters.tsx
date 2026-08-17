@@ -64,8 +64,10 @@ export function litFiltresModule(
     : "";
   // `parsePageParam` et non un `Math.max` local : la borne HAUTE compte autant
   // que la basse (`?page=1000000` demandait un `range` à vingt millions), et
-  // les cinq écrans qui lisent un numéro de page doivent la partager — cinq
-  // clamps recopiés divergeraient.
+  // les SIX écrans qui lisent un numéro de page doivent la partager — six
+  // clamps recopiés divergeraient. Le sixième, le classement d'un championnat
+  // (`app/dashboard/pronostics/[id]`, `contest_leaderboard`), avait échappé au
+  // recensement et écrivait le sien : c'est exactement ce que ce partage évite.
   const page = parsePageParam(params.page);
   const from = (page - 1) * MODULE_PAGE_SIZE;
   return {

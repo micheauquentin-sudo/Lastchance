@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MODULE_PAGE_SIZE,
@@ -61,6 +63,67 @@ describe("litFiltresModule — les bornes du `range`", () => {
     expect(litFiltresModule({ q: "  Roue  " }, STATUTS).q).toBe("Roue");
     expect(litFiltresModule({ q: "Roue" }, STATUTS).actif).toBe(true);
     expect(litFiltresModule({}, STATUTS).actif).toBe(false);
+  });
+});
+
+/**
+ * LE RECENSEMENT DES SITES, TENU PAR LA SUITE ET NON PAR UN BRIEF.
+ *
+ * Le constat CNT-1 en désignait cinq. Il y en avait SIX : le classement d'un
+ * championnat (`pronostics/[id]`) lisait son `?page=` avec un plancher seul et
+ * le passait en `p_offset` à `contest_leaderboard`. Un recensement écrit à la
+ * main dans un document ne peut pas rester vrai ; celui-ci relit l'arbre.
+ *
+ * Les deux assertions se complètent : la première nomme les sites connus (un
+ * écran neuf qui lit une page doit s'y déclarer), la seconde interdit le
+ * clamp fait maison — c'est elle qui aurait rougi sur le sixième site.
+ */
+const RACINES = ["src/app/dashboard", "src/components/dashboard"];
+
+function fichiersSources(racine: string): string[] {
+  const trouves: string[] = [];
+  for (const entree of readdirSync(racine, { withFileTypes: true })) {
+    const chemin = join(racine, entree.name);
+    if (entree.isDirectory()) trouves.push(...fichiersSources(chemin));
+    else if (/\.tsx?$/.test(entree.name) && !/\.test\.tsx?$/.test(entree.name)) {
+      trouves.push(chemin.replace(/\\/g, "/"));
+    }
+  }
+  return trouves;
+}
+
+const SOURCES = RACINES.flatMap(fichiersSources).map((chemin) => ({
+  chemin,
+  contenu: readFileSync(chemin, "utf8"),
+}));
+
+describe("le numéro de page se lit au même endroit, partout", () => {
+  it("recense SIX sites, pas cinq", () => {
+    const sites = SOURCES.filter((f) => f.contenu.includes("parsePageParam("))
+      .map((f) => f.chemin)
+      .sort();
+
+    expect(sites).toEqual([
+      "src/app/dashboard/campaigns/page.tsx",
+      "src/app/dashboard/customers/page.tsx",
+      "src/app/dashboard/participations/page.tsx",
+      "src/app/dashboard/pronostics/[id]/page.tsx",
+      "src/app/dashboard/qr-codes/page.tsx",
+      "src/components/dashboard/module-list-filters.tsx",
+    ]);
+  });
+
+  it("aucun écran ne borne un numéro de page pour son compte", () => {
+    // Les deux formes trouvées dans l'arbre avant ce wagon : le
+    // `Math.max(1, parseInt(…))` des cinq sites recensés, et le
+    // `Number.isFinite(…) && rawPage >= 1` du classement pronostics.
+    const clampsMaison = SOURCES.filter(
+      (f) =>
+        /Math\.max\(\s*1\s*,[^\n]*[Pp]age/.test(f.contenu) ||
+        /[Pp]age\s*>=\s*1/.test(f.contenu),
+    ).map((f) => f.chemin);
+
+    expect(clampsMaison).toEqual([]);
   });
 });
 
