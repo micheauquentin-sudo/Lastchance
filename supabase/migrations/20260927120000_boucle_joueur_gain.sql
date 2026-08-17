@@ -378,12 +378,14 @@ grant execute on function public.perform_atomic_spin(uuid,uuid,uuid,text,text,te
 --
 -- ── POURQUOI ZÉRO LIGNE PLUTÔT QU'UNE EXCEPTION ──
 --
--- Divergence VOLONTAIRE avec `perform_atomic_spin`, qui lève sur une clé
--- joueur malformée ou une chaîne de ressources invalide. Elle ÉCRIT : un spin
+-- Divergence VOLONTAIRE avec `perform_atomic_spin` — mais elle porte sur la
+-- RÉACTION, pas sur la VÉRIFICATION : les deux fonctions contrôlent la même
+-- chaîne roue → campagne → organisation et la même forme de clé joueur (cf. la
+-- requête ci-dessous). Seule l'issue change. Le moteur ÉCRIT : un spin
 -- inattribuable y serait une corruption, l'exception est le bon geste. Celle-ci
 -- LIT, sur un chemin de rattrapage : y lever une exception transformerait un
 -- cookie douteux en page d'erreur pour un joueur qui a précisément un lot à
--- récupérer. Aucun de ces deux cas n'est atteignable par un client légitime
+-- récupérer. Aucun de ces cas n'est atteignable par un client légitime
 -- (`anonymousPlayerKey()` rend toujours 64 hexadécimaux, et l'appelant a résolu
 -- la roue par son contexte public avant d'appeler).
 --
@@ -410,8 +412,22 @@ begin
     return;
   end if;
 
+  -- LA CHAÎNE ENTIÈRE, comme le moteur (20260731120000:118-124). La jointure sur
+  -- `campaigns` avec `c.organization_id = w.organization_id` n'est pas
+  -- décorative : sans elle, la reprise se contenterait d'une roue et d'une
+  -- organisation, là où le moteur exige que la campagne appartienne bien à la
+  -- même organisation que la roue. Une reprise est moins dangereuse qu'un
+  -- tirage, mais elle rend un spin_id que le serveur signe en jeton de retrait :
+  -- elle doit lire la même chaîne, ou elle n'atteste pas la même chose.
+  --
+  -- Aujourd'hui `wheels_campaign_org_fk` (00017:268) rend l'incohérence
+  -- IMPOSSIBLE à écrire — c'est donc une défense en profondeur, pour le jour où
+  -- une migration relâcherait cette FK. Et parce qu'une garde que rien n'éprouve
+  -- finit par se faire « simplifier », `boucle_joueur_gain.test.sql` démonte la
+  -- FK le temps d'une transaction pour prouver que cette jointure travaille.
   select w.play_limit, o.timezone into v_limit, v_timezone
   from public.wheels w
+  join public.campaigns c on c.id = w.campaign_id and c.organization_id = w.organization_id
   join public.organizations o on o.id = w.organization_id
   where w.id = p_wheel_id;
   if not found then return; end if;
@@ -471,9 +487,10 @@ comment on function public.recover_pending_spin(uuid,text) is
   'les tours OFFERTS, qui écrivent play_window_key null à dessein, dont le '
   'parrainage qui partage la clé joueur de la roue. `unlimited` : aucune borne, '
   'le stock étant déjà engagé et claim_winning_spin restant seul juge de la '
-  'conversion. Rend zéro ligne (jamais une exception) sur clé malformée ou roue '
-  'inconnue : c''est un chemin de rattrapage, pas une écriture. service_role '
-  'uniquement.';
+  'conversion. Vérifie la chaîne roue → campagne → organisation comme le moteur, '
+  'et rend zéro ligne (jamais une exception) sur clé malformée, roue inconnue ou '
+  'chaîne incohérente : c''est un chemin de rattrapage, pas une écriture. '
+  'service_role uniquement.';
 
 revoke all on function public.recover_pending_spin(uuid,text)
   from public, anon, authenticated;

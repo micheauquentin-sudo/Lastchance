@@ -18,9 +18,17 @@
 --      roue ET sans clé de fenêtre. Un filtre par clé seule aurait fermé JOU-1
 --      en ouvrant une régression invisible : (d) la garde, (e) l'empêche d'être
 --      satisfaite en laissant simplement tomber la borne.
---   4. QU'UN NONCE SE CONSOMME UNE FOIS. JOB-8 : même clé → même spin_id, un
---      seul spin, stock décrémenté UNE fois. Sans clé, rien ne change.
---   5. QUE LES DEUX PORTES SONT FERMÉES : service_role seul, et une SEULE
+--   4. QU'UN NONCE SE CONSOMME UNE FOIS, ET N'APPARTIENNE QU'À SON JOUEUR.
+--      JOB-8 : même clé → même spin_id, un seul spin, stock décrémenté UNE fois ;
+--      sans clé, rien ne change ; et le nonce d'AUTRUI ne rend pas son spin
+--      (revue sécurité MOYEN-1 : le lookup de rejeu est borné à roue +
+--      player_key, sans quoi la RPC rendrait le spin_id d'un autre joueur —
+--      celui-là même que le serveur signe en jeton de retrait).
+--   5. QUE LA CHAÎNE DE RESSOURCES EST RELUE PAR LA REPRISE (MOYEN-3), au même
+--      titre que par le moteur. La FK la rendant inviolable en production, cette
+--      assertion la démonte le temps de la transaction : c'est le seul moyen
+--      qu'une défense en profondeur ne se fasse pas « simplifier ».
+--   6. QUE LES DEUX PORTES SONT FERMÉES : service_role seul, et une SEULE
 --      surcharge de perform_atomic_spin — deux la rendraient inappelable
 --      (« function is not unique »), ce qu'aucune assertion d'ACL ne verrait.
 --
@@ -49,7 +57,7 @@ create extension if not exists pgtap with schema extensions;
 -- clé joueur) et pose des fixtures sous contraintes. Sans plan, un fichier
 -- interrompu au milieu annonce « All N subtests passed » pour les seules
 -- assertions jouées.
-select plan(26);
+select plan(28);
 
 -- Fixtures sans JWT marchand : les gardes de publication ne sont armées que
 -- pour `auth.role() = 'authenticated'`.
@@ -290,6 +298,76 @@ select is(
 );
 
 -- ════════════════════════════════════════════════════════════
+-- CHAÎNE DE RESSOURCES ROMPUE → ZÉRO LIGNE (revue sécurité, MOYEN-3)
+-- ════════════════════════════════════════════════════════════
+-- La reprise revérifie la chaîne roue → campagne → organisation, comme le
+-- moteur (20260731120000:118-124) : elle rend un spin_id que le serveur signe
+-- en jeton de retrait, elle doit donc lire la même chaîne.
+--
+-- CETTE FIXTURE DÉMONTE DEUX FK, ET C'EST DÉLIBÉRÉ. En production l'incohérence
+-- est IMPOSSIBLE à écrire, et même DEUX FOIS : `wheels_campaign_org_fk`
+-- (00017:268) l'interdit côté roue, et `spins_campaign_org_fk` (00017:278) la
+-- réimpose côté spin — le premier jet de cette fixture n'en a démonté qu'une et
+-- s'est fait refuser par la seconde, ce qui vaut d'être écrit ici. Les deux
+-- autres FK composites de `spins` (:280-284) restent en place et satisfaites :
+-- elles portent sur le triplet de la roue et sur le lot, que les lignes
+-- ci-dessous respectent.
+--
+-- La jointure `campaigns` de la RPC est donc une défense en profondeur que RIEN
+-- ne pourrait éprouver dans un schéma sain. Or une garde que rien n'éprouve se
+-- fait « simplifier » : la retirer laisserait toutes les autres assertions
+-- vertes. Le seul moyen de la rendre falsifiable est de lever les contraintes le
+-- temps de la transaction ; le `rollback` final les restaure, et aucune
+-- assertion d'ici à la fin du fichier ne dépend d'elles.
+insert into public.organizations (id, name, slug, timezone)
+values ('f0b00000-0000-4000-8000-000000000006', 'Test Boucle Voisin',
+        'tap-boucle-voisin', 'Europe/Paris');
+
+insert into public.campaigns (id, organization_id, name, status, code_ttl_seconds)
+values ('f0b00000-0000-4000-8000-000000000007',
+        'f0b00000-0000-4000-8000-000000000006', 'Campagne Voisine', 'active', 300);
+
+alter table public.wheels drop constraint wheels_campaign_org_fk;
+alter table public.spins drop constraint spins_campaign_org_fk;
+
+-- Roue de l'org 1 rattachée à la campagne de l'org 2 : chaîne rompue.
+-- `unlimited` À DESSEIN — c'est ce qui rend l'assertion falsifiable : sans la
+-- jointure `campaigns`, aucune fenêtre n'empêcherait la reprise de rendre ce
+-- spin, et l'assertion rougirait.
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
+values ('f0b00000-0000-4000-8000-000000000008',
+        'f0b00000-0000-4000-8000-000000000001',
+        'f0b00000-0000-4000-8000-000000000007', 'Roue rompue TAP', 'unlimited');
+
+insert into public.prizes (id, organization_id, wheel_id, label, stock, weight, is_active, is_losing)
+values ('f0b00000-0000-4000-8000-000000000013', 'f0b00000-0000-4000-8000-000000000001',
+        'f0b00000-0000-4000-8000-000000000008', 'Lot rompu TAP', 5, 100, true, false);
+
+-- Le spin reste cohérent avec sa propre roue et son propre lot : c'est ce qui
+-- permet aux deux FK composites restantes de `spins` de tenir pendant que la
+-- chaîne vers la campagne, elle, est rompue.
+insert into public.spins (
+  id, organization_id, campaign_id, wheel_id, prize_id, is_losing,
+  player_key, claimed, play_window_key, created_at
+)
+values (
+  'f0b00000-0000-4000-8000-000000000042',
+  'f0b00000-0000-4000-8000-000000000001',
+  'f0b00000-0000-4000-8000-000000000007',
+  'f0b00000-0000-4000-8000-000000000008',
+  'f0b00000-0000-4000-8000-000000000013', false,
+  repeat('i', 64), false, null,
+  now() - interval '10 minutes'
+);
+
+select is(
+  (select count(*)::int from public.recover_pending_spin(
+     'f0b00000-0000-4000-8000-000000000008', repeat('i', 64))),
+  0,
+  'chaîne roue → campagne → organisation rompue : zéro ligne, jamais un gain d''ailleurs'
+);
+
+-- ════════════════════════════════════════════════════════════
 -- (f, g, h) JOB-8 · LE NONCE SE CONSOMME UNE FOIS
 -- ════════════════════════════════════════════════════════════
 -- Roue `unlimited` : sur une roue bornée, le second appel serait refusé en
@@ -396,6 +474,26 @@ select throws_ok(
   '23505',
   null,
   'l''index unique refuse une seconde ligne portant la même clé'
+);
+
+-- LA MÊME PROPRIÉTÉ, PAR LA PORTE DE SERVICE (revue sécurité, MOYEN-1).
+-- L'assertion ci-dessus prouve que l'INDEX refuse le doublon ; celle-ci prouve
+-- que la RPC ne le CONTOURNE pas en rendant la ligne d'autrui. C'est la garde de
+-- la borne « roue + player_key » du lookup de rejeu : la retirer — geste que
+-- n'importe quelle relecture prendrait pour une simplification — ferait rendre à
+-- ce joueur le spin_id du précédent, soit exactement ce que le serveur signe en
+-- jeton de retrait, et TOUTES les autres assertions resteraient vertes.
+-- Aujourd'hui le lookup ne trouve rien sous cette clé joueur, le tirage se
+-- déroule, et c'est l'insert qui heurte l'index : 23505.
+select throws_ok(
+  $$select * from public.perform_atomic_spin(
+      'f0b00000-0000-4000-8000-000000000001',
+      'f0b00000-0000-4000-8000-000000000002',
+      'f0b00000-0000-4000-8000-000000000005',
+      repeat('h', 64), null, 'direct', false, 'nonce-jou-1')$$,
+  '23505',
+  null,
+  'le nonce d''un autre joueur ne rend PAS son spin : le lookup reste borné au joueur'
 );
 
 -- ════════════════════════════════════════════════════════════
