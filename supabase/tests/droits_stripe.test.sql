@@ -21,6 +21,10 @@
 --      Stripe pendant trois jours.
 --   5. QU'UN REMBOURSEMENT REPRENNE CE QU'IL A RENDU (SD-2), sans jamais rendre
 --      un solde négatif ni agir deux fois sur le même rejeu.
+--   6. QUE L'EXPIRATION SE VOIE (SD-9, migration 20260926120000). Le cron
+--      `run_campaign_schedule` publiait sans lire aucun droit, et le refus muet
+--      était le motif écrit de ne pas le garder (20260906120000). Il refuse
+--      désormais AVEC signal — `paused_reason = 'droit_expire'`, audit, job.
 --
 -- INSTANT DE RÉFÉRENCE UNIQUE, jamais `now()` là où la fonction accepte un
 -- `p_now` : sinon le fichier devient intermittent selon la durée de sa propre
@@ -600,11 +604,187 @@ select is(
 );
 
 -- ════════════════════════════════════════════════════════════
+-- SD-9 — L'EXPIRATION SE VOIT : LE PLANIFICATEUR REFUSE ET LE DIT
+-- ════════════════════════════════════════════════════════════
+--
+-- ⚠️ SECTION DATÉE EN RELATIF À `now()`, ET NON CONTRE `t0` — même raison que
+-- SD-2 : `run_campaign_schedule()` n'accepte AUCUN instant de référence, et
+-- c'est délibéré (son seul appelant est pg_cron, qui s'exécute maintenant). Une
+-- fenêtre de campagne assise sur `t0` (15 juin) serait close depuis des
+-- semaines, et la section entière basculerait toute seule un beau matin.
+--
+-- CE QUE CES ASSERTIONS PROUVENT, ET POURQUOI ELLES ÉTAIENT ROUGES AVANT :
+-- jusqu'à 20260926120000, le cron activait toute campagne `auto_schedule` dont
+-- la fenêtre s'ouvrait SANS LIRE AUCUN DROIT — et le trigger de publication ne
+-- le voyait pas passer, `auth.role()` étant NULL sous le propriétaire de la
+-- base. La première assertion rendait donc « activated » là où elle attend
+-- « blocked », et les quatre suivantes comptaient zéro.
+
+insert into public.organizations (id, name, slug, subscription_status, trial_ends_at)
+values
+  -- AUCUN droit : abonnement résilié, essai expiré, aucun octroi.
+  ('d5000000-0000-4000-8000-000000000001', 'Planif sans droit', 'tap-ds-planif-nu',
+   'canceled', pg_catalog.now() - interval '60 days'),
+  -- Une OFFRE vivante : le témoin de non-régression.
+  ('d5000000-0000-4000-8000-000000000002', 'Planif abonnee', 'tap-ds-planif-abo',
+   'active', pg_catalog.now() - interval '60 days');
+
+insert into public.campaigns
+  (id, organization_id, name, status, auto_schedule, starts_at, ends_at)
+values
+  ('d5000000-0000-4000-8000-0000000000a1', 'd5000000-0000-4000-8000-000000000001',
+   'Programmee sans droit', 'draft', true,
+   pg_catalog.now() - interval '1 hour', pg_catalog.now() + interval '30 days'),
+  ('d5000000-0000-4000-8000-0000000000b1', 'd5000000-0000-4000-8000-000000000002',
+   'Programmee avec offre', 'draft', true,
+   pg_catalog.now() - interval '1 hour', pg_catalog.now() + interval '30 days');
+
+-- Le résultat est CAPTURÉ : la fonction écrit, donc la rappeler pour relire son
+-- retour éprouverait un second passage et non le premier.
+create temporary table sd9_run1 as
+select * from public.run_campaign_schedule();
+
+select is(
+  (select r.action from sd9_run1 r
+    where r.campaign_id = 'd5000000-0000-4000-8000-0000000000a1'),
+  'blocked',
+  'SD-9 sans droit, le planificateur REFUSE au lieu de publier — le cron lit enfin l''accès'
+);
+select results_eq(
+  $$select status, paused_reason from public.campaigns
+     where id = 'd5000000-0000-4000-8000-0000000000a1'$$,
+  $$values ('paused', 'droit_expire')$$,
+  'SD-9 et le refus devient un ÉTAT lisible : paused / droit_expire'
+);
+
+-- LE SIGNAL, sans quoi ce correctif serait exactement la garde muette que
+-- 20260906120000 avait écartée à raison.
+select is(
+  (select pg_catalog.count(*)::int from public.jobs j
+    where j.type = 'automation.schedule-blocked'
+      and j.organization_id = 'd5000000-0000-4000-8000-000000000001'),
+  1,
+  'SD-9 un job automation.schedule-blocked part : le refus a de quoi se dire'
+);
+select results_eq(
+  $$select payload->>'campaign_id', payload->>'organization_id' from public.jobs
+     where type = 'automation.schedule-blocked'$$,
+  $$values ('d5000000-0000-4000-8000-0000000000a1',
+            'd5000000-0000-4000-8000-000000000001')$$,
+  'SD-9 le job porte la campagne et l''organisation — le worker n''a rien à deviner'
+);
+select is(
+  (select pg_catalog.count(*)::int from public.audit_logs a
+    where a.action = 'campaign.schedule.blocked'
+      and a.organization_id = 'd5000000-0000-4000-8000-000000000001'),
+  1,
+  'SD-9 le refus est audité (actor system), comme la pause budget'
+);
+select is(
+  (select a.metadata->>'campaign_name' from public.audit_logs a
+    where a.action = 'campaign.schedule.blocked'
+      and a.organization_id = 'd5000000-0000-4000-8000-000000000001'),
+  'Programmee sans droit',
+  'SD-9 et l''audit nomme la campagne : lisible sans rejouer la requête'
+);
+
+-- ── NON-RÉGRESSION : LE CHEMIN NOMINAL EST INTACT ───────────
+-- Sans ce témoin, la série ci-dessus passerait pour un succès si le
+-- planificateur s'était mis à refuser TOUT LE MONDE.
+select is(
+  (select r.action from sd9_run1 r
+    where r.campaign_id = 'd5000000-0000-4000-8000-0000000000b1'),
+  'activated',
+  'SD-9 avec une offre, la campagne programmée s''active comme avant'
+);
+select results_eq(
+  $$select status, paused_reason from public.campaigns
+     where id = 'd5000000-0000-4000-8000-0000000000b1'$$,
+  $$values ('active', null::text)$$,
+  'SD-9 activée sans motif de pause — le resserrement refuse, il ne ferme pas'
+);
+
+-- ── LE SIGNAL NE PART QU'À LA TRANSITION ────────────────────
+-- Le cron repasse toutes les 10 minutes. Sans cette garantie, une campagne
+-- bloquée vaudrait 144 notifications par jour, indéfiniment.
+create temporary table sd9_run2 as
+select * from public.run_campaign_schedule();
+
+select is(
+  (select pg_catalog.count(*)::int from sd9_run2 r
+    where r.campaign_id in ('d5000000-0000-4000-8000-0000000000a1',
+                            'd5000000-0000-4000-8000-0000000000b1')),
+  0,
+  'SD-9 le passage suivant est un no-op : ni réactivation, ni second refus'
+);
+select is(
+  (select pg_catalog.count(*)::int from public.jobs j
+    where j.type = 'automation.schedule-blocked'
+      and j.organization_id = 'd5000000-0000-4000-8000-000000000001'),
+  1,
+  'SD-9 IDEMPOTENCE : aucune seconde notification — le signal suit la transition'
+);
+select is(
+  (select pg_catalog.count(*)::int from public.audit_logs a
+    where a.action = 'campaign.schedule.blocked'
+      and a.organization_id = 'd5000000-0000-4000-8000-000000000001'),
+  1,
+  'SD-9 ni seconde ligne d''audit : un journal n''enregistre pas un non-événement'
+);
+
+-- ── LE RACHAT RÉPARE TOUT SEUL ──────────────────────────────
+-- C'est la raison pour laquelle `activated` n'exclut PAS `'droit_expire'` (elle
+-- exclut `'budget_reached'`, et seulement lui) : le commerçant qui repaie n'a
+-- aucun geste à faire, et le trigger `campaigns_clear_paused_reason` efface le
+-- motif au passage.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values ('d5000000-0000-4000-8000-000000000001', 'wheel', 'pass', 'backoffice',
+        pg_catalog.now() - interval '1 minute', pg_catalog.now() + interval '30 days');
+
+create temporary table sd9_run3 as
+select * from public.run_campaign_schedule();
+
+select is(
+  (select r.action from sd9_run3 r
+    where r.campaign_id = 'd5000000-0000-4000-8000-0000000000a1'),
+  'activated',
+  'SD-9 RACHAT : le droit revenu, le passage suivant active — aucun geste manuel'
+);
+select results_eq(
+  $$select status, paused_reason from public.campaigns
+     where id = 'd5000000-0000-4000-8000-0000000000a1'$$,
+  $$values ('active', null::text)$$,
+  'SD-9 et le motif droit_expire s''effface de lui-même (trigger existant)'
+);
+
+-- ── LE TROISIÈME MOTIF EST STOCKABLE, ET LE CHECK MORD ENCORE ──
+-- Éprouvé par une écriture RÉELLE et non en relisant le catalogue : si le
+-- `drop constraint if exists` de la migration n'avait pas trouvé le nom généré
+-- par Postgres, l'ancienne contrainte survivrait à côté de la neuve et cette
+-- écriture serait refusée — un défaut qu'aucune lecture de `pg_constraint`
+-- n'aurait signalé.
+select lives_ok(
+  $$update public.campaigns set paused_reason = 'droit_expire'
+     where id = 'd5000000-0000-4000-8000-0000000000b1'$$,
+  'SD-9 le CHECK de paused_reason accepte le troisième motif'
+);
+select throws_ok(
+  $$update public.campaigns set paused_reason = 'peu_importe'
+     where id = 'd5000000-0000-4000-8000-0000000000b1'$$,
+  '23514', null,
+  'SD-9 et il reste FERMÉ : la liste s''élargit, elle ne s''ouvre pas'
+);
+
+-- ════════════════════════════════════════════════════════════
 -- LES PORTES RESTENT FERMÉES
 --
--- Les quatre fonctions neuves sont SECURITY DEFINER et décident de ce qui est
--- payé. Un `alter default privileges` de Supabase accorde EXECUTE largement
--- (ADR-049) : sans révocation explicite, PostgREST les exposerait.
+-- Les fonctions neuves sont SECURITY DEFINER et décident de ce qui est payé. Un
+-- `alter default privileges` de Supabase accorde EXECUTE largement (ADR-049) :
+-- sans révocation explicite, PostgREST les exposerait. `run_campaign_schedule`
+-- est REDÉFINIE par 20260926120000 et non créée : un `create or replace`
+-- conserve l'ACL, mais un `drop`/`create` glissé plus tard la rendrait à
+-- l'`alter default privileges` — et cette fonction PUBLIE des campagnes.
 -- ════════════════════════════════════════════════════════════
 reset role;
 
@@ -628,6 +808,18 @@ select is(
   has_function_privilege('authenticated',
     'public.assert_module_publish_allowed(uuid, text, uuid)', 'EXECUTE'),
   false, 'ACL la surcharge à ressource n''est pas exposée à authenticated');
+select is(
+  has_function_privilege('authenticated',
+    'public.run_campaign_schedule()', 'EXECUTE'),
+  false, 'ACL SD-9 le planificateur redéfini n''est pas exposé à authenticated');
+select is(
+  has_function_privilege('anon',
+    'public.run_campaign_schedule()', 'EXECUTE'),
+  false, 'ACL SD-9 ni à anon — c''est lui qui publie les campagnes');
+select ok(
+  has_function_privilege('service_role',
+    'public.run_campaign_schedule()', 'EXECUTE'),
+  'ACL SD-9 mais le serveur et pg_cron l''appellent toujours');
 
 select * from finish();
 rollback;
