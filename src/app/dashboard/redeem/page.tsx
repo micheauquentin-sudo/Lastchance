@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { phraseCaisseAnnulation } from "@/lib/annulation-cause";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { hasLoyaltyAccess } from "@/lib/subscription";
+import { hasJackpotAccess, hasLoyaltyAccess } from "@/lib/subscription";
 import { badgeDeRemise, descriptionDeCaisse } from "@/lib/caisse-remise";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,10 @@ import {
   LoyaltyStaffStamp,
   type StaffLoyaltyProgram,
 } from "@/components/dashboard/loyalty-staff-stamp";
+import {
+  JackpotStaffCheckin,
+  type StaffJackpotCampaign,
+} from "@/components/dashboard/jackpot-staff-checkin";
 import {
   lookupRedeemCode,
   type CashierCalendarReward,
@@ -115,7 +119,8 @@ function RedeemedBadge({
  * un événement live (EVENT-…), un parrainage (PARRAIN-…), un quiz (QUIZ-…)
  * ou un championnat de pronostics (PRONO-…) : l'affichage s'adapte à la
  * source. En mode fidélité « staff », une section dédiée valide une VISITE en
- * scannant le passeport du client.
+ * scannant le passeport du client ; en mode jackpot « staff », une seconde
+ * section valide une PARTICIPATION à la cagnotte commune.
  */
 export default async function RedeemPage({
   searchParams,
@@ -176,6 +181,23 @@ export default async function RedeemPage({
       .eq("validation_mode", "staff")
       .order("created_at", { ascending: true });
     staffPrograms = (data ?? []) as StaffLoyaltyProgram[];
+  }
+
+  // Jackpots en mode staff : validation d'une participation en caisse. Miroir
+  // exact de la requête ci-dessus. Le mode existait dans l'éditeur et sur la
+  // page joueur, mais AUCUNE surface de caisse ne l'ouvrait : le client montrait
+  // son code et le comptoir n'avait rien à scanner.
+  let staffJackpots: StaffJackpotCampaign[] = [];
+  if (organization && hasJackpotAccess(organization)) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("jackpot_campaigns")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .eq("status", "active")
+      .eq("validation_mode", "staff")
+      .order("created_at", { ascending: true });
+    staffJackpots = (data ?? []) as StaffJackpotCampaign[];
   }
 
   return (
@@ -299,6 +321,7 @@ export default async function RedeemPage({
       {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
+      <JackpotStaffCheckin campaigns={staffJackpots} />
     </div>
   );
 }

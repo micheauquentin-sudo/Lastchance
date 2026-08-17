@@ -1007,6 +1007,23 @@ function StaffCheckinCard({ campaignId }: { campaignId: string }) {
         {token ? (
           <>
             <CheckinQr value={token} />
+            {/* LE CODE EN TEXTE, sous un pli. Toutes les caisses n'ont pas de
+                caméra utilisable — téléphone d'appoint, objectif rayé, refus de
+                l'autorisation — et l'écran de caisse offre justement une saisie
+                manuelle. Sans ce repli, le client n'avait RIEN à dicter : le
+                jeton n'existait qu'en pixels. Même secret, même durée de vie que
+                le QR : rien de plus n'est exposé ici. */}
+            <details className="mt-3 text-left">
+              <summary className="cursor-pointer text-center text-xs font-bold text-k-body underline decoration-2 underline-offset-2">
+                Afficher le code (si le scan ne marche pas)
+              </summary>
+              <p className="mt-2 break-all rounded-xl border-2 border-dashed border-k-ink/30 bg-k-bg px-3 py-2 font-mono text-[11px] leading-relaxed text-k-ink select-all">
+                {token}
+              </p>
+              <p className="mt-1 text-center text-[11px] text-k-body/70">
+                Montrez cette suite au comptoir : elle se saisit à la main.
+              </p>
+            </details>
             <p className="mt-3 text-xs text-k-body/70">
               Ce code se renouvelle automatiquement : gardez simplement cet écran
               ouvert, inutile de le photographier.
