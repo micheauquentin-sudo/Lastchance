@@ -6585,3 +6585,66 @@ abonnement 100 % pass ne ferme plus la vente de l'offre (SD-3).
 - ADR-078, ADR-079 (socle « découvrir, préparer, publier »), migration
   `20260906120000` (décision renversée)
 - roadmap V1.58 ; `docs/bugs.md` (reliquats INFO, wagon 2)
+
+## ADR-104 : La reprise d'un gain suit la fenêtre de rejeu, un nonce de défi ne joue qu'une fois, deux durcissements écrits plutôt que des retraits
+
+**Date** : 2026-08-17
+**Statut** : Accepté
+**Contexte** : wagon 3 du train de correction issu de l'audit transverse du
+2026-08-16 (`docs/chantier-audit-2026-08-16.md`, JOU-1, UI-1, UI-2, JOB-8,
+SEC-2, MORT-1), branche `chantier/audit-p0-joueur`. Quatre arbitrages
+propriétaire du 2026-08-16 encadraient ce wagon : la reprise de gain doit
+couvrir toute la fenêtre de rejeu et s'afficher d'elle-même, un défi
+skill-gated doit durcir sans retirer le jeu, le mode caisse jackpot staff
+doit recevoir l'écran qui lui manque plutôt qu'être retiré.
+
+**Décision — fenêtre de reprise (JOU-1)**. La RPC
+`recover_pending_spin(p_wheel_id, p_player_key)` remplace le cutoff fixe de
+30 minutes par la fenêtre réelle de `play_limit` de la campagne, calcul
+recopié directement de `perform_atomic_spin` — source unique SQL,
+délibérément sans miroir TypeScript, pour qu'un futur changement de la
+fenêtre en base ne puisse pas diverger silencieusement d'une copie
+applicative. Le prédicat est élargi aux spins sans `play_window_key`
+(bornés par le début de fenêtre au lieu d'être exclus) : les gains de
+parrainage empruntent la même clé joueur sans clé de fenêtre, trouvé
+pendant ce chantier — les exclure aurait laissé une classe entière de gains
+irrécupérables. `unlimited` reste sans borne explicite ; sa borne réelle est
+la purge de rétention qui anonymise `player_key` (ADR-102), pas une limite
+ajoutée ici.
+
+**Frontière assumée**. Un gain sans clé de fenêtre à cheval sur une
+frontière daily/weekly n'est plus repris au-delà de cette frontière — c'est
+un resserrement volontaire, pas un défaut : le calcul de fenêtre suit
+désormais la même règle que le spin qui a produit le gain.
+
+**Décision — idempotence du défi (JOB-8, SEC-2)**. `perform_atomic_spin`
+passe à 8 arguments avec `p_idempotency_key` ; le submit d'un défi
+skill-gated transmet `'skill:' + nonce` du payload signé comme clé — le
+nonce, jusque-là vérifié mais jamais consommé, ferme désormais la rejouabilité
+d'un même défi. Un rejeu renvoie la même issue (stock décrémenté une seule
+fois), lookup borné au joueur sous le verrou consultatif de la fonction, via
+un index unique partiel sur `spins.idempotency_key`.
+
+**Décision — deux durcissements écrits plutôt que des retraits (arbitrage
+propriétaire du 2026-08-16)**. (1) `GAUGE_MIN_SUCCESS_MS` passe à 300 ms :
+un succès à 0 ms était implausible et fermait la porte à un contrôle a
+posteriori ; le jeu reste, la mention de l'atelier Réflexe/Jauge dit
+désormais explicitement que le verdict vient de l'appareil du joueur. (2) Le
+mode caisse jackpot staff, jusque-là sans appelant pour
+`participateJackpotStaff`, reçoit son écran (`jackpot-staff-checkin.tsx`,
+calqué sur le tampon fidélité, monté sur `/dashboard/redeem`) plutôt que
+d'être retiré comme code mort.
+
+**Conséquences** : migration `20260927120000_boucle_joueur_gain.sql` ;
+`recoverPendingWin` perd son cutoff 30 min ; 4 écrans « tour offert »
+(calendrier, quiz, passeport, parrainage) gagnent un try/catch réseau (UI-1)
+et une sortie de blocage vers le portefeuille (UI-2) ; premier parcours E2E
+de la famille caisse jackpot staff.
+
+**References** :
+- `recover_pending_spin`, `perform_atomic_spin` — migration
+  `20260927120000_boucle_joueur_gain.sql`
+- `recoverPendingWin`, `GAUGE_MIN_SUCCESS_MS`, `jackpot-staff-checkin.tsx`,
+  `participateJackpotStaff`
+- ADR-102 (purge et fenêtre de rétention comme borne réelle)
+- roadmap V1.59 ; `docs/bugs.md` (JOU-7, FAIBLE-1, wagon 3)

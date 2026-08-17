@@ -24,7 +24,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 |---|---|---|---|---|
 | 1 | Rien ne sort qui ne doive sortir | `chantier/audit-p0-sorties` | NEWS-1, SEC-1 (audit_logs), TOK-1, IP-1, RET-1, DOC-1 privacy | ✅ **fusionné `585d0e7`, déployé, santé verte** |
 | 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | ✅ **fusionné `7db27ee`, déployé, santé verte** |
-| 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | à venir |
+| 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | PR ouverte, CI en cours |
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | à venir |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
 | 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 (+ le correctif de contraste en `stash@{0}` du clone WSL) | à venir |
@@ -70,3 +70,11 @@ attribués à l'ouverture de la PR, jamais avant.
   déploiement » success sur `7db27ee`, job « Base · Workers · Sécurité »
   réellement exécuté (13:11:49→13:12:00 UTC, pas sauté) — migrations
   `20260925120000` et `20260926120000` appliquées en production.**
+- **Wagon 3** : branche `chantier/audit-p0-joueur` poussée, tête `65c25e5`,
+  arbre propre, 11 commits. Revue sécurité **GO** (0 critique/élevé, 3 MOYEN
+  + 1 FAIBLE + 5 INFO, les 3 MOYEN et l'INFO-1 fermés avant PR). pgTAP 61
+  fichiers / 3522 assertions (vide et semée), typecheck/lint/build verts,
+  E2E local WSL — spec caisse jackpot staff neuve verte, non-régression
+  verte, `wheel-wizard` 23/23 en run isolé. Roadmap V1.59, ADR-104. **PR à
+  ouvrir ; fusion et santé post-déploiement à consigner ici une fois
+  connues.**

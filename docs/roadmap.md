@@ -339,6 +339,58 @@ Preuve : typecheck 0, lint 0, build 47/47 pages, Vitest complet vert, pgTAP
 **Suite du train** : wagons 3 à 7 listés dans
 `docs/chantier-audit-2026-08-16.md`.
 
+## V1.59 — La boucle joueur → gain se ferme : wagon 3 de l'audit transverse (✅ 2026-08-17, branche `chantier/audit-p0-joueur`, migration `20260927120000`)
+
+**Objectif** : troisième wagon du train de correction issu de l'audit
+transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) — fermer ce qui
+empêchait la boucle joueur → gain d'aboutir : reprise d'un gain non réclamé
+trop courte, écrans « tour offert » sans repli réseau ni sortie de blocage,
+nonce de défi jamais consommé, mode caisse jackpot staff sans écran.
+
+**Livré** :
+- Migration `20260927120000_boucle_joueur_gain.sql` : RPC
+  `recover_pending_spin(p_wheel_id, p_player_key)` — la reprise d'un gain non
+  réclamé couvre toute la fenêtre de `play_limit` (JOU-1, fin du cutoff fixe
+  de 30 min), calcul de fenêtre recopié de `perform_atomic_spin` (source
+  unique SQL, aucun miroir TS) ; prédicat élargi aux spins sans clé de
+  fenêtre bornés par le début de fenêtre (les gains de parrainage passent par
+  la même clé joueur sans `play_window_key`) ; `unlimited` sans borne, en
+  pratique bornée par la purge de rétention (ADR-102). `perform_atomic_spin`
+  passe en 8 arguments avec `p_idempotency_key` (rejeu → même issue, stock
+  décrémenté une fois, lookup borné au joueur sous le verrou consultatif) +
+  colonne `spins.idempotency_key` + index unique partiel (JOB-8). Seed :
+  campagne jackpot dédiée `e2e-jackpot-staff` pour l'E2E caisse.
+- Backend : `recoverPendingWin` passe par la RPC (le cutoff 30 min
+  disparaît) ; le submit d'un défi skill-gated passe `'skill:' + nonce` en
+  clé d'idempotence — le nonce du payload signé se consomme enfin (SEC-2) ;
+  `GAUGE_MIN_SUCCESS_MS` relevé à 300 ms pour fermer le trou du 0 ms de
+  succès à tolérance 50 (durcissement, jeu conservé — arbitrage propriétaire
+  du 2026-08-16).
+- Frontend : try/catch sur les 4 écrans « tour offert » (calendrier, quiz,
+  passeport de fidélité, parrainage) pour qu'un réseau qui lâche ne gèle plus
+  le bouton (UI-1) ; retentative unique de `recoverPendingWin` + lien vers le
+  portefeuille sur les 4 écrans bloqués, l'écran de blocage cesse d'être un
+  cul-de-sac (UI-2) ; écran caisse `jackpot-staff-checkin.tsx` calqué sur le
+  tampon fidélité, monté sur `/dashboard/redeem` — l'action
+  `participateJackpotStaff`, jusque-là sans appelant, trouve son écran
+  (MORT-1, arbitrage propriétaire : écrire l'écran plutôt que retirer le
+  mode) ; repli `<details>` « Afficher le code » sous le QR joueur (jeton
+  monté au DOM seulement pli ouvert) ; mention honnête dans l'atelier
+  Réflexe/Jauge sur qui juge le geste du joueur.
+
+**Revue sécurité** : GO (0 critique/élevé, 3 MOYEN + 1 FAIBLE + 5 INFO), les
+3 MOYEN et l'INFO-1 fermés avant PR.
+
+Preuve : pgTAP **61 fichiers / 3522 assertions PASS** ×2 (vide et semée),
+typecheck 0, lint 0, build 47/47 pages, E2E local WSL — spec caisse jackpot
+staff neuve verte (mobile-chrome + mobile-safari), non-régression
+`jackpot`/`player-win`/`skill-games` verts, `wheel-wizard` 23/23 en run
+isolé. Suite Vitest complète et CI GitHub jouées par la CI de PR, non
+rejouées localement en fin de chantier.
+
+**Suite du train** : wagons 4 à 7 listés dans
+`docs/chantier-audit-2026-08-16.md`.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse
