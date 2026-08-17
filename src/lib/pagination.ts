@@ -1,11 +1,13 @@
 /**
  * ── UN NUMÉRO DE PAGE VENU D'UNE URL, LU UNE SEULE FOIS ──
  *
- * Cinq écrans lisaient `?page=` avec la même expression recopiée —
+ * Six écrans lisaient `?page=` avec la même expression recopiée —
  * `Math.max(1, Number.parseInt(brut ?? "1", 10) || 1)` — et aucun ne posait de
  * `Math.min`. Un `?page=1000000` tapé dans la barre d'adresse partait donc tel
  * quel en base : `offset 19 999 980`, que Postgres calcule et jette pour rendre
- * zéro ligne. Cinq copies, cinq occasions de diverger au premier plafond posé.
+ * zéro ligne. Six copies (le sixième, le classement des pronostics, a échappé
+ * au premier recensement — la revue sécurité l'a rendu), six occasions de
+ * diverger au premier plafond posé.
  *
  * ── POURQUOI UN PLAFOND CONSTANT, ET PAS `ceil(total / pageSize)` ──
  *
