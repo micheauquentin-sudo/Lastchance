@@ -14,6 +14,7 @@ const resendMock = vi.hoisted(() => {
     sendPostRedemptionEmails: vi.fn(echo),
     sendBirthdayEmails: vi.fn(echo),
     sendBudgetPausedEmail: vi.fn(async () => true),
+    sendScheduleBlockedEmail: vi.fn(async () => true),
     sendLowStockEmail: vi.fn(async () => true),
     isResendConfigured: vi.fn(() => true),
   };
@@ -23,7 +24,9 @@ vi.mock("@/lib/unsubscribe", () => ({
   signUnsubscribeToken: (id: string) => `tok-${id}`,
 }));
 const merchantContactMock = vi.hoisted(() => ({
-  getOrgOwnerEmail: vi.fn(async () => "patron@commerce.fr"),
+  // Type de retour explicite : un test fait répondre `null` (aucun propriétaire
+  // joignable), ce qu'une inférence sur la valeur par défaut refuserait.
+  getOrgOwnerEmail: vi.fn(async (): Promise<string | null> => "patron@commerce.fr"),
 }));
 vi.mock("@/lib/merchant-contact", () => merchantContactMock);
 
@@ -33,6 +36,7 @@ import {
   processAutomationRunJob,
   processBudgetPausedJob,
   processLowStockJob,
+  processScheduleBlockedJob,
   runAutomationScenarios,
 } from "./automations";
 import type { JobRow } from "./jobs";
@@ -129,6 +133,10 @@ beforeEach(() => {
   resendMock.sendPostRedemptionEmails.mockClear();
   resendMock.sendBirthdayEmails.mockClear();
   resendMock.sendBudgetPausedEmail.mockClear();
+  // Réarmé et pas seulement vidé : un test de ce fichier le fait répondre
+  // `false`, et `mockClear` ne rend pas l'implémentation d'origine.
+  resendMock.sendScheduleBlockedEmail.mockClear();
+  resendMock.sendScheduleBlockedEmail.mockResolvedValue(true);
   resendMock.sendLowStockEmail.mockClear();
   resendMock.isResendConfigured.mockReturnValue(true);
   merchantContactMock.getOrgOwnerEmail.mockResolvedValue("patron@commerce.fr");
@@ -453,6 +461,86 @@ describe("processBudgetPausedJob — alerte budget au commerçant", () => {
       status: "failed",
       error: "payload incomplet",
     });
+  });
+});
+
+describe("processScheduleBlockedJob — ouverture programmée refusée (SD-9)", () => {
+  it("prévient le propriétaire que sa campagne n'a pas pu s'ouvrir", async () => {
+    const { admin } = fakeAdmin({ campaign: { id: "camp-1", name: "Jeu de l'été" } });
+
+    const outcome = await processScheduleBlockedJob(
+      admin,
+      job({ campaignId: "camp-1", organizationId: ORG_ID }),
+    );
+
+    expect(outcome).toEqual({ status: "completed" });
+    expect(resendMock.sendScheduleBlockedEmail).toHaveBeenCalledWith({
+      to: "patron@commerce.fr",
+      campaignName: "Jeu de l'été",
+    });
+  });
+
+  it("lit le payload en camelCase, comme les deux jobs voisins", async () => {
+    // LA COORDINATION QUI A FAILLI RATER. La migration a d'abord déposé
+    // `campaign_id` / `organization_id` quand `automation.budget-paused` et
+    // `automation.low-stock` écrivent en camelCase depuis toujours. Un handler
+    // recopié sur ses voisins aurait lu `undefined` : « payload incomplet »,
+    // aucune notification, exactement le silence que SD-9 corrige. Ce test fixe
+    // la convention du côté qui la CONSOMME, où elle est vérifiable.
+    const { admin } = fakeAdmin({ campaign: { id: "camp-1", name: "Jeu" } });
+
+    expect(
+      await processScheduleBlockedJob(
+        admin,
+        job({ campaign_id: "camp-1", organization_id: ORG_ID }),
+      ),
+    ).toEqual({ status: "failed", error: "payload incomplet" });
+    expect(resendMock.sendScheduleBlockedEmail).not.toHaveBeenCalled();
+  });
+
+  it("campagne introuvable → failed ; personne à prévenir → completed", async () => {
+    const { admin: sansCampagne } = fakeAdmin({ campaign: null });
+    expect(
+      await processScheduleBlockedJob(
+        sansCampagne,
+        job({ campaignId: "camp-x", organizationId: ORG_ID }),
+      ),
+    ).toEqual({ status: "failed", error: "campagne introuvable" });
+
+    // Pas de propriétaire joignable : la pause est déjà posée et la ligne
+    // d'audit `campaign.schedule.blocked` garde la trace. Rejouer ce job
+    // n'inventerait pas d'adresse — le compter en échec ferait clignoter le
+    // worker sur un fait qu'aucune tentative ne changera.
+    merchantContactMock.getOrgOwnerEmail.mockResolvedValue(null);
+    const { admin } = fakeAdmin({ campaign: { id: "camp-1", name: "Jeu" } });
+    expect(
+      await processScheduleBlockedJob(
+        admin,
+        job({ campaignId: "camp-1", organizationId: ORG_ID }),
+      ),
+    ).toEqual({ status: "completed" });
+    expect(resendMock.sendScheduleBlockedEmail).not.toHaveBeenCalled();
+  });
+
+  it("refus du fournisseur avec Resend configuré → retry, sinon completed", async () => {
+    const { admin } = fakeAdmin({ campaign: { id: "camp-1", name: "Jeu" } });
+    resendMock.sendScheduleBlockedEmail.mockResolvedValue(false);
+
+    expect(
+      await processScheduleBlockedJob(
+        admin,
+        job({ campaignId: "camp-1", organizationId: ORG_ID }),
+      ),
+    ).toEqual({ status: "retry", error: "envoi refusé par le fournisseur" });
+
+    // Dev sans Resend : best-effort, aucune tempête de retys.
+    resendMock.isResendConfigured.mockReturnValue(false);
+    expect(
+      await processScheduleBlockedJob(
+        admin,
+        job({ campaignId: "camp-1", organizationId: ORG_ID }),
+      ),
+    ).toEqual({ status: "completed" });
   });
 });
 

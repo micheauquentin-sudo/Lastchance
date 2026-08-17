@@ -3,6 +3,7 @@ import {
   processAutomationRunJob,
   processBudgetPausedJob,
   processLowStockJob,
+  processScheduleBlockedJob,
 } from "@/lib/automations";
 import { optionalEnv } from "@/lib/env";
 import { settleJob, type JobOutcome, type JobRow } from "@/lib/jobs";
@@ -123,6 +124,7 @@ async function runWorker(request: Request): Promise<NextResponse> {
               "automation.budget-paused",
               "automation.low-stock",
               "automation.run-scenarios",
+              "automation.schedule-blocked",
               "sms.send",
             ],
         p_limit: probeOnly ? 1 : CLAIM_BATCH,
@@ -237,6 +239,9 @@ async function dispatch(
       return processLowStockJob(admin, job);
     case "automation.run-scenarios":
       return processAutomationRunJob(admin, job);
+    // Ouverture programmée refusée faute de droit (run_campaign_schedule).
+    case "automation.schedule-blocked":
+      return processScheduleBlockedJob(admin, job);
     // SMS (src/lib/sms-dispatch.ts) : réservation + débit atomiques côté
     // base, envoi, puis clôture en `sent` / `failed` / `undeliverable`.
     case "sms.send":

@@ -21,6 +21,11 @@ export type JobType =
   | "automation.budget-paused"
   | "automation.low-stock"
   | "automation.run-scenarios"
+  // Déposé par `run_campaign_schedule` (20260926120000) quand une campagne
+  // programmée n'a PAS pu s'ouvrir faute de droit « wheel » : elle est retombée
+  // en `paused` / `paused_reason = 'droit_expire'`, et sans ce job la bascule
+  // resterait muette — le commerçant découvrirait sa roue fermée par lui-même.
+  | "automation.schedule-blocked"
   // Envoi d'un SMS (src/lib/sms-dispatch.ts). Passe par la file plutôt que
   // par un onzième cron : un nom de worker est adossé par clé étrangère à
   // `ops_worker_definitions` depuis 20260805240000, donc en ajouter un exige

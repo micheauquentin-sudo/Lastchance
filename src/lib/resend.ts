@@ -826,6 +826,79 @@ export async function sendBudgetPausedEmail(params: {
   }
 }
 
+function scheduleBlockedEmailHtml(p: {
+  campaignName: string;
+  modulesUrl: string;
+}): string {
+  const name = escapeHtml(p.campaignName);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">Ouverture annulée</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Campagne « ${name} » : l'ouverture programmée n'a pas eu lieu</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 20px;">
+        Votre campagne devait s'ouvrir automatiquement aujourd'hui. Le droit qui
+        ouvre la roue de la fortune est terminé : elle a été remise en pause et
+        aucun joueur n'y a accédé.
+      </p>
+      <p style="color:#3f3f46;font-size:14px;line-height:1.6;margin:0 0 20px;">
+        Rouvrez le module et la programmation repartira d'elle-même au prochain
+        passage — vos dates, votre budget et vos lots sont intacts.
+      </p>
+      <a href="${p.modulesUrl}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">Rouvrir le module</a>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Notification automatique Lastchance (ouverture programmée d'une campagne).
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Notification au commerçant : l'ouverture programmée d'une campagne a été
+ * refusée faute de droit sur la roue, la campagne est restée en pause.
+ * Retourne false si l'envoi n'est pas parti (non configuré ou refus).
+ */
+export async function sendScheduleBlockedEmail(params: {
+  to: string;
+  campaignName: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — alerte droit expiré non envoyée");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `⏸️ Campagne « ${params.campaignName} » : ouverture annulée, droit terminé`,
+      html: scheduleBlockedEmailHtml({
+        campaignName: params.campaignName,
+        // La page des options, et non celle des campagnes : le geste attendu est
+        // de rouvrir le module. Renvoyer vers la campagne offrirait un bouton
+        // « Activer » que la base refuse tant que le droit manque.
+        modulesUrl: `${APP_URL}/dashboard/settings/modules`,
+      }),
+    });
+    if (error) {
+      reportError("resend", `alerte droit expiré échouée: ${JSON.stringify(error)}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    reportError("resend", `alerte droit expiré, exception: ${err}`);
+    return false;
+  }
+}
+
 function lowStockEmailHtml(p: {
   prizeLabel: string;
   stock: number;

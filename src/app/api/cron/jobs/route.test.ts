@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   finishWorkerRun: vi.fn(),
   drainWebhookDeliveries: vi.fn(),
   reportError: vi.fn(),
+  processScheduleBlockedJob: vi.fn(),
 }));
 
 vi.mock("@/lib/env", () => ({
@@ -35,12 +36,21 @@ vi.mock("@/lib/automations", () => ({
   processAutomationRunJob: vi.fn(),
   processBudgetPausedJob: vi.fn(),
   processLowStockJob: vi.fn(),
+  processScheduleBlockedJob: (...args: unknown[]) =>
+    mocks.processScheduleBlockedJob(...args),
 }));
 vi.mock("@/lib/newsletter-worker", () => ({
   processNewsletterJob: vi.fn(),
 }));
 vi.mock("@/lib/reengagement", () => ({
   reengageOrganization: vi.fn(),
+}));
+// Lecture d'observation jouée après le travail sur un client réel : sans ce
+// double, le passage non-probe tomberait sur `admin.from` que ce harnais ne
+// fournit pas, et le 500 qui en sortirait masquerait le dispatch qu'on teste.
+vi.mock("@/lib/sms-dispatch", () => ({
+  countStaleSmsDeliveries: vi.fn(async () => 0),
+  processSmsSendJob: vi.fn(),
 }));
 
 import { GET } from "./route";
@@ -121,6 +131,56 @@ describe("GET /api/cron/jobs", () => {
       expect.objectContaining({ id: "run-1" }),
       "succeeded",
       expect.objectContaining({ processed: 1, completed: 1 }),
+    );
+  });
+
+  it("réclame ET traite `automation.schedule-blocked`, jamais un « type inconnu »", async () => {
+    // LE DÉFAUT QUE CE TEST FERME (SD-9). La base dépose ce job depuis
+    // `20260926120000`. Sans son type dans `p_types`, il n'est jamais réclamé —
+    // le commerçant n'est pas prévenu, et rien ne le signale ; sans son `case`
+    // dans le dispatch, il tombe dans le `default:` (« type inconnu »), échoue
+    // cinq fois puis part en dead-letter. Les deux moitiés sont vérifiées ici
+    // parce qu'en oublier une suffit à rétablir le silence.
+    mocks.processScheduleBlockedJob.mockResolvedValue({ status: "completed" });
+    let claims = 0;
+    mocks.rpc.mockImplementation(async (name: string, args?: unknown) => {
+      if (name === "requeue_stale_jobs") return { data: 0, error: null };
+      if (name === "claim_jobs") {
+        expect((args as { p_types: string[] }).p_types).toContain(
+          "automation.schedule-blocked",
+        );
+        claims += 1;
+        return claims === 1
+          ? {
+              data: [
+                {
+                  id: "blocked-1",
+                  type: "automation.schedule-blocked",
+                  payload: { campaignId: "camp-1", organizationId: "org-1" },
+                  attempts: 1,
+                  max_attempts: 5,
+                },
+              ],
+              error: null,
+            }
+          : { data: [], error: null };
+      }
+      throw new Error(`RPC inattendue: ${name}`);
+    });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(expect.objectContaining({ processed: 1, completed: 1 }));
+    expect(mocks.processScheduleBlockedJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "automation.schedule-blocked" }),
+    );
+    expect(mocks.settleJob).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "blocked-1" }),
+      { status: "completed" },
     );
   });
 
