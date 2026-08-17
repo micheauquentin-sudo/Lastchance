@@ -727,6 +727,7 @@ export async function saveReferralProgram(input: {
       introuvable: "Programme de parrainage introuvable",
       module: "Le module Parrainage n'est pas activé sur votre compte.",
       role: NOT_EDITOR,
+      transition: "Ce changement de statut n'est pas permis.",
       echec: "Enregistrement impossible",
     });
     if (refus) {

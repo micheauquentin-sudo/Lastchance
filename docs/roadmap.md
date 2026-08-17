@@ -391,6 +391,79 @@ rejouées localement en fin de chantier.
 **Suite du train** : wagons 4 à 7 listés dans
 `docs/chantier-audit-2026-08-16.md`.
 
+## V1.60 — Le commerçant garde la main, les chiffres disent vrai : wagon 4 de l'audit transverse (✅ 2026-08-17, branche `chantier/audit-p1-controle`, migration `20260928120000`)
+
+**Objectif** : quatrième wagon du train de correction issu de l'audit
+transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) — fermer les
+publications qui échappaient à toute garde métier, refermer la matrice
+d'états de la campagne, réparer une mesure d'analytique qui comptait des
+événements au lieu de personnes, et border trois angles côté chiffres
+(pagination, index, comptage de listes) (FIA-1..FIA-6, EXP-2, EXP-3, NUM-1,
+SCAN-1, LIST-1, IDX-1, CNT-1).
+
+**Livré** :
+- Migration `20260928120000_controle_commercant.sql` : `start_event_session`
+  refuse d'ouvrir le lobby d'un jeu qui n'est pas `active` (FIA-1) ;
+  `set_campaign_status` désarme `auto_schedule` sur `paused`/`draft`/
+  `archived` (FIA-3, branche A) et refuse `archived → active` sur la
+  **seule** campagne — les sept autres RPC de publication restent
+  permissives sur cette transition, par choix (six écrans l'offrent),
+  désormais prouvé par pgTAP au lieu d'être affirmé par un commentaire
+  (FIA-6) ; les clés d'idempotence des événements d'expérience sont datées
+  au jour local, rupture de série assumée sans backfill (NUM-1) ; trois
+  compteurs de personnes (`unique_viewers`/`unique_starters`/
+  `unique_finishers`) rejoignent les compteurs d'événements existants ;
+  trois index de clé étrangère ajoutés (`spins.campaign_id`,
+  `spins.prize_id`, `participations.prize_id`, IDX-1) ; les deux RPC de
+  pagination appelables en PostgREST direct (`org_customer_profiles_page`,
+  `org_qr_hub`) bornent désormais leur offset au même plafond que
+  TypeScript (CNT-1).
+- Backend : `src/lib/lot-tirable.ts` (nouveau) porte les deux prédicats de
+  tirabilité, déplacés hors de `atelier-verification-state.ts` — miroir de
+  `perform_atomic_spin` — et importés par `updateCampaign`
+  (`src/actions/campaigns.ts`), qui refuse désormais l'ouverture d'une
+  campagne sans lot gagnant tirable ni poids total, et par `deletePrize`
+  (`src/actions/prizes.ts`), qui refuse de supprimer le dernier lot gagnant
+  tirable d'une campagne active (FIA-2, FIA-5) ; `blocageActivationContest`
+  extrait sur le modèle de `blocageActivationEvent`, opposé par
+  `updateContest` (`src/actions/pronostics.ts`) à un championnat sans match
+  (FIA-2) ; la reprise budget d'une campagne pausée reste inchangée, sans
+  garde nouvelle (FIA-4 documenté) ; `runTransition`
+  (`src/actions/events.ts`) gagne une précondition optionnelle, utilisée par
+  `startEventSession` pour nommer le geste correct côté commerçant ;
+  supprimer une question de soirée exige désormais une confirmation nommée
+  et devient impossible pendant une session en direct (EXP-3) ; un refus de
+  matrice d'états s'affiche « Ce changement de statut n'est pas permis. »,
+  plus jamais « Mise à jour impossible » (FIA-6).
+- Frontend : le hero du tableau de bord et la tâche qu'il masque pointent
+  désormais la même destination pour les cinq faits concernés (EXP-2) ; la
+  tuile « Scans QR » dit ce qu'elle compte réellement — des ouvertures de
+  page, pas des scans (SCAN-1) ; les quatre pages de liste de module bornent
+  leurs six requêtes enfants à la page affichée au lieu de ramener toute la
+  table (LIST-1, motif `events`) ; `count: "exact"` retiré de la page
+  Participations ; un numéro de page hors bornes est ramené au plafond
+  constant de 500, en repli silencieux, en TypeScript **et** en base
+  (CNT-1) ; les tuiles d'analytique d'expérience affichent des personnes.
+
+**Arbitrage porté par l'ADR-105** : les gardes neuves (FIA-1, FIA-2) restent
+**applicatives**, jamais posées en base — ferme l'arbitrage laissé ouvert
+par l'ADR-090 (« la garde métier réelle est un arbitrage de base non
+tranché ici »). Un éditeur du même tenant en appel PostgREST direct les
+contourne toujours : contournement **connu et assumé**, jamais qualifié
+d'« impossible », listé RPC par RPC dans `docs/bugs.md`.
+
+**Revue sécurité** : GO (0 critique/élevé, 1 MOYEN + 2 FAIBLE + 7 INFO), le
+MOYEN et un FAIBLE fermés dans le wagon.
+
+Preuve : typecheck 0, lint 0, `casts:check`/`sql:check`/`migrations:check`
+verts, build vert, Vitest complet vert, `site:check` vert, pgTAP **62
+fichiers / 3561 assertions PASS** ×2 (vide et semée), E2E ciblé
+`mobile-chrome` (dashboard-home, atelier-modules, wheel-wizard,
+campaign-templates, event) 41 passed / 3 skipped / 0 failed.
+
+**Suite du train** : wagons 5 à 7 listés dans
+`docs/chantier-audit-2026-08-16.md`.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse

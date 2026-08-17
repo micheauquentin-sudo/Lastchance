@@ -282,6 +282,7 @@ export async function setJackpotCampaignStatus(
         introuvable: "Campagne introuvable",
         module: "Le module Jackpot collectif n'est pas activé sur votre compte.",
         role: NOT_EDITOR,
+        transition: "Ce changement de statut n'est pas permis.",
         echec: "Mise à jour impossible",
       },
     );

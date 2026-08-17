@@ -105,7 +105,11 @@ insert into public.jackpot_campaigns (id, organization_id, name, status, thresho
 insert into public.event_games (id, organization_id, name, status) values
   ('ca000000-0000-4000-8000-000000000161', 'ca000000-0000-4000-8000-000000000001', 'Jeu A', 'draft'),
   ('ca000000-0000-4000-8000-000000000162', 'ca000000-0000-4000-8000-000000000002', 'Jeu B', 'draft'),
-  ('ca000000-0000-4000-8000-000000000163', 'ca000000-0000-4000-8000-000000000003', 'Jeu C', 'draft');
+  ('ca000000-0000-4000-8000-000000000163', 'ca000000-0000-4000-8000-000000000003', 'Jeu C', 'draft'),
+  -- FIA-1 (wagon 4) : un SECOND jeu de l'organisation A, laissé en brouillon.
+  -- Il appartient à l'organisation qui A le droit `events` — c'est la seule
+  -- façon d'isoler le refus « jeu non publié » du refus « module absent ».
+  ('ca000000-0000-4000-8000-000000000164', 'ca000000-0000-4000-8000-000000000001', 'Jeu A brouillon', 'draft');
 
 insert into public.referral_programs (id, campaign_id, organization_id, enabled) values
   ('ca000000-0000-4000-8000-000000000171', 'ca000000-0000-4000-8000-000000000101', 'ca000000-0000-4000-8000-000000000001', false),
@@ -120,7 +124,10 @@ insert into public.contests (id, organization_id, slug, name, competition_key, s
 insert into public.event_sessions (id, game_id, organization_id, label, status, reward_stock) values
   ('ca000000-0000-4000-8000-000000000191', 'ca000000-0000-4000-8000-000000000161', 'ca000000-0000-4000-8000-000000000001', 'Session A', 'draft', 10),
   ('ca000000-0000-4000-8000-000000000192', 'ca000000-0000-4000-8000-000000000162', 'ca000000-0000-4000-8000-000000000002', 'Session B', 'draft', 10),
-  ('ca000000-0000-4000-8000-000000000193', 'ca000000-0000-4000-8000-000000000163', 'ca000000-0000-4000-8000-000000000003', 'Session C', 'draft', 10);
+  ('ca000000-0000-4000-8000-000000000193', 'ca000000-0000-4000-8000-000000000163', 'ca000000-0000-4000-8000-000000000003', 'Session C', 'draft', 10),
+  -- La session du jeu resté en brouillon (FIA-1). Elle est prête, son jeu ne
+  -- l'est pas : c'est exactement l'état qui ouvrait un lobby au public.
+  ('ca000000-0000-4000-8000-000000000194', 'ca000000-0000-4000-8000-000000000164', 'ca000000-0000-4000-8000-000000000001', 'Session A brouillon', 'draft', 10);
 
 -- ══ 1. LA COLONNE N'EST PLUS ÉCRIVABLE PAR `authenticated` ══
 -- Mesure du GRANT, pas du trigger. Sur `campaigns` et `event_games` ces deux
@@ -431,6 +438,26 @@ select ok(public.set_campaign_status('ca000000-0000-4000-8000-000000000003',
 select is((select status from public.hunts where id = 'ca000000-0000-4000-8000-000000000113'),
   'archived', 'et l''archivage a bien eu lieu');
 
+-- ── 4d bis. FIA-3 : LE RETRAIT DÉSARME LA PROGRAMMATION ─────
+-- Le retour en arrière reste libre — mais il ne doit pas être défait par le
+-- cron dix minutes plus tard. `run_campaign_schedule` réactive toute campagne
+-- `auto_schedule` dans sa fenêtre dont le motif n'est pas `budget_reached`, et
+-- une pause à la main n'en pose aucun : le commerçant reprenait la main pour la
+-- reperdre au quart d'heure suivant. Le désarmement couvre les TROIS retraits ;
+-- on éprouve ici « Restaurer en brouillon », le plus facile à oublier.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.campaigns set auto_schedule = true
+ where id = 'ca000000-0000-4000-8000-000000000103';
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a3"}', true);
+select ok(public.set_campaign_status('ca000000-0000-4000-8000-000000000003',
+    'ca000000-0000-4000-8000-000000000103', 'draft'),
+  'un RESILIE peut encore RESTAURER EN BROUILLON sa campagne');
+select is((select auto_schedule from public.campaigns
+           where id = 'ca000000-0000-4000-8000-000000000103'),
+  false,
+  'et le retour en brouillon DESARME la programmation automatique — le cron ne la republiera pas');
+
 -- ══ 5. NON-RÉGRESSION : AVEC LE DROIT, ÇA PUBLIE ════════════
 -- Sans cette section, « ça refuse » serait aussi vrai d'un `raise exception`
 -- inconditionnel, qui casserait le produit entier.
@@ -515,6 +542,26 @@ select is(
      'ca000000-0000-4000-8000-0000000000ff'))->>'state',
   'invalid_transition',
   'une session inconnue rend invalid_transition, sans rien dire de l''abonnement');
+
+-- ── 6bis. FIA-1 : LE JEU DOIT ÊTRE PUBLIÉ, PAS SEULEMENT LA SESSION ──
+-- Avant le wagon 4, `start_event_session` ne joignait JAMAIS `event_games` :
+-- elle lisait le statut de la SESSION et rien d'autre. Un jeu resté en
+-- brouillon — donc sans question, sans lot, invisible au catalogue — rendait
+-- malgré tout sa salle d'attente joignable par le public dès qu'on cliquait
+-- « Démarrer la session » sur la télécommande.
+--
+-- L'organisation A a le droit `events` et son JWT est déjà posé (a1) : le
+-- refus ci-dessous ne peut donc venir QUE du statut du jeu.
+select is(
+  (public.start_event_session('ca000000-0000-4000-8000-000000000001',
+     'ca000000-0000-4000-8000-000000000194'))->>'state',
+  'invalid_transition',
+  'un jeu encore en brouillon n''ouvre pas son lobby');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is((select status from public.event_sessions
+           where id = 'ca000000-0000-4000-8000-000000000194'),
+  'draft',
+  'et la session est restee en brouillon — le refus n''a rien ecrit');
 
 -- ══ 7. LES GRANTS D'EXÉCUTION DES RPC NEUVES ════════════════
 select ok(has_function_privilege('authenticated', 'public.set_hunt_status(uuid,uuid,text,text)', 'EXECUTE'),
@@ -807,6 +854,86 @@ select is(
   (select msg from tap_sonde_m2 where cas = 'chez lui, sans le module'),
   'module access required: hunts',
   'et elle nomme le module, comme avant');
+
+-- ════════════════════════════════════════════════════════════
+-- ══ 9. LA MATRICE D'ÉTATS, ÉNUMÉRÉE (FIA-6, wagon 4) ════════
+-- ════════════════════════════════════════════════════════════
+--
+-- PLACÉE ICI, EN DERNIER, ET C'EST UNE CONTRAINTE : la section 5bis compte
+-- exactement NEUF lignes d'audit pour l'organisation A. Toute transition
+-- supplémentaire glissée avant elle la ferait rougir pour une raison qui n'a
+-- rien à voir avec ce qu'elle mesure.
+--
+-- Ce que la section prouve tient en trois temps. (1) Une campagne CLÔTURÉE ne
+-- se republie plus par appel direct — l'écran n'offre que `archived → draft`
+-- (campaign-settings.tsx:36), la base laissait passer `archived → active`.
+-- (2) Le retour en arrière reste ouvert : sans ce contrôle, un `raise`
+-- inconditionnel passerait pour une matrice. (3) Les SIX AUTRES MODULES
+-- publient encore depuis `archived`, et c'est délibéré — six éditeurs offrent
+-- ce geste (hunt-editor.tsx:677, calendar-editor.tsx:895, quiz-editor.tsx:175,
+-- loyalty-editor.tsx:884, jackpot-editor.tsx:546, event-editor.tsx:124).
+-- L'assertion (3) n'épingle pas un défaut : elle épingle un CHOIX, pour qu'on
+-- le voie bouger si quelqu'un le change.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.campaigns set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000101';
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a1"}', true);
+select throws_ok(
+  $$select public.set_campaign_status('ca000000-0000-4000-8000-000000000001',
+      'ca000000-0000-4000-8000-000000000101', 'active')$$,
+  'P0001', 'invalid transition',
+  'une campagne CLOTUREE ne se republie pas par appel direct');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select is((select status from public.campaigns
+           where id = 'ca000000-0000-4000-8000-000000000101'),
+  'archived', 'et elle est restee archivee — le refus n''a rien ecrit');
+
+-- Contrôle négatif 1 : la matrice ferme la REPUBLICATION, pas le retour en
+-- arrière. `archived → draft` est le geste que l'écran offre, il doit passer.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a1"}', true);
+select ok(public.set_campaign_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000101', 'draft'),
+  'archived -> draft passe : on ne ferme pas la porte du remaniement');
+
+-- Contrôle négatif 2 : les six autres modules publient TOUJOURS depuis
+-- `archived`. Sans ces six assertions, la matrice de la campagne pourrait être
+-- généralisée par mégarde à tout le dépôt et six parcours mourraient en
+-- silence.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+update public.hunts set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000111';
+update public.calendars set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000121';
+update public.loyalty_programs set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000131';
+update public.quizzes set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000141';
+update public.jackpot_campaigns set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000151';
+update public.event_games set status = 'archived'
+ where id = 'ca000000-0000-4000-8000-000000000161';
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"ca000000-0000-4000-8000-0000000000a1"}', true);
+select ok(public.set_hunt_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000111', 'active'),
+  'une chasse ARCHIVEE se republie encore — hunt-editor.tsx:677 l''offre');
+select ok(public.set_calendar_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000121', 'active'),
+  'un calendrier ARCHIVE se republie encore — calendar-editor.tsx:895 l''offre');
+select ok(public.set_loyalty_program_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000131', 'active'),
+  'une fidelite ARCHIVEE se republie encore — loyalty-editor.tsx:884 l''offre');
+select ok(public.set_quiz_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000141', 'active'),
+  'un quiz ARCHIVE se republie encore — quiz-editor.tsx:175 l''offre');
+select ok(public.set_jackpot_campaign_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000151', 'active'),
+  'un jackpot ARCHIVE se republie encore — jackpot-editor.tsx:546 l''offre');
+select ok(public.set_event_game_status('ca000000-0000-4000-8000-000000000001',
+    'ca000000-0000-4000-8000-000000000161', 'active'),
+  'un jeu d''evenement ARCHIVE se republie encore — event-editor.tsx:124 l''offre');
 
 select * from finish();
 rollback;

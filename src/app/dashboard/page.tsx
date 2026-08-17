@@ -319,6 +319,17 @@ export default async function DashboardPage() {
    * donc deux nombres possibles pour une seule réalité, à quelques centimètres
    * l'un de l'autre. Le compteur qui reste est celui de la RPC, qui balaie les
    * dix tables d'émission.
+   *
+   * « Scans QR » A ÉTÉ RENOMMÉE « Ouvertures de page », et ce n'est pas un
+   * habillage : `sum(qr_codes.scan_count)` compte des CHARGEMENTS de page — le
+   * même client qui recharge compte deux fois — et seulement ceux des pages de
+   * roue (`qr_codes.campaign_id not null`), pas les sept autres modules à QR.
+   * Le vocabulaire est celui déjà arrêté pour les mêmes faits côté modules :
+   * voir `src/app/api/page-opens/route.ts:17-20` et le préambule de la
+   * migration `20260911120000` — la décision y est motivée, elle n'est pas
+   * rejouée ici. Les deux limites sont dites dans le `hint`, pas dans une
+   * infobulle au survol (`components/dashboard/info-bulle.tsx` la condamne :
+   * ni au doigt, ni au clavier).
    */
   const stats: Array<{
     label: string;
@@ -327,8 +338,9 @@ export default async function DashboardPage() {
     icon: React.ReactNode;
   }> = [
     {
-      label: "Scans QR",
+      label: "Ouvertures de page",
       value: scans,
+      hint: "Chaque chargement compte · pages de roue uniquement",
       icon: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h3v3h-3v-3Zm3 3h3v3h-3v-3Z" />,
     },
     {

@@ -17,6 +17,7 @@ import {
 import { NewCampaignForm } from "@/components/dashboard/new-campaign-form";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
+import { parsePageParam } from "@/lib/pagination";
 
 export const metadata: Metadata = { title: "Jeux instantanés" };
 
@@ -26,7 +27,7 @@ const TEMPLATES_LIMIT = 24;
 
 export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const { page: rawPage } = await searchParams;
-  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const page = parsePageParam(rawPage);
   const { organization } = await getUserAndOrg();
   // PARITÉ AVEC LES SEPT AUTRES LISTES. Cette page était la seule à ne pas
   // consulter les capacités du module : elle offrait son formulaire de

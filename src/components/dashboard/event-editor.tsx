@@ -29,6 +29,7 @@ import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import {
   EVENT_ANSWER_MEANING_HINT,
+  EVENT_QUESTION_LOSS_HINT,
   EVENT_SESSION_LOSS_HINT,
 } from "@/lib/validations/events";
 import type {
@@ -422,8 +423,30 @@ function QuestionRow({
           >
             Modifier
           </button>
-          <form onSubmit={deleteSubmit}>
+          <form onSubmit={deleteSubmit} className="max-w-[16rem]">
             <input type="hidden" name="id" value={question.id} />
+            {/* Même règle que la suppression de session juste en dessous : la
+                case n'apparaît qu'APRÈS le refus qui NOMME le nombre de
+                réponses perdues, et le filtre porte sur le marqueur partagé,
+                jamais sur `!ok` — une coupure réseau ou un refus de rôle
+                afficheraient sinon la même case destructive, ce qui apprend à
+                la cocher par réflexe le jour où elle protège un classement.
+                Une soirée EN DIRECT est refusée SANS marqueur : aucune case ne
+                s'affiche alors, et c'est voulu — rien ne doit passer outre. */}
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(EVENT_QUESTION_LOSS_HINT) && (
+                <label className="mb-2 flex items-start gap-2 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_answers_loss"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les réponses déjà données seront perdues et
+                  que le classement changera.
+                </label>
+              )}
             <button
               type="submit"
               disabled={deletePending}

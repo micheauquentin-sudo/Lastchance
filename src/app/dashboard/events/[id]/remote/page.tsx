@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getEventState } from "@/actions/events";
 import { loadEventRemoteContext } from "@/lib/event-context";
 import { eventRealtimeEnabled } from "@/lib/event-realtime";
+import { createClient } from "@/lib/supabase/server";
 import { EventRemote } from "@/components/event/event-remote";
 
 export const metadata: Metadata = { title: "Télécommande — Événement en direct" };
@@ -30,6 +31,21 @@ export default async function EventRemotePage({
   // session est en brouillon : le composant retombe alors sur session.status).
   const initialPublicState = await getEventState({ sessionId: session.id });
 
+  // LE STATUT DU JEU, ET PAS SEULEMENT CELUI DE LA SESSION.
+  //
+  // « Démarrer la session » ouvre le salon au public : un jeu encore en
+  // brouillon n'a rien à y ouvrir. Le refus existe désormais côté serveur
+  // (action + RPC), mais un bouton qui ne peut qu'échouer ne doit pas se
+  // présenter comme disponible — l'écran dit la même chose, avant le clic.
+  const supabase = await createClient();
+  const { data: game } = await supabase
+    .from("event_games")
+    .select("status")
+    .eq("id", session.gameId)
+    .eq("organization_id", ctx.organizationId)
+    .maybeSingle();
+  const gameActive = game?.status === "active";
+
   const screenUrl = `/event/${session.joinCode}/screen`;
   const playUrl = `/event/${session.joinCode}`;
 
@@ -48,6 +64,7 @@ export default async function EventRemotePage({
         screenUrl={screenUrl}
         playUrl={playUrl}
         sessionTitle={session.label || "Session en direct"}
+        gameActive={gameActive}
         initialStatus={session.status}
         initialPhase={session.phase}
         questions={questions}

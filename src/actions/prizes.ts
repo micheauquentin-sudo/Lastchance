@@ -7,6 +7,10 @@ import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
+import {
+  AUCUN_LOT_GAGNANT_TIRABLE,
+  estGagnantTirable,
+} from "@/lib/lot-tirable";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -218,6 +222,7 @@ export async function updatePrize(
     return { ok: false, error: "Mise à jour impossible" };
   }
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const campaignId = (updated.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
   if (campaignId) {
@@ -237,6 +242,73 @@ export async function deletePrize(
   const organization = await requireOrg();
   const supabase = await createClient();
 
+  // ── GARDE : NE PAS RENDRE INJOUABLE UNE ROUE OUVERTE AUX JOUEURS ──
+  //
+  // `deletePrize` parsait, résolvait l'organisation et supprimait — aucune
+  // lecture d'état. Retirer le dernier lot gagnant tirable d'une campagne
+  // ACTIVE laissait une roue où chaque client repart bredouille, sans un mot :
+  // c'est exactement l'état que l'étape « Vérification » de l'atelier annonce
+  // comme bloquant, et qu'aucun serveur n'opposait.
+  //
+  // Le refus est SEC (arbitrage du 2026-08-17) : pas de case à cocher. Le geste
+  // de remplacement existe et il est disponible — créer le lot de remplacement
+  // avant de supprimer l'ancien (plafond de 12 lots par roue, jamais atteint en
+  // pratique). Une confirmation cochable aurait coûté un marqueur, un champ,
+  // une case et une entrée de registre pour autoriser un état que le produit
+  // décrit lui-même comme cassé.
+  const { data: lot, error: erreurLot } = await supabase
+    .from("prizes")
+    // Un SEUL littéral, jamais une concaténation : supabase-js dérive le type
+    // de la ligne du type LITTÉRAL de cette chaîne, et `"a" + "b"` vaut
+    // `string` — la ligne retomberait en `GenericStringError`.
+    .select("id, wheel_id, is_active, is_losing, weight, stock, wheels!prizes_wheel_id_fkey(campaign_id, campaigns(status))")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (erreurLot) {
+    reportError("prizes.delete-lecture", erreurLot.message);
+    return { ok: false, error: "Suppression impossible" };
+  }
+  if (!lot) return { ok: false, error: "Lot introuvable" };
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const campagne = (
+    lot.wheels as unknown as {
+      campaigns?: { status?: string } | null;
+    } | null
+  )?.campaigns;
+
+  // Campagne en brouillon, en pause ou clôturée : on remanie librement. Une
+  // roue qu'aucun client ne peut jouer n'a personne à décevoir, et interdire
+  // ici transformerait la préparation en parcours d'obstacles.
+  if (campagne?.status === "active" && estGagnantTirable(lot)) {
+    const { data: autres, error: erreurAutres } = await supabase
+      .from("prizes")
+      .select("is_active, is_losing, weight, stock")
+      .eq("wheel_id", lot.wheel_id)
+      .eq("organization_id", organization.id)
+      .neq("id", lot.id);
+    // FAIL-CLOSED. `null` ou `error` ne valent PAS « zéro autre lot » : c'est
+    // « je n'ai pas pu savoir », et une garde qui échoue ouvert protège
+    // exactement les jours où rien ne va bien. Même règle que `deleteWheel`.
+    if (erreurAutres || autres === null) {
+      reportError(
+        "prizes.delete-derniers-gagnants",
+        erreurAutres?.message ?? "lecture sans résultat ni erreur",
+      );
+      return {
+        ok: false,
+        error:
+          "Impossible de vérifier les autres lots de cette roue. Réessayez " +
+          "dans un instant : tant que ce contrôle n'a pas abouti, la " +
+          "suppression est refusée pour ne pas rendre le jeu injouable.",
+      };
+    }
+    if (!autres.some(estGagnantTirable)) {
+      return { ok: false, error: AUCUN_LOT_GAGNANT_TIRABLE };
+    }
+  }
+
   const { data: deleted, error } = await supabase
     .from("prizes")
     .delete()
@@ -250,6 +322,7 @@ export async function deletePrize(
     return { ok: false, error: "Suppression impossible" };
   }
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const campaignId = (deleted?.wheels as unknown as { campaign_id: string })
     ?.campaign_id;
   if (campaignId) {

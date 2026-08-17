@@ -119,7 +119,13 @@ function candidatsOperationnels(
       phrase:
         "Elles sont commencées mais jamais ouvertes aux joueurs. Terminez-en une.",
       ctaLabel: "Reprendre un brouillon",
-      hrefs: ["/dashboard/campaigns"],
+      // Le compteur `drafts` unit NEUF modules ; `/dashboard/campaigns` n'en
+      // montre qu'un. Le commerçant lisait « 3 animations en brouillon » puis
+      // atterrissait sur « Aucune campagne pour l'instant ». Le hub QR sait
+      // filtrer sur l'état, tous modules confondus — et c'est la destination
+      // que porte déjà la tâche « Terminer les animations en brouillon » que ce
+      // hero masque : un fait, une destination.
+      hrefs: ["/dashboard/qr-codes?etat=brouillon"],
     });
   }
 
@@ -141,7 +147,10 @@ function candidatsOperationnels(
       titre: "Aucune animation ouverte aux joueurs",
       phrase: "Ouvrez-en une pour que vos clients puissent jouer.",
       ctaLabel: "Ouvrir une animation",
-      hrefs: ["/dashboard/campaigns"],
+      // Même destination que la tâche « Vérifier les modules ouverts », que ce
+      // hero masque. Sans `?etat=actif` : ce candidat ne naît que lorsque
+      // `liveExperiences === 0`, la liste filtrée serait vide par construction.
+      hrefs: ["/dashboard/settings/modules"],
     });
   }
 

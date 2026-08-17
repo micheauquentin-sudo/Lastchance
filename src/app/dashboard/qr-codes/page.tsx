@@ -21,6 +21,7 @@ import type { ExperienceKind } from "@/platform/experiences/contract";
 import type { Campaign, QrStyle } from "@/types/database";
 import type { Json } from "@/types/database.generated";
 import { Pagination } from "@/components/dashboard/pagination";
+import { parsePageParam } from "@/lib/pagination";
 
 export const metadata: Metadata = { title: "QR codes" };
 
@@ -151,7 +152,7 @@ export default async function QrCodesPage({
     scans: rawScans,
     page: rawPage,
   } = await searchParams;
-  const page = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const page = parsePageParam(rawPage);
   /**
    * Un `etat` hors vocabulaire est IGNORÉ, pas transmis. La RPC le tolère (elle
    * rend zéro ligne sans lever), mais un écran vide sans explication est le pire

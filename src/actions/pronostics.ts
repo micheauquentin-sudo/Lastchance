@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
+import { blocageActivationContest } from "@/lib/activation/pronostics";
 import { getUserAndOrg } from "@/lib/auth";
 import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions";
 import { syncContestFixtures } from "@/lib/contest-sync";
@@ -344,6 +345,58 @@ export async function updateContest(
       ok: false,
       error: "Le module Pronostics n'est pas activé sur votre compte.",
     };
+  }
+
+  // ── LA GARDE MÉTIER QUI MANQUAIT (FIA-2) ──
+  //
+  // Pronostics était le seul des huit modules à n'opposer AUCUNE précondition
+  // d'ouverture : on publiait un championnat à zéro match et zéro question, et
+  // /pronos/<slug> affichait une page sans rien à pronostiquer. L'atelier le
+  // racontait pourtant, et le promettait bloquant.
+  //
+  // Elle passe AVANT la RPC, comme les gardes métier des sept autres modules :
+  // le commerçant doit lire « ajoutez un match », pas un refus de droit
+  // générique. Le verdict lui-même vient de `blocageActivationContest`, la
+  // fonction pure que l'étape « Vérification » consomme aussi — recopier le
+  // seuil ici ferait diverger les deux côtés au premier contrôle ajouté.
+  //
+  // Deux comptages plutôt qu'un : le blocage ne dépend que du TOTAL, mais la
+  // fonction pure est la même des deux côtés et l'atelier, lui, nomme les deux
+  // chiffres. Un `count` en panne rend `null` — traité comme zéro, donc refus :
+  // même choix que `setHuntStatus` (`count ?? 0`), une garde de publication
+  // échoue FERMÉ.
+  if (status === "active") {
+    const [{ data: contest }, { count: nbMatchs }, { count: nbQuestions }] =
+      await Promise.all([
+        supabase
+          .from("contests")
+          .select("competition_key")
+          .eq("id", id)
+          .eq("organization_id", organization.id)
+          .maybeSingle(),
+        supabase
+          .from("contest_matches")
+          .select("id", { count: "exact", head: true })
+          .eq("contest_id", id)
+          .eq("organization_id", organization.id)
+          .eq("question_type", "score"),
+        supabase
+          .from("contest_matches")
+          .select("id", { count: "exact", head: true })
+          .eq("contest_id", id)
+          .eq("organization_id", organization.id)
+          .neq("question_type", "score"),
+      ]);
+    const blocage = blocageActivationContest({
+      nbMatchs: nbMatchs ?? 0,
+      nbQuestions: nbQuestions ?? 0,
+      // Calendrier synchronisé : la phrase envoie resynchroniser plutôt que
+      // saisir à la main. `competition_key` absente (championnat introuvable)
+      // vaut « pas de calendrier », jamais une exception — l'existence de la
+      // ligne reste tranchée par la RPC, qui rend « Mise à jour impossible ».
+      autoCompetition: isAutoCompetition(contest?.competition_key ?? ""),
+    });
+    if (blocage) return { ok: false, error: blocage };
   }
 
   // Les transitions de statut passent par la RPC gardée : matrice de

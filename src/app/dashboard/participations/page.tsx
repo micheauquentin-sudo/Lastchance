@@ -10,6 +10,8 @@ import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { CancelParticipationButton } from "@/components/dashboard/cancel-participation";
 import type { Campaign } from "@/types/database";
 import { Pagination } from "@/components/dashboard/pagination";
+import { couperPage } from "@/components/dashboard/module-list-filters";
+import { parsePageParam } from "@/lib/pagination";
 import {
   STATUTS,
   applyParticipationFilters,
@@ -81,7 +83,7 @@ export default async function ParticipationsPage({
   }>;
 }) {
   const brut = await searchParams;
-  const page = Math.max(1, Number.parseInt(brut.page ?? "1", 10) || 1);
+  const page = parsePageParam(brut.page);
   const pageSize = 50;
   const filtres = parseParticipationFilters(brut);
   const { organization, role } = await getUserAndOrg();
@@ -104,11 +106,17 @@ export default async function ParticipationsPage({
     .from("participations")
     .select(
       "id, created_at, first_name, email, phone, marketing_opt_in, redeem_code, redeemed_at, redeem_expires_at, cancelled_at, basket_cents, prizes!participations_prize_id_fkey(label), campaigns!participations_campaign_id_fkey(name)",
-      { count: "exact" },
     )
     .eq("organization_id", organization!.id)
     .order("created_at", { ascending: false })
-    .range((page - 1) * pageSize, page * pageSize - 1);
+    // UNE LIGNE DE PLUS QUE LA PAGE, ET PAS DE `count: "exact"`.
+    //
+    // Le total n'était affiché nulle part : il ne servait qu'à savoir s'il
+    // existait une page suivante — un balayage complet de `participations`,
+    // filtres compris, à chaque affichage, pour une seule comparaison. Le motif
+    // « une ligne de plus » est celui des huit autres listes du dashboard
+    // (`couperPage`). Aucune information ne disparaît de l'écran.
+    .range((page - 1) * pageSize, page * pageSize);
   // Effet de bord assumé : le builder PostgREST mute et se rend lui-même (voir
   // le commentaire d'`applyParticipationFilters`). `query` reste la requête.
   applyParticipationFilters(query, filtres, fuseau, prizeIds);
@@ -116,7 +124,7 @@ export default async function ParticipationsPage({
   // Les requêtes sont indépendantes : un seul aller-retour de latence.
   const [
     { data: campaigns },
-    { data, count },
+    { data },
     { count: newsletterCount },
     { data: funnelRows },
     { data: lotRows },
@@ -151,7 +159,10 @@ export default async function ParticipationsPage({
       .limit(500),
   ]);
 
-  const rows = (data ?? []) as unknown as ParticipationRow[];
+  const { lignes: rows, hasNext } = couperPage(
+    (data ?? []) as unknown as ParticipationRow[],
+    pageSize,
+  );
   const campaignList = (campaigns ?? []) as Pick<Campaign, "id" | "name">[];
   const lotLabels = [...new Set((lotRows ?? []).map((p) => p.label))];
   // L'export reprend les filtres de l'écran : sans eux, le lien « Exporter en
@@ -449,7 +460,7 @@ export default async function ParticipationsPage({
       )}
       <Pagination
         page={page}
-        hasNext={(count ?? 0) > page * pageSize}
+        hasNext={hasNext}
         params={participationSearchParams(filtres)}
       />
     </div>

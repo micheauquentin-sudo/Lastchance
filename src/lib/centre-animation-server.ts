@@ -98,7 +98,7 @@ type DefinitionAction = {
  * exactement le défaut réparé par `liens-proprietaire.ts` : un lien cliquable
  * qui renvoie l'éditeur sur « Vue d'ensemble », sans un mot.
  */
-const CATALOGUE_ACTIONS: readonly DefinitionAction[] = [
+export const CATALOGUE_ACTIONS: readonly DefinitionAction[] = [
   {
     key: "remettre-les-gains",
     label: "Remettre les gains au comptoir",
@@ -138,7 +138,11 @@ const CATALOGUE_ACTIONS: readonly DefinitionAction[] = [
       "Des animations sont commencées mais jamais ouvertes aux joueurs.",
     assigneeRole: "editor",
     availableTo: ["owner", "editor"],
-    href: "/dashboard/discover",
+    // `/dashboard/discover` est le CATALOGUE : il ne contient pas un seul
+    // brouillon, et l'éditeur envoyé « terminer ses brouillons » y lisait une
+    // liste de modules à découvrir. Le hub QR filtre sur l'état, tous modules
+    // confondus — c'est le seul écran qui montre les neuf que le compteur unit.
+    href: "/dashboard/qr-codes?etat=brouillon",
     aFaire: (compteurs) => compteurs.drafts,
   },
   /*

@@ -23,12 +23,14 @@
  * ── CE QUE CE MODULE NE PROUVE PAS ──
  *
  * Il ne garantit pas que les gardes métier (≥ 2 étapes pour une chasse,
- * ≥ 1 question pour un quiz, dotation, cohérence des cases) sont bien passées
- * AVANT lui : elles vivent dans les actions, la RPC ne les connaît pas. Leur
+ * ≥ 1 question pour un quiz, ≥ 1 match pour un championnat, un lot gagnant
+ * tirable pour une roue, dotation, cohérence des cases) sont bien passées AVANT
+ * lui : elles vivent dans les actions, la RPC ne les connaît pas — c'est
+ * l'arbitrage assumé du wagon 4, la règle de publication est APPLICATIVE. Leur
  * ordre est vérifié dans les tests des actions, pas ici.
  */
 
-/** Vocabulaire d'un module pour les quatre issues d'une transition refusée. */
+/** Vocabulaire d'un module pour les cinq issues d'une transition refusée. */
 export type TextesTransition = {
   /** La RPC a rendu `false` : aucune ligne de cette organisation à cet id. */
   introuvable: string;
@@ -36,6 +38,8 @@ export type TextesTransition = {
   module: string;
   /** `not authorized` — l'appelant n'est ni owner ni editor de l'organisation. */
   role: string;
+  /** `invalid transition` — la matrice d'états refuse ce passage-là. */
+  transition: string;
   /** Tout le reste : panne, statut hors vocabulaire, réponse inattendue. */
   echec: string;
 };
@@ -47,7 +51,13 @@ export type ReponseTransition = {
 };
 
 /** Issue d'un appel de RPC de transition, avant toute mise en mots. */
-export type IssueTransition = "ok" | "introuvable" | "module" | "role" | "echec";
+export type IssueTransition =
+  | "ok"
+  | "introuvable"
+  | "module"
+  | "role"
+  | "transition"
+  | "echec";
 
 /**
  * Classe la réponse d'une des huit RPC de transition.
@@ -73,6 +83,14 @@ export function classerTransition(reponse: ReponseTransition): IssueTransition {
     // que le commerçant lit.
     if (message.includes("module access required")) return "module";
     if (message.includes("not authorized")) return "role";
+    // `invalid transition` — la matrice d'états de la RPC. Elle n'existait que
+    // sur `set_contest_status`, qui la traduit dans son propre dictionnaire ;
+    // depuis que `set_campaign_status` refuse `archived → active`, un refus de
+    // matrice arrivait ici et retombait dans `echec`, donc « Mise à jour
+    // impossible » — une panne, pour ce qui est une règle. Le test AVANT le
+    // repli, jamais après : `echec` est un fourre-tout, il absorbe tout ce
+    // qu'on ne teste pas d'abord.
+    if (message.includes("invalid transition")) return "transition";
     return "echec";
   }
   if (reponse.data === true) return "ok";

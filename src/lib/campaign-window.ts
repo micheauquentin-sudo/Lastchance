@@ -60,3 +60,80 @@ export function campaignDisplayStatus(
   if (status !== "active" || window === "open") return status;
   return window;
 }
+
+/**
+ * ── LA REPRISE APRÈS PAUSE, DEUXIÈME ÉTAT DÉRIVÉ DE CE MODULE ──
+ *
+ * Ce fichier ne parlait que de dates, et ces deux prédicats n'en lisent
+ * aucune : ils sont ici pour la raison qui a fait naître le module, pas pour sa
+ * matière. Un état DÉRIVÉ de `campaigns` (statut + motif de pause + compteurs)
+ * lu à la fois par un écran et par une action serveur avait déjà divergé une
+ * fois — une campagne « Active » en vert que plus personne ne pouvait jouer.
+ * `repriseBudgetRequise` est exactement de cette espèce : la carte Statut s'en
+ * sert pour ne plus offrir un bouton voué à l'échec, `updateCampaign` pour
+ * refuser le POST direct. Deux copies redivergeraient au premier seuil changé.
+ */
+export interface RepriseCampagne {
+  /**
+   * `string` et non `CampaignStatus` : le prédicat est appelé aussi bien sur un
+   * `Campaign` typé côté écran que sur la ligne d'un `select(…)`, dont les
+   * types générés rendent `status: string`. Élargir ici évite un cast à
+   * l'appelant serveur — et le prédicat compare à des littéraux, il ne dérive
+   * rien du type.
+   */
+  status: string;
+  paused_reason: string | null;
+  budget_cents: number | null;
+  budget_spent_cents: number;
+}
+
+/**
+ * La campagne est-elle en pause « budget atteint » AVEC un plafond toujours
+ * dépassé ? Alors une reprise générique (`paused → active`) est un cul-de-sac :
+ * le trigger la remettra en pause au prochain gain réclamé, et le geste correct
+ * est « Reprendre la campagne » de la carte « Programmation et budget », qui
+ * relève le plafond dans le même mouvement (`resumeCampaignAfterBudget`).
+ *
+ * ── LES DEUX CAS QUI RENDENT `false`, ET C'EST VOULU ──
+ *
+ * `budget_cents === null` : le plafond a été RETIRÉ. Plus rien ne peut se
+ * dépasser, la reprise générique redevient le bon geste.
+ * `budget_spent_cents < budget_cents` : le plafond a déjà été RELEVÉ (ou des
+ * gains ont été annulés). La pause n'a plus de cause, rouvrir aboutira.
+ *
+ * Dans les deux cas le motif `budget_reached` est un RÉSIDU : il décrit
+ * pourquoi la pause a eu lieu, pas si elle tient encore. Refuser dessus
+ * enfermerait un commerçant qui vient précisément de faire ce qu'on lui
+ * demandait.
+ */
+export function repriseBudgetRequise(campaign: RepriseCampagne): boolean {
+  return (
+    campaign.status === "paused" &&
+    campaign.paused_reason === "budget_reached" &&
+    campaign.budget_cents !== null &&
+    campaign.budget_spent_cents >= campaign.budget_cents
+  );
+}
+
+/**
+ * Une reprise générique depuis la carte Statut peut-elle encore aboutir ?
+ *
+ * Deux causes, deux propriétaires. Le budget non résorbé est refusé par
+ * `updateCampaign` (garde applicative, ci-dessus). `droit_expire` est refusé
+ * par la base : `run_campaign_schedule` a mis la campagne en pause faute du
+ * droit « wheel », et `assert_module_publish_allowed` opposera le même refus à
+ * la RPC. Le bouton ne peut donc produire qu'un échec dans les deux cas — et la
+ * bannière dit déjà, pour le second, qu'il n'y a rien à relancer à la main : le
+ * planificateur réactive de lui-même dès que l'abonnement repart.
+ *
+ * PAS de garde applicative pour `droit_expire` : la base la porte déjà, et un
+ * second oracle du droit en TypeScript est exactement ce que la garde de parité
+ * `access_parity.test.sql` surveille sans pouvoir l'empêcher. Ce prédicat ne
+ * sert donc qu'à MASQUER un bouton, jamais à refuser une écriture.
+ */
+export function repriseGeneriqueImpossible(campaign: RepriseCampagne): boolean {
+  return (
+    repriseBudgetRequise(campaign) ||
+    (campaign.status === "paused" && campaign.paused_reason === "droit_expire")
+  );
+}

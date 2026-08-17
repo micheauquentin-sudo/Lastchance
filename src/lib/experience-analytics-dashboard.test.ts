@@ -12,6 +12,9 @@ describe("parseExperienceAnalytics", () => {
       summary: {
         views: "8",
         starts: 4,
+        unique_viewers: "5",
+        unique_starters: 3,
+        unique_finishers: "2",
         basket_observations: "2",
         basket_revenue_cents: "2500",
         margin_observations: "1",
@@ -31,6 +34,12 @@ describe("parseExperienceAnalytics", () => {
     });
 
     expect(result.totalEvents).toBe(12);
+    // Les trois compteurs de PERSONNES arrivent en jsonb comme les autres :
+    // parfois en texte, parfois en nombre. Sans eux dans `parseMetrics`, les
+    // tuiles diviseraient des événements par des événements (NUM-1).
+    expect(result.summary.uniqueViewers).toBe(5);
+    expect(result.summary.uniqueStarters).toBe(3);
+    expect(result.summary.uniqueFinishers).toBe(2);
     expect(result.summary.basketRevenueCents).toBe(2500);
     expect(result.summary.basketObservations).toBe(2);
     expect(result.summary.attributableMarginCents).toBe(900);
@@ -49,6 +58,17 @@ describe("parseExperienceAnalytics", () => {
       experiences: [],
       sources: [],
     });
+  });
+
+  it("un compteur de personnes ABSENT vaut zéro, jamais NaN ni undefined", () => {
+    // La RPC d'une base pas encore migrée ne rend pas ces trois clés. Sans
+    // repli, la tuile afficherait « NaN % des personnes » — et le conseiller,
+    // qui compare à zéro, se tairait ou crierait au hasard.
+    const result = parseExperienceAnalytics({ summary: { views: 10 } });
+    expect(result.summary.uniqueViewers).toBe(0);
+    expect(result.summary.uniqueStarters).toBe(0);
+    expect(result.summary.uniqueFinishers).toBe(0);
+    expect(result.summary.views).toBe(10);
   });
 });
 

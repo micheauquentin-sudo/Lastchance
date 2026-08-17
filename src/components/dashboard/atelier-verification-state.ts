@@ -1,4 +1,10 @@
 import { campaignWindowState, type CampaignWindowInput } from "@/lib/campaign-window";
+import {
+  AUCUN_LOT_GAGNANT_TIRABLE,
+  POIDS_TOTAL_NUL,
+  estGagnantTirable,
+  estTirable,
+} from "@/lib/lot-tirable";
 import { isSkillGameType, parseSkillConfig } from "@/lib/validations/skill";
 import type { EtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { libelleMecanique } from "@/components/dashboard/atelier-mecaniques";
@@ -8,11 +14,12 @@ import type { CampaignStatus, GameType } from "@/types/database";
 /**
  * L'ÉTAPE 5 DE L'ATELIER, EN FONCTION PURE.
  *
- * « Ouvrir aux joueurs » n'a AUCUNE précondition métier en base
- * (`set_campaign_status` ne vérifie que le rôle et le droit module) : on peut
- * publier une animation sans QR code, sans un seul lot tirable, ou dont la
- * date de fin est déjà passée. Cette checklist ne referme pas ce trou — elle
- * le RACONTE, avant le geste, et renvoie sur l'étape qui le corrige.
+ * « Ouvrir aux joueurs » n'a aucune précondition métier EN BASE
+ * (`set_campaign_status` ne vérifie que le rôle et le droit module) ; depuis le
+ * wagon 4, `updateCampaign` en oppose deux côté application (aucun lot gagnant
+ * tirable, poids total nul). Les autres manques — pas de QR code, date de fin
+ * déjà passée — restent libres : cette checklist ne les referme pas, elle les
+ * RACONTE avant le geste et renvoie sur l'étape qui les corrige.
  *
  * Elle est PURE et testée : aucun réseau, aucune date implicite (`now` est un
  * paramètre), aucune décision de droit. Les gardes d'accès restent où elles
@@ -24,9 +31,11 @@ import type { CampaignStatus, GameType } from "@/types/database";
  *    Ce module porte une interdiction explicite de recopie : le dashboard et
  *    /play ont déjà divergé une fois sur cette question, une campagne
  *    « Active » en vert que plus personne ne pouvait jouer.
- * 2. Un lot n'est tirable que si `is_losing || stock is null || stock > 0` —
- *    miroir exact de `perform_atomic_spin`. Compter un lot épuisé dans le
- *    total affichait des probabilités fausses.
+ * 2. La tirabilité d'un lot vient de `lib/lot-tirable.ts`, IMPORTÉE — miroir
+ *    exact de `perform_atomic_spin`. Elle vivait ici, en fonctions privées, et
+ *    l'action serveur qui refuse la publication devait la recopier pour dire la
+ *    même chose : deux exemplaires du même prédicat, donc deux vérités à terme.
+ *    La phrase de refus vient du même endroit, pour la même raison.
  */
 export interface LotVerification {
   is_active: boolean;
@@ -67,14 +76,6 @@ export interface EtatVerification {
   poidsTotal: number;
   /** « ≈ N clients sur 10 gagnent quelque chose », sur la liste COMPLÈTE. */
   partGagnante: string;
-}
-
-function estTirable(p: LotVerification): boolean {
-  return p.is_active && (p.is_losing || p.stock === null || p.stock > 0);
-}
-
-function estGagnantTirable(p: LotVerification): boolean {
-  return estTirable(p) && !p.is_losing && p.weight > 0;
 }
 
 export function construireVerification(
@@ -123,7 +124,7 @@ export function construireVerification(
     detail:
       gagnants.length > 0
         ? `${gagnants.length} lot${gagnants.length > 1 ? "s" : ""} gagnant${gagnants.length > 1 ? "s" : ""} peu${gagnants.length > 1 ? "vent" : "t"} sortir aujourd'hui.`
-        : "Aucun lot gagnant n'est tirable : ils sont désactivés, à poids nul ou en rupture de stock. Vos clients repartiraient tous bredouilles.",
+        : AUCUN_LOT_GAGNANT_TIRABLE,
     etape: "lots",
   });
 
@@ -134,7 +135,7 @@ export function construireVerification(
     detail:
       poidsTotal > 0
         ? `Poids total ${poidsTotal} — ${partGagnante}.`
-        : "Le poids total est nul : aucun lot ne peut sortir, le tirage n'a rien à distribuer.",
+        : POIDS_TOTAL_NUL,
     etape: "lots",
   });
 

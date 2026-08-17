@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { repriseGeneriqueImpossible } from "@/lib/campaign-window";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
@@ -24,16 +25,48 @@ import type { Campaign, CampaignStatus } from "@/types/database";
  * reprendre une pause ne sont pas le même geste, elles se disent donc
  * différemment (`from` distincts).
  */
+
+/**
+ * Mettre en pause, clôturer et restaurer en brouillon DÉSARMENT tous trois la
+ * programmation automatique (`set_campaign_status` pose `auto_schedule =
+ * false`). Sans cette phrase, un commerçant qui pause une heure croirait sa
+ * programmation intacte et ne comprendrait pas, la semaine suivante, pourquoi
+ * la campagne ne se rouvre plus toute seule. Le ré-armement se fait à un écran
+ * de distance, dans « Programmation et budget » : on le nomme.
+ */
+const DESARMEMENT_PROGRAMMATION =
+  "La programmation automatique est désarmée ; ré-armez-la dans « Programmation et budget » si vous voulez qu'elle reprenne la main.";
 const STATUS_ACTIONS: Array<{
   from: CampaignStatus[];
   to: CampaignStatus;
   label: string;
+  /**
+   * Conséquence à annoncer SOUS le bouton qui la produit. Le champ suit son
+   * bouton — une note posée hors du tableau se retrouverait, au premier
+   * réordonnancement, sous une autre action que celle qu'elle décrit.
+   */
+  note?: string;
 }> = [
   { from: ["draft"], to: "active", label: "Ouvrir aux joueurs" },
   { from: ["paused"], to: "active", label: "Rouvrir aux joueurs" },
-  { from: ["active"], to: "paused", label: "Mettre en pause" },
-  { from: ["draft", "active", "paused"], to: "archived", label: "Clôturer" },
-  { from: ["archived"], to: "draft", label: "Restaurer en brouillon" },
+  {
+    from: ["active"],
+    to: "paused",
+    label: "Mettre en pause",
+    note: DESARMEMENT_PROGRAMMATION,
+  },
+  {
+    from: ["draft", "active", "paused"],
+    to: "archived",
+    label: "Clôturer",
+    note: DESARMEMENT_PROGRAMMATION,
+  },
+  {
+    from: ["archived"],
+    to: "draft",
+    label: "Restaurer en brouillon",
+    note: DESARMEMENT_PROGRAMMATION,
+  },
 ];
 
 /**
@@ -76,16 +109,45 @@ export function CampaignStatusControls({
     networkError: "Changement de statut impossible, réessayez.",
   });
 
-  const transitions = STATUS_ACTIONS.filter((a) =>
-    a.from.includes(campaign.status),
+  /**
+   * « ROUVRIR AUX JOUEURS » NE S'AFFICHE PLUS QUAND IL NE PEUT QU'ÉCHOUER.
+   *
+   * Une pause budget non résorbée se reprend par le formulaire de la bannière
+   * (« Reprendre la campagne », qui demande le nouveau plafond) ; une pause
+   * `droit_expire` se rouvre toute seule dès qu'une offre redevient active.
+   * Dans les deux cas le bouton générique était un aller simple vers un refus
+   * serveur. Le prédicat est IMPORTÉ, jamais recopié : c'est le même que celui
+   * qu'oppose `updateCampaign`, et deux exemplaires redivergeraient.
+   *
+   * Les quatre autres transitions ne bougent pas — « Clôturer » notamment doit
+   * rester offerte : un commerçant qui renonce ne doit jamais être enfermé.
+   */
+  const repriseIndisponible = repriseGeneriqueImpossible(campaign);
+  const transitions = STATUS_ACTIONS.filter(
+    (a) =>
+      a.from.includes(campaign.status) &&
+      !(campaign.status === "paused" && a.to === "active" && repriseIndisponible),
   );
+  // La même conséquence est portée par trois boutons, dont deux coexistent sur
+  // une campagne ouverte : la phrase n'est écrite qu'une fois, sous le premier
+  // bouton qui la produit, plutôt que deux fois côte à côte.
+  const notesDeja = new Set<string>();
+  const transitionsRendues = transitions.map((t) => {
+    const note = t.note && !notesDeja.has(t.note) ? t.note : undefined;
+    if (note) notesDeja.add(note);
+    return { ...t, note };
+  });
 
   return (
     <Card>
       <h2 className="font-semibold mb-4">Statut de la campagne</h2>
-      <div className="flex flex-wrap gap-2">
-        {transitions.map((t) => (
-          <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
+      <div className="flex flex-wrap items-start gap-2">
+        {transitionsRendues.map((t) => (
+          <form
+            key={`${t.to}-${t.label}`}
+            onSubmit={statusSubmit}
+            className="max-w-xs"
+          >
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value={t.to} />
             <Button
@@ -95,6 +157,9 @@ export function CampaignStatusControls({
             >
               {t.label}
             </Button>
+            {t.note && (
+              <p className="mt-1.5 text-xs text-zinc-500">{t.note}</p>
+            )}
           </form>
         ))}
       </div>

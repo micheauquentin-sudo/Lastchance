@@ -77,6 +77,7 @@ import {
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
+import { parsePageParam } from "@/lib/pagination";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import type {
   Contest,
@@ -125,8 +126,11 @@ export default async function ContestDetailPage({
     etape: etapeParam,
     relance_error: relanceError,
   } = await searchParams;
-  const rawPage = Number(rawPageParam);
-  const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
+  // SIXIÈME lecture de `?page=` du dashboard, et la seule qui ne comptait pas
+  // parmi les cinq recensées : elle alimente `contest_leaderboard`, dont
+  // l'`offset` n'était borné que par le bas. Même helper, même plafond que les
+  // cinq autres — un clamp propre à cet écran redeviendrait un septième.
+  const page = parsePageParam(rawPageParam);
   // Les DEUX VISAGES de cette route : sans `?etape=`, la vue SUIVI (classement,
   // clôture, palmarès) ; avec, l'atelier. La politique « nulle » est ce qui
   // rend l'absence significative — la roue, elle, n'a pas de vue suivi.
