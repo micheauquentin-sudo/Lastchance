@@ -162,12 +162,19 @@ function PrizeRow({
   } = useActionForm(updatePrize, {
     networkError: "Mise à jour impossible, réessayez.",
   });
-  // L'état de la suppression reste ignoré, comme avant la migration : une
-  // erreur de suppression n'a jamais eu d'emplacement d'affichage sur la ligne.
-  const { pending: deletePending, onSubmit: deleteSubmit } = useActionForm(
-    deletePrize,
-    { networkError: "Suppression impossible, réessayez." },
-  );
+  // LE REFUS DE SUPPRESSION A ENFIN UN ENDROIT OÙ S'AFFICHER.
+  //
+  // L'état était ignoré : supprimer le dernier lot gagnant tirable d'une
+  // campagne ouverte est désormais refusé côté serveur, et sans ce `state` le
+  // commerçant aurait vu son clic ne rien produire, sans un mot. Le message
+  // atterrit sous le formulaire frère, à l'aplomb du bouton « Supprimer ».
+  const {
+    state: deleteState,
+    pending: deletePending,
+    onSubmit: deleteSubmit,
+  } = useActionForm(deletePrize, {
+    networkError: "Suppression impossible, réessayez.",
+  });
   // Le bouton « Supprimer » reste à sa place dans la mise en page du
   // formulaire de mise à jour, mais appartient au formulaire frère ci-dessous
   // via son attribut `form` : `formAction` n'a pas d'équivalent avec `onSubmit`,
@@ -391,8 +398,14 @@ function PrizeRow({
       <form
         id={deleteFormId}
         onSubmit={(event) => {
-          // Confirmer d'abord ; le hook n'est saisi que sur oui.
-          if (!confirm(`Supprimer le lot « ${prize.label} » ?`)) {
+          // Confirmer d'abord ; le hook n'est saisi que sur oui. La question
+          // nomme la CONSÉQUENCE et pas seulement le lot : « Supprimer le lot
+          // “Café” ? » ne dit pas qu'on retire une chance de gagner de la roue.
+          if (
+            !confirm(
+              `Supprimer le lot « ${prize.label} » ? Il ne pourra plus sortir : si c'était le dernier lot gagnant tirable, vos clients repartiraient tous bredouilles.`,
+            )
+          ) {
             event.preventDefault();
             return;
           }
@@ -401,6 +414,9 @@ function PrizeRow({
       >
         <input type="hidden" name="id" value={prize.id} />
       </form>
+      <FieldError
+        message={deleteState && !deleteState.ok ? deleteState.error : undefined}
+      />
     </Card>
   );
 }
