@@ -146,7 +146,14 @@ export default async function ContestDetailPage({
   // depuis la liste, était redirigé ici… et tombait sur un 404. Seule la
   // publication reste fermée, et elle l'est en base
   // (`assert_module_publish_allowed`).
-  const capacites = await capacitesDuModule("pronostics");
+  //
+  // L'ID EST PASSÉ, ET C'EST LA MOITIÉ DASHBOARD DE SD-5. Le pass « Saison de
+  // pronostics » est vendu pour UN championnat : sans cet argument, le
+  // commerçant qui vient de le payer lisait « la publication demande d'ouvrir ce
+  // module » sur la page du championnat que la base l'autorise déjà à publier.
+  // La page LISTE, elle, n'en passe aucun — délibérément : un pass borné
+  // n'ouvre pas la publication des AUTRES championnats.
+  const capacites = await capacitesDuModule("pronostics", id);
   if (!capacites.canExplore) notFound();
 
   const [

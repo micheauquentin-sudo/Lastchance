@@ -11,16 +11,47 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * jusqu'à une phrase affichée au commerçant.
  */
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), reportError: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  reportError: vi.fn(),
+  /** Ce que PostgREST rend à la requête d'octrois. */
+  octrois: { data: [] as unknown[], error: null as { message: string } | null },
+  /** Chaque appel de la chaîne, dans l'ordre : `[méthode, ...arguments]`. */
+  chaine: [] as unknown[][],
+  table: null as string | null,
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => ({ rpc: mocks.rpc }),
+  createAdminClient: () => ({
+    rpc: mocks.rpc,
+    /**
+     * Chaîne PostgREST minimale : chaque filtre s'enregistre et rend le
+     * builder, qui est THENABLE. C'est ce qui rend les bornes du prédicat
+     * observables — sans cela un test ne pourrait vérifier que le RÉSULTAT,
+     * qu'on lui a soufflé, et jamais la question posée à la base.
+     */
+    from: (table: string) => {
+      mocks.table = table;
+      const builder: Record<string, unknown> = {};
+      for (const nom of ["select", "eq", "is", "not", "lte", "or", "limit"]) {
+        builder[nom] = (...args: unknown[]) => {
+          mocks.chaine.push([nom, ...args]);
+          return builder;
+        };
+      }
+      builder.then = (resolve: (valeur: unknown) => unknown) =>
+        resolve(mocks.octrois);
+      return builder;
+    },
+  }),
 }));
 vi.mock("@/lib/monitoring", () => ({
   reportError: (...args: unknown[]) => mocks.reportError(...args),
 }));
 
-const { etatOctroiModule } = await import("./module-grants-loader");
+const { etatOctroiModule, octroiRessourceVivant } = await import(
+  "./module-grants-loader"
+);
 
 const ORG = "org-1";
 const MAINTENANT = new Date("2026-06-15T12:00:00.000Z");
@@ -122,5 +153,87 @@ describe("etatOctroiModule", () => {
 
     const etat = await etatOctroiModule(ORG, "wheel", MAINTENANT);
     expect(etat).toEqual({ etat: "live", endsAt: null, activateBy: null });
+  });
+});
+
+/**
+ * `octroiRessourceVivant` — la contrepartie TypeScript de SD-5.
+ *
+ * Ce que ces tests tiennent : le prédicat interrogé est celui de
+ * `org_has_live_resource_grant` (migration 20260925120000), ses quatre bornes
+ * comprises ; une panne REFUSE au lieu d'accorder ; et une ressource vide ne
+ * dégénère pas en « n'importe quel octroi borné de ce module », ce qui ferait
+ * d'un pass acheté pour un championnat un pass valable pour son voisin.
+ */
+describe("octroiRessourceVivant", () => {
+  const RESSOURCE = "contest-1";
+
+  beforeEach(() => {
+    mocks.octrois.data = [];
+    mocks.octrois.error = null;
+    mocks.chaine.length = 0;
+    mocks.table = null;
+  });
+
+  it("un octroi borné à CETTE ressource rend vrai", async () => {
+    mocks.octrois.data = [{ id: "grant-1" }];
+    expect(
+      await octroiRessourceVivant(ORG, "pronostics", RESSOURCE, MAINTENANT),
+    ).toBe(true);
+  });
+
+  it("aucun octroi borné à cette ressource rend faux", async () => {
+    expect(
+      await octroiRessourceVivant(ORG, "pronostics", RESSOURCE, MAINTENANT),
+    ).toBe(false);
+  });
+
+  it("interroge le prédicat de `org_has_live_resource_grant`, ses quatre bornes comprises", async () => {
+    // L'assertion qui empêche la dérive silencieuse. Le SQL est l'autorité ;
+    // ce chargeur n'est légitime que s'il pose la MÊME question. Retirer une
+    // seule de ces lignes accorderait un droit que la base refuse — un octroi
+    // révoqué, ou pas encore démarré, ou déjà terminé.
+    await octroiRessourceVivant(ORG, "pronostics", RESSOURCE, MAINTENANT);
+
+    expect(mocks.table).toBe("organization_module_grants");
+    const iso = MAINTENANT.toISOString();
+    expect(mocks.chaine).toEqual([
+      ["select", "id"],
+      ["eq", "organization_id", ORG],
+      ["eq", "module", "pronostics"],
+      ["eq", "resource_id", RESSOURCE],
+      ["is", "revoked_at", null],
+      ["not", "starts_at", "is", null],
+      ["lte", "starts_at", iso],
+      ["or", `ends_at.is.null,ends_at.gt.${iso}`],
+      ["limit", 1],
+    ]);
+  });
+
+  it("une panne REFUSE et se signale — jamais un droit offert par une coupure réseau", async () => {
+    // Sens d'erreur inverse de celui d'`octroiRecurrentVivant`, qui refuse la
+    // VENTE sur indécision. Ici l'indécision doit refuser l'ACCÈS : ouvrir un
+    // championnat payant parce que la base ne répond pas ne se remarquerait
+    // jamais, alors que le refus se voit et se signale.
+    mocks.octrois.error = { message: "indisponible" };
+    expect(
+      await octroiRessourceVivant(ORG, "pronostics", RESSOURCE, MAINTENANT),
+    ).toBe(false);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "module-grants-loader",
+      expect.objectContaining({ message: "indisponible" }),
+    );
+  });
+
+  it("une ressource vide refuse SANS interroger la base", async () => {
+    // Miroir du `p_resource_id is not null` du SQL, qui rend `false` plutôt que
+    // de se rabattre sur le module entier. Sans cette garde, `.eq("resource_id",
+    // "")` ne filtrerait plus rien d'utile et un pass borné pourrait remonter
+    // pour une ressource qui n'est pas la sienne.
+    mocks.octrois.data = [{ id: "grant-1" }];
+    expect(await octroiRessourceVivant(ORG, "pronostics", "", MAINTENANT)).toBe(
+      false,
+    );
+    expect(mocks.chaine).toEqual([]);
   });
 });

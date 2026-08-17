@@ -101,6 +101,71 @@ export async function chargerOctroisVivants(
 }
 
 /**
+ * UN OCTROI VIVANT BORNÉ À CETTE RESSOURCE EXISTE-T-IL ?
+ *
+ * ── LE DÉFAUT QU'IL FERME, ET IL AVAIT ÉTÉ MESURÉ ──
+ *
+ * SD-5 a rendu le pass « Saison de pronostics » borné à UNE compétition : la
+ * migration 20260925120000 écrit `resource_id` sur l'octroi, et le voisin
+ * ci-dessus l'EXCLUT désormais du module entier — c'est ce que fait sa ligne
+ * `.is("resource_id", null)`, et c'est juste. Mais la moitié SQL du correctif
+ * (`org_has_live_resource_grant`, `org_has_module_access_for_resource`) n'avait
+ * aucune contrepartie TypeScript. Résultat : le commerçant payait 39 €, la base
+ * le laissait publier son championnat, et les deux surfaces de LECTURE le
+ * refusaient — le joueur sur « Ce championnat est momentanément désactivé », le
+ * dashboard sur « la publication demande d'ouvrir ce module ». Un droit que la
+ * base accorde et que l'écran refuse : exactement le défaut que
+ * `chargerOctroisVivants` avait fermé au niveau du module, rouvert un cran plus
+ * bas par la ressource.
+ *
+ * ── LE PRÉDICAT EST CELUI DE `org_has_live_resource_grant`, MOT POUR MOT ──
+ *
+ * Y compris son premier terme : `p_resource_id is not null` y rend `false`
+ * plutôt que de se rabattre sur le module entier, et la garde ci-dessous en est
+ * le miroir. Le repli appartient à l'APPELANT, qui le fait explicitement — de
+ * même que `org_has_module_access_for_resource` compose les deux en SQL au lieu
+ * de les confondre en une fonction qui déciderait toute seule.
+ *
+ * ── LE SENS DE L'ERREUR EST CELUI DE SES VOISINS ──
+ *
+ * Une panne rend `false`, donc un refus, jamais un droit. Comme
+ * `chargerOctroisVivants` : refermer ce qui a été payé se voit et se signale,
+ * ouvrir ce qui ne l'a pas été ne se voit pas.
+ */
+export async function octroiRessourceVivant(
+  organizationId: string,
+  module: GrantableModule,
+  resourceId: string,
+  maintenant = new Date(),
+): Promise<boolean> {
+  // Miroir du `p_resource_id is not null` du SQL. `tsc` interdit déjà le `null`,
+  // mais pas la chaîne vide — qui filtrerait sur rien et pourrait faire remonter
+  // un octroi borné à une AUTRE ressource si la colonne était vide en base.
+  if (!resourceId) return false;
+
+  const admin = createAdminClient();
+  const iso = maintenant.toISOString();
+
+  const { data, error } = await admin
+    .from("organization_module_grants")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("module", module)
+    .eq("resource_id", resourceId)
+    .is("revoked_at", null)
+    .not("starts_at", "is", null)
+    .lte("starts_at", iso)
+    .or(`ends_at.is.null,ends_at.gt.${iso}`)
+    .limit(1);
+
+  if (error) {
+    reportError("module-grants-loader", error);
+    return false;
+  }
+  return (data ?? []).length > 0;
+}
+
+/**
  * Ce que la base répond à « ce module est-il déjà tenu par un récurrent ? ».
  * Trois valeurs et non un booléen : l'indécision n'est pas un « non ».
  */

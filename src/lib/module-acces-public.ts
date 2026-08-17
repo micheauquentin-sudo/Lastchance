@@ -1,6 +1,9 @@
 import "server-only";
 
-import { chargerOctroisVivants } from "@/lib/module-grants-loader";
+import {
+  chargerOctroisVivants,
+  octroiRessourceVivant,
+} from "@/lib/module-grants-loader";
 import {
   droitEffectifModule,
   type ChampsModule,
@@ -44,16 +47,44 @@ import {
  * qui parlent du même commerçant ne doivent pas emprunter deux chemins de
  * décision différents. La parité entre le miroir TypeScript et la garde SQL
  * est éprouvée par `module-access-parity.test.ts`, qui LIT la migration.
+ *
+ * ── LA RESSOURCE, QUAND LE MODULE ENTIER A DÉJÀ REFUSÉ ──
+ *
+ * Depuis SD-5 (migration 20260925120000), un pass peut être vendu pour UNE
+ * ressource nommée — un championnat de pronostics — et n'ouvre alors pas le
+ * module. `droitEffectifModule` et `chargerOctroisVivants` ne parlent que du
+ * module ENTIER, et c'est voulu : un pass borné ne doit pas rouvrir les autres
+ * championnats. Le résultat, tant que rien ne lisait la ressource ici, était
+ * qu'un pass borné n'ouvrait RIEN — le joueur lisait « momentanément
+ * désactivé » sur le championnat que le commerçant venait de payer.
+ *
+ * L'appelant qui a une ressource en main la passe donc, et cette fonction
+ * devient le miroir de `org_has_module_access_for_resource` : le module entier
+ * d'abord — il ouvre TOUTES les ressources —, la ressource seulement s'il a
+ * refusé. Même ordre que le SQL, et pour la même raison qu'au paragraphe
+ * précédent : la lecture supplémentaire n'est payée que par ceux dont elle peut
+ * changer la réponse.
  */
 export async function moduleOuvertAuJoueur<M extends GrantableModule>(
   module: M,
   org: ChampsModule<M> & { id: string },
   now = new Date(),
+  ressource?: { resourceId: string },
 ): Promise<boolean> {
   if (droitEffectifModule(module, org, now)) return true;
 
   const live_module_grants = await chargerOctroisVivants(org.id, now);
-  if (live_module_grants.length === 0) return false;
+  if (
+    live_module_grants.length > 0 &&
+    droitEffectifModule(module, { ...org, live_module_grants }, now)
+  ) {
+    return true;
+  }
 
-  return droitEffectifModule(module, { ...org, live_module_grants }, now);
+  // Aucune ressource fournie : le refus est définitif, et aucune lecture de plus
+  // n'est faite. C'est le cas des sept autres contextes publics, dont aucun
+  // module ne se vend à la ressource.
+  if (!ressource) return false;
+
+  return octroiRessourceVivant(org.id, module, ressource.resourceId, now);
 }

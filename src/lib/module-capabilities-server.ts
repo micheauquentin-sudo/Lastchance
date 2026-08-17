@@ -7,7 +7,10 @@ import {
   capacitesModule,
   type CapacitesModule,
 } from "@/lib/module-capabilities";
-import { etatOctroiModule } from "@/lib/module-grants-loader";
+import {
+  etatOctroiModule,
+  octroiRessourceVivant,
+} from "@/lib/module-grants-loader";
 import { RESSOURCE_MODULE, publicationBooleenne } from "@/lib/module-resources";
 import { droitEffectifModule, type GrantableModule } from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
@@ -23,9 +26,22 @@ import type { MemberRole } from "@/types/database";
  * qu'une autre. Les trois pièces qu'elle assemble vivent chacune ailleurs et
  * restent testables sans elle — le droit dans `droitEffectifModule`, la
  * conséquence dans `capacitesModule`, la localisation dans `RESSOURCE_MODULE`.
+ *
+ * ── `resourceId` : LE VERDICT PORTE ALORS SUR CETTE RESSOURCE, ET SUR ELLE SEULE ──
+ *
+ * Depuis SD-5, un pass peut être vendu pour UN championnat (`resource_id` sur
+ * l'octroi). Une page de DÉTAIL passe donc l'identifiant de la ressource qu'elle
+ * montre, et obtient le verdict d'un module payé pour celle-là. Une page de
+ * LISTE ne le passe pas, et c'est le geste inverse du même arbitrage : un pass
+ * borné à un championnat n'ouvre pas la publication des autres.
+ *
+ * Miroir exact de `org_has_module_access_for_resource`, y compris dans l'ordre
+ * de ses deux branches — le droit du module d'abord, qui ouvre toute ressource ;
+ * la ressource ensuite, seulement s'il a refusé.
  */
 export async function capacitesDuModule(
   module: GrantableModule,
+  resourceId?: string,
 ): Promise<CapacitesModule> {
   const { organization, role } = await getUserAndOrg();
 
@@ -41,7 +57,14 @@ export async function capacitesDuModule(
   // `organization` porte `live_module_grants`, renseigné par `getUserAndOrg`.
   // C'est la seule raison pour laquelle ce verdict peut différer de celui
   // qu'aurait rendu la même fonction avant le chargeur : un octroi daté.
-  const droitEffectif = droitEffectifModule(module, organization);
+  //
+  // La seconde branche n'est lue que si la première refuse ET qu'une ressource
+  // est nommée : un commerçant abonné, c'est-à-dire le cas courant, ne paie
+  // aucune requête de plus sur ses pages de détail.
+  const droitEffectif =
+    droitEffectifModule(module, organization) ||
+    (resourceId !== undefined &&
+      (await octroiRessourceVivant(organization.id, module, resourceId)));
 
   // Le compte n'est demandé QUE s'il peut changer quelque chose. Un module
   // payé n'a pas de limite de brouillon, donc pas de requête : les pages d'un
