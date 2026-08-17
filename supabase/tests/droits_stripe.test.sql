@@ -755,7 +755,7 @@ select results_eq(
   $$select status, paused_reason from public.campaigns
      where id = 'd5000000-0000-4000-8000-0000000000a1'$$,
   $$values ('active', null::text)$$,
-  'SD-9 et le motif droit_expire s''effface de lui-même (trigger existant)'
+  'SD-9 et le motif droit_expire s''efface de lui-même (trigger existant)'
 );
 
 -- ── LE TROISIÈME MOTIF EST STOCKABLE, ET LE CHECK MORD ENCORE ──
