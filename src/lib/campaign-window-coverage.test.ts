@@ -51,13 +51,27 @@ describe("prédicat de fenêtre de campagne", () => {
   });
 
   it("les deux surfaces commerçant importent le prédicat partagé", () => {
+    // L'assertion portait la forme EXACTE `import { campaignWindowState } from
+    // "…"`, sur une seule ligne. Le module porte désormais un second prédicat
+    // dérivé (`repriseBudgetRequise`, wagon 4) : le jour où un écran importe
+    // les deux, l'import passe en multi-lignes et cette garde rougirait sur un
+    // changement de MISE EN FORME, pas de propriété. Elle a déjà été
+    // contournée une fois pour cette raison exacte, ailleurs
+    // (`destructive-confirm-coverage.test.ts`).
+    //
+    // On vérifie donc ce qu'elle voulait dire : le fichier IMPORTE
+    // `campaignWindowState` DEPUIS ce module. Le vrai danger — recopier la
+    // comparaison de dates — reste attrapé par le test de /play ci-dessus.
     for (const rel of [
       "app/dashboard/campaigns/page.tsx",
       "app/dashboard/campaigns/[id]/page.tsx",
     ]) {
-      expect(lire(rel)).toContain(
-        'import { campaignWindowState } from "@/lib/campaign-window"',
+      const src = lire(rel).replace(/\r\n/g, "\n");
+      const blocs = src.match(
+        /import\s*\{[^}]*\}\s*from\s*"@\/lib\/campaign-window"/g,
       );
+      expect(blocs, `aucun import de campaign-window dans ${rel}`).toBeTruthy();
+      expect(blocs!.some((b) => b.includes("campaignWindowState"))).toBe(true);
     }
   });
 });

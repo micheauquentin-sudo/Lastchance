@@ -48,10 +48,17 @@ const { state, makeClient } = vi.hoisted(() => {
      * une écriture qui n'a pas eu lieu.
      */
     updatedRows: [{ id: "campagne-touchee" }] as Array<{ id: string }>,
+    /**
+     * Roues de la campagne, avec leurs lots — ce que la garde métier
+     * d'ouverture (FIA-2) relit avant d'appeler la RPC. VIDE par défaut :
+     * aucune roue, aucun verdict, les tests d'accès restent intacts.
+     */
+    wheels: [] as Array<{ id: string; prizes: unknown[] }>,
     reset() {
       state.calls = [];
       state.sourceCampaign = null;
       state.updatedRows = [{ id: "campagne-touchee" }];
+      state.wheels = [];
     },
   };
 
@@ -90,6 +97,7 @@ const { state, makeClient } = vi.hoisted(() => {
           }
           if (call.op !== "select") return { data: null, error: null };
           if (table === "campaigns") return { data: state.sourceCampaign, error: null };
+          if (table === "wheels") return { data: state.wheels, error: null };
           return { data: null, error: null };
         };
 
@@ -272,6 +280,116 @@ describe("updateCampaign — le refus d'activation dit la VRAIE cause", () => {
 
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatch(/^Votre abonnement est inactif/);
+  });
+
+  it("AUCUN LOT GAGNANT TIRABLE : la roue ne s'ouvre pas, et la RPC n'est pas appelée", async () => {
+    // LE DÉFAUT FIA-2. « Ouvrir aux joueurs » n'avait aucune précondition
+    // métier : on publiait une roue dont tous les lots gagnants sont
+    // désactivés, épuisés ou à poids nul — chaque client repart bredouille —
+    // alors que l'étape « Vérification » de l'atelier promet ce point
+    // BLOQUANT. L'écran annonçait un refus que personne ne prononçait.
+    getUserAndOrgMock.mockResolvedValue(
+      // Accès ACTIF, sinon la garde d'abonnement refuse avant et le test
+      // serait vert pour la mauvaise raison.
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+    state.wheels = [
+      {
+        id: "roue-1",
+        prizes: [
+          // Un perdant bien vivant : le poids total n'est PAS nul, seul le
+          // contrôle « lot gagnant » rougit. C'est lui qu'on mesure ici.
+          { is_active: true, is_losing: true, weight: 30, stock: null },
+          { is_active: false, is_losing: false, weight: 40, stock: null },
+          { is_active: true, is_losing: false, weight: 20, stock: 0 },
+          { is_active: true, is_losing: false, weight: 0, stock: null },
+        ],
+      },
+    ];
+
+    const res = await updateCampaign(null, activationForm());
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/^Aucun lot gagnant n'est tirable/);
+    // Le faux client n'expose PAS `rpc` : si la garde ne s'était pas
+    // déclenchée, l'action aurait levé `supabase.rpc is not a function`. Le
+    // refus lisible ci-dessus prouve donc à lui seul que la garde précède la
+    // RPC — et rien n'est parti en base.
+    expect(callsTo("campaigns").some((c) => c.op === "update")).toBe(false);
+  });
+
+  it("POIDS TOTAL NUL : la phrase la plus précise l'emporte", async () => {
+    // Les deux contrôles rougissent ensemble (un lot gagnant tirable a
+    // forcément un poids > 0), et c'est l'ordre du prédicat qui décide de la
+    // phrase. « Poids nul » dit qu'absolument RIEN ne peut sortir, pas même le
+    // segment perdant : c'est un autre réglage à corriger.
+    state.wheels = [
+      {
+        id: "roue-1",
+        prizes: [{ is_active: true, is_losing: true, weight: 0, stock: null }],
+      },
+    ];
+    getUserAndOrgMock.mockResolvedValue(
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+
+    const res = await updateCampaign(null, activationForm());
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/^Le poids total est nul/);
+  });
+
+  it("CONTRÔLE : une roue jouable n'est jamais retenue par cette garde", async () => {
+    // Sans ce témoin, une garde trop stricte refuserait toute ouverture et les
+    // deux tests ci-dessus resteraient verts.
+    getUserAndOrgMock.mockResolvedValue(
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+    state.wheels = [
+      {
+        id: "roue-1",
+        prizes: [
+          { is_active: true, is_losing: false, weight: 40, stock: 3 },
+          { is_active: true, is_losing: true, weight: 30, stock: null },
+        ],
+      },
+    ];
+
+    // La garde passe : l'action atteint la RPC, que ce harnais n'expose pas.
+    // C'est ce `TypeError` qui prouve qu'aucun refus métier n'est tombé — le
+    // chemin nominal complet est mesuré dans `publication-refus.test.ts`.
+    await expect(updateCampaign(null, activationForm())).rejects.toThrow(
+      /supabase\.rpc is not a function/,
+    );
+  });
+
+  it("BUDGET NON RÉSORBÉ : « Rouvrir aux joueurs » est refusé, et le montant est nommé", async () => {
+    // LE DÉFAUT FIA-4. Le geste aboutissait — la RPC ne connaît pas le budget —
+    // et la campagne repartait en pause au prochain gain réclamé, sans qu'un
+    // mot l'explique. Le geste correct existe et vit ailleurs : « Reprendre la
+    // campagne », qui relève le plafond dans le même mouvement.
+    getUserAndOrgMock.mockResolvedValue(
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+    state.sourceCampaign = {
+      status: "paused",
+      paused_reason: "budget_reached",
+      budget_cents: 20_000,
+      budget_spent_cents: 30_000,
+    };
+
+    const res = await updateCampaign(null, activationForm());
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain("budget");
+      // Le MONTANT, dans le vocabulaire de la bannière : sans lui, le
+      // commerçant ne sait pas de combien relever son plafond.
+      expect(res.error).toContain("300 €");
+      expect(res.error).toContain("200 €");
+      expect(res.error).toContain("Reprendre la campagne");
+    }
+    expect(callsTo("campaigns").some((c) => c.op === "update")).toBe(false);
   });
 
   it("CONTRÔLE : un simple renommage n'est jamais refusé, quel que soit l'accès", async () => {

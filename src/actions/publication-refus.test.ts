@@ -131,7 +131,17 @@ vi.mock("@/lib/supabase/admin", () => ({
       const c: Record<string, unknown> = {};
       const self = () => c;
       for (const m of ["select", "eq"]) c[m] = self;
-      c.maybeSingle = () => Promise.resolve({ data: { state_revision: 1 }, error: null });
+      // UNE ligne pour les DEUX lectures que le client admin fait sur
+      // `event_sessions` : la révision d'état après transition, et — depuis le
+      // wagon 4 (FIA-1) — le statut du jeu au-dessus de la session, lu AVANT
+      // la RPC. Ce fichier mesure la traduction des refus de la BASE : le jeu
+      // y est donc ouvert, sans quoi la garde applicative refuserait avant et
+      // ces tests deviendraient verts pour une raison qui n'est pas la leur.
+      c.maybeSingle = () =>
+        Promise.resolve({
+          data: { state_revision: 1, event_games: { status: "active" } },
+          error: null,
+        });
       return c;
     },
   })),
@@ -410,6 +420,35 @@ describe("le refus de droit de la base arrive à l'écran, module par module", (
     );
   });
 
+  it("campagne : plafond RELEVÉ, la reprise générique atteint bien la RPC", async () => {
+    // CONTRÔLE POSITIF DE LA GARDE BUDGET (FIA-4). Elle refuse une pause
+    // « budget atteint » dont le plafond est encore dépassé ; ici il vient
+    // d'être relevé, `paused_reason` n'est plus qu'un RÉSIDU, et rouvrir est le
+    // bon geste. Sans ce test, une garde écrite sur le seul motif de pause
+    // enfermerait le commerçant qui vient de faire ce qu'on lui demandait — et
+    // resterait verte partout ailleurs.
+    state.tables.campaigns = {
+      single: {
+        data: {
+          id: CAMPAIGN_ID,
+          status: "paused",
+          paused_reason: "budget_reached",
+          budget_cents: 50_000,
+          budget_spent_cents: 30_000,
+        },
+        error: null,
+      },
+    };
+
+    const res = await campagnes.updateCampaign(
+      null,
+      form({ id: CAMPAIGN_ID, status: "active" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.rpc.map((a) => a.nom)).toContain("set_campaign_status");
+  });
+
   it("parrainage : éteindre n'exige aucun droit et passe quand même par la RPC", async () => {
     // La RPC ne garde QUE l'allumage. Un commerçant dont l'abonnement s'arrête
     // doit pouvoir ARRÊTER son parrainage — l'en empêcher serait un
@@ -464,6 +503,31 @@ describe("les autres refus gardent chacun leur sens", () => {
     );
 
     expect(res.ok === false && res.error).toBe("Campagne introuvable");
+  });
+
+  it("campagne : un refus de MATRICE se dit comme une règle, pas comme une panne", async () => {
+    // `set_campaign_status` refuse `archived → active` depuis le wagon 4
+    // (FIA-6) : une campagne clôturée se restaure en brouillon, elle ne se
+    // republie pas d'un coup — et c'est bien ce que la carte Statut offre.
+    //
+    // Sans la classe `transition`, ce refus retombait dans `echec`, donc
+    // « Mise à jour impossible » : une RÈGLE affichée comme un incident. Le
+    // test de classification voisin (`publication-transition.test.ts`) ne
+    // prouve pas que la phrase ATTEINT le commerçant ; celui-ci, si.
+    state.reponses.set_campaign_status = {
+      data: null,
+      error: { message: "invalid transition" },
+    };
+
+    const res = await campagnes.updateCampaign(
+      null,
+      form({ id: CAMPAIGN_ID, status: "active" }),
+    );
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Ce changement de statut n'est pas permis.",
+    );
   });
 
   it("une panne reste une panne et ne s'habille pas en refus de droit", async () => {

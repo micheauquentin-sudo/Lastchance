@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { repriseBudgetRequise } from "@/lib/campaign-window";
 import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
+import { blocageOuvertureRoue } from "@/lib/lot-tirable";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { messageAccesCampagne } from "@/lib/message-acces-campagne";
@@ -31,7 +33,7 @@ import {
   updateCampaignSchema,
   updateCampaignShareInviteSchema,
 } from "@/lib/validations/campaigns";
-import type { ActionResult } from "@/lib/utils";
+import { formatEuros, type ActionResult } from "@/lib/utils";
 import type {
   EngagementConfig,
   Organization,
@@ -197,6 +199,88 @@ export async function updateCampaign(
   }
 
   const supabase = await createClient();
+
+  // ── LA GARDE MÉTIER QUI MANQUAIT (FIA-2) ──
+  //
+  // « Ouvrir aux joueurs » n'avait AUCUNE précondition métier, ni ici ni en
+  // base : on publiait une roue dont tous les lots gagnants étaient désactivés,
+  // à poids nul ou en rupture — chaque client repartait bredouille — alors que
+  // l'étape « Vérification » de l'atelier promettait ces deux points BLOQUANTS
+  // (`checklist/controles.ts`, `roue."lot-gagnant"` et `roue.poids`). L'écran
+  // annonçait un refus que personne ne prononçait.
+  //
+  // La règle reste APPLICATIVE et non SQL (arbitrage du 2026-08-17, ADR du
+  // wagon 4) : la descendre dans `set_campaign_status` enfermerait une campagne
+  // dont le dernier lot s'épuise en cours de route — elle ne pourrait plus
+  // jamais repasser `active` après une pause. Le verdict vient de
+  // `blocageOuvertureRoue`, le module que l'atelier consomme aussi.
+  //
+  // MÊME ROUE QUE L'ÉCRAN : la première par `position` puis `created_at`, celle
+  // qu'ouvre « Régler le jeu et les lots » et sur laquelle la checklist de la
+  // page de détail se calcule. Refuser d'après une autre roue afficherait un
+  // point vert en face du refus.
+  if (fields.status === "active") {
+    const { data: roues, error: erreurRoues } = await supabase
+      .from("wheels")
+      .select("id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock)")
+      .eq("campaign_id", id)
+      .eq("organization_id", organization.id)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(1);
+    if (erreurRoues) {
+      // Une garde de publication échoue FERMÉ : « je n'ai pas pu vérifier » ne
+      // vaut pas « il y a de quoi jouer ». Même doctrine que `codes-en-attente`.
+      reportError("campaigns.update-verification", erreurRoues.message);
+      return { ok: false, error: "Mise à jour impossible" };
+    }
+    const roue = roues?.[0];
+    // AUCUNE ROUE : on laisse passer. `create_campaign_with_defaults` en crée
+    // toujours une ; fabriquer ici un second oracle d'existence ferait dire
+    // « aucun lot tirable » à une campagne qui n'existe pas, alors que la RPC
+    // ci-dessous rend déjà « Campagne introuvable ».
+    if (roue) {
+      const blocage = blocageOuvertureRoue(roue.prizes ?? []);
+      if (blocage) return { ok: false, error: blocage };
+    }
+
+    // ── LA REPRISE BUDGET NE SE CONTOURNE PLUS (FIA-4) ──
+    //
+    // « Rouvrir aux joueurs » était offert sur TOUTE pause, y compris celle
+    // que le trigger vient de poser parce que le budget de gains est atteint.
+    // Le geste aboutissait — la RPC ne connaît pas le budget — et la campagne
+    // repartait en pause au prochain gain réclamé, sans que rien n'explique
+    // pourquoi. Le geste correct existe, il est ailleurs : « Reprendre la
+    // campagne », qui relève le plafond dans le même mouvement.
+    //
+    // LA GARDE NE DESCEND PAS DANS `set_campaign_status` : la même RPC est
+    // appelée par `resumeCampaignAfterBudget`, qui autorise DÉLIBÉRÉMENT une
+    // reprise à plafond inchangé (le commerçant a lu que le compteur n'est
+    // jamais remis à zéro et l'accepte). Une garde en base refuserait aussi
+    // ce chemin-là.
+    const { data: courante } = await supabase
+      .from("campaigns")
+      .select("status, paused_reason, budget_cents, budget_spent_cents")
+      .eq("id", id)
+      .eq("organization_id", organization.id)
+      .maybeSingle();
+    // Ligne absente : on laisse passer. « Campagne introuvable » est déjà dit
+    // par la RPC ci-dessous, et fabriquer ici un second oracle d'existence
+    // ferait dire « budget atteint » à une campagne qui n'existe pas.
+    if (courante && repriseBudgetRequise(courante)) {
+      return {
+        ok: false,
+        error:
+          "Cette campagne est en pause : le budget de gains est atteint " +
+          `(${formatEuros(courante.budget_spent_cents)} / ` +
+          `${formatEuros(courante.budget_cents ?? 0)}). La rouvrir telle ` +
+          "quelle la remettrait en pause au prochain gain réclamé. Utilisez " +
+          "« Reprendre la campagne » dans « Programmation et budget » pour " +
+          "relever le plafond.",
+      };
+    }
+  }
+
   const { status, ...reste } = fields;
 
   // ── LE STATUT ET LE NOM VOYAGENT ENSEMBLE, ILS NE S'ÉCRIVENT PLUS ENSEMBLE ──
@@ -237,7 +321,17 @@ export async function updateCampaign(
               ? "Campagne introuvable"
               : issue === "role"
                 ? "Action non autorisée"
-                : "Mise à jour impossible",
+                : // La matrice d'états de `set_campaign_status` refuse depuis le
+                  // wagon 4 `archived → active` : une campagne clôturée se
+                  // restaure en brouillon, elle ne se republie pas d'un coup.
+                  // Sans cette branche, une RÈGLE se lisait « Mise à jour
+                  // impossible », c'est-à-dire comme une panne — et le
+                  // commerçant cherchait un incident au lieu du bouton
+                  // « Restaurer en brouillon » qui est juste à côté. Phrase
+                  // déjà en service côté pronostics, pas une seconde.
+                  issue === "transition"
+                  ? "Ce changement de statut n'est pas permis."
+                  : "Mise à jour impossible",
       };
     }
   }

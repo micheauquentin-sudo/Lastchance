@@ -85,6 +85,23 @@ export function formatDate(
 }
 
 /**
+ * Centimes → euros affichables (« 250 € », « 99,90 € »). Déterministe (pas
+ * d'`Intl`) : le rendu doit être le même sur le serveur et dans le navigateur.
+ *
+ * Ce format existait en privé dans `campaign-automation.tsx` (la bannière du
+ * budget de gains) ; il est ici parce qu'un refus d'action doit désormais
+ * nommer le MÊME montant que la bannière, et qu'un refus serveur n'importe pas
+ * un composant.
+ */
+export function formatEuros(cents: number): string {
+  const value = cents / 100;
+  const text = Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(2).replace(".", ",");
+  return `${text} €`;
+}
+
+/**
  * Neutralise un terme de recherche utilisateur avant interpolation dans un
  * filtre PostgREST `.or()` (virgules, parenthèses, % et backslash retirés).
  * Retourne "" si rien d'exploitable ne reste.
