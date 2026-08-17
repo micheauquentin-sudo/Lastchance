@@ -11,8 +11,18 @@ select ok(not has_table_privilege('anon', 'public.campaigns', 'SELECT'), 'anon c
 select ok(not has_table_privilege('anon', 'public.participations', 'SELECT'), 'anon cannot query customer data directly');
 select ok(not has_table_privilege('anon', 'public.spins', 'INSERT'), 'anon cannot create spins directly');
 select ok(not has_function_privilege('authenticated', 'public.decrement_prize_stock(uuid)', 'EXECUTE'), 'merchant cannot decrement stock RPC');
-select ok(has_function_privilege('service_role', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text,boolean)', 'EXECUTE'), 'only server can perform atomic spin');
-select ok(not has_function_privilege('authenticated', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text,boolean)', 'EXECUTE'), 'merchant cannot perform atomic spin');
+-- Signature à 8 arguments depuis 20260927120000 (`p_idempotency_key`). Ces deux
+-- lignes doivent suivre chaque changement de signature : `has_function_privilege`
+-- LÈVE sur une signature inconnue, un moteur renommé rougirait donc ici en
+-- premier — ce qui est le comportement voulu.
+select ok(has_function_privilege('service_role', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text,boolean,text)', 'EXECUTE'), 'only server can perform atomic spin');
+select ok(not has_function_privilege('authenticated', 'public.perform_atomic_spin(uuid,uuid,uuid,text,text,text,boolean,text)', 'EXECUTE'), 'merchant cannot perform atomic spin');
+-- Reprise d'un gain non réclamé (JOU-1) : elle lit des spins gagnants d'un
+-- joueur sur une roue, et le spin_id qu'elle rend est ce que le serveur signe en
+-- jeton de retrait. Une porte marchande ou anonyme y serait un vol de lot.
+select ok(has_function_privilege('service_role', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'only server can recover a pending win');
+select ok(not has_function_privilege('authenticated', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'merchant cannot probe player pending wins');
+select ok(not has_function_privilege('anon', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'anon cannot recover a pending win');
 select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'only server can atomically claim');
 select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
 select ok(has_function_privilege('service_role', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem by code');
