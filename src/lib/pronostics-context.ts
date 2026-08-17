@@ -82,7 +82,18 @@ export async function loadContestContext(slug: string): Promise<ContestContext> 
     return { ok: false, error: "Championnat indisponible." };
   }
 
-  if (!await moduleOuvertAuJoueur("pronostics", org)) {
+  // LA RESSOURCE EST PASSÉE, ET C'EST TOUT L'ENJEU DE SD-5. Le pass « Saison de
+  // pronostics » est vendu pour UNE compétition : son octroi porte
+  // `resource_id = contests.id` et n'ouvre pas le module entier. Sans ce
+  // troisième argument, un commerçant qui vient de payer 39 € publiait son
+  // championnat (la base l'y autorise, `org_has_module_access_for_resource`) et
+  // son joueur tombait sur « momentanément désactivé ».
+  //
+  // Ce point de passage est le SEUL du parcours joueur pronostics : la page
+  // publique, la page de récupération, le mode TV (`loadContestTvContext`) et
+  // les onze actions publiques de `src/actions/pronostics.ts` passent tous par
+  // `loadContestContext`. Une garde ici en couvre donc toutes les portes.
+  if (!await moduleOuvertAuJoueur("pronostics", org, undefined, { resourceId: row.id })) {
     return { ok: false, error: "Ce championnat est momentanément désactivé." };
   }
   if (row.status === "draft") {

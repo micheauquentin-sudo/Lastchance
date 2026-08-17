@@ -43,6 +43,16 @@ export type RaisonRefus =
   | "role"
   /** Aucun droit effectif : ni octroi vivant, ni add-on sur abonnement actif. */
   | "droit_absent"
+  /**
+   * Un pass a été payé sur ce module et sa fenêtre s'est REFERMÉE.
+   *
+   * Distinct de `droit_absent`, et ce n'est pas une nuance : le commerçant qui
+   * n'a jamais rien acheté a besoin de découvrir, celui dont le pass est
+   * terminé a besoin de savoir QUAND il s'est terminé. Les confondre lui
+   * servait une invitation à essayer un module qu'il a déjà payé — et laissait
+   * sans explication ses campagnes retombées en pause (`droit_expire`).
+   */
+  | "pass_expire"
   /** Le brouillon gratuit de ce module est déjà pris. */
   | "quota_brouillon";
 
@@ -55,6 +65,16 @@ export interface CapacitesModule {
   canPublish: boolean;
   /** Pourquoi `canPublish` est faux. `null` quand il est vrai. */
   raison: RaisonRefus | null;
+  /**
+   * Date de fin du pass, DÉJÀ FORMATÉE dans le fuseau de l'établissement.
+   * Renseignée seulement quand `raison === "pass_expire"`, `null` sinon.
+   *
+   * Formatée en amont et non ici : ce module est pur et ne connaît pas le
+   * fuseau de l'organisation. Y passer un ISO obligerait chaque écran à
+   * reformater — donc à choisir son fuseau, donc à afficher des dates
+   * différentes d'une page à l'autre pour le même pass.
+   */
+  passTermineLe: string | null;
   /**
    * Cette personne peut-elle lever le blocage elle-même ?
    *
@@ -100,6 +120,19 @@ export interface EntreeCapacites {
    * là où un défaut aurait produit un silence.
    */
   brouillonsExistants: number;
+  /**
+   * Fin du pass expiré, déjà formatée, quand c'est ELLE qui ferme la
+   * publication. `null` ou absent : rien n'a jamais été acheté sur ce module,
+   * ou l'appelant ne sait pas répondre.
+   *
+   * OPTIONNEL, contrairement à `brouillonsExistants` juste au-dessus, et la
+   * différence tient au sens de l'oubli : oublier un compte de brouillons
+   * OUVRE une permission, oublier cette date n'en ouvre aucune — elle ne change
+   * que la phrase, qui retombe alors sur le générique « ouvrez ce module ». Le
+   * rendre obligatoire aurait forcé les appelants qui ne savent rien des
+   * octrois à écrire `null` par rite.
+   */
+  passTermineLe?: string | null;
 }
 
 /** Libellé du module tel qu'on le nomme au commerçant. */
@@ -117,6 +150,7 @@ const NOM_MODULE: Record<GrantableModule, string> = {
 
 export function capacitesModule(entree: EntreeCapacites): CapacitesModule {
   const { module, role, droitEffectif, brouillonsExistants } = entree;
+  const passTermineLe = entree.passTermineLe ?? null;
 
   // La caisse encaisse : elle ne prépare ni ne publie d'animation. Ce refus
   // précède tous les autres — inutile de parler d'achat à quelqu'un dont le
@@ -127,6 +161,9 @@ export function capacitesModule(entree: EntreeCapacites): CapacitesModule {
       canEditDraft: false,
       canPublish: false,
       raison: "role",
+      // La date n'a rien à faire ici : le refus tient au rôle, et le caissier
+      // n'a pas à savoir de quoi l'établissement est équipé ni jusqu'à quand.
+      passTermineLe: null,
       peutAcheter: false,
       message:
         role === "cashier"
@@ -145,12 +182,18 @@ export function capacitesModule(entree: EntreeCapacites): CapacitesModule {
       canEditDraft: true,
       canPublish: true,
       raison: null,
+      // Un pass terminé sous un droit vivant (un récurrent repris après coup)
+      // ne se raconte pas : ce qui compte est que le module est ouvert.
+      passTermineLe: null,
       peutAcheter: role === "owner",
       message: null,
     };
   }
 
   const quotaAtteint = brouillonsExistants >= BROUILLONS_NON_PAYES_MAX;
+  // Le pass n'est « terminé » que si la publication est par ailleurs fermée —
+  // ce que la branche `droitEffectif` ci-dessus a déjà écarté.
+  const expire = passTermineLe !== null;
 
   return {
     // Découvrir reste ouvert, toujours : c'est la promesse du cahier §3.
@@ -160,16 +203,30 @@ export function capacitesModule(entree: EntreeCapacites): CapacitesModule {
     // La raison porte sur la PUBLICATION, qui est le seul verrou payant. Un
     // quota de brouillon atteint n'est pas une raison de ne pas publier : ce
     // qui empêche de publier reste l'absence de droit.
-    raison: "droit_absent",
+    raison: expire ? "pass_expire" : "droit_absent",
+    passTermineLe,
     peutAcheter: role === "owner",
     message:
       role === "owner"
-        ? messageProprietaire(nom, quotaAtteint)
-        : `Pour publier ${nom}, demandez au propriétaire du commerce d'ouvrir ce module.`,
+        ? messageProprietaire(nom, quotaAtteint, passTermineLe)
+        : // L'éditeur lit la MÊME consigne dans les deux cas, et c'est voulu :
+          // ce qu'il doit faire ne change pas — en parler au propriétaire —, et
+          // « rouvrir » couvre aussi bien un pass fini qu'un module jamais pris.
+          `Pour publier ${nom}, demandez au propriétaire du commerce d'ouvrir ce module.`,
   };
 }
 
-function messageProprietaire(nom: string, quotaAtteint: boolean): string {
+function messageProprietaire(
+  nom: string,
+  quotaAtteint: boolean,
+  passTermineLe: string | null,
+): string {
+  // LE CAS QUE CE LOT OUVRE. « Préparez librement » à quelqu'un qui a payé et
+  // dont la fenêtre s'est refermée lui parle d'un essai qu'il a dépassé depuis
+  // longtemps ; ce qu'il lui faut est la date et le geste, dans cet ordre.
+  if (passTermineLe) {
+    return `Le pass pour ${nom} s'est terminé le ${passTermineLe}. Rouvrez le module pour publier à nouveau.`;
+  }
   const base = `Préparez ${nom} librement. La publication demande d'ouvrir ce module.`;
   if (!quotaAtteint) return base;
   return `${base} Votre brouillon d'essai est déjà utilisé : ouvrez le module pour en préparer d'autres.`;

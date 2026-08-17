@@ -508,8 +508,12 @@ export async function updateCampaignAutomation(
     //
     // Depuis `20260906120000`, le trigger `campaigns_guard_auto_schedule`
     // exige le droit « wheel » pour poser `auto_schedule = true` : c'est le
-    // cron `run_campaign_schedule` qui publiera ensuite, en `service_role`,
-    // sans lire aucun droit. Le refus arrive donc ici sous la forme d'un
+    // cron `run_campaign_schedule` qui publiera ensuite, en `service_role`.
+    // (Ce cron lit désormais le droit lui aussi, depuis `20260926120000` — une
+    // fenêtre qui s'ouvre sans droit retombe en `paused` / `droit_expire` et
+    // notifie le propriétaire. Cette garde-ci reste le premier filet, et le
+    // seul qui puisse répondre DANS le formulaire.) Le refus arrive ici sous
+    // la forme d'un
     // `P0001 module access required: wheel`, et le laisser tomber dans
     // « Enregistrement impossible » enverrait le commerçant chercher une
     // panne technique là où la cause est son abonnement — le défaut même que

@@ -40,6 +40,29 @@ export type ModuleGrantPurchase =
       /** Jauge choisie avant paiement, `null` hors pass à jauge. */
       capacity: number | null;
       /**
+       * Ressource à laquelle ce pass est BORNÉ, `null` quand il ouvre le module
+       * entier.
+       *
+       * Aujourd'hui c'est le `contest_id` d'une Saison de pronostics : « une
+       * seule compétition identifiée, un seul contest_id » (catalogue,
+       * `plans.ts`). La colonne existait depuis le lot 2 et n'était écrite par
+       * personne ; depuis la migration 20260925120000 elle DÉCIDE — un octroi
+       * borné sort de `org_has_live_module_grant`.
+       *
+       * ── POURQUOI IL VOYAGE EN METADATA, CONTRAIREMENT AUX TERMES ──
+       *
+       * Les durées sont relues au catalogue parce que les laisser transiter par
+       * le navigateur laisserait le client choisir combien de temps il a payé.
+       * Une ressource n'est pas de cette nature : c'est un CHOIX du commerçant,
+       * qu'aucun catalogue ne peut retrouver après coup — exactement comme
+       * `organization_id`. Ce qui la protège est en amont
+       * (`createAddonCheckoutSession` vérifie que la compétition appartient à
+       * l'organisation avant d'ouvrir la session) et en aval (l'octroi porte
+       * `organization_id`, donc désigner la ressource d'un autre commerçant
+       * n'ouvre rien chez lui).
+       */
+      resourceId: string | null;
+      /**
        * Instant de l'ACHAT, et non de la réception du webhook.
        *
        * C'est lui qui sert à calculer « activable dans les 90 jours ».
@@ -125,6 +148,33 @@ export function readModuleGrantPurchase(session: {
     capacity = valeur;
   }
 
+  // LA RESSOURCE BORNANTE, quand le modèle en exige une. Vérifiée sur sa FORME
+  // seulement — un uuid — et jamais relue en base ici : le webhook n'a pas à
+  // décider si une compétition existe encore, il a à écrire ce qui a été payé.
+  // Un identifiant malformé, lui, ferait lever `grant_module_from_payment` sur
+  // un cast, donc 500 en boucle sur un événement que rien ne réparera : c'est
+  // exactement ce que `invalid` est là pour éviter.
+  let resourceId: string | null = null;
+  if (offre.billing.model === "single-competition") {
+    const brut = (metadata.resource_id ?? "").trim();
+    if (!brut) {
+      // ACQUITTÉ SANS BORNE, ET C'EST LE MOINS MAUVAIS CHOIX. Une session sans
+      // ressource ne peut venir que d'avant ce lot (l'action l'exige désormais)
+      // ou d'un Payment Link posé à la main. Rendre `invalid` encaisserait sans
+      // rien ouvrir ; on octroie donc le module entier, comme avant — ce que la
+      // base honore toujours pour les octrois historiques — et l'appelant crie.
+      // La fenêtre se referme d'elle-même : plus aucune session neuve n'en sort.
+      resourceId = null;
+    } else if (!UUID.test(brut)) {
+      return {
+        kind: "invalid",
+        reason: `ressource « ${brut} » illisible pour un pass borné à une compétition`,
+      };
+    } else {
+      resourceId = brut.toLowerCase();
+    }
+  }
+
   // `created` est en SECONDES chez Stripe. L'oublier donnerait une date de
   // 1970, donc une fenêtre d'activation expirée depuis cinquante ans — le
   // commerçant paierait un pass déjà périmé.
@@ -138,6 +188,11 @@ export function readModuleGrantPurchase(session: {
     organizationId,
     entitlement: offre.entitlement,
     capacity,
+    resourceId,
     acheteA: new Date(cree * 1000),
   };
 }
+
+/** Forme d'un uuid Postgres, la seule chose que ce lecteur sait vérifier. */
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

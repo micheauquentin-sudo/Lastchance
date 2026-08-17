@@ -100,7 +100,34 @@ pg_file supabase/seed.sql >/dev/null
 
 # 4. Environnement de l'app : clés du Supabase local + secrets factices,
 #    à l'identique du job CI e2e (STRIPE_API_BASE/RESEND_BASE_URL → stubs locaux).
-eval "$(npx --no-install supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+#
+# `supabase status` a son propre critère de disponibilité, et c'est celui de
+# TOUTE la stack (auth, storage, realtime…), pas seulement de Postgres : un
+# `db reset` relance ces services, et `auth` boucle en échec (« database
+# system is starting up ») 40 à 60 s avant de stabiliser — constaté sur cette
+# machine (piège voisin du 5, mais sur `status` et non sur `start`). Le
+# `select 1` d'`attendre_pg` répond bien avant que `status` n'accepte de
+# répondre. Sans garde, la sortie vide ou partielle traverse le `grep` puis
+# l'`eval` sans rien faire, et une variable manquante reste non définie — sous
+# `set -u` le script meurt sur « unbound variable », à des kilomètres de la
+# vraie cause. On reprend sur le même budget que l'attente de Postgres (120 s)
+# et on exige les TROIS clés, pas seulement une sortie non vide : un succès
+# partiel (deux clés sur trois) laissait filer la garde et faisait échouer le
+# script trois lignes plus loin.
+STATUS_ENV=""
+FIN_STATUS=$((SECONDS + 120))
+while :; do
+  STATUS_ENV="$(npx --no-install supabase status -o env 2>/dev/null | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' || true)"
+  CLES=$(printf '%s\n' "$STATUS_ENV" | grep -cE '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')
+  [ "$CLES" -eq 3 ] && break
+  if [ "$SECONDS" -ge "$FIN_STATUS" ]; then
+    echo "✗ « supabase status -o env » ne rend toujours pas les trois clés (API_URL/ANON_KEY/SERVICE_ROLE_KEY) après 120 s."
+    exit 1
+  fi
+  echo "supabase status pas encore prêt ($CLES/3 clé(s)) — pause avant reprise"
+  sleep 5
+done
+eval "$STATUS_ENV"
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"

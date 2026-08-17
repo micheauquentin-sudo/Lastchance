@@ -6,7 +6,7 @@ import { reportError } from "@/lib/monitoring";
 import {
   ensureStripeCustomer,
   getStripe,
-  hasLiveStripeSubscription,
+  hasLiveOfferSubscription,
   resolveCheckoutPlan,
   resolveSmsPackCheckout,
   SMS_CREDIT_PURCHASE,
@@ -87,7 +87,14 @@ export async function createCheckoutSession(
     // `canManage` avait pu fermer — webhook en retard ou jamais appliqué —, et
     // le propriétaire qui venait de payer se retrouvait sans aucune action
     // possible. Le recopier en littéral rouvrirait exactement ce cul-de-sac.
-    if (await hasLiveStripeSubscription(stripe, customerId)) {
+    //
+    // `hasLiveOfferSubscription` ET NON `hasLiveStripeSubscription` (SD-3). La
+    // seconde compte aussi les abonnements de PASS mensuel, qui sont des objets
+    // Stripe séparés depuis le lot P0.5 : un Parrainage à 12 € fermait donc
+    // définitivement la vente de l'offre à 29 €, avec un message qui renvoyait
+    // vers un portail incapable de la créer. Ce que la garde doit empêcher est
+    // le SECOND abonnement d'offre, jamais le premier.
+    if (await hasLiveOfferSubscription(stripe, customerId)) {
       return { ok: false, error: CHECKOUT_REFUS_ABONNEMENT_VIVANT };
     }
 
@@ -263,6 +270,26 @@ export async function createAddonCheckoutSession(
   if (!selection.ok) return { ok: false, error: selection.erreur };
   const { offre, priceId, mode, capacity } = selection;
 
+  // ── LA COMPÉTITION D'UNE SAISON DE PRONOSTICS (SD-5) ────────
+  //
+  // « Une seule compétition identifiée, un seul contest_id » (catalogue,
+  // décision propriétaire du 2026-08-04). La colonne `resource_id` existait
+  // depuis le lot 2 mais rien ne la remplissait : le webhook posait
+  // `p_resource_id: null` en dur, donc un pass à 39 € vendu POUR une
+  // compétition ouvrait le module ENTIER — toutes les compétitions, pour la
+  // durée du plafond dur de douze mois.
+  //
+  // ── REFUSER PLUTÔT QU'OCTROYER LARGE ──
+  //
+  // Un achat sans compétition est refusé ICI, avant tout contact avec Stripe.
+  // L'alternative — encaisser puis octroyer le module entier — est exactement
+  // le défaut qu'on ferme, et elle a le désavantage d'être SILENCIEUSE : le
+  // commerçant recevrait plus que ce que le catalogue vend, et personne ne le
+  // saurait. Un refus, lui, se lit à l'écran et se corrige d'un clic.
+  const ressource = await ressourceDuPass(offre, formData, organization.id);
+  if (!ressource.ok) return { ok: false, error: ressource.erreur };
+  const resourceId = ressource.resourceId;
+
   // LE REFUS DE CUMUL, avant tout contact avec Stripe. Placé ici et non après
   // `ensureStripeCustomer` : créer un client Stripe pour une vente qu'on va
   // refuser laisserait une trace commerciale d'un achat qui n'a pas eu lieu.
@@ -351,6 +378,11 @@ export async function createAddonCheckoutSession(
         // seconde source, et deux sources finissent toujours par diverger.
         entitlement: offre.entitlement,
         ...(capacity === null ? {} : { capacity: String(capacity) }),
+        // La ressource bornante, déjà VÉRIFIÉE comme appartenant à cette
+        // organisation. Voir `ressourceDuPass` : c'est un choix du commerçant,
+        // qu'aucun catalogue ne saurait retrouver côté webhook — le seul des
+        // paramètres d'octroi qui doive légitimement voyager.
+        ...(resourceId === null ? {} : { resource_id: resourceId }),
       },
       success_url: `${APP_URL}/dashboard/settings/modules?achat=succes`,
       cancel_url: `${APP_URL}/dashboard/settings/modules?achat=annule`,
@@ -363,6 +395,84 @@ export async function createAddonCheckoutSession(
 
   if (!url) return { ok: false, error: "Impossible de démarrer le paiement" };
   redirect(url);
+}
+
+/** Forme d'un uuid : ce qu'on vérifie AVANT d'interroger Postgres. */
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type VerdictRessource =
+  | { ok: true; resourceId: string | null }
+  | { ok: false; erreur: string };
+
+/**
+ * LA RESSOURCE À LAQUELLE CET ACHAT EST BORNÉ, vérifiée côté serveur.
+ *
+ * Rend `null` — et non un refus — pour les sept add-ons qui ouvrent leur module
+ * entier : ce n'est pas « pas de ressource fournie », c'est « ce produit n'en
+ * prend pas ». Passer une ressource à ces achats-là serait sans effet, la
+ * metadata n'étant écrite que sur retour non nul.
+ *
+ * ── POURQUOI LA VÉRIFICATION EST ICI ET NON DANS LE WEBHOOK ──
+ *
+ * Le webhook doit écrire ce qui a été PAYÉ ; refuser au moment de l'octroi
+ * encaisserait sans rien ouvrir. C'est donc avant le paiement qu'on s'assure
+ * que la compétition existe et appartient au commerçant — un identifiant volé
+ * chez un autre tenant est refusé ici, et de toute façon inopérant plus loin
+ * (l'octroi porte `organization_id`, la garde SQL croise les deux).
+ *
+ * ── L'INDÉCISION REFUSE LA VENTE ──
+ *
+ * Même sens que `octroiRecurrentVivant` : une panne de lecture fait refuser
+ * l'achat, jamais passer sans borne. Vendre dans le doute, ici, c'est vendre
+ * une saison entière au prix d'une compétition.
+ */
+async function ressourceDuPass(
+  offre: { billing: { model: string }; name: string },
+  formData: FormData | undefined,
+  organizationId: string,
+): Promise<VerdictRessource> {
+  if (offre.billing.model !== "single-competition") {
+    return { ok: true, resourceId: null };
+  }
+
+  const demande = formData?.get("resource");
+  const brut = typeof demande === "string" ? demande.trim() : "";
+  if (!brut) {
+    return {
+      ok: false,
+      erreur:
+        `« ${offre.name} » s'achète pour UNE compétition. Créez-la d'abord dans ` +
+        "Pronostics — un brouillon suffit —, puis choisissez-la ici.",
+    };
+  }
+  // La forme est testée AVANT la requête : un identifiant malformé ferait
+  // rendre à Postgres une erreur de cast (22P02) que l'appelant lirait comme
+  // une panne, donc comme une indécision, là où c'est une saisie invalide.
+  if (!UUID.test(brut)) {
+    return { ok: false, erreur: "Cette compétition est introuvable sur votre compte." };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("contests")
+    .select("id")
+    .eq("id", brut)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    reportError("billing.addon-ressource", error.message);
+    return {
+      ok: false,
+      erreur:
+        "Impossible de vérifier cette compétition pour le moment. Réessayez dans un instant.",
+    };
+  }
+  if (!data) {
+    return { ok: false, erreur: "Cette compétition est introuvable sur votre compte." };
+  }
+  return { ok: true, resourceId: brut.toLowerCase() };
 }
 
 /** Ouvre le portail client Stripe (moyens de paiement, annulation…). */

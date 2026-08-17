@@ -16,8 +16,17 @@ export type SubscriptionStatus =
   | "inactive";
 
 export type CampaignStatus = "draft" | "active" | "paused" | "archived";
-/** Motif d'une pause automatique (null : pause manuelle ou campagne active). */
-export type CampaignPausedReason = "schedule_end" | "budget_reached";
+/**
+ * Motif d'une pause automatique (null : pause manuelle ou campagne active).
+ * Miroir du CHECK `campaigns_paused_reason_check` (20260926120000).
+ * `droit_expire` : `run_campaign_schedule` a refusé de publier faute du droit
+ * « wheel » — le seul des trois qui se répare en repayant, le planificateur
+ * réactivant de lui-même au passage suivant.
+ */
+export type CampaignPausedReason =
+  | "schedule_end"
+  | "budget_reached"
+  | "droit_expire";
 export type PlayLimit = "once" | "daily" | "weekly" | "unlimited";
 export type MemberRole = "owner" | "editor" | "cashier";
 export type GameType =

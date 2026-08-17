@@ -11,6 +11,7 @@ import {
   sendInactiveEmails,
   sendLowStockEmail,
   sendPostRedemptionEmails,
+  sendScheduleBlockedEmail,
   sendWonNotRedeemedEmails,
 } from "@/lib/resend";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -24,9 +25,10 @@ import type { AutomationScenario } from "@/types/database";
 /**
  * Automatisations commerçant — orchestration des scénarios d'emails.
  *
- * Trois familles de jobs (file `jobs`, worker /api/cron/jobs) :
- * - `automation.budget-paused` / `automation.low-stock` : événementiels,
- *   déposés par la base (claim_winning_spin / trigger prizes) — simple
+ * Deux familles de jobs (file `jobs`, worker /api/cron/jobs) :
+ * - `automation.budget-paused` / `automation.low-stock` /
+ *   `automation.schedule-blocked` : événementiels, déposés par la base
+ *   (claim_winning_spin / trigger prizes / run_campaign_schedule) — simple
  *   notification au propriétaire de l'organisation ;
  * - `automation.run-scenarios` : quotidien, déposé par
  *   /api/cron/automations pour chaque org ayant au moins un scénario
@@ -89,6 +91,63 @@ export async function processBudgetPausedJob(
     campaignName: campaign.name,
     budgetCents: campaign.budget_cents ?? 0,
     spentCents: campaign.budget_spent_cents ?? 0,
+  });
+  // Resend non configuré (dev) : best-effort, pas de tempête de retys.
+  if (!sent && isResendConfigured()) {
+    return { status: "retry", error: "envoi refusé par le fournisseur" };
+  }
+  return { status: "completed" };
+}
+
+/**
+ * `automation.schedule-blocked` : l'ouverture programmée d'une campagne a été
+ * REFUSÉE faute de droit sur la roue.
+ *
+ * ── L'OBJECTION QUE CE HANDLER LÈVE ──
+ *
+ * La migration 20260906120000 avait écarté toute garde de droit sur
+ * `run_campaign_schedule`, et son motif écrit était juste : « un refus en tâche
+ * de fond n'a pas d'écran pour se dire ». 20260926120000 pose la garde ET le
+ * signal ; ce handler EST le signal. Sans lui, le job tombe dans le `default:`
+ * du dispatch, échoue cinq fois puis part en dead-letter — et le commerçant
+ * découvre sa roue fermée en la cherchant.
+ *
+ * ── CE QU'IL NE FAIT PAS ──
+ *
+ * Il ne relit ni ne recalcule le droit. La décision est prise, la campagne est
+ * déjà en `paused` / `droit_expire` ; revérifier ici pourrait rendre « le droit
+ * est revenu » entre le dépôt et l'exécution (jusqu'à 24 h, voir l'en-tête du
+ * worker) et ferait taire un signal sur un fait qui a bel et bien eu lieu.
+ */
+export async function processScheduleBlockedJob(
+  admin: Admin,
+  job: JobRow,
+): Promise<JobOutcome> {
+  // camelCase, comme les deux jobs voisins déposés par la base : c'est la
+  // convention de `jobs.payload`, et la migration s'y aligne.
+  const campaignId = String(job.payload.campaignId ?? "");
+  const organizationId = String(job.payload.organizationId ?? "");
+  if (!campaignId || !organizationId) {
+    return { status: "failed", error: "payload incomplet" };
+  }
+
+  const { data: campaign, error } = await admin
+    .from("campaigns")
+    .select("id, name")
+    .eq("id", campaignId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) return { status: "retry", error: error.message };
+  if (!campaign) return { status: "failed", error: "campagne introuvable" };
+
+  const ownerEmail = await getOrgOwnerEmail(admin, organizationId);
+  // Personne à prévenir : rien d'autre à faire (la pause est déjà posée, et la
+  // ligne d'audit `campaign.schedule.blocked` garde la trace).
+  if (!ownerEmail) return { status: "completed" };
+
+  const sent = await sendScheduleBlockedEmail({
+    to: ownerEmail,
+    campaignName: campaign.name,
   });
   // Resend non configuré (dev) : best-effort, pas de tempête de retys.
   if (!sent && isResendConfigured()) {

@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const chargerOctroisVivants = vi.fn();
+const octroiRessourceVivant = vi.fn();
 vi.mock("@/lib/module-grants-loader", () => ({
   chargerOctroisVivants: (...args: unknown[]) => chargerOctroisVivants(...args),
+  octroiRessourceVivant: (...args: unknown[]) => octroiRessourceVivant(...args),
 }));
 
 const { moduleOuvertAuJoueur } = await import("./module-acces-public");
@@ -27,9 +29,24 @@ function orgAbonnee() {
   return { ...orgSansRien(), subscription_status: "active" as const, addon_quiz: true };
 }
 
+/** La même, côté pronostics : c'est le seul module vendu à la ressource. */
+function orgPronosSansRien() {
+  return {
+    id: "org-1",
+    subscription_status: "canceled" as const,
+    trial_ends_at: "2026-01-01T00:00:00.000Z",
+    past_due_since: null,
+    comp_access: false,
+    comp_access_until: null,
+    addon_pronostics: false,
+  };
+}
+
 beforeEach(() => {
   chargerOctroisVivants.mockReset();
   chargerOctroisVivants.mockResolvedValue([]);
+  octroiRessourceVivant.mockReset();
+  octroiRessourceVivant.mockResolvedValue(false);
 });
 
 describe("moduleOuvertAuJoueur — le droit du joueur", () => {
@@ -81,6 +98,81 @@ describe("moduleOuvertAuJoueur — ce que la lecture coûte, et à qui", () => {
     chargerOctroisVivants.mockResolvedValue([]);
     expect(await moduleOuvertAuJoueur("quiz", orgSansRien(), MAINTENANT)).toBe(false);
     expect(chargerOctroisVivants).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("moduleOuvertAuJoueur — le pass borné à UNE ressource (SD-5)", () => {
+  const CONTEST = { resourceId: "contest-1" };
+
+  it("un octroi borné à CE championnat l'ouvre au joueur", async () => {
+    // LE DÉFAUT MESURÉ PAR LA REVUE. La migration 20260925120000 borne le pass
+    // « Saison de pronostics » à une compétition et autorise sa publication ;
+    // ce chemin de lecture n'avait pas reçu sa contrepartie. Le commerçant
+    // payait 39 €, publiait, et son joueur lisait « momentanément désactivé ».
+    octroiRessourceVivant.mockResolvedValue(true);
+    expect(
+      await moduleOuvertAuJoueur(
+        "pronostics",
+        orgPronosSansRien(),
+        MAINTENANT,
+        CONTEST,
+      ),
+    ).toBe(true);
+    expect(octroiRessourceVivant).toHaveBeenCalledWith(
+      "org-1",
+      "pronostics",
+      "contest-1",
+      MAINTENANT,
+    );
+  });
+
+  it("sans octroi sur cette ressource, le championnat reste fermé", async () => {
+    expect(
+      await moduleOuvertAuJoueur(
+        "pronostics",
+        orgPronosSansRien(),
+        MAINTENANT,
+        CONTEST,
+      ),
+    ).toBe(false);
+  });
+
+  it("un appelant SANS ressource ne déclenche aucune lecture de ressource", async () => {
+    // Les sept autres contextes publics passent par ici sans ressource : aucun
+    // de leurs modules ne se vend à la ressource, et leur faire payer une
+    // requête de plus sur chaque page publique serait un coût sans contrepartie.
+    octroiRessourceVivant.mockResolvedValue(true);
+    expect(await moduleOuvertAuJoueur("quiz", orgSansRien(), MAINTENANT)).toBe(false);
+    expect(octroiRessourceVivant).not.toHaveBeenCalled();
+  });
+
+  it("le module ENTIER passe devant : la ressource n'est pas interrogée", async () => {
+    // Même ordre que `org_has_module_access_for_resource`, et pour la même
+    // raison : un droit de module ouvre TOUTES ses ressources, donc la seconde
+    // lecture ne pourrait pas changer la réponse.
+    chargerOctroisVivants.mockResolvedValue(["pronostics"]);
+    expect(
+      await moduleOuvertAuJoueur(
+        "pronostics",
+        orgPronosSansRien(),
+        MAINTENANT,
+        CONTEST,
+      ),
+    ).toBe(true);
+    expect(octroiRessourceVivant).not.toHaveBeenCalled();
+  });
+
+  it("un octroi borné à un AUTRE championnat n'ouvre pas celui-ci", async () => {
+    // Le contre-exemple qui rend la borne signifiante. La discrimination se
+    // fait dans `octroiRessourceVivant` (prouvée sur son `.eq("resource_id")`
+    // dans module-grants-loader.test.ts) ; ce qu'on épingle ici est que ce
+    // helper ne se rabat PAS sur le module entier quand elle répond non.
+    octroiRessourceVivant.mockResolvedValue(false);
+    expect(
+      await moduleOuvertAuJoueur("pronostics", orgPronosSansRien(), MAINTENANT, {
+        resourceId: "contest-2",
+      }),
+    ).toBe(false);
   });
 });
 

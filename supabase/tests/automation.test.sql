@@ -4,7 +4,9 @@
 --   1. Budget : imputation au claim, pause à l'atteinte, job déposé
 --      une seule fois par plafond, réarmement si le plafond remonte.
 --   2. run_campaign_schedule : activation dans la fenêtre, pause à
---      l'échéance, la pause budget n'est jamais réactivée.
+--      l'échéance, la pause budget n'est jamais réactivée — et, depuis
+--      20260926120000 (SD-9), refus motivé quand le droit « wheel »
+--      manque, au lieu d'une publication silencieuse.
 --   3. Stock faible : alerte UNE fois par épisode, réarmée quand le
 --      stock remonte.
 --   4. RPC de ciblage : filtres métier + anti-doublon email_log +
@@ -182,6 +184,43 @@ select is(
 select ok(
   exists (select 1 from cron.job where jobname = 'lastchance-campaign-schedule'),
   'le planificateur est inscrit dans pg_cron (suivi cron_last_success)'
+);
+
+-- ── SD-9 : l'activation exige le droit, et le refus se voit ──
+-- L'activation éprouvée ci-dessus tenait à un droit que ce fichier ne nommait
+-- pas : `subscription_status` vaut 'trialing' par défaut et `trial_ends_at`
+-- vaut `now() + 7 jours`, donc l'organisation de test a une OFFRE vivante.
+-- Depuis 20260926120000 le cron le vérifie. Sans cette assertion-ci, « le
+-- planificateur active la campagne dans sa fenêtre » se lirait comme « il
+-- l'active inconditionnellement » — ce qui était exactement le défaut. La
+-- matrice complète (signal, idempotence, rachat) vit dans droits_stripe.test.sql.
+insert into public.organizations (id, name, slug, subscription_status, trial_ends_at)
+values ('ac000000-0000-4000-8000-000000000001', 'Sans droit', 'tap-automations-nu',
+        'canceled', now() - interval '30 days');
+insert into public.campaigns
+  (id, organization_id, name, status, auto_schedule, starts_at, ends_at)
+values ('ac000000-0000-4000-8000-000000000002', 'ac000000-0000-4000-8000-000000000001',
+        'Programmée sans droit', 'draft', true,
+        now() - interval '1 hour', now() + interval '1 hour');
+
+select results_eq(
+  $$select campaign_id, action from public.run_campaign_schedule()$$,
+  $$values ('ac000000-0000-4000-8000-000000000002'::uuid, 'blocked')$$,
+  'sans le droit « wheel », le planificateur bloque au lieu de publier (SD-9)'
+);
+select results_eq(
+  $$select status, paused_reason from public.campaigns
+     where id = 'ac000000-0000-4000-8000-000000000002'$$,
+  $$values ('paused', 'droit_expire')$$,
+  'le refus devient un état lisible : paused / droit_expire'
+);
+select is(
+  (select count(*) from public.jobs where type = 'automation.schedule-blocked'),
+  1::bigint, 'un job automation.schedule-blocked porte le refus au commerçant'
+);
+select is(
+  (select count(*) from public.audit_logs where action = 'campaign.schedule.blocked'),
+  1::bigint, 'et le refus est audité, comme la pause budget'
 );
 
 -- ══ 3. Stock faible ══════════════════════════════════════════

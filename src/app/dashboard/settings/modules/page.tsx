@@ -5,6 +5,7 @@ import { lienSelonRole } from "@/lib/liens-proprietaire";
 import {
   chargerOctroisEnAttente,
   chargerOctroisVivants,
+  etatOctroiModule,
 } from "@/lib/module-grants-loader";
 import {
   addonAchetableEnLigne,
@@ -17,12 +18,14 @@ import {
   type AddonBilling,
   type AddonOffer,
 } from "@/lib/plans";
+import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   AchatAddon,
   DemarrerAddon,
+  type RessourceAchat,
 } from "@/components/dashboard/addon-purchase";
 
 export const metadata: Metadata = { title: "Options" };
@@ -75,6 +78,60 @@ export default async function ModulesSettingsPage({
         : null;
     })
     .filter((x) => x !== null);
+
+  // LES PASS TERMINÉS, DITS À VOIX HAUTE (constat SD-9).
+  //
+  // Une option expirée quittait simplement `ouverts` : la carte perdait sa
+  // pastille « Ouvert » et redevenait achetable, sans un mot. Le commerçant
+  // dont l'animation venait de se fermer n'avait donc aucun endroit où lire
+  // « c'est fini depuis telle date » — ni ici, ni sur la campagne, dont la
+  // bannière parlait d'un budget qu'il n'avait jamais posé.
+  //
+  // Seul `expired` s'affiche, et c'est une décision : `pending` a déjà sa
+  // section « Prêt à démarrer » ci-dessus, `revoked` relève du remboursement
+  // et se traite hors écran. Un pass expiré est le seul cas où le silence
+  // laissait le commerçant sans explication.
+  // Et jamais au caissier : même règle que `finDuPassExpire` côté capacités —
+  // il n'a pas à savoir de quoi l'établissement est équipé ni jusqu'à quand.
+  const finsDePass = new Map<string, string>();
+  if (role !== "cashier") {
+    await Promise.all(
+      ADDON_OFFERS.filter(
+        (offre) => !(ouverts as readonly string[]).includes(offre.entitlement),
+      ).map(async (offre) => {
+        const etat = await etatOctroiModule(
+          organization.id,
+          offre.entitlement,
+          maintenant,
+        );
+        if (etat?.etat === "expired" && etat.endsAt) {
+          finsDePass.set(
+            offre.entitlement,
+            formatDate(etat.endsAt, organization.timezone),
+          );
+        }
+      }),
+    );
+  }
+
+  // LES COMPÉTITIONS ACHETABLES. Une Saison de pronostics se vend « pour une
+  // compétition identifiée, un seul contest_id » (catalogue) : l'écran doit
+  // donc faire choisir, sans quoi l'action refuse — et l'octroi, avant ce lot,
+  // ouvrait le module entier. Lu par le client RLS : un propriétaire ne voit
+  // que les siennes, et l'action revérifie l'appartenance côté serveur.
+  const competitions: RessourceAchat[] = [];
+  if (proprietaire) {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("contests")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    for (const ligne of (data ?? []) as Array<{ id: string; name: string }>) {
+      competitions.push({ id: ligne.id, nom: ligne.name });
+    }
+  }
 
   return (
     <div>
@@ -162,7 +219,9 @@ export default async function ModulesSettingsPage({
             key={offre.entitlement}
             offre={offre}
             ouvert={(ouverts as readonly string[]).includes(offre.entitlement)}
+            finDePass={finsDePass.get(offre.entitlement) ?? null}
             proprietaire={proprietaire}
+            competitions={competitions}
           />
         ))}
 
@@ -182,17 +241,28 @@ export default async function ModulesSettingsPage({
 function CarteAddon({
   offre,
   ouvert,
+  finDePass,
   proprietaire,
+  competitions,
 }: {
   offre: AddonOffer;
   ouvert: boolean;
+  /** Date de fin déjà mise en forme du dernier pass expiré, sinon `null`. */
+  finDePass: string | null;
   proprietaire: boolean;
+  /** Compétitions du commerçant, pour le seul pass borné à l'une d'elles. */
+  competitions: readonly RessourceAchat[];
 }) {
   const achetable = addonAchetableEnLigne(offre.entitlement);
   const paliers =
     offre.billing.model === "capacity-pass"
       ? paliersDisponibles(offre.entitlement)
       : undefined;
+  // `single-competition` et non `entitlement === "pronostics"` : c'est le
+  // MODÈLE de facturation qui exige une ressource, et un second produit vendu
+  // ainsi hériterait du choix sans qu'on y pense.
+  const ressources =
+    offre.billing.model === "single-competition" ? competitions : undefined;
 
   return (
     <Card>
@@ -206,6 +276,13 @@ function CarteAddon({
           </span>
         )}
       </div>
+
+      {/* Discrète, et au-dessus du tarif : c'est un état, pas une offre. Elle
+          n'apparaît jamais en même temps que la pastille « Ouvert » — la page
+          ne la calcule que pour les options fermées. */}
+      {finDePass && (
+        <p className="mb-2 text-sm text-zinc-600">Pass terminé le {finDePass}</p>
+      )}
 
       <p className="mb-3 text-sm font-semibold text-zinc-800">
         {formulerTarif(offre.billing)}
@@ -222,6 +299,8 @@ function CarteAddon({
           entitlement={offre.entitlement}
           price={prixAffiche(offre.billing)}
           paliers={paliers}
+          ressources={ressources}
+          libelleRessource="la compétition"
         />
       ) : (
         // Le message dit quoi FAIRE. « Prix Stripe non configuré » n'apprend

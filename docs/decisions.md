@@ -6522,3 +6522,66 @@ implicite.
 - `supabase/tests/sorties_rgpd.test.sql`
 - `perform_atomic_spin` (garde `play_limit = 'once'`)
 - roadmap V1.57 ; `docs/bugs.md` (MOYEN 1, wagon 1)
+
+## ADR-103 : Un pass n'ouvre que son module, et un refus en tâche de fond se signale plutôt que de rester silencieux
+
+**Date** : 2026-08-17
+**Statut** : Accepté
+**Contexte** : wagon 2 du train de correction issu de l'audit transverse du
+2026-08-16 (`docs/chantier-audit-2026-08-16.md`, SD-1..SD-7, SD-9), branche
+`chantier/audit-p0-stripe`. Le catalogue Stripe vendait des pass et des
+offres qui n'ouvraient pas exactement ce qu'ils promettaient : un pass
+ouvrait le socle roue en plus de son module, une Saison de pronostics
+couvrait toutes les compétitions au lieu d'une seule, et une programmation de
+campagne dont le droit avait expiré continuait de tourner sans que personne
+ne le sache.
+
+**Décision — périmètre d'un pass (SD-4)**. `org_has_module_access` gagne un
+paramètre `_for_resource` : un octroi vivant n'ouvre plus le socle `wheel`,
+seulement son propre module. C'est l'application de la décision produit du
+2026-08-04 (déjà notée en ADR-078/ADR-079 pour le socle « découvrir,
+préparer, publier »), étendue au catalogue de pass.
+
+**Décision renversée — programmation gardée (SD-9)**. La migration
+`20260906120000` documentait un choix délibéré : « `run_campaign_schedule`
+non gardé — un refus en tâche de fond n'a pas d'écran pour se dire ».
+Cette objection est désormais **fermée par le signal**, pas ignorée :
+`run_campaign_schedule` est gardée par `org_has_module_access(org,'wheel')`,
+le motif `droit_expire` est posé à la transition avec une entrée
+`audit_logs`, et un job `automation.schedule-blocked` envoie un e-mail au
+propriétaire. Le rachat du droit réactive la campagne au passage suivant, le
+trigger existant efface le motif.
+
+**Frontière assumée**. Les campagnes déjà `active` dont le droit tombe ne
+sont pas mises en pause par le cron — le refus se joue à l'activation ; les
+contextes publics refusent déjà à la lecture. Rien ne rend une campagne
+active injouable côté joueur au moment où le droit expire ; le signal porte
+sur la reprise, pas sur l'interruption immédiate.
+
+**Décision — grâce d'impayé d'un pass ancrée sur l'événement de CET
+abonnement**. La date de départ de la grâce est prise sur `event.created` de
+l'abonnement du pass concerné, jamais sur `organizations.past_due_since`
+(qui reste réservé à l'abonnement principal) et jamais écrite pour un pass
+pur. La date est monotone : une fin calculée ≤ `starts_at` est refusée et
+signalée plutôt que d'entraîner un 500 en boucle sur `grant_fin_apres_debut`.
+`current_period_end` a été écarté : dans le SDK Stripe v22, cette date est
+portée par les items de l'abonnement, pas par l'abonnement lui-même, et en
+choisir un parmi plusieurs items n'aurait pas été justifiable.
+
+**Conséquences** : migrations `20260925120000_droits_stripe.sql` et
+`20260926120000_pass_expire_lisible.sql` ; webhook Stripe borné par
+`organization_id` sur la reprise de remboursement (SD-2) ; `resource_id`
+vivant et resserrement automatique d'`ends_at` à la clôture d'une
+compétition (SD-5) ; garde de checkout par famille de prix pour qu'un
+abonnement 100 % pass ne ferme plus la vente de l'offre (SD-3).
+
+**References** :
+- `org_has_module_access`, `run_campaign_schedule`,
+  `shrink_contest_grants_on_close`, `revoke_grant_for_refund`,
+  `debit_sms_balance_for_refund` — migrations `20260925120000` et
+  `20260926120000`
+- `etatOctroiModule`, `capacitesDuModule`, `octroiRessourceVivant`,
+  `partitionnerPrix`, `processScheduleBlockedJob`, `sendScheduleBlockedEmail`
+- ADR-078, ADR-079 (socle « découvrir, préparer, publier »), migration
+  `20260906120000` (décision renversée)
+- roadmap V1.58 ; `docs/bugs.md` (reliquats INFO, wagon 2)

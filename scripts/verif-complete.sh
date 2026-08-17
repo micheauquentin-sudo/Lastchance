@@ -283,8 +283,27 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+# `supabase start` peut lui-même sortir en 1 sur une distro qui vient de se
+# réveiller (« container is not ready: starting ») : le démon Docker répond
+# déjà à `docker info`, mais les conteneurs qu'il vient de recréer n'ont pas
+# fini leur healthcheck. Ce n'est pas le piège 5 (Postgres « healthy » mais
+# injoignable) : là, la commande elle-même échoue avant qu'on ait de base à
+# interroger. On la reprend plusieurs fois avec une pause, plutôt que de
+# laisser un simple réveil de WSL faire échouer tout le script.
+demarrer_supabase() {
+  local tentative
+  for tentative in 1 2 3 4 5; do
+    if npx --no-install supabase start; then
+      return 0
+    fi
+    echo "supabase start a échoué (tentative $tentative/5) — pause avant reprise"
+    sleep 10
+  done
+  return 1
+}
+
 etape "conteneurs orphelins (purge)" purger_orphelins
-etape "supabase start"               npx --no-install supabase start
+etape "supabase start"               demarrer_supabase
 etape "Postgres répond"              attendre_pg
 etape "db reset (sans seed)"         npx --no-install supabase db reset --no-seed
 etape "Postgres répond (après reset)" attendre_pg

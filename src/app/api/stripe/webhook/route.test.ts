@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   constructEvent: vi.fn(),
   retrieve: vi.fn(),
+  /**
+   * `checkout.sessions.list` — LA TRADUCTION QUI MANQUAIT (SD-2).
+   *
+   * Un `charge.refunded` porte une charge et un payment intent ; les deux RPC
+   * de reprise s'apparient sur l'identifiant de SESSION. Sans cet appel, elles
+   * rendraient zéro ligne — « rien à reprendre » — sur un remboursement bien
+   * réel, en silence. Le stub existe donc pour que le test puisse prouver que
+   * la traduction est faite, et non seulement que la route rend 200.
+   */
+  sessionsList: vi.fn(),
   rpc: vi.fn(),
   resolveStripeEntitlements: vi.fn(),
   reportError: vi.fn(),
@@ -75,6 +85,9 @@ vi.mock("@/lib/stripe", async () => {
     getStripe: () => ({
       webhooks: { constructEvent: mocks.constructEvent },
       subscriptions: { retrieve: mocks.retrieve },
+      checkout: {
+        sessions: { list: (...args: unknown[]) => mocks.sessionsList(...args) },
+      },
     }),
     mapStripeStatus: (status: string) => status,
     resolveStripeEntitlements: (...args: unknown[]) =>
@@ -95,15 +108,25 @@ vi.mock("@/lib/stripe", async () => {
 const octrois = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown> & { id: string }>,
   updateError: null as { message: string } | null,
+  selectError: null as { message: string } | null,
   filtresVus: [] as Array<Array<[string, unknown]>>,
+  /** Les filtres des LECTURES, tenus à part de ceux des écritures. */
+  selectsVus: [] as Array<Array<[string, unknown]>>,
 }));
 
 /** Correspondance client Stripe → organisation, celle que fait la RPC V2. */
 const organisations = vi.hoisted(() => ({
   parClient: new Map<string, string>(),
   selectError: null as { message: string } | null,
-  /** Date du premier impayé, lue par l'échéance de grâce. */
+  /**
+   * Date du premier impayé — que le webhook NE LIT PLUS, et c'est le sujet du
+   * correctif : elle n'est écrite que par `apply_stripe_subscription_event_v2`,
+   * qu'un abonnement de pass PUR ne traverse jamais. La garder ici avec son
+   * compteur de lectures est ce qui permet d'affirmer par un test que l'ancre
+   * de la grâce est bien l'événement, et non plus l'organisation.
+   */
   pastDueSince: null as string | null,
+  lecturesPastDue: 0,
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -125,6 +148,7 @@ vi.mock("@/lib/supabase/admin", () => ({
                 // l'une le résultat de l'autre — un `id` là où le code attend
                 // une date le ferait renoncer en silence.
                 if (colonnes?.includes("past_due_since")) {
+                  organisations.lecturesPastDue += 1;
                   return {
                     data: { past_due_since: organisations.pastDueSince },
                     error: null,
@@ -139,7 +163,65 @@ vi.mock("@/lib/supabase/admin", () => ({
       }
 
       if (table === "organization_module_grants") {
+        /**
+         * `in` pousse un TABLEAU de valeurs admissibles ; `eq` et `is`
+         * poussent une valeur scalaire. Les confondre ferait échouer tout
+         * filtre `in` en silence, donc ne toucher aucune ligne — un test vert
+         * sur une écriture jamais faite.
+         */
+        const correspond = (
+          row: Record<string, unknown>,
+          filtres: Array<[string, unknown]>,
+        ) =>
+          filtres.every(([column, value]) =>
+            Array.isArray(value) ? value.includes(row[column]) : row[column] === value,
+          );
+
         return {
+          /**
+           * LECTURE — celle que l'échéance d'impayé fait désormais avant
+           * d'écrire. Elle ne sert pas au confort : sans les `starts_at` et les
+           * échéances déjà posées, le webhook ne peut pas distinguer un rejeu
+           * (« déjà daté ») d'un calcul aberrant (« fin antérieure au début »),
+           * et le second se tairait.
+           */
+          // Les colonnes demandées ne servent à rien ici : la fausse table rend
+          // la ligne entière, et le code testé n'en lit que ce qu'il a demandé.
+          select: () => {
+            const filtres: Array<[string, unknown]> = [];
+            const lecteur = {
+              eq(column: string, value: unknown) {
+                filtres.push([column, value]);
+                return lecteur;
+              },
+              is(column: string, value: unknown) {
+                filtres.push([column, value]);
+                return lecteur;
+              },
+              in(column: string, values: unknown[]) {
+                filtres.push([column, values]);
+                return lecteur;
+              },
+              then(
+                resolve: (v: { data: unknown; error: unknown }) => unknown,
+                reject?: (e: unknown) => unknown,
+              ) {
+                octrois.selectsVus.push(filtres);
+                const resultat = octrois.selectError
+                  ? { data: null, error: octrois.selectError }
+                  : {
+                      // COPIES, jamais les lignes elles-mêmes : une lecture ne
+                      // doit pas offrir au code testé une poignée sur la table.
+                      data: octrois.rows
+                        .filter((row) => correspond(row, filtres))
+                        .map((row) => ({ ...row })),
+                      error: null,
+                    };
+                return Promise.resolve(resultat).then(resolve, reject);
+              },
+            };
+            return lecteur;
+          },
           update: (payload: Record<string, unknown>) => {
             const filtres: Array<[string, unknown]> = [];
             const builder = {
@@ -174,16 +256,41 @@ vi.mock("@/lib/supabase/admin", () => ({
                   return { data: null, error: octrois.updateError };
                 }
                 const touchees = octrois.rows.filter((row) =>
-                  filtres.every(([column, value]) =>
-                    // `in` pousse un TABLEAU de valeurs admissibles ; `eq` et
-                    // `is` poussent une valeur scalaire. Les confondre ferait
-                    // échouer tout filtre `in` en silence, donc ne toucher
-                    // aucune ligne — un test vert sur une écriture jamais faite.
-                    Array.isArray(value)
-                      ? value.includes(row[column])
-                      : row[column] === value,
-                  ),
+                  correspond(row, filtres),
                 );
+
+                /* ── LA FAUSSE TABLE REFUSE CE QUE LA VRAIE REFUSE ──
+                 *
+                 * `grant_fin_apres_debut` (20260907120000) exige
+                 * `ends_at > starts_at`, et `starts_at is not null` avec elle.
+                 * Sans cette garde, une fin calculée AVANT le début s'écrirait
+                 * tranquillement ici alors qu'en production elle rend un `error`
+                 * — donc un 500 rejoué trois jours par Stripe, puis le point
+                 * d'entrée désactivé. Un test qui ignore la contrainte
+                 * verrouillerait l'inverse de ce qu'il croit vérifier.
+                 */
+                if ("ends_at" in payload && payload.ends_at !== null) {
+                  const finMs = Date.parse(String(payload.ends_at));
+                  const violante = touchees.find((row) => {
+                    const debut =
+                      row.starts_at == null
+                        ? NaN
+                        : Date.parse(String(row.starts_at));
+                    return !(Number.isFinite(debut) && finMs > debut);
+                  });
+                  if (violante) {
+                    return {
+                      data: null,
+                      error: {
+                        message:
+                          'new row for relation "organization_module_grants" ' +
+                          'violates check constraint "grant_fin_apres_debut" ' +
+                          `(octroi ${violante.id})`,
+                      },
+                    };
+                  }
+                }
+
                 for (const row of touchees) Object.assign(row, payload);
                 return { data: touchees.map((row) => ({ id: row.id })), error: null };
               },
@@ -281,10 +388,13 @@ beforeEach(() => {
   events.deletes = [];
   octrois.rows = [];
   octrois.updateError = null;
+  octrois.selectError = null;
   octrois.filtresVus = [];
+  octrois.selectsVus = [];
   organisations.parClient = new Map([["cus_1", "org-1"]]);
   organisations.selectError = null;
   organisations.pastDueSince = null;
+  organisations.lecturesPastDue = 0;
   mocks.constructEvent.mockReturnValue(event);
   mocks.retrieve.mockResolvedValue({
     id: "sub_1",
@@ -313,6 +423,7 @@ beforeEach(() => {
     ],
     error: null,
   });
+  mocks.sessionsList.mockResolvedValue({ data: [] });
 });
 
 describe("webhook Stripe — droits", () => {
@@ -932,7 +1043,20 @@ function abonnementDePass(
   });
 }
 
-/** L'octroi récurrent vivant qu'une résiliation doit refermer. */
+/**
+ * L'octroi récurrent vivant qu'une résiliation doit refermer.
+ *
+ * `starts_at` et `resource_id` ne sont pas décoratifs. Le premier est ce que
+ * `grant_fin_apres_debut` compare à toute échéance posée — une ligne sans début
+ * fait REFUSER l'écriture, en base comme dans la fausse table. Le second est le
+ * filtre d'`org_has_live_module_grant` : les omettre ferait passer les lignes à
+ * côté des filtres du webhook, donc des tests verts sur des écritures jamais
+ * faites. En base, les deux colonnes existent toujours.
+ */
+const DEBUT_OCTROI = "2023-11-01T00:00:00.000Z";
+/** `event.created` des événements de pass (1 700 000 900) + 14 jours de grâce. */
+const FIN_DE_GRACE = "2023-11-28T22:28:20.000Z";
+
 function octroiVivant(over: Record<string, unknown> = {}) {
   return {
     id: "grant-loyalty",
@@ -940,6 +1064,8 @@ function octroiVivant(over: Record<string, unknown> = {}) {
     module: "loyalty",
     kind: "recurring",
     source: "stripe",
+    resource_id: null,
+    starts_at: DEBUT_OCTROI,
     revoked_at: null,
     ends_at: null,
     ...over,
@@ -1021,7 +1147,7 @@ describe("webhook Stripe — abonnement d'un add-on mensuel", () => {
     expect(octrois.rows[0].revoked_at).not.toBeNull();
   });
 
-  it("un impayé ne referme rien — la grâce est celle de l'abonnement principal", async () => {
+  it("un impayé ne RÉVOQUE rien — il DATE, et la grâce court", async () => {
     octrois.rows = [octroiVivant()];
     abonnementDePass("customer.subscription.updated");
     mocks.retrieve.mockResolvedValue({
@@ -1036,6 +1162,9 @@ describe("webhook Stripe — abonnement d'un add-on mensuel", () => {
     await POST(request());
 
     expect(octrois.rows[0].revoked_at).toBeNull();
+    // Ne rien révoquer n'est pas ne rien faire : le terme est posé, et c'est ce
+    // qui referme le module tout seul si le commerçant ne régularise pas.
+    expect(octrois.rows[0].ends_at).toBe(FIN_DE_GRACE);
   });
 
   it("le rejeu d'une résiliation ne touche plus rien, et s'acquitte", async () => {
@@ -1232,109 +1361,477 @@ describe("échéance d'un add-on mensuel impayé", () => {
     return octrois.rows.find((r) => r.id === id);
   }
 
-  it("pose la fin de grâce sur past_due, et non une révocation", async () => {
-    organisations.parClient.set("cus_1", "org-1");
-    organisations.pastDueSince = "2026-03-01T00:00:00.000Z";
-    octrois.rows.push({
-      id: "g1",
-      organization_id: "org-1",
-      module: "loyalty",
-      kind: "recurring",
-      source: "stripe",
-      revoked_at: null,
-      ends_at: null,
-    });
-    abonnementDePass("customer.subscription.updated");
+  /** L'abonnement de pass passé en impayé, dans l'état où Stripe le rend. */
+  function passEnImpaye(items: string[] = [PRIX_PASS_LOYALTY]) {
+    abonnementDePass("customer.subscription.updated", items);
     mocks.retrieve.mockResolvedValue({
       id: "sub_pass_1",
       status: "past_due",
       customer: "cus_1",
       trial_end: null,
       metadata: null,
-      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+      items: { data: items.map((id) => ({ price: { id } })) },
     });
+  }
+
+  function octroi(over: Record<string, unknown> = {}) {
+    octrois.rows.push(octroiVivant(over));
+  }
+
+  it("PASS SEUL : la fin de grâce est posée, datée de l'abonnement du pass", async () => {
+    /* ── LE CAS QUE CE CHEMIN NE TRAITAIT PAS DU TOUT ──
+     *
+     * Un pass PUR ne traverse jamais `apply_stripe_subscription_event_v2`,
+     * seule écrivaine d'`organizations.past_due_since`. Le webhook lisait donc
+     * `null`, renonçait, et le module restait ouvert INDÉFINIMENT tant que le
+     * recouvrement Stripe laissait l'abonnement en `past_due` — ce qui peut ne
+     * jamais s'arrêter selon la configuration des relances.
+     */
+    organisations.pastDueSince = null;
+    octroi({ id: "g1" });
+    passEnImpaye();
 
     expect((await POST(request())).status).toBe(200);
 
-    const l = ligne("g1");
-    // 14 jours après le PREMIER impayé — pas après la réception du webhook.
-    expect(l?.ends_at).toBe("2026-03-15T00:00:00.000Z");
-    // L'octroi n'est PAS révoqué : le commerçant garde son module le temps de
-    // régulariser, exactement comme pour l'abonnement principal.
-    expect(l?.revoked_at).toBeNull();
+    expect(ligne("g1")?.ends_at).toBe(FIN_DE_GRACE);
+    // Une échéance, pas une révocation : le commerçant garde son module le
+    // temps de régulariser, exactement comme l'abonnement principal.
+    expect(ligne("g1")?.revoked_at).toBeNull();
   });
 
-  it("l'échéance vient de la date d'impayé, jamais de l'instant du webhook", async () => {
-    // Sans cette règle, un webhook rejoué trois jours plus tard rallongerait
-    // la grâce d'autant — et un rejeu suffirait à repousser la fermeture.
-    organisations.parClient.set("cus_1", "org-1");
-    organisations.pastDueSince = "2026-01-10T12:00:00.000Z";
-    octrois.rows.push({
-      id: "g2",
-      organization_id: "org-1",
-      module: "loyalty",
-      kind: "recurring",
-      source: "stripe",
-      revoked_at: null,
-      ends_at: null,
-    });
-    abonnementDePass("customer.subscription.updated");
-    mocks.retrieve.mockResolvedValue({
-      id: "sub_pass_1",
-      status: "past_due",
-      customer: "cus_1",
-      trial_end: null,
-      metadata: null,
-      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
-    });
+  it("l'ancre est l'ÉVÉNEMENT : l'organisation n'est plus lue du tout", async () => {
+    // Le corollaire du cas précédent. Tant que `past_due_since` décidait, la
+    // grâce d'un pass dépendait d'un champ que personne n'écrit pour lui.
+    organisations.pastDueSince = "2023-01-01T00:00:00.000Z";
+    octroi({ id: "g2" });
+    passEnImpaye();
 
     await POST(request());
-    expect(ligne("g2")?.ends_at).toBe("2026-01-24T12:00:00.000Z");
+
+    expect(ligne("g2")?.ends_at).toBe(FIN_DE_GRACE);
+    expect(organisations.lecturesPastDue).toBe(0);
   });
 
-  it("le retour en active LÈVE l'échéance — régulariser suffit", async () => {
-    organisations.parClient.set("cus_1", "org-1");
-    octrois.rows.push({
-      id: "g3",
-      organization_id: "org-1",
-      module: "loyalty",
-      kind: "recurring",
-      source: "stripe",
-      revoked_at: null,
-      ends_at: "2026-03-15T00:00:00.000Z",
+  it("MIXTE, offre en impayé ANCIEN : aucun 500, et ends_at reste après starts_at", async () => {
+    /* ── LE 500 QUI DÉSACTIVAIT LE POINT D'ENTRÉE ──
+     *
+     * C'est le seul cas où `past_due_since` était réellement écrit : un
+     * abonnement qui porte l'offre ET un pass. Impayée depuis des mois, l'offre
+     * rendait une fin de grâce ANTÉRIEURE au `starts_at` de l'octroi du pass,
+     * donc une violation de `grant_fin_apres_debut` — que la fausse table
+     * refuse comme la vraie. Stripe rejoue un 500 pendant trois jours puis
+     * DÉSACTIVE le point d'entrée, ce qui coupe aussi la synchronisation des
+     * abonnements : un impayé de pass finissait par casser la facturation.
+     */
+    organisations.pastDueSince = "2023-01-01T00:00:00.000Z";
+    octroi({ id: "g3" });
+    passEnImpaye(["price_live", PRIX_PASS_LOYALTY]);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    const finPosee = ligne("g3")?.ends_at as string;
+    expect(finPosee).toBe(FIN_DE_GRACE);
+    expect(Date.parse(finPosee)).toBeGreaterThan(Date.parse(DEBUT_OCTROI));
+  });
+
+  it("MONOTONE : un second impayé ne repousse pas l'échéance déjà posée", async () => {
+    // `event.created` bouge à chaque relance de recouvrement, et Stripe en émet
+    // plusieurs. Redater à chaque passage rallongerait la grâce sans fin —
+    // exactement le défaut que la lecture de `past_due_since` évitait, et qu'il
+    // ne s'agissait pas de réintroduire en changeant d'ancre.
+    octroi({ id: "g4", ends_at: "2023-11-20T00:00:00.000Z" });
+    passEnImpaye();
+    mocks.constructEvent.mockReturnValue({
+      id: "evt_pass_2",
+      type: "customer.subscription.updated",
+      created: 1_700_000_900 + 5 * 24 * 60 * 60,
+      data: { object: { id: "sub_pass_1" } },
+    });
+
+    expect((await POST(request())).status).toBe(200);
+    expect(ligne("g4")?.ends_at).toBe("2023-11-20T00:00:00.000Z");
+  });
+
+  it("un octroi JAMAIS DÉMARRÉ est signalé, jamais écrit", async () => {
+    // `grant_fin_apres_debut` exige aussi `starts_at is not null`. Écrire quand
+    // même rendrait une erreur, donc un 500 qu'aucun rejeu ne répare. Et un
+    // octroi non démarré n'ouvre aucun accès : il n'y a rien à fermer.
+    octroi({ id: "g5", starts_at: null });
+    passEnImpaye();
+
+    expect((await POST(request())).status).toBe(200);
+    expect(ligne("g5")?.ends_at).toBeNull();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.echeance-impaye-borne",
+      expect.stringContaining("sub_pass_1"),
+    );
+  });
+
+  it("un octroi BORNÉ À UNE RESSOURCE n'est ni daté ni levé", async () => {
+    // Le filtre d'`org_has_live_module_grant`, qui manquait ici. Une Saison de
+    // pronostics vendue pour UNE compétition n'est pas gouvernée par
+    // l'abonnement d'un module entier : la dater ou la lever déciderait de la
+    // vie d'un droit que cet abonnement n'a jamais vendu.
+    octroi({ id: "g6-entier" });
+    octroi({ id: "g6-borne", resource_id: "contest-1" });
+    passEnImpaye();
+
+    expect((await POST(request())).status).toBe(200);
+    expect(ligne("g6-entier")?.ends_at).toBe(FIN_DE_GRACE);
+    expect(ligne("g6-borne")?.ends_at).toBeNull();
+  });
+
+  it("le retour en active LÈVE l'échéance — régulariser suffit, et RIEN d'autre", async () => {
+    // La moitié qui rend la branche `reactivated` (SD-6) joignable : sans
+    // échéance posée, aucun rachat ne peut en lever une. Et la levée est bornée
+    // aux mêmes lignes que la pose — un octroi de ressource garde la sienne.
+    octroi({ id: "g7", ends_at: FIN_DE_GRACE });
+    octroi({
+      id: "g7-borne",
+      resource_id: "contest-1",
+      ends_at: "2023-12-31T00:00:00.000Z",
     });
     abonnementDePass("customer.subscription.updated");
 
     expect((await POST(request())).status).toBe(200);
-    expect(ligne("g3")?.ends_at).toBeNull();
+    expect(ligne("g7")?.ends_at).toBeNull();
+    expect(ligne("g7-borne")?.ends_at).toBe("2023-12-31T00:00:00.000Z");
   });
 
-  it("sans date d'impayé, on ne devine PAS d'échéance", async () => {
-    // `past_due_since` absent = transition en cours, le webhook la datera au
-    // passage suivant. Poser une fin sur un état incomplet couperait un client
-    // à une date qui ne veut rien dire — même prudence que `hasActiveAccess`.
-    organisations.parClient.set("cus_1", "org-1");
-    organisations.pastDueSince = null;
-    octrois.rows.push({
-      id: "g4",
-      organization_id: "org-1",
-      module: "loyalty",
-      kind: "recurring",
-      source: "stripe",
-      revoked_at: null,
-      ends_at: null,
+  it("une panne de LECTURE rend 500 : le rejeu reprendra le même terme", async () => {
+    // `event.created` ne bouge pas d'un rejeu à l'autre, à la différence de
+    // `now()` : échouer franchement ici ne rallonge aucune grâce.
+    octroi({ id: "g8" });
+    octrois.selectError = { message: "pooler indisponible" };
+    passEnImpaye();
+
+    expect((await POST(request())).status).toBe(500);
+    expect(ligne("g8")?.ends_at).toBeNull();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-6 — LA QUATRIÈME ISSUE : `reactivated`
+ *
+ * La migration 20260925120000 fait lever la grâce d'un octroi récurrent au
+ * lieu d'en créer un second que la levée ferait ensuite violer l'index
+ * d'unicité. Le webhook, lui, ne connaissait que trois issues : un rachat
+ * parfaitement réussi sortait par le chemin d'alerte et n'écrivait AUCUNE trace
+ * d'audit — le droit rouvert n'aurait figuré nulle part.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — rachat pendant la grâce d'impayé", () => {
+  beforeEach(() => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-9", outcome: "reactivated" }], error: null }
+        : { data: null, error: null },
+    );
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "loyalty",
+        },
+      }),
+    );
+  });
+
+  it("journalise la réactivation au lieu de crier à l'issue inconnue", async () => {
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "module_grant.reactivated",
+        metadata: expect.objectContaining({ grant_id: "grant-9" }),
+      }),
+    );
+    // ROUGE AVANT LE CORRECTIF, et c'est l'assertion qui compte : la route
+    // sortait par `stripe.module-grant-outcome` sans écrire d'audit.
+    expect(mocks.reportError).not.toHaveBeenCalledWith(
+      "stripe.module-grant-outcome",
+      expect.anything(),
+    );
+  });
+
+  it("TÉMOIN : une issue vraiment inconnue crie toujours et n'écrit rien", async () => {
+    // Sans lui, accepter n'importe quel mot passerait le test précédent — et
+    // rouvrirait le silence que ce garde-fou existe pour fermer.
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-9", outcome: "teleporte" }], error: null }
+        : { data: null, error: null },
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.module-grant-outcome",
+      expect.stringContaining("teleporte"),
+    );
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-5 — LE PASS DE PRONOSTICS EST BORNÉ À SA COMPÉTITION
+ *
+ * `p_resource_id` était `null` EN DUR : un pass à 39 € vendu pour une
+ * compétition ouvrait le module entier, douze mois durant.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — la compétition d'une Saison de pronostics", () => {
+  const CONTEST = "bbbb0000-0000-4000-8000-000000000009";
+
+  beforeEach(() => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "grant_module_from_payment"
+        ? { data: [{ grant_id: "grant-p", outcome: "created" }], error: null }
+        : { data: null, error: null },
+    );
+  });
+
+  it("transmet le contest_id à la RPC d'octroi", async () => {
+    mocks.constructEvent.mockReturnValue(
+      achatAddonEvent({
+        metadata: {
+          purchase: "module_grant",
+          organization_id: "org-1",
+          entitlement: "pronostics",
+          resource_id: CONTEST,
+        },
+      }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    const args = octroiCalls()[0][1] as Record<string, unknown>;
+    expect(args.p_module).toBe("pronostics");
+    expect(args.p_resource_id).toBe(CONTEST);
+  });
+
+  it("les autres add-ons continuent d'ouvrir leur module ENTIER", async () => {
+    // TÉMOIN. Borner un pass Chasse à une ressource le rendrait inopérant :
+    // `org_has_live_module_grant` exige désormais `resource_id is null`.
+    mocks.constructEvent.mockReturnValue(achatAddonEvent());
+
+    await POST(request());
+
+    const args = octroiCalls()[0][1] as Record<string, unknown>;
+    expect(args.p_resource_id).toBeNull();
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * SD-2 — REPRENDRE CE QUI A ÉTÉ REMBOURSÉ OU CONTESTÉ
+ *
+ * Le piège central, et la raison d'être de la moitié de ces assertions : les
+ * deux RPC s'apparient sur la référence D'ACHAT (identifiant de session, et
+ * `stripe:<session>` pour le grand livre SMS), alors qu'un `charge.refunded`
+ * porte une charge et un payment intent. Leur passer l'identifiant de charge
+ * ne lèverait AUCUNE erreur — elles rendraient zéro ligne, donc « rien à
+ * reprendre », et le module resterait ouvert. Le défaut serait silencieux.
+ * ════════════════════════════════════════════════════════════ */
+describe("webhook Stripe — remboursements et litiges", () => {
+  const SESSION = "cs_rembourse_1";
+
+  function remboursementEvent(over: Record<string, unknown> = {}) {
+    return {
+      id: "evt_refund_1",
+      type: "charge.refunded",
+      created: 1_700_000_900,
+      data: {
+        object: {
+          id: "ch_1",
+          payment_intent: "pi_1",
+          amount: 3900,
+          amount_refunded: 3900,
+          ...over,
+        },
+      },
+    };
+  }
+
+  const appels = (nom: string) =>
+    mocks.rpc.mock.calls.filter((call) => call[0] === nom);
+
+  beforeEach(() => {
+    mocks.sessionsList.mockResolvedValue({
+      data: [{ id: SESSION, client_reference_id: "org-1", metadata: {} }],
     });
-    abonnementDePass("customer.subscription.updated");
-    mocks.retrieve.mockResolvedValue({
-      id: "sub_pass_1",
-      status: "past_due",
-      customer: "cus_1",
-      trial_end: null,
-      metadata: null,
-      items: { data: [{ price: { id: PRIX_PASS_LOYALTY } }] },
+    mocks.rpc.mockImplementation((name: string) => {
+      if (name === "revoke_grant_for_refund") {
+        return {
+          data: [{ grant_id: "grant-r", grant_module: "hunts", revoked: true }],
+          error: null,
+        };
+      }
+      if (name === "debit_sms_balance_for_refund") {
+        return {
+          data: [{ org_id: "org-1", debited_units: 100, entry_id: "entry-9" }],
+          error: null,
+        };
+      }
+      return { data: null, error: null };
     });
+  });
+
+  it("traduit la charge en SESSION avant d'appeler les deux reprises", async () => {
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    // La traduction elle-même : c'est le payment intent qui est interrogé.
+    expect(mocks.sessionsList).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: "pi_1" }),
+    );
+    // L'OCTROI s'apparie sur la référence NUE de la session…
+    expect(appels("revoke_grant_for_refund")[0][1]).toMatchObject({
+      p_source_reference: SESSION,
+      // …BORNÉ À L'ORGANISATION que la session nomme (MOYEN 1 de la revue).
+      // Sans elle, les deux RPC ne connaissaient que la référence de paiement :
+      // une référence venue d'ailleurs pouvait leur faire reprendre un droit
+      // chez un autre tenant.
+      p_organization_id: "org-1",
+    });
+    // …et le grand livre SMS sur la même référence PRÉFIXÉE, celle que
+    // `creditSmsPack` a écrite. La passer nue rendrait zéro ligne en silence.
+    expect(appels("debit_sms_balance_for_refund")[0][1]).toMatchObject({
+      p_source_reference: `stripe:${SESSION}`,
+      p_organization_id: "org-1",
+    });
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "module_grant.revoked" }),
+    );
+    expect(mocks.writeAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "sms_credit.refunded" }),
+    );
+  });
+
+  it("la metadata de session sert de REPLI pour l'organisation", async () => {
+    // Un Payment Link, ou une session antérieure au `client_reference_id` :
+    // l'organisation reste lisible, et la reprise doit rester possible.
+    mocks.sessionsList.mockResolvedValue({
+      data: [
+        {
+          id: SESSION,
+          client_reference_id: null,
+          metadata: { organization_id: "org-7" },
+        },
+      ],
+    });
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
 
     expect((await POST(request())).status).toBe(200);
-    expect(ligne("g4")?.ends_at).toBeNull();
+    expect(appels("revoke_grant_for_refund")[0][1]).toMatchObject({
+      p_organization_id: "org-7",
+    });
+  });
+
+  it("SESSION SANS ORGANISATION : criée et acquittée, aucune RPC à l'aveugle", async () => {
+    // Le paramètre est devenu REQUIS : sans organisation, il n'y a plus d'appel
+    // possible. Acquitter plutôt que rendre 500 — la metadata est gelée sur la
+    // session, aucun rejeu ne la réparera, et trois jours de rejeux finissent
+    // par désactiver le point d'entrée, donc par couper la synchro des
+    // abonnements. Aucun achat ayant ouvert un droit ne tombe ici : nos propres
+    // sessions portent l'organisation deux fois.
+    mocks.sessionsList.mockResolvedValue({
+      data: [{ id: SESSION, client_reference_id: null, metadata: {} }],
+    });
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    expect((await POST(request())).status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+    expect(appels("debit_sms_balance_for_refund")).toHaveLength(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.remboursement-organisation",
+      expect.stringContaining(SESSION),
+    );
+  });
+
+  it("un litige emprunte le même chemin, en entier", async () => {
+    mocks.constructEvent.mockReturnValue({
+      id: "evt_dispute_1",
+      type: "charge.dispute.created",
+      created: 1_700_000_950,
+      data: { object: { id: "dp_1", charge: "ch_1", payment_intent: "pi_1" } },
+    });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(1);
+  });
+
+  it("REJEU : les RPC sont rappelées et ne rendent plus rien — 200, sans audit", async () => {
+    // L'idempotence vit ENTIÈREMENT dans les deux RPC (octroi déjà révoqué non
+    // retouché, index de débit unique). Le webhook n'a donc pas à se souvenir :
+    // il rappelle, et zéro ligne veut dire « déjà fait », jamais « échec ».
+    mocks.rpc.mockImplementation(() => ({ data: [], error: null }));
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ revoked: 0, sms_debited: 0 });
+    expect(mocks.writeAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("REMBOURSEMENT PARTIEL : signalé, RIEN n'est repris", async () => {
+    // Rembourser 10 € sur un pass à 39 € ne dit pas si le droit doit tomber.
+    // Le deviner couperait un client servi ; on acquitte et un humain tranche.
+    mocks.constructEvent.mockReturnValue(
+      remboursementEvent({ amount: 3900, amount_refunded: 1000 }),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+    expect(appels("debit_sms_balance_for_refund")).toHaveLength(0);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "stripe.remboursement-partiel",
+      expect.stringContaining("ch_1"),
+    );
+  });
+
+  it("AUCUNE SESSION : rien à reprendre, et surtout aucune RPC à l'aveugle", async () => {
+    // Facture d'abonnement, paiement hors tunnel. Appeler les RPC avec une
+    // référence qu'elles ne connaissent pas ne casserait rien — c'est bien le
+    // problème : ça classerait l'événement traité sans rien avoir fait.
+    mocks.sessionsList.mockResolvedValue({ data: [] });
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+  });
+
+  it("STRIPE INJOIGNABLE pendant la traduction : 500, pour que le rejeu reprenne", async () => {
+    mocks.sessionsList.mockRejectedValue(new Error("Stripe indisponible"));
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
+    expect(appels("revoke_grant_for_refund")).toHaveLength(0);
+  });
+
+  it("PANNE DE LA RPC : 500 assumé, le rejeu ne reprend rien deux fois", async () => {
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "revoke_grant_for_refund"
+        ? { data: null, error: { message: "boom" } }
+        : { data: [], error: null },
+    );
+    mocks.constructEvent.mockReturnValue(remboursementEvent());
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(500);
   });
 });

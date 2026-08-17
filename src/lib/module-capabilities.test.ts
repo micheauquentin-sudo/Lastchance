@@ -60,6 +60,69 @@ describe("capacitesModule — découvrir, préparer, publier", () => {
   });
 });
 
+describe("capacitesModule — un pass terminé n'est pas un module jamais pris (SD-9)", () => {
+  it("la fin du pass change la raison ET porte la date", () => {
+    // LE DÉFAUT QUE CE LOT FERME. Un commerçant qui a payé, dont la fenêtre
+    // s'est refermée et dont les campagnes programmées viennent de retomber en
+    // pause (`droit_expire`) lisait la phrase écrite pour celui qui n'a jamais
+    // rien acheté : « Préparez … librement. » Il repartait chercher un essai
+    // qu'il a dépassé, sans savoir quand son pass s'est fini.
+    const c = capacitesModule(entree({ passTermineLe: "12 juin 2026" }));
+    expect(c.raison).toBe("pass_expire");
+    expect(c.passTermineLe).toBe("12 juin 2026");
+    expect(c.message ?? "").toContain("12 juin 2026");
+    // Le geste attendu, pas seulement le constat.
+    expect(c.message ?? "").toContain("Rouvrez le module");
+  });
+
+  it("sans octroi, le refus reste `droit_absent` et ne date rien", () => {
+    // Contrôle négatif, sans lequel le test précédent passerait aussi avec un
+    // `pass_expire` rendu à tout le monde — et l'écran annoncerait une fin de
+    // pass à qui n'a jamais rien payé.
+    const c = capacitesModule(entree());
+    expect(c.raison).toBe("droit_absent");
+    expect(c.passTermineLe).toBeNull();
+    expect(c.message ?? "").toContain("Préparez");
+  });
+
+  it("un module PAYÉ ne raconte aucune fin de pass", () => {
+    // Un pass fini sous un récurrent repris : le module est ouvert, et le lui
+    // rappeler serait vendre à un client qui vient de payer.
+    const c = capacitesModule(
+      entree({ droitEffectif: true, passTermineLe: "12 juin 2026" }),
+    );
+    expect(c.raison).toBeNull();
+    expect(c.passTermineLe).toBeNull();
+    expect(c.message).toBeNull();
+  });
+
+  it("la préparation reste ouverte après la fin du pass", () => {
+    // Le pass ferme la PUBLICATION, jamais le travail déjà commencé : le
+    // commerçant doit pouvoir relire et corriger ses brouillons avant de
+    // rouvrir. Rouge si `pass_expire` s'était mis à refermer l'atelier.
+    const c = capacitesModule(entree({ passTermineLe: "12 juin 2026" }));
+    expect(c.canExplore).toBe(true);
+    expect(c.canEditDraft).toBe(true);
+    expect(c.canPublish).toBe(false);
+  });
+
+  it("l'éditeur garde sa consigne humaine, sans date ni facturation", () => {
+    // Ce qu'un éditeur doit FAIRE ne change pas selon la cause : en parler au
+    // propriétaire. Lui servir une date d'échéance l'enverrait négocier un
+    // renouvellement qu'il ne peut pas payer.
+    const c = capacitesModule(entree({ role: "editor", passTermineLe: "12 juin 2026" }));
+    expect(c.raison).toBe("pass_expire");
+    expect(c.message ?? "").toContain("demandez au propriétaire");
+    expect(c.message ?? "").not.toContain("12 juin 2026");
+  });
+
+  it("le caissier reste refusé sur son rôle, pass terminé ou non", () => {
+    const c = capacitesModule(entree({ role: "cashier", passTermineLe: "12 juin 2026" }));
+    expect(c.raison).toBe("role");
+    expect(c.passTermineLe).toBeNull();
+  });
+});
+
 describe("capacitesModule — à qui l'on parle", () => {
   it("le propriétaire peut acheter, l'éditeur est renvoyé vers lui", () => {
     // Cahier §3 : « Un propriétaire peut acheter ; un éditeur voit le
