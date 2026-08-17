@@ -41,6 +41,9 @@ const analytiqueVide = (): ExperienceAnalyticsSnapshot => ({
     joins: 0,
     starts: 0,
     completions: 0,
+    uniqueViewers: 0,
+    uniqueStarters: 0,
+    uniqueFinishers: 0,
     rewardsIssued: 0,
     rewardsClaimed: 0,
     rewardsRedeemed: 0,
@@ -62,7 +65,23 @@ const analytique = (
   metriques: Partial<ExperienceAnalyticsSnapshot["summary"]>,
 ): ExperienceAnalyticsSnapshot => {
   const vide = analytiqueVide();
-  return { ...vide, summary: { ...vide.summary, ...metriques } };
+  return {
+    ...vide,
+    summary: {
+      ...vide.summary,
+      // PAR DÉFAUT, une vue = une personne, une partie = un joueur. Les
+      // fixtures écrites avant que les compteurs de personnes existent (wagon
+      // 4, NUM-1) gardent ainsi exactement le sens qu'elles avaient.
+      //
+      // Un test qui veut DISSOCIER les deux familles — quarante ouvertures de
+      // page par une seule personne — pose explicitement `uniqueViewers` : le
+      // spread ci-dessous le laisse gagner, et c'est tout l'objet du constat.
+      uniqueViewers: metriques.views ?? vide.summary.uniqueViewers,
+      uniqueStarters: metriques.starts ?? vide.summary.uniqueStarters,
+      uniqueFinishers: metriques.completions ?? vide.summary.uniqueFinishers,
+      ...metriques,
+    },
+  };
 };
 
 const ANALYTIQUE_SAINE = analytique({
@@ -334,8 +353,42 @@ describe("règles d'activité (lecture croisée)", () => {
         entree({ analytics: analytique({ views: 34, starts: 0 }) }),
       );
       expect(cle(conseils, "act-vues-sans-partie")?.texte).toBe(
-        "34 vues qualifiées sur 30 jours, aucune partie lancée.",
+        "34 personnes ont vu un jeu sur 30 jours, aucune n'a lancé de partie.",
       );
+    });
+
+    it("COMPTE DES PERSONNES, PAS DES OUVERTURES DE PAGE", () => {
+      // LE DÉFAUT NUM-1, côté conseiller. Une seule personne qui recharge
+      // quarante fois la page du jeu faisait dire « 40 vues qualifiées, aucune
+      // partie » — un diagnostic d'audience mort, tiré d'une audience d'une
+      // personne. Le conseil reste juste (personne n'a joué), mais le CHIFFRE
+      // qu'il avance doit être celui de la tuile d'à côté.
+      const conseils = construireConseils(
+        entree({
+          analytics: analytique({ views: 40, starts: 0, uniqueViewers: 1 }),
+        }),
+      );
+      expect(cle(conseils, "act-vues-sans-partie")?.texte).toBe(
+        "1 personne a vu un jeu sur 30 jours, aucune n'a lancé de partie.",
+      );
+    });
+
+    it("se tait quand la partie a été lancée par le SEUL joueur venu", () => {
+      // CONTRÔLE INVERSE : `starts` reste à 0 dans la fixture, seul
+      // `uniqueStarters` bouge. Sans la lecture des compteurs de personnes,
+      // ce test resterait rouge — c'est lui qui prouve qu'on ne lit plus les
+      // événements.
+      const conseils = construireConseils(
+        entree({
+          analytics: analytique({
+            views: 40,
+            starts: 0,
+            uniqueViewers: 3,
+            uniqueStarters: 1,
+          }),
+        }),
+      );
+      expect(cle(conseils, "act-vues-sans-partie")).toBeUndefined();
     });
 
     it("ne se déclenche pas dès qu'une seule partie a été lancée", () => {

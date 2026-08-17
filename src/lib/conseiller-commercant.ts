@@ -202,19 +202,25 @@ const REGLES_ACTIVITE: readonly {
         : null,
   },
   {
-    // Entrée de l'entonnoir. « Vue qualifiée » est le vocabulaire exact du
-    // tableau d'analytics juste en dessous (une identité touchée côté serveur,
-    // pas une vue de page) : deux mots pour la même mesure se seraient
-    // contredits à l'écran.
+    // Entrée de l'entonnoir, comptée en PERSONNES et non en événements.
+    //
+    // Cette règle disait « N vues qualifiées », vocabulaire alors exact du
+    // tableau d'analytics juste en dessous. Ce tableau compte désormais des
+    // personnes dans ses tuiles (wagon 4, NUM-1) et `views` est resté ce qu'il
+    // était : un nombre d'ouvertures, qu'un même client fait grimper à lui
+    // seul. Le conseiller aurait annoncé « 40 vues, aucune partie » pour une
+    // seule personne passée quarante fois — et les deux surfaces se seraient
+    // contredites à un écran d'écart. On lit donc `uniqueViewers` /
+    // `uniqueStarters`, et les mots suivent le chiffre : des personnes.
     key: "act-vues-sans-partie",
     href: CHEMIN_CAMPAGNES,
     priorite: 125,
     texte: ({ analytics }) => {
       if (!analytics) return null;
-      const { views, starts } = analytics.summary;
-      if (views === 0 || starts > 0) return null;
-      const s = pluriel(views);
-      return `${views} vue${s} qualifiée${s} sur ${analytics.periodDays} jours, aucune partie lancée.`;
+      const { uniqueViewers, uniqueStarters } = analytics.summary;
+      if (uniqueViewers === 0 || uniqueStarters > 0) return null;
+      const s = pluriel(uniqueViewers);
+      return `${uniqueViewers} personne${s} ${uniqueViewers > 1 ? "ont" : "a"} vu un jeu sur ${analytics.periodDays} jours, aucune n'a lancé de partie.`;
     },
   },
   {

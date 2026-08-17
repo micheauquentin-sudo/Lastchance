@@ -1,3 +1,21 @@
+/**
+ * ── DES ÉVÉNEMENTS ET DES PERSONNES : DEUX FAMILLES DE COMPTEURS ──
+ *
+ * `views` / `starts` / `completions` comptent des ÉVÉNEMENTS. Depuis que les
+ * clés d'idempotence de start et de complete sont datées (wagon 4, NUM-1), deux
+ * jours de jeu d'un même client y comptent deux fois — ce qui est le but : une
+ * mesure d'activité doit bouger quand l'activité bouge.
+ *
+ * `uniqueViewers` / `uniqueStarters` / `uniqueFinishers` comptent des
+ * PERSONNES, sur les mêmes lignes. C'est la moitié qui manquait : les tuiles de
+ * l'écran divisaient `starts / views`, donc des événements par des événements,
+ * et annonçaient « 33 % des personnes ont joué » sur un chiffre qui n'en était
+ * pas un. Les deux familles coexistent, aucune ne remplace l'autre.
+ *
+ * Le dédoublonnage se fait sur `coalesce(player_id::text, player_key)` : deux
+ * espaces de noms distincts (uuid de joueur identifié, sha256 d'appareil), qui
+ * ne se rejoignent que si la résolution d'identité a eu lieu.
+ */
 export interface ExperienceAnalyticsRow {
   experienceKind: string;
   experienceId: string;
@@ -6,6 +24,9 @@ export interface ExperienceAnalyticsRow {
   joins: number;
   starts: number;
   completions: number;
+  uniqueViewers: number;
+  uniqueStarters: number;
+  uniqueFinishers: number;
   rewardsIssued: number;
   rewardsClaimed: number;
   rewardsRedeemed: number;
@@ -46,6 +67,9 @@ const emptyMetrics = {
   joins: 0,
   starts: 0,
   completions: 0,
+  uniqueViewers: 0,
+  uniqueStarters: 0,
+  uniqueFinishers: 0,
   rewardsIssued: 0,
   rewardsClaimed: 0,
   rewardsRedeemed: 0,
@@ -80,6 +104,9 @@ function parseMetrics(value: unknown) {
     joins: number(row.joins),
     starts: number(row.starts),
     completions: number(row.completions),
+    uniqueViewers: number(row.unique_viewers),
+    uniqueStarters: number(row.unique_starters),
+    uniqueFinishers: number(row.unique_finishers),
     rewardsIssued: number(row.rewards_issued),
     rewardsClaimed: number(row.rewards_claimed),
     rewardsRedeemed: number(row.rewards_redeemed),
