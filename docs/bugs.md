@@ -4023,6 +4023,30 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     vide : l'écran reste honnête (pas de faux résultat) mais ne dit rien de
     la cause à l'opérateur qui débogue un incident.
 
+- **Wagon 2 de l'audit transverse — cinq INFO consignés sans action
+  (2026-08-17, `chantier/audit-p0-stripe`, ADR-103)** :
+  - **`echeanceImpaye` discrimine par MODULE, pas par abonnement** — la
+    propriété est tenue par l'index
+    `organization_module_grants_recurrent_vivant_idx`, pas par le code ; deux
+    prix récurrents vendus sur un même module la casseraient sans bruit.
+  - **`resoudreOrganisation` (webhook, autour de la ligne 604-608) se replie
+    sur `subscription.metadata.organization_id` sans croiser
+    `stripe_customer_id`** — sans effet sur le chemin de remboursement,
+    désormais borné par l'organisation ; toujours ouvert pour la révocation
+    de `traiterAbonnementDePass` et `echeanceImpaye`, faute d'opérateur de
+    confiance seulement.
+  - **Cosmétique : la page liste Pronostics invite « ouvrez ce module » à un
+    détenteur de pass borné à une compétition** — aucune action indûment
+    fermée, le bandeau seul est trompeur ; arbitrage assumé (la page liste
+    reste fermée, voir ADR-103).
+  - **Borné : une livraison hors ordre d'un événement `past_due` peut ancrer
+    la grâce d'un pass un peu tard** — au plus la fenêtre de recouvrement
+    Stripe ; la date reste monotone, l'écart est signalé.
+  - **La notification `automation.schedule-blocked` peut arriver jusqu'à 24 h
+    après la pause d'une campagne** — le worker tourne quotidiennement
+    (`20 4 * * *`), contrainte de plan déjà documentée en tête de la route du
+    job.
+
 ## Tracking Process
 
 ### When a bug is found:

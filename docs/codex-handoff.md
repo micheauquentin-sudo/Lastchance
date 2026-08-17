@@ -57,6 +57,42 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-17 — Train de correction de l'audit transverse : wagon 2 « Le catalogue Stripe dit vrai » — **terminé**
+
+- **Lot et objectif** : deuxième wagon du train (voir entrée 2026-08-16
+  ci-dessous pour le cadrage complet) — aligner le catalogue Stripe sur les
+  droits réellement ouverts (SD-1..SD-7, SD-9) et appliquer l'arbitrage
+  produit du 2026-08-04 : un pass n'ouvre que son module (SD-4).
+- **Branche/commits** : `chantier/audit-p0-stripe`, tête `e65b1b9`, arbre
+  propre, PR à ouvrir. Deux migrations : `20260925120000_droits_stripe.sql`
+  et `20260926120000_pass_expire_lisible.sql`. `EXPECTED_MIGRATION =
+  20260926120000`.
+- **Faits** : `org_has_module_access(_for_resource)` ferme le socle roue aux
+  pass (SD-4) ; Saison de pronostics bornée à une compétition, resserrée par
+  trigger à la clôture (SD-5) ; capacité d'événement au `max()` des octrois
+  vivants, paliers 10/30/50 (SD-1) ; rachat pendant la grâce réactive au lieu
+  de doubler (SD-6) ; webhook Stripe reprend `charge.refunded` /
+  `charge.dispute.created`, désormais borné par `organization_id` (SD-2) ;
+  garde de checkout par famille de prix — un abonnement 100 % pass ne ferme
+  plus la vente de l'offre (SD-3) ; `.env.example` documente les dix
+  `STRIPE_PRICE_ID_PASS_*` (SD-7) ; grâce d'impayé d'un pass ancrée sur
+  l'événement de SON abonnement, jamais `past_due_since`, bornée monotone ;
+  `run_campaign_schedule` gardée par le droit du module, motif `droit_expire`
+  visible + e-mail au propriétaire au lieu d'un refus silencieux (SD-9,
+  décision renversée de la migration `20260906120000`, consignée en
+  ADR-103).
+- **Validations** : typecheck 0, lint 0, build 47/47 pages, Vitest complet
+  vert, pgTAP 60 fichiers / 3493 assertions (vide et semée), E2E local WSL
+  `mobile-chrome` 39 passed / 6 skipped sur 5 specs ciblées. Revue sécurité :
+  première passe NO-GO (1 ÉLEVÉ, 2 MOYEN, 1 FAIBLE, 4 INFO), les quatre
+  corrigés dans le wagon, contre-vérification GO — 5 reliquats INFO
+  consignés dans `docs/bugs.md`. CI GitHub non exécutée à l'heure d'écrire
+  cette entrée, la PR la jouera.
+- **Risque/blocage** : aucun. Reliquats INFO sans action requise (détail
+  dans `docs/bugs.md`).
+- **Prochaine action** : ouvrir la PR du wagon 2, dérouler le wagon 3
+  (`chantier/audit-p0-joueur`).
+
 ### 2026-08-16 — Train de correction de l'audit transverse (7 wagons) — **en cours**
 
 - **Lot et objectif** : ordre direct du propriétaire — s'approprier l'audit

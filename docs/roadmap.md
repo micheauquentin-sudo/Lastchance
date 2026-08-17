@@ -285,6 +285,60 @@ et des paliers récompensés en boutique. **Livré en production, qualité GA.**
 - [ ] Collection / badges à débloquer
 - [ ] Bonus multi-établissements (multi-tenant croisé — reporté avec ADR-028)
 
+## V1.58 — Le catalogue Stripe dit vrai : wagon 2 de l'audit transverse (✅ 2026-08-17, branche `chantier/audit-p0-stripe`, migrations `20260925120000` et `20260926120000`)
+
+**Objectif** : deuxième wagon du train de correction issu de l'audit
+transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) — aligner ce
+que le catalogue Stripe promet et ce que les droits d'organisation ouvrent
+réellement (SD-1..SD-7, SD-9) et appliquer l'arbitrage produit du 2026-08-04
+sur le périmètre des pass (SD-4) : un pass n'ouvre plus que son module.
+
+**Livré** :
+- Migration `20260925120000_droits_stripe.sql` : `org_has_module_access`
+  gagne un paramètre `_for_resource` — un pass n'ouvre plus le socle roue
+  (SD-4) ; `resource_id` devient vivant et un trigger
+  `shrink_contest_grants_on_close` resserre `ends_at` à finale+7j à la
+  clôture d'une compétition ; la Saison de pronostics se vend désormais pour
+  UNE compétition (SD-5) ; `event_participant_capacity` lit le `max(capacity)`
+  des octrois vivants, paliers 10/30/50 stockables (SD-1) ; un rachat pendant
+  la grâce réactive au lieu de doubler l'octroi (SD-6) ; le webhook reprend ce
+  qui a été remboursé via `revoke_grant_for_refund` +
+  `debit_sms_balance_for_refund`, idempotentes et désormais bornées par
+  `p_organization_id` requis (SD-2).
+- Migration `20260926120000_pass_expire_lisible.sql` (SD-9) :
+  `run_campaign_schedule` gardée par `org_has_module_access(org,'wheel')`,
+  motif `droit_expire` posé à la transition + `audit_logs` + job
+  `automation.schedule-blocked` → e-mail au propriétaire ; le rachat du droit
+  réactive la campagne au passage suivant, le trigger existant efface le
+  motif.
+- Côté app : webhook Stripe traite `charge.refunded` et
+  `charge.dispute.created` (reprise d'octroi + débit SMS borné au solde),
+  réactivation ciblée ; la grâce d'impayé d'un pass est désormais datée sur
+  `event.created` de SON abonnement (plus jamais `organizations.past_due_since`,
+  jamais écrit pour un pass pur), bornée monotone (une fin ≤ `starts_at` est
+  refusée et signalée, contre le 500 en boucle possible sur
+  `grant_fin_apres_debut`) ; garde de checkout par famille de prix
+  (`partitionnerPrix`) — un abonnement 100 % pass ne ferme plus la vente de
+  l'offre (SD-3) ; `.env.example` documente les dix `STRIPE_PRICE_ID_PASS_*`
+  et requalifie la famille ADDON (SD-7) ; `etatOctroiModule` porte la raison
+  `pass_expire` avec date formatée dans `capacitesDuModule` ;
+  `octroiRessourceVivant` fait voir côté TS un pass borné à UNE compétition
+  (joueur et dashboard) ; bannière campagne `droit_expire` (ambre, « la
+  programmation rouvrira d'elle-même ») ; `ModuleCapabilityNotice` monté sur
+  `campaigns/[id]` ; « Pass terminé le … » affiché sur la page Options,
+  jamais au caissier.
+
+**Revue sécurité** : première passe NO-GO (1 ÉLEVÉ, 2 MOYEN, 1 FAIBLE, 4
+INFO), les quatre corrigés dans le wagon même, contre-vérification **GO** —
+reliquats en INFO consignés dans `docs/bugs.md`.
+
+Preuve : typecheck 0, lint 0, build 47/47 pages, Vitest complet vert, pgTAP
+**60 fichiers / 3493 assertions PASS** (base vide et semée), E2E local WSL
+`mobile-chrome` 39 passed / 6 skipped sur 5 specs ciblées.
+
+**Suite du train** : wagons 3 à 7 listés dans
+`docs/chantier-audit-2026-08-16.md`.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse

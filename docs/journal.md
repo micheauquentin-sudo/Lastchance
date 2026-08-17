@@ -4,6 +4,11 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-08-16 — Sorties de données : wagon 1 du train de correction de l'audit transverse
+
+**Dernier chantier** : **Sorties de données — wagon 1 du train de correction de l'audit transverse** (branche `chantier/audit-p0-sorties`, PR #146, CI 11/11 verte, revue sécurité GO, migration `20260924120000`), 2026-08-16. Ferme ce qui sortait où ça ne devait pas : export CSV newsletter incluait les désinscrits (corrigé) ; policy `audit_logs` laissait tout compte connecté lire les lignes `organization_id is null` — faille réelle, fermée (`is not null and is_org_owner`, `to authenticated`) ; jetons porteurs `/commande`, `/hunt`, `/invite` et le paramètre `next` masqués avant PostHog (`before_send`, session recording désactivé) et Sentry (`scrubText` + `beforeSendTransaction` sur les 3 runtimes) ; `p_ip` plus transmis, en-têtes no-referrer/no-store/noindex ajoutés ; `referral_signups.ip` supprimée (jamais lue) ; `purge_expired_personal_data` anonymise désormais `spins.player_key` au-delà de la rétention (ADR-102 : la garde « une seule fois » devient « une seule fois par période de conservation », assumé) ; politique de confidentialité déclare Brevo et Upstash. Preuve : pgTAP 59f/3372 (vide+semée), `verif-complete.sh --rapide` 0 échec, E2E local mobile-chrome passed, CI 11/11. ADR-102, roadmap V1.57.
+**Reste ouvert** : INFO 5 (`docs/bugs.md`, UPDATE d'anonymisation non borné par lots). Wagons 2 à 7 du train à venir — voir `docs/chantier-audit-2026-08-16.md`. Deux gestes propriétaire hérités : révoquer `rk_live_` et le jeton Vercel.
+
 **Pourquoi ce fichier existe, et le chiffre qui l'a décidé.** La section pesait
 **39 062 tokens sur les 42 971 du `CLAUDE.md` — 91 % du fichier** — et
 grossissait d'environ **5 500 tokens par chantier** sans jamais décroître :
