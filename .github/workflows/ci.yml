@@ -306,7 +306,13 @@ jobs:
           npx wait-on -t 30000 tcp:3443
           echo "E2E_BASE_URL=https://localhost:3443" >> "$GITHUB_ENV"
           echo "— /api/health (diagnostic non bloquant) —"
-          curl -s http://localhost:3000/api/health || true
+          # Le Bearer est indispensable depuis SEC-3 : sans lui la route ne rend
+          # que le verdict, et ce diagnostic existe précisément pour connaître la
+          # CAUSE d'un 503 (cf. le commentaire TURNSTILE_REQUIRED plus haut). Le
+          # secret est tiré au hasard à chaque run et ne vaut que contre ce
+          # localhost.
+          curl -s -H "Authorization: Bearer $CRON_SECRET" \
+            http://localhost:3000/api/health || true
           echo
 
       # Diagnostic : si les pages publiques n'affichent pas le jeu, le

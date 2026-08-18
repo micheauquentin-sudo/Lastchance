@@ -36,7 +36,57 @@ test("accepte uniquement une production et tous ses contrôles au vert", async (
   assert.deepEqual(result, {
     version: "0.1.0",
     checks: ["database", "workers", "security_configuration"],
+    detailPresent: true,
   });
+});
+
+test("porte CRON_SECRET en Bearer quand il est fourni, rien sinon", () => {
+  // Depuis SEC-3, `/api/health` ne rend `checks` qu'à un appelant authentifié.
+  return (async () => {
+    let avec;
+    await verifyProductionHealth("https://app.example.com", {
+      cronSecret: "secret-de-supervision",
+      fetchImpl: async (_url, init) => {
+        avec = init.headers;
+        return Response.json(healthyBody);
+      },
+    });
+    assert.equal(avec.authorization, "Bearer secret-de-supervision");
+
+    let sans;
+    await verifyProductionHealth("https://app.example.com", {
+      cronSecret: "",
+      fetchImpl: async (_url, init) => {
+        sans = init.headers;
+        return Response.json(healthyBody);
+      },
+    });
+    assert.equal("authorization" in sans, false);
+  })();
+});
+
+test("conclut sur le verdict global quand le détail n'est pas servi", async () => {
+  // Sonde lancée sans `CRON_SECRET` : le corps public ne porte plus `checks`.
+  // La détection SUBSISTE — la route calcule `status: "ok"` comme la
+  // conjonction des trois contrôles — mais on ne prétend plus les avoir lus.
+  const result = await verifyProductionHealth("https://app.example.com", {
+    fetchImpl: async () => Response.json({ status: "ok", version: "0.1.0" }),
+  });
+  assert.deepEqual(result, {
+    version: "0.1.0",
+    checks: [],
+    detailPresent: false,
+  });
+});
+
+test("un corps public `unhealthy` échoue même sans détail", async () => {
+  await assert.rejects(
+    verifyProductionHealth("https://app.example.com", {
+      fetchImpl: async () =>
+        Response.json({ status: "unhealthy", version: "0.1.0" }, { status: 503 }),
+    }),
+    /Production non saine/,
+  );
 });
 
 test("échoue si les workers sont absents ou non sains", async () => {

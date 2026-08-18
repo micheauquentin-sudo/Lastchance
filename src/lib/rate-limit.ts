@@ -59,6 +59,19 @@ export const RATE_LIMITS = {
   authSignup: { limit: 5, windowSeconds: 3600 },
   /** Campagnes newsletter envoyées par organisation (anti-spam/abus). */
   newsletterSend: { limit: 5, windowSeconds: 86_400 },
+  /** Sonde publique /api/health par IP — FAIL-OPEN, calibré pour des MONITEURS.
+   *
+   *  Cette route fait deux appels réseau par requête (lecture Supabase bornée +
+   *  RPC `ops_workers_health`) : non bornée, elle amplifie n'importe quelle
+   *  rafale en charge sur la base. 60/60 s laisse une marge énorme à l'usage
+   *  réel — un moniteur d'uptime interroge toutes les 30 à 60 s, et plusieurs
+   *  moniteurs plus les sondes de la plateforme restent loin du seuil.
+   *
+   *  FAIL-OPEN (appel sans `failClosed`), et ce n'est pas négociable : une
+   *  panne du backend de rate-limit ferait répondre 429 à tous les moniteurs,
+   *  qui déclareraient l'application DOWN. Une sonde de santé qui s'éteint sur
+   *  la panne d'un composant tiers ne surveille plus rien. */
+  healthIp: { limit: 60, windowSeconds: 60 },
   /** Compteur de scan par QR et IP (anti-inflation des statistiques). */
   scanIp: { limit: 60, windowSeconds: 60 },
   /** PLAFOND PAR IP SEULE de /api/page-opens, tous slugs et tous modules
