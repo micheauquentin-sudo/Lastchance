@@ -205,7 +205,20 @@ const SCENARIOS = {
   health: {
     ecrit: false,
     description: "GET /api/health — latence Supabase vue depuis la fonction",
-    requete: () => ({ url: `${BASE_URL}/api/health`, init: { cache: "no-store" } }),
+    // Depuis SEC-3, `checks` (et donc `latency_ms`) n'est rendu qu'à un
+    // appelant porteur de `CRON_SECRET` : sans lui, ce scénario tourne mais ne
+    // relève AUCUNE mesure Supabase, et la section correspondante du rapport
+    // reste vide. Ce n'est pas un échec silencieux — `mesures.db` vide se voit
+    // dans le rapport, qui n'imprime alors pas la section.
+    requete: () => ({
+      url: `${BASE_URL}/api/health`,
+      init: {
+        cache: "no-store",
+        headers: process.env.CRON_SECRET
+          ? { authorization: `Bearer ${process.env.CRON_SECRET}` }
+          : {},
+      },
+    }),
     async sonde(res, mesures) {
       try {
         const corps = await res.json();

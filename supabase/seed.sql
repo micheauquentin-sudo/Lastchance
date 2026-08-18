@@ -452,6 +452,31 @@ values (
 )
 on conflict (id) do nothing;
 
+-- ── Jackpot collectif nº3 : RÉSERVÉ AU PARCOURS JOUEUR `rotating_code` ────
+-- Le troisième mode de la même famille : le joueur SAISIT lui-même le code
+-- tournant affiché sur l'écran comptoir (`/dashboard/jackpot/[id]/comptoir`),
+-- là où les deux campagnes du dessus se valident depuis la caisse. Dédiée à
+-- la spec E2E « le joueur saisit le code et la jauge avance » — même raison
+-- d'isolement que la nº2 : une participation écrite ici ne doit déranger ni
+-- l'affichage figé de la nº1 ni le décompte de la spec caisse sur la nº2.
+-- Nom sans « Jackpot E2E » ni « comptoir » : les specs ciblent leur titre par
+-- sous-chaîne.
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, public_slug, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, reward_stock,
+  reward_label, reward_details, display_base_cents, display_increment_cents,
+  merchant_content
+)
+values (
+  'e2ec0000-0000-4000-8000-000000000003',
+  'e2e10000-0000-4000-8000-000000000001',
+  'Tirelire au code E2E', 'active', 'e2e-jackpot-code', 'rotating_code', 300,
+  'threshold_draw', 5, 20,
+  'Le pot du code tournant E2E', 'Tiré au sort tous les 5 passages.', 5000, 200,
+  'Saisissez le code affiché au comptoir pour faire monter le pot.'
+)
+on conflict (id) do nothing;
+
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
 -- L'échéance serveur est dépassée : la caisse doit refuser le retrait
 -- (badge « Code expiré », pas de bouton) — le compte à rebours client
@@ -618,12 +643,43 @@ on conflict (id) do nothing;
 
 -- Session ouverte (lobby) : join_code déterministe E2EVNT (alphabet sans I/O/0/1).
 -- Stock fini de 3 codes EVENT-… pour le podium récompensé.
+--
+-- ⚠️ SESSION EN LECTURE SEULE. `e2e/event.spec.ts` lit ici l'état INITIAL et
+-- IMMUABLE — phase `lobby`, « En attente des premiers joueurs… », aucun joueur.
+-- Ne rien piloter dessus : toute spec qui lance/verrouille/révèle une question
+-- ou qui inscrit un joueur doit utiliser la session dédiée ci-dessous.
 insert into public.event_sessions (
   id, game_id, organization_id, label, join_code, status, reward_stock, reward_label, reward_details
 ) values (
   'e2ed0000-0000-4000-8000-000000000021', 'e2ed0000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Soirée E2E', 'E2EVNT', 'lobby', 3,
   'Tournée offerte', 'À retirer au comptoir E2E.')
+on conflict (id) do nothing;
+
+-- ── Session DÉDIÉE au cycle télécommande (E2E) ────────────────
+-- Même isolation structurelle que le calendrier `e2e-calendar-vide` et que la
+-- cagnotte `e2e-jackpot-code` : `e2e/event-remote-cycle.spec.ts` MUTE la
+-- session qu'il pilote (lobby → question_active → question_locked → reveal, et
+-- il y inscrit un joueur), alors que `e2e/event.spec.ts` exige de la sienne
+-- l'état initial intact. Les deux specs tournant en parallèle (2 workers en
+-- CI) sur le MÊME état serveur, la seule session partagée rendait l'échec
+-- structurel et non ordonnancé : d'où cette seconde session, qu'aucune autre
+-- spec ne lit.
+--
+-- Le GAME reste partagé (`…0001`) à dessein : seule la SESSION porte la
+-- machine à états, les questions et leurs options sont en lecture seule dans
+-- le cycle. Un game dédié ajouterait une ligne au hub QR (une ligne par JEU) et
+-- à `/dashboard/events` sans rien isoler de plus.
+--
+-- `created_at` non forcé : psql applique le seed en autocommit, cette session
+-- est donc strictement postérieure à `…0021`, qui reste la PREMIÈRE (adresse
+-- représentative du hub QR, `order by created_at asc, id asc`).
+insert into public.event_sessions (
+  id, game_id, organization_id, label, join_code, status, reward_stock, reward_label, reward_details
+) values (
+  'e2ed0000-0000-4000-8000-000000000022', 'e2ed0000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Cycle télécommande E2E', 'E2ERMT', 'lobby', 3,
+  'Café offert', 'À retirer au comptoir E2E (cycle télécommande).')
 on conflict (id) do nothing;
 
 -- ── Calendrier / campagne quotidienne (thème Noël, actif) ─────
@@ -633,6 +689,12 @@ on conflict (id) do nothing;
 -- jour 3 VERROUILLÉ (unlock_at futur → open_calendar_box répond too_early). Le
 -- gating serveur se teste sans dépendance : la case future doit refuser
 -- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=3.
+--
+-- ⚠️ NE PAS AJOUTER DE CASE ICI. `e2e/atelier-modules.spec.ts` exige que ce
+-- calendrier parte à `day_count=3` (:357), fait lui-même monter à 4 pour
+-- fabriquer une case VIDE — c'est son oracle — puis redescend à 3, ce qui
+-- SUPPRIME cette quatrième case. Toute case ajoutée ici serait donc détruite en
+-- cours de suite. Le calendrier dédié plus bas existe pour cette raison.
 insert into public.calendars (
   id, organization_id, name, theme, status, start_date, timezone, day_count,
   public_slug, merchant_content, completion_reward_label, completion_reward_details,
@@ -657,6 +719,46 @@ insert into public.calendar_days (
    null, 'Croissant offert', 'À retirer au comptoir E2E.', 50, true),
   ('e2ee0000-0000-4000-8000-000000000013', 'e2ee0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 3, now() + interval '2 days', 'content',
+   'Encore un peu de patience...', '', null, null, false)
+on conflict (id) do nothing;
+
+-- ── Calendrier DÉDIÉ au test « case message laissée vide » ────
+-- `e2e/calendar.spec.ts` porte un test `fixme` (« une case message laissée vide
+-- ouvre sur "Pas de chance aujourd'hui !" ») vert au PREMIER passage et faux aux
+-- suivants : il vidait la case 1 du calendrier ci-dessus, seule case `content`
+-- déverrouillée, que le test précédent du même fichier a déjà ouverte dans ce
+-- seed PARTAGÉ. Le remède écrit dans son commentaire — « une case dédiée jamais
+-- ouverte » — ne pouvait pas tenir sur ce calendrier-là : `atelier-modules`
+-- fait varier son `day_count` et détruit toute case surnuméraire.
+--
+-- D'où un calendrier À PART, que rien d'autre ne touche. Sa case 1 est la
+-- donnée du test : `content`, déverrouillée, jamais ouverte ailleurs, texte
+-- stable (le test le vide puis le restaure dans un `finally`).
+--
+-- day_count=2, avec une case 2 VERROUILLÉE : à une seule case, l'ouvrir
+-- terminerait le calendrier et déclencherait l'écran de récompense d'assiduité
+-- par-dessus l'écran perdant que le test vient justement lire.
+insert into public.calendars (
+  id, organization_id, name, theme, status, start_date, timezone, day_count,
+  public_slug, merchant_content, completion_reward_label, completion_reward_details,
+  completion_reward_stock
+) values (
+  'e2ee0000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+  'Calendrier E2E — case vide', 'noel', 'active', current_date, 'Europe/Paris', 2,
+  'e2e-calendar-vide', 'Une surprise par jour, réservée aux tests.',
+  'Le petit panier de test', 'À retirer au comptoir E2E.', 5
+)
+on conflict (id) do nothing;
+
+insert into public.calendar_days (
+  id, calendar_id, organization_id, day_index, unlock_at, content_type,
+  content_text, reward_label, reward_details, reward_stock, is_special
+) values
+  ('e2ee0000-0000-4000-8000-000000000021', 'e2ee0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 1, now() - interval '1 hour', 'content',
+   'Une attention rien que pour vous aujourd''hui.', '', null, null, false),
+  ('e2ee0000-0000-4000-8000-000000000022', 'e2ee0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 2, now() + interval '2 days', 'content',
    'Encore un peu de patience...', '', null, null, false)
 on conflict (id) do nothing;
 

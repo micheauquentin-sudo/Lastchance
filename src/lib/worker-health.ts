@@ -88,14 +88,21 @@ export async function startWorkerRun(
 }
 
 /**
- * Ouvre un heartbeat SANS pouvoir faire échouer l'appelant : les six crons
- * quotidiens (reengage, purge-data, webhooks, automations,
- * calendar-reminders, jackpot-draws) font un travail métier qui ne dépend
- * en rien du journal de santé — une table absente (migration
- * 20260805240000 non encore appliquée), un nom hors registre ou une base
- * momentanément indisponible ne doivent pas suspendre une purge RGPD ni un
- * tirage. L'échec reste visible : `startWorkerRun` l'a déjà remonté à
+ * Ouvre un heartbeat SANS pouvoir faire échouer l'appelant. C'est le cas
+ * NOMINAL, et non l'exception : neuf des dix workers passent par ici
+ * (reengage, purge-data, webhooks, automations, calendar-reminders,
+ * jackpot-draws, expire-trials, weekly-digest, et `jobs` depuis JOB-7). Leur
+ * travail métier ne dépend en rien du journal de santé — une table absente,
+ * un nom hors registre ou une base momentanément indisponible ne doivent pas
+ * suspendre une purge RGPD, un tirage, ni la file entière (newsletters,
+ * relances, SMS). Le journal OBSERVE le travail, il ne le gouverne pas ; la
+ * concurrence est écartée en amont, par les verrous et l'idempotence de
+ * `claim_jobs`. L'échec reste visible : `startWorkerRun` l'a déjà remonté à
  * Sentry, sans message brut ni PII. Retourne `null` = « pas de journal ».
+ *
+ * Seul `sync-contests` appelle encore `startWorkerRun` strict, et rend un 500
+ * si le journal manque. Aucune raison n'est écrite sur place ; tant qu'elle ne
+ * l'est pas, le doute vaut d'être signalé plutôt que recopié en exemple.
  */
 export async function startWorkerRunSafely(
   admin: AdminClient,

@@ -161,12 +161,18 @@ e-mail de relance non parti. Les basculer se fait donc worker par worker,
 quand on est prêt à traiter leur rouge.
 
 Avant d'en activer un, vérifier sa période déclarée : le registre les
-inscrit tous à 86 400 s, ce qui vaut pour les crons Vercel quotidiens mais
-pas pour `jackpot-draws`, planifié toutes les 5 minutes en pg_cron
-(`lastchance-jackpot-date-draws`). Tant qu'il est `enabled = false`,
-l'écart est sans effet ; le jour où on le supervise sans corriger sa
-période, un worker de tirage mort resterait vert pendant les 30 h de sa
-tolérance — des jackpots non tirés à l'heure dite, sans un signal.
+inscrit tous à 86 400 s, ce qui vaut pour les crons Vercel quotidiens. Pour
+`jackpot-draws`, cette valeur est **volontairement correcte telle quelle**
+(revue sécurité M1 du wagon 7, ADR-108) — un premier réflexe aurait été de
+la descendre à 300 s au motif qu'un pg_cron (`lastchance-jackpot-date-draws`)
+déclenche `run_jackpot_date_draws()` toutes les 5 minutes, mais ce pg_cron
+exécute la fonction directement en SQL et n'écrit **aucune** ligne dans
+`ops_worker_runs` : le seul heartbeat de ce worker vient de la route HTTP
+quotidienne `/api/cron/jackpot-draws` (`vercel.json`, `45 4 * * *`). Une
+période à 300 s aurait rendu le capteur rouge ~23 h 45 sur 24 dès
+l'application. Superviser le chemin pg_cron des 5 minutes demanderait que
+`run_jackpot_date_draws()` écrive son propre heartbeat — chantier futur non
+fait, consigné dans `docs/bugs.md` (wagon 7).
 
 Quand un worker n'est pas `healthy`, la colonne `reason` dit pourquoi :
 `vault_missing` (secrets Vault absents, le cron n'est même pas
@@ -349,6 +355,21 @@ panne pour le commerçant même quand le site répond. Signaux :
 Requêtes utiles : `select type, status, count(*) from jobs group by 1, 2;`
 — et `select count(*) from webhook_deliveries where failed_at is not null
 and delivered_at is null;` (dead-letter en attente de rejeu).
+
+### Drain des livraisons webhook
+
+Le drain de `webhook_deliveries` (`src/lib/webhook-worker.ts`), partagé par
+`/api/cron/jobs` et `/api/cron/webhooks`, réclame **8 livraisons par
+passage** — pas 50 : chaque livraison est un appel sortant vers un endpoint
+tiers dont la durée n'appartient pas à ce code, et un lot de 50 endpoints
+lents pouvait épuiser la fonction (`maxDuration = 60 s`) au milieu d'une
+livraison, sans réponse ni clôture. La boucle teste l'horloge avant chaque
+livraison (`budgetMs`, 45 s côté `/api/cron/webhooks`) : le reliquat coupé
+par le budget est **relâché** (`deferred`, `locked_until` remis à `null`) et
+repart au passage suivant. La cadence réelle est celle de `/api/cron/jobs` —
+toutes les 5 minutes en production via pg_cron (`lastchance-jobs-worker`,
+secrets Vault posés) — et non celle du cron Vercel quotidien de
+`/api/cron/webhooks`, qui reste un filet de sécurité.
 
 ## Alertes recommandées (Sentry)
 

@@ -59,8 +59,44 @@ export const RATE_LIMITS = {
   authSignup: { limit: 5, windowSeconds: 3600 },
   /** Campagnes newsletter envoyées par organisation (anti-spam/abus). */
   newsletterSend: { limit: 5, windowSeconds: 86_400 },
+  /** Sonde publique /api/health par IP — FAIL-OPEN, calibré pour des MONITEURS.
+   *
+   *  Cette route fait deux appels réseau par requête (lecture Supabase bornée +
+   *  RPC `ops_workers_health`) : non bornée, elle amplifie n'importe quelle
+   *  rafale en charge sur la base. 60/60 s laisse une marge énorme à l'usage
+   *  réel — un moniteur d'uptime interroge toutes les 30 à 60 s, et plusieurs
+   *  moniteurs plus les sondes de la plateforme restent loin du seuil.
+   *
+   *  FAIL-OPEN (appel sans `failClosed`), et ce n'est pas négociable : une
+   *  panne du backend de rate-limit ferait répondre 429 à tous les moniteurs,
+   *  qui déclareraient l'application DOWN. Une sonde de santé qui s'éteint sur
+   *  la panne d'un composant tiers ne surveille plus rien. */
+  healthIp: { limit: 60, windowSeconds: 60 },
   /** Compteur de scan par QR et IP (anti-inflation des statistiques). */
   scanIp: { limit: 60, windowSeconds: 60 },
+  /** PLAFOND PAR IP SEULE de /api/page-opens, tous slugs et tous modules
+   *  confondus — consommé AVANT `scanIp`.
+   *
+   *  POURQUOI IL EXISTE (même défaut que `progressionDevice`) : `scanIp` est
+   *  composé avec un identifiant FOURNI PAR LE CLIENT (`?slug=`, `?id=`).
+   *  Boucler sur des slugs inventés ouvrait un seau NEUF à chaque tour — 60
+   *  req/min chacun, donc un débit borné par rien — et chaque tour coûtait une
+   *  écriture de rate-limit (`INCR` Upstash, ou un upsert dans
+   *  `public.rate_limits` quand Upstash est absent : une table qui grossit au
+   *  rythme de l'attaquant). Tranché AVANT `scanIp`, une rafale saturée
+   *  n'écrit plus qu'UNE ligne par fenêtre au lieu d'une par slug inventé.
+   *
+   *  REFUSER ICI NE FERME RIEN, et c'est ce qui le distingue des seaux
+   *  partagés qu'ADR-032 interdit de faire refuser : la route répond 204 dans
+   *  TOUS les cas, y compris nominal. Le seul effet d'un refus est une
+   *  ouverture non comptée sur un indicateur d'affichage qui ne facture rien,
+   *  n'autorise rien et ne garde aucun accès. Il n'y a pas d'expérience à
+   *  couper — donc pas d'interrupteur à allumer.
+   *
+   *  300/60 s = cinq fois le débit par slug : une vitrine dont tous les
+   *  visiteurs partagent le Wi-Fi n'en approche pas (une ouverture de page par
+   *  visiteur, pas cinq par seconde en continu). */
+  pageOpenIp: { limit: 300, windowSeconds: 60 },
   /** Inscriptions par championnat et IP. Le seuil tient compte du Wi-Fi
    *  partagé d'un commerce ; Turnstile reste la première barrière anti-bot. */
   pronoRegisterIp: { limit: 120, windowSeconds: 3600 },
@@ -87,6 +123,23 @@ export const RATE_LIMITS = {
    *  un écran légitime interroge toutes les 30 s, la marge couvre plusieurs
    *  écrans derrière la même box. */
   pronoTvIp: { limit: 30, windowSeconds: 60 },
+  /** PLAFOND PAR IP SEULE du mode TV, tous championnats confondus — consommé
+   *  AVANT `pronoTvIp`, et pour la même raison que `pageOpenIp` : le slug vient
+   *  du CLIENT, donc en boucler des inventés ouvrait un seau neuf à chaque
+   *  tour et une écriture de rate-limit avec lui.
+   *
+   *  CE SEAU N'AJOUTE AUCUN INTERRUPTEUR : cette route refuse DÉJÀ sur une clé
+   *  composée de l'IP (`pronoTvIp`, 429). La question qu'ADR-032 pose — « un
+   *  tiers peut-il fermer ce parcours en saturant une clé partagée ? » — a donc
+   *  la même réponse avant et après ; ce plafond ne fait que rendre le coût
+   *  d'une rafale indépendant du NOMBRE de slugs essayés. Il reste fail-OPEN
+   *  (appel sans `failClosed`), comme le seau qu'il précède : une panne du
+   *  backend de rate-limit ne doit pas éteindre les écrans d'une salle.
+   *
+   *  120/60 s = quatre fois le débit par championnat. Une salle qui affiche
+   *  trois championnats sur trois écrans rafraîchis toutes les 30 s produit
+   *  ~18 req/min ; la marge couvre l'imprévu sans couvrir le balayage. */
+  pronoTvIpCeiling: { limit: 120, windowSeconds: 60 },
   /** Tentatives de code de ligue par championnat — anti-bruteforce des codes
    *  d'invitation (6-8 caractères). Seau bloquant clé sur le joueur ; la clé IP
    *  ne sert plus qu'à l'observabilité (ADR-032) — d'où le nom sans suffixe. */

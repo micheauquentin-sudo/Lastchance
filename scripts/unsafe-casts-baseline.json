@@ -3,7 +3,7 @@
   "src/actions/campaigns.ts": 1,
   "src/actions/participations.ts": 1,
   "src/actions/play.test.ts": 4,
-  "src/actions/prizes.ts": 2,
+  "src/actions/prizes.ts": 1,
   "src/actions/pronostics.ts": 3,
   "src/actions/skill.test.ts": 5,
   "src/app/api/cron/sync-contests/route.ts": 1,
@@ -13,10 +13,10 @@
   "src/app/dashboard/participations/export/route.ts": 2,
   "src/app/dashboard/participations/page.tsx": 1,
   "src/app/dashboard/quiz/[id]/page.tsx": 2,
-  "src/app/play/[slug]/page.tsx": 1,
   "src/components/dashboard/qr-scanner.tsx": 1,
   "src/lib/admin/data.ts": 1,
   "src/lib/auth.ts": 1,
+  "src/lib/automations.test.ts": 1,
   "src/lib/calendar-context.ts": 2,
   "src/lib/calendar-reminders.test.ts": 4,
   "src/lib/campaign-templates.test.ts": 1,
@@ -30,5 +30,5 @@
   "src/lib/quiz-context.ts": 2,
   "src/lib/referral-context.ts": 2,
   "src/lib/revalidate-play.test.ts": 1,
-  "src/lib/stripe.test.ts": 2
+  "src/lib/supabase/rpc.test.ts": 1
 }

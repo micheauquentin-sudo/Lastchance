@@ -1044,10 +1044,6 @@ export default function LandingPage() {
         <Faq />
         <FinalCtaFooter />
       </main>
-
-      {/* Mascotte Lumoz désactivée pour le moment. Pour la réactiver :
-          importer LumozGuide (components/marketing/lumoz-guide) et
-          monter <LumozGuide /> ici. */}
     </div>
   );
 }

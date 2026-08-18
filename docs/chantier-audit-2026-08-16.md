@@ -28,7 +28,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | ✅ **fusionné `c32dfc4`, déployé, santé verte** |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | ✅ **fusionné `4b614b8`, déployé, santé verte** |
 | 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 | ✅ **fusionné `4016a8e`, déployé, santé verte** |
-| 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | à venir |
+| 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | ✅ **code complet, QA verte, sécu GO, PR en ouverture** |
 
 **Méthode par wagon** : DB d'abord (commit + `verif-complete.sh --db-seul`),
 backend + frontend en parallèle sur dossiers disjoints, `qa-verify` +
@@ -179,3 +179,14 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   `main` success sur `4016a8e` ; « Santé après déploiement » success sur
   `4016a8e`, job réellement exécuté (15:01:04→15:01:11 UTC, pas sauté) —
   aucune migration à appliquer.**
+- **Wagon 7** : branche `chantier/audit-p2-fond`, tête `3f53691`, 26 commits
+  depuis `main`, arbre propre hors `docs/lastchance-reserver.md` (Codex, non
+  suivi, hors commit). Revue sécurité **GO** (0 critique/élevé, 2 MOYEN + 2
+  INFO, tous fermés dans le wagon — M1 période `jackpot-draws`, M2 double
+  borne newsletter, I1 garde proxy de confiance, I2 `CRON_SECRET` dans le
+  workflow). pgTAP 64 fichiers / 3566 assertions PASS ×2 (vide et semée),
+  `verif-complete.sh` 0 échec (11 min), E2E complet vert (2 flakes de charge
+  WebKit tranchés par rejeu isolé vert), typecheck/lint/casts 0. Migration
+  `20260930120000_le_fond_tient.sql`. Roadmap V1.63, ADR-108. **Code complet
+  et QA verte sur la tête `3f53691` ; PR en ouverture, fusion et santé
+  post-déploiement à consigner ici une fois passées.**

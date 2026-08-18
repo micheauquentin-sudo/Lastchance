@@ -166,17 +166,21 @@ export function buildContentSecurityPolicy(options: CspOptions = {}): string {
   const sentry = originOf(process.env.NEXT_PUBLIC_SENTRY_DSN) ?? "https://*.sentry.io";
   const hosts = `https://challenges.cloudflare.com ${posthog} ${posthogAssets}`;
 
-  // 'wasm-unsafe-eval' n'autorise QUE la compilation WebAssembly (pas
-  // l'eval JS) — requis par le décodeur meshopt de la mascotte Lumoz.
+  // 'wasm-unsafe-eval' RETIRÉ (MORT-2). Il n'a jamais eu qu'une raison d'être —
+  // le décodeur meshopt de la mascotte Lumoz — et cette mascotte est supprimée
+  // avec ses dépendances. Plus rien dans `src/` ni `e2e/` ne compile de
+  // WebAssembly ; la roue est du canvas 2D, pas de la 3D. Une permission dont
+  // le motif est parti n'est pas neutre : elle reste ouverte sur les TROIS
+  // surfaces, dont `sensitive` (back-office), pour un usage qui n'existe plus.
   const scriptPolicy = (() => {
     if (surface === "static") {
-      return `'self' 'unsafe-inline' 'wasm-unsafe-eval' ${hosts}${isDev ? " 'unsafe-eval'" : ""}`;
+      return `'self' 'unsafe-inline' ${hosts}${isDev ? " 'unsafe-eval'" : ""}`;
     }
     const withNonce = nonce ? `'nonce-${nonce}' ` : "";
     if (surface === "sensitive") {
-      return `'self' ${withNonce}'strict-dynamic' 'wasm-unsafe-eval' ${hosts}`;
+      return `'self' ${withNonce}'strict-dynamic' ${hosts}`;
     }
-    return `'self' ${withNonce}'wasm-unsafe-eval' ${hosts}`;
+    return `'self' ${withNonce}${hosts}`;
   })();
 
   const endpoint = reportEndpoint();

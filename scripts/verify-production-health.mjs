@@ -17,12 +17,18 @@ export function normalizeProductionUrl(rawUrl) {
 
 export async function verifyProductionHealth(
   rawUrl,
-  { fetchImpl = fetch, timeoutMs = 15_000, bypassSecret } = {},
+  { fetchImpl = fetch, timeoutMs = 15_000, bypassSecret, cronSecret } = {},
 ) {
   const healthUrl = normalizeProductionUrl(rawUrl);
   const headers = { accept: "application/json" };
   if (typeof bypassSecret === "string" && bypassSecret.length > 0) {
     headers["x-vercel-protection-bypass"] = bypassSecret;
+  }
+  // Depuis SEC-3, `/api/health` ne rend le DÉTAIL (`checks`, latences,
+  // configuration de sécurité) qu'à un appelant porteur de `CRON_SECRET` : le
+  // corps public dit le verdict, pas ce qui l'a produit.
+  if (typeof cronSecret === "string" && cronSecret.length > 0) {
+    headers.authorization = `Bearer ${cronSecret}`;
   }
   const response = await fetchImpl(healthUrl, {
     headers,
@@ -39,23 +45,38 @@ export async function verifyProductionHealth(
   if (!response.ok || body?.status !== "ok") {
     throw new Error(`Production non saine (HTTP ${response.status})`);
   }
-  for (const check of REQUIRED_CHECKS) {
-    if (body?.checks?.[check]?.status !== "ok") {
-      throw new Error(`Contrôle requis en échec : ${check}`);
+  // Le détail n'est plus garanti présent. Quand il l'est, on vérifie chaque
+  // brique — c'est ce qui NOMME la défaillance. Quand il ne l'est pas (sonde
+  // lancée sans `CRON_SECRET`), le verdict reste concluant : la route calcule
+  // `status: "ok"` comme la CONJONCTION des trois contrôles, donc un « ok »
+  // public implique déjà les trois. On perd le nom de la brique fautive, pas
+  // la détection — et on le DIT dans le retour plutôt que de laisser croire
+  // que trois contrôles ont été lus.
+  const detailPresent = Boolean(body?.checks);
+  if (detailPresent) {
+    for (const check of REQUIRED_CHECKS) {
+      if (body.checks?.[check]?.status !== "ok") {
+        throw new Error(`Contrôle requis en échec : ${check}`);
+      }
     }
   }
   return {
     version: typeof body.version === "string" ? body.version : "inconnue",
-    checks: [...REQUIRED_CHECKS],
+    checks: detailPresent ? [...REQUIRED_CHECKS] : [],
+    detailPresent,
   };
 }
 
 async function main() {
   const rawUrl = process.argv[2] || process.env.PRODUCTION_URL;
   const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-  const result = await verifyProductionHealth(rawUrl, { bypassSecret });
+  const cronSecret = process.env.CRON_SECRET;
+  const result = await verifyProductionHealth(rawUrl, { bypassSecret, cronSecret });
   process.stdout.write(
-    `Production saine (${result.version}) : ${result.checks.join(", ")}\n`,
+    result.detailPresent
+      ? `Production saine (${result.version}) : ${result.checks.join(", ")}\n`
+      : `Production saine (${result.version}) : verdict global`
+        + ` (détail non demandé — CRON_SECRET absent)\n`,
   );
 }
 

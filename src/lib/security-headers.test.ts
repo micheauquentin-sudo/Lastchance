@@ -32,14 +32,19 @@ describe("Content Security Policy", () => {
     expect(buildContentSecurityPolicy()).toContain("script-src 'self' 'unsafe-inline'");
   });
 
-  it("autorise la compilation WebAssembly (décodeur meshopt de la mascotte)", () => {
+  it("n'autorise PLUS la compilation WebAssembly sur aucune surface (MORT-2)", () => {
+    // `'wasm-unsafe-eval'` n'a jamais eu qu'une raison d'être : le décodeur
+    // meshopt de la mascotte Lumoz, supprimée avec ses dépendances. Plus rien
+    // dans `src/` ni `e2e/` ne compile de WebAssembly — la roue est du canvas
+    // 2D. Une permission dont le motif est parti reste une permission ouverte,
+    // ici jusque sur la surface `sensitive` du back-office.
     const policies = [
       buildContentSecurityPolicy(),
       buildContentSecurityPolicy({ surface: "sensitive", nonce: "n" }),
       buildContentSecurityPolicy({ surface: "public", nonce: "n" }),
     ];
     for (const policy of policies) {
-      expect(directive(policy, "script-src")).toContain("'wasm-unsafe-eval'");
+      expect(directive(policy, "script-src")).not.toContain("'wasm-unsafe-eval'");
     }
   });
 
@@ -260,38 +265,52 @@ describe("Invariants des expériences publiques à nonce", () => {
     }
   });
 
-  it("ne prérend aucune route porteuse de nonce (sortie de build)", () => {
-    // Contrôle général contre la sortie réelle du build : un .html dans
-    // .next/server/app = HTML figé au build, donc sans nonce.
-    const prerendered = path.join(root, ".next", "server", "app");
-    let statSafe: ReturnType<typeof statSync> | undefined;
-    try { statSafe = statSync(prerendered); } catch { statSafe = undefined; }
-    if (!statSafe?.isDirectory()) {
-      // Aucun build disponible dans ce contexte : les deux tests
-      // ci-dessus couvrent les cas connus, celui-ci est le filet général.
-      expect(statSafe).toBeUndefined();
-      return;
-    }
-    function htmlFiles(dir: string): string[] {
-      const out: string[] = [];
-      for (const entry of readdirSync(dir)) {
-        const full = path.join(dir, entry);
-        if (statSync(full).isDirectory()) out.push(...htmlFiles(full));
-        else if (entry.endsWith(".html")) out.push(full);
+  // TEST-2 (audit p2-fond) : la branche `statSync` échouée s'auto-satisfaisait
+  // par un `return` muet — invisible dans le rapport, indistinguable d'un vrai
+  // passage — et la boucle `htmlFiles` ne réclamait aucun fichier : un dossier
+  // `.next/server/app` vide aurait aussi rendu ce test vert sans avoir rien
+  // vérifié. `skipIf` rend le premier cas VISIBLE dans le rapport (skipped, pas
+  // passed) ; le second est fermé en exigeant `> 0` fichiers HTML dès que le
+  // dossier existe.
+  const prerendered = path.join(root, ".next", "server", "app");
+  let buildPresent = false;
+  try {
+    buildPresent = statSync(prerendered).isDirectory();
+  } catch {
+    buildPresent = false;
+  }
+
+  it.skipIf(!buildPresent)(
+    "ne prérend aucune route porteuse de nonce (sortie de build)",
+    () => {
+      // Contrôle général contre la sortie réelle du build : un .html dans
+      // .next/server/app = HTML figé au build, donc sans nonce.
+      function htmlFiles(dir: string): string[] {
+        const out: string[] = [];
+        for (const entry of readdirSync(dir)) {
+          const full = path.join(dir, entry);
+          if (statSync(full).isDirectory()) out.push(...htmlFiles(full));
+          else if (entry.endsWith(".html")) out.push(full);
+        }
+        return out;
       }
-      return out;
-    }
-    for (const file of htmlFiles(prerendered)) {
-      const route = `/${path
-        .relative(prerendered, file)
-        .replaceAll(path.sep, "/")
-        .replace(/\.html$/, "")}`;
+      const files = htmlFiles(prerendered);
       expect(
-        cspSurfaceForPath(route),
-        `${route} est prérendue : elle ne peut pas porter de nonce`,
-      ).toBe("static");
-    }
-  });
+        files.length,
+        "dossier de build présent mais aucun .html trouvé : le contrôle ci-dessous n'aurait rien vérifié",
+      ).toBeGreaterThan(0);
+      for (const file of files) {
+        const route = `/${path
+          .relative(prerendered, file)
+          .replaceAll(path.sep, "/")
+          .replace(/\.html$/, "")}`;
+        expect(
+          cspSurfaceForPath(route),
+          `${route} est prérendue : elle ne peut pas porter de nonce`,
+        ).toBe("static");
+      }
+    },
+  );
 
   it("garde /play hors du nonce tant qu'elle est en ISR", () => {
     // Contre-épreuve du choix documenté : /play est mise en cache, un

@@ -1,3 +1,4 @@
+import { authorizeCronRequest } from "@/lib/timing-safe";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
@@ -11,15 +12,14 @@ import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health
  * (src/lib/webhook-worker.ts) : retys en minutes, dead-letter après
  * épuisement, purge des accusés > 30 jours.
  *
- * ⚠️ « FILET DE SÉCURITÉ » ÉTAIT FAUX, et le mot est corrigé ici. Il supposait
- * un drain fréquent ailleurs : /api/cron/jobs était décrit comme tournant
- * « toutes les 5 minutes via pg_cron ». Mesuré : vercel.json le planifie à
- * `20 4 * * *`, une fois par jour, et la planification pg_cron à 5 minutes
- * (`lastchance-jobs-worker`) est inactive tant que les secrets Vault
- * `jobs_worker_url` et `sync_contests_secret` n'existent pas. Cette route n'est
- * donc pas le filet d'un drain fréquent : elle est, avec /api/cron/jobs, l'un
- * des DEUX seuls passages de la journée (`5 9 * * *` ici, `20 4 * * *` là).
- * Conséquence : une livraison en échec peut attendre plusieurs heures.
+ * ⚠️ CE BLOC A DIT SUCCESSIVEMENT LES DEUX CHOSES, et voici l'état vérifié.
+ * Il annonçait un filet de sécurité, puis a été corrigé en « l'un des DEUX
+ * seuls passages de la journée » au motif que la planification pg_cron à
+ * 5 minutes (`lastchance-jobs-worker`) restait inactive faute de secrets Vault.
+ * Ces secrets sont posés depuis le chantier « cadence-file » (2026-08-01,
+ * ADR-062) : /api/cron/jobs draine bien la file toutes les 5 minutes en
+ * production. « Filet de sécurité » redevient donc le mot juste — ce passage
+ * quotidien (`5 9 * * *`) couvre la panne de pg_cron, pas le cas nominal.
  *
  * Le passage écrit son heartbeat (ops_worker_runs, worker `webhooks`) :
  * sans lui, un filet de sécurité muet est indistinguable d'un filet qui
@@ -31,10 +31,13 @@ import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Marge avant la limite de la fonction : le reliquat repart au passage suivant. */
+const TIME_BUDGET_MS = 45_000;
+
 export async function GET(request: Request) {
   const secret = optionalEnv("CRON_SECRET");
   if (!secret) return NextResponse.json({ error: "CRON_SECRET manquant" }, { status: 500 });
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!authorizeCronRequest(request, secret)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 
@@ -46,14 +49,14 @@ export async function GET(request: Request) {
 
   let summary;
   try {
-    summary = await drainWebhookDeliveries(admin);
+    summary = await drainWebhookDeliveries(admin, { budgetMs: TIME_BUDGET_MS });
   } catch (error) {
     reportError("cron.webhooks", error);
     await finishWorkerRunSafely(
       admin,
       run,
       "failed",
-      { claimed: 0, delivered: 0, deadLettered: 0 },
+      { claimed: 0, delivered: 0, deadLettered: 0, deferred: 0, settleFailed: 0 },
       "webhook_drain_failed",
     );
     return NextResponse.json(
@@ -62,13 +65,33 @@ export async function GET(request: Request) {
     );
   }
 
+  // DÉGRADÉ sur une clôture refusée par la base (JOB-9). Publier
+  // `settleFailed` sans jamais l'agir laisserait l'objectif « workers » du
+  // back-office au vert pendant qu'on perd des états : une livraison partie
+  // dont l'accusé n'a pas pu s'écrire sera RÉCLAMÉE À NOUVEAU au passage
+  // suivant, donc renvoyée au commerçant. C'est exactement le genre d'anomalie
+  // qu'un compteur muet fait passer inaperçue.
+  //
+  // `deferred` ne dégrade PAS, et la différence est délibérée : un reliquat
+  // relâché faute de budget est le fonctionnement NOMINAL d'une file drainée
+  // toutes les 5 minutes, pas une anomalie.
+  const degraded = summary.settleFailed > 0;
+
   // Clôture best-effort : les accusés sont déjà partis, un journal muet ne
   // doit pas faire rejouer le drain.
-  await finishWorkerRunSafely(admin, run, "succeeded", {
-    claimed: summary.claimed,
-    delivered: summary.delivered,
-    deadLettered: summary.deadLettered,
-  });
+  await finishWorkerRunSafely(
+    admin,
+    run,
+    degraded ? "degraded" : "succeeded",
+    {
+      claimed: summary.claimed,
+      delivered: summary.delivered,
+      deadLettered: summary.deadLettered,
+      deferred: summary.deferred,
+      settleFailed: summary.settleFailed,
+    },
+    degraded ? "webhook_settle_failed" : undefined,
+  );
 
   return NextResponse.json(
     { ok: true, ...summary },

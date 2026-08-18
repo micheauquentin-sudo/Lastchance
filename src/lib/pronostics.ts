@@ -83,17 +83,12 @@ function genericScoringPoints(value: unknown): number | null {
   return value;
 }
 
-/** Palier effectif d'un type générique (valeur lue, sinon défaut). */
-function tier(scoring: ContestScoring, key: GenericScoringKey): number {
-  const value = scoring[key];
-  return typeof value === "number" ? value : DEFAULT_GENERIC_SCORING[key];
-}
 
 /**
  * Lit la colonne jsonb `contests.scoring` sans jamais faire confiance à
  * sa forme (défauts sur toute valeur invalide). Les paliers génériques
  * absents restent ABSENTS de l'objet retourné : leur défaut est appliqué
- * par `scoreAnswer`, exactement comme en SQL.
+ * par la fonction SQL `contest_generic_points`, seule autorité en base.
  */
 export function parseScoring(raw: unknown): ContestScoring {
   if (typeof raw !== "object" || raw === null) return { ...DEFAULT_SCORING };
@@ -110,38 +105,15 @@ export function parseScoring(raw: unknown): ContestScoring {
   return scoring;
 }
 
-export interface MatchScore {
-  home: number;
-  away: number;
-}
-
-/**
- * Points d'un pronostic face au résultat réel. Un seul palier est payé,
- * le plus haut atteint : exact ⊃ diff ⊃ winner.
- * - exact : score exact
- * - diff : bonne différence (ex. prono 2-1, réel 3-2) — inclut le nul
- *   prédit avec le mauvais score (0-0 vs 2-2)
- * - winner : bon vainqueur (ou nul deviné) sans la différence
+/* `scorePrediction` (barème football) a été SUPPRIMÉ ici — DETTE-1.
+ *
+ * C'était un miroir TypeScript d'une règle dont l'autorité est en base
+ * (`contest_match_points`), sans aucun appelant de production : rien ne
+ * l'appelait, seuls ses propres tests le tenaient. Un miroir sans appelant ne
+ * protège de rien et dérive en silence — il donne au lecteur l'impression que
+ * le barème se décide ici, alors qu'un écart entre les deux ne se serait vu
+ * nulle part. La règle vit en SQL et y est couverte par pgTAP.
  */
-export function scorePrediction(
-  scoring: ContestScoring,
-  actual: MatchScore,
-  predicted: MatchScore,
-): number {
-  if (predicted.home === actual.home && predicted.away === actual.away) {
-    return scoring.exact;
-  }
-  if (predicted.home - predicted.away === actual.home - actual.away) {
-    return scoring.diff;
-  }
-  if (
-    Math.sign(predicted.home - predicted.away) ===
-    Math.sign(actual.home - actual.away)
-  ) {
-    return scoring.winner;
-  }
-  return 0;
-}
 
 // ────────────────────────────────────────────────────────────
 // Questions génériques : « événement → questions → résultat »
@@ -281,84 +253,15 @@ export function parseQuestionOptions(raw: unknown): ContestQuestionOption[] {
   return options;
 }
 
-/** Égalité jsonb : ordre des clés indifférent, ordre des tableaux non. */
-function jsonEquals(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-      return false;
-    }
-    return a.every((value, i) => jsonEquals(value, b[i]));
-  }
-  if (
-    typeof a === "object" && a !== null &&
-    typeof b === "object" && b !== null
-  ) {
-    const left = a as Record<string, unknown>;
-    const right = b as Record<string, unknown>;
-    const keys = Object.keys(left);
-    if (keys.length !== Object.keys(right).length) return false;
-    return keys.every(
-      (key) =>
-        Object.prototype.hasOwnProperty.call(right, key) &&
-        jsonEquals(left[key], right[key]),
-    );
-  }
-  return false;
-}
-
-/**
- * Points d'une réponse générique — MIROIR STRICT de la fonction SQL
- * `contest_generic_points`, seule autorité en base :
- * - résultat inconnu ou joueur sans réponse → null (rien n'est attribué) ;
- * - `choice`  : `choice` si la réponse est la bonne, sinon 0 ;
- * - `ranking` : `ranking_exact` si l'ordre est identique, sinon
- *   `ranking_partial` × nombre d'éléments à la BONNE POSITION ;
- * - `number`  : `number_exact` si l'écart est nul, sinon `number_close`
- *   si |écart| ≤ `number_tolerance`, sinon 0 ;
- * - `score` (et tout type inconnu) → null : le football garde son propre
- *   barème, `scorePrediction`, strictement inchangé.
+/* `scoreAnswer` et son aide `jsonEquals` ont été SUPPRIMÉS ici — DETTE-1.
+ *
+ * Même raison que `scorePrediction` plus haut : c'était un miroir TypeScript
+ * de `contest_generic_points`, annoncé « MIROIR STRICT », et sans le moindre
+ * appelant de production. Un miroir que personne n'appelle ne peut pas diverger
+ * « visiblement » : il diverge en silence, et sa seule fonction restante est de
+ * faire croire au lecteur que le barème générique se décide en TypeScript.
+ * L'autorité est la fonction SQL, couverte par pgTAP.
  */
-export function scoreAnswer(
-  questionType: ContestQuestionType | string,
-  answer: unknown,
-  correctAnswer: unknown,
-  scoring: ContestScoring,
-): number | null {
-  if (correctAnswer === null || correctAnswer === undefined) return null;
-  if (answer === null || answer === undefined) return null;
-
-  if (questionType === "choice") {
-    return jsonEquals(answer, correctAnswer) ? tier(scoring, "choice") : 0;
-  }
-
-  if (questionType === "ranking") {
-    if (jsonEquals(answer, correctAnswer)) return tier(scoring, "ranking_exact");
-    if (!Array.isArray(answer) || !Array.isArray(correctAnswer)) return 0;
-    // Jointure SQL sur l'ordinalité : seules les positions communes
-    // comptent, et seulement quand les deux valeurs sont égales.
-    let hits = 0;
-    const shared = Math.min(answer.length, correctAnswer.length);
-    for (let i = 0; i < shared; i += 1) {
-      if (jsonEquals(answer[i], correctAnswer[i])) hits += 1;
-    }
-    return hits * tier(scoring, "ranking_partial");
-  }
-
-  if (questionType === "number") {
-    if (typeof answer !== "number" || !Number.isFinite(answer)) return 0;
-    if (typeof correctAnswer !== "number" || !Number.isFinite(correctAnswer)) {
-      return 0;
-    }
-    const delta = Math.abs(answer - correctAnswer);
-    if (delta === 0) return tier(scoring, "number_exact");
-    return delta <= tier(scoring, "number_tolerance")
-      ? tier(scoring, "number_close")
-      : 0;
-  }
-
-  return null;
-}
 
 // ────────────────────────────────────────────────────────────
 // Verrouillage d'une question
@@ -469,40 +372,13 @@ export function rewardForRank(
   return hit ? hit.label : null;
 }
 
-// ────────────────────────────────────────────────────────────
-// Classement
-// ────────────────────────────────────────────────────────────
-
-export interface RankedPlayer<T> {
-  player: T;
-  points: number;
-  /** Rang « compétition » : deux ex æquo partagent le rang (1, 2, 2, 4). */
-  rank: number;
-}
-
-/**
- * Classe les joueurs par points décroissants avec gestion des ex æquo
- * (standard competition ranking). L'ordre d'entrée départage l'affichage
- * mais pas le rang.
+/* `rankPlayers` et `RankedPlayer` ont été SUPPRIMÉS ici — DETTE-1.
+ *
+ * Le classement affiché (mode TV, tableau public, tableau commerçant) vient de
+ * la base, déjà ordonné et déjà rangé ex æquo. Cette version TypeScript n'avait
+ * aucun appelant : c'était une seconde définition du « rang » que rien ne
+ * confrontait à la première.
  */
-export function rankPlayers<T>(
-  players: T[],
-  pointsOf: (player: T) => number,
-): RankedPlayer<T>[] {
-  const sorted = [...players]
-    .map((player) => ({ player, points: pointsOf(player) }))
-    .sort((a, b) => b.points - a.points);
-
-  const ranked: RankedPlayer<T>[] = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const rank =
-      i > 0 && sorted[i].points === sorted[i - 1].points
-        ? ranked[i - 1].rank
-        : i + 1;
-    ranked.push({ ...sorted[i], rank });
-  }
-  return ranked;
-}
 
 // ────────────────────────────────────────────────────────────
 // Identité joueur : jeton navigateur → hash en base

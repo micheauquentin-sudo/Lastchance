@@ -4,8 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   settleJob: vi.fn(),
-  startWorkerRun: vi.fn(),
-  finishWorkerRun: vi.fn(),
+  startWorkerRunSafely: vi.fn(),
+  finishWorkerRunSafely: vi.fn(),
   drainWebhookDeliveries: vi.fn(),
   reportError: vi.fn(),
   processScheduleBlockedJob: vi.fn(),
@@ -21,8 +21,8 @@ vi.mock("@/lib/jobs", () => ({
   settleJob: (...args: unknown[]) => mocks.settleJob(...args),
 }));
 vi.mock("@/lib/worker-health", () => ({
-  startWorkerRun: (...args: unknown[]) => mocks.startWorkerRun(...args),
-  finishWorkerRun: (...args: unknown[]) => mocks.finishWorkerRun(...args),
+  startWorkerRunSafely: (...args: unknown[]) => mocks.startWorkerRunSafely(...args),
+  finishWorkerRunSafely: (...args: unknown[]) => mocks.finishWorkerRunSafely(...args),
 }));
 vi.mock("@/lib/webhook-worker", () => ({
   drainWebhookDeliveries: (...args: unknown[]) =>
@@ -62,13 +62,15 @@ const request = (path = "/api/cron/jobs", token = "cron-secret") =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.startWorkerRun.mockResolvedValue({ id: "run-1", startedAt: Date.now() });
-  mocks.finishWorkerRun.mockResolvedValue(undefined);
+  mocks.startWorkerRunSafely.mockResolvedValue({ id: "run-1", startedAt: Date.now() });
+  mocks.finishWorkerRunSafely.mockResolvedValue(undefined);
   mocks.settleJob.mockResolvedValue(undefined);
   mocks.drainWebhookDeliveries.mockResolvedValue({
     claimed: 0,
     delivered: 0,
     deadLettered: 0,
+    deferred: 0,
+    settleFailed: 0,
   });
 });
 
@@ -77,7 +79,7 @@ describe("GET /api/cron/jobs", () => {
     const response = await GET(request("/api/cron/jobs", "wrong"));
 
     expect(response.status).toBe(401);
-    expect(mocks.startWorkerRun).not.toHaveBeenCalled();
+    expect(mocks.startWorkerRunSafely).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
@@ -126,7 +128,7 @@ describe("GET /api/cron/jobs", () => {
     );
     expect(mocks.drainWebhookDeliveries).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalledWith("requeue_stale_jobs");
-    expect(mocks.finishWorkerRun).toHaveBeenCalledWith(
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: "run-1" }),
       "succeeded",
@@ -184,6 +186,92 @@ describe("GET /api/cron/jobs", () => {
     );
   });
 
+  it("passe au drain SON horloge, et publie le reliquat au heartbeat", async () => {
+    // LE DÉFAUT QUE CE TEST FERME (JOB-1). Le drain repartait avec un budget
+    // neuf alors que la file de jobs venait d'en consommer l'essentiel : c'est
+    // la fonction Vercel qui tranchait, au milieu d'un appel sortant.
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "requeue_stale_jobs"
+        ? { data: 0, error: null }
+        : { data: [], error: null },
+    );
+    mocks.drainWebhookDeliveries.mockResolvedValue({
+      claimed: 8,
+      delivered: 5,
+      deadLettered: 0,
+      deferred: 3,
+      settleFailed: 1,
+    });
+
+    await GET(request());
+
+    expect(mocks.drainWebhookDeliveries).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ budgetMs: 45_000, startedAt: expect.any(Number) }),
+    );
+    // DÉGRADÉ, et non « succeeded » : une clôture refusée par la base (JOB-9)
+    // signifie qu'une livraison partie sera réclamée à nouveau au passage
+    // suivant, donc RENVOYÉE au commerçant. Publier le compteur sans jamais
+    // l'agir laisserait l'objectif « workers » au vert pendant qu'on perd des
+    // états. Le reliquat (`webhooksDeferred`), lui, est nominal et ne dégrade
+    // pas — c'est la seule différence entre les deux compteurs.
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "degraded",
+      expect.objectContaining({ webhooksDeferred: 3, webhooksSettleFailed: 1 }),
+    );
+  });
+
+  it("un reliquat de webhooks SEUL ne dégrade pas le passage (JOB-9)", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "requeue_stale_jobs"
+        ? { data: 0, error: null }
+        : { data: [], error: null },
+    );
+    mocks.drainWebhookDeliveries.mockResolvedValue({
+      claimed: 8,
+      delivered: 5,
+      deadLettered: 0,
+      deferred: 3,
+      settleFailed: 0,
+    });
+
+    await GET(request());
+
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "succeeded",
+      expect.objectContaining({ webhooksDeferred: 3, webhooksSettleFailed: 0 }),
+    );
+  });
+
+  it("travaille même sans journal de santé (JOB-7)", async () => {
+    // Ce worker était le seul des quatre crons instrumentés à REFUSER de
+    // travailler faute de heartbeat : une panne du journal arrêtait la file
+    // entière — newsletters, relances, SMS — alors que `claim_jobs` protège
+    // déjà par verrou et idempotence.
+    mocks.startWorkerRunSafely.mockResolvedValue(null);
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "requeue_stale_jobs"
+        ? { data: 0, error: null }
+        : { data: [], error: null },
+    );
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("claim_jobs", expect.anything());
+    expect(mocks.drainWebhookDeliveries).toHaveBeenCalled();
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      null,
+      "succeeded",
+      expect.anything(),
+    );
+  });
+
   it("rend un échec HTTP et clôt le heartbeat si le claim échoue", async () => {
     mocks.rpc.mockImplementation(async (name: string) =>
       name === "requeue_stale_jobs"
@@ -194,7 +282,7 @@ describe("GET /api/cron/jobs", () => {
     const response = await GET(request());
 
     expect(response.status).toBe(500);
-    expect(mocks.finishWorkerRun).toHaveBeenCalledWith(
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: "run-1" }),
       "failed",

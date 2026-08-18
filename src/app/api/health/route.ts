@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import pkg from "../../../../package.json";
+import { optionalEnv } from "@/lib/env";
 import { eventRealtimeEnabled } from "@/lib/event-realtime";
+import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
+import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
+import { authorizeCronRequest } from "@/lib/timing-safe";
 import { turnstileRequired } from "@/lib/turnstile";
 
 /**
@@ -9,7 +13,26 @@ import { turnstileRequired } from "@/lib/turnstile";
  * Vérifie que le process répond et que la base (Supabase/PostgREST) est
  * joignable. Renvoie 200 si tout va bien, 503 sinon — directement
  * exploitable par un moniteur d'uptime (UptimeRobot, BetterStack…).
- * Endpoint public, sans données sensibles.
+ *
+ * ── DEUX RÉPONSES, PAS UNE (SEC-3) ──────────────────────────
+ *
+ * Le VERDICT est public — c'est la raison d'être de la route, et un moniteur
+ * n'a besoin que du code HTTP. Le DÉTAIL ne l'est plus.
+ *
+ * Ce que ce corps annonçait à qui le demandait : quelles briques existent et
+ * laquelle est tombée (`checks.database`, `checks.workers`), les latences
+ * exactes de la base et de la RPC — donc une mesure gratuite de la charge — et
+ * surtout `security_configuration.error`, qui nommait la protection manquante.
+ * « Protection anti-bot incomplète » dit à un attaquant que Turnstile n'est pas
+ * en place AVANT qu'il tente quoi que ce soit ; « ADMIN_HOSTS manquant » lui
+ * apprend que le back-office n'est pas cloisonné par domaine. C'est un oracle
+ * de posture : il transforme une campagne à l'aveugle en campagne renseignée,
+ * et il se lisait sans aucune authentification.
+ *
+ * Le détail passe donc derrière `CRON_SECRET` (même en-tête et même comparaison
+ * à temps constant que les routes cron, `authorizeCronRequest`). Un secret
+ * absent ou faux ne produit PAS un 401 : la sonde répond normalement, sans le
+ * détail. Le contraire ferait échouer tous les moniteurs déjà en place.
  */
 
 export const dynamic = "force-dynamic";
@@ -128,22 +151,79 @@ async function checkWorkers(): Promise<CheckResult> {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // ── PLAFOND PAR IP, FAIL-OPEN ────────────────────────────────────
+  //
+  // Chaque appel coûte DEUX requêtes réseau vers Supabase (lecture bornée +
+  // RPC `ops_workers_health`) : non bornée, cette route amplifie n'importe
+  // quelle rafale en charge sur la base — et elle est publique par nature.
+  //
+  // Fail-OPEN et calibré large (cf. `healthIp`) : une sonde de santé qui
+  // répond 429 fait déclarer l'application DOWN par tous les moniteurs. Comme
+  // ailleurs, le plafond ne s'applique que sur une IP réellement mesurée —
+  // sinon la clé ne désigne personne et devient un interrupteur global.
+  const ip = clientIpFromHeaders(request.headers);
+  if (ip !== IP_CLIENT_INCONNUE) {
+    const sousPlafond = await rateLimit(
+      rateLimitBucket("health:ip", ip),
+      RATE_LIMITS.healthIp,
+    );
+    if (!sousPlafond) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez dans un instant" },
+        { status: 429, headers: { "cache-control": "no-store" } },
+      );
+    }
+  }
+
+  // Le détail n'est servi qu'à un appelant qui prouve connaître `CRON_SECRET`.
+  // Secret absent (environnement de développement) = aucun détail pour
+  // personne : c'est le sens sûr, et il évite qu'un déploiement sans secret
+  // rende par défaut ce que ce correctif ferme.
+  const cronSecret = optionalEnv("CRON_SECRET");
+  const detailAutorise = Boolean(
+    cronSecret && authorizeCronRequest(request, cronSecret),
+  );
+
   const [database, workers] = await Promise.all([checkDatabase(), checkWorkers()]);
   const turnstileConfigured = Boolean(
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   );
+  /**
+   * L'IP CLIENT EST-ELLE SEULEMENT MESURABLE ? (revue sécu I1)
+   *
+   * `clientIpFromHeaders` ne lit une IP que derrière un proxy DÉCLARÉ
+   * (`TRUSTED_PROXY_PROVIDER`, ou `VERCEL` posé par la plateforme) : partout
+   * ailleurs, les en-têtes sont forgeables et elle rend `unknown`. Or TOUS les
+   * plafonds par IP du dépôt — /api/page-opens, le mode TV, cette route
+   * elle-même — sont gardés par `ip !== IP_CLIENT_INCONNUE`, parce qu'un seau
+   * assis sur `unknown` ne désigne personne et deviendrait un interrupteur
+   * global (ADR-032).
+   *
+   * Conséquence : un changement d'hébergement désarme ces plafonds EN SILENCE.
+   * Rien ne casse, rien ne loggue, et l'anti-abus disparaît sans qu'aucune
+   * alarme ne sonne. C'est exactement la classe de panne qu'une sonde de
+   * configuration doit rendre bruyante — au même titre qu'`ADMIN_HOSTS`.
+   */
+  const clientIpMesurable = Boolean(
+    process.env.TRUSTED_PROXY_PROVIDER || process.env.VERCEL,
+  );
+  const enProduction = process.env.NODE_ENV === "production";
+
   const securityConfiguration = {
     status:
       (!turnstileRequired() || turnstileConfigured)
-      && (process.env.NODE_ENV !== "production" || Boolean(process.env.ADMIN_HOSTS))
+      && (!enProduction || Boolean(process.env.ADMIN_HOSTS))
+      && (!enProduction || clientIpMesurable)
         ? "ok"
         : "error",
     error:
       turnstileRequired() && !turnstileConfigured
         ? "Protection anti-bot incomplète"
-        : process.env.NODE_ENV === "production" && !process.env.ADMIN_HOSTS
+        : enProduction && !process.env.ADMIN_HOSTS
           ? "ADMIN_HOSTS manquant"
+          : enProduction && !clientIpMesurable
+            ? "IP client non mesurable — plafonds par IP désarmés"
         : undefined,
   };
   const healthy =
@@ -153,11 +233,23 @@ export async function GET() {
 
   return NextResponse.json(
     {
+      // ── CORPS PUBLIC : le verdict, et rien de plus ───────────────
       status: healthy ? "ok" : "unhealthy",
       version: pkg.version,
       timestamp: new Date().toISOString(),
-      uptime_s: Math.round(process.uptime()),
-      checks: { database, workers, security_configuration: securityConfiguration },
+      // ── DÉTAIL : seulement sur preuve de `CRON_SECRET` ───────────
+      // Latences (mesure gratuite de la charge), inventaire des briques, et
+      // `security_configuration.error` qui NOMME la protection manquante.
+      ...(detailAutorise
+        ? {
+            uptime_s: Math.round(process.uptime()),
+            checks: {
+              database,
+              workers,
+              security_configuration: securityConfiguration,
+            },
+          }
+        : {}),
       /**
        * DRAPEAUX D'EXPLOITATION — pas un contrôle de santé, un CONSTAT.
        *

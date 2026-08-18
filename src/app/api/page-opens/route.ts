@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isModulePageOpenKey } from "@/lib/module-page-opens";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
-import { clientIpFromHeaders } from "@/lib/request-ip";
+import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
 
 /**
  * Compteur d'ouvertures de page publique. Deux formes :
@@ -54,9 +54,55 @@ export async function POST(request: Request) {
   // ce lot porte sur ce qui est LU — route, composant, props, paramètres.
   const ip = clientIpFromHeaders(request.headers);
 
+  const slug = params.get("slug") ?? "";
+  const publicId = params.get("id") ?? "";
+
+  /**
+   * Requête EXPLOITABLE : celle qui atteindrait un seau par ressource. Une
+   * entrée malformée n'en a jamais touché aucun et ne doit pas commencer —
+   * c'est la propriété que garde `route.test.ts` sur une trentaine de formes
+   * de slugs invalides, et elle vaut mieux que ce que le plafond ci-dessous
+   * lui ajouterait : l'énumération se fait avec des identifiants BIEN FORMÉS
+   * (c'est le seul moyen d'ouvrir un seau neuf), pas avec des `../`.
+   */
+  const exploitable =
+    moduleKey === null
+      ? SLUG_RE.test(slug)
+      : isModulePageOpenKey(moduleKey) && SLUG_RE.test(publicId);
+
+  // ── PLAFOND PAR IP SEULE, CONSOMMÉ AVANT LE SEAU PAR RESSOURCE (SEC-1/SEC-4)
+  //
+  // `scanIp` ci-dessous est composé avec un identifiant que l'APPELANT choisit
+  // (`?slug=`, `?id=`) : boucler sur des valeurs inventées ouvrait un seau NEUF
+  // à chaque tour, donc un débit borné par rien, chaque tour coûtant une
+  // écriture de rate-limit. Tranché ici, une rafale saturée n'écrit plus qu'une
+  // ligne par fenêtre — et n'atteint plus aucun seau par ressource.
+  //
+  // Refuser ne ferme rien : la réponse est 204 dans tous les cas, y compris
+  // nominal, et le seul effet est une ouverture non comptée sur un indicateur
+  // d'affichage. Voir le calibrage de `pageOpenIp` pour le détail.
+  // Le plafond n'existe QUE sur une IP réellement mesurée. Sans
+  // `TRUSTED_PROXY_PROVIDER`, `clientIpFromHeaders` rend `unknown` : la clé ne
+  // désignerait plus personne et TOUS les visiteurs tomberaient dans une seule
+  // ligne, à un seuil calibré pour un seul. Y refuser serait l'interrupteur
+  // global qu'ADR-032 interdit. Et n'y poser qu'un compteur d'observabilité ne
+  // vaudrait pas mieux ICI : cette route est appelée à CHAQUE chargement de
+  // page publique, donc l'agrégat serait saturé en permanence — une alerte
+  // toujours allumée n'est pas un signal, et elle coûterait une écriture de
+  // plus sur le chemin le plus chaud de l'application. Sur une telle
+  // configuration la route reste donc exactement ce qu'elle était ; en
+  // production (Vercel), l'IP est mesurée et le plafond s'applique.
+  if (exploitable && ip !== IP_CLIENT_INCONNUE) {
+    const sousPlafond = await rateLimit(
+      rateLimitBucket("page-opens:ip", ip),
+      RATE_LIMITS.pageOpenIp,
+      { failClosed: true },
+    );
+    if (!sousPlafond) return new Response(null, { status: 204 });
+  }
+
   if (moduleKey === null) {
     // ── Chemin historique : la roue ──
-    const slug = params.get("slug") ?? "";
     if (SLUG_RE.test(slug)) {
       const allowed = await rateLimit(
         rateLimitBucket("scan", slug, ip),
@@ -77,7 +123,6 @@ export async function POST(request: Request) {
   // ── Chemin module : quiz, calendrier, jackpot, pronostics, fidélité, event,
   // et chasse au trésor — celle-ci comptée PAR ÉTAPE, son `id` étant le jeton
   // de l'étape (`/hunt/[token]`) et non l'identifiant de la chasse. ──
-  const publicId = params.get("id") ?? "";
   if (isModulePageOpenKey(moduleKey) && SLUG_RE.test(publicId)) {
     const allowed = await rateLimit(
       rateLimitBucket("scan", moduleKey, publicId, ip),

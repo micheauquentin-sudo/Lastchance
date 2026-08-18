@@ -1,3 +1,4 @@
+import { authorizeCronRequest } from "@/lib/timing-safe";
 import { NextResponse } from "next/server";
 import {
   archiveElapsedCalendars,
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET manquant" }, { status: 500 });
   }
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!authorizeCronRequest(request, secret)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

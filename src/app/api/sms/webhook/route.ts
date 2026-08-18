@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { optionalEnv } from "@/lib/env";
 import {
@@ -10,6 +9,7 @@ import {
 import { observeSharedKey, rateLimitBucket } from "@/lib/rate-limit";
 import { normalizeSmsPhone } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { timingSafeEquals } from "@/lib/timing-safe";
 
 /* ════════════════════════════════════════════════════════════
  * RÉCEPTION DU « STOP »
@@ -194,8 +194,8 @@ async function handleSmsWebhook(request: Request) {
 /**
  * Le secret, en en-tête ou à défaut en paramètre d'URL.
  *
- * Comparaison à temps constant, et longueurs comparées d'abord —
- * `timingSafeEqual` lève sur des tailles différentes.
+ * Comparaison à temps constant, longueurs comparées d'abord — voir
+ * `@/lib/timing-safe`, où ce motif vit désormais en un seul exemplaire.
  */
 function authorized(request: Request, secret: string): boolean {
   const header = request.headers.get("x-lastchance-sms-token");
@@ -203,11 +203,7 @@ function authorized(request: Request, secret: string): boolean {
     header ?? new URL(request.url).searchParams.get("token") ?? null;
   if (!token) return false;
 
-  const provided = Buffer.from(token);
-  const expected = Buffer.from(secret);
-  return (
-    provided.length === expected.length && timingSafeEqual(provided, expected)
-  );
+  return timingSafeEquals(token, secret);
 }
 
 function firstString(

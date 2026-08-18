@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { timingSafeEquals } from "@/lib/timing-safe";
 import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 
 /**
@@ -26,11 +27,9 @@ export function verifyUnsubscribeToken(token: string): string | null {
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const sigBuf = Buffer.from(sig);
-  const validSignature = verificationSecrets("UNSUBSCRIBE_TOKEN_SECRET").some((secret) => {
-    const expected = Buffer.from(hmac(`unsub:${body}`, secret));
-    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
-  });
+  const validSignature = verificationSecrets("UNSUBSCRIBE_TOKEN_SECRET").some((secret) =>
+    timingSafeEquals(sig, hmac(`unsub:${body}`, secret)),
+  );
   if (!validSignature) {
     return null;
   }

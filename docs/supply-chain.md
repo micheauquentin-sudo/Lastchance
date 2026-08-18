@@ -7,24 +7,31 @@ Revue complète des dépendances réalisée le 2026-07-10.
 Chaque dépendance de `package.json` a été confrontée aux imports réels du
 code (`src/`, `e2e/`, fichiers de config racine) :
 
-- **16 dépendances runtime** : toutes utilisées, hormis `three` qui ne
-  sert plus que la mascotte Lumoz démontée (fichiers dormants
-  `src/components/marketing/lumoz-*`). `react-dom` n'apparaît
+- **15 dépendances runtime** : toutes utilisées. `react-dom` n'apparaît
   dans aucun import direct mais est une peer dependency obligatoire de
   Next/React (rendu client) — à conserver. `passkit-generator` (ajout
   2026-07-21) signe les pass Apple Wallet (src/lib/apple-wallet.ts),
   inactif sans certificats APPLE_WALLET_*.
-- **18 devDependencies** : utilisées (Playwright, Tailwind/PostCSS, types,
-  ESLint, TypeScript, Vitest, outillage E2E
-  `local-ssl-proxy`/`wait-on`/`pngjs`), sauf `@gltf-transform/*` qui ne
-  sert plus que le pipeline de la mascotte Lumoz démontée
-  (`scripts/lumoz-paint-glb.mjs`).
+- **16 devDependencies** : toutes utilisées (Playwright, Tailwind/PostCSS,
+  types, ESLint, TypeScript, Vitest, outillage E2E
+  `local-ssl-proxy`/`wait-on`/`pngjs`).
 - **Aucun import fantôme** : tout paquet importé dans le code est déclaré
   dans `package.json` (pas de dépendance transitive utilisée directement).
 
-**Résultat : `three` (runtime) et `@gltf-transform/*` (dev) ne servent
-plus que la mascotte Lumoz démontée — à supprimer ou à réactiver.** Le
-reste du périmètre est minimal.
+**Résolu le 2026-08-18 (MORT-2)** : la mascotte Lumoz a été supprimée, et
+avec elle tout ce qui ne servait qu'à elle — `three` + `@types/three`
+(runtime/dev), `@gltf-transform/core` + `@gltf-transform/functions` (dev),
+`src/components/marketing/lumoz-{guide.tsx,model.ts}`,
+`scripts/lumoz-paint-glb.mjs` et `public/lumoz.glb` (812 Ko servis
+publiquement). **Et la permission CSP qui n'existait que pour elle** :
+`'wasm-unsafe-eval'`, ouverte sur les trois surfaces dont `sensitive`
+(back-office), pour le décodeur meshopt du modèle 3D. Une dépendance morte se
+voit dans `package.json` ; une PERMISSION morte ne se voit nulle part, et
+c'est elle qui coûtait le plus cher.
+
+Ce qui a été vérifié avant de retirer la directive : aucune occurrence de
+`WebAssembly`, `.wasm`, `meshopt` ou `draco` dans `src/` ni `e2e/`, et la roue
+est du canvas 2D — `three` n'était importé que par `lumoz-model.ts`.
 
 ## 2. Vulnérabilités corrigées
 

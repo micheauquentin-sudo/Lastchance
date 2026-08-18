@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultSource = path.join(root, "src");
 const defaultBaseline = path.join(root, "scripts", "unsafe-casts-baseline.json");
-const castPattern = /\bas\s+unknown\s+as\b/g;
+// `as any` est le même trou de typage que `as unknown as`, en plus court :
+// il échappait à la garde alors qu'il désarme autant le compilateur (CI-1).
+const castPattern = /\bas\s+unknown\s+as\b|\bas\s+any\b/g;
 const justificationPattern = /unsafe-cast-justification:\s*\S/i;
 
 async function sourceFiles(directory) {
@@ -78,7 +80,7 @@ async function main() {
   }
 
   console.error(
-    "Nouveaux `as unknown as` détectés. Supprimez-les ou ajoutez " +
+    "Nouveaux `as unknown as` ou `as any` détectés. Supprimez-les ou ajoutez " +
       "`unsafe-cast-justification: <raison>` sur la ligne précédente."
   );
   for (const regression of regressions) {

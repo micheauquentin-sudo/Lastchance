@@ -151,8 +151,48 @@ describe("GET /api/pronos/[slug]/tv — limitation de débit", () => {
     await call(SLUG, { "cf-connecting-ip": "203.0.113.7" });
     await call(SLUG, { "cf-connecting-ip": "198.51.100.9" });
 
+    // Chaque appel consomme deux seaux (plafond par IP seule, puis seau par
+    // championnat) : quatre clés, toutes distinctes, aucune partagée entre les
+    // deux IP.
     const buckets = mocks.rateLimit.mock.calls.map((args) => args[0]);
-    expect(new Set(buckets).size).toBe(2);
+    expect(new Set(buckets).size).toBe(4);
+  });
+
+  it("le plafond par IP SEULE est consommé avant le seau par championnat (SEC-1/SEC-4)", async () => {
+    await call(SLUG, { "cf-connecting-ip": "203.0.113.7" });
+
+    // LE DÉFAUT QUE CE TEST FERME. `prono:tv:<slug>:<ip>` est composé avec un
+    // slug que l'APPELANT choisit : en boucler des inventés ouvrait un seau
+    // NEUF à chaque tour — 30 req/min chacun — et une écriture de rate-limit
+    // avec lui. L'ORDRE est tout le correctif.
+    //
+    // DEUX arguments exactement, ici aussi : `failClosed` doit rester absent,
+    // sinon une panne d'Upstash éteindrait les écrans de toutes les salles.
+    const [premier] = mocks.rateLimit.mock.calls;
+    expect(premier).toEqual([
+      "prono:tv:ip:203.0.113.7",
+      RATE_LIMITS.pronoTvIpCeiling,
+    ]);
+  });
+
+  it("le plafond par IP saturé n'atteint AUCUN seau par championnat", async () => {
+    mocks.rateLimit.mockResolvedValue(false);
+
+    const response = await call(SLUG, { "cf-connecting-ip": "203.0.113.7" });
+
+    expect(mocks.rateLimit).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(429);
+  });
+
+  it("sans IP mesurable, le plafond ne s'applique pas (jamais d'interrupteur global)", async () => {
+    // Sans en-tête de proxy de confiance, `clientIpFromHeaders` rend `unknown` :
+    // tous les écrans du parc tomberaient dans une seule ligne, et y refuser
+    // les éteindrait tous d'un coup — l'interrupteur qu'ADR-032 interdit.
+    await call(SLUG);
+
+    const buckets = mocks.rateLimit.mock.calls.map((args) => String(args[0]));
+    expect(buckets.some((b) => b.startsWith("prono:tv:ip:"))).toBe(false);
+    expect(buckets).toEqual([`prono:tv:${SLUG}:unknown`]);
   });
 
   it("tranche AVANT toute lecture de base", async () => {

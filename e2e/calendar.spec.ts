@@ -116,35 +116,29 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
   });
 
   /**
-   * Case `content` VIDÉE (chantier « retours propriétaire ») : plus une
-   * anomalie remplie de texte de secours, une vraie issue perdante — « Pas de
-   * chance aujourd'hui ! » + 🍂. On vide la case 1 (seule case `content`
-   * déverrouillée du seed) depuis le dashboard, on l'ouvre côté joueur dans un
-   * contexte NEUF (cookie vierge, comme le fait la caisse) et on restaure le
-   * texte d'origine dans un `finally` : le test précédent de ce fichier
-   * («... révèle son contenu du jour ») dépend du même texte seedé et tourne
-   * dans le même worker (fichier non `fullyParallel`), donc APRÈS celui-ci
-   * dans l'ordre de déclaration.
-   */
-  /**
-   * FIXME(seed-isolation) : vert au PREMIER passage, faux aux suivants — pas
-   * un flake, une limite de données. L'ouverture de la case par le passage
-   * précédent PERSISTE dans le seed partagé (« 1/3 cases ouverte ») et le
-   * joueur suivant reçoit l'ancien contenu au lieu du « Pas de chance »,
-   * alors même que la base est prouvée vide côté dashboard (poll ci-dessous).
-   * Le produit, lui, est prouvé correct : la sonde a montré fill("") → base
-   * vide après la refonte du hook (commit « la signature est le seul
-   * déclencheur »), et l'écran perdant est couvert en unitaire
-   * (calendar-tracker.test.tsx). Réactiver ce test exige d'isoler ses
-   * données par passage (case dédiée jamais ouverte, ou reset des
-   * calendar_openings du seed) — consigné dans docs/bugs.md.
+   * FIXME(contention-ci, wagon 7 audit-p2-fond, 2026-08-18) — Réouvert puis
+   * refermé dans le même wagon. La fixture dédiée `e2e-calendar-vide`
+   * (day_count=2) a bien réglé le problème d'ISOLATION qui motivait le FIXME
+   * d'origine (case 1 partagée entre trois tests) : plus aucune autre spec ne
+   * touche cette fixture, et le test est 100 % vert en isolé (qa6, ce wagon).
+   * Mais la matrice CI complète de ce wagon (3 runs) le montre instable SOUS
+   * CONTENTION — 2 échecs sur 3, dont un sur **mobile-chrome** (pas
+   * seulement WebKit, contrairement à ce que suggérait le commentaire
+   * précédent) : `toBe("")` reçoit encore l'ancien texte à la ligne 172
+   * (l'autosave/reload n'a pas fini malgré le poll 15 s), et une fois le
+   * dialog de révélation n'affiche pas son heading à temps. Ce n'est plus un
+   * problème de données partagées, c'est un budget de temps trop juste pour
+   * un run à pleine charge (build + 3 projets + tous les workers). Consigné
+   * dans `docs/bugs.md` (section Low Priority) plutôt que rouvert comme
+   * chantier de stabilité E2E générale — hors périmètre de ce wagon.
    */
   test.fixme("une case message laissée vide ouvre sur « Pas de chance aujourd'hui ! »", async ({
     page,
     browser,
   }) => {
-    const calendarId = "e2ee0000-0000-4000-8000-000000000001";
-    const originalText = "Bienvenue ! -10 % sur votre café aujourd'hui.";
+    const calendarId = "e2ee0000-0000-4000-8000-000000000002";
+    const calendarSlugVide = "e2e-calendar-vide";
+    const originalText = "Une attention rien que pour vous aujourd'hui.";
 
     await login(page, E2E_USERS.owner);
     await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
@@ -179,7 +173,7 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
       const player = await browser.newContext();
       const playerPage = await player.newPage();
       try {
-        await playerPage.goto(`/calendar/${CALENDAR_SLUG}`);
+        await playerPage.goto(`/calendar/${calendarSlugVide}`);
         const openBox1 = playerPage.getByRole("button", {
           name: "Ouvrir la case 1",
           exact: true,

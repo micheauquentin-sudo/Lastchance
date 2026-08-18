@@ -72,14 +72,15 @@ export async function regenerateWebhookSecret(): Promise<ActionResult> {
  * Le récepteur du commerçant a généralement été réparé entre-temps — sinon la
  * livraison retombera en dead-letter.
  *
- * ⚠️ « 5 MINUTES AU PLUS » ÉTAIT FAUX. Les deux passages qui drainent cette
- * file sont des crons Vercel QUOTIDIENS (`20 4 * * *` pour /api/cron/jobs,
- * `5 9 * * *` pour /api/cron/webhooks) : le rejeu peut attendre plusieurs
- * heures. La cadence à 5 minutes existe côté pg_cron
- * (`lastchance-jobs-worker`, migration 20260722100000) mais reste inactive
- * tant que les secrets Vault `jobs_worker_url` et `sync_contests_secret` ne
- * sont pas posés. Le texte affiché au commerçant porte la même promesse
- * (`src/components/dashboard/webhook-form.tsx`) et reste à corriger.
+ * Cadence : « 5 minutes au plus » est REDEVENU vrai. Ce commentaire a annoncé
+ * des crons « QUOTIDIENS » (`20 4 * * *` pour /api/cron/jobs, `5 9 * * *` pour
+ * /api/cron/webhooks) au motif que les secrets Vault `jobs_worker_url` et
+ * `sync_contests_secret` manquaient à pg_cron. Ils sont posés depuis le
+ * chantier « cadence-file » (2026-08-01, ADR-062) : `lastchance-jobs-worker`
+ * appelle /api/cron/jobs toutes les 5 MINUTES en production, et les crons
+ * Vercel ne sont plus qu'un filet. Le rejeu repart donc au prochain quart
+ * d'heure, pas le lendemain matin — ce que promet déjà l'écran commerçant
+ * (`src/components/dashboard/webhook-form.tsx`).
  */
 export async function retryFailedWebhookDeliveries(): Promise<
   ActionResult<{ retried: number }>

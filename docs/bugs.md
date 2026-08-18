@@ -3603,6 +3603,24 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   réécriture en rôle/landmark (voir le design doc du chantier) — première
   piste à vérifier avant d'ouvrir une investigation plus large.
 
+- **`e2e/calendar.spec.ts:136` instable sous contention CI, repassé en
+  `test.fixme` (2026-08-18, `chantier/audit-p2-fond`, wagon 7)** — le FIXME
+  d'origine (isolation : la case 1 du calendrier partagé `e2e-calendar`
+  portait l'ouverture persistante de tests précédents) a bien été réglé par
+  la fixture dédiée `e2e-calendar-vide` semée pour ce test seul : 100 % vert
+  en isolé et même en combiné avec `event.spec.ts`/`jackpot-rotating`. Mais
+  la matrice CI complète du wagon (3 runs) le montre rouge 2 fois sur 3, dont
+  **une fois sur mobile-chrome** — donc plus un flake WebKit-only comme le
+  suggérait le commentaire du fichier. Deux points de rupture observés :
+  `toBe("")` à la ligne 172 (l'autosave + reload du dashboard n'a pas
+  convergé sous 15 s) et le heading de la modale de révélation qui n'a pas le
+  temps de s'afficher. Lecture retenue : budget de temps trop juste pour un
+  run à pleine charge (build + 3 projets + tous les workers), pas un bug de
+  fixture. Repassé en `test.fixme` plutôt que de rouvrir un chantier de
+  stabilité E2E générale, hors périmètre de ce wagon — à reprendre avec un
+  budget dédié si la fonctionnalité qu'il couvre (case vidée → « Pas de
+  chance aujourd'hui ! ») régresse par ailleurs.
+
 - **Le libellé du lot est du texte libre, dans un message déclaré
   transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après
   le reclassement décidé par le client. `prizes.label` est saisi par le
@@ -4209,6 +4227,46 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   que les 339 occurrences ne couvrent pas aussi des cartes blanches où le
   contraste est déjà correct (4,83:1) et où le remplacement serait sans
   objet.
+
+- **Wagon 7 (dernier) de l'audit transverse — consignes ouvertes, aucune
+  bloquante (2026-08-18, `chantier/audit-p2-fond`, ADR-108)** :
+  - **`ops_worker_definitions.enabled = true`** pour un worker aujourd'hui
+    `enabled = false` reste un geste **propriétaire**, pris worker par
+    worker après un premier succès prouvé en production — pas un update
+    glissé dans une migration.
+  - **Le chemin pg_cron 5 minutes de `jackpot-draws` n'a aucune
+    supervision** : `run_jackpot_date_draws()` s'exécute directement en SQL
+    et n'écrit aucun heartbeat dans `ops_worker_runs` ; seule la route HTTP
+    quotidienne (`/api/cron/jackpot-draws`) en écrit un. Un tirage mort côté
+    pg_cron resterait invisible jusqu'à 24 h. Chantier futur : faire écrire
+    son propre heartbeat à `run_jackpot_date_draws()`.
+  - **`record_experience_event` (fonction SQL) est orpheline** : plus aucun
+    appelant ne l'invoque depuis la suppression de `experience-analytics.ts`
+    (les 17 triggers SQL alimentent directement la table). À retirer dans
+    une migration future, hors périmètre de ce wagon (pas de suppression de
+    fonction sans confirmation qu'aucun appel externe ne subsiste).
+  - **`sync-contests` reste sur `startWorkerRun` strict**, sans version
+    « safely » comme les autres workers de ce wagon, sans raison écrite au
+    moment de la décision — à trancher si ce worker rejoint un jour la même
+    tolérance aux pannes que `jobs`.
+  - **Le secret du webhook SMS est accepté en query-string** (préexistant,
+    non corrigé dans ce wagon) : Brevo ne propose aujourd'hui aucun moyen de
+    le transmettre uniquement par en-tête ; à revoir si Brevo ouvre cette
+    option.
+  - **Double écriture rate-limit par page publique si Upstash est absent**
+    (question de capacité, non tranchée) : le repli en mémoire du process
+    écrit indépendamment du seau IP-seule et du seau par ressource — sans
+    conséquence connue en production (Upstash configuré), mais non mesuré
+    en environnement dégradé.
+  - **SEC-5 : dette de FK documentée, non corrigée** dans ce wagon — la
+    liste d'exceptions des FK composites (21 FK simples énumérées) reste
+    une liste à tenir à la main à chaque nouvelle table liée par une FK
+    composite.
+  - **JOB-5 : aucun moniteur externe** (UptimeRobot ou équivalent) ne
+    surveille la production depuis l'extérieur du compte GitHub/Vercel — la
+    sonde `production-health.yml` (toutes les 20 min) tourne chez GitHub,
+    donc une panne GitHub Actions serait elle-même invisible. Un moniteur
+    tiers indépendant reste souhaitable.
 
 ## Tracking Process
 

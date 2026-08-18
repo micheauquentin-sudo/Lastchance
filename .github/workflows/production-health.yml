@@ -2,6 +2,11 @@ name: Santé après déploiement
 
 on:
   deployment_status:
+  # La sonde ne dépend plus du seul deployment_status : un incident SANS
+  # déploiement (worker mort, base dégradée) était invisible jusqu'au commit
+  # suivant. Toutes les 20 minutes, mêmes vérifications, même verdict (JOB-5).
+  schedule:
+    - cron: "*/20 * * * *"
 
 permissions:
   contents: read
@@ -10,9 +15,10 @@ jobs:
   production-health:
     name: Base · Workers · Sécurité
     if: >-
-      github.event.deployment_status.state == 'success' &&
+      github.event_name == 'schedule' ||
+      (github.event.deployment_status.state == 'success' &&
       (github.event.deployment.environment == 'Production' ||
-      github.event.deployment.environment == 'production')
+      github.event.deployment.environment == 'production'))
     runs-on: ubuntu-latest
     concurrency:
       group: production-health
@@ -26,6 +32,12 @@ jobs:
 
       - name: Healthcheck bloquant
         env:
-          PRODUCTION_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          # Un run planifié n'a pas d'événement de déploiement : repli sur le
+          # domaine de production stable.
+          PRODUCTION_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url || 'https://lastchance-mu.vercel.app' }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # Sans ce secret, la sonde retombe sur son repli « détail non
+          # demandé » : le verdict global reste juste mais l'incident n'est
+          # plus nommé — ce qui était toute la raison de la porte CRON_SECRET.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/verify-production-health.mjs

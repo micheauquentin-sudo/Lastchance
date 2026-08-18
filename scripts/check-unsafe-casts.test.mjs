@@ -18,6 +18,18 @@ test("compte les doubles casts sans justification", () => {
   );
 });
 
+test("compte aussi les `as any`, sans double compte du composé", () => {
+  assert.equal(
+    countUnjustifiedCasts(
+      "const first = value as any;\n" +
+        "const second = value as unknown as any;\n" +
+        "// unsafe-cast-justification: mock volontairement partiel\n" +
+        "const third = value as any;"
+    ),
+    2
+  );
+});
+
 test("ignore une justification explicite sur la ligne précédente", () => {
   assert.equal(
     countUnjustifiedCasts(
