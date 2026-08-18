@@ -135,6 +135,12 @@ jobs:
       - name: Tests du garde d'ordre des migrations
         run: npm run test:migrations
 
+      # La sonde de santé post-déploiement a son propre test, qui ne tournait
+      # nulle part : une régression du script ne se voyait qu'en production,
+      # au premier incident (CI-2).
+      - name: Test de la sonde de santé
+        run: npm run test:production-health
+
       # COALESCE/GREATEST/LEAST/NULLIF sont des constructions du parseur, sans
       # entrée pg_proc : les qualifier en `pg_catalog.` passe l'application de
       # la migration et casse au premier appel réel. Contrôle statique, donc
