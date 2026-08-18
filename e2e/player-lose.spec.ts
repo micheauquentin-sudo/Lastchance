@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Campagne garantie perdante (seed : un seul lot, perdant, limite
@@ -32,5 +33,20 @@ test.describe("parcours joueur — perte et délai de rejeu", () => {
   test("un slug inexistant affiche un message clair @smoke", async ({ page }) => {
     await page.goto("/play/slug-inexistant-e2e");
     await expect(page.getByText("Ce lien de jeu n'existe pas.")).toBeVisible();
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — l'écran de jeu perdant", () => {
+  test("l'écran de jeu perdant sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto(`/play/${SLUG}`);
+    await expect(page.getByRole("button", { name: "Lancer la roue" })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

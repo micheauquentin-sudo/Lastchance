@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Parcours caisse du Jackpot en mode `staff` (audit MORT-1) : le mode était
@@ -91,5 +92,22 @@ test.describe("jackpot collectif — validation en caisse (mode staff)", () => {
     await expect(
       page.getByText(/1 participation validée/),
     ).toBeVisible();
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — le tableau de bord Jackpot", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("le tableau de bord Jackpot sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto("/dashboard/jackpot");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

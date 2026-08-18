@@ -12,6 +12,23 @@ import { expect, type Page, type TestInfo } from "@playwright/test";
  * - `disableRules` écarte un faux positif connu — chaque exclusion doit
  *   être justifiée en commentaire AU SITE D'APPEL. Aucune exclusion
  *   globale à ce jour.
+ *
+ * ── `incomplete` N'EST PAS « RIEN À SIGNALER » ──────────────────────
+ *
+ * axe range ses résultats en trois piles : `passes`, `violations`, et
+ * `incomplete` — ce qu'il n'a PAS PU trancher tout seul. Ce module ne lisait
+ * que `violations`, et c'est par là que quinze récidives de contraste sont
+ * passées : `color-contrast` tombe en `incomplete`, jamais en `violation`,
+ * dès que le fond est un dégradé, une image ou une couleur translucide.
+ * C'est-à-dire sur TOUTE la page /play, dont le fond est le dégradé du
+ * commerçant, et sur les cartes à ombre dure de la DA Kermesse.
+ *
+ * Autrement dit : l'endroit précis où le contraste est difficile à obtenir
+ * est exactement celui où le capteur se taisait. `color-contrast` en
+ * `incomplete` fait donc échouer le test, au même titre qu'une violation. Ce
+ * qui est réellement indécidable (un texte sur photo, par exemple) s'écarte
+ * par `disableRules` AU SITE D'APPEL, avec sa justification — le même
+ * mécanisme que pour les violations, et la même exigence de motif écrit.
  */
 
 type AxeResults = Awaited<ReturnType<AxeBuilder["analyze"]>>;
@@ -54,27 +71,44 @@ export async function expectNoA11yViolations(
   }
   const results = await builder.analyze();
 
-  const blocking = results.violations.filter((v) =>
-    BLOCKING_IMPACTS.has(v.impact ?? ""),
+  // Indécidable sur le contraste = bloquant (voir l'en-tête). Les autres
+  // règles `incomplete` restent indicatives : elles demandent un jugement
+  // humain que ce capteur n'a pas à trancher.
+  const contrasteIndecidable = results.incomplete.filter(
+    (v) => v.id === "color-contrast",
   );
+  const blocking = [
+    ...results.violations.filter((v) => BLOCKING_IMPACTS.has(v.impact ?? "")),
+    ...contrasteIndecidable,
+  ];
   const advisory = results.violations.filter(
     (v) => !BLOCKING_IMPACTS.has(v.impact ?? ""),
   );
+  const autresIndecis = results.incomplete.filter((v) => v.id !== "color-contrast");
 
   if (advisory.length > 0) {
     console.log(
       `[a11y] ${page.url()} — ${advisory.length} violation(s) moderate/minor (non bloquantes) :\n${formatViolations(advisory)}`,
     );
   }
-  if (results.violations.length > 0) {
+  if (autresIndecis.length > 0) {
+    console.log(
+      `[a11y] ${page.url()} — ${autresIndecis.length} règle(s) indécidable(s) hors contraste (non bloquantes) :\n${formatViolations(autresIndecis)}`,
+    );
+  }
+  if (results.violations.length > 0 || results.incomplete.length > 0) {
     await testInfo.attach("axe-violations.json", {
-      body: JSON.stringify(results.violations, null, 2),
+      body: JSON.stringify(
+        { violations: results.violations, incomplete: results.incomplete },
+        null,
+        2,
+      ),
       contentType: "application/json",
     });
   }
 
   expect(
     blocking.length,
-    `violations axe serious/critical sur ${page.url()}\n${formatViolations(blocking)}`,
+    `violations axe serious/critical (contraste indécidable compris) sur ${page.url()}\n${formatViolations(blocking)}`,
   ).toBe(0);
 }

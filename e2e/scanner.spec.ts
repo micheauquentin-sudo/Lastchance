@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Scanner de QR en caisse.
@@ -76,5 +77,22 @@ test.describe("caisse — scanner caméra", () => {
     await expect(
       page.getByRole("button", { name: "Valider la remise" }),
     ).toBeVisible();
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — la caisse", () => {
+  test.use({ storageState: "e2e/.auth/cashier.json" });
+
+  test("la caisse sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto("/dashboard/redeem");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });
