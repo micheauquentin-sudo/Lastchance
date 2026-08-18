@@ -632,14 +632,22 @@ on conflict (id) do nothing;
 -- offre 'content'), jour 2 ouvrable AUJOURD'HUI (un lot 'lot' à stock fini), et
 -- jour 3 VERROUILLÉ (unlock_at futur → open_calendar_box répond too_early). Le
 -- gating serveur se teste sans dépendance : la case future doit refuser
--- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=3.
+-- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=4.
+--
+-- ── La 4e case, et pourquoi elle existe ──
+-- `e2e/calendar.spec.ts` porte un test `fixme` (« une case message laissée vide
+-- ouvre sur "Pas de chance aujourd'hui !" ») vert au PREMIER passage et faux aux
+-- suivants : il vidait la case 1, la seule case `content` déverrouillée, que le
+-- test précédent du même fichier a déjà ouverte dans ce seed PARTAGÉ. La case 4
+-- est sa donnée à lui : `content`, déverrouillée, et JAMAIS ouverte par un autre
+-- test. Ne pas l'ouvrir ailleurs — c'est tout ce qui la rend utile.
 insert into public.calendars (
   id, organization_id, name, theme, status, start_date, timezone, day_count,
   public_slug, merchant_content, completion_reward_label, completion_reward_details,
   completion_reward_stock
 ) values (
   'e2ee0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-  'Calendrier de l''Avent E2E', 'noel', 'active', current_date, 'Europe/Paris', 3,
+  'Calendrier de l''Avent E2E', 'noel', 'active', current_date, 'Europe/Paris', 4,
   'e2e-calendar', 'Une surprise chaque jour jusqu''à Noël !',
   'Le grand panier de Noël', 'À retirer au comptoir E2E.', 5
 )
@@ -657,7 +665,13 @@ insert into public.calendar_days (
    null, 'Croissant offert', 'À retirer au comptoir E2E.', 50, true),
   ('e2ee0000-0000-4000-8000-000000000013', 'e2ee0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 3, now() + interval '2 days', 'content',
-   'Encore un peu de patience...', '', null, null, false)
+   'Encore un peu de patience...', '', null, null, false),
+  -- Case RÉSERVÉE au test « case message laissée vide » : déverrouillée comme la
+  -- case 1, mais qu'aucun autre test n'ouvre. Son texte est restauré par le test
+  -- lui-même dans un `finally` ; il doit donc rester stable ici.
+  ('e2ee0000-0000-4000-8000-000000000014', 'e2ee0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 4, now() - interval '15 minutes', 'content',
+   'Une attention rien que pour vous aujourd''hui.', '', null, null, false)
 on conflict (id) do nothing;
 
 -- ── Parrainage ludique (campagne roue gagnante E2EWIN01) ──────
