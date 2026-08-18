@@ -22,7 +22,8 @@
     "production:health": "node scripts/verify-production-health.mjs",
     "capacity:bench": "node scripts/capacity-bench.mjs",
     "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql",
-    "assets:fonds": "node scripts/optimiser-fonds.mjs"
+    "assets:fonds": "node scripts/optimiser-fonds.mjs",
+    "bundle:mesure": "node scripts/mesurer-bundle.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.69.0",
