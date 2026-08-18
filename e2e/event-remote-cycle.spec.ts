@@ -4,10 +4,21 @@ import { expect, test } from "@playwright/test";
  * Cycle MINIMAL du Mode événement en direct, piloté par la télécommande
  * organisateur authentifiée — ce que l'en-tête d'`event.spec.ts` déclare
  * explicitement hors de son lot (surfaces publiques du lobby seulement).
- * Seed : session « Soirée E2E » (`e2ed0000-0000-4000-8000-000000000021`,
- * join_code `E2EVNT`, org E2E Café, jeu « Quiz du bar E2E » actif) avec trois
- * questions, dont la première (`e2ed0000-0000-4000-8000-000000000011`, type
- * `quiz`, « Capitale de la France ? », options Paris/Lyon).
+ * Seed : session DÉDIÉE « Cycle télécommande E2E »
+ * (`e2ed0000-0000-4000-8000-000000000022`, join_code `E2ERMT`, org E2E Café,
+ * jeu « Quiz du bar E2E » actif) avec trois questions, dont la première
+ * (`e2ed0000-0000-4000-8000-000000000011`, type `quiz`, « Capitale de la
+ * France ? », options Paris/Lyon).
+ *
+ * ⚠️ POURQUOI UNE SESSION À ELLE SEULE. Ce test MUTE la session qu'il pilote —
+ * il y inscrit un joueur et la fait passer `lobby → question_active →
+ * question_locked → reveal` — alors qu'`event.spec.ts` exige de SA session
+ * (`…0021`, `E2EVNT`) l'état initial intact : phase `lobby`, « En attente des
+ * premiers joueurs… », aucun joueur. Avec 2 workers Playwright en CI, les deux
+ * specs s'exécutaient en même temps sur le MÊME état serveur : l'échec était
+ * structurel, pas une question d'ordonnancement. Même geste que le calendrier
+ * dédié `e2e-calendar-vide` et la cagnotte `e2e-jackpot-code`. Le game, lui,
+ * reste partagé : seule la session porte la machine à états.
  *
  * La session seedée est déjà en statut `lobby` (pas `draft`) : la
  * télécommande saute directement au lanceur de question, sans bouton
@@ -15,15 +26,15 @@ import { expect, test } from "@playwright/test";
  * anonyme séparé) la voit et répond → verrouiller → révéler → la
  * télécommande ET le joueur affichent la révélation. Le podium (fin de
  * session) est un bonus hors du périmètre minimal demandé et n'est pas testé
- * ici pour ne pas consommer le seul stock de récompense partagé par d'autres
- * specs éventuelles.
+ * ici : le stock de récompense est désormais propre à cette session, mais
+ * clore la session la sortirait de `lobby` pour les relances suivantes.
  *
  * Polling (pas de dépendance Realtime en local) : toutes les attentes
  * multi-onglets sont des attentes d'état (`expect(...).toBeVisible()`),
  * jamais un délai fixe.
  */
-const SESSION_ID = "e2ed0000-0000-4000-8000-000000000021";
-const JOIN_CODE = "E2EVNT";
+const SESSION_ID = "e2ed0000-0000-4000-8000-000000000022";
+const JOIN_CODE = "E2ERMT";
 
 test.describe("mode événement — cycle question → révélation (télécommande)", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });

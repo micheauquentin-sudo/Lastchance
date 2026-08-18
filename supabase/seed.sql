@@ -643,12 +643,43 @@ on conflict (id) do nothing;
 
 -- Session ouverte (lobby) : join_code déterministe E2EVNT (alphabet sans I/O/0/1).
 -- Stock fini de 3 codes EVENT-… pour le podium récompensé.
+--
+-- ⚠️ SESSION EN LECTURE SEULE. `e2e/event.spec.ts` lit ici l'état INITIAL et
+-- IMMUABLE — phase `lobby`, « En attente des premiers joueurs… », aucun joueur.
+-- Ne rien piloter dessus : toute spec qui lance/verrouille/révèle une question
+-- ou qui inscrit un joueur doit utiliser la session dédiée ci-dessous.
 insert into public.event_sessions (
   id, game_id, organization_id, label, join_code, status, reward_stock, reward_label, reward_details
 ) values (
   'e2ed0000-0000-4000-8000-000000000021', 'e2ed0000-0000-4000-8000-000000000001',
   'e2e10000-0000-4000-8000-000000000001', 'Soirée E2E', 'E2EVNT', 'lobby', 3,
   'Tournée offerte', 'À retirer au comptoir E2E.')
+on conflict (id) do nothing;
+
+-- ── Session DÉDIÉE au cycle télécommande (E2E) ────────────────
+-- Même isolation structurelle que le calendrier `e2e-calendar-vide` et que la
+-- cagnotte `e2e-jackpot-code` : `e2e/event-remote-cycle.spec.ts` MUTE la
+-- session qu'il pilote (lobby → question_active → question_locked → reveal, et
+-- il y inscrit un joueur), alors que `e2e/event.spec.ts` exige de la sienne
+-- l'état initial intact. Les deux specs tournant en parallèle (2 workers en
+-- CI) sur le MÊME état serveur, la seule session partagée rendait l'échec
+-- structurel et non ordonnancé : d'où cette seconde session, qu'aucune autre
+-- spec ne lit.
+--
+-- Le GAME reste partagé (`…0001`) à dessein : seule la SESSION porte la
+-- machine à états, les questions et leurs options sont en lecture seule dans
+-- le cycle. Un game dédié ajouterait une ligne au hub QR (une ligne par JEU) et
+-- à `/dashboard/events` sans rien isoler de plus.
+--
+-- `created_at` non forcé : psql applique le seed en autocommit, cette session
+-- est donc strictement postérieure à `…0021`, qui reste la PREMIÈRE (adresse
+-- représentative du hub QR, `order by created_at asc, id asc`).
+insert into public.event_sessions (
+  id, game_id, organization_id, label, join_code, status, reward_stock, reward_label, reward_details
+) values (
+  'e2ed0000-0000-4000-8000-000000000022', 'e2ed0000-0000-4000-8000-000000000001',
+  'e2e10000-0000-4000-8000-000000000001', 'Cycle télécommande E2E', 'E2ERMT', 'lobby', 3,
+  'Café offert', 'À retirer au comptoir E2E (cycle télécommande).')
 on conflict (id) do nothing;
 
 -- ── Calendrier / campagne quotidienne (thème Noël, actif) ─────
