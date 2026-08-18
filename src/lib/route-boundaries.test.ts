@@ -19,6 +19,12 @@ import { describe, expect, it } from "vitest";
  *    le sont) n'envoie AUCUN octet avant la fin de ses requêtes : l'écran
  *    reste blanc, en boutique, sur un réseau mobile.
  *
+ * La seconde moitié a été RETOURNÉE depuis, et c'est la leçon la plus chère de
+ * ce chantier : un `loading.tsx` fait partir l'en-tête HTTP — donc le STATUT —
+ * avant la fin du corps, et toute page dont le `notFound()` dépend d'une
+ * lecture répond alors 200. Le squelette ne se pose donc plus que sur les
+ * routes qui n'appellent JAMAIS `notFound()` ; voir la garde dédiée plus bas.
+ *
  * ── POURQUOI UNE GARDE DÉRIVÉE DU SYSTÈME DE FICHIERS ───────────────
  *
  * Le défaut ne vient pas d'une inattention isolée mais du fait qu'ajouter une
@@ -85,18 +91,18 @@ describe("frontières de rendu des routes", () => {
     expect(toutes.length).toBeGreaterThan(20);
   });
 
-  for (const frontiere of ["error.tsx", "loading.tsx"] as const) {
-    it(`chaque route a un ${frontiere} à portée`, () => {
-      const sansFrontiere = toutes
-        .filter((r) => !fichiersDesAncetres(r.dossier).has(frontiere))
-        .map((r) => relative(RACINE_APP, r.fichier).split(sep).join("/"));
-      expect(
-        sansFrontiere,
-        `ces routes n'ont aucun ${frontiere} au-dessus d'elles : ajoutez-en un ` +
-          `sur leur segment, ou rangez la route sous un groupe qui en porte déjà un`,
-      ).toEqual([]);
-    });
-  }
+  // SEULE la frontière d'ERREUR est exigée partout. Le `loading.tsx` est
+  // devenu une frontière SOUS CONDITION — voir la garde suivante.
+  it("chaque route a un error.tsx à portée", () => {
+    const sansFrontiere = toutes
+      .filter((r) => !fichiersDesAncetres(r.dossier).has("error.tsx"))
+      .map((r) => relative(RACINE_APP, r.fichier).split(sep).join("/"));
+    expect(
+      sansFrontiere,
+      "ces routes n'ont aucun error.tsx au-dessus d'elles : ajoutez-en un " +
+        "sur leur segment, ou rangez la route sous un groupe qui en porte déjà un",
+    ).toEqual([]);
+  });
 });
 
 /**
@@ -149,36 +155,69 @@ describe("chaque frontière d'erreur remonte ce qu'elle intercepte", () => {
 });
 
 /**
- * Le 404 d'une page STREAMÉE se décide avant le premier octet.
+ * LE SQUELETTE NE SE POSE QUE LÀ OÙ LE STATUT NE DÉPEND DE RIEN.
  *
- * ── LE DÉFAUT, ET POURQUOI IL ÉTAIT INVISIBLE ───────────────────────
+ * ── Ce que cet aller-retour a coûté, et ce qu'il a appris ───────────
  *
  * Poser un `loading.tsx` sur le groupe `(player)` a fait passer les dix
- * parcours joueur en rendu STREAMÉ. Next envoie alors l'en-tête HTTP — donc
- * le statut — dès que la coquille est prête, et le `notFound()` du corps,
- * qui vient après des lectures asynchrones, n'arrive que dans un chunk
- * ultérieur. Un calendrier, un événement ou un jackpot inconnu répondait
- * **200** avec un digest 404 enfoui dans le flux.
+ * parcours joueur en rendu STREAMÉ. Next émet alors la coquille — donc
+ * l'en-tête HTTP, donc le STATUT — avant que le corps ait fini ses lectures.
+ * Un calendrier, un événement ou un jackpot inconnu répondait **200**, avec
+ * le 404 enfoui plus loin dans le flux. À l'œil, rien ne change : le visiteur
+ * voit bien la page « introuvable ». Tout ce qui LIT UN STATUT était trompé —
+ * moteurs d'indexation, sondes, et les trois specs qui l'ont attrapé. Le mode
+ * de défaillance le plus coûteux : correct en apparence, faux pour les
+ * machines, et introduit par une amélioration.
  *
- * À l'œil, rien ne change : le visiteur voit bien la page « introuvable ».
- * Tout ce qui LIT UN STATUT, en revanche, était trompé — moteurs
- * d'indexation, sondes de supervision, et les trois specs E2E qui l'ont
- * attrapé. C'est le mode de défaillance le plus coûteux : correct en
- * apparence, faux pour les machines, et introduit par une amélioration.
+ * DEUX tentatives pour garder le squelette ET le statut ont échoué :
+ *  1. déplacer le `notFound()` dans `generateMetadata` — les métadonnées sont
+ *     streamées elles aussi, il arrive après l'en-tête ;
+ *  2. `htmlLimitedBots` en regex attrape-tout, pour rendre les métadonnées
+ *     bloquantes — sans effet mesurable dans la forme réelle de l'app, y
+ *     compris avec un UA de la liste par défaut de Next.
  *
- * ── CE QUE CETTE GARDE EXIGE ────────────────────────────────────────
+ * D'où la règle, déterministe et indépendante du framework : **aucune route
+ * qui appelle `notFound()` ne vit sous une frontière `loading`**. Les autres
+ * en portent une, posée sur leur propre segment. C'est l'inverse exact de ce
+ * que cette garde exigeait il y a trois commits — et elle aurait rougi sur
+ * les trois tentatives.
  *
- * `generateMetadata` s'exécute AVANT le premier octet : c'est le dernier
- * endroit où le statut est encore négociable. Toute page joueur qui sait
- * répondre 404 doit donc le décider LÀ AUSSI — le `notFound()` du corps
- * reste en filet, il n'est simplement plus le seul.
+ * ── Les deux exigences, et ce qu'elles ne recouvrent pas ────────────
  *
- * Les pages qui répondent 200 avec un écran d'explication (`/play`,
- * `/pronos/[slug]`) ne sont pas concernées et se désignent elles-mêmes :
- * elles n'appellent jamais `notFound()`.
+ * La seconde (`generateMetadata` décide aussi le 404) ne sert PLUS à fixer le
+ * statut : elle est conservée pour l'hygiène des métadonnées — un robot qui
+ * demande une ressource disparue ne doit pas recevoir un titre valide — et
+ * elle ne coûte rien, le chargeur étant mémoïsé par `cache()`.
+ *
+ * Le périmètre est celui des routes PUBLIQUES. `dashboard/` et `admin/`
+ * portent un `loading.tsx` et appellent `notFound()` : leur statut est donc
+ * faux lui aussi, mais derrière une authentification, sans indexation ni
+ * sonde externe, et leur squelette est acquis depuis longtemps. L'écart est
+ * connu et assumé ici plutôt que découvert plus tard.
  */
 describe("statut 404 des routes joueur streamées", () => {
   const JOUEUR = join(RACINE_APP, "(player)");
+  const PUBLIQUES = [JOUEUR, join(RACINE_APP, "(public)")];
+
+  it("aucune route qui 404 ne vit sous une frontière loading", () => {
+    const sousSquelette: string[] = [];
+    for (const racine of PUBLIQUES) {
+      for (const { dossier, fichier } of routes(racine)) {
+        if (!fichier.endsWith("page.tsx")) continue;
+        if (!/\bnotFound\(\)/.test(readFileSync(fichier, "utf8"))) continue;
+        if (fichiersDesAncetres(dossier).has("loading.tsx")) {
+          sousSquelette.push(relative(RACINE_APP, fichier).split(sep).join("/"));
+        }
+      }
+    }
+    expect(
+      sousSquelette,
+      "ces routes savent répondre 404 mais un `loading.tsx` d'un de leurs " +
+        "segments parents fait partir l'en-tête avant : elles rendront 200. " +
+        "Retirez le squelette, ou isolez la route dans un groupe `(…)` qui " +
+        "n'en porte pas",
+    ).toEqual([]);
+  });
 
   /** Corps de `generateMetadata`, ou `null` si la page n'en a pas. */
   function corpsDeGenerateMetadata(source: string): string | null {
@@ -214,41 +253,5 @@ describe("statut 404 des routes joueur streamées", () => {
         "`generateMetadata` (chargeur mémoïsé par `cache()` pour ne pas " +
         "doubler la requête) et appelez-y `notFound()`",
     ).toEqual([]);
-  });
-});
-
-/**
- * L'AUTRE MOITIÉ DU 404 — sans elle, la garde ci-dessus ne prouve rien.
- *
- * Décider le `notFound()` dans `generateMetadata` ne suffit PAS sous Next 16 :
- * les métadonnées y sont STREAMÉES par défaut, l'en-tête HTTP part avant leur
- * résolution, et le statut reste 200. C'est exactement le piège qui a coûté
- * un aller-retour complet de campagne QA : le correctif semblait juste, la
- * garde de source passait, et le curl continuait de rendre 200.
- *
- * Le levier est global et vit dans `next.config.ts` (`htmlLimitedBots`, voir
- * le commentaire long à cet endroit). Les deux moitiés doivent tenir
- * ensemble : retirer celle-ci rouvre le trou sans qu'aucun test de rendu ne
- * bronche, puisque le HTML produit, lui, est correct.
- */
-describe("les métadonnées bloquent la réponse", () => {
-  it("next.config.ts force les métadonnées bloquantes pour tous les UA", () => {
-    const config = readFileSync("next.config.ts", "utf8");
-    const ligne = config
-      .split(/\r?\n/)
-      .find((l) => /^\s*htmlLimitedBots\s*:/.test(l));
-    expect(
-      ligne,
-      "`htmlLimitedBots` a disparu de next.config.ts : les métadonnées " +
-        "redeviennent streamées et toute ressource joueur inconnue répondra " +
-        "200 au lieu de 404",
-    ).toBeDefined();
-    // Une regex ATTRAPE-TOUT, et pas n'importe quelle valeur : la restreindre
-    // à quelques robots est le comportement par défaut qu'on remplace.
-    expect(
-      ligne,
-      "`htmlLimitedBots` doit être une regex attrape-tout : une liste de " +
-        "robots ne rend le bon statut qu'à ces robots-là",
-    ).toMatch(/htmlLimitedBots\s*:\s*\/\.\*\/\s*,/);
   });
 });

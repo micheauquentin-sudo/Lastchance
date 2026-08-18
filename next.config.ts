@@ -95,59 +95,6 @@ const tokenPathSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // LES MÉTADONNÉES BLOQUENT LA RÉPONSE — c'est ce qui rend un 404 vraiment 404.
-  //
-  // ── Le défaut ──
-  //
-  // Next 16 STREAME les métadonnées par défaut : l'en-tête HTTP — donc le
-  // STATUT — part avant que `generateMetadata` ait fini. Une page joueur dont
-  // la ressource n'existe pas répondait donc **200**, avec le 404 enfoui plus
-  // loin dans le flux. À l'œil, rien ne change : le visiteur voit bien l'écran
-  // « introuvable ». Tout ce qui lit un statut était trompé — moteurs
-  // d'indexation, sondes de supervision, tests. Déplacer le `notFound()` du
-  // corps vers `generateMetadata` n'y changeait rien : les deux arrivent après
-  // l'en-tête.
-  //
-  // ── Le mécanisme, lu dans le Next installé (16.2.12) ──
-  //
-  // `server/lib/streaming-metadata.js` :
-  //     shouldServeStreamingMetadata(ua, htmlLimitedBots)
-  //       → new RegExp(htmlLimitedBots || <bots par défaut>, 'i')
-  //       → si l'UA correspond, retourne FALSE = métadonnées BLOQUANTES
-  //
-  // `lib/metadata/metadata.js` (MetadataOutlet) : quand le flag est faux, la
-  // promesse des métadonnées est rendue SANS `<Suspense>` autour. React ne
-  // peut alors pas émettre la coquille avant qu'elle soit résolue, et le
-  // `notFound()` remonte avant le premier octet. Avec le flag vrai, la même
-  // promesse est enveloppée d'un `<Suspense>` : la coquille part d'abord.
-  //
-  // `server/base-server.js:1041` évalue ce flag PAR REQUÊTE, à partir de
-  // l'en-tête `user-agent`. La liste par défaut ne contient que les robots
-  // « html-limited » (Bingbot, Slackbot, WhatsApp…) : eux seuls recevaient un
-  // statut juste. Une regex attrape-tout la remplace, et tout le monde le
-  // reçoit.
-  //
-  // ── Le prix, assumé ──
-  //
-  // Le TTFB attend désormais la résolution de `generateMetadata`. Sur les dix
-  // parcours joueur, c'est UNE lecture indexée — exactement ce que ces pages
-  // payaient avant ce chantier, et sans aucun squelette pour l'habiller. Le
-  // `loading.tsx` du groupe `(player)` garde toute sa valeur : il couvre le
-  // CORPS, qui reste streamé derrière la coquille. Les autres routes portent
-  // des `metadata` statiques, qui ne coûtent aucune attente.
-  //
-  // ── La limite, écrite plutôt que découverte plus tard ──
-  //
-  // La garde de Next est `if (userAgent && regex.test(userAgent))` : une
-  // requête SANS en-tête `user-agent` retombe sur le streaming, donc sur un
-  // 200. Aucune regex ne peut corriger cela depuis ici. Navigateurs, curl et
-  // robots en envoient toujours un ; une sonde en socket nu, non.
-  //
-  // Aucune option par route n'existe (vérifié dans
-  // `build/segment-config/app/`) : ce réglage est global, et c'est le seul
-  // levier documenté.
-  htmlLimitedBots: /.*/,
-
   async headers() {
     return [
       {
