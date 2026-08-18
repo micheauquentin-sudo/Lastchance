@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -22,10 +23,32 @@ import { PageOpenBeacon } from "@/components/page-open-beacon";
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Passeport de fidélité",
-  robots: { index: false },
-};
+/** Un seul chargement par requête, partagé entre generateMetadata et la page. */
+const loadContext = cache((programId: string) => loadLoyaltyContext(programId));
+
+/**
+ * LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS.
+ *
+ * Depuis que le groupe `(player)` porte un `loading.tsx`, le rendu est STREAMÉ :
+ * Next envoie l'en-tête HTTP — donc le STATUT — dès que la coquille est prête,
+ * et le `notFound()` du corps n'arrive que dans un chunk ultérieur. Une
+ * ressource inconnue rendait alors **200** avec un digest 404 dans le flux :
+ * juste à l'œil, faux pour tout ce qui lit un statut — moteurs, sondes, tests.
+ * `generateMetadata` s'exécute AVANT le premier octet ; c'est le dernier
+ * endroit où le statut est encore négociable. Le `notFound()` du corps reste
+ * en filet, et `loadContext` est mémoïsé par `cache()` : la page relit le même
+ * résultat, la requête n'est pas doublée.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ programId: string }>;
+}): Promise<Metadata> {
+  const { programId } = await params;
+  const ctx = await loadContext(programId);
+  if (!ctx.ok) notFound();
+  return { title: "Passeport de fidélité", robots: { index: false } };
+}
 
 /**
  * Précharge les roues cibles des paliers « spin » (segments publics + config
@@ -193,7 +216,7 @@ export default async function LoyaltyPassportPage({
   params: Promise<{ programId: string }>;
 }) {
   const { programId } = await params;
-  const ctx = await loadLoyaltyContext(programId);
+  const ctx = await loadContext(programId);
 
   // Réponse générique unique (404) : aucun oracle sur le motif d'invalidité
   // (programme inconnu, archivé, module coupé, abonnement inactif…).

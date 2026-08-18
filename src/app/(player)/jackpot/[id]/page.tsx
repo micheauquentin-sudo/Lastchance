@@ -29,7 +29,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const ctx = await loadContext(id);
-  if (!ctx.ok) return { title: "Jackpot", robots: { index: false } };
+
+  // LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS — le rendu du groupe
+  // `(player)` est streamé depuis qu'il porte un `loading.tsx`, et le statut
+  // part avec l'en-tête, avant le `notFound()` du corps. Voir le commentaire
+  // long dans `calendar/[slug]/page.tsx`. `loadContext` mémoïsé par `cache()`.
+  if (!ctx.ok) notFound();
 
   const name = ctx.campaign.name;
   return {

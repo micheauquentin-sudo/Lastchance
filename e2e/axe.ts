@@ -11,7 +11,8 @@ import { expect, type Page, type TestInfo } from "@playwright/test";
  *   Playwright) mais non bloquantes ;
  * - `disableRules` écarte un faux positif connu — chaque exclusion doit
  *   être justifiée en commentaire AU SITE D'APPEL. Aucune exclusion
- *   globale à ce jour.
+ *   globale à ce jour : `SURFACE_A_DEGRADE`, plus bas, est une exclusion
+ *   NOMMÉE que chaque page doit demander elle-même.
  *
  * ── `incomplete` N'EST PAS « RIEN À SIGNALER » ──────────────────────
  *
@@ -34,18 +35,48 @@ import { expect, type Page, type TestInfo } from "@playwright/test";
 type AxeResults = Awaited<ReturnType<AxeBuilder["analyze"]>>;
 type Violation = AxeResults["violations"][number];
 
+/**
+ * L'exclusion — la SEULE, et elle reste opt-in, page par page.
+ *
+ * Depuis que `incomplete` est bloquant (voir ci-dessus), il faut dire ce
+ * qu'on fait des surfaces où axe ne peut structurellement RIEN calculer :
+ * un texte posé sur un dégradé, sur du SVG, ou sur une couche translucide
+ * n'a pas de « couleur de fond » que le navigateur puisse rendre. Ce n'est
+ * pas un contraste douteux, c'est une mesure impossible — la laisser active
+ * ne mesurerait que l'impuissance de l'outil, et un capteur qui rougit
+ * toujours cesse d'être lu.
+ *
+ * Ce que ces pages perdent est repris ailleurs, et mieux : le contraste réel
+ * de la DA est CALCULÉ sur les jetons eux-mêmes par
+ * `src/lib/play-contrast.test.ts` — ratios exacts, tous les presets, y compris
+ * les combinaisons qu'aucun parcours E2E ne visite — et les couleurs fautives
+ * sont interdites en source par `play-contrast.test.ts` et
+ * `dashboard-contrast.test.ts`. Le calcul est plus fort que l'échantillon.
+ *
+ * Passée EXPLICITEMENT au site d'appel, jamais posée par défaut ici : une
+ * page neuve est scannée en entier tant que personne n'a écrit pourquoi elle
+ * ne peut pas l'être.
+ */
+export const SURFACE_A_DEGRADE = { disableRules: ["color-contrast"] };
+
 /** Impacts qui font échouer le test. */
 const BLOCKING_IMPACTS = new Set(["critical", "serious"]);
 
 /** Résumé lisible d'une liste de violations (règle, aide, cibles CSS). */
-function formatViolations(violations: Violation[]): string {
+function formatViolations(violations: Violation[], pile = "violation"): string {
   return violations
     .map((v) => {
       const targets = v.nodes
         .slice(0, 3)
         .map((n) => n.target.join(" "))
         .join(" | ");
-      return `  - [${v.impact}] ${v.id} — ${v.help} (${v.nodes.length} nœud(s)) → ${targets}`;
+      // LA PILE EST DANS LE MESSAGE, et ce n'est pas cosmétique : « axe a
+      // MESURÉ un contraste insuffisant » et « axe n'a PAS PU mesurer » se
+      // corrigent de deux façons opposées — l'un se répare dans la feuille de
+      // styles, l'autre s'écarte par `SURFACE_A_DEGRADE`. Les deux tombaient
+      // dans le même message, indiscernables, et le premier diagnostic du
+      // wagon 6 a dû se faire sans cette information.
+      return `  - [${v.impact}/${pile}] ${v.id} — ${v.help} (${v.nodes.length} nœud(s)) → ${targets}`;
     })
     .join("\n");
 }
@@ -77,10 +108,10 @@ export async function expectNoA11yViolations(
   const contrasteIndecidable = results.incomplete.filter(
     (v) => v.id === "color-contrast",
   );
-  const blocking = [
-    ...results.violations.filter((v) => BLOCKING_IMPACTS.has(v.impact ?? "")),
-    ...contrasteIndecidable,
-  ];
+  const violationsBloquantes = results.violations.filter((v) =>
+    BLOCKING_IMPACTS.has(v.impact ?? ""),
+  );
+  const blocking = [...violationsBloquantes, ...contrasteIndecidable];
   const advisory = results.violations.filter(
     (v) => !BLOCKING_IMPACTS.has(v.impact ?? ""),
   );
@@ -93,7 +124,7 @@ export async function expectNoA11yViolations(
   }
   if (autresIndecis.length > 0) {
     console.log(
-      `[a11y] ${page.url()} — ${autresIndecis.length} règle(s) indécidable(s) hors contraste (non bloquantes) :\n${formatViolations(autresIndecis)}`,
+      `[a11y] ${page.url()} — ${autresIndecis.length} règle(s) indécidable(s) hors contraste (non bloquantes) :\n${formatViolations(autresIndecis, "indécidable")}`,
     );
   }
   if (results.violations.length > 0 || results.incomplete.length > 0) {
@@ -109,6 +140,8 @@ export async function expectNoA11yViolations(
 
   expect(
     blocking.length,
-    `violations axe serious/critical (contraste indécidable compris) sur ${page.url()}\n${formatViolations(blocking)}`,
+    `violations axe serious/critical sur ${page.url()}\n` +
+      `${formatViolations(violationsBloquantes)}\n` +
+      `${formatViolations(contrasteIndecidable, "indécidable")}`,
   ).toBe(0);
 }

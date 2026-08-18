@@ -147,3 +147,72 @@ describe("chaque frontière d'erreur remonte ce qu'elle intercepte", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * Le 404 d'une page STREAMÉE se décide avant le premier octet.
+ *
+ * ── LE DÉFAUT, ET POURQUOI IL ÉTAIT INVISIBLE ───────────────────────
+ *
+ * Poser un `loading.tsx` sur le groupe `(player)` a fait passer les dix
+ * parcours joueur en rendu STREAMÉ. Next envoie alors l'en-tête HTTP — donc
+ * le statut — dès que la coquille est prête, et le `notFound()` du corps,
+ * qui vient après des lectures asynchrones, n'arrive que dans un chunk
+ * ultérieur. Un calendrier, un événement ou un jackpot inconnu répondait
+ * **200** avec un digest 404 enfoui dans le flux.
+ *
+ * À l'œil, rien ne change : le visiteur voit bien la page « introuvable ».
+ * Tout ce qui LIT UN STATUT, en revanche, était trompé — moteurs
+ * d'indexation, sondes de supervision, et les trois specs E2E qui l'ont
+ * attrapé. C'est le mode de défaillance le plus coûteux : correct en
+ * apparence, faux pour les machines, et introduit par une amélioration.
+ *
+ * ── CE QUE CETTE GARDE EXIGE ────────────────────────────────────────
+ *
+ * `generateMetadata` s'exécute AVANT le premier octet : c'est le dernier
+ * endroit où le statut est encore négociable. Toute page joueur qui sait
+ * répondre 404 doit donc le décider LÀ AUSSI — le `notFound()` du corps
+ * reste en filet, il n'est simplement plus le seul.
+ *
+ * Les pages qui répondent 200 avec un écran d'explication (`/play`,
+ * `/pronos/[slug]`) ne sont pas concernées et se désignent elles-mêmes :
+ * elles n'appellent jamais `notFound()`.
+ */
+describe("statut 404 des routes joueur streamées", () => {
+  const JOUEUR = join(RACINE_APP, "(player)");
+
+  /** Corps de `generateMetadata`, ou `null` si la page n'en a pas. */
+  function corpsDeGenerateMetadata(source: string): string | null {
+    const debut = source.indexOf("export async function generateMetadata");
+    if (debut === -1) return null;
+    // Une LIGNE réduite à `}`, et pas le premier `\n}` venu : la signature
+    // contient `}: {` en colonne zéro (le type des `params`), qui coupait la
+    // fonction juste avant son corps — la garde accusait alors des pages
+    // parfaitement correctes.
+    const fin = source.slice(debut).search(/\n\}\s*(\r?\n|$)/);
+    return fin === -1 ? source.slice(debut) : source.slice(debut, debut + fin);
+  }
+
+  it("décide le 404 dans generateMetadata, pas seulement dans le corps", () => {
+    const pages = routes(JOUEUR)
+      .map((r) => r.fichier)
+      .filter((f) => f.endsWith("page.tsx"));
+    expect(pages.length, "aucune page joueur trouvée").toBeGreaterThan(8);
+
+    const tardives: string[] = [];
+    for (const fichier of pages) {
+      const source = readFileSync(fichier, "utf8");
+      if (!/\bnotFound\(\)/.test(source)) continue;
+      const metadata = corpsDeGenerateMetadata(source);
+      if (!metadata || !/\bnotFound\(\)/.test(metadata)) {
+        tardives.push(relative(RACINE_APP, fichier).split(sep).join("/"));
+      }
+    }
+    expect(
+      tardives,
+      "ces pages ne rendent leur 404 qu'APRÈS le début du streaming, donc " +
+        "avec un statut 200 déjà envoyé : faites résoudre le contexte par " +
+        "`generateMetadata` (chargeur mémoïsé par `cache()` pour ne pas " +
+        "doubler la requête) et appelez-y `notFound()`",
+    ).toEqual([]);
+  });
+});

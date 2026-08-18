@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations } from "./axe";
+import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
 
 /**
  * Vue d'ensemble du dashboard (/dashboard), après la refonte clarté : UNE
@@ -110,7 +110,9 @@ test.describe("dashboard — vue d'ensemble", () => {
         await expect(page.getByText(interdit)).toHaveCount(0);
       }
 
-      await expectNoA11yViolations(page, testInfo);
+      // `color-contrast` écarté : tuiles et hero du dashboard en dégradé, axe ne peut pas en
+      // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
+      await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
 
       // 5. Et le lien ARRIVE là où il promet : on le suit pour de bon, en
       //    dernier — la case du hub revient cochée, donc le filtre a été lu.

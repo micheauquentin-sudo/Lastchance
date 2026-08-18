@@ -66,7 +66,11 @@ export function GoogleAuthButton({ label, next }: { label: string; next?: string
 /** Séparateur "ou" entre le formulaire email et les boutons sociaux. */
 export function AuthDivider() {
   return (
-    <div className="my-5 flex items-center gap-3 text-xs text-zinc-400">
+    // `text-k-muted` et non `text-zinc-400` : #a1a1aa sur le blanc de la carte
+    // d'authentification rend 2,5:1 — sous le seuil AA, et sous le seuil
+    // « large ». Défaut relevé par le premier scan axe de /login et /signup,
+    // qui n'avaient jamais été scannées. Le jeton calibré rend 5,8:1.
+    <div className="my-5 flex items-center gap-3 text-xs text-k-muted">
       <span className="h-px flex-1 bg-zinc-200" />
       ou
       <span className="h-px flex-1 bg-zinc-200" />

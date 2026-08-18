@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations } from "./axe";
+import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
 
 /**
  * Campagne garantie perdante (seed : un seul lot, perdant, limite
@@ -47,6 +47,8 @@ test.describe("accessibilité — l'écran de jeu perdant", () => {
   test("l'écran de jeu perdant sans violation axe serious/critical", async ({ page }, testInfo) => {
     await page.goto(`/play/${SLUG}`);
     await expect(page.getByRole("button", { name: "Lancer la roue" })).toBeVisible();
-    await expectNoA11yViolations(page, testInfo);
+    // `color-contrast` écarté : la page /play est un dégradé radial choisi par le commerçant, axe ne peut pas en
+    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
+    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
   });
 });

@@ -26,7 +26,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { code } = await params;
   const ctx = await loadContext(code);
-  if (!ctx.ok) return { title: "Événement", robots: { index: false } };
+
+  // LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS — le rendu du groupe
+  // `(player)` est streamé depuis qu'il porte un `loading.tsx`, et le statut
+  // part avec l'en-tête, avant le `notFound()` du corps. Voir le commentaire
+  // long dans `calendar/[slug]/page.tsx`. `loadContext` mémoïsé par `cache()`.
+  if (!ctx.ok) notFound();
   return {
     title: `En direct — ${ctx.organization.name}`,
     description: `Participez à l'événement en direct de ${ctx.organization.name}.`,

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,10 +18,51 @@ import { SkipLink } from "@/components/ui/skip-link";
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Chasse au trésor",
-  robots: { index: false },
-};
+/**
+ * Un seul chargement par requête, partagé entre generateMetadata et la page.
+ *
+ * Le repli en deux temps vit ICI plutôt que dans le corps de la page, parce
+ * que le statut HTTP se décide maintenant en amont (voir `generateMetadata`) :
+ * les deux endroits doivent trancher sur le MÊME contexte, sinon la métadonnée
+ * 404erait un joueur que le corps aurait servi.
+ *
+ * La chasse est close (archivée, ou `ends_at` passée) : on NE ROUVRE PAS le
+ * jeu — `loadHuntStepContext` reste le seul chargeur de `stampHuntStep` et il
+ * vient de refuser. On tente seulement de RESTITUER un code déjà gagné sur cet
+ * appareil. Sans complétion au cookie, le repli refuse à son tour et la page
+ * rend le même 404 générique qu'avant.
+ *
+ * Sans ce repli, le joueur qui terminait le dernier jour sans laisser son
+ * e-mail perdait l'accès à un code que la caisse honore pourtant toujours
+ * (`redeem_hunt_completion` ne teste ni statut ni fenêtre) — et l'ADR-024
+ * fonde le caractère facultatif de l'e-mail sur « le code reste affiché ».
+ */
+const loadContext = cache(async (token: string) => {
+  const played = await loadHuntStepContext(token);
+  return played.ok ? played : await loadHuntRecallContext(token);
+});
+
+/**
+ * LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS.
+ *
+ * Depuis que le groupe `(player)` porte un `loading.tsx`, le rendu est STREAMÉ :
+ * Next envoie l'en-tête HTTP — donc le STATUT — dès que la coquille est prête,
+ * et le `notFound()` du corps n'arrive que dans un chunk ultérieur. Un jeton
+ * d'étape inconnu rendait alors **200** avec un digest 404 dans le flux.
+ * `generateMetadata` s'exécute AVANT le premier octet ; c'est le dernier
+ * endroit où le statut est encore négociable. Le `notFound()` du corps reste
+ * en filet, et `loadContext` est mémoïsé par `cache()`.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const ctx = await loadContext(token);
+  if (!ctx.ok) notFound();
+  return { title: "Chasse au trésor", robots: { index: false } };
+}
 
 export default async function HuntStepPage({
   params,
@@ -28,19 +70,7 @@ export default async function HuntStepPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const played = await loadHuntStepContext(token);
-
-  // La chasse est close (archivée, ou `ends_at` passée) : on NE ROUVRE PAS le
-  // jeu — `loadHuntStepContext` reste le seul chargeur de `stampHuntStep` et
-  // il vient de refuser. On tente seulement de RESTITUER un code déjà gagné
-  // sur cet appareil. Sans complétion au cookie, le repli refuse à son tour et
-  // la page rend le même 404 générique qu'avant.
-  //
-  // Sans ce repli, le joueur qui terminait le dernier jour sans laisser son
-  // e-mail perdait l'accès à un code que la caisse honore pourtant toujours
-  // (`redeem_hunt_completion` ne teste ni statut ni fenêtre) — et l'ADR-024
-  // fonde le caractère facultatif de l'e-mail sur « le code reste affiché ».
-  const ctx = played.ok ? played : await loadHuntRecallContext(token);
+  const ctx = await loadContext(token);
 
   // Réponse générique unique (404) : aucun oracle sur le motif d'invalidité
   // (chasse inconnue, fermée, hors fenêtre, module coupé…).

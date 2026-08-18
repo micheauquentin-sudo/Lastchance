@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,10 +22,32 @@ import { SkipLink } from "@/components/ui/skip-link";
  */
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Votre commande",
-  robots: { index: false },
-};
+/** Un seul chargement par requête, partagé entre generateMetadata et la page. */
+const loadContext = cache((token: string) => loadOrderCodeContext(token));
+
+/**
+ * LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS.
+ *
+ * Depuis que le groupe `(player)` porte un `loading.tsx`, le rendu est STREAMÉ :
+ * Next envoie l'en-tête HTTP — donc le STATUT — dès que la coquille est prête,
+ * et le `notFound()` du corps n'arrive que dans un chunk ultérieur. Une
+ * ressource inconnue rendait alors **200** avec un digest 404 dans le flux :
+ * juste à l'œil, faux pour tout ce qui lit un statut — moteurs, sondes, tests.
+ * `generateMetadata` s'exécute AVANT le premier octet ; c'est le dernier
+ * endroit où le statut est encore négociable. Le `notFound()` du corps reste
+ * en filet, et `loadContext` est mémoïsé par `cache()` : la page relit le même
+ * résultat, la requête n'est pas doublée.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}): Promise<Metadata> {
+  const { token } = await params;
+  const ctx = await loadContext(token);
+  if (!ctx) notFound();
+  return { title: "Votre commande", robots: { index: false } };
+}
 
 export default async function CommandePage({
   params,
@@ -32,7 +55,7 @@ export default async function CommandePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const ctx = await loadOrderCodeContext(token);
+  const ctx = await loadContext(token);
   if (!ctx) notFound();
 
   return (

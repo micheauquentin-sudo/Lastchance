@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations } from "./axe";
+import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
 
 /**
  * Parcours caisse du Jackpot en mode `staff` (audit MORT-1) : le mode était
@@ -108,6 +108,8 @@ test.describe("accessibilité — le tableau de bord Jackpot", () => {
   test("le tableau de bord Jackpot sans violation axe serious/critical", async ({ page }, testInfo) => {
     await page.goto("/dashboard/jackpot");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expectNoA11yViolations(page, testInfo);
+    // `color-contrast` écarté : jauge et tuiles du Jackpot en dégradé, axe ne peut pas en
+    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
+    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
   });
 });

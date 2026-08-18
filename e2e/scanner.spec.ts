@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations } from "./axe";
+import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
 
 /**
  * Scanner de QR en caisse.
@@ -93,6 +93,8 @@ test.describe("accessibilité — la caisse", () => {
   test("la caisse sans violation axe serious/critical", async ({ page }, testInfo) => {
     await page.goto("/dashboard/redeem");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expectNoA11yViolations(page, testInfo);
+    // `color-contrast` écarté : cartes du dashboard à ombre dure et dégradés d'accent, axe ne peut pas en
+    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
+    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
   });
 });

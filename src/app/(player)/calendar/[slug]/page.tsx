@@ -33,7 +33,22 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const ctx = await loadContext(slug);
-  if (!ctx.ok) return { title: "Calendrier", robots: { index: false } };
+
+  // LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS.
+  //
+  // Depuis que le groupe `(player)` porte un `loading.tsx`, le rendu est
+  // STREAMÉ : Next envoie l'en-tête HTTP — donc le STATUT — dès que la
+  // coquille est prête, et le `notFound()` du corps n'arrive que dans un
+  // chunk ultérieur. Un calendrier inconnu rendait alors **200** avec un
+  // digest 404 dans le flux : juste à l'œil, faux pour tout ce qui lit un
+  // statut — moteurs, sondes, tests. `generateMetadata` s'exécute AVANT le
+  // premier octet ; c'est le dernier endroit où le statut est négociable.
+  //
+  // La condition est MOT POUR MOT celle du corps : deux prédicats voisins
+  // rouvriraient le trou pour le cas qu'un seul des deux couvre. `loadContext`
+  // est mémoïsé par `cache()`, la requête n'est donc pas doublée, et le
+  // `notFound()` du corps reste en filet.
+  if (!ctx.ok || !ctx.publicState.calendar) notFound();
 
   const name = ctx.publicState.calendar?.name ?? "Calendrier";
   return {

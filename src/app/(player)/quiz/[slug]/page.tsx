@@ -34,7 +34,13 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const ctx = await loadContext(slug);
-  if (!ctx.ok) return { title: "Quiz", robots: { index: false } };
+
+  // LE 404 SE DÉCIDE ICI, ET PAS SEULEMENT DANS LE CORPS — le rendu du groupe
+  // `(player)` est streamé depuis qu'il porte un `loading.tsx`, et le statut
+  // part avec l'en-tête, avant le `notFound()` du corps. Voir le commentaire
+  // long dans `calendar/[slug]/page.tsx`. Condition identique à celle du
+  // corps, `loadContext` mémoïsé par `cache()`.
+  if (!ctx.ok || !ctx.publicState.quiz) notFound();
 
   const name = ctx.publicState.quiz?.name ?? "Quiz";
   return {
