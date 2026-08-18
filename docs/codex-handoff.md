@@ -57,17 +57,20 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
-### 2026-08-17 — Train de correction de l'audit transverse : wagon 5 « La soirée live tient sa promesse » — **branche poussée, PR à ouvrir**
+### 2026-08-17 — Train de correction de l'audit transverse : wagon 5 « La soirée live tient sa promesse » — **fusionné, déployé, santé verte**
 
 - **Lot et objectif** : cinquième wagon du train — fusionner les trois
   allers-retours de lecture d'état live en un seul RPC, cacher la part
   partagée d'une session, redescendre la jauge vendue à ce qu'un banc a
   réellement prouvé, et faire dire vrai au rapport de performance (EVT-1,
   EVT-2, JOU-4, JOU-5, DOC-1 perf-report, JKP-1, plafond jauge 500).
-- **Branche/commits** : `chantier/audit-p1-live`, tête `f48b83d`, arbre
-  propre (seul `docs/lastchance-reserver.md`, fichier Codex non suivi, hors
-  commit), 11 commits. Une migration : `20260929120000_soiree_live.sql`. **PR
-  à ouvrir, CI de la PR à jouer.**
+- **Branche/commits** : `chantier/audit-p1-live`, tête `f48b83d`, 11 commits.
+  Une migration : `20260929120000_soiree_live.sql`. **PR #152 : CI de la PR
+  intégralement verte sur le SHA de tête `cd8e8c9` (6 jobs). Fusion squash
+  `4b614b8` sur l'ordre permanent le 2026-08-18 ; CI `main` success sur
+  `4b614b8` ; « Santé après déploiement » success sur `4b614b8`, job
+  « Base · Workers · Sécurité » réellement exécuté (09:12:36→09:12:46 UTC,
+  pas sauté) — migration `20260929120000` appliquée en production.**
 - **Arbitrages portés par l'ADR-106** : le cache mémoire d'1 s par session et
   par instance retenu comme levier de capacité dominant (le drapeau Realtime
   seul laisse ~217 req/s pour ~150 disponibles) ; la fusion des gardes de
