@@ -44,12 +44,20 @@ test.describe("mode événement — cycle question → révélation (télécomma
     browser,
   }) => {
     // ── 1. Télécommande : la session seedée est en lobby, prête à lancer.
+    // Sous charge CI (suite complète, 2 workers), le rendu de cette page
+    // (dashboard authentifié + chargement des questions) s'est vu dépasser
+    // les 30 s par défaut sur mobile-safari, jamais en isolé — un problème de
+    // budget, pas d'état. `waitForLoadState("networkidle")` laisse le réseau
+    // (hydratation, appels serveur) se stabiliser avant d'interroger le DOM,
+    // et le timeout de CETTE seule attente est élargi (le timeout global du
+    // test, lui, reste celui de la config).
     await page.goto(`/dashboard/events/${SESSION_ID}/remote`);
+    await page.waitForLoadState("networkidle");
     await expect(
       page.getByRole("heading", { name: "Lancer une question" }),
-    ).toBeVisible({ timeout: 30_000 });
+    ).toBeVisible({ timeout: 45_000 });
     const questionRow = page.getByText("Capitale de la France ?");
-    await expect(questionRow).toBeVisible();
+    await expect(questionRow).toBeVisible({ timeout: 45_000 });
 
     // ── 2. Joueur : contexte anonyme séparé, rejoint la partie puis répond.
     const player = await browser.newContext();
