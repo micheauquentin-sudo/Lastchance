@@ -266,6 +266,7 @@ async function loadPlayReferral(
     .eq("campaign_id", campaignId)
     .maybeSingle();
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const row = data as unknown as ReferralProgramProbe | null;
   if (!row || !row.enabled) return null;
 
