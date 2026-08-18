@@ -201,5 +201,6 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   en production (contrôle `EXPECTED_MIGRATION` de la sonde). CI `main` :
   E2E tombé au premier passage sur la roulette de contention PRÉEXISTANTE
   (pronostics, wheel-wizard, pronostics-generic — aucun spec du wagon, même
-  trio que la fusion `da013c2` d'avant le wagon), rerun lancé ; dette de
-  stabilité consignée dans `docs/bugs.md`.
+  trio que la fusion `da013c2` d'avant le wagon), **rerun success — CI
+  `main` verte sur `d170a65`** ; dette de stabilité consignée dans
+  `docs/bugs.md`. Le train est terminé.
