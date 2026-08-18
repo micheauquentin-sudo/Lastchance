@@ -1,4 +1,9 @@
 import { z } from "zod";
+// Le contrôle de date de naissance est aussi appelé par `claim-form.tsx`
+// (client) : il vit dans un module SANS import, pour que le chercher n'y tire
+// pas Zod. Le sens de la dépendance est inversé exprès — un schéma peut
+// connaître un libellé, l'inverse coûte 121 Ko à l'écran du joueur.
+import { isPlausibleBirthDate } from "@/lib/claim-libelles";
 
 /** Action d'engagement choisie par le joueur avant le spin. */
 export const spinEngagementSchema = z
@@ -8,29 +13,6 @@ export const spinEngagementSchema = z
     email: z.string().trim().toLowerCase().email("Email invalide").optional(),
   })
   .nullable();
-
-/**
- * Date de naissance plausible : date calendaire réelle (YYYY-MM-DD) et
- * âge entre 13 et 120 ans. Pure et exportée pour les tests.
- */
-export function isPlausibleBirthDate(value: string, now: Date = new Date()): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  // Rejette les dates « déroulées » par JS (2020-02-31 → 2 mars).
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day
-  ) {
-    return false;
-  }
-  const ageYears = (now.getTime() - date.getTime()) / (365.25 * 86_400_000);
-  return ageYears >= 13 && ageYears <= 120;
-}
 
 /**
  * Réclamation du gain. email / phone / firstName sont exigés ou non

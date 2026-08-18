@@ -23,7 +23,7 @@ export default function ForgotPasswordPage() {
       <h1 className="mb-1 text-xl font-bold">Réinitialiser le mot de passe</h1>
       <p className="mb-6 text-sm text-zinc-500">Si un compte correspond, un lien de réinitialisation sera envoyé.</p>
       <ResetRequestForm />
-      <Link href="/login" className="mt-5 block text-center text-sm text-orange-600 hover:underline">← Connexion</Link>
+      <Link href="/login" className="mt-5 block text-center text-sm text-k-orange-text hover:underline">← Connexion</Link>
     </Card>
   );
 }

@@ -62,7 +62,18 @@ export async function uploadLogo(
       limitInputPixels: MAX_INPUT_PIXELS,
     })
       .rotate()
-      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      // 256 px et non 1600 : AUCUNE surface du produit n'affiche le logo
+      // au-delà de 64 px (en-tête du dashboard, pastille de la page joueur,
+      // affiche QR). On servait donc, à chaque chargement de page publique, une
+      // image six fois trop large pour son plus grand usage — plusieurs
+      // centaines de kilo-octets sur un réseau mobile, pour des pixels que
+      // personne ne voit. 256 laisse la marge d'un écran 4× (64 × 4).
+      //
+      // Les logos DÉJÀ envoyés restent lourds : cette action ne retraite que ce
+      // qui passe par elle. Ils se réduiront au prochain envoi, et pas avant —
+      // un retraitement rétroactif du bucket n'a pas été fait, faute de gain
+      // proportionné au risque de casser une URL publique en circulation.
+      .resize({ width: 256, height: 256, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 88, effort: 4 })
       .toBuffer();
   } catch (error) {

@@ -43,7 +43,7 @@ describe("/commande est atteignable et traitée comme une surface publique", () 
   });
 
   it("la page publique existe et rend à la requête (prérequis du nonce)", () => {
-    const page = lire("src/app/commande/[token]/page.tsx");
+    const page = lire("src/app/(player)/commande/[token]/page.tsx");
     expect(page).toContain('export const dynamic = "force-dynamic"');
     expect(page).toContain("loadOrderCodeContext");
     expect(page).toContain("notFound()");

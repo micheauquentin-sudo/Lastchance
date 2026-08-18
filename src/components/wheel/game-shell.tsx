@@ -20,7 +20,7 @@ import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
 import type { GameType } from "@/types/database";
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "playing" | "won" | "lost" | "blocked";
 
@@ -44,7 +44,7 @@ export function GameShell({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
   gameType,
   renderReveal,
@@ -55,7 +55,7 @@ export function GameShell({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /**
    * Le commerçant propose-t-il le partage du jeu après la partie ?
    * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
@@ -76,9 +76,7 @@ export function GameShell({
    * FlipCardExperience) — la signature reste volontairement minimale.
    */
   renderReveal: (outcome: SpinOutcome, onRevealed: () => void) => ReactNode;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  // Thème « kermesse » : même bascule de classes que PlayExperience.
+}) {  // Thème « kermesse » : même bascule de classes que PlayExperience.
   const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
@@ -293,7 +291,7 @@ export function GameShell({
           <h2 className={`text-2xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Impossible de jouer</h2>
           <p className={playText.body(kermesse)}>{error}</p>
           {nextEligibleAt && (
-            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
+            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
               ⏱ Revenez dans <Countdown target={nextEligibleAt} />
             </p>
           )}

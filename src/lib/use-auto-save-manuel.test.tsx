@@ -98,6 +98,19 @@ function saisir(valeur: string) {
   fireEvent.change(screen.getByLabelText("valeur"), { target: { value: valeur } });
 }
 
+/**
+ * L'onglet passe en arrière-plan (bascule d'application, verrouillage d'écran,
+ * changement d'onglet). `document.hidden` est en lecture seule : on redéfinit
+ * l'accesseur, comme le ferait le navigateur, puis on émet l'événement.
+ */
+function basculerVisibilite(cache: boolean) {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => cache,
+  });
+  fireEvent(document, new Event("visibilitychange"));
+}
+
 let sonde: Sonde;
 
 beforeEach(() => {
@@ -110,6 +123,7 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   viderToasts();
+  basculerVisibilite(false);
 });
 
 describe("useAutoSaveManuel — rien ne part sans un geste", () => {
@@ -193,6 +207,57 @@ describe("useAutoSaveManuel — le délai", () => {
     fireEvent.focusOut(screen.getByLabelText("valeur"));
     await atterrir();
     expect(sonde.appels).toEqual(["b"]);
+  });
+
+  /**
+   * MASQUER L'ONGLET EST LA SORTIE QU'ON NE VOIT PAS. `focusout` couvre le
+   * passage d'un champ à l'autre ; sur mobile, basculer d'application ou
+   * verrouiller l'écran gèle la page SANS déplacer le focus, et le navigateur
+   * peut la décharger ensuite sans autre événement (`beforeunload` n'est pas
+   * tenu sur iOS). Le délai était donc une fenêtre de perte muette.
+   */
+  it("masquer l'onglet vide la file sans attendre", async () => {
+    render(<Bloc sonde={sonde} />);
+    saisir("b");
+    basculerVisibilite(true);
+    await atterrir();
+    expect(sonde.appels).toEqual(["b"]);
+
+    // Minuteur désarmé : rien ne repart au terme du délai.
+    avancer(DELAI_TEST * 2);
+    await atterrir();
+    expect(sonde.appels).toEqual(["b"]);
+  });
+
+  it("masquer un bloc intact ne l'enregistre pas", async () => {
+    render(<Bloc sonde={sonde} />);
+    basculerVisibilite(true);
+    avancer(60_000);
+    await atterrir();
+    expect(sonde.appels).toEqual([]);
+  });
+
+  /** On enregistre en PARTANT, jamais en revenant. */
+  it("le retour au premier plan ne déclenche rien", async () => {
+    render(<Bloc sonde={sonde} />);
+    saisir("b");
+    basculerVisibilite(true);
+    await atterrir();
+    basculerVisibilite(false);
+    avancer(DELAI_TEST * 2);
+    await atterrir();
+    expect(sonde.appels).toEqual(["b"]);
+  });
+
+  /** L'écouteur vit sur `document` : il doit repartir avec le bloc. */
+  it("l'écouteur est retiré au démontage — plus rien ne part après", async () => {
+    const vue = render(<Bloc sonde={sonde} />);
+    saisir("b");
+    vue.unmount();
+    basculerVisibilite(true);
+    avancer(60_000);
+    await atterrir();
+    expect(sonde.appels).toEqual([]);
   });
 });
 

@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   contrastRatio,
@@ -238,6 +239,113 @@ describe("les animations d'entrée ne touchent plus à l'opacité", () => {
           `et les opacités d'ancêtres se MULTIPLIENT : un second bloc animé imbriqué ` +
           `dedans repasse sous le seuil AA, quel que soit le plancher choisi.`,
       ).not.toMatch(/opacity/);
+    }
+  });
+});
+
+describe("les deux couleurs qui ne tiennent pas en texte", () => {
+  /** Les fichiers `.tsx` d'un dossier, à toute profondeur. */
+  function fichiersSous(dir: string, suffixe: string): string[] {
+    const out: string[] = [];
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const chemin = join(dir, e.name);
+      if (e.isDirectory()) out.push(...fichiersSous(chemin, suffixe));
+      else if (e.name.endsWith(suffixe)) out.push(chemin);
+    }
+    return out;
+  }
+
+  /**
+   * Une ligne de commentaire qui NOMME la classe fautive n'en habille aucun
+   * texte — plusieurs en-têtes de ce dépôt expliquent précisément pourquoi
+   * telle couleur a été retirée. La garde ne doit pas interdire d'en parler.
+   */
+  const estCommentaire = (ligne: string): boolean =>
+    /^\s*(\*|\/\/|\/\*)/.test(ligne);
+
+  /**
+   * Le point du logotype « LastChance. » — un caractère DÉCORATIF, doublé par
+   * le mot qui le précède. Il n'a rien à dire à un lecteur d'écran et rien à
+   * faire lire à personne : c'est le seul emploi légitime de l'orange plein.
+   */
+  const POINT_DU_LOGOTYPE = /LastChance<span className="text-k-orange">\.<\/span>/;
+
+  it("`text-k-orange` n'habille plus de texte dans le parcours joueur", () => {
+    // `--color-k-orange` (#f5793b) est une couleur d'OBJET : elle rend 2,7:1
+    // sur crème, sous le seuil AA (4,5:1) et même sous le seuil « large »
+    // (3:1). Le jeton `--color-k-orange-text` (#b45309) existe pour ça depuis
+    // le chantier QR, et sept sites l'ignoraient encore — dont le compte à
+    // rebours du code de gain, lu en boutique sur un téléphone, et
+    // l'astérisque des champs obligatoires.
+    //
+    // `hover:` est hors sujet : un survol n'est jamais la seule façon de lire
+    // un lien, et la couleur au repos, elle, est gardée ailleurs.
+    const fautifs: string[] = [];
+    for (const fichier of fichiersSous("src/components/wheel", ".tsx")) {
+      if (fichier.endsWith(".test.tsx")) continue;
+      const source = readFileSync(fichier, "utf8");
+      for (const ligne of source.split(/\r?\n/)) {
+        const sansHover = ligne.replace(/hover:text-k-orange\b/g, "");
+        if (/\btext-k-orange\b(?!-text)/.test(sansHover)) {
+          fautifs.push(`${fichier} → ${ligne.trim().slice(0, 100)}`);
+        }
+      }
+    }
+    expect(
+      fautifs,
+      "utilisez `text-k-orange-text` (#b45309, calibré pour le texte) : " +
+        "`text-k-orange` est la couleur décorative, elle tombe sous 3:1",
+    ).toEqual([]);
+  });
+
+  it("aucune nuance `text-zinc-3xx` en dur dans les composants de jeu", () => {
+    // Le parcours joueur bascule entre un fond sombre (« nuit ») et un fond
+    // crème (« kermesse ») SELON LE STYLE DU COMMERÇANT. Une nuance écrite en
+    // dur ne peut pas être juste des deux côtés : `text-zinc-300` rend 1,7:1
+    // sur le crème — c'est exactement ce qui rendait illisible le bouton
+    // « Révéler directement », seule porte d'entrée au clavier du jeu de
+    // grattage.
+    //
+    // Le choix se fait par `playText.*` (voir play-theme.tsx), qui prend le
+    // drapeau `kermesse` et rend le jeton calibré pour la surface.
+    const fautifs: string[] = [];
+    for (const fichier of fichiersSous("src/components/wheel", ".tsx")) {
+      if (fichier.endsWith(".test.tsx")) continue;
+      const source = readFileSync(fichier, "utf8");
+      for (const ligne of source.split(/\r?\n/)) {
+        if (estCommentaire(ligne)) continue;
+        // Le défaut visé est PRÉCIS : une nuance posée dans un `className="…"`
+        // littéral, donc appliquée quel que soit le thème. Trois emplois
+        // voisins ne le sont pas et sont écartés ici :
+        //  · `placeholder:` — texte indicatif, remplacé dès la frappe ;
+        //  · une branche de ternaire `kermesse ? … : "text-zinc-300"` ;
+        //  · une table de thème (`nuit: { body: "text-zinc-300" }`), où la
+        //    nuance sombre est choisie POUR le fond sombre, comme le fait
+        //    `playText` lui-même.
+        // Les deux derniers ne sont pas des `className="…"` littéraux : la
+        // restriction ci-dessous les exclut d'elle-même, sans liste à tenir.
+        const litteral = ligne.match(/className="([^"]*)"/)?.[1] ?? "";
+        const sansPlaceholder = litteral.replace(/placeholder:text-zinc-3\d\d\b/g, "");
+        if (!/\btext-zinc-3\d\d\b/.test(sansPlaceholder)) continue;
+        fautifs.push(`${fichier} → ${ligne.trim().slice(0, 100)}`);
+      }
+    }
+    expect(
+      fautifs,
+      "passez par `playText.*` (play-theme.tsx) : une nuance en dur ne peut " +
+        "pas être lisible à la fois sur le dégradé nuit et sur le crème kermesse",
+    ).toEqual([]);
+  });
+
+  it("le point du logotype reste la seule exception tolérée", () => {
+    // Contre-épreuve de la tolérance ci-dessus : si le point décoratif
+    // disparaissait du produit, la tolérance devrait disparaître avec lui.
+    const sites = [
+      "src/app/dashboard/layout.tsx",
+      "src/components/marketing/site-header.tsx",
+    ];
+    for (const site of sites) {
+      expect(readFileSync(site, "utf8"), site).toMatch(POINT_DU_LOGOTYPE);
     }
   });
 });

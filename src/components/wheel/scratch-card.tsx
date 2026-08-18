@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { bestTextColor } from "@/lib/contrast";
 import { SCRATCH_COVER_DEFAULT } from "@/lib/wheel-style";
+import { playText } from "./play-theme";
 
 const REVEAL_THRESHOLD = 0.5; // 50% de surface grattée = révélation auto
 const SAMPLE_STEP = 6; // échantillonnage alpha (perf) sur la grille de pixels
@@ -20,6 +21,7 @@ export function ScratchCard({
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
   cover = SCRATCH_COVER_DEFAULT,
+  kermesse,
   onRevealed,
 }: {
   label: string;
@@ -34,6 +36,15 @@ export function ScratchCard({
    * pas d'un pixel.
    */
   cover?: readonly [string, string, string];
+  /**
+   * Surface claire (thème « kermesse ») ou sombre (thème « nuit »).
+   *
+   * Le bouton « Révéler directement » portait `text-zinc-300` en dur — juste
+   * sur le dégradé nuit, illisible sur le crème de la kermesse (1,7:1), et
+   * c'est la SEULE porte d'entrée au clavier de ce jeu : sans lui, une carte
+   * à gratter ne se gratte qu'au doigt ou à la souris.
+   */
+  kermesse: boolean;
   onRevealed: () => void;
 }) {
   // DÉSTRUCTURÉ EN PRIMITIVES avant l'effet canvas : `cover` est un tableau
@@ -184,7 +195,7 @@ export function ScratchCard({
       </div>
 
       {!revealed && (
-        <button type="button" onClick={reveal} className="mx-auto mt-4 block text-sm font-medium text-zinc-300 underline decoration-dotted underline-offset-4 hover:text-zinc-200">
+        <button type="button" onClick={reveal} className={`mx-auto mt-4 block text-sm font-medium underline decoration-dotted underline-offset-4 ${playText.body(kermesse)}`}>
           Révéler directement
         </button>
       )}

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -37,7 +39,8 @@ describe("FOND_KEYS — la table des fichiers livrés", () => {
 });
 
 describe("fondSrc / fondSrcSet — les URL publiques", () => {
-  it("compose le chemin des quatre variantes", () => {
+  it("compose le chemin des cinq variantes", () => {
+    expect(fondSrc("noel", 640)).toBe("/fonds/noel-640.webp");
     expect(fondSrc("noel", 960)).toBe("/fonds/noel-960.webp");
     expect(fondSrc("noel", 1280)).toBe("/fonds/noel-1280.webp");
     expect(fondSrc("noel", 1672)).toBe("/fonds/noel-1672.webp");
@@ -50,16 +53,37 @@ describe("fondSrc / fondSrcSet — les URL publiques", () => {
    * La vignette (360 px) est EXCLUE du srcset : mélangée aux largeurs de
    * rendu, un petit mobile la choisirait comme fond plein écran.
    */
-  it("le srcset porte les trois largeurs de rendu, jamais la vignette", () => {
+  it("le srcset porte les quatre largeurs de rendu, jamais la vignette", () => {
     expect(fondSrcSet("football")).toBe(
-      "/fonds/football-960.webp 960w, /fonds/football-1280.webp 1280w, /fonds/football-1672.webp 1672w",
+      "/fonds/football-640.webp 640w, /fonds/football-960.webp 960w, /fonds/football-1280.webp 1280w, /fonds/football-1672.webp 1672w",
     );
     expect(fondSrcSet("football")).not.toContain("vignette");
   });
 
-  it("chaque clé produit un srcset à trois entrées", () => {
+  it("chaque clé produit un srcset à quatre entrées", () => {
     for (const cle of FOND_KEYS) {
-      expect(fondSrcSet(cle).split(", ")).toHaveLength(3);
+      expect(fondSrcSet(cle).split(", ")).toHaveLength(4);
+    }
+  });
+
+  /**
+   * 640 EST LA MARCHE QUI MANQUAIT, et un srcset qui promet une largeur
+   * absente du disque est pire que son absence : le navigateur la choisit, la
+   * demande, reçoit un 404, et le fond disparaît. La garde vérifie donc les
+   * FICHIERS, pas seulement la chaîne — c'est la seule assertion de ce dossier
+   * qui touche le disque, et elle le mérite : le srcset et
+   * `scripts/optimiser-fonds.mjs` sont deux listes de largeurs tenues à la
+   * main, dans deux fichiers, qui doivent rester égales.
+   */
+  it("chaque largeur annoncée existe réellement dans public/fonds", () => {
+    for (const cle of FOND_KEYS) {
+      for (const entree of fondSrcSet(cle).split(", ")) {
+        const url = entree.split(" ")[0];
+        expect(
+          existsSync(join(process.cwd(), "public", url.replace(/^\/+/, ""))),
+          `variante absente du disque : ${url}`,
+        ).toBe(true);
+      }
     }
   });
 });

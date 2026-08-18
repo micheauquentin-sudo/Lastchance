@@ -189,7 +189,7 @@ export default async function SettingsPage({
           </dl>
           <div className="mt-5 border-t border-zinc-100 pt-5">
             <TimezoneForm timezone={org.timezone} />
-            <p className="mt-2 text-xs text-zinc-400">
+            <p className="mt-2 text-xs text-k-muted">
               Utilisé pour les créneaux des roues et les limites quotidiennes.
             </p>
           </div>
@@ -383,7 +383,7 @@ export default async function SettingsPage({
             </p>
           )}
           <BillingButtons canCheckout={canCheckout} canManage={canManage} />
-          <p className="mt-4 text-xs text-zinc-400">
+          <p className="mt-4 text-xs text-k-muted">
             Paiement sécurisé par Stripe. Sans engagement, annulable à tout
             moment depuis le portail.
           </p>

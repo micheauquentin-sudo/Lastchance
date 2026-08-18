@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 import { CODE_CONSOMME } from "./redeem-card";
 
 /**
@@ -246,5 +247,20 @@ test.describe("créateur de quiz — parcours joueur", () => {
     await expect(page.getByText("✓ Lot déjà récupéré en caisse.")).toBeVisible({
       timeout: 30_000,
     });
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — le quiz joueur", () => {
+  test("le quiz joueur sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto("/quiz/e2e-quiz");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

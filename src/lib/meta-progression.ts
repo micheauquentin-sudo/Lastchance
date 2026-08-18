@@ -21,9 +21,15 @@
  * valeur manquante ou invalide). Les deux RPC de lecture renvoient `null` quand
  * il n'y a rien à montrer (joueur inconnu, pas de saison active) : ce cas retombe
  * sur l'état neutre `unavailable`, sans oracle.
+ *
+ * AUCUN IMPORT NODE, ET C'EST UNE CONTRAINTE : `progression-season-card.tsx`
+ * (client) importe d'ici vingt-six constantes et types. La promesse
+ * « importable côté client » de l'en-tête a été fausse le temps qu'une seule
+ * fonction — `deriveProgressionRequestId` — y installe `node:crypto` : le
+ * polyfill du navigateur (~121 Ko gzip) partait dans l'écran des saisons. Elle
+ * vit désormais dans `src/lib/progression-request-id.ts`, et la garde de source
+ * `src/lib/import-sans-crypto.test.ts` refuse le retour.
  */
-
-import { createHash } from "node:crypto";
 
 // ────────────────────────────────────────────────────────────
 // Types de domaine (miroir des CHECK SQL / is_valid_progression_rule)
@@ -982,56 +988,4 @@ const PROGRESSION_ERRORS: ReadonlyArray<readonly [string, string]> = [
 export function progressionErrorMessage(message: string): string {
   const found = PROGRESSION_ERRORS.find(([needle]) => message.includes(needle));
   return found ? found[1] : PROGRESSION_GENERIC_ERROR;
-}
-
-// ════════════════════════════════════════════════════════════
-// Idempotence d'ouverture — dérivation du request_id
-// ════════════════════════════════════════════════════════════
-
-/**
- * Fenêtre de repli de l'idempotence d'ouverture, quand l'appelant ne fournit pas
- * sa propre clé. Deux appels du MÊME device sur le MÊME coffre dans cette fenêtre
- * partagent le `request_id` dérivé : la contrainte unique
- * `(player_season_id, request_id)` fait alors rejouer l'ouverture au lieu de
- * débiter une seconde fois.
- *
- * 5 s couvre le double-clic et le rejeu réseau (retry d'un POST) sans gêner une
- * seconde ouverture DÉLIBÉRÉE du même coffre. Réserve connue : deux clics qui
- * enjambent une frontière de fenêtre tombent dans deux seaux — d'où la clé
- * fournie par l'appelant, qui reste le mécanisme PRÉFÉRÉ (une clé par geste,
- * stable à travers les reprises).
- */
-export const PROGRESSION_REQUEST_WINDOW_MS = 5_000;
-
-/**
- * Dérive un UUID déterministe (forme v4) à partir d'un secret d'identité, du
- * coffre visé et d'un seau de temps. Déterministe = idempotent : c'est la
- * propriété qui rend `open_progression_chest` sûre face au double-clic.
- *
- * Le hash du device n'est utilisé QU'EN ENTRÉE de SHA-256 tronqué à 128 bits :
- * l'identifiant produit ne permet pas de le retrouver, et il n'est comparable
- * qu'aux ouvertures du même joueur (l'unicité est portée par
- * `(player_season_id, request_id)`).
- */
-export function deriveProgressionRequestId(
-  deviceTokenHash: string,
-  chestId: string,
-  now: number = Date.now(),
-): string {
-  const bucket = Math.floor(now / PROGRESSION_REQUEST_WINDOW_MS);
-  const digest = createHash("sha256")
-    .update(`progression-chest:v1:${deviceTokenHash}:${chestId}:${bucket}`)
-    .digest("hex");
-  const bytes = digest.slice(0, 32).split("");
-  // Version 4 + variant RFC 4122 : la valeur reste un UUID valide pour Postgres.
-  bytes[12] = "4";
-  bytes[16] = "89ab"[Number.parseInt(bytes[16], 16) % 4];
-  const hex = bytes.join("");
-  return [
-    hex.slice(0, 8),
-    hex.slice(8, 12),
-    hex.slice(12, 16),
-    hex.slice(16, 20),
-    hex.slice(20, 32),
-  ].join("-");
 }

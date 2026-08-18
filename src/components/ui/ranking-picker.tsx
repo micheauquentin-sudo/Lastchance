@@ -64,7 +64,7 @@ export function RankingPicker({
                 <span aria-hidden>✕</span>
               </button>
             ) : (
-              <span className="flex-1 rounded-xl border-2 border-dashed border-k-ink/30 px-3 py-2 text-sm text-zinc-400">
+              <span className="flex-1 rounded-xl border-2 border-dashed border-k-ink/30 px-3 py-2 text-sm text-k-muted">
                 À choisir
               </span>
             )}

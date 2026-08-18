@@ -1480,8 +1480,14 @@ describe("non-fuite — aucun chemin public ne contourne le filtre", () => {
     "utf8",
   );
   const context = readFileSync(new URL("./quiz-context.ts", import.meta.url), "utf8");
+  // Le groupe `(player)` est entré dans le chemin le 2026-08-17 (frontière de
+  // rendu du parcours joueur) : un groupe de routes ne change pas l'URL, mais
+  // il change le CHEMIN DISQUE — et une garde de source lit le disque. Elle a
+  // cessé de collecter, sans que rien ne dise que la non-fuite n'était plus
+  // vérifiée : un `readFileSync` qui échoue au chargement du module fait
+  // disparaître le fichier de test entier, pas seulement son assertion.
   const page = readFileSync(
-    new URL("../app/quiz/[slug]/page.tsx", import.meta.url),
+    new URL("../app/(player)/quiz/[slug]/page.tsx", import.meta.url),
     "utf8",
   );
   const card = readFileSync(

@@ -21,9 +21,7 @@ import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
 import {
-  playOnLightSurface,
-  resolveWheelStyle,
-  scratchCover,
+  playOnLightSurface,  scratchCover,
   type WheelStyle,
 } from "@/lib/wheel-style";
 
@@ -41,7 +39,7 @@ export function ScratchExperience({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
 }: {
   slug: string;
@@ -50,16 +48,14 @@ export function ScratchExperience({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /**
    * Le commerçant propose-t-il le partage du jeu après la partie ?
    * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
    * `campaigns.share_enabled`.
    */
   shareEnabled: boolean;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  // Thème « kermesse » : même bascule de classes que PlayExperience.
+}) {  // Thème « kermesse » : même bascule de classes que PlayExperience.
   const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);
@@ -228,6 +224,7 @@ export function ScratchExperience({
             buttonFrom={style.buttonFrom}
             buttonTo={style.buttonTo}
             cover={cover}
+            kermesse={kermesse}
             onRevealed={handleRevealed}
           />
         </div>
@@ -273,7 +270,7 @@ export function ScratchExperience({
           <h2 className={`text-2xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Impossible de jouer</h2>
           <p className={playText.body(kermesse)}>{error}</p>
           {nextEligibleAt && (
-            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
+            <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
               ⏱ Revenez dans <Countdown target={nextEligibleAt} />
             </p>
           )}

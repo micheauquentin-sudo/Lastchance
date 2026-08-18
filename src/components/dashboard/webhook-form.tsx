@@ -85,7 +85,7 @@ export function WebhookForm({
             {revealed ? "Masquer" : "Afficher"}
           </button>
         </div>
-        <p className="mt-1 text-xs text-zinc-400">
+        <p className="mt-1 text-xs text-k-muted">
           Signe chaque envoi (HMAC SHA-256) dans le header
           X-Lastchance-Signature — à vérifier côté récepteur.
         </p>

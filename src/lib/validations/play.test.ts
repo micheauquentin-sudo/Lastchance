@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { claimSchema, isPlausibleBirthDate } from "./play";
+import { isPlausibleBirthDate } from "@/lib/claim-libelles";
+import { claimSchema } from "./play";
 
 const NOW = new Date("2026-07-21T12:00:00Z");
 

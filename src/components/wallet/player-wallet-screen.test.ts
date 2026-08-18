@@ -31,7 +31,7 @@ const SOURCE_ECRAN = readFileSync(
   "src/components/wallet/player-wallet-screen.tsx",
   "utf8",
 );
-const SOURCE_PAGE = readFileSync("src/app/portefeuille/page.tsx", "utf8");
+const SOURCE_PAGE = readFileSync("src/app/(player)/portefeuille/page.tsx", "utf8");
 /** Les deux fichiers qui touchent un code de retrait, et eux seuls. */
 const FICHIERS = [
   ["l'écran", SOURCE_ECRAN],

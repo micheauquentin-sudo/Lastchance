@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   activeProgressionSeason,
-  deriveProgressionRequestId,
   mapOrgProgressionSnapshot,
   mapPlayerProgressionArchive,
   mapPlayerProgressionSnapshot,
   mapProgressionChestOpening,
   PROGRESSION_GENERIC_ERROR,
-  PROGRESSION_REQUEST_WINDOW_MS,
   progressionErrorMessage,
 } from "./meta-progression";
+// Module SERVEUR séparé (il porte `node:crypto`) — voir son en-tête.
+import {
+  deriveProgressionRequestId,
+  PROGRESSION_REQUEST_WINDOW_MS,
+} from "./progression-request-id";
 import {
   activateProgressionSeasonSchema,
   createProgressionBadgeSchema,

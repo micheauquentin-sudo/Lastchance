@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Événement de pronostics GÉNÉRIQUE (hors football) — miroir de
@@ -151,5 +152,20 @@ test.describe("pronostics génériques — parcours joueur d'un événement", ()
     ).toBeVisible();
     await expect(page.getByText(CHOICE_PROMPT)).toHaveCount(0);
     await expect(page.getByText("Bonne réponse")).toHaveCount(0);
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — l'événement générique de pronostics", () => {
+  test("l'événement générique de pronostics sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto(`/pronos/${SLUG}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 import { ouvrirTuile } from "./helpers";
 
 /**
@@ -109,5 +110,22 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
     // ── 6. Le brouillon est CONFIGURÉ : le jeu du modèle est en place.
     await ouvrirTuile(page, /Développer «.*Vos jeux/);
     await expect(page.getByText(/La machine de l.happy hour/)).toBeVisible();
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — le catalogue de modèles", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("le catalogue de modèles sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto("/dashboard/discover");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

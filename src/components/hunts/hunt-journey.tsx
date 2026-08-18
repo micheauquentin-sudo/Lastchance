@@ -430,12 +430,22 @@ function HuntClaimForm({ stepToken }: { stepToken: string }) {
     formEvent.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await claimHuntReward({ stepToken, email, marketingOptIn });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      // Le rappel par email est OPTIONNEL : le code de gain est DÉJÀ affiché
+      // au-dessus de ce formulaire. Une exception ici (réseau coupé en
+      // boutique, action indisponible) n'était rattrapée par rien et partait
+      // vers la frontière d'erreur, qui remplace tout l'écran — le joueur
+      // perdait son code pour avoir demandé un confort. L'échec reste donc
+      // local au formulaire.
+      try {
+        const result = await claimHuntReward({ stepToken, email, marketingOptIn });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setSent(result.data.emailed);
+      } catch {
+        setError("Envoi impossible, votre code reste affiché ci-dessus.");
       }
-      setSent(result.data.emailed);
     });
   };
 

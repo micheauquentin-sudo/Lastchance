@@ -7,6 +7,7 @@
  * `.gitignore` couvre `Input/`). `scripts/optimiser-fonds.mjs` — script npm
  * `assets:fonds` — en dérive les seuls artefacts commités :
  *
+ *   public/fonds/<cle>-640.webp     ← la marche des petits mobiles
  *   public/fonds/<cle>-960.webp
  *   public/fonds/<cle>-1280.webp
  *   public/fonds/<cle>-1672.webp     ← largeur NATIVE, jamais agrandie
@@ -18,8 +19,12 @@
  *
  * ── Une seule variante chargée par page ──────────────────────
  *
- * `fondSrcSet` sert les trois largeurs au navigateur, qui n'en télécharge
- * qu'UNE selon son viewport et son ratio de pixels. La vignette est un usage
+ * `fondSrcSet` sert les quatre largeurs au navigateur, qui n'en télécharge
+ * qu'UNE selon son viewport et son ratio de pixels. La plus basse a longtemps
+ * été 960, ce qui rendait le choix illusoire pour le parc qui en a le plus
+ * besoin : un téléphone de 360 px CSS à densité 1,75 demande ~630 px et
+ * recevait 960 — la moitié des pixels payés pour rien, sur le réseau le plus
+ * lent. 640 est cette marche manquante. La vignette est un usage
  * distinct (le sélecteur de l'éditeur, qui en affiche dix d'un coup) et ne fait
  * donc pas partie du srcset : la mélanger aux largeurs de rendu ferait choisir
  * une image de 360 px comme fond plein écran sur un petit mobile.
@@ -74,13 +79,13 @@ export const FOND_LABELS: Record<FondKey, string> = {
 };
 
 /**
- * Variantes produites par `scripts/optimiser-fonds.mjs`. Les trois nombres
+ * Variantes produites par `scripts/optimiser-fonds.mjs`. Les quatre nombres
  * sont des largeurs de rendu ; `"vignette"` est l'aperçu 360 px du sélecteur.
  */
-export type FondLargeur = 960 | 1280 | 1672 | "vignette";
+export type FondLargeur = 640 | 960 | 1280 | 1672 | "vignette";
 
-/** Les trois largeurs de rendu, dans l'ordre du srcset. */
-const LARGEURS_RENDU = [960, 1280, 1672] as const;
+/** Les quatre largeurs de rendu, dans l'ordre du srcset. */
+const LARGEURS_RENDU = [640, 960, 1280, 1672] as const;
 
 /** URL publique d'une variante. */
 export function fondSrc(cle: FondKey, largeur: FondLargeur): string {
@@ -88,7 +93,7 @@ export function fondSrc(cle: FondKey, largeur: FondLargeur): string {
 }
 
 /**
- * Attribut `srcSet` des trois largeurs de rendu — la vignette en est exclue
+ * Attribut `srcSet` des quatre largeurs de rendu — la vignette en est exclue
  * délibérément (voir l'en-tête).
  */
 export function fondSrcSet(cle: FondKey): string {

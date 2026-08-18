@@ -44,7 +44,7 @@ export default async function LoginPage({
         Pas encore de compte ?{" "}
         <Link
           href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-          className="font-medium text-orange-600 hover:underline"
+          className="font-medium text-k-orange-text hover:underline"
         >
           Essai gratuit
         </Link>

@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useModalFocus } from "@/components/ui/use-modal-focus";
 import {
   getCalendarState,
   joinCalendar,
@@ -747,9 +748,11 @@ function RevealDialog({
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // Focalisait bien son bouton de fermeture, mais ne piégeait pas Tab : on
+  // ressortait dans la page trois tabulations plus loin, modale ouverte.
+  const dialogue = useModalFocus<HTMLDivElement>(closeRef);
 
   useEffect(() => {
-    closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -806,6 +809,8 @@ function RevealDialog({
       onClick={onClose}
     >
       <div
+        ref={dialogue}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="calendar-reveal-title"

@@ -440,7 +440,7 @@ function PhoneScreen({
               <button
                 type="button"
                 onClick={onReset}
-                className="mt-auto w-full rounded-full border border-orange-200 bg-white py-2.5 text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50"
+                className="mt-auto w-full rounded-full border border-orange-200 bg-white py-2.5 text-sm font-semibold text-k-orange-text transition-colors hover:bg-orange-50"
               >
                 Rejouer
               </button>

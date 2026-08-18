@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Newsletter de bout en bout via la FILE DE TRAVAUX (audit #7) :
@@ -72,5 +73,22 @@ test.describe("newsletter — composition, envoi, journal", () => {
     await expect(page.getByText(subject)).toBeVisible();
     await expect(page.getByText("Envoyé", { exact: true }).first()).toBeVisible();
     await expect(page.getByText(/3\/3 envoyés/).first()).toBeVisible();
+  });
+});
+
+/**
+ * Filet de contraste et de structure — le capteur, pas le parcours.
+ *
+ * Cette spec prouvait le comportement et rien d'autre : aucune de ses pages
+ * n'était scannée. Les quinze récidives de contraste de l'audit sont passées
+ * par là — un écran couvert fonctionnellement passe pour un écran couvert.
+ */
+test.describe("accessibilité — la newsletter", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("la newsletter sans violation axe serious/critical", async ({ page }, testInfo) => {
+    await page.goto("/dashboard/newsletter");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoA11yViolations(page, testInfo);
   });
 });

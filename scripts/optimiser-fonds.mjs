@@ -5,7 +5,7 @@
 //
 // Entrée  : Input/fonds/<cle>.png — les originaux ChatGPT du propriétaire,
 //           1672x941, jamais retouchés ni commités (.gitignore couvre Input/).
-// Sortie  : public/fonds/<cle>-{960,1280,1672}.webp + <cle>-vignette.webp
+// Sortie  : public/fonds/<cle>-{640,960,1280,1672}.webp + <cle>-vignette.webp
 //
 // Recette sharp identique à src/actions/branding.ts:60-66 (q88, effort 4,
 // jamais d'agrandissement) : c'est la doctrine d'optimisation du dépôt —
@@ -18,7 +18,12 @@ import sharp from "sharp";
 
 const SRC = path.resolve("Input/fonds");
 const OUT = path.resolve("public/fonds");
-const LARGEURS = [960, 1280, 1672];
+// 640 est la PREMIÈRE marche, et elle manquait : un téléphone en 360 px CSS à
+// densité 1,75 demande ~630 px et se voyait servir la variante 960 — 50 % de
+// pixels payés pour rien sur le réseau le plus lent du parc. Le srcset partait
+// de 960 parce que c'était la plus petite largeur produite, pas parce que
+// c'était la plus petite utile.
+const LARGEURS = [640, 960, 1280, 1672];
 const VIGNETTE = 360;
 
 const fichiers = (await readdir(SRC)).filter((f) => f.endsWith(".png"));

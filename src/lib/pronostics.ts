@@ -5,6 +5,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
+import { OPTION_ID_PATTERN, OPTION_LABEL_MAX } from "@/lib/pronostics-bornes";
 import type { Json } from "@/types/database.generated";
 
 // ────────────────────────────────────────────────────────────
@@ -176,13 +177,20 @@ export function isContestQuestionType(
 
 // Bornes miroir des fonctions SQL is_valid_contest_options /
 // is_valid_contest_question / is_valid_contest_answer.
-export const QUESTION_PROMPT_MAX = 300;
-export const OPTIONS_MIN = 2;
-export const OPTIONS_MAX = 50;
-export const OPTION_LABEL_MAX = 120;
-export const OPTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
-/** Borne d'une réponse `number` (miroir du ±1e9 SQL). */
-export const NUMBER_ANSWER_MAX = 1_000_000_000;
+//
+// Elles vivent dans `pronostics-bornes.ts`, un module SANS aucun import : ce
+// fichier-ci tire `node:crypto` (identité joueur, tout en bas), et une chaîne
+// d'imports partie d'une simple borne y embarquait ~121 Ko de polyfill dans
+// deux écrans client. Ré-exportées ici pour que les importateurs serveur
+// existants n'aient rien à changer.
+export {
+  NUMBER_ANSWER_MAX,
+  OPTION_ID_PATTERN,
+  OPTION_LABEL_MAX,
+  OPTIONS_MAX,
+  OPTIONS_MIN,
+  QUESTION_PROMPT_MAX,
+} from "@/lib/pronostics-bornes";
 
 /**
  * Modèle d'événement (`contests.event_kind`) — miroir EXACT du CHECK SQL

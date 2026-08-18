@@ -198,7 +198,7 @@ export default async function ParticipationsPage({
         actions={
           <a
             href={`/dashboard/participations/export${exportQuery ? `?${exportQuery}` : ""}`}
-            className="text-sm font-semibold text-orange-600 hover:underline"
+            className="text-sm font-semibold text-k-orange-text hover:underline"
           >
             Exporter en CSV
           </a>
@@ -219,7 +219,7 @@ export default async function ParticipationsPage({
                 {roi} %
               </span>
             ) : (
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-k-muted">
                 ROI : renseignez le coût des lots (éditeur de roue)
               </span>
             )}
@@ -227,20 +227,20 @@ export default async function ParticipationsPage({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
               <p className="text-2xl font-bold">{funnel.wins}</p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-k-muted">
                 gagnés · {pct(funnel.wins, funnel.spins_total)} des{" "}
                 {funnel.spins_total} tours
               </p>
             </div>
             <div>
               <p className="text-2xl font-bold">{funnel.claimed}</p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-k-muted">
                 réclamés · {pct(funnel.claimed, funnel.wins)} des gagnés
               </p>
             </div>
             <div>
               <p className="text-2xl font-bold">{funnel.redeemed}</p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-k-muted">
                 retirés · {pct(funnel.redeemed, funnel.claimed)} des réclamés
                 {funnel.expired > 0 && ` · ${funnel.expired} expirés`}
                 {funnel.cancelled > 0 && ` · ${funnel.cancelled} annulés`}
@@ -249,7 +249,7 @@ export default async function ParticipationsPage({
             {montants && (
               <div>
                 <p className="text-2xl font-bold">{euros(montants.panier)}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-k-muted">
                   paniers en caisse · coût des lots retirés{" "}
                   {euros(montants.cout)}
                 </p>
@@ -269,13 +269,13 @@ export default async function ParticipationsPage({
           <div className="flex items-center gap-4">
             <Link
               href="/dashboard/newsletter"
-              className="text-sm font-semibold text-orange-600 hover:underline"
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
               Envoyer un email →
             </Link>
             <a
               href="/dashboard/participations/export?type=newsletter"
-              className="text-sm font-semibold text-orange-600 hover:underline"
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
               Exporter les emails
             </a>
@@ -346,7 +346,7 @@ export default async function ParticipationsPage({
             </select>
           </>
         )}
-        <span className="flex items-center gap-2 text-sm text-zinc-500">
+        <span className="flex items-center gap-2 text-sm text-k-muted">
           <label htmlFor="parts-du">Du</label>
           <input
             id="parts-du"
@@ -373,7 +373,7 @@ export default async function ParticipationsPage({
         {participationFiltresActifs(filtres) && (
           <Link
             href="/dashboard/participations"
-            className="self-center text-sm text-zinc-500 hover:text-zinc-900"
+            className="self-center text-sm text-k-muted hover:text-zinc-900"
           >
             Réinitialiser
           </Link>
@@ -382,13 +382,13 @@ export default async function ParticipationsPage({
 
       {rows.length === 0 ? (
         <Card className="text-center py-12">
-          <p className="text-zinc-500">Aucune participation trouvée.</p>
+          <p className="text-k-muted">Aucune participation trouvée.</p>
         </Card>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-k-muted">
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Client</th>
                 <th className="px-4 py-3">Lot</th>
@@ -400,16 +400,16 @@ export default async function ParticipationsPage({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id} className="border-b border-zinc-100 last:border-0">
-                  <td className="px-4 py-3 whitespace-nowrap text-zinc-500">
+                  <td className="px-4 py-3 whitespace-nowrap text-k-muted">
                     {formatDate(row.created_at, fuseau)}
                   </td>
                   <td className="px-4 py-3">
                     <p className="font-medium">{row.first_name ?? "Anonyme"}</p>
                     {row.email && (
-                      <p className="text-zinc-500 text-xs">{row.email}</p>
+                      <p className="text-k-muted text-xs">{row.email}</p>
                     )}
                     {row.phone && (
-                      <p className="text-zinc-500 text-xs">{row.phone}</p>
+                      <p className="text-k-muted text-xs">{row.phone}</p>
                     )}
                   </td>
                   <td className="px-4 py-3">{row.prizes?.label ?? "—"}</td>
@@ -418,9 +418,9 @@ export default async function ParticipationsPage({
                   </td>
                   <td className="px-4 py-3">
                     {row.marketing_opt_in ? (
-                      <span className="text-emerald-600 font-medium">Oui</span>
+                      <span className="text-emerald-700 font-medium">Oui</span>
                     ) : (
-                      <span className="text-zinc-400">Non</span>
+                      <span className="text-k-muted">Non</span>
                     )}
                   </td>
                   <td className="px-4 py-3">

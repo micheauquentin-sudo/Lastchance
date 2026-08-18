@@ -5,7 +5,11 @@ import {
   OPTION_LABEL_MAX,
   OPTIONS_MAX,
   OPTIONS_MIN,
-} from "@/lib/pronostics";
+  // `@/lib/pronostics-bornes` et NON `@/lib/pronostics` : ce dernier importe
+  // `node:crypto`, et `quiz-editor.tsx` (client) importe d'ici le seul littéral
+  // QUIZ_DELETE_LOSS_HINT — la chaîne suffisait à embarquer ~121 Ko de
+  // polyfill dans l'écran. Garde de source : import-sans-crypto.test.ts.
+} from "@/lib/pronostics-bornes";
 import {
   normalizeQuizText,
   QUIZ_IMAGE_URL_MAX,

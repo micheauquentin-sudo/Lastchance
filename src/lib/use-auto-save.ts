@@ -42,11 +42,19 @@ import type { RefObject } from "react";
  * d'enregistrement automatique du tout : sans bouton, l'utilisateur n'a plus
  * aucun autre signal, et il part en croyant son travail sauvé.
  *
- * ── 3. QUITTER UN CHAMP VIDE LA FILE ──
+ * ── 3. QUITTER UN CHAMP — OU L'ONGLET — VIDE LA FILE ──
  *
  * Sortir d'un champ (`focusout`) ne fait pas attendre le délai restant : la
  * sauvegarde en attente part tout de suite. S'il n'y a rien en attente, il ne se
  * passe RIEN — quitter un formulaire qu'on n'a pas touché ne l'enregistre pas.
+ *
+ * `visibilitychange` → `document.hidden` fait exactement la même chose, et
+ * couvre ce que `focusout` ne voit pas : sur mobile, basculer d'application ou
+ * verrouiller l'écran gèle la page sans déplacer le focus, et le navigateur
+ * peut la décharger ensuite sans autre avertissement (`beforeunload` n'est pas
+ * tenu sur iOS). Sans cet écouteur, la fenêtre de 800 ms du délai était une
+ * fenêtre de PERTE : le commerçant repartait avec sa dernière frappe jamais
+ * enregistrée, et l'écran ne le lui disait pas.
  *
  * On ne distingue PAS le passage à un autre champ du même formulaire d'une
  * sortie complète, et c'est délibéré. Le gain serait nul : le champ qu'on vient
@@ -141,7 +149,7 @@ export function useAutoSave(
       minuteur.current = setTimeout(soumettre, delai);
     };
 
-    const surFocusOut = () => {
+    const viderLaFile = () => {
       // Rien en attente : quitter un formulaire intact ne l'enregistre pas.
       // C'est la moitié qui compte de cette règle — sans elle, un simple
       // passage du focus enregistrerait un formulaire que personne n'a touché.
@@ -149,14 +157,31 @@ export function useAutoSave(
       soumettre();
     };
 
+    /**
+     * L'onglet passe en arrière-plan : c'est le DERNIER instant où le
+     * navigateur nous rend la main. Sur mobile, basculer d'application ou
+     * verrouiller l'écran ne produit pas de `focusout` fiable — la page est
+     * simplement gelée, puis parfois déchargée sans autre événement. Le
+     * `beforeunload`, lui, n'est pas tenu sur iOS.
+     *
+     * Même règle que `focusout` : rien en attente, rien ne part. Le retour au
+     * premier plan (`document.hidden` faux) ne déclenche rien non plus — on
+     * enregistre en partant, jamais en revenant.
+     */
+    const surMasquage = () => {
+      if (document.hidden) viderLaFile();
+    };
+
     form.addEventListener("input", surSaisie);
     form.addEventListener("change", surSaisie);
-    form.addEventListener("focusout", surFocusOut);
+    form.addEventListener("focusout", viderLaFile);
+    document.addEventListener("visibilitychange", surMasquage);
     return () => {
       annuler();
       form.removeEventListener("input", surSaisie);
       form.removeEventListener("change", surSaisie);
-      form.removeEventListener("focusout", surFocusOut);
+      form.removeEventListener("focusout", viderLaFile);
+      document.removeEventListener("visibilitychange", surMasquage);
     };
   }, [formRef, delai, actif]);
 

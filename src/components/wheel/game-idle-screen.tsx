@@ -124,6 +124,11 @@ export function GameIdleScreen({
         <img
           src={logoUrl}
           alt={organizationName}
+          // Dimensions intrinsèques : la place du logo est réservée AVANT son
+          // arrivée. Sans elles le titre et le bouton sautaient vers le bas au
+          // chargement — sur le premier écran du jeu, ouvert au QR code.
+          width={160}
+          height={64}
           className="mx-auto mb-3 h-16 max-w-40 object-contain"
         />
       )}

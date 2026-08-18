@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
-import { isPlausibleBirthDate } from "@/lib/validations/play";
-import { smsConsentLabel } from "@/lib/validations/sms";
+// Deux libellés et une validation de date, sans zod : `@/lib/claim-libelles`
+// est la moitié client de `validations/play` et `validations/sms`, qui
+// n'entraient dans le lot de départ du parcours joueur que pour ces trois
+// symboles-là. Mêmes signatures, même contrat.
+import { isPlausibleBirthDate, smsConsentLabel } from "@/lib/claim-libelles";
 import { playText } from "./play-theme";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
@@ -367,7 +370,7 @@ export function ClaimForm({
         <span>
           J&apos;accepte les conditions du jeu et le traitement de mes
           données pour la remise de mon gain.{" "}
-          <span className={kermesse ? "text-k-orange" : "text-violet-300"}>*</span>
+          <span className={kermesse ? "text-k-orange-text" : "text-violet-300"}>*</span>
         </span>
       </label>
 
@@ -585,7 +588,7 @@ export function RedeemCodeScreen({
         </div>
       )}
       {secondsLeft != null && (
-        <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
+        <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
           ⏱ Ce code disparaît dans {secondsLeft} s
         </p>
       )}

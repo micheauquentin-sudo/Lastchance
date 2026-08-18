@@ -11,6 +11,13 @@ import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker, type RankingOption } from "@/components/ui/ranking-picker";
 import {
+  NUMBER_ANSWER_MAX as NUMBER_MAX,
+  OPTION_LABEL_MAX,
+  OPTIONS_MAX,
+  OPTIONS_MIN,
+  QUESTION_PROMPT_MAX as PROMPT_MAX,
+} from "@/lib/pronostics-bornes";
+import {
   suggestedQuestionsFor,
   type GenericSuggestedQuestion,
 } from "@/components/dashboard/contest-event-kinds";
@@ -29,12 +36,13 @@ import { useActionForm } from "@/lib/use-action-form";
    useActionForm et non useActionState : l'état de chargement doit retomber
    même quand le rendu ne rejoue pas la revalidation — docs/bugs.md. */
 
-/** Bornes miroir de src/lib/pronostics.ts (et des CHECK SQL). */
-const PROMPT_MAX = 300;
-const OPTIONS_MIN = 2;
-const OPTIONS_MAX = 50;
-const OPTION_LABEL_MAX = 120;
-const NUMBER_MAX = 1000000000;
+// Les cinq bornes ci-dessus étaient RECOPIÉES ici, comme dans
+// `quiz-editor.tsx`, sous un commentaire qui donnait son motif : « miroir de
+// src/lib/pronostics.ts, non importable côté client (node:crypto) ». Le motif
+// a cessé d'être vrai — `@/lib/pronostics-bornes` n'importe rien — et un
+// commentaire qui ment coûte plus cher que la recopie qu'il justifie. Les
+// CHECK SQL restent l'autorité finale ; ce module en est désormais le SEUL
+// miroir, au lieu de trois. Valeurs vérifiées identiques avant la bascule.
 
 export type GenericQuestionType = "choice" | "ranking" | "number";
 

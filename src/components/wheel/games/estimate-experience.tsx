@@ -1,6 +1,6 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { SkillGameShell } from "../skill-game-shell";
 import { EstimateChallenge } from "./estimate-challenge";
@@ -17,7 +17,7 @@ export function EstimateExperience({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
 }: {
   slug: string;
@@ -25,11 +25,11 @@ export function EstimateExperience({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
 }) {
-  const kermesse = playOnLightSurface(resolveWheelStyle(rawStyle));
+  const kermesse = playOnLightSurface(style);
 
   return (
     <SkillGameShell
@@ -38,7 +38,7 @@ export function EstimateExperience({
       organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
-      style={rawStyle}
+      style={style}
       shareEnabled={shareEnabled}
       gameType="estimate"
       renderChallenge={(challenge, submit, pending) =>

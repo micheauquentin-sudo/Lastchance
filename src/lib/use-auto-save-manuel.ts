@@ -41,9 +41,10 @@ import { DELAI_AUTO_SAVE_MS } from "@/lib/use-auto-save";
  *    sans quoi ouvrir un calendrier posterait ses vingt-quatre cases.
  * 2. **Un silence qui se voit.** `valide()` peut refuser le départ, mais
  *    `bloqueParValidation` remonte au composant, qui DOIT l'afficher.
- * 3. **Quitter le bloc vide la file.** `focusout` (seul écouteur natif
- *    conservé — il ne précède aucune synthèse React porteuse de valeur) fait
- *    partir tout de suite ce qui attendait. Rien en attente, rien ne part.
+ * 3. **Quitter le bloc — ou l'onglet — vide la file.** `focusout` et
+ *    `visibilitychange` (les deux seuls écouteurs natifs conservés — aucun ne
+ *    précède une synthèse React porteuse de valeur) font partir tout de suite
+ *    ce qui attendait. Rien en attente, rien ne part.
  *
  * ── LA FILE D'UNE PLACE ──
  *
@@ -182,22 +183,37 @@ export function useAutoSaveManuel(
     return annuler;
   }, [signature, actif, delai, annuler, soumettre]);
 
-  /** `focusout` = flush de ce qui attend. Seul écouteur natif conservé. */
+  /**
+   * `focusout` = flush de ce qui attend. Seuls écouteurs natifs conservés —
+   * aucun des deux ne précède une synthèse React porteuse de valeur.
+   *
+   * `visibilitychange` → `document.hidden` fait la même chose, sur l'événement
+   * que `focusout` ne voit pas : sur mobile, basculer d'application ou
+   * verrouiller l'écran gèle la page sans déplacer le focus, et le navigateur
+   * peut la décharger ensuite sans autre avertissement (`beforeunload` n'est
+   * pas tenu sur iOS). Sans lui, le délai était une fenêtre de PERTE.
+   */
   useEffect(() => {
     const conteneur = conteneurRef.current;
     if (!actif || !conteneur) return;
-    const surFocusOut = () => {
+    const viderLaFile = () => {
       if (minuteur.current === null) return;
       soumettre();
     };
-    conteneur.addEventListener("focusout", surFocusOut);
+    const surMasquage = () => {
+      if (document.hidden) viderLaFile();
+    };
+    conteneur.addEventListener("focusout", viderLaFile);
+    document.addEventListener("visibilitychange", surMasquage);
     return () => {
       // Au démontage le minuteur est ANNULÉ, pas vidé : enregistrer pendant
       // un démontage part dans le vide et se déclencherait deux fois en
-      // StrictMode. La fenêtre restante est couverte par `focusout` — on
-      // quitte un champ avant de quitter une page.
+      // StrictMode. La fenêtre restante est couverte par `focusout` et par le
+      // masquage de l'onglet — on quitte un champ, ou l'application, avant de
+      // quitter une page.
       annuler();
-      conteneur.removeEventListener("focusout", surFocusOut);
+      conteneur.removeEventListener("focusout", viderLaFile);
+      document.removeEventListener("visibilitychange", surMasquage);
     };
   }, [conteneurRef, actif, annuler, soumettre]);
 

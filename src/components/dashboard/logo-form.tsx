@@ -70,7 +70,18 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
       )}
 
       <form onSubmit={uploadSubmit} className="flex flex-wrap items-center gap-3">
+        {/* Le champ n'avait AUCUN nom accessible — seule violation axe
+            `critical` de la campagne, et un vrai blocage : un lecteur d'écran
+            annonçait « bouton parcourir », sans dire ce qu'on téléverse.
+            Étiquette réelle (`htmlFor`), invisible parce que le contexte
+            visuel — le titre de la carte et l'aide sous le champ — le dit déjà
+            aux voyants ; elle porte donc aussi les contraintes de format, que
+            la ligne d'aide répète. */}
+        <label htmlFor="logo-fichier" className="sr-only">
+          Fichier du logo — PNG, JPEG ou WebP, 2 Mo maximum
+        </label>
         <input
+          id="logo-fichier"
           type="file"
           name="logo"
           accept="image/png,image/jpeg,image/webp"
@@ -81,7 +92,7 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
           {uploading ? "Envoi…" : logoUrl ? "Remplacer" : "Ajouter"}
         </Button>
       </form>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-k-muted">
         PNG, JPEG ou WebP · 2 Mo max · fond transparent recommandé.
       </p>
       <FieldError
