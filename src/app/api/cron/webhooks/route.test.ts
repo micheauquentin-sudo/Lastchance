@@ -50,18 +50,56 @@ describe("GET /api/cron/webhooks", () => {
   it("compte les accusés en dead-letter sans dégrader le worker", async () => {
     // L'endpoint distant échoue, pas le drain : dégrader ici rendrait le
     // worker rouge pour la panne de quelqu'un d'autre.
-    mocks.drain.mockResolvedValue({ claimed: 3, delivered: 2, deadLettered: 1 });
+    mocks.drain.mockResolvedValue({
+      claimed: 3,
+      delivered: 2,
+      deadLettered: 1,
+      deferred: 0,
+      settleFailed: 0,
+    });
 
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ ok: true, claimed: 3, delivered: 2, deadLettered: 1 });
+    expect(body).toEqual({
+      ok: true,
+      claimed: 3,
+      delivered: 2,
+      deadLettered: 1,
+      deferred: 0,
+      settleFailed: 0,
+    });
     expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: "run-1" }),
       "succeeded",
-      { claimed: 3, delivered: 2, deadLettered: 1 },
+      { claimed: 3, delivered: 2, deadLettered: 1, deferred: 0, settleFailed: 0 },
+    );
+  });
+
+  it("borne le drain par un budget temps", async () => {
+    // Sans budget, un lot d'endpoints lents faisait expirer la fonction au
+    // milieu d'une livraison : sans réponse, sans clôture, et sans trace.
+    mocks.drain.mockResolvedValue({
+      claimed: 8,
+      delivered: 5,
+      deadLettered: 0,
+      deferred: 3,
+      settleFailed: 0,
+    });
+
+    await GET(request());
+
+    expect(mocks.drain).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ budgetMs: 45_000 }),
+    );
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "succeeded",
+      expect.objectContaining({ deferred: 3 }),
     );
   });
 
@@ -75,7 +113,7 @@ describe("GET /api/cron/webhooks", () => {
       expect.anything(),
       expect.objectContaining({ id: "run-1" }),
       "failed",
-      { claimed: 0, delivered: 0, deadLettered: 0 },
+      { claimed: 0, delivered: 0, deadLettered: 0, deferred: 0, settleFailed: 0 },
       "webhook_drain_failed",
     );
     // Le message brut (URL comprise) part à Sentry, jamais au journal.
@@ -86,19 +124,32 @@ describe("GET /api/cron/webhooks", () => {
     // Filet de sécurité : une file de webhooks qui s'accumule coûte plus cher
     // qu'un passage non journalisé. `null` = pas de journal, le drain a lieu.
     mocks.startWorkerRunSafely.mockResolvedValue(null);
-    mocks.drain.mockResolvedValue({ claimed: 2, delivered: 2, deadLettered: 0 });
+    mocks.drain.mockResolvedValue({
+      claimed: 2,
+      delivered: 2,
+      deadLettered: 0,
+      deferred: 0,
+      settleFailed: 0,
+    });
 
     const response = await GET(request());
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ ok: true, claimed: 2, delivered: 2, deadLettered: 0 });
+    expect(body).toEqual({
+      ok: true,
+      claimed: 2,
+      delivered: 2,
+      deadLettered: 0,
+      deferred: 0,
+      settleFailed: 0,
+    });
     expect(mocks.drain).toHaveBeenCalled();
     expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
       expect.anything(),
       null,
       "succeeded",
-      { claimed: 2, delivered: 2, deadLettered: 0 },
+      { claimed: 2, delivered: 2, deadLettered: 0, deferred: 0, settleFailed: 0 },
     );
   });
 });

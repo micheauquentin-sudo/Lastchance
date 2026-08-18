@@ -15,33 +15,28 @@ import { countStaleSmsDeliveries, processSmsSendJob } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { drainWebhookDeliveries } from "@/lib/webhook-worker";
 import {
-  finishWorkerRun,
-  startWorkerRun,
+  finishWorkerRunSafely,
+  startWorkerRunSafely,
   type WorkerRunStatus,
 } from "@/lib/worker-health";
 
 /**
  * Worker de la file de travaux : GET /api/cron/jobs (CRON_SECRET).
  *
- * ── LA CADENCE RÉELLE : UNE FOIS PAR JOUR ───────────────────
+ * ── LA CADENCE RÉELLE : TOUTES LES 5 MINUTES ────────────────
  *
- * Cet en-tête a longtemps annoncé « toutes les 5 minutes par pg_cron ; un cron
- * Vercel quotidien reste en filet ». Les deux moitiés étaient inversées.
+ * Cet en-tête a annoncé « une fois par jour », et ce n'est plus vrai. La
+ * planification pg_cron `lastchance-jobs-worker` (migration 20260722100000)
+ * exigeait deux secrets Vault, `jobs_worker_url` et `sync_contests_secret` :
+ * ils sont posés depuis le chantier « cadence-file » (2026-08-01, ADR-062, une
+ * action serveur les dépose sans qu'un humain recopie `CRON_SECRET`). Cette
+ * route est donc appelée TOUTES LES 5 MINUTES en production ; le cron Vercel
+ * `20 4 * * *` (vercel.json) n'est plus qu'un filet.
  *
- * Ce qui tourne aujourd'hui, c'est le cron VERCEL, `20 4 * * *` (vercel.json) :
- * UNE FOIS PAR JOUR, comme les dix crons du fichier — contrainte du plan, et
- * décision qui appartient au client. La planification pg_cron à 5 minutes
- * (`lastchance-jobs-worker`, migration 20260722100000) existe bien mais reste
- * INACTIVE : son `where` exige la présence de DEUX secrets Vault,
- * `jobs_worker_url` (l'URL de cette route) et `sync_contests_secret` (le secret
- * partagé avec le worker de synchro). Les poser suffit à l'activer — aucune
- * migration n'est nécessaire.
- *
- * CONSÉQUENCE PRODUIT, écrite plutôt qu'adoucie : tout ce qui passe par cette
- * file — newsletter, relances, automatisations, webhooks sortants, code de
- * retrait par SMS — peut attendre jusqu'à 24 h. Les fonctionnalités sont
- * correctes ; leur cadence les rend aujourd'hui peu utiles là où le délai
- * compte.
+ * CONSÉQUENCE, et c'est ce qui rend le budget temps ci-dessous nécessaire : le
+ * reliquat d'un passage n'attend plus 24 h mais 5 minutes. Différer proprement
+ * coûte donc peu, et vaut toujours mieux que se faire couper par la fonction au
+ * milieu d'un travail.
  *
  * À chaque passage :
  *   1. reprise des jobs zombies (verrou expiré) ;
@@ -75,15 +70,15 @@ async function runWorker(request: Request): Promise<NextResponse> {
   const startedAt = Date.now();
   const admin = createAdminClient();
   const probeOnly = new URL(request.url).searchParams.get("probe") === "1";
-  let run: Awaited<ReturnType<typeof startWorkerRun>>;
-  try {
-    run = await startWorkerRun(admin, "jobs");
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Heartbeat indisponible" },
-      { status: 500, headers: { "cache-control": "no-store" } },
-    );
-  }
+  // OUVERTURE BEST-EFFORT, comme expire-trials, reengage et webhooks. Ce worker
+  // était le seul des quatre à refuser de travailler sans journal de santé, et
+  // rien nulle part ne justifiait l'asymétrie : le journal OBSERVE le travail,
+  // il ne le gouverne pas. La crainte qu'il couvrait — deux passages concurrents
+  // — est déjà écartée en amont, `claim_jobs` posant un verrou par job
+  // (`locked_until`, `for update skip locked`) et l'idempotence bornant les
+  // effets. Refuser ici, c'est laisser une panne du journal arrêter la file
+  // entière : newsletters, relances, SMS.
+  const run = await startWorkerRunSafely(admin, "jobs");
 
   const totals = {
     revived: 0,
@@ -97,7 +92,13 @@ async function runWorker(request: Request): Promise<NextResponse> {
     /** Lignes SMS figées en `sending` : crédit débité, envoi non prouvé. */
     smsStale: 0,
   };
-  let webhooks = { claimed: 0, delivered: 0, deadLettered: 0 };
+  let webhooks = {
+    claimed: 0,
+    delivered: 0,
+    deadLettered: 0,
+    deferred: 0,
+    settleFailed: 0,
+  };
 
   try {
     // Une probe doit être strictement inerte hors de son propre job : elle ne
@@ -112,8 +113,8 @@ async function runWorker(request: Request): Promise<NextResponse> {
     }
 
     // Traite par petits lots tant que du travail est dû et que le budget
-    // temps le permet — le passage suivant reprend le reste, c'est-à-dire
-    // demain tant que la cadence est quotidienne (voir l'en-tête).
+    // temps le permet — le passage suivant, cinq minutes plus tard, reprend
+    // le reste (voir l'en-tête).
     while (Date.now() - startedAt < TIME_BUDGET_MS) {
       const { data, error } = await admin.rpc("claim_jobs", {
         p_types: probeOnly
@@ -166,8 +167,14 @@ async function runWorker(request: Request): Promise<NextResponse> {
     }
 
     // Le probe ne réclame et ne modifie aucun job métier ni webhook.
+    // Le drain PARTAGE l'horloge du passage : sans elle, il repartait avec un
+    // budget neuf alors que la file de jobs venait d'en consommer l'essentiel,
+    // et c'est la fonction Vercel qui tranchait — au milieu d'une livraison.
     if (!probeOnly && Date.now() - startedAt < TIME_BUDGET_MS) {
-      webhooks = await drainWebhookDeliveries(admin);
+      webhooks = await drainWebhookDeliveries(admin, {
+        budgetMs: TIME_BUDGET_MS,
+        startedAt,
+      });
     }
 
     // Lecture d'OBSERVATION seule, après le travail : une ligne SMS restée en
@@ -181,11 +188,18 @@ async function runWorker(request: Request): Promise<NextResponse> {
 
     const runStatus: WorkerRunStatus =
       totals.failed > 0 || totals.partial > 0 ? "degraded" : "succeeded";
-    await finishWorkerRun(admin, run, runStatus, {
+    // Clôture best-effort, corollaire de l'ouverture : les jobs sont traités et
+    // leurs effets sont partis ; un journal muet ne doit pas rendre un 500 qui
+    // ferait rejouer le passage.
+    await finishWorkerRunSafely(admin, run, runStatus, {
       ...totals,
       webhooksClaimed: webhooks.claimed,
       webhooksDelivered: webhooks.delivered,
       webhooksDeadLettered: webhooks.deadLettered,
+      // Reliquat relâché faute de budget, et clôtures refusées par la base :
+      // deux silences du drain, désormais lisibles au heartbeat.
+      webhooksDeferred: webhooks.deferred,
+      webhooksSettleFailed: webhooks.settleFailed,
     });
 
     return NextResponse.json(
@@ -203,11 +217,7 @@ async function runWorker(request: Request): Promise<NextResponse> {
     );
   } catch (error) {
     reportError("cron.jobs", error);
-    try {
-      await finishWorkerRun(admin, run, "failed", totals, "worker_execution_failed");
-    } catch {
-      // L'erreur de heartbeat est déjà remontée par finishWorkerRun.
-    }
+    await finishWorkerRunSafely(admin, run, "failed", totals, "worker_execution_failed");
     return NextResponse.json(
       { ok: false, error: "Exécution du worker impossible" },
       { status: 500, headers: { "cache-control": "no-store" } },
