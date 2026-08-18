@@ -36,4 +36,8 @@ jobs:
           # domaine de production stable.
           PRODUCTION_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url || 'https://lastchance-mu.vercel.app' }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          # Sans ce secret, la sonde retombe sur son repli « détail non
+          # demandé » : le verdict global reste juste mais l'incident n'est
+          # plus nommé — ce qui était toute la raison de la porte CRON_SECRET.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: node scripts/verify-production-health.mjs
