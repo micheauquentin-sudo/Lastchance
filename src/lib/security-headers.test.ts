@@ -218,7 +218,9 @@ describe("Invariants des expériences publiques à nonce", () => {
 
   it("rend chaque route à la requête (force-dynamic)", () => {
     for (const prefix of PUBLIC_NONCE_PREFIXES) {
-      const files = routeFiles(path.join(root, "src", "app", prefix));
+      // Les sept préfixes vivent sous le groupe `(player)`, qui ne consomme
+      // aucun segment d'URL : le chemin disque porte le groupe, pas l'URL.
+      const files = routeFiles(path.join(root, "src", "app", "(player)", prefix));
       expect(files.length).toBeGreaterThan(0);
       for (const file of files) {
         expect(
@@ -295,7 +297,7 @@ describe("Invariants des expériences publiques à nonce", () => {
     // Contre-épreuve du choix documenté : /play est mise en cache, un
     // nonce par requête y serait servi périmé.
     const page = readFileSync(
-      path.join(root, "src", "app", "play", "[slug]", "page.tsx"),
+      path.join(root, "src", "app", "(player)", "play", "[slug]", "page.tsx"),
       "utf8",
     );
     expect(page).toContain("export const revalidate");

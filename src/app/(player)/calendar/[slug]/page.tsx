@@ -65,18 +65,6 @@ export default async function CalendarPage({
 
   const admin = createAdminClient();
 
-  // dayIndex → id : l'état public masque l'id des cases (sécurité), mais
-  // open_calendar_box l'exige. On le résout côté serveur (service role, scopé).
-  const { data: dayRows } = await admin
-    .from("calendar_days")
-    .select("id, day_index")
-    .eq("calendar_id", ctx.calendarId)
-    .eq("organization_id", ctx.organization.id);
-  const dayIds: Record<number, string> = {};
-  for (const d of (dayRows ?? []) as { id: string; day_index: number }[]) {
-    dayIds[d.day_index] = d.id;
-  }
-
   // On ne précharge QUE les roues des cases DÉJÀ OUVERTES par ce joueur (l'état
   // public expose alors `targetWheelId`) : rien pour les cases verrouillées /
   // futures — sinon leurs lots fuiteraient dans le payload RSC. Le bundle d'une
@@ -84,11 +72,26 @@ export default async function CalendarPage({
   const openedSpinWheelIds = ctx.publicState.days
     .filter((d) => d.status === "opened" && d.contentType === "spin" && d.targetWheelId)
     .map((d) => d.targetWheelId as string);
-  const spinBundles = await loadCalendarSpinBundles(
-    admin,
-    openedSpinWheelIds,
-    ctx.organization.id,
-  );
+
+  // Les deux lectures ne dépendent pas l'une de l'autre : toutes deux ne
+  // partent que de `ctx`. Les enchaîner ajoutait un aller-retour Postgres
+  // entier avant le premier octet d'une page ouverte au QR code, en boutique,
+  // sur réseau mobile — le seul contexte où cette page est jamais lue.
+  //
+  // dayIndex → id : l'état public masque l'id des cases (sécurité), mais
+  // open_calendar_box l'exige. On le résout côté serveur (service role, scopé).
+  const [{ data: dayRows }, spinBundles] = await Promise.all([
+    admin
+      .from("calendar_days")
+      .select("id, day_index")
+      .eq("calendar_id", ctx.calendarId)
+      .eq("organization_id", ctx.organization.id),
+    loadCalendarSpinBundles(admin, openedSpinWheelIds, ctx.organization.id),
+  ]);
+  const dayIds: Record<number, string> = {};
+  for (const d of (dayRows ?? []) as { id: string; day_index: number }[]) {
+    dayIds[d.day_index] = d.id;
+  }
 
   return (
     <Shell theme={ctx.publicState.calendar.theme}>

@@ -65,24 +65,27 @@ export default async function QuizPage({
 
   const quiz = ctx.publicState.quiz;
 
-  // Classement : servi uniquement par les modes qui l'exposent au joueur.
-  let leaderboard: QuizLeaderboardEntry[] = [];
-  if (quiz.rewardMode === "ranking" || quiz.rewardMode === "draw") {
-    leaderboard = await getQuizLeaderboard({ quizId: ctx.quizId, limit: 20 });
-  }
-
-  // Tour de roue DÉJÀ acquis et non consommé (le joueur revient sur la page) :
-  // on précharge SA roue, et elle seule — le joueur y a droit à cet instant.
-  // Rien n'est préchargé tant qu'aucun lot n'a été émis pour lui.
+  // Les deux lectures ne dépendent pas l'une de l'autre : le classement et la
+  // roue déjà acquise partent toutes deux de `ctx`. Les enchaîner ajoutait un
+  // aller-retour complet avant le premier octet d'une page ouverte au QR code
+  // en boutique — et sur les modes `ranking`/`draw`, les DEUX partaient.
   const reward = ctx.publicState.reward;
-  const spinBundles =
+  const [leaderboard, spinBundles] = await Promise.all([
+    // Classement : servi uniquement par les modes qui l'exposent au joueur.
+    quiz.rewardMode === "ranking" || quiz.rewardMode === "draw"
+      ? getQuizLeaderboard({ quizId: ctx.quizId, limit: 20 })
+      : Promise.resolve([] as QuizLeaderboardEntry[]),
+    // Tour de roue DÉJÀ acquis et non consommé (le joueur revient sur la
+    // page) : on précharge SA roue, et elle seule — le joueur y a droit à cet
+    // instant. Rien n'est préchargé tant qu'aucun lot n'a été émis pour lui.
     reward?.spinGrantToken && reward.targetWheelId
-      ? await loadCalendarSpinBundles(
+      ? loadCalendarSpinBundles(
           createAdminClient(),
           [reward.targetWheelId],
           ctx.organization.id,
         )
-      : {};
+      : Promise.resolve({} as Awaited<ReturnType<typeof loadCalendarSpinBundles>>),
+  ]);
   const spinBundle = reward?.targetWheelId
     ? (spinBundles[reward.targetWheelId] ?? null)
     : null;
