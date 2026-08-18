@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -97,4 +97,53 @@ describe("frontières de rendu des routes", () => {
       ).toEqual([]);
     });
   }
+});
+
+/**
+ * Une frontière qui AVALE l'erreur sans la signaler est pire que pas de
+ * frontière.
+ *
+ * `global-error.tsx` était le seul écran d'erreur du produit, et le seul à
+ * appeler `Sentry.captureException`. Poser des `error.tsx` de segment
+ * au-dessus de lui améliore ce que voit l'utilisateur — il garde le layout,
+ * la police, le logo — et, sans précaution, ÉTEINT le signal : une exception
+ * de rendu client interceptée par un segment n'atteint plus jamais Sentry.
+ *
+ * Le prix est payé exactement là où il coûte le plus : sur les parcours
+ * publics `(player)` et `(public)`, ceux qu'un inconnu peut sonder et dont
+ * personne ne remonte les incidents par téléphone.
+ */
+describe("chaque frontière d'erreur remonte ce qu'elle intercepte", () => {
+  it("appelle captureException sur l'erreur reçue", () => {
+    const frontieres = routes(RACINE_APP)
+      .map((r) => r.dossier)
+      .concat(RACINE_APP);
+    const vues = new Set<string>();
+    const muettes: string[] = [];
+    for (const dossier of frontieres) {
+      let courant = dossier;
+      for (;;) {
+        const fichier = join(courant, "error.tsx");
+        if (!vues.has(fichier) && existsSync(fichier)) {
+          vues.add(fichier);
+          const source = readFileSync(fichier, "utf8");
+          // Les deux moitiés : capturer, et capturer L'ERREUR REÇUE — un
+          // `captureException` sur une variable inventée passerait la
+          // première et raterait tout.
+          if (!/Sentry\.captureException\(error\)/.test(source)) {
+            muettes.push(relative(RACINE_APP, fichier).split(sep).join("/"));
+          }
+        }
+        if (courant === RACINE_APP) break;
+        courant = courant.split(sep).slice(0, -1).join(sep);
+      }
+    }
+    expect(vues.size, "aucun error.tsx trouvé — la garde ne prouve rien").toBeGreaterThan(5);
+    expect(
+      muettes,
+      "ces frontières interceptent une erreur sans la remonter à Sentry : " +
+        "ajoutez le `useEffect(() => { Sentry.captureException(error); }, [error])` " +
+        "de `global-error.tsx`",
+    ).toEqual([]);
+  });
 });

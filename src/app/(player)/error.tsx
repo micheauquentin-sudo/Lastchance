@@ -1,5 +1,8 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 
 /**
@@ -15,8 +18,20 @@ import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
  * La phrase qui compte est celle de l'ancien écran, mot pour mot — c'est la
  * seule information utile au joueur à cet instant. Le lien portefeuille lui
  * donne en plus le chemin pour aller le vérifier lui-même.
+ *
+ * ── L'ERREUR EST CAPTURÉE, JAMAIS AFFICHÉE ─────────────────────────
+ *
+ * Une frontière de segment intercepte l'erreur avant `global-error.tsx`, qui
+ * était jusqu'ici le seul endroit à la remonter à Sentry. Poser ces frontières
+ * sans ce `useEffect` aurait donc ÉTEINT le signal — et précisément sur les
+ * parcours publics, ceux qu'un inconnu peut sonder. Le texte affiché ne change
+ * pas d'un mot : on remonte à Sentry, on n'expose rien au visiteur.
  */
-export default function PlayerError({ reset }: { error: Error; reset: () => void }) {
+export default function PlayerError({ error, reset }: { error: Error; reset: () => void }) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <main role="alert" className="fixed inset-0 flex items-center justify-center bg-zinc-950 px-6 text-center text-white">
       <div>

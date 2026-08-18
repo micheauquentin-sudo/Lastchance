@@ -86,16 +86,42 @@ export function Analytics() {
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
     if (!key) return;
+    const accorde = () =>
+      localStorage.getItem("lc:analytics-consent") === "granted";
+
     async function applyConsent() {
-      if (localStorage.getItem("lc:analytics-consent") !== "granted") {
+      if (!accorde()) {
         if (ph?.__loaded) {
-          ph.opt_out_capturing();
+          // L'ORDRE COMPTE, et l'inverse est un piège.
+          //
+          // `reset()` de posthog-js appelle `consent.reset()`, qui EFFACE la
+          // préférence de consentement stockée. Appelé APRÈS
+          // `opt_out_capturing()`, il annulait donc le refus qu'on venait de
+          // poser : la bibliothèque repassait à l'état « pending », c'est-à-dire
+          // capture active. Le refus de l'utilisateur ne survivait pas au geste
+          // censé l'appliquer. `reset()` d'abord (on jette l'identité et les
+          // données de session), le refus ensuite — et il tient.
           ph.reset();
+          ph.opt_out_capturing();
         }
         return;
       }
-      // Seul endroit du produit où posthog-js est réellement chargé.
-      ph ??= (await import("posthog-js")).default;
+      // Seul endroit du produit où posthog-js est réellement chargé. L'`await`
+      // est INCONDITIONNEL, même quand la poignée est déjà peuplée : le module
+      // est en cache, l'attente ne coûte rien, et elle garantit que la
+      // relecture ci-dessous a toujours lieu APRÈS un tour de boucle — sinon
+      // le contrôle de fraîcheur serait actif au premier appel et absent aux
+      // suivants, c'est-à-dire justement quand l'utilisateur change d'avis.
+      const posthog = await import("posthog-js");
+      ph ??= posthog.default;
+      // RELU APRÈS L'ATTENTE. Le téléchargement du chunk prend un temps réseau
+      // pendant lequel l'utilisateur peut très bien retirer son consentement —
+      // le bandeau est à l'écran, c'est même le moment le plus probable. Sans
+      // cette seconde lecture, `init` et `opt_in_capturing` s'exécutaient sur
+      // une décision périmée de quelques centaines de millisecondes. Le module
+      // reste chargé (le code est déjà là, le jeter n'apporte rien) ; ce sont
+      // l'initialisation et l'activation qui sont conditionnées.
+      if (!accorde()) return;
       if (!ph.__loaded) {
         ph.init(key!, OPTIONS_POSTHOG);
       }
@@ -121,5 +147,11 @@ export function capturePlayEvent(
     | "shared",
   properties?: Record<string, string | number | boolean>,
 ) {
-  if (ph?.__loaded) ph.capture(event, properties);
+  // `__loaded` dit seulement que la bibliothèque est initialisée — pas que
+  // l'utilisateur veut être suivi. Un joueur qui refuse EN COURS DE PARTIE
+  // laissait partir tous les événements de la page en cours, jusqu'au
+  // rechargement : PostHog était déjà chargé, et rien ici ne relisait sa
+  // décision. Le refus doit s'appliquer au tour de roue suivant, pas au
+  // prochain chargement de page.
+  if (ph?.__loaded && !ph.has_opted_out_capturing()) ph.capture(event, properties);
 }

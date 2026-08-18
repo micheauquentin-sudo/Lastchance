@@ -1,6 +1,22 @@
 "use client";
 
-export default function SegmentError({ reset }: { error: Error; reset: () => void }) {
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
+
+/**
+ * L'erreur est CAPTURÉE, jamais affichée.
+ *
+ * Une frontière de segment intercepte l'erreur avant `global-error.tsx`, qui
+ * était jusqu'ici le seul endroit à la remonter à Sentry. Poser ces frontières
+ * sans ce `useEffect` aurait donc ÉTEINT le signal — et précisément sur les
+ * parcours publics, ceux qu'un inconnu peut sonder. Le texte affiché ne change
+ * pas d'un mot : on remonte à Sentry, on n'expose rien au visiteur.
+ */
+export default function SegmentError({ error, reset }: { error: Error; reset: () => void }) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <main role="alert" className="flex min-h-[60vh] items-center justify-center px-6 text-center">
       <div>
