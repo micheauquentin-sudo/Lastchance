@@ -6858,3 +6858,93 @@ wagon (DOC-1).
   migration `20260929120000_soiree_live.sql`
 - `src/lib/event-etat.ts`, `src/lib/plans.ts`
 - `docs/perf-report.md` §7 ; roadmap V1.61 ; `docs/bugs.md` (wagon 5, INFO 1-4)
+
+## ADR-107 : Vrai 404 avant squelette — le streaming des métadonnées de Next 16 déjoue deux tentatives avant la troisième
+
+**Date** : 2026-08-18
+**Statut** : Accepté
+**Contexte** : wagon 6 du train de correction issu de l'audit transverse du
+2026-08-16 (`docs/chantier-audit-2026-08-16.md`, PERF-1..8, UI-3..6, A11Y-1..7),
+branche `chantier/audit-p2-front`. Le socle demandait une frontière
+`loading.tsx` sur les routes joueur qui n'en avaient aucune (play, hub
+pronostics, recover, portefeuille), pour éviter un écran blanc pendant le
+chargement des données. Trois tentatives ont été nécessaires pour la poser
+sans casser le comportement 404 des routes à ressource (calendar, event,
+jackpot) devant une ressource inconnue.
+
+### Trois tentatives, une seule qui tient
+
+1. **`notFound()` dans `generateMetadata` + `cache()`** : sans effet — Next 16
+   streame les métadonnées par défaut, l'en-tête HTTP 200 part avant que la
+   fonction s'exécute.
+2. **`htmlLimitedBots: /.*/ ` (rendu des métadonnées bloquant)** : prouvé sans
+   effet par quatre méthodes convergentes sur un build propre, y compris avec
+   l'UA `Slackbot` de la liste par défaut de Next.
+3. **Solution retenue, par construction** : aucune frontière `loading`
+   au-dessus d'une route publique qui peut rendre `notFound()`. Les quatre
+   routes équipées (play, hub pronostics — isolé dans un sous-groupe
+   `(hub)` pour ne pas contaminer ses voisines —, recover, portefeuille)
+   n'appellent jamais `notFound()`. Les routes à ressource
+   (calendar/event/jackpot) gardent leur statu quo d'avant le wagon : vrai
+   404, sans squelette de chargement au-dessus.
+
+La garde `route-boundaries.test.ts` a été **retournée** : elle affirmait
+auparavant l'inverse (toute route publique doit avoir un `loading.tsx`) et
+aurait laissé passer la régression qu'elle nomme désormais explicitement —
+neuf routes listées, échec si une frontière `loading` de groupe est reposée
+au-dessus de l'une d'elles.
+
+### L'exception dashboard/admin, assumée
+
+Le dashboard commerçant et l'espace admin gardent la paire
+`loading.tsx`+`notFound()` d'avant le wagon : leur statut 404 est donc
+« faux » (rendu 200 au streaming) mais ce n'est jamais observable par un
+visiteur anonyme — ces routes sont protégées par authentification en amont.
+Le compromis qui serait inacceptable sur une route publique (fuir
+l'existence d'une ressource) est sans conséquence derrière une connexion
+obligatoire.
+
+### L'exclusion axe nommée site par site, jamais globale
+
+Les scans d'accessibilité automatisés (axe, 7 specs Playwright + `a11y.spec.ts`
+étendue à 7 pages) lisent `incomplete` comme bloquant sur `color-contrast`,
+avec un format qui distingue `[violation]` (certain) de `[indécidable]`
+(nécessite jugement humain). L'exclusion `SURFACE_A_DEGRADE` liste 17 sites,
+chacun justifié individuellement dans le code — aucune exclusion par
+catégorie ou par page entière, pour que l'ajout d'un dix-huitième élément à
+une page déjà exclue reste détecté. Ces capteurs ont débusqué deux vrais
+défauts en une seule campagne : le séparateur « ou » de `/login` (jamais
+scannée avant ce wagon, contraste 2,5:1) et l'upload de logo sans label
+accessible (`critical`, corrigé par un `sr-only`).
+
+### La poignée PostHog comme seul mécanisme correct de retrait de poids
+
+Chargement dynamique et import-au-clic ont été écartés au profit d'un garde
+de consentement (`analytics.tsx`) : PostHog ne se charge que si le
+consentement est **accordé**, pas seulement proposé. Un chargement
+différé sans ce garde continue de télécharger la bibliothèque pour tout
+visiteur qui refuse le suivi, ce qui manque l'objectif (poids et respect du
+refus sont la même contrainte ici, pas deux contraintes séparées).
+
+### La mesure de bundle automatisée, sans seuil bloquant
+
+`scripts/mesurer-bundle.mjs` (`npm run bundle:mesure`) rend les quatre poids
+mesurés avant/après reproductibles, mais ne pose **aucun seuil qui ferait
+échouer la CI** — angle mort assumé : mesurer d'abord, menacer plus tard si
+une régression future le justifie. Un seuil prématuré, choisi sans historique
+de variation naturelle du poids d'une page, aurait un taux de faux positifs
+inconnu.
+
+**Conséquences** : `scripts/mesurer-bundle.mjs` (nouveau) ; `error.tsx` sur
+les groupes `(player)`/`(public)`/`(auth)`/admin/onboarding/poster ;
+`loading.tsx` sur play/hub-pronostics/recover/portefeuille uniquement ;
+`route-boundaries.test.ts` retournée ; règle ESLint `no-restricted-imports`
+sur `src/components` + `import-sans-crypto.test.ts` ; exclusion
+`SURFACE_A_DEGRADE` (17 sites) dans les specs a11y ; `docs/bugs.md` (wagon 6,
+quatre points consignés).
+
+**References** :
+- `scripts/mesurer-bundle.mjs`, `src/lib/analytics.tsx`
+- `route-boundaries.test.ts`, `import-sans-crypto.test.ts`,
+  `dashboard-contrast.test.ts`
+- `a11y.spec.ts` ; roadmap V1.62 ; `docs/bugs.md` (wagon 6)

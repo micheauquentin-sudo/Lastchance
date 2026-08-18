@@ -4169,6 +4169,30 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     vérifications ; exclusion pérenne à poser dans un geste séparé, hors
     périmètre de ce wagon.
 
+- **Wagon 6 de l'audit transverse — quatre points consignés sans correctif,
+  tous non bloquants (2026-08-18, `chantier/audit-p2-front`, ADR-107)** :
+  - **Logos déjà envoyés restent en 1600 px** : le redimensionnement à 256 px
+    ne s'applique qu'au prochain upload (PERF-5) — les logos déposés avant ce
+    wagon continuent de peser leur taille d'origine jusqu'à ce qu'un
+    commerçant réenvoie le sien. Pas de migration de rattrapage sur les
+    fichiers déjà stockés.
+  - **Dashboard/admin rendent un statut 404 faux** derrière l'authentification
+    (assumé) : ces deux routes gardent la frontière `loading`+`notFound()`
+    d'avant le wagon — exception documentée à la règle générale « vrai 404
+    par-dessus squelette » (ADR-107), parce qu'elles sont protégées par
+    connexion et n'exposent jamais leur statut à un visiteur anonyme.
+  - **La règle ESLint `no-restricted-imports` (chaînes `node:crypto`) ne
+    couvre que `src/components`** : les hooks clients qui vivent hors de ce
+    dossier (dans `src/lib`) ne sont tenus que par la liste `ENTREES_CLIENT`
+    du test `import-sans-crypto.test.ts`, pas par la règle ESLint elle-même —
+    un nouveau hook client ajouté à `src/lib` sans être ajouté à cette liste
+    ne serait pas détecté avant build.
+  - **Les artefacts a11y (extraits HTML) sont publiés dans les runs CI** : les
+    scans axe de `a11y.spec.ts` et des 7 specs étendues déposent leurs
+    extraits HTML en pièce jointe de run — pratique pour le diagnostic, mais
+    ce sont des extraits de pages réelles (potentiellement avec des données de
+    test) qui restent accessibles depuis l'historique CI.
+
 ## Tracking Process
 
 ### When a bug is found:

@@ -526,6 +526,77 @@ build, Vitest complet, site), E2E ciblé **57/57 verts sur 3 navigateurs**
 **Suite du train** : wagons 6 et 7 listés dans
 `docs/chantier-audit-2026-08-16.md`.
 
+## V1.62 — Léger, accessible, des états partout : wagon 6 de l'audit transverse (✅ 2026-08-18, branche `chantier/audit-p2-front`, AUCUNE migration)
+
+**Objectif** : sixième wagon du train de correction issu de l'audit transverse
+du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) — alléger le poids client,
+poser une frontière de rendu et un état de chargement sur chaque page joueur,
+et faire passer les scans d'accessibilité de manuels à mesurés (PERF-1..8,
+UI-3..6, A11Y-1..7).
+
+**Livré** :
+- Poids client, mesuré avant/après par un script neuf
+  (`scripts/mesurer-bundle.mjs`, `npm run bundle:mesure`) : éditeur de quiz
+  318,6 → 117,8 Ko gzip, progression 232,0 → 31,0 Ko, quiz joueur 182,8 → 43,1
+  Ko, `/play` 187,9 → 114,0 Ko. Par : la poignée PostHog ne se charge que sous
+  consentement accordé (`analytics.tsx`) ; trois chaînes d'imports qui
+  faisaient descendre `node:crypto` côté navigateur cassées
+  (`pronostics-bornes.ts` extrait en module unique remplaçant trois miroirs
+  recopiés à la main, `deriveProgressionRequestId` isolé côté serveur) et
+  tenues par une règle ESLint `no-restricted-imports` sur `src/components`
+  plus une garde `import-sans-crypto.test.ts` ; les 17 résolutions client de
+  `resolveWheelStyle` supprimées au profit d'une prop `WheelStyle` requise et
+  d'une constante `SPIN_WHEEL_STYLE` unique gardée par comparaison anti-dérive ;
+  `claim-libelles.ts` sort `smsConsentLabel`/`isPlausibleBirthDate` de la
+  portée de zod ; logo redimensionné à 256 px au prochain upload ; largeur 640
+  ajoutée au srcset des 10 fichiers de fond d'écran ; `Promise.all` sur
+  calendrier et quiz (PERF-1, PERF-2, PERF-3, PERF-5, PERF-6, PERF-7).
+- Frontières de rendu : `error.tsx` posé sur toutes les routes joueur/public
+  (groupes `(player)`/`(public)` + `(auth)`/admin/onboarding/poster) — deux
+  frontières préexistantes (dashboard, admin) avalaient déjà leurs erreurs en
+  silence, découvertes par cette garde ; les 8 frontières neuves ou réparées
+  appellent Sentry. `loading.tsx` posé sur les 4 routes qui n'appellent jamais
+  `notFound()` (play, hub pronostics isolé dans un sous-groupe `(hub)`,
+  recover, portefeuille). Hunt-journey passé en try/catch (UI-4) ; deux
+  squelettes de chargement dashboard (caisse, réglages, UI-5) ;
+  l'enregistrement automatique du Studio survit désormais au verrouillage
+  d'écran, déclenché sur `visibilitychange` (UI-6) (PERF-4, PERF-8, UI-3).
+- Accessibilité : contrastes recalibrés sur jetons de design (7 sites
+  `text-k-orange` → `-text`, 13 sites `text-zinc-400` → `k-muted`,
+  `ScratchCard` reçoit une prop kermesse) avec deux gardes de source neuves
+  (`play-contrast` étendue à la roue, `dashboard-contrast.test.ts`) ;
+  `useModalFocus` partagé entre le Studio QR et la modale du calendrier ;
+  `role="alert"` toujours monté sur l'échec caméra ; scans axe automatisés
+  ajoutés dans 7 specs Playwright plus `a11y.spec.ts` étendue à 7 pages, avec
+  une exclusion nommée `SURFACE_A_DEGRADE` (17 sites, tous justifiés — aucune
+  exclusion par défaut). Ces capteurs ont débusqué et corrigé deux vrais
+  défauts jamais vus manuellement : le séparateur « ou » de `/login` à 2,5:1
+  de contraste, et l'upload de logo sans label accessible (`critical`, label
+  `sr-only` ajouté) (A11Y-1..A11Y-7).
+
+**Aller-retour notable (3 tentatives), consigné en ADR-107** : poser un
+`loading.tsx` de groupe faisait rendre un **200** aux ressources joueur
+inconnues, parce que Next 16 streame les métadonnées par défaut et que
+l'en-tête HTTP part avant que `notFound()` s'exécute — attrapé par les
+spécifications E2E. `htmlLimitedBots` (métadonnées bloquantes) n'a pas
+d'effet non plus, prouvé par 4 méthodes convergentes sur un build propre.
+Solution retenue : aucune frontière `loading` au-dessus d'une route publique
+qui peut rendre `notFound()` — vrai 404 avant squelette, sauf sur
+dashboard/admin (statut faux derrière authentification, assumé). Garde
+`route-boundaries.test.ts` retournée pour interdire la régression.
+
+**Revue sécurité** : GO (consentement analytics durci après relecture —
+`reset()` avant `opt_out`, `capturePlayEvent` teste l'opt-out —, frontières
+d'erreur qui avalaient déjà les erreurs réparées en bonus).
+
+Preuve : `verif-complete.sh --rapide` **13/13 vert** (typecheck, lint,
+casts/sql/migrations + gardes, build 210 s, Vitest, site) ; E2E ciblé
+`mobile-chrome` 9 specs vertes au global (3 specs 404 calendar/event/jackpot
+passent, a11y verte) ; pgTAP 63 fichiers / 3614 assertions inchangé (aucun
+SQL, aucune migration).
+
+**Suite du train** : wagon 7 listé dans `docs/chantier-audit-2026-08-16.md`.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse
