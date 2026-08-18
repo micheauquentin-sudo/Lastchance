@@ -67,6 +67,19 @@ function avancer(ms: number) {
   });
 }
 
+/**
+ * L'onglet passe en arrière-plan (bascule d'application, verrouillage d'écran,
+ * changement d'onglet). `document.hidden` est en lecture seule : on redéfinit
+ * l'accesseur, comme le ferait le navigateur, puis on émet l'événement.
+ */
+function basculerVisibilite(cache: boolean) {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => cache,
+  });
+  fireEvent(document, new Event("visibilitychange"));
+}
+
 function valeurs(sonde: Sonde): (string | null)[] {
   return sonde.soumissions.map((f) => f.get("titre") as string | null);
 }
@@ -81,6 +94,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  basculerVisibilite(false);
 });
 
 describe("useAutoSave — rien ne part sans un geste", () => {
@@ -150,6 +164,83 @@ describe("useAutoSave — le délai", () => {
     avancer(1);
     expect(sonde.soumissions).toHaveLength(1);
     expect(DELAI_AUTO_SAVE_MS).toBe(800);
+  });
+});
+
+/**
+ * QUITTER L'ONGLET EST UNE SORTIE, ET C'EST CELLE QU'ON NE VOIT PAS.
+ *
+ * `focusout` couvre le passage d'un champ à l'autre. Il ne couvre PAS le geste
+ * qui perd réellement du travail sur mobile : basculer d'application ou
+ * verrouiller l'écran gèle la page sans déplacer le focus, et le navigateur
+ * peut la décharger ensuite sans autre événement (`beforeunload` n'est pas tenu
+ * sur iOS). Sans écouteur de visibilité, les 800 ms du délai étaient une
+ * fenêtre de PERTE muette : la dernière frappe ne partait jamais, et l'écran
+ * affichait « En attente » à un commerçant déjà parti.
+ */
+describe("useAutoSave — masquer l'onglet vide la file", () => {
+  it("soumet SANS attendre quand l'onglet passe en arrière-plan", () => {
+    render(<Formulaire sonde={sonde} />);
+    const champ = screen.getByLabelText("titre") as HTMLInputElement;
+    champ.value = "b";
+    fireEvent.input(champ);
+
+    basculerVisibilite(true);
+    expect(valeurs(sonde)).toEqual(["b"]);
+
+    // Minuteur désarmé : pas de seconde soumission au terme du délai.
+    avancer(DELAI_TEST * 2);
+    expect(sonde.soumissions).toHaveLength(1);
+  });
+
+  it("masquer un formulaire intact ne l'enregistre pas", () => {
+    render(<Formulaire sonde={sonde} />);
+    basculerVisibilite(true);
+    avancer(60_000);
+    expect(sonde.soumissions).toHaveLength(0);
+  });
+
+  /**
+   * On enregistre en PARTANT, jamais en revenant : un retour au premier plan
+   * qui posterait rejouerait une soumission déjà faite au masquage.
+   */
+  it("le retour au premier plan ne déclenche rien", () => {
+    render(<Formulaire sonde={sonde} />);
+    const champ = screen.getByLabelText("titre") as HTMLInputElement;
+    champ.value = "b";
+    fireEvent.input(champ);
+    basculerVisibilite(true);
+    expect(sonde.soumissions).toHaveLength(1);
+
+    basculerVisibilite(false);
+    avancer(DELAI_TEST * 2);
+    expect(sonde.soumissions).toHaveLength(1);
+  });
+
+  it("un formulaire invalide masqué le DIT au lieu de partir en silence", () => {
+    render(<Formulaire sonde={sonde} requis />);
+    const note = screen.getByLabelText("note") as HTMLInputElement;
+    note.value = "x";
+    fireEvent.input(note);
+    basculerVisibilite(true);
+
+    expect(sonde.soumissions).toHaveLength(0);
+    expect(
+      screen.getByText("Non enregistré : un champ requis est vide"),
+    ).toBeTruthy();
+  });
+
+  /** L'écouteur vit sur `document` : il doit repartir avec le composant. */
+  it("l'écouteur est retiré au démontage — plus rien ne part après", () => {
+    const vue = render(<Formulaire sonde={sonde} />);
+    const champ = screen.getByLabelText("titre") as HTMLInputElement;
+    champ.value = "b";
+    fireEvent.input(champ);
+    vue.unmount();
+
+    basculerVisibilite(true);
+    avancer(60_000);
+    expect(sonde.soumissions).toHaveLength(0);
   });
 });
 
