@@ -187,6 +187,19 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   workflow). pgTAP 64 fichiers / 3566 assertions PASS ×2 (vide et semée),
   `verif-complete.sh` 0 échec (11 min), E2E complet vert (2 flakes de charge
   WebKit tranchés par rejeu isolé vert), typecheck/lint/casts 0. Migration
-  `20260930120000_le_fond_tient.sql`. Roadmap V1.63, ADR-108. **Code complet
-  et QA verte sur la tête `3f53691` ; PR en ouverture, fusion et santé
-  post-déploiement à consigner ici une fois passées.**
+  `20260930120000_le_fond_tient.sql`. Roadmap V1.63, ADR-108. **✅ Fusionné,
+  déployé, santé verte.** PR #154, tête finale `efaecd0` (32 commits) : la CI
+  y a exigé quatre gestes de plus, tous sur les E2E neufs — collision de
+  fixtures event résolue par session dédiée `E2ERMT` (`8d34a06`), jauge
+  jackpot en assertion relative (`c7feb86`), `calendar:136` re-fixme
+  documenté (`181adb1`), et la vraie cause de la cascade : **le test
+  télécommande mutait sa session sans jamais la rendre — un `beforeEach` la
+  remet en lobby, les retries CI redeviennent efficaces** (`efaecd0`).
+  Fusion squash `d170a65` sur l'ordre permanent le 2026-08-19 ; « Santé
+  après déploiement » success sur `d170a65`, job réellement exécuté
+  (22:04:47→22:04:58 UTC, pas sauté) — migration `20260930120000` appliquée
+  en production (contrôle `EXPECTED_MIGRATION` de la sonde). CI `main` :
+  E2E tombé au premier passage sur la roulette de contention PRÉEXISTANTE
+  (pronostics, wheel-wizard, pronostics-generic — aucun spec du wagon, même
+  trio que la fusion `da013c2` d'avant le wagon), rerun lancé ; dette de
+  stabilité consignée dans `docs/bugs.md`.
