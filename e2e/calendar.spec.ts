@@ -118,33 +118,28 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
   /**
    * Case `content` VIDÉE (chantier « retours propriétaire ») : plus une
    * anomalie remplie de texte de secours, une vraie issue perdante — « Pas de
-   * chance aujourd'hui ! » + 🍂. On vide la case 1 (seule case `content`
-   * déverrouillée du seed) depuis le dashboard, on l'ouvre côté joueur dans un
-   * contexte NEUF (cookie vierge, comme le fait la caisse) et on restaure le
-   * texte d'origine dans un `finally` : le test précédent de ce fichier
-   * («... révèle son contenu du jour ») dépend du même texte seedé et tourne
-   * dans le même worker (fichier non `fullyParallel`), donc APRÈS celui-ci
-   * dans l'ordre de déclaration.
+   * chance aujourd'hui ! » + 🍂. Le FIXME(seed-isolation) qui bloquait ce test
+   * tenait à une seule chose : la case 1 du calendrier PARTAGÉ (e2e-calendar)
+   * porte l'ouverture persistante des deux tests précédents de ce fichier, et
+   * un troisième passage y recevait le vieux contenu au lieu du texte vidé.
+   *
+   * Le lot DB a semé un calendrier DÉDIÉ à ce seul test (day_count=2,
+   * `e2e-calendar-vide`) qu'aucune autre spec n'ouvre : sa case 1 n'est jamais
+   * touchée ailleurs, l'isolation est donc structurelle et non plus une
+   * question d'ordonnancement. On vide la case 1 depuis le dashboard, on
+   * l'ouvre côté joueur dans un contexte NEUF (cookie vierge, comme le fait la
+   * caisse) et on restaure le texte d'origine dans un `finally` — la case 2
+   * reste verrouillée (unlock_at futur), aucun risque de terminer le
+   * calendrier et de faire apparaître l'écran de récompense d'assiduité par-
+   * dessus l'écran perdant que ce test lit.
    */
-  /**
-   * FIXME(seed-isolation) : vert au PREMIER passage, faux aux suivants — pas
-   * un flake, une limite de données. L'ouverture de la case par le passage
-   * précédent PERSISTE dans le seed partagé (« 1/3 cases ouverte ») et le
-   * joueur suivant reçoit l'ancien contenu au lieu du « Pas de chance »,
-   * alors même que la base est prouvée vide côté dashboard (poll ci-dessous).
-   * Le produit, lui, est prouvé correct : la sonde a montré fill("") → base
-   * vide après la refonte du hook (commit « la signature est le seul
-   * déclencheur »), et l'écran perdant est couvert en unitaire
-   * (calendar-tracker.test.tsx). Réactiver ce test exige d'isoler ses
-   * données par passage (case dédiée jamais ouverte, ou reset des
-   * calendar_openings du seed) — consigné dans docs/bugs.md.
-   */
-  test.fixme("une case message laissée vide ouvre sur « Pas de chance aujourd'hui ! »", async ({
+  test("une case message laissée vide ouvre sur « Pas de chance aujourd'hui ! »", async ({
     page,
     browser,
   }) => {
-    const calendarId = "e2ee0000-0000-4000-8000-000000000001";
-    const originalText = "Bienvenue ! -10 % sur votre café aujourd'hui.";
+    const calendarId = "e2ee0000-0000-4000-8000-000000000002";
+    const calendarSlugVide = "e2e-calendar-vide";
+    const originalText = "Une attention rien que pour vous aujourd'hui.";
 
     await login(page, E2E_USERS.owner);
     await page.goto(`/dashboard/calendar/${calendarId}?etape=cases`);
@@ -179,7 +174,7 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
       const player = await browser.newContext();
       const playerPage = await player.newPage();
       try {
-        await playerPage.goto(`/calendar/${CALENDAR_SLUG}`);
+        await playerPage.goto(`/calendar/${calendarSlugVide}`);
         const openBox1 = playerPage.getByRole("button", {
           name: "Ouvrir la case 1",
           exact: true,
