@@ -632,22 +632,20 @@ on conflict (id) do nothing;
 -- offre 'content'), jour 2 ouvrable AUJOURD'HUI (un lot 'lot' à stock fini), et
 -- jour 3 VERROUILLÉ (unlock_at futur → open_calendar_box répond too_early). Le
 -- gating serveur se teste sans dépendance : la case future doit refuser
--- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=4.
+-- l'ouverture. Récompense d'assiduité à stock fini (5). day_count=3.
 --
--- ── La 4e case, et pourquoi elle existe ──
--- `e2e/calendar.spec.ts` porte un test `fixme` (« une case message laissée vide
--- ouvre sur "Pas de chance aujourd'hui !" ») vert au PREMIER passage et faux aux
--- suivants : il vidait la case 1, la seule case `content` déverrouillée, que le
--- test précédent du même fichier a déjà ouverte dans ce seed PARTAGÉ. La case 4
--- est sa donnée à lui : `content`, déverrouillée, et JAMAIS ouverte par un autre
--- test. Ne pas l'ouvrir ailleurs — c'est tout ce qui la rend utile.
+-- ⚠️ NE PAS AJOUTER DE CASE ICI. `e2e/atelier-modules.spec.ts` exige que ce
+-- calendrier parte à `day_count=3` (:357), fait lui-même monter à 4 pour
+-- fabriquer une case VIDE — c'est son oracle — puis redescend à 3, ce qui
+-- SUPPRIME cette quatrième case. Toute case ajoutée ici serait donc détruite en
+-- cours de suite. Le calendrier dédié plus bas existe pour cette raison.
 insert into public.calendars (
   id, organization_id, name, theme, status, start_date, timezone, day_count,
   public_slug, merchant_content, completion_reward_label, completion_reward_details,
   completion_reward_stock
 ) values (
   'e2ee0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-  'Calendrier de l''Avent E2E', 'noel', 'active', current_date, 'Europe/Paris', 4,
+  'Calendrier de l''Avent E2E', 'noel', 'active', current_date, 'Europe/Paris', 3,
   'e2e-calendar', 'Une surprise chaque jour jusqu''à Noël !',
   'Le grand panier de Noël', 'À retirer au comptoir E2E.', 5
 )
@@ -665,13 +663,47 @@ insert into public.calendar_days (
    null, 'Croissant offert', 'À retirer au comptoir E2E.', 50, true),
   ('e2ee0000-0000-4000-8000-000000000013', 'e2ee0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 3, now() + interval '2 days', 'content',
-   'Encore un peu de patience...', '', null, null, false),
-  -- Case RÉSERVÉE au test « case message laissée vide » : déverrouillée comme la
-  -- case 1, mais qu'aucun autre test n'ouvre. Son texte est restauré par le test
-  -- lui-même dans un `finally` ; il doit donc rester stable ici.
-  ('e2ee0000-0000-4000-8000-000000000014', 'e2ee0000-0000-4000-8000-000000000001',
-   'e2e10000-0000-4000-8000-000000000001', 4, now() - interval '15 minutes', 'content',
-   'Une attention rien que pour vous aujourd''hui.', '', null, null, false)
+   'Encore un peu de patience...', '', null, null, false)
+on conflict (id) do nothing;
+
+-- ── Calendrier DÉDIÉ au test « case message laissée vide » ────
+-- `e2e/calendar.spec.ts` porte un test `fixme` (« une case message laissée vide
+-- ouvre sur "Pas de chance aujourd'hui !" ») vert au PREMIER passage et faux aux
+-- suivants : il vidait la case 1 du calendrier ci-dessus, seule case `content`
+-- déverrouillée, que le test précédent du même fichier a déjà ouverte dans ce
+-- seed PARTAGÉ. Le remède écrit dans son commentaire — « une case dédiée jamais
+-- ouverte » — ne pouvait pas tenir sur ce calendrier-là : `atelier-modules`
+-- fait varier son `day_count` et détruit toute case surnuméraire.
+--
+-- D'où un calendrier À PART, que rien d'autre ne touche. Sa case 1 est la
+-- donnée du test : `content`, déverrouillée, jamais ouverte ailleurs, texte
+-- stable (le test le vide puis le restaure dans un `finally`).
+--
+-- day_count=2, avec une case 2 VERROUILLÉE : à une seule case, l'ouvrir
+-- terminerait le calendrier et déclencherait l'écran de récompense d'assiduité
+-- par-dessus l'écran perdant que le test vient justement lire.
+insert into public.calendars (
+  id, organization_id, name, theme, status, start_date, timezone, day_count,
+  public_slug, merchant_content, completion_reward_label, completion_reward_details,
+  completion_reward_stock
+) values (
+  'e2ee0000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000001',
+  'Calendrier E2E — case vide', 'noel', 'active', current_date, 'Europe/Paris', 2,
+  'e2e-calendar-vide', 'Une surprise par jour, réservée aux tests.',
+  'Le petit panier de test', 'À retirer au comptoir E2E.', 5
+)
+on conflict (id) do nothing;
+
+insert into public.calendar_days (
+  id, calendar_id, organization_id, day_index, unlock_at, content_type,
+  content_text, reward_label, reward_details, reward_stock, is_special
+) values
+  ('e2ee0000-0000-4000-8000-000000000021', 'e2ee0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 1, now() - interval '1 hour', 'content',
+   'Une attention rien que pour vous aujourd''hui.', '', null, null, false),
+  ('e2ee0000-0000-4000-8000-000000000022', 'e2ee0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 2, now() + interval '2 days', 'content',
+   'Encore un peu de patience...', '', null, null, false)
 on conflict (id) do nothing;
 
 -- ── Parrainage ludique (campagne roue gagnante E2EWIN01) ──────
