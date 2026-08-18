@@ -57,6 +57,51 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-18 — Train de correction de l'audit transverse : wagon 6 « Léger, accessible, des états partout » — **fusionné, déployé, santé verte**
+
+- **Lot et objectif** : sixième wagon du train — alléger le poids client,
+  poser une frontière de rendu et un état de chargement sur chaque page
+  joueur, faire passer les scans d'accessibilité de manuels à mesurés
+  (PERF-1..8, UI-3..6, A11Y-1..7).
+- **Branche/commits** : `chantier/audit-p2-front`, tête `ad7600f`, ~19
+  commits, aucune migration. **PR #153 : CI de la PR verte sur le SHA de tête
+  `736472f` après trois tours d'épluchage a11y (35 indécidables → arbitrage
+  compté+attaché non bloquant, exclusions retirées ; puis 2 vraies violations
+  réparées — `/login` et 8 sites `text-orange-600` brut ; puis balayage
+  complet des participations, cause racine : le dashboard vit sur fond crème,
+  `text-zinc-500` y fait 4,48:1). Fusion squash `4016a8e` sur l'ordre
+  permanent le 2026-08-18 ; CI `main` success sur `4016a8e` ; « Santé après
+  déploiement » success sur `4016a8e`, job réellement exécuté
+  (15:01:04→15:01:11 UTC, pas sauté) — aucune migration à appliquer.**
+- **Arbitrages portés par l'ADR-107** : vrai 404 avant squelette sur les
+  routes publiques à ressource — aucune frontière `loading` au-dessus d'une
+  route qui peut rendre `notFound()`, après trois tentatives (le streaming
+  des métadonnées de Next 16 déjoue les deux premières) ; exception
+  dashboard/admin assumée (statut faux derrière authentification) ;
+  l'exclusion axe nommée site par site, jamais globale ; la poignée PostHog
+  comme seul mécanisme correct de retrait de poids.
+- **Faits** : poids client mesuré avant/après (`scripts/mesurer-bundle.mjs`) —
+  quiz éditeur 318,6→117,8 Ko gzip, progression 232,0→31,0, quiz joueur
+  182,8→43,1, `/play` 187,9→114,0 ; `error.tsx` posé sur toutes les routes
+  joueur/public, deux frontières préexistantes (dashboard, admin) qui
+  avalaient déjà leurs erreurs en silence réparées en bonus ; `loading.tsx`
+  sur les 4 routes sans `notFound()` ; contrastes recalibrés, scans axe
+  automatisés dans 7 specs + `a11y.spec.ts` étendue, deux vrais défauts
+  débusqués et corrigés en amont de la PR (séparateur `/login`, upload de
+  logo sans label) — puis l'épluchage CI a débusqué le reste, décrit
+  ci-dessus.
+- **Preuve** : `verif-complete.sh --rapide` 13/13 vert, E2E ciblé
+  `mobile-chrome` 9 specs vertes au global, pgTAP 63 fichiers / 3614
+  assertions inchangé (aucun SQL). Revue sécurité **GO**.
+- **Reste ouvert** : 4 points consignés sans correctif dans `docs/bugs.md`
+  (wagon 6 : logos legacy 1600 px, 404 dashboard/admin assumé, portée ESLint
+  limitée à `src/components`, artefacts a11y publiés en CI) + **les 339
+  occurrences de `text-zinc-500` dans le dashboard**, dont le verdict de
+  contraste dépend du conteneur (4,48:1 sur crème, 4,83:1 sur carte blanche) —
+  candidat au fan-out déterministe (N≫6, geste identique, décision tranchée :
+  `text-k-muted` sur crème), à arbitrer par le propriétaire avant lancement.
+  Wagon 7 à venir.
+
 ### 2026-08-17 — Train de correction de l'audit transverse : wagon 5 « La soirée live tient sa promesse » — **fusionné, déployé, santé verte**
 
 - **Lot et objectif** : cinquième wagon du train — fusionner les trois

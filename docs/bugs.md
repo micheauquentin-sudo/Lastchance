@@ -4193,6 +4193,23 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     ce sont des extraits de pages réelles (potentiellement avec des données de
     test) qui restent accessibles depuis l'historique CI.
 
+- **339 occurrences de `text-zinc-500` dans le dashboard — verdict de
+  contraste dépendant du conteneur, non corrigé (2026-08-18, découvert
+  pendant l'épluchage a11y de la PR #153, wagon 6)** : le troisième tour de
+  balayage a11y de la PR a établi la cause racine des violations restantes —
+  le dashboard commerçant vit sur fond crème, où `text-zinc-500` ne rend que
+  4,48:1 (contre 4,83:1 sur une carte blanche interne). Seuls 8 sites
+  `text-orange-600` et le séparateur `/login` ont été corrigés dans ce wagon
+  (bloquants CI) ; les 339 occurrences de `text-zinc-500` n'ont pas été
+  traitées — hors du périmètre déjà fermé du wagon. **Candidat type du
+  fan-out déterministe** (règle `CLAUDE.md` § Token Optimization) : N≫6 sites
+  énumérables par grep, geste identique sur chacun, décision déjà tranchée
+  (`text-k-muted` remplace `text-zinc-500` sur fond crème) — reste à arbitrer
+  par le propriétaire avant de lancer le fan-out, notamment pour confirmer
+  que les 339 occurrences ne couvrent pas aussi des cartes blanches où le
+  contraste est déjà correct (4,83:1) et où le remplacement serait sans
+  objet.
+
 ## Tracking Process
 
 ### When a bug is found:

@@ -27,7 +27,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 | 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | ✅ **fusionné `4b9499b`, déployé, santé verte** |
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | ✅ **fusionné `c32dfc4`, déployé, santé verte** |
 | 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | ✅ **fusionné `4b614b8`, déployé, santé verte** |
-| 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 | ✅ **branche poussée `ad7600f`, PR à ouvrir, en attente de fusion** |
+| 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 | ✅ **fusionné `4016a8e`, déployé, santé verte** |
 | 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | à venir |
 
 **Méthode par wagon** : DB d'abord (commit + `verif-complete.sh --db-seul`),
@@ -170,5 +170,12 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   expliquées : 2 faux positifs dégradé couverts par `ad7600f`, 1 flake
   wheel-wizard rejoué 5/5 vert). Bundle mesuré avant/après sur 4 pages
   (`scripts/mesurer-bundle.mjs`). Roadmap V1.62, ADR-107. **AUCUNE migration.
-  PR à ouvrir ; fusion et santé post-déploiement à consigner ici une fois
-  jouées.**
+  CI de la PR #153 verte sur le SHA de tête `736472f` après trois tours
+  d'épluchage a11y (35 indécidables → arbitrage compté+attaché non bloquant,
+  exclusions retirées ; 2 vraies violations réparées — `/login` et 8 sites
+  `text-orange-600` brut ; puis balayage complet des participations, cause
+  racine identifiée : le dashboard vit sur fond crème, `text-zinc-500` y fait
+  4,48:1). Fusion squash `4016a8e` sur l'ordre permanent le 2026-08-18 ; CI
+  `main` success sur `4016a8e` ; « Santé après déploiement » success sur
+  `4016a8e`, job réellement exécuté (15:01:04→15:01:11 UTC, pas sauté) —
+  aucune migration à appliquer.**
