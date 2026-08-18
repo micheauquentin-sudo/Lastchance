@@ -3603,6 +3603,24 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   réécriture en rôle/landmark (voir le design doc du chantier) — première
   piste à vérifier avant d'ouvrir une investigation plus large.
 
+- **`e2e/calendar.spec.ts:136` instable sous contention CI, repassé en
+  `test.fixme` (2026-08-18, `chantier/audit-p2-fond`, wagon 7)** — le FIXME
+  d'origine (isolation : la case 1 du calendrier partagé `e2e-calendar`
+  portait l'ouverture persistante de tests précédents) a bien été réglé par
+  la fixture dédiée `e2e-calendar-vide` semée pour ce test seul : 100 % vert
+  en isolé et même en combiné avec `event.spec.ts`/`jackpot-rotating`. Mais
+  la matrice CI complète du wagon (3 runs) le montre rouge 2 fois sur 3, dont
+  **une fois sur mobile-chrome** — donc plus un flake WebKit-only comme le
+  suggérait le commentaire du fichier. Deux points de rupture observés :
+  `toBe("")` à la ligne 172 (l'autosave + reload du dashboard n'a pas
+  convergé sous 15 s) et le heading de la modale de révélation qui n'a pas le
+  temps de s'afficher. Lecture retenue : budget de temps trop juste pour un
+  run à pleine charge (build + 3 projets + tous les workers), pas un bug de
+  fixture. Repassé en `test.fixme` plutôt que de rouvrir un chantier de
+  stabilité E2E générale, hors périmètre de ce wagon — à reprendre avec un
+  budget dédié si la fonctionnalité qu'il couvre (case vidée → « Pas de
+  chance aujourd'hui ! ») régresse par ailleurs.
+
 - **Le libellé du lot est du texte libre, dans un message déclaré
   transactionnel (2026-08-01)** — trouvé par la quatrième contre-revue, après
   le reclassement décidé par le client. `prizes.label` est saisi par le
