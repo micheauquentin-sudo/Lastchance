@@ -597,6 +597,75 @@ SQL, aucune migration).
 
 **Suite du train** : wagon 7 listé dans `docs/chantier-audit-2026-08-16.md`.
 
+## V1.63 — Les capteurs disent vrai, le fond tient : wagon 7 de l'audit transverse (✅ 2026-08-18, branche `chantier/audit-p2-fond`, migration `20260930120000`)
+
+**Objectif** : septième et dernier wagon du train de correction issu de
+l'audit transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) —
+fermer les crons/observabilité, durcir la surface publique restante, et
+retirer le code mort et la dette accumulée (JOB-1..JOB-9, SEC surface, SEC
+multitenant, CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2).
+
+**Livré** :
+- DB : privilèges par défaut révoqués pour `authenticated` (symétrique au
+  filet déjà posé pour `anon`) + sept révocations explicites sur les tables
+  hors-locataire (`stripe_events`, `rate_limits`, `admin_users`,
+  `admin_sessions`, `admin_audit_logs`, `admin_notes`,
+  `webhook_deliveries`) ; `org_segment_emails` reçoit un `order by`
+  déterministe et confirme `search_path=''` ; pgTAP passe d'une liste
+  manuelle de 70 tables à une règle catalogue (≥ 110 tables) plus une
+  deuxième organisation « voisine » qui prouve le cloisonnement sur 9
+  tables ; 21 FK simples énumérées contre la liste d'exceptions des FK
+  composites. 64 fichiers / 3566 assertions PASS ×2 (vide et semée).
+  Migration `20260930120000_le_fond_tient.sql`.
+- Crons/observabilité : `authorizeCronRequest` (`timing-safe.ts`) posé sur
+  les 10 routes cron ; drain des webhooks budgété (`limit: 8`,
+  `budgetMs: 45_000`) ; `startWorkerRunSafely` couvre le cas nominal ;
+  `expire-trials` budgété à 45 s avec statut `deferred` ; `settleFailed`
+  passe en `degraded` plutôt qu'en échec silencieux ; la newsletter envoie
+  par tranches de 100 avec progression journalisée, `recipient_count` réel,
+  et une double borne anti-boucle (report exigeant une progression
+  **constatée** + plafond d'âge 24 h).
+- Sécurité : seau IP-seule appliqué **avant** le seau par ressource sur les
+  ouvertures de page et les pronostics TV (ADR-032 respecté, fail-open
+  documenté si l'IP n'est pas mesurable) ; `/api/health` sépare le verdict
+  public (seul) du détail nommé (checks, latences,
+  `security_configuration.error`), réservé au `CRON_SECRET`, avec une garde
+  qui fait rougir `security_configuration` si le proxy de confiance n'est
+  pas déclaré en production.
+- CI/sonde : la sonde de santé tourne toutes les 20 minutes (`schedule`) en
+  plus du `deployment_status`, authentifiée par `CRON_SECRET` ;
+  `test:production-health` intégré à la CI ; la garde des casts étendue à
+  `as any`, cliquet resserré.
+- Mort/dette : Lumoz retiré (647 lignes, 4 dépendances, `lumoz.glb` 812 Ko,
+  `'wasm-unsafe-eval'` sorti de la CSP) ; les miroirs TypeScript des
+  barèmes SQL supprimés (`scorePrediction`/`scoreAnswer`/`rankPlayers` —
+  la RPC Postgres reste seule source de vérité) ; `experience-analytics.ts`
+  supprimé (les 17 triggers SQL existants alimentent déjà la table).
+- E2E : 5 specs d'écriture neuves (`loyalty-staff-checkin`,
+  `event-remote-cycle`, `poster`, `jackpot-rotating-checkin`, le fixme
+  calendrier réactivé) avec fixtures seed dédiées (`e2e-calendar-vide`,
+  `e2e-jackpot-code`).
+
+**Arbitrage porté par l'ADR-108** : privilèges par défaut révoqués comme
+convention pérenne (une table hors-locataire se ferme par privilège, pas
+par absence de policy) ; un capteur de supervision porte la cadence de ce
+qu'il mesure — le heartbeat, jamais le travail sous-jacent (leçon
+`jackpot-draws`, revue sécurité M1) ; un job différé doit prouver sa
+progression, sinon il ne fait que consommer des tentatives sans avancer
+(borne newsletter, revue sécurité M2).
+
+**Revue sécurité** : GO, aucun finding critique ni élevé — les 2 MOYEN
+(M1 période `jackpot-draws`, M2 double borne newsletter) et les 2 INFO
+(garde proxy, `CRON_SECRET` dans le workflow) fermés **dans** le wagon.
+
+Preuve : `verif-complete.sh` 0 échec (11 min), E2E complet vert (2 flakes
+de charge WebKit tranchés par rejeu isolé vert), typecheck/lint/casts 0.
+
+**Statut** : code complet et QA verte sur la branche `chantier/audit-p2-fond`
+(tête `3f53691`, 26 commits depuis `main`), PR en ouverture — dernier wagon
+du train, voir `docs/chantier-audit-2026-08-16.md` pour le suivi des
+fusions.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse

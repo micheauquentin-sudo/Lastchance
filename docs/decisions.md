@@ -6948,3 +6948,84 @@ quatre points consignés).
 - `route-boundaries.test.ts`, `import-sans-crypto.test.ts`,
   `dashboard-contrast.test.ts`
 - `a11y.spec.ts` ; roadmap V1.62 ; `docs/bugs.md` (wagon 6)
+
+## ADR-108 : Privilèges par défaut symétriques, cadence de capteur = cadence du heartbeat, job différé qui prouve sa progression
+
+**Date** : 2026-08-18
+**Statut** : Accepté
+**Contexte** : wagon 7 (dernier) du train de correction issu de l'audit
+transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`, JOB-1..9, SEC
+surface, SEC multitenant, CI-1/2, TEST-1..3, DETTE-1/2, MORT-2), branche
+`chantier/audit-p2-fond`, migration `20260930120000_le_fond_tient.sql`. Trois
+décisions structurantes, indépendantes l'une de l'autre.
+
+### (a) Privilèges par défaut révoqués pour `authenticated`, symétriques à `anon`
+
+00021 avait posé « rien par défaut » pour `anon` : toute table créée ensuite
+devait gagner ses privilèges explicitement. `authenticated` n'avait jamais
+reçu la même garde — une future table oubliée aurait été lisible par
+n'importe quel compte connecté, de n'importe quel locataire, dès qu'une
+policy même modérément permissive existerait, ou même sans policy si `enable
+row level security` manquait aussi. `alter default privileges for role
+postgres in schema public revoke all … from authenticated` ferme ce filet,
+plus sept révocations explicites sur les tables hors-locataire qui ne
+tenaient que par « RLS + zéro policy » (`stripe_events`, `rate_limits`,
+`admin_users`, `admin_sessions`, `admin_audit_logs`, `admin_notes`,
+`webhook_deliveries`) : une table hors-locataire doit être fermée par
+privilège retiré, jamais par la seule absence d'une policy — la première
+policy un peu large écrite dessus l'aurait ouverte sans qu'aucun `grant`
+n'ait eu à être ajouté.
+
+**Convention à retenir pour les migrations futures** : une nouvelle table à
+séquence destinée à `authenticated` devra recevoir un `grant usage`
+explicite sur cette séquence — le filet par défaut le lui retire désormais
+aussi (finding I6 de la revue sécurité). Un privilège manquant sur une
+séquence casse silencieusement un `insert … returning` avant même d'exposer
+une donnée.
+
+### (b) Un capteur de supervision porte la cadence de ce qu'il mesure, jamais celle du travail sous-jacent
+
+Le wagon a d'abord voulu passer la période déclarée de `jackpot-draws` à
+300 s / 900 s, au motif qu'un pg_cron (`lastchance-jackpot-date-draws`) le
+déclenche toutes les 5 minutes. La revue sécurité (M1) a montré que la
+prémisse confondait le TRAVAIL et le BATTEMENT DE CŒUR : ce pg_cron exécute
+`run_jackpot_date_draws()` directement en SQL et n'écrit aucune ligne dans
+`ops_worker_runs` ; le seul heartbeat de ce worker vient de la route HTTP
+`/api/cron/jackpot-draws`, planifiée une fois par jour (`vercel.json`,
+`45 4 * * *`). Appliquer 300 s aurait rendu le capteur rouge ~23 h 45 sur 24
+dès l'activation — un voyant qui reste toujours allumé est un voyant qu'on
+cesse de lire, l'exact défaut que ce wagon ferme ailleurs. La période
+déclarée reste donc 86 400 s / 108 000 s, cadence vraie de ce que le capteur
+mesure réellement. Superviser le chemin pg_cron des 5 minutes demanderait que
+`run_jackpot_date_draws()` écrive son propre heartbeat — un chantier à part
+entière, consigné dans `docs/bugs.md`, pas un `update` glissé dans cette
+migration.
+
+### (c) Un job différé doit prouver sa progression, sinon un retry ne fait que consommer
+
+La newsletter envoie désormais par tranches de 100 avec `recipient_count`
+réel et une progression journalisée. La revue sécurité (M2) a montré qu'une
+seule borne — un plafond de tentatives ou d'âge — ne suffit pas à distinguer
+un envoi qui avance lentement d'un envoi bloqué qui consomme des retries sans
+avancer : les deux ont la même signature externe. La double borne retenue
+exige les deux conditions à la fois pour continuer à reporter — une
+progression **constatée** depuis le dernier passage, et un plafond d'âge de
+24 h au-delà duquel le job échoue explicitement plutôt que de se reporter
+indéfiniment. Un report qui ne vérifie que l'âge laisserait tourner un job
+mort jusqu'à la borne ; un report qui ne vérifie que la progression laisserait
+un job lent traîner sans fin.
+
+**Conséquences** : `supabase/migrations/20260930120000_le_fond_tient.sql`
+(revokes symétriques + sept révocations + `org_segment_emails` ordonnée) ;
+`security_acl.test.sql` (règle catalogue ≥ 110 tables + organisation
+« voisine ») ; `src/lib/newsletter-worker.ts` (double borne) ; `docs/bugs.md`
+(supervision du chemin pg_cron 5 min de `jackpot-draws`, geste
+`enabled = true` réservé au propriétaire après premier succès prouvé) ;
+`docs/observability.md` (cadence réelle du drain webhook et du registre
+`jackpot-draws`).
+
+**References** :
+- `supabase/migrations/20260930120000_le_fond_tient.sql`
+- `src/lib/webhook-worker.ts`, `src/lib/newsletter-worker.ts`,
+  `src/lib/timing-safe.ts`
+- roadmap V1.63 ; `docs/bugs.md` (wagon 7) ; `docs/chantier-audit-2026-08-16.md`
