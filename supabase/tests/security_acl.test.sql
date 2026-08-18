@@ -567,82 +567,102 @@ select ok(not exists (
     and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
 ), 'future public functions do not grant PUBLIC execute');
 
-select ok((select relrowsecurity from pg_class where oid = 'public.organizations'::regclass), 'organizations RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.participations'::regclass), 'participations RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.newsletter_subscribers'::regclass), 'newsletter RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.audit_logs'::regclass), 'audit RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.team_invitations'::regclass), 'invitations RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.admin_users'::regclass), 'admin users RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.admin_sessions'::regclass), 'admin sessions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.merchant_deletion_jobs'::regclass), 'merchant deletion jobs RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.reward_issuances'::regclass), 'universal rewards RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.ops_worker_runs'::regclass), 'worker heartbeat RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.ops_worker_definitions'::regclass), 'worker registry RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.webhook_deliveries'::regclass), 'webhook outbox RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.contest_players'::regclass), 'contest players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.contest_predictions'::regclass), 'contest predictions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.contest_leagues'::regclass), 'contest leagues RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.contest_league_members'::regclass), 'league members RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.automation_settings'::regclass), 'automation settings RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.email_log'::regclass), 'email log RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.hunts'::regclass), 'hunts RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.hunt_steps'::regclass), 'hunt steps RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.hunt_players'::regclass), 'hunt players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.hunt_scans'::regclass), 'hunt scans RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.hunt_completions'::regclass), 'hunt completions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_programs'::regclass), 'loyalty programs RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_milestones'::regclass), 'loyalty milestones RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_members'::regclass), 'loyalty members RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_stamps'::regclass), 'loyalty stamps RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.loyalty_rewards'::regclass), 'loyalty rewards RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_campaigns'::regclass), 'jackpot campaigns RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_players'::regclass), 'jackpot players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_participants'::regclass), 'jackpot participants RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.jackpot_wins'::regclass), 'jackpot wins RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_games'::regclass), 'event games RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_questions'::regclass), 'event questions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_question_options'::regclass), 'event options RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_sessions'::regclass), 'event sessions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_players'::regclass), 'event players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_answers'::regclass), 'event answers RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.event_wins'::regclass), 'event wins RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.calendars'::regclass), 'calendars RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.calendar_days'::regclass), 'calendar days RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.calendar_players'::regclass), 'calendar players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.calendar_openings'::regclass), 'calendar openings RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.calendar_rewards'::regclass), 'calendar rewards RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.campaign_templates'::regclass), 'campaign templates RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.quizzes'::regclass), 'quizzes RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.quiz_questions'::regclass), 'quiz questions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.quiz_players'::regclass), 'quiz players RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.quiz_answers'::regclass), 'quiz answers RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.quiz_rewards'::regclass), 'quiz rewards RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_seasons'::regclass), 'progression seasons RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_badges'::regclass), 'progression badges RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_collections'::regclass), 'progression collections RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_collection_items'::regclass), 'progression collection items RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_missions'::regclass), 'progression missions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_versions'::regclass), 'progression mission versions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_seasons'::regclass), 'progression player seasons RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_progress'::regclass), 'progression mission progress RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_mission_contributions'::regclass), 'progression contributions RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_badges'::regclass), 'progression player badges RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_player_items'::regclass), 'progression player items RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_chests'::regclass), 'progression chests RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_items'::regclass), 'progression chest items RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_chest_openings'::regclass), 'progression chest openings RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.progression_engine_failures'::regclass), 'progression engine failures RLS enabled');
--- Le canal SMS. Cette liste est tenue À LA MAIN : une table absente d'ici n'est
--- pas « couverte par défaut », elle est INVISIBLE — un retrait accidentel
--- d'`enable row level security` sur `sms_consents` passerait au vert. Les cinq
--- tables du lot SMS portent des PII (numéros), des identités d'expéditeur et de
--- la facturation.
-select ok((select relrowsecurity from pg_class where oid = 'public.sms_consents'::regclass), 'sms consents RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.sms_log'::regclass), 'sms log RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.sms_senders'::regclass), 'sms senders RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.sms_credits'::regclass), 'sms credits RLS enabled');
-select ok((select relrowsecurity from pg_class where oid = 'public.sms_credit_entries'::regclass), 'sms credit ledger RLS enabled');
+-- ── RLS : le CATALOGUE remplace la liste tenue à la main ─────
+--
+-- Ce qui était ici : soixante-dix `ok(relrowsecurity)`, un par table, empilés au
+-- fil des chantiers — et un commentaire qui AVOUAIT le défaut sans le corriger
+-- (« cette liste est tenue À LA MAIN : une table absente d'ici n'est pas couverte
+-- par défaut, elle est INVISIBLE »). Le catalogue en comptait 110. Quarante
+-- tables n'étaient donc regardées par personne, dont `campaigns` et
+-- `organization_members` — les deux qui décident de tout le reste.
+--
+-- La règle remplace la liste : aucune table de `public` ne tourne sans RLS. Une
+-- table neuve est couverte le jour de sa création, sans que personne ait à
+-- penser à revenir ici, et l'échec NOMME les fautives d'un coup — là où une
+-- liste de 70 assertions les révélait une par une, à condition d'y figurer.
+--
+-- ── EXCEPTIONS ──
+-- Aucune. Il n'existe aujourd'hui AUCUNE table de `public` légitimement sans
+-- RLS : l'attendu est la chaîne vide, et il a été mesuré, pas supposé. Si une
+-- exception devait naître un jour, elle s'écrit ICI, nommée et justifiée —
+-- jamais absorbée en silence par un attendu qu'on aurait élargi.
+select is(
+  (select coalesce(string_agg(c.relname, ', ' order by c.relname), '')
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind = 'r'
+      and not c.relrowsecurity),
+  '',
+  'aucune table de public ne tourne sans row level security'
+);
+-- CONTRÔLE DE PORTÉE — sans lui, l'assertion ci-dessus serait vraie sur un
+-- ensemble VIDE : une garde qui ne garde rien. Même raison, et même forme, que
+-- l'assertion 3 de `search_path_invariant.test.sql`.
+select cmp_ok(
+  (select count(*)::int
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'),
+  '>=', 110,
+  'le contrôle porte bien sur les 110 tables du schéma, pas sur un ensemble vide'
+);
+
+-- ── SEC-4 : sept tables qui ne tenaient que par l'absence de policy ──
+--
+-- RLS active et zéro policy suffit à ne rien laisser sortir — jusqu'à la
+-- première policy écrite un peu large, qui les ouvrirait sans qu'aucun `grant`
+-- ait eu à être ajouté. 20260930120000 leur retire les privilèges : la porte se
+-- ferme alors sans dépendre de ce qu'écrira la prochaine migration.
+--
+-- HONNÊTETÉ SUR CE QUE MESURENT LES SEPT LIGNES QUI SUIVENT : `authenticated`
+-- n'avait déjà ni SELECT ni aucun autre droit DML sur ces tables — elles sont
+-- vertes avant comme après la migration. Ce sont des gardes de NON-RÉGRESSION,
+-- pas la preuve du changement. Ce que la migration retire vraiment, ce sont
+-- REFERENCES/TRIGGER/TRUNCATE hérités des privilèges par défaut de Supabase, et
+-- c'est l'assertion catalogue qui suit les sept qui le mesure — TRUNCATE sur le
+-- journal Stripe ou sur les sessions d'administration n'est pas un privilège
+-- théorique.
+select ok(not has_table_privilege('authenticated', 'public.stripe_events', 'SELECT'), 'merchant cannot read the Stripe event journal');
+select ok(not has_table_privilege('authenticated', 'public.rate_limits', 'SELECT'), 'merchant cannot read the rate limit counters');
+select ok(not has_table_privilege('authenticated', 'public.admin_users', 'SELECT'), 'merchant cannot enumerate back-office administrators');
+select ok(not has_table_privilege('authenticated', 'public.admin_sessions', 'SELECT'), 'merchant cannot read back-office sessions');
+select ok(not has_table_privilege('authenticated', 'public.admin_audit_logs', 'SELECT'), 'merchant cannot read the back-office audit trail');
+select ok(not has_table_privilege('authenticated', 'public.admin_notes', 'SELECT'), 'merchant cannot read internal admin notes');
 select ok(not has_table_privilege('authenticated', 'public.webhook_deliveries', 'SELECT'), 'merchant cannot read webhook payloads');
+-- AUCUN privilège, d'aucune sorte, sur les sept — l'assertion qui mord.
+select is(
+  (select coalesce(string_agg(distinct c.relname || '.' || a.privilege_type, ', '), '')
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace,
+     lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public'
+      and c.relname in ('stripe_events', 'rate_limits', 'admin_users',
+                        'admin_sessions', 'admin_audit_logs', 'admin_notes',
+                        'webhook_deliveries')
+      and a.grantee = 'authenticated'::regrole::oid),
+  '',
+  'authenticated ne garde aucun privilège sur les sept tables hors-locataire'
+);
+-- Le FILET, enfin : plus aucun privilège par défaut ne tombe dans
+-- `authenticated` pour un objet créé par `postgres` — le rôle sous lequel
+-- tournent les migrations. C'est ce qui rend la prochaine table couverte le jour
+-- de sa création, comme 00021 l'avait fait pour `anon` et pour lui seul. Portée
+-- exacte : les privilèges par défaut posés par `supabase_admin` ne sont pas
+-- atteignables ainsi et subsistent ; la garde vaut pour tout ce que ce dépôt
+-- écrit, elle n'est pas universelle.
+select is(
+  (select coalesce(string_agg(distinct d.defaclobjtype || ':' || a.privilege_type, ', '), '')
+     from pg_default_acl d
+     join pg_namespace n on n.oid = d.defaclnamespace,
+     lateral aclexplode(d.defaclacl) a
+    where n.nspname = 'public'
+      and d.defaclrole = 'postgres'::regrole::oid
+      and d.defaclobjtype in ('r', 'S')
+      and a.grantee = 'authenticated'::regrole::oid),
+  '',
+  'aucun privilège par défaut ne tombe dans authenticated (tables et séquences créées par postgres)'
+);
 select is((select count(*) from pg_policies where schemaname='public' and tablename='organizations' and cmd='UPDATE'), 0::bigint, 'no direct organization update policy');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='participations' and policyname='participations: owner select'), 1::bigint, 'participations are owner-only');
 select is((select count(*) from pg_policies where schemaname='public' and tablename='newsletter_subscribers' and policyname='newsletter: owner select'), 1::bigint, 'newsletter is owner-only');
@@ -898,6 +918,31 @@ select results_eq(
   'a campaign keeps offering the post-game share block by default'
 );
 
+-- ── L'ORGANISATION VOISINE ──────────────────────────────────
+--
+-- Ce fichier prouvait les RÔLES — caissier, éditeur, propriétaire — et jamais
+-- les LOCATAIRES : sa fixture n'a longtemps porté qu'UNE organisation. C'est
+-- exactement le trou par lequel la fuite `audit_logs` du wagon 1 est passée. La
+-- policy donnait les lignes sans organisation à TOUT compte connecté ; le test
+-- restait vert parce qu'aucune session d'un AUTRE locataire ne venait jamais
+-- lire. Prouver qu'un caissier voit moins qu'un propriétaire ne dit rien de ce
+-- que voit le voisin.
+--
+-- « Org Voisine » ne partage rien avec « Test ACL » : aucune donnée, aucun
+-- membre. Son propriétaire est le rôle le PLUS privilégié de son locataire — si
+-- lui ne voit rien d'en face, personne chez lui ne voit rien.
+insert into auth.users (id, aud, role, email, encrypted_password, created_at, updated_at)
+values ('10000000-0000-4000-8000-000000000004', 'authenticated', 'authenticated', 'voisin@test.local', '', now(), now());
+insert into public.organizations (id, name, slug) values
+ ('20000000-0000-4000-8000-000000000002', 'Org Voisine', 'test-acl-voisine');
+insert into public.organization_members (organization_id, user_id, role) values
+ ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000004', 'owner');
+-- Un QR code chez « Test ACL ». Sans lui, le zéro du voisin sur `qr_codes`
+-- serait vrai faute de ligne à cacher, et non faute de droit d'y accéder.
+insert into public.qr_codes (id, organization_id, campaign_id, slug, label) values
+ ('a0000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001', 'TESTACLQR', 'Comptoir');
+
 -- Une ligne d'audit SANS organisation : c'est exactement ce que le webhook
 -- Stripe écrit à chaque synchronisation d'abonnement, identifiant client dans
 -- `metadata`. La policy de 00017 la donnait à lire à TOUT compte connecté, de
@@ -1007,6 +1052,41 @@ select results_eq(
   $$select count(*) from public.audit_logs where action = 'contest.delete'$$,
   array[1::bigint], 'contest deletion is audited'
 );
+
+-- CONTRÔLE DE PORTÉE du cloisonnement, joué depuis la session propriétaire de
+-- « Test ACL » — la seule qui voit ces lignes. Les neuf `count(*) = 0` du voisin
+-- ne valent que si chacune de ces tables contient RÉELLEMENT quelque chose à
+-- cacher au moment où il regarde : sur une table vide, un refus et une absence
+-- rendent le même zéro. `concat_ws` ignore les NULL, donc l'échec NOMME les
+-- tables qui se seraient vidées.
+select is(
+  concat_ws(', ',
+    case when (select count(*) from public.campaigns) = 0 then 'campaigns' end,
+    case when (select count(*) from public.wheels) = 0 then 'wheels' end,
+    case when (select count(*) from public.prizes) = 0 then 'prizes' end,
+    case when (select count(*) from public.qr_codes) = 0 then 'qr_codes' end,
+    case when (select count(*) from public.participations) = 0 then 'participations' end,
+    case when (select count(*) from public.spins) = 0 then 'spins' end,
+    case when (select count(*) from public.newsletter_subscribers) = 0 then 'newsletter_subscribers' end,
+    case when (select count(*) from public.organizations where id = '20000000-0000-4000-8000-000000000001') = 0 then 'organizations' end,
+    case when (select count(*) from public.audit_logs) = 0 then 'audit_logs' end),
+  '',
+  'les neuf tables du cloisonnement ont bien une ligne à cacher au voisin'
+);
+
+-- ── Quatrième session : le propriétaire d'EN FACE ────────────
+-- Neuf tables, neuf zéros. `organizations` est bornée à l'organisation d'en
+-- face : le voisin voit évidemment la sienne, ce qu'on lui refuse c'est l'autre.
+set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000004';
+select results_eq('select count(*) from public.campaigns', array[0::bigint], 'a neighbouring owner reads no campaign of another tenant');
+select results_eq('select count(*) from public.wheels', array[0::bigint], 'a neighbouring owner reads no wheel of another tenant');
+select results_eq('select count(*) from public.prizes', array[0::bigint], 'a neighbouring owner reads no prize of another tenant');
+select results_eq('select count(*) from public.qr_codes', array[0::bigint], 'a neighbouring owner reads no QR code of another tenant');
+select results_eq('select count(*) from public.participations', array[0::bigint], 'a neighbouring owner reads no participation PII of another tenant');
+select results_eq('select count(*) from public.spins', array[0::bigint], 'a neighbouring owner reads no spin of another tenant');
+select results_eq('select count(*) from public.newsletter_subscribers', array[0::bigint], 'a neighbouring owner reads no newsletter subscriber of another tenant');
+select results_eq($$select count(*) from public.organizations where id = '20000000-0000-4000-8000-000000000001'$$, array[0::bigint], 'a neighbouring owner does not even see the other organization row');
+select results_eq('select count(*) from public.audit_logs', array[0::bigint], 'a neighbouring owner reads no audit line at all — neither the other tenant''s, nor the tenant-less billing trail');
 
 reset role;
 select * from finish();
