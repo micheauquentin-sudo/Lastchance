@@ -209,11 +209,41 @@ describe("GET /api/cron/jobs", () => {
       expect.anything(),
       expect.objectContaining({ budgetMs: 45_000, startedAt: expect.any(Number) }),
     );
+    // DÉGRADÉ, et non « succeeded » : une clôture refusée par la base (JOB-9)
+    // signifie qu'une livraison partie sera réclamée à nouveau au passage
+    // suivant, donc RENVOYÉE au commerçant. Publier le compteur sans jamais
+    // l'agir laisserait l'objectif « workers » au vert pendant qu'on perd des
+    // états. Le reliquat (`webhooksDeferred`), lui, est nominal et ne dégrade
+    // pas — c'est la seule différence entre les deux compteurs.
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "degraded",
+      expect.objectContaining({ webhooksDeferred: 3, webhooksSettleFailed: 1 }),
+    );
+  });
+
+  it("un reliquat de webhooks SEUL ne dégrade pas le passage (JOB-9)", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "requeue_stale_jobs"
+        ? { data: 0, error: null }
+        : { data: [], error: null },
+    );
+    mocks.drainWebhookDeliveries.mockResolvedValue({
+      claimed: 8,
+      delivered: 5,
+      deadLettered: 0,
+      deferred: 3,
+      settleFailed: 0,
+    });
+
+    await GET(request());
+
     expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       "succeeded",
-      expect.objectContaining({ webhooksDeferred: 3, webhooksSettleFailed: 1 }),
+      expect.objectContaining({ webhooksDeferred: 3, webhooksSettleFailed: 0 }),
     );
   });
 

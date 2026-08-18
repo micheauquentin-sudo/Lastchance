@@ -186,8 +186,16 @@ async function runWorker(request: Request): Promise<NextResponse> {
       totals.smsStale = await countStaleSmsDeliveries(admin);
     }
 
+    // `webhooks.settleFailed` dégrade aussi (JOB-9) : une livraison partie dont
+    // l'accusé n'a pas pu s'écrire sera réclamée à nouveau au passage suivant,
+    // donc RENVOYÉE au commerçant. Publier ce compteur sans jamais l'agir
+    // laisserait l'objectif « workers » au vert pendant qu'on perd des états.
+    // `webhooks.deferred` ne dégrade pas : un reliquat relâché faute de budget
+    // est le fonctionnement nominal d'une file drainée toutes les 5 minutes.
     const runStatus: WorkerRunStatus =
-      totals.failed > 0 || totals.partial > 0 ? "degraded" : "succeeded";
+      totals.failed > 0 || totals.partial > 0 || webhooks.settleFailed > 0
+        ? "degraded"
+        : "succeeded";
     // Clôture best-effort, corollaire de l'ouverture : les jobs sont traités et
     // leurs effets sont partis ; un journal muet ne doit pas rendre un 500 qui
     // ferait rejouer le passage.

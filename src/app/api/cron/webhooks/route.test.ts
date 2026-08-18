@@ -75,6 +75,7 @@ describe("GET /api/cron/webhooks", () => {
       expect.objectContaining({ id: "run-1" }),
       "succeeded",
       { claimed: 3, delivered: 2, deadLettered: 1, deferred: 0, settleFailed: 0 },
+      undefined,
     );
   });
 
@@ -100,6 +101,35 @@ describe("GET /api/cron/webhooks", () => {
       expect.anything(),
       "succeeded",
       expect.objectContaining({ deferred: 3 }),
+      // Un reliquat relâché faute de budget est NOMINAL sur une file drainée
+      // toutes les 5 minutes : il se compte, il ne dégrade pas.
+      undefined,
+    );
+  });
+
+  it("dégrade le worker quand une clôture est refusée par la base (JOB-9)", async () => {
+    // Publier `settleFailed` sans jamais l'agir laisserait l'objectif
+    // « workers » du back-office au vert pendant qu'on perd des états : une
+    // livraison partie dont l'accusé n'a pas pu s'écrire sera RÉCLAMÉE À
+    // NOUVEAU au passage suivant, donc renvoyée au commerçant.
+    mocks.drain.mockResolvedValue({
+      claimed: 3,
+      delivered: 3,
+      deadLettered: 0,
+      deferred: 0,
+      settleFailed: 2,
+    });
+
+    const response = await GET(request());
+
+    // Le drain a bien eu lieu : dégradé n'est pas échoué.
+    expect(response.status).toBe(200);
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "degraded",
+      expect.objectContaining({ settleFailed: 2 }),
+      "webhook_settle_failed",
     );
   });
 
@@ -150,6 +180,7 @@ describe("GET /api/cron/webhooks", () => {
       null,
       "succeeded",
       { claimed: 2, delivered: 2, deadLettered: 0, deferred: 0, settleFailed: 0 },
+      undefined,
     );
   });
 });

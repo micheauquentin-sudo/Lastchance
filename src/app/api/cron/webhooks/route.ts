@@ -65,15 +65,33 @@ export async function GET(request: Request) {
     );
   }
 
+  // DÉGRADÉ sur une clôture refusée par la base (JOB-9). Publier
+  // `settleFailed` sans jamais l'agir laisserait l'objectif « workers » du
+  // back-office au vert pendant qu'on perd des états : une livraison partie
+  // dont l'accusé n'a pas pu s'écrire sera RÉCLAMÉE À NOUVEAU au passage
+  // suivant, donc renvoyée au commerçant. C'est exactement le genre d'anomalie
+  // qu'un compteur muet fait passer inaperçue.
+  //
+  // `deferred` ne dégrade PAS, et la différence est délibérée : un reliquat
+  // relâché faute de budget est le fonctionnement NOMINAL d'une file drainée
+  // toutes les 5 minutes, pas une anomalie.
+  const degraded = summary.settleFailed > 0;
+
   // Clôture best-effort : les accusés sont déjà partis, un journal muet ne
   // doit pas faire rejouer le drain.
-  await finishWorkerRunSafely(admin, run, "succeeded", {
-    claimed: summary.claimed,
-    delivered: summary.delivered,
-    deadLettered: summary.deadLettered,
-    deferred: summary.deferred,
-    settleFailed: summary.settleFailed,
-  });
+  await finishWorkerRunSafely(
+    admin,
+    run,
+    degraded ? "degraded" : "succeeded",
+    {
+      claimed: summary.claimed,
+      delivered: summary.delivered,
+      deadLettered: summary.deadLettered,
+      deferred: summary.deferred,
+      settleFailed: summary.settleFailed,
+    },
+    degraded ? "webhook_settle_failed" : undefined,
+  );
 
   return NextResponse.json(
     { ok: true, ...summary },
