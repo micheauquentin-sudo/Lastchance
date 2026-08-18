@@ -9,7 +9,7 @@
 
 import { bestTextColor } from "@/lib/contrast";
 import { fontFamily } from "@/lib/fonts";
-import { resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import type { WheelStyle } from "@/lib/wheel-style";
 
 export interface WheelSegment {
   id: string;
@@ -147,7 +147,7 @@ export function WheelSvg({
   spinning = false,
   spinDurationMs = 4400,
   reducedMotion = false,
-  style: rawStyle,
+  style: s,
 }: {
   segments: WheelSegment[];
   /** Angle courant de la roue en degrés. */
@@ -162,10 +162,20 @@ export function WheelSvg({
    * — l'appelant doit aussi écourter `spinDurationMs`.
    */
   reducedMotion?: boolean;
-  /** Style résolu (ou partiel) — défauts « classique » si absent. */
-  style?: Partial<WheelStyle>;
+  /**
+   * Style DÉJÀ RÉSOLU — obligatoire, et c'est le point de la prop.
+   *
+   * Elle acceptait un `Partial` et appelait `resolveWheelStyle` ici, comme le
+   * faisaient seize autres composants client de la roue. `resolveWheelStyle`
+   * est un `safeParse` zod : accepter un style partiel côté client, c'est
+   * embarquer zod et le schéma complet de la roue dans le lot de départ des
+   * pages joueur — celles qu'on ouvre au QR code, en boutique, sur réseau
+   * mobile — pour refaire une validation que le serveur a DÉJÀ faite
+   * (`/play` la fait en page.tsx). Rendre la prop obligatoire déplace la
+   * résolution une fois côté serveur et fait tomber les dix-sept appels.
+   */
+  style: WheelStyle;
 }) {
-  const s = resolveWheelStyle(rawStyle);
   const n = Math.max(segments.length, 1);
   const span = 360 / n;
   const labelFont = fontFamily(s.font);

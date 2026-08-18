@@ -2,9 +2,7 @@
 
 import {
   gameObjectColor,
-  playOnLightSurface,
-  resolveWheelStyle,
-  type WheelStyle,
+  playOnLightSurface,  type WheelStyle,
 } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { GameShell } from "../game-shell";
@@ -23,7 +21,7 @@ export function FlipCardExperience({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
 }: {
   slug: string;
@@ -31,12 +29,10 @@ export function FlipCardExperience({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  const kermesse = playOnLightSurface(style);
+}) {  const kermesse = playOnLightSurface(style);
 
   return (
     <GameShell
@@ -45,7 +41,7 @@ export function FlipCardExperience({
       organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
-      style={rawStyle}
+      style={style}
       shareEnabled={shareEnabled}
       gameType="flip_card"
       renderReveal={(outcome, onRevealed) => (

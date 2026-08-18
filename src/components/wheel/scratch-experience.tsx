@@ -21,9 +21,7 @@ import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
 import {
-  playOnLightSurface,
-  resolveWheelStyle,
-  scratchCover,
+  playOnLightSurface,  scratchCover,
   type WheelStyle,
 } from "@/lib/wheel-style";
 
@@ -41,7 +39,7 @@ export function ScratchExperience({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
 }: {
   slug: string;
@@ -50,16 +48,14 @@ export function ScratchExperience({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /**
    * Le commerçant propose-t-il le partage du jeu après la partie ?
    * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
    * `campaigns.share_enabled`.
    */
   shareEnabled: boolean;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  // Thème « kermesse » : même bascule de classes que PlayExperience.
+}) {  // Thème « kermesse » : même bascule de classes que PlayExperience.
   const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [outcome, setOutcome] = useState<SpinOutcome | null>(null);

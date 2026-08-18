@@ -5,7 +5,7 @@ import {
   SMS_CONSENT_VERSION,
   smsConsentLabel,
   smsConsentText,
-} from "@/lib/validations/sms";
+} from "@/lib/claim-libelles";
 
 /**
  * GARDE DE SOURCE — la case de consentement SMS du parcours joueur.
@@ -288,8 +288,12 @@ describe("le texte affiché est celui qui sera archivé", () => {
     // « voici la phrase lue en la cochant ». Recopier la phrase dans le JSX,
     // c'est pouvoir la faire diverger de la version enregistrée — et ne plus
     // pouvoir dire à quoi les gens ont consenti.
+    // `@/lib/claim-libelles` et non `@/lib/validations/sms` : le libellé est
+    // le MÊME (les deux modules le partagent, voir claim-libelles.ts), mais la
+    // moitié client est sans zod — `validations/sms` n'entrait dans le lot de
+    // départ du parcours joueur que pour cette phrase.
     expect(SRC_FORM).toMatch(
-      /import \{[^}]*\bsmsConsentLabel\b[^}]*\} from "@\/lib\/validations\/sms"/,
+      /import \{[^}]*\bsmsConsentLabel\b[^}]*\} from "@\/lib\/claim-libelles"/,
     );
     // L'assertion portait la forme EXACTE `{smsConsentText()}`, sans argument.
     // Elle est tombée le jour où le texte a reçu le NOM de l'établissement —

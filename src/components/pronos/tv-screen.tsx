@@ -150,6 +150,10 @@ export function TvScreen({
           <img
             src={data.organization.logoUrl}
             alt=""
+            // Carré : réserve la place avant l'arrivée du logo, sur un écran
+            // de télévision qu'on ne recharge pas.
+            width={96}
+            height={96}
             className="h-[8vh] w-[8vh] shrink-0 rounded-full border-4 border-k-yellow bg-white object-cover"
           />
         ) : (

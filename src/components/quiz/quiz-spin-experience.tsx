@@ -4,7 +4,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { consumeQuizSpin, type QuizSpinOutcome } from "@/actions/quiz";
 import { ClaimForm, type ClaimConfig } from "@/components/wheel/claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
-import type { WheelStyle } from "@/lib/wheel-style";
+import { SPIN_WHEEL_STYLE } from "@/components/wheel/spin-wheel-style";
 
 /**
  * Tour de roue offert par un quiz. Réutilise l'animation de la roue publique
@@ -36,14 +36,6 @@ function usePrefersReducedMotion(): boolean {
   );
 }
 
-const SPIN_WHEEL_STYLE: Partial<WheelStyle> = {
-  ring: "gold",
-  ringColor: "#211d16",
-  hub: "disc",
-  hubColor: "#211d16",
-  pointerColor: "#f5793b",
-  labelColor: "auto",
-};
 
 /**
  * `kept` : la roue n'avait rien à tirer (`no_prize`). Ce n'est PAS une défaite —

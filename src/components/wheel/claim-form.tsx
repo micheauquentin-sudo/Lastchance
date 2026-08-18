@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { claimPrize } from "@/actions/play";
 import { capturePlayEvent } from "@/components/analytics";
-import { isPlausibleBirthDate } from "@/lib/validations/play";
-import { smsConsentLabel } from "@/lib/validations/sms";
+// Deux libellés et une validation de date, sans zod : `@/lib/claim-libelles`
+// est la moitié client de `validations/play` et `validations/sms`, qui
+// n'entraient dans le lot de départ du parcours joueur que pour ces trois
+// symboles-là. Mêmes signatures, même contrat.
+import { isPlausibleBirthDate, smsConsentLabel } from "@/lib/claim-libelles";
 import { playText } from "./play-theme";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";

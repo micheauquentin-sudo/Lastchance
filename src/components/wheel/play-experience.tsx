@@ -29,7 +29,7 @@ import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
 import { readShareSource } from "@/lib/share-source";
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
 const SPIN_DURATION_MS = 4400;
 /** Durée écourtée quand l'utilisateur préfère réduire les animations. */
@@ -69,7 +69,7 @@ export function PlayExperience({
   logoUrl = null,
   segments,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   referral = null,
   organizationId = null,
   shareEnabled,
@@ -81,7 +81,7 @@ export function PlayExperience({
   segments: WheelSegment[];
   claimConfig?: ClaimConfig;
   /** Personnalisation visuelle (roue, police, bouton) — défauts sinon. */
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /** Parrainage ludique (config publique) — absent/false = section masquée. */
   referral?: PlayReferral | null;
   /**
@@ -96,9 +96,7 @@ export function PlayExperience({
    * (`referral`), qui garde sa propre case.
    */
   shareEnabled: boolean;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  const isCartoon = style.cartoonAnimations;
+}) {  const isCartoon = style.cartoonAnimations;
   // Réduction des animations : durée du spin écourtée À LA SOURCE pour
   // que la transition CSS (WheelSvg) et le timer de révélation du
   // résultat restent synchrones.
@@ -277,6 +275,11 @@ export function PlayExperience({
             <img
               src={logoUrl}
               alt={organizationName}
+              // Dimensions intrinsèques : la place du logo est réservée AVANT son
+              // arrivée. Sans elles le titre et le bouton sautaient vers le bas au
+              // chargement — sur le premier écran du jeu, ouvert au QR code.
+              width={160}
+              height={64}
               className="mx-auto mb-3 h-16 max-w-40 object-contain"
             />
           )}

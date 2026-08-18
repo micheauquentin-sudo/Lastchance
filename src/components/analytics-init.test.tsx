@@ -49,26 +49,35 @@ afterEach(() => {
 });
 
 describe("Analytics — ce qui est réellement passé à posthog.init", () => {
-  it("coupe l'enregistrement de session", () => {
+  // `posthog-js` n'est plus importé statiquement : la bibliothèque est
+  // chargée par `import()` dans la seule branche « consentement accordé »,
+  // pour ne pas la mettre dans le lot de départ des dix parcours joueur.
+  // L'initialisation est donc asynchrone — d'où le `waitFor`. Ce que ces
+  // gardes prouvent est inchangé : ce qui est passé à `init`.
+  it("coupe l'enregistrement de session", async () => {
     render(<Analytics />);
 
-    expect(init).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(init).toHaveBeenCalledTimes(1));
     const options = init.mock.calls[0][1];
     expect(options.disable_session_recording).toBe(true);
   });
 
-  it("garde le masquage des jetons sur le même appel", () => {
+  it("garde le masquage des jetons sur le même appel", async () => {
     // Les deux protections voyagent dans le même objet : si quelqu'un le
     // remplace par un littéral inline, cette assertion tombe avec l'autre.
     render(<Analytics />);
+    await vi.waitFor(() => expect(init).toHaveBeenCalled());
     expect(init.mock.calls[0][1]).toBe(OPTIONS_POSTHOG);
     expect(typeof OPTIONS_POSTHOG.before_send).toBe("function");
     expect(optIn).toHaveBeenCalled();
   });
 
-  it("sans consentement, rien n'est initialisé du tout", () => {
+  it("sans consentement, rien n'est initialisé du tout", async () => {
     localStorage.setItem("lc:analytics-consent", "denied");
     render(<Analytics />);
+    // Laisse passer les microtâches : si un `import()` partait quand même,
+    // l'initialisation aurait eu lieu ici.
+    await Promise.resolve();
     expect(init).not.toHaveBeenCalled();
   });
 });

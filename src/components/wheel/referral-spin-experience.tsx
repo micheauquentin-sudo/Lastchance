@@ -4,7 +4,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { consumeReferralSpin, type ReferralSpinOutcome } from "@/actions/referral";
 import { ClaimForm, type ClaimConfig } from "@/components/wheel/claim-form";
 import { WheelPointer, WheelSvg, type WheelSegment } from "@/components/wheel/wheel-svg";
-import type { WheelStyle } from "@/lib/wheel-style";
+import { SPIN_WHEEL_STYLE } from "./spin-wheel-style";
 
 /**
  * Tour de roue offert par un versement `spin` de parrainage (récompense parrain,
@@ -36,16 +36,6 @@ function usePrefersReducedMotion(): boolean {
   );
 }
 
-// Roue offerte lisible sur fond crème : anneau + moyeu encre, pointeur orange.
-// Les couleurs des segments viennent des lots (prizes) eux-mêmes.
-const SPIN_WHEEL_STYLE: Partial<WheelStyle> = {
-  ring: "gold",
-  ringColor: "#211d16",
-  hub: "disc",
-  hubColor: "#211d16",
-  pointerColor: "#f5793b",
-  labelColor: "auto",
-};
 
 /**
  * `kept` : la roue n'avait rien à tirer (`no_prize`). Ce n'est PAS une défaite —

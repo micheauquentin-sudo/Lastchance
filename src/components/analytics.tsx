@@ -1,9 +1,32 @@
 "use client";
 
 import { useEffect } from "react";
-import posthog from "posthog-js";
 import type { CaptureResult } from "posthog-js";
 import { masquerJetonUrl } from "@/lib/masquer-jeton-url";
+
+/**
+ * LA POIGNÉE DE MODULE — pourquoi posthog-js n'est plus importé statiquement.
+ *
+ * `Analytics` est monté par le layout racine, donc sur TOUTES les pages, y
+ * compris les dix parcours joueur qui s'ouvrent depuis un QR code en boutique,
+ * sur réseau mobile. Un `import posthog from "posthog-js"` en tête de fichier
+ * met la bibliothèque dans le lot de départ de chaque page — payée par tout le
+ * monde, y compris par les visiteurs qui n'ont pas donné leur consentement et
+ * chez qui elle ne sera JAMAIS initialisée.
+ *
+ * La référence est donc gardée dans une variable de module, peuplée par un
+ * `import()` dans la seule branche où le module sert réellement : consentement
+ * accordé ET clé publique définie. Deux réflexes ont été écartés :
+ *  - `next/dynamic`, qui vise un COMPOSANT à rendre ; ici il n'y a rien à
+ *    rendre, `Analytics` retourne `null` ;
+ *  - un import déclenché au clic, qui ferait rater les événements précédant
+ *    le premier clic et déplacerait le coût réseau au pire moment.
+ *
+ * `capturePlayEvent` reste un no-op tant que la poignée est vide : un
+ * événement émis avant le consentement n'est pas mis en file, il est perdu —
+ * ce qui est le comportement voulu, pas une régression.
+ */
+let ph: typeof import("posthog-js").default | null = null;
 
 /**
  * Dernière barrière avant l'envoi à PostHog : aucune propriété ne doit sortir
@@ -63,23 +86,26 @@ export function Analytics() {
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
     if (!key) return;
-    function applyConsent() {
+    async function applyConsent() {
       if (localStorage.getItem("lc:analytics-consent") !== "granted") {
-        if (posthog.__loaded) {
-          posthog.opt_out_capturing();
-          posthog.reset();
+        if (ph?.__loaded) {
+          ph.opt_out_capturing();
+          ph.reset();
         }
         return;
       }
-      if (!posthog.__loaded) {
-        posthog.init(key!, OPTIONS_POSTHOG);
+      // Seul endroit du produit où posthog-js est réellement chargé.
+      ph ??= (await import("posthog-js")).default;
+      if (!ph.__loaded) {
+        ph.init(key!, OPTIONS_POSTHOG);
       }
-      posthog.opt_in_capturing();
+      ph.opt_in_capturing();
     }
-    applyConsent();
-    window.addEventListener("lastchance:analytics-consent", applyConsent);
+    void applyConsent();
+    const surConsentement = () => void applyConsent();
+    window.addEventListener("lastchance:analytics-consent", surConsentement);
     return () =>
-      window.removeEventListener("lastchance:analytics-consent", applyConsent);
+      window.removeEventListener("lastchance:analytics-consent", surConsentement);
   }, []);
 
   return null;
@@ -95,5 +121,5 @@ export function capturePlayEvent(
     | "shared",
   properties?: Record<string, string | number | boolean>,
 ) {
-  if (posthog.__loaded) posthog.capture(event, properties);
+  if (ph?.__loaded) ph.capture(event, properties);
 }

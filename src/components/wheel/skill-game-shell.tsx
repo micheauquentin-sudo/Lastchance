@@ -16,7 +16,7 @@ import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
 import type { GameType } from "@/types/database";
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "challenge" | "won" | "lost" | "blocked";
 
@@ -55,7 +55,7 @@ export function SkillGameShell({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
   gameType,
   renderChallenge,
@@ -66,7 +66,7 @@ export function SkillGameShell({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /**
    * Le commerçant propose-t-il le partage du jeu après la partie ?
    * Requis (pas de défaut `true` ici) : le défaut vit en base, sur
@@ -90,9 +90,7 @@ export function SkillGameShell({
     submit: (attempt: SkillAttempt) => void,
     pending: boolean,
   ) => ReactNode;
-}) {
-  const style = resolveWheelStyle(rawStyle);
-  // Thème « kermesse » : même bascule de classes que GameShell / PlayExperience.
+}) {  // Thème « kermesse » : même bascule de classes que GameShell / PlayExperience.
   const kermesse = playOnLightSurface(style);
   const [phase, setPhase] = useState<Phase>("idle");
   const [challenge, setChallenge] = useState<SkillChallengePublic | null>(null);

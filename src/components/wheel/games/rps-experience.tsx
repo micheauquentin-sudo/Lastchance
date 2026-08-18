@@ -1,6 +1,6 @@
 "use client";
 
-import { playOnLightSurface, resolveWheelStyle, type WheelStyle } from "@/lib/wheel-style";
+import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
 import { SkillGameShell } from "../skill-game-shell";
 import { RpsChallenge } from "./rps-challenge";
@@ -18,7 +18,7 @@ export function RpsExperience({
   organizationId = null,
   logoUrl = null,
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
-  style: rawStyle,
+  style,
   shareEnabled,
 }: {
   slug: string;
@@ -26,11 +26,11 @@ export function RpsExperience({
   organizationId?: string | null;
   logoUrl?: string | null;
   claimConfig?: ClaimConfig;
-  style?: Partial<WheelStyle>;
+  style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
 }) {
-  const kermesse = playOnLightSurface(resolveWheelStyle(rawStyle));
+  const kermesse = playOnLightSurface(style);
 
   return (
     <SkillGameShell
@@ -39,7 +39,7 @@ export function RpsExperience({
       organizationId={organizationId}
       logoUrl={logoUrl}
       claimConfig={claimConfig}
-      style={rawStyle}
+      style={style}
       shareEnabled={shareEnabled}
       gameType="rps"
       renderChallenge={(_challenge, submit, pending) => (
