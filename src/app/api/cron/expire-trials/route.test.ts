@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /* ════════════════════════════════════════════════════════════
  * GET /api/cron/expire-trials
@@ -417,6 +417,110 @@ describe("pannes locales", () => {
       null,
       "succeeded",
       expect.objectContaining({ canceled: 1 }),
+      undefined,
+    );
+  });
+});
+
+describe("PROPRIÉTÉ 5 — le budget d'horloge sort proprement (JOB-6)", () => {
+  /**
+   * Fait avancer l'horloge de `pasMs` à CHAQUE appel Stripe, sans rien
+   * attendre réellement : c'est le seul moyen d'atteindre un budget de 45 s
+   * dans un test qui doit durer une milliseconde.
+   */
+  function horlogeQuiAvanceAChaqueAppelStripe(pasMs: number) {
+    let maintenant = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => maintenant);
+    mocks.hasLiveStripeSubscription.mockImplementation(async () => {
+      maintenant += pasMs;
+      return false;
+    });
+  }
+
+  // `clearAllMocks` vide les appels mais ne DÉFAIT pas un `spyOn` : sans ceci,
+  // l'horloge figée de ces tests suivrait dans tout le reste du fichier.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("s'arrête avant la limite Vercel et compte le reliquat", async () => {
+    // LE DÉFAUT QUE CE TEST FERME. `BATCH_SIZE` borne le NOMBRE de lignes, pas
+    // le TEMPS : 200 appels Stripe lents dépassaient la minute et la fonction
+    // était TUÉE en plein milieu — heartbeat laissé ouvert en `running`,
+    // indistinguable d'un worker au travail, reliquat invisible.
+    db.candidates = Array.from({ length: 20 }, (_, i) => ({
+      id: `org-${i}`,
+      stripe_customer_id: `cus_${i}`,
+    }));
+    // 10 s par organisation : la cinquième franchit les 45 s de budget.
+    horlogeQuiAvanceAChaqueAppelStripe(10_000);
+
+    const body = await (await GET(request())).json();
+
+    expect(body.candidates).toBe(20);
+    expect(body.canceled).toBe(5);
+    expect(body.deferred).toBe(15);
+    // Et surtout : le reste n'a PAS été touché.
+    expect(written()).toHaveLength(5);
+  });
+
+  it("clôt en `degraded` avec le code du reliquat, pas celui d'une panne", async () => {
+    db.candidates = Array.from({ length: 10 }, (_, i) => ({
+      id: `org-${i}`,
+      stripe_customer_id: `cus_${i}`,
+    }));
+    horlogeQuiAvanceAChaqueAppelStripe(50_000);
+
+    await GET(request());
+
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "degraded",
+      expect.objectContaining({ deferred: 9 }),
+      "organizations_deferred",
+    );
+  });
+
+  it("une panne Stripe garde la priorité sur le reliquat dans le code de sortie", async () => {
+    // Les deux causes coexistent ; celle qui demande un REGARD doit gagner —
+    // un reliquat se rattrape demain tout seul, pas une panne.
+    db.candidates = Array.from({ length: 10 }, (_, i) => ({
+      id: `org-${i}`,
+      stripe_customer_id: `cus_${i}`,
+    }));
+    let maintenant = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => maintenant);
+    mocks.hasLiveStripeSubscription.mockImplementation(async () => {
+      maintenant += 50_000;
+      throw new Error("stripe down");
+    });
+
+    await GET(request());
+
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "degraded",
+      expect.objectContaining({ deferred: 9, stripeUnavailable: 1 }),
+      "stripe_or_write_unavailable",
+    );
+  });
+
+  it("un lot qui tient dans le budget ne différe rien et reste `succeeded`", async () => {
+    db.candidates = [
+      { id: "org-1", stripe_customer_id: null },
+      { id: "org-2", stripe_customer_id: null },
+    ];
+
+    const body = await (await GET(request())).json();
+
+    expect(body.deferred).toBe(0);
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "succeeded",
+      expect.objectContaining({ deferred: 0, canceled: 2 }),
       undefined,
     );
   });

@@ -86,6 +86,25 @@ export const maxDuration = 60;
  */
 const BATCH_SIZE = 200;
 
+/**
+ * Marge avant la limite Vercel (`maxDuration = 60`) : on ne DÉMARRE plus une
+ * organisation au-delà. Motif emprunté à /api/cron/sync-contests.
+ *
+ * ── POURQUOI UN PLAFOND DE LIGNES NE SUFFIT PAS ─────────────────
+ *
+ * `BATCH_SIZE` borne le NOMBRE d'organisations, pas le TEMPS qu'elles
+ * prennent : chacune peut déclencher un appel réseau à Stripe
+ * (`hasLiveStripeSubscription`), et 200 appels lents dépassent la minute bien
+ * avant d'épuiser le lot. Ce qui arrivait alors n'était pas une erreur mais
+ * une COUPURE : la fonction était tuée en plein milieu, le heartbeat restait
+ * ouvert en `running` — indistinguable d'un worker encore au travail — et le
+ * back-office ne voyait ni l'échec, ni les organisations non traitées. Sortir
+ * proprement à 45 s clôt le journal, compte le reliquat, et le cron du
+ * lendemain reprend par les essais les plus anciens (`order by trial_ends_at`)
+ * : les non-traités d'aujourd'hui sont en tête demain.
+ */
+const TIME_BUDGET_MS = 45_000;
+
 const MS_PER_DAY = 86_400_000;
 
 export async function GET(request: Request) {
@@ -97,6 +116,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 
+  const startedAt = Date.now();
   const admin = createAdminClient();
   // Ouverture best-effort, comme les autres crons quotidiens : le journal de
   // santé ne gouverne pas le travail métier.
@@ -139,7 +159,14 @@ export async function GET(request: Request) {
   let stripe: Stripe | null = null;
   const stripeClient = (): Stripe => (stripe ??= getStripe());
 
+  let traites = 0;
+
   for (const org of candidates) {
+    // Le budget se lit EN TÊTE, avant tout appel réseau : une fois Stripe
+    // interrogé, la seconde est dépensée quoi qu'on décide ensuite.
+    if (Date.now() - startedAt > TIME_BUDGET_MS) break;
+    traites += 1;
+
     if (org.stripe_customer_id) {
       let live: boolean;
       try {
@@ -194,12 +221,22 @@ export async function GET(request: Request) {
     });
   }
 
+  // Ce que le budget a laissé sur la table. Le lot est ordonné et la boucle
+  // n'en saute aucun élément : tout ce qui suit le point de sortie est, par
+  // construction, non traité.
+  const deferred = candidates.length - traites;
+
   // DÉGRADÉ, pas ÉCHOUÉ, et seulement sur ce qui relève de CE worker : Stripe
-  // injoignable ou écriture refusée. Le désaccord de statut est une anomalie
-  // AMONT (un webhook perdu), déjà remontée à Sentry et comptée : la faire
-  // aussi virer le heartbeat au rouge ferait tomber l'objectif « workers » du
-  // back-office pour une panne qui n'est pas la sienne.
-  const degraded = stripeUnavailable > 0 || writeFailed > 0;
+  // injoignable, écriture refusée, ou budget épuisé. Le désaccord de statut est
+  // une anomalie AMONT (un webhook perdu), déjà remontée à Sentry et comptée :
+  // la faire aussi virer le heartbeat au rouge ferait tomber l'objectif
+  // « workers » du back-office pour une panne qui n'est pas la sienne.
+  //
+  // Un reliquat compte comme dégradé pour la même raison qu'à /api/cron/reengage
+  // : le travail fait est réel, la COUVERTURE ne l'est pas. Un parc qui déborde
+  // le budget tous les jours doit se voir, sans quoi la fenêtre de rattrapage
+  // s'allonge en silence.
+  const degraded = stripeUnavailable > 0 || writeFailed > 0 || deferred > 0;
   const counters = {
     candidates: candidates.length,
     canceled,
@@ -207,13 +244,21 @@ export async function GET(request: Request) {
     stripeUnavailable,
     writeFailed,
     alreadyMoved,
+    deferred,
   };
   await finishWorkerRunSafely(
     admin,
     run,
     degraded ? "degraded" : "succeeded",
     counters,
-    degraded ? "stripe_or_write_unavailable" : undefined,
+    // Le code de sortie nomme la cause DOMINANTE : un reliquat se rattrape
+    // demain, une panne Stripe demande un regard. Motif `organizations_deferred`
+    // repris tel quel de /api/cron/reengage.
+    stripeUnavailable > 0 || writeFailed > 0
+      ? "stripe_or_write_unavailable"
+      : deferred > 0
+        ? "organizations_deferred"
+        : undefined,
   );
 
   return NextResponse.json(
