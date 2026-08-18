@@ -90,6 +90,11 @@ const eslintConfig = defineConfig([
     "site/**",
     // Captures et scripts de référence locaux, hors application.
     "Input/**",
+    // Artefacts locaux de `supabase start`/`db reset` (gitignorés mais pas
+    // ignorés d'ESLint) : un bundle Deno minifié y atterrit et a pollué trois
+    // campagnes de lint avant cette ligne.
+    "supabase/.temp/**",
+    "supabase/.branches/**",
   ]),
   {
     name: "lastchance/pas-de-node-dans-le-client",
