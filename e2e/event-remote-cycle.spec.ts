@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 /**
  * Cycle MINIMAL du Mode événement en direct, piloté par la télécommande
@@ -32,32 +33,71 @@ import { expect, test } from "@playwright/test";
  * Polling (pas de dépendance Realtime en local) : toutes les attentes
  * multi-onglets sont des attentes d'état (`expect(...).toBeVisible()`),
  * jamais un délai fixe.
+ *
+ * REJOUABILITÉ (pas seulement isolation). L'isolation de session (game
+ * dédié plus haut) évite la collision AVEC `event.spec.ts`, mais ne
+ * protège pas ce test de LUI-MÊME : il mute sa propre session
+ * (`lobby → question_active → question_locked → reveal`) et ne la
+ * remettait jamais à `lobby`. Sous 2 projets Playwright + `retries: 1`
+ * en CI, une tentative qui échoue à mi-cycle (contention, un des délais
+ * serveur de 20/30 s trop juste) laissait la session en
+ * `question_active`/`reveal` avec un joueur déjà inscrit : CHAQUE
+ * tentative suivante (le retry, ou l'autre projet lancé en parallèle)
+ * trouvait alors la télécommande SANS le bouton « Lancer une question »
+ * — un échec déterministe en cascade qui ressemblait à du flake WebKit
+ * mais n'en était pas un (même défaut que la jauge jackpot corrigée en
+ * `c7feb86` : une assertion qui suppose l'état initial au lieu de le
+ * garantir). Le `beforeEach` ci-dessous remet la session en `lobby` et
+ * purge ses joueurs (service role, même client que `stripe-webhook.spec.ts`
+ * — fonctionne à l'identique en CI et en local, pas de psql à distinguer
+ * par environnement) : chaque tentative démarre d'un état propre, qu'elle
+ * suive une réussite, un échec ou un retry.
  */
 const SESSION_ID = "e2ed0000-0000-4000-8000-000000000022";
 const JOIN_CODE = "E2ERMT";
 
+const admin = () =>
+  createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } },
+  );
+
 test.describe("mode événement — cycle question → révélation (télécommande)", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test.beforeEach(async () => {
+    const supabase = admin();
+    // Cascade sur event_answers (FK on delete cascade) : purge complète du
+    // passage précédent, quel qu'ait été son point d'arrêt.
+    await supabase.from("event_players").delete().eq("session_id", SESSION_ID);
+    const { error } = await supabase
+      .from("event_sessions")
+      .update({
+        status: "lobby",
+        phase: "lobby",
+        current_question_id: null,
+        current_question_started_at: null,
+        prono_correct_option_id: null,
+      })
+      .eq("id", SESSION_ID);
+    if (error) {
+      throw new Error(`reset session événement E2E: ${error.message}`);
+    }
+  });
 
   test("l'organisateur lance une question, le joueur répond, la révélation s'affiche partout", async ({
     page,
     browser,
   }) => {
-    // ── 1. Télécommande : la session seedée est en lobby, prête à lancer.
-    // Sous charge CI (suite complète, 2 workers), le rendu de cette page
-    // (dashboard authentifié + chargement des questions) s'est vu dépasser
-    // les 30 s par défaut sur mobile-safari, jamais en isolé — un problème de
-    // budget, pas d'état. `waitForLoadState("networkidle")` laisse le réseau
-    // (hydratation, appels serveur) se stabiliser avant d'interroger le DOM,
-    // et le timeout de CETTE seule attente est élargi (le timeout global du
-    // test, lui, reste celui de la config).
+    // ── 1. Télécommande : la session est en lobby (garanti par le
+    // beforeEach), prête à lancer.
     await page.goto(`/dashboard/events/${SESSION_ID}/remote`);
-    await page.waitForLoadState("networkidle");
     await expect(
       page.getByRole("heading", { name: "Lancer une question" }),
-    ).toBeVisible({ timeout: 45_000 });
+    ).toBeVisible({ timeout: 30_000 });
     const questionRow = page.getByText("Capitale de la France ?");
-    await expect(questionRow).toBeVisible({ timeout: 45_000 });
+    await expect(questionRow).toBeVisible();
 
     // ── 2. Joueur : contexte anonyme séparé, rejoint la partie puis répond.
     const player = await browser.newContext();
