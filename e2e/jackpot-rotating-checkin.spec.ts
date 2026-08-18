@@ -30,12 +30,20 @@ test.describe("jackpot collectif — participation par code tournant", () => {
   test("le code affiché au comptoir se saisit côté joueur et fait avancer la jauge", async ({
     page,
   }) => {
-    // ── 1. Écran comptoir : le code tournant s'affiche en grand, jauge à 0/5.
+    // ── 1. Écran comptoir : le code tournant s'affiche en grand. La jauge
+    // n'est PAS assumée à 0/5 : sous CI (`retries: 1`), une reprise après un
+    // premier essai qui a timeout APRÈS avoir déjà enregistré la
+    // participation retrouverait une jauge à 1/5 — un test qui exige "0 / 5"
+    // en dur échoue alors en permanence sur la reprise. On lit le compte
+    // courant et on vérifie l'incrément relatif, seule assertion valable
+    // quel que soit l'essai.
     await page.goto(`/dashboard/jackpot/${CAMPAIGN_ID}/comptoir`);
     await expect(
       page.getByText("Participez avec ce code"),
     ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText("0 / 5")).toBeVisible();
+    const gauge = page.getByText(/^\d+ \/ 5$/);
+    await expect(gauge).toBeVisible({ timeout: 30_000 });
+    const before = Number((await gauge.textContent())!.match(/^(\d+) \/ 5$/)![1]);
 
     // Le code est groupé "XXX XXX" (espace de lisibilité) dans le seul
     // paragraphe géant en police mono de cet écran.
@@ -55,10 +63,11 @@ test.describe("jackpot collectif — participation par code tournant", () => {
     await codeInput.fill(code);
     await page.getByRole("button", { name: "Je participe !" }).click();
 
-    // ── 3. Succès : message de confirmation et jauge à 1/5.
+    // ── 3. Succès : message de confirmation et jauge incrémentée d'une unité
+    // par rapport à la valeur lue avant participation (jamais "1 / 5" en dur).
     await expect(page.getByText("Participation enregistrée !")).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("1 / 5")).toBeVisible();
+    await expect(page.getByText(`${before + 1} / 5`)).toBeVisible();
   });
 });
