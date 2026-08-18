@@ -12,7 +12,7 @@ export function LegalPage({
   return (
     <main className="min-h-dvh bg-[#fdf6f0] px-5 py-12 text-zinc-800 sm:py-20">
       <article className="mx-auto max-w-3xl rounded-3xl border border-orange-900/10 bg-white p-6 shadow-sm sm:p-10">
-        <Link href="/" className="text-sm font-semibold text-orange-600 hover:underline">
+        <Link href="/" className="text-sm font-semibold text-k-orange-text hover:underline">
           ← LastChance
         </Link>
         <h1 className="mt-6 text-3xl font-bold tracking-tight text-zinc-950">{title}</h1>

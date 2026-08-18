@@ -36,7 +36,7 @@ export default async function SignupPage({
         Déjà inscrit ?{" "}
         <Link
           href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
-          className="font-medium text-orange-600 hover:underline"
+          className="font-medium text-k-orange-text hover:underline"
         >
           Connexion
         </Link>

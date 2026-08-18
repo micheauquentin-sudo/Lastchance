@@ -198,7 +198,7 @@ export default async function ParticipationsPage({
         actions={
           <a
             href={`/dashboard/participations/export${exportQuery ? `?${exportQuery}` : ""}`}
-            className="text-sm font-semibold text-orange-600 hover:underline"
+            className="text-sm font-semibold text-k-orange-text hover:underline"
           >
             Exporter en CSV
           </a>
@@ -269,13 +269,13 @@ export default async function ParticipationsPage({
           <div className="flex items-center gap-4">
             <Link
               href="/dashboard/newsletter"
-              className="text-sm font-semibold text-orange-600 hover:underline"
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
               Envoyer un email →
             </Link>
             <a
               href="/dashboard/participations/export?type=newsletter"
-              className="text-sm font-semibold text-orange-600 hover:underline"
+              className="text-sm font-semibold text-k-orange-text hover:underline"
             >
               Exporter les emails
             </a>
