@@ -26,7 +26,7 @@ fusion, le propriétaire n'a rien d'autre à surveiller.
 | 2 | Le catalogue Stripe dit vrai | `chantier/audit-p0-stripe` | SD-1..SD-7, SD-9, SD-4 (périmètre) | ✅ **fusionné `7db27ee`, déployé, santé verte** |
 | 3 | La boucle joueur → gain se ferme | `chantier/audit-p0-joueur` | JOU-1, UI-1, UI-2, JOB-8, SEC-2 (skill), MORT-1 (écran jackpot) | ✅ **fusionné `4b9499b`, déployé, santé verte** |
 | 4 | Le commerçant garde la main, les chiffres disent vrai | `chantier/audit-p1-controle` | FIA-1..FIA-6, EXP-3, NUM-1, SCAN-1, LIST-1, IDX-1, CNT-1, EXP-2 (hero) | ✅ **fusionné `c32dfc4`, déployé, santé verte** |
-| 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | à venir |
+| 5 | La soirée live tient sa promesse | `chantier/audit-p1-live` | EVT-1, EVT-2, JOU-4, JOU-5, DOC-1 (perf-report), JKP-1, plafond jauge 500 | 🟡 **branche poussée, tête `f48b83d`, PR à ouvrir** |
 | 6 | Léger, accessible, des états partout | `chantier/audit-p2-front` | PERF-1..PERF-8, PERF-4/UI-3, UI-4, UI-5, UI-6, A11Y-1..A11Y-7 (+ le correctif de contraste en `stash@{0}` du clone WSL) | à venir |
 | 7 | Les capteurs disent vrai, le fond tient | `chantier/audit-p2-fond` | JOB-1..JOB-7, JOB-9, SEC surface (seaux, timing-safe, health, wallet), SEC multitenant (fixture 2 orgs, RLS par catalogue, privilèges par défaut), CI-1, CI-2, TEST-1..TEST-3, DETTE-1, DETTE-2, MORT-2 | à venir |
 
@@ -148,3 +148,12 @@ partir d'un `main` en retard fabrique un conflit gratuit.
   après déploiement » success sur `c32dfc4`, job « Base · Workers ·
   Sécurité » réellement exécuté (20:13:34→20:13:42 UTC, pas sauté) —
   migration `20260928120000` appliquée en production.**
+- **Wagon 5** : branche `chantier/audit-p1-live` poussée, tête `f48b83d`,
+  arbre propre (seul `docs/lastchance-reserver.md`, fichier Codex non suivi,
+  hors commit), 11 commits. Revue sécurité **GO** (0 critique/élevé, 2 MOYEN
+  + 1 FAIBLE + 5 INFO, les 2 MOYEN, le FAIBLE et 1 INFO fermés dans le
+  wagon). pgTAP 63 fichiers / 3614 assertions PASS ×2 (vide et semée),
+  `verif-complete.sh --rapide` 0 échec (6 min 29), E2E ciblé 57/57 verts sur
+  3 navigateurs (event, jackpot, jackpot-staff-checkin, player-win,
+  wheel-wizard). Roadmap V1.61, ADR-106. **PR à ouvrir ; CI de la PR à
+  jouer.**

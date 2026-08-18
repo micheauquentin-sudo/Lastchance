@@ -285,14 +285,24 @@ Ce que cela ne dit pas : la correction sous concurrence (deux joueurs sur le
 dernier lot, stock négatif, jeton rejoué). Elle est prouvée ailleurs, par
 `scripts/concurrency-probe.mjs`, et ce banc ne la remplace pas.
 
-## 7. La jauge 1 000 de « La Totale » — éprouvée, et NON tenue (2026-08-07)
+## 7. La jauge de « La Totale » — éprouvée, et RAMENÉE À 500 (2026-08-07, révisé 2026-08-17 au wagon 5)
 
-L'offre `full` vend **1 000 participants simultanés**. Le catalogue portait déjà
-la règle « ne pas vendre de jauge supérieure avant un benchmark de capacité live
-concluant » (`src/lib/plans.ts`). Le benchmark a eu lieu. **Il n'est pas
-concluant.**
+L'offre `full` a vendu **1 000 participants simultanés**. Le catalogue portait
+déjà la règle « ne pas vendre de jauge supérieure avant un benchmark de
+capacité live concluant » (`src/lib/plans.ts`). Le benchmark a eu lieu, décrit
+plus bas dans cette section : **il n'était pas concluant pour 1 000.** Au
+wagon 5 de l'audit transverse (VEN-1, migration `20260929120000`), la jauge
+vendue de l'offre `full` est **redescendue à 500** — `event_participant_capacity`
+rend désormais 500 pour `full` comme pour `live`, et `src/lib/plans.ts` porte
+l'union de type `100 | 500` : vendre 1 000 n'est plus qu'une régression de
+schéma de compiler, plus une décision qu'un commercial peut prendre seul.
+L'accès **offert** (non commercial) reste à 1 000, parce qu'il n'a jamais été
+vendu sur la promesse d'un débit garanti. Les mesures historiques à 1 000
+ci-dessous restent dans ce document **telles qu'observées avant ce
+plafonnement** — elles ne sont plus vendables, mais elles motivent la décision
+et servent de repère si un futur banc rouvre la question.
 
-### La garde de capacité, elle, est correcte
+### La garde de capacité, elle, était déjà correcte (mesure d'origine, à 1000)
 
 1 000 joins par la RPC réelle `join_event_session`, puis un 1001ᵉ :
 
@@ -303,9 +313,11 @@ concluant.**
 | Joueurs réellement inscrits | **1000** |
 | Verdict du 1001ᵉ | **`{"state": "full", "capacity": 1000}`** |
 
-Rien à corriger de ce côté : la jauge est appliquée, pas seulement affichée.
+Rien à corriger de ce côté : la jauge était déjà appliquée, pas seulement
+affichée. Depuis le wagon 5, la même garde s'applique à la jauge vendue
+révisée (500 pour `full`/`live`, 1000 pour l'accès offert).
 
-### Ce que 1 000 joueurs coûtent RÉELLEMENT
+### Ce que 1 000 joueurs coûtaient RÉELLEMENT (mesure avant plafonnement)
 
 Un participant n'est pas une requête, c'est un **rafraîchissement continu**.
 `eventPollDelay` (`src/lib/event-realtime-contract.ts`) fixe la cadence par
@@ -319,9 +331,11 @@ joueur, et **Realtime est absent de la production** (aucune variable
 | Révélation / classement | 5 000 ms | 30 000 ms |
 
 Soit, pendant une question : **1 000 joueurs ⇒ 400 req/s soutenues** sur
-`getEventState`. À 500 joueurs, 200 req/s. À 100, 40 req/s.
+`getEventState`. À 500 joueurs, 200 req/s. À 100, 40 req/s. (Chiffres avant
+plafonnement — la ligne 1000 n'est plus vendable depuis le wagon 5, gardée ici
+comme repère de charge.)
 
-### Mesure (local, session réelle en `question_active`)
+### Mesure (local, session réelle en `question_active`) — avant plafonnement
 
 | Salle | 20 conn | 60 conn | 150 conn |
 |---|---|---|---|
@@ -357,71 +371,86 @@ qui a évité d'attribuer au correctif ce qui revenait à la fatigue de la machi
 (un premier essai concluait à une DÉGRADATION de moitié ; l'A/B a montré
 l'inverse).
 
-### Le cache d'état partagé : gain RÉEL mais MODESTE
+### Le cache d'état partagé — LIVRÉ au wagon 5 (2026-08-17), pas au chiffre annoncé ici avant
 
-Découpage `event_etat_partage` (commun à la salle, cacheable 1 s) /
-`event_etat_joueur` (personnel, jamais cacheable) — migration `20260919120000`.
-Équivalence prouvée : `partagé + personnel` reproduit exactement
-`event_public_state`, avec jeton et sans jeton.
+Cette section décrivait un découpage `event_etat_partage` / `event_etat_joueur`
+sur une migration `20260919120000` et un tableau A/B mesuré. **Aucun des deux
+n'a jamais existé** : `20260919120000` est l'interrupteur de partage social,
+sans rapport, et les deux RPC n'existaient nulle part avant le wagon 5. Le
+tableau A/B qui suivait mesurait donc un artefact — à refaire au prochain banc,
+il n'a jamais eu lieu.
 
-A/B dos à dos, 1 000 joueurs, phase question, le chemin historique passant en
-PREMIER (donc avantagé par une machine plus fraîche) :
+Ce qui est réellement livré, par la **migration `20260929120000`**
+(wagon 5 de l'audit transverse, EVT-1/EVT-2, `src/lib/event-etat.ts`) :
 
-| Connexions | Sans cache | Avec cache | Écart |
-|---|---|---|---|
-| 20 | 54 req/s · p50 365 ms | **63 req/s · p50 299 ms** | +17 % |
-| 60 | 61 req/s · p50 920 ms | **62 req/s · p50 874 ms** | +2 % |
+- Découpage RPC en base : `event_etat_partage` (part commune à toute la
+  session — classement, question, chrono serveur) et `event_etat_joueur`
+  (bloc `you` : score, rang, code de retrait — jamais appelée seule, c'est un
+  invariant d'appelant tenu côté TypeScript, pas en base). Équivalence
+  champ à champ avec `event_public_state` prouvée par pgTAP, avec et sans
+  jeton.
+- Cache mémoire d'**1 s**, **par session** et **par instance serveur**, sur la
+  part partagée uniquement — le bloc `you` n'est jamais mis en cache. Seuls
+  les états `state === "ok"` entrent en cache ; un refus (session inexistante,
+  brouillon, archivée, module fermé) ou une panne de lecture n'y entrent
+  jamais, pour ne pas retarder la publication d'une session ni gonfler la
+  mémoire avec des UUID forgés.
+- Garde de contexte fusionnée en base : ce qui coûtait trois allers-retours
+  (session, garde de module, `event_public_state`) tient désormais en un
+  seul appel RPC côté rendu serveur ET côté repli polling.
+- La pression du jackpot n'est observée qu'après verdict `ok`, et rattachée
+  par `after()` — elle ne bloque plus la réponse au joueur (correctifs
+  MOYEN 1-2 de la revue sécurité du wagon).
 
-**Le classement n'était donc pas le goulot.** Le cache supprime un des trois
-allers-retours base par poll et ne gagne que ~10 % : le coût dominant est
-ailleurs — `loadEventActionContext`, l'écriture du compteur de pression
-(`observeEventPressure` écrit en base à CHAQUE poll), et l'enveloppe de la
-server action elle-même.
+**Aucune mesure de débit chiffrée n'accompagne cette livraison** — le tableau
+A/B ci-dessus n'a jamais été refait proprement dos à dos après le vrai
+correctif. Ce qui est établi, ce n'est pas un req/s : c'est la garantie
+structurelle qu'à charge de session identique, une salle de N joueurs sondant
+la même seconde ne déclenche plus qu'un seul calcul de classement au lieu de
+N, et un seul aller-retour base au lieu de trois par poll. La preuve à
+apporter avant de revendre un chiffre de débit est un nouveau banc dos à dos,
+qui reste à faire.
 
-### Verdict par palier
+### Verdict par palier — jauge vendue plafonnée à 500 (wagon 5)
 
-Transposition vers la production au rapport observé sur le chemin d'écriture
-(local 160 → prod 409, soit ×2,5) :
+Le palier 1000 n'est plus une offre vendable (`src/lib/plans.ts`,
+`event_participant_capacity` — voir plus haut) : il disparaît du tableau
+vendable, gardé seulement comme ligne de charge de référence au tableau
+« avant plafonnement » ci-dessus. Sur la meilleure mesure disponible avant le
+cache (A/B du 2026-08-08 : **61 req/s** local), transposée à la production au
+rapport observé sur le chemin d'écriture (local 160 → prod 409, soit ×2,5) :
+**~150 req/s** pour `getEventState`, Realtime coupé. Le cache du wagon 5
+réduit la charge de base par session mais n'a pas été re-mesuré sous cette
+forme (voir ci-dessus) : le tableau qui suit reste conservateur, sur la base
+du chiffre pré-cache.
 
-Sur la meilleure mesure disponible (A/B du 2026-08-08 : **61 req/s** local),
-transposée à la production au rapport observé sur le chemin d'écriture
-(local 160 → prod 409, soit ×2,5) : **~150 req/s** pour `getEventState`.
-
-| Offre | Jauge | Besoin (Realtime coupé) | Disponible (estimé prod) | Verdict |
+| Offre | Jauge vendue | Besoin (Realtime coupé) | Disponible (estimé prod) | Verdict |
 |---|---|---|---|---|
 | Coup d'envoi / Le Club | 100 | 40 req/s | ~150 req/s | **tient** |
-| Le Grand Jeu | 500 | 200 req/s | ~150 req/s | **limite** |
-| La Totale | 1 000 | 400 req/s | ~150 req/s | **ne tient pas** |
+| Le Grand Jeu | 500 | 200 req/s | ~150 req/s | **limite — c'est désormais le plafond vendu, assumé** |
 
-**Avec Realtime connecté**, la cadence passe de 2 500 à 30 000 ms et le besoin
-est divisé par douze : 1 000 joueurs ne demandent plus que **33 req/s**, ce qui
-passe très largement. **Le levier n'est donc pas l'optimisation de l'endpoint —
-c'est Realtime**, déjà écrit, testé, avec repli par polling, et qu'il suffit
-d'activer (`EVENTS_REALTIME_ENABLED`).
+« La Totale » (1000) n'existe plus au catalogue depuis le wagon 5 ; la ligne
+« ne tient pas » qu'elle portait ici a motivé son retrait plutôt que d'être
+corrigée par un correctif de débit.
 
-Le plafond se déplace alors sur les **connexions Realtime simultanées** :
-200 sur Supabase Free, 500 sur Pro. Une salle de 1 000 les dépasse encore — et
-c'est là, pas dans le SQL, que se joue la faisabilité de la jauge vendue.
+**Avec Realtime connecté**, la cadence passe de 2 500 à 30 000 ms en question
+active et le besoin est divisé par douze : une salle de 500 ne demanderait
+plus que ~17 req/s, ce qui passe très largement. **Le levier disponible n'est
+donc pas l'optimisation supplémentaire de l'endpoint — c'est l'activation de
+Realtime**, déjà écrit, testé, avec repli par polling. Le code est prêt et le
+drapeau `EVENTS_REALTIME_ENABLED` est désormais documenté dans `.env.example`
+(wagon 5) ; **son activation en production reste NON cochée dans
+`docs/roadmap.md`** — c'est un geste d'exploitation (vercel-release ou
+propriétaire), pas un chantier de code.
 
-### Le levier existe déjà, et il est à moitié posé
-
-Activer Realtime fait passer la cadence de 2 500 à 30 000 ms — **douze fois
-moins de trafic** : 1 000 joueurs ne demandent plus que 33 req/s, ce qui passe
-largement. Le code est écrit, testé, avec repli par polling ; seule la variable
-`EVENTS_REALTIME_ENABLED` manque en production.
-
-Mais le plafond se déplace alors sur les **connexions Realtime simultanées** :
-200 sur Supabase Free, 500 sur Pro. Une salle de 1 000 les dépasse encore.
-
-**Le correctif qui débloquerait réellement les grandes salles** est ailleurs, et
-il est bon marché : `event_public_state` rend la MÊME réponse à tous les joueurs
-d'une session, à leur score personnel près. Un cache serveur d'une seconde par
-session ramènerait 400 req/s de travail base à **une requête par seconde**.
-Ce n'est pas fait, et c'est le chantier à ouvrir avant de vendre une grosse
-soirée.
+Une fois Realtime actif, le plafond se déplace sur les **connexions Realtime
+simultanées** : 200 sur Supabase Free, 500 sur Pro — une salle de 500 tient
+tout juste sur le palier Pro, c'est une donnée à surveiller si la jauge
+vendue devait remonter un jour.
 
 **Restent ouverts** : le démarrage à froid (1 859 ms mesuré avant, à
-re-mesurer) et le débit réel des server actions.
+re-mesurer), le débit réel des server actions, et un banc dos à dos du cache
+du wagon 5 sous charge réelle.
 
 **Ce que cela invalide.** Les ~850 req/s du §4 ne sont pas faux, ils ne
 mesurent pas la même chose : ils décrivent le service d'une page ISR par le

@@ -6785,3 +6785,76 @@ neuve, `src/lib/codes-en-attente.ts`).
   ici » — c'est cette phrase que ce wagon ferme)
 - roadmap V1.60 ; `docs/bugs.md` (wagon 4 : sept points consignés sans
   correctif, F-2, INFO-3, INFO-5)
+
+## ADR-106 : La soirée live tient sa promesse — cache d'1 s par session, jauge vendable plafonnée à 500
+
+**Date** : 2026-08-17
+**Statut** : Accepté
+**Contexte** : wagon 5 du train de correction issu de l'audit transverse du
+2026-08-16 (`docs/chantier-audit-2026-08-16.md`, EVT-1, EVT-2, JOU-4, JOU-5,
+DOC-1 perf-report, JKP-1, plafond jauge 500), branche `chantier/audit-p1-live`.
+Le §7 de `docs/perf-report.md` avait établi, dès 2026-08-07, que la jauge
+vendue « La Totale » (1000 participants) n'était pas tenue : ~400 req/s de
+besoin contre ~150 req/s de débit estimé en production, Realtime coupé. Ce
+wagon ferme cet écart.
+
+### Le cache d'1 s par session et par instance, retenu comme levier dominant
+
+Six des sept clés de l'état public d'une session sont identiques pour tous
+ses joueurs. `event_etat_partage` (migration `20260929120000`) isole cette
+part commune et la cache une seconde en mémoire, par session, par instance
+serveur — calque du modèle déjà en usage pour `dernieresTraces`
+(`src/lib/player-identity.ts:155-180`). Le bloc `you` (`event_etat_joueur`)
+n'est **jamais** caché : il porte le score, le rang et le code de retrait
+personnels. Le drapeau `EVENTS_REALTIME_ENABLED` seul, sans ce cache, laisse
+un besoin résiduel de ~217 req/s pour ~150 req/s disponibles à 500 joueurs :
+insuffisant seul, d'où le choix de livrer le cache en base plutôt que de
+se reposer uniquement sur l'activation d'un transport encore éteint en
+production.
+
+### La fusion des gardes en base, source unique
+
+Le rendu serveur et le repli polling lisaient chacun la session puis la garde
+de module puis l'état, soit trois allers-retours dupliqués par deux chemins.
+`event_etat_partage` descend les deux premiers dans la RPC : `unavailable` sur
+session brouillon/archivée ou module fermé est désormais tranché à un seul
+endroit, en base, et la parité avec l'ancien comportement à deux chemins a été
+vérifiée à la main par la revue de sécurité plutôt que par un test générique
+de non-régression comportementale.
+
+### La jauge vendable redescend à 500, l'union de type porte l'interdit
+
+`event_participant_capacity` rend désormais 500 pour `full` et `live` (1000
+pour l'accès offert, jamais vendu sur une promesse de débit).
+`src/lib/plans.ts` rétrécit l'union `eventParticipants` à `100 | 500` : vendre
+1000 redevient une erreur de compilation, pas une case qu'un commercial peut
+cocher seul. Aucun banc n'a prouvé 1000 tenable ; le catalogue ne le propose
+donc plus tant qu'un banc futur ne l'aura pas établi.
+
+### `server_now` figé jusqu'à 1 s par le cache, assumé
+
+Le chrono serveur affiché aux deux écrans dérive du `server_now` renvoyé par
+`event_etat_partage`, lui-même valide jusqu'à 1 s pendant qu'il est servi
+depuis le cache. Assumé : très en dessous de la cadence de sondage la plus
+serrée (2,5 s en question active), ce n'est pas la fraîcheur individuelle
+d'un joueur qui est en jeu, seulement la simultanéité d'une salle.
+
+### L'écran de salle sans bouton de reconnexion, assumé
+
+Le téléphone joueur affiche « Reconnexion… » + un bouton « Actualiser » dès le
+2ᵉ échec de sondage. L'écran de salle affiche le même bandeau **sans**
+bouton : personne ne clique sur un téléviseur relié à un boîtier au fond
+d'une salle — l'organisateur agit depuis sa télécommande, pas depuis l'écran
+public.
+
+**Conséquences** : migration `20260929120000_soiree_live.sql` ;
+`src/lib/event-etat.ts` (nouveau) ; `src/lib/plans.ts` (union `100 | 500`) ;
+`.env.example` documente `EVENTS_REALTIME_ENABLED` ; `docs/perf-report.md` §7
+réécrite pour ne plus décrire comme livré ce qui ne l'était pas avant ce
+wagon (DOC-1).
+
+**References** :
+- `event_etat_partage`, `event_etat_joueur`, `event_participant_capacity` —
+  migration `20260929120000_soiree_live.sql`
+- `src/lib/event-etat.ts`, `src/lib/plans.ts`
+- `docs/perf-report.md` §7 ; roadmap V1.61 ; `docs/bugs.md` (wagon 5, INFO 1-4)
