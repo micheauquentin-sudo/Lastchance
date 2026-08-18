@@ -102,6 +102,9 @@ describe("GET /api/health", () => {
     process.env.ADMIN_HOSTS = "admin.example.com";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
     process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    // Depuis I1, une production sans proxy déclaré est `unhealthy` : ses
+    // plafonds par IP sont désarmés. Une production SAINE en déclare donc un.
+    process.env.TRUSTED_PROXY_PROVIDER = "vercel";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string | URL | Request) => {
@@ -130,6 +133,8 @@ describe("GET /api/health", () => {
     process.env.ADMIN_HOSTS = "admin.example.com";
     process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
     process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    // Déclaré pour que le worker soit la SEULE cause du 503 attendu ici.
+    process.env.TRUSTED_PROXY_PROVIDER = "vercel";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockImplementation((input: string | URL | Request) => {
@@ -157,6 +162,118 @@ describe("GET /api/health", () => {
       }),
     );
     expect(JSON.stringify(body)).not.toContain("sync-contests");
+  });
+});
+
+describe("GET /api/health — l'IP client doit être mesurable en production (I1)", () => {
+  const baseOk = () =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+    );
+
+  /**
+   * Production correctement configurée, SAUF ce que chaque cas retire. En
+   * production `checkWorkers` interroge réellement la RPC : sans réponse
+   * exploitable, tous ces cas rendraient 503 pour la mauvaise raison.
+   */
+  const productionSaine = () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: true },
+            ]),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+  };
+
+  it("503 en production quand aucun proxy de confiance n'est déclaré", async () => {
+    // LE DÉFAUT QUE CE TEST FERME. `clientIpFromHeaders` ne lit une IP que
+    // derrière un proxy DÉCLARÉ ; ailleurs elle vaut `unknown`. Or tous les
+    // plafonds par IP du dépôt sont gardés par `ip !== IP_CLIENT_INCONNUE`
+    // (ADR-032 : un seau sur `unknown` serait un interrupteur global). Un
+    // changement d'hébergement les désarmait donc TOUS en silence — rien ne
+    // casse, rien ne loggue, l'anti-abus disparaît sans une alarme.
+    productionSaine();
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.checks.security_configuration).toEqual({
+      status: "error",
+      error: "IP client non mesurable — plafonds par IP désarmés",
+    });
+  });
+
+  it("200 dès qu'un proxy est déclaré explicitement", async () => {
+    productionSaine();
+    process.env.TRUSTED_PROXY_PROVIDER = "cloudflare";
+
+    const res = await GET(requeteDetaillee());
+
+    expect(res.status).toBe(200);
+  });
+
+  it("200 sur la plateforme, qui pose `VERCEL` elle-même", async () => {
+    // Le déploiement nominal ne déclare rien à la main : c'est l'hébergeur qui
+    // pose la variable. La garde doit l'accepter, sans quoi elle crierait en
+    // permanence sur la seule configuration réellement utilisée.
+    productionSaine();
+    process.env.VERCEL = "1";
+
+    const res = await GET(requeteDetaillee());
+
+    expect(res.status).toBe(200);
+  });
+
+  it("hors production, l'absence de proxy n'est pas une faute", async () => {
+    // En développement il n'y a ni proxy ni besoin de plafond : crier ici
+    // rendrait la sonde rouge en permanence sur les postes, donc muette.
+    baseOk();
+
+    const res = await GET(requeteDetaillee());
+
+    expect(res.status).toBe(200);
+  });
+
+  it("le corps PUBLIC ne nomme pas la faille de configuration", async () => {
+    // Le verdict reste public ; sa cause ne l'est pas (SEC-3). Dire à un
+    // inconnu « les plafonds par IP sont désarmés » serait le pire des oracles
+    // — celui qui annonce que l'anti-abus est absent.
+    productionSaine();
+
+    const res = await GET(requetePublique());
+    const corps = await res.text();
+
+    expect(res.status).toBe(503);
+    expect(corps).toContain("unhealthy");
+    expect(corps).not.toContain("IP client");
+    expect(corps).not.toContain("plafonds");
+    expect(corps).not.toContain("security_configuration");
+  });
+
+  it("ADMIN_HOSTS garde la priorité dans le message", async () => {
+    // Deux causes possibles : celle qui expose le back-office se nomme
+    // d'abord. Un seul message, et c'est le plus grave qui sort.
+    productionSaine();
+    delete process.env.ADMIN_HOSTS;
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(body.checks.security_configuration.error).toBe("ADMIN_HOSTS manquant");
   });
 });
 

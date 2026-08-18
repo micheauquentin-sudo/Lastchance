@@ -261,6 +261,14 @@ jobs:
             # l'anti-robot devient obligatoire, les spins sont bloqués et
             # /api/health répond 503 (configuration de sécurité incomplète).
             echo "TURNSTILE_REQUIRED=false"
+            # ATTENDU : /api/health reste malgré tout `unhealthy` ici, et le
+            # diagnostic plus bas le dira — « IP client non mesurable » (I1).
+            # C'est EXACT : ce banc n'a ni TRUSTED_PROXY_PROVIDER ni VERCEL,
+            # donc ses plafonds par IP sont bien désarmés. On ne déclare PAS de
+            # proxy pour faire taire la sonde : `generic` ferait confiance aux
+            # en-têtes forgeables du proxy TLS local et ferait diverger le
+            # comportement E2E de celui de la production (`vercel`). Aucune
+            # étape ne dépend de ce verdict — le curl est en `|| true`.
             # Stripe : clé factice (le webhook instancie le client pour
             # vérifier la signature) + secret partagé avec les specs +
             # API détournée vers le stub local (e2e/api-stubs.mjs).

@@ -189,17 +189,41 @@ export async function GET(request: Request) {
   const turnstileConfigured = Boolean(
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   );
+  /**
+   * L'IP CLIENT EST-ELLE SEULEMENT MESURABLE ? (revue sécu I1)
+   *
+   * `clientIpFromHeaders` ne lit une IP que derrière un proxy DÉCLARÉ
+   * (`TRUSTED_PROXY_PROVIDER`, ou `VERCEL` posé par la plateforme) : partout
+   * ailleurs, les en-têtes sont forgeables et elle rend `unknown`. Or TOUS les
+   * plafonds par IP du dépôt — /api/page-opens, le mode TV, cette route
+   * elle-même — sont gardés par `ip !== IP_CLIENT_INCONNUE`, parce qu'un seau
+   * assis sur `unknown` ne désigne personne et deviendrait un interrupteur
+   * global (ADR-032).
+   *
+   * Conséquence : un changement d'hébergement désarme ces plafonds EN SILENCE.
+   * Rien ne casse, rien ne loggue, et l'anti-abus disparaît sans qu'aucune
+   * alarme ne sonne. C'est exactement la classe de panne qu'une sonde de
+   * configuration doit rendre bruyante — au même titre qu'`ADMIN_HOSTS`.
+   */
+  const clientIpMesurable = Boolean(
+    process.env.TRUSTED_PROXY_PROVIDER || process.env.VERCEL,
+  );
+  const enProduction = process.env.NODE_ENV === "production";
+
   const securityConfiguration = {
     status:
       (!turnstileRequired() || turnstileConfigured)
-      && (process.env.NODE_ENV !== "production" || Boolean(process.env.ADMIN_HOSTS))
+      && (!enProduction || Boolean(process.env.ADMIN_HOSTS))
+      && (!enProduction || clientIpMesurable)
         ? "ok"
         : "error",
     error:
       turnstileRequired() && !turnstileConfigured
         ? "Protection anti-bot incomplète"
-        : process.env.NODE_ENV === "production" && !process.env.ADMIN_HOSTS
+        : enProduction && !process.env.ADMIN_HOSTS
           ? "ADMIN_HOSTS manquant"
+          : enProduction && !clientIpMesurable
+            ? "IP client non mesurable — plafonds par IP désarmés"
         : undefined,
   };
   const healthy =
