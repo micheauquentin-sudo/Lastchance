@@ -1,7 +1,8 @@
 import "server-only";
 
-import { createHmac, createHash, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash } from "node:crypto";
 import { requiredEnv } from "@/lib/env";
+import { timingSafeEquals } from "@/lib/timing-safe";
 import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 import type { PlayLimit } from "@/types/database";
 
@@ -171,11 +172,9 @@ export function verifyClaimToken(
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const sigBuf = Buffer.from(sig);
-  const validSignature = verificationSecrets("CLAIM_TOKEN_SECRET").some((secret) => {
-    const expected = Buffer.from(hmac(signedMessage(body), secret));
-    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
-  });
+  const validSignature = verificationSecrets("CLAIM_TOKEN_SECRET").some((secret) =>
+    timingSafeEquals(sig, hmac(signedMessage(body), secret)),
+  );
   if (!validSignature) {
     return null;
   }

@@ -1,4 +1,5 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { timingSafeEquals } from "@/lib/timing-safe";
 import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 import {
   isSkillGameType,
@@ -378,11 +379,9 @@ export function verifySkillChallenge(
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const sigBuf = Buffer.from(sig);
-  const validSignature = verificationSecrets(SECRET_NAME).some((secret) => {
-    const expected = Buffer.from(hmac(signedMessage(body), secret));
-    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
-  });
+  const validSignature = verificationSecrets(SECRET_NAME).some((secret) =>
+    timingSafeEquals(sig, hmac(signedMessage(body), secret)),
+  );
   if (!validSignature) return null;
 
   try {
@@ -425,7 +424,5 @@ export function verifySkillChallenge(
  * par le pattern 64-hex, vérifié en amont côté appelant).
  */
 export function playerKeyHashMatches(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
+  return timingSafeEquals(a, b);
 }

@@ -1,3 +1,4 @@
+import { authorizeCronRequest } from "@/lib/timing-safe";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionalEnv } from "@/lib/env";
@@ -34,7 +35,7 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   const secret = optionalEnv("CRON_SECRET");
   if (!secret) return NextResponse.json({ error: "CRON_SECRET manquant" }, { status: 500 });
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!authorizeCronRequest(request, secret)) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
   }
 

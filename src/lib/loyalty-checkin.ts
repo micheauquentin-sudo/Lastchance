@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { timingSafeEquals } from "@/lib/timing-safe";
 import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
 
 /**
@@ -101,11 +102,9 @@ export function verifyLoyaltyCheckin(
 
   const body = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const sigBuf = Buffer.from(sig);
-  const validSignature = verificationSecrets(SECRET_NAME).some((secret) => {
-    const expected = Buffer.from(hmac(signedMessage(body), secret));
-    return sigBuf.length === expected.length && timingSafeEqual(sigBuf, expected);
-  });
+  const validSignature = verificationSecrets(SECRET_NAME).some((secret) =>
+    timingSafeEquals(sig, hmac(signedMessage(body), secret)),
+  );
   if (!validSignature) {
     return null;
   }
