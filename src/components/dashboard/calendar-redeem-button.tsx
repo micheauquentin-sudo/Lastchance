@@ -32,7 +32,7 @@ export function CalendarRedeemButton({ code }: { code: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-500 disabled:bg-orange-300 whitespace-nowrap"
+        className="rounded-lg bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-800 disabled:bg-orange-300 whitespace-nowrap"
       >
         {pending ? "…" : "Valider la remise"}
       </button>

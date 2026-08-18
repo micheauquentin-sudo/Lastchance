@@ -31,7 +31,7 @@ export function CancelParticipationButton({ id }: { id: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-k-muted underline underline-offset-2 hover:text-red-600"
+        className="text-xs text-k-muted underline underline-offset-2 hover:text-red-700"
       >
         Annuler…
       </button>
@@ -54,14 +54,14 @@ export function CancelParticipationButton({ id }: { id: string }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:bg-red-300"
+          className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:bg-red-300"
         >
           {pending ? "…" : "Annuler le gain"}
         </button>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-xs text-zinc-500 underline underline-offset-2"
+          className="text-xs text-k-muted underline underline-offset-2"
         >
           Fermer
         </button>

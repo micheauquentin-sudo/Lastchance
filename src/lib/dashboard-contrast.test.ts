@@ -121,7 +121,7 @@ describe("contraste des liens orange, dans tout le produit", () => {
   const RACINES = ["src/app", "src/components"];
   const POINT_DU_LOGOTYPE = /Lastchance<span className="text-orange-600">\.<\/span>/;
 
-  it("aucun `text-orange-600` en texte", () => {
+  it("aucun `text-orange-600` ni `bg-orange-600` en texte", () => {
     const fautifs: string[] = [];
     for (const racine of RACINES) {
       for (const fichier of fichiersSous(racine, ".tsx")) {
@@ -130,8 +130,12 @@ describe("contraste des liens orange, dans tout le produit", () => {
           if (/^\s*(\*|\/\/|\/\*)/.test(ligne)) continue;
           // Un survol n'est jamais la seule façon de lire un lien : la couleur
           // AU REPOS est ce que la garde surveille.
-          const reste = ligne.replace(/hover:text-orange-600\b/g, "");
-          if (!/\btext-orange-600\b/.test(reste)) continue;
+          const reste = ligne.replace(/hover:(text|bg)-orange-600\b/g, "");
+          // `bg-orange-600` est le PENDANT de `text-orange-600` : le blanc
+          // posé dessus rend 3,56:1, sous le seuil AA — c'était le fond des
+          // neuf boutons de remise en caisse, dont celui de la liste des
+          // participations. `bg-orange-700` (#c2410c) rend 5,18:1.
+          if (!/\b(text|bg)-orange-600\b/.test(reste)) continue;
           if (/\bh-4 w-4\b/.test(ligne)) continue;
           if (POINT_DU_LOGOTYPE.test(ligne)) continue;
           fautifs.push(`${fichier} → ${ligne.trim().slice(0, 100)}`);
@@ -140,9 +144,10 @@ describe("contraste des liens orange, dans tout le produit", () => {
     }
     expect(
       fautifs,
-      "utilisez `text-k-orange-text` (#b45309, 5,02:1 sur blanc) : " +
-        "`text-orange-600` (#ea580c) rend 2,9:1, sous le seuil AA ET sous le " +
-        "seuil « large »",
+      "pour du texte, `text-k-orange-text` (#b45309, 5,02:1 sur blanc) ; " +
+        "pour un fond sous du blanc, `bg-orange-700` (#c2410c, 5,18:1). " +
+        "En orange-600 (#ea580c) : 2,9:1 en texte, 3,56:1 en fond — les deux " +
+        "sous le seuil AA ET sous le seuil « large »",
     ).toEqual([]);
   });
 });

@@ -54,7 +54,7 @@ export function RedeemButton({
             placeholder="Ex : 12,50"
             className="w-36 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
           />
-          <span className="ml-1.5 text-xs text-zinc-500">
+          <span className="ml-1.5 text-xs text-k-muted">
             € — alimente le revenu attribuable
           </span>
         </div>
@@ -62,7 +62,7 @@ export function RedeemButton({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-500 disabled:bg-orange-300 whitespace-nowrap"
+        className="rounded-lg bg-orange-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-800 disabled:bg-orange-300 whitespace-nowrap"
       >
         {pending ? "…" : "Valider la remise"}
       </button>
