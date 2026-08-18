@@ -153,12 +153,70 @@ describe("POST /api/page-opens — seau de limitation", () => {
     await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
     await POST(pageOpenRequest("promo-ete", { "x-real-ip": "198.51.100.4" }));
 
-    const [premier, second] = mocks.rateLimit.mock.calls.map((call) => call[0]);
     // Rougirait si l'IP sortait de la clé : le 61ᵉ scan d'une affiche
-    // arrêterait le comptage pour tout le monde pendant une minute.
-    expect(premier).not.toBe(second);
-    expect(premier).toBe("scan:promo-ete:203.0.113.7");
-    expect(second).toBe("scan:promo-ete:198.51.100.4");
+    // arrêterait le comptage pour tout le monde pendant une minute. Les seaux
+    // par ressource sont isolés du plafond par IP seule (`page-opens:ip:…`,
+    // consommé avant chacun) : ce sont deux questions distinctes.
+    const parRessource = mocks.rateLimit.mock.calls
+      .map((call) => String(call[0]))
+      .filter((bucket) => bucket.startsWith("scan:"));
+    expect(parRessource).toEqual([
+      "scan:promo-ete:203.0.113.7",
+      "scan:promo-ete:198.51.100.4",
+    ]);
+  });
+
+  it("le plafond par IP SEULE est consommé avant le seau par ressource (SEC-1/SEC-4)", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "generic";
+
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
+
+    // LE DÉFAUT QUE CE TEST FERME. `scan:` est composé avec un slug que
+    // l'APPELANT choisit : boucler sur des slugs inventés ouvrait un seau NEUF
+    // à chaque tour — 60 req/min chacun, donc un débit borné par rien — et
+    // chaque tour coûtait une écriture de rate-limit. L'ORDRE est tout le
+    // correctif : tranché après, le plafond n'empêcherait plus rien.
+    const [premier] = mocks.rateLimit.mock.calls;
+    expect(premier[0]).toBe("page-opens:ip:203.0.113.7");
+    expect(premier[1]).toBe(RATE_LIMITS.pageOpenIp);
+  });
+
+  it("le plafond par IP saturé n'atteint AUCUN seau par ressource", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "generic";
+    mocks.rateLimit.mockResolvedValue(false);
+
+    const response = await POST(
+      pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }),
+    );
+
+    // C'est ce qui borne l'amplification d'écriture : une rafale saturée
+    // n'écrit plus qu'UNE ligne par fenêtre, au lieu d'une par slug inventé.
+    expect(mocks.rateLimit).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(204);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("sans IP mesurable, le plafond ne s'applique pas (jamais d'interrupteur global)", async () => {
+    // `TRUSTED_PROXY_PROVIDER` absent : `clientIpFromHeaders` rend `unknown`.
+    // Un plafond posé là ne désignerait personne et couperait le comptage de
+    // TOUS les visiteurs à la fois — l'interrupteur qu'ADR-032 interdit.
+    await POST(pageOpenRequest("promo-ete", { "x-real-ip": "203.0.113.7" }));
+
+    const buckets = mocks.rateLimit.mock.calls.map((call) => String(call[0]));
+    expect(buckets.some((b) => b.startsWith("page-opens:ip:"))).toBe(false);
+    expect(buckets).toContain("scan:promo-ete:unknown");
+  });
+
+  it("une entrée malformée ne consomme toujours AUCUN seau", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "generic";
+
+    // Le plafond par IP est gardé par la bonne FORME de la requête : une
+    // énumération se fait avec des identifiants valides (seul moyen d'ouvrir un
+    // seau neuf), jamais avec `../`. Faire payer le malformé n'achèterait rien
+    // et casserait la propriété « une entrée invalide ne coûte rien ».
+    await POST(pageOpenRequest("../../etc/passwd", { "x-real-ip": "203.0.113.7" }));
+
+    expect(mocks.rateLimit).not.toHaveBeenCalled();
   });
 
   it("deux QR d'un même visiteur ne partagent pas le seau", async () => {
