@@ -452,6 +452,31 @@ values (
 )
 on conflict (id) do nothing;
 
+-- ── Jackpot collectif nº3 : RÉSERVÉ AU PARCOURS JOUEUR `rotating_code` ────
+-- Le troisième mode de la même famille : le joueur SAISIT lui-même le code
+-- tournant affiché sur l'écran comptoir (`/dashboard/jackpot/[id]/comptoir`),
+-- là où les deux campagnes du dessus se valident depuis la caisse. Dédiée à
+-- la spec E2E « le joueur saisit le code et la jauge avance » — même raison
+-- d'isolement que la nº2 : une participation écrite ici ne doit déranger ni
+-- l'affichage figé de la nº1 ni le décompte de la spec caisse sur la nº2.
+-- Nom sans « Jackpot E2E » ni « comptoir » : les specs ciblent leur titre par
+-- sous-chaîne.
+insert into public.jackpot_campaigns (
+  id, organization_id, name, status, public_slug, validation_mode,
+  min_participation_interval_seconds, draw_mode, threshold, reward_stock,
+  reward_label, reward_details, display_base_cents, display_increment_cents,
+  merchant_content
+)
+values (
+  'e2ec0000-0000-4000-8000-000000000003',
+  'e2e10000-0000-4000-8000-000000000001',
+  'Tirelire au code E2E', 'active', 'e2e-jackpot-code', 'rotating_code', 300,
+  'threshold_draw', 5, 20,
+  'Le pot du code tournant E2E', 'Tiré au sort tous les 5 passages.', 5000, 200,
+  'Saisissez le code affiché au comptoir pour faire monter le pot.'
+)
+on conflict (id) do nothing;
+
 -- ── Participation au code EXPIRÉ (E2E cycle du gain) ──────────
 -- L'échéance serveur est dépassée : la caisse doit refuser le retrait
 -- (badge « Code expiré », pas de bouton) — le compte à rebours client
