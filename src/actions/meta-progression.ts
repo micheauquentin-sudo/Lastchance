@@ -6,7 +6,6 @@ import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
-  deriveProgressionRequestId,
   mapOrgProgressionSnapshot,
   mapPlayerProgressionArchive,
   mapPlayerProgressionSnapshot,
@@ -20,6 +19,7 @@ import {
 } from "@/lib/meta-progression";
 import { monitored, reportError } from "@/lib/monitoring";
 import { peekPlayerDeviceTokenHash } from "@/lib/player-identity";
+import { deriveProgressionRequestId } from "@/lib/progression-request-id";
 import {
   observeSharedKey,
   RATE_LIMITS,
