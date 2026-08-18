@@ -27,6 +27,12 @@ import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { RankingPicker } from "@/components/ui/ranking-picker";
 import {
+  NUMBER_ANSWER_MAX as NUMBER_MAX,
+  OPTION_LABEL_MAX,
+  OPTIONS_MAX,
+  OPTIONS_MIN,
+} from "@/lib/pronostics-bornes";
+import {
   QUIZ_INTRO_MAX,
   QUIZ_NAME_MAX,
   QUIZ_POINTS_MAX,
@@ -65,11 +71,12 @@ import { spinWheelIssue, type SpinWheelPrizes } from "./loyalty-settings-presets
    réel : statut → réglages → questions → dotation. Miroir de structure de
    calendar-editor.tsx (mêmes primitives, mêmes classes, mêmes gestes). */
 
-/** Bornes miroir de src/lib/pronostics.ts (non importable côté client : node:crypto). */
-const OPTIONS_MIN = 2;
-const OPTIONS_MAX = 50;
-const OPTION_LABEL_MAX = 120;
-const NUMBER_MAX = 1_000_000_000;
+// Les quatre bornes étaient RECOPIÉES ici, sous un commentaire qui donnait
+// son motif : « non importable côté client : node:crypto ». Le motif était
+// vrai — `pronostics.ts` importe `node:crypto` pour deux fonctions d'identité
+// joueur sans rapport — et il ne l'est plus : `@/lib/pronostics-bornes`
+// n'importe RIEN et sert désormais de source unique aux deux côtés.
+// Les valeurs étaient identiques au moment de la bascule, vérifiées une à une.
 
 const selectClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
