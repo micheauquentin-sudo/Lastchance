@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * L'Atelier du jeu (`/dashboard/campaigns/<id>/wheel`) — filet de bout en
@@ -90,9 +90,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     await expect(courante).toHaveCount(1);
     await expect(courante).toContainText("Les lots");
 
-    // `color-contrast` écarté : aperçu de la roue (SVG) et dégradés de l'atelier, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("étape « Le jeu » : le radiogroup des mécaniques existe, choisir « Mot mystère » désactive « Illimité (démo) »", async ({
@@ -127,9 +125,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     await expect(motMystere).toBeChecked();
     await expect(optionIllimite).toBeDisabled();
 
-    // `color-contrast` écarté : aperçu de la roue (SVG) et dégradés de l'atelier, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("étape « La vérification » : lignes ✓/✗, un ✗ porte un lien vers son étape, le CTA pointe vers #statut", async ({
@@ -173,9 +169,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
       `/dashboard/campaigns/${CAMPAIGN_PAUSE}#statut`,
     );
 
-    // `color-contrast` écarté : aperçu de la roue (SVG) et dégradés de l'atelier, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("campagne prête : la ligne de contrôle passe en ✓ et le CTA « Ouvrir aux joueurs » pointe vers #statut", async ({
@@ -201,9 +195,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
       `/dashboard/campaigns/${CAMPAIGN_GAGNANTE}#statut`,
     );
 
-    // `color-contrast` écarté : aperçu de la roue (SVG) et dégradés de l'atelier, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("étapes « Les lots », « L'habillage » et « Le créneau » : rendu sans violation a11y", async ({
@@ -221,9 +213,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
       await expect(
         page.locator("section[aria-label^='Étape']"),
       ).toBeVisible();
-      // `color-contrast` écarté : aperçu de la roue (SVG) et dégradés de l'atelier, axe ne peut pas en
-      // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-      await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+      await expectNoA11yViolations(page, testInfo);
     }
   });
 

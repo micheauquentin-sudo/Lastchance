@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
+import { expectNoA11yViolations } from "./axe";
 
 /**
  * Événement de pronostics GÉNÉRIQUE (hors football) — miroir de
@@ -166,8 +166,6 @@ test.describe("accessibilité — l'événement générique de pronostics", () =
   test("l'événement générique de pronostics sans violation axe serious/critical", async ({ page }, testInfo) => {
     await page.goto(`/pronos/${SLUG}`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // `color-contrast` écarté : le décor kermesse du championnat est un dégradé, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 });

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
+import { expectNoA11yViolations } from "./axe";
 import { E2E_USERS, login } from "./helpers";
 
 /**
@@ -70,9 +70,7 @@ test.describe("calendrier / campagne quotidienne — affichage joueur suivable",
     ).toBeVisible();
 
     // Scan a11y de la surface publique au repos (avant expansion / ouverture).
-    // `color-contrast` écarté : les cases du calendrier sont des dégradés, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
 
     // L'inscription se déplie : champ email + opt-in explicites + « Valider ».
     await page.getByRole("button", { name: "M'inscrire" }).click();

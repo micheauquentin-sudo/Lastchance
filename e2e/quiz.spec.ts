@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
+import { expectNoA11yViolations } from "./axe";
 import { CODE_CONSOMME } from "./redeem-card";
 
 /**
@@ -261,8 +261,6 @@ test.describe("accessibilité — le quiz joueur", () => {
   test("le quiz joueur sans violation axe serious/critical", async ({ page }, testInfo) => {
     await page.goto("/quiz/e2e-quiz");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // `color-contrast` écarté : le thème du quiz est un dégradé, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 });

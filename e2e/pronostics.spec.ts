@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoA11yViolations, SURFACE_A_DEGRADE } from "./axe";
+import { expectNoA11yViolations } from "./axe";
 import { CODE_CONSOMME } from "./redeem-card";
 import { ouvrirTuile } from "./helpers";
 
@@ -64,9 +64,7 @@ test.describe("pronostics — parcours joueur complet", () => {
     await expect(page.getByText(edited).first()).toBeVisible({ timeout: 10_000 });
 
     // ── Scan a11y de l'espace joueur en fin de parcours (onglet Profil).
-    // `color-contrast` écarté : le décor kermesse du championnat est un dégradé, axe ne peut pas en
-    // calculer le fond et range la règle en `incomplete` (voir SURFACE_A_DEGRADE).
-    await expectNoA11yViolations(page, testInfo, SURFACE_A_DEGRADE);
+    await expectNoA11yViolations(page, testInfo);
   });
 
   test("un championnat inconnu affiche un message clair @smoke", async ({ page }) => {
