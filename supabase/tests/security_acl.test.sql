@@ -652,7 +652,9 @@ select is(
 -- atteignables ainsi et subsistent ; la garde vaut pour tout ce que ce dépôt
 -- écrit, elle n'est pas universelle.
 select is(
-  (select coalesce(string_agg(distinct d.defaclobjtype || ':' || a.privilege_type, ', '), '')
+  -- `defaclobjtype` est un `"char"` (un octet, pas du texte) : sans le cast,
+  -- `"char" || unknown` est ambigu et psql refuse la requête entière.
+  (select coalesce(string_agg(distinct d.defaclobjtype::text || ':' || a.privilege_type, ', '), '')
      from pg_default_acl d
      join pg_namespace n on n.oid = d.defaclnamespace,
      lateral aclexplode(d.defaclacl) a
