@@ -18,9 +18,6 @@ async function requireOrg() {
   return organization;
 }
 
-/** Borne d'un envoi (le worker tronque au même seuil). */
-const MAX_RECIPIENTS = 1000;
-
 /**
  * Met une campagne EN FILE : l'action ne fait plus que valider, cibler
  * (compte du segment), journaliser la campagne (statut queued) et
@@ -28,12 +25,20 @@ const MAX_RECIPIENTS = 1000;
  * (src/lib/newsletter-worker.ts, /api/cron/jobs).
  * La requête HTTP reste instantanée, quel que soit le nombre d'abonnés.
  *
- * ⚠️ « TOUTES LES 5 MIN » ÉTAIT FAUX, et ici cela se voit du commerçant :
- * vercel.json planifie /api/cron/jobs à `20 4 * * *`, une fois par jour. Une
- * campagne mise en file à 10 h part donc le lendemain matin. La cadence à
- * 5 minutes existe côté pg_cron (`lastchance-jobs-worker`, migration
- * 20260722100000) mais reste inactive tant que les secrets Vault
- * `jobs_worker_url` et `sync_contests_secret` ne sont pas posés.
+ * ── LE COMPTE ANNONCÉ EST LE COMPTE RÉEL ────────────────────────
+ *
+ * Cette action rapatriait le segment ENTIER pour en lire le `.length`, puis le
+ * bornait à 1 000 — deux défauts d'un coup : des milliers de lignes traversées
+ * pour produire un nombre, et un nombre FAUX (le commerçant lisait « 1000 »
+ * pour un segment de 2 500, et la campagne s'affichait « 1000 sur 1000 »
+ * complète). Le compte vient désormais de la base (`count: "exact"`, sans
+ * corps de réponse) et n'est plus tronqué : le plafond de 1 000 vit
+ * exclusivement dans le worker, où il est un plafond PAR PASSAGE et où le
+ * reliquat repart en `deferred`.
+ *
+ * ⚠️ Cadence : pg_cron appelle /api/cron/jobs toutes les 5 MINUTES depuis le
+ * chantier « cadence-file » (2026-08-01, ADR-062). Le commentaire qui annonçait
+ * ici « une campagne mise en file à 10 h part le lendemain matin » est périmé.
  */
 export async function sendNewsletterCampaign(
   _prev: ActionResult<{ recipientCount: number }> | null,
@@ -66,21 +71,38 @@ export async function sendNewsletterCampaign(
   }
 
   const supabase = await createClient();
+  const rpcArgs = {
+    p_organization_id: organization.id,
+    p_segment: parsed.data.segment,
+  };
   // Ciblage par segment via RPC (loyal/new/inactive/all) — l'appartenance
   // à l'org est re-vérifiée dans la fonction (SECURITY DEFINER).
-  const { data: segmentRows, error: fetchError } = await supabase.rpc(
+  //
+  // `head: true` : la fonction est déclarée `stable`, donc appelable en
+  // HEAD/GET — PostgREST rend alors le seul `Content-Range`, sans une ligne de
+  // corps. REPLI EXPLICITE si l'appel sans corps échoue (proxy qui refuse la
+  // méthode, fonction repassée `volatile`) : on retombe sur l'appel complet et
+  // on compte les lignes. Un compte est trop peu important pour qu'un détail de
+  // transport empêche un commerçant d'envoyer sa newsletter.
+  const { count, error: countError } = await supabase.rpc(
     "org_segment_emails",
-    { p_organization_id: organization.id, p_segment: parsed.data.segment },
+    rpcArgs,
+    { count: "exact", head: true },
   );
 
-  if (fetchError) {
-    reportError("newsletter.fetch-subscribers", fetchError.message);
-    return { ok: false, error: "Impossible de charger les abonnés." };
+  let targetCount = count ?? 0;
+  if (countError) {
+    const { data: segmentRows, error: fetchError } = await supabase.rpc(
+      "org_segment_emails",
+      rpcArgs,
+    );
+    if (fetchError) {
+      reportError("newsletter.fetch-subscribers", fetchError.message);
+      return { ok: false, error: "Impossible de charger les abonnés." };
+    }
+    targetCount = ((segmentRows ?? []) as unknown[]).length;
   }
-  const targetCount = Math.min(
-    ((segmentRows ?? []) as unknown[]).length,
-    MAX_RECIPIENTS,
-  );
+
   if (targetCount === 0) {
     return { ok: false, error: "Aucun abonné dans ce segment pour le moment." };
   }
