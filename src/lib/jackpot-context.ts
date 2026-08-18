@@ -179,6 +179,21 @@ async function loadDateDrawState(
 }
 
 /**
+ * Jauge partagée complète : la projection de la campagne, complétée par l'état
+ * du tirage du cycle courant. Un seul endroit compose les deux — la page
+ * suivable (`loadJackpotContext`) et le repli polling (`getJackpotState`)
+ * doivent montrer exactement la même chose, y compris le `drawDone` qui fige
+ * un cycle.
+ */
+export async function loadJackpotGauge(
+  admin: ReturnType<typeof createAdminClient>,
+  campaign: PublicJackpotCampaign,
+): Promise<JackpotGaugeView> {
+  const drawState = await loadDateDrawState(admin, campaign);
+  return { ...toGaugeView(campaign), ...drawState };
+}
+
+/**
  * État du joueur courant (cookie httpOnly) en lecture seule : compteur de
  * participations et gains remportés (codes de retrait). Aucun cookie → état
  * vide. Le jeton d'identité ne quitte pas le serveur : seul son hash touche la
@@ -304,11 +319,10 @@ export async function loadJackpotContext(
   if (!await moduleOuvertAuJoueur("jackpot", organization)) return { ok: false, error: UNAVAILABLE };
   if (campaign.status !== "active") return { ok: false, error: UNAVAILABLE };
 
-  const [drawState, player] = await Promise.all([
-    loadDateDrawState(admin, campaign),
+  const [gauge, player] = await Promise.all([
+    loadJackpotGauge(admin, campaign),
     loadPlayerState(admin, campaign),
   ]);
-  const gauge = { ...toGaugeView(campaign), ...drawState };
 
   return { ok: true, admin, campaign, organization, gauge, player };
 }

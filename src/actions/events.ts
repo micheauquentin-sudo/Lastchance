@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { blocageActivationEvent } from "@/lib/activation/events";
 import { getUserAndOrg } from "@/lib/auth";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
@@ -20,6 +21,7 @@ import {
   eventTokenCookieName,
   loadEventActionContext,
 } from "@/lib/event-context";
+import { chargerEtatLive } from "@/lib/event-etat";
 import { broadcastEventRefresh } from "@/lib/event-realtime";
 import {
   COMPTAGE_INDISPONIBLE,
@@ -329,7 +331,16 @@ async function submitInner(
  * télécommande). C'est le FILET qui fonctionne même sans Realtime — l'UI
  * l'interroge toutes les ~2-3 s ET à chaque (re)connexion. Passe le hash du
  * cookie de session, s'il existe, pour la vue « moi » (score/rang/code) ; la
- * bonne réponse n'est jamais servie hors reveal (event_public_state + mapping).
+ * bonne réponse n'est jamais servie hors reveal (RPC + mapping).
+ *
+ * ── UN SEUL VOYAGE, ET IL EST PARTAGÉ (EVT-1+EVT-2) ──
+ *
+ * `loadEventActionContext` a DISPARU de ce chemin : ses trois vérifications
+ * (session existante, module ouvert, statut ni draft ni archived) sont
+ * descendues dans `event_etat_partage` et prouvées par pgTAP. Ce qui restait
+ * de plus cher — recalculer un classement identique pour cinquante téléphones
+ * qui sondent la même soirée — est absorbé par le cache d'une seconde de
+ * `chargerEtatLive`, partagé avec le rendu serveur.
  */
 export async function getEventState(input: {
   sessionId: string;
@@ -337,29 +348,40 @@ export async function getEventState(input: {
   const parsed = eventStateSchema.safeParse(input);
   if (!parsed.success) return mapEventPublicState(null);
 
-  const ctx = await loadEventActionContext(parsed.data.sessionId);
-  if (!ctx.ok) return mapEventPublicState(null);
-
-  // Observabilité seule (clé partagée, jamais un refus) : le poll est fréquent
-  // et légitime, on ne le bride pas.
-  await observeEventPressure(
-    parsed.data.sessionId,
-    clientIpFromHeaders(await headers()),
-  );
-
   const store = await cookies();
   const token = store.get(eventTokenCookieName(parsed.data.sessionId))?.value;
-  const tokenHash = token ? hashPlayerToken(token) : undefined;
 
-  const { data, error } = await ctx.admin.rpc("event_public_state", {
-    p_session_id: parsed.data.sessionId,
-    p_player_token_hash: tokenHash,
-  });
-  if (error) {
-    reportError("event.state", error.message);
-    return mapEventPublicState(null);
+  const etat = await chargerEtatLive(
+    parsed.data.sessionId,
+    token ? hashPlayerToken(token) : undefined,
+  );
+
+  // ── LA MESURE VIENT APRÈS LE VERDICT, ET SURVIT À LA RÉPONSE ──
+  //
+  // APRÈS, d'abord. `loadEventActionContext` refusait une session inconnue
+  // avant d'atteindre le compteur ; sa disparition avait déplacé la mesure en
+  // TÊTE, si bien qu'un POST direct avec des UUID v4 forgés créait une clé
+  // Redis neuve à chaque appel (TTL 660 s) — on payait le stockage de l'abus
+  // qu'on prétendait mesurer, et le signal se noyait dans des sessions qui
+  // n'existent pas. On n'observe donc que ce qui a répondu `ok`, comme le font
+  // `getCalendarState` et `getJackpotState`.
+  //
+  // SURVIT, ensuite. Un `void promise` n'est rattaché à rien : sous Fluid
+  // Compute l'instance peut geler dès la réponse rendue, et la mesure
+  // disparaîtrait — or ADR-032 fait de ce compteur le SEUL signal d'abus de ce
+  // chemin, puisqu'aucun refus n'y est opposé. `after()` demande au runtime de
+  // la retenir jusqu'à son terme. Le `.catch` reste : un rejet non géré ne vaut
+  // jamais un compteur.
+  if (etat.state === "ok") {
+    const ip = clientIpFromHeaders(await headers());
+    after(() =>
+      observeEventPressure(parsed.data.sessionId, ip).catch((err) =>
+        reportError("event.state-pressure", err),
+      ),
+    );
   }
-  return mapEventPublicState(data);
+
+  return etat;
 }
 
 // ════════════════════════════════════════════════════════════

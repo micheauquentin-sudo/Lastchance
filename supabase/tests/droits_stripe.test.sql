@@ -328,9 +328,13 @@ select is(
   30,
   'SD-1 la jauge VENDUE (30) est celle qui s''applique — elle n''était lue par rien'
 );
+-- 500 et non 1000 depuis 20260929120000 (wagon 5, VEN-1) : la jauge du plan
+-- `full` est redescendue au plus haut palier PROUVÉ. Ce que cette assertion
+-- éprouve reste SD-1 — que l'offre l'emporte sur le pass de 30 —, et elle
+-- l'éprouve toujours : 500 > 30. Seul le chiffre de l'offre a changé.
 select is(
   public.event_participant_capacity('d2000000-0000-4000-8000-000000000002'::uuid),
-  1000,
+  500,
   'SD-1 un plan supérieur l''emporte : c''est le plus généreux qui vaut, pas le dernier'
 );
 select is(

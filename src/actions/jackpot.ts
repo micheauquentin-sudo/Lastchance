@@ -11,6 +11,8 @@ import { zonedDateTimeToIso } from "@/lib/date-time";
 import {
   jackpotTokenCookieName,
   loadJackpotActionContext,
+  loadJackpotGauge,
+  type JackpotGaugeView,
 } from "@/lib/jackpot-context";
 import {
   mapJackpotParticipation,
@@ -36,6 +38,7 @@ import { randomCode, slugify, type ActionResult } from "@/lib/utils";
 import {
   createJackpotCampaignSchema,
   deleteJackpotCampaignSchema,
+  getJackpotStateSchema,
   jackpotCampaignIdSchema,
   jackpotCounterCodeSchema,
   participateJackpotSchema,
@@ -900,5 +903,72 @@ async function checkinTokenInner(
   } catch (err) {
     reportError("jackpot.checkinToken", err);
     return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// getJackpotState — repli polling (jauge de la page suivable)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Jauge publique d'une campagne, telle qu'un écran suivable la rafraîchit.
+ *
+ * `state` porte le MÊME refus indistinct que le reste du module : campagne
+ * inexistante, non active, ou module fermé rendent tous `unavailable`, sans
+ * dire lequel — l'état de préparation d'un commerçant n'est l'affaire de
+ * personne d'autre. `gauge` est alors `null`.
+ *
+ * AUCUN bloc joueur : seule la jauge PARTAGÉE bouge d'un tour de sondage à
+ * l'autre. Les codes de retrait du joueur courant, eux, ne changent qu'après
+ * une action qu'il a lui-même déclenchée — les faire voyager à chaque
+ * rafraîchissement ferait lire une ligne indexée par joueur et par tour pour
+ * une valeur constante.
+ */
+export interface JackpotPublicGauge {
+  state: "ok" | "unavailable";
+  gauge: JackpotGaugeView | null;
+}
+
+const JACKPOT_INDISPONIBLE: JackpotPublicGauge = {
+  state: "unavailable",
+  gauge: null,
+};
+
+/**
+ * Repli POLLING : renvoie la jauge publique d'une campagne (page suivable).
+ * Calque de `getCalendarState` — validation Zod, contexte public, compteur
+ * d'observabilité sur clé partagée (JAMAIS un refus, ADR-032 : la jauge se
+ * remplit vite par OBJECTIF, et l'IP d'un lieu est mutualisée), puis
+ * projection. Toute panne rend `unavailable` : cette action ne lève jamais,
+ * elle est appelée en boucle depuis un écran de salle.
+ */
+export async function getJackpotState(input: {
+  campaignId: string;
+}): Promise<JackpotPublicGauge> {
+  const parsed = getJackpotStateSchema.safeParse(input);
+  if (!parsed.success) return JACKPOT_INDISPONIBLE;
+
+  try {
+    const ctx = await loadJackpotActionContext(parsed.data.campaignId);
+    if (!ctx.ok) return JACKPOT_INDISPONIBLE;
+
+    // Observabilité seule (clé partagée, jamais un refus) : le poll est
+    // fréquent et légitime, on ne le bride pas — et il a son PROPRE seau.
+    // Le verser dans celui des participations aurait fait de trente écrans
+    // laissés ouverts un dépassement du seuil d'abus, sans qu'une seule
+    // participation ait eu lieu : le signal se serait noyé dans le bruit des
+    // écrans. Un sondage n'est pas une participation.
+    await observerPressionIp(
+      ["jackpot:state:ip", ctx.campaign.id],
+      clientIpFromHeaders(await headers()),
+      RATE_LIMITS.jackpotStateIp,
+      "jackpot_state_pressure",
+      { campaign_id: ctx.campaign.id },
+    );
+
+    return { state: "ok", gauge: await loadJackpotGauge(ctx.admin, ctx.campaign) };
+  } catch (err) {
+    reportError("jackpot.state", err);
+    return JACKPOT_INDISPONIBLE;
   }
 }

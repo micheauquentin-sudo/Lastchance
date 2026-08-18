@@ -9,13 +9,14 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from "react";
-import { useRouter } from "next/navigation";
 import {
   getJackpotCheckinToken,
+  getJackpotState,
   participateJackpot,
   type JackpotParticipationActionResult,
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
+import type { JackpotGaugeView } from "@/lib/jackpot-context";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { CheckinTokenReveal } from "./checkin-token-reveal";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
@@ -48,8 +49,17 @@ const TONE_BOX: Record<JackpotMessageTone, string> = {
 const codeInputClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-center text-2xl font-black tracking-[0.4em] text-k-ink tabular-nums placeholder:tracking-normal placeholder:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
-/** Rafraîchissement doux de la jauge partagée (façon mode TV). */
-const POLL_MS = 20_000;
+/**
+ * Rafraîchissement doux de la jauge partagée.
+ *
+ * Le poll relisait la page entière (`router.refresh()` : rendu serveur complet,
+ * contexte, gains, contenu marchand) toutes les 20 s pour ne rendre visible
+ * qu'un compteur et un montant. Une action ciblée coûtant une lecture, la
+ * cadence peut se détendre à la minute sans que la jauge paraisse figée : une
+ * participation LOCALE la fait monter tout de suite, et le retour d'onglet
+ * relance une lecture immédiate.
+ */
+const POLL_MS = 60_000;
 
 /** Où en est le challenge anti-robot côté client (miroir passeport). */
 type ChallengePhase = "loading" | "ready" | "expired" | "unavailable";
@@ -91,6 +101,24 @@ export interface JackpotGaugeProps {
   soldOut: boolean;
 }
 
+/**
+ * État public ciblé → props de la jauge. Le SEUL point de contact entre le
+ * contrat de `getJackpotState` et l'affichage : si le contrat bouge, c'est ici
+ * que ça se voit, pas dans six endroits du rendu.
+ */
+function gaugeFromState(fresh: JackpotGaugeView): JackpotGaugeProps {
+  return {
+    currentCount: fresh.currentCount,
+    threshold: fresh.threshold,
+    cycle: fresh.cycle,
+    displayAmountCents: fresh.displayAmountCents,
+    drawAt: fresh.drawAt,
+    drawDone: fresh.drawDone,
+    drawnAt: fresh.drawnAt,
+    soldOut: fresh.soldOut,
+  };
+}
+
 export interface JackpotTrackerProps {
   campaignId: string;
   organizationName: string;
@@ -119,10 +147,36 @@ export function JackpotTracker({
   rewardLabel,
   rewardDetails,
   merchantContent,
-  gauge,
+  gauge: initialGauge,
   wins,
 }: JackpotTrackerProps) {
-  const router = useRouter();
+  // Photo serveur vivante de la jauge partagée : point de départ = rendu
+  // serveur, rafraîchie par le poll ciblé (dernière photo SAINE conservée sur
+  // coupure) — patron du calendrier (`calendar-tracker.tsx`).
+  const [gauge, setGauge] = useState<JackpotGaugeProps>(initialGauge);
+
+  // Composant encore monté ? (le poll et la participation rendent après coup)
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  const rafraichirJauge = useCallback(async () => {
+    if (!aliveRef.current) return;
+    try {
+      const fresh = await getJackpotState({ campaignId });
+      if (!aliveRef.current) return;
+      // Photo saine uniquement : un `unavailable` (réseau coupé au comptoir,
+      // campagne indisponible le temps d'un poll) ne doit pas remettre la jauge
+      // à zéro sous les yeux du client.
+      if (fresh.state === "ok" && fresh.gauge) setGauge(gaugeFromState(fresh.gauge));
+    } catch {
+      // Coupure réseau : on conserve la dernière photo saine.
+    }
+  }, [campaignId]);
 
   // ── Challenge anti-robot (mode rotating_code) — miroir EXACT du passeport :
   // le serveur l'exige quand une participation CRÉERAIT une identité (tout
@@ -171,8 +225,9 @@ export function JackpotTracker({
       setChallengeRequired(false);
       replayRef.current = null;
       setCode("");
-      // La jauge partagée a bougé : on rafraîchit la lecture serveur en fond.
-      router.refresh();
+      // La jauge partagée a bougé : lecture ciblée en fond (plus de rendu
+      // serveur complet de la page pour un compteur).
+      void rafraichirJauge();
     } else if (!result.ok && result.challengeRequired) {
       setChallengeRequired(true);
       if (!wasReplay) replayRef.current = submitted;
@@ -224,24 +279,29 @@ export function JackpotTracker({
     );
   }, [scan]);
 
-  // ── Rafraîchissement doux de la jauge partagée : router.refresh() re-exécute
-  // le composant serveur (force-dynamic) et repasse une jauge fraîche en props,
-  // sans perdre l'état client (saisie, gains). Tolérant : suspendu onglet
-  // masqué ou pendant une participation, relancé au retour.
+  // ── Rafraîchissement doux de la jauge partagée : une lecture CIBLÉE
+  // (getJackpotState) remplace le rendu serveur complet de la page. L'état
+  // client (saisie, gains, challenge) n'est jamais perdu, la dernière photo
+  // saine survit à une coupure. Tolérant : suspendu onglet masqué ou pendant
+  // une participation, relancé immédiatement au retour d'onglet.
+  const busyRef = useRef(pending);
+  useEffect(() => {
+    busyRef.current = pending;
+  }, [pending]);
   useEffect(() => {
     const tick = () => {
-      if (!document.hidden && !pending) router.refresh();
+      if (!document.hidden && !busyRef.current) void rafraichirJauge();
     };
     const id = window.setInterval(tick, POLL_MS);
     const onVisible = () => {
-      if (!document.hidden) router.refresh();
+      if (!document.hidden && !busyRef.current) void rafraichirJauge();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [pending, router]);
+  }, [rafraichirJauge]);
 
   // Jauge affichée : la lecture serveur fait foi, mais la dernière participation
   // du joueur (même cycle) donne un retour immédiat avant le prochain poll.

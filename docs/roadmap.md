@@ -464,6 +464,68 @@ campaign-templates, event) 41 passed / 3 skipped / 0 failed.
 **Suite du train** : wagons 5 à 7 listés dans
 `docs/chantier-audit-2026-08-16.md`.
 
+## V1.61 — La soirée live tient sa promesse : wagon 5 de l'audit transverse (✅ 2026-08-17, branche `chantier/audit-p1-live`, migration `20260929120000`)
+
+**Objectif** : cinquième wagon du train de correction issu de l'audit
+transverse du 2026-08-16 (`docs/chantier-audit-2026-08-16.md`) — faire tenir
+la promesse de capacité d'une soirée live : fusionner les trois
+allers-retours de lecture d'état en un seul RPC, cacher la part partagée
+d'une session, redescendre la jauge vendue à ce qu'un banc a réellement prouvé,
+et faire dire vrai au rapport de performance (EVT-1, EVT-2, JOU-4, JOU-5,
+DOC-1 perf-report, JKP-1, plafond jauge 500).
+
+**Livré** :
+- Migration `20260929120000_soiree_live.sql` : RPC `event_etat_partage` (part
+  commune à la session — classement, question, chrono serveur, plus
+  `server_now` — avec garde de module/session fusionnée : `unavailable` sur
+  session brouillon/archivée ou module fermé) et `event_etat_joueur` (bloc
+  `you` seul : score, rang, code de retrait — n'est jamais appelée seule,
+  invariant d'appelant tenu côté application) ; équivalence champ à champ
+  avec `event_public_state` prouvée par pgTAP, avec et sans jeton (EVT-1,
+  EVT-2) ; `event_participant_capacity` redescend `full`/`live` de 1000 à
+  **500** — l'accès offert (`comp_access`) reste à 1000, jamais vendu sur une
+  promesse de débit (VEN-1, plafond jauge 500).
+- Backend : `src/lib/event-etat.ts` (nouveau) cache la part partagée 1 s, par
+  session et par instance serveur, et **seulement** quand `state === "ok"` ;
+  `getEventState` (repli polling) et le rendu serveur initial partagent
+  désormais le même producteur, plus de lecture préalable de session/garde de
+  module dupliquée (JOU-4) ; l'observation de pression du jackpot ne se
+  déclenche plus qu'après verdict `ok` et est rattachée par `after()`, hors
+  du chemin de réponse au joueur (JOU-5, correctifs MOYEN 1-2 de la revue) ;
+  `EventPublicState` porte `serverNow` ; `getJackpotState` reprend le même
+  patron que le calendrier avec un seau d'observation dédié
+  (`jackpot:state:ip`) ; `.env.example` documente `EVENTS_REALTIME_ENABLED` ;
+  `src/lib/plans.ts` rétrécit l'union `eventParticipants` à `100 | 500`, garde
+  miroir repointée sur la migration vivante.
+- Frontend : bandeau « Reconnexion… » + bouton « Actualiser » dès le 2ᵉ échec
+  de sondage côté téléphone joueur ; l'écran de salle affiche le même
+  bandeau **sans bouton**, assumé — personne ne clique sur un téléviseur ;
+  chrono ancré sur l'horloge serveur (`serverClockOffset`) sur les deux
+  écrans, un téléphone déréglé de 10 minutes reste juste ; la jauge du
+  jackpot se rafraîchit par une action ciblée toutes les 60 s, plus aucun
+  `router.refresh()` ; vitrine régénérée pour vendre « 500 participants par
+  session live ».
+- Documentation : `docs/perf-report.md` §7 cesse de décrire comme livré un
+  cache et un A/B qui n'avaient jamais existé (DOC-1) — réécrite pour
+  décrire le cache réellement livré et retirer le tableau A/B fantôme.
+
+**Arbitrage porté par l'ADR-106** : le cache d'1 s par session/instance
+retenu comme levier de capacité dominant (le drapeau Realtime seul laisse
+~217 req/s pour ~150 disponibles) ; la jauge vendable plafonnée à 500 tant
+qu'aucun banc n'a prouvé 1000 ; `server_now` figé jusqu'à 1 s par le cache,
+assumé ; l'écran de salle sans bouton de reconnexion, assumé.
+
+**Revue sécurité** : GO (0 critique/élevé, 2 MOYEN + 1 FAIBLE + 5 INFO — les
+2 MOYEN, le FAIBLE et 1 INFO fermés dans le wagon).
+
+Preuve : pgTAP **63 fichiers / 3614 assertions PASS** ×2 (vide et semée),
+`verif-complete.sh --rapide` 0 échec (typecheck, lint, casts/sql/migrations,
+build, Vitest complet, site), E2E ciblé **57/57 verts sur 3 navigateurs**
+(event, jackpot, jackpot-staff-checkin, player-win, wheel-wizard).
+
+**Suite du train** : wagons 6 et 7 listés dans
+`docs/chantier-audit-2026-08-16.md`.
+
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 
 **Objectif** : premier wagon du train de correction issu de l'audit transverse
@@ -3472,7 +3534,9 @@ direct. **En production** (revue sécurité passée sans finding bloquant).
 - [x] Machine à états serveur `lobby→question_active→question_locked→reveal→leaderboard→ended`
 - [x] 3 interfaces synchronisées : écran public, téléphone joueur (pseudo+avatar), télécommande orga
 - [x] Invariant non-fuite de la bonne réponse (4 défenses) + scoring serveur-autoritatif
-- [x] Transport : polling primaire (`event_public_state`) + Realtime ping-only activable
+- [x] Transport : polling primaire (`event_etat_partage`/`event_etat_joueur`
+      depuis le wagon 5, cache 1 s par session sur la part partagée) +
+      Realtime ping-only activable
 - [x] Podium à l'écran + lot `EVENT-` (stock fini, ADR-031) en caisse unifiée
 - [x] Migration `20260727120000`, ADR-034 — CI verte, déployé
 

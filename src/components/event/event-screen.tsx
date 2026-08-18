@@ -13,6 +13,7 @@ import {
   type EventDistributionBar,
 } from "./event-view-state";
 import { useEventPoll } from "./use-event-poll";
+import { useServerClockOffset } from "./use-server-clock";
 
 /**
  * Écran de salle du Mode événement en direct — pensé pour un téléviseur / vidéo-
@@ -43,7 +44,7 @@ export function EventScreen({
   initial: EventPublicState;
   realtimeEnabled: boolean;
 }) {
-  const { state } = useEventPoll(sessionId, initial, realtimeEnabled);
+  const { state, desynchronise } = useEventPoll(sessionId, initial, realtimeEnabled);
   const phase = state.session?.phase ?? "lobby";
   const view = viewForPhase(phase);
 
@@ -94,6 +95,18 @@ export function EventScreen({
         </div>
         <PhaseChip view={view} />
       </header>
+
+      {/* Écran de salle : personne ne clique dessus (c'est un téléviseur), donc
+          pas de bouton — mais l'animateur doit VOIR que l'affichage a décroché
+          plutôt que de croire une salle figée. Région vivante montée en
+          permanence, comme sur le téléphone. */}
+      <div role="status" aria-live="polite">
+        {desynchronise && (
+          <p className="border-b-2 border-k-yellow/60 bg-k-yellow/15 px-[4vw] py-[1vh] text-center text-[clamp(0.8rem,2vh,1.2rem)] font-black text-k-yellow">
+            ⚠ Reconnexion… l&apos;affichage n&apos;est plus à jour.
+          </p>
+        )}
+      </div>
 
       <main className="flex flex-1 flex-col px-[4vw] py-[2.5vh]">
         {view === "lobby" && (
@@ -225,7 +238,10 @@ function QuestionView({
   locked: boolean;
 }) {
   const question = state.question;
-  const now = useNow(!locked && Boolean(question));
+  // Chrono ancré sur l'horloge SERVEUR (cf. `serverClockOffset`) : l'écran de
+  // salle et les téléphones décomptent alors la MÊME seconde.
+  const clockOffset = useServerClockOffset(state.serverNow);
+  const now = useNow(!locked && Boolean(question)) + clockOffset;
 
   if (!question) {
     return (

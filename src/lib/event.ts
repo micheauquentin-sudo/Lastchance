@@ -167,7 +167,9 @@ export function mapEventSubmit(raw: unknown): EventSubmitResult {
 }
 
 // ────────────────────────────────────────────────────────────
-// event_public_state — LA source unique de l'état public
+// L'ÉTAT PUBLIC — servi par `event_etat_partage` || `event_etat_joueur`
+// (`src/lib/event-etat.ts`), et par `event_public_state` pour qui l'appelle
+// encore : les trois jsonb ont la MÊME forme, à `server_now` près.
 // ────────────────────────────────────────────────────────────
 
 /** Option telle que servie au public : JAMAIS de is_correct (invariant #1). */
@@ -234,6 +236,24 @@ export interface EventPublicState {
   distribution: EventDistributionEntry[] | null;
   leaderboard: EventLeaderboardEntry[];
   you: EventYouState | null;
+  /**
+   * Horloge SERVEUR au moment de la lecture (`server_now` d'`event_etat_partage`).
+   *
+   * Le client soustrait `serverNow − question.startedAt` et obtient un délai
+   * ÉCOULÉ, juste quel que soit le réglage de l'appareil : une tablette de bar
+   * en retard de quarante secondes affichait jusqu'ici un chrono déjà fini sur
+   * une question encore ouverte. Modèle repris du quiz (20260803120000), pas
+   * inventé ici.
+   *
+   * FIGÉE JUSQU'À UNE SECONDE par le cache de part partagée
+   * (`src/lib/event-etat.ts`) : assumé. Le compte à rebours peut donc retarder
+   * d'au plus une seconde — sans commune mesure avec les dizaines de secondes
+   * de dérive que cette clé corrige.
+   *
+   * `null` quand la source ne la porte pas : `event_public_state`, la RPC mère
+   * restée en place, ne l'émet pas.
+   */
+  serverNow: string | null;
 }
 
 function mapPublicQuestion(raw: unknown): EventPublicQuestion | null {
@@ -275,7 +295,7 @@ function mapYou(raw: unknown): EventYouState | null {
 }
 
 /**
- * Convertit le jsonb d'event_public_state en état typé, sans jamais faire
+ * Convertit le jsonb de l'état public en état typé, sans jamais faire
  * confiance à sa forme. `correctOptionId` n'est retenu QUE si la phase vaut
  * 'reveal' : défense en profondeur par-dessus le filtrage déjà appliqué par la
  * RPC. Un jsonb non reconnu (ou state ≠ ok) retombe sur `unavailable` neutre.
@@ -293,6 +313,7 @@ export function mapEventPublicState(raw: unknown): EventPublicState {
       distribution: null,
       leaderboard: [],
       you: null,
+      serverNow: null,
     };
   }
 
@@ -357,6 +378,7 @@ export function mapEventPublicState(raw: unknown): EventPublicState {
     distribution,
     leaderboard,
     you: mapYou(root.you),
+    serverNow: asString(root.server_now),
   };
 }
 

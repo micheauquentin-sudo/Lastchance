@@ -33,10 +33,23 @@ export interface PlanLimits {
   /**
    * Participants simultanés d'une session d'événement live. Limite
    * RÉELLEMENT appliquée en base par `event_participant_capacity()`
-   * (migration 20260805190000_security_equity.sql) — le catalogue en est le
+   * (migration 20260929120000_soiree_live.sql) — le catalogue en est le
    * miroir d'affichage, et un test garde les deux alignés.
+   *
+   * ── POURQUOI 1000 N'EST PLUS UNE VALEUR DE CE TYPE (VEN-1) ──
+   *
+   * La base sait toujours rendre 1000, mais pour la seule branche
+   * `comp_access` : un accès OFFERT par le propriétaire n'est pas une vente,
+   * et c'est précisément la population sur laquelle le banc de capacité se
+   * fera. Rien de VENDABLE ne dépasse 500 tant que ce banc n'a pas eu lieu —
+   * la règle est écrite au catalogue lui-même (voir `ADDON_OFFERS`, add-on
+   * « Soirée en jeu », dernière ligne de ses `rules`).
+   *
+   * Le type porte donc l'interdit : réécrire `1000` ici ne compile plus, et
+   * rouvrir la vente redevient un acte délibéré — élargir l'union, puis
+   * expliquer sur quelle mesure on s'appuie.
    */
-  eventParticipants: 100 | 500 | 1000;
+  eventParticipants: 100 | 500;
 }
 
 export interface PlanTier {
@@ -149,7 +162,9 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "quiz",
       "referral",
     ],
-    limits: { eventParticipants: 1000 },
+    // VEN-1 : 500 et non 1000. La Totale ne perd rien d'ÉPROUVÉ — elle cesse
+    // de promettre une capacité que personne n'a mesurée. Voir `PlanLimits`.
+    limits: { eventParticipants: 500 },
     // Même raison qu'au-dessus : la capacité vient de `limits`, pas d'ici.
     highlights: ["Le Club + Le Grand Jeu réunis", "Accès à tout nouveau module inclus"],
   },

@@ -4136,6 +4136,39 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     absent après jointure — cas non observé en pratique (une FK garantit la
     roue), consigné pour ne pas le supposer couvert par le même test.
 
+- **Wagon 5 de l'audit transverse — cinq points consignés sans correctif,
+  tous non bloquants (2026-08-17, `chantier/audit-p1-live`, ADR-106)** :
+  - **INFO 1 (revue sécurité)** : fenêtre d'environ 1 s de sur-exposition de
+    la part partagée d'une session juste après son archivage ou la
+    résiliation du module — le cache mémoire d'`event_etat_partage` peut
+    servir, jusqu'à sa péremption, un état lu juste avant la garde. Porte
+    uniquement sur la part partagée (classement, question) — aucune donnée
+    de joueur individuel. Assumé, borné à la durée du TTL.
+  - **INFO 2 (revue sécurité)** : la sûreté d'`event_etat_joueur` repose
+    entièrement sur l'invariant « jamais appelée seule » — tenu côté
+    application par `src/lib/event-etat.ts`, pas par une garde en base. Le
+    commentaire de la RPC est le seul garde-fou documentaire ; un futur appel
+    isolé ne serait pas intercepté par la RPC elle-même.
+  - **INFO 3 (revue sécurité)** : `event_public_state` n'a plus AUCUN
+    appelant applicatif depuis ce wagon — surface morte, à supprimer une fois
+    l'équivalence avec `event_etat_partage`/`event_etat_joueur` définitivement
+    acquise (geste de base de données futur, hors périmètre de ce wagon). Le
+    commentaire de la migration `20260929120000` (« le rendu serveur initial
+    l'appelle encore ») est devenu faux dans le commit qui l'a écrit.
+  - **INFO 4 (revue sécurité)** : les sessions `draft`/`lobby` créées AVANT
+    cette migration par des organisations au plan `full` gardent leur
+    `max_participants` figé à 1000 — seul un trigger `BEFORE INSERT` applique
+    la jauge révisée, les sessions existantes ne sont pas retouchées.
+    Direction généreuse pour le commerçant (personne ne perd de capacité
+    déjà accordée), mais c'est une décision produit à confirmer, pas un
+    correctif technique ; un `UPDATE` ciblé sur les sessions non démarrées
+    reste possible si la direction inverse est préférée.
+  - **`supabase/.temp` non exclu de la configuration ESLint** — deux
+    campagnes QA de ce wagon ont vu leurs journaux pollués par un bundle Deno
+    généré localement par les tests SQL. Sans effet sur le résultat des
+    vérifications ; exclusion pérenne à poser dans un geste séparé, hors
+    périmètre de ce wagon.
+
 ## Tracking Process
 
 ### When a bug is found:

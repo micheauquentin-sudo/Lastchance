@@ -57,6 +57,54 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-17 — Train de correction de l'audit transverse : wagon 5 « La soirée live tient sa promesse » — **branche poussée, PR à ouvrir**
+
+- **Lot et objectif** : cinquième wagon du train — fusionner les trois
+  allers-retours de lecture d'état live en un seul RPC, cacher la part
+  partagée d'une session, redescendre la jauge vendue à ce qu'un banc a
+  réellement prouvé, et faire dire vrai au rapport de performance (EVT-1,
+  EVT-2, JOU-4, JOU-5, DOC-1 perf-report, JKP-1, plafond jauge 500).
+- **Branche/commits** : `chantier/audit-p1-live`, tête `f48b83d`, arbre
+  propre (seul `docs/lastchance-reserver.md`, fichier Codex non suivi, hors
+  commit), 11 commits. Une migration : `20260929120000_soiree_live.sql`. **PR
+  à ouvrir, CI de la PR à jouer.**
+- **Arbitrages portés par l'ADR-106** : le cache mémoire d'1 s par session et
+  par instance retenu comme levier de capacité dominant (le drapeau Realtime
+  seul laisse ~217 req/s pour ~150 disponibles) ; la fusion des gardes de
+  module/session en base, parité vérifiée à la main par la revue de sécurité ;
+  la jauge vendable plafonnée à 500 tant qu'aucun banc n'a prouvé 1000 ;
+  `server_now` figé jusqu'à 1 s par le cache, assumé ; l'écran de salle sans
+  bouton de reconnexion, assumé.
+- **Faits** : `event_etat_partage` (part commune — classement, question,
+  chrono serveur, garde de module/session fusionnée : `unavailable` sur
+  session brouillon/archivée ou module fermé) et `event_etat_joueur` (bloc
+  `you` seul : score, rang, code de retrait — jamais appelée seule, invariant
+  côté application) remplacent les trois allers-retours dupliqués du rendu
+  serveur et du repli polling ; équivalence champ à champ avec
+  `event_public_state` prouvée par pgTAP, avec et sans jeton ;
+  `event_participant_capacity` redescend `full`/`live` de 1000 à **500** —
+  l'accès offert reste à 1000 ; `src/lib/plans.ts` rétrécit l'union
+  `eventParticipants` à `100 | 500` ; `src/lib/event-etat.ts` (nouveau) cache
+  la part partagée 1 s, uniquement quand `state === "ok"` ; l'observation de
+  pression du jackpot est rattachée par `after()`, hors du chemin de réponse
+  au joueur (correctifs MOYEN 1-2 de la revue) ; bandeau « Reconnexion… » +
+  bouton « Actualiser » côté téléphone joueur dès le 2ᵉ échec de sondage,
+  même bandeau sans bouton côté écran de salle ; chrono ancré sur l'horloge
+  serveur des deux côtés ; jauge du jackpot rafraîchie par action ciblée
+  toutes les 60 s ; `docs/perf-report.md` §7 cesse de décrire comme livré un
+  cache et un tableau A/B qui n'avaient jamais existé.
+- **Preuve** : pgTAP 63 fichiers / 3614 assertions PASS ×2 (vide et semée),
+  `verif-complete.sh --rapide` 0 échec (6 min 29 — typecheck, lint,
+  casts/sql/migrations + gardes, build, Vitest complet, site), E2E ciblé
+  57/57 verts sur 3 navigateurs (event, jackpot, jackpot-staff-checkin,
+  player-win, wheel-wizard). Revue sécurité **GO** (0 critique/élevé, 2 MOYEN
+  + 1 FAIBLE + 5 INFO, les 2 MOYEN, le FAIBLE et 1 INFO fermés dans le
+  wagon).
+- **Reste ouvert** : 4 INFO consignés sans correctif dans `docs/bugs.md`
+  (wagon 5) + une exclusion ESLint mineure pour `supabase/.temp`. Activation
+  de `EVENTS_REALTIME_ENABLED` en production reste un geste d'exploitation
+  hors code (case NON cochée dans `docs/roadmap.md`). Wagons 6 et 7 à venir.
+
 ### 2026-08-17 — Train de correction de l'audit transverse : wagon 4 « Le commerçant garde la main, les chiffres disent vrai » — **fusionné, déployé, santé verte**
 
 - **Lot et objectif** : quatrième wagon du train (brief `docs/wagon-4-brief.md`) —
