@@ -216,3 +216,39 @@ describe("statut 404 des routes joueur streamées", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * L'AUTRE MOITIÉ DU 404 — sans elle, la garde ci-dessus ne prouve rien.
+ *
+ * Décider le `notFound()` dans `generateMetadata` ne suffit PAS sous Next 16 :
+ * les métadonnées y sont STREAMÉES par défaut, l'en-tête HTTP part avant leur
+ * résolution, et le statut reste 200. C'est exactement le piège qui a coûté
+ * un aller-retour complet de campagne QA : le correctif semblait juste, la
+ * garde de source passait, et le curl continuait de rendre 200.
+ *
+ * Le levier est global et vit dans `next.config.ts` (`htmlLimitedBots`, voir
+ * le commentaire long à cet endroit). Les deux moitiés doivent tenir
+ * ensemble : retirer celle-ci rouvre le trou sans qu'aucun test de rendu ne
+ * bronche, puisque le HTML produit, lui, est correct.
+ */
+describe("les métadonnées bloquent la réponse", () => {
+  it("next.config.ts force les métadonnées bloquantes pour tous les UA", () => {
+    const config = readFileSync("next.config.ts", "utf8");
+    const ligne = config
+      .split(/\r?\n/)
+      .find((l) => /^\s*htmlLimitedBots\s*:/.test(l));
+    expect(
+      ligne,
+      "`htmlLimitedBots` a disparu de next.config.ts : les métadonnées " +
+        "redeviennent streamées et toute ressource joueur inconnue répondra " +
+        "200 au lieu de 404",
+    ).toBeDefined();
+    // Une regex ATTRAPE-TOUT, et pas n'importe quelle valeur : la restreindre
+    // à quelques robots est le comportement par défaut qu'on remplace.
+    expect(
+      ligne,
+      "`htmlLimitedBots` doit être une regex attrape-tout : une liste de " +
+        "robots ne rend le bon statut qu'à ces robots-là",
+    ).toMatch(/htmlLimitedBots\s*:\s*\/\.\*\/\s*,/);
+  });
+});
