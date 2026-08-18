@@ -581,11 +581,6 @@ const SMS_CREDIT_PACK_ENV: ReadonlyArray<SmsCreditPack & { env: string }> = [
   },
 ];
 
-export function getSmsPackPriceId(packId: string): string | undefined {
-  const pack = SMS_CREDIT_PACK_ENV.find((candidate) => candidate.id === packId);
-  return pack ? optionalEnv(pack.env) : undefined;
-}
-
 /** Les packs réellement achetables : ceux dont le prix Stripe est configuré. */
 export function listSmsCreditPacks(): SmsCreditPack[] {
   return SMS_CREDIT_PACK_ENV.filter((pack) => optionalEnv(pack.env)).map(

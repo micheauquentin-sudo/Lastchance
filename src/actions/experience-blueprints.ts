@@ -399,42 +399,6 @@ export async function applyExperienceBlueprintVersion(input: {
   };
 }
 
-export async function previewExperienceBlueprint(input: {
-  blueprintId: string;
-  version: number;
-}) {
-  const context = await editorContext();
-  if (!context) return { ok: false as const, error: NOT_EDITOR };
-  const parsed = blueprintIdSchema.safeParse(input);
-  if (!parsed.success) return { ok: false as const, error: "Version invalide." };
-
-  const admin = createAdminClient();
-  const { data: blueprint } = await admin
-    .from("experience_blueprints")
-    .select("kind")
-    .eq("id", parsed.data.blueprintId)
-    .eq("organization_id", context.organization.id)
-    .maybeSingle();
-  if (!blueprint) return { ok: false as const, error: "Modèle introuvable." };
-  const { data: version } = await admin
-    .from("experience_blueprint_versions")
-    .select("schema_version, configuration, assets, default_rewards")
-    .eq("blueprint_id", parsed.data.blueprintId)
-    .eq("organization_id", context.organization.id)
-    .eq("version", parsed.data.version)
-    .maybeSingle();
-  if (!version) return { ok: false as const, error: "Version introuvable." };
-  return previewBlueprintVersion({
-    blueprintId: parsed.data.blueprintId,
-    version: parsed.data.version,
-    schemaVersion: version.schema_version as number,
-    kind: blueprint.kind as ExperienceKind,
-    configuration: version.configuration,
-    assets: version.assets,
-    defaultRewards: version.default_rewards,
-  });
-}
-
 export async function listExperienceBlueprints() {
   const context = await editorContext();
   if (!context) return [];

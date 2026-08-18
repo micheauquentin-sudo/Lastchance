@@ -32,14 +32,19 @@ describe("Content Security Policy", () => {
     expect(buildContentSecurityPolicy()).toContain("script-src 'self' 'unsafe-inline'");
   });
 
-  it("autorise la compilation WebAssembly (décodeur meshopt de la mascotte)", () => {
+  it("n'autorise PLUS la compilation WebAssembly sur aucune surface (MORT-2)", () => {
+    // `'wasm-unsafe-eval'` n'a jamais eu qu'une raison d'être : le décodeur
+    // meshopt de la mascotte Lumoz, supprimée avec ses dépendances. Plus rien
+    // dans `src/` ni `e2e/` ne compile de WebAssembly — la roue est du canvas
+    // 2D. Une permission dont le motif est parti reste une permission ouverte,
+    // ici jusque sur la surface `sensitive` du back-office.
     const policies = [
       buildContentSecurityPolicy(),
       buildContentSecurityPolicy({ surface: "sensitive", nonce: "n" }),
       buildContentSecurityPolicy({ surface: "public", nonce: "n" }),
     ];
     for (const policy of policies) {
-      expect(directive(policy, "script-src")).toContain("'wasm-unsafe-eval'");
+      expect(directive(policy, "script-src")).not.toContain("'wasm-unsafe-eval'");
     }
   });
 
