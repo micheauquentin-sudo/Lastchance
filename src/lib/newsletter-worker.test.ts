@@ -24,7 +24,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 const ORG_ID = "org-1";
 const CAMPAIGN_ID = "camp-1";
 
-function job(attempts = 1): JobRow {
+function job(attempts = 1, createdAt = new Date().toISOString()): JobRow {
   return {
     id: "job-1",
     type: "newsletter.send",
@@ -36,7 +36,7 @@ function job(attempts = 1): JobRow {
     organization_id: ORG_ID,
     idempotency_key: null,
     last_error: null,
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
     completed_at: null,
   };
 }
@@ -64,6 +64,12 @@ interface FakeOptions {
    * le seul cas où le worker doit différer plutôt que réessayer.
    */
   logReadErrorDesLecture?: number;
+  /**
+   * `email_log` refuse toute ÉCRITURE. L'envoi part quand même (c'est le
+   * propre du best-effort) mais rien n'est enregistré : c'est le scénario où
+   * la progression n'est pas acquise, et où le report bouclerait sans fin.
+   */
+  logWriteError?: string;
 }
 
 function fakeAdmin(options: FakeOptions) {
@@ -147,6 +153,11 @@ function fakeAdmin(options: FakeOptions) {
         }),
         upsert: async (rows: Array<{ dedup_key: string }>) => {
           trace.push({ type: "upsert", count: rows.length });
+          if (options.logWriteError) {
+            // L'écriture est refusée : le journal reste VIDE, donc le passage
+            // suivant reverrait exactement les mêmes abonnés à servir.
+            return { error: { message: options.logWriteError } };
+          }
           for (const r of rows) journal.add(r.dedup_key);
           return { error: null };
         },
@@ -282,6 +293,107 @@ describe("processNewsletterJob — la progression s'écrit par tranche", () => {
     // La première tranche est partie : la perdre en renvoyant `retry` la
     // referait envoyer. Le reste est différé.
     expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(outcome.status).toBe("deferred");
+  });
+});
+
+describe("processNewsletterJob — le report ne peut pas boucler sans fin (M2)", () => {
+  it("n'accorde PAS de report quand le journal refuse ses écritures", async () => {
+    // LE DÉFAUT QUE CE TEST FERME. Le report ne consomme pas de tentative : ce
+    // qui bornait la boucle était l'invariant « chaque passage journalise, donc
+    // en sert moins au suivant ». Or l'écriture du journal est best-effort. Si
+    // elle échoue, le passage envoie 1 000 emails, n'en enregistre AUCUN, et se
+    // reporte à 60 s — pour resservir les mêmes 1 000. Sans plafond de
+    // tentatives, sans échéance, sans statut terminal.
+    const { admin } = fakeAdmin({
+      segment: segmentDe(2500),
+      logWriteError: "email_log en panne",
+    });
+
+    const outcome = await processNewsletterJob(admin, job());
+
+    // `retry` et non `deferred` : c'est la différence qui borne tout.
+    expect(outcome.status).toBe("retry");
+    expect(outcome).not.toHaveProperty("runAfter");
+  });
+
+  it("TERMINE en panne persistante du journal, au lieu de tourner à l'infini", async () => {
+    // La preuve demandée par la revue : on rejoue la vraie boucle, en
+    // réinjectant le résultat de chaque passage comme le ferait `settleJob`
+    // (un `retry` consomme une tentative, un `deferred` la rend). Le garde-fou
+    // à 50 tours n'est pas la borne testée — il est là pour que l'échec du test
+    // soit un échec, et non une suite qui ne rend jamais la main.
+    const { admin } = fakeAdmin({
+      segment: segmentDe(2500),
+      logWriteError: "email_log en panne",
+    });
+
+    let attempts = 1;
+    let passages = 0;
+    let dernier = "";
+    while (passages < 50) {
+      passages += 1;
+      const outcome = await processNewsletterJob(admin, job(attempts));
+      dernier = outcome.status;
+      if (outcome.status === "deferred") continue; // tentative RENDUE
+      if (outcome.status === "retry") {
+        attempts += 1;
+        continue;
+      }
+      break; // statut terminal
+    }
+
+    expect(dernier).toBe("failed");
+    // 5 tentatives (max_attempts) : le 5ᵉ passage est celui qui clôt.
+    expect(passages).toBe(5);
+  });
+
+  it("clôt en `partial` — le commerçant voit ce qui est parti, pas un zéro", async () => {
+    const { admin, trace } = fakeAdmin({
+      segment: segmentDe(2500),
+      logWriteError: "email_log en panne",
+    });
+
+    // Tentatives épuisées : ce passage est terminal.
+    const outcome = await processNewsletterJob(admin, job(5));
+
+    expect(outcome.status).toBe("failed");
+    expect(trace.at(-1)).toMatchObject({
+      status: "partial",
+      sent: 1000,
+      total: 2500,
+    });
+  });
+
+  it("un report reste accordé tant que la progression est CONSTATÉE", async () => {
+    // Le contrôle ne doit pas se déclencher sur le chemin nominal : le journal
+    // s'écrit, donc le passage suivant servira strictement moins.
+    const { admin } = fakeAdmin({ segment: segmentDe(2500) });
+
+    const outcome = await processNewsletterJob(admin, job());
+
+    expect(outcome.status).toBe("deferred");
+  });
+
+  it("plafonne l'ÂGE d'une campagne reportée, quoi qu'il arrive (backstop)", async () => {
+    // Garde de dernier recours, motif `processSmsSendJob` : le report rendant
+    // la tentative, seule une DATE peut borner une boucle dont on n'aurait pas
+    // prévu la cause. Ici le journal fonctionne — c'est bien l'âge qui tranche.
+    const vieuxDe25h = new Date(Date.now() - 25 * 3_600_000).toISOString();
+    const { admin, trace } = fakeAdmin({ segment: segmentDe(2500) });
+
+    const outcome = await processNewsletterJob(admin, job(1, vieuxDe25h));
+
+    expect(outcome.status).toBe("failed");
+    expect(trace.at(-1)).toMatchObject({ status: "partial" });
+  });
+
+  it("une campagne récente n'est pas coupée par le plafond d'âge", async () => {
+    const recente = new Date(Date.now() - 3_600_000).toISOString();
+    const { admin } = fakeAdmin({ segment: segmentDe(2500) });
+
+    const outcome = await processNewsletterJob(admin, job(1, recente));
+
     expect(outcome.status).toBe("deferred");
   });
 });

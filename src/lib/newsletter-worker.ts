@@ -49,6 +49,22 @@ const TRANCHE = 100;
 /** Délai avant reprise d'un reliquat — la file repasse toutes les 5 minutes. */
 const DELAI_RELIQUAT_MS = 60_000;
 
+/**
+ * L'ÂGE au-delà duquel une campagne cesse d'être reportée — BACKSTOP ABSOLU.
+ *
+ * Motif emprunté à `processSmsSendJob` (`MAX_WINDOW_DEFERRAL_DAYS`), et pour
+ * exactement la même raison : `deferred` REND la tentative consommée
+ * (cf. `settleJob`, src/lib/jobs.ts), donc `max_attempts` ne borne plus rien.
+ * Ce qui borne est la DATE, et il faut qu'un plafond existe.
+ *
+ * 24 h est très large devant l'usage : à 1 000 envois par passage et un report
+ * de 60 s, une campagne de 100 000 abonnés tient en moins de deux heures. Ce
+ * plafond ne coupe donc aucun envoi réel — il n'existe que pour qu'une boucle
+ * imprévue s'arrête, et il n'est PAS la garde principale (voir
+ * `progresEnregistre` plus bas, qui traite la cause connue).
+ */
+const AGE_MAX_REPORT_MS = 24 * 3_600_000;
+
 export async function processNewsletterJob(
   admin: ReturnType<typeof createAdminClient>,
   job: JobRow,
@@ -143,6 +159,8 @@ export async function processNewsletterJob(
   let reliquat = false;
   let panne = false;
   let tentative = false;
+  /** Vrai dès qu'une tranche a écrit son journal SANS erreur (cf. clôture). */
+  let progresEnregistre = false;
 
   for (let debut = 0; debut < segmentTotal; debut += TRANCHE) {
     if (envoyes >= MAX_RECIPIENTS_PAR_PASSAGE) {
@@ -230,11 +248,15 @@ export async function processNewsletterJob(
       const { error: journalError } = await admin
         .from("email_log")
         .upsert(journal, { onConflict: "dedup_key", ignoreDuplicates: true });
-      // Best-effort, comme les automatisations : si le journal ne s'écrit pas,
-      // une reprise renverra à cette tranche — l'envoi, lui, est parti et ne
-      // doit pas être compté en échec.
+      // L'ENVOI est parti : une écriture de journal refusée ne doit pas le
+      // compter en échec. Mais elle ne doit pas non plus passer inaperçue —
+      // c'est la SEULE trace de ce qui est déjà servi, et le report s'appuie
+      // dessus pour ne pas resservir. On note donc si le passage a réellement
+      // enregistré sa progression (voir `progresEnregistre` à la clôture).
       if (journalError) {
         reportError("jobs.newsletter.journal-ecriture", journalError.message);
+      } else {
+        progresEnregistre = true;
       }
     }
 
@@ -277,10 +299,47 @@ export async function processNewsletterJob(
      * Le plafond est atteint et le segment ne l'est pas : la campagne RESTE en
      * `sending`, avec son compte réel, et le job repart à une date DONNÉE sans
      * consommer de tentative (`deferred`, cf. src/lib/jobs.ts). Ce qui borne la
-     * boucle n'est donc plus `max_attempts` mais la PROGRESSION : chaque
-     * passage journalise ce qu'il envoie, donc en sert strictement moins au
-     * suivant, jusqu'à épuisement du segment.
+     * boucle n'est donc plus `max_attempts` mais la PROGRESSION.
+     *
+     * ── ET LA PROGRESSION SE VÉRIFIE, ELLE NE SE SUPPOSE PAS ────────
+     *
+     * « Chaque passage journalise ce qu'il envoie, donc en sert strictement
+     * moins au suivant » : c'est vrai TANT QUE le journal s'écrit. Or cette
+     * écriture est best-effort. Si `email_log` refuse durablement (droits
+     * révoqués, contrainte, table pleine), un passage envoyait 1 000 emails,
+     * n'en enregistrait aucun, se reportait à 60 s — et le passage suivant
+     * resservait LES MÊMES 1 000, sans plafond de tentatives (le report les
+     * rend), sans échéance et sans statut terminal. Facture Resend et
+     * réputation du domaine, en boucle, jusqu'à intervention humaine.
+     *
+     * On ne se reporte donc que sur une progression CONSTATÉE. Un passage qui
+     * a envoyé sans rien enregistrer n'a pas avancé : il repart en `retry`,
+     * qui CONSOMME une tentative et fait donc terminer la campagne en échec
+     * après `max_attempts`, au lieu de tourner sans fin.
      */
+    if (envoyes > 0 && !progresEnregistre) {
+      const raison = "journal des envois non écrit — progression non acquise";
+      if (job.attempts < job.max_attempts) {
+        await publierProgression("sending", servis, false);
+        return { status: "retry", error: raison };
+      }
+      await publierProgression("partial", servis, true);
+      return { status: "failed", error: raison };
+    }
+
+    /* BACKSTOP ABSOLU sur l'ÂGE, motif `processSmsSendJob`. La garde ci-dessus
+     * traite la cause CONNUE ; celle-ci existe pour les autres — toute forme de
+     * non-avancement qu'on n'a pas su prévoir. Sans elle, il n'y a aucune borne
+     * dure sur une boucle qui ne consomme pas de tentative. */
+    const ageMs = Date.now() - Date.parse(job.created_at);
+    if (Number.isFinite(ageMs) && ageMs > AGE_MAX_REPORT_MS) {
+      await publierProgression("partial", servis, true);
+      return {
+        status: "failed",
+        error: `campagne encore incomplète après ${AGE_MAX_REPORT_MS / 3_600_000} h de reports`,
+      };
+    }
+
     await publierProgression("sending", servis, false);
     return {
       status: "deferred",
