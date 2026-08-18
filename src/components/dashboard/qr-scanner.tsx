@@ -220,7 +220,14 @@ export function QrScanner({
           </button>
         </div>
       )}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {/* TOUJOURS monté, vide au repos — convention de
+          `src/components/ui/toast-enregistrement.tsx`. Une région live
+          insérée dans le DOM en même temps que son texte n'est pas annoncée
+          de façon fiable : le caissier dont la caméra est refusée ou occupée
+          n'entendait rien et restait devant un bouton qui « ne fait rien ». */}
+      <p role="alert" className={error ? "mt-2 text-sm text-red-600" : "sr-only"}>
+        {error}
+      </p>
     </div>
   );
 }

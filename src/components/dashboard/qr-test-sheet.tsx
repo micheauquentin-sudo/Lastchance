@@ -58,7 +58,7 @@ function QrSample({ variant, url }: { variant: Variant; url: string }) {
       <p className="mt-1 text-[10px] font-semibold leading-tight text-zinc-700">
         {variant.label}
       </p>
-      <p className="text-[8px] text-zinc-400">{variant.key}</p>
+      <p className="text-[8px] text-k-muted">{variant.key}</p>
     </article>
   );
 }

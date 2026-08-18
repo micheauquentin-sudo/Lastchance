@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useModalFocus } from "@/components/ui/use-modal-focus";
 import { updateQrStyle } from "@/actions/qr-codes";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -291,6 +292,12 @@ export function QrDesigner({
     };
   }, [onClose]);
 
+  // Focus initial, confinement de Tab, restitution au déclencheur.
+
+
+  const dialogue = useModalFocus<HTMLDivElement>();
+
+
   const scannable = isScannable(style);
 
   async function handleLogoFile(file: File | undefined) {
@@ -326,7 +333,9 @@ export function QrDesigner({
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6"
+      ref={dialogue}
+      tabIndex={-1}
+      className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6 focus:outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="Studio de personnalisation du QR code"
@@ -586,7 +595,7 @@ export function QrDesigner({
               </div>
             </Section>
 
-            <p className="text-xs font-bold text-zinc-400">
+            <p className="text-xs font-bold text-k-muted">
               Astuce : testez toujours votre QR avec un téléphone avant
               d&apos;imprimer — surtout après un dégradé ou un fond coloré.
             </p>

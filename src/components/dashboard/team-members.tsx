@@ -57,7 +57,7 @@ export function TeamMembersList({
               <p className="truncate text-sm font-medium text-zinc-900">
                 {m.email}
                 {m.user_id === currentUserId && (
-                  <span className="ml-2 text-xs font-normal text-zinc-400">(vous)</span>
+                  <span className="ml-2 text-xs font-normal text-k-muted">(vous)</span>
                 )}
               </p>
               <p className="text-xs text-zinc-500">

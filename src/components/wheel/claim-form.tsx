@@ -370,7 +370,7 @@ export function ClaimForm({
         <span>
           J&apos;accepte les conditions du jeu et le traitement de mes
           données pour la remise de mon gain.{" "}
-          <span className={kermesse ? "text-k-orange" : "text-violet-300"}>*</span>
+          <span className={kermesse ? "text-k-orange-text" : "text-violet-300"}>*</span>
         </span>
       </label>
 
@@ -588,7 +588,7 @@ export function RedeemCodeScreen({
         </div>
       )}
       {secondsLeft != null && (
-        <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange font-bold" : "text-amber-300"}`}>
+        <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
           ⏱ Ce code disparaît dans {secondsLeft} s
         </p>
       )}

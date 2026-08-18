@@ -219,7 +219,7 @@ export default async function ParticipationsPage({
                 {roi} %
               </span>
             ) : (
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-k-muted">
                 ROI : renseignez le coût des lots (éditeur de roue)
               </span>
             )}
@@ -420,7 +420,7 @@ export default async function ParticipationsPage({
                     {row.marketing_opt_in ? (
                       <span className="text-emerald-600 font-medium">Oui</span>
                     ) : (
-                      <span className="text-zinc-400">Non</span>
+                      <span className="text-k-muted">Non</span>
                     )}
                   </td>
                   <td className="px-4 py-3">

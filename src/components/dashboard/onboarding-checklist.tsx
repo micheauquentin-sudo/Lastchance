@@ -72,7 +72,7 @@ export function OnboardingChecklist({
         {steps.map((step) => (
           <li key={step.key}>
             {step.done ? (
-              <span className="flex items-center gap-2.5 text-sm text-zinc-400 line-through decoration-zinc-300">
+              <span className="flex items-center gap-2.5 text-sm text-k-muted line-through decoration-zinc-300">
                 <CheckDot done />
                 {step.label}
               </span>

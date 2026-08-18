@@ -31,7 +31,7 @@ export function CancelParticipationButton({ id }: { id: string }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-zinc-400 underline underline-offset-2 hover:text-red-600"
+        className="text-xs text-k-muted underline underline-offset-2 hover:text-red-600"
       >
         Annuler…
       </button>

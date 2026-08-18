@@ -81,7 +81,7 @@ export function LogoForm({ logoUrl }: { logoUrl: string | null }) {
           {uploading ? "Envoi…" : logoUrl ? "Remplacer" : "Ajouter"}
         </Button>
       </form>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-k-muted">
         PNG, JPEG ou WebP · 2 Mo max · fond transparent recommandé.
       </p>
       <FieldError

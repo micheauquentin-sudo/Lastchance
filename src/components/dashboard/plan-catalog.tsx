@@ -75,7 +75,7 @@ export function PlanCatalog({
                 {tier.limits.join(" · ")}
               </p>
             )}
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-k-muted">
               {tier.trialDays} jours d&apos;essai inclus
             </p>
 

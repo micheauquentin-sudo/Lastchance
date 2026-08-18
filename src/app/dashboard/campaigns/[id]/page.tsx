@@ -388,7 +388,7 @@ export default async function CampaignDetailPage({
           <p className="mt-4">
             <Link
               href={`/dashboard/qr-codes?campaign=${c.id}`}
-              className="text-sm font-bold text-k-orange hover:underline"
+              className="text-sm font-bold text-k-orange-text hover:underline"
             >
               Gérer tous les QR codes
             </Link>

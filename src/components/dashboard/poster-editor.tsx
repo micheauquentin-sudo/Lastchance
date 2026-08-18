@@ -818,7 +818,7 @@ export function PosterEditor({
             </p>
           )}
 
-          <p className="text-[11px] font-bold text-zinc-400">
+          <p className="text-[11px] font-bold text-k-muted">
             Le QR affiché est celui personnalisé dans le Studio QR — testez
             le scan avant d&apos;imprimer.
           </p>
