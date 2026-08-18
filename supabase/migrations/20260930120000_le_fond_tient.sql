@@ -136,27 +136,21 @@ revoke all on table public.admin_notes from authenticated;
 revoke all on table public.webhook_deliveries from authenticated;
 
 -- ============================================================
--- 3. `jackpot-draws` : une période semée fausse
+-- 3. `jackpot-draws` : la période reste quotidienne — volontairement
 -- ============================================================
--- Le registre inscrit ce worker à 86 400 s / 108 000 s de tolérance —
--- les valeurs des crons Vercel QUOTIDIENS, appliquées par défaut à tout
--- le lot de 20260805240000. Mais `jackpot-draws` n'est pas quotidien :
--- il est déclenché toutes les 5 minutes par pg_cron
--- (`lastchance-jackpot-date-draws`).
+-- Ce wagon a d'abord voulu passer ce worker à 300 s / 900 s, au motif
+-- qu'un pg_cron le déclenche toutes les 5 minutes
+-- (`lastchance-jackpot-date-draws`). La revue sécurité a montré que la
+-- prémisse confond le TRAVAIL et le BATTEMENT DE CŒUR : le pg_cron
+-- exécute `run_jackpot_date_draws()` directement en SQL et n'écrit
+-- AUCUNE ligne dans `ops_worker_runs` ; le seul heartbeat de ce worker
+-- vient de la route HTTP `/api/cron/jackpot-draws`, planifiée UNE fois
+-- par jour (vercel.json, 45 4 * * *). Une période de 300 s aurait rendu
+-- le capteur rouge ~23 h 45 sur 24 dès l'application — un voyant
+-- toujours allumé est un voyant qu'on cesse de lire, l'exact défaut que
+-- ce wagon ferme ailleurs.
 --
--- Tant qu'il est `enabled = false`, l'écart ne fait rien. Le jour où on
--- le supervise sans l'avoir corrigé, un worker de tirage MORT resterait
--- vert pendant les 30 heures de sa tolérance : des jackpots non tirés à
--- l'heure dite, et pas un signal. C'est un capteur qui ment, ce que ce
--- wagon existe précisément pour fermer.
---
--- 300 / 900 : exactement le réglage de `jobs`, l'autre worker pg_cron à
--- 5 minutes — trois passages manqués avant de déclarer la mort, ce qui
--- absorbe un redémarrage sans absorber une panne.
---
--- `enabled` n'est PAS touché : brancher la supervision est un geste
--- d'exploitation, pris quand on est prêt à traiter son rouge.
-update public.ops_worker_definitions
-   set expected_period_seconds = 300,
-       tolerance_seconds       = 900
- where worker = 'jackpot-draws';
+-- 86 400 / 108 000 reste donc la cadence VRAIE de ce que le capteur
+-- mesure. Superviser le chemin pg_cron 5 minutes demanderait que
+-- `run_jackpot_date_draws()` écrive son propre heartbeat — un chantier
+-- à part entière, consigné dans docs/bugs.md, pas un update glissé ici.
