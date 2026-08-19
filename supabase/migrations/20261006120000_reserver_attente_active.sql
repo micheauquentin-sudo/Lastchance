@@ -847,6 +847,17 @@ begin
   -- Le `>` sur un horodatage rend le contrôle insensible aux lignes purgées :
   -- une empreinte remplacée par `purge:…` ne peut plus égaler une empreinte de
   -- 64 hexadécimaux, donc elle ne peut ni bloquer ni être bloquée.
+  --
+  -- Le verrou d'avis SÉRIALISE le seau : sans lui, k `waitUsePause` parallèles
+  -- sur k sessions pré-armées (READ COMMITTED) passaient tous le `exists` avant
+  -- le premier commit — k jetons pour une seule promesse. Le `where … is null`
+  -- protège la ligne courante, pas la borne inter-lignes ; c'est le motif
+  -- maison de toute borne qui compte des lignes voisines (queue_join,
+  -- consume_reserver_wait_spin_grant).
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+    'reserver_wait_pause:' || p_organization_id::text || ':'
+      || p_player_key_hash || ':' || coalesce(v_queue_id, v_activity_id)::text,
+    0));
   if exists (
     select 1
       from public.reservation_wait_sessions s2

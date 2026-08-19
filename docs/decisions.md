@@ -7267,7 +7267,11 @@ La promesse produit devient « un tour offert par visite et par guichet »,
 non « par attente ».
 
 **Conséquences** : un client légitime qui revient le lendemain rejoue ; un
-cycleur ne gagne rien de plus que sa première Pause. La config de retrait
+cycleur ne gagne rien de plus que sa première Pause — le seau est sérialisé
+par verrou d'avis (org+empreinte+guichet), la course des sessions pré-armées
+est fermée. « Par guichet » se lit au pied de la lettre : une file rattachée
+à une activité et l'activité elle-même sont deux guichets (deux attentes
+réelles), bornés par la configuration marchande. La config de retrait
 (`collect_email`, `collect_phone`, TTL) descend de la campagne cible par
 `wait_session_open` — le flux GAIN- reste le standard, sans régime parallèle.
 
