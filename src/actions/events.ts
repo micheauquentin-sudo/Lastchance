@@ -202,10 +202,20 @@ async function joinInner(
 ): Promise<ActionResult<EventJoinResult>> {
   try {
     const admin = createAdminClient();
-    await observeEventPressure(
-      sessionId,
-      clientIpFromHeaders(await headers()),
-    );
+    // Observation seule (fail-open, jamais un refus, cf. ADR-032) : ne PAS
+    // l'attendre avant la RPC. `getEventState` a déjà appris cette leçon (voir
+    // son commentaire) mais join/submit la rejouaient encore — un aller-retour
+    // rate-limit de plus, en série, sur un chemin borné par le chrono SERVEUR
+    // de la question. `after()` la retient jusqu'à son terme sans retarder la
+    // réponse au joueur.
+    {
+      const ip = clientIpFromHeaders(await headers());
+      after(() =>
+        observeEventPressure(sessionId, ip).catch((err) =>
+          reportError("event.join-pressure", err),
+        ),
+      );
+    }
 
     const { data, error } = await admin.rpc("join_event_session", {
       p_join_code: parsed.joinCode,
@@ -305,8 +315,16 @@ async function submitInner(
       return { ok: true, data: mapEventSubmit({ state: "unavailable" }) };
     }
 
+    // Observation seule (fail-open, cf. ADR-032) : ne pas la mettre en série
+    // avant la RPC de soumission — le chrono de réponse (20 s SEED) est un
+    // budget SERVEUR réel, et chaque aller-retour rate-limit ajouté avant la
+    // RPC le grignote pour rien. Même correction que `joinInner` ci-dessus.
     const ip = clientIpFromHeaders(await headers());
-    await observeEventPressure(parsed.sessionId, ip);
+    after(() =>
+      observeEventPressure(parsed.sessionId, ip).catch((err) =>
+        reportError("event.submit-pressure", err),
+      ),
+    );
 
     const { data, error } = await ctx.admin.rpc("submit_event_answer", {
       p_session_id: parsed.sessionId,

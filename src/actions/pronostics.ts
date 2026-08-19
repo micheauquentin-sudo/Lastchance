@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { blocageActivationContest } from "@/lib/activation/pronostics";
 import { getUserAndOrg } from "@/lib/auth";
@@ -1477,13 +1478,21 @@ async function registerInner(
     // les doublons. La clé IP (partagée : Wi-Fi de commerce) ne porte donc plus
     // qu'un compteur LARGE et fail-OPEN — elle alerte sur un débit anormal,
     // elle ne refuse jamais l'inscription d'un championnat entier (ADR-032).
-    await observerPressionIp(
-      ["prono:register:ip", ctx.contest.id],
-      ip,
-      RATE_LIMITS.pronoRegisterIp,
-      "prono_register_ip_pressure",
-      { contest_id: ctx.contest.id },
-      );
+    //
+    // Observation seule : ne PAS l'attendre avant l'écriture d'inscription qui
+    // suit — un aller-retour rate-limit de plus en série sur le chemin qui
+    // bloque le bouton « Inscription… » à l'écran. `after()` la retient
+    // jusqu'à son terme sans retarder la réponse au joueur (même correction
+    // que `submitInner`/`joinInner` dans `src/actions/events.ts`).
+    after(() =>
+      observerPressionIp(
+        ["prono:register:ip", ctx.contest.id],
+        ip,
+        RATE_LIMITS.pronoRegisterIp,
+        "prono_register_ip_pressure",
+        { contest_id: ctx.contest.id },
+      ).catch((err) => reportError("prono.register-pressure", err)),
+    );
 
     // Exigences de collecte définies par le championnat (source de
     // vérité serveur, comme le claim de gain).

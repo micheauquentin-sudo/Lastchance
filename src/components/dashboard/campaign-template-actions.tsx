@@ -35,7 +35,6 @@ export function ApplyTemplateButton({
   /** Nom du modèle — pour un libellé de bouton explicite au lecteur d'écran. */
   name: string;
 }) {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
@@ -50,9 +49,15 @@ export function ApplyTemplateButton({
           setError(res.error);
           return;
         }
-        // Succès = navigation vers l'éditeur du brouillon créé, pas un
-        // refresh : la destination porte déjà les données fraîches.
-        router.push(`/dashboard/campaigns/${res.data.campaignId}`);
+        // Succès = navigation FRANCHE vers l'éditeur du brouillon créé.
+        // `router.push` a été mesuré flaky ici (`docs/bugs.md` : « transition
+        // figée après une action réussie », vercel/next.js #82289/#88767) —
+        // le cache client du routeur n'applique pas toujours le RSC fraîchement
+        // fetché après une action serveur. Même correctif que la création de
+        // saison de progression (`progression-new-season.tsx`) : une
+        // navigation complète, jamais périmée, contre un `push` qui marche
+        // la plupart du temps.
+        window.location.assign(`/dashboard/campaigns/${res.data.campaignId}`);
       } catch {
         setError("Création impossible, réessayez.");
       } finally {
