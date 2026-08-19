@@ -37,6 +37,12 @@ const { state, makeAdmin } = vi.hoisted(() => {
     rpcs: [] as string[],
     /** La ligne d'invitation résolue PAR EMPREINTE de jeton, ou `null`. */
     invitationRow: null as Record<string, unknown> | null,
+    /** La FILE d'accueil (RES-3), avec son organisation jointe, ou `null`. */
+    queueRow: null as Record<string, unknown> | null,
+    /** Les entrées `waiting` que la lecture de comptage rapporte. */
+    entreesFile: [] as Array<Record<string, unknown>>,
+    /** Ce que rend `queue_public_state`. */
+    etatFile: { state: "not_in_queue" } as Record<string, unknown>,
     empreinte: null as string | null,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
@@ -88,6 +94,29 @@ const { state, makeAdmin } = vi.hoisted(() => {
         created_by: null,
         created_at: "2026-08-01T00:00:00Z",
       };
+      state.queueRow = {
+        id: "44444444-4444-4444-8444-444444444444",
+        organization_id: "11111111-1111-4111-8111-111111111111",
+        activity_id: null,
+        name: "Comptoir",
+        status: "open",
+        max_live_entries: 50,
+        created_at: "2026-08-01T00:00:00Z",
+        organizations: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Chez Marco",
+          logo_url: null,
+          subscription_status: "active",
+          trial_ends_at: "2030-01-01T00:00:00Z",
+          past_due_since: null,
+          addon_vitrine: true,
+          comp_access: false,
+          comp_access_until: null,
+          timezone: "Indian/Reunion",
+        },
+      };
+      state.entreesFile = [];
+      state.etatFile = { state: "not_in_queue" };
       state.empreinte = null;
       state.selects = [];
       state.filtres = [];
@@ -99,6 +128,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
     return {
       rpc(nom: string) {
         state.rpcs.push(nom);
+        if (nom === "queue_public_state") {
+          return Promise.resolve({ data: state.etatFile, error: null });
+        }
         return Promise.resolve({ data: state.etatPublic, error: null });
       },
       from(table: string) {
@@ -130,6 +162,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
             if (table === "reservation_slots") {
               return Promise.resolve({ data: state.slots, error: null });
             }
+            if (table === "reservation_queue_entries") {
+              return Promise.resolve({ data: state.entreesFile, error: null });
+            }
             if (table === "reservation_waitlist_entries") {
               return Promise.resolve({ data: state.tenues, error: null });
             }
@@ -142,6 +177,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
             state.filtres.push(filtres);
             if (table === "reservation_invitations") {
               return Promise.resolve({ data: state.invitationRow, error: null });
+            }
+            if (table === "reservation_queues") {
+              return Promise.resolve({ data: state.queueRow, error: null });
             }
             return Promise.resolve({ data: state.activityRow, error: null });
           },
@@ -195,8 +233,10 @@ vi.mock("@/lib/player-identity", () => ({
 import {
   generateInvitationToken,
   hashInvitationToken,
+  lireEtatFilePublic,
   loadReserverInvitationContext,
   loadReserverPublicContext,
+  loadReserverQueuePublicContext,
 } from "@/lib/reserver-context";
 
 beforeEach(() => state.reset());
@@ -612,5 +652,264 @@ describe("loadReserverInvitationContext", () => {
     state.slots = [];
     const contexte = await loadReserverInvitationContext(JETON);
     expect(contexte.ok).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// La file sereine (RES-3) — le chargeur public, et ce qu'il refuse.
+// ────────────────────────────────────────────────────────────
+
+const QUEUE_ID = "44444444-4444-4444-8444-444444444444";
+
+describe("loadReserverQueuePublicContext", () => {
+  it("rend la file, le fuseau de l'établissement, et l'ouvre à l'entrée", async () => {
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.queue.name).toBe("Comptoir");
+    expect(contexte.queue.status).toBe("open");
+    expect(contexte.timezone).toBe("Indian/Reunion");
+    expect(contexte.accepteEntree).toBe(true);
+  });
+
+  it("rend le MÊME contexte indisponible sans le droit `vitrine`", async () => {
+    // Aucun oracle sur l'état commercial d'un commerce qui n'est pas celui du
+    // visiteur : afficher une file EST une capacité de l'offre Vitrine.
+    state.droitVitrine = false;
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(false);
+    expect(contexte.ok === false && contexte.error).toContain("pas disponible");
+    // Et surtout : la RPC n'est jamais appelée.
+    expect(state.rpcs).toEqual([]);
+  });
+
+  it("refuse une jointure qui rapporterait l'organisation d'un AUTRE locataire", async () => {
+    state.queueRow = {
+      ...(state.queueRow as Record<string, unknown>),
+      organization_id: "99999999-9999-4999-8999-999999999999",
+    };
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+    expect(contexte.ok).toBe(false);
+  });
+
+  it("observe l'IP SEULE avant l'IP par file, et ne refuse sur aucune", async () => {
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+      "reserver_page_pressure",
+    ]);
+    expect(state.pressions[0].parts).toBe("reserver:page:ip");
+    expect(state.pressions[1].parts).toBe(`reserver:page:queue:ip:${QUEUE_ID}`);
+    expect(contexte.ok).toBe(true);
+  });
+
+  it("compte l'IP SEULE même sur une file qui n'existe pas", async () => {
+    // C'est TOUT L'INTÉRÊT du premier compteur : un balayage d'identifiants
+    // inventés n'atteint jamais une file résolue.
+    state.queueRow = null;
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(false);
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+    ]);
+  });
+
+  it("ferme l'entrée d'une file en PAUSE, sans la rendre indisponible", async () => {
+    // La pause refuse d'accueillir et continue de SERVIR : celui qui attend
+    // déjà doit garder son écran, et son rang.
+    state.queueRow = {
+      ...(state.queueRow as Record<string, unknown>),
+      status: "paused",
+    };
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.queue.status).toBe("paused");
+    expect(contexte.accepteEntree).toBe(false);
+  });
+
+  it("ferme l'entrée quand l'activité liée est coupée, et nomme cette activité", async () => {
+    state.queueRow = {
+      ...(state.queueRow as Record<string, unknown>),
+      activity_id: ACTIVITY_ID,
+    };
+    state.activityRow = {
+      ...(state.activityRow as Record<string, unknown>),
+      active: false,
+    };
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.queue.activityName).toBe("Dégustation");
+    expect(contexte.accepteEntree).toBe(false);
+  });
+
+  it("SANS IDENTITÉ : ne demande RIEN à la RPC, et compte les personnes en attente", async () => {
+    // `queue_public_state` exige une empreinte de cookie, et en fabriquer une
+    // pour lire un nombre écrirait une identité à quelqu'un qui n'a rien
+    // demandé — ce qu'un rendu de page n'a de toute façon pas le droit de faire.
+    state.empreinte = null;
+    state.entreesFile = [{ id: "e1" }, { id: "e2" }, { id: "e3" }];
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(state.rpcs).toEqual([]);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.waitingCount).toBe(3);
+    expect(contexte.maPlace).toBeNull();
+    expect(contexte.aUneIdentite).toBe(false);
+    // Le comptage porte sur le MÊME prédicat que la RPC : les seules `waiting`.
+    const comptage = state.filtres.find(
+      (f) => f.table === "reservation_queue_entries",
+    );
+    expect(comptage?.status).toBe("waiting");
+  });
+
+  it("AVEC IDENTITÉ : la RPC fait foi, rang et taille de file compris", async () => {
+    state.empreinte = "b".repeat(64);
+    state.etatFile = {
+      state: "in_queue",
+      queue_name: "Comptoir",
+      queue_status: "open",
+      entry_id: "e1",
+      status: "waiting",
+      position: 2,
+      waiting_count: 5,
+      joined_at: "2026-08-20T09:00:00Z",
+      called_at: null,
+    };
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(state.rpcs).toEqual(["queue_public_state"]);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.waitingCount).toBe(5);
+    expect(contexte.maPlace?.position).toBe(2);
+    expect(contexte.maPlace?.etat).toBe("attente");
+  });
+
+  it("L'APPEL PRIME : une place appelée n'a plus de rang, et le dit", async () => {
+    state.empreinte = "b".repeat(64);
+    state.etatFile = {
+      state: "in_queue",
+      queue_name: "Comptoir",
+      queue_status: "open",
+      entry_id: "e1",
+      status: "called",
+      position: null,
+      waiting_count: 4,
+      joined_at: "2026-08-20T09:00:00Z",
+      called_at: "2026-08-20T10:00:00Z",
+    };
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.maPlace?.etat).toBe("appele");
+    expect(contexte.maPlace?.position).toBeNull();
+    expect(contexte.maPlace?.calledAt).toBe("2026-08-20T10:00:00Z");
+  });
+
+  it("ÉNUMÈRE les colonnes, et n'en demande NI l'adresse NI le prénom", async () => {
+    // Les deux sont hors du grant de `authenticated` : un `select *` y est
+    // refusé EN ENTIER. Le prénom ne sort que par `queue_staff_state`, qui
+    // choisit ce qu'elle expose.
+    state.empreinte = null;
+    await loadReserverQueuePublicContext(QUEUE_ID);
+
+    const lectures = state.selects.filter(
+      (s) =>
+        s.table === "reservation_queues" ||
+        s.table === "reservation_queue_entries",
+    );
+    expect(lectures.length).toBeGreaterThan(0);
+    for (const lecture of lectures) {
+      expect(lecture.colonnes).not.toContain("*");
+      expect(lecture.colonnes).not.toContain("email");
+      expect(lecture.colonnes).not.toContain("display_name");
+      expect(lecture.colonnes).not.toContain("player_key_hash");
+    }
+  });
+
+  it("ne rend AUCUNE clé de durée : le contexte ne porte pas d'ETA", async () => {
+    state.empreinte = "b".repeat(64);
+    state.etatFile = {
+      state: "in_queue",
+      queue_name: "Comptoir",
+      queue_status: "open",
+      entry_id: "e1",
+      status: "waiting",
+      position: 2,
+      waiting_count: 5,
+      joined_at: "2026-08-20T09:00:00Z",
+      called_at: null,
+    };
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    // Liste NOMMÉE plutôt qu'expression : `etat` — l'état d'interface de la
+    // place — contient les trois lettres d'`eta` et ferait rougir une regex,
+    // pour un champ qui ne promet rien du tout.
+    const CLES_DE_DELAI = new Set([
+      "eta",
+      "etaMinutes",
+      "etaSeconds",
+      "estimatedWait",
+      "estimatedAt",
+      "waitMinutes",
+      "delay",
+      "delayMinutes",
+      "duration",
+      "duree",
+      "dureeEstimee",
+      "tempsAttente",
+    ]);
+    const cles = [
+      ...Object.keys(contexte),
+      ...Object.keys(contexte.queue),
+      ...Object.keys(contexte.maPlace ?? {}),
+    ];
+    expect(cles.filter((cle) => CLES_DE_DELAI.has(cle))).toEqual([]);
+  });
+});
+
+describe("lireEtatFilePublic — UNE lecture, partagée par la page et son scrutin", () => {
+  it("rend la file et sa taille à un visiteur sans identité, sans toucher la RPC", async () => {
+    state.entreesFile = [{ id: "e1" }, { id: "e2" }];
+    const etat = await lireEtatFilePublic(QUEUE_ID, null);
+
+    expect(state.rpcs).toEqual([]);
+    expect(etat.state).toBe("not_in_queue");
+    expect(etat.queueName).toBe("Comptoir");
+    expect(etat.waitingCount).toBe(2);
+  });
+
+  it("rend `unavailable` sur une file inconnue, sans rien inventer", async () => {
+    state.queueRow = null;
+    const etat = await lireEtatFilePublic(QUEUE_ID, null);
+    expect(etat.state).toBe("unavailable");
+    expect(etat.queueName).toBeNull();
+    expect(etat.waitingCount).toBe(0);
+  });
+
+  it("NE SE RABAT PAS sur la table quand la RPC rend `unavailable`", async () => {
+    // Elle ne trouverait rien non plus, et l'aller-retour serait payé à chaque
+    // tic de scrutin d'un identifiant inventé.
+    state.etatFile = { state: "unavailable" };
+    const etat = await lireEtatFilePublic(QUEUE_ID, "b".repeat(64));
+
+    expect(state.rpcs).toEqual(["queue_public_state"]);
+    expect(etat.state).toBe("unavailable");
+    expect(
+      state.filtres.some((f) => f.table === "reservation_queues"),
+    ).toBe(false);
   });
 });

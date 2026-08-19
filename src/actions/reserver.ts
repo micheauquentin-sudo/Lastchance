@@ -19,6 +19,12 @@ import {
   mapCloseInvitation,
   mapCreateInvitation,
   mapEvictWaitlistEntry,
+  mapQueueCallNext,
+  mapQueueJoin,
+  mapQueueLeave,
+  mapQueueReopen,
+  mapQueueResolve,
+  mapQueueStaffState,
   mapRedeemInvitation,
   mapReservationPublicState,
   mapReserveSlot,
@@ -33,6 +39,13 @@ import {
   type ClaimWaitlistOfferResult,
   type CloseInvitationResult,
   type EvictWaitlistEntryResult,
+  type QueueCallNextResult,
+  type QueueJoinResult,
+  type QueueLeaveResult,
+  type QueuePublicStateResult,
+  type QueueReopenResult,
+  type QueueResolveResult,
+  type QueueStaffStateResult,
   type RedeemInvitationResult,
   type ReservationPublicState,
   type ReserveSlotResult,
@@ -44,6 +57,7 @@ import {
   assurerIdentiteReserver,
   generateInvitationToken,
   hashInvitationToken,
+  lireEtatFilePublic,
   lireIdentiteReserver,
 } from "@/lib/reserver-context";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,13 +73,21 @@ import {
   closeReserverInvitationSchema,
   createReserverActivitySchema,
   createReserverInvitationSchema,
+  createReserverQueueSchema,
   createReserverSlotSchema,
   evictWaitlistEntrySchema,
   loadMyReservationsSchema,
+  queueCallNextSchema,
+  queueJoinSchema,
+  queueLeaveSchema,
+  queueReopenEntrySchema,
+  queueResolveSchema,
+  queueStateSchema,
   redeemInvitationSchema,
   reserveSlotSchema,
   revokeReserverInvitationSchema,
   updateReserverActivitySchema,
+  updateReserverQueueSchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
   waitlistJoinSchema,
@@ -175,11 +197,32 @@ const SANS_DROIT =
 //  le seau par APPAREIL, tranché en premier.
 //  checkinReservation (authentifié)
 //    · cashier:lookup:<org>:<user>            opérateur  CLOSED (seau de caisse)
+//  queueJoin (public, ÉMETTEUR — RES-3) — MÊME forme que `redeemInvitation`, et
+//  pour la même raison : l'organisation n'est connue qu'APRÈS résolution de la
+//  FILE, donc les deux clés org-scopées ne peuvent être tranchées qu'ensuite.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 2e)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED (après résolution)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (après résolution)
+//  AUCUN seau composé avec l'identifiant de FILE : la clé serait choisie par
+//  l'appelant, donc un identifiant inventé par tour ouvrirait un seau neuf à
+//  chaque coup (motif `progressionDevice`, wagon 7).
+//  AUCUN seau `reserver:email` non plus, et pour une raison simple : CE LOT
+//  N'ENVOIE AUCUN EMAIL. L'adresse est stockée, rien ne la lit.
+//  queueLeave (public) — aucune friction sur un geste qui LIBÈRE une ligne.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<entrée>:<empreinte>   identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  queueCallNext / queueResolve / queueReopen (authentifiés) — AUCUN seau,
+//  motif `cancelReservationStaff` et `evictWaitlistEntry` : gestes d'un
+//  opérateur authentifié sur son propre écran, et le seau `cashier:lookup`
+//  borne la SAISIE DE CODES, pas l'appel du suivant.
 //  Ouverture de la page publique — hors de ce fichier, dans
-//  `loadReserverPublicContext` ET `loadReserverInvitationContext`
-//  (src/lib/reserver-context.ts) :
+//  `loadReserverPublicContext`, `loadReserverInvitationContext` ET
+//  `loadReserverQueuePublicContext` (src/lib/reserver-context.ts) :
 //    · reserver:page:ip:<ip>                  partagée   OPEN (IP SEULE, 1er)
 //    · reserver:page:activity:ip:<act>:<ip>   partagée   OPEN (observabilité)
+//    · reserver:page:queue:ip:<file>:<ip>     partagée   OPEN (observabilité)
 // ════════════════════════════════════════════════════════════
 
 // ────────────────────────────────────────────────────────────
@@ -1697,4 +1740,600 @@ export async function updateReserverSlotStatus(
 
   revalidatePath("/dashboard/reservations");
   return { ok: true, data: undefined };
+}
+
+// ════════════════════════════════════════════════════════════
+// La file sereine (RES-3, lot L6) — rejoindre, partir ; appeler, constater
+//
+// ── AUCUN EMAIL N'EST ENVOYÉ PAR CE LOT, ET C'EST ASSUMÉ ──
+//
+// L'adresse et son consentement sont STOCKÉS (`queue_join`), rien ne les lit.
+// Rien n'est promis à quelqu'un qui entre dans une file : ni un horaire, ni un
+// rang tenu. Le jour où un message partira — « c'est bientôt à vous » — ce sera
+// une décision produit, avec son seau `reserver:email` et son `after()`, comme
+// partout ailleurs dans ce fichier. Aucun fil n'est tiré vers Resend ici.
+//
+// ── ET AUCUN DÉLAI, NULLE PART ──
+//
+// Aucune de ces actions ne calcule, ne transporte ni ne rend une durée. Le rang
+// et le nombre de personnes en attente viennent du serveur ; tout le reste
+// serait inventé (critère dur RES-3).
+// ════════════════════════════════════════════════════════════
+
+export type QueueJoinActionResult =
+  | { ok: true; data: QueueJoinResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Entrer dans une file d'accueil.
+ *
+ * ── L'ORGANISATION VIENT DE LA FILE, PAS DU CORPS ──
+ *
+ * Motif `redeemInvitation`, et pour la même raison : l'appelant nomme une FILE,
+ * le serveur en déduit l'organisation. La poster aurait laissé le navigateur
+ * choisir sous quelle enseigne il prend son rang — et le refus muet de la RPC,
+ * qui rend « file d'une AUTRE organisation » indistinguable d'« inconnue »,
+ * n'aurait plus rien gardé.
+ *
+ * Conséquence sur l'ordre des seaux, identique à `redeemInvitation` : le
+ * plafond par APPAREIL est le seul opposable avant la résolution, les deux clés
+ * org-scopées ne peuvent l'être qu'après.
+ *
+ * ── LE CHALLENGE Y EST, ET IL DOIT Y ÊTRE ──
+ *
+ * `queue_join` est un appel ÉMETTEUR au même titre que `reserve_slot` : les
+ * invariants SQL bornent le NOMBRE d'entrées vivantes (plafond de la file,
+ * index unique partiel), jamais la DIVERSITÉ des mains. Un bot muni de cookies
+ * jetables qui remplit une file de cinquante fantômes coûte au commerçant
+ * exactement ce que coûte un créneau vidé — sauf qu'ici les gens sont debout
+ * dans le magasin et voient la file refuser du monde.
+ *
+ * ── LE DROIT `vitrine` EST TENU PAR LA RPC ──
+ *
+ * `queue_join` interroge `org_has_module_access(…, 'vitrine')` sous son verrou
+ * et rend `unavailable` sans le droit — c'est la vraie défense, et elle tient
+ * même sur une action POSTée en direct. La page publique le vérifie AUSSI
+ * (`loadReserverQueuePublicContext`), pour ne pas afficher un bouton sans issue.
+ */
+export async function queueJoin(input: {
+  queueId: string;
+  displayName?: string;
+  email?: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<QueueJoinActionResult> {
+  const parsed = queueJoinSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Identité AVANT tout : aucun aller-retour base, donc le premier seau est
+  // tranché avant la moindre requête SQL.
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  // LE SEAU PAR APPAREIL SEUL, ET AVANT TOUT LE RESTE. Le composer avec la FILE
+  // aurait ouvert un seau neuf à chaque identifiant inventé — c'est-à-dire
+  // aucune borne du tout (motif `progressionDevice`, wagon 7).
+  if (!(await autoriserAppareilReserver(empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.queue-join", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    // IP SEULE d'abord : elle est comptée même sur une file qui ne résout rien,
+    // et c'est tout l'intérêt — un balayage d'UUID n'atteint aucune file.
+    await observerPressionReserver(null, ip);
+
+    if (
+      reserverChallengeDisponible() &&
+      // LA VALEUR VALIDÉE, jamais celle du corps : ce jeton part en requête
+      // sortante vers Cloudflare.
+      !(await verifyTurnstile(parsed.data.turnstileToken, ip, "reserver-queue-join"))
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réessayez.",
+        challengeRequired: true,
+      };
+    }
+
+    const admin = createAdminClient();
+
+    // L'ORGANISATION EST CELLE DE LA FILE. Introuvable = `unavailable`, le même
+    // état muet que rendrait la RPC pour une file fermée ou d'un autre commerce.
+    const { data: file } = await admin
+      .from("reservation_queues")
+      .select("id, organization_id")
+      .eq("id", parsed.data.queueId)
+      .maybeSingle();
+    // AUCUNE ORGANISATION N'EST POSTÉE, et c'est ce qui rend ce chemin sûr : il
+    // n'existe pas de valeur du corps à confronter, donc pas de valeur à
+    // confondre avec celle qui autorise. La ligne lue ici est la seule source.
+    if (!file) {
+      return { ok: true as const, data: mapQueueJoin({ state: "unavailable" }) };
+    }
+    const organizationId = file.organization_id;
+
+    // Le second seau et le second compteur, maintenant que la portée existe.
+    if (!(await autoriserPorteeReserver(organizationId, empreinte))) {
+      return { ok: false as const, error: TOO_MANY };
+    }
+    await observerPressionIp(
+      ["reserver:public:ip", organizationId],
+      ip,
+      RATE_LIMITS.reserverPublicIp,
+      "reserver_public_pressure",
+      { organization_id: organizationId },
+    );
+
+    const { data, error } = await admin.rpc("queue_join", {
+      p_organization_id: organizationId,
+      p_queue_id: parsed.data.queueId,
+      p_player_key_hash: empreinte,
+      // Le prénom est un ORNEMENT D'ÉCRAN : vide vaut absent, et la RPC le
+      // tronque à 40 caractères plutôt que de refuser l'entrée.
+      p_display_name: parsed.data.displayName || null,
+      // L'adresse ne part QU'AVEC son consentement — la base porte une
+      // équivalence, pas une implication.
+      p_email: parsed.data.email ?? null,
+      p_consent: parsed.data.consent,
+    });
+    if (error) {
+      reportError("reserver.queue-join", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    // AUCUN EMAIL : voir l'en-tête de section. L'adresse est stockée, rien ne
+    // la lit encore.
+    return { ok: true as const, data: mapQueueJoin(data) };
+  });
+}
+
+/**
+ * Quitter la file.
+ *
+ * Aucune friction, aucun challenge : c'est un geste qui LIBÈRE une ligne du
+ * plafond, et qui n'a aucune conséquence — ni pénalité, ni délai de carence
+ * (critère RES-3, l'abandon est MESURÉ, jamais sanctionné). Même forme que
+ * `waitlistLeave`, y compris le seau porté par l'identifiant de l'ENTRÉE :
+ * l'organisation n'est pas un paramètre, la RPC la lit sur la ligne.
+ */
+export async function queueLeave(input: {
+  entryId: string;
+}): Promise<ActionResult<QueueLeaveResult>> {
+  const parsed = queueLeaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // LECTURE SEULE du cookie : sans identité, il n'y a rien à quitter.
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: INDISPONIBLE };
+  if (!(await autoriserJoueurReserver(parsed.data.entryId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.queue-leave", async () => {
+    // IP SEULE, fail-open : ce chemin ne connaît pas l'organisation — la RPC la
+    // lit sur la ligne — donc le compteur par organisation n'existe pas ici, et
+    // l'inventaire en tête de fichier le dit.
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("queue_leave", {
+      p_entry_id: parsed.data.entryId,
+      p_player_key_hash: empreinte,
+    });
+    if (error) {
+      reportError("reserver.queue-leave", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    return { ok: true as const, data: mapQueueLeave(data) };
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Comptoir — appeler, constater, corriger (session + rôle)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Session + RÔLE DE COMPTOIR, caissier COMPRIS — et sans garde `vitrine`.
+ *
+ * ── POURQUOI PAS `gardeEditeurReserver` ──
+ *
+ * Elle exclut le caissier, et l'accueil EST son poste : appeler le suivant est
+ * le geste de comptoir par excellence, pas une décision commerciale. Les trois
+ * RPC (`queue_call_next`, `queue_resolve`, `queue_reopen_entry`) acceptent
+ * `owner`/`editor`/`cashier` et le revérifient EN SQL — cette garde ne fait que
+ * rendre un message utile, elle ne tient pas la porte.
+ *
+ * ── POURQUOI AUCUNE GARDE `vitrine` ──
+ *
+ * Motif EXACT de `checkinReservation`, et pas celui de `cancelReservationStaff`.
+ * Refuser d'appeler le suivant parce qu'un abonnement vient d'expirer
+ * laisserait le commerçant devant douze personnes debout dans son magasin, sans
+ * aucun geste : la sanction tomberait sur elles. Honorer l'existant est la seule
+ * lecture correcte — et c'est aussi ce que fait le SQL, qui ne vérifie ce droit
+ * QUE sur `queue_join`, l'entrée de nouvelles personnes.
+ *
+ * ── ET AUCUN SEAU ──
+ *
+ * Motif `cancelReservationStaff` et `evictWaitlistEntry` : ce sont des gestes
+ * d'un opérateur AUTHENTIFIÉ sur son propre écran, pas un chemin public. Le
+ * seau `cashier:lookup` n'est pas repris ici — il borne la SAISIE DE CODES, et
+ * le partager ferait payer à l'appel du suivant le budget du check-in.
+ */
+async function gardeComptoirReserver(): Promise<
+  { ok: true; organizationId: string; userId: string } | { ok: false; error: string }
+> {
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor" && role !== "cashier") {
+    return { ok: false, error: NOT_EDITOR };
+  }
+  return { ok: true, organizationId: organization.id, userId: user.id };
+}
+
+/**
+ * Appeler la première personne en attente.
+ *
+ * ── CE QUE CETTE ACTION NE DÉCIDE PAS ──
+ *
+ * Ni qui est en tête, ni si deux caissiers qui cliquent en même temps appellent
+ * la même personne : `queue_call_next` choisit la tête et la bascule SOUS UN
+ * VERROU D'AVIS, donc deux appels concurrents appellent deux personnes
+ * DIFFÉRENTES. Reproduire ce choix ici — lire la tête puis demander à la RPC de
+ * l'appeler — aurait rétabli exactement la course que le verrou ferme.
+ *
+ * Elle ne contrôle pas non plus le statut de la file : une file `paused`
+ * n'accepte plus personne mais SE SERT ENCORE, et c'est tout le sens de la
+ * pause (« je ferme la file, je finis les douze qui attendent »).
+ */
+export async function queueCallNext(
+  _prev: ActionResult<QueueCallNextResult> | null,
+  formData: FormData,
+): Promise<ActionResult<QueueCallNextResult>> {
+  const parsed = queueCallNextSchema.safeParse({
+    queueId: formData.get("queueId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeComptoirReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.queue-call", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("queue_call_next", {
+      p_organization_id: garde.organizationId,
+      p_queue_id: parsed.data.queueId,
+      // DE LA SESSION. Jamais du corps de la requête — la RPC le revérifie
+      // membre en SQL, et un acteur posté ferait de la ligne d'audit
+      // `reservation.queue_call` une déclaration sur l'honneur.
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.queue-call", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: mapQueueCallNext(data) };
+  });
+}
+
+/**
+ * Constater l'issue d'une personne appelée : servie, ou absente.
+ *
+ * ── MARQUER « ABSENT » EST UNE AFFIRMATION SUR UNE PERSONNE ──
+ *
+ * C'est pourquoi ce n'est pas un simple `update` depuis l'écran : elle doit
+ * porter un auteur, et `audit_logs` en garde la trace sur le SEUL geste réel
+ * (une entrée déjà résolue est rendue telle quelle, sans écriture et sans
+ * audit). AUCUNE conséquence automatique n'en découle — pas de blocage, pas de
+ * carence : le cahier RES-3 l'exclut nommément.
+ *
+ * `not_called` n'est pas une erreur d'appelant mais un refus utile au comptoir :
+ * servir quelqu'un qui n'a pas été appelé saute le tour de tous ceux qui sont
+ * devant lui, et c'est exactement ce contre quoi la file existe.
+ */
+export async function queueResolve(
+  _prev: ActionResult<QueueResolveResult> | null,
+  formData: FormData,
+): Promise<ActionResult<QueueResolveResult>> {
+  const parsed = queueResolveSchema.safeParse({
+    entryId: formData.get("entryId"),
+    outcome: formData.get("outcome"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeComptoirReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.queue-resolve", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("queue_resolve", {
+      p_organization_id: garde.organizationId,
+      p_entry_id: parsed.data.entryId,
+      // DE LA SESSION. Jamais du corps de la requête.
+      p_actor: garde.userId,
+      p_outcome: parsed.data.outcome,
+    });
+    if (error) {
+      reportError("reserver.queue-resolve", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: mapQueueResolve(data) };
+  });
+}
+
+/**
+ * Défaire un appel erroné — « j'ai appelé Camille, c'était Dominique ».
+ *
+ * L'entrée redevient `waiting` et se retrouve EN TÊTE : ce n'est pas une
+ * écriture de rang mais une CONSÉQUENCE — `queue_call_next` avait pris la plus
+ * ancienne entrée en attente, et rien de plus ancien ne peut apparaître après
+ * coup. Rien n'est renuméroté, donc rien ne peut dériver.
+ *
+ * Le caissier en est, à l'inverse d'`evictWaitlistEntry` : celle-là RETIRE un
+ * rang, celle-ci le REND, et c'est la correction immédiate d'une erreur de
+ * comptoir. La faire remonter à un responsable laisserait quelqu'un perdre son
+ * tour en attendant.
+ */
+export async function queueReopen(
+  _prev: ActionResult<QueueReopenResult> | null,
+  formData: FormData,
+): Promise<ActionResult<QueueReopenResult>> {
+  const parsed = queueReopenEntrySchema.safeParse({
+    entryId: formData.get("entryId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeComptoirReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.queue-reopen", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("queue_reopen_entry", {
+      p_organization_id: garde.organizationId,
+      p_entry_id: parsed.data.entryId,
+      // DE LA SESSION. Jamais du corps de la requête.
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.queue-reopen", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: mapQueueReopen(data) };
+  });
+}
+
+// ────────────────────────────────────────────────────────────
+// Files d'accueil — configuration (session + RLS éditeurs)
+//
+// AUCUNE SUPPRESSION, comme partout dans ce module et pour la même raison : le
+// socle n'a pas donné de `grant delete`, parce que la cascade emporterait les
+// entrées du jour — donc les compteurs de servis, d'absents et de partis, la
+// seule mesure que RES-3 promet au commerçant. `status = 'closed'` ferme sans
+// rien effacer.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Créer une file d'accueil.
+ *
+ * L'ACTIVITÉ EST OPTIONNELLE — une file « Comptoir » n'en a aucune, et c'est le
+ * cas dominant. Quand elle est posée, la FK COMPOSITE
+ * `(activity_id, organization_id)` garantit qu'elle appartient à ce locataire :
+ * une activité empruntée au voisin est refusée par la base, pas par une
+ * vérification applicative qu'on pourrait oublier.
+ */
+export async function createReserverQueue(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = createReserverQueueSchema.safeParse({
+    name: formData.get("name"),
+    activityId: formData.get("activityId"),
+    maxLiveEntries: formData.get("maxLiveEntries"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("reservation_queues").insert({
+    organization_id: garde.organizationId,
+    // `""` = aucune activité, et c'est une valeur, pas une absence de décision.
+    activity_id: parsed.data.activityId || null,
+    name: parsed.data.name,
+    status: parsed.data.status,
+    max_live_entries: parsed.data.maxLiveEntries,
+  });
+
+  if (error) {
+    console.error("[reserver] create queue:", error.message);
+    // Unicité (organization_id, name) : le message nomme la cause réelle plutôt
+    // qu'un échec générique sur lequel le commerçant ne peut rien.
+    if (error.code === "23505") {
+      return { ok: false, error: "Une file porte déjà ce nom." };
+    }
+    // Violation de la FK composite : l'activité n'existe pas, ou n'est pas
+    // celle de ce commerce. Un seul message pour les deux — le distinguer
+    // apprendrait à qui tape des identifiants ce qui existe chez le voisin.
+    if (error.code === "23503") {
+      return { ok: false, error: "Cette activité est introuvable." };
+    }
+    return { ok: false, error: "Impossible de créer la file" };
+  }
+
+  revalidatePath("/dashboard/reservations");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Réglages d'une file — dont son interrupteur `status`.
+ *
+ * `paused` N'EST PAS `closed`, et la distinction est réelle au comptoir : la
+ * pause refuse les nouvelles arrivées mais laisse SERVIR ceux qui attendent
+ * déjà — `queue_call_next` ne contrôle pas le statut, délibérément.
+ *
+ * Baisser le plafond est SÛR : `queue_join` relit `max_live_entries` SOUS son
+ * verrou, dans le même instantané que son comptage. Les entrées déjà admises
+ * restent — rien ne les expulse, et rien ne doit les expulser.
+ */
+export async function updateReserverQueue(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateReserverQueueSchema.safeParse({
+    queueId: formData.get("queueId"),
+    name: formData.get("name"),
+    activityId: formData.get("activityId"),
+    maxLiveEntries: formData.get("maxLiveEntries"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("reservation_queues")
+    .update({
+      name: parsed.data.name,
+      activity_id: parsed.data.activityId || null,
+      status: parsed.data.status,
+      max_live_entries: parsed.data.maxLiveEntries,
+    })
+    .eq("id", parsed.data.queueId)
+    // Double la RLS plutôt que de s'y fier seule.
+    .eq("organization_id", garde.organizationId);
+
+  if (error) {
+    console.error("[reserver] update queue:", error.message);
+    if (error.code === "23505") {
+      return { ok: false, error: "Une file porte déjà ce nom." };
+    }
+    if (error.code === "23503") {
+      return { ok: false, error: "Cette activité est introuvable." };
+    }
+    return { ok: false, error: "Impossible d'enregistrer la file" };
+  }
+
+  revalidatePath("/dashboard/reservations");
+  return { ok: true, data: undefined };
+}
+
+// ────────────────────────────────────────────────────────────
+// Le SCRUTIN des deux écrans de la file
+//
+// ── POURQUOI CES DEUX-LÀ RENDENT `null` ET NON UN `ActionResult` ──
+//
+// Ce sont des LECTURES RÉPÉTÉES, appelées toutes les quelques secondes par un
+// écran qui affiche DÉJÀ un état. `null` y veut dire « ce tic n'a rien
+// rapporté » — l'écran garde ce qu'il montrait, et personne ne voit une erreur
+// pour une requête perdue dans un tunnel. Un `ActionResult` aurait obligé
+// chaque appelant à traduire un refus en « ne change rien », c'est-à-dire à
+// réécrire la même décision deux fois.
+//
+// ── ET POURQUOI AUCUN DÉLAI N'EN SORT ──
+//
+// Ni l'un ni l'autre ne rend de durée, et aucun ne mesure l'écart entre deux
+// tics : le seul temps que ces chemins connaissent est celui, FACTUEL, de
+// l'inscription et de l'appel. Un ETA ne peut pas naître d'un scrutin.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * L'état de la file pour CE navigateur — le tic du joueur.
+ *
+ * ── AUCUNE GARDE `vitrine`, ET C'EST LE MOTIF DE LA RPC ──
+ *
+ * `queue_public_state` ne vérifie ni le droit ni le statut de la file : lire son
+ * propre rang n'est pas un acte commercial. Le refuser laisserait sans réponse
+ * quelqu'un qui attend PHYSIQUEMENT, pour un motif — un abonnement, une pause —
+ * qui ne le regarde pas. La page, elle, vérifie le droit avant d'AFFICHER la
+ * file et son bouton (`loadReserverQueuePublicContext`).
+ *
+ * ── LES SEAUX D'IDENTITÉ NE SONT OPPOSÉS QU'À UNE IDENTITÉ ──
+ *
+ * Sans cookie, il n'y a aucune clé propre à trancher : le visiteur qui regarde
+ * la file avant d'y entrer n'est mesuré que par les compteurs d'IP, fail-open
+ * (ADR-032). Lui POSER un cookie pour pouvoir le compter serait écrire une
+ * identité à quelqu'un qui n'a rien demandé.
+ */
+export async function getQueuePublicState(input: {
+  queueId: string;
+}): Promise<QueuePublicStateResult | null> {
+  const parsed = queueStateSchema.safeParse(input);
+  if (!parsed.success) return null;
+
+  // LECTURE SEULE du cookie : un scrutin ne crée pas d'identité.
+  const empreinte = await lireIdentiteReserver();
+  if (
+    empreinte &&
+    !(await autoriserJoueurReserver(parsed.data.queueId, empreinte))
+  ) {
+    // À SEC = ce tic ne rapporte rien, et l'écran garde son état. C'est le
+    // comportement exact qu'on veut d'un seau sur un scrutin : il ralentit une
+    // boucle, il n'efface pas un rang.
+    return null;
+  }
+
+  return monitored("reserver.queue-state", async () => {
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+    return lireEtatFilePublic(parsed.data.queueId, empreinte);
+  });
+}
+
+/**
+ * L'écran d'accueil d'une file — le tic du comptoir.
+ *
+ * ── L'ORGANISATION VIENT DE LA SESSION, ET C'EST L'INVARIANT DU LOT ──
+ *
+ * `queue_staff_state` ne vérifie AUCUNE appartenance : elle est en lecture,
+ * `service_role`, et bornée à l'organisation qu'on lui passe. Son commentaire
+ * SQL l'écrit noir sur blanc — l'identifiant DOIT venir de `getUserAndOrg`.
+ * C'est pourquoi l'entrée de cette action ne porte QUE la file : il n'existe
+ * aucun chemin par lequel un navigateur puisse nommer l'organisation lue.
+ *
+ * La file d'un AUTRE commerce rend `unknown`, indistinctement d'une file
+ * inexistante — décidé par la RPC, et rien ici ne cherche à les distinguer :
+ * `mapQueueStaffState` rend alors un état non-`ok`, et cette action `null`.
+ */
+export async function getQueueStaffState(input: {
+  queueId: string;
+}): Promise<QueueStaffStateResult | null> {
+  const parsed = queueStateSchema.safeParse(input);
+  if (!parsed.success) return null;
+
+  const garde = await gardeComptoirReserver();
+  if (!garde.ok) return null;
+
+  return monitored("reserver.queue-staff-state", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("queue_staff_state", {
+      // DE LA SESSION. Jamais d'un paramètre de requête — voir ci-dessus.
+      p_organization_id: garde.organizationId,
+      p_queue_id: parsed.data.queueId,
+    });
+    if (error) {
+      reportError("reserver.queue-staff-state", error.message);
+      return null;
+    }
+    const etat = mapQueueStaffState(data);
+    return etat.ok ? etat : null;
+  });
 }

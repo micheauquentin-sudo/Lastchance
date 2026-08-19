@@ -199,6 +199,11 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "Entrée en liste prioritaire : corps d'action typé — même équivalence email ⇔ consentement que la réservation, elle ne doit pas se déduire d'un champ absent.",
   },
   {
+    chemin: "reserver:queueJoinSchema",
+    raison:
+      "Entrée en file d'accueil : corps d'action typé — même équivalence email ⇔ consentement que la réservation, et le prénom absent (« je rejoins sans rien donner de moi ») ne doit pas se confondre avec un champ qu'un formulaire aurait omis.",
+  },
+  {
     chemin: "reserver:redeemInvitationSchema",
     raison:
       "Rejointe par invitation privée : corps d'action typé — le créneau absent est le signal « invitation à un créneau précis », que la RPC tranche seule.",
