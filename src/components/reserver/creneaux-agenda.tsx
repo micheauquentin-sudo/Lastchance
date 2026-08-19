@@ -39,10 +39,17 @@ export function CreneauxAgenda({
   activityId,
   creneaux,
   timeZone,
+  peutRetirer,
 }: {
   activityId: string;
   creneaux: ReserverSlotDashboardView[];
   timeZone: string;
+  /**
+   * Le rôle peut-il retirer quelqu'un de la file ? Tranché côté serveur par la
+   * page (`owner`/`editor`) : `evict_waitlist_entry` refuse un caissier et un
+   * lecteur, et un bouton qui ne peut qu'échouer se lit comme une panne.
+   */
+  peutRetirer: boolean;
 }) {
   return (
     <section className="mt-8">
@@ -74,6 +81,7 @@ export function CreneauxAgenda({
                 creneau={creneau}
                 activityId={activityId}
                 timeZone={timeZone}
+                peutRetirer={peutRetirer}
               />
             </li>
           ))}
@@ -87,10 +95,12 @@ function CreneauCarte({
   creneau,
   activityId,
   timeZone,
+  peutRetirer,
 }: {
   creneau: ReserverSlotDashboardView;
   activityId: string;
   timeZone: string;
+  peutRetirer: boolean;
 }) {
   const annulees = creneau.reservations.filter(
     (r) => r.status === "cancelled",
@@ -195,7 +205,11 @@ function CreneauCarte({
         </details>
       )}
 
-      <FileAttenteCreneau creneau={creneau} timeZone={timeZone} />
+      <FileAttenteCreneau
+        creneau={creneau}
+        timeZone={timeZone}
+        peutRetirer={peutRetirer}
+      />
     </Card>
   );
 }
@@ -230,9 +244,11 @@ function CreneauCarte({
 function FileAttenteCreneau({
   creneau,
   timeZone,
+  peutRetirer,
 }: {
   creneau: ReserverSlotDashboardView;
   timeZone: string;
+  peutRetirer: boolean;
 }) {
   if (creneau.waitlist.length === 0) {
     // Silence sur un créneau qui n'a jamais eu de liste : afficher « 0 personne
@@ -281,10 +297,13 @@ function FileAttenteCreneau({
             </span>
             <PastilleFileAttente entree={entree} />
             {/* Le bouton n'apparaît QUE là où il peut aboutir : sur une entrée
-                VIVANTE. Une entrée convertie, expirée ou déjà partie n'occupe
-                plus de rang — la RPC le dirait, mais proposer un geste qui
-                échoue est pire que de ne rien proposer. */}
-            {entree.status === "waiting" || entree.status === "offered" ? (
+                VIVANTE, et pour un rôle qui a le droit de retirer. Une entrée
+                convertie, expirée ou déjà partie n'occupe plus de rang, et
+                `evict_waitlist_entry` refuse caissier et lecteur — la RPC le
+                dirait dans les deux cas, mais proposer un geste qui échoue est
+                pire que de ne rien proposer. */}
+            {peutRetirer &&
+            (entree.status === "waiting" || entree.status === "offered") ? (
               <RetirerDeLaFile
                 entryId={entree.entryId}
                 position={entree.position}
