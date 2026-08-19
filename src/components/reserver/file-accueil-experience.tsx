@@ -17,9 +17,11 @@ import {
   type EtatUiFile,
   type QueuePublicStateResult,
   type ReservationQueueStatus,
+  type ReserverAttenteView,
 } from "@/lib/reserver";
 import { useActionForm } from "@/lib/use-action-form";
 import { useFilePoll } from "@/components/reserver/use-file-poll";
+import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 
 /**
  * LA FILE D'ACCUEIL, VUE DU CLIENT QUI POUSSE LA PORTE (RES-3).
@@ -101,6 +103,7 @@ export function FileAccueilExperience({
   logoUrl,
   initial,
   timeZone,
+  attente = null,
 }: {
   queueId: string;
   organizationName: string;
@@ -108,6 +111,12 @@ export function FileAccueilExperience({
   /** Assemblé par la page depuis `loadReserverQueuePublicContext`. */
   initial: QueuePublicStateResult;
   timeZone: string;
+  /**
+   * Le Mode Attente active (RES-4), s'il y a une attente ET quelque chose à
+   * proposer. `null` quand ce navigateur n'est pas dans la file : il n'y a alors
+   * pas de session, donc rien à jouer.
+   */
+  attente?: ReserverAttenteView | null;
 }) {
   const charger = useCallback(
     () => getQueuePublicState({ queueId }),
@@ -175,18 +184,37 @@ export function FileAccueilExperience({
       </header>
 
       {etat.state === "in_queue" ? (
-        <MonRang
-          entryId={etat.entryId}
-          position={etat.position}
-          waitingCount={etat.waitingCount}
-          joinedAt={etat.joinedAt}
-          appele={appele}
-          timeZone={timeZone}
-          onDepart={() => {
-            setSouvenir("parti");
-            rafraichir();
-          }}
-        />
+        <>
+          <MonRang
+            entryId={etat.entryId}
+            position={etat.position}
+            waitingCount={etat.waitingCount}
+            joinedAt={etat.joinedAt}
+            appele={appele}
+            timeZone={timeZone}
+            onDepart={() => {
+              setSouvenir("parti");
+              rafraichir();
+            }}
+          />
+
+          {/* LE JEU SE FERME PROPREMENT À L'APPEL (critère dur de RES-4).
+              `AppelPleinEcran` est déjà `fixed inset-0 z-50` et le recouvrirait
+              de toute façon — mais le scrutin qui l'a déclenché est le MÊME
+              document que celui-ci, alors on va au bout : la section est
+              DÉMONTÉE, pas seulement cachée. Rien n'est perdu — le tour est
+              tiré, journalisé dans `spins` et retenu par la session : il se
+              réaffiche en « déjà jouée » au rechargement suivant.
+
+              Elle est SOUS le rang, jamais au-dessus : ce que le client rouvre
+              sa page pour voir, c'est sa place. */}
+          {!appele && attente ? (
+            <PendantVotreAttente
+              attente={attente}
+              organizationName={organizationName}
+            />
+          ) : null}
+        </>
       ) : (
         <>
           {souvenir !== "aucun" ? (

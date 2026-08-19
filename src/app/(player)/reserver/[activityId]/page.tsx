@@ -90,6 +90,9 @@ export default async function ReserverPage({
         mesReservations={ctx.mesReservations}
         maFile={ctx.maFile}
         timeZone={ctx.timezone}
+        // Le Mode Attente active (RES-4) : la session rattachée à la
+        // réservation confirmée de ce navigateur, ou `null`.
+        attente={ctx.attente}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

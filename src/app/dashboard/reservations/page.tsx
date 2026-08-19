@@ -162,6 +162,11 @@ export default async function ReservationsPage() {
         activites={activites.map((a) => ({ id: a.id, name: a.name }))}
         peutEditer={capacites.canEditDraft}
         appUrl={APP_URL}
+        // Le Mode Attente active (RES-4) : ce qu'on peut proposer pendant
+        // l'attente. Les deux listes sont celles de l'organisation, résolues
+        // côté serveur — un identifiant de quiz ou de campagne ne se saisit pas.
+        quiz={agenda.ok ? agenda.waitQuiz : []}
+        campagnes={agenda.ok ? agenda.waitCampaigns : []}
       />
     </div>
   );
