@@ -368,6 +368,40 @@ select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_q
 -- `select` de `getUserAndOrg` énumère ses colonnes et serait refusé EN ENTIER.
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'SELECT'), 'merchant can read vitrine entitlement');
 select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'UPDATE'), 'merchant cannot grant itself the vitrine entitlement');
+
+-- Socle Réserver (20261002120000). Trois tables, et trois régimes distincts :
+-- le catalogue d'activités et les créneaux sont ÉDITEURS (motif
+-- campaign_templates) ; les réservations sont en LECTURE SEULE pour tous les
+-- membres — le caissier a besoin de l'écran de comptoir — et n'acceptent
+-- AUCUNE écriture directe, parce qu'une insertion PostgREST contournerait le
+-- comptage sous verrou de `reserve_slot` et donc la capacité elle-même.
+-- L'adresse est hors du grant de colonnes : elle n'existe que pour l'envoi
+-- transactionnel côté serveur, jamais pour un écran.
+select ok(not has_table_privilege('anon', 'public.reservation_activities', 'SELECT'), 'anon cannot read reservation activities');
+select ok(not has_table_privilege('anon', 'public.reservation_slots', 'SELECT'), 'anon cannot read reservation slots');
+select ok(not has_table_privilege('anon', 'public.reservations', 'SELECT'), 'anon cannot read reservations');
+select ok(not has_column_privilege('authenticated', 'public.reservations', 'email', 'SELECT'), 'merchant session cannot read reservation email addresses');
+select ok(has_column_privilege('authenticated', 'public.reservations', 'code', 'SELECT'), 'merchant session can read the check-in code');
+select ok(not has_table_privilege('authenticated', 'public.reservations', 'INSERT'), 'merchant cannot insert a reservation past the capacity guard');
+select ok(not has_table_privilege('authenticated', 'public.reservations', 'UPDATE'), 'merchant cannot check in a reservation by direct update');
+select ok(not has_table_privilege('authenticated', 'public.reservations', 'DELETE'), 'merchant cannot delete a reservation');
+-- NI SUR LES DEUX TABLES DE CONFIGURATION : la cascade y emporterait les
+-- créneaux d'une activité PUIS les réservations de ces créneaux, donc
+-- l'historique des arrivées, sans audit et sans que rien n'ait compté ce qui
+-- disparaissait. `active = false` et `status = 'closed'` ferment sans effacer.
+select ok(not has_table_privilege('authenticated', 'public.reservation_activities', 'DELETE'), 'merchant cannot delete a reservation activity and cascade away its arrival history');
+select ok(not has_table_privilege('authenticated', 'public.reservation_slots', 'DELETE'), 'merchant cannot delete a reservation slot and cascade away its arrival history');
+select ok(has_function_privilege('service_role', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'server can take a reservation slot');
+select ok(not has_function_privilege('authenticated', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot bypass the reservation capacity lock');
+select ok(not has_function_privilege('anon', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot reserve directly');
+select ok(not has_function_privilege('authenticated', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'merchant session cannot cancel through the player RPC');
+select ok(not has_function_privilege('anon', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'anon cannot cancel directly');
+select ok(has_function_privilege('service_role', 'public.checkin_reservation(uuid,text,text)', 'EXECUTE'), 'server can validate an arrival');
+select ok(not has_function_privilege('authenticated', 'public.checkin_reservation(uuid,text,text)', 'EXECUTE'), 'merchant session cannot bypass the check-in role guard');
+select ok(not has_function_privilege('anon', 'public.checkin_reservation(uuid,text,text)', 'EXECUTE'), 'anon cannot check in a reservation');
+select ok(not has_function_privilege('authenticated', 'public.reservation_public_state(uuid,text)', 'EXECUTE'), 'merchant cannot enumerate player reservations through the public RPC');
+select ok(not has_function_privilege('anon', 'public.reservation_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the reservation public state directly');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');
@@ -729,6 +763,17 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_answer
 select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(quiz_id, player_id)%'), 'quiz one-reward-per-player uniqueness exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.quiz_rewards'::regclass and contype='u' and pg_get_constraintdef(oid) ilike '%(quiz_id, rank)%'), 'quiz one-winner-per-rank uniqueness exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.quizzes'::regclass and conname='quizzes_reward_bounds_check' and contype='c'), 'quiz reward emission is bounded by its finite stock');
+select ok(exists (select 1 from pg_constraint where conrelid='public.reservation_slots'::regclass and conname='reservation_slots_activity_id_organization_id_fkey' and contype='f'), 'reservation slot tenant FK exists');
+select ok(exists (select 1 from pg_constraint where conrelid='public.reservations'::regclass and conname='reservations_slot_id_organization_id_fkey' and contype='f'), 'reservation slot-of-reservation tenant FK exists');
+-- L'unicité de la place n'est pas une contrainte mais un index PARTIEL : la
+-- réservation annulée doit pouvoir être remplacée par une nouvelle du même
+-- joueur, ce qu'une contrainte pleine interdirait. Son prédicat porte LES DEUX
+-- ÉTATS VIVANTS, et l'assertion le vérifie état par état : sur `confirmed`
+-- seul, un joueur ARRIVÉ sortait de l'index et pouvait reprendre une seconde
+-- place sur le créneau qu'il venait d'honorer — le même trou que le comptage
+-- de capacité de `reserve_slot`, dont ce prédicat doit rester le miroir exact.
+select ok(exists (select 1 from pg_indexes where schemaname='public' and indexname='reservations_slot_player_active_idx' and indexdef ilike '%where%' and indexdef ilike '%confirmed%' and indexdef ilike '%checked_in%' and indexdef not ilike '%cancelled%'), 'one live reservation per player and slot is enforced by a partial unique index covering BOTH live states');
+select ok(exists (select 1 from pg_constraint where conrelid='public.reservations'::regclass and conname='reservations_org_code_unique' and contype='u'), 'the check-in code is unique within its organization only');
 select ok(exists (select 1 from pg_trigger where tgrelid='public.quiz_answers'::regclass and tgname='quiz_answers_freeze' and not tgisinternal), 'a submitted quiz answer is frozen by trigger');
 select ok(exists (
   select 1 from storage.buckets

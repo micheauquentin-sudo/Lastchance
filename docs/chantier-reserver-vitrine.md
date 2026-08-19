@@ -22,10 +22,10 @@ parallèle, fusions de migrations sérialisées.
 
 | Lot | Contenu court | Statut | PR | Migration |
 |---|---|---|---|---|
-| L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | 🔨 en cours | #156 | — |
+| L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | ✅ | #156 | — |
 | L1 | Benchmark Mennoo (lecture seule) → [`docs/benchmark-mennoo.md`](./benchmark-mennoo.md) | ✅ | #156 | — |
-| L2 | Droit serveur vitrine (entitlement A1) | 🔨 en cours | — | 20261001120000 |
-| L3 | RES-1a — schéma + RPC réservation | ⏳ | — | — |
+| L2 | Droit serveur vitrine (entitlement A1) | ✅ | #157 | 20261001120000 |
+| L3 | RES-1a — schéma + RPC réservation | 🔨 en cours | #159 | 20261002120000 |
 | L4 | RES-1b — surfaces + email (A2) | ⏳ | — | — |
 | L5 | RES-2 — liste prioritaire + invitations | ⏳ | — | — |
 | L6 | RES-3 — file sereine | ⏳ | — | — |
@@ -43,6 +43,12 @@ parallèle, fusions de migrations sérialisées.
 | L18 | Portrait de la Bande (A4, packs de questions) | ⏳ | — | — |
 
 Légende : ⏳ à faire · 🔨 en cours · ✅ fusionné.
+
+Hors lots — **Flake E2E ✅ #158** : correction d'une instabilité de la suite
+Playwright rencontrée pendant le train. Elle n'appartient à aucun lot et ne
+porte aucune migration ; elle figure ici parce qu'elle occupe un numéro de PR
+de la série et qu'un trou dans la numérotation se relit, six mois plus tard,
+comme une PR perdue.
 
 ## Notes de mise à jour
 

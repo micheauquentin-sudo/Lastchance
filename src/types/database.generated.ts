@@ -5741,6 +5741,155 @@ export type Database = {
           },
         ]
       }
+      reservation_activities: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_activities_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reservation_slots: {
+        Row: {
+          activity_id: string
+          capacity: number
+          created_at: string
+          ends_at: string
+          id: string
+          organization_id: string
+          starts_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          activity_id: string
+          capacity: number
+          created_at?: string
+          ends_at: string
+          id?: string
+          organization_id: string
+          starts_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          activity_id?: string
+          capacity?: number
+          created_at?: string
+          ends_at?: string
+          id?: string
+          organization_id?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_slots_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_slots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reservations: {
+        Row: {
+          cancelled_at: string | null
+          checked_in_at: string | null
+          checked_in_by: string | null
+          code: string
+          consent_transactional_at: string | null
+          created_at: string
+          email: string | null
+          id: string
+          organization_id: string
+          player_key_hash: string
+          slot_id: string
+          status: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          code: string
+          consent_transactional_at?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          organization_id: string
+          player_key_hash: string
+          slot_id: string
+          status?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          checked_in_at?: string | null
+          checked_in_by?: string | null
+          code?: string
+          consent_transactional_at?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          organization_id?: string
+          player_key_hash?: string
+          slot_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservations_slot_id_organization_id_fkey"
+            columns: ["slot_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_slots"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       reward_issuances: {
         Row: {
           basket_cents: number | null
@@ -6603,9 +6752,28 @@ export type Database = {
         }
         Returns: boolean
       }
+      cancel_reservation: {
+        Args: { p_player_key_hash: string; p_reservation_id: string }
+        Returns: Json
+      }
       check_rate_limit: {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
+      }
+      checkin_reservation: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          activity_name: string
+          cancelled_at: string
+          checked_in_at: string
+          checked_in_now: boolean
+          code: string
+          ends_at: string
+          id: string
+          starts_at: string
+          status: string
+          window_state: string
+        }[]
       }
       claim_fixture_refresh: {
         Args: { p_league_id: string; p_ttl_seconds?: number }
@@ -7848,6 +8016,20 @@ export type Database = {
         Returns: string
       }
       requeue_stale_jobs: { Args: never; Returns: number }
+      reservation_public_state: {
+        Args: { p_organization_id: string; p_player_key_hash: string }
+        Returns: Json
+      }
+      reserve_slot: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_organization_id: string
+          p_player_key_hash: string
+          p_slot_id: string
+        }
+        Returns: Json
+      }
       resolve_player_identity: {
         Args: {
           p_acquisition_qr_code_id: string
