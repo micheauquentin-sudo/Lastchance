@@ -694,14 +694,20 @@ select is(
 
 -- IDEMPOTENCE : un second passage ne réécrit rien (sinon chaque nuit
 -- reconstruirait les mêmes lignes mortes, indéfiniment).
-create temporary table rv_purge_xmin as
-select xmin as x from public.reservations
+--
+-- La preuve porte sur `ctid` et NON sur `xmin`. Les deux passages ont lieu dans
+-- la MÊME transaction, donc le même identifiant de transaction : `xmin` serait
+-- identique qu'il y ait eu réécriture ou non, et l'assertion passerait au vert
+-- en ne prouvant rien. Une mise à jour, elle, crée toujours une nouvelle
+-- version physique de la ligne — c'est `ctid` qui la voit.
+create temporary table rv_purge_ctid as
+select ctid as t from public.reservations
  where id = '4e5e0000-0000-4000-8000-000000000401';
 select public.purge_expired_personal_data();
 select is(
-  (select xmin from public.reservations
+  (select ctid from public.reservations
     where id = '4e5e0000-0000-4000-8000-000000000401'),
-  (select x from rv_purge_xmin),
+  (select t from rv_purge_ctid),
   'PURGE-6 un second passage ne réécrit pas la ligne déjà neutralisée');
 
 select * from finish();
