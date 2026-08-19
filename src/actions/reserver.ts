@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
@@ -45,61 +45,61 @@ import {
   updateReserverSlotStatusSchema,
 } from "@/lib/validations/reserver";
 
-const NOT_EDITOR = "Action non autorisÃ©e";
-const GENERIC_ERROR = "Une erreur est survenue, rÃ©essayez.";
+const NOT_EDITOR = "Action non autorisée";
+const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 const TOO_MANY = "Trop de tentatives. Patientez un instant.";
-const INDISPONIBLE = "Cette rÃ©servation n'est pas disponible.";
+const INDISPONIBLE = "Cette réservation n'est pas disponible.";
 const SANS_DROIT =
-  "L'agenda RÃ©server fait partie de l'offre Vitrine. Activez-la pour ouvrir des crÃ©neaux.";
+  "L'agenda Réserver fait partie de l'offre Vitrine. Activez-la pour ouvrir des créneaux.";
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// ContrÃ´le d'abus â€” principe de conception du module (ADR-032)
+// ════════════════════════════════════════════════════════════
+// Contrôle d'abus — principe de conception du module (ADR-032)
 //
-// Le parcours public de RÃ©server est servi par le service_role Ã  des clients
-// qui scannent le QR d'un restaurant, d'une cave, d'un atelier : derriÃ¨re un
-// Wi-Fi ou un CGNAT, l'IP est PARTAGÃ‰E par tous les clients prÃ©sents. AUCUN
-// seau `failClosed` ne porte donc sur une clÃ© partagÃ©e (IP, organisation,
-// crÃ©neau) â€” un tel seau deviendrait un interrupteur qu'un tiers allume en le
-// saturant (Â« dÃ©ni de rÃ©servation d'un commerce entier Â»). Les clÃ©s partagÃ©es
-// ne portent que des compteurs d'OBSERVABILITÃ‰ fail-OPEN.
+// Le parcours public de Réserver est servi par le service_role à des clients
+// qui scannent le QR d'un restaurant, d'une cave, d'un atelier : derrière un
+// Wi-Fi ou un CGNAT, l'IP est PARTAGÉE par tous les clients présents. AUCUN
+// seau `failClosed` ne porte donc sur une clé partagée (IP, organisation,
+// créneau) — un tel seau deviendrait un interrupteur qu'un tiers allume en le
+// saturant (« déni de réservation d'un commerce entier »). Les clés partagées
+// ne portent que des compteurs d'OBSERVABILITÉ fail-OPEN.
 //
-// Le `failClosed` reste lÃ©gitime â€” et employÃ© â€” sur une clÃ© propre Ã  UNE
-// identitÃ© (empreinte du cookie `lc-player`) ou Ã  UN opÃ©rateur authentifiÃ©
+// Le `failClosed` reste légitime — et employé — sur une clé propre à UNE
+// identité (empreinte du cookie `lc-player`) ou à UN opérateur authentifié
 // (user.id au comptoir) : la saturer ne coupe que son porteur.
 //
-// La borne rÃ©elle contre l'abus n'est pas un rate-limit : c'est le socle SQL â€”
-// capacitÃ© comptÃ©e sous verrou d'avis, index unique partiel (une identitÃ©, une
-// place vivante par crÃ©neau), idempotence de la RPC. Frapper des cookies ne
-// crÃ©e AUCUNE place supplÃ©mentaire.
+// La borne réelle contre l'abus n'est pas un rate-limit : c'est le socle SQL —
+// capacité comptée sous verrou d'avis, index unique partiel (une identité, une
+// place vivante par créneau), idempotence de la RPC. Frapper des cookies ne
+// crée AUCUNE place supplémentaire.
 //
-// ANTI-SYBIL â€” ce que les invariants ne couvrent PAS : ils bornent le NOMBRE de
-// places, pas la DIVERSITÃ‰ des mains qui les prennent. Un bot muni de cookies
-// jetables peut vider un crÃ©neau sans jamais venir â€” le commerÃ§ant prÃ©pare pour
-// vingt et n'accueille personne. Le SEUL appel Ã‰METTEUR du parcours est
-// `reserveSlot` : c'est lÃ  â€” et lÃ  seulement â€” qu'un challenge Turnstile est
-// opposÃ©, et UNIQUEMENT si les clÃ©s sont configurÃ©es (motif `finishQuiz`). RIEN
+// ANTI-SYBIL — ce que les invariants ne couvrent PAS : ils bornent le NOMBRE de
+// places, pas la DIVERSITÉ des mains qui les prennent. Un bot muni de cookies
+// jetables peut vider un créneau sans jamais venir — le commerçant prépare pour
+// vingt et n'accueille personne. Le SEUL appel ÉMETTEUR du parcours est
+// `reserveSlot` : c'est là — et là seulement — qu'un challenge Turnstile est
+// opposé, et UNIQUEMENT si les clés sont configurées (motif `finishQuiz`). RIEN
 // sur l'annulation ni sur la relecture : aucune friction sur un geste qui rend
-// une place ou qui n'Ã©crit rien.
+// une place ou qui n'écrit rien.
 //
-// â”€â”€ INVENTAIRE DES SEAUX â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── INVENTAIRE DES SEAUX ────────────────────────────────────────────────
 //  reserveSlot / cancelReservation / loadMyReservations (public)
-//    Â· reserver:device:<empreinte>            identitÃ©   CLOSED  (tranchÃ© 1er)
-//    Â· reserver:player:<org>:<empreinte>      identitÃ©   CLOSED
-//    Â· reserver:ip:<ip>                       partagÃ©e   OPEN (IP SEULE, 1er)
-//    Â· reserver:public:ip:<org>:<ip>          partagÃ©e   OPEN (observabilitÃ©)
-//  checkinReservation (authentifiÃ©)
-//    Â· cashier:lookup:<org>:<user>            opÃ©rateur  CLOSED (seau de caisse)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
+//  checkinReservation (authentifié)
+//    · cashier:lookup:<org>:<user>            opérateur  CLOSED (seau de caisse)
+// ════════════════════════════════════════════════════════════
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Parcours public â€” identitÃ© cookie, seaux, observabilitÃ©
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ────────────────────────────────────────────────────────────
+// Parcours public — identité cookie, seaux, observabilité
+// ────────────────────────────────────────────────────────────
 
 /**
  * Le challenge anti-robot est-il opposable ?
  *
- * Motif EXACT de `quizChallengeAvailable` : la clÃ© publique doit exister aussi,
- * sans quoi l'Ã©cran n'a aucun widget Ã  afficher et le refus serait sans issue
+ * Motif EXACT de `quizChallengeAvailable` : la clé publique doit exister aussi,
+ * sans quoi l'écran n'a aucun widget à afficher et le refus serait sans issue
  * pour le joueur.
  */
 function reserverChallengeDisponible(): boolean {
@@ -109,16 +109,16 @@ function reserverChallengeDisponible(): boolean {
 }
 
 /**
- * Les DEUX seaux d'identitÃ©, dans l'ordre. Le plafond par APPAREIL est tranchÃ©
- * en premier parce que le second est composÃ© avec un `organization_id` fourni
- * par le client : boucler sur des organisations inventÃ©es ouvrirait sinon un
- * seau neuf Ã  chaque tour (motif `progressionDevice`, wagon 7).
+ * Les DEUX seaux d'identité, dans l'ordre. Le plafond par APPAREIL est tranché
+ * en premier parce que le second est composé avec un `organization_id` fourni
+ * par le client : boucler sur des organisations inventées ouvrirait sinon un
+ * seau neuf à chaque tour (motif `progressionDevice`, wagon 7).
  */
 async function autoriserJoueurReserver(
   /**
-   * PORTÃ‰E du second seau : l'organisation pour les gestes qui la nomment,
-   * l'identifiant de la rÃ©servation pour l'annulation â€” qui ne connaÃ®t pas
-   * l'organisation (la RPC la lit sur la ligne) et dÃ©tient dÃ©jÃ  cette clÃ©.
+   * PORTÉE du second seau : l'organisation pour les gestes qui la nomment,
+   * l'identifiant de la réservation pour l'annulation — qui ne connaît pas
+   * l'organisation (la RPC la lit sur la ligne) et détient déjà cette clé.
    * Les deux sont des UUID : aucune collision d'espace de noms possible.
    */
   portee: string,
@@ -141,13 +141,13 @@ async function autoriserJoueurReserver(
 }
 
 /**
- * Les deux compteurs d'observabilitÃ©, dans l'ordre : IP SEULE d'abord, IP par
+ * Les deux compteurs d'observabilité, dans l'ordre : IP SEULE d'abord, IP par
  * organisation ensuite. Aucun des deux ne refuse jamais.
  *
- * L'IP seule est comptÃ©e en premier pour la raison de `pageOpenIp` (wagon 7) :
+ * L'IP seule est comptée en premier pour la raison de `pageOpenIp` (wagon 7) :
  * le second seau porte un `organization_id` que l'appelant choisit, et une
- * rafale qui boucle dessus se disperserait sur autant de sÃ©ries â€” invisible en
- * supervision, et une Ã©criture de rate-limit par organisation inventÃ©e.
+ * rafale qui boucle dessus se disperserait sur autant de séries — invisible en
+ * supervision, et une écriture de rate-limit par organisation inventée.
  */
 async function observerPressionReserver(
   organizationId: string,
@@ -173,16 +173,16 @@ export type ReserveSlotActionResult =
   | { ok: false; error: string; challengeRequired?: boolean };
 
 /**
- * Prendre une place sur un crÃ©neau.
+ * Prendre une place sur un créneau.
  *
- * L'identitÃ© vient du cookie `lc-player` (posÃ© au besoin), JAMAIS du corps.
- * L'email n'est transmis qu'AVEC son consentement â€” la base porte une
- * Ã©quivalence, pas une implication, et une adresse sans consentement serait une
- * donnÃ©e personnelle conservÃ©e sans finalitÃ©.
+ * L'identité vient du cookie `lc-player` (posé au besoin), JAMAIS du corps.
+ * L'email n'est transmis qu'AVEC son consentement — la base porte une
+ * équivalence, pas une implication, et une adresse sans consentement serait une
+ * donnée personnelle conservée sans finalité.
  *
- * Aucun code n'est fourni Ã  l'insertion : le trigger `reservations_set_code`
- * l'Ã©crase de toute faÃ§on, et le choisir depuis l'application ferait reposer son
- * imprÃ©visibilitÃ© sur la discipline de l'appelant.
+ * Aucun code n'est fourni à l'insertion : le trigger `reservations_set_code`
+ * l'écrase de toute façon, et le choisir depuis l'application ferait reposer son
+ * imprévisibilité sur la discipline de l'appelant.
  */
 export async function reserveSlot(input: {
   organizationId: string;
@@ -196,8 +196,8 @@ export async function reserveSlot(input: {
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  // IdentitÃ© AVANT tout : aucun aller-retour base, donc le premier seau est
-  // tranchÃ© avant la moindre requÃªte SQL et avant l'instrumentation.
+  // Identité AVANT tout : aucun aller-retour base, donc le premier seau est
+  // tranché avant la moindre requête SQL et avant l'instrumentation.
   const empreinte = await assurerIdentiteReserver();
   if (!empreinte) return { ok: false, error: GENERIC_ERROR };
   if (!(await autoriserJoueurReserver(parsed.data.organizationId, empreinte))) {
@@ -221,8 +221,8 @@ async function reserveInner(
 ): Promise<ReserveSlotActionResult> {
   const ip = clientIpFromHeaders(await headers());
 
-  // Compteurs partagÃ©s AVANT l'appel Ã©metteur : ce qu'ils mesurent est la
-  // pression rÃ©elle sur le parcours, y compris celle qui Ã©chouera au challenge.
+  // Compteurs partagés AVANT l'appel émetteur : ce qu'ils mesurent est la
+  // pression réelle sur le parcours, y compris celle qui échouera au challenge.
   await observerPressionReserver(parsed.organizationId, ip);
 
   if (
@@ -232,7 +232,7 @@ async function reserveInner(
     return {
       ok: false,
       error:
-        "VÃ©rification anti-robot requise. Validez le contrÃ´le ci-dessous puis rÃ©servez.",
+        "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réservez.",
       challengeRequired: true,
     };
   }
@@ -253,10 +253,10 @@ async function reserveInner(
 
   const resultat = mapReserveSlot(data);
 
-  // CONFIRMATION HORS DU CHEMIN DE RÃ‰PONSE. Le joueur a dÃ©jÃ  son code Ã 
-  // l'Ã©cran : l'email est un rappel, jamais la preuve. `after()` le sort du
-  // temps de rÃ©ponse, et son Ã©chec est AVALÃ‰ puis COMPTÃ‰ (`reserver.email.*`)
-  // plutÃ´t que remontÃ© â€” une panne Resend ne doit pas dÃ©faire une place prise.
+  // CONFIRMATION HORS DU CHEMIN DE RÉPONSE. Le joueur a déjà son code à
+  // l'écran : l'email est un rappel, jamais la preuve. `after()` le sort du
+  // temps de réponse, et son échec est AVALÉ puis COMPTÉ (`reserver.email.*`)
+  // plutôt que remonté — une panne Resend ne doit pas défaire une place prise.
   if (resultat.state === "reserved" && parsed.consent && parsed.email) {
     const destinataire = parsed.email;
     after(() =>
@@ -273,10 +273,10 @@ async function reserveInner(
 }
 
 /**
- * Compose et envoie la confirmation. Trois lectures, toutes org-scopÃ©es, toutes
- * hors du chemin de rÃ©ponse : l'activitÃ© et l'organisation ne sont pas dans la
- * rÃ©ponse de `reserve_slot`, et les faire voyager par l'appelant aurait laissÃ©
- * un nom de commerce se dÃ©clarer depuis le client.
+ * Compose et envoie la confirmation. Trois lectures, toutes org-scopées, toutes
+ * hors du chemin de réponse : l'activité et l'organisation ne sont pas dans la
+ * réponse de `reserve_slot`, et les faire voyager par l'appelant aurait laissé
+ * un nom de commerce se déclarer depuis le client.
  */
 async function envoyerConfirmation(params: {
   to: string;
@@ -322,11 +322,11 @@ async function envoyerConfirmation(params: {
 }
 
 /**
- * Annuler sa rÃ©servation, sur preuve de possession (cookie + identifiant).
+ * Annuler sa réservation, sur preuve de possession (cookie + identifiant).
  *
- * Aucune organisation demandÃ©e : la RPC la lit sur la ligne. Le seau par
- * organisation est donc portÃ© par l'identifiant de la RÃ‰SERVATION â€” une clÃ© que
- * l'appelant dÃ©tient dÃ©jÃ , et qui n'ouvre rien de neuf.
+ * Aucune organisation demandée : la RPC la lit sur la ligne. Le seau par
+ * organisation est donc porté par l'identifiant de la RÉSERVATION — une clé que
+ * l'appelant détient déjà, et qui n'ouvre rien de neuf.
  */
 export async function cancelReservation(input: {
   reservationId: string;
@@ -336,9 +336,9 @@ export async function cancelReservation(input: {
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  // LECTURE SEULE du cookie : annuler n'est pas un chemin qui crÃ©e une identitÃ©.
-  // Sans cookie, il n'y a rien Ã  annuler â€” la RPC rÃ©pondrait `unknown`, autant
-  // ne pas la dÃ©ranger.
+  // LECTURE SEULE du cookie : annuler n'est pas un chemin qui crée une identité.
+  // Sans cookie, il n'y a rien à annuler — la RPC répondrait `unknown`, autant
+  // ne pas la déranger.
   const empreinte = await lireIdentiteReserver();
   if (!empreinte) return { ok: false, error: INDISPONIBLE };
   if (
@@ -362,9 +362,9 @@ export async function cancelReservation(input: {
 }
 
 /**
- * Â« Mes rÃ©servations chez ce commerÃ§ant Â» â€” bornÃ©e Ã  une organisation, comme la
- * RPC : l'empreinte du cookie est GLOBALE, et une rÃ©ponse non bornÃ©e montrerait
- * sur la page d'un commerce ce que la personne a rÃ©servÃ© chez le concurrent.
+ * « Mes réservations chez ce commerçant » — bornée à une organisation, comme la
+ * RPC : l'empreinte du cookie est GLOBALE, et une réponse non bornée montrerait
+ * sur la page d'un commerce ce que la personne a réservé chez le concurrent.
  */
 export async function loadMyReservations(input: {
   organizationId: string;
@@ -376,7 +376,7 @@ export async function loadMyReservations(input: {
 
   const empreinte = await lireIdentiteReserver();
   if (!empreinte) {
-    // Pas d'identitÃ© = aucune rÃ©servation, et c'est VRAI par construction : ce
+    // Pas d'identité = aucune réservation, et c'est VRAI par construction : ce
     // n'est pas une erreur, c'est une liste vide.
     return {
       ok: true,
@@ -405,36 +405,36 @@ export async function loadMyReservations(input: {
   });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// Comptoir â€” valider une arrivÃ©e (session + rÃ´le)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════════════════════════
+// Comptoir — valider une arrivée (session + rôle)
+// ════════════════════════════════════════════════════════════
 
 /**
- * Enregistrer l'arrivÃ©e d'un client par son code.
+ * Enregistrer l'arrivée d'un client par son code.
  *
- * â”€â”€ L'ACTEUR VIENT DE LA SESSION, JAMAIS DU CORPS â”€â”€
+ * ── L'ACTEUR VIENT DE LA SESSION, JAMAIS DU CORPS ──
  *
- * `p_actor` est l'identifiant de l'utilisateur authentifiÃ©, et la RPC le
- * revÃ©rifie EN SQL contre `organization_members`. Un acteur postÃ© aurait fait de
- * l'audit `reservation.checkin` une dÃ©claration sur l'honneur.
+ * `p_actor` est l'identifiant de l'utilisateur authentifié, et la RPC le
+ * revérifie EN SQL contre `organization_members`. Un acteur posté aurait fait de
+ * l'audit `reservation.checkin` une déclaration sur l'honneur.
  *
- * â”€â”€ LES TROIS RÃ”LES, DONT LE CAISSIER â”€â”€
+ * ── LES TROIS RÔLES, DONT LE CAISSIER ──
  *
- * Valider une arrivÃ©e est un geste de comptoir : `cashier` en fait partie, au
- * mÃªme titre qu'`owner` et `editor`. C'est aussi ce que la RPC accepte.
+ * Valider une arrivée est un geste de comptoir : `cashier` en fait partie, au
+ * même titre qu'`owner` et `editor`. C'est aussi ce que la RPC accepte.
  *
- * â”€â”€ AUCUNE GARDE `vitrine` ICI, ET C'EST DÃ‰LIBÃ‰RÃ‰ â”€â”€
+ * ── AUCUNE GARDE `vitrine` ICI, ET C'EST DÉLIBÉRÉ ──
  *
- * Les actions de configuration l'exigent â€” on n'ouvre pas de nouveaux crÃ©neaux
- * sans le droit. Mais refuser une ARRIVÃ‰E parce qu'un abonnement a expirÃ©
- * laisserait le commerÃ§ant face Ã  des clients dÃ©jÃ  venus, dÃ©jÃ  confirmÃ©s, sans
- * moyen d'enregistrer leur prÃ©sence : la sanction tomberait sur eux. Honorer
+ * Les actions de configuration l'exigent — on n'ouvre pas de nouveaux créneaux
+ * sans le droit. Mais refuser une ARRIVÉE parce qu'un abonnement a expiré
+ * laisserait le commerçant face à des clients déjà venus, déjà confirmés, sans
+ * moyen d'enregistrer leur présence : la sanction tomberait sur eux. Honorer
  * l'existant est la seule lecture correcte.
  *
- * â”€â”€ LE SEAU DE LA CAISSE, RÃ‰UTILISÃ‰ â”€â”€
+ * ── LE SEAU DE LA CAISSE, RÉUTILISÉ ──
  *
- * MÃªme clÃ© et mÃªme rÃ¨gle que `lookupRedeemCode` : c'est le mÃªme opÃ©rateur, sur
- * le mÃªme Ã©cran, qui saisit des codes. Deux seaux distincts lui auraient donnÃ©
+ * Même clé et même règle que `lookupRedeemCode` : c'est le même opérateur, sur
+ * le même écran, qui saisit des codes. Deux seaux distincts lui auraient donné
  * deux budgets pour un seul geste.
  */
 export async function checkinReservation(
@@ -466,7 +466,7 @@ export async function checkinReservation(
     const { data, error } = await admin.rpc("checkin_reservation", {
       p_organization_id: organization.id,
       p_code: parsed.data.code,
-      // DE LA SESSION. Jamais du corps de la requÃªte.
+      // DE LA SESSION. Jamais du corps de la requête.
       p_actor: user.id,
     });
     if (error) {
@@ -477,18 +477,18 @@ export async function checkinReservation(
   });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// Dashboard commerÃ§ant â€” activitÃ©s et crÃ©neaux (session + RLS Ã©diteurs)
+// ════════════════════════════════════════════════════════════
+// Dashboard commerçant — activités et créneaux (session + RLS éditeurs)
 //
-// AUCUNE SUPPRESSION, et ce n'est pas un oubli : le socle a dÃ©libÃ©rÃ©ment retirÃ©
+// AUCUNE SUPPRESSION, et ce n'est pas un oubli : le socle a délibérément retiré
 // le `grant delete` sur les deux tables. La cascade de la FK composite
-// emporterait les crÃ©neaux d'une activitÃ© PUIS les rÃ©servations de ces crÃ©neaux
-// â€” donc l'historique des arrivÃ©es, sans audit et sans qu'aucun Ã©cran n'ait
-// comptÃ© ce qui allait disparaÃ®tre. `active = false` (activitÃ©) et
-// `status = 'closed'` (crÃ©neau) sont les interrupteurs, et ils n'effacent rien.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// emporterait les créneaux d'une activité PUIS les réservations de ces créneaux
+// — donc l'historique des arrivées, sans audit et sans qu'aucun écran n'ait
+// compté ce qui allait disparaître. `active = false` (activité) et
+// `status = 'closed'` (créneau) sont les interrupteurs, et ils n'effacent rien.
+// ════════════════════════════════════════════════════════════
 
-/** Session + rÃ´le Ã©diteur + droit `vitrine`, en un seul geste. */
+/** Session + rôle éditeur + droit `vitrine`, en un seul geste. */
 async function gardeEditeurReserver(): Promise<
   | { ok: true; organizationId: string; timezone: string }
   | { ok: false; error: string }
@@ -498,7 +498,7 @@ async function gardeEditeurReserver(): Promise<
   if (role !== "owner" && role !== "editor") {
     return { ok: false, error: NOT_EDITOR };
   }
-  // Le droit est REVÃ‰RIFIÃ‰ cÃ´tÃ© serveur : l'Ã©cran cache dÃ©jÃ  le formulaire, mais
+  // Le droit est REVÉRIFIÉ côté serveur : l'écran cache déjà le formulaire, mais
   // une server action reste POSTable en direct.
   if (!droitEffectifModule("vitrine", organization)) {
     return { ok: false, error: SANS_DROIT };
@@ -510,7 +510,7 @@ async function gardeEditeurReserver(): Promise<
   };
 }
 
-/** CrÃ©er une activitÃ© rÃ©servable. */
+/** Créer une activité réservable. */
 export async function createReserverActivity(
   _prev: ActionResult | null,
   formData: FormData,
@@ -536,19 +536,19 @@ export async function createReserverActivity(
 
   if (error) {
     console.error("[reserver] create activity:", error.message);
-    // UnicitÃ© (organization_id, name) : le message nomme la cause rÃ©elle plutÃ´t
-    // qu'un Ã©chec gÃ©nÃ©rique sur lequel le commerÃ§ant ne peut rien.
+    // Unicité (organization_id, name) : le message nomme la cause réelle plutôt
+    // qu'un échec générique sur lequel le commerçant ne peut rien.
     if (error.code === "23505") {
-      return { ok: false, error: "Une activitÃ© porte dÃ©jÃ  ce nom." };
+      return { ok: false, error: "Une activité porte déjà ce nom." };
     }
-    return { ok: false, error: "Impossible de crÃ©er l'activitÃ©" };
+    return { ok: false, error: "Impossible de créer l'activité" };
   }
 
   revalidatePath("/dashboard/reservations");
   return { ok: true, data: undefined };
 }
 
-/** RÃ©glages d'une activitÃ© â€” dont son interrupteur `active`. */
+/** Réglages d'une activité — dont son interrupteur `active`. */
 export async function updateReserverActivity(
   _prev: ActionResult | null,
   formData: FormData,
@@ -575,15 +575,15 @@ export async function updateReserverActivity(
       active: parsed.data.active,
     })
     .eq("id", parsed.data.id)
-    // Double la RLS plutÃ´t que de s'y fier seule.
+    // Double la RLS plutôt que de s'y fier seule.
     .eq("organization_id", garde.organizationId);
 
   if (error) {
     console.error("[reserver] update activity:", error.message);
     if (error.code === "23505") {
-      return { ok: false, error: "Une activitÃ© porte dÃ©jÃ  ce nom." };
+      return { ok: false, error: "Une activité porte déjà ce nom." };
     }
-    return { ok: false, error: "Impossible d'enregistrer l'activitÃ©" };
+    return { ok: false, error: "Impossible d'enregistrer l'activité" };
   }
 
   revalidatePath("/dashboard/reservations");
@@ -591,8 +591,8 @@ export async function updateReserverActivity(
 }
 
 /**
- * CrÃ©er un crÃ©neau. Il naÃ®t en `draft` â€” invisible du joueur â€” parce qu'un
- * crÃ©neau se relit avant de s'ouvrir : capacitÃ©, heures, activitÃ©. L'ouverture
+ * Créer un créneau. Il naît en `draft` — invisible du joueur — parce qu'un
+ * créneau se relit avant de s'ouvrir : capacité, heures, activité. L'ouverture
  * est un second geste, explicite (`updateReserverSlotStatus`).
  */
 export async function createReserverSlot(
@@ -612,8 +612,8 @@ export async function createReserverSlot(
   const garde = await gardeEditeurReserver();
   if (!garde.ok) return { ok: false, error: garde.error };
 
-  // Les heures saisies sont CIVILES, dans le fuseau de l'Ã©tablissement. La
-  // conversion refuse explicitement les heures inexistantes et ambiguÃ«s des
+  // Les heures saisies sont CIVILES, dans le fuseau de l'établissement. La
+  // conversion refuse explicitement les heures inexistantes et ambiguës des
   // changements d'heure, au lieu de laisser JavaScript choisir en silence.
   let startsAt: string;
   let endsAt: string;
@@ -639,15 +639,15 @@ export async function createReserverSlot(
 
   if (error) {
     console.error("[reserver] create slot:", error.message);
-    // UnicitÃ© (activity_id, starts_at) : le double clic d'un Ã©diteur, que la
-    // base refuse pour Ã©viter de doubler la capacitÃ© rÃ©elle en silence.
+    // Unicité (activity_id, starts_at) : le double clic d'un éditeur, que la
+    // base refuse pour éviter de doubler la capacité réelle en silence.
     if (error.code === "23505") {
       return {
         ok: false,
-        error: "Un crÃ©neau de cette activitÃ© commence dÃ©jÃ  Ã  cette heure.",
+        error: "Un créneau de cette activité commence déjà à cette heure.",
       };
     }
-    return { ok: false, error: "Impossible de crÃ©er le crÃ©neau" };
+    return { ok: false, error: "Impossible de créer le créneau" };
   }
 
   revalidatePath("/dashboard/reservations");
@@ -655,12 +655,12 @@ export async function createReserverSlot(
 }
 
 /**
- * Corriger les heures et la capacitÃ© d'un crÃ©neau.
+ * Corriger les heures et la capacité d'un créneau.
  *
  * Seul chemin de correction du module : rien ne se supprime (le `grant delete`
- * a Ã©tÃ© retirÃ©), donc un crÃ©neau saisi Ã  la mauvaise heure doit pouvoir Ãªtre
- * repris. Baisser la capacitÃ© est sÃ»r â€” `reserve_slot` la relit SOUS son verrou,
- * dans le mÃªme instantanÃ© que son comptage.
+ * a été retiré), donc un créneau saisi à la mauvaise heure doit pouvoir être
+ * repris. Baisser la capacité est sûr — `reserve_slot` la relit SOUS son verrou,
+ * dans le même instantané que son comptage.
  */
 export async function updateReserverSlot(
   _prev: ActionResult | null,
@@ -707,10 +707,10 @@ export async function updateReserverSlot(
     if (error.code === "23505") {
       return {
         ok: false,
-        error: "Un crÃ©neau de cette activitÃ© commence dÃ©jÃ  Ã  cette heure.",
+        error: "Un créneau de cette activité commence déjà à cette heure.",
       };
     }
-    return { ok: false, error: "Impossible de modifier le crÃ©neau" };
+    return { ok: false, error: "Impossible de modifier le créneau" };
   }
 
   revalidatePath("/dashboard/reservations");
@@ -718,9 +718,9 @@ export async function updateReserverSlot(
 }
 
 /**
- * Ouvrir, refermer ou remettre en brouillon un crÃ©neau.
+ * Ouvrir, refermer ou remettre en brouillon un créneau.
  *
- * Fermer ne touche Ã  AUCUNE rÃ©servation dÃ©jÃ  confirmÃ©e : c'est un Ã©tat
+ * Fermer ne touche à AUCUNE réservation déjà confirmée : c'est un état
  * d'inscription, pas une annulation de masse.
  */
 export async function updateReserverSlotStatus(
@@ -747,7 +747,7 @@ export async function updateReserverSlotStatus(
 
   if (error) {
     console.error("[reserver] update slot status:", error.message);
-    return { ok: false, error: "Impossible de modifier le crÃ©neau" };
+    return { ok: false, error: "Impossible de modifier le créneau" };
   }
 
   revalidatePath("/dashboard/reservations");
