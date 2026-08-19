@@ -41,18 +41,25 @@ create temporary table t0 (v timestamptz);
 insert into t0 values (timestamptz '2026-06-15 12:00:00+00');
 
 -- ════════════════════════════════════════════════════════════
--- SD-4 — UN PASS N'OUVRE QUE SON MODULE, POUR LES NEUF
+-- SD-4 — UN PASS N'OUVRE QUE SON MODULE, POUR LES DIX
 -- ════════════════════════════════════════════════════════════
 --
--- La matrice est jouée sur les NEUF modules et non sur un échantillon. Le
+-- La matrice est jouée sur les DIX modules et non sur un échantillon. Le
 -- défaut ne venait pas d'un module particulier : il venait de
 -- `org_has_active_access`, en amont de tous. Un échantillon aurait prouvé la
 -- correction là où on regardait, et l'aurait supposée ailleurs.
-
+--
+-- LISTE MANUELLE, et c'est sa faiblesse connue : rien ici ne la compare au
+-- vocabulaire du `check` d'`organization_module_grants`. `vitrine` y est entré
+-- avec 20261001120000 et n'a rejoint cette matrice qu'au lot suivant, faute
+-- d'un capteur qui l'aurait signalé — c'est module_grants.test.sql:551 qui
+-- compare les deux listes, pas ce fichier. Le prochain module devra donc être
+-- ajouté ICI À LA MAIN, comme les dix précédents.
 create temporary table mods (rang int primary key, m text not null unique);
 insert into mods (rang, m) values
   (1, 'wheel'), (2, 'hunts'), (3, 'calendar'), (4, 'loyalty'), (5, 'quiz'),
-  (6, 'jackpot'), (7, 'events'), (8, 'referral'), (9, 'pronostics');
+  (6, 'jackpot'), (7, 'events'), (8, 'referral'), (9, 'pronostics'),
+  (10, 'vitrine');
 
 create temporary table modorgs (m text primary key, id uuid not null);
 insert into modorgs (m, id)
@@ -80,7 +87,7 @@ select is(
   'SD-4 [' || o.m || '] le pass ouvre SON module, sans aucun abonnement'
 ) from modorgs o order by o.m;
 
--- LE CŒUR DU DÉFAUT. Avant 20260925120000, ces huit assertions rendaient
+-- LE CŒUR DU DÉFAUT. Avant 20260925120000, ces neuf assertions rendaient
 -- toutes `true` : n'importe quel octroi vivant portait le socle, et la roue
 -- suivait le socle.
 select is(
@@ -100,8 +107,8 @@ select is(
 
 -- La matrice est-elle bien jouée ? Sans ceci, un bloc vidé par erreur rendrait
 -- « 0 assertion, 0 rouge », qui se lit exactement comme un succès.
-select is((select pg_catalog.count(*)::int from modorgs), 9,
-  'SD-4 les NEUF modules sont joués — un bloc vide se lirait comme un succes');
+select is((select pg_catalog.count(*)::int from modorgs), 10,
+  'SD-4 les DIX modules sont joués — un bloc vide se lirait comme un succes');
 
 -- ── CE QUE LE RESSERREMENT NE DOIT PAS CASSER ───────────────
 -- Le socle reste vrai pour un porteur de pass : c'est ce que lisent les
