@@ -33,6 +33,14 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
     // se coupait lui-même l'herbe sous le pied — une fois revenu sur l'écran
     // joueur pour vérifier l'appel, il ne pouvait plus jamais recliquer
     // « Appeler le suivant », resté sur une autre page.
+    // LA BOUCLE D'APPEL A BESOIN DE PLUS QUE LE DÉLAI ORDINAIRE. Son
+    // `expect.poll` est borné à 90 s — exactement le délai global d'un test :
+    // il ne pouvait donc JAMAIS épuiser son propre budget, le test mourait
+    // d'abord. Et la file est partagée avec l'autre projet Playwright, qui
+    // consomme des tours d'appel en parallèle. `test.slow()` triple le délai ;
+    // le budget du scrutin reste, lui, la vraie borne.
+    test.slow();
+
     const playerContext = await browser.newContext();
     const playerPage = await playerContext.newPage();
     try {
@@ -105,7 +113,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
             return estJoueurAppele(playerPage);
           },
           {
-            timeout: 90_000,
+            timeout: 120_000,
             message: "notre entrée doit finir par être appelée",
           },
         )
@@ -121,7 +129,12 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // navigue déjà se fait avorter (« interrupted by another navigation »).
       // On laisse le réseau se stabiliser avant de renaviguer nous-mêmes.
       await page.waitForLoadState("networkidle").catch(() => {});
-      await page.goto("/dashboard/reservations");
+      // `networkidle` ne suffit pas toujours : WebKit peut replanifier le
+      // rafraîchissement du dernier « Appeler le suivant » APRÈS que le réseau
+      // se soit calmé, et le `goto` se fait alors avorter (« interrupted by
+      // another navigation to …/dashboard/reservations » — vers la MÊME URL).
+      // On le rejoue une fois plutôt que d'espérer.
+      await gotoApresNavigation(page, "/dashboard/reservations");
       await page.getByRole("button", { name: /Comptoir E2E/ }).click();
       await expect(
         page.getByText("Au comptoir", { exact: true }),
@@ -129,14 +142,24 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
 
       const compteurServisAvant = await lireCompteur(page, "Servis");
 
-      await page.getByRole("button", { name: /^Servi — / }).click();
+      // LA PERSONNE AU COMPTOIR, quelle qu'elle soit — la console n'en montre
+      // qu'UNE à la fois (la première appelée non résolue), et ce n'est pas
+      // forcément notre joueur : la file est PARTAGÉE et porte deux entrées
+      // pré-semées. Ce que ce test prouve, c'est que le geste « Servi »
+      // incrémente le compteur du jour, pas qui il sert.
+      await page.getByRole("button", { name: /^Servi — / }).first().click();
 
+      // STRICTEMENT SUPÉRIEUR, et non « +1 exactement » : l'autre projet
+      // Playwright sert sur la MÊME file au même moment, et le compteur peut
+      // donc avancer de deux entre la lecture et le tic suivant. Même règle
+      // que pour les rangs (en-tête de fichier) — on prouve le sens, pas la
+      // valeur.
       await expect
         .poll(async () => lireCompteur(page, "Servis"), {
           timeout: 30_000,
           message: "le compteur « Servis » du jour doit s'incrémenter",
         })
-        .toBe(compteurServisAvant + 1);
+        .toBeGreaterThan(compteurServisAvant);
     } finally {
       await playerContext.close();
     }
@@ -207,8 +230,19 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       page.getByRole("heading", { name: "Réservations" }),
     ).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: /Comptoir E2E/ }).click();
+    // LE GESTE PRINCIPAL DE LA CONSOLE, sous ses TROIS libellés — c'est le même
+    // bouton, et son nom accessible dépend de l'état de la file : « Appeler le
+    // suivant », « Appeler le suivant aussi » quand quelqu'un est déjà au
+    // comptoir, « Personne n'attend » quand la file est vide (il est alors
+    // désactivé). N'attendre que le premier rendait ce test tributaire de
+    // l'autre projet Playwright, qui joue le même fichier sur la MÊME file et
+    // peut l'avoir vidée : le bouton existait toujours, sous un autre nom.
+    // Ce test ne parle pas de l'état de la file — il vérifie qu'AUCUN délai
+    // n'est annoncé nulle part — donc il attend le panneau, pas un état.
     await expect(
-      page.getByRole("button", { name: /Appeler le suivant/ }),
+      page.getByRole("button", {
+        name: /Appeler le suivant|Personne n'attend/,
+      }),
     ).toBeVisible({ timeout: 30_000 });
     expect(await page.locator("body").innerText()).not.toMatch(
       motifEstimation,
@@ -232,16 +266,51 @@ async function lireRang(page: import("@playwright/test").Page) {
 
 /**
  * L'écran « C'est à vous » (appel plein écran) est-il affiché, côté joueur ?
- * Revient sur l'URL de la file (le scrutin ne tourne que sur une page
- * montée) et lit l'état — jamais une pause fixe : le premier `expect`
- * appelant attend déjà l'actionabilité de la page.
+ * Revient sur l'URL de la file (le scrutin ne tourne que sur une page montée)
+ * et lit l'état.
+ *
+ * ── `waitFor` BORNÉ, ET NON `isVisible` ──
+ *
+ * `isVisible()` ne réessaie PAS : il photographie le DOM à l'instant même. Or
+ * `page.goto` rend la main sur l'événement `load`, et cette page est rendue par
+ * le serveur PUIS hydratée — l'overlay peut n'être peint qu'après. Le test
+ * lisait donc systématiquement « pas encore appelé », y compris quand la base
+ * disait `called` depuis plusieurs minutes : la boucle rappelait indéfiniment
+ * une file déjà vide et mourait au délai. Constaté en local, reproductible, sur
+ * les deux projets — l'entrée était bien `called` dix secondes après la jointe.
+ *
+ * Le délai est COURT et volontairement : ce n'est pas une assertion, c'est le
+ * prédicat d'un scrutin. Trop long, chaque tour négatif coûterait cher et la
+ * boucle appellerait trop peu ; trop court, on retombe dans le faux négatif.
  */
 async function estJoueurAppele(page: import("@playwright/test").Page) {
   await page.goto(`/reserver/file/${QUEUE_ID}`);
   return page
     .getByText("Présentez-vous au comptoir.", { exact: true })
-    .isVisible()
+    .waitFor({ state: "visible", timeout: 4_000 })
+    .then(() => true)
     .catch(() => false);
+}
+
+/**
+ * `page.goto` qui survit à une navigation client encore en vol.
+ *
+ * WebKit rejette un `goto` qu'une AUTRE navigation interrompt — c'est ce que
+ * fait le rafraîchissement client d'un geste de comptoir quand il est
+ * replanifié après que le réseau se soit calmé. L'échec est bénin (la seconde
+ * navigation aboutit, c'est la première qui rend une erreur), et le rejouer
+ * une fois suffit. Toute autre erreur remonte telle quelle.
+ */
+async function gotoApresNavigation(
+  page: import("@playwright/test").Page,
+  url: string,
+) {
+  try {
+    await page.goto(url);
+  } catch (erreur) {
+    if (!/interrupted by another navigation/.test(String(erreur))) throw erreur;
+    await page.goto(url);
+  }
 }
 
 /** Le compteur du jour (Servis / Absents / Partis) affiché côté console. */
