@@ -20,6 +20,7 @@ import * as prizes from "./prizes";
 import * as pronostics from "./pronostics";
 import * as quiz from "./quiz";
 import * as referral from "./referral";
+import * as reserver from "./reserver";
 import * as rewardExpiry from "./reward-expiry";
 import * as skill from "./skill";
 import * as sms from "./sms";
@@ -178,6 +179,21 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "Participation publique : le code absent est le signal « mode caisse », que la RPC tranche seule (pas d'oracle).",
   },
   {
+    chemin: "reserver:reserveSlotSchema",
+    raison:
+      "Parcours public joueur : corps d'action typé — le consentement transactionnel ne doit JAMAIS se déduire d'un champ absent, la base portant une ÉQUIVALENCE email ⇔ consentement.",
+  },
+  {
+    chemin: "reserver:cancelReservationSchema",
+    raison:
+      "Annulation par le joueur : corps d'action typé, jamais un FormData de dashboard.",
+  },
+  {
+    chemin: "reserver:loadMyReservationsSchema",
+    raison:
+      "Relecture de ses réservations : corps d'action typé, l'organisation vient du contexte de la page publique.",
+  },
+  {
     chemin: "pronostics:registerPlayerSchema",
     raison: "Inscription d'un joueur au championnat : corps d'action typé, jamais un FormData.",
   },
@@ -297,6 +313,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   pronostics,
   quiz,
   referral,
+  reserver,
   "reward-expiry": rewardExpiry,
   skill,
   sms,

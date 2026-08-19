@@ -991,3 +991,17 @@ values (
   now() + interval '2 days', now() + interval '2 days 20 minutes', 4, 'open'
 )
 on conflict (id) do nothing;
+
+-- Un second créneau, PROCHE (dans 30 minutes) : sa fenêtre de check-in
+-- (`starts_at - 1h`) est déjà ouverte au moment du seed, contrairement au
+-- créneau ci-dessus qui reste à 2 jours. Le parcours E2E d'arrivée en caisse
+-- a besoin d'une réservation IMMÉDIATEMENT enregistrable — sans lui, prouver
+-- le check-in demanderait de recalculer l'horloge de la base à l'exécution.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000022',
+  'e2ea0000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '30 minutes', now() + interval '50 minutes', 4, 'open'
+)
+on conflict (id) do nothing;

@@ -41,6 +41,11 @@
 --   9. UNE SEULE SIGNATURE PAR RPC dans le catalogue. Ce fichier de migration a
 --      été réécrit en place ; une base l'ayant vu en version antérieure doit
 --      avoir perdu l'ancienne `reserve_slot`, celle SANS borne de locataire.
+--  10. LE COMMERÇANT LIBÈRE UNE PLACE (bloc 12, migration 20261003120000).
+--      `cancel_reservation_staff` rend la place à un AUTRE joueur, refuse
+--      l'arrivée déjà enregistrée et le créneau commencé, exclut le caissier,
+--      reste muette sur la réservation d'une organisation voisine, s'audite une
+--      fois par geste réel, et prend LE MÊME verrou d'avis que `reserve_slot`.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -201,7 +206,25 @@ values
    '4e5e0000-0000-4000-8000-00000000000a',
    (date_trunc('day', now() at time zone 'Europe/Paris')
      at time zone 'Europe/Paris') - interval '1 hour',
-   now() - interval '30 minutes', 3, 'open');
+   now() - interval '30 minutes', 3, 'open'),
+  -- S12 : UNE place, à venir. Le créneau de l'ANNULATION STAFF (bloc 12) : on
+  -- le remplit, le commerçant libère la place, et un autre joueur la prend.
+  -- SEPT jours, et non deux : `reservation_slots_activity_start_unique` porte
+  -- sur (activity_id, starts_at), et S1 occupe déjà « dans deux jours » sur
+  -- cette activité. Chaque créneau de cette activité a donc son heure à lui.
+  ('4e5e0000-0000-4000-8000-000000000312',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '7 days', now() + interval '7 days 1 hour', 1, 'open'),
+  -- S13 : deux places, à venir, et AUCUN `reserve_slot` ne le touchera — sa
+  -- seule réservation y est INSÉRÉE DIRECTEMENT. C'est ce qui rend l'assertion
+  -- de verrou du bloc 12 discriminante : sur un créneau déjà verrouillé par
+  -- `reserve_slot` dans la même transaction, le verrou serait détenu même si
+  -- `cancel_reservation_staff` n'en prenait aucun.
+  ('4e5e0000-0000-4000-8000-000000000313',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '6 days', now() + interval '6 days 1 hour', 2, 'open');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -829,7 +852,7 @@ select is(
 
 
 -- ════════════════════════════════════════════════════════════
--- 8. ACL — les quatre RPC sont service_role, et elles seules
+-- 8. ACL — les cinq RPC sont service_role, et elles seules
 -- ════════════════════════════════════════════════════════════
 
 select ok(has_function_privilege('service_role',
@@ -859,6 +882,18 @@ select ok(not has_function_privilege('authenticated',
 select ok(not has_function_privilege('anon',
   'public.reservation_public_state(uuid,text)', 'EXECUTE'),
   'ACL-9 reservation_public_state est fermée à anon');
+-- La cinquième RPC (20261003120000) : l'annulation AU NOM DU COMMERCE. Elle
+-- écrit sur des lignes qu'aucun grant ne laisse toucher — d'où le même régime
+-- que les quatre autres.
+select ok(has_function_privilege('service_role',
+  'public.cancel_reservation_staff(uuid,uuid,text)', 'EXECUTE'),
+  'ACL-9a service_role exécute cancel_reservation_staff');
+select ok(not has_function_privilege('authenticated',
+  'public.cancel_reservation_staff(uuid,uuid,text)', 'EXECUTE'),
+  'ACL-9b cancel_reservation_staff est fermée à authenticated');
+select ok(not has_function_privilege('anon',
+  'public.cancel_reservation_staff(uuid,uuid,text)', 'EXECUTE'),
+  'ACL-9c cancel_reservation_staff est fermée à anon');
 
 -- Le catalogue ne prouve pas l'exécution : la garde `auth.role()` doit mordre
 -- aussi. On la joue en se faisant passer pour une session marchande.
@@ -874,6 +909,16 @@ select throws_ok(
       '4e5e0000-0000-4000-8000-00000000000a', repeat('d', 64))$$,
   '42501', 'not authorized',
   'ACL-11 idem pour l''état public');
+-- Et pour l'annulation staff — la garde de rôle est tranchée AVANT la
+-- vérification d'appartenance, donc une session marchande n'atteint même pas
+-- `organization_members`.
+select throws_ok(
+  $$select public.cancel_reservation_staff(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000999',
+      '4e5e0000-0000-4000-8000-000000000101')$$,
+  '42501', 'not authorized',
+  'ACL-11a et pour l''annulation staff, avant toute lecture');
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- Les trois tables ferment `anon` au niveau TABLE, pas seulement par RLS.
@@ -1240,6 +1285,248 @@ select is(
   (select consent_transactional_at from public.reservations
     where player_key_hash = repeat('c9', 32)),
   null, 'CONS-3 ni le moindre consentement');
+
+-- ════════════════════════════════════════════════════════════
+-- 12. ANNULATION STAFF — le commerçant libère enfin une place
+--
+-- CE QUE CE BLOC FERME (revue de sécurité L4, M-4a) : le socle n'ouvrait
+-- AUCUN chemin d'annulation au commerce. `cancel_reservation` exige l'empreinte
+-- du cookie du joueur, et `reservations` n'a aucun grant `update`. Un client qui
+-- annulait par téléphone laissait donc sa place gelée jusqu'à l'heure du
+-- créneau — sur un module dont le seul objet est de distribuer ces places.
+--
+-- La preuve centrale n'est pas « l'appel rend `cancelled` » : c'est que LA
+-- PLACE EST RÉELLEMENT REPRISE ensuite par un autre joueur, sur un créneau qui
+-- refusait tout le monde une assertion plus tôt.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv_s12 as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000312', repeat('f0', 32)) as j;
+select is((select j->>'state' from rv_s12), 'reserved',
+  'STAFF-1 la place unique de S12 est prise');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000312', repeat('f1', 32)))->>'state',
+  'full', 'STAFF-2 le créneau est plein : le second joueur est refusé');
+
+create temporary table rv_s12id as
+select r.id as id from public.reservations r
+ where r.slot_id = '4e5e0000-0000-4000-8000-000000000312';
+
+-- ── L'ACTEUR EST VÉRIFIÉ EN SQL, comme au check-in ───────────
+select throws_ok(
+  format(
+    $$select public.cancel_reservation_staff(
+        '4e5e0000-0000-4000-8000-00000000000a', %L,
+        '4e5e0000-0000-4000-8000-000000000104')$$,
+    (select id from rv_s12id)),
+  '42501', 'not authorized',
+  'STAFF-3 un compte membre de rien ne libère aucune place');
+select throws_ok(
+  format(
+    $$select public.cancel_reservation_staff(
+        '4e5e0000-0000-4000-8000-00000000000a', %L,
+        '4e5e0000-0000-4000-8000-000000000103')$$,
+    (select id from rv_s12id)),
+  '42501', 'not authorized',
+  'STAFF-4 le propriétaire de la VOISINE non plus, même en visant la bonne '
+  'organisation');
+-- LE CAISSIER EST EXCLU, et c'est la seule différence de rôle avec le check-in :
+-- enregistrer une arrivée CONSTATE ce qui vient de se produire ; annuler RETIRE
+-- une place à quelqu'un qui n'est pas là pour le voir.
+select throws_ok(
+  format(
+    $$select public.cancel_reservation_staff(
+        '4e5e0000-0000-4000-8000-00000000000a', %L,
+        '4e5e0000-0000-4000-8000-000000000102')$$,
+    (select id from rv_s12id)),
+  '42501', 'not authorized',
+  'STAFF-5 le CAISSIER est refusé : annuler est un geste de gestion, pas de '
+  'comptoir');
+select throws_ok(
+  format(
+    $$select public.cancel_reservation_staff(
+        null, %L, '4e5e0000-0000-4000-8000-000000000101')$$,
+    (select id from rv_s12id)),
+  '22023', 'organization required',
+  'STAFF-6 l''organisation n''est pas facultative');
+
+-- ── INDISTINGUABILITÉ : inconnu et voisin rendent LE MÊME `unknown` ──
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-0000000009f9',
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'unknown', 'STAFF-7 un identifiant inconnu rend `unknown`');
+
+create temporary table rv_sb as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000b',
+  '4e5e0000-0000-4000-8000-000000000306', repeat('f2', 32)) as j;
+create temporary table rv_sbid as
+select r.id as id from public.reservations r
+ where r.slot_id = '4e5e0000-0000-4000-8000-000000000306'
+   and r.player_key_hash = repeat('f2', 32);
+
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select id from rv_sbid),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'unknown',
+  'STAFF-8 la réservation de la VOISINE rend EXACTEMENT la même chose : le '
+  'bouton n''est pas un oracle d''existence');
+select is(
+  (select r.status from public.reservations r
+    where r.id = (select id from rv_sbid)),
+  'confirmed', 'STAFF-9 et elle est intacte chez la voisine');
+
+-- ── UNE ARRIVÉE RESTE UNE ARRIVÉE ────────────────────────────
+-- Le bloc 11 a laissé quatre arrivées sur S10 ; le commerçant ne peut en
+-- effacer aucune. Son créneau est pourtant encore à venir : c'est bien le
+-- statut qui refuse, pas la borne de temps.
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select r.id from public.reservations r
+      where r.slot_id = '4e5e0000-0000-4000-8000-000000000310'
+        and r.player_key_hash = repeat('a1', 32)),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'already_checked_in',
+  'STAFF-10 une arrivée enregistrée ne s''annule pas, même par le propriétaire');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000310'
+       and status = 'checked_in'$$,
+  array[4::bigint],
+  'STAFF-11 et les quatre arrivées de S10 sont toujours là');
+
+-- ── LE CRÉNEAU COMMENCÉ NE SE DÉSISTE PLUS ───────────────────
+-- Insertion DIRECTE : `reserve_slot` refuserait un créneau passé, et c'est
+-- justement une réservation passée qu'il faut ici. Ce que la borne protège :
+-- un no-show effacé du taux de présence par le commerçant lui-même.
+insert into public.reservations (slot_id, organization_id, player_key_hash)
+values ('4e5e0000-0000-4000-8000-000000000303',
+        '4e5e0000-0000-4000-8000-00000000000a', repeat('f4', 32));
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select r.id from public.reservations r
+      where r.player_key_hash = repeat('f4', 32)),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'too_late', 'STAFF-12 un créneau déjà commencé ne se libère plus');
+select is(
+  (select r.status from public.reservations r
+    where r.player_key_hash = repeat('f4', 32)),
+  'confirmed', 'STAFF-13 le no-show reste un no-show, il ne devient pas annulé');
+
+-- ── LA LIBÉRATION, ET SA PREUVE ──────────────────────────────
+create temporary table rv_s12c as
+select public.cancel_reservation_staff(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select id from rv_s12id),
+  '4e5e0000-0000-4000-8000-000000000101') as j;
+select is((select j->>'state' from rv_s12c), 'cancelled',
+  'STAFF-14 le propriétaire annule la réservation de son client');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000312', repeat('f1', 32)))->>'state',
+  'reserved',
+  'STAFF-15 LA PLACE EST RÉELLEMENT REVENUE : le joueur refusé en STAFF-2 '
+  'passe, sans qu''aucun compteur n''ait été décrémenté');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000312'
+       and status = 'confirmed'$$,
+  array[1::bigint],
+  'STAFF-16 le créneau d''une place en compte toujours exactement une');
+
+-- ── IDEMPOTENCE ──────────────────────────────────────────────
+create temporary table rv_s12c2 as
+select public.cancel_reservation_staff(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select id from rv_s12id),
+  '4e5e0000-0000-4000-8000-000000000101') as j;
+select is((select j->>'state' from rv_s12c2), 'cancelled',
+  'STAFF-17 annuler deux fois rend le même état');
+select is(
+  (select (j->>'cancelled_at')::timestamptz from rv_s12c2),
+  (select r.cancelled_at from public.reservations r
+    where r.id = (select id from rv_s12id)),
+  'STAFF-18 et le second appel ne repousse pas l''horodatage');
+
+-- ── L'AUDIT — QUI a retiré sa place à un client ───────────────
+-- `reservations` ne porte pas de colonne `cancelled_by` : cette ligne EST la
+-- seule trace. Elle n'est écrite que sur le geste RÉEL — ni les refus
+-- ci-dessus, ni la répétition, n'en produisent une seconde.
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.cancel_staff'$$,
+  array[1::bigint],
+  'STAFF-19 exactement UNE ligne d''audit : refus et répétition n''en écrivent '
+  'aucune');
+select is(
+  (select a.actor from public.audit_logs a
+    where a.organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+      and a.action = 'reservation.cancel_staff'),
+  '4e5e0000-0000-4000-8000-000000000101',
+  'STAFF-20 elle nomme l''acteur, et c''est celui que la RPC a vérifié membre');
+select is(
+  (select a.metadata->>'reservation_id' from public.audit_logs a
+    where a.organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+      and a.action = 'reservation.cancel_staff'),
+  (select id::text from rv_s12id),
+  'STAFF-21 et la réservation concernée');
+select is(
+  (select a.metadata->>'slot_id' from public.audit_logs a
+    where a.organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+      and a.action = 'reservation.cancel_staff'),
+  '4e5e0000-0000-4000-8000-000000000312',
+  'STAFF-22 avec le créneau, sans quoi relire le journal demanderait une '
+  'jointure sur une ligne peut-être purgée');
+
+-- ── LE VERROU EST LE MÊME QUE CELUI DE `reserve_slot` ────────
+-- S13 n'a JAMAIS été touché par `reserve_slot` : sa réservation y est insérée
+-- directement. Si `cancel_reservation_staff` ne prenait pas le verrou — ou le
+-- prenait sur une autre clé — l'assertion ci-dessous serait fausse. Sur S12
+-- elle aurait été vraie de toute façon, `reserve_slot` l'ayant déjà verrouillé
+-- dans cette même transaction.
+insert into public.reservations (slot_id, organization_id, player_key_hash)
+values ('4e5e0000-0000-4000-8000-000000000313',
+        '4e5e0000-0000-4000-8000-00000000000a', repeat('f3', 32));
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select r.id from public.reservations r
+      where r.player_key_hash = repeat('f3', 32)),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'cancelled', 'STAFF-23 la réservation de S13 est annulée');
+with k as (
+  select pg_catalog.hashtextextended(
+    'reservation_slot:' || '4e5e0000-0000-4000-8000-00000000000a'
+      || ':' || '4e5e0000-0000-4000-8000-000000000313', 0) as v
+)
+select ok(
+  exists (
+    select 1 from pg_locks l, k
+     where l.locktype = 'advisory'
+       and l.objsubid = 1
+       and l.classid::bigint = ((k.v >> 32) & 4294967295)
+       and l.objid::bigint = (k.v & 4294967295)
+  ),
+  'STAFF-24 le verrou d''avis (organisation + créneau) est LE MÊME que celui '
+  'de reserve_slot : les trois RPC se sérialisent réellement');
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.cancel_staff'$$,
+  array[2::bigint],
+  'STAFF-25 chaque annulation réelle écrit UNE ligne d''audit, pas plus');
 
 select * from finish();
 rollback;

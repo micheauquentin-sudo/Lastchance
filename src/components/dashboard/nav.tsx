@@ -25,6 +25,7 @@ type IconKey =
   | "calendar"
   | "quiz"
   | "progression"
+  | "reservations"
   | "discover";
 
 interface DashboardLink {
@@ -65,6 +66,29 @@ const PROGRESSION_LINK: DashboardLink = {
   href: "/dashboard/progression",
   label: "Missions & coffres",
   icon: "progression",
+};
+
+/**
+ * L'AGENDA « RÉSERVER » — ajouté À LA MAIN, exactement comme la
+ * méta-progression au-dessus, et pour une raison de même nature.
+ *
+ * Son droit s'appelle `vitrine` (« Vitrine & Réserver », migration
+ * 20261001120000) et il est VOLONTAIREMENT absent d'`ExperienceKind` et
+ * d'`EXPERIENCE_CATALOG` : ce n'est pas une expérience jouable. Le faire passer
+ * par le catalogue le ferait donc purement disparaître du menu — `activeExperiences`
+ * ne peut pas contenir un `kind` qui n'existe pas.
+ *
+ * Il est en revanche GARDÉ comme les autres : `reserverActif` est calculé par le
+ * layout à partir du droit effectif du module (`droitEffectifModule("vitrine")`,
+ * miroir TypeScript d'`org_has_module_access`), au même titre
+ * qu'`activeExperienceKinds` garde les huit expériences. Le menu ne montre donc
+ * pas plus que ce que l'établissement a ouvert — et la page, elle, reste gardée
+ * par `capacitesDuModule("vitrine")`, qui décide seule.
+ */
+const RESERVATIONS_LINK: DashboardLink = {
+  href: "/dashboard/reservations",
+  label: "Réservations",
+  icon: "reservations",
 };
 
 /**
@@ -110,6 +134,9 @@ const EMOJIS: Record<IconKey, string> = {
   // 🗝️ et non 📈 : la courbe disait « statistiques » alors que la page ouvre
   // des coffres avec des clés. Le libellé et le glyphe disent la même chose.
   progression: "🗝️",
+  // 🗓️ est déjà pris par le calendrier à surprises : 🕑 dit le CRÉNEAU, qui
+  // est ce qu'un client réserve — l'activité, elle, n'a pas d'heure.
+  reservations: "🕑",
   discover: "🧭",
   qr: "📱",
   list: "📋",
@@ -187,9 +214,16 @@ function lienCourant(
 export function DashboardNav({
   role = null,
   activeExperiences = ["campaign"],
+  reserverActif = false,
 }: {
   role?: MemberRole | null;
   activeExperiences?: ExperienceKind[];
+  /**
+   * Le droit `vitrine` est-il ouvert ? Il ne peut pas voyager dans
+   * `activeExperiences` : `vitrine` n'est pas un `ExperienceKind`. Défaut
+   * `false` — un menu ne montre pas une porte qu'il n'a pas vérifiée.
+   */
+  reserverActif?: boolean;
 }) {
   const pathname = usePathname();
   const experienceLinks: DashboardLink[] = EXPERIENCE_CATALOG.flatMap((entry) => {
@@ -215,7 +249,11 @@ export function DashboardNav({
           {
             titre: "Vos animations",
             cle: "animations",
-            links: [...experienceLinks, PROGRESSION_LINK],
+            links: [
+              ...experienceLinks,
+              ...(reserverActif ? [RESERVATIONS_LINK] : []),
+              PROGRESSION_LINK,
+            ],
           },
           { titre: "Outils", cle: "outils", links: EDITOR_TOOL_LINKS },
           ...(role === "owner"

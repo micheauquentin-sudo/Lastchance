@@ -25,8 +25,8 @@ parallèle, fusions de migrations sérialisées.
 | L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | ✅ | #156 | — |
 | L1 | Benchmark Mennoo (lecture seule) → [`docs/benchmark-mennoo.md`](./benchmark-mennoo.md) | ✅ | #156 | — |
 | L2 | Droit serveur vitrine (entitlement A1) | ✅ | #157 | 20261001120000 |
-| L3 | RES-1a — schéma + RPC réservation | 🔨 en cours | #159 | 20261002120000 |
-| L4 | RES-1b — surfaces + email (A2) | ⏳ | — | — |
+| L3 | RES-1a — schéma + RPC réservation | ✅ | #159 | 20261002120000 |
+| L4 | RES-1b — surfaces + email (A2) | 🔨 QA | #160 | — |
 | L5 | RES-2 — liste prioritaire + invitations | ⏳ | — | — |
 | L6 | RES-3 — file sereine | ⏳ | — | — |
 | L7 | RES-4 — attente active | ⏳ | — | — |
@@ -49,6 +49,27 @@ Playwright rencontrée pendant le train. Elle n'appartient à aucun lot et ne
 porte aucune migration ; elle figure ici parce qu'elle occupe un numéro de PR
 de la série et qu'un trou dans la numérotation se relit, six mois plus tard,
 comme une PR perdue.
+
+Note L4 : `PageOpenBeacon` non posé sur `/reserver` (`ModulePageOpenKey` à
+étendre — analytics VIT-4).
+
+Note L4 (revue de sécurité, correctifs appliqués) :
+
+- **Turnstile — clés de production à poser AVANT l'ouverture commerçant.**
+  C'est une **condition de la revue**, pas une amélioration : le challenge
+  anti-Sybil n'est opposé que si `TURNSTILE_SECRET_KEY` **et**
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` sont configurées (motif `finishQuiz` — sans
+  clé publique, l'écran n'aurait aucun widget et le refus serait sans issue pour
+  le joueur). Sans elles, `reserveSlot` — le seul appel émetteur du parcours —
+  n'oppose **aucune** friction : un bot muni de cookies jetables peut vider un
+  créneau sans jamais venir, et le commerçant prépare pour vingt personnes qui
+  n'existent pas. Les invariants SQL bornent le **nombre** de places, pas la
+  **diversité** des mains qui les prennent.
+- **Migration `20261003120000`** — `cancel_reservation_staff` : le commerçant
+  peut enfin libérer une place (aucun geste ne le permettait, `cancel_reservation`
+  exigeant l'empreinte du cookie joueur et `reservations` n'ayant aucun grant
+  `update`). Org-scopée, acteur vérifié `owner`/`editor` en SQL, auditée sous
+  `reservation.cancel_staff`, même verrou d'avis que `reserve_slot`.
 
 ## Notes de mise à jour
 
