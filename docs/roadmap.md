@@ -1,5 +1,39 @@
 # Roadmap — Lastchance
 
+## V1.64 — Train Réserver & Vitrine — EN COURS (2026-08-19)
+
+**Objectif** : livrer LastChance Réserver (RES-1..5) et la Vitrine (VIT-1..5),
+plus les Expériences Signature, Duo Miroir et Portrait de la Bande, selon le
+plan de 19 lots validé par le propriétaire le 2026-08-19 (ordre permanent
+d'exécution autonome : push/fusion/enchaînement des lots sans intervention,
+bilan global en fin de train). Suivi détaillé, statut lot par lot et
+arbitrages : [`docs/chantier-reserver-vitrine.md`](./chantier-reserver-vitrine.md).
+Cahier produit source : [`docs/lastchance-reserver.md`](./lastchance-reserver.md).
+Arbitrages A1-A4 et décision traduction : ADR-109.
+
+**Lots** :
+- L0 cadrage docs
+- L1 benchmark Mennoo (lecture seule)
+- L2 droit serveur vitrine
+- L3 RES-1a schéma + RPC
+- L4 RES-1b surfaces + email
+- L5 RES-2 liste prioritaire + invitations
+- L6 RES-3 file sereine
+- L7 RES-4 attente active
+- L8 Expériences Signature
+- L9 RES-5 hold stock + RESA- + Drop
+- L10 VIT-1a marque + catalogue FR (sous drapeau)
+- L11 VIT-1b infra i18n + adaptateur neutre (ouverture publique Vitrine)
+- L12 VIT-2 import assisté + QR imprimables
+- L13 VIT-3 branchement
+- L14 VIT-4 social + avis + analytics + CRM léger
+- L15 VIT-5 langues+
+- L16 socle session joueur
+- L17 Duo Miroir
+- L18 Portrait de la Bande
+
+**Statut** : L0 en cours.
+
 ## V1 — MVP SaaS (✅ livrée)
 **Objectif** : MVP robuste testable chez un premier commerce réel.
 
@@ -661,10 +695,9 @@ progression, sinon il ne fait que consommer des tentatives sans avancer
 Preuve : `verif-complete.sh` 0 échec (11 min), E2E complet vert (2 flakes
 de charge WebKit tranchés par rejeu isolé vert), typecheck/lint/casts 0.
 
-**Statut** : code complet et QA verte sur la branche `chantier/audit-p2-fond`
-(tête `3f53691`, 26 commits depuis `main`), PR en ouverture — dernier wagon
-du train, voir `docs/chantier-audit-2026-08-16.md` pour le suivi des
-fusions.
+**Statut** : ✅ fusionné — PR #154 fusionnée (`d170a65`), CI main verte sur
+`ac26bed` après rerun (2026-08-18). Dernier wagon du train, voir
+`docs/chantier-audit-2026-08-16.md` pour l'historique des fusions.
 
 ## V1.57 — Sorties de données : wagon 1 de l'audit transverse (✅ 2026-08-16, branche `chantier/audit-p0-sorties`, PR #146, migration `20260924120000`)
 

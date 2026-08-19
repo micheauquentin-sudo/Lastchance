@@ -57,6 +57,53 @@
 > les précédentes. Ce journal décrit l'exécution ; les décisions et priorités
 > Codex restent dans les sections qui suivent.
 
+### 2026-08-19 — Train « Réserver & Vitrine » : lot L0 cadrage documentaire — **en cours**
+
+- **Lot et objectif** : L0 du train de 19 lots (L0→L18) implémentant
+  `docs/lastchance-reserver.md` (LastChance Réserver RES-1..5, Vitrine
+  VIT-1..5, Expériences Signature, Duo Miroir, Portrait de la Bande).
+  Validation propriétaire du plan complet le 2026-08-19, avec **ordre
+  permanent d'exécution autonome** : push/fusion/enchaînement des 19 lots
+  sans intervention de sa part, bilan global attendu en fin de train.
+- **Arbitrages tranchés par le propriétaire avant le lancement** (détaillés
+  en ADR-109) :
+  - A1 : un seul entitlement « vitrine » vérifié côté serveur sur 3 surfaces
+    (publier la Vitrine, CRM léger, agenda Réserver) — octroi bêta ouvre les
+    3 capacités ensemble.
+  - A2 : canal nominatif par email (Resend), consentement transactionnel
+    capturé à la réservation et à l'inscription liste prioritaire, check-in
+    par code court (pas de QR en email, le rendu QR est 100 % client).
+  - A3 : pas de scission du consentement SMS au MVP (`sms_consents`
+    inchangé), interdiction d'envoyer du transactionnel sur le consentement
+    marketing actuel, lot conditionnel hors chemin critique si besoin futur.
+  - A4 : lobbies joueurs (Duo Miroir, Portrait de la Bande) gratuits, hors
+    paliers événement facturés ; gardes = seau IP-seule + quota organisation
+    + TTL d'expiration, plafond cookie reconnu décoratif.
+  - Traduction : zéro IA payante, zéro clé Anthropic, DeepL écarté pour
+    l'instant (compte à créer par le propriétaire) ; L11 livre une infra
+    i18n avec adaptateur neutre pluggable + repli français automatique,
+    aucun fournisseur branché ; écart assumé si aucune traduction gratuite
+    viable — la Vitrine ouvre en français seul.
+  - Packs de questions Portrait de la Bande : rédigés par Claude au lot L18
+    (pack par défaut positif, pack « taquin » assumé, exclusions strictes),
+    relecture propriétaire au bilan.
+- **Branche/commits** : `chantier/rv-l0-cadrage`, depuis `main` à jour
+  (`ac26bed`). PR en préparation.
+- **État** : **en cours** — lot L0 (cadrage documentaire uniquement, aucun
+  code).
+- **Faits/fichiers touchés** : `docs/decisions.md` (ADR-109), `docs/roadmap.md`
+  (entrée V1.64 + correction du statut fusionné du wagon 7), commit de
+  `docs/lastchance-reserver.md` (cahier produit, non suivi jusqu'ici),
+  création de `docs/chantier-reserver-vitrine.md` (tracker des 19 lots),
+  cette entrée.
+- **Validations** : aucune requise pour un lot documentaire pur ; non
+  exécutées (typecheck/tests non applicables — aucun code touché).
+- **Risque/blocage** : aucun.
+- **Prochaine action** : lot L1, benchmark Mennoo (lecture seule), puis
+  enchaînement des lots suivants selon l'ordre validé, sans nouvelle
+  validation du propriétaire entre chaque lot (ordre permanent).
+- **Suivi détaillé** : [`docs/chantier-reserver-vitrine.md`](./chantier-reserver-vitrine.md).
+
 ### 2026-08-18 — Train de correction de l'audit transverse : wagon 6 « Léger, accessible, des états partout » — **fusionné, déployé, santé verte**
 
 - **Lot et objectif** : sixième wagon du train — alléger le poids client,
@@ -1357,6 +1404,8 @@ pas des lots autorises.
 
 | Date | Type | Décision / proposition | État |
 | --- | --- | --- | --- |
+| 2026-08-19 | Estimation Codex, lecture seule — coût traduction Vitrine | **Hypothèse volontairement haute :** 50 commerces × 50 000 mots × ~6 caractères source/mot = ~15 M caractères, pour une seule langue cible. Avec Google Cloud Translation NMT (500 000 caractères gratuits/mois, puis 20 USD/M), le premier chargement coûterait environ **290 USD** s'il est fait sur un seul mois ; chaque consultation ultérieure vaut **0** grâce au cache. Avec 5 % de textes modifiés/mois, ~750 000 caractères sont retraduits, soit ~5 USD/mois après quota. Deux langues cibles doublent le volume. **À mesurer avant choix :** un vrai menu est souvent bien inférieur à 50 000 mots ; à 5 000 mots par commerce, le même calcul initial tombe vers 20 USD. **Réemploi sûr :** une mémoire globale peut réutiliser exactement un terme générique approuvé (`veau` → `veal`) sans appel ni attribution ; descriptions, noms de plats composés, textes de marque et toute donnée non générique restent en cache strictement par organisation, afin de ne créer aucune fuite ou copie inter-commerces. | Hypothèse de coût, pas un engagement tarifaire ni une configuration Google. Le cache par champ/version et la limite de dépense sont requis avant toute activation. |
+| 2026-08-19 | Recherche Codex ciblée, lecture seule — traduction Vitrine | **Constat vérifié :** Weglot est le chemin le plus court pour traduire un site existant et afficher un sélecteur de langue ; son offre gratuite est limitée à 2 000 mots uniques au total et une seule langue, donc utile uniquement pour une maquette/petit pilote. **Recommandation pour VIT-5 :** serveur Next.js + DeepL API Free, traduction à la demande et cache par version de contenu ; le plan Free annonce 500 000 caractères/mois. Le sélecteur (FR/EN avec libellé, drapeau secondaire) reste notre composant accessible : ne jamais exposer la clé DeepL au navigateur ni traduire automatiquement tout le DOM. **Alternative sans facture de fournisseur :** LibreTranslate auto-hébergé, mais son exploitation et sa qualité restent à assumer. **Benchmark public Mennoo :** son site vitrine charge le plugin WordPress Autoglot (`autoglot.js` 2.11.2), dont le modèle est traduction à la première visite puis stockage local ; aucune preuve publique ne permet d'identifier son moteur sous-jacent (DeepL, Google ou autre). **Autoglot ne s'intègre pas directement dans LastChance :** c'est un plugin WordPress, alors que LastChance est en Next.js ; créer un WordPress auxiliaire dupliquerait catalogue, droits et publication. Reprendre le modèle cache/version, pas le plugin. **Traduction initiale par Claude :** valable pour les textes fixes du dépôt, versionnés et relus avant livraison ; elle ne couvre ni les futurs menus, ni les mises à jour commerçant. Ne pas appeler les endpoints non documentés de Google Translate : l'API officielle exige une authentification et son premier quota de 500 000 caractères/mois est gratuit. | Aucun code, compte, clé API, configuration externe, commit ou déploiement effectué. Décision attendue : prototype Weglot ultra-rapide ou intégration DeepL serveur durable. |
 | 2026-08-17 | Décision produit utilisateur — nettoyage du portefeuille | **À écarter des pistes actives :** Le Geste, Le Défi Produit et Le Choix des habitués. Motif : le Quiz couvre déjà l'intention ludique de 3/4 et ces propositions ne répondent pas assez largement à l'ambition recherchée. **À conserver :** Ticket d'Or, Minute Chance, Coffre des habitués et Ticket à offrir. Nouvelle demande : ouvrir un éventail d'améliorations simples et vendables, au-delà des tickets, QR, quiz et soirées ; inclure nouvelles interactions, nouveaux jeux et services que le commerçant peut proposer avec LastChance. | Audit produit large en cours ; aucune de ces pistes écartées ne doit devenir un lot. |
 | 2026-08-17 | Audit Codex produit, lecture seule — portefeuille élargi à arbitrer | **Constat :** le produit couvre déjà roue/grattage, révélations, défis, Quiz, chasse, fidélité, jackpot, calendrier, parrainage, pronostics et live ; une variante de quiz/coffre/carte n'est donc pas un manque prouvé. **Portefeuille proposé :** (1) services métier : Boussole de choix, Rendez-vous Express, Drop anti-gaspi, Liste Prioritaire, File sereine, Invitations privées ; (2) interactions de valeur : Choix du cadeau, Thermomètre/Radar Client, Favoris du lieu, Objectif Stock ; (3) jeu réellement distinct : Défi Duo coopératif. **Axes de valeur :** vendre mieux, remplir des créneaux, écouler un stock fini, capter une demande perdue, personnaliser une offre et retenir un client. Les briques existantes (portefeuille, caisse, stock atomique, QR, créneaux, SMS/segments) doivent être réutilisées ; aucune nouvelle plateforme de jeu isolée. | **Sélection utilisateur :** Boussole de choix, Drop anti-gaspi, Rendez-vous Express, Choix du cadeau, File sereine et Invitation privée sont retenus pour cadrage, sans développement autorisé. Le prochain arbitrage porte sur un pilier unifié de réservation (créneau, attente, liste prioritaire, invitation, réservation de stock) ; Carte cadeau reste hors MVP tant que comptabilité, fraude et cadre légal ne sont pas cadrés. |
 | 2026-08-17 | Cadrage Codex produit, lecture seule — pilier « Réserver » | **Décision de cadrage :** une primitive de réservation unique, non huit calendriers. Promesse : « Prendre un créneau, rejoindre la file, récupérer une place. » **MVP :** Rendez-vous Express (activité, créneaux à capacité finie, réservation QR, annulation, check-in staff). **Déclinaisons dans le même socle :** File sereine (rang réel, pas d'ETA fictif), Liste prioritaire puis Place libérée (offre à une personne, expiration), Accès en petit comité/Invitation privée, Dernière minute, puis Réserve ton offre/Drop anti-gaspi (stock bloqué temporairement et retrait en caisse). | Aucun développement autorisé. Ordre recommandé : créneau+capacité+check-in → liste/place libérée → file → réservation de stock/dernière minute. Invariants : fuseau de l'organisation, capacité atomique, annulation idempotente, jeton limité et non transférable, isolation organisation, consentement distinct pour rappels et purge des données ; pas de sanction automatique du no-show. |
