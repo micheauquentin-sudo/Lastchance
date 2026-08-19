@@ -264,6 +264,7 @@ export async function loadReserverPublicContext(
     .maybeSingle();
   if (!activityData) return { ok: false, error: INDISPONIBLE };
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const row = activityData as unknown as ActivityRow;
   const organization = row.organizations ?? null;
   // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
@@ -302,6 +303,7 @@ export async function loadReserverPublicContext(
     .order("starts_at", { ascending: true })
     .limit(CRENEAUX_PUBLICS_MAX);
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const slotRows = (slotData ?? []) as unknown as SlotRow[];
   const slotIds = slotRows.map((slot) => slot.id);
 
@@ -338,6 +340,7 @@ export async function loadReserverPublicContext(
         .in("status", ["confirmed", "checked_in"])
         .limit(CRENEAUX_PUBLICS_MAX);
 
+      // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
       for (const brute of (miennes ?? []) as unknown as ReservationRow[]) {
         mesReservations[brute.slot_id] = {
           reservationId: brute.id,
@@ -444,6 +447,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
     .eq("organization_id", organization.id)
     .order("created_at", { ascending: false });
 
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
   const activityRows = (activityData ?? []) as unknown as ActivityRow[];
   const activityIds = activityRows.map((activity) => activity.id);
 
@@ -458,6 +462,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       .in("activity_id", activityIds)
       .order("starts_at", { ascending: true })
       .limit(CRENEAUX_DASHBOARD_MAX);
+    // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
     slotRows = (slotData ?? []) as unknown as SlotRow[];
   }
 
@@ -472,6 +477,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       )
       .order("created_at", { ascending: true })
       .limit(RESERVATIONS_DASHBOARD_MAX);
+    // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
     reservationRows = (reservationData ?? []) as unknown as ReservationRow[];
   }
 
