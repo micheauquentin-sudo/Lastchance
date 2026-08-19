@@ -45,12 +45,16 @@ import {
  * constante à une version que Postgres n'exécute plus — c'est-à-dire qu'elle
  * gardait du mort, exactement le piège « lire le catalogue vivant, pas la
  * migration d'origine » déjà payé deux fois sur ce dépôt.
+ *
+ * Déplacée une seconde fois le 2026-08-19 : `20261001120000_droit_vitrine.sql`
+ * redéfinit à son tour la fonction pour y faire entrer `vitrine`. Même geste,
+ * même motif — l'ancre suit la dernière redéfinition, jamais la première.
  */
 const MIGRATION = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20260925120000_droits_stripe.sql",
+  "20261001120000_droit_vitrine.sql",
 );
 
 /**
@@ -124,9 +128,35 @@ describe("parité MODULE_ADDON_COLUMN ↔ org_has_module_access", () => {
   );
 
   it("la roue n'est conditionnée par aucun add-on, des deux côtés", () => {
-    // Épinglé à part parce que c'est le seul `null`, donc le seul cas où une
-    // divergence se lirait comme « pas d'entrée » plutôt que comme un écart.
+    // Épinglé à part parce qu'un `null` se lirait comme « pas d'entrée »
+    // plutôt que comme un écart — une divergence y serait invisible.
     expect(TABLE_SQL.get("wheel")).toBeNull();
     expect(MODULE_ADDON_COLUMN.wheel).toBeNull();
+  });
+
+  it("vitrine n'est conditionnée par aucun add-on, des deux côtés", () => {
+    // MÊME FORME que la roue, MOTIF DIFFÉRENT, et c'est pourquoi il est écrit
+    // ici : la roue est le produit de base, Vitrine n'est simplement pas vendue
+    // comme ligne d'abonnement — aucune colonne `addon_vitrine` n'existe.
+    // ROUGE SI quelqu'un ajoutait cette colonne d'un seul côté : le droit
+    // serait alors accordé par Postgres et refusé par l'écran, ou l'inverse.
+    expect(TABLE_SQL.get("vitrine")).toBeNull();
+    expect(MODULE_ADDON_COLUMN.vitrine).toBeNull();
+  });
+
+  it("exactement deux modules sont sans add-on, des deux côtés", () => {
+    // Contrôle de CARDINALITÉ, sans lequel les deux tests ci-dessus passeraient
+    // aussi si un `then true` s'était glissé sur un module vendu — un add-on
+    // deviendrait gratuit pour tout abonné, et aucune assertion ne bougerait.
+    const sansAddonSql = [...TABLE_SQL.entries()]
+      .filter(([, colonne]) => colonne === null)
+      .map(([nom]) => nom)
+      .sort();
+    const sansAddonTs = Object.entries(MODULE_ADDON_COLUMN)
+      .filter(([, colonne]) => colonne === null)
+      .map(([nom]) => nom)
+      .sort();
+    expect(sansAddonSql).toEqual(["vitrine", "wheel"]);
+    expect(sansAddonTs).toEqual(["vitrine", "wheel"]);
   });
 });

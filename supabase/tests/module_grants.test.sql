@@ -377,14 +377,98 @@ select throws_ok(
 );
 
 -- ────────────────────────────────────────────────────────────
+-- 8 bis. LE DROIT « VITRINE » (lot L2, migration 20261001120000)
+--
+-- Un seul entitlement pour trois capacités serveur — publier la Vitrine, le
+-- CRM léger, l'agenda Réserver. Il n'a AUCUNE colonne `addon_vitrine` : le seul
+-- chemin de la bêta est l'octroi daté accordé au back-office.
+--
+-- ── CE QUE CE BLOC DOIT PROUVER, ET DANS QUEL ORDRE ──
+--
+--   1. Un octroi vivant OUVRE le module — sans abonnement, comme tout add-on
+--      acheté seul.
+--   2. Sans octroi, l'organisation SANS OFFRE est refusée. Sans cette
+--      assertion, le point 1 passerait aussi avec un droit accordé à tous — et
+--      c'est exactement le risque d'un module dont la ligne du `case` vaut
+--      `true` : c'est la branche OFFRE, en amont, qui refuse.
+--   3. L'organisation VOISINE, qui n'a rien acheté, est refusée. Le cloisonnement
+--      ne se déduit pas de 1 et 2 : ceux-ci portent sur le même locataire.
+--
+-- Les organisations réutilisées sont celles du fichier : 'seule' porte un pass
+-- « hunts » et rien d'autre (abonnement résilié, essai expiré), 'abonnee' a un
+-- abonnement actif. C'est ce qui rend chaque verdict attribuable à une cause.
+-- ────────────────────────────────────────────────────────────
+
+-- 2. AVANT L'OCTROI. L'organisation 'seule' n'a ni offre, ni octroi vitrine :
+-- posé EN PREMIER, parce qu'après l'insertion cette assertion serait
+-- ininterprétable — et un témoin joué trop tard ne prouve plus rien.
+select is(
+  public.org_has_module_access((select id from ids where nom = 'seule'), 'vitrine', (select v from t0)),
+  false,
+  'VITRINE : sans octroi ni offre, le module est refusé'
+);
+
+-- 3. LE VOISIN. 'abonnee' a un abonnement ACTIF et aucun octroi vitrine.
+-- C'est le cas qui dit ce que « colonne addon null » veut réellement dire :
+-- une offre vivante ouvre `vitrine` comme elle ouvre `wheel`. Assertion
+-- délibérément posée à `true` — elle épingle une CONSÉQUENCE ASSUMÉE de la
+-- décision produit, et la changer devra être un acte, pas une dérive.
+select is(
+  public.org_has_module_access((select id from ids where nom = 'abonnee'), 'vitrine', (select v from t0)),
+  true,
+  'VITRINE : une OFFRE vivante l''ouvre — aucun booléen addon ne la conditionne'
+);
+
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+select (select id from ids where nom = 'seule'), 'vitrine', 'pass', 'backoffice',
+       (select v from t0) - interval '1 day',
+       (select v from t0) + interval '29 days';
+
+-- 1. LE POINT CENTRAL. L'octroi seul suffit, sans abonnement.
+select is(
+  public.org_has_module_access((select id from ids where nom = 'seule'), 'vitrine', (select v from t0)),
+  true,
+  'VITRINE : un octroi daté vivant ouvre le module, sans aucun abonnement'
+);
+
+-- 3 (suite). L'ORGANISATION VOISINE NE LE GAGNE PAS. 'revoquee' n'a ni offre
+-- (abonnement résilié, essai expiré) ni octroi vitrine : l'octroi posé chez
+-- 'seule' ne doit rien lui ouvrir. C'est le cloisonnement, et il se prouve
+-- APRÈS l'insertion — avant, il n'y aurait rien à ne pas franchir.
+select is(
+  public.org_has_module_access((select id from ids where nom = 'revoquee'), 'vitrine', (select v from t0)),
+  false,
+  'VITRINE : l''octroi d''une organisation n''ouvre rien chez la voisine'
+);
+
+-- LA PAUSE À L'ÉCHÉANCE vaut pour ce module comme pour les autres : elle opère
+-- par ABSENCE, la même ligne cessant simplement d'être vivante.
+select is(
+  public.org_has_module_access(
+    (select id from ids where nom = 'seule'), 'vitrine', (select v from t0) + interval '30 days'),
+  false,
+  'VITRINE : passé ends_at, le module retombe — aucune prolongation'
+);
+
+-- ET IL N'OUVRE QUE LUI. Sans cette assertion, un droit trop généreux passerait
+-- les quatre précédentes en offrant tout le catalogue.
+select is(
+  public.org_has_module_access((select id from ids where nom = 'seule'), 'jackpot', (select v from t0)),
+  false,
+  'VITRINE : un octroi vitrine n''ouvre PAS les autres modules'
+);
+
+-- ────────────────────────────────────────────────────────────
 -- 9. LE VOCABULAIRE NE PEUT PAS DIVERGER
 --
--- La migration répète la liste des neuf modules à deux endroits : le `check`
+-- La migration répète la liste des dix modules à deux endroits : le `check`
 -- de la table et le `if not in` de `org_has_module_access`. C'est assumé — un
 -- `check` ne peut pas appeler une fonction stable — mais assumé ne veut pas
--- dire non gardé : un dixième module ajouté d'un seul côté produirait, selon
+-- dire non gardé : un onzième module ajouté d'un seul côté produirait, selon
 -- le côté, soit des lignes qu'aucune garde ne sait lire, soit une garde qui
--- lève sur un module légitime.
+-- lève sur un module légitime. C'est exactement ce que `vitrine` a demandé de
+-- faire des deux côtés à la fois (20261001120000).
 --
 -- La comparaison porte sur pg_proc et pg_constraint, c'est-à-dire sur le
 -- catalogue VIVANT — jamais sur le fichier de migration, qu'une redéfinition
@@ -428,10 +512,16 @@ select (regexp_matches(
 -- CONTRÔLE DU CONTRÔLE : deux extractions vides seraient « d'accord » et ne
 -- prouveraient rien. C'est la forme de détecteur muet que ce dépôt s'est déjà
 -- fait prendre plusieurs fois — un zéro rouge indistinguable d'un succès.
-select is((select count(*)::int from vocab_table), 9,
-  'la contrainte de table énumère bien neuf modules (sinon l''accord ci-dessous est vide)');
-select is((select count(*)::int from vocab_fonction), 9,
-  'la fonction énumère bien neuf modules');
+-- DIX depuis 20261001120000 (« vitrine »), neuf auparavant. Ce nombre est
+-- ÉCRIT et non dérivé, délibérément : c'est lui qui a attrapé le filtre par nom
+-- de contrainte qui ramenait treize valeurs, et c'est lui qui attraperait une
+-- ancienne contrainte survivant à côté de la neuve — le `drop constraint if
+-- exists` de la migration se lirait alors comme un succès, et la table
+-- porterait deux vocabulaires dont le plus étroit gagnerait.
+select is((select count(*)::int from vocab_table), 10,
+  'la contrainte de table énumère bien dix modules (sinon l''accord ci-dessous est vide)');
+select is((select count(*)::int from vocab_fonction), 10,
+  'la fonction énumère bien dix modules');
 
 select is_empty(
   $$ (select m from vocab_table except select m from vocab_fonction)
