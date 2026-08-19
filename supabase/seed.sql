@@ -955,3 +955,39 @@ values
    2, 'Quel oiseau orne l''enseigne du Comptoir E2E ?', 'text', 'timed',
    null, '["PERROQUET"]'::jsonb, 120, 1, null, null)
 on conflict (id) do nothing;
+
+-- ── Réserver — activité et créneau DÉTERMINISTES (module vitrine) ────
+-- Le droit `vitrine` est semé par OCTROI DATÉ et non par `addon_vitrine` :
+-- l'addon n'ouvre le module qu'adossé à une OFFRE d'abonnement vivante, or
+-- « E2E Café » tourne sur `comp_access`, pas sur un abonnement Stripe. L'octroi
+-- de back-office est de toute façon le SEUL chemin ouvert pendant la bêta
+-- (20261001120000), donc le seul qui vaille la peine d'être semé.
+insert into public.organization_module_grants
+  (id, organization_id, module, kind, source, starts_at, ends_at)
+values (
+  'e2ea0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'vitrine', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days'
+)
+on conflict (id) do nothing;
+
+-- Une activité ACTIVE et un créneau OUVERT dans le futur proche, à capacité
+-- petite mais PLURIELLE (4) : une place unique ferait échouer le second
+-- parcours d'une même exécution E2E sur « full » plutôt que sur ce qu'il
+-- teste, et une capacité large ne prouverait jamais que la borne existe.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values (
+  'e2ea0000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+  'Dégustation du Comptoir E2E',
+  'Trois cafés commentés, vingt minutes au comptoir.', true
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000021',
+  'e2ea0000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '2 days', now() + interval '2 days 20 minutes', 4, 'open'
+)
+on conflict (id) do nothing;
