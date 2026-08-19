@@ -1073,18 +1073,27 @@ values (
 )
 on conflict (id) do nothing;
 
--- L'INVITATION. Le jeton CLAIR est `E2E-INVIT-0001` : il vit dans ce
--- commentaire et dans la spec E2E, jamais en base. La colonne ne porte que son
--- empreinte SHA-256 hexadécimale, calculée ici comme l'application devra le
--- faire — `sha256(jeton)`, SANS sel : le jeton est tiré côté serveur avec assez
--- d'entropie pour qu'aucun dictionnaire ne le retrouve, et un sel applicatif
--- rendrait toutes les invitations illisibles le jour où il tournerait.
+-- L'INVITATION. Le jeton CLAIR est `E2E-INVIT-TOKEN-0000000000000000` : il vit
+-- dans ce commentaire et dans la spec E2E, jamais en base. La colonne ne porte
+-- que son empreinte SHA-256 hexadécimale, calculée ici comme l'application
+-- devra le faire — `sha256(jeton)`, SANS sel : le jeton est tiré côté serveur
+-- avec assez d'entropie pour qu'aucun dictionnaire ne le retrouve, et un sel
+-- applicatif rendrait toutes les invitations illisibles le jour où il
+-- tournerait.
+--
+-- EXACTEMENT 32 CARACTÈRES `[A-Za-z0-9_-]`, ET C'EST OBLIGATOIRE :
+-- `RESERVER_INVITATION_TOKEN_PATTERN` (src/lib/reserver.ts) est ce gabarit, et
+-- `hashInvitationToken` (src/lib/reserver-context.ts) rend `null` — donc un
+-- 404 générique, AVANT toute lecture de la table — sur un jeton qui ne le
+-- respecte pas. Le jeton court `E2E-INVIT-0001` (14 caractères) posé au lot
+-- L5 ne le respectait pas : aucun parcours E2E n'avait encore chargé cette
+-- page pour le révéler (QA du lot L5 / RES-2, PR #161, 2026-08-19).
 insert into public.reservation_invitations
   (id, organization_id, slot_id, label, token_hash, max_uses, created_by)
 values (
   'e2ea0000-0000-4000-8000-000000000051', 'e2e10000-0000-4000-8000-000000000001',
   'e2ea0000-0000-4000-8000-000000000024', 'Invitation E2E',
-  encode(extensions.digest('E2E-INVIT-0001', 'sha256'), 'hex'),
+  encode(extensions.digest('E2E-INVIT-TOKEN-0000000000000000', 'sha256'), 'hex'),
   5, 'e2e00000-0000-4000-8000-000000000001'
 )
 on conflict (id) do nothing;

@@ -315,7 +315,11 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
       await expect(
         pageB.getByRole("heading", { name: "Ma file d'attente" }),
       ).toBeVisible({ timeout: 30_000 });
-      await expect(pageB.getByText("Sur la liste")).toBeVisible();
+      // `exact` : la pastille dit « Sur la liste », la phrase en dessous dit
+      // « Vous êtes 1er sur la liste. » — le substring ambiguë en mode strict.
+      await expect(
+        pageB.getByText("Sur la liste", { exact: true }),
+      ).toBeVisible();
       await expect(pageB.getByText("1er")).toBeVisible();
 
       // ── 3. Navigateur A se désiste : la place revient, et RES-2 la
@@ -368,7 +372,9 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
  * Invitation privée (RES-2, lot L5) : jeton révélé une fois côté serveur,
  * jamais rendu au client.
  *
- * Seed dédiée : jeton clair `E2E-INVIT-0001` (supabase/seed.sql), empreinte
+ * Seed dédiée : jeton clair `E2E-INVIT-TOKEN-0000000000000000` (32
+ * caractères — `RESERVER_INVITATION_TOKEN_PATTERN` l'exige, voir
+ * supabase/seed.sql), empreinte
  * SHA-256 en base sur l'invitation `...051`, ouvrant le créneau FERMÉ AU
  * PUBLIC `...024` (capacité 2) de la même activité `...012`. Capacité et
  * `max_uses` (5) couvrent large : ce test consomme UNE place, une fois par
@@ -379,7 +385,7 @@ test.describe("réserver — invitation privée (RES-2)", () => {
   test("réservation via jeton, jamais rendu en clair dans la page", async ({
     page,
   }) => {
-    await page.goto("/reserver/invitation/E2E-INVIT-0001");
+    await page.goto("/reserver/invitation/E2E-INVIT-TOKEN-0000000000000000");
     await expect(
       page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -413,7 +419,7 @@ test.describe("réserver — invitation privée (RES-2)", () => {
     // révélé une fois côté serveur (au commerçant qui crée l'invitation) et
     // ne revit jamais côté client.
     const contenu = await page.content();
-    expect(contenu).not.toContain("E2E-INVIT-0001");
+    expect(contenu).not.toContain("E2E-INVIT-TOKEN-0000000000000000");
   });
 
   test("jeton inconnu : 404 générique, aucun oracle sur son existence", async ({
