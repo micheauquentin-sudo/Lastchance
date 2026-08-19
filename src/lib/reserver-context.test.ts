@@ -25,6 +25,18 @@ const { state, makeAdmin } = vi.hoisted(() => {
     slots: [] as Array<Record<string, unknown>>,
     vivantes: [] as Array<Record<string, unknown>>,
     miennes: [] as Array<Record<string, unknown>>,
+    /** Offres de liste prioritaire encore TENUES sur les créneaux affichés. */
+    tenues: [] as Array<Record<string, unknown>>,
+    /** Ce que rend `reservation_public_state` — dont la clé `waitlist`. */
+    etatPublic: {
+      state: "ok",
+      timezone: "Indian/Reunion",
+      reservations: [],
+      waitlist: [] as Array<Record<string, unknown>>,
+    } as Record<string, unknown>,
+    rpcs: [] as string[],
+    /** La ligne d'invitation résolue PAR EMPREINTE de jeton, ou `null`. */
+    invitationRow: null as Record<string, unknown> | null,
     empreinte: null as string | null,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
@@ -54,6 +66,28 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.slots = [];
       state.vivantes = [];
       state.miennes = [];
+      state.tenues = [];
+      state.etatPublic = {
+        state: "ok",
+        timezone: "Indian/Reunion",
+        reservations: [],
+        waitlist: [],
+      };
+      state.rpcs = [];
+      state.invitationRow = {
+        id: "77777777-7777-4777-8777-777777777777",
+        organization_id: "11111111-1111-4111-8111-111111111111",
+        activity_id: "33333333-3333-4333-8333-333333333333",
+        slot_id: null,
+        label: "Habitués du samedi",
+        max_uses: 5,
+        used_count: 0,
+        expires_at: null,
+        closed_at: null,
+        revoked_at: null,
+        created_by: null,
+        created_at: "2026-08-01T00:00:00Z",
+      };
       state.empreinte = null;
       state.selects = [];
       state.filtres = [];
@@ -63,6 +97,10 @@ const { state, makeAdmin } = vi.hoisted(() => {
 
   function makeAdmin() {
     return {
+      rpc(nom: string) {
+        state.rpcs.push(nom);
+        return Promise.resolve({ data: state.etatPublic, error: null });
+      },
       from(table: string) {
         const filtres: Record<string, unknown> = { table };
         let colonnes = "";
@@ -92,6 +130,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
             if (table === "reservation_slots") {
               return Promise.resolve({ data: state.slots, error: null });
             }
+            if (table === "reservation_waitlist_entries") {
+              return Promise.resolve({ data: state.tenues, error: null });
+            }
             return Promise.resolve({
               data: lectureMienne ? state.miennes : state.vivantes,
               error: null,
@@ -99,6 +140,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
           },
           maybeSingle: () => {
             state.filtres.push(filtres);
+            if (table === "reservation_invitations") {
+              return Promise.resolve({ data: state.invitationRow, error: null });
+            }
             return Promise.resolve({ data: state.activityRow, error: null });
           },
         };
@@ -148,7 +192,12 @@ vi.mock("@/lib/player-identity", () => ({
   peekPlayerDeviceTokenHash: () => Promise.resolve(state.empreinte),
 }));
 
-import { loadReserverPublicContext } from "@/lib/reserver-context";
+import {
+  generateInvitationToken,
+  hashInvitationToken,
+  loadReserverInvitationContext,
+  loadReserverPublicContext,
+} from "@/lib/reserver-context";
 
 beforeEach(() => state.reset());
 afterEach(() => vi.clearAllMocks());
@@ -338,5 +387,230 @@ describe("loadReserverPublicContext", () => {
       (f) => typeof f.player_key_hash === "string",
     );
     expect(mienne?.organization_id).toBe(ORG_ID);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Liste prioritaire dans le contexte public (RES-2, lot L5)
+// ════════════════════════════════════════════════════════════
+
+const CRENEAU_OUVERT = {
+  id: SLOT_ID,
+  organization_id: ORG_ID,
+  activity_id: ACTIVITY_ID,
+  starts_at: "2026-09-01T12:00:00Z",
+  ends_at: "2026-09-01T14:00:00Z",
+  capacity: 10,
+  status: "open",
+  waitlist_offer_minutes: null,
+};
+
+describe("loadReserverPublicContext — la jauge à DEUX termes", () => {
+  it("retranche les offres TENUES, pas seulement les réservations vivantes", async () => {
+    state.slots = [CRENEAU_OUVERT];
+    state.vivantes = [{ slot_id: SLOT_ID, status: "confirmed" }];
+    state.tenues = [
+      { slot_id: SLOT_ID, status: "offered", offer_expires_at: "2030-01-01T00:00:00Z" },
+      { slot_id: SLOT_ID, status: "offered", offer_expires_at: "2030-01-01T00:00:00Z" },
+    ];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    // 10 − 1 vivante − 2 tenues. Compter les seules vivantes afficherait 9
+    // places, dont deux sont promises : la RPC refuserait deux d'entre elles.
+    expect(contexte.slots[0].remaining).toBe(7);
+  });
+
+  it("ne compte comme tenue qu'une offre dont l'échéance est FUTURE", async () => {
+    state.slots = [CRENEAU_OUVERT];
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+
+    const lecture = state.filtres.find(
+      (f) => f.table === "reservation_waitlist_entries",
+    );
+    // Refus PARESSEUX, comme le SQL : une offre échue ne tient plus rien, même
+    // si le balayage de pg_cron n'est pas encore passé.
+    expect(lecture?.status).toBe("offered");
+    expect(typeof lecture?.["gt:offer_expires_at"]).toBe("string");
+  });
+
+  it("porte la fenêtre d'attente du créneau jusqu'à l'écran", async () => {
+    state.slots = [{ ...CRENEAU_OUVERT, waitlist_offer_minutes: 45 }];
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok && contexte.slots[0].waitlistOfferMinutes).toBe(45);
+  });
+
+  it("rend MA file par la RPC — position et `offer_live` viennent du serveur", async () => {
+    state.empreinte = "b".repeat(64);
+    state.slots = [CRENEAU_OUVERT];
+    state.etatPublic = {
+      state: "ok",
+      timezone: "Indian/Reunion",
+      reservations: [],
+      waitlist: [
+        {
+          entry_id: "e1",
+          slot_id: SLOT_ID,
+          status: "offered",
+          offer_expires_at: "2030-01-01T00:00:00Z",
+          offer_live: true,
+          position: 1,
+          activity_name: "Dégustation",
+        },
+      ],
+    };
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(state.rpcs).toContain("reservation_public_state");
+    expect(contexte.maFile[SLOT_ID]?.offerLive).toBe(true);
+    expect(contexte.maFile[SLOT_ID]?.position).toBe(1);
+  });
+
+  it("ne demande RIEN de la file à un visiteur sans identité", async () => {
+    state.slots = [CRENEAU_OUVERT];
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(state.rpcs).toHaveLength(0);
+    expect(contexte.maFile).toEqual({});
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Contexte d'une invitation privée (RES-2, lot L5)
+// ════════════════════════════════════════════════════════════
+
+describe("jeton d'invitation", () => {
+  it("tire 32 caractères base64url — 192 bits, bien au-delà des 128 exigés", () => {
+    const jeton = generateInvitationToken();
+    expect(jeton).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(jeton).not.toBe(generateInvitationToken());
+  });
+
+  it("hache en SHA-256 hexadécimal NON SALÉ — le contrat de la migration", () => {
+    const jeton = generateInvitationToken();
+    const empreinte = hashInvitationToken(jeton);
+    expect(empreinte).toMatch(/^[0-9a-f]{64}$/);
+    // NON SALÉ : deux appels rendent la même empreinte, et une rotation de
+    // secret ne rendrait aucune invitation illisible.
+    expect(hashInvitationToken(jeton)).toBe(empreinte);
+  });
+
+  it("refuse de hacher ce qui n'a pas la forme du générateur", () => {
+    expect(hashInvitationToken("")).toBeNull();
+    expect(hashInvitationToken("trop-court")).toBeNull();
+    expect(hashInvitationToken("a".repeat(33))).toBeNull();
+    expect(hashInvitationToken(`${"a".repeat(31)}+`)).toBeNull();
+  });
+});
+
+describe("loadReserverInvitationContext", () => {
+  const JETON = "Zq7xK9mB4tR2wL8vN5cP1sD3fG6hJ0yU";
+
+  beforeEach(() => {
+    state.slots = [CRENEAU_OUVERT];
+  });
+
+  it("résout l'invitation PAR EMPREINTE, jamais par le clair", async () => {
+    const contexte = await loadReserverInvitationContext(JETON);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.invitation.label).toBe("Habitués du samedi");
+    expect(contexte.invitation.creneauImpose).toBe(false);
+
+    const lecture = state.filtres.find(
+      (f) => f.table === "reservation_invitations",
+    );
+    expect(lecture?.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(state.filtres)).not.toContain(JETON);
+  });
+
+  it("MONTRE un créneau `closed` — c'est le cas d'usage même de l'invitation", async () => {
+    await loadReserverInvitationContext(JETON);
+    const lecture = state.filtres.find((f) => f.table === "reservation_slots");
+    expect(lecture?.status).toEqual(["open", "closed"]);
+  });
+
+  it("ne demande JAMAIS `token_hash` ni `email` dans ses colonnes", async () => {
+    await loadReserverInvitationContext(JETON);
+    for (const { colonnes } of state.selects) {
+      expect(colonnes).not.toContain("token_hash");
+      expect(colonnes).not.toContain("email");
+    }
+  });
+
+  it("rend la MÊME réponse pour un jeton malformé, inconnu, révoqué, clos, expiré ou épuisé", async () => {
+    const attendu = "Cette page de réservation n'est pas disponible.";
+
+    const malforme = await loadReserverInvitationContext("trop-court");
+    expect(malforme.ok === false && malforme.error).toBe(attendu);
+
+    state.invitationRow = null;
+    const inconnu = await loadReserverInvitationContext(JETON);
+    expect(inconnu.ok === false && inconnu.error).toBe(attendu);
+
+    const base = {
+      id: "77777777-7777-4777-8777-777777777777",
+      organization_id: ORG_ID,
+      activity_id: ACTIVITY_ID,
+      slot_id: null,
+      label: "Habitués",
+      max_uses: 5,
+      used_count: 0,
+      expires_at: null,
+      closed_at: null,
+      revoked_at: null,
+      created_by: null,
+      created_at: "2026-08-01T00:00:00Z",
+    };
+    for (const eteint of [
+      { revoked_at: "2026-08-01T00:00:00Z" },
+      { closed_at: "2026-08-01T00:00:00Z" },
+      { expires_at: "2026-08-01T00:00:00Z" },
+      { used_count: 5 },
+    ]) {
+      state.invitationRow = { ...base, ...eteint };
+      const refus = await loadReserverInvitationContext(JETON);
+      expect(refus.ok === false && refus.error).toBe(attendu);
+    }
+  });
+
+  it("refuse — de la même façon — une organisation sans le droit `vitrine`", async () => {
+    state.droitVitrine = false;
+    const contexte = await loadReserverInvitationContext(JETON);
+    expect(contexte.ok).toBe(false);
+  });
+
+  it("compte l'IP SEULE avant même de hacher, puis l'activité une fois résolue", async () => {
+    state.invitationRow = null;
+    await loadReserverInvitationContext("trop-court");
+    // Un balayage de jetons inventés est VU : c'est tout l'intérêt du premier
+    // compteur, et il n'aurait rien vu posé après la résolution.
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+    ]);
+
+    state.reset();
+    state.slots = [CRENEAU_OUVERT];
+    await loadReserverInvitationContext(JETON);
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+      "reserver_page_pressure",
+    ]);
+    // Par ACTIVITÉ, jamais par jeton : une clé choisie par l'appelant ouvrirait
+    // une série neuve à chaque essai.
+    expect(state.pressions[1].parts).toBe(
+      `reserver:page:activity:ip:${ACTIVITY_ID}`,
+    );
+  });
+
+  it("refuse quand la cible n'a plus aucun créneau ouvrable", async () => {
+    state.slots = [];
+    const contexte = await loadReserverInvitationContext(JETON);
+    expect(contexte.ok).toBe(false);
   });
 });

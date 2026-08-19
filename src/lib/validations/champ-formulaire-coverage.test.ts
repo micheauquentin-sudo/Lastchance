@@ -194,6 +194,16 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "Relecture de ses réservations : corps d'action typé, l'organisation vient du contexte de la page publique.",
   },
   {
+    chemin: "reserver:waitlistJoinSchema",
+    raison:
+      "Entrée en liste prioritaire : corps d'action typé — même équivalence email ⇔ consentement que la réservation, elle ne doit pas se déduire d'un champ absent.",
+  },
+  {
+    chemin: "reserver:redeemInvitationSchema",
+    raison:
+      "Rejointe par invitation privée : corps d'action typé — le créneau absent est le signal « invitation à un créneau précis », que la RPC tranche seule.",
+  },
+  {
     chemin: "pronostics:registerPlayerSchema",
     raison: "Inscription d'un joueur au championnat : corps d'action typé, jamais un FormData.",
   },

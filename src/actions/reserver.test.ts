@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ────────────────────────────────────────────────────────────
@@ -30,8 +31,44 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     reserveResponse: { state: "reserved", reservation_id: "r", code: "ABCD2345", remaining: 2 } as unknown,
     cancelResponse: { state: "cancelled" } as unknown,
     checkinResponse: [] as unknown,
-    publicStateResponse: { state: "ok", timezone: "Europe/Paris", reservations: [] } as unknown,
+    publicStateResponse: { state: "ok", timezone: "Europe/Paris", reservations: [], waitlist: [] } as unknown,
     cancelStaffResponse: { state: "cancelled" } as unknown,
+    waitlistJoinResponse: { state: "waiting", entry_id: "e1", status: "waiting", position: 2 } as unknown,
+    claimResponse: {
+      state: "claimed",
+      entry_id: "e1",
+      reservation_id: "44444444-4444-4444-8444-444444444444",
+      code: "ABCD2345",
+      status: "confirmed",
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+    } as unknown,
+    leaveResponse: { state: "left", entry_id: "e1", cancelled_at: "2026-08-20T10:00:00Z" } as unknown,
+    redeemResponse: {
+      state: "reserved",
+      reservation_id: "44444444-4444-4444-8444-444444444444",
+      code: "ABCD2345",
+      invitation_id: "i1",
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+      activity_name: "Dégustation",
+      remaining: 3,
+    } as unknown,
+    createInvitationResponse: { state: "created", invitation_id: "i1", max_uses: 5, expires_at: null } as unknown,
+    /** La ligne que la résolution par POSSESSION rapporte, ou `null`. */
+    entreeFile: {
+      id: "66666666-6666-4666-8666-666666666666",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+      email: "client@exemple.fr",
+      consent_transactional_at: "2026-08-20T09:00:00Z",
+    } as Record<string, unknown> | null,
+    /** La ligne que la résolution PAR JETON rapporte, ou `null`. */
+    invitationRow: {
+      id: "i1",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+    } as Record<string, unknown> | null,
+    selects: [] as Array<{ table: string; colonnes: string }>,
+    filtres: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rateLimitCalls: [] as Array<{ bucket: string; failClosed: boolean }>,
     rateLimitVerdict: true,
@@ -54,8 +91,42 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.reserveResponse = { state: "reserved", reservation_id: "r", code: "ABCD2345", remaining: 2 };
       state.cancelResponse = { state: "cancelled" };
       state.checkinResponse = [];
-      state.publicStateResponse = { state: "ok", timezone: "Europe/Paris", reservations: [] };
+      state.publicStateResponse = { state: "ok", timezone: "Europe/Paris", reservations: [], waitlist: [] };
       state.cancelStaffResponse = { state: "cancelled" };
+      state.waitlistJoinResponse = { state: "waiting", entry_id: "e1", status: "waiting", position: 2 };
+      state.claimResponse = {
+        state: "claimed",
+        entry_id: "e1",
+        reservation_id: "44444444-4444-4444-8444-444444444444",
+        code: "ABCD2345",
+        status: "confirmed",
+        starts_at: "2026-09-01T12:00:00Z",
+        ends_at: "2026-09-01T14:00:00Z",
+      };
+      state.leaveResponse = { state: "left", entry_id: "e1", cancelled_at: "2026-08-20T10:00:00Z" };
+      state.redeemResponse = {
+        state: "reserved",
+        reservation_id: "44444444-4444-4444-8444-444444444444",
+        code: "ABCD2345",
+        invitation_id: "i1",
+        starts_at: "2026-09-01T12:00:00Z",
+        ends_at: "2026-09-01T14:00:00Z",
+        activity_name: "Dégustation",
+        remaining: 3,
+      };
+      state.createInvitationResponse = { state: "created", invitation_id: "i1", max_uses: 5, expires_at: null };
+      state.entreeFile = {
+        id: "66666666-6666-4666-8666-666666666666",
+        organization_id: "11111111-1111-4111-8111-111111111111",
+        email: "client@exemple.fr",
+        consent_transactional_at: "2026-08-20T09:00:00Z",
+      };
+      state.invitationRow = {
+        id: "i1",
+        organization_id: "11111111-1111-4111-8111-111111111111",
+      };
+      state.selects = [];
+      state.filtres = [];
       state.rpcCalls = [];
       state.rateLimitCalls = [];
       state.rateLimitVerdict = true;
@@ -91,13 +162,60 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         if (name === "checkin_reservation") {
           return Promise.resolve({ data: state.checkinResponse, error: null });
         }
+        if (name === "waitlist_join") {
+          return Promise.resolve({ data: state.waitlistJoinResponse, error: null });
+        }
+        if (name === "claim_waitlist_offer") {
+          return Promise.resolve({ data: state.claimResponse, error: null });
+        }
+        if (name === "waitlist_leave") {
+          return Promise.resolve({ data: state.leaveResponse, error: null });
+        }
+        if (name === "redeem_invitation") {
+          return Promise.resolve({ data: state.redeemResponse, error: null });
+        }
+        if (name === "create_reservation_invitation") {
+          return Promise.resolve({ data: state.createInvitationResponse, error: null });
+        }
+        if (name === "revoke_reservation_invitation") {
+          return Promise.resolve({
+            data: { state: "revoked", invitation_id: "i1", revoked_at: "2026-08-20T10:00:00Z" },
+            error: null,
+          });
+        }
+        if (name === "close_reservation_invitation") {
+          return Promise.resolve({
+            data: { state: "closed", invitation_id: "i1", closed_at: "2026-08-20T10:00:00Z" },
+            error: null,
+          });
+        }
         return Promise.resolve({ data: state.publicStateResponse, error: null });
       },
       from(table: string) {
+        const filtres: Record<string, unknown> = {};
         const builder = {
-          select: () => builder,
-          eq: () => builder,
+          select: (colonnes: string) => {
+            state.selects.push({ table, colonnes });
+            return builder;
+          },
+          eq: (colonne: string, valeur: unknown) => {
+            filtres[colonne] = valeur;
+            return builder;
+          },
           maybeSingle: () => {
+            state.filtres.push({ table, ...filtres });
+            if (table === "reservation_waitlist_entries") {
+              return Promise.resolve({ data: state.entreeFile, error: null });
+            }
+            if (table === "reservation_invitations") {
+              return Promise.resolve({ data: state.invitationRow, error: null });
+            }
+            if (table === "reservations") {
+              return Promise.resolve({
+                data: { id: "44444444-4444-4444-8444-444444444444", slot_id: "22222222-2222-4222-8222-222222222222" },
+                error: null,
+              });
+            }
             if (table === "reservation_slots") {
               return Promise.resolve({
                 data: {
@@ -169,10 +287,23 @@ vi.mock("next/server", () => ({
   },
 }));
 
-vi.mock("@/lib/reserver-context", () => ({
-  assurerIdentiteReserver: () => Promise.resolve(state.empreinte),
-  lireIdentiteReserver: () => Promise.resolve(state.empreinte),
-}));
+// `generateInvitationToken` et `hashInvitationToken` sont RÉELS : ce sont deux
+// fonctions pures (`node:crypto`), et c'est précisément le contrat de hachage
+// qu'on veut voir tenu — un faux qui rendrait « hash » ferait passer le test
+// qui vérifie que le clair ne descend jamais.
+vi.mock("@/lib/reserver-context", async (importOriginal) => {
+  const { createHash, randomBytes } = await import("node:crypto");
+  void importOriginal;
+  return {
+    assurerIdentiteReserver: () => Promise.resolve(state.empreinte),
+    lireIdentiteReserver: () => Promise.resolve(state.empreinte),
+    generateInvitationToken: () => randomBytes(24).toString("base64url"),
+    hashInvitationToken: (jeton: string) =>
+      /^[A-Za-z0-9_-]{32}$/.test(jeton.trim())
+        ? createHash("sha256").update(jeton.trim()).digest("hex")
+        : null,
+  };
+});
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -256,11 +387,18 @@ import {
   cancelReservation,
   cancelReservationStaff,
   checkinReservation,
+  claimWaitlistOffer,
+  closeInvitation,
+  createInvitation,
   createReserverActivity,
   createReserverSlot,
   loadMyReservations,
+  redeemInvitation,
   reserveSlot,
+  revokeInvitation,
   updateReserverSlotStatus,
+  waitlistJoin,
+  waitlistLeave,
 } from "@/actions/reserver";
 
 function formData(entries: Record<string, string>): FormData {
@@ -757,5 +895,433 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     const actions = await import("@/actions/reserver");
     const noms = Object.keys(actions);
     expect(noms.some((nom) => /delete|supprim/i.test(nom))).toBe(false);
+  });
+
+  it("transmet la fenêtre d'attente à la création comme à l'édition", async () => {
+    await createReserverSlot(
+      null,
+      formData({
+        activityId: ACTIVITY_ID,
+        startsAt: "2026-09-01T14:00",
+        endsAt: "2026-09-01T16:00",
+        capacity: "12",
+        waitlistOfferMinutes: "45",
+      }),
+    );
+    expect(state.rlsWrites.at(-1)?.values.waitlist_offer_minutes).toBe(45);
+
+    // Champ laissé vide : `null`, c'est-à-dire le défaut du produit — et non 0,
+    // qui serait une fenêtre de zéro minute.
+    await createReserverSlot(
+      null,
+      formData({
+        activityId: ACTIVITY_ID,
+        startsAt: "2026-09-01T14:00",
+        endsAt: "2026-09-01T16:00",
+        capacity: "12",
+        waitlistOfferMinutes: "",
+      }),
+    );
+    expect(state.rlsWrites.at(-1)?.values.waitlist_offer_minutes).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Liste prioritaire (RES-2, lot L5)
+// ════════════════════════════════════════════════════════════
+
+describe("waitlistJoin — le même inventaire de seaux que reserveSlot", () => {
+  it("porte le failClosed sur la clé COOKIE, l'appareil AVANT l'organisation", async () => {
+    await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    const fermes = state.rateLimitCalls.filter((appel) => appel.failClosed);
+    expect(fermes).toHaveLength(2);
+    for (const appel of fermes) expect(appel.bucket).toContain(EMPREINTE);
+    expect(state.rateLimitCalls[0].bucket).toBe(`reserver:device:${EMPREINTE}`);
+    expect(state.rateLimitCalls[1].bucket).toBe(
+      `reserver:player:${ORG_ID}:${EMPREINTE}`,
+    );
+  });
+
+  it("observe l'IP SEULE avant l'IP par organisation", async () => {
+    await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+      "reserver_public_pressure",
+    ]);
+  });
+
+  it("oppose le challenge — c'est un appel ÉMETTEUR — et SEULEMENT s'il est configuré", async () => {
+    // Non configuré : aucun challenge, aucune vérification.
+    await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(state.turnstileJetons).toHaveLength(0);
+
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+    state.turnstileVerdict = false;
+    state.rpcCalls = [];
+    const refus = await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(refus.ok).toBe(false);
+    expect(refus.ok === false && refus.challengeRequired).toBe(true);
+    // Refusé AVANT la RPC : aucune inscription n'est écrite.
+    expect(state.rpcCalls.some((appel) => appel.name === "waitlist_join")).toBe(
+      false,
+    );
+  });
+
+  it("n'envoie l'adresse QUE consentie, et n'envoie AUCUN email à l'inscription", async () => {
+    await waitlistJoin({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+    const appel = state.rpcCalls.find((a) => a.name === "waitlist_join");
+    expect(appel?.args.p_email).toBe("client@exemple.fr");
+    expect(appel?.args.p_consent).toBe(true);
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+    // MVP assumé : rien n'est promis à l'inscription, donc rien n'est envoyé.
+    expect(state.emails).toHaveLength(0);
+  });
+
+  it("refuse à sec sur le seau d'APPAREIL sans jamais appeler la base", async () => {
+    state.seauxASec = ["reserver:device"];
+    const resultat = await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("claimWaitlistOffer — l'organisation se LIT, elle ne se poste pas", () => {
+  it("résout l'organisation sur l'entrée, par possession, et la passe à la RPC", async () => {
+    const resultat = await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    expect(resultat.ok).toBe(true);
+
+    const lecture = state.filtres.find(
+      (f) => f.table === "reservation_waitlist_entries",
+    );
+    // La lecture est bornée par l'EMPREINTE DU COOKIE : une entrée d'autrui ne
+    // se résout pas, et rend `unknown` sans jamais appeler la RPC.
+    expect(lecture?.player_key_hash).toBe(EMPREINTE);
+
+    const appel = state.rpcCalls.find((a) => a.name === "claim_waitlist_offer");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+  });
+
+  it("rend `unknown` — sans appeler la RPC — sur une entrée d'une autre identité", async () => {
+    state.entreeFile = null;
+    const resultat = await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    expect(resultat.ok && resultat.data.state).toBe("unknown");
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("porte le seau par ENTRÉE, jamais par organisation — elle est inconnue de l'appelant", async () => {
+    await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    expect(state.rateLimitCalls[0].bucket).toBe(`reserver:device:${EMPREINTE}`);
+    expect(state.rateLimitCalls[1].bucket).toBe(
+      `reserver:player:${RESERVATION_ID}:${EMPREINTE}`,
+    );
+    // IP SEULE, et rien par organisation : elle n'est pas connue à ce moment.
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+    ]);
+  });
+
+  it("n'oppose AUCUN challenge : la place est déjà tenue pour cette identité", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+    state.turnstileVerdict = false;
+    const resultat = await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    expect(resultat.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+  });
+
+  it("envoie la confirmation sur la conversion RÉELLE, à l'adresse de l'ENTRÉE", async () => {
+    await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(1);
+    expect(state.emails[0].to).toBe("client@exemple.fr");
+    expect(state.emails[0].code).toBe("ABCD2345");
+    const seau = state.rateLimitCalls.at(-1);
+    expect(seau?.bucket).toBe(`reserver:email:${ORG_ID}:client@exemple.fr`);
+    expect(seau?.failClosed).toBe(true);
+  });
+
+  it("N'ENVOIE RIEN sur le rejeu idempotent — la RPC ne rend alors aucune borne", async () => {
+    state.claimResponse = {
+      state: "claimed",
+      entry_id: "e1",
+      reservation_id: RESERVATION_ID,
+      code: "ABCD2345",
+      status: "confirmed",
+    };
+    await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+  });
+
+  it("N'ENVOIE RIEN quand l'entrée ne porte pas d'adresse consentie", async () => {
+    state.entreeFile = {
+      id: "66666666-6666-4666-8666-666666666666",
+      organization_id: ORG_ID,
+      email: null,
+      consent_transactional_at: null,
+    };
+    await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+  });
+
+  it("le seau d'email à sec ne défait PAS la place — il est seulement compté", async () => {
+    state.seauxASec = ["reserver:email"];
+    const resultat = await claimWaitlistOffer({ entryId: RESERVATION_ID });
+    await Promise.all(state.taches);
+    expect(resultat.ok && resultat.data.state).toBe("claimed");
+    expect(state.emails).toHaveLength(0);
+    expect(state.compteurs).toContain("reserver.email.throttled");
+  });
+});
+
+describe("waitlistLeave — rendre une place n'a aucune friction", () => {
+  it("autorise par POSSESSION et ne poste aucune organisation", async () => {
+    const resultat = await waitlistLeave({ entryId: RESERVATION_ID });
+    expect(resultat.ok).toBe(true);
+    const appel = state.rpcCalls.find((a) => a.name === "waitlist_leave");
+    expect(Object.keys(appel?.args ?? {})).toEqual([
+      "p_entry_id",
+      "p_player_key_hash",
+    ]);
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+  });
+
+  it("n'oppose AUCUN challenge et n'observe que l'IP seule", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+    state.turnstileVerdict = false;
+    const resultat = await waitlistLeave({ entryId: RESERVATION_ID });
+    expect(resultat.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+    ]);
+  });
+
+  it("sans cookie, il n'y a rien à quitter — la base n'est pas dérangée", async () => {
+    state.empreinte = null;
+    const resultat = await waitlistLeave({ entryId: RESERVATION_ID });
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Invitations privées (RES-2, lot L5)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Un jeton bien formé, et DISTINCT de l'empreinte du cookie : `"a".repeat(32)`
+ * est un sous-mot de `"a".repeat(64)`, et les assertions « le clair n'apparaît
+ * nulle part » auraient rougi sur le seau d'appareil sans qu'aucun jeton n'ait
+ * fuité.
+ */
+const JETON = "Zq7xK9mB4tR2wL8vN5cP1sD3fG6hJ0yU";
+
+describe("redeemInvitation — le clair ne quitte jamais la server action", () => {
+  it("n'envoie que l'EMPREINTE du jeton à la base, jamais le clair", async () => {
+    await redeemInvitation({ token: JETON, slotId: SLOT_ID });
+
+    const appel = state.rpcCalls.find((a) => a.name === "redeem_invitation");
+    expect(appel?.args.p_token_hash).toMatch(/^[0-9a-f]{64}$/);
+    // Le clair n'apparaît dans AUCUN argument, sous aucune clé.
+    expect(JSON.stringify(appel?.args)).not.toContain(JETON);
+    // La résolution non plus ne le recopie nulle part.
+    expect(JSON.stringify(state.filtres)).not.toContain(JETON);
+  });
+
+  it("résout l'organisation SUR LE JETON, sans jamais la recevoir du navigateur", async () => {
+    await redeemInvitation({ token: JETON, slotId: SLOT_ID });
+    const lecture = state.filtres.find(
+      (f) => f.table === "reservation_invitations",
+    );
+    expect(lecture?.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    const appel = state.rpcCalls.find((a) => a.name === "redeem_invitation");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+  });
+
+  it("rend `unavailable` — muet — sur un jeton qui ne résout rien", async () => {
+    state.invitationRow = null;
+    const resultat = await redeemInvitation({ token: JETON });
+    expect(resultat.ok && resultat.data.state).toBe("unavailable");
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("rend le MÊME message sur un jeton malformé que sur un jeton inconnu", async () => {
+    const malforme = await redeemInvitation({ token: "trop-court" });
+    state.invitationRow = null;
+    expect(malforme.ok).toBe(false);
+    expect(malforme.ok === false && malforme.error).toBe(
+      "Cette réservation n'est pas disponible.",
+    );
+  });
+
+  it("tranche le seau par APPAREIL avant tout, et l'organisation seulement APRÈS résolution", async () => {
+    await redeemInvitation({ token: JETON });
+    expect(state.rateLimitCalls[0].bucket).toBe(`reserver:device:${EMPREINTE}`);
+    expect(state.rateLimitCalls[1].bucket).toBe(
+      `reserver:player:${ORG_ID}:${EMPREINTE}`,
+    );
+    // AUCUN seau composé avec le jeton — ni en clair, ni haché : la clé serait
+    // choisie par l'appelant, donc un jeton inventé par tour ouvrirait un seau
+    // neuf à chaque coup, c'est-à-dire aucune borne.
+    const empreinteJeton = createHash("sha256").update(JETON).digest("hex");
+    for (const appel of state.rateLimitCalls) {
+      expect(appel.bucket).not.toContain(JETON);
+      expect(appel.bucket).not.toContain(empreinteJeton);
+    }
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+      "reserver_public_pressure",
+    ]);
+  });
+
+  it("oppose le challenge AVANT même de résoudre le jeton", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+    state.turnstileVerdict = false;
+    const resultat = await redeemInvitation({ token: JETON });
+    expect(resultat.ok === false && resultat.challengeRequired).toBe(true);
+    // Ni résolution, ni RPC : un balayage n'apprend rien sur l'existence.
+    expect(state.filtres).toHaveLength(0);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("envoie la confirmation consentie, et rien sans consentement", async () => {
+    await redeemInvitation({
+      token: JETON,
+      slotId: SLOT_ID,
+      email: "invite@exemple.fr",
+      consent: true,
+    });
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(1);
+    expect(state.emails[0].to).toBe("invite@exemple.fr");
+
+    state.reset();
+    await redeemInvitation({ token: JETON, slotId: SLOT_ID });
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+  });
+});
+
+describe("createInvitation — le clair, une seule fois", () => {
+  it("tire le jeton côté serveur, n'envoie que son empreinte, et rend le clair", async () => {
+    const resultat = await createInvitation(
+      null,
+      formData({ label: "Habitués", activityId: ACTIVITY_ID, maxUses: "5" }),
+    );
+    expect(resultat.ok).toBe(true);
+    if (!resultat.ok || !resultat.data) return;
+
+    // Le clair a la forme du générateur, et n'a JAMAIS été envoyé à la base.
+    expect(resultat.data.token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    const appel = state.rpcCalls.find(
+      (a) => a.name === "create_reservation_invitation",
+    );
+    expect(appel?.args.p_token_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(appel?.args)).not.toContain(resultat.data.token);
+    // L'ACTEUR VIENT DE LA SESSION.
+    expect(appel?.args.p_actor).toBe(USER_ID);
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_activity_id).toBe(ACTIVITY_ID);
+    expect(appel?.args.p_slot_id).toBeNull();
+    // Le lien complet, prêt à copier — et il porte le clair, pas l'empreinte.
+    expect(resultat.data.url).toContain(
+      `/reserver/invitation/${resultat.data.token}`,
+    );
+  });
+
+  it("tire un jeton DIFFÉRENT à chaque création", async () => {
+    const a = await createInvitation(
+      null,
+      formData({ label: "A", activityId: ACTIVITY_ID, maxUses: "1" }),
+    );
+    const b = await createInvitation(
+      null,
+      formData({ label: "B", activityId: ACTIVITY_ID, maxUses: "1" }),
+    );
+    expect(a.ok && b.ok && a.data?.token).not.toBe(b.ok ? b.data?.token : null);
+  });
+
+  it("convertit l'expiration dans le fuseau de l'organisation", async () => {
+    await createInvitation(
+      null,
+      formData({
+        label: "Habitués",
+        slotId: SLOT_ID,
+        maxUses: "1",
+        expiresAt: "2026-09-01T14:00",
+      }),
+    );
+    const appel = state.rpcCalls.find(
+      (a) => a.name === "create_reservation_invitation",
+    );
+    // 14 h civiles à Paris en septembre = 12:00 UTC.
+    expect(appel?.args.p_expires_at).toBe("2026-09-01T12:00:00.000Z");
+  });
+
+  it("traduit chaque refus de la RPC, sans jamais annoncer un lien", async () => {
+    state.createInvitationResponse = { state: "invalid_target" };
+    const resultat = await createInvitation(
+      null,
+      formData({ label: "Habitués", activityId: ACTIVITY_ID, maxUses: "5" }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(resultat.ok === false && resultat.error).toContain("une seule");
+  });
+
+  it("REFUSE un caissier, et n'appelle pas la base", async () => {
+    state.role = "cashier";
+    const resultat = await createInvitation(
+      null,
+      formData({ label: "Habitués", activityId: ACTIVITY_ID, maxUses: "5" }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("REFUSE sans le droit `vitrine`", async () => {
+    state.orgAddonVitrine = false;
+    const resultat = await createInvitation(
+      null,
+      formData({ label: "Habitués", activityId: ACTIVITY_ID, maxUses: "5" }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("revokeInvitation / closeInvitation", () => {
+  it("passent l'acteur de la SESSION et l'organisation de la session", async () => {
+    await revokeInvitation(null, formData({ id: RESERVATION_ID }));
+    const revoque = state.rpcCalls.at(-1);
+    expect(revoque?.name).toBe("revoke_reservation_invitation");
+    expect(revoque?.args.p_actor).toBe(USER_ID);
+    expect(revoque?.args.p_organization_id).toBe(ORG_ID);
+
+    await closeInvitation(null, formData({ id: RESERVATION_ID }));
+    const ferme = state.rpcCalls.at(-1);
+    expect(ferme?.name).toBe("close_reservation_invitation");
+    expect(ferme?.args.p_actor).toBe(USER_ID);
+  });
+
+  it("REFUSENT un caissier sans appeler la base", async () => {
+    state.role = "cashier";
+    expect((await revokeInvitation(null, formData({ id: RESERVATION_ID }))).ok).toBe(
+      false,
+    );
+    expect((await closeInvitation(null, formData({ id: RESERVATION_ID }))).ok).toBe(
+      false,
+    );
+    expect(state.rpcCalls).toHaveLength(0);
   });
 });

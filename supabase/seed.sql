@@ -1005,3 +1005,139 @@ values (
   now() + interval '30 minutes', now() + interval '50 minutes', 4, 'open'
 )
 on conflict (id) do nothing;
+
+-- ── Réserver RES-2 — liste prioritaire et invitation privée ──────────
+--
+-- SUR UNE SECONDE ACTIVITÉ, ET C'EST DÉLIBÉRÉ. Le parcours public rend UNE
+-- activité par page (`ReserverExperience` reçoit un seul `activityName` et une
+-- seule liste de créneaux) : poser ces fixtures sur « Dégustation du Comptoir
+-- E2E » y aurait ajouté un créneau COMPLET que `e2e/reserver.spec.ts` aurait
+-- attrapé avec son `.last()`, et le second scénario aurait échoué sur un
+-- créneau sans place au lieu de tester ce qu'il teste. Les deux jeux de
+-- fixtures ne se croisent donc jamais.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values (
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  'Atelier privé du Comptoir E2E',
+  'Six places, sur invitation ou liste prioritaire.', true
+)
+on conflict (id) do nothing;
+
+-- Un créneau à UNE place, DÉJÀ PRISE : c'est la seule situation où
+-- `waitlist_join` accepte quelqu'un — sur un créneau qui a de la place, elle
+-- renvoie `not_full` et invite à réserver normalement. Sans ce créneau, aucun
+-- parcours E2E ne pourrait atteindre la file.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000023',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '4 days', now() + interval '4 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;
+
+-- La place qui rend le créneau complet. Le code de comptoir est posé par le
+-- trigger `reservations_set_code`, jamais ici : le seed n'a pas à choisir un
+-- identifiant que la base réserve au serveur.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash)
+values (
+  'e2ea0000-0000-4000-8000-000000000031',
+  'e2ea0000-0000-4000-8000-000000000023', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e2', 32)
+)
+on conflict (id) do nothing;
+
+-- Un inscrit sur la liste, en attente. `waiting` et non `offered` : une offre
+-- semée serait déjà en train de courir vers son échéance au moment où l'E2E
+-- démarre, et le balayage pg_cron pourrait la faire expirer entre le seed et
+-- le test. Une entrée en attente, elle, est stable.
+insert into public.reservation_waitlist_entries
+  (id, slot_id, organization_id, player_key_hash)
+values (
+  'e2ea0000-0000-4000-8000-000000000041',
+  'e2ea0000-0000-4000-8000-000000000023', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e3', 32)
+)
+on conflict (id) do nothing;
+
+-- Un créneau FERMÉ au public : le cas d'usage même de l'invitation privée —
+-- le commerçant a coupé les réservations et ouvre malgré tout quelques places.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000024',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '5 days', now() + interval '5 days 30 minutes', 2, 'closed'
+)
+on conflict (id) do nothing;
+
+-- L'INVITATION. Le jeton CLAIR est `E2E-INVIT-TOKEN-0000000000000000` : il vit
+-- dans ce commentaire et dans la spec E2E, jamais en base. La colonne ne porte
+-- que son empreinte SHA-256 hexadécimale, calculée ici comme l'application
+-- devra le faire — `sha256(jeton)`, SANS sel : le jeton est tiré côté serveur
+-- avec assez d'entropie pour qu'aucun dictionnaire ne le retrouve, et un sel
+-- applicatif rendrait toutes les invitations illisibles le jour où il
+-- tournerait.
+--
+-- EXACTEMENT 32 CARACTÈRES `[A-Za-z0-9_-]`, ET C'EST OBLIGATOIRE :
+-- `RESERVER_INVITATION_TOKEN_PATTERN` (src/lib/reserver.ts) est ce gabarit, et
+-- `hashInvitationToken` (src/lib/reserver-context.ts) rend `null` — donc un
+-- 404 générique, AVANT toute lecture de la table — sur un jeton qui ne le
+-- respecte pas. Le jeton court `E2E-INVIT-0001` (14 caractères) posé au lot
+-- L5 ne le respectait pas : aucun parcours E2E n'avait encore chargé cette
+-- page pour le révéler (QA du lot L5 / RES-2, PR #161, 2026-08-19).
+insert into public.reservation_invitations
+  (id, organization_id, slot_id, label, token_hash, max_uses, created_by)
+values (
+  'e2ea0000-0000-4000-8000-000000000051', 'e2e10000-0000-4000-8000-000000000001',
+  'e2ea0000-0000-4000-8000-000000000024', 'Invitation E2E',
+  encode(extensions.digest('E2E-INVIT-TOKEN-0000000000000000', 'sha256'), 'hex'),
+  5, 'e2e00000-0000-4000-8000-000000000001'
+)
+on conflict (id) do nothing;
+
+-- Un créneau à UNE place, LIBRE — sans réservation ni entrée de file
+-- pré-semées, DÉLIBÉRÉMENT, contrairement à `...023` ci-dessus. Ce dernier
+-- porte déjà une entrée `waiting` posée avant tout navigateur E2E : un test qui
+-- y rejoindrait la file puis libérerait la place verrait l'offre partir au FIFO
+-- vers ce concurrent seedé, jamais vers le navigateur de test. Ce créneau-ci
+-- sert le scénario complet « offre → prise » : le SEUL navigateur de test y
+-- réserve la place (le remplit), un second navigateur (second cookie, même
+-- test) rejoint la file en 1ère position, le premier annule, et le second
+-- observe l'offre puis la prend.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000025',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;
+
+-- UNE SECONDE ACTIVITÉ, ET UN SECOND CRÉNEAU DÉDIÉ IDENTIQUE — pour la MÊME
+-- raison que la séparation `...011` / `...012` documentée plus haut :
+-- `mobile-chrome` et `mobile-safari` exécutent le même fichier de specs EN
+-- PARALLÈLE, sur la même base seedée. Un unique créneau à capacité 1 partagé
+-- entre les deux projets ferait échouer celui qui arrive en second — le
+-- bouton « Réserver ma place » aurait déjà disparu, pris par l'autre projet.
+-- Chaque projet a donc SA PROPRE activité à une place, jamais touchée par
+-- l'autre.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values (
+  'e2ea0000-0000-4000-8000-000000000013', 'e2e10000-0000-4000-8000-000000000001',
+  'Atelier privé du Comptoir E2E (bis)',
+  'Six places, sur invitation ou liste prioritaire.', true
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000026',
+  'e2ea0000-0000-4000-8000-000000000013', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;

@@ -116,8 +116,9 @@ select results_eq(
   $$select worker from public.ops_worker_definitions order by worker$$,
   $$values ('automations'), ('calendar-reminders'), ('expire-trials'),
            ('jackpot-draws'), ('jobs'), ('purge-data'), ('reengage'),
-           ('sync-contests'), ('webhooks'), ('weekly-digest')$$,
-  'le registre porte exactement les dix workers du projet, nommés'
+           ('reservation-waitlist'), ('sync-contests'), ('webhooks'),
+           ('weekly-digest')$$,
+  'le registre porte exactement les onze workers du projet, nommés'
 );
 -- CONTRÔLE NÉGATIF DE LA RÈGLE DE 20260820120000. Cette migration supervise
 -- tout worker ayant DÉJÀ déposé un succès dans `ops_worker_runs`. Sur une

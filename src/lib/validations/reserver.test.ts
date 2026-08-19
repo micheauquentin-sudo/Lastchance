@@ -3,12 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   cancelReservationSchema,
   checkinReservationSchema,
+  claimWaitlistOfferSchema,
   createReserverActivitySchema,
+  createReserverInvitationSchema,
   createReserverSlotSchema,
+  redeemInvitationSchema,
   reserveSlotSchema,
   updateReserverActivitySchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
+  waitlistJoinSchema,
+  waitlistLeaveSchema,
 } from "@/lib/validations/reserver";
 
 const UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -241,5 +246,237 @@ describe("schémas du dashboard (FormData)", () => {
       updateReserverSlotStatusSchema.safeParse({ id: UUID, status: null })
         .success,
     ).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Liste prioritaire et invitations (RES-2, lot L5)
+// ════════════════════════════════════════════════════════════
+
+describe("waitlistOfferMinutes — la fenêtre de tenue d'une place", () => {
+  const BASE = {
+    activityId: UUID,
+    startsAt: "2026-09-01T14:00",
+    endsAt: "2026-09-01T16:00",
+    capacity: "4",
+  };
+
+  it("VIDE et NON RENDU valent tous deux `null` — le défaut du produit", () => {
+    const vide = createReserverSlotSchema.safeParse({
+      ...BASE,
+      waitlistOfferMinutes: "",
+    });
+    const absent = createReserverSlotSchema.safeParse(BASE);
+    expect(vide.success && vide.data.waitlistOfferMinutes).toBeNull();
+    expect(absent.success && absent.data.waitlistOfferMinutes).toBeNull();
+    // `null` (FormData.get d'un champ absent) doit dire la MÊME chose.
+    const nul = createReserverSlotSchema.safeParse({
+      ...BASE,
+      waitlistOfferMinutes: null,
+    });
+    expect(nul.success && nul.data.waitlistOfferMinutes).toBeNull();
+  });
+
+  it("accepte les deux bornes du CHECK SQL, et refuse juste à côté", () => {
+    for (const valeur of ["5", "1440"]) {
+      expect(
+        createReserverSlotSchema.safeParse({
+          ...BASE,
+          waitlistOfferMinutes: valeur,
+        }).success,
+      ).toBe(true);
+    }
+    for (const valeur of ["4", "1441", "0", "-10", "12.5", "abc"]) {
+      expect(
+        createReserverSlotSchema.safeParse({
+          ...BASE,
+          waitlistOfferMinutes: valeur,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("porte la même règle sur l'édition d'un créneau", () => {
+    expect(
+      updateReserverSlotSchema.safeParse({
+        id: UUID,
+        startsAt: "2026-09-01T14:00",
+        endsAt: "2026-09-01T16:00",
+        capacity: "4",
+        waitlistOfferMinutes: "90",
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("waitlistJoinSchema — même règle que la réservation", () => {
+  it("exige que l'adresse et le consentement voyagent ENSEMBLE", () => {
+    expect(
+      waitlistJoinSchema.safeParse({
+        organizationId: UUID,
+        slotId: AUTRE_UUID,
+        email: "client@exemple.fr",
+      }).success,
+    ).toBe(false);
+    expect(
+      waitlistJoinSchema.safeParse({
+        organizationId: UUID,
+        slotId: AUTRE_UUID,
+        consent: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      waitlistJoinSchema.safeParse({
+        organizationId: UUID,
+        slotId: AUTRE_UUID,
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("les deux gestes de possession ne demandent QUE l'entrée", () => {
+  it("prendre sa place et quitter la file n'exigent aucune organisation", () => {
+    const prendre = claimWaitlistOfferSchema.safeParse({ entryId: UUID });
+    const partir = waitlistLeaveSchema.safeParse({ entryId: UUID });
+    expect(prendre.success).toBe(true);
+    expect(partir.success).toBe(true);
+    // Une organisation postée n'entrerait de toute façon pas dans le schéma :
+    // le serveur la lit sur la ligne, sur preuve de possession.
+    expect(
+      Object.keys(prendre.success ? prendre.data : {}),
+    ).toEqual(["entryId"]);
+  });
+
+  it("refuse un identifiant qui n'est pas un UUID", () => {
+    expect(claimWaitlistOfferSchema.safeParse({ entryId: "abc" }).success).toBe(
+      false,
+    );
+    expect(waitlistLeaveSchema.safeParse({ entryId: null }).success).toBe(false);
+  });
+});
+
+describe("redeemInvitationSchema — la forme du jeton, jamais son contenu", () => {
+  const JETON = "a".repeat(32);
+
+  it("accepte un jeton base64url de 32 caractères, avec ou sans créneau", () => {
+    expect(redeemInvitationSchema.safeParse({ token: JETON }).success).toBe(true);
+    expect(
+      redeemInvitationSchema.safeParse({ token: JETON, slotId: UUID }).success,
+    ).toBe(true);
+  });
+
+  it("refuse tout ce qui n'a pas la forme du générateur", () => {
+    for (const jeton of ["", "trop-court", "a".repeat(31), "a".repeat(33), `${"a".repeat(31)}+`]) {
+      expect(redeemInvitationSchema.safeParse({ token: jeton }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("ne demande AUCUNE organisation : le jeton la désigne à lui seul", () => {
+    const parsed = redeemInvitationSchema.safeParse({ token: JETON });
+    expect(parsed.success && "organizationId" in parsed.data).toBe(false);
+  });
+
+  it("porte la même équivalence email ⇔ consentement que la réservation", () => {
+    expect(
+      redeemInvitationSchema.safeParse({
+        token: JETON,
+        email: "client@exemple.fr",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("createReserverInvitationSchema — une cible, et une seule", () => {
+  const BASE = { label: "Habitués du samedi", maxUses: "5" };
+
+  it("accepte une activité SEULE ou un créneau SEUL", () => {
+    expect(
+      createReserverInvitationSchema.safeParse({ ...BASE, activityId: UUID })
+        .success,
+    ).toBe(true);
+    expect(
+      createReserverInvitationSchema.safeParse({ ...BASE, slotId: UUID }).success,
+    ).toBe(true);
+  });
+
+  it("refuse LES DEUX comme AUCUNE — c'est un OU exclusif, comme le CHECK SQL", () => {
+    expect(
+      createReserverInvitationSchema.safeParse({
+        ...BASE,
+        activityId: UUID,
+        slotId: AUTRE_UUID,
+      }).success,
+    ).toBe(false);
+    expect(createReserverInvitationSchema.safeParse(BASE).success).toBe(false);
+  });
+
+  it("borne les usages entre 1 et 500, et refuse un champ non rendu", () => {
+    for (const valeur of ["1", "500"]) {
+      expect(
+        createReserverInvitationSchema.safeParse({
+          ...BASE,
+          maxUses: valeur,
+          activityId: UUID,
+        }).success,
+      ).toBe(true);
+    }
+    for (const valeur of ["0", "501", null]) {
+      expect(
+        createReserverInvitationSchema.safeParse({
+          ...BASE,
+          maxUses: valeur,
+          activityId: UUID,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("borne le libellé à 120 caractères, comme le CHECK SQL", () => {
+    expect(
+      createReserverInvitationSchema.safeParse({
+        ...BASE,
+        label: "x".repeat(121),
+        activityId: UUID,
+      }).success,
+    ).toBe(false);
+    expect(
+      createReserverInvitationSchema.safeParse({
+        ...BASE,
+        label: "   ",
+        activityId: UUID,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("n'exige AUCUNE expiration, et refuse une date illisible", () => {
+    expect(
+      createReserverInvitationSchema.safeParse({ ...BASE, activityId: UUID })
+        .success,
+    ).toBe(true);
+    expect(
+      createReserverInvitationSchema.safeParse({
+        ...BASE,
+        activityId: UUID,
+        expiresAt: "pas une date",
+      }).success,
+    ).toBe(false);
+    expect(
+      createReserverInvitationSchema.safeParse({
+        ...BASE,
+        activityId: UUID,
+        expiresAt: "2026-09-01T14:00",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("NE PORTE AUCUN CHAMP DE JETON : il est tiré par le serveur, jamais posté", () => {
+    const parsed = createReserverInvitationSchema.safeParse({
+      ...BASE,
+      activityId: UUID,
+    });
+    expect(parsed.success && "token" in parsed.data).toBe(false);
+    expect(parsed.success && "tokenHash" in parsed.data).toBe(false);
   });
 });

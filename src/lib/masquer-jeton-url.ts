@@ -9,7 +9,9 @@
  *  - `/commande/<jeton>` — QR de commande à usage unique ;
  *  - `/hunt/<jeton>` — jeton d'étape de chasse au trésor ;
  *  - `/invite/<jeton>` — invitation d'équipe (HMAC, 7 jours) : qui l'ouvre
- *    entre dans l'organisation avec le rôle inscrit dedans.
+ *    entre dans l'organisation avec le rôle inscrit dedans ;
+ *  - `/reserver/invitation/<jeton>` — invitation privée Réserver (révocable,
+ *    usages bornés) : qui l'ouvre peut réserver une place du quota invité.
  *
  * L'invitation voyage AUSSI encodée dans `?next=%2Finvite%2F…`, puisque la
  * page redirige un visiteur non connecté vers /login et /signup en emportant
@@ -24,8 +26,8 @@
  *
  * LISTE FERMÉE, volontairement. Masquer « tout segment qui ressemble à un
  * jeton » coûterait le diagnostic (les identifiants techniques se ressemblent
- * tous) et raterait quand même les formes inattendues. Trois préfixes connus,
- * ajoutés à la main quand une quatrième route porteuse apparaîtra.
+ * tous) et raterait quand même les formes inattendues. Quatre préfixes connus,
+ * ajoutés à la main quand une cinquième route porteuse apparaîtra.
  *
  * Fonction PURE et sans dépendance : elle est appelée depuis
  * `src/components/analytics.tsx`, monté sur TOUTES les pages.
@@ -46,7 +48,8 @@ export const SEGMENT_JETON_MASQUE = "[jeton]";
  * Le `/` final du préfixe est exigé dans le motif : `/hunts/…` (la liste du
  * dashboard, au pluriel) n'y correspond pas et n'est pas touché.
  */
-const CHEMIN_PORTEUR = /(\/(?:commande|hunt|invite)\/)([^/?#\s"'<>\\]+)/gi;
+const CHEMIN_PORTEUR =
+  /(\/(?:commande|hunt|invite|reserver\/invitation)\/)([^/?#\s"'<>\\]+)/gi;
 
 /**
  * `?next=<valeur>` / `&next=<valeur>` — le SEUL paramètre du produit dont la

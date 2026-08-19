@@ -71,6 +71,22 @@ test.describe("réserver — parcours public puis comptoir", () => {
       { timeout: 30_000 },
     );
     const champCode = page.getByLabel("Code de réservation");
+    // ATTENDRE L'HYDRATATION AVANT DE SAISIR (motif `player-win.spec.ts`,
+    // caisse du panier) : le champ est CONTRÔLÉ (`value={code}` dans
+    // `arrivees-checkin.tsx`) et porte `autoFocus` — `fill()` seul n'attend
+    // que l'actionnabilité DOM, pas que React ait attaché ses gestionnaires.
+    // Course connue en local sur mobile-safari : le champ se remplit avant
+    // hydratation, React reprend la main avec son état interne `code=""` et
+    // écrase la saisie — le bouton reste alors désactivé indéfiniment
+    // (`disabled={pending || code.length === 0}`).
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector("#arrivee-code");
+        return !!el && Object.keys(el).some((k) => k.startsWith("__react"));
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     await champCode.fill(code);
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(
@@ -88,6 +104,16 @@ test.describe("réserver — parcours public puis comptoir", () => {
       timeout: 20_000,
     });
     await expect(page.getByText("Fenêtre d'arrivée refermée")).toHaveCount(0);
+
+    // ATTENDRE QUE LA NAVIGATION DU FORMULAIRE SE TERMINE AVANT D'EN LANCER
+    // UNE AUTRE. Course connue en local sur mobile-safari : `useActionForm`
+    // (`reloadOnSuccess`) déclenche un rafraîchissement client de CETTE page
+    // après le second clic ; le texte « Déjà enregistrée » apparaît dès que
+    // l'état serveur est là, mais la navigation sous-jacente peut encore être
+    // en vol. Un `page.goto` immédiat vers une autre URL se fait alors
+    // interrompre par elle (WebKit : « Navigation … is interrupted by
+    // another navigation to …/dashboard/reservations »).
+    await page.waitForLoadState("networkidle");
 
     // ── 5. Tentative d'annulation de la réservation arrivée : le bouton
     // d'annulation n'apparaît plus (une arrivée déjà enregistrée ne s'annule
@@ -150,10 +176,20 @@ test.describe("réserver — parcours public puis comptoir", () => {
       page.getByRole("heading", { name: "Créneaux" }),
     ).toBeVisible({ timeout: 30_000 });
 
+    // IDEMPOTENT, ET IL DOIT L'ÊTRE : cliquer un `<summary>` TOGGLE le pli.
+    // L'ancienne version cliquait chaque summary sans regarder son état, donc
+    // refermait tout pli déjà ouvert — et il suffisait qu'un rendu arrive entre
+    // le comptage et le clic pour que les indices glissent. On n'ouvre plus que
+    // ce qui est fermé.
     const ouvrirLesPlis = async () => {
-      const plis = page.locator("details > summary");
+      const plis = page.locator("details");
       const combien = await plis.count();
-      for (let i = 0; i < combien; i++) await plis.nth(i).click();
+      for (let i = 0; i < combien; i++) {
+        const pli = plis.nth(i);
+        if ((await pli.getAttribute("open")) === null) {
+          await pli.locator("> summary").click();
+        }
+      }
     };
     await ouvrirLesPlis();
 
@@ -168,11 +204,30 @@ test.describe("réserver — parcours public puis comptoir", () => {
     page.once("dialog", (dialogue) => dialogue.accept());
     await ligne.getByRole("button", { name: "Annuler (staff)" }).click();
 
-    // `reloadOnSuccess` : la page se recharge, les plis se referment.
+    // ── OUVRIR PUIS OBSERVER, EN UN SEUL GESTE QUI SE REJOUE ──
+    //
+    // Le défaut, et il a résisté à deux remèdes plus naïfs : `reloadOnSuccess`
+    // appelle `window.location.reload()`, mais le DOCUMENT PRÉCÉDENT reste
+    // affiché tant que le rechargement n'a pas abouti — et l'instant où il
+    // aboutit n'est pas observable d'avance. « Créneaux » est déjà visible sur
+    // l'ancien document, les plis y sont déjà là : on les ouvrait, le
+    // rechargement les balayait, et la pastille attendait vingt secondes dans
+    // un pli refermé. La trace le dit mot pour mot — « 2 × waiting for
+    // navigation to finish » PENDANT l'attente, sur une annulation qui, elle,
+    // avait parfaitement réussi (le résumé du pli affichait bien « 0
+    // réservation en cours · 1 annulée »).
+    //
+    // `waitForLoadState("networkidle")` ne suffit pas : il se satisfait d'un
+    // ancien document calme, alors que le rechargement est encore à venir. Ce
+    // qui est déterministe, en revanche, c'est de rendre l'OBSERVATION
+    // idempotente : chaque tour rouvre les plis (`ouvrirLesPlis` n'ouvre que ce
+    // qui est fermé) puis regarde. Si un rechargement passe entre les deux, le
+    // tour suivant rattrape. On ne suppose plus un instant stable — on
+    // converge vers lui.
+    await page.waitForLoadState("networkidle");
     await expect(
       page.getByRole("heading", { name: "Créneaux" }),
     ).toBeVisible({ timeout: 30_000 });
-    await ouvrirLesPlis();
 
     const ligneApres = page
       .locator("details li")
@@ -180,9 +235,22 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .first();
     // `exact` : le résumé du pli dit « … · 1 annulée » et la ligne « annulée le
     // … ». Seule la pastille vaut exactement « Annulée ».
-    await expect(ligneApres.getByText("Annulée", { exact: true })).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect
+      .poll(
+        async () => {
+          await ouvrirLesPlis().catch(() => {});
+          return ligneApres
+            .getByText("Annulée", { exact: true })
+            .isVisible()
+            .catch(() => false);
+        },
+        {
+          timeout: 30_000,
+          message:
+            "la pastille « Annulée » doit être visible sous le pli du créneau",
+        },
+      )
+      .toBe(true);
     // Le bouton disparaît : il ne s'affiche que là où il peut aboutir.
     await expect(
       ligneApres.getByRole("button", { name: "Annuler (staff)" }),
@@ -239,5 +307,274 @@ test.describe("réserver — parcours public puis comptoir", () => {
     // Ni l'email saisi ni un jeton n'apparaissent dans la page rendue.
     const contenu = await page.content();
     expect(contenu).not.toContain("client-e2e-sans-consentement@example.com");
+  });
+});
+
+/**
+ * Liste prioritaire (RES-2, lot L5) : offre à échéance, prise, et FIFO.
+ *
+ * DEUX activités jumelles, UNE par projet Playwright — `mobile-chrome` et
+ * `mobile-safari` exécutent ce fichier EN PARALLÈLE sur la même base seedée
+ * (`fullyParallel`), et un unique créneau à capacité 1 partagé entre les deux
+ * ferait échouer celui qui arrive en second : le bouton « Réserver ma place »
+ * aurait déjà disparu, pris par l'autre projet. `...012` / `...025` sert
+ * `mobile-chrome` (et tout projet non listé) ; `...013` / `...026` sert
+ * `mobile-safari`.
+ *
+ * `...025` (comme `...026`) est UNE place, LIBRE, sans réservation ni entrée
+ * de file pré-semées. Le créneau `...023` de l'activité `...012` porte lui
+ * une entrée `waiting` posée avant tout navigateur E2E (`e2ea0000-…-000041`) :
+ * y rejoindre la file ferait partir l'offre à ce concurrent seedé au FIFO,
+ * jamais au navigateur de test — d'où des créneaux séparés, remplis et vidés
+ * par CE test lui-même.
+ */
+const ACTIVITES_FILE: Record<
+  string,
+  { activityId: string; slotUnique: boolean }
+> = {
+  "mobile-safari": {
+    activityId: "e2ea0000-0000-4000-8000-000000000013",
+    // Cette activité n'a qu'UN créneau (pas de `...023` complet à côté) :
+    // le premier `<li>` de la liste EST le créneau dédié, sans ambiguïté.
+    slotUnique: true,
+  },
+};
+const ACTIVITE_FILE_DEFAUT = {
+  activityId: "e2ea0000-0000-4000-8000-000000000012",
+  slotUnique: false,
+};
+
+test.describe("réserver — liste prioritaire (RES-2)", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("un désistement offre la place au premier de la file, qui la prend", async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const { activityId: ACTIVITY_ID_2, slotUnique } =
+      ACTIVITES_FILE[testInfo.project.name] ?? ACTIVITE_FILE_DEFAUT;
+    const nomActivite = slotUnique
+      ? "Atelier privé du Comptoir E2E (bis)"
+      : "Atelier privé du Comptoir E2E";
+
+    // ── 1. Navigateur A : réserve la seule place du créneau dédié. Le seul
+    // créneau de cette activité qui porte encore un bouton « Réserver ma
+    // place » (l'autre, `...023` sur l'activité par défaut, est déjà complet
+    // et n'affiche que la file).
+    await page.goto(`/reserver/${ACTIVITY_ID_2}`);
+    await expect(
+      page.getByRole("heading", { name: nomActivite }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const creneauxSection = page.getByRole("region", {
+      name: "Créneaux disponibles",
+    });
+    const carteLibre = creneauxSection
+      .locator("li")
+      .filter({ has: page.getByRole("button", { name: "Réserver ma place" }) });
+    await expect(carteLibre).toBeVisible();
+    await carteLibre.getByRole("button", { name: "Réserver ma place" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.locator("li").filter({ hasText: "Confirmée" }).first(),
+    ).toBeVisible();
+
+    // ── 2. Navigateur B : identité séparée (nouveau contexte, nouveau
+    // cookie). Sur l'activité jumelle (`slotUnique`), il n'y a qu'un seul
+    // créneau — c'est le premier `<li>`. Sur l'activité par défaut, les deux
+    // créneaux sont maintenant complets ; celui qui l'intéresse est le
+    // dernier de la liste (tri par `starts_at` croissant — `...025` est le
+    // plus tardif des deux).
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    try {
+      await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
+      await expect(
+        pageB.getByRole("heading", { name: nomActivite }),
+      ).toBeVisible({ timeout: 30_000 });
+
+      const creneauxSectionB = pageB.getByRole("region", {
+        name: "Créneaux disponibles",
+      });
+      const carteDediee = slotUnique
+        ? creneauxSectionB.locator("li").first()
+        : creneauxSectionB.locator("li").last();
+      await expect(carteDediee.getByText("Complet")).toBeVisible();
+      await carteDediee
+        .getByRole("button", { name: "Rejoindre la liste d'attente" })
+        .click();
+      await carteDediee
+        .getByRole("button", { name: "M'inscrire sur la liste" })
+        .click();
+
+      // `reloadOnSuccess` : « Ma file d'attente » apparaît, 1er sur la liste
+      // puisque c'est la seule inscription sur ce créneau tout neuf.
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toBeVisible({ timeout: 30_000 });
+      // `exact` : la pastille dit « Sur la liste », la phrase en dessous dit
+      // « Vous êtes 1er sur la liste. » — le substring ambiguë en mode strict.
+      await expect(
+        pageB.getByText("Sur la liste", { exact: true }),
+      ).toBeVisible();
+      await expect(pageB.getByText("1er")).toBeVisible();
+
+      // ── 3. Navigateur A se désiste : la place revient, et RES-2 la
+      // propose immédiatement au premier de la file (B), sous le même
+      // verrou que la réservation.
+      const carteReservationA = page
+        .locator("li")
+        .filter({ hasText: "Confirmée" })
+        .first();
+      await carteReservationA
+        .getByRole("button", { name: "Annuler ma réservation" })
+        .click();
+      // `reloadOnSuccess` : `mesReservations` ne SELECTionne que
+      // `confirmed`/`checked_in` (reserver-context.ts) — une fois annulée, la
+      // réservation ne revit pas sous une pastille « Annulée » sur CETTE page
+      // (contrairement à l'agenda du commerçant) : la carte, et la section
+      // « Mes réservations » elle-même, disparaissent entièrement.
+      await expect(
+        page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+      ).toHaveCount(0, { timeout: 20_000 });
+
+      // ── 4. Navigateur B recharge : l'offre est vivante, il la prend.
+      await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(pageB.getByText("Place proposée")).toBeVisible();
+      await pageB.getByRole("button", { name: "Prendre la place" }).click();
+
+      // `reloadOnSuccess` : la place devient une réservation, avec son code.
+      await expect(
+        pageB.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+      ).toBeVisible({ timeout: 30_000 });
+      const carteReservationB = pageB
+        .locator("li")
+        .filter({ hasText: "Confirmée" })
+        .first();
+      await expect(carteReservationB).toBeVisible();
+      const codeTexte = await carteReservationB
+        .locator("p.font-mono")
+        .last()
+        .textContent();
+      expect((codeTexte ?? "").trim()).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+      // La file, elle, ne montre plus B en attente : l'entrée est convertie.
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toHaveCount(0);
+    } finally {
+      await contextB.close();
+    }
+  });
+});
+
+/**
+ * Invitation privée (RES-2, lot L5) : jeton révélé une fois côté serveur,
+ * jamais rendu au client.
+ *
+ * Seed dédiée : jeton clair `E2E-INVIT-TOKEN-0000000000000000` (32
+ * caractères — `RESERVER_INVITATION_TOKEN_PATTERN` l'exige, voir
+ * supabase/seed.sql), empreinte
+ * SHA-256 en base sur l'invitation `...051`, ouvrant le créneau FERMÉ AU
+ * PUBLIC `...024` (capacité 2) de la même activité `...012`. Capacité et
+ * `max_uses` (5) couvrent large : ce test consomme UNE place, une fois par
+ * projet Playwright exécuté (mobile-chrome + mobile-safari = 2, exactement la
+ * capacité) — ne pas dupliquer ce scénario sans revoir la fixture.
+ */
+const JETON_INVITATION = "E2E-INVIT-TOKEN-0000000000000000";
+
+test.describe("réserver — invitation privée (RES-2)", () => {
+  test("réservation via jeton, jamais lisible à l'écran ni emporté ailleurs", async ({
+    page,
+  }) => {
+    await page.goto(`/reserver/invitation/${JETON_INVITATION}`);
+    await expect(
+      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Invitation privée")).toBeVisible();
+    // TOUTES LES PAGES DU PARCOURS, celle-ci comprise : le jeton n'est lisible
+    // nulle part à l'écran. Un invité qui fait lire son écran à son voisin ne
+    // lui donne pas de quoi prendre une seconde place.
+    expect(await page.locator("body").innerText()).not.toContain(
+      JETON_INVITATION,
+    );
+
+    const carteCreneau = page
+      .getByRole("region", { name: /créneau/i })
+      .locator("li")
+      .first();
+    await expect(carteCreneau).toBeVisible();
+    await carteCreneau
+      .getByRole("button", { name: "Réserver ma place" })
+      .click();
+
+    // `reloadOnSuccess` : « Votre place »/« Vos places » avec le code.
+    await expect(
+      page.getByRole("heading", { name: /Vos places|Votre place/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    const carteReservation = page
+      .locator("li")
+      .filter({ hasText: "Confirmée" })
+      .first();
+    await expect(carteReservation).toBeVisible();
+    const codeTexte = await carteReservation
+      .locator("p.font-mono")
+      .last()
+      .textContent();
+    expect((codeTexte ?? "").trim()).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+
+    // ── POURQUOI `page.content()` N'EST PAS LE BON JUGE ICI ──
+    //
+    // Le jeton VOYAGE DANS L'URL de cette route : le payload RSC que Next
+    // sérialise dans le HTML porte donc forcément le chemin courant, jeton
+    // compris — même propriété que `/hunt/[token]`, et ce n'est pas une fuite
+    // (qui détient l'URL détient déjà le jeton). L'assertion précédente
+    // interdisait cette présence-là, c'est-à-dire une propriété que le
+    // framework ne peut pas tenir.
+    //
+    // Les deux invariants RÉELS, eux, tiennent : le jeton n'est jamais LISIBLE
+    // à l'écran, et il n'est jamais EMPORTÉ vers une page qui ne le porte pas
+    // déjà dans son adresse.
+    const texteVisible = await page.locator("body").innerText();
+    expect(texteVisible).not.toContain(JETON_INVITATION);
+
+    // LA PAGE SUIVANTE — celle dont l'adresse ne porte PAS le jeton. C'est là
+    // que `page.content()` redevient un juge légitime : si le jeton s'y trouve,
+    // c'est qu'il a été recopié quelque part (état client, cookie, lien de
+    // retour), et cette fois c'en serait bien une fuite.
+    //
+    // La réservation obtenue n'y est PAS visible, et c'est normal : elle vit sur
+    // un créneau FERMÉ AU PUBLIC, que la page publique ne liste pas
+    // (`loadReserverPublicContext` ne retient que `status = 'open'`) — c'est
+    // exactement ce à quoi sert une invitation privée.
+    //
+    // `networkidle` avant le `goto`, motif du premier test de ce fichier : le
+    // `reloadOnSuccess` du bouton laisse une navigation client en vol, et sur
+    // WebKit un `goto` immédiat se fait interrompre par elle.
+    await page.waitForLoadState("networkidle");
+    await page.goto("/reserver/e2ea0000-0000-4000-8000-000000000012");
+    await expect(
+      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+    expect(await page.content()).not.toContain(JETON_INVITATION);
+  });
+
+  test("jeton inconnu : 404 générique, aucun oracle sur son existence", async ({
+    page,
+  }) => {
+    // Un jeton qui n'a jamais existé se résout AVANT tout rendu client
+    // (`notFound()` côté serveur, docstring de `InvitationPage`) : même 404
+    // générique que n'importe quelle autre page absente — pas de message
+    // dédié qui apprendrait à qui tape des jetons au hasard que la route
+    // existe.
+    await page.goto("/reserver/invitation/ce-jeton-nexiste-pas");
+    await expect(
+      page.getByRole("heading", { name: "Page introuvable" }),
+    ).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -12,6 +12,9 @@ import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import {
   RESERVER_CAPACITY_MAX,
   RESERVER_CAPACITY_MIN,
+  RESERVER_WAITLIST_OFFER_MINUTES_DEFAUT,
+  RESERVER_WAITLIST_OFFER_MINUTES_MAX,
+  RESERVER_WAITLIST_OFFER_MINUTES_MIN,
   type ReservationSlotStatus,
 } from "@/lib/reserver";
 import type { ReserverSlotDashboardView } from "@/lib/reserver-context";
@@ -154,6 +157,51 @@ export function CreneauForm({
             {edition && creneau.vivantes > 0
               ? `${creneau.vivantes} place${creneau.vivantes > 1 ? "s" : ""} déjà prise${creneau.vivantes > 1 ? "s" : ""} sur ce créneau : n'allez pas en dessous.`
               : "Au moins une place. Un créneau sans place n'est pas un créneau fermé — c'est l'état qui sert à cela."}
+          </p>
+        </div>
+
+        {/* ── LA FENÊTRE D'OFFRE DE LA LISTE PRIORITAIRE ──
+
+            Le champ est VIDE par défaut, et vide ne veut pas dire zéro : la
+            colonne accepte `null`, qui signifie « le défaut du produit »
+            (deux heures). Écrire 120 dans chaque ligne aurait figé ce défaut
+            dans autant de lignes qu'il y a de créneaux — le changer plus tard
+            aurait demandé une migration de données au lieu d'une constante.
+
+            Les bornes viennent de `src/lib/reserver.ts`, miroir du `check` SQL :
+            sous cinq minutes l'offre est morte avant d'être lue, au-delà de
+            vingt-quatre heures ce n'est plus une offre mais une réservation qui
+            ne dit pas son nom. */}
+        <div className="sm:col-span-2">
+          <Label htmlFor={`creneau-fenetre${suffixe}`}>
+            Fenêtre d&apos;offre de la liste d&apos;attente (minutes)
+          </Label>
+          <Input
+            id={`creneau-fenetre${suffixe}`}
+            name="waitlistOfferMinutes"
+            type="number"
+            inputMode="numeric"
+            min={RESERVER_WAITLIST_OFFER_MINUTES_MIN}
+            max={RESERVER_WAITLIST_OFFER_MINUTES_MAX}
+            step={1}
+            placeholder={String(RESERVER_WAITLIST_OFFER_MINUTES_DEFAUT)}
+            defaultValue={
+              edition ? (creneau.waitlistOfferMinutes ?? "") : ""
+            }
+            aria-describedby={`creneau-fenetre-aide${suffixe}`}
+            className="sm:max-w-40"
+          />
+          <p
+            id={`creneau-fenetre-aide${suffixe}`}
+            className="mt-1.5 text-xs font-semibold text-k-body"
+          >
+            Quand une place se libère sur un créneau complet, elle est tenue ce
+            temps-là pour la personne en tête de liste, puis passe
+            automatiquement à la suivante. Laissez vide pour le réglage par
+            défaut ({RESERVER_WAITLIST_OFFER_MINUTES_DEFAUT} minutes) ; entre{" "}
+            {RESERVER_WAITLIST_OFFER_MINUTES_MIN} minutes et{" "}
+            {RESERVER_WAITLIST_OFFER_MINUTES_MAX} minutes sinon. L&apos;offre ne
+            dépasse jamais le début du créneau.
           </p>
         </div>
       </div>

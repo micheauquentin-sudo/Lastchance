@@ -5779,6 +5779,76 @@ export type Database = {
           },
         ]
       }
+      reservation_invitations: {
+        Row: {
+          activity_id: string | null
+          closed_at: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          label: string
+          max_uses: number
+          organization_id: string
+          revoked_at: string | null
+          slot_id: string | null
+          token_hash: string
+          used_count: number
+        }
+        Insert: {
+          activity_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          label: string
+          max_uses?: number
+          organization_id: string
+          revoked_at?: string | null
+          slot_id?: string | null
+          token_hash: string
+          used_count?: number
+        }
+        Update: {
+          activity_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          label?: string
+          max_uses?: number
+          organization_id?: string
+          revoked_at?: string | null
+          slot_id?: string | null
+          token_hash?: string
+          used_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_invitations_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_invitations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_invitations_slot_id_organization_id_fkey"
+            columns: ["slot_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_slots"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       reservation_slots: {
         Row: {
           activity_id: string
@@ -5790,6 +5860,7 @@ export type Database = {
           starts_at: string
           status: string
           updated_at: string
+          waitlist_offer_minutes: number | null
         }
         Insert: {
           activity_id: string
@@ -5801,6 +5872,7 @@ export type Database = {
           starts_at: string
           status?: string
           updated_at?: string
+          waitlist_offer_minutes?: number | null
         }
         Update: {
           activity_id?: string
@@ -5812,6 +5884,7 @@ export type Database = {
           starts_at?: string
           status?: string
           updated_at?: string
+          waitlist_offer_minutes?: number | null
         }
         Relationships: [
           {
@@ -5827,6 +5900,79 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      reservation_waitlist_entries: {
+        Row: {
+          cancelled_at: string | null
+          consent_transactional_at: string | null
+          converted_at: string | null
+          converted_reservation_id: string | null
+          created_at: string
+          email: string | null
+          expired_at: string | null
+          id: string
+          offer_expires_at: string | null
+          offered_at: string | null
+          organization_id: string
+          player_key_hash: string
+          slot_id: string
+          status: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          consent_transactional_at?: string | null
+          converted_at?: string | null
+          converted_reservation_id?: string | null
+          created_at?: string
+          email?: string | null
+          expired_at?: string | null
+          id?: string
+          offer_expires_at?: string | null
+          offered_at?: string | null
+          organization_id: string
+          player_key_hash: string
+          slot_id: string
+          status?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          consent_transactional_at?: string | null
+          converted_at?: string | null
+          converted_reservation_id?: string | null
+          created_at?: string
+          email?: string | null
+          expired_at?: string | null
+          id?: string
+          offer_expires_at?: string | null
+          offered_at?: string | null
+          organization_id?: string
+          player_key_hash?: string
+          slot_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_waitlist_entries_converted_reservation_id_orga_fkey"
+            columns: ["converted_reservation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservations"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_waitlist_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_waitlist_entries_slot_id_organization_id_fkey"
+            columns: ["slot_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_slots"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -6823,6 +6969,14 @@ export type Database = {
         }
         Returns: boolean
       }
+      claim_waitlist_offer: {
+        Args: {
+          p_entry_id: string
+          p_organization_id: string
+          p_player_key_hash: string
+        }
+        Returns: Json
+      }
       claim_webhook_deliveries: {
         Args: { p_limit?: number }
         Returns: {
@@ -6847,6 +7001,14 @@ export type Database = {
           participation_id: string
           redeem_code: string
         }[]
+      }
+      close_reservation_invitation: {
+        Args: {
+          p_actor: string
+          p_invitation_id: string
+          p_organization_id: string
+        }
+        Returns: Json
       }
       consume_calendar_spin_grant: {
         Args: {
@@ -7056,6 +7218,19 @@ export type Database = {
         }
         Returns: string
       }
+      create_reservation_invitation: {
+        Args: {
+          p_activity_id?: string
+          p_actor: string
+          p_expires_at?: string
+          p_label: string
+          p_max_uses?: number
+          p_organization_id: string
+          p_slot_id?: string
+          p_token_hash: string
+        }
+        Returns: Json
+      }
       credit_sms_balance: {
         Args: {
           p_destination_country?: string
@@ -7177,6 +7352,10 @@ export type Database = {
         Args: { p_player_token_hash?: string; p_session_id: string }
         Returns: Json
       }
+      evict_waitlist_entry: {
+        Args: { p_actor: string; p_entry_id: string; p_organization_id: string }
+        Returns: Json
+      }
       experience_belongs_to_organization: {
         Args: {
           p_experience_id: string
@@ -7184,6 +7363,14 @@ export type Database = {
           p_organization_id: string
         }
         Returns: boolean
+      }
+      expire_waitlist_offers: {
+        Args: never
+        Returns: {
+          offers_created: number
+          offers_expired: number
+          slots_processed: number
+        }[]
       }
       finalize_contest: {
         Args: {
@@ -7918,6 +8105,17 @@ export type Database = {
           reward_label: string
         }[]
       }
+      redeem_invitation: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_organization_id: string
+          p_player_key_hash: string
+          p_slot_id?: string
+          p_token_hash: string
+        }
+        Returns: Json
+      }
       redeem_jackpot_prize: {
         Args: { p_actor: string; p_code: string; p_organization_id: string }
         Returns: {
@@ -8024,6 +8222,10 @@ export type Database = {
         Returns: string
       }
       requeue_stale_jobs: { Args: never; Returns: number }
+      reservation_offer_next: {
+        Args: { p_organization_id: string; p_slot_id: string }
+        Returns: number
+      }
       reservation_public_state: {
         Args: { p_organization_id: string; p_player_key_hash: string }
         Returns: Json
@@ -8091,6 +8293,14 @@ export type Database = {
           grant_module: string
           revoked: boolean
         }[]
+      }
+      revoke_reservation_invitation: {
+        Args: {
+          p_actor: string
+          p_invitation_id: string
+          p_organization_id: string
+        }
+        Returns: Json
       }
       revoke_sms_consent: {
         Args: { p_organization_id: string; p_phone: string; p_reason?: string }
@@ -8505,6 +8715,20 @@ export type Database = {
           p_proof_spin_id: string
           p_referral_code: string
         }
+        Returns: Json
+      }
+      waitlist_join: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_organization_id: string
+          p_player_key_hash: string
+          p_slot_id: string
+        }
+        Returns: Json
+      }
+      waitlist_leave: {
+        Args: { p_entry_id: string; p_player_key_hash: string }
         Returns: Json
       }
     }

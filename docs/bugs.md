@@ -3791,12 +3791,13 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
   de la question subsidiaire est SELECTée par `pronostics-context.ts` mais n'est
   jamais transmise au client (projections explicites côté composants). Aucune
   fuite constatée ; durcissement souhaitable : la retirer de la projection.
-- **E2E `pronostics.spec.ts` : locator page-wide ambigu (FRAGILITÉ
-  PRÉ-EXISTANTE, hors chantier)** — 2026-07-24. `e2e/pronostics.spec.ts:40`
-  attend `/Enregistré|Modifier/` sur toute la page, alors que le hub joueur
-  porte un bouton « Modifier » PERMANENT : risque d'ambiguïté Playwright
-  (strict mode). Non touché par le chantier générique — à trancher au premier
-  run CI.
+- **E2E `pronostics.spec.ts` : locator page-wide ambigu — RÉSOLU** —
+  2026-07-24 (ouvert), résolu 2026-08-19 (QA du lot L5 / RES-2, PR #161).
+  `e2e/pronostics.spec.ts:40` attendait `/Enregistré|Modifier/` sur toute la
+  page, alors que le hub joueur porte un bouton « Modifier » PERMANENT :
+  risque d'ambiguïté Playwright (strict mode). Corrigé en scopant le locator
+  au conteneur `<li>` du match (identifié par ses inputs de score), au lieu
+  de chercher sur toute la page.
 - **`wheels.theme` (colonne morte)** — 2026-07-11. Colonne jsonb du schéma
   initial, remplacée par `wheels.style` (00006) et plus lue nulle part.
   Sans danger ; à supprimer dans une future migration de ménage.
