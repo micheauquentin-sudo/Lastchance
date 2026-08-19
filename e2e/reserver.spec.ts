@@ -103,6 +103,91 @@ test.describe("réserver — parcours public puis comptoir", () => {
     ).toHaveCount(0);
   });
 
+  test("le commerçant libère une place : annulation staff depuis l'agenda", async ({
+    page,
+  }) => {
+    // Ce que ce parcours prouve, et qui n'existait pas avant la migration
+    // 20261003120000 : AUCUN geste commerçant ne libérait une place.
+    // `cancel_reservation` exige l'empreinte du cookie du joueur, et
+    // `reservations` n'a aucun grant `update` — un client qui annulait par
+    // téléphone laissait son siège gelé jusqu'à l'heure du créneau.
+
+    // ── 1. Une réservation publique sur le créneau LOINTAIN (2 jours) : le
+    // bouton staff n'existe que sur un créneau qui n'a pas commencé, et le
+    // créneau proche est réservé au parcours de check-in.
+    await page.goto(`/reserver/${ACTIVITY_ID}`);
+    await expect(
+      page.getByRole("heading", { name: "Dégustation du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const creneauxSection = page.getByRole("region", {
+      name: "Créneaux disponibles",
+    });
+    await creneauxSection
+      .locator("li")
+      .filter({ hasText: /place/ })
+      .last()
+      .getByRole("button", { name: "Réserver ma place" })
+      .click();
+
+    await expect(
+      page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    const codeTexte = await page
+      .locator("li")
+      .filter({ hasText: "Confirmée" })
+      .first()
+      .locator("p.font-mono")
+      .last()
+      .textContent();
+    const code = (codeTexte ?? "").trim();
+    expect(code).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+
+    // ── 2. L'agenda du commerçant. Les réservations vivent sous un pli
+    // (`<details>`) : on l'ouvre avant de chercher la ligne.
+    await page.goto(`/dashboard/reservations/${ACTIVITY_ID}`);
+    await expect(
+      page.getByRole("heading", { name: "Créneaux" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const ouvrirLesPlis = async () => {
+      const plis = page.locator("details > summary");
+      const combien = await plis.count();
+      for (let i = 0; i < combien; i++) await plis.nth(i).click();
+    };
+    await ouvrirLesPlis();
+
+    const ligne = page.locator("li").filter({ hasText: code }).first();
+    await expect(ligne).toBeVisible();
+    await expect(ligne.getByText("Confirmée")).toBeVisible();
+
+    // ── 3. Confirmation en deux temps : le geste ne part que sur « oui ».
+    page.once("dialog", (dialogue) => dialogue.accept());
+    await ligne.getByRole("button", { name: "Annuler (staff)" }).click();
+
+    // `reloadOnSuccess` : la page se recharge, les plis se referment.
+    await expect(
+      page.getByRole("heading", { name: "Créneaux" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await ouvrirLesPlis();
+
+    const ligneApres = page.locator("li").filter({ hasText: code }).first();
+    await expect(ligneApres.getByText("Annulée")).toBeVisible({
+      timeout: 20_000,
+    });
+    // Le bouton disparaît : il ne s'affiche que là où il peut aboutir.
+    await expect(
+      ligneApres.getByRole("button", { name: "Annuler (staff)" }),
+    ).toHaveCount(0);
+
+    // ── 4. Et côté joueur, la place est bien rendue : sa réservation est
+    // annulée, sans qu'il ait rien fait.
+    await page.goto(`/reserver/${ACTIVITY_ID}`);
+    await expect(
+      page.locator("li").filter({ hasText: "Annulée" }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
   test("email sans consentement coché : le formulaire refuse avec le message ciblé", async ({
     page,
   }) => {
