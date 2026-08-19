@@ -19,12 +19,38 @@ import { champSelect } from "@/components/reserver/champs";
  * lire avant de cocher, parce que c'est ce qu'il devra pouvoir répondre au
  * client qui demande si jouer lui fait perdre sa place.
  *
- * ── UN SÉLECTEUR VIDE NE S'AFFICHE PAS ──
+ * ── UN SÉLECTEUR VIDE NE S'AFFICHE PAS — SAUF S'IL PORTE DÉJÀ UN RÉGLAGE ──
  *
  * Même règle que « Activité liée » au-dessus : proposer un menu déroulant dont
  * la seule option est « Aucun » demande un choix qui n'existe pas. Sans quiz
  * publié, ou sans campagne, le champ correspondant disparaît.
+ *
+ * MAIS PAS QUAND UN RÉGLAGE EST POSÉ, et c'est le défaut que ce garde corrigeait
+ * à moitié. Ces listes sont bornées (au-delà de deux cents entrées elles sont
+ * tronquées) et elles peuvent se vider — un quiz archivé, une campagne rangée.
+ * Le champ disparaissait alors, ou retombait sur « Aucun » faute de trouver sa
+ * valeur : le formulaire postait `""`, et **enregistrer un réglage voisin
+ * effaçait l'animation** sans que personne n'ait rien demandé. Un formulaire ne
+ * doit jamais perdre en silence ce qu'il n'affiche pas.
+ *
+ * D'où l'OPTION DE REPLI : quand le réglage courant n'est pas dans la liste, il
+ * y est ajouté sous son identifiant, marqué comme tel. Le commerçant voit qu'il
+ * y a quelque chose, peut le retirer délibérément (« Aucun » reste là), et un
+ * enregistrement qui ne touche pas ce champ le laisse exactement où il était.
  */
+
+/**
+ * La liste à rendre : celle du serveur, PLUS le réglage courant s'il en est
+ * absent. Le libellé de repli ne ment pas — il ne prétend pas connaître un nom
+ * qu'on n'a pas — et l'identifiant tronqué suffit à distinguer deux replis.
+ */
+function avecReplis(
+  options: { id: string; name: string }[],
+  courant: string | null,
+): { id: string; name: string }[] {
+  if (!courant || options.some((o) => o.id === courant)) return options;
+  return [...options, { id: courant, name: `Réglage actuel (${courant.slice(0, 8)}…)` }];
+}
 export function ChampsAttenteActive({
   quiz,
   campagnes,
@@ -48,11 +74,17 @@ export function ChampsAttenteActive({
    */
   espacement?: string;
 }) {
-  if (quiz.length === 0 && campagnes.length === 0) return null;
+  // Les listes réellement rendues : voir `avecReplis`. C'est sur ELLES que
+  // portent les gardes de visibilité ci-dessous — un champ qui porte un réglage
+  // n'est jamais masqué, sinon l'enregistrement suivant l'efface.
+  const quizOptions = avecReplis(quiz, defaultQuizId);
+  const campagneOptions = avecReplis(campagnes, defaultPauseCampaignId);
+
+  if (quizOptions.length === 0 && campagneOptions.length === 0) return null;
 
   return (
     <>
-      {quiz.length > 0 ? (
+      {quizOptions.length > 0 ? (
         <div className={espacement}>
           <Label htmlFor={`attente-quiz${instanceId}`}>
             Quiz d&apos;attente{" "}
@@ -65,7 +97,7 @@ export function ChampsAttenteActive({
             className={champSelect}
           >
             <option value="">Aucun</option>
-            {quiz.map((q) => (
+            {quizOptions.map((q) => (
               <option key={q.id} value={q.id}>
                 {q.name}
               </option>
@@ -78,7 +110,7 @@ export function ChampsAttenteActive({
         </div>
       ) : null}
 
-      {campagnes.length > 0 ? (
+      {campagneOptions.length > 0 ? (
         <div className={espacement}>
           <Label htmlFor={`attente-pause${instanceId}`}>
             Campagne Pause Chance{" "}
@@ -91,7 +123,7 @@ export function ChampsAttenteActive({
             className={champSelect}
           >
             <option value="">Aucune</option>
-            {campagnes.map((c) => (
+            {campagneOptions.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>

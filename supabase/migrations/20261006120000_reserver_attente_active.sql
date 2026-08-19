@@ -38,12 +38,16 @@
 --      DÉLAI OU DROIT À UNE PLACE. C'est l'invariant MÉCANIQUE de ce fichier, et
 --      il se lit dans le code plutôt que dans une promesse : les trois RPC
 --      ci-dessous n'exécutent, sur `reservation_queue_entries`, `reservations`
---      et `reservation_waitlist_entries`, QUE des `select` de VIVACITÉ — un
---      `status`, une empreinte. Aucun `update`, aucun `insert`, aucun `delete`,
---      pas même sur une colonne d'ornement. Et elles ne rendent au joueur NI
---      rang, NI compteur d'attente, NI échéance : `queue_public_state` reste le
---      seul chemin vers ces nombres. `reserver_attente.test.sql` le prouve en
---      photographiant les trois tables avant et après chaque appel.
+--      et `reservation_waitlist_entries`, QUE des `select` de PROPRIÉTÉ (une
+--      empreinte), de VIVACITÉ (un `status`) et d'APPARTENANCE (`queue_id`,
+--      `activity_id` — DE QUELLE file ou activité relève cette attente, ce qui
+--      est l'adresse du guichet, jamais une position dans sa file). Aucun
+--      `update`, aucun `insert`, aucun `delete`, pas même sur une colonne
+--      d'ornement. Et surtout AUCUNE lecture de `created_at` — qui EST le rang —
+--      ni d'aucun compteur : elles ne rendent au joueur NI rang, NI compteur
+--      d'attente, NI échéance, et `queue_public_state` reste le seul chemin vers
+--      ces nombres. `reserver_attente.test.sql` le prouve en photographiant les
+--      trois tables avant et après chaque appel.
 --
 --   3. UNE PAUSE CHANCE EST BORNÉE PAR SESSION. Une colonne, `pause_chance_used_at`,
 --      et un `update` CONDITIONNEL (`where … is null`) : le verrou est la ligne
@@ -463,6 +467,23 @@ revoke all on table public.reservation_wait_sessions
 -- base peut éviter d'un `and`. C'est l'habitude de `queue_join`, qui refuse
 -- déjà sur une activité coupée. Ces deux lectures portent sur `quizzes` et
 -- `campaigns` — jamais sur la file : le critère 2 est intact.
+--
+-- ── ELLE REND AUSSI LA CONFIGURATION DE RETRAIT DE LA CAMPAGNE ──
+--
+-- `collect_email`, `collect_phone`, `code_ttl_seconds` — les trois champs dont
+-- `ClaimForm` a besoin pour demander ce qu'il faut AVANT d'afficher le code.
+-- Sans eux l'écran d'attente devait inventer une configuration, et il inventait
+-- « ne rien demander » : or `campaigns.collect_email` vaut `true` PAR DÉFAUT
+-- (00004), donc le retrait automatique partait sans adresse, le serveur le
+-- refusait — et le lot était déjà tiré, le stock déjà décompté. Un tour offert
+-- brûlé sans code, ce qui est la pire issue possible pour ce parcours.
+--
+-- Ils voyagent avec la campagne et SEULEMENT avec elle : `pause_campaign_id`
+-- nul (aucune campagne, ou campagne fermée) les met tous les trois à `null` —
+-- une configuration de retrait sans lot à retirer n'a aucun sens, et la rendre
+-- quand même aurait laissé un écran croire qu'il y a quelque chose à réclamer.
+-- Ce sont trois réglages d'affichage du commerçant, pas des données de tiers :
+-- ils ne disent rien de la file, rien de qui attend.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.wait_session_open(
@@ -483,6 +504,9 @@ declare
   v_quiz_id uuid;
   v_campaign_id uuid;
   v_activity_id uuid;
+  v_collect_email boolean;
+  v_collect_phone boolean;
+  v_code_ttl integer;
   v_session public.reservation_wait_sessions%rowtype;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
@@ -566,13 +590,29 @@ begin
   ) then
     v_quiz_id := null;
   end if;
-  if v_campaign_id is not null and not exists (
-    select 1 from public.campaigns c
+  --
+  -- La campagne est lue UNE fois, et cette lecture fait les deux choses à la
+  -- fois : elle décide si l'animation est jouable (`status = 'active'`) ET elle
+  -- rapporte la configuration de retrait que `ClaimForm` devra appliquer. Un
+  -- `exists` suivi d'un second `select` aurait interrogé deux fois la même
+  -- ligne pour la même décision.
+  if v_campaign_id is not null then
+    select c.collect_email, c.collect_phone, c.code_ttl_seconds
+      into v_collect_email, v_collect_phone, v_code_ttl
+      from public.campaigns c
      where c.id = v_campaign_id
        and c.organization_id = p_organization_id
-       and c.status = 'active'
-  ) then
-    v_campaign_id := null;
+       and c.status = 'active';
+    if not found then
+      -- Campagne fermée, archivée ou d'un autre locataire : NI campagne, NI
+      -- configuration. Les trois champs repartent à `null` explicitement — un
+      -- `select … into` qui ne trouve rien laisse les variables intactes, et
+      -- elles le sont ici, mais l'écrire protège de la prochaine réécriture.
+      v_campaign_id := null;
+      v_collect_email := null;
+      v_collect_phone := null;
+      v_code_ttl := null;
+    end if;
   end if;
 
   -- IDEMPOTENCE. Sous le verrou, donc deux ouvertures simultanées de la MÊME
@@ -600,6 +640,11 @@ begin
     'source', v_source,
     'quiz_id', v_quiz_id,
     'pause_campaign_id', v_campaign_id,
+    -- La configuration de RETRAIT de la campagne, indissociable d'elle : nulle
+    -- partout où `pause_campaign_id` l'est. Voir l'en-tête de section.
+    'pause_collect_email', v_collect_email,
+    'pause_collect_phone', v_collect_phone,
+    'pause_code_ttl_seconds', v_code_ttl,
     'activity_id', v_activity_id,
     'pause_chance_used', v_session.pause_chance_used_at is not null
   );
@@ -617,7 +662,12 @@ comment on function public.wait_session_open(uuid, text, uuid, uuid) is
   'place ». Rend `unknown` INDISTINCTEMENT pour une source inconnue, celle d''une '
   'AUTRE organisation, celle d''un AUTRE joueur, une source morte et une '
   'organisation sans le droit `vitrine`. La configuration d''animation (quiz, '
-  'campagne de Pause Chance) n''est rendue que si elle est `active`.';
+  'campagne de Pause Chance) n''est rendue que si elle est `active`, et la '
+  'campagne rend AVEC elle sa configuration de retrait — collect_email, '
+  'collect_phone, code_ttl_seconds — sans quoi l''écran d''attente devrait '
+  'l''inventer : il inventait « ne rien demander », le retrait automatique '
+  'partait sans adresse alors que collect_email vaut `true` par défaut, et le '
+  'tour offert était brûlé sans code.';
 
 revoke all on function public.wait_session_open(uuid, text, uuid, uuid)
   from public, anon, authenticated;
@@ -646,8 +696,44 @@ grant execute on function public.wait_session_open(uuid, text, uuid, uuid)
 -- s'évaporer. (b) Relire la file ici aurait AJOUTÉ un accès aux tables d'attente
 -- pour ne rien décider d'utile — le contraire de la séparation. La borne
 -- économique ne tient pas à la vivacité : elle tient à ce qu'une session soit
--- unique par source et n'accorde qu'UNE pause. Une entrée en file = une Pause
--- Chance, pour toujours, servie ou non.
+-- unique par source et n'accorde qu'UNE pause.
+--
+-- ── MAIS « UNE PAR SESSION » NE SUFFISAIT PAS, ET C'ÉTAIT UNE FUITE ──
+--
+-- « Une entrée en file = une Pause Chance » se lisait comme une borne. C'en est
+-- une pour l'ENTRÉE ; ce n'en est pas une pour la PERSONNE, parce que rien
+-- n'empêche de sortir de la file et d'y revenir. Le cycle
+-- entrer → jouer → sortir → revenir crée une entrée NEUVE, donc une session
+-- NEUVE, donc une Pause Chance NEUVE — autant de fois qu'on le veut, sur le
+-- stock du commerçant, en trente secondes de manipulation. La borne économique
+-- de tout ce lot reposait sur une hypothèse fausse : que l'attente ne se
+-- renouvelle pas.
+--
+-- D'où le SEAU DE 24 HEURES PAR PERSONNE ET PAR GUICHET, éprouvé ici : s'il
+-- existe une AUTRE session du même `player_key_hash` sur la MÊME file (ou la
+-- MÊME activité) dont la Pause Chance a été consommée il y a moins de 24 h,
+-- l'octroi est refusé — `cooldown`.
+--
+--   · PAR PERSONNE, pas par entrée : la clé est l'empreinte du cookie, la même
+--     qui prouve déjà la propriété de la source. Aucune identité nouvelle n'est
+--     demandée, aucune donnée nouvelle n'est retenue.
+--   · PAR GUICHET, pas par organisation : deux files d'un même commerce sont
+--     deux animations que le commerçant a dotées séparément, et le client qui
+--     passe de l'une à l'autre attend réellement deux fois. Élargir à
+--     l'organisation aurait puni un parcours honnête.
+--   · `cooldown` EST UN ÉTAT PROPRE, distinct d'`already_used` : « vous avez
+--     déjà joué ici récemment » n'est pas « vous avez déjà joué DANS CETTE
+--     attente-ci ». Le second rend son jeton — c'est le sien, dans cette
+--     session. Le premier ne peut pas : le jeton appartient à une AUTRE
+--     session, et le faire voyager d'une session à l'autre serait exactement la
+--     confusion que la borne cherche à empêcher. L'écran le dit avec ses mots,
+--     et renvoie au portefeuille où le gain précédent attend.
+--
+-- CE QUE CE CONTRÔLE LIT, ET CE QU'IL NE LIT PAS. Il suit `queue_entry_id` vers
+-- `queue_id`, et `reservation_id` vers `activity_id` : de QUEL guichet relève
+-- cette attente. Pas un `status`, pas un `created_at` — qui EST le rang — pas un
+-- compteur. Le critère 2 tient : voir l'en-tête du fichier, amendé pour nommer
+-- cette troisième lecture plutôt que de la laisser démentir une promesse.
 --
 -- ── ELLE NE TIRE PAS LE TOUR ──
 --
@@ -676,6 +762,10 @@ as $$
 declare
   v_session public.reservation_wait_sessions%rowtype;
   v_campaign_id uuid;
+  -- LE GUICHET de cette attente : exactement l'un des deux est posé, comme la
+  -- source de la session. C'est la portée du seau de 24 h.
+  v_queue_id uuid;
+  v_activity_id uuid;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
@@ -698,23 +788,37 @@ begin
      -- l'interdit déjà ; ce filtre écrit l'intention et tiendrait encore si
      -- cette garde venait à s'assouplir (motif `queue_public_state`).
      and s.player_key_hash not like 'purge:%';
-  if not found then
+  -- DÉFENSE EN PROFONDEUR SUR LE DROIT `vitrine`, motif exact de
+  -- `wait_session_open` : sans elle, un abonnement fermé laissait la Pause
+  -- Chance CONTINUER de tirer sur le stock du commerçant, parce que la session
+  -- avait été ouverte quand le droit était encore là. Le refus rejoint les
+  -- autres sous le MÊME état muet — distinguer « votre commerce n'a plus le
+  -- module » de « cette session n'existe pas » n'apprendrait rien d'utile au
+  -- joueur et dirait à un curieux ce qu'un commerce voisin a souscrit.
+  if not found
+     or not public.org_has_module_access(p_organization_id, 'vitrine')
+  then
     return pg_catalog.jsonb_build_object('state', 'unknown');
   end if;
 
   -- LA CAMPAGNE CIBLE VIENT DU PARENT, jamais de l'appelant : c'est ce qui rend
   -- « gains décidés côté serveur » vrai. Un `p_campaign_id` en paramètre aurait
   -- laissé le navigateur choisir sur quelle campagne il joue son tour offert.
-  -- La lecture de la file se borne ici à SUIVRE le lien — aucun état, aucun rang.
+  -- La lecture de la file se borne ici à SUIVRE le lien — aucun état, aucun
+  -- rang. Elle rapporte deux choses et pas une de plus : la campagne à jouer, et
+  -- l'IDENTITÉ DU GUICHET (`queue_id` / `activity_id`), qui est la portée du
+  -- seau de 24 h ci-dessous. Les deux voyagent dans la MÊME requête : la
+  -- deuxième colonne d'un `join` qu'on faisait déjà ne coûte rien, là où un
+  -- second aller-retour aurait relu la même ligne.
   if v_session.queue_entry_id is not null then
-    select q.wait_pause_campaign_id into v_campaign_id
+    select q.wait_pause_campaign_id, q.id into v_campaign_id, v_queue_id
       from public.reservation_queue_entries e
       join public.reservation_queues q
         on q.id = e.queue_id and q.organization_id = e.organization_id
      where e.id = v_session.queue_entry_id
        and e.organization_id = p_organization_id;
   else
-    select a.wait_pause_campaign_id into v_campaign_id
+    select a.wait_pause_campaign_id, a.id into v_campaign_id, v_activity_id
       from public.reservations r
       join public.reservation_slots s2
         on s2.id = r.slot_id and s2.organization_id = r.organization_id
@@ -729,6 +833,47 @@ begin
     -- Pause Chance. C'est actionnable côté écran (ne pas montrer le bouton),
     -- là où « inconnu » ne l'est pas.
     return pg_catalog.jsonb_build_object('state', 'unconfigured');
+  end if;
+
+  -- ── LE SEAU DE 24 HEURES, PAR PERSONNE ET PAR GUICHET ──
+  --
+  -- Voir l'en-tête de section : sans lui, sortir de la file et y revenir rendait
+  -- une Pause Chance neuve, indéfiniment. `s2.id <> v_session.id` est ce qui
+  -- distingue les deux bornes — la session COURANTE ne se refuse pas elle-même
+  -- ici (son `update` conditionnel ci-dessous rend `already_used`, avec SON
+  -- jeton), seule une AUTRE attente récente du même porteur au même guichet
+  -- déclenche `cooldown`.
+  --
+  -- Le `>` sur un horodatage rend le contrôle insensible aux lignes purgées :
+  -- une empreinte remplacée par `purge:…` ne peut plus égaler une empreinte de
+  -- 64 hexadécimaux, donc elle ne peut ni bloquer ni être bloquée.
+  if exists (
+    select 1
+      from public.reservation_wait_sessions s2
+     where s2.organization_id = p_organization_id
+       and s2.player_key_hash = p_player_key_hash
+       and s2.id <> v_session.id
+       and s2.pause_chance_used_at > pg_catalog.now() - interval '24 hours'
+       and (
+         (v_queue_id is not null and exists (
+            select 1
+              from public.reservation_queue_entries e2
+             where e2.id = s2.queue_entry_id
+               and e2.organization_id = s2.organization_id
+               and e2.queue_id = v_queue_id))
+         or
+         (v_activity_id is not null and exists (
+            select 1
+              from public.reservations r2
+              join public.reservation_slots s3
+                on s3.id = r2.slot_id
+               and s3.organization_id = r2.organization_id
+             where r2.id = s2.reservation_id
+               and r2.organization_id = s2.organization_id
+               and s3.activity_id = v_activity_id))
+       )
+  ) then
+    return pg_catalog.jsonb_build_object('state', 'cooldown');
   end if;
 
   -- LE GESTE, EN UNE INSTRUCTION. Voir l'en-tête : le `where … is null` EST le
@@ -770,7 +915,15 @@ comment on function public.wait_session_use_pause(uuid, uuid, text) is
   'd''octroi de tour + la campagne cible. BORNÉE PAR SESSION par un update '
   'CONDITIONNEL (`where pause_chance_used_at is null`) : le verrou est la ligne '
   'elle-même, donc un seul appel gagne sous concurrence, le second rend '
-  '`already_used`. La campagne vient du PARENT (file ou activité), JAMAIS de '
+  '`already_used`. ET BORNÉE PAR PERSONNE ET PAR GUICHET : une AUTRE session du '
+  'même player_key_hash sur la MÊME file (ou la MÊME activité) dont la Pause a '
+  'été consommée il y a moins de 24 h rend `cooldown` — sans quoi le cycle '
+  'entrer/jouer/sortir/revenir fabriquait une Pause Chance neuve à volonté sur '
+  'le stock du commerçant, la borne « une par session » ne bornant que '
+  'l''entrée en file, pas la personne. Exige aussi le droit `vitrine` (défense '
+  'en profondeur, motif wait_session_open) : un abonnement fermé ne laisse pas '
+  'une animation continuer de tirer. La campagne vient du PARENT (file ou '
+  'activité), JAMAIS de '
   'l''appelant — c''est ce qui rend « gains décidés côté serveur » vrai. N''écrit '
   'RIEN dans la file ni dans la réservation, et ne revérifie pas leur vivacité : '
   'perdre sa place ne confisque pas ce qu''on avait commencé, et la borne tient à '
@@ -877,7 +1030,16 @@ begin
      and s.player_key_hash = p_player_key_hash
      and s.player_key_hash not like 'purge:%'
    for update of s;
-  if not found then
+  -- MÊME GARDE DE DROIT QU'AUX DEUX ÉTAGES DU DESSUS, et c'est ici qu'elle
+  -- compte le plus : c'est cette fonction qui DÉCRÉMENTE le stock. Sans elle, un
+  -- jeton obtenu du temps de l'abonnement continuait de tirer sur la campagne
+  -- d'un commerce qui n'a plus le module — le seul endroit de ce lot où le
+  -- défaut aurait un coût en lots réels. L'organisation vient de la SESSION,
+  -- jamais d'un paramètre : cette RPC n'en prend pas, et c'est ce qui rend la
+  -- garde inévitable. `unavailable`, indistinctement d'un jeton inventé.
+  if not found
+     or not public.org_has_module_access(v_session.organization_id, 'vitrine')
+  then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
   if v_session.pause_spin_consumed_at is not null then
@@ -1047,7 +1209,10 @@ comment on function public.consume_reserver_wait_spin_grant(uuid, text, text) is
   'fenêtre de campagne), même BORNE 2 (un lot à stock ILLIMITÉ n''est pas '
   'tirable), même tirage pondéré atomique. Le jeton n''est consommé qu''APRÈS un '
   'tirage réussi : `no_prize` et `unavailable` le laissent intact. Le jeton seul '
-  'ne suffit pas — l''empreinte du joueur est exigée avec lui. Le gain est un '
+  'ne suffit pas — l''empreinte du joueur est exigée avec lui, et l''organisation '
+  'de la session doit TOUJOURS détenir le droit `vitrine` : c''est ici que le '
+  'stock se décrémente, donc ici qu''un abonnement fermé coûterait des lots '
+  'réels. Le gain est un '
   '`spins` ORDINAIRE (`source = ''reserver_wait''`), donc un code remis EN CAISSE '
   'comme n''importe quel gain : critère dur RES-4 « toute récompense liée à '
   'l''attente n''est remise qu''après check-in ou hors du flux de file », tenu par '

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   getQueuePublicState,
   queueJoin,
@@ -125,6 +126,11 @@ export function FileAccueilExperience({
   const { etat, rafraichir } = useFilePoll(initial, charger, cadenceFile);
 
   const [souvenir, setSouvenir] = useState<Souvenir>("aucun");
+  // UN LOT A ÉTÉ RÉVÉLÉ pendant cette attente. Posé par la section d'animation,
+  // lu par l'écran d'appel — qui doit alors dire où le gain se retrouve. Une
+  // fois vrai, il le reste : l'appel arrive APRÈS le tirage, jamais avant.
+  const [gainPause, setGainPause] = useState(false);
+  const noterGainPause = useCallback(() => setGainPause(true), []);
   const precedentRef = useRef<QueuePublicStateResult>(initial);
 
   useEffect(() => {
@@ -157,7 +163,9 @@ export function FileAccueilExperience({
       {/* L'APPEL, MONTÉ EN PREMIER ET PAR-DESSUS TOUT. Il est rendu avant le
           reste du document pour que l'ordre de lecture et l'ordre de tabulation
           le donnent en premier, sans dépendre du seul `z-index`. */}
-      {appele ? <AppelPleinEcran nomFile={etat.queueName} /> : null}
+      {appele ? (
+        <AppelPleinEcran nomFile={etat.queueName} gainEnAttente={gainPause} />
+      ) : null}
 
       <header className="mb-6 text-center">
         {logoUrl ? (
@@ -198,20 +206,33 @@ export function FileAccueilExperience({
             }}
           />
 
-          {/* LE JEU SE FERME PROPREMENT À L'APPEL (critère dur de RES-4).
-              `AppelPleinEcran` est déjà `fixed inset-0 z-50` et le recouvrirait
-              de toute façon — mais le scrutin qui l'a déclenché est le MÊME
-              document que celui-ci, alors on va au bout : la section est
-              DÉMONTÉE, pas seulement cachée. Rien n'est perdu — le tour est
-              tiré, journalisé dans `spins` et retenu par la session : il se
-              réaffiche en « déjà jouée » au rechargement suivant.
+          {/* LE JEU SE FERME PROPREMENT À L'APPEL (critère dur de RES-4) — ET
+              « SE FERMER » N'EST PAS « DISPARAÎTRE ».
+
+              Cette section était DÉMONTÉE sur `!appele`, et c'était une perte
+              sèche : l'appel arrive typiquement pendant qu'on regarde son gain,
+              et démonter le composant emportait son état — le lot révélé, son
+              code, le formulaire de retrait en cours de saisie. Le tirage, lui,
+              survivait en base ; mais le joueur, lui, voyait son écran s'effacer
+              au moment précis où il lisait un code à présenter au comptoir.
+
+              Elle reste donc MONTÉE, SOUS l'overlay : `AppelPleinEcran` est
+              `fixed inset-0 z-50` et la recouvre entièrement — l'appel prime
+              toujours, c'est lui qu'on voit — mais si l'overlay se referme (le
+              comptoir remet la personne en attente), le résultat reprend sa
+              place intact plutôt que de devoir être redemandé.
+
+              Ce que l'écran d'appel doit alors dire, il le dit lui-même :
+              `gainEnAttente` lui fait ajouter une ligne vers le portefeuille,
+              et UNIQUEMENT si un lot a réellement été révélé.
 
               Elle est SOUS le rang, jamais au-dessus : ce que le client rouvre
               sa page pour voir, c'est sa place. */}
-          {!appele && attente ? (
+          {attente ? (
             <PendantVotreAttente
               attente={attente}
               organizationName={organizationName}
+              onGain={noterGainPause}
             />
           ) : null}
         </>
@@ -247,7 +268,19 @@ export function FileAccueilExperience({
  */
 const VIBRATION_APPEL = [400, 120, 400, 120, 600];
 
-function AppelPleinEcran({ nomFile }: { nomFile: string | null }) {
+function AppelPleinEcran({
+  nomFile,
+  gainEnAttente = false,
+}: {
+  nomFile: string | null;
+  /**
+   * Un lot a été révélé par la Pause Chance pendant cette attente. L'écran
+   * d'appel recouvre alors la carte qui le montrait : sans un mot, le gagnant
+   * croirait l'avoir perdu. Faux par défaut, et la ligne ne s'affiche JAMAIS
+   * sans gain — promettre une récompense à qui n'en a pas est pire que se taire.
+   */
+  gainEnAttente?: boolean;
+}) {
   useEffect(() => {
     // Un seul déclenchement par appel : ce composant n'est monté qu'à la
     // bascule vers `called` et démonté à sa résolution. Le navigateur refuse
@@ -285,6 +318,23 @@ function AppelPleinEcran({ nomFile }: { nomFile: string | null }) {
       <p className="mt-3 max-w-xs text-sm font-bold leading-relaxed text-white/80">
         Cet écran reste affiché jusqu&apos;à ce qu&apos;on vous ait accueilli.
       </p>
+      {/* DISCRÈTE, ET SOUS L'APPEL : ce que la personne doit faire dans les dix
+          secondes, c'est se présenter au comptoir. Le gain, lui, ne s'évapore
+          pas — c'est un code de retrait ordinaire, rangé dans le portefeuille
+          comme tous les autres — mais l'écran qui le montrait vient de
+          disparaître sous celui-ci, et le dire coûte une ligne. */}
+      {gainEnAttente ? (
+        <p className="mt-8 max-w-xs text-xs font-bold leading-relaxed text-white/70">
+          🍀 Votre gain de la Pause Chance vous attend dans{" "}
+          <Link
+            href="/portefeuille"
+            className="underline decoration-k-yellow decoration-2 underline-offset-4 hover:text-k-yellow"
+          >
+            Mes récompenses
+          </Link>
+          .
+        </p>
+      ) : null}
     </div>
   );
 }

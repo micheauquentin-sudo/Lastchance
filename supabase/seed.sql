@@ -1224,17 +1224,24 @@ on conflict (id) do nothing;
 -- LES DEUX ANIMATIONS RÉUTILISENT DES FIXTURES EXISTANTES, ce qui est très
 -- exactement la promesse de RES-4 : aucun moteur neuf, aucune récompense neuve.
 --   · le quiz est `Quiz du Comptoir E2E` (e2e95000-…-01), `active`, stock 5000 ;
---   · la Pause Chance tire sur `E2E Grattage` (e2e20000-…-03), PAS sur
---     `E2E Gagnante` (…-01, qui sert ailleurs à prouver le formulaire de
---     collecte) : `PendantVotreAttente` rend un `ClaimConfig` MUET
---     (`COLLECTE_MUETTE`, sans email ni téléphone — la config réelle de la
---     campagne n'est jamais résolue côté client, voir le commentaire du
---     composant) et `E2E Gagnante` exige un email — le claim automatique y
---     échouait avec « Votre email est requis », détecté par
---     `reserver-attente.spec.ts`. `E2E Grattage` ne collecte rien et son lot
---     gagnant porte, depuis ce lot, un stock FINI de 5000 — indispensable :
---     la BORNE 2 exclut du tour offert tout lot à stock illimité, et un lot
---     par défaut aurait rendu `no_prize` à chaque Pause Chance.
+--   · la Pause Chance tire sur DEUX campagnes DIFFÉRENTES, une par porteur, et
+--     c'est délibéré depuis que `wait_session_open` descend la configuration de
+--     retrait réelle de la campagne : les deux moitiés du parcours de gain
+--     doivent être couvertes.
+--       — FILE (« Comptoir Attente E2E ») → `E2E Grattage` (e2e20000-…-03), qui
+--         ne collecte RIEN : le retrait est automatique, le code s'affiche seul,
+--         et le test lit le code sans formulaire à remplir.
+--       — ACTIVITÉ (« Dégustation du Comptoir E2E ») → `E2E Gagnante`
+--         (e2e20000-…-01), qui EXIGE l'email : c'est la moitié qui prouve le
+--         correctif. Tant que l'écran supposait « ne rien collecter », le
+--         retrait automatique partait sans adresse, le serveur le refusait —
+--         et le lot était DÉJÀ tiré, le stock DÉJÀ décompté. Un tour offert
+--         brûlé sans code. Le seul témoin possible est une campagne qui
+--         collecte, et `reserver-attente.spec.ts` y vérifie que le formulaire
+--         apparaît au lieu d'échouer en silence.
+--     LES DEUX LOTS GAGNANTS PORTENT UN STOCK FINI (5000) — indispensable : la
+--     BORNE 2 exclut du tour offert tout lot à stock illimité, et un lot par
+--     défaut aurait rendu `no_prize` à chaque Pause Chance.
 --
 -- LES DEUX PORTEURS SONT CONFIGURÉS, un par forme d'attente : la file
 -- « Comptoir Attente E2E » (attente DEBOUT — DÉDIÉE, pas « Comptoir E2E »,
@@ -1249,5 +1256,5 @@ update public.reservation_queues
 
 update public.reservation_activities
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
-       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000003'
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
  where id = 'e2ea0000-0000-4000-8000-000000000011';

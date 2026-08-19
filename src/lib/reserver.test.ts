@@ -1215,6 +1215,9 @@ describe("mapWaitSessionOpen", () => {
       source: "queue_entry",
       quiz_id: "q1",
       pause_campaign_id: "c1",
+      pause_collect_email: true,
+      pause_collect_phone: false,
+      pause_code_ttl_seconds: 120,
       activity_id: "a1",
       pause_chance_used: false,
     });
@@ -1226,6 +1229,46 @@ describe("mapWaitSessionOpen", () => {
     expect(r.pauseCampaignId).toBe("c1");
     expect(r.activityId).toBe("a1");
     expect(r.pauseChanceUsed).toBe(false);
+  });
+
+  // ── LA CONFIGURATION DE RETRAIT ──
+  //
+  // Elle n'était pas descendue : l'écran la supposait « ne rien demander »,
+  // alors que `campaigns.collect_email` vaut `true` par défaut. Le retrait
+  // automatique partait sans adresse, le serveur le refusait, et le lot était
+  // déjà tiré — un tour offert brûlé sans code.
+  it("descend la configuration de retrait DE LA CAMPAGNE, sans rien supposer", () => {
+    const r = mapWaitSessionOpen({
+      state: "open",
+      session_id: "s1",
+      source: "queue_entry",
+      pause_campaign_id: "c1",
+      pause_collect_email: true,
+      pause_collect_phone: true,
+      pause_code_ttl_seconds: 90,
+    });
+
+    expect(r.pauseClaimConfig).toEqual({
+      collectEmail: true,
+      collectPhone: true,
+      codeTtlSeconds: 90,
+    });
+  });
+
+  it("adosse la configuration à la campagne : pas de campagne, pas de collecte", () => {
+    // ROUGE SI l'on repliait sur un objet de valeurs par défaut : ce serait la
+    // configuration inventée que ce correctif supprime, sous un autre nom.
+    expect(
+      mapWaitSessionOpen({
+        state: "open",
+        session_id: "s1",
+        source: "queue_entry",
+        pause_campaign_id: null,
+        pause_collect_email: true,
+        pause_collect_phone: true,
+        pause_code_ttl_seconds: 90,
+      }).pauseClaimConfig,
+    ).toBeNull();
   });
 
   it("ne retient RIEN sur `unknown` — pas même une animation glissée dans le document", () => {
@@ -1245,6 +1288,7 @@ describe("mapWaitSessionOpen", () => {
     expect(r.source).toBeNull();
     expect(r.quizId).toBeNull();
     expect(r.pauseCampaignId).toBeNull();
+    expect(r.pauseClaimConfig).toBeNull();
     expect(r.activityId).toBeNull();
     expect(r.pauseChanceUsed).toBe(false);
   });
@@ -1275,6 +1319,7 @@ describe("mapWaitSessionOpen", () => {
       "activityId",
       "pauseCampaignId",
       "pauseChanceUsed",
+      "pauseClaimConfig",
       "quizId",
       "sessionId",
       "source",
@@ -1328,6 +1373,29 @@ describe("mapWaitUsePause", () => {
     });
     expect(inconnu.campaignId).toBeNull();
     expect(inconnu.grantToken).toBeNull();
+  });
+
+  it("lit `cooldown` — déjà jouée ICI récemment, dans une AUTRE attente", () => {
+    // LE CYCLE QU'IL FERME : sortir de la file et y revenir crée une entrée
+    // neuve, donc une session neuve, donc une Pause Chance neuve. « Une par
+    // session » ne bornait que l'entrée ; le seau de 24 h borne la PERSONNE.
+    const r = mapWaitUsePause({ state: "cooldown" });
+    expect(r.state).toBe("cooldown");
+  });
+
+  it("ne laisse voyager AUCUN jeton sur `cooldown`", () => {
+    // ROUGE SI l'on repliait `cooldown` sur `already_used` : le jeton
+    // appartiendrait à une AUTRE session, et le tirage le refuserait — le
+    // joueur verrait une panne là où il y a une règle.
+    const r = mapWaitUsePause({
+      state: "cooldown",
+      campaign_id: "c1",
+      grant_token: "f".repeat(48),
+      spin_id: "sp1",
+    });
+    expect(r.grantToken).toBeNull();
+    expect(r.campaignId).toBeNull();
+    expect(r.spinId).toBeNull();
   });
 
   it("replie sur `unknown` un document illisible", () => {
@@ -1433,11 +1501,37 @@ describe("vueAttente", () => {
       source: "reservation",
       quizId: "q1",
       pauseCampaignId: null,
+      pauseClaimConfig: null,
       activityId: "a1",
       pauseChanceUsed: false,
       pause: "absente",
       animations: ["quiz", "activite"],
     });
+  });
+
+  it("fait voyager la configuration de retrait jusqu'à l'écran", () => {
+    // C'EST LE CHEMIN COMPLET DU CORRECTIF : la campagne dit ce qu'elle
+    // collecte, `wait_session_open` le rend, et la vue le porte jusqu'à
+    // `ClaimForm` — qui n'a plus rien à inventer.
+    const vue = vueAttente(
+      mapWaitSessionOpen({
+        state: "open",
+        session_id: "s1",
+        source: "queue_entry",
+        pause_campaign_id: "c1",
+        pause_collect_email: true,
+        pause_collect_phone: false,
+        pause_code_ttl_seconds: null,
+        pause_chance_used: false,
+      }),
+    );
+
+    expect(vue?.pauseClaimConfig).toEqual({
+      collectEmail: true,
+      collectPhone: false,
+      codeTtlSeconds: null,
+    });
+    expect(vue?.animations).toEqual(["pause"]);
   });
 
   it("rend `null` sur un refus, ET sur un document `open` sans preuve", () => {

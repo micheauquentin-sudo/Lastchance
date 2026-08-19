@@ -29,6 +29,15 @@
 --   8. ACL ET RLS. La table neuve est fermée à `anon` ET à `authenticated` au
 --      niveau TABLE, ne porte AUCUNE policy, et les trois RPC ne sont
 --      exécutables que par `service_role`.
+--   9. LA PAUSE CHANCE NE SE RENOUVELLE PAS EN CYCLANT LA FILE. Le cycle
+--      sortir → revenir crée une entrée neuve, donc une session neuve : « une
+--      par session » ne bornait que l'ENTRÉE. Le seau de 24 h par personne ET
+--      par guichet est éprouvé sur les deux formes d'attente, avec ses deux
+--      bords — un AUTRE joueur au même guichet passe, la même personne repasse
+--      après 25 h simulées.
+--  10. LE DROIT `vitrine` EST EXIGÉ AUX TROIS ÉTAGES. Une session ouverte du
+--      temps de l'abonnement ne sert plus rien après sa fermeture — ni octroi,
+--      ni tirage — et le tirage est celui qui décrémente le stock.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -93,9 +102,15 @@ insert into public.quizzes (
 -- jamais tiré — il est hors du filtre `weight > 0`). Trois tours possibles, puis
 -- la roue n'a plus rien : c'est ce qui permet de prouver, dans le même fichier,
 -- et que le tour offert gagne, et que le stock est réellement décompté.
-insert into public.campaigns (id, organization_id, name, status)
+-- LA CONFIGURATION DE RETRAIT est posée EXPLICITEMENT et à contre-défaut sur
+-- les trois champs (le produit sert `true / false / null`) : une assertion qui
+-- ne ferait que relire les valeurs par défaut passerait encore si la RPC les
+-- inventait au lieu de les lire.
+insert into public.campaigns (id, organization_id, name, status,
+                              collect_email, collect_phone, code_ttl_seconds)
 values ('4f22e000-0000-4000-8000-000000000501',
-        '4f22e000-0000-4000-8000-00000000000a', 'Pause Chance', 'active');
+        '4f22e000-0000-4000-8000-00000000000a', 'Pause Chance', 'active',
+        true, true, 120);
 insert into public.wheels (id, organization_id, campaign_id, name, play_limit)
 values ('4f22e000-0000-4000-8000-000000000502',
         '4f22e000-0000-4000-8000-00000000000a',
@@ -355,6 +370,19 @@ select is((select j->>'quiz_id' from s1 where n = 1),
 select is((select j->>'pause_campaign_id' from s1 where n = 1),
   '4f22e000-0000-4000-8000-000000000501',
   'OPEN-5 la campagne de Pause Chance configurée sur la file est rendue');
+
+-- LA CONFIGURATION DE RETRAIT VOYAGE AVEC LA CAMPAGNE. Sans elle, l'écran
+-- d'attente devait l'inventer — et il inventait « ne rien demander », alors que
+-- `collect_email` vaut `true` PAR DÉFAUT : le retrait automatique partait sans
+-- adresse, le serveur le refusait, et le lot était déjà tiré. Un tour offert
+-- brûlé sans code.
+select is((select j->>'pause_collect_email' from s1 where n = 1), 'true',
+  'OPEN-5b la campagne dit qu''elle collecte l''email — l''écran n''a plus à le deviner');
+select is((select j->>'pause_collect_phone' from s1 where n = 1), 'true',
+  'OPEN-5c …et le téléphone');
+select is((select j->>'pause_code_ttl_seconds' from s1 where n = 1), '120',
+  'OPEN-5d …et la durée d''affichage du code, lue et non supposée');
+
 select is((select j->>'pause_chance_used' from s1 where n = 1), 'false',
   'OPEN-6 la Pause Chance n''est pas encore consommée');
 select is((select j->>'activity_id' from s1 where n = 1), null,
@@ -366,7 +394,8 @@ select is((select j->>'activity_id' from s1 where n = 1), null,
 select is(
   (select string_agg(k, ',' order by k)
      from s1, lateral jsonb_object_keys(j) k where n = 1),
-  'activity_id,pause_campaign_id,pause_chance_used,quiz_id,session_id,source,state',
+  'activity_id,pause_campaign_id,pause_chance_used,pause_code_ttl_seconds,'
+    || 'pause_collect_email,pause_collect_phone,quiz_id,session_id,source,state',
   'OPEN-8 le document d''ouverture ne porte NI rang, NI compteur d''attente, NI délai');
 
 -- LE VERROU D'AVIS, sur la clé EXACTE (organisation + source).
@@ -440,6 +469,14 @@ select is((select j->>'quiz_id' from s1 where n = 6), null,
 select is((select j->>'pause_campaign_id' from s1 where n = 6),
   '4f22e000-0000-4000-8000-000000000511',
   'OPEN-19 la campagne ACTIVE de la même file reste proposée, elle');
+-- …ET SA CONFIGURATION, QUI N'EST PAS CELLE DE L'AUTRE CAMPAGNE. C'est ce qui
+-- distingue « la RPC LIT la campagne » de « la RPC rend une constante ».
+select is(
+  (select (j->>'pause_collect_email') || '/' || (j->>'pause_collect_phone')
+       || '/' || coalesce(j->>'pause_code_ttl_seconds', '∅')
+     from s1 where n = 6),
+  'true/false/∅',
+  'OPEN-19b …avec SA configuration de retrait à elle, différente de celle de la file Q1');
 
 -- AUCUNE ANIMATION CONFIGURÉE : la session s'ouvre quand même, vide. Le Mode
 -- Attente active est FACULTATIF, et une file sans configuration se comporte
@@ -727,6 +764,13 @@ insert into s1 values (9, public.wait_session_open(
   '4f22e000-0000-4000-8000-000000000707', null));
 select is((select j->>'pause_campaign_id' from s1 where n = 9), null,
   'BORNE3-1 une campagne ARCHIVÉE n''est pas proposée à l''ouverture');
+select is(
+  (select coalesce(j->>'pause_collect_email', '∅') || '/'
+       || coalesce(j->>'pause_collect_phone', '∅') || '/'
+       || coalesce(j->>'pause_code_ttl_seconds', '∅')
+     from s1 where n = 9),
+  '∅/∅/∅',
+  'BORNE3-1a …et sa configuration de retrait part avec elle : rien à réclamer, rien à demander');
 insert into s3 values (7, public.wait_session_use_pause(
   '4f22e000-0000-4000-8000-00000000000a',
   (select (j->>'session_id')::uuid from s1 where n = 9),
@@ -971,6 +1015,180 @@ select throws_ok(
   '23505',
   null,
   'ACL-14 une SECONDE session sur la même entrée de file est refusée par l''index unique');
+
+-- ════════════════════════════════════════════════════════════
+-- 8. LA PAUSE CHANCE NE SE RENOUVELLE PAS EN CYCLANT LA FILE
+--
+-- « Une entrée en file = une Pause Chance » bornait l'ENTRÉE, pas la PERSONNE :
+-- sortir de la file et y revenir fabriquait une entrée neuve, donc une session
+-- neuve, donc un tour offert neuf — à volonté, sur le stock du commerçant, en
+-- trente secondes de manipulation. Le seau de 24 h par personne ET PAR GUICHET
+-- ferme le cycle, et ce sont les VRAIES RPC de file qui le prouvent ici :
+-- `queue_leave` puis `queue_join`, exactement les deux boutons de l'écran.
+--
+-- CETTE SECTION ÉCRIT DANS LA FILE — c'est elle qui simule le joueur — et c'est
+-- pour cela qu'elle vient APRÈS la photographie de la section 5 : l'invariant
+-- « le JEU ne touche pas la file » y a déjà été prouvé sur les vingt-cinq appels
+-- d'animation qui le précèdent, et il porterait à faux sur des gestes de file
+-- délibérés.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table s8 (n int, j jsonb);
+
+insert into s8 values (1, public.queue_leave(
+  '4f22e000-0000-4000-8000-000000000701', repeat('a1', 32)));
+select is((select j->>'state' from s8 where n = 1), 'left',
+  'CYCLE-1 Alix quitte la file où elle vient de jouer sa Pause Chance — un bouton de son écran, rien de plus');
+
+insert into s8 values (2, public.queue_join(
+  '4f22e000-0000-4000-8000-00000000000a',
+  '4f22e000-0000-4000-8000-000000000601',
+  repeat('a1', 32)));
+select is((select j->>'state' from s8 where n = 2), 'waiting',
+  'CYCLE-2 …et se réinscrit aussitôt : une entrée NEUVE, en dernier');
+
+insert into s8 values (3, public.wait_session_open(
+  '4f22e000-0000-4000-8000-00000000000a', repeat('a1', 32),
+  (select (j->>'entry_id')::uuid from s8 where n = 2), null));
+select is((select j->>'state' from s8 where n = 3), 'open',
+  'CYCLE-3 la nouvelle entrée ouvre une session — la séparation ne change pas de règle');
+select isnt(
+  (select j->>'session_id' from s8 where n = 3),
+  (select j->>'session_id' from s1 where n = 1),
+  'CYCLE-4 …et ce n''est PAS la précédente : « une par session » ne bornait donc que l''entrée');
+select is((select j->>'pause_chance_used' from s8 where n = 3), 'false',
+  'CYCLE-5 …et cette session se croit vierge, ce qu''elle est : le refus se joue à l''octroi, pas à l''ouverture');
+
+insert into s8 values (4, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000a',
+  (select (j->>'session_id')::uuid from s8 where n = 3),
+  repeat('a1', 32)));
+select is((select j->>'state' from s8 where n = 4), 'cooldown',
+  'CYCLE-6 la Pause Chance est REFUSÉE : moins de 24 h depuis la précédente, au MÊME guichet et par la MÊME personne');
+select is(
+  (select pause_chance_used_at from public.reservation_wait_sessions
+    where id = (select (j->>'session_id')::uuid from s8 where n = 3)),
+  null,
+  'CYCLE-7 …et la session neuve reste vierge : le refus ne brûle rien');
+select is((select j->>'grant_token' from s8 where n = 4), null,
+  'CYCLE-8 …et AUCUN jeton ne voyage d''une session à l''autre — `cooldown` n''est pas `already_used`');
+
+-- LE SEAU BORNE UNE PERSONNE, PAS UN GUICHET. Sans cette assertion, une garde
+-- posée par erreur sur la FILE entière passerait le test ci-dessus tout en
+-- privant de Pause Chance tous ceux qui attendent derrière.
+insert into s8 values (5, public.wait_session_open(
+  '4f22e000-0000-4000-8000-00000000000a', repeat('a2', 32),
+  '4f22e000-0000-4000-8000-000000000702', null));
+insert into s8 values (6, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000a',
+  (select (j->>'session_id')::uuid from s8 where n = 5),
+  repeat('a2', 32)));
+select is((select j->>'state' from s8 where n = 6), 'granted',
+  'CYCLE-9 Bilal, sur LA MÊME file et à la même seconde, joue la sienne sans entrave');
+
+-- APRÈS 24 H, ELLE REVIENT. C'est un SEAU, pas une interdiction — et pgTAP ne
+-- peut pas attendre : on VIEILLIT la session qui bloque, seul levier honnête.
+update public.reservation_wait_sessions
+   set pause_chance_used_at = pg_catalog.now() - interval '25 hours'
+ where id = (select (j->>'session_id')::uuid from s1 where n = 1);
+
+insert into s8 values (7, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000a',
+  (select (j->>'session_id')::uuid from s8 where n = 3),
+  repeat('a1', 32)));
+select is((select j->>'state' from s8 where n = 7), 'granted',
+  'CYCLE-10 vingt-cinq heures plus tard, la même personne rejoue au même guichet');
+select ok((select j->>'grant_token' from s8 where n = 7) ~ '^[0-9a-f]{48}$',
+  'CYCLE-11 …avec un jeton NEUF, celui de SA session');
+select isnt(
+  (select j->>'grant_token' from s8 where n = 7),
+  (select j->>'grant_token' from s3 where n = 1),
+  'CYCLE-12 …et jamais celui de l''attente précédente');
+
+-- L'AUTRE FORME D'ATTENTE : LE SEAU VAUT AUSSI PAR ACTIVITÉ. Deux créneaux de la
+-- MÊME activité, sous la MÊME empreinte — l'index unique de `reservations`
+-- interdit deux places actives sur UN créneau, le cycle passe donc par un
+-- second. Réserver deux fois n'est pas attendre deux fois.
+insert into s8 values (8, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000a',
+  (select (j->>'session_id')::uuid from s1 where n = 4),
+  repeat('b1', 32)));
+select is((select j->>'state' from s8 where n = 8), 'granted',
+  'CYCLE-13 la première Pause Chance de la réservation R1 est accordée');
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values ('4f22e000-0000-4000-8000-000000000806', '4f22e000-0000-4000-8000-000000000801',
+        '4f22e000-0000-4000-8000-00000000000a',
+        now() + interval '3 days', now() + interval '3 days 30 minutes', 4, 'open');
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash, status)
+values ('4f22e000-0000-4000-8000-000000000805',
+        '4f22e000-0000-4000-8000-000000000806',
+        '4f22e000-0000-4000-8000-00000000000a', repeat('b1', 32), 'confirmed');
+
+insert into s8 values (9, public.wait_session_open(
+  '4f22e000-0000-4000-8000-00000000000a', repeat('b1', 32),
+  null, '4f22e000-0000-4000-8000-000000000805'));
+select is((select j->>'state' from s8 where n = 9), 'open',
+  'CYCLE-14 la seconde réservation, sur un autre créneau de la MÊME activité, ouvre bien sa session');
+insert into s8 values (10, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000a',
+  (select (j->>'session_id')::uuid from s8 where n = 9),
+  repeat('b1', 32)));
+select is((select j->>'state' from s8 where n = 10), 'cooldown',
+  'CYCLE-15 …et sa Pause Chance est refusée : le guichet est l''ACTIVITÉ, pas le créneau');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 9. LE DROIT `vitrine` EST EXIGÉ AUX TROIS ÉTAGES, PAS AU PREMIER SEULEMENT
+--
+-- `wait_session_open` le vérifiait déjà (REFUS-6) ; les deux autres RPC ne le
+-- vérifiaient pas. Une session ouverte DU TEMPS de l'abonnement continuait donc
+-- de servir une Pause Chance — et, à l'étage du tirage, de DÉCRÉMENTER LE STOCK
+-- — longtemps après la fermeture du module. La session est ici posée à la main,
+-- ce qui est exactement la situation réelle : elle date d'avant.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.reservation_wait_sessions
+  (id, organization_id, queue_entry_id, player_key_hash,
+   pause_chance_used_at, pause_spin_grant_token)
+values ('4f22e000-0000-4000-8000-0000000009c1',
+        '4f22e000-0000-4000-8000-00000000000c',
+        '4f22e000-0000-4000-8000-000000000771', repeat('a8', 32),
+        now(), repeat('cd', 24));
+
+create temporary table s9 (n int, j jsonb);
+
+insert into s9 values (1, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000c',
+  '4f22e000-0000-4000-8000-0000000009c1', repeat('a8', 32)));
+select is((select j->>'state' from s9 where n = 1), 'unknown',
+  'DROIT-1 sans le droit `vitrine`, l''octroi de Pause Chance est muet — le MÊME état que les autres refus');
+
+insert into s9 values (2, public.consume_reserver_wait_spin_grant(
+  '4f22e000-0000-4000-8000-0000000009c1', repeat('a8', 32), repeat('cd', 24)));
+select is((select j->>'state' from s9 where n = 2), 'unavailable',
+  'DROIT-2 …et le TIRAGE refuse aussi : c''est lui qui décrémente le stock du commerçant');
+select is(
+  (select pause_spin_consumed_at from public.reservation_wait_sessions
+    where id = '4f22e000-0000-4000-8000-0000000009c1'),
+  null,
+  'DROIT-3 …sans brûler le jeton : rouvrir son abonnement rend le tour au joueur');
+
+-- ET C'EST BIEN LE DROIT QUI REFUSE, pas une fixture bancale : l'octroi posé, la
+-- MÊME session passe de `unknown` à `unconfigured` — elle est lue, comprise, et
+-- refusée pour la seule raison qui reste (cette file n'a pas de campagne).
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values ('4f22e000-0000-4000-8000-00000000000c', 'vitrine', 'pass', 'backoffice',
+        now() - interval '1 day', now() + interval '365 days');
+
+insert into s9 values (3, public.wait_session_use_pause(
+  '4f22e000-0000-4000-8000-00000000000c',
+  '4f22e000-0000-4000-8000-0000000009c1', repeat('a8', 32)));
+select is((select j->>'state' from s9 where n = 3), 'unconfigured',
+  'DROIT-4 l''octroi posé, la MÊME session n''est plus `unknown` : c''était le DROIT qui refusait');
 
 select * from finish();
 rollback;

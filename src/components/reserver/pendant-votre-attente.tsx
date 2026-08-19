@@ -31,10 +31,13 @@ import {
  *
  * `AppelPleinEcran` est `fixed inset-0 z-50` et monté AVANT le document. Cette
  * section vit dans le flux ordinaire et n'utilise ni `fixed` ni `z-index` : elle
- * ne peut pas recouvrir l'appel. La page va plus loin et la DÉMONTE quand le
- * statut passe à `called` — c'est la fermeture propre du cahier, et elle ne perd
- * rien : le tour est tiré, journalisé dans `spins` et retenu par la session
- * (`pause_resulting_spin_id`), donc il se retrouve.
+ * ne peut pas recouvrir l'appel. Elle reste MONTÉE dessous, et ce n'est pas un
+ * relâchement de la fermeture : elle est intégralement recouverte, donc invisible
+ * — mais son état survit. La démonter emportait le lot révélé, son code et le
+ * formulaire de retrait en cours de saisie, au moment précis où quelqu'un lisait
+ * un code à présenter au comptoir. Le tirage, lui, survit toujours en base
+ * (`spins`, `pause_resulting_spin_id`) ; ce qui se perdait, c'était l'écran. Et
+ * l'appel se charge de dire où le gain se retrouve, via `onGain`.
  *
  * ── POURQUOI PAS DE ROUE QUI TOURNE ICI ──
  *
@@ -56,29 +59,37 @@ const carteClass =
   "k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]";
 
 /**
- * Collecte par défaut : AUCUNE.
+ * LA CONFIGURATION DE COLLECTE N'EST PLUS UNE PROP, ET C'EST LE CORRECTIF.
  *
- * La configuration réelle de la campagne n'est pas résolue côté client — la
- * campagne vient du parent, et l'écran ne la connaît que par son identifiant.
- * Demander une adresse qu'on ne sait pas devoir demander serait pire que de ne
- * pas la demander : le code s'affiche, et il se retire au comptoir.
+ * Elle valait `{ false, false, null }` en dur ici, faute d'être résolue : la
+ * campagne vient du parent, et l'écran n'en connaissait que l'identifiant. Or
+ * `campaigns.collect_email` vaut `true` PAR DÉFAUT — le retrait automatique
+ * partait donc sans adresse, le serveur le refusait, et le lot était DÉJÀ tiré,
+ * le stock DÉJÀ décompté. Un tour offert brûlé sans code, l'issue la plus chère
+ * de ce parcours.
+ *
+ * `wait_session_open` la rend désormais avec la campagne, et elle voyage dans
+ * `attente.pauseClaimConfig`. Elle n'est plus une prop du tout : deux points de
+ * montage, deux occasions d'oublier de la passer, et le défaut réapparaissait
+ * silencieusement au premier oubli. Adossée à la vue, elle ne peut pas manquer
+ * là où la campagne est présente — et là où la campagne manque, la tuile n'est
+ * pas rendue.
  */
-const COLLECTE_MUETTE: ClaimConfig = {
-  collectEmail: false,
-  collectPhone: false,
-  codeTtlSeconds: null,
-};
-
 export function PendantVotreAttente({
   attente,
   organizationName,
   organizationId = null,
-  claimConfig = COLLECTE_MUETTE,
+  onGain,
 }: {
   attente: ReserverAttenteView;
   organizationName: string;
   organizationId?: string | null;
-  claimConfig?: ClaimConfig;
+  /**
+   * Signale au parent qu'un LOT a été révélé pendant cette attente. Sert à
+   * l'écran d'appel, qui doit alors dire où le gain se retrouve — la page ne
+   * peut pas le deviner, l'état du tirage vit ici.
+   */
+  onGain?: () => void;
 }) {
   // `animations` est calculée côté serveur (`animationsAttente`) : l'ordre
   // d'affichage et la présence de chaque tuile sont tranchés une seule fois,
@@ -106,12 +117,18 @@ export function PendantVotreAttente({
             {animation === "quiz" && attente.quizId ? (
               <CarteQuiz quizId={attente.quizId} />
             ) : null}
-            {animation === "pause" ? (
+            {/* `pauseClaimConfig` est non nul exactement quand
+                `pauseCampaignId` l'est — même lecture SQL, même ligne. Le
+                tester ici plutôt que de replier sur une valeur par défaut est
+                ce qui rend la collecte muette impossible à réintroduire : sans
+                configuration, pas de tuile. */}
+            {animation === "pause" && attente.pauseClaimConfig ? (
               <CartePauseChance
                 attente={attente}
                 organizationName={organizationName}
                 organizationId={organizationId}
-                claimConfig={claimConfig}
+                claimConfig={attente.pauseClaimConfig}
+                onGain={onGain}
               />
             ) : null}
             {animation === "activite" && attente.activityId ? (
@@ -187,9 +204,16 @@ function CarteDecouvrir({ activityId }: { activityId: string }) {
  * retirer sa campagne entre le rendu et le clic. Il n'est donc pas traité comme
  * une panne, et il ne dit rien de la place dans la file, qui n'a pas bougé.
  */
-const REFUS_PAUSE: Record<"unconfigured" | "unknown", string> = {
+const REFUS_PAUSE: Record<"unconfigured" | "cooldown" | "unknown", string> = {
   unconfigured:
     "Le jeu n'est plus proposé pour le moment. Votre place, elle, n'a pas bougé.",
+  // `cooldown` : déjà jouée ICI il y a moins de 24 h, mais dans une AUTRE
+  // attente — le cas de celui qui sort de la file et y revient. La phrase dit
+  // les trois choses qui comptent : c'est déjà fait, ce n'est pas perdu, et la
+  // place n'a pas bougé. Elle ne parle jamais de « triche » : le geste est
+  // légitime, c'est la borne qui manquait.
+  cooldown:
+    "Vous avez déjà joué votre Pause Chance ici — une par visite. Un gain éventuel vous attend dans « Mes récompenses », et votre place n'a pas bougé.",
   unknown: "Cette attente est introuvable. Rechargez la page.",
 };
 
@@ -200,11 +224,13 @@ function CartePauseChance({
   organizationName,
   organizationId,
   claimConfig,
+  onGain,
 }: {
   attente: ReserverAttenteView;
   organizationName: string;
   organizationId: string | null;
   claimConfig: ClaimConfig;
+  onGain?: () => void;
 }) {
   const [resultat, setResultat] = useState<ReserverWaitSpinOutcome | null>(null);
   const [phase, setPhase] = useState<PhasePause>("repos");
@@ -236,7 +262,11 @@ function CartePauseChance({
     }
 
     const etatOctroi = octroi.data.state;
-    if (etatOctroi === "unconfigured" || etatOctroi === "unknown") {
+    if (
+      etatOctroi === "unconfigured" ||
+      etatOctroi === "cooldown" ||
+      etatOctroi === "unknown"
+    ) {
       setErreur(REFUS_PAUSE[etatOctroi]);
       setPhase("erreur");
       return;
@@ -275,7 +305,11 @@ function CartePauseChance({
 
     setResultat(tirage.data);
     setPhase("resolu");
-  }, [attente.sessionId]);
+    // UN GAIN, et seulement un gain : ni `no_prize` (rien à distribuer, le tour
+    // reste offert) ni un lot perdant. C'est ce que l'écran d'appel pourra
+    // promettre sans mentir.
+    if (tirage.data.state !== "no_prize" && !tirage.data.isLosing) onGain?.();
+  }, [attente.sessionId, onGain]);
 
   return (
     <div className={carteClass}>
