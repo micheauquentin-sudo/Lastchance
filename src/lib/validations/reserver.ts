@@ -702,8 +702,12 @@ export const updateReserverQueueSchema = z.object({
  */
 export const waitSessionOpenSchema = z
   .object({
-    queueEntryId: uuid.optional(),
-    reservationId: uuid.optional(),
+    queueEntryId: uuid
+      .nullish()
+      .transform((v) => v ?? undefined),
+    reservationId: uuid
+      .nullish()
+      .transform((v) => v ?? undefined),
   })
   .superRefine((valeur, ctx) => {
     const posees = [valeur.queueEntryId, valeur.reservationId].filter(
