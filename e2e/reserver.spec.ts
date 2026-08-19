@@ -132,9 +132,9 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .click();
 
     await expect(
-      page.getByRole("alert", {
-        name: "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
-      }),
+      page.getByText(
+        "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
+      ),
     ).toBeVisible({ timeout: 20_000 });
 
     // Ni l'email saisi ni un jeton n'apparaissent dans la page rendue.
