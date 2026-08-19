@@ -22,9 +22,9 @@ parallèle, fusions de migrations sérialisées.
 
 | Lot | Contenu court | Statut | PR | Migration |
 |---|---|---|---|---|
-| L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | 🔨 en cours | — | — |
-| L1 | Benchmark Mennoo (lecture seule) | ⏳ | — | — |
-| L2 | Droit serveur vitrine (entitlement A1) | ⏳ | — | — |
+| L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | 🔨 en cours | #156 | — |
+| L1 | Benchmark Mennoo (lecture seule) → [`docs/benchmark-mennoo.md`](./benchmark-mennoo.md) | ✅ | #156 | — |
+| L2 | Droit serveur vitrine (entitlement A1) | 🔨 en cours | — | 20261001120000 |
 | L3 | RES-1a — schéma + RPC réservation | ⏳ | — | — |
 | L4 | RES-1b — surfaces + email (A2) | ⏳ | — | — |
 | L5 | RES-2 — liste prioritaire + invitations | ⏳ | — | — |
