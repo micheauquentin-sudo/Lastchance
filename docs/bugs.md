@@ -1,5 +1,17 @@
 # Known Issues & Bugs - Lastchance
 
+## Notes
+
+- **2026-08-19 — `event-remote-cycle.spec.ts` sous mobile-safari : timeout
+  global, pas une attente précise.** Run CI 32206711952 (SHA 41c7345,
+  PR #158) : seul échec restant du chantier flake E2E. Le test orchestre 3
+  pages (télécommande + joueur) sur 6 attentes bornées à 20-30 s chacune ;
+  sous WebKit headless chargé en CI la somme dépasse le budget par défaut de
+  90 s (`playwright.config.ts`) alors que mobile-chrome passe dans le même
+  run. Corrigé par `test.setTimeout(150_000)` dans le test, pas par
+  l'allongement d'une attente individuelle ni par une restriction de
+  couverture navigateur.
+
 ## Critical
 
 - **✅ Le canal SMS livré (V1.24, PR #80) était INERTE — aucun SMS ne
