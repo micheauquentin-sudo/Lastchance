@@ -10,6 +10,7 @@ import {
   TurnstileWidget,
   turnstileClientEnabled,
 } from "@/components/wheel/turnstile-widget";
+import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { LoyaltyMessageTone } from "./loyalty-passport-state";
 import { messageForOrderStamp } from "./tampon-commande-state";
 
@@ -51,8 +52,6 @@ const TONE_BOX: Record<LoyaltyMessageTone, string> = {
 type ChallengePhase = "loading" | "ready" | "expired" | "unavailable";
 
 export interface TamponCommandeProps {
-  /** Jeton du QR imprimé sur la carte glissée dans le colis. */
-  token: string;
   programId: string;
   programName: string;
   organizationName: string;
@@ -62,7 +61,6 @@ export interface TamponCommandeProps {
 }
 
 export function TamponCommande({
-  token,
   programId,
   programName,
   organizationName,
@@ -92,7 +90,10 @@ export function TamponCommande({
       let res: LoyaltyStampActionResult;
       try {
         res = await stampLoyaltyOrder({
-          orderToken: token,
+          // Lu de l'adresse À L'ENVOI, et non reçu en prop : une prop serveur →
+          // client est recopiée en clair dans le HTML (payload RSC), et ce
+          // jeton-ci pose un tampon à usage unique.
+          orderToken: jetonDeLAdresse(),
           turnstileToken: jeton,
         });
       } catch {
@@ -124,7 +125,7 @@ export function TamponCommande({
       }
       setResult(res);
     },
-    [token],
+    [],
   );
 
   // Rejeu automatique dès qu'un jeton frais arrive.

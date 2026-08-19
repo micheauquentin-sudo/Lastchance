@@ -31,7 +31,6 @@ const { TamponCommande } = await import(
  */
 
 const PROPS = {
-  token: "CMD-TOKEN-1",
   programId: "prog-1",
   programName: "Carte du Café des Sports",
   organizationName: "Café des Sports",
@@ -43,6 +42,10 @@ const bouton = () => screen.getByRole("button", { name: /Ajouter mon tampon/ });
 
 beforeEach(() => {
   stampLoyaltyOrder.mockReset();
+  // Le jeton n'est PLUS une prop : il vit dans l'adresse, et l'écran l'y relit
+  // au moment du POST (une prop serveur → client serait recopiée en clair dans
+  // le payload RSC, donc dans le HTML).
+  window.history.replaceState({}, "", "/commande/CMD-TOKEN-1");
 });
 afterEach(cleanup);
 
@@ -51,6 +54,26 @@ describe("TamponCommande", () => {
     render(<TamponCommande {...PROPS} />);
     expect(stampLoyaltyOrder).not.toHaveBeenCalled();
     expect(bouton()).toBeTruthy();
+  });
+
+  it("envoie le jeton LU DE L'ADRESSE, pas une prop", async () => {
+    // Le défaut gardé : reprendre une prop `token`. Elle traverserait la
+    // frontière serveur → client, donc serait sérialisée en clair dans le HTML
+    // (`self.__next_f.push`) — pour un jeton à usage unique qui pose un tampon.
+    stampLoyaltyOrder.mockResolvedValue({
+      ok: true,
+      data: { state: "stamped", visitCount: 1, tier: "bronze", milestonesReached: [] },
+    });
+    window.history.replaceState({}, "", "/commande/CMD-DE-L-URL");
+    render(<TamponCommande {...PROPS} />);
+    bouton().click();
+
+    await waitFor(() =>
+      expect(stampLoyaltyOrder).toHaveBeenCalledWith({
+        orderToken: "CMD-DE-L-URL",
+        turnstileToken: null,
+      }),
+    );
   });
 
   it("succès : annonce le tampon, retire le bouton, offre le passeport", async () => {
