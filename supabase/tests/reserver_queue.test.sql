@@ -29,7 +29,12 @@
 --  11. ACL ET RLS. Les deux tables neuves sont fermées à `anon` au niveau TABLE,
 --      l'adresse ET LE PRÉNOM sont hors du grant de colonnes, et la formule du
 --      rang n'est exécutable par AUCUN rôle applicatif — `service_role` compris.
---  12. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA FILE.
+--  12. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA FILE — ET ELLE FERME
+--      L'ENTRÉE ENCORE VIVANTE, qui occupait sinon une ligne du plafond POUR
+--      TOUJOURS : son empreinte n'en est plus une, donc plus rien ne pouvait la
+--      libérer. La clôture est datée du dernier instant connu de l'entrée, pas
+--      de l'instant du cron, sans quoi les compteurs du jour auraient annoncé
+--      au commerçant une volée d'abandons vieux de treize mois.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -129,6 +134,11 @@ values
   -- La purge.
   ('4f11e000-0000-4000-8000-000000000308',
    '4f11e000-0000-4000-8000-00000000000a', null, 'Purgée', 'open', 50),
+  -- LE PLAFOND TENU PAR UN FANTÔME. Plafond à UN, et il le faut : à 50, la
+  -- ligne qu'une entrée purgée occupe indéfiniment ne refuse encore personne,
+  -- et le bogue reste invisible. À 1, il se voit du premier coup.
+  ('4f11e000-0000-4000-8000-000000000309',
+   '4f11e000-0000-4000-8000-00000000000a', null, 'Plafond oublié', 'open', 1),
   -- VOISINE.
   ('4f11e000-0000-4000-8000-000000000351',
    '4f11e000-0000-4000-8000-00000000000b', null, 'Comptoir voisin', 'open', 50),
@@ -951,14 +961,15 @@ select ok(
 -- 10. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA FILE
 -- ════════════════════════════════════════════════════════════
 
--- DEUX entrées de plus de 400 jours : une SERVIE — l'histoire du remplissage
--- que le commerçant garde — et une restée « en attente ». La seconde est le cas
--- que le filtre de la purge vise nommément : une entrée toujours `waiting`
--- treize mois après n'est pas quelqu'un qui attend, c'est une ligne oubliée, et
--- sa donnée personnelle a la même échéance que celle des autres. C'est aussi
--- elle qui permet de prouver que l'ANCIENNE CLÉ CESSE D'OUVRIR — ce qu'une
--- entrée déjà résolue n'aurait pas pu montrer, n'étant plus lisible de toute
--- façon.
+-- QUATRE entrées de plus de 400 jours : une SERVIE — l'histoire du remplissage
+-- que le commerçant garde — une restée « en attente », une restée « appelée »,
+-- et une dernière qui tient à elle seule le plafond d'une file. Les trois
+-- vivantes sont le cas que le filtre de la purge vise nommément : une entrée
+-- toujours `waiting` treize mois après n'est pas quelqu'un qui attend, c'est une
+-- ligne oubliée, et sa donnée personnelle a la même échéance que celle des
+-- autres. C'est aussi elle qui permet de prouver que l'ANCIENNE CLÉ CESSE
+-- D'OUVRIR — ce qu'une entrée déjà résolue n'aurait pas pu montrer, n'étant plus
+-- lisible de toute façon.
 insert into public.reservation_queue_entries
   (id, queue_id, organization_id, player_key_hash, display_name,
    email, consent_transactional_at, status, called_at, resolved_at, created_at)
@@ -971,6 +982,18 @@ values
   ('4f11e000-0000-4000-8000-000000000602',
    '4f11e000-0000-4000-8000-000000000308', '4f11e000-0000-4000-8000-00000000000a',
    repeat('7b', 32), 'Oubliée', 'oubliee@purge.test', now() - interval '400 days',
+   'waiting', null, null, now() - interval '400 days'),
+  -- APPELÉE ET JAMAIS RÉSOLUE : le comptoir a crié un nom, puis la journée s'est
+  -- terminée. Elle occupe une ligne du plafond au même titre qu'une attente —
+  -- `queue_join` compte `waiting` ET `called`.
+  ('4f11e000-0000-4000-8000-000000000603',
+   '4f11e000-0000-4000-8000-000000000308', '4f11e000-0000-4000-8000-00000000000a',
+   repeat('7c', 32), 'Appelée', null, null,
+   'called', now() - interval '399 days', null, now() - interval '400 days'),
+  -- CELLE QUI TIENT LE PLAFOND de la file 309, à elle seule.
+  ('4f11e000-0000-4000-8000-000000000604',
+   '4f11e000-0000-4000-8000-000000000309', '4f11e000-0000-4000-8000-00000000000a',
+   repeat('7d', 32), 'Fantôme', null, null,
    'waiting', null, null, now() - interval '400 days');
 
 select is(
@@ -978,6 +1001,15 @@ select is(
     '4f11e000-0000-4000-8000-000000000308', repeat('7b', 32)))->>'state',
   'in_queue',
   'PURG-0 avant la purge, l''ancienne clé ouvre bien l''entrée');
+
+-- LE BOGUE, MONTRÉ AVANT D'ÊTRE CORRIGÉ : la file 309 refuse une vraie personne
+-- parce qu'une entrée de treize mois occupe sa seule ligne.
+select is(
+  (public.queue_join(
+    '4f11e000-0000-4000-8000-00000000000a',
+    '4f11e000-0000-4000-8000-000000000309', repeat('7e', 32), 'Tardif'))->>'state',
+  'queue_full',
+  'PURG-0a avant la purge, l''entrée oubliée occupe la seule ligne de la file');
 
 select is(
   (select count(*)::text from public.purge_expired_personal_data()), '1',
@@ -1022,14 +1054,32 @@ select is(
   'purge:4f11e000-0000-4000-8000-000000000601',
   'PURG-8 … sans rien réécrire : le garde `not like` rend le passage idempotent');
 
--- L'ENTRÉE OUBLIÉE : sa donnée personnelle part comme celle des autres, mais son
--- ÉTAT n'est pas touché — la purge efface la personne, elle ne décide pas de
--- l'issue d'une attente à sa place.
+-- L'ENTRÉE OUBLIÉE : sa donnée personnelle part comme celle des autres, ET son
+-- attente est CLOSE. Sans cette clôture, la ligne serait restée `waiting` pour
+-- toujours — son empreinte n'est plus une empreinte, donc `queue_leave` ne
+-- l'atteint plus, et rien d'autre ne pouvait la libérer. `left` et non
+-- `no_show` : marquer une absence est une affirmation sur une personne, et elle
+-- doit porter un auteur (section 8) — une purge n'en a pas.
 select is(
   (select e.status from public.reservation_queue_entries e
     where e.id = '4f11e000-0000-4000-8000-000000000602'),
-  'waiting',
-  'PURG-9 la purge n''invente aucune issue : l''entrée oubliée reste `waiting`');
+  'left',
+  'PURG-9 la purge FERME l''entrée oubliée : elle cesse d''occuper une ligne du '
+  'plafond, qu''aucun geste ne pouvait plus libérer');
+select is(
+  (select e.resolved_at from public.reservation_queue_entries e
+    where e.id = '4f11e000-0000-4000-8000-000000000602'),
+  (select e.created_at from public.reservation_queue_entries e
+    where e.id = '4f11e000-0000-4000-8000-000000000602'),
+  'PURG-9a … datée du DERNIER INSTANT CONNU de l''entrée, jamais de l''instant '
+  'du cron : sinon les compteurs du jour annonceraient des abandons de treize mois');
+select is(
+  (select e.status || ' ' || (e.resolved_at = e.called_at)::text
+     from public.reservation_queue_entries e
+    where e.id = '4f11e000-0000-4000-8000-000000000603'),
+  'left true',
+  'PURG-9b l''entrée APPELÉE et jamais résolue est fermée elle aussi — elle '
+  'occupait une ligne du plafond au même titre — et datée de son appel');
 select is(
   (select e.display_name || coalesce(e.email, '') from public.reservation_queue_entries e
     where e.id = '4f11e000-0000-4000-8000-000000000602'),
@@ -1043,7 +1093,46 @@ select is(
   (public.queue_public_state(
     '4f11e000-0000-4000-8000-000000000308', repeat('7b', 32)))->>'state',
   'not_in_queue',
-  'PURG-11 l''ancienne empreinte n''ouvre plus l''entrée, pourtant toujours vivante');
+  'PURG-11 l''ancienne empreinte n''ouvre plus l''entrée');
+-- La preuve du MARQUEUR SEUL, indépendante de l'état : `queue_leave` ne filtre
+-- pas sur le statut — il ne refuse que sur la forme de l'empreinte. Motif
+-- `PURGE-4` de reserver.test.sql.
+select is(
+  (public.queue_leave(
+    '4f11e000-0000-4000-8000-000000000602', repeat('7b', 32)))->>'state',
+  'unknown',
+  'PURG-11a … et le marqueur suffit à le garantir, sans rien devoir au statut');
+
+-- LE PLAFOND EST RENDU. C'est le bogue, pris par l'autre bout : la file 309
+-- refusait une vraie personne (PURG-0a) au nom d'une entrée dont la donnée
+-- personnelle venait d'être effacée. Après la purge, elle l'accepte, en 1re.
+select is(
+  (public.queue_join(
+    '4f11e000-0000-4000-8000-00000000000a',
+    '4f11e000-0000-4000-8000-000000000309', repeat('7e', 32), 'Tardif'))->>'state',
+  'waiting',
+  'PURG-12 la ligne du plafond est RENDUE : la file accepte de nouveau');
+select is(
+  (public.queue_public_state(
+    '4f11e000-0000-4000-8000-000000000309', repeat('7e', 32)))->>'position',
+  '1',
+  'PURG-12a … et le nouvel arrivant est 1er : le fantôme ne compte plus dans le rang');
+
+-- LES COMPTEURS DU JOUR N'ONT PAS BOUGÉ. Trois entrées viennent d'être fermées
+-- dans la file 308, et l'écran d'accueil du commerçant n'en montre AUCUNE :
+-- c'est exactement ce que le choix de `resolved_at` protège.
+select is(
+  (public.queue_staff_state(
+    '4f11e000-0000-4000-8000-00000000000a',
+    '4f11e000-0000-4000-8000-000000000308'))->'today'->>'left',
+  '0',
+  'PURG-13 la purge n''INVENTE aucun abandon du jour');
+select is(
+  (public.queue_staff_state(
+    '4f11e000-0000-4000-8000-00000000000a',
+    '4f11e000-0000-4000-8000-000000000308'))->'live'->>'waiting',
+  '0',
+  'PURG-13a … et plus rien ne compte comme vivant dans la file purgée');
 
 select * from finish();
 rollback;

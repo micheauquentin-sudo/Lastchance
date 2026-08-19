@@ -1593,6 +1593,45 @@ grant execute on function public.queue_staff_state(uuid, uuid)
 -- toujours `waiting` six mois après avoir été créée n'est pas une personne qui
 -- attend, c'est une ligne oubliée — et sa donnée personnelle a la même échéance
 -- que celle des autres. Le garde final rend le passage idempotent.
+--
+-- ── ET POURQUOI CETTE LIGNE-LÀ EST FERMÉE, ELLE ──
+--
+-- Effacer la personne SANS TOUCHER À L'ÉTAT laissait l'entrée oubliée occuper
+-- une ligne du plafond POUR TOUJOURS, et le mot n'est pas exagéré : plus rien
+-- ne pouvait la libérer. `queue_leave` exige une empreinte, et la purge vient
+-- précisément de la remplacer par un marqueur ; `queue_call_next` la prendrait
+-- bien — c'est l'arbitrage de la section 7, qui refuse de sauter les purgées
+-- pour cette raison même — mais il faut encore que quelqu'un appelle, et une
+-- file qu'on a cessé de servir est justement celle où les lignes oubliées
+-- s'accumulent. Le plafond existe pour BORNER LE STOCKAGE DE DONNÉES
+-- PERSONNELLES (leçon E-1a de la revue L5) : le laisser saturé par des lignes
+-- DONT LA DONNÉE PERSONNELLE VIENT D'ÊTRE EFFACÉE serait l'exact contraire de
+-- ce qu'il protège — la file refuserait une vraie personne au nom de fantômes.
+-- Le rang, lui, mentait de la même façon : `queue_entry_position` compte les
+-- `waiting` devant soi, fantômes compris.
+--
+-- `left`, ET AUCUNE AUTRE ISSUE. `served` affirmerait un passage qui n'a pas eu
+-- lieu, et gonflerait le seul chiffre dont le commerçant se sert. `no_show` est
+-- une AFFIRMATION SUR UNE PERSONNE — la section 8 exige qu'elle porte un
+-- auteur, et une purge n'en a pas. `left` dit la seule chose qu'on sache :
+-- l'attente s'est terminée sans passage. C'est aussi la seule issue que
+-- `…_outcome_origin` accepte SANS APPEL PRÉALABLE, donc la seule qui ferme d'un
+-- même geste une entrée `waiting` et une entrée `called`.
+--
+-- `resolved_at` EST DATÉ AU DERNIER INSTANT CONNU DE L'ENTRÉE — `called_at`
+-- s'il y a eu un appel, `created_at` sinon — et JAMAIS `now()`. Avec `now()`,
+-- le matin où le cron passe, `queue_staff_state` aurait montré au commerçant
+-- une volée d'abandons « du jour » vieux de treize mois : la purge aurait
+-- INVENTÉ une statistique, exactement ce que le critère « abandons et absences
+-- mesurés » interdit. Daté ainsi, l'instant retenu est par construction
+-- antérieur à la rétention, donc à tout jour que le comptoir regarde encore, et
+-- le compte du jour ne bouge pas d'une unité.
+--
+-- LE GARDE FINAL GAGNE DONC `status in ('waiting', 'called')`. Sans ce
+-- disjoint, une ligne déjà purgée mais restée vivante — celles qu'une version
+-- antérieure de cette fonction a pu laisser derrière elle — serait sautée par
+-- l'idempotence et ne serait JAMAIS fermée. Le rejeu reste sans écriture une
+-- fois l'entrée close : `left` ne satisfait plus aucun disjoint.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.purge_expired_personal_data()
@@ -1686,17 +1725,38 @@ begin
     -- cette table, et il part avec les trois autres. La ligne reste : combien
     -- de gens ont attendu, combien sont partis, combien ne se sont pas
     -- présentés, c'est la seule mesure que RES-3 promet au commerçant.
+    --
+    -- ET L'ENTRÉE ENCORE VIVANTE EST FERMÉE — `left`, l'issue qui n'affirme
+    -- rien sur la personne et la seule qui n'exige pas d'appel préalable. Sans
+    -- ce geste, une entrée `waiting` ou `called` purgée occupait une ligne du
+    -- plafond POUR TOUJOURS : son empreinte n'est plus une empreinte, donc
+    -- `queue_leave` ne l'atteint plus, et rien d'autre ne la clôt. Voir
+    -- l'en-tête de section pour le choix de l'issue et celui de la date.
+    --
+    -- Les deux `case` lisent l'état AVANT mise à jour : dans un `set`, le côté
+    -- droit voit toujours la ligne d'origine.
     update public.reservation_queue_entries
        set display_name = null,
            email = null,
            consent_transactional_at = null,
-           player_key_hash = 'purge:' || id::text
+           player_key_hash = 'purge:' || id::text,
+           status = case when status in ('waiting', 'called')
+                         then 'left' else status end,
+           -- DERNIER INSTANT CONNU, jamais `now()` : sinon les compteurs du
+           -- jour de `queue_staff_state` afficheraient au commerçant une volée
+           -- d'abandons vieux de plusieurs mois, le matin du passage du cron.
+           resolved_at = case when status in ('waiting', 'called')
+                              then coalesce(called_at, created_at)
+                              else resolved_at end
       where organization_id = r.id
         and created_at < now() - make_interval(months => r.data_retention_months)
         and (display_name is not null
              or email is not null
              or consent_transactional_at is not null
-             or player_key_hash not like 'purge:%');
+             or player_key_hash not like 'purge:%'
+             -- Sans ce disjoint, une ligne déjà purgée mais restée vivante ne
+             -- serait jamais fermée : l'idempotence la sauterait.
+             or status in ('waiting', 'called'));
   end loop;
   delete from public.webhook_deliveries
     where (delivered_at is not null or attempts >= 12)
