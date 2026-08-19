@@ -25,6 +25,8 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
     counters: new Map<string, number>(),
     rateLimitCalls: [] as string[],
     rateLimitDenied: [] as string[],
+    /** Tâches confiées à `after()` — le runtime les retient après la réponse. */
+    taches: [] as Array<Promise<unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     // Écritures directes du client session (dashboard commerçant).
     inserts: [] as Array<{ table: string; payload: Record<string, unknown> }>,
@@ -51,6 +53,7 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       state.counters = new Map();
       state.rateLimitCalls = [];
       state.rateLimitDenied = [];
+      state.taches = [];
       state.rpcCalls = [];
       state.inserts = [];
       state.updates = [];
@@ -350,6 +353,17 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+/**
+ * `after()` : le runtime retient la tâche jusqu'à son terme, APRÈS la
+ * réponse. Le mock la déclenche et garde sa promesse — c'est ce que les
+ * tests d'inscription (ci-dessous) attendent explicitement avant de vérifier
+ * `rateLimitCalls`/`rateLimitDenied`, même pattern que `events.state.test.ts`.
+ */
+vi.mock("next/server", () => ({
+  after: (fn: () => unknown) => {
+    state.taches.push(Promise.resolve().then(fn));
+  },
+}));
 
 import { syncContestFixtures } from "@/lib/contest-sync";
 import {
@@ -569,6 +583,10 @@ describe("registerContestPlayer — la clé IP ne refuse jamais l'inscription", 
 
   it("(d) parcours nominal : inscription acceptée, IP en observabilité seule", async () => {
     const res = await nominal();
+    // Observation seule : confiée à `after()`, elle ne retarde plus la
+    // réponse d'inscription — l'attendre explicitement ici, comme le fait
+    // `events.state.test.ts` pour la même mesure côté événement.
+    await Promise.all(state.taches);
     expect(res.ok).toBe(true);
     expect(state.rateLimitCalls).toEqual([REGISTER_IP]);
   });
@@ -576,6 +594,7 @@ describe("registerContestPlayer — la clé IP ne refuse jamais l'inscription", 
   it("(a) un tiers qui sature prono:register:ip n'empêche PAS l'inscription", async () => {
     saturate(REGISTER_IP);
     const res = await nominal();
+    await Promise.all(state.taches);
     // La clé partagée alerte, elle ne refuse pas l'inscription d'un championnat.
     expect(res.ok).toBe(true);
     expect(state.rateLimitDenied).toEqual([REGISTER_IP]);
