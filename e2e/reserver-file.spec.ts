@@ -25,101 +25,114 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
 
   test("rejoindre la file, être appelé, être servi : le compteur du jour s'incrémente", async ({
     page,
+    browser,
   }) => {
-    // ── 1. Le joueur pousse la porte : rejoint la file, sans prénom.
-    await page.goto(`/reserver/file/${QUEUE_ID}`);
-    await expect(
-      page.getByRole("heading", { name: "Comptoir E2E" }),
-    ).toBeVisible({ timeout: 30_000 });
+    // Deux acteurs distincts, chacun sur SA page : le staff (dashboard,
+    // storageState owner) sur `page`, le joueur (public, sans session) sur
+    // `playerPage`. Un seul et même `page` naviguant entre les deux écrans
+    // se coupait lui-même l'herbe sous le pied — une fois revenu sur l'écran
+    // joueur pour vérifier l'appel, il ne pouvait plus jamais recliquer
+    // « Appeler le suivant », resté sur une autre page.
+    const playerContext = await browser.newContext();
+    const playerPage = await playerContext.newPage();
+    try {
+      // ── 1. Le joueur pousse la porte : rejoint la file, sans prénom.
+      await playerPage.goto(`/reserver/file/${QUEUE_ID}`);
+      await expect(
+        playerPage.getByRole("heading", { name: "Comptoir E2E" }),
+      ).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: "Prendre mon tour" }).click();
+      await playerPage.getByRole("button", { name: "Prendre mon tour" }).click();
 
-    // `reloadOnSuccess` implicite du scrutin : « Vous êtes » + un rang
-    // apparaît. On ne teste PAS le nombre — seed partagée entre projets.
-    await expect(
-      page.getByText("Vous êtes", { exact: true }),
-    ).toBeVisible({ timeout: 30_000 });
-    const rangTexte = await page
-      .locator("p.text-7xl.font-black")
-      .first()
-      .textContent();
-    // Le chiffre est suivi d'un ordinal ("1er", "2e"…) dans un <span> imbriqué
-    // — textContent() les concatène.
-    expect((rangTexte ?? "").trim()).toMatch(/^\d+(er|e)$/);
+      // `reloadOnSuccess` implicite du scrutin : « Vous êtes » + un rang
+      // apparaît. On ne teste PAS le nombre — seed partagée entre projets.
+      await expect(
+        playerPage.getByText("Vous êtes", { exact: true }),
+      ).toBeVisible({ timeout: 30_000 });
+      const rangTexte = await playerPage
+        .locator("p.text-7xl.font-black")
+        .first()
+        .textContent();
+      // Le chiffre est suivi d'un ordinal ("1er", "2e"…) dans un <span>
+      // imbriqué — textContent() les concatène.
+      expect((rangTexte ?? "").trim()).toMatch(/^\d+(er|e)$/);
 
-    // Aucune estimation temporelle nulle part sur cet écran — voir
-    // l'assertion transversale en bas de fichier, appliquée ici aussi sur le
-    // texte visible immédiat.
-    const texteApresJointe = await page.locator("body").innerText();
-    expect(texteApresJointe).not.toMatch(/[~≈]|environ|estimation/i);
+      // Aucune estimation temporelle nulle part sur cet écran — voir
+      // l'assertion transversale en bas de fichier, appliquée ici aussi sur
+      // le texte visible immédiat.
+      const texteApresJointe = await playerPage.locator("body").innerText();
+      expect(texteApresJointe).not.toMatch(/[~≈]|environ|estimation/i);
 
-    // ── 2. Le comptoir appelle le suivant, en boucle jusqu'à ce que ce soit
-    // NOTRE entrée qui passe « appelée » — la seed partagée peut placer
-    // Camille et Dominique devant nous selon le projet Playwright qui
-    // démarre en premier.
-    await page.goto("/dashboard/reservations");
-    await expect(
-      page.getByRole("heading", { name: "Réservations" }),
-    ).toBeVisible({ timeout: 30_000 });
+      // ── 2. Le comptoir appelle le suivant, en boucle jusqu'à ce que ce
+      // soit NOTRE entrée qui passe « appelée » — la seed partagée peut
+      // placer Camille et Dominique devant nous selon le projet Playwright
+      // qui démarre en premier.
+      await page.goto("/dashboard/reservations");
+      await expect(
+        page.getByRole("heading", { name: "Réservations" }),
+      ).toBeVisible({ timeout: 30_000 });
 
-    const ongletFile = page.getByRole("button", { name: /Comptoir E2E/ });
-    await ongletFile.click();
+      const ongletFile = page.getByRole("button", { name: /Comptoir E2E/ });
+      await ongletFile.click();
 
-    const boutonAppeler = page.getByRole("button", {
-      name: /Appeler le suivant/,
-    });
-    await expect(boutonAppeler).toBeVisible({ timeout: 30_000 });
+      const boutonAppeler = page.getByRole("button", {
+        name: /Appeler le suivant/,
+      });
+      await expect(boutonAppeler).toBeVisible({ timeout: 30_000 });
 
-    // On appelle jusqu'à ce que CE joueur bascule « appelé ». La file est
-    // PARTAGÉE entre projets Playwright (chrome/safari tournent en même
-    // temps sur la même base) : l'autre projet peut vider la file avant
-    // notre tour, ou y ajouter des entrées après. Un compte de tours fixe ne
-    // suffit donc pas — `expect.poll` retente l'appel à chaque tic tant que
-    // notre entrée n'est pas passée « appelée », borné par un timeout
-    // généreux plutôt qu'un nombre d'essais.
-    await expect
-      .poll(
-        async () => {
-          if (await boutonAppeler.isEnabled().catch(() => false)) {
-            await boutonAppeler.click().catch(() => {});
-            // Le geste tic-tique immédiatement (pas de reloadOnSuccess) : on
-            // attend l'annonce (aria-live), état produit par CE clic — sans
-            // bloquer le poll si elle n'arrive pas (autre projet plus rapide).
-            await page
-              .getByText(/— appelé\.|Personne n'attend/)
-              .waitFor({ timeout: 5_000 })
-              .catch(() => {});
-          }
-          return estJoueurAppele(page);
-        },
-        {
-          timeout: 90_000,
-          message: "notre entrée doit finir par être appelée",
-        },
-      )
-      .toBe(true);
+      // On appelle jusqu'à ce que CE joueur bascule « appelé ». La file est
+      // PARTAGÉE entre projets Playwright (chrome/safari tournent en même
+      // temps sur la même base) : l'autre projet peut vider la file avant
+      // notre tour, ou y ajouter des entrées après. Un compte de tours fixe
+      // ne suffit donc pas — `expect.poll` retente l'appel à chaque tic tant
+      // que notre entrée n'est pas passée « appelée », borné par un timeout
+      // généreux plutôt qu'un nombre d'essais. `page` (staff) et `playerPage`
+      // (joueur) restent chacune sur leur écran tout du long.
+      await expect
+        .poll(
+          async () => {
+            if (await boutonAppeler.isEnabled().catch(() => false)) {
+              await boutonAppeler.click().catch(() => {});
+              // Le geste tic-tique immédiatement (pas de reloadOnSuccess) :
+              // on attend l'annonce (aria-live), état produit par CE clic —
+              // sans bloquer le poll si elle n'arrive pas (autre projet plus
+              // rapide).
+              await page
+                .getByText(/— appelé\.|Personne n'attend/)
+                .waitFor({ timeout: 5_000 })
+                .catch(() => {});
+            }
+            return estJoueurAppele(playerPage);
+          },
+          {
+            timeout: 90_000,
+            message: "notre entrée doit finir par être appelée",
+          },
+        )
+        .toBe(true);
 
-    // ── 4. Retour comptoir : « Servi » sur la personne au comptoir. On
-    // rouvre l'onglet de la file (le tour précédent peut avoir navigué
-    // ailleurs) et on clique « Servi » sur l'entrée appelée.
-    await page.goto("/dashboard/reservations");
-    await page.getByRole("button", { name: /Comptoir E2E/ }).click();
-    await expect(page.getByText("Au comptoir", { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+      // ── 4. Retour comptoir : « Servi » sur la personne au comptoir. On
+      // rouvre l'onglet de la file (le tour précédent peut avoir navigué
+      // ailleurs) et on clique « Servi » sur l'entrée appelée.
+      await page.goto("/dashboard/reservations");
+      await page.getByRole("button", { name: /Comptoir E2E/ }).click();
+      await expect(
+        page.getByText("Au comptoir", { exact: true }),
+      ).toBeVisible({ timeout: 30_000 });
 
-    const compteurServisAvant = await lireCompteur(page, "Servis");
+      const compteurServisAvant = await lireCompteur(page, "Servis");
 
-    await page
-      .getByRole("button", { name: /^Servi — / })
-      .click();
+      await page.getByRole("button", { name: /^Servi — / }).click();
 
-    await expect
-      .poll(async () => lireCompteur(page, "Servis"), {
-        timeout: 30_000,
-        message: "le compteur « Servis » du jour doit s'incrémenter",
-      })
-      .toBe(compteurServisAvant + 1);
+      await expect
+        .poll(async () => lireCompteur(page, "Servis"), {
+          timeout: 30_000,
+          message: "le compteur « Servis » du jour doit s'incrémenter",
+        })
+        .toBe(compteurServisAvant + 1);
+    } finally {
+      await playerContext.close();
+    }
   });
 
   test("un second joueur voit son rang décroître quand le premier est servi, et peut quitter la file", async ({
