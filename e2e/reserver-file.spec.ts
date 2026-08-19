@@ -114,6 +114,13 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // ── 4. Retour comptoir : « Servi » sur la personne au comptoir. On
       // rouvre l'onglet de la file (le tour précédent peut avoir navigué
       // ailleurs) et on clique « Servi » sur l'entrée appelée.
+      //
+      // Le dernier clic « Appeler le suivant » ci-dessus peut avoir déclenché
+      // un rafraîchissement client encore en vol (Server Action) : sur
+      // WebKit, un `page.goto()` lancé pendant que ce rafraîchissement
+      // navigue déjà se fait avorter (« interrupted by another navigation »).
+      // On laisse le réseau se stabiliser avant de renaviguer nous-mêmes.
+      await page.waitForLoadState("networkidle").catch(() => {});
       await page.goto("/dashboard/reservations");
       await page.getByRole("button", { name: /Comptoir E2E/ }).click();
       await expect(
