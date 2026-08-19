@@ -456,6 +456,55 @@ select ok(not has_function_privilege('service_role', 'public.reservation_offer_n
 select ok(not has_function_privilege('authenticated', 'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'), 'nor by a merchant session');
 select ok(not has_function_privilege('anon', 'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'), 'nor by anon');
 
+-- File sereine (20261005120000, RES-3). Deux tables neuves, mêmes régimes que
+-- RES-2 : les FILES sont de la configuration (éditeurs, policy `for all`), les
+-- ENTRÉES sont lisibles par tous les MEMBRES — le caissier tient l'écran
+-- d'accueil, c'est son poste — et n'acceptent AUCUNE écriture directe, parce
+-- que l'ordre de passage décide de qui passe devant.
+select ok(not has_table_privilege('anon', 'public.reservation_queues', 'SELECT'), 'anon cannot read reservation queues');
+select ok(not has_table_privilege('anon', 'public.reservation_queue_entries', 'SELECT'), 'anon cannot read who is standing in a queue');
+select ok(not has_table_privilege('authenticated', 'public.reservation_queue_entries', 'INSERT'), 'merchant cannot insert itself into a queue');
+select ok(not has_table_privilege('authenticated', 'public.reservation_queue_entries', 'UPDATE'), 'merchant cannot reorder a queue by direct update');
+select ok(not has_table_privilege('authenticated', 'public.reservation_queue_entries', 'DELETE'), 'merchant cannot delete a queue entry');
+-- AUCUN delete sur les files non plus : la cascade emporterait les entrées du
+-- jour, donc les compteurs de servis et d'absents — la seule mesure que RES-3
+-- promet au commerçant. `status = 'closed'` ferme sans effacer.
+select ok(not has_table_privilege('authenticated', 'public.reservation_queues', 'DELETE'), 'merchant cannot delete a queue and cascade away the day counters');
+-- L'ADRESSE et LE PRÉNOM sont hors du grant de colonnes. L'adresse pour la
+-- raison du socle — elle n'existe que pour un envoi serveur. Le prénom pour une
+-- raison propre à ce lot : il n'a de sens que sur l'écran d'accueil, ordonné en
+-- face du bon rang, et queue_staff_state est ce qui l'y met. Ouvert en
+-- PostgREST, il aurait aussi listé les prénoms de tous ceux qui sont passés.
+select ok(not has_column_privilege('authenticated', 'public.reservation_queue_entries', 'email', 'SELECT'), 'merchant session cannot read queue email addresses');
+select ok(not has_column_privilege('authenticated', 'public.reservation_queue_entries', 'display_name', 'SELECT'), 'merchant session cannot list the first names of everyone who queued');
+select ok(has_column_privilege('authenticated', 'public.reservation_queue_entries', 'status', 'SELECT'), 'merchant session can read a queue entry status');
+select ok(has_function_privilege('service_role', 'public.queue_join(uuid,uuid,text,text,text,boolean)', 'EXECUTE'), 'server can put someone in a queue');
+select ok(not has_function_privilege('authenticated', 'public.queue_join(uuid,uuid,text,text,text,boolean)', 'EXECUTE'), 'merchant session cannot forge a queue position');
+select ok(not has_function_privilege('anon', 'public.queue_join(uuid,uuid,text,text,text,boolean)', 'EXECUTE'), 'anon cannot join a queue directly');
+select ok(not has_function_privilege('authenticated', 'public.queue_leave(uuid,text)', 'EXECUTE'), 'merchant session cannot drop someone through the player RPC');
+select ok(not has_function_privilege('anon', 'public.queue_leave(uuid,text)', 'EXECUTE'), 'anon cannot leave a queue directly');
+-- Les trois gestes de comptoir : org-scopés, acteur vérifié owner/editor/cashier
+-- EN SQL et audités. Ouverts à la session marchande, la garde de rôle et la
+-- trace d'audit seraient contournables par le chemin PostgREST.
+select ok(has_function_privilege('service_role', 'public.queue_call_next(uuid,uuid,text)', 'EXECUTE'), 'server can call the next person in line');
+select ok(not has_function_privilege('authenticated', 'public.queue_call_next(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot call someone past the role guard and the audit trail');
+select ok(not has_function_privilege('anon', 'public.queue_call_next(uuid,uuid,text)', 'EXECUTE'), 'anon cannot call the next person');
+select ok(not has_function_privilege('authenticated', 'public.queue_resolve(uuid,uuid,text,text)', 'EXECUTE'), 'merchant session cannot mark someone served or absent past the audit trail');
+select ok(not has_function_privilege('anon', 'public.queue_resolve(uuid,uuid,text,text)', 'EXECUTE'), 'anon cannot mark anyone absent');
+select ok(not has_function_privilege('authenticated', 'public.queue_reopen_entry(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot undo a call past the audit trail');
+select ok(not has_function_privilege('anon', 'public.queue_reopen_entry(uuid,uuid,text)', 'EXECUTE'), 'anon cannot undo a call');
+select ok(not has_function_privilege('authenticated', 'public.queue_public_state(uuid,text)', 'EXECUTE'), 'merchant cannot enumerate player queue positions through the public RPC');
+select ok(not has_function_privilege('anon', 'public.queue_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the queue public state directly');
+select ok(not has_function_privilege('authenticated', 'public.queue_staff_state(uuid,uuid)', 'EXECUTE'), 'merchant session cannot read a queue front desk without going through the server');
+select ok(not has_function_privilege('anon', 'public.queue_staff_state(uuid,uuid)', 'EXECUTE'), 'anon cannot read a queue front desk');
+-- LE SECOND HELPER INTERNE, après reservation_offer_next : la formule du rang.
+-- Elle n'est grantée à AUCUN rôle applicatif, service_role compris — non parce
+-- qu'elle serait dangereuse, mais parce qu'une SECONDE façon d'obtenir un rang
+-- est une seconde façon de le voir diverger. Un seul chemin : les RPC.
+select ok(not has_function_privilege('service_role', 'public.queue_entry_position(public.reservation_queue_entries)', 'EXECUTE'), 'the queue rank formula is not callable by the application at all');
+select ok(not has_function_privilege('authenticated', 'public.queue_entry_position(public.reservation_queue_entries)', 'EXECUTE'), 'nor by a merchant session');
+select ok(not has_function_privilege('anon', 'public.queue_entry_position(public.reservation_queue_entries)', 'EXECUTE'), 'nor by anon');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');
