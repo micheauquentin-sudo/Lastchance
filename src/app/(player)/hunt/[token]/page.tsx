@@ -99,15 +99,18 @@ export default async function HuntStepPage({
         question que pose le commerçant qui a collé l'étape 1 à la boulangerie
         et l'étape 2 chez le fleuriste.
 
-        On passe `step.token` (résolu) et non le paramètre d'URL brut : ici, la
-        page a déjà rendu son 404 pour tout jeton qui ne désigne aucune étape.
-        Le repli de restitution (chasse close) compte aussi — c'est bien un
-        chargement de l'affiche, et les six autres modules comptent de même
-        hors de leur fenêtre.
+        LE JETON NE DESCEND PLUS EN PROP — ni ici, ni vers le parcours. Une
+        prop serveur → client est sérialisée en clair dans le payload RSC, donc
+        recopiée dans le HTML, et ce jeton-ci pose le tampon. Les deux
+        composants le relisent de `window.location.pathname` au moment de leur
+        appel réseau : la page a déjà rendu son 404 pour tout jeton qui ne
+        désigne aucune étape, et `step.token` EST le dernier segment de
+        l'adresse. Le repli de restitution (chasse close) compte aussi — c'est
+        bien un chargement de l'affiche, et les six autres modules comptent de
+        même hors de leur fenêtre.
       */}
-      <PageOpenBeacon module="hunts" publicId={step.token} />
+      <PageOpenBeacon module="hunts" />
       <HuntJourney
-        stepToken={step.token}
         organizationName={organization.name}
         organizationId={organization.id}
         logoUrl={organization.logo_url}

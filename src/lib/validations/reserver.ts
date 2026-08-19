@@ -7,6 +7,11 @@ import {
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
 import {
+  QUEUE_DISPLAY_NAME_INPUT_MAX,
+  QUEUE_DISPLAY_NAME_MAX,
+  QUEUE_MAX_LIVE_ENTRIES_MAX,
+  QUEUE_MAX_LIVE_ENTRIES_MIN,
+  QUEUE_NAME_MAX,
   RESERVER_ACTIVITY_DESCRIPTION_MAX,
   RESERVER_ACTIVITY_NAME_MAX,
   RESERVER_CAPACITY_MAX,
@@ -474,4 +479,176 @@ export const revokeReserverInvitationSchema = z.object({
  */
 export const closeReserverInvitationSchema = z.object({
   id: uuid,
+});
+
+// ════════════════════════════════════════════════════════════
+// La file sereine (RES-3, lot L6) — migration 20261005120000
+//
+// MIROIR DE CONFORT, comme le reste du fichier : la vérité est en base — le
+// plafond d'entrées vivantes compté sous verrou, l'index unique partiel « une
+// identité, une entrée vivante par file », l'équivalence email ⇔ consentement,
+// le vocabulaire fermé des issues.
+//
+// AUCUN CHAMP DE DÉLAI ICI, et il ne faut pas en ajouter : le module n'annonce
+// aucun ETA (critère dur RES-3), donc aucune saisie ne peut en produire un.
+// ════════════════════════════════════════════════════════════
+
+/** Nom d'une file — 1..80, exactement le CHECK SQL. */
+const queueNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Le nom de la file est requis")
+  .max(QUEUE_NAME_MAX, `Nom trop long (${QUEUE_NAME_MAX} caractères max)`);
+
+/**
+ * Prénom d'appel — TRONQUÉ, JAMAIS REFUSÉ.
+ *
+ * `queue_join` tronque à 40 caractères plutôt que d'échouer, et ce schéma fait
+ * exactement pareil : refuser ici ce que la base accepte ferait de l'écran un
+ * SECOND JUGE, et le refus tomberait sur quelqu'un qui est debout dans le
+ * magasin, pour un ornement d'écran. La seule borne qui refuse est celle de
+ * DÉFENSE — on ne rogne pas une chaîne non bornée choisie par l'appelant.
+ */
+const queueDisplayNameSchema = z
+  .string()
+  .trim()
+  .max(QUEUE_DISPLAY_NAME_INPUT_MAX, "Prénom trop long")
+  .transform((valeur) => valeur.slice(0, QUEUE_DISPLAY_NAME_MAX).trim())
+  .optional();
+
+/**
+ * Plafond d'entrées vivantes — `between 1 and 200`, exactement le CHECK SQL.
+ * Au-delà de 200, « chacun son tour » cesse de décrire une file d'accueil.
+ */
+const queueMaxLiveEntriesSchema = entierRequis({
+  absent: "Indiquez le nombre de personnes que la file peut accueillir.",
+  nombre: "Plafond invalide",
+  entier: "Nombre entier de personnes requis",
+  min: [QUEUE_MAX_LIVE_ENTRIES_MIN, "Une file accueille au moins une personne"],
+  max: [
+    QUEUE_MAX_LIVE_ENTRIES_MAX,
+    `Maximum ${QUEUE_MAX_LIVE_ENTRIES_MAX} personnes en file`,
+  ],
+});
+
+/**
+ * Rejoindre une file d'accueil.
+ *
+ * ── NI ORGANISATION, NI IDENTITÉ POSTÉES ──
+ *
+ * L'identité vient du cookie `lc-player`, côté serveur. L'ORGANISATION vient de
+ * la FILE, résolue par le serveur : la poster aurait laissé le navigateur
+ * désigner sous quelle enseigne il prend son rang, et le refus muet de la RPC —
+ * qui rend « file d'une AUTRE organisation » indistinguable d'« inconnue » —
+ * n'aurait plus rien gardé.
+ *
+ * Même équivalence email ⇔ consentement que le reste du module : la base la
+ * porte (`reservation_queue_entries_consent_state`), et une adresse sans
+ * consentement serait une donnée personnelle sans finalité. RIEN N'EST ENVOYÉ
+ * au MVP — le champ est stocké pour un envoi ultérieur, et le consentement doit
+ * donc être donné pour cet envoi-là, pas déduit.
+ */
+export const queueJoinSchema = z
+  .object({
+    queueId: uuid,
+    displayName: queueDisplayNameSchema,
+    email: emailSchema.optional(),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine(exigerEmailEtConsentementEnsemble);
+
+/**
+ * Quitter la file. Un seul champ, motif `waitlistLeaveSchema` : la RPC autorise
+ * par POSSESSION (identifiant d'entrée + empreinte du cookie) et lit la file et
+ * son organisation sur la ligne.
+ */
+export const queueLeaveSchema = z.object({
+  entryId: uuid,
+});
+
+/**
+ * Relire l'état d'une file — le scrutin des deux écrans.
+ *
+ * Un seul champ, et c'est TOUT ce dont les deux lectures ont besoin : le
+ * visiteur est identifié par son cookie, le commerçant par sa session. Poster
+ * une organisation ici l'aurait rendue choisissable côté client sur le chemin
+ * exact où `queue_staff_state` ne vérifie AUCUNE appartenance.
+ */
+export const queueStateSchema = z.object({
+  queueId: uuid,
+});
+
+/**
+ * Appeler le suivant. NI acteur, NI organisation : le premier vient de la
+ * session, la seconde de l'appartenance du membre. Un `actor` posté ferait de
+ * la ligne d'audit `reservation.queue_call` une déclaration sur l'honneur, et
+ * une organisation postée ouvrirait l'écran d'accueil du voisin —
+ * `queue_staff_state` ne vérifie AUCUNE appartenance.
+ */
+export const queueCallNextSchema = z.object({
+  queueId: uuid,
+});
+
+/**
+ * Constater l'issue d'une personne APPELÉE.
+ *
+ * `outcome` est un vocabulaire FERMÉ de deux mots, et `left` n'en fait pas
+ * partie : partir est un geste du joueur (`queue_leave`), pas un constat du
+ * comptoir. Une valeur hors vocabulaire fait LEVER la RPC — c'est un bogue de
+ * l'appelant, pas un refus métier — et ce schéma l'arrête avant l'aller-retour.
+ */
+export const queueResolveSchema = z.object({
+  entryId: uuid,
+  outcome: z.enum(["served", "no_show"]),
+});
+
+/**
+ * Défaire un appel erroné (« j'ai appelé Camille, c'était Dominique »).
+ * L'entrée redevient `waiting`, EN TÊTE de file — conséquence, pas écriture.
+ */
+export const queueReopenEntrySchema = z.object({
+  entryId: uuid,
+});
+
+/**
+ * Créer une file d'accueil.
+ *
+ * ── L'ACTIVITÉ EST OPTIONNELLE, ET C'EST LE CŒUR DU MODÈLE ──
+ *
+ * Une file « Comptoir » doit exister sans rien réserver — boulangerie du samedi
+ * matin, stand de marché, bureau de retrait : c'est le cas DOMINANT. `""` =
+ * « aucune activité », comme partout ailleurs dans ce fichier ; un `<select>`
+ * non choisi poste la chaîne vide, et la lire comme un UUID invalide donnerait
+ * un message hors sujet.
+ *
+ * `status` est TOLÉRANT À L'ABSENCE et vaut `open` : c'est le défaut SQL, et une
+ * file se configure d'un nom et d'un plafond — contrairement à un créneau, qui
+ * naît en brouillon parce qu'il faut en relire les heures avant de l'ouvrir.
+ */
+export const createReserverQueueSchema = z.object({
+  name: queueNameSchema,
+  activityId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
+  maxLiveEntries: queueMaxLiveEntriesSchema,
+  status: nonRenduVaut(z.enum(["open", "paused", "closed"]), "open"),
+});
+
+/**
+ * Réglages d'une file — dont son interrupteur `status`.
+ *
+ * IL N'EXISTE AUCUNE SUPPRESSION : le socle a retiré le `grant delete`, parce
+ * que la cascade emporterait les entrées du jour, donc les compteurs de servis
+ * et d'absents. `closed` ferme sans rien effacer, exactement comme
+ * `active = false` sur une activité.
+ *
+ * `paused` N'EST PAS `closed`, et la distinction est réelle au comptoir : la
+ * pause refuse les nouvelles arrivées mais laisse SERVIR ceux qui attendent
+ * déjà — « je ferme la file, je finis les douze qui sont là ».
+ */
+export const updateReserverQueueSchema = z.object({
+  queueId: uuid,
+  name: queueNameSchema,
+  activityId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
+  maxLiveEntries: queueMaxLiveEntriesSchema,
+  status: z.enum(["open", "paused", "closed"]),
 });

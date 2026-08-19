@@ -1141,3 +1141,47 @@ values (
   now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
 )
 on conflict (id) do nothing;
+
+-- ── Réserver RES-3 — file d'accueil en continu ───────────────────────
+--
+-- SANS ACTIVITÉ, DÉLIBÉRÉMENT. `activity_id` est nul : c'est la file
+-- « Comptoir » du cahier — celle qui n'a ni créneau ni prestation, juste un
+-- endroit où l'on attend. C'est le cas dominant du produit, et le semer ainsi
+-- vérifie au passage que la FK composite optionnelle laisse bien passer une
+-- file qui n'en a pas.
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values (
+  'e2ea0000-0000-4000-8000-000000000061', 'e2e10000-0000-4000-8000-000000000001',
+  null, 'Comptoir E2E', 'open', 50
+)
+on conflict (id) do nothing;
+
+-- DEUX ENTRÉES EN ATTENTE, dans cet ordre. `created_at` est laissé au défaut
+-- (`clock_timestamp()`) : deux valeurs écrites à la main auraient pu être
+-- égales, et le rang serait alors retombé sur l'UUID — c'est-à-dire sur le
+-- hasard. L'ordre d'insertion suffit et il est le seul honnête.
+--
+-- CE QU'UNE SPEC E2E DOIT SAVOIR : `mobile-chrome` et `mobile-safari` jouent le
+-- même fichier EN PARALLÈLE sur la même base. Chaque navigateur a son propre
+-- cookie, donc sa propre entrée — aucun conflit, contrairement aux créneaux à
+-- une place. Mais le RANG obtenu dépend de qui arrive en premier : une
+-- assertion doit porter sur « un rang est affiché » ou sur sa DÉCROISSANCE,
+-- jamais sur un nombre précis.
+insert into public.reservation_queue_entries
+  (id, queue_id, organization_id, player_key_hash, display_name)
+values (
+  'e2ea0000-0000-4000-8000-000000000071',
+  'e2ea0000-0000-4000-8000-000000000061', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e4', 32), 'Camille'
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_queue_entries
+  (id, queue_id, organization_id, player_key_hash, display_name)
+values (
+  'e2ea0000-0000-4000-8000-000000000072',
+  'e2ea0000-0000-4000-8000-000000000061', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e5', 32), 'Dominique'
+)
+on conflict (id) do nothing;

@@ -71,8 +71,11 @@ export default async function CommandePage({
         }}
       />
       <main id="contenu" tabIndex={-1} className="outline-none">
+        {/* Le jeton NE DESCEND PAS en prop : une prop passée d'un composant
+            serveur à un composant client est sérialisée en clair dans le
+            payload RSC, donc recopiée dans le HTML. `TamponCommande` le relit
+            de `window.location.pathname` au moment du POST. */}
         <TamponCommande
-          token={token}
           programId={ctx.programId}
           programName={ctx.programName}
           organizationName={ctx.organizationName}

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { urlActiviteReserver } from "@/lib/reserver";
@@ -50,6 +51,21 @@ export default async function ActiviteReservablePage({
   // Activité inconnue OU d'une autre organisation : même réponse.
   if (!activite) notFound();
 
+  /**
+   * LE RÔLE DÉCIDE DE CE QUI S'AFFICHE, PAS SEULEMENT DE CE QUI PASSE.
+   *
+   * `evict_waitlist_entry` refuse un caissier et un lecteur — le bouton
+   * « Retirer » leur échouait donc SYSTÉMATIQUEMENT, et un geste qui ne peut
+   * qu'échouer se lit comme une panne. Il ne descend maintenant que pour les
+   * rôles qui peuvent l'aboutir. Ce n'est PAS la garde : la server action
+   * revérifie, comme toujours — c'est l'écran qui cesse de mentir.
+   *
+   * `getUserAndOrg` est mémoïsé par `cache()` : la page n'ajoute pas de
+   * requête, et le chargeur d'agenda ne rend pas le rôle.
+   */
+  const { role } = await getUserAndOrg();
+  const peutRetirer = role === "owner" || role === "editor";
+
   return (
     <div>
       <PageHeader
@@ -85,6 +101,7 @@ export default async function ActiviteReservablePage({
         activityId={activite.id}
         creneaux={activite.slots}
         timeZone={agenda.timezone}
+        peutRetirer={peutRetirer}
       />
 
       {/* Les invitations sont AU NIVEAU DE L'ACTIVITÉ, sous l'agenda : l'une

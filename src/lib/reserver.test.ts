@@ -1,20 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  asQueueEntryStatus,
+  asQueueStatus,
   cheminActiviteReserver,
+  cheminFileReserver,
   cheminInvitationReserver,
   etatUiCreneau,
   etatUiEntreeFile,
+  etatUiFile,
   etatUiInvitation,
+  etatUiPlaceFile,
   etatUiReservation,
+  fileAccepteEntree,
   formatCreneau,
   formatHeure,
   LIBELLE_FENETRE_CHECKIN,
+  LIBELLE_FILE_SANS_DELAI,
   mapCancelReservation,
   mapCheckinReservation,
   mapClaimWaitlistOffer,
   mapCloseInvitation,
   mapCreateInvitation,
+  mapQueueCallNext,
+  mapQueueJoin,
+  mapQueueLeave,
+  mapQueuePublicState,
+  mapQueueReopen,
+  mapQueueResolve,
+  mapQueueStaffState,
   mapRedeemInvitation,
   mapReservationPublicState,
   mapReserveSlot,
@@ -23,6 +37,7 @@ import {
   mapWaitlistLeave,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
+  urlFileReserver,
   urlInvitationReserver,
 } from "@/lib/reserver";
 
@@ -763,5 +778,416 @@ describe("adresse d'une invitation", () => {
     expect(urlInvitationReserver("jeton", "https://x.fr/")).toBe(
       "https://x.fr/reserver/invitation/jeton",
     );
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// La file sereine (RES-3) — les mappers, et le repli le plus fermé.
+//
+// Ce que ces tests attestent :
+//   · aucun document rendu ne porte de DURÉE — critère dur du lot ;
+//   · un `jsonb` illisible se lit dans l'état auquel RIEN N'EST DÛ, jamais
+//     dans celui qui promet une place ou qui crie « c'est à vous » ;
+//   · les champs ne sont retenus que sur les états qui les JUSTIFIENT — un
+//     identifiant d'entrée ne voyage pas avec un refus ;
+//   · l'appel prime sur le rang, dans le mapper d'écran comme dans le SQL.
+// ────────────────────────────────────────────────────────────
+
+/** Toutes les clés d'un objet, y compris celles des objets imbriqués. */
+function toutesLesCles(valeur: unknown, prefixe = ""): string[] {
+  if (typeof valeur !== "object" || valeur === null) return [];
+  return Object.entries(valeur).flatMap(([cle, sous]) => [
+    `${prefixe}${cle}`,
+    ...toutesLesCles(sous, `${prefixe}${cle}.`),
+  ]);
+}
+
+const MOTS_DE_DELAI = /eta|delay|duree|duration|remaining_time|minutes/i;
+
+describe("mapQueueJoin", () => {
+  it("rend le rang, la taille de la file et l'entrée sur une inscription", () => {
+    const resultat = mapQueueJoin({
+      state: "waiting",
+      entry_id: "e1",
+      status: "waiting",
+      position: 3,
+      waiting_count: 3,
+      called_at: null,
+    });
+
+    expect(resultat).toEqual({
+      state: "waiting",
+      entryId: "e1",
+      entryStatus: "waiting",
+      position: 3,
+      waitingCount: 3,
+      calledAt: null,
+      capacity: null,
+    });
+  });
+
+  it("rend LE MÊME RANG sur une rejointe idempotente, appel compris", () => {
+    // Rejoindre deux fois est un RECHARGEMENT DE PAGE, pas une faute : la RPC
+    // rend le rang existant, et celui qui a été appelé entre-temps le voit.
+    const resultat = mapQueueJoin({
+      state: "already_waiting",
+      entry_id: "e1",
+      status: "called",
+      position: null,
+      called_at: "2026-08-20T10:00:00Z",
+    });
+
+    expect(resultat.entryStatus).toBe("called");
+    expect(resultat.position).toBeNull();
+    expect(resultat.calledAt).toBe("2026-08-20T10:00:00Z");
+    // La RPC ne recompte PAS la file pour quelqu'un qui a déjà sa place.
+    expect(resultat.waitingCount).toBeNull();
+  });
+
+  it("rend le plafond avec `queue_full`, et AUCUNE entrée", () => {
+    const resultat = mapQueueJoin({ state: "queue_full", capacity: 50 });
+    expect(resultat.capacity).toBe(50);
+    expect(resultat.entryId).toBeNull();
+  });
+
+  it("se replie sur `unavailable` — jamais sur une place accordée", () => {
+    expect(mapQueueJoin(null).state).toBe("unavailable");
+    expect(mapQueueJoin({ state: "waitiiing" }).state).toBe("unavailable");
+    expect(mapQueueJoin("waiting").state).toBe("unavailable");
+  });
+
+  it("ne laisse AUCUN identifiant d'entrée voyager avec un refus", () => {
+    const resultat = mapQueueJoin({
+      state: "unavailable",
+      entry_id: "fuite",
+      position: 1,
+    });
+    expect(resultat.entryId).toBeNull();
+    expect(resultat.position).toBeNull();
+  });
+
+  it("ne porte AUCUNE clé de durée", () => {
+    const cles = toutesLesCles(
+      mapQueueJoin({ state: "waiting", entry_id: "e1", position: 1 }),
+    );
+    expect(cles.some((cle) => MOTS_DE_DELAI.test(cle))).toBe(false);
+  });
+});
+
+describe("mapQueueLeave", () => {
+  it("rend l'issue telle quelle quand le comptoir a déjà tranché", () => {
+    // Réécrire un `served` en `left` effacerait un passage réel des
+    // statistiques du commerçant, sur simple clic d'un joueur.
+    const resultat = mapQueueLeave({
+      state: "served",
+      entry_id: "e1",
+      resolved_at: "2026-08-20T10:00:00Z",
+    });
+    expect(resultat.state).toBe("served");
+    expect(resultat.resolvedAt).toBe("2026-08-20T10:00:00Z");
+  });
+
+  it("se replie sur `unknown`, sans identifiant", () => {
+    const resultat = mapQueueLeave({ state: "??", entry_id: "fuite" });
+    expect(resultat.state).toBe("unknown");
+    expect(resultat.entryId).toBeNull();
+  });
+});
+
+describe("mapQueueCallNext", () => {
+  it("rend le prénom à appeler à voix haute, et le reste de la file", () => {
+    const resultat = mapQueueCallNext({
+      state: "called",
+      entry_id: "e1",
+      display_name: "Camille",
+      called_at: "2026-08-20T10:00:00Z",
+      waiting_count: 4,
+    });
+    expect(resultat.displayName).toBe("Camille");
+    expect(resultat.waitingCount).toBe(4);
+  });
+
+  it("accepte l'absence de prénom — la file se rejoint sans rien donner de soi", () => {
+    const resultat = mapQueueCallNext({
+      state: "called",
+      entry_id: "e1",
+      display_name: null,
+      called_at: "2026-08-20T10:00:00Z",
+      waiting_count: 0,
+    });
+    expect(resultat.displayName).toBeNull();
+    expect(resultat.state).toBe("called");
+  });
+
+  it("ne retient rien sur `empty` ni sur un document illisible", () => {
+    expect(mapQueueCallNext({ state: "empty", display_name: "fuite" })).toEqual({
+      state: "empty",
+      entryId: null,
+      displayName: null,
+      calledAt: null,
+      waitingCount: null,
+    });
+    expect(mapQueueCallNext(undefined).state).toBe("unknown");
+  });
+});
+
+describe("mapQueueResolve", () => {
+  it("rend l'issue et son horodatage", () => {
+    expect(
+      mapQueueResolve({
+        state: "no_show",
+        entry_id: "e1",
+        resolved_at: "2026-08-20T10:00:00Z",
+      }),
+    ).toEqual({
+      state: "no_show",
+      entryId: "e1",
+      resolvedAt: "2026-08-20T10:00:00Z",
+    });
+  });
+
+  it("ne fabrique AUCUN horodatage sur `not_called` : rien n'a été tranché", () => {
+    const resultat = mapQueueResolve({
+      state: "not_called",
+      entry_id: "e1",
+      resolved_at: "2026-08-20T10:00:00Z",
+    });
+    expect(resultat.state).toBe("not_called");
+    expect(resultat.resolvedAt).toBeNull();
+  });
+});
+
+describe("mapQueueReopen", () => {
+  it("rend le rang de la remise en tête — 1, par construction", () => {
+    const resultat = mapQueueReopen({
+      state: "waiting",
+      entry_id: "e1",
+      position: 1,
+    });
+    expect(resultat.position).toBe(1);
+    expect(resultat.resolvedAt).toBeNull();
+  });
+
+  it("rend telle quelle une entrée terminale : on ne rouvre pas une absence constatée", () => {
+    const resultat = mapQueueReopen({
+      state: "no_show",
+      entry_id: "e1",
+      resolved_at: "2026-08-20T10:00:00Z",
+    });
+    expect(resultat.state).toBe("no_show");
+    expect(resultat.position).toBeNull();
+    expect(resultat.resolvedAt).toBe("2026-08-20T10:00:00Z");
+  });
+});
+
+describe("mapQueuePublicState", () => {
+  it("rend le rang, la taille de la file et l'appel sur le MÊME document", () => {
+    // C'est ce qui permet à l'écran de basculer sans aller chercher ailleurs —
+    // critère RES-3 « l'appel staff prime sur tout autre écran ».
+    const resultat = mapQueuePublicState({
+      state: "in_queue",
+      queue_name: "Comptoir",
+      queue_status: "open",
+      entry_id: "e1",
+      status: "called",
+      position: null,
+      waiting_count: 4,
+      joined_at: "2026-08-20T09:00:00Z",
+      called_at: "2026-08-20T10:00:00Z",
+    });
+
+    expect(resultat.entryStatus).toBe("called");
+    expect(resultat.calledAt).toBe("2026-08-20T10:00:00Z");
+    expect(resultat.position).toBeNull();
+    expect(resultat.waitingCount).toBe(4);
+  });
+
+  it("garde le nom et la taille de la file quand on n'y est pas", () => {
+    const resultat = mapQueuePublicState({
+      state: "not_in_queue",
+      queue_name: "Comptoir",
+      queue_status: "paused",
+      waiting_count: 2,
+    });
+    expect(resultat.queueName).toBe("Comptoir");
+    expect(resultat.queueStatus).toBe("paused");
+    expect(resultat.waitingCount).toBe(2);
+    expect(resultat.entryId).toBeNull();
+  });
+
+  it("se replie sur `unavailable`, file muette et compte à zéro", () => {
+    const resultat = mapQueuePublicState({ state: "nawak", queue_name: "X" });
+    expect(resultat.state).toBe("unavailable");
+    expect(resultat.queueName).toBeNull();
+    expect(resultat.waitingCount).toBe(0);
+  });
+
+  it("ne porte AUCUNE clé de durée", () => {
+    const cles = toutesLesCles(
+      mapQueuePublicState({
+        state: "in_queue",
+        entry_id: "e1",
+        position: 2,
+        waiting_count: 5,
+      }),
+    );
+    expect(cles.some((cle) => MOTS_DE_DELAI.test(cle))).toBe(false);
+  });
+});
+
+describe("mapQueueStaffState", () => {
+  const OK = {
+    state: "ok",
+    queue: {
+      id: "f1",
+      name: "Comptoir",
+      status: "paused",
+      max_live_entries: 20,
+      activity_id: null,
+      activity_name: null,
+    },
+    timezone: "Indian/Reunion",
+    entries: [
+      {
+        entry_id: "e1",
+        display_name: "Camille",
+        status: "called",
+        position: null,
+        joined_at: "2026-08-20T09:00:00Z",
+        called_at: "2026-08-20T10:00:00Z",
+      },
+      {
+        entry_id: "e2",
+        display_name: null,
+        status: "waiting",
+        position: 1,
+        joined_at: "2026-08-20T09:05:00Z",
+        called_at: null,
+      },
+    ],
+    live: { waiting: 1, called: 1 },
+    today: { served: 7, no_show: 2, left: 1 },
+  };
+
+  it("rend la file, ses entrées vivantes et les trois compteurs du jour", () => {
+    const resultat = mapQueueStaffState(OK);
+
+    expect(resultat.ok).toBe(true);
+    expect(resultat.queue?.status).toBe("paused");
+    expect(resultat.queue?.maxLiveEntries).toBe(20);
+    expect(resultat.timezone).toBe("Indian/Reunion");
+    expect(resultat.entries).toHaveLength(2);
+    expect(resultat.entries[0].displayName).toBe("Camille");
+    expect(resultat.entries[1].position).toBe(1);
+    expect(resultat.today).toEqual({ served: 7, noShow: 2, left: 1 });
+    expect(resultat.live).toEqual({ waiting: 1, called: 1 });
+  });
+
+  it("écarte une ligne sans identifiant ou sans heure d'inscription", () => {
+    // Elle n'a ni geste possible ni place dans l'ordre : on l'écarte plutôt
+    // que d'inventer une date pour la ranger quelque part.
+    const resultat = mapQueueStaffState({
+      ...OK,
+      entries: [
+        { display_name: "Sans id", status: "waiting", joined_at: "2026-08-20T09:00:00Z" },
+        { entry_id: "e3", status: "waiting", joined_at: null },
+        OK.entries[1],
+      ],
+    });
+    expect(resultat.entries.map((e) => e.entryId)).toEqual(["e2"]);
+  });
+
+  it("rend un état FERMÉ sur `unknown`, sur un document illisible et sans file", () => {
+    for (const brut of [
+      { state: "unknown" },
+      null,
+      "ok",
+      { state: "ok", queue: null },
+      { state: "ok", queue: { name: "sans id" } },
+    ]) {
+      const resultat = mapQueueStaffState(brut);
+      expect(resultat.ok).toBe(false);
+      expect(resultat.queue).toBeNull();
+      expect(resultat.entries).toEqual([]);
+      expect(resultat.today).toEqual({ served: 0, noShow: 0, left: 0 });
+    }
+  });
+
+  it("ne porte AUCUNE adresse — elle n'existe que pour un envoi serveur", () => {
+    const resultat = mapQueueStaffState({
+      ...OK,
+      entries: [{ ...OK.entries[0], email: "fuite@exemple.fr" }],
+    });
+    const cles = toutesLesCles(resultat);
+    expect(cles.some((cle) => /email/i.test(cle))).toBe(false);
+  });
+
+  it("ne porte AUCUNE clé de durée", () => {
+    const cles = toutesLesCles(mapQueueStaffState(OK));
+    expect(cles.some((cle) => MOTS_DE_DELAI.test(cle))).toBe(false);
+  });
+});
+
+describe("statuts de file — le repli le plus fermé", () => {
+  it("lit un statut de file inconnu comme `closed` : on n'ouvre pas sur un doute", () => {
+    expect(asQueueStatus("open")).toBe("open");
+    expect(asQueueStatus("paused")).toBe("paused");
+    expect(asQueueStatus("ouverte")).toBe("closed");
+    expect(asQueueStatus(null)).toBe("closed");
+  });
+
+  it("lit un statut d'entrée inconnu comme `waiting` : on ne crie pas un appel", () => {
+    expect(asQueueEntryStatus("called")).toBe("called");
+    expect(asQueueEntryStatus(42)).toBe("waiting");
+  });
+});
+
+describe("états d'interface de la file", () => {
+  it("teste `appele` EN PREMIER — l'appel prime sur tout autre écran", () => {
+    expect(etatUiPlaceFile({ status: "called" })).toBe("appele");
+    expect(etatUiPlaceFile({ status: "waiting" })).toBe("attente");
+    expect(etatUiPlaceFile({ status: "served" })).toBe("servi");
+    expect(etatUiPlaceFile({ status: "no_show" })).toBe("absent");
+    expect(etatUiPlaceFile({ status: "left" })).toBe("parti");
+  });
+
+  it("distingue la pause de la fermeture", () => {
+    expect(etatUiFile("open")).toBe("ouverte");
+    expect(etatUiFile("paused")).toBe("en_pause");
+    expect(etatUiFile("closed")).toBe("fermee");
+  });
+
+  it("refuse l'ENTRÉE en pause comme en fermeture — mais ce ne sont pas le même état", () => {
+    // La pause refuse d'accueillir et continue de SERVIR : c'est pourquoi le
+    // libellé les distingue là où l'entrée les confond.
+    expect(fileAccepteEntree({ status: "open", activiteActive: true })).toBe(true);
+    expect(fileAccepteEntree({ status: "paused", activiteActive: true })).toBe(
+      false,
+    );
+    expect(fileAccepteEntree({ status: "closed", activiteActive: true })).toBe(
+      false,
+    );
+  });
+
+  it("referme la file quand son activité liée est coupée", () => {
+    expect(fileAccepteEntree({ status: "open", activiteActive: false })).toBe(
+      false,
+    );
+  });
+});
+
+describe("adresse publique d'une file", () => {
+  it("ne porte NI jeton NI empreinte : c'est une adresse, pas une preuve", () => {
+    expect(cheminFileReserver("f1")).toBe("/reserver/file/f1");
+    expect(urlFileReserver("f1", "https://x.fr/")).toBe(
+      "https://x.fr/reserver/file/f1",
+    );
+  });
+});
+
+describe("la phrase qui remplace le délai", () => {
+  it("ne promet aucune durée, et le dit", () => {
+    expect(LIBELLE_FILE_SANS_DELAI).not.toMatch(/\d+\s*(min|minute|heure)/i);
+    expect(LIBELLE_FILE_SANS_DELAI).toMatch(/rang/i);
   });
 });

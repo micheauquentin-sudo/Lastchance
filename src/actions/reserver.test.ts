@@ -55,6 +55,63 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       remaining: 3,
     } as unknown,
     createInvitationResponse: { state: "created", invitation_id: "i1", max_uses: 5, expires_at: null } as unknown,
+    /** La FILE que `queueJoin` résout — c'est ELLE qui porte l'organisation. */
+    queueRow: {
+      id: "88888888-8888-4888-8888-888888888888",
+      organization_id: "11111111-1111-4111-8111-111111111111",
+    } as Record<string, unknown> | null,
+    queueJoinResponse: {
+      state: "waiting",
+      entry_id: "q1",
+      status: "waiting",
+      position: 3,
+      waiting_count: 3,
+      called_at: null,
+    } as unknown,
+    queueLeaveResponse: {
+      state: "left",
+      entry_id: "q1",
+      resolved_at: "2026-08-20T10:00:00Z",
+    } as unknown,
+    queueCallResponse: {
+      state: "called",
+      entry_id: "q1",
+      display_name: "Camille",
+      called_at: "2026-08-20T10:00:00Z",
+      waiting_count: 2,
+    } as unknown,
+    queueResolveResponse: {
+      state: "served",
+      entry_id: "q1",
+      resolved_at: "2026-08-20T10:01:00Z",
+    } as unknown,
+    queueReopenResponse: { state: "waiting", entry_id: "q1", position: 1 } as unknown,
+    queueStaffResponse: {
+      state: "ok",
+      queue: {
+        id: "88888888-8888-4888-8888-888888888888",
+        name: "Comptoir",
+        status: "open",
+        max_live_entries: 50,
+        activity_id: null,
+        activity_name: null,
+      },
+      timezone: "Indian/Reunion",
+      entries: [],
+      live: { waiting: 0, called: 0 },
+      today: { served: 0, no_show: 0, left: 0 },
+    } as unknown,
+    queuePublicResponse: {
+      state: "in_queue",
+      queue_name: "Comptoir",
+      queue_status: "open",
+      entry_id: "q1",
+      status: "waiting",
+      position: 2,
+      waiting_count: 4,
+      joined_at: "2026-08-20T09:00:00Z",
+      called_at: null,
+    } as unknown,
     /** La ligne que la résolution par POSSESSION rapporte, ou `null`. */
     entreeFile: {
       id: "66666666-6666-4666-8666-666666666666",
@@ -84,6 +141,11 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     taches: [] as Array<Promise<unknown>>,
     role: "owner" as string | null,
     orgAddonVitrine: true,
+    /** Le droit `vitrine` de l'organisation qui PORTE la file scrutée. */
+    droitVitrineFile: true,
+    /** Combien de fois le scrutin a résolu ce droit — une lecture se compte. */
+    droitVitrineFileAppels: 0,
+    evenementsSecurite: [] as string[],
     rlsWrites: [] as Array<{ table: string; op: string; values: Record<string, unknown>; filters: Record<string, unknown> }>,
     rlsError: null as { message: string; code?: string } | null,
     reset() {
@@ -115,6 +177,62 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         remaining: 3,
       };
       state.createInvitationResponse = { state: "created", invitation_id: "i1", max_uses: 5, expires_at: null };
+      state.queueRow = {
+        id: "88888888-8888-4888-8888-888888888888",
+        organization_id: "11111111-1111-4111-8111-111111111111",
+      };
+      state.queueJoinResponse = {
+        state: "waiting",
+        entry_id: "q1",
+        status: "waiting",
+        position: 3,
+        waiting_count: 3,
+        called_at: null,
+      };
+      state.queueLeaveResponse = {
+        state: "left",
+        entry_id: "q1",
+        resolved_at: "2026-08-20T10:00:00Z",
+      };
+      state.queueCallResponse = {
+        state: "called",
+        entry_id: "q1",
+        display_name: "Camille",
+        called_at: "2026-08-20T10:00:00Z",
+        waiting_count: 2,
+      };
+      state.queueResolveResponse = {
+        state: "served",
+        entry_id: "q1",
+        resolved_at: "2026-08-20T10:01:00Z",
+      };
+      state.queueReopenResponse = { state: "waiting", entry_id: "q1", position: 1 };
+      state.queueStaffResponse = {
+        state: "ok",
+        queue: {
+          id: "88888888-8888-4888-8888-888888888888",
+          name: "Comptoir",
+          status: "open",
+          max_live_entries: 50,
+          activity_id: null,
+          activity_name: null,
+        },
+        timezone: "Indian/Reunion",
+        entries: [],
+        live: { waiting: 0, called: 0 },
+        today: { served: 0, no_show: 0, left: 0 },
+      };
+      state.queuePublicResponse = {
+        state: "in_queue",
+        queue_name: "Comptoir",
+        queue_status: "open",
+        entry_id: "q1",
+        status: "waiting",
+        position: 2,
+        waiting_count: 4,
+        joined_at: "2026-08-20T09:00:00Z",
+        called_at: null,
+      };
       state.entreeFile = {
         id: "66666666-6666-4666-8666-666666666666",
         organization_id: "11111111-1111-4111-8111-111111111111",
@@ -141,6 +259,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.taches = [];
       state.role = "owner";
       state.orgAddonVitrine = true;
+      state.droitVitrineFile = true;
+      state.droitVitrineFileAppels = 0;
+      state.evenementsSecurite = [];
       state.rlsWrites = [];
       state.rlsError = null;
     },
@@ -183,6 +304,27 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
             error: null,
           });
         }
+        if (name === "queue_join") {
+          return Promise.resolve({ data: state.queueJoinResponse, error: null });
+        }
+        if (name === "queue_leave") {
+          return Promise.resolve({ data: state.queueLeaveResponse, error: null });
+        }
+        if (name === "queue_call_next") {
+          return Promise.resolve({ data: state.queueCallResponse, error: null });
+        }
+        if (name === "queue_resolve") {
+          return Promise.resolve({ data: state.queueResolveResponse, error: null });
+        }
+        if (name === "queue_reopen_entry") {
+          return Promise.resolve({ data: state.queueReopenResponse, error: null });
+        }
+        if (name === "queue_staff_state") {
+          return Promise.resolve({ data: state.queueStaffResponse, error: null });
+        }
+        if (name === "queue_public_state") {
+          return Promise.resolve({ data: state.queuePublicResponse, error: null });
+        }
         if (name === "close_reservation_invitation") {
           return Promise.resolve({
             data: { state: "closed", invitation_id: "i1", closed_at: "2026-08-20T10:00:00Z" },
@@ -209,6 +351,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
             }
             if (table === "reservation_invitations") {
               return Promise.resolve({ data: state.invitationRow, error: null });
+            }
+            if (table === "reservation_queues") {
+              return Promise.resolve({ data: state.queueRow, error: null });
             }
             if (table === "reservations") {
               return Promise.resolve({
@@ -302,6 +447,24 @@ vi.mock("@/lib/reserver-context", async (importOriginal) => {
       /^[A-Za-z0-9_-]{32}$/.test(jeton.trim())
         ? createHash("sha256").update(jeton.trim()).digest("hex")
         : null,
+    // Le SCRUTIN public passe par le lecteur partagé du chargeur : ce faux ne
+    // rend que ce que la RPC rendrait, MAPPÉ — c'est le contrat que l'action
+    // doit respecter (une lecture, pas deux), pas la lecture elle-même, qui a
+    // ses propres tests dans `reserver-context.test.ts`.
+    lireEtatFilePublic: async (_queueId: string, empreinte: string | null) => {
+      const { mapQueuePublicState } = await import("@/lib/reserver");
+      return mapQueuePublicState(
+        empreinte ? state.queuePublicResponse : { state: "not_in_queue" },
+      );
+    },
+    // La garde vitrine du scrutin : sa lecture réelle (jointure + garde
+    // inter-tenant + `moduleOuvertAuJoueur`) a ses tests dans
+    // `reserver-context.test.ts`. Ce que l'action doit tenir, c'est QUAND elle
+    // l'appelle — et le compteur ci-dessous l'atteste.
+    droitVitrineOuvertPourFile: () => {
+      state.droitVitrineFileAppels += 1;
+      return Promise.resolve(state.droitVitrineFile);
+    },
   };
 });
 
@@ -373,6 +536,9 @@ vi.mock("@/lib/monitoring", () => ({
   recordCounter: (op: string) => {
     state.compteurs.push(op);
   },
+  reportSecurityEvent: (evenement: string) => {
+    state.evenementsSecurite.push(evenement);
+  },
 }));
 
 vi.mock("@/lib/resend", () => ({
@@ -391,11 +557,20 @@ import {
   closeInvitation,
   createInvitation,
   createReserverActivity,
+  createReserverQueue,
   createReserverSlot,
+  getQueuePublicState,
+  getQueueStaffState,
   loadMyReservations,
+  queueCallNext,
+  queueJoin,
+  queueLeave,
+  queueReopen,
+  queueResolve,
   redeemInvitation,
   reserveSlot,
   revokeInvitation,
+  updateReserverQueue,
   updateReserverSlotStatus,
   waitlistJoin,
   waitlistLeave,
@@ -1323,5 +1498,449 @@ describe("revokeInvitation / closeInvitation", () => {
       false,
     );
     expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// La file sereine (RES-3) — ce que les actions REFUSENT, et d'où viennent
+// l'organisation et l'acteur.
+// ────────────────────────────────────────────────────────────
+
+const QUEUE_ID = "88888888-8888-4888-8888-888888888888";
+const ENTRY_ID = "99999999-9999-4999-8999-999999999999";
+
+describe("queueJoin — l'organisation vient de la FILE, jamais du corps", () => {
+  it("résout l'organisation sur la ligne et la passe à la RPC", async () => {
+    const resultat = await queueJoin({ queueId: QUEUE_ID });
+
+    expect(resultat.ok).toBe(true);
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("queue_join");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_queue_id).toBe(QUEUE_ID);
+    // L'IDENTITÉ VIENT DU COOKIE, jamais du corps.
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+  });
+
+  it("tranche le seau par APPAREIL avant celui par organisation", async () => {
+    // La portée du second seau est l'organisation RÉSOLUE : elle n'existe
+    // qu'après la lecture de la file, donc l'appareil est le seul opposable
+    // avant. Motif `redeemInvitation`.
+    await queueJoin({ queueId: QUEUE_ID });
+
+    const seaux = state.rateLimitCalls.map((appel) => appel.bucket);
+    expect(seaux[0]).toBe(`reserver:device:${EMPREINTE}`);
+    expect(seaux[1]).toBe(`reserver:player:${ORG_ID}:${EMPREINTE}`);
+    expect(state.rateLimitCalls.every((appel) => appel.failClosed)).toBe(true);
+  });
+
+  it("observe l'IP SEULE avant l'IP par organisation, et ne refuse sur aucune", async () => {
+    await queueJoin({ queueId: QUEUE_ID });
+
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+      "reserver_public_pressure",
+    ]);
+    expect(state.pressions[0].parts).toBe("reserver:ip");
+    expect(state.pressions[1].parts).toBe(`reserver:public:ip:${ORG_ID}`);
+  });
+
+  it("rend `unavailable` sur une file inconnue, SANS appeler la RPC", async () => {
+    // Et sans jamais dire laquelle des deux raisons : inconnue, ou d'un autre
+    // commerce. C'est ce que rendrait la RPC, à qui on évite un appel sans objet.
+    state.queueRow = null;
+    const resultat = await queueJoin({ queueId: QUEUE_ID });
+
+    expect(resultat.ok).toBe(true);
+    expect(resultat.ok && resultat.data.state).toBe("unavailable");
+    expect(state.rpcCalls).toHaveLength(0);
+    // L'IP SEULE est comptée quand même : c'est tout l'intérêt du premier
+    // compteur — un balayage d'identifiants n'atteint aucune file.
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+    ]);
+  });
+
+  it("oppose le challenge anti-robot, et NE LIT MÊME PAS la file sans lui", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site";
+    state.turnstileVerdict = false;
+
+    const resultat = await queueJoin({ queueId: QUEUE_ID, turnstileToken: "t" });
+
+    expect(resultat.ok).toBe(false);
+    expect(resultat.ok === false && resultat.challengeRequired).toBe(true);
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.turnstileJetons).toEqual(["t"]);
+  });
+
+  it("n'oppose AUCUN challenge quand les clés ne sont pas configurées", async () => {
+    state.turnstileConfigure = false;
+    const resultat = await queueJoin({ queueId: QUEUE_ID });
+
+    expect(resultat.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+  });
+
+  it("N'ENVOIE AUCUN EMAIL, même consenti — le lot ne câble rien sur Resend", async () => {
+    const resultat = await queueJoin({
+      queueId: QUEUE_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+
+    expect(resultat.ok).toBe(true);
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+    // Aucun seau de destinataire non plus : il n'y a pas d'envoi à borner.
+    expect(
+      state.rateLimitCalls.some((appel) =>
+        appel.bucket.startsWith("reserver:email"),
+      ),
+    ).toBe(false);
+  });
+
+  it("transmet l'adresse SEULEMENT avec son consentement", async () => {
+    await queueJoin({
+      queueId: QUEUE_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+    expect(state.rpcCalls.at(-1)?.args.p_email).toBe("client@exemple.fr");
+
+    state.reset();
+    // Une adresse SANS consentement est refusée par le schéma : la base porte
+    // une ÉQUIVALENCE, et l'action ne l'atteint même pas.
+    const refus = await queueJoin({
+      queueId: QUEUE_ID,
+      email: "client@exemple.fr",
+      consent: false,
+    });
+    expect(refus.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("TRONQUE le prénom à 40 caractères plutôt que de refuser l'entrée", async () => {
+    await queueJoin({ queueId: QUEUE_ID, displayName: "é".repeat(60) });
+    expect(state.rpcCalls.at(-1)?.args.p_display_name).toBe("é".repeat(40));
+  });
+
+  it("envoie `null` pour un prénom vide — un ornement absent n'est pas une chaîne vide", async () => {
+    await queueJoin({ queueId: QUEUE_ID, displayName: "   " });
+    expect(state.rpcCalls.at(-1)?.args.p_display_name).toBeNull();
+  });
+});
+
+describe("queueLeave — possession, et aucune friction", () => {
+  it("passe l'entrée et l'empreinte, sans organisation", async () => {
+    const resultat = await queueLeave({ entryId: ENTRY_ID });
+
+    expect(resultat.ok).toBe(true);
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("queue_leave");
+    expect(appel?.args).toEqual({
+      p_entry_id: ENTRY_ID,
+      p_player_key_hash: EMPREINTE,
+    });
+    // L'organisation n'est PAS connue de ce chemin : la RPC la lit sur la
+    // ligne, donc pas de compteur par organisation ici.
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+    ]);
+  });
+
+  it("n'oppose AUCUN challenge : c'est un geste qui libère une place", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site";
+    state.turnstileVerdict = false;
+
+    const resultat = await queueLeave({ entryId: ENTRY_ID });
+    expect(resultat.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+  });
+
+  it("porte le seau sur l'ENTRÉE, une clé que l'appelant détient déjà", async () => {
+    await queueLeave({ entryId: ENTRY_ID });
+    expect(state.rateLimitCalls.map((a) => a.bucket)).toEqual([
+      `reserver:device:${EMPREINTE}`,
+      `reserver:player:${ENTRY_ID}:${EMPREINTE}`,
+    ]);
+  });
+});
+
+describe("comptoir de la file — l'acteur vient de la SESSION", () => {
+  it("appelle le suivant avec l'organisation et l'acteur de la session", async () => {
+    const resultat = await queueCallNext(null, formData({ queueId: QUEUE_ID }));
+
+    expect(resultat.ok).toBe(true);
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("queue_call_next");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_actor).toBe(USER_ID);
+    expect(resultat.ok && resultat.data.displayName).toBe("Camille");
+  });
+
+  it("ACCEPTE un caissier sur les trois gestes de comptoir", async () => {
+    // C'est le point du lot : l'accueil EST le poste du caissier. La garde
+    // d'édition l'exclut, celle-ci non — motif `checkinReservation`.
+    state.role = "cashier";
+
+    expect((await queueCallNext(null, formData({ queueId: QUEUE_ID }))).ok).toBe(
+      true,
+    );
+    expect(
+      (await queueResolve(null, formData({ entryId: ENTRY_ID, outcome: "served" })))
+        .ok,
+    ).toBe(true);
+    expect((await queueReopen(null, formData({ entryId: ENTRY_ID }))).ok).toBe(
+      true,
+    );
+    expect(state.rpcCalls).toHaveLength(3);
+  });
+
+  it("REFUSE un rôle hors comptoir, sans appeler la base", async () => {
+    state.role = "viewer";
+    const resultat = await queueCallNext(null, formData({ queueId: QUEUE_ID }));
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("SERT ENCORE sans le droit `vitrine` — la pause d'un abonnement ne vide pas le magasin", async () => {
+    // Motif `checkinReservation`, et l'inverse de `cancelReservationStaff` :
+    // refuser d'appeler le suivant laisserait le commerçant devant douze
+    // personnes debout, sans aucun geste. La sanction tomberait sur elles.
+    state.orgAddonVitrine = false;
+    const resultat = await queueCallNext(null, formData({ queueId: QUEUE_ID }));
+
+    expect(resultat.ok).toBe(true);
+    expect(state.rpcCalls.at(-1)?.name).toBe("queue_call_next");
+  });
+
+  it("transmet l'issue du vocabulaire fermé, et refuse tout autre mot", async () => {
+    await queueResolve(null, formData({ entryId: ENTRY_ID, outcome: "no_show" }));
+    expect(state.rpcCalls.at(-1)?.args.p_outcome).toBe("no_show");
+
+    state.reset();
+    const refus = await queueResolve(
+      null,
+      // `left` est un geste du JOUEUR, pas un constat du comptoir : hors
+      // vocabulaire, et arrêté ici plutôt que de faire lever la RPC.
+      formData({ entryId: ENTRY_ID, outcome: "left" }),
+    );
+    expect(refus.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("rouvre une entrée appelée par erreur, acteur de session compris", async () => {
+    const resultat = await queueReopen(null, formData({ entryId: ENTRY_ID }));
+
+    expect(resultat.ok).toBe(true);
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("queue_reopen_entry");
+    expect(appel?.args.p_actor).toBe(USER_ID);
+    // EN TÊTE, et c'est une conséquence : rien n'a été renuméroté.
+    expect(resultat.ok && resultat.data.position).toBe(1);
+  });
+});
+
+describe("scrutin de la file", () => {
+  it("getQueueStaffState lit l'organisation de la SESSION, jamais du paramètre", async () => {
+    // C'est l'invariant du lot : `queue_staff_state` ne vérifie AUCUNE
+    // appartenance. Le seul chemin jusqu'à `p_organization_id` passe par
+    // `getUserAndOrg`, et l'entrée de l'action ne porte que la file.
+    const etat = await getQueueStaffState({ queueId: QUEUE_ID });
+
+    expect(etat?.ok).toBe(true);
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("queue_staff_state");
+    expect(appel?.args).toEqual({
+      p_organization_id: ORG_ID,
+      p_queue_id: QUEUE_ID,
+    });
+  });
+
+  it("getQueueStaffState rend `null` — jamais une erreur d'écran — sur une file inconnue", async () => {
+    state.queueStaffResponse = { state: "unknown" };
+    expect(await getQueueStaffState({ queueId: QUEUE_ID })).toBeNull();
+  });
+
+  it("getQueueStaffState refuse un rôle hors comptoir sans lire la base", async () => {
+    state.role = "viewer";
+    expect(await getQueueStaffState({ queueId: QUEUE_ID })).toBeNull();
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("getQueueStaffState borne sa CADENCE sur la clé de l'opérateur, et le dit", async () => {
+    // Seul scrutin authentifié du module, et le seul dont la RPC recompose les
+    // rangs de la file entière à chaque tic. La clé est propre à UN opérateur —
+    // c'est ce qui rend le `failClosed` conforme à ADR-032 : la saturer ne
+    // ralentit que celui qui l'a saturée.
+    await getQueueStaffState({ queueId: QUEUE_ID });
+    const seau = state.rateLimitCalls.at(-1);
+    expect(seau?.bucket).toBe(`reserver:queue-staff:${ORG_ID}:${USER_ID}`);
+    expect(seau?.failClosed).toBe(true);
+
+    state.reset();
+    state.seauxASec = ["reserver:queue-staff"];
+    // À SEC : l'écran garde ce qu'il montrait, la RPC n'est pas appelée, et
+    // l'emballement est REPORTÉ — être freiné ne suffit pas, il faut être vu.
+    expect(await getQueueStaffState({ queueId: QUEUE_ID })).toBeNull();
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.evenementsSecurite).toEqual(["reserver_queue_staff_cadence"]);
+  });
+
+  it("getQueuePublicState rend le rang du porteur du cookie, sans ETA", async () => {
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(etat?.state).toBe("in_queue");
+    expect(etat?.position).toBe(2);
+    expect(etat?.waitingCount).toBe(4);
+    // AUCUNE clé de durée dans le document rendu — critère dur RES-3.
+    expect(Object.keys(etat ?? {}).some((cle) => /eta|delay|duree/i.test(cle))).toBe(
+      false,
+    );
+  });
+
+  it("getQueuePublicState prend le seau de LECTURE, jamais celui des gestes", async () => {
+    // Le correctif d'INFO-1 : à 12 tics/min et deux onglets, ce scrutin
+    // épuisait `reserver:device` — partagé avec `queueJoin` et `queueLeave` —
+    // et le refus tombait sur le geste, jamais sur la lecture qui l'avait vidé.
+    await getQueuePublicState({ queueId: QUEUE_ID });
+
+    const seaux = state.rateLimitCalls.map((appel) => appel.bucket);
+    expect(seaux).toEqual([`reserver:queue-read:${EMPREINTE}`]);
+    expect(state.rateLimitCalls[0].failClosed).toBe(true);
+  });
+
+  it("getQueuePublicState rend `null` quand le seau du scrutin est à sec", async () => {
+    // L'écran garde alors ce qu'il montrait : un seau ralentit une boucle, il
+    // n'efface pas un rang.
+    state.seauxASec = ["reserver:queue-read"];
+    expect(await getQueuePublicState({ queueId: QUEUE_ID })).toBeNull();
+  });
+
+  it("getQueuePublicState laisse passer `in_queue` SANS résoudre le droit vitrine", async () => {
+    // Quelqu'un qui attend physiquement doit voir son appel, abonnement expiré
+    // ou non : la sanction ne tombe pas sur lui (motif `queueCallNext`).
+    state.droitVitrineFile = false;
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(etat?.state).toBe("in_queue");
+    expect(etat?.position).toBe(2);
+    // Et la lecture du droit n'est même pas payée sur cette branche.
+    expect(state.droitVitrineFileAppels).toBe(0);
+  });
+
+  it("getQueuePublicState rend `unavailable` sur `not_in_queue` quand le droit vitrine est fermé", async () => {
+    // M-1 : sans cette garde, le scrutin rendait le nom de la file, son statut
+    // et le nombre de personnes en attente à n'importe qui — c'est-à-dire
+    // l'oracle sur l'état commercial d'un tiers que la PAGE refuse d'être.
+    state.empreinte = null;
+    state.droitVitrineFile = false;
+
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(etat?.state).toBe("unavailable");
+    // INDISTINGUABLE d'une file inexistante : rien du document n'a fuité.
+    expect(etat?.queueName).toBeNull();
+    expect(etat?.queueStatus).toBeNull();
+    expect(etat?.waitingCount).toBe(0);
+  });
+
+  it("getQueuePublicState rend `not_in_queue` tel quel quand le droit vitrine est ouvert", async () => {
+    state.empreinte = null;
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(etat?.state).toBe("not_in_queue");
+  });
+});
+
+describe("files d'accueil — configuration", () => {
+  it("crée la file sous l'organisation de la SESSION", async () => {
+    const resultat = await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "50" }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.table).toBe("reservation_queues");
+    expect(ecriture?.values.organization_id).toBe(ORG_ID);
+    // Sans activité choisie, la colonne est NULLE : c'est la file « Comptoir »,
+    // le cas dominant du modèle.
+    expect(ecriture?.values.activity_id).toBeNull();
+    expect(ecriture?.values.status).toBe("open");
+  });
+
+  it("nomme la cause réelle d'un doublon de libellé", async () => {
+    state.rlsError = { message: "duplicate", code: "23505" };
+    const resultat = await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "50" }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(resultat.ok === false && resultat.error).toContain("porte déjà ce nom");
+  });
+
+  it("REFUSE un caissier, et n'écrit rien", async () => {
+    // Créer, renommer, mettre en pause sont du PARAMÉTRAGE : `gardeEditeurReserver`,
+    // pas la garde de comptoir.
+    state.role = "cashier";
+    const resultat = await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "50" }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("REFUSE sans le droit `vitrine`", async () => {
+    state.orgAddonVitrine = false;
+    const resultat = await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "50" }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("borne le plafond d'entrées vivantes à celui du CHECK SQL", async () => {
+    const resultat = await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "500" }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("met à jour SOUS l'organisation de la session, en doublant la RLS", async () => {
+    const resultat = await updateReserverQueue(
+      null,
+      formData({
+        queueId: QUEUE_ID,
+        name: "Retrait commandes",
+        maxLiveEntries: "12",
+        status: "paused",
+      }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.op).toBe("update");
+    expect(ecriture?.filters).toEqual({
+      id: QUEUE_ID,
+      organization_id: ORG_ID,
+    });
+    // `paused` N'EST PAS `closed` : la file refuse les arrivées mais se sert
+    // encore, et c'est la valeur écrite telle quelle.
+    expect(ecriture?.values.status).toBe("paused");
+    expect(ecriture?.values.max_live_entries).toBe(12);
   });
 });

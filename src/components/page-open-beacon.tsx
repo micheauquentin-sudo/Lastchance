@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { ModulePageOpenKey } from "@/lib/module-page-opens";
 
 /**
@@ -25,21 +26,39 @@ import type { ModulePageOpenKey } from "@/lib/module-page-opens";
  * CHARGEMENT de page — rechargement, retour arrière et lien partagé compris —
  * et jamais un scan de QR distinct. Renommer le composant sans son URL aurait
  * troqué un décalage contre un autre ; les deux bougent donc ensemble.
+ *
+ * ── LA CHASSE AU TRÉSOR NE PASSE PAS SON IDENTIFIANT EN PROP ──
+ *
+ * Six des sept modules comptent sur un slug, un code de jonction ou un
+ * identifiant : rien de secret, la prop est le chemin le plus simple. Le
+ * septième compte PAR ÉTAPE, et l'identifiant d'une étape est son JETON — celui
+ * qui pose le tampon. Une prop serveur → client étant recopiée en clair dans le
+ * payload RSC (donc dans le HTML), `module="hunts"` se passe donc SANS
+ * `publicId` : le jeton est lu de l'adresse au moment de l'envoi, et il y est
+ * déjà, puisque la page EST `/hunt/<jeton>`.
  */
 type PageOpenBeaconProps =
   | { slug: string; module?: undefined; publicId?: undefined }
-  | { module: ModulePageOpenKey; publicId: string; slug?: undefined };
+  | { module: ModulePageOpenKey; publicId: string; slug?: undefined }
+  | { module: "hunts"; publicId?: undefined; slug?: undefined };
+
+/** L'URL de comptage — construite À L'ENVOI, jamais au rendu (voir ci-dessus). */
+function urlDuComptage(props: PageOpenBeaconProps): string {
+  if (props.module === undefined) {
+    return `/api/page-opens?slug=${encodeURIComponent(props.slug)}`;
+  }
+  const id = props.publicId ?? jetonDeLAdresse();
+  return `/api/page-opens?module=${encodeURIComponent(props.module)}&id=${encodeURIComponent(id)}`;
+}
 
 export function PageOpenBeacon(props: PageOpenBeaconProps) {
   const sent = useRef(false);
-  const url =
-    props.module === undefined
-      ? `/api/page-opens?slug=${encodeURIComponent(props.slug)}`
-      : `/api/page-opens?module=${encodeURIComponent(props.module)}&id=${encodeURIComponent(props.publicId)}`;
 
   useEffect(() => {
     if (sent.current) return;
     sent.current = true;
+
+    const url = urlDuComptage(props);
 
     if (typeof navigator.sendBeacon === "function") {
       navigator.sendBeacon(url);
@@ -48,7 +67,7 @@ export function PageOpenBeacon(props: PageOpenBeaconProps) {
         /* comptage best-effort */
       });
     }
-  }, [url]);
+  }, [props]);
 
   return null;
 }

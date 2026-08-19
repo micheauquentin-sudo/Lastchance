@@ -590,6 +590,42 @@ export const RATE_LIMITS = {
    *  partiel (une identité, une place vivante par créneau) et la capacité comptée
    *  sous verrou : frapper des cookies ne crée aucune place supplémentaire. */
   reserverPlayerAction: { limit: 30, windowSeconds: 60 },
+  /** SCRUTIN de la file d'accueil par le JOUEUR — clé d'IDENTITÉ pure
+   *  (l'empreinte du cookie `lc-player`, SANS identifiant de file), donc
+   *  `failClosed` légitime (ADR-032) : la saturer ne coupe que son porteur.
+   *
+   *  SÉRIE DISTINCTE DE `reserverDevice`, ET C'EST TOUT SON OBJET. L'écran de
+   *  file relit son rang toutes les cinq secondes — 12 tics par minute, ×2 si le
+   *  client a laissé un second onglet ouvert. Partagé avec les GESTES, ce débit
+   *  mangeait les 60/min de `reserverDevice` en quelques minutes, et le premier
+   *  refus tombait sur `queueLeave` : quelqu'un debout au comptoir ne pouvait
+   *  plus quitter la file parce qu'il l'avait trop REGARDÉE. Une lecture qui
+   *  n'écrit rien ne doit pas dépenser le budget d'un geste qui écrit.
+   *
+   *  120/60 s = dix fois la cadence d'un écran, quatre fois celle de deux
+   *  onglets : large par construction, puisqu'il ne borne qu'une lecture dont le
+   *  refus se traduit par « ce tic n'a rien rapporté » — l'écran garde son rang.
+   *  La clé n'est PAS composée avec l'identifiant de file : il vient de
+   *  l'appelant, et boucler dessus ouvrirait un seau neuf à chaque tour (motif
+   *  `progressionDevice`, wagon 7). */
+  reserverQueueRead: { limit: 120, windowSeconds: 60 },
+  /** CADENCE de l'écran d'accueil du COMPTOIR (`getQueueStaffState`) par
+   *  organisation et OPÉRATEUR authentifié — motif de clé `cashier:lookup`, et
+   *  `failClosed` légitime pour la même raison : `user.id` est propre à une
+   *  personne, la saturer ne coupe qu'elle (ADR-032).
+   *
+   *  POURQUOI IL EXISTE : c'est le seul chemin du module qu'un écran rappelle
+   *  toutes les cinq secondes ET dont la RPC recompose les rangs de la file
+   *  entière à chaque tic. Sans borne, un onglet laissé en boucle — ou un script
+   *  muni d'une session de caissier — tenait ce coût indéfiniment, invisible en
+   *  supervision. Le dépassement est REPORTÉ (`reserver_queue_staff_cadence`) :
+   *  le seau ne se contente pas de freiner, il le dit.
+   *
+   *  40/60 s : un écran consomme 12 tics par minute, deux consoles ouvertes sur
+   *  le même compte en consomment 24 — les deux passent. Une boucle emballée,
+   *  elle, est freinée, et son refus est bénin (l'action rend `null`, l'écran
+   *  garde ce qu'il montrait). */
+  reserverQueueStaffState: { limit: 40, windowSeconds: 60 },
   /** PLAFOND PAR IP SEULE du parcours Réserver, toutes organisations confondues
    *  — compteur d'OBSERVABILITÉ, jamais un refus, et consommé AVANT le compteur
    *  par organisation (motif `pronoTvIpCeiling`, wagon 7). Son rôle est de rendre

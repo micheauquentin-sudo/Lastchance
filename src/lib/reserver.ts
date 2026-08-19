@@ -1085,6 +1085,586 @@ export const LIBELLE_FENETRE_CHECKIN =
   "Le code s'enregistre à partir d'une heure avant le début, et jusqu'à la fin " +
   "de la séance, plus deux heures, et au moins jusqu'à la fin de la journée.";
 
+// ════════════════════════════════════════════════════════════
+// LA FILE SEREINE (RES-3, lot L6) — migration 20261005120000
+//
+// L'accueil EN CONTINU, et il ne faut pas le confondre avec la liste
+// prioritaire ci-dessus : celle-là attend UN CRÉNEAU PRÉCIS et n'existe que
+// parce qu'il est complet, celle-ci n'a AUCUN créneau — on pousse la porte, on
+// scanne, on attend son tour. Deux objets, deux tables, aucun mapper partagé.
+//
+// ── AUCUN ETA, NULLE PART, ET SURTOUT PAS ICI ──
+//
+// Aucune des structures ci-dessous ne porte de durée, d'heure de passage ni de
+// « environ N minutes », et ce n'est pas un manque à combler par une
+// soustraction côté écran : rien dans cette base ne mesure le temps de service,
+// donc toute estimation serait INVENTÉE — crue, puis démentie. Le rang et le
+// nombre de personnes qui attendent sont tout ce que le module promet.
+// ════════════════════════════════════════════════════════════
+
+/** Libellé d'une file — 1..80, exactement le CHECK SQL. */
+export const QUEUE_NAME_MAX = 80;
+
+/**
+ * Prénom d'appel au comptoir — 1..40, exactement le CHECK SQL.
+ *
+ * Il est TRONQUÉ et jamais refusé (`queue_join` le fait aussi) : c'est un
+ * ornement d'écran, et faire échouer l'entrée en file d'une personne debout dans
+ * le magasin parce que son prénom fait 41 caractères ferait payer à la file ce
+ * qui ne la regarde pas.
+ */
+export const QUEUE_DISPLAY_NAME_MAX = 40;
+
+/**
+ * Borne de DÉFENSE sur le prénom reçu, avant la troncature.
+ *
+ * Elle ne dit rien du produit : elle empêche seulement de travailler (trim,
+ * coupe) sur une chaîne non bornée choisie par l'appelant. Le refus qu'elle
+ * produit n'est pas un refus métier — aucun prénom ne l'atteint.
+ */
+export const QUEUE_DISPLAY_NAME_INPUT_MAX = 2048;
+
+/**
+ * Plafond d'entrées VIVANTES (`waiting` + `called`) d'une file — `between 1 and
+ * 200`, exactement le CHECK SQL.
+ *
+ * Sans lui, la seule borne serait une ligne par cookie — c'est-à-dire aucune —
+ * et chaque ligne porte un prénom, une adresse et un consentement.
+ */
+export const QUEUE_MAX_LIVE_ENTRIES_MIN = 1;
+export const QUEUE_MAX_LIVE_ENTRIES_MAX = 200;
+/** Défaut SQL de `reservation_queues.max_live_entries`. */
+export const QUEUE_MAX_LIVE_ENTRIES_DEFAUT = 50;
+
+/** Statut d'une file — miroir du CHECK `reservation_queues.status`. */
+export type ReservationQueueStatus = "open" | "paused" | "closed";
+
+/**
+ * Statut d'une entrée de file — miroir du CHECK
+ * `reservation_queue_entries.status`.
+ */
+export type ReservationQueueEntryStatus =
+  | "waiting"
+  | "called"
+  | "served"
+  | "left"
+  | "no_show";
+
+/**
+ * Issue que le comptoir peut CONSTATER — le vocabulaire fermé de
+ * `queue_resolve`. `left` n'en fait pas partie : partir est un geste du joueur,
+ * pas un constat du staff.
+ */
+export type QueueResolveOutcome = "served" | "no_show";
+
+/** Issues de `queue_join`. */
+export type QueueJoinState =
+  | "unavailable"
+  | "invalid_email"
+  /**
+   * La FILE est pleine — état distinct et NON muet, motif `waitlist_full` : il
+   * ne révèle rien qu'un visiteur ne voie déjà, et « la file est complète,
+   * revenez dans un moment » est actionnable là où « indisponible » ne l'est pas.
+   */
+  | "queue_full"
+  | "already_waiting"
+  | "waiting";
+
+/** Issues de `queue_leave`. */
+export type QueueLeaveState = "unknown" | "left" | "served" | "no_show";
+
+/** Issues de `queue_call_next`. */
+export type QueueCallNextState = "unknown" | "empty" | "called";
+
+/** Issues de `queue_resolve`. */
+export type QueueResolveState =
+  | "unknown"
+  /** Depuis `waiting` : servir sans avoir appelé saute le tour de tous ceux qui sont devant. */
+  | "not_called"
+  | "served"
+  | "no_show"
+  | "left";
+
+/** Issues de `queue_reopen_entry`. */
+export type QueueReopenState =
+  | "unknown"
+  | "waiting"
+  | "served"
+  | "no_show"
+  | "left";
+
+/** Issues de `queue_public_state`. */
+export type QueuePublicKind = "unavailable" | "not_in_queue" | "in_queue";
+
+const QUEUE_STATUSES: readonly ReservationQueueStatus[] = [
+  "open",
+  "paused",
+  "closed",
+];
+
+const QUEUE_ENTRY_STATUSES: readonly ReservationQueueEntryStatus[] = [
+  "waiting",
+  "called",
+  "served",
+  "left",
+  "no_show",
+];
+
+const QUEUE_JOIN_STATES: readonly QueueJoinState[] = [
+  "unavailable",
+  "invalid_email",
+  "queue_full",
+  "already_waiting",
+  "waiting",
+];
+
+const QUEUE_LEAVE_STATES: readonly QueueLeaveState[] = [
+  "unknown",
+  "left",
+  "served",
+  "no_show",
+];
+
+const QUEUE_CALL_STATES: readonly QueueCallNextState[] = [
+  "unknown",
+  "empty",
+  "called",
+];
+
+const QUEUE_RESOLVE_STATES: readonly QueueResolveState[] = [
+  "unknown",
+  "not_called",
+  "served",
+  "no_show",
+  "left",
+];
+
+const QUEUE_REOPEN_STATES: readonly QueueReopenState[] = [
+  "unknown",
+  "waiting",
+  "served",
+  "no_show",
+  "left",
+];
+
+const QUEUE_PUBLIC_KINDS: readonly QueuePublicKind[] = [
+  "unavailable",
+  "not_in_queue",
+  "in_queue",
+];
+
+/**
+ * Statut de file, ou `closed` — le REPLI LE PLUS FERMÉ. Un statut illisible ne
+ * doit jamais faire croire qu'on peut encore entrer.
+ */
+export function asQueueStatus(value: unknown): ReservationQueueStatus {
+  const candidate = asString(value);
+  return candidate && (QUEUE_STATUSES as string[]).includes(candidate)
+    ? (candidate as ReservationQueueStatus)
+    : "closed";
+}
+
+/**
+ * Statut d'entrée, ou `waiting` — le REPLI LE PLUS FERMÉ ici : c'est l'état
+ * auquel RIEN N'EST DÛ. Lire `called` par défaut ferait crier « c'est à vous »
+ * sur un document corrompu, et envoyer quelqu'un au comptoir devant les autres.
+ */
+export function asQueueEntryStatus(
+  value: unknown,
+): ReservationQueueEntryStatus {
+  const candidate = asString(value);
+  return candidate && (QUEUE_ENTRY_STATUSES as string[]).includes(candidate)
+    ? (candidate as ReservationQueueEntryStatus)
+    : "waiting";
+}
+
+export interface QueueJoinResult {
+  state: QueueJoinState;
+  /** Présent sur `waiting` et `already_waiting`. */
+  entryId: string | null;
+  entryStatus: ReservationQueueEntryStatus | null;
+  /**
+   * Rang, 1 = tête de file. `null` sur une entrée qui n'attend plus (appelée) :
+   * « 0e » n'est pas un rang, et le SQL rend `null` pour cette raison.
+   */
+  position: number | null;
+  /**
+   * Nombre de personnes en attente. Rendu par le SEUL chemin qui INSÈRE : une
+   * rejointe idempotente ne le porte pas — la RPC ne le recompte pas pour
+   * quelqu'un qui a déjà sa place.
+   */
+  waitingCount: number | null;
+  /** Horodatage de l'appel, s'il a déjà eu lieu (`already_waiting`). */
+  calledAt: string | null;
+  /** Plafond de la file, rendu avec `queue_full` — de quoi expliquer le refus. */
+  capacity: number | null;
+}
+
+/**
+ * Mappe le `jsonb` de `queue_join`.
+ *
+ * Même discipline que `mapReserveSlot` : `entryId` n'est retenu que pour les
+ * deux états qui PROUVENT qu'une ligne appartient à cette identité.
+ */
+export function mapQueueJoin(raw: unknown): QueueJoinResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueueJoinState =
+    stateRaw && (QUEUE_JOIN_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as QueueJoinState)
+      : "unavailable";
+
+  const dansLaFile = state === "waiting" || state === "already_waiting";
+
+  return {
+    state,
+    entryId: dansLaFile && root ? asString(root.entry_id) : null,
+    entryStatus: dansLaFile && root ? asQueueEntryStatus(root.status) : null,
+    position: dansLaFile && root ? asInt(root.position) : null,
+    waitingCount: state === "waiting" && root ? asInt(root.waiting_count) : null,
+    calledAt: dansLaFile && root ? asString(root.called_at) : null,
+    capacity: state === "queue_full" && root ? asInt(root.capacity) : null,
+  };
+}
+
+export interface QueueLeaveResult {
+  state: QueueLeaveState;
+  entryId: string | null;
+  /**
+   * Horodatage de l'issue. Il est rendu AUSSI quand le comptoir a déjà tranché
+   * (`served` / `no_show`) : la RPC rend l'issue telle quelle sans rien
+   * réécrire, et l'écran doit pouvoir dire « vous êtes déjà passé ».
+   */
+  resolvedAt: string | null;
+}
+
+export function mapQueueLeave(raw: unknown): QueueLeaveResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueueLeaveState =
+    stateRaw && (QUEUE_LEAVE_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as QueueLeaveState)
+      : "unknown";
+
+  return {
+    state,
+    entryId: state === "unknown" || !root ? null : asString(root.entry_id),
+    resolvedAt: state === "unknown" || !root ? null : asString(root.resolved_at),
+  };
+}
+
+export interface QueueCallNextResult {
+  state: QueueCallNextState;
+  entryId: string | null;
+  /**
+   * Le prénom, POUR APPELER À VOIX HAUTE — le seul endroit du module où il
+   * sort, et `null` est un cas parfaitement normal : la file fonctionne
+   * entièrement sans lui.
+   */
+  displayName: string | null;
+  calledAt: string | null;
+  /** Combien attendent ENCORE, après cet appel. */
+  waitingCount: number | null;
+}
+
+export function mapQueueCallNext(raw: unknown): QueueCallNextResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueueCallNextState =
+    stateRaw && (QUEUE_CALL_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as QueueCallNextState)
+      : "unknown";
+
+  const appele = state === "called";
+
+  return {
+    state,
+    entryId: appele && root ? asString(root.entry_id) : null,
+    displayName: appele && root ? asString(root.display_name) : null,
+    calledAt: appele && root ? asString(root.called_at) : null,
+    waitingCount: appele && root ? asInt(root.waiting_count) : null,
+  };
+}
+
+export interface QueueResolveResult {
+  state: QueueResolveState;
+  entryId: string | null;
+  resolvedAt: string | null;
+}
+
+export function mapQueueResolve(raw: unknown): QueueResolveResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueueResolveState =
+    stateRaw && (QUEUE_RESOLVE_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as QueueResolveState)
+      : "unknown";
+
+  return {
+    state,
+    entryId: state === "unknown" || !root ? null : asString(root.entry_id),
+    // `not_called` ne porte AUCUN horodatage : rien n'a été tranché, et en
+    // fabriquer un ferait apparaître une sortie qu'aucun écran ne montre.
+    resolvedAt:
+      state === "unknown" || state === "not_called" || !root
+        ? null
+        : asString(root.resolved_at),
+  };
+}
+
+export interface QueueReopenResult {
+  state: QueueReopenState;
+  entryId: string | null;
+  /**
+   * Rang rendu par la réouverture, et il vaut 1 : `queue_call_next` avait pris
+   * la PLUS ANCIENNE entrée en attente, et rien de plus ancien ne peut
+   * apparaître après coup. La remise en tête est une conséquence, pas une
+   * écriture — aucun rang n'est renuméroté.
+   */
+  position: number | null;
+  /** Rendu sur une entrée terminale, qu'on ne rouvre pas. */
+  resolvedAt: string | null;
+}
+
+export function mapQueueReopen(raw: unknown): QueueReopenResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueueReopenState =
+    stateRaw && (QUEUE_REOPEN_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as QueueReopenState)
+      : "unknown";
+
+  return {
+    state,
+    entryId: state === "unknown" || !root ? null : asString(root.entry_id),
+    position: state === "waiting" && root ? asInt(root.position) : null,
+    resolvedAt:
+      state === "waiting" || state === "unknown" || !root
+        ? null
+        : asString(root.resolved_at),
+  };
+}
+
+export interface QueuePublicStateResult {
+  state: QueuePublicKind;
+  queueName: string | null;
+  queueStatus: ReservationQueueStatus | null;
+  /**
+   * Combien de personnes ATTENDENT — les `called` n'en sont pas : elles sont au
+   * comptoir. C'est ce qui rend le rang lisible (« 2e sur 5 »).
+   */
+  waitingCount: number;
+  entryId: string | null;
+  entryStatus: ReservationQueueEntryStatus | null;
+  /** `null` dès que l'entrée n'attend plus — notamment quand elle est appelée. */
+  position: number | null;
+  joinedAt: string | null;
+  /**
+   * L'APPEL VOYAGE AVEC LE RANG, sur le même document : c'est ce qui permet à
+   * l'écran de basculer sans aller chercher ailleurs (critère RES-3 « l'appel
+   * staff prime sur tout autre écran »).
+   */
+  calledAt: string | null;
+}
+
+export function mapQueuePublicState(raw: unknown): QueuePublicStateResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: QueuePublicKind =
+    stateRaw && (QUEUE_PUBLIC_KINDS as string[]).includes(stateRaw)
+      ? (stateRaw as QueuePublicKind)
+      : "unavailable";
+
+  const connue = state !== "unavailable";
+  const dansLaFile = state === "in_queue";
+
+  return {
+    state,
+    queueName: connue && root ? asString(root.queue_name) : null,
+    queueStatus: connue && root ? asQueueStatus(root.queue_status) : null,
+    waitingCount: connue && root ? (asInt(root.waiting_count) ?? 0) : 0,
+    entryId: dansLaFile && root ? asString(root.entry_id) : null,
+    entryStatus: dansLaFile && root ? asQueueEntryStatus(root.status) : null,
+    position: dansLaFile && root ? asInt(root.position) : null,
+    joinedAt: dansLaFile && root ? asString(root.joined_at) : null,
+    calledAt: dansLaFile && root ? asString(root.called_at) : null,
+  };
+}
+
+/** Une entrée vivante, vue de l'écran d'accueil. */
+export interface QueueStaffEntryView {
+  entryId: string;
+  /** Le prénom, ou `null` — la file se rejoint sans rien donner de soi. */
+  displayName: string | null;
+  status: ReservationQueueEntryStatus;
+  /** `null` sur une entrée appelée : elle n'attend plus. */
+  position: number | null;
+  /**
+   * L'HEURE D'INSCRIPTION, ET C'EST LE RANG. `created_at` est `not null` en
+   * base : une entrée qui n'en porterait pas serait un document corrompu, pas
+   * une donnée manquante — et elle n'aurait aucune place lisible dans une liste
+   * ordonnée. Le mapper l'écarte plutôt que d'inventer une date.
+   */
+  joinedAt: string;
+  calledAt: string | null;
+}
+
+export interface QueueStaffQueueView {
+  id: string;
+  name: string;
+  status: ReservationQueueStatus;
+  maxLiveEntries: number;
+  activityId: string | null;
+  activityName: string | null;
+}
+
+export interface QueueStaffStateResult {
+  ok: boolean;
+  queue: QueueStaffQueueView | null;
+  timezone: string;
+  /** Les appelés d'abord, puis les attentes dans l'ordre exact du rang. */
+  entries: QueueStaffEntryView[];
+  live: { waiting: number; called: number };
+  /**
+   * Les trois issues du JOUR — le jour du FUSEAU DE L'ORGANISATION, tranché par
+   * la RPC. C'est la seule mesure honnête qu'on tire d'une file sans mesurer le
+   * temps (critère RES-3 « abandons et absences MESURÉS »).
+   */
+  today: { served: number; noShow: number; left: number };
+}
+
+const ETAT_FILE_INCONNU: QueueStaffStateResult = {
+  ok: false,
+  queue: null,
+  timezone: RESERVER_FUSEAU_DEFAUT,
+  entries: [],
+  live: { waiting: 0, called: 0 },
+  today: { served: 0, noShow: 0, left: 0 },
+};
+
+export function mapQueueStaffState(raw: unknown): QueueStaffStateResult {
+  const root = asRecord(raw);
+  if (!root || asString(root.state) !== "ok") return ETAT_FILE_INCONNU;
+
+  const queueRaw = asRecord(root.queue);
+  const queueId = queueRaw ? asString(queueRaw.id) : null;
+  if (!queueRaw || !queueId) return ETAT_FILE_INCONNU;
+
+  const live = asRecord(root.live);
+  const today = asRecord(root.today);
+
+  return {
+    ok: true,
+    queue: {
+      id: queueId,
+      name: asString(queueRaw.name) ?? "",
+      status: asQueueStatus(queueRaw.status),
+      maxLiveEntries:
+        asInt(queueRaw.max_live_entries) ?? QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
+      activityId: asString(queueRaw.activity_id),
+      activityName: asString(queueRaw.activity_name),
+    },
+    timezone: asString(root.timezone) ?? RESERVER_FUSEAU_DEFAUT,
+    entries: asArray(root.entries).flatMap((entree) => {
+      const item = asRecord(entree);
+      const entryId = item ? asString(item.entry_id) : null;
+      const joinedAt = item ? asString(item.joined_at) : null;
+      // Sans identifiant NI sans heure d'inscription, la ligne n'a ni geste
+      // possible ni place dans l'ordre : elle est écartée, pas complétée.
+      if (!item || !entryId || !joinedAt) return [];
+      return [
+        {
+          entryId,
+          displayName: asString(item.display_name),
+          status: asQueueEntryStatus(item.status),
+          position: asInt(item.position),
+          joinedAt,
+          calledAt: asString(item.called_at),
+        } satisfies QueueStaffEntryView,
+      ];
+    }),
+    live: {
+      waiting: (live && asInt(live.waiting)) ?? 0,
+      called: (live && asInt(live.called)) ?? 0,
+    },
+    today: {
+      served: (today && asInt(today.served)) ?? 0,
+      noShow: (today && asInt(today.no_show)) ?? 0,
+      left: (today && asInt(today.left)) ?? 0,
+    },
+  };
+}
+
+/** Ce que le joueur lit sur SA place dans la file d'accueil. */
+export type EtatUiPlaceFile =
+  | "attente"
+  | "appele"
+  | "servi"
+  | "absent"
+  | "parti";
+
+/**
+ * État affichable d'une place en file.
+ *
+ * ── `appele` EST TESTÉ EN PREMIER, ET C'EST LA RÈGLE ──
+ *
+ * Critère dur RES-3 : « l'appel staff prime sur tout autre écran ». L'entrée
+ * appelée n'a plus de rang (`position` vaut `null` en SQL), et rien de ce que
+ * l'écran affiche par ailleurs — un rang mémorisé, une animation d'attente —
+ * ne doit pouvoir passer devant. Ce mapper LIT le statut tranché par le
+ * serveur ; il ne le recalcule pas et n'en déduit rien d'une horloge locale.
+ */
+export function etatUiPlaceFile(entree: {
+  status: ReservationQueueEntryStatus;
+}): EtatUiPlaceFile {
+  if (entree.status === "called") return "appele";
+  if (entree.status === "served") return "servi";
+  if (entree.status === "no_show") return "absent";
+  if (entree.status === "left") return "parti";
+  return "attente";
+}
+
+/** Ce que le commerçant et le joueur lisent sur l'ÉTAT DE LA FILE. */
+export type EtatUiFile = "ouverte" | "en_pause" | "fermee";
+
+export function etatUiFile(status: ReservationQueueStatus): EtatUiFile {
+  if (status === "paused") return "en_pause";
+  if (status === "closed") return "fermee";
+  return "ouverte";
+}
+
+/**
+ * La file accepte-t-elle une NOUVELLE arrivée ?
+ *
+ * `paused` ≠ `closed` du point de vue du COMPTOIR — la pause continue de
+ * servir ceux qui sont là — mais les deux refusent l'ENTRÉE, et c'est ce que
+ * cette fonction dit. L'activité liée coupée referme la file de la même façon,
+ * exactement comme `queue_join` la referme (`coalesce(v_activity_active, true)`
+ * : une file « Comptoir » n'a pas d'activité, et c'est le cas dominant).
+ *
+ * Elle ne remplace RIEN : la RPC reste seule juge, sous verrou. Cette fonction
+ * ne sert qu'à choisir un libellé et à ne pas montrer un bouton sans issue.
+ */
+export function fileAccepteEntree(file: {
+  status: ReservationQueueStatus;
+  activiteActive: boolean;
+}): boolean {
+  return file.status === "open" && file.activiteActive;
+}
+
+/**
+ * Ce que le joueur lit à la place d'un délai.
+ *
+ * Formulation VALIDÉE, et elle dit exactement pourquoi il n'y a pas d'ETA :
+ * aucune mesure du temps de service n'existe, donc toute estimation serait
+ * inventée. Une phrase partagée vaut mieux qu'un écran qui improvise « environ
+ * 10 minutes » à partir d'un rang.
+ */
+export const LIBELLE_FILE_SANS_DELAI =
+  "Votre rang se met à jour tout seul. Aucun délai n'est annoncé : nous " +
+  "préférons ne rien promettre plutôt que d'annoncer une heure qui ne serait " +
+  "pas tenue.";
+
 // ────────────────────────────────────────────────────────────
 // Adresses publiques — DES ADRESSES, JAMAIS DES PREUVES
 // ────────────────────────────────────────────────────────────
@@ -1105,6 +1685,24 @@ export function cheminActiviteReserver(activityId: string): string {
 /** La même adresse, absolue — pour un email transactionnel. */
 export function urlActiviteReserver(activityId: string, appUrl: string): string {
   return `${appUrl.replace(/\/+$/, "")}${cheminActiviteReserver(activityId)}`;
+}
+
+/**
+ * Page publique d'une file d'accueil.
+ *
+ * MÊME CONTRAT que `cheminActiviteReserver`, et c'est ce QR-là qu'un commerçant
+ * colle sur son comptoir : AUCUN jeton, AUCUNE empreinte, AUCUN identifiant
+ * d'entrée dans l'adresse (ADR-109). C'est le cookie `lc-player` qui fait
+ * retrouver au visiteur sa place — un lien photographié par le client suivant
+ * n'emporte donc pas la place du précédent.
+ */
+export function cheminFileReserver(queueId: string): string {
+  return `/reserver/file/${queueId}`;
+}
+
+/** La même adresse, absolue — c'est elle que le QR du comptoir encode. */
+export function urlFileReserver(queueId: string, appUrl: string): string {
+  return `${appUrl.replace(/\/+$/, "")}${cheminFileReserver(queueId)}`;
 }
 
 /**

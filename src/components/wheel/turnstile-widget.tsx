@@ -105,7 +105,11 @@ export function TurnstileWidget({
     // `verifyTurnstile` dans `src/actions/reserver.ts`, pour la raison
     // ci-dessus.
     | "reserver-waitlist-join"
-    | "reserver-invitation";
+    | "reserver-invitation"
+    // Prise de tour dans une file d'accueil (`queueJoin`, RES-3). Même
+    // littéral que celui passé à `verifyTurnstile` — c'est un QR scanné en
+    // boutique, donc le défi ne s'affiche que si le serveur l'a réclamé.
+    | "reserver-queue-join";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);

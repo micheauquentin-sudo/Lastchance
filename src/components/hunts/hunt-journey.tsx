@@ -7,6 +7,7 @@ import {
   useTransition,
 } from "react";
 import { claimHuntReward, stampHuntStep } from "@/actions/hunts";
+import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { HuntScanResult } from "@/lib/hunts";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
@@ -44,8 +45,21 @@ const TONE_BOX: Record<HuntMessageTone, string> = {
   error: "border-red-400 bg-red-50 text-red-700",
 };
 
+/**
+ * LE JETON D'ÉTAPE N'EST PAS UNE PROP, ET C'EST LE POINT (revue de sécurité).
+ *
+ * Il l'était : la page serveur passait `stepToken={step.token}`. Une prop
+ * traversant la frontière serveur → client est SÉRIALISÉE DANS LE PAYLOAD RSC,
+ * c'est-à-dire recopiée en clair dans le HTML (`self.__next_f.push`) — le jeton
+ * qui pose le tampon se retrouvait donc dans le CORPS de la page, là où lisent
+ * aussi les caches intermédiaires et les extensions de navigateur.
+ *
+ * Il est désormais lu de `window.location.pathname` AU MOMENT DE L'APPEL :
+ * l'étape EST l'adresse (`/hunt/<jeton>`), c'est la seule source, et sa lecture
+ * ne franchit aucune frontière. `stampHuntStep` et `claimHuntReward` le
+ * revalident de bout en bout — rien n'est cru sur parole ici.
+ */
 export interface HuntJourneyProps {
-  stepToken: string;
   organizationName: string;
   /** Organisation du jeu — clé de la proposition de Passeport. */
   organizationId?: string | null;
@@ -68,7 +82,6 @@ export interface HuntJourneyProps {
 }
 
 export function HuntJourney({
-  stepToken,
   organizationName,
   organizationId = null,
   logoUrl,
@@ -84,7 +97,7 @@ export function HuntJourney({
   const [state, formAction, pending] = useActionState<
     ActionResult<HuntScanResult> | null,
     FormData
-  >(async () => stampHuntStep({ stepToken }), null);
+  >(async () => stampHuntStep({ stepToken: jetonDeLAdresse() }), null);
 
   const scan = state?.ok ? state.data : null;
   const stampError = state && !state.ok ? state.error : null;
@@ -147,7 +160,6 @@ export function HuntJourney({
         <StateBox state="unavailable" />
       ) : complete ? (
         <CompletionCard
-          stepToken={stepToken}
           code={completedCode}
           // `initial.rewardSoldOut` vient du serveur : sans lui, l'information
           // « plus de lot » disparaissait au premier rechargement et la carte
@@ -305,13 +317,11 @@ function StateBox({
  * mail n'est jamais requis.
  */
 function CompletionCard({
-  stepToken,
   code,
   huntFull,
   reward,
   organizationId = null,
 }: {
-  stepToken: string;
   code: string | null;
   organizationId?: string | null;
   /** Stock épuisé au moment de terminer : pas de code, message dédié. */
@@ -409,7 +419,7 @@ function CompletionCard({
         )}
       </div>
 
-      {code && <HuntClaimForm stepToken={stepToken} />}
+      {code && <HuntClaimForm />}
     </section>
   );
 }
@@ -419,7 +429,7 @@ function CompletionCard({
  * marketing distinct du simple envoi (double consentement), miroir du
  * formulaire de gain de la roue.
  */
-function HuntClaimForm({ stepToken }: { stepToken: string }) {
+function HuntClaimForm() {
   const [email, setEmail] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -437,7 +447,13 @@ function HuntClaimForm({ stepToken }: { stepToken: string }) {
       // perdait son code pour avoir demandé un confort. L'échec reste donc
       // local au formulaire.
       try {
-        const result = await claimHuntReward({ stepToken, email, marketingOptIn });
+        const result = await claimHuntReward({
+          // Lu de l'adresse à l'envoi, comme le tampon : le jeton d'étape ne
+          // traverse pas la frontière serveur → client (payload RSC).
+          stepToken: jetonDeLAdresse(),
+          email,
+          marketingOptIn,
+        });
         if (!result.ok) {
           setError(result.error);
           return;

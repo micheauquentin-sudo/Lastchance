@@ -6,10 +6,14 @@ import {
   claimWaitlistOfferSchema,
   createReserverActivitySchema,
   createReserverInvitationSchema,
+  createReserverQueueSchema,
   createReserverSlotSchema,
+  queueJoinSchema,
+  queueResolveSchema,
   redeemInvitationSchema,
   reserveSlotSchema,
   updateReserverActivitySchema,
+  updateReserverQueueSchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
   waitlistJoinSchema,
@@ -478,5 +482,198 @@ describe("createReserverInvitationSchema — une cible, et une seule", () => {
     });
     expect(parsed.success && "token" in parsed.data).toBe(false);
     expect(parsed.success && "tokenHash" in parsed.data).toBe(false);
+  });
+});
+
+describe("queueJoinSchema — le prénom se tronque, l'adresse se consent", () => {
+  it("accepte une entrée en file SANS rien donner de soi", () => {
+    const parsed = queueJoinSchema.safeParse({ queueId: UUID });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.displayName).toBeUndefined();
+      expect(parsed.data.email).toBeUndefined();
+      expect(parsed.data.consent).toBe(false);
+    }
+  });
+
+  it("NE PORTE AUCUNE ORGANISATION : elle se lit sur la file, côté serveur", () => {
+    const parsed = queueJoinSchema.safeParse({
+      queueId: UUID,
+      organizationId: AUTRE_UUID,
+    });
+    expect(parsed.success && "organizationId" in parsed.data).toBe(false);
+  });
+
+  it("TRONQUE le prénom à 40 caractères au lieu de refuser l'entrée", () => {
+    // Refuser l'entrée en file d'une personne debout dans le magasin parce que
+    // son prénom fait 41 caractères ferait payer à la file ce qui ne la regarde
+    // pas. `queue_join` tronque aussi — un seul juge, deux fois d'accord.
+    const parsed = queueJoinSchema.safeParse({
+      queueId: UUID,
+      displayName: `  ${"a".repeat(60)}  `,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.displayName).toBe("a".repeat(40));
+  });
+
+  it("refuse un prénom d'une longueur qui n'est plus un prénom", () => {
+    // Borne de DÉFENSE, pas borne métier : on ne rogne pas une chaîne non
+    // bornée choisie par l'appelant.
+    const parsed = queueJoinSchema.safeParse({
+      queueId: UUID,
+      displayName: "a".repeat(5000),
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("exige l'adresse et le consentement ENSEMBLE, ou aucun des deux", () => {
+    expect(
+      queueJoinSchema.safeParse({
+        queueId: UUID,
+        email: "client@exemple.fr",
+        consent: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      queueJoinSchema.safeParse({ queueId: UUID, consent: true }).success,
+    ).toBe(false);
+    expect(
+      queueJoinSchema.safeParse({
+        queueId: UUID,
+        email: "  Client@Exemple.FR ",
+        consent: true,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("normalise l'adresse — deux orthographes de la même boîte, un seul seau", () => {
+    const parsed = queueJoinSchema.safeParse({
+      queueId: UUID,
+      email: "  Client@Exemple.FR ",
+      consent: true,
+    });
+    expect(parsed.success && parsed.data.email).toBe("client@exemple.fr");
+  });
+});
+
+describe("queueResolveSchema — un vocabulaire de deux mots", () => {
+  it("accepte les deux issues que le comptoir peut CONSTATER", () => {
+    expect(
+      queueResolveSchema.safeParse({ entryId: UUID, outcome: "served" }).success,
+    ).toBe(true);
+    expect(
+      queueResolveSchema.safeParse({ entryId: UUID, outcome: "no_show" }).success,
+    ).toBe(true);
+  });
+
+  it("refuse `left` : partir est un geste du JOUEUR, pas un constat du staff", () => {
+    expect(
+      queueResolveSchema.safeParse({ entryId: UUID, outcome: "left" }).success,
+    ).toBe(false);
+    expect(
+      queueResolveSchema.safeParse({ entryId: UUID, outcome: "waiting" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("créer et régler une file d'accueil", () => {
+  it("accepte une file SANS activité — c'est le cas dominant du modèle", () => {
+    const parsed = createReserverQueueSchema.safeParse({
+      name: "Comptoir",
+      activityId: "",
+      maxLiveEntries: "50",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.activityId).toBe("");
+      // Une file se configure d'un nom et d'un plafond : elle naît OUVERTE, à
+      // l'inverse d'un créneau, dont les heures se relisent avant l'ouverture.
+      expect(parsed.data.status).toBe("open");
+    }
+  });
+
+  it("lit le champ NON RENDU comme « aucune activité », pas comme un UUID invalide", () => {
+    const parsed = createReserverQueueSchema.safeParse({
+      name: "Comptoir",
+      activityId: null,
+      maxLiveEntries: "50",
+      status: null,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.activityId).toBe("");
+    expect(parsed.success && parsed.data.status).toBe("open");
+  });
+
+  it("borne le nom et le plafond exactement comme les CHECK SQL", () => {
+    expect(
+      createReserverQueueSchema.safeParse({
+        name: "a".repeat(81),
+        maxLiveEntries: "50",
+      }).success,
+    ).toBe(false);
+    expect(
+      createReserverQueueSchema.safeParse({ name: "", maxLiveEntries: "50" })
+        .success,
+    ).toBe(false);
+    expect(
+      createReserverQueueSchema.safeParse({ name: "Comptoir", maxLiveEntries: "0" })
+        .success,
+    ).toBe(false);
+    expect(
+      createReserverQueueSchema.safeParse({
+        name: "Comptoir",
+        maxLiveEntries: "201",
+      }).success,
+    ).toBe(false);
+    expect(
+      createReserverQueueSchema.safeParse({
+        name: "Comptoir",
+        maxLiveEntries: "200",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("REFUSE un plafond non rendu plutôt que de le lire zéro", () => {
+    // Le mode silencieux que `entierRequis` ferme : `Number(null)` vaut 0, et
+    // une file à zéro place n'est pas une file fermée.
+    expect(
+      createReserverQueueSchema.safeParse({ name: "Comptoir", maxLiveEntries: null })
+        .success,
+    ).toBe(false);
+  });
+
+  it("accepte les trois statuts au réglage — `paused` n'est pas `closed`", () => {
+    for (const status of ["open", "paused", "closed"]) {
+      expect(
+        updateReserverQueueSchema.safeParse({
+          queueId: UUID,
+          name: "Comptoir",
+          activityId: "",
+          maxLiveEntries: "20",
+          status,
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      updateReserverQueueSchema.safeParse({
+        queueId: UUID,
+        name: "Comptoir",
+        activityId: "",
+        maxLiveEntries: "20",
+        status: "archived",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("NE PORTE AUCUN CHAMP DE SUPPRESSION : rien ne s'efface dans ce module", () => {
+    const parsed = updateReserverQueueSchema.safeParse({
+      queueId: UUID,
+      name: "Comptoir",
+      activityId: "",
+      maxLiveEntries: "20",
+      status: "closed",
+    });
+    expect(parsed.success && "delete" in parsed.data).toBe(false);
+    expect(parsed.success && "supprimer" in parsed.data).toBe(false);
   });
 });

@@ -15,15 +15,24 @@ import {
   PLAYER_DEVICE_TOKEN_PATTERN,
 } from "@/lib/player-identity";
 import {
+  asQueueStatus,
   asReservationStatus,
   asSlotStatus,
   asWaitlistStatus,
   etatUiInvitation,
+  etatUiPlaceFile,
+  mapQueuePublicState,
   mapReservationPublicState,
+  QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
+  QUEUE_MAX_LIVE_ENTRIES_MAX,
   RESERVER_FUSEAU_DEFAUT,
   RESERVER_INVITATION_TOKEN_PATTERN,
   type EtatUiInvitation,
+  type EtatUiPlaceFile,
   type PublicWaitlistItem,
+  type QueuePublicStateResult,
+  type ReservationQueueEntryStatus,
+  type ReservationQueueStatus,
   type ReservationStatus,
   type ReservationSlotStatus,
   type ReservationWaitlistStatus,
@@ -100,6 +109,22 @@ const WAITLIST_COLUMNS =
 const INVITATION_COLUMNS =
   "id, organization_id, activity_id, slot_id, label, max_uses, used_count, expires_at, closed_at, revoked_at, created_by, created_at";
 
+/** Files d'accueil (RES-3) — toutes les colonnes de la table, aucune sensible. */
+const QUEUE_COLUMNS =
+  "id, organization_id, activity_id, name, status, max_live_entries, created_at";
+
+/**
+ * Entrées de file lues POUR ÊTRE COMPTÉES.
+ *
+ * `email` ET `display_name` sont HORS du grant de colonnes de `authenticated`
+ * (20261005120000) : un `select *` y est refusé EN ENTIER, pas partiellement.
+ * Le prénom ne sort que par `queue_staff_state`, qui choisit ce qu'elle expose
+ * — c'est le seul écran où il a une raison d'être, en face du bon rang.
+ * `player_key_hash` est absent aussi, et là c'est un choix de CETTE couche :
+ * c'est la clé d'accès du joueur, elle n'a rien à faire dans un HTML.
+ */
+const QUEUE_ENTRY_COUNT_COLUMNS = "id, queue_id, status";
+
 type ReserverOrganization = Pick<
   Organization,
   | "id"
@@ -174,6 +199,17 @@ interface ReservationRow {
   cancelled_at: string | null;
   checked_in_at: string | null;
   checked_in_by: string | null;
+}
+
+interface QueueRow {
+  id: string;
+  organization_id: string;
+  activity_id: string | null;
+  name: string;
+  status: string;
+  max_live_entries: number;
+  created_at: string;
+  organizations?: ReserverOrganization | null;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1110,6 +1146,455 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       createdAt: activity.created_at,
       slots: creneauxParActivite.get(activity.id) ?? [],
       invitations: invitationsParActivite.get(activity.id) ?? [],
+    })),
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// La file sereine (RES-3, lot L6) — contexte public et contextes commerçant
+//
+// ── CE QUE CETTE COUCHE DOIT TENIR, ET QUE LE SQL NE TIENT PAS ──
+//
+// `queue_staff_state` ne vérifie AUCUNE appartenance : elle est en lecture,
+// `service_role` seulement, et bornée à l'organisation qu'on lui passe. Son
+// commentaire SQL l'écrit noir sur blanc — l'identifiant DOIT venir de la
+// session marchande résolue côté serveur (`getUserAndOrg`), JAMAIS d'un
+// paramètre de requête. Les deux chargeurs commerçants ci-dessous sont les
+// SEULS appelants, et aucun ne prend d'organisation en argument : c'est
+// l'invariant, et il se lit sur leur signature.
+//
+// `queue_public_state`, à l'inverse, autorise PAR POSSESSION (identifiant de
+// file + empreinte du cookie) et ne vérifie ni le droit `vitrine` ni le statut
+// de la file : lire son propre rang n'est pas un acte commercial. Le chargeur
+// public, lui, VÉRIFIE le droit `vitrine` — parce qu'il décide d'AFFICHER une
+// file, ce qui est une capacité de l'offre Vitrine, là où la RPC ne fait que
+// répondre à quelqu'un qui attend déjà.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Plafond de la lecture de comptage d'une file.
+ *
+ * Il n'est pas arbitraire : le CHECK SQL borne `max_live_entries` à 200, donc
+ * une file ne peut pas avoir admis plus de 200 entrées vivantes, quel que soit
+ * l'historique de son plafond.
+ */
+const FILE_COMPTAGE_MAX = QUEUE_MAX_LIVE_ENTRIES_MAX;
+
+/** Plafonds du panneau commerçant : 50 files, leurs entrées vivantes. */
+const FILES_DASHBOARD_MAX = 50;
+const FILE_ENTREES_DASHBOARD_MAX = FILES_DASHBOARD_MAX * FILE_COMPTAGE_MAX;
+
+/** Ce que le joueur voit de SA place. */
+export interface ReserverQueuePlaceView {
+  entryId: string;
+  status: ReservationQueueEntryStatus;
+  /** `null` dès qu'elle n'attend plus — notamment quand elle est appelée. */
+  position: number | null;
+  joinedAt: string | null;
+  calledAt: string | null;
+  etat: EtatUiPlaceFile;
+}
+
+/**
+ * Ce que le joueur voit de LA FILE. Ni plafond, ni liste, ni prénom : le
+ * document public ne porte que son entrée à lui et des NOMBRES — rendre la
+ * liste, même réduite à des prénoms, ferait de la page d'attente un annuaire de
+ * qui est dans le magasin.
+ */
+export interface ReserverQueuePublicView {
+  id: string;
+  name: string;
+  status: ReservationQueueStatus;
+  /** `null` sur une file « Comptoir », qui n'a aucune activité — cas dominant. */
+  activityName: string | null;
+}
+
+export type ReserverQueuePublicContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      organization: ReserverOrganization;
+      /** Fuseau de l'établissement — jamais celui de l'hôte ni du navigateur. */
+      timezone: string;
+      queue: ReserverQueuePublicView;
+      /**
+       * La file accepte-t-elle une NOUVELLE arrivée ? `paused` et `closed` la
+       * refusent tous deux, l'activité liée coupée aussi. Indicatif : la RPC
+       * reste seule juge, sous verrou.
+       */
+      accepteEntree: boolean;
+      /** Combien de personnes ATTENDENT — les appelées n'en sont pas. */
+      waitingCount: number;
+      /** La place de CE navigateur, ou `null` s'il n'est pas dans la file. */
+      maPlace: ReserverQueuePlaceView | null;
+      aUneIdentite: boolean;
+    };
+
+/**
+ * Combien de personnes attendent dans cette file.
+ *
+ * MÊME PRÉDICAT que `queue_public_state` (`status = 'waiting'` sur cette file),
+ * et cette lecture n'existe que pour le visiteur qui n'a PAS encore d'identité :
+ * la RPC exige une empreinte de cookie, et lui en fabriquer une pour lire un
+ * nombre écrirait une identité à quelqu'un qui n'a rien demandé. Dès qu'une
+ * identité existe, c'est la RPC qui fait foi — un seul juge.
+ */
+/**
+ * L'organisation qui PORTE cette file a-t-elle encore le droit `vitrine` ?
+ *
+ * ── CE QU'ELLE FERME, ET POURQUOI ELLE N'EST PAS DANS `lireEtatFilePublic` ──
+ *
+ * Le scrutin public (`getQueuePublicState`) répondait `not_in_queue` — avec le
+ * nom de la file, son statut et le nombre de personnes qui attendent — à
+ * n'importe qui, y compris quand l'abonnement Vitrine du commerce a expiré. La
+ * PAGE, elle, rend « indisponible » dans ce cas (`loadReserverQueuePublicContext`
+ * ci-dessous). Deux réponses opposées sur le même fait : le scrutin devenait
+ * l'oracle que la page refusait d'être, sur l'état commercial d'un tiers.
+ *
+ * La garde vit ICI plutôt que dans `lireEtatFilePublic` parce que la page a
+ * DÉJÀ lu l'organisation et tranché son droit avant d'appeler cette lecture :
+ * l'y enfouir aurait fait payer une seconde résolution à chaque rendu de page,
+ * pour reposer une question déjà répondue. C'est l'appelant public — l'action
+ * de scrutin — qui l'oppose, et seulement sur la branche qui en a besoin.
+ *
+ * ── ET ELLE NE FERME PAS `in_queue` ──
+ *
+ * Quelqu'un qui attend PHYSIQUEMENT doit voir son appel : lui refuser son rang
+ * parce qu'un abonnement a expiré ferait tomber la sanction sur lui. C'est le
+ * motif exact de `queueCallNext` au comptoir — honorer l'existant.
+ *
+ * Introuvable, jointure inter-locataire, droit fermé : `false` dans les trois
+ * cas, et l'appelant en fait un seul état muet.
+ */
+export async function droitVitrineOuvertPourFile(
+  queueId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("reservation_queues")
+    .select(`${QUEUE_COLUMNS}, organizations(${ORG_COLUMNS})`)
+    .eq("id", queueId)
+    .maybeSingle();
+  if (!data) return false;
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const row = data as unknown as QueueRow;
+  const organization = row.organizations ?? null;
+  // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
+  // qui n'est pas celle de la ligne (motif `loadReserverQueuePublicContext`).
+  if (!organization || organization.id !== row.organization_id) return false;
+  return moduleOuvertAuJoueur("vitrine", organization);
+}
+
+async function compterEnAttente(
+  admin: ReturnType<typeof createAdminClient>,
+  queueId: string,
+): Promise<number> {
+  const { data } = await admin
+    .from("reservation_queue_entries")
+    .select(QUEUE_ENTRY_COUNT_COLUMNS)
+    .eq("queue_id", queueId)
+    .eq("status", "waiting")
+    .limit(FILE_COMPTAGE_MAX);
+  return (data ?? []).length;
+}
+
+/**
+ * L'ÉTAT PUBLIC D'UNE FILE POUR CE NAVIGATEUR — la seule lecture, partagée par
+ * le rendu de la page et par son scrutin.
+ *
+ * ── POURQUOI ELLE EST ÉCRITE UNE FOIS ──
+ *
+ * La page rend un premier état, puis le composant relit toutes les quelques
+ * secondes. Deux lectures écrites séparément auraient divergé au premier champ
+ * ajouté — et le symptôme aurait été le pire possible : un rang venu d'une
+ * source et une taille de file venue de l'autre, sur le même écran.
+ *
+ * ── LE VISITEUR SANS IDENTITÉ ──
+ *
+ * `queue_public_state` EXIGE une empreinte de cookie, et lui en fabriquer une
+ * pour lire un nombre écrirait une identité à quelqu'un qui n'a rien demandé —
+ * ce que le rendu d'une page serveur n'a de toute façon pas le droit de faire.
+ * Ce chemin-là lit donc la file et compte les `waiting` : MÊME PRÉDICAT que la
+ * RPC, et il ne rend jamais d'entrée — il n'y en a pas.
+ */
+export async function lireEtatFilePublic(
+  queueId: string,
+  empreinte: string | null,
+): Promise<QueuePublicStateResult> {
+  const admin = createAdminClient();
+
+  if (empreinte) {
+    const { data } = await admin.rpc("queue_public_state", {
+      p_queue_id: queueId,
+      p_player_key_hash: empreinte,
+    });
+    // Rendu TEL QUEL, `unavailable` compris : on ne se rabat PAS sur la lecture
+    // de table dans ce cas — elle ne trouverait rien non plus, et l'aller-retour
+    // serait payé à chaque tic de scrutin d'un identifiant inventé.
+    return mapQueuePublicState(data);
+  }
+
+  const { data: queueData } = await admin
+    .from("reservation_queues")
+    .select(QUEUE_COLUMNS)
+    .eq("id", queueId)
+    .maybeSingle();
+  if (!queueData) return mapQueuePublicState({ state: "unavailable" });
+
+  // unsafe-cast-justification: select par gabarit de colonnes, non typable
+  const queue = queueData as unknown as QueueRow;
+  return mapQueuePublicState({
+    state: "not_in_queue",
+    queue_name: queue.name,
+    queue_status: queue.status,
+    waiting_count: await compterEnAttente(admin, queue.id),
+  });
+}
+
+/**
+ * Contexte de la page publique d'une file d'accueil.
+ *
+ * ── LE DROIT `vitrine` EST VÉRIFIÉ ICI, ET LA RPC NE LE VÉRIFIE PAS ──
+ *
+ * Ce n'est pas une divergence, c'est la répartition. `queue_public_state` répond
+ * à quelqu'un qui attend DÉJÀ, et lui refuser son rang parce qu'un abonnement a
+ * expiré ferait tomber la sanction sur lui. Cette page, elle, MONTRE la file et
+ * porte le bouton qui la rejoint — deux gestes de l'offre Vitrine. Une
+ * organisation sans le droit rend donc le MÊME contexte « indisponible » qu'une
+ * file inexistante : aucun oracle sur l'état commercial d'un tiers.
+ *
+ * `queue_join` revérifie ce droit EN SQL, et c'est là qu'est la vraie défense —
+ * une server action reste POSTable en direct.
+ */
+export async function loadReserverQueuePublicContext(
+  queueId: string,
+): Promise<ReserverQueuePublicContext> {
+  // PRESSION IP D'ABORD, SUR L'IP SEULE, ET SANS JAMAIS REFUSER — motif
+  // `loadReserverPublicContext` : l'identifiant vient de l'URL, donc du client,
+  // et un balayage d'UUID inventés n'atteint jamais une file résolue. Posé
+  // après la lecture, ce compteur n'en verrait rien. Fail-open par
+  // construction (ADR-032) : l'IP est partagée derrière le Wi-Fi d'un commerce.
+  const ip = clientIpFromHeaders(await headers());
+  await observerPressionIp(
+    ["reserver:page:ip"],
+    ip,
+    RATE_LIMITS.reserverPageIpCeiling,
+    "reserver_page_ip_ceiling",
+  );
+
+  const admin = createAdminClient();
+
+  const { data: queueData } = await admin
+    .from("reservation_queues")
+    .select(`${QUEUE_COLUMNS}, organizations(${ORG_COLUMNS})`)
+    .eq("id", queueId)
+    .maybeSingle();
+  if (!queueData) return { ok: false, error: INDISPONIBLE };
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const row = queueData as unknown as QueueRow;
+  const organization = row.organizations ?? null;
+  // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
+  // qui n'est pas celle de la ligne (motif loadReserverPublicContext).
+  if (!organization || organization.id !== row.organization_id) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+  if (!(await moduleOuvertAuJoueur("vitrine", organization))) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+
+  // Second compteur, par FILE, une fois la cible résolue — et par file, jamais
+  // par une valeur libre : composer une clé de seau sur ce que l'appelant
+  // choisit ouvrirait une série neuve à chaque identifiant inventé (wagon 7).
+  await observerPressionIp(
+    ["reserver:page:queue:ip", row.id],
+    ip,
+    RATE_LIMITS.reserverPageIp,
+    "reserver_page_pressure",
+    { queue_id: row.id },
+  );
+
+  // L'ACTIVITÉ LIÉE EST OPTIONNELLE : une file « Comptoir » n'en a aucune, et
+  // c'est le cas dominant — d'où le `true` quand la colonne est nulle, exactement
+  // comme le `coalesce(v_activity_active, true)` de `queue_join`. Quand elle est
+  // posée, le repli est FERMÉ : une activité qu'on n'arrive pas à relire ne fait
+  // pas ouvrir la file (la FK composite garantit qu'elle existe).
+  let activityName: string | null = null;
+  let activiteActive = true;
+  if (row.activity_id) {
+    const { data: activityData } = await admin
+      .from("reservation_activities")
+      .select("id, name, active")
+      .eq("id", row.activity_id)
+      .eq("organization_id", row.organization_id)
+      .maybeSingle();
+    const activity = activityData as { name: string; active: boolean } | null;
+    activityName = activity?.name ?? null;
+    activiteActive = activity?.active ?? false;
+  }
+
+  // LA MÊME LECTURE QUE LE SCRUTIN — voir `lireEtatFilePublic`. Le rang y est
+  // compté par la RPC, à la lecture, sous le même instantané que le nombre de
+  // personnes en attente : le recomposer ici demanderait de relire toute la
+  // file pour compter les inscrits antérieurs, et donnerait un second juge.
+  const empreinte = await lireIdentiteReserver();
+  const etat = await lireEtatFilePublic(row.id, empreinte);
+  const maPlace: ReserverQueuePlaceView | null =
+    etat.state === "in_queue" && etat.entryId && etat.entryStatus
+      ? {
+          entryId: etat.entryId,
+          status: etat.entryStatus,
+          position: etat.position,
+          joinedAt: etat.joinedAt,
+          calledAt: etat.calledAt,
+          etat: etatUiPlaceFile({ status: etat.entryStatus }),
+        }
+      : null;
+
+  const status = asQueueStatus(row.status);
+
+  return {
+    ok: true,
+    organization,
+    timezone: organization.timezone || RESERVER_FUSEAU_DEFAUT,
+    queue: {
+      id: row.id,
+      name: row.name,
+      status,
+      activityName,
+    },
+    accepteEntree: status === "open" && activiteActive,
+    waitingCount: etat.waitingCount,
+    maPlace,
+    aUneIdentite: Boolean(empreinte),
+  };
+}
+
+/** Une file, vue de la liste du commerçant. */
+export interface ReserverQueueDashboardView {
+  id: string;
+  name: string;
+  status: ReservationQueueStatus;
+  maxLiveEntries: number;
+  activityId: string | null;
+  activityName: string | null;
+  createdAt: string;
+  /** Entrées `waiting` — celles qui attendent encore. */
+  enAttente: number;
+  /** Entrées `called` — celles qui sont au comptoir. */
+  appeles: number;
+}
+
+export type ReserverQueuesDashboardContext =
+  | { ok: false; reason: "unauthenticated" | "no_access" }
+  | {
+      ok: true;
+      organizationId: string;
+      timezone: string;
+      queues: ReserverQueueDashboardView[];
+    };
+
+/**
+ * Les files de l'organisation, avec leurs compteurs vivants.
+ *
+ * Lecture par le client RLS de la SESSION (jamais le service_role) : la policy
+ * `reservation_queue_entries: members read` sert tous les membres, caissier
+ * compris — l'écran d'accueil est littéralement son poste. Le filtre
+ * `organization_id` explicite double la RLS plutôt que de s'y fier seule.
+ *
+ * AUCUN APPEL À `queue_staff_state` ICI, et c'est délibéré : une RPC par file
+ * ferait N allers-retours pour une liste. Les deux compteurs vivants se
+ * déduisent d'UNE lecture groupée ; l'écran détaillé d'une file, lui, passe par
+ * l'action de scrutin `getQueueStaffState` (`src/actions/reserver.ts`), qui
+ * appelle `queue_staff_state` — il n'existe aucun chargeur `…StaffContext` ici,
+ * et ce commentaire en nommait un depuis le premier jour du lot.
+ */
+export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueuesDashboardContext> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) return { ok: false, reason: "unauthenticated" };
+  if (!droitEffectifModule("vitrine", organization)) {
+    return { ok: false, reason: "no_access" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: queueData } = await supabase
+    .from("reservation_queues")
+    .select(QUEUE_COLUMNS)
+    .eq("organization_id", organization.id)
+    .order("created_at", { ascending: false })
+    .limit(FILES_DASHBOARD_MAX);
+
+  // unsafe-cast-justification: select par gabarit de colonnes, non typable
+  const queueRows = (queueData ?? []) as unknown as QueueRow[];
+
+  const nomParActivite = new Map<string, string>();
+  const activityIds = [
+    ...new Set(
+      queueRows.flatMap((queue) =>
+        queue.activity_id ? [queue.activity_id] : [],
+      ),
+    ),
+  ];
+  if (activityIds.length > 0) {
+    const { data: activityData } = await supabase
+      .from("reservation_activities")
+      .select("id, name")
+      .eq("organization_id", organization.id)
+      .in("id", activityIds)
+      .limit(FILES_DASHBOARD_MAX);
+    for (const activity of (activityData ?? []) as Array<{
+      id: string;
+      name: string;
+    }>) {
+      nomParActivite.set(activity.id, activity.name);
+    }
+  }
+
+  const enAttenteParFile = new Map<string, number>();
+  const appelesParFile = new Map<string, number>();
+  if (queueRows.length > 0) {
+    // LES DEUX ÉTATS VIVANTS, le MÊME ensemble que compte le plafond de
+    // `queue_join` : une personne appelée occupe toujours une ligne de la file
+    // et une place au comptoir.
+    const { data: entryData } = await supabase
+      .from("reservation_queue_entries")
+      .select(QUEUE_ENTRY_COUNT_COLUMNS)
+      .eq("organization_id", organization.id)
+      .in(
+        "queue_id",
+        queueRows.map((queue) => queue.id),
+      )
+      .in("status", ["waiting", "called"])
+      .limit(FILE_ENTREES_DASHBOARD_MAX);
+
+    for (const entree of (entryData ?? []) as Array<{
+      queue_id: string;
+      status: string;
+    }>) {
+      const cible =
+        entree.status === "called" ? appelesParFile : enAttenteParFile;
+      cible.set(entree.queue_id, (cible.get(entree.queue_id) ?? 0) + 1);
+    }
+  }
+
+  return {
+    ok: true,
+    organizationId: organization.id,
+    timezone: organization.timezone || RESERVER_FUSEAU_DEFAUT,
+    queues: queueRows.map((queue) => ({
+      id: queue.id,
+      name: queue.name,
+      status: asQueueStatus(queue.status),
+      maxLiveEntries: queue.max_live_entries ?? QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
+      activityId: queue.activity_id,
+      activityName: queue.activity_id
+        ? (nomParActivite.get(queue.activity_id) ?? null)
+        : null,
+      createdAt: queue.created_at,
+      enAttente: enAttenteParFile.get(queue.id) ?? 0,
+      appeles: appelesParFile.get(queue.id) ?? 0,
     })),
   };
 }

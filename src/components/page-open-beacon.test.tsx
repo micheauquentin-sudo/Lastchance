@@ -48,6 +48,18 @@ describe("PageOpenBeacon", () => {
     );
   });
 
+  it("la chasse lit son jeton DANS L'ADRESSE, sans prop", () => {
+    // L'identifiant d'une étape de chasse EST son jeton de tampon : passé en
+    // prop, il traverserait la frontière serveur → client et se retrouverait en
+    // clair dans le HTML (payload RSC). Il est donc relu du chemin — où il est
+    // déjà, puisque la page EST `/hunt/<jeton>`.
+    window.history.replaceState({}, "", "/hunt/etape-3-jeton");
+    render(<PageOpenBeacon module="hunts" />);
+    expect(beacon).toHaveBeenCalledWith(
+      "/api/page-opens?module=hunts&id=etape-3-jeton",
+    );
+  });
+
   it("échappe l'identifiant public", () => {
     // Le code de jonction et l'uuid sont sûrs, mais rien n'impose qu'un futur
     // identifiant le soit : une esperluette non échappée découperait la
