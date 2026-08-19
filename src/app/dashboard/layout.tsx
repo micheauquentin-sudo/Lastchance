@@ -11,6 +11,7 @@ import {
 } from "@/lib/rappels";
 import { hasEverSubscribed } from "@/lib/stripe";
 import {
+  droitEffectifModule,
   hasActiveAccess,
   hasCompAccess,
   isTrialExpired,
@@ -178,9 +179,18 @@ export default async function DashboardLayout({
               marque « Actif » (discover/page.tsx passe bien `fullAccess`)…
               et le menu n'en montrait aucun. Deux écrans se contredisaient
               sur le même fait. */}
+          {/* `reserverActif` en PLUS d'`activeExperiences`, et non dedans :
+              le droit « Vitrine & Réserver » s'appelle `vitrine` et n'est pas
+              un `ExperienceKind` — ce n'est pas une expérience jouable. Il est
+              lu par `droitEffectifModule`, miroir TypeScript
+              d'`org_has_module_access`, et l'accès offert le force au même
+              titre que les huit autres modules. */}
           <DashboardNav
             role={role}
             activeExperiences={activeExperienceKinds(organization, compActive)}
+            reserverActif={
+              compActive || droitEffectifModule("vitrine", organization)
+            }
           />
 
           <form action={logout} className="mt-auto hidden lg:block">

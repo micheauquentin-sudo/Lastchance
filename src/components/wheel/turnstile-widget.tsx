@@ -94,7 +94,11 @@ export function TurnstileWidget({
     | "quiz-finish"
     | "event-join"
     | "hunt-register"
-    | "calendar-register";
+    | "calendar-register"
+    // Prise de place sur un créneau (`reserveSlot`). Le littéral est celui que
+    // la server action passe à `verifyTurnstile` : deux orthographes feraient
+    // échouer la vérification côté Cloudflare sans qu'aucun type ne bronche.
+    | "reserver-reserve";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
