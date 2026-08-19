@@ -5849,6 +5849,108 @@ export type Database = {
           },
         ]
       }
+      reservation_queue_entries: {
+        Row: {
+          called_at: string | null
+          consent_transactional_at: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          organization_id: string
+          player_key_hash: string
+          queue_id: string
+          resolved_at: string | null
+          status: string
+        }
+        Insert: {
+          called_at?: string | null
+          consent_transactional_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          organization_id: string
+          player_key_hash: string
+          queue_id: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Update: {
+          called_at?: string | null
+          consent_transactional_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          organization_id?: string
+          player_key_hash?: string
+          queue_id?: string
+          resolved_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_queue_entries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_queue_entries_queue_id_organization_id_fkey"
+            columns: ["queue_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_queues"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      reservation_queues: {
+        Row: {
+          activity_id: string | null
+          created_at: string
+          id: string
+          max_live_entries: number
+          name: string
+          organization_id: string
+          status: string
+        }
+        Insert: {
+          activity_id?: string | null
+          created_at?: string
+          id?: string
+          max_live_entries?: number
+          name: string
+          organization_id: string
+          status?: string
+        }
+        Update: {
+          activity_id?: string | null
+          created_at?: string
+          id?: string
+          max_live_entries?: number
+          name?: string
+          organization_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_queues_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_queues_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reservation_slots: {
         Row: {
           activity_id: string
@@ -7922,6 +8024,52 @@ export type Database = {
           deleted: number
           reaped: number
         }[]
+      }
+      queue_call_next: {
+        Args: { p_actor: string; p_organization_id: string; p_queue_id: string }
+        Returns: Json
+      }
+      queue_entry_position: {
+        Args: {
+          p_entry: Database["public"]["Tables"]["reservation_queue_entries"]["Row"]
+        }
+        Returns: number
+      }
+      queue_join: {
+        Args: {
+          p_consent?: boolean
+          p_display_name?: string
+          p_email?: string
+          p_organization_id: string
+          p_player_key_hash: string
+          p_queue_id: string
+        }
+        Returns: Json
+      }
+      queue_leave: {
+        Args: { p_entry_id: string; p_player_key_hash: string }
+        Returns: Json
+      }
+      queue_public_state: {
+        Args: { p_player_key_hash: string; p_queue_id: string }
+        Returns: Json
+      }
+      queue_reopen_entry: {
+        Args: { p_actor: string; p_entry_id: string; p_organization_id: string }
+        Returns: Json
+      }
+      queue_resolve: {
+        Args: {
+          p_actor: string
+          p_entry_id: string
+          p_organization_id: string
+          p_outcome: string
+        }
+        Returns: Json
+      }
+      queue_staff_state: {
+        Args: { p_organization_id: string; p_queue_id: string }
+        Returns: Json
       }
       quiz_answer_is_correct: {
         Args: {
