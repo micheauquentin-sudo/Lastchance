@@ -31,12 +31,17 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     cancelResponse: { state: "cancelled" } as unknown,
     checkinResponse: [] as unknown,
     publicStateResponse: { state: "ok", timezone: "Europe/Paris", reservations: [] } as unknown,
+    cancelStaffResponse: { state: "cancelled" } as unknown,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rateLimitCalls: [] as Array<{ bucket: string; failClosed: boolean }>,
     rateLimitVerdict: true,
+    /** Préfixes de seaux rendus À SEC, indépendamment du verdict global. */
+    seauxASec: [] as string[],
+    compteurs: [] as string[],
     pressions: [] as Array<{ parts: string; evenement: string }>,
     turnstileConfigure: false,
     turnstileVerdict: true,
+    turnstileJetons: [] as Array<string | undefined>,
     emails: [] as Array<Record<string, unknown>>,
     emailLeve: false,
     taches: [] as Array<Promise<unknown>>,
@@ -50,12 +55,16 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.cancelResponse = { state: "cancelled" };
       state.checkinResponse = [];
       state.publicStateResponse = { state: "ok", timezone: "Europe/Paris", reservations: [] };
+      state.cancelStaffResponse = { state: "cancelled" };
       state.rpcCalls = [];
       state.rateLimitCalls = [];
       state.rateLimitVerdict = true;
+      state.seauxASec = [];
+      state.compteurs = [];
       state.pressions = [];
       state.turnstileConfigure = false;
       state.turnstileVerdict = true;
+      state.turnstileJetons = [];
       state.emails = [];
       state.emailLeve = false;
       state.taches = [];
@@ -75,6 +84,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         }
         if (name === "cancel_reservation") {
           return Promise.resolve({ data: state.cancelResponse, error: null });
+        }
+        if (name === "cancel_reservation_staff") {
+          return Promise.resolve({ data: state.cancelStaffResponse, error: null });
         }
         if (name === "checkin_reservation") {
           return Promise.resolve({ data: state.checkinResponse, error: null });
@@ -195,6 +207,9 @@ vi.mock("@/lib/rate-limit", async (importOriginal) => {
     ...reel,
     rateLimit: (bucket: string, _rule: unknown, options?: { failClosed?: boolean }) => {
       state.rateLimitCalls.push({ bucket, failClosed: options?.failClosed === true });
+      if (state.seauxASec.some((prefixe) => bucket.startsWith(prefixe))) {
+        return Promise.resolve(false);
+      }
       return Promise.resolve(state.rateLimitVerdict);
     },
   };
@@ -215,13 +230,18 @@ vi.mock("@/lib/request-ip", () => ({
 
 vi.mock("@/lib/turnstile", () => ({
   turnstileEnabled: () => state.turnstileConfigure,
-  verifyTurnstile: () => Promise.resolve(state.turnstileVerdict),
+  verifyTurnstile: (jeton: string | undefined) => {
+    state.turnstileJetons.push(jeton);
+    return Promise.resolve(state.turnstileVerdict);
+  },
 }));
 
 vi.mock("@/lib/monitoring", () => ({
   monitored: <T>(_name: string, fn: () => Promise<T>) => fn(),
   reportError: vi.fn(),
-  recordCounter: vi.fn(),
+  recordCounter: (op: string) => {
+    state.compteurs.push(op);
+  },
 }));
 
 vi.mock("@/lib/resend", () => ({
@@ -234,6 +254,7 @@ vi.mock("@/lib/resend", () => ({
 
 import {
   cancelReservation,
+  cancelReservationStaff,
   checkinReservation,
   createReserverActivity,
   createReserverSlot,
@@ -350,6 +371,83 @@ describe("reserveSlot — le challenge anti-robot", () => {
     if (!resultat.ok) expect(resultat.challengeRequired).toBe(true);
     expect(state.rpcCalls).toHaveLength(0);
   });
+
+  it("transmet le jeton VALIDÉ, et refuse celui qui dépasse la borne du schéma", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    await reserveSlot({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      turnstileToken: "jeton-valide",
+    });
+    expect(state.turnstileJetons).toEqual(["jeton-valide"]);
+
+    // Au-delà de 2048, le schéma refuse — et rien ne part vers Cloudflare. Le
+    // jeton relayé vient donc de `parsed.data`, jamais du corps brut : c'est ce
+    // qui garantit que la borne de longueur a bien été franchie avant l'appel
+    // sortant (INFO-1 de la revue L4).
+    state.rpcCalls = [];
+    const trop = "x".repeat(2049);
+    const resultat = await reserveSlot({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      turnstileToken: trop,
+    });
+    expect(resultat.ok).toBe(false);
+    expect(state.turnstileJetons).toEqual(["jeton-valide"]);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("reserveSlot — l'anti-arrosage de la boîte d'un tiers", () => {
+  it("consomme un seau fail-closed PAR ADRESSE avant d'envoyer", async () => {
+    await reserveSlot({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      email: "Client@Exemple.fr",
+      consent: true,
+    });
+
+    const seau = state.rateLimitCalls.find((appel) =>
+      appel.bucket.startsWith("reserver:email"),
+    );
+    // La clé porte l'ADRESSE NORMALISÉE : deux orthographes de la même boîte
+    // partagent le seau. Elle est propre à UN destinataire, donc `failClosed`
+    // reste conforme à ADR-032 — la saturer ne coupe l'email de personne d'autre.
+    expect(seau?.bucket).toBe(`reserver:email:${ORG_ID}:client@exemple.fr`);
+    expect(seau?.failClosed).toBe(true);
+
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(1);
+  });
+
+  it("à sec : AUCUN envoi, la réservation reste valide, et c'est COMPTÉ", async () => {
+    state.seauxASec = ["reserver:email"];
+    const resultat = await reserveSlot({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+
+    // La place est prise — le code est déjà dans la réponse, l'email n'a jamais
+    // été la preuve.
+    expect(resultat.ok).toBe(true);
+    if (resultat.ok) expect(resultat.data.state).toBe("reserved");
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+    // Un envoi sauté en silence serait indistinguable d'une panne Resend.
+    expect(state.compteurs).toContain("reserver.email.throttled");
+  });
+
+  it("ne consomme ce seau QUE lorsqu'un envoi est réellement dû", async () => {
+    // Sans consentement, aucune adresse : rien à arroser, donc rien à compter.
+    await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(
+      state.rateLimitCalls.some((a) => a.bucket.startsWith("reserver:email")),
+    ).toBe(false);
+  });
 });
 
 describe("reserveSlot — email et consentement", () => {
@@ -459,6 +557,96 @@ describe("cancelReservation / loadMyReservations", () => {
     const appel = state.rpcCalls.find((c) => c.name === "reservation_public_state");
     expect(appel?.args.p_organization_id).toBe(ORG_ID);
     expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+  });
+
+  // ── L'INVENTAIRE DES SEAUX DIT VRAI (M-2 de la revue L4) ──
+  // Il attribuait ces compteurs aux trois actions publiques alors que seule
+  // `reserveSlot` les consommait. Ces deux tests sont ce qui l'empêche de
+  // redevenir une déclaration d'intention.
+  it("l'annulation observe l'IP SEULE — et rien par organisation, qu'elle ignore", async () => {
+    await cancelReservation({ reservationId: RESERVATION_ID });
+
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+    ]);
+    expect(state.pressions[0].parts).toBe("reserver:ip");
+    // Fail-open : l'annulation aboutit quand même. Une porte sur une clé
+    // partagée ferait d'un tiers l'interrupteur du parcours (ADR-032).
+    expect(state.rpcCalls.some((c) => c.name === "cancel_reservation")).toBe(true);
+  });
+
+  it("« mes réservations » observe les DEUX, IP seule d'abord", async () => {
+    await loadMyReservations({ organizationId: ORG_ID });
+
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+      "reserver_public_pressure",
+    ]);
+    expect(state.pressions[1].parts).toBe(`reserver:public:ip:${ORG_ID}`);
+  });
+});
+
+describe("cancelReservationStaff — le commerçant libère une place", () => {
+  it("passe l'organisation ET l'acteur de la SESSION, jamais du corps", async () => {
+    const resultat = await cancelReservationStaff(
+      null,
+      formData({
+        reservationId: RESERVATION_ID,
+        // Postés pour rien : ils ne sont dans aucun schéma.
+        organizationId: "99999999-9999-4999-8999-999999999999",
+        actor: "99999999-9999-4999-8999-999999999999",
+      }),
+    );
+    expect(resultat.ok).toBe(true);
+
+    const appel = state.rpcCalls.find((c) => c.name === "cancel_reservation_staff");
+    expect(appel?.args).toEqual({
+      p_organization_id: ORG_ID,
+      p_reservation_id: RESERVATION_ID,
+      p_actor: USER_ID,
+    });
+  });
+
+  it("REFUSE le caissier : annuler retire une place, ce n'est pas un geste de comptoir", async () => {
+    state.role = "cashier";
+    const resultat = await cancelReservationStaff(
+      null,
+      formData({ reservationId: RESERVATION_ID }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("REFUSE sans le droit `vitrine`, même à un propriétaire", async () => {
+    // Contrairement au check-in, qui l'exclut délibérément : ici l'écran qui
+    // porte le bouton est lui-même derrière le droit, donc refuser n'abandonne
+    // personne qui voyait le bouton.
+    state.orgAddonVitrine = false;
+    const resultat = await cancelReservationStaff(
+      null,
+      formData({ reservationId: RESERVATION_ID }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("REFUSE un identifiant qui n'est pas un UUID, sans toucher à la base", async () => {
+    const resultat = await cancelReservationStaff(
+      null,
+      formData({ reservationId: "pas-un-uuid" }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("rend l'ÉTAT de la RPC, refus compris — l'écran doit pouvoir l'expliquer", async () => {
+    state.cancelStaffResponse = { state: "already_checked_in", reservation_id: RESERVATION_ID };
+    const resultat = await cancelReservationStaff(
+      null,
+      formData({ reservationId: RESERVATION_ID }),
+    );
+    expect(resultat.ok).toBe(true);
+    if (resultat.ok) expect(resultat.data.state).toBe("already_checked_in");
   });
 });
 

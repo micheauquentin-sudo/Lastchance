@@ -6756,6 +6756,14 @@ export type Database = {
         Args: { p_player_key_hash: string; p_reservation_id: string }
         Returns: Json
       }
+      cancel_reservation_staff: {
+        Args: {
+          p_actor: string
+          p_organization_id: string
+          p_reservation_id: string
+        }
+        Returns: Json
+      }
       check_rate_limit: {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number }
         Returns: boolean

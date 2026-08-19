@@ -209,10 +209,13 @@ values
    now() - interval '30 minutes', 3, 'open'),
   -- S12 : UNE place, à venir. Le créneau de l'ANNULATION STAFF (bloc 12) : on
   -- le remplit, le commerçant libère la place, et un autre joueur la prend.
+  -- SEPT jours, et non deux : `reservation_slots_activity_start_unique` porte
+  -- sur (activity_id, starts_at), et S1 occupe déjà « dans deux jours » sur
+  -- cette activité. Chaque créneau de cette activité a donc son heure à lui.
   ('4e5e0000-0000-4000-8000-000000000312',
    '4e5e0000-0000-4000-8000-000000000201',
    '4e5e0000-0000-4000-8000-00000000000a',
-   now() + interval '2 days', now() + interval '2 days 1 hour', 1, 'open'),
+   now() + interval '7 days', now() + interval '7 days 1 hour', 1, 'open'),
   -- S13 : deux places, à venir, et AUCUN `reserve_slot` ne le touchera — sa
   -- seule réservation y est INSÉRÉE DIRECTEMENT. C'est ce qui rend l'assertion
   -- de verrou du bloc 12 discriminante : sur un créneau déjà verrouillé par

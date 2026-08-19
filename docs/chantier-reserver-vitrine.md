@@ -53,6 +53,24 @@ comme une PR perdue.
 Note L4 : `PageOpenBeacon` non posé sur `/reserver` (`ModulePageOpenKey` à
 étendre — analytics VIT-4).
 
+Note L4 (revue de sécurité, correctifs appliqués) :
+
+- **Turnstile — clés de production à poser AVANT l'ouverture commerçant.**
+  C'est une **condition de la revue**, pas une amélioration : le challenge
+  anti-Sybil n'est opposé que si `TURNSTILE_SECRET_KEY` **et**
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` sont configurées (motif `finishQuiz` — sans
+  clé publique, l'écran n'aurait aucun widget et le refus serait sans issue pour
+  le joueur). Sans elles, `reserveSlot` — le seul appel émetteur du parcours —
+  n'oppose **aucune** friction : un bot muni de cookies jetables peut vider un
+  créneau sans jamais venir, et le commerçant prépare pour vingt personnes qui
+  n'existent pas. Les invariants SQL bornent le **nombre** de places, pas la
+  **diversité** des mains qui les prennent.
+- **Migration `20261003120000`** — `cancel_reservation_staff` : le commerçant
+  peut enfin libérer une place (aucun geste ne le permettait, `cancel_reservation`
+  exigeant l'empreinte du cookie joueur et `reservations` n'ayant aucun grant
+  `update`). Org-scopée, acteur vérifié `owner`/`editor` en SQL, auditée sous
+  `reservation.cancel_staff`, même verrou d'avis que `reserve_slot`.
+
 ## Notes de mise à jour
 
 Ce fichier est mis à jour à chaque lot : statut, numéro de PR, migration
