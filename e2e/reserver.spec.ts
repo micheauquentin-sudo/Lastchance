@@ -204,20 +204,30 @@ test.describe("réserver — parcours public puis comptoir", () => {
     page.once("dialog", (dialogue) => dialogue.accept());
     await ligne.getByRole("button", { name: "Annuler (staff)" }).click();
 
-    // ATTENDRE QUE LE RECHARGEMENT AIT EU LIEU AVANT DE TOUCHER À LA PAGE.
-    // Troisième occurrence du même défaut dans ce fichier, et la plus sournoise :
-    // `reloadOnSuccess` déclenche un `window.location.reload()`, mais le
-    // DOCUMENT PRÉCÉDENT reste affiché tant qu'il n'a pas abouti. « Créneaux »
-    // y est déjà visible et les plis y sont déjà là : la suite ouvrait donc les
-    // plis de l'ANCIENNE page, le rechargement les balayait, et la pastille
-    // « Annulée » attendait vingt secondes dans un pli refermé — sur une
-    // annulation qui, elle, avait parfaitement réussi (le résumé du pli disait
-    // bien « 0 réservation en cours · 1 annulée »).
+    // ── OUVRIR PUIS OBSERVER, EN UN SEUL GESTE QUI SE REJOUE ──
+    //
+    // Le défaut, et il a résisté à deux remèdes plus naïfs : `reloadOnSuccess`
+    // appelle `window.location.reload()`, mais le DOCUMENT PRÉCÉDENT reste
+    // affiché tant que le rechargement n'a pas abouti — et l'instant où il
+    // aboutit n'est pas observable d'avance. « Créneaux » est déjà visible sur
+    // l'ancien document, les plis y sont déjà là : on les ouvrait, le
+    // rechargement les balayait, et la pastille attendait vingt secondes dans
+    // un pli refermé. La trace le dit mot pour mot — « 2 × waiting for
+    // navigation to finish » PENDANT l'attente, sur une annulation qui, elle,
+    // avait parfaitement réussi (le résumé du pli affichait bien « 0
+    // réservation en cours · 1 annulée »).
+    //
+    // `waitForLoadState("networkidle")` ne suffit pas : il se satisfait d'un
+    // ancien document calme, alors que le rechargement est encore à venir. Ce
+    // qui est déterministe, en revanche, c'est de rendre l'OBSERVATION
+    // idempotente : chaque tour rouvre les plis (`ouvrirLesPlis` n'ouvre que ce
+    // qui est fermé) puis regarde. Si un rechargement passe entre les deux, le
+    // tour suivant rattrape. On ne suppose plus un instant stable — on
+    // converge vers lui.
     await page.waitForLoadState("networkidle");
     await expect(
       page.getByRole("heading", { name: "Créneaux" }),
     ).toBeVisible({ timeout: 30_000 });
-    await ouvrirLesPlis();
 
     const ligneApres = page
       .locator("details li")
@@ -225,9 +235,22 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .first();
     // `exact` : le résumé du pli dit « … · 1 annulée » et la ligne « annulée le
     // … ». Seule la pastille vaut exactement « Annulée ».
-    await expect(ligneApres.getByText("Annulée", { exact: true })).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect
+      .poll(
+        async () => {
+          await ouvrirLesPlis().catch(() => {});
+          return ligneApres
+            .getByText("Annulée", { exact: true })
+            .isVisible()
+            .catch(() => false);
+        },
+        {
+          timeout: 30_000,
+          message:
+            "la pastille « Annulée » doit être visible sous le pli du créneau",
+        },
+      )
+      .toBe(true);
     // Le bouton disparaît : il ne s'affiche que là où il peut aboutir.
     await expect(
       ligneApres.getByRole("button", { name: "Annuler (staff)" }),
