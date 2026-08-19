@@ -431,6 +431,14 @@ select ok(not has_function_privilege('anon', 'public.waitlist_join(uuid,uuid,tex
 select ok(not has_function_privilege('authenticated', 'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot claim a waitlist offer on behalf of a player');
 select ok(not has_function_privilege('anon', 'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'), 'anon cannot claim a waitlist offer directly');
 select ok(not has_function_privilege('authenticated', 'public.waitlist_leave(uuid,text)', 'EXECUTE'), 'merchant session cannot remove a player from a waitlist through the player RPC');
+-- Le RETRAIT STAFF existe désormais (revue L5, E-1b), et il passe par sa PROPRE
+-- RPC : celle-ci vérifie l'appartenance owner/editor en SQL et journalise
+-- l'acteur, là où `waitlist_leave` n'exige qu'une preuve de possession du
+-- cookie. Les laisser toutes deux ouvertes à la session marchande aurait rendu
+-- l'audit contournable par le chemin joueur.
+select ok(has_function_privilege('service_role', 'public.evict_waitlist_entry(uuid,uuid,text)', 'EXECUTE'), 'server can evict a waitlist entry on behalf of the merchant');
+select ok(not has_function_privilege('authenticated', 'public.evict_waitlist_entry(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot evict a waitlist entry past the role guard and the audit trail');
+select ok(not has_function_privilege('anon', 'public.evict_waitlist_entry(uuid,uuid,text)', 'EXECUTE'), 'anon cannot evict anyone from a waitlist');
 select ok(not has_function_privilege('authenticated', 'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'), 'merchant session cannot redeem an invitation past the capacity lock');
 select ok(not has_function_privilege('anon', 'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'), 'anon cannot redeem an invitation directly');
 select ok(not has_function_privilege('authenticated', 'public.create_reservation_invitation(uuid,text,text,text,uuid,uuid,integer,timestamptz)', 'EXECUTE'), 'merchant session cannot mint an invitation past the role guard');

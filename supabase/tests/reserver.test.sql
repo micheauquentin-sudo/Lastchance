@@ -2705,5 +2705,504 @@ select ok(
     where jobname = 'lastchance-reservation-waitlist-expire'),
   'OPS-4 la planification pg_cron existe, et une seule fois');
 
+
+-- ════════════════════════════════════════════════════════════
+-- 24. FIXTURES DE LA REVUE DE SÉCURITÉ L5 (E-1a, E-1b, M-1, I-4)
+--
+-- APRÈS le bloc 23, et pas avant : `OPS-2` et `OPS-3` comptent les passages du
+-- balayage, et le bloc 24 en déclenche un de plus pour prouver qu'une
+-- EXPIRATION libère une place DE FILE. Placées plus haut, ces fixtures auraient
+-- fait rougir deux assertions de supervision qui n'ont rien à voir avec la
+-- revue — exactement le motif qui avait déjà fait descendre les fixtures RES-2
+-- sous les comptages RLS (bloc 13).
+--
+-- Les heures reprennent à +16 j : l'activité 201 occupe déjà tout jusqu'à
+-- +15 j, et `reservation_slots_activity_start_unique` porte sur
+-- (activity_id, starts_at).
+-- ════════════════════════════════════════════════════════════
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status,
+   waitlist_offer_minutes)
+values
+  -- S30 : UNE place. Le créneau du PLAFOND DE FILE : capacité 1 →
+  -- `least(greatest(2 × 1, 4), 50)` = 4, c'est la branche PLANCHER.
+  ('4e5e0000-0000-4000-8000-000000000330',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '16 days', now() + interval '16 days 1 hour', 1, 'open', null),
+  -- S31 : UNE place. Le créneau de l'ÉVICTION.
+  ('4e5e0000-0000-4000-8000-000000000331',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '17 days', now() + interval '17 days 1 hour', 1, 'open', null),
+  -- S32 : UNE place. On y fabrique une offre VIVANTE, PUIS on remet le créneau
+  -- en BROUILLON — le seul moyen d'obtenir l'état que M-1 doit refuser, puisque
+  -- `reservation_offer_next` n'émet jamais d'offre sur un créneau non ouvert.
+  ('4e5e0000-0000-4000-8000-000000000332',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '18 days', now() + interval '18 days 1 hour', 1, 'open', null),
+  -- S33 : le SYMÉTRIQUE de S32 — même montage, mais `closed`. Sans lui, M-1
+  -- passerait tout aussi bien avec une garde qui refuserait TOUT créneau non
+  -- ouvert, et la propriété qu'on veut (« fermé au public reste honoré ») ne
+  -- serait prouvée nulle part.
+  ('4e5e0000-0000-4000-8000-000000000333',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '19 days', now() + interval '19 days 1 hour', 1, 'open', null),
+  -- S34 : UNE place. Le créneau de l'entrée PURGÉE qui ne doit plus rien
+  -- recevoir (I-4).
+  ('4e5e0000-0000-4000-8000-000000000334',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '20 days', now() + interval '20 days 1 hour', 1, 'open', null),
+  -- S35 : TROIS places → plafond `least(greatest(6, 4), 50)` = 6. C'est la
+  -- branche PROPORTIONNELLE, et le seul créneau qui distingue la formule d'une
+  -- constante 4.
+  ('4e5e0000-0000-4000-8000-000000000335',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '21 days', now() + interval '21 days 1 hour', 3, 'open', null);
+
+
+-- ════════════════════════════════════════════════════════════
+-- 25. LA FILE A UN PLAFOND (revue de sécurité L5, E-1a)
+--
+-- CE QUE CE BLOC FERME : la seule borne à `reservation_waitlist_entries` était
+-- l'unicité (créneau, empreinte) sur les états vivants — c'est-à-dire UNE LIGNE
+-- PAR COOKIE, et un cookie se renouvelle à volonté. Un créneau complet pouvait
+-- accumuler une file sans fin, chaque entrée portant en prime une adresse et un
+-- consentement : stockage de données personnelles non borné, et un rang annoncé
+-- au centième inscrit qui ne veut plus rien dire pour personne.
+--
+-- LA PREUVE N'EST PAS SEULEMENT « le cinquième est refusé » : c'est que le
+-- plafond SE REARME (il n'est pas un compteur qui se vide) et surtout qu'une
+-- place de FILE se libère — par un départ ET par une expiration. Un plafond qui
+-- ne se rouvrirait jamais aurait condamné le créneau à sa première file.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv3_s30r as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1a', 32)) as j;
+select is((select j->>'state' from rv3_s30r), 'reserved',
+  'CAP-F1 la place unique de S30 est prise : le créneau est complet');
+
+create temporary table rv3_file (n int, j jsonb);
+insert into rv3_file values (1, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1b', 32)));
+insert into rv3_file values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1c', 32)));
+insert into rv3_file values (3, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1d', 32)));
+insert into rv3_file values (4, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1e', 32)));
+
+select is(
+  (select pg_catalog.count(*)::int from rv3_file where j->>'state' = 'waiting'),
+  4, 'CAP-F2 les quatre premiers entrent dans la file');
+
+-- LE CINQUIÈME EST REFUSÉ, et par un état À LUI. `unavailable` aurait été le
+-- réflexe — c'est le mot muet de tout ce module — et il aurait été FAUX ici :
+-- ce refus ne révèle rien qu'un visiteur ne voie déjà (le créneau est complet,
+-- sa capacité est affichée), et l'écran doit pouvoir dire « la liste est
+-- pleine, revenez plus tard » plutôt que « indisponible », qui n'est pas
+-- actionnable.
+create temporary table rv3_plein as
+select public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000330', repeat('1f', 32)) as j;
+select is((select j->>'state' from rv3_plein), 'waitlist_full',
+  'CAP-F3 le cinquième est refusé, et le refus porte son propre nom');
+select is((select (j->>'capacity')::int from rv3_plein), 4,
+  'CAP-F4 le plafond annoncé est celui du PLANCHER : 2 × 1 place, relevé à 4');
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where slot_id = '4e5e0000-0000-4000-8000-000000000330'$$,
+  array[4::bigint],
+  'CAP-F5 et AUCUNE cinquième ligne n''est écrite, sous aucun statut');
+
+-- ── UN DÉPART LIBÈRE UNE PLACE DE FILE ──────────────────────
+select is(
+  (public.waitlist_leave(
+    (select (j->>'entry_id')::uuid from rv3_file where n = 1),
+    repeat('1b', 32)))->>'state',
+  'left',
+  'CAP-F6 le premier de la file s''en va');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000330', repeat('1f', 32)))->>'state',
+  'waiting',
+  'CAP-F7 sa place DE FILE est reprise : le refusé de CAP-F3 entre');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000330', repeat('2a', 32)))->>'state',
+  'waitlist_full',
+  'CAP-F8 et le plafond SE REARME aussitôt — ce n''est pas un quota qui se vide');
+
+-- ── UNE OFFRE TENUE COMPTE DANS LE PLAFOND ──────────────────
+-- La place réelle repart au premier de la file : l'entrée passe `waiting` →
+-- `offered`, et le nombre d'entrées VIVANTES ne bouge pas.
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv3_s30r),
+    repeat('1a', 32)))->>'state',
+  'cancelled',
+  'CAP-F9 le titulaire se désiste : la place part au premier de la file');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000330', repeat('2a', 32)))->>'state',
+  'waitlist_full',
+  'CAP-F10 la file reste pleine : une offre TENUE occupe toujours sa ligne');
+
+-- ── UNE EXPIRATION LIBÈRE UNE PLACE DE FILE ─────────────────
+-- L'échéance est reculée dans le passé, puis le balayage passe : l'entrée
+-- devient `expired` — état TERMINAL, donc plus vivante — et la place réelle
+-- repart au suivant. Le compte des vivantes descend de 4 à 3.
+update public.reservation_waitlist_entries
+   set offer_expires_at = now() - interval '1 minute'
+ where slot_id = '4e5e0000-0000-4000-8000-000000000330'
+   and status = 'offered';
+
+select ok(
+  (select slots_processed >= 1 from public.expire_waitlist_offers()),
+  'CAP-F11 le balayage ramasse l''offre échue de S30');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000330', repeat('2a', 32)))->>'state',
+  'waiting',
+  'CAP-F12 l''expiration a libéré une place DE FILE, sans intervention');
+
+-- ── LA BRANCHE PROPORTIONNELLE : le plafond n'est pas la constante 4 ──
+insert into rv3_file values (10, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('2b', 32)));
+insert into rv3_file values (11, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('2c', 32)));
+insert into rv3_file values (12, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('2d', 32)));
+select is(
+  (select pg_catalog.count(*)::int from rv3_file
+    where n between 10 and 12 and j->>'state' = 'reserved'),
+  3, 'CAP-F13 les trois places de S35 sont prises');
+
+insert into rv3_file values (20, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('2e', 32)));
+insert into rv3_file values (21, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('2f', 32)));
+insert into rv3_file values (22, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('3a', 32)));
+insert into rv3_file values (23, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('3b', 32)));
+insert into rv3_file values (24, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000335', repeat('3c', 32)));
+
+-- LE CINQUIÈME PASSE ICI, ALORS QU'IL ÉTAIT REFUSÉ SUR S30. C'est l'assertion
+-- qui distingue `greatest(2 × capacité, 4)` d'un plafond fixe : sur trois
+-- places, la file en accepte six.
+select is((select j->>'state' from rv3_file where n = 24), 'waiting',
+  'CAP-F14 sur un créneau de 3 places, le 5e inscrit passe : le plafond SUIT la '
+  'capacité et n''est pas la constante 4');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 26. LE COMMERÇANT RETIRE QUELQU'UN DE LA FILE (E-1b)
+--
+-- CE QUE CE BLOC FERME : aucun geste ne permettait de retirer une personne de
+-- la liste. Le fichier de migration l'assumait — « une offre meurt d'elle-même
+-- en deux heures » — ce qui décrit l'extinction NATURELLE d'une file et non le
+-- retrait de QUELQU'UN : un doublon manifeste, une inscription abusive, un
+-- désistement téléphonique de la part de qui a perdu son lien.
+--
+-- LA PREUVE CENTRALE N'EST PAS « l'appel rend `evicted` ». C'est que la place
+-- TENUE par l'évincé REPART AU SUIVANT, et exactement UNE FOIS — sans quoi elle
+-- serait restée comptée nulle part : ni réservée, ni tenue, ni proposée, et le
+-- balayage (qui ne regarde que les offres ÉCHUES) ne serait jamais revenu la
+-- chercher.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv3_s31r as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000331', repeat('3d', 32)) as j;
+create temporary table rv3_evi (n int, j jsonb);
+insert into rv3_evi values (1, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000331', repeat('3e', 32)));
+insert into rv3_evi values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000331', repeat('3f', 32)));
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv3_s31r),
+    repeat('3d', 32)))->>'state',
+  'cancelled',
+  'EVI-1 la place se libère et part au premier de la file');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_evi where n = 1)),
+  'offered',
+  'EVI-2 le premier TIENT la place');
+
+-- ── LES REFUS D'AUTORISATION, AVANT LE GESTE ────────────────
+select throws_ok(
+  $$select public.evict_waitlist_entry(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '00000000-0000-4000-8000-000000000000',
+      '4e5e0000-0000-4000-8000-000000000102')$$,
+  '42501', null,
+  'EVI-3 le CAISSIER n''évince personne : retirer un rang est un geste de gestion');
+select throws_ok(
+  $$select public.evict_waitlist_entry(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '00000000-0000-4000-8000-000000000000',
+      '4e5e0000-0000-4000-8000-000000000104')$$,
+  '42501', null,
+  'EVI-4 ni un utilisateur qui n''est membre de rien');
+select throws_ok(
+  $$select public.evict_waitlist_entry(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '00000000-0000-4000-8000-000000000000', 'pas-un-uuid')$$,
+  '42501', null,
+  'EVI-5 ni un acteur dont la forme n''est même pas celle d''un identifiant');
+
+-- L'ORGANISATION VOISINE EST MUETTE, ET DU MÊME MOT QU'UN IDENTIFIANT INCONNU.
+-- Le propriétaire de B est bien owner CHEZ LUI : la garde d'appartenance passe,
+-- et c'est le filtre org-scopé — lui seul — qui referme la porte.
+select is(
+  (public.evict_waitlist_entry(
+    '4e5e0000-0000-4000-8000-00000000000b',
+    (select (j->>'entry_id')::uuid from rv3_evi where n = 1),
+    '4e5e0000-0000-4000-8000-000000000103'))->>'state',
+  'unknown',
+  'EVI-6 la voisine ne retire personne de la file de A');
+select is(
+  (public.evict_waitlist_entry(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '00000000-0000-4000-8000-000000000000',
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'unknown',
+  'EVI-7 et un identifiant inconnu rend EXACTEMENT le même mot');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_evi where n = 1)),
+  'offered',
+  'EVI-8 aucun de ces refus n''a touché l''entrée');
+
+-- ── LE GESTE : ÉVINCER CELUI QUI TIENT L'OFFRE ──────────────
+create temporary table rv3_ev1 as
+select public.evict_waitlist_entry(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select (j->>'entry_id')::uuid from rv3_evi where n = 1),
+  '4e5e0000-0000-4000-8000-000000000101') as j;
+select is((select j->>'state' from rv3_ev1), 'evicted',
+  'EVI-9 le propriétaire retire celui qui tenait la place');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_evi where n = 1)),
+  'cancelled',
+  'EVI-10 son entrée est close');
+
+-- LE CŒUR DU BLOC : LA PLACE REPART, ET UNE SEULE FOIS.
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_evi where n = 2)),
+  'offered',
+  'EVI-11 la place TENUE repart immédiatement au suivant, sous le même verrou');
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where slot_id = '4e5e0000-0000-4000-8000-000000000331'
+       and status = 'offered'$$,
+  array[1::bigint],
+  'EVI-12 et une seule offre existe sur ce créneau — jamais deux sur une place');
+
+-- ── IDEMPOTENCE ─────────────────────────────────────────────
+create temporary table rv3_ev2 as
+select public.evict_waitlist_entry(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select (j->>'entry_id')::uuid from rv3_evi where n = 1),
+  '4e5e0000-0000-4000-8000-000000000101') as j;
+select is((select j->>'state' from rv3_ev2), 'evicted',
+  'EVI-13 rejouée, elle rend le même mot');
+select is(
+  (select j->>'cancelled_at' from rv3_ev2),
+  (select j->>'cancelled_at' from rv3_ev1),
+  'EVI-14 sans repousser la date de sortie');
+
+-- ── LE JOURNAL NE RETIENT QUE LE GESTE RÉEL ─────────────────
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.waitlist_evict'$$,
+  array[1::bigint],
+  'EVI-15 deux clics, UNE ligne d''audit : le second n''a rien écrit');
+select ok(
+  (select (metadata->>'was_offered')::boolean from public.audit_logs
+    where action = 'reservation.waitlist_evict'
+      and organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
+  'EVI-16 et la ligne dit que l''évincé TENAIT une place — pas le même geste '
+  'que retirer un simple inscrit');
+select ok(
+  (select metadata ? 'entry_id' and not (metadata ? 'email')
+     from public.audit_logs
+    where action = 'reservation.waitlist_evict'
+      and organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
+  'EVI-17 elle porte l''entrée, jamais l''adresse');
+
+-- ── ÉVINCER UNE ENTRÉE TERMINÉE N'INVENTE RIEN ──────────────
+-- Le second de la file tient désormais l'offre ; on la lui laisse et on vérifie
+-- l'autre extrémité : une entrée CONVERTIE ne se retire pas.
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv3_evi where n = 2),
+    repeat('3f', 32)))->>'state',
+  'claimed',
+  'EVI-18 le suivant prend la place qui lui a été rendue');
+select is(
+  (public.evict_waitlist_entry(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv3_evi where n = 2),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'converted',
+  'EVI-19 une entrée CONVERTIE ne se retire pas de la file : elle est devenue '
+  'une réservation, et c''est l''annulation staff qui la reprend');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 27. UNE OFFRE NE S'HONORE PAS SUR UN CRÉNEAU EN BROUILLON (M-1)
+--
+-- `claim_waitlist_offer` ne revérifiait PAS le statut du créneau, délibérément :
+-- « l'offre EST l'autorisation ». L'arbitrage tenait pour `closed` — fermé veut
+-- dire fermé AU PUBLIC, et l'offre est justement l'autre règle d'accès — et il
+-- ne tenait pas pour `draft`, qui veut dire PAS CONFIGURÉ : un créneau qu'on est
+-- en train de refaire, dont l'horaire et la capacité peuvent encore bouger.
+-- L'alignement se fait sur `redeem_invitation`, qui tranchait déjà ainsi.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv3_m1 (n int, j jsonb);
+insert into rv3_m1 values (1, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000332', repeat('4a', 32)));
+insert into rv3_m1 values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000332', repeat('4b', 32)));
+insert into rv3_m1 values (3, public.cancel_reservation(
+  (select (j->>'reservation_id')::uuid from rv3_m1 where n = 1),
+  repeat('4a', 32)));
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_m1 where n = 2)),
+  'offered',
+  'DRAFT-1 l''offre est vivante sur S32, créneau encore ouvert');
+
+-- LE CRÉNEAU RETOURNE EN BROUILLON — le commerçant le reprend en main.
+update public.reservation_slots
+   set status = 'draft'
+ where id = '4e5e0000-0000-4000-8000-000000000332';
+
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv3_m1 where n = 2),
+    repeat('4b', 32)))->>'state',
+  'unavailable',
+  'DRAFT-2 l''offre ne s''honore PLUS : un créneau en brouillon n''est pas '
+  'configuré, et l''offre n''y donne pas de place');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000332'
+       and status = 'confirmed'$$,
+  array[0::bigint],
+  'DRAFT-3 et aucune réservation n''a été écrite sur ce créneau');
+
+-- ── LE SYMÉTRIQUE : `closed` RESTE HONORÉ ───────────────────
+insert into rv3_m1 values (11, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000333', repeat('4c', 32)));
+insert into rv3_m1 values (12, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000333', repeat('4d', 32)));
+insert into rv3_m1 values (13, public.cancel_reservation(
+  (select (j->>'reservation_id')::uuid from rv3_m1 where n = 11),
+  repeat('4c', 32)));
+
+update public.reservation_slots
+   set status = 'closed'
+ where id = '4e5e0000-0000-4000-8000-000000000333';
+
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv3_m1 where n = 12),
+    repeat('4d', 32)))->>'state',
+  'claimed',
+  'DRAFT-4 sur un créneau FERMÉ AU PUBLIC, l''offre est honorée : c''est '
+  'exactement ce que la file et l''invitation savent faire de plus que la jauge');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 28. UNE ENTRÉE PURGÉE NE REÇOIT PLUS D'OFFRE (I-4)
+--
+-- La purge RGPD remplace l'empreinte par `purge:<id>`, une forme que la garde
+-- de `claim_waitlist_offer` refuse. Sans le filtre ajouté à
+-- `reservation_offer_next`, la place partait quand même sur cette entrée — et
+-- y restait TENUE jusqu'à l'échéance, réclamable par personne. Une place gelée
+-- deux heures au profit d'une identité effacée, sur un créneau complet,
+-- c'est-à-dire précisément là où elle est rare.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv3_i4 (n int, j jsonb);
+insert into rv3_i4 values (1, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000334', repeat('5a', 32)));
+-- Le PREMIER de la file — celui qui a le rang, et qui va être purgé.
+insert into rv3_i4 values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000334', repeat('5b', 32)));
+-- Le second, intact.
+insert into rv3_i4 values (3, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000334', repeat('5c', 32)));
+
+-- LA PURGE, dans sa forme exacte (section 14 de la migration) : la ligne reste,
+-- la personne s'efface.
+update public.reservation_waitlist_entries
+   set email = null,
+       consent_transactional_at = null,
+       player_key_hash = 'purge:' || id::text
+ where id = (select (j->>'entry_id')::uuid from rv3_i4 where n = 2);
+
+insert into rv3_i4 values (4, public.cancel_reservation(
+  (select (j->>'reservation_id')::uuid from rv3_i4 where n = 1),
+  repeat('5a', 32)));
+
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_i4 where n = 2)),
+  'waiting',
+  'PURG-1 l''entrée PURGÉE est SAUTÉE : aucune offre ne lui est faite');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv3_i4 where n = 3)),
+  'offered',
+  'PURG-2 la place va au premier inscrit RÉELLEMENT joignable');
+
 select * from finish();
 rollback;

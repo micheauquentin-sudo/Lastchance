@@ -103,6 +103,22 @@ export function RejoindreFileAttente({
         turnstileToken: captchaToken ?? undefined,
       });
       if (!resultat.ok && resultat.challengeRequired) setChallengeDemande(true);
+      // `waitlist_full` EST un échec, et c'est le seul état de cette RPC dont
+      // le rechargement ne montrerait RIEN : l'écran réafficherait le même
+      // bouton « Rejoindre la liste d'attente », et le joueur croirait à un clic
+      // perdu. Il devient donc un refus lisible — et nommé, pas muet : ce refus
+      // ne révèle rien qu'il ne voie déjà (le créneau est complet, sa capacité
+      // est affichée), et « la liste est complète » est actionnable là où
+      // « indisponible » ne l'est pas.
+      if (resultat.ok && resultat.data.state === "waitlist_full") {
+        const plafond = resultat.data.waitlistCapacity;
+        return {
+          ok: false,
+          error: plafond
+            ? `La liste d'attente de ce créneau est complète (${plafond} personnes). Revenez un peu plus tard, ou choisissez un autre créneau.`
+            : "La liste d'attente de ce créneau est complète. Revenez un peu plus tard, ou choisissez un autre créneau.",
+        } satisfies WaitlistJoinActionResult;
+      }
       // `not_full` n'est PAS un échec, et n'est pas non plus une inscription :
       // une place s'est libérée entre l'affichage et le clic, et la base renvoie
       // le joueur vers la réservation ordinaire. Le rechargement la lui montre,

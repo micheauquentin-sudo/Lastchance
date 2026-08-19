@@ -286,6 +286,17 @@ export const cancelReservationStaffSchema = z.object({
 });
 
 /**
+ * Retirer quelqu'un de la liste prioritaire, AU NOM DU COMMERCE (revue L5,
+ * E-1b). Comme ci-dessus, l'ACTEUR N'EST PAS UN CHAMP : il vient de la session,
+ * et `evict_waitlist_entry` le revérifie membre owner/editor en SQL. Un `actor`
+ * posté ferait de la ligne `reservation.waitlist_evict` une déclaration sur
+ * l'honneur.
+ */
+export const evictWaitlistEntrySchema = z.object({
+  entryId: uuid,
+});
+
+/**
  * Valider une arrivée. L'ACTEUR N'EST PAS UN CHAMP : il vient de la session
  * authentifiée, et l'organisation de son appartenance. Un `actor` posté serait
  * une déclaration sur l'honneur — l'audit de check-in ne vaudrait plus rien.

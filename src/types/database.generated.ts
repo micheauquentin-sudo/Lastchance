@@ -7352,6 +7352,10 @@ export type Database = {
         Args: { p_player_token_hash?: string; p_session_id: string }
         Returns: Json
       }
+      evict_waitlist_entry: {
+        Args: { p_actor: string; p_entry_id: string; p_organization_id: string }
+        Returns: Json
+      }
       experience_belongs_to_organization: {
         Args: {
           p_experience_id: string

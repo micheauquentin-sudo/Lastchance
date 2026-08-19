@@ -64,6 +64,13 @@ export type WaitlistJoinState =
   | "unavailable"
   | "invalid_email"
   | "not_full"
+  /**
+   * La FILE est pleine, pas le créneau (revue de sécurité L5, E-1a). État
+   * distinct et NON muet, contrairement aux six refus de `reserve_slot` : il ne
+   * révèle rien qu'un visiteur ne voie déjà, et « la liste est complète » est
+   * actionnable là où « indisponible » ne l'est pas.
+   */
+  | "waitlist_full"
   | "already_reserved"
   | "waiting"
   | "already_waiting";
@@ -79,6 +86,21 @@ export type ClaimWaitlistOfferState =
 export type WaitlistLeaveState =
   | "unknown"
   | "left"
+  | "converted"
+  | "expired";
+
+/**
+ * Issues de `evict_waitlist_entry` (retrait AU NOM DU COMMERCE, revue L5 E-1b).
+ *
+ * Même forme que `waitlist_leave`, un mot près : `evicted` au lieu de `left`.
+ * Deux types plutôt qu'un seul, parce que les deux chemins n'ont ni la même
+ * autorisation (appartenance contre possession) ni le même journal — et qu'un
+ * type partagé aurait invité, au premier état ajouté d'un côté, à le traiter
+ * comme s'il existait de l'autre.
+ */
+export type EvictWaitlistEntryState =
+  | "unknown"
+  | "evicted"
   | "converted"
   | "expired";
 
@@ -205,6 +227,7 @@ const WAITLIST_JOIN_STATES: readonly WaitlistJoinState[] = [
   "unavailable",
   "invalid_email",
   "not_full",
+  "waitlist_full",
   "already_reserved",
   "waiting",
   "already_waiting",
@@ -220,6 +243,13 @@ const CLAIM_STATES: readonly ClaimWaitlistOfferState[] = [
 const LEAVE_STATES: readonly WaitlistLeaveState[] = [
   "unknown",
   "left",
+  "converted",
+  "expired",
+];
+
+const EVICT_STATES: readonly EvictWaitlistEntryState[] = [
+  "unknown",
+  "evicted",
   "converted",
   "expired",
 ];
@@ -401,6 +431,13 @@ export interface WaitlistJoinResult {
   offerExpiresAt: string | null;
   /** Places encore libres — rendu avec `not_full` : on ne fait pas la queue. */
   remaining: number | null;
+  /**
+   * Plafond de la FILE, rendu avec `waitlist_full` seulement. C'est un nombre
+   * de personnes en attente, jamais un nombre de places : le confondre avec
+   * `remaining` ferait dire à l'écran « il reste 4 places » sur un créneau
+   * complet.
+   */
+  waitlistCapacity: number | null;
   /** Les trois champs de `already_reserved`, mot pour mot ceux de `reserve_slot`. */
   reservationId: string | null;
   code: string | null;
@@ -435,6 +472,8 @@ export function mapWaitlistJoin(raw: unknown): WaitlistJoinResult {
         ? asString(root.offer_expires_at)
         : null,
     remaining: state === "not_full" && root ? asInt(root.remaining) : null,
+    waitlistCapacity:
+      state === "waitlist_full" && root ? asInt(root.capacity) : null,
     reservationId:
       state === "already_reserved" && root ? asString(root.reservation_id) : null,
     code: state === "already_reserved" && root ? asString(root.code) : null,
@@ -511,6 +550,42 @@ export function mapWaitlistLeave(raw: unknown): WaitlistLeaveResult {
     state,
     entryId: state === "unknown" || !root ? null : asString(root.entry_id),
     cancelledAt: state === "left" && root ? asString(root.cancelled_at) : null,
+    reservationId:
+      state === "converted" && root ? asString(root.reservation_id) : null,
+    offerExpiresAt:
+      state === "expired" && root ? asString(root.offer_expires_at) : null,
+  };
+}
+
+export interface EvictWaitlistEntryResult {
+  state: EvictWaitlistEntryState;
+  entryId: string | null;
+  cancelledAt: string | null;
+  /** Rendu avec `converted` : la personne a déjà pris sa place. */
+  reservationId: string | null;
+  offerExpiresAt: string | null;
+}
+
+/**
+ * Mappe le `jsonb` de `evict_waitlist_entry`.
+ *
+ * `unknown` couvre l'entrée inconnue ET celle d'une AUTRE organisation — la RPC
+ * les rend indistinctes volontairement, et ce mappage ne les distingue pas non
+ * plus : rien dans la réponse ne permet de savoir laquelle des deux.
+ */
+export function mapEvictWaitlistEntry(raw: unknown): EvictWaitlistEntryResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: EvictWaitlistEntryState =
+    stateRaw && (EVICT_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as EvictWaitlistEntryState)
+      : "unknown";
+
+  return {
+    state,
+    entryId: state === "unknown" || !root ? null : asString(root.entry_id),
+    cancelledAt:
+      state === "evicted" && root ? asString(root.cancelled_at) : null,
     reservationId:
       state === "converted" && root ? asString(root.reservation_id) : null,
     offerExpiresAt:

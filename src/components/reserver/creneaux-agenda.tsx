@@ -14,6 +14,7 @@ import {
   PastilleReservation,
   Remplissage,
 } from "@/components/reserver/pastilles";
+import { RetirerDeLaFile } from "@/components/reserver/retirer-file-attente";
 
 /**
  * L'AGENDA D'UNE ACTIVITÉ — ses créneaux, et sous chacun, ses réservations.
@@ -202,14 +203,22 @@ function CreneauCarte({
 /**
  * LA LISTE PRIORITAIRE D'UN CRÉNEAU, vue du commerçant (RES-2, lot L5).
  *
- * ── ELLE NE PORTE AUCUN GESTE, ET C'EST DÉLIBÉRÉ ──
+ * ── ELLE NE PORTE AUCUN GESTE D'ORDRE, ET C'EST DÉLIBÉRÉ ──
  *
- * Rien à cliquer : ni « proposer à », ni « faire passer devant ». L'ordre est
- * celui de l'inscription, et la place se propose toute seule dès qu'elle se
- * libère (`reservation_offer_next`, sous le même verrou que la réservation). Un
- * bouton de promotion manuelle aurait donné au commerçant un moyen de doubler sa
- * propre file — et à la base deux écritures concurrentes à départager. Ce
- * panneau CONSTATE.
+ * Ni « proposer à », ni « faire passer devant ». L'ordre est celui de
+ * l'inscription, et la place se propose toute seule dès qu'elle se libère
+ * (`reservation_offer_next`, sous le même verrou que la réservation). Un bouton
+ * de promotion manuelle aurait donné au commerçant un moyen de doubler sa propre
+ * file — et à la base deux écritures concurrentes à départager. Ce panneau
+ * CONSTATE.
+ *
+ * ── LE SEUL GESTE QU'IL PORTE : RETIRER (revue de sécurité L5, E-1b) ──
+ *
+ * Il n'est pas une exception à ce qui précède, il en est le complément exact :
+ * il RETIRE, il ne réordonne pas, et la place repart au suivant du même
+ * mouvement — retirer la tête ne fait donc qu'avancer celle d'après. Sans lui,
+ * un doublon manifeste ou une inscription abusive n'avait que deux issues :
+ * attendre l'échéance, ou fermer le créneau pour tout le monde.
  *
  * ── AUCUN EMAIL, ICI NON PLUS ──
  *
@@ -271,6 +280,17 @@ function FileAttenteCreneau({
                 : ""}
             </span>
             <PastilleFileAttente entree={entree} />
+            {/* Le bouton n'apparaît QUE là où il peut aboutir : sur une entrée
+                VIVANTE. Une entrée convertie, expirée ou déjà partie n'occupe
+                plus de rang — la RPC le dirait, mais proposer un geste qui
+                échoue est pire que de ne rien proposer. */}
+            {entree.status === "waiting" || entree.status === "offered" ? (
+              <RetirerDeLaFile
+                entryId={entree.entryId}
+                position={entree.position}
+                tientUnePlace={entree.offerLive}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -278,7 +298,9 @@ function FileAttenteCreneau({
         L&apos;ordre est celui de l&apos;inscription et il ne se modifie pas :
         dès qu&apos;une place se libère, elle est tenue pour la personne en tête,
         une seule à la fois, pendant la durée réglée sur ce créneau. Passé ce
-        délai, elle passe automatiquement à la suivante.
+        délai, elle passe automatiquement à la suivante. «&nbsp;Retirer&nbsp;»
+        sort quelqu&apos;un de la liste sans le prévenir — et rend aussitôt à la
+        personne suivante la place qui lui était tenue.
       </p>
     </details>
   );

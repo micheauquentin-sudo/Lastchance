@@ -68,10 +68,6 @@
 --     vient de telle invitation » vit dans `audit_logs`, qui est déjà la trace
 --     de qui a fait quoi. Une colonne de plus sur une table de production pour
 --     redire ce que le journal dit déjà ne se paie pas.
---   * AUCUNE RPC staff pour retirer quelqu'un de la liste. Une offre en cours
---     meurt d'elle-même en deux heures au plus ; fermer le créneau tarit les
---     offres SUIVANTES. Le geste manque, il est signalé, il n'est pas inventé
---     ici — il demanderait sa propre décision d'autorisation.
 --   * AUCUNE route Vercel. Le balayage est planifié par pg_cron, DANS la base :
 --     pas d'aller-retour HTTP pour une fonction qui ne lit que du SQL. Il naît
 --     avec son battement de cœur `ops_worker_runs` — la leçon du wagon 7, où le
@@ -663,6 +659,14 @@ begin
      where w.slot_id = p_slot_id
        and w.organization_id = p_organization_id
        and w.status = 'waiting'
+       -- UNE ENTRÉE PURGÉE NE REÇOIT PLUS D'OFFRE (revue de sécurité L5, I-4).
+       -- La purge RGPD (section 14) remplace l'empreinte par `purge:<id>`, une
+       -- forme que `claim_waitlist_offer` refuse par sa garde de forme : sans
+       -- ce filtre, la place partait quand même sur cette entrée, y restait
+       -- tenue jusqu'à l'échéance, et n'était PLUS RÉCLAMABLE PAR PERSONNE.
+       -- Une place gelée deux heures au profit d'une identité effacée — sur un
+       -- créneau complet, c'est-à-dire précisément quand elle est rare.
+       and w.player_key_hash not like 'purge:%'
      order by w.created_at, w.id
      limit 1;
     exit when v_entry_id is null;
@@ -684,8 +688,12 @@ $$;
 comment on function public.reservation_offer_next(uuid, uuid) is
   'Fait avancer la liste prioritaire d''UN créneau : marque expirées les offres '
   'échues (toujours), puis propose la ou les places réellement libres aux '
-  'premiers `waiting` (seulement si le créneau est ouvert, à venir, d''une '
-  'activité active et d''une organisation portant le droit `vitrine`). '
+  'premiers `waiting` NON PURGÉS (seulement si le créneau est ouvert, à venir, '
+  'd''une activité active et d''une organisation portant le droit `vitrine`). '
+  'Une entrée dont les données personnelles ont été purgées est SAUTÉE : son '
+  'empreinte vaut `purge:<id>`, que claim_waitlist_offer refuse — lui proposer '
+  'la place l''aurait gelée jusqu''à l''échéance sans que personne puisse la '
+  'prendre. '
   'INVARIANT TENU : réservations vivantes + offres vivantes <= capacité — donc '
   'au plus UNE offre par place libre. SUPPOSE QUE L''APPELANT DÉTIENT DÉJÀ le '
   'verrou d''avis (organisation + créneau) : elle ne le prend pas, pour que son '
@@ -1135,14 +1143,20 @@ grant execute on function public.cancel_reservation_staff(uuid, uuid, text)
 
 
 -- ────────────────────────────────────────────────────────────
--- 10. Les trois RPC de la liste, côté joueur
+-- 10. Les RPC de la liste — trois côté joueur, une côté commerce
 --
 -- Mêmes gardes de forme que `reserve_slot`, même verrou, mêmes refus
--- indistinguables. `waitlist_join` porte EN PLUS la garde qui fait tout le sens
--- de la file : ON NE S'INSCRIT QUE SUR UN CRÉNEAU RÉELLEMENT COMPLET. Sans
--- elle, la liste prioritaire deviendrait une seconde file d'attente parallèle
--- à la réservation ordinaire — deux chemins pour la même place, et un rang qui
--- ne veut plus rien dire.
+-- indistinguables. `waitlist_join` porte EN PLUS les deux gardes qui font tout
+-- le sens de la file : ON NE S'INSCRIT QUE SUR UN CRÉNEAU RÉELLEMENT COMPLET —
+-- sans quoi la liste prioritaire deviendrait une seconde file parallèle à la
+-- réservation ordinaire, deux chemins pour la même place et un rang qui ne veut
+-- plus rien dire — et LA FILE A UN PLAFOND, sans quoi la seule borne serait une
+-- ligne par cookie, c'est-à-dire aucune (revue de sécurité L5, E-1a).
+--
+-- La quatrième, `evict_waitlist_entry`, est le pendant commerçant de
+-- `waitlist_leave` : mêmes écritures, même re-proposition sous le même verrou,
+-- mais autorisation par APPARTENANCE (owner/editor) au lieu de possession, et
+-- geste audité. Elle est documentée à sa place, après le départ volontaire.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.waitlist_join(
@@ -1165,6 +1179,8 @@ declare
   v_email text;
   v_taken integer;
   v_held integer;
+  v_live integer;
+  v_plafond integer;
   v_position integer;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
@@ -1275,6 +1291,56 @@ begin
     );
   end if;
 
+  -- ── LA FILE A UN PLAFOND (revue de sécurité L5, E-1a) ──
+  --
+  -- Sans lui, la seule borne à `reservation_waitlist_entries` était l'unicité
+  -- (slot_id, player_key_hash) sur les états vivants — c'est-à-dire une ligne
+  -- par COOKIE, et un cookie se renouvelle à volonté. Un créneau complet
+  -- pouvait donc accumuler une file sans fin, chaque entrée portant en prime
+  -- une adresse et un consentement : le stockage de données personnelles était
+  -- non borné, et le rang annoncé au centième inscrit (« vous êtes 100e ») ne
+  -- signifiait plus rien pour personne.
+  --
+  -- `least(greatest(2 * capacité, 4), 50)` — trois bornes, trois raisons :
+  --   * DEUX FOIS la capacité : c'est le taux de désistement au-delà duquel une
+  --     file ne sert plus à remplir un créneau mais à faire patienter des gens
+  --     qui n'auront jamais de place. Proportionnel, parce qu'une file de dix
+  --     sur un créneau de vingt est saine et absurde sur un créneau d'un.
+  --   * PLANCHER À 4 : sur un créneau d'une place, `2 * 1 = 2` aurait fermé la
+  --     file au troisième arrivant, alors que c'est exactement la situation où
+  --     elle est la plus utile (une table de restaurant qui se libère).
+  --   * PLAFOND ABSOLU À 50 : au-delà, la promesse « chacun son tour, quelques
+  --     heures » ne tient plus dans la durée de vie du créneau, quelle que soit
+  --     sa capacité.
+  --
+  -- `least` et `greatest` restent NON QUALIFIÉS : ce sont des nœuds du parseur
+  -- et non des fonctions du catalogue — les préfixer échouerait à l'exécution
+  -- seulement (même réserve que dans `reservation_offer_next`, garde sql:check).
+  --
+  -- ON COMPTE LE MÊME ENSEMBLE QUE L'INDEX UNIQUE PARTIEL `…_live_idx` —
+  -- `waiting` ET `offered`, sans regarder l'échéance. Une offre échue que le
+  -- balayage n'a pas encore ramassée occupe toujours une LIGNE de la file ; la
+  -- décompter ici aurait fait dépendre le plafond de la ponctualité d'un cron,
+  -- alors que tout le reste de ce fichier s'en est explicitement affranchi.
+  select pg_catalog.count(*)::integer into v_live
+    from public.reservation_waitlist_entries w
+   where w.slot_id = p_slot_id
+     and w.status in ('waiting', 'offered');
+
+  v_plafond := least(greatest(2 * v_slot.capacity, 4), 50);
+
+  if v_live >= v_plafond then
+    -- ÉTAT PROPRE, PAS `unavailable`. Ce refus-ci n'est pas un refus muet : il
+    -- ne révèle rien qu'un visiteur ne voie déjà (le créneau est complet, sa
+    -- capacité est affichée) et il doit être DISTINGUABLE côté écran — « la
+    -- liste est pleine, revenez plus tard » est actionnable, « indisponible »
+    -- ne l'est pas.
+    return pg_catalog.jsonb_build_object(
+      'state', 'waitlist_full',
+      'capacity', v_plafond
+    );
+  end if;
+
   insert into public.reservation_waitlist_entries (
     slot_id, organization_id, player_key_hash, email, consent_transactional_at
   ) values (
@@ -1312,7 +1378,11 @@ comment on function public.waitlist_join(uuid, uuid, text, text, boolean) is
   'MÊME état muet `unavailable` pour les six refus, afin que la file ne devienne '
   'pas l''oracle que la réservation refuse d''être. Rend `not_full` (et le '
   'nombre de places restantes) si le créneau a encore de la place : on ne fait '
-  'pas la queue pour une place libre. Idempotente deux fois : `already_reserved` '
+  'pas la queue pour une place libre. PLAFONNE la file à '
+  '`least(greatest(2 × capacité, 4), 50)` entrées VIVANTES — le même ensemble '
+  'que l''index unique partiel, offre échue non encore balayée comprise — et '
+  'rend alors `waitlist_full` : sans cette borne, la seule limite était une '
+  'ligne par cookie, donc aucune. Idempotente deux fois : `already_reserved` '
   'si l''identité détient déjà une place, `already_waiting` avec son RANG si '
   'elle est déjà dans la file. Le rang est déduit de l''ordre d''inscription, '
   'jamais stocké. L''adresse n''est conservée QUE si `p_consent`.';
@@ -1339,9 +1409,17 @@ grant execute on function public.waitlist_join(uuid, uuid, text, text, boolean)
 --   * le créneau n'a pas COMMENCÉ. On ne rejoint pas une séance en cours.
 --   * l'activité est active, et l'organisation porte toujours le droit
 --     `vitrine`. Deux interrupteurs qui coupent tout le module.
---   * le STATUT DU CRÉNEAU N'EST PAS REVÉRIFIÉ, délibérément. L'offre EST
+--   * le créneau n'est pas REVENU EN BROUILLON. `draft` est refusé, `closed`
+--     accepté — exactement l'arbitrage de `redeem_invitation`, et pour la même
+--     raison (revue de sécurité L5, M-1) : « fermé » veut dire fermé AU PUBLIC,
+--     et l'offre comme l'invitation sont précisément les deux règles d'accès
+--     qui passent outre ; « brouillon » veut dire PAS CONFIGURÉ — un créneau
+--     qu'on est en train de refaire, dont l'horaire et la capacité peuvent
+--     encore bouger. Honorer une offre là-dessus donnerait une place sur un
+--     créneau que le commerçant ne considère pas comme existant.
+--   * LE STATUT N'EST REVÉRIFIÉ QUE POUR ÇA, et pas plus. L'offre reste
 --     l'autorisation : elle a été émise quand le créneau était ouvert, elle
---     tient au plus deux heures, et le commerçant qui ferme entre-temps tarit
+--     tient au plus deux heures, et le commerçant qui FERME entre-temps tarit
 --     les offres SUIVANTES (`reservation_offer_next` exige `open`) sans
 --     reprendre celle qu'on vient de promettre à quelqu'un.
 -- ────────────────────────────────────────────────────────────
@@ -1447,7 +1525,12 @@ begin
    where a.id = v_slot.activity_id
      and a.organization_id = v_slot.organization_id;
 
+  -- `not in ('open', 'closed')` PLUTÔT QUE `= 'draft'` : la formule est
+  -- recopiée de `redeem_invitation`, et elle est celle qui survit à l'ajout
+  -- d'un quatrième statut — le jour où il en naît un, il sera refusé par
+  -- défaut, ce qui est le bon sens de la garde.
   if not coalesce(v_activity_active, false)
+     or v_slot.status not in ('open', 'closed')
      or v_slot.starts_at <= pg_catalog.now()
      or not public.org_has_module_access(v_slot.organization_id, 'vitrine')
   then
@@ -1524,9 +1607,12 @@ comment on function public.claim_waitlist_offer(uuid, uuid, text) is
   'un créneau commencé, une activité coupée ou une organisation sans droit '
   '`vitrine`, et `unknown` — indistinctement — pour une entrée inconnue, d''une '
   'AUTRE organisation ou d''une autre identité. Idempotente : rejouée, elle rend '
-  'la même réservation et le même code. Le STATUT du créneau n''est pas '
-  'revérifié : l''offre EST l''autorisation, et fermer un créneau tarit les '
-  'offres suivantes sans reprendre celle qui est promise.';
+  'la même réservation et le même code. Le créneau `draft` est REFUSÉ et le '
+  'créneau `closed` ACCEPTÉ, même arbitrage que redeem_invitation : « fermé » '
+  'veut dire fermé AU PUBLIC — et l''offre est justement l''autre règle d''accès '
+  '— tandis que « brouillon » veut dire PAS CONFIGURÉ. Le statut n''est '
+  'revérifié QUE pour cela : fermer un créneau tarit les offres suivantes sans '
+  'reprendre celle qui est déjà promise.';
 
 revoke all on function public.claim_waitlist_offer(uuid, uuid, text)
   from public, anon, authenticated;
@@ -1651,6 +1737,198 @@ comment on function public.waitlist_leave(uuid, text) is
 revoke all on function public.waitlist_leave(uuid, text)
   from public, anon, authenticated;
 grant execute on function public.waitlist_leave(uuid, text)
+  to service_role;
+
+
+-- ── `evict_waitlist_entry` — retirer quelqu'un de la file ────
+--
+-- ── POURQUOI CE GESTE EXISTE MAINTENANT (revue de sécurité L5, E-1b) ──
+--
+-- Il était explicitement écarté de la première rédaction de ce fichier, au
+-- motif qu'« une offre en cours meurt d'elle-même en deux heures au plus » et
+-- que « fermer le créneau tarit les offres SUIVANTES ». Les deux restent vrais
+-- et ne suffisent pas : ils décrivent l'extinction NATURELLE d'une file, pas le
+-- cas où le commerçant doit en retirer QUELQU'UN — un doublon manifeste, une
+-- inscription abusive, une personne qui appelle pour se désister sans retrouver
+-- son lien. Sans ce geste, la seule issue était d'attendre, ou de fermer le
+-- créneau pour tout le monde. La contrepartie a été rendue explicite : le geste
+-- est audité, réservé à owner/editor, et il REND LA PLACE plutôt que de la
+-- garder — un commerçant ne peut pas s'en servir pour doubler sa propre file.
+--
+-- ── LE CAS QUI DEMANDE DE L'ATTENTION : ÉVINCER QUELQU'UN QUI TIENT L'OFFRE ──
+--
+-- L'entrée `offered` est celle pour qui une place est actuellement TENUE.
+-- L'évincer sans plus rien faire aurait laissé cette place comptée nulle part :
+-- ni réservée, ni tenue, ni proposée — récupérable seulement par le prochain
+-- passage du balayage, qui ne regarde QUE les offres échues et ne serait donc
+-- jamais revenu sur ce créneau. La place serait restée perdue jusqu'à
+-- l'annulation suivante. `reservation_offer_next` est donc appelée APRÈS
+-- l'écriture, SOUS LE VERROU déjà détenu — même geste, même ordre et même
+-- raison que dans `waitlist_leave` et les deux annulations.
+--
+-- ── IDEMPOTENTE, ET MUETTE SUR LE VOISIN ──
+--
+-- Les trois états terminaux se rendent tels quels sans rien réécrire (le
+-- trigger de la section 5 refuserait de toute façon), et le filtre org-scopé
+-- rend `unknown` indistinctement pour une entrée inconnue et pour celle d'une
+-- AUTRE organisation : un commerçant ne doit pas apprendre, en tapant des
+-- identifiants, que la file du voisin existe.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.evict_waitlist_entry(
+  p_organization_id uuid,
+  p_entry_id uuid,
+  p_actor text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_actor_id uuid;
+  v_slot_id uuid;
+  v_entry public.reservation_waitlist_entries%rowtype;
+  v_was_offered boolean;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_organization_id is null then
+    raise exception 'organization required' using errcode = '22023';
+  end if;
+  -- MÊME GARDE DE FORME QUE `cancel_reservation_staff`, mot pour mot : l'acteur
+  -- vient de la session de l'appelant et sa forme est vérifiée AVANT le cast,
+  -- pour qu'une valeur libre ne fasse pas lever un 22P02 illisible.
+  if p_actor is null
+     or p_actor <> pg_catalog.btrim(p_actor)
+     or p_actor !~
+       '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+  then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  v_actor_id := p_actor::uuid;
+
+  -- OWNER/EDITOR SEULEMENT, et tranché EN SQL. Le caissier en est exclu pour la
+  -- raison exacte de l'annulation staff : retirer quelqu'un de la file lui
+  -- retire un rang qu'il ne verra pas disparaître, c'est un geste de gestion et
+  -- pas de comptoir.
+  if not exists (
+    select 1
+      from public.organization_members om
+     where om.organization_id = p_organization_id
+       and om.user_id = v_actor_id
+       and om.role in ('owner', 'editor')
+  ) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- Lecture HORS VERROU pour connaître le créneau — l'autre moitié de la clé.
+  -- Rien n'est décidé dessus : tout est relu sous le verrou.
+  select w.slot_id into v_slot_id
+    from public.reservation_waitlist_entries w
+   where w.id = p_entry_id
+     and w.organization_id = p_organization_id;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unknown');
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'reservation_slot:' || p_organization_id::text || ':' || v_slot_id::text,
+      0)
+  );
+
+  select w.* into v_entry
+    from public.reservation_waitlist_entries w
+   where w.id = p_entry_id
+     and w.organization_id = p_organization_id;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unknown');
+  end if;
+
+  -- LES TROIS ÉTATS TERMINAUX, RENDUS TELS QUELS ET SANS AUDIT. Ce ne sont pas
+  -- des refus d'autorisation : il n'y a simplement plus rien à retirer, et
+  -- journaliser « ce responsable a évincé » sur un clic qui n'a rien écrit
+  -- ferait mentir le registre.
+  if v_entry.status = 'converted' then
+    return pg_catalog.jsonb_build_object(
+      'state', 'converted',
+      'entry_id', v_entry.id,
+      'reservation_id', v_entry.converted_reservation_id
+    );
+  end if;
+  if v_entry.status = 'expired' then
+    return pg_catalog.jsonb_build_object(
+      'state', 'expired',
+      'entry_id', v_entry.id,
+      'offer_expires_at', v_entry.offer_expires_at
+    );
+  end if;
+  -- Déjà partie — de son fait ou d'un premier clic. MÊME MOT que le geste
+  -- réussi : l'appelant n'a qu'un cas à traiter, et `cancelled_at` n'est pas
+  -- repoussée.
+  if v_entry.status = 'cancelled' then
+    return pg_catalog.jsonb_build_object(
+      'state', 'evicted',
+      'entry_id', v_entry.id,
+      'cancelled_at', v_entry.cancelled_at
+    );
+  end if;
+
+  v_was_offered := v_entry.status = 'offered';
+
+  update public.reservation_waitlist_entries
+     set status = 'cancelled',
+         cancelled_at = pg_catalog.now()
+   where id = v_entry.id
+  returning * into v_entry;
+
+  -- ELLE TENAIT UNE PLACE : elle repart au suivant IMMÉDIATEMENT, sous le
+  -- verrou pris plus haut. Sans cette ligne, la place n'aurait été ni réservée,
+  -- ni tenue, ni proposée — et le balayage, qui ne regarde que les offres
+  -- ÉCHUES, ne serait jamais revenu la chercher.
+  if v_was_offered then
+    perform public.reservation_offer_next(p_organization_id, v_slot_id);
+  end if;
+
+  insert into public.audit_logs (organization_id, actor, action, metadata)
+  values (p_organization_id, p_actor, 'reservation.waitlist_evict',
+          pg_catalog.jsonb_build_object(
+            'entry_id', v_entry.id,
+            'slot_id', v_slot_id,
+            -- CE QUE LE JOURNAL RETIENT, ET CE QU'IL NE RETIENT PAS : l'état
+            -- d'où l'on sortait — retirer quelqu'un qui tenait une place n'est
+            -- pas le même geste que retirer un simple inscrit — mais NI
+            -- l'adresse NI l'empreinte du cookie, qui n'ont rien à faire dans
+            -- une table qu'aucune purge ne réécrit.
+            'was_offered', v_was_offered));
+
+  return pg_catalog.jsonb_build_object(
+    'state', 'evicted',
+    'entry_id', v_entry.id,
+    'cancelled_at', v_entry.cancelled_at
+  );
+end;
+$$;
+
+comment on function public.evict_waitlist_entry(uuid, uuid, text) is
+  'Retire une personne de la liste prioritaire AU NOM DU COMMERCE (RES-2, revue '
+  'de sécurité L5). Org-scopée, acteur obligatoire et vérifié membre '
+  'owner/editor EN SQL (le caissier en est exclu : retirer un rang est un geste '
+  'de gestion, pas de comptoir), idempotente, auditée sous '
+  '`reservation.waitlist_evict` SUR LE SEUL GESTE RÉEL. Accepte une entrée '
+  '`waiting` comme une entrée `offered` : si la personne TENAIT une place, '
+  'celle-ci est immédiatement re-proposée au suivant par reservation_offer_next, '
+  'SOUS LE MÊME verrou d''avis — sans quoi elle ne serait ni réservée, ni tenue, '
+  'ni proposée, et le balayage (qui ne regarde que les offres échues) ne serait '
+  'jamais revenu la chercher. Rend `converted` ou `expired` — sans écrire — sur '
+  'une entrée déjà terminée, et `unknown` INDISTINCTEMENT pour une entrée '
+  'inconnue et pour celle d''une AUTRE organisation.';
+
+revoke all on function public.evict_waitlist_entry(uuid, uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.evict_waitlist_entry(uuid, uuid, text)
   to service_role;
 
 

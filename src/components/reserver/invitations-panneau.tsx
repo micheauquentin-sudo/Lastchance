@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { isoToZonedDateTimeInput } from "@/lib/date-time";
 import {
   formatCreneau,
   RESERVER_INVITATION_LABEL_MAX,
@@ -147,15 +148,6 @@ function NouvelleInvitationForm({
    */
   const [lien, setLien] = useState<string | null>(null);
 
-  const { state, pending, onSubmit } = useActionForm(createInvitation, {
-    resetOnSuccess: true,
-    // L'URL COMPLÈTE VIENT DE LA SERVER ACTION, pas d'une recomposition ici :
-    // elle seule connaît `APP_URL`, et deux façons de fabriquer la même adresse
-    // divergeraient au premier changement de domaine.
-    onSuccess: (data) => setLien(data.url),
-    networkError: "Création impossible, réessayez.",
-  });
-
   // Un créneau passé ne peut plus être ouvert par une invitation
   // (`redeem_invitation` refuse `starts_at <= now()`) : le proposer en cible
   // serait offrir un choix qui n'aboutira jamais.
@@ -168,6 +160,53 @@ function NouvelleInvitationForm({
   const cibles = creneaux.filter(
     (creneau) => Date.parse(creneau.startsAt) > maintenant,
   );
+
+  /**
+   * L'ÉCHÉANCE PROPOSÉE POUR UNE INVITATION À TOUTE L'ACTIVITÉ (revue L5, I-2).
+   *
+   * ── POURQUOI ELLE NE VAUT QUE POUR CETTE CIBLE-LÀ ──
+   *
+   * Une invitation à UN CRÉNEAU porte déjà sa propre fin : le créneau commence,
+   * et `redeem_invitation` refuse. Une invitation à TOUTE L'ACTIVITÉ, elle, n'a
+   * aucune borne naturelle — elle survit à chaque créneau qu'elle a servi et
+   * reste ouverte tant qu'il lui reste un usage. Sans échéance, un lien envoyé
+   * à quinze habitués en mars ouvre encore des places en décembre, et c'est
+   * précisément la forme d'invitation qu'on retrouve six mois plus tard dans un
+   * fil de messages.
+   *
+   * ── PROPOSÉE, PAS IMPOSÉE ──
+   *
+   * Le champ reste modifiable ET VIDABLE : « sans échéance » demeure un choix
+   * légitime, la RPC l'accepte, et une valeur qu'on ne peut pas effacer n'est
+   * plus une suggestion mais une règle qui ne dit pas son nom. Dès que le
+   * commerçant y touche, la sélection de cible ne la réécrit plus — sinon
+   * changer d'avis sur la cible effacerait la date qu'il vient de taper.
+   */
+  const echeanceParDefaut = isoToZonedDateTimeInput(
+    new Date(maintenant + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    timeZone,
+  );
+  const [cible, setCible] = useState("");
+  const [echeance, setEcheance] = useState(echeanceParDefaut);
+  const [echeanceTouchee, setEcheanceTouchee] = useState(false);
+
+  const { state, pending, onSubmit } = useActionForm(createInvitation, {
+    resetOnSuccess: true,
+    // L'URL COMPLÈTE VIENT DE LA SERVER ACTION, pas d'une recomposition ici :
+    // elle seule connaît `APP_URL`, et deux façons de fabriquer la même adresse
+    // divergeraient au premier changement de domaine.
+    onSuccess: (data) => {
+      setLien(data.url);
+      // `resetOnSuccess` appelle `form.reset()`, qui ne rend au DOM que les
+      // `defaultValue` — il ne sait rien de ces deux états. Sans cette remise à
+      // zéro, la cible et l'échéance affichées seraient celles de l'invitation
+      // précédente, sur un formulaire que le commerçant vient de voir se vider.
+      setCible("");
+      setEcheance(echeanceParDefaut);
+      setEcheanceTouchee(false);
+    },
+    networkError: "Création impossible, réessayez.",
+  });
 
   return (
     <div className="rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]">
@@ -202,7 +241,17 @@ function NouvelleInvitationForm({
             <select
               id="invitation-cible"
               name="slotId"
-              defaultValue=""
+              value={cible}
+              onChange={(event) => {
+                const valeur = event.target.value;
+                setCible(valeur);
+                // Tant que le commerçant n'a pas touché à l'échéance, elle suit
+                // la cible : proposée sur « toute l'activité », effacée sur un
+                // créneau précis, qui porte déjà sa propre fin.
+                if (!echeanceTouchee) {
+                  setEcheance(valeur === "" ? echeanceParDefaut : "");
+                }
+              }}
               className={champSelect}
               aria-describedby="invitation-cible-aide"
             >
@@ -256,6 +305,11 @@ function NouvelleInvitationForm({
               id="invitation-expires"
               name="expiresAt"
               type="datetime-local"
+              value={echeance}
+              onChange={(event) => {
+                setEcheance(event.target.value);
+                setEcheanceTouchee(true);
+              }}
               aria-describedby="invitation-expires-aide"
             />
             <p
@@ -264,6 +318,24 @@ function NouvelleInvitationForm({
             >
               Heure de votre établissement. Sans échéance, l&apos;invitation reste
               valable jusqu&apos;à épuisement de ses places.
+              {cible === "" ? (
+                <>
+                  {" "}
+                  <strong className="text-k-ink">
+                    Trente jours vous sont proposés
+                  </strong>{" "}
+                  parce qu&apos;une invitation à toute l&apos;activité n&apos;a
+                  pas de fin naturelle : elle survit à chaque créneau qu&apos;elle
+                  a servi. Modifiez cette date, ou videz le champ si vous voulez
+                  vraiment un lien sans échéance.
+                </>
+              ) : (
+                <>
+                  {" "}
+                  Sur un créneau précis, elle s&apos;arrête de toute façon quand
+                  le créneau commence.
+                </>
+              )}
             </p>
           </div>
         </div>

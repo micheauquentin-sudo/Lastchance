@@ -18,6 +18,7 @@ import {
   mapClaimWaitlistOffer,
   mapCloseInvitation,
   mapCreateInvitation,
+  mapEvictWaitlistEntry,
   mapRedeemInvitation,
   mapReservationPublicState,
   mapReserveSlot,
@@ -31,6 +32,7 @@ import {
   type CheckinReservationResult,
   type ClaimWaitlistOfferResult,
   type CloseInvitationResult,
+  type EvictWaitlistEntryResult,
   type RedeemInvitationResult,
   type ReservationPublicState,
   type ReserveSlotResult,
@@ -58,6 +60,7 @@ import {
   createReserverActivitySchema,
   createReserverInvitationSchema,
   createReserverSlotSchema,
+  evictWaitlistEntrySchema,
   loadMyReservationsSchema,
   redeemInvitationSchema,
   reserveSlotSchema,
@@ -1171,6 +1174,61 @@ export async function cancelReservationStaff(
     // le même jsonb aurait dérivé de celle-ci au premier état ajouté.
     revalidatePath("/dashboard/reservations");
     return { ok: true as const, data: mapCancelReservation(data) };
+  });
+}
+
+/**
+ * RETIRER QUELQU'UN DE LA LISTE PRIORITAIRE — le second geste qui manquait.
+ *
+ * ── LE DÉFAUT QU'IL FERME (revue de sécurité L5, E-1b) ──
+ *
+ * La file n'avait aucun geste commerçant. Le SQL l'assumait — « une offre meurt
+ * d'elle-même en deux heures au plus » — ce qui décrit l'extinction NATURELLE
+ * d'une file et non le retrait de QUELQU'UN : un doublon manifeste, une
+ * inscription abusive, un désistement téléphonique de la part de qui a perdu son
+ * lien. Les seules issues étaient d'attendre, ou de fermer le créneau pour tout
+ * le monde.
+ *
+ * ── CE QUE CETTE ACTION NE DÉCIDE PAS ──
+ *
+ * Ni l'appartenance, ni le rôle, ni l'organisation de l'entrée :
+ * `evict_waitlist_entry` revérifie TOUT en SQL, et c'est elle qui re-propose la
+ * place au suivant sous le verrou d'avis. La garde ci-dessous sert à rendre un
+ * message utile au commerçant, pas à tenir la porte — une server action reste
+ * POSTable en direct.
+ */
+export async function evictWaitlistEntry(
+  _prev: ActionResult<EvictWaitlistEntryResult> | null,
+  formData: FormData,
+): Promise<ActionResult<EvictWaitlistEntryResult>> {
+  const parsed = evictWaitlistEntrySchema.safeParse({
+    entryId: formData.get("entryId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.waitlist-evict", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("evict_waitlist_entry", {
+      p_organization_id: garde.organizationId,
+      p_entry_id: parsed.data.entryId,
+      // DE LA SESSION. Jamais du corps de la requête.
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.waitlist-evict", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    // AUCUN EMAIL, comme à l'inscription : rien n'avait été promis à cette
+    // personne — ni une place, ni une date — et lui écrire pour lui annoncer
+    // qu'elle n'est plus dans une file où elle n'a peut-être jamais su qu'elle
+    // était classée serait un message que le module n'a pas à envoyer.
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: mapEvictWaitlistEntry(data) };
   });
 }
 
