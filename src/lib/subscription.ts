@@ -1,7 +1,7 @@
 import type { Organization, SubscriptionStatus } from "@/types/database";
 
 /**
- * Les neuf modules qui peuvent porter un octroi daté. Miroir du `check` de
+ * Les dix modules qui peuvent porter un octroi daté. Miroir du `check` de
  * `organization_module_grants.module` et du `if not in` de
  * `org_has_module_access` — les trois listes sont comparées entre elles par
  * `supabase/tests/module_grants.test.sql`, dans le catalogue vivant.
@@ -16,6 +16,14 @@ export const GRANTABLE_MODULES = [
   "events",
   "referral",
   "pronostics",
+  /**
+   * Vitrine & Réserver (lot L2, migration 20261001120000). Octroyable comme
+   * les autres — c'est ce qui la rend accordable depuis le back-office, dont
+   * le formulaire dérive sa liste d'ici — mais elle n'a NI ressource
+   * publiable, NI offre au catalogue : les gardes qui énumèrent l'une ou
+   * l'autre l'exemptent nommément plutôt que par un vide.
+   */
+  "vitrine",
 ] as const;
 
 /**
@@ -202,9 +210,17 @@ export function pastDueGraceEndsAt(org: OrgAccessFields): Date | null {
  * `wheel` est à `null` et ce n'est pas un oubli : la roue est le produit de
  * base, aucun add-on ne la conditionne, seul l'abonnement compte. Écrire
  * `null` plutôt que d'omettre la clé oblige `satisfies` à le constater.
+ *
+ * `vitrine` est à `null` POUR UNE AUTRE RAISON, et il faut les distinguer :
+ * elle n'est pas le produit de base, elle n'est simplement pas vendue comme
+ * ligne d'abonnement — aucune colonne `addon_vitrine` n'existe. Pendant la
+ * bêta elle ne s'ouvre que par un octroi daté accordé au back-office ; le
+ * `null` dit « aucun booléen ne la conditionne », et la branche d'offre en
+ * amont refuse déjà qui n'a pas d'abonnement vivant.
  */
 export const MODULE_ADDON_COLUMN = {
   wheel: null,
+  vitrine: null,
   hunts: "addon_hunts",
   calendar: "addon_calendar",
   loyalty: "addon_loyalty",
@@ -282,7 +298,10 @@ export function droitEffectifModule<M extends GrantableModule>(
   if (!hasSubscriptionAccess(org, now)) return false;
 
   const colonne = MODULE_ADDON_COLUMN[module];
-  // `wheel` : aucun add-on ne la conditionne, l'accès actif suffit.
+  // `wheel` et `vitrine` : aucun add-on ne les conditionne, l'offre suffit.
+  // Les deux `null` n'ont pas le même motif — produit de base d'un côté, module
+  // non vendu comme ligne d'abonnement de l'autre — mais ils décident pareil,
+  // et le SQL écrit `then true` pour les deux (voir MODULE_ADDON_COLUMN).
   if (colonne === null) return true;
   // unsafe-cast-justification: lecture par clé DYNAMIQUE d'une colonne dont le nom vient de MODULE_ADDON_COLUMN, jamais de l'appelant. Trois choses rendent ce cast sûr, et aucune n'est une intention : ChampsModule<M> oblige tsc a exiger cette colonne exacte chez chaque appelant, MODULE_ADDON_COLUMN est `satisfies Record<GrantableModule, keyof Organization | null>` donc le nom est une clé reelle d'Organization, et module-access-parity.test.ts compare la table au `case p_module` LU dans la migration. Un acces statique demanderait neuf branches recopiant la table que la garde derive deja.
   return (org as unknown as Record<string, boolean>)[colonne] === true;

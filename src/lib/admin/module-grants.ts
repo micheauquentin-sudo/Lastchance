@@ -222,6 +222,7 @@ export const LIBELLE_MODULE: Record<string, string> = {
   events: "Soirée en jeu",
   referral: "Bouche-à-oreille",
   pronostics: "Saison de pronostics",
+  vitrine: "Vitrine & Réserver",
 };
 
 /**

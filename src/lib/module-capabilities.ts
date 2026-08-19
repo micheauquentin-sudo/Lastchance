@@ -146,6 +146,7 @@ const NOM_MODULE: Record<GrantableModule, string> = {
   events: "la soirée en jeu",
   referral: "le bouche-à-oreille",
   pronostics: "la saison de pronostics",
+  vitrine: "la vitrine et l'agenda Réserver",
 };
 
 export function capacitesModule(entree: EntreeCapacites): CapacitesModule {
