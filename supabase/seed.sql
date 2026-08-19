@@ -617,7 +617,7 @@ insert into public.event_questions (
   id, game_id, organization_id, position, question_type, prompt, time_limit_seconds, points_base
 ) values
   ('e2ed0000-0000-4000-8000-000000000011', 'e2ed0000-0000-4000-8000-000000000001',
-   'e2e10000-0000-4000-8000-000000000001', 0, 'quiz', 'Capitale de la France ?', 20, 1000),
+   'e2e10000-0000-4000-8000-000000000001', 0, 'quiz', 'Capitale de la France ?', 90, 1000),
   ('e2ed0000-0000-4000-8000-000000000012', 'e2ed0000-0000-4000-8000-000000000001',
    'e2e10000-0000-4000-8000-000000000001', 1, 'poll', 'Bière préférée ?', 30, 1000),
   ('e2ed0000-0000-4000-8000-000000000013', 'e2ed0000-0000-4000-8000-000000000001',
