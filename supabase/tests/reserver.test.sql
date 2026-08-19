@@ -5,8 +5,8 @@
 --
 --   1. CAPACITÉ. Un créneau d'une place n'en donne qu'une, et le refus est
 --      `full`. Le verrou d'avis est VÉRIFIÉ DANS `pg_locks`, sur la clé exacte
---      du créneau — voir la réserve ci-dessous sur ce que « concurrence » peut
---      vouloir dire dans un fichier pgTAP.
+--      — ORGANISATION ET créneau — voir la réserve ci-dessous sur ce que
+--      « concurrence » peut vouloir dire dans un fichier pgTAP.
 --   2. IDEMPOTENCE. Re-réserver rend `already_reserved` ET LE MÊME CODE, sans
 --      créer de seconde ligne. Annuler deux fois ne repousse pas `cancelled_at`.
 --      Valider une arrivée deux fois ne la valide qu'une, et `checked_in_now`
@@ -27,15 +27,20 @@
 --      PERSONNE en session marchande.
 --   6. LE DROIT `vitrine`. Une organisation qui ne l'a pas ne prend aucune
 --      réservation, même sur un créneau parfaitement ouvert.
---   7. LA FENÊTRE DE CHECK-IN. Trois semaines avant, ou trois jours après, le
+--   7. LA FENÊTRE DE CHECK-IN. Trois jours avant, ou trois jours après, le
 --      code ne s'échange pas : `too_early` / `too_late`, et la réservation
---      n'est PAS consommée.
+--      n'est PAS consommée. MAIS LE CRÉNEAU NOCTURNE, LUI, S'ARRIVE : la
+--      journée civile de `starts_at` se ferme avant la fin d'une séance qui
+--      franchit minuit, et la seconde borne (`ends_at + 2 h`) la rattrape.
 --   8. L'ADRESSE NE SURVIT PAS AU CONSENTEMENT. Sans consentement elle n'est
 --      pas stockée du tout ; passé la rétention, elle, son consentement ET le
 --      lien à l'appareil s'effacent — la ligne, elle, reste, et un second
 --      passage ne réécrit rien. La valeur de remplacement est un MARQUEUR, pas
 --      une empreinte dérivée de l'identifiant : une ligne purgée ne se rouvre
 --      donc pas en recalculant sa clé depuis son `id`.
+--   9. UNE SEULE SIGNATURE PAR RPC dans le catalogue. Ce fichier de migration a
+--      été réécrit en place ; une base l'ayant vu en version antérieure doit
+--      avoir perdu l'ancienne `reserve_slot`, celle SANS borne de locataire.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -59,6 +64,13 @@
 -- donc à ±3 JOURS, où aucune heure d'exécution ne change la réponse ; celles
 -- qui doivent être DANS la fenêtre et encore réservables tiennent dans
 -- l'intersection étroite des deux règles — `starts_at` dans l'heure qui vient.
+--
+-- LE CRÉNEAU NOCTURNE (S11) EST ANCRÉ SUR MINUIT LOCAL, pas écrit en dur. Un
+-- littéral « 23 h → 1 h » ne serait dans la fenêtre qu'entre minuit et 3 h du
+-- matin : le fichier passerait la nuit et rougirait le jour. Ancré sur
+-- `date_trunc('day', ...)` dans le fuseau de l'organisation, il porte à TOUTE
+-- HEURE la seule propriété qui compte — une journée civile de `starts_at` déjà
+-- close, et une fin de séance encore dans les deux heures.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -177,7 +189,19 @@ values
   ('4e5e0000-0000-4000-8000-000000000310',
    '4e5e0000-0000-4000-8000-000000000201',
    '4e5e0000-0000-4000-8000-00000000000a',
-   now() + interval '45 minutes', now() + interval '105 minutes', 4, 'open');
+   now() + interval '45 minutes', now() + interval '105 minutes', 4, 'open'),
+  -- S11 : LE CRÉNEAU NOCTURNE — celui que l'ancienne borne fermait au milieu de
+  -- lui-même. Il commence UNE HEURE AVANT MINUIT LOCAL (donc « 23 h », la
+  -- veille au sens civil) et se termine il y a une demi-heure : sa journée
+  -- civile est close depuis minuit — l'ancienne borne rendait donc `too_late` —
+  -- mais sa fin est, elle, à moins de deux heures. Voir la note sur l'ancrage en
+  -- tête de fichier : ces deux propriétés tiennent à 0 h 30 comme à 14 h.
+  ('4e5e0000-0000-4000-8000-000000000311',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   (date_trunc('day', now() at time zone 'Europe/Paris')
+     at time zone 'Europe/Paris') - interval '1 hour',
+   now() - interval '30 minutes', 3, 'open');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -213,9 +237,14 @@ select ok(
 -- LE VERROU EST RÉELLEMENT DÉTENU, et sur LA clé du créneau. Sans cette
 -- assertion, retirer le `pg_advisory_xact_lock` de reserve_slot laisserait
 -- tout ce fichier au vert : en session unique, le comptage seul suffit.
+-- LA CLÉ PORTE L'ORGANISATION, pas le créneau seul : dans ce socle, tout ce qui
+-- désigne un objet le fait sous son locataire, et l'espace de noms des verrous
+-- ne fait pas exception. `cancel_reservation` construit LA MÊME — sans quoi les
+-- deux RPC prendraient deux verrous distincts et cesseraient de se sérialiser.
 with k as (
   select pg_catalog.hashtextextended(
-    'reservation_slot:' || '4e5e0000-0000-4000-8000-000000000301', 0) as v
+    'reservation_slot:' || '4e5e0000-0000-4000-8000-00000000000a'
+      || ':' || '4e5e0000-0000-4000-8000-000000000301', 0) as v
 )
 select ok(
   exists (
@@ -225,7 +254,7 @@ select ok(
        and l.classid::bigint = ((k.v >> 32) & 4294967295)
        and l.objid::bigint = (k.v & 4294967295)
   ),
-  'CAP-6 le verrou d''avis du créneau est détenu par la transaction');
+  'CAP-6 le verrou d''avis (organisation + créneau) est détenu par la transaction');
 
 -- Un AUTRE joueur, même créneau : la place est prise.
 select is(
@@ -603,6 +632,44 @@ select results_eq(
   array[1::bigint],
   'FEN-7 aucun des deux refus de fenêtre n''a écrit au journal d''audit');
 
+-- ── LE CRÉNEAU NOCTURNE S'ARRIVE, LUI ────────────────────────
+-- LE DÉFAUT QUE CES QUATRE ASSERTIONS FERMENT : la fermeture de la fenêtre
+-- valait « fin de la journée civile de `starts_at` », et cette borne TOMBE AU
+-- MILIEU d'une séance qui franchit minuit. Une dégustation de 23 h à 1 h
+-- n'acceptait donc plus personne passé 0 h — pendant la moitié de sa durée, et
+-- justement aux heures où ce genre de séance se remplit. La fermeture est
+-- désormais la PLUS TARDIVE des deux bornes, et `ends_at + 2 h` rattrape la
+-- journée civile exactement dans ce cas-là.
+--
+-- La ligne est posée à la main : `reserve_slot` refuse un créneau commencé, et
+-- c'est justement l'état d'après qu'on veut examiner.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash)
+values ('4e5e0000-0000-4000-8000-000000000504',
+        '4e5e0000-0000-4000-8000-000000000311',
+        '4e5e0000-0000-4000-8000-00000000000a', repeat('b8', 32));
+
+create temporary table rv_nuit as
+select * from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select code from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000504'),
+  '4e5e0000-0000-4000-8000-000000000102');
+
+select is((select window_state from rv_nuit), 'ok',
+  'FEN-8 NOCTURNE un créneau qui franchit minuit reste dans la fenêtre après '
+  'minuit — sa journée civile est close, sa séance ne l''est pas');
+select ok((select checked_in_now from rv_nuit),
+  'FEN-9 et l''arrivée compte réellement, ce n''est pas un simple état rendu');
+select is((select status from rv_nuit), 'checked_in',
+  'FEN-10 la réservation est bien consommée');
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.checkin'$$,
+  array[2::bigint],
+  'FEN-11 le journal d''audit enregistre cette seconde arrivée, elle');
+
 -- ── LE CRÉNEAU COMMENCÉ NE SE DÉSISTE PLUS ───────────────────
 select is(
   (public.cancel_reservation(
@@ -613,6 +680,47 @@ select is(
   (select status from public.reservations
     where id = '4e5e0000-0000-4000-8000-000000000503'),
   'confirmed', 'ANN-9 et la ligne n''a pas bougé');
+
+-- ── ANNULÉE, PUIS RE-ANNULÉE, SUR UN CRÉNEAU DÉJÀ COMMENCÉ ───
+-- L'ORDRE DES DEUX REFUS EST LE SUJET, et il n'est pas décoratif :
+-- `cancel_reservation` évalue l'idempotence AVANT `too_late`. Interverti, une
+-- réservation DÉJÀ ANNULÉE dont le créneau a commencé se serait entendu
+-- répondre « trop tard » — c'est-à-dire qu'elle est encore due — et le joueur
+-- qui avait pourtant annulé à temps serait passé pour un no-show, dans sa propre
+-- interface comme dans les statistiques du commerçant. Il ne peut jamais y avoir
+-- de `too_late` sur une place déjà rendue.
+--
+-- La ligne est posée annulée à la main : la RPC refuserait (`too_late`) de
+-- l'annuler une première fois sur un créneau commencé — c'est ANN-8 — et c'est
+-- l'état d'APRÈS qu'on veut examiner.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash, status, cancelled_at)
+values ('4e5e0000-0000-4000-8000-000000000505',
+        '4e5e0000-0000-4000-8000-000000000303',
+        '4e5e0000-0000-4000-8000-00000000000a', repeat('b9', 32),
+        'cancelled', now() - interval '3 hours');
+
+create temporary table rv_c3 as
+select public.cancel_reservation(
+  '4e5e0000-0000-4000-8000-000000000505', repeat('b9', 32)) as j;
+select is((select j->>'state' from rv_c3), 'cancelled',
+  'ANN-10 annuler une réservation DÉJÀ annulée d''un créneau commencé rend '
+  'l''annulation, jamais `too_late`');
+
+create temporary table rv_c4 as
+select public.cancel_reservation(
+  '4e5e0000-0000-4000-8000-000000000505', repeat('b9', 32)) as j;
+select is((select j->>'state' from rv_c4), 'cancelled',
+  'ANN-11 et le passage suivant non plus');
+select is(
+  (select r.cancelled_at from public.reservations r
+    where r.id = '4e5e0000-0000-4000-8000-000000000505'),
+  now() - interval '3 hours',
+  'ANN-12 l''horodatage d''annulation d''origine n''est repoussé par aucun des deux');
+select is(
+  (select status from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000505'),
+  'cancelled', 'ANN-13 et la ligne reste annulée, sans réécriture');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -799,6 +907,30 @@ select ok(not has_table_privilege('authenticated',
   'public.reservation_slots', 'DELETE'),
   'ACL-21 un créneau non plus : `status = closed` ferme sans rien effacer');
 
+-- ── UNE SEULE SIGNATURE PAR RPC ──────────────────────────────
+-- La migration 20261002120000 a été RÉÉCRITE EN PLACE. Une base qui en avait
+-- appliqué la version antérieure porterait encore
+-- `reserve_slot(uuid, text, text, boolean)` — celle SANS borne de locataire —
+-- À CÔTÉ de la nouvelle : Postgres distingue les fonctions par leurs types
+-- d'arguments, un `create or replace` n'écrase pas l'autre, et un appel à
+-- quatre arguments se résoudrait sur l'ancienne. Les `drop function if exists`
+-- en tête de la section RPC l'en débarrassent ; ces deux assertions vérifient
+-- qu'il n'en reste QU'UNE. Elles ne coûtent rien sur base fraîche — et ce sont
+-- les seules qui distingueraient une base réécrite d'une base saine.
+select results_eq(
+  $$select count(*) from pg_catalog.pg_proc p
+      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'reserve_slot'$$,
+  array[1::bigint],
+  'ACL-22 le catalogue ne porte QU''UNE signature de reserve_slot');
+select results_eq(
+  $$select count(*) from pg_catalog.pg_proc p
+      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'checkin_reservation'$$,
+  array[1::bigint],
+  'ACL-23 et qu''une seule de checkin_reservation, dont le type de retour a '
+  'changé — `create or replace` seul aurait fait échouer la migration');
+
 
 -- ════════════════════════════════════════════════════════════
 -- 9. RLS — le voisin ne voit rien, le caissier voit son comptoir
@@ -830,13 +962,14 @@ select results_eq(
   array[0::bigint],
   'RLS-3 ni aucun de ses créneaux');
 
--- Cinq réservations chez A à ce stade : Alice (annulée) et son remplaçant sur
--- S1, Dora (arrivée) sur S2, le « trop tôt » sur S8, le « trop tard » sur S9.
+-- Sept réservations chez A à ce stade : Alice (annulée) et son remplaçant sur
+-- S1, Dora (arrivée) sur S2, le « trop tôt » sur S8, le « trop tard » sur S9,
+-- l'arrivée NOCTURNE sur S11, et l'annulée d'un créneau commencé sur S3.
 set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000102';
 select results_eq(
   $$select count(*) from public.reservations
      where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
-  array[5::bigint],
+  array[7::bigint],
   'RLS-4 le CAISSIER voit les réservations de son organisation (écran de comptoir)');
 select results_eq(
   $$select count(*) from public.reservation_activities

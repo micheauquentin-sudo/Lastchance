@@ -149,8 +149,9 @@ comment on table public.reservation_slots is
   'Créneau à capacité FINIE d''une activité réservable. `starts_at`/`ends_at` '
   'sont des instants absolus : le fuseau de l''organisation (organizations.timezone) '
   'est un rendu, jamais une donnée du créneau. La capacité n''est jamais '
-  'décomptée ici — elle se déduit des réservations `confirmed`, sous verrou '
-  'd''avis, dans reserve_slot.';
+  'décomptée ici — elle se déduit des réservations VIVANTES, c''est-à-dire '
+  '`confirmed` ET `checked_in` (une arrivée occupe la place qu''elle honore : '
+  'le check-in ne libère rien), sous verrou d''avis, dans reserve_slot.';
 comment on column public.reservation_slots.status is
   'draft (invisible du joueur) → open (réservable) → closed (le commerçant a '
   'fermé les inscriptions). Fermer ne touche à AUCUNE réservation déjà '
@@ -438,6 +439,36 @@ grant select (
 
 
 -- ────────────────────────────────────────────────────────────
+-- 5 bis. LES SIGNATURES D'AVANT — retirées AVANT de recréer
+--
+-- Ce fichier a été RÉÉCRIT EN PLACE après une première application (le check-in
+-- ne libère plus de place ; `reserve_slot` a reçu sa borne de locataire). Sur
+-- une base FRAÎCHE ces deux ordres ne trouvent rien et ne coûtent rien ; sur une
+-- base qui a vu la version antérieure ils sont INDISPENSABLES, et pour deux
+-- raisons différentes :
+--
+--   * `reserve_slot(uuid, text, text, boolean)` — l'ancienne, SANS
+--     `p_organization_id`. Un `create or replace` de la nouvelle l'aurait
+--     laissée en place À CÔTÉ : Postgres distingue les fonctions par leurs
+--     types d'arguments, et un appel à quatre arguments se serait résolu sur
+--     l'ancienne. La borne de locataire aurait alors été contournable par la
+--     seule FORME de l'appel — exactement le trou que la réécriture ferme.
+--   * `checkin_reservation(uuid, text, text)` — même signature, mais son
+--     `returns table` a gagné `window_state`. `create or replace` REFUSE de
+--     changer un type de retour : sans ce `drop`, la migration ÉCHOUE.
+--
+-- Aucun `cascade` : rien ne dépend de ces fonctions, et une dépendance
+-- inattendue doit faire échouer la migration, pas disparaître avec elle. Les
+-- privilèges partent avec la fonction et sont reposés par les `grant` qui
+-- suivent chaque `create`. Le catalogue est vérifié par pgTAP (ACL-22/23) :
+-- une seule signature par RPC, sur base fraîche comme sur base réécrite.
+-- ────────────────────────────────────────────────────────────
+
+drop function if exists public.reserve_slot(uuid, text, text, boolean);
+drop function if exists public.checkin_reservation(uuid, text, text);
+
+
+-- ────────────────────────────────────────────────────────────
 -- 6. `reserve_slot` — le seul chemin par lequel une place se prend
 --
 -- ── POURQUOI UN VERROU D'AVIS, ET PAS UN `for update` SUR LE CRÉNEAU ──
@@ -448,6 +479,19 @@ grant select (
 -- une transaction qui n'écrit pas cette ligne. Le verrou d'avis dit exactement
 -- ce qu'on veut dire, et c'est le patron déjà en place pour le plafond de
 -- ligues (20260723100000:117).
+--
+-- ── LA CLÉ DU VERROU PORTE L'ORGANISATION ──
+--
+-- `'reservation_slot:' || organisation || ':' || créneau`, et non le créneau
+-- seul. Ce n'est pas une frontière de sécurité — deux UUID ne se rencontrent
+-- pas — c'est une règle d'hygiène : dans ce fichier, TOUT ce qui désigne un
+-- objet le fait sous son locataire (FK composites, unicité du code, filtres des
+-- RPC). Un espace de noms de verrous qui, seul, l'oublierait serait le premier
+-- endroit où une clé bâtie plus tard sur un identifiant NON global — un slug,
+-- un numéro de créneau par commerce — sérialiserait en silence deux
+-- organisations l'une derrière l'autre. La clé est la MÊME dans
+-- `cancel_reservation` : deux clés divergentes ne se verrouilleraient pas
+-- mutuellement, et l'annulation cesserait d'être sérialisée avec la réservation.
 --
 -- ORDRE DES REFUS, ET IL COMPTE : l'idempotence est évaluée AVANT la capacité.
 -- Un joueur déjà inscrit sur un créneau devenu complet doit retrouver sa
@@ -516,7 +560,9 @@ begin
   -- comptage. À partir d'ici, « lire », « compter » et « insérer » sont un seul
   -- geste.
   perform pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('reservation_slot:' || p_slot_id::text, 0)
+    pg_catalog.hashtextextended(
+      'reservation_slot:' || p_organization_id::text || ':' || p_slot_id::text,
+      0)
   );
 
   select s.* into v_slot
@@ -639,10 +685,15 @@ grant execute on function public.reserve_slot(uuid, uuid, text, text, boolean)
 -- fait foi. Aucun identifiant d'organisation n'est demandé — le connaître
 -- n'ajouterait rien, et l'empreinte seule rend l'énumération sans objet.
 --
--- LE VERROU EST LE MÊME QUE CELUI DE `reserve_slot`, et c'est tout l'intérêt
--- de n'avoir AUCUN compteur dénormalisé : la place « revient » sans qu'aucune
--- ligne ne soit décrémentée, simplement parce que le comptage de
--- `reserve_slot` cesse de voir cette réservation. Rien à maintenir d'accord.
+-- LE VERROU EST LE MÊME QUE CELUI DE `reserve_slot` — la MÊME CLÉ, organisation
+-- comprise, sans quoi les deux RPC prendraient deux verrous distincts et
+-- cesseraient de se sérialiser l'une l'autre. C'est tout l'intérêt de n'avoir
+-- AUCUN compteur dénormalisé : la place « revient » sans qu'aucune ligne ne
+-- soit décrémentée, simplement parce que le comptage de `reserve_slot` cesse de
+-- voir cette réservation. Rien à maintenir d'accord.
+--
+-- L'organisation n'est toujours pas un PARAMÈTRE — l'appelant n'a pas à la
+-- connaître — elle est LUE sur la réservation, en même temps que son créneau.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.cancel_reservation(
@@ -656,6 +707,7 @@ set search_path = ''
 as $$
 declare
   v_slot_id uuid;
+  v_org_id uuid;
   v_starts_at timestamptz;
   v_row public.reservations%rowtype;
 begin
@@ -670,9 +722,10 @@ begin
     raise exception 'invalid player key' using errcode = '22023';
   end if;
 
-  -- Lecture SANS verrou, pour connaître le créneau à verrouiller. Rien n'est
-  -- décidé sur cette lecture : tout est relu ci-dessous une fois le verrou pris.
-  select r.slot_id into v_slot_id
+  -- Lecture SANS verrou, pour connaître le créneau ET SON ORGANISATION — les
+  -- deux moitiés de la clé de verrou. Rien n'est décidé sur cette lecture : tout
+  -- est relu ci-dessous une fois le verrou pris.
+  select r.slot_id, r.organization_id into v_slot_id, v_org_id
     from public.reservations r
    where r.id = p_reservation_id
      and r.player_key_hash = p_player_key_hash
@@ -681,8 +734,12 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unknown');
   end if;
 
+  -- MÊME CLÉ QUE `reserve_slot`, organisation comprise : c'est ce qui fait que
+  -- les deux RPC s'attendent réellement l'une l'autre.
   perform pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('reservation_slot:' || v_slot_id::text, 0)
+    pg_catalog.hashtextextended(
+      'reservation_slot:' || v_org_id::text || ':' || v_slot_id::text,
+      0)
   );
 
   select r.* into v_row
@@ -788,13 +845,31 @@ grant execute on function public.cancel_reservation(uuid, text)
 --   * ouverture  = `starts_at - 1 heure`. Les gens arrivent en avance, jamais
 --     la veille ; une heure couvre l'accueil sans ouvrir la porte à un usage
 --     détaché de la séance.
---   * fermeture  = FIN DE LA JOURNÉE CIVILE du créneau, DANS LE FUSEAU DE
---     L'ORGANISATION. Pas `ends_at` : un atelier qui déborde, un retardataire
---     accueilli à la fin, un staff qui saisit les arrivées en fermant la
---     caisse, sont des gestes normaux qu'une borne à la minute aurait refusés.
---     La journée civile est ce que le commerçant appelle « aujourd'hui », et
---     c'est pour cela que le fuseau intervient : à 23 h à Paris, un créneau du
---     jour est encore du jour, ce qu'un calcul en UTC aurait déjà nié.
+--   * fermeture  = LA PLUS TARDIVE de ces deux bornes :
+--       (a) FIN DE LA JOURNÉE CIVILE du créneau, DANS LE FUSEAU DE
+--           L'ORGANISATION. Pas `ends_at` : un atelier qui déborde, un
+--           retardataire accueilli à la fin, un staff qui saisit les arrivées
+--           en fermant la caisse, sont des gestes normaux qu'une borne à la
+--           minute aurait refusés. La journée civile est ce que le commerçant
+--           appelle « aujourd'hui », et c'est pour cela que le fuseau
+--           intervient : à 23 h à Paris, un créneau du jour est encore du jour,
+--           ce qu'un calcul en UTC aurait déjà nié.
+--       (b) `ends_at + 2 heures`.
+--
+--     POURQUOI (b) EXISTE : (a) SEULE COUPAIT AVANT LA FIN DU CRÉNEAU dès que
+--     celui-ci franchissait minuit. Une séance de 23 h à 1 h n'acceptait plus
+--     personne passé 0 h — c'est-à-dire pendant la moitié de sa durée, et
+--     précisément aux heures où ce genre de séance se remplit. La fermeture ne
+--     peut pas être ANTÉRIEURE à la fin de la séance : c'est la seule chose que
+--     (b) affirme. Les deux heures de battement rendent au créneau nocturne la
+--     même tolérance de comptoir que la journée civile donne au créneau diurne.
+--
+--     `greatest` des deux, donc : un créneau de jour garde EXACTEMENT la borne
+--     d'avant (sa journée civile se termine bien après `ends_at + 2 h`), et
+--     seul celui qui déborde sur le lendemain gagne quelque chose.
+--     `coalesce(ends_at, starts_at)` est une ceinture — la colonne est `not
+--     null` — pour qu'un futur créneau à fin ouverte ne rende pas la borne nulle
+--     et, avec elle, toute la fenêtre indécidable.
 --
 -- Hors fenêtre, la réservation N'EST PAS CONSOMMÉE et la ligne est tout de même
 -- rendue : le comptoir doit pouvoir expliquer son refus. `window_state` dit
@@ -883,9 +958,10 @@ begin
           -- lecture ci-dessous : deux formules qui divergeraient rendraient
           -- « too_early » sur une réservation pourtant consommée.
           and pg_catalog.now() >= s.starts_at - interval '1 hour'
-          and pg_catalog.now() <
-              ((((s.starts_at at time zone v_timezone)::date + 1)
-                 ::timestamp) at time zone v_timezone)
+          and pg_catalog.now() < greatest(
+                ((((s.starts_at at time zone v_timezone)::date + 1)
+                   ::timestamp) at time zone v_timezone),
+                coalesce(s.ends_at, s.starts_at) + interval '2 hours')
      )
   returning r.id into v_id;
 
@@ -911,9 +987,10 @@ begin
          case
            when pg_catalog.now() < s.starts_at - interval '1 hour'
              then 'too_early'::text
-           when pg_catalog.now() >=
-                ((((s.starts_at at time zone v_timezone)::date + 1)
-                   ::timestamp) at time zone v_timezone)
+           when pg_catalog.now() >= greatest(
+                  ((((s.starts_at at time zone v_timezone)::date + 1)
+                     ::timestamp) at time zone v_timezone),
+                  coalesce(s.ends_at, s.starts_at) + interval '2 hours')
              then 'too_late'
            else 'ok'
          end
@@ -934,8 +1011,10 @@ comment on function public.checkin_reservation(uuid, text, text) is
   'Valide l''arrivée d''une réservation par son code court. Org-scopée, acteur '
   'obligatoire et vérifié membre owner/editor/cashier EN SQL, idempotente '
   '(`checked_in_now` distingue le geste de sa répétition), auditée sous '
-  '`reservation.checkin`. BORNÉE DANS LE TEMPS : de `starts_at - 1 h` à la fin '
-  'de la journée civile du créneau dans le fuseau de l''organisation ; hors '
+  '`reservation.checkin`. BORNÉE DANS LE TEMPS : de `starts_at - 1 h` à la PLUS '
+  'TARDIVE des deux bornes « fin de la journée civile du créneau dans le fuseau '
+  'de l''organisation » et « `ends_at` + 2 h » — la seconde existe pour que la '
+  'fenêtre d''un créneau qui franchit minuit ne se ferme pas AVANT sa fin ; hors '
   'fenêtre la réservation n''est PAS consommée et `window_state` vaut '
   '`too_early` ou `too_late`. Réponse INDISTINGUABLE — aucune ligne — pour un '
   'code inconnu et pour un code d''une autre organisation.';
