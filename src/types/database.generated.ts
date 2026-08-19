@@ -5750,6 +5750,8 @@ export type Database = {
           name: string
           organization_id: string
           updated_at: string
+          wait_pause_campaign_id: string | null
+          wait_quiz_id: string | null
         }
         Insert: {
           active?: boolean
@@ -5759,6 +5761,8 @@ export type Database = {
           name: string
           organization_id: string
           updated_at?: string
+          wait_pause_campaign_id?: string | null
+          wait_quiz_id?: string | null
         }
         Update: {
           active?: boolean
@@ -5768,6 +5772,8 @@ export type Database = {
           name?: string
           organization_id?: string
           updated_at?: string
+          wait_pause_campaign_id?: string | null
+          wait_quiz_id?: string | null
         }
         Relationships: [
           {
@@ -5776,6 +5782,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_activities_wait_pause_campaign_fkey"
+            columns: ["wait_pause_campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_activities_wait_quiz_fkey"
+            columns: ["wait_quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -5915,6 +5935,8 @@ export type Database = {
           name: string
           organization_id: string
           status: string
+          wait_pause_campaign_id: string | null
+          wait_quiz_id: string | null
         }
         Insert: {
           activity_id?: string | null
@@ -5924,6 +5946,8 @@ export type Database = {
           name: string
           organization_id: string
           status?: string
+          wait_pause_campaign_id?: string | null
+          wait_quiz_id?: string | null
         }
         Update: {
           activity_id?: string | null
@@ -5933,6 +5957,8 @@ export type Database = {
           name?: string
           organization_id?: string
           status?: string
+          wait_pause_campaign_id?: string | null
+          wait_quiz_id?: string | null
         }
         Relationships: [
           {
@@ -5948,6 +5974,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_queues_wait_pause_campaign_fkey"
+            columns: ["wait_pause_campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_queues_wait_quiz_fkey"
+            columns: ["wait_quiz_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -6002,6 +6042,74 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      reservation_wait_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          pause_chance_used_at: string | null
+          pause_resulting_spin_id: string | null
+          pause_spin_consumed_at: string | null
+          pause_spin_grant_token: string | null
+          player_key_hash: string
+          queue_entry_id: string | null
+          reservation_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          pause_chance_used_at?: string | null
+          pause_resulting_spin_id?: string | null
+          pause_spin_consumed_at?: string | null
+          pause_spin_grant_token?: string | null
+          player_key_hash: string
+          queue_entry_id?: string | null
+          reservation_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          pause_chance_used_at?: string | null
+          pause_resulting_spin_id?: string | null
+          pause_spin_consumed_at?: string | null
+          pause_spin_grant_token?: string | null
+          player_key_hash?: string
+          queue_entry_id?: string | null
+          reservation_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_wait_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_wait_sessions_pause_resulting_spin_id_fkey"
+            columns: ["pause_resulting_spin_id"]
+            isOneToOne: false
+            referencedRelation: "spins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_wait_sessions_queue_entry_id_organization_id_fkey"
+            columns: ["queue_entry_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_queue_entries"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_wait_sessions_reservation_id_organization_id_fkey"
+            columns: ["reservation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservations"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -7138,6 +7246,14 @@ export type Database = {
       }
       consume_referral_spin_grant: {
         Args: { p_campaign_id: string; p_grant_token: string; p_key: string }
+        Returns: Json
+      }
+      consume_reserver_wait_spin_grant: {
+        Args: {
+          p_grant_token: string
+          p_player_key_hash: string
+          p_session_id: string
+        }
         Returns: Json
       }
       contest_generic_points: {
@@ -8862,6 +8978,23 @@ export type Database = {
           p_ip?: string
           p_proof_spin_id: string
           p_referral_code: string
+        }
+        Returns: Json
+      }
+      wait_session_open: {
+        Args: {
+          p_organization_id: string
+          p_player_key_hash: string
+          p_queue_entry_id?: string
+          p_reservation_id?: string
+        }
+        Returns: Json
+      }
+      wait_session_use_pause: {
+        Args: {
+          p_organization_id: string
+          p_player_key_hash: string
+          p_session_id: string
         }
         Returns: Json
       }
