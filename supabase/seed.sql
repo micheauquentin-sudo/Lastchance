@@ -1185,3 +1185,33 @@ values (
   repeat('e5', 32), 'Dominique'
 )
 on conflict (id) do nothing;
+
+-- ── Réserver RES-4 — mode attente active ─────────────────────────────
+--
+-- La configuration est posée par UPDATE et non dans les `insert` ci-dessus, et
+-- ce n'est pas une coquetterie : ces inserts portent tous `on conflict (id) do
+-- nothing`, donc sur une base déjà semée ils ne feraient RIEN — la file
+-- existerait sans son animation, et le parcours E2E échouerait sur une absence
+-- de configuration au lieu de tester ce qu'il teste.
+--
+-- LES DEUX ANIMATIONS RÉUTILISENT DES FIXTURES EXISTANTES, ce qui est très
+-- exactement la promesse de RES-4 : aucun moteur neuf, aucune récompense neuve.
+--   · le quiz est `Quiz du Comptoir E2E` (e2e95000-…-01), `active`, stock 5000 ;
+--   · la Pause Chance tire sur `E2E Gagnante` (e2e20000-…-01), dont le lot
+--     gagnant porte un stock FINI de 5000 — indispensable ici : la BORNE 2
+--     exclut du tour offert tout lot à stock illimité, et une campagne à lots
+--     par défaut aurait rendu `no_prize` à chaque Pause Chance.
+--
+-- LES DEUX PORTEURS SONT CONFIGURÉS, un par forme d'attente : la file
+-- « Comptoir E2E » (attente DEBOUT) et l'activité « Dégustation du Comptoir
+-- E2E » (attente AVEC CRÉNEAU, celle dont le créneau proche porte déjà une
+-- réservation confirmée dans les parcours de check-in).
+update public.reservation_queues
+   set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
+ where id = 'e2ea0000-0000-4000-8000-000000000061';
+
+update public.reservation_activities
+   set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
+ where id = 'e2ea0000-0000-4000-8000-000000000011';

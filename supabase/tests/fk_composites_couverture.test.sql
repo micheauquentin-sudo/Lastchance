@@ -90,7 +90,7 @@ couverte as (
    )
 ),
 assumees (paire) as (values
-  -- ── Le tour de roue produit EN RÉCOMPENSE (6) ──
+  -- ── Le tour de roue produit EN RÉCOMPENSE (7) ──
   -- L'identifiant du spin n'existe pas avant l'appel : il est créé par la RPC
   -- qui écrit la ligne, dans la même transaction et sur la même organisation.
   -- Aucun appelant ne le fournit, donc aucun appelant ne peut le croiser.
@@ -100,6 +100,10 @@ assumees (paire) as (values
   ('referral_rewards.resulting_spin_id -> spins'),
   ('referral_signups.proof_spin_id -> spins'),
   ('participations.spin_id -> spins'),
+  -- Cinquième exemplaire du même patron, arrivé avec le Mode Attente active
+  -- (RES-4, 20261006120000) : `consume_reserver_wait_spin_grant` crée le spin
+  -- puis écrit son identifiant sur la session, dans la même transaction.
+  ('reservation_wait_sessions.pause_resulting_spin_id -> spins'),
   -- ── L'état interne d'une session live (2) ──
   -- Écrits par les RPC d'animation, jamais par le joueur ni par le formulaire.
   ('event_sessions.current_question_id -> event_questions'),

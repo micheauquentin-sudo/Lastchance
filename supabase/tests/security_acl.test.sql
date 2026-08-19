@@ -505,6 +505,57 @@ select ok(not has_function_privilege('service_role', 'public.queue_entry_positio
 select ok(not has_function_privilege('authenticated', 'public.queue_entry_position(public.reservation_queue_entries)', 'EXECUTE'), 'nor by a merchant session');
 select ok(not has_function_privilege('anon', 'public.queue_entry_position(public.reservation_queue_entries)', 'EXECUTE'), 'nor by anon');
 
+-- Mode attente active (20261006120000, RES-4). Une table neuve au régime LE PLUS
+-- FERMÉ du module : RLS active et AUCUNE policy — ni joueur ni commerçant n'a
+-- d'écran dessus. Le joueur passe par les RPC ; le commerçant n'a rien à y lire,
+-- son écran d'accueil parle de rangs, pas de qui a joué en attendant. Lui ouvrir
+-- une lecture aurait fait de l'animation une information sur les personnes
+-- présentes dans son magasin, ce que RES-4 n'a jamais promis.
+select ok(not has_table_privilege('anon', 'public.reservation_wait_sessions', 'SELECT'), 'anon cannot read wait sessions');
+select ok(not has_table_privilege('authenticated', 'public.reservation_wait_sessions', 'SELECT'), 'merchant cannot read who played while waiting');
+select ok(not has_table_privilege('authenticated', 'public.reservation_wait_sessions', 'INSERT'), 'merchant cannot forge a wait session');
+select ok(not has_table_privilege('authenticated', 'public.reservation_wait_sessions', 'UPDATE'), 'merchant cannot reset a spent Pause Chance by direct update');
+select ok(not has_table_privilege('authenticated', 'public.reservation_wait_sessions', 'DELETE'), 'merchant cannot delete a wait session');
+-- AUCUN privilège d'AUCUNE sorte, `references`/`trigger`/`truncate` compris :
+-- c'est le `revoke all` de la migration qui mord, pas l'absence de policy
+-- (leçon SEC-4, wagon 7 — les privilèges par défaut de Supabase servent ces
+-- trois-là sur toute table neuve de `public`).
+select is(
+  (select coalesce(string_agg(distinct a.privilege_type, ', '), '')
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace,
+     lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public'
+      and c.relname = 'reservation_wait_sessions'
+      and a.grantee in ('authenticated'::regrole::oid, 'anon'::regrole::oid)),
+  '',
+  'ni anon ni authenticated ne gardent le moindre privilège sur les sessions d''attente'
+);
+select is(
+  (select count(*) from pg_policies
+    where schemaname = 'public' and tablename = 'reservation_wait_sessions'),
+  0::bigint,
+  'les sessions d''attente ne portent AUCUNE policy — service_role et rien d''autre'
+);
+-- Les trois RPC d'animation : serveur seul. Ouvertes à la session marchande, un
+-- commerçant aurait pu ouvrir une session sur l'entrée de quelqu'un d'autre et
+-- brûler sa Pause Chance ; ouvertes à anon, n'importe qui l'aurait pu.
+select ok(has_function_privilege('service_role', 'public.wait_session_open(uuid,text,uuid,uuid)', 'EXECUTE'), 'server can open a wait session');
+select ok(not has_function_privilege('authenticated', 'public.wait_session_open(uuid,text,uuid,uuid)', 'EXECUTE'), 'merchant session cannot open a wait session on someone else''s place in line');
+select ok(not has_function_privilege('anon', 'public.wait_session_open(uuid,text,uuid,uuid)', 'EXECUTE'), 'anon cannot open a wait session directly');
+select ok(has_function_privilege('service_role', 'public.wait_session_use_pause(uuid,uuid,text)', 'EXECUTE'), 'server can spend the one Pause Chance of a session');
+select ok(not has_function_privilege('authenticated', 'public.wait_session_use_pause(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot spend a player Pause Chance');
+select ok(not has_function_privilege('anon', 'public.wait_session_use_pause(uuid,uuid,text)', 'EXECUTE'), 'anon cannot spend a Pause Chance directly');
+select ok(has_function_privilege('service_role', 'public.consume_reserver_wait_spin_grant(uuid,text,text)', 'EXECUTE'), 'server can draw the offered wait spin');
+select ok(not has_function_privilege('authenticated', 'public.consume_reserver_wait_spin_grant(uuid,text,text)', 'EXECUTE'), 'merchant session cannot draw an offered wait spin past the economic bounds');
+select ok(not has_function_privilege('anon', 'public.consume_reserver_wait_spin_grant(uuid,text,text)', 'EXECUTE'), 'anon cannot draw an offered wait spin directly');
+-- La CONFIGURATION d'attente, elle, est de la configuration : les quatre
+-- colonnes rejoignent la liste blanche des éditeurs, sur les deux porteurs.
+select ok(has_column_privilege('authenticated', 'public.reservation_queues', 'wait_quiz_id', 'UPDATE'), 'merchant can pick the quiz offered while waiting in a queue');
+select ok(has_column_privilege('authenticated', 'public.reservation_queues', 'wait_pause_campaign_id', 'UPDATE'), 'merchant can pick the Pause Chance campaign of a queue');
+select ok(has_column_privilege('authenticated', 'public.reservation_activities', 'wait_quiz_id', 'UPDATE'), 'merchant can pick the quiz offered while waiting for a booked slot');
+select ok(has_column_privilege('authenticated', 'public.reservation_activities', 'wait_pause_campaign_id', 'UPDATE'), 'merchant can pick the Pause Chance campaign of an activity');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');
