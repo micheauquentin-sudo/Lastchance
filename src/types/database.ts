@@ -107,6 +107,13 @@ export interface Organization {
   addon_referral: boolean;
   /** Module Créateur de quiz activé depuis le back-office. */
   addon_quiz: boolean;
+  /**
+   * Vitrine & Réserver activé au titre d'une OFFRE d'abonnement
+   * (migration 20261001120000). Offre DISTINCTE, jamais incluse dans
+   * l'abonnement de base : `false` par défaut pour tous les abonnés existants.
+   * Le chemin de la bêta reste l'octroi daté, lu par `live_module_grants`.
+   */
+  addon_vitrine: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */

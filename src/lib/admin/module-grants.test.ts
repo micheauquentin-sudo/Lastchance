@@ -71,6 +71,54 @@ describe("calculerFenetres — un pass acheté mais pas démarré", () => {
     );
     expect(v.ok).toBe(false);
   });
+
+  /* ── FAIBLE (revue L2) : L'OCTROI INDÉMARRABLE ─────────────
+   *
+   * « Acheté, pas démarré » suppose un écran où le commerçant appuie sur
+   * départ : la section « Prêt à démarrer » de settings/modules, qui apparie
+   * chaque octroi en attente à `ADDON_OFFERS.find(…)` et JETTE ceux qui n'y
+   * trouvent rien. Un pass différé sur un module hors catalogue était donc payé
+   * de la main de l'admin, invisible, et jamais démarrable.
+   */
+  it("REFUSE un pass différé sur un module sans offre au catalogue", () => {
+    const v = calculerFenetres(
+      { module: "vitrine", kind: "pass", demarrage: "a_activer", delaiActivationJours: 90 },
+      MAINTENANT,
+    );
+    expect(v.ok).toBe(false);
+    if (v.ok) return;
+    // Le message NOMME le module comme le panneau juste au-dessus le nomme, et
+    // dit la sortie — sans quoi l'admin recommence le même geste.
+    expect(v.erreur).toContain("Vitrine & Réserver");
+    expect(v.erreur).toContain("démarrage immédiat");
+  });
+
+  it("et les deux formes qui restent ouvertes le sont vraiment", () => {
+    // Le témoin qui empêche le refus ci-dessus de devenir « on n'octroie plus
+    // Vitrine du tout » : c'est la combinaison qui est refusée, pas le module.
+    const immediat = calculerFenetres(
+      { module: "vitrine", kind: "pass", demarrage: "maintenant", dureeJours: 30 },
+      MAINTENANT,
+    );
+    expect(immediat.ok).toBe(true);
+    const recurrent = calculerFenetres(
+      { module: "vitrine", kind: "recurring", demarrage: "maintenant" },
+      MAINTENANT,
+    );
+    expect(recurrent.ok).toBe(true);
+  });
+
+  it("TÉMOIN : un module du catalogue garde son pass différé", () => {
+    // Sans lui, un prédicat inversé refuserait les huit add-ons vendus et le
+    // test ci-dessus passerait quand même.
+    for (const vendu of ["hunts", "calendar", "quiz", "events"] as const) {
+      const v = calculerFenetres(
+        { module: vendu, kind: "pass", demarrage: "a_activer", delaiActivationJours: 90 },
+        MAINTENANT,
+      );
+      expect(v.ok, vendu).toBe(true);
+    }
+  });
 });
 
 describe("calculerFenetres — un droit récurrent", () => {

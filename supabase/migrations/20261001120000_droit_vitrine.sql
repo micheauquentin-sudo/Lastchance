@@ -14,23 +14,46 @@
 -- ensemble ; le jour où l'un devra se détacher, le détacher sera une décision
 -- explicite plutôt qu'un état de fait jamais choisi.
 --
--- ── PAS DE COLONNE `addon_vitrine`, ET CE N'EST PAS UN OUBLI ──
+-- ── UNE COLONNE `addon_vitrine`, PARCE QUE VITRINE EST UNE OFFRE DISTINCTE ──
 --
--- Les huit modules d'add-on portent un booléen `organizations.addon_*`, posé
--- par le webhook d'abonnement. `vitrine` n'en a pas, et suit le précédent EXACT
--- de `wheel` : sa ligne du `case p_module` vaut `true`, c'est-à-dire « aucun
--- booléen ne la conditionne ». Deux chemins l'ouvrent, et deux seulement :
+-- Décision propriétaire (2026-08-19, revue sécurité du lot L2, MOYEN-1) :
+-- **Vitrine n'est PAS incluse dans l'abonnement.** C'est une offre à part, et
+-- la colonne est ce qui rend cette phrase vraie côté base.
+--
+-- Une première écriture de ce lot n'en posait aucune et faisait valoir
+-- `when 'vitrine' then true`, sur le précédent de `wheel`. La conséquence était
+-- écrite noir sur blanc et présentée comme assumée : « un commerçant qui a une
+-- offre vivante ouvre `vitrine` sans octroi ». C'est-à-dire que TOUS les abonnés
+-- existants recevaient, à l'application de la migration, un module que personne
+-- n'avait décidé de leur vendre. Un droit qu'on n'a jamais facturé ne se reprend
+-- pas sans se dédire ; il valait mieux ne pas l'accorder.
+--
+-- La colonne est le MIROIR EXACT d'`addon_calendar` (20260728120000:65-73) :
+-- `boolean not null default false`, plus le `grant select (…)` qu'exigent les
+-- grants de colonnes de `organizations` (00017). `default false` est le point —
+-- l'application de cette migration ne change le droit d'AUCUNE organisation
+-- existante.
+--
+-- Trois chemins l'ouvrent désormais, et trois seulement :
 --
 --   * un OCTROI DATÉ vivant sur `organization_module_grants` — le chemin de la
 --     bêta, accordé depuis le back-office et lui seul ;
---   * une OFFRE d'abonnement vivante (`org_has_subscription_access`) — le
---     chemin d'un abonnement futur, si le catalogue décide d'y inclure Vitrine.
+--   * `addon_vitrine` allumé ET une OFFRE d'abonnement vivante
+--     (`org_has_subscription_access`) — le chemin d'une vente future ;
+--   * rien d'autre.
 --
--- Conséquence à lire avant de s'en étonner, elle est ASSUMÉE et non subie : un
--- commerçant qui a une offre vivante ouvre `vitrine` sans octroi, exactement
--- comme il ouvre `wheel`. C'est ce que « colonne addon null » veut dire, et
--- c'est la seule forme que `src/lib/module-access-parity.test.ts` sait mettre
--- en regard de `MODULE_ADDON_COLUMN.vitrine = null`.
+-- ── CE QUE LA COLONNE NE REJOINT PAS, ET POURQUOI ──
+--
+-- `protect_stripe_managed_entitlements` (20260818120000) et son trigger
+-- `organizations_protect_stripe_entitlements` énumèrent les neuf colonnes que
+-- STRIPE gouverne : `addon_vitrine` n'y entre PAS, parce qu'aucun produit Stripe
+-- ne la pilote. L'y ajouter aurait rendu le seul chemin de la bêta — le
+-- back-office — impossible sur tout commerçant portant un abonnement vivant :
+-- le trigger aurait levé `entitlements are managed by Stripe` sur un droit que
+-- Stripe ignore. Le trigger ne se déclenche pas sur un `update` qui ne touche
+-- que `addon_vitrine` (`before update OF <colonnes>` ne mord que sur la liste).
+-- Même raison pour la projection legacy et pour `apply_stripe_subscription_event_v2` :
+-- `vitrine` n'est dans aucun `p_entitlements`, donc rien à y écrire.
 --
 -- ── AUCUN PRODUIT STRIPE, ET C'EST VOULU ──
 --
@@ -50,9 +73,55 @@
 --   * Aucun changement à `org_has_active_access` ni à
 --     `org_has_subscription_access` : le socle et l'offre répondent déjà
 --     correctement, et leur parité est jouée par access_parity.test.sql.
+--
+--     UNE RÉSERVE ÉCRITE ICI PLUTÔT QUE TAIRE (revue sécurité, MOYEN-2) :
+--     `org_has_active_access` rend vrai sur UN OCTROI VIVANT QUELCONQUE, donc
+--     aussi sur un octroi `vitrine` accordé gratuitement en bêta — un droit
+--     offert y porterait le socle payant. Le miroir TypeScript
+--     (`hasActiveAccess`, src/lib/subscription.ts) a été RESSERRÉ aux modules
+--     adossés à une offre du catalogue ; le SQL ne l'a pas été, et l'écart est
+--     BORNÉ et volontaire : dans le catalogue vivant, `org_has_active_access`
+--     n'a plus AUCUN appelant SQL — `org_has_module_access` passe par
+--     `org_has_subscription_access` depuis 20260925120000 — ni aucun appelant
+--     applicatif (elle est révoquée à `authenticated` et n'est appelée par
+--     aucune `.rpc`). La resserrer ici aurait demandé de recopier en SQL la
+--     liste des offres d'`ADDON_OFFERS`, soit une troisième écriture d'un même
+--     fait, pour corriger une fonction que rien n'interroge. Le jour où un
+--     appelant réapparaît, c'est ici qu'il faut revenir.
 --   * Aucun changement à `org_has_live_module_grant`, qui filtre sur le
 --     `p_module` qu'on lui passe et n'énumère aucun vocabulaire.
 -- ============================================================
+
+
+-- ────────────────────────────────────────────────────────────
+-- 0. L'addon d'organisation — miroir EXACT d'addon_calendar
+--
+-- Posé AVANT la redéfinition d'`org_has_module_access` (§2) qui le lit : une
+-- fonction plpgsql résout ses colonnes à l'exécution, mais l'ordre inverse
+-- laisserait la fonction vivante quelques instructions durant sur une colonne
+-- absente, et la moindre reprise partielle de ce fichier casserait sur un
+-- message incompréhensible.
+-- ────────────────────────────────────────────────────────────
+
+alter table public.organizations
+  add column addon_vitrine boolean not null default false;
+
+-- `organizations` utilise des grants de colonnes (00017) : une colonne ajoutée
+-- ensuite n'est pas lisible automatiquement par authenticated. SANS CETTE
+-- LIGNE, ce n'est pas le seul droit vitrine qui tombe : le `select` de
+-- `getUserAndOrg` (src/lib/auth.ts) énumère ses colonnes et serait refusé EN
+-- ENTIER, donc tout le dashboard.
+grant select (addon_vitrine) on public.organizations to authenticated;
+
+comment on column public.organizations.addon_vitrine is
+  'Vitrine & Réserver activé au titre d''une OFFRE d''abonnement. Offre '
+  'DISTINCTE, jamais incluse dans l''abonnement de base (décision propriétaire '
+  'du 2026-08-19) : `default false` laisse donc tous les abonnés existants '
+  'inchangés à l''application de 20261001120000. Aucun produit Stripe ne la '
+  'pilote — elle est hors de `protect_stripe_managed_entitlements` et hors de '
+  'la projection d''entitlements — et le seul chemin de la bêta reste l''octroi '
+  'daté accordé au back-office, lu par la première branche '
+  'd''org_has_module_access.';
 
 
 -- ────────────────────────────────────────────────────────────
@@ -137,22 +206,19 @@ begin
   -- BRANCHE OFFRE. `org_has_subscription_access` et NON `org_has_active_access` :
   -- la seconde rend vrai sur n'importe quel octroi vivant, ce qui faisait
   -- ouvrir `wheel` — dont la ligne du `case` vaut `true` — par un pass Chasse.
-  -- La remarque vaut désormais aussi pour `vitrine`, dont la ligne vaut `true`
-  -- pour la même raison : sans ce resserrement, un pass Quiz l'ouvrirait.
   if not public.org_has_subscription_access(p_organization_id, p_now) then
     return false;
   end if;
 
   select case p_module
     -- La roue / les campagnes sont le produit de base : aucun addon ne les
-    -- conditionne, seule l'OFFRE compte (src/actions/campaigns.ts).
+    -- conditionne, seule l'OFFRE compte (src/actions/campaigns.ts). C'est
+    -- désormais la SEULE ligne à valoir `true`, et la garde de cardinalité de
+    -- src/lib/module-access-parity.test.ts épingle ce « une seule ».
     when 'wheel'      then true
-    -- Vitrine n'a AUCUNE colonne `addon_vitrine` : elle n'est pas vendue comme
-    -- ligne d'abonnement, et pendant la bêta elle ne s'ouvre que par l'octroi
-    -- traité plus haut. `true` ici dit « aucun booléen ne la conditionne »,
-    -- exactement comme pour la roue — et non « ouverte à tous » : la branche
-    -- offre juste au-dessus a déjà refusé qui n'a pas d'abonnement vivant.
-    when 'vitrine'    then true
+    -- Vitrine est une OFFRE DISTINCTE, jamais incluse dans l'abonnement : sa
+    -- ligne se lit exactement comme les huit add-ons, et non comme la roue.
+    when 'vitrine'    then o.addon_vitrine
     when 'hunts'      then o.addon_hunts
     when 'calendar'   then o.addon_calendar
     when 'loyalty'    then o.addon_loyalty
@@ -180,9 +246,10 @@ comment on function public.org_has_module_access(uuid, text, timestamptz) is
   '« un pass n''ouvre QUE son module »). La PAUSE À L''ÉCHÉANCE opère par '
   'ABSENCE : passé `ends_at`, la première branche cesse de répondre. Aucun '
   'cron, aucune écriture, donc aucune prolongation silencieuse possible. '
-  'Les modules « wheel » et « vitrine » n''ont pas d''addon : le premier est le '
-  'produit de base, la seconde (20261001120000) n''est pas vendue comme ligne '
-  'd''abonnement et ne s''ouvre pendant la bêta que par un octroi de back-office. '
+  'Seul « wheel » n''a pas d''addon : c''est le produit de base. « vitrine » '
+  '(20261001120000) a le sien, `addon_vitrine`, parce qu''elle est une OFFRE '
+  'DISTINCTE et non une inclusion de l''abonnement — pendant la bêta elle ne '
+  's''ouvre que par un octroi de back-office, lu par la première branche. '
   'Un nom de module inconnu LÈVE, il ne rend pas false. '
   'Pour un geste portant sur UNE ressource nommée : '
   'org_has_module_access_for_resource.';

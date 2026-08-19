@@ -362,6 +362,12 @@ select ok(not has_function_privilege('authenticated', 'public.purge_expired_cale
 -- anon), compteurs de stock et état du tirage RPC-only, parcours joueur
 -- service-role only, helper d'émission strictement interne.
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_quiz', 'SELECT'), 'merchant can read quiz entitlement');
+
+-- Vitrine & Réserver (20261001120000). `organizations` fonctionne par grants de
+-- COLONNES : sans celui-ci, ce n'est pas le seul droit vitrine qui tombe — le
+-- `select` de `getUserAndOrg` énumère ses colonnes et serait refusé EN ENTIER.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'SELECT'), 'merchant can read vitrine entitlement');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'UPDATE'), 'merchant cannot grant itself the vitrine entitlement');
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');

@@ -755,6 +755,55 @@ describe("octroi daté de module (lot 2)", () => {
     expect(hasSubscriptionAccess(o, NOW)).toBe(false);
   });
 
+  /* ── MOYEN-2 : UN OCTROI GRATUIT N'ACHÈTE PAS LE SOCLE ─────
+   *
+   * `hasActiveAccess` rendait vrai sur n'importe quel octroi vivant, ce qui
+   * était juste tant que tout octroi était un achat. Le lot L2 casse
+   * l'équivalence : `vitrine` s'accorde GRATUITEMENT au back-office pendant la
+   * bêta, et un abonné résilié à qui on l'offrait retrouvait du même coup ses
+   * roues publiques et l'activation de ses campagnes — c'est-à-dire l'offre
+   * mensuelle, rendue par un geste qui ne facture rien.
+   *
+   * LE POINT DÉLICAT est que le module lui-même doit rester ouvert : on borne
+   * le SOCLE, pas le droit. Les deux assertions sont donc jouées sur LE MÊME
+   * objet, sans quoi rien ne dirait qu'on n'a pas simplement tout fermé.
+   */
+  it("MOYEN-2 : un octroi vitrine ouvre Vitrine mais NE PORTE PAS le socle", () => {
+    const o = {
+      ...resilie,
+      addon_vitrine: false,
+      live_module_grants: ["vitrine"] as const,
+    };
+    expect(droitEffectifModule("vitrine", o, NOW)).toBe(true);
+    // ROUGE AVANT LE CORRECTIF : la branche « un octroi vivant quelconque »
+    // rendait vrai, donc roues publiques jouables et campagnes activables.
+    expect(hasActiveAccess(o, NOW)).toBe(false);
+    expect(droitEffectifModule("wheel", o, NOW)).toBe(false);
+  });
+
+  it("TÉMOIN : un octroi PAYÉ porte toujours le socle, lui", () => {
+    // Sans lui, une branche devenue toujours fausse passerait le test ci-dessus
+    // en coupant le socle de tous les porteurs de pass — exactement le défaut
+    // que la branche d'octroi avait été écrite pour fermer.
+    const paye = { ...resilie, live_module_grants: ["hunts"] as const };
+    expect(hasActiveAccess(paye, NOW)).toBe(true);
+    // Et le produit de base octroyé en direct le porte aussi : `wheel` n'est
+    // dans aucune offre du catalogue, il EST le socle.
+    const roue = { ...resilie, live_module_grants: ["wheel"] as const };
+    expect(hasActiveAccess(roue, NOW)).toBe(true);
+  });
+
+  it("le socle retombe sur l'abonnement quand l'octroi ne le porte pas", () => {
+    // La borne ne doit pas couper un abonné à qui on offre Vitrine : les deux
+    // sources du droit restent en OU.
+    const abonneAvecVitrineOfferte = {
+      ...resilie,
+      subscription_status: "active" as SubscriptionStatus,
+      live_module_grants: ["vitrine"] as const,
+    };
+    expect(hasActiveAccess(abonneAvecVitrineOfferte, NOW)).toBe(true);
+  });
+
   it("hasSubscriptionAccess garde la grâce d'impayé et l'accès offert", () => {
     // Le corps a été DÉPLACÉ, pas réécrit : les deux branches délicates
     // doivent répondre exactement comme `hasActiveAccess` le faisait.
