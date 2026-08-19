@@ -11,21 +11,31 @@
 --      créer de seconde ligne. Annuler deux fois ne repousse pas `cancelled_at`.
 --      Valider une arrivée deux fois ne la valide qu'une, et `checked_in_now`
 --      dit laquelle des deux fois a compté.
---   3. LA PLACE REVIENT. Après annulation, un AUTRE joueur passe sur un
---      créneau qui était complet — sans qu'aucun compteur n'ait été décrémenté,
---      puisqu'il n'y en a pas.
---   4. UNE ARRIVÉE NE S'ANNULE PAS. Ni par la RPC (`already_checked_in`), ni
---      par une écriture directe (les `check` d'état la refusent).
+--   3. LA PLACE REVIENT — À L'ANNULATION, ET SEULEMENT LÀ. Après annulation, un
+--      AUTRE joueur passe sur un créneau qui était complet, sans qu'aucun
+--      compteur n'ait été décrémenté puisqu'il n'y en a pas. LE CHECK-IN, LUI,
+--      NE REND RIEN : bloc 11, quatre arrivées sur quatre places, la cinquième
+--      demande reste refusée.
+--   4. UNE ARRIVÉE NE S'ANNULE PAS, et un créneau commencé non plus. Ni par la
+--      RPC (`already_checked_in`, `too_late`), ni par une écriture directe (les
+--      `check` d'état la refusent).
 --   5. ISOLATION. Le check-in d'un code d'une organisation VOISINE rend
---      EXACTEMENT ce que rend un code inconnu : zéro ligne. L'état public d'un
---      joueur est borné à l'organisation interrogée. La RLS ne laisse lire ni
---      à `anon`, ni au voisin, et l'email n'est lisible par PERSONNE en
---      session marchande.
+--      EXACTEMENT ce que rend un code inconnu : zéro ligne. Réserver un créneau
+--      d'une autre organisation rend `unavailable` et RIEN d'autre. L'état
+--      public d'un joueur est borné à l'organisation interrogée. La RLS ne
+--      laisse lire ni à `anon`, ni au voisin, et l'email n'est lisible par
+--      PERSONNE en session marchande.
 --   6. LE DROIT `vitrine`. Une organisation qui ne l'a pas ne prend aucune
 --      réservation, même sur un créneau parfaitement ouvert.
---   7. PURGE. Passé la rétention, l'adresse, son consentement ET le lien à
---      l'appareil s'effacent ; la ligne, elle, reste — et un second passage
---      ne réécrit rien.
+--   7. LA FENÊTRE DE CHECK-IN. Trois semaines avant, ou trois jours après, le
+--      code ne s'échange pas : `too_early` / `too_late`, et la réservation
+--      n'est PAS consommée.
+--   8. L'ADRESSE NE SURVIT PAS AU CONSENTEMENT. Sans consentement elle n'est
+--      pas stockée du tout ; passé la rétention, elle, son consentement ET le
+--      lien à l'appareil s'effacent — la ligne, elle, reste, et un second
+--      passage ne réécrit rien. La valeur de remplacement est un MARQUEUR, pas
+--      une empreinte dérivée de l'identifiant : une ligne purgée ne se rouvre
+--      donc pas en recalculant sa clé depuis son `id`.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -40,6 +50,15 @@
 -- Le fichier doit passer sur une base VIDE comme sur une base SEMÉE : toutes
 -- les assertions sont bornées aux organisations créées ici, aucune ne compte
 -- globalement.
+--
+-- ── LES CRÉNEAUX SONT DATÉS EN RELATIF, ET LES BORNES SONT CHOISIES ──
+--
+-- La fenêtre de check-in se ferme à la fin de la JOURNÉE CIVILE du créneau :
+-- une fixture « il y a deux heures » serait `ok` à 14 h et `too_late` à 0 h 30,
+-- soit un fichier qui rougit une nuit sur douze. Les fixtures hors fenêtre sont
+-- donc à ±3 JOURS, où aucune heure d'exécution ne change la réponse ; celles
+-- qui doivent être DANS la fenêtre et encore réservables tiennent dans
+-- l'intersection étroite des deux règles — `starts_at` dans l'heure qui vient.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -107,11 +126,13 @@ values
    '4e5e0000-0000-4000-8000-000000000201',
    '4e5e0000-0000-4000-8000-00000000000a',
    now() + interval '2 days', now() + interval '2 days 1 hour', 1, 'open'),
-  -- S2 : deux places, sert au check-in et à la purge.
+  -- S2 : deux places, DANS L'HEURE QUI VIENT — le seul endroit où un créneau
+  -- est à la fois encore réservable (`starts_at > now()`) et déjà ouvert au
+  -- check-in (`now() >= starts_at - 1 h`). Sert au check-in et à la purge.
   ('4e5e0000-0000-4000-8000-000000000302',
    '4e5e0000-0000-4000-8000-000000000201',
    '4e5e0000-0000-4000-8000-00000000000a',
-   now() + interval '3 days', now() + interval '3 days 1 hour', 2, 'open'),
+   now() + interval '30 minutes', now() + interval '90 minutes', 2, 'open'),
   -- S3 : ouvert mais PASSÉ.
   ('4e5e0000-0000-4000-8000-000000000303',
    '4e5e0000-0000-4000-8000-000000000201',
@@ -136,7 +157,27 @@ values
   ('4e5e0000-0000-4000-8000-000000000307',
    '4e5e0000-0000-4000-8000-000000000204',
    '4e5e0000-0000-4000-8000-00000000000c',
-   now() + interval '2 days', now() + interval '2 days 1 hour', 5, 'open');
+   now() + interval '2 days', now() + interval '2 days 1 hour', 5, 'open'),
+  -- S8 : réservable, mais LOIN — trois jours, donc hors fenêtre de check-in
+  -- quelle que soit l'heure d'exécution.
+  ('4e5e0000-0000-4000-8000-000000000308',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '3 days', now() + interval '3 days 1 hour', 5, 'open'),
+  -- S9 : trois jours DERRIÈRE. Sa journée civile est close depuis deux jours
+  -- pleins : `too_late` ne dépend d'aucun fuseau ni d'aucune heure.
+  ('4e5e0000-0000-4000-8000-000000000309',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() - interval '3 days', now() - interval '3 days' + interval '1 hour',
+   5, 'closed'),
+  -- S10 : QUATRE places, dans l'heure qui vient. C'est le créneau du bloc 11 :
+  -- on le remplit, on fait arriver tout le monde, et on vérifie qu'il reste
+  -- plein.
+  ('4e5e0000-0000-4000-8000-000000000310',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '45 minutes', now() + interval '105 minutes', 4, 'open');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -145,6 +186,7 @@ values
 
 create temporary table rv_r1 as
 select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
   '4e5e0000-0000-4000-8000-000000000301',
   repeat('a', 64), 'Alice@Example.COM ', true
 ) as j;
@@ -188,6 +230,7 @@ select ok(
 -- Un AUTRE joueur, même créneau : la place est prise.
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000301', repeat('b', 64)))->>'state',
   'full',
   'CAP-7 la seconde demande sur une place unique est refusée « full »');
@@ -204,17 +247,20 @@ select results_eq(
 
 create temporary table rv_r2 as
 select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
   '4e5e0000-0000-4000-8000-000000000301', repeat('a', 64)) as j;
 
 select is((select j->>'state' from rv_r2), 'already_reserved',
   'IDEM-1 le même joueur ne réserve pas deux fois');
 select is((select j->>'code' from rv_r2), (select j->>'code' from rv_r1),
   'IDEM-2 il retrouve SON code, pas un nouveau');
+select is((select j->>'status' from rv_r2), 'confirmed',
+  'IDEM-3 et le statut de sa place, pour que l''écran sache quoi dire');
 select results_eq(
   $$select count(*) from public.reservations
      where slot_id = '4e5e0000-0000-4000-8000-000000000301'$$,
   array[1::bigint],
-  'IDEM-3 aucune seconde ligne n''a été créée');
+  'IDEM-4 aucune seconde ligne n''a été créée');
 
 -- La base le refuserait de toute façon : l'index partiel est la ceinture.
 select throws_ok(
@@ -223,44 +269,90 @@ select throws_ok(
             '4e5e0000-0000-4000-8000-00000000000a', repeat('a', 64))$$,
   '23505',
   null,
-  'IDEM-4 l''index partiel refuse une seconde réservation vivante du même joueur');
+  'IDEM-5 l''index partiel refuse une seconde réservation vivante du même joueur');
 
 
 -- ════════════════════════════════════════════════════════════
--- 3. REFUS INDISTINCTS — passé, brouillon, activité coupée, sans droit
+-- 3. REFUS INDISTINCTS — passé, brouillon, activité coupée, sans droit,
+--    et CRÉNEAU D'UNE AUTRE ORGANISATION
 -- ════════════════════════════════════════════════════════════
 
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000303', repeat('c', 64)))->>'state',
   'unavailable', 'REF-1 un créneau passé ne se réserve pas');
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000304', repeat('c', 64)))->>'state',
   'unavailable', 'REF-2 un créneau en brouillon ne se réserve pas');
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000305', repeat('c', 64)))->>'state',
   'unavailable', 'REF-3 un créneau ouvert d''une activité coupée ne se réserve pas');
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000c',
     '4e5e0000-0000-4000-8000-000000000307', repeat('c', 64)))->>'state',
   'unavailable',
   'REF-4 VITRINE une organisation sans le droit ne prend aucune réservation');
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-0000000009ff', repeat('c', 64)))->>'state',
   'unavailable',
   'REF-5 un créneau inexistant rend LE MÊME état que les quatre refus ci-dessus');
+
+-- ── LA BORNE DE LOCATAIRE ────────────────────────────────────
+-- Le créneau existe, il est ouvert, il est réservable — mais pas ici. Sans
+-- `p_organization_id`, l'identifiant seul (qui circule en clair dans les URL
+-- publiques) suffisait à écrire chez le voisin ET à en récupérer les horaires
+-- et la capacité dans la réponse.
 select is(
   (public.reserve_slot(
-    '4e5e0000-0000-4000-8000-000000000302', repeat('c', 64), 'pas-une-adresse'))->>'state',
-  'invalid_email', 'REF-6 une adresse malformée est refusée avant toute écriture');
+    '4e5e0000-0000-4000-8000-00000000000b',
+    '4e5e0000-0000-4000-8000-000000000301', repeat('c', 64)))->>'state',
+  'unavailable',
+  'REF-6 ISOLATION un créneau d''une AUTRE organisation ne se réserve pas');
+select ok(
+  not ((public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000b',
+    '4e5e0000-0000-4000-8000-000000000301', repeat('c', 64)))
+    ?| array['capacity', 'starts_at', 'ends_at', 'code', 'reservation_id']),
+  'REF-7 et le refus ne laisse fuir AUCUN attribut du créneau visé');
+select throws_ok(
+  $$select public.reserve_slot(
+      null, '4e5e0000-0000-4000-8000-000000000301', repeat('c', 64))$$,
+  '22023', 'organization required',
+  'REF-8 appeler sans organisation est un bogue d''appelant, pas un refus muet');
+
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000302', repeat('c', 64),
+    'pas-une-adresse'))->>'state',
+  'invalid_email', 'REF-9 une adresse malformée est refusée avant toute écriture');
+-- 250 + 12 = 262 caractères : la FORME est valide, la LONGUEUR ne l'est pas.
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000302', repeat('c', 64),
+    repeat('x', 250) || '@example.com', true))->>'state',
+  'invalid_email',
+  'REF-10 une adresse de plus de 254 caractères aussi — la contrainte de table '
+  'n''a pas à lever une erreur que le joueur ne comprendrait pas');
 select results_eq(
   $$select count(*) from public.reservations
      where organization_id = '4e5e0000-0000-4000-8000-00000000000c'$$,
   array[0::bigint],
-  'REF-7 aucun de ces refus n''a laissé de ligne derrière lui');
+  'REF-11 aucun de ces refus n''a laissé de ligne derrière lui');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000302'$$,
+  array[0::bigint],
+  'REF-12 ni sur le créneau visé par les deux adresses refusées');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -300,6 +392,7 @@ select is(
 -- pas : le comptage de reserve_slot ne voit tout simplement plus la ligne.
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000301', repeat('b', 64)))->>'state',
   'reserved',
   'ANN-5 la place libérée est reprise par un autre joueur');
@@ -313,16 +406,18 @@ select results_eq(
 -- Et l'annulée peut re-réserver à son tour ? Non : la place est reprise.
 select is(
   (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
     '4e5e0000-0000-4000-8000-000000000301', repeat('a', 64)))->>'state',
   'full', 'ANN-7 celui qui a annulé ne récupère pas une place déjà reprise');
 
 
 -- ════════════════════════════════════════════════════════════
--- 5. CHECK-IN — org-scopé, autorisé, idempotent, indistinguable
+-- 5. CHECK-IN — org-scopé, autorisé, idempotent, indistinguable, BORNÉ
 -- ════════════════════════════════════════════════════════════
 
 create temporary table rv_r3 as
 select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
   '4e5e0000-0000-4000-8000-000000000302', repeat('d', 64),
   'dora@example.com', true) as j;
 create temporary table rv_code as select (select j->>'code' from rv_r3) as c;
@@ -357,19 +452,21 @@ select is((select status from rv_k1), 'checked_in',
   'CHK-3 le caissier valide l''arrivée');
 select ok((select checked_in_now from rv_k1),
   'CHK-4 le premier appel est bien celui qui a compté');
+select is((select window_state from rv_k1), 'ok',
+  'CHK-5 le créneau commence dans la demi-heure : on est dans la fenêtre');
 select is((select activity_name from rv_k1), 'Dégustation',
-  'CHK-5 le comptoir voit de quelle activité il s''agit');
+  'CHK-6 le comptoir voit de quelle activité il s''agit');
 select is(
   (select r.checked_in_by from public.reservations r
     where r.code = (select c from rv_code)
       and r.organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
   '4e5e0000-0000-4000-8000-000000000102'::uuid,
-  'CHK-6 l''auteur de la validation est enregistré');
+  'CHK-7 l''auteur de la validation est enregistré');
 select results_eq(
   $$select count(*) from public.audit_logs
      where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
        and action = 'reservation.checkin'$$,
-  array[1::bigint], 'CHK-7 l''arrivée est auditée, une fois');
+  array[1::bigint], 'CHK-8 l''arrivée est auditée, une fois');
 
 -- IDEMPOTENCE : deuxième passage du même code.
 create temporary table rv_k2 as
@@ -378,16 +475,16 @@ select * from public.checkin_reservation(
   (select c from rv_code),
   '4e5e0000-0000-4000-8000-000000000102');
 select is((select status from rv_k2), 'checked_in',
-  'CHK-8 le second passage rend l''état, sans le refuser');
+  'CHK-9 le second passage rend l''état, sans le refuser');
 select ok(not (select checked_in_now from rv_k2),
-  'CHK-9 mais il ne compte pas comme une arrivée');
+  'CHK-10 mais il ne compte pas comme une arrivée');
 select is((select checked_in_at from rv_k2), (select checked_in_at from rv_k1),
-  'CHK-10 l''horodatage d''arrivée n''est pas repoussé');
+  'CHK-11 l''horodatage d''arrivée n''est pas repoussé');
 select results_eq(
   $$select count(*) from public.audit_logs
      where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
        and action = 'reservation.checkin'$$,
-  array[1::bigint], 'CHK-11 et il n''ajoute aucune ligne d''audit');
+  array[1::bigint], 'CHK-12 et il n''ajoute aucune ligne d''audit');
 
 -- L'ARRIVÉE NE S'ANNULE PLUS.
 select is(
@@ -397,7 +494,7 @@ select is(
         and r.organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
     repeat('d', 64)))->>'state',
   'already_checked_in',
-  'CHK-12 une réservation arrivée ne peut plus être annulée');
+  'CHK-13 une réservation arrivée ne peut plus être annulée');
 
 -- INDISTINGUABILITÉ. Le code d'A présenté chez B, et un code qui n'existe
 -- nulle part, rendent la MÊME chose : rien.
@@ -408,31 +505,114 @@ select results_eq(
         '4e5e0000-0000-4000-8000-000000000103')$$,
     (select c from rv_code)),
   array[0::bigint],
-  'CHK-13 le code d''une autre organisation ne rend aucune ligne');
+  'CHK-14 le code d''une autre organisation ne rend aucune ligne');
 select results_eq(
   $$select count(*)::bigint from public.checkin_reservation(
       '4e5e0000-0000-4000-8000-00000000000b', 'ZZZZZZZZ',
       '4e5e0000-0000-4000-8000-000000000103')$$,
   array[0::bigint],
-  'CHK-14 un code inconnu rend EXACTEMENT la même chose : aucune ligne');
+  'CHK-15 un code inconnu rend EXACTEMENT la même chose : aucune ligne');
 select results_eq(
   $$select count(*) from public.reservations
      where status = 'checked_in'
        and organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
   array[1::bigint],
-  'CHK-15 la tentative croisée n''a rien consommé');
+  'CHK-16 la tentative croisée n''a rien consommé');
 
--- Deux organisations ont le droit de porter le MÊME code court.
+-- Deux organisations ont le droit de porter le MÊME code court. Le code est
+-- posé PAR UN `update` et non à l'insertion : le trigger écrase désormais
+-- systématiquement ce que l'appelant fournit (voir CODE-1 ci-dessous).
 insert into public.reservations
-  (slot_id, organization_id, player_key_hash, code)
-values ('4e5e0000-0000-4000-8000-000000000306',
-        '4e5e0000-0000-4000-8000-00000000000b', repeat('e', 64),
-        (select c from rv_code));
+  (id, slot_id, organization_id, player_key_hash)
+values ('4e5e0000-0000-4000-8000-000000000501',
+        '4e5e0000-0000-4000-8000-000000000306',
+        '4e5e0000-0000-4000-8000-00000000000b', repeat('e', 64));
+update public.reservations
+   set code = (select c from rv_code)
+ where id = '4e5e0000-0000-4000-8000-000000000501';
 select results_eq(
   format($$select count(*) from public.reservations where code = %L$$,
          (select c from rv_code)),
   array[2::bigint],
-  'CHK-16 le code n''est unique QUE dans son organisation');
+  'CHK-17 le code n''est unique QUE dans son organisation');
+
+-- ── LE CODE NE SE CHOISIT PAS ────────────────────────────────
+-- Un appelant capable d'écrire dans la table pouvait poser le code de son
+-- choix — donc rendre prévisible l'identifiant qu'on présente au comptoir.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash, code)
+values ('4e5e0000-0000-4000-8000-000000000502',
+        '4e5e0000-0000-4000-8000-000000000306',
+        '4e5e0000-0000-4000-8000-00000000000b', repeat('9', 64), 'BCDEFGHJ');
+select isnt(
+  (select code from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000502'),
+  'BCDEFGHJ',
+  'CODE-1 un code fourni à l''insertion est ÉCRASÉ, jamais retenu');
+select ok(
+  (select code ~ '^[A-HJ-NP-Z2-9]{8}$' from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000502'),
+  'CODE-2 et remplacé par un code du serveur, à l''alphabet sans ambiguïté');
+
+-- ── LA FENÊTRE ───────────────────────────────────────────────
+-- TROP TÔT : le créneau est dans trois jours.
+create temporary table rv_early as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000308', repeat('f6', 32)) as j;
+create temporary table rv_ek as
+select * from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select j->>'code' from rv_early),
+  '4e5e0000-0000-4000-8000-000000000102');
+select is((select window_state from rv_ek), 'too_early',
+  'FEN-1 un code présenté trois jours avant le créneau est hors fenêtre');
+select ok(not (select checked_in_now from rv_ek),
+  'FEN-2 et le geste ne compte pas');
+select is((select status from rv_ek), 'confirmed',
+  'FEN-3 la réservation n''est PAS consommée : le joueur peut encore venir');
+
+-- TROP TARD : le créneau est de l'avant-veille, sa journée civile est close.
+-- La ligne est posée à la main — reserve_slot refuse évidemment un créneau
+-- passé, et c'est justement l'état qu'on veut examiner.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash)
+values ('4e5e0000-0000-4000-8000-000000000503',
+        '4e5e0000-0000-4000-8000-000000000309',
+        '4e5e0000-0000-4000-8000-00000000000a', repeat('a7', 32));
+create temporary table rv_lk as
+select * from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select code from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000503'),
+  '4e5e0000-0000-4000-8000-000000000102');
+select is((select window_state from rv_lk), 'too_late',
+  'FEN-4 un code présenté trois jours après le créneau est hors fenêtre');
+select ok(not (select checked_in_now from rv_lk),
+  'FEN-5 et n''ouvre pas rétroactivement une présence');
+select is(
+  (select status from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000503'),
+  'confirmed',
+  'FEN-6 le no-show reste `confirmed` et non arrivé — c''est une information, '
+  'pas un accident à effacer');
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.checkin'$$,
+  array[1::bigint],
+  'FEN-7 aucun des deux refus de fenêtre n''a écrit au journal d''audit');
+
+-- ── LE CRÉNEAU COMMENCÉ NE SE DÉSISTE PLUS ───────────────────
+select is(
+  (public.cancel_reservation(
+    '4e5e0000-0000-4000-8000-000000000503', repeat('a7', 32)))->>'state',
+  'too_late',
+  'ANN-8 une place sur un créneau déjà commencé ne se rend plus');
+select is(
+  (select status from public.reservations
+    where id = '4e5e0000-0000-4000-8000-000000000503'),
+  'confirmed', 'ANN-9 et la ligne n''a pas bougé');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -460,6 +640,35 @@ select throws_ok(
             '4e5e0000-0000-4000-8000-00000000000a', repeat('f', 64), now())$$,
   '23514', null,
   'ETAT-3 un consentement sans adresse est refusé');
+-- L'AUTRE MOITIÉ, et c'est celle que l'implication laissait passer : une
+-- adresse conservée sans base légale pour la conserver.
+select throws_ok(
+  $$insert into public.reservations
+      (slot_id, organization_id, player_key_hash, email)
+    values ('4e5e0000-0000-4000-8000-000000000302',
+            '4e5e0000-0000-4000-8000-00000000000a', repeat('f', 64),
+            'sans-base@example.com')$$,
+  '23514', null,
+  'ETAT-4 une adresse sans consentement est refusée par la base, pas seulement '
+  'par la discipline de reserve_slot');
+select throws_ok(
+  $$insert into public.reservations
+      (slot_id, organization_id, player_key_hash, email,
+       consent_transactional_at)
+    values ('4e5e0000-0000-4000-8000-000000000302',
+            '4e5e0000-0000-4000-8000-00000000000a', repeat('f', 64),
+            repeat('x', 250) || '@example.com', now())$$,
+  '23514', null,
+  'ETAT-5 une adresse de plus de 254 caractères est refusée par la table');
+-- L'empreinte n'admet que deux formes : 64 hexadécimaux, ou le marqueur de
+-- purge de SA ligne. Une chaîne libre n'entre pas.
+select throws_ok(
+  $$insert into public.reservations
+      (slot_id, organization_id, player_key_hash)
+    values ('4e5e0000-0000-4000-8000-000000000302',
+            '4e5e0000-0000-4000-8000-00000000000a', 'purge:pas-mon-identifiant')$$,
+  '23514', null,
+  'ETAT-6 le marqueur de purge d''une AUTRE ligne n''est pas une empreinte valide');
 select throws_ok(
   $$insert into public.reservation_slots
       (activity_id, organization_id, starts_at, ends_at, capacity)
@@ -467,7 +676,7 @@ select throws_ok(
             '4e5e0000-0000-4000-8000-00000000000a',
             now() + interval '9 days', now() + interval '9 days 1 hour', 0)$$,
   '23514', null,
-  'ETAT-4 un créneau de zéro place n''existe pas');
+  'ETAT-7 un créneau de zéro place n''existe pas');
 -- FK COMPOSITE : un créneau de A ne peut pas être rattaché à une activité de B.
 select throws_ok(
   $$insert into public.reservation_slots
@@ -476,7 +685,7 @@ select throws_ok(
             '4e5e0000-0000-4000-8000-00000000000a',
             now() + interval '9 days', now() + interval '9 days 1 hour', 5)$$,
   '23503', null,
-  'ETAT-5 la FK composite refuse un créneau cousu sur l''activité d''un voisin');
+  'ETAT-8 la FK composite refuse un créneau cousu sur l''activité d''un voisin');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -516,13 +725,13 @@ select is(
 -- ════════════════════════════════════════════════════════════
 
 select ok(has_function_privilege('service_role',
-  'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
   'ACL-1 service_role exécute reserve_slot');
 select ok(not has_function_privilege('authenticated',
-  'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
   'ACL-2 authenticated ne l''exécute pas');
 select ok(not has_function_privilege('anon',
-  'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
   'ACL-3 anon ne l''exécute pas');
 select ok(not has_function_privilege('authenticated',
   'public.cancel_reservation(uuid,text)', 'EXECUTE'),
@@ -548,6 +757,7 @@ select ok(not has_function_privilege('anon',
 select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 select throws_ok(
   $$select public.reserve_slot(
+      '4e5e0000-0000-4000-8000-00000000000a',
       '4e5e0000-0000-4000-8000-000000000302', repeat('9', 64))$$,
   '42501', 'not authorized',
   'ACL-10 la garde auth.role() de reserve_slot mord, pas seulement le grant');
@@ -579,6 +789,15 @@ select ok(not has_table_privilege('authenticated', 'public.reservations', 'UPDAT
   'ACL-18 aucune mise à jour directe de réservation');
 select ok(not has_table_privilege('authenticated', 'public.reservations', 'DELETE'),
   'ACL-19 aucune suppression directe de réservation');
+-- AUCUNE SUPPRESSION EN CASCADE NON PLUS. Supprimer une activité emporterait
+-- ses créneaux, puis les réservations de ces créneaux — donc l'historique des
+-- arrivées, sans audit et sans que rien n'ait compté ce qui disparaissait.
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_activities', 'DELETE'),
+  'ACL-20 une activité ne se supprime pas : `active = false` est l''interrupteur');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_slots', 'DELETE'),
+  'ACL-21 un créneau non plus : `status = closed` ferme sans rien effacer');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -611,11 +830,13 @@ select results_eq(
   array[0::bigint],
   'RLS-3 ni aucun de ses créneaux');
 
+-- Cinq réservations chez A à ce stade : Alice (annulée) et son remplaçant sur
+-- S1, Dora (arrivée) sur S2, le « trop tôt » sur S8, le « trop tard » sur S9.
 set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000102';
 select results_eq(
   $$select count(*) from public.reservations
      where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
-  array[3::bigint],
+  array[5::bigint],
   'RLS-4 le CAISSIER voit les réservations de son organisation (écran de comptoir)');
 select results_eq(
   $$select count(*) from public.reservation_activities
@@ -640,17 +861,31 @@ select throws_ok(
             '4e5e0000-0000-4000-8000-00000000000a', repeat('7', 64))$$,
   '42501', null,
   'RLS-8 même le propriétaire ne s''ajoute pas une réservation à la main');
+-- ET IL NE SUPPRIME RIEN. Le grant `delete` a été retiré des deux tables de
+-- configuration : la cascade y aurait emporté l'historique des arrivées.
+select throws_ok(
+  $$delete from public.reservation_activities
+     where id = '4e5e0000-0000-4000-8000-000000000201'$$,
+  '42501', null,
+  'RLS-9 il ne supprime pas non plus une activité, ni la cascade qui suivrait');
+select throws_ok(
+  $$delete from public.reservation_slots
+     where id = '4e5e0000-0000-4000-8000-000000000308'$$,
+  '42501', null,
+  'RLS-10 ni un créneau');
 
 set local role anon;
 select throws_ok(
   $$select count(*) from public.reservations$$,
-  '42501', null, 'RLS-9 anon ne lit aucune réservation');
+  '42501', null, 'RLS-11 anon ne lit aucune réservation');
 select throws_ok(
   $$select count(*) from public.reservation_slots$$,
-  '42501', null, 'RLS-10 anon ne lit aucun créneau');
+  '42501', null, 'RLS-12 anon ne lit aucun créneau');
 
 reset role;
 select set_config('request.jwt.claim.sub', '', true);
+-- La session redevient service_role : les deux blocs suivants rappellent les RPC.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 
 -- ════════════════════════════════════════════════════════════
@@ -658,20 +893,21 @@ select set_config('request.jwt.claim.sub', '', true);
 -- ════════════════════════════════════════════════════════════
 
 -- Une réservation ANCIENNE (au-delà des 6 mois de rétention de A) et une
--- RÉCENTE, pour prouver que la purge ne mord que sur la première.
+-- RÉCENTE, pour prouver que la purge ne mord que sur la première. Les codes ne
+-- sont pas posés : le trigger les écrase de toute façon.
 insert into public.reservations
   (id, slot_id, organization_id, player_key_hash, email,
-   consent_transactional_at, code, created_at)
+   consent_transactional_at, created_at)
 values
   ('4e5e0000-0000-4000-8000-000000000401',
    '4e5e0000-0000-4000-8000-000000000302',
    '4e5e0000-0000-4000-8000-00000000000a', repeat('1', 64),
-   'vieille@example.com', now() - interval '10 months', 'PURGEAAA',
+   'vieille@example.com', now() - interval '10 months',
    now() - interval '10 months'),
   ('4e5e0000-0000-4000-8000-000000000402',
    '4e5e0000-0000-4000-8000-000000000302',
    '4e5e0000-0000-4000-8000-00000000000a', repeat('2', 64),
-   'recente@example.com', now(), 'PURGEBBB', now());
+   'recente@example.com', now(), now());
 
 select public.purge_expired_personal_data();
 
@@ -691,14 +927,42 @@ select is(
 select is(
   (select player_key_hash from public.reservations
     where id = '4e5e0000-0000-4000-8000-000000000401'),
-  pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
-    '4e5e0000-0000-4000-8000-000000000401', 'UTF8')), 'hex'),
-  'PURGE-4 et le lien à l''appareil est remplacé par une valeur dérivée de la ligne');
+  'purge:4e5e0000-0000-4000-8000-000000000401',
+  'PURGE-4 et le lien à l''appareil est remplacé par un MARQUEUR, hors de '
+  'l''espace des empreintes');
 select is(
   (select email from public.reservations
     where id = '4e5e0000-0000-4000-8000-000000000402'),
   'recente@example.com',
   'PURGE-5 la réservation récente est intacte');
+
+-- ── UNE LIGNE PURGÉE NE SE ROUVRE PAS ────────────────────────
+-- La première version remplaçait l'empreinte par `sha256(id)` : dérivable par
+-- quiconque connaît l'identifiant de la ligne, donc toujours un authentifiant —
+-- et un authentifiant PUBLIC. Ces trois assertions échoueraient sur cette
+-- version-là, et c'est exactement leur raison d'être.
+select is(
+  (public.cancel_reservation(
+    '4e5e0000-0000-4000-8000-000000000401',
+    pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+      '4e5e0000-0000-4000-8000-000000000401', 'UTF8')), 'hex')))->>'state',
+  'unknown',
+  'PURGE-6 une empreinte RECALCULÉE depuis l''identifiant n''annule rien');
+select is(
+  (select pg_catalog.jsonb_array_length(
+    (public.reservation_public_state(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+        '4e5e0000-0000-4000-8000-000000000401', 'UTF8')), 'hex')))
+    ->'reservations')),
+  0,
+  'PURGE-7 et ne rend aucune réservation à lire');
+select throws_ok(
+  $$select public.cancel_reservation(
+      '4e5e0000-0000-4000-8000-000000000401',
+      'purge:4e5e0000-0000-4000-8000-000000000401')$$,
+  '22023', 'invalid player key',
+  'PURGE-8 le marqueur lui-même ne franchit même pas la garde de forme');
 
 -- IDEMPOTENCE : un second passage ne réécrit rien (sinon chaque nuit
 -- reconstruirait les mêmes lignes mortes, indéfiniment).
@@ -716,7 +980,133 @@ select is(
   (select ctid from public.reservations
     where id = '4e5e0000-0000-4000-8000-000000000401'),
   (select t from rv_purge_ctid),
-  'PURGE-6 un second passage ne réécrit pas la ligne déjà neutralisée');
+  'PURGE-9 un second passage ne réécrit pas la ligne déjà neutralisée');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 11. LE CHECK-IN NE LIBÈRE PAS LA PLACE
+--
+-- LE DÉFAUT QUE CE BLOC FERME : le comptage et l'index partiel ne regardaient
+-- que `confirmed`, alors que `checkin_reservation` fait passer la ligne en
+-- `checked_in`. Un créneau de quatre places dont les quatre inscrits étaient
+-- arrivés retombait donc à zéro occupant AUX YEUX DE LA BASE : la cinquième
+-- réservation passait, et le commerçant accueillait cinq personnes dans une
+-- salle prévue pour quatre. Le même trou permettait à un joueur déjà arrivé de
+-- reprendre une seconde place sur le créneau qu'il venait d'honorer.
+-- ════════════════════════════════════════════════════════════
+
+-- QUATRE INSTRUCTIONS, ET NON QUATRE COLONNES D'UN MÊME `select` : l'ordre
+-- d'évaluation d'une liste de sélection n'est pas un contrat, et « la quatrième
+-- demande annonce zéro place restante » n'a de sens que si elle est bien la
+-- quatrième. Ce qui est ordonné ici, ce sont les instructions.
+create temporary table rv_full (n int, j jsonb);
+insert into rv_full values (1, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000310', repeat('a1', 32)));
+insert into rv_full values (2, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000310', repeat('b2', 32)));
+insert into rv_full values (3, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000310', repeat('c3', 32)));
+insert into rv_full values (4, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000310', repeat('d4', 32)));
+
+select is(
+  (select pg_catalog.count(*)::int from rv_full where j->>'state' = 'reserved'),
+  4, 'PLEIN-1 les quatre places du créneau sont prises');
+select is((select (j->>'remaining')::int from rv_full where n = 4), 0,
+  'PLEIN-2 la quatrième demande annonce zéro place restante');
+
+-- LES QUATRE ARRIVENT. C'est ici que l'ancien comptage vidait le créneau.
+create temporary table rv_kf (n int, counted boolean);
+insert into rv_kf
+select 1, k.checked_in_now from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select j->>'code' from rv_full where n = 1),
+  '4e5e0000-0000-4000-8000-000000000102') k;
+insert into rv_kf
+select 2, k.checked_in_now from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select j->>'code' from rv_full where n = 2),
+  '4e5e0000-0000-4000-8000-000000000102') k;
+insert into rv_kf
+select 3, k.checked_in_now from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select j->>'code' from rv_full where n = 3),
+  '4e5e0000-0000-4000-8000-000000000102') k;
+insert into rv_kf
+select 4, k.checked_in_now from public.checkin_reservation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select j->>'code' from rv_full where n = 4),
+  '4e5e0000-0000-4000-8000-000000000102') k;
+
+select is(
+  (select pg_catalog.count(*)::int from rv_kf where counted), 4,
+  'PLEIN-3 les quatre arrivées sont validées, et chacune compte pour une');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000310'
+       and status = 'checked_in'$$,
+  array[4::bigint],
+  'PLEIN-4 le créneau porte quatre arrivées et plus aucune ligne `confirmed`');
+
+-- LE CŒUR DU BLOC.
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000310', repeat('e5', 32)))->>'state',
+  'full',
+  'PLEIN-5 CAPACITÉ un créneau plein d''arrivées reste plein : la cinquième '
+  'réservation est refusée');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000310', repeat('a1', 32)))->>'state',
+  'already_reserved',
+  'PLEIN-6 IDEMPOTENCE le joueur déjà ARRIVÉ ne reprend pas une seconde place');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000310', repeat('a1', 32)))->>'status',
+  'checked_in',
+  'PLEIN-7 et la réponse dit qu''il est arrivé, pas seulement inscrit');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000310'$$,
+  array[4::bigint],
+  'PLEIN-8 aucune cinquième ligne n''existe, sous aucun statut');
+
+-- L'INDEX PARTIEL COUVRE LE MÊME ENSEMBLE que le comptage : la ceinture tient
+-- même si l'on court-circuite la RPC.
+select throws_ok(
+  $$insert into public.reservations (slot_id, organization_id, player_key_hash)
+    values ('4e5e0000-0000-4000-8000-000000000310',
+            '4e5e0000-0000-4000-8000-00000000000a', repeat('a1', 32))$$,
+  '23505', null,
+  'PLEIN-9 l''index partiel refuse aussi une seconde ligne face à une arrivée');
+
+-- ── L'ADRESSE N'EST PAS STOCKÉE SANS CONSENTEMENT ────────────
+-- Le joueur donne son adresse mais refuse le message : rien n'est conservé.
+-- Ce n'est pas la contrainte de table qui le décide — elle refuserait la ligne
+-- entière — c'est reserve_slot qui jette l'adresse avant d'écrire.
+create temporary table rv_nc as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000308', repeat('c9', 32),
+  'refuse-le-message@example.com', false) as j;
+select is((select j->>'state' from rv_nc), 'reserved',
+  'CONS-1 la réservation SANS consentement passe : l''adresse est facultative');
+select is(
+  (select email from public.reservations
+    where player_key_hash = repeat('c9', 32)),
+  null,
+  'CONS-2 mais l''adresse fournie n''est PAS conservée');
+select is(
+  (select consent_transactional_at from public.reservations
+    where player_key_hash = repeat('c9', 32)),
+  null, 'CONS-3 ni le moindre consentement');
 
 select * from finish();
 rollback;

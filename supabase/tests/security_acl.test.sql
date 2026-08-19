@@ -385,9 +385,15 @@ select ok(has_column_privilege('authenticated', 'public.reservations', 'code', '
 select ok(not has_table_privilege('authenticated', 'public.reservations', 'INSERT'), 'merchant cannot insert a reservation past the capacity guard');
 select ok(not has_table_privilege('authenticated', 'public.reservations', 'UPDATE'), 'merchant cannot check in a reservation by direct update');
 select ok(not has_table_privilege('authenticated', 'public.reservations', 'DELETE'), 'merchant cannot delete a reservation');
-select ok(has_function_privilege('service_role', 'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'), 'server can take a reservation slot');
-select ok(not has_function_privilege('authenticated', 'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot bypass the reservation capacity lock');
-select ok(not has_function_privilege('anon', 'public.reserve_slot(uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot reserve directly');
+-- NI SUR LES DEUX TABLES DE CONFIGURATION : la cascade y emporterait les
+-- créneaux d'une activité PUIS les réservations de ces créneaux, donc
+-- l'historique des arrivées, sans audit et sans que rien n'ait compté ce qui
+-- disparaissait. `active = false` et `status = 'closed'` ferment sans effacer.
+select ok(not has_table_privilege('authenticated', 'public.reservation_activities', 'DELETE'), 'merchant cannot delete a reservation activity and cascade away its arrival history');
+select ok(not has_table_privilege('authenticated', 'public.reservation_slots', 'DELETE'), 'merchant cannot delete a reservation slot and cascade away its arrival history');
+select ok(has_function_privilege('service_role', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'server can take a reservation slot');
+select ok(not has_function_privilege('authenticated', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot bypass the reservation capacity lock');
+select ok(not has_function_privilege('anon', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot reserve directly');
 select ok(not has_function_privilege('authenticated', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'merchant session cannot cancel through the player RPC');
 select ok(not has_function_privilege('anon', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'anon cannot cancel directly');
 select ok(has_function_privilege('service_role', 'public.checkin_reservation(uuid,text,text)', 'EXECUTE'), 'server can validate an arrival');
@@ -761,8 +767,12 @@ select ok(exists (select 1 from pg_constraint where conrelid='public.reservation
 select ok(exists (select 1 from pg_constraint where conrelid='public.reservations'::regclass and conname='reservations_slot_id_organization_id_fkey' and contype='f'), 'reservation slot-of-reservation tenant FK exists');
 -- L'unicité de la place n'est pas une contrainte mais un index PARTIEL : la
 -- réservation annulée doit pouvoir être remplacée par une nouvelle du même
--- joueur, ce qu'une contrainte pleine interdirait.
-select ok(exists (select 1 from pg_indexes where schemaname='public' and indexname='reservations_slot_player_active_idx' and indexdef ilike '%where (status = ''confirmed''::text)%'), 'one live reservation per player and slot is enforced by a partial unique index');
+-- joueur, ce qu'une contrainte pleine interdirait. Son prédicat porte LES DEUX
+-- ÉTATS VIVANTS, et l'assertion le vérifie état par état : sur `confirmed`
+-- seul, un joueur ARRIVÉ sortait de l'index et pouvait reprendre une seconde
+-- place sur le créneau qu'il venait d'honorer — le même trou que le comptage
+-- de capacité de `reserve_slot`, dont ce prédicat doit rester le miroir exact.
+select ok(exists (select 1 from pg_indexes where schemaname='public' and indexname='reservations_slot_player_active_idx' and indexdef ilike '%where%' and indexdef ilike '%confirmed%' and indexdef ilike '%checked_in%' and indexdef not ilike '%cancelled%'), 'one live reservation per player and slot is enforced by a partial unique index covering BOTH live states');
 select ok(exists (select 1 from pg_constraint where conrelid='public.reservations'::regclass and conname='reservations_org_code_unique' and contype='u'), 'the check-in code is unique within its organization only');
 select ok(exists (select 1 from pg_trigger where tgrelid='public.quiz_answers'::regclass and tgname='quiz_answers_freeze' and not tgisinternal), 'a submitted quiz answer is frozen by trigger');
 select ok(exists (

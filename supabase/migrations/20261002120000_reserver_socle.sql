@@ -8,14 +8,18 @@
 -- ── LES QUATRE INVARIANTS QUE CE FICHIER REND VRAIS ──
 --
 --   1. AUCUNE SUR-RÉSERVATION SOUS CONCURRENCE. La capacité n'est pas un
---      compteur dénormalisé : elle se DÉDUIT des lignes `confirmed`, sous un
---      verrou d'avis porté par le créneau. Un compteur dupliqué aurait exigé
---      de le maintenir juste à l'annulation, au check-in et à la purge — trois
---      occasions de dériver, contre une seule source de vérité ici.
+--      compteur dénormalisé : elle se DÉDUIT des lignes VIVANTES — `confirmed`
+--      ET `checked_in` — sous un verrou d'avis porté par le créneau. Ne compter
+--      que les `confirmed` aurait fait du CHECK-IN UNE LIBÉRATION DE PLACE :
+--      quatre arrivées sur un créneau de quatre, et la cinquième réservation
+--      passait, sur un créneau physiquement plein. Un compteur dupliqué, lui,
+--      aurait exigé d'être maintenu juste à l'annulation, au check-in et à la
+--      purge — trois occasions de dériver, contre une seule source de vérité.
 --   2. UNE IDENTITÉ NE RÉSERVE PAS DEUX FOIS LE MÊME CRÉNEAU. Un index unique
---      PARTIEL (`where status = 'confirmed'`) le garantit au niveau de la base,
+--      PARTIEL — sur le MÊME ensemble d'états que le comptage, sous peine de
+--      rouvrir exactement le trou ci-dessus — le garantit au niveau de la base,
 --      et la RPC le rend IDEMPOTENT plutôt que fautif : re-réserver rend la
---      réservation existante et son code.
+--      réservation existante et son code, y compris après l'arrivée.
 --   3. UNE RÉSERVATION ARRIVÉE NE S'ANNULE PLUS. Deux `check` d'état
 --      s'en chargent, sur le patron `redeemed_at` XOR `cancelled_at` de
 --      `reward_issuances` (20260805150000:104-115).
@@ -183,9 +187,19 @@ create table public.reservations (
   slot_id uuid not null,
   organization_id uuid not null
     references public.organizations(id) on delete cascade,
-  player_key_hash text not null check (player_key_hash ~ '^[0-9a-f]{64}$'),
+  -- Sa FORME est portée par `reservations_player_key_shape` ci-dessous, et pas
+  -- ici : elle admet une seconde valeur, le marqueur de purge, qui ne peut
+  -- s'écrire qu'en fonction de `id` — donc d'une autre colonne.
+  player_key_hash text not null,
+  -- BORNE DE LONGUEUR avant la forme (précédent hunt_completions,
+  -- 20260724120000:152) : `~*` sur une chaîne non bornée est un travail
+  -- proportionnel à ce que l'appelant envoie, et 254 est le maximum d'un
+  -- chemin d'expéditeur (RFC 5321). reserve_slot refuse au-delà, plutôt que de
+  -- laisser la contrainte lever une erreur que le joueur ne comprendrait pas.
   email text
-    check (email is null or email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+    check (email is null
+           or (pg_catalog.char_length(email) <= 254
+               and email ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$')),
   consent_transactional_at timestamptz,
   -- Code court de check-in : alphabet sans ambiguïté (ni I/O/0/1), posé par
   -- le trigger SECURITY DEFINER ci-dessous, jamais par le client. 8 caractères
@@ -215,12 +229,25 @@ create table public.reservations (
     check (cancelled_at is null or checked_in_at is null),
   constraint reservations_checkin_actor_state
     check (checked_in_by is null or checked_in_at is not null),
-  -- Un consentement sans adresse ne consent à rien. C'est aussi ce qui rend la
-  -- purge honnête : effacer l'email SANS effacer le consentement laisserait en
-  -- base la trace « cette personne acceptait qu'on lui écrive », sur une
-  -- personne qu'on ne sait plus joindre.
+  -- ÉQUIVALENCE, comme les deux états ci-dessus, et pour la même raison : une
+  -- implication simple laissait passer l'autre moitié du problème. Un
+  -- consentement sans adresse ne consent à rien ; UNE ADRESSE SANS CONSENTEMENT
+  -- EST UNE DONNÉE PERSONNELLE CONSERVÉE SANS BASE — c'est le cas que
+  -- l'implication laissait entrer, et il n'était retenu que par la discipline
+  -- de `reserve_slot`. Il l'est maintenant par la base. C'est aussi ce qui rend
+  -- la purge honnête : effacer l'email sans effacer le consentement laisserait
+  -- la trace « cette personne acceptait qu'on lui écrive », sur une personne
+  -- qu'on ne sait plus joindre — la purge efface donc les deux d'un geste.
   constraint reservations_consent_state
-    check (consent_transactional_at is null or email is not null),
+    check ((email is not null) = (consent_transactional_at is not null)),
+  -- L'EMPREINTE, OU LE MARQUEUR DE PURGE, ET RIEN D'AUTRE. Le marqueur est
+  -- HORS de l'espace des empreintes (deux-points, absent de l'hexadécimal) et
+  -- adossé à l'identifiant de SA ligne : unique par construction — donc
+  -- compatible d'office avec l'index partiel — et impossible à confondre avec
+  -- une empreinte comme à recalculer depuis une valeur devinée.
+  constraint reservations_player_key_shape
+    check (player_key_hash ~ '^[0-9a-f]{64}$'
+           or player_key_hash = 'purge:' || id::text),
   -- Le code ne vaut que dans son organisation : deux commerçants ont le droit
   -- d'émettre le même. C'est la portée que checkin_reservation applique.
   constraint reservations_org_code_unique unique (organization_id, code),
@@ -238,7 +265,9 @@ comment on table public.reservations is
 comment on column public.reservations.player_key_hash is
   'Empreinte SHA-256 du cookie joueur HTTP-only (miroir event_players.token_hash '
   '/ jackpot_participants.player_token_hash). Neutralisée par '
-  'purge_expired_personal_data passé la rétention de l''organisation.';
+  'purge_expired_personal_data passé la rétention de l''organisation, remplacée '
+  'par le marqueur `purge:<id>` — HORS de l''espace des empreintes, donc '
+  'inutilisable comme clé d''accès par les RPC joueur.';
 comment on column public.reservations.consent_transactional_at is
   'Consentement au message NÉCESSAIRE AU SERVICE (confirmation, rappel, '
   'annulation), capturé à la réservation — ADR-109. N''est JAMAIS un '
@@ -249,12 +278,19 @@ comment on column public.reservations.code is
   'pas un QR-preuve (ADR-109) : le check-in exige une action staff authentifiée.';
 
 -- UNICITÉ MÉTIER #2 : une identité ne détient qu'UNE réservation vivante sur
--- un créneau. PARTIEL (`confirmed` seul) — sans quoi annuler puis re-réserver
--- serait refusé par la base, alors que c'est un parcours normal. Sert aussi
--- d'index de tête au comptage de capacité (`slot_id` en tête).
+-- un créneau. PARTIEL — sans quoi annuler puis re-réserver serait refusé par la
+-- base, alors que c'est un parcours normal. Sert aussi d'index de tête au
+-- comptage de capacité (`slot_id` en tête).
+--
+-- L'ENSEMBLE D'ÉTATS EST LE MÊME QUE CELUI DU COMPTAGE DE `reserve_slot`, et
+-- ce n'est pas une commodité : sur `confirmed` seul, un joueur arrivé n'était
+-- plus dans l'index — il pouvait reprendre une seconde place sur le créneau
+-- qu'il venait d'honorer, et la place qu'il occupait physiquement était
+-- revendue à quelqu'un d'autre. Les deux listes se lisent ensemble ou pas du
+-- tout. `cancelled` reste dehors : la place, elle, est réellement rendue.
 create unique index reservations_slot_player_active_idx
   on public.reservations (slot_id, player_key_hash)
-  where status = 'confirmed';
+  where status in ('confirmed', 'checked_in');
 
 create index reservations_org_created_idx
   on public.reservations (organization_id, created_at desc);
@@ -270,8 +306,17 @@ create index reservations_org_player_idx
 -- près, toutes deux imposées par le fait que l'unicité est ici PAR
 -- ORGANISATION : la sonde de collision est org-scopée, et la longueur passe à
 -- 8 (le code se dicte au comptoir, il vit plus longtemps qu'un join_code de
--- soirée). N'écrase pas un code fourni : les fixtures en posent de
--- déterministes.
+-- soirée).
+--
+-- LE CODE DE L'APPELANT EST ÉCRASÉ, TOUJOURS. La première version de ce fichier
+-- respectait un `code` déjà posé, « pour que les fixtures en choisissent de
+-- déterministes » : c'était laisser CHOISIR un identifiant de comptoir à qui
+-- sait écrire dans la table, et faire reposer l'imprévisibilité du code sur la
+-- discipline de l'appelant plutôt que sur la base. Entre écraser en silence et
+-- lever une exception, on écrase : la garantie est la même — aucune ligne ne
+-- porte jamais un code choisi — et aucune écriture légitime n'échoue pour
+-- autant. Les rares fixtures qui ont besoin d'un code précis le posent par un
+-- `update`, geste explicite et hors de portée d'un insert.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.reservations_set_code()
@@ -287,9 +332,6 @@ declare
   i integer;
   attempt integer;
 begin
-  if new.code is not null then
-    return new;
-  end if;
   for attempt in 1..12 loop
     v_bytes := extensions.gen_random_bytes(8);
     v_code := '';
@@ -359,19 +401,29 @@ create policy "reservations: members read" on public.reservations
   for select to authenticated
   using (public.is_org_member(organization_id));
 
+-- AUCUN `grant delete`, NI SUR LES ACTIVITÉS NI SUR LES CRÉNEAUX, et c'est un
+-- retrait délibéré : la cascade de la FK composite emporte les créneaux d'une
+-- activité PUIS les réservations de ces créneaux — donc l'historique des
+-- arrivées, sans audit et sans qu'aucun écran n'ait compté ce qui allait
+-- disparaître. Cela contredisait le contrat écrit deux sections plus haut
+-- (« `active` est un interrupteur, pas une suppression »). Le motif dominant du
+-- dépôt pour un geste destructif est de COMPTER D'ABORD ce qui serait perdu —
+-- les six gardes existantes le font côté application ; en SQL, le plus simple
+-- qui soit sûr est de ne pas ouvrir la porte, et de laisser `active = false`
+-- (activité) et `status = 'closed'` (créneau) faire le travail sans rien
+-- effacer. Une suppression réelle, si elle est demandée, sera une RPC qui
+-- énonce d'abord son bilan.
 grant select on table public.reservation_activities to authenticated;
 grant insert (organization_id, name, description, active)
   on public.reservation_activities to authenticated;
 grant update (name, description, active)
   on public.reservation_activities to authenticated;
-grant delete on public.reservation_activities to authenticated;
 
 grant select on table public.reservation_slots to authenticated;
 grant insert (activity_id, organization_id, starts_at, ends_at, capacity, status)
   on public.reservation_slots to authenticated;
 grant update (starts_at, ends_at, capacity, status)
   on public.reservation_slots to authenticated;
-grant delete on public.reservation_slots to authenticated;
 
 -- GRANT DE COLONNES, et `email` n'y est PAS. Le commerçant lit l'agenda —
 -- qui vient, quand, avec quel code, arrivé ou non ; l'adresse n'existe que
@@ -400,9 +452,21 @@ grant select (
 -- ORDRE DES REFUS, ET IL COMPTE : l'idempotence est évaluée AVANT la capacité.
 -- Un joueur déjà inscrit sur un créneau devenu complet doit retrouver sa
 -- réservation, pas s'entendre dire « complet » sur sa propre place.
+--
+-- ── L'ORGANISATION EST EXIGÉE, ET LE CRÉNEAU SEUL NE SUFFIT PAS ──
+--
+-- `p_organization_id` n'est pas une commodité de routage : c'est la borne de
+-- locataire. Sans elle, un identifiant de créneau — 128 bits, mais qui circule
+-- en clair dans les URL publiques d'un commerce — suffisait à faire écrire la
+-- RPC dans les tables d'une AUTRE organisation, et à en rendre les attributs
+-- (`starts_at`, `ends_at`, `capacity`) dans la réponse `reserved`. Le contexte
+-- de la page appelante dit chez QUI le joueur croit réserver ; la RPC vérifie
+-- que le créneau est bien de cette maison, et rend `unavailable` sinon —
+-- indistinctement du créneau qui n'existe pas. Patron `checkin_reservation`.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.reserve_slot(
+  p_organization_id uuid,
   p_slot_id uuid,
   p_player_key_hash text,
   p_email text default null,
@@ -424,19 +488,48 @@ begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
   end if;
+  -- Organisation ABSENTE = bogue de l'appelant, pas un refus métier : on le
+  -- dit fort (patron checkin_reservation). Organisation PRÉSENTE MAIS AUTRE =
+  -- refus métier muet, traité plus bas avec les cinq autres.
+  if p_organization_id is null then
+    raise exception 'organization required' using errcode = '22023';
+  end if;
   if p_player_key_hash is null or p_player_key_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'invalid player key' using errcode = '22023';
   end if;
 
+  -- La forme de l'adresse est jugée AVANT le verrou : une chaîne malformée ne
+  -- vaut pas qu'on sérialise le créneau derrière elle.
+  v_email := nullif(pg_catalog.btrim(pg_catalog.lower(coalesce(p_email, ''))), '');
+  if v_email is not null
+     and (pg_catalog.char_length(v_email) > 254
+          or v_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$')
+  then
+    return pg_catalog.jsonb_build_object('state', 'invalid_email');
+  end if;
+
+  -- LE VERROU D'ABORD, LA LECTURE ENSUITE. La version initiale lisait le
+  -- créneau — donc sa CAPACITÉ — avant de verrouiller, puis comparait le
+  -- comptage à cette valeur lue plus tôt : un éditeur qui abaissait la capacité
+  -- entre les deux voyait la place accordée sur l'ancien chiffre. Tout ce qui
+  -- décide est désormais lu sous le verrou, dans le même instantané que le
+  -- comptage. À partir d'ici, « lire », « compter » et « insérer » sont un seul
+  -- geste.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('reservation_slot:' || p_slot_id::text, 0)
+  );
+
   select s.* into v_slot
     from public.reservation_slots s
-   where s.id = p_slot_id;
+   where s.id = p_slot_id
+     and s.organization_id = p_organization_id;
 
-  -- UN SEUL ÉTAT POUR CINQ REFUS, ET C'EST VOULU : créneau inexistant,
-  -- activité coupée, organisation sans le droit `vitrine`, créneau non ouvert,
-  -- créneau passé. Les distinguer donnerait à un appelant public un oracle sur
-  -- l'existence d'un créneau et sur l'état commercial d'une organisation qui
-  -- n'est pas la sienne — même arbitrage que join_event_session.
+  -- UN SEUL ÉTAT POUR SIX REFUS, ET C'EST VOULU : créneau inexistant, créneau
+  -- d'une AUTRE organisation, activité coupée, organisation sans le droit
+  -- `vitrine`, créneau non ouvert, créneau passé. Les distinguer donnerait à un
+  -- appelant public un oracle sur l'existence d'un créneau et sur l'état
+  -- commercial d'une organisation qui n'est pas la sienne — même arbitrage que
+  -- join_event_session.
   if not found then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
@@ -457,35 +550,34 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
-  v_email := nullif(pg_catalog.btrim(pg_catalog.lower(coalesce(p_email, ''))), '');
-  if v_email is not null and v_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
-    return pg_catalog.jsonb_build_object('state', 'invalid_email');
-  end if;
-
-  -- À partir d'ici, « compter » et « insérer » sont un seul geste.
-  perform pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended('reservation_slot:' || p_slot_id::text, 0)
-  );
-
   -- IDEMPOTENCE. Sous le verrou, donc deux appels simultanés du MÊME joueur
   -- n'insèrent pas deux lignes : le second attend et voit la première.
+  -- `checked_in` EST DE LA PARTIE : le joueur déjà arrivé détient toujours sa
+  -- place, et lui rendre `reserved` sur une seconde ligne aurait vendu deux
+  -- fois le même siège à la même personne. `status` est rendu avec, pour que
+  -- L4 sache s'il doit afficher « vous êtes inscrit » ou « vous êtes arrivé ».
   select r.* into v_existing
     from public.reservations r
    where r.slot_id = p_slot_id
      and r.player_key_hash = p_player_key_hash
-     and r.status = 'confirmed';
+     and r.status in ('confirmed', 'checked_in');
   if found then
     return pg_catalog.jsonb_build_object(
       'state', 'already_reserved',
       'reservation_id', v_existing.id,
-      'code', v_existing.code
+      'code', v_existing.code,
+      'status', v_existing.status
     );
   end if;
 
+  -- LES DEUX ÉTATS VIVANTS, PAS `confirmed` SEUL. Une arrivée occupe la place
+  -- qu'elle honore : la retirer du comptage aurait fait du passage au comptoir
+  -- une libération de siège. Cette liste et celle de
+  -- `reservations_slot_player_active_idx` sont la même — les modifier ensemble.
   select pg_catalog.count(*)::integer into v_count
     from public.reservations r
    where r.slot_id = p_slot_id
-     and r.status = 'confirmed';
+     and r.status in ('confirmed', 'checked_in');
   if v_count >= v_slot.capacity then
     return pg_catalog.jsonb_build_object(
       'state', 'full',
@@ -499,9 +591,12 @@ begin
     v_slot.id,
     v_slot.organization_id,
     p_player_key_hash,
-    v_email,
-    -- Le consentement n'existe qu'adossé à une adresse (contrainte
-    -- reservations_consent_state) : `p_consent` seul ne consent à rien.
+    -- L'ADRESSE N'EST CONSERVÉE QUE SI ELLE EST CONSENTIE. Sans consentement,
+    -- elle n'a aucune finalité — rien ne sera envoyé — et une donnée
+    -- personnelle sans finalité ne se stocke pas « au cas où ». Elle est donc
+    -- jetée ici, pas à l'envoi : la contrainte reservations_consent_state
+    -- refuserait de toute façon la ligne qui la garderait seule.
+    case when coalesce(p_consent, false) then v_email end,
     case when coalesce(p_consent, false) and v_email is not null
          then pg_catalog.now() end
   )
@@ -518,18 +613,22 @@ begin
 end;
 $$;
 
-comment on function public.reserve_slot(uuid, text, text, boolean) is
-  'Prend une place sur un créneau. ATOMIQUE (verrou d''avis sur le créneau + '
-  'comptage des réservations `confirmed` sous ce verrou : aucune '
-  'sur-réservation sous concurrence) et IDEMPOTENTE (re-réserver rend '
-  '`already_reserved` et le code existant). Refuse `full` à capacité atteinte, '
-  'et `unavailable` — indistinctement — pour un créneau inexistant, une '
-  'activité coupée, un créneau non ouvert ou passé, et une organisation sans '
-  'le droit `vitrine`.';
+comment on function public.reserve_slot(uuid, uuid, text, text, boolean) is
+  'Prend une place sur un créneau, DANS UNE ORGANISATION DONNÉE. Atomique '
+  '(verrou d''avis sur le créneau, puis lecture du créneau ET comptage des '
+  'réservations vivantes — `confirmed` et `checked_in` — sous ce verrou : '
+  'aucune sur-réservation sous concurrence, et le check-in ne libère aucune '
+  'place) et idempotente (re-réserver rend `already_reserved`, le code existant '
+  'et le statut). Refuse `full` à capacité atteinte, `invalid_email` sur une '
+  'adresse malformée ou de plus de 254 caractères, et `unavailable` — '
+  'indistinctement — pour un créneau inexistant, un créneau d''une AUTRE '
+  'organisation, une activité coupée, un créneau non ouvert ou passé, et une '
+  'organisation sans le droit `vitrine`. L''adresse n''est stockée QUE si '
+  '`p_consent`.';
 
-revoke all on function public.reserve_slot(uuid, text, text, boolean)
+revoke all on function public.reserve_slot(uuid, uuid, text, text, boolean)
   from public, anon, authenticated;
-grant execute on function public.reserve_slot(uuid, text, text, boolean)
+grant execute on function public.reserve_slot(uuid, uuid, text, text, boolean)
   to service_role;
 
 
@@ -557,11 +656,16 @@ set search_path = ''
 as $$
 declare
   v_slot_id uuid;
+  v_starts_at timestamptz;
   v_row public.reservations%rowtype;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
   end if;
+  -- Cette garde de forme est aussi ce qui rend une ligne PURGÉE inatteignable :
+  -- son `player_key_hash` vaut alors `purge:<id>`, qui ne peut pas franchir ce
+  -- filtre. Le `not like` explicite ci-dessous ne fait donc que rendre
+  -- l'intention lisible — et survivrait à un assouplissement de cette garde.
   if p_player_key_hash is null or p_player_key_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'invalid player key' using errcode = '22023';
   end if;
@@ -571,7 +675,8 @@ begin
   select r.slot_id into v_slot_id
     from public.reservations r
    where r.id = p_reservation_id
-     and r.player_key_hash = p_player_key_hash;
+     and r.player_key_hash = p_player_key_hash
+     and r.player_key_hash not like 'purge:%';
   if not found then
     return pg_catalog.jsonb_build_object('state', 'unknown');
   end if;
@@ -583,10 +688,18 @@ begin
   select r.* into v_row
     from public.reservations r
    where r.id = p_reservation_id
-     and r.player_key_hash = p_player_key_hash;
+     and r.player_key_hash = p_player_key_hash
+     and r.player_key_hash not like 'purge:%';
   if not found then
     return pg_catalog.jsonb_build_object('state', 'unknown');
   end if;
+
+  -- Le créneau est relu séparément — un `into` PL/pgSQL n'accepte pas un
+  -- %rowtype et un scalaire dans la même liste — mais sous le MÊME verrou.
+  select s.starts_at into v_starts_at
+    from public.reservation_slots s
+   where s.id = v_row.slot_id
+     and s.organization_id = v_row.organization_id;
 
   -- UNE ARRIVÉE NE S'ANNULE PAS. Le client est passé ; réécrire l'histoire
   -- fausserait le taux de présence du commerçant, et la contrainte
@@ -599,12 +712,30 @@ begin
   end if;
 
   -- IDEMPOTENCE : deuxième annulation, même réponse, aucune écriture — et
-  -- surtout `cancelled_at` n'est pas repoussé à chaque appel.
+  -- surtout `cancelled_at` n'est pas repoussé à chaque appel. AVANT `too_late`,
+  -- volontairement : une réservation déjà annulée le reste, que son créneau
+  -- soit passé ou non, et un refus à ce stade laisserait croire qu'elle est
+  -- encore due.
   if v_row.status = 'cancelled' then
     return pg_catalog.jsonb_build_object(
       'state', 'cancelled',
       'reservation_id', v_row.id,
       'cancelled_at', v_row.cancelled_at
+    );
+  end if;
+
+  -- LE CRÉNEAU COMMENCÉ NE SE DÉSISTE PLUS. Sans cette borne, une place
+  -- confirmée sur un créneau en cours — ou d'hier — pouvait être rendue au
+  -- comptage à tout moment : le commerçant qui a préparé pour vingt personnes
+  -- voyait son remplissage s'effondrer après coup, et un no-show s'effaçait de
+  -- ses statistiques d'un simple appel. Le no-show reste `confirmed` et non
+  -- arrivé — c'est une information, pas un accident à masquer. Même borne que
+  -- l'ouverture des réservations (`starts_at > now()`), lue dans l'autre sens.
+  if v_starts_at <= pg_catalog.now() then
+    return pg_catalog.jsonb_build_object(
+      'state', 'too_late',
+      'reservation_id', v_row.id,
+      'starts_at', v_starts_at
     );
   end if;
 
@@ -624,10 +755,12 @@ $$;
 
 comment on function public.cancel_reservation(uuid, text) is
   'Annule une réservation sur preuve de possession (identifiant + empreinte du '
-  'cookie joueur). Idempotente, refuse `already_checked_in` sur une arrivée '
-  'déjà enregistrée. Libère la place SANS décrémenter quoi que ce soit : la '
-  'capacité se déduit des lignes `confirmed`, et l''annulation se fait sous le '
-  'MÊME verrou d''avis que reserve_slot.';
+  'cookie joueur). Idempotente ; refuse `already_checked_in` sur une arrivée '
+  'déjà enregistrée, `too_late` sur un créneau déjà commencé, et `unknown` sur '
+  'une ligne dont les données personnelles ont été purgées. Libère la place '
+  'SANS décrémenter quoi que ce soit : la capacité se déduit des lignes '
+  'vivantes, et l''annulation se fait sous le MÊME verrou d''avis que '
+  'reserve_slot.';
 
 revoke all on function public.cancel_reservation(uuid, text)
   from public, anon, authenticated;
@@ -642,6 +775,30 @@ grant execute on function public.cancel_reservation(uuid, text)
 -- et redeem_reward_by_code (20260805150000:715-731) pour le contrôle de rôle :
 -- l'acteur est un UUID de membre, vérifié EN SQL contre organization_members.
 -- Un `p_actor` libre aurait fait de l'audit une déclaration sur l'honneur.
+--
+-- ── LA FENÊTRE, ET POURQUOI ELLE EXISTE ──
+--
+-- Sans borne de temps, un code valait pour toujours : le staff pouvait marquer
+-- « arrivé » trois semaines avant le créneau — ou trois mois après — et le taux
+-- de présence du commerçant, seule mesure qu'il tire de ce module, ne voulait
+-- plus rien dire. Pire, un check-in anticipé consommait la réservation d'un
+-- joueur qui ne s'était pas encore présenté.
+--
+-- LA BORNE CHOISIE, la plus simple qui tienne au comptoir :
+--   * ouverture  = `starts_at - 1 heure`. Les gens arrivent en avance, jamais
+--     la veille ; une heure couvre l'accueil sans ouvrir la porte à un usage
+--     détaché de la séance.
+--   * fermeture  = FIN DE LA JOURNÉE CIVILE du créneau, DANS LE FUSEAU DE
+--     L'ORGANISATION. Pas `ends_at` : un atelier qui déborde, un retardataire
+--     accueilli à la fin, un staff qui saisit les arrivées en fermant la
+--     caisse, sont des gestes normaux qu'une borne à la minute aurait refusés.
+--     La journée civile est ce que le commerçant appelle « aujourd'hui », et
+--     c'est pour cela que le fuseau intervient : à 23 h à Paris, un créneau du
+--     jour est encore du jour, ce qu'un calcul en UTC aurait déjà nié.
+--
+-- Hors fenêtre, la réservation N'EST PAS CONSOMMÉE et la ligne est tout de même
+-- rendue : le comptoir doit pouvoir expliquer son refus. `window_state` dit
+-- laquelle des deux bornes a mordu.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.checkin_reservation(
@@ -652,7 +809,7 @@ create or replace function public.checkin_reservation(
 returns table(
   id uuid, code text, status text, checked_in_at timestamptz,
   starts_at timestamptz, ends_at timestamptz, activity_name text,
-  cancelled_at timestamptz, checked_in_now boolean
+  cancelled_at timestamptz, checked_in_now boolean, window_state text
 )
 language plpgsql
 security definer
@@ -662,6 +819,7 @@ declare
   v_code text;
   v_actor_id uuid;
   v_id uuid;
+  v_timezone text;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
@@ -691,6 +849,16 @@ begin
 
   v_code := pg_catalog.upper(pg_catalog.btrim(coalesce(p_code, '')));
 
+  -- Le fuseau borne la journée civile du créneau. Même repli que
+  -- reservation_public_state : une zone que Postgres ne connaît pas ne doit pas
+  -- faire échouer un geste de comptoir.
+  select o.timezone into v_timezone
+    from public.organizations o
+   where o.id = p_organization_id;
+  if v_timezone is null or not public.is_valid_timezone(v_timezone) then
+    v_timezone := 'Europe/Paris';
+  end if;
+
   update public.reservations r
      set status = 'checked_in',
          checked_in_at = pg_catalog.now(),
@@ -711,6 +879,13 @@ begin
        select 1 from public.reservation_slots s
         where s.id = r.slot_id
           and s.organization_id = p_organization_id
+          -- LA FENÊTRE, et elle est la MÊME expression que le `case` de la
+          -- lecture ci-dessous : deux formules qui divergeraient rendraient
+          -- « too_early » sur une réservation pourtant consommée.
+          and pg_catalog.now() >= s.starts_at - interval '1 hour'
+          and pg_catalog.now() <
+              ((((s.starts_at at time zone v_timezone)::date + 1)
+                 ::timestamp) at time zone v_timezone)
      )
   returning r.id into v_id;
 
@@ -729,7 +904,19 @@ begin
   return query
   select r.id, r.code, r.status, r.checked_in_at,
          s.starts_at, s.ends_at, a.name, r.cancelled_at,
-         (r.id is not distinct from v_id)
+         (r.id is not distinct from v_id),
+         -- `::text` explicite : un `case` dont toutes les branches sont des
+         -- littéraux rend `unknown`, et `return query` compare STRICTEMENT les
+         -- types de colonnes à ceux du `returns table`.
+         case
+           when pg_catalog.now() < s.starts_at - interval '1 hour'
+             then 'too_early'::text
+           when pg_catalog.now() >=
+                ((((s.starts_at at time zone v_timezone)::date + 1)
+                   ::timestamp) at time zone v_timezone)
+             then 'too_late'
+           else 'ok'
+         end
     from public.reservations r
     join public.reservation_slots s
       on s.id = r.slot_id
@@ -747,8 +934,11 @@ comment on function public.checkin_reservation(uuid, text, text) is
   'Valide l''arrivée d''une réservation par son code court. Org-scopée, acteur '
   'obligatoire et vérifié membre owner/editor/cashier EN SQL, idempotente '
   '(`checked_in_now` distingue le geste de sa répétition), auditée sous '
-  '`reservation.checkin`. Réponse INDISTINGUABLE — aucune ligne — pour un code '
-  'inconnu et pour un code d''une autre organisation.';
+  '`reservation.checkin`. BORNÉE DANS LE TEMPS : de `starts_at - 1 h` à la fin '
+  'de la journée civile du créneau dans le fuseau de l''organisation ; hors '
+  'fenêtre la réservation n''est PAS consommée et `window_state` vaut '
+  '`too_early` ou `too_late`. Réponse INDISTINGUABLE — aucune ligne — pour un '
+  'code inconnu et pour un code d''une autre organisation.';
 
 revoke all on function public.checkin_reservation(uuid, text, text)
   from public, anon, authenticated;
@@ -828,7 +1018,15 @@ begin
       on a.id = s.activity_id
      and a.organization_id = p_organization_id
    where r.organization_id = p_organization_id
-     and r.player_key_hash = p_player_key_hash;
+     and r.player_key_hash = p_player_key_hash
+     -- UNE LIGNE PURGÉE NE SE RELIT PAS. Son `player_key_hash` vaut alors
+     -- `purge:<id>`, que la garde de forme ci-dessus interdit déjà de passer en
+     -- paramètre : ce filtre ne fait qu'écrire l'intention, et tiendrait encore
+     -- si cette garde venait à s'assouplir. Le remplacement PAR MARQUEUR, et
+     -- non par une empreinte dérivée de l'identifiant, est ce qui rend cela
+     -- vrai — une valeur dérivée reste calculable par quiconque connaît l'`id`,
+     -- donc reste un authentifiant, donc n'anonymise rien.
+     and r.player_key_hash not like 'purge:%';
 
   -- NI l'email NI l'empreinte ne sortent d'ici. Le premier est une donnée que
   -- l'appelant a déjà fournie s'il la connaît ; la seconde est la clé d'accès
@@ -877,12 +1075,25 @@ grant execute on function public.reservation_public_state(uuid, text)
 --   * `player_key_hash` — MÊME MOTIF QUE `spins.player_key` : c'est le LIEN
 --     entre toutes les réservations d'une même personne. Le laisser rendrait
 --     l'anonymisation illusoire — l'email parti, l'historique resterait
---     rattachable à un appareil. La valeur de remplacement DÉRIVE de
---     l'identifiant de ligne : unique par construction (donc compatible
---     d'office avec reservations_slot_player_active_idx) et conforme au
---     `check` hexadécimal de la colonne, ce que `'purge:' || id` n'aurait pas
---     été. Elle est déterministe, donc le garde `is distinct from` rend le
---     passage idempotent.
+--     rattachable à un appareil.
+--
+-- ── POURQUOI UN MARQUEUR, ET NON UNE EMPREINTE DÉRIVÉE ──
+--
+-- La première version écrivait `sha256(id::text)` : unique par construction,
+-- conforme au `check` hexadécimal de la colonne — et REDÉRIVABLE PAR QUICONQUE
+-- CONNAÎT L'IDENTIFIANT DE LA LIGNE. Or cette colonne n'est pas une étiquette :
+-- c'est LA CLÉ D'ACCÈS des RPC joueur. Une valeur calculable depuis un `id` qui
+-- circule en clair n'anonymise donc rien — elle remplace un authentifiant
+-- secret par un authentifiant public, et rend la ligne purgée annulable et
+-- lisible par un tiers qui n'a jamais possédé le cookie.
+--
+-- Le remplacement est donc `'purge:' || id` — PRÉCÉDENT `spins` ci-dessous,
+-- même geste, même raison : hors de l'espace des clés (le deux-points n'est pas
+-- de l'hexadécimal), donc refusé par la garde de forme des trois RPC avant même
+-- d'atteindre une ligne ; unique par construction, donc compatible d'office
+-- avec reservations_slot_player_active_idx ; et auto-descriptif, donc le garde
+-- `not like` rend le passage idempotent sans rien recalculer. C'est
+-- `reservations_player_key_shape` qui l'admet aux côtés de l'empreinte.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.purge_expired_personal_data()
@@ -955,15 +1166,12 @@ begin
     update public.reservations
        set email = null,
            consent_transactional_at = null,
-           player_key_hash = pg_catalog.encode(
-             pg_catalog.sha256(pg_catalog.convert_to(id::text, 'UTF8')), 'hex')
+           player_key_hash = 'purge:' || id::text
       where organization_id = r.id
         and created_at < now() - make_interval(months => r.data_retention_months)
         and (email is not null
              or consent_transactional_at is not null
-             or player_key_hash is distinct from pg_catalog.encode(
-                  pg_catalog.sha256(pg_catalog.convert_to(id::text, 'UTF8')),
-                  'hex'));
+             or player_key_hash not like 'purge:%');
   end loop;
   delete from public.webhook_deliveries
     where (delivered_at is not null or attempts >= 12)
