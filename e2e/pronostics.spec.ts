@@ -34,12 +34,20 @@ test.describe("pronostics — parcours joueur complet", () => {
     await expect(page.getByText(pseudo).first()).toBeVisible({ timeout: 10_000 });
 
     // ── Match futur : saisie d'un pronostic.
+    // Carte du match (`<li>`) : le hub joueur porte AUSSI un bouton
+    // « Modifier » permanent (onglet Profil), donc chercher
+    // /Enregistré|Modifier/ sur toute la page est ambigu en mode strict
+    // (docs/bugs.md, entrée « locator page-wide ambigu »). On scope au
+    // conteneur du match, identifié par ses inputs de score.
     const homeInput = page.getByRole("spinbutton").first();
     const awayInput = page.getByRole("spinbutton").nth(1);
+    const carteMatch = page.locator("li").filter({ has: homeInput });
     await homeInput.fill("2");
     await awayInput.fill("1");
-    await page.getByRole("button", { name: "Valider" }).click();
-    await expect(page.getByRole("button", { name: /Enregistré|Modifier/ })).toBeVisible({
+    await carteMatch.getByRole("button", { name: "Valider" }).click();
+    await expect(
+      carteMatch.getByRole("button", { name: /Enregistré|Modifier/ }),
+    ).toBeVisible({
       timeout: 10_000,
     });
 

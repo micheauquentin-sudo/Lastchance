@@ -241,3 +241,192 @@ test.describe("réserver — parcours public puis comptoir", () => {
     expect(contenu).not.toContain("client-e2e-sans-consentement@example.com");
   });
 });
+
+/**
+ * Liste prioritaire (RES-2, lot L5) : offre à échéance, prise, et FIFO.
+ *
+ * Seed dédiée : « Atelier privé du Comptoir E2E »
+ * (e2ea0000-0000-4000-8000-000000000012), créneau `...025` — UNE place,
+ * LIBRE, sans réservation ni entrée de file pré-semées. Le créneau `...023`
+ * de la même activité porte lui une entrée `waiting` posée avant tout
+ * navigateur E2E (`e2ea0000-…-000041`) : y rejoindre la file ferait partir
+ * l'offre à ce concurrent seedé au FIFO, jamais au navigateur de test — d'où
+ * un créneau séparé, rempli et vidé par CE test lui-même.
+ */
+const ACTIVITY_ID_2 = "e2ea0000-0000-4000-8000-000000000012";
+
+test.describe("réserver — liste prioritaire (RES-2)", () => {
+  test.use({ storageState: "e2e/.auth/owner.json" });
+
+  test("un désistement offre la place au premier de la file, qui la prend", async ({
+    page,
+    browser,
+  }) => {
+    // ── 1. Navigateur A : réserve la seule place du créneau dédié. Le seul
+    // créneau de cette activité qui porte encore un bouton « Réserver ma
+    // place » (l'autre, `...023`, est déjà complet et n'affiche que la file).
+    await page.goto(`/reserver/${ACTIVITY_ID_2}`);
+    await expect(
+      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    const creneauxSection = page.getByRole("region", {
+      name: "Créneaux disponibles",
+    });
+    const carteLibre = creneauxSection
+      .locator("li")
+      .filter({ has: page.getByRole("button", { name: "Réserver ma place" }) });
+    await expect(carteLibre).toBeVisible();
+    await carteLibre.getByRole("button", { name: "Réserver ma place" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.locator("li").filter({ hasText: "Confirmée" }).first(),
+    ).toBeVisible();
+
+    // ── 2. Navigateur B : identité séparée (nouveau contexte, nouveau
+    // cookie). Les deux créneaux de l'activité sont maintenant complets ;
+    // celui qui l'intéresse est le dernier de la liste (tri par `starts_at`
+    // croissant — `...025` est le plus tardif des deux).
+    const contextB = await browser.newContext();
+    const pageB = await contextB.newPage();
+    try {
+      await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
+      await expect(
+        pageB.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+      ).toBeVisible({ timeout: 30_000 });
+
+      const creneauxSectionB = pageB.getByRole("region", {
+        name: "Créneaux disponibles",
+      });
+      const carteDediee = creneauxSectionB.locator("li").last();
+      await expect(carteDediee.getByText("Complet")).toBeVisible();
+      await carteDediee
+        .getByRole("button", { name: "Rejoindre la liste d'attente" })
+        .click();
+      await carteDediee
+        .getByRole("button", { name: "M'inscrire sur la liste" })
+        .click();
+
+      // `reloadOnSuccess` : « Ma file d'attente » apparaît, 1er sur la liste
+      // puisque c'est la seule inscription sur ce créneau tout neuf.
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(pageB.getByText("Sur la liste")).toBeVisible();
+      await expect(pageB.getByText("1er")).toBeVisible();
+
+      // ── 3. Navigateur A se désiste : la place revient, et RES-2 la
+      // propose immédiatement au premier de la file (B), sous le même
+      // verrou que la réservation.
+      const carteReservationA = page
+        .locator("li")
+        .filter({ hasText: "Confirmée" })
+        .first();
+      await carteReservationA
+        .getByRole("button", { name: "Annuler ma réservation" })
+        .click();
+      await expect(
+        page.locator("li").filter({ hasText: "Annulée" }).first(),
+      ).toBeVisible({ timeout: 20_000 });
+
+      // ── 4. Navigateur B recharge : l'offre est vivante, il la prend.
+      await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(pageB.getByText("Place proposée")).toBeVisible();
+      await pageB.getByRole("button", { name: "Prendre la place" }).click();
+
+      // `reloadOnSuccess` : la place devient une réservation, avec son code.
+      await expect(
+        pageB.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+      ).toBeVisible({ timeout: 30_000 });
+      const carteReservationB = pageB
+        .locator("li")
+        .filter({ hasText: "Confirmée" })
+        .first();
+      await expect(carteReservationB).toBeVisible();
+      const codeTexte = await carteReservationB
+        .locator("p.font-mono")
+        .last()
+        .textContent();
+      expect((codeTexte ?? "").trim()).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+      // La file, elle, ne montre plus B en attente : l'entrée est convertie.
+      await expect(
+        pageB.getByRole("heading", { name: "Ma file d'attente" }),
+      ).toHaveCount(0);
+    } finally {
+      await contextB.close();
+    }
+  });
+});
+
+/**
+ * Invitation privée (RES-2, lot L5) : jeton révélé une fois côté serveur,
+ * jamais rendu au client.
+ *
+ * Seed dédiée : jeton clair `E2E-INVIT-0001` (supabase/seed.sql), empreinte
+ * SHA-256 en base sur l'invitation `...051`, ouvrant le créneau FERMÉ AU
+ * PUBLIC `...024` (capacité 2) de la même activité `...012`. Capacité et
+ * `max_uses` (5) couvrent large : ce test consomme UNE place, une fois par
+ * projet Playwright exécuté (mobile-chrome + mobile-safari = 2, exactement la
+ * capacité) — ne pas dupliquer ce scénario sans revoir la fixture.
+ */
+test.describe("réserver — invitation privée (RES-2)", () => {
+  test("réservation via jeton, jamais rendu en clair dans la page", async ({
+    page,
+  }) => {
+    await page.goto("/reserver/invitation/E2E-INVIT-0001");
+    await expect(
+      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Invitation privée")).toBeVisible();
+
+    const carteCreneau = page
+      .getByRole("region", { name: /créneau/i })
+      .locator("li")
+      .first();
+    await expect(carteCreneau).toBeVisible();
+    await carteCreneau
+      .getByRole("button", { name: "Réserver ma place" })
+      .click();
+
+    // `reloadOnSuccess` : « Votre place »/« Vos places » avec le code.
+    await expect(
+      page.getByRole("heading", { name: /Vos places|Votre place/ }),
+    ).toBeVisible({ timeout: 30_000 });
+    const carteReservation = page
+      .locator("li")
+      .filter({ hasText: "Confirmée" })
+      .first();
+    await expect(carteReservation).toBeVisible();
+    const codeTexte = await carteReservation
+      .locator("p.font-mono")
+      .last()
+      .textContent();
+    expect((codeTexte ?? "").trim()).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
+
+    // LE JETON CLAIR N'APPARAÎT NULLE PART dans la page de succès — il est
+    // révélé une fois côté serveur (au commerçant qui crée l'invitation) et
+    // ne revit jamais côté client.
+    const contenu = await page.content();
+    expect(contenu).not.toContain("E2E-INVIT-0001");
+  });
+
+  test("jeton inconnu : 404 générique, aucun oracle sur son existence", async ({
+    page,
+  }) => {
+    // Un jeton qui n'a jamais existé se résout AVANT tout rendu client
+    // (`notFound()` côté serveur, docstring de `InvitationPage`) : même 404
+    // générique que n'importe quelle autre page absente — pas de message
+    // dédié qui apprendrait à qui tape des jetons au hasard que la route
+    // existe.
+    await page.goto("/reserver/invitation/ce-jeton-nexiste-pas");
+    await expect(
+      page.getByRole("heading", { name: "Page introuvable" }),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+});

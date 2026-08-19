@@ -1088,3 +1088,21 @@ values (
   5, 'e2e00000-0000-4000-8000-000000000001'
 )
 on conflict (id) do nothing;
+
+-- Un créneau à UNE place, LIBRE — sans réservation ni entrée de file
+-- pré-semées, DÉLIBÉRÉMENT, contrairement à `...023` ci-dessus. Ce dernier
+-- porte déjà une entrée `waiting` posée avant tout navigateur E2E : un test qui
+-- y rejoindrait la file puis libérerait la place verrait l'offre partir au FIFO
+-- vers ce concurrent seedé, jamais vers le navigateur de test. Ce créneau-ci
+-- sert le scénario complet « offre → prise » : le SEUL navigateur de test y
+-- réserve la place (le remplit), un second navigateur (second cookie, même
+-- test) rejoint la file en 1ère position, le premier annule, et le second
+-- observe l'offre puis la prend.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000025',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;
