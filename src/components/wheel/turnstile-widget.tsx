@@ -98,7 +98,14 @@ export function TurnstileWidget({
     // Prise de place sur un créneau (`reserveSlot`). Le littéral est celui que
     // la server action passe à `verifyTurnstile` : deux orthographes feraient
     // échouer la vérification côté Cloudflare sans qu'aucun type ne bronche.
-    | "reserver-reserve";
+    | "reserver-reserve"
+    // Inscription sur la liste prioritaire d'un créneau complet
+    // (`waitlistJoin`) et réservation au titre d'une invitation privée
+    // (`redeemInvitation`). Mêmes littéraux que ceux passés à
+    // `verifyTurnstile` dans `src/actions/reserver.ts`, pour la raison
+    // ci-dessus.
+    | "reserver-waitlist-join"
+    | "reserver-invitation";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);

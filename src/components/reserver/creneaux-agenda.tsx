@@ -10,6 +10,7 @@ import {
 } from "@/components/reserver/creneau-form";
 import {
   PastilleCreneau,
+  PastilleFileAttente,
   PastilleReservation,
   Remplissage,
 } from "@/components/reserver/pastilles";
@@ -192,6 +193,93 @@ function CreneauCarte({
           </ul>
         </details>
       )}
+
+      <FileAttenteCreneau creneau={creneau} timeZone={timeZone} />
     </Card>
+  );
+}
+
+/**
+ * LA LISTE PRIORITAIRE D'UN CRÉNEAU, vue du commerçant (RES-2, lot L5).
+ *
+ * ── ELLE NE PORTE AUCUN GESTE, ET C'EST DÉLIBÉRÉ ──
+ *
+ * Rien à cliquer : ni « proposer à », ni « faire passer devant ». L'ordre est
+ * celui de l'inscription, et la place se propose toute seule dès qu'elle se
+ * libère (`reservation_offer_next`, sous le même verrou que la réservation). Un
+ * bouton de promotion manuelle aurait donné au commerçant un moyen de doubler sa
+ * propre file — et à la base deux écritures concurrentes à départager. Ce
+ * panneau CONSTATE.
+ *
+ * ── AUCUN EMAIL, ICI NON PLUS ──
+ *
+ * La colonne existe sur `reservation_waitlist_entries`, comme sur
+ * `reservations`, et elle est hors du grant de colonnes pour la même raison :
+ * elle n'a de finalité que l'envoi serveur. Ce que le comptoir a besoin de
+ * savoir tient dans le rang, l'état et les horodatages.
+ */
+function FileAttenteCreneau({
+  creneau,
+  timeZone,
+}: {
+  creneau: ReserverSlotDashboardView;
+  timeZone: string;
+}) {
+  if (creneau.waitlist.length === 0) {
+    // Silence sur un créneau qui n'a jamais eu de liste : afficher « 0 personne
+    // en attente » sur chaque carte d'un agenda de vingt créneaux noierait les
+    // deux qui en ont une.
+    return null;
+  }
+
+  // Les DEUX compteurs viennent du chargeur, tranchés côté serveur —
+  // `offresTenues` en particulier : savoir si une offre tient encore dépend de
+  // l'horloge de la base, jamais de celle du poste de caisse.
+  const vivantes = creneau.enAttente;
+  const proposees = creneau.offresTenues;
+
+  return (
+    <details className="mt-4 border-t border-zinc-100 pt-3">
+      <summary className="cursor-pointer text-sm font-bold text-k-body hover:text-k-ink">
+        File d&apos;attente ·{" "}
+        <span className="font-black tabular-nums text-k-ink">{vivantes}</span>{" "}
+        personne{vivantes > 1 ? "s" : ""} en attente
+        {proposees > 0
+          ? ` · ${proposees} place${proposees > 1 ? "s" : ""} proposée${proposees > 1 ? "s" : ""}`
+          : ""}
+      </summary>
+      <ul className="mt-3 space-y-2">
+        {creneau.waitlist.map((entree) => (
+          <li
+            key={entree.entryId}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-k-ink/15 bg-k-bg px-3 py-2"
+          >
+            {/* `position` vaut 0 sur une entrée terminée : elle n'occupe plus
+                de rang, et afficher « #0 » ferait croire à une tête de file. */}
+            <span className="w-10 shrink-0 font-mono text-sm font-black tabular-nums text-k-ink">
+              {entree.position > 0 ? `#${entree.position}` : "—"}
+            </span>
+            <span className="min-w-0 flex-1 text-xs font-semibold text-k-body">
+              Inscrite le {formatDate(entree.createdAt, timeZone)}
+              {entree.offeredAt
+                ? ` · proposée le ${formatDate(entree.offeredAt, timeZone)}`
+                : ""}
+              {entree.offerExpiresAt
+                ? entree.offerLive
+                  ? ` · tenue jusqu'au ${formatDate(entree.offerExpiresAt, timeZone)}`
+                  : ` · délai écoulé le ${formatDate(entree.offerExpiresAt, timeZone)}`
+                : ""}
+            </span>
+            <PastilleFileAttente entree={entree} />
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs font-medium leading-relaxed text-k-body">
+        L&apos;ordre est celui de l&apos;inscription et il ne se modifie pas :
+        dès qu&apos;une place se libère, elle est tenue pour la personne en tête,
+        une seule à la fois, pendant la durée réglée sur ce créneau. Passé ce
+        délai, elle passe automatiquement à la suivante.
+      </p>
+    </details>
   );
 }

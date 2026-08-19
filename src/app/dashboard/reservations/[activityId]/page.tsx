@@ -9,6 +9,7 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { PublicShare } from "@/components/dashboard/public-share";
 import { ActiviteReglagesForm } from "@/components/reserver/activite-reglages-form";
 import { CreneauxAgenda } from "@/components/reserver/creneaux-agenda";
+import { InvitationsPanneau } from "@/components/reserver/invitations-panneau";
 
 export const metadata: Metadata = { title: "Activité réservable" };
 
@@ -83,6 +84,18 @@ export default async function ActiviteReservablePage({
       <CreneauxAgenda
         activityId={activite.id}
         creneaux={activite.slots}
+        timeZone={agenda.timezone}
+      />
+
+      {/* Les invitations sont AU NIVEAU DE L'ACTIVITÉ, sous l'agenda : l'une
+          d'elles peut viser toute l'activité, et celles qui visent un créneau
+          doivent rester lisibles une fois ce créneau passé. Aucune adresse ne
+          descend en prop : le lien à partager est composé par la server action
+          de création, qui est aussi la seule à voir le jeton en clair. */}
+      <InvitationsPanneau
+        activityId={activite.id}
+        creneaux={activite.slots}
+        invitations={activite.invitations}
         timeZone={agenda.timezone}
       />
     </div>

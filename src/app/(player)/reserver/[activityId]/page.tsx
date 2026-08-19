@@ -88,6 +88,7 @@ export default async function ReserverPage({
         logoUrl={ctx.organization.logo_url}
         creneaux={ctx.slots}
         mesReservations={ctx.mesReservations}
+        maFile={ctx.maFile}
         timeZone={ctx.timezone}
       />
 

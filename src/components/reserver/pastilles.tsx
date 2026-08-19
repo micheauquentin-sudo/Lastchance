@@ -1,11 +1,14 @@
 import { cn } from "@/lib/utils";
 import {
   etatUiCreneau,
+  etatUiEntreeFile,
   etatUiReservation,
   type EtatUiCreneau,
+  type EtatUiEntreeFile,
   type EtatUiReservation,
   type ReservationSlotStatus,
   type ReservationStatus,
+  type ReservationWaitlistStatus,
 } from "@/lib/reserver";
 
 /**
@@ -85,6 +88,39 @@ export function PastilleCreneau({
 }) {
   const brut = LIBELLE_STATUT_BRUT[creneau.status];
   const { label, ton } = brut ?? LIBELLE_CRENEAU[etatUiCreneau(creneau, now)];
+  return <span className={cn(BASE, ton, className)}>{label}</span>;
+}
+
+/**
+ * Les six états d'une entrée de liste prioritaire, dans les mots du comptoir.
+ *
+ * Le verdict est celui d'`etatUiEntreeFile`, comme côté joueur : il lit
+ * `offerLive`, tranché PAR LE SERVEUR. Recomparer `offerExpiresAt` à l'horloge
+ * du poste de caisse rétablirait ce que le SQL a écarté — une place « encore
+ * tenue » qui dépend d'une machine mal réglée.
+ *
+ * `offre_expiree` et `expiree` portent le même mot et ne sont pas le même état :
+ * la première ligne est encore `offered` en base (le balayage n'est pas passé),
+ * la seconde est terminale. Le commerçant n'a rien à faire ni de l'une ni de
+ * l'autre — d'où le libellé commun.
+ */
+const LIBELLE_FILE: Record<EtatUiEntreeFile, { label: string; ton: string }> = {
+  attente: { label: "En attente", ton: "bg-white text-k-ink" },
+  offre: { label: "Place proposée", ton: "bg-amber-100 text-k-ink" },
+  offre_expiree: { label: "Délai écoulé", ton: "bg-zinc-200 text-k-ink" },
+  convertie: { label: "Place prise", ton: "bg-k-green/40 text-k-ink" },
+  expiree: { label: "Délai écoulé", ton: "bg-zinc-200 text-k-ink" },
+  partie: { label: "Retiré", ton: "bg-zinc-200 text-k-ink" },
+};
+
+export function PastilleFileAttente({
+  entree,
+  className,
+}: {
+  entree: { status: ReservationWaitlistStatus; offerLive: boolean };
+  className?: string;
+}) {
+  const { label, ton } = LIBELLE_FILE[etatUiEntreeFile(entree)];
   return <span className={cn(BASE, ton, className)}>{label}</span>;
 }
 

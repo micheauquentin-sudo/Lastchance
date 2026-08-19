@@ -6,15 +6,17 @@ import {
   reserveSlot,
   type ReserveSlotActionResult,
 } from "@/actions/reserver";
+import { DefiAntiRobot } from "@/components/reserver/defi-antirobot";
 import {
-  TurnstileWidget,
-  turnstileClientEnabled,
-} from "@/components/wheel/turnstile-widget";
+  MaFileAttente,
+  RejoindreFileAttente,
+} from "@/components/reserver/file-attente";
 import {
   etatUiCreneau,
   formatCreneau,
   LIBELLE_FENETRE_CHECKIN,
   RESERVER_EMAIL_MAX,
+  type PublicWaitlistItem,
 } from "@/lib/reserver";
 import type {
   ReserverMaReservationView,
@@ -58,6 +60,7 @@ export function ReserverExperience({
   logoUrl,
   creneaux,
   mesReservations,
+  maFile,
   timeZone,
 }: {
   /**
@@ -75,13 +78,33 @@ export function ReserverExperience({
   creneaux: ReserverSlotPublicView[];
   /** La réservation VIVANTE de ce navigateur sur chaque créneau, par `slotId`. */
   mesReservations: Record<string, ReserverMaReservationView>;
+  /**
+   * L'inscription VIVANTE de ce navigateur sur la liste prioritaire de chaque
+   * créneau, par `slotId`.
+   *
+   * C'est l'AIGUILLAGE du parcours, pas un ornement : un joueur qui détient une
+   * offre reçoit `full` de `reserve_slot` — sa place est déjà comptée comme
+   * tenue — et son chemin passe donc par `claimWaitlistOffer`, jamais par le
+   * bouton de réservation.
+   */
+  maFile: Record<string, PublicWaitlistItem>;
   timeZone: string;
 }) {
   // Les créneaux réservés d'abord, en tête de page : c'est ce que le client
   // rouvre sa page pour retrouver — son code — et non pour réserver une
   // deuxième fois.
   const reservees = creneaux.filter((c) => mesReservations[c.id]);
-  const libres = creneaux.filter((c) => !mesReservations[c.id]);
+  // PUIS les créneaux où il attend. Ils sont SORTIS des créneaux libres, et
+  // c'est le point d'attention du lot : une place tenue pour lui compte dans la
+  // capacité, donc la jauge lui répond « complet » — son chemin de réservation
+  // est « Prendre la place » (`claim_waitlist_offer`), jamais le bouton
+  // « Réserver ma place », qui se ferait répondre `full` par la base.
+  const enAttente = creneaux.filter(
+    (c) => !mesReservations[c.id] && maFile[c.id],
+  );
+  const libres = creneaux.filter(
+    (c) => !mesReservations[c.id] && !maFile[c.id],
+  );
 
   return (
     <div className="mx-auto max-w-md px-4 py-8">
@@ -141,6 +164,28 @@ export function ReserverExperience({
         </section>
       ) : null}
 
+      {enAttente.length > 0 ? (
+        <section aria-labelledby="ma-file-titre" className="mb-6">
+          <h2
+            id="ma-file-titre"
+            className="mb-3 text-sm font-black uppercase tracking-wide text-k-body"
+          >
+            ⏳ Ma file d&apos;attente
+          </h2>
+          <ul className="space-y-3">
+            {enAttente.map((creneau) => (
+              <li key={creneau.id}>
+                <MaFileAttente
+                  creneau={creneau}
+                  entree={maFile[creneau.id]}
+                  timeZone={timeZone}
+                />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-labelledby="creneaux-titre" className="mb-6">
         <h2
           id="creneaux-titre"
@@ -151,7 +196,7 @@ export function ReserverExperience({
         {libres.length === 0 ? (
           <div className={carteClass}>
             <p className="text-center text-sm font-bold text-k-ink">
-              {reservees.length > 0
+              {reservees.length > 0 || enAttente.length > 0
                 ? "Aucun autre créneau n'est ouvert à la réservation pour le moment."
                 : "Aucun créneau n'est ouvert à la réservation pour le moment."}
             </p>
@@ -194,8 +239,6 @@ function CreneauReservable({
   const [consent, setConsent] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [challengeDemande, setChallengeDemande] = useState(false);
-  const [challengeNonce, setChallengeNonce] = useState(0);
-  const [challengeIndisponible, setChallengeIndisponible] = useState(false);
 
   /**
    * `reserveSlot` prend un OBJET, pas un `FormData` — le contrat des actions
@@ -249,15 +292,6 @@ function CreneauReservable({
     networkError:
       "Connexion perdue. Vérifiez votre réseau puis réessayez — votre place n'a pas été prise.",
   });
-
-  const onCaptchaToken = useCallback((token: string | null) => {
-    setCaptchaToken(token);
-    if (!token) setChallengeIndisponible(false);
-  }, []);
-  const onCaptchaUnavailable = useCallback(() => {
-    setCaptchaToken(null);
-    setChallengeIndisponible(true);
-  }, []);
 
   const etat = etatUiCreneau({
     status: creneau.status,
@@ -345,56 +379,16 @@ function CreneauReservable({
 
           {/* Région vivante montée EN PERMANENCE : un `aria-live` créé en même
               temps que son contenu n'annonce rien, et l'apparition du contrôle
-              anti-robot est précisément ce qu'un lecteur d'écran doit entendre. */}
+              anti-robot est précisément ce qu'un lecteur d'écran doit entendre.
+              Le bloc lui-même vit dans `defi-antirobot.tsx` depuis que le lot L5
+              ouvre deux autres formulaires publics qui peuvent le demander. */}
           <div aria-live="polite">
-            {challengeDemande && turnstileClientEnabled() ? (
-              <div
-                role="group"
-                aria-labelledby={`challenge-titre-${creneau.id}`}
-                className="mt-4 rounded-xl border-2 border-k-ink bg-k-blue/20 px-4 py-3"
-              >
-                <p
-                  id={`challenge-titre-${creneau.id}`}
-                  className="text-sm font-black text-k-ink"
-                >
-                  Confirmez que vous n&apos;êtes pas un robot
-                </p>
-                <p className="mt-0.5 text-xs font-bold text-k-body">
-                  Une seule fois, le temps de vous enregistrer. Votre saisie est
-                  conservée : relancez la réservation dès que le contrôle est
-                  validé.
-                </p>
-                <TurnstileWidget
-                  key={challengeNonce}
-                  action="reserver-reserve"
-                  onToken={onCaptchaToken}
-                  onUnavailable={onCaptchaUnavailable}
-                />
-                {challengeIndisponible ? (
-                  <div className="mt-2 text-center">
-                    <p className="text-xs font-bold text-red-700">
-                      Le contrôle n&apos;a pas pu se charger (connexion instable
-                      ou bloqueur de publicités).
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCaptchaToken(null);
-                        setChallengeIndisponible(false);
-                        setChallengeNonce((n) => n + 1);
-                      }}
-                      className="mt-2 rounded-xl border-2 border-k-ink bg-white px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/30"
-                    >
-                      Recommencer le contrôle
-                    </button>
-                  </div>
-                ) : captchaToken ? (
-                  <p className="mt-2 text-center text-xs font-bold text-k-ink">
-                    ✓ Contrôle validé.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+            <DefiAntiRobot
+              id={creneau.id}
+              action="reserver-reserve"
+              visible={challengeDemande}
+              onToken={setCaptchaToken}
+            />
           </div>
 
           <button
@@ -429,6 +423,17 @@ function CreneauReservable({
           </div>
         </form>
       ) : null}
+
+      {/* COMPLET N'EST PLUS UN CUL-DE-SAC (RES-2). La liste prioritaire n'est
+          proposée que là : sur un créneau fermé ou passé, `waitlist_join`
+          répondrait `unavailable`, et sur un créneau ouvert, `not_full` — le
+          joueur y a une place ordinaire à prendre. */}
+      {etat === "complet" ? (
+        <RejoindreFileAttente
+          organizationId={organizationId}
+          creneau={creneau}
+        />
+      ) : null}
     </div>
   );
 }
@@ -437,7 +442,7 @@ function CreneauReservable({
 // « Mes réservations » — l'identité est le cookie, jamais l'URL
 // ────────────────────────────────────────────────────────────
 
-function MaReservation({
+export function MaReservation({
   creneau,
   reservation,
   activityName,
