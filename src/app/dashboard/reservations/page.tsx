@@ -2,13 +2,18 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
+import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { etatUiCreneau, RESERVER_FUSEAU_DEFAUT } from "@/lib/reserver";
-import { loadReserverDashboardContext } from "@/lib/reserver-context";
+import {
+  loadReserverDashboardContext,
+  loadReserverQueuesDashboardContext,
+} from "@/lib/reserver-context";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { ArriveesCheckin } from "@/components/reserver/arrivees-checkin";
+import { FilesAccueilPanneau } from "@/components/reserver/files-accueil-panneau";
 import { NouvelleActiviteForm } from "@/components/reserver/nouvelle-activite-form";
 
 export const metadata: Metadata = { title: "Réservations" };
@@ -52,7 +57,14 @@ export default async function ReservationsPage() {
   const capacites = await capacitesDuModule("vitrine");
   if (!capacites.canExplore) notFound();
 
-  const agenda = await loadReserverDashboardContext();
+  // Les deux lectures sont INDÉPENDANTES — l'agenda des créneaux d'un côté, les
+  // files d'accueil de l'autre — et n'ont aucune donnée en commun : les
+  // enchaîner aurait ajouté un aller-retour à une page que le commerçant ouvre
+  // en début de service.
+  const [agenda, filesAccueil] = await Promise.all([
+    loadReserverDashboardContext(),
+    loadReserverQueuesDashboardContext(),
+  ]);
   const activites = agenda.ok ? agenda.activities : [];
   const timeZone = agenda.ok
     ? agenda.timezone
@@ -140,6 +152,17 @@ export default async function ReservationsPage() {
           vient précisément d'obtenir. La RPC, elle, résout le code dans toute
           l'organisation. */}
       <ArriveesCheckin timeZone={timeZone} />
+
+      {/* LES FILES D'ACCUEIL SONT SOUS L'AGENDA, ET C'EST L'ORDRE DE LA JOURNÉE :
+          on prépare ses créneaux le matin, on tient sa file toute la journée. La
+          console est ouverte au CAISSIER — elle ne dépend pas de `canEditDraft`,
+          qui ne gouverne que la création et les réglages, passés en `peutEditer`. */}
+      <FilesAccueilPanneau
+        files={filesAccueil.ok ? filesAccueil.queues : []}
+        activites={activites.map((a) => ({ id: a.id, name: a.name }))}
+        peutEditer={capacites.canEditDraft}
+        appUrl={APP_URL}
+      />
     </div>
   );
 }

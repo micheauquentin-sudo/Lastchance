@@ -6,6 +6,7 @@ import {
   type EtatUiCreneau,
   type EtatUiEntreeFile,
   type EtatUiReservation,
+  type ReservationQueueStatus,
   type ReservationSlotStatus,
   type ReservationStatus,
   type ReservationWaitlistStatus,
@@ -121,6 +122,39 @@ export function PastilleFileAttente({
   className?: string;
 }) {
   const { label, ton } = LIBELLE_FILE[etatUiEntreeFile(entree)];
+  return <span className={cn(BASE, ton, className)}>{label}</span>;
+}
+
+/**
+ * Les trois états d'une FILE D'ACCUEIL (RES-3), et le deuxième est le seul qui
+ * demande une explication.
+ *
+ * « En pause » n'est PAS « fermée » : on ne prend plus de monde, mais on sert
+ * encore ceux qui attendent. C'est le geste de vingt minutes avant la
+ * fermeture, et confondre les deux ferait partir des gens qui avaient encore
+ * leur place. La pastille porte donc le mot ; la phrase, elle, est sur les deux
+ * écrans qui en ont besoin — celui du client et la console du comptoir.
+ *
+ * Pourquoi pas `PastilleCreneau` : un créneau se remplit et se périme, une file
+ * ne fait ni l'un ni l'autre. Les états ne se recouvrent sur aucun mot.
+ */
+const LIBELLE_FILE_ACCUEIL: Record<
+  ReservationQueueStatus,
+  { label: string; ton: string }
+> = {
+  open: { label: "Ouverte", ton: "bg-k-green/40 text-k-ink" },
+  paused: { label: "En pause", ton: "bg-amber-100 text-k-ink" },
+  closed: { label: "Fermée", ton: "bg-zinc-200 text-k-ink" },
+};
+
+export function PastilleFileAccueil({
+  status,
+  className,
+}: {
+  status: ReservationQueueStatus;
+  className?: string;
+}) {
+  const { label, ton } = LIBELLE_FILE_ACCUEIL[status];
   return <span className={cn(BASE, ton, className)}>{label}</span>;
 }
 
