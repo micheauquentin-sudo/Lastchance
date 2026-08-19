@@ -7248,3 +7248,29 @@ d'identité — écart assumé, voir ADR-032 et `docs/bugs.md` (notes du train).
 **Références** :
 - PR #162, migration `20261005120000`
 - `docs/chantier-reserver-vitrine.md`
+
+---
+
+## ADR-112 — RES-4 : un tour offert par visite, pas par attente
+
+**Date** : 2026-08-20 · **Statut** : acté (revue sécurité L7, finding F1)
+
+**Contexte** : la Pause Chance était bornée à une par session d'attente, mais
+une session naît avec chaque entrée en file : entrer → jouer → sortir →
+recommencer renouvelait le tirage à volonté, le stock de la campagne restant
+la seule borne réelle.
+
+**Décision** : `wait_session_use_pause` refuse (`cooldown`, aucun jeton ne
+voyage) s'il existe une autre session du même `player_key_hash` sur la même
+file ou la même activité dont la Pause a été consommée depuis moins de 24 h.
+La promesse produit devient « un tour offert par visite et par guichet »,
+non « par attente ».
+
+**Conséquences** : un client légitime qui revient le lendemain rejoue ; un
+cycleur ne gagne rien de plus que sa première Pause. La config de retrait
+(`collect_email`, `collect_phone`, TTL) descend de la campagne cible par
+`wait_session_open` — le flux GAIN- reste le standard, sans régime parallèle.
+
+**Références** :
+- PR #163, migration `20261006120000`
+- ADR-110, ADR-111 · `docs/chantier-reserver-vitrine.md`
