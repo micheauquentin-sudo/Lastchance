@@ -43,7 +43,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       .locator("p.text-7xl.font-black")
       .first()
       .textContent();
-    expect((rangTexte ?? "").trim()).toMatch(/^\d+$/);
+    // Le chiffre est suivi d'un ordinal ("1er", "2e"…) dans un <span> imbriqué
+    // — textContent() les concatène.
+    expect((rangTexte ?? "").trim()).toMatch(/^\d+(er|e)$/);
 
     // Aucune estimation temporelle nulle part sur cet écran — voir
     // l'assertion transversale en bas de fichier, appliquée ici aussi sur le
@@ -201,7 +203,10 @@ async function lireRang(page: import("@playwright/test").Page) {
     .first()
     .textContent()
     .catch(() => null);
-  const nombre = Number((texte ?? "").trim());
+  // Le chiffre est suivi d'un ordinal ("1er", "2e"…) dans un <span> imbriqué
+  // — textContent() les concatène ; on isole le préfixe numérique.
+  const match = (texte ?? "").trim().match(/^\d+/);
+  const nombre = match ? Number(match[0]) : NaN;
   return Number.isFinite(nombre) && nombre > 0 ? nombre : null;
 }
 
