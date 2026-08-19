@@ -17,13 +17,30 @@ import { useActionForm } from "@/lib/use-action-form";
 /**
  * L'INVITATION PRIVÉE, VUE DE L'INVITÉ (RES-2, lot L5).
  *
- * ── LE JETON NE S'AFFICHE NULLE PART ──
+ * ── LE JETON NE S'AFFICHE NULLE PART, ET IL NE TRAVERSE PLUS LE RSC ──
  *
  * Il arrive par l'URL, il repart dans le corps du POST, et c'est tout : aucun
  * texte, aucun `<code>`, aucun lien de partage ne le remontre. Un invité qui
  * fait lire son écran à son voisin ne lui donne pas de quoi prendre une
  * deuxième place, et une capture d'écran de la page de confirmation ne vaut pas
  * invitation. Le jeton reste une propriété de l'adresse, jamais du contenu.
+ *
+ * ── POURQUOI IL N'EST PLUS UNE PROP (revue de sécurité L5) ──
+ *
+ * Il l'était, et la docstring affirmait alors qu'il valait mieux ne pas le
+ * relire de l'URL — « deux lectures du même secret sont une occasion de plus de
+ * le laisser fuir ». Le raisonnement était juste et la conclusion inverse de ce
+ * qu'il fallait : une prop passée d'un composant SERVEUR à un composant CLIENT
+ * est SÉRIALISÉE DANS LE PAYLOAD RSC, c'est-à-dire recopiée en clair dans le
+ * HTML (`self.__next_f.push`). Le jeton se retrouvait donc dans le CORPS de la
+ * page — pas seulement dans son adresse — là où le mettent aussi les caches
+ * intermédiaires et les extensions qui lisent le DOM.
+ *
+ * Il est désormais lu de `window.location.pathname` AU MOMENT DE L'ENVOI. Ce
+ * n'est pas une seconde source de vérité : c'est LA source, la seule qui existe
+ * déjà côté client de toute façon, et sa lecture ne franchit aucune frontière.
+ * `redeemInvitation` le revalide de bout en bout — la forme, puis l'empreinte —
+ * donc rien n'est cru sur parole ici.
  *
  * ── UN SEUL MESSAGE DE REFUS ──
  *
@@ -45,8 +62,29 @@ import { useActionForm } from "@/lib/use-action-form";
 const carteClass =
   "k-border rounded-2xl bg-white p-5 shadow-[6px_6px_0_var(--color-k-ink)]";
 
+/**
+ * LE JETON, LU DE L'ADRESSE AU MOMENT DE L'ENVOI.
+ *
+ * Dernier segment de `/reserver/invitation/<jeton>`, décodé — l'adresse est
+ * percent-encodée par le navigateur, et un jeton rendu tel quel ne
+ * correspondrait plus à son empreinte. `redeemInvitation` revalide la forme
+ * avant de hacher : une valeur bricolée n'ouvre rien de plus qu'un jeton
+ * inventé, c'est-à-dire le même `unavailable` que tout le reste.
+ */
+function jetonDeLAdresse(): string {
+  if (typeof window === "undefined") return "";
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  const dernier = segments[segments.length - 1] ?? "";
+  try {
+    return decodeURIComponent(dernier);
+  } catch {
+    // Séquence `%` invalide : la valeur brute part telle quelle et sera refusée
+    // par la validation, ce qui est exactement le bon résultat.
+    return dernier;
+  }
+}
+
 export function InvitationExperience({
-  token,
   organizationName,
   logoUrl,
   activityName,
@@ -56,13 +94,6 @@ export function InvitationExperience({
   mesReservations,
   timeZone,
 }: {
-  /**
-   * Le jeton clair, UNIQUEMENT pour le corps de l'appel à `redeemInvitation` —
-   * jamais rendu. Il n'est pas relu de l'URL côté client : la page serveur l'a
-   * déjà résolu, et deux lectures du même secret sont une occasion de plus de
-   * le laisser fuir.
-   */
-  token: string;
   organizationName: string;
   logoUrl: string | null;
   activityName: string;
@@ -150,11 +181,7 @@ export function InvitationExperience({
           <ul className="space-y-4">
             {libres.map((creneau) => (
               <li key={creneau.id}>
-                <CreneauInvite
-                  token={token}
-                  creneau={creneau}
-                  timeZone={timeZone}
-                />
+                <CreneauInvite creneau={creneau} timeZone={timeZone} />
               </li>
             ))}
           </ul>
@@ -179,11 +206,9 @@ export function InvitationExperience({
 // ────────────────────────────────────────────────────────────
 
 function CreneauInvite({
-  token,
   creneau,
   timeZone,
 }: {
-  token: string;
   creneau: ReserverSlotPublicView;
   timeZone: string;
 }) {
@@ -210,8 +235,12 @@ function CreneauInvite({
       // AUCUNE organisation dans le corps : `redeemInvitation` la résout à
       // partir de l'empreinte du jeton. La lui passer en aurait fait une entrée
       // client de plus à valider, pour une valeur qu'elle sait déjà.
+      //
+      // LE JETON EST LU ICI, PAS À LA CONSTRUCTION DU COMPOSANT : le prendre en
+      // prop l'aurait fait sérialiser dans le payload RSC, donc écrire en clair
+      // dans le HTML de la page (voir l'en-tête de ce fichier).
       const resultat = await redeemInvitation({
-        token,
+        token: jetonDeLAdresse(),
         slotId: creneau.id,
         email: consenti && emailSaisi ? emailSaisi : undefined,
         consent: consenti,
@@ -233,7 +262,7 @@ function CreneauInvite({
       }
       return resultat;
     },
-    [token, creneau.id, captchaToken],
+    [creneau.id, captchaToken],
   );
 
   // `reloadOnSuccess` : le code émis n'existe nulle part dans cet écran — seule

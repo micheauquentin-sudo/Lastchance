@@ -40,6 +40,28 @@ describe("masquerJetonUrl — ce qui doit disparaître", () => {
     expect(masquerJetonUrl(entree)).toBe(attendu);
   });
 
+  /**
+   * LE JETON EXACT QUE PARCOURT L'E2E, dans la forme exacte de `$current_url`.
+   *
+   * C'est ici, et NON dans `e2e/reserver.spec.ts`, que le masquage analytique
+   * se prouve : dans le navigateur, le jeton est LÉGITIMEMENT présent — c'est
+   * l'adresse de la page — et l'E2E ne peut donc rien affirmer d'autre que
+   * « il n'est pas lisible à l'écran, ni emporté ailleurs ». La question « et
+   * que part-il chez PostHog et Sentry ? » se tranche sur la fonction pure qui
+   * en décide, avec la valeur réelle plutôt qu'un jeton de laboratoire : ce
+   * jeton-ci porte des MAJUSCULES et des tirets, et un motif trop strict sur
+   * les minuscules l'aurait laissé passer intact.
+   */
+  it("masque le jeton d'invitation du parcours E2E, tel qu'il part en analytics", () => {
+    const jetonE2E = "E2E-INVIT-TOKEN-0000000000000000";
+    expect(
+      masquerJetonUrl(`https://localhost:3443/reserver/invitation/${jetonE2E}`),
+    ).toBe("https://localhost:3443/reserver/invitation/[jeton]");
+    expect(masquerJetonUrl(`/reserver/invitation/${jetonE2E}`)).not.toContain(
+      jetonE2E,
+    );
+  });
+
   it("préserve la query, qui porte le diagnostic", () => {
     expect(
       masquerJetonUrl(`https://app.lastchance.fr/commande/${JETON}?src=qr&page=2`),

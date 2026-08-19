@@ -20,13 +20,23 @@ import { SkipLink } from "@/components/ui/skip-link";
  * `invitation` n'est pas un identifiant d'activité valide, donc rien ne se
  * chevauche dans l'autre sens.
  *
- * ── LE JETON EST UN SECRET DE CHEMIN ──
+ * ── LE JETON EST UN SECRET DE CHEMIN, ET IL Y RESTE ──
  *
- * Qui détient l'URL détient la place. Le jeton doit donc être ajouté à la liste
- * fermée de `src/lib/masquer-jeton-url.ts` (aujourd'hui `/commande/`, `/hunt/`,
- * `/invite/`), sans quoi il partira tel quel dans `$current_url` chez PostHog et
- * dans les breadcrumbs Sentry. Ce fichier est hors du périmètre frontend : le
- * geste est signalé, pas fait ici.
+ * Qui détient l'URL détient la place. Deux conséquences, et les deux sont
+ * tenues ici :
+ *
+ *  1. Le préfixe `/reserver/invitation/` est dans la liste fermée de
+ *     `src/lib/masquer-jeton-url.ts` — sans quoi le jeton partirait tel quel
+ *     dans `$current_url` chez PostHog et dans les breadcrumbs Sentry.
+ *  2. IL N'EST PAS PASSÉ EN PROP au composant client (revue de sécurité L5).
+ *     Une prop qui franchit la frontière serveur → client est sérialisée dans
+ *     le payload RSC, c'est-à-dire écrite EN CLAIR dans le HTML
+ *     (`self.__next_f.push`) : le secret quittait alors l'adresse pour entrer
+ *     dans le CORPS de la page. `InvitationExperience` le lit de
+ *     `window.location.pathname` au moment de l'envoi.
+ *
+ * Le `token` reste utilisé ici, côté SERVEUR uniquement, pour résoudre le
+ * contexte : cette valeur-là ne traverse rien.
  *
  * ── PAS DE `loading.tsx`, PAS D'`error.tsx` LOCAL (ADR-107) ──
  *
@@ -88,8 +98,11 @@ export default async function InvitationPage({
 
   return (
     <Shell>
+      {/* AUCUNE prop `token`, et c'est le correctif de la revue L5 : une prop
+          passée à un composant CLIENT est sérialisée dans le payload RSC, donc
+          recopiée en clair dans le HTML. Le composant lit l'adresse au moment
+          de l'envoi — voir l'en-tête d'`invitation-experience.tsx`. */}
       <InvitationExperience
-        token={token}
         organizationName={ctx.organization.name}
         logoUrl={ctx.organization.logo_url}
         activityName={ctx.activity.name}

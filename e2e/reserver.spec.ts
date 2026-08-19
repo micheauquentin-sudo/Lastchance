@@ -444,11 +444,13 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
  * projet Playwright exécuté (mobile-chrome + mobile-safari = 2, exactement la
  * capacité) — ne pas dupliquer ce scénario sans revoir la fixture.
  */
+const JETON_INVITATION = "E2E-INVIT-TOKEN-0000000000000000";
+
 test.describe("réserver — invitation privée (RES-2)", () => {
-  test("réservation via jeton, jamais rendu en clair dans la page", async ({
+  test("réservation via jeton, jamais lisible à l'écran ni emporté ailleurs", async ({
     page,
   }) => {
-    await page.goto("/reserver/invitation/E2E-INVIT-TOKEN-0000000000000000");
+    await page.goto(`/reserver/invitation/${JETON_INVITATION}`);
     await expect(
       page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -478,11 +480,35 @@ test.describe("réserver — invitation privée (RES-2)", () => {
       .textContent();
     expect((codeTexte ?? "").trim()).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
 
-    // LE JETON CLAIR N'APPARAÎT NULLE PART dans la page de succès — il est
-    // révélé une fois côté serveur (au commerçant qui crée l'invitation) et
-    // ne revit jamais côté client.
-    const contenu = await page.content();
-    expect(contenu).not.toContain("E2E-INVIT-TOKEN-0000000000000000");
+    // ── POURQUOI `page.content()` N'EST PAS LE BON JUGE ICI ──
+    //
+    // Le jeton VOYAGE DANS L'URL de cette route : le payload RSC que Next
+    // sérialise dans le HTML porte donc forcément le chemin courant, jeton
+    // compris — même propriété que `/hunt/[token]`, et ce n'est pas une fuite
+    // (qui détient l'URL détient déjà le jeton). L'assertion précédente
+    // interdisait cette présence-là, c'est-à-dire une propriété que le
+    // framework ne peut pas tenir.
+    //
+    // Les deux invariants RÉELS, eux, tiennent : le jeton n'est jamais LISIBLE
+    // à l'écran, et il n'est jamais EMPORTÉ vers une page qui ne le porte pas
+    // déjà dans son adresse.
+    const texteVisible = await page.locator("body").innerText();
+    expect(texteVisible).not.toContain(JETON_INVITATION);
+
+    // LA PAGE SUIVANTE — celle dont l'adresse ne porte PAS le jeton. C'est là
+    // que `page.content()` redevient un juge légitime : si le jeton s'y trouve,
+    // c'est qu'il a été recopié quelque part (état client, cookie, lien de
+    // retour), et cette fois c'en serait bien une fuite.
+    //
+    // La réservation obtenue n'y est PAS visible, et c'est normal : elle vit sur
+    // un créneau FERMÉ AU PUBLIC, que la page publique ne liste pas
+    // (`loadReserverPublicContext` ne retient que `status = 'open'`) — c'est
+    // exactement ce à quoi sert une invitation privée.
+    await page.goto("/reserver/e2ea0000-0000-4000-8000-000000000012");
+    await expect(
+      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+    ).toBeVisible({ timeout: 30_000 });
+    expect(await page.content()).not.toContain(JETON_INVITATION);
   });
 
   test("jeton inconnu : 404 générique, aucun oracle sur son existence", async ({
