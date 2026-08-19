@@ -90,6 +90,14 @@ test.describe("mode événement — cycle question → révélation (télécomma
     page,
     browser,
   }) => {
+    // Ce test orchestre 3 pages (télécommande + joueur) et enchaîne 6
+    // attentes bornées à 20-30 s chacune : le budget par défaut (90 s,
+    // playwright.config.ts) est trop juste sous WebKit headless en CI (run
+    // 32206711952, mobile-safari uniquement — mobile-chrome passe dans le
+    // même run). Ce n'est pas une attente précise qui est trop courte, c'est
+    // la somme sous charge qui dépasse le timeout global du test.
+    test.setTimeout(150_000);
+
     // ── 1. Télécommande : la session est en lobby (garanti par le
     // beforeEach), prête à lancer.
     await page.goto(`/dashboard/events/${SESSION_ID}/remote`);
