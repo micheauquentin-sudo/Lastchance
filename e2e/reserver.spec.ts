@@ -73,7 +73,9 @@ test.describe("réserver — parcours public puis comptoir", () => {
     const champCode = page.getByLabel("Code de réservation");
     await champCode.fill(code);
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
-    await expect(page.getByText("Arrivée enregistrée")).toBeVisible({
+    await expect(
+      page.getByRole("status").getByText("Arrivée enregistrée"),
+    ).toBeVisible({
       timeout: 20_000,
     });
 
@@ -129,7 +131,11 @@ test.describe("réserver — parcours public puis comptoir", () => {
       .getByRole("button", { name: "Réserver ma place" })
       .click();
 
-    await expect(page.getByRole("alert")).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByRole("alert", {
+        name: "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
+      }),
+    ).toBeVisible({ timeout: 20_000 });
 
     // Ni l'email saisi ni un jeton n'apparaissent dans la page rendue.
     const contenu = await page.content();
