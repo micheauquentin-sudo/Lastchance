@@ -28,6 +28,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
     empreinte: null as string | null,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
+    pressions: [] as Array<{ parts: string; evenement: string }>,
     reset() {
       state.droitVitrine = true;
       state.activityRow = {
@@ -56,6 +57,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.empreinte = null;
       state.selects = [];
       state.filtres = [];
+      state.pressions = [];
     },
   };
 
@@ -112,6 +114,19 @@ const { state, makeAdmin } = vi.hoisted(() => {
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({
   cookies: () => Promise.resolve({ get: () => undefined, set: vi.fn() }),
+  headers: () => Promise.resolve({ get: () => null }),
+}));
+vi.mock("@/lib/request-ip", () => ({
+  clientIpFromHeaders: () => "203.0.113.7",
+  observerPressionIp: (
+    parts: Array<string | number>,
+    _ip: string,
+    _rule: unknown,
+    evenement: string,
+  ) => {
+    state.pressions.push({ parts: parts.join(":"), evenement });
+    return Promise.resolve();
+  },
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -158,6 +173,34 @@ describe("loadReserverPublicContext", () => {
     expect(contexte.timezone).toBe("Indian/Reunion");
     expect(contexte.slots).toHaveLength(1);
     expect(contexte.slots[0].remaining).toBe(10);
+  });
+
+  it("observe l'IP SEULE avant l'IP par activité, et ne refuse jamais dessus", async () => {
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+      "reserver_page_pressure",
+    ]);
+    expect(state.pressions[0].parts).toBe("reserver:page:ip");
+    expect(state.pressions[1].parts).toBe(
+      `reserver:page:activity:ip:${ACTIVITY_ID}`,
+    );
+    // Ces compteurs ne portent AUCUNE porte : la page se rend quand même.
+    expect(contexte.ok).toBe(true);
+  });
+
+  it("compte l'IP SEULE même sur une activité qui n'existe pas", async () => {
+    // C'est TOUT L'INTÉRÊT du premier compteur : un balayage d'UUID inventés
+    // n'atteint jamais une activité résolue. Posé après la lecture, il ne
+    // verrait rien du seul trafic qu'il est censé rendre visible.
+    state.activityRow = null;
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+
+    expect(contexte.ok).toBe(false);
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_page_ip_ceiling",
+    ]);
   });
 
   it("REFUSE — indistinctement — une organisation sans le droit `vitrine`", async () => {

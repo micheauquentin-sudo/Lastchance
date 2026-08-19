@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { APP_URL } from "@/lib/env";
-import { monitored, reportError } from "@/lib/monitoring";
+import { monitored, recordCounter, reportError } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { sendReservationConfirmationEmail } from "@/lib/resend";
@@ -35,6 +35,7 @@ import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import { type ActionResult } from "@/lib/utils";
 import {
   cancelReservationSchema,
+  cancelReservationStaffSchema,
   checkinReservationSchema,
   createReserverActivitySchema,
   createReserverSlotSchema,
@@ -81,14 +82,44 @@ const SANS_DROIT =
 // sur l'annulation ni sur la relecture : aucune friction sur un geste qui rend
 // une place ou qui n'écrit rien.
 //
+// ── ANTI-ARROSAGE EMAIL — la victime n'est pas l'appelant ──
+//
+// Les seaux d'identité bornent le PORTEUR DU COOKIE ; ils ne bornent pas le
+// nombre de messages reçus par un TIERS. Le parcours public accepte une adresse
+// choisie par le visiteur, et réserver puis annuler en boucle sur un créneau
+// ouvert relance un envoi à chaque tour — la place revient, donc la capacité ne
+// borne rien. Le seau `reserver:email:<org>:<adresse>` ferme cela : clé propre à
+// UN destinataire, donc `failClosed` conforme à ADR-032 (la saturer ne coupe
+// l'email de personne d'autre), motif exact `pronoRecoverEmail`. À sec, ON
+// N'ENVOIE PAS et LA RÉSERVATION RESTE VALIDE — le code est déjà à l'écran.
+//
 // ── INVENTAIRE DES SEAUX ────────────────────────────────────────────────
-//  reserveSlot / cancelReservation / loadMyReservations (public)
+// Cet inventaire est VÉRIFIÉ, pas déclaratif : il a menti pendant tout le lot L4
+// en attribuant à `cancelReservation` et `loadMyReservations` des compteurs IP
+// que seul `reserveSlot` consommait. Le corriger a coûté moins cher que de le
+// croire.
+//  reserveSlot (public, ÉMETTEUR)
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
+//    · reserver:email:<org>:<adresse>         destinataire CLOSED (avant l'envoi)
+//  cancelReservation (public) — l'organisation n'est PAS connue de l'appelant :
+//  la RPC la lit sur la ligne, donc pas de seau par organisation ici.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<résa>:<empreinte>     identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  loadMyReservations (public)
 //    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
 //    · reserver:player:<org>:<empreinte>      identité   CLOSED
 //    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
 //    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
 //  checkinReservation (authentifié)
 //    · cashier:lookup:<org>:<user>            opérateur  CLOSED (seau de caisse)
+//  Ouverture de la page publique — hors de ce fichier, dans
+//  `loadReserverPublicContext` (src/lib/reserver-context.ts) :
+//    · reserver:page:ip:<ip>                  partagée   OPEN (IP SEULE, 1er)
+//    · reserver:page:activity:ip:<act>:<ip>   partagée   OPEN (observabilité)
 // ════════════════════════════════════════════════════════════
 
 // ────────────────────────────────────────────────────────────
@@ -141,16 +172,23 @@ async function autoriserJoueurReserver(
 }
 
 /**
- * Les deux compteurs d'observabilité, dans l'ordre : IP SEULE d'abord, IP par
+ * Les compteurs d'observabilité, dans l'ordre : IP SEULE d'abord, IP par
  * organisation ensuite. Aucun des deux ne refuse jamais.
  *
  * L'IP seule est comptée en premier pour la raison de `pageOpenIp` (wagon 7) :
  * le second seau porte un `organization_id` que l'appelant choisit, et une
  * rafale qui boucle dessus se disperserait sur autant de séries — invisible en
  * supervision, et une écriture de rate-limit par organisation inventée.
+ *
+ * `organizationId` À NULL : le seul appelant dans ce cas est `cancelReservation`,
+ * qui ne connaît PAS l'organisation — la RPC la lit sur la ligne. Inventer une
+ * clé de repli (« unknown », l'identifiant de la réservation) aurait fabriqué
+ * une série qui ne se rapproche d'aucune autre ; l'IP seule, elle, se compare à
+ * tout le reste du parcours. Le compteur par organisation est donc simplement
+ * absent de ce chemin, et l'inventaire ci-dessus le dit.
  */
 async function observerPressionReserver(
-  organizationId: string,
+  organizationId: string | null,
   ip: string,
 ): Promise<void> {
   await observerPressionIp(
@@ -159,6 +197,7 @@ async function observerPressionReserver(
     RATE_LIMITS.reserverIpCeiling,
     "reserver_ip_ceiling",
   );
+  if (!organizationId) return;
   await observerPressionIp(
     ["reserver:public:ip", organizationId],
     ip,
@@ -204,8 +243,12 @@ export async function reserveSlot(input: {
     return { ok: false, error: TOO_MANY };
   }
 
+  // LA VALEUR VALIDÉE, jamais celle du corps : `input.turnstileToken` n'a
+  // traversé ni la borne de longueur ni le contrôle de type du schéma. Le jeton
+  // part ensuite en requête sortante vers Cloudflare — c'est exactement le
+  // genre de champ qu'on ne relaie pas brut.
   return monitored("reserver.reserve", () =>
-    reserveInner(parsed.data, empreinte, input.turnstileToken),
+    reserveInner(parsed.data, empreinte, parsed.data.turnstileToken),
   );
 }
 
@@ -259,14 +302,32 @@ async function reserveInner(
   // plutôt que remonté — une panne Resend ne doit pas défaire une place prise.
   if (resultat.state === "reserved" && parsed.consent && parsed.email) {
     const destinataire = parsed.email;
-    after(() =>
-      envoyerConfirmation({
-        to: destinataire,
-        organizationId: parsed.organizationId,
-        slotId: parsed.slotId,
-        code: resultat.code,
-      }).catch((err) => reportError("reserver.confirmation", err)),
+    // ANTI-ARROSAGE, CONSOMMÉ AVANT L'`after()` — pas dedans : un seau posé
+    // dans la tâche différée compterait bien, mais après que la décision
+    // d'envoyer a été prise, et une rafale l'aurait déjà remplie de tâches.
+    // L'adresse est celle que Zod a normalisée (trim + minuscules) : deux
+    // orthographes de la même boîte partagent donc le même seau.
+    const autorise = await rateLimit(
+      rateLimitBucket("reserver:email", parsed.organizationId, destinataire),
+      RATE_LIMITS.reserverEmail,
+      { failClosed: true },
     );
+    if (autorise) {
+      after(() =>
+        envoyerConfirmation({
+          to: destinataire,
+          organizationId: parsed.organizationId,
+          slotId: parsed.slotId,
+          code: resultat.code,
+        }).catch((err) => reportError("reserver.confirmation", err)),
+      );
+    } else {
+      // LA PLACE RESTE PRISE. Ce n'est pas une erreur rendue au joueur : sa
+      // réservation est valide et son code est à l'écran. Seul le rappel est
+      // sauté, et il est COMPTÉ — sans quoi un seau mal calibré ferait
+      // disparaître des confirmations sans que personne ne sache combien.
+      recordCounter("reserver.email.throttled");
+    }
   }
 
   return { ok: true, data: resultat };
@@ -348,6 +409,12 @@ export async function cancelReservation(input: {
   }
 
   return monitored("reserver.cancel", async () => {
+    // IP SEULE, fail-open. Ce chemin ne connaît pas l'organisation — la RPC la
+    // lit sur la ligne — donc le compteur par organisation n'existe pas ici, et
+    // l'inventaire en tête de fichier le dit. Ce qui reste mesuré est ce qui
+    // compte : la pression réelle du parcours par IP, annulations comprises.
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("cancel_reservation", {
       p_reservation_id: parsed.data.reservationId,
@@ -392,6 +459,14 @@ export async function loadMyReservations(input: {
   }
 
   return monitored("reserver.my-reservations", async () => {
+    // Les DEUX compteurs ici : cette action connaît l'organisation, elle la
+    // reçoit du client. Même ordre que `reserveSlot` — IP seule d'abord, parce
+    // que le second seau est composé avec un identifiant que l'appelant choisit.
+    await observerPressionReserver(
+      parsed.data.organizationId,
+      clientIpFromHeaders(await headers()),
+    );
+
     const admin = createAdminClient();
     const { data, error } = await admin.rpc("reservation_public_state", {
       p_organization_id: parsed.data.organizationId,
@@ -490,7 +565,7 @@ export async function checkinReservation(
 
 /** Session + rôle éditeur + droit `vitrine`, en un seul geste. */
 async function gardeEditeurReserver(): Promise<
-  | { ok: true; organizationId: string; timezone: string }
+  | { ok: true; organizationId: string; userId: string; timezone: string }
   | { ok: false; error: string }
 > {
   const { user, organization, role } = await getUserAndOrg();
@@ -506,8 +581,79 @@ async function gardeEditeurReserver(): Promise<
   return {
     ok: true,
     organizationId: organization.id,
+    // L'ACTEUR, pour les gestes audités. Il sort de la SESSION et de nulle part
+    // ailleurs : `cancel_reservation_staff` le revérifie membre en SQL, et un
+    // acteur posté aurait fait de la ligne d'audit une déclaration sur
+    // l'honneur (même raison qu'au comptoir).
+    userId: user.id,
     timezone: organization.timezone || RESERVER_FUSEAU_DEFAUT,
   };
+}
+
+/**
+ * ANNULER AU NOM DU COMMERCE — le geste qui manquait.
+ *
+ * ── LE DÉFAUT QU'IL FERME (revue de sécurité L4, M-4a) ──
+ *
+ * Le socle n'a livré qu'un chemin d'annulation, et il exige l'empreinte du
+ * cookie du joueur. `reservations` n'a par ailleurs AUCUN grant `update` : ni
+ * PostgREST, ni la RLS, ni aucune action ne pouvaient libérer une place. Un
+ * client qui annulait par téléphone — le cas le plus banal d'un restaurant —
+ * laissait donc son siège gelé jusqu'à l'heure du créneau, et le commerçant
+ * n'avait littéralement aucun geste. Sur un module dont l'objet unique est de
+ * distribuer ces places.
+ *
+ * ── CE QUE CETTE ACTION NE DÉCIDE PAS ──
+ *
+ * Ni l'appartenance, ni le rôle, ni l'organisation de la réservation :
+ * `cancel_reservation_staff` revérifie TOUT en SQL (migration 20261003120000).
+ * Les gardes ci-dessous servent à rendre un message utile au commerçant, pas à
+ * tenir la porte — une server action reste POSTable en direct.
+ *
+ * ── POURQUOI `gardeEditeurReserver`, DROIT `vitrine` COMPRIS ──
+ *
+ * Contrairement au check-in, qui l'exclut délibérément pour ne pas laisser un
+ * commerçant sans abonnement face à des clients déjà venus. Ici la question ne
+ * se pose pas : l'écran qui porte ce bouton est LUI-MÊME derrière le droit
+ * (`loadReserverDashboardContext` rend `no_access` sans lui), donc refuser ne
+ * peut abandonner personne qui voyait le bouton. Et la RPC accepte
+ * `owner`/`editor` seulement — le caissier en est exclu, parce qu'annuler
+ * RETIRE une place à quelqu'un qui n'est pas là pour le voir, là où enregistrer
+ * une arrivée ne fait que CONSTATER.
+ */
+export async function cancelReservationStaff(
+  _prev: ActionResult<CancelReservationResult> | null,
+  formData: FormData,
+): Promise<ActionResult<CancelReservationResult>> {
+  const parsed = cancelReservationStaffSchema.safeParse({
+    reservationId: formData.get("reservationId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.cancel-staff", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("cancel_reservation_staff", {
+      p_organization_id: garde.organizationId,
+      p_reservation_id: parsed.data.reservationId,
+      // DE LA SESSION. Jamais du corps de la requête.
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.cancel-staff", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    // Même forme de réponse que le chemin joueur : `mapCancelReservation` lit
+    // les quatre états (`unknown`, `already_checked_in`, `too_late`,
+    // `cancelled`) et l'écran les traduit. Une seconde fonction de lecture pour
+    // le même jsonb aurait dérivé de celle-ci au premier état ajouté.
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: mapCancelReservation(data) };
+  });
 }
 
 /** Créer une activité réservable. */

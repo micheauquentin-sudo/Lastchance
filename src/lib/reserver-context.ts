@@ -1,8 +1,10 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+import { RATE_LIMITS } from "@/lib/rate-limit";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import {
   generatePlayerDeviceToken,
   hashPlayerDeviceToken,
@@ -232,6 +234,27 @@ export type ReserverPublicContext =
 export async function loadReserverPublicContext(
   activityId: string,
 ): Promise<ReserverPublicContext> {
+  // ── PRESSION IP, EN PREMIER ET SANS JAMAIS REFUSER ──
+  //
+  // C'était le dernier chargeur public du module sans aucune mesure : la page
+  // n'est pas `monitored` et aucune server action n'est appelée à l'ouverture,
+  // donc une boucle de GET sur `/reserver/<uuid>` restait invisible à la
+  // supervision. `observerPressionIp` est fail-OPEN par construction
+  // (`observeSharedKey` ne rend rien) — l'IP est une clé PARTAGÉE derrière le
+  // Wi-Fi d'un commerce, et un refus dessus serait un interrupteur qu'un tiers
+  // allume (ADR-032). Règle `reserverPageIpCeiling`, motif `loyaltyOrderPageIp`.
+  //
+  // AVANT LA LECTURE, contrairement au précédent loyalty : l'identifiant vient
+  // de l'URL, donc du client. Un balayage d'UUID inventés n'atteint jamais une
+  // activité résolue — posé après, ce compteur n'en verrait rien.
+  const ip = clientIpFromHeaders(await headers());
+  await observerPressionIp(
+    ["reserver:page:ip"],
+    ip,
+    RATE_LIMITS.reserverPageIpCeiling,
+    "reserver_page_ip_ceiling",
+  );
+
   const admin = createAdminClient();
 
   const { data: activityData } = await admin
@@ -254,6 +277,17 @@ export async function loadReserverPublicContext(
     return { ok: false, error: INDISPONIBLE };
   }
   if (!row.active) return { ok: false, error: INDISPONIBLE };
+
+  // Second compteur, par ACTIVITÉ cette fois — il n'a de sens qu'ici, une fois
+  // l'activité résolue. Fail-open lui aussi : il nomme la page sous pression,
+  // il n'en ferme aucune.
+  await observerPressionIp(
+    ["reserver:page:activity:ip", row.id],
+    ip,
+    RATE_LIMITS.reserverPageIp,
+    "reserver_page_pressure",
+    { activity_id: row.id },
+  );
 
   const timezone = organization.timezone || RESERVER_FUSEAU_DEFAUT;
   const maintenant = new Date().toISOString();

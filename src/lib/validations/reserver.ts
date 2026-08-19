@@ -154,6 +154,19 @@ export const loadMyReservationsSchema = z.object({
 });
 
 /**
+ * Annuler AU NOM DU COMMERCE (migration 20261003120000).
+ *
+ * Un seul champ, et c'est le point : ni organisation, ni acteur. L'organisation
+ * vient de la session du commerçant et l'acteur de son identifiant utilisateur.
+ * Les poster aurait laissé un écran choisir sous quelle enseigne il annule, et
+ * fait de la ligne d'audit `reservation.cancel_staff` une déclaration sur
+ * l'honneur — exactement ce que `checkinReservationSchema` refuse déjà.
+ */
+export const cancelReservationStaffSchema = z.object({
+  reservationId: uuid,
+});
+
+/**
  * Valider une arrivée. L'ACTEUR N'EST PAS UN CHAMP : il vient de la session
  * authentifiée, et l'organisation de son appartenance. Un `actor` posté serait
  * une déclaration sur l'honneur — l'audit de check-in ne vaudrait plus rien.

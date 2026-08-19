@@ -1445,7 +1445,19 @@ export async function sendReservationConfirmationEmail(params: {
     });
 
     if (error) {
-      reportError("resend", `confirmation de réservation échouée: ${JSON.stringify(error)}`);
+      // NI `JSON.stringify(error)`, NI `error.message` — contrairement aux
+      // autres envois de ce fichier, et pour une raison propre à ce chemin :
+      // le destinataire est un VISITEUR, pas un commerçant inscrit. Resend
+      // recopie l'adresse dans le message d'erreur (« Invalid `to` field: … »),
+      // qui partirait alors dans les logs de la plateforme et dans Sentry — une
+      // donnée personnelle collectée pour un seul envoi transactionnel,
+      // conservée dans un système d'observabilité qui n'a jamais eu de base
+      // pour la porter. `name` et `statusCode` disent tout ce qu'une astreinte
+      // a besoin de savoir : quelle classe d'erreur, et si c'est nous ou eux.
+      reportError(
+        "resend",
+        `confirmation de réservation échouée: ${error.name} (${error.statusCode ?? "sans statut"})`,
+      );
       recordCounter("reserver.email.failed");
       return false;
     }

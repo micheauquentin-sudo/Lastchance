@@ -605,6 +605,49 @@ export const RATE_LIMITS = {
    *  un interrupteur (« déni de réservation d'un commerce entier »). Ne PAS
    *  repasser en `failClosed`. */
   reserverPublicIp: { limit: 1200, windowSeconds: 600 },
+  /** OUVERTURES de la page publique Réserver, PAR IP SEULE — compteur
+   *  d'OBSERVABILITÉ, jamais un refus, consommé AVANT toute lecture en base.
+   *
+   *  SÉRIE DISTINCTE des deux seaux d'action ci-dessus, pour la raison qui
+   *  sépare `huntStepIp` de `huntScanIp` : mélanger les ouvertures de page et
+   *  les gestes émetteurs dans une même série rendrait le rapport illisible —
+   *  une page très consultée noierait la rafale d'écriture qu'on cherche.
+   *
+   *  POURQUOI AVANT LA LECTURE, et non après la résolution de l'activité comme
+   *  `loyaltyOrderPageIp` : l'identifiant d'activité vient de l'URL, donc du
+   *  client. Une rafale qui boucle sur des UUID inventés n'atteint JAMAIS une
+   *  activité résolue — un compteur posé après la résolution ne verrait rien
+   *  d'elle, c'est-à-dire exactement le balayage qu'il est censé rendre visible.
+   *
+   *  Calibrage repris des seaux d'action du même parcours (600/600 s), et non
+   *  inventé : même public, même Wi-Fi de commerce partagé. */
+  reserverPageIpCeiling: { limit: 600, windowSeconds: 600 },
+  /** PRESSION des ouvertures de page publique Réserver par ACTIVITÉ et IP —
+   *  compteur d'OBSERVABILITÉ, jamais un refus (motif `loyaltyOrderPageIp`).
+   *
+   *  Posé APRÈS la résolution de l'activité : avant, il n'y aurait pas
+   *  d'activité à nommer. Son plafond est le double de l'agrégat ci-dessus, et
+   *  c'est le même rapport que `reserverIpCeiling` / `reserverPublicIp` : c'est
+   *  l'AGRÉGAT qui doit alerter le premier, puisque c'est lui — et lui seul —
+   *  qui voit une rafale que les clés par activité dispersent. */
+  reserverPageIp: { limit: 1200, windowSeconds: 600 },
+  /** CONFIRMATION de réservation par ADRESSE — `failClosed`, 3 par heure.
+   *
+   *  CLÉ PROPRE À UN SEUL DESTINATAIRE (organisation + adresse normalisée) :
+   *  c'est ce qui la rend compatible avec ADR-032, qui interdit le `failClosed`
+   *  sur une clé PARTAGÉE. La saturer ne coupe l'email de personne d'autre.
+   *  Motif exact `pronoRecoverEmail`, mêmes chiffres.
+   *
+   *  CE QU'ELLE BORNE : le parcours public accepte une adresse choisie par le
+   *  visiteur, et la réservation est le seul geste qui déclenche un envoi. Sans
+   *  ce seau, réserver puis annuler en boucle sur des créneaux ouverts fait
+   *  partir autant de messages vers une boîte tierce — la place revient à chaque
+   *  tour, donc la capacité ne borne rien. Les seaux d'identité plafonnent le
+   *  porteur du cookie, pas le nombre de messages reçus par la victime.
+   *
+   *  À SEC, ON N'ENVOIE PAS ET LA RÉSERVATION RESTE VALIDE : le code est déjà à
+   *  l'écran, l'email n'a jamais été la preuve. */
+  reserverEmail: { limit: 3, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

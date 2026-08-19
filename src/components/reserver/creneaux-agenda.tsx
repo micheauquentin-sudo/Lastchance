@@ -1,7 +1,8 @@
 import { Card } from "@/components/ui/card";
-import { formatCreneau } from "@/lib/reserver";
+import { etatUiCreneau, formatCreneau } from "@/lib/reserver";
 import type { ReserverSlotDashboardView } from "@/lib/reserver-context";
 import { formatDate } from "@/lib/utils";
+import { AnnulerReservationStaff } from "@/components/reserver/annuler-reservation";
 import {
   EditerCreneau,
   EtatCreneauForm,
@@ -93,6 +94,20 @@ function CreneauCarte({
     (r) => r.status === "cancelled",
   ).length;
 
+  // LE CRÉNEAU A-T-IL COMMENCÉ ? Au-delà, `cancel_reservation_staff` refuse
+  // `too_late` — la place ne serait reprise par personne (`reserve_slot` exige
+  // un créneau à venir) et l'absence resterait de toute façon dans les
+  // statistiques. Question posée à `etatUiCreneau`, comme du côté joueur, et
+  // avec les mêmes valeurs neutralisées : c'est SON heure qu'on demande, pas
+  // son état d'ouverture — un créneau fermé mais encore à venir garde ses
+  // annulations.
+  const commence =
+    etatUiCreneau({
+      status: "open",
+      startsAt: creneau.startsAt,
+      remaining: 1,
+    }) === "passe";
+
   return (
     <Card>
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -162,6 +177,16 @@ function CreneauCarte({
                     : ""}
                 </span>
                 <PastilleReservation status={reservation.status} />
+                {/* Le bouton n'apparaît QUE là où il peut aboutir : une
+                    réservation vivante, sur un créneau qui n'a pas commencé.
+                    Ailleurs, la RPC refuserait — et proposer un geste qui
+                    échoue est pire que de ne rien proposer. */}
+                {reservation.status === "confirmed" && !commence ? (
+                  <AnnulerReservationStaff
+                    reservationId={reservation.reservationId}
+                    code={reservation.code}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
