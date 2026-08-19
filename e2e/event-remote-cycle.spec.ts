@@ -121,8 +121,11 @@ test.describe("mode événement — cycle question → révélation (télécomma
       // Lancer la question depuis la télécommande, et attendre la
       // CONFIRMATION serveur (le libellé du contrôle bascule sur « Question
       // en cours ») avant de faire quoi que ce soit côté joueur : la question
-      // porte un chrono SERVEUR de 20 s (seed) qui démarre au moment où la
-      // Server Action aboutit, pas au clic lui-même.
+      // porte un chrono SERVEUR de 90 s (seed, élargi depuis 20 s le
+      // 2026-08-19 : le run 32210244435 montrait « Temps écoulé »/« Trop
+      // tard » — la fenêtre de 20 s ne survivait pas à la chaîne
+      // lancement → cache 1 s → polling → tap → submit sous charge CI) qui
+      // démarre au moment où la Server Action aboutit, pas au clic lui-même.
       await page
         .getByRole("button", { name: "Lancer" })
         .first()

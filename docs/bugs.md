@@ -11,6 +11,13 @@
   run. Corrigé par `test.setTimeout(150_000)` dans le test, pas par
   l'allongement d'une attente individuelle ni par une restriction de
   couverture navigateur.
+  ↳ 2026-08-19 (run 32210244435, SHA b158ccf) : la trace montrait « ⏱ Temps
+  écoulé. » / « Trop tard : les réponses sont closes. » — la question du
+  seed n'avait qu'un chrono serveur de 20 s, mangé par la chaîne
+  lancement → cache 1 s → polling joueur → tap → submit sous charge CI.
+  Élargi à 90 s dans `supabase/seed.sql` (question
+  `e2ed0000-0000-4000-8000-000000000011`) ; aucune attente Playwright
+  allongée.
 
 ## Critical
 

@@ -7029,3 +7029,121 @@ un job lent traîner sans fin.
 - `src/lib/webhook-worker.ts`, `src/lib/newsletter-worker.ts`,
   `src/lib/timing-safe.ts`
 - roadmap V1.63 ; `docs/bugs.md` (wagon 7) ; `docs/chantier-audit-2026-08-16.md`
+
+## ADR-109 : Train Réserver & Vitrine — plan de lots et arbitrages
+
+**Date** : 2026-08-19
+**Statut** : Accepté
+**Contexte** : le propriétaire a validé le 2026-08-19 un plan de 19 lots
+(L0→L18) implémentant les décisions produit de
+`docs/lastchance-reserver.md` — LastChance Réserver (RES-1..5), Vitrine
+(VIT-1..5), Expériences Signature, Duo Miroir, Portrait de la Bande. Il a
+donné un **ordre permanent** : exécution autonome complète, push/fusion/
+enchaînement des lots sans son intervention, bilan global à la fin du train.
+Quatre arbitrages ont été tranchés avant le lancement, plus une décision de
+traduction et une décision sur les packs de questions.
+
+### Ordre permanent du propriétaire
+
+Exécution autonome sur l'ensemble des 19 lots : chaque lot est développé,
+vérifié, poussé et fusionné sans validation intermédiaire du propriétaire ;
+un bilan global est produit en fin de train (voir
+`docs/chantier-reserver-vitrine.md` pour le suivi lot par lot). Règle de
+cadence héritée du socle opérationnel : au plus 2 trains d'écriture en vol,
+jamais 2 lots à migration en parallèle, fusions de migrations sérialisées.
+
+### A1 — Un seul entitlement « vitrine », vérifié côté serveur sur 3 surfaces
+
+**Décision** : un entitlement unique couvre la publication de la Vitrine, le
+CRM léger et l'agenda Réserver, vérifié côté serveur sur chacune des trois
+surfaces.
+**Justification** : ajouter un enum de droit supplémentaire plus tard reste
+bon marché ; fusionner deux entitlements distincts après coup est coûteux
+(migration de données, double vérification transitoire). L'entitlement
+unique colle au modèle déjà en place « un droit, trois capacités ».
+**Conséquence assumée** : un octroi bêta ouvre les trois capacités
+ensemble — il n'existe pas de granularité plus fine au MVP.
+
+### A2 — Canal nominatif par email, check-in par code court
+
+**Décision** : le canal nominatif des réservations est l'email (Resend,
+déjà en production). Le consentement transactionnel est capturé à la fois à
+la réservation et à l'inscription en liste prioritaire. Le check-in se fait
+par code court, pas par QR en email.
+**Justification** : ni liaison de compte joueur ni SMS ne sont nécessaires
+au MVP ; le rendu QR est aujourd'hui 100 % côté client, donc un QR envoyé
+par email n'a pas de générateur serveur disponible — le code court évite ce
+chantier annexe.
+**Conséquence assumée** : pas de QR imprimable/affichable par email au MVP.
+
+### A3 — Pas de scission du consentement SMS au MVP
+
+**Décision** : `sms_consents` reste tel quel, sans nouvelle colonne de
+consentement transactionnel dédié. Interdiction explicite d'envoyer du
+transactionnel Réserver/Vitrine sur le consentement marketing actuel.
+**Justification** : scinder le consentement est un chantier à part entière
+(ADR-061 sur le SMS transactionnel de retrait fait déjà cette distinction
+pour un autre flux) ; l'introduire ici alourdirait un train déjà large sans
+bénéfice immédiat, le canal MVP étant l'email (A2).
+**Conséquence assumée** : lot conditionnel, hors chemin critique du train,
+à activer seulement si un SMS transactionnel Réserver devient nécessaire.
+
+### A4 — Lobbies joueurs gratuits, hors paliers événement facturés
+
+**Décision** : les lobbies créés par les joueurs (Duo Miroir à 2, Portrait
+de la Bande de 2 à 12) sont gratuits, distincts des paliers événement
+facturés (minimum 10 participants, créés depuis le dashboard commerçant).
+**Gardes retenues** : seau IP-seule (protection réelle contre l'abus),
+quota par organisation, TTL d'expiration des lobbies non verrouillés. Le
+plafond par cookie joueur est reconnu comme décoratif — il ne protège rien
+qu'un joueur motivé ne contourne en effaçant son cookie — et n'est donc pas
+compté comme une garde à part entière.
+**Justification** : un lobby joueur gratuit doit rester praticable en
+usage normal tout en étant borné contre l'abus organisé ; l'IP et le quota
+d'organisation sont les deux gardes qui résistent à un joueur qui rejoue le
+geste, contrairement au cookie.
+
+### Décision traduction — zéro IA payante, adaptateur neutre, repli français
+
+**Décision** : aucune IA payante et aucune clé Anthropic pour la traduction
+de la Vitrine. DeepL est écarté pour l'instant — son compte devrait être
+créé par le propriétaire, geste hors du périmètre d'exécution autonome de ce
+train. Le lot L11 (VIT-1b) livre une infrastructure i18n avec un adaptateur
+de traduction **neutre et pluggable**, plus un repli automatique vers le
+français, sans fournisseur branché à ce stade.
+**Conséquence assumée, validée par le propriétaire** : si aucune traduction
+gratuite viable n'est trouvée au moment du lot L11, la Vitrine ouvre **en
+français seul** — écart assumé par rapport à l'ambition initiale
+« anglais dès le socle ». Les alternatives gratuites ou à faible coût (DeepL
+Free, 500 000 caractères/mois ; LibreTranslate auto-hébergé ; autres pistes
+trouvées en cours de route) seront documentées au bilan de fin de train,
+avec un calcul de capacité rapporté au volume de clients.
+
+### Décision packs de questions — Portrait de la Bande
+
+**Décision** : les packs de questions du module Portrait de la Bande sont
+rédigés et livrés par Claude au lot L18 — un pack par défaut à tonalité
+positive, un pack « taquin » assumé comme tel, avec des exclusions strictes
+de contenu. Relecture et validation du propriétaire au bilan de fin de
+train, pas avant.
+
+### Ordre des 19 lots
+
+L0 cadrage docs · L1 benchmark Mennoo (lecture seule) · L2 droit serveur
+vitrine · L3 RES-1a schéma + RPC · L4 RES-1b surfaces + email · L5 RES-2
+liste prioritaire + invitations · L6 RES-3 file sereine · L7 RES-4 attente
+active · L8 Expériences Signature · L9 RES-5 hold stock + RESA- + Drop ·
+L10 VIT-1a marque + catalogue FR (sous drapeau) · L11 VIT-1b infra i18n +
+adaptateur neutre (ouverture publique Vitrine) · L12 VIT-2 import assisté +
+QR imprimables · L13 VIT-3 branchement · L14 VIT-4 social + avis +
+analytics + CRM léger (segments « réservé »/« venu ») · L15 VIT-5 langues+ ·
+L16 socle session joueur · L17 Duo Miroir · L18 Portrait de la Bande.
+
+**Conséquences** : `docs/chantier-reserver-vitrine.md` (tracker créé au lot
+L0, mis à jour à chaque lot fusionné) ; `docs/roadmap.md` (entrée V1.64) ;
+`docs/codex-handoff.md` (journal d'avancement).
+
+**Références** :
+- `docs/lastchance-reserver.md`
+- `docs/chantier-reserver-vitrine.md`
+- roadmap V1.64
