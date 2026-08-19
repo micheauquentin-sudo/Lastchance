@@ -137,7 +137,6 @@ export function ContestRegisterForm({
   /** Question subsidiaire du championnat (départage des ex æquo). */
   tiebreakerQuestion?: string | null;
 }) {
-  const router = useRouter();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [avatar, setAvatar] = useState<AvatarId>(DEFAULT_AVATAR);
   const [state, formAction, pending] = useActionState(
@@ -156,7 +155,15 @@ export function ContestRegisterForm({
         tiebreakerGuess: rawGuess === "" ? "" : Number(rawGuess),
         turnstileToken: captchaToken ?? undefined,
       });
-      if (result.ok) router.refresh();
+      // Rechargement FRANC, pas `router.refresh()` : le cookie httpOnly de
+      // session joueur est posé par l'action, mais le cache client du
+      // routeur n'applique pas toujours le RSC fraîchement fetché après une
+      // action serveur réussie — flake mesuré ici (`docs/bugs.md` :
+      // « transition figée après une action réussie », vercel/next.js
+      // #82289/#88767 ; e2e/pronostics.spec.ts:34 restait bloqué sur
+      // « Inscription… » malgré une réponse serveur 200 en ~50 ms). Même
+      // correctif que `progression-season-card.tsx` / `quiz-editor.tsx`.
+      if (result.ok) window.location.reload();
       return result;
     },
     null,
