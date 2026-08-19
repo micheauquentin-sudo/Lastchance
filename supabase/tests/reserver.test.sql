@@ -585,6 +585,13 @@ select ok(not has_table_privilege('authenticated', 'public.reservations', 'DELET
 -- 9. RLS — le voisin ne voit rien, le caissier voit son comptoir
 -- ════════════════════════════════════════════════════════════
 
+-- `request.jwt.claims` est VIDÉ avant de basculer en session marchande.
+-- `auth.uid()` lit `request.jwt.claim.sub` d'abord, mais laisser derrière soi un
+-- `claims` qui annonce `service_role` sans porter de `sub` mélange deux
+-- identités dans la même session — et le jour où l'ordre de ce `coalesce`
+-- change côté Supabase, tout ce bloc rendrait 0 partout, ce qui se lit
+-- exactement comme « la RLS isole bien ».
+select set_config('request.jwt.claims', '', true);
 set local role authenticated;
 
 set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000103';
@@ -643,6 +650,7 @@ select throws_ok(
   '42501', null, 'RLS-10 anon ne lit aucun créneau');
 
 reset role;
+select set_config('request.jwt.claim.sub', '', true);
 
 
 -- ════════════════════════════════════════════════════════════
