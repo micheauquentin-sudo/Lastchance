@@ -35,10 +35,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * jonction entre les quatre modules et lui, rien d'autre.
  *
  * Et la garde textuelle garde une valeur que celle-ci n'a pas : elle se dérive
- * du dossier `src/actions`, donc un CINQUIÈME module d'offre écrit demain y
- * arrive avec son exigence, sans que personne pense à l'inscrire. Ce
- * fichier-ci, lui, énumère quatre modules à la main — il ne dira rien du
- * cinquième. Les deux se complètent ; aucune ne remplace l'autre.
+ * du dossier `src/actions`, donc un module d'offre écrit demain y arrive avec
+ * son exigence, sans que personne pense à l'inscrire. Ce fichier-ci, lui,
+ * énumère les modules à la main — il ne dira rien du suivant. Les deux se
+ * complètent ; aucune ne remplace l'autre.
+ *
+ * ── LE CINQUIÈME EST ARRIVÉ (RES-4) ────────────────────────
+ *
+ * La Pause Chance du Mode Attente active offre un tour sur la campagne que le
+ * commerçant a dotée. C'est exactement le patron des quatre autres, donc
+ * exactement le même défaut à attraper : la liste ci-dessous a été portée à
+ * cinq, et c'est le geste que la garde textuelle ne sait pas faire toute seule.
  * ════════════════════════════════════════════════════════════ */
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
@@ -49,9 +56,13 @@ const QUIZ_ID = "55555555-5555-4555-8555-555555555555";
 const WHEEL_ID = "66666666-6666-4666-8666-666666666666";
 const PRIZE_ID = "77777777-7777-4777-8777-777777777777";
 const SPIN_ID = "88888888-8888-4888-8888-888888888888";
-/** 48 hexa : le CHECK SQL du jeton de grant, recopié par les quatre schémas. */
+/** 48 hexa : le CHECK SQL du jeton de grant, recopié par les cinq schémas. */
 const GRANT_TOKEN = "a".repeat(48);
 const REFERRAL_SLUG = "chez-marcel";
+/** La session d'attente active (RES-4) qui porte la Pause Chance. */
+const WAIT_SESSION_ID = "99999999-9999-4999-8999-999999999999";
+/** Empreinte du cookie joueur — 64 hexa, la forme exigée par les RPC RES-4. */
+const EMPREINTE = "a".repeat(64);
 
 const { state, ADMIN, bridgeMock, ensureMock } = vi.hoisted(() => {
   const state = {
@@ -238,11 +249,25 @@ vi.mock("@/lib/referral-context", () => ({
     }),
   loadReferralPublicContext: vi.fn(),
 }));
+// RES-4 : le module d'attente active n'a pas de « contexte d'action » — la RPC
+// de tirage résout la session par le jeton ET l'empreinte, donc il n'y a rien
+// à charger. Seule l'identité cookie est doublée ; le reste du module
+// (chargeurs de page, jeton d'invitation) n'est pas sur ce chemin.
+vi.mock("@/lib/reserver-context", () => ({
+  lireIdentiteReserver: () => Promise.resolve(EMPREINTE),
+  assurerIdentiteReserver: () => Promise.resolve(EMPREINTE),
+  ouvrirSessionAttente: vi.fn(),
+  lireEtatFilePublic: vi.fn(),
+  droitVitrineOuvertPourFile: () => Promise.resolve(true),
+  generateInvitationToken: () => "jeton",
+  hashInvitationToken: () => null,
+}));
 
 import { consumeCalendarSpin } from "./calendar";
 import { consumeLoyaltySpin } from "./loyalty";
 import { consumeQuizSpin } from "./quiz";
 import { consumeReferralSpin } from "./referral";
+import { consumeReserverWaitSpin } from "./reserver";
 
 /**
  * Les quatre modules d'offre, joués pour de vrai. Chacun rend l'issue typée du
@@ -276,6 +301,15 @@ const MODULES: Array<{
     rpc: "consume_referral_spin_grant",
     jouer: () =>
       consumeReferralSpin({ slug: REFERRAL_SLUG, grantToken: GRANT_TOKEN }),
+  },
+  {
+    nom: "attente active",
+    rpc: "consume_reserver_wait_spin_grant",
+    jouer: () =>
+      consumeReserverWaitSpin({
+        sessionId: WAIT_SESSION_ID,
+        grantToken: GRANT_TOKEN,
+      }),
   },
 ];
 

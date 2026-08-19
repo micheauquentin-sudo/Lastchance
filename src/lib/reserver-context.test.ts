@@ -43,9 +43,13 @@ const { state, makeAdmin } = vi.hoisted(() => {
     entreesFile: [] as Array<Record<string, unknown>>,
     /** Ce que rend `queue_public_state`. */
     etatFile: { state: "not_in_queue" } as Record<string, unknown>,
+    /** Ce que rend `wait_session_open` (RES-4). */
+    sessionAttente: {} as Record<string, unknown>,
     empreinte: null as string | null,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
+    /** Les arguments de chaque RPC, dans l'ordre — parallèle à `rpcs`. */
+    rpcArgs: [] as Array<Record<string, unknown>>,
     pressions: [] as Array<{ parts: string; evenement: string }>,
     reset() {
       state.droitVitrine = true;
@@ -117,19 +121,33 @@ const { state, makeAdmin } = vi.hoisted(() => {
       };
       state.entreesFile = [];
       state.etatFile = { state: "not_in_queue" };
+      state.sessionAttente = {
+        state: "open",
+        session_id: "88888888-8888-4888-8888-888888888888",
+        source: "queue_entry",
+        quiz_id: "99999999-9999-4999-8999-999999999999",
+        pause_campaign_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        activity_id: null,
+        pause_chance_used: false,
+      };
       state.empreinte = null;
       state.selects = [];
       state.filtres = [];
+      state.rpcArgs = [];
       state.pressions = [];
     },
   };
 
   function makeAdmin() {
     return {
-      rpc(nom: string) {
+      rpc(nom: string, args?: Record<string, unknown>) {
         state.rpcs.push(nom);
+        state.rpcArgs.push(args ?? {});
         if (nom === "queue_public_state") {
           return Promise.resolve({ data: state.etatFile, error: null });
+        }
+        if (nom === "wait_session_open") {
+          return Promise.resolve({ data: state.sessionAttente, error: null });
         }
         return Promise.resolve({ data: state.etatPublic, error: null });
       },
@@ -789,7 +807,10 @@ describe("loadReserverQueuePublicContext", () => {
 
     const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
 
-    expect(state.rpcs).toEqual(["queue_public_state"]);
+    // `wait_session_open` SUIT, et seulement parce qu'une place existe : ouvrir
+    // la session d'attente active (RES-4) est idempotent et ne touche pas à la
+    // file. C'est `queue_public_state` qui reste le SEUL juge du rang.
+    expect(state.rpcs).toEqual(["queue_public_state", "wait_session_open"]);
     expect(contexte.ok).toBe(true);
     if (!contexte.ok) return;
     expect(contexte.waitingCount).toBe(5);
@@ -940,5 +961,214 @@ describe("droitVitrineOuvertPourFile — la garde que le SCRUTIN oppose", () => 
       organization_id: "99999999-9999-4999-8999-999999999999",
     };
     expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LE MODE ATTENTE ACTIVE (RES-4, lot L7) — la session, dans les deux contextes
+//
+// Ce que ces tests attestent :
+//   · la session ne s'ouvre QUE pour quelqu'un qui attend réellement — ni le
+//     visiteur sans identité, ni celui qui regarde la file avant d'y entrer ;
+//   · l'organisation passée à la RPC est celle de la LIGNE lue, jamais une
+//     valeur d'appelant ;
+//   · une seule session par écran, même quand le navigateur détient plusieurs
+//     réservations : vingt lignes pour un écran qui n'en montre qu'une seraient
+//     vingt écritures pour rien ;
+//   · le refus de la RPC n'est pas une panne — l'écran garde son rang, sans
+//     animation. Le Mode Attente active est FACULTATIF.
+// ════════════════════════════════════════════════════════════
+
+/** Une place tenue par ce navigateur, telle que `queue_public_state` la rend. */
+const MA_PLACE = {
+  state: "in_queue",
+  queue_name: "Comptoir",
+  queue_status: "open",
+  entry_id: "55555555-5555-4555-8555-555555555555",
+  status: "waiting",
+  position: 2,
+  waiting_count: 5,
+  joined_at: "2026-08-20T09:00:00Z",
+  called_at: null,
+};
+
+describe("session d'attente — contexte PUBLIC d'une file", () => {
+  it("ouvre la session sur l'ENTRÉE tenue, avec l'organisation de la file", async () => {
+    state.empreinte = "b".repeat(64);
+    state.etatFile = MA_PLACE;
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    const index = state.rpcs.indexOf("wait_session_open");
+    expect(index).toBeGreaterThan(-1);
+    expect(state.rpcArgs[index]).toEqual({
+      p_organization_id: ORG_ID,
+      p_player_key_hash: "b".repeat(64),
+      p_queue_entry_id: MA_PLACE.entry_id,
+      p_reservation_id: undefined,
+    });
+    expect(contexte.ok && contexte.attente?.animations).toEqual([
+      "quiz",
+      "pause",
+    ]);
+    expect(contexte.ok && contexte.attente?.pause).toBe("disponible");
+  });
+
+  it("N'OUVRE RIEN pour qui n'a pas de place — même avec une identité", async () => {
+    // Le visiteur qui regarde la file avant d'y entrer n'attend rien : lui
+    // ouvrir une session écrirait une ligne pour un écran sans animation.
+    state.empreinte = "b".repeat(64);
+    state.etatFile = { state: "not_in_queue", queue_name: "Comptoir" };
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(state.rpcs).not.toContain("wait_session_open");
+    expect(contexte.ok && contexte.attente).toBeNull();
+  });
+
+  it("N'OUVRE RIEN sans identité : un rendu de page n'écrit pas de cookie", async () => {
+    state.empreinte = null;
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(state.rpcs).not.toContain("wait_session_open");
+    expect(contexte.ok && contexte.attente).toBeNull();
+  });
+
+  it("un refus de la RPC laisse le RANG intact et l'animation absente", async () => {
+    // `unknown` n'est pas une panne : le Mode Attente active est facultatif, et
+    // la file continue de fonctionner exactement comme avant RES-4.
+    state.empreinte = "b".repeat(64);
+    state.etatFile = MA_PLACE;
+    state.sessionAttente = { state: "unknown" };
+
+    const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
+
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.attente).toBeNull();
+    expect(contexte.maPlace?.position).toBe(2);
+    expect(contexte.waitingCount).toBe(5);
+  });
+});
+
+describe("session d'attente — contexte PUBLIC d'une activité", () => {
+  /** Deux créneaux ouverts, dans l'ordre chronologique rendu par la base. */
+  const AUTRE_SLOT = "66666666-6666-4666-8666-666666666666";
+  const creneaux = [
+    {
+      id: SLOT_ID,
+      organization_id: ORG_ID,
+      activity_id: ACTIVITY_ID,
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+      capacity: 10,
+      status: "open",
+    },
+    {
+      id: AUTRE_SLOT,
+      organization_id: ORG_ID,
+      activity_id: ACTIVITY_ID,
+      starts_at: "2026-09-08T12:00:00Z",
+      ends_at: "2026-09-08T14:00:00Z",
+      capacity: 10,
+      status: "open",
+    },
+  ];
+
+  function maReservation(slotId: string, status: string, id: string) {
+    return {
+      id,
+      slot_id: slotId,
+      organization_id: ORG_ID,
+      code: "ABCD2345",
+      status,
+      created_at: "2026-08-20T08:00:00Z",
+      cancelled_at: null,
+      checked_in_at: status === "checked_in" ? "2026-09-01T12:05:00Z" : null,
+      checked_in_by: null,
+    };
+  }
+
+  it("ouvre UNE session, celle du PROCHAIN créneau confirmé", async () => {
+    state.empreinte = "b".repeat(64);
+    state.slots = creneaux;
+    state.miennes = [
+      maReservation(AUTRE_SLOT, "confirmed", "22222222-2222-4222-8222-222222222222"),
+      maReservation(SLOT_ID, "confirmed", "11111111-1111-4111-8111-111111111111"),
+    ];
+    state.sessionAttente = {
+      state: "open",
+      session_id: "88888888-8888-4888-8888-888888888888",
+      source: "reservation",
+      quiz_id: null,
+      pause_campaign_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      activity_id: ACTIVITY_ID,
+      pause_chance_used: true,
+    };
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+
+    // UNE SEULE : deux réservations, un seul écran d'attente. C'est celle du
+    // créneau le plus proche, le seul qu'on attende réellement.
+    const ouvertures = state.rpcs.filter((nom) => nom === "wait_session_open");
+    expect(ouvertures).toHaveLength(1);
+    const index = state.rpcs.indexOf("wait_session_open");
+    expect(state.rpcArgs[index]).toEqual({
+      p_organization_id: ORG_ID,
+      p_player_key_hash: "b".repeat(64),
+      p_queue_entry_id: undefined,
+      p_reservation_id: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(contexte.ok && contexte.attente?.pause).toBe("utilisee");
+    expect(contexte.ok && contexte.attente?.animations).toEqual([
+      "pause",
+      "activite",
+    ]);
+  });
+
+  it("N'OUVRE RIEN pour une arrivée déjà enregistrée : qui est arrivé n'attend plus", async () => {
+    state.empreinte = "b".repeat(64);
+    state.slots = [creneaux[0]];
+    state.miennes = [
+      maReservation(SLOT_ID, "checked_in", "11111111-1111-4111-8111-111111111111"),
+    ];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+
+    expect(state.rpcs).not.toContain("wait_session_open");
+    expect(contexte.ok && contexte.attente).toBeNull();
+  });
+
+  it("N'OUVRE RIEN sans identité ni réservation", async () => {
+    state.slots = creneaux;
+
+    const sansCookie = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(state.rpcs).not.toContain("wait_session_open");
+    expect(sansCookie.ok && sansCookie.attente).toBeNull();
+
+    state.rpcs = [];
+    state.empreinte = "b".repeat(64);
+    const sansPlace = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(state.rpcs).not.toContain("wait_session_open");
+    expect(sansPlace.ok && sansPlace.attente).toBeNull();
+  });
+
+  it("ne fait DESCENDRE aucune configuration d'animation au visiteur", async () => {
+    // La config vit sur l'activité, mais elle ne se lit QUE côté commerçant :
+    // le visiteur d'une page publique n'a rien à savoir de ce qui sera proposé
+    // à quelqu'un d'autre. Elle ne descend que par `wait_session_open`, et
+    // seulement à qui détient une attente vivante.
+    state.slots = creneaux;
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+
+    expect(contexte.ok && contexte.activity.waitQuizId).toBeNull();
+    expect(contexte.ok && contexte.activity.waitPauseCampaignId).toBeNull();
+    const lecture = state.selects.find(
+      (s) => s.table === "reservation_activities",
+    );
+    expect(lecture?.colonnes).not.toContain("wait_quiz_id");
+    expect(lecture?.colonnes).not.toContain("wait_pause_campaign_id");
   });
 });

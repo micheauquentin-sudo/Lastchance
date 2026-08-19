@@ -570,6 +570,7 @@ import {
   redeemInvitation,
   reserveSlot,
   revokeInvitation,
+  updateReserverActivity,
   updateReserverQueue,
   updateReserverSlotStatus,
   waitlistJoin,
@@ -1943,4 +1944,126 @@ describe("files d'accueil — configuration", () => {
     expect(ecriture?.values.status).toBe("paused");
     expect(ecriture?.values.max_live_entries).toBe(12);
   });
+});
+
+describe("les animations d'attente (RES-4) se règlent là où le commerçant regarde", () => {
+  // La configuration vit sur les DEUX porteurs — la FILE pour qui attend
+  // debout, l'ACTIVITÉ pour qui a un créneau en poche — et les quatre gestes
+  // de configuration doivent l'écrire, sans quoi une des deux formes d'attente
+  // resterait sans animation réglable.
+  const porteurs = [
+    {
+      nom: "file (création)",
+      table: "reservation_queues",
+      op: "insert",
+      jouer: (champs: Record<string, string>) =>
+        createReserverQueue(
+          null,
+          formData({ name: "Comptoir", maxLiveEntries: "50", ...champs }),
+        ),
+    },
+    {
+      nom: "file (réglages)",
+      table: "reservation_queues",
+      op: "update",
+      jouer: (champs: Record<string, string>) =>
+        updateReserverQueue(
+          null,
+          formData({
+            queueId: QUEUE_ID,
+            name: "Comptoir",
+            maxLiveEntries: "50",
+            status: "open",
+            ...champs,
+          }),
+        ),
+    },
+    {
+      nom: "activité (création)",
+      table: "reservation_activities",
+      op: "insert",
+      jouer: (champs: Record<string, string>) =>
+        createReserverActivity(null, formData({ name: "Atelier", ...champs })),
+    },
+    {
+      nom: "activité (réglages)",
+      table: "reservation_activities",
+      op: "update",
+      jouer: (champs: Record<string, string>) =>
+        updateReserverActivity(
+          null,
+          formData({
+            id: ACTIVITY_ID,
+            name: "Atelier",
+            active: "true",
+            ...champs,
+          }),
+        ),
+    },
+  ];
+
+  it.each(porteurs)(
+    "$nom : écrit les deux colonnes d'animation",
+    async ({ table, op, jouer }) => {
+      const resultat = await jouer({
+        waitQuizId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        waitPauseCampaignId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      });
+
+      expect(resultat.ok).toBe(true);
+      const ecriture = state.rlsWrites.at(-1);
+      expect(ecriture?.table).toBe(table);
+      expect(ecriture?.op).toBe(op);
+      expect(ecriture?.values.wait_quiz_id).toBe(
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      );
+      expect(ecriture?.values.wait_pause_campaign_id).toBe(
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      );
+    },
+  );
+
+  it.each(porteurs)(
+    "$nom : sans réglage, écrit `null` — l'animation est FACULTATIVE",
+    async ({ jouer }) => {
+      const resultat = await jouer({});
+
+      expect(resultat.ok).toBe(true);
+      const ecriture = state.rlsWrites.at(-1);
+      expect(ecriture?.values.wait_quiz_id).toBeNull();
+      expect(ecriture?.values.wait_pause_campaign_id).toBeNull();
+    },
+  );
+
+  it.each(porteurs)(
+    "$nom : `\"\"` DÉCROCHE l'animation, il n'échoue pas",
+    async ({ jouer }) => {
+      // Un `<select>` remis sur « Aucune » poste la chaîne vide : c'est une
+      // valeur, pas une absence de décision.
+      const resultat = await jouer({
+        waitQuizId: "",
+        waitPauseCampaignId: "",
+      });
+
+      expect(resultat.ok).toBe(true);
+      expect(state.rlsWrites.at(-1)?.values.wait_quiz_id).toBeNull();
+    },
+  );
+
+  it.each(porteurs)(
+    "$nom : une FK composite refusée rend un message unique, sans oracle",
+    async ({ jouer }) => {
+      // Inexistant ou appartenant au voisin : un seul message pour les deux —
+      // le distinguer apprendrait à qui tape des identifiants ce qui existe
+      // chez le commerce d'en face.
+      state.rlsError = { message: "fk", code: "23503" };
+
+      const resultat = await jouer({
+        waitQuizId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      });
+
+      expect(resultat.ok).toBe(false);
+      expect(resultat.ok === false && resultat.error).toMatch(/introuvable/i);
+    },
+  );
 });

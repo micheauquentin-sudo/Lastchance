@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  animationsAttente,
   asQueueEntryStatus,
   asQueueStatus,
   cheminActiviteReserver,
@@ -10,6 +11,7 @@ import {
   etatUiEntreeFile,
   etatUiFile,
   etatUiInvitation,
+  etatUiPauseChance,
   etatUiPlaceFile,
   etatUiReservation,
   fileAccepteEntree,
@@ -35,10 +37,14 @@ import {
   mapRevokeInvitation,
   mapWaitlistJoin,
   mapWaitlistLeave,
+  mapWaitSessionOpen,
+  mapWaitSpinGrant,
+  mapWaitUsePause,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
   urlFileReserver,
   urlInvitationReserver,
+  vueAttente,
 } from "@/lib/reserver";
 
 // ────────────────────────────────────────────────────────────
@@ -1189,5 +1195,259 @@ describe("la phrase qui remplace le délai", () => {
   it("ne promet aucune durée, et le dit", () => {
     expect(LIBELLE_FILE_SANS_DELAI).not.toMatch(/\d+\s*(min|minute|heure)/i);
     expect(LIBELLE_FILE_SANS_DELAI).toMatch(/rang/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LE MODE ATTENTE ACTIVE (RES-4, lot L7)
+//
+// Ce que ces tests attestent : les trois mappers ne retiennent RIEN hors de
+// l'état qui le prouve, et AUCUN ne fait entrer un rang, un compteur d'attente
+// ou un délai dans la couche d'écran — c'est le critère dur du cahier, et il se
+// vérifie ici sur la forme même des objets rendus.
+// ════════════════════════════════════════════════════════════
+
+describe("mapWaitSessionOpen", () => {
+  it("lit une session ouverte, sa source et ses deux animations", () => {
+    const r = mapWaitSessionOpen({
+      state: "open",
+      session_id: "s1",
+      source: "queue_entry",
+      quiz_id: "q1",
+      pause_campaign_id: "c1",
+      activity_id: "a1",
+      pause_chance_used: false,
+    });
+
+    expect(r.state).toBe("open");
+    expect(r.sessionId).toBe("s1");
+    expect(r.source).toBe("queue_entry");
+    expect(r.quizId).toBe("q1");
+    expect(r.pauseCampaignId).toBe("c1");
+    expect(r.activityId).toBe("a1");
+    expect(r.pauseChanceUsed).toBe(false);
+  });
+
+  it("ne retient RIEN sur `unknown` — pas même une animation glissée dans le document", () => {
+    // ROUGE SI le mapper devenait permissif : `unknown` couvre « pas la vôtre »
+    // et « d'un autre commerce ». En laisser sortir un identifiant de quiz
+    // ferait de ce refus muet un oracle.
+    const r = mapWaitSessionOpen({
+      state: "unknown",
+      session_id: "s1",
+      quiz_id: "q1",
+      pause_campaign_id: "c1",
+      activity_id: "a1",
+      pause_chance_used: true,
+    });
+
+    expect(r.sessionId).toBeNull();
+    expect(r.source).toBeNull();
+    expect(r.quizId).toBeNull();
+    expect(r.pauseCampaignId).toBeNull();
+    expect(r.activityId).toBeNull();
+    expect(r.pauseChanceUsed).toBe(false);
+  });
+
+  it("replie sur `unknown` un document illisible, et écarte une source hors vocabulaire", () => {
+    expect(mapWaitSessionOpen(null).state).toBe("unknown");
+    expect(mapWaitSessionOpen("open").state).toBe("unknown");
+    expect(mapWaitSessionOpen({ state: "ouverte" }).state).toBe("unknown");
+    expect(
+      mapWaitSessionOpen({ state: "open", session_id: "s1", source: "table" })
+        .source,
+    ).toBeNull();
+  });
+
+  it("ne rend NI rang, NI compteur d'attente, NI délai — critère dur RES-4", () => {
+    const r = mapWaitSessionOpen({
+      state: "open",
+      session_id: "s1",
+      source: "reservation",
+      // Même si la base en glissait — elle n'en glisse pas —, rien ne les
+      // ferait entrer : le mapper énumère ses champs, il ne recopie pas.
+      position: 3,
+      waiting_count: 12,
+      eta_minutes: 8,
+    });
+
+    expect(Object.keys(r).sort()).toEqual([
+      "activityId",
+      "pauseCampaignId",
+      "pauseChanceUsed",
+      "quizId",
+      "sessionId",
+      "source",
+      "state",
+    ]);
+  });
+});
+
+describe("mapWaitUsePause", () => {
+  it("rend le jeton et la campagne sur `granted`", () => {
+    const r = mapWaitUsePause({
+      state: "granted",
+      session_id: "s1",
+      campaign_id: "c1",
+      grant_token: "f".repeat(48),
+    });
+
+    expect(r.state).toBe("granted");
+    expect(r.campaignId).toBe("c1");
+    expect(r.grantToken).toBe("f".repeat(48));
+    expect(r.spinId).toBeNull();
+  });
+
+  it("rend LE MÊME jeton sur `already_used`, avec le tour déjà tiré", () => {
+    // Le taire aurait puni un rechargement de page d'un tour perdu : le rejeu
+    // est borné à l'étage d'en dessous, pas ici.
+    const r = mapWaitUsePause({
+      state: "already_used",
+      session_id: "s1",
+      campaign_id: "c1",
+      grant_token: "f".repeat(48),
+      spin_id: "sp1",
+    });
+
+    expect(r.grantToken).toBe("f".repeat(48));
+    expect(r.spinId).toBe("sp1");
+  });
+
+  it("distingue `unconfigured` d'`unknown`, et ne laisse fuir aucun jeton sur ni l'un ni l'autre", () => {
+    const rien = mapWaitUsePause({
+      state: "unconfigured",
+      grant_token: "f".repeat(48),
+    });
+    expect(rien.state).toBe("unconfigured");
+    expect(rien.grantToken).toBeNull();
+
+    const inconnu = mapWaitUsePause({
+      state: "unknown",
+      campaign_id: "c1",
+      grant_token: "f".repeat(48),
+    });
+    expect(inconnu.campaignId).toBeNull();
+    expect(inconnu.grantToken).toBeNull();
+  });
+
+  it("replie sur `unknown` un document illisible", () => {
+    expect(mapWaitUsePause(undefined).state).toBe("unknown");
+    expect(mapWaitUsePause({ state: "offerte" }).state).toBe("unknown");
+  });
+});
+
+describe("mapWaitSpinGrant", () => {
+  it("lit un tour tiré", () => {
+    const r = mapWaitSpinGrant({
+      state: "spun",
+      spin_id: "sp1",
+      wheel_id: "w1",
+      campaign_id: "c1",
+      prize_id: "p1",
+      is_losing: false,
+    });
+
+    expect(r.state).toBe("spun");
+    expect(r.spinId).toBe("sp1");
+    expect(r.wheelId).toBe("w1");
+    expect(r.campaignId).toBe("c1");
+    expect(r.prizeId).toBe("p1");
+    expect(r.isLosing).toBe(false);
+  });
+
+  it("replie sur `unavailable`, et `is_losing` n'est vrai que s'il est VRAI", () => {
+    expect(mapWaitSpinGrant(null).state).toBe("unavailable");
+    expect(mapWaitSpinGrant({ state: "tire" }).state).toBe("unavailable");
+    // Un `is_losing` « truthy » ne doit pas faire passer un gain pour une
+    // perte : le lot ne serait jamais réclamé.
+    expect(mapWaitSpinGrant({ state: "spun", is_losing: "oui" }).isLosing).toBe(
+      false,
+    );
+  });
+});
+
+describe("état d'écran de la Pause Chance", () => {
+  it("distingue « pas configurée » de « déjà jouée »", () => {
+    // Les confondre afficherait « déjà joué » à quelqu'un qui n'a jamais rien
+    // eu à jouer.
+    expect(
+      etatUiPauseChance({ pauseCampaignId: null, pauseChanceUsed: false }),
+    ).toBe("absente");
+    expect(
+      etatUiPauseChance({ pauseCampaignId: null, pauseChanceUsed: true }),
+    ).toBe("absente");
+    expect(
+      etatUiPauseChance({ pauseCampaignId: "c1", pauseChanceUsed: false }),
+    ).toBe("disponible");
+    expect(
+      etatUiPauseChance({ pauseCampaignId: "c1", pauseChanceUsed: true }),
+    ).toBe("utilisee");
+  });
+
+  it("garde la Pause dans les animations une fois consommée", () => {
+    // Faire disparaître la tuile sous les doigts de quelqu'un qui vient de
+    // cliquer serait pire que de lui dire « c'est fait ».
+    expect(
+      animationsAttente({
+        quizId: null,
+        pauseCampaignId: "c1",
+        activityId: null,
+      }),
+    ).toEqual(["pause"]);
+  });
+
+  it("n'annonce que ce qui est réellement proposable, dans l'ordre", () => {
+    expect(
+      animationsAttente({
+        quizId: "q1",
+        pauseCampaignId: "c1",
+        activityId: "a1",
+      }),
+    ).toEqual(["quiz", "pause", "activite"]);
+    expect(
+      animationsAttente({
+        quizId: null,
+        pauseCampaignId: null,
+        activityId: null,
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("vueAttente", () => {
+  it("compose la vue d'écran d'une session ouverte", () => {
+    const vue = vueAttente(
+      mapWaitSessionOpen({
+        state: "open",
+        session_id: "s1",
+        source: "reservation",
+        quiz_id: "q1",
+        pause_campaign_id: null,
+        activity_id: "a1",
+        pause_chance_used: false,
+      }),
+    );
+
+    expect(vue).toEqual({
+      sessionId: "s1",
+      source: "reservation",
+      quizId: "q1",
+      pauseCampaignId: null,
+      activityId: "a1",
+      pauseChanceUsed: false,
+      pause: "absente",
+      animations: ["quiz", "activite"],
+    });
+  });
+
+  it("rend `null` sur un refus, ET sur un document `open` sans preuve", () => {
+    // Le second cas est celui qui compte : une session sans identifiant ni
+    // source est un document corrompu, et l'écran ne doit pas l'afficher comme
+    // une animation disponible.
+    expect(vueAttente(mapWaitSessionOpen({ state: "unknown" }))).toBeNull();
+    expect(vueAttente(mapWaitSessionOpen({ state: "open" }))).toBeNull();
+    expect(
+      vueAttente(mapWaitSessionOpen({ state: "open", session_id: "s1" })),
+    ).toBeNull();
   });
 });

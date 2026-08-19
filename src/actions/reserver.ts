@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { APP_URL } from "@/lib/env";
+import { bridgeOfferedSpinToCampaign } from "@/lib/player-identity";
 import {
   monitored,
   recordCounter,
@@ -37,6 +38,8 @@ import {
   mapRevokeInvitation,
   mapWaitlistJoin,
   mapWaitlistLeave,
+  mapWaitSpinGrant,
+  mapWaitUsePause,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
   urlInvitationReserver,
@@ -54,10 +57,12 @@ import {
   type QueueStaffStateResult,
   type RedeemInvitationResult,
   type ReservationPublicState,
+  type ReserverAttenteView,
   type ReserveSlotResult,
   type RevokeInvitationResult,
   type WaitlistJoinResult,
   type WaitlistLeaveResult,
+  type WaitUsePauseResult,
 } from "@/lib/reserver";
 import {
   assurerIdentiteReserver,
@@ -66,7 +71,9 @@ import {
   hashInvitationToken,
   lireEtatFilePublic,
   lireIdentiteReserver,
+  ouvrirSessionAttente,
 } from "@/lib/reserver-context";
+import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { droitEffectifModule } from "@/lib/subscription";
@@ -97,8 +104,11 @@ import {
   updateReserverQueueSchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
+  waitConsumeSpinSchema,
   waitlistJoinSchema,
   waitlistLeaveSchema,
+  waitSessionOpenSchema,
+  waitUsePauseSchema,
 } from "@/lib/validations/reserver";
 
 const NOT_EDITOR = "Action non autorisée";
@@ -107,6 +117,16 @@ const TOO_MANY = "Trop de tentatives. Patientez un instant.";
 const INDISPONIBLE = "Cette réservation n'est pas disponible.";
 const SANS_DROIT =
   "L'agenda Réserver fait partie de l'offre Vitrine. Activez-la pour ouvrir des créneaux.";
+/**
+ * Refus d'une FK composite d'ANIMATION D'ATTENTE (RES-4). UN SEUL message pour
+ * le quiz et pour la campagne, et pour les deux causes (inexistant, ou d'un
+ * autre commerce) : les distinguer apprendrait à qui tape des identifiants ce
+ * qui existe chez le voisin.
+ */
+const ANIMATION_INTROUVABLE =
+  "Cette animation d'attente est introuvable.";
+/** Refus muet des trois chemins d'attente active — aucun oracle, jamais. */
+const ATTENTE_INDISPONIBLE = "Cette animation n'est pas disponible.";
 
 // ════════════════════════════════════════════════════════════
 // Contrôle d'abus — principe de conception du module (ADR-032)
@@ -241,6 +261,43 @@ const SANS_DROIT =
 //  les rangs de la file entière à chaque tic : contrairement aux trois gestes
 //  de comptoir ci-dessus, sa CADENCE est bornée. Clé d'opérateur, donc
 //  `failClosed` conforme (ADR-032) ; le dépassement est aussi REPORTÉ.
+//  waitSessionOpen (public, LECTURE/OUVERTURE IDEMPOTENTE — RES-4) — SÉRIE DE
+//  LECTURE, la même que `getQueuePublicState` : ouvrir une session est
+//  idempotent (verrou d'avis, une ligne par source) et l'écran d'attente le
+//  refait à chaque retour d'onglet. Lui faire dépenser le budget des GESTES
+//  ferait tomber le premier refus sur `queueLeave`, c'est-à-dire sur quelqu'un
+//  qui veut quitter la file dans laquelle il est debout.
+//    · reserver:queue-read:<empreinte>        identité   CLOSED (120/min)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (après résolution)
+//  waitUsePause (public, ÉMETTEUR — RES-4)
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 2e)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (après résolution)
+//  consumeReserverWaitSpin (public, ÉMETTEUR — RES-4)
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  AUCUN seau composé avec l'identifiant de SESSION, d'ENTRÉE ni de
+//  RÉSERVATION sur ces trois chemins : la clé serait choisie par l'appelant,
+//  donc un identifiant inventé par tour ouvrirait un seau neuf à chaque coup —
+//  c'est-à-dire aucune borne (motif `progressionDevice`, wagon 7). Ce qui les
+//  borne est le seau par APPAREIL, tranché en premier.
+//
+//  ── ET AUCUN TURNSTILE SUR LES TROIS, DÉLIBÉRÉMENT ──
+//
+//  Le challenge existe sur `reserveSlot`, `waitlistJoin` et `queueJoin` parce
+//  que ce sont des appels ÉMETTEURS dont les invariants SQL bornent le NOMBRE de
+//  places, jamais la DIVERSITÉ des mains : un bot à cookies jetables y prend
+//  quelque chose de RARE. Rien de tel ici, et pour deux raisons structurelles.
+//  (a) La Pause Chance est bornée à UNE PAR SESSION par un `update` conditionnel,
+//  et la session est UNIQUE PAR SOURCE (index unique partiel) : la borne réelle
+//  est « une par entrée en file », et multiplier les cookies ne multiplie pas
+//  les entrées — `queue_join`, LUI, oppose déjà le challenge. (b) Le gain est
+//  borné par l'ÉCONOMIE DE LA CAMPAGNE que le commerçant a dotée : stock fini,
+//  BORNE 2 (un lot à stock illimité n'est pas tirable par un tour offert),
+//  BORNE 3 (statut et fenêtre). Un challenge de plus n'aurait donc rien protégé
+//  qui ne le soit déjà, et il aurait mis une friction anti-robot devant
+//  quelqu'un qui patiente debout dans un magasin.
 //  Ouverture de la page publique — hors de ce fichier, dans
 //  `loadReserverPublicContext`, `loadReserverInvitationContext` ET
 //  `loadReserverQueuePublicContext` (src/lib/reserver-context.ts) :
@@ -1543,6 +1600,8 @@ export async function createReserverActivity(
   const parsed = createReserverActivitySchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
+    waitQuizId: formData.get("waitQuizId"),
+    waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -1557,6 +1616,10 @@ export async function createReserverActivity(
     name: parsed.data.name,
     description: parsed.data.description || null,
     active: true,
+    // ANIMATIONS D'ATTENTE (RES-4) : `""` = « aucune », et c'est le défaut. La
+    // FK COMPOSITE `(wait_quiz_id, organization_id)` refuse le quiz du voisin.
+    wait_quiz_id: parsed.data.waitQuizId || null,
+    wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,
   });
 
   if (error) {
@@ -1565,6 +1628,12 @@ export async function createReserverActivity(
     // qu'un échec générique sur lequel le commerçant ne peut rien.
     if (error.code === "23505") {
       return { ok: false, error: "Une activité porte déjà ce nom." };
+    }
+    // Violation d'une FK composite d'animation : le quiz ou la campagne
+    // n'existe pas, ou n'est pas celui de ce commerce. Un seul message pour les
+    // deux — le distinguer apprendrait ce qui existe chez le voisin.
+    if (error.code === "23503") {
+      return { ok: false, error: ANIMATION_INTROUVABLE };
     }
     return { ok: false, error: "Impossible de créer l'activité" };
   }
@@ -1583,6 +1652,8 @@ export async function updateReserverActivity(
     name: formData.get("name"),
     description: formData.get("description"),
     active: formData.get("active"),
+    waitQuizId: formData.get("waitQuizId"),
+    waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -1598,6 +1669,8 @@ export async function updateReserverActivity(
       name: parsed.data.name,
       description: parsed.data.description || null,
       active: parsed.data.active,
+      wait_quiz_id: parsed.data.waitQuizId || null,
+      wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,
     })
     .eq("id", parsed.data.id)
     // Double la RLS plutôt que de s'y fier seule.
@@ -1607,6 +1680,9 @@ export async function updateReserverActivity(
     console.error("[reserver] update activity:", error.message);
     if (error.code === "23505") {
       return { ok: false, error: "Une activité porte déjà ce nom." };
+    }
+    if (error.code === "23503") {
+      return { ok: false, error: ANIMATION_INTROUVABLE };
     }
     return { ok: false, error: "Impossible d'enregistrer l'activité" };
   }
@@ -2185,6 +2261,8 @@ export async function createReserverQueue(
     activityId: formData.get("activityId"),
     maxLiveEntries: formData.get("maxLiveEntries"),
     status: formData.get("status"),
+    waitQuizId: formData.get("waitQuizId"),
+    waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -2201,6 +2279,11 @@ export async function createReserverQueue(
     name: parsed.data.name,
     status: parsed.data.status,
     max_live_entries: parsed.data.maxLiveEntries,
+    // ANIMATIONS D'ATTENTE (RES-4), facultatives : `""` = « aucune ». Elles ne
+    // confèrent AUCUN droit sur la file — le jeu ignore jusqu'à l'existence
+    // d'un rang.
+    wait_quiz_id: parsed.data.waitQuizId || null,
+    wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,
   });
 
   if (error) {
@@ -2210,11 +2293,15 @@ export async function createReserverQueue(
     if (error.code === "23505") {
       return { ok: false, error: "Une file porte déjà ce nom." };
     }
-    // Violation de la FK composite : l'activité n'existe pas, ou n'est pas
-    // celle de ce commerce. Un seul message pour les deux — le distinguer
+    // Violation d'une FK composite : l'activité — ou, depuis RES-4, le quiz ou
+    // la campagne d'animation — n'existe pas, ou n'est pas celui de ce
+    // commerce. Un seul message pour toutes ces causes : les distinguer
     // apprendrait à qui tape des identifiants ce qui existe chez le voisin.
     if (error.code === "23503") {
-      return { ok: false, error: "Cette activité est introuvable." };
+      return {
+        ok: false,
+        error: "Cette activité ou cette animation d'attente est introuvable.",
+      };
     }
     return { ok: false, error: "Impossible de créer la file" };
   }
@@ -2244,6 +2331,8 @@ export async function updateReserverQueue(
     activityId: formData.get("activityId"),
     maxLiveEntries: formData.get("maxLiveEntries"),
     status: formData.get("status"),
+    waitQuizId: formData.get("waitQuizId"),
+    waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -2260,6 +2349,8 @@ export async function updateReserverQueue(
       activity_id: parsed.data.activityId || null,
       status: parsed.data.status,
       max_live_entries: parsed.data.maxLiveEntries,
+      wait_quiz_id: parsed.data.waitQuizId || null,
+      wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,
     })
     .eq("id", parsed.data.queueId)
     // Double la RLS plutôt que de s'y fier seule.
@@ -2271,7 +2362,10 @@ export async function updateReserverQueue(
       return { ok: false, error: "Une file porte déjà ce nom." };
     }
     if (error.code === "23503") {
-      return { ok: false, error: "Cette activité est introuvable." };
+      return {
+        ok: false,
+        error: "Cette activité ou cette animation d'attente est introuvable.",
+      };
     }
     return { ok: false, error: "Impossible d'enregistrer la file" };
   }
@@ -2435,4 +2529,417 @@ export async function getQueueStaffState(input: {
     const etat = mapQueueStaffState(data);
     return etat.ok ? etat : null;
   });
+}
+
+// ════════════════════════════════════════════════════════════
+// LE MODE ATTENTE ACTIVE (RES-4, lot L7) — parcours public
+//
+// Trois gestes, et AUCUN ne touche à la file : les RPC n'exécutent sur
+// `reservation_queue_entries`, `reservations` et `reservation_waitlist_entries`
+// que des `select` de VIVACITÉ. Le critère dur du cahier — « le jeu ne peut ni
+// lire ni modifier rang, priorité, capacité, accès, délai ou droit à une
+// place » — est donc tenu en SQL ; rien ici ne peut le défaire, et rien ici ne
+// rend de rang.
+//
+// ── L'ORGANISATION EST RÉSOLUE PAR LE SERVEUR, TOUJOURS ──
+//
+// Elle vient de la SOURCE (l'entrée de file ou la réservation) ou de la SESSION,
+// lues au service_role. Aucun schéma d'entrée ne la porte, donc il n'existe
+// aucune valeur du corps à confondre avec celle qui autorise — motif exact de
+// `queueJoin` et `redeemInvitation`. Et le refus est MUET : `unknown` couvre
+// indistinctement une source inconnue, celle d'un autre commerce, celle d'un
+// autre joueur, une source morte et une organisation sans le droit `vitrine`.
+// Les distinguer donnerait un oracle sur qui se trouve dans le magasin d'en
+// face.
+//
+// ── PAS DE TURNSTILE, ET LA RAISON EST STRUCTURELLE ──
+//
+// Voir l'inventaire des seaux en tête de fichier : la Pause Chance est bornée à
+// UNE PAR SESSION par la base, la session est UNIQUE PAR SOURCE, et le gain est
+// borné par l'économie de la campagne que le commerçant a dotée (stock fini,
+// BORNE 2, BORNE 3). Un challenge n'aurait rien protégé de plus, devant
+// quelqu'un qui patiente debout dans un magasin.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * L'organisation qui PORTE la source d'attente, lue au service_role.
+ *
+ * C'est une RÉSOLUTION, pas une autorisation : la RPC revérifie la propriété
+ * (empreinte du cookie) et la vivacité sous son verrou. Introuvable rend `null`,
+ * et l'appelant en fait le même refus muet que la RPC.
+ */
+async function organisationDeLaSourceAttente(
+  admin: ReturnType<typeof createAdminClient>,
+  source: { queueEntryId: string } | { reservationId: string },
+): Promise<string | null> {
+  const table =
+    "queueEntryId" in source ? "reservation_queue_entries" : "reservations";
+  const id =
+    "queueEntryId" in source ? source.queueEntryId : source.reservationId;
+  const { data } = await admin
+    .from(table)
+    .select("id, organization_id")
+    .eq("id", id)
+    .maybeSingle();
+  return (data as { organization_id: string } | null)?.organization_id ?? null;
+}
+
+/**
+ * Ouvrir — ou retrouver — sa session d'attente active.
+ *
+ * IDEMPOTENTE de bout en bout : la RPC retrouve la session existante sous
+ * verrou d'avis, donc recharger l'écran n'en crée pas une seconde. C'est aussi
+ * pourquoi le seau est celui de la LECTURE (`reserver:queue-read`) et non celui
+ * des gestes : cet appel se refait à chaque retour d'onglet, et le laisser
+ * manger le budget de `queueLeave` ferait tomber le premier refus sur quelqu'un
+ * qui veut quitter la file dans laquelle il est debout.
+ *
+ * Le rendu de page l'appelle DÉJÀ (`loadReserverPublicContext`,
+ * `loadReserverQueuePublicContext`) ; cette action existe pour l'écran qui
+ * rafraîchit sans recharger.
+ */
+export async function waitSessionOpen(input: {
+  queueEntryId?: string;
+  reservationId?: string;
+}): Promise<ActionResult<ReserverAttenteView>> {
+  const parsed = waitSessionOpenSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // LECTURE SEULE du cookie : sans identité, il n'y a aucune attente à ouvrir —
+  // et une ouverture ne fabrique pas d'identité à quelqu'un qui n'a rien
+  // demandé.
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: ATTENTE_INDISPONIBLE };
+  if (!(await autoriserLectureFileReserver(empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  const source = parsed.data.queueEntryId
+    ? { queueEntryId: parsed.data.queueEntryId }
+    : { reservationId: parsed.data.reservationId as string };
+
+  return monitored("reserver.wait-open", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    // IP SEULE d'abord : elle est comptée même sur une source qui ne résout
+    // rien, et c'est tout l'intérêt — un balayage d'UUID n'atteint aucune
+    // attente.
+    await observerPressionReserver(null, ip);
+
+    const admin = createAdminClient();
+    const organizationId = await organisationDeLaSourceAttente(admin, source);
+    if (!organizationId) {
+      return { ok: false as const, error: ATTENTE_INDISPONIBLE };
+    }
+
+    await observerPressionIp(
+      ["reserver:public:ip", organizationId],
+      ip,
+      RATE_LIMITS.reserverPublicIp,
+      "reserver_public_pressure",
+      { organization_id: organizationId },
+    );
+
+    // LA MÊME OUVERTURE QUE LES DEUX PAGES — écrite une fois, dans
+    // `reserver-context`. Deux appels séparés auraient divergé au premier champ
+    // ajouté, et l'écran aurait montré une animation que le rendu ignorait.
+    const attente = await ouvrirSessionAttente(
+      organizationId,
+      empreinte,
+      source,
+    );
+    if (!attente) return { ok: false as const, error: ATTENTE_INDISPONIBLE };
+    return { ok: true as const, data: attente };
+  });
+}
+
+/**
+ * Consommer LA Pause Chance de sa session — au plus une, définitivement.
+ *
+ * ── ELLE NE TIRE PAS LE TOUR ──
+ *
+ * Elle rend un JETON et la campagne cible ; `consumeReserverWaitSpin` tire.
+ * Séparer les deux permet à l'écran de montrer la roue avant de connaître le
+ * résultat, comme partout ailleurs dans ce produit.
+ *
+ * ── LA CAMPAGNE VIENT DU PARENT, JAMAIS DE L'APPELANT ──
+ *
+ * C'est ce qui rend « gains décidés côté serveur à valeur plafonnée » vrai : un
+ * `campaignId` posté aurait laissé le navigateur choisir sur quelle campagne il
+ * joue son tour offert.
+ *
+ * `already_used` rend LE MÊME jeton, et ce n'est pas une fuite : c'est le sien,
+ * le rejeu est borné à l'étage d'en dessous, et le taire punirait un
+ * rechargement de page d'un tour perdu.
+ */
+export async function waitUsePause(input: {
+  sessionId: string;
+}): Promise<ActionResult<WaitUsePauseResult>> {
+  const parsed = waitUsePauseSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: ATTENTE_INDISPONIBLE };
+  // LE SEAU PAR APPAREIL SEUL : le composer avec la SESSION aurait ouvert un
+  // seau neuf à chaque identifiant inventé, c'est-à-dire aucune borne du tout
+  // (motif `progressionDevice`, wagon 7).
+  if (!(await autoriserAppareilReserver(empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.wait-use-pause", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    await observerPressionReserver(null, ip);
+
+    const admin = createAdminClient();
+    // L'ORGANISATION EST CELLE DE LA SESSION. Résolution seule — la RPC
+    // revérifie que la session est bien celle de ce cookie.
+    const { data: sessionRow } = await admin
+      .from("reservation_wait_sessions")
+      .select("id, organization_id")
+      .eq("id", parsed.data.sessionId)
+      .maybeSingle();
+    const organizationId =
+      (sessionRow as { organization_id: string } | null)?.organization_id ??
+      null;
+    if (!organizationId) {
+      return { ok: false as const, error: ATTENTE_INDISPONIBLE };
+    }
+
+    await observerPressionIp(
+      ["reserver:public:ip", organizationId],
+      ip,
+      RATE_LIMITS.reserverPublicIp,
+      "reserver_public_pressure",
+      { organization_id: organizationId },
+    );
+
+    const { data, error } = await admin.rpc("wait_session_use_pause", {
+      p_organization_id: organizationId,
+      p_session_id: parsed.data.sessionId,
+      p_player_key_hash: empreinte,
+    });
+    if (error) {
+      reportError("reserver.wait-use-pause", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    const resultat = mapWaitUsePause(data);
+    // `unknown` = refus muet. `unconfigured` sort en `ok` : le commerçant n'a
+    // simplement rien configuré, et l'écran doit pouvoir le dire sans erreur.
+    if (resultat.state === "unknown") {
+      return { ok: false as const, error: ATTENTE_INDISPONIBLE };
+    }
+    return { ok: true as const, data: resultat };
+  });
+}
+
+/** Issue d'un tour de Pause Chance consommé, prête pour l'UI de la roue. */
+export interface ReserverWaitSpinOutcome {
+  state: "spun" | "already_consumed" | "no_prize";
+  wheelId: string | null;
+  prizeId: string | null;
+  isLosing: boolean;
+  /** Index du lot dans la roue cible (animation), `null` si perdant/indispo. */
+  prizeIndex: number | null;
+  label: string | null;
+  description: string | null;
+  /** Gain non perdant : jeton signé à passer à claimPrize (flux GAIN-…). */
+  claimToken: string | null;
+}
+
+interface SpinRow {
+  wheelId: string;
+  prizeId: string | null;
+  isLosing: boolean;
+}
+
+/** Relit un spin (reprise `already_consumed` via `resulting_spin_id`). */
+async function loadSpinRow(
+  admin: ReturnType<typeof createAdminClient>,
+  spinId: string,
+): Promise<SpinRow | null> {
+  const { data } = await admin
+    .from("spins")
+    .select("wheel_id, prize_id, is_losing")
+    .eq("id", spinId)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    wheelId: data.wheel_id as string,
+    prizeId: (data.prize_id as string | null) ?? null,
+    isLosing: data.is_losing as boolean,
+  };
+}
+
+/** Enrichit l'issue avec le libellé et l'index du lot dans la roue cible. */
+async function enrichSpinPrize(
+  admin: ReturnType<typeof createAdminClient>,
+  wheelId: string | null,
+  prizeId: string | null,
+): Promise<{
+  prizeIndex: number | null;
+  label: string | null;
+  description: string | null;
+}> {
+  const empty = { prizeIndex: null, label: null, description: null };
+  if (!wheelId || !prizeId) return empty;
+
+  const { data } = await admin
+    .from("prizes")
+    .select("id, label, description, position, created_at")
+    .eq("wheel_id", wheelId)
+    .eq("is_active", true);
+  const prizes = (
+    (data as Array<{
+      id: string;
+      label: string;
+      description: string;
+      position: number;
+      created_at: string;
+    }> | null) ?? []
+  ).sort(
+    (a, b) => a.position - b.position || a.created_at.localeCompare(b.created_at),
+  );
+  const idx = prizes.findIndex((p) => p.id === prizeId);
+  if (idx < 0) return empty;
+  return {
+    prizeIndex: idx,
+    label: prizes[idx].label,
+    description: prizes[idx].description,
+  };
+}
+
+/**
+ * Échanger le jeton d'octroi d'une Pause Chance contre UN tour de roue.
+ *
+ * CINQUIÈME exemplaire du tour de roue offert de ce dépôt (fidélité,
+ * calendrier, quiz, parrainage), et c'est le but : même RPC de tirage pondéré
+ * atomique, mêmes bornes économiques, même jeton `claim` rebranché sur le flux
+ * `claimPrize` existant (code GAIN-…). Rien de neuf n'est inventé — le plafond
+ * est celui de la campagne que le commerçant a déjà dotée.
+ *
+ * `no_prize` et `unavailable` NE BRÛLENT PAS le jeton : le joueur pourra revenir
+ * quand le commerçant aura réapprovisionné. Un jeton brûlé sur une roue vide
+ * serait une Pause Chance volée.
+ */
+export async function consumeReserverWaitSpin(input: {
+  sessionId: string;
+  grantToken: string;
+}): Promise<ActionResult<ReserverWaitSpinOutcome>> {
+  const parsed = waitConsumeSpinSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Sans cookie il n'y a rien à consommer : on sort avant toute requête, tout
+  // compteur et toute instrumentation (motif `consumeQuizSpin`).
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: ATTENTE_INDISPONIBLE };
+  if (!(await autoriserAppareilReserver(empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.wait-consume-spin", () =>
+    consommerTourAttente(parsed.data, empreinte),
+  );
+}
+
+async function consommerTourAttente(
+  parsed: { sessionId: string; grantToken: string },
+  empreinte: string,
+): Promise<ActionResult<ReserverWaitSpinOutcome>> {
+  try {
+    // Le contexte de ce chemin tient en un client : la RPC ne prend AUCUNE
+    // organisation — elle la lit sur la session, résolue par le jeton ET
+    // l'empreinte. Il n'y a donc rien à résoudre ici, et rien à confondre.
+    const ctx = { admin: createAdminClient() };
+
+    // Clé PARTAGÉE (IP seule) : fail-OPEN, observabilité seule (ADR-032).
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    const { data, error } = await ctx.admin.rpc(
+      "consume_reserver_wait_spin_grant",
+      {
+        p_session_id: parsed.sessionId,
+        p_player_key_hash: empreinte,
+        p_grant_token: parsed.grantToken,
+      },
+    );
+    if (error) {
+      reportError("reserver.wait-consume-spin", error.message);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+
+    const grant = mapWaitSpinGrant(data);
+    if (grant.state === "unavailable") {
+      return { ok: false, error: ATTENTE_INDISPONIBLE };
+    }
+    if (grant.state === "no_prize") {
+      return {
+        ok: true,
+        data: {
+          state: "no_prize",
+          wheelId: grant.wheelId,
+          prizeId: null,
+          isLosing: false,
+          prizeIndex: null,
+          label: null,
+          description: null,
+          claimToken: null,
+        },
+      };
+    }
+
+    // spun / already_consumed : reconstruire l'issue à partir du spin.
+    let wheelId = grant.wheelId;
+    let prizeId = grant.prizeId;
+    let isLosing = grant.isLosing;
+    if (grant.state === "already_consumed" && grant.spinId) {
+      const spin = await loadSpinRow(ctx.admin, grant.spinId);
+      if (spin) {
+        wheelId = spin.wheelId;
+        prizeId = spin.prizeId;
+        isLosing = spin.isLosing;
+      }
+    }
+
+    const enriched = await enrichSpinPrize(ctx.admin, wheelId, prizeId);
+    const claimToken =
+      !isLosing && prizeId && grant.spinId ? signClaimToken(grant.spinId) : null;
+
+    // PONT `campaign` DU TOUR OFFERT (voir `bridgeOfferedSpinToCampaign`).
+    //
+    // La `participations` que `claimPrize` va créer est résolue par le triplet
+    // (`campaign`, campaign_id, player_key) : sans ce pont, son `player_id`
+    // reste null et le lot n'apparaît JAMAIS sur `/portefeuille` — sans une
+    // erreur nulle part (ADR-066).
+    //
+    // Posé ICI et pas plus haut : un jeton de claim émis est la condition
+    // exacte sous laquelle une participation peut naître. Un tour perdant ou
+    // sans lot n'a aucun lot à faire figurer nulle part.
+    if (claimToken && grant.spinId) {
+      await bridgeOfferedSpinToCampaign(ctx.admin, grant.spinId);
+    }
+
+    return {
+      ok: true,
+      data: {
+        state: grant.state,
+        wheelId,
+        prizeId,
+        isLosing,
+        prizeIndex: enriched.prizeIndex,
+        label: enriched.label,
+        description: enriched.description,
+        claimToken,
+      },
+    };
+  } catch (err) {
+    reportError("reserver.wait-consume-spin", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
 }

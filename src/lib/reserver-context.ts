@@ -23,14 +23,17 @@ import {
   etatUiPlaceFile,
   mapQueuePublicState,
   mapReservationPublicState,
+  mapWaitSessionOpen,
   QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
   QUEUE_MAX_LIVE_ENTRIES_MAX,
   RESERVER_FUSEAU_DEFAUT,
   RESERVER_INVITATION_TOKEN_PATTERN,
+  vueAttente,
   type EtatUiInvitation,
   type EtatUiPlaceFile,
   type PublicWaitlistItem,
   type QueuePublicStateResult,
+  type ReserverAttenteView,
   type ReservationQueueEntryStatus,
   type ReservationQueueStatus,
   type ReservationStatus,
@@ -82,6 +85,17 @@ const ORG_COLUMNS =
 const ACTIVITY_COLUMNS =
   "id, organization_id, name, description, active, created_at";
 
+/**
+ * LES DEUX COLONNES D'ANIMATION D'ATTENTE (RES-4), ajoutées aux précédentes
+ * pour le SEUL écran qui les règle.
+ *
+ * Une constante séparée, et non deux colonnes de plus sur `ACTIVITY_COLUMNS` :
+ * la configuration d'animation n'a aucune raison d'être lue sur le chemin
+ * public, qui la jetterait de toute façon. Ce qu'on ne lit pas ne peut pas
+ * fuir dans un HTML par un `...row` distrait.
+ */
+const ACTIVITY_DASHBOARD_COLUMNS = `${ACTIVITY_COLUMNS}, wait_quiz_id, wait_pause_campaign_id`;
+
 const SLOT_COLUMNS =
   "id, organization_id, activity_id, starts_at, ends_at, capacity, status, waitlist_offer_minutes";
 
@@ -112,6 +126,22 @@ const INVITATION_COLUMNS =
 /** Files d'accueil (RES-3) — toutes les colonnes de la table, aucune sensible. */
 const QUEUE_COLUMNS =
   "id, organization_id, activity_id, name, status, max_live_entries, created_at";
+
+/** Miroir d'`ACTIVITY_DASHBOARD_COLUMNS` pour la file — même raison. */
+const QUEUE_DASHBOARD_COLUMNS = `${QUEUE_COLUMNS}, wait_quiz_id, wait_pause_campaign_id`;
+
+/**
+ * Les cibles d'animation proposables au commerçant. `name` sur les deux tables,
+ * et rien d'autre : un sélecteur n'a besoin que d'un libellé et d'un
+ * identifiant.
+ */
+const ATTENTE_OPTION_COLUMNS = "id, name";
+
+/**
+ * Plafond des deux listes de choix. Un commerce qui aurait plus de 200 quiz ou
+ * 200 campagnes ne choisirait de toute façon pas dans une liste déroulante.
+ */
+const ATTENTE_OPTIONS_MAX = 200;
 
 /**
  * Entrées de file lues POUR ÊTRE COMPTÉES.
@@ -146,7 +176,16 @@ interface ActivityRow {
   description: string | null;
   active: boolean;
   created_at: string;
+  /** Présentes seulement sur la lecture `ACTIVITY_DASHBOARD_COLUMNS`. */
+  wait_quiz_id?: string | null;
+  wait_pause_campaign_id?: string | null;
   organizations?: ReserverOrganization | null;
+}
+
+/** Une cible d'animation d'attente, telle que le sélecteur la propose. */
+export interface ReserverAttenteOption {
+  id: string;
+  name: string;
 }
 
 interface SlotRow {
@@ -209,6 +248,9 @@ interface QueueRow {
   status: string;
   max_live_entries: number;
   created_at: string;
+  /** Présentes seulement sur la lecture `QUEUE_DASHBOARD_COLUMNS`. */
+  wait_quiz_id?: string | null;
+  wait_pause_campaign_id?: string | null;
   organizations?: ReserverOrganization | null;
 }
 
@@ -307,6 +349,58 @@ export function hashInvitationToken(jeton: string): string | null {
 }
 
 // ────────────────────────────────────────────────────────────
+// LE MODE ATTENTE ACTIVE (RES-4) — la session, écrite UNE FOIS
+//
+// Les deux formes d'attente du produit ouvrent la MÊME session par la MÊME
+// RPC ; seule la source change. Écrire cet appel deux fois aurait fait diverger
+// les deux écrans au premier champ ajouté — c'est le motif exact de
+// `lireEtatFilePublic`, et il vaut ici pour la même raison.
+//
+// ── L'ORGANISATION VIENT DE LA RÉSOLUTION SERVEUR, JAMAIS DU CLIENT ──
+//
+// Les appelants la tiennent d'une ligne qu'ils viennent de lire (la file, ou
+// l'activité qui porte le créneau). Aucun chemin ne laisse un navigateur la
+// nommer, et `unknown` — le seul refus de la RPC — se traduit ici par `null` :
+// aucun oracle, et l'écran d'attente reste ce qu'il était avant RES-4.
+//
+// ── OUVRIR EST IDEMPOTENT, DONC UN RENDU DE PAGE PEUT LE FAIRE ──
+//
+// `wait_session_open` retrouve la session existante sous verrou d'avis et
+// n'insère qu'à la première ouverture. Recharger la page ne crée pas une
+// seconde session, et rien de cette écriture ne touche la file — la RPC ne lit
+// de la source que sa propriété et sa vivacité.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Ouvre — ou retrouve — la session d'attente de CE navigateur sur une source
+ * vivante, et rend de quoi peupler l'écran d'attente.
+ *
+ * `null` dès que la RPC refuse (source inconnue, d'un autre commerce, d'un
+ * autre joueur, morte, ou organisation sans le droit `vitrine`) : le Mode
+ * Attente active est FACULTATIF, son absence n'est pas une panne.
+ */
+export async function ouvrirSessionAttente(
+  organizationId: string,
+  empreinte: string,
+  source: { queueEntryId: string } | { reservationId: string },
+): Promise<ReserverAttenteView | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("wait_session_open", {
+    p_organization_id: organizationId,
+    p_player_key_hash: empreinte,
+    // EXACTEMENT UNE des deux, comme le `num_nonnulls(…) = 1` de la table.
+    p_queue_entry_id:
+      "queueEntryId" in source ? source.queueEntryId : undefined,
+    p_reservation_id:
+      "reservationId" in source ? source.reservationId : undefined,
+  });
+  // Un échec d'ouverture n'a AUCUNE conséquence sur l'attente elle-même : la
+  // page rend son rang comme avant, sans animation. Rien à propager.
+  if (error) return null;
+  return vueAttente(mapWaitSessionOpen(data));
+}
+
+// ────────────────────────────────────────────────────────────
 // Contexte PUBLIC d'une activité
 // ────────────────────────────────────────────────────────────
 
@@ -315,6 +409,19 @@ export interface ReserverActivityView {
   name: string;
   description: string | null;
   active: boolean;
+  /**
+   * ANIMATIONS D'ATTENTE (RES-4) — la CONFIGURATION, celle que le commerçant
+   * règle sur son écran.
+   *
+   * Toujours `null` sur le contexte PUBLIC, et ce n'est pas un oubli : le
+   * visiteur d'une page d'activité n'a rien à savoir de ce qui sera proposé à
+   * quelqu'un d'autre. La configuration ne descend au joueur que par
+   * `wait_session_open`, donc uniquement à celui qui détient une attente
+   * VIVANTE, et seulement si l'animation est `active` — voir `attente` sur
+   * `ReserverPublicContext`.
+   */
+  waitQuizId: string | null;
+  waitPauseCampaignId: string | null;
 }
 
 export interface ReserverSlotPublicView {
@@ -367,6 +474,22 @@ export type ReserverPublicContext =
        * c'est cette entrée-là qui le lui dit.
        */
       maFile: Record<string, PublicWaitlistItem>;
+      /**
+       * La session d'ATTENTE ACTIVE (RES-4) du prochain créneau confirmé, ou
+       * `null`.
+       *
+       * ── UNE SEULE, ET C'EST CELLE DE L'ATTENTE EN COURS ──
+       *
+       * Cette page peut porter vingt créneaux, donc jusqu'à vingt réservations
+       * de ce navigateur. En ouvrir une session par réservation aurait écrit
+       * vingt lignes pour UN écran, et l'écran n'en montre qu'une : celle du
+       * créneau le plus proche, le seul qu'on attende réellement. Les autres
+       * s'ouvriront le jour où elles seront la prochaine.
+       *
+       * `checked_in` n'y donne pas droit : qui est arrivé n'attend plus, et la
+       * RPC le refuse (`confirmed` seulement).
+       */
+      attente: ReserverAttenteView | null;
       /** Ce navigateur porte-t-il déjà une identité joueur ? */
       aUneIdentite: boolean;
     };
@@ -542,6 +665,22 @@ export async function loadReserverPublicContext(
     }
   }
 
+  // LA SESSION D'ATTENTE DU PROCHAIN CRÉNEAU — voir le champ `attente` du
+  // contexte pour le pourquoi d'une SEULE. `slotIds` est ordonné par
+  // `starts_at` croissant, donc le premier créneau où ce navigateur détient une
+  // réservation `confirmed` est bien la prochaine attente.
+  let attente: ReserverAttenteView | null = null;
+  if (empreinte) {
+    const prochaine = slotIds
+      .map((slotId) => mesReservations[slotId])
+      .find((reservation) => reservation?.status === "confirmed");
+    if (prochaine) {
+      attente = await ouvrirSessionAttente(organization.id, empreinte, {
+        reservationId: prochaine.reservationId,
+      });
+    }
+  }
+
   return {
     ok: true,
     activity: {
@@ -549,6 +688,12 @@ export async function loadReserverPublicContext(
       name: row.name,
       description: row.description,
       active: row.active,
+      // `null` DÉLIBÉRÉMENT : voir `ReserverActivityView`. Ces colonnes ne sont
+      // même pas lues ici (`ACTIVITY_COLUMNS` ne les porte pas) — la
+      // configuration d'animation n'a aucune raison d'atteindre le HTML d'un
+      // visiteur qui n'attend rien.
+      waitQuizId: null,
+      waitPauseCampaignId: null,
     },
     organization,
     timezone,
@@ -568,6 +713,7 @@ export async function loadReserverPublicContext(
     })),
     mesReservations,
     maFile,
+    attente,
     aUneIdentite: Boolean(empreinte),
   };
 }
@@ -787,6 +933,9 @@ export async function loadReserverInvitationContext(
       name: activity.name,
       description: activity.description,
       active: activity.active,
+      // `null` sur le chemin public — voir `ReserverActivityView`.
+      waitQuizId: null,
+      waitPauseCampaignId: null,
     },
     slots: slotRows.map((slot) => ({
       id: slot.id,
@@ -916,6 +1065,26 @@ export type ReserverDashboardContext =
       organizationId: string;
       timezone: string;
       activities: ReserverActivityDashboardView[];
+      /**
+       * Les cibles d'ANIMATION D'ATTENTE (RES-4) de ce commerce — quiz d'un
+       * côté, campagnes de l'autre.
+       *
+       * ── POURQUOI SUR CE CONTEXTE, ET POURQUOI TOUTES ──
+       *
+       * Le commerçant règle son animation depuis l'écran de l'activité ET
+       * depuis celui de la file : les deux panneaux lisent la même paire de
+       * listes, résolues SERVEUR. Aucun identifiant de quiz ou de campagne ne
+       * se saisit à la main — ce qui n'est pas dans ces listes n'appartient pas
+       * à ce commerce, et la FK composite le refuserait de toute façon.
+       *
+       * Elles ne sont PAS filtrées sur `status = 'active'`, délibérément. La
+       * RPC, elle, ne propose au joueur qu'une animation `active` — mais si le
+       * sélecteur cachait les autres, corriger le nom d'une file effacerait en
+       * silence l'animation d'un quiz momentanément en pause. Un réglage ne
+       * disparaît pas parce qu'on a édité le champ d'à côté.
+       */
+      waitQuiz: ReserverAttenteOption[];
+      waitCampaigns: ReserverAttenteOption[];
     };
 
 /** Plafond de lecture du panneau : 200 créneaux, 5 000 réservations. */
@@ -946,7 +1115,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
 
   const { data: activityData } = await supabase
     .from("reservation_activities")
-    .select(ACTIVITY_COLUMNS)
+    .select(ACTIVITY_DASHBOARD_COLUMNS)
     .eq("organization_id", organization.id)
     .order("created_at", { ascending: false });
 
@@ -1143,10 +1312,55 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       name: activity.name,
       description: activity.description,
       active: activity.active,
+      waitQuizId: activity.wait_quiz_id ?? null,
+      waitPauseCampaignId: activity.wait_pause_campaign_id ?? null,
       createdAt: activity.created_at,
       slots: creneauxParActivite.get(activity.id) ?? [],
       invitations: invitationsParActivite.get(activity.id) ?? [],
     })),
+    ...(await lireCiblesAttente(supabase, organization.id)),
+  };
+}
+
+/**
+ * Les deux listes de cibles d'animation d'attente d'un commerce.
+ *
+ * Lecture par le client RLS de la SESSION, comme tout le reste de ce chargeur,
+ * et doublée d'un filtre `organization_id` explicite : deux gardes valent mieux
+ * qu'une sur une liste qui va peupler un sélecteur.
+ */
+async function lireCiblesAttente(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string,
+): Promise<{
+  waitQuiz: ReserverAttenteOption[];
+  waitCampaigns: ReserverAttenteOption[];
+}> {
+  const [quiz, campagnes] = await Promise.all([
+    supabase
+      .from("quizzes")
+      .select(ATTENTE_OPTION_COLUMNS)
+      .eq("organization_id", organizationId)
+      .order("name", { ascending: true })
+      .limit(ATTENTE_OPTIONS_MAX),
+    supabase
+      .from("campaigns")
+      .select(ATTENTE_OPTION_COLUMNS)
+      .eq("organization_id", organizationId)
+      .order("name", { ascending: true })
+      .limit(ATTENTE_OPTIONS_MAX),
+  ]);
+
+  const lister = (data: unknown): ReserverAttenteOption[] =>
+    ((data ?? []) as Array<{ id?: unknown; name?: unknown }>).flatMap((ligne) =>
+      typeof ligne.id === "string" && typeof ligne.name === "string"
+        ? [{ id: ligne.id, name: ligne.name }]
+        : [],
+    );
+
+  return {
+    waitQuiz: lister(quiz.data),
+    waitCampaigns: lister(campagnes.data),
   };
 }
 
@@ -1227,6 +1441,14 @@ export type ReserverQueuePublicContext =
       waitingCount: number;
       /** La place de CE navigateur, ou `null` s'il n'est pas dans la file. */
       maPlace: ReserverQueuePlaceView | null;
+      /**
+       * La session d'ATTENTE ACTIVE (RES-4) de cette place, ou `null`.
+       *
+       * Elle ne porte NI rang, NI compteur, NI délai — le critère dur du cahier
+       * est que le jeu ne puisse ni lire ni modifier la file, et `maPlace`
+       * au-dessus reste le seul chemin vers ces nombres.
+       */
+      attente: ReserverAttenteView | null;
       aUneIdentite: boolean;
     };
 
@@ -1454,6 +1676,17 @@ export async function loadReserverQueuePublicContext(
 
   const status = asQueueStatus(row.status);
 
+  // LA SESSION D'ATTENTE, et seulement pour quelqu'un qui a une place. Un
+  // visiteur qui regarde la file avant d'y entrer n'attend rien : lui ouvrir une
+  // session écrirait une ligne pour un écran qui n'a pas d'animation à montrer.
+  // La vivacité de l'entrée est tranchée par la RPC, pas ici.
+  const attente =
+    empreinte && maPlace
+      ? await ouvrirSessionAttente(organization.id, empreinte, {
+          queueEntryId: maPlace.entryId,
+        })
+      : null;
+
   return {
     ok: true,
     organization,
@@ -1467,6 +1700,7 @@ export async function loadReserverQueuePublicContext(
     accepteEntree: status === "open" && activiteActive,
     waitingCount: etat.waitingCount,
     maPlace,
+    attente,
     aUneIdentite: Boolean(empreinte),
   };
 }
@@ -1479,6 +1713,12 @@ export interface ReserverQueueDashboardView {
   maxLiveEntries: number;
   activityId: string | null;
   activityName: string | null;
+  /**
+   * ANIMATIONS D'ATTENTE (RES-4) réglées sur CETTE file. `null` = aucune, et
+   * c'est le défaut : le Mode Attente active est facultatif.
+   */
+  waitQuizId: string | null;
+  waitPauseCampaignId: string | null;
   createdAt: string;
   /** Entrées `waiting` — celles qui attendent encore. */
   enAttente: number;
@@ -1521,7 +1761,7 @@ export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueu
 
   const { data: queueData } = await supabase
     .from("reservation_queues")
-    .select(QUEUE_COLUMNS)
+    .select(QUEUE_DASHBOARD_COLUMNS)
     .eq("organization_id", organization.id)
     .order("created_at", { ascending: false })
     .limit(FILES_DASHBOARD_MAX);
@@ -1592,6 +1832,8 @@ export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueu
       activityName: queue.activity_id
         ? (nomParActivite.get(queue.activity_id) ?? null)
         : null,
+      waitQuizId: queue.wait_quiz_id ?? null,
+      waitPauseCampaignId: queue.wait_pause_campaign_id ?? null,
       createdAt: queue.created_at,
       enAttente: enAttenteParFile.get(queue.id) ?? 0,
       appeles: appelesParFile.get(queue.id) ?? 0,

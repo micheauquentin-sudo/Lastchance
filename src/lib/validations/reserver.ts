@@ -314,9 +314,27 @@ export const checkinReservationSchema = z.object({
 // Dashboard commerçant (FormData)
 // ════════════════════════════════════════════════════════════
 
+/**
+ * Une animation d'attente (RES-4) : le quiz ou la campagne de Pause Chance
+ * proposés pendant qu'on patiente.
+ *
+ * `""` = « aucune animation », comme `activityId` partout dans ce fichier — un
+ * `<select>` remis à « aucune » poste la chaîne vide, et la lire comme un UUID
+ * invalide donnerait un message hors sujet. Le champ NON RENDU vaut `""` lui
+ * aussi : un panneau qui n'affiche pas le réglage ne demande pas de le changer.
+ *
+ * L'appartenance au locataire n'est PAS vérifiée ici et ne peut pas l'être : ce
+ * module ne connaît pas l'organisation. C'est la FK COMPOSITE
+ * `(wait_quiz_id, organization_id)` qui refuse le quiz du voisin — par la base,
+ * pas par une vérification applicative qu'on pourrait oublier.
+ */
+const waitAnimationIdSchema = nonRenduVaut(z.union([z.literal(""), uuid]), "");
+
 export const createReserverActivitySchema = z.object({
   name: activityNameSchema,
   description: activityDescriptionSchema,
+  waitQuizId: waitAnimationIdSchema,
+  waitPauseCampaignId: waitAnimationIdSchema,
 });
 
 /**
@@ -329,6 +347,8 @@ export const updateReserverActivitySchema = z.object({
   name: activityNameSchema,
   description: activityDescriptionSchema,
   active: caseACochee,
+  waitQuizId: waitAnimationIdSchema,
+  waitPauseCampaignId: waitAnimationIdSchema,
 });
 
 /**
@@ -631,6 +651,8 @@ export const createReserverQueueSchema = z.object({
   activityId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
   maxLiveEntries: queueMaxLiveEntriesSchema,
   status: nonRenduVaut(z.enum(["open", "paused", "closed"]), "open"),
+  waitQuizId: waitAnimationIdSchema,
+  waitPauseCampaignId: waitAnimationIdSchema,
 });
 
 /**
@@ -651,4 +673,68 @@ export const updateReserverQueueSchema = z.object({
   activityId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
   maxLiveEntries: queueMaxLiveEntriesSchema,
   status: z.enum(["open", "paused", "closed"]),
+  waitQuizId: waitAnimationIdSchema,
+  waitPauseCampaignId: waitAnimationIdSchema,
+});
+
+// ════════════════════════════════════════════════════════════
+// Le MODE ATTENTE ACTIVE (RES-4) — migration 20261006120000
+//
+// AUCUNE ORGANISATION N'EST POSTÉE, sur aucun de ces trois schémas, et c'est
+// l'invariant du lot : le serveur la résout depuis la SOURCE (l'entrée de file
+// ou la réservation) ou depuis la SESSION. La poster aurait laissé le
+// navigateur choisir sous quelle enseigne il joue son tour offert — et le refus
+// muet des RPC, qui rend « source d'une AUTRE organisation » indistinguable
+// d'« inconnue », n'aurait plus rien gardé.
+//
+// AUCUNE CAMPAGNE NON PLUS : elle vient du PARENT de la session (la file ou
+// l'activité), jamais de l'appelant. C'est ce qui rend « gains décidés côté
+// serveur à valeur plafonnée » vrai plutôt que promis.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Ouvrir — ou retrouver — sa session d'attente.
+ *
+ * EXACTEMENT UNE SOURCE, comme le `num_nonnulls(…) = 1` de la table : une
+ * session qui pointerait à la fois une entrée en file et une réservation
+ * n'aurait aucune configuration parente déterminée. Le refus est posé ici pour
+ * éviter l'aller-retour ; la base le redirait, mais par une erreur illisible.
+ */
+export const waitSessionOpenSchema = z
+  .object({
+    queueEntryId: uuid.optional(),
+    reservationId: uuid.optional(),
+  })
+  .superRefine((valeur, ctx) => {
+    const posees = [valeur.queueEntryId, valeur.reservationId].filter(
+      (v) => v !== undefined,
+    ).length;
+    if (posees !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["queueEntryId"],
+        message: "Une seule source d'attente est attendue",
+      });
+    }
+  });
+
+/**
+ * Consommer LA Pause Chance de sa session. Un seul champ : la RPC autorise par
+ * POSSESSION (identifiant de session + empreinte du cookie) et lit la campagne
+ * cible sur le parent.
+ */
+export const waitUsePauseSchema = z.object({
+  sessionId: uuid,
+});
+
+/**
+ * Échanger le jeton d'octroi contre le tour. MÊME forme de jeton que les quatre
+ * tours offerts déjà livrés — 48 hexadécimaux, le CHECK SQL recopié.
+ */
+export const waitConsumeSpinSchema = z.object({
+  sessionId: uuid,
+  grantToken: z
+    .string()
+    .trim()
+    .regex(/^[0-9a-f]{48}$/, "Jeton de tour offert invalide"),
 });

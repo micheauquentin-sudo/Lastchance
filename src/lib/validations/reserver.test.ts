@@ -16,8 +16,11 @@ import {
   updateReserverQueueSchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
+  waitConsumeSpinSchema,
   waitlistJoinSchema,
   waitlistLeaveSchema,
+  waitSessionOpenSchema,
+  waitUsePauseSchema,
 } from "@/lib/validations/reserver";
 
 const UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -675,5 +678,157 @@ describe("créer et régler une file d'accueil", () => {
     });
     expect(parsed.success && "delete" in parsed.data).toBe(false);
     expect(parsed.success && "supprimer" in parsed.data).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LE MODE ATTENTE ACTIVE (RES-4) — les deux colonnes de config, les trois gestes
+// ════════════════════════════════════════════════════════════
+
+describe("les deux colonnes d'animation, sur les DEUX porteurs", () => {
+  // La configuration vit sur `reservation_queues` ET sur
+  // `reservation_activities` : on attend DEBOUT dans une file, ou AVEC un
+  // créneau pour une activité. Un seul des deux schémas aurait laissé une des
+  // deux formes d'attente sans animation configurable.
+  const porteurs = [
+    {
+      nom: "file (création)",
+      schema: createReserverQueueSchema,
+      base: { name: "Comptoir", activityId: "", maxLiveEntries: "20" },
+    },
+    {
+      nom: "file (réglages)",
+      schema: updateReserverQueueSchema,
+      base: {
+        queueId: UUID,
+        name: "Comptoir",
+        activityId: "",
+        maxLiveEntries: "20",
+        status: "open",
+      },
+    },
+    {
+      nom: "activité (création)",
+      schema: createReserverActivitySchema,
+      base: { name: "Dégustation", description: "" },
+    },
+    {
+      nom: "activité (réglages)",
+      schema: updateReserverActivitySchema,
+      base: { id: UUID, name: "Dégustation", description: "", active: "true" },
+    },
+  ];
+
+  it.each(porteurs)(
+    "$nom : les deux champs ABSENTS valent « aucune animation »",
+    ({ schema, base }) => {
+      // Le Mode Attente active est FACULTATIF : un panneau qui n'affiche pas le
+      // réglage ne demande pas de le changer.
+      const parsed = schema.safeParse(base);
+      expect(parsed.success).toBe(true);
+      expect(parsed.success && parsed.data.waitQuizId).toBe("");
+      expect(parsed.success && parsed.data.waitPauseCampaignId).toBe("");
+    },
+  );
+
+  it.each(porteurs)("$nom : accepte deux UUID", ({ schema, base }) => {
+    const parsed = schema.safeParse({
+      ...base,
+      waitQuizId: UUID,
+      waitPauseCampaignId: AUTRE_UUID,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.waitQuizId).toBe(UUID);
+    expect(parsed.success && parsed.data.waitPauseCampaignId).toBe(AUTRE_UUID);
+  });
+
+  it.each(porteurs)(
+    "$nom : `\"\"` DÉCROCHE l'animation, et n'est pas un UUID invalide",
+    ({ schema, base }) => {
+      // Un `<select>` remis sur « Aucune » poste la chaîne vide : la lire comme
+      // un UUID invalide donnerait au commerçant un message hors sujet.
+      const parsed = schema.safeParse({
+        ...base,
+        waitQuizId: "",
+        waitPauseCampaignId: "",
+      });
+      expect(parsed.success).toBe(true);
+    },
+  );
+
+  it.each(porteurs)("$nom : refuse une valeur qui n'est ni vide ni un UUID", ({
+    schema,
+    base,
+  }) => {
+    expect(schema.safeParse({ ...base, waitQuizId: "quiz-1" }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("waitSessionOpenSchema — EXACTEMENT une source", () => {
+  it("accepte une entrée de file SEULE, ou une réservation SEULE", () => {
+    expect(waitSessionOpenSchema.safeParse({ queueEntryId: UUID }).success).toBe(
+      true,
+    );
+    expect(
+      waitSessionOpenSchema.safeParse({ reservationId: UUID }).success,
+    ).toBe(true);
+  });
+
+  it("refuse ZÉRO source, et refuse les DEUX", () => {
+    // Miroir du `num_nonnulls(…) = 1` de la table : une session qui pointerait
+    // les deux n'aurait aucune configuration parente déterminée.
+    expect(waitSessionOpenSchema.safeParse({}).success).toBe(false);
+    expect(
+      waitSessionOpenSchema.safeParse({
+        queueEntryId: UUID,
+        reservationId: AUTRE_UUID,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("NE PORTE AUCUNE ORGANISATION : le serveur la résout depuis la source", () => {
+    const parsed = waitSessionOpenSchema.safeParse({
+      queueEntryId: UUID,
+      organizationId: AUTRE_UUID,
+    });
+    expect(parsed.success && "organizationId" in parsed.data).toBe(false);
+  });
+});
+
+describe("waitUsePauseSchema / waitConsumeSpinSchema", () => {
+  it("la Pause ne prend QUE la session — jamais la campagne à jouer", () => {
+    // Un `campaignId` posté aurait laissé le navigateur choisir sur quelle
+    // campagne il joue son tour offert : la cible vient du PARENT.
+    const parsed = waitUsePauseSchema.safeParse({
+      sessionId: UUID,
+      campaignId: AUTRE_UUID,
+      organizationId: AUTRE_UUID,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && "campaignId" in parsed.data).toBe(false);
+    expect(parsed.success && "organizationId" in parsed.data).toBe(false);
+  });
+
+  it("le jeton d'octroi a la forme du CHECK SQL — 48 hexadécimaux", () => {
+    expect(
+      waitConsumeSpinSchema.safeParse({
+        sessionId: UUID,
+        grantToken: "a".repeat(48),
+      }).success,
+    ).toBe(true);
+    expect(
+      waitConsumeSpinSchema.safeParse({
+        sessionId: UUID,
+        grantToken: "a".repeat(47),
+      }).success,
+    ).toBe(false);
+    expect(
+      waitConsumeSpinSchema.safeParse({
+        sessionId: UUID,
+        grantToken: "Z".repeat(48),
+      }).success,
+    ).toBe(false);
   });
 });
