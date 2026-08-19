@@ -4460,3 +4460,26 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     silencieusement absent du projet Playwright `desktop-smoke`, piège de
     filtrage relevé par QA — le fichier a dû être rejoué explicitement hors
     du projet smoke pour être exécuté dans ce chantier.
+
+- **Train Réserver & Vitrine — résidus assumés (2026-08-19, lots L0-L6,
+  `docs/chantier-reserver-vitrine.md`)** — consignés sans correctif à ce
+  stade, hors chemin critique des lots livrés :
+  - Le plafond de file de RES-2 (`least(greatest(2×capacité, 4), 50)`,
+    ADR-110) borne le stock **vivant** de PII par créneau, pas son cumul
+    dans le temps. À réévaluer si l'email d'attente devient actionnable
+    (relance, export) plutôt que purement informatif.
+  - `getQueuePublicState` (RES-3, ADR-111) reste joignable sans cookie sur
+    la branche `not_in_queue` : environ 4 requêtes non opposables à un seau
+    d'identité. Écart assumé (ADR-032) ; piste retenue si le volume d'abus
+    devient réel : porter la garde vitrine directement dans
+    `queue_public_state` côté SQL plutôt qu'au-dessus en applicatif.
+  - Le seau comptoir staff (`reserver_queue_staff_cadence`, 40/min) est à
+    revoir s'il se met à remonter sur des comptes réels multi-tablettes —
+    non observé à ce stade, seuil choisi par précaution.
+  - Les clés Turnstile de production restent à poser avant toute ouverture
+    commerçant du module Réserver — condition de revue posée au lot L4, pas
+    encore une action réalisée.
+  - Une entrée `waiting` purgée sur une file **encore vivante** (créneau non
+    clos) devient `'cancelled'`/`'left'` selon le contexte : comportement
+    voulu (RES-3, purge datée au dernier instant connu, ADR-111), pas un
+    bug — documenté ici pour éviter qu'il soit rouvert comme régression.

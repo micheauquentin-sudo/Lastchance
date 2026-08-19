@@ -7147,3 +7147,104 @@ L0, mis à jour à chaque lot fusionné) ; `docs/roadmap.md` (entrée V1.64) ;
 - `docs/lastchance-reserver.md`
 - `docs/chantier-reserver-vitrine.md`
 - roadmap V1.64
+
+## ADR-110 : RES-2 — l'offre à une personne, le plafond de file et l'éviction staff
+
+**Date** : 2026-08-19
+**Statut** : Accepté
+**Contexte** : le lot L5 (RES-2, PR #161, migration `20261004120000`) livre
+la liste prioritaire (waitlist) et les invitations d'un créneau complet.
+Plusieurs arbitrages ont été tranchés pendant l'implémentation.
+
+**Décision — capacité et verrouillage** : la capacité d'un créneau se compte
+sur les lignes `reservations` à l'état vivant (`'confirmed'`, `'checked_in'`),
+sous verrou `org_id` + créneau pour éviter la survente en écriture concurrente.
+
+**Décision — offre séquentielle exactly-once** : quand une place se libère,
+une offre est envoyée à un seul candidat de la file à la fois, avec
+expiration ; l'état terminal de l'offre (acceptée/expirée/retirée) est posé
+par trigger pour garantir qu'une offre ne peut être consommée qu'une fois,
+même en cas de double appel concurrent.
+
+**Décision — plafond de file** : `least(greatest(2×capacité, 4), 50)` — un
+plancher de 4 pour les petits créneaux, un plafond dur de 50 pour borner le
+volume de PII conservé par créneau quelle que soit sa capacité.
+
+**Décision — éviction staff auditée** : le commerçant peut retirer une
+entrée de la file ; le geste est audité comme les autres actions staff du
+module (même modèle que `cancel_reservation_staff`, ADR consigné au lot L4).
+
+**Décision — jeton d'invitation** : 192 bits d'entropie, haché SHA-256 sans
+sel côté base, révélé une seule fois au moment de l'envoi. Masqué dans les
+analytics via l'extension du même mécanisme `masquer-jeton-url` déjà en
+place pour les liens de retrait. Le jeton en clair est interdit en prop
+client React (Server Component) : un bug de cette classe a été trouvé et
+corrigé dans ce lot, puis le même geste de correction a été appliqué par
+prudence aux deux autres surfaces qui en portaient un déjà en production
+(`/commande`, `/hunt`), sans attendre un audit dédié.
+
+**Justification** : la file d'attente d'un créneau est une surface neuve qui
+manipule des identifiants nominatifs (email) et des jetons d'accès — le même
+niveau de rigueur que les mécaniques de retrait existantes (masquage
+analytics, absence de secret client) s'imposait dès la livraison plutôt
+qu'en correctif après coup.
+
+**Conséquences** : le plafond de file borne le stock vivant de PII par
+créneau, pas son cumul dans le temps (voir `docs/bugs.md`, notes du train).
+Pas d'email d'offre au MVP — la file est découverte par consultation de la
+page (voir note L5 de `docs/chantier-reserver-vitrine.md`).
+
+**Références** :
+- PR #161, migration `20261004120000`
+- `docs/chantier-reserver-vitrine.md`
+
+## ADR-111 : RES-3 — la file sereine sans ETA ni pénalité
+
+**Date** : 2026-08-19
+**Statut** : Accepté
+**Contexte** : le lot L6 (RES-3, PR #162, migration `20261005120000`) livre
+la file d'attente affichée au joueur sans estimation de temps ni risque de
+pénalité automatique.
+
+**Décision — rang calculé à la lecture** : le rang d'un joueur dans la file
+n'est jamais stocké ; il est recalculé à chaque lecture. Aucun ETA n'est
+affiché ni calculé.
+**Justification** : un ETA stocké ou estimé finit toujours par mentir (un
+créneau plus lent ou plus rapide que la moyenne le rend faux), et une
+promesse de temps non tenue est perçue comme une pénalité par le joueur —
+contraire à l'objectif « file sereine ».
+**Garde** : l'ensemble clos des clés publiques exposées par la file est
+verrouillé par un test — tout ajout futur d'un champ de type ETA fera
+rougir ce test, pour empêcher qu'une régression réintroduise la promesse de
+temps par un chemin détourné.
+
+**Décision — aucun worker d'expiration** : une entrée de la file d'attente
+n'expire pas automatiquement.
+**Justification** : une expiration automatique est une pénalité déguisée en
+mécanique technique — elle retire au joueur une place qu'il n'a pas
+explicitement quittée.
+
+**Décision — purge datée au dernier instant connu** : quand une entrée
+vivante doit être purgée, elle est marquée `'left'` avec la date du dernier
+instant connu de son activité, jamais `now()`.
+**Justification** : dater au moment du cron plutôt qu'au dernier instant
+connu fabriquerait une statistique de temps d'attente inventée, mesurée au
+matin du passage du job plutôt qu'au moment réel où le joueur a quitté la
+file.
+
+**Décision — console staff sans droit vitrine** : la console de gestion de
+file est ouverte au caissier même sans l'entitlement vitrine (motif :
+check-in), distincte de l'accès à la Vitrine elle-même.
+
+**Décision — garde du scrutin public** : le scrutin public (page de la
+file, pollée par le joueur) n'est ouvert que sur la branche
+`not_in_queue` — un joueur déjà dans la file ne repasse pas par ce chemin
+public, réduisant la surface interrogeable sans identité vérifiée.
+
+**Conséquences** : `getQueuePublicState` reste accessible sans cookie sur
+la branche `not_in_queue`, environ 4 requêtes non opposables à un seau
+d'identité — écart assumé, voir ADR-032 et `docs/bugs.md` (notes du train).
+
+**Références** :
+- PR #162, migration `20261005120000`
+- `docs/chantier-reserver-vitrine.md`

@@ -27,9 +27,9 @@ parallèle, fusions de migrations sérialisées.
 | L2 | Droit serveur vitrine (entitlement A1) | ✅ | #157 | 20261001120000 |
 | L3 | RES-1a — schéma + RPC réservation | ✅ | #159 | 20261002120000 |
 | L4 | RES-1b — surfaces + email (A2) | ✅ | #160 | — |
-| L5 | RES-2 — liste prioritaire + invitations | 🔨 QA | #161 | 20261004120000 |
-| L6 | RES-3 — file sereine | ⏳ | — | — |
-| L7 | RES-4 — attente active | ⏳ | — | — |
+| L5 | RES-2 — liste prioritaire + invitations | ✅ | #161 | 20261004120000 |
+| L6 | RES-3 — file sereine | ✅ | #162 | 20261005120000 |
+| L7 | RES-4 — attente active | 🔨 | — | 20261006120000 |
 | L8 | Expériences Signature | ⏳ | — | — |
 | L9 | RES-5 — hold stock + RESA- + Drop | ⏳ | — | — |
 | L10 | VIT-1a — marque + catalogue FR (sous drapeau) | ⏳ | — | — |
@@ -73,6 +73,16 @@ Note L4 (revue de sécurité, correctifs appliqués) :
 
 Note L5 : pas d'email d'offre au MVP (découverte par la page) ; pas de
 retrait staff d'une file (suites).
+
+Note L5/L6 : arbitrages RES-2 (capacité, offre séquentielle, plafond de
+file, jeton d'invitation) et RES-3 (rang calculé à la lecture, aucun worker
+d'expiration, purge datée au dernier instant connu) consignés dans
+ADR-110 et ADR-111 (`docs/decisions.md`). Résidus assumés (plafond de file
+vs cumul, `getQueuePublicState` sans cookie, seau comptoir, Turnstile
+production) listés dans `docs/bugs.md`, section Notes.
+
+ADR-110/111 écrites ; handoff Codex sera mis à jour au bilan (modification
+concurrente à préserver).
 
 ## Notes de mise à jour
 
