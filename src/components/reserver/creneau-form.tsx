@@ -208,7 +208,15 @@ export function EtatCreneauForm({
 }) {
   const { state, pending, onSubmit } = useActionForm(
     updateReserverSlotStatus,
-    { networkError: "Enregistrement impossible, réessayez." },
+    {
+      // L'état posté ici est DÉRIVÉ de la prop serveur (`creneau.status`,
+      // sélectionné par `defaultValue`) : la page publique le lit aussitôt
+      // (ouvrir un créneau le rend réservable par QR). Sans rechargement, cet
+      // écran affiche la valeur choisie alors que le geste suivant repartirait
+      // de la même prop périmée — voir `use-action-form-bascule.test.ts`.
+      reloadOnSuccess: true,
+      networkError: "Enregistrement impossible, réessayez.",
+    },
   );
 
   return (

@@ -25,8 +25,8 @@ parallèle, fusions de migrations sérialisées.
 | L0 | Cadrage documentaire (ADR, roadmap, handoff, tracker) | ✅ | #156 | — |
 | L1 | Benchmark Mennoo (lecture seule) → [`docs/benchmark-mennoo.md`](./benchmark-mennoo.md) | ✅ | #156 | — |
 | L2 | Droit serveur vitrine (entitlement A1) | ✅ | #157 | 20261001120000 |
-| L3 | RES-1a — schéma + RPC réservation | 🔨 en cours | #159 | 20261002120000 |
-| L4 | RES-1b — surfaces + email (A2) | ⏳ | — | — |
+| L3 | RES-1a — schéma + RPC réservation | ✅ | #159 | 20261002120000 |
+| L4 | RES-1b — surfaces + email (A2) | 🔨 QA | #160 | — |
 | L5 | RES-2 — liste prioritaire + invitations | ⏳ | — | — |
 | L6 | RES-3 — file sereine | ⏳ | — | — |
 | L7 | RES-4 — attente active | ⏳ | — | — |
@@ -49,6 +49,9 @@ Playwright rencontrée pendant le train. Elle n'appartient à aucun lot et ne
 porte aucune migration ; elle figure ici parce qu'elle occupe un numéro de PR
 de la série et qu'un trou dans la numérotation se relit, six mois plus tard,
 comme une PR perdue.
+
+Note L4 : `PageOpenBeacon` non posé sur `/reserver` (`ModulePageOpenKey` à
+étendre — analytics VIT-4).
 
 ## Notes de mise à jour
 

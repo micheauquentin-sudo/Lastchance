@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { cancelReservation, reserveSlot } from "@/actions/reserver";
+import {
+  cancelReservation,
+  reserveSlot,
+  type ReserveSlotActionResult,
+} from "@/actions/reserver";
 import {
   TurnstileWidget,
   turnstileClientEnabled,
@@ -204,6 +208,20 @@ function CreneauReservable({
     async (_prev: unknown, formData: FormData) => {
       const emailSaisi = String(formData.get("email") ?? "").trim();
       const consenti = formData.get("consent") === "on";
+
+      // MÊME RÈGLE QUE `reserveSlotSchema` (équivalence email/consentement),
+      // tranchée ICI plutôt qu'au serveur : une adresse saisie sans la case
+      // cochée ne doit JAMAIS traverser le réseau (voir plus bas), donc le
+      // refus ne peut pas venir de la réponse de `reserveSlot` — à ce
+      // moment-là l'adresse aurait déjà voyagé pour rien.
+      if (emailSaisi && !consenti) {
+        return {
+          ok: false,
+          error:
+            "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
+        } satisfies ReserveSlotActionResult;
+      }
+
       const resultat = await reserveSlot({
         organizationId,
         slotId: creneau.id,
