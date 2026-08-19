@@ -89,6 +89,11 @@ export function AnnulerReservationStaff({
       <button
         type="submit"
         disabled={pending}
+        // Le créneau porte une LISTE de ces boutons, tous étiquetés pareil : à
+        // la lecture d'écran, « Annuler (staff) » douze fois de suite ne dit
+        // pas laquelle. Le nom accessible porte donc le code, la surface
+        // visible reste courte.
+        aria-label={`Annuler (staff) la réservation ${code}`}
         className="rounded-lg border-2 border-k-ink/25 bg-white px-2.5 py-1 text-xs font-bold text-k-body hover:border-k-ink hover:text-k-ink disabled:pointer-events-none disabled:opacity-60"
       >
         {pending ? "Annulation…" : "Annuler (staff)"}
