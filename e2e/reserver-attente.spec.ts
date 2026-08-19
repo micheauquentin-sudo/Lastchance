@@ -10,7 +10,9 @@ import { expect, test, type Page } from "@playwright/test";
  * (e2ea0000-0000-4000-8000-000000000061) et l'activité « Dégustation du
  * Comptoir E2E » (e2ea0000-0000-4000-8000-000000000011) portent toutes les
  * deux `wait_quiz_id` (Quiz du Comptoir E2E) et `wait_pause_campaign_id`
- * (« E2E Gagnante », roue à un seul lot pondéré 100 et stock fini 5000 —
+ * (« E2E Grattage », SANS collecte — `PendantVotreAttente` rend un
+ * `ClaimConfig` muet, et une campagne qui collecte l'email ferait échouer le
+ * claim automatique — roue à un seul lot pondéré 100 et stock fini 5000 :
  * tirage déterministe, toujours gagnant).
  *
  * `attente` est un CHAMP DE CONTEXTE, résolu une fois par rendu serveur
@@ -82,7 +84,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
         timeout: 30_000,
       });
       await expect(
-        cartePause.getByText("Café offert E2E", { exact: false }).first(),
+        cartePause.getByText("Dessert offert E2E", { exact: false }).first(),
       ).toBeVisible();
       await expect(
         cartePause.getByText("À retirer au comptoir lors de votre passage."),
@@ -99,7 +101,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
       // ── 4. Le lot apparaît sur /portefeuille — même cookie, même joueur.
       await playerPage.getByRole("link", { name: /Mes récompenses/ }).click();
       await expect(
-        playerPage.getByRole("heading", { name: "Café offert E2E" }),
+        playerPage.getByRole("heading", { name: "Dessert offert E2E" }),
       ).toBeVisible({ timeout: 30_000 });
 
       // ── 5. Retour sur la file, rechargement : « Revoir mon tour » rend le

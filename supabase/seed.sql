@@ -134,11 +134,15 @@ values ('e2e30000-0000-4000-8000-000000000003', 'e2e10000-0000-4000-8000-0000000
         'e2e20000-0000-4000-8000-000000000003', 'Carte à gratter', 'unlimited', 'scratch')
 on conflict (id) do nothing;
 
-insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+-- Le gagnant porte un stock FINI (5000) : cette campagne est AUSSI la cible
+-- de la Pause Chance (RES-4, lot L7) — un tour OFFERT n'est jamais tiré sur
+-- un lot à stock illimité (BORNE 2, `consume_reserver_wait_spin_grant` filtre
+-- `p.stock > 0`). Sans ce stock, la Pause Chance répondrait `no_prize`.
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position, stock) values
   ('e2e40000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000003', 'Dessert offert E2E', 'Gain grattage.', '#ec4899', 100, false, 0),
+   'e2e30000-0000-4000-8000-000000000003', 'Dessert offert E2E', 'Gain grattage.', '#ec4899', 100, false, 0, 5000),
   ('e2e40000-0000-4000-8000-000000000006', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000003', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+   'e2e30000-0000-4000-8000-000000000003', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1, null)
 on conflict (id) do nothing;
 
 insert into public.qr_codes (organization_id, campaign_id, slug, label)
@@ -1197,9 +1201,16 @@ on conflict (id) do nothing;
 -- LES DEUX ANIMATIONS RÉUTILISENT DES FIXTURES EXISTANTES, ce qui est très
 -- exactement la promesse de RES-4 : aucun moteur neuf, aucune récompense neuve.
 --   · le quiz est `Quiz du Comptoir E2E` (e2e95000-…-01), `active`, stock 5000 ;
---   · la Pause Chance tire sur `E2E Gagnante` (e2e20000-…-01), dont le lot
---     gagnant porte un stock FINI de 5000 — indispensable ici : la BORNE 2
---     exclut du tour offert tout lot à stock illimité, et une campagne à lots
+--   · la Pause Chance tire sur `E2E Grattage` (e2e20000-…-03), PAS sur
+--     `E2E Gagnante` (…-01, qui sert ailleurs à prouver le formulaire de
+--     collecte) : `PendantVotreAttente` rend un `ClaimConfig` MUET
+--     (`COLLECTE_MUETTE`, sans email ni téléphone — la config réelle de la
+--     campagne n'est jamais résolue côté client, voir le commentaire du
+--     composant) et `E2E Gagnante` exige un email — le claim automatique y
+--     échouait avec « Votre email est requis », détecté par
+--     `reserver-attente.spec.ts`. `E2E Grattage` ne collecte rien et son lot
+--     gagnant porte, depuis ce lot, un stock FINI de 5000 — indispensable :
+--     la BORNE 2 exclut du tour offert tout lot à stock illimité, et un lot
 --     par défaut aurait rendu `no_prize` à chaque Pause Chance.
 --
 -- LES DEUX PORTEURS SONT CONFIGURÉS, un par forme d'attente : la file
@@ -1208,10 +1219,10 @@ on conflict (id) do nothing;
 -- réservation confirmée dans les parcours de check-in).
 update public.reservation_queues
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
-       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000003'
  where id = 'e2ea0000-0000-4000-8000-000000000061';
 
 update public.reservation_activities
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
-       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000003'
  where id = 'e2ea0000-0000-4000-8000-000000000011';
