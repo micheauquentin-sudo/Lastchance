@@ -105,6 +105,16 @@ test.describe("réserver — parcours public puis comptoir", () => {
     });
     await expect(page.getByText("Fenêtre d'arrivée refermée")).toHaveCount(0);
 
+    // ATTENDRE QUE LA NAVIGATION DU FORMULAIRE SE TERMINE AVANT D'EN LANCER
+    // UNE AUTRE. Course connue en local sur mobile-safari : `useActionForm`
+    // (`reloadOnSuccess`) déclenche un rafraîchissement client de CETTE page
+    // après le second clic ; le texte « Déjà enregistrée » apparaît dès que
+    // l'état serveur est là, mais la navigation sous-jacente peut encore être
+    // en vol. Un `page.goto` immédiat vers une autre URL se fait alors
+    // interrompre par elle (WebKit : « Navigation … is interrupted by
+    // another navigation to …/dashboard/reservations »).
+    await page.waitForLoadState("networkidle");
+
     // ── 5. Tentative d'annulation de la réservation arrivée : le bouton
     // d'annulation n'apparaît plus (une arrivée déjà enregistrée ne s'annule
     // plus — commentaire de `MaReservation`).
