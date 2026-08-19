@@ -7,7 +7,12 @@ import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { APP_URL } from "@/lib/env";
-import { monitored, recordCounter, reportError } from "@/lib/monitoring";
+import {
+  monitored,
+  recordCounter,
+  reportError,
+  reportSecurityEvent,
+} from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { sendReservationConfirmationEmail } from "@/lib/resend";
@@ -22,6 +27,7 @@ import {
   mapQueueCallNext,
   mapQueueJoin,
   mapQueueLeave,
+  mapQueuePublicState,
   mapQueueReopen,
   mapQueueResolve,
   mapQueueStaffState,
@@ -55,6 +61,7 @@ import {
 } from "@/lib/reserver";
 import {
   assurerIdentiteReserver,
+  droitVitrineOuvertPourFile,
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
@@ -217,6 +224,23 @@ const SANS_DROIT =
 //  motif `cancelReservationStaff` et `evictWaitlistEntry` : gestes d'un
 //  opérateur authentifié sur son propre écran, et le seau `cashier:lookup`
 //  borne la SAISIE DE CODES, pas l'appel du suivant.
+//  getQueuePublicState (public, LECTURE RÉPÉTÉE — un tic toutes les 5 s) — SÉRIE
+//  PROPRE, et c'est le correctif : ce scrutin consommait `reserver:device`,
+//  PARTAGÉ avec `queueJoin` et `queueLeave`. À 12 tics/min et deux onglets, un
+//  client debout au comptoir épuisait les 60/min du seau de GESTE en regardant
+//  son rang, et se voyait refuser `queueLeave`. Une lecture qui n'écrit rien ne
+//  dépense plus le budget d'un geste qui écrit.
+//    · reserver:queue-read:<empreinte>       identité   CLOSED (120/min)
+//    · reserver:ip:<ip>                      partagée   OPEN (IP SEULE)
+//  AUCUN seau composé avec l'identifiant de FILE — clé choisie par l'appelant
+//  (motif `progressionDevice`, wagon 7). SANS COOKIE, aucun seau d'identité
+//  n'est opposable : seul le compteur d'IP mesure ce visiteur (ADR-032).
+//  getQueueStaffState (authentifié, LECTURE RÉPÉTÉE — un tic toutes les 5 s)
+//    · reserver:queue-staff:<org>:<user>     opérateur  CLOSED (40/min)
+//  SEUL scrutin authentifié du module, et le seul chemin dont la RPC recompose
+//  les rangs de la file entière à chaque tic : contrairement aux trois gestes
+//  de comptoir ci-dessus, sa CADENCE est bornée. Clé d'opérateur, donc
+//  `failClosed` conforme (ADR-032) ; le dépassement est aussi REPORTÉ.
 //  Ouverture de la page publique — hors de ce fichier, dans
 //  `loadReserverPublicContext`, `loadReserverInvitationContext` ET
 //  `loadReserverQueuePublicContext` (src/lib/reserver-context.ts) :
@@ -272,6 +296,25 @@ async function autoriserAppareilReserver(empreinte: string): Promise<boolean> {
   return rateLimit(
     rateLimitBucket("reserver:device", empreinte),
     RATE_LIMITS.reserverDevice,
+    { failClosed: true },
+  );
+}
+
+/**
+ * Le seau du SCRUTIN de file, et lui seul. Série DISTINCTE de `reserver:device`
+ * — voir l'inventaire en tête de fichier : une lecture répétée douze fois par
+ * minute ne doit pas dépenser le budget des gestes qui écrivent, sans quoi le
+ * premier refus tombe sur `queueLeave`, c'est-à-dire sur quelqu'un qui veut
+ * quitter la file dans laquelle il est debout.
+ *
+ * Clé d'IDENTITÉ pure (l'empreinte du cookie, sans identifiant de file), donc
+ * `failClosed` conforme à ADR-032 : la saturer ne coupe que son porteur, et le
+ * refus se traduit par « ce tic n'a rien rapporté ».
+ */
+async function autoriserLectureFileReserver(empreinte: string): Promise<boolean> {
+  return rateLimit(
+    rateLimitBucket("reserver:queue-read", empreinte),
+    RATE_LIMITS.reserverQueueRead,
     { failClosed: true },
   );
 }
@@ -2259,13 +2302,22 @@ export async function updateReserverQueue(
 /**
  * L'état de la file pour CE navigateur — le tic du joueur.
  *
- * ── AUCUNE GARDE `vitrine`, ET C'EST LE MOTIF DE LA RPC ──
+ * ── LA GARDE `vitrine` NE PORTE QUE SUR CELUI QUI N'ATTEND PAS ──
  *
- * `queue_public_state` ne vérifie ni le droit ni le statut de la file : lire son
- * propre rang n'est pas un acte commercial. Le refuser laisserait sans réponse
- * quelqu'un qui attend PHYSIQUEMENT, pour un motif — un abonnement, une pause —
- * qui ne le regarde pas. La page, elle, vérifie le droit avant d'AFFICHER la
- * file et son bouton (`loadReserverQueuePublicContext`).
+ * `queue_public_state` ne vérifie ni le droit ni le statut de la file, et c'est
+ * juste pour quelqu'un qui attend PHYSIQUEMENT : lire son propre rang n'est pas
+ * un acte commercial, et le lui refuser parce qu'un abonnement a expiré ferait
+ * tomber la sanction sur lui. `in_queue` passe donc sans condition.
+ *
+ * `not_in_queue` est un tout autre document : le nom de la file, son statut et
+ * le nombre de personnes qui attendent, rendus à N'IMPORTE QUI. La PAGE refuse
+ * exactement cela quand le droit est fermé (`loadReserverQueuePublicContext`)
+ * — laisser le scrutin y répondre en faisait l'oracle que la page refusait
+ * d'être, sur l'état commercial d'un commerce tiers. Droit fermé ⇒ `unavailable`,
+ * indistinctement d'une file inexistante.
+ *
+ * La lecture du droit n'est payée QUE sur cette branche : celui qui attend ne la
+ * traverse jamais, et `unavailable` n'a plus rien à cacher.
  *
  * ── LES SEAUX D'IDENTITÉ NE SONT OPPOSÉS QU'À UNE IDENTITÉ ──
  *
@@ -2273,6 +2325,12 @@ export async function updateReserverQueue(
  * la file avant d'y entrer n'est mesuré que par les compteurs d'IP, fail-open
  * (ADR-032). Lui POSER un cookie pour pouvoir le compter serait écrire une
  * identité à quelqu'un qui n'a rien demandé.
+ *
+ * ── ET LE SEAU EST CELUI DE LA LECTURE, PAS CELUI DES GESTES ──
+ *
+ * Voir `autoriserLectureFileReserver` : ce scrutin consommait `reserver:device`,
+ * partagé avec `queueJoin` et `queueLeave`, et le premier refus tombait sur le
+ * geste, jamais sur la lecture qui l'avait épuisé.
  */
 export async function getQueuePublicState(input: {
   queueId: string;
@@ -2282,10 +2340,7 @@ export async function getQueuePublicState(input: {
 
   // LECTURE SEULE du cookie : un scrutin ne crée pas d'identité.
   const empreinte = await lireIdentiteReserver();
-  if (
-    empreinte &&
-    !(await autoriserJoueurReserver(parsed.data.queueId, empreinte))
-  ) {
+  if (empreinte && !(await autoriserLectureFileReserver(empreinte))) {
     // À SEC = ce tic ne rapporte rien, et l'écran garde son état. C'est le
     // comportement exact qu'on veut d'un seau sur un scrutin : il ralentit une
     // boucle, il n'efface pas un rang.
@@ -2294,7 +2349,12 @@ export async function getQueuePublicState(input: {
 
   return monitored("reserver.queue-state", async () => {
     await observerPressionReserver(null, clientIpFromHeaders(await headers()));
-    return lireEtatFilePublic(parsed.data.queueId, empreinte);
+    const etat = await lireEtatFilePublic(parsed.data.queueId, empreinte);
+    // `in_queue` sort tel quel, et `unavailable` n'a rien à protéger : la
+    // résolution du droit ne coûte une lecture que sur la branche qui l'exige.
+    if (etat.state !== "not_in_queue") return etat;
+    if (await droitVitrineOuvertPourFile(parsed.data.queueId)) return etat;
+    return mapQueuePublicState({ state: "unavailable" });
   });
 }
 
@@ -2312,6 +2372,26 @@ export async function getQueuePublicState(input: {
  * La file d'un AUTRE commerce rend `unknown`, indistinctement d'une file
  * inexistante — décidé par la RPC, et rien ici ne cherche à les distinguer :
  * `mapQueueStaffState` rend alors un état non-`ok`, et cette action `null`.
+ *
+ * ── LE SEUL SCRUTIN AUTHENTIFIÉ, ET LE SEUL À PORTER UNE CADENCE ──
+ *
+ * Les trois gestes de comptoir ci-dessus n'ont aucun seau, et c'est justifié :
+ * ce sont des gestes ponctuels sur un écran d'opérateur. Celui-ci n'est pas un
+ * geste — c'est un écran qui se rappelle toutes les cinq secondes, et dont la
+ * RPC recompose les rangs de la file entière à chaque tic. Sans borne, un
+ * onglet laissé en boucle tenait ce coût indéfiniment, invisible en supervision.
+ *
+ * LE CHOIX : une seule clé, `reserver:queue-staff:<org>:<user>`, propre à UN
+ * opérateur authentifié — motif `cashier:lookup`. C'est ce qui rend le refus
+ * conforme à ADR-032 : rien de PARTAGÉ n'est fail-closed ici, saturer cette clé
+ * ne ralentit que la personne qui l'a saturée, jamais l'écran de son collègue
+ * ni celui d'un autre commerce. Et le refus est bénin par construction — cette
+ * action rend `null`, ce qui veut dire « ce tic n'a rien rapporté » : l'écran
+ * garde ce qu'il montrait, personne ne perd sa file.
+ *
+ * Le dépassement est REPORTÉ en plus d'être opposé (`observeSharedKey` ne rend
+ * que la moitié de ce service ici — il n'oppose rien) : une console emballée
+ * doit être VUE, pas seulement freinée.
  */
 export async function getQueueStaffState(input: {
   queueId: string;
@@ -2321,6 +2401,25 @@ export async function getQueueStaffState(input: {
 
   const garde = await gardeComptoirReserver();
   if (!garde.ok) return null;
+
+  const seau = rateLimitBucket(
+    "reserver:queue-staff",
+    garde.organizationId,
+    garde.userId,
+  );
+  if (
+    !(await rateLimit(seau, RATE_LIMITS.reserverQueueStaffState, {
+      failClosed: true,
+    }))
+  ) {
+    reportSecurityEvent("reserver_queue_staff_cadence", {
+      organization_id: garde.organizationId,
+      bucket: seau,
+      limit: RATE_LIMITS.reserverQueueStaffState.limit,
+      window_seconds: RATE_LIMITS.reserverQueueStaffState.windowSeconds,
+    });
+    return null;
+  }
 
   return monitored("reserver.queue-staff-state", async () => {
     const admin = createAdminClient();

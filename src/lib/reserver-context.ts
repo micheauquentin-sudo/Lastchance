@@ -1239,6 +1239,53 @@ export type ReserverQueuePublicContext =
  * nombre écrirait une identité à quelqu'un qui n'a rien demandé. Dès qu'une
  * identité existe, c'est la RPC qui fait foi — un seul juge.
  */
+/**
+ * L'organisation qui PORTE cette file a-t-elle encore le droit `vitrine` ?
+ *
+ * ── CE QU'ELLE FERME, ET POURQUOI ELLE N'EST PAS DANS `lireEtatFilePublic` ──
+ *
+ * Le scrutin public (`getQueuePublicState`) répondait `not_in_queue` — avec le
+ * nom de la file, son statut et le nombre de personnes qui attendent — à
+ * n'importe qui, y compris quand l'abonnement Vitrine du commerce a expiré. La
+ * PAGE, elle, rend « indisponible » dans ce cas (`loadReserverQueuePublicContext`
+ * ci-dessous). Deux réponses opposées sur le même fait : le scrutin devenait
+ * l'oracle que la page refusait d'être, sur l'état commercial d'un tiers.
+ *
+ * La garde vit ICI plutôt que dans `lireEtatFilePublic` parce que la page a
+ * DÉJÀ lu l'organisation et tranché son droit avant d'appeler cette lecture :
+ * l'y enfouir aurait fait payer une seconde résolution à chaque rendu de page,
+ * pour reposer une question déjà répondue. C'est l'appelant public — l'action
+ * de scrutin — qui l'oppose, et seulement sur la branche qui en a besoin.
+ *
+ * ── ET ELLE NE FERME PAS `in_queue` ──
+ *
+ * Quelqu'un qui attend PHYSIQUEMENT doit voir son appel : lui refuser son rang
+ * parce qu'un abonnement a expiré ferait tomber la sanction sur lui. C'est le
+ * motif exact de `queueCallNext` au comptoir — honorer l'existant.
+ *
+ * Introuvable, jointure inter-locataire, droit fermé : `false` dans les trois
+ * cas, et l'appelant en fait un seul état muet.
+ */
+export async function droitVitrineOuvertPourFile(
+  queueId: string,
+): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("reservation_queues")
+    .select(`${QUEUE_COLUMNS}, organizations(${ORG_COLUMNS})`)
+    .eq("id", queueId)
+    .maybeSingle();
+  if (!data) return false;
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const row = data as unknown as QueueRow;
+  const organization = row.organizations ?? null;
+  // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
+  // qui n'est pas celle de la ligne (motif `loadReserverQueuePublicContext`).
+  if (!organization || organization.id !== row.organization_id) return false;
+  return moduleOuvertAuJoueur("vitrine", organization);
+}
+
 async function compterEnAttente(
   admin: ReturnType<typeof createAdminClient>,
   queueId: string,
@@ -1459,7 +1506,9 @@ export type ReserverQueuesDashboardContext =
  * AUCUN APPEL À `queue_staff_state` ICI, et c'est délibéré : une RPC par file
  * ferait N allers-retours pour une liste. Les deux compteurs vivants se
  * déduisent d'UNE lecture groupée ; l'écran détaillé d'une file, lui, passe par
- * `loadReserverQueueStaffContext`.
+ * l'action de scrutin `getQueueStaffState` (`src/actions/reserver.ts`), qui
+ * appelle `queue_staff_state` — il n'existe aucun chargeur `…StaffContext` ici,
+ * et ce commentaire en nommait un depuis le premier jour du lot.
  */
 export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueuesDashboardContext> {
   const { user, organization } = await getUserAndOrg();

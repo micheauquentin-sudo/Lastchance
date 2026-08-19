@@ -231,6 +231,7 @@ vi.mock("@/lib/player-identity", () => ({
 }));
 
 import {
+  droitVitrineOuvertPourFile,
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
@@ -911,5 +912,33 @@ describe("lireEtatFilePublic — UNE lecture, partagée par la page et son scrut
     expect(
       state.filtres.some((f) => f.table === "reservation_queues"),
     ).toBe(false);
+  });
+});
+
+describe("droitVitrineOuvertPourFile — la garde que le SCRUTIN oppose", () => {
+  it("rend `true` quand l'organisation qui porte la file a le droit", async () => {
+    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(true);
+    // La jointure est ÉNUMÉRÉE, comme partout dans ce fichier.
+    const lecture = state.selects.at(-1);
+    expect(lecture?.table).toBe("reservation_queues");
+    expect(lecture?.colonnes).toContain("organizations(");
+  });
+
+  it("rend `false` sans le droit `vitrine`", async () => {
+    state.droitVitrine = false;
+    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+  });
+
+  it("rend `false` sur une file inconnue — le même refus, indistinctement", async () => {
+    state.queueRow = null;
+    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+  });
+
+  it("rend `false` sur une jointure inter-locataire", async () => {
+    state.queueRow = {
+      ...(state.queueRow as Record<string, unknown>),
+      organization_id: "99999999-9999-4999-8999-999999999999",
+    };
+    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
   });
 });

@@ -141,6 +141,11 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     taches: [] as Array<Promise<unknown>>,
     role: "owner" as string | null,
     orgAddonVitrine: true,
+    /** Le droit `vitrine` de l'organisation qui PORTE la file scrutée. */
+    droitVitrineFile: true,
+    /** Combien de fois le scrutin a résolu ce droit — une lecture se compte. */
+    droitVitrineFileAppels: 0,
+    evenementsSecurite: [] as string[],
     rlsWrites: [] as Array<{ table: string; op: string; values: Record<string, unknown>; filters: Record<string, unknown> }>,
     rlsError: null as { message: string; code?: string } | null,
     reset() {
@@ -254,6 +259,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.taches = [];
       state.role = "owner";
       state.orgAddonVitrine = true;
+      state.droitVitrineFile = true;
+      state.droitVitrineFileAppels = 0;
+      state.evenementsSecurite = [];
       state.rlsWrites = [];
       state.rlsError = null;
     },
@@ -449,6 +457,14 @@ vi.mock("@/lib/reserver-context", async (importOriginal) => {
         empreinte ? state.queuePublicResponse : { state: "not_in_queue" },
       );
     },
+    // La garde vitrine du scrutin : sa lecture réelle (jointure + garde
+    // inter-tenant + `moduleOuvertAuJoueur`) a ses tests dans
+    // `reserver-context.test.ts`. Ce que l'action doit tenir, c'est QUAND elle
+    // l'appelle — et le compteur ci-dessous l'atteste.
+    droitVitrineOuvertPourFile: () => {
+      state.droitVitrineFileAppels += 1;
+      return Promise.resolve(state.droitVitrineFile);
+    },
   };
 });
 
@@ -519,6 +535,9 @@ vi.mock("@/lib/monitoring", () => ({
   reportError: vi.fn(),
   recordCounter: (op: string) => {
     state.compteurs.push(op);
+  },
+  reportSecurityEvent: (evenement: string) => {
+    state.evenementsSecurite.push(evenement);
   },
 }));
 
@@ -1752,6 +1771,25 @@ describe("scrutin de la file", () => {
     expect(state.rpcCalls).toHaveLength(0);
   });
 
+  it("getQueueStaffState borne sa CADENCE sur la clé de l'opérateur, et le dit", async () => {
+    // Seul scrutin authentifié du module, et le seul dont la RPC recompose les
+    // rangs de la file entière à chaque tic. La clé est propre à UN opérateur —
+    // c'est ce qui rend le `failClosed` conforme à ADR-032 : la saturer ne
+    // ralentit que celui qui l'a saturée.
+    await getQueueStaffState({ queueId: QUEUE_ID });
+    const seau = state.rateLimitCalls.at(-1);
+    expect(seau?.bucket).toBe(`reserver:queue-staff:${ORG_ID}:${USER_ID}`);
+    expect(seau?.failClosed).toBe(true);
+
+    state.reset();
+    state.seauxASec = ["reserver:queue-staff"];
+    // À SEC : l'écran garde ce qu'il montrait, la RPC n'est pas appelée, et
+    // l'emballement est REPORTÉ — être freiné ne suffit pas, il faut être vu.
+    expect(await getQueueStaffState({ queueId: QUEUE_ID })).toBeNull();
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.evenementsSecurite).toEqual(["reserver_queue_staff_cadence"]);
+  });
+
   it("getQueuePublicState rend le rang du porteur du cookie, sans ETA", async () => {
     const etat = await getQueuePublicState({ queueId: QUEUE_ID });
 
@@ -1764,11 +1802,59 @@ describe("scrutin de la file", () => {
     );
   });
 
+  it("getQueuePublicState prend le seau de LECTURE, jamais celui des gestes", async () => {
+    // Le correctif d'INFO-1 : à 12 tics/min et deux onglets, ce scrutin
+    // épuisait `reserver:device` — partagé avec `queueJoin` et `queueLeave` —
+    // et le refus tombait sur le geste, jamais sur la lecture qui l'avait vidé.
+    await getQueuePublicState({ queueId: QUEUE_ID });
+
+    const seaux = state.rateLimitCalls.map((appel) => appel.bucket);
+    expect(seaux).toEqual([`reserver:queue-read:${EMPREINTE}`]);
+    expect(state.rateLimitCalls[0].failClosed).toBe(true);
+  });
+
   it("getQueuePublicState rend `null` quand le seau du scrutin est à sec", async () => {
     // L'écran garde alors ce qu'il montrait : un seau ralentit une boucle, il
     // n'efface pas un rang.
-    state.seauxASec = ["reserver:device"];
+    state.seauxASec = ["reserver:queue-read"];
     expect(await getQueuePublicState({ queueId: QUEUE_ID })).toBeNull();
+  });
+
+  it("getQueuePublicState laisse passer `in_queue` SANS résoudre le droit vitrine", async () => {
+    // Quelqu'un qui attend physiquement doit voir son appel, abonnement expiré
+    // ou non : la sanction ne tombe pas sur lui (motif `queueCallNext`).
+    state.droitVitrineFile = false;
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(etat?.state).toBe("in_queue");
+    expect(etat?.position).toBe(2);
+    // Et la lecture du droit n'est même pas payée sur cette branche.
+    expect(state.droitVitrineFileAppels).toBe(0);
+  });
+
+  it("getQueuePublicState rend `unavailable` sur `not_in_queue` quand le droit vitrine est fermé", async () => {
+    // M-1 : sans cette garde, le scrutin rendait le nom de la file, son statut
+    // et le nombre de personnes en attente à n'importe qui — c'est-à-dire
+    // l'oracle sur l'état commercial d'un tiers que la PAGE refuse d'être.
+    state.empreinte = null;
+    state.droitVitrineFile = false;
+
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(etat?.state).toBe("unavailable");
+    // INDISTINGUABLE d'une file inexistante : rien du document n'a fuité.
+    expect(etat?.queueName).toBeNull();
+    expect(etat?.queueStatus).toBeNull();
+    expect(etat?.waitingCount).toBe(0);
+  });
+
+  it("getQueuePublicState rend `not_in_queue` tel quel quand le droit vitrine est ouvert", async () => {
+    state.empreinte = null;
+    const etat = await getQueuePublicState({ queueId: QUEUE_ID });
+
+    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(etat?.state).toBe("not_in_queue");
   });
 });
 
