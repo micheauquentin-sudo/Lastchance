@@ -455,6 +455,12 @@ test.describe("réserver — invitation privée (RES-2)", () => {
       page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("Invitation privée")).toBeVisible();
+    // TOUTES LES PAGES DU PARCOURS, celle-ci comprise : le jeton n'est lisible
+    // nulle part à l'écran. Un invité qui fait lire son écran à son voisin ne
+    // lui donne pas de quoi prendre une seconde place.
+    expect(await page.locator("body").innerText()).not.toContain(
+      JETON_INVITATION,
+    );
 
     const carteCreneau = page
       .getByRole("region", { name: /créneau/i })
@@ -504,6 +510,11 @@ test.describe("réserver — invitation privée (RES-2)", () => {
     // un créneau FERMÉ AU PUBLIC, que la page publique ne liste pas
     // (`loadReserverPublicContext` ne retient que `status = 'open'`) — c'est
     // exactement ce à quoi sert une invitation privée.
+    //
+    // `networkidle` avant le `goto`, motif du premier test de ce fichier : le
+    // `reloadOnSuccess` du bouton laisse une navigation client en vol, et sur
+    // WebKit un `goto` immédiat se fait interrompre par elle.
+    await page.waitForLoadState("networkidle");
     await page.goto("/reserver/e2ea0000-0000-4000-8000-000000000012");
     await expect(
       page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
