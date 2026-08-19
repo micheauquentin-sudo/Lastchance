@@ -332,9 +332,14 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
       await carteReservationA
         .getByRole("button", { name: "Annuler ma réservation" })
         .click();
+      // `reloadOnSuccess` : `mesReservations` ne SELECTionne que
+      // `confirmed`/`checked_in` (reserver-context.ts) — une fois annulée, la
+      // réservation ne revit pas sous une pastille « Annulée » sur CETTE page
+      // (contrairement à l'agenda du commerçant) : la carte, et la section
+      // « Mes réservations » elle-même, disparaissent entièrement.
       await expect(
-        page.locator("li").filter({ hasText: "Annulée" }).first(),
-      ).toBeVisible({ timeout: 20_000 });
+        page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+      ).toHaveCount(0, { timeout: 20_000 });
 
       // ── 4. Navigateur B recharge : l'offre est vivante, il la prend.
       await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
