@@ -70,33 +70,33 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
     });
     await expect(boutonAppeler).toBeVisible({ timeout: 30_000 });
 
-    // On appelle jusqu'à ce que CE joueur bascule « appelé » (au plus les 2
-    // entrées seedées + la nôtre + une marge), en revérifiant côté joueur
-    // après chaque appel — la seed est partagée entre projets Playwright,
-    // Camille et/ou Dominique peuvent nous précéder.
-    let appele = false;
-    for (let tour = 0; tour < 6 && !appele; tour++) {
-      if (await boutonAppeler.isEnabled()) {
-        await boutonAppeler.click();
-        // Le geste tic-tique immédiatement (pas de reloadOnSuccess) : on
-        // attend l'annonce (aria-live), état produit par CE clic — pas un
-        // délai fixe.
-        await expect(
-          page.getByText(/— appelé\.|Personne n'attend/),
-        ).toBeVisible({ timeout: 15_000 });
-      }
-      appele = await estJoueurAppele(page);
-    }
-
-    // ── 3. Écran joueur : l'appel plein écran doit être visible. Si le
-    // dernier tour ne l'a pas encore constaté (le scrutin joueur peut
-    // rafraîchir après la lecture ci-dessus), on relit jusqu'au tic suivant
-    // — timeout généreux, jamais un délai fixe.
+    // On appelle jusqu'à ce que CE joueur bascule « appelé ». La file est
+    // PARTAGÉE entre projets Playwright (chrome/safari tournent en même
+    // temps sur la même base) : l'autre projet peut vider la file avant
+    // notre tour, ou y ajouter des entrées après. Un compte de tours fixe ne
+    // suffit donc pas — `expect.poll` retente l'appel à chaque tic tant que
+    // notre entrée n'est pas passée « appelée », borné par un timeout
+    // généreux plutôt qu'un nombre d'essais.
     await expect
-      .poll(() => estJoueurAppele(page), {
-        timeout: 60_000,
-        message: "l'écran « C'est à vous » doit apparaître côté joueur",
-      })
+      .poll(
+        async () => {
+          if (await boutonAppeler.isEnabled().catch(() => false)) {
+            await boutonAppeler.click().catch(() => {});
+            // Le geste tic-tique immédiatement (pas de reloadOnSuccess) : on
+            // attend l'annonce (aria-live), état produit par CE clic — sans
+            // bloquer le poll si elle n'arrive pas (autre projet plus rapide).
+            await page
+              .getByText(/— appelé\.|Personne n'attend/)
+              .waitFor({ timeout: 5_000 })
+              .catch(() => {});
+          }
+          return estJoueurAppele(page);
+        },
+        {
+          timeout: 90_000,
+          message: "notre entrée doit finir par être appelée",
+        },
+      )
       .toBe(true);
 
     // ── 4. Retour comptoir : « Servi » sur la personne au comptoir. On
