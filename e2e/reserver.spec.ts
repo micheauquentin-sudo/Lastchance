@@ -71,6 +71,22 @@ test.describe("réserver — parcours public puis comptoir", () => {
       { timeout: 30_000 },
     );
     const champCode = page.getByLabel("Code de réservation");
+    // ATTENDRE L'HYDRATATION AVANT DE SAISIR (motif `player-win.spec.ts`,
+    // caisse du panier) : le champ est CONTRÔLÉ (`value={code}` dans
+    // `arrivees-checkin.tsx`) et porte `autoFocus` — `fill()` seul n'attend
+    // que l'actionnabilité DOM, pas que React ait attaché ses gestionnaires.
+    // Course connue en local sur mobile-safari : le champ se remplit avant
+    // hydratation, React reprend la main avec son état interne `code=""` et
+    // écrase la saisie — le bouton reste alors désactivé indéfiniment
+    // (`disabled={pending || code.length === 0}`).
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector("#arrivee-code");
+        return !!el && Object.keys(el).some((k) => k.startsWith("__react"));
+      },
+      undefined,
+      { timeout: 20_000 },
+    );
     await champCode.fill(code);
     await page.getByRole("button", { name: "Enregistrer l'arrivée" }).click();
     await expect(
