@@ -245,15 +245,36 @@ test.describe("réserver — parcours public puis comptoir", () => {
 /**
  * Liste prioritaire (RES-2, lot L5) : offre à échéance, prise, et FIFO.
  *
- * Seed dédiée : « Atelier privé du Comptoir E2E »
- * (e2ea0000-0000-4000-8000-000000000012), créneau `...025` — UNE place,
- * LIBRE, sans réservation ni entrée de file pré-semées. Le créneau `...023`
- * de la même activité porte lui une entrée `waiting` posée avant tout
- * navigateur E2E (`e2ea0000-…-000041`) : y rejoindre la file ferait partir
- * l'offre à ce concurrent seedé au FIFO, jamais au navigateur de test — d'où
- * un créneau séparé, rempli et vidé par CE test lui-même.
+ * DEUX activités jumelles, UNE par projet Playwright — `mobile-chrome` et
+ * `mobile-safari` exécutent ce fichier EN PARALLÈLE sur la même base seedée
+ * (`fullyParallel`), et un unique créneau à capacité 1 partagé entre les deux
+ * ferait échouer celui qui arrive en second : le bouton « Réserver ma place »
+ * aurait déjà disparu, pris par l'autre projet. `...012` / `...025` sert
+ * `mobile-chrome` (et tout projet non listé) ; `...013` / `...026` sert
+ * `mobile-safari`.
+ *
+ * `...025` (comme `...026`) est UNE place, LIBRE, sans réservation ni entrée
+ * de file pré-semées. Le créneau `...023` de l'activité `...012` porte lui
+ * une entrée `waiting` posée avant tout navigateur E2E (`e2ea0000-…-000041`) :
+ * y rejoindre la file ferait partir l'offre à ce concurrent seedé au FIFO,
+ * jamais au navigateur de test — d'où des créneaux séparés, remplis et vidés
+ * par CE test lui-même.
  */
-const ACTIVITY_ID_2 = "e2ea0000-0000-4000-8000-000000000012";
+const ACTIVITES_FILE: Record<
+  string,
+  { activityId: string; slotUnique: boolean }
+> = {
+  "mobile-safari": {
+    activityId: "e2ea0000-0000-4000-8000-000000000013",
+    // Cette activité n'a qu'UN créneau (pas de `...023` complet à côté) :
+    // le premier `<li>` de la liste EST le créneau dédié, sans ambiguïté.
+    slotUnique: true,
+  },
+};
+const ACTIVITE_FILE_DEFAUT = {
+  activityId: "e2ea0000-0000-4000-8000-000000000012",
+  slotUnique: false,
+};
 
 test.describe("réserver — liste prioritaire (RES-2)", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -261,13 +282,20 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
   test("un désistement offre la place au premier de la file, qui la prend", async ({
     page,
     browser,
-  }) => {
+  }, testInfo) => {
+    const { activityId: ACTIVITY_ID_2, slotUnique } =
+      ACTIVITES_FILE[testInfo.project.name] ?? ACTIVITE_FILE_DEFAUT;
+    const nomActivite = slotUnique
+      ? "Atelier privé du Comptoir E2E (bis)"
+      : "Atelier privé du Comptoir E2E";
+
     // ── 1. Navigateur A : réserve la seule place du créneau dédié. Le seul
     // créneau de cette activité qui porte encore un bouton « Réserver ma
-    // place » (l'autre, `...023`, est déjà complet et n'affiche que la file).
+    // place » (l'autre, `...023` sur l'activité par défaut, est déjà complet
+    // et n'affiche que la file).
     await page.goto(`/reserver/${ACTIVITY_ID_2}`);
     await expect(
-      page.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+      page.getByRole("heading", { name: nomActivite }),
     ).toBeVisible({ timeout: 30_000 });
 
     const creneauxSection = page.getByRole("region", {
@@ -287,21 +315,25 @@ test.describe("réserver — liste prioritaire (RES-2)", () => {
     ).toBeVisible();
 
     // ── 2. Navigateur B : identité séparée (nouveau contexte, nouveau
-    // cookie). Les deux créneaux de l'activité sont maintenant complets ;
-    // celui qui l'intéresse est le dernier de la liste (tri par `starts_at`
-    // croissant — `...025` est le plus tardif des deux).
+    // cookie). Sur l'activité jumelle (`slotUnique`), il n'y a qu'un seul
+    // créneau — c'est le premier `<li>`. Sur l'activité par défaut, les deux
+    // créneaux sont maintenant complets ; celui qui l'intéresse est le
+    // dernier de la liste (tri par `starts_at` croissant — `...025` est le
+    // plus tardif des deux).
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
     try {
       await pageB.goto(`/reserver/${ACTIVITY_ID_2}`);
       await expect(
-        pageB.getByRole("heading", { name: "Atelier privé du Comptoir E2E" }),
+        pageB.getByRole("heading", { name: nomActivite }),
       ).toBeVisible({ timeout: 30_000 });
 
       const creneauxSectionB = pageB.getByRole("region", {
         name: "Créneaux disponibles",
       });
-      const carteDediee = creneauxSectionB.locator("li").last();
+      const carteDediee = slotUnique
+        ? creneauxSectionB.locator("li").first()
+        : creneauxSectionB.locator("li").last();
       await expect(carteDediee.getByText("Complet")).toBeVisible();
       await carteDediee
         .getByRole("button", { name: "Rejoindre la liste d'attente" })

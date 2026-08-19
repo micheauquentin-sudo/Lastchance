@@ -1115,3 +1115,29 @@ values (
   now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
 )
 on conflict (id) do nothing;
+
+-- UNE SECONDE ACTIVITÉ, ET UN SECOND CRÉNEAU DÉDIÉ IDENTIQUE — pour la MÊME
+-- raison que la séparation `...011` / `...012` documentée plus haut :
+-- `mobile-chrome` et `mobile-safari` exécutent le même fichier de specs EN
+-- PARALLÈLE, sur la même base seedée. Un unique créneau à capacité 1 partagé
+-- entre les deux projets ferait échouer celui qui arrive en second — le
+-- bouton « Réserver ma place » aurait déjà disparu, pris par l'autre projet.
+-- Chaque projet a donc SA PROPRE activité à une place, jamais touchée par
+-- l'autre.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values (
+  'e2ea0000-0000-4000-8000-000000000013', 'e2e10000-0000-4000-8000-000000000001',
+  'Atelier privé du Comptoir E2E (bis)',
+  'Six places, sur invitation ou liste prioritaire.', true
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000026',
+  'e2ea0000-0000-4000-8000-000000000013', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '6 days', now() + interval '6 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;
