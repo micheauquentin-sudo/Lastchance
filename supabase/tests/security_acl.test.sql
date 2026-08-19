@@ -402,6 +402,52 @@ select ok(not has_function_privilege('anon', 'public.checkin_reservation(uuid,te
 select ok(not has_function_privilege('authenticated', 'public.reservation_public_state(uuid,text)', 'EXECUTE'), 'merchant cannot enumerate player reservations through the public RPC');
 select ok(not has_function_privilege('anon', 'public.reservation_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the reservation public state directly');
 
+-- Liste prioritaire et invitations privées (20261004120000, RES-2). Deux tables
+-- neuves, deux régimes distincts : la FILE est lisible par tous les MEMBRES —
+-- le caissier doit pouvoir dire à quelqu'un où il en est — les INVITATIONS le
+-- sont par les seuls éditeurs, parce que c'est de la configuration. Aucune
+-- écriture directe nulle part : l'ordre de la file et le compteur d'usages
+-- décident de qui obtient une place, et une écriture PostgREST les
+-- contournerait aussi sûrement qu'elle contournerait la capacité.
+select ok(not has_table_privilege('anon', 'public.reservation_waitlist_entries', 'SELECT'), 'anon cannot read the reservation waitlist');
+select ok(not has_table_privilege('anon', 'public.reservation_invitations', 'SELECT'), 'anon cannot read private reservation invitations');
+select ok(not has_table_privilege('authenticated', 'public.reservation_waitlist_entries', 'INSERT'), 'merchant cannot insert itself into a waitlist');
+select ok(not has_table_privilege('authenticated', 'public.reservation_waitlist_entries', 'UPDATE'), 'merchant cannot reorder a waitlist by direct update');
+select ok(not has_table_privilege('authenticated', 'public.reservation_waitlist_entries', 'DELETE'), 'merchant cannot delete a waitlist entry');
+select ok(not has_table_privilege('authenticated', 'public.reservation_invitations', 'INSERT'), 'merchant cannot forge an invitation outside the audited RPC');
+select ok(not has_table_privilege('authenticated', 'public.reservation_invitations', 'UPDATE'), 'merchant cannot reset an invitation use counter by hand');
+select ok(not has_table_privilege('authenticated', 'public.reservation_invitations', 'DELETE'), 'merchant cannot delete an invitation and its trace');
+-- L'ADRESSE de la file et l'EMPREINTE du jeton sont hors des grants de colonnes,
+-- pour la même raison que `reservations.email` : elles n'existent pas pour un
+-- écran. Le jeton en clair, lui, n'entre jamais en base — seule son empreinte y
+-- vit, et elle ne sort pas non plus.
+select ok(not has_column_privilege('authenticated', 'public.reservation_waitlist_entries', 'email', 'SELECT'), 'merchant session cannot read waitlist email addresses');
+select ok(has_column_privilege('authenticated', 'public.reservation_waitlist_entries', 'status', 'SELECT'), 'merchant session can read a waitlist entry status');
+select ok(not has_column_privilege('authenticated', 'public.reservation_invitations', 'token_hash', 'SELECT'), 'merchant session cannot read the invitation token digest');
+select ok(has_column_privilege('authenticated', 'public.reservation_invitations', 'used_count', 'SELECT'), 'merchant session can read how many invitation places were taken');
+select ok(has_function_privilege('service_role', 'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'server can join a reservation waitlist');
+select ok(not has_function_privilege('authenticated', 'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot forge a waitlist position');
+select ok(not has_function_privilege('anon', 'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot join a waitlist directly');
+select ok(not has_function_privilege('authenticated', 'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot claim a waitlist offer on behalf of a player');
+select ok(not has_function_privilege('anon', 'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'), 'anon cannot claim a waitlist offer directly');
+select ok(not has_function_privilege('authenticated', 'public.waitlist_leave(uuid,text)', 'EXECUTE'), 'merchant session cannot remove a player from a waitlist through the player RPC');
+select ok(not has_function_privilege('authenticated', 'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'), 'merchant session cannot redeem an invitation past the capacity lock');
+select ok(not has_function_privilege('anon', 'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'), 'anon cannot redeem an invitation directly');
+select ok(not has_function_privilege('authenticated', 'public.create_reservation_invitation(uuid,text,text,text,uuid,uuid,integer,timestamptz)', 'EXECUTE'), 'merchant session cannot mint an invitation past the role guard');
+select ok(not has_function_privilege('authenticated', 'public.revoke_reservation_invitation(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot revoke an invitation past the role guard');
+select ok(not has_function_privilege('authenticated', 'public.close_reservation_invitation(uuid,uuid,text)', 'EXECUTE'), 'merchant session cannot close an invitation past the role guard');
+select ok(not has_function_privilege('authenticated', 'public.expire_waitlist_offers()', 'EXECUTE'), 'merchant session cannot run the waitlist sweep');
+select ok(not has_function_privilege('anon', 'public.expire_waitlist_offers()', 'EXECUTE'), 'anon cannot run the waitlist sweep');
+-- LE HELPER INTERNE : le SEUL de tout ce dépôt qui ne soit granté à AUCUN rôle
+-- applicatif, service_role compris. Il fait avancer une file en supposant que
+-- son appelant détient déjà le verrou d'avis du créneau ; l'exposer à
+-- l'application permettrait de proposer deux fois la même place. Les privilèges
+-- par défaut de Supabase servent `execute` à service_role sur toute fonction
+-- neuve de `public` : ce retrait est donc explicite, pas hérité.
+select ok(not has_function_privilege('service_role', 'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'), 'the waitlist release helper is not callable by the application at all');
+select ok(not has_function_privilege('authenticated', 'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'), 'nor by a merchant session');
+select ok(not has_function_privilege('anon', 'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'), 'nor by anon');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');

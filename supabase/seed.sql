@@ -1005,3 +1005,86 @@ values (
   now() + interval '30 minutes', now() + interval '50 minutes', 4, 'open'
 )
 on conflict (id) do nothing;
+
+-- ── Réserver RES-2 — liste prioritaire et invitation privée ──────────
+--
+-- SUR UNE SECONDE ACTIVITÉ, ET C'EST DÉLIBÉRÉ. Le parcours public rend UNE
+-- activité par page (`ReserverExperience` reçoit un seul `activityName` et une
+-- seule liste de créneaux) : poser ces fixtures sur « Dégustation du Comptoir
+-- E2E » y aurait ajouté un créneau COMPLET que `e2e/reserver.spec.ts` aurait
+-- attrapé avec son `.last()`, et le second scénario aurait échoué sur un
+-- créneau sans place au lieu de tester ce qu'il teste. Les deux jeux de
+-- fixtures ne se croisent donc jamais.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values (
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  'Atelier privé du Comptoir E2E',
+  'Six places, sur invitation ou liste prioritaire.', true
+)
+on conflict (id) do nothing;
+
+-- Un créneau à UNE place, DÉJÀ PRISE : c'est la seule situation où
+-- `waitlist_join` accepte quelqu'un — sur un créneau qui a de la place, elle
+-- renvoie `not_full` et invite à réserver normalement. Sans ce créneau, aucun
+-- parcours E2E ne pourrait atteindre la file.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000023',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '4 days', now() + interval '4 days 30 minutes', 1, 'open'
+)
+on conflict (id) do nothing;
+
+-- La place qui rend le créneau complet. Le code de comptoir est posé par le
+-- trigger `reservations_set_code`, jamais ici : le seed n'a pas à choisir un
+-- identifiant que la base réserve au serveur.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash)
+values (
+  'e2ea0000-0000-4000-8000-000000000031',
+  'e2ea0000-0000-4000-8000-000000000023', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e2', 32)
+)
+on conflict (id) do nothing;
+
+-- Un inscrit sur la liste, en attente. `waiting` et non `offered` : une offre
+-- semée serait déjà en train de courir vers son échéance au moment où l'E2E
+-- démarre, et le balayage pg_cron pourrait la faire expirer entre le seed et
+-- le test. Une entrée en attente, elle, est stable.
+insert into public.reservation_waitlist_entries
+  (id, slot_id, organization_id, player_key_hash)
+values (
+  'e2ea0000-0000-4000-8000-000000000041',
+  'e2ea0000-0000-4000-8000-000000000023', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e3', 32)
+)
+on conflict (id) do nothing;
+
+-- Un créneau FERMÉ au public : le cas d'usage même de l'invitation privée —
+-- le commerçant a coupé les réservations et ouvre malgré tout quelques places.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000024',
+  'e2ea0000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '5 days', now() + interval '5 days 30 minutes', 2, 'closed'
+)
+on conflict (id) do nothing;
+
+-- L'INVITATION. Le jeton CLAIR est `E2E-INVIT-0001` : il vit dans ce
+-- commentaire et dans la spec E2E, jamais en base. La colonne ne porte que son
+-- empreinte SHA-256 hexadécimale, calculée ici comme l'application devra le
+-- faire — `sha256(jeton)`, SANS sel : le jeton est tiré côté serveur avec assez
+-- d'entropie pour qu'aucun dictionnaire ne le retrouve, et un sel applicatif
+-- rendrait toutes les invitations illisibles le jour où il tournerait.
+insert into public.reservation_invitations
+  (id, organization_id, slot_id, label, token_hash, max_uses, created_by)
+values (
+  'e2ea0000-0000-4000-8000-000000000051', 'e2e10000-0000-4000-8000-000000000001',
+  'e2ea0000-0000-4000-8000-000000000024', 'Invitation E2E',
+  encode(extensions.digest('E2E-INVIT-0001', 'sha256'), 'hex'),
+  5, 'e2e00000-0000-4000-8000-000000000001'
+)
+on conflict (id) do nothing;

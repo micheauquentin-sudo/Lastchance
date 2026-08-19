@@ -47,6 +47,44 @@
 --      reste muette sur la réservation d'une organisation voisine, s'audite une
 --      fois par geste réel, et prend LE MÊME verrou d'avis que `reserve_slot`.
 --
+-- ── CE QUE LES BLOCS 13 À 23 AJOUTENT (RES-2, migration 20261004120000) ──
+--
+--  11. LA FILE NE S'OUVRE QUE SUR UN CRÉNEAU COMPLET (bloc 14). `not_full`
+--      renvoie vers la réservation ; les six refus muets de `reserve_slot` sont
+--      les mêmes ici, à la lettre ; l'adresse suit le même régime de
+--      consentement ; se réinscrire rend son RANG, jamais une seconde ligne.
+--  12. UNE PLACE LIBÉRÉE VA À UNE SEULE PERSONNE (blocs 15 et 16). Une
+--      annulation = UNE offre, au premier de la file ; deux annulations = deux
+--      offres SÉQUENTIELLES, jamais deux sur la même place ; l'invariant
+--      « vivantes + tenues <= capacité » est énoncé tel quel. Les DEUX chemins
+--      d'annulation — joueur et commerçant — font avancer la file, et quitter la
+--      file en tenant une offre la rend immédiatement au suivant.
+--  13. LA CONVERSION CONSOMME LA PLACE (bloc 15). La jauge publique voit la
+--      place TENUE et rend `full` ; après conversion elle rend encore `full` ;
+--      le créneau ne porte JAMAIS plus d'une réservation vivante. C'est la
+--      preuve qu'aucune sur-réservation ne passe entre la file et le public.
+--  14. L'EXPIRATION, DEUX FOIS PROUVÉE (bloc 17). PARESSEUSEMENT — une offre
+--      échue est refusée et sa place reprenable AVANT tout balayage, donc sans
+--      dépendre d'un cron — et PAR LE BALAYAGE, qui la donne au suivant sans
+--      qu'aucun humain n'agisse. Le REJEU IMMÉDIAT rend trois zéros : c'est
+--      « exactement une fois », et le trigger d'état terminal refuse de rouvrir
+--      une entrée expirée ou convertie même par écriture directe.
+--  15. L'INVITATION PRIVÉE (bloc 18). Jeton stocké HACHÉ ; le créneau FERMÉ au
+--      public s'ouvre à l'invité et à lui seul ; l'idempotence précède
+--      l'incrément (deux clics ne brûlent pas deux usages) ; la capacité prime
+--      sur les usages restants ; RÉVOQUÉE, ÉPUISÉE, VOISINE et INCONNUE rendent
+--      EXACTEMENT le même mot ; fermer les inscriptions n'annule AUCUNE place
+--      confirmée ; le caissier n'en crée pas.
+--  16. FERMER UN CRÉNEAU N'ANNULE RIEN (bloc 19), et l'état public du joueur
+--      porte sa file avec un `offer_live` tranché par le SERVEUR (bloc 20).
+--  17. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA PLACE (bloc 21), et
+--      une entrée purgée ne se rouvre pas depuis l'ancienne clé.
+--  18. ACL, RLS ET SUPERVISION (blocs 22 et 23). Les deux tables neuves sont
+--      fermées à `anon` au niveau TABLE, l'adresse et l'empreinte du jeton sont
+--      hors des grants de colonnes, le helper de libération n'est exécutable par
+--      AUCUN rôle applicatif — service_role compris — et le balayage pg_cron
+--      naît inscrit au registre ET réellement supervisé.
+--
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
 -- pgTAP tourne dans UNE session et UNE transaction : il ne peut pas lancer
@@ -1527,6 +1565,1145 @@ select results_eq(
        and action = 'reservation.cancel_staff'$$,
   array[2::bigint],
   'STAFF-25 chaque annulation réelle écrit UNE ligne d''audit, pas plus');
+
+-- ════════════════════════════════════════════════════════════
+-- 13. RES-2 — FIXTURES DE LA LISTE PRIORITAIRE ET DES INVITATIONS
+--
+-- CRÉÉES ICI, ET NON DANS LE BLOC DE TÊTE, POUR UNE RAISON PRÉCISE : le bloc
+-- RLS compte les activités du propriétaire (`RLS-7`, deux) et les réservations
+-- vues par le caissier (`RLS-4`, sept). Une activité ou une réservation de plus
+-- en tête de fichier ferait rougir deux assertions qui n'ont rien à voir avec
+-- RES-2 — et le lecteur chercherait la régression du mauvais côté. Tout ce que
+-- ce lot ajoute vit donc APRÈS les comptages, dans son propre espace.
+--
+-- LES HEURES SONT ÉCARTÉES DE JOUR EN JOUR : `reservation_slots_activity_start_unique`
+-- porte sur (activity_id, starts_at), et les créneaux de la tête occupent déjà
+-- +2 j, +3 j, +4 j, +6 j et +7 j sur l'activité 201.
+-- ════════════════════════════════════════════════════════════
+
+-- Une SECONDE activité active chez A : elle sert à prouver qu'une invitation
+-- adossée à l'activité 201 n'ouvre pas le créneau d'une autre activité.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values
+  ('4e5e0000-0000-4000-8000-000000000205',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Atelier privé', null, true);
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status,
+   waitlist_offer_minutes)
+values
+  -- S20 : UNE place, +8 j. Le créneau de la file : on le remplit, on annule, et
+  -- la place doit aller à UNE seule personne. Fenêtre d'offre par DÉFAUT (null).
+  ('4e5e0000-0000-4000-8000-000000000320',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '8 days', now() + interval '8 days 1 hour', 1, 'open', null),
+  -- S21 : DEUX places, +9 j, fenêtre d'offre RÉGLÉE à 15 minutes — c'est ce qui
+  -- prouve que la colonne sert réellement, et pas seulement qu'elle existe.
+  -- C'est le créneau des deux annulations successives, puis de l'expiration.
+  ('4e5e0000-0000-4000-8000-000000000321',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '9 days', now() + interval '9 days 1 hour', 2, 'open', 15),
+  -- S22 : deux places, +10 j, et FERMÉ. C'est le cas d'usage même de
+  -- l'invitation privée : le commerçant a coupé les réservations publiques et
+  -- ouvre malgré tout quelques places à des invités.
+  ('4e5e0000-0000-4000-8000-000000000322',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '10 days', now() + interval '10 days 1 hour', 2, 'closed', null),
+  -- S23 : BROUILLON. Une invitation ne l'ouvre pas non plus : un créneau non
+  -- configuré n'est pas un créneau fermé.
+  ('4e5e0000-0000-4000-8000-000000000323',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '11 days', now() + interval '11 days 1 hour', 1, 'draft', null),
+  -- S24 : trois places, ouvert. Le créneau des invitations épuisables.
+  ('4e5e0000-0000-4000-8000-000000000324',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '12 days', now() + interval '12 days 1 hour', 3, 'open', null),
+  -- S25 : UNE place, ouvert. On y réserve, PUIS on ferme le créneau : la
+  -- réservation doit survivre intacte.
+  ('4e5e0000-0000-4000-8000-000000000325',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '13 days', now() + interval '13 days 1 hour', 1, 'open', null),
+  -- S26 : chez A, mais sur l'AUTRE activité. La cible qui ne correspond pas.
+  ('4e5e0000-0000-4000-8000-000000000326',
+   '4e5e0000-0000-4000-8000-000000000205',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '8 days', now() + interval '8 days 1 hour', 2, 'open', null),
+  -- S27 : chez la VOISINE. Son invitation ne doit rien ouvrir chez A, et
+  -- l'inverse non plus.
+  ('4e5e0000-0000-4000-8000-000000000327',
+   '4e5e0000-0000-4000-8000-000000000203',
+   '4e5e0000-0000-4000-8000-00000000000b',
+   now() + interval '9 days', now() + interval '9 days 1 hour', 2, 'open', null),
+  -- S28 et S29 : UNE place chacun, dédiés à l'EXPIRATION. Deux créneaux et non
+  -- un seul, parce que les deux propriétés à prouver se contredisent sur un même
+  -- créneau : montrer que la place d'une offre échue est REPRENABLE la consomme,
+  -- et il n'en resterait plus pour montrer que le BALAYAGE la donne au suivant.
+  ('4e5e0000-0000-4000-8000-000000000328',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '14 days', now() + interval '14 days 1 hour', 1, 'open', null),
+  ('4e5e0000-0000-4000-8000-000000000329',
+   '4e5e0000-0000-4000-8000-000000000201',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '15 days', now() + interval '15 days 1 hour', 1, 'open', null);
+
+
+-- ════════════════════════════════════════════════════════════
+-- 14. ON N'ENTRE DANS LA FILE QUE SUR UN CRÉNEAU RÉELLEMENT COMPLET
+-- ════════════════════════════════════════════════════════════
+
+-- Le créneau a encore sa place : la file n'a pas lieu d'être.
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('ab', 32)))->>'state',
+  'not_full',
+  'LIST-1 sur un créneau qui a de la place, la file renvoie vers la réservation');
+
+create temporary table rv2_w1 as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000320', repeat('ab', 32)
+) as j;
+select is((select j->>'state' from rv2_w1), 'reserved',
+  'LIST-2 la place unique de S20 est prise');
+
+create temporary table rv2_j1 as
+select public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000320', repeat('cd', 32),
+  'Bob@Example.COM ', true
+) as j;
+select is((select j->>'state' from rv2_j1), 'waiting',
+  'LIST-3 le créneau est désormais complet : l''inscription est acceptée');
+select is((select (j->>'position')::int from rv2_j1), 1,
+  'LIST-4 le premier inscrit est au rang 1');
+
+-- L'ADRESSE SUIT LE MÊME RÉGIME QUE SUR UNE RÉSERVATION : normalisée, et
+-- conservée seulement parce qu'elle est consentie.
+select is(
+  (select w.email from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'bob@example.com',
+  'LIST-5 l''adresse de la file est normalisée avant d''être stockée');
+select ok(
+  (select w.consent_transactional_at is not null
+     from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'LIST-6 le consentement transactionnel est daté, comme sur une réservation');
+
+-- IDEMPOTENCE : le même joueur, la même file. Son rang, pas une erreur.
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('cd', 32)))->>'state',
+  'already_waiting',
+  'LIST-7 se réinscrire rend son rang, jamais une seconde ligne');
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where slot_id = '4e5e0000-0000-4000-8000-000000000320'$$,
+  array[1::bigint],
+  'LIST-8 et la base ne porte toujours qu''une entrée');
+
+create temporary table rv2_j2 as
+select public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000320', repeat('ef', 32)
+) as j;
+select is((select (j->>'position')::int from rv2_j2), 2,
+  'LIST-9 le second inscrit est au rang 2');
+
+-- Celui qui DÉTIENT la place ne fait pas la queue pour elle.
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('ab', 32)))->>'state',
+  'already_reserved',
+  'LIST-10 le détenteur de la place ne s''inscrit pas sur sa propre file');
+
+-- LES REFUS MUETS, exactement ceux de `reserve_slot` : la file ne devient pas
+-- l'oracle que la réservation refuse d'être.
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000306', repeat('cd', 32)))->>'state',
+  'unavailable',
+  'LIST-11 le créneau d''une AUTRE organisation rend `unavailable`');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000c',
+    '4e5e0000-0000-4000-8000-000000000307', repeat('cd', 32)))->>'state',
+  'unavailable',
+  'LIST-12 une organisation sans le droit `vitrine` non plus');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000305', repeat('cd', 32)))->>'state',
+  'unavailable',
+  'LIST-13 ni le créneau d''une activité coupée');
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('cd', 32),
+    'pas-une-adresse', true))->>'state',
+  'invalid_email',
+  'LIST-14 la forme de l''adresse est jugée comme dans reserve_slot');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 15. UNE PLACE LIBÉRÉE VA À UNE SEULE PERSONNE, ET LA CONVERSION LA CONSOMME
+-- ════════════════════════════════════════════════════════════
+
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv2_w1),
+    repeat('ab', 32)))->>'state',
+  'cancelled',
+  'LIST-15 la place de S20 est rendue');
+
+-- LE CŒUR DU CRITÈRE D'ACCEPTATION : une place, une offre. Le second de la file
+-- ne reçoit RIEN — il n'y a qu'une place à donner.
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where slot_id = '4e5e0000-0000-4000-8000-000000000320'
+       and status = 'offered'$$,
+  array[1::bigint],
+  'LIST-16 UNE place libérée = UNE offre, jamais deux');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'offered',
+  'LIST-17 et c''est le PREMIER de la file qui la reçoit');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j2)),
+  'waiting',
+  'LIST-18 le second reste en attente');
+
+-- LA FENÊTRE PAR DÉFAUT EST DE DEUX HEURES, et elle est bornée par le créneau
+-- (+8 j, donc pas de plafonnement ici).
+select ok(
+  (select w.offer_expires_at between now() + interval '119 minutes'
+                                and now() + interval '121 minutes'
+     from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'LIST-19 l''offre par défaut tient deux heures');
+
+-- LA JAUGE PUBLIQUE VOIT LA PLACE TENUE. Sans cela, un visiteur de passage
+-- reprendrait la place qu'on vient de promettre, et la conversion
+-- sur-réserverait le créneau.
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('12', 32)))->>'state',
+  'full',
+  'LIST-20 la jauge publique compte la place TENUE : elle rend `full`');
+
+create temporary table rv2_c1 as
+select public.claim_waitlist_offer(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select (j->>'entry_id')::uuid from rv2_j1),
+  repeat('cd', 32)
+) as j;
+select is((select j->>'state' from rv2_c1), 'claimed',
+  'LIST-21 l''offre se convertit en réservation confirmée');
+select ok((select (j->>'code') ~ '^[A-HJ-NP-Z2-9]{8}$' from rv2_c1),
+  'LIST-22 avec un code de comptoir, comme toute réservation');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'converted',
+  'LIST-23 l''entrée de file passe à `converted`');
+select ok(
+  (select w.converted_reservation_id = (select (j->>'reservation_id')::uuid from rv2_c1)
+     from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'LIST-24 et pointe la réservation qu''elle a produite');
+
+-- L'ADRESSE CONSENTIE DE LA FILE SUIT LA RÉSERVATION : la redemander serait une
+-- friction, la jeter priverait le joueur de sa confirmation.
+select is(
+  (select r.email from public.reservations r
+    where r.id = (select (j->>'reservation_id')::uuid from rv2_c1)),
+  'bob@example.com',
+  'LIST-25 l''adresse consentie de la file suit la réservation');
+
+-- AUCUNE SUR-RÉSERVATION. Une place, une réservation vivante, et la jauge
+-- publique le dit toujours.
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000320'
+       and status in ('confirmed', 'checked_in')$$,
+  array[1::bigint],
+  'LIST-26 la conversion a CONSOMMÉ la place, elle n''en a pas créé une seconde');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000320', repeat('12', 32)))->>'state',
+  'full',
+  'LIST-27 et le créneau reste complet après la conversion');
+
+-- IDEMPOTENCE DE LA CONVERSION : rejouée, elle rend la MÊME réservation.
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv2_j1),
+    repeat('cd', 32)))->>'reservation_id',
+  (select j->>'reservation_id' from rv2_c1),
+  'LIST-28 rejouer la conversion rend la même réservation, pas une seconde');
+
+-- INDISTINGUABILITÉ : l'entrée d'un autre, ou d'une autre organisation.
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv2_j2),
+    repeat('cd', 32)))->>'state',
+  'unknown',
+  'LIST-29 convertir l''entrée d''un AUTRE joueur rend `unknown`');
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000b',
+    (select (j->>'entry_id')::uuid from rv2_j2),
+    repeat('ef', 32)))->>'state',
+  'unknown',
+  'LIST-30 depuis une AUTRE organisation, exactement la même réponse');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 16. DEUX ANNULATIONS, DEUX OFFRES — SÉQUENTIELLES, JAMAIS SIMULTANÉES SUR
+--     LA MÊME PLACE
+--
+-- L'invariant vérifié n'est pas « une seule offre par créneau » — ce serait
+-- faux sur un créneau dont deux places se libèrent — mais celui qui compte :
+--     réservations vivantes + offres tenues <= capacité.
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv2_s21a as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000321', repeat('34', 32)
+) as j;
+create temporary table rv2_s21b as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000321', repeat('56', 32)
+) as j;
+select is((select j->>'state' from rv2_s21b), 'reserved',
+  'SEQ-1 les deux places de S21 sont prises');
+
+create temporary table rv2_q1 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000321', repeat('78', 32)) as j;
+create temporary table rv2_q2 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000321', repeat('90', 32)) as j;
+create temporary table rv2_q3 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000321', repeat('a1', 32)) as j;
+select is((select (j->>'position')::int from rv2_q3), 3,
+  'SEQ-2 trois personnes attendent, aux rangs 1, 2 et 3');
+
+-- PREMIÈRE ANNULATION — par le chemin JOUEUR.
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv2_s21a), repeat('34', 32)))->>'state',
+  'cancelled',
+  'SEQ-3 la première place est rendue (chemin joueur)');
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where slot_id = '4e5e0000-0000-4000-8000-000000000321'
+       and status = 'offered'$$,
+  array[1::bigint],
+  'SEQ-4 UNE offre, pas trois : une place libérée ne se propose qu''une fois');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_q1)),
+  'offered',
+  'SEQ-5 et c''est le rang 1 qui l''a');
+
+-- SECONDE ANNULATION — par le chemin STAFF, cette fois : les deux chemins
+-- doivent faire avancer la file, sinon l'annulation par téléphone gèlerait la
+-- place que le commerçant croit avoir rendue.
+select is(
+  (public.cancel_reservation_staff(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'reservation_id')::uuid from rv2_s21b),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'cancelled',
+  'SEQ-6 la seconde place est rendue (chemin commerçant)');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_q2)),
+  'offered',
+  'SEQ-7 le rang 2 reçoit la seconde place — séquentiellement');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_q3)),
+  'waiting',
+  'SEQ-8 le rang 3 attend toujours : il n''y avait que deux places');
+
+-- L'INVARIANT, ÉNONCÉ TEL QUEL.
+select ok(
+  (select (select count(*) from public.reservations r
+            where r.slot_id = s.id and r.status in ('confirmed', 'checked_in'))
+        + (select count(*) from public.reservation_waitlist_entries w
+            where w.slot_id = s.id and w.status = 'offered'
+              and w.offer_expires_at > now())
+        <= s.capacity
+     from public.reservation_slots s
+    where s.id = '4e5e0000-0000-4000-8000-000000000321'),
+  'SEQ-9 réservations vivantes + offres tenues <= capacité');
+
+-- LA FENÊTRE RÉGLÉE PAR CRÉNEAU SERT RÉELLEMENT : 15 minutes ici, pas 120.
+select ok(
+  (select w.offer_expires_at between now() + interval '14 minutes'
+                                and now() + interval '16 minutes'
+     from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_q1)),
+  'SEQ-10 `waitlist_offer_minutes` du créneau borne l''offre (15 min, pas 120)');
+
+-- LES DEUX PLACES SONT TENUES : la jauge publique refuse.
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000321', repeat('b2', 32)))->>'state',
+  'full',
+  'SEQ-11 les deux places tenues rendent le créneau complet pour le public');
+
+-- QUITTER LA FILE EN TENANT UNE OFFRE LA REND IMMÉDIATEMENT AU SUIVANT.
+select is(
+  (public.waitlist_leave(
+    (select (j->>'entry_id')::uuid from rv2_q2), repeat('90', 32)))->>'state',
+  'left',
+  'SEQ-12 on quitte la file volontairement');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_q3)),
+  'offered',
+  'SEQ-13 refuser une place la rend au suivant sans attendre son échéance');
+select is(
+  (public.waitlist_leave(
+    (select (j->>'entry_id')::uuid from rv2_q2), repeat('90', 32)))->>'state',
+  'left',
+  'SEQ-14 quitter deux fois rend le même état, sans rien réécrire');
+select is(
+  (public.waitlist_leave(
+    (select (j->>'entry_id')::uuid from rv2_q2), repeat('b2', 32)))->>'state',
+  'unknown',
+  'SEQ-15 l''entrée d''un autre joueur est `unknown`, jamais quittable');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 17. L'EXPIRATION REND LA PLACE AU SUIVANT — SANS INTERVENTION, UNE SEULE FOIS
+--
+-- Les échéances sont ramenées dans le passé par écriture directe : c'est la
+-- seule façon, dans une transaction unique, de faire vieillir une offre. Rien
+-- d'autre n'est simulé — le balayage joué est la fonction réelle, et le refus
+-- paresseux celui de la RPC réelle.
+-- ════════════════════════════════════════════════════════════
+
+-- ── S28 : LA PLACE D'UNE OFFRE ÉCHUE EST REPRENABLE SANS BALAYAGE ──
+create temporary table rv2_e1 as
+select public.reserve_slot('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000328', repeat('c3', 32)) as j;
+create temporary table rv2_e2 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000328', repeat('d4', 32)) as j;
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv2_e1), repeat('c3', 32)))->>'state',
+  'cancelled',
+  'EXP-1 la place de S28 est rendue, donc proposée');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_e2)),
+  'offered',
+  'EXP-2 le seul inscrit la reçoit');
+
+update public.reservation_waitlist_entries
+   set offer_expires_at = now() - interval '1 minute'
+ where id = (select (j->>'entry_id')::uuid from rv2_e2);
+
+-- LE REFUS PARESSEUX, AVANT TOUT BALAYAGE : la garantie ne dépend pas de la
+-- ponctualité d'un cron.
+select is(
+  (public.claim_waitlist_offer(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'entry_id')::uuid from rv2_e2), repeat('d4', 32)))->>'state',
+  'expired',
+  'EXP-3 une offre échue est refusée AVANT même que le balayage ne passe');
+-- ET LA PLACE N'EST DÉJÀ PLUS TENUE POUR LE COMPTAGE : un balayage en retard ne
+-- gèle aucune place.
+select is(
+  (public.reserve_slot('4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000328', repeat('e5', 32)))->>'state',
+  'reserved',
+  'EXP-4 la place d''une offre échue est immédiatement reprenable par le public');
+
+-- ── S29 : LE BALAYAGE DONNE LA PLACE AU SUIVANT, UNE SEULE FOIS ──
+create temporary table rv2_f1 as
+select public.reserve_slot('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000329', repeat('c3', 32)) as j;
+create temporary table rv2_f2 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000329', repeat('d4', 32)) as j;
+create temporary table rv2_f3 as
+select public.waitlist_join('4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000329', repeat('e5', 32)) as j;
+select is(
+  (public.cancel_reservation(
+    (select (j->>'reservation_id')::uuid from rv2_f1), repeat('c3', 32)))->>'state',
+  'cancelled',
+  'EXP-5 la place de S29 est rendue au rang 1');
+
+update public.reservation_waitlist_entries
+   set offer_expires_at = now() - interval '1 minute'
+ where id = (select (j->>'entry_id')::uuid from rv2_f2);
+
+create temporary table rv2_sweep1 as
+select * from public.expire_waitlist_offers();
+select ok((select offers_expired >= 1 from rv2_sweep1),
+  'EXP-6 le balayage marque les offres échues');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_f2)),
+  'expired',
+  'EXP-7 le rang 1 qui n''a pas répondu est `expired`');
+select ok(
+  (select w.expired_at is not null from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_f2)),
+  'EXP-8 l''expiration est datée, donc auditable');
+-- LE CŒUR DU CRITÈRE : SANS INTERVENTION, la place passe au suivant.
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_f3)),
+  'offered',
+  'EXP-9 et le rang 2 la reçoit — sans qu''aucun humain n''ait agi');
+
+-- LE REJEU NE FAIT RIEN. C'est l'assertion « exactement une fois ».
+create temporary table rv2_sweep2 as
+select * from public.expire_waitlist_offers();
+select results_eq(
+  $$select slots_processed, offers_expired, offers_created from rv2_sweep2$$,
+  $$values (0, 0, 0)$$,
+  'EXP-10 rejouer le balayage immédiatement ne fait RIEN : exactement une fois');
+select ok(
+  (select w.status = 'offered' from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_f3)),
+  'EXP-11 le rejeu n''a pas repris au rang 2 la place qu''il venait de recevoir');
+
+-- ET L'ÉTAT TERMINAL NE SE QUITTE PAS, même par une écriture directe.
+select throws_ok(
+  $$update public.reservation_waitlist_entries
+       set status = 'waiting', expired_at = null
+     where status = 'expired'
+       and slot_id = '4e5e0000-0000-4000-8000-000000000329'$$,
+  '23514', null,
+  'EXP-12 une entrée expirée ne se rouvre pas, même par écriture directe');
+select throws_ok(
+  $$update public.reservation_waitlist_entries
+       set status = 'cancelled', converted_at = null,
+           converted_reservation_id = null, cancelled_at = now()
+     where status = 'converted'
+       and slot_id = '4e5e0000-0000-4000-8000-000000000320'$$,
+  '23514', null,
+  'EXP-13 ni une entrée convertie');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 18. L'INVITATION PRIVÉE
+-- ════════════════════════════════════════════════════════════
+
+-- I1 : sur le créneau FERMÉ S22, trois usages. Le cas d'usage même de
+-- l'invitation — ouvrir quelques places sans rouvrir les réservations.
+create temporary table rv2_i1 as
+select public.create_reservation_invitation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000101',
+  'Habitués du samedi',
+  repeat('1a', 32),
+  null,
+  '4e5e0000-0000-4000-8000-000000000322',
+  3,
+  null
+) as j;
+select is((select j->>'state' from rv2_i1), 'created',
+  'INV-1 le propriétaire crée une invitation sur un créneau fermé');
+
+-- LE JETON EST STOCKÉ HACHÉ, ET RIEN D'AUTRE N'EST STOCKÉ.
+select ok(
+  (select i.token_hash ~ '^[0-9a-f]{64}$'
+     from public.reservation_invitations i
+    where i.id = (select (j->>'invitation_id')::uuid from rv2_i1)),
+  'INV-2 le jeton n''existe en base que sous forme d''empreinte');
+
+-- LE CRÉNEAU FERMÉ S'OUVRE À L'INVITÉ, ET SEULEMENT À LUI : la réservation
+-- publique sur ce même créneau reste refusée.
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000322', repeat('ab', 32)))->>'state',
+  'unavailable',
+  'INV-3 le public ne réserve pas sur un créneau fermé');
+
+create temporary table rv2_r1 as
+select public.redeem_invitation(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  repeat('1a', 32),
+  repeat('ab', 32)
+) as j;
+select is((select j->>'state' from rv2_r1), 'reserved',
+  'INV-4 l''invité, lui, obtient sa place sur ce créneau fermé');
+select results_eq(
+  $$select used_count from public.reservation_invitations
+     where token_hash = repeat('1a', 32)$$,
+  array[1],
+  'INV-5 un usage est consommé');
+
+-- IDEMPOTENCE AVANT INCRÉMENT : deux clics ne brûlent pas deux places.
+select is(
+  (public.redeem_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    repeat('1a', 32), repeat('ab', 32)))->>'state',
+  'already_reserved',
+  'INV-6 recliquer rend la même place');
+select results_eq(
+  $$select used_count from public.reservation_invitations
+     where token_hash = repeat('1a', 32)$$,
+  array[1],
+  'INV-7 et ne consomme PAS un second usage');
+
+select is(
+  (public.redeem_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    repeat('1a', 32), repeat('cd', 32)))->>'state',
+  'reserved',
+  'INV-8 un second invité prend la seconde place');
+
+-- LA CAPACITÉ RESTE LA CAPACITÉ : deux places, deux invités, le troisième est
+-- refusé bien que l'invitation autorise encore un usage.
+select is(
+  (public.redeem_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    repeat('1a', 32), repeat('ef', 32)))->>'state',
+  'full',
+  'INV-9 une invitation ne sur-réserve pas : la capacité prime sur les usages');
+
+-- ── FERMER LES INSCRIPTIONS N'ANNULE AUCUNE PLACE CONFIRMÉE ──
+select is(
+  (public.close_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'invitation_id')::uuid from rv2_i1),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'closed',
+  'INV-10 l''organisateur ferme les inscriptions');
+select results_eq(
+  $$select count(*) from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000322'
+       and status = 'confirmed'$$,
+  array[2::bigint],
+  'INV-11 les DEUX places déjà confirmées sont intactes — critère RES-2');
+select is(
+  (public.redeem_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    repeat('1a', 32), repeat('12', 32)))->>'state',
+  'unavailable',
+  'INV-12 mais le lien n''ouvre plus rien');
+
+-- ── RÉVOQUÉE, ÉPUISÉE, VOISINE, INCONNUE : LA MÊME RÉPONSE ──
+select is(
+  (public.revoke_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select (j->>'invitation_id')::uuid from rv2_i1),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'revoked',
+  'INV-13 l''invitation est révocable');
+
+-- I2 : un seul usage, sur un créneau ouvert à trois places. Elle s'épuise avant
+-- que la capacité ne morde — c'est bien l'usage, et non la place, qui manque.
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Place unique', repeat('2b', 32), null,
+    '4e5e0000-0000-4000-8000-000000000324', 1, null))->>'state',
+  'created',
+  'INV-14 une invitation à usage unique est créée');
+select is(
+  (public.redeem_invitation('4e5e0000-0000-4000-8000-00000000000a',
+    repeat('2b', 32), repeat('34', 32)))->>'state',
+  'reserved',
+  'INV-15 son unique usage est consommé');
+
+-- I3 : chez la VOISINE, sur SON créneau.
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000b',
+    '4e5e0000-0000-4000-8000-000000000103',
+    'Invitation voisine', repeat('3c', 32), null,
+    '4e5e0000-0000-4000-8000-000000000327', 5, null))->>'state',
+  'created',
+  'INV-16 la voisine crée la sienne');
+
+-- LES QUATRE REFUS SONT LE MÊME MOT. C'est l'assertion d'indistinguabilité.
+select results_eq(
+  $$select distinct
+      (public.redeem_invitation('4e5e0000-0000-4000-8000-00000000000a',
+         t, repeat('56', 32)))->>'state'
+      from (values
+        (repeat('1a', 32)),   -- révoquée
+        (repeat('2b', 32)),   -- épuisée
+        (repeat('3c', 32)),   -- celle de la VOISINE
+        (repeat('4d', 32))    -- jamais émise
+      ) as v(t)$$,
+  array['unavailable'],
+  'INV-17 révoquée, épuisée, voisine et inconnue rendent EXACTEMENT le même mot');
+
+-- LE BROUILLON RESTE FERMÉ, LUI : un créneau non configuré n'est pas un créneau
+-- fermé au public.
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Sur brouillon', repeat('5e', 32), null,
+    '4e5e0000-0000-4000-8000-000000000323', 5, null))->>'state',
+  'created',
+  'INV-18 rien n''interdit de créer une invitation sur un brouillon');
+select is(
+  (public.redeem_invitation('4e5e0000-0000-4000-8000-00000000000a',
+    repeat('5e', 32), repeat('78', 32)))->>'state',
+  'unavailable',
+  'INV-19 mais elle n''ouvre rien tant que le créneau est en brouillon');
+
+-- ── L'INVITATION ADOSSÉE À UNE ACTIVITÉ ──
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Toute la dégustation', repeat('6f', 32),
+    '4e5e0000-0000-4000-8000-000000000201', null, 5, null))->>'state',
+  'created',
+  'INV-20 une invitation peut viser une ACTIVITÉ entière');
+select is(
+  (public.redeem_invitation('4e5e0000-0000-4000-8000-00000000000a',
+    repeat('6f', 32), repeat('90', 32),
+    '4e5e0000-0000-4000-8000-000000000324'))->>'state',
+  'reserved',
+  'INV-21 l''invité choisit alors son créneau dans cette activité');
+select is(
+  (public.redeem_invitation('4e5e0000-0000-4000-8000-00000000000a',
+    repeat('6f', 32), repeat('a1', 32),
+    '4e5e0000-0000-4000-8000-000000000326'))->>'state',
+  'unavailable',
+  'INV-22 mais pas un créneau d''une AUTRE activité, même chez lui');
+
+-- ── LES REFUS DE CRÉATION ──
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Deux cibles', repeat('7a', 32),
+    '4e5e0000-0000-4000-8000-000000000201',
+    '4e5e0000-0000-4000-8000-000000000324', 5, null))->>'state',
+  'invalid_target',
+  'INV-23 deux cibles à la fois sont refusées');
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Aucune cible', repeat('7a', 32), null, null, 5, null))->>'state',
+  'invalid_target',
+  'INV-24 aucune cible non plus');
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Cible de la voisine', repeat('7a', 32), null,
+    '4e5e0000-0000-4000-8000-000000000327', 5, null))->>'state',
+  'invalid_target',
+  'INV-25 ni le créneau d''une AUTRE organisation');
+select is(
+  (public.create_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000101',
+    'Déjà morte', repeat('7a', 32), null,
+    '4e5e0000-0000-4000-8000-000000000324', 5,
+    now() - interval '1 hour'))->>'state',
+  'invalid_expiry',
+  'INV-26 une échéance déjà passée est refusée à la création');
+
+-- LE CAISSIER N'OUVRE PAS DE PLACES : c'est une décision commerciale.
+select throws_ok(
+  $$select public.create_reservation_invitation(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000102',
+      'Par le caissier', repeat('8b', 32), null,
+      '4e5e0000-0000-4000-8000-000000000324', 5, null)$$,
+  '42501', 'not authorized',
+  'INV-27 le caissier ne crée pas d''invitation');
+select throws_ok(
+  $$select public.revoke_reservation_invitation(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000999',
+      '4e5e0000-0000-4000-8000-000000000104')$$,
+  '42501', 'not authorized',
+  'INV-28 ni un utilisateur qui n''est membre de rien');
+
+-- INDISTINGUABILITÉ CÔTÉ GESTION AUSSI.
+select is(
+  (public.revoke_reservation_invitation(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    (select i.id from public.reservation_invitations i
+      where i.token_hash = repeat('3c', 32)),
+    '4e5e0000-0000-4000-8000-000000000101'))->>'state',
+  'unknown',
+  'INV-29 révoquer l''invitation de la VOISINE rend `unknown`');
+
+-- L'AUDIT EXISTE, ET IL NE COMPTE QUE LES GESTES RÉELS.
+select ok(
+  (select count(*) >= 1 from public.audit_logs
+    where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+      and action = 'reservation.invitation_redeem'),
+  'INV-30 chaque rejointe réelle laisse une ligne d''audit');
+select results_eq(
+  $$select count(*) from public.audit_logs
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'
+       and action = 'reservation.invitation_close'$$,
+  array[1::bigint],
+  'INV-31 fermer deux fois n''écrirait qu''une ligne : ici un seul geste réel');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 19. FERMER UN CRÉNEAU N'ANNULE AUCUNE RÉSERVATION CONFIRMÉE
+-- ════════════════════════════════════════════════════════════
+
+create temporary table rv2_s25 as
+select public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000325', repeat('b2', 32)
+) as j;
+select is((select j->>'state' from rv2_s25), 'reserved',
+  'CLOSE-1 une place est prise sur S25');
+
+update public.reservation_slots
+   set status = 'closed'
+ where id = '4e5e0000-0000-4000-8000-000000000325';
+
+select is(
+  (select r.status from public.reservations r
+    where r.id = (select (j->>'reservation_id')::uuid from rv2_s25)),
+  'confirmed',
+  'CLOSE-2 fermer le créneau ne touche PAS la réservation déjà confirmée');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000325', repeat('cd', 32)))->>'state',
+  'unavailable',
+  'CLOSE-3 il ferme en revanche la porte aux suivants');
+
+-- ET IL TARIT LES OFFRES SUIVANTES SANS REPRENDRE CELLE QUI EST EN COURS :
+-- annuler sur un créneau fermé ne propose plus rien.
+select is(
+  (public.waitlist_join(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000325', repeat('ef', 32)))->>'state',
+  'unavailable',
+  'CLOSE-4 et la file ne s''ouvre pas non plus sur un créneau fermé');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 20. L'ÉTAT PUBLIC DU JOUEUR PORTE SA FILE
+-- ════════════════════════════════════════════════════════════
+
+-- Le rang 3 de S21 tient une offre depuis SEQ-13.
+create temporary table rv2_pub as
+select public.reservation_public_state(
+  '4e5e0000-0000-4000-8000-00000000000a', repeat('a1', 32)
+) as j;
+select is((select j->>'state' from rv2_pub), 'ok',
+  'PUB-1 l''état public répond');
+select is(
+  (select pg_catalog.jsonb_array_length(j->'waitlist') from rv2_pub),
+  1,
+  'PUB-2 il porte l''entrée de file vivante du joueur');
+select is(
+  (select j->'waitlist'->0->>'status' from rv2_pub),
+  'offered',
+  'PUB-3 avec son statut');
+select is(
+  (select (j->'waitlist'->0->>'offer_live')::boolean from rv2_pub),
+  true,
+  'PUB-4 et `offer_live` TRANCHÉ PAR LE SERVEUR, pas par l''horloge du client');
+-- RANG 2, ET C'EST JUSTE : S21 porte DEUX entrées vivantes — le rang 1, qui
+-- tient toujours son offre, et celui-ci, entré après. Le rang compte les
+-- inscrits vivants qui précèdent, il ne dit pas « à qui le tour » ; c'est
+-- `offer_live` qui dit à ce joueur que la place est à lui. Attendre 1 ici aurait
+-- exigé que le rang se renumérote dès qu'une offre est faite — soit exactement
+-- la colonne mouvante que ce module refuse d'avoir.
+select is(
+  (select (j->'waitlist'->0->>'position')::int from rv2_pub),
+  2,
+  'PUB-5 son rang est recalculé à la lecture, sur les inscrits vivants');
+select ok(
+  (select not ((j->'waitlist'->0) ? 'email')
+          and not ((j->'waitlist'->0) ? 'player_key_hash') from rv2_pub),
+  'PUB-6 ni l''adresse ni l''empreinte ne sortent de la file');
+
+-- L'entrée CONVERTIE n'est plus dans la file : elle est devenue une réservation.
+select is(
+  (select pg_catalog.jsonb_array_length(
+     (public.reservation_public_state(
+       '4e5e0000-0000-4000-8000-00000000000a', repeat('cd', 32)))->'waitlist')),
+  0,
+  'PUB-7 une entrée convertie quitte la file — elle est dans les réservations');
+
+-- BORNÉE À L'ORGANISATION, comme les réservations : la file d'un commerce
+-- n'apparaît pas sur la page d'un autre.
+select is(
+  (select pg_catalog.jsonb_array_length(
+     (public.reservation_public_state(
+       '4e5e0000-0000-4000-8000-00000000000b', repeat('a1', 32)))->'waitlist')),
+  0,
+  'PUB-8 la file est bornée à l''organisation interrogée');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 21. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA PLACE
+-- ════════════════════════════════════════════════════════════
+
+-- L'entrée convertie de S20 porte une adresse consentie. On la vieillit au-delà
+-- de la rétention de l'organisation (6 mois), puis on purge.
+update public.reservation_waitlist_entries
+   set created_at = now() - interval '400 days'
+ where id = (select (j->>'entry_id')::uuid from rv2_j1);
+
+select lives_ok(
+  $$select * from public.purge_expired_personal_data()$$,
+  'PURGE-1 la purge passe sur les entrées de file');
+select ok(
+  (select w.email is null and w.consent_transactional_at is null
+          and w.player_key_hash = 'purge:' || w.id::text
+     from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'PURGE-2 l''adresse, son consentement et le lien à l''appareil s''effacent');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv2_j1)),
+  'converted',
+  'PURGE-3 mais l''issue de la place reste : elle raconte le remplissage');
+-- La ligne purgée n'est plus atteignable par les RPC joueur : son empreinte
+-- n'est plus une empreinte.
+select is(
+  (public.waitlist_leave(
+    (select (j->>'entry_id')::uuid from rv2_j1), repeat('cd', 32)))->>'state',
+  'unknown',
+  'PURGE-4 et une entrée purgée ne se rouvre pas depuis l''ancienne clé');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 22. ACL ET RLS DES DEUX TABLES NEUVES
+-- ════════════════════════════════════════════════════════════
+
+select ok(has_function_privilege('service_role',
+  'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'ACL2-1 service_role exécute waitlist_join');
+select ok(not has_function_privilege('authenticated',
+  'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'ACL2-2 authenticated ne l''exécute pas');
+select ok(not has_function_privilege('anon',
+  'public.waitlist_join(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'ACL2-3 anon non plus');
+select ok(not has_function_privilege('authenticated',
+  'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'),
+  'ACL2-4 claim_waitlist_offer est fermée à authenticated');
+select ok(not has_function_privilege('anon',
+  'public.claim_waitlist_offer(uuid,uuid,text)', 'EXECUTE'),
+  'ACL2-5 et à anon');
+select ok(not has_function_privilege('authenticated',
+  'public.waitlist_leave(uuid,text)', 'EXECUTE'),
+  'ACL2-6 waitlist_leave est fermée à authenticated');
+select ok(not has_function_privilege('authenticated',
+  'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'),
+  'ACL2-7 redeem_invitation est fermée à authenticated');
+select ok(not has_function_privilege('anon',
+  'public.redeem_invitation(uuid,text,text,uuid,text,boolean)', 'EXECUTE'),
+  'ACL2-8 et à anon');
+select ok(not has_function_privilege('authenticated',
+  'public.create_reservation_invitation(uuid,text,text,text,uuid,uuid,integer,timestamptz)',
+  'EXECUTE'),
+  'ACL2-9 create_reservation_invitation est fermée à authenticated');
+select ok(not has_function_privilege('authenticated',
+  'public.expire_waitlist_offers()', 'EXECUTE'),
+  'ACL2-10 le balayage est fermé à authenticated');
+select ok(not has_function_privilege('anon',
+  'public.expire_waitlist_offers()', 'EXECUTE'),
+  'ACL2-11 et à anon');
+
+-- LE HELPER INTERNE N'EST GRANTÉ À PERSONNE — pas même à service_role. C'est
+-- l'ACL, et non un contrôle interne, qui empêche de faire avancer une file sans
+-- détenir le verrou du créneau.
+select ok(not has_function_privilege('service_role',
+  'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'),
+  'ACL2-12 reservation_offer_next n''est exécutable par AUCUN rôle applicatif');
+select ok(not has_function_privilege('authenticated',
+  'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'),
+  'ACL2-13 ni par une session marchande');
+select ok(not has_function_privilege('anon',
+  'public.reservation_offer_next(uuid,uuid)', 'EXECUTE'),
+  'ACL2-14 ni par anon');
+
+-- La garde `auth.role()` mord aussi, pas seulement le grant.
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+select throws_ok(
+  $$select public.waitlist_join(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000320', repeat('ab', 32))$$,
+  '42501', 'not authorized',
+  'ACL2-15 la garde auth.role() de waitlist_join mord');
+select throws_ok(
+  $$select public.redeem_invitation(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      repeat('1a', 32), repeat('ab', 32))$$,
+  '42501', 'not authorized',
+  'ACL2-16 et celle de redeem_invitation, avant toute lecture de jeton');
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- Les deux tables ferment `anon` au niveau TABLE, pas seulement par RLS.
+select ok(not has_table_privilege('anon',
+  'public.reservation_waitlist_entries', 'SELECT'),
+  'ACL2-17 anon n''a aucun privilège de table sur la liste prioritaire');
+select ok(not has_table_privilege('anon',
+  'public.reservation_invitations', 'SELECT'),
+  'ACL2-18 ni sur les invitations');
+-- AUCUNE ÉCRITURE DIRECTE : l'ordre de la file et le compteur d'usages sont
+-- serveur-autoritaires.
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_waitlist_entries', 'INSERT'),
+  'ACL2-19 le commerçant ne se place pas dans une file');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_waitlist_entries', 'UPDATE'),
+  'ACL2-20 ni ne réordonne une file par écriture directe');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_waitlist_entries', 'DELETE'),
+  'ACL2-21 ni n''en efface une entrée');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_invitations', 'INSERT'),
+  'ACL2-22 aucune invitation forgée directement');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_invitations', 'UPDATE'),
+  'ACL2-23 ni de compteur d''usages remis à zéro à la main');
+select ok(not has_table_privilege('authenticated',
+  'public.reservation_invitations', 'DELETE'),
+  'ACL2-24 ni d''invitation effacée avec sa trace');
+-- L'ADRESSE et L'EMPREINTE DU JETON sont hors des grants de colonnes.
+select ok(not has_column_privilege('authenticated',
+  'public.reservation_waitlist_entries', 'email', 'SELECT'),
+  'ACL2-25 le commerçant ne lit pas l''adresse d''une entrée de file');
+select ok(has_column_privilege('authenticated',
+  'public.reservation_waitlist_entries', 'status', 'SELECT'),
+  'ACL2-26 il lit en revanche le statut : c''est son écran');
+select ok(not has_column_privilege('authenticated',
+  'public.reservation_invitations', 'token_hash', 'SELECT'),
+  'ACL2-27 l''empreinte du jeton ne sort d''aucun écran marchand');
+select ok(has_column_privilege('authenticated',
+  'public.reservation_invitations', 'used_count', 'SELECT'),
+  'ACL2-28 il voit en revanche combien de places ont été prises');
+
+-- ── RLS : le voisin ne voit rien, le caissier voit la file ───
+select set_config('request.jwt.claims', '', true);
+set local role authenticated;
+
+set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000103';
+select results_eq(
+  $$select count(*) from public.reservation_waitlist_entries
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  array[0::bigint],
+  'RLS2-1 le propriétaire voisin ne voit aucune entrée de file de A');
+select results_eq(
+  $$select count(*) from public.reservation_invitations
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  array[0::bigint],
+  'RLS2-2 ni aucune de ses invitations');
+
+set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000102';
+select ok(
+  (select count(*) > 0 from public.reservation_waitlist_entries
+    where organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
+  'RLS2-3 le CAISSIER voit la file de son organisation (écran de comptoir)');
+select results_eq(
+  $$select count(*) from public.reservation_invitations
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  array[0::bigint],
+  'RLS2-4 mais pas les invitations, réservées aux éditeurs');
+select throws_ok(
+  $$select email from public.reservation_waitlist_entries
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  '42501', null,
+  'RLS2-5 et il ne lit l''adresse d''aucune entrée');
+
+set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000101';
+select ok(
+  (select count(*) > 0 from public.reservation_invitations
+    where organization_id = '4e5e0000-0000-4000-8000-00000000000a'),
+  'RLS2-6 le propriétaire lit ses invitations');
+select throws_ok(
+  $$select token_hash from public.reservation_invitations
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  '42501', null,
+  'RLS2-7 mais jamais l''empreinte de leurs jetons');
+select throws_ok(
+  $$update public.reservation_invitations set used_count = 0
+     where organization_id = '4e5e0000-0000-4000-8000-00000000000a'$$,
+  '42501', null,
+  'RLS2-8 ni ne remet un compteur d''usages à zéro');
+
+set local role anon;
+select throws_ok(
+  $$select count(*) from public.reservation_waitlist_entries$$,
+  '42501', null, 'RLS2-9 anon ne lit aucune entrée de file');
+select throws_ok(
+  $$select count(*) from public.reservation_invitations$$,
+  '42501', null, 'RLS2-10 ni aucune invitation');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+
+-- ════════════════════════════════════════════════════════════
+-- 23. LE BALAYAGE EST SUPERVISÉ — le défaut relevé au wagon 7 ne se répète pas
+-- ════════════════════════════════════════════════════════════
+
+-- `enabled = false` À L'INSCRIPTION, et c'est le RÉGLAGE ATTENDU, pas un
+-- oubli : brancher la supervision est un UPDATE d'exploitation, jamais une
+-- migration (`ops_worker_definitions` le dit, `ops_monitoring.test.sql` le
+-- garde). Ce que ce lot devait fournir, et qui manquait au pg_cron de
+-- `jackpot-draws`, c'est le BATTEMENT DE CŒUR — OPS-2 et OPS-3 ci-dessous.
+select results_eq(
+  $$select enabled, expected_period_seconds from public.ops_worker_definitions
+     where worker = 'reservation-waitlist'$$,
+  $$values (false, 300)$$,
+  'OPS-1 le balayage est inscrit AU REGISTRE, prêt à être supervisé par un UPDATE');
+select ok(
+  (select count(*) >= 2 from public.ops_worker_runs
+    where worker = 'reservation-waitlist'),
+  'OPS-2 chacun de ses passages a écrit son battement de cœur');
+select results_eq(
+  $$select count(*) from public.ops_worker_runs
+     where worker = 'reservation-waitlist' and status <> 'succeeded'$$,
+  array[0::bigint],
+  'OPS-3 et les deux passages de ce fichier se sont clos en succès');
+select ok(
+  (select count(*) = 1 from cron.job
+    where jobname = 'lastchance-reservation-waitlist-expire'),
+  'OPS-4 la planification pg_cron existe, et une seule fois');
 
 select * from finish();
 rollback;
