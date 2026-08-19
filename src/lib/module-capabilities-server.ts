@@ -11,7 +11,11 @@ import {
   etatOctroiModule,
   octroiRessourceVivant,
 } from "@/lib/module-grants-loader";
-import { RESSOURCE_MODULE, publicationBooleenne } from "@/lib/module-resources";
+import {
+  RESSOURCE_MODULE,
+  estPubliable,
+  publicationBooleenne,
+} from "@/lib/module-resources";
 import { droitEffectifModule, type GrantableModule } from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
@@ -140,6 +144,12 @@ async function compterBrouillons(
   module: GrantableModule,
   organizationId: string,
 ): Promise<number> {
+  // `vitrine` n'a pas de ressource publiable (lot L2 : le droit serveur seul).
+  // ZÉRO et non `BROUILLONS_NON_PAYES_MAX` : il n'y a aucun brouillon parce
+  // qu'il n'y a aucune table, pas parce que la lecture a échoué — refermer la
+  // préparation sur une absence de table serait un refus sans cause.
+  if (!estPubliable(module)) return 0;
+
   const { table, valeursPubliees } = RESSOURCE_MODULE[module];
   // Lue en `string` DÉLIBÉRÉMENT. `table` est variable : le client typé réduit
   // les colonnes connues à l'intersection des neuf tables, où ni `status` ni

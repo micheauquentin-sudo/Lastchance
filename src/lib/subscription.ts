@@ -1,7 +1,8 @@
+import { ADDON_OFFERS } from "@/lib/plans";
 import type { Organization, SubscriptionStatus } from "@/types/database";
 
 /**
- * Les neuf modules qui peuvent porter un octroi daté. Miroir du `check` de
+ * Les dix modules qui peuvent porter un octroi daté. Miroir du `check` de
  * `organization_module_grants.module` et du `if not in` de
  * `org_has_module_access` — les trois listes sont comparées entre elles par
  * `supabase/tests/module_grants.test.sql`, dans le catalogue vivant.
@@ -16,15 +17,31 @@ export const GRANTABLE_MODULES = [
   "events",
   "referral",
   "pronostics",
+  /**
+   * Vitrine & Réserver (lot L2, migration 20261001120000). Octroyable comme
+   * les autres — c'est ce qui la rend accordable depuis le back-office, dont
+   * le formulaire dérive sa liste d'ici — mais elle n'a NI ressource
+   * publiable, NI offre au catalogue : les gardes qui énumèrent l'une ou
+   * l'autre l'exemptent nommément plutôt que par un vide.
+   *
+   * Elle porte en revanche sa colonne `addon_vitrine`, comme les huit add-ons
+   * vendus : c'est une OFFRE DISTINCTE, jamais incluse dans l'abonnement
+   * (décision propriétaire du 2026-08-19). « Pas d'offre au catalogue » et
+   * « pas d'addon » sont deux choses, et elles ne se déduisent pas l'une de
+   * l'autre : la première dit qu'on ne peut pas encore l'acheter en ligne, la
+   * seconde dirait que tout abonné l'a déjà.
+   */
+  "vitrine",
 ] as const;
 
 /**
  * Le type est DÉRIVÉ de la liste, et non écrit à côté d'elle : les deux ne
- * peuvent donc pas diverger. Ce module n'importe que des types, il est
- * lisible depuis un composant client — c'est pourquoi la liste vit ici et non
- * dans `validations/admin`, dont la chaîne d'imports atteint
- * `@/lib/supabase/admin` et ferait entrer du code serveur dans le bundle.
- * (Le build l'a refusé, ce n'est pas une précaution théorique.)
+ * peuvent donc pas diverger. Ce module n'importe que des types et le catalogue
+ * PUR `@/lib/plans` (aucun `server-only`, aucun accès env), il est lisible
+ * depuis un composant client — c'est pourquoi la liste vit ici et non dans
+ * `validations/admin`, dont la chaîne d'imports atteint `@/lib/supabase/admin`
+ * et ferait entrer du code serveur dans le bundle. (Le build l'a refusé, ce
+ * n'est pas une précaution théorique.)
  */
 export type GrantableModule = (typeof GRANTABLE_MODULES)[number];
 
@@ -123,19 +140,27 @@ export const TRIAL_EXPIRY_GRACE_DAYS = 3;
  * - essai expiré ou abonnement annulé → non : le commerçant garde son
  *   dashboard et peut créer des QR codes, mais ne peut plus activer de
  *   campagne et ses roues publiques sont désactivées.
+ * - octroi daté vivant d'un module QUI A UN PRIX → oui (voir
+ *   `MODULES_PORTANT_LE_SOCLE`). Un octroi gratuit de bêta, non.
  */
 export function hasActiveAccess(org: OrgAccessFields, now = new Date()): boolean {
-  // BRANCHE NEUVE (lot 2, migration 20260907120000) : un octroi daté vivant —
-  // quel que soit son module — porte le socle commun avec lui. C'est « tout
-  // add-on peut être acheté seul : il embarque les briques communes »
-  // (docs/codex-handoff.md §2). Le OU est le point : l'octroi ne remplace pas
-  // l'abonnement, il devient une seconde source du même droit.
+  // BRANCHE NEUVE (lot 2, migration 20260907120000) : un octroi daté vivant
+  // porte le socle commun avec lui. C'est « tout add-on peut être acheté seul :
+  // il embarque les briques communes » (docs/codex-handoff.md §2). Le OU est le
+  // point : l'octroi ne remplace pas l'abonnement, il devient une seconde source
+  // du même droit.
+  //
+  // BORNÉE AUX MODULES QUI ONT UN PRIX (revue L2, MOYEN-2) : un octroi bêta
+  // gratuit — `vitrine` s'accorde ainsi au back-office — n'achète pas le socle.
+  // Voir `MODULES_PORTANT_LE_SOCLE`, dérivée et non écrite.
   //
   // La PAUSE À L'ÉCHÉANCE opère ici par ABSENCE : passé sa fin, l'octroi ne
   // figure plus dans `live_module_grants`, cette branche cesse de répondre et
   // le socle retombe sur l'abonnement — qui refusera s'il n'y en a pas. Aucune
   // écriture, donc aucune prolongation possible par panne.
-  if ((org.live_module_grants?.length ?? 0) > 0) return true;
+  if ((org.live_module_grants ?? []).some((m) => MODULES_PORTANT_LE_SOCLE.has(m))) {
+    return true;
+  }
   return hasSubscriptionAccess(org, now);
 }
 
@@ -202,9 +227,18 @@ export function pastDueGraceEndsAt(org: OrgAccessFields): Date | null {
  * `wheel` est à `null` et ce n'est pas un oubli : la roue est le produit de
  * base, aucun add-on ne la conditionne, seul l'abonnement compte. Écrire
  * `null` plutôt que d'omettre la clé oblige `satisfies` à le constater.
+ *
+ * `wheel` EST DÉSORMAIS LE SEUL `null`, et c'est le correctif MOYEN-1 de la
+ * revue du lot L2. `vitrine` y a figuré le temps d'une écriture, avec pour
+ * conséquence — assumée dans le texte, et c'est ce qui la rendait dangereuse —
+ * que tout abonné ouvrait Vitrine sans que personne la lui ait vendue. Le
+ * propriétaire a tranché : Vitrine est une OFFRE DISTINCTE, elle porte donc sa
+ * colonne comme les huit add-ons, et `default false` laisse les abonnés
+ * existants exactement où ils étaient.
  */
 export const MODULE_ADDON_COLUMN = {
   wheel: null,
+  vitrine: "addon_vitrine",
   hunts: "addon_hunts",
   calendar: "addon_calendar",
   loyalty: "addon_loyalty",
@@ -214,6 +248,52 @@ export const MODULE_ADDON_COLUMN = {
   referral: "addon_referral",
   pronostics: "addon_pronostics",
 } as const satisfies Record<GrantableModule, keyof Organization | null>;
+
+/**
+ * LES MODULES ADOSSÉS À UNE OFFRE DU CATALOGUE — c'est-à-dire ceux qu'un
+ * commerçant peut PAYER.
+ *
+ * Dérivée d'`ADDON_OFFERS` et jamais écrite à la main : une liste recopiée
+ * cesserait d'être vraie le jour où une offre entre au catalogue ou en sort, et
+ * personne ne le verrait — c'est précisément la classe de dette que
+ * `MODULE_ADDON_COLUMN` a déjà coûtée.
+ *
+ * Les huit noms d'`ADDON_OFFERS.entitlement` sont des `GrantableModule` par
+ * construction : `Exclude<Entitlement, "core">` est inclus dans l'union des
+ * modules octroyables, `tsc` le vérifie sans cast.
+ */
+export const MODULES_AVEC_OFFRE: ReadonlySet<GrantableModule> = new Set(
+  ADDON_OFFERS.map((offre) => offre.entitlement),
+);
+
+/**
+ * LES MODULES DONT UN OCTROI VIVANT PORTE LE SOCLE.
+ *
+ * ── LE DÉFAUT QUE CETTE LISTE FERME (revue sécurité du lot L2, MOYEN-2) ──
+ *
+ * `hasActiveAccess` rendait vrai sur UN OCTROI VIVANT QUELCONQUE. C'était juste
+ * tant que tout octroi était un achat — « tout add-on peut être acheté seul : il
+ * embarque les briques communes » (docs/codex-handoff.md §2). Le lot L2 casse
+ * cette équivalence : `vitrine` s'accorde GRATUITEMENT au back-office pendant la
+ * bêta, et un droit offert ouvrait alors le socle payant tout entier — roues
+ * publiques jouables, campagnes activables — sans qu'un centime ait changé de
+ * main. Un octroi bêta gratuit n'achète pas le socle.
+ *
+ * Deux moitiés, toutes deux DÉRIVÉES :
+ *   * les modules du catalogue (`MODULES_AVEC_OFFRE`) : ils ont un prix ;
+ *   * le produit de base lui-même, reconnu à sa colonne addon nulle. Un octroi
+ *     `wheel` EST le socle, l'exclure le rendrait sans effet. Il est le SEUL
+ *     dans ce cas, et `module-access-parity.test.ts` épingle cette cardinalité
+ *     des deux côtés — SQL compris.
+ *
+ * CE QUE ÇA NE CHANGE PAS : le droit du module lui-même. `droitEffectifModule`
+ * interroge `hasLiveModuleGrant` en premier, sans passer par ici — un octroi
+ * vitrine ouvre Vitrine, il n'ouvre simplement plus la roue et les campagnes.
+ */
+const MODULES_PORTANT_LE_SOCLE: ReadonlySet<GrantableModule> = new Set([
+  ...MODULES_AVEC_OFFRE,
+  ...GRANTABLE_MODULES.filter((module) => MODULE_ADDON_COLUMN[module] === null),
+]);
 
 type ColonneAddon<M extends GrantableModule> = (typeof MODULE_ADDON_COLUMN)[M];
 
@@ -282,7 +362,8 @@ export function droitEffectifModule<M extends GrantableModule>(
   if (!hasSubscriptionAccess(org, now)) return false;
 
   const colonne = MODULE_ADDON_COLUMN[module];
-  // `wheel` : aucun add-on ne la conditionne, l'accès actif suffit.
+  // `wheel` seul : aucun add-on ne conditionne le produit de base, l'offre
+  // suffit — le SQL écrit `then true` sur cette unique ligne.
   if (colonne === null) return true;
   // unsafe-cast-justification: lecture par clé DYNAMIQUE d'une colonne dont le nom vient de MODULE_ADDON_COLUMN, jamais de l'appelant. Trois choses rendent ce cast sûr, et aucune n'est une intention : ChampsModule<M> oblige tsc a exiger cette colonne exacte chez chaque appelant, MODULE_ADDON_COLUMN est `satisfies Record<GrantableModule, keyof Organization | null>` donc le nom est une clé reelle d'Organization, et module-access-parity.test.ts compare la table au `case p_module` LU dans la migration. Un acces statique demanderait neuf branches recopiant la table que la garde derive deja.
   return (org as unknown as Record<string, boolean>)[colonne] === true;

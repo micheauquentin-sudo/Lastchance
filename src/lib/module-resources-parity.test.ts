@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { RESSOURCE_MODULE, publicationBooleenne } from "./module-resources";
+import {
+  RESSOURCE_MODULE,
+  estPubliable,
+  publicationBooleenne,
+  type ModulePubliable,
+} from "./module-resources";
 import { GRANTABLE_MODULES } from "./subscription";
 
 /**
@@ -69,22 +74,44 @@ function declarationsDepuisMigration(source: string): DeclarationTrigger[] {
 
 const DECLARATIONS = declarationsDepuisMigration(readFileSync(MIGRATION, "utf8"));
 
+/**
+ * Les modules qui DOIVENT avoir un trigger. `vitrine` n'en a pas : le lot L2
+ * (migration 20261001120000) livre son droit serveur et rien d'autre — pas de
+ * table, donc rien à publier, donc rien à garder.
+ *
+ * DÉRIVÉE de `GRANTABLE_MODULES` par le prédicat `estPubliable`, jamais
+ * recopiée : le onzième module ajouté demain entre ici tout seul et fait
+ * rougir la comparaison tant que son trigger n'existe pas. C'est l'inverse
+ * d'une liste écrite à la main, qui l'aurait laissé passer en silence.
+ */
+const MODULES_PUBLIABLES: ModulePubliable[] =
+  GRANTABLE_MODULES.filter(estPubliable);
+
 describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
   it("les neuf triggers ont été trouvés", () => {
     // Assertion de NON-VACUITÉ, et elle n'est pas décorative : une regex qui
     // ne mord plus rendrait un tableau vide, et le `it.each` ci-dessous ne
     // jouerait AUCUN cas tout en affichant du vert. « 0 rouge » et « rien
     // mesuré » se ressemblent trop pour qu'on s'en remette au hasard.
-    expect(DECLARATIONS).toHaveLength(GRANTABLE_MODULES.length);
+    expect(DECLARATIONS).toHaveLength(MODULES_PUBLIABLES.length);
+  });
+
+  it("vitrine est le seul module exempté de trigger, et il est nommé", () => {
+    // L'EXEMPTION EST ÉPINGLÉE, pas déduite du vide. Sans cette assertion, un
+    // module dont quelqu'un retirerait le trigger par erreur pourrait être
+    // « réparé » en l'ajoutant à l'exemption, et les deux tests ci-dessus
+    // redeviendraient verts sans que rien ne soit gardé en base.
+    const exemptes = GRANTABLE_MODULES.filter((m) => !estPubliable(m));
+    expect(exemptes).toEqual(["vitrine"]);
   });
 
   it("les modules gardés en base sont exactement ceux que l'application connaît", () => {
     expect(DECLARATIONS.map((d) => d.module).sort()).toEqual(
-      [...GRANTABLE_MODULES].sort(),
+      [...MODULES_PUBLIABLES].sort(),
     );
   });
 
-  it.each(GRANTABLE_MODULES)("%s : table, colonne et valeurs concordent", (nom) => {
+  it.each(MODULES_PUBLIABLES)("%s : table, colonne et valeurs concordent", (nom) => {
     const declaration = DECLARATIONS.find((d) => d.module === nom);
     expect(declaration).toBeDefined();
     const attendu = RESSOURCE_MODULE[nom];
@@ -97,7 +124,7 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     // Épinglé parce que cette singularité change la REQUÊTE de comptage :
     // PostgREST ne filtre pas un booléen comme un texte, et se tromper rend un
     // compte vide au lieu d'une erreur — donc un quota qui ne borne rien.
-    const booleens = GRANTABLE_MODULES.filter(publicationBooleenne);
+    const booleens = MODULES_PUBLIABLES.filter(publicationBooleenne);
     expect(booleens).toEqual(["referral"]);
   });
 });

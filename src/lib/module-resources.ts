@@ -65,6 +65,24 @@ type RessourceModuleTypee = {
   };
 }[TableDuSchema];
 
+/**
+ * Les modules qui ONT une ressource publiable — c'est-à-dire tous sauf
+ * `vitrine`, qui n'a ni table, ni trigger `guard_module_publication` : le lot
+ * L2 ne livre que le droit serveur, il n'y a encore rien à publier.
+ *
+ * EXEMPTION ÉCRITE ET NON DÉDUITE. La faire porter par le type plutôt que par
+ * une clé absente est ce qui la rend visible : le jour où Vitrine gagne sa
+ * table, `tsc` réclame son entrée ci-dessous dès qu'on la retire de
+ * l'`Exclude`, alors qu'une clé simplement manquante n'aurait jamais rien
+ * réclamé à personne.
+ */
+export type ModulePubliable = Exclude<GrantableModule, "vitrine">;
+
+/** Ce module a-t-il une ressource publiable, donc une entrée ci-dessous ? */
+export function estPubliable(module: GrantableModule): module is ModulePubliable {
+  return module !== "vitrine";
+}
+
 export const RESSOURCE_MODULE = {
   wheel: { table: "campaigns", colonnePublication: "status", valeursPubliees: ["active"] },
   hunts: { table: "hunts", colonnePublication: "status", valeursPubliees: ["active"] },
@@ -75,7 +93,7 @@ export const RESSOURCE_MODULE = {
   events: { table: "event_games", colonnePublication: "status", valeursPubliees: ["active"] },
   referral: { table: "referral_programs", colonnePublication: "enabled", valeursPubliees: ["true"] },
   pronostics: { table: "contests", colonnePublication: "status", valeursPubliees: ["active"] },
-} as const satisfies Record<GrantableModule, RessourceModuleTypee>;
+} as const satisfies Record<ModulePubliable, RessourceModuleTypee>;
 
 /**
  * La colonne de publication est-elle un booléen ?
@@ -86,7 +104,7 @@ export const RESSOURCE_MODULE = {
  * ne traite pas les deux de la même façon, et se tromper rend un compte VIDE
  * plutôt qu'une erreur.
  */
-export function publicationBooleenne(module: GrantableModule): boolean {
+export function publicationBooleenne(module: ModulePubliable): boolean {
   // Typé en `readonly string[]` et non par inférence : `as const` fige chaque
   // entrée sur sa valeur littérale, et comparer `"active"` à `"true"` devient
   // alors une erreur de compilation plutôt qu'un test qui rend false. On veut

@@ -1,4 +1,4 @@
-import type { GrantableModule } from "@/lib/subscription";
+import { MODULES_AVEC_OFFRE, type GrantableModule } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 
 /**
@@ -123,6 +123,30 @@ export function calculerFenetres(
     };
   }
 
+  // ── UN PASS DIFFÉRÉ EXIGE UNE OFFRE AU CATALOGUE, SINON IL EST INDÉMARRABLE ──
+  //
+  // « Acheté, pas démarré » suppose un écran où le commerçant appuie sur
+  // départ : c'est la section « Prêt à démarrer » de
+  // src/app/dashboard/settings/modules/page.tsx, qui apparie chaque octroi en
+  // attente à `ADDON_OFFERS.find(…)` et JETTE ceux qui n'y trouvent rien. Un
+  // module hors catalogue — `vitrine` aujourd'hui — y resterait donc invisible
+  // à vie : payé de la main de l'admin, jamais démarrable, et pas même
+  // affiché pour dire pourquoi. Le refus tombe ici, à la saisie, plutôt que de
+  // laisser créer une ligne que personne ne pourra plus faire vivre.
+  //
+  // Ce n'est PAS un refus d'octroyer le module : `recurring` et le pass démarré
+  // tout de suite restent ouverts, et ce sont les deux formes qui ouvrent le
+  // droit sans passer par cet écran.
+  if (!MODULES_AVEC_OFFRE.has(saisie.module)) {
+    const nom = LIBELLE_MODULE[saisie.module] ?? saisie.module;
+    return {
+      ok: false,
+      erreur:
+        `« ${nom} » n'a pas d'offre au catalogue : un pass à activer plus tard `
+        + `y serait indémarrable. Accordez-le en démarrage immédiat, ou en droit récurrent.`,
+    };
+  }
+
   const delai = saisie.delaiActivationJours ?? null;
   if (delai === null || !Number.isFinite(delai) || delai < DUREE_MIN_JOURS || delai > DUREE_MAX_JOURS) {
     return {
@@ -222,6 +246,7 @@ export const LIBELLE_MODULE: Record<string, string> = {
   events: "Soirée en jeu",
   referral: "Bouche-à-oreille",
   pronostics: "Saison de pronostics",
+  vitrine: "Vitrine & Réserver",
 };
 
 /**

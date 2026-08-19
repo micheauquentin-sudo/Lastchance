@@ -50,6 +50,11 @@ const FICHIER_ACTION: Record<GrantableModule, string | null> = {
   pronostics: "pronostics.ts",
   // EXEMPTÉ, avec son motif : pas de création, un réglage booléen par campagne.
   referral: null,
+  // EXEMPTÉ, avec son motif : le lot L2 (migration 20261001120000) livre le
+  // DROIT SERVEUR « vitrine » et rien d'autre — ni table, ni ressource, donc
+  // aucune action de création à border. L'exemption tombera le jour où le lot
+  // qui livre la Vitrine ajoutera son action ; ce test le réclamera alors.
+  vitrine: null,
 };
 
 function source(fichier: string): string {
@@ -65,9 +70,12 @@ describe("couverture du quota de brouillons", () => {
     );
   });
 
-  it("un seul module est exempté, et c'est le parrainage", () => {
+  it("deux modules sont exemptés, et on sait lesquels", () => {
+    // ÉPINGLÉ NOMMÉMENT plutôt que compté : un module retiré du quota par
+    // erreur se « réparerait » sinon en le passant à `null`, et ce test
+    // resterait vert en ayant cessé de garder quoi que ce soit.
     const exemptes = GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] === null);
-    expect(exemptes).toEqual(["referral"]);
+    expect(exemptes).toEqual(["referral", "vitrine"]);
   });
 
   it.each(GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] !== null))(
