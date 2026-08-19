@@ -951,15 +951,33 @@ select ok(
 -- 10. LA PURGE EFFACE LA PERSONNE, PAS L'HISTOIRE DE LA FILE
 -- ════════════════════════════════════════════════════════════
 
+-- DEUX entrées de plus de 400 jours : une SERVIE — l'histoire du remplissage
+-- que le commerçant garde — et une restée « en attente ». La seconde est le cas
+-- que le filtre de la purge vise nommément : une entrée toujours `waiting`
+-- treize mois après n'est pas quelqu'un qui attend, c'est une ligne oubliée, et
+-- sa donnée personnelle a la même échéance que celle des autres. C'est aussi
+-- elle qui permet de prouver que l'ANCIENNE CLÉ CESSE D'OUVRIR — ce qu'une
+-- entrée déjà résolue n'aurait pas pu montrer, n'étant plus lisible de toute
+-- façon.
 insert into public.reservation_queue_entries
   (id, queue_id, organization_id, player_key_hash, display_name,
    email, consent_transactional_at, status, called_at, resolved_at, created_at)
-values (
-  '4f11e000-0000-4000-8000-000000000601',
-  '4f11e000-0000-4000-8000-000000000308', '4f11e000-0000-4000-8000-00000000000a',
-  repeat('7a', 32), 'Ancienne', 'ancienne@purge.test', now() - interval '400 days',
-  'served', now() - interval '400 days', now() - interval '400 days',
-  now() - interval '400 days');
+values
+  ('4f11e000-0000-4000-8000-000000000601',
+   '4f11e000-0000-4000-8000-000000000308', '4f11e000-0000-4000-8000-00000000000a',
+   repeat('7a', 32), 'Ancienne', 'ancienne@purge.test', now() - interval '400 days',
+   'served', now() - interval '400 days', now() - interval '400 days',
+   now() - interval '400 days'),
+  ('4f11e000-0000-4000-8000-000000000602',
+   '4f11e000-0000-4000-8000-000000000308', '4f11e000-0000-4000-8000-00000000000a',
+   repeat('7b', 32), 'Oubliée', 'oubliee@purge.test', now() - interval '400 days',
+   'waiting', null, null, now() - interval '400 days');
+
+select is(
+  (public.queue_public_state(
+    '4f11e000-0000-4000-8000-000000000308', repeat('7b', 32)))->>'state',
+  'in_queue',
+  'PURG-0 avant la purge, l''ancienne clé ouvre bien l''entrée');
 
 select is(
   (select count(*)::text from public.purge_expired_personal_data()), '1',
@@ -1004,12 +1022,28 @@ select is(
   'purge:4f11e000-0000-4000-8000-000000000601',
   'PURG-8 … sans rien réécrire : le garde `not like` rend le passage idempotent');
 
--- ET L'ANCIENNE CLÉ N'OUVRE PLUS RIEN.
+-- L'ENTRÉE OUBLIÉE : sa donnée personnelle part comme celle des autres, mais son
+-- ÉTAT n'est pas touché — la purge efface la personne, elle ne décide pas de
+-- l'issue d'une attente à sa place.
+select is(
+  (select e.status from public.reservation_queue_entries e
+    where e.id = '4f11e000-0000-4000-8000-000000000602'),
+  'waiting',
+  'PURG-9 la purge n''invente aucune issue : l''entrée oubliée reste `waiting`');
+select is(
+  (select e.display_name || coalesce(e.email, '') from public.reservation_queue_entries e
+    where e.id = '4f11e000-0000-4000-8000-000000000602'),
+  null,
+  'PURG-10 … mais son prénom et son adresse sont partis');
+
+-- ET L'ANCIENNE CLÉ N'OUVRE PLUS RIEN — c'est ce que le MARQUEUR garantit, là
+-- où une empreinte dérivée de l'identifiant serait restée recalculable par
+-- quiconque lit l'`id`, donc serait restée un authentifiant.
 select is(
   (public.queue_public_state(
-    '4f11e000-0000-4000-8000-000000000308', repeat('7a', 32)))->>'state',
+    '4f11e000-0000-4000-8000-000000000308', repeat('7b', 32)))->>'state',
   'not_in_queue',
-  'PURG-9 l''ancienne empreinte ne retrouve plus l''entrée purgée');
+  'PURG-11 l''ancienne empreinte n''ouvre plus l''entrée, pourtant toujours vivante');
 
 select * from finish();
 rollback;
