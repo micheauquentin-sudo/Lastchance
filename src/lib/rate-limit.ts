@@ -569,6 +569,42 @@ export const RATE_LIMITS = {
    *  porteur d'une progression dans plusieurs enseignes, ne s'en approche jamais
    *  (il lit son panneau à l'ouverture d'une page et clique quelques coffres). */
   progressionDevice: { limit: 120, windowSeconds: 60 },
+  /** PLAFOND GLOBAL d'un cookie `lc-player` sur le parcours Réserver, toutes
+   *  organisations confondues — clé d'IDENTITÉ pure (l'empreinte salée du
+   *  cookie, SANS `organization_id`), donc `failClosed` légitime (ADR-032) : la
+   *  saturer ne coupe que son porteur.
+   *
+   *  POURQUOI IL EXISTE, ET POURQUOI IL EST TRANCHÉ EN PREMIER (motif
+   *  `progressionDevice` / `pageOpenIp`) : `reserverPlayerAction` est composé
+   *  avec un `organization_id` FOURNI PAR LE CLIENT. Avec un seul cookie valide,
+   *  boucler sur des UUID d'organisation inventés ouvrirait un seau NEUF à
+   *  chaque tour — donc un débit borné par rien, chaque tour coûtant une
+   *  écriture de rate-limit. Tranché AVANT le seau par organisation, une rafale
+   *  saturée n'écrit plus rien d'autre.
+   *
+   *  60/60 s : réserver, annuler et relire ses places sont des gestes rares. */
+  reserverDevice: { limit: 60, windowSeconds: 60 },
+  /** Actions du parcours Réserver par JOUEUR (organisation + empreinte du
+   *  cookie) — clé propre à UNE identité, donc `failClosed` légitime. Couvre
+   *  réserver / annuler / relire. La vraie borne métier reste l'index unique
+   *  partiel (une identité, une place vivante par créneau) et la capacité comptée
+   *  sous verrou : frapper des cookies ne crée aucune place supplémentaire. */
+  reserverPlayerAction: { limit: 30, windowSeconds: 60 },
+  /** PLAFOND PAR IP SEULE du parcours Réserver, toutes organisations confondues
+   *  — compteur d'OBSERVABILITÉ, jamais un refus, et consommé AVANT le compteur
+   *  par organisation (motif `pronoTvIpCeiling`, wagon 7). Son rôle est de rendre
+   *  visible une rafale qui boucle sur des organisations inventées : le compteur
+   *  par organisation, lui, la disperserait sur autant de séries. */
+  reserverIpCeiling: { limit: 600, windowSeconds: 600 },
+  /** PRESSION du parcours Réserver par organisation et IP — compteur
+   *  d'OBSERVABILITÉ, jamais un refus (miroir `quizPublicIp`).
+   *
+   *  PRINCIPE (ADR-032) : la page de réservation se sert derrière le Wi-Fi ou le
+   *  CGNAT PARTAGÉ d'un commerce — l'IP est commune à tous les clients présents.
+   *  Aucun seau fail-closed ne porte sur cette clé, sans quoi un tiers en ferait
+   *  un interrupteur (« déni de réservation d'un commerce entier »). Ne PAS
+   *  repasser en `failClosed`. */
+  reserverPublicIp: { limit: 1200, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

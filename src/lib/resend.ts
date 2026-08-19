@@ -6,7 +6,7 @@ import { APP_URL, optionalEnv } from "@/lib/env";
 // console, donc une panne de domaine ou un compte Resend en mode test
 // n'émettait aucune alerte — les emails de gain, de code de chasse et de
 // rappel disparaissaient en silence.
-import { reportError } from "@/lib/monitoring";
+import { recordCounter, reportError } from "@/lib/monitoring";
 // Type SEUL (effacé à la compilation) : `weekly-digest.ts` importe les envois
 // de ce module, l'inverse ne doit rien ajouter à l'exécution. Même geste que
 // `automations.ts` avec `@/lib/jobs`.
@@ -1386,4 +1386,113 @@ export async function sendWeeklyDigestEmails(params: {
       };
     }),
   );
+}
+
+/**
+ * Confirmation d'une réservation (module Réserver, RES-1b).
+ *
+ * ── CE QUI N'EST PAS DANS CET EMAIL, ET POURQUOI ──
+ *
+ * AUCUN lien porteur de jeton, d'identifiant de réservation ou d'empreinte.
+ * L'adresse donnée est celle de la PAGE PUBLIQUE de l'activité, et rien d'autre
+ * (ADR-109 : « le QR public est une adresse, jamais une preuve de présence »).
+ * C'est le cookie `lc-player` du navigateur qui fait retrouver au joueur sa
+ * place ; un email transféré n'emporte donc aucun pouvoir avec lui — ni annuler,
+ * ni se présenter à la place de quelqu'un. Le code de check-in, lui, y figure :
+ * il ne vaut qu'au comptoir, sur une action staff authentifiée.
+ *
+ * ── L'ENVOI EST CONDITIONNÉ AU CONSENTEMENT, EN AMONT ──
+ *
+ * Cette fonction ne le vérifie pas et n'a pas à le faire : la base ne conserve
+ * l'adresse QUE consentie (contrainte d'équivalence `reservations_consent_state`)
+ * et la lit sur la ligne. Une adresse en main est donc déjà une adresse
+ * consentie.
+ *
+ * Best-effort, comme tous les transactionnels de ce module : rend un booléen,
+ * ne lève jamais. Chaque branche de sortie est COMPTÉE (motif `sms-prize.ts`) —
+ * sans quoi un domaine non vérifié ferait disparaître les confirmations en
+ * silence, et personne ne saurait dire combien.
+ */
+export async function sendReservationConfirmationEmail(params: {
+  to: string;
+  activityName: string;
+  /** Créneau DÉJÀ formaté dans le fuseau de l'organisation. */
+  slotLabel: string;
+  code: string;
+  organizationName: string;
+  /** Page publique de l'activité — une adresse, jamais un jeton. */
+  statusUrl: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+
+  if (!apiKey || !from) {
+    console.warn(
+      `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
+        `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — confirmation de réservation non envoyée`,
+    );
+    recordCounter("reserver.email.not_configured");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `Votre réservation chez ${params.organizationName}`,
+      html: reservationConfirmationEmailHtml(params),
+    });
+
+    if (error) {
+      reportError("resend", `confirmation de réservation échouée: ${JSON.stringify(error)}`);
+      recordCounter("reserver.email.failed");
+      return false;
+    }
+    console.log(`[resend] confirmation de réservation envoyée (id: ${data?.id})`);
+    recordCounter("reserver.email.sent");
+    return true;
+  } catch (err) {
+    reportError("resend", `exception à l'envoi de la confirmation: ${err}`);
+    recordCounter("reserver.email.failed");
+    return false;
+  }
+}
+
+function reservationConfirmationEmailHtml(p: {
+  activityName: string;
+  slotLabel: string;
+  code: string;
+  organizationName: string;
+  statusUrl: string;
+}): string {
+  const activity = escapeHtml(p.activityName);
+  const slot = escapeHtml(p.slotLabel);
+  const code = escapeHtml(p.code);
+  const org = escapeHtml(p.organizationName);
+  const url = escapeHtml(p.statusUrl);
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin:0 0 12px;">${org}</p>
+      <h1 style="font-size:24px;color:#18181b;margin:0 0 8px;">C'est réservé ✅</h1>
+      <p style="font-size:20px;font-weight:bold;color:#18181b;margin:0 0 4px;">${activity}</p>
+      <p style="color:#52525b;font-size:15px;margin:0 0 24px;">${slot}</p>
+      <div style="background:#f4f4f5;border-radius:12px;padding:20px;margin:24px 0;">
+        <p style="font-size:11px;letter-spacing:2px;color:#71717a;margin:0 0 6px;">VOTRE CODE</p>
+        <p style="font-size:28px;font-weight:bold;letter-spacing:4px;color:#18181b;margin:0;font-family:monospace;">${code}</p>
+      </div>
+      <p style="color:#71717a;font-size:13px;margin:0 0 24px;">Présentez ce code sur place à votre arrivée.</p>
+      <a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;border-radius:10px;padding:12px 20px;font-size:14px;">Voir ou annuler ma réservation</a>
+      <p style="color:#a1a1aa;font-size:12px;margin:16px 0 0;">Ouvrez ce lien depuis le téléphone avec lequel vous avez réservé.</p>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email parce que vous avez demandé une confirmation en réservant chez ${org}.
+    </p>
+  </div>
+</body>
+</html>`;
 }
