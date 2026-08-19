@@ -88,8 +88,11 @@ test.describe("réserver — mode attente active (RES-4)", () => {
         cartePause.getByText("À retirer au comptoir lors de votre passage."),
       ).toBeVisible();
 
+      // « p.font-mono » n'isole pas le code : le bandeau « ✦ GAGNÉ ✦ » porte
+      // la même classe (`RevelationPause`). Le motif du code (alphabet de
+      // caisse, sans I/O/0/1) l'isole sans ambiguïté.
       const codeTexte = (
-        await cartePause.locator("p.font-mono").last().textContent()
+        await cartePause.getByText(/^[A-HJ-NP-Z2-9]{8}$/).textContent()
       )?.trim();
       expect(codeTexte).toMatch(/^[A-HJ-NP-Z2-9]{8}$/);
 
@@ -120,7 +123,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
         timeout: 30_000,
       });
       const codeRejoue = (
-        await cartePauseApres.locator("p.font-mono").last().textContent()
+        await cartePauseApres.getByText(/^[A-HJ-NP-Z2-9]{8}$/).textContent()
       )?.trim();
       expect(codeRejoue).toBe(codeTexte);
     } finally {
@@ -225,10 +228,13 @@ test.describe("réserver — mode attente active (RES-4)", () => {
     );
     await expect(section).toContainText(PHRASE_NON_NECESSAIRE);
 
-    // Assertion transversale : sous « Mes réservations », jamais au-dessus.
+    // Assertion transversale : sous la carte de réservation elle-même
+    // (le code que le client rouvre sa page pour retrouver), jamais au-dessus
+    // — PAS sous la section englobante, qui contient l'attente elle-même et
+    // dont la boîte engloberait donc toujours les deux.
     await assertSectionSousLeRang(
       page,
-      'section[aria-labelledby="mes-reservations-titre"]',
+      'section[aria-labelledby="mes-reservations-titre"] ul',
       section,
     );
   });
