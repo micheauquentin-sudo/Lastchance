@@ -157,9 +157,12 @@ test.describe("réserver — parcours public puis comptoir", () => {
     };
     await ouvrirLesPlis();
 
-    const ligne = page.locator("li").filter({ hasText: code }).first();
+    // `details li` et NON `li` : la carte du créneau est elle aussi un `<li>` et
+    // contient le code — en mode strict, les deux se disputeraient le locator.
+    // Les lignes de réservation, elles, ne vivent QUE sous le pli.
+    const ligne = page.locator("details li").filter({ hasText: code }).first();
     await expect(ligne).toBeVisible();
-    await expect(ligne.getByText("Confirmée")).toBeVisible();
+    await expect(ligne.getByText("Confirmée", { exact: true })).toBeVisible();
 
     // ── 3. Confirmation en deux temps : le geste ne part que sur « oui ».
     page.once("dialog", (dialogue) => dialogue.accept());
@@ -171,8 +174,13 @@ test.describe("réserver — parcours public puis comptoir", () => {
     ).toBeVisible({ timeout: 30_000 });
     await ouvrirLesPlis();
 
-    const ligneApres = page.locator("li").filter({ hasText: code }).first();
-    await expect(ligneApres.getByText("Annulée")).toBeVisible({
+    const ligneApres = page
+      .locator("details li")
+      .filter({ hasText: code })
+      .first();
+    // `exact` : le résumé du pli dit « … · 1 annulée » et la ligne « annulée le
+    // … ». Seule la pastille vaut exactement « Annulée ».
+    await expect(ligneApres.getByText("Annulée", { exact: true })).toBeVisible({
       timeout: 20_000,
     });
     // Le bouton disparaît : il ne s'affiche que là où il peut aboutir.
@@ -180,12 +188,18 @@ test.describe("réserver — parcours public puis comptoir", () => {
       ligneApres.getByRole("button", { name: "Annuler (staff)" }),
     ).toHaveCount(0);
 
-    // ── 4. Et côté joueur, la place est bien rendue : sa réservation est
-    // annulée, sans qu'il ait rien fait.
+    // ── 4. LA PREUVE CÔTÉ JOUEUR : la place est réellement retournée au
+    // créneau. `loadReserverPublicContext` ne rend que les réservations VIVANTES
+    // — la carte disparaît donc entièrement, code compris, et le créneau
+    // repasse dans la liste des créneaux réservables.
     await page.goto(`/reserver/${ACTIVITY_ID}`);
     await expect(
-      page.locator("li").filter({ hasText: "Annulée" }).first(),
+      page.getByRole("heading", { name: "Dégustation du Comptoir E2E" }),
     ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(code)).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: /Mes réservations|Ma réservation/ }),
+    ).toHaveCount(0);
   });
 
   test("email sans consentement coché : le formulaire refuse avec le message ciblé", async ({
