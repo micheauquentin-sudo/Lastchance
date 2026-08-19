@@ -15,17 +15,33 @@ import {
   formatCreneau,
   mapCancelReservation,
   mapCheckinReservation,
+  mapClaimWaitlistOffer,
+  mapCloseInvitation,
+  mapCreateInvitation,
+  mapRedeemInvitation,
   mapReservationPublicState,
   mapReserveSlot,
+  mapRevokeInvitation,
+  mapWaitlistJoin,
+  mapWaitlistLeave,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
+  urlInvitationReserver,
   type CancelReservationResult,
   type CheckinReservationResult,
+  type ClaimWaitlistOfferResult,
+  type CloseInvitationResult,
+  type RedeemInvitationResult,
   type ReservationPublicState,
   type ReserveSlotResult,
+  type RevokeInvitationResult,
+  type WaitlistJoinResult,
+  type WaitlistLeaveResult,
 } from "@/lib/reserver";
 import {
   assurerIdentiteReserver,
+  generateInvitationToken,
+  hashInvitationToken,
   lireIdentiteReserver,
 } from "@/lib/reserver-context";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -37,13 +53,20 @@ import {
   cancelReservationSchema,
   cancelReservationStaffSchema,
   checkinReservationSchema,
+  claimWaitlistOfferSchema,
+  closeReserverInvitationSchema,
   createReserverActivitySchema,
+  createReserverInvitationSchema,
   createReserverSlotSchema,
   loadMyReservationsSchema,
+  redeemInvitationSchema,
   reserveSlotSchema,
+  revokeReserverInvitationSchema,
   updateReserverActivitySchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
+  waitlistJoinSchema,
+  waitlistLeaveSchema,
 } from "@/lib/validations/reserver";
 
 const NOT_EDITOR = "Action non autorisée";
@@ -114,10 +137,44 @@ const SANS_DROIT =
 //    · reserver:player:<org>:<empreinte>      identité   CLOSED
 //    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
 //    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
+//  waitlistJoin (public, ÉMETTEUR) — MÊME inventaire que `reserveSlot`, aux
+//  mêmes clés : c'est le même geste sur le même écran, et deux jeux de seaux
+//  auraient donné deux budgets pour une seule main.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
+//  claimWaitlistOffer (public) — PAS de Turnstile : la place est DÉJÀ tenue
+//  pour cette identité, il n'y a rien à gagner à multiplier les cookies. Comme
+//  `cancelReservation`, l'organisation n'est pas postée : elle se lit sur
+//  l'entrée, donc pas de compteur par organisation ici.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<entrée>:<empreinte>   identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//    · reserver:email:<org>:<adresse>         destinataire CLOSED (avant l'envoi)
+//  waitlistLeave (public) — même raison, et aucune friction n'est opposée à un
+//  geste qui REND une place.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<entrée>:<empreinte>   identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  redeemInvitation (public, ÉMETTEUR) — l'organisation n'est connue qu'APRÈS
+//  résolution du jeton : le seau par appareil et l'IP seule sont tranchés
+//  avant, les deux clés org-scopées après.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 2e)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED (après résolution)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (après résolution)
+//    · reserver:email:<org>:<adresse>         destinataire CLOSED (avant l'envoi)
+//  AUCUN seau n'est composé avec le JETON d'invitation, et c'est délibéré : la
+//  clé serait choisie par l'appelant, donc un jeton inventé par tour ouvrirait
+//  un seau neuf à chaque coup — une écriture de rate-limit par essai, et rien
+//  de borné (motif `progressionDevice`, wagon 7). Ce qui borne la rejointe est
+//  le seau par APPAREIL, tranché en premier.
 //  checkinReservation (authentifié)
 //    · cashier:lookup:<org>:<user>            opérateur  CLOSED (seau de caisse)
 //  Ouverture de la page publique — hors de ce fichier, dans
-//  `loadReserverPublicContext` (src/lib/reserver-context.ts) :
+//  `loadReserverPublicContext` ET `loadReserverInvitationContext`
+//  (src/lib/reserver-context.ts) :
 //    · reserver:page:ip:<ip>                  partagée   OPEN (IP SEULE, 1er)
 //    · reserver:page:activity:ip:<act>:<ip>   partagée   OPEN (observabilité)
 // ════════════════════════════════════════════════════════════
@@ -155,15 +212,29 @@ async function autoriserJoueurReserver(
   portee: string,
   empreinte: string,
 ): Promise<boolean> {
-  if (
-    !(await rateLimit(
-      rateLimitBucket("reserver:device", empreinte),
-      RATE_LIMITS.reserverDevice,
-      { failClosed: true },
-    ))
-  ) {
-    return false;
-  }
+  if (!(await autoriserAppareilReserver(empreinte))) return false;
+  return autoriserPorteeReserver(portee, empreinte);
+}
+
+/**
+ * Le PLAFOND PAR APPAREIL, seul. Il se tranche toujours en premier, et il est
+ * le seul seau opposable à un geste dont la portée n'est pas encore connue —
+ * `redeemInvitation`, qui ne sait de quelle organisation il s'agit qu'après
+ * avoir résolu le jeton.
+ */
+async function autoriserAppareilReserver(empreinte: string): Promise<boolean> {
+  return rateLimit(
+    rateLimitBucket("reserver:device", empreinte),
+    RATE_LIMITS.reserverDevice,
+    { failClosed: true },
+  );
+}
+
+/** Le seau par PORTÉE — voir `autoriserJoueurReserver` pour ce qu'elle vaut. */
+async function autoriserPorteeReserver(
+  portee: string,
+  empreinte: string,
+): Promise<boolean> {
   return rateLimit(
     rateLimitBucket("reserver:player", portee, empreinte),
     RATE_LIMITS.reserverPlayerAction,
@@ -451,6 +522,7 @@ export async function loadMyReservations(input: {
         ok: true,
         timezone: RESERVER_FUSEAU_DEFAUT,
         reservations: [],
+        waitlist: [],
       },
     };
   }
@@ -477,6 +549,452 @@ export async function loadMyReservations(input: {
       return { ok: false as const, error: GENERIC_ERROR };
     }
     return { ok: true as const, data: mapReservationPublicState(data) };
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// Liste prioritaire (RES-2) — rejoindre, prendre sa place, partir
+// ════════════════════════════════════════════════════════════
+
+export type WaitlistJoinActionResult =
+  | { ok: true; data: WaitlistJoinResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Rejoindre la liste prioritaire d'un créneau complet.
+ *
+ * ── POURQUOI LE MÊME INVENTAIRE DE SEAUX QUE `reserveSlot` ──
+ *
+ * C'est le même écran, la même main et le même geste : le joueur clique sur le
+ * créneau, et c'est la JAUGE qui décide s'il réserve ou s'il fait la queue. Des
+ * seaux distincts lui auraient donné deux budgets pour un seul geste — et
+ * l'ordre importe autant qu'eux (appareil avant organisation, IP seule avant IP
+ * par organisation), pour la raison écrite dans `autoriserJoueurReserver`.
+ *
+ * ── LE CHALLENGE Y EST, ET IL DOIT Y ÊTRE ──
+ *
+ * `waitlist_join` est un appel ÉMETTEUR au même titre que `reserve_slot` : les
+ * invariants SQL bornent le nombre de PLACES, jamais la diversité des mains.
+ * Un bot muni de cookies jetables qui remplit une file coûte au commerçant
+ * exactement ce que coûte un créneau vidé — il prépare pour vingt personnes qui
+ * n'ont jamais existé.
+ */
+export async function waitlistJoin(input: {
+  organizationId: string;
+  slotId: string;
+  email?: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<WaitlistJoinActionResult> {
+  const parsed = waitlistJoinSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  if (!(await autoriserJoueurReserver(parsed.data.organizationId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.waitlist-join", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    await observerPressionReserver(parsed.data.organizationId, ip);
+
+    if (
+      reserverChallengeDisponible() &&
+      !(await verifyTurnstile(
+        // LA VALEUR VALIDÉE, jamais celle du corps : ce jeton part en requête
+        // sortante vers Cloudflare.
+        parsed.data.turnstileToken,
+        ip,
+        "reserver-waitlist-join",
+      ))
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réessayez.",
+        challengeRequired: true,
+      };
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("waitlist_join", {
+      p_organization_id: parsed.data.organizationId,
+      p_slot_id: parsed.data.slotId,
+      p_player_key_hash: empreinte,
+      p_email: parsed.data.email ?? null,
+      p_consent: parsed.data.consent,
+    });
+    if (error) {
+      reportError("reserver.waitlist-join", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    // AUCUN EMAIL ICI, ET C'EST ASSUMÉ (MVP RES-2) : rien n'est promis à
+    // l'inscription — ni une place, ni une date. Le seul message qui parte est
+    // celui de la CONFIRMATION, quand l'offre est devenue une réservation.
+    return { ok: true as const, data: mapWaitlistJoin(data) };
+  });
+}
+
+/**
+ * Prendre la place qui m'est proposée.
+ *
+ * ── AUCUN CHALLENGE, ET AUCUNE JAUGE ──
+ *
+ * La place est DÉJÀ tenue pour cette identité : `reserve_slot` et
+ * `waitlist_join` la comptent comme occupée depuis l'émission de l'offre. Ni
+ * Turnstile (rien à gagner à multiplier les cookies : l'offre est nominative),
+ * ni comptage de capacité (la retester la compterait deux fois, et aucune offre
+ * ne serait jamais honorable) — c'est écrit dans la RPC, et cette action ne
+ * refait aucun des deux.
+ *
+ * ── LA CONFIRMATION PART SUR LA CONVERSION RÉELLE, PAS SUR LE CLIC ──
+ *
+ * `claim_waitlist_offer` est idempotente : rejouée, elle rend la même
+ * réservation et le même code. Seul le chemin qui INSÈRE rend `starts_at` /
+ * `ends_at`, et c'est ce que ce code lit pour décider d'envoyer. Le seau
+ * `reserver:email` borne de toute façon un destinataire à trois messages par
+ * heure — la discipline ici évite le message inutile, le seau évite l'abus.
+ */
+export async function claimWaitlistOffer(input: {
+  entryId: string;
+}): Promise<ActionResult<ClaimWaitlistOfferResult>> {
+  const parsed = claimWaitlistOfferSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // LECTURE SEULE du cookie : on ne crée pas d'identité pour prendre une place
+  // qui a été promise à une identité qui existait déjà.
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: INDISPONIBLE };
+  // Portée = l'ENTRÉE, comme `cancelReservation` porte la réservation : ce
+  // chemin ne reçoit pas d'organisation, et la clé est déjà détenue.
+  if (!(await autoriserJoueurReserver(parsed.data.entryId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.waitlist-claim", async () => {
+    // IP SEULE : l'organisation n'est connue qu'APRÈS résolution, et inventer
+    // une clé de repli fabriquerait une série qui ne se compare à rien
+    // (raison écrite dans `observerPressionReserver`).
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    const admin = createAdminClient();
+
+    // L'ORGANISATION SE LIT SUR L'ENTRÉE, sur preuve de possession. `unknown`
+    // couvre indistinctement l'entrée inconnue, celle d'une autre identité et
+    // celle dont les données ont été purgées — exactement ce que rendrait la
+    // RPC, à qui ce chemin évite simplement un appel sans objet.
+    const { data: entree } = await admin
+      .from("reservation_waitlist_entries")
+      .select("id, organization_id")
+      .eq("id", parsed.data.entryId)
+      .eq("player_key_hash", empreinte)
+      .maybeSingle();
+    if (!entree) {
+      return {
+        ok: true as const,
+        data: mapClaimWaitlistOffer({ state: "unknown" }),
+      };
+    }
+    const organizationId = entree.organization_id;
+
+    const { data, error } = await admin.rpc("claim_waitlist_offer", {
+      p_organization_id: organizationId,
+      p_entry_id: parsed.data.entryId,
+      p_player_key_hash: empreinte,
+    });
+    if (error) {
+      reportError("reserver.waitlist-claim", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    const resultat = mapClaimWaitlistOffer(data);
+    if (resultat.state === "claimed" && resultat.startsAt && resultat.code) {
+      await confirmerParEmail({
+        organizationId,
+        reservationId: resultat.reservationId,
+        code: resultat.code,
+        // L'ADRESSE VIENT DE L'ENTRÉE DE FILE, jamais du corps de la requête :
+        // elle y a été donnée pour ce créneau, chez ce commerçant, sous le même
+        // consentement transactionnel — et la RPC l'a recopiée telle quelle sur
+        // la réservation.
+        destinataire: await adresseConsentieDeLaFile(admin, {
+          organizationId,
+          entryId: parsed.data.entryId,
+        }),
+      });
+    }
+    return { ok: true as const, data: resultat };
+  });
+}
+
+/**
+ * Quitter la file.
+ *
+ * Aucune friction : c'est un geste qui REND une place — la RPC la propose
+ * immédiatement au suivant si celui qui part en tenait une. Même forme que
+ * `cancelReservation`, y compris le seau porté par l'identifiant de l'ENTRÉE :
+ * l'organisation n'est pas un paramètre, la RPC la lit sur la ligne.
+ */
+export async function waitlistLeave(input: {
+  entryId: string;
+}): Promise<ActionResult<WaitlistLeaveResult>> {
+  const parsed = waitlistLeaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: INDISPONIBLE };
+  if (!(await autoriserJoueurReserver(parsed.data.entryId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.waitlist-leave", async () => {
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("waitlist_leave", {
+      p_entry_id: parsed.data.entryId,
+      p_player_key_hash: empreinte,
+    });
+    if (error) {
+      reportError("reserver.waitlist-leave", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    return { ok: true as const, data: mapWaitlistLeave(data) };
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// Invitations privées (RES-2) — la rejointe publique
+// ════════════════════════════════════════════════════════════
+
+export type RedeemInvitationActionResult =
+  | { ok: true; data: RedeemInvitationResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Réserver au titre d'une invitation privée.
+ *
+ * ── LE CLAIR S'ARRÊTE À CETTE FONCTION ──
+ *
+ * `hashInvitationToken` est appliqué avant le premier aller-retour, et c'est
+ * l'EMPREINTE seule qui descend. Le clair n'est ni journalisé, ni recopié dans
+ * un message d'erreur, ni relayé à un tiers : un jeton qui apparaît dans un
+ * journal est un jeton qu'il faut révoquer.
+ *
+ * ── MÊMES SEAUX, MÊME CHALLENGE QUE `reserveSlot` ──
+ *
+ * C'est un appel ÉMETTEUR : il crée une réservation. Le fait que l'accès passe
+ * par une règle privée ne change rien à ce que le module craint — des cookies
+ * jetables qui vident un créneau sans jamais venir.
+ */
+export async function redeemInvitation(input: {
+  token: string;
+  slotId?: string;
+  email?: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<RedeemInvitationActionResult> {
+  const parsed = redeemInvitationSchema.safeParse(input);
+  // UN SEUL MESSAGE pour un jeton malformé comme pour un jeton inconnu : dire
+  // « ce lien n'a pas la bonne forme » apprendrait à qui tape au hasard quand
+  // il a trouvé la bonne. `INDISPONIBLE` est ce que rend aussi `unavailable`.
+  if (!parsed.success) return { ok: false, error: INDISPONIBLE };
+
+  const empreinteJeton = hashInvitationToken(parsed.data.token);
+  if (!empreinteJeton) return { ok: false, error: INDISPONIBLE };
+
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  // LE SEAU PAR APPAREIL SEUL, ET AVANT TOUT LE RESTE. Le second seau est
+  // composé avec une organisation qu'on ne connaît pas encore ; le composer
+  // avec le JETON à la place aurait ouvert un seau neuf à chaque jeton
+  // inventé — c'est-à-dire aucune borne du tout (wagon 7).
+  if (!(await autoriserAppareilReserver(empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.invitation-redeem", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    // IP SEULE d'abord : elle est comptée même sur un jeton qui ne résout rien,
+    // et c'est tout l'intérêt — un balayage n'atteint aucune invitation.
+    await observerPressionReserver(null, ip);
+
+    if (
+      reserverChallengeDisponible() &&
+      !(await verifyTurnstile(
+        parsed.data.turnstileToken,
+        ip,
+        "reserver-invitation",
+      ))
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réservez.",
+        challengeRequired: true,
+      };
+    }
+
+    const admin = createAdminClient();
+
+    // L'ORGANISATION EST CELLE DU JETON, jamais une valeur postée. Introuvable
+    // = `unavailable`, le même état muet que rendrait la RPC pour un jeton
+    // révoqué, expiré ou d'un autre commerce.
+    const { data: invitation } = await admin
+      .from("reservation_invitations")
+      .select("id, organization_id")
+      .eq("token_hash", empreinteJeton)
+      .maybeSingle();
+    if (!invitation) {
+      return {
+        ok: true as const,
+        data: mapRedeemInvitation({ state: "unavailable" }),
+      };
+    }
+    const organizationId = invitation.organization_id;
+
+    // Le second seau et le second compteur, maintenant que la portée existe.
+    if (!(await autoriserPorteeReserver(organizationId, empreinte))) {
+      return { ok: false as const, error: TOO_MANY };
+    }
+    await observerPressionIp(
+      ["reserver:public:ip", organizationId],
+      ip,
+      RATE_LIMITS.reserverPublicIp,
+      "reserver_public_pressure",
+      { organization_id: organizationId },
+    );
+
+    const { data, error } = await admin.rpc("redeem_invitation", {
+      p_organization_id: organizationId,
+      p_token_hash: empreinteJeton,
+      p_player_key_hash: empreinte,
+      p_slot_id: parsed.data.slotId ?? null,
+      p_email: parsed.data.email ?? null,
+      p_consent: parsed.data.consent,
+    });
+    if (error) {
+      // LE MESSAGE DE L'ERREUR, JAMAIS LES ARGUMENTS : `error.message` de
+      // PostgREST ne contient pas le jeton (il n'a d'ailleurs reçu que son
+      // empreinte), et rien d'autre n'est journalisé ici.
+      reportError("reserver.invitation-redeem", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    const resultat = mapRedeemInvitation(data);
+    if (
+      resultat.state === "reserved" &&
+      parsed.data.consent &&
+      parsed.data.email &&
+      resultat.code
+    ) {
+      await confirmerParEmail({
+        organizationId,
+        reservationId: resultat.reservationId,
+        code: resultat.code,
+        destinataire: parsed.data.email,
+      });
+    }
+    return { ok: true as const, data: resultat };
+  });
+}
+
+/**
+ * L'adresse consentie portée par une entrée de file, ou `null`.
+ *
+ * Lecture service_role : `email` est HORS du grant de colonnes de
+ * `authenticated`, exactement comme sur `reservations`. Elle ne sort pas d'ici
+ * — elle va directement au destinataire qu'elle nomme.
+ */
+async function adresseConsentieDeLaFile(
+  admin: ReturnType<typeof createAdminClient>,
+  params: { organizationId: string; entryId: string },
+): Promise<string | null> {
+  const { data } = await admin
+    .from("reservation_waitlist_entries")
+    .select("id, email, consent_transactional_at")
+    .eq("id", params.entryId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!data?.email || !data.consent_transactional_at) return null;
+  return data.email;
+}
+
+/**
+ * Le rappel par email d'une réservation qui vient d'être confirmée par un
+ * chemin autre que `reserveSlot` (offre prise, invitation honorée).
+ *
+ * MÊME SEAU, MÊME `after()`, MÊME COMPTEUR que le chemin d'origine : le
+ * destinataire est borné à trois messages par heure et par organisation, la
+ * décision d'envoyer est prise AVANT la tâche différée (une rafale l'aurait
+ * sinon remplie de tâches déjà décidées), et un refus de seau ne défait RIEN —
+ * la place est prise, le code est à l'écran, seul le rappel est sauté.
+ */
+async function confirmerParEmail(params: {
+  organizationId: string;
+  reservationId: string | null;
+  code: string;
+  destinataire: string | null;
+}): Promise<void> {
+  const { destinataire, reservationId } = params;
+  if (!destinataire || !reservationId) return;
+
+  const autorise = await rateLimit(
+    rateLimitBucket("reserver:email", params.organizationId, destinataire),
+    RATE_LIMITS.reserverEmail,
+    { failClosed: true },
+  );
+  if (!autorise) {
+    recordCounter("reserver.email.throttled");
+    return;
+  }
+
+  after(() =>
+    envoyerConfirmationPourReservation({
+      to: destinataire,
+      organizationId: params.organizationId,
+      reservationId,
+      code: params.code,
+    }).catch((err) => reportError("reserver.confirmation", err)),
+  );
+}
+
+/**
+ * Compose la confirmation à partir d'une RÉSERVATION plutôt que d'un créneau.
+ *
+ * Un aller-retour de plus que `envoyerConfirmation`, et il est nécessaire : ni
+ * `claim_waitlist_offer` ni `redeem_invitation` ne rendent le `slot_id` — la
+ * première parce que le créneau vient de l'entrée de file, la seconde parce
+ * qu'il peut venir de l'invitation. Le faire voyager par le client aurait
+ * laissé un créneau se déclarer depuis le navigateur.
+ */
+async function envoyerConfirmationPourReservation(params: {
+  to: string;
+  organizationId: string;
+  reservationId: string;
+  code: string;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { data: reservation } = await admin
+    .from("reservations")
+    .select("id, slot_id")
+    .eq("id", params.reservationId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!reservation) return;
+
+  await envoyerConfirmation({
+    to: params.to,
+    organizationId: params.organizationId,
+    slotId: reservation.slot_id,
+    code: params.code,
   });
 }
 
@@ -656,6 +1174,223 @@ export async function cancelReservationStaff(
   });
 }
 
+// ────────────────────────────────────────────────────────────
+// Invitations privées — côté commerçant
+// ────────────────────────────────────────────────────────────
+
+export interface CreateReserverInvitationData {
+  invitationId: string;
+  /**
+   * Le libellé, RENVOYÉ TEL QUEL. L'écran affiche le lien à côté du nom qu'il
+   * vient de lui donner — le relire depuis la liste rechargée aurait fait
+   * dépendre l'affichage du secret d'un aller-retour qui peut échouer.
+   */
+  label: string;
+  /**
+   * LE JETON EN CLAIR, RENDU UNE SEULE FOIS.
+   *
+   * La base n'en garde que l'empreinte : personne — ni le commerçant, ni le
+   * support, ni une requête SQL — ne peut le retrouver ensuite. C'est le
+   * contrat d'une clé d'API, et c'est ce qui empêche une invitation de devenir
+   * un QR permanent qu'on retrouve six mois plus tard dans un tableau de bord.
+   */
+  token: string;
+  /** L'adresse complète à copier — la seule forme utile au commerçant. */
+  url: string;
+  maxUses: number | null;
+  expiresAt: string | null;
+}
+
+/** Ce que lit le commerçant pour chacun des refus de la RPC. */
+const MESSAGES_INVITATION: Record<string, string> = {
+  invalid_label: "Donnez un nom à cette invitation.",
+  invalid_max_uses: "Nombre d'usages invalide.",
+  invalid_target:
+    "Choisissez une cible et une seule : une activité entière, ou un créneau précis, de votre établissement.",
+  invalid_expiry: "L'expiration doit être dans le futur.",
+  duplicate: "Réessayez : ce lien n'a pas pu être créé.",
+};
+
+/**
+ * Créer une invitation privée.
+ *
+ * ── LE JETON EST TIRÉ ICI, ET HACHÉ AVANT DE PARTIR ──
+ *
+ * `create_reservation_invitation` ne prend QUE l'empreinte : le clair n'entre
+ * jamais en base, donc aucun journal Postgres ne peut le contenir. Il ne
+ * traverse ce fichier que pour être rendu à l'écran de création, une fois.
+ *
+ * ── POURQUOI `gardeEditeurReserver`, ET POURQUOI LA RPC LE REVÉRIFIE ──
+ *
+ * Ouvrir des places est une décision commerciale : `owner`/`editor` seulement,
+ * le caissier en est exclu — c'est le même arbitrage que `cancelReservationStaff`
+ * et c'est la RPC qui le tient, en SQL, contre `organization_members`. La garde
+ * ci-dessous sert à rendre un message utile, pas à tenir la porte.
+ */
+export async function createInvitation(
+  _prev: ActionResult<CreateReserverInvitationData> | null,
+  formData: FormData,
+): Promise<ActionResult<CreateReserverInvitationData>> {
+  const parsed = createReserverInvitationSchema.safeParse({
+    label: formData.get("label"),
+    activityId: formData.get("activityId"),
+    slotId: formData.get("slotId"),
+    maxUses: formData.get("maxUses"),
+    expiresAt: formData.get("expiresAt"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  let expiresAt: string | null = null;
+  if (parsed.data.expiresAt) {
+    try {
+      // Heure CIVILE dans le fuseau de l'établissement, comme les créneaux : une
+      // invitation qui expire « samedi minuit » n'expire pas à la même seconde à
+      // Saint-Denis et à Paris.
+      expiresAt = zonedDateTimeToIso(parsed.data.expiresAt, garde.timezone);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Date invalide",
+      };
+    }
+  }
+
+  const jeton = generateInvitationToken();
+  const empreinte = hashInvitationToken(jeton);
+  // Impossible par construction (le générateur produit la forme attendue) ;
+  // refuser plutôt que d'envoyer une empreinte que la RPC rejetterait en 22023.
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+
+  return monitored("reserver.invitation-create", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("create_reservation_invitation", {
+      p_organization_id: garde.organizationId,
+      // DE LA SESSION. Jamais du corps de la requête.
+      p_actor: garde.userId,
+      p_label: parsed.data.label,
+      p_token_hash: empreinte,
+      p_activity_id: parsed.data.activityId || null,
+      p_slot_id: parsed.data.slotId || null,
+      p_max_uses: parsed.data.maxUses,
+      p_expires_at: expiresAt,
+    });
+    if (error) {
+      reportError("reserver.invitation-create", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    const resultat = mapCreateInvitation(data);
+    if (resultat.state !== "created" || !resultat.invitationId) {
+      return {
+        ok: false as const,
+        error: MESSAGES_INVITATION[resultat.state] ?? GENERIC_ERROR,
+      };
+    }
+
+    revalidatePath("/dashboard/reservations");
+    return {
+      ok: true as const,
+      data: {
+        invitationId: resultat.invitationId,
+        label: parsed.data.label,
+        token: jeton,
+        url: urlInvitationReserver(jeton, APP_URL),
+        maxUses: resultat.maxUses,
+        expiresAt: resultat.expiresAt,
+      },
+    };
+  });
+}
+
+/**
+ * Révoquer une invitation : le lien est MORT.
+ *
+ * Il rendra `unavailable` à la rejointe, indistinctement d'un jeton inconnu —
+ * un visiteur ne doit pas apprendre qu'une invitation a existé. NE TOUCHE
+ * AUCUNE réservation déjà confirmée par ce lien.
+ */
+export async function revokeInvitation(
+  _prev: ActionResult<RevokeInvitationResult> | null,
+  formData: FormData,
+): Promise<ActionResult<RevokeInvitationResult>> {
+  const parsed = revokeReserverInvitationSchema.safeParse({
+    id: formData.get("id"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.invitation-revoke", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("revoke_reservation_invitation", {
+      p_organization_id: garde.organizationId,
+      p_invitation_id: parsed.data.id,
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.invitation-revoke", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    const resultat = mapRevokeInvitation(data);
+    if (resultat.state === "unknown") {
+      return { ok: false as const, error: INDISPONIBLE };
+    }
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: resultat };
+  });
+}
+
+/**
+ * Fermer les inscriptions d'une invitation.
+ *
+ * ── CE N'EST PAS UNE ANNULATION DE MASSE ──
+ *
+ * Critère d'acceptation RES-2, et sa preuve est dans la RPC : elle n'écrit que
+ * dans `reservation_invitations` et ne lit même pas `reservations`. Le lien
+ * reste lisible par le commerçant, il n'ouvre simplement plus rien.
+ */
+export async function closeInvitation(
+  _prev: ActionResult<CloseInvitationResult> | null,
+  formData: FormData,
+): Promise<ActionResult<CloseInvitationResult>> {
+  const parsed = closeReserverInvitationSchema.safeParse({
+    id: formData.get("id"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  return monitored("reserver.invitation-close", async () => {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("close_reservation_invitation", {
+      p_organization_id: garde.organizationId,
+      p_invitation_id: parsed.data.id,
+      p_actor: garde.userId,
+    });
+    if (error) {
+      reportError("reserver.invitation-close", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    const resultat = mapCloseInvitation(data);
+    if (resultat.state === "unknown") {
+      return { ok: false as const, error: INDISPONIBLE };
+    }
+    revalidatePath("/dashboard/reservations");
+    return { ok: true as const, data: resultat };
+  });
+}
+
 /** Créer une activité réservable. */
 export async function createReserverActivity(
   _prev: ActionResult | null,
@@ -750,6 +1485,7 @@ export async function createReserverSlot(
     startsAt: formData.get("startsAt"),
     endsAt: formData.get("endsAt"),
     capacity: formData.get("capacity"),
+    waitlistOfferMinutes: formData.get("waitlistOfferMinutes"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -780,6 +1516,9 @@ export async function createReserverSlot(
     starts_at: startsAt,
     ends_at: endsAt,
     capacity: parsed.data.capacity,
+    // `null` = défaut du produit (120 min). C'est une valeur, pas une absence :
+    // la colonne est nullable exactement pour porter ce sens.
+    waitlist_offer_minutes: parsed.data.waitlistOfferMinutes,
     status: "draft",
   });
 
@@ -817,6 +1556,7 @@ export async function updateReserverSlot(
     startsAt: formData.get("startsAt"),
     endsAt: formData.get("endsAt"),
     capacity: formData.get("capacity"),
+    waitlistOfferMinutes: formData.get("waitlistOfferMinutes"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -844,6 +1584,7 @@ export async function updateReserverSlot(
       starts_at: startsAt,
       ends_at: endsAt,
       capacity: parsed.data.capacity,
+      waitlist_offer_minutes: parsed.data.waitlistOfferMinutes,
     })
     .eq("id", parsed.data.id)
     .eq("organization_id", garde.organizationId);

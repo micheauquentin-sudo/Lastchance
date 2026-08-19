@@ -3,6 +3,7 @@ import { isValidLocalDateTime } from "@/lib/date-time";
 import {
   caseACochee,
   entierRequis,
+  nonRenduVaut,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
 import {
@@ -12,6 +13,12 @@ import {
   RESERVER_CAPACITY_MIN,
   RESERVER_CODE_PATTERN,
   RESERVER_EMAIL_MAX,
+  RESERVER_INVITATION_LABEL_MAX,
+  RESERVER_INVITATION_MAX_USES_MAX,
+  RESERVER_INVITATION_MAX_USES_MIN,
+  RESERVER_INVITATION_TOKEN_PATTERN,
+  RESERVER_WAITLIST_OFFER_MINUTES_MAX,
+  RESERVER_WAITLIST_OFFER_MINUTES_MIN,
 } from "@/lib/reserver";
 
 // ────────────────────────────────────────────────────────────
@@ -86,6 +93,30 @@ const emailSchema = z
   .email("Email invalide")
   .max(RESERVER_EMAIL_MAX, "Email trop long (254 caractères max)");
 
+/**
+ * Fenêtre de tenue d'une place proposée, en minutes.
+ *
+ * VIDE = `null` = « défaut du produit » (120 min), et c'est une valeur à part
+ * entière, pas une absence de décision : la colonne SQL est nullable exactement
+ * pour cela. Le champ non rendu vaut donc `null` lui aussi — un panneau qui
+ * n'affiche pas le réglage ne demande pas de le changer.
+ */
+const waitlistOfferMinutesSchema = nonRenduVaut(
+  z
+    .string()
+    .trim()
+    .transform((valeur) => (valeur === "" ? null : Number(valeur)))
+    .refine(
+      (valeur) =>
+        valeur === null ||
+        (Number.isInteger(valeur) &&
+          valeur >= RESERVER_WAITLIST_OFFER_MINUTES_MIN &&
+          valeur <= RESERVER_WAITLIST_OFFER_MINUTES_MAX),
+      `Fenêtre d'attente invalide (de ${RESERVER_WAITLIST_OFFER_MINUTES_MIN} à ${RESERVER_WAITLIST_OFFER_MINUTES_MAX} minutes, ou vide pour le réglage par défaut)`,
+    ),
+  null,
+);
+
 /** Code court présenté au comptoir — normalisé avant la forme. */
 const checkinCodeSchema = z
   .string({ error: "Saisissez le code de réservation." })
@@ -112,6 +143,28 @@ const checkinCodeSchema = z
  * rien. Le `superRefine` ci-dessous dit exactement cela, avec un message que le
  * joueur comprend — la contrainte SQL, elle, refuserait la ligne sans un mot.
  */
+function exigerEmailEtConsentementEnsemble(
+  valeur: { email?: string; consent: boolean },
+  ctx: z.RefinementCtx,
+): void {
+  const adresse = valeur.email?.trim() ?? "";
+  if (adresse && !valeur.consent) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["consent"],
+      message:
+        "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
+    });
+  }
+  if (!adresse && valeur.consent) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["email"],
+      message: "Indiquez une adresse email pour recevoir votre confirmation.",
+    });
+  }
+}
+
 export const reserveSlotSchema = z
   .object({
     organizationId: uuid,
@@ -120,24 +173,90 @@ export const reserveSlotSchema = z
     consent: z.boolean().default(false),
     turnstileToken: z.string().max(2048).optional(),
   })
-  .superRefine((valeur, ctx) => {
-    const adresse = valeur.email?.trim() ?? "";
-    if (adresse && !valeur.consent) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["consent"],
-        message:
-          "Cochez la case pour recevoir votre confirmation par email, ou laissez l'adresse vide.",
-      });
-    }
-    if (!adresse && valeur.consent) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["email"],
-        message: "Indiquez une adresse email pour recevoir votre confirmation.",
-      });
-    }
-  });
+  .superRefine(exigerEmailEtConsentementEnsemble);
+
+/**
+ * Rejoindre la liste prioritaire d'un créneau COMPLET.
+ *
+ * Forme identique à `reserveSlotSchema`, et c'est délibéré : la file collecte
+ * la même adresse sous le même consentement, dans la même page, et
+ * `waitlist_join` porte la MÊME équivalence SQL. Deux formes divergentes
+ * auraient fait dire deux choses différentes au même écran.
+ *
+ * Le challenge Turnstile y figure parce que c'est un appel ÉMETTEUR : un bot
+ * muni de cookies jetables peut remplir une file aussi bien qu'un créneau.
+ */
+export const waitlistJoinSchema = z
+  .object({
+    organizationId: uuid,
+    slotId: uuid,
+    email: emailSchema.optional(),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine(exigerEmailEtConsentementEnsemble);
+
+/**
+ * Prendre la place qui m'est proposée.
+ *
+ * UN SEUL CHAMP, comme `cancelReservationSchema`. `claim_waitlist_offer` prend
+ * bien une organisation, mais l'appelant n'a aucune raison de la connaître : le
+ * serveur la lit sur l'entrée, sur preuve de possession (identifiant + empreinte
+ * du cookie). La poster aurait laissé le navigateur désigner sous quelle
+ * enseigne il prend sa place — et le filtre org-scopé de la RPC, qui rend
+ * « entrée d'une AUTRE organisation » indistinguable d'« inconnue », n'aurait
+ * plus rien gardé.
+ *
+ * Aucun email ici : l'adresse et son consentement sont REPRIS de l'entrée de
+ * file, où ils ont été donnés pour ce créneau et ce commerçant.
+ */
+export const claimWaitlistOfferSchema = z.object({
+  entryId: uuid,
+});
+
+/**
+ * Quitter la file. Un seul champ, comme `cancelReservationSchema` et pour la
+ * même raison : la RPC autorise par POSSESSION (identifiant + empreinte du
+ * cookie) et lit l'organisation sur la ligne.
+ */
+export const waitlistLeaveSchema = z.object({
+  entryId: uuid,
+});
+
+/**
+ * Rejoindre par une invitation privée.
+ *
+ * ── LE JETON EST LE CLAIR, ET IL S'ARRÊTE À LA SERVER ACTION ──
+ *
+ * Ce schéma valide sa FORME (24 octets base64url), jamais son contenu : c'est
+ * l'action qui le hache en SHA-256 non salé avant de l'envoyer à la base, et le
+ * clair ne descend nulle part ailleurs — ni en base, ni dans un journal, ni
+ * dans un message d'erreur.
+ *
+ * ── AUCUNE ORGANISATION POSTÉE ──
+ *
+ * Le jeton la désigne à lui seul : le serveur la lit sur l'invitation qu'il
+ * résout. La demander au navigateur aurait ajouté un champ que rien ne vérifie
+ * et qui, mal posé, rendrait `unavailable` sur une invitation parfaitement
+ * valide.
+ *
+ * `slotId` est FACULTATIF : une invitation à un créneau précis le porte
+ * elle-même (la RPC ignore alors ce champ), une invitation à l'échelle d'une
+ * activité exige que le visiteur choisisse. Son absence dans le second cas rend
+ * `unavailable`, muet comme le reste.
+ */
+export const redeemInvitationSchema = z
+  .object({
+    token: z
+      .string()
+      .trim()
+      .regex(RESERVER_INVITATION_TOKEN_PATTERN, "Invitation invalide"),
+    slotId: uuid.optional(),
+    email: emailSchema.optional(),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine(exigerEmailEtConsentementEnsemble);
 
 /**
  * Annuler sa réservation. Aucune organisation demandée : la RPC autorise par
@@ -209,6 +328,7 @@ export const createReserverSlotSchema = z
     startsAt: localDateTimeSchema,
     endsAt: localDateTimeSchema,
     capacity: capacitySchema,
+    waitlistOfferMinutes: waitlistOfferMinutesSchema,
   })
   .superRefine((valeur, ctx) => {
     if (valeur.endsAt <= valeur.startsAt) {
@@ -240,6 +360,7 @@ export const updateReserverSlotSchema = z
     startsAt: localDateTimeSchema,
     endsAt: localDateTimeSchema,
     capacity: capacitySchema,
+    waitlistOfferMinutes: waitlistOfferMinutesSchema,
   })
   .superRefine((valeur, ctx) => {
     if (valeur.endsAt <= valeur.startsAt) {
@@ -260,4 +381,86 @@ export const updateReserverSlotSchema = z
 export const updateReserverSlotStatusSchema = z.object({
   id: uuid,
   status: z.enum(["draft", "open", "closed"]),
+});
+
+// ════════════════════════════════════════════════════════════
+// Invitations privées (RES-2) — FormData du dashboard
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Créer une invitation.
+ *
+ * ── LE JETON N'EST PAS UN CHAMP, ET NE PEUT PAS L'ÊTRE ──
+ *
+ * Il est TIRÉ par le serveur puis haché : un jeton posté par le formulaire
+ * serait un secret choisi par le navigateur, donc prévisible par qui le
+ * fabrique. C'est aussi pourquoi l'action le rend UNE FOIS et une seule — la
+ * base n'en conserve que l'empreinte, et le lien perdu se révoque et se recrée.
+ *
+ * ── UNE CIBLE, ET UNE SEULE ──
+ *
+ * Activité OU créneau. Le `superRefine` ci-dessous dit ce que la contrainte
+ * `reservation_invitations_target_state` refuserait de toute façon, mais avec
+ * un message que le commerçant comprend.
+ */
+export const createReserverInvitationSchema = z
+  .object({
+    label: z
+      .string()
+      .trim()
+      .min(1, "Donnez un nom à cette invitation")
+      .max(
+        RESERVER_INVITATION_LABEL_MAX,
+        `Nom trop long (${RESERVER_INVITATION_LABEL_MAX} caractères max)`,
+      ),
+    // `""` = « pas cette cible-là ». Un `<select>` non choisi poste la chaîne
+    // vide, et la lire comme un UUID invalide ferait un message hors sujet.
+    activityId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
+    slotId: nonRenduVaut(z.union([z.literal(""), uuid]), ""),
+    maxUses: entierRequis({
+      absent: "Indiquez le nombre de places ouvertes par cette invitation.",
+      nombre: "Nombre d'usages invalide",
+      entier: "Nombre entier d'usages requis",
+      min: [
+        RESERVER_INVITATION_MAX_USES_MIN,
+        "Une invitation ouvre au moins une place",
+      ],
+      max: [
+        RESERVER_INVITATION_MAX_USES_MAX,
+        `Maximum ${RESERVER_INVITATION_MAX_USES_MAX} usages — au-delà, ouvrez simplement le créneau`,
+      ],
+    }),
+    /** Heure civile, convertie dans le fuseau de l'organisation par l'action. */
+    expiresAt: texteOptionnel(
+      z
+        .string()
+        .trim()
+        .refine(
+          (valeur) => valeur === "" || isValidLocalDateTime(valeur),
+          "Date d'expiration invalide",
+        ),
+    ),
+  })
+  .superRefine((valeur, ctx) => {
+    if (Boolean(valeur.activityId) === Boolean(valeur.slotId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["activityId"],
+        message:
+          "Choisissez une cible et une seule : une activité entière, ou un créneau précis.",
+      });
+    }
+  });
+
+/** Révoquer : le lien est mort. Geste de sécurité, il a fuité. */
+export const revokeReserverInvitationSchema = z.object({
+  id: uuid,
+});
+
+/**
+ * Fermer les inscriptions. NE TOUCHE AUCUNE PLACE déjà confirmée — critère
+ * d'acceptation RES-2, et la RPC ne lit même pas `reservations`.
+ */
+export const closeReserverInvitationSchema = z.object({
+  id: uuid,
 });

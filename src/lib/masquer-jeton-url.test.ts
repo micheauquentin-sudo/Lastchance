@@ -19,6 +19,13 @@ describe("masquerJetonUrl — ce qui doit disparaître", () => {
     // le rôle inscrit dans le jeton. Sept jours de validité, donc sept jours
     // pendant lesquels une ligne de journal chez un tiers vaut un accès.
     ["invitation d'équipe", `/invite/${JETON}`, "/invite/[jeton]"],
+    // L'invitation privée Réserver : révocable et bornée en usages, mais tant
+    // qu'elle vit, la ligne de journal d'un tiers vaut une place réservée.
+    [
+      "invitation privée Réserver",
+      `/reserver/invitation/${JETON}`,
+      "/reserver/invitation/[jeton]",
+    ],
     [
       "URL absolue",
       `https://app.lastchance.fr/commande/${JETON}`,

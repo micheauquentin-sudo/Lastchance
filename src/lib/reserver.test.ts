@@ -2,17 +2,28 @@ import { describe, expect, it } from "vitest";
 
 import {
   cheminActiviteReserver,
+  cheminInvitationReserver,
   etatUiCreneau,
+  etatUiEntreeFile,
+  etatUiInvitation,
   etatUiReservation,
   formatCreneau,
   formatHeure,
   LIBELLE_FENETRE_CHECKIN,
   mapCancelReservation,
   mapCheckinReservation,
+  mapClaimWaitlistOffer,
+  mapCloseInvitation,
+  mapCreateInvitation,
+  mapRedeemInvitation,
   mapReservationPublicState,
   mapReserveSlot,
+  mapRevokeInvitation,
+  mapWaitlistJoin,
+  mapWaitlistLeave,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
+  urlInvitationReserver,
 } from "@/lib/reserver";
 
 // ────────────────────────────────────────────────────────────
@@ -347,5 +358,410 @@ describe("adresses publiques", () => {
     expect(
       urlActiviteReserver("99999999-9999-4999-8999-999999999999", "https://x.fr/"),
     ).toBe("https://x.fr/reserver/99999999-9999-4999-8999-999999999999");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Liste prioritaire et invitations (RES-2, lot L5)
+//
+// Ce que ces tests attestent, et qui est le cœur du lot :
+//   · aucun mapper ne laisse fuir un identifiant, un code ou une échéance
+//     depuis un état qui ne prouve pas la possession de la ligne ;
+//   · `offer_live` est LU, jamais recalculé : l'horloge du client ne décide pas
+//     si une place est encore tenue ;
+//   · les neuf refus de `redeem_invitation` restent UN SEUL état — le mapper ne
+//     reconstruit pas l'oracle que le SQL a refusé de donner ;
+//   · l'état d'une invitation suit l'ordre de ses quatre interrupteurs.
+// ════════════════════════════════════════════════════════════
+
+describe("mapWaitlistJoin", () => {
+  it("rend le rang sur une inscription neuve, sans échéance d'offre", () => {
+    const resultat = mapWaitlistJoin({
+      state: "waiting",
+      entry_id: "e1",
+      status: "waiting",
+      position: 3,
+      offer_expires_at: null,
+    });
+    expect(resultat.state).toBe("waiting");
+    expect(resultat.entryId).toBe("e1");
+    expect(resultat.position).toBe(3);
+    expect(resultat.offerExpiresAt).toBeNull();
+  });
+
+  it("rend le rang ET l'échéance sur une inscription DÉJÀ faite", () => {
+    const resultat = mapWaitlistJoin({
+      state: "already_waiting",
+      entry_id: "e1",
+      status: "offered",
+      position: 1,
+      offer_expires_at: "2026-09-01T12:00:00Z",
+    });
+    expect(resultat.entryStatus).toBe("offered");
+    expect(resultat.offerExpiresAt).toBe("2026-09-01T12:00:00Z");
+  });
+
+  it("rend les places restantes sur `not_full` : on ne fait pas la queue pour une place libre", () => {
+    const resultat = mapWaitlistJoin({ state: "not_full", remaining: 2 });
+    expect(resultat.remaining).toBe(2);
+    expect(resultat.entryId).toBeNull();
+  });
+
+  it("ne laisse fuir NI code NI identifiant depuis un refus muet", () => {
+    const resultat = mapWaitlistJoin({
+      state: "unavailable",
+      entry_id: "e1",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      position: 1,
+    });
+    expect(resultat.entryId).toBeNull();
+    expect(resultat.reservationId).toBeNull();
+    expect(resultat.code).toBeNull();
+    expect(resultat.position).toBeNull();
+  });
+
+  it("retombe sur `unavailable` — le repli le plus fermé — sur un document illisible", () => {
+    expect(mapWaitlistJoin(null).state).toBe("unavailable");
+    expect(mapWaitlistJoin({ state: "inconnu" }).state).toBe("unavailable");
+  });
+});
+
+describe("mapClaimWaitlistOffer", () => {
+  it("rend la réservation, son code et les bornes du créneau sur une conversion RÉELLE", () => {
+    const resultat = mapClaimWaitlistOffer({
+      state: "claimed",
+      entry_id: "e1",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "confirmed",
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+    });
+    expect(resultat.reservationId).toBe("r1");
+    expect(resultat.startsAt).toBe("2026-09-01T12:00:00Z");
+  });
+
+  it("laisse `startsAt` NUL sur le rejeu idempotent — c'est ce qui distingue les deux", () => {
+    // La RPC ne rend les bornes que sur le chemin qui INSÈRE. L'action s'en sert
+    // pour ne pas renvoyer une confirmation par email à chaque clic.
+    const resultat = mapClaimWaitlistOffer({
+      state: "claimed",
+      entry_id: "e1",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "confirmed",
+    });
+    expect(resultat.reservationId).toBe("r1");
+    expect(resultat.startsAt).toBeNull();
+  });
+
+  it("rend l'échéance dépassée avec `expired`, et rien d'autre", () => {
+    const resultat = mapClaimWaitlistOffer({
+      state: "expired",
+      entry_id: "e1",
+      offer_expires_at: "2026-08-01T00:00:00Z",
+    });
+    expect(resultat.offerExpiresAt).toBe("2026-08-01T00:00:00Z");
+    expect(resultat.code).toBeNull();
+  });
+
+  it("ne nomme AUCUNE entrée sur `unknown` ni sur `unavailable`", () => {
+    expect(
+      mapClaimWaitlistOffer({ state: "unknown", entry_id: "e1" }).entryId,
+    ).toBeNull();
+    expect(
+      mapClaimWaitlistOffer({ state: "unavailable", entry_id: "e1" }).entryId,
+    ).toBeNull();
+  });
+
+  it("retombe sur `unknown` sur un document illisible", () => {
+    expect(mapClaimWaitlistOffer(undefined).state).toBe("unknown");
+  });
+});
+
+describe("mapWaitlistLeave", () => {
+  it("rend `converted` avec la réservation : la place n'est pas perdue, elle a été prise", () => {
+    const resultat = mapWaitlistLeave({
+      state: "converted",
+      entry_id: "e1",
+      reservation_id: "r1",
+    });
+    expect(resultat.reservationId).toBe("r1");
+    expect(resultat.cancelledAt).toBeNull();
+  });
+
+  it("rend `left` idempotent avec sa date, sans réservation", () => {
+    const resultat = mapWaitlistLeave({
+      state: "left",
+      entry_id: "e1",
+      cancelled_at: "2026-08-20T10:00:00Z",
+    });
+    expect(resultat.cancelledAt).toBe("2026-08-20T10:00:00Z");
+    expect(resultat.reservationId).toBeNull();
+  });
+
+  it("ne nomme aucune entrée sur `unknown`", () => {
+    expect(
+      mapWaitlistLeave({ state: "unknown", entry_id: "e1" }).entryId,
+    ).toBeNull();
+  });
+});
+
+describe("mapRedeemInvitation", () => {
+  it("rend la place, son code, l'invitation et le créneau sur `reserved`", () => {
+    const resultat = mapRedeemInvitation({
+      state: "reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      invitation_id: "i1",
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+      activity_name: "Dégustation",
+      remaining: 4,
+    });
+    expect(resultat.status).toBe("confirmed");
+    expect(resultat.invitationId).toBe("i1");
+    expect(resultat.activityName).toBe("Dégustation");
+    expect(resultat.remaining).toBe(4);
+  });
+
+  it("rend la place déjà détenue sur `already_reserved`, SANS nommer l'invitation", () => {
+    const resultat = mapRedeemInvitation({
+      state: "already_reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "checked_in",
+      invitation_id: "i1",
+    });
+    expect(resultat.code).toBe("ABCD2345");
+    expect(resultat.status).toBe("checked_in");
+    // Deux clics ne brûlent qu'un usage, et n'apprennent rien de l'invitation.
+    expect(resultat.invitationId).toBeNull();
+  });
+
+  it("ne laisse RIEN fuir de `unavailable` — les neuf refus restent muets", () => {
+    const resultat = mapRedeemInvitation({
+      state: "unavailable",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      invitation_id: "i1",
+      activity_name: "Dégustation",
+      capacity: 10,
+    });
+    expect(resultat.reservationId).toBeNull();
+    expect(resultat.code).toBeNull();
+    expect(resultat.invitationId).toBeNull();
+    expect(resultat.activityName).toBeNull();
+    expect(resultat.capacity).toBeNull();
+  });
+
+  it("rend la capacité avec `full` — de quoi expliquer le refus", () => {
+    expect(mapRedeemInvitation({ state: "full", capacity: 8 }).capacity).toBe(8);
+  });
+
+  it("retombe sur `unavailable` sur un état hors contrat", () => {
+    expect(mapRedeemInvitation({ state: "revoked" }).state).toBe("unavailable");
+  });
+});
+
+describe("mappers d'invitation côté commerçant", () => {
+  it("rend l'identifiant sur `created`, et le plafond d'usages", () => {
+    const resultat = mapCreateInvitation({
+      state: "created",
+      invitation_id: "i1",
+      max_uses: 5,
+      expires_at: "2026-09-01T12:00:00Z",
+    });
+    expect(resultat.invitationId).toBe("i1");
+    expect(resultat.maxUses).toBe(5);
+  });
+
+  it("ne nomme aucune invitation sur un refus", () => {
+    const resultat = mapCreateInvitation({
+      state: "duplicate",
+      invitation_id: "i1",
+    });
+    expect(resultat.state).toBe("duplicate");
+    expect(resultat.invitationId).toBeNull();
+  });
+
+  it("retombe sur `unknown` — repli FERMÉ — plutôt que d'annoncer un lien qui n'existe pas", () => {
+    expect(mapCreateInvitation(null).state).toBe("unknown");
+    expect(mapCreateInvitation({ state: "created" }).invitationId).toBeNull();
+  });
+
+  it("révoquer et clore rendent `unknown` indistinctement d'un autre locataire", () => {
+    expect(mapRevokeInvitation({ state: "unknown" }).invitationId).toBeNull();
+    expect(mapCloseInvitation({ state: "unknown" }).invitationId).toBeNull();
+    expect(
+      mapRevokeInvitation({
+        state: "revoked",
+        invitation_id: "i1",
+        revoked_at: "2026-08-20T10:00:00Z",
+      }).revokedAt,
+    ).toBe("2026-08-20T10:00:00Z");
+    expect(
+      mapCloseInvitation({
+        state: "closed",
+        invitation_id: "i1",
+        closed_at: "2026-08-20T10:00:00Z",
+      }).closedAt,
+    ).toBe("2026-08-20T10:00:00Z");
+  });
+});
+
+describe("mapReservationPublicState — la file", () => {
+  it("lit `offer_live` du SERVEUR, sans jamais le recalculer", () => {
+    const etat = mapReservationPublicState({
+      state: "ok",
+      timezone: "Europe/Paris",
+      reservations: [],
+      waitlist: [
+        {
+          entry_id: "e1",
+          slot_id: "s1",
+          status: "offered",
+          // Échéance PASSÉE, mais le serveur dit l'offre vivante : c'est lui qui
+          // tranche, il a lu `now()` dans le même instantané.
+          offer_expires_at: "2000-01-01T00:00:00Z",
+          offer_live: true,
+          position: 1,
+          activity_name: "Dégustation",
+        },
+      ],
+    });
+    expect(etat.waitlist[0].offerLive).toBe(true);
+    expect(etat.waitlist[0].position).toBe(1);
+  });
+
+  it("retombe sur `offerLive: false` — jamais une promesse — sur un champ illisible", () => {
+    const etat = mapReservationPublicState({
+      state: "ok",
+      timezone: "Europe/Paris",
+      reservations: [],
+      waitlist: [
+        { entry_id: "e1", slot_id: "s1", status: "offered", offer_live: "oui" },
+      ],
+    });
+    expect(etat.waitlist[0].offerLive).toBe(false);
+  });
+
+  it("jette une entrée sans identifiant plutôt que d'en inventer un", () => {
+    const etat = mapReservationPublicState({
+      state: "ok",
+      timezone: "Europe/Paris",
+      reservations: [],
+      waitlist: [{ slot_id: "s1" }, { entry_id: "e1" }],
+    });
+    expect(etat.waitlist).toHaveLength(0);
+  });
+
+  it("rend une file VIDE — pas `undefined` — sur un état refusé", () => {
+    expect(mapReservationPublicState({ state: "unavailable" }).waitlist).toEqual(
+      [],
+    );
+  });
+});
+
+describe("etatUiEntreeFile", () => {
+  it("distingue l'offre vivante de l'offre échue que le balayage n'a pas encore vue", () => {
+    expect(etatUiEntreeFile({ status: "offered", offerLive: true })).toBe("offre");
+    // La ligne est ENCORE `offered` en base : dire « expirée » mentirait sur son
+    // état, et l'écran n'aurait plus de quoi expliquer un rang encore occupé.
+    expect(etatUiEntreeFile({ status: "offered", offerLive: false })).toBe(
+      "offre_expiree",
+    );
+  });
+
+  it("rend les trois états terminaux tels quels", () => {
+    expect(etatUiEntreeFile({ status: "converted", offerLive: false })).toBe(
+      "convertie",
+    );
+    expect(etatUiEntreeFile({ status: "expired", offerLive: false })).toBe(
+      "expiree",
+    );
+    expect(etatUiEntreeFile({ status: "cancelled", offerLive: false })).toBe(
+      "partie",
+    );
+  });
+
+  it("`waiting` reste `attente`, même si un `offerLive` incohérent traîne", () => {
+    expect(etatUiEntreeFile({ status: "waiting", offerLive: true })).toBe(
+      "attente",
+    );
+  });
+});
+
+describe("etatUiInvitation", () => {
+  const VIVANTE = {
+    revokedAt: null,
+    closedAt: null,
+    expiresAt: null,
+    usedCount: 0,
+    maxUses: 5,
+  };
+
+  it("suit l'ordre des quatre interrupteurs de la RPC", () => {
+    // Révoquée ET épuisée : c'est la RÉVOCATION qu'on nomme — une décision du
+    // commerçant passe avant sa conséquence.
+    expect(
+      etatUiInvitation({
+        ...VIVANTE,
+        revokedAt: "2026-08-01T00:00:00Z",
+        closedAt: "2026-08-01T00:00:00Z",
+        usedCount: 5,
+      }),
+    ).toBe("revoquee");
+    expect(
+      etatUiInvitation({
+        ...VIVANTE,
+        closedAt: "2026-08-01T00:00:00Z",
+        usedCount: 5,
+      }),
+    ).toBe("fermee");
+    expect(
+      etatUiInvitation(
+        { ...VIVANTE, expiresAt: "2026-08-01T00:00:00Z", usedCount: 5 },
+        new Date("2026-08-20T00:00:00Z"),
+      ),
+    ).toBe("expiree");
+    expect(etatUiInvitation({ ...VIVANTE, usedCount: 5 })).toBe("epuisee");
+    expect(etatUiInvitation(VIVANTE)).toBe("active");
+  });
+
+  it("une échéance FUTURE ne ferme rien", () => {
+    expect(
+      etatUiInvitation(
+        { ...VIVANTE, expiresAt: "2030-01-01T00:00:00Z" },
+        new Date("2026-08-20T00:00:00Z"),
+      ),
+    ).toBe("active");
+  });
+
+  it("une date illisible ne fait pas expirer une invitation valide", () => {
+    expect(etatUiInvitation({ ...VIVANTE, expiresAt: "pas une date" })).toBe(
+      "active",
+    );
+  });
+});
+
+describe("adresse d'une invitation", () => {
+  it("porte le jeton — et c'est le seul chemin du module qui en porte un", () => {
+    expect(cheminInvitationReserver("aBc_-123")).toBe(
+      "/reserver/invitation/aBc_-123",
+    );
+  });
+
+  it("échappe ce qui viendrait d'ailleurs plutôt que de le recopier dans le chemin", () => {
+    expect(cheminInvitationReserver("a/b?c")).toBe(
+      "/reserver/invitation/a%2Fb%3Fc",
+    );
+  });
+
+  it("construit une URL absolue sans doubler la barre oblique", () => {
+    expect(urlInvitationReserver("jeton", "https://x.fr/")).toBe(
+      "https://x.fr/reserver/invitation/jeton",
+    );
   });
 });
