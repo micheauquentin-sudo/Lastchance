@@ -176,10 +176,20 @@ test.describe("réserver — parcours public puis comptoir", () => {
       page.getByRole("heading", { name: "Créneaux" }),
     ).toBeVisible({ timeout: 30_000 });
 
+    // IDEMPOTENT, ET IL DOIT L'ÊTRE : cliquer un `<summary>` TOGGLE le pli.
+    // L'ancienne version cliquait chaque summary sans regarder son état, donc
+    // refermait tout pli déjà ouvert — et il suffisait qu'un rendu arrive entre
+    // le comptage et le clic pour que les indices glissent. On n'ouvre plus que
+    // ce qui est fermé.
     const ouvrirLesPlis = async () => {
-      const plis = page.locator("details > summary");
+      const plis = page.locator("details");
       const combien = await plis.count();
-      for (let i = 0; i < combien; i++) await plis.nth(i).click();
+      for (let i = 0; i < combien; i++) {
+        const pli = plis.nth(i);
+        if ((await pli.getAttribute("open")) === null) {
+          await pli.locator("> summary").click();
+        }
+      }
     };
     await ouvrirLesPlis();
 
@@ -194,7 +204,16 @@ test.describe("réserver — parcours public puis comptoir", () => {
     page.once("dialog", (dialogue) => dialogue.accept());
     await ligne.getByRole("button", { name: "Annuler (staff)" }).click();
 
-    // `reloadOnSuccess` : la page se recharge, les plis se referment.
+    // ATTENDRE QUE LE RECHARGEMENT AIT EU LIEU AVANT DE TOUCHER À LA PAGE.
+    // Troisième occurrence du même défaut dans ce fichier, et la plus sournoise :
+    // `reloadOnSuccess` déclenche un `window.location.reload()`, mais le
+    // DOCUMENT PRÉCÉDENT reste affiché tant qu'il n'a pas abouti. « Créneaux »
+    // y est déjà visible et les plis y sont déjà là : la suite ouvrait donc les
+    // plis de l'ANCIENNE page, le rechargement les balayait, et la pastille
+    // « Annulée » attendait vingt secondes dans un pli refermé — sur une
+    // annulation qui, elle, avait parfaitement réussi (le résumé du pli disait
+    // bien « 0 réservation en cours · 1 annulée »).
+    await page.waitForLoadState("networkidle");
     await expect(
       page.getByRole("heading", { name: "Créneaux" }),
     ).toBeVisible({ timeout: 30_000 });
