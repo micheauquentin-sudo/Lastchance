@@ -6772,6 +6772,7 @@ export type Database = {
           id: string
           starts_at: string
           status: string
+          window_state: string
         }[]
       }
       claim_fixture_refresh: {
@@ -8023,6 +8024,7 @@ export type Database = {
         Args: {
           p_consent?: boolean
           p_email?: string
+          p_organization_id: string
           p_player_key_hash: string
           p_slot_id: string
         }
