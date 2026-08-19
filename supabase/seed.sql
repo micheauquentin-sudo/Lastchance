@@ -1190,6 +1190,29 @@ values (
 )
 on conflict (id) do nothing;
 
+-- FILE DÉDIÉE au Mode Attente active (RES-4, lot L7), DISTINCTE de
+-- « Comptoir E2E » ci-dessus.
+--
+-- `reserver-file.spec.ts` boucle sur « Appeler le suivant » jusqu'à ce que
+-- SA PROPRE entrée bascule « appelée » — sans distinguer QUI elle appelle,
+-- puisque `queue_call_next` sert le PREMIER de la file. Sur la même file que
+-- `reserver-attente.spec.ts`, ce clic sert indifféremment l'entrée de l'un
+-- ou de l'autre spec : l'appel plein écran (`AppelPleinEcran`) DÉMONTE alors
+-- `PendantVotreAttente` avant que le test d'attente ait fini de jouer sa
+-- Pause Chance — les deux specs tournent dans le MÊME run Playwright, sur
+-- des workers parallèles, et se sont bel et bien percutées (constaté : les
+-- deux timeouts à 90 s, l'un sur la section démontée, l'autre sur « notre
+-- entrée doit finir par être appelée »). Une file séparée retire la course :
+-- seul le test « appel du staff » de `reserver-attente.spec.ts` appelle sur
+-- CETTE file, et il le fait lui-même — personne d'autre n'y touche.
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values (
+  'e2ea0000-0000-4000-8000-000000000063', 'e2e10000-0000-4000-8000-000000000001',
+  null, 'Comptoir Attente E2E', 'open', 50
+)
+on conflict (id) do nothing;
+
 -- ── Réserver RES-4 — mode attente active ─────────────────────────────
 --
 -- La configuration est posée par UPDATE et non dans les `insert` ci-dessus, et
@@ -1214,13 +1237,15 @@ on conflict (id) do nothing;
 --     par défaut aurait rendu `no_prize` à chaque Pause Chance.
 --
 -- LES DEUX PORTEURS SONT CONFIGURÉS, un par forme d'attente : la file
--- « Comptoir E2E » (attente DEBOUT) et l'activité « Dégustation du Comptoir
--- E2E » (attente AVEC CRÉNEAU, celle dont le créneau proche porte déjà une
+-- « Comptoir Attente E2E » (attente DEBOUT — DÉDIÉE, pas « Comptoir E2E »,
+-- voir le commentaire à sa création plus haut sur la course avec
+-- `reserver-file.spec.ts`) et l'activité « Dégustation du Comptoir E2E »
+-- (attente AVEC CRÉNEAU, celle dont le créneau proche porte déjà une
 -- réservation confirmée dans les parcours de check-in).
 update public.reservation_queues
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
        wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000003'
- where id = 'e2ea0000-0000-4000-8000-000000000061';
+ where id = 'e2ea0000-0000-4000-8000-000000000063';
 
 update public.reservation_activities
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',

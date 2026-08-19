@@ -6,14 +6,19 @@ import { expect, test, type Page } from "@playwright/test";
  * (`/reserver/file/[queueId]`) et la réservation confirmée avec créneau
  * (`/reserver/[activityId]`).
  *
- * Seed (`supabase/seed.sql`) : la file « Comptoir E2E »
- * (e2ea0000-0000-4000-8000-000000000061) et l'activité « Dégustation du
- * Comptoir E2E » (e2ea0000-0000-4000-8000-000000000011) portent toutes les
- * deux `wait_quiz_id` (Quiz du Comptoir E2E) et `wait_pause_campaign_id`
- * (« E2E Grattage », SANS collecte — `PendantVotreAttente` rend un
- * `ClaimConfig` muet, et une campagne qui collecte l'email ferait échouer le
- * claim automatique — roue à un seul lot pondéré 100 et stock fini 5000 :
- * tirage déterministe, toujours gagnant).
+ * Seed (`supabase/seed.sql`) : la file « Comptoir Attente E2E »
+ * (e2ea0000-0000-4000-8000-000000000063 — DÉDIÉE, distincte de « Comptoir
+ * E2E » qu'utilise `reserver-file.spec.ts` : les deux specs tournent dans le
+ * MÊME run Playwright sur des workers parallèles, et `queue_call_next` sert
+ * le PREMIER de la file sans distinguer qui l'appelle — sur une file
+ * partagée, la boucle « Appeler le suivant » de l'un aurait servi l'entrée de
+ * l'autre, démontant `PendantVotreAttente` en plein test) et l'activité
+ * « Dégustation du Comptoir E2E » (e2ea0000-0000-4000-8000-000000000011)
+ * portent toutes les deux `wait_quiz_id` (Quiz du Comptoir E2E) et
+ * `wait_pause_campaign_id` (« E2E Grattage », SANS collecte —
+ * `PendantVotreAttente` rend un `ClaimConfig` muet, et une campagne qui
+ * collecte l'email ferait échouer le claim automatique — roue à un seul lot
+ * pondéré 100 et stock fini 5000 : tirage déterministe, toujours gagnant).
  *
  * `attente` est un CHAMP DE CONTEXTE, résolu une fois par rendu serveur
  * (`loadReserverQueuePublicContext` / `loadReserverPublicContext`) — jamais
@@ -27,7 +32,7 @@ import { expect, test, type Page } from "@playwright/test";
  * (`mobile-chrome`/`mobile-safari`) — même règle que `reserver-file.spec.ts` :
  * aucune assertion sur un rang exact, seulement sur sa présence.
  */
-const QUEUE_ID = "e2ea0000-0000-4000-8000-000000000061";
+const QUEUE_ID = "e2ea0000-0000-4000-8000-000000000063";
 const ACTIVITY_ID = "e2ea0000-0000-4000-8000-000000000011";
 const PHRASE_NON_NECESSAIRE =
   "Aucune animation n'est nécessaire pour conserver votre place.";
@@ -46,7 +51,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
       // rendu qui voit la place fraîchement prise.
       await playerPage.goto(`/reserver/file/${QUEUE_ID}`);
       await expect(
-        playerPage.getByRole("heading", { name: "Comptoir E2E" }),
+        playerPage.getByRole("heading", { name: "Comptoir Attente E2E" }),
       ).toBeVisible({ timeout: 30_000 });
       await playerPage
         .getByRole("button", { name: "Prendre mon tour" })
@@ -142,7 +147,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
     try {
       await playerPage.goto(`/reserver/file/${QUEUE_ID}`);
       await expect(
-        playerPage.getByRole("heading", { name: "Comptoir E2E" }),
+        playerPage.getByRole("heading", { name: "Comptoir Attente E2E" }),
       ).toBeVisible({ timeout: 30_000 });
       await playerPage
         .getByRole("button", { name: "Prendre mon tour" })
@@ -161,7 +166,7 @@ test.describe("réserver — mode attente active (RES-4)", () => {
       await expect(
         page.getByRole("heading", { name: "Réservations" }),
       ).toBeVisible({ timeout: 30_000 });
-      await page.getByRole("button", { name: /Comptoir E2E/ }).click();
+      await page.getByRole("button", { name: /Comptoir Attente E2E/ }).click();
       const boutonAppeler = page.getByRole("button", {
         name: /Appeler le suivant/,
       });
