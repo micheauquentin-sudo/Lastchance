@@ -32,10 +32,12 @@ Arbitrages A1-A4 et décision traduction : ADR-109.
 - L17 Duo Miroir
 - L18 Portrait de la Bande
 
-**Statut** : L0 à L6 livrés et fusionnés (PR #156, #157, #159, #160, #161,
-#162 ; migrations `20261001120000` à `20261005120000`). L7 (RES-4, attente
-active) en cours, migration `20261006120000`. L8 à L18 inchangés, à faire.
-Arbitrages RES-2/RES-3 : ADR-110, ADR-111. Suivi détaillé :
+**Statut** : L0 à L9 livrés et fusionnés (PR #156, #157, #159, #160, #161,
+#162, #163, #164, #165 ; migrations `20261001120000` à `20261010120000`) —
+**le périmètre Réserver (RES-1 à RES-5) est complet**. L10 (VIT-1a, catalogue
+Vitrine) en cours sur `chantier/rv-l10-vitrine-catalogue`, migration
+`20261011120000`. L11 à L18 inchangés, à faire. Arbitrages RES-2/RES-3/L8/L9 :
+ADR-110, ADR-111, ADR-113, ADR-114. Suivi détaillé :
 [`docs/chantier-reserver-vitrine.md`](./chantier-reserver-vitrine.md).
 
 ## V1 — MVP SaaS (✅ livrée)
