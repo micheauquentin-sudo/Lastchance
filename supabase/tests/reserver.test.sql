@@ -894,13 +894,13 @@ select is(
 -- ════════════════════════════════════════════════════════════
 
 select ok(has_function_privilege('service_role',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-1 service_role exécute reserve_slot');
 select ok(not has_function_privilege('authenticated',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-2 authenticated ne l''exécute pas');
 select ok(not has_function_privilege('anon',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-3 anon ne l''exécute pas');
 select ok(not has_function_privilege('authenticated',
   'public.cancel_reservation(uuid,text)', 'EXECUTE'),
@@ -3203,6 +3203,486 @@ select is(
     where w.id = (select (j->>'entry_id')::uuid from rv3_i4 where n = 3)),
   'offered',
   'PURG-2 la place va au premier inscrit RÉELLEMENT joignable');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 24. LES EXPÉRIENCES SIGNATURE (RES-5, migration 20261007120000)
+--
+-- Ce bloc prouve UNE SEULE PROPRIÉTÉ, sous tous les angles où elle peut se
+-- perdre : LA CAPACITÉ SE COMPTE EN PERSONNES, ET UN DUO EST INDIVISIBLE.
+--
+-- Le défaut qu'il ferme est précis. Tant que le module comptait des LIGNES,
+-- deux hôtes cliquant sur le dernier créneau d'un Atelier Duo de deux places
+-- passaient tous les deux (2 lignes <= 2 places) et quatre personnes se
+-- présentaient à un atelier pour deux. Aucune erreur, aucun log, aucune trace :
+-- le commerçant l'aurait découvert le samedi, devant les gens.
+--
+-- LES CINQ ANGLES :
+--   * LA JAUGE (DUO-1 à DUO-4) — un duo prend deux places, le suivant est
+--     refusé même s'il reste une place, et cette place ne se vend pas à moitié.
+--   * LA DERNIÈRE PAIRE (CONC-1 à CONC-3) — deux duos sur deux places : un
+--     seul passe. C'est la même réserve que le bloc 1 sur ce que « concurrence »
+--     veut dire ici : pgTAP est mono-transactionnel, donc ce qui est prouvé est
+--     que LA JAUGE trie, et le verrou d'avis est vérifié séparément (bloc 1).
+--   * LA LIBÉRATION (CANC-1 à CANC-4) — annuler un duo rend DEUX places, et
+--     `reservation_offer_next` repart avec la bonne arithmétique : UNE offre
+--     pour la paire, et sa conversion crée une réservation de DEUX personnes.
+--     C'est l'angle le plus important : `claim_waitlist_offer` ne retestant
+--     PAS la capacité, une conversion à une personne aurait laissé une place
+--     tenue que plus rien n'aurait libérée, et une conversion sans unité
+--     commune aurait sur-réservé le créneau en silence.
+--   * LA PLACE ESSEULÉE (SEUL-1, SEUL-2) — sur un Atelier Duo à qui il reste
+--     UNE place, la file s'ouvre et aucune offre ne part. Proposer cette place
+--     aurait fait sonner un téléphone pour une offre impossible à honorer.
+--   * LES CHAMPS DE PRÉSENTATION (PRES-1 à PRES-8) — ce que la base refuse
+--     d'un format mal décrit, avant qu'un écran ait à le rendre.
+--
+-- ET LES DEUX INVARIANTS DU DÉPÔT, rejoués sur les tables neuves : l'ORG
+-- VOISINE ne réserve pas ici (VOIS-1), et le `remaining` public dit la vérité
+-- en PERSONNES (REM-1, REM-2).
+-- ════════════════════════════════════════════════════════════
+
+-- ── Fixtures des deux formats ────────────────────────────────
+-- Le Moment Signature porte ses trois cartes et sa durée ; l'Atelier Duo porte
+-- sa durée et ses instructions, et AUCUNE étape — c'est la différence de
+-- format, écrite dans les données plutôt que racontée.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active,
+   kind, promise, duration_minutes, steps, preparation)
+values
+  ('4e5e0000-0000-4000-8000-000000000206',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Moment Signature', null, true,
+   'signature', 'Trente minutes hors du temps, au comptoir.', 30,
+   '[{"title":"On vous accueille","body":"Un mot sur la maison."},
+     {"title":"On goûte","body":"Trois verres commentés."},
+     {"title":"On repart","body":"Avec la fiche de dégustation."}]'::jsonb,
+   'Venez cinq minutes en avance.'),
+  ('4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Atelier Duo', null, true,
+   'duo', 'À deux, les mains dans la farine.', 90, null,
+   'Prévoyez un tablier ; tout le reste est fourni.'),
+  -- Chez la VOISINE, un Atelier Duo parfaitement ouvert.
+  ('4e5e0000-0000-4000-8000-000000000208',
+   '4e5e0000-0000-4000-8000-00000000000b', 'Atelier Duo voisin', null, true,
+   'duo', 'Le même, ailleurs.', 90, null, null);
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values
+  -- S40 : Atelier Duo, TROIS places. Le nombre est choisi : il est IMPAIR, donc
+  -- il reste forcément une place après un duo — celle qui ne doit jamais se
+  -- vendre à moitié.
+  ('4e5e0000-0000-4000-8000-000000000340',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '2 days', now() + interval '2 days 90 minutes', 3, 'open'),
+  -- S41 : Atelier Duo, DEUX places — la dernière paire.
+  ('4e5e0000-0000-4000-8000-000000000341',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '3 days', now() + interval '3 days 90 minutes', 2, 'open'),
+  -- S42 : Atelier Duo, DEUX places — celui qu'on annule pour voir la file
+  -- repartir.
+  ('4e5e0000-0000-4000-8000-000000000342',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '4 days', now() + interval '4 days 90 minutes', 2, 'open'),
+  -- S43 : Moment Signature, TROIS places — le format qui refuse la taille 2.
+  ('4e5e0000-0000-4000-8000-000000000343',
+   '4e5e0000-0000-4000-8000-000000000206',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '2 days', now() + interval '2 days 30 minutes', 3, 'open'),
+  -- S44 : l'Atelier Duo de la VOISINE.
+  ('4e5e0000-0000-4000-8000-000000000344',
+   '4e5e0000-0000-4000-8000-000000000208',
+   '4e5e0000-0000-4000-8000-00000000000b',
+   now() + interval '2 days', now() + interval '2 days 90 minutes', 4, 'open');
+
+
+-- ── PRES : ce que la base refuse d'un format mal décrit ──────
+--
+-- Les contraintes conditionnelles sont écrites en implication : elles ne
+-- doivent mordre QUE sur le format concerné. Chaque refus est donc doublé, plus
+-- loin, d'une acceptation sur un autre format — sans quoi une contrainte trop
+-- large passerait pour une contrainte juste.
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature sans durée',
+            'signature',
+            '[{"title":"Une","body":"Deux."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-1 une `signature` SANS DURÉE est refusée : la page immersive promet un '
+  'temps, et s''engager sur une inconnue n''est pas une promesse');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo sans durée', 'duo', null)$$,
+  '23514', null,
+  'PRES-2 un `duo` SANS DURÉE est refusé aussi — la contrainte vise les deux '
+  'formats nouveaux, pas seulement celui qui a des cartes');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature bavarde',
+            'signature', 30,
+            '[{"title":"Une","body":"."},{"title":"Deux","body":"."},
+              {"title":"Trois","body":"."},{"title":"Quatre","body":"."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-3 QUATRE cartes sont refusées : la page en montre trois, et la base ne '
+  'stocke pas ce que l''écran ne sait pas rendre');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature muette',
+            'signature', 30, null)$$,
+  '23514', null,
+  'PRES-4 une `signature` SANS ÉTAPES est refusée : trois cartes sont sa '
+  'définition, pas son ornement');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature vide',
+            'signature', 30, '[]'::jsonb)$$,
+  '23514', null,
+  'PRES-5 un tableau VIDE ne vaut pas des étapes — le validateur borne le haut, '
+  'la contrainte conditionnelle borne le bas');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature difforme',
+            'signature', 30, '[{"title":"Sans corps"}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6 une carte SANS `body` est refusée : la forme est validée carte par '
+  'carte, pas seulement au niveau du tableau');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo interminable',
+            'duo', 600)$$,
+  '23514', null,
+  'PRES-7 une durée de dix heures est refusée : au-delà de la journée de '
+  'travail, un créneau unique n''est plus le bon objet');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, promise)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo prolixe', 'duo', 60,
+            repeat('x', 201))$$,
+  '23514', null,
+  'PRES-8 une promesse de 201 caractères est refusée : c''est une phrase, pas '
+  'un paragraphe');
+
+-- ET LE FORMAT `standard` N'EST TOUCHÉ PAR AUCUNE DES DEUX CONDITIONNELLES.
+-- C'est l'assertion qui prouve que cette migration ne casse pas le socle : une
+-- activité d'hier, sans durée ni cartes, s'insère toujours.
+select lives_ok(
+  $$insert into public.reservation_activities (organization_id, name)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Activité du socle')$$,
+  'PRES-9 une activité `standard` sans durée ni étapes reste parfaitement '
+  'valide — le défaut de `kind` préserve tout l''existant');
+
+
+-- ── DUO : la jauge compte des personnes ─────────────────────
+--
+-- S40 porte TROIS places. Un duo en prend deux ; il en reste une, et c'est
+-- exactement la situation que « atomique par personne » doit régler.
+
+create temporary table rv5_duo as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d1', 32),
+  null, false, 2) as j;
+
+select is((select j->>'state' from rv5_duo where n = 1), 'reserved',
+  'DUO-1 un hôte réserve l''Atelier pour deux');
+select is((select j->>'party_size' from rv5_duo where n = 1), '2',
+  'DUO-2 et la réservation porte DEUX personnes sur UNE ligne — un hôte, un '
+  'accompagnant, un seul code de comptoir');
+select is((select j->>'remaining' from rv5_duo where n = 1), '1',
+  'DUO-3 `remaining` est en PERSONNES : trois places moins deux en font une');
+
+-- LE SECOND DUO EST REFUSÉ, ALORS QU'IL RESTE UNE PLACE. C'est l'assertion
+-- centrale du bloc : la jauge teste la DEMANDE ENTIÈRE (`v_taken + v_held +
+-- v_seats > capacity`), pas seulement l'état. Avec un `>=` sur l'état, ce
+-- second duo serait passé et l'atelier aurait accueilli quatre personnes.
+insert into rv5_duo values (2, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d2', 32),
+  null, false, 2));
+select is((select j->>'state' from rv5_duo where n = 2), 'full',
+  'DUO-4 le second duo est refusé BIEN QU''IL RESTE UNE PLACE : un atelier à '
+  'deux ne se vend pas à moitié');
+
+-- ET LA PLACE ESSEULÉE NE SE VEND PAS NON PLUS À L'UNITÉ.
+insert into rv5_duo values (3, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d3', 32),
+  null, false, 1));
+select is((select j->>'state' from rv5_duo where n = 3), 'invalid_party_size',
+  'DUO-5 une personne seule est refusée sur un Atelier Duo : « l''atelier se '
+  'réserve à deux » est sa définition, pas une préférence');
+select is((select j->>'expected' from rv5_duo where n = 3), '2',
+  'DUO-6 et le refus DIT la taille attendue — le format est public, le taire '
+  'ne cacherait rien et empêcherait l''écran d''expliquer');
+
+-- LE SYMÉTRIQUE : deux personnes sur un format qui n'est pas un duo.
+insert into rv5_duo values (4, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000343', repeat('d4', 32),
+  null, false, 2));
+select is((select j->>'state' from rv5_duo where n = 4), 'invalid_party_size',
+  'DUO-7 deux personnes sont refusées sur un Moment Signature : une seule '
+  'égalité `p_party_size = unité du format` porte les deux refus');
+select is((select j->>'expected' from rv5_duo where n = 4), '1',
+  'DUO-8 qui attend une personne le dit');
+
+-- HORS BORNES : c'est un bogue d'appelant, pas un choix de joueur.
+select throws_ok(
+  format(
+    $$select public.reserve_slot(
+        '4e5e0000-0000-4000-8000-00000000000a',
+        '4e5e0000-0000-4000-8000-000000000340', %L, null, false, 3)$$,
+    repeat('d5', 32)),
+  '22023', 'invalid party size',
+  'DUO-9 une taille de 3 lève, elle ne se négocie pas : la borne de la base '
+  'refuserait la ligne, mais avec une erreur que personne ne saurait lire');
+
+-- LA VÉRITÉ EN BASE, pas seulement dans la réponse.
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000340'
+       and status in ('confirmed', 'checked_in')$$,
+  array[2],
+  'DUO-10 le créneau porte DEUX personnes pour UNE ligne : c''est la somme, '
+  'pas le compte, qui fait foi');
+
+
+-- ── CONC : la dernière PAIRE ────────────────────────────────
+--
+-- S41 porte DEUX places, c'est-à-dire exactement UN duo. Deux hôtes le
+-- demandent. Même réserve que le bloc 1 : pgTAP est mono-transactionnel, donc
+-- ce qui est prouvé ici est que LA JAUGE trie — le verrou d'avis qui rend ce
+-- tri atomique entre sessions est vérifié dans `pg_locks` au bloc 1, sur la
+-- clé exacte, et `reserve_slot` le prend avant de compter.
+
+create temporary table rv5_conc as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000341', repeat('c1', 32),
+  null, false, 2) as j;
+insert into rv5_conc values (2, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000341', repeat('c2', 32),
+  null, false, 2));
+
+select is((select j->>'state' from rv5_conc where n = 1), 'reserved',
+  'CONC-1 le premier duo prend la dernière paire');
+select is((select j->>'state' from rv5_conc where n = 2), 'full',
+  'CONC-2 le second est refusé — UN SEUL passe, jamais deux moitiés');
+select results_eq(
+  $$select count(*)::integer from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000341'
+       and status = 'confirmed'$$,
+  array[1],
+  'CONC-3 et il n''existe QU''UNE ligne : le refus n''a rien écrit');
+
+
+-- ── SEUL : la place esseulée ne se propose à personne ────────
+--
+-- Retour sur S40 : deux places prises sur trois, il en reste UNE, et aucune
+-- réservation ne peut la prendre. Deux propriétés en découlent, et elles
+-- doivent être vraies ENSEMBLE — la file s'ouvre (sinon le joueur serait
+-- renvoyé vers une réservation qui le refusera), et aucune offre ne part
+-- (sinon on promettrait une place impossible à honorer).
+
+create temporary table rv5_seul as
+select 1 as n, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('e1', 32)) as j;
+
+select is((select j->>'state' from rv5_seul where n = 1), 'waiting',
+  'SEUL-1 la file S''OUVRE bien qu''il reste une place : « complet » se dit en '
+  'RÉSERVATIONS POSSIBLES, et plus aucune ne tient');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv5_seul where n = 1)),
+  'waiting',
+  'SEUL-2 et l''inscrit reste `waiting` : la place isolée ne lui est PAS '
+  'proposée — une offre qu''il ne pourrait pas convertir aurait gelé la place '
+  'jusqu''à son échéance');
+select results_eq(
+  $$select public.reservation_offer_next(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000340')$$,
+  array[0],
+  'SEUL-3 appelée directement, l''avance de file crée ZÉRO offre : la division '
+  'entière `places libres / unité` vaut 0 sur une place isolée');
+
+
+-- ── CANC : annuler un duo rend DEUX places ──────────────────
+--
+-- S42, deux places, un duo dessus : le créneau est plein. Quelqu'un s'inscrit
+-- en file, l'hôte annule — et toute la chaîne doit repartir avec la BONNE
+-- ARITHMÉTIQUE. C'est l'angle le plus délicat du lot, parce que
+-- `claim_waitlist_offer` ne reteste PAS la capacité : elle fait confiance à
+-- l'unité commune.
+
+create temporary table rv5_canc as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000342', repeat('f1', 32),
+  null, false, 2) as j;
+insert into rv5_canc values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000342', repeat('f2', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 2), 'waiting',
+  'CANC-1 le créneau est plein (deux places, un duo) et la file s''ouvre');
+
+-- L'ANNULATION. Elle ne compte rien elle-même : elle écrit le statut puis
+-- appelle `reservation_offer_next` sous son verrou. La bonne arithmétique lui
+-- vient donc de la fonction qu'elle appelait déjà — c'est pourquoi la migration
+-- ne la redéfinit pas.
+insert into rv5_canc values (3, public.cancel_reservation(
+  (select (j->>'reservation_id')::uuid from rv5_canc where n = 1),
+  repeat('f1', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 3), 'cancelled',
+  'CANC-2 l''hôte annule');
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000342'
+       and status in ('confirmed', 'checked_in')$$,
+  array[0],
+  'CANC-3 DEUX places reviennent d''un coup — pas une');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv5_canc where n = 2)),
+  'offered',
+  'CANC-4 et la paire libérée part au premier de la file, en UNE offre');
+
+-- LA CONVERSION CRÉE UNE RÉSERVATION DE DEUX PERSONNES. Sans cela, l'offre
+-- aurait tenu deux places et n'en aurait consommé qu'une : une place serait
+-- restée tenue par une offre convertie, que plus rien n'aurait libérée.
+insert into rv5_canc values (4, public.claim_waitlist_offer(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select (j->>'entry_id')::uuid from rv5_canc where n = 2),
+  repeat('f2', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 4), 'claimed',
+  'CANC-5 le premier de la file convertit son offre');
+select is((select j->>'party_size' from rv5_canc where n = 4), '2',
+  'CANC-6 et sa réservation vaut DEUX personnes — exactement ce que l''offre '
+  'tenait ; c''est cette égalité qui autorise la conversion à ne pas retester '
+  'la capacité');
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000342'
+       and status in ('confirmed', 'checked_in')$$,
+  array[2],
+  'CANC-7 le créneau est de nouveau plein, à DEUX personnes exactement : '
+  'aucune sur-réservation par le chemin qui ne vérifie rien');
+
+
+-- ── VOIS : l'organisation voisine ───────────────────────────
+--
+-- L'invariant du dépôt, rejoué sur le format neuf : viser le créneau de la
+-- voisine depuis l'organisation A rend `unavailable` et RIEN d'autre — pas
+-- `invalid_party_size`, qui aurait révélé le format d'un créneau qu'on n'a pas
+-- le droit de voir. L'ORDRE DES REFUS EST LA PROPRIÉTÉ : la règle de taille est
+-- évaluée APRÈS les six refus muets.
+
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000344', repeat('b1', 32),
+    null, false, 2))->>'state',
+  'unavailable',
+  'VOIS-1 le créneau de la VOISINE reste muet, même avec la bonne taille');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000344', repeat('b2', 32),
+    null, false, 1))->>'state',
+  'unavailable',
+  'VOIS-2 et avec la MAUVAISE taille aussi : `invalid_party_size` ici aurait '
+  'dit qu''un Atelier Duo existe chez le voisin');
+select results_eq(
+  $$select count(*)::integer from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000344'$$,
+  array[0],
+  'VOIS-3 et rien n''a été écrit chez elle');
+
+
+-- ── REM : le `remaining` public dit la vérité en personnes ───
+
+create temporary table rv5_rem as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000343', repeat('a1', 32),
+  null, false, 1) as j;
+
+select is((select j->>'state' from rv5_rem where n = 1), 'reserved',
+  'REM-1 le Moment Signature se réserve à une personne, comme le socle');
+select is((select j->>'remaining' from rv5_rem where n = 1), '2',
+  'REM-2 et son `remaining` est celui d''hier : trois places moins une');
+
+-- L'ÉTAT PUBLIC DU JOUEUR PORTE SA TAILLE. Sans elle, l'hôte d'un Atelier Duo
+-- ne pourrait pas savoir si son accompagnant a une place.
+select is(
+  (select (item->>'party_size')
+     from pg_catalog.jsonb_array_elements(
+       (public.reservation_public_state(
+          '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32)))
+         -> 'reservations') as item
+    limit 1),
+  '2',
+  'REM-3 l''état public rend `party_size` : l''hôte relit « pour deux »');
+
+-- ET LE FORMAT N'ENTRE PAS DANS CET ÉTAT — il décrit ce qui est PROPOSÉ, que la
+-- page lit sur `reservation_activities`. Deux sources pour la même vérité
+-- auraient fini par diverger.
+select ok(
+  not ((public.reservation_public_state(
+          '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32)))
+        -> 'reservations' -> 0 ? 'kind'),
+  'REM-4 et il ne recopie PAS le format de l''activité');
+
+
+-- ── ACL : les colonnes neuves suivent le régime du socle ────
+
+select ok(has_column_privilege('authenticated',
+  'public.reservations', 'party_size', 'SELECT'),
+  'ACL-24 l''éditeur LIT `party_size` — sans quoi son agenda afficherait '
+  '« 3 réservations » sur un atelier plein à 6 personnes');
+select ok(not has_column_privilege('authenticated',
+  'public.reservations', 'party_size', 'UPDATE'),
+  'ACL-25 mais ne l''écrit pas : la taille se décide sous le verrou');
+select ok(not has_column_privilege('anon',
+  'public.reservation_activities', 'kind', 'SELECT'),
+  'ACL-26 `anon` ne lit RIEN des formats — le parcours joueur passe par une RPC');
+select ok(has_column_privilege('authenticated',
+  'public.reservation_activities', 'steps', 'UPDATE'),
+  'ACL-27 l''éditeur règle les cartes de son Moment Signature');
+select results_eq(
+  $$select count(*) from pg_catalog.pg_proc p
+      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'reserve_slot'$$,
+  array[1::bigint],
+  'ACL-28 le catalogue ne porte TOUJOURS qu''UNE signature de reserve_slot : '
+  'l''ancienne à cinq arguments est partie, sans quoi un appel sans taille '
+  'aurait réservé un Atelier Duo pour une personne');
 
 select * from finish();
 rollback;

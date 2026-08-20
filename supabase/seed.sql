@@ -1146,6 +1146,83 @@ values (
 )
 on conflict (id) do nothing;
 
+-- ── Réserver RES-5 — les deux Expériences Signature ──────────────────
+--
+-- DEUX ACTIVITÉS DE PLUS, ET SUR LEURS PROPRES CRÉNEAUX. Le parcours public
+-- rend UNE activité par page : poser ces formats sur une activité existante
+-- aurait ajouté aux fixtures RES-1a/RES-2 des créneaux d'un autre format, que
+-- les specs attrapent avec leur `.last()`.
+--
+-- LES CRÉNEAUX SONT PROCHES (2 h et 3 h) et non à plusieurs jours : les deux
+-- formats se jouent sur la PAGE IMMERSIVE — promesse, durée, étapes,
+-- préparation — et une spec qui doit lire ces éléments n'a pas besoin
+-- d'attendre, mais a besoin d'un créneau visible en tête de liste.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active,
+   kind, promise, duration_minutes, steps, preparation)
+values (
+  'e2ea0000-0000-4000-8000-000000000014', 'e2e10000-0000-4000-8000-000000000001',
+  'Moment Signature du Comptoir E2E',
+  'Trente minutes au comptoir, en trois temps.', true,
+  'signature',
+  'Trente minutes hors du temps, entre le moulin et la tasse.',
+  30,
+  -- TROIS cartes, le maximum : c'est le format nominal, et c'est aussi ce qui
+  -- vérifie au passage que la borne haute laisse bien passer trois.
+  '[{"title":"On vous accueille",
+     "body":"Un mot sur la maison, et le choix des grains du jour."},
+    {"title":"On extrait ensemble",
+     "body":"Vous tenez le porte-filtre ; on règle la mouture à deux."},
+    {"title":"On déguste",
+     "body":"Trois tasses commentées, et la fiche à emporter."}]'::jsonb,
+  'Venez cinq minutes en avance. Évitez le parfum : il couvre les arômes.'
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000027',
+  'e2ea0000-0000-4000-8000-000000000014', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '2 hours', now() + interval '2 hours 30 minutes', 4, 'open'
+)
+on conflict (id) do nothing;
+
+-- L'ATELIER DUO. Capacité SIX, c'est-à-dire TROIS duos : un multiple de deux,
+-- délibérément — sur une capacité impaire, la place esseulée finale rendrait
+-- « complet » au dernier duo et une spec y verrait un échec plutôt que la
+-- règle. Trois duos laissent en outre `mobile-chrome` et `mobile-safari` jouer
+-- le même fichier en parallèle sans se prendre la dernière paire.
+--
+-- AUCUN score, AUCUN classement, AUCUN gain : c'est le cahier, et rien dans ce
+-- seed n'attache de campagne ni de quiz à cette activité.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active,
+   kind, promise, duration_minutes, steps, preparation)
+values (
+  'e2ea0000-0000-4000-8000-000000000015', 'e2e10000-0000-4000-8000-000000000001',
+  'Atelier Duo du Comptoir E2E',
+  'Une heure et demie à deux, autour du latte art.', true,
+  'duo',
+  'À deux, les mains dans le lait : repartez avec votre première rosetta.',
+  90,
+  -- PAS D'ÉTAPES, et c'est la différence de format écrite dans les données :
+  -- le Duo dit sa préparation en prose, le Signature la présente en cartes.
+  null,
+  'Réservez pour deux : la place de votre accompagnant est prise avec la '
+  'vôtre. Prévoyez un tablier, tout le reste est fourni.'
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2ea0000-0000-4000-8000-000000000028',
+  'e2ea0000-0000-4000-8000-000000000015', 'e2e10000-0000-4000-8000-000000000001',
+  now() + interval '3 hours', now() + interval '3 hours 90 minutes', 6, 'open'
+)
+on conflict (id) do nothing;
+
 -- ── Réserver RES-3 — file d'accueil en continu ───────────────────────
 --
 -- SANS ACTIVITÉ, DÉLIBÉRÉMENT. `activity_id` est nul : c'est la file

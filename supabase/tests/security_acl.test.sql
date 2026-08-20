@@ -391,9 +391,9 @@ select ok(not has_table_privilege('authenticated', 'public.reservations', 'DELET
 -- disparaissait. `active = false` et `status = 'closed'` ferment sans effacer.
 select ok(not has_table_privilege('authenticated', 'public.reservation_activities', 'DELETE'), 'merchant cannot delete a reservation activity and cascade away its arrival history');
 select ok(not has_table_privilege('authenticated', 'public.reservation_slots', 'DELETE'), 'merchant cannot delete a reservation slot and cascade away its arrival history');
-select ok(has_function_privilege('service_role', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'server can take a reservation slot');
-select ok(not has_function_privilege('authenticated', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot bypass the reservation capacity lock');
-select ok(not has_function_privilege('anon', 'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot reserve directly');
+select ok(has_function_privilege('service_role', 'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'), 'server can take a reservation slot');
+select ok(not has_function_privilege('authenticated', 'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'), 'merchant session cannot bypass the reservation capacity lock');
+select ok(not has_function_privilege('anon', 'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'), 'anon cannot reserve directly');
 select ok(not has_function_privilege('authenticated', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'merchant session cannot cancel through the player RPC');
 select ok(not has_function_privilege('anon', 'public.cancel_reservation(uuid,text)', 'EXECUTE'), 'anon cannot cancel directly');
 select ok(has_function_privilege('service_role', 'public.checkin_reservation(uuid,text,text)', 'EXECUTE'), 'server can validate an arrival');
