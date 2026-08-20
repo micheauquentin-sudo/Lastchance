@@ -90,8 +90,10 @@ test.describe("vitrine — dashboard commerçant", () => {
     const ficheLi = page.locator("li").filter({ hasText: nomFiche }).last();
     await expect(ficheLi).toBeVisible({ timeout: 20_000 });
 
-    // Ouvrir le détail pour cocher badge + allergène.
-    await ficheLi.getByRole("button", { name: /Modifier|Voir le détail/ }).click();
+    // Ouvrir le détail pour cocher badge + allergène. Le contrôle est un
+    // <summary> natif (fiche-editeur.tsx) : Playwright l'expose en `generic`,
+    // jamais en `button` — on le vise donc par sa balise, pas par un rôle.
+    await ficheLi.locator("summary").first().click();
     await ficheLi.getByLabel("🌱 Vegan").check();
     await ficheLi.getByLabel("Gluten").check();
     await ficheLi
