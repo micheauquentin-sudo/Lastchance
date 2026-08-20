@@ -1729,3 +1729,343 @@ export function cheminInvitationReserver(jeton: string): string {
 export function urlInvitationReserver(jeton: string, appUrl: string): string {
   return `${appUrl.replace(/\/+$/, "")}${cheminInvitationReserver(jeton)}`;
 }
+
+// ════════════════════════════════════════════════════════════
+// LE MODE ATTENTE ACTIVE (RES-4, lot L7) — migration 20261006120000
+//
+// Une SESSION D'ATTENTE sépare strictement la file (ou la réservation) de
+// l'animation proposée pendant qu'on patiente. Rien ici ne porte de rang, de
+// compteur d'attente ni d'échéance, et ce n'est pas un oubli : les rendre
+// ferait de la session une SECONDE source de vérité sur la file, c'est-à-dire
+// exactement ce que la séparation interdit. Le rang a un seul chemin, et c'est
+// `mapQueuePublicState` ci-dessus.
+//
+// ── LES TROIS ANIMATIONS NE SONT PAS DES MOTEURS NEUFS ──
+//
+// `quiz` est un `quizzes` existant, `pause` UNE participation offerte sur une
+// `campaigns` existante — donc un `spins` ordinaire, un code de retrait
+// ordinaire, remis EN CAISSE — et `activite` n'est qu'un LIEN. Aucune famille
+// de récompense n'est inventée, aucune économie n'est ajoutée : le plafond est
+// celui de la campagne que le commerçant a déjà dotée.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * D'où l'on attend. Les deux formes du produit — debout dans la file (RES-3) ou
+ * un créneau confirmé en poche (RES-1) — et EXACTEMENT une par session, comme
+ * le `num_nonnulls(…) = 1` de la table.
+ */
+export type ReserverWaitSource = "queue_entry" | "reservation";
+
+const RESERVER_WAIT_SOURCES: readonly ReserverWaitSource[] = [
+  "queue_entry",
+  "reservation",
+];
+
+/** Issues de `wait_session_open`. */
+export type WaitSessionOpenState = "unknown" | "open";
+
+const WAIT_SESSION_OPEN_STATES: readonly WaitSessionOpenState[] = [
+  "unknown",
+  "open",
+];
+
+/**
+ * La configuration de RETRAIT de la campagne de Pause Chance — ce que
+ * `ClaimForm` doit demander avant d'afficher le code.
+ *
+ * ── POURQUOI ELLE EST REDÉCLARÉE ICI ET PAS IMPORTÉE DE `claim-form` ──
+ *
+ * `ClaimConfig` vit dans un composant `"use client"`. Ce module est lu par le
+ * rendu serveur ; l'importer ferait remonter une dépendance d'écran dans une
+ * couche qui ne doit connaître que des données. La forme est identique, donc
+ * l'affectation est structurellement valide, et c'est le bon sens de la
+ * dépendance : c'est l'écran qui accepte ce que le serveur lui donne.
+ *
+ * ── ELLE NE SE DEVINE PAS ──
+ *
+ * Elle valait `{ false, false, null }` en dur avant ce correctif, faute d'être
+ * descendue. Or `campaigns.collect_email` vaut `true` PAR DÉFAUT : le retrait
+ * automatique partait donc sans adresse, le serveur le refusait — et le lot
+ * était déjà tiré, le stock déjà décompté. Un tour offert brûlé sans code.
+ */
+export interface ReserverPauseClaimConfig {
+  collectEmail: boolean;
+  collectPhone: boolean;
+  codeTtlSeconds: number | null;
+}
+
+export interface WaitSessionOpenResult {
+  state: WaitSessionOpenState;
+  /** Présent sur `open` seulement — c'est lui qui PROUVE la session. */
+  sessionId: string | null;
+  source: ReserverWaitSource | null;
+  /**
+   * Quiz proposé, ou `null`. La RPC le met à `null` dès qu'il n'est plus
+   * `active` : une animation qu'on ne peut pas jouer ne se propose pas.
+   */
+  quizId: string | null;
+  /** Campagne de la Pause Chance, `null` par le même filtre de jouabilité. */
+  pauseCampaignId: string | null;
+  /**
+   * Configuration de retrait de CETTE campagne. Indissociable d'elle : `null`
+   * exactement quand `pauseCampaignId` l'est — une collecte sans lot à
+   * réclamer n'a pas de sens, et la rendre quand même laisserait un écran
+   * croire qu'il y a quelque chose à retirer.
+   */
+  pauseClaimConfig: ReserverPauseClaimConfig | null;
+  /** ADRESSE de l'activité — de quoi construire le lien, rien de plus. */
+  activityId: string | null;
+  pauseChanceUsed: boolean;
+}
+
+/**
+ * Mappe le `jsonb` de `wait_session_open`.
+ *
+ * Même discipline que `mapQueueJoin` : rien n'est retenu hors de l'état qui le
+ * prouve. `unknown` couvre INDISTINCTEMENT une source inconnue, celle d'un
+ * autre commerce, celle d'un autre joueur, une source morte et une organisation
+ * sans le droit `vitrine` — les distinguer donnerait un oracle sur qui se
+ * trouve dans le magasin d'en face.
+ */
+export function mapWaitSessionOpen(raw: unknown): WaitSessionOpenResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: WaitSessionOpenState =
+    stateRaw && (WAIT_SESSION_OPEN_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as WaitSessionOpenState)
+      : "unknown";
+
+  const ouverte = state === "open";
+  const sourceRaw = ouverte && root ? asString(root.source) : null;
+  const pauseCampaignId =
+    ouverte && root ? asString(root.pause_campaign_id) : null;
+
+  return {
+    state,
+    sessionId: ouverte && root ? asString(root.session_id) : null,
+    source:
+      sourceRaw && (RESERVER_WAIT_SOURCES as string[]).includes(sourceRaw)
+        ? (sourceRaw as ReserverWaitSource)
+        : null,
+    quizId: ouverte && root ? asString(root.quiz_id) : null,
+    pauseCampaignId,
+    // ADOSSÉE À LA CAMPAGNE, jamais autonome : sans campagne il n'y a rien à
+    // réclamer, donc rien à demander. La RPC rend les trois champs nuls dans ce
+    // cas ; on n'en fabrique pas un objet de valeurs par défaut, qui serait
+    // exactement la configuration inventée que ce correctif supprime.
+    pauseClaimConfig: pauseCampaignId
+      ? {
+          collectEmail: asBool(root?.pause_collect_email) === true,
+          collectPhone: asBool(root?.pause_collect_phone) === true,
+          codeTtlSeconds: asInt(root?.pause_code_ttl_seconds),
+        }
+      : null,
+    activityId: ouverte && root ? asString(root.activity_id) : null,
+    pauseChanceUsed: ouverte && root ? asBool(root.pause_chance_used) === true : false,
+  };
+}
+
+/** Issues de `wait_session_use_pause`. */
+export type WaitUsePauseState =
+  | "unknown"
+  /**
+   * Le commerçant n'a PAS configuré de Pause Chance. État propre et non muet :
+   * il est actionnable côté écran (ne pas montrer le bouton), là où « inconnu »
+   * ne l'est pas.
+   */
+  | "unconfigured"
+  /**
+   * DÉJÀ JOUÉE RÉCEMMENT À CE GUICHET, mais dans une AUTRE attente.
+   *
+   * Distinct d'`already_used`, et la nuance n'est pas cosmétique : le second
+   * rend son jeton — c'est celui de CETTE session, et le taire punirait un
+   * rechargement de page d'un tour perdu. Le premier ne peut pas : le jeton
+   * appartient à une session précédente, et le faire voyager serait exactement
+   * la confusion que la borne empêche. Le seau est de 24 h, par personne et par
+   * file (ou activité) — sans lui, sortir de la file et y revenir fabriquait
+   * une Pause Chance neuve à volonté.
+   */
+  | "cooldown"
+  | "granted"
+  | "already_used";
+
+const WAIT_USE_PAUSE_STATES: readonly WaitUsePauseState[] = [
+  "unknown",
+  "unconfigured",
+  "cooldown",
+  "granted",
+  "already_used",
+];
+
+export interface WaitUsePauseResult {
+  state: WaitUsePauseState;
+  sessionId: string | null;
+  /** Campagne cible, venue du PARENT — jamais d'un paramètre d'appelant. */
+  campaignId: string | null;
+  /**
+   * Jeton d'octroi, 48 hexadécimaux. Rendu AUSSI sur `already_used`, et c'est
+   * voulu : c'est le SIEN, le rejeu est borné à l'étage d'en dessous
+   * (`consume_reserver_wait_spin_grant` est idempotente), et le taire punirait
+   * un rechargement de page d'un tour perdu.
+   */
+  grantToken: string | null;
+  /** Tour déjà tiré avec ce jeton (`already_used`), s'il l'a été. */
+  spinId: string | null;
+}
+
+export function mapWaitUsePause(raw: unknown): WaitUsePauseResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: WaitUsePauseState =
+    stateRaw && (WAIT_USE_PAUSE_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as WaitUsePauseState)
+      : "unknown";
+
+  const octroyee = state === "granted" || state === "already_used";
+
+  return {
+    state,
+    sessionId: octroyee && root ? asString(root.session_id) : null,
+    campaignId: octroyee && root ? asString(root.campaign_id) : null,
+    grantToken: octroyee && root ? asString(root.grant_token) : null,
+    spinId: state === "already_used" && root ? asString(root.spin_id) : null,
+  };
+}
+
+/**
+ * Issues de `consume_reserver_wait_spin_grant` — miroir de
+ * `ReferralSpinGrantState`, cinquième exemplaire du tour de roue offert.
+ *
+ * `no_prize` et `unavailable` NE BRÛLENT PAS le jeton : le joueur pourra
+ * revenir quand le commerçant aura réapprovisionné.
+ */
+export type WaitSpinGrantState =
+  | "unavailable"
+  | "already_consumed"
+  | "no_prize"
+  | "spun";
+
+const WAIT_SPIN_GRANT_STATES: readonly WaitSpinGrantState[] = [
+  "unavailable",
+  "already_consumed",
+  "no_prize",
+  "spun",
+];
+
+export interface WaitSpinGrantResult {
+  state: WaitSpinGrantState;
+  /** Tour produit (`spun`) ou déjà produit (`already_consumed`) ; `null` sinon. */
+  spinId: string | null;
+  wheelId: string | null;
+  campaignId: string | null;
+  prizeId: string | null;
+  isLosing: boolean;
+}
+
+export function mapWaitSpinGrant(raw: unknown): WaitSpinGrantResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: WaitSpinGrantState =
+    stateRaw && (WAIT_SPIN_GRANT_STATES as string[]).includes(stateRaw)
+      ? (stateRaw as WaitSpinGrantState)
+      : "unavailable";
+
+  return {
+    state,
+    spinId: root ? asString(root.spin_id) : null,
+    wheelId: root ? asString(root.wheel_id) : null,
+    campaignId: root ? asString(root.campaign_id) : null,
+    prizeId: root ? asString(root.prize_id) : null,
+    isLosing: root?.is_losing === true,
+  };
+}
+
+/**
+ * Ce que le joueur peut faire pendant qu'il attend. Trois valeurs, et aucune
+ * n'est un moteur neuf — voir l'en-tête de section.
+ */
+export type AnimationAttente = "quiz" | "pause" | "activite";
+
+/** Ce que le joueur lit du bouton « Pause Chance ». */
+export type EtatUiPauseChance = "absente" | "disponible" | "utilisee";
+
+/**
+ * État affichable de la Pause Chance.
+ *
+ * `absente` N'EST PAS `utilisee` : le premier veut dire « le commerçant n'a rien
+ * configuré » (le bouton n'existe pas), le second « c'est fait, une par session,
+ * définitivement ». Confondre les deux ferait afficher « déjà joué » à quelqu'un
+ * qui n'a jamais rien eu à jouer.
+ */
+export function etatUiPauseChance(session: {
+  pauseCampaignId: string | null;
+  pauseChanceUsed: boolean;
+}): EtatUiPauseChance {
+  if (!session.pauseCampaignId) return "absente";
+  return session.pauseChanceUsed ? "utilisee" : "disponible";
+}
+
+/**
+ * Les animations réellement PROPOSABLES, dans l'ordre d'affichage.
+ *
+ * La Pause Chance y figure même une fois consommée : l'écran doit pouvoir dire
+ * « c'est fait » plutôt que de faire disparaître une tuile sous les doigts de
+ * quelqu'un qui vient de cliquer. C'est `etatUiPauseChance` qui porte la
+ * nuance, pas cette liste.
+ */
+export function animationsAttente(session: {
+  quizId: string | null;
+  pauseCampaignId: string | null;
+  activityId: string | null;
+}): AnimationAttente[] {
+  const animations: AnimationAttente[] = [];
+  if (session.quizId) animations.push("quiz");
+  if (session.pauseCampaignId) animations.push("pause");
+  if (session.activityId) animations.push("activite");
+  return animations;
+}
+
+/** La session d'attente, telle qu'un écran la consomme. */
+export interface ReserverAttenteView {
+  sessionId: string;
+  source: ReserverWaitSource;
+  quizId: string | null;
+  pauseCampaignId: string | null;
+  /**
+   * Ce que `ClaimForm` devra demander au gagnant. Voyage AVEC la campagne, et
+   * l'écran n'a plus rien à supposer : c'est le correctif de la collecte muette.
+   */
+  pauseClaimConfig: ReserverPauseClaimConfig | null;
+  activityId: string | null;
+  pauseChanceUsed: boolean;
+  pause: EtatUiPauseChance;
+  /** Vide = rien à proposer, et l'écran d'attente reste ce qu'il était. */
+  animations: AnimationAttente[];
+}
+
+/**
+ * Vue d'écran d'une session ouverte, ou `null`.
+ *
+ * `null` sur TOUT ce qui n'est pas une session prouvée — `unknown`, mais aussi
+ * un document `open` sans identifiant ni source, qui serait corrompu. L'appelant
+ * n'a alors rien à afficher, et c'est exactement le comportement d'avant RES-4 :
+ * le Mode Attente active est facultatif, son absence n'est pas une panne.
+ */
+export function vueAttente(
+  session: WaitSessionOpenResult,
+): ReserverAttenteView | null {
+  if (session.state !== "open" || !session.sessionId || !session.source) {
+    return null;
+  }
+  return {
+    sessionId: session.sessionId,
+    source: session.source,
+    quizId: session.quizId,
+    pauseCampaignId: session.pauseCampaignId,
+    pauseClaimConfig: session.pauseClaimConfig,
+    activityId: session.activityId,
+    pauseChanceUsed: session.pauseChanceUsed,
+    pause: etatUiPauseChance(session),
+    animations: animationsAttente(session),
+  };
+}

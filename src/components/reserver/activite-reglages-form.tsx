@@ -12,6 +12,7 @@ import {
 } from "@/lib/reserver";
 import type { ReserverActivityView } from "@/lib/reserver-context";
 import { champDescription } from "@/components/reserver/champs";
+import { ChampsAttenteActive } from "@/components/reserver/champs-attente-active";
 
 /**
  * Réglages d'une activité : nom, description, et L'INTERRUPTEUR.
@@ -31,7 +32,20 @@ import { champDescription } from "@/components/reserver/champs";
  * atteignable au clavier sans une ligne de JavaScript, et un lecteur d'écran
  * annonce « coché / non coché » sans qu'on ait à le lui apprendre.
  */
-export function ActiviteReglagesForm({ activite }: { activite: ReserverActivityView }) {
+export function ActiviteReglagesForm({
+  activite,
+  quiz = [],
+  campagnes = [],
+}: {
+  activite: ReserverActivityView;
+  /**
+   * Le Mode Attente active (RES-4). Vides par défaut : un commerce sans quiz ni
+   * campagne ne voit pas les sélecteurs, plutôt qu'un menu déroulant dont la
+   * seule option serait « Aucun ».
+   */
+  quiz?: { id: string; name: string }[];
+  campagnes?: { id: string; name: string }[];
+}) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   const { state, pending, onSubmit } = useActionForm(
@@ -74,6 +88,17 @@ export function ActiviteReglagesForm({ activite }: { activite: ReserverActivityV
             scannant votre QR code.
           </p>
         </div>
+
+        {/* Le Mode Attente active (RES-4) : ce qu'on propose à celui qui
+            patiente, jamais ce qui décide de son tour. */}
+        <ChampsAttenteActive
+          quiz={quiz}
+          campagnes={campagnes}
+          instanceId="-activite"
+          defaultQuizId={activite.waitQuizId}
+          defaultPauseCampaignId={activite.waitPauseCampaignId}
+          espacement="mt-4"
+        />
 
         <div className="mt-5 rounded-xl border-2 border-k-ink bg-k-bg p-4">
           <label

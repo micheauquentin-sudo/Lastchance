@@ -83,7 +83,13 @@ export default async function ActiviteReservablePage({
         enregistrement des arrivées en caisse par code court.
       </ModuleCapabilityNotice>
 
-      <ActiviteReglagesForm activite={activite} />
+      <ActiviteReglagesForm
+        activite={activite}
+        // Le Mode Attente active (RES-4) : les deux listes de l'organisation,
+        // résolues côté serveur — un identifiant ne se saisit pas à la main.
+        quiz={agenda.ok ? agenda.waitQuiz : []}
+        campagnes={agenda.ok ? agenda.waitCampaigns : []}
+      />
 
       {/* Le QR et le lien que le client scanne. L'adresse est STABLE — elle ne
           porte que l'identifiant de l'activité, jamais un jeton (ADR-109) —

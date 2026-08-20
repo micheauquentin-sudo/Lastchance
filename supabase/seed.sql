@@ -134,11 +134,15 @@ values ('e2e30000-0000-4000-8000-000000000003', 'e2e10000-0000-4000-8000-0000000
         'e2e20000-0000-4000-8000-000000000003', 'Carte à gratter', 'unlimited', 'scratch')
 on conflict (id) do nothing;
 
-insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values
+-- Le gagnant porte un stock FINI (5000) : cette campagne est AUSSI la cible
+-- de la Pause Chance (RES-4, lot L7) — un tour OFFERT n'est jamais tiré sur
+-- un lot à stock illimité (BORNE 2, `consume_reserver_wait_spin_grant` filtre
+-- `p.stock > 0`). Sans ce stock, la Pause Chance répondrait `no_prize`.
+insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position, stock) values
   ('e2e40000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000003', 'Dessert offert E2E', 'Gain grattage.', '#ec4899', 100, false, 0),
+   'e2e30000-0000-4000-8000-000000000003', 'Dessert offert E2E', 'Gain grattage.', '#ec4899', 100, false, 0, 5000),
   ('e2e40000-0000-4000-8000-000000000006', 'e2e10000-0000-4000-8000-000000000001',
-   'e2e30000-0000-4000-8000-000000000003', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
+   'e2e30000-0000-4000-8000-000000000003', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1, null)
 on conflict (id) do nothing;
 
 insert into public.qr_codes (organization_id, campaign_id, slug, label)
@@ -1185,3 +1189,72 @@ values (
   repeat('e5', 32), 'Dominique'
 )
 on conflict (id) do nothing;
+
+-- FILE DÉDIÉE au Mode Attente active (RES-4, lot L7), DISTINCTE de
+-- « Comptoir E2E » ci-dessus.
+--
+-- `reserver-file.spec.ts` boucle sur « Appeler le suivant » jusqu'à ce que
+-- SA PROPRE entrée bascule « appelée » — sans distinguer QUI elle appelle,
+-- puisque `queue_call_next` sert le PREMIER de la file. Sur la même file que
+-- `reserver-attente.spec.ts`, ce clic sert indifféremment l'entrée de l'un
+-- ou de l'autre spec : l'appel plein écran (`AppelPleinEcran`) DÉMONTE alors
+-- `PendantVotreAttente` avant que le test d'attente ait fini de jouer sa
+-- Pause Chance — les deux specs tournent dans le MÊME run Playwright, sur
+-- des workers parallèles, et se sont bel et bien percutées (constaté : les
+-- deux timeouts à 90 s, l'un sur la section démontée, l'autre sur « notre
+-- entrée doit finir par être appelée »). Une file séparée retire la course :
+-- seul le test « appel du staff » de `reserver-attente.spec.ts` appelle sur
+-- CETTE file, et il le fait lui-même — personne d'autre n'y touche.
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values (
+  'e2ea0000-0000-4000-8000-000000000063', 'e2e10000-0000-4000-8000-000000000001',
+  null, 'Comptoir Attente E2E', 'open', 50
+)
+on conflict (id) do nothing;
+
+-- ── Réserver RES-4 — mode attente active ─────────────────────────────
+--
+-- La configuration est posée par UPDATE et non dans les `insert` ci-dessus, et
+-- ce n'est pas une coquetterie : ces inserts portent tous `on conflict (id) do
+-- nothing`, donc sur une base déjà semée ils ne feraient RIEN — la file
+-- existerait sans son animation, et le parcours E2E échouerait sur une absence
+-- de configuration au lieu de tester ce qu'il teste.
+--
+-- LES DEUX ANIMATIONS RÉUTILISENT DES FIXTURES EXISTANTES, ce qui est très
+-- exactement la promesse de RES-4 : aucun moteur neuf, aucune récompense neuve.
+--   · le quiz est `Quiz du Comptoir E2E` (e2e95000-…-01), `active`, stock 5000 ;
+--   · la Pause Chance tire sur DEUX campagnes DIFFÉRENTES, une par porteur, et
+--     c'est délibéré depuis que `wait_session_open` descend la configuration de
+--     retrait réelle de la campagne : les deux moitiés du parcours de gain
+--     doivent être couvertes.
+--       — FILE (« Comptoir Attente E2E ») → `E2E Grattage` (e2e20000-…-03), qui
+--         ne collecte RIEN : le retrait est automatique, le code s'affiche seul,
+--         et le test lit le code sans formulaire à remplir.
+--       — ACTIVITÉ (« Dégustation du Comptoir E2E ») → `E2E Gagnante`
+--         (e2e20000-…-01), qui EXIGE l'email : c'est la moitié qui prouve le
+--         correctif. Tant que l'écran supposait « ne rien collecter », le
+--         retrait automatique partait sans adresse, le serveur le refusait —
+--         et le lot était DÉJÀ tiré, le stock DÉJÀ décompté. Un tour offert
+--         brûlé sans code. Le seul témoin possible est une campagne qui
+--         collecte, et `reserver-attente.spec.ts` y vérifie que le formulaire
+--         apparaît au lieu d'échouer en silence.
+--     LES DEUX LOTS GAGNANTS PORTENT UN STOCK FINI (5000) — indispensable : la
+--     BORNE 2 exclut du tour offert tout lot à stock illimité, et un lot par
+--     défaut aurait rendu `no_prize` à chaque Pause Chance.
+--
+-- LES DEUX PORTEURS SONT CONFIGURÉS, un par forme d'attente : la file
+-- « Comptoir Attente E2E » (attente DEBOUT — DÉDIÉE, pas « Comptoir E2E »,
+-- voir le commentaire à sa création plus haut sur la course avec
+-- `reserver-file.spec.ts`) et l'activité « Dégustation du Comptoir E2E »
+-- (attente AVEC CRÉNEAU, celle dont le créneau proche porte déjà une
+-- réservation confirmée dans les parcours de check-in).
+update public.reservation_queues
+   set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000003'
+ where id = 'e2ea0000-0000-4000-8000-000000000063';
+
+update public.reservation_activities
+   set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
+       wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
+ where id = 'e2ea0000-0000-4000-8000-000000000011';

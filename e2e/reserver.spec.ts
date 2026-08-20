@@ -118,7 +118,13 @@ test.describe("réserver — parcours public puis comptoir", () => {
     // ── 5. Tentative d'annulation de la réservation arrivée : le bouton
     // d'annulation n'apparaît plus (une arrivée déjà enregistrée ne s'annule
     // plus — commentaire de `MaReservation`).
-    await page.goto(`/reserver/${ACTIVITY_ID}`);
+    //
+    // `gotoApresNavigation` et non `page.goto` : `networkidle` ci-dessus ne
+    // suffit PAS toujours — WebKit peut replanifier le rafraîchissement APRÈS
+    // que le réseau se soit calmé, et le test échouait alors 2 fois sur 2 en
+    // local. On reprend le `goto` une fois plutôt que d'espérer que l'attente
+    // précédente ait tout couvert.
+    await gotoApresNavigation(page, `/reserver/${ACTIVITY_ID}`);
     const carteArrivee = page
       .locator("li")
       .filter({ hasText: "Arrivé" })
@@ -578,3 +584,25 @@ test.describe("réserver — invitation privée (RES-2)", () => {
     ).toBeVisible({ timeout: 30_000 });
   });
 });
+
+/**
+ * `page.goto` qui survit à une navigation client encore en vol.
+ *
+ * WebKit rejette un `goto` qu'une AUTRE navigation interrompt — c'est ce que
+ * fait `router.refresh()` de `useActionForm(reloadOnSuccess)` quand il est
+ * replanifié après que le réseau se soit calmé. L'échec est bénin (la seconde
+ * navigation aboutit, c'est la première qui rend une erreur), et le rejouer
+ * une fois suffit. Toute autre erreur remonte telle quelle : on n'avale que
+ * cette course-là, nommée.
+ */
+async function gotoApresNavigation(
+  page: import("@playwright/test").Page,
+  url: string,
+) {
+  try {
+    await page.goto(url);
+  } catch (erreur) {
+    if (!/interrupted by another navigation/.test(String(erreur))) throw erreur;
+    await page.goto(url);
+  }
+}

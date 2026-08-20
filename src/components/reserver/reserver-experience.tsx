@@ -11,12 +11,14 @@ import {
   MaFileAttente,
   RejoindreFileAttente,
 } from "@/components/reserver/file-attente";
+import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 import {
   etatUiCreneau,
   formatCreneau,
   LIBELLE_FENETRE_CHECKIN,
   RESERVER_EMAIL_MAX,
   type PublicWaitlistItem,
+  type ReserverAttenteView,
 } from "@/lib/reserver";
 import type {
   ReserverMaReservationView,
@@ -62,6 +64,7 @@ export function ReserverExperience({
   mesReservations,
   maFile,
   timeZone,
+  attente = null,
 }: {
   /**
    * Chez QUI le joueur croit réserver. `reserve_slot` l'exige : c'est la borne
@@ -89,6 +92,12 @@ export function ReserverExperience({
    */
   maFile: Record<string, PublicWaitlistItem>;
   timeZone: string;
+  /**
+   * Le Mode Attente active (RES-4), rattaché à la réservation CONFIRMÉE de ce
+   * navigateur. `null` tant qu'il n'y en a aucune : il n'y a alors pas
+   * d'attente, donc rien à occuper.
+   */
+  attente?: ReserverAttenteView | null;
 }) {
   // Les créneaux réservés d'abord, en tête de page : c'est ce que le client
   // rouvre sa page pour retrouver — son code — et non pour réserver une
@@ -161,6 +170,18 @@ export function ReserverExperience({
             autre téléphone elles n&apos;apparaîtront pas — présentez simplement
             votre code au comptoir.
           </p>
+
+          {/* Le Mode Attente active (RES-4), SOUS la réservation confirmée et
+              jamais au-dessus : le code est ce que le client rouvre sa page
+              pour retrouver. Il n'est proposé QUE si une réservation existe —
+              sans elle, il n'y a pas d'attente à occuper. */}
+          {attente ? (
+            <PendantVotreAttente
+              attente={attente}
+              organizationId={organizationId}
+              organizationName={organizationName}
+            />
+          ) : null}
         </section>
       ) : null}
 

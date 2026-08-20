@@ -129,7 +129,11 @@ describe("pont d'identité — le TOUR OFFERT rejoint la campagne qu'il joue", (
     // Sans cette assertion, une réécriture qui renommerait `grant` viderait la
     // liste et rendrait le test suivant VACANT tout en restant vert. Quatre
     // harnais ont menti de cette façon sur ce projet.
-    expect(modulesDeTourOffert().length).toBeGreaterThanOrEqual(4);
+    //
+    // CINQ depuis RES-4 (`reserver.ts`, la Pause Chance du Mode Attente active) :
+    // le plancher suit le dépôt, sans quoi il cesserait de mesurer ce qu'il
+    // prétend mesurer le jour où un module d'offre disparaîtrait sans bruit.
+    expect(modulesDeTourOffert().length).toBeGreaterThanOrEqual(5);
   });
 
   it("chacun pose le pont `campaign`, pas seulement celui de sa famille", () => {

@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { champSelect } from "@/components/reserver/champs";
+import { ChampsAttenteActive } from "@/components/reserver/champs-attente-active";
 import { FileAccueilConsole } from "@/components/reserver/file-accueil-console";
 import { PastilleFileAccueil } from "@/components/reserver/pastilles";
 import {
@@ -50,6 +51,8 @@ export function FilesAccueilPanneau({
   activites,
   peutEditer,
   appUrl,
+  quiz = [],
+  campagnes = [],
 }: {
   files: ReserverQueueDashboardView[];
   /** Les activités auxquelles une file peut être rattachée (facultatif). */
@@ -58,6 +61,14 @@ export function FilesAccueilPanneau({
   peutEditer: boolean;
   /** Base publique, pour montrer le lien à mettre sur l'affiche. */
   appUrl: string;
+  /**
+   * Le Mode Attente active (RES-4) : les quiz et les campagnes de
+   * l'organisation, proposables PENDANT l'attente. Vides par défaut — un
+   * commerce sans quiz ni campagne ne voit simplement pas les deux sélecteurs,
+   * exactement comme « Activité liée » disparaît sans activité.
+   */
+  quiz?: { id: string; name: string }[];
+  campagnes?: { id: string; name: string }[];
 }) {
   const [selection, setSelection] = useState<string | null>(
     files[0]?.id ?? null,
@@ -81,7 +92,12 @@ export function FilesAccueilPanneau({
           </p>
           {peutEditer ? (
             <div className="mt-4 flex justify-center">
-              <NouvelleFileForm activites={activites} instanceId="-vide" />
+              <NouvelleFileForm
+                activites={activites}
+                quiz={quiz}
+                campagnes={campagnes}
+                instanceId="-vide"
+              />
             </div>
           ) : null}
         </div>
@@ -162,6 +178,8 @@ export function FilesAccueilPanneau({
                   key={fileActive.id}
                   file={fileActive}
                   activites={activites}
+                  quiz={quiz}
+                  campagnes={campagnes}
                 />
               ) : null}
 
@@ -175,7 +193,11 @@ export function FilesAccueilPanneau({
 
           {peutEditer ? (
             <div className="mt-6 border-t-2 border-k-ink/10 pt-5">
-              <NouvelleFileForm activites={activites} />
+              <NouvelleFileForm
+                activites={activites}
+                quiz={quiz}
+                campagnes={campagnes}
+              />
             </div>
           ) : null}
         </>
@@ -216,9 +238,13 @@ export function FilesAccueilPanneau({
  */
 function NouvelleFileForm({
   activites,
+  quiz,
+  campagnes,
   instanceId = "",
 }: {
   activites: { id: string; name: string }[];
+  quiz: { id: string; name: string }[];
+  campagnes: { id: string; name: string }[];
   instanceId?: string;
 }) {
   const [ouvert, setOuvert] = useState(false);
@@ -251,7 +277,12 @@ function NouvelleFileForm({
         />
       </div>
 
-      <ChampsCommuns activites={activites} instanceId={instanceId} />
+      <ChampsCommuns
+        activites={activites}
+        quiz={quiz}
+        campagnes={campagnes}
+        instanceId={instanceId}
+      />
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending}>
@@ -278,9 +309,13 @@ function NouvelleFileForm({
 function ReglagesFileForm({
   file,
   activites,
+  quiz,
+  campagnes,
 }: {
   file: ReserverQueueDashboardView;
   activites: { id: string; name: string }[];
+  quiz: { id: string; name: string }[];
+  campagnes: { id: string; name: string }[];
 }) {
   // `reloadOnSuccess` pour la même raison qu'à la création : le nom, la
   // pastille d'état et le plafond affichés viennent tous du rendu serveur.
@@ -309,10 +344,14 @@ function ReglagesFileForm({
 
       <ChampsCommuns
         activites={activites}
+        quiz={quiz}
+        campagnes={campagnes}
         instanceId={`-edit-${file.id}`}
         defaultActivityId={file.activityId}
         defaultMaxLive={file.maxLiveEntries}
         defaultStatus={file.status}
+        defaultQuizId={file.waitQuizId}
+        defaultPauseCampaignId={file.waitPauseCampaignId}
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -337,16 +376,24 @@ function ReglagesFileForm({
  */
 function ChampsCommuns({
   activites,
+  quiz,
+  campagnes,
   instanceId,
   defaultActivityId = null,
   defaultMaxLive = QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
   defaultStatus = "open",
+  defaultQuizId = null,
+  defaultPauseCampaignId = null,
 }: {
   activites: { id: string; name: string }[];
+  quiz: { id: string; name: string }[];
+  campagnes: { id: string; name: string }[];
   instanceId: string;
   defaultActivityId?: string | null;
   defaultMaxLive?: number;
   defaultStatus?: ReserverQueueDashboardView["status"];
+  defaultQuizId?: string | null;
+  defaultPauseCampaignId?: string | null;
 }) {
   return (
     <>
@@ -413,6 +460,14 @@ function ChampsCommuns({
           <option value="closed">Fermée — plus d&apos;inscription</option>
         </select>
       </div>
+
+      <ChampsAttenteActive
+        quiz={quiz}
+        campagnes={campagnes}
+        instanceId={instanceId}
+        defaultQuizId={defaultQuizId}
+        defaultPauseCampaignId={defaultPauseCampaignId}
+      />
     </>
   );
 }

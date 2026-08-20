@@ -122,6 +122,11 @@ export default async function FileAccueilPage({
         logoUrl={ctx.organization.logo_url}
         initial={etatInitial(ctx)}
         timeZone={ctx.timezone}
+        // Le Mode Attente active (RES-4). Il vient du CONTEXTE et non du
+        // scrutin : `queue_public_state` ne rend que le rang, et lui ajouter la
+        // session d'attente aurait fait voyager un jeton d'octroi toutes les
+        // deux secondes et demie pour un état qui ne change qu'une fois.
+        attente={ctx.attente}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">
