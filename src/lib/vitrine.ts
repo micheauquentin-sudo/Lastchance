@@ -409,7 +409,9 @@ export type BlocVitrine = (typeof VITRINE_BLOCS)[number];
  * personne n'avait fait : toute vitrine dont le commerçant n'a jamais touché
  * l'ordre des blocs se serait mise, au déploiement de VIT-3, à ANNONCER
  * publiquement ses activités, ses files et ses quiz — sur une page servie en
- * ISR, indexable, et découverte par un visiteur avant par son propriétaire.
+ * ISR, NON indexée (`robots: { index: false }`, décision de commerce en
+ * attente) mais atteignable par quiconque devine le slug de l'enseigne, et
+ * découverte par un visiteur avant par son propriétaire.
  *
  * Ces noms ne sont pas neutres : « Privatisation Dupont », « Rattrapage de
  * M. Bernard », « File retrait commande Martin » sont des libellés d'ORGANISATION
