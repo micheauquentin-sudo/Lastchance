@@ -17,6 +17,9 @@ select has_trigger('public', 'calendar_rewards', 'calendar_rewards_reward_issuan
 select has_trigger('public', 'referral_rewards', 'referral_rewards_reward_issuance', 'code-bearing referral emissions are mirrored');
 select has_trigger('public', 'quiz_rewards', 'quiz_rewards_reward_issuance', 'code-bearing quiz emissions are mirrored');
 select has_trigger('public', 'contest_awards', 'contest_awards_reward_issuance', 'contest emissions are mirrored');
+-- 10e famille (RES-5, 20261010120000). La table des prises reste L'AUTORITÉ du
+-- stock : ce trigger ne fait que porter le code jusqu'à la caisse universelle.
+select has_trigger('public', 'reservation_stock_holds', 'reservation_stock_holds_reward_issuance', 'stock holds are mirrored');
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, created_at, updated_at
