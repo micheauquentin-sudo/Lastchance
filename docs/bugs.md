@@ -4483,3 +4483,47 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     clos) devient `'cancelled'`/`'left'` selon le contexte : comportement
     voulu (RES-3, purge datée au dernier instant connu, ADR-111), pas un
     bug — documenté ici pour éviter qu'il soit rouvert comme régression.
+  - `track_reward_issuance_analytics` avale silencieusement toute famille
+    de récompense inconnue de son `case` (`exception when others`, sans
+    relever l'erreur) : ajouter un 11e `kind` au premier `case` sans
+    ajouter la branche correspondante au second produit une **perte muette**
+    des événements de cette famille — aucune erreur, aucun log, juste des
+    statistiques qui ne comptent jamais cette famille. `reserver_stock`
+    (L9) n'entre volontairement dans aucun des deux `case` (ADR-114 : ce
+    n'est pas un gain de jeu), donc le piège ne le touche pas aujourd'hui,
+    mais toute future extension à neuf branches doit vérifier LES DEUX.
+  - Rotation du cookie `lc-player` au-delà de 90 jours (appareil) : le
+    rayon connu de l'incident touche désormais aussi le geste principal de
+    Réserver — réservations, entrées de file et prises de stock orphelines
+    côté écran joueur après rotation, le portefeuille survivant lui grâce
+    à `player_legacy_identities`. Dette produit à arbitrer, non corrigée
+    dans ce train.
+  - Le compteur `reserver.stock_hold.pont_rattrape` (L9,
+    `src/actions/reserver.ts`) n'est **pas strictement à zéro en usage
+    normal** : un `already_held` non servable (photo de restant à zéro
+    au moment du test, RPC finalement accordée) l'incrémente au même titre
+    qu'un `held` de rattrapage réel. Ne pas alerter sur ce compteur tel
+    quel — il mélange deux cas dont un seul est la fenêtre de course qu'il
+    cherche à mesurer.
+  - Vitest est cassé sous Git Bash sur l'arbre Windows
+    (`C:\Users\MISHOW\Documents\LastChance\Lastchance`) : échoue avec une
+    erreur `reading 'config'` au démarrage ; la même commande passe sous
+    PowerShell. Dette outillage, non liée au code du train — vérifier
+    l'environnement d'exécution (bash vs PowerShell) avant de conclure à
+    une régression sur un `npm test` qui échoue immédiatement.
+  - `src/lib/module-resources-parity.test.ts:78-80` porte un commentaire
+    périmé depuis la migration `20261011120000` (L10, VIT-1a) : il affirme
+    que `vitrine` est exempté de trigger de publication faute de table,
+    alors que cette même migration ajoute le trigger
+    `vitrine_settings_guard_publication` sur `vitrine_settings`. Le test
+    reste vert (l'exemption qu'il vérifie porte sur un module différent du
+    catalogue Vitrine créé en L10), mais le commentaire décrit un état qui
+    n'existe plus — à corriger au prochain passage sur ce fichier.
+  - Parité `FONT_KEYS` (TypeScript, thème Vitrine) ↔ la liste des polices
+    autorisées côté SQL (`vitrine_settings`, migration `20261011120000`) :
+    aucune garde de parité ne les compare, contrairement au motif déjà en
+    place pour `RESSOURCE_MODULE` ↔ triggers de publication
+    (`module-resources-parity.test.ts`, ci-dessus) ou pour les autres
+    listes fermées du dépôt. Une police ajoutée d'un seul côté passerait le
+    typecheck et le `check` SQL séparément sans qu'aucun test ne le
+    signale. À poser, sur le modèle de la garde existante.
