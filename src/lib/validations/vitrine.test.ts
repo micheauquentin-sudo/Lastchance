@@ -585,3 +585,17 @@ describe("la langue demandée — `en`, ou rien (VIT-1b)", () => {
     }
   });
 });
+
+
+/**
+ * La borne de la CHAÎNE brute (M2, revue L12) : refusée AVANT `JSON.parse`,
+ * pas après une traversée d'un mégaoctet. Le message est le même
+ * qu'un JSON illisible — un envoi hors gabarit n'apprend rien de plus.
+ */
+describe("importVitrineCarteSchema — borne de la chaîne brute", () => {
+  it("une chaîne au-delà de 128 Ko est refusée sans être parsée", () => {
+    const enorme = `{"pad":"${"x".repeat(140_000)}"}`;
+    const verdict = importVitrineCarteSchema.safeParse({ import: enorme });
+    expect(verdict.success).toBe(false);
+  });
+});

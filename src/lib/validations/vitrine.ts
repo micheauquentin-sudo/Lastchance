@@ -642,9 +642,20 @@ const carteImporteeSchema = z
  * la carte en état (collage, fichier lu côté client) et la sérialise ; c'est du
  * JSON parce que le lot est un ARBRE, ce qu'aucun jeu de `name=` plat ne porte.
  */
+/**
+ * Borne de la CHAÎNE brute, avant tout `JSON.parse` : le pire cas légitime —
+ * 133 lignes aux longueurs maximales, vocabulaires compris — tient sous 96 Ko ;
+ * 128 Ko laissent la marge de l'échappement JSON. Sans elle, la seule borne
+ * était le `bodySizeLimit` implicite de Next (1 Mo) : ~1 s de parse Zod par
+ * envoi refusé APRÈS coup, et une borne de framework qui monterait en silence
+ * le jour où quelqu'un la relève pour un upload (revue L12, M2).
+ */
+const IMPORT_CHAINE_MAX = 131_072;
+
 export const importVitrineCarteSchema = z.object({
   import: z
     .string({ error: IMPORT_ILLISIBLE })
+    .max(IMPORT_CHAINE_MAX, { error: IMPORT_ILLISIBLE })
     .transform((saisie, ctx) => {
       let brut: unknown;
       try {

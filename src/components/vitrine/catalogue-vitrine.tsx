@@ -101,7 +101,7 @@ export function CatalogueVitrine({
     lireFragment,
     () => "",
   );
-  const ancre = fragment ? decodeURIComponent(fragment.slice(1)) : "";
+  const ancre = decoderFragment(fragment);
 
   const carteVisee = useMemo(() => {
     if (ancre.startsWith("carte-")) {
@@ -322,6 +322,25 @@ function sAbonnerAuFragment(onChange: () => void): () => void {
 
 function lireFragment(): string {
   return window.location.hash;
+}
+
+/**
+ * Le fragment vient du VISITEUR — barre d'adresse, lien posté n'importe où.
+ * `decodeURIComponent` lève `URIError` sur toute séquence de pourcentage
+ * incomplète (`#%`, `#%zz`), et cet appel vit dans le corps de rendu : sans
+ * garde, deux caractères dans un lien partagé remplacent la vitrine entière
+ * par l'écran d'erreur (revue L12, M1). Repli : la chaîne brute — les ancres
+ * réelles (`carte-{uuid}`) n'ont pas de `%`, un fragment indécodable ne
+ * matchera simplement rien.
+ */
+export function decoderFragment(fragment: string): string {
+  if (!fragment) return "";
+  const brut = fragment.slice(1);
+  try {
+    return decodeURIComponent(brut);
+  } catch {
+    return brut;
+  }
 }
 
 /** Minuscules, sans accents : « Crème brûlée » se trouve en tapant « creme ». */
