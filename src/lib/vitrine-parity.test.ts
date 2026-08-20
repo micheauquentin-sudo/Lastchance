@@ -90,17 +90,36 @@ function lire(fichier: string): string {
  * et surtout elle passerait au vert sur un futur retrait.
  *
  * On vise donc la définition VIVANTE : le dernier fichier, dans l'ordre des
- * horodatages, qui porte un `create or replace` de cette fonction. Une
- * troisième réécriture sera suivie sans que personne n'ait à revenir ici.
+ * horodatages, qui DÉFINIT cette fonction. Une troisième réécriture sera suivie
+ * sans que personne n'ait à revenir ici.
+ *
+ * ── LES DEUX ÉCRITURES SONT ACCEPTÉES, ET C'EST LE POINT (revue L13, I1) ──
+ *
+ * L'ancre était la chaîne littérale `create or replace function`. Or la leçon L3
+ * de ce dépôt fait redéfinir une fonction en `drop function` puis
+ * `create function` — sans `or replace` — dès que sa SIGNATURE change, ce que
+ * `create or replace` refuse. Une migration écrite comme cela aurait été
+ * INVISIBLE pour cette recherche : la garde serait silencieusement retombée sur
+ * la définition précédente, MORTE, et aurait continué à comparer le miroir
+ * TypeScript à un vocabulaire que la base n'applique plus. Un test vert sur une
+ * source périmée, c'est-à-dire le pire des deux mondes.
+ *
+ * Le `or replace` est donc FACULTATIF dans le motif. Le reste reste serré — le
+ * nom qualifié `public.` et la parenthèse ouvrante — pour qu'un `comment on
+ * function` ou un `grant execute` ne soit jamais pris pour une définition.
  */
+function motifDefinition(fonction: string): RegExp {
+  return new RegExp(`create (or replace )?function public\\.${fonction}\\(`);
+}
+
 function definitionVivante(fonction: string): string {
-  const ancre = `create or replace function public.${fonction}(`;
+  const ancre = motifDefinition(fonction);
   const fichiers = readdirSync(MIGRATIONS)
     .filter((nom) => nom.endsWith(".sql"))
     .sort();
   for (const nom of [...fichiers].reverse()) {
     const source = lire(nom);
-    if (source.includes(ancre)) return source;
+    if (ancre.test(source)) return source;
   }
   throw new Error(
     `Aucune migration ne définit « ${fonction} » : la garde ne mesure plus ` +
@@ -196,6 +215,33 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
     expect(BLOCS_SQL.length).toBe(7);
     expect(POLICES_SQL.length).toBe(7);
     expect(RESERVES_SQL.length).toBeGreaterThan(40);
+  });
+
+  it("l'ancre de la définition vivante accepte les DEUX écritures", () => {
+    // Sans le `or replace` facultatif, une redéfinition écrite selon la leçon L3
+    // — `drop function` puis `create function`, seul chemin quand la SIGNATURE
+    // change — serait invisible : la garde retomberait en silence sur la
+    // définition précédente, morte, et resterait verte sur un vocabulaire que la
+    // base n'applique plus.
+    const ancre = motifDefinition("is_valid_vitrine_theme");
+    expect(
+      ancre.test("create or replace function public.is_valid_vitrine_theme(\n"),
+    ).toBe(true);
+    expect(
+      ancre.test("create function public.is_valid_vitrine_theme(p_theme jsonb)"),
+    ).toBe(true);
+
+    // Et elle reste serrée : ni un droit, ni un commentaire, ni une fonction
+    // dont le nom COMMENCE par celui-là ne doivent passer pour une définition.
+    expect(
+      ancre.test("grant execute on function public.is_valid_vitrine_theme("),
+    ).toBe(false);
+    expect(
+      ancre.test("comment on function public.is_valid_vitrine_theme(jsonb) is"),
+    ).toBe(false);
+    expect(
+      ancre.test("create function public.is_valid_vitrine_theme_v2(p jsonb)"),
+    ).toBe(false);
   });
 
   it("les huit badges de régime sont les mêmes des deux côtés", () => {

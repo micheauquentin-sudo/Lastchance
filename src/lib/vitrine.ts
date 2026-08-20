@@ -383,6 +383,10 @@ export function libelleStyleCartes(style: string): string {
  * autres — et LE RETRAIT EST LE RÉGLAGE : un commerçant qui ne veut pas annoncer
  * ses files les omet de son ordre, il n'y a aucun drapeau séparé qui dirait la
  * même chose une seconde fois.
+ *
+ * CETTE LISTE EST LE VOCABULAIRE COMPLET — ce que la base accepte, ce que
+ * l'écran de réglages propose, ce que la validation laisse passer. Elle n'est
+ * PAS le défaut : voir `VITRINE_BLOCS_DEFAUT` juste en dessous.
  */
 export const VITRINE_BLOCS = [
   "accroche",
@@ -394,6 +398,43 @@ export const VITRINE_BLOCS = [
   "experiences",
 ] as const;
 export type BlocVitrine = (typeof VITRINE_BLOCS)[number];
+
+/**
+ * CE QU'UNE VITRINE JAMAIS RÉGLÉE PUBLIE : les cinq blocs de VIT-1a, et EUX
+ * SEULS. Les deux portes de VIT-3 en sont absentes — délibérément.
+ *
+ * ── UNE PORTE PUBLIÉE EST UN CHOIX, PAS UN DÉFAUT ──
+ *
+ * Le repli portait la liste complète, et la conséquence était un geste que
+ * personne n'avait fait : toute vitrine dont le commerçant n'a jamais touché
+ * l'ordre des blocs se serait mise, au déploiement de VIT-3, à ANNONCER
+ * publiquement ses activités, ses files et ses quiz — sur une page servie en
+ * ISR, indexable, et découverte par un visiteur avant par son propriétaire.
+ *
+ * Ces noms ne sont pas neutres : « Privatisation Dupont », « Rattrapage de
+ * M. Bernard », « File retrait commande Martin » sont des libellés d'ORGANISATION
+ * INTERNE, écrits pour un écran de comptoir. Aucun d'eux ne doit s'annoncer
+ * seul, et surtout pas parce qu'une version a changé.
+ *
+ * ── LE GESTE EST LE CONSENTEMENT ──
+ *
+ * Le commerçant remonte `reserver` et `experiences` depuis la colonne
+ * « Masqués » de ses réglages, et cette remontée EST l'accord de publier. Il n'y
+ * a donc toujours aucun drapeau séparé — l'omission reste le réglage, ce qui
+ * change est seulement le point de départ : masqué jusqu'à ce qu'on le montre,
+ * plutôt que montré jusqu'à ce qu'on le cache.
+ *
+ * `satisfies` et non une recopie libre : un bloc retiré du vocabulaire ferait
+ * rougir le compilateur ici, plutôt que de survivre dans un défaut que la base
+ * refuserait ensuite en 23514.
+ */
+export const VITRINE_BLOCS_DEFAUT = [
+  "accroche",
+  "histoire",
+  "cartes",
+  "horaires",
+  "social",
+] as const satisfies readonly BlocVitrine[];
 
 const BLOCS_LIBELLES: Record<BlocVitrine, string> = {
   accroche: "Accroche",

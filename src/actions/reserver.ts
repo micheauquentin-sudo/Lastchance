@@ -19,6 +19,7 @@ import {
 } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
   sendReservationConfirmationEmail,
   sendStockHoldConfirmationEmail,
@@ -1689,6 +1690,12 @@ export async function createReserverActivity(
   }
 
   revalidatePath("/dashboard/reservations");
+  // LA VITRINE PUBLIE CE DRAPEAU (VIT-3, revue L13). Une activité naît `active`
+  // : elle devient donc immédiatement une porte de `/v/{slug}`, servie en ISR.
+  // Sans cette purge, le commerçant la cherche une minute sur sa propre carte.
+  // Le POURQUOI complet — les deux langues, le coût, le repli silencieux quand
+  // le commerce n'a pas d'adresse — est dans `@/lib/revalidate-vitrine`.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }
 
@@ -1893,6 +1900,9 @@ export async function updateReserverActivity(
   }
 
   revalidatePath("/dashboard/reservations");
+  // `active` vient de changer, dans un sens ou dans l'autre : la porte s'ouvre
+  // ou disparaît de la vitrine — voir `createReserverActivity`.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }
 
@@ -2512,6 +2522,9 @@ export async function createReserverQueue(
   }
 
   revalidatePath("/dashboard/reservations");
+  // Une file peut NAÎTRE `open` : c'est une porte publiée dès l'insertion —
+  // voir `createReserverActivity`.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }
 
@@ -2576,6 +2589,10 @@ export async function updateReserverQueue(
   }
 
   revalidatePath("/dashboard/reservations");
+  // `open`/`paused`/`closed` : la vitrine n'annonce que `open`. Une file fermée
+  // qui resterait affichée envoie le visiteur sur une porte close, signée du
+  // commerce — voir `createReserverActivity`.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }
 
@@ -3634,6 +3651,9 @@ export async function createStockOffer(
   }
 
   revalidatePath("/dashboard/reservations");
+  // Une offre peut naître `open` ET dans sa fenêtre de retrait : porte publiée
+  // à l'insertion — voir `createReserverActivity`.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }
 
@@ -3711,5 +3731,9 @@ export async function updateStockOffer(
   }
 
   revalidatePath("/dashboard/reservations");
+  // `closed` EST l'interrupteur ici — il n'y a pas de suppression. La fenêtre
+  // de retrait entre elle aussi dans le filtre de la RPC publique : la corriger
+  // peut faire apparaître ou disparaître la porte, au même titre que le statut.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
 }

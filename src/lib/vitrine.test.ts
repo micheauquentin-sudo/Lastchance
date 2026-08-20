@@ -21,6 +21,7 @@ import {
   SEUIL_COUVERTURE_SELECTEUR,
   urlVitrine,
   VITRINE_BLOCS,
+  VITRINE_BLOCS_DEFAUT,
   VITRINE_PORTES_MAX,
   VITRINE_PUBLIQUE_OUVERTE,
 } from "./vitrine";
@@ -43,6 +44,42 @@ describe("le drapeau serveur", () => {
     // ouvrir — et une fermeture d'urgence le demandera aussi. C'est exactement
     // ce qu'un drapeau d'environnement ne sait pas faire.
     expect(VITRINE_PUBLIQUE_OUVERTE).toBe(true);
+  });
+});
+
+describe("le défaut des blocs — la publication des portes est OPT-IN", () => {
+  it("le défaut ne contient AUCUNE des deux portes", () => {
+    // ÉPINGLÉ, et pénible à changer volontairement : ajouter `reserver` ou
+    // `experiences` ici ferait annoncer, à toute vitrine jamais réglée, des
+    // libellés écrits pour un comptoir — « Privatisation Dupont », « File
+    // retrait commande Martin ». Une porte publiée est un GESTE du commerçant :
+    // il remonte le bloc depuis « Masqués », et cette remontée est l'accord.
+    expect(VITRINE_BLOCS_DEFAUT).not.toContain("reserver");
+    expect(VITRINE_BLOCS_DEFAUT).not.toContain("experiences");
+    expect(VITRINE_BLOCS_DEFAUT).toHaveLength(5);
+  });
+
+  it("le défaut est un SOUS-ENSEMBLE du vocabulaire, dans l'ordre historique", () => {
+    // Le vocabulaire complet reste à SEPT : c'est lui que la base accepte, que
+    // la validation laisse passer, et que l'écran de réglages propose. Ce sont
+    // deux listes différentes pour deux questions différentes — « qu'est-ce qui
+    // est permis » et « qu'est-ce qui est publié sans qu'on l'ait demandé ».
+    expect(VITRINE_BLOCS).toHaveLength(7);
+    expect([...VITRINE_BLOCS_DEFAUT]).toEqual(
+      VITRINE_BLOCS.filter((bloc) =>
+        (VITRINE_BLOCS_DEFAUT as readonly string[]).includes(bloc),
+      ),
+    );
+  });
+
+  it("les deux blocs hors défaut sont EXACTEMENT les deux portes de VIT-3", () => {
+    // C'est cette liste-là que l'écran de réglages montre en « Masqués » sur une
+    // vitrine jamais réglée : `VITRINE_BLOCS.filter(b => !blocs.includes(b))`.
+    expect(
+      VITRINE_BLOCS.filter(
+        (bloc) => !(VITRINE_BLOCS_DEFAUT as readonly string[]).includes(bloc),
+      ),
+    ).toEqual(["reserver", "experiences"]);
   });
 });
 
