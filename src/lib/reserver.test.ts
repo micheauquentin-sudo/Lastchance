@@ -4,6 +4,11 @@ import {
   animationsAttente,
   asQueueEntryStatus,
   asQueueStatus,
+  asReserverActivityKind,
+  libelleTaillePersonnes,
+  mapExperienceSteps,
+  pairesRestantes,
+  placesParReservation,
   cheminActiviteReserver,
   cheminFileReserver,
   cheminInvitationReserver,
@@ -1543,5 +1548,242 @@ describe("vueAttente", () => {
     expect(
       vueAttente(mapWaitSessionOpen({ state: "open", session_id: "s1" })),
     ).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LES EXPÉRIENCES SIGNATURE (RES-5, lot L8) — migration 20261007120000
+//
+// Ce que ces tests attestent :
+//   · un format illisible se lit `standard`, donc UNE personne — lire `duo` par
+//     défaut ferait demander deux places au premier document corrompu ;
+//   · `party_size` sort par les QUATRE portes qui le rendent (réservation,
+//     idempotence, offre convertie, invitation) : l'hôte d'un Atelier Duo doit
+//     pouvoir relire « pour deux » d'où qu'il vienne ;
+//   · `invalid_party_size` est un refus NOMMÉ qui porte la taille attendue — de
+//     quoi dire « cet atelier se réserve à deux » plutôt qu'« indisponible » ;
+//   · sur un duo, une place libre ISOLÉE n'est prenable par personne, et l'écran
+//     ne doit pas l'annoncer comme ouverte.
+// ════════════════════════════════════════════════════════════
+
+describe("asReserverActivityKind — le repli est le format du socle", () => {
+  it("lit les trois formats du CHECK SQL", () => {
+    expect(asReserverActivityKind("standard")).toBe("standard");
+    expect(asReserverActivityKind("signature")).toBe("signature");
+    expect(asReserverActivityKind("duo")).toBe("duo");
+  });
+
+  it("retombe sur `standard` — jamais sur `duo` — pour tout le reste", () => {
+    // Le repli le plus FERMÉ est celui qui coûte le moins cher s'il se trompe :
+    // une réservation d'une personne. Lire `duo` par défaut demanderait deux
+    // places à un créneau qui n'en accorde qu'une, et le refus serait constant.
+    expect(asReserverActivityKind("DUO")).toBe("standard");
+    expect(asReserverActivityKind(null)).toBe("standard");
+    expect(asReserverActivityKind(2)).toBe("standard");
+    expect(asReserverActivityKind(undefined)).toBe("standard");
+  });
+});
+
+describe("placesParReservation / pairesRestantes — l'unité du format", () => {
+  it("vaut 2 sur un duo, 1 partout ailleurs", () => {
+    expect(placesParReservation("duo")).toBe(2);
+    expect(placesParReservation("signature")).toBe(1);
+    expect(placesParReservation("standard")).toBe(1);
+  });
+
+  it("rend les DEUX nombres du duo : places brutes et duos possibles", () => {
+    // Division ENTIÈRE, comme `reservation_offer_next` : cinq places libres
+    // n'ouvrent que deux duos, la cinquième n'étant prenable par personne.
+    expect(pairesRestantes(5, "duo")).toBe(2);
+    expect(pairesRestantes(4, "duo")).toBe(2);
+    expect(pairesRestantes(1, "duo")).toBe(0);
+    expect(pairesRestantes(0, "duo")).toBe(0);
+  });
+
+  it("rend `null` hors d'un duo : la place EST la réservation possible", () => {
+    // Rendre le même nombre deux fois inviterait un écran à afficher
+    // « 3 places, 3 réservations possibles ».
+    expect(pairesRestantes(3, "standard")).toBeNull();
+    expect(pairesRestantes(3, "signature")).toBeNull();
+  });
+});
+
+describe("mapExperienceSteps — la forme des trois cartes", () => {
+  it("détoure les cartes complètes et respecte le plafond de trois", () => {
+    expect(
+      mapExperienceSteps([
+        { title: "  Accueil  ", body: " On vous installe. " },
+        { title: "Dégustation", body: "Trois vins." },
+        { title: "Retour", body: "On échange." },
+        { title: "Quatrième", body: "Nulle part où s'afficher." },
+      ]),
+    ).toEqual([
+      { title: "Accueil", body: "On vous installe." },
+      { title: "Dégustation", body: "Trois vins." },
+      { title: "Retour", body: "On échange." },
+    ]);
+  });
+
+  it("ÉCARTE une carte incomplète plutôt que de la compléter", () => {
+    // Une carte sans corps est ce que le `coalesce` de
+    // `is_valid_experience_steps` refuse en base ; la rendre à l'écran
+    // creuserait un trou dans une page qui promet des étapes.
+    expect(
+      mapExperienceSteps([
+        { title: "Accueil" },
+        { body: "Sans titre" },
+        { title: "   ", body: "   " },
+        "pas un objet",
+        { title: "Retour", body: "On échange." },
+      ]),
+    ).toEqual([{ title: "Retour", body: "On échange." }]);
+  });
+
+  it("rend un tableau vide sur `null` et sur un document illisible", () => {
+    expect(mapExperienceSteps(null)).toEqual([]);
+    expect(mapExperienceSteps({ title: "x" })).toEqual([]);
+  });
+});
+
+describe("mapReserveSlot — la taille sort avec la place (RES-5)", () => {
+  it("porte `party_size` sur `reserved`", () => {
+    const resultat = mapReserveSlot({
+      state: "reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      starts_at: "2026-09-01T12:00:00Z",
+      ends_at: "2026-09-01T14:00:00Z",
+      party_size: 2,
+      remaining: 2,
+    });
+    expect(resultat.state).toBe("reserved");
+    expect(resultat.partySize).toBe(2);
+    expect(resultat.expectedPartySize).toBeNull();
+  });
+
+  it("porte `party_size` sur `already_reserved` : recharger relit « pour deux »", () => {
+    const resultat = mapReserveSlot({
+      state: "already_reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "confirmed",
+      party_size: 2,
+    });
+    expect(resultat.partySize).toBe(2);
+  });
+
+  it("rend `invalid_party_size` AVEC la taille attendue", () => {
+    // Refus NOMMÉ, et non muet comme les six voisins : le format est écrit sur
+    // la page publique que le joueur vient de lire.
+    const resultat = mapReserveSlot({
+      state: "invalid_party_size",
+      expected: 2,
+    });
+    expect(resultat.state).toBe("invalid_party_size");
+    expect(resultat.expectedPartySize).toBe(2);
+    expect(resultat.partySize).toBeNull();
+    expect(resultat.reservationId).toBeNull();
+    expect(resultat.code).toBeNull();
+  });
+
+  it("ne charrie AUCUNE taille depuis un état qui ne prouve rien", () => {
+    const resultat = mapReserveSlot({ state: "unavailable", party_size: 2 });
+    expect(resultat.partySize).toBeNull();
+  });
+});
+
+describe("Les trois autres portes rendent la même taille", () => {
+  it("`waitlist_join` la rend sur `already_reserved`", () => {
+    const resultat = mapWaitlistJoin({
+      state: "already_reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "confirmed",
+      party_size: 2,
+    });
+    expect(resultat.reservationPartySize).toBe(2);
+  });
+
+  it("`claim_waitlist_offer` la rend : l'offre tenait DEUX places", () => {
+    const resultat = mapClaimWaitlistOffer({
+      state: "claimed",
+      entry_id: "e1",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      status: "confirmed",
+      party_size: 2,
+    });
+    expect(resultat.partySize).toBe(2);
+  });
+
+  it("`redeem_invitation` la rend : l'invité d'un duo vient à deux sans le dire", () => {
+    const resultat = mapRedeemInvitation({
+      state: "reserved",
+      reservation_id: "r1",
+      code: "ABCD2345",
+      invitation_id: "i1",
+      party_size: 2,
+      remaining: 0,
+    });
+    expect(resultat.partySize).toBe(2);
+  });
+
+  it("`reservation_public_state` la rend, et son repli est 1 — jamais 0", () => {
+    const etat = mapReservationPublicState({
+      state: "ok",
+      timezone: "Europe/Paris",
+      reservations: [
+        {
+          reservation_id: "r1",
+          code: "ABCD2345",
+          status: "confirmed",
+          activity_name: "Atelier Duo",
+          party_size: 2,
+        },
+        {
+          reservation_id: "r2",
+          code: "EFGH2345",
+          status: "confirmed",
+          activity_name: "Dégustation",
+        },
+      ],
+      waitlist: [],
+    });
+    expect(etat.reservations[0].partySize).toBe(2);
+    // Un document illisible ne fait pas disparaître quelqu'un d'un compte.
+    expect(etat.reservations[1].partySize).toBe(1);
+  });
+});
+
+describe("libelleTaillePersonnes — la mention n'existe que si elle apprend quelque chose", () => {
+  it("dit « pour 2 personnes » sur un duo", () => {
+    expect(libelleTaillePersonnes(2)).toBe("pour 2 personnes");
+  });
+
+  it("se tait à une personne, et sur l'absence de taille", () => {
+    expect(libelleTaillePersonnes(1)).toBeNull();
+    expect(libelleTaillePersonnes(null)).toBeNull();
+  });
+});
+
+describe("etatUiCreneau — « complet » se dit en RÉSERVATIONS POSSIBLES", () => {
+  const creneau = {
+    status: "open" as const,
+    startsAt: "2030-01-01T12:00:00Z",
+    remaining: 1,
+  };
+
+  it("une place restante ouvre un créneau standard", () => {
+    expect(etatUiCreneau(creneau)).toBe("ouvert");
+    expect(etatUiCreneau({ ...creneau, kind: "signature" })).toBe("ouvert");
+  });
+
+  it("mais FERME un Atelier Duo : cette place n'est prenable par personne", () => {
+    // C'est le test de `waitlist_join` (`taken + held + seats <= capacity`) :
+    // afficher « ouvert » ici enverrait l'hôte se faire refuser `full`.
+    expect(etatUiCreneau({ ...creneau, kind: "duo" })).toBe("complet");
+    expect(etatUiCreneau({ ...creneau, remaining: 2, kind: "duo" })).toBe(
+      "ouvert",
+    );
   });
 });

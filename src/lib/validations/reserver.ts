@@ -13,11 +13,20 @@ import {
   QUEUE_MAX_LIVE_ENTRIES_MIN,
   QUEUE_NAME_MAX,
   RESERVER_ACTIVITY_DESCRIPTION_MAX,
+  RESERVER_ACTIVITY_DURATION_MAX,
+  RESERVER_ACTIVITY_DURATION_MIN,
   RESERVER_ACTIVITY_NAME_MAX,
+  RESERVER_ACTIVITY_PREPARATION_MAX,
+  RESERVER_ACTIVITY_PROMISE_MAX,
+  RESERVER_ACTIVITY_STEPS_MAX,
   RESERVER_CAPACITY_MAX,
   RESERVER_CAPACITY_MIN,
   RESERVER_CODE_PATTERN,
   RESERVER_EMAIL_MAX,
+  RESERVER_PARTY_SIZE_MAX,
+  RESERVER_PARTY_SIZE_MIN,
+  RESERVER_STEP_BODY_MAX,
+  RESERVER_STEP_TITLE_MAX,
   RESERVER_INVITATION_LABEL_MAX,
   RESERVER_INVITATION_MAX_USES_MAX,
   RESERVER_INVITATION_MAX_USES_MIN,
@@ -170,10 +179,31 @@ function exigerEmailEtConsentementEnsemble(
   }
 }
 
+/**
+ * Personnes que la réservation occupe (RES-5).
+ *
+ * DÉFAUT 1, et la SURFACE DUO envoie 2 : ce champ n'est pas une préférence du
+ * joueur mais la taille du FORMAT, que l'écran recopie depuis l'activité qu'il
+ * affiche. La borne 1..2 n'est qu'une garde de forme — c'est `reserve_slot` qui
+ * tranche, sous verrou, en comparant la demande à l'unité du format, et qui
+ * refuse `invalid_party_size` si les deux divergent. Refuser ici ce que la base
+ * accepterait ferait de l'écran un second juge.
+ */
+const partySizeSchema = z
+  .number()
+  .int("Nombre entier de personnes requis")
+  .min(RESERVER_PARTY_SIZE_MIN, "Une réservation vaut au moins une personne")
+  .max(
+    RESERVER_PARTY_SIZE_MAX,
+    `Maximum ${RESERVER_PARTY_SIZE_MAX} personnes par réservation`,
+  )
+  .default(RESERVER_PARTY_SIZE_MIN);
+
 export const reserveSlotSchema = z
   .object({
     organizationId: uuid,
     slotId: uuid,
+    partySize: partySizeSchema,
     email: emailSchema.optional(),
     consent: z.boolean().default(false),
     turnstileToken: z.string().max(2048).optional(),
@@ -330,26 +360,222 @@ export const checkinReservationSchema = z.object({
  */
 const waitAnimationIdSchema = nonRenduVaut(z.union([z.literal(""), uuid]), "");
 
-export const createReserverActivitySchema = z.object({
-  name: activityNameSchema,
-  description: activityDescriptionSchema,
-  waitQuizId: waitAnimationIdSchema,
-  waitPauseCampaignId: waitAnimationIdSchema,
+// ────────────────────────────────────────────────────────────
+// LES EXPÉRIENCES SIGNATURE (RES-5, lot L8) — migration 20261007120000
+//
+// MIROIR DE CONFORT, comme le reste : les cinq colonnes portent leurs CHECK, et
+// les deux contraintes CONDITIONNELLES de la table (`…_experience_duration`,
+// `…_signature_steps`) refuseraient de toute façon la ligne. Ce que le
+// `superRefine` ajoute, c'est un message que le commerçant comprend là où la
+// base rendrait un nom de contrainte.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Format de l'expérience. Le champ NON RENDU vaut `standard`, comme le défaut
+ * SQL de la colonne : un panneau qui n'affiche pas le choix propose le socle.
+ */
+const activityKindSchema = nonRenduVaut(
+  z.enum(["standard", "signature", "duo"]),
+  "standard",
+);
+
+/** La phrase que le joueur lit avant de s'engager — facultative, ≤ 200. */
+const activityPromiseSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(
+      RESERVER_ACTIVITY_PROMISE_MAX,
+      `Promesse trop longue (${RESERVER_ACTIVITY_PROMISE_MAX} caractères max)`,
+    ),
+);
+
+/** Ce qu'il faut savoir avant de venir — la « préparation » ET les « instructions ». */
+const activityPreparationSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(
+      RESERVER_ACTIVITY_PREPARATION_MAX,
+      `Préparation trop longue (${RESERVER_ACTIVITY_PREPARATION_MAX} caractères max)`,
+    ),
+);
+
+/**
+ * Durée annoncée, en minutes. VIDE = `null` = « non annoncée », et c'est une
+ * valeur à part entière (la colonne est nullable) — motif
+ * `waitlistOfferMinutesSchema`. Le `superRefine` de chaque schéma d'activité
+ * l'EXIGE des deux formats nouveaux, jamais du `standard`.
+ */
+const activityDurationSchema = nonRenduVaut(
+  z
+    .string()
+    .trim()
+    .transform((valeur) => (valeur === "" ? null : Number(valeur)))
+    .refine(
+      (valeur) =>
+        valeur === null ||
+        (Number.isInteger(valeur) &&
+          valeur >= RESERVER_ACTIVITY_DURATION_MIN &&
+          valeur <= RESERVER_ACTIVITY_DURATION_MAX),
+      `Durée invalide (de ${RESERVER_ACTIVITY_DURATION_MIN} à ${RESERVER_ACTIVITY_DURATION_MAX} minutes)`,
+    ),
+  null,
+);
+
+/** Une carte : un titre et un corps, tous deux NON VIDES (CHECK SQL). */
+const experienceStepSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Donnez un titre à cette étape")
+    .max(
+      RESERVER_STEP_TITLE_MAX,
+      `Titre d'étape trop long (${RESERVER_STEP_TITLE_MAX} caractères max)`,
+    ),
+  body: z
+    .string()
+    .trim()
+    .min(1, "Décrivez cette étape")
+    .max(
+      RESERVER_STEP_BODY_MAX,
+      `Description d'étape trop longue (${RESERVER_STEP_BODY_MAX} caractères max)`,
+    ),
 });
+
+/**
+ * Les étapes, telles que le formulaire les poste : TROIS PAIRES de champs, dont
+ * les paires ENTIÈREMENT vides sont retirées avant validation.
+ *
+ * ── POURQUOI LE VIDE SE RETIRE, ET LA MOITIÉ SE REFUSE ──
+ *
+ * Un panneau rend toujours ses trois paires ; un Moment Signature en deux étapes
+ * en laisse donc une vide, et refuser cela obligerait le commerçant à en
+ * inventer une troisième. Une paire À MOITIÉ remplie, en revanche, est une
+ * saisie interrompue : `experienceStepSchema` la refuse avec le message du champ
+ * manquant, exactement là où la base refuserait la ligne sans un mot.
+ */
+const experienceStepsSchema = z.preprocess(
+  (valeur) =>
+    Array.isArray(valeur)
+      ? valeur.filter((etape) => {
+          const carte = etape as { title?: unknown; body?: unknown } | null;
+          const titre =
+            typeof carte?.title === "string" ? carte.title.trim() : "";
+          const corps = typeof carte?.body === "string" ? carte.body.trim() : "";
+          return titre !== "" || corps !== "";
+        })
+      : [],
+  z
+    .array(experienceStepSchema)
+    .max(
+      RESERVER_ACTIVITY_STEPS_MAX,
+      `Trois étapes au maximum — la page en montre trois`,
+    ),
+);
+
+/**
+ * Les DEUX contraintes conditionnelles de la table, dites en français.
+ *
+ * La durée est exigée des deux formats nouveaux : « 20-45 min » et « capacité
+ * par personne » sont des promesses faites au joueur AVANT qu'il réserve, et une
+ * page immersive sans durée annoncée lui demande de s'engager sur une inconnue.
+ * Les étapes, elles, ne sont exigées que de la `signature` — c'est SA définition
+ * ; le Duo dit sa préparation en prose.
+ */
+function exigerLesChampsDuFormat(
+  valeur: {
+    kind: "standard" | "signature" | "duo";
+    durationMinutes: number | null;
+    steps: { title: string; body: string }[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  if (valeur.kind !== "standard" && valeur.durationMinutes === null) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["durationMinutes"],
+      message:
+        "Annoncez la durée de cette expérience : le joueur s'engage dessus avant de réserver.",
+    });
+  }
+  if (valeur.kind === "signature" && valeur.steps.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["steps"],
+      message: "Un Moment Signature se présente en une à trois étapes.",
+    });
+  }
+}
+
+export const createReserverActivitySchema = z
+  .object({
+    name: activityNameSchema,
+    description: activityDescriptionSchema,
+    kind: activityKindSchema,
+    promise: activityPromiseSchema,
+    durationMinutes: activityDurationSchema,
+    steps: experienceStepsSchema,
+    preparation: activityPreparationSchema,
+    waitQuizId: waitAnimationIdSchema,
+    waitPauseCampaignId: waitAnimationIdSchema,
+  })
+  .superRefine(exigerLesChampsDuFormat);
 
 /**
  * Réglages d'une activité. `active` est l'INTERRUPTEUR — il n'existe aucune
  * suppression : le socle a délibérément retiré le `grant delete`, parce que la
  * cascade emporterait les créneaux puis l'historique des arrivées.
  */
-export const updateReserverActivitySchema = z.object({
-  id: uuid,
-  name: activityNameSchema,
-  description: activityDescriptionSchema,
-  active: caseACochee,
-  waitQuizId: waitAnimationIdSchema,
-  waitPauseCampaignId: waitAnimationIdSchema,
-});
+export const updateReserverActivitySchema = z
+  .object({
+    id: uuid,
+    name: activityNameSchema,
+    description: activityDescriptionSchema,
+    kind: activityKindSchema,
+    promise: activityPromiseSchema,
+    durationMinutes: activityDurationSchema,
+    steps: experienceStepsSchema,
+    preparation: activityPreparationSchema,
+    active: caseACochee,
+    waitQuizId: waitAnimationIdSchema,
+    waitPauseCampaignId: waitAnimationIdSchema,
+  })
+  .superRefine(exigerLesChampsDuFormat);
+
+/**
+ * Les noms des champs d'étapes, RÉPÉTÉS — le panneau rend une paire par carte,
+ * toutes sous le même nom, et la liste s'ajoute et se retire à l'écran.
+ *
+ * Ils vivent ICI, à côté du schéma qui les valide, pour que l'écran et l'action
+ * ne puissent pas diverger : un formulaire qui nommerait ses champs autrement
+ * poserait des étapes qu'aucune action ne lirait, sans la moindre erreur.
+ */
+export const RESERVER_STEP_TITLE_FIELD = "stepTitle";
+export const RESERVER_STEP_BODY_FIELD = "stepBody";
+
+/**
+ * Assemble les paires d'un `FormData` en tableau d'étapes BRUT.
+ *
+ * `getAll` ET NON trois lectures indexées : les cartes sont une LISTE que le
+ * commerçant allonge et raccourcit, et des noms indexés auraient laissé un trou
+ * au milieu dès qu'il retire la deuxième de trois. L'ordre du `FormData` est
+ * celui du document, donc celui de l'écran.
+ *
+ * Rien n'est validé ni nettoyé ici : les paires vides, les moitiés et les
+ * longueurs sont l'affaire d'`experienceStepsSchema`. Cette fonction ne fait que
+ * transposer une forme de formulaire en une forme de document.
+ */
+export function etapesDepuisFormData(
+  formData: Pick<FormData, "getAll">,
+): { title: unknown; body: unknown }[] {
+  const titres = formData.getAll(RESERVER_STEP_TITLE_FIELD);
+  const corps = formData.getAll(RESERVER_STEP_BODY_FIELD);
+  return titres.map((titre, index) => ({
+    title: titre,
+    body: corps[index] ?? null,
+  }));
+}
 
 /**
  * Créer un créneau. Les deux bornes sont des heures CIVILES ; leur cohérence

@@ -89,6 +89,7 @@ import {
   createReserverInvitationSchema,
   createReserverQueueSchema,
   createReserverSlotSchema,
+  etapesDepuisFormData,
   evictWaitlistEntrySchema,
   loadMyReservationsSchema,
   queueCallNextSchema,
@@ -443,6 +444,13 @@ export type ReserveSlotActionResult =
 export async function reserveSlot(input: {
   organizationId: string;
   slotId: string;
+  /**
+   * Personnes occupées (RES-5). Absent = 1, et c'est le cas de tous les écrans
+   * d'hier ; la SURFACE DUO envoie 2, recopié du format de l'activité qu'elle
+   * affiche. Cette valeur ne décide de rien : `reserve_slot` la compare, sous
+   * verrou, à l'unité du format, et refuse `invalid_party_size` si elle diverge.
+   */
+  partySize?: number;
   email?: string;
   consent?: boolean;
   turnstileToken?: string;
@@ -473,6 +481,7 @@ async function reserveInner(
   parsed: {
     organizationId: string;
     slotId: string;
+    partySize: number;
     email?: string;
     consent: boolean;
   },
@@ -504,6 +513,10 @@ async function reserveInner(
     p_player_key_hash: empreinte,
     p_email: parsed.email ?? null,
     p_consent: parsed.consent,
+    // LA TAILLE VALIDÉE, jamais celle du corps. La base la revérifie contre le
+    // format sous verrou — elle n'est transmise que pour que le refus soit
+    // NOMMÉ (`invalid_party_size`) plutôt que muet.
+    p_party_size: parsed.partySize,
   });
 
   if (error) {
@@ -1600,6 +1613,13 @@ export async function createReserverActivity(
   const parsed = createReserverActivitySchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
+    // LES CINQ CHAMPS D'EXPÉRIENCE (RES-5). Un panneau qui ne les rend pas
+    // laisse une activité `standard`, exactement comme avant ce lot.
+    kind: formData.get("kind"),
+    promise: formData.get("promise"),
+    durationMinutes: formData.get("durationMinutes"),
+    steps: etapesDepuisFormData(formData),
+    preparation: formData.get("preparation"),
     waitQuizId: formData.get("waitQuizId"),
     waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
@@ -1616,6 +1636,15 @@ export async function createReserverActivity(
     name: parsed.data.name,
     description: parsed.data.description || null,
     active: true,
+    // LE FORMAT ET SA PRÉSENTATION (RES-5). `steps` part à `null` quand il n'y
+    // a aucune carte : un tableau vide serait une liste d'étapes vide, la base
+    // dit « pas d'étapes » avec `null` — et c'est ce que la contrainte
+    // conditionnelle de la `signature` teste.
+    kind: parsed.data.kind,
+    promise: parsed.data.promise || null,
+    duration_minutes: parsed.data.durationMinutes,
+    steps: parsed.data.steps.length > 0 ? parsed.data.steps : null,
+    preparation: parsed.data.preparation || null,
     // ANIMATIONS D'ATTENTE (RES-4) : `""` = « aucune », et c'est le défaut. La
     // FK COMPOSITE `(wait_quiz_id, organization_id)` refuse le quiz du voisin.
     wait_quiz_id: parsed.data.waitQuizId || null,
@@ -1651,6 +1680,11 @@ export async function updateReserverActivity(
     id: formData.get("id"),
     name: formData.get("name"),
     description: formData.get("description"),
+    kind: formData.get("kind"),
+    promise: formData.get("promise"),
+    durationMinutes: formData.get("durationMinutes"),
+    steps: etapesDepuisFormData(formData),
+    preparation: formData.get("preparation"),
     active: formData.get("active"),
     waitQuizId: formData.get("waitQuizId"),
     waitPauseCampaignId: formData.get("waitPauseCampaignId"),
@@ -1668,6 +1702,35 @@ export async function updateReserverActivity(
     .update({
       name: parsed.data.name,
       description: parsed.data.description || null,
+      kind: parsed.data.kind,
+      // ── LE RETOUR À `standard` NE DOIT RIEN EFFACER ──
+      //
+      // Le panneau MASQUE les quatre champs de présentation dès que le format
+      // choisi est `standard` : ils ne sont donc pas postés, et le schéma les lit
+      // comme absents (`""` / `null` / `[]`). Les écrire quand même remettrait
+      // `promise`, `duration_minutes`, `steps` et `preparation` à `null` —
+      // c'est-à-dire qu'un commerçant qui bascule un Moment Signature en
+      // « Standard » pour une saison PERDRAIT sa promesse et ses trois cartes,
+      // sans confirmation et sans moyen de les retrouver.
+      //
+      // La règle du dépôt est « un champ non rendu ne réécrit pas » : sur
+      // `standard`, les quatre colonnes sortent du payload et gardent leur
+      // valeur. Rien n'est incohérent en base — les deux contraintes
+      // conditionnelles ne contraignent QUE `signature` et `duo`, et une
+      // activité `standard` a le droit de porter une promesse qu'elle n'affiche
+      // pas. Sur les deux autres formats, le `superRefine` garantit que les
+      // champs exigés sont là : on écrit alors ce qui a été posté.
+      //
+      // `createReserverActivity` n'a pas cette clause, et n'en a pas besoin :
+      // à la création il n'y a rien à préserver.
+      ...(parsed.data.kind === "standard"
+        ? {}
+        : {
+            promise: parsed.data.promise || null,
+            duration_minutes: parsed.data.durationMinutes,
+            steps: parsed.data.steps.length > 0 ? parsed.data.steps : null,
+            preparation: parsed.data.preparation || null,
+          }),
       active: parsed.data.active,
       wait_quiz_id: parsed.data.waitQuizId || null,
       wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,

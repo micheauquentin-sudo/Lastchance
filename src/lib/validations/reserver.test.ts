@@ -832,3 +832,226 @@ describe("waitUsePauseSchema / waitConsumeSpinSchema", () => {
     ).toBe(false);
   });
 });
+
+// ════════════════════════════════════════════════════════════
+// LES EXPÉRIENCES SIGNATURE (RES-5, lot L8) — migration 20261007120000
+//
+// Les schémas ne DÉCIDENT rien : la base porte les cinq CHECK et les deux
+// contraintes conditionnelles. Ce qui est vérifié ici, c'est qu'un refus arrive
+// AVANT l'aller-retour, avec un message que le commerçant comprend.
+// ════════════════════════════════════════════════════════════
+
+/** Le minimum qu'un formulaire d'activité poste toujours. */
+const ACTIVITE_BASE = {
+  name: "Atelier",
+  description: "",
+  waitQuizId: "",
+  waitPauseCampaignId: "",
+};
+
+describe("reserveSlotSchema — la taille de la réservation (RES-5)", () => {
+  it("vaut 1 quand l'écran ne dit rien : c'est le parcours d'hier", () => {
+    const parsed = reserveSlotSchema.safeParse({
+      organizationId: UUID,
+      slotId: AUTRE_UUID,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.partySize).toBe(1);
+  });
+
+  it("accepte 2 — ce que la SURFACE DUO envoie", () => {
+    const parsed = reserveSlotSchema.safeParse({
+      organizationId: UUID,
+      slotId: AUTRE_UUID,
+      partySize: 2,
+    });
+    expect(parsed.success && parsed.data.partySize).toBe(2);
+  });
+
+  it("refuse hors de 1..2 et refuse les décimales — garde de FORME", () => {
+    // Au-delà, c'est un bogue d'appelant : la contrainte de table refuserait
+    // de toute façon la ligne, mais avec une erreur illisible.
+    for (const partySize of [0, 3, 40, 1.5]) {
+      expect(
+        reserveSlotSchema.safeParse({
+          organizationId: UUID,
+          slotId: AUTRE_UUID,
+          partySize,
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe("createReserverActivitySchema — les cinq champs d'expérience", () => {
+  it("reste `standard` quand le panneau ne rend aucun des cinq champs", () => {
+    const parsed = createReserverActivitySchema.safeParse(ACTIVITE_BASE);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.kind).toBe("standard");
+    expect(parsed.data.durationMinutes).toBeNull();
+    expect(parsed.data.steps).toEqual([]);
+    expect(parsed.data.promise).toBe("");
+    expect(parsed.data.preparation).toBe("");
+  });
+
+  it("EXIGE la durée des deux formats nouveaux, jamais du standard", () => {
+    // « 20-45 min » est une promesse faite au joueur AVANT qu'il réserve : une
+    // page immersive sans durée lui demande de s'engager sur une inconnue.
+    const sansDuree = createReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      kind: "duo",
+    });
+    expect(sansDuree.success).toBe(false);
+    expect(sansDuree.success === false && sansDuree.error.issues[0].path).toEqual(
+      ["durationMinutes"],
+    );
+
+    expect(
+      createReserverActivitySchema.safeParse({
+        ...ACTIVITE_BASE,
+        kind: "duo",
+        durationMinutes: "120",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("EXIGE une à trois étapes de la SEULE signature", () => {
+    // C'est SA définition — « présentée en trois étapes ». Le Duo, lui, dit sa
+    // préparation en prose.
+    const sansEtapes = createReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      kind: "signature",
+      durationMinutes: "30",
+    });
+    expect(sansEtapes.success).toBe(false);
+    expect(
+      sansEtapes.success === false && sansEtapes.error.issues[0].path,
+    ).toEqual(["steps"]);
+
+    const avecUne = createReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      kind: "signature",
+      durationMinutes: "30",
+      steps: [
+        { title: "Accueil", body: "On vous installe." },
+        { title: null, body: null },
+        { title: "", body: "" },
+      ],
+    });
+    expect(avecUne.success).toBe(true);
+    expect(avecUne.success && avecUne.data.steps).toEqual([
+      { title: "Accueil", body: "On vous installe." },
+    ]);
+  });
+
+  it("refuse une paire À MOITIÉ remplie — une saisie interrompue", () => {
+    // La paire ENTIÈREMENT vide se retire (un Signature en deux étapes en laisse
+    // une vide) ; la moitié, elle, est une erreur qu'on nomme.
+    const parsed = createReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      kind: "signature",
+      durationMinutes: "30",
+      steps: [{ title: "Accueil", body: "" }],
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.success === false && parsed.error.issues[0].message).toBe(
+      "Décrivez cette étape",
+    );
+  });
+
+  it("refuse une quatrième carte : la page n'en montre que trois", () => {
+    const parsed = createReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      kind: "signature",
+      durationMinutes: "30",
+      steps: [1, 2, 3, 4].map((n) => ({ title: `Étape ${n}`, body: "Corps." })),
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("borne les quatre textes exactement comme les CHECK SQL", () => {
+    const trop = (champs: Record<string, unknown>) =>
+      createReserverActivitySchema.safeParse({ ...ACTIVITE_BASE, ...champs })
+        .success;
+
+    expect(trop({ promise: "p".repeat(200) })).toBe(true);
+    expect(trop({ promise: "p".repeat(201) })).toBe(false);
+    expect(trop({ preparation: "p".repeat(600) })).toBe(true);
+    expect(trop({ preparation: "p".repeat(601) })).toBe(false);
+    expect(
+      trop({
+        kind: "signature",
+        durationMinutes: "30",
+        steps: [{ title: "t".repeat(81), body: "Corps." }],
+      }),
+    ).toBe(false);
+    expect(
+      trop({
+        kind: "signature",
+        durationMinutes: "30",
+        steps: [{ title: "Titre", body: "b".repeat(401) }],
+      }),
+    ).toBe(false);
+  });
+
+  it("borne la durée à 10..240 minutes, entiers seulement", () => {
+    // La borne haute est la journée de travail d'un commerce ; la basse écarte
+    // la saisie accidentelle. « 20 à 45 » reste une recommandation de format —
+    // la borner ici interdirait l'Atelier Duo de deux heures.
+    const duree = (valeur: string) =>
+      createReserverActivitySchema.safeParse({
+        ...ACTIVITE_BASE,
+        kind: "duo",
+        durationMinutes: valeur,
+      }).success;
+
+    expect(duree("10")).toBe(true);
+    expect(duree("240")).toBe(true);
+    expect(duree("9")).toBe(false);
+    expect(duree("241")).toBe(false);
+    expect(duree("30.5")).toBe(false);
+    expect(duree("bientôt")).toBe(false);
+  });
+
+  it("refuse un format hors du vocabulaire fermé", () => {
+    expect(
+      createReserverActivitySchema.safeParse({
+        ...ACTIVITE_BASE,
+        kind: "atelier",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("updateReserverActivitySchema — les mêmes règles, plus l'interrupteur", () => {
+  it("porte les cinq champs et garde `active`", () => {
+    const parsed = updateReserverActivitySchema.safeParse({
+      ...ACTIVITE_BASE,
+      id: UUID,
+      active: "true",
+      kind: "duo",
+      promise: "Deux heures à deux.",
+      durationMinutes: "120",
+      preparation: "Venez avec un tablier.",
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.kind).toBe("duo");
+    expect(parsed.data.durationMinutes).toBe(120);
+    expect(parsed.data.active).toBe(true);
+    expect(parsed.data.preparation).toBe("Venez avec un tablier.");
+  });
+
+  it("applique les DEUX règles conditionnelles à la mise à jour aussi", () => {
+    expect(
+      updateReserverActivitySchema.safeParse({
+        ...ACTIVITE_BASE,
+        id: UUID,
+        active: "true",
+        kind: "signature",
+        durationMinutes: "",
+      }).success,
+    ).toBe(false);
+  });
+});
