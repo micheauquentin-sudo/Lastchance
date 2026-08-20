@@ -138,10 +138,15 @@ export default async function OffreStockPage({
             ? etatUiPriseStock(ctx.offre.myHold, maintenant)
             : null
         }
-        // LA BORNE BASSE DE LA FENÊTRE, tranchée ici parce qu'elle n'existe
-        // dans aucun état : `redeem_stock_hold` refuse avant `window_starts_at`,
-        // et ni `etatUiPriseStock` ni le registre n'ont de mot pour « trop tôt ».
-        retraitOuvert={new Date(windowStartsAt).getTime() <= maintenant.getTime()}
+        // LA BORNE BASSE, tranchée ici. Quand une prise existe, sa GRAVURE
+        // (`redeem_not_before`) prime sur la fenêtre courante de l'offre :
+        // c'est elle que `redeem_stock_hold` applique, et une réédition de
+        // fenêtre ne change pas le sort d'une prise consentie.
+        retraitOuvert={
+          new Date(
+            ctx.offre.myHold?.redeemNotBefore ?? windowStartsAt,
+          ).getTime() <= maintenant.getTime()
+        }
         timeZone={ctx.timezone}
       />
 

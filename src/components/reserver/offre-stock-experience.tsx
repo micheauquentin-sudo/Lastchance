@@ -464,11 +464,14 @@ function MaPriseStock({
           <p className="mt-1 break-all font-mono text-3xl font-black tracking-wider text-k-ink">
             {prise.code}
           </p>
+          {/* La fenêtre affichée sur LE CODE est la GRAVURE de la prise, pas
+              celle de l'offre : après une réédition de fenêtre, c'est la
+              gravure que le comptoir applique. */}
           <p className="mt-3 text-sm font-medium text-k-body">
             Donnez ce code au comptoir, à retirer{" "}
             {formatFenetreStock(
-              offre.windowStartsAt,
-              offre.windowEndsAt,
+              prise.redeemNotBefore ?? offre.windowStartsAt,
+              prise.redeemExpiresAt ?? offre.windowEndsAt,
               timeZone,
             )}
             .
@@ -483,7 +486,11 @@ function MaPriseStock({
       {etat === "tenue" && !retraitOuvert ? (
         <p className="mt-3 rounded-xl border-2 border-k-ink bg-k-blue/20 px-3 py-2 text-sm font-bold text-k-ink">
           Retrait pas encore ouvert : revenez à partir du{" "}
-          {formatDate(offre.windowStartsAt, timeZone)}.
+          {formatDate(
+            prise.redeemNotBefore ?? offre.windowStartsAt,
+            timeZone,
+          )}
+          .
         </p>
       ) : null}
 

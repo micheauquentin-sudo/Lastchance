@@ -2534,6 +2534,10 @@ export interface StockHoldMineView {
   holdId: string;
   code: string;
   status: StockHoldStatus;
+  /** Les DEUX bornes gravées à la prise (doctrine 20260904120000) : c'est
+   *  elles que le comptoir applique, pas la fenêtre courante de l'offre —
+   *  une réédition de fenêtre ne change pas le sort d'une prise consentie. */
+  redeemNotBefore: string | null;
   redeemExpiresAt: string | null;
 }
 
@@ -2599,6 +2603,7 @@ export function mapStockOfferPublicState(
             holdId,
             code,
             status: asStockHoldStatus(mien.status),
+            redeemNotBefore: asString(mien.redeem_not_before),
             redeemExpiresAt: asString(mien.redeem_expires_at),
           }
         : null,
