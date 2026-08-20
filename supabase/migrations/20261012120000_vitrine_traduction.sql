@@ -1015,3 +1015,62 @@ comment on function public.vitrine_translation_state(uuid) is
 revoke all on function public.vitrine_translation_state(uuid)
   from public, anon, authenticated;
 grant execute on function public.vitrine_translation_state(uuid) to service_role;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 8. CORRECTIF DE COMMENTAIRE — `set_vitrine_slug` et le droit `vitrine`
+--
+-- Condition 4 de la revue de sécurité du lot L10. AUCUN COMPORTEMENT NE CHANGE
+-- ICI : la fonction n'est ni redéfinie, ni resignée, ni regrantée. Seul son
+-- `comment` est réécrit, parce qu'il décrivait un produit qui n'existe pas.
+--
+-- ── CE QUE DISAIT LE COMMENTAIRE, ET POURQUOI C'ÉTAIT FAUX ──
+--
+-- 20261011120000 concluait : « Ne vérifie PAS le droit `vitrine` : préparer sa
+-- vitrine avant d'avoir l'offre est légitime. » La première moitié est vraie —
+-- le corps de la fonction n'appelle pas `org_has_module_access`. La seconde est
+-- une PROMESSE QUE RIEN NE TIENT : l'unique appelant de cette RPC est l'action
+-- serveur `setVitrineSlug` (`src/actions/vitrine.ts`), et elle passe par
+-- `gardeEditeurVitrine` (`src/lib/vitrine-context.ts`), qui REFUSE tout
+-- commerçant sans le droit `vitrine` avant même de composer l'appel. Aucune
+-- surface du produit ne permet donc de « préparer avant d'avoir l'offre ».
+--
+-- ── POURQUOI CELA COMPTE PLUS QU'UNE IMPRÉCISION DE RÉDACTION ──
+--
+-- Un `comment on function` est ce que lit l'auditeur qui interroge la base sans
+-- ouvrir le dépôt applicatif — c'est la seule documentation que `\df+` rend. Un
+-- commentaire qui décrit une porte ouverte là où le couloir est fermé conduit
+-- exactement à deux erreurs opposées : croire l'ouverture réelle et la traiter
+-- comme une faille à colmater, ou croire la fermeture acquise EN SQL et bâtir
+-- dessus. La phrase vraie dit les deux niveaux et à qui appartient la décision.
+--
+-- ── ET CE QUI RESTE VRAI, DONC CE QU'ON NE TOUCHE PAS ──
+--
+-- La fonction ne doit PAS se mettre à exiger le droit : le jour où un lot
+-- voudra vraiment offrir la préparation avant l'offre (choisir son adresse pour
+-- réserver le nom, sans rien publier), c'est la garde APPLICATIVE qui devra
+-- s'ouvrir, et elle peut le faire sans migration. Graver le droit ici aurait
+-- déplacé cet arbitrage dans le seul endroit d'où on ne peut plus le reprendre.
+-- ────────────────────────────────────────────────────────────
+
+comment on function public.set_vitrine_slug(uuid, text, text) is
+  'Pose ou change l''ADRESSE PUBLIQUE d''une vitrine, et CRÉE la ligne de '
+  'réglages si elle n''existe pas — c''est pourquoi `insert` n''est accordé à '
+  'personne sur vitrine_settings : un premier choix sans trace est justement '
+  'celui qui engage l''impression des QR. Acteur obligatoire, vérifié EN SQL '
+  'membre owner/editor (pas le caissier : ce n''est pas un geste de comptoir). '
+  'Normalise en minuscules détourées, puis refuse séparément « invalid_slug » '
+  '(forme), « reserved_slug » (vocabulaire de la plateforme) et « slug_taken » '
+  '(unicité globale) — trois refus que l''écran doit savoir distinguer. '
+  'Réenregistrer la MÊME adresse ne journalise rien. '
+  'DROIT `vitrine` — LES DEUX NIVEAUX, corrigé en VIT-1b (condition 4 de la '
+  'revue L10) : cette FONCTION ne le vérifie pas, mais son UNIQUE appelant, '
+  'l''action serveur setVitrineSlug, passe par gardeEditeurVitrine qui REFUSE '
+  'sans le droit. Aucune surface ne permet donc aujourd''hui de choisir une '
+  'adresse avant d''avoir l''offre, contrairement à ce que ce commentaire '
+  'affirmait en L10. L''ouverture reste APPLICATIVE et volontairement pas '
+  'gravée ici : le jour où réserver son adresse sans publier deviendra un geste '
+  'offert, la garde s''ouvre sans migration. Publier, en revanche, exige le '
+  'droit dans TOUS les cas — le trigger vitrine_settings_guard_publication le '
+  'tient, et rien n''est visible du public tant que `published` et le droit ne '
+  'sont pas réunis.';

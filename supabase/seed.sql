@@ -1475,63 +1475,123 @@ values
    array['nouveau', 'fait_maison']::text[], array[]::text[], true, 2)
 on conflict (id) do nothing;
 
--- ── Vitrine — TRADUCTIONS anglaises, dont une PÉRIMÉE (VIT-1b) ──────
+-- ── Vitrine — TRADUCTIONS anglaises, COUVERTURE 100 % (VIT-1b) ──────
 --
--- QUATRE LIGNES, ET LA QUATRIÈME EST LA PLUS UTILE : trois traductions fraîches
--- pour que la page `?lang=en` rende vraiment de l'anglais, et UNE PÉRIMÉE pour
--- qu'un écran qui ignorerait `version_source` soit visiblement faux — il
--- afficherait « Chickpea hummus » là où le seul rendu correct est le français
--- « Houmous du jour ». Un jeu de données tout-frais n'aurait jamais fait échouer
--- ce rendu-là, qui est pourtant le seul comportement propre à ce lot.
+-- DIX-NEUF LIGNES, C'EST-À-DIRE TOUS les champs traduisibles de cette vitrine :
+-- accroche + histoire + horaires des réglages (3), les deux noms de cartes (2),
+-- les trois noms de rubriques (3), et les noms et descriptions NON NULLES des
+-- six fiches (11 — « Limonade artisanale » n'a pas de description, elle ne
+-- compte donc pas). Toutes FRAÎCHES.
 --
--- LES TROIS NIVEAUX SONT COUVERTS — réglages, rubrique, fiche — parce qu'un
--- calque posé au bon endroit sur un seul niveau ressemble beaucoup à un calque
--- posé nulle part ailleurs.
+-- ── POURQUOI PAS UNE SEULE PÉRIMÉE ICI, ALORS QUE C'EST LE COMPORTEMENT
+--    PROPRE À CE LOT ──
 --
--- `version_source` EST LU DANS LA CIBLE, jamais écrit en dur : le seed tourne
--- après les insertions ci-dessus, et recopier `now()` aurait produit une
--- fraîcheur qui dépend de l'ordre des transactions du fichier. Pour la périmée,
--- on RECULE d'une heure — la cible n'a pas bougé, c'est la traduction qui est
--- datée d'avant.
+-- Parce que la règle de produit est « sélecteur de langue si la couverture
+-- atteint 95 % », et que 18 fraîches sur 19 font 94,7 % : une seule ligne
+-- périmée dans ce jeu de données ferait passer la vitrine E2E SOUS le seuil, et
+-- le sélecteur disparaîtrait de l'écran — par accident d'arithmétique, pas par
+-- décision. Un E2E ne pourrait alors plus observer le cas nominal, qui est
+-- justement celui qu'il doit garder.
+--
+-- LA PÉREMPTION RESTE PROUVÉE, et mieux qu'ici : `vitrine.test.sql` §12e la
+-- FABRIQUE — il pose une traduction fraîche, modifie sa cible, et vérifie que le
+-- français ressort. Une donnée semée périmée d'avance prouve moins : elle ne
+-- montre pas le trigger `touch_updated_at` en train de la périmer.
+--
+-- `version_source` EST LU DANS LA CIBLE, jamais écrit en dur : recopier `now()`
+-- aurait produit une fraîcheur qui dépend de l'ordre des transactions du
+-- fichier, et une couverture qui vacille d'un `db reset` à l'autre.
+--
+-- L'ANGLAIS EST ÉCRIT À LA MAIN, sobre, et il traduit VRAIMENT — c'est ce
+-- qu'un écran de démonstration doit montrer. Les noms propres n'en sont pas
+-- exemptés : « Côtes-du-Rhône » est son propre rendu anglais, et l'appellation
+-- doit quand même porter sa ligne, sinon la couverture ne peut pas atteindre
+-- 100 % sur une carte des vins.
 insert into public.vitrine_translations
   (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
-select
-  v.id::uuid, 'e2e10000-0000-4000-8000-000000000001'::uuid,
-  v.cible_type, v.cible_id::uuid, 'en', v.champ, v.texte,
-  v.version_source
-from (
-  -- FRAÎCHE — l'accroche des réglages.
-  select 'e2f10000-0000-4000-8000-0000000000f1' as id,
-         'settings' as cible_type,
-         'e2f10000-0000-4000-8000-000000000001' as cible_id,
-         'accroche' as champ,
-         'The neighbourhood coffee bar, roasting our own beans since 2019.'
-           as texte,
-         (select s.updated_at from public.vitrine_settings s
-           where s.id = 'e2f10000-0000-4000-8000-000000000001')
-           as version_source
-  union all
-  -- FRAÎCHE — le nom d'une rubrique.
-  select 'e2f10000-0000-4000-8000-0000000000f2',
-         'categorie', 'e2f10000-0000-4000-8000-000000000021', 'nom',
-         'Starters',
-         (select k.updated_at from public.vitrine_categories k
-           where k.id = 'e2f10000-0000-4000-8000-000000000021')
-  union all
-  -- FRAÎCHE — le nom d'une fiche.
-  select 'e2f10000-0000-4000-8000-0000000000f3',
-         'item', 'e2f10000-0000-4000-8000-000000000031', 'nom',
-         'Pumpkin velouté',
-         (select i.updated_at from public.vitrine_items i
-           where i.id = 'e2f10000-0000-4000-8000-000000000031')
-  union all
-  -- PÉRIMÉE — traduite AVANT la dernière version de la fiche. Le français doit
-  -- ressortir malgré la présence de cette ligne.
-  select 'e2f10000-0000-4000-8000-0000000000f4',
-         'item', 'e2f10000-0000-4000-8000-000000000032', 'nom',
-         'Chickpea hummus',
-         (select i.updated_at - interval '1 hour' from public.vitrine_items i
-           where i.id = 'e2f10000-0000-4000-8000-000000000032')
-) as v(id, cible_type, cible_id, champ, texte, version_source)
-where v.version_source is not null
+select v.id::uuid, s.organization_id, 'settings', s.id, 'en', v.champ,
+       v.texte, s.updated_at
+  from public.vitrine_settings s
+  cross join (values
+    ('e2f10000-0000-4000-8000-000000000f01', 'accroche',
+     'The neighbourhood coffee bar, roasting our own beans since 2019.'),
+    ('e2f10000-0000-4000-8000-000000000f02', 'histoire',
+     'A twenty-seat room, a roaster at the back, and a menu that follows the '
+     'market. People come for the coffee in the morning and for lunch at '
+     'midday, never to wait.'),
+    ('e2f10000-0000-4000-8000-000000000f03', 'horaires_texte',
+     E'Monday to Friday: 8 am – 4 pm\nSaturday: 9 am – 6 pm\nSunday: closed')
+  ) as v(id, champ, texte)
+ where s.id = 'e2f10000-0000-4000-8000-000000000001'
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, m.organization_id, 'menu', m.id, 'en', 'nom',
+       v.texte, m.updated_at
+  from public.vitrine_menus m
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f04',
+     'e2f10000-0000-4000-8000-000000000011', 'Lunch menu'),
+    ('e2f10000-0000-4000-8000-000000000f05',
+     'e2f10000-0000-4000-8000-000000000012', 'Wine & drinks')
+  ) as v(id, cible, texte) on v.cible::uuid = m.id
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, k.organization_id, 'categorie', k.id, 'en', 'nom',
+       v.texte, k.updated_at
+  from public.vitrine_categories k
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f06',
+     'e2f10000-0000-4000-8000-000000000021', 'Starters'),
+    ('e2f10000-0000-4000-8000-000000000f07',
+     'e2f10000-0000-4000-8000-000000000022', 'Mains'),
+    ('e2f10000-0000-4000-8000-000000000f08',
+     'e2f10000-0000-4000-8000-000000000023', 'By the glass')
+  ) as v(id, cible, texte) on v.cible::uuid = k.id
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, i.organization_id, 'item', i.id, 'en', v.champ,
+       v.texte, i.updated_at
+  from public.vitrine_items i
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f09',
+     'e2f10000-0000-4000-8000-000000000031', 'nom', 'Pumpkin velouté'),
+    ('e2f10000-0000-4000-8000-000000000f10',
+     'e2f10000-0000-4000-8000-000000000031', 'description',
+     'Light cream, house-roasted seeds.'),
+    ('e2f10000-0000-4000-8000-000000000f11',
+     'e2f10000-0000-4000-8000-000000000032', 'nom', 'Hummus of the day'),
+    ('e2f10000-0000-4000-8000-000000000f12',
+     'e2f10000-0000-4000-8000-000000000032', 'description',
+     'Chickpeas, preserved lemon, olive oil.'),
+    ('e2f10000-0000-4000-8000-000000000f13',
+     'e2f10000-0000-4000-8000-000000000033', 'nom', 'Beef tartare'),
+    ('e2f10000-0000-4000-8000-000000000f14',
+     'e2f10000-0000-4000-8000-000000000033', 'description',
+     'Hand-cut, with house fries.'),
+    ('e2f10000-0000-4000-8000-000000000f15',
+     'e2f10000-0000-4000-8000-000000000034', 'nom',
+     'Grilled vegetable curry'),
+    ('e2f10000-0000-4000-8000-000000000f16',
+     'e2f10000-0000-4000-8000-000000000034', 'description',
+     'Spicy, served with brown rice.'),
+    -- L'APPELLATION EST SON PROPRE RENDU ANGLAIS, et elle porte quand même sa
+    -- ligne : sans elle, une carte des vins plafonnerait la couverture sous le
+    -- seuil du sélecteur pour la seule raison qu'un nom propre ne se traduit
+    -- pas.
+    ('e2f10000-0000-4000-8000-000000000f17',
+     'e2f10000-0000-4000-8000-000000000035', 'nom', 'Côtes-du-Rhône'),
+    ('e2f10000-0000-4000-8000-000000000f18',
+     'e2f10000-0000-4000-8000-000000000035', 'description',
+     'Domaine de la Tour, 2023 vintage.'),
+    -- « Limonade artisanale » n'a PAS de description : une seule ligne pour
+    -- elle, et c'est ce qui fait dix-neuf et non vingt.
+    ('e2f10000-0000-4000-8000-000000000f19',
+     'e2f10000-0000-4000-8000-000000000036', 'nom', 'Craft lemonade')
+  ) as v(id, cible, champ, texte) on v.cible::uuid = i.id
 on conflict on constraint vitrine_translations_cible_unique do nothing;

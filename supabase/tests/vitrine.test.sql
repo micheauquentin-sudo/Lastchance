@@ -883,6 +883,19 @@ select is(
   1::bigint,
   '… et une seule `vitrine_cartes_json`, sans quoi l''appel à deux arguments de vitrine_dashboard_state serait ambigu');
 
+-- CONDITION 4 DE LA REVUE L10, GARDÉE plutôt que corrigée une fois. Le
+-- commentaire de `set_vitrine_slug` affirmait que « préparer sa vitrine avant
+-- d'avoir l'offre est légitime » : la RPC ne vérifie effectivement pas le droit
+-- `vitrine`, mais son UNIQUE appelant le refuse, donc aucune surface n'offrait
+-- cette préparation. La phrase corrigée NOMME la garde applicative — une
+-- réécriture qui la perdrait fait rougir cette ligne, là où une correction sans
+-- garde se serait effacée au chantier suivant.
+select ok(
+  position('gardeEditeurVitrine' in
+    obj_description('public.set_vitrine_slug(uuid,text,text)'::regprocedure,
+                    'pg_proc')) > 0,
+  'le commentaire de la pose d''adresse dit les DEUX niveaux : la RPC n''exige pas le droit `vitrine`, son unique appelant si');
+
 
 -- ── 12b. LA PORTE D'ÉCRITURE, ET SES REFUS NOMMÉS ────────────
 
@@ -1181,6 +1194,38 @@ select is(
     #>> '{resume,total_champs_traduisibles}',
   '0',
   'une organisation qui n''a jamais ouvert sa vitrine n''a rien à traduire, et ce n''est pas une erreur');
+
+-- ── LA VITRINE SEMÉE EST TRADUITE À 100 %, ET ON LE GARDE ICI ──
+--
+-- HONNÊTETÉ SUR LA PORTÉE : ce fichier doit passer sur base VIDE comme sur base
+-- SEMÉE, donc cette assertion est VACUE sur la première — l'ensemble y est vide
+-- et la chaîne attendue l'est aussi. Elle ne garde donc rien dans ce run-là, et
+-- c'est écrit plutôt que caché.
+--
+-- Sur base SEMÉE, en revanche, elle mord, et elle garde une règle de PRODUIT :
+-- l'écran n'offre l'anglais qu'à partir de 95 % de couverture, et une seule
+-- traduction manquante ou périmée sur les dix-neuf champs de `e2e-comptoir`
+-- ferait 94,7 % — le sélecteur disparaîtrait de l'E2E par arithmétique, pas par
+-- décision. L'échec NOMME les champs fautifs, de quoi corriger le seed sans
+-- rien rouvrir.
+select is(
+  (select coalesce(
+     string_agg(c.cible_type || '.' || c.champ, ', '
+                order by c.cible_type, c.champ), '')
+     from public.vitrine_settings s
+     join lateral public.vitrine_champs_traduisibles(s.organization_id, true) c
+       on true
+     left join public.vitrine_translations t
+       on t.organization_id = s.organization_id
+      and t.cible_type = c.cible_type
+      and t.cible_id = c.cible_id
+      and t.champ = c.champ
+      and t.lang = 'en'
+      and t.version_source >= c.version_courante
+    where s.slug = 'e2e-comptoir'
+      and t.id is null),
+  '',
+  'sur base semée, aucun champ de la vitrine E2E ne reste sans anglais FRAIS — la règle « sélecteur si ≥ 95 % » doit y être observable');
 
 
 -- ── 12e. `touch_updated_at` PÉRIME — la boucle se referme ────
