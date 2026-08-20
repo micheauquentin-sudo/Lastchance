@@ -30,7 +30,7 @@ parallèle, fusions de migrations sérialisées.
 | L5 | RES-2 — liste prioritaire + invitations | ✅ | #161 | 20261004120000 |
 | L6 | RES-3 — file sereine | ✅ | #162 | 20261005120000 |
 | L7 | RES-4 — attente active | ✅ | #163 | 20261006120000 |
-| L8 | Expériences Signature | 🔨 QA | #164 | 20261007120000, 20261008120000 |
+| L8 | Expériences Signature | 🔨 QA | #164 | 20261007120000, 20261008120000, 20261009120000 |
 | L9 | RES-5 — hold stock + RESA- + Drop | ⏳ | — | — |
 | L10 | VIT-1a — marque + catalogue FR (sous drapeau) | ⏳ | — | — |
 | L11 | VIT-1b — infra i18n + adaptateur neutre (ouverture publique Vitrine) | ⏳ | — | — |

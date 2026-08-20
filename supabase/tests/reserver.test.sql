@@ -3915,5 +3915,105 @@ select ok(not has_function_privilege('anon',
   'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
   'ACL-31 et `anon` n''a rien à savoir de ce qui est engagé chez un commerce');
 
+-- L'EXCEPTION QUI DOIT SURVIVRE À LA PROCHAINE PASSE DE DURCISSEMENT.
+--
+-- Tout le reste de ce module retire l'EXECUTE à `authenticated` ; celle-ci le
+-- REÇOIT (20261008120000), et le geste réflexe d'un durcissement — « aucune
+-- fonction de `public` n'est exécutable par `authenticated` » — la casserait
+-- sans que rien ne rougisse avant la production. Une fonction référencée dans
+-- un `check` de table est évaluée avec les privilèges du rôle qui ÉCRIT la
+-- ligne : sans ce grant, tout insert/update de `reservation_activities` par
+-- PostgREST échoue en « permission denied », ce qu'un E2E a mis quatre heures
+-- à trouver. Cette assertion est là pour que la prochaine fois soit gratuite.
+select ok(has_function_privilege('authenticated',
+  'public.is_valid_experience_steps(jsonb)', 'EXECUTE'),
+  'ACL-32 le rôle qui écrit une activité peut évaluer le `check` de ses '
+  'étapes — le lui retirer rendrait tout Moment Signature incréable');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 26. LE PLANCHER — LE PATCH DIRECT NE BASCULE PAS NON PLUS
+--     (RES-5, trigger `reservation_activities_freeze_kind`)
+--
+-- Le refus de `updateReserverActivity` protège LE PANNEAU. Il ne protège pas la
+-- TABLE : `reservation_activities` porte une policy `for all` pour les éditeurs
+-- et un `grant update (kind, …)` (20261007120000). Un PATCH PostgREST envoyé
+-- avec le jeton du commerçant bascule donc le format sans jamais voir le
+-- serveur Next — ce n'est pas une acrobatie, c'est l'API que Supabase expose et
+-- dont ce module se sert partout ailleurs.
+--
+-- Ce bloc joue ce PATCH pour de vrai : rôle `authenticated`, `sub` du
+-- propriétaire de A, `update` direct sous la policy éditeur.
+--
+-- LES ASSERTIONS FORMENT UN ENSEMBLE, et c'est l'ensemble qui prouve :
+--   * VERR-1 refuse SOUS engagements.
+--   * VERR-2 accepte SANS, sur une instruction de FORME IDENTIQUE. Sans elle,
+--     VERR-1 serait vert même si le refus venait d'ailleurs — la contrainte
+--     `reservation_activities_experience_duration` refuse elle aussi en 23514,
+--     et un `duo` sans durée l'aurait déclenchée.
+--   * VERR-3 relit la ligne, parce qu'un `lives_ok` est vert quand la RLS a
+--     écarté zéro ligne en silence — c'est-à-dire quand le trigger n'a même pas
+--     été atteint.
+--   * VERR-4 accepte la réécriture de `kind` À L'IDENTIQUE, engagements ou pas.
+--     `before update of kind` se déclenche dès que la colonne FIGURE dans
+--     l'`update`, et le panneau la poste à chaque enregistrement : sans le
+--     court-circuit, le commerçant ne pourrait plus renommer une activité tant
+--     qu'une seule personne attend. La garde serait un mur.
+-- ════════════════════════════════════════════════════════════
+
+select set_config('request.jwt.claims', '', true);
+set local role authenticated;
+set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000101';
+
+-- 209 : deux réservations et deux attentes vivantes sur un créneau à venir.
+select throws_ok(
+  $$update public.reservation_activities
+       set kind = 'duo', duration_minutes = 60
+     where id = '4e5e0000-0000-4000-8000-000000000209'$$,
+  '23514', null,
+  'VERR-1 le PATCH direct ne bascule pas le format sous des engagements '
+  'vivants : le trigger recompte DANS la transaction de l''écriture');
+
+-- 210 : la même instruction, sur l'activité dont la saison est derrière elle.
+select lives_ok(
+  $$update public.reservation_activities
+       set kind = 'duo', duration_minutes = 60
+     where id = '4e5e0000-0000-4000-8000-000000000210'$$,
+  'VERR-2 …et il passe dès qu''il n''y a plus rien à trahir — mêmes colonnes, '
+  'mêmes valeurs : ce qui a refusé plus haut est bien le comptage');
+
+-- ET LA LIGNE A VRAIMENT CHANGÉ. `lives_ok` est vert quand rien ne lève — y
+-- compris quand la RLS a écarté zéro ligne en silence. Sans cette relecture,
+-- une erreur d'identifiant rendrait VERR-2 vert sans que le trigger ait seulement
+-- été atteint : le test vert qui ne teste rien.
+select is(
+  (select kind from public.reservation_activities
+    where id = '4e5e0000-0000-4000-8000-000000000210'),
+  'duo',
+  'VERR-3 …et l''écriture a bien porté : l''éditeur a atteint la ligne, le '
+  'trigger l''a laissée passer');
+
+-- L'écriture de réglages ORDINAIRE, celle que fait le panneau à chaque « Enregistrer ».
+select lives_ok(
+  $$update public.reservation_activities
+       set name = 'Bascule sous engagements (renommee)', kind = 'standard'
+     where id = '4e5e0000-0000-4000-8000-000000000209'$$,
+  'VERR-4 réécrire `kind` à l''identique passe, engagements ou pas : sinon '
+  'renommer une activité qui tourne deviendrait impossible');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- LE TRIGGER ET L'ACTION LISENT LE MÊME COMPTAGE, et le prouver ici évite qu'on
+-- les laisse diverger : la RPC rend encore 2 et 2 sur 209, c'est-à-dire
+-- exactement ce que VERR-1 vient de faire refuser.
+insert into rv5_eng values (5, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000209'));
+select is((select j->>'reservations' from rv5_eng where n = 5), '2',
+  'VERR-5 le refus muet du trigger et le refus nommé de l''action comptent la '
+  'MÊME chose : une seule expression de « vivant », deux lecteurs');
+
 select * from finish();
 rollback;

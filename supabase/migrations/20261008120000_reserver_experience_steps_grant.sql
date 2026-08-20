@@ -29,10 +29,14 @@
 -- contrainte porte sur `steps`, colonne présente dans TOUT insert/update de
 -- `reservation_activities` passant par le panneau commerçant.
 --
--- LE PRÉCÉDENT CITÉ (`is_valid_progression_rule`, 20260805200000) PORTE LA
--- MÊME OMISSION — non détectée ici faute d'E2E qui exercerait une écriture
--- `authenticated` sur une règle de progression. Hors du périmètre de cette
--- migration (RES-5 seul) : à vérifier séparément par `db-supabase`.
+-- LE PRÉCÉDENT CITÉ (`is_valid_progression_rule`, 20260805200000) NE PORTE PAS
+-- LA MÊME OMISSION, vérification faite — et il ne faut RIEN lui granter. La
+-- table qui porte son `check`, `progression_mission_versions`, n'a que
+-- `grant select` pour `authenticated` : ses écritures passent toutes par les
+-- RPC `security definer` (`create_progression_mission`…), qui s'exécutent avec
+-- les droits de leur PROPRIÉTAIRE — lequel possède la fonction, donc en a
+-- l'EXECUTE d'office. `reservation_activities`, elle, s'écrit en PostgREST
+-- direct sous `authenticated` : c'est CETTE différence qui fait le bug ici.
 --
 -- LE CORRECTIF EST L'INVERSE MINIMAL DU `revoke` : rendre l'EXECUTE au SEUL
 -- rôle qui en a besoin pour que ses écritures passent le `check` —

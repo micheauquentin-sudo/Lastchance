@@ -49,28 +49,68 @@
 --     commerçant le seul geste qui règle vraiment la question : fermer ou
 --     honorer ce qui est engagé, puis changer de format.
 --
--- ── CE QUE CETTE FONCTION EST, ET CE QU'ELLE N'EST PAS ──
+-- ── UN SEUL COMPTAGE, DEUX LECTEURS QUI N'EN FONT PAS LE MÊME USAGE ──
 --
--- Elle COMPTE et rend le format courant. Elle n'écrit rien, ne verrouille rien
--- et ne décide rien : la décision est prise par `updateReserverActivity`, qui
--- compare le format demandé au format courant et refuse s'il change alors que
--- le compte n'est pas nul.
+-- Le prédicat « vivant » est écrit UNE FOIS, dans
+-- `reservation_activity_live_counts`, et deux gardes le lisent — parce qu'elles
+-- ne posent pas la même question :
 --
--- ── LE TOCTOU MARCHAND EST ASSUMÉ, ET C'EST UN CHOIX ÉCRIT ──
+--   * `updateReserverActivity` demande COMBIEN, pour le dire : « 2 réservations
+--     et 2 attentes vivantes sur des créneaux à venir. Fermez ou honorez-les
+--     d'abord. » C'est le refus NOMMÉ, motif des gardes destructives du dépôt
+--     (`deleteWheel`, `deleteCampaign`), et c'est lui qui rend au commerçant le
+--     geste qui débloque, au lieu de le laisser chercher ce qui coince.
+--   * Le trigger `reservation_activities_freeze_kind` demande seulement S'IL Y
+--     EN A, et refuse l'`update` lui-même. Il ne parle à personne : il ferme.
 --
--- Entre ce comptage et l'`update` du panneau, un joueur peut réserver : le
--- changement de format passerait alors sur un engagement né dans l'intervalle.
--- Prendre le verrou d'avis du module aurait supposé un verrou PAR CRÉNEAU
--- (c'est sa clé : organisation + créneau), donc en prendre autant qu'il y a de
--- créneaux à venir, et les tenir pendant une écriture PostgREST qui se fait
--- dans une AUTRE transaction — ce que ce verrou ne sait pas faire. La fenêtre
--- est donc volontaire et bornée à quelques millisecondes, sur un geste que le
--- commerçant fait depuis son propre écran ; le pire cas reproduit exactement le
--- défaut d'origine, sur une réservation, et le commerçant vient de lire un
--- compte qui le rendait attentif.
+-- Les deux dérivent du MÊME prédicat, et c'est tout l'intérêt de l'avoir sorti
+-- de la RPC : deux définitions concurrentes de « vivant » auraient fini par
+-- diverger, et c'est la plus laxiste qui aurait fait autorité — donc aucune.
+--
+-- ── POURQUOI UN TRIGGER, PUISQUE L'ACTION REFUSE DÉJÀ ──
+--
+-- 1. PARCE QUE L'ACTION N'EST PAS LE SEUL CHEMIN. `reservation_activities`
+--    porte une policy `for all` pour les éditeurs et un `grant update (kind,
+--    …)` (20261007120000) : un PATCH PostgREST direct, avec le jeton du
+--    commerçant, bascule le format sans jamais passer par le serveur Next.
+--    Rien d'exotique — c'est l'API que Supabase expose par construction, et le
+--    panneau s'en sert partout ailleurs dans ce module.
+--
+-- 2. PARCE QUE L'ACTION LAISSAIT UNE FENÊTRE, ÉCRITE ET ASSUMÉE. Entre son
+--    comptage (client admin, une requête) et son `update` (client utilisateur,
+--    une AUTRE requête, une AUTRE transaction), un joueur pouvait réserver. Le
+--    trigger recompte DANS la transaction de l'écriture : la fenêtre passe de
+--    deux allers-retours HTTP à l'intérieur d'un `update`.
+--
+-- CE QU'IL NE FERME PAS, et il faut le dire aussi : une transaction concurrente
+-- qui s'engage APRÈS le snapshot de l'instruction n'est pas vue. Refermer cela
+-- aurait demandé de prendre le verrou d'avis de CHAQUE créneau à venir — c'est
+-- sa clé, organisation + créneau — donc autant de verrous qu'il y a de créneaux,
+-- sur un chemin qui n'en connaît pas le nombre. Ce qui reste est de l'ordre de
+-- la microseconde, sur un geste manuel fait une fois par saison.
+--
+-- L'ACTION GARDE DONC SON REFUS, et ce n'est pas une redondance : sans lui, le
+-- commerçant recevrait l'erreur générique du trigger — sans chiffre, sans geste.
+-- Le trigger est le plancher ; l'action est ce qui se lit.
 -- ============================================================
 
-create or replace function public.reservation_activity_live_commitments(
+
+-- ────────────────────────────────────────────────────────────
+-- LE COMPTAGE — interne, sans contrôle d'accès, et c'est voulu
+--
+-- `auth.role()` lit le jeton de la session, pas le rôle effectif : dans un
+-- trigger déclenché par un `update` PostgREST, il rend `authenticated` même si
+-- la fonction est `security definer`. La RPC publique ne pouvait donc pas être
+-- appelée depuis le trigger sans que sa propre garde la refuse — d'où la
+-- séparation : ce comptage-ci ne garde rien, la RPC qui le suit garde tout.
+--
+-- Il n'est GRANTÉ À PERSONNE, `service_role` compris. Ses deux appelants sont
+-- `security definer` et appartiennent au propriétaire des migrations, qui a
+-- l'EXECUTE de ce qu'il possède : aucun rôle Supabase ne peut l'atteindre
+-- directement, et rien n'a besoin qu'il le puisse.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.reservation_activity_live_counts(
   p_organization_id uuid,
   p_activity_id uuid
 )
@@ -85,16 +125,9 @@ declare
   v_reservations integer;
   v_waitlist integer;
 begin
-  if coalesce(auth.role(), '') <> 'service_role' then
-    raise exception 'not authorized' using errcode = '42501';
-  end if;
-  if p_organization_id is null or p_activity_id is null then
-    raise exception 'organization and activity required' using errcode = '22023';
-  end if;
-
   -- ORG-SCOPÉE, comme toute lecture de ce module : l'activité de la voisine est
   -- `unknown`, jamais un compte. Le panneau refuserait de toute façon (`.eq`
-  -- sur l'organisation), mais une RPC ne se repose pas sur son appelant.
+  -- sur l'organisation), mais un comptage ne se repose pas sur son appelant.
   select a.kind into v_kind
     from public.reservation_activities a
    where a.id = p_activity_id
@@ -157,6 +190,53 @@ begin
 end;
 $$;
 
+comment on function public.reservation_activity_live_counts(uuid, uuid) is
+  'LE prédicat « engagement vivant » du module Réserver (RES-5), écrit une '
+  'seule fois : format courant, réservations `confirmed`/`checked_in` et '
+  'attentes convertibles (`waiting`, plus les `offered` dont l''échéance TIENT '
+  'ENCORE), sur les créneaux À VENIR uniquement. Interne : aucun contrôle '
+  'd''accès et AUCUN grant, pas même à `service_role` — `auth.role()` rendrait '
+  '`authenticated` dans le trigger qui l''appelle. Ses deux lecteurs sont '
+  '`reservation_activity_live_commitments` (qui garde l''accès et rend les '
+  'chiffres au commerçant) et `reservation_activities_freeze_kind` (qui refuse '
+  'l''écriture). Deux définitions de « vivant » auraient divergé : il n''y en a '
+  'qu''une.';
+
+revoke all on function public.reservation_activity_live_counts(uuid, uuid)
+  from public, anon, authenticated, service_role;
+
+-- ────────────────────────────────────────────────────────────
+-- LA RPC — le comptage rendu au serveur, et à lui seul
+--
+-- Elle n'ajoute au comptage que ce que le comptage ne peut pas porter : le
+-- contrôle d'accès. Elle n'écrit rien et ne décide rien — la décision LISIBLE
+-- appartient à `updateReserverActivity`, qui compare le format demandé au
+-- format courant et refuse EN NOMMANT ce qu'il a compté ; la décision MUETTE
+-- appartient au trigger, plus bas.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.reservation_activity_live_commitments(
+  p_organization_id uuid,
+  p_activity_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_organization_id is null or p_activity_id is null then
+    raise exception 'organization and activity required' using errcode = '22023';
+  end if;
+
+  return public.reservation_activity_live_counts(p_organization_id, p_activity_id);
+end;
+$$;
+
 comment on function public.reservation_activity_live_commitments(uuid, uuid) is
   'Ce qui est ENGAGÉ sur une activité et peut encore bouger (RES-5) : son '
   'format courant, le nombre de réservations vivantes (`confirmed` + '
@@ -169,11 +249,13 @@ comment on function public.reservation_activity_live_commitments(uuid, uuid) is
   'FILTRE PAS sur le statut du créneau : un `closed` convertit encore, un '
   '`draft` se rouvre. NE FILTRE PAS non plus sur le droit `vitrine` : le '
   'compte doit rester honnête même si l''abonnement a lapsé, sinon la garde '
-  'rendrait 0 et laisserait passer. Ne verrouille rien, n''écrit rien : la '
-  'décision appartient à `updateReserverActivity`, et la fenêtre entre le '
-  'compte et l''écriture est un TOCTOU assumé (voir l''en-tête de '
-  '20261009120000). Org-scopée : `unknown` sur l''activité d''une autre '
-  'organisation. N''est grantée qu''à `service_role`.';
+  'rendrait 0 et laisserait passer. N''écrit rien et ne décide rien : elle rend '
+  'à `updateReserverActivity` de quoi refuser EN NOMMANT ce qui est engagé. La '
+  'fenêtre entre ce compte et l''écriture (deux transactions) n''est plus un '
+  'trou : `reservation_activities_freeze_kind` recompte dans la transaction de '
+  'l''`update` et refuse le changement — y compris sur un PATCH PostgREST qui '
+  'n''aurait jamais vu cette RPC. Org-scopée : `unknown` sur l''activité d''une '
+  'autre organisation. N''est grantée qu''à `service_role`.';
 
 revoke all on function public.reservation_activity_live_commitments(uuid, uuid)
   from public, anon, authenticated;
@@ -197,4 +279,94 @@ grant execute on function public.reservation_activity_live_commitments(uuid, uui
 -- centaines de lignes) ne justifie pas un index de plus, qu'il faudrait ensuite
 -- maintenir à chaque écriture du chemin chaud — celui de la réservation.
 -- Le noter est ce qui évite qu'on se repose la question dans six mois.
+--
+-- LE TRIGGER CI-DESSOUS NE CHANGE RIEN À CE RAISONNEMENT : il ne compte que
+-- lorsque `kind` change VRAIMENT, c'est-à-dire une poignée de fois par an et
+-- par activité. Il n'est sur aucun chemin chaud.
 -- ────────────────────────────────────────────────────────────
+
+
+-- ────────────────────────────────────────────────────────────
+-- LE PLANCHER — le format ne bascule pas, même sans passer par l'action
+--
+-- Motif `reservation_waitlist_freeze_terminal` (20261004120000) : un trigger
+-- `before update` du module qui refuse une transition impossible, en `23514`.
+--
+-- ── IL NE SE DÉCLENCHE QUE SI LE FORMAT CHANGE VRAIMENT ──
+--
+-- `before update of kind` se déclenche dès que `kind` FIGURE dans l'`update`,
+-- même à valeur identique — et `updateReserverActivity` l'écrit à CHAQUE
+-- enregistrement des réglages. Sans le `is not distinct from` en tête, le
+-- moindre changement de nom sur une activité qui tourne serait refusé : la
+-- garde deviendrait un mur, et le commerçant ne pourrait plus rien régler tant
+-- qu'une seule personne attend.
+--
+-- ── IL REFUSE AUSSI QUAND IL N'A PAS SU COMPTER ──
+--
+-- `state <> 'ok'` ne peut pas arriver sur une ligne qu'on est en train de
+-- modifier (elle existe, et son organisation est celle qu'on lui passe). Le
+-- refus est là parce qu'un comptage qui ne répond pas ne vaut pas zéro :
+-- laisser passer faute d'avoir su compter, c'est exactement le silence que
+-- cette garde existe pour rompre — et c'est déjà ce que fait l'action.
+--
+-- ── LE MESSAGE N'EST PAS CELUI QUE LIT LE COMMERÇANT ──
+--
+-- Il est technique et anglais, comme les autres refus SQL du module : ce
+-- chemin-ci n'est atteint que par un PATCH direct ou par une course. Le refus
+-- FRANÇAIS, avec les chiffres et le geste, reste celui de l'action.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.reservation_activities_freeze_kind()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_counts jsonb;
+begin
+  if new.kind is not distinct from old.kind then
+    return new;
+  end if;
+
+  v_counts := public.reservation_activity_live_counts(
+    old.organization_id, old.id);
+
+  if coalesce(v_counts->>'state', '') <> 'ok' then
+    raise exception
+      'activity % live commitments could not be counted; kind change refused',
+      old.id
+      using errcode = '23514';
+  end if;
+
+  if (v_counts->>'reservations')::integer
+     + (v_counts->>'waitlist')::integer > 0 then
+    -- Format sur UNE ligne : PL/pgSQL attend un littéral unique après `raise`,
+    -- il ne recolle pas deux littéraux adjacents comme le fait le lexer SQL.
+    raise exception
+      'activity % kind is locked: % live reservation(s), % live waitlist entries',
+      old.id, v_counts->>'reservations', v_counts->>'waitlist'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.reservation_activities_freeze_kind() is
+  'Refuse un changement de `reservation_activities.kind` tant que des '
+  'engagements vivants portent sur des créneaux à venir (RES-5). Plancher de '
+  'la garde nommée de `updateReserverActivity` : il ferme le PATCH PostgREST '
+  'direct — la policy éditeur et le `grant update (kind, …)` l''autorisent — et '
+  'il resserre la fenêtre entre le comptage de l''action et son écriture, qui '
+  'se faisaient dans deux transactions. Ne se déclenche que si le format change '
+  'RÉELLEMENT : `kind` figure dans tout enregistrement des réglages.';
+
+revoke all on function public.reservation_activities_freeze_kind()
+  from public, anon, authenticated;
+
+drop trigger if exists reservation_activities_freeze_kind
+  on public.reservation_activities;
+create trigger reservation_activities_freeze_kind
+  before update of kind on public.reservation_activities
+  for each row execute function public.reservation_activities_freeze_kind();

@@ -8509,6 +8509,10 @@ export type Database = {
         Args: { p_activity_id: string; p_organization_id: string }
         Returns: Json
       }
+      reservation_activity_live_counts: {
+        Args: { p_activity_id: string; p_organization_id: string }
+        Returns: Json
+      }
       reservation_offer_next: {
         Args: { p_organization_id: string; p_slot_id: string }
         Returns: number

@@ -1746,12 +1746,19 @@ export async function updateReserverActivity(
   // le format courant — sans quoi il aurait fallu une quatrième lecture pour
   // savoir si le format change vraiment.
   //
-  // LA FENÊTRE ENTRE CE COMPTE ET L'`update` EST ASSUMÉE : un joueur peut
-  // réserver dans l'intervalle. La refermer aurait demandé de tenir le verrou
-  // d'avis de CHAQUE créneau à venir pendant une écriture PostgREST faite dans
-  // une autre transaction, ce que ce verrou ne sait pas faire. Le pire cas
-  // reproduit le défaut d'origine sur UNE réservation, sur un geste que le
-  // commerçant vient de faire en connaissance de cause.
+  // ── ET CE REFUS-CI N'EST PAS LE SEUL : IL EST CELUI QUI SE LIT ──
+  //
+  // Le plancher est en base — trigger `reservation_activities_freeze_kind`
+  // (20261009120000), qui recompte DANS la transaction de l'`update` et le
+  // refuse en `23514`. Il ferme deux choses que ce code ne pouvait pas fermer :
+  // le PATCH PostgREST direct (la policy éditeur et le `grant update (kind, …)`
+  // l'autorisent, et il ne passe jamais par ici), et la fenêtre entre le compte
+  // ci-dessus et l'écriture ci-dessous — deux requêtes, deux transactions.
+  //
+  // Ce qui suit reste donc nécessaire, et pour une raison qui n'est pas la
+  // sécurité : le trigger ne parle à personne. Sans le refus nommé ci-dessous,
+  // le commerçant recevrait l'erreur générique, sans le compte ni le geste qui
+  // débloque. Le trigger empêche ; celui-ci explique.
   const admin = createAdminClient();
   const { data: engagementsBruts, error: erreurEngagements } = await admin.rpc(
     "reservation_activity_live_commitments",
