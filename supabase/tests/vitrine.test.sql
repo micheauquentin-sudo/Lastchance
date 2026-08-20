@@ -1208,10 +1208,19 @@ select is(
 -- ferait 94,7 % — le sélecteur disparaîtrait de l'E2E par arithmétique, pas par
 -- décision. L'échec NOMME les champs fautifs, de quoi corriger le seed sans
 -- rien rouvrir.
+--
+-- LES DEUX VITRINES SEMÉES SONT GARDÉES ICI, et le libellé porte le slug pour
+-- que l'échec dise LAQUELLE. Le seed en pose deux depuis le correctif E2E de
+-- L11, et elles ne jouent pas le même rôle : `e2e-comptoir` est celle que le
+-- spec dashboard MUTE (fiches créées, réglages enregistrés), `e2e-traduit` est
+-- RÉSERVÉE aux assertions publiques et ne doit être mutée par personne. Les deux
+-- doivent être intégralement traduites, pour des raisons différentes — la
+-- seconde parce que l'E2E y lit la couverture, la première parce qu'elle reste
+-- la carte de démonstration.
 select is(
   (select coalesce(
-     string_agg(c.cible_type || '.' || c.champ, ', '
-                order by c.cible_type, c.champ), '')
+     string_agg(s.slug || '.' || c.cible_type || '.' || c.champ, ', '
+                order by s.slug, c.cible_type, c.champ), '')
      from public.vitrine_settings s
      join lateral public.vitrine_champs_traduisibles(s.organization_id, true) c
        on true
@@ -1222,10 +1231,45 @@ select is(
       and t.champ = c.champ
       and t.lang = 'en'
       and t.version_source >= c.version_courante
-    where s.slug = 'e2e-comptoir'
+    where s.slug in ('e2e-comptoir', 'e2e-traduit')
       and t.id is null),
   '',
-  'sur base semée, aucun champ de la vitrine E2E ne reste sans anglais FRAIS — la règle « sélecteur si ≥ 95 % » doit y être observable');
+  'sur base semée, aucun champ des DEUX vitrines E2E ne reste sans anglais FRAIS — la règle « sélecteur si ≥ 95 % » doit y être observable');
+
+
+-- ── … ET LE COMPTE DE `e2e-traduit`, CHIFFRÉ ────────────────
+--
+-- L'assertion du dessus dit « rien ne manque » ; celles-ci disent « il y a bien
+-- CINQ champs, et les cinq sont frais ». Les deux sont nécessaires, et la
+-- première ne remplace pas les secondes : une vitrine dont on aurait vidé
+-- l'accroche la satisferait sans effort — plus rien à traduire — en ayant perdu
+-- exactement ce que l'E2E vient y lire.
+--
+-- CINQ, PARCE QUE LE SEED LA VEUT SOBRE : accroche des réglages (histoire et
+-- horaires restent NULS, donc non traduisibles), nom de carte, nom de rubrique,
+-- nom et description de l'unique fiche. 5 frais sur 5 = 100 %, franchement
+-- au-dessus du seuil de 95 % — c'est la marge qui manquait à `e2e-comptoir`,
+-- où une seule fiche créée par un spec voisin suffisait à faire tomber le
+-- sélecteur.
+--
+-- LA MESURE PASSE PAR LA RPC PUBLIQUE et non par un `count` direct : c'est
+-- exactement le chemin que suit la page, `actives_seulement` compris.
+--
+-- VACUES SUR BASE VIDE comme leur voisine, par la même mécanique : les deux
+-- membres valent alors `null` — `vitrine_public_state` rend `unavailable`, sans
+-- clé `lang_coverage`, et le `select` de droite ne rend aucune ligne — et `is()`
+-- tient `null = null` pour vrai.
+select is(
+  public.vitrine_public_state('e2e-traduit')
+    #>> '{lang_coverage,total_champs_traduisibles}',
+  (select '5' from public.vitrine_settings where slug = 'e2e-traduit'),
+  'la vitrine réservée aux assertions publiques compte CINQ champs traduisibles, et pas un de plus');
+
+select is(
+  public.vitrine_public_state('e2e-traduit')
+    #>> '{lang_coverage,traduits_frais}',
+  (select '5' from public.vitrine_settings where slug = 'e2e-traduit'),
+  '… et les cinq sont traduits ET FRAIS : 100 %, une couverture qui ne dépend d''aucun spec voisin');
 
 
 -- ── 12e. `touch_updated_at` PÉRIME — la boucle se referme ────
