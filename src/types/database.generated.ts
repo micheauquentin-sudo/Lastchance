@@ -8027,6 +8027,10 @@ export type Database = {
         Args: { p_hunt_id: string; p_removed_step_id: string }
         Returns: number
       }
+      import_vitrine_carte: {
+        Args: { p_organization_id: string; p_payload: Json }
+        Returns: Json
+      }
       increment_module_page_open: {
         Args: { p_module: string; p_public_id: string }
         Returns: undefined
