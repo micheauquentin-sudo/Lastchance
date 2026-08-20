@@ -26,6 +26,7 @@ type IconKey =
   | "quiz"
   | "progression"
   | "reservations"
+  | "vitrine"
   | "discover";
 
 interface DashboardLink {
@@ -92,6 +93,26 @@ const RESERVATIONS_LINK: DashboardLink = {
 };
 
 /**
+ * LA VITRINE — même droit, même garde, même raison que « Réservations »
+ * ci-dessus.
+ *
+ * Le droit `vitrine` couvre TROIS capacités (migration 20261001120000) :
+ * publier la vitrine, le CRM léger, l'agenda Réserver. Les deux entrées de menu
+ * partagent donc exactement le même verrou (`reserverActif`) — et il n'y en a
+ * pas de troisième à inventer : ajouter un second drapeau ferait apparaître une
+ * des deux portes sans l'autre pour un droit unique.
+ *
+ * Elle est placée AVANT « Réservations » : on publie sa carte avant d'ouvrir
+ * son agenda, et c'est aussi l'entrée que le commerçant ouvrira le plus souvent
+ * — un plat épuisé se signale plusieurs fois par service.
+ */
+const VITRINE_LINK: DashboardLink = {
+  href: "/dashboard/vitrine",
+  label: "Vitrine",
+  icon: "vitrine",
+};
+
+/**
  * Outils TRANSVERSES, servis après les expériences. Ils ne dépendent d'aucun
  * addon et ne sont donc pas filtrés par `activeExperiences`.
  */
@@ -137,6 +158,10 @@ const EMOJIS: Record<IconKey, string> = {
   // 🗓️ est déjà pris par le calendrier à surprises : 🕑 dit le CRÉNEAU, qui
   // est ce qu'un client réserve — l'activité, elle, n'a pas d'heure.
   reservations: "🕑",
+  // 📖 : la carte qu'on pose sur la table. 🍽️ aurait enfermé la vitrine dans
+  // la restauration, alors qu'un fleuriste ou un coiffeur y publie aussi ses
+  // prestations.
+  vitrine: "📖",
   discover: "🧭",
   qr: "📱",
   list: "📋",
@@ -251,7 +276,7 @@ export function DashboardNav({
             cle: "animations",
             links: [
               ...experienceLinks,
-              ...(reserverActif ? [RESERVATIONS_LINK] : []),
+              ...(reserverActif ? [VITRINE_LINK, RESERVATIONS_LINK] : []),
               PROGRESSION_LINK,
             ],
           },
