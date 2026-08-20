@@ -138,13 +138,24 @@ begin
     return false;
   end if;
 
+  -- ── LES `coalesce` NE SONT PAS DÉCORATIFS : ILS FERMENT UN TROU ──
+  --
+  -- Sur une carte à qui il MANQUE une clé, `v_step -> 'body'` vaut NULL SQL,
+  -- donc `jsonb_typeof(...)` vaut NULL, donc `NULL <> 'string'` vaut NULL — et
+  -- une chaîne `or` qui ne contient que `false` et `NULL` vaut NULL, que le
+  -- `if` ne prend PAS. Sans ces `coalesce`, une carte sans corps était donc
+  -- ACCEPTÉE, et la page aurait rendu une carte vide. Le défaut a été trouvé
+  -- par PRES-6, qui est écrit exactement pour lui.
+  --
+  -- `coalesce` reste NON QUALIFIÉ (garde sql:check) : c'est un nœud du parseur,
+  -- pas une fonction du catalogue.
   for v_step in select value from jsonb_array_elements(p_steps)
   loop
     if jsonb_typeof(v_step) <> 'object'
-      or jsonb_typeof(v_step -> 'title') <> 'string'
-      or char_length(btrim(v_step ->> 'title')) not between 1 and 80
-      or jsonb_typeof(v_step -> 'body') <> 'string'
-      or char_length(btrim(v_step ->> 'body')) not between 1 and 400
+      or coalesce(jsonb_typeof(v_step -> 'title'), '') <> 'string'
+      or char_length(btrim(coalesce(v_step ->> 'title', ''))) not between 1 and 80
+      or coalesce(jsonb_typeof(v_step -> 'body'), '') <> 'string'
+      or char_length(btrim(coalesce(v_step ->> 'body', ''))) not between 1 and 400
     then
       return false;
     end if;

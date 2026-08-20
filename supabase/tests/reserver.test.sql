@@ -3362,6 +3362,21 @@ select throws_ok(
   'PRES-6 une carte SANS `body` est refusée : la forme est validée carte par '
   'carte, pas seulement au niveau du tableau');
 
+-- LE SYMÉTRIQUE, et il n'est pas redondant. Une clé absente donne `NULL` là où
+-- le validateur attend un texte, et une chaîne `or` de `false` et de `NULL`
+-- vaut `NULL` — que le `if` ne prend pas. C'est ce qui faisait ACCEPTER la
+-- carte de PRES-6 avant les `coalesce` du validateur. Les deux assertions
+-- prouvent que la parade tient des DEUX côtés, pas seulement de celui qui a
+-- rougi.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature anonyme',
+            'signature', 30, '[{"body":"Sans titre."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6b une carte SANS `title` est refusée aussi — la clé absente ne '
+  'traverse pas le validateur en `NULL`');
+
 select throws_ok(
   $$insert into public.reservation_activities
       (organization_id, name, kind, duration_minutes)
