@@ -274,6 +274,122 @@ test.describe("vitrine — ancres contextuelles", () => {
   });
 });
 
+/**
+ * LES PORTES DES MODULES (VIT-3 / L13) — l'annuaire, des deux côtés du vide.
+ *
+ * ── POURQUOI CES DEUX VITRINES, ET PAS UNE ──
+ *
+ * Les deux blocs se masquent EUX-MÊMES quand leurs listes sont vides. Un test
+ * qui ne verrait que la vitrine riche prouverait le rendu et jamais le masquage
+ * — et c'est le masquage qui a le mode d'échec silencieux : un « Réserver »
+ * suivi de rien sur la vitrine d'un commerce qui n'a activé aucun module.
+ *
+ *  • `e2e-comptoir` porte les quatre familles : deux activités actives, deux
+ *    files ouvertes, une offre DANS sa fenêtre (« Tarte du jour E2E » ; « Drop
+ *    du soir E2E » n'ouvre que dans deux heures et la RPC ne la rend pas), et
+ *    le quiz `e2e-quiz`. Ses portes sont écrites en queue de son `ordre_blocs`.
+ *
+ *  • `e2e-traduit` est une AUTRE organisation, sans aucun module : les six
+ *    listes reviennent vides, et les deux ancres ne doivent pas exister. C'est
+ *    ce test-là qui rougirait si un jour un bloc se rendait « au cas où ».
+ *
+ * ── CE QUI EST ASSERTÉ, ET CE QUI NE L'EST PAS ──
+ *
+ * Les NOMS des portes viennent du seed et restent français sur les deux
+ * variantes de langue (`portes` ne porte aucun champ traduisible). Les RANGS,
+ * les compteurs et les fenêtres horaires n'en sont pas : la fenêtre est
+ * formatée dans le fuseau du navigateur et deux projets Playwright peuvent
+ * tourner sous des fuseaux différents. On vérifie donc la PORTE — son intitulé
+ * et sa destination — et que la destination répond.
+ *
+ * AUCUNE ÉCRITURE : ce bloc n'entre dans aucune file, ne retient aucun créneau
+ * et ne prend aucune unité de stock. Il ouvre des pages, et c'est tout —
+ * `e2e-traduit` reste donc en lecture seule, comme la règle en tête l'exige.
+ */
+test.describe("vitrine — les portes des modules", () => {
+  test("la vitrine riche annonce Réserver et les jeux, et les portes mènent quelque part", async ({
+    page,
+  }) => {
+    await page.goto("/v/e2e-comptoir");
+    await expect(page.getByRole("heading", { name: "E2E Café" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const reserver = page.locator("#bloc-reserver");
+    await expect(reserver).toBeVisible();
+
+    // Les trois groupes, par leur chrome français.
+    await expect(reserver.getByText("Réserver une table")).toBeVisible();
+    await expect(reserver.getByText("File d'attente")).toBeVisible();
+    await expect(reserver.getByText("Offres du moment")).toBeVisible();
+
+    // UNE PORTE DE CHAQUE FAMILLE, nommée par le seed et visée par sa
+    // DESTINATION plutôt que par son rang : l'ordre est celui du nom, et une
+    // activité ajoutée par un autre test le décalerait.
+    await expect(
+      reserver.getByRole("link", { name: "Dégustation du Comptoir E2E" }),
+    ).toHaveAttribute("href", /^\/reserver\/[0-9a-f-]{36}$/);
+    await expect(
+      reserver.getByRole("link", { name: "Comptoir E2E", exact: true }),
+    ).toHaveAttribute("href", /^\/reserver\/file\//);
+    // « Tarte du jour E2E » est ouverte depuis une heure et pour trois : c'est
+    // la seule offre du seed dont la fenêtre soit EN COURS.
+    await expect(
+      reserver.getByRole("link", { name: "Tarte du jour E2E" }),
+    ).toHaveAttribute("href", /^\/reserver\/stock\//);
+
+    // ── Le bloc des jeux, et sa promesse de lancement volontaire ──
+    const experiences = page.locator("#bloc-experiences");
+    await expect(experiences).toBeVisible();
+    await expect(experiences.getByText(/À vous de jouer/)).toBeVisible();
+    await expect(
+      experiences.getByRole("link", { name: "Quiz du Comptoir E2E" }),
+    ).toHaveAttribute("href", "/quiz/e2e-quiz");
+  });
+
+  test("la porte d'une file ouvre une page qui répond, sans y entrer", async ({
+    page,
+  }) => {
+    await page.goto("/v/e2e-comptoir");
+    const porte = page
+      .locator("#bloc-reserver")
+      .getByRole("link", { name: "Comptoir E2E", exact: true });
+    await expect(porte).toBeVisible({ timeout: 30_000 });
+
+    // L'ADRESSE EST LUE, PUIS OUVERTE EN DIRECT — et non cliquée. `goto` rend
+    // le statut HTTP, ce qu'un clic ne donne pas : c'est la seule façon de
+    // prouver que la porte ne mène pas à un 404, qui est précisément ce qu'un
+    // annuaire mal câblé produit.
+    const href = await porte.getAttribute("href");
+    expect(href).toBeTruthy();
+    const reponse = await page.goto(href!);
+    expect(reponse?.status()).toBe(200);
+
+    // RIEN N'EST CLIQUÉ SUR CETTE PAGE : entrer dans la file écrirait une
+    // entrée, et `reserver-attente.spec.ts` tourne en parallèle sur la même
+    // base. Le pied de page suffit — il n'existe que si la file a été chargée.
+    await expect(page.getByText(/File d'accueil proposée par/)).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("une vitrine sans module ne rend aucune porte, pas même un titre vide", async ({
+    page,
+  }) => {
+    const reponse = await page.goto("/v/e2e-traduit");
+    expect(reponse?.status()).toBe(200);
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // L'ABSENCE DES ANCRES est l'assertion, et pas l'absence d'un texte : ce
+    // sont elles que les QR contextuels peuvent viser (VIT-2), et un bloc rendu
+    // vide se serait trahi ici avant de se trahir en boutique.
+    await expect(page.locator("#bloc-reserver")).toHaveCount(0);
+    await expect(page.locator("#bloc-experiences")).toHaveCount(0);
+  });
+});
+
 test.describe("vitrine — dashboard commerçant", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 

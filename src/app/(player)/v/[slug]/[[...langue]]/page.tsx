@@ -9,6 +9,10 @@ import {
 } from "@/lib/vitrine";
 import { getVitrinePublicState } from "@/lib/vitrine-context";
 import { CatalogueVitrine } from "@/components/vitrine/catalogue-vitrine";
+import {
+  BlocExperiences,
+  BlocReserver,
+} from "@/components/vitrine/portes";
 import { TEXTES_VITRINE } from "@/components/vitrine/langue";
 import {
   policesVitrine,
@@ -225,6 +229,29 @@ export default async function VitrinePage({
                       lang={lang}
                     />
                   </div>
+                );
+              // ── LES PORTES DES MODULES (VIT-3 / L13) ──────────────
+              //
+              // Les deux blocs se MASQUENT EUX-MÊMES quand leurs listes sont
+              // vides — la base rend les six listes toujours, « elle ne met pas
+              // en page ». Rien n'est donc testé ici : la décision d'affichage
+              // vit dans le composant, à un seul endroit, et l'ordre des blocs
+              // reste une simple permutation.
+              case "reserver":
+                return (
+                  <BlocReserver
+                    key={bloc}
+                    portes={etat.portes.reserver}
+                    lang={lang}
+                  />
+                );
+              case "experiences":
+                return (
+                  <BlocExperiences
+                    key={bloc}
+                    portes={etat.portes.experiences}
+                    lang={lang}
+                  />
                 );
               case "social":
                 return (
