@@ -1474,3 +1474,64 @@ values
    null, '4 €',
    array['nouveau', 'fait_maison']::text[], array[]::text[], true, 2)
 on conflict (id) do nothing;
+
+-- ── Vitrine — TRADUCTIONS anglaises, dont une PÉRIMÉE (VIT-1b) ──────
+--
+-- QUATRE LIGNES, ET LA QUATRIÈME EST LA PLUS UTILE : trois traductions fraîches
+-- pour que la page `?lang=en` rende vraiment de l'anglais, et UNE PÉRIMÉE pour
+-- qu'un écran qui ignorerait `version_source` soit visiblement faux — il
+-- afficherait « Chickpea hummus » là où le seul rendu correct est le français
+-- « Houmous du jour ». Un jeu de données tout-frais n'aurait jamais fait échouer
+-- ce rendu-là, qui est pourtant le seul comportement propre à ce lot.
+--
+-- LES TROIS NIVEAUX SONT COUVERTS — réglages, rubrique, fiche — parce qu'un
+-- calque posé au bon endroit sur un seul niveau ressemble beaucoup à un calque
+-- posé nulle part ailleurs.
+--
+-- `version_source` EST LU DANS LA CIBLE, jamais écrit en dur : le seed tourne
+-- après les insertions ci-dessus, et recopier `now()` aurait produit une
+-- fraîcheur qui dépend de l'ordre des transactions du fichier. Pour la périmée,
+-- on RECULE d'une heure — la cible n'a pas bougé, c'est la traduction qui est
+-- datée d'avant.
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select
+  v.id::uuid, 'e2e10000-0000-4000-8000-000000000001'::uuid,
+  v.cible_type, v.cible_id::uuid, 'en', v.champ, v.texte,
+  v.version_source
+from (
+  -- FRAÎCHE — l'accroche des réglages.
+  select 'e2f10000-0000-4000-8000-0000000000f1' as id,
+         'settings' as cible_type,
+         'e2f10000-0000-4000-8000-000000000001' as cible_id,
+         'accroche' as champ,
+         'The neighbourhood coffee bar, roasting our own beans since 2019.'
+           as texte,
+         (select s.updated_at from public.vitrine_settings s
+           where s.id = 'e2f10000-0000-4000-8000-000000000001')
+           as version_source
+  union all
+  -- FRAÎCHE — le nom d'une rubrique.
+  select 'e2f10000-0000-4000-8000-0000000000f2',
+         'categorie', 'e2f10000-0000-4000-8000-000000000021', 'nom',
+         'Starters',
+         (select k.updated_at from public.vitrine_categories k
+           where k.id = 'e2f10000-0000-4000-8000-000000000021')
+  union all
+  -- FRAÎCHE — le nom d'une fiche.
+  select 'e2f10000-0000-4000-8000-0000000000f3',
+         'item', 'e2f10000-0000-4000-8000-000000000031', 'nom',
+         'Pumpkin velouté',
+         (select i.updated_at from public.vitrine_items i
+           where i.id = 'e2f10000-0000-4000-8000-000000000031')
+  union all
+  -- PÉRIMÉE — traduite AVANT la dernière version de la fiche. Le français doit
+  -- ressortir malgré la présence de cette ligne.
+  select 'e2f10000-0000-4000-8000-0000000000f4',
+         'item', 'e2f10000-0000-4000-8000-000000000032', 'nom',
+         'Chickpea hummus',
+         (select i.updated_at - interval '1 hour' from public.vitrine_items i
+           where i.id = 'e2f10000-0000-4000-8000-000000000032')
+) as v(id, cible_type, cible_id, champ, texte, version_source)
+where v.version_source is not null
+on conflict on constraint vitrine_translations_cible_unique do nothing;
