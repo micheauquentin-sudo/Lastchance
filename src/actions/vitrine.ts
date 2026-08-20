@@ -1223,12 +1223,19 @@ function lireComptesImport(brut: unknown): {
  * allume. Ce geste écrit jusqu'à 133 lignes et une ligne d'audit par appel —
  * voir `RATE_LIMITS.vitrineImport`.
  *
- * ── LA GARDE APPLICATIVE EST LA SEULE, ET C'EST ÉCRIT DANS LA RPC ──
+ * ── DEUX NIVEAUX D'AUTORISATION, PLUS UN SEUL (VIT-3) ──
  *
- * `import_vitrine_carte` est `security definer` / `service_role` et ne vérifie
- * NI l'appartenance NI le droit `vitrine` : elle écrit dans l'organisation qu'on
- * lui nomme, point. Sa sûreté tient entièrement au fait que cette action lui
- * passe l'organisation de la SESSION — jamais un champ du formulaire.
+ * La garde applicative reste PREMIÈRE, et c'est elle qui exige le droit
+ * `vitrine` — que la RPC ne connaît pas. Mais elle n'est plus la seule :
+ * `import_vitrine_carte` reçoit désormais un `p_actor` et le REVÉRIFIE membre
+ * `owner`/`editor` de l'organisation EN SQL, motif exact de `set_vitrine_slug`.
+ *
+ * `p_actor` VIENT DONC DE LA SESSION, jamais du formulaire : un acteur posté
+ * aurait fait de la ligne d'audit — la seule trace d'un geste qui peut refaire
+ * cent vingt fiches d'un coup — une déclaration sur l'honneur de l'appelant.
+ * La RPC refuse en 42501 indistinct (acteur absent, d'une autre organisation,
+ * ou simple caissier), qui retombe sur `GENERIC_ERROR` : ce n'est plus une
+ * saisie à corriger, c'est une anomalie que la garde aurait dû arrêter avant.
  *
  * ── AUCUNE TRADUCTION N'EST ÉCRITE, ET LA COUVERTURE BAISSE ──
  *
@@ -1263,11 +1270,14 @@ export async function importVitrineCarte(
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("import_vitrine_carte", {
-    // DE LA SESSION. Jamais du corps de la requête — la RPC ne le revérifie pas.
+    // DE LA SESSION. Jamais du corps de la requête.
     p_organization_id: garde.organizationId,
     // LE PAYLOAD VALIDÉ, et non la chaîne postée : noms détourés, vocabulaires
     // dédoublonnés, clés inconnues déjà refusées.
     p_payload: toJson(parsed.data.import),
+    // DE LA SESSION AUSSI, et la RPC le revérifie membre `owner`/`editor` en
+    // SQL : la ligne d'audit ne recopie pas ce qu'on lui dit.
+    p_actor: garde.userId,
   });
   if (error) return { ok: false, error: messageImport(error) };
 

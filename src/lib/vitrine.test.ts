@@ -10,6 +10,7 @@ import {
   libelleBadge,
   libelleBloc,
   libelleStyleCartes,
+  mapPortesVitrine,
   mapSetVitrineSlug,
   mapThemeVitrine,
   mapVitrineCartes,
@@ -19,6 +20,8 @@ import {
   selecteurLanguesOuvert,
   SEUIL_COUVERTURE_SELECTEUR,
   urlVitrine,
+  VITRINE_BLOCS,
+  VITRINE_PORTES_MAX,
   VITRINE_PUBLIQUE_OUVERTE,
 } from "./vitrine";
 
@@ -49,6 +52,16 @@ describe("les libellés — un slug inconnu se rend lui-même", () => {
     expect(libelleAllergene("fruits_a_coque")).toBe("Fruits à coque");
     expect(libelleBloc("histoire")).toBe("Notre histoire");
     expect(libelleStyleCartes("magazine")).toBe("Magazine");
+  });
+
+  it("les deux portes ont leur libellé, et AUCUN bloc n'est sans nom", () => {
+    // Un bloc ajouté au vocabulaire sans libellé s'afficherait sous son slug —
+    // « experiences », sans accent, dans une liste de réglages en français.
+    expect(libelleBloc("reserver")).toBe("Réserver");
+    expect(libelleBloc("experiences")).toBe("Jeux et expériences");
+    for (const bloc of VITRINE_BLOCS) {
+      expect(libelleBloc(bloc), bloc).not.toBe(bloc);
+    }
   });
 
   it("le français est le DÉFAUT du paramètre de langue", () => {
@@ -439,6 +452,168 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
     );
     expect(mapVitrinePublicState(null).state).toBe("unavailable");
     expect(mapVitrinePublicState("nope").state).toBe("unavailable");
+  });
+
+  it("les portes remontent jusqu'à l'état public", () => {
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {},
+      cartes: [],
+      portes: {
+        reserver: { activites: [{ id: "a1", nom: "Table" }], files: [], offres: [] },
+        experiences: { quiz: [] },
+      },
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    expect(etat.portes.reserver.activites).toEqual([{ id: "a1", nom: "Table" }]);
+  });
+
+  it("un document d'AVANT les portes en rend six listes vides", () => {
+    // Une vitrine servie par une version d'avant VIT-3 n'a pas la clé `portes`.
+    // L'écran ne doit pas avoir à distinguer ce cas de « aucune porte ouverte »,
+    // sans quoi il porterait deux chemins pour un seul affichage.
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {},
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    expect(etat.portes).toEqual({
+      reserver: { activites: [], files: [], offres: [] },
+      experiences: { quiz: [] },
+    });
+  });
+});
+
+describe("mapPortesVitrine — l'annuaire, et ce qu'il refuse d'inventer", () => {
+  it("lit les quatre listes, bornes de retrait comprises", () => {
+    const portes = mapPortesVitrine({
+      reserver: {
+        activites: [{ id: "a1", nom: "Table pour deux" }],
+        files: [{ id: "f1", nom: "Comptoir" }],
+        offres: [
+          {
+            id: "o1",
+            nom: "Panier du soir",
+            window_starts_at: "2026-08-21T16:00:00+00:00",
+            window_ends_at: "2026-08-21T18:00:00+00:00",
+          },
+        ],
+      },
+      experiences: { quiz: [{ slug: "quiz-du-midi", titre: "Quiz du midi" }] },
+    });
+
+    expect(portes.reserver.activites).toEqual([{ id: "a1", nom: "Table pour deux" }]);
+    expect(portes.reserver.files).toEqual([{ id: "f1", nom: "Comptoir" }]);
+    // Les clés de la base deviennent celles de l'application : les portes ne
+    // repartent jamais en `jsonb`, aucun aller-retour ne peut donc échouer sur
+    // une clé renommée (voir l'en-tête de `PortesVitrineView`).
+    expect(portes.reserver.offres).toEqual([
+      {
+        id: "o1",
+        nom: "Panier du soir",
+        windowStartsAt: "2026-08-21T16:00:00+00:00",
+        windowEndsAt: "2026-08-21T18:00:00+00:00",
+      },
+    ]);
+    expect(portes.experiences.quiz).toEqual([
+      { slug: "quiz-du-midi", titre: "Quiz du midi" },
+    ]);
+  });
+
+  it("les six listes existent TOUJOURS, même sur un document vide", () => {
+    const vide = {
+      reserver: { activites: [], files: [], offres: [] },
+      experiences: { quiz: [] },
+    };
+    expect(mapPortesVitrine({})).toEqual(vide);
+    expect(mapPortesVitrine(null)).toEqual(vide);
+    expect(mapPortesVitrine("nope")).toEqual(vide);
+    expect(mapPortesVitrine([])).toEqual(vide);
+    // Une liste rendue comme autre chose qu'un tableau vaut la liste vide, et
+    // non une exception : cette lecture sert une page publique.
+    expect(
+      mapPortesVitrine({ reserver: { activites: "beaucoup" }, experiences: 12 }),
+    ).toEqual(vide);
+  });
+
+  it("une porte sans identifiant ou sans libellé est ÉCARTÉE", () => {
+    // Un `href` vers `/reserver/` enverrait le visiteur sur un 404 signé du
+    // commerce : c'est pire qu'une porte absente.
+    const portes = mapPortesVitrine({
+      reserver: {
+        activites: [
+          { id: "a1", nom: "Table" },
+          { id: "a2" },
+          { nom: "Sans id" },
+          { id: 42, nom: "Id numérique" },
+          null,
+          "porte",
+        ],
+        files: [],
+        offres: [{ nom: "Offre sans id" }],
+      },
+      experiences: { quiz: [{ slug: "ok", titre: "OK" }, { slug: "sans-titre" }] },
+    });
+
+    expect(portes.reserver.activites).toEqual([{ id: "a1", nom: "Table" }]);
+    expect(portes.reserver.offres).toEqual([]);
+    expect(portes.experiences.quiz).toEqual([{ slug: "ok", titre: "OK" }]);
+  });
+
+  it("une borne de retrait illisible vaut null, la porte RESTE", () => {
+    // Une porte sans horaire reste une porte : l'écran l'affiche sans dire
+    // « jusqu'à ». La faire disparaître aurait fermé une offre réellement
+    // ouverte pour une valeur de forme.
+    const portes = mapPortesVitrine({
+      reserver: {
+        activites: [],
+        files: [],
+        offres: [{ id: "o1", nom: "Panier", window_starts_at: 1700000000 }],
+      },
+      experiences: { quiz: [] },
+    });
+    expect(portes.reserver.offres).toEqual([
+      { id: "o1", nom: "Panier", windowStartsAt: null, windowEndsAt: null },
+    ]);
+  });
+
+  it("DOUZE au plus par liste, même si le document en porte cent", () => {
+    // La base tronque déjà (`c_max_portes`). Cette borne-ci est celle de la
+    // LECTURE : la page est servie en ISR, et un document plus généreux — futur
+    // ou bricolé — ne doit pas pouvoir la faire grossir sans fin.
+    const cent = Array.from({ length: 100 }, (_, i) => ({
+      id: `a${i}`,
+      nom: `Activité ${i}`,
+    }));
+    const portes = mapPortesVitrine({
+      reserver: { activites: cent, files: cent, offres: [] },
+      experiences: { quiz: [] },
+    });
+    expect(portes.reserver.activites).toHaveLength(VITRINE_PORTES_MAX);
+    expect(portes.reserver.files).toHaveLength(VITRINE_PORTES_MAX);
+    // Les douze RETENUES, dans l'ordre du document — la troncature borne le
+    // poids de la page, elle ne réordonne rien.
+    expect(portes.reserver.activites[0]).toEqual({ id: "a0", nom: "Activité 0" });
+  });
+
+  it("la borne compte les portes RETENUES, pas les entrées lues", () => {
+    // Une entrée sur deux corrompue rend quand même douze portes valides :
+    // tronquer sur les entrées LUES aurait fait disparaître des portes ouvertes
+    // parce que le document portait du bruit à côté.
+    const melange: unknown[] = [];
+    for (let i = 0; i < 40; i += 1) {
+      melange.push(null, { id: `a${i}`, nom: `Activité ${i}` });
+    }
+    const portes = mapPortesVitrine({
+      reserver: { activites: melange, files: [], offres: [] },
+      experiences: { quiz: [] },
+    });
+    expect(portes.reserver.activites).toHaveLength(VITRINE_PORTES_MAX);
   });
 });
 

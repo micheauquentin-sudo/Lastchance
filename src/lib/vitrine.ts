@@ -374,6 +374,15 @@ export function libelleStyleCartes(style: string): string {
  * L'ordre déclaré ici est l'ordre PAR DÉFAUT — celui qu'une vitrine sans thème
  * rend. Le commerçant le permute, et MASQUER UN BLOC C'EST L'OMETTRE : la
  * migration accepte une permutation PARTIELLE, sans doublon.
+ *
+ * ── LES DEUX PORTES SONT EN QUEUE, ET C'EST LE DÉFAUT QU'ON VEUT (VIT-3) ──
+ *
+ * `reserver` et `experiences` ouvrent sur d'AUTRES pages du commerce. Les poser
+ * en tête aurait fait sortir le visiteur de la vitrine avant qu'il ait lu la
+ * carte pour laquelle il a scanné le QR. Ils restent permutables comme les cinq
+ * autres — et LE RETRAIT EST LE RÉGLAGE : un commerçant qui ne veut pas annoncer
+ * ses files les omet de son ordre, il n'y a aucun drapeau séparé qui dirait la
+ * même chose une seconde fois.
  */
 export const VITRINE_BLOCS = [
   "accroche",
@@ -381,6 +390,8 @@ export const VITRINE_BLOCS = [
   "cartes",
   "horaires",
   "social",
+  "reserver",
+  "experiences",
 ] as const;
 export type BlocVitrine = (typeof VITRINE_BLOCS)[number];
 
@@ -390,6 +401,8 @@ const BLOCS_LIBELLES: Record<BlocVitrine, string> = {
   cartes: "Nos cartes",
   horaires: "Horaires",
   social: "Réseaux et avis",
+  reserver: "Réserver",
+  experiences: "Jeux et expériences",
 };
 
 export function libelleBloc(bloc: string): string {
@@ -630,6 +643,85 @@ export interface VitrineLiensView {
   tiktok_url: string | null;
 }
 
+// ────────────────────────────────────────────────────────────
+// LES PORTES (VIT-3) — l'annuaire des autres pages publiques
+//
+// La vitrine était un cul-de-sac : le visiteur lisait la carte, et rien ne lui
+// disait que ce commerce ouvre aussi une file d'attente, un stock à retirer ou
+// un quiz. `vitrine_public_state` rend désormais cet annuaire, et ces types en
+// sont la forme applicative.
+//
+// ── LA SEULE FAMILLE DE CE FICHIER EN camelCase, ET POURQUOI ──
+//
+// L'en-tête pose la règle : les vues gardent les noms de la base. Elle a une
+// raison PRÉCISE — le thème repart en `jsonb` par le même chemin, et le
+// renommer à la lecture obligerait à le renommer en sens inverse à l'écriture.
+// Les portes ne repartent JAMAIS : elles sont dérivées de quatre tables
+// d'autres modules, elles ne sont ni saisies ni enregistrées ici, et aucun
+// aller-retour ne peut donc les faire échouer sur une clé oubliée. Leurs deux
+// bornes de fenêtre deviennent `windowStartsAt`/`windowEndsAt` parce que leur
+// seul consommateur est un composant React qui les formate — et non un `check`
+// SQL qui les relira.
+//
+// ── AUCUN CHEMIN N'EST CONSTRUIT ICI ──
+//
+// Les `id` sortent en texte parce que ce sont des fragments d'URL
+// (`/reserver/{id}`), mais l'assemblage du `href` appartient à l'écran : ce
+// mappeur lit un document, il ne décide pas d'une route.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LA BORNE DES PORTES — miroir de `c_max_portes` (20261014120000).
+ *
+ * La base tronque déjà à douze par liste. Ce nombre est recopié ici pour que la
+ * lecture le tronque AUSSI : la page est servie en ISR, et un document bricolé
+ * — ou écrit par une version future plus généreuse — ne doit pas pouvoir faire
+ * grossir sans borne ce que l'écran rend à chaque visiteur.
+ */
+export const VITRINE_PORTES_MAX = 12;
+
+/** Une porte de Réserver : un identifiant d'URL et un libellé. */
+export interface PorteVitrineView {
+  id: string;
+  nom: string;
+}
+
+/**
+ * Une offre de stock — la seule porte qui porte ses bornes de retrait.
+ *
+ * Elles voyagent avec la porte pour que l'écran puisse dire « jusqu'à 18 h »
+ * sans second appel. `null` quand le document ne les porte pas : l'écran
+ * affiche alors la porte sans horaire, ce qui reste juste, plutôt que de
+ * disparaître pour une valeur illisible.
+ */
+export interface PorteOffreVitrineView extends PorteVitrineView {
+  windowStartsAt: string | null;
+  windowEndsAt: string | null;
+}
+
+/** Une expérience : `slug` et non `id`, parce que son URL publique est un slug. */
+export interface PorteQuizVitrineView {
+  slug: string;
+  titre: string;
+}
+
+/**
+ * L'annuaire complet. LES SIX LISTES EXISTENT TOUJOURS, éventuellement vides —
+ * exactement comme en SQL : distinguer « pas de file » de « pas de clé » aurait
+ * fait porter deux chemins à l'écran pour un seul état. C'est l'écran qui masque
+ * un bloc vide, pas ce mappeur.
+ */
+export interface PortesVitrineView {
+  reserver: {
+    activites: PorteVitrineView[];
+    files: PorteVitrineView[];
+    offres: PorteOffreVitrineView[];
+  };
+  experiences: {
+    quiz: PorteQuizVitrineView[];
+  };
+}
+
 export type VitrinePublicState =
   | { state: "unavailable" }
   | {
@@ -650,6 +742,9 @@ export type VitrinePublicState =
       identite: VitrineIdentiteView;
       liens: VitrineLiensView;
       cartes: VitrineCarteView[];
+      /** L'annuaire des autres pages publiques du commerce — voir
+       *  `PortesVitrineView`. Toujours présent, listes vides comprises. */
+      portes: PortesVitrineView;
     };
 
 export interface VitrineSettingsView {
@@ -860,6 +955,95 @@ export function mapVitrineCartes(raw: unknown): VitrineCarteView[] {
     .filter((c): c is VitrineCarteView => c !== null);
 }
 
+/**
+ * Une liste de portes, LUE DÉFENSIVEMENT ET TRONQUÉE À DOUZE.
+ *
+ * La borne compte les portes RETENUES et non les entrées lues : un document où
+ * une entrée sur deux est corrompue rend quand même douze portes valides, ce qui
+ * est le comportement utile — la troncature est là pour le poids de la page, pas
+ * pour punir un document abîmé.
+ *
+ * Une liste absente ou illisible vaut la liste VIDE : `asArray` rend `[]` pour
+ * tout ce qui n'est pas un tableau, et une clé manquante prend le même chemin
+ * qu'une clé vide. C'est ce qui garantit que les six listes existent toujours,
+ * même si la base cessait un jour de le promettre.
+ */
+function mapListePortes<T>(
+  raw: unknown,
+  lire: (brut: unknown) => T | null,
+): T[] {
+  const sortie: T[] = [];
+  for (const brut of asArray(raw)) {
+    if (sortie.length >= VITRINE_PORTES_MAX) break;
+    const porte = lire(brut);
+    if (porte) sortie.push(porte);
+  }
+  return sortie;
+}
+
+/**
+ * Une porte sans identifiant ni libellé est écartée, motif `mapFiche` : il n'y a
+ * ni `href` à construire ni texte à cliquer. Un lien vide vers `/reserver/`
+ * serait pire qu'une porte absente — il envoie le visiteur sur un 404 signé du
+ * commerce.
+ */
+function mapPorteSimple(raw: unknown): PorteVitrineView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+  const id = asString(root.id);
+  const nom = asString(root.nom);
+  if (!id || !nom) return null;
+  return { id, nom };
+}
+
+function mapPorteOffre(raw: unknown): PorteOffreVitrineView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+  const base = mapPorteSimple(root);
+  if (!base) return null;
+  return {
+    ...base,
+    // Les deux bornes sont rendues telles quelles — c'est de l'ISO 8601 produit
+    // par Postgres, et le formatage appartient à l'écran, qui seul connaît la
+    // langue servie. Une valeur non textuelle vaut `null` : une porte sans
+    // horaire reste une porte, une porte avec un horaire faux ne l'est pas.
+    windowStartsAt: asString(root.window_starts_at),
+    windowEndsAt: asString(root.window_ends_at),
+  };
+}
+
+function mapPorteQuiz(raw: unknown): PorteQuizVitrineView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+  const slug = asString(root.slug);
+  const titre = asString(root.titre);
+  if (!slug || !titre) return null;
+  return { slug, titre };
+}
+
+/**
+ * Lecture de la clé `portes` de `vitrine_public_state`.
+ *
+ * Rend TOUJOURS les six listes, y compris sur `undefined` — un document écrit
+ * avant VIT-3 n'a pas cette clé, et l'écran ne doit pas avoir à distinguer
+ * « vitrine d'avant les portes » de « commerce sans porte ouverte ».
+ */
+export function mapPortesVitrine(raw: unknown): PortesVitrineView {
+  const root = asRecord(raw);
+  const reserver = asRecord(root?.reserver);
+  const experiences = asRecord(root?.experiences);
+  return {
+    reserver: {
+      activites: mapListePortes(reserver?.activites, mapPorteSimple),
+      files: mapListePortes(reserver?.files, mapPorteSimple),
+      offres: mapListePortes(reserver?.offres, mapPorteOffre),
+    },
+    experiences: {
+      quiz: mapListePortes(experiences?.quiz, mapPorteQuiz),
+    },
+  };
+}
+
 const VITRINE_INDISPONIBLE: VitrinePublicState = { state: "unavailable" };
 
 /**
@@ -945,6 +1129,7 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       tiktok_url: asLienSortant(liens.tiktok_url),
     },
     cartes: mapVitrineCartes(root.cartes),
+    portes: mapPortesVitrine(root.portes),
   };
 }
 

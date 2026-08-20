@@ -775,6 +775,8 @@ describe("importVitrineCarte — ce qui part à la RPC", () => {
 
     expect(rpcMock).toHaveBeenCalledWith("import_vitrine_carte", {
       p_organization_id: ORG_ID,
+      // DE LA SESSION, et la RPC le revérifie owner|editor en SQL depuis VIT-3.
+      p_actor: USER_ID,
       p_payload: {
         nom: "Carte du midi",
         rubriques: [
@@ -794,6 +796,29 @@ describe("importVitrineCarte — ce qui part à la RPC", () => {
         ],
       },
     });
+  });
+
+  it("l'acteur est celui de la GARDE, jamais un identifiant posté", async () => {
+    // Point I2 de la revue L12 : la RPC journalisait `system`. Elle reçoit
+    // désormais un acteur ET le revérifie membre owner|editor en SQL — mais
+    // cette vérification ne vaut que si l'acteur envoyé vient de la session.
+    // Un `actor` accepté depuis le formulaire aurait fait de la ligne d'audit
+    // du geste le plus lourd du module une déclaration sur l'honneur.
+    gardeOk();
+    comptesRpc(1, 1);
+
+    await importVitrineCarte(
+      null,
+      fd({
+        import: JSON.stringify(LOT),
+        actor: "00000000-0000-4000-8000-00000000dead",
+        p_actor: "00000000-0000-4000-8000-00000000dead",
+        user_id: "00000000-0000-4000-8000-00000000dead",
+      }),
+    );
+
+    const args = rpcMock.mock.calls.at(-1)?.[1] as { p_actor?: unknown };
+    expect(args.p_actor).toBe(USER_ID);
   });
 
   it("le CRUD de session n'est pas utilisé pour écrire — seule la RPC écrit", async () => {

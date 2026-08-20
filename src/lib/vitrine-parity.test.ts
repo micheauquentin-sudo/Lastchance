@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+﻿import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -20,6 +20,7 @@ import {
   VITRINE_BLOCS,
   VITRINE_ORDRE_MAX,
   VITRINE_ORDRE_MIN,
+  VITRINE_PORTES_MAX,
   VITRINE_PRIX_AFFICHE_MAX,
   VITRINE_RUBRIQUE_NOM_MAX,
   VITRINE_SLUG_MAX,
@@ -59,12 +60,7 @@ import {
  * le défaut « le détecteur ment », déjà payé douze fois sur ce dépôt.
  */
 
-const MIGRATION = join(
-  process.cwd(),
-  "supabase",
-  "migrations",
-  "20261011120000_vitrine_catalogue.sql",
-);
+const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
 
 /**
  * FINS DE LIGNE NORMALISÉES À LA LECTURE, et non gérées ancre par ancre.
@@ -76,7 +72,55 @@ const MIGRATION = join(
  * VIDE — donc un test vert qui ne compare rien. On le ferme une fois, à la
  * source, plutôt que d'écrire `\r?\n` dans chaque ancre.
  */
-const SOURCE = readFileSync(MIGRATION, "utf8").replace(/\r\n/g, "\n");
+function lire(fichier: string): string {
+  return readFileSync(join(MIGRATIONS, fichier), "utf8").replace(/\r\n/g, "\n");
+}
+
+/**
+ * LA DERNIÈRE MIGRATION QUI DÉFINIT CETTE FONCTION — pas la première.
+ *
+ * ── LE DÉFAUT QUE CETTE INDIRECTION FERME, ET IL A EXISTÉ ──
+ *
+ * Cette garde lisait `20261011120000_vitrine_catalogue.sql` en dur. VIT-3 y a
+ * ajouté deux blocs (`reserver`, `experiences`) en RECRÉANT
+ * `is_valid_vitrine_theme` dans une migration ultérieure : le fichier d'origine
+ * est resté à cinq blocs, il est toujours vrai en tant qu'historique, et il ne
+ * décrit PLUS ce que la base accepte. Une garde qui le lit encore compare le
+ * miroir TypeScript à une définition MORTE — elle rougit sur un ajout correct,
+ * et surtout elle passerait au vert sur un futur retrait.
+ *
+ * On vise donc la définition VIVANTE : le dernier fichier, dans l'ordre des
+ * horodatages, qui porte un `create or replace` de cette fonction. Une
+ * troisième réécriture sera suivie sans que personne n'ait à revenir ici.
+ */
+function definitionVivante(fonction: string): string {
+  const ancre = `create or replace function public.${fonction}(`;
+  const fichiers = readdirSync(MIGRATIONS)
+    .filter((nom) => nom.endsWith(".sql"))
+    .sort();
+  for (const nom of [...fichiers].reverse()) {
+    const source = lire(nom);
+    if (source.includes(ancre)) return source;
+  }
+  throw new Error(
+    `Aucune migration ne définit « ${fonction} » : la garde ne mesure plus ` +
+      "rien — corriger l'ancre, jamais la contourner.",
+  );
+}
+
+/** Les TABLES et leurs `check` : la migration fondatrice, jamais réécrite. */
+const SOURCE = lire("20261011120000_vitrine_catalogue.sql");
+
+/**
+ * LE VALIDATEUR DU THÈME, DANS SA VERSION VIVANTE.
+ *
+ * Styles, blocs et polices vivent tous les trois dans `is_valid_vitrine_theme`,
+ * qui a été recréé en VIT-3 : les trois se lisent donc ici et non dans `SOURCE`.
+ */
+const SOURCE_THEME = definitionVivante("is_valid_vitrine_theme");
+
+/** La RPC publique, vivante elle aussi — c'est elle qui borne les portes. */
+const SOURCE_ETAT_PUBLIC = definitionVivante("vitrine_public_state");
 
 /** Les chaînes SQL simples quotées d'un fragment, dans l'ordre du fichier. */
 function motsQuotes(fragment: string): string[] {
@@ -90,27 +134,27 @@ function motsQuotes(fragment: string): string[] {
  * évite le piège CRLF que ce dépôt paie à chaque garde textuelle écrite sous
  * Windows (cf. `module-access-parity.test.ts`).
  */
-function fragment(ancre: string, fin: string, depuis = 0): string {
-  const debut = SOURCE.indexOf(ancre, depuis);
+function fragment(ancre: string, fin: string, source: string = SOURCE): string {
+  const debut = source.indexOf(ancre);
   if (debut < 0) {
     throw new Error(
       `Ancre introuvable dans la migration Vitrine : « ${ancre} ». La garde ne ` +
         "mesure plus rien — corriger l'ancre, jamais la contourner.",
     );
   }
-  const apres = SOURCE.indexOf(fin, debut + ancre.length);
+  const apres = source.indexOf(fin, debut + ancre.length);
   if (apres < 0) {
     throw new Error(
       `Terminateur « ${fin} » introuvable après « ${ancre} » : forme du SQL ` +
         "changée, garde à réécrire.",
     );
   }
-  return SOURCE.slice(debut + ancre.length, apres);
+  return source.slice(debut + ancre.length, apres);
 }
 
 /** Un nombre nommé par une regex, ou une erreur — jamais un `undefined` muet. */
-function nombre(motif: RegExp, quoi: string): number {
-  const trouve = motif.exec(SOURCE);
+function nombre(motif: RegExp, quoi: string, source: string = SOURCE): number {
+  const trouve = motif.exec(source);
   if (!trouve) {
     throw new Error(
       `Borne « ${quoi} » introuvable dans la migration Vitrine : la garde ne ` +
@@ -124,9 +168,16 @@ const BADGES_SQL = motsQuotes(fragment("badges,\n      array[", "]::text[]"));
 const ALLERGENES_SQL = motsQuotes(
   fragment("allergenes,\n      array[", "]::text[]"),
 );
-const STYLES_SQL = motsQuotes(fragment("->> 'style_cartes') not in (", ")"));
-const BLOCS_SQL = motsQuotes(fragment("(e.value #>> '{}') not in", ")"));
-const POLICES_SQL = motsQuotes(fragment("(v_polices ->> e.key) not in", ")"));
+// Les trois vocabulaires du thème se lisent dans le validateur VIVANT.
+const STYLES_SQL = motsQuotes(
+  fragment("->> 'style_cartes') not in (", ")", SOURCE_THEME),
+);
+const BLOCS_SQL = motsQuotes(
+  fragment("(e.value #>> '{}') not in", ")", SOURCE_THEME),
+);
+const POLICES_SQL = motsQuotes(
+  fragment("(v_polices ->> e.key) not in", ")", SOURCE_THEME),
+);
 const RESERVES_SQL = motsQuotes(
   fragment(
     "return lower(btrim(p_slug)) = any (array[",
@@ -141,7 +192,8 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
     expect(BADGES_SQL.length).toBe(8);
     expect(ALLERGENES_SQL.length).toBe(14);
     expect(STYLES_SQL.length).toBe(3);
-    expect(BLOCS_SQL.length).toBe(5);
+    // SEPT depuis VIT-3 : les cinq blocs de VIT-1a plus les deux portes.
+    expect(BLOCS_SQL.length).toBe(7);
     expect(POLICES_SQL.length).toBe(7);
     expect(RESERVES_SQL.length).toBeGreaterThan(40);
   });
@@ -168,8 +220,22 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
     expect(STYLES_SQL.slice().sort()).toEqual([...VITRINE_STYLES_CARTES].sort());
   });
 
-  it("les cinq blocs de la page d'accueil sont les mêmes des deux côtés", () => {
+  it("les sept blocs de la page d'accueil sont les mêmes des deux côtés", () => {
     expect(BLOCS_SQL.slice().sort()).toEqual([...VITRINE_BLOCS].sort());
+  });
+
+  it("la CARDINALITÉ acceptée par le SQL suit le nombre de blocs", () => {
+    // `jsonb_array_length(…) > 7` est une SECONDE écriture du même nombre, dans
+    // la même fonction : ajouter un huitième bloc au vocabulaire sans toucher
+    // cette borne rendrait une permutation complète refusée en 23514, sur un
+    // formulaire correctement rempli.
+    expect(
+      nombre(
+        /jsonb_array_length\(p_theme -> 'ordre_blocs'\) > (\d+)/,
+        "cardinalité d'ordre_blocs",
+        SOURCE_THEME,
+      ),
+    ).toBe(VITRINE_BLOCS.length);
   });
 
   it("le vocabulaire réservé des slugs est le même des deux côtés", () => {
@@ -325,6 +391,20 @@ describe("parité Vitrine — les bornes des `check`", () => {
     expect(
       nombre(/char_length\(prix_affiche\) between 1 and (\d+)/, "prix_affiche"),
     ).toBe(VITRINE_PRIX_AFFICHE_MAX);
+  });
+
+  it("la borne des portes est la même des deux côtés", () => {
+    // `VITRINE_PORTES_MAX` tronque à la LECTURE ce que `c_max_portes` tronque en
+    // base. Les deux doivent dire douze : un miroir plus généreux laisserait
+    // passer un document futur plus gros, un miroir plus strict amputerait des
+    // portes réellement ouvertes.
+    expect(
+      nombre(
+        /c_max_portes constant integer := (\d+)/,
+        "borne des portes",
+        SOURCE_ETAT_PUBLIC,
+      ),
+    ).toBe(VITRINE_PORTES_MAX);
   });
 
   it("le rang d'affichage est borné pareil des deux côtés", () => {
