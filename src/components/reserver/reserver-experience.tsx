@@ -25,6 +25,7 @@ import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente
 import {
   etatUiCreneau,
   formatCreneau,
+  libelleTaillePersonnes,
   LIBELLE_FENETRE_CHECKIN,
   RESERVER_EMAIL_MAX,
   type PublicWaitlistItem,
@@ -613,6 +614,16 @@ export function MaReservation({
           <p className="mt-1 break-all font-mono text-3xl font-black tracking-wider text-k-ink">
             {reservation.code}
           </p>
+          {/* La mention « pour 2 personnes » (RES-5) : sur un Atelier Duo, le
+              code seul ne dit pas qu'il tient deux places — le client qui
+              relit sa confirmation doit le savoir avant de se présenter seul
+              au comptoir. `libelleTaillePersonnes` rend `null` sous 2, donc
+              une réservation standard ne voit rien de nouveau. */}
+          {libelleTaillePersonnes(reservation.partySize) ? (
+            <p className="mt-1 text-sm font-black text-k-ink">
+              Réservation {libelleTaillePersonnes(reservation.partySize)}
+            </p>
+          ) : null}
           <p className="mt-3 text-sm font-medium text-k-body">
             Donnez-le au comptoir en arrivant. {LIBELLE_FENETRE_CHECKIN}
           </p>

@@ -29,8 +29,8 @@ parallèle, fusions de migrations sérialisées.
 | L4 | RES-1b — surfaces + email (A2) | ✅ | #160 | — |
 | L5 | RES-2 — liste prioritaire + invitations | ✅ | #161 | 20261004120000 |
 | L6 | RES-3 — file sereine | ✅ | #162 | 20261005120000 |
-| L7 | RES-4 — attente active | 🔨 | — | 20261006120000 |
-| L8 | Expériences Signature | ⏳ | — | — |
+| L7 | RES-4 — attente active | ✅ | #163 | 20261006120000 |
+| L8 | Expériences Signature | 🔨 QA | #164 | 20261007120000, 20261008120000 |
 | L9 | RES-5 — hold stock + RESA- + Drop | ⏳ | — | — |
 | L10 | VIT-1a — marque + catalogue FR (sous drapeau) | ⏳ | — | — |
 | L11 | VIT-1b — infra i18n + adaptateur neutre (ouverture publique Vitrine) | ⏳ | — | — |
@@ -83,6 +83,18 @@ production) listés dans `docs/bugs.md`, section Notes.
 
 ADR-110/111 écrites ; handoff Codex sera mis à jour au bilan (modification
 concurrente à préserver).
+
+L8 — QA (`e2e/reserver-signature.spec.ts`, PR #164) a trouvé deux bugs
+produit réels, tous deux corrigés dans le même lot : `is_valid_experience_steps`
+(fonction de `check` sur `reservation_activities`) n'avait pas l'`EXECUTE`
+nécessaire à `authenticated` — toute création/édition d'un Moment Signature
+échouait en `permission denied` (migration 20261008120000) ; la case « Activité
+ouverte aux réservations » postait `value="on"`, un enum invalide pour
+`caseACochee` — tout enregistrement des réglages d'activité avec la case
+cochée échouait silencieusement (`activite-reglages-form.tsx`, corrigé en
+`value="true"`). Les deux étaient présents avant ce lot (le premier depuis
+20261007120000, le second depuis L4) et n'avaient jamais été exercés par un
+E2E jusqu'ici.
 
 ## Notes de mise à jour
 
