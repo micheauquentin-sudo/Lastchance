@@ -5746,9 +5746,14 @@ export type Database = {
           active: boolean
           created_at: string
           description: string | null
+          duration_minutes: number | null
           id: string
+          kind: string
           name: string
           organization_id: string
+          preparation: string | null
+          promise: string | null
+          steps: Json | null
           updated_at: string
           wait_pause_campaign_id: string | null
           wait_quiz_id: string | null
@@ -5757,9 +5762,14 @@ export type Database = {
           active?: boolean
           created_at?: string
           description?: string | null
+          duration_minutes?: number | null
           id?: string
+          kind?: string
           name: string
           organization_id: string
+          preparation?: string | null
+          promise?: string | null
+          steps?: Json | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
           wait_quiz_id?: string | null
@@ -5768,9 +5778,14 @@ export type Database = {
           active?: boolean
           created_at?: string
           description?: string | null
+          duration_minutes?: number | null
           id?: string
+          kind?: string
           name?: string
           organization_id?: string
+          preparation?: string | null
+          promise?: string | null
+          steps?: Json | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
           wait_quiz_id?: string | null
@@ -6197,6 +6212,7 @@ export type Database = {
           email: string | null
           id: string
           organization_id: string
+          party_size: number
           player_key_hash: string
           slot_id: string
           status: string
@@ -6211,6 +6227,7 @@ export type Database = {
           email?: string | null
           id?: string
           organization_id: string
+          party_size?: number
           player_key_hash: string
           slot_id: string
           status?: string
@@ -6225,6 +6242,7 @@ export type Database = {
           email?: string | null
           id?: string
           organization_id?: string
+          party_size?: number
           player_key_hash?: string
           slot_id?: string
           status?: string
@@ -7677,6 +7695,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_valid_experience_steps: { Args: { p_steps: Json }; Returns: boolean }
       is_valid_progression_rule: { Args: { p_rule: Json }; Returns: boolean }
       is_valid_quiz_answer: {
         Args: {
@@ -8499,6 +8518,7 @@ export type Database = {
           p_consent?: boolean
           p_email?: string
           p_organization_id: string
+          p_party_size?: number
           p_player_key_hash: string
           p_slot_id: string
         }
