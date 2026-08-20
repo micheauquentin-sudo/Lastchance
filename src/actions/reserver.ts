@@ -1671,6 +1671,29 @@ export async function createReserverActivity(
   return { ok: true, data: undefined };
 }
 
+/**
+ * Ce que la base a compté d'engagements vivants sur une activité, et son format
+ * courant. Miroir exact de `reservation_activity_live_commitments` (migration
+ * 20261009120000) — voir son en-tête pour ce que « vivant » veut dire.
+ */
+interface EngagementsActivite {
+  kind: string;
+  reservations: number;
+  waitlist: number;
+}
+
+function lireEngagements(data: unknown): EngagementsActivite | null {
+  if (!data || typeof data !== "object") return null;
+  const brut = data as Record<string, unknown>;
+  if (brut.state !== "ok") return null;
+  const kind = typeof brut.kind === "string" ? brut.kind : null;
+  const reservations =
+    typeof brut.reservations === "number" ? brut.reservations : null;
+  const waitlist = typeof brut.waitlist === "number" ? brut.waitlist : null;
+  if (kind === null || reservations === null || waitlist === null) return null;
+  return { kind, reservations, waitlist };
+}
+
 /** Réglages d'une activité — dont son interrupteur `active`. */
 export async function updateReserverActivity(
   _prev: ActionResult | null,
@@ -1695,6 +1718,74 @@ export async function updateReserverActivity(
 
   const garde = await gardeEditeurReserver();
   if (!garde.ok) return { ok: false, error: garde.error };
+
+  // ── LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS ──
+  //
+  // `kind` est l'UNITÉ DE COMPTAGE de toute la capacité depuis RES-5, et il est
+  // relu à chaque appel plutôt que figé au moment où un engagement est pris.
+  // Basculer une activité en « Atelier Duo » pendant qu'une offre de liste tient
+  // UNE place fait donc convertir le claim à DEUX personnes — et
+  // `claim_waitlist_offer` ne repasse PAS par la jauge, par construction. Quatre
+  // personnes sur trois places, aucune erreur, aucun journal. Le raisonnement
+  // complet et les deux parades écartées sont dans l'en-tête de la migration
+  // 20261009120000.
+  //
+  // ── ON COMPTE, ET ON NOMME CE QU'ON A COMPTÉ ──
+  //
+  // Motif des gardes destructives du dépôt (`deleteWheel` : « N lot(s) gagné(s)
+  // attendent encore en caisse »). Un refus qui dit seulement « impossible »
+  // laisse le commerçant chercher ce qui bloque ; celui-ci lui donne le compte
+  // et le geste — fermer ou honorer, puis rebasculer.
+  //
+  // ── PAR RPC, ET PAS PAR DEUX LECTURES ADMIN ──
+  //
+  // Les deux comptages joignent `reservation_slots` sur `activity_id` et
+  // `starts_at`, et `reservations` n'a aucune policy de lecture pour l'éditeur.
+  // Côté client, cela faisait trois allers-retours et une liste d'identifiants
+  // non bornée ; la RPC les fait sous UN instantané, org-scopée, et rend AUSSI
+  // le format courant — sans quoi il aurait fallu une quatrième lecture pour
+  // savoir si le format change vraiment.
+  //
+  // LA FENÊTRE ENTRE CE COMPTE ET L'`update` EST ASSUMÉE : un joueur peut
+  // réserver dans l'intervalle. La refermer aurait demandé de tenir le verrou
+  // d'avis de CHAQUE créneau à venir pendant une écriture PostgREST faite dans
+  // une autre transaction, ce que ce verrou ne sait pas faire. Le pire cas
+  // reproduit le défaut d'origine sur UNE réservation, sur un geste que le
+  // commerçant vient de faire en connaissance de cause.
+  const admin = createAdminClient();
+  const { data: engagementsBruts, error: erreurEngagements } = await admin.rpc(
+    "reservation_activity_live_commitments",
+    {
+      p_organization_id: garde.organizationId,
+      p_activity_id: parsed.data.id,
+    },
+  );
+  if (erreurEngagements) {
+    reportError("reserver.activity-commitments", erreurEngagements.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  const engagements = lireEngagements(engagementsBruts);
+  // `null` couvre `unknown` (activité d'une autre organisation, ou disparue) ET
+  // une charge utile illisible. On REFUSE dans les deux cas : laisser passer
+  // parce qu'on n'a pas su compter, c'est exactement le silence que cette garde
+  // existe pour rompre.
+  if (!engagements) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+  if (
+    engagements.kind !== parsed.data.kind &&
+    engagements.reservations + engagements.waitlist > 0
+  ) {
+    const r = engagements.reservations;
+    const a = engagements.waitlist;
+    return {
+      ok: false,
+      error:
+        `Impossible de changer le format : ${r} réservation${r > 1 ? "s" : ""} ` +
+        `et ${a} attente${a > 1 ? "s" : ""} vivantes sur des créneaux à venir. ` +
+        "Fermez ou honorez-les d'abord.",
+    };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase

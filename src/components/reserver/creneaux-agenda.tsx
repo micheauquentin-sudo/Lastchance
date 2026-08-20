@@ -166,6 +166,17 @@ function CreneauCarte({
           <summary className="cursor-pointer text-sm font-bold text-k-body hover:text-k-ink">
             {creneau.vivantes} réservation{creneau.vivantes > 1 ? "s" : ""} en
             cours
+            {/* LES PERSONNES, ET SEULEMENT QUAND ELLES DIFFÈRENT DES LIGNES
+                (RES-5). Sur un Atelier Duo, « 3 réservations en cours » est
+                exact et trompeur : six personnes viennent, et c'est ce nombre-là
+                que la capacité compare. Le pli ouvert le dit déjà, code par code
+                (« 2 pers. ») — mais replié, il ne le disait pas, et c'est replié
+                qu'on lit son agenda du matin. Hors duo les deux chiffres sont
+                égaux et la mention n'apparaît pas : répéter le même nombre sous
+                deux mots n'apprend rien. */}
+            {creneau.personnes !== creneau.vivantes
+              ? ` · ${creneau.personnes} personnes attendues`
+              : ""}
             {annulees > 0
               ? ` · ${annulees} annulée${annulees > 1 ? "s" : ""}`
               : ""}

@@ -25,7 +25,9 @@ import {
   RESERVER_EMAIL_MAX,
   RESERVER_PARTY_SIZE_MAX,
   RESERVER_PARTY_SIZE_MIN,
+  RESERVER_STEP_BODY_FIELD,
   RESERVER_STEP_BODY_MAX,
+  RESERVER_STEP_TITLE_FIELD,
   RESERVER_STEP_TITLE_MAX,
   RESERVER_INVITATION_LABEL_MAX,
   RESERVER_INVITATION_MAX_USES_MAX,
@@ -547,12 +549,17 @@ export const updateReserverActivitySchema = z
  * Les noms des champs d'étapes, RÉPÉTÉS — le panneau rend une paire par carte,
  * toutes sous le même nom, et la liste s'ajoute et se retire à l'écran.
  *
- * Ils vivent ICI, à côté du schéma qui les valide, pour que l'écran et l'action
- * ne puissent pas diverger : un formulaire qui nommerait ses champs autrement
- * poserait des étapes qu'aucune action ne lirait, sans la moindre erreur.
+ * DÉFINIS DANS `@/lib/reserver` et ré-exportés ici, où le schéma qui les valide
+ * les lit. Ils ont commencé à cet endroit-ci, ce qui était le bon voisinage et
+ * le mauvais module : le formulaire qui doit nommer ses champs avec ces deux
+ * chaînes est un composant CLIENT, et importer ce fichier-ci depuis le
+ * navigateur y aurait tiré Zod et tous les schémas du module pour deux
+ * littéraux. La ré-export garde le voisinage sans le coût.
  */
-export const RESERVER_STEP_TITLE_FIELD = "stepTitle";
-export const RESERVER_STEP_BODY_FIELD = "stepBody";
+export {
+  RESERVER_STEP_BODY_FIELD,
+  RESERVER_STEP_TITLE_FIELD,
+} from "@/lib/reserver";
 
 /**
  * Assemble les paires d'un `FormData` en tableau d'étapes BRUT.

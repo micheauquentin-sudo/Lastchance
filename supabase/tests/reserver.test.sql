@@ -3377,6 +3377,35 @@ select throws_ok(
   'PRES-6b une carte SANS `title` est refusée aussi — la clé absente ne '
   'traverse pas le validateur en `NULL`');
 
+-- LA FORME EST FERMÉE, PAS SEULEMENT COMPLÈTE. Les deux assertions précédentes
+-- prouvent que les clés attendues sont EXIGÉES ; celle-ci prouve qu'aucune
+-- autre n'est TOLÉRÉE. Sans elle, une carte parfaitement valide augmentée d'un
+-- `cta` ou d'un `ordre` entrait en base sous une colonne réputée validée — que
+-- rien ne borne ensuite, ni en longueur, ni en nombre, ni en nature.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature enrichie',
+            'signature', 30,
+            '[{"title":"Une","body":"Deux.","cta":"https://exemple.fr"}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6c une carte avec une clé PARASITE est refusée : la forme est fermée à '
+  '`{title, body}`, sinon la colonne devient un dépotoir que rien ne valide');
+
+-- ET LE REFUS EST BIEN UN 23514, PAS UNE EXCEPTION BRUTE. `jsonb_object_keys`
+-- LÈVE sur un jsonb qui n'est pas un objet, et SQL ne garantit pas l'ordre
+-- d'évaluation d'un `or` : fondu dans la chaîne de tests, il aurait pu partir
+-- avant le contrôle de type et transformer « étapes invalides » en erreur que
+-- plus aucun écran ne sait traduire. Un élément SCALAIRE est donc rejoué ici.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature scalaire',
+            'signature', 30, '["juste une chaîne"]'::jsonb)$$,
+  '23514', null,
+  'PRES-6d une étape SCALAIRE reste un refus de contrainte (23514) et non une '
+  'exception brute : le contrôle de type passe AVANT la lecture des clés');
+
 select throws_ok(
   $$insert into public.reservation_activities
       (organization_id, name, kind, duration_minutes)
@@ -3675,6 +3704,179 @@ select ok(
   'REM-4 et il ne recopie PAS le format de l''activité');
 
 
+-- ════════════════════════════════════════════════════════════
+-- 25. LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS
+--     (RES-5, migration 20261009120000)
+--
+-- `kind` est l'unité de comptage de toute la capacité, et il est RELU à chaque
+-- appel — jamais figé au moment où un engagement est pris. Bascule d'une
+-- activité en `duo` pendant qu'une offre de liste tient UNE place :
+-- `claim_waitlist_offer` ne repasse PAS par la jauge (sa propriété fondatrice),
+-- lit le format COURANT, écrit `party_size = 2`, et le créneau porte quatre
+-- personnes sur trois places. Sans erreur, sans journal, sans trace.
+--
+-- `reservation_activity_live_commitments` est ce qui permet au panneau de
+-- REFUSER en NOMMANT ce qu'il a compté. Ce bloc prouve les quatre frontières de
+-- ce comptage, parce que ce sont elles qui décident si la garde protège ou
+-- gêne :
+--   * CE QUI COMPTE — réservations `confirmed` ET `checked_in`, entrées
+--     `waiting` ET `offered` encore tenues.
+--   * CE QUI NE COMPTE PAS — annulée, expirée, et l'OFFRE ÉCHUE : elle ne se
+--     convertit plus (refus paresseux de `claim_waitlist_offer`), la compter
+--     bloquerait le commerçant sur une ligne morte.
+--   * OÙ ÇA COMPTE — sur les créneaux À VENIR seulement. Un créneau commencé ne
+--     produira plus rien ; l'y inclure aurait interdit de changer de format
+--     APRÈS sa saison, c'est-à-dire au moment exact où on le fait.
+--   * CHEZ QUI — org-scopée, `unknown` pour la voisine.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.reservation_activities
+  (id, organization_id, name, active, kind)
+values
+  -- 209 : l'activité SOUS ENGAGEMENTS. Standard, comme l'est toute activité
+  -- qu'on s'apprête à basculer en duo — c'est le scénario du défaut.
+  ('4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Bascule sous engagements', true,
+   'standard'),
+  -- 210 : la MÊME chose, mais tout est derrière elle. C'est l'état où le
+  -- commerçant a le droit de changer de format, et il doit être reconnu comme
+  -- tel — une garde qui ne s'ouvre jamais n'est pas une garde, c'est un mur.
+  ('4e5e0000-0000-4000-8000-000000000210',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Bascule apres la saison', true,
+   'standard');
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values
+  -- S45 : À VENIR. Tout ce qui doit compter est ici.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '5 days', now() + interval '5 days 1 hour', 4, 'open'),
+  -- S46 : PASSÉ, et de la MÊME activité. C'est ce qui rend le filtre « à venir »
+  -- prouvé plutôt que supposé : deux activités séparées auraient pu passer avec
+  -- un filtre qui ne regarde que l'activité.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() - interval '5 days', now() - interval '5 days' + interval '1 hour',
+   4, 'open'),
+  -- S47 : passé aussi, pour l'activité dont la saison est finie.
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-000000000210',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() - interval '6 days', now() - interval '6 days' + interval '1 hour',
+   4, 'open');
+
+-- LES RÉSERVATIONS. Écrites en direct plutôt que par `reserve_slot` : on veut
+-- poser des ÉTATS (annulée, arrivée, sur créneau passé) que la RPC refuserait
+-- justement de créer, et c'est le comptage qu'on teste, pas la prise de place.
+insert into public.reservations
+  (slot_id, organization_id, player_key_hash, status, cancelled_at, checked_in_at)
+values
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a1', 32),
+   'confirmed', null, null),
+  -- ARRIVÉE : le check-in ne libère RIEN, elle compte comme vivante.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a2', 32),
+   'checked_in', null, now() - interval '1 minute'),
+  -- ANNULÉE : elle n'engage plus personne.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a3', 32),
+   'cancelled', now() - interval '1 hour', null),
+  -- VIVANTE, mais sur le créneau PASSÉ : elle ne sera plus recomptée par rien.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('c1', 32),
+   'confirmed', null, null),
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32),
+   'confirmed', null, null);
+
+insert into public.reservation_waitlist_entries
+  (slot_id, organization_id, player_key_hash, status,
+   offered_at, offer_expires_at, expired_at)
+values
+  -- ATTEND : c'est elle que la bascule trahirait. Elle recevra une offre à la
+  -- première place libre, et cette offre sera convertie à l'unité du format
+  -- COURANT — celui d'après la bascule.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b1', 32), 'waiting',
+   null, null, null),
+  -- OFFRE TENUE : le cas exact de la revue.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b2', 32), 'offered',
+   now() - interval '10 minutes', now() + interval '1 hour', null),
+  -- OFFRE ÉCHUE : `claim_waitlist_offer` lui rend `expired` par refus
+  -- PARESSEUX, balayage ou pas. Elle ne peut plus rien convertir, donc elle ne
+  -- doit pas bloquer le commerçant.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b3', 32), 'offered',
+   now() - interval '3 hours', now() - interval '1 hour', null),
+  -- TERMINÉE.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b4', 32), 'expired',
+   now() - interval '4 hours', now() - interval '3 hours',
+   now() - interval '3 hours'),
+  -- VIVANTE, sur le créneau PASSÉ.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('c2', 32), 'waiting',
+   null, null, null),
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('d2', 32), 'waiting',
+   null, null, null);
+
+create temporary table rv5_eng as
+select 1 as n, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000209') as j;
+
+select is((select j->>'state' from rv5_eng where n = 1), 'ok',
+  'ENG-1 le comptage répond pour une activité de son organisation');
+select is((select j->>'kind' from rv5_eng where n = 1), 'standard',
+  'ENG-2 et rend le format COURANT — sans lui, l''appelant aurait dû relire '
+  'l''activité pour savoir si le format change vraiment');
+
+-- DEUX réservations sur cinq lignes : la `confirmed` et la `checked_in` du
+-- créneau à venir. L'annulée, la passée et celle de l'autre activité sortent.
+select is((select j->>'reservations' from rv5_eng where n = 1), '2',
+  'ENG-3 deux réservations vivantes : `checked_in` compte (le check-in ne '
+  'libère rien), `cancelled` non, et le créneau PASSÉ non plus');
+
+-- DEUX attentes sur six lignes : la `waiting` et l'offre encore TENUE.
+select is((select j->>'waitlist' from rv5_eng where n = 1), '2',
+  'ENG-4 deux attentes convertibles : l''offre ÉCHUE ne compte pas — elle ne '
+  'se convertit plus, la compter bloquerait le commerçant sur une ligne morte');
+
+-- L'ÉTAT OÙ LA BASCULE EST PERMISE. Une garde qui ne s'ouvre jamais est un mur :
+-- l'activité 210 porte une réservation vivante et une attente vivante, mais
+-- toutes deux sur un créneau passé — rien ne peut plus s'y produire.
+insert into rv5_eng values (2, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000210'));
+select is((select j->>'reservations' from rv5_eng where n = 2), '0',
+  'ENG-5 saison finie : plus aucune réservation ne compte…');
+select is((select j->>'waitlist' from rv5_eng where n = 2), '0',
+  'ENG-6 …ni aucune attente, et le format redevient donc réglable');
+
+-- L'INVARIANT DU DÉPÔT. Viser l'activité de A depuis B rend `unknown` — pas un
+-- compte de zéro, qui aurait appris que l'activité existe et n'engage personne.
+insert into rv5_eng values (3, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000b',
+  '4e5e0000-0000-4000-8000-000000000209'));
+select is((select j->>'state' from rv5_eng where n = 3), 'unknown',
+  'ENG-7 la voisine n''obtient RIEN de l''activité de A — ni compte, ni format');
+select ok(not ((select j from rv5_eng where n = 3) ? 'reservations'),
+  'ENG-8 et le refus ne laisse échapper aucun chiffre');
+
+insert into rv5_eng values (4, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-0000000009ff'));
+select is((select j->>'state' from rv5_eng where n = 4), 'unknown',
+  'ENG-9 une activité inconnue rend le MÊME état qu''une activité étrangère : '
+  'les distinguer donnerait un oracle d''existence');
+
+
 -- ── ACL : les colonnes neuves suivent le régime du socle ────
 
 select ok(has_column_privilege('authenticated',
@@ -3698,6 +3900,20 @@ select results_eq(
   'ACL-28 le catalogue ne porte TOUJOURS qu''UNE signature de reserve_slot : '
   'l''ancienne à cinq arguments est partie, sans quoi un appel sans taille '
   'aurait réservé un Atelier Duo pour une personne');
+
+-- LE COMPTAGE D'ENGAGEMENTS SUIT LE RÉGIME DES CINQ AUTRES RPC DU MODULE : il
+-- lit `reservations`, dont l'éditeur n'a AUCUNE policy de lecture, et il
+-- contourne la RLS pour cela. Le rendre à `authenticated` aurait donné au
+-- panneau un chemin direct vers des comptages qu'il doit demander au serveur.
+select ok(has_function_privilege('service_role',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-29 le serveur compte les engagements avant d''autoriser une bascule');
+select ok(not has_function_privilege('authenticated',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-30 le panneau commerçant ne compte pas lui-même : il passe par l''action');
+select ok(not has_function_privilege('anon',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-31 et `anon` n''a rien à savoir de ce qui est engagé chez un commerce');
 
 select * from finish();
 rollback;

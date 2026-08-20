@@ -13,10 +13,15 @@ import type { ReserverActivityKind } from "@/lib/reserver";
  *
  * Les BORNES de saisie (`RESERVER_ACTIVITY_PROMISE_MAX`, `RESERVER_ACTIVITY_DURATION_MIN`…)
  * vivent dans `src/lib/reserver.ts`, au plus près des `check` SQL dont elles sont
- * le miroir — même règle que `champs.ts`. Et l'UNITÉ de réservation
- * (`placesParReservation`) est ici parce que c'est la traduction d'un format en
- * mots d'écran ; la base, elle, a le dernier mot et refuse `invalid_party_size`
- * si l'écran se trompait.
+ * le miroir — même règle que `champs.ts`.
+ *
+ * L'UNITÉ de réservation (`placesParReservation`) y vit AUSSI, et n'est plus
+ * ici : ce fichier en portait une seconde copie, identique au caractère près.
+ * Deux définitions d'une même règle ne coûtent rien tant qu'elles s'accordent —
+ * et le jour où le MVP élargira le duo, celle qu'on aura oublié de corriger
+ * enverra l'écran demander une taille que `reserve_slot` refusera. La règle est
+ * une propriété du FORMAT, pas un mot d'écran : elle appartient au module qui
+ * fait miroir aux `check` SQL, et `reserver-context.ts` la lisait déjà là.
  */
 
 export interface FormatExperience {
@@ -51,18 +56,6 @@ export const FORMATS_ORDONNES: readonly ReserverActivityKind[] = [
   "signature",
   "duo",
 ];
-
-/**
- * Combien de places une réservation prend, selon le format.
- *
- * C'est le `party_size` que la page envoie et que `reserve_slot` EXIGE d'égaler
- * — une valeur différente se fait refuser `invalid_party_size`. L'écran ne
- * décide donc de rien : il dit la même chose que la base, avant le clic plutôt
- * qu'après.
- */
-export function placesParReservation(kind: ReserverActivityKind): number {
-  return kind === "duo" ? 2 : 1;
-}
 
 /**
  * La durée dans les mots d'une affiche : « 45 min », « 1 h », « 1 h 30 ».

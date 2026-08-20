@@ -192,6 +192,29 @@ export const RESERVER_STEP_TITLE_MAX = 80;
 export const RESERVER_STEP_BODY_MAX = 400;
 
 /**
+ * Les NOMS des deux champs répétés qui portent les cartes dans le formulaire.
+ *
+ * Le panneau rend une paire par carte, toutes sous le même nom, et
+ * `etapesDepuisFormData` les rassemble par `getAll` — appariées par leur
+ * POSITION, sans identifiant. Les deux bouts doivent donc s'accorder sur ces
+ * deux chaînes EXACTEMENT, et un désaccord ne fait pas d'erreur : le formulaire
+ * poste des étapes que l'action ne lit pas, l'activité s'enregistre sans ses
+ * cartes, et rien ne le signale.
+ *
+ * ── POURQUOI ICI, ET PLUS DANS `validations/reserver.ts` ──
+ *
+ * Elles y sont nées, à côté du schéma qui les valide — le bon voisinage, mais
+ * le mauvais module : `validations/reserver.ts` construit des schémas Zod à
+ * l'import, et le formulaire qui a besoin de ces deux chaînes est un composant
+ * CLIENT. Les y lire aurait tiré Zod et les vingt schémas du module dans le
+ * bundle du navigateur pour deux littéraux. Ce fichier-ci, lui, est déjà des
+ * deux côtés — c'est le vocabulaire partagé du module. `validations` les
+ * ré-exporte, donc rien ne change pour qui les lisait là-bas.
+ */
+export const RESERVER_STEP_TITLE_FIELD = "stepTitle";
+export const RESERVER_STEP_BODY_FIELD = "stepBody";
+
+/**
  * Taille d'une réservation, en PERSONNES — `between 1 and 2`, exactement le
  * CHECK `reservations_party_size_bound`. Au MVP le duo est la seule taille
  * plurielle ; élargir sera une migration, avec sa décision.

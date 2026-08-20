@@ -17,16 +17,14 @@ import {
   MaFileAttente,
   RejoindreFileAttente,
 } from "@/components/reserver/file-attente";
-import {
-  placesParReservation,
-  uniteJauge,
-} from "@/components/reserver/formats-experience";
+import { uniteJauge } from "@/components/reserver/formats-experience";
 import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 import {
   etatUiCreneau,
   formatCreneau,
   libelleTaillePersonnes,
   LIBELLE_FENETRE_CHECKIN,
+  placesParReservation,
   RESERVER_EMAIL_MAX,
   type PublicWaitlistItem,
   type ReserverActivityKind,
@@ -175,9 +173,23 @@ export function ReserverExperience({
           {activityName}
         </h1>
         {/* La promesse passe AVANT la description : elle dit pourquoi on vient,
-            la description dit comment ça se passe. Sans promesse ni durée, le
-            bloc ne rend rien — l'en-tête standard est intact. */}
-        <ExergueExperience promise={promise} durationMinutes={durationMinutes} />
+            la description dit comment ça se passe.
+
+            LE BLOC EST GATÉ SUR LE FORMAT, pas seulement sur la présence de sa
+            matière — et les deux ne sont PAS équivalents depuis que
+            `updateReserverActivity` préserve délibérément les quatre colonnes de
+            présentation quand on repasse une activité en « Standard » (pour que
+            le commerçant retrouve ses cartes en revenant). Une activité standard
+            garde donc sa promesse et sa durée EN BASE, et sans ce test elle les
+            affichait encore : l'écran contredisait le format que le commerçant
+            venait de choisir. La préservation en base reste — c'est l'affichage
+            qui suit le format. */}
+        {kind !== "standard" ? (
+          <ExergueExperience
+            promise={promise}
+            durationMinutes={durationMinutes}
+          />
+        ) : null}
         {description ? (
           <p className="mt-3 whitespace-pre-line text-sm font-medium leading-relaxed text-k-ink">
             {description}
@@ -254,10 +266,15 @@ export function ReserverExperience({
       {/* LES ÉTAPES ET LA PRÉPARATION SONT AVANT LES CRÉNEAUX, ET APRÈS LE CODE.
           Avant les créneaux, parce qu'elles servent à décider de réserver ;
           après « ma réservation », parce que ce que le client rouvre sa page
-          pour retrouver reste son code. Les deux rendent `null` sans matière —
-          une activité standard ne les voit jamais. */}
+          pour retrouver reste son code. Les deux sont gatées sur le FORMAT —
+          même raison que l'exergue plus haut : une activité repassée en
+          « Standard » garde sa préparation en base, et l'écran ne doit pas
+          continuer à la rendre. Les composants rendent aussi `null` sans
+          matière ; ce test-ci répond à l'autre question. */}
       {kind === "signature" ? <EtapesExperience steps={steps} /> : null}
-      <PreparationExperience kind={kind} preparation={preparation} />
+      {kind !== "standard" ? (
+        <PreparationExperience kind={kind} preparation={preparation} />
+      ) : null}
 
       <section aria-labelledby="creneaux-titre" className="mb-6">
         <h2

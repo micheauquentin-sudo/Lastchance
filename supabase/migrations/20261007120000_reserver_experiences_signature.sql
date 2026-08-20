@@ -103,7 +103,8 @@
 -- `set search_path = pg_catalog` — d'où les appels NON qualifiés, qui s'y
 -- résolvent — et rendue à personne.
 --
--- ELLE VALIDE LA FORME, PAS LA PRÉSENCE. Le plafond de trois et la forme de
+-- ELLE VALIDE LA FORME, PAS LA PRÉSENCE, ET LA FORME EST FERMÉE : une carte
+-- porte EXACTEMENT `title` et `body`. Le plafond de trois et la forme de
 -- chaque carte sont ici ; l'exigence « une à trois cartes POUR UNE SIGNATURE »
 -- est portée par une contrainte conditionnelle de la table, parce qu'elle
 -- dépend du format et pas du tableau. Un tableau vide est donc structurellement
@@ -151,8 +152,44 @@ begin
   -- pas une fonction du catalogue.
   for v_step in select value from jsonb_array_elements(p_steps)
   loop
-    if jsonb_typeof(v_step) <> 'object'
-      or coalesce(jsonb_typeof(v_step -> 'title'), '') <> 'string'
+    if jsonb_typeof(v_step) <> 'object' then
+      return false;
+    end if;
+
+    -- ── LES CLÉS SONT EXACTEMENT `{title, body}`, NI PLUS NI MOINS ──
+    --
+    -- Sans ce test, la validation était OUVERTE : elle exigeait `title` et
+    -- `body` bien formés, et se taisait sur tout le reste. Une carte
+    -- `{"title":"…","body":"…","cta":"https://…","ordre":2}` entrait donc en
+    -- base, où plus rien ne la relisait — la page ne rend que deux champs. On y
+    -- aurait stocké, sous une colonne réputée validée, du contenu que personne
+    -- ne borne : ni en longueur, ni en nombre, ni en nature. C'est la porte par
+    -- laquelle une colonne de présentation devient un dépotoir, et le jour où
+    -- un écran décide d'afficher `cta`, il rend une chaîne que rien n'a jamais
+    -- vérifiée.
+    --
+    -- FORME STRICTE PLUTÔT QUE BORNE DE TAILLE (`pg_column_size(steps) <= 4096`,
+    -- l'autre parade envisagée) : une borne d'octets dit « pas trop » sans dire
+    -- QUOI, et un refus « votre document dépasse 4096 octets » n'apprend rien à
+    -- un commerçant qui a saisi trois cartes de deux lignes. La forme, elle,
+    -- énonce le contrat que l'écran tient déjà.
+    --
+    -- LE TEST EST DANS SON PROPRE `if`, ET CE N'EST PAS UN CHOIX DE STYLE.
+    -- `jsonb_object_keys` LÈVE une exception sur un jsonb qui n'est pas un
+    -- objet, là où `->` rendait tranquillement NULL ; or SQL ne garantit PAS
+    -- l'ordre d'évaluation des membres d'un `or`. Fondu dans la chaîne
+    -- ci-dessous, il aurait pu s'exécuter AVANT le test de type et transformer
+    -- « étapes invalides » (23514, que la contrainte de table rend au
+    -- commerçant) en erreur brute 22023 — un refus que plus aucun écran ne sait
+    -- traduire. Le `return false` du bloc précédent rend l'ordre explicite.
+    if exists (
+      select 1 from jsonb_object_keys(v_step) k
+       where k not in ('title', 'body')
+    ) then
+      return false;
+    end if;
+
+    if coalesce(jsonb_typeof(v_step -> 'title'), '') <> 'string'
       or char_length(btrim(coalesce(v_step ->> 'title', ''))) not between 1 and 80
       or coalesce(jsonb_typeof(v_step -> 'body'), '') <> 'string'
       or char_length(btrim(coalesce(v_step ->> 'body', ''))) not between 1 and 400
@@ -167,11 +204,14 @@ $$;
 
 comment on function public.is_valid_experience_steps(jsonb) is
   'Valide la FORME des étapes d''un Moment Signature (RES-5) : un tableau d''AU '
-  'PLUS TROIS objets `{title, body}`, titres et corps non vides et bornés à 80 '
-  'et 400 caractères une fois détourés. `null` est accepté — l''absence '
-  'd''étapes est légitime pour les formats qui n''en présentent pas ; c''est la '
-  'contrainte conditionnelle `reservation_activities_signature_steps` qui les '
-  'EXIGE d''une `signature`. Rendue à personne : elle n''est appelée que depuis '
+  'PLUS TROIS objets portant EXACTEMENT les clés `{title, body}` — une clé '
+  'parasite fait échouer la validation, sans quoi la colonne accueillerait, '
+  'sous couvert d''être validée, du contenu que rien ne borne — titres et corps '
+  'non vides et bornés à 80 et 400 caractères une fois détourés. `null` est '
+  'accepté — l''absence d''étapes est légitime pour les formats qui n''en '
+  'présentent pas ; c''est la contrainte conditionnelle '
+  '`reservation_activities_signature_steps` qui les EXIGE d''une `signature`. '
+  'Rendue à personne : elle n''est appelée que depuis '
   'un `check` de table, où PostgreSQL évalue l''expression sans contrôle '
   'de privilège (motif is_valid_progression_rule, 20260805200000).';
 

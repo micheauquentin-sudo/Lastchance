@@ -48,7 +48,8 @@ grant execute on function public.is_valid_experience_steps(jsonb)
 
 comment on function public.is_valid_experience_steps(jsonb) is
   'Valide la FORME des étapes d''un Moment Signature (RES-5) : un tableau d''AU '
-  'PLUS TROIS objets `{title, body}`, titres et corps non vides et bornés à 80 '
+  'PLUS TROIS objets portant EXACTEMENT les clés `{title, body}` — une clé '
+  'parasite est refusée — titres et corps non vides et bornés à 80 '
   'et 400 caractères une fois détourés. `null` est accepté — l''absence '
   'd''étapes est légitime pour les formats qui n''en présentent pas ; c''est la '
   'contrainte conditionnelle `reservation_activities_signature_steps` qui les '

@@ -124,6 +124,18 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       id: "i1",
       organization_id: "11111111-1111-4111-8111-111111111111",
     } as Record<string, unknown> | null,
+    /**
+     * Ce que `reservation_activity_live_commitments` rend au panneau avant
+     * d'autoriser un changement de format (RES-5, migration 20261009120000).
+     * Par défaut : rien d'engagé, donc tous les réglages passent — c'est l'état
+     * de la quasi-totalité des cas, et celui que les tests d'avant supposaient.
+     */
+    activityCommitments: {
+      state: "ok",
+      kind: "standard",
+      reservations: 0,
+      waitlist: 0,
+    } as unknown,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -243,6 +255,12 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         id: "i1",
         organization_id: "11111111-1111-4111-8111-111111111111",
       };
+      state.activityCommitments = {
+        state: "ok",
+        kind: "standard",
+        reservations: 0,
+        waitlist: 0,
+      };
       state.selects = [];
       state.filtres = [];
       state.rpcCalls = [];
@@ -324,6 +342,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         }
         if (name === "queue_public_state") {
           return Promise.resolve({ data: state.queuePublicResponse, error: null });
+        }
+        if (name === "reservation_activity_live_commitments") {
+          return Promise.resolve({ data: state.activityCommitments, error: null });
         }
         if (name === "close_reservation_invitation") {
           return Promise.resolve({
@@ -1189,6 +1210,121 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     expect(ecriture?.values.kind).toBe("duo");
     expect(ecriture?.values.duration_minutes).toBe(120);
     expect(ecriture?.values.steps).toBeNull();
+  });
+
+  // ── LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS (RES-5) ──
+  //
+  // Le défaut, en une phrase : `claim_waitlist_offer` ne repasse PAS par la
+  // jauge et lit le format COURANT. Une offre émise quand l'activité tenait UNE
+  // place, convertie après une bascule en « Atelier Duo », crée une réservation
+  // de DEUX personnes sur une place réservée pour une. Rien ne le signale.
+  it("REFUSE de changer le format tant qu'un engagement vivant subsiste, et NOMME le compte", async () => {
+    state.activityCommitments = {
+      state: "ok",
+      kind: "standard",
+      reservations: 1,
+      waitlist: 2,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier Duo",
+        active: "true",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    // LE COMPTE EST DANS LE MESSAGE, motif des gardes destructives du dépôt
+    // (`deleteWheel` : « N lot(s) gagné(s) attendent encore en caisse »). Un
+    // « impossible » nu laisserait le commerçant chercher ce qui bloque.
+    expect(resultat.ok === false && resultat.error).toContain("1 réservation");
+    expect(resultat.ok === false && resultat.error).toContain("2 attentes");
+    // ET RIEN N'EST ÉCRIT : le refus est un refus, pas un enregistrement
+    // partiel où le nom serait passé et le format non.
+    expect(state.rlsWrites).toHaveLength(0);
+    // Le comptage est demandé à la BASE, org-scopé, jamais recalculé côté
+    // action : `reservations` n'a aucune policy de lecture pour l'éditeur.
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("reservation_activity_live_commitments");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_activity_id).toBe(ACTIVITY_ID);
+  });
+
+  it("laisse basculer quand tout est clos ou passé", async () => {
+    // L'ÉTAT OÙ LA GARDE DOIT S'OUVRIR. Une garde qui ne s'ouvre jamais n'est
+    // pas une garde : le commerçant change de format ENTRE deux saisons, c'est
+    // précisément le moment où ses créneaux sont derrière lui.
+    state.activityCommitments = {
+      state: "ok",
+      kind: "duo",
+      reservations: 0,
+      waitlist: 0,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier",
+        active: "true",
+        kind: "standard",
+      }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    expect(state.rlsWrites.at(-1)?.values.kind).toBe("standard");
+  });
+
+  it("ne bloque PAS les autres réglages quand le format ne change pas", async () => {
+    // La garde porte sur LA BASCULE, pas sur l'écran. Renommer une activité ou
+    // la couper pendant que dix personnes attendent doit rester possible —
+    // couper est même le geste qu'on fait EN PREMIER quand ça déborde.
+    state.activityCommitments = {
+      state: "ok",
+      kind: "duo",
+      reservations: 4,
+      waitlist: 3,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier Duo (complet)",
+        active: "false",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    expect(state.rlsWrites.at(-1)?.values.active).toBe(false);
+  });
+
+  it("refuse aussi quand le comptage ne se lit pas", async () => {
+    // `unknown` (activité d'une autre organisation, ou disparue) et charge utile
+    // illisible tombent au MÊME endroit. Laisser passer parce qu'on n'a pas su
+    // compter, ce serait exactement le silence que cette garde existe pour
+    // rompre.
+    state.activityCommitments = { state: "unknown" };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier",
+        active: "true",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
   });
 
   it("crée un créneau en BROUILLON, converti dans le fuseau de l'organisation", async () => {

@@ -9,7 +9,9 @@ import {
   RESERVER_ACTIVITY_PREPARATION_MAX,
   RESERVER_ACTIVITY_PROMISE_MAX,
   RESERVER_ACTIVITY_STEPS_MAX,
+  RESERVER_STEP_BODY_FIELD,
   RESERVER_STEP_BODY_MAX,
+  RESERVER_STEP_TITLE_FIELD,
   RESERVER_STEP_TITLE_MAX,
   type ReserverActivityKind,
 } from "@/lib/reserver";
@@ -48,7 +50,12 @@ import {
  * ── LES ÉTAPES SONT UN ÉTAT LOCAL, ET RIEN D'AUTRE ──
  *
  * Une à trois cartes, ajoutées et retirées côté navigateur ; elles partent en
- * champs répétés `stepTitle` / `stepBody`, appariés par leur POSITION. Aucun
+ * champs répétés dont les noms viennent de `RESERVER_STEP_TITLE_FIELD` et
+ * `RESERVER_STEP_BODY_FIELD` — les mêmes constantes que lit
+ * `etapesDepuisFormData`, et non deux chaînes recopiées de part et d'autre : un
+ * désaccord entre les deux ne fait AUCUNE erreur, il fait un formulaire qui
+ * poste des étapes que l'action ne lit pas. Elles sont appariées par leur
+ * POSITION. Aucun
  * identifiant : une étape n'a pas d'existence propre en base, c'est une entrée
  * du `jsonb` de l'activité. Le seul invariant tenu ici est celui de la
  * contrainte SQL — au moins une, jamais plus de trois — et il est tenu par les
@@ -225,7 +232,7 @@ export function ChampsExperience({
                   </Label>
                   <Input
                     id={`etape-titre${instanceId}-${etape.cle}`}
-                    name="stepTitle"
+                    name={RESERVER_STEP_TITLE_FIELD}
                     required
                     maxLength={RESERVER_STEP_TITLE_MAX}
                     value={etape.title}
@@ -248,7 +255,7 @@ export function ChampsExperience({
                   </Label>
                   <textarea
                     id={`etape-corps${instanceId}-${etape.cle}`}
-                    name="stepBody"
+                    name={RESERVER_STEP_BODY_FIELD}
                     rows={2}
                     required
                     maxLength={RESERVER_STEP_BODY_MAX}

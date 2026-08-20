@@ -107,8 +107,23 @@ export default async function ReservationsPage() {
             // en décide, comme sur la page publique. Un compte calculé
             // autrement ici ferait dire au tableau de bord « 3 créneaux » là où
             // le client n'en voit qu'un.
+            //
+            // LE FORMAT ENTRE DANS LE VERDICT (RES-5), et sans lui la phrase
+            // ci-dessus cessait d'être vraie : sur un Atelier Duo à qui il reste
+            // UNE place, `etatUiCreneau` rend « complet » — une place isolée
+            // n'est prenable par personne — mais seulement si on lui DIT que
+            // c'est un duo. Sans `kind`, cet écran comptait le créneau comme
+            // ouvert quand la page publique affichait « complet » dessus : le
+            // commerçant lisait « 1 créneau ouvert à venir » et son client ne
+            // pouvait pas réserver.
+            //
+            // Le format vit sur l'ACTIVITÉ, pas sur le créneau
+            // (`ReserverSlotDashboardView` ne le porte pas, et c'est voulu — un
+            // même Atelier Duo ne peut pas changer d'unité selon l'heure). On le
+            // joint donc ici, à la lecture.
             const ouverts = activite.slots.filter(
-              (creneau) => etatUiCreneau(creneau) === "ouvert",
+              (creneau) =>
+                etatUiCreneau({ ...creneau, kind: activite.kind }) === "ouvert",
             ).length;
             return (
               <li key={activite.id}>
