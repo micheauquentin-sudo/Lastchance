@@ -8028,7 +8028,7 @@ export type Database = {
         Returns: number
       }
       import_vitrine_carte: {
-        Args: { p_organization_id: string; p_payload: Json }
+        Args: { p_actor: string; p_organization_id: string; p_payload: Json }
         Returns: Json
       }
       increment_module_page_open: {

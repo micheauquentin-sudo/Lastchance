@@ -4,8 +4,9 @@
 -- Ce que ce fichier prouve, et dans quel ordre :
 --
 --   1. LES VOCABULAIRES SONT DANS LE CATALOGUE VIVANT, ET ON LES COMPTE. Huit
---      badges, quatorze allergènes, sept polices, cinq blocs, trois styles de
---      cartes. Le compte est lu dans `pg_get_constraintdef` et dans `prosrc`,
+--      badges, quatorze allergènes, sept polices, SEPT blocs (cinq en VIT-1a,
+--      plus les deux portes de VIT-3), trois styles de cartes. Le compte est lu
+--      dans `pg_get_constraintdef` et dans `prosrc`,
 --      pas dans une liste recopiée ici : une valeur retirée d'une migration
 --      future fera rougir ce fichier, une liste jumelle n'aurait rien vu.
 --   2. LE THÈME EST FERMÉ AUX DEUX RANGS. Une clé parasite de premier rang, une
@@ -145,10 +146,11 @@ select is(
      from pg_proc p
      cross join lateral
        pg_catalog.regexp_matches(p.prosrc,
-         '''(accroche|histoire|cartes|horaires|social)''', 'g') m
+         '''(accroche|histoire|cartes|horaires|social|reserver|experiences)''',
+         'g') m
     where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure),
-  5::bigint,
-  'les cinq blocs de la page d''accueil sont le vocabulaire fermé d''ordre_blocs'
+  7::bigint,
+  'les SEPT blocs de la page d''accueil sont le vocabulaire fermé d''ordre_blocs — les cinq de VIT-1a, plus les deux portes de VIT-3'
 );
 
 select is(
@@ -236,6 +238,45 @@ select throws_ok(
      where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
   '23514', null,
   'un bloc hors vocabulaire est refusé');
+
+-- ── LES DEUX PORTES DE VIT-3, ET LA BORNE QUI PASSE DE CINQ À SEPT ──
+--
+-- LA PREMIÈRE ASSERTION PORTE LES DEUX CHANGEMENTS À ELLE SEULE : sept blocs
+-- valides d'un coup ne passent QUE si le vocabulaire s'est élargi ET si la borne
+-- de longueur a suivi. Restée à cinq, elle refuserait cette liste-là.
+--
+-- LA DEUXIÈME EST SUR-DÉTERMINÉE, ET C'EST ÉCRIT PLUTÔT QUE CACHÉ. Il n'existe
+-- que sept blocs : toute liste de huit éléments contient forcément un doublon ou
+-- un mot inconnu, donc son refus ne peut pas isoler la borne de longueur — le
+-- test du doublon la refuserait aussi. Elle garde le CONTRAT (huit est refusé),
+-- pas le mécanisme, et la borne reste dans la migration comme ceinture par
+-- dessus les bretelles.
+--
+-- LA TROISIÈME prouve que le vocabulaire reste FERMÉ malgré son élargissement :
+-- sans elle, ouvrir la liste à tout et n'importe quoi serait vert aux deux
+-- premières.
+--
+-- LE RETRAIT D'UN BLOC EST LE RÉGLAGE COMMERÇANT : la permutation est PARTIELLE
+-- depuis VIT-1a, donc masquer les portes c'est les omettre de l'ordre. C'est ce
+-- que le thème à trois blocs plus haut exerce déjà, et c'est pourquoi aucun
+-- drapeau « afficher les portes » n'est cherché ici — il n'en existe pas, et
+-- une colonne de plus aurait donné deux façons de dire la même chose.
+select ok(public.is_valid_vitrine_theme(
+  '{"ordre_blocs":["accroche","histoire","cartes","horaires","social",
+                   "reserver","experiences"]}'::jsonb),
+  'les SEPT blocs à la fois sont acceptés : `reserver` et `experiences` rejoignent le vocabulaire fermé');
+
+select ok(not public.is_valid_vitrine_theme(
+  '{"ordre_blocs":["accroche","histoire","cartes","horaires","social",
+                   "reserver","experiences","accroche"]}'::jsonb),
+  'un HUITIÈME élément est refusé — sur-déterminé (le doublon le refuserait aussi), gardé pour le contrat et non pour le mécanisme');
+
+select throws_ok(
+  $$update public.vitrine_settings
+       set theme = '{"ordre_blocs":["reserver","boutique"]}'::jsonb
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  '23514', null,
+  'le vocabulaire reste FERMÉ après son élargissement : un huitième bloc inventé est refusé par la contrainte');
 
 
 -- ══ 3. LE CATALOGUE, ET SES VOCABULAIRES FERMÉS ═════════════
@@ -1406,6 +1447,10 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 --   * L'IMPORT NE TRADUIT RIEN, et le compte le montre : huit champs
 --     traduisibles, zéro frais. C'est l'invariant de L11 et non un oubli — une
 --     machine ne publie pas d'anglais sur une carte que personne n'a relue.
+--   * L'ACTEUR EST TRANCHÉ EN SQL, ET IL SIGNE LE JOURNAL (VIT-3, point I2 de la
+--     revue L12). Le caissier — MEMBRE, et pourtant refusé — sépare le rôle de
+--     l'appartenance ; le propriétaire d'une AUTRE organisation sépare
+--     l'appartenance du rôle. Une garde bâclée passerait l'un ou l'autre.
 --
 -- ── POURQUOI UNE SIXIÈME ORGANISATION ──
 --
@@ -1425,6 +1470,29 @@ insert into public.organizations
   (id, name, slug, subscription_status, plan, timezone, data_retention_months)
 values ('f1000000-0000-4000-8000-00000000000f', 'Vitrine F', 'tap-vitrine-f',
         'active', 'starter', 'Europe/Paris', 6);
+
+-- DEUX ACTEURS POUR F, ET IL EN FAUT DEUX (VIT-3). L'import exige désormais un
+-- acteur vérifié `owner|editor` EN SQL : l'ÉDITEUR joue tous les imports de
+-- cette section, le CAISSIER n'existe que pour prouver que le RÔLE est tranché
+-- et pas seulement l'appartenance — sans lui, « l'acteur doit être membre »
+-- serait vert alors que n'importe quel membre passerait.
+--
+-- L'ACTEUR D'UNE AUTRE ORGANISATION est déjà disponible : `…f01`, propriétaire
+-- de A. C'est le refus qui compte le plus des trois, et il ne demande aucune
+-- fixture neuve.
+insert into auth.users
+  (id, aud, role, email, encrypted_password, created_at, updated_at)
+values
+  ('f1000000-0000-4000-8000-000000000f05', 'authenticated', 'authenticated',
+   'editeur-f@test.local', '', now(), now()),
+  ('f1000000-0000-4000-8000-000000000f06', 'authenticated', 'authenticated',
+   'caissier-f@test.local', '', now(), now());
+
+insert into public.organization_members (organization_id, user_id, role) values
+  ('f1000000-0000-4000-8000-00000000000f',
+   'f1000000-0000-4000-8000-000000000f05', 'editor'),
+  ('f1000000-0000-4000-8000-00000000000f',
+   'f1000000-0000-4000-8000-000000000f06', 'cashier');
 
 -- UNE CARTE PRÉEXISTANTE, à l'ordre 4. Elle sert à prouver que la carte importée
 -- se pose APRÈS et non en tête : un import s'ajoute à un catalogue, il ne le
@@ -1460,7 +1528,8 @@ select is(
          ]},
         {"nom": "Desserts",
          "fiches": [{"nom": "Tarte du jour", "prix_affiche": "6 €"}]}
-      ]}'::jsonb) ->> 'rubriques_creees',
+      ]}'::jsonb,
+    'f1000000-0000-4000-8000-000000000f05') ->> 'rubriques_creees',
   '2',
   'l''import crée les deux rubriques du lot en un seul geste');
 
@@ -1613,7 +1682,8 @@ select is(
 -- doit pas avoir bougé d'une ligne.
 
 select throws_ok(
-  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+  format($$select public.import_vitrine_carte(
+      %L, %L::jsonb, 'f1000000-0000-4000-8000-000000000f05')$$,
     'f1000000-0000-4000-8000-00000000000f',
     jsonb_build_object(
       'nom', 'Carte atomique',
@@ -1657,7 +1727,8 @@ select is(
 -- l'insertion de la carte, pas de celui qui garde les lignes. Les deux messages
 -- diffèrent, et sans cette assertion les intervertir serait vert.
 select throws_ok(
-  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+  format($$select public.import_vitrine_carte(
+      %L, %L::jsonb, 'f1000000-0000-4000-8000-000000000f05')$$,
     'f1000000-0000-4000-8000-00000000000f',
     jsonb_build_object('nom', repeat('c', 81), 'rubriques', '[]'::jsonb)),
   '23514',
@@ -1672,7 +1743,8 @@ select throws_ok(
 -- `check` n'aurait pu les exprimer.
 
 select throws_ok(
-  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+  format($$select public.import_vitrine_carte(
+      %L, %L::jsonb, 'f1000000-0000-4000-8000-000000000f05')$$,
     'f1000000-0000-4000-8000-00000000000f',
     jsonb_build_object(
       'nom', 'Carte à treize rubriques',
@@ -1684,7 +1756,8 @@ select throws_ok(
   'treize rubriques sont refusées, et le message NOMME la borne — un refus qui ne dit pas combien ne dit rien');
 
 select throws_ok(
-  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+  format($$select public.import_vitrine_carte(
+      %L, %L::jsonb, 'f1000000-0000-4000-8000-000000000f05')$$,
     'f1000000-0000-4000-8000-00000000000f',
     jsonb_build_object(
       'nom', 'Carte à cent vingt et une fiches',
@@ -1711,7 +1784,8 @@ select is(
           'fiches', (select jsonb_agg(jsonb_build_object(
                               'nom', 'Fiche ' || g || '-' || h))
                        from generate_series(1, 10) h)))
-          from generate_series(1, 12) g))) ->> 'fiches_creees',
+          from generate_series(1, 12) g)),
+    'f1000000-0000-4000-8000-000000000f05') ->> 'fiches_creees',
   '120',
   'douze rubriques et cent vingt fiches PASSENT : les deux bornes sont inclusives, comme le produit les promet');
 
@@ -1725,7 +1799,8 @@ select is(
 select throws_ok(
   $$select public.import_vitrine_carte(
       '00000000-0000-4000-8000-0000000000ff'::uuid,
-      '{"nom": "Carte de nulle part", "rubriques": []}'::jsonb)$$,
+      '{"nom": "Carte de nulle part", "rubriques": []}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '42501', 'not authorized',
   'une organisation inconnue rend le 42501 INDISTINCT du module — pas un mot de plus');
 
@@ -1736,7 +1811,8 @@ select throws_ok(
 select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
-      '{"nom": "Carte importée", "rubriques": []}'::jsonb)$$,
+      '{"nom": "Carte importée", "rubriques": []}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '23505', 'a carte of this name already exists in this catalogue',
   'un nom de carte déjà pris rend 23505, et le message ne relaie PAS le nom');
 
@@ -1749,7 +1825,8 @@ select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
       '{"nom": "Carte au badge inconnu",
-        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": ["licorne"]}]}]}'::jsonb)$$,
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": ["licorne"]}]}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '23514',
   'a line of the import was rejected by constraint vitrine_items_badges_check',
   'un badge hors vocabulaire est refusé par le `check` de la table, et le refus dit LAQUELLE des règles a mordu');
@@ -1758,7 +1835,8 @@ select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
       '{"nom": "Carte à l''allergène inconnu",
-        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "allergenes": ["licorne"]}]}]}'::jsonb)$$,
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "allergenes": ["licorne"]}]}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '23514',
   'a line of the import was rejected by constraint vitrine_items_allergenes_check',
   '… et les quatorze allergènes de l''annexe II sont gardés par la même mécanique, sous leur propre nom de contrainte');
@@ -1770,21 +1848,24 @@ select throws_ok(
 select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
-      '{"nom": "C", "rubriques": [], "couleur": "rouge"}'::jsonb)$$,
+      '{"nom": "C", "rubriques": [], "couleur": "rouge"}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'payload carries an unknown key',
   'une clé inconnue au premier rang du lot est refusée');
 
 select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
-      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [], "icone": "x"}]}'::jsonb)$$,
+      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [], "icone": "x"}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'a rubrique carries an unknown key',
   '… au deuxième rang aussi');
 
 select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
-      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "prix": "8 €"}]}]}'::jsonb)$$,
+      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "prix": "8 €"}]}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'a fiche carries an unknown key',
   '… et au troisième : « prix » au lieu de « prix_affiche » est REFUSÉ, pas ignoré');
 
@@ -1797,7 +1878,8 @@ select throws_ok(
       'f1000000-0000-4000-8000-00000000000f',
       '{"nom": "Carte aux rubriques jumelles",
         "rubriques": [{"nom": "Entrées", "fiches": []},
-                      {"nom": "Entrées", "fiches": []}]}'::jsonb)$$,
+                      {"nom": "Entrées", "fiches": []}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'two rubriques of the import share the same name',
   'deux rubriques homonymes dans le même lot sont refusées SOUS LEUR PROPRE MOT, avant que rien ne soit écrit');
 
@@ -1805,7 +1887,8 @@ select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
       '{"nom": "Carte mal typée",
-        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": "vegan"}]}]}'::jsonb)$$,
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": "vegan"}]}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'a fiche has a field of the wrong type',
   'un vocabulaire passé en CHAÎNE au lieu d''un tableau est un fichier mal formé, et il le dit — pas « badge inconnu »');
 
@@ -1813,18 +1896,107 @@ select throws_ok(
   $$select public.import_vitrine_carte(
       'f1000000-0000-4000-8000-00000000000f',
       '{"nom": "Carte au badge numérique",
-        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": [7]}]}]}'::jsonb)$$,
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": [7]}]}]}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f05')$$,
   '22023', 'badges and allergenes must be arrays of strings',
   '… et un élément non textuel dans un vocabulaire est refusé AVANT le `check`, qui aurait dit « badge inconnu » pour une faute de forme');
 
 
--- ── 13f. LES ACL, ET LA RÈGLE CHECK ⇒ EXECUTE DU CHEMIN DEFINER ──
+-- ── 13f. L'ACTEUR — TRANCHÉ EN SQL, ET IL SIGNE LE JOURNAL ──
+--
+-- Point I2 de la revue L12, fermé en VIT-3. La RPC journalisait `system` faute
+-- de recevoir un acteur : cent vingt fiches écrites en un geste, et le journal
+-- ne disait pas par qui — précisément le geste dont on voudra savoir l'auteur,
+-- parce que c'est le seul du module qui refait toute une carte d'un coup.
+--
+-- LES QUATRE REFUS RENDENT LE MÊME 42501, et c'est l'objet de la moitié des
+-- assertions : « acteur absent », « caissier », « membre d'une AUTRE
+-- organisation » et « organisation inconnue » sont indistincts. Distinguer
+-- aurait fait de cette RPC un oracle sur les équipes d'autrui.
+--
+-- LE REFUS DU MEMBRE D'UNE AUTRE ORGANISATION EST CELUI QUI COMPTE LE PLUS :
+-- c'est le seul qui échouerait si la vérification avait été écrite « ce user
+-- existe » au lieu de « ce user est membre de CETTE organisation ». Les trois
+-- autres passeraient une garde bâclée.
 
-select ok(has_function_privilege('service_role', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+-- LE JOURNAL PORTE L'ACTEUR, ET PLUS `system`. Deux imports ont abouti dans
+-- cette section (13a et la borne exacte de 13d) : les DEUX doivent être signés,
+-- et l'assertion porte sur l'ensemble plutôt que sur une ligne — une seule
+-- signée sur deux serait verte à un `limit 1`.
+select is(
+  (select pg_catalog.string_agg(distinct a.actor, ',')
+     from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and a.action = 'vitrine.carte_imported'),
+  'f1000000-0000-4000-8000-000000000f05',
+  'TOUTES les lignes d''audit de l''import portent l''ÉDITEUR qui l''a joué — plus une seule ne dit « system » (point I2 de la revue L12)');
+
+select is(
+  (select pg_catalog.count(*)::bigint
+     from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and a.action = 'vitrine.carte_imported'),
+  2::bigint,
+  '… et le journal compte les GESTES : deux imports aboutis, deux lignes — pas une par fiche, pas une par lot refusé');
+
+-- LE CAISSIER EST MEMBRE, ET IL EST REFUSÉ. C'est la différence entre
+-- « appartenance » et « rôle », et sans cette assertion une garde écrite
+-- `exists (… where user_id = …)` sans le `role in (…)` serait verte partout
+-- ailleurs.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte du comptoir", "rubriques": []}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f06')$$,
+  '42501', 'not authorized',
+  'le CAISSIER est refusé : refaire une carte n''est pas un geste de comptoir, motif set_vitrine_slug');
+
+-- LE PROPRIÉTAIRE DE A SUR LE CATALOGUE DE F. Il est `owner`, donc son rôle
+-- suffirait — ce qui manque est l'appartenance à CETTE organisation.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte du voisin", "rubriques": []}'::jsonb,
+      'f1000000-0000-4000-8000-000000000f01')$$,
+  '42501', 'not authorized',
+  'le propriétaire d''une AUTRE organisation est refusé sur ce catalogue : la garde lit l''appartenance, pas seulement le rôle');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte anonyme", "rubriques": []}'::jsonb,
+      null)$$,
+  '42501', 'not authorized',
+  'un acteur ABSENT est refusé sous le même mot : la RPC n''a plus de chemin sans acteur depuis que l''ancienne forme est supprimée');
+
+-- RIEN N'A ÉTÉ ÉCRIT PAR AUCUN DES TROIS REFUS. Le compte de référence est celui
+-- de 13d : les deux cartes de 13a/13c plus celle de la borne exacte.
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_menus m
+    where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and m.nom in ('Carte du comptoir', 'Carte du voisin', 'Carte anonyme')),
+  0::bigint,
+  'aucun des trois refus d''acteur n''a laissé de carte derrière lui — le refus tombe AVANT la première écriture');
+
+
+-- ── 13g. LES ACL, ET LA RÈGLE CHECK ⇒ EXECUTE DU CHEMIN DEFINER ──
+--
+-- LA SIGNATURE A ÉTÉ REMPLACÉE, PAS SURCHARGÉE (leçon L3, motif §12a). Deux
+-- exemplaires auraient laissé grand ouvert le chemin SANS acteur : un appelant
+-- oublié aurait continué d'écrire `system` dans le journal, et rien ne l'aurait
+-- dit — l'ancienne forme reste appelable tant qu'elle existe.
+select is(
+  (select pg_catalog.count(*)::bigint from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'import_vitrine_carte'),
+  1::bigint,
+  'une seule `import_vitrine_carte` existe : la forme SANS acteur est SUPPRIMÉE, pas surchargée');
+
+select ok(has_function_privilege('service_role', 'public.import_vitrine_carte(uuid,jsonb,uuid)', 'EXECUTE'),
   'seul le serveur importe une carte');
-select ok(not has_function_privilege('authenticated', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+select ok(not has_function_privilege('authenticated', 'public.import_vitrine_carte(uuid,jsonb,uuid)', 'EXECUTE'),
   'le commerçant ne contourne pas l''action serveur pour écrire cent vingt fiches d''un coup');
-select ok(not has_function_privilege('anon', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+select ok(not has_function_privilege('anon', 'public.import_vitrine_carte(uuid,jsonb,uuid)', 'EXECUTE'),
   'anon n''importe rien, nulle part');
 
 -- LA LEÇON FRAPPÉE DEUX FOIS, RÉAFFIRMÉE POUR LE RÔLE QUI ÉCRIT VRAIMENT ICI.
@@ -1839,7 +2011,7 @@ select ok(not has_function_privilege('anon', 'public.import_vitrine_carte(uuid,j
 select ok(
   has_function_privilege(
     (select p.proowner::regrole::text from pg_proc p
-      where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+      where p.oid = 'public.import_vitrine_carte(uuid,jsonb,uuid)'::regprocedure),
     'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'),
   'le PROPRIÉTAIRE de l''import peut exécuter le validateur de vocabulaire — un `check` s''évalue sous le rôle qui écrit, et ici ce rôle est le definer');
 
@@ -1852,14 +2024,292 @@ select ok(
 -- INSTALLÉE et non sur le fichier : c'est le catalogue qui fait foi.
 select ok(
   (select p.prosecdef from pg_proc p
-    where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+    where p.oid = 'public.import_vitrine_carte(uuid,jsonb,uuid)'::regprocedure),
   'l''import est `security definer` — c''est ce qui lui donne le droit d''écrire sans session marchande');
 
 select is(
   (select pg_catalog.array_to_string(p.proconfig, ',') from pg_catalog.pg_proc p
-    where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+    where p.oid = 'public.import_vitrine_carte(uuid,jsonb,uuid)'::regprocedure),
   'search_path=""',
   '… et son search_path est VIDE : aucun schéma appelant ne peut lui glisser une fonction homonyme');
+
+
+-- ══ 14. LES PORTES DES MODULES (VIT-3, lot L13) ═════════════
+--
+-- Ce que cette section prouve, et pourquoi chaque assertion est là :
+--
+--   * CHAQUE DRAPEAU EST EXERCÉ DANS LES DEUX SENS. Une activité coupée, une
+--     file en pause, une file fermée, une offre dont la fenêtre n'a pas
+--     commencé, une offre dont la fenêtre est passée, une offre en brouillon, un
+--     quiz en brouillon : chacun a son jumeau SERVI. Un filtre oublié ne se voit
+--     que si la ligne qu'il devait retenir existe.
+--   * LE DROIT `quiz` EST LE SEUL REDEMANDÉ, et il l'est vraiment : H a une
+--     vitrine servie et un quiz ACTIF, et sa liste de quiz est vide. Sans cette
+--     organisation, « le droit est vérifié » et « il n'y a pas de quiz »
+--     rendraient le même résultat.
+--   * LES SIX LISTES EXISTENT TOUJOURS. La forme du document ne dépend pas de
+--     son contenu : c'est l'écran qui masque un bloc vide, et il ne peut le
+--     faire que si la clé est là.
+--   * LA BORNE EST APPLIQUÉE APRÈS L'ORDRE, ce qui est la seule façon dont elle
+--     soit utile. Prouvé sur quinze activités dont les noms disent leur rang :
+--     un `limit` sans `order by` dans la sous-requête rendrait douze lignes au
+--     choix du plan, et la page changerait de contenu d'un rafraîchissement à
+--     l'autre sans que rien n'ait bougé en base.
+--   * LES PORTES NE SONT PAS TRADUISIBLES, et c'est CHIFFRÉ. G porte quatre
+--     portes et UN seul champ traduisible. Si elles entraient au dénominateur,
+--     toute vitrine traduite serait retombée sous le seuil du sélecteur de
+--     langue le jour de cette migration — sans que personne n'ait rien défait.
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- ── Fixtures G et H ─────────────────────────────────────────
+-- G : SERVIE, avec le droit `quiz` EN PLUS du droit `vitrine`. Elle porte un
+--     jumeau retenu pour chaque jumeau servi.
+-- H : SERVIE elle aussi, mais SANS le droit `quiz`. Son quiz actif doit rester
+--     invisible pendant que tout le reste de sa vitrine répond.
+insert into public.organizations
+  (id, name, slug, subscription_status, plan, timezone, data_retention_months)
+values
+  ('f1000000-0000-4000-8000-000000001300', 'Vitrine G', 'tap-vitrine-g',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('f1000000-0000-4000-8000-000000001301', 'Vitrine H', 'tap-vitrine-h',
+   'active', 'starter', 'Europe/Paris', 6);
+
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('f1000000-0000-4000-8000-000000001300', 'vitrine', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('f1000000-0000-4000-8000-000000001300', 'quiz', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  -- H n'a QUE `vitrine` : c'est toute la fixture.
+  ('f1000000-0000-4000-8000-000000001301', 'vitrine', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+-- `histoire` et `horaires_texte` restent NULLES : un champ vide n'est pas
+-- traduisible, donc le total de G vaut UN — son accroche — et c'est ce chiffre
+-- qui rend l'assertion de non-traduisibilité des portes lisible à la main.
+insert into public.vitrine_settings
+  (id, organization_id, slug, published, accroche)
+values
+  ('f1000000-0000-4000-8000-000000001310',
+   'f1000000-0000-4000-8000-000000001300', 'tap-portes', true,
+   'Le comptoir aux quatre portes.'),
+  ('f1000000-0000-4000-8000-000000001311',
+   'f1000000-0000-4000-8000-000000001301', 'tap-portes-sans-quiz', true,
+   'Le bar sans quiz.');
+
+-- UNE ACTIVE, UNE COUPÉE.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active)
+values
+  ('f1000000-0000-4000-8000-000000001320',
+   'f1000000-0000-4000-8000-000000001300', 'Dégustation', null, true),
+  ('f1000000-0000-4000-8000-000000001321',
+   'f1000000-0000-4000-8000-000000001300', 'Atelier suspendu', null, false);
+
+-- UNE OUVERTE, UNE EN PAUSE, UNE FERMÉE. `paused` sert encore ceux qui
+-- attendent déjà mais n'accepte plus personne : l'annoncer depuis la Vitrine
+-- aurait envoyé un client sur une page qui le refuse.
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values
+  ('f1000000-0000-4000-8000-000000001330',
+   'f1000000-0000-4000-8000-000000001300', null, 'Comptoir', 'open', 50),
+  ('f1000000-0000-4000-8000-000000001331',
+   'f1000000-0000-4000-8000-000000001300', null, 'En pause', 'paused', 50),
+  ('f1000000-0000-4000-8000-000000001332',
+   'f1000000-0000-4000-8000-000000001300', null, 'Fermée', 'closed', 50);
+
+-- QUATRE OFFRES POUR TROIS REFUS. La fenêtre est la borne que le comptoir
+-- applique (`redeem_stock_hold`) : une offre dont la fenêtre est passée ne se
+-- retire plus, et une offre dont la fenêtre n'a pas commencé annoncerait un
+-- retrait impossible aujourd'hui.
+insert into public.reservation_stock_offers
+  (id, organization_id, title, description, stock_total,
+   window_starts_at, window_ends_at, per_player_limit, status)
+values
+  ('f1000000-0000-4000-8000-000000001340',
+   'f1000000-0000-4000-8000-000000001300', 'Tarte du jour', null, 4,
+   now() - interval '1 hour', now() + interval '3 hours', 1, 'open'),
+  ('f1000000-0000-4000-8000-000000001341',
+   'f1000000-0000-4000-8000-000000001300', 'Drop de demain', null, 4,
+   now() + interval '2 hours', now() + interval '3 hours', 1, 'open'),
+  ('f1000000-0000-4000-8000-000000001342',
+   'f1000000-0000-4000-8000-000000001300', 'Drop d''hier', null, 4,
+   now() - interval '3 hours', now() - interval '1 hour', 1, 'open'),
+  -- EN BROUILLON ET DANS SA FENÊTRE : le seul des quatre dont le refus vient du
+  -- statut et non de l'horloge.
+  ('f1000000-0000-4000-8000-000000001343',
+   'f1000000-0000-4000-8000-000000001300', 'Brouillon du soir', null, 4,
+   now() - interval '1 hour', now() + interval '3 hours', 1, 'draft');
+
+insert into public.quizzes
+  (id, organization_id, name, status, public_slug)
+values
+  ('f1000000-0000-4000-8000-000000001350',
+   'f1000000-0000-4000-8000-000000001300', 'Quiz du comptoir', 'active',
+   'tap-quiz-servi'),
+  ('f1000000-0000-4000-8000-000000001351',
+   'f1000000-0000-4000-8000-000000001300', 'Quiz en préparation', 'draft',
+   'tap-quiz-brouillon'),
+  -- CELUI DE H : ACTIF, et pourtant invisible — son organisation n'a pas le
+  -- droit `quiz`.
+  ('f1000000-0000-4000-8000-000000001352',
+   'f1000000-0000-4000-8000-000000001301', 'Quiz sans droit', 'active',
+   'tap-quiz-sans-droit');
+
+
+-- ── 14a. LA FORME DU DOCUMENT — les six listes existent ─────
+
+select results_eq(
+  $$select key from pg_catalog.jsonb_each(
+      public.vitrine_public_state('tap-portes') -> 'portes') order by key$$,
+  array['experiences', 'reserver'],
+  'les portes se rangent en DEUX blocs, et cette liste de clés est close');
+
+select results_eq(
+  $$select key from pg_catalog.jsonb_each(
+      public.vitrine_public_state('tap-portes') #> '{portes,reserver}')
+     order by key$$,
+  array['activites', 'files', 'offres'],
+  'le bloc Réserver porte ses TROIS listes, nommées comme les trois pages publiques du module');
+
+-- LES LISTES EXISTENT MÊME VIDES. E n'a aucune fixture de Réserver ni de quiz,
+-- et pourtant sa réponse porte les six clés : c'est ce qui permet à l'écran de
+-- masquer un bloc sans distinguer « pas de file » de « pas de clé ».
+select is(
+  public.vitrine_public_state('tap-traduction') #>> '{portes,reserver,files}',
+  '[]',
+  'une vitrine SANS aucune porte rend quand même la liste, VIDE : la forme du document ne dépend pas de son contenu');
+
+select is(
+  public.vitrine_public_state('tap-traduction') #>> '{portes,experiences,quiz}',
+  '[]',
+  '… et il en va de même du bloc Expériences');
+
+
+-- ── 14b. CHAQUE DRAPEAU, ET SON JUMEAU RETENU ───────────────
+
+select is(
+  (select pg_catalog.string_agg(p ->> 'nom', ', ')
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes')
+         #> '{portes,reserver,activites}') p),
+  'Dégustation',
+  'seule l''activité ACTIVE est annoncée : « Atelier suspendu » existe et ne sort pas');
+
+select is(
+  (select pg_catalog.string_agg(p ->> 'nom', ', ')
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes')
+         #> '{portes,reserver,files}') p),
+  'Comptoir',
+  'seule la file OUVERTE est annoncée : ni « En pause » — qui sert encore ceux qui attendent mais n''accepte plus — ni « Fermée »');
+
+select is(
+  (select pg_catalog.string_agg(p ->> 'nom', ', ')
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes')
+         #> '{portes,reserver,offres}') p),
+  'Tarte du jour',
+  'seule l''offre OUVERTE ET DANS SA FENÊTRE est annoncée : la future, la passée et le brouillon restent dehors');
+
+-- LES DEUX BORNES VOYAGENT AVEC LA PORTE, pour que l'écran puisse écrire
+-- « jusqu'à 18 h » sans un second appel par offre.
+select results_eq(
+  $$select key from pg_catalog.jsonb_each(
+      public.vitrine_public_state('tap-portes')
+        #> '{portes,reserver,offres,0}') order by key$$,
+  array['id', 'nom', 'window_ends_at', 'window_starts_at'],
+  'une porte d''offre porte ses DEUX bornes de retrait, et rien de plus');
+
+select is(
+  (select pg_catalog.string_agg(p ->> 'titre', ', ')
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes')
+         #> '{portes,experiences,quiz}') p),
+  'Quiz du comptoir',
+  'seul le quiz ACTIF est annoncé : celui qui est encore en préparation ne l''est pas');
+
+select is(
+  public.vitrine_public_state('tap-portes')
+    #>> '{portes,experiences,quiz,0,slug}',
+  'tap-quiz-servi',
+  '… et la porte porte le `public_slug`, c''est-à-dire l''adresse de la page, pas l''identifiant interne');
+
+
+-- ── 14c. LE DROIT `quiz`, LE SEUL REDEMANDÉ ─────────────────
+--
+-- H EST SERVIE : c'est la moitié qui rend l'assertion utile. Une vitrine muette
+-- aurait rendu la liste vide pour la mauvaise raison.
+
+select is(public.vitrine_public_state('tap-portes-sans-quiz') ->> 'state', 'ok',
+  'la vitrine sans le droit `quiz` répond normalement — c''est bien le quiz qui est retenu, pas la page');
+
+select is(
+  public.vitrine_public_state('tap-portes-sans-quiz')
+    #>> '{portes,experiences,quiz}',
+  '[]',
+  'un quiz ACTIF reste invisible sans `org_has_module_access(…, ''quiz'')` : le droit `vitrine` ne couvre PAS le quiz');
+
+
+-- ── 14d. LES PORTES NE SONT PAS TRADUISIBLES, ET C'EST CHIFFRÉ ──
+--
+-- G porte quatre portes et UN seul champ traduisible : son accroche. Le jour où
+-- une porte entrerait dans `vitrine_champs_traduisibles`, ce total passerait à
+-- cinq et cette ligne rougirait — ce qui est exactement le but, parce que la
+-- même arithmétique ferait tomber le sélecteur de langue des vitrines E2E.
+
+select is(
+  public.vitrine_public_state('tap-portes')
+    #>> '{lang_coverage,total_champs_traduisibles}',
+  '1',
+  'les quatre portes de G n''ajoutent AUCUN champ traduisible : le dénominateur de la couverture ne bouge pas en VIT-3');
+
+
+-- ── 14e. DOUZE PAR LISTE, ET L'ORDRE PASSE AVANT LA BORNE ───
+--
+-- Quatorze activités de plus, dont le NOM dit le rang. Triées, « Atelier 01 » à
+-- « Atelier 14 » précèdent « Dégustation » : les douze retenues sont donc
+-- connues d'avance, et l'assertion mord sur l'ORDRE autant que sur le compte.
+-- Un `limit` posé sans `order by` dans la sous-requête rendrait douze lignes au
+-- choix du plan — le compte serait vert, la page changerait de contenu d'un
+-- rafraîchissement à l'autre.
+
+insert into public.reservation_activities (organization_id, name, active)
+select 'f1000000-0000-4000-8000-000000001300',
+       'Atelier ' || to_char(g, 'FM00'), true
+  from generate_series(1, 14) g;
+
+select is(
+  pg_catalog.jsonb_array_length(
+    public.vitrine_public_state('tap-portes') #> '{portes,reserver,activites}'),
+  12,
+  'quinze activités actives ne rendent que DOUZE portes : la page reste une page, pas un catalogue');
+
+select is(
+  public.vitrine_public_state('tap-portes') #>> '{portes,reserver,activites,0,nom}',
+  'Atelier 01',
+  '… et les douze retenues sont les douze PREMIÈRES par nom, pas douze au choix du plan');
+
+select is(
+  public.vitrine_public_state('tap-portes') #>> '{portes,reserver,activites,11,nom}',
+  'Atelier 12',
+  '… jusqu''à la douzième exactement : « Atelier 13 », « Atelier 14 » et « Dégustation » tombent au-delà de la borne');
+
+-- LES IDENTIFIANTS SORTENT EN TEXTE. Ce sont des fragments d'URL
+-- (`/reserver/{activityId}`), pas des clés que l'appelant recompose.
+select is(
+  pg_catalog.jsonb_typeof(
+    public.vitrine_public_state('tap-portes') #> '{portes,reserver,files,0,id}'),
+  'string',
+  'les identifiants des portes sortent en TEXTE : ce sont des fragments d''URL');
+
+select is(
+  public.vitrine_public_state('tap-portes') #>> '{portes,reserver,files,0,id}',
+  'f1000000-0000-4000-8000-000000001330',
+  '… et c''est bien l''identifiant de la file ouverte, celui que `/reserver/file/{id}` attend');
 
 
 select * from finish();

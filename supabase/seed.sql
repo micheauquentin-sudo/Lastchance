@@ -1420,9 +1420,34 @@ values (
   '{"couleurs":{"primary":"#7c3aed","secondary":"#f59e0b"},'
   '"polices":{"heading":"elegant","body":"sans"},'
   '"style_cartes":"grille",'
-  '"ordre_blocs":["accroche","cartes","histoire","horaires"]}'::jsonb
+  -- LES DEUX PORTES SONT EN QUEUE D'ORDRE (VIT-3), et il FAUT les y écrire :
+  -- `ordre_blocs` est une permutation PARTIELLE, donc un bloc absent de la
+  -- liste est un bloc MASQUÉ. Cette vitrine portait un ordre explicite depuis
+  -- VIT-1a ; sans cette ligne, `reserver` et `experiences` en seraient tombés
+  -- par omission — les portes seraient bien rendues par la RPC et invisibles à
+  -- l'écran, exactement le mode d'échec qui ressemble à un succès.
+  --
+  -- EN QUEUE et non en tête : la carte reste ce que le visiteur vient lire, les
+  -- portes sont ce qu'il découvre ensuite.
+  '"ordre_blocs":["accroche","cartes","histoire","horaires",'
+  '"reserver","experiences"]}'::jsonb
 )
 on conflict (id) do nothing;
+
+-- PAS D'`update` DE RATTRAPAGE ICI, contrairement à la configuration d'attente
+-- active de RES-4 — et c'est un arbitrage, pas un oubli. L'insert ci-dessus
+-- porte `on conflict (id) do nothing` : sur une base déjà semée SANS reset, il
+-- ne fait rien et cette vitrine garde son ordre à quatre blocs. Le rattraper par
+-- `update` aurait déclenché `vitrine_settings_touch_updated_at`, donc AVANCÉ
+-- `updated_at` — et les trois traductions de réglages, elles aussi protégées par
+-- `on conflict do nothing`, seraient restées à leur ancien `version_source` :
+-- PÉRIMÉES. La vitrine E2E serait passée sous le seuil de 95 %, le sélecteur de
+-- langue aurait disparu, et `vitrine.test.sql` aurait rougi sur une base semée
+-- deux fois. Le remède aurait coûté plus cher que le mal.
+--
+-- LE CHEMIN NOMINAL EST `db reset` PUIS SEED, ensemble, et c'est ce que fait
+-- `scripts/verif-complete.sh` : sur une base fraîche, l'ordre à six blocs est
+-- posé par l'insert lui-même.
 
 insert into public.vitrine_menus (id, organization_id, nom, ordre, active) values
   ('e2f10000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',

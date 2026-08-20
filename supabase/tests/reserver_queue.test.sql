@@ -754,6 +754,60 @@ select is(
   'unavailable',
   'PUB-4 une file inconnue rend `unavailable`');
 
+-- ── LE DROIT `vitrine` GARDE LA DÉCOUVERTE, JAMAIS LA POSSESSION (VIT-3) ──
+--
+-- Dette de la revue L6, échue au lot L13 : jusque-là cette RPC répondait à qui
+-- que ce soit sur sa branche `not_in_queue`, droit éteint compris. Tant qu'une
+-- file ne se découvrait que par un QR imprimé sur place, la surface était
+-- théorique ; VIT-3 publie les files ouvertes depuis la Vitrine, et attendre
+-- l'abus pour poser la garde serait revenu à ouvrir la porte d'abord.
+--
+-- LA MÊME EMPREINTE SUR LES DEUX FILES, et c'est ce qui rend la paire probante :
+-- `bb` n'est dans aucune des deux, elle reçoit `not_in_queue` chez A (PUB-3
+-- ci-dessus) et `unavailable` chez C. La seule chose qui diffère est le droit.
+select is(
+  (public.queue_public_state(
+    '4f11e000-0000-4000-8000-000000000371', repeat('bb', 32)))->>'state',
+  'unavailable',
+  'PUB-4b sans le droit `vitrine`, un visiteur qui n''est PAS dans la file reçoit le mot INDISTINCT de la file inconnue');
+
+-- ET LE MOT EST VRAIMENT INDISTINCT : la réponse ne porte QUE `state`. Rendre
+-- `queue_name` ou `waiting_count` à côté d'un `unavailable` aurait fait de ce
+-- refus un oracle plus bavard que la file inconnue qu'il imite.
+select is(
+  (select pg_catalog.string_agg(t.k, ',' order by t.k)
+     from pg_catalog.jsonb_object_keys(
+       public.queue_public_state(
+         '4f11e000-0000-4000-8000-000000000371', repeat('bb', 32))) as t(k)),
+  'state',
+  'PUB-4c … et ce refus ne dit RIEN d''autre : ni le nom de la file, ni le nombre de personnes qui attendent');
+
+-- L'AUTRE MOITIÉ, ET C'EST ELLE QUI PORTE LA DÉCISION. Quelqu'un qui attend
+-- DEBOUT dans le magasin ne perd pas son écran parce qu'un abonnement s'est
+-- arrêté ce matin-là : « lire son propre rang n'est pas un acte commercial »
+-- (en-tête de 20261005120000) reste vrai, droit éteint compris.
+--
+-- L'ENTRÉE EST INSÉRÉE EN DIRECT, et il le faut : `queue_join` refuse sur cette
+-- organisation (JOIN-18), donc aucun chemin de RPC ne peut asseoir quelqu'un
+-- dans une file sans droit. C'est exactement la situation réelle qu'on veut
+-- reproduire — le droit s'est éteint APRÈS l'arrivée du client.
+insert into public.reservation_queue_entries
+  (queue_id, organization_id, player_key_hash, display_name)
+values ('4f11e000-0000-4000-8000-000000000371',
+        '4f11e000-0000-4000-8000-00000000000c', repeat('cc', 32), 'Dominique');
+
+select is(
+  (public.queue_public_state(
+    '4f11e000-0000-4000-8000-000000000371', repeat('cc', 32)))->>'state',
+  'in_queue',
+  'PUB-4d celui qui EST dans la file lit son état même sans le droit : le droit garde la DÉCOUVERTE, jamais la possession');
+
+select is(
+  (public.queue_public_state(
+    '4f11e000-0000-4000-8000-000000000371', repeat('cc', 32)))->>'position',
+  '1',
+  'PUB-4e … et son RANG avec, parce que c''est tout ce qu''il est venu chercher');
+
 -- AUCUNE IDENTITÉ D'AUTRUI. Le document ne contient ni prénom, ni empreinte, ni
 -- adresse — les siennes comprises.
 select ok(
