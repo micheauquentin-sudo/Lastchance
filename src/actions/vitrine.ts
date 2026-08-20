@@ -2,12 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { reportError } from "@/lib/monitoring";
+import { rateLimit, rateLimitBucket, RATE_LIMITS } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toJson } from "@/lib/supabase/json";
 import type { ActionResult } from "@/lib/utils";
 import {
-  cheminVitrine,
+  cheminsPublicsVitrine,
   mapSetVitrineSlug,
   VITRINE_ORDRE_MAX,
   VITRINE_PUBLIQUE_OUVERTE,
@@ -73,6 +74,41 @@ const RATTACHEMENT_INTROUVABLE =
 
 const CHEMIN_DASHBOARD = "/dashboard/vitrine";
 
+/** Le refus du seau de `setVitrineSlug` — il DATE la réessayabilité. */
+const TROP_D_ESSAIS_SLUG =
+  "Trop de changements d'adresse en peu de temps. Réessayez dans une heure.";
+
+/**
+ * Le refus de suppression d'une carte non vide, RECONSTRUIT plutôt que relayé.
+ *
+ * ── CE QUE LA REVUE L10 A DEMANDÉ DE FERMER ──
+ *
+ * L'action renvoyait `error.message` TEL QUEL à l'écran. Le message du trigger
+ * est écrit pour le commerçant, mais c'est du texte de BASE DE DONNÉES : il
+ * n'est borné ni en longueur ni en contenu, et le code `23503` ne vient pas
+ * seulement de ce trigger-là — une violation de FK ordinaire y aurait fait
+ * remonter un nom de contrainte, de table et de schéma, c'est-à-dire de la
+ * structure interne, dans une page rendue à un utilisateur.
+ *
+ * ── CE QU'ON GARDE QUAND MÊME : LE COMPTE ──
+ *
+ * « Videz-la ou désactivez-la » sans dire COMBIEN ne dit rien. On extrait donc
+ * le seul chiffre du message — au plus quatre chiffres, rien d'autre ne
+ * traverse — et on réécrit la phrase ICI. Ce qui sort est entièrement de nous ;
+ * ce qui vient de la base tient dans un entier.
+ *
+ * Le message brut continue d'aller au monitoring, où il a sa place.
+ */
+const COMPTE_RUBRIQUES = /porte encore (\d{1,4}) rubrique/;
+const CARTE_NON_VIDE_SANS_COMPTE =
+  "Suppression refusée : cette carte porte encore des rubriques. Videz-la ou désactivez-la.";
+
+function messageCarteNonVide(brut: string): string {
+  const trouve = COMPTE_RUBRIQUES.exec(brut);
+  if (!trouve) return CARTE_NON_VIDE_SANS_COMPTE;
+  return `Suppression refusée : cette carte porte encore ${Number(trouve[1])} rubrique(s). Videz-la ou désactivez-la.`;
+}
+
 /**
  * Les trois refus de `set_vitrine_slug`, plus l'illisible — un message chacun.
  *
@@ -94,20 +130,31 @@ const MESSAGES_SLUG: Record<
 };
 
 /**
- * Revalide ce qui a pu changer — le tableau de bord toujours, la page publique
- * seulement si elle est servie.
+ * Revalide ce qui a pu changer — le tableau de bord, ET LES DEUX PAGES
+ * PUBLIQUES.
  *
- * ── POURQUOI LE PUBLIC EST CONDITIONNEL, ET PAS PAR PARESSE ──
+ * ── POURQUOI LA PURGE PUBLIQUE N'EST PLUS OPTIONNELLE (L11) ──
  *
- * Tant que `VITRINE_PUBLIQUE_OUVERTE` est faux, AUCUNE page publique n'existe :
- * `/v/[slug]` rend 404 et `loadVitrinePublicContext` refuse avant toute
- * lecture — rien n'est en cache, il n'y a rien à purger. Payer une lecture du
- * slug à chaque geste éditorial pour revalider une adresse que personne ne sert
- * aurait ajouté une requête par clic, et le jour de l'ouverture, la ligne à
- * retirer aurait été celle qui rend le code correct.
+ * La page `/v/{slug}` est servie en ISR (60 s). Sans purge, le commerçant qui
+ * corrige un prix, grise un plat ou renomme une carte reste devant sa PROPRE
+ * vitrine inchangée jusqu'à la fin de la fenêtre — et le geste qu'il vient de
+ * faire, dont l'écran d'édition lui a confirmé le succès, semble n'avoir servi à
+ * rien. Une requête de plus par geste éditorial (la lecture du slug) achète la
+ * cohérence immédiate de ce que le commerçant vient d'écrire.
  *
- * Quand le drapeau tombera (L11), cette fonction lira le slug et purgera
- * `/v/{slug}`. `slugConnu` évite la lecture quand l'appelant l'a déjà en main.
+ * LES DEUX LANGUES, pas seulement la française : `cheminsPublicsVitrine` dérive
+ * la liste de `VITRINE_LANGUES`. Ne purger que `/v/{slug}` aurait laissé la page
+ * anglaise servir l'ancien prix — l'incohérence la plus difficile à voir, parce
+ * que c'est celle que le commerçant francophone ne regarde jamais.
+ *
+ * ── LE DRAPEAU RESTE TESTÉ, ET IL SERT ENCORE ──
+ *
+ * `VITRINE_PUBLIQUE_OUVERTE` refermé, aucune page publique n'existe : rien n'est
+ * en cache, il n'y a rien à purger, et cette lecture du slug serait payée pour
+ * rien à chaque clic. La garde n'est donc pas un vestige — c'est ce qui rend
+ * l'interrupteur d'urgence gratuit.
+ *
+ * `slugConnu` évite la lecture quand l'appelant l'a déjà en main.
  */
 async function revaliderVitrine(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -126,7 +173,10 @@ async function revaliderVitrine(
       .maybeSingle();
     slug = data?.slug ?? null;
   }
-  if (slug) revalidatePath(cheminVitrine(slug));
+  // Pas d'adresse = pas de page publique : `set_vitrine_slug` est le seul geste
+  // qui fasse naître la ligne, et il passe son slug en `slugConnu`.
+  if (!slug) return;
+  for (const chemin of cheminsPublicsVitrine(slug)) revalidatePath(chemin);
 }
 
 /**
@@ -186,6 +236,16 @@ function rangSuivant(dernier: number | null | undefined): number {
  *
  * Les trois refus restent DISTINCTS parce que l'écran doit les distinguer :
  * « mal formé » n'envoie pas le commerçant au même endroit que « déjà pris ».
+ *
+ * ── LE SEUL GESTE DE CE FICHIER QUI PORTE UN SEAU (revue L10) ──
+ *
+ * Les autres actions écrivent des lignes du locataire, bornées par la RLS et par
+ * ce qu'un commerçant peut saisir. Celle-ci est différente sur trois points :
+ * elle passe par le `service_role`, elle ÉCRIT UNE LIGNE D'AUDIT à chaque appel,
+ * et son refus `slug_taken` répond une question sur l'espace de noms GLOBAL —
+ * bouclée, elle dirait quelles adresses sont déjà prises chez les voisins. Le
+ * seau est consommé APRÈS la garde, donc sur une clé qu'aucun tiers ne peut
+ * entamer : voir `RATE_LIMITS.vitrineSlug` pour l'arbitrage ADR-032.
  */
 export async function setVitrineSlug(
   _prev: ActionResult<SetVitrineSlugResult> | null,
@@ -200,6 +260,17 @@ export async function setVitrineSlug(
 
   const garde = await gardeEditeurVitrine();
   if (!garde.ok) return { ok: false, error: garde.error };
+
+  // APRÈS la garde : la clé est celle du locataire authentifié, jamais une
+  // valeur venue du navigateur — un seau posé avant aurait été entamable par
+  // n'importe qui, et refuser sur une telle clé est exactement l'interrupteur
+  // qu'ADR-032 interdit.
+  const autorise = await rateLimit(
+    rateLimitBucket("vitrine:slug", garde.organizationId),
+    RATE_LIMITS.vitrineSlug,
+    { failClosed: true },
+  );
+  if (!autorise) return { ok: false, error: TROP_D_ESSAIS_SLUG };
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("set_vitrine_slug", {
@@ -225,6 +296,11 @@ export async function setVitrineSlug(
   }
 
   const supabase = await createClient();
+  // LE NOUVEAU SLUG SEULEMENT. L'ANCIEN garde ses pages en cache au plus une
+  // fenêtre ISR (60 s), puis se résout en `unavailable` donc en 404 : la RPC ne
+  // connaît plus cette adresse. Le contrat de `set_vitrine_slug` ne rend pas le
+  // slug précédent, et le lire AVANT l'appel aurait ajouté un aller-retour à
+  // chaque changement pour raccourcir d'une minute une page qui n'existe plus.
   await revaliderVitrine(supabase, garde.organizationId, resultat.slug);
   return { ok: true, data: resultat };
 }
@@ -485,10 +561,10 @@ export async function updateVitrineCarte(
  * Supprime une carte VIDE.
  *
  * Le trigger `vitrine_menus_refuse_suppression_non_vide` refuse une carte qui
- * porte encore des rubriques et NOMME LE COMPTE dans son message. On relaie ce
- * message tel quel : il dit « videz-la ou désactivez-la » avec le nombre exact,
- * et le remplacer par un générique aurait retiré au commerçant la seule
- * information utile — combien.
+ * porte encore des rubriques et NOMME LE COMPTE dans son message. On garde ce
+ * compte — le remplacer par un générique aurait retiré au commerçant la seule
+ * information utile — mais on ne relaie PAS le texte de la base : il est
+ * réécrit ici autour du seul chiffre extrait (`messageCarteNonVide`).
  */
 export async function deleteVitrineCarte(
   _prev: ActionResult | null,
@@ -514,9 +590,9 @@ export async function deleteVitrineCarte(
   if (error) {
     reportError("vitrine.delete-carte", error.message);
     if (error.code === "23503") {
-      // Le message du trigger porte le compte de rubriques : il est écrit pour
-      // le commerçant, pas pour les journaux.
-      return { ok: false, error: `Suppression refusée : ${error.message}` };
+      // Le compte de rubriques est la seule information utile du refus ; il est
+      // EXTRAIT, jamais relayé — voir `messageCarteNonVide`.
+      return { ok: false, error: messageCarteNonVide(error.message) };
     }
     return { ok: false, error: GENERIC_ERROR };
   }

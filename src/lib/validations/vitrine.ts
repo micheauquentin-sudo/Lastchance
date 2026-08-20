@@ -104,6 +104,29 @@ export const setVitrineSlugSchema = z.object({
   slug: slugVitrineSchema,
 });
 
+// ── LA LANGUE DEMANDÉE (VIT-1b) ──────────────────────────────
+
+/**
+ * La langue d'une page publique : `"en"`, ou rien.
+ *
+ * ── POURQUOI UN LITTÉRAL ET NON UN `enum` DES DEUX LANGUES ──
+ *
+ * `"fr"` n'est pas une valeur qu'on DEMANDE : c'est l'absence de demande, et
+ * c'est le segment d'URL qui n'existe pas (`/v/{slug}`, sans suffixe). Admettre
+ * `"fr"` ici aurait créé une seconde façon d'écrire le défaut, donc un état de
+ * plus à faire retomber au même endroit.
+ *
+ * ── CE QU'IL NE FAIT PAS : IL NE REFUSE RIEN ──
+ *
+ * Une langue inconnue (`de`, `xx`, une chaîne vide) n'est PAS une erreur de
+ * page : elle vaut `undefined`, donc le français — même arbitrage que la RPC,
+ * qui replie silencieusement. Lever aurait transformé une adresse bricolée en
+ * page d'erreur, et refuser aurait donné au visiteur un moyen de distinguer les
+ * langues configurées des autres. Les appelants utilisent donc `safeParse` et
+ * lisent `success ? data : undefined`.
+ */
+export const vitrineLangSchema = z.literal("en").optional();
+
 // ── L'IDENTITÉ ET LE THÈME ───────────────────────────────────
 
 const HEX = /^#[0-9a-fA-F]{6}$/;

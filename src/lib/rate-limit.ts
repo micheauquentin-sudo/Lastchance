@@ -684,6 +684,27 @@ export const RATE_LIMITS = {
    *  À SEC, ON N'ENVOIE PAS ET LA RÉSERVATION RESTE VALIDE : le code est déjà à
    *  l'écran, l'email n'a jamais été la preuve. */
   reserverEmail: { limit: 3, windowSeconds: 3600 },
+  /** POSE ou CHANGEMENT de l'adresse publique d'une vitrine, par ORGANISATION —
+   *  `failClosed`, 20 par heure.
+   *
+   *  CLÉ NON PUBLIQUE, et c'est ce qui la rend compatible avec ADR-032 : le
+   *  seau est consommé APRÈS `gardeEditeurVitrine`, donc seul un `owner` ou un
+   *  `editor` de CETTE organisation peut l'entamer. Il n'y a pas de tiers à qui
+   *  l'ouvrir : la saturer ne peut gêner que ses propres collègues, jamais un
+   *  visiteur ni un autre locataire. Le `failClosed` interdit sur clé partagée
+   *  vise l'interrupteur qu'un inconnu allume ; celui-ci n'a pas d'inconnu.
+   *
+   *  L'ORGANISATION PLUTÔT QUE L'OPÉRATEUR : ce que ce geste consomme est une
+   *  ressource du LOCATAIRE (`set_vitrine_slug` écrit une ligne d'audit à chaque
+   *  appel, et l'unicité du slug est globale). Le porter sur `organisation +
+   *  user.id` aurait multiplié le budget par le nombre d'éditeurs pour borner
+   *  une ressource qui, elle, ne se multiplie pas.
+   *
+   *  20/3600 s : chercher une adresse libre se fait par essais — « déjà prise »,
+   *  « réservée » — et chaque essai compte. Vingt suffisent largement à trouver,
+   *  et bornent la boucle qui énumérerait le vocabulaire réservé ou sonderait
+   *  quelles adresses sont déjà prises. */
+  vitrineSlug: { limit: 20, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */
