@@ -642,16 +642,31 @@ select ok(has_table_privilege('authenticated', 'public.vitrine_items', 'DELETE')
 -- elle ne vérifie ni le droit ni la publication, c'est le travail de ses deux
 -- appelantes, et l'ouvrir aurait donné le catalogue entier de n'importe quel
 -- locataire à qui connaît un UUID d'organisation.
-select ok(has_function_privilege('service_role', 'public.vitrine_public_state(text)', 'EXECUTE'), 'server can render a public storefront');
-select ok(not has_function_privilege('anon', 'public.vitrine_public_state(text)', 'EXECUTE'), 'anon cannot call the storefront RPC directly');
-select ok(not has_function_privilege('authenticated', 'public.vitrine_public_state(text)', 'EXECUTE'), 'merchant session cannot probe other storefronts through the public RPC');
+select ok(has_function_privilege('service_role', 'public.vitrine_public_state(text,text)', 'EXECUTE'), 'server can render a public storefront');
+select ok(not has_function_privilege('anon', 'public.vitrine_public_state(text,text)', 'EXECUTE'), 'anon cannot call the storefront RPC directly');
+select ok(not has_function_privilege('authenticated', 'public.vitrine_public_state(text,text)', 'EXECUTE'), 'merchant session cannot probe other storefronts through the public RPC');
 select ok(has_function_privilege('service_role', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'server can build the storefront editor view');
 select ok(not has_function_privilege('anon', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'anon cannot read unpublished storefronts');
 select ok(not has_function_privilege('authenticated', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'merchant session cannot read another tenant''s draft storefront');
 select ok(has_function_privilege('service_role', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'server can claim a public address, with an actor and an audit line');
 select ok(not has_function_privilege('authenticated', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'merchant session cannot claim a public address without the server guard');
 select ok(not has_function_privilege('anon', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'anon cannot squat public addresses');
-select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json(uuid,boolean)', 'EXECUTE'), 'the catalogue tree is granted to nobody: it checks neither entitlement nor publication');
+select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json(uuid,boolean,text)', 'EXECUTE'), 'the catalogue tree is granted to nobody: it checks neither entitlement nor publication');
+-- ── VIT-1b : le calque de traduction, la table la plus fermée des cinq ──
+-- Aucune policy, aucun privilège hors `service_role` : ni le commerçant ni le
+-- visiteur ne lisent ces lignes, et l'écriture passe par une RPC qui vérifie —
+-- PAR TYPE — que la cible appartient bien à l'organisation. `cible_id` ne porte
+-- aucune FK (quatre tables cibles), donc rien d'autre dans le schéma ne peut le
+-- garantir.
+select ok(not has_table_privilege('anon', 'public.vitrine_translations', 'SELECT'), 'anon cannot read storefront translations');
+select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'SELECT'), 'merchant session cannot read translations directly: RPC only');
+select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'INSERT'), 'merchant session cannot write a translation past the ownership check');
+select ok(has_function_privilege('service_role', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'server can store one translated field, audited');
+select ok(not has_function_privilege('authenticated', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'merchant session cannot bypass the server action to publish English');
+select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'anon cannot store translations');
+select ok(has_function_privilege('service_role', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'server can report translation progress');
+select ok(not has_function_privilege('anon', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'anon cannot probe translation progress across tenants');
+select ok(not has_function_privilege('service_role', 'public.vitrine_champs_traduisibles(uuid,boolean)', 'EXECUTE'), 'the translatable-field definition is granted to nobody: it checks neither entitlement nor publication');
 -- LES TROIS VALIDATEURS SONT EXÉCUTABLES PAR LE COMMERÇANT, et c'est l'inverse
 -- de ce qui était écrit ici. Ces deux lignes affirmaient « granted to nobody
 -- (checks evaluate without a privilege check) » — la même phrase fausse que

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cheminsPublicsVitrine,
   cheminVitrine,
+  cheminVitrineLangue,
   estSlugVitrineReserve,
   formeSlugVitrineValide,
   libelleAllergene,
@@ -14,6 +16,8 @@ import {
   mapVitrineDashboardState,
   mapVitrinePublicState,
   normaliserSlugVitrine,
+  selecteurLanguesOuvert,
+  SEUIL_COUVERTURE_SELECTEUR,
   urlVitrine,
   VITRINE_PUBLIQUE_OUVERTE,
 } from "./vitrine";
@@ -29,13 +33,13 @@ import {
  */
 
 describe("le drapeau serveur", () => {
-  it("la Vitrine publique est FERMÉE tant que L11 n'a pas livré l'anglais", () => {
-    // ÉPINGLÉ, et volontairement pénible à changer : ce test est la trace écrite
-    // d'une décision produit. Le passer au vert après une ouverture demande de
-    // le modifier — c'est-à-dire d'écrire, dans un commit, qu'on a bien voulu
-    // ouvrir. C'est exactement ce qu'un drapeau d'environnement ne sait pas
-    // faire.
-    expect(VITRINE_PUBLIQUE_OUVERTE).toBe(false);
+  it("la Vitrine publique est OUVERTE depuis L11", () => {
+    // ÉPINGLÉ, et volontairement pénible à changer dans LES DEUX SENS : ce test
+    // est la trace écrite d'une décision produit. L'ouverture a demandé de le
+    // modifier — c'est-à-dire d'écrire, dans un commit, qu'on a bien voulu
+    // ouvrir — et une fermeture d'urgence le demandera aussi. C'est exactement
+    // ce qu'un drapeau d'environnement ne sait pas faire.
+    expect(VITRINE_PUBLIQUE_OUVERTE).toBe(true);
   });
 });
 
@@ -47,13 +51,60 @@ describe("les libellés — un slug inconnu se rend lui-même", () => {
     expect(libelleStyleCartes("magazine")).toBe("Magazine");
   });
 
+  it("le français est le DÉFAUT du paramètre de langue", () => {
+    // Les appelants d'avant L11 n'ont pas été touchés : `libelleBadge(x)` rend
+    // toujours du français.
+    expect(libelleBadge("fait_maison")).toBe(libelleBadge("fait_maison", "fr"));
+    expect(libelleAllergene("sulfites")).toBe(
+      libelleAllergene("sulfites", "fr"),
+    );
+  });
+
+  it("l'anglais rend le vocabulaire de plateforme, émoji INCHANGÉ", () => {
+    // Un pictogramme n'a pas de langue : le garder identique fait que le badge
+    // occupe la même place et se reconnaît du même coup d'œil.
+    expect(libelleBadge("fait_maison", "en")).toBe("🏠 Homemade");
+    expect(libelleBadge("epice", "en")).toBe("🌶️ Spicy");
+    // Les termes de l'annexe II elle-même, pas des traductions libres.
+    expect(libelleAllergene("fruits_a_coque", "en")).toBe("Nuts");
+    expect(libelleAllergene("crustaces", "en")).toBe("Crustaceans");
+  });
+
   it("une valeur retirée du vocabulaire rend son slug, jamais du vide", () => {
     // Une case vide sur une fiche est un défaut que personne ne sait expliquer ;
-    // le slug, lui, se cherche.
+    // le slug, lui, se cherche. Vrai DANS LES DEUX LANGUES : l'anglais n'a pas
+    // de repli vers le français, qui aurait affiché un mot français sur une page
+    // anglaise sans que personne sache d'où il vient.
     expect(libelleBadge("licorne")).toBe("licorne");
+    expect(libelleBadge("licorne", "en")).toBe("licorne");
     expect(libelleAllergene("licorne")).toBe("licorne");
+    expect(libelleAllergene("licorne", "en")).toBe("licorne");
     expect(libelleBloc("licorne")).toBe("licorne");
     expect(libelleStyleCartes("licorne")).toBe("licorne");
+  });
+});
+
+describe("le seuil du sélecteur de langue — la décision est ICI, pas en SQL", () => {
+  it("95 % : la base compte, l'application tranche", () => {
+    // Épinglé : la migration 20261012120000 rend `total_champs_traduisibles` et
+    // `traduits_frais` et s'arrête là. Ce chiffre est l'arbitrage produit, et il
+    // se règle sans migration.
+    expect(SEUIL_COUVERTURE_SELECTEUR).toBe(0.95);
+  });
+
+  it("s'ouvre AU seuil, se ferme juste en dessous", () => {
+    // 19/20 = 95 % pile : le sélecteur s'offre.
+    expect(selecteurLanguesOuvert({ total: 20, frais: 19 })).toBe(true);
+    // 18/20 = 90 % : il ne s'offre pas.
+    expect(selecteurLanguesOuvert({ total: 20, frais: 18 })).toBe(false);
+    expect(selecteurLanguesOuvert({ total: 100, frais: 95 })).toBe(true);
+    expect(selecteurLanguesOuvert({ total: 100, frais: 94 })).toBe(false);
+  });
+
+  it("rien à traduire n'est PAS une couverture parfaite", () => {
+    // 0/0 ferait 100 % par convention arithmétique. Proposer « English » sur une
+    // page qui rendrait exactement les mêmes mots est une promesse creuse.
+    expect(selecteurLanguesOuvert({ total: 0, frais: 0 })).toBe(false);
   });
 });
 
@@ -63,6 +114,22 @@ describe("les chemins et le slug", () => {
     expect(urlVitrine("le-comptoir", "https://app.test/")).toBe(
       "https://app.test/v/le-comptoir",
     );
+  });
+
+  it("le français n'a PAS de segment de langue, l'anglais en a un", () => {
+    // L'adresse est IMPRIMÉE : `/fr` l'aurait allongée et aurait créé deux URL
+    // pour la même page française.
+    expect(cheminVitrineLangue("le-comptoir", "fr")).toBe("/v/le-comptoir");
+    expect(cheminVitrineLangue("le-comptoir", "en")).toBe("/v/le-comptoir/en");
+  });
+
+  it("les chemins publics à purger couvrent TOUTES les langues", () => {
+    // Dérivés de `VITRINE_LANGUES` : une troisième langue serait sinon servie
+    // par un cache que plus personne ne purge.
+    expect(cheminsPublicsVitrine("le-comptoir")).toEqual([
+      "/v/le-comptoir",
+      "/v/le-comptoir/en",
+    ]);
   });
 
   it("normalise comme le SQL : minuscules et détourage, RIEN D'AUTRE", () => {
@@ -209,7 +276,7 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       liens: {
         google_review_url: "",
         instagram_url: null,
-        tiktok_url: "https://tt",
+        tiktok_url: "https://www.tiktok.com/@lecomptoir",
       },
       cartes: [],
     });
@@ -217,9 +284,137 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
     if (etat.state !== "ok") return;
     expect(etat.identite.nom).toBe("Le Comptoir");
     expect(etat.identite.theme.style_cartes).toBe("grille");
-    // `''` est RENDU TEL QUEL : c'est l'écran qui décide de ne rien afficher.
-    expect(etat.liens.google_review_url).toBe("");
+    // `''` (« non renseigné ») tombe en `null` comme toute valeur que la liste
+    // blanche refuse : l'écran filtrait déjà les deux de la même façon.
+    expect(etat.liens.google_review_url).toBeNull();
     expect(etat.liens.instagram_url).toBeNull();
+    expect(etat.liens.tiktok_url).toBe("https://www.tiktok.com/@lecomptoir");
+  });
+
+  it("un lien sortant hors liste blanche ou non-https DISPARAÎT, en silence", () => {
+    // MOYEN 3 de la revue L11 : ces trois valeurs partent en `href` sur une page
+    // publique. La liste blanche n'était tenue qu'à l'écriture — une valeur
+    // écrite avant elle, ou par un chemin qui l'ignore, atteignait le visiteur.
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {
+        // Hôte hors liste blanche : le patron même de la redirection ouverte.
+        google_review_url: "https://phishing.test/avis",
+        // Bon hôte, mauvais schéma.
+        instagram_url: "http://instagram.com/lecomptoir",
+        // Bon hôte, mais identifiants dans l'URL : l'hôte réel est masqué dans
+        // la barre d'adresse du visiteur.
+        tiktok_url: "https://qui:quoi@www.tiktok.com/@lecomptoir",
+      },
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    // REPLI MUET : `state` reste « ok », la vitrine s'affiche, seuls les liens
+    // manquent. Personne n'attend un message d'erreur sur une lecture publique.
+    expect(etat.liens).toEqual({
+      google_review_url: null,
+      instagram_url: null,
+      tiktok_url: null,
+    });
+  });
+
+  it("lit la langue SERVIE, la couverture et le verdict du seuil", () => {
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      lang: "en",
+      lang_coverage: {
+        lang: "en",
+        total_champs_traduisibles: 20,
+        traduits_frais: 19,
+      },
+      identite: {},
+      liens: {},
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    expect(etat.lang).toBe("en");
+    // Les clés de la base (`total_champs_traduisibles`) deviennent celles de
+    // l'application, et la clé `lang` du document est ignorée : il n'y a qu'une
+    // langue traduisible.
+    expect(etat.langCoverage).toEqual({ total: 20, frais: 19 });
+    // 95 % pile : le sélecteur s'offre, et il est tranché ICI plutôt qu'à
+    // l'écran — deux écrans auraient sinon deux réponses.
+    expect(etat.selecteurLangues).toBe(true);
+  });
+
+  it("juste sous le seuil, le sélecteur ne s'offre pas", () => {
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      lang: "fr",
+      lang_coverage: { total_champs_traduisibles: 20, traduits_frais: 18 },
+      identite: {},
+      liens: {},
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    // LE COMPTE EST RENDU SUR LA PAGE FRANÇAISE AUSSI : c'est là que l'écran
+    // décide d'offrir l'anglais.
+    expect(etat.lang).toBe("fr");
+    expect(etat.selecteurLangues).toBe(false);
+  });
+
+  it("une langue inconnue ou absente vaut le FRANÇAIS, jamais elle-même", () => {
+    const lire = (lang: unknown) =>
+      mapVitrinePublicState({
+        state: "ok",
+        slug: "x-y-z",
+        lang,
+        identite: {},
+        liens: {},
+        cartes: [],
+      });
+    for (const lang of ["de", "EN", "", 42, null, undefined]) {
+      const etat = lire(lang);
+      if (etat.state !== "ok") throw new Error("état inattendu");
+      // Repli FERMÉ, comme la RPC : un document d'avant L11 rend une page
+      // française cohérente plutôt qu'un attribut de langue inventé.
+      expect(etat.lang).toBe("fr");
+    }
+  });
+
+  it("une couverture illisible ou incohérente n'ouvre JAMAIS le sélecteur", () => {
+    const lire = (lang_coverage: unknown) =>
+      mapVitrinePublicState({
+        state: "ok",
+        slug: "x-y-z",
+        lang_coverage,
+        identite: {},
+        liens: {},
+        cartes: [],
+      });
+
+    // Absente, illisible : zéro, donc fermé.
+    for (const brut of [undefined, null, "beaucoup", []]) {
+      const etat = lire(brut);
+      if (etat.state !== "ok") throw new Error("état inattendu");
+      expect(etat.langCoverage).toEqual({ total: 0, frais: 0 });
+      expect(etat.selecteurLangues).toBe(false);
+    }
+
+    // `frais > total` est IMPOSSIBLE côté SQL (le `left join` part des champs
+    // traduisibles) : ce cas est celui du document bricolé, et il ne doit pas
+    // allumer le sélecteur sur une vitrine non traduite.
+    const forge = lire({ total_champs_traduisibles: 2, traduits_frais: 99 });
+    if (forge.state !== "ok") throw new Error("état inattendu");
+    expect(forge.langCoverage).toEqual({ total: 2, frais: 2 });
+
+    // Un total négatif ne descend pas sous zéro.
+    const negatif = lire({
+      total_champs_traduisibles: -5,
+      traduits_frais: -5,
+    });
+    if (negatif.state !== "ok") throw new Error("état inattendu");
+    expect(negatif.langCoverage).toEqual({ total: 0, frais: 0 });
+    expect(negatif.selecteurLangues).toBe(false);
   });
 
   it("un nom illisible ne rend jamais un titre vide", () => {

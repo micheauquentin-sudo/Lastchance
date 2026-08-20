@@ -1474,3 +1474,281 @@ values
    null, '4 €',
    array['nouveau', 'fait_maison']::text[], array[]::text[], true, 2)
 on conflict (id) do nothing;
+
+-- ── Vitrine — TRADUCTIONS anglaises, COUVERTURE 100 % (VIT-1b) ──────
+--
+-- DIX-NEUF LIGNES, C'EST-À-DIRE TOUS les champs traduisibles de cette vitrine :
+-- accroche + histoire + horaires des réglages (3), les deux noms de cartes (2),
+-- les trois noms de rubriques (3), et les noms et descriptions NON NULLES des
+-- six fiches (11 — « Limonade artisanale » n'a pas de description, elle ne
+-- compte donc pas). Toutes FRAÎCHES.
+--
+-- ── POURQUOI PAS UNE SEULE PÉRIMÉE ICI, ALORS QUE C'EST LE COMPORTEMENT
+--    PROPRE À CE LOT ──
+--
+-- Parce que la règle de produit est « sélecteur de langue si la couverture
+-- atteint 95 % », et que 18 fraîches sur 19 font 94,7 % : une seule ligne
+-- périmée dans ce jeu de données ferait passer la vitrine E2E SOUS le seuil, et
+-- le sélecteur disparaîtrait de l'écran — par accident d'arithmétique, pas par
+-- décision. Un E2E ne pourrait alors plus observer le cas nominal, qui est
+-- justement celui qu'il doit garder.
+--
+-- LA PÉREMPTION RESTE PROUVÉE, et mieux qu'ici : `vitrine.test.sql` §12e la
+-- FABRIQUE — il pose une traduction fraîche, modifie sa cible, et vérifie que le
+-- français ressort. Une donnée semée périmée d'avance prouve moins : elle ne
+-- montre pas le trigger `touch_updated_at` en train de la périmer.
+--
+-- `version_source` EST LU DANS LA CIBLE, jamais écrit en dur : recopier `now()`
+-- aurait produit une fraîcheur qui dépend de l'ordre des transactions du
+-- fichier, et une couverture qui vacille d'un `db reset` à l'autre.
+--
+-- L'ANGLAIS EST ÉCRIT À LA MAIN, sobre, et il traduit VRAIMENT — c'est ce
+-- qu'un écran de démonstration doit montrer. Les noms propres n'en sont pas
+-- exemptés : « Côtes-du-Rhône » est son propre rendu anglais, et l'appellation
+-- doit quand même porter sa ligne, sinon la couverture ne peut pas atteindre
+-- 100 % sur une carte des vins.
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, s.organization_id, 'settings', s.id, 'en', v.champ,
+       v.texte, s.updated_at
+  from public.vitrine_settings s
+  cross join (values
+    ('e2f10000-0000-4000-8000-000000000f01', 'accroche',
+     'The neighbourhood coffee bar, roasting our own beans since 2019.'),
+    ('e2f10000-0000-4000-8000-000000000f02', 'histoire',
+     'A twenty-seat room, a roaster at the back, and a menu that follows the '
+     'market. People come for the coffee in the morning and for lunch at '
+     'midday, never to wait.'),
+    ('e2f10000-0000-4000-8000-000000000f03', 'horaires_texte',
+     E'Monday to Friday: 8 am – 4 pm\nSaturday: 9 am – 6 pm\nSunday: closed')
+  ) as v(id, champ, texte)
+ where s.id = 'e2f10000-0000-4000-8000-000000000001'
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, m.organization_id, 'menu', m.id, 'en', 'nom',
+       v.texte, m.updated_at
+  from public.vitrine_menus m
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f04',
+     'e2f10000-0000-4000-8000-000000000011', 'Lunch menu'),
+    ('e2f10000-0000-4000-8000-000000000f05',
+     'e2f10000-0000-4000-8000-000000000012', 'Wine & drinks')
+  ) as v(id, cible, texte) on v.cible::uuid = m.id
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, k.organization_id, 'categorie', k.id, 'en', 'nom',
+       v.texte, k.updated_at
+  from public.vitrine_categories k
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f06',
+     'e2f10000-0000-4000-8000-000000000021', 'Starters'),
+    ('e2f10000-0000-4000-8000-000000000f07',
+     'e2f10000-0000-4000-8000-000000000022', 'Mains'),
+    ('e2f10000-0000-4000-8000-000000000f08',
+     'e2f10000-0000-4000-8000-000000000023', 'By the glass')
+  ) as v(id, cible, texte) on v.cible::uuid = k.id
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, i.organization_id, 'item', i.id, 'en', v.champ,
+       v.texte, i.updated_at
+  from public.vitrine_items i
+  join (values
+    ('e2f10000-0000-4000-8000-000000000f09',
+     'e2f10000-0000-4000-8000-000000000031', 'nom', 'Pumpkin velouté'),
+    ('e2f10000-0000-4000-8000-000000000f10',
+     'e2f10000-0000-4000-8000-000000000031', 'description',
+     'Light cream, house-roasted seeds.'),
+    ('e2f10000-0000-4000-8000-000000000f11',
+     'e2f10000-0000-4000-8000-000000000032', 'nom', 'Hummus of the day'),
+    ('e2f10000-0000-4000-8000-000000000f12',
+     'e2f10000-0000-4000-8000-000000000032', 'description',
+     'Chickpeas, preserved lemon, olive oil.'),
+    ('e2f10000-0000-4000-8000-000000000f13',
+     'e2f10000-0000-4000-8000-000000000033', 'nom', 'Beef tartare'),
+    ('e2f10000-0000-4000-8000-000000000f14',
+     'e2f10000-0000-4000-8000-000000000033', 'description',
+     'Hand-cut, with house fries.'),
+    ('e2f10000-0000-4000-8000-000000000f15',
+     'e2f10000-0000-4000-8000-000000000034', 'nom',
+     'Grilled vegetable curry'),
+    ('e2f10000-0000-4000-8000-000000000f16',
+     'e2f10000-0000-4000-8000-000000000034', 'description',
+     'Spicy, served with brown rice.'),
+    -- L'APPELLATION EST SON PROPRE RENDU ANGLAIS, et elle porte quand même sa
+    -- ligne : sans elle, une carte des vins plafonnerait la couverture sous le
+    -- seuil du sélecteur pour la seule raison qu'un nom propre ne se traduit
+    -- pas.
+    ('e2f10000-0000-4000-8000-000000000f17',
+     'e2f10000-0000-4000-8000-000000000035', 'nom', 'Côtes-du-Rhône'),
+    ('e2f10000-0000-4000-8000-000000000f18',
+     'e2f10000-0000-4000-8000-000000000035', 'description',
+     'Domaine de la Tour, 2023 vintage.'),
+    -- « Limonade artisanale » n'a PAS de description : une seule ligne pour
+    -- elle, et c'est ce qui fait dix-neuf et non vingt.
+    ('e2f10000-0000-4000-8000-000000000f19',
+     'e2f10000-0000-4000-8000-000000000036', 'nom', 'Craft lemonade')
+  ) as v(id, cible, champ, texte) on v.cible::uuid = i.id
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+-- ══ Vitrine — SECONDE VITRINE, RÉSERVÉE AUX ASSERTIONS PUBLIQUES ══
+--
+-- ── LE DÉFAUT QU'ELLE CORRIGE ──
+--
+-- `e2e-comptoir` tenait DEUX rôles incompatibles. C'est la vitrine que le spec
+-- dashboard MUTE — il y crée une carte, une rubrique et une fiche, et il
+-- enregistre les réglages — et c'est aussi celle sur laquelle les projets
+-- Playwright PARALLÈLES assertent la couverture (seuil de 95 %) et l'accroche
+-- anglaise. Les deux ne peuvent pas cohabiter :
+--   * une fiche neuve non traduite porte le total de dix-neuf à vingt-deux
+--     champs traduisibles, donc la couverture à 19/22 = 86 % ;
+--   * une sauvegarde des réglages fait avancer `updated_at` par le trigger
+--     `touch_updated_at` (20261012120000), ce qui PÉRIME d'un coup les trois
+--     traductions des réglages.
+-- Dans les deux cas le sélecteur de langue disparaît de la page française et
+-- l'assertion anglaise tombe — en course, donc de façon intermittente, et sur
+-- un test qui n'a rien demandé.
+--
+-- `e2e-traduit` est l'autre moitié de la réponse : PUBLIÉE, traduite à 100 %, et
+-- hors d'atteinte des specs commerçant.
+--
+-- ── AUCUN TEST NE DOIT LA MUTER — C'EST LA RÈGLE À TENIR ──
+--
+-- Cette vitrine est RÉSERVÉE aux assertions publiques : `/v/e2e-traduit`,
+-- `/v/e2e-traduit/en`, la couverture et le sélecteur de langue. Toute écriture
+-- sur ses réglages, sa carte, sa rubrique ou sa fiche périmerait ses traductions
+-- par `touch_updated_at` — silencieusement, sans erreur — et rendrait rouge un
+-- test parallèle. Un spec qui a besoin d'ÉCRIRE écrit sur `e2e-comptoir`, dont
+-- c'est désormais le seul rôle.
+--
+-- ── UNE ORGANISATION À ELLE, ET NON « E2E Stripe » ──
+--
+-- La seule autre organisation semée est `e2e-stripe`, dont le commentaire pose
+-- l'invariant que `stripe-webhook.spec.ts` observe : « comp_access=false : le
+-- statut Stripe gouverne réellement l'accès ». Lui adosser un octroi de
+-- back-office valable un an aurait rendu cette phrase à moitié fausse, et aurait
+-- fait dépendre la vitrine publique de l'état d'un abonnement que des webhooks
+-- de test manipulent. Une troisième organisation coûte quatre lignes.
+
+insert into public.organizations (id, name, slug, comp_access, timezone)
+values ('e2e10000-0000-4000-8000-000000000003', 'E2E Quai', 'e2e-quai', false, 'Europe/Paris')
+on conflict (id) do nothing;
+
+-- AUCUN `organization_members`, ET C'EST LA GARANTIE MÉCANIQUE du paragraphe
+-- ci-dessus : sans membre, aucun compte E2E ne peut ouvrir le tableau de bord de
+-- cette organisation, donc aucun spec commerçant ne PEUT muter cette vitrine —
+-- la règle ne repose pas sur la discipline de qui écrira le prochain test.
+-- `vitrine_public_state` ne demande d'ailleurs aucun membre : elle exige la
+-- publication et le droit, rien d'autre.
+
+-- Le droit `vitrine` par le MÊME chemin qu'`e2e-comptoir` : un octroi daté de
+-- back-office. `comp_access = false` et aucun abonnement, donc c'est la PREMIÈRE
+-- branche d'`org_has_module_access` — l'octroi vivant — qui ouvre le module, et
+-- elle ne consulte aucun état Stripe.
+insert into public.organization_module_grants
+  (id, organization_id, module, kind, source, starts_at, ends_at)
+values (
+  'e2ea0000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000003',
+  'vitrine', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days'
+)
+on conflict (id) do nothing;
+
+-- UNE CARTE, UNE RUBRIQUE, UNE FICHE, et `histoire` / `horaires_texte` laissés
+-- NULS : l'exact contraire de la richesse d'`e2e-comptoir`, et c'est le but. Un
+-- champ nul n'est pas traduisible (`vitrine_champs_traduisibles`), il ne pèse
+-- donc pas au dénominateur — cinq champs traduisibles en tout, qui se recomptent
+-- de tête : accroche, nom de carte, nom de rubrique, nom et description de la
+-- fiche. La couverture attendue (5/5 = 100 %) ne dépend d'aucun décompte
+-- fragile, alors que 19 en dépendait.
+--
+-- `theme` est OMIS : la colonne vaut `'{}'::jsonb` par défaut, et « thème par
+-- défaut » est justement ce que cette vitrine doit rendre à l'écran.
+insert into public.vitrine_settings
+  (id, organization_id, slug, published, accroche)
+values (
+  'e2f20000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000003',
+  'e2e-traduit', true,
+  'Le bar à vins du quai.'
+)
+on conflict (id) do nothing;
+
+insert into public.vitrine_menus (id, organization_id, nom, ordre, active) values
+  ('e2f20000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000003',
+   'La carte', 1, true)
+on conflict (id) do nothing;
+
+insert into public.vitrine_categories (id, menu_id, organization_id, nom, ordre) values
+  ('e2f20000-0000-4000-8000-000000000021', 'e2f20000-0000-4000-8000-000000000011',
+   'e2e10000-0000-4000-8000-000000000003', 'Au verre', 1)
+on conflict (id) do nothing;
+
+insert into public.vitrine_items
+  (id, categorie_id, organization_id, nom, description, prix_affiche,
+   badges, allergenes, disponible, ordre)
+values (
+  'e2f20000-0000-4000-8000-000000000031', 'e2f20000-0000-4000-8000-000000000021',
+  'e2e10000-0000-4000-8000-000000000003', 'Planche du soir',
+  'Fromages affinés et charcuterie.', '12 €',
+  array['fait_maison']::text[], array['lait']::text[], true, 1
+)
+on conflict (id) do nothing;
+
+-- ── LES CINQ TRADUCTIONS, ET L'ORDRE QUI LES REND FRAÎCHES ──────────
+--
+-- CONTRAINTE D'ORDRE, À NE PAS DÉFAIRE : ce bloc doit rester APRÈS toute
+-- écriture de ses cibles dans ce fichier. `touch_updated_at` avance `updated_at`
+-- à CHAQUE update ; un `update` sur les réglages, la carte, la rubrique ou la
+-- fiche placé plus bas dans le seed périmerait donc les cinq lignes posées ici,
+-- sans erreur et sans bruit, et la couverture tomberait sous le seuil du
+-- sélecteur. C'est pour cette raison que TOUTE cette vitrine forme un bloc
+-- contigu en fin de fichier : il n'y a rien après, donc rien qui puisse la
+-- périmer.
+--
+-- `version_source` EST LU DANS LA CIBLE (`s.updated_at`, `m.updated_at`…) et
+-- jamais écrit en dur — motif du bloc d'`e2e-comptoir` : recopier `now()`
+-- produirait une fraîcheur dépendante de l'ordre des transactions, donc une
+-- couverture qui vacille d'un `db reset` à l'autre.
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select 'e2f20000-0000-4000-8000-000000000f01'::uuid, s.organization_id,
+       'settings', s.id, 'en', 'accroche',
+       'The quayside wine bar.', s.updated_at
+  from public.vitrine_settings s
+ where s.id = 'e2f20000-0000-4000-8000-000000000001'
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select 'e2f20000-0000-4000-8000-000000000f02'::uuid, m.organization_id,
+       'menu', m.id, 'en', 'nom',
+       'The menu', m.updated_at
+  from public.vitrine_menus m
+ where m.id = 'e2f20000-0000-4000-8000-000000000011'
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select 'e2f20000-0000-4000-8000-000000000f03'::uuid, k.organization_id,
+       'categorie', k.id, 'en', 'nom',
+       'By the glass', k.updated_at
+  from public.vitrine_categories k
+ where k.id = 'e2f20000-0000-4000-8000-000000000021'
+on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+insert into public.vitrine_translations
+  (id, organization_id, cible_type, cible_id, lang, champ, texte, version_source)
+select v.id::uuid, i.organization_id, 'item', i.id, 'en', v.champ,
+       v.texte, i.updated_at
+  from public.vitrine_items i
+  cross join (values
+    ('e2f20000-0000-4000-8000-000000000f04', 'nom', 'Evening board'),
+    ('e2f20000-0000-4000-8000-000000000f05', 'description',
+     'Aged cheeses and charcuterie.')
+  ) as v(id, champ, texte)
+ where i.id = 'e2f20000-0000-4000-8000-000000000031'
+on conflict on constraint vitrine_translations_cible_unique do nothing;

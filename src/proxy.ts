@@ -89,8 +89,8 @@ export default async function proxy(request: NextRequest) {
   // RÉSEAU. Un organisateur qui regarde l'écran de sa propre soirée déclenchait
   // ainsi un aller-retour d'authentification à CHAQUE rafraîchissement.
   //
-  // POURQUOI NE PAS SIMPLEMENT LES RETIRER DU MATCHER, comme `/play` et
-  // `/pronos` : parce qu'elles sont dans `PUBLIC_NONCE_PREFIXES` et perdraient
+  // POURQUOI NE PAS SIMPLEMENT LES RETIRER DU MATCHER, comme `/play`,
+  // `/pronos` et `/v` : parce qu'elles sont dans `PUBLIC_NONCE_PREFIXES` et perdraient
   // leur CSP à nonce pour retomber en régime `static`, donc sous
   // `'unsafe-inline'`. Le durcissement obtenu partout ailleurs serait perdu sur
   // elles seules — une dégradation silencieuse, que `security-headers.ts`
@@ -182,10 +182,24 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Tout sauf assets statiques, parcours publics /play et /pronos
+  // Tout sauf assets statiques, parcours publics /play, /pronos et /v
   // (aucune session requise), /api/page-opens (beacon de comptage anonyme) et
   // /api/health (pingé par les moniteurs d'uptime)
+  //
+  // `/v` (vitrine publique) rejoint /play et /pronos pour la MÊME raison, et
+  // sans rien perdre : elle n'est pas dans `PUBLIC_NONCE_PREFIXES` — donc déjà
+  // en régime `static` — et son ISR interdirait de toute façon un nonce par
+  // requête. Elle traversait pourtant le proxy, c'est-à-dire un
+  // `auth.getUser()` par requête : sur un simple cookie de session existant,
+  // un aller-retour RÉSEAU vers l'API Auth Supabase dont le résultat n'était
+  // lu par personne. Son canal CSP Report-Only, servi ici jusqu'alors, est
+  // repris par `next.config.ts` — qui le pose déjà pour /play et /pronos.
+  //
+  // `v(?:/|$)` et non `v` nu : une lettre unique a un rayon d'action sans
+  // commune mesure avec un mot — un futur `/verify` ou `/videos` sortirait
+  // silencieusement du proxy, perdant session, redirection de connexion et
+  // isolation du domaine admin (contre-revue L11).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

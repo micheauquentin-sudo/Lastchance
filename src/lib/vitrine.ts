@@ -1,4 +1,5 @@
 import type { FontKey } from "@/lib/fonts";
+import { estLienInvitationSur } from "@/lib/validations/organizations";
 
 /**
  * VITRINE — le vocabulaire, les bornes et la lecture du catalogue QR (VIT-1a).
@@ -36,30 +37,111 @@ import type { FontKey } from "@/lib/fonts";
  */
 
 // ────────────────────────────────────────────────────────────
-// LE DRAPEAU SERVEUR — la Vitrine publique n'ouvre qu'en L11
+// LE DRAPEAU SERVEUR — OUVERT depuis L11, et il RESTE
 // ────────────────────────────────────────────────────────────
 
 /**
- * LA VITRINE PUBLIQUE EST FERMÉE, ET C'EST UNE DÉCISION DU PROPRIÉTAIRE.
+ * LA VITRINE PUBLIQUE EST OUVERTE (L11), ET LE DRAPEAU NE DISPARAÎT PAS.
  *
- * Le catalogue se saisit dès maintenant côté commerçant ; ce qu'aucun visiteur
- * ne peut atteindre, c'est la page publique — `/v/{slug}` rend 404 et
- * `loadVitrinePublicContext` refuse sans même appeler la base. La raison est
- * produit et non technique : la Vitrine n'ouvre qu'AVEC l'anglais, livré en
- * L11 ; une carte de restaurant servie en français seul au visiteur étranger
- * est un moins bon produit que pas de carte du tout.
+ * Il a d'abord servi à tenir la page fermée jusqu'à l'anglais : la condition
+ * d'ouverture était produit et non technique — une carte de restaurant servie en
+ * français seul au visiteur étranger est un moins bon produit que pas de carte
+ * du tout. Cette condition est remplie : `p_lang` superpose les traductions
+ * fraîches et le sélecteur s'offre au-delà de `SEUIL_COUVERTURE_SELECTEUR`.
  *
- * IL EST SERVEUR, PAS UNE VARIABLE D'ENVIRONNEMENT. Une variable se bascule
+ * ── CE QU'IL EST DEVENU : L'INTERRUPTEUR D'URGENCE ──
+ *
+ * Il reste le SEUL point où toutes les pages publiques de la Vitrine se coupent
+ * d'un geste : `/v/{slug}` rend 404 et `getVitrinePublicState` refuse SANS
+ * MÊME APPELER LA BASE. Le repasser à `false` est la réponse à une fuite
+ * constatée, à un abus, à une RPC qui rend n'importe quoi — un seul mot changé,
+ * relu, déployé, et plus aucune vitrine n'est servie. Le retirer aurait demandé,
+ * ce jour-là, d'écrire le mécanisme sous pression.
+ *
+ * IL RESTE SERVEUR, PAS UNE VARIABLE D'ENVIRONNEMENT. Une variable se bascule
  * depuis un tableau de bord, sans revue, sans trace dans l'historique, et sur un
  * seul environnement à la fois — c'est-à-dire exactement ce qu'on ne veut pas
- * d'une décision d'ouverture commerciale. Le retirer est un COMMIT CONSCIENT,
- * relu, daté, réversible par `git revert`.
+ * d'une décision d'ouverture commerciale. L'ouvrir comme le refermer est un
+ * COMMIT CONSCIENT, relu, daté, réversible par `git revert`.
  *
  * CE QU'IL NE FAIT PAS : il ne remplace ni `published` (le choix du commerçant)
  * ni le droit `vitrine` (l'abonnement). La base tient ces deux-là, et la RPC les
  * exige toutes les deux — ce drapeau est un troisième verrou, en amont.
+ *
+ * TYPÉ `boolean`, PAS `true as const`, et c'est délibéré : les gardes
+ * `if (!VITRINE_PUBLIQUE_OUVERTE)` doivent rester du code VIVANT pour le
+ * compilateur — un littéral les ferait narrower en branches mortes, et c'est
+ * précisément le chemin qu'on veut pouvoir emprunter un jour de panne.
  */
-export const VITRINE_PUBLIQUE_OUVERTE = false as const;
+export const VITRINE_PUBLIQUE_OUVERTE: boolean = true;
+
+// ────────────────────────────────────────────────────────────
+// LES LANGUES — la superposition est en SQL, le SEUIL est ici
+// ────────────────────────────────────────────────────────────
+
+/** Les langues qu'une page publique peut servir. Le français est le repli. */
+export const VITRINE_LANGUES = ["fr", "en"] as const;
+export type LangueVitrine = (typeof VITRINE_LANGUES)[number];
+
+/**
+ * La seule langue TRADUISIBLE aujourd'hui — celle que `vitrine_translations`
+ * accepte (`check` sur `lang`) et que `lang_coverage` décrit.
+ *
+ * Le français n'en fait pas partie : il n'est pas traduit, il est la SOURCE.
+ */
+export const VITRINE_LANGUE_TRADUITE = "en" as const;
+
+/**
+ * À PARTIR DE QUAND ON PROPOSE L'ANGLAIS : 95 % des champs traduisibles à jour.
+ *
+ * ── POURQUOI CE SEUIL VIT ICI ET NON EN SQL ──
+ *
+ * La migration `20261012120000` rend le COMPTE et s'arrête là
+ * (`total_champs_traduisibles`, `traduits_frais`) : elle recompte, elle ne
+ * conclut pas. Le seuil est un arbitrage de PRODUIT — il se règle en relisant
+ * des vitrines réelles, pas en écrivant une migration — et l'enfermer dans une
+ * fonction `security definer` aurait demandé un déploiement de base pour le
+ * bouger d'un point.
+ *
+ * ── POURQUOI 95 ET NON 100 ──
+ *
+ * Une carte vivante est TOUJOURS un peu en retard : le plat du jour saisi à
+ * 11 h n'est pas traduit à midi. Exiger 100 % aurait fait disparaître le
+ * sélecteur au premier ajout, c'est-à-dire au moment où la vitrine sert le plus
+ * — et l'aurait fait disparaître d'un coup, sans que le commerçant comprenne ce
+ * qu'il a cassé. Les 5 % de marge sont ce retard-là, et rien d'autre : les
+ * champs manquants retombent en français, champ à champ, jamais en page vide.
+ */
+export const SEUIL_COUVERTURE_SELECTEUR = 0.95;
+
+/**
+ * La couverture de traduction, telle que l'application la lit.
+ *
+ * `total` = champs traduisibles VISIBLES du visiteur (la RPC compte sur les
+ * cartes actives seulement), `frais` = ceux dont la traduction est postérieure à
+ * la dernière modification du texte source. Une traduction PÉRIMÉE compte donc
+ * comme absente — c'est ce que « frais » veut dire, et c'est le seul comptage
+ * qui ne promet pas une page anglaise faite de textes d'avant-hier.
+ */
+export interface VitrineLangCoverage {
+  total: number;
+  frais: number;
+}
+
+/**
+ * Le sélecteur de langue s'offre-t-il ?
+ *
+ * `total > 0` est une condition à part entière, et pas une garde contre la
+ * division par zéro : une vitrine SANS aucun champ traduisible (ni accroche, ni
+ * histoire, ni carte) n'a rien à traduire, et proposer « English » sur une page
+ * qui rendrait exactement les mêmes mots serait une promesse creuse.
+ */
+export function selecteurLanguesOuvert(coverage: VitrineLangCoverage): boolean {
+  return (
+    coverage.total > 0 &&
+    coverage.frais / coverage.total >= SEUIL_COUVERTURE_SELECTEUR
+  );
+}
 
 // ────────────────────────────────────────────────────────────
 // LES BORNES — miroir exact des `check` de la migration
@@ -109,7 +191,9 @@ export const VITRINE_SLUG_PATTERN = /^[a-z0-9-]{3,60}$/;
 //
 // Slugs recopiés du `check` de `vitrine_items.badges`. Les libellés et les
 // émojis, eux, n'existent QUE côté application : la base n'a aucune raison de
-// porter du français, et L11 traduira ces libellés une fois pour toutes.
+// porter du français. L11 les a traduits UNE FOIS POUR TOUTES (`BADGES_EN`) —
+// c'est du vocabulaire de plateforme, il ne passe pas par le calque
+// `vitrine_translations`, qui ne porte que ce que le commerçant écrit.
 //
 // ÉMOJI SOBRE, un par badge : il sert de repère visuel sur une fiche dense, pas
 // de décoration. Aucun émoji composé (ZWJ) — ils se rendent mal sur les vieux
@@ -129,7 +213,7 @@ export const VITRINE_BADGES = [
 
 export type BadgeVitrine = (typeof VITRINE_BADGES)[number];
 
-const BADGES_LIBELLES: Record<BadgeVitrine, string> = {
+export const BADGES_FR: Record<BadgeVitrine, string> = {
   vegetarien: "🥗 Végétarien",
   vegan: "🌱 Vegan",
   epice: "🌶️ Épicé",
@@ -141,14 +225,46 @@ const BADGES_LIBELLES: Record<BadgeVitrine, string> = {
 };
 
 /**
- * Le libellé d'un badge, émoji compris.
+ * LES MÊMES HUIT BADGES, EN ANGLAIS — écrits à la main (VIT-1b).
+ *
+ * ── AUCUNE MACHINE N'A TRADUIT CES HUIT MOTS ──
+ *
+ * C'est du vocabulaire de PLATEFORME : il tient sur une ligne, il ne change
+ * jamais, et il est lu par un visiteur qui décide s'il peut manger le plat.
+ * Le faire traduire à la volée aurait coûté un appel par page pour huit chaînes
+ * connues d'avance, et aurait laissé « Fait maison » revenir en « Made at home »
+ * un jour sur deux. Le calque `vitrine_translations` traduit ce que le
+ * commerçant ÉCRIT ; ces huit mots, eux, sont à nous.
+ *
+ * ── LES ÉMOJIS SONT LES MÊMES, ET C'EST LE POINT ──
+ *
+ * Un pictogramme n'a pas de langue. Le garder identique fait que le badge occupe
+ * la même place, se reconnaît du même coup d'œil et se compare d'une langue à
+ * l'autre — changer d'émoji en changeant de langue aurait laissé croire à un
+ * autre régime.
+ */
+export const BADGES_EN: Record<BadgeVitrine, string> = {
+  vegetarien: "🥗 Vegetarian",
+  vegan: "🌱 Vegan",
+  epice: "🌶️ Spicy",
+  traditionnel: "🍲 Traditional",
+  sain: "🍃 Healthy",
+  grille: "🔥 Grilled",
+  nouveau: "✨ New",
+  fait_maison: "🏠 Homemade",
+};
+
+/**
+ * Le libellé d'un badge, émoji compris, dans la langue servie.
  *
  * Rend le SLUG quand il ne connaît pas la valeur, plutôt qu'une chaîne vide :
  * une ligne écrite avant un retrait de vocabulaire afficherait sinon une case
- * vide que personne ne sait expliquer.
+ * vide que personne ne sait expliquer. Le français est le DÉFAUT du paramètre,
+ * ce qui laisse les appelants d'avant L11 inchangés.
  */
-export function libelleBadge(badge: string): string {
-  return BADGES_LIBELLES[badge as BadgeVitrine] ?? badge;
+export function libelleBadge(badge: string, lang: LangueVitrine = "fr"): string {
+  const catalogue = lang === "en" ? BADGES_EN : BADGES_FR;
+  return catalogue[badge as BadgeVitrine] ?? badge;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -179,7 +295,7 @@ export const VITRINE_ALLERGENES = [
 
 export type AllergeneVitrine = (typeof VITRINE_ALLERGENES)[number];
 
-const ALLERGENES_LIBELLES: Record<AllergeneVitrine, string> = {
+export const ALLERGENES_FR: Record<AllergeneVitrine, string> = {
   gluten: "Gluten",
   crustaces: "Crustacés",
   oeufs: "Œufs",
@@ -196,8 +312,42 @@ const ALLERGENES_LIBELLES: Record<AllergeneVitrine, string> = {
   mollusques: "Mollusques",
 };
 
-export function libelleAllergene(allergene: string): string {
-  return ALLERGENES_LIBELLES[allergene as AllergeneVitrine] ?? allergene;
+/**
+ * LES QUATORZE ALLERGÈNES EN ANGLAIS — les termes de l'annexe II elle-même.
+ *
+ * Ce ne sont pas des traductions libres : le règlement UE 1169/2011 est publié
+ * dans les vingt-quatre langues de l'Union, et sa version anglaise NOMME ces
+ * quatorze substances. On recopie ce vocabulaire-là plutôt que d'en inventer un
+ * — « Nuts » et non « Shell fruits », « Sulphites » et non « Sulfites » (la
+ * graphie britannique est celle du texte), « Molluscs » et non « Shellfish »,
+ * qui en anglais courant désigne AUSSI les crustacés et fondrait deux entrées
+ * que le règlement sépare.
+ *
+ * Aucun émoji ici non plus : un allergène n'est pas un argument de vente.
+ */
+export const ALLERGENES_EN: Record<AllergeneVitrine, string> = {
+  gluten: "Gluten",
+  crustaces: "Crustaceans",
+  oeufs: "Eggs",
+  poissons: "Fish",
+  arachides: "Peanuts",
+  soja: "Soybeans",
+  lait: "Milk",
+  fruits_a_coque: "Nuts",
+  celeri: "Celery",
+  moutarde: "Mustard",
+  sesame: "Sesame",
+  sulfites: "Sulphites",
+  lupin: "Lupin",
+  mollusques: "Molluscs",
+};
+
+export function libelleAllergene(
+  allergene: string,
+  lang: LangueVitrine = "fr",
+): string {
+  const catalogue = lang === "en" ? ALLERGENES_EN : ALLERGENES_FR;
+  return catalogue[allergene as AllergeneVitrine] ?? allergene;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -376,6 +526,32 @@ export function urlVitrine(slug: string, appUrl: string): string {
 }
 
 /**
+ * L'adresse publique DANS UNE LANGUE : `/v/{slug}` en français, `/v/{slug}/en`.
+ *
+ * ── LE FRANÇAIS N'A PAS DE SEGMENT, ET C'EST DÉLIBÉRÉ ──
+ *
+ * C'est l'adresse IMPRIMÉE sur le QR : lui ajouter `/fr` aurait allongé ce qui
+ * est gravé sur un support qu'on ne réimprime pas, et créé deux URL pour la même
+ * page française — donc deux entrées de cache, deux pages indexées, et un choix
+ * canonique à trancher pour rien.
+ */
+export function cheminVitrineLangue(slug: string, lang: LangueVitrine): string {
+  return lang === "fr" ? cheminVitrine(slug) : `${cheminVitrine(slug)}/${lang}`;
+}
+
+/**
+ * TOUS les chemins publics d'une vitrine — ce qu'une mutation doit revalider.
+ *
+ * La page publique est en ISR : sans cette purge, le commerçant qui corrige un
+ * prix attend la fenêtre de revalidation devant sa propre carte. La liste est
+ * DÉRIVÉE de `VITRINE_LANGUES` et non recopiée : une troisième langue serait
+ * sinon servie par un cache que plus personne ne purge.
+ */
+export function cheminsPublicsVitrine(slug: string): string[] {
+  return VITRINE_LANGUES.map((lang) => cheminVitrineLangue(slug, lang));
+}
+
+/**
  * Normalise comme `set_vitrine_slug` le fait, MOT POUR MOT : minuscules et
  * détourage, rien d'autre. Les espaces internes et les accents ne sont PAS
  * transformés en silence — ils restent hors forme, et sont refusés.
@@ -459,6 +635,18 @@ export type VitrinePublicState =
   | {
       state: "ok";
       slug: string;
+      /**
+       * La langue RÉELLEMENT servie, jamais celle qui a été demandée : `?lang=de`
+       * rend `fr`. C'est elle qui va sur l'attribut `lang` du document — le
+       * redeviner côté écran aurait dupliqué la règle de repli du SQL.
+       */
+      lang: LangueVitrine;
+      /** Le COMPTE, dans les deux langues : c'est sur la page française que
+       *  l'écran décide s'il propose l'anglais. */
+      langCoverage: VitrineLangCoverage;
+      /** Le verdict du seuil, calculé UNE FOIS ici — voir
+       *  `SEUIL_COUVERTURE_SELECTEUR`. */
+      selecteurLangues: boolean;
       identite: VitrineIdentiteView;
       liens: VitrineLiensView;
       cartes: VitrineCarteView[];
@@ -674,6 +862,51 @@ export function mapVitrineCartes(raw: unknown): VitrineCarteView[] {
 
 const VITRINE_INDISPONIBLE: VitrinePublicState = { state: "unavailable" };
 
+/**
+ * Lit `lang_coverage`, DÉFENSIVEMENT et sans jamais dépasser 100 %.
+ *
+ * La RPC compte par `left join` depuis les champs traduisibles : `frais` ne
+ * peut pas y excéder `total`. Le bornage est donc écrit pour le document
+ * CORROMPU — une charge utile bricolée qui rendrait `frais > total` allumerait
+ * sinon le sélecteur sur une vitrine non traduite, et le visiteur anglophone
+ * verrait une page française sous un drapeau anglais. Une valeur illisible vaut
+ * ZÉRO : le repli fermé, celui qui n'offre pas l'anglais.
+ *
+ * La clé `lang` du document (toujours `'en'` aujourd'hui) est IGNORÉE : il n'y a
+ * qu'une langue traduisible, et lire un nom de langue pour ne rien en faire
+ * aurait laissé croire que ce mappeur sait en gérer plusieurs.
+ */
+function mapLangCoverage(raw: unknown): VitrineLangCoverage {
+  const root = asRecord(raw);
+  if (!root) return { total: 0, frais: 0 };
+  const total = Math.max(0, asInt(root.total_champs_traduisibles) ?? 0);
+  const frais = Math.max(0, asInt(root.traduits_frais) ?? 0);
+  return { total, frais: Math.min(frais, total) };
+}
+
+/**
+ * Un lien SORTANT servi à un visiteur anonyme — revalidé À LA LECTURE.
+ *
+ * La liste blanche d'hôtes (`estLienInvitationSur`) n'était tenue qu'à
+ * l'ÉCRITURE, par le schéma des réglages. C'est insuffisant ici : ces trois
+ * valeurs partent en `href` sur une page publique, et une valeur écrite avant
+ * que la liste blanche n'existe — ou posée par un chemin qui l'ignorerait —
+ * ferait de la vitrine un relais de redirection avec la caution visuelle du
+ * commerce. C'est la LECTURE qui doit être sûre.
+ *
+ * Exactement le motif de `lib/play-context.ts:64` : même garde, et surtout même
+ * repli MUET. Une valeur refusée vaut `null`, le lien ne s'affiche pas, et
+ * personne n'attend de message d'erreur sur une lecture publique.
+ *
+ * `''` (« non renseigné », 20260918120000) tombe donc en `null` plutôt que
+ * d'être rendu tel quel : `estLienInvitationSur` refuse la chaîne vide, et
+ * l'écran filtrait déjà les deux de la même façon (`Boolean(href?.trim())`).
+ */
+function asLienSortant(value: unknown): string | null {
+  const lien = asString(value);
+  return lien !== null && estLienInvitationSur(lien) ? lien : null;
+}
+
 /** Lecture de `vitrine_public_state`. Tout ce qui n'est pas « ok » est muet. */
 export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
   const root = asRecord(raw);
@@ -683,10 +916,18 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
 
   const identite = asRecord(root.identite) ?? {};
   const liens = asRecord(root.liens) ?? {};
+  const langCoverage = mapLangCoverage(root.lang_coverage);
 
   return {
     state: "ok",
     slug,
+    // REPLI FERMÉ SUR LE FRANÇAIS, exactement comme la RPC : tout ce qui n'est
+    // pas la langue traduite est du français. Un document sans `lang` — écrit
+    // par une version d'avant L11 — rend donc une page française cohérente
+    // plutôt qu'un attribut de langue inventé.
+    lang: asString(root.lang) === VITRINE_LANGUE_TRADUITE ? "en" : "fr",
+    langCoverage,
+    selecteurLangues: selecteurLanguesOuvert(langCoverage),
     identite: {
       // `organizations.name` est `not null` : ce repli ne couvre qu'un document
       // corrompu, et il vaut mieux qu'un `<title>` vide.
@@ -699,13 +940,9 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
-      // `''` est RENDU TEL QUEL, jamais traduit en `null` : la base garde le
-      // choix du commerçant (« non renseigné » = chaîne vide, 20260918120000)
-      // et c'est l'écran qui décide de ne rien afficher. Une troisième écriture
-      // du même fait aurait fait diverger les deux surfaces.
-      google_review_url: asString(liens.google_review_url),
-      instagram_url: asString(liens.instagram_url),
-      tiktok_url: asString(liens.tiktok_url),
+      google_review_url: asLienSortant(liens.google_review_url),
+      instagram_url: asLienSortant(liens.instagram_url),
+      tiktok_url: asLienSortant(liens.tiktok_url),
     },
     cartes: mapVitrineCartes(root.cartes),
   };

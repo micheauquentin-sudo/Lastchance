@@ -1,19 +1,16 @@
 import "server-only";
 
-import { headers } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
-import { RATE_LIMITS } from "@/lib/rate-limit";
-import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { droitEffectifModule } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { vitrineLangSchema } from "@/lib/validations/vitrine";
 import {
   mapVitrineDashboardState,
   mapVitrinePublicState,
   VITRINE_PUBLIQUE_OUVERTE,
   type VitrineCarteView,
   type VitrineDashboardState,
-  type VitrineIdentiteView,
-  type VitrineLiensView,
+  type VitrinePublicState,
   type VitrineSettingsView,
 } from "@/lib/vitrine";
 
@@ -37,16 +34,26 @@ import {
  * `export type` est effacé à la compilation.
  */
 export type {
+  LangueVitrine,
   VitrineCarteView,
   VitrineFicheView,
   VitrineIdentiteView,
+  VitrineLangCoverage,
   VitrineLiensView,
+  VitrinePublicState,
   VitrineRubriqueView,
   VitrineSettingsView,
 } from "@/lib/vitrine";
 
-/** Un seul mot pour tous les refus publics — voir `loadVitrinePublicContext`. */
-const INDISPONIBLE = "Cette vitrine n'est pas disponible.";
+/**
+ * LE REFUS PUBLIC, une seule valeur pour tous les cas.
+ *
+ * Elle sert au drapeau d'urgence comme à la panne de lecture, et elle a
+ * exactement la forme que la RPC rend quand elle refuse : l'appelant n'a pas à
+ * savoir lequel des cinq cas s'est produit — c'est le point, voir ci-dessous.
+ */
+const VITRINE_INDISPONIBLE: VitrinePublicState = { state: "unavailable" };
+
 const NON_AUTHENTIFIE = "Session expirée, reconnectez-vous.";
 const NOT_EDITOR = "Action non autorisée";
 const SANS_DROIT = "Votre offre ne comprend pas la Vitrine.";
@@ -114,30 +121,28 @@ export async function gardeEditeurVitrine(): Promise<GardeVitrine> {
 // LE CONTEXTE PUBLIC — derrière le drapeau serveur
 // ────────────────────────────────────────────────────────────
 
-export type VitrinePublicContext =
-  | { ok: false; error: string }
-  | {
-      ok: true;
-      slug: string;
-      identite: VitrineIdentiteView;
-      liens: VitrineLiensView;
-      cartes: VitrineCarteView[];
-    };
-
 /**
- * Ce que le visiteur du QR reçoit — ou plutôt, en L10, ce qu'il ne reçoit pas.
+ * Ce que le visiteur du QR reçoit — l'état PUBLIC, tel que la RPC le rend.
+ *
+ * ── ELLE REND L'ÉTAT, PAS UN `{ ok }` ──
+ *
+ * Contrairement au chargeur du tableau de bord, cette fonction ne traduit pas le
+ * refus en message : `unavailable` EST le contrat, du `check` SQL jusqu'à la
+ * page, et la page en fait un 404. Envelopper aurait ajouté un troisième
+ * vocabulaire (`{ ok: false, error }`) qui n'apporte rien — il n'y a qu'un seul
+ * refus et il n'a rien à expliquer.
  *
  * ── LE DRAPEAU EST TRANCHÉ AVANT TOUTE E/S, ET C'EST LE POINT ──
  *
- * `VITRINE_PUBLIQUE_OUVERTE` est faux jusqu'à L11 (voir sa doctrine dans
- * `src/lib/vitrine.ts`). Le tester EN PREMIER — avant l'IP, avant la RPC —
- * garantit que la fonctionnalité fermée ne coûte rien et surtout n'apprend
- * rien : aucune requête ne part, donc aucun temps de réponse ne distingue un
- * slug qui existe d'un slug inventé. Un drapeau évalué après la lecture aurait
- * laissé la RPC répondre et le chronomètre parler.
+ * `VITRINE_PUBLIQUE_OUVERTE` est ouvert depuis L11 mais reste l'interrupteur
+ * d'urgence (voir sa doctrine dans `src/lib/vitrine.ts`). Le tester EN PREMIER —
+ * avant l'IP, avant la RPC — garantit qu'une fermeture ne coûte rien et surtout
+ * n'apprend rien : aucune requête ne part, donc aucun temps de réponse ne
+ * distingue un slug qui existe d'un slug inventé. Un drapeau évalué après la
+ * lecture aurait laissé la RPC répondre et le chronomètre parler.
  *
- * La page `/v/[slug]` le lit AUSSI, et rend `notFound()`. Les deux ne font pas
- * double emploi : la page décide du STATUT HTTP (404, indistinguable d'un slug
+ * La page le lit AUSSI, et rend `notFound()`. Les deux ne font pas double
+ * emploi : la page décide du STATUT HTTP (404, indistinguable d'un slug
  * inconnu), ce chargeur décide de ce qui est LU. Un appelant futur — flux RSS,
  * export, aperçu — passera par ici sans passer par la page.
  *
@@ -149,47 +154,54 @@ export type VitrinePublicContext =
  * n'a pas payé », « cette adresse est libre » — sur un point d'entrée que
  * personne n'authentifie et que tout le monde peut balayer.
  *
- * ── LA PRESSION IP EST UN COMPTEUR, JAMAIS UN REFUS ──
+ * ── AUCUN `headers()`, AUCUN `cookies()` : C'EST L'ISR QUI PROTÈGE ICI ──
  *
- * `pageOpenIp` sur l'IP SEULE, consommée AVANT la lecture : le slug vient de
- * l'URL, donc du client, et une rafale qui boucle sur des adresses inventées
- * n'atteint jamais une vitrine résolue — un compteur posé après la résolution ne
- * verrait rien du balayage qu'il est censé rendre visible. Aucun second seau par
- * slug n'est posé : composer une clé de seau sur une valeur libre ouvrirait une
- * série neuve à chaque adresse inventée (wagon 7).
+ * LA RÈGLE, D'ABORD : cette fonction ne doit toucher AUCUNE API dynamique. La
+ * page publique est en `revalidate = 60` ; le moindre accès dynamique la fait
+ * retomber en rendu par requête SILENCIEUSEMENT — aucun test ne rougit, aucune
+ * erreur n'est levée, et le cache court par slug annoncé à la revue L10
+ * disparaît sans que personne le voie. `vitrine-context.guards.test.ts` garde
+ * cet invariant TEXTUELLEMENT, parce qu'il ne se voit pas autrement.
+ *
+ * CE QU'IL Y AVAIT AVANT, ET POURQUOI IL EST PARTI. Un compteur d'observabilité
+ * `pageOpenIp` lisait l'IP via `headers()` — utile tant que la page était rendue
+ * à chaque requête. En ISR il aurait fait exactement l'inverse de ce qu'il
+ * mesure : il aurait forcé le rendu dynamique pour compter des rafales que le
+ * cache empêche.
+ *
+ * CE QUI BORNE L'AMPLIFICATION MAINTENANT : le cache lui-même. Quoi qu'un
+ * visiteur fasse, une adresse ne coûte au plus qu'UNE RPC par minute et par
+ * langue — c'est une borne plus dure que n'importe quel seau, et elle ne dépend
+ * d'aucune clé. Une adresse INVENTÉE ne coûte rien du tout : la RPC rend
+ * `unavailable` et la page rend 404. Le seau n'est donc pas déplacé ailleurs sur
+ * ce chemin, il est remplacé. Les MUTATIONS, elles, gardent les leurs (ADR-032).
+ *
+ * ── LA LANGUE EST VALIDÉE, PUIS OUBLIÉE SI ELLE EST INCONNUE ──
+ *
+ * `vitrineLangSchema` n'admet que `"en"` ; tout le reste vaut `undefined`, donc
+ * `p_lang` absent, donc le français. Le repli est SILENCIEUX des deux côtés (la
+ * RPC replie elle aussi) : une adresse bricolée rend une page française, jamais
+ * une erreur — et le visiteur n'apprend pas quelles langues existent.
  */
-export async function loadVitrinePublicContext(
+export async function getVitrinePublicState(
   slug: string,
-): Promise<VitrinePublicContext> {
-  if (!VITRINE_PUBLIQUE_OUVERTE) return { ok: false, error: INDISPONIBLE };
+  lang?: string,
+): Promise<VitrinePublicState> {
+  if (!VITRINE_PUBLIQUE_OUVERTE) return VITRINE_INDISPONIBLE;
 
-  const ip = clientIpFromHeaders(await headers());
-  await observerPressionIp(
-    ["vitrine:page:ip"],
-    ip,
-    RATE_LIMITS.pageOpenIp,
-    "vitrine_page_ip",
-  );
-
+  const langue = vitrineLangSchema.safeParse(lang);
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("vitrine_public_state", {
     p_slug: slug,
+    // ABSENT plutôt que `'fr'` quand rien n'est demandé : le défaut de la
+    // fonction SQL est `null`, et lui passer explicitement le repli aurait
+    // recopié ici une règle qui vit là-bas.
+    ...(langue.success && langue.data ? { p_lang: langue.data } : {}),
   });
   // Rendu TEL QUEL, l'erreur comprise : aucun repli sur une lecture de table,
   // qui ne trouverait rien de plus et paierait un aller-retour à chaque adresse
   // inventée.
-  const etat = error
-    ? { state: "unavailable" as const }
-    : mapVitrinePublicState(data);
-  if (etat.state !== "ok") return { ok: false, error: INDISPONIBLE };
-
-  return {
-    ok: true,
-    slug: etat.slug,
-    identite: etat.identite,
-    liens: etat.liens,
-    cartes: etat.cartes,
-  };
+  return error ? VITRINE_INDISPONIBLE : mapVitrinePublicState(data);
 }
 
 // ────────────────────────────────────────────────────────────

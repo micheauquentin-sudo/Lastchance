@@ -14,6 +14,7 @@ import {
   VITRINE_SLUG_MIN,
   VITRINE_STYLES_CARTES,
 
+  cheminVitrine,
   estSlugVitrineReserve,
   formeSlugVitrineValide,
   libelleBloc,
@@ -79,7 +80,6 @@ export function ReglagesVitrine({
   appUrl,
   peutEditer,
   peutPublier,
-  ouverturePubliqueActive,
 }: {
   settings: VitrineSettingsView | null;
   appUrl: string;
@@ -87,12 +87,6 @@ export function ReglagesVitrine({
   peutEditer: boolean;
   /** Rendre la vitrine atteignable. Payant, toujours. */
   peutPublier: boolean;
-  /**
-   * Le drapeau serveur `VITRINE_PUBLIQUE_OUVERTE`. Il ne change RIEN à ce que
-   * le commerçant peut faire — il change ce qu'on lui promet, et c'est tout
-   * l'objet de le faire descendre jusqu'ici.
-   */
-  ouverturePubliqueActive: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -108,7 +102,6 @@ export function ReglagesVitrine({
             settings={settings}
             appUrl={appUrl}
             peutPublier={peutPublier}
-            ouverturePubliqueActive={ouverturePubliqueActive}
           />
         </>
       ) : null}
@@ -547,27 +540,36 @@ function ChoixPolice({
 }
 
 /**
- * PUBLIER — et dire la vérité sur ce que « publié » veut dire aujourd'hui.
+ * PUBLIER — et montrer l'adresse, pas une promesse.
  *
- * ── LA PHRASE HONNÊTE ──
+ * ── LA PHRASE D'ATTENTE EST MORTE (L11) ──
  *
- * Tant que `VITRINE_PUBLIQUE_OUVERTE` est faux, l'adresse publique ne répond
- * pas : `/v/<slug>` rend 404, y compris pour une vitrine publiée et payée.
- * Écrire « Publiée » sans le dire aurait envoyé un commerçant imprimer ses QR
- * et découvrir le trou en salle. On publie donc pour de bon — le drapeau
- * `published` est vrai en base, la garde de publication s'applique — et l'écran
- * ajoute ce qui manque : ce n'est pas encore visible.
+ * Cet encart a porté pendant tout L10 un avertissement : « l'adresse ne répond
+ * pas encore — n'imprimez pas vos QR codes tout de suite ». C'était vrai tant
+ * que `VITRINE_PUBLIQUE_OUVERTE` valait faux ; ça ne l'est plus, et une
+ * consigne d'attente qui survit à la fin de l'attente est pire qu'une absence
+ * de consigne : le commerçant n'imprime toujours pas ses QR, et personne ne
+ * saura dire pourquoi son module ne sert à rien.
+ *
+ * À la place, la seule chose qu'il ait besoin de voir : L'ADRESSE, en clair et
+ * cliquable, pour qu'il l'ouvre sur son téléphone avant de la faire imprimer.
+ *
+ * ── LE LIEN N'EST CLIQUABLE QUE PUBLIÉE ──
+ *
+ * Non publiée, `/v/{slug}` rend 404 — indistinctement d'une adresse inconnue,
+ * c'est la doctrine de la page publique. Offrir le lien quand même aurait fait
+ * découvrir une page introuvable à celui qui vient de la préparer. L'adresse
+ * reste donc affichée — il la choisit, il doit la lire — mais en texte, et la
+ * phrase dit ce qui manque : publier.
  */
 function PublicationCard({
   settings,
   appUrl,
   peutPublier,
-  ouverturePubliqueActive,
 }: {
   settings: VitrineSettingsView;
   appUrl: string;
   peutPublier: boolean;
-  ouverturePubliqueActive: boolean;
 }) {
   const publier = useActionForm(publierAction, {
     networkError: "Publication impossible, réessayez.",
@@ -589,10 +591,24 @@ function PublicationCard({
         </p>
         <p className="mt-1 text-sm text-k-body">
           {settings.published
-            ? ouverturePubliqueActive
-              ? `Vos clients la voient à l'adresse ${urlVitrine(settings.slug, appUrl)}.`
-              : "Elle sera visible dès que les adresses publiques seront ouvertes. D'ici là, l'adresse ne répond pas encore — n'imprimez pas vos QR codes tout de suite."
-            : "Vous seul la voyez. Rien n'est visible de vos clients tant que vous ne publiez pas."}
+            ? "Votre vitrine est en ligne. Ouvrez l'adresse ci-dessous sur votre téléphone avant de la faire imprimer sur vos QR codes."
+            : "Publiez pour ouvrir l'adresse. Vous seul la voyez : tant qu'elle n'est pas publiée, elle ne répond pas à vos clients."}
+        </p>
+        <p className="mt-2 text-sm">
+          {settings.published ? (
+            <a
+              href={cheminVitrine(settings.slug)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-k-ink underline underline-offset-2 hover:text-k-orange-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-yellow"
+            >
+              {urlVitrine(settings.slug, appUrl)}
+            </a>
+          ) : (
+            <span className="font-semibold text-zinc-500">
+              {urlVitrine(settings.slug, appUrl)}
+            </span>
+          )}
         </p>
       </div>
 

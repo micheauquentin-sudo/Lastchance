@@ -7,14 +7,18 @@ import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 import type { VitrineCarteView } from "@/lib/vitrine";
 
 /**
- * LA COUVERTURE DU RENDU PUBLIC — le seul endroit où on la prouve.
+ * LA COUVERTURE DU RENDU PUBLIC — au niveau du composant.
  *
- * `VITRINE_PUBLIQUE_OUVERTE` est faux (`src/lib/vitrine.ts`) : `/v/[slug]`
- * rend 404 en E2E, donc `CatalogueVitrine` et `FicheVitrine` — les composants
- * que le VISITEUR verrait — n'ont aucun chemin E2E qui les exerce. Ce fichier
- * contourne le drapeau proprement : il rend les composants en unitaire, avec
- * les mêmes données que `supabase/seed.sql` (vitrine `e2e-comptoir`),
- * reproduites ici plutôt qu'importées — ce fichier ne dépend d'aucune base.
+ * `/v/{slug}` est OUVERTE depuis L11 et `e2e/vitrine.spec.ts` la parcourt
+ * vraiment. Ces tests-ci ne font donc plus office de contournement : ils
+ * gardent ce que l'E2E ne sait pas viser sans base — les états de la fiche
+ * (épuisée, badges vides), le repli d'un tableau vide, et le CHROME dans les
+ * deux langues. Les données reproduisent `supabase/seed.sql` (vitrine
+ * `e2e-comptoir`) plutôt que de l'importer : ce fichier ne dépend d'aucune base.
+ *
+ * `lang="fr"` PARTOUT sauf dans le dernier bloc : le chrome français est ce que
+ * la très grande majorité des visiteurs voit, et le rendu anglais se prouve une
+ * fois, sur ce qui change vraiment.
  */
 
 afterEach(cleanup);
@@ -133,7 +137,7 @@ const CARTES: VitrineCarteView[] = [
 
 describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   it("rend les deux cartes en onglets et la première carte par défaut", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
 
     expect(
       screen
@@ -153,7 +157,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("la fiche épuisée est grisée ET dite, jamais retirée", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
 
     const article = screen
       .getByText("Curry de légumes grillés")
@@ -166,7 +170,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("badges et allergènes vides ne rendent aucun « [] »", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
 
     // Onglet "Vins & boissons" pour atteindre la fiche sans badges.
     fireEvent.click(screen.getByRole("button", { name: "Vins & boissons" }));
@@ -177,7 +181,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("le filet nom/prix et le prix s'affichent sur une même ligne", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -186,7 +190,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("les allergènes sont repliés dans un <details>", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -203,7 +207,7 @@ describe("FicheVitrine — rendu isolé", () => {
   const ficheIndisponible = CARTES[0].categories[1].fiches[1];
 
   it("nom, description, prix et badges d'une fiche disponible", () => {
-    render(<FicheVitrine fiche={ficheDisponible} styleCartes="liste" />);
+    render(<FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" />);
     expect(screen.getByText("Velouté de potiron")).toBeTruthy();
     expect(
       screen.getByText("Crème légère, graines torréfiées maison."),
@@ -214,7 +218,7 @@ describe("FicheVitrine — rendu isolé", () => {
 
   it("le monogramme n'apparaît qu'en dehors du style liste", () => {
     const { container: liste } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="liste" />,
+      <FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" />,
     );
     // Le monogramme porte `h-16`/`h-28` ; le filet nom/prix porte aussi
     // `aria-hidden`, donc on cible la classe propre au monogramme.
@@ -222,13 +226,47 @@ describe("FicheVitrine — rendu isolé", () => {
     cleanup();
 
     const { container: grille } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="grille" />,
+      <FicheVitrine fiche={ficheDisponible} styleCartes="grille" lang="fr" />,
     );
     expect(grille.textContent).toContain("V");
   });
 
   it("une fiche indisponible est grisée avec la mention textuelle", () => {
-    render(<FicheVitrine fiche={ficheIndisponible} styleCartes="grille" />);
+    render(<FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="fr" />);
     expect(screen.getByText("Indisponible aujourd'hui")).toBeTruthy();
+  });
+});
+
+/**
+ * LE CHROME ANGLAIS — ce qui NE VIENT PAS de la base.
+ *
+ * Les noms et descriptions arrivent déjà traduits par le SQL : les passer en
+ * anglais ici ne prouverait que la capacité de ce test à écrire de l'anglais.
+ * Ce qui se prouve, c'est que le chrome et le vocabulaire de plateforme
+ * basculent — et que la mention d'indisponibilité, seul état que l'écran doit
+ * DIRE plutôt que masquer, le dit dans la langue servie.
+ */
+describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
+  const ficheIndisponible = CARTES[0].categories[1].fiches[1];
+
+  it("la mention d'indisponibilité et le pli des allergènes sont en anglais", () => {
+    render(
+      <FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="en" />,
+    );
+    expect(screen.getByText("Unavailable today")).toBeTruthy();
+    expect(screen.queryByText("Indisponible aujourd'hui")).toBeNull();
+    expect(screen.getByText("Allergens")).toBeTruthy();
+  });
+
+  it("le libellé de recherche et l'état vide basculent aussi", () => {
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="en" />);
+    expect(screen.getByLabelText("Search in Carte du midi")).toBeTruthy();
+
+    // Le nom de la carte, lui, reste tel que la base l'a rendu : le chrome se
+    // traduit ici, le contenu du commerçant se traduit en SQL.
+    fireEvent.change(screen.getByLabelText("Search in Carte du midi"), {
+      target: { value: "zzzz" },
+    });
+    expect(screen.getByText("No dish matches your search.")).toBeTruthy();
   });
 });

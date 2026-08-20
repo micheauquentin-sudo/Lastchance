@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ────────────────────────────────────────────────────────────
 // VITRINE — GARDES D'INNOCUITÉ DES ACTIONS (VIT-1a, lot L10)
@@ -110,11 +110,14 @@ const { state, makeClient } = vi.hoisted(() => {
   return { state, makeClient };
 });
 
-const { gardeMock, rpcMock, adminFromMock } = vi.hoisted(() => ({
-  gardeMock: vi.fn(),
-  rpcMock: vi.fn(),
-  adminFromMock: vi.fn(),
-}));
+const { gardeMock, rpcMock, adminFromMock, revalidateMock, rateLimitMock } =
+  vi.hoisted(() => ({
+    gardeMock: vi.fn(),
+    rpcMock: vi.fn(),
+    adminFromMock: vi.fn(),
+    revalidateMock: vi.fn(),
+    rateLimitMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => Promise.resolve(makeClient()),
@@ -124,7 +127,13 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 vi.mock("@/lib/vitrine-context", () => ({ gardeEditeurVitrine: gardeMock }));
 vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: revalidateMock }));
+vi.mock("@/lib/rate-limit", () => ({
+  rateLimit: rateLimitMock,
+  rateLimitBucket: (...parts: Array<string | number>) => parts.join(":"),
+  // Valeur RÉELLE de src/lib/rate-limit.ts (bornes épinglées là-bas).
+  RATE_LIMITS: { vitrineSlug: { limit: 20, windowSeconds: 3600 } },
+}));
 
 import {
   createVitrineCarte,
@@ -172,6 +181,17 @@ afterEach(() => {
   state.reset();
   vi.clearAllMocks();
 });
+
+beforeEach(() => {
+  // Le seau laisse passer par défaut : chaque test qui veut le voir refuser le
+  // dit explicitement.
+  rateLimitMock.mockResolvedValue(true);
+});
+
+/** Les chemins passés à `revalidatePath`, dans l'ordre. */
+function cheminsRevalides(): string[] {
+  return revalidateMock.mock.calls.map((appel) => String(appel[0]));
+}
 
 // ────────────────────────────────────────────────────────────
 // Invariant 1 — aucune écriture sans la garde
@@ -485,8 +505,8 @@ describe("setVitrineSlug — trois refus, trois messages", () => {
   });
 });
 
-describe("deleteVitrineCarte — le refus du trigger NOMME le compte", () => {
-  it("relaie le message de la base plutôt qu'un générique", async () => {
+describe("deleteVitrineCarte — le compte est GARDÉ, le texte de la base NON", () => {
+  it("garde le compte de rubriques du trigger", async () => {
     gardeOk();
     state.error = {
       code: "23503",
@@ -500,6 +520,141 @@ describe("deleteVitrineCarte — le refus du trigger NOMME le compte", () => {
     // Un refus qui ne dit pas COMBIEN ne dit rien : c'est la seule information
     // utile, et elle n'existe que dans le message du trigger.
     expect(res.error).toContain("3 rubrique(s)");
+  });
+
+  it("NE RELAIE PAS le texte de la base — seul le chiffre traverse", async () => {
+    gardeOk();
+    // Le même code 23503 remonte aussi de violations de FK ordinaires, dont le
+    // message porte des noms de contrainte, de table et de schéma. Aucun de ces
+    // mots ne doit atteindre l'écran du commerçant (revue L10).
+    state.error = {
+      code: "23503",
+      message:
+        'insert or update on table "vitrine_categories" violates foreign key ' +
+        'constraint "vitrine_categories_menu_fk" — DETAIL: Key (menu_id, ' +
+        "organization_id)=(…) is not present in table \"vitrine_menus\".",
+    };
+
+    const res = await deleteVitrineCarte(null, fd({ id: CARTE_ID }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).not.toContain("constraint");
+    expect(res.error).not.toContain("vitrine_categories");
+    expect(res.error).not.toContain("DETAIL");
+    // Le repli reste UTILE : il dit quoi faire, sans le compte qu'il n'a pas.
+    expect(res.error).toContain("Videz-la ou désactivez-la");
+  });
+
+  it("un compte absurde ne traverse pas non plus", async () => {
+    gardeOk();
+    // Cinq chiffres : hors de la forme extraite, donc repli sans compte. Le
+    // motif ne borne pas seulement le CONTENU, il borne aussi la LONGUEUR de ce
+    // qui est interpolé.
+    state.error = {
+      code: "23503",
+      message: "cette carte porte encore 999999 rubrique(s) : videz-la",
+    };
+
+    const res = await deleteVitrineCarte(null, fd({ id: CARTE_ID }));
+
+    if (res.ok) return;
+    expect(res.error).not.toContain("999999");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// L11 — le seau de l'adresse, et la purge des pages publiques
+// ────────────────────────────────────────────────────────────
+
+describe("setVitrineSlug — le seau est APRÈS la garde, sur la clé du locataire", () => {
+  it("borne les essais par ORGANISATION, en fail-closed", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", slug: "le-comptoir", created: true, changed: false },
+      error: null,
+    });
+
+    await setVitrineSlug(null, fd({ slug: "le-comptoir" }));
+
+    expect(rateLimitMock).toHaveBeenCalledWith(
+      // La clé ne porte AUCUNE valeur venue du navigateur : ni le slug demandé,
+      // ni l'IP. Boucler sur des adresses inventées n'ouvre donc pas un seau
+      // neuf à chaque tour.
+      `vitrine:slug:${ORG_ID}`,
+      { limit: 20, windowSeconds: 3600 },
+      { failClosed: true },
+    );
+  });
+
+  it("le seau refuse SANS appeler la RPC ni écrire de ligne d'audit", async () => {
+    gardeOk();
+    rateLimitMock.mockResolvedValue(false);
+
+    const res = await setVitrineSlug(null, fd({ slug: "le-comptoir" }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // `set_vitrine_slug` audite à chaque appel : un refus qui appelle d'abord
+    // aurait laissé la boucle écrire autant de lignes qu'elle veut.
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(res.error).toContain("Réessayez");
+  });
+
+  it("le caissier n'entame PAS le seau — la garde passe en premier", async () => {
+    gardeRefusee();
+
+    await setVitrineSlug(null, fd({ slug: "le-comptoir" }));
+
+    // Sinon un compte sans droit d'écriture pourrait épuiser le budget de son
+    // organisation sans jamais rien écrire.
+    expect(rateLimitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
+  it("un geste éditorial revalide le dashboard ET les deux langues", async () => {
+    gardeOk();
+
+    await updateVitrineFiche(null, fd({ id: FICHE_ID, nom: "Soupe" }));
+
+    // Le slug n'était pas connu de l'appelant : il est lu dans
+    // `vitrine_settings` (ligne par défaut du faux client, `le-comptoir`).
+    expect(cheminsRevalides()).toEqual([
+      "/dashboard/vitrine",
+      "/v/le-comptoir",
+      "/v/le-comptoir/en",
+    ]);
+  });
+
+  it("sans adresse publique, seul le dashboard est purgé", async () => {
+    gardeOk();
+    // `set_vitrine_slug` est le seul geste qui fasse naître la ligne de
+    // réglages : avant lui, il n'y a aucune page publique à purger.
+    state.row = null;
+
+    await createVitrineCarte(null, fd({ nom: "Midi" }));
+
+    expect(cheminsRevalides()).toEqual(["/dashboard/vitrine"]);
+  });
+
+  it("setVitrineSlug purge le NOUVEAU slug sans relire la base", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", slug: "chez-marie", created: false, changed: true },
+      error: null,
+    });
+
+    await setVitrineSlug(null, fd({ slug: "chez-marie" }));
+
+    // Le slug vient de la RPC, pas d'une seconde lecture : `slugConnu` existe
+    // pour éviter l'aller-retour.
+    expect(cheminsRevalides()).toEqual([
+      "/dashboard/vitrine",
+      "/v/chez-marie",
+      "/v/chez-marie/en",
+    ]);
+    expect(callsTo("vitrine_settings")).toHaveLength(0);
   });
 });
 

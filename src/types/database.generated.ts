@@ -7099,6 +7099,50 @@ export type Database = {
           },
         ]
       }
+      vitrine_translations: {
+        Row: {
+          champ: string
+          cible_id: string
+          cible_type: string
+          created_at: string
+          id: string
+          lang: string
+          organization_id: string
+          texte: string
+          version_source: string
+        }
+        Insert: {
+          champ: string
+          cible_id: string
+          cible_type: string
+          created_at?: string
+          id?: string
+          lang: string
+          organization_id: string
+          texte: string
+          version_source: string
+        }
+        Update: {
+          champ?: string
+          cible_id?: string
+          cible_type?: string
+          created_at?: string
+          id?: string
+          lang?: string
+          organization_id?: string
+          texte?: string
+          version_source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_translations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_deliveries: {
         Row: {
           attempts: number
@@ -9360,6 +9404,18 @@ export type Database = {
         }
         Returns: undefined
       }
+      upsert_vitrine_translation: {
+        Args: {
+          p_champ: string
+          p_cible_id: string
+          p_cible_type: string
+          p_lang: string
+          p_organization_id: string
+          p_texte: string
+          p_version_source: string
+        }
+        Returns: Json
+      }
       validate_referral: {
         Args: {
           p_campaign_id: string
@@ -9372,14 +9428,34 @@ export type Database = {
         Returns: Json
       }
       vitrine_cartes_json: {
-        Args: { p_actives_seulement: boolean; p_organization_id: string }
+        Args: {
+          p_actives_seulement: boolean
+          p_lang?: string
+          p_organization_id: string
+        }
         Returns: Json
+      }
+      vitrine_champs_traduisibles: {
+        Args: { p_actives_seulement: boolean; p_organization_id: string }
+        Returns: {
+          champ: string
+          cible_id: string
+          cible_type: string
+          version_courante: string
+        }[]
       }
       vitrine_dashboard_state: {
         Args: { p_organization_id: string }
         Returns: Json
       }
-      vitrine_public_state: { Args: { p_slug: string }; Returns: Json }
+      vitrine_public_state: {
+        Args: { p_lang?: string; p_slug: string }
+        Returns: Json
+      }
+      vitrine_translation_state: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
       wait_session_open: {
         Args: {
           p_organization_id: string

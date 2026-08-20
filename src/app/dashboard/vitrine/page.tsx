@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
-import { VITRINE_PUBLIQUE_OUVERTE } from "@/lib/vitrine";
 import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -25,11 +24,14 @@ export const metadata: Metadata = { title: "Vitrine" };
  *
  * `capacitesDuModule` décide de ce que la page MONTRE — découvrir reste ouvert
  * à tous (cahier §3), d'où l'écran complet et son encart d'offre pour qui n'a
- * pas le droit. `loadVitrineDashboardContext` décide de ce qu'elle LIT. Et un
- * troisième verdict, distinct des deux, décide de ce qu'elle PROMET : le
- * drapeau `VITRINE_PUBLIQUE_OUVERTE`, qui ne ferme aucun geste ici mais change
- * la phrase affichée sous « Publiée ». Les confondre aurait fait dire à
- * l'écran qu'une carte est en ligne alors que son adresse rend 404.
+ * pas le droit. `loadVitrineDashboardContext` décide de ce qu'elle LIT.
+ *
+ * IL Y EN AVAIT UN TROISIÈME, ET IL A DISPARU AVEC L11 : le drapeau
+ * `VITRINE_PUBLIQUE_OUVERTE` descendait jusqu'à `ReglagesVitrine` pour changer
+ * la phrase sous « Publiée » — « n'imprimez pas vos QR codes tout de suite ».
+ * L'adresse publique répond désormais, la phrase n'a plus d'objet, et le
+ * paramètre qui la portait est retiré plutôt que laissé à `true` : une prop
+ * dont une seule valeur est possible finit par être lue comme une option.
  */
 export default async function VitrineDashboardPage() {
   const capacites = await capacitesDuModule("vitrine");
@@ -58,7 +60,6 @@ export default async function VitrineDashboardPage() {
           appUrl={APP_URL}
           peutEditer={capacites.canEditDraft}
           peutPublier={capacites.canPublish}
-          ouverturePubliqueActive={VITRINE_PUBLIQUE_OUVERTE}
         />
 
         {/* LE CATALOGUE N'APPARAÎT QU'APRÈS L'ADRESSE, et c'est le premier pas

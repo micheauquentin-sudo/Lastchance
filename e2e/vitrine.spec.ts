@@ -1,28 +1,234 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Vitrine (VIT-1a / L10) : le dashboard commerçant, la garde de rôle, et
- * l'assertion du drapeau public.
+ * Vitrine (VIT-1a / L10, VIT-1b / L11) : la chaîne publique bilingue, le
+ * dashboard commerçant, la garde de rôle.
  *
  * Seed (`supabase/seed.sql`) : org « E2E Café » (owner/editor/cashier),
  * vitrine `e2e-comptoir` PUBLIÉE, deux cartes / trois rubriques / six fiches
  * dont une indisponible (« Curry de légumes grillés ») et une aux badges ET
- * allergènes vides (« Côtes-du-rhône »).
+ * allergènes vides (« Côtes-du-rhône »). Quatre traductions anglaises, dont
+ * UNE PÉRIMÉE — « Chickpea hummus », qui ne doit JAMAIS s'afficher.
  *
- * ── LE DRAPEAU `VITRINE_PUBLIQUE_OUVERTE` EST FAUX (`src/lib/vitrine.ts`) ──
+ * ══════════════════════════════════════════════════════════════════════
+ * DEUX VITRINES, ET LA RÈGLE QUI LES SÉPARE — À LIRE AVANT D'AJOUTER UN TEST
+ * ══════════════════════════════════════════════════════════════════════
  *
- * `/v/e2e-comptoir` rend donc 404 aujourd'hui, MÊME PUBLIÉE — la Vitrine
- * n'ouvre qu'avec l'anglais, en L11. Le test ci-dessous fige cette
- * assertion : il rougira le jour où le drapeau bascule, et c'est le but —
- * il force la mise à jour consciente de ce fichier plutôt qu'un oubli
- * silencieux.
+ * Les projets Playwright tournent EN PARALLÈLE sur la même base. Les tests du
+ * dashboard ci-dessous créent des cartes, des rubriques et des fiches NON
+ * traduites dans `e2e-comptoir`, et enregistrent ses réglages — ce qui, via le
+ * trigger `touch_updated_at`, PÉRIME les traductions des réglages, pendant que
+ * `revaliderVitrine` purge le cache ISR dans la foulée. La CI l'a payé sur
+ * `df9360a` : trois champs traduisibles de plus (19 → 22) font tomber la
+ * couverture à 86 %, sous le seuil de 95 % du sélecteur de langue, et le test
+ * du sélecteur rougit sans qu'aucune ligne de produit ne soit fausse.
+ *
+ * D'où le partage, qui n'est pas une convention de confort :
+ *
+ *  • `e2e-comptoir` ABSORBE LES MUTATIONS. Tout ce que le dashboard crée ou
+ *    enregistre atterrit là. Une assertion sur cette vitrine doit rester vraie
+ *    quel que soit le nombre de fiches non traduites ajoutées à côté.
+ *
+ *  • `e2e-traduit` (org distincte, publiée, couverture 5/5) est en LECTURE
+ *    SEULE POUR TOUS LES TESTS, sans exception — aucun test, dashboard ou
+ *    public, n'y écrit jamais. C'est ce qui rend sa couverture stable.
+ *
+ * LE CRITÈRE DE PLACEMENT tient en une phrase : la couverture et la fraîcheur
+ * sont des invariants GLOBAUX À LA VITRINE — un champ ajouté n'importe où les
+ * déplace. Toute assertion qui en dépend (présence du sélecteur de langue,
+ * accroche traduite des réglages, tout ce qui suppose « rien n'a changé
+ * depuis le seed ») vit donc sur `e2e-traduit`. Ce qui est insensible aux
+ * mutations — un statut HTTP, du contenu français, du chrome d'interface, ou
+ * la superposition PAR CHAMP au niveau d'UNE fiche que le dashboard ne touche
+ * jamais — peut rester sur `e2e-comptoir`.
+ *
+ * ── LE DRAPEAU EST TOMBÉ, ET CE FICHIER L'A SUIVI CONSCIEMMENT ──
+ *
+ * Ce bloc portait pendant tout L10 l'assertion inverse : `/v/e2e-comptoir`
+ * rendait 404 même publiée, parce que `VITRINE_PUBLIQUE_OUVERTE` valait faux —
+ * la Vitrine n'ouvrait qu'AVEC l'anglais. Le test était écrit pour ROUGIR le
+ * jour de la bascule, et il a rougi : c'est ce qui a forcé la relecture de ce
+ * fichier plutôt qu'un `expect` retourné à la va-vite. L'anglais est livré,
+ * l'adresse répond, et les tests ci-dessous parcourent la vraie chaîne.
+ *
+ * Le 404 n'a pas disparu pour autant — il a retrouvé ses seules raisons
+ * légitimes : slug inconnu, vitrine non publiée, droit éteint, et langue
+ * inconnue dans le chemin.
  */
-test.describe("vitrine — drapeau public fermé", () => {
-  test("l'adresse publique rend 404 tant que le drapeau est fermé", async ({
+test.describe("vitrine — la page publique, en français", () => {
+  test("l'adresse publique répond et rend la carte du seed", async ({
     page,
   }) => {
     const reponse = await page.goto("/v/e2e-comptoir");
+    expect(reponse?.status()).toBe(200);
+
+    await expect(page.getByRole("heading", { name: "E2E Café" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Une fiche DISPONIBLE de la carte ouverte par défaut (« Carte du midi »).
+    // Volontairement pas « Velouté de potiron », qui est traduite : celle-ci
+    // reste française dans les deux langues et ne prouverait rien plus bas.
+    await expect(page.getByText("Tartare de bœuf")).toBeVisible();
+
+    // LA FICHE ÉPUISÉE EST LÀ, ET ELLE EST DITE. La base la rend exprès avec
+    // son drapeau : l'écran doit la GRISER, jamais la faire disparaître — un
+    // plat qui s'évapore de la carte se lit comme une carte qui a changé.
+    await expect(page.getByText("Curry de légumes grillés")).toBeVisible();
+    await expect(page.getByText("Indisponible aujourd'hui")).toBeVisible();
+  });
+
+  test("une langue inconnue dans le chemin rend 404", async ({ page }) => {
+    // PAS de repli silencieux sur le français : `/v/x/xx` servirait la même
+    // page sous une adresse de plus, avec sa propre entrée de cache ISR.
+    const reponse = await page.goto("/v/e2e-comptoir/xx");
     expect(reponse?.status()).toBe(404);
+  });
+
+  test("un slug inconnu rend 404, comme avant l'ouverture", async ({
+    page,
+  }) => {
+    const reponse = await page.goto("/v/adresse-qui-nexiste-pas-e2e");
+    expect(reponse?.status()).toBe(404);
+  });
+});
+
+/**
+ * LA VARIANTE ANGLAISE — sur `e2e-traduit`, et seulement là.
+ *
+ * Tout ce bloc dépend de la FRAÎCHEUR du calque : une accroche traduite ne
+ * s'affiche que si sa ligne de traduction est plus récente que la ligne
+ * qu'elle traduit. Or la sauvegarde des réglages d'`e2e-comptoir` par les
+ * tests du dashboard périme précisément celle-là. Ces assertions vivent donc
+ * sur la vitrine en lecture seule.
+ */
+test.describe("vitrine — la variante anglaise", () => {
+  test("/en répond et sert les champs traduits du seed", async ({ page }) => {
+    const reponse = await page.goto("/v/e2e-traduit/en");
+    expect(reponse?.status()).toBe(200);
+
+    // Les TROIS NIVEAUX du calque, tels que le seed les pose : l'accroche des
+    // réglages, le nom d'une carte et d'une rubrique, le nom d'une fiche.
+    await expect(page.getByText("The quayside wine bar.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("The menu")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "By the glass" }),
+    ).toBeVisible();
+    await expect(page.getByText("Evening board")).toBeVisible();
+    await expect(
+      page.getByText("Aged cheeses and charcuterie."),
+    ).toBeVisible();
+
+    // Et le français correspondant a bien CÉDÉ la place, champ par champ.
+    await expect(page.getByText("Le bar à vins du quai.")).toHaveCount(0);
+    await expect(page.getByText("Planche du soir")).toHaveCount(0);
+  });
+
+  test("badges et allergènes passent en libellé anglais", async ({ page }) => {
+    await page.goto("/v/e2e-traduit/en");
+    const fiche = page.locator("article").filter({ hasText: "Evening board" });
+    await expect(fiche).toBeVisible({ timeout: 30_000 });
+
+    // « Planche du soir » porte `fait_maison` et l'allergène `lait`. Le
+    // vocabulaire de plateforme est traduit à la main, une fois pour toutes
+    // (`BADGES_EN` / `ALLERGENES_EN` dans `src/lib/vitrine.ts`) — le calque de
+    // traduction n'y touche jamais.
+    await expect(fiche.getByText(/Homemade/i)).toBeVisible();
+    await expect(fiche.getByText("🏠 Fait maison")).toHaveCount(0);
+
+    await fiche.getByText("Allergens").click();
+    await expect(fiche.getByText(/Milk/i)).toBeVisible();
+  });
+
+  test("le retour au français est TOUJOURS offert sur la variante anglaise", async ({
+    page,
+  }) => {
+    await page.goto("/v/e2e-traduit/en");
+    const retour = page.getByRole("link", { name: "Français" });
+    await expect(retour).toBeVisible({ timeout: 30_000 });
+    await retour.click();
+    await expect(page).toHaveURL(/\/v\/e2e-traduit$/);
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible();
+  });
+});
+
+/**
+ * CE QUI RESTE SUR `e2e-comptoir/en` — et pourquoi ça y survit.
+ *
+ * La superposition se décide CHAMP PAR CHAMP : chaque ligne de traduction est
+ * comparée à SA cible, pas à la moyenne de la vitrine. Une fiche que les tests
+ * du dashboard ne touchent jamais garde donc sa traduction fraîche même quand
+ * trois fiches non traduites sont créées à côté et que la couverture globale
+ * s'effondre. C'est exactement ce que ce bloc prouve, et c'est la seule chose
+ * que la couverture globale ne peut PAS faire tomber.
+ *
+ * Le chrome d'interface, lui, ne vient d'aucune table
+ * (`src/components/vitrine/langue.ts`) : il est insensible par construction.
+ */
+test.describe("vitrine — la superposition par champ, sous les mutations", () => {
+  test("une fiche traduite reste anglaise quoi qu'il arrive à côté", async ({
+    page,
+  }) => {
+    const reponse = await page.goto("/v/e2e-comptoir/en");
+    expect(reponse?.status()).toBe(200);
+
+    // « Houmous du jour » n'est ni créée, ni modifiée, ni renommée par aucun
+    // test — son calque ne périme pas. La péremption elle-même — une
+    // traduction plus vieille que sa cible redonne le français — reste prouvée
+    // par pgTAP (§12, `supabase/tests/vitrine.test.sql`), qui la CRÉE par un
+    // update plutôt que de la figer dans un jeu de données.
+    await expect(page.getByText("Hummus of the day")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Houmous du jour")).toHaveCount(0);
+
+    // Le CHROME suit aussi.
+    await expect(page.getByText("Unavailable today")).toBeVisible();
+  });
+});
+
+/**
+ * LE SÉLECTEUR DE LANGUE — et pourquoi l'assertion est celle-ci.
+ *
+ * La page FRANÇAISE n'offre l'anglais que si `selecteurLangues` est vrai,
+ * c'est-à-dire au-delà de 95 % de couverture : envoyer un visiteur étranger sur
+ * une carte à moitié française est pire que ne rien lui offrir, parce qu'il a
+ * fait la démarche.
+ *
+ * ── POURQUOI SUR `e2e-traduit` ET PAS SUR `e2e-comptoir` ──
+ *
+ * La couverture est un RATIO sur toute la vitrine : elle bouge dès qu'un champ
+ * traduisible apparaît quelque part. Sur `e2e-comptoir`, les tests du
+ * dashboard créent en parallèle une carte, une rubrique et une fiche — trois
+ * champs non traduits, 19/22 = 86 %, sous le seuil, sélecteur absent. Ce test
+ * a rougi ainsi sur `df9360a` alors que le produit était juste.
+ *
+ * `e2e-traduit` est en lecture seule pour tous les tests et porte 5 champs
+ * traduisibles, tous FRAIS (accroche + carte + rubrique + nom et description
+ * de fiche) : 5/5 = 100 %, et ce chiffre ne dépend de l'ordonnancement
+ * d'aucun projet Playwright.
+ *
+ * Le garde-fou inverse — sélecteur ABSENT sous le seuil — est prouvé par les
+ * tests Vitest de `selecteurLanguesOuvert` aux deux bords du seuil ; le seed
+ * n'a pas de vitrine publiée à couverture nulle pour l'asserter ici.
+ */
+test.describe("vitrine — sélecteur de langue", () => {
+  test("la page française offre l'anglais dès le seuil de couverture atteint", async ({
+    page,
+  }) => {
+    await page.goto("/v/e2e-traduit");
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole("link", { name: "English" })).toBeVisible();
+
+    // L'adresse anglaise reste atteignable EN DIRECT : le sélecteur est une
+    // porte d'entrée, pas une autorisation. Vrai des DEUX vitrines — celle qui
+    // absorbe les mutations le prouve mieux, puisqu'elle passe sous le seuil.
+    const reponse = await page.goto("/v/e2e-comptoir/en");
+    expect(reponse?.status()).toBe(200);
   });
 });
 
@@ -37,10 +243,17 @@ test.describe("vitrine — dashboard commerçant", () => {
 
     await expect(page.getByLabel("Adresse")).toHaveValue("e2e-comptoir");
     await expect(page.getByText("Publiée")).toBeVisible();
-    // La phrase honnête : publiée, mais le drapeau serveur n'ouvre pas
-    // encore l'adresse publique.
+
+    // LA PHRASE D'ATTENTE EST MORTE AVEC L11. L'encart ne dit plus « n'imprimez
+    // pas vos QR codes tout de suite » : il dit que la vitrine est en ligne et
+    // donne l'adresse, cliquable, pour qu'elle soit ouverte avant d'être
+    // imprimée.
+    await expect(page.getByText(/Votre vitrine est en ligne/)).toBeVisible();
     await expect(
       page.getByText(/n'imprimez pas vos QR codes tout de suite/),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: /\/v\/e2e-comptoir$/ }),
     ).toBeVisible();
   });
 
@@ -104,7 +317,16 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ hasText: /Modifier|Voir le détail/ })
       .first()
       .click();
-    await ficheLi.getByLabel("🌱 Vegan").check();
+
+    // ATTENDRE L'ACCALMIE AVANT DE COCHER. Chaque mutation de cet écran est
+    // suivie d'un `revaliderVitrine` puis d'un rafraîchissement : un `check()`
+    // lancé pendant ce cycle meurt en « waiting for navigation ». Rendre la
+    // case VISIBLE avant de la toucher fait de l'attente un ancrage explicite
+    // plutôt qu'une course avec le routeur.
+    const caseVegan = ficheLi.getByLabel("🌱 Vegan");
+    await expect(caseVegan).toBeVisible({ timeout: 20_000 });
+    await caseVegan.check();
+
     // Les allergènes vivent derrière un second pli DANS l'éditeur — l'ouvrir
     // avant de cocher, sinon la case existe mais n'est pas visible.
     await ficheLi
@@ -112,18 +334,37 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ hasText: "Allergènes" })
       .first()
       .click();
-    await ficheLi.getByLabel("Gluten").check();
+    const caseGluten = ficheLi.getByLabel("Gluten");
+    await expect(caseGluten).toBeVisible({ timeout: 20_000 });
+    await caseGluten.check();
+
     await ficheLi
       .getByRole("button", { name: "Enregistrer la fiche" })
       .click();
-    await expect(ficheLi.getByText("Enregistré.")).toBeVisible({
-      timeout: 20_000,
-    });
+
+    // TOAST *OU* ÉTAT PERSISTÉ, PAS LE TOAST SEUL. « Enregistré. » est un
+    // `role="status"` éphémère, et le rafraîchissement qui suit la sauvegarde
+    // peut l'emporter avant que l'assertion ne l'observe — sur une machine de
+    // CI chargée, l'ordre des deux n'est pas garanti. Ce qui est STABLE après
+    // la sauvegarde, c'est la valeur elle-même : la case cochée est encore
+    // cochée. On accepte l'un ou l'autre, ce qui prouve la même chose sans
+    // dépendre de qui gagne la course.
+    await expect
+      .poll(
+        async () =>
+          (await ficheLi.getByText("Enregistré.").count()) > 0 ||
+          (await caseVegan.isChecked().catch(() => false)),
+        { timeout: 20_000 },
+      )
+      .toBe(true);
 
     // ── Marquer indisponible ──
-    await ficheLi
-      .getByRole("button", { name: "Marquer indisponible" })
-      .click();
+    // Même précaution : ancrer sur le bouton re-rendu avant de cliquer.
+    const boutonIndispo = ficheLi.getByRole("button", {
+      name: "Marquer indisponible",
+    });
+    await expect(boutonIndispo).toBeVisible({ timeout: 20_000 });
+    await boutonIndispo.click();
     await expect(ficheLi.getByText("Indisponible")).toBeVisible({
       timeout: 20_000,
     });
@@ -147,8 +388,8 @@ test.describe("vitrine — rôle caissier", () => {
 
     // `notFound()` ICI EST IMBRIQUÉ dans le layout dashboard, déjà envoyé en
     // 200 (flux RSC) : le statut HTTP reste 200, seul le contenu dit le refus
-    // — même motif que `reserver.spec.ts` (« jeton inconnu »). Le test du
-    // drapeau public ci-dessus reste sur `status()` : sa 404 est, elle, au
+    // — même motif que `reserver.spec.ts` (« jeton inconnu »). Les tests
+    // publics ci-dessus restent sur `status()` : leurs 404 sont, elles, au
     // TOUT premier niveau, avant tout layout.
     await page.goto("/dashboard/vitrine");
     await expect(

@@ -8,7 +8,7 @@ import {
 } from "./src/lib/security-headers";
 
 // Politique de repli : elle couvre tout ce que le proxy ne voit pas
-// (assets, /play, /pronos) et sert de socle aux routes qu'il enrichit
+// (assets, /play, /pronos, /v) et sert de socle aux routes qu'il enrichit
 // d'un nonce — l'en-tête posé par le proxy prime alors sur celui-ci.
 const csp = buildContentSecurityPolicy();
 const cspReportOnly = buildCspReportOnlyPolicy();
@@ -123,14 +123,18 @@ const nextConfig: NextConfig = {
         source: "/invite/:path*",
         headers: tokenPathSecurityHeaders,
       },
-      // /play (ISR) et /pronos (hors matcher du proxy) ne reçoivent
-      // jamais de nonce : ce sont les seules surfaces publiques où
-      // 'unsafe-inline' reste appliqué. Le canal Report-Only y mesure la
-      // politique candidate sans rien bloquer, et n'existe que si
+      // /play (ISR), /pronos et /v (toutes trois hors matcher du proxy) ne
+      // reçoivent jamais de nonce : ce sont LES TROIS surfaces publiques —
+      // pas deux — où 'unsafe-inline' reste appliqué. Le canal Report-Only y
+      // mesure la politique candidate sans rien bloquer, et n'existe que si
       // CSP_REPORT_URI est configuré. Le proxy ne passant pas ici, aucun
       // conflit d'en-tête possible.
+      //
+      // /v y est entrée avec sa sortie du matcher : le proxy lui servait ce
+      // même canal, et l'exclure sans l'ajouter ici l'aurait rendue muette —
+      // une surface sous 'unsafe-inline' qui ne remonte plus rien.
       ...(cspReportOnly
-        ? ["/play/:path*", "/pronos/:path*"].map((source) => ({
+        ? ["/play/:path*", "/pronos/:path*", "/v/:path*"].map((source) => ({
             source,
             headers: [
               { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },

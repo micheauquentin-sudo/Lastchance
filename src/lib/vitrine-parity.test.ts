@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import { FONT_KEYS } from "./fonts";
 import {
+  ALLERGENES_EN,
+  ALLERGENES_FR,
+  BADGES_EN,
+  BADGES_FR,
   VITRINE_ACCROCHE_MAX,
   VITRINE_ALLERGENES,
   VITRINE_BADGES,
@@ -174,6 +178,87 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
     // addition a été rangée au mauvais endroit — c'est-à-dire qu'elle sera
     // oubliée à la prochaine relecture.
     expect(RESERVES_SQL).toEqual([...VITRINE_SLUGS_RESERVES]);
+  });
+});
+
+describe("parité Vitrine — le vocabulaire de plateforme EN FRANÇAIS ET EN ANGLAIS", () => {
+  /**
+   * Le texte d'un libellé, émoji de tête retiré.
+   *
+   * Les badges portent un pictogramme, les allergènes non : cette fonction rend
+   * la partie qu'on peut comparer d'une langue à l'autre.
+   */
+  const texteSeul = (libelle: string): string =>
+    libelle.replace(/^\P{L}+\s/u, "");
+
+  it("les deux catalogues de badges couvrent EXACTEMENT le vocabulaire SQL", () => {
+    // La garde que L11 ajoute : un neuvième badge ajouté en base et en français
+    // sans passer par l'anglais afficherait un SLUG nu sur la page anglaise —
+    // une case que le visiteur ne sait pas lire, exactement le défaut que
+    // `libelleBadge` évite en français.
+    expect(Object.keys(BADGES_FR).sort()).toEqual(BADGES_SQL.slice().sort());
+    expect(Object.keys(BADGES_EN).sort()).toEqual(BADGES_SQL.slice().sort());
+  });
+
+  it("les deux catalogues d'allergènes couvrent EXACTEMENT les quatorze", () => {
+    expect(Object.keys(ALLERGENES_FR).sort()).toEqual(
+      ALLERGENES_SQL.slice().sort(),
+    );
+    expect(Object.keys(ALLERGENES_EN).sort()).toEqual(
+      ALLERGENES_SQL.slice().sort(),
+    );
+  });
+
+  it("aucun libellé vide, dans aucune des deux langues", () => {
+    // Une chaîne vide est PIRE qu'un slug : elle rend une case que personne ne
+    // sait expliquer. Le détourage est testé aussi — « ␣Vegan » se voit à
+    // l'écran et pas dans une revue.
+    for (const catalogue of [BADGES_FR, BADGES_EN, ALLERGENES_FR, ALLERGENES_EN]) {
+      for (const [cle, libelle] of Object.entries(catalogue)) {
+        expect(libelle.trim(), cle).not.toBe("");
+        expect(libelle, cle).toBe(libelle.trim());
+      }
+    }
+  });
+
+  it("le pictogramme d'un badge est le MÊME dans les deux langues", () => {
+    // Un émoji n'a pas de langue. En changer avec la langue aurait laissé croire
+    // à un autre régime, et déplacé le badge dans la grille.
+    for (const cle of Object.keys(BADGES_FR) as Array<keyof typeof BADGES_FR>) {
+      const emojiFr = BADGES_FR[cle].slice(0, BADGES_FR[cle].indexOf(" "));
+      const emojiEn = BADGES_EN[cle].slice(0, BADGES_EN[cle].indexOf(" "));
+      expect(emojiEn, cle).toBe(emojiFr);
+      // AUCUNE assertion « les deux textes diffèrent » : « Vegan » s'écrit
+      // pareil dans les deux langues, et l'exiger aurait poussé à inventer une
+      // différence là où le mot juste est le même. C'est la garde d'accent
+      // ci-dessous qui attrape le copier-coller.
+      expect(texteSeul(BADGES_EN[cle]), cle).not.toBe("");
+    }
+  });
+
+  it("l'anglais ne porte AUCUN caractère accentué", () => {
+    // Le filet qui attrape un libellé oublié en français : « Épicé », « Œufs »
+    // et « Crustacés » ne passent pas. Il ne prouve pas la qualité de la
+    // traduction — c'est une relecture humaine qui l'a faite — mais il attrape
+    // le copier-coller.
+    const accentue = /[À-ÖØ-öø-ÿŒœ]/;
+    for (const libelle of [
+      ...Object.values(BADGES_EN),
+      ...Object.values(ALLERGENES_EN),
+    ]) {
+      expect(accentue.test(libelle), libelle).toBe(false);
+    }
+  });
+
+  it("aucun émoji sur un allergène, dans aucune des deux langues", () => {
+    // Un allergène n'est pas un argument de vente, et un pictogramme fantaisiste
+    // sur « fruits à coque » serait lu comme une nuance.
+    for (const libelle of [
+      ...Object.values(ALLERGENES_FR),
+      ...Object.values(ALLERGENES_EN),
+    ]) {
+      expect(/\p{Extended_Pictographic}/u.test(libelle), libelle).toBe(false);
+    }
   });
 });
 

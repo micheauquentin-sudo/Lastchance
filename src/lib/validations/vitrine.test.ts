@@ -8,6 +8,7 @@ import {
   toggleVitrineFicheDisponibiliteSchema,
   updateVitrineCarteSchema,
   updateVitrineFicheSchema,
+  vitrineLangSchema,
 } from "./vitrine";
 
 /**
@@ -245,5 +246,35 @@ describe("les noms sont requis, et un champ non rendu les refuse", () => {
         nom: "a".repeat(121),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("la langue demandée — `en`, ou rien (VIT-1b)", () => {
+  it("`en` est la seule valeur qui passe", () => {
+    const res = vitrineLangSchema.safeParse("en");
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.data).toBe("en");
+  });
+
+  it("l'absence de demande est valide, et vaut le français", () => {
+    const res = vitrineLangSchema.safeParse(undefined);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    // `undefined` et non `"fr"` : le français est l'ABSENCE de demande, et le
+    // chemin qui n'a pas de segment de langue. Deux façons de l'écrire auraient
+    // fait deux états à replier au même endroit.
+    expect(res.data).toBeUndefined();
+  });
+
+  it("une langue inconnue échoue ICI, et l'appelant la lit comme « rien »", () => {
+    // Elle ne devient jamais une page d'erreur : `getVitrinePublicState` fait
+    // `safeParse` et n'ajoute `p_lang` que sur un succès. Refuser aurait donné
+    // au visiteur un moyen de distinguer les langues configurées des autres.
+    for (const brut of ["fr", "EN", "de", "", "en-GB", 42, null]) {
+      expect(vitrineLangSchema.safeParse(brut).success, String(brut)).toBe(
+        false,
+      );
+    }
   });
 });
