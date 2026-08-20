@@ -10,6 +10,38 @@ import { expect, test } from "@playwright/test";
  * allergènes vides (« Côtes-du-rhône »). Quatre traductions anglaises, dont
  * UNE PÉRIMÉE — « Chickpea hummus », qui ne doit JAMAIS s'afficher.
  *
+ * ══════════════════════════════════════════════════════════════════════
+ * DEUX VITRINES, ET LA RÈGLE QUI LES SÉPARE — À LIRE AVANT D'AJOUTER UN TEST
+ * ══════════════════════════════════════════════════════════════════════
+ *
+ * Les projets Playwright tournent EN PARALLÈLE sur la même base. Les tests du
+ * dashboard ci-dessous créent des cartes, des rubriques et des fiches NON
+ * traduites dans `e2e-comptoir`, et enregistrent ses réglages — ce qui, via le
+ * trigger `touch_updated_at`, PÉRIME les traductions des réglages, pendant que
+ * `revaliderVitrine` purge le cache ISR dans la foulée. La CI l'a payé sur
+ * `df9360a` : trois champs traduisibles de plus (19 → 22) font tomber la
+ * couverture à 86 %, sous le seuil de 95 % du sélecteur de langue, et le test
+ * du sélecteur rougit sans qu'aucune ligne de produit ne soit fausse.
+ *
+ * D'où le partage, qui n'est pas une convention de confort :
+ *
+ *  • `e2e-comptoir` ABSORBE LES MUTATIONS. Tout ce que le dashboard crée ou
+ *    enregistre atterrit là. Une assertion sur cette vitrine doit rester vraie
+ *    quel que soit le nombre de fiches non traduites ajoutées à côté.
+ *
+ *  • `e2e-traduit` (org distincte, publiée, couverture 5/5) est en LECTURE
+ *    SEULE POUR TOUS LES TESTS, sans exception — aucun test, dashboard ou
+ *    public, n'y écrit jamais. C'est ce qui rend sa couverture stable.
+ *
+ * LE CRITÈRE DE PLACEMENT tient en une phrase : la couverture et la fraîcheur
+ * sont des invariants GLOBAUX À LA VITRINE — un champ ajouté n'importe où les
+ * déplace. Toute assertion qui en dépend (présence du sélecteur de langue,
+ * accroche traduite des réglages, tout ce qui suppose « rien n'a changé
+ * depuis le seed ») vit donc sur `e2e-traduit`. Ce qui est insensible aux
+ * mutations — un statut HTTP, du contenu français, du chrome d'interface, ou
+ * la superposition PAR CHAMP au niveau d'UNE fiche que le dashboard ne touche
+ * jamais — peut rester sur `e2e-comptoir`.
+ *
  * ── LE DRAPEAU EST TOMBÉ, ET CE FICHIER L'A SUIVI CONSCIEMMENT ──
  *
  * Ce bloc portait pendant tout L10 l'assertion inverse : `/v/e2e-comptoir`
@@ -61,45 +93,50 @@ test.describe("vitrine — la page publique, en français", () => {
   });
 });
 
+/**
+ * LA VARIANTE ANGLAISE — sur `e2e-traduit`, et seulement là.
+ *
+ * Tout ce bloc dépend de la FRAÎCHEUR du calque : une accroche traduite ne
+ * s'affiche que si sa ligne de traduction est plus récente que la ligne
+ * qu'elle traduit. Or la sauvegarde des réglages d'`e2e-comptoir` par les
+ * tests du dashboard périme précisément celle-là. Ces assertions vivent donc
+ * sur la vitrine en lecture seule.
+ */
 test.describe("vitrine — la variante anglaise", () => {
   test("/en répond et sert les champs traduits du seed", async ({ page }) => {
-    const reponse = await page.goto("/v/e2e-comptoir/en");
+    const reponse = await page.goto("/v/e2e-traduit/en");
     expect(reponse?.status()).toBe(200);
 
     // Les TROIS NIVEAUX du calque, tels que le seed les pose : l'accroche des
-    // réglages, le nom d'une rubrique, le nom d'une fiche.
+    // réglages, le nom d'une carte et d'une rubrique, le nom d'une fiche.
+    await expect(page.getByText("The quayside wine bar.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("The menu")).toBeVisible();
     await expect(
-      page.getByText(
-        "The neighbourhood coffee bar, roasting our own beans since 2019.",
-      ),
-    ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: "Starters" })).toBeVisible();
-    await expect(page.getByText("Pumpkin velouté")).toBeVisible();
+      page.getByRole("heading", { name: "By the glass" }),
+    ).toBeVisible();
+    await expect(page.getByText("Evening board")).toBeVisible();
+    await expect(
+      page.getByText("Aged cheeses and charcuterie."),
+    ).toBeVisible();
 
-    // Le seed est à couverture COMPLÈTE (19/19 frais — condition du sélecteur,
-    // voir plus bas) : plus aucune ligne périmée ici. La péremption — une
-    // traduction plus vieille que sa cible redonne le français — reste prouvée
-    // par pgTAP (§12, `supabase/tests/vitrine.test.sql`), qui la CRÉE par un
-    // update plutôt que de la figer dans un jeu de données.
-    await expect(page.getByText("Hummus of the day")).toBeVisible();
-    await expect(page.getByText("Houmous du jour")).toHaveCount(0);
-
-    // Le CHROME suit aussi, et il ne vient d'aucune table
-    // (`src/components/vitrine/langue.ts`).
-    await expect(page.getByText("Unavailable today")).toBeVisible();
+    // Et le français correspondant a bien CÉDÉ la place, champ par champ.
+    await expect(page.getByText("Le bar à vins du quai.")).toHaveCount(0);
+    await expect(page.getByText("Planche du soir")).toHaveCount(0);
   });
 
   test("badges et allergènes passent en libellé anglais", async ({ page }) => {
-    await page.goto("/v/e2e-comptoir/en");
-    const fiche = page.locator("article").filter({ hasText: "Pumpkin velouté" });
+    await page.goto("/v/e2e-traduit/en");
+    const fiche = page.locator("article").filter({ hasText: "Evening board" });
     await expect(fiche).toBeVisible({ timeout: 30_000 });
 
-    // « Velouté de potiron » porte `vegetarien` et l'allergène `lait`. Le
+    // « Planche du soir » porte `fait_maison` et l'allergène `lait`. Le
     // vocabulaire de plateforme est traduit à la main, une fois pour toutes
     // (`BADGES_EN` / `ALLERGENES_EN` dans `src/lib/vitrine.ts`) — le calque de
     // traduction n'y touche jamais.
-    await expect(fiche.getByText(/Vegetarian/i)).toBeVisible();
-    await expect(fiche.getByText("🥗 Végétarien")).toHaveCount(0);
+    await expect(fiche.getByText(/Homemade/i)).toBeVisible();
+    await expect(fiche.getByText("🏠 Fait maison")).toHaveCount(0);
 
     await fiche.getByText("Allergens").click();
     await expect(fiche.getByText(/Milk/i)).toBeVisible();
@@ -108,12 +145,47 @@ test.describe("vitrine — la variante anglaise", () => {
   test("le retour au français est TOUJOURS offert sur la variante anglaise", async ({
     page,
   }) => {
-    await page.goto("/v/e2e-comptoir/en");
+    await page.goto("/v/e2e-traduit/en");
     const retour = page.getByRole("link", { name: "Français" });
     await expect(retour).toBeVisible({ timeout: 30_000 });
     await retour.click();
-    await expect(page).toHaveURL(/\/v\/e2e-comptoir$/);
-    await expect(page.getByText("Velouté de potiron")).toBeVisible();
+    await expect(page).toHaveURL(/\/v\/e2e-traduit$/);
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible();
+  });
+});
+
+/**
+ * CE QUI RESTE SUR `e2e-comptoir/en` — et pourquoi ça y survit.
+ *
+ * La superposition se décide CHAMP PAR CHAMP : chaque ligne de traduction est
+ * comparée à SA cible, pas à la moyenne de la vitrine. Une fiche que les tests
+ * du dashboard ne touchent jamais garde donc sa traduction fraîche même quand
+ * trois fiches non traduites sont créées à côté et que la couverture globale
+ * s'effondre. C'est exactement ce que ce bloc prouve, et c'est la seule chose
+ * que la couverture globale ne peut PAS faire tomber.
+ *
+ * Le chrome d'interface, lui, ne vient d'aucune table
+ * (`src/components/vitrine/langue.ts`) : il est insensible par construction.
+ */
+test.describe("vitrine — la superposition par champ, sous les mutations", () => {
+  test("une fiche traduite reste anglaise quoi qu'il arrive à côté", async ({
+    page,
+  }) => {
+    const reponse = await page.goto("/v/e2e-comptoir/en");
+    expect(reponse?.status()).toBe(200);
+
+    // « Houmous du jour » n'est ni créée, ni modifiée, ni renommée par aucun
+    // test — son calque ne périme pas. La péremption elle-même — une
+    // traduction plus vieille que sa cible redonne le français — reste prouvée
+    // par pgTAP (§12, `supabase/tests/vitrine.test.sql`), qui la CRÉE par un
+    // update plutôt que de la figer dans un jeu de données.
+    await expect(page.getByText("Hummus of the day")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("Houmous du jour")).toHaveCount(0);
+
+    // Le CHROME suit aussi.
+    await expect(page.getByText("Unavailable today")).toBeVisible();
   });
 });
 
@@ -125,32 +197,36 @@ test.describe("vitrine — la variante anglaise", () => {
  * une carte à moitié française est pire que ne rien lui offrir, parce qu'il a
  * fait la démarche.
  *
- * ── ÉTAT DU SEED, MESURÉ ET NON SUPPOSÉ ──
+ * ── POURQUOI SUR `e2e-traduit` ET PAS SUR `e2e-comptoir` ──
  *
- * `supabase/seed.sql` pose les DIX-NEUF champs traduisibles de `e2e-comptoir`
- * en anglais FRAIS (3 réglages + 2 cartes + 3 rubriques + 11 noms et
- * descriptions de fiches — « Limonade artisanale » n'a pas de description).
- * Couverture 100 %, au-dessus du seuil : le sélecteur est PRÉSENT sur la page
- * française, et c'est ce que ce test fige. Une seule ligne périmée aurait fait
- * 18/19 = 94,7 % — sous le seuil par accident : c'est pourquoi la péremption
- * vit en pgTAP et pas dans le seed.
+ * La couverture est un RATIO sur toute la vitrine : elle bouge dès qu'un champ
+ * traduisible apparaît quelque part. Sur `e2e-comptoir`, les tests du
+ * dashboard créent en parallèle une carte, une rubrique et une fiche — trois
+ * champs non traduits, 19/22 = 86 %, sous le seuil, sélecteur absent. Ce test
+ * a rougi ainsi sur `df9360a` alors que le produit était juste.
+ *
+ * `e2e-traduit` est en lecture seule pour tous les tests et porte 5 champs
+ * traduisibles, tous FRAIS (accroche + carte + rubrique + nom et description
+ * de fiche) : 5/5 = 100 %, et ce chiffre ne dépend de l'ordonnancement
+ * d'aucun projet Playwright.
  *
  * Le garde-fou inverse — sélecteur ABSENT sous le seuil — est prouvé par les
  * tests Vitest de `selecteurLanguesOuvert` aux deux bords du seuil ; le seed
- * n'a pas de seconde vitrine publiée à couverture nulle pour l'asserter ici.
+ * n'a pas de vitrine publiée à couverture nulle pour l'asserter ici.
  */
 test.describe("vitrine — sélecteur de langue", () => {
   test("la page française offre l'anglais dès le seuil de couverture atteint", async ({
     page,
   }) => {
-    await page.goto("/v/e2e-comptoir");
-    await expect(page.getByRole("heading", { name: "E2E Café" })).toBeVisible({
+    await page.goto("/v/e2e-traduit");
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole("link", { name: "English" })).toBeVisible();
 
     // L'adresse anglaise reste atteignable EN DIRECT : le sélecteur est une
-    // porte d'entrée, pas une autorisation.
+    // porte d'entrée, pas une autorisation. Vrai des DEUX vitrines — celle qui
+    // absorbe les mutations le prouve mieux, puisqu'elle passe sous le seuil.
     const reponse = await page.goto("/v/e2e-comptoir/en");
     expect(reponse?.status()).toBe(200);
   });
@@ -241,7 +317,16 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ hasText: /Modifier|Voir le détail/ })
       .first()
       .click();
-    await ficheLi.getByLabel("🌱 Vegan").check();
+
+    // ATTENDRE L'ACCALMIE AVANT DE COCHER. Chaque mutation de cet écran est
+    // suivie d'un `revaliderVitrine` puis d'un rafraîchissement : un `check()`
+    // lancé pendant ce cycle meurt en « waiting for navigation ». Rendre la
+    // case VISIBLE avant de la toucher fait de l'attente un ancrage explicite
+    // plutôt qu'une course avec le routeur.
+    const caseVegan = ficheLi.getByLabel("🌱 Vegan");
+    await expect(caseVegan).toBeVisible({ timeout: 20_000 });
+    await caseVegan.check();
+
     // Les allergènes vivent derrière un second pli DANS l'éditeur — l'ouvrir
     // avant de cocher, sinon la case existe mais n'est pas visible.
     await ficheLi
@@ -249,18 +334,37 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ hasText: "Allergènes" })
       .first()
       .click();
-    await ficheLi.getByLabel("Gluten").check();
+    const caseGluten = ficheLi.getByLabel("Gluten");
+    await expect(caseGluten).toBeVisible({ timeout: 20_000 });
+    await caseGluten.check();
+
     await ficheLi
       .getByRole("button", { name: "Enregistrer la fiche" })
       .click();
-    await expect(ficheLi.getByText("Enregistré.")).toBeVisible({
-      timeout: 20_000,
-    });
+
+    // TOAST *OU* ÉTAT PERSISTÉ, PAS LE TOAST SEUL. « Enregistré. » est un
+    // `role="status"` éphémère, et le rafraîchissement qui suit la sauvegarde
+    // peut l'emporter avant que l'assertion ne l'observe — sur une machine de
+    // CI chargée, l'ordre des deux n'est pas garanti. Ce qui est STABLE après
+    // la sauvegarde, c'est la valeur elle-même : la case cochée est encore
+    // cochée. On accepte l'un ou l'autre, ce qui prouve la même chose sans
+    // dépendre de qui gagne la course.
+    await expect
+      .poll(
+        async () =>
+          (await ficheLi.getByText("Enregistré.").count()) > 0 ||
+          (await caseVegan.isChecked().catch(() => false)),
+        { timeout: 20_000 },
+      )
+      .toBe(true);
 
     // ── Marquer indisponible ──
-    await ficheLi
-      .getByRole("button", { name: "Marquer indisponible" })
-      .click();
+    // Même précaution : ancrer sur le bouton re-rendu avant de cliquer.
+    const boutonIndispo = ficheLi.getByRole("button", {
+      name: "Marquer indisponible",
+    });
+    await expect(boutonIndispo).toBeVisible({ timeout: 20_000 });
+    await boutonIndispo.click();
     await expect(ficheLi.getByText("Indisponible")).toBeVisible({
       timeout: 20_000,
     });
