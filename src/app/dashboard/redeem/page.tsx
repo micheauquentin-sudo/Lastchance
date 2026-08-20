@@ -4,6 +4,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess, hasLoyaltyAccess } from "@/lib/subscription";
 import { badgeDeRemise, descriptionDeCaisse } from "@/lib/caisse-remise";
+import { formatFenetreStock, libelleRetraitTropTot } from "@/lib/reserver";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
@@ -15,6 +16,7 @@ import { EventRedeemButton } from "@/components/dashboard/event-redeem-button";
 import { ReferralRedeemButton } from "@/components/dashboard/referral-redeem-button";
 import { QuizRedeemButton } from "@/components/dashboard/quiz-redeem-button";
 import { ContestRedeemButton } from "@/components/dashboard/contest-redeem-button";
+import { StockRedeemButton } from "@/components/dashboard/stock-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -35,6 +37,7 @@ import {
   type CashierParticipation,
   type CashierQuizReward,
   type CashierReferralReward,
+  type CashierStockHold,
 } from "@/actions/participations";
 
 export const metadata: Metadata = { title: "Caisse" };
@@ -54,6 +57,26 @@ const isLookupExpired = (found: {
  * Idem pour un lot de pronostics : l'annulation y est portée par `status`
  * (pas de colonne `cancelled_at`), d'où ce prédicat dédié.
  */
+/**
+ * LA BORNE BASSE DE LA FENÊTRE DE RETRAIT (RES-5), et elle n'existe QUE pour
+ * cette famille.
+ *
+ * `redeem_stock_hold` refuse un retrait tenté AVANT `window_starts_at`, et le
+ * routeur universel ressort alors en `source_refused` — un état pour lequel le
+ * registre n'a délibérément pas de mot (la migration 20261010120000 l'écrit :
+ * « c'est au comptoir qu'il faut phraser "retrait à partir de 19 h" »). Sans ce
+ * prédicat, le caissier cliquait « Valider le retrait » devant le client pour
+ * découvrir un refus dont l'écran ne donnait pas le motif.
+ *
+ * Fonction simple et non calcul de rendu, comme les deux prédicats voisins :
+ * `Date.now()` dans un corps de composant est impur, et la règle
+ * `react-hooks/purity` a raison de le refuser.
+ */
+const isStockPickupNotOpen = (hold: CashierStockHold) =>
+  !hold.redeemed_at &&
+  !hold.cancelled_at &&
+  new Date(hold.window_starts_at).getTime() > Date.now();
+
 const isContestAwardExpired = (award: CashierContestAward) =>
   !award.redeemed_at &&
   award.status !== "cancelled" &&
@@ -214,7 +237,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-… PRONO-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-… PRONO-… RESA-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -319,6 +342,7 @@ export default async function RedeemPage({
       {match?.source === "referral" && <ReferralResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
       {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
       {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "reserver_stock" && <StockHoldResult hold={match.hold} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
       <JackpotStaffCheckin campaigns={staffJackpots} />
@@ -933,6 +957,131 @@ export function ContestResult({
         </p>
       ) : (
         <ContestRedeemButton code={award.code} />
+      )}
+    </Card>
+  );
+}
+
+/**
+ * RÉSERVATION DE STOCK — code RESA-…, retiré en caisse (RES-5).
+ *
+ * ── CE N'EST PAS UN LOT, ET LA CARTE NE DOIT PAS LE DIRE AUTREMENT ──
+ *
+ * Les neuf familles au-dessus remettent un GAIN : quelque chose que le client a
+ * obtenu par un jeu. Ici il vient chercher une unité qu'il a bloquée, et qu'il
+ * paiera peut-être au comptoir. Le vocabulaire suit — « retrait », pas
+ * « remise » — parce que le caissier ne fait pas le même geste, et parce que
+ * dire « lot » sur un panier payant l'aurait fait donner gratuitement.
+ *
+ * ── QUATRE REFUS, ET LE QUATRIÈME EST NEUF ──
+ *
+ * Déjà retiré, annulé, échéance passée : les trois refus des autres familles.
+ * Le quatrième — TROP TÔT — n'appartient qu'à ce module, et c'est la raison
+ * d'être de la fenêtre : `redeem_stock_hold` borne le retrait AUX DEUX BOUTS, et
+ * le registre ne sait pas nommer la borne basse. On l'affiche donc avant le
+ * clic, avec l'heure d'ouverture, plutôt que de laisser le caissier découvrir le
+ * motif en cliquant.
+ */
+function StockHoldResult({
+  hold,
+  nomGagne,
+  descriptionGagnee,
+  fuseau,
+  remis,
+}: {
+  hold: CashierStockHold;
+  /** Libellé gravé à l'émission, `null` pour un code antérieur au registre. */
+  nomGagne: string | null;
+  /** Description gravée à l'émission, `null` : repli sur la table parente. */
+  descriptionGagnee: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
+  /** La page vient-elle du rechargement déclenché par un retrait ? */
+  remis: boolean;
+}) {
+  const expired = isLookupExpired(hold);
+  const tropTot = isStockPickupNotOpen(hold);
+  const actionable =
+    !hold.redeemed_at && !hold.cancelled_at && !expired && !tropTot;
+  // LA FENÊTRE, DATÉE AUX DEUX BOUTS. `formatFenetreStock` et non `formatCreneau`
+  // : une fenêtre de retrait peut franchir minuit — un Drop de fin de service
+  // relevé le lendemain matin — et « 18:00 – 10:00 » se lirait comme une fenêtre
+  // qui remonte le temps.
+  const fenetre = formatFenetreStock(
+    hold.window_starts_at,
+    hold.window_ends_at,
+    fuseau,
+  );
+  const detailsGagnes = descriptionDeCaisse({
+    detailsGraves: descriptionGagnee,
+    nomGagne,
+    labelCourant: hold.offer_title,
+    descriptionCourante: hold.offer_description,
+  });
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{hold.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🛍️ Réservation de stock
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {nomGagne || hold.offer_title || "Offre supprimée"}
+      </p>
+      {detailsGagnes && (
+        <p className="mb-2 text-sm text-zinc-600">{detailsGagnes}</p>
+      )}
+      {/* LA FENÊTRE EST SUR LA CARTE, TOUJOURS. C'est ce que le caissier doit
+          pouvoir lire à voix haute devant quelqu'un qui arrive trop tôt ou trop
+          tard — et le seul renseignement que le code, lui, ne porte pas. */}
+      <p className="mb-5 text-sm text-zinc-600">
+        À retirer {fenetre} · réservé le {formatDate(hold.created_at, fuseau)}
+      </p>
+
+      {hold.redeemed_at ? (
+        <RedeemedBadge
+          remis={remis}
+          at={hold.redeemed_at}
+          fuseau={fuseau}
+          suffix={
+            hold.basket_cents !== null
+              ? ` · panier ${(hold.basket_cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}`
+              : null
+          }
+        />
+      ) : hold.cancelled_at ? (
+        <div>
+          <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
+            ✖ Réservation annulée le {formatDate(hold.cancelled_at, fuseau)}
+          </p>
+          <p className="mt-2 text-sm text-zinc-600">
+            Le client l&apos;a annulée depuis son téléphone : l&apos;unité est
+            repartie en vente. Ne la lui remettez pas.
+          </p>
+        </div>
+      ) : tropTot ? (
+        <div>
+          {/* LE LIBELLÉ VIENT DU MODULE, pas d'ici : c'est le même mot que la
+              page du client lit sur sa propre prise, et deux formulations du
+              même refus auraient fini par se contredire au comptoir. */}
+          <p className="inline-flex rounded-full bg-sky-100 px-4 py-2 text-sm font-semibold text-sky-800">
+            🕑 {libelleRetraitTropTot(fenetre)}
+          </p>
+          <p className="mt-2 text-sm text-zinc-600">
+            Sa réservation est valable : le code fonctionnera à l&apos;heure dite
+            — inutile de le faire retaper.
+          </p>
+        </div>
+      ) : expired ? (
+        <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
+          ⏱ Fenêtre close le {formatDate(hold.redeem_expires_at!, fuseau)} —
+          l&apos;unité est repartie en vente
+        </p>
+      ) : (
+        <StockRedeemButton code={hold.code} />
       )}
     </Card>
   );

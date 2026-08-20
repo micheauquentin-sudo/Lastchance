@@ -109,7 +109,12 @@ export function TurnstileWidget({
     // Prise de tour dans une file d'accueil (`queueJoin`, RES-3). Même
     // littéral que celui passé à `verifyTurnstile` — c'est un QR scanné en
     // boutique, donc le défi ne s'affiche que si le serveur l'a réclamé.
-    | "reserver-queue-join";
+    | "reserver-queue-join"
+    // Blocage d'une unité de stock (`holdStockOffer`, RES-5). Même littéral que
+    // celui passé à `verifyTurnstile` dans `src/actions/reserver.ts` : c'est un
+    // QR scanné en boutique, donc le défi ne s'affiche que si le serveur l'a
+    // réclamé.
+    | "reserver-stock-hold";
   onUnavailable?: (reason: TurnstileUnavailableReason) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
