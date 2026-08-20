@@ -79,6 +79,15 @@ export function VitrineQrPlanche({
   const [valeur, setValeur] = useState("accueil");
   const [exemplaires, setExemplaires] = useState(1);
   const [prefixe, setPrefixe] = useState("Table");
+  /**
+   * FERMÉE PAR DÉFAUT, et les canvas avec elle. Dessiner les QR au montage
+   * chargeait le fil principal à CHAQUE visite du dashboard Vitrine — pour un
+   * outil qu'on ouvre le jour où l'on imprime. Sur les runners WebKit, ce
+   * dessin au montage suffisait à faire dériver les clics du test de création
+   * de fiche (« waiting for navigation to finish », CI L12). Le pli est la
+   * réponse produit ET la réponse machine : rien ne se dessine avant l'intention.
+   */
+  const [ouverte, setOuverte] = useState(false);
 
   const cible = cibles.find((c) => valeurCible(c) === valeur) ?? cibles[0];
 
@@ -121,6 +130,7 @@ export function VitrineQrPlanche({
           @page { size: A4 portrait; margin: 12mm; }
           body { background: #fff !important; }
           .vitrine-qr-controls { display: none !important; }
+          .vitrine-qr-pli > summary { display: none !important; }
           .vitrine-qr-planche {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important;
@@ -134,7 +144,15 @@ export function VitrineQrPlanche({
         }
       `}</style>
 
-      <div className="vitrine-qr-controls space-y-4">
+      <details
+        onToggle={(e) => setOuverte(e.currentTarget.open)}
+        className="vitrine-qr-pli"
+      >
+        <summary className="cursor-pointer select-none text-sm font-bold text-k-ink">
+          Préparer les QR à imprimer
+        </summary>
+
+        <div className="vitrine-qr-controls mt-4 space-y-4">
         <div>
           <Label htmlFor="vitrine-qr-cible">Ce que le QR ouvre</Label>
           <select
@@ -210,23 +228,28 @@ export function VitrineQrPlanche({
           <span className="font-bold text-k-ink">Adresse encodée :</span>{" "}
           <code className="break-all text-k-body">{url}</code>
         </p>
-      </div>
+        </div>
 
-      <ul className="vitrine-qr-planche mt-5 grid gap-4 sm:grid-cols-2">
-        {exemplairesListe.map((index) => (
-          <QrExemplaire
-            key={index}
-            url={url}
-            contexte={libelleContexte}
-            libelle={
-              prefixe.trim() && exemplaires > 0
-                ? `${prefixe.trim()} ${index + 1}`
-                : null
-            }
-            fichier={`vitrine-${slug}-${valeur.replace(":", "-")}-${index + 1}`}
-          />
-        ))}
-      </ul>
+        {/* Les canvas n'existent que le pli ouvert : rien ne se dessine
+            avant l'intention (voir le commentaire d'`ouverte`). */}
+        {ouverte ? (
+          <ul className="vitrine-qr-planche mt-5 grid gap-4 sm:grid-cols-2">
+            {exemplairesListe.map((index) => (
+              <QrExemplaire
+                key={index}
+                url={url}
+                contexte={libelleContexte}
+                libelle={
+                  prefixe.trim() && exemplaires > 0
+                    ? `${prefixe.trim()} ${index + 1}`
+                    : null
+                }
+                fichier={`vitrine-${slug}-${valeur.replace(":", "-")}-${index + 1}`}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </details>
     </Card>
   );
 }

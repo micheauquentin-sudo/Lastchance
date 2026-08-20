@@ -162,6 +162,7 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
           </div>
 
           <div
+            id="vitrine-import-comptes"
             className="rounded-xl border-2 border-k-ink/15 bg-white px-3 py-2 text-sm"
             aria-live="polite"
           >

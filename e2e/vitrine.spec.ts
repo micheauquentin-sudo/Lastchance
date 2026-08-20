@@ -454,16 +454,18 @@ test.describe("vitrine — dashboard commerçant", () => {
 
     const nomChamp = page.locator("#vitrine-import-nom");
     await expect(nomChamp).toBeVisible({ timeout: 10_000 });
-    // `{ exact: true }` : « 2 rubriques » apparaît AUSSI dans la phrase du
-    // refus de suppression d'une carte existante (« videz-la de ses 2
-    // rubriques ») — le mode strict de Playwright refuse l'ambiguïté.
-    await expect(page.getByText("2 rubriques", { exact: true })).toBeVisible();
-    await expect(page.getByText("3 fiches", { exact: true })).toBeVisible();
+    // ANCRÉ SUR LE CONTENEUR, pas sur le texte seul : « 2 fiches » existe en
+    // quatre exemplaires sur la page (compteur global, comptes par rubrique de
+    // l'aperçu, phrase du refus de suppression d'une carte existante). Seul le
+    // bloc `#vitrine-import-comptes` porte le verdict de l'import.
+    const comptes = page.locator("#vitrine-import-comptes");
+    await expect(comptes.getByText("2 rubriques", { exact: true })).toBeVisible();
+    await expect(comptes.getByText("3 fiches", { exact: true })).toBeVisible();
 
     // ── RECLASSER UNE LIGNE, et voir les comptes suivre ──
     const ligneSoupe = page.locator("li").filter({ hasText: "Soupe E2E" }).last();
     await ligneSoupe.getByLabel("Classement").selectOption("ignorer");
-    await expect(page.getByText("2 fiches", { exact: true })).toBeVisible();
+    await expect(comptes.getByText("2 fiches", { exact: true })).toBeVisible();
     // …puis la rendre à la carte : le reclassement se fait dans les deux sens.
     await ligneSoupe.getByLabel("Classement").selectOption("fiche");
     await expect(page.getByText("3 fiches")).toBeVisible();
@@ -504,6 +506,13 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(
       page.getByRole("heading", { name: "QR et impression" }),
     ).toBeVisible({ timeout: 30_000 });
+
+    // La section est PLIÉE par défaut : rien ne se dessine avant l'intention
+    // (les canvas au montage chargeaient le fil principal — CI WebKit L12).
+    await page
+      .locator("summary")
+      .filter({ hasText: "Préparer les QR à imprimer" })
+      .click();
 
     // Index 1 : la première carte du commerce (index 0 = l'accueil).
     await page.getByLabel("Ce que le QR ouvre").selectOption({ index: 1 });
