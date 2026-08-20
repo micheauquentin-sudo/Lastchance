@@ -105,6 +105,13 @@ test.describe("vitrine — dashboard commerçant", () => {
       .first()
       .click();
     await ficheLi.getByLabel("🌱 Vegan").check();
+    // Les allergènes vivent derrière un second pli DANS l'éditeur — l'ouvrir
+    // avant de cocher, sinon la case existe mais n'est pas visible.
+    await ficheLi
+      .locator("summary")
+      .filter({ hasText: "Allergènes" })
+      .first()
+      .click();
     await ficheLi.getByLabel("Gluten").check();
     await ficheLi
       .getByRole("button", { name: "Enregistrer la fiche" })
