@@ -75,9 +75,24 @@ function declarationsDepuisMigration(source: string): DeclarationTrigger[] {
 const DECLARATIONS = declarationsDepuisMigration(readFileSync(MIGRATION, "utf8"));
 
 /**
- * Les modules qui DOIVENT avoir un trigger. `vitrine` n'en a pas : le lot L2
- * (migration 20261001120000) livre son droit serveur et rien d'autre — pas de
- * table, donc rien à publier, donc rien à garder.
+ * Les modules qui DOIVENT avoir un trigger DANS CE FICHIER DE MIGRATION.
+ *
+ * ── L'EXEMPTION DE `vitrine` A CHANGÉ DE RAISON (VIT-1a, 20261011120000) ──
+ *
+ * Elle disait « pas de table, donc rien à publier, donc rien à garder », ce qui
+ * était vrai du lot L2 — qui livrait le droit serveur et rien d'autre. Ce n'est
+ * PLUS le cas : `vitrine_settings` existe, elle porte `published`, et un dixième
+ * trigger `guard_module_publication` la garde. Il vit simplement dans SA
+ * migration, pas dans les neuf de 20260905120000 que ce fichier parse.
+ *
+ * Ce qui reste vrai, et qui est la raison ACTUELLE de l'exemption : `vitrine`
+ * n'a pas d'entrée dans `RESSOURCE_MODULE`, parce qu'aucun QUOTA DE BROUILLONS
+ * ne s'applique à elle — une organisation a une vitrine, pas N brouillons de
+ * vitrine. C'est cela qu'`estPubliable` mesure, et pas l'existence d'un trigger.
+ *
+ * Le jour où la vitrine devient contingentée, elle entre dans `RESSOURCE_MODULE`
+ * et l'assertion d'exemption ci-dessous rougit — ce qui est le bon sens de
+ * l'échec.
  *
  * DÉRIVÉE de `GRANTABLE_MODULES` par le prédicat `estPubliable`, jamais
  * recopiée : le onzième module ajouté demain entre ici tout seul et fait
@@ -96,11 +111,15 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     expect(DECLARATIONS).toHaveLength(MODULES_PUBLIABLES.length);
   });
 
-  it("vitrine est le seul module exempté de trigger, et il est nommé", () => {
+  it("vitrine est le seul module hors RESSOURCE_MODULE, et il est nommé", () => {
     // L'EXEMPTION EST ÉPINGLÉE, pas déduite du vide. Sans cette assertion, un
     // module dont quelqu'un retirerait le trigger par erreur pourrait être
     // « réparé » en l'ajoutant à l'exemption, et les deux tests ci-dessus
     // redeviendraient verts sans que rien ne soit gardé en base.
+    //
+    // Elle ne dit PAS « vitrine n'est pas gardée » : elle l'est, par le trigger
+    // de sa propre migration (20261011120000). Elle dit qu'aucun quota de
+    // brouillons ne s'y applique — voir le commentaire de MODULES_PUBLIABLES.
     const exemptes = GRANTABLE_MODULES.filter((m) => !estPubliable(m));
     expect(exemptes).toEqual(["vitrine"]);
   });

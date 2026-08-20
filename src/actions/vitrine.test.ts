@@ -1,0 +1,529 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// ────────────────────────────────────────────────────────────
+// VITRINE — GARDES D'INNOCUITÉ DES ACTIONS (VIT-1a, lot L10)
+//
+// `src/lib/vitrine.test.ts` couvre les fonctions PURES (lecture des jsonb).
+// Ce fichier couvre l'autre bout : ce qui ÉCRIT. Trois invariants, vérifiés sur
+// le comportement RÉEL de l'action et non sur ses commentaires.
+//
+//   1. AUCUNE ÉCRITURE SANS LA GARDE. Le caissier, la session expirée et
+//      l'absence de droit `vitrine` refusent AVANT toute requête — vérifié par
+//      le compte de requêtes émises, qui doit rester à zéro. Un refus qui écrit
+//      d'abord et refuse ensuite n'est pas un refus.
+//
+//   2. L'ORGANISATION VIENT DE LA SESSION, JAMAIS DU FORMULAIRE. Chaque
+//      écriture porte un filtre ou une colonne `organization_id` valant celle
+//      de la session, et le CRUD passe par le client de SESSION (donc sous RLS)
+//      — jamais par `createAdminClient`, qui court-circuiterait les policies
+//      « vitrine_* : editors ». Le service_role n'apparaît QUE sur
+//      `set_vitrine_slug`, qui l'exige et revérifie l'acteur en SQL.
+//
+//   3. CE QUE LE LOT NE FAIT PAS, IL NE L'ÉCRIT PAS. Aucune action n'envoie de
+//      `cover_path` ni de `photo_path` autrement qu'à `null` : le pipeline
+//      d'images n'existe pas dans ce lot, et une colonne écrite « au cas où »
+//      serait un chemin que rien ne sert.
+// ────────────────────────────────────────────────────────────
+
+const ORG_ID = "00000000-0000-4000-8000-0000000000a1";
+const USER_ID = "00000000-0000-4000-8000-0000000000f1";
+const CARTE_ID = "00000000-0000-4000-8000-0000000000b1";
+const RUBRIQUE_ID = "00000000-0000-4000-8000-0000000000c1";
+const FICHE_ID = "00000000-0000-4000-8000-0000000000d1";
+
+interface DbCall {
+  table: string;
+  op: "select" | "insert" | "update" | "delete";
+  payload: unknown;
+  filters: Record<string, unknown>;
+}
+
+const { state, makeClient } = vi.hoisted(() => {
+  const state = {
+    calls: [] as Array<{
+      table: string;
+      op: "select" | "insert" | "update" | "delete";
+      payload: unknown;
+      filters: Record<string, unknown>;
+    }>,
+    /** Ligne rendue par un `.select().maybeSingle()` après écriture. */
+    row: { id: "row-1", slug: "le-comptoir", published: true } as unknown,
+    /** Erreur simulée sur l'écriture suivante. */
+    error: null as { message: string; code?: string } | null,
+    reset() {
+      state.calls = [];
+      state.row = { id: "row-1", slug: "le-comptoir", published: true };
+      state.error = null;
+    },
+  };
+
+  function makeClient() {
+    return {
+      from(table: string) {
+        const call = {
+          table,
+          op: "select" as "select" | "insert" | "update" | "delete",
+          payload: undefined as unknown,
+          filters: {} as Record<string, unknown>,
+        };
+        state.calls.push(call);
+
+        const settle = () =>
+          state.error
+            ? { data: null, error: state.error }
+            : { data: state.row, error: null };
+
+        const builder = {
+          select: () => builder,
+          insert: (payload: unknown) => {
+            call.op = "insert";
+            call.payload = payload;
+            return builder;
+          },
+          update: (payload: unknown) => {
+            call.op = "update";
+            call.payload = payload;
+            return builder;
+          },
+          delete: () => {
+            call.op = "delete";
+            return builder;
+          },
+          eq: (column: string, value: unknown) => {
+            call.filters[column] = value;
+            return builder;
+          },
+          order: () => builder,
+          limit: () => builder,
+          maybeSingle: () => Promise.resolve(settle()),
+          single: () => Promise.resolve(settle()),
+          then: (
+            onFulfilled: (value: { data: unknown; error: unknown }) => unknown,
+            onRejected?: (reason: unknown) => unknown,
+          ) => Promise.resolve(settle()).then(onFulfilled, onRejected),
+        };
+        return builder;
+      },
+    };
+  }
+
+  return { state, makeClient };
+});
+
+const { gardeMock, rpcMock, adminFromMock } = vi.hoisted(() => ({
+  gardeMock: vi.fn(),
+  rpcMock: vi.fn(),
+  adminFromMock: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: () => Promise.resolve(makeClient()),
+}));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => ({ rpc: rpcMock, from: adminFromMock }),
+}));
+vi.mock("@/lib/vitrine-context", () => ({ gardeEditeurVitrine: gardeMock }));
+vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+
+import {
+  createVitrineCarte,
+  createVitrineFiche,
+  createVitrineRubrique,
+  deleteVitrineCarte,
+  publishVitrine,
+  reorderVitrineFiches,
+  saveVitrineSettings,
+  setVitrineSlug,
+  toggleVitrineFicheDisponibilite,
+  unpublishVitrine,
+  updateVitrineFiche,
+} from "./vitrine";
+
+function gardeOk() {
+  gardeMock.mockResolvedValue({
+    ok: true,
+    organizationId: ORG_ID,
+    userId: USER_ID,
+  });
+}
+
+function gardeRefusee(error = "Action non autorisée") {
+  gardeMock.mockResolvedValue({ ok: false, error });
+}
+
+function fd(champs: Record<string, string | string[]>): FormData {
+  const form = new FormData();
+  for (const [cle, valeur] of Object.entries(champs)) {
+    if (Array.isArray(valeur)) {
+      for (const v of valeur) form.append(cle, v);
+    } else {
+      form.set(cle, valeur);
+    }
+  }
+  return form;
+}
+
+function callsTo(table: string): DbCall[] {
+  return state.calls.filter((call) => call.table === table);
+}
+
+afterEach(() => {
+  state.reset();
+  vi.clearAllMocks();
+});
+
+// ────────────────────────────────────────────────────────────
+// Invariant 1 — aucune écriture sans la garde
+// ────────────────────────────────────────────────────────────
+
+describe("la garde refuse AVANT d'écrire", () => {
+  const gestes: Array<[string, () => Promise<{ ok: boolean }>]> = [
+    ["createVitrineCarte", () => createVitrineCarte(null, fd({ nom: "Midi" }))],
+    [
+      "createVitrineRubrique",
+      () =>
+        createVitrineRubrique(
+          null,
+          fd({ menu_id: CARTE_ID, nom: "Entrées" }),
+        ),
+    ],
+    [
+      "createVitrineFiche",
+      () =>
+        createVitrineFiche(
+          null,
+          fd({ categorie_id: RUBRIQUE_ID, nom: "Soupe" }),
+        ),
+    ],
+    ["deleteVitrineCarte", () => deleteVitrineCarte(null, fd({ id: CARTE_ID }))],
+    [
+      "toggleVitrineFicheDisponibilite",
+      () =>
+        toggleVitrineFicheDisponibilite(
+          null,
+          fd({ id: FICHE_ID, disponible: "false" }),
+        ),
+    ],
+    ["publishVitrine", () => publishVitrine()],
+    ["unpublishVitrine", () => unpublishVitrine()],
+    [
+      "reorderVitrineFiches",
+      () =>
+        reorderVitrineFiches(
+          null,
+          fd({ categorie_id: RUBRIQUE_ID, order: JSON.stringify([FICHE_ID]) }),
+        ),
+    ],
+    ["setVitrineSlug", () => setVitrineSlug(null, fd({ slug: "le-comptoir" }))],
+    [
+      "saveVitrineSettings",
+      () => saveVitrineSettings(null, fd({ accroche: "Bistrot" })),
+    ],
+  ];
+
+  it.each(gestes)("%s refuse le caissier sans émettre de requête", async (
+    _nom,
+    geste,
+  ) => {
+    gardeRefusee();
+    const res = await geste();
+    expect(res.ok).toBe(false);
+    // ZÉRO REQUÊTE : un refus qui écrit d'abord n'est pas un refus. Ce compte
+    // couvre aussi bien le client de session que le service_role.
+    expect(state.calls).toHaveLength(0);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Invariant 2 — l'organisation vient de la session
+// ────────────────────────────────────────────────────────────
+
+describe("l'organisation vient de la SESSION, jamais du formulaire", () => {
+  it("une carte est créée avec l'organisation de la session", async () => {
+    gardeOk();
+    const res = await createVitrineCarte(
+      null,
+      // `organization_id` posté est IGNORÉ : le schéma ne le lit pas, et
+      // l'action n'écrit que celui de la garde.
+      fd({ nom: "Carte du midi", organization_id: "org-du-voisin" }),
+    );
+
+    expect(res.ok).toBe(true);
+    const insertion = callsTo("vitrine_menus").find((c) => c.op === "insert");
+    expect(insertion).toBeDefined();
+    expect(
+      (insertion!.payload as Record<string, unknown>).organization_id,
+    ).toBe(ORG_ID);
+  });
+
+  it("une rubrique porte l'organisation de la session ET sa carte", async () => {
+    gardeOk();
+    await createVitrineRubrique(
+      null,
+      fd({ menu_id: CARTE_ID, nom: "Entrées" }),
+    );
+
+    const insertion = callsTo("vitrine_categories").find(
+      (c) => c.op === "insert",
+    );
+    const payload = insertion!.payload as Record<string, unknown>;
+    // Les deux colonnes de la FK COMPOSITE : c'est elle qui refuse de coudre
+    // une rubrique sous la carte d'un autre locataire.
+    expect(payload.organization_id).toBe(ORG_ID);
+    expect(payload.menu_id).toBe(CARTE_ID);
+  });
+
+  it("chaque mise à jour porte un filtre organization_id explicite", async () => {
+    gardeOk();
+    await updateVitrineFiche(
+      null,
+      fd({ id: FICHE_ID, nom: "Soupe", badges: ["vegan"] }),
+    );
+
+    const maj = callsTo("vitrine_items").find((c) => c.op === "update");
+    expect(maj!.filters.id).toBe(FICHE_ID);
+    // En plus de la RLS `is_org_editor` : la ceinture ET les bretelles, parce
+    // qu'une policy retirée par erreur ne se voit dans aucun test d'action.
+    expect(maj!.filters.organization_id).toBe(ORG_ID);
+  });
+
+  it("le réordonnancement borne aussi sur le PARENT", async () => {
+    gardeOk();
+    await reorderVitrineFiches(
+      null,
+      fd({ categorie_id: RUBRIQUE_ID, order: JSON.stringify([FICHE_ID]) }),
+    );
+
+    const maj = callsTo("vitrine_items").find((c) => c.op === "update");
+    expect(maj!.filters.organization_id).toBe(ORG_ID);
+    // Garde de COHÉRENCE, pas de locataire : sans elle, un identifiant glissé
+    // dans la liste réordonnerait une fiche d'une autre rubrique du commerce.
+    expect(maj!.filters.categorie_id).toBe(RUBRIQUE_ID);
+    expect((maj!.payload as Record<string, unknown>).ordre).toBe(0);
+  });
+
+  it("le CRUD n'utilise JAMAIS le service_role", async () => {
+    gardeOk();
+    await createVitrineCarte(null, fd({ nom: "Midi" }));
+    await updateVitrineFiche(null, fd({ id: FICHE_ID, nom: "Soupe" }));
+    await deleteVitrineCarte(null, fd({ id: CARTE_ID }));
+
+    // Le service_role court-circuiterait les policies « vitrine_* : editors ».
+    expect(adminFromMock).not.toHaveBeenCalled();
+  });
+
+  it("setVitrineSlug passe l'acteur de la SESSION à la RPC", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", slug: "le-comptoir", created: true, changed: true },
+      error: null,
+    });
+
+    const res = await setVitrineSlug(
+      null,
+      fd({ slug: "  Le-Comptoir ", actor: "quelqu-un-d-autre" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(rpcMock).toHaveBeenCalledWith("set_vitrine_slug", {
+      p_organization_id: ORG_ID,
+      // Normalisé comme en SQL — minuscules et détourage, rien d'autre.
+      p_slug: "le-comptoir",
+      // DE LA SESSION : un acteur posté ferait de la ligne d'audit une
+      // déclaration sur l'honneur.
+      p_actor: USER_ID,
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Invariant 3 — ce que le lot ne fait pas, il ne l'écrit pas
+// ────────────────────────────────────────────────────────────
+
+describe("aucun pipeline d'images dans ce lot", () => {
+  it("une fiche créée pose photo_path à null, explicitement", async () => {
+    gardeOk();
+    await createVitrineFiche(
+      null,
+      fd({ categorie_id: RUBRIQUE_ID, nom: "Soupe" }),
+    );
+
+    const payload = callsTo("vitrine_items").find((c) => c.op === "insert")!
+      .payload as Record<string, unknown>;
+    expect(payload.photo_path).toBeNull();
+  });
+
+  it("l'édition d'une fiche ne touche NI photo_path NI le rattachement NI le rang", async () => {
+    gardeOk();
+    await updateVitrineFiche(null, fd({ id: FICHE_ID, nom: "Soupe" }));
+
+    const payload = callsTo("vitrine_items").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    // Les envoyer ici ferait qu'éditer un libellé remette la fiche à sa place
+    // d'avant — et écraserait un rang que les flèches ↑↓ viennent de poser.
+    expect(payload).not.toHaveProperty("photo_path");
+    expect(payload).not.toHaveProperty("categorie_id");
+    expect(payload).not.toHaveProperty("ordre");
+  });
+
+  it("les réglages n'écrivent pas cover_path", async () => {
+    gardeOk();
+    await saveVitrineSettings(null, fd({ accroche: "Bistrot de quartier" }));
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("cover_path");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Le thème : composé aux NOMS DE LA BASE, sans clé vide
+// ────────────────────────────────────────────────────────────
+
+describe("saveVitrineSettings — le thème part sous ses noms SQL", () => {
+  it("compose les quatre clés du validateur, et pas une de plus", async () => {
+    gardeOk();
+    await saveVitrineSettings(
+      null,
+      fd({
+        accroche: "Bistrot",
+        histoire: "",
+        horaires_texte: "12h-14h",
+        couleur_primary: "#112233",
+        couleur_secondary: "",
+        police_heading: "elegant",
+        police_body: "",
+        style_cartes: "magazine",
+        ordre_blocs: JSON.stringify(["cartes", "accroche", "inconnu"]),
+      }),
+    );
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    // `""` → `null` : `null` dit « non renseigné », une chaîne vide aurait été
+    // une seconde façon d'écrire le même fait.
+    expect(payload.histoire).toBeNull();
+    expect(payload.horaires_texte).toBe("12h-14h");
+    // `style_cartes` et non `styleCartes` : `is_valid_vitrine_theme` est fermée
+    // aux deux rangs, un camelCase serait refusé en 23514.
+    expect(payload.theme).toEqual({
+      couleurs: { primary: "#112233" },
+      polices: { heading: "elegant" },
+      style_cartes: "magazine",
+      ordre_blocs: ["cartes", "accroche"],
+    });
+  });
+
+  it("un thème entièrement vide vaut {} — jamais des sous-objets vides", async () => {
+    gardeOk();
+    await saveVitrineSettings(null, fd({ accroche: "Bistrot" }));
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    // `{"couleurs":{}}` dirait « personnalisé, avec rien » : un état de plus à
+    // distinguer dans chaque lecture, pour aucun gain.
+    expect(payload.theme).toEqual({});
+  });
+
+  it("sans ligne de réglages, on le DIT plutôt que de réussir dans le vide", async () => {
+    gardeOk();
+    state.row = null;
+
+    const res = await saveVitrineSettings(null, fd({ accroche: "Bistrot" }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Le pire des deux aurait été un succès : le commerçant repart en croyant
+    // son texte enregistré. `vitrine_settings` n'accorde `insert` à personne —
+    // seule `set_vitrine_slug` crée la ligne, et elle audite.
+    expect(res.error).toContain("adresse publique");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Les refus, tels que l'écran doit les distinguer
+// ────────────────────────────────────────────────────────────
+
+describe("setVitrineSlug — trois refus, trois messages", () => {
+  it.each([
+    ["invalid_slug", "Adresse invalide"],
+    ["reserved_slug", "réservée par la plateforme"],
+    ["slug_taken", "déjà prise"],
+  ])("%s rend un message qui lui est propre", async (etat, attendu) => {
+    gardeOk();
+    rpcMock.mockResolvedValue({ data: { state: etat }, error: null });
+
+    const res = await setVitrineSlug(null, fd({ slug: "le-comptoir" }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain(attendu);
+  });
+
+  it("une réponse illisible ne dit PAS « adresse invalide »", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({ data: { state: "quoi" }, error: null });
+
+    const res = await setVitrineSlug(null, fd({ slug: "le-comptoir" }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Envoyer le commerçant corriger une adresse correcte est le pire message
+    // possible : ce cas rend l'erreur générique.
+    expect(res.error).not.toContain("Adresse invalide");
+  });
+
+  it("un slug hors forme est refusé AVANT l'aller-retour", async () => {
+    gardeOk();
+
+    const res = await setVitrineSlug(null, fd({ slug: "le comptoir" }));
+
+    expect(res.ok).toBe(false);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteVitrineCarte — le refus du trigger NOMME le compte", () => {
+  it("relaie le message de la base plutôt qu'un générique", async () => {
+    gardeOk();
+    state.error = {
+      code: "23503",
+      message: "cette carte porte encore 3 rubrique(s) : videz-la ou désactivez-la",
+    };
+
+    const res = await deleteVitrineCarte(null, fd({ id: CARTE_ID }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Un refus qui ne dit pas COMBIEN ne dit rien : c'est la seule information
+    // utile, et elle n'existe que dans le message du trigger.
+    expect(res.error).toContain("3 rubrique(s)");
+  });
+});
+
+describe("la publication ne se garde pas ici, mais elle s'explique", () => {
+  it("un refus du trigger devient un message d'offre, pas une erreur muette", async () => {
+    gardeOk();
+    state.error = { code: "P0001", message: "module vitrine non accessible" };
+
+    const res = await publishVitrine();
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain("offre");
+  });
+
+  it("dépublier n'est jamais gardé", async () => {
+    gardeOk();
+    state.row = { id: "row-1", slug: "le-comptoir", published: false };
+
+    const res = await unpublishVitrine();
+
+    expect(res.ok).toBe(true);
+    const maj = callsTo("vitrine_settings").find((c) => c.op === "update");
+    expect((maj!.payload as Record<string, unknown>).published).toBe(false);
+    expect(maj!.filters.organization_id).toBe(ORG_ID);
+  });
+});
