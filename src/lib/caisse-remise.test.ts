@@ -178,8 +178,18 @@ describe("descriptionDeCaisse", () => {
 /**
  * GARDE D'AFFICHAGE — les règles ci-dessus ne valent que si l'écran les appelle.
  *
- * Neuf familles de codes partagent les mêmes deux pastilles ; c'est un oubli sur
- * une seule qui a produit le défaut d'origine.
+ * DIX familles de codes partagent les mêmes deux pastilles depuis RES-5 (la
+ * réservation de stock, `RESA-`) ; c'est un oubli sur une seule qui a produit le
+ * défaut d'origine.
+ *
+ * ── POURQUOI DES COMPTES EN DUR, ET POURQUOI ILS SE METTENT À JOUR ──
+ *
+ * Le compte est ce qui rend l'oubli VISIBLE : une famille ajoutée sans sa
+ * pastille ne fait pas rougir un test qui vérifierait seulement « au moins une
+ * carte ». Le prix est celui-ci — chaque famille neuve fait échouer ce fichier
+ * jusqu'à ce que quelqu'un ait REGARDÉ la nouvelle carte et compté. C'est le
+ * geste attendu, pas une corvée : le rouge dit « une carte est arrivée »,
+ * l'incrément dit « et elle porte bien les deux règles ».
  */
 describe("la caisse consomme bien les deux règles", () => {
   const page = readFileSync("src/app/dashboard/redeem/page.tsx", "utf8");
@@ -193,39 +203,44 @@ describe("la caisse consomme bien les deux règles", () => {
     expect(page).not.toMatch(/90_000/);
   });
 
-  it("les neuf cartes reçoivent le drapeau", () => {
+  it("les dix cartes reçoivent le drapeau", () => {
     const passes = page.match(/remis=\{issuDuGeste\}/g) ?? [];
-    expect(passes).toHaveLength(9);
-    const badges = page.match(/<RedeemedBadge remis=\{remis\}/g) ?? [];
-    expect(badges).toHaveLength(9);
+    expect(passes).toHaveLength(10);
+    // `\s+` ET NON UNE ESPACE : la mise en forme décide seule si `remis` reste
+    // sur la ligne de la balise ou passe à la suivante, et une carte
+    // parfaitement câblée devenait invisible de ce compte au premier retour à
+    // la ligne — un rouge qui accuse la carte alors que seul Prettier a bougé.
+    const badges = page.match(/<RedeemedBadge\s+remis=\{remis\}/g) ?? [];
+    expect(badges).toHaveLength(10);
   });
 
   it("aucune carte n'affiche une description non filtrée", () => {
-    // Les huit cartes porteuses d'une description passent toutes par la règle.
+    // Les neuf cartes porteuses d'une description passent toutes par la règle.
+    // (Seule `contest` n'en a pas : elle n'écrit jamais `reward_details`.)
     const appels = page.match(/descriptionDeCaisse\(\{/g) ?? [];
-    expect(appels).toHaveLength(8);
+    expect(appels).toHaveLength(9);
     expect(page).not.toMatch(/\{\w+\.reward_details && \(/);
     expect(page).not.toMatch(/\{participation\.prizes\?\.description && \(/);
   });
 
-  it("les huit cartes reçoivent la description GRAVÉE, pas seulement la courante", () => {
+  it("les neuf cartes reçoivent la description GRAVÉE, pas seulement la courante", () => {
     // `detailsGraves` est un champ REQUIS du type, donc `tsc` attrape déjà une
     // carte qui l'oublierait. Ce qu'il ne peut pas attraper : une carte qui le
     // câblerait sur `null` en dur, ce qui la ferait retomber en silence sur la
     // table parente — l'oubli sur UNE famille est précisément le défaut
     // d'origine. On compte donc les câblages réels.
     const cables = page.match(/detailsGraves: descriptionGagnee,/g) ?? [];
-    expect(cables).toHaveLength(8);
+    expect(cables).toHaveLength(9);
     // La valeur vient bien du registre, jamais d'une table parente.
     expect(page).toMatch(/lookup\.frozenDetails/);
   });
 
-  it("les neuf boutons de remise marquent leur geste dans l'URL", async () => {
+  it("les dix boutons de remise marquent leur geste dans l'URL", async () => {
     const { readdirSync } = await import("node:fs");
     const boutons = readdirSync("src/components/dashboard").filter((n) =>
       n.endsWith("redeem-button.tsx"),
     );
-    expect(boutons).toHaveLength(9);
+    expect(boutons).toHaveLength(10);
     for (const nom of boutons) {
       const src = readFileSync(`src/components/dashboard/${nom}`, "utf8");
       expect(src, nom).toMatch(/reloadWith: \{ remis: "1" \}/);

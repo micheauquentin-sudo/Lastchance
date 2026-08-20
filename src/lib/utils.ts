@@ -239,6 +239,26 @@ export function normalizeContestCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `PRONO-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de RETRAIT D'UNE UNITÉ DE STOCK saisie en caisse (RES-5) :
+ * "resa abcd2345", "ABCD2345", "resa-abcd2345" → "RESA-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict de
+ * `normalizeContestCode` : rejette les codes GAIN-… / CHASSE-… / FIDELITE-… /
+ * JACKPOT-… / EVENT-… / CADEAU-… / PARRAIN-… / QUIZ-… / PRONO- (préfixe
+ * distinct).
+ *
+ * L'alphabet est celui que le trigger `reservation_stock_holds_set_code` tire :
+ * un sous-ensemble de [A-Z0-9], donc la forme normalisée satisfait d'office
+ * `reward_issuances_code_shape` et le filtre d'entrée du routeur universel.
+ */
+export function normalizeStockHoldCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^RESA/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `RESA-${cleaned}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

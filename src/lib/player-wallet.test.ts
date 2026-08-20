@@ -298,3 +298,58 @@ describe("regroupement et comptage", () => {
     expect(view.organizations[0].rewards[0].code).toBe("OK-1");
   });
 });
+
+describe("LA 10e FAMILLE — une unité de stock réservée entre au portefeuille", () => {
+  it("un hold semé au registre ressort tel quel, sans code de famille à ajouter", async () => {
+    // ── CE QUE CE TEST FERME, ET CE QU'IL NE FERME PAS ──
+    //
+    // Il atteste que ce module n'a AUCUNE liste de familles à tenir : le
+    // portefeuille rend ce que `player_wallet` lui donne, `source_type` compris.
+    // C'est ce qui rendait inutile un « pont » applicatif de plus pour RES-5 —
+    // le miroir du registre suffit, à UNE condition, qui ne se vérifie pas ici :
+    // que `reward_issuances.player_id` ait été résolu à l'émission. C'est
+    // `holdStockOffer` qui la tient, en posant le pont d'identité AVANT la prise
+    // (voir `src/actions/reserver.test.ts`), et le pgTAP qui la prouve en base.
+    mocks.rpc.mockResolvedValue({
+      data: [
+        row({
+          source_type: "reserver_stock",
+          label: "Panier surprise",
+          code: "RESA-ABCD2345",
+          status: "active",
+        }),
+      ],
+      error: null,
+    });
+
+    const view = await loadPlayerWallet();
+    if (view.status !== "ready") throw new Error("état inattendu");
+
+    expect(view.organizations[0].rewards[0]).toMatchObject({
+      sourceType: "reserver_stock",
+      label: "Panier surprise",
+      code: "RESA-ABCD2345",
+      status: "active",
+    });
+    expect(view.activeCount).toBe(1);
+    // Et le code RESA- est un droit au porteur comme les neuf autres : il ne
+    // sort pas dans les journaux.
+    expect(trace()).not.toContain("RESA-ABCD2345");
+  });
+
+  it("une prise retirée ou dont la fenêtre est passée ne compte plus comme active", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        row({ source_type: "reserver_stock", code: "RESA-ABCD2345", status: "redeemed" }),
+        row({ source_type: "reserver_stock", code: "RESA-BCDE3456", status: "expired" }),
+      ],
+      error: null,
+    });
+
+    const view = await loadPlayerWallet();
+    if (view.status !== "ready") throw new Error("état inattendu");
+
+    expect(view.totalCount).toBe(2);
+    expect(view.activeCount).toBe(0);
+  });
+});

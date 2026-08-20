@@ -21,11 +21,15 @@ import {
   asSlotStatus,
   asWaitlistStatus,
   etatUiInvitation,
+  etatUiOffreStock,
   etatUiPlaceFile,
   mapExperienceSteps,
   mapQueuePublicState,
   mapReservationPublicState,
+  mapStockOfferPublicState,
+  mapStockOffersStaffState,
   mapWaitSessionOpen,
+  offreAccepteePrise,
   pairesRestantes,
   placesParReservation,
   QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
@@ -34,9 +38,12 @@ import {
   RESERVER_INVITATION_TOKEN_PATTERN,
   vueAttente,
   type EtatUiInvitation,
+  type EtatUiOffreStock,
   type EtatUiPlaceFile,
   type PublicWaitlistItem,
   type QueuePublicStateResult,
+  type StockOfferPublicStateResult,
+  type StockOfferStaffView,
   type ReserverActivityKind,
   type ReserverAttenteView,
   type ReserverExperienceStep,
@@ -2023,5 +2030,213 @@ export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueu
       enAttente: enAttenteParFile.get(queue.id) ?? 0,
       appeles: appelesParFile.get(queue.id) ?? 0,
     })),
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// Réservation de stock réel et Drop (RES-5, lot L9)
+// migration 20261010120000
+//
+// ── TOUT PASSE PAR LES RPC, ET C'EST UNE OBLIGATION, PAS UN STYLE ──
+//
+// `reservation_stock_offers` n'a AUCUNE policy `anon` et `reservation_stock_holds`
+// aucune policy d'écriture : le joueur ne lit ces lignes QUE par une RPC
+// service_role, et le restant ne se compte QUE sous verrou d'avis. Un chargeur
+// qui lirait les tables pour recomposer un restant aurait fabriqué le SECOND
+// JUGE que tout le module refuse — et il l'aurait fait hors verrou, donc faux.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * L'ÉTAT PUBLIC D'UNE OFFRE POUR CE NAVIGATEUR — la seule lecture, partagée par
+ * le rendu de la page et par son scrutin.
+ *
+ * Motif EXACT de `lireEtatFilePublic`, et pour la même raison : la page rend un
+ * premier état, puis l'écran relit après chaque geste. Deux lectures écrites
+ * séparément auraient divergé au premier champ ajouté, et le symptôme aurait été
+ * le pire possible — un restant venu d'une source et une prise venue de l'autre,
+ * sur le même écran.
+ *
+ * ── LE VISITEUR SANS IDENTITÉ EST SERVI, ET SANS COOKIE ──
+ *
+ * `stock_offer_public_state` accepte une empreinte FACULTATIVE : un visiteur qui
+ * n'a jamais rien réservé doit pouvoir lire le restant. Lui poser un cookie pour
+ * pouvoir le compter écrirait une identité à quelqu'un qui n'a rien demandé — ce
+ * qu'un rendu de page serveur n'a de toute façon pas le droit de faire.
+ */
+export async function lireEtatOffreStock(
+  offerId: string,
+  empreinte: string | null,
+): Promise<StockOfferPublicStateResult> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("stock_offer_public_state", {
+    p_offer_id: offerId,
+    // `undefined` et non `null` : la RPC porte un défaut, et lui passer
+    // explicitement `null` reviendrait au même — mais l'omission dit « je n'en
+    // ai pas » plutôt que « voici rien ».
+    p_player_key_hash: empreinte ?? undefined,
+  });
+  // Rendu TEL QUEL, `unavailable` compris : aucun repli sur une lecture de
+  // table, qui ne trouverait rien de plus et paierait un aller-retour à chaque
+  // identifiant inventé.
+  if (error) return mapStockOfferPublicState({ state: "unavailable" });
+  return mapStockOfferPublicState(data);
+}
+
+export type ReserverStockOfferPublicContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      organization: ReserverOrganization;
+      /** Fuseau de l'établissement — jamais celui de l'hôte ni du navigateur. */
+      timezone: string;
+      offre: StockOfferPublicStateResult;
+      /** Ce que l'écran affiche de l'offre — brouillon, ouverte, épuisée… */
+      etat: EtatUiOffreStock;
+      /** Indicatif : `hold_stock_offer` reste seule juge, sous verrou. */
+      accepteePrise: boolean;
+      aUneIdentite: boolean;
+    };
+
+/**
+ * Contexte de la page publique d'une offre de stock.
+ *
+ * ── LE DROIT `vitrine` EST TRANCHÉ PAR LA RPC, ET PAS ICI ──
+ *
+ * Différence assumée avec `loadReserverQueuePublicContext`, qui le résout
+ * lui-même : `stock_offer_public_state` l'interroge DÉJÀ et rend `unavailable` —
+ * indistinctement d'une offre inconnue ou en brouillon. Le refaire ici aurait
+ * payé une seconde lecture de l'organisation pour reposer une question déjà
+ * répondue, et surtout aurait ouvert la possibilité que les deux réponses
+ * divergent.
+ *
+ * L'organisation est quand même lue, mais pour AFFICHER (nom, logo, fuseau), et
+ * seulement APRÈS que la RPC a accepté de servir l'offre : un visiteur à qui
+ * elle répond `unavailable` n'apprend donc rien de l'existence du commerce.
+ */
+export async function loadStockOfferPublicContext(
+  offerId: string,
+): Promise<ReserverStockOfferPublicContext> {
+  // PRESSION IP D'ABORD, SUR L'IP SEULE, ET SANS JAMAIS REFUSER — motif
+  // `loadReserverQueuePublicContext` : l'identifiant vient de l'URL, donc du
+  // client, et un balayage d'UUID inventés n'atteint jamais une offre résolue.
+  // Posé après la lecture, ce compteur n'en verrait rien.
+  const ip = clientIpFromHeaders(await headers());
+  await observerPressionIp(
+    ["reserver:page:ip"],
+    ip,
+    RATE_LIMITS.reserverPageIpCeiling,
+    "reserver_page_ip_ceiling",
+  );
+
+  const empreinte = await lireIdentiteReserver();
+  const offre = await lireEtatOffreStock(offerId, empreinte);
+  if (offre.state !== "ok" || !offre.offerId) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+
+  // Second compteur, par OFFRE, une fois la cible résolue — et par offre, jamais
+  // par une valeur libre : composer une clé de seau sur ce que l'appelant
+  // choisit ouvrirait une série neuve à chaque identifiant inventé (wagon 7).
+  await observerPressionIp(
+    ["reserver:page:stock:ip", offre.offerId],
+    ip,
+    RATE_LIMITS.reserverPageIp,
+    "reserver_page_pressure",
+    { offer_id: offre.offerId },
+  );
+
+  // L'ORGANISATION N'EST PAS DANS LA RÉPONSE DE LA RPC, et ne doit pas l'être :
+  // elle sert à HABILLER la page (nom, logo, fuseau), pas à décider. On la
+  // retrouve par la ligne d'offre, au service_role, une fois l'offre servie.
+  const admin = createAdminClient();
+  const { data: offerData } = await admin
+    .from("reservation_stock_offers")
+    .select(`id, organization_id, organizations(${ORG_COLUMNS})`)
+    .eq("id", offre.offerId)
+    .maybeSingle();
+  if (!offerData) return { ok: false, error: INDISPONIBLE };
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const row = offerData as unknown as {
+    id: string;
+    organization_id: string;
+    organizations?: ReserverOrganization | null;
+  };
+  const organization = row.organizations ?? null;
+  // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
+  // qui n'est pas celle de la ligne (motif `loadReserverPublicContext`).
+  if (!organization || organization.id !== row.organization_id) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+
+  return {
+    ok: true,
+    organization,
+    timezone: organization.timezone || RESERVER_FUSEAU_DEFAUT,
+    offre,
+    etat: etatUiOffreStock({
+      status: offre.status ?? "draft",
+      windowEndsAt: offre.windowEndsAt,
+      remaining: offre.remaining,
+    }),
+    accepteePrise: offreAccepteePrise({
+      status: offre.status ?? "draft",
+      windowEndsAt: offre.windowEndsAt,
+      remaining: offre.remaining,
+    }),
+    aUneIdentite: Boolean(empreinte),
+  };
+}
+
+export type ReserverStockOffersDashboardContext =
+  | { ok: false; reason: "unauthenticated" | "no_access" }
+  | {
+      ok: true;
+      organizationId: string;
+      timezone: string;
+      offers: StockOfferStaffView[];
+    };
+
+/**
+ * Les offres de stock de l'organisation, avec leurs compteurs.
+ *
+ * ── UNE SEULE RPC, CONTRAIREMENT AUX FILES ──
+ *
+ * `loadReserverQueuesDashboardContext` recompose ses deux compteurs depuis une
+ * lecture groupée, parce que `queue_staff_state` est par FILE et qu'une RPC par
+ * ligne aurait fait N allers-retours. Ici `stock_offers_staff_state` rend
+ * l'organisation ENTIÈRE en un appel, compteurs compris — dont `expired_count`,
+ * qui n'existe dans AUCUNE colonne et ne se recomposerait qu'en relisant toutes
+ * les prises.
+ *
+ * L'ORGANISATION VIENT DE LA SESSION, et il n'existe aucun chemin par lequel un
+ * navigateur puisse en nommer une autre : la RPC ne vérifie AUCUNE appartenance
+ * (elle est en lecture, service_role, bornée à l'organisation qu'on lui passe) —
+ * c'est exactement le contrat de `queue_staff_state`, et le même invariant.
+ */
+export async function loadStockOffersDashboardContext(): Promise<ReserverStockOffersDashboardContext> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) return { ok: false, reason: "unauthenticated" };
+  if (!droitEffectifModule("vitrine", organization)) {
+    return { ok: false, reason: "no_access" };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("stock_offers_staff_state", {
+    // DE LA SESSION. Jamais d'un paramètre de requête — voir ci-dessus.
+    p_organization_id: organization.id,
+  });
+  // Une panne de lecture rend une LISTE VIDE plutôt qu'un refus de droit : le
+  // commerçant a le droit, il n'a simplement rien à afficher pour l'instant.
+  // Confondre les deux lui ferait croire que son abonnement a changé.
+  const etat = error
+    ? { ok: false, offers: [] }
+    : mapStockOffersStaffState(data);
+
+  return {
+    ok: true,
+    organizationId: organization.id,
+    timezone: organization.timezone || RESERVER_FUSEAU_DEFAUT,
+    offers: etat.offers,
   };
 }

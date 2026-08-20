@@ -7,7 +7,10 @@ import { after } from "next/server";
 import { getUserAndOrg } from "@/lib/auth";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { APP_URL } from "@/lib/env";
-import { bridgeOfferedSpinToCampaign } from "@/lib/player-identity";
+import {
+  bridgeOfferedSpinToCampaign,
+  ensureProgressivePlayerIdentity,
+} from "@/lib/player-identity";
 import {
   monitored,
   recordCounter,
@@ -16,15 +19,21 @@ import {
 } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
-import { sendReservationConfirmationEmail } from "@/lib/resend";
+import {
+  sendReservationConfirmationEmail,
+  sendStockHoldConfirmationEmail,
+} from "@/lib/resend";
 import {
   formatCreneau,
+  formatFenetreStock,
   mapCancelReservation,
+  mapCancelStockHold,
   mapCheckinReservation,
   mapClaimWaitlistOffer,
   mapCloseInvitation,
   mapCreateInvitation,
   mapEvictWaitlistEntry,
+  mapHoldStockOffer,
   mapQueueCallNext,
   mapQueueJoin,
   mapQueueLeave,
@@ -43,11 +52,14 @@ import {
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
   urlInvitationReserver,
+  urlOffreStock,
   type CancelReservationResult,
+  type CancelStockHoldResult,
   type CheckinReservationResult,
   type ClaimWaitlistOfferResult,
   type CloseInvitationResult,
   type EvictWaitlistEntryResult,
+  type HoldStockOfferResult,
   type QueueCallNextResult,
   type QueueJoinResult,
   type QueueLeaveResult,
@@ -60,6 +72,7 @@ import {
   type ReserverAttenteView,
   type ReserveSlotResult,
   type RevokeInvitationResult,
+  type StockOfferPublicStateResult,
   type WaitlistJoinResult,
   type WaitlistLeaveResult,
   type WaitUsePauseResult,
@@ -70,6 +83,7 @@ import {
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
+  lireEtatOffreStock,
   lireIdentiteReserver,
   ouvrirSessionAttente,
 } from "@/lib/reserver-context";
@@ -82,6 +96,7 @@ import { type ActionResult } from "@/lib/utils";
 import {
   cancelReservationSchema,
   cancelReservationStaffSchema,
+  cancelStockHoldSchema,
   checkinReservationSchema,
   claimWaitlistOfferSchema,
   closeReserverInvitationSchema,
@@ -89,8 +104,10 @@ import {
   createReserverInvitationSchema,
   createReserverQueueSchema,
   createReserverSlotSchema,
+  createStockOfferSchema,
   etapesDepuisFormData,
   evictWaitlistEntrySchema,
+  holdStockOfferSchema,
   loadMyReservationsSchema,
   queueCallNextSchema,
   queueJoinSchema,
@@ -101,10 +118,12 @@ import {
   redeemInvitationSchema,
   reserveSlotSchema,
   revokeReserverInvitationSchema,
+  stockOfferStateSchema,
   updateReserverActivitySchema,
   updateReserverQueueSchema,
   updateReserverSlotSchema,
   updateReserverSlotStatusSchema,
+  updateStockOfferSchema,
   waitConsumeSpinSchema,
   waitlistJoinSchema,
   waitlistLeaveSchema,
@@ -1845,6 +1864,29 @@ export async function updateReserverActivity(
     if (error.code === "23503") {
       return { ok: false, error: ANIMATION_INTROUVABLE };
     }
+    // ── LE PLANCHER A PARLÉ : LE TRIGGER `…_freeze_kind` A REFUSÉ ──
+    //
+    // La garde comptée plus haut a laissé passer, et pourtant la base refuse.
+    // C'est la FENÊTRE entre les deux — deux requêtes, deux transactions : un
+    // engagement a été pris pendant qu'on comptait. Le trigger, lui, recompte
+    // DANS la transaction de l'`update` et lève `23514` (20261009120000).
+    //
+    // Sans ce mappage, ce cas — le seul où la course se produit réellement —
+    // rendait le message générique, c'est-à-dire précisément le silence que la
+    // garde comptée existe pour rompre : le commerçant relisait « Impossible
+    // d'enregistrer » sans savoir que quelqu'un venait de réserver.
+    //
+    // On ne recompte PAS pour donner un chiffre : il serait relu dans une
+    // TROISIÈME transaction, donc déjà potentiellement faux, et deux comptes
+    // divergents sur le même écran valent moins que pas de compte du tout. «
+    // Rechargez la page » renvoie à la seule source qui sera à jour.
+    if (error.code === "23514") {
+      return {
+        ok: false,
+        error:
+          "Le format n'a pas pu changer : des réservations ou attentes vivantes existent. Rechargez la page.",
+      };
+    }
     return { ok: false, error: "Impossible d'enregistrer l'activité" };
   }
 
@@ -3103,4 +3145,495 @@ async function consommerTourAttente(
     reportError("reserver.wait-consume-spin", err);
     return { ok: false, error: GENERIC_ERROR };
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// LA RÉSERVATION DE STOCK RÉEL ET LE DROP (RES-5, lot L9)
+// migration 20261010120000
+//
+// Un joueur bloque UNE unité d'un objet PHYSIQUE ; il vient la chercher au
+// comptoir dans la fenêtre annoncée, avec un code `RESA-` que la CAISSE
+// STANDARD encaisse — il n'y a pas de second comptoir, et RIEN ICI NE REMET UNE
+// UNITÉ : le retrait passe par le routeur universel
+// (`redeemStockHold`, src/actions/participations.ts).
+//
+// ── INVENTAIRE DES SEAUX (complément de celui en tête de fichier) ──
+//  holdStockOffer (public, ÉMETTEUR) — MÊME inventaire que `reserveSlot`, aux
+//  mêmes clés : c'est le même geste — bloquer une chose rare — sur un écran de
+//  la même famille, et deux jeux de seaux auraient donné deux budgets pour une
+//  seule main.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<org>:<empreinte>      identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE, 1er)
+//    · reserver:public:ip:<org>:<ip>          partagée   OPEN (observabilité)
+//    · reserver:email:<org>:<adresse>         destinataire CLOSED (avant l'envoi)
+//  ET LE CHALLENGE TURNSTILE, action `reserver-stock-hold` : c'est le SEUL
+//  appel émetteur du lot, et la raison est celle de `reserveSlot` — les
+//  invariants SQL bornent le NOMBRE d'unités (`stock_total` sous verrou), jamais
+//  la DIVERSITÉ des mains. Un bot à cookies jetables viderait un Drop de vingt
+//  parts sans jamais venir, et le commerçant jetterait les vingt.
+//  cancelStockHold (public) — AUCUNE friction sur un geste qui REND une unité,
+//  et aucun Turnstile : c'est le geste qu'on veut ENCOURAGER, puisque c'est lui
+//  qui remet la part en vente avant la fin de la fenêtre. L'organisation n'est
+//  pas postée — la RPC la lit sur la ligne — donc pas de seau par organisation.
+//    · reserver:device:<empreinte>            identité   CLOSED  (tranché 1er)
+//    · reserver:player:<prise>:<empreinte>    identité   CLOSED
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  loadStockOfferPublic (public, LECTURE) — SÉRIE DE LECTURE, la même que
+//  `getQueuePublicState` : relire le restant après chaque geste ne doit pas
+//  dépenser le budget des gestes, sans quoi le premier refus tombe sur
+//  `cancelStockHold` — c'est-à-dire sur quelqu'un qui veut RENDRE sa part.
+//    · reserver:queue-read:<empreinte>        identité   CLOSED (120/min)
+//    · reserver:ip:<ip>                       partagée   OPEN (IP SEULE)
+//  AUCUN seau composé avec l'identifiant d'OFFRE ni de PRISE sur ces trois
+//  chemins : la clé serait choisie par l'appelant, donc un identifiant inventé
+//  par tour ouvrirait un seau neuf à chaque coup (motif `progressionDevice`,
+//  wagon 7). Ce qui les borne est le seau par APPAREIL, tranché en premier.
+//  createStockOffer / updateStockOffer (authentifiés) — AUCUN seau, motif
+//  `createReserverSlot` : gestes d'un éditeur sur son propre panneau.
+//  Ouverture de la page publique — hors de ce fichier, dans
+//  `loadStockOfferPublicContext` (src/lib/reserver-context.ts) :
+//    · reserver:page:ip:<ip>                  partagée   OPEN (IP SEULE, 1er)
+//    · reserver:page:stock:ip:<offre>:<ip>    partagée   OPEN (observabilité)
+// ════════════════════════════════════════════════════════════
+
+/** Refus muet du parcours stock — aucun oracle, jamais. */
+const STOCK_INDISPONIBLE = "Cette réservation n'est plus disponible.";
+
+export type HoldStockOfferActionResult =
+  | { ok: true; data: HoldStockOfferResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Bloquer UNE unité de stock.
+ *
+ * L'identité vient du cookie `lc-player` (posé au besoin), JAMAIS du corps.
+ * L'email n'est transmis qu'AVEC son consentement — la base porte une
+ * équivalence, pas une implication.
+ *
+ * Aucun code n'est fourni : le trigger `reservation_stock_holds_set_code`
+ * l'écrase de toute façon, et le choisir depuis l'application ferait reposer
+ * l'imprévisibilité d'un droit au porteur sur la discipline de l'appelant.
+ */
+export async function holdStockOffer(input: {
+  organizationId: string;
+  offerId: string;
+  email?: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<HoldStockOfferActionResult> {
+  const parsed = holdStockOfferSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Identité AVANT tout : aucun aller-retour base, donc le premier seau est
+  // tranché avant la moindre requête SQL et avant l'instrumentation.
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  if (!(await autoriserJoueurReserver(parsed.data.organizationId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  // LA VALEUR VALIDÉE, jamais celle du corps : le jeton part en requête
+  // sortante vers Cloudflare, c'est exactement le genre de champ qu'on ne
+  // relaie pas brut.
+  return monitored("reserver.stock-hold", () =>
+    holdStockInner(parsed.data, empreinte, parsed.data.turnstileToken),
+  );
+}
+
+async function holdStockInner(
+  parsed: {
+    organizationId: string;
+    offerId: string;
+    email?: string;
+    consent: boolean;
+  },
+  empreinte: string,
+  turnstileToken: string | undefined,
+): Promise<HoldStockOfferActionResult> {
+  const ip = clientIpFromHeaders(await headers());
+
+  // Compteurs partagés AVANT l'appel émetteur : ce qu'ils mesurent est la
+  // pression réelle sur le parcours, y compris celle qui échouera au challenge.
+  await observerPressionReserver(parsed.organizationId, ip);
+
+  if (
+    reserverChallengeDisponible() &&
+    !(await verifyTurnstile(turnstileToken, ip, "reserver-stock-hold"))
+  ) {
+    return {
+      ok: false,
+      error:
+        "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réservez.",
+      challengeRequired: true,
+    };
+  }
+
+  const admin = createAdminClient();
+
+  // ── LE PONT D'IDENTITÉ SE POSE AVANT LA PRISE, ET C'EST OBLIGATOIRE ──
+  //
+  // Le miroir du registre est un TRIGGER `after insert` : il résout le joueur
+  // par `reward_player_from_legacy(org, 'reserver_stock', offer_id, empreinte)`
+  // DANS la transaction de la prise. Si le pont n'existe pas encore à cet
+  // instant, `reward_issuances.player_id` reste NUL — et comme `player_wallet`
+  // filtre sur cette colonne, la prise n'apparaîtrait JAMAIS sur
+  // `/portefeuille`. Rien ne repasserait derrière : l'`upsert` du registre ne
+  // reprend `player_id` que lors d'un `update` de la prise, c'est-à-dire un
+  // retrait ou une annulation — trop tard, et seulement pour qui bouge.
+  //
+  // Poser le pont APRÈS, comme le font les huit autres familles, serait donc ici
+  // un défaut silencieux : chez elles il est posé au JOIN, bien avant la
+  // première émission. Ce module n'a pas de join — la prise EST le premier
+  // contact — alors c'est elle qui en tient lieu.
+  //
+  // CONSÉQUENCE ASSUMÉE : une prise refusée (offre fermée, épuisée) laisse quand
+  // même une adhésion d'expérience. C'est une ligne d'identité, pas une unité de
+  // stock, et `player_experience_scope_is_valid` garantit qu'elle ne peut
+  // désigner qu'une offre RÉELLE de CETTE organisation — une offre inventée fait
+  // échouer le pont, jamais naître une adhésion fantôme.
+  //
+  // Best-effort comme les huit autres sites : une panne du pont ne doit pas
+  // faire échouer une prise, et son échec est déjà compté par le module
+  // d'identité (`player-identity.bridge-failed.*`).
+  await ensureProgressivePlayerIdentity({
+    organizationId: parsed.organizationId,
+    experienceKind: "reserver_stock",
+    experienceId: parsed.offerId,
+    legacyIdentityHash: empreinte,
+    acquisitionSource: "direct",
+  });
+
+  const { data, error } = await admin.rpc("hold_stock_offer", {
+    p_organization_id: parsed.organizationId,
+    p_offer_id: parsed.offerId,
+    p_player_key_hash: empreinte,
+    p_email: parsed.email ?? undefined,
+    p_consent: parsed.consent,
+  });
+
+  if (error) {
+    reportError("reserver.stock-hold", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  const resultat = mapHoldStockOffer(data);
+
+  // CONFIRMATION HORS DU CHEMIN DE RÉPONSE. Le joueur a déjà son code à
+  // l'écran : l'email est un rappel, jamais la preuve. `after()` le sort du
+  // temps de réponse, et son échec est AVALÉ puis COMPTÉ plutôt que remonté —
+  // une panne Resend ne doit pas défaire une unité bloquée.
+  //
+  // SEULEMENT SUR `held`, jamais sur `already_held` : la seconde tentative ne
+  // bloque rien de neuf, et renvoyer un email à chaque rafraîchissement ferait
+  // de l'idempotence de la RPC un robinet d'arrosage.
+  if (resultat.state === "held" && parsed.consent && parsed.email) {
+    const destinataire = parsed.email;
+    // ANTI-ARROSAGE, CONSOMMÉ AVANT L'`after()` — pas dedans : un seau posé dans
+    // la tâche différée compterait bien, mais après que la décision d'envoyer a
+    // été prise, et une rafale l'aurait déjà remplie de tâches.
+    const autorise = await rateLimit(
+      rateLimitBucket("reserver:email", parsed.organizationId, destinataire),
+      RATE_LIMITS.reserverEmail,
+      { failClosed: true },
+    );
+    if (autorise) {
+      after(() =>
+        envoyerConfirmationStock({
+          to: destinataire,
+          organizationId: parsed.organizationId,
+          offerId: parsed.offerId,
+          code: resultat.code,
+          windowStartsAt: resultat.windowStartsAt,
+          windowEndsAt: resultat.windowEndsAt,
+        }).catch((err) => reportError("reserver.stock-confirmation", err)),
+      );
+    } else {
+      // L'UNITÉ RESTE BLOQUÉE. Ce n'est pas une erreur rendue au joueur : son
+      // code est à l'écran. Seul le rappel est sauté, et il est COMPTÉ — sans
+      // quoi un seau mal calibré ferait disparaître des confirmations sans que
+      // personne ne sache combien.
+      recordCounter("reserver.stock_email.throttled");
+    }
+  }
+
+  return { ok: true, data: resultat };
+}
+
+/**
+ * Compose et envoie la confirmation d'une unité bloquée. Deux lectures, toutes
+ * org-scopées, toutes hors du chemin de réponse : le titre de l'offre et le nom
+ * du commerce ne sont pas dans la réponse de `hold_stock_offer`, et les faire
+ * voyager par l'appelant aurait laissé un nom de commerce se déclarer depuis le
+ * client.
+ */
+async function envoyerConfirmationStock(params: {
+  to: string;
+  organizationId: string;
+  offerId: string;
+  code: string | null;
+  windowStartsAt: string | null;
+  windowEndsAt: string | null;
+}): Promise<void> {
+  if (!params.code || !params.windowStartsAt || !params.windowEndsAt) return;
+  const admin = createAdminClient();
+
+  const { data: offer } = await admin
+    .from("reservation_stock_offers")
+    .select("id, title")
+    .eq("id", params.offerId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!offer) return;
+
+  const { data: organization } = await admin
+    .from("organizations")
+    .select("name, timezone")
+    .eq("id", params.organizationId)
+    .maybeSingle();
+  if (!organization) return;
+
+  const timezone = organization.timezone || RESERVER_FUSEAU_DEFAUT;
+  await sendStockHoldConfirmationEmail({
+    to: params.to,
+    offerTitle: offer.title,
+    windowLabel: formatFenetreStock(
+      params.windowStartsAt,
+      params.windowEndsAt,
+      timezone,
+    ),
+    code: params.code,
+    organizationName: organization.name,
+    statusUrl: urlOffreStock(offer.id, APP_URL),
+  });
+}
+
+/**
+ * Rendre son unité, sur preuve de possession (cookie + identifiant).
+ *
+ * Aucune organisation demandée : la RPC la lit sur la ligne. Le seau par portée
+ * est donc porté par l'identifiant de la PRISE — une clé que l'appelant détient
+ * déjà, et qui n'ouvre rien de neuf.
+ */
+export async function cancelStockHold(input: {
+  holdId: string;
+}): Promise<ActionResult<CancelStockHoldResult>> {
+  const parsed = cancelStockHoldSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // LECTURE SEULE du cookie : rendre une unité n'est pas un chemin qui crée une
+  // identité. Sans cookie, il n'y a rien à rendre — la RPC répondrait `unknown`,
+  // autant ne pas la déranger.
+  const empreinte = await lireIdentiteReserver();
+  if (!empreinte) return { ok: false, error: STOCK_INDISPONIBLE };
+  if (!(await autoriserJoueurReserver(parsed.data.holdId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.stock-cancel", async () => {
+    // Clé PARTAGÉE (IP seule) : fail-OPEN, observabilité seule (ADR-032).
+    // L'organisation n'est pas connue de l'appelant, donc pas de second compteur
+    // ici — voir `observerPressionReserver`.
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("cancel_stock_hold", {
+      p_hold_id: parsed.data.holdId,
+      p_player_key_hash: empreinte,
+    });
+    if (error) {
+      reportError("reserver.stock-cancel", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+    return { ok: true as const, data: mapCancelStockHold(data) };
+  });
+}
+
+/**
+ * L'état public d'une offre — le rafraîchissement de l'écran joueur.
+ *
+ * ── LE SEAU EST CELUI DE LA LECTURE, PAS CELUI DES GESTES ──
+ *
+ * Voir `autoriserLectureFileReserver` : une relecture après chaque geste ne doit
+ * pas dépenser le budget de `cancelStockHold`, sans quoi le premier refus tombe
+ * sur quelqu'un qui veut rendre sa part avant la fin de la fenêtre.
+ *
+ * SANS COOKIE, aucun seau d'identité n'est opposable : seul le compteur d'IP
+ * mesure ce visiteur (ADR-032), et la RPC lui sert le restant sans `my_hold` —
+ * lui POSER un cookie pour pouvoir le compter serait écrire une identité à
+ * quelqu'un qui n'a rien demandé.
+ */
+export async function loadStockOfferPublic(input: {
+  offerId: string;
+}): Promise<StockOfferPublicStateResult | null> {
+  const parsed = stockOfferStateSchema.safeParse(input);
+  if (!parsed.success) return null;
+
+  // LECTURE SEULE du cookie : une relecture ne crée pas d'identité.
+  const empreinte = await lireIdentiteReserver();
+  if (empreinte && !(await autoriserLectureFileReserver(empreinte))) {
+    // À SEC = cette lecture ne rapporte rien, et l'écran garde son état. C'est
+    // le comportement exact qu'on veut d'un seau sur une relecture : il ralentit
+    // une boucle, il n'efface pas une prise.
+    return null;
+  }
+
+  return monitored("reserver.stock-state", async () => {
+    await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+    // LA MÊME LECTURE QUE LA PAGE — `lireEtatOffreStock`. Le droit `vitrine`,
+    // l'état `draft` et l'offre inconnue sont tranchés par la RPC, en un seul
+    // état muet : rien ici ne cherche à les distinguer.
+    return lireEtatOffreStock(parsed.data.offerId, empreinte);
+  });
+}
+
+/**
+ * Créer une offre de stock.
+ *
+ * Elle naît en `draft` par défaut — invisible du joueur — parce qu'une offre se
+ * relit avant de s'ouvrir : titre, unités, fenêtre. Le panneau peut poster
+ * `status` s'il propose d'ouvrir tout de suite ; c'est le seul champ qui change
+ * l'exposition, et la RPC de prise le revérifie de toute façon.
+ */
+export async function createStockOffer(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = createStockOfferSchema.safeParse({
+    title: formData.get("title"),
+    description: formData.get("description"),
+    stockTotal: formData.get("stockTotal"),
+    windowStartsAt: formData.get("windowStartsAt"),
+    windowEndsAt: formData.get("windowEndsAt"),
+    perPlayerLimit: formData.get("perPlayerLimit"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  // Les heures saisies sont CIVILES, dans le fuseau de l'établissement. La
+  // conversion refuse explicitement les heures inexistantes et ambiguës des
+  // changements d'heure, au lieu de laisser JavaScript choisir en silence.
+  let windowStartsAt: string;
+  let windowEndsAt: string;
+  try {
+    windowStartsAt = zonedDateTimeToIso(
+      parsed.data.windowStartsAt,
+      garde.timezone,
+    );
+    windowEndsAt = zonedDateTimeToIso(parsed.data.windowEndsAt, garde.timezone);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Date invalide",
+    };
+  }
+
+  // Le client RLS DE LA SESSION, jamais le service_role : la policy
+  // `reservation_stock_offers: editors` et le grant de colonnes sont la vraie
+  // porte, et l'emprunter ici garde une seule autorité sur qui écrit quoi.
+  const supabase = await createClient();
+  const { error } = await supabase.from("reservation_stock_offers").insert({
+    organization_id: garde.organizationId,
+    title: parsed.data.title,
+    description: parsed.data.description || null,
+    stock_total: parsed.data.stockTotal,
+    window_starts_at: windowStartsAt,
+    window_ends_at: windowEndsAt,
+    per_player_limit: parsed.data.perPlayerLimit,
+    status: parsed.data.status,
+  });
+
+  if (error) {
+    console.error("[reserver] create stock offer:", error.message);
+    return { ok: false, error: "Impossible de créer l'offre" };
+  }
+
+  revalidatePath("/dashboard/reservations");
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Corriger une offre — seul chemin de correction, et il n'y a PAS de
+ * suppression : `closed` est l'interrupteur.
+ *
+ * ── POURQUOI RIEN NE SE SUPPRIME ICI ──
+ *
+ * Aucun `grant delete` sur la table : la cascade de la FK composite emporterait
+ * les PRISES — donc les preuves de retrait, les paniers et les compteurs de
+ * gaspillage — sans qu'aucun écran n'ait compté ce qui allait disparaître.
+ * Fermer une offre ne touche à AUCUNE prise déjà tenue : les gens qui ont bloqué
+ * leur part viennent la chercher.
+ *
+ * BAISSER `stock_total` EST SÛR, y compris sous le nombre de prises tenues :
+ * `hold_stock_offer` relit le total SOUS son verrou, dans le même instantané que
+ * son comptage, et le restant affiché ne descend pas sous zéro.
+ */
+export async function updateStockOffer(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateStockOfferSchema.safeParse({
+    id: formData.get("id"),
+    title: formData.get("title"),
+    description: formData.get("description"),
+    stockTotal: formData.get("stockTotal"),
+    windowStartsAt: formData.get("windowStartsAt"),
+    windowEndsAt: formData.get("windowEndsAt"),
+    perPlayerLimit: formData.get("perPlayerLimit"),
+    status: formData.get("status"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  let windowStartsAt: string;
+  let windowEndsAt: string;
+  try {
+    windowStartsAt = zonedDateTimeToIso(
+      parsed.data.windowStartsAt,
+      garde.timezone,
+    );
+    windowEndsAt = zonedDateTimeToIso(parsed.data.windowEndsAt, garde.timezone);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Date invalide",
+    };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("reservation_stock_offers")
+    .update({
+      title: parsed.data.title,
+      description: parsed.data.description || null,
+      stock_total: parsed.data.stockTotal,
+      window_starts_at: windowStartsAt,
+      window_ends_at: windowEndsAt,
+      per_player_limit: parsed.data.perPlayerLimit,
+      status: parsed.data.status,
+    })
+    .eq("id", parsed.data.id)
+    // Double la RLS plutôt que de s'y fier seule.
+    .eq("organization_id", garde.organizationId);
+
+  if (error) {
+    console.error("[reserver] update stock offer:", error.message);
+    return { ok: false, error: "Impossible d'enregistrer l'offre" };
+  }
+
+  revalidatePath("/dashboard/reservations");
+  return { ok: true, data: undefined };
 }

@@ -136,6 +136,25 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       reservations: 0,
       waitlist: 0,
     } as unknown,
+    /** Ce que `hold_stock_offer` rend (RES-5, lot L9). */
+    stockHoldResponse: {
+      state: "held",
+      hold_id: "77777777-7777-4777-8777-777777777777",
+      code: "RESA-ABCD2345",
+      window_starts_at: "2030-04-12T16:00:00Z",
+      window_ends_at: "2030-04-12T18:00:00Z",
+      redeem_expires_at: "2030-04-12T18:00:00Z",
+      remaining: 4,
+    } as unknown,
+    stockCancelResponse: {
+      state: "cancelled",
+      hold_id: "77777777-7777-4777-8777-777777777777",
+      cancelled_at: "2030-04-12T15:00:00Z",
+    } as unknown,
+    /** Les ponts d'identité posés, dans l'ORDRE — c'est l'ordre qui compte. */
+    pontsIdentite: [] as Array<{ kind: string; experienceId: string }>,
+    /** Traces d'appels, dans l'ordre : pont, RPC, lecture d'état. */
+    chronologie: [] as string[],
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -261,6 +280,22 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         reservations: 0,
         waitlist: 0,
       };
+      state.stockHoldResponse = {
+        state: "held",
+        hold_id: "77777777-7777-4777-8777-777777777777",
+        code: "RESA-ABCD2345",
+        window_starts_at: "2030-04-12T16:00:00Z",
+        window_ends_at: "2030-04-12T18:00:00Z",
+        redeem_expires_at: "2030-04-12T18:00:00Z",
+        remaining: 4,
+      };
+      state.stockCancelResponse = {
+        state: "cancelled",
+        hold_id: "77777777-7777-4777-8777-777777777777",
+        cancelled_at: "2030-04-12T15:00:00Z",
+      };
+      state.pontsIdentite = [];
+      state.chronologie = [];
       state.selects = [];
       state.filtres = [];
       state.rpcCalls = [];
@@ -289,6 +324,16 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     return {
       rpc: (name: string, args: Record<string, unknown>) => {
         state.rpcCalls.push({ name, args });
+        state.chronologie.push(`rpc:${name}`);
+        if (name === "hold_stock_offer") {
+          return Promise.resolve({ data: state.stockHoldResponse, error: null });
+        }
+        if (name === "cancel_stock_hold") {
+          return Promise.resolve({
+            data: state.stockCancelResponse,
+            error: null,
+          });
+        }
         if (name === "reserve_slot") {
           return Promise.resolve({ data: state.reserveResponse, error: null });
         }
@@ -393,6 +438,15 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
                 error: null,
               });
             }
+            if (table === "reservation_stock_offers") {
+              return Promise.resolve({
+                data: {
+                  id: "99999999-9999-4999-8999-999999999999",
+                  title: "Panier surprise",
+                },
+                error: null,
+              });
+            }
             if (table === "reservation_activities") {
               return Promise.resolve({
                 data: { id: "33333333-3333-4333-8333-333333333333", name: "Dégustation" },
@@ -486,8 +540,54 @@ vi.mock("@/lib/reserver-context", async (importOriginal) => {
       state.droitVitrineFileAppels += 1;
       return Promise.resolve(state.droitVitrineFile);
     },
+    // La lecture d'état d'une offre de stock passe par le MÊME lecteur partagé
+    // que la page (motif `lireEtatFilePublic`). Ce faux ne rend que ce que la
+    // RPC rendrait, MAPPÉ : ce que l'action doit tenir, c'est de n'en faire
+    // QU'UNE, et de passer l'empreinte telle quelle.
+    lireEtatOffreStock: async (offerId: string, empreinte: string | null) => {
+      state.chronologie.push("lecture:offre");
+      const { mapStockOfferPublicState } = await import("@/lib/reserver");
+      return mapStockOfferPublicState({
+        state: "ok",
+        offer_id: offerId,
+        title: "Panier surprise",
+        description: null,
+        status: "open",
+        window_starts_at: "2030-04-12T16:00:00Z",
+        window_ends_at: "2030-04-12T18:00:00Z",
+        per_player_limit: 1,
+        remaining: 3,
+        my_hold: empreinte
+          ? {
+              hold_id: "77777777-7777-4777-8777-777777777777",
+              code: "RESA-ABCD2345",
+              status: "held",
+              redeem_expires_at: "2030-04-12T18:00:00Z",
+            }
+          : null,
+      });
+    },
   };
 });
+
+// Le PONT D'IDENTITÉ est espionné, pas exécuté : sa justesse (bon triplet, bonne
+// empreinte) a ses propres tests, et son miroir pgTAP. Ce qui se joue ICI est
+// l'ORDRE — le pont AVANT `hold_stock_offer`, sans quoi le miroir du registre
+// écrit `player_id` nul et la prise n'atteint jamais `/portefeuille`.
+vi.mock("@/lib/player-identity", () => ({
+  ensureProgressivePlayerIdentity: (input: {
+    experienceKind: string;
+    experienceId: string;
+  }) => {
+    state.pontsIdentite.push({
+      kind: input.experienceKind,
+      experienceId: input.experienceId,
+    });
+    state.chronologie.push("pont");
+    return Promise.resolve({ ok: true });
+  },
+  bridgeOfferedSpinToCampaign: () => Promise.resolve(),
+}));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -568,11 +668,17 @@ vi.mock("@/lib/resend", () => ({
     if (state.emailLeve) return Promise.reject(new Error("resend indisponible"));
     return Promise.resolve(true);
   },
+  sendStockHoldConfirmationEmail: (params: Record<string, unknown>) => {
+    state.emails.push(params);
+    if (state.emailLeve) return Promise.reject(new Error("resend indisponible"));
+    return Promise.resolve(true);
+  },
 }));
 
 import {
   cancelReservation,
   cancelReservationStaff,
+  cancelStockHold,
   checkinReservation,
   claimWaitlistOffer,
   closeInvitation,
@@ -580,7 +686,10 @@ import {
   createReserverActivity,
   createReserverQueue,
   createReserverSlot,
+  createStockOffer,
   getQueuePublicState,
+  holdStockOffer,
+  loadStockOfferPublic,
   getQueueStaffState,
   loadMyReservations,
   queueCallNext,
@@ -594,6 +703,7 @@ import {
   updateReserverActivity,
   updateReserverQueue,
   updateReserverSlotStatus,
+  updateStockOffer,
   waitlistJoin,
   waitlistLeave,
 } from "@/actions/reserver";
@@ -2359,4 +2469,366 @@ describe("les animations d'attente (RES-4) se règlent là où le commerçant re
       expect(resultat.ok === false && resultat.error).toMatch(/introuvable/i);
     },
   );
+});
+
+// ════════════════════════════════════════════════════════════
+// Réservation de stock réel et Drop (RES-5, lot L9)
+//
+// Ce que ces tests attestent, et qui n'existe nulle part ailleurs :
+//   · le PONT D'IDENTITÉ est posé AVANT la prise — le miroir du registre est un
+//     trigger `after insert`, donc un pont posé après laisserait `player_id`
+//     nul et la prise n'atteindrait JAMAIS `/portefeuille` ;
+//   · le challenge Turnstile est opposé sur le SEUL appel émetteur, avec sa
+//     propre action (`reserver-stock-hold`) ;
+//   · rendre son unité n'oppose AUCUNE friction — c'est le geste qui remet la
+//     part en vente ;
+//   · la relecture d'état consomme le seau de LECTURE, pas celui des gestes.
+// ════════════════════════════════════════════════════════════
+
+const OFFER_ID = "99999999-9999-4999-8999-999999999999";
+const HOLD_ID = "77777777-7777-4777-8777-777777777777";
+
+describe("holdStockOffer — bloquer une unité", () => {
+  it("appelle la RPC avec l'empreinte du COOKIE, jamais une identité du corps", async () => {
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+    });
+    expect(res.ok).toBe(true);
+    const appel = state.rpcCalls.find((c) => c.name === "hold_stock_offer");
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    // Ni email ni consentement quand rien n'a été donné.
+    expect(appel?.args.p_email).toBeUndefined();
+    expect(appel?.args.p_consent).toBe(false);
+  });
+
+  it("POSE LE PONT D'IDENTITÉ AVANT LA PRISE, sur l'OFFRE", async () => {
+    // ROUGE SI : quelqu'un déplace le pont après la RPC. Le miroir du registre
+    // résout le joueur DANS la transaction de la prise ; posé après, il ne
+    // trouve rien, `player_id` reste nul, et le lot n'apparaît jamais au
+    // portefeuille — sans une erreur nulle part.
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_stock", experienceId: OFFER_ID },
+    ]);
+    expect(state.chronologie.indexOf("pont")).toBeLessThan(
+      state.chronologie.indexOf("rpc:hold_stock_offer"),
+    );
+  });
+
+  it("tranche le seau par APPAREIL avant celui par organisation", async () => {
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+    const seaux = state.rateLimitCalls.map((c) => c.bucket);
+    expect(seaux[0]).toContain("reserver:device");
+    expect(seaux[1]).toContain("reserver:player");
+    // Les deux clés d'identité sont fail-CLOSED (ADR-032 : jamais l'IP).
+    expect(state.rateLimitCalls[0].failClosed).toBe(true);
+    expect(state.rateLimitCalls[1].failClosed).toBe(true);
+  });
+
+  it("compte l'IP SEULE avant l'IP par organisation, et ne refuse jamais dessus", async () => {
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+    expect(state.pressions.map((p) => p.parts)).toEqual([
+      "reserver:ip",
+      `reserver:public:ip:${ORG_ID}`,
+    ]);
+  });
+
+  it("à sec sur l'appareil : aucune prise, aucune RPC, aucun pont", async () => {
+    state.seauxASec = ["reserver:device"];
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+    });
+    expect(res).toEqual({ ok: false, error: "Trop de tentatives. Patientez un instant." });
+    expect(state.rpcCalls).toHaveLength(0);
+    expect(state.pontsIdentite).toHaveLength(0);
+  });
+
+  it("oppose le challenge anti-robot — et seulement s'il est configuré", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site";
+    state.turnstileVerdict = false;
+    const refus = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      turnstileToken: "jeton",
+    });
+    expect(refus.ok).toBe(false);
+    expect(refus.ok === false && refus.challengeRequired).toBe(true);
+    // AUCUNE prise n'est tentée quand le challenge échoue.
+    expect(state.rpcCalls.some((c) => c.name === "hold_stock_offer")).toBe(false);
+  });
+
+  it("sans clés Turnstile, aucun challenge n'est opposé", async () => {
+    state.turnstileConfigure = false;
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+    });
+    expect(res.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+  });
+
+  it("refuse un email sans consentement AVANT toute requête (équivalence SQL)", async () => {
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      email: "client@exemple.fr",
+    });
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("envoie la confirmation HORS du chemin de réponse, une fois consentie", async () => {
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      email: "Client@Exemple.FR",
+      consent: true,
+    });
+    expect(res.ok).toBe(true);
+    // Rien n'est parti pendant la réponse : c'est `after()` qui l'exécute.
+    expect(state.emails).toHaveLength(0);
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(1);
+    // L'adresse est celle que Zod a normalisée (trim + minuscules).
+    expect(state.emails[0].to).toBe("client@exemple.fr");
+    expect(state.emails[0].code).toBe("RESA-ABCD2345");
+    expect(String(state.emails[0].windowLabel)).toContain("du ");
+  });
+
+  it("le seau par DESTINATAIRE est consommé AVANT l'`after()`, et à sec rien ne part", async () => {
+    state.seauxASec = ["reserver:email"];
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+    // L'UNITÉ RESTE BLOQUÉE : seul le rappel est sauté, et il est COMPTÉ.
+    expect(res.ok).toBe(true);
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+    expect(state.compteurs).toContain("reserver.stock_email.throttled");
+  });
+
+  it("N'ENVOIE RIEN sur `already_held` — l'idempotence n'est pas un robinet", async () => {
+    state.stockHoldResponse = {
+      state: "already_held",
+      hold_id: HOLD_ID,
+      code: "RESA-ABCD2345",
+      status: "held",
+      per_player_limit: 1,
+    };
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+    expect(res.ok).toBe(true);
+    await Promise.all(state.taches);
+    expect(state.emails).toHaveLength(0);
+  });
+
+  it("un échec d'envoi ne défait pas la prise", async () => {
+    state.emailLeve = true;
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+      email: "client@exemple.fr",
+      consent: true,
+    });
+    expect(res.ok).toBe(true);
+    await expect(Promise.all(state.taches)).resolves.toBeDefined();
+  });
+});
+
+describe("cancelStockHold — rendre son unité", () => {
+  it("autorise par POSSESSION et ne poste AUCUNE organisation", async () => {
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+    expect(res.ok).toBe(true);
+    const appel = state.rpcCalls.find((c) => c.name === "cancel_stock_hold");
+    expect(appel?.args).toEqual({
+      p_hold_id: HOLD_ID,
+      p_player_key_hash: EMPREINTE,
+    });
+    expect(appel?.args.p_organization_id).toBeUndefined();
+  });
+
+  it("porte le seau par PRISE, jamais par organisation inventée", async () => {
+    await cancelStockHold({ holdId: HOLD_ID });
+    const seaux = state.rateLimitCalls.map((c) => c.bucket);
+    expect(seaux[0]).toContain("reserver:device");
+    expect(seaux[1]).toContain(`reserver:player:${HOLD_ID}`);
+  });
+
+  it("ne compte que l'IP SEULE : l'organisation n'est pas connue de l'appelant", async () => {
+    await cancelStockHold({ holdId: HOLD_ID });
+    expect(state.pressions.map((p) => p.parts)).toEqual(["reserver:ip"]);
+  });
+
+  it("N'OPPOSE AUCUN CHALLENGE — c'est le geste qui remet la part en vente", async () => {
+    state.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site";
+    state.turnstileVerdict = false;
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+    expect(res.ok).toBe(true);
+    expect(state.turnstileJetons).toHaveLength(0);
+  });
+
+  it("sans cookie, aucune RPC n'est dérangée", async () => {
+    state.empreinte = null;
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("loadStockOfferPublic — la relecture d'état", () => {
+  it("consomme le seau de LECTURE, pas celui des gestes", async () => {
+    // ROUGE SI : cette lecture repasse sur `reserver:device`. Le premier refus
+    // tomberait alors sur `cancelStockHold` — quelqu'un qui veut rendre sa part.
+    await loadStockOfferPublic({ offerId: OFFER_ID });
+    expect(state.rateLimitCalls.map((c) => c.bucket)).toEqual([
+      `reserver:queue-read:${EMPREINTE}`,
+    ]);
+  });
+
+  it("à sec, la lecture ne rapporte rien — et n'efface rien", async () => {
+    state.seauxASec = ["reserver:queue-read"];
+    expect(await loadStockOfferPublic({ offerId: OFFER_ID })).toBeNull();
+    expect(state.chronologie).not.toContain("lecture:offre");
+  });
+
+  it("passe par le lecteur PARTAGÉ avec la page, une seule fois", async () => {
+    const etat = await loadStockOfferPublic({ offerId: OFFER_ID });
+    expect(etat?.state).toBe("ok");
+    expect(etat?.myHold?.code).toBe("RESA-ABCD2345");
+    expect(state.chronologie.filter((t) => t === "lecture:offre")).toHaveLength(1);
+  });
+
+  it("sert un visiteur SANS COOKIE, sans lui en poser un et sans `my_hold`", async () => {
+    state.empreinte = null;
+    const etat = await loadStockOfferPublic({ offerId: OFFER_ID });
+    expect(etat?.state).toBe("ok");
+    expect(etat?.myHold).toBeNull();
+    // Aucun seau d'identité n'est opposable : seul le compteur d'IP le mesure.
+    expect(state.rateLimitCalls).toHaveLength(0);
+    expect(state.pressions.map((p) => p.parts)).toEqual(["reserver:ip"]);
+  });
+
+  it("une entrée mal formée ne coûte aucune lecture", async () => {
+    expect(await loadStockOfferPublic({ offerId: "pas-un-uuid" })).toBeNull();
+    expect(state.chronologie).toHaveLength(0);
+  });
+});
+
+describe("createStockOffer / updateStockOffer — le panneau du commerçant", () => {
+  const champs = {
+    title: "Panier surprise",
+    description: "Les invendus du soir",
+    stockTotal: "12",
+    windowStartsAt: "2030-04-12T18:00",
+    windowEndsAt: "2030-04-12T20:00",
+    perPlayerLimit: "2",
+    status: "open",
+  };
+
+  it("écrit par le client RLS de la SESSION, avec l'organisation de la session", async () => {
+    const res = await createStockOffer(null, formData(champs));
+    expect(res.ok).toBe(true);
+    const write = state.rlsWrites.at(-1);
+    expect(write?.table).toBe("reservation_stock_offers");
+    expect(write?.op).toBe("insert");
+    expect(write?.values.organization_id).toBe(ORG_ID);
+    expect(write?.values.stock_total).toBe(12);
+    expect(write?.values.per_player_limit).toBe(2);
+    expect(write?.values.status).toBe("open");
+    // Les heures civiles sont converties dans le fuseau de l'établissement.
+    expect(String(write?.values.window_starts_at)).toContain("2030-04-12T16:00");
+  });
+
+  it("naît en brouillon quand le panneau ne rend pas le statut", async () => {
+    const sansStatut = { ...champs };
+    delete (sansStatut as Record<string, string>).status;
+    await createStockOffer(null, formData(sansStatut));
+    expect(state.rlsWrites.at(-1)?.values.status).toBe("draft");
+  });
+
+  it("refuse une fenêtre qui remonte le temps, AVANT toute écriture", async () => {
+    const res = await createStockOffer(
+      null,
+      formData({ ...champs, windowEndsAt: "2030-04-12T17:00" }),
+    );
+    expect(res.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("refuse un stock hors bornes (1..500)", async () => {
+    expect(
+      (await createStockOffer(null, formData({ ...champs, stockTotal: "0" }))).ok,
+    ).toBe(false);
+    expect(
+      (await createStockOffer(null, formData({ ...champs, stockTotal: "501" }))).ok,
+    ).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("refuse une limite par personne hors bornes (1..3)", async () => {
+    expect(
+      (await createStockOffer(null, formData({ ...champs, perPlayerLimit: "4" })))
+        .ok,
+    ).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("le CAISSIER ne configure pas, et une organisation sans droit non plus", async () => {
+    state.role = "cashier";
+    expect((await createStockOffer(null, formData(champs))).ok).toBe(false);
+    state.role = "owner";
+    state.orgAddonVitrine = false;
+    expect((await createStockOffer(null, formData(champs))).ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("la mise à jour double la RLS par un filtre d'organisation explicite", async () => {
+    const res = await updateStockOffer(
+      null,
+      formData({ ...champs, id: OFFER_ID, status: "closed" }),
+    );
+    expect(res.ok).toBe(true);
+    const write = state.rlsWrites.at(-1);
+    expect(write?.op).toBe("update");
+    expect(write?.filters).toEqual({ id: OFFER_ID, organization_id: ORG_ID });
+    // `closed` est l'INTERRUPTEUR : il n'existe aucun chemin de suppression.
+    expect(write?.values.status).toBe("closed");
+  });
+});
+
+describe("updateReserverActivity — le trigger qui gèle le format PARLE (L8)", () => {
+  it("traduit le 23514 en refus lisible plutôt qu'en erreur générique", async () => {
+    // La garde COMPTÉE a laissé passer (aucun engagement au moment du compte),
+    // et pourtant la base refuse : c'est la fenêtre entre les deux requêtes.
+    // Sans ce mappage, le commerçant lisait « Impossible d'enregistrer » sans
+    // savoir que quelqu'un venait de réserver pendant qu'il enregistrait.
+    state.rlsError = { message: "kind is frozen", code: "23514" };
+    const res = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Dégustation",
+        kind: "duo",
+        promise: "Une heure à deux",
+        durationMinutes: "60",
+        active: "true",
+      }),
+    );
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Le format n'a pas pu changer : des réservations ou attentes vivantes existent. Rechargez la page.",
+    );
+  });
 });

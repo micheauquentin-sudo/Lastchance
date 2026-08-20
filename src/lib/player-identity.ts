@@ -22,6 +22,21 @@ export const PLAYER_EXPERIENCE_KINDS = [
   "referral",
   "contest",
   "quiz",
+  /**
+   * RÉSERVER — une unité de stock bloquée (RES-5, migration 20261010120000).
+   *
+   * L'EXPÉRIENCE EST L'OFFRE, pas l'organisation ni l'activité : c'est l'objet
+   * sur lequel le joueur revient, et le grain auquel le registre range déjà
+   * `experience_id` (`sync_reward_issuance` y écrit `sh.offer_id`).
+   *
+   * Cette liste est le MIROIR APPLICATIF du `check` de
+   * `player_experience_memberships.experience_kind` et du validateur de portée
+   * `player_experience_scope_is_valid`. Tant qu'elle ne portait pas la valeur,
+   * la base l'acceptait mais aucune server action ne pouvait poser le pont —
+   * `player_id` serait resté nul sur la ligne de registre, et la prise
+   * n'apparaîtrait JAMAIS sur `/portefeuille`.
+   */
+  "reserver_stock",
 ] as const;
 
 export type PlayerExperienceKind = (typeof PLAYER_EXPERIENCE_KINDS)[number];
@@ -164,8 +179,8 @@ const FENETRE_TRACE_MS = 60_000;
 /**
  * Dernière trace émise par cause, `${reason}.${experienceKind}`.
  *
- * Cardinalité BORNÉE par construction : deux motifs × dix étiquettes de famille
- * (les neuf du vocabulaire fermé, plus `unvalidated`). Aucune saisie n'entre
+ * Cardinalité BORNÉE par construction : deux motifs × onze étiquettes de famille
+ * (les dix du vocabulaire fermé, plus `unvalidated`). Aucune saisie n'entre
  * dans cette clé — c'est la même propriété que celle du nom de compteur, et
  * elle est ce qui autorise à garder l'état en mémoire sans le borner à la main.
  */
@@ -177,7 +192,7 @@ const dernieresTraces = new Map<string, number>();
  * ── POURQUOI L'ÉTOUFFEMENT ──
  *
  * `ensureProgressivePlayerIdentity` est appelée à chaque spin, chaque tampon et
- * chaque join des neuf modules — deux fois sur les quatre chemins de tour
+ * chaque join des dix modules — deux fois sur les quatre chemins de tour
  * offert. Sans borne, une cause GÉNÉRALE (sel `PLAYER_KEY_SALT` mal déployé,
  * `resolve_player_identity` en échec après une migration) faisait produire à
  * CHAQUE requête joueur un événement Sentry ET une ligne `ops_metrics` — car
@@ -227,7 +242,7 @@ const dernieresTraces = new Map<string, number>();
  * Ni `legacyIdentityHash`, ni le jeton d'appareil, ni son hash, ni aucun
  * identifiant de joueur. Le nom du compteur est composé de littéraux et de
  * `experienceKind`, SEULE donnée d'appelant admise et valeur d'énumération
- * fermée (neuf familles), jamais une saisie — c'est aussi la seule dimension
+ * fermée (dix familles), jamais une saisie — c'est aussi la seule dimension
  * utile : elle dit QUELLE famille perd ses ponts. Le message d'erreur, lui,
  * vient de Postgres et ne porte aucun paramètre lié.
  */
