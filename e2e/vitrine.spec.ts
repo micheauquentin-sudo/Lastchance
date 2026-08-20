@@ -343,7 +343,11 @@ test.describe("vitrine — dashboard commerçant", () => {
       .locator("li")
       .filter({ hasText: nomRubrique })
       .last();
-    const nomFiche = "Plat E2E";
+    // HORODATÉ comme `nomCarte`, et pour la même raison : sur une base
+    // accumulée (suite complète, reruns), un « Plat E2E » d'un run précédent
+    // existe DÉJÀ — le `.last()` ancrait cette fiche-là, que le rechargement
+    // post-création efface ensuite (« résolue mais hidden 20 s », trace L12).
+    const nomFiche = `Plat E2E ${Date.now()}`;
     await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
 

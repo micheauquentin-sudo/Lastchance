@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useActionForm } from "@/lib/use-action-form";
 import { VITRINE_CARTE_NOM_MAX } from "@/lib/vitrine";
 import { importVitrineCarte } from "@/actions/vitrine";
@@ -56,11 +56,35 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
   const [nomCarte, setNomCarte] = useState("");
   const [messageSucces, setMessageSucces] = useState<string | null>(null);
 
-  const comptes = compterImport(nomCarte, lignes ?? []);
+  /**
+   * ── LES DÉRIVÉS SONT MÉMORISÉS, ET CE N'EST PAS DE LA MICRO-OPTIMISATION ──
+   *
+   * `compterImport`, `rubriquesHomonymes` et la charge JSON traversent CHACUN
+   * la liste entière via `construireImport` : écrits dans le corps du rendu,
+   * c'était trois parcours de trente lignes à chaque frappe dans n'importe quel
+   * champ de l'aperçu. Le coût n'est pas le vrai problème — le problème est que
+   * ces trois valeurs sont des IDENTITÉS neuves à chaque rendu, `charge` en
+   * tête, qui repose le `value` du champ caché et fait battre l'arbre. Sous
+   * charge (suite E2E complète, WebKit), un `<select>` de l'aperçu ne tenait
+   * jamais deux frames de suite avec la même boîte, et Playwright l'a attendu
+   * 90 s sans jamais le juger « stable ».
+   *
+   * Les dérivés ne changent donc que quand le nom de carte ou les lignes
+   * changent — c'est-à-dire quand les comptes affichés changent vraiment, ce
+   * qui vaut aussi pour la zone `aria-live` : elle ne réannonce plus à chaque
+   * rendu, seulement quand le verdict bouge.
+   */
+  const comptes = useMemo(
+    () => compterImport(nomCarte, lignes ?? []),
+    [nomCarte, lignes],
+  );
   const tropDeRubriques = comptes.rubriques > VITRINE_IMPORT_RUBRIQUES_MAX;
   const tropDeFiches = comptes.fiches > VITRINE_IMPORT_FICHES_MAX;
   const rienAImporter = comptes.fiches === 0 && comptes.rubriques === 0;
-  const homonymes = rubriquesHomonymes(nomCarte, lignes ?? []);
+  const homonymes = useMemo(
+    () => rubriquesHomonymes(nomCarte, lignes ?? []),
+    [nomCarte, lignes],
+  );
 
   const { state, pending, onSubmit } = useActionForm(importVitrineCarte, {
     networkError: "Import impossible, réessayez.",
@@ -80,12 +104,29 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
     },
   });
 
-  const modifierLigne = (cle: string, champs: Partial<LigneImport>) => {
-    setLignes((actuelles) =>
-      (actuelles ?? []).map((l) => (l.cle === cle ? { ...l, ...champs } : l)),
-    );
-  };
+  /**
+   * STABLE D'UN RENDU À L'AUTRE — c'est la moitié du contrat de `LigneApercu`.
+   *
+   * Recréée à chaque rendu, cette fonction changeait la prop `onModifier` des
+   * trente lignes, et le `memo` de `LigneApercu` n'aurait rien retenu : une
+   * frappe dans un seul champ re-rendait toute la liste. La mise à jour ne lit
+   * que l'état précédent, elle n'a donc aucune dépendance.
+   */
+  const modifierLigne = useCallback(
+    (cle: string, champs: Partial<LigneImport>) => {
+      setLignes((actuelles) =>
+        (actuelles ?? []).map((l) => (l.cle === cle ? { ...l, ...champs } : l)),
+      );
+    },
+    [],
+  );
 
+  /**
+   * LE PARSE NE TOURNE QU'ICI, AU CLIC. Il pose un état ; le rendu ne le
+   * rejoue jamais. Relancé dans le corps du rendu, il aurait rendu des lignes
+   * NEUVES à chaque frappe — donc des `key` portant des objets neufs, donc des
+   * champs remontés, et toute correction manuelle écrasée au caractère suivant.
+   */
   const analyser = () => {
     const trouvees = analyserCarte(texte);
     setLignes(trouvees);
@@ -93,7 +134,10 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
     if (!nomCarte.trim()) setNomCarte("Ma carte");
   };
 
-  const charge = JSON.stringify(construireImport(nomCarte, lignes ?? []));
+  const charge = useMemo(
+    () => JSON.stringify(construireImport(nomCarte, lignes ?? [])),
+    [nomCarte, lignes],
+  );
 
   return (
     <Card>
@@ -276,8 +320,17 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
  * tabulation. « Ignorer » est une valeur à part entière — une ligne qu'on ne
  * veut pas garde sa place à l'écran, grisée, plutôt que de disparaître : un
  * commerçant qui s'est trompé doit pouvoir revenir en arrière.
+ *
+ * ── `memo`, PARCE QUE LA LISTE EST LONGUE ET L'ÉTAT EN HAUT ──
+ *
+ * Les lignes vivent dans un seul `useState` du parent, et `modifierLigne` rend
+ * un tableau neuf dont TOUS les éléments sauf un sont les mêmes objets. Sans
+ * `memo`, une frappe dans le prix de la ligne 3 re-rendait les trente lignes,
+ * reposant trente `value` de `<select>` et d'`<input>` — c'est ce battement
+ * continu que Playwright voyait comme une boîte jamais stable. Avec `memo` et
+ * un `onModifier` stable, seule la ligne réellement modifiée se re-rend.
  */
-function LigneApercu({
+const LigneApercu = memo(function LigneApercu({
   ligne,
   numero,
   onModifier,
@@ -375,4 +428,4 @@ function LigneApercu({
       ) : null}
     </li>
   );
-}
+});
