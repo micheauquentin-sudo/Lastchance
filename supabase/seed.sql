@@ -1380,3 +1380,97 @@ values (
   now() + interval '2 hours', now() + interval '3 hours', 1, 'open'
 )
 on conflict (id) do nothing;
+
+-- ── Vitrine — catalogue QR PUBLIÉ (VIT-1a) ──────────────────────────
+--
+-- Slug 'e2e-comptoir', PUBLIÉ, et servi par l'octroi `vitrine` semé plus haut :
+-- les trois conditions de `vitrine_public_state` sont réunies, donc la page
+-- publique répond dès le premier `db reset` suivi du seed.
+--
+-- LA LIGNE DE RÉGLAGES EST INSÉRÉE EN DIRECT et non par `set_vitrine_slug` :
+-- la RPC exige un ACTEUR membre et écrit une ligne d'audit, ce qui ferait du
+-- seed un faux geste de commerçant dans le journal. C'est le même arbitrage que
+-- partout ailleurs dans ce fichier — le seed pose des FAITS, il ne rejoue pas
+-- les parcours. Le trigger de publication ne s'y oppose pas : il n'est armé que
+-- pour `auth.role() = 'authenticated'`, et le seed tourne en `postgres`.
+--
+-- DEUX CARTES, TROIS RUBRIQUES, SIX FICHES, et ce n'est pas un nombre rond
+-- choisi au hasard :
+--   * DEUX cartes prouvent le pluriel du modèle — une seule aurait laissé
+--     passer un écran qui ignore `vitrine_menus` et affiche les rubriques à
+--     plat ;
+--   * une carte à DEUX rubriques et une carte à UNE prouvent que la navigation
+--     ne suppose pas un nombre fixe ;
+--   * UNE fiche `disponible = false` est indispensable : c'est le seul état que
+--     l'écran doit rendre AUTREMENT plutôt que de le masquer, et un jeu de
+--     données tout-disponible n'aurait jamais fait échouer un écran qui la
+--     fait disparaître.
+-- Badges et allergènes sont VARIÉS et couvrent le cas du tableau VIDE, celui
+-- qu'un rendu naïf transforme en « [] ».
+insert into public.vitrine_settings
+  (id, organization_id, slug, published, accroche, histoire, horaires_texte, theme)
+values (
+  'e2f10000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
+  'e2e-comptoir', true,
+  'Le comptoir de quartier, torréfaction maison depuis 2019.',
+  'Une salle de vingt couverts, une torréfaction au fond, et une carte qui '
+  'change avec le marché. On y vient pour le café le matin et pour la cuisine '
+  'du midi, jamais pour attendre.',
+  E'Lundi au vendredi : 8 h – 16 h\nSamedi : 9 h – 18 h\nDimanche : fermé',
+  '{"couleurs":{"primary":"#7c3aed","secondary":"#f59e0b"},'
+  '"polices":{"heading":"elegant","body":"sans"},'
+  '"style_cartes":"grille",'
+  '"ordre_blocs":["accroche","cartes","histoire","horaires"]}'::jsonb
+)
+on conflict (id) do nothing;
+
+insert into public.vitrine_menus (id, organization_id, nom, ordre, active) values
+  ('e2f10000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+   'Carte du midi', 1, true),
+  ('e2f10000-0000-4000-8000-000000000012', 'e2e10000-0000-4000-8000-000000000001',
+   'Vins & boissons', 2, true)
+on conflict (id) do nothing;
+
+insert into public.vitrine_categories (id, menu_id, organization_id, nom, ordre) values
+  ('e2f10000-0000-4000-8000-000000000021', 'e2f10000-0000-4000-8000-000000000011',
+   'e2e10000-0000-4000-8000-000000000001', 'Entrées', 1),
+  ('e2f10000-0000-4000-8000-000000000022', 'e2f10000-0000-4000-8000-000000000011',
+   'e2e10000-0000-4000-8000-000000000001', 'Plats', 2),
+  ('e2f10000-0000-4000-8000-000000000023', 'e2f10000-0000-4000-8000-000000000012',
+   'e2e10000-0000-4000-8000-000000000001', 'Au verre', 1)
+on conflict (id) do nothing;
+
+insert into public.vitrine_items
+  (id, categorie_id, organization_id, nom, description, prix_affiche,
+   badges, allergenes, disponible, ordre)
+values
+  ('e2f10000-0000-4000-8000-000000000031', 'e2f10000-0000-4000-8000-000000000021',
+   'e2e10000-0000-4000-8000-000000000001', 'Velouté de potiron',
+   'Crème légère, graines torréfiées maison.', 'à partir de 8 €',
+   array['vegetarien', 'sain', 'fait_maison']::text[],
+   array['lait', 'celeri']::text[], true, 1),
+  ('e2f10000-0000-4000-8000-000000000032', 'e2f10000-0000-4000-8000-000000000021',
+   'e2e10000-0000-4000-8000-000000000001', 'Houmous du jour',
+   'Pois chiches, citron confit, huile d''olive.', '7 €',
+   array['vegan', 'sain']::text[], array['sesame']::text[], true, 2),
+  ('e2f10000-0000-4000-8000-000000000033', 'e2f10000-0000-4000-8000-000000000022',
+   'e2e10000-0000-4000-8000-000000000001', 'Tartare de bœuf',
+   'Coupé au couteau, frites maison.', '19 €',
+   array['traditionnel']::text[], array['oeufs', 'moutarde']::text[], true, 1),
+  -- LA FICHE ÉPUISÉE. Elle sort quand même de vitrine_public_state, avec son
+  -- drapeau : l'écran doit la GRISER, pas la faire disparaître.
+  ('e2f10000-0000-4000-8000-000000000034', 'e2f10000-0000-4000-8000-000000000022',
+   'e2e10000-0000-4000-8000-000000000001', 'Curry de légumes grillés',
+   'Épicé, servi avec un riz complet.', '16 €',
+   array['vegan', 'epice', 'grille']::text[],
+   array['fruits_a_coque', 'soja']::text[], false, 2),
+  -- BADGES ET ALLERGÈNES VIDES : le cas qu'un rendu naïf transforme en « [] ».
+  ('e2f10000-0000-4000-8000-000000000035', 'e2f10000-0000-4000-8000-000000000023',
+   'e2e10000-0000-4000-8000-000000000001', 'Côtes-du-rhône',
+   'Domaine de la Tour, 2023.', '5,5 / 24 €',
+   array[]::text[], array['sulfites']::text[], true, 1),
+  ('e2f10000-0000-4000-8000-000000000036', 'e2f10000-0000-4000-8000-000000000023',
+   'e2e10000-0000-4000-8000-000000000001', 'Limonade artisanale',
+   null, '4 €',
+   array['nouveau', 'fait_maison']::text[], array[]::text[], true, 2)
+on conflict (id) do nothing;

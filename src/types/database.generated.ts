@@ -6903,6 +6903,202 @@ export type Database = {
           },
         ]
       }
+      vitrine_categories: {
+        Row: {
+          created_at: string
+          id: string
+          menu_id: string
+          nom: string
+          ordre: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          menu_id: string
+          nom: string
+          ordre?: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          menu_id?: string
+          nom?: string
+          ordre?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_categories_menu_id_organization_id_fkey"
+            columns: ["menu_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_menus"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "vitrine_categories_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vitrine_items: {
+        Row: {
+          allergenes: string[]
+          badges: string[]
+          categorie_id: string
+          created_at: string
+          description: string | null
+          disponible: boolean
+          id: string
+          nom: string
+          ordre: number
+          organization_id: string
+          photo_path: string | null
+          prix_affiche: string | null
+          updated_at: string
+        }
+        Insert: {
+          allergenes?: string[]
+          badges?: string[]
+          categorie_id: string
+          created_at?: string
+          description?: string | null
+          disponible?: boolean
+          id?: string
+          nom: string
+          ordre?: number
+          organization_id: string
+          photo_path?: string | null
+          prix_affiche?: string | null
+          updated_at?: string
+        }
+        Update: {
+          allergenes?: string[]
+          badges?: string[]
+          categorie_id?: string
+          created_at?: string
+          description?: string | null
+          disponible?: boolean
+          id?: string
+          nom?: string
+          ordre?: number
+          organization_id?: string
+          photo_path?: string | null
+          prix_affiche?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_items_categorie_id_organization_id_fkey"
+            columns: ["categorie_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_categories"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "vitrine_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vitrine_menus: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          nom: string
+          ordre: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          nom: string
+          ordre?: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          nom?: string
+          ordre?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_menus_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vitrine_settings: {
+        Row: {
+          accroche: string | null
+          cover_path: string | null
+          created_at: string
+          histoire: string | null
+          horaires_texte: string | null
+          id: string
+          organization_id: string
+          published: boolean
+          slug: string
+          theme: Json
+          updated_at: string
+        }
+        Insert: {
+          accroche?: string | null
+          cover_path?: string | null
+          created_at?: string
+          histoire?: string | null
+          horaires_texte?: string | null
+          id?: string
+          organization_id: string
+          published?: boolean
+          slug: string
+          theme?: Json
+          updated_at?: string
+        }
+        Update: {
+          accroche?: string | null
+          cover_path?: string | null
+          created_at?: string
+          histoire?: string | null
+          horaires_texte?: string | null
+          id?: string
+          organization_id?: string
+          published?: boolean
+          slug?: string
+          theme?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_deliveries: {
         Row: {
           attempts: number
@@ -7795,6 +7991,7 @@ export type Database = {
       is_org_editor: { Args: { p_organization_id: string }; Returns: boolean }
       is_org_member: { Args: { org_id: string }; Returns: boolean }
       is_org_owner: { Args: { org_id: string }; Returns: boolean }
+      is_reserved_vitrine_slug: { Args: { p_slug: string }; Returns: boolean }
       is_safe_experience_metadata: { Args: { p_value: Json }; Returns: boolean }
       is_valid_contest_answer: {
         Args: {
@@ -7860,6 +8057,11 @@ export type Database = {
         Returns: boolean
       }
       is_valid_timezone: { Args: { p_timezone: string }; Returns: boolean }
+      is_valid_vitrine_theme: { Args: { p_theme: Json }; Returns: boolean }
+      is_valid_vitrine_vocabulaire: {
+        Args: { p_valeurs: string[]; p_vocabulaire: string[] }
+        Returns: boolean
+      }
       join_calendar: {
         Args: {
           p_email?: string
@@ -8926,6 +9128,10 @@ export type Database = {
         Args: { p_organization_id: string; p_role: string; p_user_id: string }
         Returns: string
       }
+      set_vitrine_slug: {
+        Args: { p_actor: string; p_organization_id: string; p_slug: string }
+        Returns: Json
+      }
       set_worker_vault_secrets: {
         Args: { p_secret: string; p_url: string; p_worker: string }
         Returns: {
@@ -9165,6 +9371,15 @@ export type Database = {
         }
         Returns: Json
       }
+      vitrine_cartes_json: {
+        Args: { p_actives_seulement: boolean; p_organization_id: string }
+        Returns: Json
+      }
+      vitrine_dashboard_state: {
+        Args: { p_organization_id: string }
+        Returns: Json
+      }
+      vitrine_public_state: { Args: { p_slug: string }; Returns: Json }
       wait_session_open: {
         Args: {
           p_organization_id: string

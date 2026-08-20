@@ -605,6 +605,56 @@ select ok(not has_function_privilege('anon', 'public.stock_offer_public_state(uu
 select ok(has_function_privilege('service_role', 'public.stock_offers_staff_state(uuid)', 'EXECUTE'), 'server can build the counter view');
 select ok(not has_function_privilege('anon', 'public.stock_offers_staff_state(uuid)', 'EXECUTE'), 'anon cannot read the counter view');
 
+-- Catalogue QR de Vitrine (20261011120000, VIT-1a). QUATRE tables neuves, un
+-- seul régime : ÉDITEURS partout, en lecture comme en écriture. Une vitrine est
+-- de la CONFIGURATION, pas un écran de comptoir — le caissier ne change pas la
+-- carte entre deux cafés, et lui ouvrir la lecture n'aurait élargi la surface
+-- que pour un usage qui n'existe pas.
+--
+-- ANON N'A RIEN, ET C'EST LE POINT LE PLUS IMPORTANT DE CE LOT : la vitrine est
+-- la première ressource du produit dont TOUT le contenu est destiné à être vu
+-- par des inconnus. La tentation d'une policy `anon` de lecture sur les fiches
+-- « puisqu'elles sont publiques » est exactement l'erreur : elle aurait rendu
+-- lisibles les cartes NON PUBLIÉES, celles des organisations sans droit, et le
+-- catalogue entier de tous les locataires à quiconque possède la clé anonyme.
+-- C'est `vitrine_public_state` qui choisit ce qui sort, après avoir vérifié la
+-- publication ET le droit.
+select ok(not has_table_privilege('anon', 'public.vitrine_settings', 'SELECT'), 'anon cannot read vitrine settings directly');
+select ok(not has_table_privilege('anon', 'public.vitrine_menus', 'SELECT'), 'anon cannot enumerate the menus of every tenant');
+select ok(not has_table_privilege('anon', 'public.vitrine_categories', 'SELECT'), 'anon cannot enumerate menu sections directly');
+select ok(not has_table_privilege('anon', 'public.vitrine_items', 'SELECT'), 'anon cannot read unpublished catalogue items');
+select ok(not has_table_privilege('anon', 'public.vitrine_items', 'INSERT'), 'anon cannot forge a catalogue item');
+-- L'ADRESSE PUBLIQUE N'EST PAS UN CHAMP DE FORMULAIRE. Elle engage les QR déjà
+-- imprimés : ni l'`insert` de la ligne ni l'`update` de la colonne ne sont
+-- accordés, et `set_vitrine_slug` est la seule porte — celle qui journalise.
+select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'INSERT'), 'merchant cannot claim a public address without an audit line');
+select ok(not has_column_privilege('authenticated', 'public.vitrine_settings', 'slug', 'UPDATE'), 'merchant cannot rewrite the public address and break printed QR codes silently');
+select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'published', 'UPDATE'), 'merchant can publish and unpublish (the trigger guards the entitlement)');
+select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'theme', 'UPDATE'), 'merchant can style their own storefront');
+select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'DELETE'), 'merchant cannot delete their storefront settings — unpublishing is enough');
+-- La suppression d'une CARTE est ouverte mais GARDÉE (trigger « compter
+-- d'abord ») ; celle des rubriques et des fiches est libre — contenu éditorial,
+-- aucun fait client.
+select ok(has_table_privilege('authenticated', 'public.vitrine_menus', 'DELETE'), 'merchant can delete an EMPTY menu (the trigger refuses a non-empty one, and names the count)');
+select ok(has_table_privilege('authenticated', 'public.vitrine_categories', 'DELETE'), 'merchant can delete a menu section');
+select ok(has_table_privilege('authenticated', 'public.vitrine_items', 'DELETE'), 'merchant can delete a catalogue item');
+-- Les trois RPC : serveur seul. `vitrine_cartes_json` n'est rendue à PERSONNE —
+-- elle ne vérifie ni le droit ni la publication, c'est le travail de ses deux
+-- appelantes, et l'ouvrir aurait donné le catalogue entier de n'importe quel
+-- locataire à qui connaît un UUID d'organisation.
+select ok(has_function_privilege('service_role', 'public.vitrine_public_state(text)', 'EXECUTE'), 'server can render a public storefront');
+select ok(not has_function_privilege('anon', 'public.vitrine_public_state(text)', 'EXECUTE'), 'anon cannot call the storefront RPC directly');
+select ok(not has_function_privilege('authenticated', 'public.vitrine_public_state(text)', 'EXECUTE'), 'merchant session cannot probe other storefronts through the public RPC');
+select ok(has_function_privilege('service_role', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'server can build the storefront editor view');
+select ok(not has_function_privilege('anon', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'anon cannot read unpublished storefronts');
+select ok(not has_function_privilege('authenticated', 'public.vitrine_dashboard_state(uuid)', 'EXECUTE'), 'merchant session cannot read another tenant''s draft storefront');
+select ok(has_function_privilege('service_role', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'server can claim a public address, with an actor and an audit line');
+select ok(not has_function_privilege('authenticated', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'merchant session cannot claim a public address without the server guard');
+select ok(not has_function_privilege('anon', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'anon cannot squat public addresses');
+select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json(uuid,boolean)', 'EXECUTE'), 'the catalogue tree is granted to nobody: it checks neither entitlement nor publication');
+select ok(not has_function_privilege('authenticated', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'), 'the theme validator is granted to nobody (checks evaluate without a privilege check)');
+select ok(not has_function_privilege('authenticated', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'), 'the reserved-slug vocabulary is granted to nobody');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');
@@ -1199,6 +1249,27 @@ insert into public.qr_codes (id, organization_id, campaign_id, slug, label) valu
  ('a0000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
   '30000000-0000-4000-8000-000000000001', 'TESTACLQR', 'Comptoir');
 
+-- Une VITRINE chez « Test ACL », publiée, avec une carte et une fiche (VIT-1a).
+-- Même raison que le QR ci-dessus : sans ces lignes, les zéros du voisin sur
+-- les quatre tables de vitrine seraient vrais faute de matière à cacher. Elles
+-- comptent doublement ici — la vitrine est la première ressource du produit
+-- dont le contenu est FAIT pour être vu par des inconnus, et c'est justement
+-- pour cela qu'aucun locataire ne doit pouvoir le lire chez un autre.
+insert into public.vitrine_settings (id, organization_id, slug, published) values
+ ('a1000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+  'test-acl-vitrine', true);
+insert into public.vitrine_menus (id, organization_id, nom, ordre) values
+ ('a1000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000001',
+  'Carte ACL', 1);
+insert into public.vitrine_categories (id, menu_id, organization_id, nom, ordre) values
+ ('a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000002',
+  '20000000-0000-4000-8000-000000000001', 'Rubrique ACL', 1);
+insert into public.vitrine_items
+  (id, categorie_id, organization_id, nom, prix_affiche, badges, allergenes) values
+ ('a1000000-0000-4000-8000-000000000004', 'a1000000-0000-4000-8000-000000000003',
+  '20000000-0000-4000-8000-000000000001', 'Fiche ACL', '12 €',
+  array['nouveau']::text[], array['gluten']::text[]);
+
 -- Une ligne d'audit SANS organisation : c'est exactement ce que le webhook
 -- Stripe écrit à chaque synchronisation d'abonnement, identifiant client dans
 -- `metadata`. La policy de 00017 la donnait à lire à TOUT compte connecté, de
@@ -1331,7 +1402,7 @@ select is(
 );
 
 -- ── Quatrième session : le propriétaire d'EN FACE ────────────
--- Neuf tables, neuf zéros. `organizations` est bornée à l'organisation d'en
+-- Treize tables, treize zéros. `organizations` est bornée à l'organisation d'en
 -- face : le voisin voit évidemment la sienne, ce qu'on lui refuse c'est l'autre.
 set local "request.jwt.claim.sub" = '10000000-0000-4000-8000-000000000004';
 select results_eq('select count(*) from public.campaigns', array[0::bigint], 'a neighbouring owner reads no campaign of another tenant');
@@ -1343,6 +1414,12 @@ select results_eq('select count(*) from public.spins', array[0::bigint], 'a neig
 select results_eq('select count(*) from public.newsletter_subscribers', array[0::bigint], 'a neighbouring owner reads no newsletter subscriber of another tenant');
 select results_eq($$select count(*) from public.organizations where id = '20000000-0000-4000-8000-000000000001'$$, array[0::bigint], 'a neighbouring owner does not even see the other organization row');
 select results_eq('select count(*) from public.audit_logs', array[0::bigint], 'a neighbouring owner reads no audit line at all — neither the other tenant''s, nor the tenant-less billing trail');
+-- La vitrine d'en face, PUBLIÉE, et pourtant invisible ici : ce qu'un visiteur
+-- reçoit par `vitrine_public_state` ne passe jamais par une session marchande.
+select results_eq('select count(*) from public.vitrine_settings', array[0::bigint], 'a neighbouring owner reads no storefront settings of another tenant, published or not');
+select results_eq('select count(*) from public.vitrine_menus', array[0::bigint], 'a neighbouring owner reads no menu of another tenant');
+select results_eq('select count(*) from public.vitrine_categories', array[0::bigint], 'a neighbouring owner reads no menu section of another tenant');
+select results_eq('select count(*) from public.vitrine_items', array[0::bigint], 'a neighbouring owner reads no catalogue item of another tenant');
 
 reset role;
 select * from finish();
