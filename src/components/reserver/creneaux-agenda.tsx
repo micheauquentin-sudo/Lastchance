@@ -179,6 +179,17 @@ function CreneauCarte({
                 <span className="font-mono text-sm font-black tracking-wider text-k-ink">
                   {reservation.code}
                 </span>
+                {/* LE NOMBRE DE PERSONNES (RES-5), et seulement quand il n'est
+                    pas 1. Un Atelier Duo tient DEUX places sous un seul code :
+                    le comptoir doit le savoir avant d'ouvrir la porte, sans
+                    quoi il attend une personne et en voit arriver deux. Sur une
+                    réservation ordinaire, « 1 pers. » n'apprendrait rien et
+                    ferait une colonne de bruit. */}
+                {reservation.partySize > 1 ? (
+                  <span className="shrink-0 rounded-full border-2 border-k-ink bg-sky-100 px-2 py-0.5 text-xs font-black text-k-ink">
+                    {reservation.partySize} pers.
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 text-xs font-semibold text-k-body">
                   Réservée le {formatDate(reservation.createdAt, timeZone)}
                   {reservation.checkedInAt

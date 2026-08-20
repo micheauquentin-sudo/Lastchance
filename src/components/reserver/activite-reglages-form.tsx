@@ -13,6 +13,7 @@ import {
 import type { ReserverActivityView } from "@/lib/reserver-context";
 import { champDescription } from "@/components/reserver/champs";
 import { ChampsAttenteActive } from "@/components/reserver/champs-attente-active";
+import { ChampsExperience } from "@/components/reserver/champs-experience";
 
 /**
  * Réglages d'une activité : nom, description, et L'INTERRUPTEUR.
@@ -88,6 +89,21 @@ export function ActiviteReglagesForm({
             scannant votre QR code.
           </p>
         </div>
+
+        {/* LES EXPÉRIENCES SIGNATURE (RES-5), juste sous la description : c'est
+            la même matière — ce que le client lit avant de réserver — et les
+            champs qui s'ouvrent la prolongent. Repasser en « Standard »
+            n'EFFACE rien : les colonnes gardent leur contenu, elles cessent
+            seulement d'être affichées. */}
+        <ChampsExperience
+          instanceId="-activite"
+          defaultKind={activite.kind}
+          defaultPromise={activite.promise}
+          defaultDurationMinutes={activite.durationMinutes}
+          defaultSteps={activite.steps}
+          defaultPreparation={activite.preparation}
+          espacement="mt-4"
+        />
 
         {/* Le Mode Attente active (RES-4) : ce qu'on propose à celui qui
             patiente, jamais ce qui décide de son tour. */}
