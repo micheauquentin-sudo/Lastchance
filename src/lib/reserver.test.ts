@@ -1936,6 +1936,7 @@ describe("mapStockOfferPublicState — la photo du restant", () => {
         hold_id: "h1",
         code: "RESA-ABCD2345",
         status: "held",
+        redeem_not_before: "2030-04-12T10:00:00Z",
         redeem_expires_at: "2030-04-12T18:00:00Z",
       },
     });
@@ -1943,6 +1944,7 @@ describe("mapStockOfferPublicState — la photo du restant", () => {
       holdId: "h1",
       code: "RESA-ABCD2345",
       status: "held",
+      redeemNotBefore: "2030-04-12T10:00:00Z",
       redeemExpiresAt: "2030-04-12T18:00:00Z",
     });
   });
