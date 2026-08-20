@@ -30,9 +30,9 @@ parallèle, fusions de migrations sérialisées.
 | L5 | RES-2 — liste prioritaire + invitations | ✅ | #161 | 20261004120000 |
 | L6 | RES-3 — file sereine | ✅ | #162 | 20261005120000 |
 | L7 | RES-4 — attente active | ✅ | #163 | 20261006120000 |
-| L8 | Expériences Signature | 🔨 QA | #164 | 20261007120000, 20261008120000, 20261009120000 |
-| L9 | RES-5 — hold stock + RESA- + Drop | ⏳ | — | — |
-| L10 | VIT-1a — marque + catalogue FR (sous drapeau) | ⏳ | — | — |
+| L8 | Expériences Signature | ✅ | #164 | 20261007120000, 20261008120000, 20261009120000 |
+| L9 | RES-5 — hold stock + RESA- + Drop | ✅ | #165 | 20261010120000 |
+| L10 | VIT-1a — marque + catalogue FR (sous drapeau) | 🔨 | — | 20261011120000 |
 | L11 | VIT-1b — infra i18n + adaptateur neutre (ouverture publique Vitrine) | ⏳ | — | — |
 | L12 | VIT-2 — import assisté + QR imprimables | ⏳ | — | — |
 | L13 | VIT-3 — branchement | ⏳ | — | — |
@@ -94,7 +94,19 @@ ouverte aux réservations » postait `value="on"`, un enum invalide pour
 cochée échouait silencieusement (`activite-reglages-form.tsx`, corrigé en
 `value="true"`). Les deux étaient présents avant ce lot (le premier depuis
 20261007120000, le second depuis L4) et n'avaient jamais été exercés par un
-E2E jusqu'ici.
+E2E jusqu'ici. Arbitrage L8 (capacité en personnes, format gelé par trigger,
+grant EXECUTE épinglé) : ADR-113.
+
+L9 — RES-5, PR #165, migration `20261010120000` : offres de stock réel
+(`reservation_stock_offers` / `reservation_stock_holds`), restant dérivé sous
+verrou d'avis, code `RESA-` en 10e famille du registre universel, deux bornes
+de retrait gravées sur la prise, pont d'identité conditionné à la
+servabilité. Arbitrage complet : ADR-114. **Le périmètre Réserver (RES-1 à
+RES-5, L0 à L9) est complet.**
+
+**Bascule Vitrine** : à partir de L10, le train quitte Réserver pour la
+Vitrine (VIT-1a, catalogue commerce/cartes/rubriques/fiches), migration
+`20261011120000`, branche `chantier/rv-l10-vitrine-catalogue`.
 
 ## Notes de mise à jour
 

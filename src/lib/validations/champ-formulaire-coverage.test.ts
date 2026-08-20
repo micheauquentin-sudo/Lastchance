@@ -25,6 +25,7 @@ import * as rewardExpiry from "./reward-expiry";
 import * as skill from "./skill";
 import * as sms from "./sms";
 import * as team from "./team";
+import * as vitrine from "./vitrine";
 import * as webhooks from "./webhooks";
 
 /**
@@ -348,6 +349,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   skill,
   sms,
   team,
+  vitrine,
   webhooks,
 };
 

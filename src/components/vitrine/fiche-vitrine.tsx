@@ -1,0 +1,162 @@
+import { cn } from "@/lib/utils";
+import {
+  libelleAllergene,
+  libelleBadge,
+  type StyleCartesVitrine,
+  type VitrineFicheView,
+} from "@/lib/vitrine";
+
+/**
+ * UNE FICHE DE CARTE — un plat, une boisson, une prestation.
+ *
+ * ── CE LOT NE MONTE AUCUNE PHOTO, ET LA FICHE DOIT ÊTRE BELLE QUAND MÊME ──
+ *
+ * C'est la contrainte de départ, pas un repli : la référence du marché publie
+ * une « carte sans photos » à côté de ses cartes illustrées, et c'est souvent
+ * celle qu'un restaurateur garde. Ce qui tient une carte sans images, c'est la
+ * TYPOGRAPHIE : un nom en police de titre, un prix aligné à droite, et un filet
+ * pointillé entre les deux qui fait lire la ligne d'un bout à l'autre — la
+ * mise en page d'un menu imprimé, pas celle d'une liste de produits.
+ *
+ * Le seul « placeholder » est un MONOGRAMME, et seulement dans les styles
+ * `grille` et `magazine`, où la mise en page réserve une place visuelle qui
+ * serait autrement un trou. Il est en couleur d'accent très diluée : il occupe
+ * l'espace sans jamais prétendre être une image. En style `liste`, il n'y a
+ * aucune place à combler, donc aucun monogramme — un carré gris par ligne
+ * serait exactement le bruit que le mot « discret » exclut.
+ *
+ * ── L'INDISPONIBLE EST GRISÉ, JAMAIS RETIRÉ ──
+ *
+ * La base rend délibérément les fiches indisponibles avec leur drapeau : « la
+ * retirer ferait disparaître un plat de la carte au lieu de le montrer épuisé ».
+ * L'opacité seule ne suffirait pas — elle ne se lit pas au lecteur d'écran et
+ * pas du tout en plein soleil sur un téléphone — d'où la mention textuelle, qui
+ * est la vraie information.
+ *
+ * ── LES ALLERGÈNES SONT REPLIÉS, ET C'EST UN `<details>` ──
+ *
+ * Quatorze valeurs possibles sur chaque ligne noieraient la carte ; les cacher
+ * serait pire, c'est le seul champ où se tromper compte vraiment. Un `<details>`
+ * natif règle les deux : replié par défaut, ouvrable au clic ET au clavier,
+ * annoncé comme un groupe par les lecteurs d'écran, et il fonctionne même si
+ * aucun JavaScript ne s'exécute.
+ */
+export function FicheVitrine({
+  fiche,
+  styleCartes,
+}: {
+  fiche: VitrineFicheView;
+  styleCartes: StyleCartesVitrine;
+}) {
+  const indisponible = !fiche.disponible;
+  const monogramme = styleCartes !== "liste";
+  const magazine = styleCartes === "magazine";
+  const titreId = `fiche-${fiche.id}`;
+
+  return (
+    <article
+      aria-labelledby={titreId}
+      className={cn(
+        "rounded-2xl border border-black/10 bg-white/70 p-4",
+        magazine && "p-5",
+        // `opacity` sur le conteneur ET une mention en clair : le gris seul
+        // n'est pas une information.
+        indisponible && "opacity-70",
+      )}
+    >
+      <div className={cn(magazine ? "space-y-3" : "space-y-2")}>
+        {monogramme ? <Monogramme nom={fiche.nom} grand={magazine} /> : null}
+
+        {/* NOM ── FILET ── PRIX. Le filet est `aria-hidden` : il fait lire la
+            ligne à l'œil, il n'a rien à dire à l'oreille. */}
+        <div className="flex items-baseline gap-2">
+          <h3
+            id={titreId}
+            className={cn(
+              "font-[family-name:var(--vitrine-titre)] font-bold leading-tight text-[var(--vitrine-sur-secondary)]",
+              magazine ? "text-xl" : "text-base",
+            )}
+          >
+            {fiche.nom}
+          </h3>
+          {fiche.prix_affiche ? (
+            <>
+              <span
+                aria-hidden
+                className="min-w-4 flex-1 translate-y-[-0.2em] border-b border-dotted border-current opacity-30"
+              />
+              <p className="shrink-0 font-bold tabular-nums text-[var(--vitrine-primary)]">
+                {fiche.prix_affiche}
+              </p>
+            </>
+          ) : null}
+        </div>
+
+        {fiche.description ? (
+          <p
+            className={cn(
+              "font-[family-name:var(--vitrine-texte)] leading-relaxed text-[var(--vitrine-sur-secondary)]/80",
+              magazine ? "text-base" : "text-sm",
+            )}
+          >
+            {fiche.description}
+          </p>
+        ) : null}
+
+        {indisponible ? (
+          <p className="text-sm font-semibold text-[var(--vitrine-sur-secondary)]">
+            Indisponible aujourd&apos;hui
+          </p>
+        ) : null}
+
+        {fiche.badges.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {fiche.badges.map((badge) => (
+              <li
+                key={badge}
+                className="rounded-full border border-[var(--vitrine-primary)]/25 px-2 py-0.5 text-xs font-semibold text-[var(--vitrine-primary)]"
+              >
+                {libelleBadge(badge)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {fiche.allergenes.length > 0 ? (
+          <details className="group">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md text-xs font-semibold text-[var(--vitrine-sur-secondary)]/70 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]">
+              Allergènes
+              <span aria-hidden className="transition-transform group-open:rotate-180">
+                ⌄
+              </span>
+            </summary>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--vitrine-sur-secondary)]/80">
+              {fiche.allergenes.map(libelleAllergene).join(" · ")}
+            </p>
+          </details>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+/**
+ * Le monogramme : première lettre du nom, en accent très dilué.
+ *
+ * `aria-hidden` — il ne répète que la première lettre d'un titre déjà lu juste
+ * en dessous, et l'annoncer ferait entendre « T, Tarte aux pommes ».
+ */
+function Monogramme({ nom, grand }: { nom: string; grand: boolean }) {
+  const lettre = nom.trim().charAt(0).toUpperCase() || "·";
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "flex items-center justify-center rounded-xl bg-[var(--vitrine-primary)]/10 font-[family-name:var(--vitrine-titre)] font-bold text-[var(--vitrine-primary)]/25",
+        grand ? "h-28 text-5xl" : "h-16 text-3xl",
+      )}
+    >
+      {lettre}
+    </div>
+  );
+}

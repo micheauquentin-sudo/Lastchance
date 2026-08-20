@@ -7278,3 +7278,128 @@ réelles), bornés par la configuration marchande. La config de retrait
 **Références** :
 - PR #163, migration `20261006120000`
 - ADR-110, ADR-111 · `docs/chantier-reserver-vitrine.md`
+
+## ADR-113 — L8 : la capacité en personnes et le format gelé
+
+**Date** : 2026-08-20 · **Statut** : acté
+
+**Contexte** : les Expériences Signature (Moment Signature, Atelier Duo)
+partagent le même moteur que le socle Réserver — mêmes RPC, même verrou
+d'avis — sans table ni jauge à elles. L'Atelier Duo casse l'équivalence
+« une réservation = une place » : `reservations.party_size` porte le nombre
+de personnes, et tous les comptages du module passent de `count(*)` à
+`sum(party_size)` sous les verrous existants. Un format réglable à tout
+moment (`reservation_activities.kind`) devient alors l'unité de comptage
+lue à chaque appel — jamais figée au moment où un engagement est pris — ce
+qui permet à un créneau de dépasser sa capacité sans qu'aucune contrainte
+ne soit violée ni qu'aucune erreur ne s'affiche (revue du lot L8, sévérité
+MOYEN).
+
+**Décision** : le duo vaut deux places atomiques par les trois portes
+(réservation directe, offre de liste d'attente, prise de l'offre) ; l'offre
+de liste d'attente porte l'unité du format au moment de son émission ; le
+trigger `reservation_activities_freeze_kind` refuse tout changement de
+`kind` — y compris un PATCH PostgREST direct, hors serveur Next — dès qu'il
+existe une réservation ou une attente vivante sur un créneau à venir, en
+recomptant dans la transaction même de l'écriture. `updateReserverActivity`
+garde son propre refus nommé (« N réservations et N attentes vivantes »)
+en amont : le trigger est le plancher, l'action est ce qui se lit. Les deux
+dérivent du même prédicat, écrit une fois dans
+`reservation_activity_live_counts`.
+
+Un second défaut, trouvé par l'E2E du lot (`e2e/reserver-signature.spec.ts`)
+et non par lecture de code : `is_valid_experience_steps`, référencée dans un
+`check` de `reservation_activities`, est évaluée avec les privilèges du rôle
+qui écrit la ligne — pas sans contrôle, contrairement au commentaire qui
+accompagnait son `revoke all`. Sans `grant execute` à `authenticated` et
+`service_role`, tout insert/update sur `reservation_activities` portant des
+étapes échouait en « permission denied for function
+is_valid_experience_steps ». Le grant est rendu (migration
+`20261008120000`) et épinglé par une assertion pgTAP
+(`has_function_privilege('authenticated', 'public.is_valid_experience_steps(jsonb)', 'EXECUTE')`,
+ACL-32 dans `supabase/tests/reserver.test.sql`) pour que la prochaine fois
+soit gratuite.
+
+**Justification** : figer `party_size` à l'émission de l'offre aurait
+ajouté un second endroit où l'unité s'écrit — donc un second endroit où
+elle diverge, l'inverse de ce que le lot cherchait. Convertir les lignes
+existantes au changement de format surprend le commerçant sans qu'il ait
+rien demandé. Refuser le changement tant qu'il y a des engagements vivants,
+en nommant ce qui est compté, reprend le motif déjà retenu pour les gardes
+destructives du dépôt (`deleteWheel`, `deleteCampaign`).
+
+**Conséquences** : ce que le trigger ne ferme pas — une transaction
+concurrente engagée après le snapshot de l'instruction — reste de l'ordre
+de la microseconde, sur un geste manuel fait une fois par saison ; le
+reprendre aurait demandé un verrou par créneau à venir sur un chemin qui
+n'en connaît pas le nombre. Le précédent cité pour le grant EXECUTE
+(`is_valid_progression_rule`, 20260805200000) n'a pas la même omission :
+ses écritures passent par des RPC `security definer`, qui héritent
+l'EXECUTE de leur propriétaire — `reservation_activities` s'écrit en
+PostgREST direct sous `authenticated`, d'où le besoin du grant explicite.
+
+**Références** :
+- PR #164, migrations `20261007120000`, `20261008120000`, `20261009120000`
+- ADR-109, ADR-112 · `docs/chantier-reserver-vitrine.md`
+
+## ADR-114 — L9 : le stock qui se dérive et les bornes gravées
+
+**Date** : 2026-08-20 · **Statut** : acté
+
+**Contexte** : le Drop anti-gaspi (RES-5, lot L9) bloque un objet physique
+jusqu'à une heure dite, à retirer en caisse. Ce n'est pas un second
+mécanisme mais une offre dont la fenêtre de retrait est courte et proche :
+une seule table (`reservation_stock_offers` / `reservation_stock_holds`),
+un seul jeu de RPC, la même caisse universelle. La leçon retenue du lot L8
+est explicite dans le fichier de migration : « l'arithmétique remplace la
+compensation ».
+
+**Décision** :
+- Le restant se **dérive** — `stock_total` moins les prises vivantes, sous
+  le verrou d'avis de l'offre — sans compteur dénormalisé. Une prise dont
+  la fenêtre est passée cesse simplement d'être comptée : aucun job de
+  restock, donc aucune occasion de restituer une unité deux fois.
+- Le code de retrait `RESA-` devient la **10e famille** du registre
+  universel de récompenses, routée par `redeem_reward_by_code` comme les
+  neuf précédentes ; une seconde présentation rend `already_redeemed`.
+- La dérivation des fonctions déjà vivantes en production
+  (`sync_reward_issuance`) est appliquée par remplacement de motif dans le
+  corps installé, verrouillé par une assertion qui compte les occurrences
+  du motif avant patch (`v_hits <> 1` lève une exception si la fonction a
+  changé) et vérifie après coup que la branche `reservation_stock_holds`
+  est bien présente dans le corps installé — pour ne jamais migrer contre
+  du code que la description ne décrit plus.
+- Les **deux bornes de retrait sont gravées sur la prise**
+  (`redeem_not_before`, `redeem_expires_at`), recopiées de la fenêtre de
+  l'offre à l'instant du blocage et jamais relues ensuite : une fenêtre
+  rééditée par le commerçant vaut pour les prises à venir, pas pour celles
+  déjà consenties (doctrine de 20260904120000, appliquée aux deux bouts).
+  La prise est possible dès que l'offre est `open`, y compris avant le
+  début de la fenêtre ; le retrait ne l'est que dans la fenêtre.
+- Le **pont d'identité** (`ensureProgressivePlayerIdentity`, 10e famille
+  `experience_kind = 'reserver_stock'`) est posé **avant** l'appel RPC
+  seulement quand l'offre est jugée servable sur une photo non verrouillée
+  du restant (`offreServableAvantPont`). Quand cette photo ment — restant
+  affiché à zéro pendant qu'une annulation concurrente libère l'unité —
+  la RPC accorde quand même la prise, et le pont est reposé après coup ;
+  le cas est compté (`reserver.stock_hold.pont_rattrape`) plutôt que
+  silencieux.
+
+**Justification** : le stock n'est jamais un compteur temps réel — le
+commerçant saisit un nombre fini borné à 500, et ce nombre est la seule
+vérité, un choix nommé par le cahier des charges pour éviter les ventes
+doubles qu'une fausse promesse de synchronisation produirait. Le registre
+reste un miroir qui ne décide jamais du stock, conformément à sa règle
+fondatrice (20260805150000) : `reservation_stock_holds` est seule autorité.
+
+**Conséquences** : `reserver.stock_hold.pont_rattrape` à zéro n'est pas la
+preuve que la fenêtre de course n'existe pas — voir `docs/bugs.md`, le
+compteur peut être incrémenté par un `already_held` non servable, donc ne
+pas alerter dessus tel quel. La famille `reserver_stock` n'entre ni dans
+`track_reward_issuance_analytics` ni dans `experience_economic_policies` :
+elle n'est tirée au sort par rien et ne doit apparaître dans aucune
+statistique de jeu — voir le bug analytics associé dans `docs/bugs.md`.
+
+**Références** :
+- PR #165, migration `20261010120000`
+- ADR-112, ADR-113 · `docs/chantier-reserver-vitrine.md`
