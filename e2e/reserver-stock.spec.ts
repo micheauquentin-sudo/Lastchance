@@ -38,7 +38,16 @@ test.describe("réserver — offre de stock, code RESA-, portefeuille, annulatio
     ).toBeVisible({ timeout: 30_000 });
 
     // ── 1. La fenêtre de retrait est annoncée AVANT toute prise. ──
-    await expect(page.getByText("Fenêtre de retrait")).toBeVisible();
+    //
+    // `exact: true` OBLIGATOIRE, et ce n'est pas un détail de style :
+    // `getByText` avec une chaîne cherche une SOUS-CHAÎNE, insensible à la
+    // casse. Le libellé de consentement du même écran dit « … et le rappel de
+    // sa fenêtre de retrait. » — il contenait donc la cible, et le mode strict
+    // de Playwright refusait les deux éléments sans jamais regarder l'écran.
+    // La forme exacte ne désigne plus que l'étiquette du bandeau.
+    await expect(
+      page.getByText("Fenêtre de retrait", { exact: true }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Réserver la mienne" }).click();
 
