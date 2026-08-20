@@ -34,7 +34,7 @@ parallèle, fusions de migrations sérialisées.
 | L9 | RES-5 — hold stock + RESA- + Drop | ✅ | #165 | 20261010120000 |
 | L10 | VIT-1a — marque + catalogue FR (sous drapeau) | ✅ | #166 | 20261011120000 |
 | L11 | VIT-1b — infra i18n + adaptateur neutre (**Vitrine OUVERTE au public**, ISR 60 s, sélecteur ≥95 %) | ✅ | #167 | 20261012120000 |
-| L12 | VIT-2 — import assisté + QR imprimables | ⏳ | — | — |
+| L12 | VIT-2 — import assisté (revue obligatoire, RPC atomique) + QR contextuels par ancres | ✅ | #168 | 20261013120000 |
 | L13 | VIT-3 — branchement | ⏳ | — | — |
 | L14 | VIT-4 — social + avis + analytics + CRM léger | ⏳ | — | — |
 | L15 | VIT-5 — langues+ | ⏳ | — | — |
