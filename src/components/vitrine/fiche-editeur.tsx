@@ -60,6 +60,22 @@ export function FicheEditeur({
 }) {
   const disponible = useDisponibiliteAffichee(fiche);
 
+  /**
+   * L'OUVERTURE DU PLI EST DE L'ÉTAT CLIENT, PAS DE L'ÉTAT DOM.
+   *
+   * L'attribut `open` d'un `<details>` non contrôlé ne vit que dans le nœud :
+   * il disparaît dès que React recrée l'élément. Or chaque mutation de cet
+   * écran est suivie d'un `router.refresh()` qui re-rend l'arbre serveur — et
+   * le commerçant, lui, était en train de remplir le formulaire qui se trouve
+   * DEDANS. Mesuré en E2E WebKit sous charge : la case « 🌱 Vegan » restait
+   * résolue mais `hidden` vingt secondes, le pli s'étant refermé sous elle.
+   *
+   * Contrôlé, l'état survit au rafraîchissement — la `key` de ce composant est
+   * l'id de la fiche (`catalogue-editeur.tsx`), stable à travers un refresh,
+   * donc l'instance n'est pas remplacée et son état non plus.
+   */
+  const [ouvert, setOuvert] = useState(false);
+
   return (
     <li
       className={cn(
@@ -131,7 +147,11 @@ export function FicheEditeur({
             </div>
           ) : null}
 
-          <details className="mt-2 group">
+          <details
+            className="mt-2 group"
+            open={ouvert}
+            onToggle={(e) => setOuvert(e.currentTarget.open)}
+          >
             <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md text-sm font-bold text-k-body underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink">
               {peutEditer ? "Modifier" : "Voir le détail"}
               <span aria-hidden className="transition-transform group-open:rotate-180">
@@ -205,6 +225,18 @@ function FicheForm({
   const supprimer = useActionForm(deleteVitrineFiche, {
     networkError: "Suppression impossible, réessayez.",
   });
+
+  /**
+   * MÊME RAISON QUE LE PLI PARENT, et une de plus : `open` piloté par
+   * `fiche.allergenes.length > 0` était une prop RECALCULÉE à chaque rendu.
+   * Le pli qu'on venait d'ouvrir à la main pour cocher « Gluten » retombait
+   * donc à la valeur serveur au premier rafraîchissement. L'état est semé une
+   * fois — ce qui est déjà renseigné reste visible d'emblée — puis il suit le
+   * geste de l'utilisateur, qui fait foi ensuite.
+   */
+  const [allergenesOuverts, setAllergenesOuverts] = useState(
+    fiche.allergenes.length > 0,
+  );
 
   return (
     <div className="mt-3 space-y-4 border-t-2 border-dashed border-zinc-200 pt-3">
@@ -286,7 +318,10 @@ function FicheForm({
             dépliées sur chaque fiche noieraient les champs qu'on vient
             modifier. Le `<details>` est ouvert quand la fiche en porte déjà :
             ce qui est renseigné doit se voir sans qu'on ait à chercher. */}
-        <details open={fiche.allergenes.length > 0}>
+        <details
+          open={allergenesOuverts}
+          onToggle={(e) => setAllergenesOuverts(e.currentTarget.open)}
+        >
           <summary className="cursor-pointer list-none text-sm font-bold text-k-ink underline underline-offset-2">
             Allergènes {fiche.allergenes.length > 0 ? `(${fiche.allergenes.length})` : ""}
           </summary>

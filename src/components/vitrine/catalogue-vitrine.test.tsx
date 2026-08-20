@@ -2,7 +2,10 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { CatalogueVitrine } from "@/components/vitrine/catalogue-vitrine";
+import {
+  CatalogueVitrine,
+  decoderFragment,
+} from "@/components/vitrine/catalogue-vitrine";
 import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 import type { VitrineCarteView } from "@/lib/vitrine";
 
@@ -268,5 +271,25 @@ describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
       target: { value: "zzzz" },
     });
     expect(screen.getByText("No dish matches your search.")).toBeTruthy();
+  });
+});
+
+/**
+ * `decoderFragment` — la garde M1 de la revue L12 : le fragment vient du
+ * visiteur, et `decodeURIComponent` lève sur un pourcentage incomplet. Sans
+ * repli, `#%` dans un lien partagé remplaçait la vitrine par l'écran d'erreur.
+ */
+describe("decoderFragment", () => {
+  it("décode les fragments valides et retire le croisillon", () => {
+    expect(decoderFragment("#carte-abc")).toBe("carte-abc");
+    expect(decoderFragment("#fiche-%C3%A9")).toBe("fiche-é");
+    expect(decoderFragment("")).toBe("");
+  });
+
+  it("un pourcentage incomplet rend la chaîne brute, jamais une exception", () => {
+    for (const brut of ["#%", "#%zz", "#%E0%A4%A", "#%F0%9F"]) {
+      expect(() => decoderFragment(brut)).not.toThrow();
+      expect(decoderFragment(brut)).toBe(brut.slice(1));
+    }
   });
 });

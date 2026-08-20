@@ -65,13 +65,28 @@ export function FicheVitrine({
   const indisponible = !fiche.disponible;
   const monogramme = styleCartes !== "liste";
   const magazine = styleCartes === "magazine";
-  const titreId = `fiche-${fiche.id}`;
+  const titreId = `fiche-titre-${fiche.id}`;
 
   return (
     <article
+      /**
+       * L'ANCRE STABLE DE LA FICHE — ce que vise un QR contextuel.
+       *
+       * `#fiche-{id}` N'ATTEINT JAMAIS LE SERVEUR : un fragment n'est pas
+       * envoyé dans la requête HTTP. Le QR imprimé sur un chevalet pointe donc
+       * sur la MÊME url mise en cache que tous les autres — aucune entrée de
+       * cache ISR supplémentaire, aucun basculement en rendu dynamique, ce
+       * qu'un `?fiche=…` aurait provoqué. C'est `catalogue-vitrine.tsx` qui lit
+       * le fragment à l'ouverture, sélectionne la bonne carte et défile.
+       *
+       * L'identifiant du TITRE porte donc désormais `fiche-titre-…` : deux
+       * éléments ne peuvent pas partager un `id`, et c'est l'article — la fiche
+       * entière — qui est la cible d'un défilement.
+       */
+      id={`fiche-${fiche.id}`}
       aria-labelledby={titreId}
       className={cn(
-        "rounded-2xl border border-black/10 bg-white/70 p-4",
+        "scroll-mt-4 rounded-2xl border border-black/10 bg-white/70 p-4",
         magazine && "p-5",
         // `opacity` sur le conteneur ET une mention en clair : le gris seul
         // n'est pas une information.

@@ -23,6 +23,7 @@ import {
   deleteVitrineCarteSchema,
   deleteVitrineFicheSchema,
   deleteVitrineRubriqueSchema,
+  importVitrineCarteSchema,
   reorderVitrineCartesSchema,
   reorderVitrineFichesSchema,
   reorderVitrineRubriquesSchema,
@@ -51,8 +52,10 @@ import {
  *     `gardeEditeurVitrine()`, jamais du formulaire. Le CRUD passe par le client
  *     de SESSION — donc sous les policies « vitrine_* : editors » — et porte EN
  *     PLUS un filtre `organization_id` explicite. Le `service_role` n'apparaît
- *     que pour `set_vitrine_slug`, qui l'exige (elle audite, et revérifie
- *     l'appartenance de l'acteur EN SQL).
+ *     que sur les DEUX chemins qui l'exigent : `set_vitrine_slug` (elle audite,
+ *     et revérifie l'appartenance de l'acteur EN SQL) et `import_vitrine_carte`
+ *     (VIT-2), qui ne revérifie RIEN — sa sûreté tient entièrement à
+ *     `gardeEditeurVitrine` et à l'organisation passée depuis la session.
  *
  *  2. LES COLONNES SONT ÉNUMÉRÉES, jamais un objet recopié depuis l'entrée.
  *     La migration n'accorde d'ailleurs l'écriture que colonne par colonne
@@ -1062,4 +1065,224 @@ export async function reorderVitrineFiches(
     return { ok: false, error: parsed.error.issues[0].message };
   }
   return reordonner("fiches", parsed.data.categorie_id, parsed.data.order);
+}
+
+// ════════════════════════════════════════════════════════════
+// L'IMPORT D'UNE CARTE EN LOT (VIT-2, lot L12)
+// ════════════════════════════════════════════════════════════
+
+/** Ce que l'écran reçoit d'un import réussi : trois comptes et leur phrase. */
+export interface ImportVitrineCarteResult {
+  carte_id: string;
+  rubriques_creees: number;
+  fiches_creees: number;
+  /** Déjà composé ici : l'écran affiche, il ne recompte pas. */
+  message: string;
+}
+
+const IMPORT_REFUSE_FORME =
+  "Le fichier n'a pas la forme attendue. Vérifiez les rubriques et les fiches, puis réessayez.";
+const IMPORT_NOM_PRIS =
+  "Une carte porte déjà ce nom. Renommez la carte du fichier, puis réessayez.";
+const IMPORT_LIGNE_REFUSEE =
+  "Import refusé : une ligne du fichier n'est pas acceptée. Vérifiez les noms, les prix, les badges et les allergènes.";
+
+/** Le refus du seau d'import — il DATE la réessayabilité, comme celui du slug. */
+const TROP_D_IMPORTS =
+  "Trop d'imports en peu de temps. Réessayez dans une heure.";
+
+/**
+ * DU NOM DE CONTRAINTE AU NOM DE CHAMP — une table FERMÉE, jamais un relais.
+ *
+ * ── CE QUI TRAVERSE, ET CE QUI NE TRAVERSE PAS ──
+ *
+ * La RPC rend `… rejected by constraint <nom>` précisément pour qu'un écran
+ * d'import puisse pointer la bonne colonne du fichier : c'est un identifiant du
+ * schéma, borné, écrit par nous. Il n'est pourtant PAS relayé — il sert de CLÉ
+ * de recherche dans la table ci-dessous, et ce qui sort de l'action est une
+ * phrase entièrement à nous. Un nom de contrainte affiché tel quel aurait
+ * apporté au commerçant un nom de table et une convention Postgres au lieu du
+ * mot qu'il cherche dans son fichier.
+ *
+ * ── POURQUOI UNE TABLE ET NON UNE DÉCOUPE DU NOM ──
+ *
+ * `vitrine_items_prix_affiche_check` se découpe très bien… jusqu'à
+ * `vitrine_items_badges_check`, dont la colonne s'appelle `badges` mais dont la
+ * règle porte sur un VOCABULAIRE, ce que « vérifiez les badges » dit et que
+ * « badges » seul ne dit pas. Une table fermée refuse d'inventer une phrase pour
+ * une contrainte qu'on n'a pas prévue : le repli générique reste utile, et il
+ * est honnête.
+ *
+ * Les `check` de 20261011120000 sont ANONYMES — leur nom est celui que Postgres
+ * dérive, `<table>_<colonne>_check`. Ceux qui ne peuvent pas venir d'un import
+ * (`photo_path`, `ordre`) n'y sont pas : ces colonnes ne sont dans aucun rang du
+ * payload, et leur donner une phrase aurait promis un champ que le fichier n'a
+ * pas.
+ */
+const CHAMPS_PAR_CONTRAINTE: Record<string, string> = {
+  vitrine_menus_nom_check: "le nom de la carte",
+  vitrine_categories_nom_check: "le nom d'une rubrique",
+  vitrine_items_nom_check: "le nom d'une fiche",
+  vitrine_items_description_check: "la description d'une fiche",
+  vitrine_items_prix_affiche_check: "le prix d'une fiche",
+  vitrine_items_badges_check: "les badges d'une fiche",
+  vitrine_items_allergenes_check: "les allergènes d'une fiche",
+};
+
+/**
+ * La forme EXACTE que les deux `raise` de la RPC produisent, et rien d'autre.
+ *
+ * Bornée à des identifiants Postgres (`[a-z0-9_]`, 63 caractères au plus) : une
+ * capture large aurait pu ramener n'importe quel fragment du message dans la
+ * clé de recherche — sans effet ici, puisque seule une clé CONNUE produit une
+ * phrase, mais l'ancre reste écrite serrée pour que ce soit vrai par
+ * construction et non par chance.
+ */
+const CONTRAINTE_DU_MESSAGE = /rejected by constraint ([a-z0-9_]{1,63})/;
+
+function messageContrainte(brut: string): string {
+  const trouve = CONTRAINTE_DU_MESSAGE.exec(brut);
+  const champ = trouve ? CHAMPS_PAR_CONTRAINTE[trouve[1]] : undefined;
+  if (!champ) return IMPORT_LIGNE_REFUSEE;
+  return `Import refusé : vérifiez ${champ} dans votre fichier.`;
+}
+
+/**
+ * Les quatre refus d'`import_vitrine_carte`, traduits en messages BORNÉS.
+ *
+ * ── 42501 EST UNE ANOMALIE, PAS UNE SAISIE ──
+ *
+ * `gardeEditeurVitrine` a déjà tranché la session, le rôle et le droit ; la RPC
+ * ne rend ce code que si l'appel ne porte pas le `service_role` ou si
+ * l'organisation de la SESSION n'existe plus. Aucun des deux ne se corrige
+ * depuis un écran d'import : c'est l'erreur générique, et elle se journalise.
+ *
+ * ── 22023 EST INDISTINCT ICI, ET C'EST LE PRIX ASSUMÉ ──
+ *
+ * La RPC en distingue quatre causes par des messages différents — forme,
+ * rubriques homonymes, trop de rubriques, trop de fiches. Les rendre distinctes
+ * à l'écran aurait demandé de lire son TEXTE, ce que ce fichier s'interdit
+ * (revue L10, `deleteVitrineCarte`). Le schéma Zod porte donc les quatre refus
+ * EN AMONT, avec leur message propre : un 22023 qui atteint cette ligne est un
+ * écart entre le miroir et la base, pas une faute du commerçant.
+ */
+function messageImport(error: { code?: string; message: string }): string {
+  reportError("vitrine.import-carte", error.message);
+  if (error.code === "23514") return messageContrainte(error.message);
+  if (error.code === "23505") return IMPORT_NOM_PRIS;
+  if (error.code === "22023") return IMPORT_REFUSE_FORME;
+  return GENERIC_ERROR;
+}
+
+/**
+ * Lit le compte rendu de la RPC — DÉFENSIVEMENT, motif `mapSetVitrineSlug`.
+ *
+ * `Returns: Json` : le typage ne garantit rien de la forme, et un import qui
+ * a RÉUSSI ne doit pas devenir un refus parce que sa réponse s'est mal lue. Les
+ * comptes retombent donc à zéro plutôt que d'invalider le succès — la carte, elle,
+ * est écrite, et l'écran est revalidé juste après.
+ */
+function lireComptesImport(brut: unknown): {
+  carte_id: string;
+  rubriques_creees: number;
+  fiches_creees: number;
+} {
+  const root =
+    typeof brut === "object" && brut !== null && !Array.isArray(brut)
+      ? (brut as Record<string, unknown>)
+      : null;
+  const entier = (valeur: unknown): number =>
+    typeof valeur === "number" && Number.isFinite(valeur)
+      ? Math.max(0, Math.trunc(valeur))
+      : 0;
+  return {
+    carte_id: typeof root?.carte_id === "string" ? root.carte_id : "",
+    rubriques_creees: entier(root?.rubriques_creees),
+    fiches_creees: entier(root?.fiches_creees),
+  };
+}
+
+/**
+ * Dépose une carte entière — ou rien.
+ *
+ * ── L'ORDRE DES QUATRE GARDES, ET POURQUOI ZOD N'EST PAS EN PREMIER ──
+ *
+ * Toutes les autres actions de ce fichier valident AVANT d'appeler la garde :
+ * leurs entrées tiennent en un identifiant et un nom, et refuser tôt y coûte
+ * moins cher. Celle-ci fait l'inverse, et c'est délibéré — son entrée est un
+ * arbre qui peut peser des mégaoctets. `JSON.parse` puis la traversée de Zod se
+ * paient AVANT tout verdict, donc les faire précéder le seau aurait laissé un
+ * compte sans droit d'écriture faire brûler ce coût-là autant de fois qu'il veut.
+ * L'ordre est : QUI (garde) → COMBIEN DE FOIS (seau) → QUOI (Zod) → la base.
+ *
+ * ── LE SEAU EST APRÈS LA GARDE, SUR LA CLÉ DU LOCATAIRE ──
+ *
+ * Même arbitrage que `setVitrineSlug` : la clé ne porte aucune valeur venue du
+ * navigateur, elle n'est entamable que par un `owner`/`editor` de
+ * l'organisation, et le `failClosed` qu'ADR-032 proscrit est celui qu'un inconnu
+ * allume. Ce geste écrit jusqu'à 133 lignes et une ligne d'audit par appel —
+ * voir `RATE_LIMITS.vitrineImport`.
+ *
+ * ── LA GARDE APPLICATIVE EST LA SEULE, ET C'EST ÉCRIT DANS LA RPC ──
+ *
+ * `import_vitrine_carte` est `security definer` / `service_role` et ne vérifie
+ * NI l'appartenance NI le droit `vitrine` : elle écrit dans l'organisation qu'on
+ * lui nomme, point. Sa sûreté tient entièrement au fait que cette action lui
+ * passe l'organisation de la SESSION — jamais un champ du formulaire.
+ *
+ * ── AUCUNE TRADUCTION N'EST ÉCRITE, ET LA COUVERTURE BAISSE ──
+ *
+ * Invariant de L11, pas un effet de bord : une carte importée naît non traduite.
+ * L'action n'a rien à faire de plus que revalider — le sélecteur de langue
+ * s'éteindra tout seul si la couverture passe sous le seuil, ce qui est
+ * exactement ce qu'on veut d'une carte que personne n'a encore relue.
+ */
+export async function importVitrineCarte(
+  _prev: ActionResult<ImportVitrineCarteResult> | null,
+  formData: FormData,
+): Promise<ActionResult<ImportVitrineCarteResult>> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const autorise = await rateLimit(
+    rateLimitBucket("vitrine:import", garde.organizationId),
+    RATE_LIMITS.vitrineImport,
+    { failClosed: true },
+  );
+  if (!autorise) return { ok: false, error: TROP_D_IMPORTS };
+
+  const parsed = importVitrineCarteSchema.safeParse({
+    import: formData.get("import"),
+  });
+  if (!parsed.success) {
+    // Tous les messages du schéma sont écrits par nous et bornés : aucun ne
+    // recopie le fichier, y compris celui de la clé inconnue (voir l'en-tête de
+    // `importVitrineCarteSchema`).
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("import_vitrine_carte", {
+    // DE LA SESSION. Jamais du corps de la requête — la RPC ne le revérifie pas.
+    p_organization_id: garde.organizationId,
+    // LE PAYLOAD VALIDÉ, et non la chaîne postée : noms détourés, vocabulaires
+    // dédoublonnés, clés inconnues déjà refusées.
+    p_payload: toJson(parsed.data.import),
+  });
+  if (error) return { ok: false, error: messageImport(error) };
+
+  const comptes = lireComptesImport(data);
+  const supabase = await createClient();
+  await revaliderVitrine(supabase, garde.organizationId);
+
+  // L'accord se fait ici, pas à l'écran : le message est composé une seule
+  // fois, par la seule couche qui connaît les comptes réellement créés.
+  const s = (n: number) => (n > 1 ? "s" : "");
+  return {
+    ok: true,
+    data: {
+      ...comptes,
+      message: `Carte créée : ${comptes.rubriques_creees} rubrique${s(comptes.rubriques_creees)}, ${comptes.fiches_creees} fiche${s(comptes.fiches_creees)}.`,
+    },
+  };
 }

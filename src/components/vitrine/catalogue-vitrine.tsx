@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { cn } from "@/lib/utils";
 import type {
   LangueVitrine,
@@ -58,14 +65,65 @@ export function CatalogueVitrine({
 }) {
   const t = TEXTES_VITRINE[lang];
   const rechercheId = useId();
-  const [carteActiveId, setCarteActiveId] = useState<string | null>(
-    cartes[0]?.id ?? null,
-  );
+  /**
+   * `null` tant que le visiteur n'a rien choisi — ce n'est PAS « la première
+   * carte ». La distinction porte l'ancre : un choix explicite doit primer sur
+   * le fragment, et le fragment sur le défaut.
+   */
+  const [carteChoisieId, setCarteChoisieId] = useState<string | null>(null);
   const [recherche, setRecherche] = useState("");
   const conteneurRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * L'ANCRE D'OUVERTURE — ce qui fait qu'un QR contextuel ouvre la bonne carte.
+   *
+   * ── POURQUOI UN FRAGMENT ET PAS UN `searchParams` ──
+   *
+   * `/v/{slug}` est en ISR (`revalidate = 60`). Lire un `?carte=…` ferait
+   * retomber la page en rendu par requête et supprimerait le cache — une
+   * lecture de base par scan, sur une adresse publique balayable. Un fragment,
+   * lui, N'EST JAMAIS ENVOYÉ AU SERVEUR : tous les QR imprimés — porte, tables,
+   * chevalets — pointent sur la même url mise en cache, et le contexte se
+   * résout ici, dans le navigateur.
+   *
+   * ── `useSyncExternalStore` ET NON UN EFFET QUI POSE UN ÉTAT ──
+   *
+   * L'URL est un système EXTERNE à React. La lire dans un `useState` initial
+   * donnerait un rendu client différent du HTML servi (erreur d'hydratation) ;
+   * la lire dans un effet qui appelle `setState` déclenche le rendu en cascade
+   * que `react-hooks/set-state-in-effect` interdit — à raison. Ce hook existe
+   * exactement pour ce cas : instantané serveur vide, instantané client réel,
+   * et l'abonnement à `hashchange` fait suivre un second QR scanné sans quitter
+   * la page.
+   */
+  const fragment = useSyncExternalStore(
+    sAbonnerAuFragment,
+    lireFragment,
+    () => "",
+  );
+  const ancre = decoderFragment(fragment);
+
+  const carteVisee = useMemo(() => {
+    if (ancre.startsWith("carte-")) {
+      const id = ancre.slice("carte-".length);
+      return cartes.find((c) => c.id === id) ?? null;
+    }
+    if (ancre.startsWith("fiche-")) {
+      const id = ancre.slice("fiche-".length);
+      return (
+        cartes.find((c) =>
+          c.categories.some((r) => r.fiches.some((f) => f.id === id)),
+        ) ?? null
+      );
+    }
+    return null;
+  }, [ancre, cartes]);
+
   const carte =
-    cartes.find((c) => c.id === carteActiveId) ?? cartes[0] ?? null;
+    cartes.find((c) => c.id === carteChoisieId) ??
+    carteVisee ??
+    cartes[0] ??
+    null;
 
   const rubriques = useMemo(() => {
     if (!carte) return [];
@@ -85,10 +143,24 @@ export function CatalogueVitrine({
 
   const trouvees = rubriques.reduce((n, r) => n + r.fiches.length, 0);
 
+  /**
+   * LE DÉFILEMENT, une fois la bonne carte rendue.
+   *
+   * Le navigateur ne peut pas le faire seul : à l'ouverture, la fiche visée
+   * n'est dans le DOM que si sa carte est active, ce qui vient d'être décidé
+   * ci-dessus. Cet effet ne pose AUCUN état — il ne fait que pousser vers un
+   * système externe (le défilement), ce qui est le rôle d'un effet.
+   */
+  const carteRendueId = carte?.id;
+  useEffect(() => {
+    if (!ancre) return;
+    document.getElementById(ancre)?.scrollIntoView({ block: "start" });
+  }, [ancre, carteRendueId]);
+
   if (!carte) return null;
 
   const changerDeCarte = (id: string) => {
-    setCarteActiveId(id);
+    setCarteChoisieId(id);
     // La recherche NE SURVIT PAS au changement de carte : un filtre invisible
     // parce qu'on regarde ailleurs fait croire que la carte est vide.
     setRecherche("");
@@ -96,7 +168,10 @@ export function CatalogueVitrine({
   };
 
   return (
-    <div ref={conteneurRef} className="scroll-mt-4">
+    // `id="carte-{id}"` sur le conteneur de la carte AFFICHÉE : l'ancre d'un QR
+    // contextuel ne vaut que pour la carte ouverte, et l'effet ci-dessus l'a
+    // justement ouverte avant que le défilement ne cherche l'élément.
+    <div ref={conteneurRef} id={`carte-${carte.id}`} className="scroll-mt-4">
       {cartes.length >= 2 ? (
         <nav aria-label={t.nosCartes} className="mb-5">
           {/* Défilement horizontal plutôt que retour à la ligne : sept cartes
@@ -233,6 +308,39 @@ export function CatalogueVitrine({
       )}
     </div>
   );
+}
+
+/**
+ * L'ABONNEMENT AU FRAGMENT — définis au niveau du module, et pas dans le
+ * composant : `useSyncExternalStore` compare les fonctions par identité, et
+ * deux clôtures recréées à chaque rendu le feraient se réabonner sans fin.
+ */
+function sAbonnerAuFragment(onChange: () => void): () => void {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
+function lireFragment(): string {
+  return window.location.hash;
+}
+
+/**
+ * Le fragment vient du VISITEUR — barre d'adresse, lien posté n'importe où.
+ * `decodeURIComponent` lève `URIError` sur toute séquence de pourcentage
+ * incomplète (`#%`, `#%zz`), et cet appel vit dans le corps de rendu : sans
+ * garde, deux caractères dans un lien partagé remplacent la vitrine entière
+ * par l'écran d'erreur (revue L12, M1). Repli : la chaîne brute — les ancres
+ * réelles (`carte-{uuid}`) n'ont pas de `%`, un fragment indécodable ne
+ * matchera simplement rien.
+ */
+export function decoderFragment(fragment: string): string {
+  if (!fragment) return "";
+  const brut = fragment.slice(1);
+  try {
+    return decodeURIComponent(brut);
+  } catch {
+    return brut;
+  }
 }
 
 /** Minuscules, sans accents : « Crème brûlée » se trouve en tapant « creme ». */

@@ -705,6 +705,31 @@ export const RATE_LIMITS = {
    *  et bornent la boucle qui énumérerait le vocabulaire réservé ou sonderait
    *  quelles adresses sont déjà prises. */
   vitrineSlug: { limit: 20, windowSeconds: 3600 },
+  /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
+   *  `failClosed`, 10 par heure.
+   *
+   *  CLÉ NON PUBLIQUE, exactement comme `vitrineSlug` ci-dessus et pour la même
+   *  raison : le seau est consommé APRÈS `gardeEditeurVitrine`, donc seul un
+   *  `owner` ou un `editor` de CETTE organisation peut l'entamer. Le `failClosed`
+   *  qu'ADR-032 proscrit est celui qu'un INCONNU allume en saturant une clé
+   *  partagée ; celui-ci n'a pas d'inconnu, et la saturer ne peut gêner que ses
+   *  propres collègues.
+   *
+   *  L'ORGANISATION PLUTÔT QUE L'OPÉRATEUR, même arbitrage que `vitrineSlug` :
+   *  ce que ce geste consomme est une ressource du LOCATAIRE — jusqu'à 1 carte,
+   *  12 rubriques et 120 fiches ÉCRITES par appel, soit 133 lignes, plus une
+   *  ligne d'audit. Le porter sur `organisation + user.id` aurait multiplié ce
+   *  budget par le nombre d'éditeurs pour borner un catalogue qui, lui, ne se
+   *  multiplie pas.
+   *
+   *  10/3600 s : importer une carte est un geste de MISE EN ROUTE, pas une
+   *  habitude — on dépose sa carte du midi, celle du soir, celle des boissons.
+   *  Dix par heure couvre la reprise après correction d'un fichier refusé (le
+   *  refus est atomique, donc on recommence le même geste) et borne à ~1330
+   *  lignes/heure ce qu'un compte compromis peut faire écrire dans les tables
+   *  que des visiteurs lisent. C'est délibérément deux fois plus serré que
+   *  `vitrineSlug`, qui n'écrit qu'une ligne par appel. */
+  vitrineImport: { limit: 10, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

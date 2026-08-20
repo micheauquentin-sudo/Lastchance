@@ -1372,5 +1372,495 @@ reset role;
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
+
+
+-- ══ 13. L'IMPORT EN LOT (VIT-2, lot L12) ════════════════════
+--
+-- Ce que cette section prouve, et pourquoi chaque assertion est là :
+--
+--   * L'ATOMICITÉ, PAR LE COMPTAGE ET NON PAR LA CONFIANCE. « Tout ou rien »
+--     est gratuit dans une fonction PL/pgSQL — la transaction de l'appelant est
+--     abandonnée par toute exception non rattrapée — et c'est exactement
+--     pourquoi il faut le prouver : une garantie qui ne coûte rien est celle
+--     qu'un futur `exception when others then return` fera disparaître sans
+--     bruit. On ne vérifie donc pas que l'import ÉCHOUE, on compte les lignes
+--     APRÈS l'échec et on exige que RIEN n'ait bougé.
+--   * LES DEUX BORNES DE CARDINALITÉ SONT INCLUSIVES. 13 rubriques et 121 fiches
+--     sont refusées ; 12 rubriques et 120 fiches passent. Sans la seconde
+--     moitié, une borne écrite `>=` au lieu de `>` serait verte ici tout en
+--     refusant le lot le plus large que le produit promet d'accepter.
+--   * LES MESSAGES NE RELAIENT AUCUN TEXTE DU PAYLOAD. Chaque `throws_ok` de
+--     refus porte le message ATTENDU EN ENTIER : c'est la seule façon de prouver
+--     l'absence, puisqu'un message conforme ne peut pas contenir en plus le nom
+--     que le lot portait.
+--   * LE NOM DE CONTRAINTE, LUI, REMONTE. C'est un identifiant du schéma, borné
+--     et écrit par nous, et il dit LAQUELLE des règles a mordu — un écran
+--     d'import ne peut pas pointer la bonne colonne du fichier avec « ligne
+--     invalide ».
+--   * LA RÈGLE CHECK ⇒ EXECUTE, POUR UN CHEMIN QUE LA RÈGLE CATALOGUE NE VOIT
+--     PAS. `security_acl.test.sql` n'inspecte qu'`anon` et `authenticated`, les
+--     écrivains DIRECTS ; ici l'écriture passe par une fonction `security
+--     definer`, donc sous son PROPRIÉTAIRE. La classe a coûté deux migrations
+--     (20261008120000, puis les trois validateurs de 20261011120000) : elle est
+--     réaffirmée ici pour le rôle qui écrit vraiment.
+--   * L'IMPORT NE TRADUIT RIEN, et le compte le montre : huit champs
+--     traduisibles, zéro frais. C'est l'invariant de L11 et non un oubli — une
+--     machine ne publie pas d'anglais sur une carte que personne n'a relue.
+--
+-- ── POURQUOI UNE SIXIÈME ORGANISATION ──
+--
+-- Même raison qu'à la section 12 : les comptes exacts de l'atomicité ne se
+-- lisent que sur un catalogue dont on connaît chaque ligne. F est posée ici, et
+-- rien avant elle ne l'a touchée.
+--
+-- F N'A PAS D'OCTROI `vitrine`, ET C'EST UNE ASSERTION DÉGUISÉE : l'import
+-- aboutit quand même. Comme `set_vitrine_slug`, cette RPC ne contrôle pas le
+-- droit — la garde est applicative, seul endroit d'où elle peut se rouvrir sans
+-- migration — et rien de ce qui est importé n'est visible du public tant que
+-- `published` et le droit ne sont pas réunis.
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+insert into public.organizations
+  (id, name, slug, subscription_status, plan, timezone, data_retention_months)
+values ('f1000000-0000-4000-8000-00000000000f', 'Vitrine F', 'tap-vitrine-f',
+        'active', 'starter', 'Europe/Paris', 6);
+
+-- UNE CARTE PRÉEXISTANTE, à l'ordre 4. Elle sert à prouver que la carte importée
+-- se pose APRÈS et non en tête : un import s'ajoute à un catalogue, il ne le
+-- réordonne pas. Sans elle, `max(ordre) + 1` et « toujours 0 » rendraient le
+-- même résultat et l'assertion ne prouverait rien.
+insert into public.vitrine_menus (id, organization_id, nom, ordre, active) values
+  ('f1000000-0000-4000-8000-000000000801',
+   'f1000000-0000-4000-8000-00000000000f', 'Carte du matin', 4, true);
+
+
+-- ── 13a. L'IMPORT NOMINAL — structure, rangs, normalisation ──
+--
+-- Le lot porte tout ce qui doit être exercé en une fois : deux rubriques, trois
+-- fiches, les deux vocabulaires, les deux champs facultatifs présents ET
+-- absents, et un prix ENTOURÉ D'ESPACES — le `check` de `prix_affiche` exige une
+-- valeur déjà détourée, donc sans le `btrim` de la RPC cet import entier
+-- échouerait. C'est la ligne qui prouve la normalisation, et elle la prouve par
+-- le fait que tout le reste passe.
+
+select is(
+  public.import_vitrine_carte(
+    'f1000000-0000-4000-8000-00000000000f',
+    '{"nom": "  Carte importée  ",
+      "rubriques": [
+        {"nom": "Entrées",
+         "fiches": [
+           {"nom": "Velouté de potiron",
+            "description": "Crème légère.",
+            "prix_affiche": "  à partir de 8 €  ",
+            "badges": ["vegetarien"],
+            "allergenes": ["lait"]},
+           {"nom": "Houmous du jour", "description": "   "}
+         ]},
+        {"nom": "Desserts",
+         "fiches": [{"nom": "Tarte du jour", "prix_affiche": "6 €"}]}
+      ]}'::jsonb) ->> 'rubriques_creees',
+  '2',
+  'l''import crée les deux rubriques du lot en un seul geste');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_items i
+     join public.vitrine_categories k
+       on k.id = i.categorie_id and k.organization_id = i.organization_id
+     join public.vitrine_menus m
+       on m.id = k.menu_id and m.organization_id = k.organization_id
+    where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and m.nom = 'Carte importée'),
+  3::bigint,
+  '… et les trois fiches, rattachées à la bonne carte par les deux FK composites');
+
+-- LE NOM EST DÉTOURÉ, pas refusé : un fichier exporté d'un tableur porte des
+-- espaces de bord une ligne sur trois, et refuser là-dessus aurait été de la
+-- pédanterie. La LONGUEUR, elle, reste au `check` de la colonne.
+select is(
+  (select m.ordre from public.vitrine_menus m
+    where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and m.nom = 'Carte importée'),
+  5,
+  'la carte importée se pose APRÈS les cartes existantes (4 → 5), elle ne prend pas la tête du catalogue');
+
+-- LES RANGS SONT CEUX DU FICHIER, 0..n. L'ordre du payload est une information
+-- que le commerçant a produite en écrivant sa carte ; la perdre l'obligerait à
+-- tout réordonner à la main juste après l'avoir importée.
+select results_eq(
+  $$select k.nom, k.ordre from public.vitrine_categories k
+      join public.vitrine_menus m
+        on m.id = k.menu_id and m.organization_id = k.organization_id
+     where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+       and m.nom = 'Carte importée'
+     order by k.ordre$$,
+  $$values ('Entrées', 0), ('Desserts', 1)$$,
+  'les rubriques reçoivent les rangs 0..n DANS L''ORDRE DU FICHIER, pas dans celui de l''alphabet');
+
+select results_eq(
+  $$select i.nom, i.ordre from public.vitrine_items i
+      join public.vitrine_categories k
+        on k.id = i.categorie_id and k.organization_id = i.organization_id
+     where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+       and k.nom = 'Entrées'
+     order by i.ordre$$,
+  $$values ('Velouté de potiron', 0), ('Houmous du jour', 1)$$,
+  'les fiches sont rangées 0..n DANS LEUR rubrique — le compteur repart à zéro à chaque rubrique');
+
+select is(
+  (select i.ordre from public.vitrine_items i
+     join public.vitrine_categories k
+       on k.id = i.categorie_id and k.organization_id = i.organization_id
+    where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and k.nom = 'Desserts'),
+  0,
+  '… et il repart bien à zéro : la fiche unique de la seconde rubrique est au rang 0, pas au rang 2');
+
+select is(
+  (select i.prix_affiche from public.vitrine_items i
+    where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and i.nom = 'Velouté de potiron'),
+  'à partir de 8 €',
+  'le prix est DÉTOURÉ avant l''écriture — son `check` exige une valeur déjà détourée, sans quoi tout le lot tombait sur un espace de tableur');
+
+-- « ABSENT », « null » ET « TROIS ESPACES » SONT LE MÊME ÉTAT. Trois façons de
+-- l'écrire en base auraient donné trois chemins à tenir dans chaque lecture.
+select is(
+  (select i.description from public.vitrine_items i
+    where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and i.nom = 'Houmous du jour'),
+  null,
+  'une description qui ne contient que des espaces devient NULL, comme une description absente');
+
+select is(
+  (select i.prix_affiche from public.vitrine_items i
+    where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and i.nom = 'Houmous du jour'),
+  null,
+  '… et un champ facultatif absent du lot reste NULL, sans valeur inventée');
+
+select results_eq(
+  $$select i.badges, i.allergenes from public.vitrine_items i
+     where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+       and i.nom = 'Velouté de potiron'$$,
+  $$values (array['vegetarien']::text[], array['lait']::text[])$$,
+  'les deux vocabulaires traversent l''import intacts');
+
+select results_eq(
+  $$select i.badges, i.allergenes from public.vitrine_items i
+     where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+       and i.nom = 'Tarte du jour'$$,
+  $$values ('{}'::text[], '{}'::text[])$$,
+  '… et leur ABSENCE donne le tableau vide des colonnes, jamais NULL : elles sont `not null default ''{}''`');
+
+-- LE JOURNAL COMPTE LES GESTES, PAS LES LIGNES. Une seule entrée pour cent vingt
+-- fiches possibles : cent vingt lignes d'audit pour un clic auraient rendu le
+-- journal illisible exactement quand on en a besoin.
+select is(
+  (select pg_catalog.count(*)::bigint from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and a.action = 'vitrine.carte_imported'),
+  1::bigint,
+  'l''import journalise UNE ligne pour tout le lot, pas une par fiche');
+
+select is(
+  (select a.metadata ->> 'fiches_creees' from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and a.action = 'vitrine.carte_imported'),
+  '3',
+  '… et elle porte le COMPTE, pas le contenu : un journal n''est pas un stockage');
+
+
+-- ── 13b. L'IMPORT NE TRADUIT RIEN — l'invariant de L11 ──────
+--
+-- HUIT CHAMPS TRADUISIBLES, comptés à la main : 2 noms de cartes (celle du matin
+-- et l'importée) + 2 noms de rubriques + 3 noms de fiches + 1 description (celle
+-- du velouté ; les deux autres sont nulles). ZÉRO est traduit.
+--
+-- LA COUVERTURE BAISSE DONC MÉCANIQUEMENT À CHAQUE IMPORT, et c'est correct :
+-- L11 a construit la péremption pour qu'une machine ne publie jamais d'anglais
+-- sur un texte que personne n'a relu. Une carte déposée il y a une seconde est
+-- exactement ce cas.
+
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-00000000000f')
+    #>> '{resume,total_champs_traduisibles}',
+  '8',
+  'une carte importée entre bien dans le décompte des champs traduisibles');
+
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-00000000000f')
+    #>> '{resume,manquants}',
+  '8',
+  '… et AUCUN n''est traduit : l''import n''écrit pas une ligne dans le calque, c''est l''invariant de L11');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_translations t
+    where t.organization_id = 'f1000000-0000-4000-8000-00000000000f'),
+  0::bigint,
+  'aucune traduction n''a été fabriquée par le chemin d''import — la seule porte reste upsert_vitrine_translation');
+
+
+-- ── 13c. L'ATOMICITÉ — prouvée par ce qui N'EST PAS là ──────
+--
+-- Le lot est valide de bout en bout SAUF sa dernière fiche, dont le nom fait 121
+-- caractères — un de trop pour le `check` de `vitrine_items.nom`. Les trois
+-- lignes qui la précèdent (une carte, une rubrique, une fiche) sont
+-- irréprochables et seraient écrites une à une par le chemin unitaire.
+--
+-- L'ÉTAT DE RÉFÉRENCE EST CELUI DE 13a : 2 cartes, 2 rubriques, 3 fiches. Il ne
+-- doit pas avoir bougé d'une ligne.
+
+select throws_ok(
+  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+    'f1000000-0000-4000-8000-00000000000f',
+    jsonb_build_object(
+      'nom', 'Carte atomique',
+      'rubriques', jsonb_build_array(jsonb_build_object(
+        'nom', 'Rubrique valide',
+        'fiches', jsonb_build_array(
+          jsonb_build_object('nom', 'Fiche parfaitement valide'),
+          jsonb_build_object('nom', repeat('x', 121))))))),
+  '23514',
+  'a line of the import was rejected by constraint vitrine_items_nom_check',
+  'une fiche au nom trop long fait échouer l''import, et le refus NOMME la contrainte qui a mordu');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_menus m
+    where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'
+      and m.nom = 'Carte atomique'),
+  0::bigint,
+  'ATOMICITÉ : la carte du lot refusé n''existe pas — pas même vide, pas même orpheline');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_categories k
+    where k.organization_id = 'f1000000-0000-4000-8000-00000000000f'),
+  2::bigint,
+  '… la rubrique VALIDE qui précédait la fiche fautive n''a pas survécu non plus : on reste aux deux de 13a');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_items i
+    where i.organization_id = 'f1000000-0000-4000-8000-00000000000f'),
+  3::bigint,
+  '… et la fiche VALIDE qui la précédait pas davantage : trois fiches, celles de 13a, et rien d''autre');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.vitrine_menus m
+    where m.organization_id = 'f1000000-0000-4000-8000-00000000000f'),
+  2::bigint,
+  '… le catalogue entier est intact : tout ou rien, et ici ce fut rien');
+
+-- LA CARTE A SON PROPRE BLOC `exception`, ET SON PROPRE MESSAGE. Un nom de
+-- quatre-vingt-un caractères tombe sur `vitrine_menus_nom_check` AVANT que la
+-- moindre rubrique ne soit tentée : le refus vient donc du bloc qui garde
+-- l'insertion de la carte, pas de celui qui garde les lignes. Les deux messages
+-- diffèrent, et sans cette assertion les intervertir serait vert.
+select throws_ok(
+  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+    'f1000000-0000-4000-8000-00000000000f',
+    jsonb_build_object('nom', repeat('c', 81), 'rubriques', '[]'::jsonb)),
+  '23514',
+  'carte rejected by constraint vitrine_menus_nom_check',
+  'un nom de carte trop long est refuse par le bloc de la CARTE, sous son propre message');
+
+
+-- ── 13d. LES BORNES DE CARDINALITÉ, DANS LES DEUX SENS ──────
+--
+-- Elles ne bornent AUCUNE ligne : elles bornent un GESTE. C'est pourquoi elles
+-- vivent dans le corps de la RPC et non dans un `check`, et pourquoi aucun
+-- `check` n'aurait pu les exprimer.
+
+select throws_ok(
+  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+    'f1000000-0000-4000-8000-00000000000f',
+    jsonb_build_object(
+      'nom', 'Carte à treize rubriques',
+      'rubriques', (select jsonb_agg(jsonb_build_object(
+                             'nom', 'Rubrique ' || g, 'fiches', '[]'::jsonb))
+                      from generate_series(1, 13) g))),
+  '22023',
+  'too many rubriques in one import (max 12)',
+  'treize rubriques sont refusées, et le message NOMME la borne — un refus qui ne dit pas combien ne dit rien');
+
+select throws_ok(
+  format($$select public.import_vitrine_carte(%L, %L::jsonb)$$,
+    'f1000000-0000-4000-8000-00000000000f',
+    jsonb_build_object(
+      'nom', 'Carte à cent vingt et une fiches',
+      'rubriques', jsonb_build_array(jsonb_build_object(
+        'nom', 'Rubrique unique',
+        'fiches', (select jsonb_agg(jsonb_build_object('nom', 'Fiche ' || g))
+                     from generate_series(1, 121) g))))),
+  '22023',
+  'too many fiches in one import (max 120)',
+  'cent vingt et une fiches sont refusées, et la borne porte sur le TOTAL du lot, pas sur une rubrique');
+
+-- LA BORNE EST INCLUSIVE, ET C'EST LA MOITIÉ QUI MANQUE TOUJOURS. Douze
+-- rubriques de dix fiches : le lot le plus large que le produit promet
+-- d'accepter. Un `>=` écrit à la place d'un `>` serait vert aux deux assertions
+-- ci-dessus et refuserait pourtant cet import-ci.
+select is(
+  public.import_vitrine_carte(
+    'f1000000-0000-4000-8000-00000000000f',
+    jsonb_build_object(
+      'nom', 'Carte à la borne exacte',
+      'rubriques', (
+        select jsonb_agg(jsonb_build_object(
+          'nom', 'Rubrique ' || g,
+          'fiches', (select jsonb_agg(jsonb_build_object(
+                              'nom', 'Fiche ' || g || '-' || h))
+                       from generate_series(1, 10) h)))
+          from generate_series(1, 12) g))) ->> 'fiches_creees',
+  '120',
+  'douze rubriques et cent vingt fiches PASSENT : les deux bornes sont inclusives, comme le produit les promet');
+
+
+-- ── 13e. LES REFUS NOMMÉS, ET CE QU'ILS NE DISENT PAS ───────
+
+-- L'ORGANISATION INCONNUE REND LE MÊME 42501 INDISTINCT que le reste du module.
+-- Distinguer « cette organisation n'existe pas » aurait fait de cette RPC un
+-- oracle sur les identifiants d'autrui, exactement ce que
+-- `vitrine_public_state` refuse d'être.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      '00000000-0000-4000-8000-0000000000ff'::uuid,
+      '{"nom": "Carte de nulle part", "rubriques": []}'::jsonb)$$,
+  '42501', 'not authorized',
+  'une organisation inconnue rend le 42501 INDISTINCT du module — pas un mot de plus');
+
+-- LE CONFLIT DE NOM, ET LE NOM QUI N'Y EST PAS. Le message attendu est donné EN
+-- ENTIER : c'est la seule façon de prouver une absence, puisqu'un message
+-- conforme ne peut pas contenir en plus le libellé que le lot portait. Ce
+-- message-ci finit dans un journal d'application que personne n'a borné.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte importée", "rubriques": []}'::jsonb)$$,
+  '23505', 'a carte of this name already exists in this catalogue',
+  'un nom de carte déjà pris rend 23505, et le message ne relaie PAS le nom');
+
+-- LE VOCABULAIRE RESTE AU `check` DE LA TABLE, et c'est lui qui refuse. La RPC
+-- ne recopie ni les huit badges ni les quatorze allergènes : une liste jumelle
+-- aurait divergé le jour où un quinzième allergène entre. Le nom de la
+-- contrainte remonte, et c'est ce qui permet à un écran d'import de pointer LA
+-- BONNE COLONNE du fichier.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte au badge inconnu",
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": ["licorne"]}]}]}'::jsonb)$$,
+  '23514',
+  'a line of the import was rejected by constraint vitrine_items_badges_check',
+  'un badge hors vocabulaire est refusé par le `check` de la table, et le refus dit LAQUELLE des règles a mordu');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte à l''allergène inconnu",
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "allergenes": ["licorne"]}]}]}'::jsonb)$$,
+  '23514',
+  'a line of the import was rejected by constraint vitrine_items_allergenes_check',
+  '… et les quatorze allergènes de l''annexe II sont gardés par la même mécanique, sous leur propre nom de contrainte');
+
+-- LA FORME EST FERMÉE AUX TROIS RANGS. Une clé inconnue acceptée en silence
+-- produirait une carte de soixante plats SANS AUCUN PRIX et sans le moindre
+-- message : le seul mode d'échec qu'un écran d'import ne peut pas rattraper,
+-- parce qu'il ressemble à un succès.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "C", "rubriques": [], "couleur": "rouge"}'::jsonb)$$,
+  '22023', 'payload carries an unknown key',
+  'une clé inconnue au premier rang du lot est refusée');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [], "icone": "x"}]}'::jsonb)$$,
+  '22023', 'a rubrique carries an unknown key',
+  '… au deuxième rang aussi');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "C", "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "prix": "8 €"}]}]}'::jsonb)$$,
+  '22023', 'a fiche carries an unknown key',
+  '… et au troisième : « prix » au lieu de « prix_affiche » est REFUSÉ, pas ignoré');
+
+-- DEUX RUBRIQUES DE MÊME NOM DANS LE MÊME LOT. La contrainte
+-- `vitrine_categories_menu_nom_unique` le refuserait aussi — elle est le filet —
+-- mais en 23505, sous le même mot que « cette carte existe déjà », que l'écran
+-- devrait alors distinguer sans indice.
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte aux rubriques jumelles",
+        "rubriques": [{"nom": "Entrées", "fiches": []},
+                      {"nom": "Entrées", "fiches": []}]}'::jsonb)$$,
+  '22023', 'two rubriques of the import share the same name',
+  'deux rubriques homonymes dans le même lot sont refusées SOUS LEUR PROPRE MOT, avant que rien ne soit écrit');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte mal typée",
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": "vegan"}]}]}'::jsonb)$$,
+  '22023', 'a fiche has a field of the wrong type',
+  'un vocabulaire passé en CHAÎNE au lieu d''un tableau est un fichier mal formé, et il le dit — pas « badge inconnu »');
+
+select throws_ok(
+  $$select public.import_vitrine_carte(
+      'f1000000-0000-4000-8000-00000000000f',
+      '{"nom": "Carte au badge numérique",
+        "rubriques": [{"nom": "R", "fiches": [{"nom": "F", "badges": [7]}]}]}'::jsonb)$$,
+  '22023', 'badges and allergenes must be arrays of strings',
+  '… et un élément non textuel dans un vocabulaire est refusé AVANT le `check`, qui aurait dit « badge inconnu » pour une faute de forme');
+
+
+-- ── 13f. LES ACL, ET LA RÈGLE CHECK ⇒ EXECUTE DU CHEMIN DEFINER ──
+
+select ok(has_function_privilege('service_role', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+  'seul le serveur importe une carte');
+select ok(not has_function_privilege('authenticated', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+  'le commerçant ne contourne pas l''action serveur pour écrire cent vingt fiches d''un coup');
+select ok(not has_function_privilege('anon', 'public.import_vitrine_carte(uuid,jsonb)', 'EXECUTE'),
+  'anon n''importe rien, nulle part');
+
+-- LA LEÇON FRAPPÉE DEUX FOIS, RÉAFFIRMÉE POUR LE RÔLE QUI ÉCRIT VRAIMENT ICI.
+-- 20261008120000 a dû rendre l'EXECUTE à `is_valid_experience_steps` après un
+-- « permission denied » sur toute création de Moment Signature ; 20261011120000
+-- l'a rendu aux trois validateurs de la Vitrine pour la même raison. La règle
+-- catalogue de `security_acl.test.sql` garde ce cas — mais seulement pour `anon`
+-- et `authenticated`, les écrivains DIRECTS. L'import écrit en `security
+-- definer`, donc sous le PROPRIÉTAIRE de la fonction : c'est LUI qui doit
+-- pouvoir déclencher l'évaluation du `check`, et aucune règle catalogue ne le
+-- vérifie aujourd'hui.
+select ok(
+  has_function_privilege(
+    (select p.proowner::regrole::text from pg_proc p
+      where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+    'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'),
+  'le PROPRIÉTAIRE de l''import peut exécuter le validateur de vocabulaire — un `check` s''évalue sous le rôle qui écrit, et ici ce rôle est le definer');
+
+select ok(
+  has_function_privilege('service_role',
+    'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'),
+  '… et service_role le peut aussi, pour le jour où une écriture de fiche repasserait par PostgREST plutôt que par cette RPC');
+
+-- LE `security definer` ET LE `search_path` VIDE, VÉRIFIÉS SUR LA FONCTION
+-- INSTALLÉE et non sur le fichier : c'est le catalogue qui fait foi.
+select ok(
+  (select p.prosecdef from pg_proc p
+    where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+  'l''import est `security definer` — c''est ce qui lui donne le droit d''écrire sans session marchande');
+
+select is(
+  (select pg_catalog.array_to_string(p.proconfig, ',') from pg_catalog.pg_proc p
+    where p.oid = 'public.import_vitrine_carte(uuid,jsonb)'::regprocedure),
+  'search_path=""',
+  '… et son search_path est VIDE : aucun schéma appelant ne peut lui glisser une fonction homonyme');
+
+
 select * from finish();
 rollback;

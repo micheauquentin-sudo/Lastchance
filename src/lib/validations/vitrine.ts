@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  absentSiNonRendu,
   caseACochee,
   nonRenduVaut,
   texteOptionnel,
@@ -418,6 +419,272 @@ export const reorderVitrineFichesSchema = z.object({
   categorie_id: uuid,
   order: ordreIdsSchema,
 });
+
+// ── L'IMPORT D'UNE CARTE EN LOT (VIT-2) ──────────────────────
+
+/**
+ * Les deux bornes de CARDINALITÉ de l'import.
+ *
+ * ── POURQUOI ELLES NE VIENNENT PAS DE `@/lib/vitrine` ──
+ *
+ * Toutes les autres bornes de ce fichier bornent une COLONNE : elles sont dans
+ * les `check` de 20261011120000, recopiées dans `@/lib/vitrine`, et
+ * `vitrine-parity.test.ts` compare les deux. Celles-ci ne portent sur AUCUNE
+ * ligne — elles bornent un GESTE — et n'existent qu'en deux constantes du corps
+ * de `import_vitrine_carte` (20261013120000), que ce test-là ne lit pas. Elles
+ * vivent donc ici, et leur parité est gardée par `vitrine.test.ts`, qui lit la
+ * migration d'import comme la garde de parité lit la sienne.
+ *
+ * ── POURQUOI LES REFUSER ICI ALORS QUE LA RPC LES REFUSE DÉJÀ ──
+ *
+ * C'est exactement le cas où l'aller-retour est le plus cher : un payload de dix
+ * mille fiches doit voyager en entier pour s'entendre dire qu'il est trop gros.
+ * La base reste juge — elle refusera de toute façon — mais elle n'a pas à le
+ * faire pour un fichier qu'on peut mesurer avant de l'envoyer.
+ */
+export const VITRINE_IMPORT_RUBRIQUES_MAX = 12;
+export const VITRINE_IMPORT_FICHES_MAX = 120;
+
+/** Ce que dit un refus de FORME, aux trois rangs : jamais le contenu du fichier. */
+const IMPORT_ILLISIBLE = "Import illisible";
+
+/**
+ * Un vocabulaire fermé venu d'un FICHIER, et non de cases à cocher.
+ *
+ * Même arbitrage que `vocabulaireFerme` sur les doublons — ils sont ÉCARTÉS,
+ * parce que `is_valid_vitrine_vocabulaire` les refuserait en 23514 pour une
+ * répétition qui n'enlève ni n'ajoute rien à la fiche. Un mot INCONNU, lui, est
+ * refusé : ici il ne peut venir que de la main qui a écrit le fichier, et le
+ * taire produirait une fiche sans le badge que le commerçant croit avoir posé.
+ */
+function vocabulaireImporte<T extends string>(
+  vocabulaire: readonly [T, ...T[]],
+  message: string,
+) {
+  // `.nullish()` et non `.optional()` : la règle A du dépôt — un champ qui
+  // tolère l'absence rend la MÊME chose pour `null`, parce qu'un producteur
+  // JSON écrit `"badges": null` aussi naturellement qu'il omet la clé.
+  return z
+    .array(z.enum(vocabulaire, { error: message }), { error: message })
+    .nullish()
+    .transform((valeurs) =>
+      valeurs == null ? undefined : [...new Set(valeurs)],
+    );
+}
+
+/**
+ * Un nom du fichier — MÊMES BORNES que le formulaire, autres MESSAGES.
+ *
+ * Les bornes viennent des mêmes constantes, donc du même `check` : c'est le seul
+ * point où la divergence coûterait quelque chose. Les messages, eux, sont
+ * réécrits parce qu'ils ne s'adressent pas au même geste — « Le nom de la fiche
+ * est requis » désigne LE champ qu'on a sous les yeux dans un formulaire, et ne
+ * désigne rien du tout dans un fichier de cent vingt lignes.
+ *
+ * Le paramètre `error` couvre le mauvais TYPE (`"nom": 42`), que les schémas du
+ * formulaire laissent au message anglais par défaut de Zod : là-bas un `<input>`
+ * ne peut pas poster autre chose qu'une chaîne, ici un fichier écrit à la main
+ * le peut.
+ */
+function nomImporte(max: number, requis: string, tropLong: string) {
+  return z.string({ error: requis }).trim().min(1, requis).max(max, tropLong);
+}
+
+/**
+ * Un champ facultatif du fichier : absent, `null`, ou du texte détouré.
+ *
+ * Les trois disent « rien à afficher », exactement comme en SQL — la RPC écrit
+ * `nullif(btrim(…), '')` et fait retomber les trois sur `null`. Le détourage est
+ * fait ICI aussi parce que le `check` de `prix_affiche` exige une valeur déjà
+ * détourée : un prix copié d'un tableur avec son espace de fin ferait échouer
+ * TOUT l'import sur un 23514 que l'écran ne sait pas expliquer.
+ */
+function texteImporte(max: number, typeAttendu: string, tropLong: string) {
+  // Le `?? undefined` final aligne `null` sur l'absence (règle A) : les deux
+  // disparaissent du JSON envoyé, et la RPC fait de toute façon retomber les
+  // trois formes de « rien » sur `null` en base.
+  return z
+    .string({ error: typeAttendu })
+    .trim()
+    .max(max, tropLong)
+    .nullish()
+    .transform((valeur) => valeur ?? undefined);
+}
+
+/**
+ * LE MIROIR DU CONTRAT FERMÉ, aux trois rangs.
+ *
+ * ── `.strict()` N'EST PAS UN CONFORT ICI ──
+ *
+ * La RPC refuse une clé inconnue à chacun des trois rangs, et son en-tête dit
+ * pourquoi en toutes lettres : accepter `"prix"` au lieu de `"prix_affiche"` en
+ * le laissant tomber produirait une carte de soixante plats SANS AUCUN PRIX et
+ * sans le moindre message — le seul mode d'échec qui ressemble à un succès. Un
+ * `z.object` ordinaire DÉPOUILLE les clés inconnues : il aurait fabriqué ce
+ * mode d'échec côté application, sur le chemin même que la base ferme.
+ *
+ * `photo_path` et `disponible` sont donc REFUSÉS comme n'importe quelle autre
+ * clé inventée, et c'est voulu : la photo suppose un fichier déjà déposé dans
+ * un bucket qu'un lot jsonb ne peut pas porter, la disponibilité naît à `true`
+ * et se règle d'un geste sur l'écran prévu pour ça.
+ *
+ * ── LE MESSAGE DE REFUS NE RECOPIE PAS LE FICHIER ──
+ *
+ * Zod nomme la clé fautive dans son message par défaut. Ce message part vers un
+ * écran et un journal ; le paramètre `error` de chaque rang le remplace par le
+ * nôtre, borné, pour la raison qui interdit à la RPC de relayer du texte libre
+ * du payload.
+ */
+const ficheImporteeSchema = z
+  .object(
+    {
+      nom: nomImporte(
+        VITRINE_FICHE_NOM_MAX,
+        "Une fiche du fichier n'a pas de nom",
+        `Nom de fiche trop long (${VITRINE_FICHE_NOM_MAX} caractères max)`,
+      ),
+      description: texteImporte(
+        VITRINE_FICHE_DESCRIPTION_MAX,
+        "La description d'une fiche doit être du texte",
+        `Description trop longue (${VITRINE_FICHE_DESCRIPTION_MAX} caractères max)`,
+      ),
+      prix_affiche: texteImporte(
+        VITRINE_PRIX_AFFICHE_MAX,
+        "Le prix d'une fiche doit être du texte",
+        `Prix trop long (${VITRINE_PRIX_AFFICHE_MAX} caractères max)`,
+      ),
+      badges: vocabulaireImporte(
+        VITRINE_BADGES,
+        "Badge inconnu dans une fiche du fichier",
+      ),
+      allergenes: vocabulaireImporte(
+        VITRINE_ALLERGENES,
+        "Allergène inconnu dans une fiche du fichier",
+      ),
+    },
+    { error: "Une fiche du fichier porte un champ inconnu" },
+  )
+  .strict();
+
+const rubriqueImporteeSchema = z
+  .object(
+    {
+      nom: nomImporte(
+        VITRINE_RUBRIQUE_NOM_MAX,
+        "Une rubrique du fichier n'a pas de nom",
+        `Nom de rubrique trop long (${VITRINE_RUBRIQUE_NOM_MAX} caractères max)`,
+      ),
+      fiches: absentSiNonRendu(
+        z.array(ficheImporteeSchema, {
+          error: "Les fiches d'une rubrique doivent former une liste",
+        }),
+      ),
+    },
+    { error: "Une rubrique du fichier porte un champ inconnu" },
+  )
+  .strict();
+
+/**
+ * La carte entière — et les deux refus qu'aucun rang ne peut porter seul.
+ *
+ * LE TOTAL DE FICHES est compté SUR LE LOT, pas par rubrique : douze rubriques
+ * de cent fiches passeraient douze bornes locales et resteraient un import de
+ * mille deux cents lignes. C'est le total qui coûte, et c'est lui que la RPC
+ * borne.
+ *
+ * LES RUBRIQUES HOMONYMES sont refusées ici alors que la RPC les refuse aussi,
+ * et ce doublon-là est le seul du fichier à être délibéré : c'est le refus dont
+ * le message vaut le plus, puisqu'il désigne une faute que le commerçant peut
+ * corriger dans son fichier en dix secondes. Le laisser partir aurait rendu un
+ * 22023 indistinct des refus de forme — l'action ne peut pas les distinguer sans
+ * relayer le texte de la base, ce qu'elle s'interdit.
+ */
+const carteImporteeSchema = z
+  .object(
+    {
+      nom: nomImporte(
+        VITRINE_CARTE_NOM_MAX,
+        "Le fichier n'indique pas le nom de la carte",
+        `Nom de carte trop long (${VITRINE_CARTE_NOM_MAX} caractères max)`,
+      ),
+      rubriques: nonRenduVaut(
+        z
+          .array(rubriqueImporteeSchema, {
+            error: "Les rubriques du fichier doivent former une liste",
+          })
+          .max(
+            VITRINE_IMPORT_RUBRIQUES_MAX,
+            `Trop de rubriques dans un seul import (${VITRINE_IMPORT_RUBRIQUES_MAX} max)`,
+          ),
+        [],
+      ),
+    },
+    { error: "Le fichier porte un champ inconnu" },
+  )
+  .strict()
+  .superRefine((carte, ctx) => {
+    const vus = new Set<string>();
+    for (const rubrique of carte.rubriques) {
+      if (vus.has(rubrique.nom)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Deux rubriques du fichier portent le même nom",
+        });
+        break;
+      }
+      vus.add(rubrique.nom);
+    }
+
+    const total = carte.rubriques.reduce(
+      (compte, rubrique) => compte + (rubrique.fiches?.length ?? 0),
+      0,
+    );
+    if (total > VITRINE_IMPORT_FICHES_MAX) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Trop de fiches dans un seul import (${VITRINE_IMPORT_FICHES_MAX} max)`,
+      });
+    }
+  });
+
+/**
+ * L'entrée de l'action : un champ CACHÉ portant le payload en JSON.
+ *
+ * Motif exact d'`ordreIdsSchema` — `JSON.parse` dans un `transform` qui rend une
+ * ISSUE, jamais une exception : une action serveur qui lève sur un champ posté
+ * rend une erreur de rendu là où le commerçant attend une phrase. L'écran tient
+ * la carte en état (collage, fichier lu côté client) et la sérialise ; c'est du
+ * JSON parce que le lot est un ARBRE, ce qu'aucun jeu de `name=` plat ne porte.
+ */
+/**
+ * Borne de la CHAÎNE brute, avant tout `JSON.parse` : le pire cas légitime —
+ * 133 lignes aux longueurs maximales, vocabulaires compris — tient sous 96 Ko ;
+ * 128 Ko laissent la marge de l'échappement JSON. Sans elle, la seule borne
+ * était le `bodySizeLimit` implicite de Next (1 Mo) : ~1 s de parse Zod par
+ * envoi refusé APRÈS coup, et une borne de framework qui monterait en silence
+ * le jour où quelqu'un la relève pour un upload (revue L12, M2).
+ */
+const IMPORT_CHAINE_MAX = 131_072;
+
+export const importVitrineCarteSchema = z.object({
+  import: z
+    .string({ error: IMPORT_ILLISIBLE })
+    .max(IMPORT_CHAINE_MAX, { error: IMPORT_ILLISIBLE })
+    .transform((saisie, ctx) => {
+      let brut: unknown;
+      try {
+        brut = JSON.parse(saisie);
+      } catch {
+        ctx.addIssue({ code: "custom", message: IMPORT_ILLISIBLE });
+        return z.NEVER;
+      }
+      return brut;
+    })
+    .pipe(carteImporteeSchema),
+});
+
+/** Le payload tel qu'il part à `import_vitrine_carte` : détouré, dédoublonné. */
+export type CarteImportee = z.infer<typeof carteImporteeSchema>;
 
 // ── LA PUBLICATION ───────────────────────────────────────────
 //

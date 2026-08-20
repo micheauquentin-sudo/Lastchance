@@ -7,7 +7,9 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
+import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
+import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
 
 export const metadata: Metadata = { title: "Vitrine" };
 
@@ -68,7 +70,30 @@ export default async function VitrineDashboardPage() {
             n'a été choisie. Composer trente fiches avant de savoir où elles
             seront servies revient à préparer une vitrine sans magasin. */}
         {settings ? (
-          <CatalogueEditeur cartes={cartes} peutEditer={capacites.canEditDraft} />
+          <>
+            {/* L'IMPORT EST AVANT L'ÉDITEUR, et c'est l'ordre du geste réel :
+                un commerçant qui arrive avec sa carte dans un document ne veut
+                pas saisir trente fiches à la main pour découvrir ensuite
+                qu'un import existait. Il ne remplace PAS l'éditeur — les
+                badges, les allergènes et la disponibilité ne s'importent pas —
+                il le remplit. */}
+            <ImportCarte peutEditer={capacites.canEditDraft} />
+
+            <CatalogueEditeur
+              cartes={cartes}
+              peutEditer={capacites.canEditDraft}
+            />
+
+            {/* LES QR VIENNENT APRÈS LES CARTES : ils les visent. La section
+                n'apparaît qu'avec une adresse posée (`settings` non nul), et
+                elle rappelle elle-même de publier avant d'imprimer. */}
+            <VitrineQrPlanche
+              slug={settings.slug}
+              publiee={settings.published}
+              cartes={cartes}
+              appUrl={APP_URL}
+            />
+          </>
         ) : (
           <Card className="py-10 text-center">
             <p className="text-sm font-semibold text-k-body">

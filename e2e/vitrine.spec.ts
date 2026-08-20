@@ -7,8 +7,9 @@ import { expect, test } from "@playwright/test";
  * Seed (`supabase/seed.sql`) : org « E2E Café » (owner/editor/cashier),
  * vitrine `e2e-comptoir` PUBLIÉE, deux cartes / trois rubriques / six fiches
  * dont une indisponible (« Curry de légumes grillés ») et une aux badges ET
- * allergènes vides (« Côtes-du-rhône »). Quatre traductions anglaises, dont
- * UNE PÉRIMÉE — « Chickpea hummus », qui ne doit JAMAIS s'afficher.
+ * allergènes vides (« Côtes-du-rhône »). Dix-neuf traductions anglaises, toutes
+ * FRAÎCHES au seed — la péremption se prouve en pgTAP, qui la crée par un
+ * update, jamais par une ligne figée ici (voir le bloc sélecteur plus bas).
  *
  * ══════════════════════════════════════════════════════════════════════
  * DEUX VITRINES, ET LA RÈGLE QUI LES SÉPARE — À LIRE AVANT D'AJOUTER UN TEST
@@ -232,6 +233,47 @@ test.describe("vitrine — sélecteur de langue", () => {
   });
 });
 
+/**
+ * LES ANCRES CONTEXTUELLES (VIT-2 / L12) — sur `e2e-traduit`, EN LECTURE SEULE.
+ *
+ * Un QR posé sur une table encode `/v/{slug}#carte-{id}`. Le fragment n'atteint
+ * jamais le serveur : c'est la condition du cache ISR, et c'est aussi pourquoi
+ * ce test peut vivre sur la vitrine en lecture seule — il ne fait qu'ouvrir une
+ * adresse déjà servie, sans écrire nulle part.
+ *
+ * Les identifiants sont ceux du seed (`supabase/seed.sql`, bloc `e2e-traduit`) :
+ * une carte « La carte », une rubrique « Au verre », une fiche « Planche du
+ * soir ». Les figer ici est le seul moyen de viser une ancre sans muter la base
+ * pour s'en fabriquer une.
+ */
+test.describe("vitrine — ancres contextuelles", () => {
+  const CARTE = "e2f20000-0000-4000-8000-000000000011";
+  const FICHE = "e2f20000-0000-4000-8000-000000000031";
+
+  test("l'ancre d'une carte ouvre la vitrine et l'élément visé existe", async ({
+    page,
+  }) => {
+    const reponse = await page.goto(`/v/e2e-traduit#carte-${CARTE}`);
+    // LE STATUT EST LE MÊME QUE SANS FRAGMENT, et c'est tout le point : le
+    // navigateur n'envoie pas le `#`, donc rien ne distingue cette requête de
+    // celle d'un visiteur venu par le lien nu — même entrée de cache.
+    expect(reponse?.status()).toBe(200);
+
+    await expect(page.getByText("Le bar à vins du quai.")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.locator(`#carte-${CARTE}`)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Au verre" })).toBeVisible();
+  });
+
+  test("l'ancre d'une fiche désigne la fiche elle-même", async ({ page }) => {
+    await page.goto(`/v/e2e-traduit#fiche-${FICHE}`);
+    const fiche = page.locator(`#fiche-${FICHE}`);
+    await expect(fiche).toBeVisible({ timeout: 30_000 });
+    await expect(fiche.getByText("Planche du soir")).toBeVisible();
+  });
+});
+
 test.describe("vitrine — dashboard commerçant", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
@@ -301,7 +343,11 @@ test.describe("vitrine — dashboard commerçant", () => {
       .locator("li")
       .filter({ hasText: nomRubrique })
       .last();
-    const nomFiche = "Plat E2E";
+    // HORODATÉ comme `nomCarte`, et pour la même raison : sur une base
+    // accumulée (suite complète, reruns), un « Plat E2E » d'un run précédent
+    // existe DÉJÀ — le `.last()` ancrait cette fiche-là, que le rechargement
+    // post-création efface ensuite (« résolue mais hidden 20 s », trace L12).
+    const nomFiche = `Plat E2E ${Date.now()}`;
     await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
 
@@ -374,6 +420,132 @@ test.describe("vitrine — dashboard commerçant", () => {
       .getByRole("button", { name: new RegExp(`Descendre.*${nomCarte}`) })
       .click({ timeout: 5_000 })
       .catch(() => {});
+  });
+
+  /**
+   * L'IMPORT ASSISTÉ — et la preuve que RIEN NE PART SANS L'APERÇU.
+   *
+   * Le nom de la carte est HORODATÉ : `vitrine_menus` porte une unicité par
+   * organisation, et un nom fixe ferait échouer le second passage en 23505 sans
+   * qu'aucune ligne de produit ne soit fausse. Motif du test de création
+   * juste au-dessus.
+   *
+   * Les fiches sont suffixées « E2E » pour rester reconnaissables au milieu de
+   * ce que les autres tests créent sur `e2e-comptoir`.
+   */
+  test("import assisté : l'aperçu se relit, se corrige, puis crée la carte", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/vitrine");
+    await expect(page.getByRole("heading", { name: "Vitrine" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // LES NOMS COLLÉS SONT HORODATÉS, comme `nomCarte` — la trace CI l'a
+    // prouvé : sur base accumulée, « Soupe E2E » existait DÉJÀ dans le
+    // catalogue (importé par le run du projet précédent), et le `.last()` du
+    // reclassement ancrait cette fiche-là — qui n'a pas de champ
+    // « Classement » — au lieu de la ligne d'aperçu. 90 s d'attente sur un
+    // locator qui ne pouvait pas résoudre.
+    const marque = Date.now();
+    const soupe = `Soupe E2E ${marque}`;
+    await page
+      .getByLabel("Votre carte, en texte")
+      .fill(
+        [
+          "ENTRÉES",
+          `Houmous E2E ${marque} — pois chiches — 7 €`,
+          `${soupe} — 6,50`,
+          "PLATS",
+          `Risotto E2E ${marque} — 18 €`,
+        ].join("\n"),
+      );
+
+    // « Analyser » N'ENVOIE RIEN : il affiche. C'est la garantie que ce test
+    // vérifie d'abord — l'aperçu existe avant qu'aucune carte n'ait été créée.
+    await page.getByRole("button", { name: "Analyser ma carte" }).click();
+
+    const nomChamp = page.locator("#vitrine-import-nom");
+    await expect(nomChamp).toBeVisible({ timeout: 10_000 });
+    // ANCRÉ SUR LE CONTENEUR, pas sur le texte seul : « 2 fiches » existe en
+    // quatre exemplaires sur la page (compteur global, comptes par rubrique de
+    // l'aperçu, phrase du refus de suppression d'une carte existante). Seul le
+    // bloc `#vitrine-import-comptes` porte le verdict de l'import.
+    const comptes = page.locator("#vitrine-import-comptes");
+    await expect(comptes.getByText("2 rubriques", { exact: true })).toBeVisible();
+    await expect(comptes.getByText("3 fiches", { exact: true })).toBeVisible();
+
+    // ── RECLASSER UNE LIGNE, et voir les comptes suivre ──
+    const ligneSoupe = page.locator("li").filter({ hasText: soupe }).last();
+    await ligneSoupe.getByLabel("Classement").selectOption("ignorer");
+    await expect(comptes.getByText("2 fiches", { exact: true })).toBeVisible();
+    // …puis la rendre à la carte : le reclassement se fait dans les deux sens.
+    await ligneSoupe.getByLabel("Classement").selectOption("fiche");
+    await expect(comptes.getByText("3 fiches", { exact: true })).toBeVisible();
+
+    const nomCarte = `Import E2E ${Date.now()}`;
+    await nomChamp.fill(nomCarte);
+
+    await page.getByRole("button", { name: "Importer", exact: true }).click();
+
+    // Le succès porte les COMPTES : c'est ce qui distingue un import réussi
+    // d'un import partiel, et c'est la seule chose que le commerçant lit.
+    await expect(page.getByText(/^Carte créée : 2 rubriques, 3 fiches\.$/)).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Et la carte EXISTE. Rechargement explicite plutôt que d'attendre le
+    // rafraîchissement du routeur, dont ce dépôt a mesuré qu'il n'aboutit pas
+    // 5 à 32 % du temps (`use-action-form.ts`) : ce test-ci juge l'import, pas
+    // la fenêtre de React.
+    await page.reload();
+    await expect(page.getByRole("heading", { name: nomCarte })).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  /**
+   * LES QR CONTEXTUELS — le choix du contexte, les exemplaires, la planche.
+   *
+   * `window.print()` n'est JAMAIS déclenché : Playwright ne sait pas fermer la
+   * boîte d'impression du système, et le test resterait pendu. On vérifie que
+   * le bouton est là et que la planche est rendue — ce qui est exactement ce
+   * qu'un commerçant voit avant de cliquer.
+   */
+  test("QR et impression : une carte visée, deux exemplaires, une planche", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/vitrine");
+    await expect(
+      page.getByRole("heading", { name: "QR et impression" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // La section est PLIÉE par défaut : rien ne se dessine avant l'intention
+    // (les canvas au montage chargeaient le fil principal — CI WebKit L12).
+    await page
+      .locator("summary")
+      .filter({ hasText: "Préparer les QR à imprimer" })
+      .click();
+
+    // Index 1 : la première carte du commerce (index 0 = l'accueil).
+    await page.getByLabel("Ce que le QR ouvre").selectOption({ index: 1 });
+
+    // L'ADRESSE ENCODÉE PORTE L'ANCRE, et rien d'autre : pas de `?table=`,
+    // pas de `?carte=` — le cache ISR de la page publique en dépend.
+    await expect(page.getByText(/\/v\/e2e-comptoir#carte-/)).toBeVisible();
+
+    await page.getByLabel("Exemplaires").fill("2");
+    await expect(page.locator(".vitrine-qr-carte")).toHaveCount(2);
+    await expect(page.locator(".vitrine-qr-carte canvas")).toHaveCount(2);
+
+    // Le numéro de table est un LIBELLÉ IMPRIMÉ : les deux exemplaires encodent
+    // la même adresse et ne se distinguent que par ce texte.
+    await expect(page.getByText("Table 1")).toBeVisible();
+    await expect(page.getByText("Table 2")).toBeVisible();
+
+    await expect(
+      page.getByRole("button", { name: /Imprimer la planche/ }),
+    ).toBeVisible();
   });
 });
 
