@@ -441,15 +441,23 @@ test.describe("vitrine — dashboard commerçant", () => {
       timeout: 30_000,
     });
 
+    // LES NOMS COLLÉS SONT HORODATÉS, comme `nomCarte` — la trace CI l'a
+    // prouvé : sur base accumulée, « Soupe E2E » existait DÉJÀ dans le
+    // catalogue (importé par le run du projet précédent), et le `.last()` du
+    // reclassement ancrait cette fiche-là — qui n'a pas de champ
+    // « Classement » — au lieu de la ligne d'aperçu. 90 s d'attente sur un
+    // locator qui ne pouvait pas résoudre.
+    const marque = Date.now();
+    const soupe = `Soupe E2E ${marque}`;
     await page
       .getByLabel("Votre carte, en texte")
       .fill(
         [
           "ENTRÉES",
-          "Houmous E2E — pois chiches — 7 €",
-          "Soupe E2E — 6,50",
+          `Houmous E2E ${marque} — pois chiches — 7 €`,
+          `${soupe} — 6,50`,
           "PLATS",
-          "Risotto E2E — 18 €",
+          `Risotto E2E ${marque} — 18 €`,
         ].join("\n"),
       );
 
@@ -468,7 +476,7 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(comptes.getByText("3 fiches", { exact: true })).toBeVisible();
 
     // ── RECLASSER UNE LIGNE, et voir les comptes suivre ──
-    const ligneSoupe = page.locator("li").filter({ hasText: "Soupe E2E" }).last();
+    const ligneSoupe = page.locator("li").filter({ hasText: soupe }).last();
     await ligneSoupe.getByLabel("Classement").selectOption("ignorer");
     await expect(comptes.getByText("2 fiches", { exact: true })).toBeVisible();
     // …puis la rendre à la carte : le reclassement se fait dans les deux sens.
