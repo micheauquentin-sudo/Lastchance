@@ -1627,6 +1627,16 @@ begin
       pg_catalog.jsonb_build_object(
         'offer_id', o.id,
         'title', o.title,
+        -- LA DESCRIPTION EST RENDUE PARCE QUE LE PANNEAU LA RÉÉCRIT.
+        --
+        -- Ce n'est pas un ornement d'affichage : le formulaire d'édition du
+        -- commerçant poste TOUS les champs de l'offre, `description` comprise.
+        -- Sans elle ici, le champ se préremplissait vide et le premier
+        -- enregistrement EFFAÇAIT la description — un texte que personne n'avait
+        -- demandé de supprimer, sans confirmation et sans moyen de le retrouver.
+        -- La règle du dépôt est « un champ non rendu ne réécrit pas » ; ici le
+        -- champ EST rendu, donc c'est sa valeur qu'il faut lui donner à lire.
+        'description', o.description,
         'status', o.status,
         'window_starts_at', o.window_starts_at,
         'window_ends_at', o.window_ends_at,
@@ -1676,7 +1686,9 @@ $$;
 comment on function public.stock_offers_staff_state(uuid) is
   'Offres de stock d''une organisation et leurs compteurs, pour l''écran de '
   'comptoir : tenues MAINTENANT, retirées, ÉTEINTES SANS RETRAIT et annulées, '
-  'plus le restant. `expired_count` est entièrement DÉRIVÉ — aucune ligne ne '
+  'plus le restant. Rend AUSSI `description`, parce que le panneau d''édition '
+  'réécrit ce champ : sans lui, le formulaire le préremplissait vide et le '
+  'premier enregistrement effaçait le texte. `expired_count` est entièrement DÉRIVÉ — aucune ligne ne '
   'porte cet état — et mesure les prises que personne n''est venu chercher. '
   'N''expose ni l''email ni l''empreinte des joueurs : la preuve de retrait '
   '(qui, quand, quel panier) se lit sur la table, ouverte en lecture à tous les '

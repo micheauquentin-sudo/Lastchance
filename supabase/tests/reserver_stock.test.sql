@@ -324,6 +324,18 @@ select is(
   1,
   'le comptoir compte la prise éteinte sans retrait — la mesure du gaspillage');
 
+-- LA DESCRIPTION EST DANS LE DOCUMENT DE COMPTOIR, et ce n'est pas cosmétique :
+-- le panneau d'édition RÉÉCRIT ce champ. Sans elle, le formulaire se
+-- préremplissait vide et le premier enregistrement effaçait le texte.
+select is(
+  (select o ->> 'description'
+     from pg_catalog.jsonb_array_elements(
+       public.stock_offers_staff_state('5c100000-0000-4000-8000-00000000000a')
+         -> 'offers') as o
+    where o ->> 'offer_id' = '5c100000-0000-4000-8000-000000000104'),
+  'Trois invendus, à retirer entre 19 h et 20 h.',
+  'le comptoir lit la description de l''offre — le panneau la réécrit');
+
 
 -- ════════════════════════════════════════════════════════════
 -- 4. L'ANNULÉ REVIENT AUSSI, ET UNE SEULE FOIS
