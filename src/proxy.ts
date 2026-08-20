@@ -194,7 +194,12 @@ export const config = {
   // un aller-retour RÉSEAU vers l'API Auth Supabase dont le résultat n'était
   // lu par personne. Son canal CSP Report-Only, servi ici jusqu'alors, est
   // repris par `next.config.ts` — qui le pose déjà pour /play et /pronos.
+  //
+  // `v(?:/|$)` et non `v` nu : une lettre unique a un rayon d'action sans
+  // commune mesure avec un mot — un futur `/verify` ou `/videos` sortirait
+  // silencieusement du proxy, perdant session, redirection de connexion et
+  // isolation du domaine admin (contre-revue L11).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

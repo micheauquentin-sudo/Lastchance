@@ -124,7 +124,17 @@ describe("matcher — /v rejoint /play et /pronos hors du proxy", () => {
 
   it("CONTRÔLE NÉGATIF : les routes qui ont besoin d'une session la gardent", () => {
     // Sans lui, vider le matcher ferait passer les assertions ci-dessus.
-    for (const chemin of ["/dashboard", "/login", "/tarifs", "/quiz/ABC"]) {
+    // `/verify` et `/videos` : la borne de mot du matcher (`v(?:/|$)`) est ce
+    // qui les garde dans le proxy — un `v` nu les en aurait sortis en silence,
+    // et aucun chemin en `v…` ne le signalait ici (contre-revue L11).
+    for (const chemin of [
+      "/dashboard",
+      "/login",
+      "/tarifs",
+      "/quiz/ABC",
+      "/verify",
+      "/videos/promo",
+    ]) {
       expect(matcher.test(chemin)).toBe(true);
     }
   });
