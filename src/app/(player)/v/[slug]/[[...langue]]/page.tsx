@@ -61,6 +61,23 @@ import { SkipLink } from "@/components/ui/skip-link";
  */
 export const revalidate = 60;
 
+/**
+ * SANS CET EXPORT, TOUT CE QUI PRÉCÈDE EST FAUX. Dans Next 16, une route
+ * paramétrée n'entre au manifeste de prérendu — donc au cache ISR — que si
+ * `generateStaticParams` existe, même vide : `revalidate` seul est inerte et
+ * la page retombe en rendu par requête, silencieusement. Motif identique à
+ * `play/[slug]/page.tsx` : liste vide, chaque adresse est générée à la
+ * première visite puis servie depuis le cache. La preuve n'est pas dans ce
+ * fichier mais dans l'artefact : `.next/prerender-manifest.json` doit lister
+ * cette route dans `dynamicRoutes` (finding ÉLEVÉ de la revue L11).
+ */
+export function generateStaticParams(): Array<{
+  slug: string;
+  langue?: string[];
+}> {
+  return [];
+}
+
 type ParamsVitrine = Promise<{ slug: string; langue?: string[] }>;
 
 /**

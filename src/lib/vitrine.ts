@@ -1,4 +1,5 @@
 import type { FontKey } from "@/lib/fonts";
+import { estLienInvitationSur } from "@/lib/validations/organizations";
 
 /**
  * VITRINE — le vocabulaire, les bornes et la lecture du catalogue QR (VIT-1a).
@@ -883,6 +884,29 @@ function mapLangCoverage(raw: unknown): VitrineLangCoverage {
   return { total, frais: Math.min(frais, total) };
 }
 
+/**
+ * Un lien SORTANT servi à un visiteur anonyme — revalidé À LA LECTURE.
+ *
+ * La liste blanche d'hôtes (`estLienInvitationSur`) n'était tenue qu'à
+ * l'ÉCRITURE, par le schéma des réglages. C'est insuffisant ici : ces trois
+ * valeurs partent en `href` sur une page publique, et une valeur écrite avant
+ * que la liste blanche n'existe — ou posée par un chemin qui l'ignorerait —
+ * ferait de la vitrine un relais de redirection avec la caution visuelle du
+ * commerce. C'est la LECTURE qui doit être sûre.
+ *
+ * Exactement le motif de `lib/play-context.ts:64` : même garde, et surtout même
+ * repli MUET. Une valeur refusée vaut `null`, le lien ne s'affiche pas, et
+ * personne n'attend de message d'erreur sur une lecture publique.
+ *
+ * `''` (« non renseigné », 20260918120000) tombe donc en `null` plutôt que
+ * d'être rendu tel quel : `estLienInvitationSur` refuse la chaîne vide, et
+ * l'écran filtrait déjà les deux de la même façon (`Boolean(href?.trim())`).
+ */
+function asLienSortant(value: unknown): string | null {
+  const lien = asString(value);
+  return lien !== null && estLienInvitationSur(lien) ? lien : null;
+}
+
 /** Lecture de `vitrine_public_state`. Tout ce qui n'est pas « ok » est muet. */
 export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
   const root = asRecord(raw);
@@ -916,13 +940,9 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
-      // `''` est RENDU TEL QUEL, jamais traduit en `null` : la base garde le
-      // choix du commerçant (« non renseigné » = chaîne vide, 20260918120000)
-      // et c'est l'écran qui décide de ne rien afficher. Une troisième écriture
-      // du même fait aurait fait diverger les deux surfaces.
-      google_review_url: asString(liens.google_review_url),
-      instagram_url: asString(liens.instagram_url),
-      tiktok_url: asString(liens.tiktok_url),
+      google_review_url: asLienSortant(liens.google_review_url),
+      instagram_url: asLienSortant(liens.instagram_url),
+      tiktok_url: asLienSortant(liens.tiktok_url),
     },
     cartes: mapVitrineCartes(root.cartes),
   };

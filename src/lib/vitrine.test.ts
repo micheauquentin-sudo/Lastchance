@@ -276,7 +276,7 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       liens: {
         google_review_url: "",
         instagram_url: null,
-        tiktok_url: "https://tt",
+        tiktok_url: "https://www.tiktok.com/@lecomptoir",
       },
       cartes: [],
     });
@@ -284,9 +284,40 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
     if (etat.state !== "ok") return;
     expect(etat.identite.nom).toBe("Le Comptoir");
     expect(etat.identite.theme.style_cartes).toBe("grille");
-    // `''` est RENDU TEL QUEL : c'est l'écran qui décide de ne rien afficher.
-    expect(etat.liens.google_review_url).toBe("");
+    // `''` (« non renseigné ») tombe en `null` comme toute valeur que la liste
+    // blanche refuse : l'écran filtrait déjà les deux de la même façon.
+    expect(etat.liens.google_review_url).toBeNull();
     expect(etat.liens.instagram_url).toBeNull();
+    expect(etat.liens.tiktok_url).toBe("https://www.tiktok.com/@lecomptoir");
+  });
+
+  it("un lien sortant hors liste blanche ou non-https DISPARAÎT, en silence", () => {
+    // MOYEN 3 de la revue L11 : ces trois valeurs partent en `href` sur une page
+    // publique. La liste blanche n'était tenue qu'à l'écriture — une valeur
+    // écrite avant elle, ou par un chemin qui l'ignore, atteignait le visiteur.
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {
+        // Hôte hors liste blanche : le patron même de la redirection ouverte.
+        google_review_url: "https://phishing.test/avis",
+        // Bon hôte, mauvais schéma.
+        instagram_url: "http://instagram.com/lecomptoir",
+        // Bon hôte, mais identifiants dans l'URL : l'hôte réel est masqué dans
+        // la barre d'adresse du visiteur.
+        tiktok_url: "https://qui:quoi@www.tiktok.com/@lecomptoir",
+      },
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    // REPLI MUET : `state` reste « ok », la vitrine s'affiche, seuls les liens
+    // manquent. Personne n'attend un message d'erreur sur une lecture publique.
+    expect(etat.liens).toEqual({
+      google_review_url: null,
+      instagram_url: null,
+      tiktok_url: null,
+    });
   });
 
   it("lit la langue SERVIE, la couverture et le verdict du seuil", () => {
