@@ -1335,3 +1335,48 @@ update public.reservation_activities
    set wait_quiz_id = 'e2e95000-0000-4000-8000-000000000001',
        wait_pause_campaign_id = 'e2e20000-0000-4000-8000-000000000001'
  where id = 'e2ea0000-0000-4000-8000-000000000011';
+
+-- ── Réserver RES-5 — offres de stock et Drop anti-gaspi ──────────────
+--
+-- DEUX offres, et elles ne servent pas au même parcours :
+--
+--   * « Tarte du jour » — fenêtre de retrait ENGLOBANT MAINTENANT (de −1 h à
+--     +3 h). C'est la seule forme sur laquelle le RETRAIT EN CAISSE est
+--     immédiatement jouable : la borne basse de `redeem_stock_hold` refuse
+--     avant `window_starts_at`, donc une offre à fenêtre future ne permettrait
+--     jamais de prouver le passage au comptoir sans manipuler l'horloge de la
+--     base à l'exécution. Même raison que le créneau « à 30 minutes » de RES-1a.
+--   * « Drop du soir » — fenêtre COURTE et À VENIR (+2 h à +3 h). C'est la
+--     forme « Drop » du cahier, et elle prouve l'autre moitié de la décision du
+--     lot : la PRISE est ouverte dès maintenant, le RETRAIT non.
+--
+-- STOCK PETIT MAIS PLURIEL (4 et 3) : une unité unique ferait échouer le second
+-- parcours d'une même exécution E2E sur `sold_out` plutôt que sur ce qu'il
+-- teste, et un stock large ne prouverait jamais que la borne existe. Même
+-- arbitrage que la capacité 4 des créneaux.
+--
+-- `per_player_limit` À 1 sur les deux — c'est le défaut et le sens du module :
+-- `mobile-chrome` et `mobile-safari` jouent le même spec EN PARALLÈLE sur la
+-- même base, et un plafond plus large laisserait un projet consommer les unités
+-- de l'autre sans que l'échec dise pourquoi.
+insert into public.reservation_stock_offers
+  (id, organization_id, title, description, stock_total,
+   window_starts_at, window_ends_at, per_player_limit, status)
+values (
+  'e2ea0000-0000-4000-8000-0000000000a1', 'e2e10000-0000-4000-8000-000000000001',
+  'Tarte du jour E2E',
+  'Une part mise de côté, à retirer au comptoir avant la fermeture.', 4,
+  now() - interval '1 hour', now() + interval '3 hours', 1, 'open'
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_stock_offers
+  (id, organization_id, title, description, stock_total,
+   window_starts_at, window_ends_at, per_player_limit, status)
+values (
+  'e2ea0000-0000-4000-8000-0000000000a2', 'e2e10000-0000-4000-8000-000000000001',
+  'Drop du soir E2E',
+  'Trois invendus du jour, à récupérer sur le créneau du soir.', 3,
+  now() + interval '2 hours', now() + interval '3 hours', 1, 'open'
+)
+on conflict (id) do nothing;

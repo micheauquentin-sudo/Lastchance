@@ -5,8 +5,19 @@ import {
   asQueueEntryStatus,
   asQueueStatus,
   asReserverActivityKind,
+  cheminOffreStock,
+  etatUiOffreStock,
+  etatUiPriseStock,
+  formatFenetreStock,
+  libelleRetraitTropTot,
   libelleTaillePersonnes,
+  mapCancelStockHold,
   mapExperienceSteps,
+  mapHoldStockOffer,
+  mapStockOfferPublicState,
+  mapStockOffersStaffState,
+  offreAccepteePrise,
+  urlOffreStock,
   pairesRestantes,
   placesParReservation,
   cheminActiviteReserver,
@@ -1784,6 +1795,352 @@ describe("etatUiCreneau — « complet » se dit en RÉSERVATIONS POSSIBLES", ()
     expect(etatUiCreneau({ ...creneau, kind: "duo" })).toBe("complet");
     expect(etatUiCreneau({ ...creneau, remaining: 2, kind: "duo" })).toBe(
       "ouvert",
+    );
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// Réservation de stock réel et Drop (RES-5, lot L9)
+// ════════════════════════════════════════════════════════════
+
+describe("mapHoldStockOffer — le code ne sort QUE si l'unité est tenue", () => {
+  it("lit une prise accordée, sa fenêtre et le restant APRÈS elle", () => {
+    const r = mapHoldStockOffer({
+      state: "held",
+      hold_id: "h1",
+      code: "RESA-ABCD2345",
+      window_starts_at: "2030-04-12T16:00:00Z",
+      window_ends_at: "2030-04-12T18:00:00Z",
+      redeem_expires_at: "2030-04-12T18:00:00Z",
+      remaining: 4,
+    });
+    expect(r.state).toBe("held");
+    expect(r.holdId).toBe("h1");
+    expect(r.code).toBe("RESA-ABCD2345");
+    expect(r.status).toBe("held");
+    expect(r.windowStartsAt).toBe("2030-04-12T16:00:00Z");
+    expect(r.redeemExpiresAt).toBe("2030-04-12T18:00:00Z");
+    expect(r.remaining).toBe(4);
+  });
+
+  it("rend l'idempotence `already_held` avec SA prise et le plafond", () => {
+    const r = mapHoldStockOffer({
+      state: "already_held",
+      hold_id: "h1",
+      code: "RESA-ABCD2345",
+      status: "redeemed",
+      per_player_limit: 2,
+    });
+    expect(r.state).toBe("already_held");
+    expect(r.code).toBe("RESA-ABCD2345");
+    // Le statut vient du document : quelqu'un qui a DÉJÀ retiré doit le lire.
+    expect(r.status).toBe("redeemed");
+    expect(r.perPlayerLimit).toBe(2);
+  });
+
+  it("`sold_out` rend zéro, et RIEN d'autre", () => {
+    const r = mapHoldStockOffer({ state: "sold_out", remaining: 0 });
+    expect(r.remaining).toBe(0);
+    expect(r.code).toBeNull();
+    expect(r.holdId).toBeNull();
+    expect(r.windowEndsAt).toBeNull();
+  });
+
+  it("N'EMPORTE JAMAIS un code sur un refus — un RESA- est un droit au porteur", () => {
+    // ROUGE SI : un document mal formé (ou un futur état bavard) fait fuiter un
+    // code vers quelqu'un qui ne tient rien.
+    const r = mapHoldStockOffer({
+      state: "unavailable",
+      hold_id: "h1",
+      code: "RESA-ABCD2345",
+    });
+    expect(r.code).toBeNull();
+    expect(r.holdId).toBeNull();
+  });
+
+  it("un état inconnu retombe sur `unavailable`, jamais sur une prise", () => {
+    expect(mapHoldStockOffer({ state: "quelque_chose" }).state).toBe(
+      "unavailable",
+    );
+    expect(mapHoldStockOffer(null).state).toBe("unavailable");
+  });
+
+  it("distingue `invalid_email` d'un refus muet", () => {
+    expect(mapHoldStockOffer({ state: "invalid_email" }).state).toBe(
+      "invalid_email",
+    );
+  });
+});
+
+describe("mapCancelStockHold — rendre son unité", () => {
+  it("lit l'annulation et sa date", () => {
+    const r = mapCancelStockHold({
+      state: "cancelled",
+      hold_id: "h1",
+      cancelled_at: "2030-04-12T15:00:00Z",
+    });
+    expect(r.state).toBe("cancelled");
+    expect(r.cancelledAt).toBe("2030-04-12T15:00:00Z");
+  });
+
+  it("`too_late` porte l'échéance — de quoi expliquer le refus", () => {
+    const r = mapCancelStockHold({
+      state: "too_late",
+      hold_id: "h1",
+      redeem_expires_at: "2030-04-12T18:00:00Z",
+    });
+    expect(r.redeemExpiresAt).toBe("2030-04-12T18:00:00Z");
+    expect(r.cancelledAt).toBeNull();
+  });
+
+  it("une unité déjà retirée ne s'annule pas", () => {
+    expect(
+      mapCancelStockHold({ state: "already_redeemed", hold_id: "h1" }).state,
+    ).toBe("already_redeemed");
+  });
+
+  it("`unknown` n'emporte aucun identifiant", () => {
+    expect(
+      mapCancelStockHold({ state: "unknown", hold_id: "h1" }).holdId,
+    ).toBeNull();
+    expect(mapCancelStockHold(undefined).state).toBe("unknown");
+  });
+});
+
+describe("mapStockOfferPublicState — la photo du restant", () => {
+  const document = {
+    state: "ok",
+    offer_id: "o1",
+    title: "Panier surprise",
+    description: "Les invendus du soir",
+    status: "open",
+    window_starts_at: "2030-04-12T16:00:00Z",
+    window_ends_at: "2030-04-12T18:00:00Z",
+    per_player_limit: 1,
+    remaining: 3,
+    my_hold: null,
+  };
+
+  it("lit l'offre et son restant", () => {
+    const etat = mapStockOfferPublicState(document);
+    expect(etat.state).toBe("ok");
+    expect(etat.title).toBe("Panier surprise");
+    expect(etat.remaining).toBe(3);
+    expect(etat.myHold).toBeNull();
+  });
+
+  it("fait apparaître MA prise quand la RPC la rend", () => {
+    const etat = mapStockOfferPublicState({
+      ...document,
+      my_hold: {
+        hold_id: "h1",
+        code: "RESA-ABCD2345",
+        status: "held",
+        redeem_not_before: "2030-04-12T10:00:00Z",
+        redeem_expires_at: "2030-04-12T18:00:00Z",
+      },
+    });
+    expect(etat.myHold).toEqual({
+      holdId: "h1",
+      code: "RESA-ABCD2345",
+      status: "held",
+      redeemNotBefore: "2030-04-12T10:00:00Z",
+      redeemExpiresAt: "2030-04-12T18:00:00Z",
+    });
+  });
+
+  it("un document « ok » SANS offre est corrompu, pas incomplet", () => {
+    const etat = mapStockOfferPublicState({ ...document, offer_id: null });
+    expect(etat.state).toBe("unavailable");
+    expect(etat.remaining).toBe(0);
+  });
+
+  it("`unavailable` ne dit rien de plus — aucun oracle", () => {
+    const etat = mapStockOfferPublicState({ state: "unavailable" });
+    expect(etat.title).toBeNull();
+    expect(etat.remaining).toBe(0);
+    expect(etat.myHold).toBeNull();
+  });
+});
+
+describe("mapStockOffersStaffState — les compteurs du comptoir", () => {
+  it("lit les quatre compteurs et le restant", () => {
+    const etat = mapStockOffersStaffState({
+      state: "ok",
+      offers: [
+        {
+          offer_id: "o1",
+          title: "Panier surprise",
+          description: "Les invendus du soir",
+          status: "open",
+          window_starts_at: "2030-04-12T16:00:00Z",
+          window_ends_at: "2030-04-12T18:00:00Z",
+          stock_total: 10,
+          per_player_limit: 1,
+          held_count: 3,
+          redeemed_count: 2,
+          expired_count: 1,
+          cancelled_count: 4,
+          remaining: 5,
+        },
+      ],
+    });
+    expect(etat.ok).toBe(true);
+    expect(etat.offers[0].heldCount).toBe(3);
+    // ROUGE SI : la RPC cesse de rendre `description`. Le panneau d'édition la
+    // réécrit — un prérempli vide EFFACE le texte au premier enregistrement.
+    expect(etat.offers[0].description).toBe("Les invendus du soir");
+    // DÉRIVÉ : aucune ligne ne porte cet état, et c'est la mesure du gaspillage.
+    expect(etat.offers[0].expiredCount).toBe(1);
+    expect(etat.offers[0].remaining).toBe(5);
+  });
+
+  it("écarte une ligne sans identifiant plutôt que de l'inventer", () => {
+    const etat = mapStockOffersStaffState({
+      state: "ok",
+      offers: [{ title: "Sans identifiant" }, { offer_id: "o2", title: "Bon" }],
+    });
+    expect(etat.offers).toHaveLength(1);
+    expect(etat.offers[0].offerId).toBe("o2");
+  });
+
+  it("un état non-`ok` rend une liste vide et `ok: false`", () => {
+    expect(mapStockOffersStaffState({ state: "unavailable" })).toEqual({
+      ok: false,
+      offers: [],
+    });
+  });
+});
+
+describe("etatUiPriseStock — l'expiration se déduit de l'ÉCHÉANCE GRAVÉE", () => {
+  const maintenant = new Date("2030-04-12T17:00:00Z");
+
+  it("une prise vivante est « tenue »", () => {
+    expect(
+      etatUiPriseStock(
+        { status: "held", redeemExpiresAt: "2030-04-12T18:00:00Z" },
+        maintenant,
+      ),
+    ).toBe("tenue");
+  });
+
+  it("une prise `held` échue est « expirée » — SANS qu'aucune ligne n'ait bougé", () => {
+    // C'est tout le module : la restitution est ARITHMÉTIQUE, donc l'écran doit
+    // savoir le dire alors que `status` vaut toujours `held`.
+    expect(
+      etatUiPriseStock(
+        { status: "held", redeemExpiresAt: "2030-04-12T16:00:00Z" },
+        maintenant,
+      ),
+    ).toBe("expiree");
+  });
+
+  it("« retirée » prime sur l'horloge : l'objet est sorti du magasin", () => {
+    expect(
+      etatUiPriseStock(
+        { status: "redeemed", redeemExpiresAt: "2030-04-12T16:00:00Z" },
+        maintenant,
+      ),
+    ).toBe("retiree");
+  });
+
+  it("lit l'annulation, et l'état `expired` que rien n'écrit en L9", () => {
+    expect(
+      etatUiPriseStock(
+        { status: "cancelled", redeemExpiresAt: "2030-04-12T18:00:00Z" },
+        maintenant,
+      ),
+    ).toBe("annulee");
+    expect(
+      etatUiPriseStock(
+        { status: "expired", redeemExpiresAt: "2030-04-12T18:00:00Z" },
+        maintenant,
+      ),
+    ).toBe("expiree");
+  });
+});
+
+describe("etatUiOffreStock — la décision du commerçant prime sur l'horloge", () => {
+  const maintenant = new Date("2030-04-12T17:00:00Z");
+  const ouverte = {
+    status: "open" as const,
+    windowEndsAt: "2030-04-12T18:00:00Z",
+    remaining: 3,
+  };
+
+  it("ouverte, avec du restant", () => {
+    expect(etatUiOffreStock(ouverte, maintenant)).toBe("ouverte");
+    expect(offreAccepteePrise(ouverte, maintenant)).toBe(true);
+  });
+
+  it("« fermée » et « brouillon » priment sur une fenêtre passée", () => {
+    // « fermée » dit ce que le commerçant a fait ; « passée » dirait ce que le
+    // temps a fait — et c'est le premier qu'il faut lui rendre.
+    const passee = { ...ouverte, windowEndsAt: "2030-04-12T16:00:00Z" };
+    expect(etatUiOffreStock({ ...passee, status: "closed" }, maintenant)).toBe(
+      "fermee",
+    );
+    expect(etatUiOffreStock({ ...passee, status: "draft" }, maintenant)).toBe(
+      "brouillon",
+    );
+  });
+
+  it("une fenêtre écoulée n'accepte plus rien", () => {
+    const passee = { ...ouverte, windowEndsAt: "2030-04-12T16:00:00Z" };
+    expect(etatUiOffreStock(passee, maintenant)).toBe("passee");
+    expect(offreAccepteePrise(passee, maintenant)).toBe(false);
+  });
+
+  it("zéro restant = épuisée, et le bouton se tait", () => {
+    const epuisee = { ...ouverte, remaining: 0 };
+    expect(etatUiOffreStock(epuisee, maintenant)).toBe("epuisee");
+    expect(offreAccepteePrise(epuisee, maintenant)).toBe(false);
+  });
+
+  it("LA PRISE EST OUVERTE AVANT LE DÉBUT DE LA FENÊTRE — c'est le Drop annoncé", () => {
+    // ROUGE SI : quelqu'un ajoute une garde sur `windowStartsAt`. Bloquer sa
+    // part des heures avant l'ouverture est la promesse même du module ; seul
+    // le RETRAIT est borné en bas.
+    const avant = new Date("2030-04-12T09:00:00Z");
+    expect(etatUiOffreStock(ouverte, avant)).toBe("ouverte");
+    expect(offreAccepteePrise(ouverte, avant)).toBe(true);
+  });
+});
+
+describe("formatFenetreStock — les DEUX bornes sont datées", () => {
+  it("ne réduit jamais la fin à une heure seule", () => {
+    // ROUGE SI : quelqu'un réutilise `formatCreneau` ici. Une fenêtre qui
+    // franchit minuit se lirait « 12 avr. 2026, 18:00 – 10:00 », c'est-à-dire
+    // une fenêtre qui remonte le temps.
+    const libelle = formatFenetreStock(
+      "2026-04-12T18:00:00Z",
+      "2026-04-13T08:00:00Z",
+      "Europe/Paris",
+    );
+    expect(libelle).toContain("12 avr. 2026");
+    expect(libelle).toContain("13 avr. 2026");
+    expect(libelle.startsWith("du ")).toBe(true);
+  });
+});
+
+describe("libelleRetraitTropTot — le mot que le registre n'a pas", () => {
+  it("nomme la fenêtre plutôt qu'un refus opaque", () => {
+    expect(libelleRetraitTropTot("du A au B")).toBe(
+      "Retrait pas encore ouvert — fenêtre : du A au B",
+    );
+  });
+});
+
+describe("cheminOffreStock — une adresse, jamais une preuve", () => {
+  it("ne porte ni code, ni empreinte, ni jeton", () => {
+    const chemin = cheminOffreStock("o1");
+    expect(chemin).toBe("/reserver/stock/o1");
+    expect(chemin).not.toContain("?");
+  });
+
+  it("l'URL absolue ne double pas la barre oblique", () => {
+    expect(urlOffreStock("o1", "https://app.test/")).toBe(
+      "https://app.test/reserver/stock/o1",
     );
   });
 });

@@ -6060,6 +6060,125 @@ export type Database = {
           },
         ]
       }
+      reservation_stock_holds: {
+        Row: {
+          basket_cents: number | null
+          cancelled_at: string | null
+          code: string
+          consent_transactional_at: string | null
+          created_at: string
+          email: string | null
+          id: string
+          offer_id: string
+          organization_id: string
+          player_key_hash: string
+          redeem_expires_at: string
+          redeem_not_before: string
+          redeemed_at: string | null
+          redeemed_by: string | null
+          status: string
+        }
+        Insert: {
+          basket_cents?: number | null
+          cancelled_at?: string | null
+          code: string
+          consent_transactional_at?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          offer_id: string
+          organization_id: string
+          player_key_hash: string
+          redeem_expires_at: string
+          redeem_not_before: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          status?: string
+        }
+        Update: {
+          basket_cents?: number | null
+          cancelled_at?: string | null
+          code?: string
+          consent_transactional_at?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          offer_id?: string
+          organization_id?: string
+          player_key_hash?: string
+          redeem_expires_at?: string
+          redeem_not_before?: string
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_stock_holds_offer_id_organization_id_fkey"
+            columns: ["offer_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_stock_offers"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_stock_holds_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reservation_stock_offers: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          organization_id: string
+          per_player_limit: number
+          status: string
+          stock_total: number
+          title: string
+          updated_at: string
+          window_ends_at: string
+          window_starts_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          per_player_limit?: number
+          status?: string
+          stock_total: number
+          title: string
+          updated_at?: string
+          window_ends_at: string
+          window_starts_at: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          per_player_limit?: number
+          status?: string
+          stock_total?: number
+          title?: string
+          updated_at?: string
+          window_ends_at?: string
+          window_starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_stock_offers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reservation_wait_sessions: {
         Row: {
           created_at: string
@@ -7138,6 +7257,10 @@ export type Database = {
         }
         Returns: Json
       }
+      cancel_stock_hold: {
+        Args: { p_hold_id: string; p_player_key_hash: string }
+        Returns: Json
+      }
       check_rate_limit: {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
@@ -7648,6 +7771,16 @@ export type Database = {
           grant_id: string
           outcome: string
         }[]
+      }
+      hold_stock_offer: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_offer_id: string
+          p_organization_id: string
+          p_player_key_hash: string
+        }
+        Returns: Json
       }
       hunt_players_in_progress: { Args: { p_hunt_id: string }; Returns: number }
       hunt_settlement_preview: {
@@ -8480,6 +8613,21 @@ export type Database = {
           wallet_status: string
         }[]
       }
+      redeem_stock_hold: {
+        Args: {
+          p_actor: string
+          p_basket_cents?: number
+          p_code: string
+          p_organization_id: string
+        }
+        Returns: {
+          code: string
+          id: string
+          redeemed_at: string
+          redeemed_now: boolean
+          status: string
+        }[]
+      }
       referral_emit_reward: {
         Args: {
           p_beneficiary: string
@@ -8814,6 +8962,14 @@ export type Database = {
           p_question_id: string
           p_quiz_id: string
         }
+        Returns: Json
+      }
+      stock_offer_public_state: {
+        Args: { p_offer_id: string; p_player_key_hash?: string }
+        Returns: Json
+      }
+      stock_offers_staff_state: {
+        Args: { p_organization_id: string }
         Returns: Json
       }
       submit_contest_answer: {

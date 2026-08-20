@@ -189,6 +189,21 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "Annulation par le joueur : corps d'action typé, jamais un FormData de dashboard.",
   },
   {
+    chemin: "reserver:holdStockOfferSchema",
+    raison:
+      "Blocage d'une unité de stock (RES-5) : corps d'action typé — même équivalence email ⇔ consentement que la réservation, elle ne doit pas se déduire d'un champ absent.",
+  },
+  {
+    chemin: "reserver:cancelStockHoldSchema",
+    raison:
+      "Restitution d'une unité par le joueur : corps d'action typé, jamais un FormData de dashboard.",
+  },
+  {
+    chemin: "reserver:stockOfferStateSchema",
+    raison:
+      "Relecture de l'état public d'une offre : corps d'action typé, l'identifiant vient de l'URL de la page publique.",
+  },
+  {
     chemin: "reserver:loadMyReservationsSchema",
     raison:
       "Relecture de ses réservations : corps d'action typé, l'organisation vient du contexte de la page publique.",

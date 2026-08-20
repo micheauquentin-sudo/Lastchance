@@ -556,6 +556,55 @@ select ok(has_column_privilege('authenticated', 'public.reservation_queues', 'wa
 select ok(has_column_privilege('authenticated', 'public.reservation_activities', 'wait_quiz_id', 'UPDATE'), 'merchant can pick the quiz offered while waiting for a booked slot');
 select ok(has_column_privilege('authenticated', 'public.reservation_activities', 'wait_pause_campaign_id', 'UPDATE'), 'merchant can pick the Pause Chance campaign of an activity');
 
+-- Réservation de stock et Drop anti-gaspi (20261010120000, RES-5). Deux tables,
+-- deux régimes — exactement ceux du socle : l'OFFRE est de la configuration
+-- (éditeurs), les PRISES sont en lecture seule pour tous les membres, parce que
+-- le caissier doit voir qui vient chercher quoi et avec quelle preuve de
+-- retrait. AUCUNE écriture directe sur les prises : une insertion PostgREST
+-- contournerait le comptage sous verrou de `hold_stock_offer` — c'est-à-dire
+-- l'invariant « une unité n'est jamais attribuée deux fois » lui-même, qui ne
+-- tient à rien d'autre.
+select ok(not has_table_privilege('anon', 'public.reservation_stock_offers', 'SELECT'), 'anon cannot read stock offers');
+select ok(not has_table_privilege('anon', 'public.reservation_stock_holds', 'SELECT'), 'anon cannot read stock holds');
+select ok(not has_column_privilege('authenticated', 'public.reservation_stock_holds', 'email', 'SELECT'), 'merchant session cannot read stock hold email addresses');
+select ok(has_column_privilege('authenticated', 'public.reservation_stock_holds', 'code', 'SELECT'), 'merchant session can read the counter code of a stock hold');
+select ok(has_column_privilege('authenticated', 'public.reservation_stock_holds', 'basket_cents', 'SELECT'), 'merchant session can read the proof of pickup');
+select ok(not has_table_privilege('authenticated', 'public.reservation_stock_holds', 'INSERT'), 'merchant cannot insert a stock hold past the remaining-stock lock');
+select ok(not has_table_privilege('authenticated', 'public.reservation_stock_holds', 'UPDATE'), 'merchant cannot redeem a stock hold by direct update');
+select ok(not has_table_privilege('authenticated', 'public.reservation_stock_holds', 'DELETE'), 'merchant cannot delete a stock hold and erase the anti-waste record');
+-- Pas de DELETE sur l'offre non plus : la cascade emporterait les prises, donc
+-- les preuves de retrait. `status = 'closed'` ferme sans effacer.
+select ok(not has_table_privilege('authenticated', 'public.reservation_stock_offers', 'DELETE'), 'merchant cannot delete a stock offer and cascade away its pickup history');
+-- AUCUN privilège d'AUCUNE sorte sur les prises, `references`/`trigger`/
+-- `truncate` compris (leçon SEC-4, wagon 7) — hors le SELECT de colonnes.
+select is(
+  (select coalesce(string_agg(distinct a.privilege_type, ', '), '')
+     from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace,
+     lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public'
+      and c.relname = 'reservation_stock_holds'
+      and a.grantee in ('authenticated'::regrole::oid, 'anon'::regrole::oid)),
+  '',
+  'les prises de stock ne portent aucun privilège de TABLE : seul le grant de colonnes sert le comptoir'
+);
+select ok(not has_table_privilege('anon', 'public.reservation_stock_offers', 'INSERT'), 'anon cannot forge a stock offer');
+-- Les cinq RPC : serveur seul. `redeem_stock_hold` en particulier — ouverte à la
+-- session marchande, elle aurait été un SECOND point d'entrée de caisse,
+-- court-circuitant le registre universel et son échéance.
+select ok(has_function_privilege('service_role', 'public.hold_stock_offer(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'server can hold a unit of stock');
+select ok(not has_function_privilege('authenticated', 'public.hold_stock_offer(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'merchant session cannot bypass the remaining-stock lock');
+select ok(not has_function_privilege('anon', 'public.hold_stock_offer(uuid,uuid,text,text,boolean)', 'EXECUTE'), 'anon cannot hold a unit directly');
+select ok(not has_function_privilege('authenticated', 'public.cancel_stock_hold(uuid,text)', 'EXECUTE'), 'merchant session cannot cancel through the player RPC');
+select ok(not has_function_privilege('anon', 'public.cancel_stock_hold(uuid,text)', 'EXECUTE'), 'anon cannot cancel a hold directly');
+select ok(has_function_privilege('service_role', 'public.redeem_stock_hold(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem a stock hold through the universal router');
+select ok(not has_function_privilege('authenticated', 'public.redeem_stock_hold(uuid,text,text,integer)', 'EXECUTE'), 'merchant session cannot open a second cashier door that skips the registry expiry');
+select ok(not has_function_privilege('anon', 'public.redeem_stock_hold(uuid,text,text,integer)', 'EXECUTE'), 'anon cannot redeem a stock hold');
+select ok(not has_function_privilege('authenticated', 'public.stock_offer_public_state(uuid,text)', 'EXECUTE'), 'merchant cannot enumerate player holds through the public RPC');
+select ok(not has_function_privilege('anon', 'public.stock_offer_public_state(uuid,text)', 'EXECUTE'), 'anon cannot read the stock offer public state directly');
+select ok(has_function_privilege('service_role', 'public.stock_offers_staff_state(uuid)', 'EXECUTE'), 'server can build the counter view');
+select ok(not has_function_privilege('anon', 'public.stock_offers_staff_state(uuid)', 'EXECUTE'), 'anon cannot read the counter view');
+
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
 select ok(not has_table_privilege('anon', 'public.quiz_players', 'SELECT'), 'anon cannot read quiz players');

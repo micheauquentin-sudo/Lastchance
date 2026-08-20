@@ -239,6 +239,49 @@ export function normalizeContestCode(input: string): string {
   return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `PRONO-${cleaned}` : "";
 }
 
+/**
+ * Normalise un code de RETRAIT D'UNE UNITÉ DE STOCK saisie en caisse (RES-5) :
+ * "resa abcd2345", "ABCD2345", "resa-abcd2345" → "RESA-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1). Miroir strict de
+ * `normalizeContestCode` : rejette les codes GAIN-… / CHASSE-… / FIDELITE-… /
+ * JACKPOT-… / EVENT-… / CADEAU-… / PARRAIN-… / QUIZ-… / PRONO- (préfixe
+ * distinct).
+ *
+ * L'alphabet est celui que le trigger `reservation_stock_holds_set_code` tire :
+ * un sous-ensemble de [A-Z0-9], donc la forme normalisée satisfait d'office
+ * `reward_issuances_code_shape` et le filtre d'entrée du routeur universel.
+ *
+ * ── LA FORME EST TESTÉE AVANT LE RETRAIT DU PRÉFIXE, ET IL LE FAUT ──
+ *
+ * Les neuf sœurs ci-dessus retirent d'abord, testent ensuite. Sur celle-ci, ce
+ * geste mange des codes RÉELS : `R`, `E`, `S` et `A` appartiennent tous à
+ * l'alphabet du trigger, donc un corps tiré au hasard commence par `RESA` une
+ * fois sur 32⁴ — environ une prise sur un million. Le caissier qui saisit ce
+ * corps seul (`RESA2345`, forme que cette fonction accepte explicitement) le
+ * voyait amputé à `2345`, refusé, et le code imprimé sur le téléphone du client
+ * devenait inutilisable sans que rien n'explique pourquoi.
+ *
+ * On teste donc la forme COMPLÈTE d'abord : un corps de huit caractères valides
+ * est pris tel quel, et le retrait du préfixe ne s'applique qu'à ce qui n'en est
+ * pas un. Aucune ambiguïté possible — un code préfixé fait douze caractères,
+ * jamais huit.
+ *
+ * POURQUOI SEULEMENT ICI. Les autres préfixes sont hors d'atteinte : `GAIN`,
+ * `FIDELITE`, `PARRAIN` et `QUIZ` contiennent un `I`, `JACKPOT` et `PRONO` un
+ * `O` — deux lettres que l'alphabet sans ambiguïté exclut, donc aucun corps ne
+ * peut commencer par eux. `EVENT`, `CHASSE` et `CADEAU` restent possibles mais
+ * font cinq à six caractères, soit une chance sur 33 millions à un milliard.
+ * `RESA` est le seul préfixe à la fois court et entièrement composé de lettres
+ * tirables : la collision y est mille fois plus probable que chez le suivant.
+ */
+export function normalizeStockHoldCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input).toUpperCase().replace(/[\s_-]/g, "");
+  const corps = /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned)
+    ? cleaned
+    : cleaned.replace(/^RESA/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(corps) ? `RESA-${corps}` : "";
+}
+
 /** Résultat standard des Server Actions. */
 export type ActionResult<T = void> =
   | { ok: true; data: T }

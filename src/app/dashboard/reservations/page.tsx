@@ -8,6 +8,7 @@ import { etatUiCreneau, RESERVER_FUSEAU_DEFAUT } from "@/lib/reserver";
 import {
   loadReserverDashboardContext,
   loadReserverQueuesDashboardContext,
+  loadStockOffersDashboardContext,
 } from "@/lib/reserver-context";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,6 +16,7 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { ArriveesCheckin } from "@/components/reserver/arrivees-checkin";
 import { FilesAccueilPanneau } from "@/components/reserver/files-accueil-panneau";
 import { NouvelleActiviteForm } from "@/components/reserver/nouvelle-activite-form";
+import { OffresStockPanneau } from "@/components/reserver/offres-stock-panneau";
 import { PastilleFormat } from "@/components/reserver/pastilles";
 
 export const metadata: Metadata = { title: "Réservations" };
@@ -62,9 +64,12 @@ export default async function ReservationsPage() {
   // files d'accueil de l'autre — et n'ont aucune donnée en commun : les
   // enchaîner aurait ajouté un aller-retour à une page que le commerçant ouvre
   // en début de service.
-  const [agenda, filesAccueil] = await Promise.all([
+  // Les trois lectures sont INDÉPENDANTES — l'agenda des créneaux, les files
+  // d'accueil, les offres de stock — et n'ont aucune donnée en commun.
+  const [agenda, filesAccueil, offresStock] = await Promise.all([
     loadReserverDashboardContext(),
     loadReserverQueuesDashboardContext(),
+    loadStockOffersDashboardContext(),
   ]);
   const activites = agenda.ok ? agenda.activities : [];
   const timeZone = agenda.ok
@@ -191,6 +196,18 @@ export default async function ReservationsPage() {
         // côté serveur — un identifiant de quiz ou de campagne ne se saisit pas.
         quiz={agenda.ok ? agenda.waitQuiz : []}
         campagnes={agenda.ok ? agenda.waitCampaigns : []}
+      />
+
+      {/* LES OFFRES DE STOCK EN DERNIER, ET C'EST LA MÊME LOGIQUE DE JOURNÉE :
+          on prépare ses créneaux le matin, on tient sa file toute la journée, et
+          on solde son invendu en fin de service. Le geste du caissier n'est pas
+          ici — le retrait se fait en CAISSE, par le code — d'où l'absence de
+          console et le seul droit d'édition. */}
+      <OffresStockPanneau
+        offres={offresStock.ok ? offresStock.offers : []}
+        peutEditer={capacites.canEditDraft}
+        appUrl={APP_URL}
+        timeZone={timeZone}
       />
     </div>
   );

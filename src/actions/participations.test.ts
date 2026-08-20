@@ -29,6 +29,37 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     player_id: string;
   }
 
+  /** Prise de stock telle que la voit la caisse (mutable). */
+  interface StockHoldRow {
+    id: string;
+    organization_id: string;
+    offer_id: string;
+    code: string;
+    created_at: string;
+    redeemed_at: string | null;
+    cancelled_at: string | null;
+    /**
+     * LES DEUX BORNES, GRAVÉES SUR LA PRISE (revue L9, M3). L'ouverture vivait
+     * sur l'offre et y était relue à chaque retrait : une fenêtre décalée
+     * changeait alors le sort de prises déjà consenties. Elles sont désormais
+     * recopiées au blocage, et c'est ici que le comptoir les lit.
+     */
+    redeem_not_before: string | null;
+    redeem_expires_at: string | null;
+    basket_cents: number | null;
+    status: "held" | "redeemed" | "cancelled";
+  }
+
+  /** Offre de stock — elle porte la fenêtre COURANTE, celle des prises à venir. */
+  interface StockOfferRow {
+    id: string;
+    organization_id: string;
+    title: string;
+    description: string | null;
+    window_starts_at: string;
+    window_ends_at: string;
+  }
+
   const db = {
     participations: new Map<string, unknown>(), // clé : redeem_code
     huntCompletions: new Map<string, unknown>(), // clé : code
@@ -47,6 +78,11 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     contestAwards: new Map<string, ContestAwardRow>(), // clé : code
     contests: new Map<string, unknown>(), // clé : id
     contestPlayers: new Map<string, unknown>(), // clé : id
+    // Réservation de stock — 10e source (RES-5). Les prises sont MUTÉES par la
+    // RPC factice du routeur : c'est le seul chemin de retrait de cette
+    // famille, elle n'a AUCUN repli legacy.
+    stockHolds: new Map<string, StockHoldRow>(), // clé : code
+    stockOffers: new Map<string, StockOfferRow>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
     rewardIssuances: new Map<
       string,
@@ -68,7 +104,8 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
           | "calendar"
           | "referral"
           | "quiz"
-          | "contest";
+          | "contest"
+          | "reserver_stock";
         source_id: string;
         code: string;
         /**
@@ -96,7 +133,13 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       }
     >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    /**
+     * Les RPC qui doivent RÉPONDRE EN ERREUR, par nom. Vide par défaut : une
+     * panne se demande, elle ne s'obtient pas par omission.
+     */
+    rpcErreurs: [] as string[],
     reset() {
+      db.rpcErreurs = [];
       db.participations.clear();
       db.huntCompletions.clear();
       db.hunts.clear();
@@ -112,6 +155,8 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.contestAwards.clear();
       db.contests.clear();
       db.contestPlayers.clear();
+      db.stockHolds.clear();
+      db.stockOffers.clear();
       db.queries = [];
       db.rewardIssuances.clear();
       db.rpcCalls = [];
@@ -130,11 +175,93 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
        */
       rpc(name: string, args: Record<string, unknown>) {
         db.rpcCalls.push({ name, args });
+        // LE REGISTRE EN PANNE, sur demande explicite. Le distinguer d'un code
+        // inconnu est tout l'objet de `UniversalRedeemOutcome` : l'un dit
+        // « réessayez », l'autre « refaites saisir ».
+        if (db.rpcErreurs.includes(name)) {
+          return Promise.resolve({
+            data: null,
+            error: { message: `${name} indisponible` },
+          });
+        }
         if (name === "redeem_reward_by_code") {
           const code = String(args.p_code);
           const issuance = db.rewardIssuances.get(code);
           if (!issuance || issuance.organization_id !== args.p_organization_id) {
             return Promise.resolve({ data: [], error: null });
+          }
+          // ── LA 10e FAMILLE : le bras source borne la fenêtre AUX DEUX BOUTS
+          //
+          // Reproduit fidèlement `redeem_stock_hold` : `update` conditionnel
+          // (vivante ET dans la fenêtre) puis lecture INCONDITIONNELLE si le
+          // code existe — c'est ce qui distingue `source_missing` de
+          // `source_refused`, et c'est le second qui porte « trop tôt ».
+          if (issuance.source_type === "reserver_stock") {
+            const hold = db.stockHolds.get(code);
+            if (!hold || hold.organization_id !== args.p_organization_id) {
+              return Promise.resolve({
+                data: [
+                  {
+                    ...issuance,
+                    state: "source_missing",
+                    redeemed_at: null,
+                    redeemed_by: null,
+                    expires_at: null,
+                    cancelled_at: null,
+                    basket_cents: null,
+                    wallet_status: "not_requested",
+                    redeemed_now: false,
+                  },
+                ],
+                error: null,
+              });
+            }
+            // LES DEUX BORNES SE LISENT SUR LA PRISE, comme le SQL depuis M3 :
+            // `redeem_stock_hold` n'interroge plus l'offre du tout. Un mock qui
+            // continuerait de lire `offer.window_starts_at` resterait vert sur
+            // une régression qui remettrait la fenêtre courante aux commandes.
+            const maintenant = Date.now();
+            const echue = hold.redeem_expires_at
+              ? new Date(hold.redeem_expires_at).getTime() <= maintenant
+              : false;
+            const tropTot = hold.redeem_not_before
+              ? new Date(hold.redeem_not_before).getTime() > maintenant
+              : false;
+            const retireMaintenant =
+              hold.status === "held" && !echue && !tropTot;
+            if (retireMaintenant) {
+              hold.status = "redeemed";
+              hold.redeemed_at = new Date(maintenant).toISOString();
+              hold.basket_cents =
+                (args.p_basket_cents as number | null) ?? null;
+            }
+            const etat = retireMaintenant
+              ? "redeemed"
+              : hold.redeemed_at
+                ? "already_redeemed"
+                : hold.cancelled_at
+                  ? "cancelled"
+                  : echue
+                    ? "expired"
+                    : "source_refused";
+            return Promise.resolve({
+              data: [
+                {
+                  ...issuance,
+                  state: etat,
+                  redeemed_at: hold.redeemed_at,
+                  redeemed_by: retireMaintenant ? String(args.p_actor) : null,
+                  expires_at: hold.redeem_expires_at,
+                  cancelled_at: hold.cancelled_at,
+                  basket_cents: hold.basket_cents,
+                  wallet_status: retireMaintenant
+                    ? "revocation_requested"
+                    : "not_requested",
+                  redeemed_now: retireMaintenant,
+                },
+              ],
+              error: null,
+            });
           }
           if (issuance.source_type !== "contest") {
             return Promise.resolve({
@@ -402,6 +529,26 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
                 error: null,
               });
             }
+            if (table === "reservation_stock_holds") {
+              const hold = db.stockHolds.get(String(filters.code));
+              return Promise.resolve({
+                data:
+                  hold && hold.organization_id === filters.organization_id
+                    ? hold
+                    : null,
+                error: null,
+              });
+            }
+            if (table === "reservation_stock_offers") {
+              const offer = db.stockOffers.get(String(filters.id));
+              return Promise.resolve({
+                data:
+                  offer && offer.organization_id === filters.organization_id
+                    ? offer
+                    : null,
+                error: null,
+              });
+            }
             return Promise.resolve({ data: null, error: null });
           },
         };
@@ -495,6 +642,7 @@ import {
   redeemLoyaltyReward,
   redeemQuizReward,
   redeemReferralReward,
+  redeemStockHold,
 } from "./participations";
 
 /** Seed d'une complétion de chasse retrouvable par son code normalisé. */
@@ -649,7 +797,8 @@ function seedUniversalReward(
     | "calendar"
     | "referral"
     | "quiz"
-    | "contest",
+    | "contest"
+    | "reserver_stock",
   organizationId = "org-1",
   label: string | null = null,
   rewardDetails: string | null | undefined = undefined,
@@ -1784,5 +1933,255 @@ describe("lookupRedeemCode — la description gravée remonte à la caisse", () 
       expect(result.frozenDetails ?? null).toBeNull();
       expect(result.match.source).toBe("wheel");
     }
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// La 10e famille en caisse : la réservation de stock (RESA-…, RES-5)
+//
+// Ce que ces tests attestent :
+//   · un code RESA- est ROUTÉ vers sa famille, et jamais vers la roue — dont
+//     le normaliseur est PERMISSIF et l'attraperait sans eux ;
+//   · le retrait passe par le ROUTEUR UNIVERSEL et par lui seul : il n'y a
+//     aucun repli legacy, parce que `redeem_stock_hold` est un bras source ;
+//   · `source_refused` est PHRASÉ avec la fenêtre. Traduit par le générique
+//     « ce lot ne peut pas être remis », il ferait renvoyer chez lui quelqu'un
+//     dont la réservation est parfaitement valide.
+// ════════════════════════════════════════════════════════════
+
+/** Seed d'une prise de stock retrouvable par son code, avec son offre. */
+function seedStockHold(
+  code: string,
+  overrides: Partial<{
+    status: "held" | "redeemed" | "cancelled";
+    redeemed_at: string | null;
+    cancelled_at: string | null;
+    redeem_expires_at: string | null;
+    organization_id: string;
+  }> = {},
+  fenetre: { debut: string; fin: string } = {
+    debut: "2020-01-01T10:00:00.000Z",
+    fin: "2099-01-01T12:00:00.000Z",
+  },
+) {
+  db.stockHolds.set(code, {
+    id: `hold-${code}`,
+    organization_id: "org-1",
+    offer_id: "offer-1",
+    code,
+    created_at: "2026-07-20T10:00:00.000Z",
+    redeemed_at: null,
+    cancelled_at: null,
+    // LES DEUX BORNES SONT SUR LA PRISE (revue L9, M3). Le message de refus les
+    // lit ici, plus sur l'offre : c'est la gravure que le bras source applique,
+    // et citer la fenêtre courante enverrait le client à une heure où il serait
+    // refusé une seconde fois.
+    redeem_not_before: fenetre.debut,
+    redeem_expires_at: fenetre.fin,
+    basket_cents: null,
+    status: "held",
+    ...overrides,
+  });
+  db.stockOffers.set("offer-1", {
+    id: "offer-1",
+    organization_id: overrides.organization_id ?? "org-1",
+    title: "Panier surprise",
+    description: "Les invendus du soir",
+    window_starts_at: fenetre.debut,
+    window_ends_at: fenetre.fin,
+  });
+}
+
+describe("caisse — routage d'un code RESA-", () => {
+  afterEach(() => {
+    db.reset();
+    rateLimitMock.mockClear();
+    recordCounterMock.mockClear();
+  });
+
+  it("route vers la famille stock, jamais vers la roue", async () => {
+    // ROUGE SI : le normaliseur ou la route disparaissent. `normalizeRedeemCode`
+    // est PERMISSIF — sans la branche RESA-, ce code finirait en « lot de roue
+    // introuvable », c'est-à-dire « Code introuvable » devant un client qui
+    // tient sa réservation.
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock", "org-1", "Panier surprise");
+
+    const result = await lookupRedeemCode("RESA-ABCD2345");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.match.source).toBe("reserver_stock");
+      if (result.match.source === "reserver_stock") {
+        expect(result.match.hold.code).toBe("RESA-ABCD2345");
+        // LA FENÊTRE VOYAGE AVEC LA PRISE : sans elle, le comptoir n'a aucun
+        // moyen de dire quand revenir.
+        expect(result.match.hold.window_starts_at).toBe("2020-01-01T10:00:00.000Z");
+        expect(result.match.hold.offer_title).toBe("Panier surprise");
+      }
+      expect(result.frozenLabel).toBe("Panier surprise");
+    }
+  });
+
+  it("tolère la saisie manuelle (casse, espaces, préfixe absent)", async () => {
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+
+    for (const saisie of ["resa abcd2345", " RESA-abcd2345 ", "abcd2345"]) {
+      const result = await lookupRedeemCode(saisie);
+      expect(result.status, saisie).toBe("found");
+    }
+  });
+
+  it("une prise d'une AUTRE organisation reste introuvable", async () => {
+    seedStockHold("RESA-ABCD2345", { organization_id: "org-2" });
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock", "org-2");
+
+    expect((await lookupRedeemCode("RESA-ABCD2345")).status).toBe("not_found");
+  });
+
+  it("le préfixe RESA fait AUTORITÉ : pas de repli sur la roue", async () => {
+    // Aucune prise semée. Un code RESA- inconnu ne doit pas aller chercher un
+    // lot de roue portant le même suffixe.
+    seedWheel("GAIN-ABCD2345");
+    expect((await lookupRedeemCode("RESA-ABCD2345")).status).toBe("not_found");
+  });
+
+  it("une recherche ne coûte qu'UN jeton, préfixe RESA compris", async () => {
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    await lookupRedeemCode("RESA-ABCD2345");
+    expect(lookupTokens()).toHaveLength(1);
+  });
+});
+
+describe("redeemStockHold — le retrait au comptoir", () => {
+  afterEach(() => {
+    db.reset();
+    rateLimitMock.mockClear();
+    recordCounterMock.mockClear();
+  });
+
+  function form(champs: Record<string, string>): FormData {
+    const fd = new FormData();
+    for (const [cle, valeur] of Object.entries(champs)) fd.set(cle, valeur);
+    return fd;
+  }
+
+  it("retire l'unité par le ROUTEUR UNIVERSEL, avec le panier saisi", async () => {
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+
+    const res = await redeemStockHold(
+      null,
+      form({ code: "RESA-ABCD2345", basket: "12,50" }),
+    );
+
+    expect(res.ok).toBe(true);
+    const appel = db.rpcCalls.find((c) => c.name === "redeem_reward_by_code");
+    expect(appel?.args.p_basket_cents).toBe(1250);
+    // AUCUN appel au bras source : la caisse n'a qu'une porte.
+    expect(db.rpcCalls.some((c) => c.name === "redeem_stock_hold")).toBe(false);
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("redeemed");
+  });
+
+  it("le second passage est refusé, et daté", async () => {
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+
+    const rejeu = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+    expect(rejeu.ok).toBe(false);
+    expect(rejeu.ok === false && rejeu.error).toContain("déjà été remis");
+  });
+
+  it("PHRASE « pas encore ouvert » avec la fenêtre, jamais le refus générique", async () => {
+    // C'est LE point de la famille : la borne BASSE n'existe que dans le bras
+    // source, et le registre n'a pas de mot pour elle. Le générique « ce lot ne
+    // peut pas être remis » renverrait chez lui quelqu'un dont la réservation
+    // est parfaitement valide.
+    seedStockHold(
+      "RESA-ABCD2345",
+      {},
+      { debut: "2099-04-12T16:00:00.000Z", fin: "2099-04-12T18:00:00.000Z" },
+    );
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+
+    const res = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain("Retrait pas encore ouvert");
+    expect(res.ok === false && res.error).toContain("fenêtre :");
+    // L'unité N'EST PAS consommée : le client revient à l'heure dite.
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+  });
+
+  it("une prise annulée et une fenêtre close se disent chacune pour elles-mêmes", async () => {
+    seedStockHold("RESA-ABCD2345", {
+      status: "cancelled",
+      cancelled_at: "2026-07-21T10:00:00.000Z",
+    });
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    const annulee = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+    expect(annulee.ok === false && annulee.error).toContain("annulé");
+
+    db.reset();
+    seedStockHold(
+      "RESA-BCDE3456",
+      {},
+      { debut: "2020-01-01T10:00:00.000Z", fin: "2020-01-01T12:00:00.000Z" },
+    );
+    seedUniversalReward("RESA-BCDE3456", "reserver_stock");
+    const close = await redeemStockHold(null, form({ code: "RESA-BCDE3456" }));
+    expect(close.ok === false && close.error).toContain("expiré");
+  });
+
+  it("un code que le registre ne connaît pas est INTROUVABLE, sans repli legacy", async () => {
+    // Cette famille est née AVEC le registre : un « miss » n'y est pas un code
+    // historique, c'est un code inventé. Aucun repli ne doit être tenté.
+    seedStockHold("RESA-ABCD2345");
+    const res = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe("Code introuvable");
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+  });
+
+  it("un registre EN PANNE dit « réessayez », jamais « introuvable » (revue L9)", async () => {
+    // ROUGE SI : les deux silences se remettent à se confondre. Un registre
+    // muet et un registre en panne rendaient tous deux « Code introuvable »,
+    // alors que la docstring de l'action promettait « Validation impossible ».
+    // La différence n'est pas cosmétique : elle décide de ce que le caissier
+    // fait ensuite — refaire saisir, ou recommencer. Et comme cette famille n'a
+    // AUCUN repli legacy, personne ne rattrape derrière.
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    db.rpcErreurs = ["redeem_reward_by_code"];
+
+    const res = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Validation impossible — réessayez",
+    );
+    // L'unité reste tenue : le client repassera, son code est toujours bon.
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+    expect(recordCounterMock).toHaveBeenCalledWith("rewards.registry_error");
+  });
+
+  it("refuse une forme de code invalide avant tout aller-retour", async () => {
+    const res = await redeemStockHold(null, form({ code: "GAIN-ABCD2345" }));
+    expect(res.ok).toBe(false);
+    expect(db.rpcCalls).toHaveLength(0);
+  });
+
+  it("refuse un panier illisible sans rien retirer", async () => {
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    const res = await redeemStockHold(
+      null,
+      form({ code: "RESA-ABCD2345", basket: "beaucoup" }),
+    );
+    expect(res.ok).toBe(false);
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
   });
 });

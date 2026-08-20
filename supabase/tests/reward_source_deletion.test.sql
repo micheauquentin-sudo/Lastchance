@@ -37,12 +37,12 @@
 -- « aucun plan trouvé », ce que rien ne distingue d'un succès.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(51);
+select plan(52);
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
--- ══ 0. Les dix jumeaux à la suppression existent ════════════
--- Un par table source, en miroir des dix triggers d'insertion/mise à jour.
+-- ══ 0. Les onze jumeaux à la suppression existent ═══════════
+-- Un par table source, en miroir des onze triggers d'insertion/mise à jour.
 select has_trigger('public', 'participations', 'participations_reward_issuance_delete', 'la disparition d''une participation est suivie');
 select has_trigger('public', 'hunt_completions', 'hunt_completions_reward_issuance_delete', 'la disparition d''une complétion de chasse est suivie');
 select has_trigger('public', 'loyalty_rewards', 'loyalty_rewards_reward_issuance_delete', 'la disparition d''une récompense de fidélité est suivie');
@@ -53,6 +53,7 @@ select has_trigger('public', 'calendar_rewards', 'calendar_rewards_reward_issuan
 select has_trigger('public', 'referral_rewards', 'referral_rewards_reward_issuance_delete', 'la disparition d''une récompense de parrainage est suivie');
 select has_trigger('public', 'quiz_rewards', 'quiz_rewards_reward_issuance_delete', 'la disparition d''une récompense de quiz est suivie');
 select has_trigger('public', 'contest_awards', 'contest_awards_reward_issuance_delete', 'la disparition d''une récompense de pronostics est suivie');
+select has_trigger('public', 'reservation_stock_holds', 'reservation_stock_holds_reward_issuance_delete', 'la disparition d''une prise de stock est suivie');
 
 -- ── Fixtures ────────────────────────────────────────────────
 insert into auth.users (

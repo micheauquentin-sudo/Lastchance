@@ -2,15 +2,19 @@ import { cn } from "@/lib/utils";
 import {
   etatUiCreneau,
   etatUiEntreeFile,
+  etatUiOffreStock,
   etatUiReservation,
   type EtatUiCreneau,
   type EtatUiEntreeFile,
+  type EtatUiOffreStock,
+  type EtatUiPriseStock,
   type EtatUiReservation,
   type ReservationQueueStatus,
   type ReservationSlotStatus,
   type ReservationStatus,
   type ReservationWaitlistStatus,
   type ReserverActivityKind,
+  type StockOfferStatus,
 } from "@/lib/reserver";
 import { LIBELLE_FORMAT } from "@/components/reserver/formats-experience";
 
@@ -180,6 +184,81 @@ export function PastilleFormat({
 }) {
   if (kind === "standard") return null;
   const { label, ton } = LIBELLE_FORMAT[kind];
+  return <span className={cn(BASE, ton, className)}>{label}</span>;
+}
+
+/**
+ * L'ÉTAT D'UNE OFFRE DE STOCK (RES-5, lot L9), vu du commerçant comme du client.
+ *
+ * « Épuisée » n'est pas « Fermée » : la première est le résultat du succès —
+ * tout est parti — la seconde une décision. Les confondre ferait croire au
+ * commerçant qu'il a coupé une offre que ses clients ont simplement vidée. Et
+ * « Passée » n'est pas « Fermée » non plus : c'est le temps qui a tranché, pas
+ * lui. Ces cinq mots sont ceux d'`etatUiOffreStock`, un pour un — la fonction
+ * décide, cette table peint.
+ */
+const LIBELLE_OFFRE_STOCK: Record<
+  EtatUiOffreStock,
+  { label: string; ton: string }
+> = {
+  brouillon: { label: "Brouillon", ton: "bg-white text-k-ink" },
+  ouverte: { label: "Ouverte", ton: "bg-k-green/40 text-k-ink" },
+  epuisee: { label: "Épuisée", ton: "bg-amber-100 text-k-ink" },
+  passee: { label: "Passée", ton: "bg-zinc-200 text-k-ink" },
+  fermee: { label: "Fermée", ton: "bg-zinc-200 text-k-ink" },
+};
+
+/**
+ * `now` est un paramètre pour que le rendu reste déterministe en test — et
+ * parce qu'`etatUiOffreStock` l'expose déjà pour la même raison.
+ */
+export function PastilleOffreStock({
+  offre,
+  now,
+  className,
+}: {
+  offre: {
+    status: StockOfferStatus;
+    windowEndsAt: string | null;
+    remaining: number;
+  };
+  now?: Date;
+  className?: string;
+}) {
+  const { label, ton } = LIBELLE_OFFRE_STOCK[etatUiOffreStock(offre, now)];
+  return <span className={cn(BASE, ton, className)}>{label}</span>;
+}
+
+/**
+ * L'ÉTAT DE LA PRISE D'UN CLIENT (RES-5, lot L9).
+ *
+ * « Non retirée » plutôt qu'« Expirée » : le mot qui compte au comptoir n'est
+ * pas l'échéance technique mais le FAIT — personne n'est venu chercher cette
+ * part, et elle est repartie en vente. C'est aussi le compteur que le tableau
+ * de bord met en avant.
+ *
+ * Le verdict est celui d'`etatUiPriseStock`, y compris pour l'expiration :
+ * aucun chemin n'écrit `status = 'expired'`, et recomparer l'échéance ici
+ * fabriquerait une seconde règle à côté de celle du module.
+ */
+const LIBELLE_PRISE_STOCK: Record<
+  EtatUiPriseStock,
+  { label: string; ton: string }
+> = {
+  tenue: { label: "Bloquée", ton: "bg-amber-100 text-k-ink" },
+  retiree: { label: "Retirée", ton: "bg-k-green/40 text-k-ink" },
+  annulee: { label: "Annulée", ton: "bg-zinc-200 text-k-ink" },
+  expiree: { label: "Non retirée", ton: "bg-zinc-200 text-k-ink" },
+};
+
+export function PastillePriseStock({
+  etat,
+  className,
+}: {
+  etat: EtatUiPriseStock;
+  className?: string;
+}) {
+  const { label, ton } = LIBELLE_PRISE_STOCK[etat];
   return <span className={cn(BASE, ton, className)}>{label}</span>;
 }
 

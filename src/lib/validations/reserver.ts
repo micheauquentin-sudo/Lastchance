@@ -29,6 +29,14 @@ import {
   RESERVER_STEP_BODY_MAX,
   RESERVER_STEP_TITLE_FIELD,
   RESERVER_STEP_TITLE_MAX,
+  RESERVER_STOCK_CODE_PATTERN,
+  RESERVER_STOCK_DESCRIPTION_MAX,
+  RESERVER_STOCK_PER_PLAYER_DEFAUT,
+  RESERVER_STOCK_PER_PLAYER_MAX,
+  RESERVER_STOCK_PER_PLAYER_MIN,
+  RESERVER_STOCK_TITLE_MAX,
+  RESERVER_STOCK_TOTAL_MAX,
+  RESERVER_STOCK_TOTAL_MIN,
   RESERVER_INVITATION_LABEL_MAX,
   RESERVER_INVITATION_MAX_USES_MAX,
   RESERVER_INVITATION_MAX_USES_MIN,
@@ -975,3 +983,194 @@ export const waitConsumeSpinSchema = z.object({
     .trim()
     .regex(/^[0-9a-f]{48}$/, "Jeton de tour offert invalide"),
 });
+
+// ════════════════════════════════════════════════════════════
+// Réservation de stock réel et Drop (RES-5, lot L9)
+// migration 20261010120000
+//
+// MIROIR DE CONFORT, comme tout ce fichier. La vérité est en base : le restant
+// DÉDUIT sous verrou d'avis, le plafond par personne compté dans le même
+// instantané, l'équivalence email ⇔ consentement, le vocabulaire fermé des
+// états. Ces schémas ne servent qu'à rendre un message utile AVANT
+// l'aller-retour — jamais à décider à la place de la base.
+//
+// AUCUN CHAMP « is_drop », ET IL NE FAUT PAS EN AJOUTER : une offre à fenêtre
+// courte et proche EST un Drop. Un booléen aurait créé une seconde vérité à
+// tenir d'accord avec les dates, sans rien changer au comportement.
+// ════════════════════════════════════════════════════════════
+
+/** Titre d'une offre — 1..120, exactement le CHECK SQL. */
+const stockTitleSchema = z
+  .string()
+  .trim()
+  .min(1, "Donnez un titre à cette offre")
+  .max(
+    RESERVER_STOCK_TITLE_MAX,
+    `Titre trop long (${RESERVER_STOCK_TITLE_MAX} caractères max)`,
+  );
+
+/** Description facultative — le champ non rendu vaut la chaîne vide. */
+const stockDescriptionSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(
+      RESERVER_STOCK_DESCRIPTION_MAX,
+      `Description trop longue (${RESERVER_STOCK_DESCRIPTION_MAX} caractères max)`,
+    ),
+);
+
+/**
+ * Unités mises de côté — FINIES et strictement positives (CHECK SQL).
+ *
+ * Ce nombre n'est JAMAIS décrémenté : c'est le TOTAL, et le restant s'en déduit.
+ * Le baisser sous le nombre de prises déjà tenues est SÛR — `hold_stock_offer`
+ * relit `stock_total` sous son verrou, dans le même instantané que son comptage,
+ * et le restant affiché ne descend pas sous zéro.
+ */
+const stockTotalSchema = entierRequis({
+  absent: "Indiquez le nombre d'unités mises de côté.",
+  nombre: "Nombre d'unités invalide",
+  entier: "Nombre entier d'unités requis",
+  min: [RESERVER_STOCK_TOTAL_MIN, "Une offre met au moins une unité de côté"],
+  max: [RESERVER_STOCK_TOTAL_MAX, `Maximum ${RESERVER_STOCK_TOTAL_MAX} unités`],
+});
+
+/**
+ * Unités qu'UNE personne peut bloquer — `between 1 and 3` (CHECK SQL).
+ *
+ * Au-delà, une personne préempte un Drop entier et le partage cesse d'en être
+ * un. Le champ non rendu vaut le défaut SQL (1), qui est le sens du module.
+ */
+const perPlayerLimitSchema = nonRenduVaut(
+  z
+    .string()
+    .trim()
+    .transform((valeur) =>
+      valeur === "" ? RESERVER_STOCK_PER_PLAYER_DEFAUT : Number(valeur),
+    )
+    .refine(
+      (valeur) =>
+        Number.isInteger(valeur) &&
+        valeur >= RESERVER_STOCK_PER_PLAYER_MIN &&
+        valeur <= RESERVER_STOCK_PER_PLAYER_MAX,
+      `Limite par personne invalide (de ${RESERVER_STOCK_PER_PLAYER_MIN} à ${RESERVER_STOCK_PER_PLAYER_MAX})`,
+    ),
+  RESERVER_STOCK_PER_PLAYER_DEFAUT,
+);
+
+/**
+ * Statut d'une offre. `draft` par défaut à la création — une offre se relit
+ * avant de s'ouvrir (titre, stock, fenêtre), exactement comme un créneau.
+ *
+ * `closed` EST L'INTERRUPTEUR, et il n'y a pas de suppression : la cascade de la
+ * FK composite emporterait les prises — donc les preuves de retrait — sans
+ * qu'aucun écran n'ait compté ce qui allait disparaître.
+ */
+const stockStatusSchema = z.enum(["draft", "open", "closed"]);
+
+/**
+ * La FENÊTRE DE RETRAIT doit être cohérente : la fin suit le début.
+ *
+ * La base garde sa propre contrainte (`reservation_stock_offers_window_check`) ;
+ * celle-ci ne fait qu'éviter l'aller-retour. La comparaison porte sur deux
+ * `YYYY-MM-DDTHH:mm`, qui est l'ordre chronologique pour ce format à longueur
+ * fixe — même technique que `createReserverSlotSchema`.
+ *
+ * RIEN N'EXIGE QUE LA FENÊTRE SOIT DANS LE FUTUR, et c'est délibéré : un
+ * commerçant qui saisit un Drop pendant qu'il commence a le droit de le faire, et
+ * `hold_stock_offer` refuse d'elle-même une fenêtre déjà passée.
+ */
+function exigerFenetreCoherente(
+  valeur: { windowStartsAt: string; windowEndsAt: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (valeur.windowEndsAt <= valeur.windowStartsAt) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["windowEndsAt"],
+      message: "La fin de la fenêtre de retrait doit suivre son début.",
+    });
+  }
+}
+
+/** Créer une offre de stock (FormData du dashboard). */
+export const createStockOfferSchema = z
+  .object({
+    title: stockTitleSchema,
+    description: stockDescriptionSchema,
+    stockTotal: stockTotalSchema,
+    /** Heures civiles, converties dans le fuseau de l'organisation par l'action. */
+    windowStartsAt: localDateTimeSchema,
+    windowEndsAt: localDateTimeSchema,
+    perPlayerLimit: perPlayerLimitSchema,
+    status: nonRenduVaut(stockStatusSchema, "draft"),
+  })
+  .superRefine(exigerFenetreCoherente);
+
+/**
+ * Corriger une offre — seul chemin de correction, puisque rien ne se supprime.
+ *
+ * Le statut fait partie du même formulaire : contrairement aux créneaux, qui ont
+ * une action de statut à part (`updateReserverSlotStatus`), une offre de stock
+ * n'a que trois états et ils se règlent avec le reste. Un second geste aurait
+ * fait ouvrir une offre dont on vient de corriger le stock en DEUX soumissions.
+ */
+export const updateStockOfferSchema = z
+  .object({
+    id: uuid,
+    title: stockTitleSchema,
+    description: stockDescriptionSchema,
+    stockTotal: stockTotalSchema,
+    windowStartsAt: localDateTimeSchema,
+    windowEndsAt: localDateTimeSchema,
+    perPlayerLimit: perPlayerLimitSchema,
+    status: nonRenduVaut(stockStatusSchema, "draft"),
+  })
+  .superRefine(exigerFenetreCoherente);
+
+/**
+ * Bloquer une unité. L'identité du joueur N'EST PAS un champ : elle vient du
+ * cookie `lc-player`, côté serveur.
+ *
+ * Email et consentement voyagent ENSEMBLE ou pas du tout — même équivalence SQL
+ * que les réservations, même `superRefine`, même message.
+ *
+ * Le challenge Turnstile y figure parce que c'est un appel ÉMETTEUR : les
+ * invariants SQL bornent le NOMBRE d'unités, jamais la DIVERSITÉ des mains, et
+ * un bot muni de cookies jetables viderait un Drop sans jamais venir.
+ */
+export const holdStockOfferSchema = z
+  .object({
+    organizationId: uuid,
+    offerId: uuid,
+    email: emailSchema.optional(),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine(exigerEmailEtConsentementEnsemble);
+
+/**
+ * Rendre son unité. Un seul champ, comme `cancelReservationSchema` : la RPC
+ * autorise par POSSESSION (identifiant + empreinte du cookie) et lit
+ * l'organisation sur la ligne.
+ */
+export const cancelStockHoldSchema = z.object({
+  holdId: uuid,
+});
+
+/** Relire l'état public d'une offre — l'identifiant, et rien d'autre. */
+export const stockOfferStateSchema = z.object({
+  offerId: uuid,
+});
+
+/**
+ * Code de retrait présenté en caisse (RESA-XXXXXXXX). Casse et espaces autour
+ * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
+ * `contestRedeemCodeSchema`.
+ */
+export const stockHoldRedeemCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(RESERVER_STOCK_CODE_PATTERN, "Code de retrait invalide");

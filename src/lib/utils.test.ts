@@ -109,3 +109,37 @@ describe("formatDate — le fuseau de l'établissement", () => {
     );
   });
 });
+
+describe("normalizeStockHoldCode — le corps qui commence par RESA (revue L9)", () => {
+  it("accepte les trois formes de saisie du comptoir", async () => {
+    const { normalizeStockHoldCode } = await import("./utils");
+    expect(normalizeStockHoldCode("RESA-ABCD2345")).toBe("RESA-ABCD2345");
+    expect(normalizeStockHoldCode("abcd2345")).toBe("RESA-ABCD2345");
+    expect(normalizeStockHoldCode("  resa abcd2345 ")).toBe("RESA-ABCD2345");
+  });
+
+  it("NE MANGE PAS un corps qui commence par RESA", async () => {
+    // ROUGE SI : quelqu'un remet le retrait du préfixe AVANT le test de forme.
+    // `R`, `E`, `S` et `A` sont tous dans l'alphabet du trigger : un corps sur
+    // 32⁴ — environ une prise sur un million — commence par `RESA`. Saisi seul,
+    // il était amputé à `2345`, refusé, et le code imprimé sur le téléphone du
+    // client devenait inutilisable sans que rien n'explique pourquoi.
+    const { normalizeStockHoldCode } = await import("./utils");
+    expect(normalizeStockHoldCode("RESA2345")).toBe("RESA-RESA2345");
+    expect(normalizeStockHoldCode("resa2345")).toBe("RESA-RESA2345");
+    // Et la forme préfixée du même code marche toujours : douze caractères,
+    // jamais huit — aucune ambiguïté entre les deux.
+    expect(normalizeStockHoldCode("RESA-RESA2345")).toBe("RESA-RESA2345");
+    expect(normalizeStockHoldCode("resa resa2345")).toBe("RESA-RESA2345");
+  });
+
+  it("rejette toujours les préfixes des neuf autres familles", async () => {
+    const { normalizeStockHoldCode } = await import("./utils");
+    expect(normalizeStockHoldCode("GAIN-ABCD2345")).toBe("");
+    expect(normalizeStockHoldCode("PRONO-ABCD2345")).toBe("");
+    // Alphabet sans ambiguïté : ni I, ni O, ni 0, ni 1.
+    expect(normalizeStockHoldCode("ABCD234I")).toBe("");
+    expect(normalizeStockHoldCode("")).toBe("");
+    expect(normalizeStockHoldCode("resa-")).toBe("");
+  });
+});
