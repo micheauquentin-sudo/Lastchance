@@ -894,13 +894,13 @@ select is(
 -- ════════════════════════════════════════════════════════════
 
 select ok(has_function_privilege('service_role',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-1 service_role exécute reserve_slot');
 select ok(not has_function_privilege('authenticated',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-2 authenticated ne l''exécute pas');
 select ok(not has_function_privilege('anon',
-  'public.reserve_slot(uuid,uuid,text,text,boolean)', 'EXECUTE'),
+  'public.reserve_slot(uuid,uuid,text,text,boolean,integer)', 'EXECUTE'),
   'ACL-3 anon ne l''exécute pas');
 select ok(not has_function_privilege('authenticated',
   'public.cancel_reservation(uuid,text)', 'EXECUTE'),
@@ -3203,6 +3203,817 @@ select is(
     where w.id = (select (j->>'entry_id')::uuid from rv3_i4 where n = 3)),
   'offered',
   'PURG-2 la place va au premier inscrit RÉELLEMENT joignable');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 24. LES EXPÉRIENCES SIGNATURE (RES-5, migration 20261007120000)
+--
+-- Ce bloc prouve UNE SEULE PROPRIÉTÉ, sous tous les angles où elle peut se
+-- perdre : LA CAPACITÉ SE COMPTE EN PERSONNES, ET UN DUO EST INDIVISIBLE.
+--
+-- Le défaut qu'il ferme est précis. Tant que le module comptait des LIGNES,
+-- deux hôtes cliquant sur le dernier créneau d'un Atelier Duo de deux places
+-- passaient tous les deux (2 lignes <= 2 places) et quatre personnes se
+-- présentaient à un atelier pour deux. Aucune erreur, aucun log, aucune trace :
+-- le commerçant l'aurait découvert le samedi, devant les gens.
+--
+-- LES CINQ ANGLES :
+--   * LA JAUGE (DUO-1 à DUO-4) — un duo prend deux places, le suivant est
+--     refusé même s'il reste une place, et cette place ne se vend pas à moitié.
+--   * LA DERNIÈRE PAIRE (CONC-1 à CONC-3) — deux duos sur deux places : un
+--     seul passe. C'est la même réserve que le bloc 1 sur ce que « concurrence »
+--     veut dire ici : pgTAP est mono-transactionnel, donc ce qui est prouvé est
+--     que LA JAUGE trie, et le verrou d'avis est vérifié séparément (bloc 1).
+--   * LA LIBÉRATION (CANC-1 à CANC-4) — annuler un duo rend DEUX places, et
+--     `reservation_offer_next` repart avec la bonne arithmétique : UNE offre
+--     pour la paire, et sa conversion crée une réservation de DEUX personnes.
+--     C'est l'angle le plus important : `claim_waitlist_offer` ne retestant
+--     PAS la capacité, une conversion à une personne aurait laissé une place
+--     tenue que plus rien n'aurait libérée, et une conversion sans unité
+--     commune aurait sur-réservé le créneau en silence.
+--   * LA PLACE ESSEULÉE (SEUL-1, SEUL-2) — sur un Atelier Duo à qui il reste
+--     UNE place, la file s'ouvre et aucune offre ne part. Proposer cette place
+--     aurait fait sonner un téléphone pour une offre impossible à honorer.
+--   * LES CHAMPS DE PRÉSENTATION (PRES-1 à PRES-8) — ce que la base refuse
+--     d'un format mal décrit, avant qu'un écran ait à le rendre.
+--
+-- ET LES DEUX INVARIANTS DU DÉPÔT, rejoués sur les tables neuves : l'ORG
+-- VOISINE ne réserve pas ici (VOIS-1), et le `remaining` public dit la vérité
+-- en PERSONNES (REM-1, REM-2).
+-- ════════════════════════════════════════════════════════════
+
+-- ── Fixtures des deux formats ────────────────────────────────
+-- Le Moment Signature porte ses trois cartes et sa durée ; l'Atelier Duo porte
+-- sa durée et ses instructions, et AUCUNE étape — c'est la différence de
+-- format, écrite dans les données plutôt que racontée.
+insert into public.reservation_activities
+  (id, organization_id, name, description, active,
+   kind, promise, duration_minutes, steps, preparation)
+values
+  ('4e5e0000-0000-4000-8000-000000000206',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Moment Signature', null, true,
+   'signature', 'Trente minutes hors du temps, au comptoir.', 30,
+   '[{"title":"On vous accueille","body":"Un mot sur la maison."},
+     {"title":"On goûte","body":"Trois verres commentés."},
+     {"title":"On repart","body":"Avec la fiche de dégustation."}]'::jsonb,
+   'Venez cinq minutes en avance.'),
+  ('4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Atelier Duo', null, true,
+   'duo', 'À deux, les mains dans la farine.', 90, null,
+   'Prévoyez un tablier ; tout le reste est fourni.'),
+  -- Chez la VOISINE, un Atelier Duo parfaitement ouvert.
+  ('4e5e0000-0000-4000-8000-000000000208',
+   '4e5e0000-0000-4000-8000-00000000000b', 'Atelier Duo voisin', null, true,
+   'duo', 'Le même, ailleurs.', 90, null, null);
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values
+  -- S40 : Atelier Duo, TROIS places. Le nombre est choisi : il est IMPAIR, donc
+  -- il reste forcément une place après un duo — celle qui ne doit jamais se
+  -- vendre à moitié.
+  ('4e5e0000-0000-4000-8000-000000000340',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '2 days', now() + interval '2 days 90 minutes', 3, 'open'),
+  -- S41 : Atelier Duo, DEUX places — la dernière paire.
+  ('4e5e0000-0000-4000-8000-000000000341',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '3 days', now() + interval '3 days 90 minutes', 2, 'open'),
+  -- S42 : Atelier Duo, DEUX places — celui qu'on annule pour voir la file
+  -- repartir.
+  ('4e5e0000-0000-4000-8000-000000000342',
+   '4e5e0000-0000-4000-8000-000000000207',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '4 days', now() + interval '4 days 90 minutes', 2, 'open'),
+  -- S43 : Moment Signature, TROIS places — le format qui refuse la taille 2.
+  ('4e5e0000-0000-4000-8000-000000000343',
+   '4e5e0000-0000-4000-8000-000000000206',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '2 days', now() + interval '2 days 30 minutes', 3, 'open'),
+  -- S44 : l'Atelier Duo de la VOISINE.
+  ('4e5e0000-0000-4000-8000-000000000344',
+   '4e5e0000-0000-4000-8000-000000000208',
+   '4e5e0000-0000-4000-8000-00000000000b',
+   now() + interval '2 days', now() + interval '2 days 90 minutes', 4, 'open');
+
+
+-- ── PRES : ce que la base refuse d'un format mal décrit ──────
+--
+-- Les contraintes conditionnelles sont écrites en implication : elles ne
+-- doivent mordre QUE sur le format concerné. Chaque refus est donc doublé, plus
+-- loin, d'une acceptation sur un autre format — sans quoi une contrainte trop
+-- large passerait pour une contrainte juste.
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature sans durée',
+            'signature',
+            '[{"title":"Une","body":"Deux."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-1 une `signature` SANS DURÉE est refusée : la page immersive promet un '
+  'temps, et s''engager sur une inconnue n''est pas une promesse');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo sans durée', 'duo', null)$$,
+  '23514', null,
+  'PRES-2 un `duo` SANS DURÉE est refusé aussi — la contrainte vise les deux '
+  'formats nouveaux, pas seulement celui qui a des cartes');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature bavarde',
+            'signature', 30,
+            '[{"title":"Une","body":"."},{"title":"Deux","body":"."},
+              {"title":"Trois","body":"."},{"title":"Quatre","body":"."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-3 QUATRE cartes sont refusées : la page en montre trois, et la base ne '
+  'stocke pas ce que l''écran ne sait pas rendre');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature muette',
+            'signature', 30, null)$$,
+  '23514', null,
+  'PRES-4 une `signature` SANS ÉTAPES est refusée : trois cartes sont sa '
+  'définition, pas son ornement');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature vide',
+            'signature', 30, '[]'::jsonb)$$,
+  '23514', null,
+  'PRES-5 un tableau VIDE ne vaut pas des étapes — le validateur borne le haut, '
+  'la contrainte conditionnelle borne le bas');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature difforme',
+            'signature', 30, '[{"title":"Sans corps"}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6 une carte SANS `body` est refusée : la forme est validée carte par '
+  'carte, pas seulement au niveau du tableau');
+
+-- LE SYMÉTRIQUE, et il n'est pas redondant. Une clé absente donne `NULL` là où
+-- le validateur attend un texte, et une chaîne `or` de `false` et de `NULL`
+-- vaut `NULL` — que le `if` ne prend pas. C'est ce qui faisait ACCEPTER la
+-- carte de PRES-6 avant les `coalesce` du validateur. Les deux assertions
+-- prouvent que la parade tient des DEUX côtés, pas seulement de celui qui a
+-- rougi.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature anonyme',
+            'signature', 30, '[{"body":"Sans titre."}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6b une carte SANS `title` est refusée aussi — la clé absente ne '
+  'traverse pas le validateur en `NULL`');
+
+-- LA FORME EST FERMÉE, PAS SEULEMENT COMPLÈTE. Les deux assertions précédentes
+-- prouvent que les clés attendues sont EXIGÉES ; celle-ci prouve qu'aucune
+-- autre n'est TOLÉRÉE. Sans elle, une carte parfaitement valide augmentée d'un
+-- `cta` ou d'un `ordre` entrait en base sous une colonne réputée validée — que
+-- rien ne borne ensuite, ni en longueur, ni en nombre, ni en nature.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature enrichie',
+            'signature', 30,
+            '[{"title":"Une","body":"Deux.","cta":"https://exemple.fr"}]'::jsonb)$$,
+  '23514', null,
+  'PRES-6c une carte avec une clé PARASITE est refusée : la forme est fermée à '
+  '`{title, body}`, sinon la colonne devient un dépotoir que rien ne valide');
+
+-- ET LE REFUS EST BIEN UN 23514, PAS UNE EXCEPTION BRUTE. `jsonb_object_keys`
+-- LÈVE sur un jsonb qui n'est pas un objet, et SQL ne garantit pas l'ordre
+-- d'évaluation d'un `or` : fondu dans la chaîne de tests, il aurait pu partir
+-- avant le contrôle de type et transformer « étapes invalides » en erreur que
+-- plus aucun écran ne sait traduire. Un élément SCALAIRE est donc rejoué ici.
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, steps)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Signature scalaire',
+            'signature', 30, '["juste une chaîne"]'::jsonb)$$,
+  '23514', null,
+  'PRES-6d une étape SCALAIRE reste un refus de contrainte (23514) et non une '
+  'exception brute : le contrôle de type passe AVANT la lecture des clés');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo interminable',
+            'duo', 600)$$,
+  '23514', null,
+  'PRES-7 une durée de dix heures est refusée : au-delà de la journée de '
+  'travail, un créneau unique n''est plus le bon objet');
+
+select throws_ok(
+  $$insert into public.reservation_activities
+      (organization_id, name, kind, duration_minutes, promise)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Duo prolixe', 'duo', 60,
+            repeat('x', 201))$$,
+  '23514', null,
+  'PRES-8 une promesse de 201 caractères est refusée : c''est une phrase, pas '
+  'un paragraphe');
+
+-- ET LE FORMAT `standard` N'EST TOUCHÉ PAR AUCUNE DES DEUX CONDITIONNELLES.
+-- C'est l'assertion qui prouve que cette migration ne casse pas le socle : une
+-- activité d'hier, sans durée ni cartes, s'insère toujours.
+select lives_ok(
+  $$insert into public.reservation_activities (organization_id, name)
+    values ('4e5e0000-0000-4000-8000-00000000000a', 'Activité du socle')$$,
+  'PRES-9 une activité `standard` sans durée ni étapes reste parfaitement '
+  'valide — le défaut de `kind` préserve tout l''existant');
+
+
+-- ── DUO : la jauge compte des personnes ─────────────────────
+--
+-- S40 porte TROIS places. Un duo en prend deux ; il en reste une, et c'est
+-- exactement la situation que « atomique par personne » doit régler.
+
+create temporary table rv5_duo as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d1', 32),
+  null, false, 2) as j;
+
+select is((select j->>'state' from rv5_duo where n = 1), 'reserved',
+  'DUO-1 un hôte réserve l''Atelier pour deux');
+select is((select j->>'party_size' from rv5_duo where n = 1), '2',
+  'DUO-2 et la réservation porte DEUX personnes sur UNE ligne — un hôte, un '
+  'accompagnant, un seul code de comptoir');
+select is((select j->>'remaining' from rv5_duo where n = 1), '1',
+  'DUO-3 `remaining` est en PERSONNES : trois places moins deux en font une');
+
+-- LE SECOND DUO EST REFUSÉ, ALORS QU'IL RESTE UNE PLACE. C'est l'assertion
+-- centrale du bloc : la jauge teste la DEMANDE ENTIÈRE (`v_taken + v_held +
+-- v_seats > capacity`), pas seulement l'état. Avec un `>=` sur l'état, ce
+-- second duo serait passé et l'atelier aurait accueilli quatre personnes.
+insert into rv5_duo values (2, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d2', 32),
+  null, false, 2));
+select is((select j->>'state' from rv5_duo where n = 2), 'full',
+  'DUO-4 le second duo est refusé BIEN QU''IL RESTE UNE PLACE : un atelier à '
+  'deux ne se vend pas à moitié');
+
+-- ET LA PLACE ESSEULÉE NE SE VEND PAS NON PLUS À L'UNITÉ.
+insert into rv5_duo values (3, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('d3', 32),
+  null, false, 1));
+select is((select j->>'state' from rv5_duo where n = 3), 'invalid_party_size',
+  'DUO-5 une personne seule est refusée sur un Atelier Duo : « l''atelier se '
+  'réserve à deux » est sa définition, pas une préférence');
+select is((select j->>'expected' from rv5_duo where n = 3), '2',
+  'DUO-6 et le refus DIT la taille attendue — le format est public, le taire '
+  'ne cacherait rien et empêcherait l''écran d''expliquer');
+
+-- LE SYMÉTRIQUE : deux personnes sur un format qui n'est pas un duo.
+insert into rv5_duo values (4, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000343', repeat('d4', 32),
+  null, false, 2));
+select is((select j->>'state' from rv5_duo where n = 4), 'invalid_party_size',
+  'DUO-7 deux personnes sont refusées sur un Moment Signature : une seule '
+  'égalité `p_party_size = unité du format` porte les deux refus');
+select is((select j->>'expected' from rv5_duo where n = 4), '1',
+  'DUO-8 qui attend une personne le dit');
+
+-- HORS BORNES : c'est un bogue d'appelant, pas un choix de joueur.
+select throws_ok(
+  format(
+    $$select public.reserve_slot(
+        '4e5e0000-0000-4000-8000-00000000000a',
+        '4e5e0000-0000-4000-8000-000000000340', %L, null, false, 3)$$,
+    repeat('d5', 32)),
+  '22023', 'invalid party size',
+  'DUO-9 une taille de 3 lève, elle ne se négocie pas : la borne de la base '
+  'refuserait la ligne, mais avec une erreur que personne ne saurait lire');
+
+-- LA VÉRITÉ EN BASE, pas seulement dans la réponse.
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000340'
+       and status in ('confirmed', 'checked_in')$$,
+  array[2],
+  'DUO-10 le créneau porte DEUX personnes pour UNE ligne : c''est la somme, '
+  'pas le compte, qui fait foi');
+
+
+-- ── CONC : la dernière PAIRE ────────────────────────────────
+--
+-- S41 porte DEUX places, c'est-à-dire exactement UN duo. Deux hôtes le
+-- demandent. Même réserve que le bloc 1 : pgTAP est mono-transactionnel, donc
+-- ce qui est prouvé ici est que LA JAUGE trie — le verrou d'avis qui rend ce
+-- tri atomique entre sessions est vérifié dans `pg_locks` au bloc 1, sur la
+-- clé exacte, et `reserve_slot` le prend avant de compter.
+
+create temporary table rv5_conc as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000341', repeat('c1', 32),
+  null, false, 2) as j;
+insert into rv5_conc values (2, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000341', repeat('c2', 32),
+  null, false, 2));
+
+select is((select j->>'state' from rv5_conc where n = 1), 'reserved',
+  'CONC-1 le premier duo prend la dernière paire');
+select is((select j->>'state' from rv5_conc where n = 2), 'full',
+  'CONC-2 le second est refusé — UN SEUL passe, jamais deux moitiés');
+select results_eq(
+  $$select count(*)::integer from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000341'
+       and status = 'confirmed'$$,
+  array[1],
+  'CONC-3 et il n''existe QU''UNE ligne : le refus n''a rien écrit');
+
+
+-- ── SEUL : la place esseulée ne se propose à personne ────────
+--
+-- Retour sur S40 : deux places prises sur trois, il en reste UNE, et aucune
+-- réservation ne peut la prendre. Deux propriétés en découlent, et elles
+-- doivent être vraies ENSEMBLE — la file s'ouvre (sinon le joueur serait
+-- renvoyé vers une réservation qui le refusera), et aucune offre ne part
+-- (sinon on promettrait une place impossible à honorer).
+
+create temporary table rv5_seul as
+select 1 as n, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000340', repeat('e1', 32)) as j;
+
+select is((select j->>'state' from rv5_seul where n = 1), 'waiting',
+  'SEUL-1 la file S''OUVRE bien qu''il reste une place : « complet » se dit en '
+  'RÉSERVATIONS POSSIBLES, et plus aucune ne tient');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv5_seul where n = 1)),
+  'waiting',
+  'SEUL-2 et l''inscrit reste `waiting` : la place isolée ne lui est PAS '
+  'proposée — une offre qu''il ne pourrait pas convertir aurait gelé la place '
+  'jusqu''à son échéance');
+select results_eq(
+  $$select public.reservation_offer_next(
+      '4e5e0000-0000-4000-8000-00000000000a',
+      '4e5e0000-0000-4000-8000-000000000340')$$,
+  array[0],
+  'SEUL-3 appelée directement, l''avance de file crée ZÉRO offre : la division '
+  'entière `places libres / unité` vaut 0 sur une place isolée');
+
+
+-- ── CANC : annuler un duo rend DEUX places ──────────────────
+--
+-- S42, deux places, un duo dessus : le créneau est plein. Quelqu'un s'inscrit
+-- en file, l'hôte annule — et toute la chaîne doit repartir avec la BONNE
+-- ARITHMÉTIQUE. C'est l'angle le plus délicat du lot, parce que
+-- `claim_waitlist_offer` ne reteste PAS la capacité : elle fait confiance à
+-- l'unité commune.
+
+create temporary table rv5_canc as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000342', repeat('f1', 32),
+  null, false, 2) as j;
+insert into rv5_canc values (2, public.waitlist_join(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000342', repeat('f2', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 2), 'waiting',
+  'CANC-1 le créneau est plein (deux places, un duo) et la file s''ouvre');
+
+-- L'ANNULATION. Elle ne compte rien elle-même : elle écrit le statut puis
+-- appelle `reservation_offer_next` sous son verrou. La bonne arithmétique lui
+-- vient donc de la fonction qu'elle appelait déjà — c'est pourquoi la migration
+-- ne la redéfinit pas.
+insert into rv5_canc values (3, public.cancel_reservation(
+  (select (j->>'reservation_id')::uuid from rv5_canc where n = 1),
+  repeat('f1', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 3), 'cancelled',
+  'CANC-2 l''hôte annule');
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000342'
+       and status in ('confirmed', 'checked_in')$$,
+  array[0],
+  'CANC-3 DEUX places reviennent d''un coup — pas une');
+select is(
+  (select w.status from public.reservation_waitlist_entries w
+    where w.id = (select (j->>'entry_id')::uuid from rv5_canc where n = 2)),
+  'offered',
+  'CANC-4 et la paire libérée part au premier de la file, en UNE offre');
+
+-- LA CONVERSION CRÉE UNE RÉSERVATION DE DEUX PERSONNES. Sans cela, l'offre
+-- aurait tenu deux places et n'en aurait consommé qu'une : une place serait
+-- restée tenue par une offre convertie, que plus rien n'aurait libérée.
+insert into rv5_canc values (4, public.claim_waitlist_offer(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  (select (j->>'entry_id')::uuid from rv5_canc where n = 2),
+  repeat('f2', 32)));
+
+select is((select j->>'state' from rv5_canc where n = 4), 'claimed',
+  'CANC-5 le premier de la file convertit son offre');
+select is((select j->>'party_size' from rv5_canc where n = 4), '2',
+  'CANC-6 et sa réservation vaut DEUX personnes — exactement ce que l''offre '
+  'tenait ; c''est cette égalité qui autorise la conversion à ne pas retester '
+  'la capacité');
+select results_eq(
+  $$select coalesce(sum(party_size), 0)::integer
+      from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000342'
+       and status in ('confirmed', 'checked_in')$$,
+  array[2],
+  'CANC-7 le créneau est de nouveau plein, à DEUX personnes exactement : '
+  'aucune sur-réservation par le chemin qui ne vérifie rien');
+
+
+-- ── VOIS : l'organisation voisine ───────────────────────────
+--
+-- L'invariant du dépôt, rejoué sur le format neuf : viser le créneau de la
+-- voisine depuis l'organisation A rend `unavailable` et RIEN d'autre — pas
+-- `invalid_party_size`, qui aurait révélé le format d'un créneau qu'on n'a pas
+-- le droit de voir. L'ORDRE DES REFUS EST LA PROPRIÉTÉ : la règle de taille est
+-- évaluée APRÈS les six refus muets.
+
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000344', repeat('b1', 32),
+    null, false, 2))->>'state',
+  'unavailable',
+  'VOIS-1 le créneau de la VOISINE reste muet, même avec la bonne taille');
+select is(
+  (public.reserve_slot(
+    '4e5e0000-0000-4000-8000-00000000000a',
+    '4e5e0000-0000-4000-8000-000000000344', repeat('b2', 32),
+    null, false, 1))->>'state',
+  'unavailable',
+  'VOIS-2 et avec la MAUVAISE taille aussi : `invalid_party_size` ici aurait '
+  'dit qu''un Atelier Duo existe chez le voisin');
+select results_eq(
+  $$select count(*)::integer from public.reservations
+     where slot_id = '4e5e0000-0000-4000-8000-000000000344'$$,
+  array[0],
+  'VOIS-3 et rien n''a été écrit chez elle');
+
+
+-- ── REM : le `remaining` public dit la vérité en personnes ───
+
+create temporary table rv5_rem as
+select 1 as n, public.reserve_slot(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000343', repeat('a1', 32),
+  null, false, 1) as j;
+
+select is((select j->>'state' from rv5_rem where n = 1), 'reserved',
+  'REM-1 le Moment Signature se réserve à une personne, comme le socle');
+select is((select j->>'remaining' from rv5_rem where n = 1), '2',
+  'REM-2 et son `remaining` est celui d''hier : trois places moins une');
+
+-- L'ÉTAT PUBLIC DU JOUEUR PORTE SA TAILLE. Sans elle, l'hôte d'un Atelier Duo
+-- ne pourrait pas savoir si son accompagnant a une place.
+select is(
+  (select (item->>'party_size')
+     from pg_catalog.jsonb_array_elements(
+       (public.reservation_public_state(
+          '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32)))
+         -> 'reservations') as item
+    limit 1),
+  '2',
+  'REM-3 l''état public rend `party_size` : l''hôte relit « pour deux »');
+
+-- ET LE FORMAT N'ENTRE PAS DANS CET ÉTAT — il décrit ce qui est PROPOSÉ, que la
+-- page lit sur `reservation_activities`. Deux sources pour la même vérité
+-- auraient fini par diverger.
+select ok(
+  not ((public.reservation_public_state(
+          '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32)))
+        -> 'reservations' -> 0 ? 'kind'),
+  'REM-4 et il ne recopie PAS le format de l''activité');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 25. LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS
+--     (RES-5, migration 20261009120000)
+--
+-- `kind` est l'unité de comptage de toute la capacité, et il est RELU à chaque
+-- appel — jamais figé au moment où un engagement est pris. Bascule d'une
+-- activité en `duo` pendant qu'une offre de liste tient UNE place :
+-- `claim_waitlist_offer` ne repasse PAS par la jauge (sa propriété fondatrice),
+-- lit le format COURANT, écrit `party_size = 2`, et le créneau porte quatre
+-- personnes sur trois places. Sans erreur, sans journal, sans trace.
+--
+-- `reservation_activity_live_commitments` est ce qui permet au panneau de
+-- REFUSER en NOMMANT ce qu'il a compté. Ce bloc prouve les quatre frontières de
+-- ce comptage, parce que ce sont elles qui décident si la garde protège ou
+-- gêne :
+--   * CE QUI COMPTE — réservations `confirmed` ET `checked_in`, entrées
+--     `waiting` ET `offered` encore tenues.
+--   * CE QUI NE COMPTE PAS — annulée, expirée, et l'OFFRE ÉCHUE : elle ne se
+--     convertit plus (refus paresseux de `claim_waitlist_offer`), la compter
+--     bloquerait le commerçant sur une ligne morte.
+--   * OÙ ÇA COMPTE — sur les créneaux À VENIR seulement. Un créneau commencé ne
+--     produira plus rien ; l'y inclure aurait interdit de changer de format
+--     APRÈS sa saison, c'est-à-dire au moment exact où on le fait.
+--   * CHEZ QUI — org-scopée, `unknown` pour la voisine.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.reservation_activities
+  (id, organization_id, name, active, kind)
+values
+  -- 209 : l'activité SOUS ENGAGEMENTS. Standard, comme l'est toute activité
+  -- qu'on s'apprête à basculer en duo — c'est le scénario du défaut.
+  ('4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Bascule sous engagements', true,
+   'standard'),
+  -- 210 : la MÊME chose, mais tout est derrière elle. C'est l'état où le
+  -- commerçant a le droit de changer de format, et il doit être reconnu comme
+  -- tel — une garde qui ne s'ouvre jamais n'est pas une garde, c'est un mur.
+  ('4e5e0000-0000-4000-8000-000000000210',
+   '4e5e0000-0000-4000-8000-00000000000a', 'Bascule apres la saison', true,
+   'standard');
+
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values
+  -- S45 : À VENIR. Tout ce qui doit compter est ici.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() + interval '5 days', now() + interval '5 days 1 hour', 4, 'open'),
+  -- S46 : PASSÉ, et de la MÊME activité. C'est ce qui rend le filtre « à venir »
+  -- prouvé plutôt que supposé : deux activités séparées auraient pu passer avec
+  -- un filtre qui ne regarde que l'activité.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-000000000209',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() - interval '5 days', now() - interval '5 days' + interval '1 hour',
+   4, 'open'),
+  -- S47 : passé aussi, pour l'activité dont la saison est finie.
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-000000000210',
+   '4e5e0000-0000-4000-8000-00000000000a',
+   now() - interval '6 days', now() - interval '6 days' + interval '1 hour',
+   4, 'open');
+
+-- LES RÉSERVATIONS. Écrites en direct plutôt que par `reserve_slot` : on veut
+-- poser des ÉTATS (annulée, arrivée, sur créneau passé) que la RPC refuserait
+-- justement de créer, et c'est le comptage qu'on teste, pas la prise de place.
+insert into public.reservations
+  (slot_id, organization_id, player_key_hash, status, cancelled_at, checked_in_at)
+values
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a1', 32),
+   'confirmed', null, null),
+  -- ARRIVÉE : le check-in ne libère RIEN, elle compte comme vivante.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a2', 32),
+   'checked_in', null, now() - interval '1 minute'),
+  -- ANNULÉE : elle n'engage plus personne.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('a3', 32),
+   'cancelled', now() - interval '1 hour', null),
+  -- VIVANTE, mais sur le créneau PASSÉ : elle ne sera plus recomptée par rien.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('c1', 32),
+   'confirmed', null, null),
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('d1', 32),
+   'confirmed', null, null);
+
+insert into public.reservation_waitlist_entries
+  (slot_id, organization_id, player_key_hash, status,
+   offered_at, offer_expires_at, expired_at)
+values
+  -- ATTEND : c'est elle que la bascule trahirait. Elle recevra une offre à la
+  -- première place libre, et cette offre sera convertie à l'unité du format
+  -- COURANT — celui d'après la bascule.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b1', 32), 'waiting',
+   null, null, null),
+  -- OFFRE TENUE : le cas exact de la revue.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b2', 32), 'offered',
+   now() - interval '10 minutes', now() + interval '1 hour', null),
+  -- OFFRE ÉCHUE : `claim_waitlist_offer` lui rend `expired` par refus
+  -- PARESSEUX, balayage ou pas. Elle ne peut plus rien convertir, donc elle ne
+  -- doit pas bloquer le commerçant.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b3', 32), 'offered',
+   now() - interval '3 hours', now() - interval '1 hour', null),
+  -- TERMINÉE.
+  ('4e5e0000-0000-4000-8000-000000000345',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('b4', 32), 'expired',
+   now() - interval '4 hours', now() - interval '3 hours',
+   now() - interval '3 hours'),
+  -- VIVANTE, sur le créneau PASSÉ.
+  ('4e5e0000-0000-4000-8000-000000000346',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('c2', 32), 'waiting',
+   null, null, null),
+  ('4e5e0000-0000-4000-8000-000000000347',
+   '4e5e0000-0000-4000-8000-00000000000a', repeat('d2', 32), 'waiting',
+   null, null, null);
+
+create temporary table rv5_eng as
+select 1 as n, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000209') as j;
+
+select is((select j->>'state' from rv5_eng where n = 1), 'ok',
+  'ENG-1 le comptage répond pour une activité de son organisation');
+select is((select j->>'kind' from rv5_eng where n = 1), 'standard',
+  'ENG-2 et rend le format COURANT — sans lui, l''appelant aurait dû relire '
+  'l''activité pour savoir si le format change vraiment');
+
+-- DEUX réservations sur cinq lignes : la `confirmed` et la `checked_in` du
+-- créneau à venir. L'annulée, la passée et celle de l'autre activité sortent.
+select is((select j->>'reservations' from rv5_eng where n = 1), '2',
+  'ENG-3 deux réservations vivantes : `checked_in` compte (le check-in ne '
+  'libère rien), `cancelled` non, et le créneau PASSÉ non plus');
+
+-- DEUX attentes sur six lignes : la `waiting` et l'offre encore TENUE.
+select is((select j->>'waitlist' from rv5_eng where n = 1), '2',
+  'ENG-4 deux attentes convertibles : l''offre ÉCHUE ne compte pas — elle ne '
+  'se convertit plus, la compter bloquerait le commerçant sur une ligne morte');
+
+-- L'ÉTAT OÙ LA BASCULE EST PERMISE. Une garde qui ne s'ouvre jamais est un mur :
+-- l'activité 210 porte une réservation vivante et une attente vivante, mais
+-- toutes deux sur un créneau passé — rien ne peut plus s'y produire.
+insert into rv5_eng values (2, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000210'));
+select is((select j->>'reservations' from rv5_eng where n = 2), '0',
+  'ENG-5 saison finie : plus aucune réservation ne compte…');
+select is((select j->>'waitlist' from rv5_eng where n = 2), '0',
+  'ENG-6 …ni aucune attente, et le format redevient donc réglable');
+
+-- L'INVARIANT DU DÉPÔT. Viser l'activité de A depuis B rend `unknown` — pas un
+-- compte de zéro, qui aurait appris que l'activité existe et n'engage personne.
+insert into rv5_eng values (3, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000b',
+  '4e5e0000-0000-4000-8000-000000000209'));
+select is((select j->>'state' from rv5_eng where n = 3), 'unknown',
+  'ENG-7 la voisine n''obtient RIEN de l''activité de A — ni compte, ni format');
+select ok(not ((select j from rv5_eng where n = 3) ? 'reservations'),
+  'ENG-8 et le refus ne laisse échapper aucun chiffre');
+
+insert into rv5_eng values (4, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-0000000009ff'));
+select is((select j->>'state' from rv5_eng where n = 4), 'unknown',
+  'ENG-9 une activité inconnue rend le MÊME état qu''une activité étrangère : '
+  'les distinguer donnerait un oracle d''existence');
+
+
+-- ── ACL : les colonnes neuves suivent le régime du socle ────
+
+select ok(has_column_privilege('authenticated',
+  'public.reservations', 'party_size', 'SELECT'),
+  'ACL-24 l''éditeur LIT `party_size` — sans quoi son agenda afficherait '
+  '« 3 réservations » sur un atelier plein à 6 personnes');
+select ok(not has_column_privilege('authenticated',
+  'public.reservations', 'party_size', 'UPDATE'),
+  'ACL-25 mais ne l''écrit pas : la taille se décide sous le verrou');
+select ok(not has_column_privilege('anon',
+  'public.reservation_activities', 'kind', 'SELECT'),
+  'ACL-26 `anon` ne lit RIEN des formats — le parcours joueur passe par une RPC');
+select ok(has_column_privilege('authenticated',
+  'public.reservation_activities', 'steps', 'UPDATE'),
+  'ACL-27 l''éditeur règle les cartes de son Moment Signature');
+select results_eq(
+  $$select count(*) from pg_catalog.pg_proc p
+      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'reserve_slot'$$,
+  array[1::bigint],
+  'ACL-28 le catalogue ne porte TOUJOURS qu''UNE signature de reserve_slot : '
+  'l''ancienne à cinq arguments est partie, sans quoi un appel sans taille '
+  'aurait réservé un Atelier Duo pour une personne');
+
+-- LE COMPTAGE D'ENGAGEMENTS SUIT LE RÉGIME DES CINQ AUTRES RPC DU MODULE : il
+-- lit `reservations`, dont l'éditeur n'a AUCUNE policy de lecture, et il
+-- contourne la RLS pour cela. Le rendre à `authenticated` aurait donné au
+-- panneau un chemin direct vers des comptages qu'il doit demander au serveur.
+select ok(has_function_privilege('service_role',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-29 le serveur compte les engagements avant d''autoriser une bascule');
+select ok(not has_function_privilege('authenticated',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-30 le panneau commerçant ne compte pas lui-même : il passe par l''action');
+select ok(not has_function_privilege('anon',
+  'public.reservation_activity_live_commitments(uuid,uuid)', 'EXECUTE'),
+  'ACL-31 et `anon` n''a rien à savoir de ce qui est engagé chez un commerce');
+
+-- L'EXCEPTION QUI DOIT SURVIVRE À LA PROCHAINE PASSE DE DURCISSEMENT.
+--
+-- Tout le reste de ce module retire l'EXECUTE à `authenticated` ; celle-ci le
+-- REÇOIT (20261008120000), et le geste réflexe d'un durcissement — « aucune
+-- fonction de `public` n'est exécutable par `authenticated` » — la casserait
+-- sans que rien ne rougisse avant la production. Une fonction référencée dans
+-- un `check` de table est évaluée avec les privilèges du rôle qui ÉCRIT la
+-- ligne : sans ce grant, tout insert/update de `reservation_activities` par
+-- PostgREST échoue en « permission denied », ce qu'un E2E a mis quatre heures
+-- à trouver. Cette assertion est là pour que la prochaine fois soit gratuite.
+select ok(has_function_privilege('authenticated',
+  'public.is_valid_experience_steps(jsonb)', 'EXECUTE'),
+  'ACL-32 le rôle qui écrit une activité peut évaluer le `check` de ses '
+  'étapes — le lui retirer rendrait tout Moment Signature incréable');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 26. LE PLANCHER — LE PATCH DIRECT NE BASCULE PAS NON PLUS
+--     (RES-5, trigger `reservation_activities_freeze_kind`)
+--
+-- Le refus de `updateReserverActivity` protège LE PANNEAU. Il ne protège pas la
+-- TABLE : `reservation_activities` porte une policy `for all` pour les éditeurs
+-- et un `grant update (kind, …)` (20261007120000). Un PATCH PostgREST envoyé
+-- avec le jeton du commerçant bascule donc le format sans jamais voir le
+-- serveur Next — ce n'est pas une acrobatie, c'est l'API que Supabase expose et
+-- dont ce module se sert partout ailleurs.
+--
+-- Ce bloc joue ce PATCH pour de vrai : rôle `authenticated`, `sub` du
+-- propriétaire de A, `update` direct sous la policy éditeur.
+--
+-- LES ASSERTIONS FORMENT UN ENSEMBLE, et c'est l'ensemble qui prouve :
+--   * VERR-1 refuse SOUS engagements.
+--   * VERR-2 accepte SANS, sur une instruction de FORME IDENTIQUE. Sans elle,
+--     VERR-1 serait vert même si le refus venait d'ailleurs — la contrainte
+--     `reservation_activities_experience_duration` refuse elle aussi en 23514,
+--     et un `duo` sans durée l'aurait déclenchée.
+--   * VERR-3 relit la ligne, parce qu'un `lives_ok` est vert quand la RLS a
+--     écarté zéro ligne en silence — c'est-à-dire quand le trigger n'a même pas
+--     été atteint.
+--   * VERR-4 accepte la réécriture de `kind` À L'IDENTIQUE, engagements ou pas.
+--     `before update of kind` se déclenche dès que la colonne FIGURE dans
+--     l'`update`, et le panneau la poste à chaque enregistrement : sans le
+--     court-circuit, le commerçant ne pourrait plus renommer une activité tant
+--     qu'une seule personne attend. La garde serait un mur.
+-- ════════════════════════════════════════════════════════════
+
+select set_config('request.jwt.claims', '', true);
+set local role authenticated;
+set local "request.jwt.claim.sub" = '4e5e0000-0000-4000-8000-000000000101';
+
+-- 209 : deux réservations et deux attentes vivantes sur un créneau à venir.
+select throws_ok(
+  $$update public.reservation_activities
+       set kind = 'duo', duration_minutes = 60
+     where id = '4e5e0000-0000-4000-8000-000000000209'$$,
+  '23514', null,
+  'VERR-1 le PATCH direct ne bascule pas le format sous des engagements '
+  'vivants : le trigger recompte DANS la transaction de l''écriture');
+
+-- 210 : la même instruction, sur l'activité dont la saison est derrière elle.
+select lives_ok(
+  $$update public.reservation_activities
+       set kind = 'duo', duration_minutes = 60
+     where id = '4e5e0000-0000-4000-8000-000000000210'$$,
+  'VERR-2 …et il passe dès qu''il n''y a plus rien à trahir — mêmes colonnes, '
+  'mêmes valeurs : ce qui a refusé plus haut est bien le comptage');
+
+-- ET LA LIGNE A VRAIMENT CHANGÉ. `lives_ok` est vert quand rien ne lève — y
+-- compris quand la RLS a écarté zéro ligne en silence. Sans cette relecture,
+-- une erreur d'identifiant rendrait VERR-2 vert sans que le trigger ait seulement
+-- été atteint : le test vert qui ne teste rien.
+select is(
+  (select kind from public.reservation_activities
+    where id = '4e5e0000-0000-4000-8000-000000000210'),
+  'duo',
+  'VERR-3 …et l''écriture a bien porté : l''éditeur a atteint la ligne, le '
+  'trigger l''a laissée passer');
+
+-- L'écriture de réglages ORDINAIRE, celle que fait le panneau à chaque « Enregistrer ».
+select lives_ok(
+  $$update public.reservation_activities
+       set name = 'Bascule sous engagements (renommee)', kind = 'standard'
+     where id = '4e5e0000-0000-4000-8000-000000000209'$$,
+  'VERR-4 réécrire `kind` à l''identique passe, engagements ou pas : sinon '
+  'renommer une activité qui tourne deviendrait impossible');
+
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- LE TRIGGER ET L'ACTION LISENT LE MÊME COMPTAGE, et le prouver ici évite qu'on
+-- les laisse diverger : la RPC rend encore 2 et 2 sur 209, c'est-à-dire
+-- exactement ce que VERR-1 vient de faire refuser.
+insert into rv5_eng values (5, public.reservation_activity_live_commitments(
+  '4e5e0000-0000-4000-8000-00000000000a',
+  '4e5e0000-0000-4000-8000-000000000209'));
+select is((select j->>'reservations' from rv5_eng where n = 5), '2',
+  'VERR-5 le refus muet du trigger et le refus nommé de l''action comptent la '
+  'MÊME chose : une seule expression de « vivant », deux lecteurs');
 
 select * from finish();
 rollback;

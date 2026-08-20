@@ -15,6 +15,7 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { ArriveesCheckin } from "@/components/reserver/arrivees-checkin";
 import { FilesAccueilPanneau } from "@/components/reserver/files-accueil-panneau";
 import { NouvelleActiviteForm } from "@/components/reserver/nouvelle-activite-form";
+import { PastilleFormat } from "@/components/reserver/pastilles";
 
 export const metadata: Metadata = { title: "Réservations" };
 
@@ -106,8 +107,23 @@ export default async function ReservationsPage() {
             // en décide, comme sur la page publique. Un compte calculé
             // autrement ici ferait dire au tableau de bord « 3 créneaux » là où
             // le client n'en voit qu'un.
+            //
+            // LE FORMAT ENTRE DANS LE VERDICT (RES-5), et sans lui la phrase
+            // ci-dessus cessait d'être vraie : sur un Atelier Duo à qui il reste
+            // UNE place, `etatUiCreneau` rend « complet » — une place isolée
+            // n'est prenable par personne — mais seulement si on lui DIT que
+            // c'est un duo. Sans `kind`, cet écran comptait le créneau comme
+            // ouvert quand la page publique affichait « complet » dessus : le
+            // commerçant lisait « 1 créneau ouvert à venir » et son client ne
+            // pouvait pas réserver.
+            //
+            // Le format vit sur l'ACTIVITÉ, pas sur le créneau
+            // (`ReserverSlotDashboardView` ne le porte pas, et c'est voulu — un
+            // même Atelier Duo ne peut pas changer d'unité selon l'heure). On le
+            // joint donc ici, à la lecture.
             const ouverts = activite.slots.filter(
-              (creneau) => etatUiCreneau(creneau) === "ouvert",
+              (creneau) =>
+                etatUiCreneau({ ...creneau, kind: activite.kind }) === "ouvert",
             ).length;
             return (
               <li key={activite.id}>
@@ -129,6 +145,13 @@ export default async function ReservationsPage() {
                         </p>
                       </div>
                     </div>
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    {/* Le format (RES-5) AVANT l'interrupteur : « Atelier Duo »
+                        dit ce que c'est, « Ouverte » dit seulement si ça tourne.
+                        Rien ne s'affiche sur une activité standard — c'est le
+                        défaut, et une colonne où chaque ligne porte le même mot
+                        ne montre plus les deux qui en portent un autre. */}
+                    <PastilleFormat kind={activite.kind} />
                     <span
                       className={`shrink-0 rounded-full border-2 border-k-ink px-3 py-1 text-xs font-black ${
                         activite.active
@@ -138,6 +161,7 @@ export default async function ReservationsPage() {
                     >
                       {activite.active ? "Ouverte" : "Coupée"}
                     </span>
+                    </div>
                   </div>
                 </Link>
               </li>

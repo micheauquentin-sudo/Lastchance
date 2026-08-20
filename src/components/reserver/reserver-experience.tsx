@@ -8,16 +8,26 @@ import {
 } from "@/actions/reserver";
 import { DefiAntiRobot } from "@/components/reserver/defi-antirobot";
 import {
+  BandeauDuo,
+  EtapesExperience,
+  ExergueExperience,
+  PreparationExperience,
+} from "@/components/reserver/experience-immersive";
+import {
   MaFileAttente,
   RejoindreFileAttente,
 } from "@/components/reserver/file-attente";
+import { uniteJauge } from "@/components/reserver/formats-experience";
 import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 import {
   etatUiCreneau,
   formatCreneau,
+  libelleTaillePersonnes,
   LIBELLE_FENETRE_CHECKIN,
+  placesParReservation,
   RESERVER_EMAIL_MAX,
   type PublicWaitlistItem,
+  type ReserverActivityKind,
   type ReserverAttenteView,
 } from "@/lib/reserver";
 import type {
@@ -65,6 +75,11 @@ export function ReserverExperience({
   maFile,
   timeZone,
   attente = null,
+  kind = "standard",
+  promise = null,
+  durationMinutes = null,
+  steps = [],
+  preparation = null,
 }: {
   /**
    * Chez QUI le joueur croit réserver. `reserve_slot` l'exige : c'est la borne
@@ -98,6 +113,25 @@ export function ReserverExperience({
    * d'attente, donc rien à occuper.
    */
   attente?: ReserverAttenteView | null;
+  /**
+   * LES EXPÉRIENCES SIGNATURE (RES-5), et pourquoi elles vivent DANS ce
+   * composant plutôt que dans une page à part.
+   *
+   * Ce qui change entre les trois formats, c'est ce qu'on RACONTE avant les
+   * créneaux — pas la mécanique. Les créneaux, le code d'arrivée, la liste
+   * prioritaire et le Mode Attente sont rigoureusement les mêmes, et un second
+   * composant « page signature » les aurait dupliqués, donc fait diverger dès la
+   * première correction.
+   *
+   * `standard` est le défaut de tous ces props : l'écran rendu est alors, au
+   * pixel près, celui d'avant ce lot — chaque bloc immersif rend `null` sans sa
+   * matière.
+   */
+  kind?: ReserverActivityKind;
+  promise?: string | null;
+  durationMinutes?: number | null;
+  steps?: readonly { title: string; body: string }[];
+  preparation?: string | null;
 }) {
   // Les créneaux réservés d'abord, en tête de page : c'est ce que le client
   // rouvre sa page pour retrouver — son code — et non pour réserver une
@@ -138,12 +172,34 @@ export function ReserverExperience({
         <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">
           {activityName}
         </h1>
+        {/* La promesse passe AVANT la description : elle dit pourquoi on vient,
+            la description dit comment ça se passe.
+
+            LE BLOC EST GATÉ SUR LE FORMAT, pas seulement sur la présence de sa
+            matière — et les deux ne sont PAS équivalents depuis que
+            `updateReserverActivity` préserve délibérément les quatre colonnes de
+            présentation quand on repasse une activité en « Standard » (pour que
+            le commerçant retrouve ses cartes en revenant). Une activité standard
+            garde donc sa promesse et sa durée EN BASE, et sans ce test elle les
+            affichait encore : l'écran contredisait le format que le commerçant
+            venait de choisir. La préservation en base reste — c'est l'affichage
+            qui suit le format. */}
+        {kind !== "standard" ? (
+          <ExergueExperience
+            promise={promise}
+            durationMinutes={durationMinutes}
+          />
+        ) : null}
         {description ? (
           <p className="mt-3 whitespace-pre-line text-sm font-medium leading-relaxed text-k-ink">
             {description}
           </p>
         ) : null}
       </header>
+
+      {/* Le bandeau du duo est EN HAUT, avant tout le reste : « à deux » change
+          la décision de venir, pas seulement le libellé du bouton. */}
+      {kind === "duo" ? <BandeauDuo /> : null}
 
       {reservees.length > 0 ? (
         <section aria-labelledby="mes-reservations-titre" className="mb-6">
@@ -207,6 +263,19 @@ export function ReserverExperience({
         </section>
       ) : null}
 
+      {/* LES ÉTAPES ET LA PRÉPARATION SONT AVANT LES CRÉNEAUX, ET APRÈS LE CODE.
+          Avant les créneaux, parce qu'elles servent à décider de réserver ;
+          après « ma réservation », parce que ce que le client rouvre sa page
+          pour retrouver reste son code. Les deux sont gatées sur le FORMAT —
+          même raison que l'exergue plus haut : une activité repassée en
+          « Standard » garde sa préparation en base, et l'écran ne doit pas
+          continuer à la rendre. Les composants rendent aussi `null` sans
+          matière ; ce test-ci répond à l'autre question. */}
+      {kind === "signature" ? <EtapesExperience steps={steps} /> : null}
+      {kind !== "standard" ? (
+        <PreparationExperience kind={kind} preparation={preparation} />
+      ) : null}
+
       <section aria-labelledby="creneaux-titre" className="mb-6">
         <h2
           id="creneaux-titre"
@@ -234,6 +303,7 @@ export function ReserverExperience({
                   organizationId={organizationId}
                   creneau={creneau}
                   timeZone={timeZone}
+                  kind={kind}
                 />
               </li>
             ))}
@@ -252,11 +322,28 @@ function CreneauReservable({
   organizationId,
   creneau,
   timeZone,
+  kind,
 }: {
   organizationId: string;
   creneau: ReserverSlotPublicView;
   timeZone: string;
+  kind: ReserverActivityKind;
 }) {
+  const duo = kind === "duo";
+  /**
+   * L'UNITÉ DE LA JAUGE, ET LE VERDICT D'ÉCRAN QUI EN DÉCOULE.
+   *
+   * Un Atelier Duo dont il reste UNE place n'est pas « 1 place restante » : il
+   * est COMPLET, parce que `reserve_slot` y refuserait `full` — la réservation
+   * en demande deux. `pairesRestantes` est tranché côté serveur, par la même
+   * arithmétique que la RPC ; on le passe à `etatUiCreneau` à la place de
+   * `remaining` pour que l'écran et la base disent le même mot.
+   *
+   * `pairesRestantes` est `null` HORS d'un duo — là, une place restante EST une
+   * réservation possible, et le chargeur ne rend pas deux fois le même nombre.
+   * Le `??` est donc la lecture littérale de ce contrat, pas un garde-fou.
+   */
+  const unites = creneau.pairesRestantes ?? creneau.remaining;
   const [consent, setConsent] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [challengeDemande, setChallengeDemande] = useState(false);
@@ -294,6 +381,11 @@ function CreneauReservable({
         // le réseau et les journaux pour rien.
         email: consenti && emailSaisi ? emailSaisi : undefined,
         consent: consenti,
+        // L'UNITÉ DU FORMAT, jamais un chiffre saisi : `reserve_slot` EXIGE
+        // qu'elle égale la sienne et répond `invalid_party_size` sinon. La page
+        // ne propose donc aucun sélecteur de nombre de personnes — il n'y a rien
+        // à choisir, et un champ modifiable n'aurait produit que des refus.
+        partySize: placesParReservation(kind),
         turnstileToken: captchaToken ?? undefined,
       });
       if (!resultat.ok && resultat.challengeRequired) {
@@ -301,7 +393,7 @@ function CreneauReservable({
       }
       return resultat;
     },
-    [organizationId, creneau.id, captchaToken],
+    [organizationId, creneau.id, captchaToken, kind],
   );
 
   // `reloadOnSuccess` : le rafraîchissement est le SEUL moyen pour cette page de
@@ -317,7 +409,7 @@ function CreneauReservable({
   const etat = etatUiCreneau({
     status: creneau.status,
     startsAt: creneau.startsAt,
-    remaining: creneau.remaining,
+    remaining: unites,
   });
   const champConsentId = `consent-${creneau.id}`;
   const champEmailId = `email-${creneau.id}`;
@@ -330,11 +422,11 @@ function CreneauReservable({
 
       {etat === "ouvert" ? (
         <p className="mt-1 text-sm font-bold text-k-body">
-          <span className="font-black tabular-nums text-k-ink">
-            {creneau.remaining}
-          </span>{" "}
-          place{creneau.remaining > 1 ? "s" : ""} restante
-          {creneau.remaining > 1 ? "s" : ""}
+          {/* « 3 duos possibles » et non « 6 places restantes » : le chiffre brut
+              serait exact et trompeur — il laisserait croire qu'on peut venir
+              seul. Le chiffre garde son emphase, comme avant ce lot. */}
+          <span className="font-black tabular-nums text-k-ink">{unites}</span>{" "}
+          {uniteJauge(kind, unites)}
         </p>
       ) : (
         <p className="mt-3 rounded-xl border-2 border-k-ink bg-zinc-100 px-3 py-2 text-center text-sm font-black text-k-ink">
@@ -417,7 +509,11 @@ function CreneauReservable({
             disabled={pending}
             className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
           >
-            {pending ? "Réservation…" : "Réserver ma place"}
+            {pending
+              ? "Réservation…"
+              : duo
+                ? "Réserver pour deux"
+                : "Réserver ma place"}
           </button>
 
           {/* Régions vivantes montées EN PERMANENCE : un `aria-live` créé en
@@ -535,6 +631,16 @@ export function MaReservation({
           <p className="mt-1 break-all font-mono text-3xl font-black tracking-wider text-k-ink">
             {reservation.code}
           </p>
+          {/* La mention « pour 2 personnes » (RES-5) : sur un Atelier Duo, le
+              code seul ne dit pas qu'il tient deux places — le client qui
+              relit sa confirmation doit le savoir avant de se présenter seul
+              au comptoir. `libelleTaillePersonnes` rend `null` sous 2, donc
+              une réservation standard ne voit rien de nouveau. */}
+          {libelleTaillePersonnes(reservation.partySize) ? (
+            <p className="mt-1 text-sm font-black text-k-ink">
+              Réservation {libelleTaillePersonnes(reservation.partySize)}
+            </p>
+          ) : null}
           <p className="mt-3 text-sm font-medium text-k-body">
             Donnez-le au comptoir en arrivant. {LIBELLE_FENETRE_CHECKIN}
           </p>

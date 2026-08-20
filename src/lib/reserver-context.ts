@@ -17,13 +17,17 @@ import {
 import {
   asQueueStatus,
   asReservationStatus,
+  asReserverActivityKind,
   asSlotStatus,
   asWaitlistStatus,
   etatUiInvitation,
   etatUiPlaceFile,
+  mapExperienceSteps,
   mapQueuePublicState,
   mapReservationPublicState,
   mapWaitSessionOpen,
+  pairesRestantes,
+  placesParReservation,
   QUEUE_MAX_LIVE_ENTRIES_DEFAUT,
   QUEUE_MAX_LIVE_ENTRIES_MAX,
   RESERVER_FUSEAU_DEFAUT,
@@ -33,7 +37,9 @@ import {
   type EtatUiPlaceFile,
   type PublicWaitlistItem,
   type QueuePublicStateResult,
+  type ReserverActivityKind,
   type ReserverAttenteView,
+  type ReserverExperienceStep,
   type ReservationQueueEntryStatus,
   type ReservationQueueStatus,
   type ReservationStatus,
@@ -82,8 +88,23 @@ const RESERVATIONS_COMPTAGE_MAX = 10_000;
 const ORG_COLUMNS =
   "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_vitrine, comp_access, comp_access_until, timezone";
 
+/**
+ * Les CINQ COLONNES D'EXPÉRIENCE (RES-5) sont dans la liste COMMUNE, à la
+ * différence des deux colonnes d'animation d'attente — et c'est la même règle
+ * qui range les unes ici et les autres à part : on lit ce que la page rend.
+ *
+ * `kind`, `promise`, `duration_minutes`, `steps` et `preparation` SONT la page
+ * immersive : le visiteur doit lire la promesse, la durée annoncée, les trois
+ * cartes et ce qu'il faut savoir avant de venir. `wait_quiz_id`, lui, décrit ce
+ * qui sera proposé à QUELQU'UN D'AUTRE pendant qu'il attend — rien à faire dans
+ * le HTML d'un visiteur qui n'attend rien.
+ *
+ * `authenticated` porte un `grant select` DE TABLE sur `reservation_activities`
+ * (socle, 20261002120000:418) : les colonnes neuves y entrent sans grant de
+ * plus, contrairement à `reservations` qui est en liste blanche de colonnes.
+ */
 const ACTIVITY_COLUMNS =
-  "id, organization_id, name, description, active, created_at";
+  "id, organization_id, name, description, active, created_at, kind, promise, duration_minutes, steps, preparation";
 
 /**
  * LES DEUX COLONNES D'ANIMATION D'ATTENTE (RES-4), ajoutées aux précédentes
@@ -99,9 +120,16 @@ const ACTIVITY_DASHBOARD_COLUMNS = `${ACTIVITY_COLUMNS}, wait_quiz_id, wait_paus
 const SLOT_COLUMNS =
   "id, organization_id, activity_id, starts_at, ends_at, capacity, status, waitlist_offer_minutes";
 
-/** `email` EST ABSENT, et c'est le point : il n'existe que pour l'envoi serveur. */
+/**
+ * `email` EST ABSENT, et c'est le point : il n'existe que pour l'envoi serveur.
+ *
+ * `party_size` Y EST (RES-5), et il a fallu un grant pour cela
+ * (20261007120000:412) : sans lui, l'agenda du commerçant afficherait
+ * « 3 réservations » sur un atelier plein à 6 personnes, et la jauge ne pourrait
+ * pas sommer ce qu'elle ne peut pas lire.
+ */
 const RESERVATION_COLUMNS =
-  "id, slot_id, organization_id, code, status, created_at, cancelled_at, checked_in_at, checked_in_by";
+  "id, slot_id, organization_id, code, status, created_at, cancelled_at, checked_in_at, checked_in_by, party_size";
 
 /**
  * Entrées de liste prioritaire du panneau commerçant.
@@ -176,6 +204,12 @@ interface ActivityRow {
   description: string | null;
   active: boolean;
   created_at: string;
+  /** Les cinq colonnes d'expérience (RES-5) — lues sur les deux chemins. */
+  kind: string;
+  promise: string | null;
+  duration_minutes: number | null;
+  steps: unknown;
+  preparation: string | null;
   /** Présentes seulement sur la lecture `ACTIVITY_DASHBOARD_COLUMNS`. */
   wait_quiz_id?: string | null;
   wait_pause_campaign_id?: string | null;
@@ -238,6 +272,7 @@ interface ReservationRow {
   cancelled_at: string | null;
   checked_in_at: string | null;
   checked_in_by: string | null;
+  party_size: number;
 }
 
 interface QueueRow {
@@ -422,6 +457,17 @@ export interface ReserverActivityView {
    */
   waitQuizId: string | null;
   waitPauseCampaignId: string | null;
+  /**
+   * LE FORMAT (RES-5) et sa présentation. Ceux-là descendent AUSSI sur le chemin
+   * public — ils SONT la page immersive, et le visiteur les lit avant de
+   * s'engager. `kind` est ce qui décide de l'unité de réservation : sur `duo`,
+   * la surface publique demande deux places.
+   */
+  kind: ReserverActivityKind;
+  promise: string | null;
+  durationMinutes: number | null;
+  steps: ReserverExperienceStep[];
+  preparation: string | null;
 }
 
 export interface ReserverSlotPublicView {
@@ -431,12 +477,26 @@ export interface ReserverSlotPublicView {
   capacity: number;
   status: ReservationSlotStatus;
   /**
-   * Places restantes — comptage à DEUX TERMES, celui de `reserve_slot` :
-   * réservations vivantes (confirmées ET arrivées) PLUS offres de liste
-   * prioritaire encore tenues. Oublier le second ferait afficher une place
-   * libre que la RPC refuse, parce qu'elle est promise à quelqu'un.
+   * Places restantes, EN PERSONNES — comptage à DEUX TERMES, celui de
+   * `reserve_slot` : réservations vivantes (confirmées ET arrivées) PLUS offres
+   * de liste prioritaire encore tenues. Oublier le second ferait afficher une
+   * place libre que la RPC refuse, parce qu'elle est promise à quelqu'un.
+   *
+   * ── DES PERSONNES, PAS DES LIGNES (RES-5) ──
+   *
+   * Le premier terme SOMME `party_size` depuis L8. Compter des lignes
+   * sous-estimait l'occupation d'un Atelier Duo de moitié : trois lignes y
+   * valent six personnes, et la jauge affichait « 3 places prises » sur un
+   * atelier plein.
    */
   remaining: number;
+  /**
+   * Combien de RÉSERVATIONS ENTIÈRES tiennent encore — `null` hors d'un Atelier
+   * Duo, où une place restante EST une réservation possible et où rendre le même
+   * nombre deux fois n'apprendrait rien. Sur un duo, c'est `remaining / 2` en
+   * division entière : une place isolée n'est prenable par personne.
+   */
+  pairesRestantes: number | null;
   /** Fenêtre de tenue d'une place proposée ; `null` = défaut du produit. */
   waitlistOfferMinutes: number | null;
 }
@@ -449,6 +509,8 @@ export interface ReserverMaReservationView {
   createdAt: string;
   cancelledAt: string | null;
   checkedInAt: string | null;
+  /** Personnes que CETTE réservation occupe — 2 sur un Atelier Duo (RES-5). */
+  partySize: number;
 }
 
 export type ReserverPublicContext =
@@ -493,6 +555,58 @@ export type ReserverPublicContext =
       /** Ce navigateur porte-t-il déjà une identité joueur ? */
       aUneIdentite: boolean;
     };
+
+/**
+ * LA PLACE N'EST PLUS LA LIGNE (RES-5) — la jauge SOMME `party_size`.
+ *
+ * Les deux chemins publics comptaient des lignes, ce qui était exact tant qu'une
+ * réservation valait une personne. Sur un Atelier Duo, trois lignes valent SIX
+ * personnes : compter des lignes affichait « 3 places prises » sur un atelier
+ * plein, donc une jauge qui sous-estime l'occupation de MOITIÉ et un bouton
+ * « réserver » que `reserve_slot` refuse.
+ *
+ * Écrit UNE FOIS et partagé par les deux chemins, délibérément : deux boucles
+ * jumelles avaient déjà produit deux comptages qu'il fallait tenir d'accord.
+ *
+ * LE REPLI EST 1, JAMAIS 0. Une réservation occupe au moins une place ; une
+ * colonne illisible ne doit pas faire disparaître quelqu'un d'un compte de
+ * capacité — l'erreur sûre est de compter une place de trop, pas une de moins.
+ */
+function compterPersonnesParCreneau(
+  lignes: ReadonlyArray<{ slot_id: string; party_size?: number | null }>,
+): Map<string, number> {
+  const parCreneau = new Map<string, number>();
+  for (const ligne of lignes) {
+    const places =
+      typeof ligne.party_size === "number" && Number.isFinite(ligne.party_size)
+        ? Math.max(1, Math.trunc(ligne.party_size))
+        : 1;
+    parCreneau.set(
+      ligne.slot_id,
+      (parCreneau.get(ligne.slot_id) ?? 0) + places,
+    );
+  }
+  return parCreneau;
+}
+
+/**
+ * Les PLACES qu'une offre de liste prioritaire tient — l'unité du format, pas
+ * une ligne (`count(*) * v_seats` dans les cinq RPC). Une offre sur un Atelier
+ * Duo tient DEUX places, puisque sa conversion en prendra deux.
+ */
+function compterPlacesTenues(
+  lignes: ReadonlyArray<{ slot_id: string }>,
+  placesParOffre: number,
+): Map<string, number> {
+  const parCreneau = new Map<string, number>();
+  for (const ligne of lignes) {
+    parCreneau.set(
+      ligne.slot_id,
+      (parCreneau.get(ligne.slot_id) ?? 0) + placesParOffre,
+    );
+  }
+  return parCreneau;
+}
 
 /**
  * Contexte public d'une activité : l'activité, ses créneaux OUVERTS et À VENIR,
@@ -583,8 +697,14 @@ export async function loadReserverPublicContext(
   const empreinte = await lireIdentiteReserver();
   const mesReservations: Record<string, ReserverMaReservationView> = {};
   const maFile: Record<string, PublicWaitlistItem> = {};
-  const vivantesParCreneau = new Map<string, number>();
-  const tenuesParCreneau = new Map<string, number>();
+  // LE FORMAT DE L'ACTIVITÉ, lu une fois : c'est lui qui donne l'unité de
+  // réservation de tous ses créneaux (voir la migration — le format est une
+  // propriété de ce qui est proposé, jamais de l'heure à laquelle on le
+  // propose).
+  const kind = asReserverActivityKind(row.kind);
+  const placesParOffre = placesParReservation(kind);
+  let vivantesParCreneau = new Map<string, number>();
+  let tenuesParCreneau = new Map<string, number>();
 
   if (slotIds.length > 0) {
     // LES DEUX ÉTATS VIVANTS, comme le comptage de `reserve_slot` : une arrivée
@@ -592,18 +712,16 @@ export async function loadReserverPublicContext(
     // seules `confirmed` ferait afficher une place qui n'existe plus.
     const { data: vivantes } = await admin
       .from("reservations")
-      .select("slot_id, status")
+      .select("slot_id, status, party_size")
       .eq("organization_id", organization.id)
       .in("slot_id", slotIds)
       .in("status", ["confirmed", "checked_in"])
       .limit(RESERVATIONS_COMPTAGE_MAX);
 
-    for (const entree of (vivantes ?? []) as Array<{ slot_id: string }>) {
-      vivantesParCreneau.set(
-        entree.slot_id,
-        (vivantesParCreneau.get(entree.slot_id) ?? 0) + 1,
-      );
-    }
+    // EN PERSONNES, PAS EN LIGNES (RES-5) — voir `compterPersonnesParCreneau`.
+    vivantesParCreneau = compterPersonnesParCreneau(
+      (vivantes ?? []) as Array<{ slot_id: string; party_size?: number | null }>,
+    );
 
     // LE SECOND TERME DE LA JAUGE : les places TENUES par une offre de liste
     // prioritaire. `offer_expires_at > maintenant` reproduit le refus PARESSEUX
@@ -619,12 +737,10 @@ export async function loadReserverPublicContext(
       .gt("offer_expires_at", maintenant)
       .limit(RESERVATIONS_COMPTAGE_MAX);
 
-    for (const entree of (tenues ?? []) as Array<{ slot_id: string }>) {
-      tenuesParCreneau.set(
-        entree.slot_id,
-        (tenuesParCreneau.get(entree.slot_id) ?? 0) + 1,
-      );
-    }
+    tenuesParCreneau = compterPlacesTenues(
+      (tenues ?? []) as Array<{ slot_id: string }>,
+      placesParOffre,
+    );
 
     if (empreinte) {
       const { data: miennes } = await admin
@@ -646,6 +762,7 @@ export async function loadReserverPublicContext(
           createdAt: brute.created_at,
           cancelledAt: brute.cancelled_at,
           checkedInAt: brute.checked_in_at,
+          partySize: brute.party_size ?? 1,
         };
       }
 
@@ -694,23 +811,33 @@ export async function loadReserverPublicContext(
       // visiteur qui n'attend rien.
       waitQuizId: null,
       waitPauseCampaignId: null,
+      // LA PAGE IMMERSIVE, elle, descend : c'est ce que le visiteur vient lire.
+      kind,
+      promise: row.promise,
+      durationMinutes: row.duration_minutes,
+      steps: mapExperienceSteps(row.steps),
+      preparation: row.preparation,
     },
     organization,
     timezone,
-    slots: slotRows.map((slot) => ({
-      id: slot.id,
-      startsAt: slot.starts_at,
-      endsAt: slot.ends_at,
-      capacity: slot.capacity,
-      status: asSlotStatus(slot.status),
-      remaining: Math.max(
+    slots: slotRows.map((slot) => {
+      const remaining = Math.max(
         0,
         slot.capacity -
           (vivantesParCreneau.get(slot.id) ?? 0) -
           (tenuesParCreneau.get(slot.id) ?? 0),
-      ),
-      waitlistOfferMinutes: slot.waitlist_offer_minutes,
-    })),
+      );
+      return {
+        id: slot.id,
+        startsAt: slot.starts_at,
+        endsAt: slot.ends_at,
+        capacity: slot.capacity,
+        status: asSlotStatus(slot.status),
+        remaining,
+        pairesRestantes: pairesRestantes(remaining, kind),
+        waitlistOfferMinutes: slot.waitlist_offer_minutes,
+      } satisfies ReserverSlotPublicView;
+    }),
     mesReservations,
     maFile,
     attente,
@@ -861,23 +988,24 @@ export async function loadReserverInvitationContext(
   );
 
   const slotIds = slotRows.map((slot) => slot.id);
-  const vivantesParCreneau = new Map<string, number>();
-  const tenuesParCreneau = new Map<string, number>();
+  // MÊME UNITÉ QUE LA PORTE PUBLIQUE : l'invité d'un Atelier Duo vient à deux
+  // sans avoir à le dire, et la jauge de cette page doit donc compter comme
+  // celle de l'autre. Les faire diverger aurait affiché deux nombres de places
+  // différents pour le même créneau selon la page par où l'on arrive.
+  const kind = asReserverActivityKind(activity.kind);
+  const placesParOffre = placesParReservation(kind);
   const mesReservations: Record<string, ReserverMaReservationView> = {};
 
   const { data: vivantes } = await admin
     .from("reservations")
-    .select("slot_id, status")
+    .select("slot_id, status, party_size")
     .eq("organization_id", organization.id)
     .in("slot_id", slotIds)
     .in("status", ["confirmed", "checked_in"])
     .limit(RESERVATIONS_COMPTAGE_MAX);
-  for (const entree of (vivantes ?? []) as Array<{ slot_id: string }>) {
-    vivantesParCreneau.set(
-      entree.slot_id,
-      (vivantesParCreneau.get(entree.slot_id) ?? 0) + 1,
-    );
-  }
+  const vivantesParCreneau = compterPersonnesParCreneau(
+    (vivantes ?? []) as Array<{ slot_id: string; party_size?: number | null }>,
+  );
 
   const { data: tenues } = await admin
     .from("reservation_waitlist_entries")
@@ -887,12 +1015,10 @@ export async function loadReserverInvitationContext(
     .eq("status", "offered")
     .gt("offer_expires_at", maintenant)
     .limit(RESERVATIONS_COMPTAGE_MAX);
-  for (const entree of (tenues ?? []) as Array<{ slot_id: string }>) {
-    tenuesParCreneau.set(
-      entree.slot_id,
-      (tenuesParCreneau.get(entree.slot_id) ?? 0) + 1,
-    );
-  }
+  const tenuesParCreneau = compterPlacesTenues(
+    (tenues ?? []) as Array<{ slot_id: string }>,
+    placesParOffre,
+  );
 
   const empreinte = await lireIdentiteReserver();
   if (empreinte) {
@@ -914,6 +1040,7 @@ export async function loadReserverInvitationContext(
         createdAt: brute.created_at,
         cancelledAt: brute.cancelled_at,
         checkedInAt: brute.checked_in_at,
+        partySize: brute.party_size ?? 1,
       };
     }
   }
@@ -936,21 +1063,30 @@ export async function loadReserverInvitationContext(
       // `null` sur le chemin public — voir `ReserverActivityView`.
       waitQuizId: null,
       waitPauseCampaignId: null,
+      kind,
+      promise: activity.promise,
+      durationMinutes: activity.duration_minutes,
+      steps: mapExperienceSteps(activity.steps),
+      preparation: activity.preparation,
     },
-    slots: slotRows.map((slot) => ({
-      id: slot.id,
-      startsAt: slot.starts_at,
-      endsAt: slot.ends_at,
-      capacity: slot.capacity,
-      status: asSlotStatus(slot.status),
-      remaining: Math.max(
+    slots: slotRows.map((slot) => {
+      const remaining = Math.max(
         0,
         slot.capacity -
           (vivantesParCreneau.get(slot.id) ?? 0) -
           (tenuesParCreneau.get(slot.id) ?? 0),
-      ),
-      waitlistOfferMinutes: slot.waitlist_offer_minutes,
-    })),
+      );
+      return {
+        id: slot.id,
+        startsAt: slot.starts_at,
+        endsAt: slot.ends_at,
+        capacity: slot.capacity,
+        status: asSlotStatus(slot.status),
+        remaining,
+        pairesRestantes: pairesRestantes(remaining, kind),
+        waitlistOfferMinutes: slot.waitlist_offer_minutes,
+      } satisfies ReserverSlotPublicView;
+    }),
     mesReservations,
     aUneIdentite: Boolean(empreinte),
   };
@@ -964,15 +1100,31 @@ export interface ReserverSlotDashboardView extends ReserverSlotPublicView {
   activityId: string;
   /** Réservations du créneau — SANS email : la colonne n'est pas dans le grant. */
   reservations: ReserverDashboardReservationView[];
-  /** Vivantes (confirmées + arrivées) : ce que `reserve_slot` compte. */
+  /**
+   * Réservations vivantes (confirmées + arrivées) — DES LIGNES : « trois
+   * réservations », ce que le commerçant lit dans son agenda.
+   */
   vivantes: number;
+  /**
+   * Les PERSONNES que ces lignes occupent (RES-5) — la somme de `party_size`,
+   * et c'est elle que `reserve_slot` compare à la capacité. Sur un Atelier Duo,
+   * trois réservations valent six personnes ; afficher `vivantes` en face de la
+   * capacité y ferait croire à un atelier à moitié vide.
+   */
+  personnes: number;
   /** Arrivées enregistrées — le seul indicateur de présence du commerçant. */
   arrivees: number;
   /** La file, dans l'ordre — SANS email, SANS empreinte (voir WAITLIST_COLUMNS). */
   waitlist: ReserverWaitlistDashboardView[];
   /** Entrées VIVANTES (`waiting` + `offered`) : combien de gens attendent. */
   enAttente: number;
-  /** Places actuellement TENUES par une offre — le second terme de la jauge. */
+  /**
+   * PLACES actuellement tenues par une offre — le second terme de la jauge.
+   *
+   * Des places, pas des offres (RES-5) : sur un Atelier Duo, une offre vivante
+   * tient DEUX places, puisque sa conversion en prendra deux. C'est
+   * `count(*) * v_seats` des cinq RPC, recopié.
+   */
   offresTenues: number;
 }
 
@@ -983,6 +1135,8 @@ export interface ReserverDashboardReservationView {
   createdAt: string;
   cancelledAt: string | null;
   checkedInAt: string | null;
+  /** Personnes attendues sous ce code — 2 sur un Atelier Duo (RES-5). */
+  partySize: number;
 }
 
 /**
@@ -1201,8 +1355,20 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
 
   const maintenant = Date.now();
 
+  // LE FORMAT DE CHAQUE ACTIVITÉ, résolu une fois : c'est lui qui donne l'unité
+  // de réservation de ses créneaux. Un créneau dont l'activité n'a pas été lue
+  // retombe sur `standard`, c'est-à-dire sur l'arithmétique d'hier.
+  const formatParActivite = new Map<string, ReserverActivityKind>(
+    activityRows.map((activity) => [
+      activity.id,
+      asReserverActivityKind(activity.kind),
+    ]),
+  );
+
   const creneauxParActivite = new Map<string, ReserverSlotDashboardView[]>();
   for (const slot of slotRows) {
+    const kind = formatParActivite.get(slot.activity_id) ?? "standard";
+    const placesParOffre = placesParReservation(kind);
     const brutes = parCreneau.get(slot.id) ?? [];
     const reservations = brutes.map((brute) => ({
       reservationId: brute.id,
@@ -1211,11 +1377,20 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       createdAt: brute.created_at,
       cancelledAt: brute.cancelled_at,
       checkedInAt: brute.checked_in_at,
+      partySize: brute.party_size ?? 1,
     }));
-    const vivantes = reservations.filter(
+    const lignesVivantes = reservations.filter(
       (reservation) =>
         reservation.status === "confirmed" || reservation.status === "checked_in",
-    ).length;
+    );
+    const vivantes = lignesVivantes.length;
+    // LA JAUGE COMPTE DES PERSONNES, PAS DES LIGNES (RES-5) — même somme que
+    // `reserve_slot`. Le repli à 1 est celui de `compterPersonnesParCreneau` :
+    // une réservation occupe au moins une place.
+    const personnes = lignesVivantes.reduce(
+      (total, reservation) => total + Math.max(1, reservation.partySize),
+      0,
+    );
 
     // Le rang ne se compte QUE sur les vivantes, et dans l'ordre déjà demandé à
     // la base : une entrée convertie, expirée ou partie n'occupe plus la file.
@@ -1243,7 +1418,13 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       } satisfies ReserverWaitlistDashboardView;
     });
 
-    const offresTenues = waitlist.filter((entree) => entree.offerLive).length;
+    const offresTenues =
+      waitlist.filter((entree) => entree.offerLive).length * placesParOffre;
+
+    // MÊME JAUGE QUE LE SQL, ses deux termes compris : une place promise à
+    // quelqu'un de la file n'est pas une place libre, et l'afficher comme telle
+    // ferait ouvrir au commerçant une porte que `reserve_slot` referme.
+    const remaining = Math.max(0, slot.capacity - personnes - offresTenues);
 
     const vue: ReserverSlotDashboardView = {
       id: slot.id,
@@ -1252,13 +1433,12 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       endsAt: slot.ends_at,
       capacity: slot.capacity,
       status: asSlotStatus(slot.status),
-      // MÊME JAUGE QUE LE SQL, ses deux termes compris : une place promise à
-      // quelqu'un de la file n'est pas une place libre, et l'afficher comme
-      // telle ferait ouvrir au commerçant une porte que `reserve_slot` referme.
-      remaining: Math.max(0, slot.capacity - vivantes - offresTenues),
+      remaining,
+      pairesRestantes: pairesRestantes(remaining, kind),
       waitlistOfferMinutes: slot.waitlist_offer_minutes,
       reservations,
       vivantes,
+      personnes,
       arrivees: reservations.filter(
         (reservation) => reservation.status === "checked_in",
       ).length,
@@ -1314,6 +1494,11 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       active: activity.active,
       waitQuizId: activity.wait_quiz_id ?? null,
       waitPauseCampaignId: activity.wait_pause_campaign_id ?? null,
+      kind: asReserverActivityKind(activity.kind),
+      promise: activity.promise,
+      durationMinutes: activity.duration_minutes,
+      steps: mapExperienceSteps(activity.steps),
+      preparation: activity.preparation,
       createdAt: activity.created_at,
       slots: creneauxParActivite.get(activity.id) ?? [],
       invitations: invitationsParActivite.get(activity.id) ?? [],

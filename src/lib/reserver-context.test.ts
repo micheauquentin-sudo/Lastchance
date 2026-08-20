@@ -481,6 +481,115 @@ describe("loadReserverPublicContext — la jauge à DEUX termes", () => {
     expect(contexte.slots[0].remaining).toBe(7);
   });
 
+  it("SOMME `party_size` : un duo occupe DEUX places, pas une ligne", async () => {
+    // ── LE BOGUE QUE CE TEST FERME (RES-5) ──
+    //
+    // La jauge comptait des LIGNES, ce qui était exact tant qu'une réservation
+    // valait une personne. Sur un Atelier Duo, deux lignes valent QUATRE
+    // personnes : compter des lignes affichait « 8 places restantes » sur un
+    // créneau de 10 où il n'en reste que 6, soit une occupation sous-estimée de
+    // MOITIÉ — et un bouton « réserver » que `reserve_slot` refuse.
+    state.activityRow = {
+      ...(state.activityRow as Record<string, unknown>),
+      kind: "duo",
+    };
+    state.slots = [CRENEAU_OUVERT];
+    state.vivantes = [
+      { slot_id: SLOT_ID, status: "confirmed", party_size: 2 },
+      { slot_id: SLOT_ID, status: "checked_in", party_size: 2 },
+    ];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.slots[0].remaining).toBe(6);
+    // Et le nombre que l'écran doit vraiment annoncer sur un duo : trois duos
+    // possibles, pas six places à prendre séparément.
+    expect(contexte.slots[0].pairesRestantes).toBe(3);
+    expect(contexte.activity.kind).toBe("duo");
+
+    // La colonne est bien DEMANDÉE : sans elle, la somme retomberait sur le
+    // repli à 1 et le bogue reviendrait sans qu'aucun test ne rougisse.
+    const comptage = state.selects.find(
+      (s) => s.table === "reservations" && s.colonnes.includes("status"),
+    );
+    expect(comptage?.colonnes).toContain("party_size");
+  });
+
+  it("une offre TENUE sur un duo tient DEUX places", async () => {
+    // `count(*) * v_seats` des cinq RPC : l'offre tient ce que sa conversion
+    // prendra. La compter pour une place laisserait la page ouvrir une porte
+    // que `claim_waitlist_offer` refermerait par sur-réservation.
+    state.activityRow = {
+      ...(state.activityRow as Record<string, unknown>),
+      kind: "duo",
+    };
+    state.slots = [CRENEAU_OUVERT];
+    state.tenues = [
+      {
+        slot_id: SLOT_ID,
+        status: "offered",
+        offer_expires_at: "2030-01-01T00:00:00Z",
+      },
+    ];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.slots[0].remaining).toBe(8);
+  });
+
+  it("un créneau standard compte EXACTEMENT comme hier, et sans paires", async () => {
+    // `party_size` vaut 1 partout ailleurs : la somme redevient le comptage de
+    // lignes, au caractère près. C'est la vérification que ce lot ne casse rien.
+    state.slots = [CRENEAU_OUVERT];
+    state.vivantes = [
+      { slot_id: SLOT_ID, status: "confirmed", party_size: 1 },
+      { slot_id: SLOT_ID, status: "confirmed" },
+    ];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.slots[0].remaining).toBe(8);
+    expect(contexte.slots[0].pairesRestantes).toBeNull();
+    expect(contexte.activity.kind).toBe("standard");
+  });
+
+  it("porte la page immersive jusqu'à l'écran public", async () => {
+    // La promesse, la durée, les cartes et la préparation SONT la page — le
+    // visiteur les lit avant de s'engager, contrairement à la configuration
+    // d'animation, qui décrit ce qui sera proposé à quelqu'un d'autre.
+    state.activityRow = {
+      ...(state.activityRow as Record<string, unknown>),
+      kind: "signature",
+      promise: "Trente minutes qui changent un samedi.",
+      duration_minutes: 30,
+      steps: [
+        { title: "Accueil", body: "On vous installe." },
+        { title: "Sans corps" },
+      ],
+      preparation: "Venez dix minutes avant.",
+    };
+    state.slots = [CRENEAU_OUVERT];
+
+    const contexte = await loadReserverPublicContext(ACTIVITY_ID);
+    expect(contexte.ok).toBe(true);
+    if (!contexte.ok) return;
+    expect(contexte.activity.kind).toBe("signature");
+    expect(contexte.activity.promise).toBe(
+      "Trente minutes qui changent un samedi.",
+    );
+    expect(contexte.activity.durationMinutes).toBe(30);
+    expect(contexte.activity.preparation).toBe("Venez dix minutes avant.");
+    // La carte incomplète est ÉCARTÉE, pas complétée.
+    expect(contexte.activity.steps).toEqual([
+      { title: "Accueil", body: "On vous installe." },
+    ]);
+    // La configuration d'animation, elle, ne descend toujours pas.
+    expect(contexte.activity.waitQuizId).toBeNull();
+  });
+
   it("ne compte comme tenue qu'une offre dont l'échéance est FUTURE", async () => {
     state.slots = [CRENEAU_OUVERT];
     const contexte = await loadReserverPublicContext(ACTIVITY_ID);

@@ -166,6 +166,17 @@ function CreneauCarte({
           <summary className="cursor-pointer text-sm font-bold text-k-body hover:text-k-ink">
             {creneau.vivantes} réservation{creneau.vivantes > 1 ? "s" : ""} en
             cours
+            {/* LES PERSONNES, ET SEULEMENT QUAND ELLES DIFFÈRENT DES LIGNES
+                (RES-5). Sur un Atelier Duo, « 3 réservations en cours » est
+                exact et trompeur : six personnes viennent, et c'est ce nombre-là
+                que la capacité compare. Le pli ouvert le dit déjà, code par code
+                (« 2 pers. ») — mais replié, il ne le disait pas, et c'est replié
+                qu'on lit son agenda du matin. Hors duo les deux chiffres sont
+                égaux et la mention n'apparaît pas : répéter le même nombre sous
+                deux mots n'apprend rien. */}
+            {creneau.personnes !== creneau.vivantes
+              ? ` · ${creneau.personnes} personnes attendues`
+              : ""}
             {annulees > 0
               ? ` · ${annulees} annulée${annulees > 1 ? "s" : ""}`
               : ""}
@@ -179,6 +190,17 @@ function CreneauCarte({
                 <span className="font-mono text-sm font-black tracking-wider text-k-ink">
                   {reservation.code}
                 </span>
+                {/* LE NOMBRE DE PERSONNES (RES-5), et seulement quand il n'est
+                    pas 1. Un Atelier Duo tient DEUX places sous un seul code :
+                    le comptoir doit le savoir avant d'ouvrir la porte, sans
+                    quoi il attend une personne et en voit arriver deux. Sur une
+                    réservation ordinaire, « 1 pers. » n'apprendrait rien et
+                    ferait une colonne de bruit. */}
+                {reservation.partySize > 1 ? (
+                  <span className="shrink-0 rounded-full border-2 border-k-ink bg-sky-100 px-2 py-0.5 text-xs font-black text-k-ink">
+                    {reservation.partySize} pers.
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 text-xs font-semibold text-k-body">
                   Réservée le {formatDate(reservation.createdAt, timeZone)}
                   {reservation.checkedInAt

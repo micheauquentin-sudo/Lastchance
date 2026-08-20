@@ -13,6 +13,7 @@ import {
 import type { ReserverActivityView } from "@/lib/reserver-context";
 import { champDescription } from "@/components/reserver/champs";
 import { ChampsAttenteActive } from "@/components/reserver/champs-attente-active";
+import { ChampsExperience } from "@/components/reserver/champs-experience";
 
 /**
  * Réglages d'une activité : nom, description, et L'INTERRUPTEUR.
@@ -89,6 +90,21 @@ export function ActiviteReglagesForm({
           </p>
         </div>
 
+        {/* LES EXPÉRIENCES SIGNATURE (RES-5), juste sous la description : c'est
+            la même matière — ce que le client lit avant de réserver — et les
+            champs qui s'ouvrent la prolongent. Repasser en « Standard »
+            n'EFFACE rien : les colonnes gardent leur contenu, elles cessent
+            seulement d'être affichées. */}
+        <ChampsExperience
+          instanceId="-activite"
+          defaultKind={activite.kind}
+          defaultPromise={activite.promise}
+          defaultDurationMinutes={activite.durationMinutes}
+          defaultSteps={activite.steps}
+          defaultPreparation={activite.preparation}
+          espacement="mt-4"
+        />
+
         {/* Le Mode Attente active (RES-4) : ce qu'on propose à celui qui
             patiente, jamais ce qui décide de son tour. */}
         <ChampsAttenteActive
@@ -109,7 +125,12 @@ export function ActiviteReglagesForm({
               id="activite-active"
               name="active"
               type="checkbox"
-              value="on"
+              // `caseACochee` (schéma) attend la chaîne "true"/"false", jamais
+              // la valeur HTML par défaut "on" : postée cochée, "on" est un
+              // enum invalide et `updateReserverActivity` refusait TOUT
+              // enregistrement avec la case cochée — trouvé par l'E2E du lot
+              // L8, qui est la première à exercer ce formulaire.
+              value="true"
               defaultChecked={activite.active}
               className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-k-ink accent-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
             />

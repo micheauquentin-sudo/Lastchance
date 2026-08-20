@@ -33,11 +33,29 @@ export type ReservationStatus = "confirmed" | "cancelled" | "checked_in";
 /** Statut d'un créneau — miroir du CHECK `reservation_slots.status`. */
 export type ReservationSlotStatus = "draft" | "open" | "closed";
 
+/**
+ * Format d'une expérience — miroir du CHECK `reservation_activities.kind`
+ * (RES-5, 20261007120000).
+ *
+ * SEUL `duo` change l'arithmétique : sur lui, toute réservation vaut DEUX
+ * personnes, par les trois portes (publique, liste prioritaire, invitation).
+ * Les deux autres se réservent à une personne, et `standard` est le socle.
+ */
+export type ReserverActivityKind = "standard" | "signature" | "duo";
+
 /** Issues de `reserve_slot`. */
 export type ReserveSlotState =
   | "unavailable"
   | "invalid_email"
   | "full"
+  /**
+   * La taille demandée n'est pas celle du format (RES-5) : deux personnes hors
+   * d'un Atelier Duo, ou une seule sur un Atelier Duo. NOMMÉ, et non muet comme
+   * les six refus voisins — le format est écrit sur la page publique que le
+   * joueur vient de lire, le taire ne cacherait rien et empêcherait l'écran de
+   * dire « cet atelier se réserve à deux ».
+   */
+  | "invalid_party_size"
   | "already_reserved"
   | "reserved";
 
@@ -151,6 +169,59 @@ export const RESERVER_CAPACITY_MIN = 1;
  */
 export const RESERVER_CAPACITY_MAX = 500;
 
+/**
+ * Bornes des champs de PRÉSENTATION d'une expérience (RES-5) — exactement les
+ * CHECK de `reservation_activities` (20261007120000).
+ *
+ * La durée n'est PAS bornée à « 20 à 45 minutes » : le cahier l'annonce pour le
+ * Moment Signature, mais c'est une recommandation de format, et la même colonne
+ * porte l'Atelier Duo de deux heures.
+ */
+export const RESERVER_ACTIVITY_PROMISE_MAX = 200;
+export const RESERVER_ACTIVITY_DURATION_MIN = 10;
+export const RESERVER_ACTIVITY_DURATION_MAX = 240;
+export const RESERVER_ACTIVITY_PREPARATION_MAX = 600;
+
+/**
+ * Les cartes du Moment Signature. TROIS, parce que la page en montre trois :
+ * ce n'est pas une borne technique mais le format lui-même, et une quatrième
+ * carte n'aurait nulle part où s'afficher.
+ */
+export const RESERVER_ACTIVITY_STEPS_MAX = 3;
+export const RESERVER_STEP_TITLE_MAX = 80;
+export const RESERVER_STEP_BODY_MAX = 400;
+
+/**
+ * Les NOMS des deux champs répétés qui portent les cartes dans le formulaire.
+ *
+ * Le panneau rend une paire par carte, toutes sous le même nom, et
+ * `etapesDepuisFormData` les rassemble par `getAll` — appariées par leur
+ * POSITION, sans identifiant. Les deux bouts doivent donc s'accorder sur ces
+ * deux chaînes EXACTEMENT, et un désaccord ne fait pas d'erreur : le formulaire
+ * poste des étapes que l'action ne lit pas, l'activité s'enregistre sans ses
+ * cartes, et rien ne le signale.
+ *
+ * ── POURQUOI ICI, ET PLUS DANS `validations/reserver.ts` ──
+ *
+ * Elles y sont nées, à côté du schéma qui les valide — le bon voisinage, mais
+ * le mauvais module : `validations/reserver.ts` construit des schémas Zod à
+ * l'import, et le formulaire qui a besoin de ces deux chaînes est un composant
+ * CLIENT. Les y lire aurait tiré Zod et les vingt schémas du module dans le
+ * bundle du navigateur pour deux littéraux. Ce fichier-ci, lui, est déjà des
+ * deux côtés — c'est le vocabulaire partagé du module. `validations` les
+ * ré-exporte, donc rien ne change pour qui les lisait là-bas.
+ */
+export const RESERVER_STEP_TITLE_FIELD = "stepTitle";
+export const RESERVER_STEP_BODY_FIELD = "stepBody";
+
+/**
+ * Taille d'une réservation, en PERSONNES — `between 1 and 2`, exactement le
+ * CHECK `reservations_party_size_bound`. Au MVP le duo est la seule taille
+ * plurielle ; élargir sera une migration, avec sa décision.
+ */
+export const RESERVER_PARTY_SIZE_MIN = 1;
+export const RESERVER_PARTY_SIZE_MAX = 2;
+
 /** Code court de check-in — miroir du CHECK `^[A-HJ-NP-Z2-9]{8}$`. */
 export const RESERVER_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;
 
@@ -200,10 +271,17 @@ const SLOT_STATUSES: readonly ReservationSlotStatus[] = [
   "closed",
 ];
 
+const ACTIVITY_KINDS: readonly ReserverActivityKind[] = [
+  "standard",
+  "signature",
+  "duo",
+];
+
 const RESERVE_STATES: readonly ReserveSlotState[] = [
   "unavailable",
   "invalid_email",
   "full",
+  "invalid_party_size",
   "already_reserved",
   "reserved",
 ];
@@ -331,6 +409,91 @@ export function asWaitlistStatus(value: unknown): ReservationWaitlistStatus {
     : "waiting";
 }
 
+/**
+ * Format d'activité, ou `standard` — le REPLI LE PLUS FERMÉ ici, et c'est le
+ * DÉFAUT SQL de la colonne : un format illisible se lit comme le socle, donc
+ * une réservation d'UNE personne. Lire `duo` par défaut ferait réserver deux
+ * places au premier document corrompu.
+ */
+export function asReserverActivityKind(value: unknown): ReserverActivityKind {
+  const candidate = asString(value);
+  return candidate && (ACTIVITY_KINDS as string[]).includes(candidate)
+    ? (candidate as ReserverActivityKind)
+    : "standard";
+}
+
+/** Une carte du Moment Signature — miroir de `is_valid_experience_steps`. */
+export interface ReserverExperienceStep {
+  title: string;
+  body: string;
+}
+
+/**
+ * Lit le `jsonb` `reservation_activities.steps`.
+ *
+ * DÉFENSIF ET SILENCIEUX : une carte sans titre ou sans corps est ÉCARTÉE, pas
+ * complétée — la base la refuse déjà (`coalesce` de `is_valid_experience_steps`),
+ * et une carte vide rendue à l'écran serait un trou dans une page qui promet
+ * trois étapes. Le plafond est réappliqué ici : ce qui dépasse ne s'affiche
+ * nulle part.
+ */
+export function mapExperienceSteps(raw: unknown): ReserverExperienceStep[] {
+  return asArray(raw)
+    .flatMap((entry) => {
+      const item = asRecord(entry);
+      const title = item ? asString(item.title)?.trim() : null;
+      const body = item ? asString(item.body)?.trim() : null;
+      if (!title || !body) return [];
+      return [{ title, body } satisfies ReserverExperienceStep];
+    })
+    .slice(0, RESERVER_ACTIVITY_STEPS_MAX);
+}
+
+/**
+ * L'UNITÉ DE RÉSERVATION D'UN FORMAT, en personnes — `case when kind = 'duo'
+ * then 2 else 1 end`, la seule expression que les cinq RPC partagent.
+ *
+ * Elle est recopiée ici pour que l'écran DEMANDE la bonne taille, jamais pour
+ * décider à la place de la base : `reserve_slot` la revérifie sous verrou et
+ * refuse `invalid_party_size` si les deux divergent.
+ */
+export function placesParReservation(kind: ReserverActivityKind): number {
+  return kind === "duo" ? 2 : 1;
+}
+
+/**
+ * Combien de RÉSERVATIONS ENTIÈRES tiennent encore dans les places restantes.
+ *
+ * `null` hors d'un Atelier Duo, délibérément : sur les deux autres formats une
+ * place restante EST une réservation possible, et rendre le même nombre deux
+ * fois inviterait un écran à afficher « 3 places, 3 réservations possibles ».
+ *
+ * DIVISION ENTIÈRE, comme `reservation_offer_next` : sur un duo, une place libre
+ * isolée n'est prenable par personne — l'afficher comme disponible enverrait
+ * l'hôte se faire refuser.
+ */
+export function pairesRestantes(
+  remaining: number,
+  kind: ReserverActivityKind,
+): number | null {
+  if (kind !== "duo") return null;
+  return Math.max(0, Math.floor(remaining / 2));
+}
+
+/**
+ * Ce que le joueur lit sur la TAILLE de sa réservation.
+ *
+ * `null` à une personne, et ce n'est pas un oubli : « pour 1 personne » sur une
+ * réservation ordinaire ajoute un mot à chaque ligne d'écran pour ne rien
+ * apprendre. La mention n'existe que là où elle porte une information — l'hôte
+ * d'un Atelier Duo doit pouvoir relire que son accompagnant a une place.
+ */
+export function libelleTaillePersonnes(partySize: number | null): string | null {
+  return partySize !== null && partySize >= 2
+    ? `pour ${partySize} personnes`
+    : null;
+}
+
 // ────────────────────────────────────────────────────────────
 // `reserve_slot`
 // ────────────────────────────────────────────────────────────
@@ -349,6 +512,17 @@ export interface ReserveSlotResult {
   remaining: number | null;
   /** Capacité du créneau, rendue avec `full` — de quoi expliquer le refus. */
   capacity: number | null;
+  /**
+   * Personnes que CETTE réservation occupe (RES-5). Rendue sur `reserved` et
+   * sur `already_reserved` : l'hôte d'un Atelier Duo qui recharge sa page doit
+   * relire « pour deux ».
+   */
+  partySize: number | null;
+  /**
+   * La taille QUE LE FORMAT EXIGE, rendue avec `invalid_party_size` — de quoi
+   * dire « cet atelier se réserve à deux » plutôt qu'« indisponible ».
+   */
+  expectedPartySize: number | null;
 }
 
 /**
@@ -383,6 +557,9 @@ export function mapReserveSlot(raw: unknown): ReserveSlotResult {
     endsAt: state === "reserved" && root ? asString(root.ends_at) : null,
     remaining: state === "reserved" && root ? asInt(root.remaining) : null,
     capacity: state === "full" && root ? asInt(root.capacity) : null,
+    partySize: detenue && root ? asInt(root.party_size) : null,
+    expectedPartySize:
+      state === "invalid_party_size" && root ? asInt(root.expected) : null,
   };
 }
 
@@ -438,10 +615,12 @@ export interface WaitlistJoinResult {
    * complet.
    */
   waitlistCapacity: number | null;
-  /** Les trois champs de `already_reserved`, mot pour mot ceux de `reserve_slot`. */
+  /** Les quatre champs de `already_reserved`, mot pour mot ceux de `reserve_slot`. */
   reservationId: string | null;
   code: string | null;
   reservationStatus: ReservationStatus | null;
+  /** Taille de la réservation déjà détenue (RES-5) — `already_reserved` seul. */
+  reservationPartySize: number | null;
 }
 
 /**
@@ -481,6 +660,8 @@ export function mapWaitlistJoin(raw: unknown): WaitlistJoinResult {
       state === "already_reserved" && root
         ? asReservationStatus(root.status)
         : null,
+    reservationPartySize:
+      state === "already_reserved" && root ? asInt(root.party_size) : null,
   };
 }
 
@@ -501,6 +682,12 @@ export interface ClaimWaitlistOfferResult {
   endsAt: string | null;
   /** Échéance dépassée, rendue avec `expired` — de quoi expliquer le refus. */
   offerExpiresAt: string | null;
+  /**
+   * Personnes que la réservation créée occupe (RES-5) — l'UNITÉ DU FORMAT, pas
+   * un choix : une offre sur un Atelier Duo tenait deux places, sa conversion
+   * en prend deux. Rendue sur `claimed`, rejeu idempotent compris.
+   */
+  partySize: number | null;
 }
 
 export function mapClaimWaitlistOffer(raw: unknown): ClaimWaitlistOfferResult {
@@ -526,6 +713,7 @@ export function mapClaimWaitlistOffer(raw: unknown): ClaimWaitlistOfferResult {
     endsAt: obtenue && root ? asString(root.ends_at) : null,
     offerExpiresAt:
       state === "expired" && root ? asString(root.offer_expires_at) : null,
+    partySize: obtenue && root ? asInt(root.party_size) : null,
   };
 }
 
@@ -610,6 +798,13 @@ export interface RedeemInvitationResult {
   remaining: number | null;
   /** Capacité du créneau, rendue avec `full` — de quoi expliquer le refus. */
   capacity: number | null;
+  /**
+   * Personnes occupées (RES-5). L'invité d'un Atelier Duo vient à deux SANS
+   * AVOIR À LE DIRE : la taille est une propriété du format, jamais un choix de
+   * l'invité — la lui demander aurait ouvert un second chemin par lequel un
+   * Atelier Duo se réserve à une personne.
+   */
+  partySize: number | null;
 }
 
 /**
@@ -648,6 +843,7 @@ export function mapRedeemInvitation(raw: unknown): RedeemInvitationResult {
       state === "reserved" && root ? asString(root.activity_name) : null,
     remaining: state === "reserved" && root ? asInt(root.remaining) : null,
     capacity: state === "full" && root ? asInt(root.capacity) : null,
+    partySize: detenue && root ? asInt(root.party_size) : null,
   };
 }
 
@@ -722,6 +918,16 @@ export interface PublicReservationItem {
   startsAt: string | null;
   endsAt: string | null;
   activityName: string;
+  /**
+   * Personnes occupées par cette réservation (RES-5). Sa page ne lit pas la
+   * table — elle lit ce document — et « Atelier Duo, samedi 14 h » sans le
+   * nombre de personnes laisserait ouverte la seule question qui compte pour
+   * l'hôte : est-ce que mon accompagnant a une place.
+   *
+   * Le REPLI EST 1, jamais 0 : une réservation occupe au moins une place, et un
+   * document illisible ne doit pas faire disparaître une personne d'un compte.
+   */
+  partySize: number;
 }
 
 /**
@@ -785,6 +991,7 @@ export function mapReservationPublicState(raw: unknown): ReservationPublicState 
         startsAt: asString(item.starts_at),
         endsAt: asString(item.ends_at),
         activityName: asString(item.activity_name) ?? "",
+        partySize: asInt(item.party_size) ?? 1,
       } satisfies PublicReservationItem,
     ];
   });
@@ -927,15 +1134,30 @@ export type EtatUiCreneau = "ouvert" | "complet" | "ferme" | "passe";
  * passé même s'il est plein — la base refuse déjà pour ces deux motifs, et
  * afficher « complet » sur un créneau d'hier enverrait le joueur chercher une
  * place qui n'existe plus.
+ *
+ * ── « COMPLET » SE DIT EN RÉSERVATIONS POSSIBLES (RES-5) ──
+ *
+ * `kind` est FACULTATIF et vaut `standard` : les deux formats à une personne se
+ * comportent exactement comme avant. Sur un Atelier Duo, en revanche, une place
+ * libre isolée n'est prenable par personne — c'est le test de `waitlist_join`
+ * (`taken + held + seats <= capacity`), et afficher « ouvert » dessus enverrait
+ * l'hôte se faire refuser `full`.
  */
 export function etatUiCreneau(
-  creneau: { status: ReservationSlotStatus; startsAt: string; remaining: number },
+  creneau: {
+    status: ReservationSlotStatus;
+    startsAt: string;
+    remaining: number;
+    kind?: ReserverActivityKind;
+  },
   now = new Date(),
 ): EtatUiCreneau {
   if (creneau.status !== "open") return "ferme";
   const debut = new Date(creneau.startsAt).getTime();
   if (!Number.isFinite(debut) || debut <= now.getTime()) return "passe";
-  if (creneau.remaining <= 0) return "complet";
+  if (creneau.remaining < placesParReservation(creneau.kind ?? "standard")) {
+    return "complet";
+  }
   return "ouvert";
 }
 

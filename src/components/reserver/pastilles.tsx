@@ -10,7 +10,9 @@ import {
   type ReservationSlotStatus,
   type ReservationStatus,
   type ReservationWaitlistStatus,
+  type ReserverActivityKind,
 } from "@/lib/reserver";
+import { LIBELLE_FORMAT } from "@/components/reserver/formats-experience";
 
 /**
  * Les pastilles de l'agenda Réserver.
@@ -155,6 +157,29 @@ export function PastilleFileAccueil({
   className?: string;
 }) {
   const { label, ton } = LIBELLE_FILE_ACCUEIL[status];
+  return <span className={cn(BASE, ton, className)}>{label}</span>;
+}
+
+/**
+ * LE FORMAT D'UNE ACTIVITÉ (RES-5), vu du commerçant.
+ *
+ * Elle ne s'affiche PAS sur une activité standard, et c'est délibéré : c'est le
+ * défaut, donc l'absence de pastille en dit autant qu'un mot, et une liste où
+ * chaque ligne porte « Standard » ne montre plus les deux qui ne le sont pas.
+ *
+ * Le vocabulaire vient de `formats-experience.ts`, comme sur les quatre autres
+ * écrans qui le portent — recopier « Moment Signature » ici aurait fait diverger
+ * la pastille du sélecteur qui la produit.
+ */
+export function PastilleFormat({
+  kind,
+  className,
+}: {
+  kind: ReserverActivityKind;
+  className?: string;
+}) {
+  if (kind === "standard") return null;
+  const { label, ton } = LIBELLE_FORMAT[kind];
   return <span className={cn(BASE, ton, className)}>{label}</span>;
 }
 

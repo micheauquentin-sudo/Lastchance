@@ -11,6 +11,7 @@ import {
   RESERVER_ACTIVITY_NAME_MAX,
 } from "@/lib/reserver";
 import { champDescription } from "@/components/reserver/champs";
+import { ChampsExperience } from "@/components/reserver/champs-experience";
 
 /**
  * Création d'une activité réservable.
@@ -82,6 +83,15 @@ export function NouvelleActiviteForm({
           className={champDescription}
         />
       </div>
+
+      {/* LES EXPÉRIENCES SIGNATURE (RES-5). Le format est demandé DÈS LA
+          CRÉATION, et non renvoyé aux réglages : « Moment Signature » exige au
+          moins une étape et une durée — créer d'abord une activité standard,
+          puis la convertir, aurait fait rencontrer ces exigences à un moment où
+          le commerçant croyait avoir fini. Le défaut reste « Standard », donc ce
+          bloc n'ajoute qu'un menu déroulant à qui ne cherche rien de plus. */}
+      <ChampsExperience instanceId={instanceId} espacement="mt-3" />
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Création…" : "Créer l'activité"}

@@ -124,6 +124,18 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       id: "i1",
       organization_id: "11111111-1111-4111-8111-111111111111",
     } as Record<string, unknown> | null,
+    /**
+     * Ce que `reservation_activity_live_commitments` rend au panneau avant
+     * d'autoriser un changement de format (RES-5, migration 20261009120000).
+     * Par défaut : rien d'engagé, donc tous les réglages passent — c'est l'état
+     * de la quasi-totalité des cas, et celui que les tests d'avant supposaient.
+     */
+    activityCommitments: {
+      state: "ok",
+      kind: "standard",
+      reservations: 0,
+      waitlist: 0,
+    } as unknown,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
@@ -243,6 +255,12 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         id: "i1",
         organization_id: "11111111-1111-4111-8111-111111111111",
       };
+      state.activityCommitments = {
+        state: "ok",
+        kind: "standard",
+        reservations: 0,
+        waitlist: 0,
+      };
       state.selects = [];
       state.filtres = [];
       state.rpcCalls = [];
@@ -324,6 +342,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         }
         if (name === "queue_public_state") {
           return Promise.resolve({ data: state.queuePublicResponse, error: null });
+        }
+        if (name === "reservation_activity_live_commitments") {
+          return Promise.resolve({ data: state.activityCommitments, error: null });
         }
         if (name === "close_reservation_invitation") {
           return Promise.resolve({
@@ -654,6 +675,25 @@ describe("reserveSlot — anti-Sybil et ordre des seaux", () => {
     // ferait reposer son imprévisibilité sur la discipline de l'appelant.
     expect(Object.keys(appel?.args ?? {})).not.toContain("p_code");
   });
+
+  it("transmet la taille demandée — 2 pour la surface duo (RES-5)", async () => {
+    // Elle ne DÉCIDE de rien : `reserve_slot` la compare, sous verrou, à l'unité
+    // du format, et refuse `invalid_party_size` si les deux divergent. Ce que ce
+    // test garde, c'est qu'elle arrive jusque-là.
+    await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID, partySize: 2 });
+    const appel = state.rpcCalls.find((c) => c.name === "reserve_slot");
+    expect(appel?.args.p_party_size).toBe(2);
+  });
+
+  it("REFUSE une taille hors de 1..2 sans déranger la base", async () => {
+    const resultat = await reserveSlot({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 40,
+    });
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
 });
 
 describe("reserveSlot — le challenge anti-robot", () => {
@@ -787,6 +827,8 @@ describe("reserveSlot — email et consentement", () => {
     const appel = state.rpcCalls.find((c) => c.name === "reserve_slot");
     expect(appel?.args.p_email).toBe("client@exemple.fr");
     expect(appel?.args.p_consent).toBe(true);
+    // Le parcours d'hier réserve pour UNE personne, sans avoir à le dire.
+    expect(appel?.args.p_party_size).toBe(1);
     expect(resultat.ok).toBe(true);
     // L'envoi n'a PAS retardé la réponse : il vit dans `after()`.
     expect(state.emails).toHaveLength(0);
@@ -1030,6 +1072,257 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
   it("REFUSE un caissier sur la configuration", async () => {
     state.role = "cashier";
     const resultat = await createReserverActivity(null, formData({ name: "Atelier" }));
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("écrit les cinq champs d'expérience (RES-5), étapes comprises", async () => {
+    // LES ÉTAPES SONT UNE LISTE : le panneau rend une paire par carte, toutes
+    // sous le MÊME nom, et l'action les relit par `getAll`. Des noms indexés
+    // auraient laissé un trou dès que le commerçant retire une carte du milieu.
+    const champs = formData({
+      name: "Moment Signature",
+      kind: "signature",
+      promise: "Trente minutes qui changent un samedi.",
+      durationMinutes: "30",
+      preparation: "Venez dix minutes avant.",
+    });
+    champs.append("stepTitle", "Accueil");
+    champs.append("stepBody", "On vous installe.");
+    champs.append("stepTitle", "Dégustation");
+    champs.append("stepBody", "Trois vins.");
+
+    const resultat = await createReserverActivity(null, champs);
+    expect(resultat.ok).toBe(true);
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.values.kind).toBe("signature");
+    expect(ecriture?.values.duration_minutes).toBe(30);
+    expect(ecriture?.values.promise).toBe(
+      "Trente minutes qui changent un samedi.",
+    );
+    expect(ecriture?.values.preparation).toBe("Venez dix minutes avant.");
+    // La troisième paire, non rendue, ne crée pas de carte vide.
+    expect(ecriture?.values.steps).toEqual([
+      { title: "Accueil", body: "On vous installe." },
+      { title: "Dégustation", body: "Trois vins." },
+    ]);
+  });
+
+  it("laisse `standard` et `null` quand le panneau ne rend aucun des cinq", async () => {
+    // C'est ce qui rend ce lot rétrocompatible : un formulaire d'hier crée
+    // exactement l'activité d'hier. `steps` part à `null` et non `[]` — la base
+    // dit « pas d'étapes » avec `null`.
+    const resultat = await createReserverActivity(
+      null,
+      formData({ name: "Dégustation" }),
+    );
+    expect(resultat.ok).toBe(true);
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.values.kind).toBe("standard");
+    expect(ecriture?.values.duration_minutes).toBeNull();
+    expect(ecriture?.values.steps).toBeNull();
+    expect(ecriture?.values.promise).toBeNull();
+    expect(ecriture?.values.preparation).toBeNull();
+  });
+
+  it("REFUSE un duo sans durée annoncée, avant tout aller-retour", async () => {
+    const resultat = await createReserverActivity(
+      null,
+      formData({ name: "Atelier Duo", kind: "duo" }),
+    );
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("repasser en « Standard » NE RÉÉCRIT PAS les quatre champs masqués", async () => {
+    // ── L'ALLER-RETOUR QUE CE TEST GARDE ──
+    //
+    // 1. Le commerçant enregistre un Moment Signature complet.
+    // 2. Il repasse en « Standard » : le panneau masque promesse, durée, étapes
+    //    et préparation, qui ne sont donc PAS postées.
+    // 3. Sans cette clause, l'update les écrivait à `null` — sa promesse et ses
+    //    trois cartes disparaissaient sans confirmation ni moyen de les
+    //    retrouver. Elles doivent sortir du payload, donc rester en base.
+    const signature = formData({
+      id: ACTIVITY_ID,
+      name: "Moment Signature",
+      active: "true",
+      kind: "signature",
+      promise: "Trente minutes qui changent un samedi.",
+      durationMinutes: "30",
+      preparation: "Venez dix minutes avant.",
+    });
+    signature.append("stepTitle", "Accueil");
+    signature.append("stepBody", "On vous installe.");
+
+    expect((await updateReserverActivity(null, signature)).ok).toBe(true);
+    const complet = state.rlsWrites.at(-1);
+    expect(complet?.values.promise).toBe(
+      "Trente minutes qui changent un samedi.",
+    );
+    expect(complet?.values.steps).toEqual([
+      { title: "Accueil", body: "On vous installe." },
+    ]);
+
+    const retour = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Moment Signature",
+        active: "true",
+        kind: "standard",
+      }),
+    );
+    expect(retour.ok).toBe(true);
+
+    const apres = state.rlsWrites.at(-1);
+    // Le format change — c'est le seul geste demandé.
+    expect(apres?.values.kind).toBe("standard");
+    // Et les quatre colonnes ne sont PAS dans l'écriture : elles gardent leur
+    // valeur. Les tester à `null` aurait été tester le bogue.
+    for (const colonne of [
+      "promise",
+      "duration_minutes",
+      "steps",
+      "preparation",
+    ]) {
+      expect(Object.keys(apres?.values ?? {})).not.toContain(colonne);
+    }
+    // Le reste du formulaire, lui, s'écrit normalement.
+    expect(apres?.values.name).toBe("Moment Signature");
+    expect(apres?.values.active).toBe(true);
+  });
+
+  it("fait traverser les cinq champs à la mise à jour aussi", async () => {
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier Duo",
+        active: "true",
+        kind: "duo",
+        durationMinutes: "120",
+        preparation: "Venez avec un tablier.",
+      }),
+    );
+    expect(resultat.ok).toBe(true);
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.values.kind).toBe("duo");
+    expect(ecriture?.values.duration_minutes).toBe(120);
+    expect(ecriture?.values.steps).toBeNull();
+  });
+
+  // ── LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS (RES-5) ──
+  //
+  // Le défaut, en une phrase : `claim_waitlist_offer` ne repasse PAS par la
+  // jauge et lit le format COURANT. Une offre émise quand l'activité tenait UNE
+  // place, convertie après une bascule en « Atelier Duo », crée une réservation
+  // de DEUX personnes sur une place réservée pour une. Rien ne le signale.
+  it("REFUSE de changer le format tant qu'un engagement vivant subsiste, et NOMME le compte", async () => {
+    state.activityCommitments = {
+      state: "ok",
+      kind: "standard",
+      reservations: 1,
+      waitlist: 2,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier Duo",
+        active: "true",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    // LE COMPTE EST DANS LE MESSAGE, motif des gardes destructives du dépôt
+    // (`deleteWheel` : « N lot(s) gagné(s) attendent encore en caisse »). Un
+    // « impossible » nu laisserait le commerçant chercher ce qui bloque.
+    expect(resultat.ok === false && resultat.error).toContain("1 réservation");
+    expect(resultat.ok === false && resultat.error).toContain("2 attentes");
+    // ET RIEN N'EST ÉCRIT : le refus est un refus, pas un enregistrement
+    // partiel où le nom serait passé et le format non.
+    expect(state.rlsWrites).toHaveLength(0);
+    // Le comptage est demandé à la BASE, org-scopé, jamais recalculé côté
+    // action : `reservations` n'a aucune policy de lecture pour l'éditeur.
+    const appel = state.rpcCalls.at(-1);
+    expect(appel?.name).toBe("reservation_activity_live_commitments");
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_activity_id).toBe(ACTIVITY_ID);
+  });
+
+  it("laisse basculer quand tout est clos ou passé", async () => {
+    // L'ÉTAT OÙ LA GARDE DOIT S'OUVRIR. Une garde qui ne s'ouvre jamais n'est
+    // pas une garde : le commerçant change de format ENTRE deux saisons, c'est
+    // précisément le moment où ses créneaux sont derrière lui.
+    state.activityCommitments = {
+      state: "ok",
+      kind: "duo",
+      reservations: 0,
+      waitlist: 0,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier",
+        active: "true",
+        kind: "standard",
+      }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    expect(state.rlsWrites.at(-1)?.values.kind).toBe("standard");
+  });
+
+  it("ne bloque PAS les autres réglages quand le format ne change pas", async () => {
+    // La garde porte sur LA BASCULE, pas sur l'écran. Renommer une activité ou
+    // la couper pendant que dix personnes attendent doit rester possible —
+    // couper est même le geste qu'on fait EN PREMIER quand ça déborde.
+    state.activityCommitments = {
+      state: "ok",
+      kind: "duo",
+      reservations: 4,
+      waitlist: 3,
+    };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier Duo (complet)",
+        active: "false",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
+    expect(resultat.ok).toBe(true);
+    expect(state.rlsWrites.at(-1)?.values.active).toBe(false);
+  });
+
+  it("refuse aussi quand le comptage ne se lit pas", async () => {
+    // `unknown` (activité d'une autre organisation, ou disparue) et charge utile
+    // illisible tombent au MÊME endroit. Laisser passer parce qu'on n'a pas su
+    // compter, ce serait exactement le silence que cette garde existe pour
+    // rompre.
+    state.activityCommitments = { state: "unknown" };
+
+    const resultat = await updateReserverActivity(
+      null,
+      formData({
+        id: ACTIVITY_ID,
+        name: "Atelier",
+        active: "true",
+        kind: "duo",
+        durationMinutes: "90",
+      }),
+    );
+
     expect(resultat.ok).toBe(false);
     expect(state.rlsWrites).toHaveLength(0);
   });

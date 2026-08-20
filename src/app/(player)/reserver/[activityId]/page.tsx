@@ -93,6 +93,15 @@ export default async function ReserverPage({
         // Le Mode Attente active (RES-4) : la session rattachée à la
         // réservation confirmée de ce navigateur, ou `null`.
         attente={ctx.attente}
+        // LES EXPÉRIENCES SIGNATURE (RES-5). Le format décide de ce que la page
+        // RACONTE — promesse, durée, étapes, préparation, unité de réservation —
+        // jamais de ce qu'elle peut faire : la mécanique est la même pour les
+        // trois, et `standard` rend exactement l'écran d'avant ce lot.
+        kind={ctx.activity.kind}
+        promise={ctx.activity.promise}
+        durationMinutes={ctx.activity.durationMinutes}
+        steps={ctx.activity.steps}
+        preparation={ctx.activity.preparation}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

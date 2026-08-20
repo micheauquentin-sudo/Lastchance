@@ -89,6 +89,7 @@ import {
   createReserverInvitationSchema,
   createReserverQueueSchema,
   createReserverSlotSchema,
+  etapesDepuisFormData,
   evictWaitlistEntrySchema,
   loadMyReservationsSchema,
   queueCallNextSchema,
@@ -443,6 +444,13 @@ export type ReserveSlotActionResult =
 export async function reserveSlot(input: {
   organizationId: string;
   slotId: string;
+  /**
+   * Personnes occupées (RES-5). Absent = 1, et c'est le cas de tous les écrans
+   * d'hier ; la SURFACE DUO envoie 2, recopié du format de l'activité qu'elle
+   * affiche. Cette valeur ne décide de rien : `reserve_slot` la compare, sous
+   * verrou, à l'unité du format, et refuse `invalid_party_size` si elle diverge.
+   */
+  partySize?: number;
   email?: string;
   consent?: boolean;
   turnstileToken?: string;
@@ -473,6 +481,7 @@ async function reserveInner(
   parsed: {
     organizationId: string;
     slotId: string;
+    partySize: number;
     email?: string;
     consent: boolean;
   },
@@ -504,6 +513,10 @@ async function reserveInner(
     p_player_key_hash: empreinte,
     p_email: parsed.email ?? null,
     p_consent: parsed.consent,
+    // LA TAILLE VALIDÉE, jamais celle du corps. La base la revérifie contre le
+    // format sous verrou — elle n'est transmise que pour que le refus soit
+    // NOMMÉ (`invalid_party_size`) plutôt que muet.
+    p_party_size: parsed.partySize,
   });
 
   if (error) {
@@ -1600,6 +1613,13 @@ export async function createReserverActivity(
   const parsed = createReserverActivitySchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description"),
+    // LES CINQ CHAMPS D'EXPÉRIENCE (RES-5). Un panneau qui ne les rend pas
+    // laisse une activité `standard`, exactement comme avant ce lot.
+    kind: formData.get("kind"),
+    promise: formData.get("promise"),
+    durationMinutes: formData.get("durationMinutes"),
+    steps: etapesDepuisFormData(formData),
+    preparation: formData.get("preparation"),
     waitQuizId: formData.get("waitQuizId"),
     waitPauseCampaignId: formData.get("waitPauseCampaignId"),
   });
@@ -1616,6 +1636,15 @@ export async function createReserverActivity(
     name: parsed.data.name,
     description: parsed.data.description || null,
     active: true,
+    // LE FORMAT ET SA PRÉSENTATION (RES-5). `steps` part à `null` quand il n'y
+    // a aucune carte : un tableau vide serait une liste d'étapes vide, la base
+    // dit « pas d'étapes » avec `null` — et c'est ce que la contrainte
+    // conditionnelle de la `signature` teste.
+    kind: parsed.data.kind,
+    promise: parsed.data.promise || null,
+    duration_minutes: parsed.data.durationMinutes,
+    steps: parsed.data.steps.length > 0 ? parsed.data.steps : null,
+    preparation: parsed.data.preparation || null,
     // ANIMATIONS D'ATTENTE (RES-4) : `""` = « aucune », et c'est le défaut. La
     // FK COMPOSITE `(wait_quiz_id, organization_id)` refuse le quiz du voisin.
     wait_quiz_id: parsed.data.waitQuizId || null,
@@ -1642,6 +1671,29 @@ export async function createReserverActivity(
   return { ok: true, data: undefined };
 }
 
+/**
+ * Ce que la base a compté d'engagements vivants sur une activité, et son format
+ * courant. Miroir exact de `reservation_activity_live_commitments` (migration
+ * 20261009120000) — voir son en-tête pour ce que « vivant » veut dire.
+ */
+interface EngagementsActivite {
+  kind: string;
+  reservations: number;
+  waitlist: number;
+}
+
+function lireEngagements(data: unknown): EngagementsActivite | null {
+  if (!data || typeof data !== "object") return null;
+  const brut = data as Record<string, unknown>;
+  if (brut.state !== "ok") return null;
+  const kind = typeof brut.kind === "string" ? brut.kind : null;
+  const reservations =
+    typeof brut.reservations === "number" ? brut.reservations : null;
+  const waitlist = typeof brut.waitlist === "number" ? brut.waitlist : null;
+  if (kind === null || reservations === null || waitlist === null) return null;
+  return { kind, reservations, waitlist };
+}
+
 /** Réglages d'une activité — dont son interrupteur `active`. */
 export async function updateReserverActivity(
   _prev: ActionResult | null,
@@ -1651,6 +1703,11 @@ export async function updateReserverActivity(
     id: formData.get("id"),
     name: formData.get("name"),
     description: formData.get("description"),
+    kind: formData.get("kind"),
+    promise: formData.get("promise"),
+    durationMinutes: formData.get("durationMinutes"),
+    steps: etapesDepuisFormData(formData),
+    preparation: formData.get("preparation"),
     active: formData.get("active"),
     waitQuizId: formData.get("waitQuizId"),
     waitPauseCampaignId: formData.get("waitPauseCampaignId"),
@@ -1662,12 +1719,116 @@ export async function updateReserverActivity(
   const garde = await gardeEditeurReserver();
   if (!garde.ok) return { ok: false, error: garde.error };
 
+  // ── LE FORMAT NE BASCULE PAS SOUS DES ENGAGEMENTS VIVANTS ──
+  //
+  // `kind` est l'UNITÉ DE COMPTAGE de toute la capacité depuis RES-5, et il est
+  // relu à chaque appel plutôt que figé au moment où un engagement est pris.
+  // Basculer une activité en « Atelier Duo » pendant qu'une offre de liste tient
+  // UNE place fait donc convertir le claim à DEUX personnes — et
+  // `claim_waitlist_offer` ne repasse PAS par la jauge, par construction. Quatre
+  // personnes sur trois places, aucune erreur, aucun journal. Le raisonnement
+  // complet et les deux parades écartées sont dans l'en-tête de la migration
+  // 20261009120000.
+  //
+  // ── ON COMPTE, ET ON NOMME CE QU'ON A COMPTÉ ──
+  //
+  // Motif des gardes destructives du dépôt (`deleteWheel` : « N lot(s) gagné(s)
+  // attendent encore en caisse »). Un refus qui dit seulement « impossible »
+  // laisse le commerçant chercher ce qui bloque ; celui-ci lui donne le compte
+  // et le geste — fermer ou honorer, puis rebasculer.
+  //
+  // ── PAR RPC, ET PAS PAR DEUX LECTURES ADMIN ──
+  //
+  // Les deux comptages joignent `reservation_slots` sur `activity_id` et
+  // `starts_at`, et `reservations` n'a aucune policy de lecture pour l'éditeur.
+  // Côté client, cela faisait trois allers-retours et une liste d'identifiants
+  // non bornée ; la RPC les fait sous UN instantané, org-scopée, et rend AUSSI
+  // le format courant — sans quoi il aurait fallu une quatrième lecture pour
+  // savoir si le format change vraiment.
+  //
+  // ── ET CE REFUS-CI N'EST PAS LE SEUL : IL EST CELUI QUI SE LIT ──
+  //
+  // Le plancher est en base — trigger `reservation_activities_freeze_kind`
+  // (20261009120000), qui recompte DANS la transaction de l'`update` et le
+  // refuse en `23514`. Il ferme deux choses que ce code ne pouvait pas fermer :
+  // le PATCH PostgREST direct (la policy éditeur et le `grant update (kind, …)`
+  // l'autorisent, et il ne passe jamais par ici), et la fenêtre entre le compte
+  // ci-dessus et l'écriture ci-dessous — deux requêtes, deux transactions.
+  //
+  // Ce qui suit reste donc nécessaire, et pour une raison qui n'est pas la
+  // sécurité : le trigger ne parle à personne. Sans le refus nommé ci-dessous,
+  // le commerçant recevrait l'erreur générique, sans le compte ni le geste qui
+  // débloque. Le trigger empêche ; celui-ci explique.
+  const admin = createAdminClient();
+  const { data: engagementsBruts, error: erreurEngagements } = await admin.rpc(
+    "reservation_activity_live_commitments",
+    {
+      p_organization_id: garde.organizationId,
+      p_activity_id: parsed.data.id,
+    },
+  );
+  if (erreurEngagements) {
+    reportError("reserver.activity-commitments", erreurEngagements.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  const engagements = lireEngagements(engagementsBruts);
+  // `null` couvre `unknown` (activité d'une autre organisation, ou disparue) ET
+  // une charge utile illisible. On REFUSE dans les deux cas : laisser passer
+  // parce qu'on n'a pas su compter, c'est exactement le silence que cette garde
+  // existe pour rompre.
+  if (!engagements) {
+    return { ok: false, error: INDISPONIBLE };
+  }
+  if (
+    engagements.kind !== parsed.data.kind &&
+    engagements.reservations + engagements.waitlist > 0
+  ) {
+    const r = engagements.reservations;
+    const a = engagements.waitlist;
+    return {
+      ok: false,
+      error:
+        `Impossible de changer le format : ${r} réservation${r > 1 ? "s" : ""} ` +
+        `et ${a} attente${a > 1 ? "s" : ""} vivantes sur des créneaux à venir. ` +
+        "Fermez ou honorez-les d'abord.",
+    };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("reservation_activities")
     .update({
       name: parsed.data.name,
       description: parsed.data.description || null,
+      kind: parsed.data.kind,
+      // ── LE RETOUR À `standard` NE DOIT RIEN EFFACER ──
+      //
+      // Le panneau MASQUE les quatre champs de présentation dès que le format
+      // choisi est `standard` : ils ne sont donc pas postés, et le schéma les lit
+      // comme absents (`""` / `null` / `[]`). Les écrire quand même remettrait
+      // `promise`, `duration_minutes`, `steps` et `preparation` à `null` —
+      // c'est-à-dire qu'un commerçant qui bascule un Moment Signature en
+      // « Standard » pour une saison PERDRAIT sa promesse et ses trois cartes,
+      // sans confirmation et sans moyen de les retrouver.
+      //
+      // La règle du dépôt est « un champ non rendu ne réécrit pas » : sur
+      // `standard`, les quatre colonnes sortent du payload et gardent leur
+      // valeur. Rien n'est incohérent en base — les deux contraintes
+      // conditionnelles ne contraignent QUE `signature` et `duo`, et une
+      // activité `standard` a le droit de porter une promesse qu'elle n'affiche
+      // pas. Sur les deux autres formats, le `superRefine` garantit que les
+      // champs exigés sont là : on écrit alors ce qui a été posté.
+      //
+      // `createReserverActivity` n'a pas cette clause, et n'en a pas besoin :
+      // à la création il n'y a rien à préserver.
+      ...(parsed.data.kind === "standard"
+        ? {}
+        : {
+            promise: parsed.data.promise || null,
+            duration_minutes: parsed.data.durationMinutes,
+            steps: parsed.data.steps.length > 0 ? parsed.data.steps : null,
+            preparation: parsed.data.preparation || null,
+          }),
       active: parsed.data.active,
       wait_quiz_id: parsed.data.waitQuizId || null,
       wait_pause_campaign_id: parsed.data.waitPauseCampaignId || null,
