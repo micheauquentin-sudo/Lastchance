@@ -454,13 +454,16 @@ test.describe("vitrine — dashboard commerçant", () => {
 
     const nomChamp = page.locator("#vitrine-import-nom");
     await expect(nomChamp).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("2 rubriques")).toBeVisible();
-    await expect(page.getByText("3 fiches")).toBeVisible();
+    // `{ exact: true }` : « 2 rubriques » apparaît AUSSI dans la phrase du
+    // refus de suppression d'une carte existante (« videz-la de ses 2
+    // rubriques ») — le mode strict de Playwright refuse l'ambiguïté.
+    await expect(page.getByText("2 rubriques", { exact: true })).toBeVisible();
+    await expect(page.getByText("3 fiches", { exact: true })).toBeVisible();
 
     // ── RECLASSER UNE LIGNE, et voir les comptes suivre ──
     const ligneSoupe = page.locator("li").filter({ hasText: "Soupe E2E" }).last();
     await ligneSoupe.getByLabel("Classement").selectOption("ignorer");
-    await expect(page.getByText("2 fiches")).toBeVisible();
+    await expect(page.getByText("2 fiches", { exact: true })).toBeVisible();
     // …puis la rendre à la carte : le reclassement se fait dans les deux sens.
     await ligneSoupe.getByLabel("Classement").selectOption("fiche");
     await expect(page.getByText("3 fiches")).toBeVisible();
