@@ -27,6 +27,10 @@
 --      (`source_refused`, la garde du bras source) et après (`expired`,
 --      l'échéance gravée que le registre applique) ; la seconde présentation
 --      rend `already_redeemed`. Hors fenêtre, la prise n'est PAS consommée.
+--      ET LA FENÊTRE QUI FAIT FOI EST CELLE DE LA PRISE : décaler celle de
+--      l'offre après coup ne déplace ni l'une ni l'autre borne, et le retrait
+--      passe quand même (section 7e). C'est la promesse faite au client qui
+--      tient, pas la dernière valeur saisie par le commerçant.
 --   8. LE PORTEFEUILLE. La prise apparaît dans `player_wallet` par le miroir du
 --      registre, avec son libellé gravé.
 --   9. LE VOISIN EST MUET, et il ne l'est pas parce qu'il serait cassé : sa
@@ -108,6 +112,7 @@ insert into public.organization_members (organization_id, user_id, role) values
 --   105 : stock 1 — l'annulation idempotente (section 4)
 --   106 : stock 1 — le retiré compte toujours (section 5)
 --   107 : stock 1 — le retrait nominal et le portefeuille (sections 7 et 8)
+--   110 : stock 1 — la fenêtre rééditée APRÈS la prise (section 7e)
 insert into public.reservation_stock_offers
   (id, organization_id, title, description, stock_total,
    window_starts_at, window_ends_at, per_player_limit, status)
@@ -135,6 +140,9 @@ values
    now() - interval '1 hour', now() + interval '3 hours', 1, 'open'),
   ('5c100000-0000-4000-8000-000000000108', '5c100000-0000-4000-8000-00000000000a',
    'Panier du portefeuille', null, 2,
+   now() - interval '1 hour', now() + interval '3 hours', 1, 'open'),
+  ('5c100000-0000-4000-8000-000000000110', '5c100000-0000-4000-8000-00000000000a',
+   'Fenêtre rééditée', null, 1,
    now() - interval '1 hour', now() + interval '3 hours', 1, 'open'),
   -- Chez le VOISIN.
   ('5c100000-0000-4000-8000-000000000109', '5c100000-0000-4000-8000-00000000000b',
@@ -622,6 +630,85 @@ select is(
      '5c100000-0000-4000-8000-000000000f01', null)),
   'cancelled',
   'une part rendue ne se retire pas au comptoir');
+
+-- ── 7e. DÉCALER LA FENÊTRE NE CHANGE PAS LE SORT D'UNE PRISE CONSENTIE ──
+--
+-- L'asymétrie que cette section ferme : l'échéance était gravée depuis le
+-- premier jour, l'OUVERTURE était relue sur l'offre à chaque retrait. Un
+-- commerçant qui repoussait sa fenêtre faisait donc refuser au comptoir des gens
+-- à qui SA page avait promis une heure — et la promesse cassée tombait toujours
+-- du côté du client.
+--
+-- On grave la fenêtre par une prise, on repousse celle de l'offre de CINQ
+-- HEURES, et on vérifie les deux choses : les bornes de la prise n'ont pas
+-- bougé, et le retrait passe quand même. C'est le second point qui prouve
+-- vraiment quelque chose — avant, il ressortait en `source_refused`.
+create temporary table tap_hf on commit drop as
+select public.hold_stock_offer(
+  '5c100000-0000-4000-8000-00000000000a',
+  '5c100000-0000-4000-8000-000000000110',
+  repeat('e5', 32)) as r;
+
+select is((select r ->> 'state' from tap_hf), 'held',
+  'la part de la fenêtre rééditée est bloquée');
+
+-- La photo des bornes AVANT l'édition. Elles sont lues sur la PRISE : c'est
+-- l'objet du test, et les relire sur l'offre après coup ne prouverait rien.
+create temporary table tap_bornes on commit drop as
+select h.redeem_not_before, h.redeem_expires_at
+  from public.reservation_stock_holds h
+ where h.offer_id = '5c100000-0000-4000-8000-000000000110';
+
+select is(
+  (select redeem_not_before from tap_bornes),
+  (select window_starts_at from public.reservation_stock_offers
+    where id = '5c100000-0000-4000-8000-000000000110'),
+  'les DEUX bornes sont gravées à la prise : l''ouverture…');
+select is(
+  (select redeem_expires_at from tap_bornes),
+  (select window_ends_at from public.reservation_stock_offers
+    where id = '5c100000-0000-4000-8000-000000000110'),
+  '…comme l''échéance');
+
+-- LE COMMERÇANT REPOUSSE SA FENÊTRE. Geste parfaitement légitime : il ouvrira
+-- plus tard. Ce qu'il ne doit pas faire, c'est déplacer ce qu'il a déjà promis.
+update public.reservation_stock_offers
+   set window_starts_at = now() + interval '5 hours',
+       window_ends_at = now() + interval '9 hours'
+ where id = '5c100000-0000-4000-8000-000000000110';
+
+select is(
+  (select h.redeem_not_before from public.reservation_stock_holds h
+    where h.offer_id = '5c100000-0000-4000-8000-000000000110'),
+  (select redeem_not_before from tap_bornes),
+  'la fenêtre décalée ne déplace PAS l''ouverture gravée de la prise');
+select is(
+  (select h.redeem_expires_at from public.reservation_stock_holds h
+    where h.offer_id = '5c100000-0000-4000-8000-000000000110'),
+  (select redeem_expires_at from tap_bornes),
+  'ni son échéance');
+
+create temporary table tap_rf on commit drop as
+select * from public.redeem_reward_by_code(
+  '5c100000-0000-4000-8000-00000000000a',
+  (select r ->> 'code' from tap_hf),
+  '5c100000-0000-4000-8000-000000000f01',
+  null);
+
+select is((select state from tap_rf), 'redeemed',
+  'ET LE RETRAIT PASSE : le bras source lit la GRAVURE, pas la fenêtre courante');
+select is((select redeemed_now from tap_rf), true,
+  'le client repart avec sa part, à l''heure qu''on lui avait promise');
+
+-- Le miroir dit la même chose que l'autorité. Sans cela, le portefeuille du
+-- joueur aurait affiché la fenêtre RÉÉDITÉE — c'est-à-dire une heure à laquelle
+-- le comptoir l'aurait refusé.
+select is(
+  (select (metadata ->> 'window_starts_at')::timestamptz
+     from public.reward_issuances
+    where code = (select r ->> 'code' from tap_hf)),
+  (select redeem_not_before from tap_bornes),
+  'et le miroir du registre porte la fenêtre DE LA PRISE, pas celle de l''offre');
 
 
 -- ════════════════════════════════════════════════════════════

@@ -6073,6 +6073,7 @@ export type Database = {
           organization_id: string
           player_key_hash: string
           redeem_expires_at: string
+          redeem_not_before: string
           redeemed_at: string | null
           redeemed_by: string | null
           status: string
@@ -6089,6 +6090,7 @@ export type Database = {
           organization_id: string
           player_key_hash: string
           redeem_expires_at: string
+          redeem_not_before: string
           redeemed_at?: string | null
           redeemed_by?: string | null
           status?: string
@@ -6105,6 +6107,7 @@ export type Database = {
           organization_id?: string
           player_key_hash?: string
           redeem_expires_at?: string
+          redeem_not_before?: string
           redeemed_at?: string | null
           redeemed_by?: string | null
           status?: string

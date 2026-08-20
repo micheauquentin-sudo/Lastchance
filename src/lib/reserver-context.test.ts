@@ -46,6 +46,18 @@ const { state, makeAdmin } = vi.hoisted(() => {
     /** Ce que rend `wait_session_open` (RES-4). */
     sessionAttente: {} as Record<string, unknown>,
     empreinte: null as string | null,
+    /**
+     * La session MARCHANDE, pour les chargeurs de tableau de bord. `null` par
+     * défaut : la quasi-totalité de ce fichier teste des chemins PUBLICS, où il
+     * n'y a personne de connecté, et ce défaut est ce qui les garde honnêtes.
+     */
+    session: null as {
+      user: { id: string };
+      organization: Record<string, unknown>;
+      role: string | null;
+    } | null,
+    /** Ce que `stock_offers_staff_state` rend au panneau du commerçant. */
+    stockOffersStaffState: { state: "ok", offers: [] } as unknown,
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
     /** Les arguments de chaque RPC, dans l'ordre — parallèle à `rpcs`. */
@@ -53,6 +65,8 @@ const { state, makeAdmin } = vi.hoisted(() => {
     pressions: [] as Array<{ parts: string; evenement: string }>,
     reset() {
       state.droitVitrine = true;
+      state.session = null;
+      state.stockOffersStaffState = { state: "ok", offers: [] };
       state.activityRow = {
         id: "33333333-3333-4333-8333-333333333333",
         organization_id: "11111111-1111-4111-8111-111111111111",
@@ -149,6 +163,12 @@ const { state, makeAdmin } = vi.hoisted(() => {
         if (nom === "wait_session_open") {
           return Promise.resolve({ data: state.sessionAttente, error: null });
         }
+        if (nom === "stock_offers_staff_state") {
+          return Promise.resolve({
+            data: state.stockOffersStaffState,
+            error: null,
+          });
+        }
         return Promise.resolve({ data: state.etatPublic, error: null });
       },
       from(table: string) {
@@ -232,7 +252,14 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() })
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => Promise.resolve(makeAdmin()),
 }));
-vi.mock("@/lib/auth", () => ({ getUserAndOrg: () => Promise.resolve({ user: null, organization: null, role: null, memberships: [] }) }));
+vi.mock("@/lib/auth", () => ({
+  getUserAndOrg: () =>
+    Promise.resolve(
+      state.session
+        ? { ...state.session, memberships: [] }
+        : { user: null, organization: null, role: null, memberships: [] },
+    ),
+}));
 vi.mock("@/lib/module-acces-public", () => ({
   moduleOuvertAuJoueur: (module: string) => {
     expect(module).toBe("vitrine");
@@ -256,6 +283,7 @@ import {
   loadReserverInvitationContext,
   loadReserverPublicContext,
   loadReserverQueuePublicContext,
+  loadStockOffersDashboardContext,
 } from "@/lib/reserver-context";
 
 beforeEach(() => state.reset());
@@ -1279,5 +1307,60 @@ describe("session d'attente — contexte PUBLIC d'une activité", () => {
     );
     expect(lecture?.colonnes).not.toContain("wait_quiz_id");
     expect(lecture?.colonnes).not.toContain("wait_pause_campaign_id");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// loadStockOffersDashboardContext — LE RÔLE EST VÉRIFIÉ ICI (revue L9, M2)
+//
+// `stock_offers_staff_state` est `security definer` et ne demande AUCUNE
+// appartenance : elle rend les offres de l'organisation qu'on lui nomme, point.
+// Sa sûreté reposait donc entièrement sur une seule ligne de ce chargeur — celle
+// qui lui passe l'organisation de la SESSION — sans qu'aucune garde ne le
+// rappelle. Ces trois cas fixent le contrat, pour que la fuite ne soit pas à un
+// paramètre de distance le jour où quelqu'un rend l'organisation configurable.
+// ════════════════════════════════════════════════════════════
+
+describe("loadStockOffersDashboardContext — la garde d'éditeur", () => {
+  const ORG = {
+    id: "11111111-1111-4111-8111-111111111111",
+    subscription_status: "active",
+    trial_ends_at: "2030-01-01T00:00:00Z",
+    past_due_since: null,
+    addon_vitrine: true,
+    comp_access: false,
+    comp_access_until: null,
+    timezone: "Indian/Reunion",
+  };
+
+  it("sans session : `unauthenticated`, et AUCUNE RPC n'est appelée", async () => {
+    const res = await loadStockOffersDashboardContext();
+    expect(res).toEqual({ ok: false, reason: "unauthenticated" });
+    expect(state.rpcs).toEqual([]);
+  });
+
+  it("un CAISSIER n'ouvre pas le panneau d'offres — et rien n'est lu", async () => {
+    // ROUGE SI : quelqu'un retire la garde de rôle. Le caissier a son écran, le
+    // comptoir ; ce panneau-ci est du paramétrage (créer une offre, fixer un
+    // stock, rééditer une fenêtre), motif `gardeEditeurReserver`.
+    state.session = { user: { id: "u1" }, organization: ORG, role: "cashier" };
+    const res = await loadStockOffersDashboardContext();
+    expect(res).toEqual({ ok: false, reason: "no_access" });
+    // La preuve qui compte : la RPC service_role n'est JAMAIS atteinte.
+    expect(state.rpcs).toEqual([]);
+  });
+
+  it("un ÉDITEUR lit ses offres, et l'organisation vient de la SESSION", async () => {
+    state.session = { user: { id: "u1" }, organization: ORG, role: "editor" };
+    state.stockOffersStaffState = { state: "ok", offers: [] };
+
+    const res = await loadStockOffersDashboardContext();
+
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.organizationId).toBe(ORG.id);
+    expect(state.rpcs).toEqual(["stock_offers_staff_state"]);
+    // Jamais d'ailleurs que de la session : c'est l'invariant que la garde de
+    // rôle vient doubler.
+    expect(state.rpcArgs[0]).toEqual({ p_organization_id: ORG.id });
   });
 });

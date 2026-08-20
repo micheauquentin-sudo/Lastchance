@@ -2213,10 +2213,31 @@ export type ReserverStockOffersDashboardContext =
  * navigateur puisse en nommer une autre : la RPC ne vérifie AUCUNE appartenance
  * (elle est en lecture, service_role, bornée à l'organisation qu'on lui passe) —
  * c'est exactement le contrat de `queue_staff_state`, et le même invariant.
+ *
+ * ── LE RÔLE EST VÉRIFIÉ ICI, PARCE QUE PERSONNE D'AUTRE NE LE FAIT (revue L9) ──
+ *
+ * `stock_offers_staff_state` est `security definer` et ne demande AUCUNE
+ * appartenance : elle rend les offres de l'organisation qu'on lui nomme, point.
+ * Sa sûreté repose donc entièrement sur le fait que ce chargeur-ci lui passe
+ * l'organisation de la SESSION — un invariant vrai, mais qui tenait à une seule
+ * ligne et qu'aucune garde ne rappelait. Le rôle est le second tour de clé : il
+ * ne change rien tant que l'invariant tient, et il évite qu'une fuite
+ * inter-locataire soit à un paramètre de distance le jour où quelqu'un croit
+ * bien faire en rendant l'organisation configurable.
+ *
+ * `owner | editor`, motif `gardeEditeurReserver` (src/actions/reserver.ts) : ce
+ * panneau est du PARAMÉTRAGE — créer une offre, fixer un stock, rééditer une
+ * fenêtre. Le CAISSIER, lui, n'en a pas besoin ; son écran est le comptoir
+ * (`/dashboard/redeem`), qui lit les prises et non le catalogue. Il voit donc
+ * cette page sans les offres, exactement comme il voit les autres panneaux
+ * d'édition qui ne le concernent pas.
  */
 export async function loadStockOffersDashboardContext(): Promise<ReserverStockOffersDashboardContext> {
-  const { user, organization } = await getUserAndOrg();
+  const { user, organization, role } = await getUserAndOrg();
   if (!user || !organization) return { ok: false, reason: "unauthenticated" };
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, reason: "no_access" };
+  }
   if (!droitEffectifModule("vitrine", organization)) {
     return { ok: false, reason: "no_access" };
   }

@@ -58,13 +58,21 @@
 -- revanche le cœur du service : le commerçant a promis une plage d'accueil, pas
 -- une créance permanente sur son stock.
 --
--- Les deux bornes du retrait sont donc portées SÉPARÉMENT, et c'est délibéré :
---   * la borne HAUTE est `redeem_expires_at`, GRAVÉE sur la prise à l'émission
---     et miroitée en `reward_issuances.expires_at` — le moteur universel la
---     applique déjà, sans une ligne de code nouvelle (`expired`) ;
---   * la borne BASSE vit dans `redeem_stock_hold`, le bras source. Voir la
---     section 9 pour l'arbitrage complet : il a été envisagé d'ajouter une
---     colonne `redeem_not_before` au registre, et il a été ÉCARTÉ.
+-- LES DEUX BORNES DU RETRAIT SONT GRAVÉES SUR LA PRISE — `redeem_not_before` et
+-- `redeem_expires_at`, recopiées de la fenêtre de l'offre à l'instant du blocage
+-- et jamais relues ensuite. Une fenêtre rééditée vaut donc pour les prises À
+-- VENIR, et laisse intactes celles qui sont déjà consenties : le commerçant a
+-- promis une plage à quelqu'un, et cette promesse-là ne se réécrit pas dans son
+-- dos. C'est la doctrine de 20260904120000, appliquée aux deux bouts.
+--
+-- Ce qui les APPLIQUE, en revanche, est réparti, et c'est délibéré :
+--   * la borne HAUTE est miroitée en `reward_issuances.expires_at` — le moteur
+--     universel l'applique déjà, sans une ligne de code nouvelle (`expired`) ;
+--   * la borne BASSE est appliquée par `redeem_stock_hold`, le bras source. Voir
+--     la section 10 pour l'arbitrage complet : il a été envisagé d'ajouter une
+--     colonne `redeem_not_before` AU REGISTRE, et cela a été ÉCARTÉ — le
+--     registre ne porte que ce qui est un invariant DU REGISTRE, et « trop tôt »
+--     ne concerne qu'une famille sur dix.
 --
 -- ── CE QUE CE FICHIER NE FAIT PAS, VOLONTAIREMENT ──
 --
@@ -160,14 +168,22 @@ create index reservation_stock_offers_org_window_idx
 -- une donnée personnelle conservée sans base, et un consentement sans adresse
 -- ne consent à rien. La purge efface donc les deux d'un seul geste (section 13).
 --
--- ── POURQUOI `redeem_expires_at` EST UNE COLONNE, ET NON UNE JOINTURE ──
+-- ── POURQUOI LA FENÊTRE EST DEUX COLONNES, ET NON UNE JOINTURE ──
 --
 -- Doctrine 20260904120000 : « échéance GRAVÉE à l'émission, lue sur la ligne
 -- émise, jamais recalculée depuis la parente ». Si le miroir lisait
 -- `offers.window_ends_at` à chaque passage, un commerçant qui décale sa fenêtre
 -- déplacerait l'échéance de prises DÉJÀ CONSENTIES — la preuve du client
--- bougerait sous lui. La colonne fige ce qui a été promis au moment où ça a
+-- bougerait sous lui. Les colonnes figent ce qui a été promis au moment où ça a
 -- été promis.
+--
+-- LA MÊME RAISON VAUT POUR L'AUTRE BOUT, et c'est pour cela qu'il y en a DEUX.
+-- Une première écriture de ce fichier ne gravait que l'échéance et relisait
+-- `window_starts_at` sur l'offre à chaque retrait : les deux bornes de la même
+-- promesse obéissaient alors à des doctrines contraires, et la seule des deux
+-- qui pouvait encore bouger était celle qui décide si le client repart avec sa
+-- part ou les mains vides. Une asymétrie de ce genre ne se voit pas en relisant
+-- la colonne — elle se voit en relisant les DEUX.
 --
 -- ── `expired` EST DANS LA LISTE, ET RIEN NE L'ÉCRIT ──
 --
@@ -202,7 +218,11 @@ create table public.reservation_stock_holds (
   code text not null check (code ~ '^RESA-[A-HJ-NP-Z2-9]{8}$'),
   status text not null default 'held'
     check (status in ('held', 'redeemed', 'cancelled', 'expired')),
-  -- ÉCHÉANCE GRAVÉE : recopie de `window_ends_at` au moment de la prise.
+  -- LES DEUX BORNES DE LA FENÊTRE, GRAVÉES À LA PRISE — recopies de
+  -- `window_starts_at` et `window_ends_at` de l'offre. Voir les commentaires de
+  -- colonne : c'est ce qui rend une prise consentie insensible à une RÉÉDITION
+  -- de la fenêtre par le commerçant.
+  redeem_not_before timestamptz not null,
   redeem_expires_at timestamptz not null,
   redeemed_at timestamptz,
   redeemed_by uuid references auth.users(id) on delete set null,
@@ -265,8 +285,24 @@ comment on column public.reservation_stock_holds.redeem_expires_at is
   'Échéance GRAVÉE à la prise depuis `window_ends_at` de l''offre, jamais '
   'recalculée (doctrine 20260904120000). Miroitée en '
   '`reward_issuances.expires_at` : c''est elle que la caisse universelle '
-  'applique pour refuser un retrait APRÈS la fenêtre. La borne AVANT est '
-  'portée par redeem_stock_hold — voir la section 9.';
+  'applique pour refuser un retrait APRÈS la fenêtre.';
+comment on column public.reservation_stock_holds.redeem_not_before is
+  'Ouverture GRAVÉE à la prise depuis `window_starts_at` de l''offre, SYMÉTRIQUE '
+  'de redeem_expires_at et pour la même raison. C''est `redeem_stock_hold` qui '
+  'l''applique — le registre universel n''a pas de mot pour « trop tôt », et lui '
+  'en inventer un pour UNE famille sur dix a été écarté en section 10. '
+  'CE QU''ELLE FERME : sans elle, le bras source lisait `window_starts_at` SUR '
+  'L''OFFRE, à chaque retrait : une fenêtre déplacée par le commerçant changeait '
+  'rétroactivement le sort de prises DÉJÀ CONSENTIES, et dans le mauvais sens — '
+  'quelqu''un à qui on avait promis « à partir de 19 h » se voyait refusé au '
+  'comptoir parce que la fenêtre disait désormais 21 h. L''échéance, elle, était '
+  'gravée depuis le premier jour : les deux bornes étaient donc régies par deux '
+  'doctrines contraires sur la même promesse. Elles le sont maintenant par la '
+  'même. AUCUN `check` NE COMPARE LES DEUX BORNES, délibérément : leur ordre est '
+  'garanti À LA SOURCE par `reservation_stock_offers_window_check`, et la '
+  'gravure n''en est qu''une recopie. Une seconde garde sur la copie rendrait '
+  'l''échappatoire de reprise de données (une borne déjà posée est respectée, '
+  'voir la section 3) plus étroite que la table dont elle recopie les valeurs.';
 
 -- « Le restant de cette offre » : le seul chemin de comptage, et il porte
 -- `offer_id` en tête parce que c'est par là qu'on l'interroge toujours.
@@ -280,30 +316,39 @@ create index reservation_stock_holds_org_created_idx
 
 
 -- ────────────────────────────────────────────────────────────
--- 3. Génération du code et gravure de l'échéance (service-authoritative)
+-- 3. Génération du code et gravure de la FENÊTRE (service-authoritative)
 --
 -- Patron `reservations_set_code` (20261002120000:323) à deux différences près :
--- le PRÉFIXE `RESA-`, imposé par le registre universel, et la gravure de
--- l'échéance dans le même passage — les deux valeurs viennent de la base, aucune
--- ne peut être choisie par l'appelant.
+-- le PRÉFIXE `RESA-`, imposé par le registre universel, et la gravure des DEUX
+-- BORNES de la fenêtre dans le même passage — les trois valeurs viennent de la
+-- base, aucune ne peut être choisie par l'appelant.
 --
 -- LE CODE DE L'APPELANT EST ÉCRASÉ, TOUJOURS, et pour la raison écrite en
 -- 20261002120000:312 : laisser choisir un identifiant de comptoir à qui sait
 -- écrire dans la table ferait reposer son imprévisibilité sur la discipline de
 -- l'appelant plutôt que sur la base.
 --
--- L'ÉCHÉANCE, ELLE, EST RESPECTÉE SI ELLE EST DÉJÀ POSÉE — motif inverse, et
--- c'est celui de `set_reward_redeem_expiry` (20260904120000:352) : une reprise
--- de données ou une RPC future doit pouvoir poser une échéance particulière
--- sans que ce trigger la lui reprenne. La colonne étant `not null`, le cas
--- courant est de toute façon la gravure.
+-- LES BORNES, ELLES, SONT RESPECTÉES SI ELLES SONT DÉJÀ POSÉES — motif inverse,
+-- et c'est celui de `set_reward_redeem_expiry` (20260904120000:352) : une
+-- reprise de données ou une RPC future doit pouvoir poser une fenêtre
+-- particulière sans que ce trigger la lui reprenne. Les colonnes étant
+-- `not null`, le cas courant est de toute façon la gravure.
+--
+-- CHAQUE BORNE EST TRAITÉE SÉPARÉMENT, et ce n'est pas de la coquetterie : une
+-- sortie anticipée sur la seule échéance — la forme qu'avait ce trigger quand il
+-- ne gravait qu'elle — aurait laissé `redeem_not_before` NUL sur toute ligne
+-- posant explicitement son échéance, c'est-à-dire exactement sur le chemin de
+-- reprise de données que le paragraphe ci-dessus autorise. La colonne est
+-- `not null` : l'insertion aurait échoué, et le message aurait parlé d'une
+-- contrainte plutôt que du trigger qui l'a laissée vide.
 --
 -- POURQUOI PAS `set_reward_redeem_expiry`, LE GRAVEUR GÉNÉRIQUE : il est de
 -- forme « TTL EN JOURS » — il calcule `now() + make_interval(days => …)` depuis
--- une colonne `code_ttl_days` de la parente (20260904120000:396). Ici
--- l'échéance est un INSTANT ABSOLU déjà écrit sur l'offre. Lui ajouter une
--- branche aurait tordu son contrat pour un cas qui n'est pas le sien ; la
--- doctrine qu'il porte — graver à l'émission — est respectée à la lettre.
+-- une colonne `code_ttl_days` de la parente (20260904120000:396). Ici les bornes
+-- sont des INSTANTS ABSOLUS déjà écrits sur l'offre, et il y en a deux. Lui
+-- ajouter une branche aurait tordu son contrat pour un cas qui n'est pas le
+-- sien ; la doctrine qu'il porte — graver à l'émission — est respectée à la
+-- lettre.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.reservation_stock_holds_set_code()
@@ -351,20 +396,23 @@ create trigger reservation_stock_holds_set_code
   for each row execute function public.reservation_stock_holds_set_code();
 
 
-create or replace function public.reservation_stock_holds_grave_expiry()
+create or replace function public.reservation_stock_holds_grave_window()
 returns trigger
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
+  v_starts_at timestamptz;
   v_ends_at timestamptz;
 begin
-  if new.redeem_expires_at is not null then
+  if new.redeem_not_before is not null
+     and new.redeem_expires_at is not null then
     return new;
   end if;
 
-  select o.window_ends_at into v_ends_at
+  select o.window_starts_at, o.window_ends_at
+    into v_starts_at, v_ends_at
     from public.reservation_stock_offers o
    where o.id = new.offer_id
      and o.organization_id = new.organization_id;
@@ -372,25 +420,26 @@ begin
   if v_ends_at is null then
     -- La FK composite garantit l'existence de l'offre ; ce refus explicite
     -- couvre l'ordre d'exécution (le trigger précède la vérification de la FK)
-    -- et refuse de graver une échéance nulle sur une colonne `not null`.
-    raise exception 'stock offer % not found for hold expiry', new.offer_id
+    -- et refuse de graver des bornes nulles sur des colonnes `not null`.
+    raise exception 'stock offer % not found for hold window', new.offer_id
       using errcode = '23503';
   end if;
 
-  new.redeem_expires_at := v_ends_at;
+  new.redeem_not_before := coalesce(new.redeem_not_before, v_starts_at);
+  new.redeem_expires_at := coalesce(new.redeem_expires_at, v_ends_at);
   return new;
 end;
 $$;
 
-revoke all on function public.reservation_stock_holds_grave_expiry()
+revoke all on function public.reservation_stock_holds_grave_window()
   from public, anon, authenticated;
 
--- APRÈS le poseur de code dans l'ordre alphabétique des noms de triggers
--- (`…_grave_expiry` < `…_set_code`) : les deux sont indépendants — l'un écrit
--- `code`, l'autre `redeem_expires_at` — donc leur ordre n'a aucune incidence.
-create trigger reservation_stock_holds_grave_expiry
+-- AVANT le poseur de code dans l'ordre alphabétique des noms de triggers
+-- (`…_grave_window` < `…_set_code`) : les deux sont indépendants — l'un écrit
+-- `code`, l'autre les deux bornes — donc leur ordre n'a aucune incidence.
+create trigger reservation_stock_holds_grave_window
   before insert on public.reservation_stock_holds
-  for each row execute function public.reservation_stock_holds_grave_expiry();
+  for each row execute function public.reservation_stock_holds_grave_window();
 
 
 -- ────────────────────────────────────────────────────────────
@@ -425,6 +474,7 @@ begin
           or new.redeemed_by is distinct from old.redeemed_by
           or new.basket_cents is distinct from old.basket_cents
           or new.cancelled_at is distinct from old.cancelled_at
+          or new.redeem_not_before is distinct from old.redeem_not_before
           or new.redeem_expires_at is distinct from old.redeem_expires_at
           or new.offer_id is distinct from old.offer_id
           or new.code is distinct from old.code)
@@ -496,8 +546,8 @@ grant update (title, description, stock_total,
 -- PostgREST sera REFUSÉ EN ENTIER sur cette table.
 grant select (
   id, offer_id, organization_id, player_key_hash, consent_transactional_at,
-  code, status, redeem_expires_at, redeemed_at, redeemed_by, basket_cents,
-  cancelled_at, created_at
+  code, status, redeem_not_before, redeem_expires_at, redeemed_at, redeemed_by,
+  basket_cents, cancelled_at, created_at
 ) on public.reservation_stock_holds to authenticated;
 
 
@@ -535,6 +585,26 @@ grant select (
 --     des roues. La fonction sort en silence sur une famille inconnue
 --     (`if v_kind is null then return new`), ce qui est ici le comportement
 --     VOULU et non une perte à réparer.
+--
+--     ⚠️ PIÈGE POUR QUI VOUDRAIT REVENIR SUR CE REFUS — et il ne se voit pas.
+--     Cette fonction porte DEUX `case new.source_type`, et ils ne sont pas de
+--     la même nature. Le PREMIER (20260805160000:897) est une EXPRESSION : sans
+--     branche correspondante il rend `null`, et c'est ce `null` qui déclenche la
+--     sortie en silence — c'est par là que la 10e famille passe aujourd'hui.
+--     Le SECOND (20260805160000:931), celui qui relit l'empreinte legacy, est
+--     une INSTRUCTION `case … end case` SANS `else` : en plpgsql, une
+--     instruction de cette forme qui ne trouve aucune branche LÈVE
+--     `case_not_found` (20000).
+--
+--     Ajouter `when 'reserver_stock' then …` au premier SANS ajouter de branche
+--     — ou un `else null` — au second fait donc lever la fonction sur chaque
+--     prise. Ce qui suit est la partie contre-intuitive : la prise NE TOMBERAIT
+--     PAS. Le corps se termine par `exception when others then return new`, qui
+--     avale l'erreur, annule la sous-transaction et laisse le trigger réussir.
+--     Le prix n'est donc pas un échec visible mais une PERTE MUETTE — plus
+--     aucune ligne d'`experience_events` pour cette famille, y compris celles
+--     que le premier `case` venait d'autoriser. Le symptôme serait « les
+--     statistiques restent à zéro », à des semaines de la cause.
 -- ────────────────────────────────────────────────────────────
 
 -- ① Le `check` de `source_type`. La contrainte est ANONYME dans la définition
@@ -654,8 +724,16 @@ declare
     || '      pg_catalog.jsonb_strip_nulls(pg_catalog.jsonb_build_object(' || E'\n'
     || '        ''legacy_table'', ''reservation_stock_holds'',' || E'\n'
     || '        ''experience_label'', so.title,' || E'\n'
-    || '        ''window_starts_at'', so.window_starts_at,' || E'\n'
-    || '        ''window_ends_at'', so.window_ends_at' || E'\n'
+    -- Le commentaire inséré est SANS APOSTROPHE, délibérément : ce texte
+    -- traverse un littéral SQL avant d'être exécuté, et chaque apostrophe y
+    -- coûterait un doublement de plus — la classe d'erreur la moins visible
+    -- d'un bloc qui se dérive.
+    || '        -- LES DEUX BORNES GRAVEES SUR LA PRISE, jamais la fenetre' || E'\n'
+    || '        -- COURANTE de la parente : raison en section 10. Recopier la' || E'\n'
+    || '        -- fenetre de la parente ferait dire au miroir autre chose que' || E'\n'
+    || '        -- ce que dit l autorite, des la premiere reedition.' || E'\n'
+    || '        ''window_starts_at'', sh.redeem_not_before,' || E'\n'
+    || '        ''window_ends_at'', sh.redeem_expires_at' || E'\n'
     || '      )) as metadata,' || E'\n'
     || '      sh.created_at as issued_at,' || E'\n'
     || '      -- ÉCHÉANCE GRAVÉE À L''ÉMISSION (20260904120000) : lue sur la' || E'\n'
@@ -889,6 +967,18 @@ $$;
 --       de retrait promise par un commerçant est une règle métier de Réserver,
 --       pas une propriété du registre.
 --
+-- ── ET ELLE SE LIT SUR LA PRISE, PAS SUR L'OFFRE ──
+--
+-- La garde interroge `redeem_not_before`, GRAVÉE à la prise (section 3), et non
+-- `window_starts_at` de l'offre. La première écriture de cette section faisait
+-- l'inverse, et les deux bornes de la même promesse obéissaient alors à des
+-- doctrines contraires : l'échéance était gravée, l'ouverture était relue à
+-- chaque retrait. Conséquence concrète, et elle tombait toujours du même côté —
+-- un commerçant qui décale sa fenêtre de 19 h à 21 h faisait refuser au comptoir
+-- des gens à qui SA page avait promis 19 h, sans que personne ne l'ait décidé.
+-- L'édition d'une fenêtre concerne les prises À VENIR ; celles qui sont déjà
+-- consenties portent la leur.
+--
 -- CONSÉQUENCE ASSUMÉE, ET ELLE DOIT ÊTRE RELAYÉE À LA COUCHE APPLICATIVE : un
 -- retrait tenté AVANT la fenêtre rend l'état `source_refused` — le bras refuse,
 -- donc `redeemed_now` est faux et la source est trouvée. Le registre n'a pas de
@@ -981,15 +1071,14 @@ begin
      -- couvre la déjà-retirée (idempotence), et couvrira tout statut ajouté
      -- plus tard sans qu'on y repense.
      and h.status = 'held'
-     -- LA FENÊTRE. La borne haute est ceinture ET bretelles : le routeur l'a
-     -- déjà appliquée depuis le registre, mais un bras source qui ne la porterait
-     -- pas deviendrait faux le jour où quelqu'un l'appelle autrement.
-     and pg_catalog.now() >= (
-       select o.window_starts_at
-         from public.reservation_stock_offers o
-        where o.id = h.offer_id
-          and o.organization_id = h.organization_id
-     )
+     -- LA FENÊTRE, LUE SUR LA PRISE ET JAMAIS SUR L'OFFRE. Les deux bornes sont
+     -- gravées à la prise (section 3) : rééditer la fenêtre de l'offre ne change
+     -- plus le sort de ce qui a déjà été promis. La borne haute est ceinture ET
+     -- bretelles — le routeur l'a déjà appliquée depuis `expires_at` du
+     -- registre, qui est le miroir de cette même gravure — mais un bras source
+     -- qui ne la porterait pas deviendrait faux le jour où quelqu'un l'appelle
+     -- autrement.
+     and pg_catalog.now() >= h.redeem_not_before
      and pg_catalog.now() < h.redeem_expires_at
   returning h.id into v_id;
 
@@ -1015,11 +1104,13 @@ comment on function public.redeem_stock_hold(uuid, text, text, integer) is
   'un point d''entrée de comptoir : la caisse n''a qu''une porte, et c''est le '
   'routeur universel. Org-scopée, acteur vérifié membre owner/editor/cashier EN '
   'SQL, idempotente (`redeemed_now` distingue le geste de sa répétition), '
-  'auditée sous `reservation.stock_redeem`. BORNÉE PAR LA FENÊTRE DE RETRAIT '
-  'aux DEUX bouts : la borne haute double celle que le registre applique déjà '
-  'via `expires_at`, la borne basse n''existe QUE là — un retrait tenté avant '
-  '`window_starts_at` ressort du routeur en `source_refused`. Hors fenêtre, la '
-  'prise n''est PAS consommée.';
+  'auditée sous `reservation.stock_redeem`. BORNÉE PAR LA FENÊTRE GRAVÉE SUR LA '
+  'PRISE — `redeem_not_before` et `redeem_expires_at`, jamais la fenêtre '
+  'COURANTE de l''offre : rééditer celle-ci ne change pas le sort d''une prise '
+  'déjà consentie. La borne haute double celle que le registre applique via '
+  '`expires_at` (le miroir de la même gravure) ; la borne basse n''existe QUE '
+  'là — un retrait tenté avant `redeem_not_before` ressort du routeur en '
+  '`source_refused`. Hors fenêtre, la prise n''est PAS consommée.';
 
 revoke all on function public.redeem_stock_hold(uuid, text, text, integer)
   from public, anon, authenticated;
@@ -1323,8 +1414,15 @@ begin
     'state', 'held',
     'hold_id', v_row.id,
     'code', v_row.code,
-    'window_starts_at', v_offer.window_starts_at,
-    'window_ends_at', v_offer.window_ends_at,
+    -- LES BORNES RENDUES SONT CELLES DE LA PRISE, pas celles lues sur l'offre
+    -- quelques lignes plus haut. À cet instant les deux paires sont égales — le
+    -- trigger vient de recopier l'une dans l'autre — mais c'est la GRAVURE qui
+    -- fera foi au comptoir, et c'est donc elle qu'on promet. Rendre `v_offer`
+    -- aurait été juste aujourd'hui et faux au premier chemin de reprise qui
+    -- pose ses propres bornes.
+    'window_starts_at', v_row.redeem_not_before,
+    'window_ends_at', v_row.redeem_expires_at,
+    'redeem_not_before', v_row.redeem_not_before,
     'redeem_expires_at', v_row.redeem_expires_at,
     'remaining', v_offer.stock_total - (v_taken + 1)
   );
@@ -1459,6 +1557,18 @@ begin
      and status = 'held'
   returning * into v_row;
 
+  -- ZÉRO LIGNE : ON NE PRÉTEND PAS AVOIR ANNULÉ. Le verrou d'avis rend ce
+  -- chemin pratiquement inatteignable — les trois RPC qui touchent une prise le
+  -- prennent sur la même clé, donc un concurrent aurait été vu par la relecture
+  -- ci-dessus. Il reste néanmoins écrit, parce que la forme précédente rendait
+  -- `state: 'cancelled'` avec un `hold_id` NUL : l'appelant lisait « c'est
+  -- annulé » d'une ligne que personne n'avait touchée, et la seule trace du
+  -- doute était un identifiant manquant que rien ne l'obligeait à regarder.
+  -- `unknown` est le mot exact — cette RPC ne sait plus de quoi elle parle.
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unknown');
+  end if;
+
   return pg_catalog.jsonb_build_object(
     'state', 'cancelled',
     'hold_id', v_row.id,
@@ -1471,7 +1581,9 @@ comment on function public.cancel_stock_hold(uuid, text) is
   'Rend une unité bloquée, sur preuve de possession (identifiant + empreinte du '
   'cookie joueur). IDEMPOTENTE : la seconde annulation n''écrit rien et ne '
   'repousse pas `cancelled_at` — c''est ce qui rend la restitution exactement '
-  'unique. Refuse `already_redeemed` sur une unité déjà retirée, `too_late` '
+  'unique. Rend aussi `unknown` si l''écriture finale ne touche aucune ligne — '
+  'chemin que le verrou rend inatteignable, mais dont le mot devait rester '
+  'exact. Refuse `already_redeemed` sur une unité déjà retirée, `too_late` '
   'passé la fenêtre (l''unité y est DÉJÀ revenue au restant par arithmétique : '
   'annuler ne rendrait rien et transformerait un non-retrait en désistement '
   'dans les compteurs du commerçant), et `unknown` sur une ligne purgée. Libère '
@@ -1543,10 +1655,16 @@ begin
      );
 
   if p_player_key_hash is not null then
+    -- LA FENÊTRE DE LA PRISE VOYAGE AVEC ELLE. L'écran affiche par ailleurs la
+    -- fenêtre de l'OFFRE (les clés `window_*` du document) : les deux coïncident
+    -- tant que le commerçant ne la réédite pas, et divergent ensuite. C'est
+    -- alors la gravure qui dit vrai, puisque c'est elle que le comptoir
+    -- appliquera — voir la section 10.
     select pg_catalog.jsonb_build_object(
              'hold_id', h.id,
              'code', h.code,
              'status', h.status,
+             'redeem_not_before', h.redeem_not_before,
              'redeem_expires_at', h.redeem_expires_at
            )
       into v_mine
@@ -1583,7 +1701,11 @@ $$;
 comment on function public.stock_offer_public_state(uuid, text) is
   'État public d''une offre de stock : titre, fenêtre de retrait, restant '
   'HONNÊTE et — si l''empreinte du cookie est fournie — la prise du joueur '
-  '{code, statut, échéance}. L''empreinte est FACULTATIVE : un visiteur sans '
+  '{code, statut, LES DEUX BORNES GRAVÉES}. Les bornes du `my_hold` sont celles '
+  'de la PRISE, celles du document sont celles de l''OFFRE : elles coïncident '
+  'jusqu''à la première réédition de la fenêtre, et c''est la gravure qui dit '
+  'vrai — c''est elle que le comptoir applique. L''empreinte est FACULTATIVE : '
+  'un visiteur sans '
   'cookie lit quand même le restant. Le restant est une PHOTO non verrouillée, '
   'jamais une réservation : seule hold_stock_offer tranche, sous verrou. Rend '
   '`unavailable` — indistinctement — pour une offre inconnue, en brouillon, ou '
@@ -1825,6 +1947,13 @@ begin
   -- LES PRISES DE STOCK (RES-5). `expired` est calculé À LA LECTURE et rendu au
   -- client : la ligne, elle, reste `held`. Sans ce champ, la page afficherait
   -- « réservé » sur une part que le commerçant a déjà remise en vente.
+  --
+  -- LA FENÊTRE RENDUE EST CELLE DE LA PRISE, jamais celle que porte l'offre
+  -- AUJOURD'HUI. C'est ici que ça compte le plus : cette liste est ce que le
+  -- joueur relit avant de se déplacer, et lui montrer la fenêtre courante
+  -- d'une offre rééditée l'enverrait à une heure où le comptoir le refuserait —
+  -- le comptoir, lui, applique la gravure (section 10). L'offre n'est plus
+  -- jointe que pour son titre.
   select coalesce(
     pg_catalog.jsonb_agg(
       pg_catalog.jsonb_build_object(
@@ -1837,10 +1966,10 @@ begin
         'redeemed_at', h.redeemed_at,
         'redeem_expires_at', h.redeem_expires_at,
         'title', o.title,
-        'window_starts_at', o.window_starts_at,
-        'window_ends_at', o.window_ends_at
+        'window_starts_at', h.redeem_not_before,
+        'window_ends_at', h.redeem_expires_at
       )
-      order by o.window_starts_at desc
+      order by h.redeem_not_before desc
     ),
     '[]'::jsonb
   ) into v_stock

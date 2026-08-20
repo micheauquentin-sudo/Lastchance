@@ -45,10 +45,12 @@ import {
   mapReservationPublicState,
   mapReserveSlot,
   mapRevokeInvitation,
+  mapStockOfferPublicState,
   mapWaitlistJoin,
   mapWaitlistLeave,
   mapWaitSpinGrant,
   mapWaitUsePause,
+  offreAccepteePrise,
   RESERVER_FUSEAU_DEFAUT,
   urlActiviteReserver,
   urlInvitationReserver,
@@ -3200,6 +3202,51 @@ async function consommerTourAttente(
 /** Refus muet du parcours stock — aucun oracle, jamais. */
 const STOCK_INDISPONIBLE = "Cette réservation n'est plus disponible.";
 
+/**
+ * L'offre a-t-elle une CHANCE de servir ? — le garde-fou du pont d'identité.
+ *
+ * Ce n'est PAS un second juge, et le distinguer importe : `hold_stock_offer`
+ * tranche seule, sous verrou, et rien ici ne change ce qu'elle répondra. Cette
+ * lecture ne sert qu'à décider si l'on paie une écriture d'identité — voir le
+ * commentaire de `holdStockInner`.
+ *
+ * ── POURQUOI CETTE RPC-LÀ, ET PAS UNE LECTURE DE TABLE ──
+ *
+ * `stock_offer_public_state` est la MÊME lecture que celle de la page publique,
+ * donc les deux ne peuvent pas diverger. Elle porte déjà les trois refus
+ * durables — offre inconnue, brouillon, organisation sans le droit `vitrine` —
+ * et rend le statut, la fin de fenêtre et le restant, c'est-à-dire tout ce que
+ * `hold_stock_offer` évalue. Recomposer ce verdict depuis les tables aurait
+ * fabriqué le second juge que le module refuse partout ailleurs.
+ *
+ * L'ORGANISATION N'EST PAS VÉRIFIÉE ICI, et n'a pas à l'être : une offre d'un
+ * AUTRE commerçant fait échouer le pont lui-même — `player_experience_scope_is_valid`
+ * exige que l'expérience appartienne à l'organisation — donc ce cas n'écrivait
+ * déjà rien. Le rejouer ici aurait payé une seconde lecture pour un refus qui
+ * tombe de toute façon.
+ *
+ * En cas de doute — panne, document illisible — on rend `true` : le pont sera
+ * posé pour rien, ce qui est exactement l'état antérieur. Un `false` par défaut
+ * aurait fait de la moindre panne de lecture une prise sans identité, donc une
+ * réservation invisible du portefeuille de son propriétaire.
+ */
+async function offreServableAvantPont(
+  admin: ReturnType<typeof createAdminClient>,
+  offerId: string,
+): Promise<boolean> {
+  const { data, error } = await admin.rpc("stock_offer_public_state", {
+    p_offer_id: offerId,
+  });
+  if (error) return true;
+  const etat = mapStockOfferPublicState(data);
+  if (etat.state !== "ok") return false;
+  return offreAccepteePrise({
+    status: etat.status ?? "draft",
+    windowEndsAt: etat.windowEndsAt,
+    remaining: etat.remaining,
+  });
+}
+
 export type HoldStockOfferActionResult =
   | { ok: true; data: HoldStockOfferResult }
   | { ok: false; error: string; challengeRequired?: boolean };
@@ -3289,22 +3336,31 @@ async function holdStockInner(
   // première émission. Ce module n'a pas de join — la prise EST le premier
   // contact — alors c'est elle qui en tient lieu.
   //
-  // CONSÉQUENCE ASSUMÉE : une prise refusée (offre fermée, épuisée) laisse quand
-  // même une adhésion d'expérience. C'est une ligne d'identité, pas une unité de
-  // stock, et `player_experience_scope_is_valid` garantit qu'elle ne peut
-  // désigner qu'une offre RÉELLE de CETTE organisation — une offre inventée fait
-  // échouer le pont, jamais naître une adhésion fantôme.
+  // ── … MAIS PAS QUAND LA PRISE EST DÉJÀ PERDUE (revue L9, M1) ──
   //
-  // Best-effort comme les huit autres sites : une panne du pont ne doit pas
-  // faire échouer une prise, et son échec est déjà compté par le module
-  // d'identité (`player-identity.bridge-failed.*`).
-  await ensureProgressivePlayerIdentity({
-    organizationId: parsed.organizationId,
-    experienceKind: "reserver_stock",
-    experienceId: parsed.offerId,
-    legacyIdentityHash: empreinte,
-    acquisitionSource: "direct",
-  });
+  // L'ordre ci-dessus est nécessaire ; l'inconditionnel ne l'était pas. Le pont
+  // écrit une ligne `players` et une adhésion d'expérience à chaque appel, et il
+  // le faisait AUSSI sur une offre épuisée, fermée ou en brouillon — c'est-à-dire
+  // sur le seul appel dont on sait d'avance qu'il n'aboutira pas. À cookie neuf,
+  // c'est une écriture gratuite et répétable : le nombre de lignes d'identité
+  // n'était borné par rien, alors même que `stock_total` bornait tout le reste.
+  //
+  // On demande donc à la base si l'offre a une CHANCE de servir, avant. Cette
+  // lecture ne décide de rien : `hold_stock_offer` reste seule juge, sous verrou,
+  // et la réponse rendue au joueur est la sienne, inchangée.
+  const servable = await offreServableAvantPont(admin, parsed.offerId);
+  if (servable) {
+    // Best-effort comme les huit autres sites : une panne du pont ne doit pas
+    // faire échouer une prise, et son échec est déjà compté par le module
+    // d'identité (`player-identity.bridge-failed.*`).
+    await ensureProgressivePlayerIdentity({
+      organizationId: parsed.organizationId,
+      experienceKind: "reserver_stock",
+      experienceId: parsed.offerId,
+      legacyIdentityHash: empreinte,
+      acquisitionSource: "direct",
+    });
+  }
 
   const { data, error } = await admin.rpc("hold_stock_offer", {
     p_organization_id: parsed.organizationId,
@@ -3320,6 +3376,26 @@ async function holdStockInner(
   }
 
   const resultat = mapHoldStockOffer(data);
+
+  // ── LE RÉSIDU, ÉCRIT PLUTÔT QUE PASSÉ SOUS SILENCE ──
+  //
+  // Le restant lu ci-dessus est une PHOTO non verrouillée. Elle peut dire zéro
+  // pendant qu'une annulation, arrivée entre les deux appels, rend l'unité : la
+  // RPC accorde alors une prise dont le pont n'a pas été posé, et SON miroir
+  // gardera `player_id` nul jusqu'au retrait. On repose donc le pont — il servira
+  // aux prises suivantes de la même personne — et on COMPTE le cas, parce qu'une
+  // fenêtre de course qu'on ne mesure pas est une fenêtre dont on ne saura jamais
+  // si elle est rare. Zéro est la valeur attendue.
+  if (!servable && (resultat.state === "held" || resultat.state === "already_held")) {
+    recordCounter("reserver.stock_hold.pont_rattrape");
+    await ensureProgressivePlayerIdentity({
+      organizationId: parsed.organizationId,
+      experienceKind: "reserver_stock",
+      experienceId: parsed.offerId,
+      legacyIdentityHash: empreinte,
+      acquisitionSource: "direct",
+    });
+  }
 
   // CONFIRMATION HORS DU CHEMIN DE RÉPONSE. Le joueur a déjà son code à
   // l'écran : l'email est un rappel, jamais la preuve. `after()` le sort du

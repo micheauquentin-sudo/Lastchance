@@ -136,6 +136,27 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       reservations: 0,
       waitlist: 0,
     } as unknown,
+    /**
+     * Les RPC qui doivent RÉPONDRE EN ERREUR, par nom. Vide par défaut : une
+     * panne se demande explicitement, elle ne s'obtient pas par omission.
+     */
+    rpcErreurs: [] as string[],
+    /**
+     * Ce que `stock_offer_public_state` rend au GARDE-FOU DU PONT (revue L9,
+     * M1). Par défaut : une offre servable — c'est l'état de la quasi-totalité
+     * des appels, et celui que les tests écrits avant le garde-fou supposent.
+     */
+    stockOfferPublicState: {
+      state: "ok",
+      offer_id: "99999999-9999-4999-8999-999999999999",
+      title: "Panier surprise",
+      status: "open",
+      window_starts_at: "2030-04-12T16:00:00Z",
+      window_ends_at: "2030-04-12T18:00:00Z",
+      per_player_limit: 1,
+      remaining: 4,
+      my_hold: null,
+    } as unknown,
     /** Ce que `hold_stock_offer` rend (RES-5, lot L9). */
     stockHoldResponse: {
       state: "held",
@@ -280,12 +301,25 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         reservations: 0,
         waitlist: 0,
       };
+      state.rpcErreurs = [];
+      state.stockOfferPublicState = {
+        state: "ok",
+        offer_id: "99999999-9999-4999-8999-999999999999",
+        title: "Panier surprise",
+        status: "open",
+        window_starts_at: "2030-04-12T16:00:00Z",
+        window_ends_at: "2030-04-12T18:00:00Z",
+        per_player_limit: 1,
+        remaining: 4,
+        my_hold: null,
+      };
       state.stockHoldResponse = {
         state: "held",
         hold_id: "77777777-7777-4777-8777-777777777777",
         code: "RESA-ABCD2345",
         window_starts_at: "2030-04-12T16:00:00Z",
         window_ends_at: "2030-04-12T18:00:00Z",
+        redeem_not_before: "2030-04-12T16:00:00Z",
         redeem_expires_at: "2030-04-12T18:00:00Z",
         remaining: 4,
       };
@@ -325,6 +359,18 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       rpc: (name: string, args: Record<string, unknown>) => {
         state.rpcCalls.push({ name, args });
         state.chronologie.push(`rpc:${name}`);
+        if (state.rpcErreurs.includes(name)) {
+          return Promise.resolve({
+            data: null,
+            error: { message: `${name} indisponible` },
+          });
+        }
+        if (name === "stock_offer_public_state") {
+          return Promise.resolve({
+            data: state.stockOfferPublicState,
+            error: null,
+          });
+        }
         if (name === "hold_stock_offer") {
           return Promise.resolve({ data: state.stockHoldResponse, error: null });
         }
@@ -2515,6 +2561,83 @@ describe("holdStockOffer — bloquer une unité", () => {
     expect(state.chronologie.indexOf("pont")).toBeLessThan(
       state.chronologie.indexOf("rpc:hold_stock_offer"),
     );
+  });
+
+  // ── LE GARDE-FOU DU PONT (revue L9, M1) ─────────────────────────────────
+  //
+  // L'ordre ci-dessus est nécessaire ; l'inconditionnel ne l'était pas. Le pont
+  // écrit une ligne `players` et une adhésion, et il le faisait AUSSI sur les
+  // offres dont on sait d'avance qu'elles refuseront. À cookie neuf, c'était une
+  // écriture gratuite et répétable — bornée par rien, là où `stock_total` borne
+  // tout le reste du module.
+  it("une offre ÉPUISÉE n'écrit AUCUNE identité — le pont n'est pas posé", async () => {
+    state.stockOfferPublicState = {
+      state: "ok",
+      offer_id: OFFER_ID,
+      title: "Panier surprise",
+      status: "open",
+      window_starts_at: "2030-04-12T16:00:00Z",
+      window_ends_at: "2030-04-12T18:00:00Z",
+      per_player_limit: 1,
+      remaining: 0,
+      my_hold: null,
+    };
+    state.stockHoldResponse = { state: "sold_out", remaining: 0 };
+
+    const res = await holdStockOffer({
+      organizationId: ORG_ID,
+      offerId: OFFER_ID,
+    });
+
+    expect(state.pontsIdentite).toHaveLength(0);
+    // La RPC reste SEULE JUGE : elle est appelée, et c'est SA réponse qui sort.
+    expect(state.rpcCalls.some((c) => c.name === "hold_stock_offer")).toBe(true);
+    expect(res.ok && res.data.state).toBe("sold_out");
+  });
+
+  it("une offre FERMÉE ou en BROUILLON non plus", async () => {
+    state.stockOfferPublicState = { state: "unavailable" };
+    state.stockHoldResponse = { state: "unavailable" };
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+    expect(state.pontsIdentite).toHaveLength(0);
+  });
+
+  it("une panne de la lecture pose le pont QUAND MÊME : le doute profite au joueur", async () => {
+    // ROUGE SI : quelqu'un fait de ce garde-fou un fail-closed. Un `false` par
+    // défaut ferait d'une panne de lecture une prise sans identité — donc une
+    // réservation invisible du portefeuille de son propriétaire, sans erreur
+    // nulle part. L'état antérieur (pont posé pour rien) est le bon repli.
+    state.stockOfferPublicState = null;
+    state.rpcErreurs = ["stock_offer_public_state"];
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_stock", experienceId: OFFER_ID },
+    ]);
+  });
+
+  it("la photo disait épuisé, la RPC a dit oui : le pont est RATTRAPÉ et le cas COMPTÉ", async () => {
+    // Le restant lu avant le pont n'est pas verrouillé : une annulation arrivée
+    // entre les deux appels rend l'unité. On repose alors le pont — il servira
+    // aux prises suivantes — et on compte, parce qu'une fenêtre de course qu'on
+    // ne mesure pas est une fenêtre dont on ne saura jamais si elle est rare.
+    state.stockOfferPublicState = {
+      state: "ok",
+      offer_id: OFFER_ID,
+      title: "Panier surprise",
+      status: "open",
+      window_starts_at: "2030-04-12T16:00:00Z",
+      window_ends_at: "2030-04-12T18:00:00Z",
+      per_player_limit: 1,
+      remaining: 0,
+      my_hold: null,
+    };
+
+    await holdStockOffer({ organizationId: ORG_ID, offerId: OFFER_ID });
+
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_stock", experienceId: OFFER_ID },
+    ]);
+    expect(state.compteurs).toContain("reserver.stock_hold.pont_rattrape");
   });
 
   it("tranche le seau par APPAREIL avant celui par organisation", async () => {
