@@ -7,8 +7,9 @@ import { expect, test } from "@playwright/test";
  * Seed (`supabase/seed.sql`) : org « E2E Café » (owner/editor/cashier),
  * vitrine `e2e-comptoir` PUBLIÉE, deux cartes / trois rubriques / six fiches
  * dont une indisponible (« Curry de légumes grillés ») et une aux badges ET
- * allergènes vides (« Côtes-du-rhône »). Quatre traductions anglaises, dont
- * UNE PÉRIMÉE — « Chickpea hummus », qui ne doit JAMAIS s'afficher.
+ * allergènes vides (« Côtes-du-rhône »). Dix-neuf traductions anglaises, toutes
+ * FRAÎCHES au seed — la péremption se prouve en pgTAP, qui la crée par un
+ * update, jamais par une ligne figée ici (voir le bloc sélecteur plus bas).
  *
  * ══════════════════════════════════════════════════════════════════════
  * DEUX VITRINES, ET LA RÈGLE QUI LES SÉPARE — À LIRE AVANT D'AJOUTER UN TEST
@@ -468,7 +469,7 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(comptes.getByText("2 fiches", { exact: true })).toBeVisible();
     // …puis la rendre à la carte : le reclassement se fait dans les deux sens.
     await ligneSoupe.getByLabel("Classement").selectOption("fiche");
-    await expect(page.getByText("3 fiches")).toBeVisible();
+    await expect(comptes.getByText("3 fiches", { exact: true })).toBeVisible();
 
     const nomCarte = `Import E2E ${Date.now()}`;
     await nomChamp.fill(nomCarte);
