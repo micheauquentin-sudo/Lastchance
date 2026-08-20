@@ -52,17 +52,25 @@ test.describe("vitrine — dashboard commerçant", () => {
       page.getByRole("heading", { name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
 
-    // ── Carte ──
+    // ── Carte ── `.first()` : le libellé « Nom de la carte » se répète
+    // ensuite pour chaque carte existante (formulaire de renommage) — seul le
+    // premier, dans le bloc de création, est ciblé ici.
     const nomCarte = `Brunch E2E ${Date.now()}`;
-    await page.getByLabel("Nom de la carte").fill(nomCarte);
+    await page.getByLabel("Nom de la carte").first().fill(nomCarte);
     await page.getByRole("button", { name: "Créer la carte" }).click();
     await expect(page.getByRole("heading", { name: nomCarte })).toBeVisible({
       timeout: 20_000,
     });
 
+    // Deux conditions plutôt qu'une : un div ne contenant QUE le titre serait
+    // le petit conteneur flex des flèches d'ordre (motif de
+    // `CarteEditeur`), pas la carte entière — le `.last()` sur les divs qui
+    // portent LES DEUX (titre et champ de rubrique) retombe sur la `Card`
+    // elle-même, plus précise que le conteneur qui liste toutes les cartes.
     const carteCard = page
       .locator("div")
       .filter({ has: page.getByRole("heading", { name: nomCarte }) })
+      .filter({ has: page.getByLabel("Nouvelle rubrique") })
       .last();
 
     // ── Rubrique ──
@@ -118,7 +126,14 @@ test.describe("vitrine — rôle caissier", () => {
     await page.goto("/dashboard/redeem");
     await expect(page.getByRole("link", { name: "Vitrine" })).toHaveCount(0);
 
-    const reponse = await page.goto("/dashboard/vitrine");
-    expect(reponse?.status()).toBe(404);
+    // `notFound()` ICI EST IMBRIQUÉ dans le layout dashboard, déjà envoyé en
+    // 200 (flux RSC) : le statut HTTP reste 200, seul le contenu dit le refus
+    // — même motif que `reserver.spec.ts` (« jeton inconnu »). Le test du
+    // drapeau public ci-dessus reste sur `status()` : sa 404 est, elle, au
+    // TOUT premier niveau, avant tout layout.
+    await page.goto("/dashboard/vitrine");
+    await expect(
+      page.getByRole("heading", { name: "Page introuvable" }),
+    ).toBeVisible({ timeout: 30_000 });
   });
 });
