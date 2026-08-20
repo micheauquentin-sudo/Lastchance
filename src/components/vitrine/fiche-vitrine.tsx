@@ -2,9 +2,11 @@ import { cn } from "@/lib/utils";
 import {
   libelleAllergene,
   libelleBadge,
+  type LangueVitrine,
   type StyleCartesVitrine,
   type VitrineFicheView,
 } from "@/lib/vitrine";
+import { TEXTES_VITRINE } from "@/components/vitrine/langue";
 
 /**
  * UNE FICHE DE CARTE — un plat, une boisson, une prestation.
@@ -40,14 +42,26 @@ import {
  * natif règle les deux : replié par défaut, ouvrable au clic ET au clavier,
  * annoncé comme un groupe par les lecteurs d'écran, et il fonctionne même si
  * aucun JavaScript ne s'exécute.
+ *
+ * ── DEUX LANGUES, DEUX ORIGINES ──
+ *
+ * `fiche.nom` et `fiche.description` arrivent DÉJÀ dans la langue servie : le
+ * SQL a superposé le calque de traduction champ par champ, avec repli français
+ * pour ce qui manque ou a vieilli. Les BADGES et les ALLERGÈNES, eux, sont du
+ * vocabulaire de plateforme et se traduisent ici (`@/components/vitrine/langue`)
+ * — les faire passer par le calque aurait fait traduire « Gluten » une fois par
+ * commerçant.
  */
 export function FicheVitrine({
   fiche,
   styleCartes,
+  lang,
 }: {
   fiche: VitrineFicheView;
   styleCartes: StyleCartesVitrine;
+  lang: LangueVitrine;
 }) {
+  const t = TEXTES_VITRINE[lang];
   const indisponible = !fiche.disponible;
   const monogramme = styleCartes !== "liste";
   const magazine = styleCartes === "magazine";
@@ -105,7 +119,7 @@ export function FicheVitrine({
 
         {indisponible ? (
           <p className="text-sm font-semibold text-[var(--vitrine-sur-secondary)]">
-            Indisponible aujourd&apos;hui
+            {t.indisponible}
           </p>
         ) : null}
 
@@ -116,7 +130,7 @@ export function FicheVitrine({
                 key={badge}
                 className="rounded-full border border-[var(--vitrine-primary)]/25 px-2 py-0.5 text-xs font-semibold text-[var(--vitrine-primary)]"
               >
-                {libelleBadge(badge)}
+                {libelleBadge(badge, lang)}
               </li>
             ))}
           </ul>
@@ -125,13 +139,15 @@ export function FicheVitrine({
         {fiche.allergenes.length > 0 ? (
           <details className="group">
             <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md text-xs font-semibold text-[var(--vitrine-sur-secondary)]/70 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]">
-              Allergènes
+              {t.allergenes}
               <span aria-hidden className="transition-transform group-open:rotate-180">
                 ⌄
               </span>
             </summary>
             <p className="mt-1 text-xs leading-relaxed text-[var(--vitrine-sur-secondary)]/80">
-              {fiche.allergenes.map(libelleAllergene).join(" · ")}
+              {fiche.allergenes
+                .map((allergene) => libelleAllergene(allergene, lang))
+                .join(" · ")}
             </p>
           </details>
         ) : null}

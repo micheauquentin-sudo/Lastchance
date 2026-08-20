@@ -2,8 +2,13 @@
 
 import { useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { StyleCartesVitrine, VitrineCarteView } from "@/lib/vitrine";
+import type {
+  LangueVitrine,
+  StyleCartesVitrine,
+  VitrineCarteView,
+} from "@/lib/vitrine";
 import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
+import { TEXTES_VITRINE } from "@/components/vitrine/langue";
 
 /**
  * LE CATALOGUE PUBLIC — cartes, rubriques, fiches.
@@ -39,11 +44,19 @@ import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 export function CatalogueVitrine({
   cartes,
   styleCartes,
+  lang,
 }: {
   /** Cartes ACTIVES, déjà ordonnées par le serveur. */
   cartes: VitrineCarteView[];
   styleCartes: StyleCartesVitrine;
+  /**
+   * La langue RÉELLEMENT SERVIE. Les noms de cartes, de rubriques et de fiches
+   * arrivent déjà traduits par le SQL — cette prop ne pilote que le chrome de
+   * l'écran (libellé de recherche, compte de résultats, états vides).
+   */
+  lang: LangueVitrine;
 }) {
+  const t = TEXTES_VITRINE[lang];
   const rechercheId = useId();
   const [carteActiveId, setCarteActiveId] = useState<string | null>(
     cartes[0]?.id ?? null,
@@ -85,7 +98,7 @@ export function CatalogueVitrine({
   return (
     <div ref={conteneurRef} className="scroll-mt-4">
       {cartes.length >= 2 ? (
-        <nav aria-label="Nos cartes" className="mb-5">
+        <nav aria-label={t.nosCartes} className="mb-5">
           {/* Défilement horizontal plutôt que retour à la ligne : sept cartes
               empilées sur trois lignes repoussent le contenu hors de l'écran
               d'un téléphone, qui est l'écran de référence ici. */}
@@ -119,14 +132,14 @@ export function CatalogueVitrine({
           htmlFor={rechercheId}
           className="mb-1.5 block text-sm font-semibold text-[var(--vitrine-sur-secondary)]"
         >
-          Rechercher dans {carte.nom}
+          {t.rechercherDans(carte.nom)}
         </label>
         <input
           id={rechercheId}
           type="search"
           value={recherche}
           onChange={(e) => setRecherche(e.target.value)}
-          placeholder="Un plat, un ingrédient…"
+          placeholder={t.recherchePlaceholder}
           // `text-base` et non `text-sm` : sous 16 px, iOS zoome à la mise au
           // point du champ et le client perd la page qu'il lisait.
           className="w-full rounded-xl border border-[var(--vitrine-primary)]/30 bg-white/70 px-4 py-3 text-base text-[var(--vitrine-sur-secondary)] placeholder:text-[var(--vitrine-sur-secondary)]/50 focus:outline-2 focus:outline-offset-2 focus:outline-[var(--vitrine-primary)]"
@@ -140,14 +153,14 @@ export function CatalogueVitrine({
         >
           {recherche.trim()
             ? trouvees === 0
-              ? "Aucun résultat dans cette carte."
-              : `${trouvees} résultat${trouvees > 1 ? "s" : ""}`
+              ? t.aucunResultat
+              : t.compteResultats(trouvees)
             : ""}
         </p>
       </div>
 
       {rubriques.length >= 2 ? (
-        <nav aria-label="Rubriques" className="mb-6">
+        <nav aria-label={t.rubriques} className="mb-6">
           <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
             {rubriques.map((rubrique) => (
               <li key={rubrique.id} className="shrink-0">
@@ -179,9 +192,7 @@ export function CatalogueVitrine({
 
       {rubriques.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-[var(--vitrine-primary)]/30 px-4 py-10 text-center text-sm text-[var(--vitrine-sur-secondary)]/70">
-          {recherche.trim()
-            ? "Aucun plat ne correspond à votre recherche."
-            : "Cette carte est en cours de préparation."}
+          {recherche.trim() ? t.aucunPlat : t.carteEnPreparation}
         </p>
       ) : (
         <div className="space-y-8">
@@ -208,7 +219,11 @@ export function CatalogueVitrine({
               >
                 {rubrique.fiches.map((fiche) => (
                   <li key={fiche.id}>
-                    <FicheVitrine fiche={fiche} styleCartes={styleCartes} />
+                    <FicheVitrine
+                      fiche={fiche}
+                      styleCartes={styleCartes}
+                      lang={lang}
+                    />
                   </li>
                 ))}
               </ul>
