@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  absentSiNonRendu,
   caseACochee,
   nonRenduVaut,
   texteOptionnel,
@@ -460,11 +461,14 @@ function vocabulaireImporte<T extends string>(
   vocabulaire: readonly [T, ...T[]],
   message: string,
 ) {
+  // `.nullish()` et non `.optional()` : la règle A du dépôt — un champ qui
+  // tolère l'absence rend la MÊME chose pour `null`, parce qu'un producteur
+  // JSON écrit `"badges": null` aussi naturellement qu'il omet la clé.
   return z
     .array(z.enum(vocabulaire, { error: message }), { error: message })
-    .optional()
+    .nullish()
     .transform((valeurs) =>
-      valeurs === undefined ? undefined : [...new Set(valeurs)],
+      valeurs == null ? undefined : [...new Set(valeurs)],
     );
 }
 
@@ -496,7 +500,15 @@ function nomImporte(max: number, requis: string, tropLong: string) {
  * TOUT l'import sur un 23514 que l'écran ne sait pas expliquer.
  */
 function texteImporte(max: number, typeAttendu: string, tropLong: string) {
-  return z.string({ error: typeAttendu }).trim().max(max, tropLong).nullish();
+  // Le `?? undefined` final aligne `null` sur l'absence (règle A) : les deux
+  // disparaissent du JSON envoyé, et la RPC fait de toute façon retomber les
+  // trois formes de « rien » sur `null` en base.
+  return z
+    .string({ error: typeAttendu })
+    .trim()
+    .max(max, tropLong)
+    .nullish()
+    .transform((valeur) => valeur ?? undefined);
 }
 
 /**
@@ -562,11 +574,11 @@ const rubriqueImporteeSchema = z
         "Une rubrique du fichier n'a pas de nom",
         `Nom de rubrique trop long (${VITRINE_RUBRIQUE_NOM_MAX} caractères max)`,
       ),
-      fiches: z
-        .array(ficheImporteeSchema, {
+      fiches: absentSiNonRendu(
+        z.array(ficheImporteeSchema, {
           error: "Les fiches d'une rubrique doivent former une liste",
-        })
-        .optional(),
+        }),
+      ),
     },
     { error: "Une rubrique du fichier porte un champ inconnu" },
   )
@@ -595,15 +607,17 @@ const carteImporteeSchema = z
         "Le fichier n'indique pas le nom de la carte",
         `Nom de carte trop long (${VITRINE_CARTE_NOM_MAX} caractères max)`,
       ),
-      rubriques: z
-        .array(rubriqueImporteeSchema, {
-          error: "Les rubriques du fichier doivent former une liste",
-        })
-        .max(
-          VITRINE_IMPORT_RUBRIQUES_MAX,
-          `Trop de rubriques dans un seul import (${VITRINE_IMPORT_RUBRIQUES_MAX} max)`,
-        )
-        .default([]),
+      rubriques: nonRenduVaut(
+        z
+          .array(rubriqueImporteeSchema, {
+            error: "Les rubriques du fichier doivent former une liste",
+          })
+          .max(
+            VITRINE_IMPORT_RUBRIQUES_MAX,
+            `Trop de rubriques dans un seul import (${VITRINE_IMPORT_RUBRIQUES_MAX} max)`,
+          ),
+        [],
+      ),
     },
     { error: "Le fichier porte un champ inconnu" },
   )
