@@ -652,8 +652,20 @@ select ok(has_function_privilege('service_role', 'public.set_vitrine_slug(uuid,t
 select ok(not has_function_privilege('authenticated', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'merchant session cannot claim a public address without the server guard');
 select ok(not has_function_privilege('anon', 'public.set_vitrine_slug(uuid,text,text)', 'EXECUTE'), 'anon cannot squat public addresses');
 select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json(uuid,boolean)', 'EXECUTE'), 'the catalogue tree is granted to nobody: it checks neither entitlement nor publication');
-select ok(not has_function_privilege('authenticated', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'), 'the theme validator is granted to nobody (checks evaluate without a privilege check)');
-select ok(not has_function_privilege('authenticated', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'), 'the reserved-slug vocabulary is granted to nobody');
+-- LES TROIS VALIDATEURS SONT EXÉCUTABLES PAR LE COMMERÇANT, et c'est l'inverse
+-- de ce qui était écrit ici. Ces deux lignes affirmaient « granted to nobody
+-- (checks evaluate without a privilege check) » — la même phrase fausse que
+-- 20261007120000, qui avait déjà coûté un bug (20261008120000). Un `check` de
+-- table s'évalue avec les privilèges du rôle qui ÉCRIT la ligne : sans EXECUTE,
+-- toute écriture de fiche et tout enregistrement de réglages échouaient en
+-- « permission denied » pour tout commerçant. La règle catalogue de la section
+-- « CHECK → EXECUTE » plus bas ferme la classe pour le schéma entier.
+select ok(has_function_privilege('authenticated', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'), 'merchant can trigger the theme validator: a CHECK runs as the writing role');
+select ok(has_function_privilege('authenticated', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'), 'merchant can trigger the reserved-slug check: an UPDATE re-evaluates every CHECK on the row');
+select ok(has_function_privilege('authenticated', 'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'), 'merchant can trigger the closed-vocabulary validator on every catalogue item write');
+select ok(not has_function_privilege('anon', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'), 'anon never writes a storefront, and gets no validator either');
+select ok(not has_function_privilege('anon', 'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'), 'anon never writes a catalogue item, and gets no validator either');
+select ok(not has_function_privilege('anon', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'), 'anon cannot probe the reserved address vocabulary');
 
 select ok(not has_table_privilege('anon', 'public.quizzes', 'SELECT'), 'anon cannot read quizzes');
 select ok(not has_table_privilege('anon', 'public.quiz_questions', 'SELECT'), 'anon cannot read quiz answer keys');
@@ -899,6 +911,97 @@ select cmp_ok(
     where n.nspname = 'public' and c.relkind = 'r'),
   '>=', 110,
   'le contrôle porte bien sur les 110 tables du schéma, pas sur un ensemble vide'
+);
+
+-- ── CHECK → EXECUTE : la classe qui a frappé DEUX FOIS ──────
+--
+-- ── LA DOCTRINE, ET POURQUOI ELLE A ÉTÉ ÉCRITE À L'ENVERS DEUX FOIS ──
+--
+-- Une fonction PL/pgSQL ordinaire — ni `security definer`, ni possédée par
+-- l'appelant — référencée dans une contrainte `check` est évaluée AVEC LES
+-- PRIVILÈGES DU RÔLE QUI EXÉCUTE LE DML, exactement comme n'importe quel appel
+-- de fonction dans une requête. Elle n'est PAS évaluée « sans contrôle de
+-- privilège », et le contrôle précède l'exécution : il mord même quand la valeur
+-- écrite ferait retourner la fonction sur sa première ligne.
+--
+-- Cette phrase fausse a été recopiée d'un validateur à l'autre, et elle a coûté
+-- deux bugs identiques, tous deux trouvés par un E2E et non par une lecture :
+--
+--   * 20261007120000 → 20261008120000 : `is_valid_experience_steps` révoquée à
+--     `authenticated`, `check` de `reservation_activities.steps` →
+--     « permission denied for function is_valid_experience_steps » sur TOUTE
+--     création de Moment Signature.
+--   * 20261011120000 (ce lot) : les TROIS validateurs de la Vitrine d'un coup —
+--     et le second cas est le plus instructif, parce qu'un UPDATE réévalue TOUS
+--     les `check` de la ligne : enregistrer une accroche échouait à cause du
+--     `check` du SLUG et de celui du THÈME, deux colonnes que le commerçant
+--     n'avait pas touchées.
+--
+-- ── LA RÈGLE REMPLACE LA VIGILANCE ──
+--
+-- Pour CHAQUE contrainte `check` de `public` qui référence une fonction, tout
+-- rôle détenant INSERT ou UPDATE sur la table doit détenir EXECUTE sur cette
+-- fonction. L'échec NOMME la table, la contrainte, la fonction et le rôle : de
+-- quoi écrire le `grant` sans rien rouvrir. Une troisième occurrence de la
+-- classe est désormais impossible à livrer verte.
+--
+-- ── LES QUATRE CHOIX DE PORTÉE, TOUS DÉLIBÉRÉS ──
+--
+--   * `pg_depend` et non un `pg_get_expr` passé au peigne : c'est le lien que
+--     Postgres tient LUI-MÊME, il ne se trompe pas de nom et ne rate pas un
+--     appel qualifié autrement. Les fonctions du catalogue système (`char_length`
+--     et consorts) sont ÉPINGLÉES, donc absentes de `pg_depend` — la règle ne
+--     porte donc que sur les validateurs que ce dépôt écrit, ce qui est
+--     exactement sa cible.
+--   * `has_any_column_privilege` et NON `has_table_privilege` : les grants de ce
+--     dépôt sont pour beaucoup COLONNE PAR COLONNE (`grant insert (nom, ordre)`),
+--     et ceux-là vivent dans `pg_attribute.attacl`, pas dans `relacl`. Une règle
+--     bâtie sur `relacl` aurait manqué `vitrine_items` — c'est-à-dire le bug
+--     qu'elle est née pour attraper.
+--   * `anon` et `authenticated` seulement. `service_role` détient INSERT/UPDATE
+--     partout par les privilèges par défaut de Supabase : l'inclure ferait
+--     rougir des validateurs dont les tables ne s'écrivent QUE par des RPC
+--     `security definer` (`is_valid_progression_rule`), où l'EXECUTE vient du
+--     propriétaire et où le grant serait une ouverture gratuite.
+--   * Aucune exception nommée, parce qu'il n'y en a aucune : l'attendu est la
+--     chaîne vide, et il a été MESURÉ sur les dix paires du schéma.
+select is(
+  (select coalesce(string_agg(distinct
+       c.relname || '.' || con.conname || ' → ' || p.proname
+         || ' [' || r.roleoid::regrole::text || ']', ', '), '')
+     from pg_constraint con
+     join pg_class c on c.oid = con.conrelid
+     join pg_namespace n on n.oid = c.relnamespace
+     join pg_depend dep
+       on dep.classid = 'pg_constraint'::regclass
+      and dep.objid = con.oid
+      and dep.refclassid = 'pg_proc'::regclass
+     join pg_proc p on p.oid = dep.refobjid
+     cross join (values ('anon'::regrole::oid),
+                        ('authenticated'::regrole::oid)) as r(roleoid)
+    where n.nspname = 'public'
+      and con.contype = 'c'
+      and (has_any_column_privilege(r.roleoid, c.oid, 'INSERT')
+        or has_any_column_privilege(r.roleoid, c.oid, 'UPDATE'))
+      and not has_function_privilege(r.roleoid, p.oid, 'EXECUTE')),
+  '',
+  'toute fonction appelée par un check est exécutable par les rôles qui écrivent la table (un check tourne sous le rôle écrivain)'
+);
+-- CONTRÔLE DE PORTÉE, même raison que les 110 tables : sans lui, la règle
+-- ci-dessus serait verte sur un ensemble vide le jour où `pg_depend` change de
+-- forme ou où une jointure se casse en silence. Dix paires mesurées.
+select cmp_ok(
+  (select count(*)::int
+     from pg_constraint con
+     join pg_class c on c.oid = con.conrelid
+     join pg_namespace n on n.oid = c.relnamespace
+     join pg_depend dep
+       on dep.classid = 'pg_constraint'::regclass
+      and dep.objid = con.oid
+      and dep.refclassid = 'pg_proc'::regclass
+    where n.nspname = 'public' and con.contype = 'c'),
+  '>=', 10,
+  'la règle porte bien sur les dix contraintes check qui appellent une fonction, pas sur un ensemble vide'
 );
 
 -- ── SEC-4 : sept tables qui ne tenaient que par l'absence de policy ──

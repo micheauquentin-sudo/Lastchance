@@ -653,5 +653,101 @@ select ok(not has_function_privilege('authenticated', 'public.set_vitrine_slug(u
 select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json(uuid,boolean)', 'EXECUTE'),
   'l''arbre du catalogue n''est appelable par personne : il ne garde ni droit ni publication');
 
+-- ── LES TROIS VALIDATEURS DE `check` SONT EXÉCUTABLES PAR L'ÉCRIVAIN ──
+--
+-- Motif ACL-32, une assertion PAR FONCTION. Ce sont les trois seules fonctions
+-- de ce lot appelées depuis une contrainte `check`, et le sens de l'assertion
+-- est l'INVERSE de ce que ce fichier a d'abord affirmé : un `check` de table
+-- s'évalue avec les privilèges du rôle qui ÉCRIT la ligne, jamais « sans
+-- contrôle de privilège ». Sans ces trois grants, aucun commerçant ne pouvait
+-- écrire une fiche ni enregistrer ses réglages (même classe que
+-- 20261008120000). La règle de schéma qui ferme la classe pour de bon vit dans
+-- security_acl.test.sql.
+select ok(has_function_privilege('authenticated', 'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'),
+  'le validateur de vocabulaire est exécutable par le rôle qui écrit les fiches');
+select ok(has_function_privilege('authenticated', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'),
+  'le validateur de thème est exécutable par le rôle qui écrit les réglages');
+select ok(has_function_privilege('authenticated', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'),
+  'le vocabulaire réservé est exécutable par le rôle qui écrit les réglages — un UPDATE réévalue TOUS les `check` de la ligne');
+select ok(not has_function_privilege('anon', 'public.is_valid_vitrine_vocabulaire(text[],text[])', 'EXECUTE'),
+  'anon n''écrit dans aucune des quatre tables : il n''a pas non plus les validateurs');
+select ok(not has_function_privilege('anon', 'public.is_valid_vitrine_theme(jsonb)', 'EXECUTE'),
+  'anon n''a pas le validateur de thème');
+select ok(not has_function_privilege('anon', 'public.is_reserved_vitrine_slug(text)', 'EXECUTE'),
+  'anon ne sonde pas le vocabulaire réservé des adresses');
+
+
+-- ══ 11. LE COMMERÇANT ÉCRIT VRAIMENT — sous son propre rôle ═
+--
+-- CE QUE CETTE SECTION EXISTE POUR ATTRAPER, et que rien d'autre dans ce fichier
+-- ne pouvait voir : toutes les écritures ci-dessus passent sous le rôle `postgres`
+-- (celui de psql), qui POSSÈDE les validateurs et en a donc l'EXECUTE d'office.
+-- Le fichier était entièrement vert alors que PAS UN commerçant ne pouvait
+-- écrire une fiche ni enregistrer une accroche — « permission denied for
+-- function is_valid_vitrine_vocabulaire », la même erreur qu'au lot L8.
+--
+-- Ce qui manquait n'est pas une assertion de plus, c'est LE RÔLE : `set local
+-- role authenticated` fait passer les mêmes DML par les mêmes contrôles de
+-- privilège que PostgREST. Aucune assertion d'ACL ne remplace cela — une ACL
+-- prouve un grant, elle ne prouve pas qu'une écriture aboutit.
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"f1000000-0000-4000-8000-000000000f01"}', true);
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'f1000000-0000-4000-8000-000000000f01';
+
+-- ── LA FICHE : le `check` de badges ET celui d'allergènes s'évaluent ──
+select lives_ok(
+  $$insert into public.vitrine_items
+      (categorie_id, organization_id, nom, prix_affiche, badges, allergenes, ordre)
+    values ('f1000000-0000-4000-8000-000000000201',
+            'f1000000-0000-4000-8000-00000000000a',
+            'Focaccia du jour', '5 €',
+            array['vegetarien', 'fait_maison']::text[],
+            array['gluten']::text[], 12)$$,
+  'le commerçant crée une fiche SOUS SON PROPRE RÔLE — sans le grant, c''était « permission denied for function is_valid_vitrine_vocabulaire »');
+
+-- LE GRANT N'A PAS DÉSARMÉ LE VALIDATEUR, et c'est le contrôle qui le prouve :
+-- le refus est toujours un 23514 (la contrainte), pas un 42501 (le privilège).
+select throws_ok(
+  $$update public.vitrine_items set badges = array['halal']::text[]
+     where id = 'f1000000-0000-4000-8000-000000000301'$$,
+  '23514', null,
+  '… et le vocabulaire fermé mord toujours sous ce rôle : 23514, pas 42501');
+
+-- ── LES RÉGLAGES : une SEULE colonne touchée, TROIS `check` réévalués ──
+--
+-- C'est le cas le plus contre-intuitif de la classe, et celui qui rendait le bug
+-- illisible : l'accroche n'a aucun validateur à elle. Ce sont les `check` du
+-- SLUG et du THÈME — deux colonnes auxquelles le commerçant ne touche pas — qui
+-- refusaient l'écriture, parce qu'un UPDATE réévalue toutes les contraintes de
+-- la ligne.
+select lives_ok(
+  $$update public.vitrine_settings
+       set accroche = 'La table du quartier, depuis 1998.'
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  'le commerçant enregistre son accroche : l''UPDATE réévalue les `check` du slug et du thème, qu''il n''a pourtant pas touchés');
+
+select lives_ok(
+  $$update public.vitrine_settings
+       set theme = '{"couleurs":{"primary":"#112233"},"style_cartes":"grille"}'::jsonb
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  'le commerçant règle son thème sous son propre rôle');
+
+-- PUBLIER ET DÉPUBLIER, sous le rôle marchand et avec le droit `vitrine` vivant.
+update public.vitrine_settings set published = false
+ where organization_id = 'f1000000-0000-4000-8000-00000000000a';
+select lives_ok(
+  $$update public.vitrine_settings set published = true
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  'le commerçant qui a le droit `vitrine` publie sous son propre rôle — la garde de publication passe, et les `check` de la ligne aussi');
+
+reset role;
+
+select is(
+  (select accroche from public.vitrine_settings
+    where organization_id = 'f1000000-0000-4000-8000-00000000000a'),
+  'La table du quartier, depuis 1998.',
+  '… et l''écriture a bien atterri : ce n''était pas un refus silencieux');
+
 select * from finish();
 rollback;

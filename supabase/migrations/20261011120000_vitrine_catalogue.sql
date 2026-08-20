@@ -91,13 +91,47 @@
 -- ────────────────────────────────────────────────────────────
 -- 1. LES VALIDATEURS — trois fonctions immuables, appelées par des `check`
 --
--- Motif des validateurs du dépôt (`is_valid_experience_steps`, 20261007120000 ;
+-- Forme des validateurs du dépôt (`is_valid_experience_steps`, 20261007120000 ;
 -- `is_valid_progression_rule`, 20260805200000) : `immutable`,
 -- `set search_path = pg_catalog` — d'où les appels NON qualifiés, qui s'y
--- résolvent — et RENDUES À PERSONNE. Un `check` de table évalue son expression
--- sans contrôle de privilège ; une RPC `security definer` appartenant au
--- propriétaire les atteint de même. Personne d'autre n'a de raison de les
--- appeler.
+-- résolvent.
+--
+-- ── UN `check` S'EXÉCUTE SOUS LE RÔLE QUI ÉCRIT LA LIGNE ──
+--
+-- Ce fichier a d'abord porté, aux trois validateurs, la phrase « rendue à
+-- personne : les `check` évaluent sans contrôle de privilège ». ELLE EST FAUSSE,
+-- et elle avait déjà coûté un bug une migration plus tôt : 20261008120000 a dû
+-- rendre l'EXECUTE à `is_valid_experience_steps` après que l'E2E du lot L8 eut
+-- ramené « permission denied for function is_valid_experience_steps » sur toute
+-- création de Moment Signature. Une fonction PL/pgSQL ordinaire — ni `security
+-- definer`, ni possédée par l'appelant — référencée dans une contrainte `check`
+-- est évaluée avec les privilèges du RÔLE QUI EXÉCUTE LE DML, exactement comme
+-- n'importe quel appel de fonction dans une requête.
+--
+-- La classe a frappé DEUX FOIS pour la même raison recopiée. Ici, elle atteignait
+-- les trois validateurs à la fois, parce que les trois tables qu'ils gardent
+-- s'écrivent en PostgREST DIRECT sous `authenticated` (`src/actions/vitrine.ts`
+-- passe par `createClient()`, la session marchande) :
+--
+--   * `is_valid_vitrine_vocabulaire` — `check` de vitrine_items.badges ET
+--     .allergenes : toute écriture de fiche, badges vides compris ;
+--   * `is_valid_vitrine_theme` et `is_reserved_vitrine_slug` — `check` de
+--     vitrine_settings.theme et .slug : un UPDATE réévalue TOUS les `check` de la
+--     ligne, donc enregistrer une accroche ou publier échouait aussi, sur une
+--     colonne que le commerçant n'avait pas touchée.
+--
+-- LE CORRECTIF EST L'INVERSE MINIMAL DU `revoke` : l'EXECUTE est rendu aux seuls
+-- rôles qui doivent pouvoir DÉCLENCHER l'évaluation en écrivant une ligne —
+-- `authenticated` (PostgREST, le commerçant) et `service_role` (qui contourne la
+-- RLS mais PAS les grants de fonction, et détient INSERT/UPDATE sur ces tables
+-- par les privilèges par défaut de Supabase). `anon` reste exclu : il n'écrit
+-- dans aucune des quatre tables, et n'y a aucun privilège. Rendre EXECUTE ne
+-- change RIEN à ce que ces fonctions valident — seulement à qui peut en
+-- provoquer l'appel.
+--
+-- La règle est désormais gardée pour tout le schéma, et plus par la vigilance :
+-- `security_acl.test.sql` refuse qu'une fonction référencée par un `check` soit
+-- inexécutable par un rôle qui détient INSERT ou UPDATE sur la table.
 -- ────────────────────────────────────────────────────────────
 
 -- ── 1a. Le vocabulaire réservé des slugs publics ─────────────
@@ -147,12 +181,17 @@ comment on function public.is_reserved_vitrine_slug(text) is
   'Vrai si le slug demandé appartient au vocabulaire RÉSERVÉ de la plateforme. '
   'Appelée à deux endroits qui ne peuvent pas diverger : le `check` de '
   'vitrine_settings.slug (le filet) et set_vitrine_slug (la porte, qui rend '
-  '« reserved_slug » plutôt qu''un 23514 illisible). Rendue à personne : les '
-  '`check` évaluent sans contrôle de privilège et la RPC `security definer` '
-  'l''atteint par son propriétaire.';
+  '« reserved_slug » plutôt qu''un 23514 illisible). EXECUTE rendu à '
+  '`authenticated` et `service_role` : un `check` de table s''évalue avec les '
+  'privilèges du rôle qui ÉCRIT la ligne, et un UPDATE de vitrine_settings '
+  'réévalue TOUS les `check` de la ligne — sans ce grant, enregistrer une '
+  'accroche ou publier échouait en « permission denied », sur une colonne que le '
+  'commerçant n''avait pas touchée (même classe que 20261008120000).';
 
 revoke all on function public.is_reserved_vitrine_slug(text)
   from public, anon, authenticated, service_role;
+grant execute on function public.is_reserved_vitrine_slug(text)
+  to authenticated, service_role;
 
 
 -- ── 1b. Le vocabulaire d'un tableau fermé ────────────────────
@@ -230,10 +269,16 @@ comment on function public.is_valid_vitrine_vocabulaire(text[], text[]) is
   'Le vocabulaire reste écrit dans le `check` de la table — c''est là qu''il se '
   'lit et se compte — la fonction ne porte que la forme, identique pour les '
   'badges de régime et les allergènes UE-14. `null` est accepté : les deux '
-  'colonnes sont `not null default ''{}''`. Rendue à personne.';
+  'colonnes sont `not null default ''{}''`. EXECUTE rendu à `authenticated` et '
+  '`service_role` : un `check` de table s''évalue avec les privilèges du rôle '
+  'qui ÉCRIT la ligne — sans ce grant, TOUTE écriture de fiche par le commerçant '
+  '(badges vides compris) échouait en « permission denied », même classe que '
+  '20261008120000.';
 
 revoke all on function public.is_valid_vitrine_vocabulaire(text[], text[])
   from public, anon, authenticated, service_role;
+grant execute on function public.is_valid_vitrine_vocabulaire(text[], text[])
+  to authenticated, service_role;
 
 
 -- ── 1c. Le thème — CLÉS EXACTES, PAS DE PASSAGER CLANDESTIN ──
@@ -403,11 +448,17 @@ comment on function public.is_valid_vitrine_theme(jsonb) is
   'ajoutée à l''application sans passer ici est refusée, et c''est le bon sens '
   'de l''échec. `style_cartes` : liste/grille/magazine. `ordre_blocs` : '
   'permutation PARTIELLE et sans doublon des cinq blocs de la page d''accueil. '
-  'Toutes les clés sont facultatives ; `null` et `{}` sont valides. Rendue à '
-  'personne.';
+  'Toutes les clés sont facultatives ; `null` et `{}` sont valides. EXECUTE '
+  'rendu à `authenticated` et `service_role` : un `check` de table s''évalue '
+  'avec les privilèges du rôle qui ÉCRIT la ligne, et un UPDATE réévalue TOUS '
+  'les `check` de la ligne — sans ce grant, tout enregistrement de réglages '
+  'échouait en « permission denied », thème inchangé compris (même classe que '
+  '20261008120000).';
 
 revoke all on function public.is_valid_vitrine_theme(jsonb)
   from public, anon, authenticated, service_role;
+grant execute on function public.is_valid_vitrine_theme(jsonb)
+  to authenticated, service_role;
 
 
 -- ────────────────────────────────────────────────────────────
