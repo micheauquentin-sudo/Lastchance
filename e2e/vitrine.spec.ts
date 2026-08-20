@@ -82,7 +82,12 @@ test.describe("vitrine — dashboard commerçant", () => {
     });
 
     // ── Fiche ──
-    const rubriqueLi = page.locator("li").filter({ hasText: nomRubrique });
+    // `.last()` : les `li` sont imbriqués (carte > rubrique) et le filtre
+    // par texte matche AUSSI le parent — le plus profond est le bon.
+    const rubriqueLi = page
+      .locator("li")
+      .filter({ hasText: nomRubrique })
+      .last();
     const nomFiche = "Plat E2E";
     await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
@@ -92,8 +97,13 @@ test.describe("vitrine — dashboard commerçant", () => {
 
     // Ouvrir le détail pour cocher badge + allergène. Le contrôle est un
     // <summary> natif (fiche-editeur.tsx) : Playwright l'expose en `generic`,
-    // jamais en `button` — on le vise donc par sa balise, pas par un rôle.
-    await ficheLi.locator("summary").first().click();
+    // jamais en `button` — on le vise par sa balise ET son texte, car la
+    // fiche porte un second <summary> (le pli « Allergènes » du rendu).
+    await ficheLi
+      .locator("summary")
+      .filter({ hasText: /Modifier|Voir le détail/ })
+      .first()
+      .click();
     await ficheLi.getByLabel("🌱 Vegan").check();
     await ficheLi.getByLabel("Gluten").check();
     await ficheLi
