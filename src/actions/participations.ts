@@ -110,9 +110,26 @@ interface UniversalRedeemResult {
 }
 
 /**
- * Tente le nouveau registre avant la RPC historique. `null` signifie que le
- * code n'est pas encore miroirisé (ou que la migration n'est pas disponible) :
- * l'appelant conserve alors exactement son flux legacy.
+ * Ce que le registre a répondu — et les DEUX absences de ligne sont distinguées.
+ *
+ * `registry_error` : la RPC elle-même a échoué. On ne sait RIEN du code.
+ * `unknown_code`   : la RPC a répondu, et ne connaît pas ce code.
+ *
+ * Les neuf familles à repli legacy traitent les deux pareil, et elles ont
+ * raison : dans les deux cas il faut essayer l'autre porte. La dixième
+ * (`reserver_stock`) n'a PAS de repli — c'est le seul chemin de sa caisse — et
+ * pour elle les deux mots opposés sont dus au caissier : « code introuvable »
+ * l'envoie refaire saisir, « validation impossible » l'envoie réessayer. Les
+ * confondre faisait dire « introuvable » sur un lot parfaitement valide chaque
+ * fois que la base toussait, c'est-à-dire au pire moment.
+ */
+type UniversalRedeemOutcome =
+  | { kind: "row"; row: UniversalRedeemResult }
+  | { kind: "unknown_code" }
+  | { kind: "registry_error" };
+
+/**
+ * Tente le nouveau registre avant la RPC historique.
  *
  * ── Pourquoi ces deux compteurs ──
  *
@@ -134,7 +151,7 @@ async function tryUniversalRedeem(
   actor: string,
   family: CashierMatch["source"],
   basketCents: number | null = null,
-): Promise<UniversalRedeemResult | null> {
+): Promise<UniversalRedeemOutcome> {
   const { data, error } = await admin.rpc("redeem_reward_by_code", {
     p_organization_id: organizationId,
     p_code: code,
@@ -146,7 +163,7 @@ async function tryUniversalRedeem(
     // migration. Ne jamais loguer le code (secret porteur) ni le détail DB.
     console.warn("[rewards] registre universel indisponible, repli legacy");
     recordCounter("rewards.registry_error");
-    return null;
+    return { kind: "registry_error" };
   }
   const row = (data as UniversalRedeemResult[] | null)?.[0] ?? null;
   if (!row) {
@@ -155,8 +172,9 @@ async function tryUniversalRedeem(
     // une famille, retirer son repli ferait dire « code introuvable » à un
     // caissier tenant un lot valide.
     recordCounter(`rewards.registry_miss.${family}`);
+    return { kind: "unknown_code" };
   }
-  return row;
+  return { kind: "row", row };
 }
 
 /**
@@ -222,7 +240,7 @@ async function redeemThroughUniversalRegistry(
     revalidate?: string[];
   },
 ): Promise<ActionResult | null> {
-  const row = await tryUniversalRedeem(
+  const issue = await tryUniversalRedeem(
     admin,
     organizationId,
     code,
@@ -230,7 +248,12 @@ async function redeemThroughUniversalRegistry(
     options.family,
     options.basketCents,
   );
-  if (!row) return null;
+  // `null` = « le registre n'a pas tranché, essaie l'autre porte ». Les deux
+  // absences de ligne y mènent, et c'est correct POUR CES FAMILLES-LÀ : elles
+  // ont un repli legacy, qui est la bonne réponse à un registre muet comme à un
+  // registre en panne. Seule la famille sans repli a besoin de les distinguer.
+  if (issue.kind !== "row") return null;
+  const row = issue.row;
   if (!row.redeemed_now) {
     return universalRedeemFailure(
       row,
@@ -2030,9 +2053,12 @@ export async function redeemContestAward(
  * directement d'ici aurait ouvert une seconde porte, non auditée par le
  * registre, sur la seule famille qui n'en a jamais eu besoin.
  *
- * Un registre indisponible rend donc « Validation impossible » plutôt qu'un
- * repli : mieux vaut un refus honnête, que le caissier peut réessayer, qu'un
- * chemin parallèle qui remettrait l'unité sans que le registre le sache.
+ * Un registre indisponible rend donc « Validation impossible — réessayez »
+ * plutôt qu'un repli : mieux vaut un refus honnête, que le caissier peut
+ * réessayer, qu'un chemin parallèle qui remettrait l'unité sans que le registre
+ * le sache. Ce refus-là est SOIGNEUSEMENT distinct de « Code introuvable » —
+ * voir `UniversalRedeemOutcome` : l'un dit « recommence », l'autre dit « refais
+ * saisir », et le caissier n'a pas les moyens de deviner lequel s'applique.
  *
  * ── LE QUATRIÈME REFUS, QUI N'APPARTIENT QU'À CETTE FAMILLE ──
  *
@@ -2077,7 +2103,7 @@ export async function redeemStockHold(
   const fuseau = organization.timezone;
 
   const admin = createAdminClient();
-  const row = await tryUniversalRedeem(
+  const issue = await tryUniversalRedeem(
     admin,
     organization.id,
     parsed.data,
@@ -2085,12 +2111,27 @@ export async function redeemStockHold(
     "reserver_stock",
     basketCents,
   );
-  // Le registre ne connaît pas ce code : pour cette famille, cela ne peut pas
-  // être un code « historique non miroirisé ». C'est un code inventé, ou d'une
-  // autre organisation — les deux se disent pareil, et le caissier fait
-  // recommencer la saisie.
-  if (!row) return { ok: false, error: "Code introuvable" };
 
+  // DEUX SILENCES, DEUX PHRASES — c'est ce que la docstring ci-dessus promet, et
+  // ce que le premier jet ne faisait pas : les deux ressortaient en « code
+  // introuvable ».
+  //
+  // Le registre EN PANNE ne dit rien du code. Envoyer le caissier refaire saisir
+  // un lot valide, devant le client, pendant que la base tousse, est le mauvais
+  // conseil au mauvais moment : ce qu'il faut, c'est réessayer. Et comme cette
+  // famille n'a pas de repli legacy, personne d'autre ne rattrapera derrière.
+  if (issue.kind === "registry_error") {
+    return { ok: false, error: "Validation impossible — réessayez" };
+  }
+  // Le registre a RÉPONDU et ne connaît pas ce code : pour cette famille, cela
+  // ne peut pas être un code « historique non miroirisé » — elle est née avec le
+  // registre. C'est un code inventé, ou d'une autre organisation — les deux se
+  // disent pareil, et le caissier fait recommencer la saisie.
+  if (issue.kind === "unknown_code") {
+    return { ok: false, error: "Code introuvable" };
+  }
+
+  const row = issue.row;
   if (!row.redeemed_now) {
     if (row.state === "source_refused") {
       return {
@@ -2109,9 +2150,18 @@ export async function redeemStockHold(
  * Le message d'un retrait refusé PAR LE BRAS SOURCE — c'est-à-dire, sur cette
  * famille, « pas encore l'heure ».
  *
- * La fenêtre est relue sur la prise et son offre plutôt que transportée : elle
- * n'est pas dans la réponse du routeur, et la faire voyager par le formulaire
- * aurait laissé l'écran choisir la date qu'on lui oppose.
+ * La fenêtre est relue sur la prise plutôt que transportée : elle n'est pas dans
+ * la réponse du routeur, et la faire voyager par le formulaire aurait laissé
+ * l'écran choisir la date qu'on lui oppose.
+ *
+ * ── SUR LA PRISE, ET SURTOUT PAS SUR L'OFFRE ──
+ *
+ * `redeem_stock_hold` applique `redeem_not_before`, GRAVÉE au blocage. Nommer
+ * ici la fenêtre COURANTE de l'offre ferait dire au comptoir une heure autre que
+ * celle qui vient de le faire refuser — dès qu'un commerçant a réédité sa
+ * fenêtre, c'est-à-dire dans le seul cas où les deux diffèrent. Le message doit
+ * citer la borne qui a tranché, sans quoi le caissier renvoie le client à une
+ * heure où il sera refusé une seconde fois.
  *
  * REPLI GÉNÉRIQUE si la lecture échoue : sans fenêtre à nommer, la phrase « à
  * partir de … » n'aurait rien à mettre après « de ». Mieux vaut le refus sobre
@@ -2125,23 +2175,15 @@ async function refusRetraitStock(
 ): Promise<string> {
   const { data: hold } = await admin
     .from("reservation_stock_holds")
-    .select("id, offer_id")
+    .select("id, redeem_not_before, redeem_expires_at")
     .eq("organization_id", organizationId)
     .eq("code", code)
     .limit(1)
     .maybeSingle();
   if (!hold) return "Ce lot ne peut pas être remis";
 
-  const { data: offer } = await admin
-    .from("reservation_stock_offers")
-    .select("window_starts_at, window_ends_at")
-    .eq("id", hold.offer_id)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (!offer) return "Ce lot ne peut pas être remis";
-
   return libelleRetraitTropTot(
-    formatFenetreStock(offer.window_starts_at, offer.window_ends_at, fuseau),
+    formatFenetreStock(hold.redeem_not_before, hold.redeem_expires_at, fuseau),
   );
 }
 

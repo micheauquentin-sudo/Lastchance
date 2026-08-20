@@ -38,13 +38,19 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     created_at: string;
     redeemed_at: string | null;
     cancelled_at: string | null;
-    /** Échéance GRAVÉE sur la prise — c'est elle qui fait expirer. */
+    /**
+     * LES DEUX BORNES, GRAVÉES SUR LA PRISE (revue L9, M3). L'ouverture vivait
+     * sur l'offre et y était relue à chaque retrait : une fenêtre décalée
+     * changeait alors le sort de prises déjà consenties. Elles sont désormais
+     * recopiées au blocage, et c'est ici que le comptoir les lit.
+     */
+    redeem_not_before: string | null;
     redeem_expires_at: string | null;
     basket_cents: number | null;
     status: "held" | "redeemed" | "cancelled";
   }
 
-  /** Offre de stock — elle porte LA FENÊTRE, dont la borne basse. */
+  /** Offre de stock — elle porte la fenêtre COURANTE, celle des prises à venir. */
   interface StockOfferRow {
     id: string;
     organization_id: string;
@@ -127,7 +133,13 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       }
     >(),
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    /**
+     * Les RPC qui doivent RÉPONDRE EN ERREUR, par nom. Vide par défaut : une
+     * panne se demande, elle ne s'obtient pas par omission.
+     */
+    rpcErreurs: [] as string[],
     reset() {
+      db.rpcErreurs = [];
       db.participations.clear();
       db.huntCompletions.clear();
       db.hunts.clear();
@@ -163,6 +175,15 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
        */
       rpc(name: string, args: Record<string, unknown>) {
         db.rpcCalls.push({ name, args });
+        // LE REGISTRE EN PANNE, sur demande explicite. Le distinguer d'un code
+        // inconnu est tout l'objet de `UniversalRedeemOutcome` : l'un dit
+        // « réessayez », l'autre « refaites saisir ».
+        if (db.rpcErreurs.includes(name)) {
+          return Promise.resolve({
+            data: null,
+            error: { message: `${name} indisponible` },
+          });
+        }
         if (name === "redeem_reward_by_code") {
           const code = String(args.p_code);
           const issuance = db.rewardIssuances.get(code);
@@ -195,13 +216,16 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
                 error: null,
               });
             }
-            const offer = db.stockOffers.get(hold.offer_id);
+            // LES DEUX BORNES SE LISENT SUR LA PRISE, comme le SQL depuis M3 :
+            // `redeem_stock_hold` n'interroge plus l'offre du tout. Un mock qui
+            // continuerait de lire `offer.window_starts_at` resterait vert sur
+            // une régression qui remettrait la fenêtre courante aux commandes.
             const maintenant = Date.now();
             const echue = hold.redeem_expires_at
               ? new Date(hold.redeem_expires_at).getTime() <= maintenant
               : false;
-            const tropTot = offer
-              ? new Date(offer.window_starts_at).getTime() > maintenant
+            const tropTot = hold.redeem_not_before
+              ? new Date(hold.redeem_not_before).getTime() > maintenant
               : false;
             const retireMaintenant =
               hold.status === "held" && !echue && !tropTot;
@@ -1948,6 +1972,11 @@ function seedStockHold(
     created_at: "2026-07-20T10:00:00.000Z",
     redeemed_at: null,
     cancelled_at: null,
+    // LES DEUX BORNES SONT SUR LA PRISE (revue L9, M3). Le message de refus les
+    // lit ici, plus sur l'offre : c'est la gravure que le bras source applique,
+    // et citer la fenêtre courante enverrait le client à une heure où il serait
+    // refusé une seconde fois.
+    redeem_not_before: fenetre.debut,
     redeem_expires_at: fenetre.fin,
     basket_cents: null,
     status: "held",
@@ -2115,6 +2144,28 @@ describe("redeemStockHold — le retrait au comptoir", () => {
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.error).toBe("Code introuvable");
     expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+  });
+
+  it("un registre EN PANNE dit « réessayez », jamais « introuvable » (revue L9)", async () => {
+    // ROUGE SI : les deux silences se remettent à se confondre. Un registre
+    // muet et un registre en panne rendaient tous deux « Code introuvable »,
+    // alors que la docstring de l'action promettait « Validation impossible ».
+    // La différence n'est pas cosmétique : elle décide de ce que le caissier
+    // fait ensuite — refaire saisir, ou recommencer. Et comme cette famille n'a
+    // AUCUN repli legacy, personne ne rattrape derrière.
+    seedStockHold("RESA-ABCD2345");
+    seedUniversalReward("RESA-ABCD2345", "reserver_stock");
+    db.rpcErreurs = ["redeem_reward_by_code"];
+
+    const res = await redeemStockHold(null, form({ code: "RESA-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe(
+      "Validation impossible — réessayez",
+    );
+    // L'unité reste tenue : le client repassera, son code est toujours bon.
+    expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+    expect(recordCounterMock).toHaveBeenCalledWith("rewards.registry_error");
   });
 
   it("refuse une forme de code invalide avant tout aller-retour", async () => {
