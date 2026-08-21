@@ -281,6 +281,186 @@ export type Database = {
           },
         ]
       }
+      bande_parties: {
+        Row: {
+          created_at: string
+          id: string
+          lobby_id: string
+          nb_questions: number
+          organization_id: string
+          pack: string
+          position: number
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lobby_id: string
+          nb_questions: number
+          organization_id: string
+          pack: string
+          position?: number
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lobby_id?: string
+          nb_questions?: number
+          organization_id?: string
+          pack?: string
+          position?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bande_parties_lobby_id_organization_id_fkey"
+            columns: ["lobby_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "player_lobbies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "bande_parties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bande_settings: {
+        Row: {
+          created_at: string
+          organization_id: string
+          pack: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          pack?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          pack?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bande_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bande_tours: {
+        Row: {
+          created_at: string
+          denominateur: number
+          id: string
+          organization_id: string
+          partie_id: string
+          position: number
+          question_cle: string
+          revealed_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          denominateur: number
+          id?: string
+          organization_id: string
+          partie_id: string
+          position: number
+          question_cle: string
+          revealed_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          denominateur?: number
+          id?: string
+          organization_id?: string
+          partie_id?: string
+          position?: number
+          question_cle?: string
+          revealed_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bande_tours_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bande_tours_partie_id_organization_id_fkey"
+            columns: ["partie_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "bande_parties"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      bande_votes: {
+        Row: {
+          cible_member_id: string | null
+          cible_pseudo: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          tour_id: string
+          voter_token_hash: string
+        }
+        Insert: {
+          cible_member_id?: string | null
+          cible_pseudo?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          tour_id: string
+          voter_token_hash: string
+        }
+        Update: {
+          cible_member_id?: string | null
+          cible_pseudo?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          tour_id?: string
+          voter_token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bande_votes_cible_member_id_organization_id_fkey"
+            columns: ["cible_member_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "player_lobby_members"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "bande_votes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bande_votes_tour_id_organization_id_fkey"
+            columns: ["tour_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "bande_tours"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       calendar_days: {
         Row: {
           calendar_id: string
@@ -7739,6 +7919,39 @@ export type Database = {
           redeem_expires_at: string
         }[]
       }
+      bande_next: {
+        Args: { p_creator_token_hash: string; p_lobby_id: string }
+        Returns: Json
+      }
+      bande_pack_questions: { Args: { p_pack: string }; Returns: string[] }
+      bande_questions_tirees: {
+        Args: { p_lobby_id: string; p_n: number; p_pack: string }
+        Returns: string[]
+      }
+      bande_recap: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      bande_reveal: {
+        Args: { p_creator_token_hash: string; p_lobby_id: string }
+        Returns: Json
+      }
+      bande_start: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      bande_state: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      bande_vote: {
+        Args: {
+          p_cible_member_id: string
+          p_lobby_id: string
+          p_token_hash: string
+        }
+        Returns: Json
+      }
       calendar_public_state: {
         Args: { p_calendar_id: string; p_player_token_hash?: string }
         Returns: Json
@@ -9409,6 +9622,10 @@ export type Database = {
           cycle: number
           organization_id: string
         }[]
+      }
+      set_bande_pack: {
+        Args: { p_actor: string; p_organization_id: string; p_pack: string }
+        Returns: Json
       }
       set_calendar_status: {
         Args: {

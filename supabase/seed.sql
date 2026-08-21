@@ -1973,3 +1973,29 @@ values
   ('e2e10000-0000-4000-8000-000000000001',
    'e2f10000-0000-4000-8000-000000000036')
 on conflict (organization_id) do nothing;
+
+-- ════════════════════════════════════════════════════════════
+-- PORTRAIT DE LA BANDE — LE PACK DE « E2E Café » (L18, 20261019120000)
+--
+-- UNE LIGNE, ET C'EST TOUT CE QUE LE JEU DEMANDE AU COMMERÇANT. Contrairement à
+-- Duo Miroir, qui a besoin d'un plateau de fiches épinglées, Portrait de la
+-- Bande se joue avec des questions de plateforme : le réglage tient dans la clé
+-- d'un pack, et la base ne connaît que cette clé (le texte vit dans
+-- `src/lib/bande-packs.ts`).
+--
+-- LE PACK EST `amis`, QUI EST AUSSI LE DÉFAUT. Semé EXPLICITEMENT plutôt que
+-- laissé au `coalesce` de `bande_start` : ce qu'un parcours E2E doit pouvoir
+-- éprouver, c'est le chemin où la ligne EXISTE — celui du commerçant qui a
+-- réglé son jeu. Le chemin sans ligne est couvert par pgTAP, sur une
+-- organisation qui n'en a pas.
+--
+-- AUCUN LOBBY N'EST SEMÉ ICI : la salle « bande » E2EBND et ses deux membres
+-- sont déjà posés plus haut par le socle L16, et c'est elle que le parcours
+-- rejoint. Aucune PARTIE non plus, pour la même raison qu'en L17 — semer une
+-- partie à moitié jouée donnerait aux tests un état qui dépend de qui a tourné
+-- avant eux. Les tests démarrent la leur.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.bande_settings (organization_id, pack)
+values ('e2e10000-0000-4000-8000-000000000001', 'amis')
+on conflict (organization_id) do nothing;
