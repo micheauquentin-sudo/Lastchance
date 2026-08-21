@@ -7717,6 +7717,10 @@ export type Database = {
           redeem_code: string
         }[]
       }
+      close_player_lobby_as_org: {
+        Args: { p_actor: string; p_lobby_id: string; p_organization_id: string }
+        Returns: Json
+      }
       close_reservation_invitation: {
         Args: {
           p_actor: string
@@ -8537,6 +8541,7 @@ export type Database = {
           state: string
         }[]
       }
+      org_player_lobbies: { Args: { p_organization_id: string }; Returns: Json }
       org_prize_funnel: {
         Args: { p_days?: number; p_organization_id: string }
         Returns: {

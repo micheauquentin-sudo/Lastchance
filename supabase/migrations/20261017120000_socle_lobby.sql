@@ -38,7 +38,7 @@
 --      salles vides en faisait son propre levier de déni, vingt requêtes
 --      d'affilée suffisant à fermer un commerce à ses propres clients.
 --   3. TTL D'EXPIRATION des lobbies non verrouillés — trente minutes à la
---      création, prolongées à quatre heures par le VERROUILLAGE, et un plafond
+--      création, prolongées à UNE HEURE par le VERROUILLAGE, et un plafond
 --      dur de vingt-quatre heures écrit en `check` : aucune prolongation, aucun
 --      bogue de calcul, aucune horloge dérivante ne peut faire vivre un lobby
 --      plus d'un jour.
@@ -46,6 +46,37 @@
 --      dit en toutes lettres, et ce fichier ne la redouble pas. Il n'est donc
 --      pas implémenté ici, et surtout il n'est compté nulle part comme une
 --      garde.
+--
+-- ── LE DÉNI INTRA-ORGANISATION : COURT, VISIBLE, RÉVERSIBLE (E-1) ──
+--
+-- La contre-revue a DÉMONTRÉ que durcir davantage le prédicat du quota ne sert
+-- à rien : `create` + entrée avec son PROPRE code de partage + `lock` font
+-- trois requêtes, et rendent une salle qui compte comme habitée. C'est MOINS
+-- CHER que la rafale de salles vides que le durcissement venait fermer. La
+-- raison est structurelle et il faut l'écrire une fois pour toutes : AUCUN
+-- prédicat portant sur une appartenance attestée par cookie ne sépare N cookies
+-- de N personnes. Un tour de vis de plus ne ferait que déplacer le prix de
+-- l'attaque de quinze requêtes à vingt.
+--
+-- La contrepartie livrée ici ne re-durcit donc RIEN. Elle rend le déni court,
+-- visible et réversible :
+--
+--   · COURT — le TTL du verrouillage passe de quatre heures à UNE HEURE. Une
+--     partie de Duo Miroir ou de Portrait de la Bande dure quinze minutes ;
+--     quatre heures étaient une marge de confort, elles étaient devenues la
+--     durée de vie d'une salle-squat. Le plafond dur de vingt-quatre heures ne
+--     bouge pas (`player_lobbies_ttl_borne`, inchangé) : c'est la garde 3, et
+--     une garde ne se renégocie pas parce qu'une autre valeur a changé.
+--   · VISIBLE — `org_player_lobbies` rend au commerçant la liste de ses salles
+--     vivantes. Vingt salles ouvertes en trois minutes se VOIENT, là où le seul
+--     signe était jusqu'ici un refus opposé à un vrai client.
+--   · RÉVERSIBLE — `close_player_lobby_as_org` ferme une salle en un geste.
+--     Vingt salles-squat se ferment en vingt clics au lieu d'attendre le TTL,
+--     et chaque fermeture rend IMMÉDIATEMENT sa place au quota.
+--
+-- Ce triplet ne rend pas l'attaque impossible — rien de ce qui est écrit ici ne
+-- le prétend. Il en change le rapport de forces : l'attaquant doit rejouer sans
+-- cesse ce que le commerçant défait d'un clic, sous ses yeux.
 --
 -- ── L'EXPIRATION EST CONSTATÉE À LA LECTURE, JAMAIS ÉCRITE (ADR-111) ──
 --
@@ -71,6 +102,13 @@
 -- donc il n'existe aucun prédicat marchand qui aurait un sens ici. La porte
 -- reste fermée pour `anon` comme pour `authenticated`, `references` / `trigger`
 -- / `truncate` compris (leçon SEC-4, wagon 7).
+--
+-- LES DEUX RPC COMMERÇANT (§12 et §13) NE CHANGENT RIEN À CELA. Elles sont
+-- `security definer`, rendues à `service_role` et à lui seul, et le lien avec le
+-- commerçant est un `p_organization_id` COMPARÉ DANS LA FONCTION. Ouvrir une
+-- policy à `authenticated` aurait donné aux comptes marchands un accès DIRECT
+-- aux deux tables — donc aux pseudos et aux codes de partage, que ces deux RPC
+-- refusent précisément de rendre.
 --
 -- ── L'IDENTITÉ EST RÉUTILISÉE, JAMAIS DUPLIQUÉE ──
 --
@@ -155,6 +193,10 @@ comment on table public.player_lobbies is
   'par organisation dans create_player_lobby — vingt salles HABITÉES OU RÉCENTES, '
   'durci à la revue L16 parce qu''il est le seul refus effectif du lot —, TTL en '
   'colonne, plafond dur de 24 h en check. '
+  'Le déni intra-organisation (E-1) ne se ferme PAS par un prédicat de plus — '
+  'aucun ne sépare N cookies de N personnes — mais se rend COURT (verrouillage à '
+  '1 h), VISIBLE (org_player_lobbies) et RÉVERSIBLE '
+  '(close_player_lobby_as_org). '
   'L''expiration se CONSTATE à la lecture (ADR-111), aucun worker ne '
   'l''écrit. RLS active et AUCUNE policy : service_role seul, tout passe par les '
   'RPC de 20261017120000 (motif vitrine_translations).';
@@ -165,10 +207,14 @@ comment on column public.player_lobbies.join_code is
   'rejouable après expiration : le lobby mort garde son code, et le code mort '
   'rend le MÊME refus qu''un code jamais né.';
 comment on column public.player_lobbies.expires_at is
-  'Date de mort. 30 minutes à la création, portée à 4 heures par '
-  'lock_player_lobby, jamais au-delà de created_at + 24 h (check '
-  'player_lobbies_ttl_borne). C''est aussi le DERNIER INSTANT CONNU du lobby : '
-  'purge_expired_lobbies date son seuil dessus, jamais sur now() (ADR-111).';
+  'Date de mort. 30 minutes à la création, portée à 1 HEURE par '
+  'lock_player_lobby — quatre heures à l''origine, ramenées à une à la '
+  'contre-revue L16 : une partie dure quinze minutes, et la marge était devenue '
+  'la durée de vie d''une salle-squat. Jamais au-delà de created_at + 24 h '
+  '(check player_lobbies_ttl_borne, inchangé). C''est aussi le DERNIER INSTANT '
+  'CONNU du lobby : purge_expired_lobbies date son seuil dessus, jamais sur '
+  'now() (ADR-111), et close_player_lobby_as_org le ramène à l''instant de la '
+  'fermeture pour la même raison.';
 comment on column public.player_lobbies.creator_token_hash is
   'SHA-256 du cookie de l''hôte. Seul ce hash verrouille le lobby et se voit '
   'rendre join_code par lobby_state. Ce n''est PAS l''identité globale du joueur : '
@@ -786,10 +832,20 @@ grant execute on function public.lobby_state(uuid, text)
 -- l'interface sait AVANT de cliquer qu'elle doit désactiver le bouton. Cette
 -- RPC est le filet, pas le message.
 --
+-- LA PROLONGATION EST D'UNE HEURE, et c'était quatre. Ramenée à la contre-revue
+-- L16, contrepartie du finding E-1 : le prédicat du quota ne peut pas être
+-- durci utilement (voir l'en-tête), donc c'est la DURÉE du déni qu'on coupe. Une
+-- partie de Duo Miroir ou de Portrait de la Bande dure quinze minutes — une
+-- heure reste une marge de quatre parties, et une salle-squat verrouillée ne
+-- tient plus le quota d'un commerce une demi-journée.
+--
 -- LA PROLONGATION EST BORNÉE DEUX FOIS : `least` la plafonne à
 -- `created_at + 24 h`, et le `check` de la table refuserait le dépassement
 -- même si ce `least` disparaissait un jour. La ceinture ET les bretelles,
--- parce que c'est la garde 3 d'ADR-109 §A4.
+-- parce que c'est la garde 3 d'ADR-109 §A4. Le `least` mord désormais dans une
+-- fenêtre plus étroite — un lobby né il y a plus de VINGT-TROIS HEURES, contre
+-- vingt à l'époque des quatre heures — mais il mord de la même façon, et le
+-- pgTAP le prouve sur un lobby construit pour ça.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.lock_player_lobby(
@@ -854,7 +910,7 @@ begin
   -- `least` NON qualifié : ce n'est pas une fonction du catalogue, la qualifier
   -- en `pg_catalog.` casserait à l'exécution (garde `npm run sql:check`).
   v_expires := least(
-    pg_catalog.now() + interval '4 hours',
+    pg_catalog.now() + interval '1 hour',
     v_lobby.created_at + interval '24 hours'
   );
 
@@ -1184,4 +1240,350 @@ $$;
 revoke all on function public.purge_expired_lobbies()
   from public, anon, authenticated;
 grant execute on function public.purge_expired_lobbies()
+  to service_role;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 12. `org_player_lobbies` — ce que le commerçant VOIT
+--
+-- CONTRAT :
+--   {"lobbies":[{"id":uuid,"kind":text,"status":text,"membres":int,
+--                "created_at":timestamptz,"expires_at":timestamptz}]}
+--
+-- Toujours un document, jamais un refus : une organisation inconnue et une
+-- organisation sans salle vivante rendent le MÊME `{"lobbies":[]}`. Il n'y a
+-- rien à distinguer — l'appelant est le serveur, qui connaît déjà l'organisation
+-- dont il tient l'écran.
+--
+-- ── CE QUI EN SORT, ET SURTOUT CE QUI N'EN SORT PAS ──
+--
+-- AUCUN PSEUDO, AUCUN CODE DE PARTAGE, AUCUN `token_hash`. Le commerçant
+-- SUPERVISE des salles ; il n'espionne pas ses clients. Ce qu'il lui faut pour
+-- décider — combien de salles, depuis quand, avec combien de monde dedans, et
+-- jusqu'à quand elles vivent — tient dans ces six clés. Un pseudo de plus ne
+-- l'aiderait à rien décider, et rendrait l'écran capable de lire des
+-- conversations de comptoir auxquelles il n'a pas été invité.
+--
+-- LE `join_code` EST L'OMISSION LA PLUS IMPORTANTE DES TROIS. Le rendre ferait
+-- de cet écran un ANNUAIRE DE CODES : un compte marchand compromis, ou un
+-- employé curieux, entrerait dans n'importe quelle salle de la maison sans
+-- qu'aucun joueur l'ait invité. Le code n'appartient qu'à l'hôte (`lobby_state`
+-- le tient déjà à cette règle, STATE-1 / STATE-2), et cette RPC-ci ne fabrique
+-- pas la porte dérobée que l'autre refuse.
+--
+-- ── « ACTIVES » VEUT DIRE VIVANTES, PAS « COMPTÉES AU QUOTA » ──
+--
+-- Le prédicat est « ni close, ni morte » — et il est DÉLIBÉRÉMENT PLUS LARGE que
+-- celui du quota. Une salle ouverte il y a une heure où personne n'est jamais
+-- venu ne pèse pas sur le quota (elle a passé la fenêtre des dix minutes), mais
+-- elle est EXACTEMENT ce que le commerçant veut voir et fermer : c'est la forme
+-- d'une salle-squat. Un écran qui ne montrerait que ce que le quota compte
+-- cacherait précisément ce contre quoi il existe.
+--
+-- L'expiration est CONSTATÉE ici comme partout (ADR-111) : une salle dépassée
+-- disparaît de la liste sans qu'aucune ligne ait bougé, donc `status` n'a jamais
+-- besoin de valoir « expired » dans ce document.
+--
+-- ── LA BORNE, ET SON DÉPARTAGE ──
+--
+-- Cinquante lignes au plus, les plus RÉCENTES d'abord. Cinquante et non vingt :
+-- le quota ne compte que les salles habitées ou récentes, donc le nombre de
+-- salles VIVANTES peut le dépasser franchement — et ce dépassement est
+-- justement le symptôme qu'on veut rendre lisible.
+--
+-- Le départage par `id` n'est pas décoratif. `created_at` vaut `now()`, qui est
+-- l'instant de DÉBUT DE TRANSACTION : toutes les salles nées d'une même
+-- transaction — le seed, un pgTAP, une rafale groupée — portent la MÊME date à
+-- la microseconde près. Une borne posée sur un ensemble non totalement ordonné
+-- coupe dans un sous-ensemble arbitraire, et deux appels n'y voient pas les
+-- mêmes lignes (motif `org_segment_emails`, 20260930120000).
+--
+-- ── L'APPARTENANCE DU COMMERÇANT EST APPLICATIVE, ET C'EST ASSUMÉ ──
+--
+-- Cette RPC ne prend PAS d'acteur : elle ne rend rien de personnel et n'écrit
+-- rien, donc exiger un `p_actor` ici aurait coûté une vérification par
+-- rafraîchissement d'écran pour garder six chiffres. La garde qui compte est
+-- celle de l'ÉCRITURE, et elle est en SQL — voir §13. Motif `set_vitrine_slug` :
+-- ce qui engage se vérifie dans la base, ce qui affiche se garde au-dessus.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.org_player_lobbies(
+  p_organization_id uuid
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_lobbies jsonb;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_organization_id is null then
+    raise exception 'organization required' using errcode = '22023';
+  end if;
+
+  select coalesce(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object(
+               'id', s.id,
+               'kind', s.kind,
+               'status', s.status,
+               'membres', s.membres,
+               'created_at', s.created_at,
+               'expires_at', s.expires_at)
+             order by s.created_at desc, s.id),
+           '[]'::jsonb)
+    into v_lobbies
+    from (
+      select l.id,
+             l.kind,
+             l.status,
+             l.created_at,
+             l.expires_at,
+             (select pg_catalog.count(*)::integer
+                from public.player_lobby_members m
+               where m.lobby_id = l.id) as membres
+        from public.player_lobbies l
+       where l.organization_id = p_organization_id
+         and l.status in ('lobby', 'locked')
+         and l.expires_at > pg_catalog.now()
+       order by l.created_at desc, l.id
+       limit 50
+    ) s;
+
+  return pg_catalog.jsonb_build_object('lobbies', v_lobbies);
+end;
+$$;
+
+comment on function public.org_player_lobbies(uuid) is
+  'Les salles de jeu VIVANTES d''une organisation, pour l''écran de supervision '
+  'du commerçant (contrepartie du finding E-1 : rendre le déni VISIBLE). Rend '
+  '{"lobbies":[{id, kind, status, membres, created_at, expires_at}]} — SIX clés '
+  'et pas une de plus. AUCUN pseudo, AUCUN join_code, AUCUN token_hash : le '
+  'commerçant supervise des salles, il n''espionne pas ses clients, et rendre le '
+  'code de partage ferait de cet écran un ANNUAIRE DE CODES ouvrant toutes les '
+  'salles de la maison. « Vivante » = ni close ni morte, volontairement PLUS '
+  'LARGE que le prédicat du quota : la salle vide et vieille ne compte pas au '
+  'quota mais c''est justement la forme d''une salle-squat, et c''est elle qu''on '
+  'veut voir. Bornée à 50, plus récentes d''abord, départage par id parce que '
+  'now() est constant dans une transaction (motif org_segment_emails). '
+  'Organisation inconnue et organisation sans salle rendent le même document '
+  'vide. Rendue à service_role ; l''appartenance du commerçant est APPLICATIVE '
+  '(lecture sans donnée personnelle), celle de l''écriture est en SQL — voir '
+  'close_player_lobby_as_org.';
+
+revoke all on function public.org_player_lobbies(uuid)
+  from public, anon, authenticated;
+grant execute on function public.org_player_lobbies(uuid)
+  to service_role;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 13. `close_player_lobby_as_org` — le commerçant reprend sa place
+--
+-- CONTRAT :
+--   {"state":"ok","closed":true}   — la salle était vivante, elle ne l'est plus
+--   {"state":"ok","closed":false}  — il n'y avait rien à fermer
+--   42501                          — TOUT le reste, et d'un seul mot
+--
+-- C'EST CE GESTE QUI REND LE DÉNI RÉVERSIBLE. Sans lui, vingt salles-squat
+-- tiennent le quota d'un commerce jusqu'à l'expiration ; avec lui, elles se
+-- ferment en vingt clics, et chaque fermeture rend IMMÉDIATEMENT sa place —
+-- `status = 'closed'` sort la salle du prédicat de `create_player_lobby` à
+-- l'instant même, sans attendre aucun cron.
+--
+-- ── LE 42501 EST INDISTINCT, ET IL COUVRE QUATRE CHOSES ──
+--
+-- Acteur absent, acteur qui n'est pas `owner|editor`, salle inconnue, salle
+-- d'une AUTRE organisation : un seul et même refus, sans corps. Distinguer la
+-- troisième de la quatrième donnerait à n'importe quel commerçant un oracle
+-- d'existence sur les identifiants de salles de ses voisins — c'est-à-dire un
+-- compteur d'activité du commerce d'en face, une requête à la fois.
+--
+-- ── L'ACTEUR EST VÉRIFIÉ EN SQL (motif `set_vitrine_slug`) ──
+--
+-- `owner|editor`, pas le caissier : fermer une salle interrompt des gens qui
+-- jouent, ce n'est pas un geste de comptoir. Et surtout, la vérification est
+-- DANS LA BASE parce que le geste est JOURNALISÉ : un `p_actor` accepté sur
+-- parole ferait de la ligne d'audit une déclaration sur l'honneur, et « qui a
+-- fermé la salle de mes clients » est exactement la question qu'on se pose après
+-- coup.
+--
+-- ── EN `locked` AUSSI, ET C'EST LE CŒUR DU GESTE ──
+--
+-- Les autres RPC de ce fichier refusent d'écrire sur une salle verrouillée : une
+-- partie commencée ne se re-négocie pas entre joueurs. Celle-ci le peut, et il
+-- FAUT qu'elle le puisse — l'attaque démontrée à la contre-revue est précisément
+-- `create` + entrée avec son propre code + `lock`, donc une salle VERROUILLÉE.
+-- Une fermeture qui s'arrêterait à `lobby` raterait exactement le cas pour lequel
+-- elle est écrite. Ce n'est pas la même décision que celle refusée à L17/L18 :
+-- eux arbitrent entre joueurs d'une même partie, le commerçant arbitre chez lui.
+-- Les joueurs le constatent par `lobby_state`, qui rend `closed` sans qu'aucun
+-- état nouveau ait eu à exister.
+--
+-- ── LA DATE DE MORT RECULE, ELLE N'AVANCE JAMAIS (ADR-111) ──
+--
+-- `expires_at` est ramené à l'instant de la fermeture, pour que la purge date la
+-- salle de son DERNIER INSTANT CONNU au lieu de la garder vingt-quatre heures
+-- après une date de mort qui n'a plus de sens. Deux précautions, chacune pour un
+-- vrai cas :
+--
+--   · `clock_timestamp()` et non `now()` — `now()` rend l'instant de début de
+--     transaction, donc une salle CRÉÉE PUIS FERMÉE dans la même transaction
+--     (un seed, un pgTAP) recevrait `expires_at = created_at` et violerait
+--     `player_lobbies_ttl_borne` (`expires_at > created_at`). Même écart, même
+--     raison que `player_lobby_members.joined_at`.
+--   · `least(…, v_lobby.expires_at)` — fermer ne PROLONGE jamais. Sans cette
+--     borne, une transaction restée ouverte des heures pourrait repousser la
+--     date de mort au-delà de ce qu'elle était, et jusqu'à franchir le plafond
+--     des vingt-quatre heures.
+--
+-- ── L'IDEMPOTENCE N'ÉCRIT RIEN, ET NE JOURNALISE RIEN ──
+--
+-- Une salle déjà close, déjà `expired`, ou simplement morte, rend
+-- `{"state":"ok","closed":false}` SANS TOUCHER À LA LIGNE. Réécrire `expires_at`
+-- sur un cadavre REPOUSSERAIT sa purge — l'exact contraire de ce que le champ
+-- signifie. Et un journal qui compte les non-gestes devient illisible quand on
+-- en a besoin (motif `set_vitrine_slug` : réenregistrer la même adresse ne
+-- journalise rien).
+--
+-- ── LE DROIT `vitrine` N'EST PAS EXIGÉ, DÉLIBÉRÉMENT ──
+--
+-- Ouvrir une salle demande le module et une vitrine publiée ; en fermer une n'a
+-- rien à demander. Un commerçant dont l'offre vient d'expirer doit pouvoir
+-- fermer les salles ouvertes la veille — subordonner un geste DÉFENSIF à un
+-- abonnement vivant, c'est le retirer exactement quand il sert.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.close_player_lobby_as_org(
+  p_organization_id uuid,
+  p_lobby_id uuid,
+  p_actor uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_org uuid;
+  v_lobby public.player_lobbies%rowtype;
+  v_membres integer;
+  v_expires timestamptz;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  -- Paramètre ABSENT = bogue de l'appelant, et il se dit fort (motif
+  -- `delete_vitrine_translation`). Un `null` n'est l'identifiant de personne :
+  -- le crier n'apprend rien à qui sonde.
+  if p_organization_id is null or p_lobby_id is null then
+    raise exception 'organization and lobby required' using errcode = '22023';
+  end if;
+
+  -- ── L'ACTEUR D'ABORD, LA SALLE ENSUITE ──────────────────────
+  --
+  -- L'ordre compte : un non-membre ne doit rien apprendre de l'existence de la
+  -- salle qu'il désigne, pas même par la forme du chemin parcouru. Les deux
+  -- refus rendent de toute façon le même 42501 sans corps.
+  if p_actor is null then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if not exists (
+    select 1
+      from public.organization_members om
+     where om.organization_id = p_organization_id
+       and om.user_id = p_actor
+       and om.role in ('owner', 'editor')
+  ) then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- Localisation, jamais décision — même motif que `join_player_lobby`. La
+  -- salle d'un AUTRE locataire emprunte le même `raise` que la salle inconnue.
+  select l.organization_id into v_org
+    from public.player_lobbies l
+   where l.id = p_lobby_id;
+  if not found or v_org <> p_organization_id then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- LE MÊME VERROU QUE `join` / `lock` / `kick`, sur la MÊME clé : une
+  -- fermeture qui croiserait une entrée laisserait un membre dans une salle
+  -- close, et le comptage journalisé ci-dessous serait faux d'une personne.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'player_lobby:' || v_org::text || ':' || p_lobby_id::text, 0)
+  );
+
+  select l.* into v_lobby
+    from public.player_lobbies l
+   where l.id = p_lobby_id;
+  if not found then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- RIEN À FERMER : déjà close, déjà `expired`, ou morte. Aucune écriture,
+  -- aucune ligne de journal — voir l'en-tête.
+  if v_lobby.status not in ('lobby', 'locked')
+     or v_lobby.expires_at <= pg_catalog.now() then
+    return pg_catalog.jsonb_build_object('state', 'ok', 'closed', false);
+  end if;
+
+  select pg_catalog.count(*)::integer into v_membres
+    from public.player_lobby_members m
+   where m.lobby_id = v_lobby.id;
+
+  -- `least` NON qualifié : ce n'est pas une fonction du catalogue, la qualifier
+  -- en `pg_catalog.` casserait à l'exécution (garde `npm run sql:check`).
+  v_expires := least(pg_catalog.clock_timestamp(), v_lobby.expires_at);
+
+  update public.player_lobbies l
+     set status = 'closed',
+         expires_at = v_expires
+   where l.id = v_lobby.id;
+
+  -- LE JOURNAL PORTE LE GESTE, PAS LES GENS. `membres` est un NOMBRE : il dit
+  -- si la salle fermée était habitée — ce qui distingue le ménage d'une
+  -- salle-squat de l'interruption de vrais clients — sans nommer personne. Ni
+  -- pseudo, ni code de partage, ni empreinte de jeton : ce que §12 refuse de
+  -- montrer à l'écran, le journal ne le grave pas non plus.
+  insert into public.audit_logs (organization_id, actor, action, metadata)
+  values (p_organization_id, p_actor::text, 'lobby.closed_by_org',
+          pg_catalog.jsonb_build_object(
+            'lobby_id', v_lobby.id,
+            'statut_avant', v_lobby.status,
+            'membres', v_membres));
+
+  return pg_catalog.jsonb_build_object('state', 'ok', 'closed', true);
+end;
+$$;
+
+comment on function public.close_player_lobby_as_org(uuid, uuid, uuid) is
+  'Le commerçant ferme une salle de SON organisation (contrepartie du finding '
+  'E-1 : rendre le déni RÉVERSIBLE). status → closed et expires_at ramené à '
+  'l''instant de la fermeture, pour que la purge date la salle de son DERNIER '
+  'INSTANT CONNU (ADR-111) ; clock_timestamp() borné par least à l''ancienne '
+  'date de mort — fermer ne prolonge jamais, et une salle créée puis fermée dans '
+  'la même transaction ne viole pas expires_at > created_at. Acteur vérifié EN '
+  'SQL membre owner/editor (pas le caissier : fermer interrompt des gens qui '
+  'jouent), motif set_vitrine_slug — la vérification est dans la base parce que '
+  'le geste est JOURNALISÉ (lobby.closed_by_org). Acteur absent, acteur non '
+  'habilité, salle inconnue et salle d''un AUTRE locataire rendent le MÊME 42501 '
+  'sans corps : sinon un commerçant compterait l''activité de ses voisins une '
+  'requête à la fois. FERME AUSSI UNE SALLE VERROUILLÉE, contrairement à '
+  'kick/leave : l''attaque démontrée est create + auto-entrée + lock, donc '
+  's''arrêter à « lobby » raterait le seul cas pour lequel cette RPC existe. '
+  'Idempotente : salle déjà close ou morte → {"state":"ok","closed":false}, '
+  'AUCUNE écriture et AUCUNE ligne de journal. N''exige PAS le droit vitrine — '
+  'un geste défensif ne se retire pas au commerçant le jour où son offre '
+  'expire. Rendue à service_role.';
+
+revoke all on function public.close_player_lobby_as_org(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.close_player_lobby_as_org(uuid, uuid, uuid)
   to service_role;

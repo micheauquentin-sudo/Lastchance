@@ -36,21 +36,41 @@
 --      inoccupé rend un succès muet. Et l'arbitrage est prouvé des DEUX côtés :
 --      la personne retirée ne revient pas toute seule, mais rien ne l'empêche
 --      de rejoindre à neuf — c'est un retrait de place, pas un bannissement.
---   8. LE VERROUILLAGE PROLONGE, ET LA PROLONGATION EST BORNÉE. Sur un lobby
---      né il y a vingt-trois heures, `now() + 4 h` est rabattu à
---      `created_at + 24 h` — la garde 3 d'ADR-109 §A4 mord pour de vrai.
+--   8. LE VERROUILLAGE PROLONGE D'UNE HEURE — et c'était quatre. Ramené à la
+--      contre-revue L16 : le prédicat du quota ne peut pas être durci
+--      utilement (aucun prédicat ne sépare N cookies de N personnes), donc
+--      c'est la DURÉE du déni qu'on coupe. LA PROLONGATION RESTE BORNÉE : sur
+--      un lobby né il y a vingt-trois heures et demie, `now() + 1 h` est
+--      rabattu à `created_at + 24 h` — la garde 3 d'ADR-109 §A4 mord pour de
+--      vrai, dans une fenêtre simplement plus étroite qu'avant.
 --   9. LA PURGE DATE DU DERNIER INSTANT CONNU (ADR-111) : elle efface ce qui
 --      est mort depuis plus de vingt-quatre heures, et laisse intact ce qui est
 --      mort depuis vingt-trois — y compris un lobby CLOS dont la date de mort
 --      est encore devant.
 --  10. ACL ET RLS. Les deux tables portent la RLS et ZÉRO policy, `anon` et
 --      `authenticated` n'y gardent AUCUN privilège (`references` / `trigger` /
---      `truncate` compris), les SEPT RPC sont à `service_role` et à lui seul, et
+--      `truncate` compris), les NEUF RPC sont à `service_role` et à lui seul, et
 --      la formule du rang n'est exécutable par AUCUN rôle applicatif.
 --  11. LA RÈGLE CATALOGUE CHECK ⇒ EXECUTE ne peut pas mordre ici : aucun
 --      `check` des deux tables n'appelle une fonction du dépôt.
 --  12. LE LOCATAIRE TIENT PAR LA BASE. La FK composite refuse un membre
 --      rattaché à une autre organisation que son lobby.
+--  13. LE COMMERÇANT VOIT SES SALLES, ET RIEN D'AUTRE (`org_player_lobbies`).
+--      L'isolation inter-organisation est prouvée dans les DEUX SENS et sur
+--      l'ENSEMBLE EXACT des identifiants, pas sur un échantillon. Le jeu de
+--      clés du document est mesuré au caractère près : six clés, donc AUCUN
+--      pseudo, AUCUN code de partage, AUCUNE empreinte de jeton. La liste est
+--      PLUS LARGE que le quota — les salles vieilles et vides, invisibles au
+--      quota, y figurent, parce que c'est exactement la forme d'une
+--      salle-squat. Et la borne de cinquante coupe dans un ensemble
+--      TOTALEMENT ORDONNÉ, départage par `id` compris.
+--  14. LE COMMERÇANT FERME UNE SALLE (`close_player_lobby_as_org`), et c'est
+--      ce geste qui rend le déni RÉVERSIBLE. Nominal, VERROUILLÉE comprise —
+--      l'attaque démontrée produit précisément une salle verrouillée —, la
+--      place rendue au quota À L'INSTANT, l'idempotence muette, et CINQ refus
+--      qui ne se distinguent pas — acteur absent, caissier, membre habilité
+--      d'une AUTRE maison, salle inconnue, salle du voisin — assertés sur le
+--      SQLSTATE **et** sur le message.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -86,6 +106,11 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 --     (vides et vieilles / verrouillées / habitées). Elles sont SÉPARÉES parce
 --     qu'un quota est par organisation : les mélanger ferait compter ensemble
 --     des salles que la RPC compte séparément.
+-- H : la BORNE de `org_player_lobbies`. Cinquante-cinq salles vivantes, écrites
+--     EN DIRECT — passer par la RPC aurait demandé de contourner le quota trois
+--     fois de suite pour prouver une propriété qui n'a rien à voir avec lui.
+--     Elle n'a ni module ni vitrine : la lecture de supervision n'en demande
+--     pas, et le vérifier ici coûte une ligne.
 insert into public.organizations
   (id, name, slug, subscription_status, plan, timezone, data_retention_months)
 values
@@ -102,7 +127,30 @@ values
   ('6b0b1e00-0000-4000-8000-00000000000f', 'Lobby F', 'tap-lobby-f',
    'active', 'starter', 'Europe/Paris', 6),
   ('6b0b1e00-0000-4000-8000-000000000010', 'Lobby G', 'tap-lobby-g',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-000000000011', 'Lobby H', 'tap-lobby-h',
    'active', 'starter', 'Europe/Paris', 6);
+
+-- LES ACTEURS. `close_player_lobby_as_org` vérifie l'appartenance EN SQL, donc
+-- il faut de vrais membres : un propriétaire et un éditeur chez A (les deux
+-- habilités), un CAISSIER chez A (le refus qui prouve que le rôle est lu, et pas
+-- seulement l'appartenance), et un propriétaire chez B (celui qui prouve que le
+-- locataire est comparé — il est habilité, mais pas ici).
+insert into auth.users (id, email) values
+  ('6b0b1e01-0000-4000-8000-000000000001', 'proprio-a@tap-lobby.local'),
+  ('6b0b1e01-0000-4000-8000-000000000002', 'editeur-a@tap-lobby.local'),
+  ('6b0b1e01-0000-4000-8000-000000000003', 'caissier-a@tap-lobby.local'),
+  ('6b0b1e01-0000-4000-8000-000000000004', 'proprio-b@tap-lobby.local');
+
+insert into public.organization_members (organization_id, user_id, role) values
+  ('6b0b1e00-0000-4000-8000-00000000000a',
+   '6b0b1e01-0000-4000-8000-000000000001', 'owner'),
+  ('6b0b1e00-0000-4000-8000-00000000000a',
+   '6b0b1e01-0000-4000-8000-000000000002', 'editor'),
+  ('6b0b1e00-0000-4000-8000-00000000000a',
+   '6b0b1e01-0000-4000-8000-000000000003', 'cashier'),
+  ('6b0b1e00-0000-4000-8000-00000000000b',
+   '6b0b1e01-0000-4000-8000-000000000004', 'owner');
 
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
@@ -647,9 +695,40 @@ select is(
   'unavailable',
   'LOCK-1 un hôte seul ne verrouille rien');
 
--- Un lobby NÉ IL Y A VINGT-TROIS HEURES, encore vivant pour trente minutes.
--- C'est le seul cas où `now() + 4 h` dépasse `created_at + 24 h`, donc le seul
--- qui prouve que la borne mord.
+-- ── LE TTL NOMINAL DU VERROUILLAGE : UNE HEURE ────────────────
+--
+-- Ramené de quatre heures à une à la contre-revue L16, contrepartie du finding
+-- E-1 : le prédicat du quota ne peut pas être durci utilement, donc c'est la
+-- DURÉE du déni qu'on coupe. Le lobby est FRAIS, donc `least` ne rabat rien —
+-- ce qui est mesuré ici est bien la valeur choisie, et non la borne des
+-- vingt-quatre heures. C'est `vieux`, juste en dessous, qui prouve la borne.
+insert into lb values ('frais', public.create_player_lobby(
+  '6b0b1e00-0000-4000-8000-00000000000a', 'bande', 4,
+  repeat('81', 32), 'Hôte Frais'));
+insert into lb values ('frais2', public.join_player_lobby(
+  (select j->>'join_code' from lb where nom = 'frais'),
+  repeat('82', 32), 'Compagnon Frais'));
+select is((select j->>'state' from lb where nom = 'frais2'), 'joined',
+  'TTL-2 fixture : la salle fraîche a deux membres, elle est donc verrouillable');
+select is(
+  (public.lock_player_lobby(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'frais'),
+     repeat('81', 32)))->>'state',
+  'locked',
+  'TTL-3 l''hôte ferme la porte d''une salle fraîche');
+select is(
+  (select l.expires_at - l.created_at from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'frais')),
+  interval '1 hour',
+  'TTL-4 le verrouillage porte la date de mort à UNE HEURE, et non plus à quatre');
+
+-- Un lobby NÉ IL Y A VINGT-TROIS HEURES ET DEMIE, encore vivant pour trente
+-- minutes. C'est le seul cas où `now() + 1 h` dépasse `created_at + 24 h`, donc
+-- le seul qui prouve que la borne mord. Vingt-trois heures suffisaient du temps
+-- des quatre heures ; avec une heure, la fenêtre s'est resserrée d'autant, et
+-- une demi-heure de marge est ce qui SÉPARE ce scénario du cas nominal — à
+-- vingt-trois heures pile, `now() + 1 h` et `created_at + 24 h` seraient ÉGAUX
+-- et l'assertion serait verte sans que `least` ait rien rabattu.
 insert into lb values ('vieux', public.create_player_lobby(
   '6b0b1e00-0000-4000-8000-00000000000a', 'bande', 4,
   repeat('11', 32), 'Hôte Vieux'));
@@ -657,7 +736,7 @@ insert into lb values ('vieux2', public.join_player_lobby(
   (select j->>'join_code' from lb where nom = 'vieux'),
   repeat('12', 32), 'Compagnon'));
 update public.player_lobbies
-   set created_at = now() - interval '23 hours'
+   set created_at = now() - interval '23 hours 30 minutes'
  where id = (select (j->>'lobby_id')::uuid from lb where nom = 'vieux');
 
 select is(
@@ -685,8 +764,8 @@ select is(
 select ok(
   (select l.expires_at from public.player_lobbies l
     where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'vieux'))
-  < now() + interval '4 hours',
-  'LOCK-6 … donc bien en deçà des quatre heures demandées');
+  < now() + interval '1 hour',
+  'LOCK-6 … donc bien en deçà de l''heure demandée : `least` a rabattu');
 
 select is(
   (public.lock_player_lobby(
@@ -1049,7 +1128,409 @@ select throws_ok(
 
 
 -- ════════════════════════════════════════════════════════════
--- 11. ACL, RLS, GRANTS
+-- 11. LE COMMERÇANT VOIT SES SALLES — ET RIEN D'AUTRE
+--
+-- Contrepartie du finding E-1, volet VISIBLE. Ce que ces assertions prouvent :
+-- le document ne contient que six clés (donc ni pseudo, ni code de partage, ni
+-- empreinte), l'isolation inter-organisation tient sur l'ENSEMBLE EXACT des
+-- identifiants et dans les DEUX SENS, la liste est délibérément PLUS LARGE que
+-- le quota, et la borne de cinquante coupe dans un ensemble totalement ordonné.
+-- ════════════════════════════════════════════════════════════
+
+-- H : cinquante-cinq salles vivantes, écrites EN DIRECT. Le quota n'est pas le
+-- sujet ici, et le contourner trois fois pour arriver à cinquante-cinq aurait
+-- fait dépendre une propriété de tri d'une propriété de comptage.
+insert into public.player_lobbies
+  (organization_id, kind, capacite, creator_token_hash, expires_at)
+select '6b0b1e00-0000-4000-8000-000000000011', 'bande', 4,
+       lpad(to_hex(700000 + g.i), 64, '0'),
+       now() + interval '30 minutes'
+  from generate_series(1, 55) as g(i);
+
+-- ── LE JEU DE CLÉS, MESURÉ ────────────────────────────────────
+-- L'assertion porte sur l'ENSEMBLE EXACT des clés, et non sur l'absence de
+-- trois d'entre elles : « pas de pseudo, pas de join_code, pas de token » serait
+-- vert le jour où une QUATRIÈME donnée personnelle apparaîtrait. Six clés, et
+-- la liste est close.
+select is(
+  (select pg_catalog.string_agg(distinct k.nom, ',' order by k.nom)
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e),
+          lateral pg_catalog.jsonb_object_keys(t.e) as k(nom)),
+  'created_at,expires_at,id,kind,membres,status',
+  'ORG-1 le document porte SIX clés, et la liste est close');
+
+-- LES TROIS ABSENCES, VÉRIFIÉES SUR LES VALEURS et pas seulement sur les noms :
+-- une clé mal nommée qui transporterait un code de partage passerait ORG-1.
+select ok(
+  public.org_player_lobbies('6b0b1e00-0000-4000-8000-00000000000a')::text
+    not like '%' || (select j->>'join_code' from lb where nom = 'kick') || '%',
+  'ORG-2 aucun code de partage ne se lit dans le document : cet écran n''est pas un annuaire de codes');
+select ok(
+  public.org_player_lobbies('6b0b1e00-0000-4000-8000-00000000000a')::text
+    not like '%' || repeat('71', 32) || '%',
+  'ORG-3 ni aucune empreinte de jeton');
+select ok(
+  public.org_player_lobbies('6b0b1e00-0000-4000-8000-00000000000a')::text
+    not like '%Hôte Kick%',
+  'ORG-4 ni aucun pseudo : le commerçant supervise des salles, il n''espionne pas ses clients');
+
+-- ── LE CONTENU EST JUSTE ──────────────────────────────────────
+select is(
+  (select (t.e->>'membres')::integer
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)
+    where (t.e->>'id')::uuid
+          = (select (j->>'lobby_id')::uuid from lb where nom = 'cap')),
+  12,
+  'ORG-5 `membres` compte les gens réellement présents');
+select is(
+  (select (t.e->>'status')
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)
+    where (t.e->>'id')::uuid
+          = (select (j->>'lobby_id')::uuid from lb where nom = 'vieux')),
+  'locked',
+  'ORG-6 une salle VERROUILLÉE est listée : une partie en cours occupe la maison');
+
+-- CE QUI N'EST PAS LISTÉ : la salle CLOSE et la salle MORTE. L'expiration est
+-- constatée ici comme partout (ADR-111) — `mort` a encore `status = 'lobby'` en
+-- base, et c'est bien sa DATE qui la sort de la liste.
+select is(
+  (select pg_catalog.count(*)::integer
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)
+    where (t.e->>'id')::uuid in (
+      (select (j->>'lobby_id')::uuid from lb where nom = 'salon'),
+      (select (j->>'lobby_id')::uuid from lb where nom = 'mort'))),
+  0,
+  'ORG-7 ni la salle CLOSE ni la salle MORTE n''y figurent');
+
+-- ── PLUS LARGE QUE LE QUOTA, ET C'EST LE POINT ────────────────
+-- Les vingt salles de E sont vieilles, vides et vivantes : E1-3 a prouvé
+-- qu'elles ne pèsent PAS sur le quota. Elles sont pourtant listées — c'est
+-- exactement la forme d'une salle-squat, et un écran qui ne montrerait que ce
+-- que le quota compte cacherait précisément ce contre quoi il existe.
+select cmp_ok(
+  (select pg_catalog.count(*)::integer
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000e')->'lobbies') as t(e)
+     join public.player_lobbies l on l.id = (t.e->>'id')::uuid
+    where l.status = 'lobby'
+      and l.created_at <= now() - interval '10 minutes'
+      and (select pg_catalog.count(*) from public.player_lobby_members m
+            where m.lobby_id = l.id) = 1),
+  '>=', 20,
+  'ORG-8 les salles VIEILLES ET VIDES — invisibles au quota — sont bien listées');
+
+-- ── L'ISOLATION, SUR L'ENSEMBLE EXACT ET DANS LES DEUX SENS ───
+-- Contrôle de portée d'abord : sans lui, les deux assertions suivantes seraient
+-- vertes sur un document vide.
+select cmp_ok(
+  (select pg_catalog.jsonb_array_length(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies')),
+  '>=', 5,
+  'ORG-9 contrôle de portée : A a bien plusieurs salles vivantes à montrer');
+
+select is(
+  (select pg_catalog.string_agg(t.e->>'id', ',' order by t.e->>'id')
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)),
+  (select pg_catalog.string_agg(l.id::text, ',' order by l.id::text)
+     from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000a'
+      and l.status in ('lobby', 'locked')
+      and l.expires_at > now()),
+  'ORG-10 la liste d''A est EXACTEMENT l''ensemble de ses salles vivantes : ni une de plus, ni une de moins');
+select is(
+  (select pg_catalog.string_agg(t.e->>'id', ',' order by t.e->>'id')
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000b')->'lobbies') as t(e)),
+  (select pg_catalog.string_agg(l.id::text, ',' order by l.id::text)
+     from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000b'
+      and l.status in ('lobby', 'locked')
+      and l.expires_at > now()),
+  'ORG-11 … et celle de B l''ensemble des SIENNES : l''isolation tient dans les deux sens');
+select is(
+  (select pg_catalog.count(*)::integer
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)
+     join public.player_lobbies l on l.id = (t.e->>'id')::uuid
+    where l.organization_id <> '6b0b1e00-0000-4000-8000-00000000000a'),
+  0,
+  'ORG-12 aucune salle d''un autre locataire ne se glisse dans la liste d''A');
+
+-- ── LA BORNE, ET SON DÉPARTAGE ────────────────────────────────
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-000000000011'),
+  55,
+  'ORG-13 contrôle de portée : H porte bien cinquante-cinq salles vivantes');
+select is(
+  (select pg_catalog.jsonb_array_length(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-000000000011')->'lobbies')),
+  50,
+  'ORG-14 la liste est bornée à CINQUANTE');
+-- LE DÉPARTAGE. Les cinquante-cinq salles de H sont nées dans la MÊME
+-- transaction, donc elles portent le MÊME `created_at` à la microseconde :
+-- sans `id` en second terme, la borne couperait dans un sous-ensemble
+-- arbitraire et deux appels n'y verraient pas les mêmes lignes. L'ordre est
+-- reconstruit ici EXACTEMENT comme dans la RPC — si l'un des deux change, cette
+-- assertion rougit (motif QUOTA-4 pour la clé du verrou).
+select is(
+  (select pg_catalog.string_agg(t.e->>'id', ',' order by t.e->>'id')
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-000000000011')->'lobbies') as t(e)),
+  (select pg_catalog.string_agg(u.id::text, ',' order by u.id::text)
+     from (select l.id
+             from public.player_lobbies l
+            where l.organization_id = '6b0b1e00-0000-4000-8000-000000000011'
+            order by l.created_at desc, l.id
+            limit 50) u),
+  'ORG-15 … et ce sont les cinquante PREMIÈRES de l''ordre annoncé, départage par id compris');
+
+-- ── LE DOCUMENT VIDE N'EST PAS UN REFUS ───────────────────────
+select is(
+  public.org_player_lobbies('6b0b1e00-0000-4000-8000-00000000000c'),
+  '{"lobbies": []}'::jsonb,
+  'ORG-16 une organisation sans salle rend un document VIDE, pas une erreur');
+select is(
+  public.org_player_lobbies('6b0b1e00-0000-4000-8000-00000000000c'),
+  public.org_player_lobbies('facade00-0000-4000-8000-000000000000'),
+  'ORG-17 … et une organisation inconnue rend EXACTEMENT le même');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 12. LE COMMERÇANT FERME UNE SALLE
+--
+-- Contrepartie du finding E-1, volet RÉVERSIBLE. La démonstration centrale est
+-- CLOSE-9/10/11 : B est saturée, on ferme UNE salle, la création repasse — sans
+-- cron, sans TTL, à l'instant. Le reste borne le geste : l'acteur est vérifié en
+-- SQL, les quatre refus ne se distinguent pas, l'idempotence n'écrit ni ne
+-- journalise, et une salle VERROUILLÉE se ferme aussi — c'est la forme même de
+-- l'attaque démontrée (`create` + auto-entrée + `lock`).
+-- ════════════════════════════════════════════════════════════
+
+-- ── LES CINQ REFUS, ET ILS SONT LE MÊME ───────────────────────
+-- Acteur absent, CAISSIER (l'appartenance ne suffit pas, le rôle est lu), acteur
+-- habilité mais d'une AUTRE organisation, salle inconnue, salle du VOISIN : même
+-- SQLSTATE et même message, donc aucun oracle. Le message est asserté en toutes
+-- lettres — un 42501 qui dirait « lobby not found » serait le même code et un
+-- oracle quand même.
+select throws_ok(
+  format($$select public.close_player_lobby_as_org(%L, %L, null::uuid)$$,
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'duo')),
+  '42501', 'not authorized',
+  'CLOSE-1 un acteur absent est refusé');
+select throws_ok(
+  format($$select public.close_player_lobby_as_org(%L, %L, %L)$$,
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'duo'),
+    '6b0b1e01-0000-4000-8000-000000000003'),
+  '42501', 'not authorized',
+  'CLOSE-2 le CAISSIER est refusé : fermer interrompt des gens qui jouent, ce n''est pas un geste de comptoir');
+select throws_ok(
+  format($$select public.close_player_lobby_as_org(%L, %L, %L)$$,
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'duo'),
+    '6b0b1e01-0000-4000-8000-000000000004'),
+  '42501', 'not authorized',
+  'CLOSE-3 le propriétaire de B est refusé chez A : habilité ne veut pas dire habilité PARTOUT');
+select throws_ok(
+  format($$select public.close_player_lobby_as_org(%L, %L, %L)$$,
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    '3f3f3f3f-0000-4000-8000-000000000000',
+    '6b0b1e01-0000-4000-8000-000000000001'),
+  '42501', 'not authorized',
+  'CLOSE-4 une salle inventée est refusée');
+select throws_ok(
+  format($$select public.close_player_lobby_as_org(%L, %L, %L)$$,
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select l.id from public.player_lobbies l
+      where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000b'
+      order by l.id limit 1),
+    '6b0b1e01-0000-4000-8000-000000000001'),
+  '42501', 'not authorized',
+  'CLOSE-5 la salle du VOISIN est refusée du MÊME mot : personne ne compte l''activité d''en face une requête à la fois');
+select is(
+  (select l.status from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'duo')),
+  'lobby',
+  'CLOSE-6 aucun de ces cinq refus n''a rien écrit');
+
+-- ── LE GESTE NOMINAL ──────────────────────────────────────────
+select is(
+  public.close_player_lobby_as_org(
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    '6b0b1e01-0000-4000-8000-000000000001'),
+  '{"state": "ok", "closed": true}'::jsonb,
+  'CLOSE-7 le propriétaire ferme une salle de sa maison');
+select is(
+  (select l.status from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')),
+  'closed',
+  'CLOSE-8 et la base le sait');
+
+-- ── LA PLACE EST RENDUE À L'INSTANT ───────────────────────────
+-- LE CŒUR DU LOT. B est saturée depuis QUOTA-2 ; on ferme UNE de ses salles et
+-- la création repasse, sans qu'aucun cron soit passé et sans attendre aucun TTL.
+-- C'est ce que « réversible » veut dire, et c'est ce qui change le rapport de
+-- forces : vingt clics défont ce que vingt requêtes ont fait.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000b', 'bande', 4,
+     repeat('b9', 32), 'Avant fermeture'))->>'state',
+  'quota',
+  'CLOSE-9 contrôle de portée : B est bien encore saturée');
+select is(
+  public.close_player_lobby_as_org(
+    '6b0b1e00-0000-4000-8000-00000000000b',
+    (select l.id from public.player_lobbies l
+      where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000b'
+        and l.status = 'lobby'
+      order by l.id limit 1),
+    '6b0b1e01-0000-4000-8000-000000000004'),
+  '{"state": "ok", "closed": true}'::jsonb,
+  'CLOSE-10 le propriétaire de B ferme UNE salle');
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000b', 'bande', 4,
+     repeat('b9', 32), 'Après fermeture'))->>'state',
+  'created',
+  'CLOSE-11 … et la place est rendue À L''INSTANT : la création repasse');
+
+-- ── UNE SALLE VERROUILLÉE SE FERME AUSSI ──────────────────────
+-- `kick` et `leave` refusent d'écrire sur une partie commencée, et c'est juste :
+-- eux arbitrent entre joueurs. Le commerçant, lui, arbitre chez lui — et
+-- l'attaque démontrée produit précisément une salle VERROUILLÉE, donc s'arrêter
+-- à « lobby » raterait le seul cas pour lequel cette RPC existe.
+select is(
+  public.close_player_lobby_as_org(
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'frais'),
+    '6b0b1e01-0000-4000-8000-000000000002'),
+  '{"state": "ok", "closed": true}'::jsonb,
+  'CLOSE-12 l''ÉDITEUR ferme une salle VERROUILLÉE : c''est la forme même de la salle-squat');
+select is(
+  (select l.status from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'frais')),
+  'closed',
+  'CLOSE-13 … et la partie s''arrête pour de bon');
+-- LES JOUEURS LE CONSTATENT PAR `lobby_state`, sans qu'aucun état nouveau ait eu
+-- à exister : la salle rend `closed`, comme quand un hôte s'en va.
+select is(
+  (public.lobby_state(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'frais'),
+     repeat('82', 32)))->>'status',
+  'closed',
+  'CLOSE-14 le joueur resté dedans le voit, et ne lit aucun état inventé pour l''occasion');
+
+-- ── LA DATE DE MORT RECULE, ELLE N'AVANCE JAMAIS (ADR-111) ────
+select ok(
+  (select l.expires_at from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'frais'))
+  < now() + interval '1 hour',
+  'CLOSE-15 la date de mort est ramenée à l''instant de la fermeture, pas laissée à l''heure du verrouillage');
+select ok(
+  (select l.expires_at > l.created_at from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'frais')),
+  'CLOSE-16 … et elle reste APRÈS la naissance : clock_timestamp() et non now(), sinon le check tombait sur une salle créée et fermée dans la même transaction');
+
+-- ── L'IDEMPOTENCE N'ÉCRIT RIEN ET NE JOURNALISE RIEN ──────────
+select is(
+  public.close_player_lobby_as_org(
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    '6b0b1e01-0000-4000-8000-000000000001'),
+  '{"state": "ok", "closed": false}'::jsonb,
+  'CLOSE-17 fermer une salle DÉJÀ CLOSE est un succès muet, pas une erreur');
+-- LA SALLE MORTE AUSSI — et surtout, sa date de mort NE BOUGE PAS. La repousser
+-- reculerait sa purge : l'exact contraire de ce que le champ signifie.
+create temporary table lb_mort as
+  select l.expires_at from public.player_lobbies l
+   where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'mort');
+select is(
+  public.close_player_lobby_as_org(
+    '6b0b1e00-0000-4000-8000-00000000000a',
+    (select (j->>'lobby_id')::uuid from lb where nom = 'mort'),
+    '6b0b1e01-0000-4000-8000-000000000001'),
+  '{"state": "ok", "closed": false}'::jsonb,
+  'CLOSE-18 fermer une salle MORTE aussi');
+select is(
+  (select l.expires_at from public.player_lobbies l
+    where l.id = (select (j->>'lobby_id')::uuid from lb where nom = 'mort')),
+  (select expires_at from lb_mort),
+  'CLOSE-19 … et sa date de mort n''a PAS bougé : repousser un cadavre reculerait sa purge');
+
+-- ── LE JOURNAL PORTE LE GESTE, PAS LES GENS ───────────────────
+select is(
+  (select a.actor from public.audit_logs a
+    where a.action = 'lobby.closed_by_org'
+      and a.metadata->>'lobby_id'
+          = (select j->>'lobby_id' from lb where nom = 'kick')),
+  '6b0b1e01-0000-4000-8000-000000000001',
+  'CLOSE-20 la ligne d''audit porte le nom de la personne, vérifié en SQL — pas une déclaration sur l''honneur');
+select is(
+  (select a.metadata from public.audit_logs a
+    where a.action = 'lobby.closed_by_org'
+      and a.metadata->>'lobby_id'
+          = (select j->>'lobby_id' from lb where nom = 'kick')),
+  pg_catalog.jsonb_build_object(
+    'lobby_id', (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    'statut_avant', 'lobby',
+    'membres', 3),
+  'CLOSE-21 … le statut d''AVANT et le NOMBRE de gens dedans, et rien de plus');
+select is(
+  (select pg_catalog.count(*)::integer from public.audit_logs a
+    where a.action = 'lobby.closed_by_org'
+      and a.metadata->>'lobby_id'
+          = (select j->>'lobby_id' from lb where nom = 'kick')),
+  1,
+  'CLOSE-22 fermer deux fois ne journalise QU''UNE fois : un journal qui compte les non-gestes devient illisible');
+select ok(
+  (select a.metadata::text from public.audit_logs a
+    where a.action = 'lobby.closed_by_org'
+      and a.metadata->>'lobby_id'
+          = (select j->>'lobby_id' from lb where nom = 'kick'))
+  not like '%' || (select j->>'join_code' from lb where nom = 'kick') || '%',
+  'CLOSE-23 le journal ne grave pas le code de partage…');
+select ok(
+  (select a.metadata::text from public.audit_logs a
+    where a.action = 'lobby.closed_by_org'
+      and a.metadata->>'lobby_id'
+          = (select j->>'lobby_id' from lb where nom = 'kick'))
+  not like '%Hôte Kick%',
+  'CLOSE-24 … ni les pseudos : ce que l''écran refuse de montrer, le journal ne le garde pas non plus');
+
+-- ── ET LA SALLE FERMÉE DISPARAÎT DE L'ÉCRAN ───────────────────
+select is(
+  (select pg_catalog.count(*)::integer
+     from pg_catalog.jsonb_array_elements(
+            public.org_player_lobbies(
+              '6b0b1e00-0000-4000-8000-00000000000a')->'lobbies') as t(e)
+    where (t.e->>'id')::uuid in (
+      (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+      (select (j->>'lobby_id')::uuid from lb where nom = 'frais'))),
+  0,
+  'CLOSE-25 les deux salles fermées ont quitté l''écran de supervision : les deux RPC racontent la même chose');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 13. ACL, RLS, GRANTS
 -- ════════════════════════════════════════════════════════════
 
 select ok(
@@ -1083,7 +1564,7 @@ select is(
   '',
   'ACL-4 ni anon ni authenticated ne gardent le moindre privilège sur les deux tables');
 
--- LES SIX RPC : `service_role` et lui seul.
+-- LES NEUF RPC : `service_role` et lui seul.
 select ok(has_function_privilege('service_role', 'public.create_player_lobby(uuid,text,integer,text,text)', 'EXECUTE'), 'ACL-5 le serveur ouvre un lobby');
 select ok(not has_function_privilege('authenticated', 'public.create_player_lobby(uuid,text,integer,text,text)', 'EXECUTE'), 'ACL-6 un commerçant ne peut pas ouvrir un lobby au nom d''un joueur');
 select ok(not has_function_privilege('anon', 'public.create_player_lobby(uuid,text,integer,text,text)', 'EXECUTE'), 'ACL-7 anon non plus — sinon le quota se contourne avec la clé publique');
@@ -1115,6 +1596,19 @@ select ok(not has_function_privilege('anon', 'public.player_lobby_rang(uuid,time
 select ok(not has_function_privilege('authenticated', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-29 la génération de code n''est pas appelable par un commerçant');
 select ok(not has_function_privilege('anon', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-30 ni par anon');
 
+-- LES DEUX RPC COMMERÇANT. Le point qui compte : `authenticated` — le rôle des
+-- comptes marchands — n'y a PAS accès. Elles sont écrites POUR le commerçant,
+-- mais elles passent par le serveur, qui seul sait de quelle organisation il
+-- tient l'écran. Les ouvrir à `authenticated` rendrait le `p_organization_id`
+-- déclaratif : n'importe quel compte connecté lirait les salles de n'importe
+-- quelle maison en changeant un uuid.
+select ok(has_function_privilege('service_role', 'public.org_player_lobbies(uuid)', 'EXECUTE'), 'ACL-31 le serveur lit la liste de supervision');
+select ok(not has_function_privilege('authenticated', 'public.org_player_lobbies(uuid)', 'EXECUTE'), 'ACL-32 un commerçant ne l''appelle PAS lui-même : le p_organization_id deviendrait déclaratif');
+select ok(not has_function_privilege('anon', 'public.org_player_lobbies(uuid)', 'EXECUTE'), 'ACL-33 anon non plus — sinon la clé publique compterait les salles de tout le monde');
+select ok(has_function_privilege('service_role', 'public.close_player_lobby_as_org(uuid,uuid,uuid)', 'EXECUTE'), 'ACL-34 le serveur ferme une salle');
+select ok(not has_function_privilege('authenticated', 'public.close_player_lobby_as_org(uuid,uuid,uuid)', 'EXECUTE'), 'ACL-35 un commerçant ne l''appelle pas en direct, même habilité');
+select ok(not has_function_privilege('anon', 'public.close_player_lobby_as_org(uuid,uuid,uuid)', 'EXECUTE'), 'ACL-36 anon non plus — sinon fermer les salles des autres coûterait une requête');
+
 -- LA RÈGLE CATALOGUE CHECK ⇒ EXECUTE, appliquée aux deux tables neuves. Un
 -- `check` s'évalue AVEC LES PRIVILÈGES DU RÔLE QUI ÉCRIT : si l'un d'eux
 -- appelait une fonction du dépôt, il faudrait accorder EXECUTE à ce rôle, et
@@ -1137,7 +1631,7 @@ select is(
       and con.contype = 'c'
       and c.relname in ('player_lobbies', 'player_lobby_members')),
   '',
-  'ACL-31 aucun check des deux tables n''appelle une fonction du dépôt : rien à accorder, rien à oublier');
+  'ACL-37 aucun check des deux tables n''appelle une fonction du dépôt : rien à accorder, rien à oublier');
 -- CONTRÔLE DE PORTÉE : sans lui, l'assertion ci-dessus serait verte le jour où
 -- les deux tables disparaîtraient du schéma. Neuf `check` mesurés.
 select cmp_ok(
@@ -1148,7 +1642,7 @@ select cmp_ok(
     where n.nspname = 'public' and con.contype = 'c'
       and c.relname in ('player_lobbies', 'player_lobby_members')),
   '>=', 8,
-  'ACL-32 la règle porte bien sur les check réellement posés, pas sur un ensemble vide');
+  'ACL-38 la règle porte bien sur les check réellement posés, pas sur un ensemble vide');
 
 select * from finish();
 rollback;
