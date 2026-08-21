@@ -441,7 +441,9 @@ test.describe("vitrine — dashboard commerçant", () => {
       page.getByRole("heading", { name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
 
-    await expect(page.getByLabel("Adresse")).toHaveValue("e2e-comptoir");
+    await expect(
+      page.getByLabel("Adresse", { exact: true }),
+    ).toHaveValue("e2e-comptoir");
     await expect(page.getByText("Publiée")).toBeVisible();
 
     // LA PHRASE D'ATTENTE EST MORTE AVEC L11. L'encart ne dit plus « n'imprimez

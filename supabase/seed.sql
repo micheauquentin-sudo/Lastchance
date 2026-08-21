@@ -1420,17 +1420,18 @@ values (
   '{"couleurs":{"primary":"#7c3aed","secondary":"#f59e0b"},'
   '"polices":{"heading":"elegant","body":"sans"},'
   '"style_cartes":"grille",'
-  -- LES DEUX PORTES SONT EN QUEUE D'ORDRE (VIT-3), et il FAUT les y écrire :
-  -- `ordre_blocs` est une permutation PARTIELLE, donc un bloc absent de la
-  -- liste est un bloc MASQUÉ. Cette vitrine portait un ordre explicite depuis
-  -- VIT-1a ; sans cette ligne, `reserver` et `experiences` en seraient tombés
-  -- par omission — les portes seraient bien rendues par la RPC et invisibles à
-  -- l'écran, exactement le mode d'échec qui ressemble à un succès.
+  -- LES TROIS BLOCS SONT EN QUEUE D'ORDRE (VIT-3 puis VIT-4), et il FAUT les y
+  -- écrire : `ordre_blocs` est une permutation PARTIELLE, donc un bloc absent
+  -- de la liste est un bloc MASQUÉ. Cette vitrine portait un ordre explicite
+  -- depuis VIT-1a ; sans cette ligne, `reserver`, `experiences` et `social` en
+  -- seraient tombés par omission — les portes et le contenu « À la une »
+  -- seraient bien rendus par la RPC et invisibles à l'écran, exactement le
+  -- mode d'échec qui ressemble à un succès.
   --
   -- EN QUEUE et non en tête : la carte reste ce que le visiteur vient lire, les
-  -- portes sont ce qu'il découvre ensuite.
+  -- portes et le contenu mis en avant sont ce qu'il découvre ensuite.
   '"ordre_blocs":["accroche","cartes","histoire","horaires",'
-  '"reserver","experiences"]}'::jsonb
+  '"reserver","experiences","social"]}'::jsonb
 )
 on conflict (id) do nothing;
 

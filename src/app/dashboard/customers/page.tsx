@@ -161,7 +161,7 @@ export default async function CustomersPage({
       </form>
 
       {reserveCount > 0 || venuCount > 0 ? (
-        <p className="-mt-3 mb-6 text-sm text-zinc-500">
+        <p className="-mt-3 mb-6 text-sm text-zinc-600">
           Parmi vos abonnés newsletter :{" "}
           <span className="font-semibold text-zinc-700 tabular-nums">
             {reserveCount}
