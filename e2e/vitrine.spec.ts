@@ -716,6 +716,137 @@ test.describe("vitrine — dashboard commerçant", () => {
   });
 
   /**
+   * L'ÉCRAN DE TRADUCTION (VIT-5 / L15) — poser un anglais, puis le retirer.
+   *
+   * ── CE TEST NE TOUCHE QUE CE QU'IL A CRÉÉ, ET C'EST LA RÈGLE DU FICHIER ──
+   *
+   * Les dix-neuf traductions du seed sur `e2e-comptoir` sont un INVARIANT de
+   * couverture, et `e2e-traduit` est en lecture seule pour tout le monde. Ce
+   * test crée donc sa PROPRE fiche, horodatée, et ne pose puis ne retire un
+   * anglais que sur elle. Aucune ligne du seed n'est lue, écrite ni comptée.
+   *
+   * Il n'asserte AUCUN compte exact non plus — ni dans la jauge, ni ailleurs :
+   * les projets Playwright tournent en parallèle sur la même base, et chaque
+   * fiche créée par les tests voisins déplace le total. C'est la FORME du
+   * chiffre qui est vérifiée (« N champs sur M »), pas sa valeur, exactement
+   * comme le compteur d'ouvertures plus haut.
+   *
+   * La fiche créée reste en base à la fin, non traduite — comme celles des
+   * autres tests du dashboard. Seul l'anglais posé par ce test est repris, ce
+   * qui laisse la couverture du seed strictement où elle était.
+   */
+  test("traductions : traduire le nom d'une fiche créée, puis retirer l'anglais", async ({
+    page,
+  }) => {
+    const marque = Date.now();
+    const nomCarte = `Traductions E2E ${marque}`;
+    const nomRubrique = `Rubrique trad ${marque}`;
+    const nomFiche = `Plat à traduire ${marque}`;
+
+    // ── La matière : une carte, une rubrique, une fiche, par l'éditeur réel ──
+    await page.goto("/dashboard/vitrine");
+    await expect(page.getByRole("heading", { name: "Vitrine" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByLabel("Nom de la carte").first().fill(nomCarte);
+    await page.getByRole("button", { name: "Créer la carte" }).click();
+    await expect(page.getByRole("heading", { name: nomCarte })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Motif du test de création plus haut : deux conditions pour retomber sur
+    // la `Card` de la carte et non sur le conteneur des flèches d'ordre.
+    const carteCard = page
+      .locator("div")
+      .filter({ has: page.getByRole("heading", { name: nomCarte }) })
+      .filter({ has: page.getByLabel("Nouvelle rubrique") })
+      .last();
+
+    await carteCard.getByLabel("Nouvelle rubrique").fill(nomRubrique);
+    await carteCard.getByRole("button", { name: "Ajouter" }).first().click();
+    await expect(carteCard.getByText(nomRubrique)).toBeVisible({
+      timeout: 20_000,
+    });
+
+    const rubriqueLi = page
+      .locator("li")
+      .filter({ hasText: nomRubrique })
+      .last();
+    await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
+    await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
+    await expect(
+      page.locator("li").filter({ hasText: nomFiche }).last(),
+    ).toBeVisible({ timeout: 20_000 });
+
+    // ── L'écran de traduction ──
+    await page.goto("/dashboard/vitrine/traductions");
+    await expect(
+      page.getByRole("heading", { name: "Où en est votre anglais" }),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // LA JAUGE PORTE DES CHIFFRES, et elle dit la règle du sélecteur. Les deux
+    // sont assertés par leur FORME : la valeur bouge à chaque fiche créée par
+    // les tests voisins.
+    await expect(
+      page.getByText(/\d+ champs? sur \d+ traduits? et à jour/),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/L'anglais se propose aux visiteurs à partir de \d+ %/),
+    ).toBeVisible();
+
+    // L'ÉTIQUETTE PORTE LE NOM FRANÇAIS DE LA FICHE, horodaté : elle est donc
+    // unique sur un écran qui liste toutes les fiches du commerce, sans aucun
+    // `nth()` à tenir d'accord avec l'ordre du rendu.
+    const libelle = `Anglais : Nom — ${nomFiche}`;
+    const saisie = page.getByLabel(libelle);
+    await expect(saisie).toBeVisible({ timeout: 20_000 });
+
+    // Le bloc du champ : ancré sur SA saisie, donc insensible aux autres
+    // fiches — c'est lui qui porte le badge d'état.
+    const bloc = page
+      .locator("div")
+      .filter({ has: page.getByLabel(libelle) })
+      .last();
+    await expect(bloc.getByText("Pas encore traduit")).toBeVisible();
+
+    // Le retrait n'existe que sur une traduction posée : son ABSENCE est ici la
+    // preuve qu'aucune ligne n'existe encore pour ce champ.
+    const retirer = page.getByRole("button", {
+      name: `Retirer l'anglais : Nom — ${nomFiche}`,
+    });
+    await expect(retirer).toHaveCount(0);
+
+    // ── Traduire ──
+    await saisie.fill(`Test dish ${marque}`);
+    await bloc.getByRole("button", { name: "Traduire" }).click();
+
+    // La traduction est FRAÎCHE d'emblée : elle vient d'être écrite sur le
+    // français courant. Le bouton de retrait apparaît dans le même mouvement.
+    await expect(retirer).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page
+        .locator("div")
+        .filter({ has: page.getByLabel(libelle) })
+        .last()
+        .getByText("À jour"),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByLabel(libelle)).toHaveValue(`Test dish ${marque}`);
+
+    // ── Retirer, et retrouver l'état d'avant ──
+    await retirer.click();
+    await expect(retirer).toHaveCount(0, { timeout: 20_000 });
+    await expect(
+      page
+        .locator("div")
+        .filter({ has: page.getByLabel(libelle) })
+        .last()
+        .getByText("Pas encore traduit"),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByLabel(libelle)).toHaveValue("");
+  });
+
+  /**
    * LES QR CONTEXTUELS — le choix du contexte, les exemplaires, la planche.
    *
    * `window.print()` n'est JAMAIS déclenché : Playwright ne sait pas fermer la

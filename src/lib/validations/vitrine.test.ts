@@ -7,7 +7,9 @@ import { VITRINE_BLOCS } from "@/lib/vitrine";
 import {
   createVitrineCarteSchema,
   deleteVitrineContenuSchema,
+  deleteVitrineTraductionSchema,
   importVitrineCarteSchema,
+  setVitrineTraductionSchema,
   setVitrineContenuSchema,
   reorderVitrineFichesSchema,
   saveVitrineSettingsSchema,
@@ -721,5 +723,170 @@ describe("importVitrineCarteSchema — borne de la chaîne brute", () => {
     const enorme = `{"pad":"${"x".repeat(140_000)}"}`;
     const verdict = importVitrineCarteSchema.safeParse({ import: enorme });
     expect(verdict.success).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LES TRADUCTIONS (VIT-5, lot L15)
+// ────────────────────────────────────────────────────────────
+
+const CIBLE_ID = "00000000-0000-4000-8000-0000000000b1";
+const VERSION = "2026-08-20T10:00:00+00:00";
+
+function traductionValide() {
+  return {
+    cible_type: "item",
+    cible_id: CIBLE_ID,
+    champ: "description",
+    texte: "Cream and hazelnuts.",
+    version: VERSION,
+  };
+}
+
+describe("setVitrineTraductionSchema — les vocabulaires sont FERMÉS", () => {
+  it("accepte une traduction complète et détoure le texte", () => {
+    const res = setVitrineTraductionSchema.safeParse({
+      ...traductionValide(),
+      texte: "  Cream and hazelnuts.  ",
+    });
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    // Détouré comme la RPC détoure : `char_length(btrim(texte))` est ce que le
+    // `check` mesure, et mesurer autrement ferait refuser en base un texte
+    // accepté ici.
+    expect(res.data.texte).toBe("Cream and hazelnuts.");
+  });
+
+  it("refuse un `cible_type` ou un `champ` hors vocabulaire", () => {
+    for (const cible of ["organisation", "", "ITEM", null, 42]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        cible_type: cible,
+      });
+      expect(res.success, String(cible)).toBe(false);
+    }
+    for (const champ of ["prix_affiche", "slug", "", null]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        champ,
+      });
+      expect(res.success, String(champ)).toBe(false);
+    }
+  });
+
+  it("refuse un identifiant de cible qui n'est pas un uuid", () => {
+    for (const id of ["i1", "", null, "00000000-0000-4000-8000"]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        cible_id: id,
+      });
+      expect(res.success, String(id)).toBe(false);
+    }
+  });
+
+  it("refuse un texte VIDE — le vide ne vaut pas un retrait", () => {
+    // Doctrine de la migration L15 : le retrait est une SECONDE PORTE, pour
+    // qu'un texte perdu en chemin n'efface pas un contenu publié.
+    for (const texte of ["", "   ", "\n\t", null, undefined]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        texte,
+      });
+      expect(res.success, JSON.stringify(texte)).toBe(false);
+    }
+  });
+
+  it("refuse au-delà de 2000 caractères, accepte à 2000 pile", () => {
+    const pile = setVitrineTraductionSchema.safeParse({
+      ...traductionValide(),
+      texte: "x".repeat(2000),
+    });
+    expect(pile.success).toBe(true);
+    const trop = setVitrineTraductionSchema.safeParse({
+      ...traductionValide(),
+      texte: "x".repeat(2001),
+    });
+    expect(trop.success).toBe(false);
+  });
+
+  it("accepte les formes de version que Postgres écrit, et rien d'autre", () => {
+    for (const version of [
+      "2026-08-20T10:00:00+00:00",
+      "2026-08-20T10:00:00Z",
+      "2026-08-20T10:00:00.123456+02:00",
+    ]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        version,
+      });
+      expect(res.success, version).toBe(true);
+      if (!res.success) continue;
+      // TELLE QUELLE : aucun reformatage, sous peine de faire comparer égaux
+      // deux instants distants d'une microseconde.
+      expect(res.data.version).toBe(version);
+    }
+    for (const version of ["", "hier", null, "x".repeat(65)]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        version,
+      });
+      expect(res.success, String(version)).toBe(false);
+    }
+  });
+
+  it("une clé inconnue est REFUSÉE, elle n'est pas ignorée", () => {
+    // `.strict()` garde le jour où quelqu'un recopie
+    // `Object.fromEntries(formData)` : un `lang` ou un `organization_id` posté
+    // passerait sinon en silence.
+    for (const cle of ["lang", "organization_id", "deleted"]) {
+      const res = setVitrineTraductionSchema.safeParse({
+        ...traductionValide(),
+        [cle]: "en",
+      });
+      expect(res.success, cle).toBe(false);
+    }
+  });
+});
+
+describe("deleteVitrineTraductionSchema — la cible, et rien de plus", () => {
+  it("accepte les trois clés du retrait", () => {
+    const res = deleteVitrineTraductionSchema.safeParse({
+      cible_type: "settings",
+      cible_id: CIBLE_ID,
+      champ: "accroche",
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("REFUSE `texte` et `version` — le retrait n'en dépend pas", () => {
+    // Les exiger aurait fait échouer le geste le jour où la source a bougé,
+    // c'est-à-dire le jour où l'on veut retirer une traduction devenue fausse.
+    const res = deleteVitrineTraductionSchema.safeParse({
+      cible_type: "settings",
+      cible_id: CIBLE_ID,
+      champ: "accroche",
+      texte: "Neighbourhood bistro",
+      version: VERSION,
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("ferme les mêmes vocabulaires que la pose", () => {
+    // Une divergence entre les deux portes serait un trou : ce qu'on ne peut
+    // pas écrire, on ne doit pas pouvoir l'effacer.
+    expect(
+      deleteVitrineTraductionSchema.safeParse({
+        cible_type: "quoi",
+        cible_id: CIBLE_ID,
+        champ: "nom",
+      }).success,
+    ).toBe(false);
+    expect(
+      deleteVitrineTraductionSchema.safeParse({
+        cible_type: "item",
+        cible_id: "i1",
+        champ: "nom",
+      }).success,
+    ).toBe(false);
   });
 });

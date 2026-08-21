@@ -144,6 +144,63 @@ export function selecteurLanguesOuvert(coverage: VitrineLangCoverage): boolean {
 }
 
 // ────────────────────────────────────────────────────────────
+// LE CALQUE DE TRADUCTION (VIT-5) — miroir des `check` de
+// `vitrine_translations` (20261012120000)
+//
+// Ces trois vocabulaires sont ceux que l'ÉCRAN poste en retour : le tableau de
+// traduction rend une ligne par (cible, champ), et chaque ligne réécrit
+// exactement les valeurs qu'elle a reçues. Les fermer ici sert donc deux fois —
+// à refuser une valeur forgée avant l'aller-retour, et à typer les vues.
+// ────────────────────────────────────────────────────────────
+
+/** Les quatre porteurs de texte traduisible — `check (cible_type in …)`. */
+export const VITRINE_TRADUCTION_CIBLES = [
+  "settings",
+  "menu",
+  "categorie",
+  "item",
+] as const;
+export type CibleTraductionVitrine = (typeof VITRINE_TRADUCTION_CIBLES)[number];
+
+/**
+ * Les cinq champs traduisibles, TOUS TYPES DE CIBLE CONFONDUS.
+ *
+ * La base tient EN PLUS le couplage type ↔ champ
+ * (`vitrine_translations_champ_par_cible` : `settings` porte accroche/histoire/
+ * horaires_texte, `menu` et `categorie` portent `nom`, `item` porte nom et
+ * description). Ce couplage n'est PAS recopié ici, et c'est délibéré : les deux
+ * RPC d'écriture le vérifient et rendent `invalid_champ`, un refus nommé que
+ * l'action traduit en message. Le doubler en TypeScript aurait donné deux
+ * tables de vérité à tenir d'accord pour un verdict identique — exactement ce
+ * que le vocabulaire réservé des slugs a déjà refusé de faire.
+ */
+export const VITRINE_TRADUCTION_CHAMPS = [
+  "accroche",
+  "histoire",
+  "horaires_texte",
+  "nom",
+  "description",
+] as const;
+export type ChampTraductionVitrine = (typeof VITRINE_TRADUCTION_CHAMPS)[number];
+
+/**
+ * Les trois états d'un champ traduisible, tels que `vitrine_translation_state`
+ * les calcule. TROIS ET NON DEUX : « il reste des plats à traduire » et « vos
+ * modifications d'hier ont périmé six fiches » sont deux écrans différents.
+ */
+export const VITRINE_TRADUCTION_ETATS = ["frais", "perime", "absent"] as const;
+export type EtatTraductionVitrine = (typeof VITRINE_TRADUCTION_ETATS)[number];
+
+/**
+ * La borne du texte traduit : `char_length(btrim(texte)) between 1 and 2000`.
+ *
+ * Au-dessus du plus long champ traduisible (`histoire`, 1200) : une traduction
+ * est parfois plus longue que sa source, et refuser sur la borne du français
+ * aurait fait échouer un anglais correct.
+ */
+export const VITRINE_TRADUCTION_TEXTE_MAX = 2000;
+
+// ────────────────────────────────────────────────────────────
 // LES BORNES — miroir exact des `check` de la migration
 // ────────────────────────────────────────────────────────────
 
@@ -1381,4 +1438,286 @@ export function mapSetVitrineSlug(raw: unknown): SetVitrineSlugResult {
     created: root?.created === true,
     changed: root?.changed === true,
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// L'ÉTAT DE TRADUCTION, TEL QUE L'ÉCRAN LE LIT (VIT-5, lot L15)
+//
+// Lecture de `vitrine_translation_state` (20261016120000). Les noms de la base
+// sont ici TRADUITS en noms de vue (`cible_type` → `cibleType`) — seul endroit
+// du fichier où la règle « un seul jeu de noms » cède, et pour une raison : ces
+// valeurs ne sont pas des colonnes d'un formulaire, ce sont les propriétés d'un
+// tableau que React rend et reposte. Les clés POSTÉES, elles, gardent les noms
+// de la base (voir `setVitrineTraductionSchema`).
+// ════════════════════════════════════════════════════════════
+
+/** Une ligne du tableau : un champ d'une cible, son état, ses deux textes. */
+export interface TraductionChampView {
+  champ: ChampTraductionVitrine;
+  etat: EtatTraductionVitrine;
+  /**
+   * Le français COURANT — celui qui a périmé la traduction, jamais celui
+   * d'alors. `""` quand la RPC n'a pas retrouvé la source : voir
+   * `mapTraductionChamp`, la ligne reste montrée.
+   */
+  texteSource: string;
+  /** L'anglais stocké, PÉRIMÉ COMPRIS : une périmée se retouche. */
+  texteTraduit: string | null;
+}
+
+/** Un bloc du tableau : une carte, une rubrique, une fiche, ou les réglages. */
+export interface TraductionCibleView {
+  cibleType: CibleTraductionVitrine;
+  cibleId: string;
+  /** Le nom lisible — « Carte du soir », « Velouté », ou « Réglages ». */
+  libelle: string;
+  /**
+   * LA VERSION VUE : l'`updated_at` de la cible au moment de cette lecture.
+   *
+   * Elle est repostée TELLE QUELLE à l'enregistrement (`p_version_source`), et
+   * c'est tout le modèle : la traduction vaut pour la version du texte source
+   * que le commerçant avait sous les yeux. Si la source a bougé entre la
+   * lecture et l'envoi, la traduction naît PÉRIMÉE — ce qui est exact, et
+   * infiniment préférable à une fraîcheur déclarée sur un texte jamais lu.
+   *
+   * `""` si le document ne la porte pas : la ligne reste affichée (voir
+   * `mapTraductionCible`), et le schéma de l'action refuse l'enregistrement.
+   */
+  version: string;
+  champs: TraductionChampView[];
+}
+
+export interface TraductionEtatView {
+  /**
+   * LE RÉSUMÉ VIENT DE LA RPC, il n'est pas recompté depuis `cibles`.
+   *
+   * C'est le seul comptage qui porte sur TOUT le catalogue, cartes désactivées
+   * comprises, et l'écran l'affiche `frais / total` contre
+   * `SEUIL_COUVERTURE_SELECTEUR`. Le recalculer depuis la liste rendue aurait
+   * fait dépendre le chiffre de ce que ce mappeur a su lire.
+   */
+  resume: { total: number; frais: number; perimes: number; manquants: number };
+  cibles: TraductionCibleView[];
+}
+
+/**
+ * Le repli : rien à traduire, rien à montrer.
+ *
+ * FABRIQUÉ À CHAQUE APPEL et non partagé comme `VITRINE_INDISPONIBLE` : il
+ * porte un tableau, et une constante de module rendue N fois donnerait N
+ * appelants sur la même liste mutable.
+ */
+function traductionVide(): TraductionEtatView {
+  return {
+    resume: { total: 0, frais: 0, perimes: 0, manquants: 0 },
+    cibles: [],
+  };
+}
+
+const TRADUCTION_LIBELLE_INCONNU = "Sans titre";
+
+/**
+ * Une ligne de champ.
+ *
+ * ── CE QUI FAIT DISPARAÎTRE UNE LIGNE, ET CE QUI NE LE FAIT PAS ──
+ *
+ * Un `champ` ou un `etat` hors vocabulaire fait disparaître la ligne : la
+ * première valeur ne peut pas être repostée (le schéma de l'action la refuse),
+ * la seconde ne peut pas être rendue. C'est le motif de
+ * `motsDuVocabulaireVitrine` — l'inconnu est OMIS, jamais rendu tel quel.
+ *
+ * Un `texte_source` nul, LUI, NE LA FAIT PAS DISPARAÎTRE, et c'est le point
+ * délicat. La migration s'en explique : son `left join` laisse sortir un champ
+ * dont la source n'a pas été retrouvée « et [il] reste COMPTÉ — un `inner join`
+ * l'aurait fait disparaître de la liste tout en le laissant dans le résumé
+ * chiffré, soit un écran qui affirme "3 manquants" en n'en montrant que deux ».
+ * Le refaire ici rétablirait exactement l'incohérence que le SQL a refusée. La
+ * ligne sort donc avec une source vide, comptée comme les autres.
+ */
+function mapTraductionChamp(raw: unknown): TraductionChampView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+
+  const champ = asString(root.champ);
+  const etat = asString(root.etat);
+  if (
+    !champ ||
+    !(VITRINE_TRADUCTION_CHAMPS as readonly string[]).includes(champ)
+  ) {
+    return null;
+  }
+  if (
+    !etat ||
+    !(VITRINE_TRADUCTION_ETATS as readonly string[]).includes(etat)
+  ) {
+    return null;
+  }
+
+  return {
+    champ: champ as ChampTraductionVitrine,
+    etat: etat as EtatTraductionVitrine,
+    texteSource: asString(root.texte_source) ?? "",
+    texteTraduit: asString(root.texte_traduit),
+  };
+}
+
+/**
+ * Un bloc de cible.
+ *
+ * ── L'IDENTITÉ EST REQUISE, LE TEXTE NE L'EST PAS ──
+ *
+ * Sans `cible_type` connu ni `cible_id`, il n'y a ni clé de rendu ni cible à
+ * poster : le bloc est retiré, motif `mapFiche`. Le LIBELLÉ et la VERSION, eux,
+ * ne conditionnent rien de tout cela — la migration les calcule par jointure
+ * (`max(libelle)`) et prévoit explicitement qu'une jointure ratée ne fasse pas
+ * disparaître de ligne. Un libellé illisible vaut donc « Sans titre » et une
+ * version illisible vaut `""` : le bloc reste montré, reste compté, et c'est le
+ * schéma de l'action qui refusera l'enregistrement d'une ligne sans version —
+ * un message d'échec vaut mieux qu'un plat qui manque au tableau sans que le
+ * résumé chiffré bouge.
+ *
+ * Un bloc dont AUCUN champ n'a survécu est retiré : il ne resterait qu'un titre
+ * au-dessus de rien.
+ */
+function mapTraductionCible(raw: unknown): TraductionCibleView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+
+  const cibleType = asString(root.cible_type);
+  const cibleId = asString(root.cible_id);
+  if (
+    !cibleType ||
+    !(VITRINE_TRADUCTION_CIBLES as readonly string[]).includes(cibleType)
+  ) {
+    return null;
+  }
+  if (!cibleId) return null;
+
+  const champs: TraductionChampView[] = [];
+  for (const brut of asArray(root.champs)) {
+    const champ = mapTraductionChamp(brut);
+    if (champ) champs.push(champ);
+  }
+  if (champs.length === 0) return null;
+
+  return {
+    cibleType: cibleType as CibleTraductionVitrine,
+    cibleId,
+    libelle: asString(root.libelle) ?? TRADUCTION_LIBELLE_INCONNU,
+    version: asString(root.version) ?? "",
+    champs,
+  };
+}
+
+/**
+ * Lecture de `vitrine_translation_state`.
+ *
+ * ── LES COMPTEURS SONT BORNÉS PAR LE TOTAL ──
+ *
+ * Même raison qu'à `mapLangCoverage`, et elle vaut surtout pour `frais` :
+ * l'écran affiche `frais / total` contre `SEUIL_COUVERTURE_SELECTEUR`, et un
+ * document bricolé rendant `frais > total` annoncerait au commerçant que sa
+ * vitrine est traduite au-delà du seuil alors qu'elle ne l'est pas. Les deux
+ * autres sont bornés pour la même raison de cohérence, pas parce qu'un affichage
+ * en dépendrait.
+ *
+ * Un document illisible — absent, tronqué, `state` autre qu'`ok`, y compris
+ * l'`unavailable` d'une organisation inconnue — vaut le tableau VIDE et le
+ * résumé à zéro. C'est l'état que l'écran sait rendre (« rien à traduire »), et
+ * il ne promet rien.
+ */
+export function mapVitrineTraductionState(raw: unknown): TraductionEtatView {
+  const root = asRecord(raw);
+  if (!root || asString(root.state) !== "ok") return traductionVide();
+
+  const brut = asRecord(root.resume);
+  const total = Math.max(0, asInt(brut?.total_champs_traduisibles) ?? 0);
+  const borne = (valeur: unknown): number =>
+    Math.min(Math.max(0, asInt(valeur) ?? 0), total);
+
+  const cibles: TraductionCibleView[] = [];
+  for (const entree of asArray(root.cibles)) {
+    const cible = mapTraductionCible(entree);
+    if (cible) cibles.push(cible);
+  }
+
+  return {
+    resume: {
+      total,
+      frais: borne(brut?.traduits_frais),
+      perimes: borne(brut?.perimes),
+      manquants: borne(brut?.manquants),
+    },
+    cibles,
+  };
+}
+
+/**
+ * Les refus NOMMÉS des deux portes d'écriture, plus l'illisible.
+ *
+ * `error` n'existe pas dans le contrat SQL : il nomme ce que le contrat ne
+ * couvre pas — un jsonb illisible, une réponse tronquée. Motif
+ * `SetVitrineSlugResult`, et pour la même raison : replier sur `invalid_texte`
+ * aurait envoyé le commerçant corriger un texte correct.
+ */
+export type RefusTraductionVitrine =
+  | "invalid_cible"
+  | "invalid_lang"
+  | "invalid_champ"
+  | "invalid_texte"
+  | "error";
+
+export type UpsertVitrineTraductionResult =
+  | { state: RefusTraductionVitrine }
+  | { state: "ok"; created: boolean; changed: boolean };
+
+/**
+ * Le retrait ne peut pas rendre `invalid_texte` — il n'en poste aucun — mais son
+ * type le porte quand même : les deux portes partagent leurs refus, et donner à
+ * l'une un vocabulaire amputé aurait obligé l'action à distinguer deux tables de
+ * messages pour un jeu de refus identique.
+ */
+export type DeleteVitrineTraductionResult =
+  | { state: RefusTraductionVitrine }
+  | { state: "ok"; deleted: boolean };
+
+/** Les quatre refus nommés, ou `error`. Rendu `null` sur un succès. */
+function refusTraduction(raw: unknown): RefusTraductionVitrine | null {
+  const root = asRecord(raw);
+  const state = root ? asString(root.state) : null;
+  if (
+    state === "invalid_cible" ||
+    state === "invalid_lang" ||
+    state === "invalid_champ" ||
+    state === "invalid_texte"
+  ) {
+    return state;
+  }
+  return state === "ok" ? null : "error";
+}
+
+/** Lecture d'`upsert_vitrine_translation`. Un document illisible vaut `error`. */
+export function mapUpsertVitrineTraduction(
+  raw: unknown,
+): UpsertVitrineTraductionResult {
+  const refus = refusTraduction(raw);
+  if (refus) return { state: refus };
+  const root = asRecord(raw);
+  return {
+    state: "ok",
+    created: root?.created === true,
+    // `changed: false` est un SUCCÈS : le texte posté était déjà celui qui est
+    // stocké, pour la même version source. La RPC n'écrit rien et le dit.
+    changed: root?.changed === true,
+  };
+}
+
+/** Lecture de `delete_vitrine_translation`. Idempotente : `deleted` peut être faux. */
+export function mapDeleteVitrineTraduction(
+  raw: unknown,
+): DeleteVitrineTraductionResult {
+  const refus = refusTraduction(raw);
+  if (refus) return { state: refus };
+  const root = asRecord(raw);
+  return { state: "ok", deleted: root?.deleted === true };
 }

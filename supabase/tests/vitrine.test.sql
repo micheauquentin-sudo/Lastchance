@@ -824,6 +824,21 @@ insert into public.organization_module_grants
 values ('f1000000-0000-4000-8000-00000000000e', 'vitrine', 'pass', 'backoffice',
         now() - interval '1 day', now() + interval '365 days');
 
+-- UN ACTEUR POUR E (VIT-5, point M2 de la revue L15). Les deux portes du calque
+-- exigent désormais un membre `owner|editor` vérifié EN SQL : sans lui, toute
+-- cette section lèverait 42501 avant d'atteindre ce qu'elle prouve. L'ÉDITEUR
+-- suffit ici — le rôle est tranché dans la fixture L15, qui porte aussi un
+-- caissier.
+insert into auth.users
+  (id, aud, role, email, encrypted_password, created_at, updated_at)
+values
+  ('f1000000-0000-4000-8000-000000000f0e', 'authenticated', 'authenticated',
+   'editeur-e@test.local', '', now(), now());
+
+insert into public.organization_members (organization_id, user_id, role) values
+  ('f1000000-0000-4000-8000-00000000000e',
+   'f1000000-0000-4000-8000-000000000f0e', 'editor');
+
 -- `histoire` et `horaires_texte` restent NULLES, et c'est une assertion
 -- déguisée : un champ vide n'est pas traduisible, donc le total doit valoir six
 -- et non huit. Les compter aurait plafonné pour toujours la couverture d'une
@@ -945,35 +960,40 @@ select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-000000000401', 'en', 'accroche',
   'The wine bar on the square.',
   (select s.updated_at from public.vitrine_settings s
-    where s.id = 'f1000000-0000-4000-8000-000000000401')) ->> 'created', 'true',
+    where s.id = 'f1000000-0000-4000-8000-000000000401'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'created', 'true',
   'la première traduction d''un champ CRÉE sa ligne');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'menu',
   'f1000000-0000-4000-8000-000000000501', 'en', 'nom', 'Evening menu',
   (select m.updated_at from public.vitrine_menus m
-    where m.id = 'f1000000-0000-4000-8000-000000000501')) ->> 'state', 'ok',
+    where m.id = 'f1000000-0000-4000-8000-000000000501'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'state', 'ok',
   'le nom d''une carte se traduit');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'categorie',
   'f1000000-0000-4000-8000-000000000601', 'en', 'nom', 'Starters',
   (select k.updated_at from public.vitrine_categories k
-    where k.id = 'f1000000-0000-4000-8000-000000000601')) ->> 'state', 'ok',
+    where k.id = 'f1000000-0000-4000-8000-000000000601'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'state', 'ok',
   'le nom d''une rubrique se traduit');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'item',
   'f1000000-0000-4000-8000-000000000701', 'en', 'nom', 'Pumpkin velouté',
   (select i.updated_at from public.vitrine_items i
-    where i.id = 'f1000000-0000-4000-8000-000000000701')) ->> 'state', 'ok',
+    where i.id = 'f1000000-0000-4000-8000-000000000701'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'state', 'ok',
   'le nom d''une fiche se traduit');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'item',
   'f1000000-0000-4000-8000-000000000701', 'en', 'description', 'Light cream.',
   (select i.updated_at from public.vitrine_items i
-    where i.id = 'f1000000-0000-4000-8000-000000000701')) ->> 'state', 'ok',
+    where i.id = 'f1000000-0000-4000-8000-000000000701'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'state', 'ok',
   '… et sa description aussi, indépendamment de son nom');
 
 -- LA PÉRIMÉE, POSÉE PÉRIMÉE : sa version source est ANTÉRIEURE à celle de la
@@ -982,7 +1002,8 @@ select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'item',
   'f1000000-0000-4000-8000-000000000702', 'en', 'nom', 'Chickpea hummus',
   (select i.updated_at - interval '1 hour' from public.vitrine_items i
-    where i.id = 'f1000000-0000-4000-8000-000000000702')) ->> 'state', 'ok',
+    where i.id = 'f1000000-0000-4000-8000-000000000702'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'state', 'ok',
   'une traduction datée d''une version ANTÉRIEURE s''écrit sans protester — c''est la lecture qui l''ignorera');
 
 -- LE JOURNAL COMPTE LES GESTES, PAS LES NON-GESTES. Six écritures, six lignes ;
@@ -998,7 +1019,8 @@ select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'menu',
   'f1000000-0000-4000-8000-000000000501', 'en', 'nom', 'Evening menu',
   (select m.updated_at from public.vitrine_menus m
-    where m.id = 'f1000000-0000-4000-8000-000000000501')) ->> 'changed', 'false',
+    where m.id = 'f1000000-0000-4000-8000-000000000501'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'changed', 'false',
   'réécrire le MÊME texte pour la MÊME version ne change rien');
 
 select is(
@@ -1024,25 +1046,29 @@ select ok(
 -- indéchiffrable.
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'carte',
-  'f1000000-0000-4000-8000-000000000501', 'en', 'nom', 'X', now())
+  'f1000000-0000-4000-8000-000000000501', 'en', 'nom', 'X', now(),
+  'f1000000-0000-4000-8000-000000000f0e')
     ->> 'state', 'invalid_cible',
   'un type de cible hors des quatre niveaux est refusé sous son propre mot');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'menu',
-  'f1000000-0000-4000-8000-000000000501', 'fr', 'nom', 'Carte du soir', now())
+  'f1000000-0000-4000-8000-000000000501', 'fr', 'nom', 'Carte du soir', now(),
+  'f1000000-0000-4000-8000-000000000f0e')
     ->> 'state', 'invalid_lang',
   'le FRANÇAIS n''est pas une traduction : il est la référence, et cette table ne le stocke jamais');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'menu',
-  'f1000000-0000-4000-8000-000000000501', 'en', 'description', 'X', now())
+  'f1000000-0000-4000-8000-000000000501', 'en', 'description', 'X', now(),
+  'f1000000-0000-4000-8000-000000000f0e')
     ->> 'state', 'invalid_champ',
   'une carte n''a pas de description : le couplage type↔champ est refusé sous son propre mot');
 
 select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'menu',
-  'f1000000-0000-4000-8000-000000000501', 'en', 'nom', '   ', now())
+  'f1000000-0000-4000-8000-000000000501', 'en', 'nom', '   ', now(),
+  'f1000000-0000-4000-8000-000000000f0e')
     ->> 'state', 'invalid_texte',
   'un texte vide une fois détouré est refusé : une traduction blanche effacerait un nom de carte');
 
@@ -1063,14 +1089,16 @@ select throws_ok(
 select throws_ok(
   $$select public.upsert_vitrine_translation(
       'f1000000-0000-4000-8000-00000000000e', 'item',
-      'f1000000-0000-4000-8000-000000000301', 'en', 'nom', 'Stolen', now())$$,
+      'f1000000-0000-4000-8000-000000000301', 'en', 'nom', 'Stolen', now(),
+      'f1000000-0000-4000-8000-000000000f0e')$$,
   '42501', 'not authorized',
   'traduire la fiche d''un AUTRE locataire est refusé — la FK ne peut pas le refuser, la RPC le fait');
 
 select throws_ok(
   $$select public.upsert_vitrine_translation(
       'f1000000-0000-4000-8000-00000000000e', 'item',
-      'f1000000-0000-4000-8000-0000000009ff', 'en', 'nom', 'Fantôme', now())$$,
+      'f1000000-0000-4000-8000-0000000009ff', 'en', 'nom', 'Fantôme', now(),
+      'f1000000-0000-4000-8000-000000000f0e')$$,
   '42501', 'not authorized',
   '… et une cible INCONNUE rend le MÊME refus : distinguer ferait de cette RPC un oracle sur les identifiants d''autrui');
 
@@ -1362,7 +1390,8 @@ select is(public.upsert_vitrine_translation(
   'f1000000-0000-4000-8000-00000000000e', 'item',
   'f1000000-0000-4000-8000-000000000701', 'en', 'nom', 'Pumpkin velouté',
   (select i.updated_at from public.vitrine_items i
-    where i.id = 'f1000000-0000-4000-8000-000000000701')) ->> 'created', 'false',
+    where i.id = 'f1000000-0000-4000-8000-000000000701'),
+  'f1000000-0000-4000-8000-000000000f0e') ->> 'created', 'false',
   'rafraîchir une traduction périmée MET À JOUR sa ligne, il n''en crée pas une seconde');
 
 select is(
@@ -1386,11 +1415,11 @@ select ok(not has_table_privilege('authenticated', 'public.vitrine_translations'
 select ok(has_table_privilege('service_role', 'public.vitrine_translations', 'SELECT'),
   'le serveur, lui, lit la table — c''est lui qui sert les RPC');
 
-select ok(has_function_privilege('service_role', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'),
+select ok(has_function_privilege('service_role', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'),
   'seul le serveur pose une traduction');
-select ok(not has_function_privilege('authenticated', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'),
+select ok(not has_function_privilege('authenticated', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'),
   'le marchand ne contourne pas l''action serveur pour écrire de l''anglais sur sa carte');
-select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'),
+select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'),
   'anon n''écrit aucune traduction');
 select ok(has_function_privilege('service_role', 'public.vitrine_translation_state(uuid)', 'EXECUTE'),
   'seul le serveur rend l''état de traduction');
@@ -2310,6 +2339,896 @@ select is(
   public.vitrine_public_state('tap-portes') #>> '{portes,reserver,files,0,id}',
   'f1000000-0000-4000-8000-000000001330',
   '… et c''est bien l''identifiant de la file ouverte, celui que `/reserver/file/{id}` attend');
+
+
+
+
+-- ══ 15. L'ÉCRAN DE TRADUCTION : LE CONTRAT, ET LE RETRAIT (VIT-5, lot L15) ══
+--
+-- Ce que cette section prouve, et pourquoi chaque preuve existe :
+--
+--   1. LE CONTRAT DE SORTIE DE `vitrine_translation_state` EST EXACT, clé par
+--      clé, aux quatre rangs. C'est un contrat d'ÉCRAN : le front construit une
+--      liste à deux colonnes dessus, et une clé qui disparaît ne casse rien à la
+--      compilation — elle rend une colonne vide en production. Les quatre
+--      `results_eq` mordent sur l'ENSEMBLE des clés, pas sur leur présence : une
+--      clé ajoutée les fait rougir autant qu'une clé retirée, ce qui est le but.
+--      Le glissement qu'elles empêchent est celui que `lang_coverage` a déjà
+--      failli connaître — un verdict calculé en base parce que c'était pratique.
+--   2. LES TROIS VALEURS AJOUTÉES SONT LES BONNES : un libellé lisible par
+--      cible, le français COURANT par champ, et l'anglais stocké s'il existe —
+--      périmé compris. Le tout en UNE assertion qui rend les cinq lignes d'un
+--      coup : un échec montre le tableau entier, pas une cellule.
+--   3. LA JOINTURE DES TEXTES NE PERD PERSONNE, et c'est vérifié sur TOUTES les
+--      vitrines de la base, pas sur la fixture. `vitrine_champs_traduisibles`
+--      reste seule à décider quels champs comptent ; le jour où un sixième champ
+--      y entrerait sans entrer dans la liste des sources, il sortirait ici avec
+--      un français nul — l'écran afficherait une ligne à traduire sans montrer
+--      quoi. La règle le nomme au lieu de le laisser passer.
+--   4. LE RETRAIT FAIT CE QU'IL DIT : la traduction disparaît, l'état repasse
+--      « absent », le français reste, le résumé bouge, et le journal compte UN
+--      geste. Puis il est IDEMPOTENT — et les deux appels prouvent au passage
+--      que « EN » et « en » désignent la même ligne, sans quoi une traduction
+--      posée dans une casse serait ineffaçable dans l'autre.
+--   5. LA VERSION RENDUE EST CELLE QUE L'ÉCRAN DEVRA RENVOYER, et le scénario
+--      complet est joué : état lu, français modifié entre-temps, traduction
+--      envoyée avec la version VUE — elle atterrit périmée d'emblée. C'est la
+--      preuve que la fraîcheur se décide à l'AFFICHAGE et non à l'envoi ; sans
+--      elle, la même saisie serait enregistrée fraîche et rien ne la périmerait
+--      jamais.
+--   6. LE RETRAIT NE FRANCHIT PAS LA FRONTIÈRE, et il refuse SANS RIEN
+--      APPRENDRE : le même code et le même message pour « cible d'autrui » et
+--      « cible inexistante ». Les distinguer aurait fait de cette RPC un oracle
+--      sur les identifiants des autres locataires — ce que l'upsert refuse
+--      d'être depuis L11, et une divergence entre les deux portes serait un
+--      trou : ce qu'on ne peut pas écrire chez le voisin, on ne doit pas
+--      pouvoir l'effacer.
+--   7. LA VERSION POSÉE EST BORNÉE PAR LA RÉALITÉ (point M1 de la revue L15).
+--      La clé du point 5 voyage par le client, donc elle est forgeable : une
+--      version FUTURE rendait `version_source >= version_courante` vrai POUR
+--      TOUJOURS, et l'anglais correspondant ne pouvait plus jamais périmer. §15h
+--      pose une version 9999-12-31, constate que la ligne STOCKÉE porte
+--      l'`updated_at` réel de la cible, puis fait bouger le français et la voit
+--      périr. La borne est unilatérale : une version ANTÉRIEURE est conservée
+--      telle quelle, sans quoi le point 5 deviendrait faux.
+--   8. LES DEUX PORTES SIGNENT LEUR JOURNAL (point M2). L'acteur est vérifié EN
+--      SQL membre `owner|editor` : le caissier — MEMBRE, et pourtant refusé —
+--      sépare le rôle de l'appartenance, le propriétaire d'une AUTRE
+--      organisation sépare l'appartenance du rôle, et l'acteur absent ferme le
+--      chemin anonyme. Une garde bâclée passerait l'un ou l'autre.
+--
+-- ── CE QUE CETTE SECTION NE PROUVE PAS ──
+--
+-- Rien de l'écran lui-même : il vit dans `src/app`, et aucune assertion SQL ne
+-- peut l'observer. Ce qui est prouvé ici, c'est que la base lui rend TOUT ce
+-- qu'il lui faut en UN appel — c'est-à-dire qu'aucun second aller-retour par
+-- cible n'est nécessaire pour afficher quatorze noms de plats.
+
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- ── Fixture L15 : cinq champs, et les TROIS états d'un coup ──
+--
+-- NON PUBLIÉE, délibérément : on traduit AVANT d'ouvrir, et l'état de l'éditeur
+-- ne doit pas dépendre de la publication — il mesure le travail restant, pas ce
+-- que le visiteur voit. Aucun droit `vitrine` non plus, pour la même raison :
+-- `vitrine_translation_state` ne garde ni l'un ni l'autre, et sa docstring le
+-- dit. Si l'un des deux devenait nécessaire, tout ce qui suit rougirait.
+insert into public.organizations
+  (id, name, slug, subscription_status, plan, timezone, data_retention_months)
+values ('f1000000-0000-4000-8000-000000001500', 'Vitrine L15', 'tap-vitrine-l15',
+        'active', 'starter', 'Europe/Paris', 6);
+
+-- DEUX ACTEURS POUR L15, ET IL EN FAUT DEUX (VIT-5, point M2 de la revue L15).
+-- Les deux portes du calque exigent un membre `owner|editor` vérifié EN SQL :
+-- l'ÉDITEUR joue tout ce qui suit, le CAISSIER n'existe que pour prouver que le
+-- RÔLE est tranché et pas seulement l'appartenance — sans lui, une garde écrite
+-- `exists (… where user_id = …)` sans le `role in (…)` serait verte partout
+-- ailleurs. Le propriétaire de A (`…0f01`), lui, sépare l'inverse : son rôle
+-- suffirait, c'est son appartenance à CETTE organisation qui manque.
+insert into auth.users
+  (id, aud, role, email, encrypted_password, created_at, updated_at)
+values
+  ('f1000000-0000-4000-8000-000000001505', 'authenticated', 'authenticated',
+   'editeur-l15@test.local', '', now(), now()),
+  ('f1000000-0000-4000-8000-000000001506', 'authenticated', 'authenticated',
+   'caissier-l15@test.local', '', now(), now());
+
+insert into public.organization_members (organization_id, user_id, role) values
+  ('f1000000-0000-4000-8000-000000001500',
+   'f1000000-0000-4000-8000-000000001505', 'editor'),
+  ('f1000000-0000-4000-8000-000000001500',
+   'f1000000-0000-4000-8000-000000001506', 'cashier');
+
+-- `histoire` et `horaires_texte` restent NULLES : elles ne sont pas
+-- traduisibles, donc elles ne doivent apparaître NI dans les cibles NI dans le
+-- total. C'est la même assertion déguisée qu'à la fixture E, reprise ici parce
+-- que la liste des sources de `vitrine_translation_state` est une SECONDE
+-- énumération des mêmes colonnes : si elle laissait passer une colonne nulle,
+-- le contrat rendrait un champ fantôme sans que le compteur bouge.
+insert into public.vitrine_settings
+  (id, organization_id, slug, published, accroche)
+values ('f1000000-0000-4000-8000-000000001501',
+        'f1000000-0000-4000-8000-000000001500', 'tap-l15-traduction', false,
+        'Notre table du marché.');
+
+insert into public.vitrine_menus (id, organization_id, nom, ordre, active) values
+  ('f1000000-0000-4000-8000-000000001502',
+   'f1000000-0000-4000-8000-000000001500', 'Carte de saison', 1, true);
+
+insert into public.vitrine_categories (id, menu_id, organization_id, nom, ordre)
+values
+  ('f1000000-0000-4000-8000-000000001503',
+   'f1000000-0000-4000-8000-000000001502',
+   'f1000000-0000-4000-8000-000000001500', 'Desserts', 1);
+
+insert into public.vitrine_items
+  (id, categorie_id, organization_id, nom, description, prix_affiche,
+   badges, allergenes, disponible, ordre)
+values
+  ('f1000000-0000-4000-8000-000000001504',
+   'f1000000-0000-4000-8000-000000001503',
+   'f1000000-0000-4000-8000-000000001500', 'Tarte aux figues',
+   'Pâte brisée, miel de châtaignier.', '9 €',
+   array['vegetarien']::text[], array['gluten']::text[], true, 1);
+
+-- TROIS ÉTATS SUR CINQ CHAMPS, et c'est le minimum qui rende la section utile :
+--   * accroche          → FRAIS  (version source = version courante)
+--   * nom de la carte   → PÉRIMÉ (version source antérieure d'une heure)
+--   * nom de la fiche   → FRAIS
+--   * nom de la rubrique → ABSENT (jamais traduit)
+--   * description       → ABSENT
+-- La fiche porte donc UN champ frais et UN champ absent : c'est elle qui prouve
+-- que le regroupement par cible ne scinde pas une entrée quand les états
+-- diffèrent, et que son libellé tient sur les DEUX lignes.
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'settings',
+  'f1000000-0000-4000-8000-000000001501', 'en', 'accroche',
+  'Our market table.',
+  (select s.updated_at from public.vitrine_settings s
+    where s.id = 'f1000000-0000-4000-8000-000000001501'),
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'L15 — l''accroche est traduite, et fraîche');
+
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'menu',
+  'f1000000-0000-4000-8000-000000001502', 'en', 'nom', 'Seasonal menu',
+  (select m.updated_at - interval '1 hour' from public.vitrine_menus m
+    where m.id = 'f1000000-0000-4000-8000-000000001502'),
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'L15 — le nom de la carte est traduit à une version ANTÉRIEURE : il naît périmé');
+
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'item',
+  'f1000000-0000-4000-8000-000000001504', 'en', 'nom', 'Fig tart',
+  (select i.updated_at from public.vitrine_items i
+    where i.id = 'f1000000-0000-4000-8000-000000001504'),
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'L15 — le nom de la fiche est traduit, et frais ; sa description ne l''est pas');
+
+
+-- ── 15a. LE CONTRAT DE SORTIE, CLÉ PAR CLÉ, AUX QUATRE RANGS ──
+--
+-- `results_eq` sur l'ENSEMBLE des clés et non `has_key` sur chacune : une clé
+-- AJOUTÉE doit rougir autant qu'une clé retirée. C'est la forme retenue pour
+-- `lang_coverage` (« la couverture rend un COMPTE et rien d'autre »), et elle
+-- vaut ici pour la raison inverse : cette sortie est un contrat d'écran, et
+-- l'élargir en silence est le geste par lequel une RPC de lecture devient
+-- lentement une API sans propriétaire.
+
+select results_eq(
+  $$select key from jsonb_each(
+      public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500'))
+     order by key$$,
+  array['cibles', 'lang', 'resume', 'state'],
+  'le premier rang porte EXACTEMENT quatre clés : l''état, la langue décrite, le résumé chiffré et les cibles');
+
+select results_eq(
+  $$select key from jsonb_each(
+      public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+        -> 'resume')
+     order by key$$,
+  array['manquants', 'perimes', 'total_champs_traduisibles', 'traduits_frais'],
+  'le résumé porte EXACTEMENT le total et les trois états — aucun pourcentage, aucun verdict : le seuil est une décision de produit');
+
+select results_eq(
+  $$select key from jsonb_each(
+      public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+        #> '{cibles,0}')
+     order by key$$,
+  array['champs', 'cible_id', 'cible_type', 'libelle', 'version'],
+  'une cible porte EXACTEMENT son type, son identifiant, son LIBELLÉ lisible, sa VERSION et ses champs — sans le libellé l''écran afficherait une liste d''UUID, sans la version il enregistrerait des traductions faussement fraîches');
+
+select results_eq(
+  $$select key from jsonb_each(
+      public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+        #> '{cibles,0,champs,0}')
+     order by key$$,
+  array['champ', 'etat', 'texte_source', 'texte_traduit'],
+  'un champ porte EXACTEMENT son nom, son état, le FRANÇAIS source et l''anglais stocké — sans le français, l''écran de saisie n''a qu''une colonne');
+
+-- L'ORDRE FAIT PARTIE DU CONTRAT, et il est (cible_type, cible_id) — inchangé
+-- depuis L11. Sans second rang, deux ouvertures de l'écran ne rendraient pas la
+-- même liste ; sans premier rang stable, un test d'index serait un test du plan.
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{cibles,0,cible_type}',
+  'categorie',
+  'les cibles sortent triées par type puis par identifiant : « categorie » ouvre la liste');
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{cibles,3,cible_type}',
+  'settings',
+  '… et « settings » la ferme — quatre cibles, une par niveau');
+
+
+-- ── 15b. LES TROIS VALEURS AJOUTÉES, LES CINQ LIGNES D'UN COUP ──
+--
+-- UNE assertion et non quinze : l'écran est un tableau, et un échec doit montrer
+-- le tableau. Quinze `is()` auraient révélé la première cellule fausse et caché
+-- les quatorze autres — c'est précisément ce qui rend une régression de forme
+-- coûteuse à diagnostiquer.
+
+select is(
+  (select string_agg(
+     (cb ->> 'cible_type') || ' [' || (cb ->> 'libelle') || '] '
+       || (ch ->> 'champ') || ' = ' || (ch ->> 'etat')
+       || ' | fr: ' || coalesce(ch ->> 'texte_source', '(vide)')
+       || ' | en: ' || coalesce(ch ->> 'texte_traduit', '(vide)'),
+     E'\n' order by cb ->> 'cible_type', cb ->> 'cible_id', ch ->> 'champ')
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch),
+  'categorie [Desserts] nom = absent | fr: Desserts | en: (vide)' || E'\n' ||
+  'item [Tarte aux figues] description = absent | fr: Pâte brisée, miel de châtaignier. | en: (vide)' || E'\n' ||
+  'item [Tarte aux figues] nom = frais | fr: Tarte aux figues | en: Fig tart' || E'\n' ||
+  'menu [Carte de saison] nom = perime | fr: Carte de saison | en: Seasonal menu' || E'\n' ||
+  'settings [Réglages] accroche = frais | fr: Notre table du marché. | en: Our market table.',
+  'l''écran reçoit tout en UN appel : libellé lisible par cible, français courant par champ, anglais stocké s''il existe — et les réglages, qui n''ont pas de titre, s''appellent « Réglages »');
+
+-- LE PÉRIMÉ GARDE SON ANGLAIS, et c'est la raison d'être de la conservation
+-- décidée en L11 (« elle n'est pas effacée pour autant »). La ligne du dessus le
+-- montre déjà ; celle-ci le NOMME, parce que c'est la propriété qu'une
+-- réécriture distraite ferait disparaître en croyant simplifier — servir `null`
+-- dès que l'état n'est pas `frais` semble propre et rend la conservation
+-- inutile : une périmée se retouche, elle ne se réécrit pas.
+select isnt(
+  (select ch -> 'texte_traduit'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'menu'),
+  'null'::jsonb,
+  'une traduction PÉRIMÉE sort quand même : le commerçant la retouche, il ne la réécrit pas');
+
+-- LE FRANÇAIS RENDU EST LE COURANT, PAS CELUI D'ALORS. Sur un champ périmé
+-- c'est tout l'enjeu : montrer le texte d'avant la correction aurait fait
+-- retraduire le mauvais.
+update public.vitrine_menus
+   set nom = 'Carte de printemps'
+ where id = 'f1000000-0000-4000-8000-000000001502';
+
+select is(
+  (select ch ->> 'texte_source'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'menu'),
+  'Carte de printemps',
+  'le français rendu est le COURANT — celui qui vient de périmer la traduction, pas celui qu''elle traduisait');
+
+select is(
+  (select cb ->> 'libelle'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'menu'),
+  'Carte de printemps',
+  '… et le libellé suit le renommage : il est LU dans la table, il n''est pas figé à la traduction');
+
+-- LE RÉSUMÉ, AVANT TOUT RETRAIT : cinq champs, deux frais, un périmé, deux
+-- absents. Il est chiffré ici pour que la section 15d puisse prouver qu'il BOUGE.
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,total_champs_traduisibles}',
+  '5',
+  'cinq champs traduisibles : les deux colonnes NULLES des réglages ne comptent toujours pas, et elles ne sortent pas non plus en cible');
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,traduits_frais}',
+  '2',
+  '… deux sont frais');
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,perimes}',
+  '1',
+  '… un est périmé');
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,manquants}',
+  '2',
+  '… et deux n''ont jamais été traduits');
+
+
+-- ── 15c. LA JOINTURE NE PERD PERSONNE — la règle, pas la fixture ──
+--
+-- `vitrine_champs_traduisibles` décide QUELS champs existent ;
+-- `vitrine_translation_state` leur colle leur texte par une SECONDE énumération
+-- des mêmes colonnes. Deux listes qui doivent rester d'accord, et le désaccord
+-- est silencieux : un sixième champ traduisible ajouté à la première sans être
+-- ajouté à la seconde sortirait avec un français nul — l'écran demanderait de
+-- traduire une ligne sans montrer quoi, et le compteur ne bougerait pas.
+--
+-- La règle balaie TOUTES les vitrines de la base, pas la fixture : sur base
+-- semée elle passe sur `e2e-comptoir` et `e2e-traduit`, sur base vide sur les
+-- fixtures `tap-*` de ce fichier. L'échec NOMME la vitrine, la cible et le
+-- champ fautifs.
+select is(
+  (select coalesce(string_agg(
+     s.slug || '.' || (cb ->> 'cible_type') || '.' || (ch ->> 'champ'), ', '
+     order by s.slug, cb ->> 'cible_type', ch ->> 'champ'), '')
+     from public.vitrine_settings s
+     cross join lateral jsonb_array_elements(
+       public.vitrine_translation_state(s.organization_id) -> 'cibles') cb
+     cross join lateral jsonb_array_elements(cb -> 'champs') ch
+    where ch -> 'texte_source' = 'null'::jsonb
+       or cb -> 'libelle' = 'null'::jsonb),
+  '',
+  'aucun champ traduisible ne sort sans son français, aucune cible sans son libellé — les deux énumérations de colonnes restent d''accord');
+
+-- CONTRÔLE DE PORTÉE, même raison que les 110 tables de `security_acl` : sans
+-- lui, la règle ci-dessus serait verte sur un ensemble vide le jour où la
+-- jointure se casserait en silence. VINGT-TROIS champs mesurés sur base VIDE —
+-- c'est le plancher, la base semée en compte quarante-sept.
+select cmp_ok(
+  (select count(*)::int
+     from public.vitrine_settings s
+     cross join lateral jsonb_array_elements(
+       public.vitrine_translation_state(s.organization_id) -> 'cibles') cb
+     cross join lateral jsonb_array_elements(cb -> 'champs') ch),
+  '>=', 23,
+  'la règle porte bien sur les vingt-trois champs traduisibles des vitrines, pas sur un ensemble vide');
+
+
+-- ── 15d. LE RETRAIT — ce qu'il fait, et ce qu'il refait ──
+--
+-- POURQUOI CETTE PORTE EXISTE : sans elle, une traduction posée était servie
+-- pour toujours. Un nom propre traduit par erreur (« Kouign-amann » devenu autre
+-- chose), une accroche dont l'anglais ne rend pas le ton : la seule issue était
+-- d'écrire l'anglais IDENTIQUE au français, ce qui gonfle la couverture d'un
+-- champ qui n'est pas traduit. Retirer la ligne fait la bonne chose : le champ
+-- redevient « absent », le compteur baisse honnêtement, et la page publique sert
+-- le français POUR CE CHAMP — ce que `vitrine_cartes_json` sait faire depuis
+-- L11 sans qu'une ligne de code ait à changer.
+
+-- « EN » ET « en » SONT LA MÊME LIGNE. Le retrait est envoyé en majuscules et il
+-- trouve la traduction posée en minuscules : sans la normalisation, une
+-- traduction serait ineffaçable par un appelant qui n'écrit pas la casse de
+-- celui qui l'a posée.
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'settings',
+  'f1000000-0000-4000-8000-000000001501', 'EN', 'accroche',
+  'f1000000-0000-4000-8000-000000001505') ->> 'deleted', 'true',
+  'le retrait enlève la traduction — et « EN » désigne bien la ligne posée en « en »');
+
+select ok(
+  not exists (
+    select 1 from public.vitrine_translations t
+     where t.organization_id = 'f1000000-0000-4000-8000-000000001500'
+       and t.cible_type = 'settings'
+       and t.champ = 'accroche'),
+  '… la LIGNE a disparu de la table : ce n''est pas un drapeau, c''est un retrait');
+
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'settings'),
+  'absent',
+  '… l''état repasse à « absent » : le champ redevient à traduire, il n''est pas perdu');
+
+select is(
+  (select ch ->> 'texte_source'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'settings'),
+  'Notre table du marché.',
+  '… et le FRANÇAIS reste : c''est la référence, elle n''a jamais vécu dans le calque');
+
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,manquants}',
+  '3',
+  'le résumé bouge : deux manquants deviennent trois, la couverture baisse HONNÊTEMENT');
+select is(
+  public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
+    #>> '{resume,total_champs_traduisibles}',
+  '5',
+  '… et le DÉNOMINATEUR ne bouge pas : retirer une traduction ne retire pas un champ à traduire');
+
+-- LE JOURNAL COMPTE LE GESTE, symétriquement à `vitrine.translation_set`.
+select is(
+  (select count(*)::bigint from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and a.action = 'vitrine.translation_removed'),
+  1::bigint,
+  'le retrait laisse UNE ligne de journal : savoir quand un anglais a cessé d''être servi vaut autant que savoir quand il a été posé');
+
+-- LE JOURNAL NE CONTIENT PAS LE TEXTE RETIRÉ. Un journal n'est pas une
+-- corbeille : l'y recopier ferait du journal d'audit le seul endroit où survit
+-- un contenu que le commerçant vient précisément de retirer.
+select ok(
+  not exists (
+    select 1 from public.audit_logs a
+     where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+       and a.action = 'vitrine.translation_removed'
+       and a.metadata::text like '%market table%'),
+  '… et elle ne contient PAS le texte retiré : un journal n''est pas une corbeille');
+
+-- L'IDEMPOTENCE. Un double-clic, un rejeu d'action serveur, un pipeline qui
+-- repasse : le second retrait doit rendre le même succès, sans lever et sans
+-- journaliser. Le journal compte les GESTES, pas les non-gestes.
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'settings',
+  'f1000000-0000-4000-8000-000000001501', 'en', 'accroche',
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'retirer une traduction ABSENTE est un SUCCÈS : un double-clic ne doit pas afficher une erreur au commerçant');
+
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'settings',
+  'f1000000-0000-4000-8000-000000001501', 'en', 'accroche',
+  'f1000000-0000-4000-8000-000000001505') ->> 'deleted', 'false',
+  '… et il dit honnêtement qu''il n''a rien retiré');
+
+select is(
+  (select count(*)::bigint from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and a.action = 'vitrine.translation_removed'),
+  1::bigint,
+  '… sans écrire une seconde ligne de journal : le journal compte les gestes, pas les non-gestes');
+
+-- LES REFUS NOMMÉS, LES MÊMES QU'À L'UPSERT. Une divergence de vocabulaire entre
+-- les deux portes obligerait l'appelant à écrire deux tables de correspondance
+-- pour la même famille d'erreurs.
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'carte',
+  'f1000000-0000-4000-8000-000000001502', 'en', 'nom',
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'invalid_cible',
+  'un type de cible hors des quatre niveaux est refusé sous son propre mot, comme à l''écriture');
+
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'menu',
+  'f1000000-0000-4000-8000-000000001502', 'fr', 'nom',
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'invalid_lang',
+  'le français n''est pas dans le calque : il n''y a rien à en retirer');
+
+select is(public.delete_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'menu',
+  'f1000000-0000-4000-8000-000000001502', 'en', 'description',
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'invalid_champ',
+  'une carte n''a pas de description : le couplage type↔champ refuse AUSSI au retrait, plutôt que de rendre un « rien à retirer » rassurant');
+
+
+-- ── 15e. LE RETRAIT NE FRANCHIT PAS LA FRONTIÈRE, ET IL N'APPREND RIEN ──
+--
+-- `cible_id` ne porte toujours aucune FK (quatre tables cibles) : rien dans le
+-- schéma n'empêche L15 d'effacer la traduction de E. C'est la RPC qui le refuse,
+-- par la même jointure PAR TYPE que l'upsert — ce qu'on ne peut pas écrire chez
+-- le voisin, on ne doit pas pouvoir l'effacer.
+--
+-- ET LE REFUS EST INDISTINCT : même code, même message pour « la cible est à
+-- quelqu'un d'autre » et « la cible n'existe pas ». Les distinguer aurait fait
+-- de cette RPC un oracle sur les identifiants d'autrui — il aurait suffi de
+-- balayer des UUID pour savoir lesquels existent ailleurs.
+
+select throws_ok(
+  $$select public.delete_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'item',
+      'f1000000-0000-4000-8000-000000000701', 'en', 'nom',
+      'f1000000-0000-4000-8000-000000001505')$$,
+  '42501', 'not authorized',
+  'effacer la traduction d''un AUTRE locataire est refusé — la FK ne peut pas le refuser, la RPC le fait');
+
+select throws_ok(
+  $$select public.delete_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'item',
+      'f1000000-0000-4000-8000-0000000019ff', 'en', 'nom',
+      'f1000000-0000-4000-8000-000000001505')$$,
+  '42501', 'not authorized',
+  '… et une cible INEXISTANTE rend le MÊME refus, au message près : sans quoi le retrait deviendrait un oracle sur les identifiants d''autrui');
+
+-- LA TRADUCTION DU VOISIN EST INTACTE. Le refus n'est pas cosmétique : rien
+-- n'a été effacé avant qu'il ne tombe.
+select ok(
+  exists (
+    select 1 from public.vitrine_translations t
+     where t.organization_id = 'f1000000-0000-4000-8000-00000000000e'
+       and t.cible_id = 'f1000000-0000-4000-8000-000000000701'
+       and t.champ = 'nom'),
+  'la traduction du voisin est TOUJOURS LÀ : le refus tombe avant le delete, pas après');
+
+
+-- ── 15f. LES ACL DU RETRAIT — aussi fermé que l'écriture ─────
+--
+-- Ces assertions doublent les règles catalogue de `security_acl.test.sql`, et
+-- c'est voulu : celles-là gardent le schéma entier, celles-ci gardent CE lot.
+
+select ok(has_function_privilege('service_role', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'),
+  'seul le serveur retire une traduction');
+select ok(not has_function_privilege('authenticated', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'),
+  'le marchand ne contourne pas l''action serveur pour effacer de l''anglais : la vérification d''appartenance est DANS la RPC');
+select ok(not has_function_privilege('anon', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'),
+  'anon n''efface aucune traduction');
+
+-- LA SUPPRESSION EN DIRECT RESTE FERMÉE, et ce n'est pas la RLS qui la refuse :
+-- c'est l'absence de privilège, qui mord AVANT toute policy. Sans cette ligne,
+-- la RPC serait une porte de plus à côté d'une porte ouverte.
+select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'DELETE'),
+  'le commerçant ne supprime pas une traduction en direct : la seule porte vérifie l''appartenance de la cible');
+select ok(not has_table_privilege('anon', 'public.vitrine_translations', 'DELETE'),
+  'anon non plus, évidemment');
+
+-- UNE SEULE `delete_vitrine_translation` EXISTE (leçon L3) : un `create or
+-- replace` qui changerait un paramètre ne remplacerait rien, il créerait une
+-- SURCHARGE — et l'appel à cinq arguments de l'action serveur deviendrait
+-- ambigu, « function is not unique », à l'exécution seulement.
+select is(
+  (select count(*)::bigint from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'delete_vitrine_translation'),
+  1::bigint,
+  'une seule `delete_vitrine_translation` existe : aucune surcharge ne rend l''appel ambigu');
+
+-- … ET UNE SEULE `vitrine_translation_state`, pour la même raison : ce lot la
+-- redéfinit par `create or replace` à signature IDENTIQUE, et c'est ce qui lui
+-- conserve ses `grant` sans avoir à les réécrire.
+select is(
+  (select count(*)::bigint from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'vitrine_translation_state'),
+  1::bigint,
+  '… et une seule `vitrine_translation_state` : la redéfinition de L15 garde la signature de L11, donc ses privilèges');
+
+
+-- ── 15g. LA VERSION VUE — la fraîcheur se décide à l'AFFICHAGE ──
+--
+-- `upsert_vitrine_translation` exige la version du texte français que la
+-- traduction traduit. SANS la clé `version`, l'action serveur n'aurait qu'un
+-- choix — relire `updated_at` au moment de l'envoi — et elle enregistrerait la
+-- version d'ARRIVÉE. Le trou est étroit et parfaitement atteignable : le
+-- commerçant ouvre l'écran, part traduire, et pendant ce temps le français bouge
+-- (autre onglet, associé, import de carte). Son anglais traduit l'ANCIEN texte
+-- et il est enregistré FRAIS — `version_source >= version_courante` est vrai,
+-- donc rien ne le périmera jamais et la page publique sert cet anglais faux
+-- indéfiniment. Le pire cas d'un calque n'est pas le champ manquant, c'est le
+-- champ faux qui se croit bon.
+--
+-- Les deux assertions qui suivent tiennent la clé ; les quatre d'après jouent le
+-- SCÉNARIO COMPLET, qui est la seule preuve qui vaille : lire, laisser le
+-- français bouger, envoyer la version vue, constater que la traduction est
+-- périmée D'EMBLÉE.
+
+select is(
+  (select (cb ->> 'version')::timestamptz
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'item'),
+  (select i.updated_at from public.vitrine_items i
+    where i.id = 'f1000000-0000-4000-8000-000000001504'),
+  'la version rendue est l''`updated_at` COURANT de la cible — et elle survit à l''aller-retour par JSON au microseconde près, sans quoi l''upsert la recevrait décalée et périmerait tout');
+
+-- UNE SEULE VERSION POUR LES DEUX CHAMPS DE LA FICHE, et c'est la portée réelle
+-- de la clé : `touch_updated_at` avance l'`updated_at` de la LIGNE. Une version
+-- par champ aurait laissé croire à une granularité que la base n'a pas.
+select is(
+  (select count(distinct cb ->> 'version')::bigint
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'item'),
+  1::bigint,
+  '… et la fiche n''en porte qu''UNE pour son nom et sa description : la clé de version porte sur la LIGNE, pas sur le champ');
+
+-- ── LE SCÉNARIO, EN QUATRE TEMPS ──
+-- 1. L'écran lit l'état et EMBARQUE la version de la rubrique dans son
+--    formulaire. `set_config` tient lieu de champ caché : la valeur est celle
+--    qui SORT de la RPC, pas un `updated_at` relu à côté — c'est tout l'objet
+--    de la preuve.
+select set_config('tap.l15_version_vue',
+  (select cb ->> 'version'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'categorie'), true);
+
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'absent',
+  'la rubrique part d''un état ABSENT : ce qui suit ne peut donc pas être un reste de la section précédente');
+
+-- 2. LE FRANÇAIS BOUGE pendant que le commerçant traduit. Le trigger avance
+--    `updated_at` — c'est le geste qui rend la version vue OBSOLÈTE.
+update public.vitrine_categories
+   set nom = 'Desserts et douceurs'
+ where id = 'f1000000-0000-4000-8000-000000001503';
+
+-- 3. LE FORMULAIRE REVIENT, avec la version VUE et une traduction de l'ANCIEN
+--    nom. L'upsert l'accepte sans protester : ce n'est pas son rôle de refuser
+--    une version ancienne — L11 l'a écrit noir sur blanc (« c'est la lecture qui
+--    l'ignorera »).
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'categorie',
+  'f1000000-0000-4000-8000-000000001503', 'en', 'nom', 'Desserts',
+  current_setting('tap.l15_version_vue')::timestamptz,
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'la traduction de l''ANCIEN nom s''enregistre avec la version VUE — l''upsert n''a pas à juger, il enregistre ce que l''écran avait sous les yeux');
+
+-- 4. ET ELLE ATTERRIT DÉJÀ PÉRIMÉE. C'est toute la démonstration : sans la clé,
+--    l'action serveur aurait relu `updated_at` à cet instant et cette même
+--    traduction serait « fraîche » — un anglais qui traduit « Desserts » servi
+--    sous « Desserts et douceurs », que RIEN n'aurait jamais périmé.
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'perime',
+  'la traduction saisie sur un texte modifié entre-temps atterrit DÉJÀ PÉRIMÉE — honnête par construction, sans verrou ni relecture dans l''action serveur');
+
+select is(
+  (select ch ->> 'texte_source'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'Desserts et douceurs',
+  '… et l''écran la ressort « à revoir » en face du français COURANT : le commerçant voit exactement ce qui a changé sous lui');
+
+
+-- ── 15h. LA BORNE DE VERSION — point M1 de la revue L15 ──────
+--
+-- §15g vient de prouver que la version VUE est ce qu'il faut faire voyager. Elle
+-- voyage donc dans le formulaire, c'est-à-dire chez le client — et ce que le
+-- client tient, il peut l'inventer. Une version POSTÉRIEURE à l'`updated_at` de
+-- la cible rendait `version_source >= version_courante` vrai POUR TOUJOURS :
+-- l'anglais correspondant ne pouvait plus jamais périmer, quoi qu'il advienne du
+-- français. C'est le pire cas nommé par L11 — « le champ faux qui se croit bon » —
+-- mais rendu définitif, et donc invisible : aucun écran ne signale un champ qui
+-- se déclare frais.
+--
+-- LA BORNE EST UNILATÉRALE, et les deux moitiés comptent autant :
+--   * au-dessus de la réalité, la version est ramenée à l'`updated_at` de la
+--     cible — le geste passe, l'éternité non ;
+--   * en dessous, RIEN NE CHANGE, et c'est ce que §15g prouve déjà sans qu'une
+--     ligne y ait bougé : une version ancienne est le cas HONNÊTE, celui que L11
+--     décrit, et la remonter aurait détruit la propriété qu'on veut garder.
+
+-- 1. LE GESTE PASSE. Refuser aurait transformé une horloge décalée de trois
+--    secondes — le client n'est pas le serveur — en échec d'enregistrement
+--    affiché au commerçant, pour un texte qu'il vient d'écrire juste.
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'item',
+  'f1000000-0000-4000-8000-000000001504', 'en', 'description',
+  'Shortcrust pastry, chestnut honey.',
+  '9999-12-31T23:59:59+00'::timestamptz,
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'une version FUTURE ne fait pas échouer l''enregistrement : la borne retire un privilège, elle ne refuse pas un geste');
+
+-- 2. … ET LA LIGNE STOCKÉE PORTE LA RÉALITÉ. C'est M1 en une assertion : ce qui
+--    est écrit dans la table n'est plus ce que l'appelant a demandé, c'est le
+--    minimum entre sa demande et l'`updated_at` de la cible.
+select is(
+  (select t.version_source from public.vitrine_translations t
+    where t.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and t.cible_type = 'item'
+      and t.cible_id = 'f1000000-0000-4000-8000-000000001504'
+      and t.champ = 'description'),
+  (select i.updated_at from public.vitrine_items i
+    where i.id = 'f1000000-0000-4000-8000-000000001504'),
+  '… mais la ligne STOCKÉE porte l''`updated_at` RÉEL de la cible et non le 9999-12-31 reçu : la version posée est bornée par la réalité');
+
+-- 3. FRAÎCHE MAINTENANT, et c'est juste : elle traduit bien le texte courant.
+--    La borne ne punit pas, elle ramène.
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'item' and ch ->> 'champ' = 'description'),
+  'frais',
+  '… elle est FRAÎCHE dans l''instant, ce qui est exact : elle traduit bien le français courant');
+
+-- 4. LE NON-GESTE SE MESURE SUR LA VERSION ÉCRITE, PAS SUR CELLE REÇUE. Sans
+--    cela, un pipeline qui renvoie inlassablement sa version future rendrait
+--    `changed: true` à chaque passage et noierait le journal — pour une table qui
+--    n'a pas bougé d'un octet.
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'item',
+  'f1000000-0000-4000-8000-000000001504', 'en', 'description',
+  'Shortcrust pastry, chestnut honey.',
+  '9999-12-31T23:59:59+00'::timestamptz,
+  'f1000000-0000-4000-8000-000000001505') ->> 'changed', 'false',
+  'renvoyer DEUX FOIS la même version future ne change rien : le non-geste se compare à ce qui SERAIT écrit');
+
+select is(
+  (select pg_catalog.count(*)::bigint from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and a.action = 'vitrine.translation_set'
+      and a.metadata ->> 'champ' = 'description'),
+  1::bigint,
+  '… et n''écrit pas une seconde ligne de journal');
+
+-- 5. LE JOURNAL COMMENTE LA TABLE, IL NE RECOPIE PAS LA DEMANDE. Y laisser le
+--    9999-12-31 aurait fait diverger la trace d'audit de la ligne qu'elle décrit.
+select is(
+  (select (a.metadata ->> 'version_source')::timestamptz from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and a.action = 'vitrine.translation_set'
+      and a.metadata ->> 'champ' = 'description'),
+  (select i.updated_at from public.vitrine_items i
+    where i.id = 'f1000000-0000-4000-8000-000000001504'),
+  '… et le journal porte la version ÉCRITE, pas celle reçue : il commente la table, il ne recopie pas la demande');
+
+-- 6. ET ELLE PÉRIT À LA PREMIÈRE ÉDITION DU FRANÇAIS. Toute la démonstration est
+--    là : SANS la borne, `version_source` valait 9999-12-31, donc
+--    `version_source >= version_courante` restait vrai après CETTE modification
+--    et après toutes les suivantes — cet anglais aurait été servi indéfiniment
+--    sur un plat dont la description a changé.
+update public.vitrine_items
+   set description = 'Pâte brisée, miel de châtaignier et thym frais.'
+ where id = 'f1000000-0000-4000-8000-000000001504';
+
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'item' and ch ->> 'champ' = 'description'),
+  'perime',
+  'et elle PÉRIT à la première édition du français : l''invariant « honnête par construction » ne dépend plus du seul champ que le client tient');
+
+-- 7. LA BORNE NE REMONTE RIEN. `least` et non « la version de la cible » : une
+--    version antérieure est conservée TELLE QUELLE, sans quoi toute traduction
+--    naîtrait fraîche et §15g deviendrait faux.
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'menu',
+  'f1000000-0000-4000-8000-000000001502', 'en', 'nom', 'Seasonal menu',
+  (select m.updated_at - interval '2 hours' from public.vitrine_menus m
+    where m.id = 'f1000000-0000-4000-8000-000000001502'),
+  'f1000000-0000-4000-8000-000000001505') ->> 'state', 'ok',
+  'une version ANTÉRIEURE s''enregistre toujours sans protester');
+
+select is(
+  (select t.version_source from public.vitrine_translations t
+    where t.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and t.cible_type = 'menu'
+      and t.champ = 'nom'),
+  (select m.updated_at - interval '2 hours' from public.vitrine_menus m
+    where m.id = 'f1000000-0000-4000-8000-000000001502'),
+  '… et elle est stockée TELLE QUELLE : la borne est unilatérale, elle ne remonte jamais une version honnête vers la fraîcheur');
+
+
+-- ── 15i. L'ACTEUR — point M2 de la revue L15 ─────────────────
+--
+-- Les deux portes du calque journalisaient `system` faute de recevoir un acteur.
+-- « Qui a écrit ça sur ma carte » est la question pour laquelle ce journal
+-- existe, et « qui a retiré l'anglais de ma carte » est pire encore : le retrait
+-- ne laisse, par construction, AUCUNE trace dans la table — le journal est la
+-- seule mémoire du geste.
+--
+-- ET UN `p_actor` NON VÉRIFIÉ AURAIT ÉTÉ PIRE QUE PAS D'ACTEUR : une ligne
+-- d'audit qui recopie ce que l'appelant déclare ne prouve rien, et elle est plus
+-- dangereuse qu'un journal vide parce qu'on la croit. L'acteur est donc tranché
+-- EN SQL, membre `owner|editor` de l'organisation VISÉE.
+--
+-- LES QUATRE REFUS RENDENT LE MÊME 42501 — acteur absent, caissier, membre d'une
+-- AUTRE organisation, organisation inconnue — et le même que « cible d'autrui ».
+-- Distinguer ferait de ces RPC un oracle sur les équipes et les identifiants des
+-- autres locataires.
+
+-- LE JOURNAL PORTE L'ACTEUR, SUR LES DEUX ACTIONS. `string_agg(distinct)` et non
+-- un `limit 1` : une seule ligne restée à « system » ferait rougir celle-ci, là
+-- où une assertion sur une ligne au hasard serait verte sur les autres.
+select is(
+  (select pg_catalog.string_agg(distinct a.actor, ',')
+     from public.audit_logs a
+    where a.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and a.action in ('vitrine.translation_set', 'vitrine.translation_removed')),
+  'f1000000-0000-4000-8000-000000001505',
+  'TOUTES les lignes d''audit du calque — poses ET retraits — portent l''ÉDITEUR qui a joué le geste : plus une seule ne dit « system »');
+
+-- LE CAISSIER EST MEMBRE, ET IL EST REFUSÉ, SUR LES DEUX PORTES. C'est la
+-- différence entre « appartenance » et « rôle » : sans lui, une garde écrite
+-- `exists (… where user_id = …)` sans le `role in (…)` serait verte partout.
+select throws_ok(
+  $$select public.upsert_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom', 'Cashier menu',
+      now(), 'f1000000-0000-4000-8000-000000001506')$$,
+  '42501', 'not authorized',
+  'le CAISSIER est refusé à l''écriture : publier de l''anglais sous l''enseigne n''est pas un geste de comptoir, motif set_vitrine_slug');
+
+select throws_ok(
+  $$select public.delete_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom',
+      'f1000000-0000-4000-8000-000000001506')$$,
+  '42501', 'not authorized',
+  '… et au retrait : une divergence entre les deux portes serait un trou — ce qu''on ne peut pas écrire, on ne doit pas pouvoir l''effacer');
+
+-- LE PROPRIÉTAIRE D'UNE AUTRE ORGANISATION. Il est `owner`, donc son RÔLE
+-- suffirait ; ce qui manque est l'appartenance à CETTE organisation.
+select throws_ok(
+  $$select public.upsert_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom', 'Neighbour menu',
+      now(), 'f1000000-0000-4000-8000-000000000f01')$$,
+  '42501', 'not authorized',
+  'le propriétaire d''une AUTRE organisation est refusé : la garde lit l''appartenance, pas seulement le rôle');
+
+select throws_ok(
+  $$select public.delete_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom',
+      'f1000000-0000-4000-8000-000000000f01')$$,
+  '42501', 'not authorized',
+  '… au retrait aussi, et sous le MÊME mot : distinguer ferait de ces RPC un oracle sur les équipes d''autrui');
+
+select throws_ok(
+  $$select public.upsert_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom', 'Anonymous menu',
+      now(), null)$$,
+  '42501', 'not authorized',
+  'un acteur ABSENT est refusé sous le même mot : il n''y a plus de chemin sans acteur depuis que les anciennes formes sont supprimées');
+
+select throws_ok(
+  $$select public.delete_vitrine_translation(
+      'f1000000-0000-4000-8000-000000001500', 'menu',
+      'f1000000-0000-4000-8000-000000001502', 'en', 'nom', null)$$,
+  '42501', 'not authorized',
+  '… et au retrait, sans quoi la seule mémoire d''un effacement redeviendrait anonyme');
+
+-- AUCUN DES SIX REFUS N'A TOUCHÉ LA TABLE. Le refus tombe AVANT la première
+-- écriture et avant le `delete` : sans cette ligne, une garde qui lèverait APRÈS
+-- coup serait verte sur les six `throws_ok` ci-dessus.
+select is(
+  (select t.texte from public.vitrine_translations t
+    where t.organization_id = 'f1000000-0000-4000-8000-000000001500'
+      and t.cible_type = 'menu'
+      and t.champ = 'nom'),
+  'Seasonal menu',
+  'aucun des six refus d''acteur n''a laissé de trace — ni écriture, ni effacement : le refus tombe avant la table');
+
+-- UNE SEULE `upsert_vitrine_translation` (leçon L3). Sa signature a changé : un
+-- `create or replace` n'aurait rien remplacé, il aurait SURCHARGÉ — et la forme
+-- SANS acteur serait restée appelable par `service_role`, chemin oublié écrivant
+-- « system » avec une version que personne ne borne. Le pendant pour le retrait
+-- est en §15f, où vivent ses ACL.
+select is(
+  (select pg_catalog.count(*)::bigint from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'upsert_vitrine_translation'),
+  1::bigint,
+  'une seule `upsert_vitrine_translation` existe : la forme sans acteur ni borne est SUPPRIMÉE, pas surchargée');
+
 
 
 select * from finish();
