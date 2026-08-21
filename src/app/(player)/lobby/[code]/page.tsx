@@ -103,6 +103,25 @@ export default async function LobbyPage({
   // et le booléen est tout ce dont l'écran a besoin pour choisir sa moitié.
   const dejaMembre = (await lireJetonLobby(salle.lobbyId)) !== null;
 
+  // UNE SALLE FINIE NE SE REJOINT PAS, MAIS ELLE SE RELIT. Le résolveur laisse
+  // passer les salles closes de quelques heures pour que le résultat d'une
+  // partie survive à un rechargement (la révélation ferme la salle). Celui qui
+  // n'a pas le cookie n'y a pas joué : il reçoit le refus indistinct, exactement
+  // comme sur un code inventé — et surtout pas un formulaire pour entrer dans
+  // une partie qui n'existe plus.
+  if (!salle.vivante && !dejaMembre) {
+    return (
+      <LobbyShell
+        titre="Le salon"
+        chapeau="Retrouvez-vous ici avant de jouer, à la même table ou non."
+      >
+        <LobbyCarton>
+          <p className="text-center text-sm text-k-body">{INDISPONIBLE}</p>
+        </LobbyCarton>
+      </LobbyShell>
+    );
+  }
+
   return (
     <LobbyShell
       titre="Le salon"

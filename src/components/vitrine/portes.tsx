@@ -107,15 +107,38 @@ export function BlocReserver({
   );
 }
 
+/**
+ * LA PORTE DU DUO MIROIR EST UN BOOLÉEN, ET IL EST LU DÉFENSIVEMENT.
+ *
+ * `portes.experiences.duo` est désormais DÉCLARÉ par `PortesVitrineView` et
+ * mappé en repli fermé (`=== true`) : une vitrine servie depuis un cache d'avant
+ * l'amendement n'a pas la clé, et rend donc `false`. Le repli va dans le sens
+ * qui ne ment pas — ne pas offrir un jeu qui existe est un manque, offrir un jeu
+ * qui n'ouvrira pas est une promesse rompue, sur la page qu'un client consulte
+ * pendant son repas.
+ */
+function duoOuvert(portes: PortesVitrineView["experiences"]): boolean {
+  return portes.duo;
+}
+
 export function BlocExperiences({
   portes,
+  slug,
   lang,
 }: {
   portes: PortesVitrineView["experiences"];
+  /**
+   * Le slug du commerce — la porte du Duo Miroir mène à `/lobby/nouveau/{slug}`,
+   * qui ouvre un salon (socle L16). Il vient de l'état PUBLIC (`etat.slug`), pas
+   * de l'adresse : c'est la valeur que la base a servie, et elle est déjà dans
+   * l'URL de la page.
+   */
+  slug: string;
   lang: LangueVitrine;
 }) {
   const t = TEXTES_VITRINE[lang];
-  if (portes.quiz.length === 0) return null;
+  const duo = duoOuvert(portes);
+  if (portes.quiz.length === 0 && !duo) return null;
 
   return (
     <section
@@ -131,6 +154,16 @@ export function BlocExperiences({
         {t.experiencesInvite}
       </p>
       <ul className="space-y-2">
+        {/* « Duo Miroir » NE SE TRADUIT PAS — nom propre de produit, motif
+            « Instagram » / « TikTok ». La ligne qui l'explique, elle, suit la
+            langue de la page. */}
+        {duo && (
+          <CarteLien href={`/lobby/nouveau/${slug}`} nom="Duo Miroir">
+            <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
+              {t.duoInvite}
+            </span>
+          </CarteLien>
+        )}
         {portes.quiz.map((q) => (
           <CarteLien key={q.slug} href={`/quiz/${q.slug}`} nom={q.titre} />
         ))}

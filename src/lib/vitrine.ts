@@ -867,6 +867,16 @@ export interface PortesVitrineView {
   };
   experiences: {
     quiz: PorteQuizVitrineView[];
+    /**
+     * Duo Miroir est-il JOUABLE ici (L17) — un booléen, et rien de plus.
+     *
+     * La base ne publie ni le nombre de fiches épinglées ni leurs noms : le
+     * lien à peindre se déduit du slug (`/lobby/nouveau/{slug}`), et publier
+     * la sélection du commerçant reviendrait à annoncer la carte du jeu avant
+     * que les joueurs l'ouvrent. Sa vérité vit dans `duo_jouable()` — au moins
+     * deux fiches épinglées, la même condition qui laisse la manche démarrer.
+     */
+    duo: boolean;
   };
 }
 
@@ -1194,6 +1204,10 @@ export function mapPortesVitrine(raw: unknown): PortesVitrineView {
     },
     experiences: {
       quiz: mapListePortes(experiences?.quiz, mapPorteQuiz),
+      // REPLI FERMÉ : tout ce qui n'est pas exactement `true` vaut « pas de
+      // jeu ici ». Un document ancien (d'avant L17) n'a pas la clé, et la
+      // porte ne doit pas s'ouvrir sur une absence.
+      duo: experiences?.duo === true,
     },
   };
 }

@@ -2204,6 +2204,30 @@ select results_eq(
   array['activites', 'files', 'offres'],
   'le bloc Réserver porte ses TROIS listes, nommées comme les trois pages publiques du module');
 
+-- LE BLOC EXPÉRIENCES, ET SA LISTE EST CLOSE ELLE AUSSI (porte Duo Miroir,
+-- L17). Cette assertion manquait : `experiences` était le seul bloc de `portes`
+-- dont le jeu de clés n'était verrouillé nulle part, si bien qu'une clé ajoutée
+-- là ne faisait rougir personne. Elle l'est maintenant.
+--
+-- `duo` EST UN BOOLÉEN, PAS UNE LISTE, et c'est la seule dissymétrie du
+-- document : un commerce publie N quiz, chacun à son adresse — donc l'écran a
+-- besoin de leurs slugs — mais UN seul Duo Miroir, à une adresse déductible du
+-- slug de la vitrine. « Oui » ou « non » est tout ce qu'il y a à dire.
+select results_eq(
+  $$select key from pg_catalog.jsonb_each(
+      public.vitrine_public_state('tap-portes') #> '{portes,experiences}')
+     order by key$$,
+  array['duo', 'quiz'],
+  'le bloc Expériences porte SA liste de quiz et SON drapeau duo, et cette liste de clés est close');
+
+-- G n'a aucune fiche Duo épinglée : la porte est FAUSSE, et surtout elle est
+-- PRÉSENTE. Une clé absente aurait obligé l'écran à distinguer « pas de jeu » de
+-- « pas de clé » — exactement ce que les quatre listes évitent depuis VIT-3.
+select is(
+  public.vitrine_public_state('tap-portes') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'une vitrine sans fiche Duo épinglée rend le drapeau à FAUX, et non une clé absente');
+
 -- LES LISTES EXISTENT MÊME VIDES. E n'a aucune fixture de Réserver ni de quiz,
 -- et pourtant sa réponse porte les six clés : c'est ce qui permet à l'écran de
 -- masquer un bloc sans distinguer « pas de file » de « pas de clé ».

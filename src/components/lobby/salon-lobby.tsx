@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
 import { messageRefusEntree } from "@/components/lobby/refus";
+import { DuoExperience } from "@/components/duo/duo-experience";
 
 /**
  * `/lobby/[code]` — l'écran unique du socle : on y entre, puis on y attend.
@@ -168,6 +169,24 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   // sinon l'hôte reclique sur une liste périmée (voir `retirer`). Une relecture
   // en tir-et-oublie rendait la main avant que la liste n'ait bougé.
   const lireRef = useRef<() => Promise<void>>(async () => undefined);
+  // COMPTEUR DE GÉNÉRATION — la seule chose qui empêche une réponse ANCIENNE
+  // d'écraser une récente.
+  //
+  // Le scrutin (3 s) et la relecture explicite de `verrouiller` / `retirer`
+  // partent du MÊME écran à quelques centaines de millisecondes d'écart, et
+  // rien dans le transport ne garantit qu'elles reviennent dans l'ordre où
+  // elles sont parties. Le cas qui coûte : l'hôte verrouille, un scrutin déjà
+  // EN VOL depuis avant le verrou rapporte `status: "lobby"` et arrive APRÈS le
+  // `locked` — l'écran retombe sur « la partie commence » (ou, en duo, démonte
+  // `DuoExperience`) alors que la base dit le contraire.
+  //
+  // Chaque lecture prend donc un numéro AU DÉPART ; au retour, si ce numéro
+  // n'est plus le dernier émis, le résultat est jeté — état, refus muet ET
+  // arrêt du scrutin compris : une lecture périmée n'a pas plus le droit de
+  // tuer la minuterie que de repeindre l'écran. Un délai n'aurait fait que
+  // déplacer la fenêtre ; l'ordre d'émission, lui, est connu avec certitude
+  // côté client.
+  const generationRef = useRef(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -186,9 +205,12 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
     const lire = async () => {
       // Onglet en arrière-plan : rien n'est lu. C'est la moitié du budget.
       if (arrete || document.hidden) return;
+      const generation = ++generationRef.current;
       try {
         const suivant = await getLobbyState(lobbyId);
-        if (!vivant) return;
+        // DÉPASSÉE PENDANT LE VOL : une lecture plus récente est partie après
+        // celle-ci, sa réponse fait foi. On ne peint rien, on n'arrête rien.
+        if (!vivant || generation !== generationRef.current) return;
         if (suivant.state !== "ok") {
           // Refus MUET de `lobby_state` : salle inconnue, cookie effacé OU
           // jeton non membre, indistinctement — et l'écran n'en dira pas plus
@@ -303,6 +325,38 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
         </p>
       </LobbyCarton>
     );
+  }
+
+  // ── DUO MIROIR (L17) — LE VERROU N'EST PLUS UNE FIN, C'EST LE DÉPART ──
+  //
+  // Sur une salle « duo », `locked` ne mène pas à l'écran « la partie commence »
+  // mais au jeu lui-même, qui ouvre sa propre manche et tient son propre
+  // scrutin. Le scrutin de la salle, lui, s'est déjà arrêté (`TERMINAUX`) : plus
+  // rien de la SALLE ne bouge, tout ce qui bouge est dans `duo_rounds`.
+  //
+  // CE TEST PASSE AVANT « EXPIRÉ » ET AVANT « REFERMÉ », ET C'EST LA CONDITION
+  // POUR QUE LE RÉSULTAT S'AFFICHE. La révélation FERME la salle et ramène sa
+  // date de mort à l'instant même : à la seconde où les deux choix se
+  // rencontrent, la salle est `closed` ET périmée. Placé plus bas, ce test
+  // n'aurait jamais été atteint — l'écran de résultat aurait été remplacé par
+  // « ce salon a pris fin », c'est-à-dire par une panne, sur une partie qui vient
+  // de parfaitement se dérouler. C'est aussi pourquoi `duo_state` ne regarde ni
+  // `status` ni `expires_at` du lobby : les deux moitiés tiennent le même
+  // arbitrage.
+  //
+  // Une salle « duo » encore en attente (`lobby`) reste sous la règle commune :
+  // elle expire comme les autres, et ce test ne la voit pas.
+  //
+  // ── LE STATUT VOYAGE AVEC, PARCE QUE `closed` A DEUX CAUSES ──
+  //
+  // La révélation en est une ; `close_player_lobby_as_org` — le commerçant
+  // referme la salle depuis son dashboard — en est une autre, et elle tombe
+  // AVANT la révélation. Vues d'ici les deux sont le même mot, et `duo_state`
+  // ne les distingue pas non plus (il ne regarde pas le lobby, à dessein). Seul
+  // cet endroit tient les deux moitiés à la fois : on passe donc le statut, et
+  // c'est `DuoExperience` qui les croise avec l'état de sa manche.
+  if (vue.kind === "duo" && (vue.status === "locked" || vue.status === "closed")) {
+    return <DuoExperience lobbyId={lobbyId} statutSalle={vue.status} />;
   }
 
   const restants = msRestants(vue.expiresAt);

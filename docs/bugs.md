@@ -4532,16 +4532,38 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
 
-**État : OUVERT, borné, consigné. Condition avant que L17/L18 publient l'entrée
-depuis la Vitrine.** Aujourd'hui sans impact : aucun lien du produit ne mène à
-`/lobby` (vérifié à la revue).
+**État : OUVERT. Remède POSÉ mais NON ARMÉ.** La formulation précédente disait
+« fermé sous condition de clés », ce qui se lit « fermé » — et la contre-revue
+L17 a eu raison de refuser ce mot : **tant que les clés ne sont pas posées, ce
+lot n'ajoute aucune protection.** Le code du remède existe (`createLobby`, L17,
+Turnstile sur la création seule) et s'armera au geste propriétaire **déjà requis
+pour « Réserver » depuis L4** — poser `TURNSTILE_SECRET_KEY` **et**
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Aucun déploiement supplémentaire ne sera
+nécessaire ce jour-là.
 
-**Le fait.** Un anonyme qui connaît un slug de vitrine peut occuper le quota de
-salons d'un commerce : `create` + rejoindre sa propre salle avec un second
-cookie + `lock` = trois requêtes pour une place tenue une heure. Régime
-soutenu : **~15 requêtes/heure**, très en dessous du seuil d'observation
-(`lobbyIp`, 3 600/h) — le capteur ne se déclenche jamais. Les vrais clients du
-commerce reçoivent alors « Beaucoup de salles sont déjà ouvertes ici ».
+**LES DEUX CLÉS, JAMAIS UNE SEULE** (revue L17, I-3) : avec la clé publique
+seule, le widget s'affiche et bloque le bouton, mais le serveur ne vérifie
+**rien** — un POST direct crée le salon quand même. Une configuration à moitié
+faite est pire qu'aucune : elle donne l'apparence d'une protection. Le même
+piège existe déjà sur « Réserver ».
+
+**L17/L18 PEUVENT PUBLIER L'ENTRÉE DEPUIS LA VITRINE.** C'était la condition
+posée par la contre-revue L16, et elle est levée : le remède est en place et
+s'armera seul. Ce qui reste au propriétaire n'est pas un travail de code, c'est
+la paire de clés qu'il doit de toute façon poser pour un autre module.
+
+**Le fait** (description conservée — le mécanisme reste exact). Un anonyme qui
+connaît un slug de vitrine peut occuper le quota de salons d'un commerce :
+`create` + rejoindre sa propre salle avec un second cookie + `lock` = trois
+requêtes pour une place tenue une heure. Le quota étant de **20 salles**, tenir
+la totalité en régime soutenu coûte `20 × 3` = **~60 requêtes/heure**, très en
+dessous du seuil d'observation (`lobbyIp`, 3 600/h) — le capteur ne se déclenche
+jamais. Les vrais clients du commerce reçoivent alors « Beaucoup de salles sont
+déjà ouvertes ici ».
+
+> *L'entrée portait « ~15 requêtes/heure ». Le chiffre était sous-estimé : il
+> comptait une salle et non le quota entier. L'arithmétique est écrite ci-dessus
+> pour être vérifiable — 20 places × 3 requêtes, renouvelées à l'heure.*
 
 **Pourquoi ce n'est pas réparable en SQL.** Aucun prédicat portant sur une
 appartenance attestée par cookie ne distingue *un attaquant qui frappe N
@@ -4552,10 +4574,29 @@ récentes) a été livré et **ne ferme pas** le chemin — il le borne.
 ramené à une heure, liste des salons actifs dans le dashboard commerçant, geste
 de fermeture par salon. Le déni est devenu court, visible et réversible.
 
-**Ce qui le fermerait, et qui appartient au propriétaire** : Turnstile sur la
-création seule (friction et tiers script sur un parcours gratuit), ou seau
-`failClosed` par IP sur la création seule (heurte ADR-032, mais le rayon d'action
-est plus petit que celui du déni qu'il empêche : « cette IP n'ouvre pas de salon
-pendant une heure » contre « plus personne dans ce commerce n'ouvre de salon »).
+**Le remède retenu, et pourquoi celui-là** (L17). Turnstile sur `createLobby`
+**seulement** :
+
+- **Jamais sur `joinLobby`.** L'invité qui scanne un code ne CRÉE rien : il ne
+  peut pas occuper le quota. Lui opposer un contrôle mettrait la friction devant
+  quelqu'un qui est déjà assis à la table, sans rien protéger.
+- **Plutôt qu'un seau `failClosed` par IP**, l'autre remède envisagé : sur une
+  clé partagée, refuser coupe le NAT d'un centre commercial entier — ADR-032
+  interdit ce refus en parcours public, et l'exception ne se justifiait pas ici.
+- **Inerte aujourd'hui, et c'est la moitié de la décision.** Le challenge n'est
+  opposé que si les DEUX clés sont posées (`lobbyChallengeDisponible`, motif
+  exact de `reserverChallengeDisponible`). Elles ne le sont pas : le parcours
+  reste donc au caractère près celui d'avant — aucune friction, aucun script
+  tiers, aucune latence pour une tablée de café. Le coût n'est payé que le jour
+  où la protection sert.
+
+Refus côté serveur : `{ ok: false, error: "Vérification anti-robot échouée,
+réessayez." }`, **avant** la résolution du commerce — aucune RPC, aucun quota
+consommé, aucun oracle sur l'existence du slug. Le compteur `lobbyIp` est
+consommé AVANT le challenge, pour qu'une rafale bloquée reste visible du capteur.
+
+**Où c'est écrit** : `src/actions/lobby.ts` (en-tête + `createLobby`),
+`src/components/lobby/creation-lobby-form.tsx` (widget `TurnstileGate`),
+8 tests dans `src/actions/lobby.test.ts`.
 
 **Voir** : ADR-109 §A4 amendé (`docs/decisions.md`), revue et contre-revue L16.

@@ -1918,3 +1918,58 @@ values
    'e2e10000-0000-4000-8000-000000000001', repeat('b3', 32), 'Hôte Périmé',
    now() - interval '40 minutes')
 on conflict (id) do nothing;
+
+
+-- ════════════════════════════════════════════════════════════
+-- DUO MIROIR — LE PLATEAU DE « E2E Café » (L17, 20261018120000)
+--
+-- QUATRE FICHES ÉPINGLÉES ET UNE SUGGESTION, prises dans la carte déjà semée
+-- plus haut : aucune fiche neuve ici, et c'est délibéré. Le seed vise 100 % de
+-- couverture de traduction anglaise (19 lignes pour un seuil produit à 95 %) —
+-- ajouter une fiche sans sa traduction ferait tomber le ratio sous le seuil,
+-- disparaître le sélecteur de langue de la vitrine, et rougir vitrine.test.sql.
+-- Le jeu se joue très bien avec ce qui est déjà sur la carte.
+--
+-- LE CHOIX DES QUATRE : deux entrées, un plat, un verre. Assez varié pour que
+-- « ce que je t'offrirais » ait un sens, et assez court pour tenir sur un écran
+-- de téléphone. « Curry de légumes grillés » est volontairement ÉCARTÉ des
+-- options — non parce qu'il est indisponible (le plateau ne filtre PAS sur
+-- `disponible`, la question posée étant « que t'offrirais-je », pas « qu'est-ce
+-- qu'il reste en cuisine »), mais pour garder deux fiches de la carte HORS
+-- plateau : un parcours E2E a besoin d'un identifiant valide chez ce commerce
+-- et pourtant refusé par duo_choose, et c'est ainsi qu'il en trouve un.
+--
+-- LA SUGGESTION EST « Limonade artisanale », qui n'est PAS une option. C'est le
+-- cas le plus intéressant du jeu — le commerce propose ce à quoi aucun des deux
+-- n'avait pensé — et c'est aussi celui qui prouve qu'une suggestion ne se
+-- choisit pas : duo_choose ne valide que contre duo_options.
+--
+-- AUCUN LOBBY « duo » N'EST SEMÉ, contrairement aux deux salles « bande » de
+-- L16 ci-dessus. Une salle Duo Miroir ne vit que le temps d'une partie et se
+-- FERME toute seule à la révélation : semer une salle verrouillée donnerait aux
+-- tests une salle déjà à moitié jouée, dont l'état dépendrait de qui a tourné
+-- avant eux. Les tests créent la leur, jouent, et la révélation la ferme.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.duo_options (id, organization_id, item_id, ordre)
+values
+  ('e2ec0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001',
+   'e2f10000-0000-4000-8000-000000000031', 1),   -- Velouté de potiron
+  ('e2ec0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001',
+   'e2f10000-0000-4000-8000-000000000032', 2),   -- Houmous du jour
+  ('e2ec0000-0000-4000-8000-000000000003',
+   'e2e10000-0000-4000-8000-000000000001',
+   'e2f10000-0000-4000-8000-000000000033', 3),   -- Tartare de bœuf
+  ('e2ec0000-0000-4000-8000-000000000004',
+   'e2e10000-0000-4000-8000-000000000001',
+   'e2f10000-0000-4000-8000-000000000035', 4)    -- Côtes-du-rhône
+on conflict (id) do nothing;
+
+-- « Limonade artisanale » — hors plateau, présentée APRÈS la révélation.
+insert into public.duo_settings (organization_id, suggestion_item_id)
+values
+  ('e2e10000-0000-4000-8000-000000000001',
+   'e2f10000-0000-4000-8000-000000000036')
+on conflict (organization_id) do nothing;

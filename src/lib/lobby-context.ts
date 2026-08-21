@@ -151,16 +151,25 @@ export async function supprimerJetonLobby(lobbyId: string): Promise<void> {
  * et code viennent du client, donc un seau composé avec eux se disperserait sur
  * autant de valeurs inventées que la rafale en essaie. `etape` n'est qu'une
  * ÉTIQUETTE de contexte — elle voyage dans les métadonnées, jamais dans la clé.
+ *
+ * ── POURQUOI L'IP EST RENDUE ──
+ *
+ * `createLobby` en a besoin JUSTE APRÈS, pour la joindre à la vérification
+ * Turnstile (LOBBY-1). La relire de son côté aurait donné deux lectures d'en-
+ * têtes pour une seule requête, et surtout deux endroits où l'ordre « seau
+ * d'abord, challenge ensuite » pourrait diverger. Les appelants qui n'en ont
+ * pas l'usage — `join`, `page` — l'ignorent sans rien changer.
  */
 export async function observerPressionLobby(
   etape: "create" | "join" | "page",
-): Promise<void> {
+): Promise<string> {
   const ip = clientIpFromHeaders(await headers());
   after(() =>
     observerPressionIp(["lobby:ip"], ip, RATE_LIMITS.lobbyIp, "lobby_ip_ceiling", {
       etape,
     }).catch((err) => reportError("lobby.pressure", err)),
   );
+  return ip;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -262,25 +271,53 @@ export async function resoudreCommerceLobby(
  * exige EN PLUS l'empreinte du cookie de cette salle, et rend le même refus muet
  * à qui n'est pas membre. C'est ce qui permet à la page de résoudre le code sans
  * rien apprendre à celui qui l'a tapé au hasard.
+ *
+ * ── ET POURTANT UNE SALLE CLOSE SE RÉSOUT ENCORE, QUELQUES HEURES ──
+ *
+ * Le filtre d'origine perdait le résultat d'une partie AU RECHARGEMENT : la
+ * révélation du Duo Miroir ferme la salle et ramène sa date de mort à l'instant
+ * même, donc « close ET expirée » — l'écran de résultat devenait introuvable
+ * pour ceux-là mêmes qui venaient d'y jouer (CI L17). Une partie qu'on ne peut
+ * pas relire est une partie qu'on n'a pas finie.
+ *
+ * La fenêtre de grâce (`FENETRE_RELECTURE_MS`) court depuis `expires_at` et non
+ * depuis maintenant : elle suit la mort de la salle, pas l'horloge du visiteur.
+ * Et elle ne rend RIEN de plus à un inconnu — la page lit ensuite le cookie de
+ * cette salle : sans lui, elle rend le même écran de refus qu'un code inventé.
+ * Ce qui s'ouvre ici n'est donc pas la salle, c'est la possibilité de prouver
+ * qu'on y était.
  */
+const FENETRE_RELECTURE_MS = 6 * 60 * 60 * 1000;
+
 export async function resoudreLobbyParCode(
   code: string,
-): Promise<{ lobbyId: string } | null> {
+): Promise<{ lobbyId: string; vivante: boolean } | null> {
   // Normalisation ET forme, par le schéma qui sert déjà l'action : un code
   // malformé ne mérite pas un aller-retour, et il rend le même `null`.
   const parsed = lobbyJoinCodeSchema.safeParse(code);
   if (!parsed.success) return null;
 
+  const maintenant = Date.now();
   const admin = createAdminClient();
   const { data } = await admin
     .from("player_lobbies")
-    .select("id")
+    .select("id, status, expires_at")
     .eq("join_code", parsed.data)
-    .in("status", ["lobby", "locked"])
-    .gt("expires_at", new Date().toISOString())
+    .in("status", ["lobby", "locked", "closed"])
+    .gt("expires_at", new Date(maintenant - FENETRE_RELECTURE_MS).toISOString())
     .maybeSingle();
+  if (!data) return null;
 
-  return data ? { lobbyId: data.id as string } : null;
+  // `vivante` = ce que `join_player_lobby` accepterait. La page s'en sert pour
+  // ne JAMAIS proposer de rejoindre une salle finie : on relit un résultat, on
+  // n'entre pas dans une partie qui n'existe plus.
+  const expiresAt = Date.parse(String(data.expires_at));
+  const vivante =
+    (data.status === "lobby" || data.status === "locked") &&
+    Number.isFinite(expiresAt) &&
+    expiresAt > maintenant;
+
+  return { lobbyId: data.id as string, vivante };
 }
 
 // ────────────────────────────────────────────────────────────
