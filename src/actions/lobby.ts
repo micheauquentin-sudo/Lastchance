@@ -374,7 +374,12 @@ async function joinLobbyInner(parsed: {
     // requêtes différentes auraient fini par diverger, et l'écart se serait vu
     // comme un écran de salon peint sur une salle que l'action refuse.
     const salle = await resoudreLobbyParCode(parsed.code);
-    if (!salle) return REFUS_INDISPONIBLE;
+    // `vivante` EXIGÉE ICI, et seulement ici : le résolveur rend aussi les
+    // salles closes d'il y a quelques heures, pour que ceux qui y ont joué
+    // puissent RELIRE leur résultat. Entrer, c'est autre chose — on ne rejoint
+    // pas une partie finie, et la refuser au même endroit que le code inventé
+    // garde l'indistinction intacte.
+    if (!salle || !salle.vivante) return REFUS_INDISPONIBLE;
     const lobbyId = salle.lobbyId;
 
     const admin = createAdminClient();

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * LES ACTIONS DU SOCLE DE LOBBY (L16).
@@ -37,8 +37,18 @@ const { etat } = vi.hoisted(() => ({
     effaces: [] as string[],
     /** Commerce résolu par slug, ou `null` (inconnu / droit fermé). */
     commerce: null as { organizationId: string } | null,
-    /** Lignes rendues par la résolution de `player_lobbies` par code. */
-    lobbyParCode: null as { id: string } | null,
+    /**
+     * Lignes rendues par la résolution de `player_lobbies` par code.
+     *
+     * `status` et `expires_at` sont LUS depuis L17 : le résolveur laisse passer
+     * les salles closes de quelques heures (pour que le résultat d'une partie
+     * survive à un rechargement) et rend `vivante`, dont dépend le droit
+     * d'ENTRER. Un harnais qui les omettrait rendrait toute salle non vivante,
+     * et tous les tests de jointure verdiraient par le mauvais chemin.
+     */
+    lobbyParCode: null as
+      | { id: string; status?: string; expires_at?: string }
+      | null,
     /** Requêtes PostgREST observées : table + filtres posés. */
     requetes: [] as Array<{ table: string; filtres: Record<string, unknown> }>,
     /** Seaux d'observabilité consommés : clé + règle + événement. */
@@ -174,6 +184,17 @@ const { hashLobbyToken, lobbyTokenCookieName, loadOrgLobbies } = await import(
 
 const LOBBY_ID = "11111111-1111-4111-8111-111111111111";
 /**
+ * Une salle OUVRABLE telle que la base la rend : `locked`/`lobby` et non
+ * expirée. Fabriquée à chaque appel — la date est calculée, pas figée, sinon
+ * elle vieillirait avec le fichier et le jour viendrait où toute salle du
+ * harnais serait morte.
+ */
+const SALLE_VIVANTE = () => ({
+  id: LOBBY_ID,
+  status: "lobby",
+  expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+});
+/**
  * L'organisation et l'acteur de la SESSION — de vrais UUID, et c'est nécessaire :
  * `orgLobbiesSchema` et `closeOrgLobbySchema` les exigent, précisément pour
  * qu'un identifiant malformé ne parte jamais vers une RPC qui lèverait une 22023.
@@ -208,7 +229,7 @@ beforeEach(() => {
   etat.poses = [];
   etat.effaces = [];
   etat.commerce = { organizationId: "org-1" };
-  etat.lobbyParCode = { id: LOBBY_ID };
+  etat.lobbyParCode = SALLE_VIVANTE();
   etat.requetes = [];
   etat.pressions = [];
   etat.taches = [];
@@ -663,17 +684,40 @@ describe("joinLobby — entrer par le code", () => {
     expect(etat.rpc.find((r) => r.nom === "join_player_lobby")).toBeUndefined();
   });
 
-  it("la résolution du code exclut les salles CLOSES et les salles MORTES", async () => {
-    // Le filtre est le même que celui de `join_player_lobby`, et c'est ce qui
-    // rend « code inventé » et « code périmé » indistinguables PLUS TÔT, dès la
-    // page. Sans `expires_at > now()`, un salon mort resterait résolvable et son
-    // écran d'attente se peindrait sur une salle que la RPC refuse.
+  it("la résolution laisse passer les salles CLOSES, mais on n'y ENTRE pas", async () => {
+    // ── CE QUE CE TEST A CESSÉ DE DIRE, ET POURQUOI ──
+    //
+    // Il exigeait `status in ('lobby','locked')` — ce qui perdait le résultat
+    // d'une partie AU RECHARGEMENT : la révélation du Duo Miroir ferme la salle
+    // et ramène sa date de mort à l'instant même, donc l'écran de résultat
+    // devenait introuvable pour ceux-là mêmes qui venaient d'y jouer (CI L17).
+    //
+    // La résolution accepte donc `closed` sur une fenêtre de relecture, et
+    // c'est `vivante` qui porte désormais le droit d'ENTRER. Les deux moitiés
+    // sont vérifiées ici, parce que l'une sans l'autre serait une régression :
+    // élargir le filtre sans refuser l'entrée rouvrirait une partie finie.
     await joinLobby(null, form());
 
     const requete = etat.requetes.find((r) => r.table === "player_lobbies")!;
     expect(requete.filtres.join_code).toBe("ABC234");
-    expect(requete.filtres.status).toEqual(["lobby", "locked"]);
+    expect(requete.filtres.status).toEqual(["lobby", "locked", "closed"]);
     expect(typeof requete.filtres["expires_at>"]).toBe("string");
+  });
+
+  it("une salle CLOSE ne se rejoint pas — même refus qu'un code inventé", async () => {
+    etat.lobbyParCode = {
+      id: LOBBY_ID,
+      status: "closed",
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+
+    const verdict = await joinLobby(null, form());
+
+    expect(verdict).toEqual(REFUS_INDISPONIBLE);
+    // ET SURTOUT : la RPC n'est pas appelée. Le refus est décidé par `vivante`,
+    // pas par la base — donc aucune place n'est prise, aucun cookie posé.
+    expect(etat.rpc.find((r) => r.nom === "join_player_lobby")).toBeUndefined();
+    expect(etat.poses).toHaveLength(0);
   });
 
   it("un code MALFORMÉ rend exactement le même refus qu'un code inventé", async () => {
@@ -688,7 +732,7 @@ describe("joinLobby — entrer par le code", () => {
 
     // Et le contre-test qui donne son sens à l'égalité : sans lui, une action
     // qui refuserait TOUT passerait ces quatre assertions.
-    etat.lobbyParCode = { id: LOBBY_ID };
+    etat.lobbyParCode = SALLE_VIVANTE();
     const valide = await joinLobby(null, form("ABC234"));
 
     for (const verdict of [invente, zeroInterdit, tropCourt, vide]) {
