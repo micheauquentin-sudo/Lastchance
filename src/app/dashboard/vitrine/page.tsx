@@ -46,15 +46,18 @@ export default async function VitrineDashboardPage() {
   const ctx = await loadVitrineDashboardContext();
   const settings = ctx.ok ? ctx.settings : null;
   const cartes = ctx.ok ? ctx.cartes : [];
+  const organizationId = ctx.ok ? ctx.organizationId : null;
 
   /**
    * LES CONTENUS MIS EN AVANT ET LES OUVERTURES — deux lectures, un seul aller.
    *
-   * Elles passent par le client de SESSION et non par l'admin : les deux
-   * tables sont sous RLS de membre (`vitrine_contenus: member select`,
-   * `module_page_opens: member select`), le cloisonnement est donc fait par la
-   * base et cette page n'a aucune organisation à nommer. C'est le motif des
-   * pages `dashboard/calendar/[id]` et `dashboard/jackpot/[id]`.
+   * Client de SESSION, RLS de membre — ET le filtre d'organisation EXPLICITE
+   * quand même (revue L14, E1) : `is_org_member` est vrai pour TOUTES les
+   * organisations d'un utilisateur multi-comptes, pas pour la seule active.
+   * Sans `.eq`, un franchisé voyait les « À la une » de ses deux enseignes
+   * mélangés — et pouvait en recopier un chez l'autre d'un clic. Le motif réel
+   * du dépôt est celui-là : `dashboard/calendar/[id]` et `jackpot/[id]` posent
+   * TOUS le `.eq("organization_id", …)` en plus de la RLS.
    *
    * `resource_id` est `vitrine_settings.id`, jamais le slug : le beacon public
    * envoie le slug, `/api/page-opens` le traduit, et le compteur est indexé sur
@@ -62,11 +65,12 @@ export default async function VitrineDashboardPage() {
    * aux chasses qui comptent par sous-objet.
    */
   const supabase = await createClient();
-  const [contenus, ouvertures] = settings
+  const [contenus, ouvertures] = settings && organizationId
     ? await Promise.all([
         supabase
           .from("vitrine_contenus")
           .select("rang, titre, url")
+          .eq("organization_id", organizationId)
           .order("rang")
           .then(({ data }) => (data ?? []) as ContenuVitrineView[]),
         readModulePageOpenCount(supabase, "vitrine", settings.id),
