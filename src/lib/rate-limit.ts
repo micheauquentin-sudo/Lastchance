@@ -736,9 +736,12 @@ export const RATE_LIMITS = {
    *  pourtant été livrée OBSERVATOIRE, parce qu'ADR-032 interdit le refus sur
    *  clé partagée dans un parcours public (le Wi-Fi du café est l'IP de toute
    *  la table). Cette tension est TRANCHÉE par l'amendement §A4 (revue L16,
-   *  M-1) : la garde 1 observe, et le REFUS effectif est porté par le quota
-   *  SQL durci — seules les salles habitées ou récentes comptent, une rafale
-   *  de salles vides cesse de peser à la fenêtre écoulée. Le plafond par
+   *  M-1) : la garde 1 observe. Le quota SQL durci BORNE l'abus sans le
+   *  fermer — un attaquant qui rejoint et verrouille sa propre salle tient
+   *  une place pour trois requêtes (E-1) —, et ce qui referme vraiment E-1
+   *  est un arbitrage porté au propriétaire : Turnstile ou `failClosed` sur
+   *  la CRÉATION seule. En attendant, le déni est court (TTL verrouillé d'une
+   *  heure), visible et réversible (le commerçant voit et ferme). Le plafond par
    *  cookie joueur reste écarté par §A4, qui le dit décoratif (« il ne protège
    *  rien qu'un joueur motivé ne contourne en effaçant son cookie ») — ne pas
    *  le réintroduire en croyant compléter le lot.

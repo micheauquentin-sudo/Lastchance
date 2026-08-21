@@ -7421,10 +7421,29 @@ la création pour les vrais clients à quarante requêtes par heure (E-1).
 **Décision.**
 1. La garde 1 de §A4 est actée **observatoire** : le seau `lobbyIp` compte,
    alerte, et ne refuse jamais. ADR-032 prime.
-2. Le **refus effectif** est porté par le quota SQL **durci** : seules les
-   salles *habitées ou récentes* comptent (verrouillée, OU créée depuis moins
-   de dix minutes, OU au moins deux membres). Une rafale de salles vides cesse
-   de peser à la fenêtre écoulée ; l'usage légitime ne paie rien.
+2. Le quota SQL est **durci** — seules les salles *habitées ou récentes*
+   comptent (verrouillée, OU créée depuis moins de dix minutes, OU au moins
+   deux membres) — mais **il ne ferme pas E-1, et il ne le fermera jamais**.
+   La contre-revue l'a démontré chiffres en main : l'attaquant reçoit le
+   `join_code` de sa propre salle, la rejoint avec un second cookie, la
+   verrouille, et tient une place pour trois requêtes ; le déni se maintient à
+   **~15 requêtes par heure**, moins cher que les 40 de l'attaque d'origine.
+   La raison est structurelle et vaut d'être écrite une fois pour toutes :
+   **aucun prédicat portant sur une appartenance attestée par cookie ne peut
+   distinguer un attaquant qui frappe N cookies de N personnes.** Le levier
+   n'est pas en SQL.
+   **Ce qui est fait à la place** : rendre le déni COURT, VISIBLE et
+   RÉVERSIBLE — TTL des salles verrouillées ramené de quatre heures à une
+   heure (une partie dure quinze minutes), liste des salles actives dans le
+   dashboard du commerçant, et geste de fermeture par salle. Vingt salles-squat
+   se ferment en vingt clics au lieu de se subir.
+   **Ce qui reste à trancher par le propriétaire** (porté au bilan, condition
+   avant que L17/L18 publient l'entrée depuis la Vitrine) : Turnstile sur la
+   création seule, ou seau `failClosed` par IP sur la création seule. Le second
+   heurte ADR-032, mais la comparaison de rayon d'action n'avait jamais été
+   posée — saturer ce seau coûterait « cette IP n'ouvre pas de salon pendant
+   une heure », là où le déni actuel coûte « plus personne dans ce commerce
+   n'ouvre de salon ». C'est cet arbitrage-là, et lui seul, qui referme E-1.
 3. L'hôte dispose d'un **retrait par rang** (`kick_player_lobby`) : un porteur
    de code qui occupe les places se retire sans consommer le quota (M-2). C'est
    un retrait de place, pas un bannissement — le bannissement serait un autre

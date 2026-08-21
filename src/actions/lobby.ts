@@ -43,9 +43,17 @@ import {
 //      il OBSERVE, il ne refuse pas.
 //   2. Quota par organisation — EN SQL, sous verrou consultatif, dans
 //      `create_player_lobby`, et DURCI : seules les salles habitées ou
-//      récentes comptent. C'est LUI le refus effectif. Rien à rejouer ici.
-//   3. TTL : trente minutes, quatre heures après verrouillage, plafond dur de
-//      vingt-quatre heures en `check`. En SQL également.
+//      récentes comptent. Il BORNE, il ne ferme pas : un attaquant qui
+//      rejoint et verrouille sa propre salle tient une place pour trois
+//      requêtes (E-1, contre-revue L16). Aucun prédicat sur une appartenance
+//      attestée par cookie ne distingue N cookies de N personnes — le levier
+//      n'est pas ici. Ce qui est fait : TTL verrouillé d'une heure, et le
+//      commerçant voit et ferme ses salles. Ce qui reste à trancher est au
+//      bilan (Turnstile ou failClosed sur la création seule).
+//   3. TTL : trente minutes, UNE heure après verrouillage (ramené de quatre —
+//      une partie dure quinze minutes, et quatre heures étaient devenues la
+//      durée de vie d'une salle-squat), plafond dur de vingt-quatre heures en
+//      `check`. En SQL également.
 //   4. Plafond par cookie joueur — ÉCARTÉ. §A4 le dit décoratif : il ne protège
 //      rien qu'un joueur motivé ne contourne en effaçant son cookie.
 //
