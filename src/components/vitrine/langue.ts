@@ -45,6 +45,38 @@ export interface TextesVitrine {
   propulsePar: string;
   /** Le nom de CETTE langue, tel qu'on l'écrit dans cette langue. */
   nomLangue: string;
+
+  // ── LES PORTES DES MODULES (VIT-3) ──────────────────────────────
+  //
+  // SEUL LE CHROME EST ICI. Les NOMS des activités, des files, des offres et
+  // des quiz restent en français sur les deux variantes : `portes` ne porte
+  // aucun champ traduisible (migration 20261014120000), et les y faire entrer
+  // aurait fait retomber toute vitrine traduite sous le seuil de 95 % du
+  // sélecteur de langue le jour de la livraison.
+  /** Titre du bloc « Réserver ». */
+  reserverTitre: string;
+  /** Groupe des activités à créneaux → `/reserver/{id}`. */
+  reserverActivites: string;
+  /** Groupe des files d'accueil → `/reserver/file/{id}`. */
+  reserverFiles: string;
+  /** Groupe des offres à stock → `/reserver/stock/{id}`. */
+  reserverOffres: string;
+  /** Titre du bloc des jeux. */
+  experiencesTitre: string;
+  /**
+   * La phrase du LANCEMENT VOLONTAIRE : rien ne démarre tout seul. Elle est de
+   * produit, pas de décoration — c'est ce qui distingue une porte d'une
+   * redirection.
+   */
+  experiencesInvite: string;
+  /**
+   * L'étiquette BCP 47 pour `Intl.DateTimeFormat`. `en-GB` et non `en-US` :
+   * l'anglais servi ici s'adresse à un visiteur EN EUROPE, à qui « 6:00 PM »
+   * pour une fermeture à 18 h se lit moins vite que « 18:00 ».
+   */
+  localeFenetre: string;
+  /** La fenêtre de retrait d'une offre, bornes DÉJÀ formatées. */
+  fenetreOffre: (debut: string, fin: string) => string;
   /**
    * Les entrées à argument sont des FONCTIONS et non des gabarits à trous :
    * « Search in {menu} » et « Rechercher dans {carte} » ne placent pas leur
@@ -72,6 +104,14 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     allergenes: "Allergènes",
     propulsePar: "Lastchance",
     nomLangue: "Français",
+    reserverTitre: "Réserver",
+    reserverActivites: "Réserver une table",
+    reserverFiles: "File d'attente",
+    reserverOffres: "Offres du moment",
+    experiencesTitre: "Jeux",
+    experiencesInvite: "À vous de jouer, quand vous voulez.",
+    localeFenetre: "fr-FR",
+    fenetreOffre: (debut, fin) => `À retirer de ${debut} à ${fin}`,
     rechercherDans: (carte) => `Rechercher dans ${carte}`,
     compteResultats: (n) => `${n} résultat${n > 1 ? "s" : ""}`,
     proposeePar: (nom) => `Vitrine proposée par ${nom} · propulsé par`,
@@ -91,6 +131,14 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     allergenes: "Allergens",
     propulsePar: "Lastchance",
     nomLangue: "English",
+    reserverTitre: "Book",
+    reserverActivites: "Book a table",
+    reserverFiles: "Join the queue",
+    reserverOffres: "Offers right now",
+    experiencesTitre: "Games",
+    experiencesInvite: "Your call — start whenever you like.",
+    localeFenetre: "en-GB",
+    fenetreOffre: (debut, fin) => `Pick up from ${debut} to ${fin}`,
     rechercherDans: (carte) => `Search in ${carte}`,
     compteResultats: (n) => `${n} result${n > 1 ? "s" : ""}`,
     proposeePar: (nom) => `Menu by ${nom} · powered by`,

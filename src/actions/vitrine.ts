@@ -7,11 +7,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toJson } from "@/lib/supabase/json";
 import type { ActionResult } from "@/lib/utils";
+import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
-  cheminsPublicsVitrine,
   mapSetVitrineSlug,
   VITRINE_ORDRE_MAX,
-  VITRINE_PUBLIQUE_OUVERTE,
   type SetVitrineSlugResult,
   type ThemeVitrine,
 } from "@/lib/vitrine";
@@ -145,19 +144,17 @@ const MESSAGES_SLUG: Record<
  * rien. Une requête de plus par geste éditorial (la lecture du slug) achète la
  * cohérence immédiate de ce que le commerçant vient d'écrire.
  *
- * LES DEUX LANGUES, pas seulement la française : `cheminsPublicsVitrine` dérive
- * la liste de `VITRINE_LANGUES`. Ne purger que `/v/{slug}` aurait laissé la page
- * anglaise servir l'ancien prix — l'incohérence la plus difficile à voir, parce
- * que c'est celle que le commerçant francophone ne regarde jamais.
+ * ── LA PURGE PUBLIQUE ELLE-MÊME A DÉMÉNAGÉ (revue L13, M3) ──
  *
- * ── LE DRAPEAU RESTE TESTÉ, ET IL SERT ENCORE ──
+ * Elle vit désormais dans `@/lib/revalidate-vitrine`, parce qu'elle a d'autres
+ * appelants : les gestes de Réserver et du Quiz changent les DRAPEAUX que
+ * l'annuaire de portes de VIT-3 publie, et doivent purger les mêmes chemins.
+ * Le détail — les deux langues, le rôle du drapeau serveur, le coût de la
+ * lecture de slug — est écrit là-bas, une seule fois.
  *
- * `VITRINE_PUBLIQUE_OUVERTE` refermé, aucune page publique n'existe : rien n'est
- * en cache, il n'y a rien à purger, et cette lecture du slug serait payée pour
- * rien à chaque clic. La garde n'est donc pas un vestige — c'est ce qui rend
- * l'interrupteur d'urgence gratuit.
- *
- * `slugConnu` évite la lecture quand l'appelant l'a déjà en main.
+ * Ce qui reste ici est ce qui n'appartient qu'à la vitrine : la page du tableau
+ * de bord. Le `slugConnu` traverse — `set_vitrine_slug` est le seul geste qui
+ * fasse naître la ligne, et il passe le sien.
  */
 async function revaliderVitrine(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -165,21 +162,7 @@ async function revaliderVitrine(
   slugConnu?: string | null,
 ): Promise<void> {
   revalidatePath(CHEMIN_DASHBOARD);
-  if (!VITRINE_PUBLIQUE_OUVERTE) return;
-
-  let slug = slugConnu ?? null;
-  if (!slug) {
-    const { data } = await supabase
-      .from("vitrine_settings")
-      .select("slug")
-      .eq("organization_id", organizationId)
-      .maybeSingle();
-    slug = data?.slug ?? null;
-  }
-  // Pas d'adresse = pas de page publique : `set_vitrine_slug` est le seul geste
-  // qui fasse naître la ligne, et il passe son slug en `slugConnu`.
-  if (!slug) return;
-  for (const chemin of cheminsPublicsVitrine(slug)) revalidatePath(chemin);
+  await revaliderVitrinePublique(supabase, organizationId, slugConnu);
 }
 
 /**
@@ -1152,10 +1135,17 @@ function messageContrainte(brut: string): string {
  *
  * ── 42501 EST UNE ANOMALIE, PAS UNE SAISIE ──
  *
- * `gardeEditeurVitrine` a déjà tranché la session, le rôle et le droit ; la RPC
- * ne rend ce code que si l'appel ne porte pas le `service_role` ou si
- * l'organisation de la SESSION n'existe plus. Aucun des deux ne se corrige
- * depuis un écran d'import : c'est l'erreur générique, et elle se journalise.
+ * `gardeEditeurVitrine` a déjà tranché la session, le rôle et le droit. La RPC
+ * rend ce code sur QUATRE causes, et non plus deux — depuis VIT-3 elle reçoit
+ * un `p_actor` et le REVÉRIFIE en SQL : l'appel ne porte pas le `service_role`,
+ * l'organisation de la SESSION n'existe plus, l'acteur est absent, ou il n'est
+ * pas membre `owner`/`editor` de cette organisation-là (simple caissier, ou
+ * membre d'une autre org). Le refus est INDISTINCT — c'est voulu, distinguer
+ * apprendrait au demandeur ce qu'il n'est pas autorisé à savoir.
+ *
+ * Aucune des quatre ne se corrige depuis un écran d'import : ce n'est pas une
+ * saisie à reprendre, c'est une anomalie que la garde aurait dû arrêter avant.
+ * D'où l'erreur générique, et la journalisation.
  *
  * ── 22023 EST INDISTINCT ICI, ET C'EST LE PRIX ASSUMÉ ──
  *
@@ -1223,12 +1213,19 @@ function lireComptesImport(brut: unknown): {
  * allume. Ce geste écrit jusqu'à 133 lignes et une ligne d'audit par appel —
  * voir `RATE_LIMITS.vitrineImport`.
  *
- * ── LA GARDE APPLICATIVE EST LA SEULE, ET C'EST ÉCRIT DANS LA RPC ──
+ * ── DEUX NIVEAUX D'AUTORISATION, PLUS UN SEUL (VIT-3) ──
  *
- * `import_vitrine_carte` est `security definer` / `service_role` et ne vérifie
- * NI l'appartenance NI le droit `vitrine` : elle écrit dans l'organisation qu'on
- * lui nomme, point. Sa sûreté tient entièrement au fait que cette action lui
- * passe l'organisation de la SESSION — jamais un champ du formulaire.
+ * La garde applicative reste PREMIÈRE, et c'est elle qui exige le droit
+ * `vitrine` — que la RPC ne connaît pas. Mais elle n'est plus la seule :
+ * `import_vitrine_carte` reçoit désormais un `p_actor` et le REVÉRIFIE membre
+ * `owner`/`editor` de l'organisation EN SQL, motif exact de `set_vitrine_slug`.
+ *
+ * `p_actor` VIENT DONC DE LA SESSION, jamais du formulaire : un acteur posté
+ * aurait fait de la ligne d'audit — la seule trace d'un geste qui peut refaire
+ * cent vingt fiches d'un coup — une déclaration sur l'honneur de l'appelant.
+ * La RPC refuse en 42501 indistinct (acteur absent, d'une autre organisation,
+ * ou simple caissier), qui retombe sur `GENERIC_ERROR` : ce n'est plus une
+ * saisie à corriger, c'est une anomalie que la garde aurait dû arrêter avant.
  *
  * ── AUCUNE TRADUCTION N'EST ÉCRITE, ET LA COUVERTURE BAISSE ──
  *
@@ -1263,11 +1260,14 @@ export async function importVitrineCarte(
 
   const admin = createAdminClient();
   const { data, error } = await admin.rpc("import_vitrine_carte", {
-    // DE LA SESSION. Jamais du corps de la requête — la RPC ne le revérifie pas.
+    // DE LA SESSION. Jamais du corps de la requête.
     p_organization_id: garde.organizationId,
     // LE PAYLOAD VALIDÉ, et non la chaîne postée : noms détourés, vocabulaires
     // dédoublonnés, clés inconnues déjà refusées.
     p_payload: toJson(parsed.data.import),
+    // DE LA SESSION AUSSI, et la RPC le revérifie membre `owner`/`editor` en
+    // SQL : la ligne d'audit ne recopie pas ce qu'on lui dit.
+    p_actor: garde.userId,
   });
   if (error) return { ok: false, error: messageImport(error) };
 

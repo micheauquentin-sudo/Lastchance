@@ -547,6 +547,23 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+
+/**
+ * LA PURGE DE LA VITRINE EST FEINTE, ET OBSERVÉE (revue L13, M3).
+ *
+ * `revaliderVitrinePublique` lit `vitrine_settings` puis appelle
+ * `revalidatePath` : deux choses que ce fichier n'a aucune raison de rejouer —
+ * le vrai comportement de la purge est tenu par les tests de `@/actions/vitrine`
+ * et par `revalidate-vitrine` lui-même. Ce qu'on veut prouver ICI est le
+ * CÂBLAGE : les trois familles de drapeaux publiés par la vitrine (activité
+ * active, file `open`, offre `open`) la déclenchent après leur succès.
+ *
+ * Motif exact de `campaigns.test.ts` avec `@/lib/revalidate-play`.
+ */
+const purgeVitrine = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/revalidate-vitrine", () => ({
+  revaliderVitrinePublique: purgeVitrine,
+}));
 vi.mock("next/server", () => ({
   after: (fn: () => unknown) => {
     state.taches.push(Promise.resolve().then(fn));
@@ -1216,6 +1233,31 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     expect(ecriture?.table).toBe("reservation_activities");
     expect(ecriture?.values.organization_id).toBe(ORG_ID);
     expect(ecriture?.values.active).toBe(true);
+  });
+
+  it("PURGE LA VITRINE quand le drapeau `active` change — et jamais sur un refus", async () => {
+    // FAMILLE 1 des quatre drapeaux publiés par `/v/{slug}` (VIT-3). Une
+    // activité naît `active` : c'est une porte publiée à l'insertion, et sans
+    // purge la vitrine met une minute (ISR) à l'annoncer — ou à cesser de
+    // l'annoncer quand le commerçant la désactive.
+    await createReserverActivity(null, formData({ name: "Dégustation" }));
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
+
+    purgeVitrine.mockClear();
+    await updateReserverActivity(
+      null,
+      formData({ id: ACTIVITY_ID, name: "Dégustation", active: "false" }),
+    );
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
+
+    // CONTRÔLE NÉGATIF : un refus d'autorisation n'a rien changé en base, donc
+    // rien à purger — et surtout, il ne doit pas payer la lecture du slug.
+    purgeVitrine.mockClear();
+    state.role = "cashier";
+    expect((await createReserverActivity(null, formData({ name: "X" }))).ok).toBe(
+      false,
+    );
+    expect(purgeVitrine).not.toHaveBeenCalled();
   });
 
   it("REFUSE sans le droit `vitrine`, même à un propriétaire", async () => {
@@ -2393,6 +2435,29 @@ describe("files d'accueil — configuration", () => {
     expect(ecriture?.values.status).toBe("paused");
     expect(ecriture?.values.max_live_entries).toBe(12);
   });
+
+  it("PURGE LA VITRINE quand le statut de la file change", async () => {
+    // FAMILLE 2. La vitrine n'annonce que les files `open` : une file passée en
+    // `closed` qui resterait affichée envoie le visiteur sur une porte close,
+    // signée du commerce. Une file peut aussi NAÎTRE `open`, d'où les deux.
+    await createReserverQueue(
+      null,
+      formData({ name: "Comptoir", maxLiveEntries: "12", status: "open" }),
+    );
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
+
+    purgeVitrine.mockClear();
+    await updateReserverQueue(
+      null,
+      formData({
+        queueId: QUEUE_ID,
+        name: "Comptoir",
+        maxLiveEntries: "12",
+        status: "closed",
+      }),
+    );
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
+  });
 });
 
 describe("les animations d'attente (RES-4) se règlent là où le commerçant regarde", () => {
@@ -2879,6 +2944,22 @@ describe("createStockOffer / updateStockOffer — le panneau du commerçant", ()
     delete (sansStatut as Record<string, string>).status;
     await createStockOffer(null, formData(sansStatut));
     expect(state.rlsWrites.at(-1)?.values.status).toBe("draft");
+  });
+
+  it("PURGE LA VITRINE quand le statut de l'offre change", async () => {
+    // FAMILLE 3. `closed` EST l'interrupteur — il n'y a pas de suppression
+    // d'offre — et la vitrine n'annonce que les offres `open` DANS leur fenêtre.
+    // La fenêtre entre donc dans le même filtre que le statut, et se corrige par
+    // le même geste : les deux passent par cette purge.
+    await createStockOffer(null, formData(champs));
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
+
+    purgeVitrine.mockClear();
+    await updateStockOffer(
+      null,
+      formData({ ...champs, id: OFFER_ID, status: "closed" }),
+    );
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), ORG_ID);
   });
 
   it("refuse une fenêtre qui remonte le temps, AVANT toute écriture", async () => {

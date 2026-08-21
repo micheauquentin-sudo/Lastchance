@@ -6,7 +6,7 @@ import {
   type FontKey,
 } from "@/lib/fonts";
 import {
-  VITRINE_BLOCS,
+  VITRINE_BLOCS_DEFAUT,
   VITRINE_STYLES_CARTES,
   type BlocVitrine,
   type StyleCartesVitrine,
@@ -129,11 +129,17 @@ export function resoudreThemeVitrine(
       : STYLE_CARTES_DEFAUT;
 
   // L'ordre PARTIEL est légitime : omettre un bloc, c'est le masquer. Deux cas
-  // seulement retombent sur l'ordre canonique, et aucun n'est un choix du
+  // seulement retombent sur l'ordre par défaut, et aucun n'est un choix du
   // commerçant : la clé ABSENTE (`mapThemeVitrine` ne la pose que si elle
   // existait) et une liste VIDE, qui rendrait une page sans rien.
+  //
+  // LE REPLI EST `VITRINE_BLOCS_DEFAUT` — LES CINQ, PAS LES SEPT. Retomber sur
+  // le vocabulaire complet aurait fait publier les deux portes de VIT-3 à toute
+  // vitrine jamais réglée, sans que personne l'ait demandé : voir le POURQUOI
+  // au-dessus de la constante, dans `@/lib/vitrine`.
   const demandes = theme?.ordre_blocs ?? [];
-  const blocs = demandes.length > 0 ? [...demandes] : [...VITRINE_BLOCS];
+  const blocs =
+    demandes.length > 0 ? [...demandes] : [...VITRINE_BLOCS_DEFAUT];
 
   return {
     primary,

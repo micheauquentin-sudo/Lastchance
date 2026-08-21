@@ -18,6 +18,7 @@ import {
 import { monitored, reportError } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import { refusTransition } from "@/lib/publication-transition";
+import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
   mapQuizAnswerResult,
   mapQuizDraw,
@@ -987,6 +988,10 @@ export async function updateQuiz(
 
   revalidatePath("/dashboard/quiz");
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  // LA VITRINE PUBLIE `titre` ET `slug` (VIT-3) : un renommage ou un changement
+  // d'URL publique laisserait la porte afficher l'ancien libellé une minute
+  // d'ISR — même arbitrage que `setQuizStatus` juste en dessous.
+  await revaliderVitrinePublique(supabase, organization.id);
   return { ok: true, data: undefined };
 }
 
@@ -1211,6 +1216,12 @@ export async function setQuizStatus(
     if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/quiz");
     revalidatePath(`/dashboard/quiz/${id}`);
+    // LA VITRINE PUBLIE CE DRAPEAU (VIT-3, revue L13) : `status = 'active'` est
+    // ce qui fait d'un quiz une porte de `/v/{slug}`, servie en ISR. Le quiz
+    // vient d'en sortir — sans cette purge, la vitrine continue une minute à
+    // annoncer une expérience qui n'est plus jouable. Le POURQUOI complet est
+    // dans `@/lib/revalidate-vitrine`.
+    await revaliderVitrinePublique(supabase, organization.id);
     return { ok: true, data: undefined };
   }
 
@@ -1249,6 +1260,9 @@ export async function setQuizStatus(
 
   revalidatePath("/dashboard/quiz");
   revalidatePath(`/dashboard/quiz/${id}`);
+  // Le quiz vient d'entrer dans l'annuaire des portes — voir la branche
+  // non-`active` ci-dessus.
+  await revaliderVitrinePublique(supabase, organization.id);
   return { ok: true, data: undefined };
 }
 
@@ -1313,6 +1327,10 @@ export async function deleteQuiz(
   }
 
   revalidatePath("/dashboard/quiz");
+  // Un quiz `active` supprimé fait DISPARAÎTRE une porte publiée : même famille
+  // que `setQuizStatus`, et le seul autre chemin par lequel `/v/{slug}` cesse
+  // d'être vrai. La purge passe AVANT le `redirect`, qui lève.
+  await revaliderVitrinePublique(supabase, organization.id);
   redirect("/dashboard/quiz");
 }
 

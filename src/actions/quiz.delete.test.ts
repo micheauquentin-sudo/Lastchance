@@ -28,6 +28,12 @@ const { state } = vi.hoisted(() => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/headers", () => ({ cookies: vi.fn(), headers: vi.fn() }));
+
+/** La purge de la vitrine est feinte et OBSERVÉE — voir le test qui la suit. */
+const purgeVitrine = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/revalidate-vitrine", () => ({
+  revaliderVitrinePublique: purgeVitrine,
+}));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => {
     throw new Error("NEXT_REDIRECT");
@@ -98,6 +104,24 @@ describe("deleteQuiz — les codes QUIZ- non retirés", () => {
     state.deletes = [];
     state.filtresComptage = [];
     state.role = "owner";
+    purgeVitrine.mockClear();
+  });
+
+  it("PURGE LA VITRINE, parce qu'un quiz supprimé emporte sa porte", async () => {
+    // Un quiz `active` est une porte de `/v/{slug}` (VIT-3). Le supprimer est,
+    // avec `setQuizStatus`, le seul geste qui rende l'annuaire public faux —
+    // sans purge, la vitrine annonce une minute une expérience qui n'existe
+    // plus, et le visiteur qui clique tombe sur un 404 signé du commerce.
+    await expect(deleteQuiz(null, form(false))).rejects.toThrow("NEXT_REDIRECT");
+    expect(purgeVitrine).toHaveBeenCalledWith(expect.anything(), "org-1");
+  });
+
+  it("ne purge RIEN quand la suppression n'a pas eu lieu", async () => {
+    // CONTRÔLE NÉGATIF : un refus n'a rien changé en base. Purger quand même
+    // ferait payer la lecture du slug à chaque clic écarté.
+    state.enAttente = 3;
+    expect((await deleteQuiz(null, form(false))).ok).toBe(false);
+    expect(purgeVitrine).not.toHaveBeenCalled();
   });
 
   it("refuse tant qu'un code QUIZ- attend en caisse", async () => {

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { VITRINE_BLOCS } from "@/lib/vitrine";
+
 import {
   createVitrineCarteSchema,
   importVitrineCarteSchema,
@@ -160,6 +162,30 @@ describe("l'ordre des blocs — écarter, jamais refuser", () => {
   it("écarte inconnus et doublons sans rougir", () => {
     expect(theme(JSON.stringify(["accroche", "licorne", "accroche"]))).toEqual([
       "accroche",
+    ]);
+  });
+
+  it("accepte la permutation COMPLÈTE des sept blocs, portes comprises", () => {
+    // SEPT depuis VIT-3, et le SQL accepte exactement sept
+    // (`jsonb_array_length(…) > 7`) : un schéma qui en amputerait un ferait
+    // disparaître une porte que le commerçant vient de replacer.
+    const sept = [...VITRINE_BLOCS];
+    expect(sept).toHaveLength(7);
+    expect(theme(JSON.stringify(sept))).toEqual(sept);
+    expect(theme(JSON.stringify(["reserver", "experiences"]))).toEqual([
+      "reserver",
+      "experiences",
+    ]);
+  });
+
+  it("un HUITIÈME bloc est écarté, et les sept passent quand même", () => {
+    // Écarté et non refusé : le vocabulaire est fermé par construction (le
+    // schéma dérive de `VITRINE_BLOCS`), et un refus enverrait le commerçant
+    // corriger une liste qu'il n'a pas composée à la main. Ce qui compte, c'est
+    // que l'intrus ne parte JAMAIS à la base — la migration le rejetterait en
+    // 23514 et tout l'enregistrement de réglages échouerait avec lui.
+    expect(theme(JSON.stringify([...VITRINE_BLOCS, "jackpot"]))).toEqual([
+      ...VITRINE_BLOCS,
     ]);
   });
 
