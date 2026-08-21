@@ -38,7 +38,7 @@ parallèle, fusions de migrations sérialisées.
 | L13 | VIT-3 — portes Réserver/quiz publiées en **opt-in** (blocs 5→7, purge sur drapeaux, acteur d'import) | ✅ | #169 | 20261014120000 |
 | L14 | VIT-4 — À la une (3 contenus), audience (beacon vitrine), segments réservé/venu | ✅ | #170 | 20261015120000 |
 | L15 | VIT-5 — écran de traduction (version vue bornée, acteur signé) ; langues+ = extension documentée | ✅ | #171 | 20261016120000 |
-| L16 | Socle session joueur | ⏳ | — | — |
+| L16 | Socle session joueur — salons 2-12, code court, TTL, kick, supervision commerçant (E-1 borné : voir `bugs.md` LOBBY-1) | ✅ | #172 | 20261017120000 |
 | L17 | Duo Miroir (A4) | ⏳ | — | — |
 | L18 | Portrait de la Bande (A4, packs de questions) | ⏳ | — | — |
 
