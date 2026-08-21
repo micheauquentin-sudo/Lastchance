@@ -1267,6 +1267,53 @@ values (
 )
 on conflict (id) do nothing;
 
+-- FILE JUMELLE, RÉSERVÉE AU PROJET PLAYWRIGHT `mobile-safari`.
+--
+-- Le commentaire ci-dessus dit que deux navigateurs se partagent « Comptoir
+-- E2E » sans conflit parce que chacun a son cookie. C'EST VRAI DE L'ENTRÉE,
+-- FAUX DE L'APPEL. `queue_call_next` sert le PREMIER de la file, et l'état
+-- « appelé, pas encore servi » est un SINGLETON PAR FILE : quand les deux
+-- projets cliquent « Appeler le suivant » en même temps, l'un consomme le tour
+-- de l'autre. Constaté en CI (run 32527676441) : au retry, le bouton n'était
+-- même plus affiché côté `mobile-safari` — il n'y avait plus rien à appeler.
+-- Aucun durcissement du test ne répare cela ; seule une fixture par projet le
+-- fait, comme la file dédiée de RES-4 juste en dessous.
+--
+-- LE NOM N'A AUCUNE SOUS-CHAÎNE COMMUNE avec « Comptoir E2E », et c'est
+-- délibéré : les specs ciblent l'onglet du dashboard par motif partiel
+-- (`/Comptoir E2E/`). Un libellé qui contiendrait celui de la première file
+-- résoudrait DEUX nœuds et ferait échouer ces locators en mode strict — on
+-- aurait échangé un flake contre une casse déterministe. Même raison pour les
+-- prénoms : Solveig et Nolwenn n'apparaissent nulle part ailleurs dans ce seed.
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values (
+  'e2ea0000-0000-4000-8000-000000000062', 'e2e10000-0000-4000-8000-000000000001',
+  null, 'File E2E WebKit', 'open', 50
+)
+on conflict (id) do nothing;
+
+-- DEUX ENTRÉES EN ATTENTE, dans cet ordre, strictement parallèles à Camille et
+-- Dominique : mêmes conditions de rang, donc même parcours à jouer. `created_at`
+-- reste au défaut pour la même raison qu'au-dessus.
+insert into public.reservation_queue_entries
+  (id, queue_id, organization_id, player_key_hash, display_name)
+values (
+  'e2ea0000-0000-4000-8000-000000000073',
+  'e2ea0000-0000-4000-8000-000000000062', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e6', 32), 'Solveig'
+)
+on conflict (id) do nothing;
+
+insert into public.reservation_queue_entries
+  (id, queue_id, organization_id, player_key_hash, display_name)
+values (
+  'e2ea0000-0000-4000-8000-000000000074',
+  'e2ea0000-0000-4000-8000-000000000062', 'e2e10000-0000-4000-8000-000000000001',
+  repeat('e7', 32), 'Nolwenn'
+)
+on conflict (id) do nothing;
+
 -- FILE DÉDIÉE au Mode Attente active (RES-4, lot L7), DISTINCTE de
 -- « Comptoir E2E » ci-dessus.
 --
