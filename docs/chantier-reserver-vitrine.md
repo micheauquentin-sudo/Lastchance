@@ -37,7 +37,7 @@ parallèle, fusions de migrations sérialisées.
 | L12 | VIT-2 — import assisté (revue obligatoire, RPC atomique) + QR contextuels par ancres | ✅ | #168 | 20261013120000 |
 | L13 | VIT-3 — portes Réserver/quiz publiées en **opt-in** (blocs 5→7, purge sur drapeaux, acteur d'import) | ✅ | #169 | 20261014120000 |
 | L14 | VIT-4 — À la une (3 contenus), audience (beacon vitrine), segments réservé/venu | ✅ | #170 | 20261015120000 |
-| L15 | VIT-5 — langues+ | ⏳ | — | — |
+| L15 | VIT-5 — écran de traduction (version vue bornée, acteur signé) ; langues+ = extension documentée | ✅ | #171 | 20261016120000 |
 | L16 | Socle session joueur | ⏳ | — | — |
 | L17 | Duo Miroir (A4) | ⏳ | — | — |
 | L18 | Portrait de la Bande (A4, packs de questions) | ⏳ | — | — |
