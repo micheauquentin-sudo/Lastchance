@@ -4532,11 +4532,20 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
 
-**État : FERMÉ SOUS CONDITION DE CLÉS.** Le remède est POSÉ dans le code
-(`createLobby`, L17) ; il s'arme au geste propriétaire **déjà requis pour
-« Réserver » depuis L4** — poser `TURNSTILE_SECRET_KEY` et
+**État : OUVERT. Remède POSÉ mais NON ARMÉ.** La formulation précédente disait
+« fermé sous condition de clés », ce qui se lit « fermé » — et la contre-revue
+L17 a eu raison de refuser ce mot : **tant que les clés ne sont pas posées, ce
+lot n'ajoute aucune protection.** Le code du remède existe (`createLobby`, L17,
+Turnstile sur la création seule) et s'armera au geste propriétaire **déjà requis
+pour « Réserver » depuis L4** — poser `TURNSTILE_SECRET_KEY` **et**
 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Aucun déploiement supplémentaire ne sera
 nécessaire ce jour-là.
+
+**LES DEUX CLÉS, JAMAIS UNE SEULE** (revue L17, I-3) : avec la clé publique
+seule, le widget s'affiche et bloque le bouton, mais le serveur ne vérifie
+**rien** — un POST direct crée le salon quand même. Une configuration à moitié
+faite est pire qu'aucune : elle donne l'apparence d'une protection. Le même
+piège existe déjà sur « Réserver ».
 
 **L17/L18 PEUVENT PUBLIER L'ENTRÉE DEPUIS LA VITRINE.** C'était la condition
 posée par la contre-revue L16, et elle est levée : le remède est en place et
