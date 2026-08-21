@@ -27,6 +27,12 @@
 --      révèle JAMAIS toute seule ; l'hôte la clôt, les non-votants restent des
 --      abstentions, et le dénominateur ne bouge pas. Le tour suivant en re-fige
 --      un neuf.
+--  7b. MAIS L'HÔTE NE CLÔT PAS QUAND IL VEUT (revue L18, E-1). Sous
+--      `least(3, denominateur)` gestes, `bande_reveal` rend `trop_tot` et
+--      n'écrit rien : sans ce plancher, l'hôte votait, attendait que le compte
+--      passe à deux, clôturait, retranchait sa propre voix et tenait le choix
+--      EXACT de son voisin. Le compte lui-même n'est rendu qu'à QUI A DÉJÀ
+--      RÉPONDU — sinon le plancher n'aurait été qu'un détour.
 --   8. LE VOTE EST SCELLÉ. Rejouer le même est idempotent ; en désigner un
 --      autre, ou passer après avoir voté, est refusé ET n'écrit rien.
 --   9. ON NE VOTE PAS POUR SOI, et le refus est INDISTINCT de celui d'une cible
@@ -41,7 +47,10 @@
 --      cours — seuls les NOMMÉS y figurent, et la purge l'emporte en cascade.
 --  14. LES ACL. service_role seul sur les sept RPC, personne sur les deux
 --      aides ; `anon` et `authenticated` nus sur les trois tables de partie,
---      `references` / `trigger` / `truncate` compris (leçon SEC-4).
+--      `references` / `trigger` / `truncate` compris (leçon SEC-4). Et
+--      `bande_settings` en LECTURE SEULE pour `authenticated` : ni insert ni
+--      update, pas même sur `pack` — sans quoi un éditeur allumerait le taquin
+--      par PostgREST sans laisser de ligne d'audit (revue L18, M-2).
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
 --
@@ -364,6 +373,35 @@ insert into pb values ('s4j2', public.join_player_lobby(
 insert into pb values ('s4l', public.lock_player_lobby(
   (select (j->>'lobby_id')::uuid from pb where nom = 's4'), repeat('e1', 32)));
 
+-- S5 — QUATRE JOUEURS, pour le PLANCHER DE RÉVÉLATION (revue L18, E-1).
+--
+-- IL LUI FAUT QUATRE MEMBRES, et c'est une contrainte de la mécanique et non un
+-- choix de confort : le plancher vaut `least(3, denominateur)`, donc à trois
+-- présents ou moins il vaut le dénominateur — et à ce compte-là, la révélation
+-- AUTOMATIQUE de `bande_vote` a déjà joué avant que l'hôte puisse presser quoi
+-- que ce soit. Aucune des salles existantes ne peut donc montrer `bande_reveal`
+-- en train d'ACCEPTER : S1 et S2 jouent leurs questions jusqu'au bout, S3 en a
+-- trois et S4 en a deux. À quatre présents et trois gestes, le plancher est
+-- franchi ET le dénominateur ne l'est pas : c'est le seul endroit où la clôture
+-- forcée existe encore.
+--
+-- Les pseudos épuisent l'alphabet OTAN, qui s'arrête ici — les quatre lettres
+-- qui restaient après Victor.
+insert into pb values ('s5', public.create_player_lobby(
+  'b0000000-0000-4000-8000-00000000000a', 'bande', 6,
+  repeat('21', 32), 'Bande Whiskey'));
+insert into pb values ('s5j2', public.join_player_lobby(
+  (select j->>'join_code' from pb where nom = 's5'),
+  repeat('22', 32), 'Bande Xray'));
+insert into pb values ('s5j3', public.join_player_lobby(
+  (select j->>'join_code' from pb where nom = 's5'),
+  repeat('23', 32), 'Bande Yankee'));
+insert into pb values ('s5j4', public.join_player_lobby(
+  (select j->>'join_code' from pb where nom = 's5'),
+  repeat('24', 32), 'Bande Zulu'));
+insert into pb values ('s5l', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+
 -- SSOLO — DEUX JOUEURS, verrouillée, puis RÉDUITE À UN. C'est la seule façon
 -- d'obtenir une salle `locked` à un seul membre en passant par les vraies RPC :
 -- `lock_player_lobby` refuse de verrouiller à un, et `kick_player_lobby` exige
@@ -437,6 +475,13 @@ select x.nom, m.id
   from (values ('mike', 'e1'), ('november', 'e2')) as x(nom, h)
   join public.player_lobby_members m
     on m.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's4')
+   and m.token_hash = repeat(x.h, 32);
+insert into pbm
+select x.nom, m.id
+  from (values ('whiskey', '21'), ('xray', '22'),
+               ('yankee', '23'), ('zulu', '24')) as x(nom, h)
+  join public.player_lobby_members m
+    on m.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's5')
    and m.token_hash = repeat(x.h, 32);
 insert into pbm
 select 'victor', m.id
@@ -611,10 +656,26 @@ select is(
   (select j->'resultats' from pb where nom = 'vue_echo'),
   'null'::jsonb,
   'SEC-4 `resultats` est NULL : aucun résultat avant la révélation');
+-- `votes_exprimes` EST NUL POUR ECHO, ET C'EST LA DÉFENSE EN PROFONDEUR DE E-1.
+-- Echo n'a pas répondu : lui rendre le compte lui apprendrait QUAND ses voisins
+-- répondent — assis à la même table, il voit qui vient de poser son téléphone,
+-- et le compte lui dit que c'était un vote. C'est le renseignement même dont le
+-- plancher de `bande_reveal` prive l'hôte (§8) ; l'y laisser entrer par la porte
+-- de la lecture aurait rendu ce plancher décoratif.
+--
+-- L'ASSERTION PORTE SUR `is null` ET SUR `jsonb null`, ce qui n'est pas la même
+-- chose : la clé doit être PRÉSENTE avec la valeur `null` (SEC-3 le vérifie
+-- déjà côté jeu de clés), et non absente du document. Une clé qui disparaît se
+-- teste à chaque lecture côté application, et une clé qu'on oublie de tester
+-- est une clé qu'on affiche.
 select is(
   (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_echo'),
-  '1'::jsonb,
-  'SEC-5 `votes_exprimes` dit COMBIEN ont répondu — l''attente invisible du cahier');
+  'null'::jsonb,
+  'SEC-5 `votes_exprimes` est NUL pour Echo, qui n''a pas encore répondu');
+select ok(
+  exists (select 1 from pb, pg_catalog.jsonb_object_keys(j->'tour') as k
+           where nom = 'vue_echo' and k = 'votes_exprimes'),
+  'SEC-5b … NUL et non ABSENT : la clé reste, la forme du document ne bouge pas');
 select is(
   (select j->'mon_vote' from pb where nom = 'vue_echo'),
   'null'::jsonb,
@@ -670,6 +731,13 @@ select ok(
   exists (select 1 from public.bande_votes v
            where v.voter_token_hash = repeat('a1', 32)),
   'SEC-12 CONTRÔLE DE PORTÉE : le jeton cherché par SEC-9 EST bien écrit en base');
+-- LE CONTRÔLE DE PORTÉE DE SEC-5. Sans lui, « le compte est nul pour Echo »
+-- serait verte le jour où `votes_exprimes` cesserait d'exister pour tout le
+-- monde — et l'attente invisible du cahier partirait avec elle, sans un rouge.
+select is(
+  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_alpha'),
+  '1'::jsonb,
+  'SEC-12b CONTRÔLE DE PORTÉE : Alpha, qui A voté, LIT le compte — un geste sur cinq');
 
 select is(
   (select j->'mon_vote'->>'cible_pseudo' from pb where nom = 'vue_alpha'),
@@ -710,14 +778,25 @@ insert into pb values ('v_charlie', public.bande_vote(
 -- QUATRE GESTES SUR CINQ : toujours rien. C'est l'assertion qui sépare « la
 -- révélation vient quand tous ont voté » de « la révélation vient quand
 -- quelqu'un vote ».
+--
+-- DEUX VUES, ET C'EST LE MOMENT DE TENSION DE E-1. Echo est le SEUL à n'avoir
+-- pas encore répondu : c'est exactement la position d'où l'on regarderait le
+-- compte monter geste après geste. Alpha, lui, a scellé le sien. Les deux
+-- documents décrivent la même question au même instant et ne portent PAS le
+-- même compte — c'est la propriété, et elle se lit ici en deux lignes.
 insert into pb values ('vue_4', public.bande_state(
   (select (j->>'lobby_id')::uuid from pb where nom = 's1'), repeat('a5', 32)));
+insert into pb values ('vue_4a', public.bande_state(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's1'), repeat('a1', 32)));
 select is(
   (select j->'resultats' from pb where nom = 'vue_4'), 'null'::jsonb,
   'REV-1 à QUATRE gestes sur cinq, `resultats` est encore NULL');
 select is(
-  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_4'), '4'::jsonb,
-  'REV-2 … et le compte, lui, a bien monté à quatre (les passes y sont)');
+  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_4a'), '4'::jsonb,
+  'REV-2 … et pour ALPHA, qui a répondu, le compte a bien monté à quatre (les passes y sont)');
+select is(
+  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_4'), 'null'::jsonb,
+  'REV-2b … mais ECHO, qui n''a pas répondu, ne voit RIEN monter : c''est la même question, au même instant');
 select is(
   (select j->'revelee' from pb where nom = 'v_charlie'), 'false'::jsonb,
   'REV-3 … le PASSE de Charlie n''a pas révélé : il en manquait un');
@@ -882,11 +961,32 @@ select is(
 
 
 -- ════════════════════════════════════════════════════════════
--- 8. LE DÉNOMINATEUR EST FIGÉ, ET L'HÔTE CLÔT
+-- 8. LE PLANCHER DE RÉVÉLATION, LE DÉNOMINATEUR FIGÉ, ET L'HÔTE QUI CLÔT
 --
--- Golf nomme Hotel. Deux gestes sur trois présents : la révélation automatique
--- n'arrivera JAMAIS si Hotel ne vote pas — c'est le cas réel du téléphone qu'on
--- referme, et c'est pour lui que le bouton de l'hôte existe.
+-- ── CE QUE CETTE SECTION PROUVAIT, ET QUI ÉTAIT L'INVERSE (revue L18, E-1) ──
+--
+-- Elle montrait l'hôte clore la question de S3 à DEUX gestes sur trois, et elle
+-- appelait cela une preuve. C'en était une, mais de l'attaque : Foxtrot avait
+-- voté Golf au §7, il voyait le compte passer de un à deux — il voyait Golf
+-- poser son téléphone — il clôturait, `resultats` portait DEUX lignes, il
+-- retranchait la sienne, et il tenait le choix EXACT de Golf. Six fois par
+-- partie, sur une tablée qui croit voter à bulletin secret. Un test vert peut
+-- graver une faute aussi bien qu'une promesse ; celui-ci gravait une faute.
+--
+-- LA SECTION PROUVE MAINTENANT LES DEUX MOITIÉS DU PLANCHER, sur deux salles,
+-- parce qu'une seule ne peut pas les porter :
+--
+--   S3, TROIS PRÉSENTS — le REFUS. Le plancher y vaut `least(3, 3)` = 3, donc
+--   la clôture forcée à deux gestes est refusée, et c'est le scénario de la
+--   revue mot pour mot. Le troisième geste — un PASSE — atteint alors le
+--   dénominateur, et la révélation AUTOMATIQUE joue : à trois présents, l'hôte
+--   n'a jamais la main, ce qui est cohérent.
+--
+--   S5, QUATRE PRÉSENTS — l'ACCEPTATION. C'est la seule forme de salle où
+--   `bande_reveal` peut encore clore : trois gestes franchissent le plancher
+--   sans atteindre le dénominateur. Sans elle, la branche qui ACCEPTE ne serait
+--   couverte nulle part, et le correctif pourrait se durcir jusqu'à tout
+--   refuser sans qu'un seul test rougisse.
 -- ════════════════════════════════════════════════════════════
 
 insert into pb values ('sc_golf', public.bande_vote(
@@ -905,12 +1005,17 @@ select is(
   (select j->'resultats' from pb where nom = 'vue_s3_2'), 'null'::jsonb,
   'FIGE-3 … et il n''y a toujours aucun résultat');
 
--- UN MEMBRE ORDINAIRE NE FORCE RIEN.
+-- UN MEMBRE ORDINAIRE NE FORCE RIEN — et son refus ne porte AUCUN compteur.
+-- L'assertion porte sur le document ENTIER, et c'est ce qui la rend utile ici :
+-- si le plancher était évalué AVANT la comparaison de `creator_token_hash`, ce
+-- refus s'appellerait `trop_tot` et porterait `exprimes`. N'importe quel membre
+-- — n'importe qui connaissant l'identifiant de salle — tiendrait alors le
+-- compteur de votes en direct, par la porte que le plancher venait de fermer.
 select is(
   public.bande_reveal(
     (select (j->>'lobby_id')::uuid from pb where nom = 's3'), repeat('d2', 32)),
   '{"state": "unavailable"}'::jsonb,
-  'FIGE-4 un membre ORDINAIRE ne peut pas clore la question');
+  'FIGE-4 un membre ORDINAIRE ne peut pas clore, et son refus ne dit RIEN du compte');
 select is(
   (select t.status from public.bande_tours t
      join public.bande_parties p on p.id = t.partie_id
@@ -919,30 +1024,61 @@ select is(
   'ouverte',
   'FIGE-5 … et ce refus n''a rien clos');
 
-insert into pb values ('rev_s3', public.bande_reveal(
+-- ── LE SCÉNARIO DE LA REVUE, REFUSÉ ──────────────────────────
+-- Foxtrot est l'hôte, il a voté Golf au §7, le compte est à deux. C'est ICI
+-- qu'il dé-anonymisait Golf. Le plancher vaut `least(3, 3)` = 3.
+insert into pb values ('rev_s3_tot', public.bande_reveal(
   (select (j->>'lobby_id')::uuid from pb where nom = 's3'), repeat('d1', 32)));
+select is(
+  (select j from pb where nom = 'rev_s3_tot'),
+  '{"state": "trop_tot", "requis": 3, "exprimes": 2}'::jsonb,
+  'PLANCH-1 L''HÔTE NE CLÔT PAS À DEUX GESTES SUR TROIS : `trop_tot`, avec ses deux compteurs');
+select is(
+  (select t.status from public.bande_tours t
+     join public.bande_parties p on p.id = t.partie_id
+    where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's3')
+      and t.position = 1),
+  'ouverte',
+  'PLANCH-2 … le refus n''a RIEN clos : la question est toujours ouverte');
+select is(
+  (select public.bande_state(
+            (select (j->>'lobby_id')::uuid from pb where nom = 's3'),
+            repeat('d1', 32))->'resultats'),
+  'null'::jsonb,
+  'PLANCH-3 … et l''hôte n''a RIEN obtenu : `resultats` est toujours NULL');
+
+-- LE TROISIÈME GESTE. Hotel PASSE — il ne donne sa voix à personne — et cela
+-- suffit : trois gestes sur trois présents, la révélation AUTOMATIQUE joue. À
+-- trois présents, le plancher vaut le dénominateur, donc l'hôte n'a jamais la
+-- main : c'est `bande_vote` qui clôt, comme partout ailleurs.
+insert into pb values ('p_hotel', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's3'), repeat('d3', 32),
+  null));
 insert into pb values ('rev_s3bis', public.bande_reveal(
   (select (j->>'lobby_id')::uuid from pb where nom = 's3'), repeat('d1', 32)));
 
 select is(
-  (select j from pb where nom = 'rev_s3'),
-  '{"state": "ok", "revelee": true}'::jsonb,
-  'FIGE-6 L''HÔTE, lui, clôt la question');
+  (select j from pb where nom = 'p_hotel'),
+  '{"state": "ok", "scelle": true, "revelee": true}'::jsonb,
+  'FIGE-6 le TROISIÈME geste atteint le dénominateur et révèle TOUT SEUL');
 select is(
   (select j from pb where nom = 'rev_s3bis'),
   '{"state": "ok", "revelee": true}'::jsonb,
-  'FIGE-7 … et il peut cliquer deux fois : bande_reveal est IDEMPOTENTE');
+  'FIGE-7 … et le bouton de l''hôte reste IDEMPOTENT sur une question déjà révélée : le plancher n''est même pas consulté');
 
 insert into pb values ('vue_s3_rev', public.bande_state(
   (select (j->>'lobby_id')::uuid from pb where nom = 's3'), repeat('d1', 32)));
 select is(
   (select j->'tour'->'denominateur' from pb where nom = 'vue_s3_rev'), '3'::jsonb,
-  'FIGE-8 LE DÉNOMINATEUR N''A PAS BOUGÉ : le non-votant reste une ABSTENTION');
+  'FIGE-8 LE DÉNOMINATEUR N''A PAS BOUGÉ : le PASSE reste une abstention');
 select is(
-  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_s3_rev'), '2'::jsonb,
-  'FIGE-9 … deux gestes exprimés sur trois, et le document dit les deux nombres');
--- LE POURCENTAGE EST CALCULÉ SUR TROIS, PAS SUR DEUX. Recalculer sur les seuls
--- votants aurait affiché 50 % / 50 %, soit deux fois un chiffre faux.
+  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_s3_rev'), '3'::jsonb,
+  'FIGE-9 … trois gestes exprimés sur trois, et le document dit les deux nombres');
+-- LE POURCENTAGE EST CALCULÉ SUR TROIS PRÉSENTS, PAS SUR LES DEUX QUI ONT DONNÉ
+-- LEUR VOIX. Le passe de Hotel compte au dénominateur et ne fait pas de ligne :
+-- trois gestes, DEUX voix, trois présents — trois nombres différents, et c'est
+-- ce qui rend l'assertion discriminante. Diviser par les seules voix aurait
+-- affiché 50 % / 50 %, soit deux fois un chiffre faux.
 select is(
   (select pg_catalog.string_agg(
             (r->>'cible_pseudo') || '=' || (r->>'pourcentage'), ',' order by r->>'cible_pseudo')
@@ -950,6 +1086,86 @@ select is(
     where nom = 'vue_s3_rev'),
   'Bande Golf=33,Bande Hotel=33',
   'FIGE-10 … et les pourcentages sont calculés sur TROIS : 33 %, pas 50 %');
+
+-- ── S5 : LE PLANCHER FRANCHI, ET L'HÔTE QUI CLÔT VRAIMENT ────
+-- Quatre présents. Xray nomme Yankee, puis Whiskey — L'HÔTE — nomme Yankee à
+-- son tour : deux gestes, et c'est exactement la position d'où l'attaque
+-- partait. Elle est refusée une seconde fois, sur une autre forme de salle.
+insert into pb values ('st5', public.bande_start(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+insert into pb values ('v5_xray', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('22', 32),
+  (select id from pbm where nom = 'yankee')));
+insert into pb values ('rev_s5_1', public.bande_reveal(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+insert into pb values ('v5_whiskey', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32),
+  (select id from pbm where nom = 'yankee')));
+insert into pb values ('rev_s5_2', public.bande_reveal(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+
+select is(
+  (select j from pb where nom = 'rev_s5_1'),
+  '{"state": "trop_tot", "requis": 3, "exprimes": 1}'::jsonb,
+  'PLANCH-4 à UN geste sur quatre, la clôture est refusée — c''est la variante où l''hôte ne vote même pas');
+select is(
+  (select j from pb where nom = 'rev_s5_2'),
+  '{"state": "trop_tot", "requis": 3, "exprimes": 2}'::jsonb,
+  'PLANCH-5 … à DEUX, elle l''est encore : le plancher ne dépend pas du dénominateur tant qu''il vaut trois');
+
+-- LE TROISIÈME GESTE NE RÉVÈLE PAS TOUT SEUL — il en manque un pour atteindre
+-- QUATRE. C'est l'assertion qui sépare « le plancher est franchi » de « la
+-- question est finie », et sans elle la suite ne prouverait rien : on ne saurait
+-- pas si c'est le bouton de l'hôte ou la révélation automatique qui a clos.
+insert into pb values ('v5_yankee', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('23', 32),
+  (select id from pbm where nom = 'zulu')));
+select is(
+  (select j->'revelee' from pb where nom = 'v5_yankee'), 'false'::jsonb,
+  'PLANCH-6 le TROISIÈME geste sur quatre ne révèle PAS : le dénominateur n''est pas atteint');
+
+-- ET UN MEMBRE ORDINAIRE NE PROFITE PAS DU PLANCHER FRANCHI. FIGE-4 le prouvait
+-- sous le plancher ; ici il est AU-DESSUS, et c'est l'autre moitié : le refus de
+-- rôle ne cède pas parce que la règle de jeu, elle, serait satisfaite.
+select is(
+  public.bande_reveal(
+    (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('22', 32)),
+  '{"state": "unavailable"}'::jsonb,
+  'PLANCH-7 … et Xray, membre ordinaire, ne clôt toujours pas : le plancher franchi ne lui donne rien');
+
+insert into pb values ('rev_s5_3', public.bande_reveal(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+select is(
+  (select j from pb where nom = 'rev_s5_3'),
+  '{"state": "ok", "revelee": true}'::jsonb,
+  'PLANCH-8 L''HÔTE CLÔT, à TROIS gestes sur quatre : le plancher laisse passer ce qu''il doit');
+select is(
+  (select t.status from public.bande_tours t
+     join public.bande_parties p on p.id = t.partie_id
+    where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's5')
+      and t.position = 1),
+  'revelee',
+  'PLANCH-9 … et cette fois la question EST close');
+
+-- LA PROMESSE DU CAHIER TIENT APRÈS UNE CLÔTURE FORCÉE. Zulu n'a pas répondu :
+-- il reste une ABSTENTION, le dénominateur vaut toujours quatre, et les
+-- pourcentages se lisent sur quatre — « 2 personnes sur 4 », jamais 100 %.
+insert into pb values ('vue_s5', public.bande_state(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's5'), repeat('21', 32)));
+select is(
+  (select j->'tour'->'denominateur' from pb where nom = 'vue_s5'), '4'::jsonb,
+  'PLANCH-10 le dénominateur n''a pas bougé : quatre, et le non-votant reste une abstention');
+select is(
+  (select j->'tour'->'votes_exprimes' from pb where nom = 'vue_s5'), '3'::jsonb,
+  'PLANCH-11 … trois gestes exprimés sur quatre');
+select is(
+  (select pg_catalog.string_agg(
+            (r->>'cible_pseudo') || '=' || (r->>'voix') || '/' || (r->>'pourcentage'),
+            ',' order by r->>'cible_pseudo')
+     from pb, pg_catalog.jsonb_array_elements(j->'resultats') as r
+    where nom = 'vue_s5'),
+  'Bande Yankee=2/50,Bande Zulu=1/25',
+  'PLANCH-12 … et les pourcentages sont calculés sur QUATRE : 50 % et 25 %, pas 67 % et 33 %');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -972,8 +1188,8 @@ select is(
      join public.bande_tours t on t.id = v.tour_id
      join public.bande_parties p on p.id = t.partie_id
     where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's3')),
-  2,
-  'GRAVE-1 le vote qui désignait Hotel N''A PAS ÉTÉ EFFACÉ par son départ');
+  3,
+  'GRAVE-1 les trois gestes sont TOUJOURS LÀ : celui qui désignait Hotel n''a pas été effacé par son départ');
 select is(
   (select v.cible_member_id from public.bande_votes v
     where v.voter_token_hash = repeat('d2', 32)),
@@ -1127,9 +1343,53 @@ select l.expires_at
   from public.player_lobbies l
  where l.id = (select (j->>'lobby_id')::uuid from pb where nom = 's4');
 
--- Les questions 2 à 6, closes par l'hôte sans que personne ne vote. Une boucle
--- plutôt que dix appels recopiés : ce qu'on éprouve est la SORTIE de la boucle,
--- pas chacun de ses tours.
+-- ── CE QUE CETTE BOUCLE FAISAIT, ET QU'ELLE NE PEUT PLUS FAIRE ──
+--
+-- Elle enchaînait `bande_next` et `bande_reveal` cinq fois SANS QU'AUCUN JOUEUR
+-- NE VOTE, et elle passait. C'était la démonstration la plus nette que le bouton
+-- de l'hôte clôturait à ZÉRO geste — le cas où `resultats` ne porte rien du
+-- tout, mais aussi celui d'où l'on part pour attendre `0 → 1` et clore sur une
+-- seule ligne (revue L18, E-1). Le plancher le refuse désormais, et c'est
+-- éprouvé ici AVANT la boucle, sur la question 2, plutôt que constaté par une
+-- boucle qui tournerait dans le vide.
+--
+-- À DEUX PRÉSENTS, LE PLANCHER VAUT DEUX — `least(3, 2)` — donc il vaut le
+-- dénominateur, donc SEULE la révélation automatique peut clore. La boucle passe
+-- de « next puis reveal » à « next puis deux PASSES » : c'est le vrai chemin du
+-- produit pour une tablée de deux qui saute une question.
+insert into pb values ('n4_q2', public.bande_next(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's4'), repeat('e1', 32)));
+insert into pb values ('rev4_vide', public.bande_reveal(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's4'), repeat('e1', 32)));
+
+select is(
+  (select j->>'status' from pb where nom = 'n4_q2'), 'en_cours',
+  'FIN-0a (mise en place) la question 2 de S4 est ouverte, et personne n''y a répondu');
+select is(
+  (select j from pb where nom = 'rev4_vide'),
+  '{"state": "trop_tot", "requis": 2, "exprimes": 0}'::jsonb,
+  'FIN-0b L''HÔTE NE CLÔT PLUS À ZÉRO GESTE : à deux présents le plancher vaut DEUX, et rien ne le franchit sauf les deux réponses');
+select is(
+  (select t.status from public.bande_tours t
+     join public.bande_parties p on p.id = t.partie_id
+    where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's4')
+      and t.position = 2),
+  'ouverte',
+  'FIN-0c … et ce refus n''a rien clos non plus');
+
+-- LES DEUX PASSES, QUI SEULS CLOSENT. `bande_vote` avec une cible nulle est un
+-- GESTE (arbitrage 1) : il verrouille la question sans donner de voix.
+insert into pb values ('p4_hote', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's4'), repeat('e1', 32), null));
+insert into pb values ('p4_invite', public.bande_vote(
+  (select (j->>'lobby_id')::uuid from pb where nom = 's4'), repeat('e2', 32), null));
+select is(
+  (select j->'revelee' from pb where nom = 'p4_invite'), 'true'::jsonb,
+  'FIN-0d … c''est le SECOND passe qui clôt, tout seul, dans la même transaction');
+
+-- Les questions 3 à 6, sautées de la même façon. Une boucle plutôt que douze
+-- appels recopiés : ce qu'on éprouve est la SORTIE de la boucle, pas chacun de
+-- ses tours.
 do $$
 declare
   v_lobby uuid;
@@ -1138,9 +1398,10 @@ begin
   select l.id into v_lobby
     from public.player_lobbies l
    where l.join_code = (select j->>'join_code' from pb where nom = 's4');
-  for i in 1..5 loop
+  for i in 1..4 loop
     perform public.bande_next(v_lobby, repeat('e1', 32));
-    perform public.bande_reveal(v_lobby, repeat('e1', 32));
+    perform public.bande_vote(v_lobby, repeat('e1', 32), null);
+    perform public.bande_vote(v_lobby, repeat('e2', 32), null);
   end loop;
 end;
 $$;
@@ -1309,8 +1570,8 @@ select is(
      join public.bande_tours t on t.id = v.tour_id
      join public.bande_parties p on p.id = t.partie_id
     where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's4')),
-  2,
-  'PURGE-1 (mise en place) la partie de S4 porte bien ses deux votes');
+  12,
+  'PURGE-1 (mise en place) la partie de S4 porte bien ses douze gestes : deux votes et dix passes');
 
 create temporary table pb_avant as
 select (select pg_catalog.count(*)::integer from public.bande_parties) as parties,
@@ -1331,8 +1592,8 @@ select is(
   'PURGE-3 … et ses six questions');
 select is(
   (select pg_catalog.count(*)::integer from public.bande_votes),
-  (select votes - 2 from pb_avant),
-  'PURGE-4 … et ses deux votes : rien du portrait ne survit à la salle');
+  (select votes - 12 from pb_avant),
+  'PURGE-4 … et ses douze gestes : rien du portrait ne survit à la salle');
 select is(
   (select pg_catalog.count(*)::integer from public.bande_parties),
   (select parties - 1 from pb_avant),
@@ -1347,6 +1608,43 @@ select ok(
 -- ════════════════════════════════════════════════════════════
 -- 14. LA FORME DES CONTRAINTES
 -- ════════════════════════════════════════════════════════════
+
+-- ── LA CONTRAINTE QU'ON NE DOIT PAS ATTEINDRE (revue L18, I-1) ──
+--
+-- `bande_tours.denominateur` porte `check (denominateur between 1 and 12)`. Une
+-- salle vidée de tous ses membres ferait donc lever une 23514 BRUTE à
+-- `bande_next`, que l'action appelante ne saurait traduire qu'en panne — là où
+-- « la salle n'est plus jouable » est exactement ce que `unavailable` dit
+-- partout ailleurs dans ce fichier.
+--
+-- LE CAS EST INATTEIGNABLE PAR LE PRODUIT, et c'est dit au §9 : rien ne retire
+-- un membre d'une partie commencée. On l'atteint donc par une SUPPRESSION
+-- DIRECTE, comme la garde `on delete set null`, et pour la même raison — la
+-- garde existe pour le lot « présence » à venir, qui n'aura aucune raison de
+-- rouvrir la migration.
+--
+-- S2 EST LA SALLE QU'ON PEUT SACRIFIER : sa question est révélée depuis le §10
+-- et plus aucune assertion ne la relit. `bande_next` ne demande PAS
+-- l'appartenance de l'appelant — il compare `creator_token_hash` sur le lobby —
+-- donc India peut encore appeler après que sa propre ligne de membre a disparu.
+delete from public.player_lobby_members m
+ where m.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's2');
+
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's2')),
+  0,
+  'VIDE-1 (mise en place) S2 n''a plus AUCUN membre');
+select is(
+  public.bande_next(
+    (select (j->>'lobby_id')::uuid from pb where nom = 's2'), repeat('c1', 32)),
+  '{"state": "unavailable"}'::jsonb,
+  'VIDE-2 `bande_next` sur une salle VIDE rend `unavailable`, et non la 23514 brute du check');
+select is(
+  (select p.position from public.bande_parties p
+    where p.lobby_id = (select (j->>'lobby_id')::uuid from pb where nom = 's2')),
+  1,
+  'VIDE-3 … et la partie n''a pas avancé : aucun tour sans dénominateur n''a été écrit');
 
 select ok(
   exists (select 1 from pg_catalog.pg_constraint con
@@ -1482,11 +1780,25 @@ select is(
       and acl.grantee::regrole::text = 'anon'),
   '',
   'ACL-9 … et anon n''y a RIEN');
--- AUCUN `grant insert` — motif duo_settings / vitrine_settings, et c'est ce qui
--- force le passage par set_bande_pack, qui journalise.
+-- NI `grant insert` NI `grant update` — motif duo_settings / vitrine_settings,
+-- et c'est ce qui force le passage par set_bande_pack, qui journalise.
+--
+-- LES DEUX MOITIÉS SONT INDISSOCIABLES, ET C'EST LA LEÇON DE LA REVUE L18 (M-2).
+-- Le refus d'`insert` se défendait par « la ligne naît de la RPC, qui audite » —
+-- argument VIDE tant que `grant update (pack)` existait : un éditeur basculait
+-- sur `taquin` par un PATCH PostgREST direct, sans jamais appeler la RPC, donc
+-- sans une ligne d'`audit_logs`. Une trace qui ne couvre qu'un chemin d'écriture
+-- sur deux ne trace rien ; elle donne seulement l'impression qu'on saurait.
 select ok(
   not has_table_privilege('authenticated', 'public.bande_settings', 'INSERT'),
   'ACL-10 bande_settings n''accorde AUCUN insert : la ligne naît de la RPC, qui audite');
+select ok(
+  not has_table_privilege('authenticated', 'public.bande_settings', 'UPDATE'),
+  'ACL-10b … NI AUCUN update : la ligne ne CHANGE que par la RPC, qui audite aussi');
+-- L'ASSERTION PORTE SUR L'ENSEMBLE DES COLONNES, et non sur `pack` seule : un
+-- `grant update (pack)` rétabli par mégarde rendrait `pack` ici, et c'est
+-- exactement ce qu'on veut voir rougir. Chercher « pack n'est plus écrivable »
+-- aurait laissé passer un grant posé sur une AUTRE colonne.
 select is(
   (select coalesce(pg_catalog.string_agg(
             a.attname, ',' order by a.attname), '')
@@ -1494,8 +1806,21 @@ select is(
      join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0
     where c.oid = 'public.bande_settings'::regclass
       and has_column_privilege('authenticated', c.oid, a.attnum, 'UPDATE')),
-  'pack',
-  'ACL-11 … et la SEULE colonne écrivable est `pack` : le locataire ne se corrige pas');
+  '',
+  'ACL-11 … et AUCUNE colonne n''est écrivable, `pack` comprise : PostgREST n''a plus de chemin qui échappe à l''audit');
+-- L'ACL EXHAUSTIVE, motif ACL-5/6/7 : `authenticated` n'a plus QUE `SELECT` sur
+-- cette table — `references`, `trigger` et `truncate` compris, ceux qu'on
+-- oublie (leçon SEC-4, wagon 7).
+select is(
+  (select coalesce(pg_catalog.string_agg(
+            acl.privilege_type, ',' order by acl.privilege_type), '')
+     from pg_catalog.pg_class c,
+          lateral pg_catalog.aclexplode(
+            coalesce(c.relacl, pg_catalog.acldefault('r', c.relowner))) as acl
+    where c.oid = 'public.bande_settings'::regclass
+      and acl.grantee::regrole::text = 'authenticated'),
+  'SELECT',
+  'ACL-11b … et l''ACL EXHAUSTIVE de authenticated se réduit à SELECT, rien d''autre');
 
 -- LES SEPT RPC : service_role seul. Le motif est triplé par fonction — vrai
 -- pour service_role, faux pour authenticated, faux pour anon.
@@ -1587,9 +1912,13 @@ select is(
 -- Une contrainte `check` s'évalue sous le rôle qui ÉCRIT la table. Toute
 -- fonction qu'elle appelle doit donc être exécutable par ce rôle, sinon
 -- l'insertion casse à l'exécution alors que le DDL s'est appliqué sans bruit.
--- Règle du dépôt, rejouée ici sur le schéma entier : ce lot ajoute une table
--- écrite par `authenticated` (bande_settings), donc il est exactement dans la
--- classe de bug qu'elle attrape.
+-- Règle du dépôt, rejouée ici sur le schéma entier. Elle ne porte PLUS sur une
+-- table de ce lot depuis que `bande_settings` est passée en lecture seule pour
+-- `authenticated` (ACL-10b, revue L18 M-2) — le lot n'écrit plus que par des
+-- fonctions `security definer`, exécutées avec les privilèges de leur
+-- propriétaire. On la rejoue quand même ici : elle est le filet du jour où une
+-- table de ce lot redeviendrait écrivable, et un filet qu'on retire parce qu'il
+-- ne sert plus est un filet qu'il faut se souvenir de reposer.
 select is(
   (select coalesce(pg_catalog.string_agg(distinct
        c.relname || '.' || con.conname || ' → ' || p.proname

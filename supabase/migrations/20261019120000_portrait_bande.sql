@@ -222,6 +222,13 @@ revoke all on table public.bande_settings from public, anon, authenticated;
 -- l'écriture aux seuls éditeurs. Le caissier a une raison de savoir quel pack
 -- tourne quand un client lui pose la question ; il n'a aucune raison d'en
 -- changer entre deux cafés.
+--
+-- LA POLICY D'ÉCRITURE NE COMMANDE PLUS RIEN, ET ELLE RESTE. Depuis que le
+-- `grant update` a été retiré (voir plus bas), `authenticated` n'a aucun
+-- privilège d'écriture à filtrer : la policy est le SECOND verrou, celui qui
+-- tiendrait le jour où un grant reviendrait par inadvertance. Une policy retirée
+-- parce qu'« elle ne sert plus » est une policy qu'il faut se rappeler de
+-- réécrire, et l'oubli ne se voit qu'à la fuite.
 create policy "bande_settings: member select" on public.bande_settings
   for select to authenticated
   using (public.is_org_member(organization_id));
@@ -230,14 +237,23 @@ create policy "bande_settings: editor write" on public.bande_settings
   using (public.is_org_editor(organization_id))
   with check (public.is_org_editor(organization_id));
 
--- AUCUN `grant insert`, motif `duo_settings` / `vitrine_settings` : la ligne
--- NAÎT de `set_bande_pack`, qui audite. Accorder l'insertion aurait laissé
--- poser le PREMIER pack sans qu'aucune trace n'existe — et le premier est celui
--- qui compte, puisque c'est lui qui peut allumer le taquin. `organization_id`
--- n'est écrivable nulle part : c'est le locataire, il se pose une fois, par la
--- RPC.
+-- `authenticated` NE FAIT QUE LIRE. Ni `insert`, ni `update`, ni sur `pack` :
+-- motif `duo_settings` / `vitrine_settings`, la ligne NAÎT de `set_bande_pack`,
+-- qui audite, ET ELLE N'Y CHANGE QUE PAR ELLE.
+--
+-- Les deux moitiés sont indissociables, et c'est la leçon de la revue L18. Le
+-- refus d'`insert` seul se défendait ainsi : « le premier pack est celui qui
+-- compte, puisque c'est lui qui peut allumer le taquin ». L'argument était faux
+-- tant que `grant update (pack)` existait — un éditeur basculait sur `taquin`
+-- par un `PATCH` PostgREST direct, sans jamais appeler la RPC, donc SANS ligne
+-- d'`audit_logs`. Une trace qui ne couvre qu'un chemin d'écriture sur deux ne
+-- trace rien : elle donne seulement l'impression qu'on saurait.
+--
+-- LA RÉVOCATION NE COÛTE RIEN À L'APPLICATION : elle n'écrit que par
+-- `set_bande_pack` (`src/actions/bande.ts`), qui est rendue à `service_role`.
+-- `organization_id` n'est écrivable nulle part : c'est le locataire, il se pose
+-- une fois, par la RPC.
 grant select on table public.bande_settings to authenticated;
-grant update (pack) on public.bande_settings to authenticated;
 
 create trigger bande_settings_touch_updated_at
   before update on public.bande_settings
@@ -1386,7 +1402,54 @@ grant execute on function public.bande_vote(uuid, text, uuid)
 --
 -- CONTRAT :
 --   {"state":"ok","revelee":true}
+--   {"state":"trop_tot","requis":int,"exprimes":int}  — SOUS LE PLANCHER
 --   {"state":"unavailable"}  — TOUT le reste
+--
+-- ── LE PLANCHER DE RÉVÉLATION, ET POURQUOI IL EXISTE (revue L18, E-1) ──
+--
+-- Sans lui, ce bouton DÉ-ANONYMISE les votes un par un, et il n'y faut aucun
+-- outil : l'hôte vote, l'écran lui dit « 1 sur 5 », il attend de voir le compte
+-- passer à 2 — il regarde son voisin taper — et il clôt. `resultats` porte alors
+-- DEUX lignes, il retranche la sienne, il tient le choix exact de son voisin.
+-- La variante est pire encore : il ne vote pas du tout, il attend `0 → 1`, il
+-- clôt, et `resultats` ne porte qu'UNE ligne — celle de la seule personne qui a
+-- répondu. Six fois par partie, sur une tablée de gens qui croient voter à
+-- bulletin secret. Toute la migration existe pour que cela ne soit pas
+-- possible ; ce bouton l'était.
+--
+-- LA CLÔTURE FORCÉE EXIGE DONC `least(3, denominateur)` GESTES. Trois, parce que
+-- l'hôte peut toujours retrancher le sien : à trois, il reste DEUX voix qu'il ne
+-- peut pas attribuer, et deux est le plus petit nombre qui laisse un doute. À
+-- deux, il n'en resterait qu'une, et il n'y aurait pas de doute du tout.
+--
+-- `least` ET NON `3` SEC, parce qu'une tablée de deux ne pourrait jamais
+-- atteindre trois : le plancher y vaut 2, c'est-à-dire le dénominateur, c'est-à-
+-- dire que la révélation AUTOMATIQUE de `bande_vote` a déjà joué. À deux, ce
+-- bouton ne peut donc jamais rien clore, et c'est cohérent : à deux, savoir que
+-- l'autre a répondu revient à savoir qu'il a répondu, il n'y a rien à protéger
+-- de plus. Une question qui s'y coince — l'un des deux est parti sans voter —
+-- n'est PAS perdue : `close_player_lobby_as_org` la ferme côté commerçant, et le
+-- TTL de la salle l'emporte de toute façon. On ne rouvre pas la porte du secret
+-- pour épargner un cas que deux issues couvrent déjà.
+--
+-- ── POURQUOI UN ÉTAT DISTINCT, ET NON `unavailable` ──
+--
+-- Ce n'est PAS un refus de sécurité : c'est une RÈGLE DU JEU, et l'écran doit
+-- pouvoir la dire — « il faut au moins trois réponses ». Un `unavailable` aurait
+-- affiché une panne là où il n'y a qu'une attente, et l'hôte aurait rechargé la
+-- page en croyant à un bug. Les compteurs voyagent avec, pour que la phrase soit
+-- juste sans que l'écran refasse le calcul.
+--
+-- L'ORDRE DES GARDES EST LA GARDE. Le plancher est évalué APRÈS la comparaison
+-- de `creator_token_hash` : un membre ordinaire, ou un inconnu, reçoit toujours
+-- `unavailable` et n'apprend RIEN du compte. Inverser les deux aurait fait de ce
+-- refus un compteur de votes ouvert à quiconque connaît l'identifiant de salle.
+--
+-- ── ET L'IDEMPOTENCE N'EN SOUFFRE PAS ──
+--
+-- Le plancher n'est lu que si la question est encore `ouverte`. Une question
+-- DÉJÀ révélée rend `ok` sans le consulter : le double-clic reste sans
+-- conséquence, y compris juste après une révélation automatique.
 --
 -- ── POURQUOI CE BOUTON EXISTE ──
 --
@@ -1429,6 +1492,10 @@ declare
   v_lobby public.player_lobbies%rowtype;
   v_partie public.bande_parties%rowtype;
   v_tour public.bande_tours%rowtype;
+  v_exprimes integer;
+  -- LE PLANCHER, calculé sur le dénominateur FIGÉ du tour et non sur les
+  -- présents du moment : c'est la même promesse que partout ailleurs ici.
+  v_requis integer;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
@@ -1456,6 +1523,8 @@ begin
   select l.* into v_lobby
     from public.player_lobbies l
    where l.id = p_lobby_id;
+  -- LA GARDE D'IDENTITÉ EST AVANT LE PLANCHER, ET L'ORDRE EST LA GARDE : qui
+  -- n'est pas l'hôte n'apprend rien du compte (voir l'en-tête).
   if not found
      or v_lobby.kind <> 'bande'
      or v_lobby.status <> 'locked'
@@ -1479,8 +1548,29 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
-  -- IDEMPOTENTE : une question déjà révélée rend `ok` sans rien écrire.
+  -- IDEMPOTENTE : une question déjà révélée rend `ok` sans rien écrire — et sans
+  -- consulter le plancher, qui n'aurait plus rien à protéger.
   if v_tour.status = 'ouverte' then
+    -- ── LE PLANCHER DE RÉVÉLATION (revue L18, E-1) ────────────
+    -- Le MÊME compte que celui de `bande_vote` et de `bande_state` : les passes
+    -- y sont, parce qu'ils verrouillent la question comme un vote.
+    select pg_catalog.count(*)::integer into v_exprimes
+      from public.bande_votes v
+     where v.tour_id = v_tour.id;
+
+    -- `least` NON qualifié : ce n'est pas une fonction du catalogue, la
+    -- qualifier casserait à l'exécution (garde `npm run sql:check`).
+    v_requis := least(3, v_tour.denominateur);
+
+    if v_exprimes < v_requis then
+      -- PAS `unavailable` : une RÈGLE DU JEU, que l'écran doit pouvoir dire.
+      return pg_catalog.jsonb_build_object(
+        'state', 'trop_tot',
+        'requis', v_requis,
+        'exprimes', v_exprimes
+      );
+    end if;
+
     -- RIEN N'EST RECALCULÉ. Le dénominateur ne bouge pas, les non-votants
     -- restent des abstentions : c'est toute la raison d'être de cette RPC.
     update public.bande_tours t
@@ -1504,10 +1594,24 @@ comment on function public.bande_reveal(uuid, text) is
   'le dénominateur — c''est-à-dire de renoncer à la promesse. LES NON-VOTANTS '
   'RESTENT DES ABSTENTIONS et RIEN n''est recalculé : « 2 personnes sur 5 » dit '
   'la vérité, là où un recalcul sur les seuls votants aurait affiché 100 %. '
-  'IDEMPOTENTE — une question déjà révélée rend ok sans rien écrire, parce '
-  'qu''un double-clic devant une table qui attend ne doit pas punir. L''hôte '
-  'est reconnu par creator_token_hash (motif lock_player_lobby) et un membre '
-  'ordinaire reçoit le refus GÉNÉRIQUE. Rendue à service_role.';
+  'UN PLANCHER LE GARDE (revue L18, E-1) : la clôture forcée exige '
+  'least(3, denominateur) gestes et rend sinon trop_tot avec ses deux '
+  'compteurs. SANS LUI, CE BOUTON DÉ-ANONYMISE : l''hôte vote, attend que le '
+  'compte passe à deux, clôt, retranche sa propre voix et tient le choix EXACT '
+  'de son voisin — ou ne vote pas, attend 0 → 1, et clôt sur une seule ligne de '
+  'résultat. Trois, parce que l''hôte peut toujours retrancher le sien : il '
+  'reste alors DEUX voix qu''il ne peut pas attribuer. least et non 3 sec parce '
+  'qu''une tablée de deux ne l''atteindrait jamais — le plancher y vaut le '
+  'dénominateur, donc seule la révélation AUTOMATIQUE joue, et une question qui '
+  's''y coince est emportée par close_player_lobby_as_org ou par le TTL. '
+  'trop_tot est un état DISTINCT et non unavailable : c''est une règle du jeu, '
+  'pas une panne, et l''écran doit pouvoir dire « il faut au moins trois '
+  'réponses ». Le plancher est évalué APRÈS creator_token_hash : un membre '
+  'ordinaire reçoit le refus GÉNÉRIQUE et n''apprend RIEN du compte. '
+  'IDEMPOTENTE — une question déjà révélée rend ok sans rien écrire et sans '
+  'consulter le plancher, parce qu''un double-clic devant une table qui attend '
+  'ne doit pas punir. L''hôte est reconnu par creator_token_hash (motif '
+  'lock_player_lobby). Rendue à service_role.';
 
 revoke all on function public.bande_reveal(uuid, text)
   from public, anon, authenticated;
@@ -1669,6 +1773,18 @@ begin
     from public.player_lobby_members m
    where m.lobby_id = v_lobby.id;
 
+  -- UNE SALLE VIDE N'OUVRE PAS DE QUESTION (revue L18, I-1). Le `check
+  -- (denominateur between 1 and 12)` lèverait ici une 23514 BRUTE, que l'action
+  -- appelante ne saurait traduire qu'en panne — là où « la salle n'est plus
+  -- jouable » est exactement ce que `unavailable` dit déjà partout dans ce
+  -- fichier. Le cas est INATTEIGNABLE aujourd'hui : rien ne retire un membre
+  -- d'une partie commencée (voir l'en-tête). C'est précisément pour cela que la
+  -- garde s'écrit MAINTENANT — le lot « présence » qui ajoutera ce retrait
+  -- n'aura aucune raison de rouvrir ce fichier.
+  if v_presents < 1 then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
   insert into public.bande_tours
     (partie_id, organization_id, position, question_cle, denominateur)
   values (v_partie.id, v_partie.organization_id, v_suivante,
@@ -1698,8 +1814,11 @@ comment on function public.bande_next(uuid, text) is
   'la MÊME TRANSACTION (arbitrage 6), expires_at ramené par '
   'least(clock_timestamp(), expires_at) — fermer ne prolonge jamais. Le '
   'programme est RECALCULÉ à l''identique par bande_questions_tirees, dont la '
-  'dérivation ne dépend que de trois valeurs figées dans bande_parties. Hôte '
-  'reconnu par creator_token_hash, refus générique pour tout le reste. Rendue à '
+  'dérivation ne dépend que de trois valeurs figées dans bande_parties. UNE '
+  'SALLE VIDE rend unavailable plutôt que la 23514 brute du check sur '
+  'denominateur (revue L18, I-1) : inatteignable aujourd''hui, écrit pour le lot '
+  '« présence » qui ne relira pas ce fichier. Hôte reconnu par '
+  'creator_token_hash, refus générique pour tout le reste. Rendue à '
   'service_role.';
 
 revoke all on function public.bande_next(uuid, text)
@@ -1715,7 +1834,8 @@ grant execute on function public.bande_next(uuid, text)
 --   {"state":"ok",
 --    "partie":{"pack":text,"position":int,"nb_questions":int,"status":text},
 --    "tour":{"position":int,"question_cle":text,"status":text,
---            "denominateur":int,"votes_exprimes":int},
+--            "denominateur":int,"votes_exprimes":int|null},  ← NULL SI JE N'AI
+--                                                              PAS RÉPONDU
 --    "mon_vote":{"cible_member_id":uuid|null,"cible_pseudo":text|null}|null,
 --    "participants":[{"member_id":uuid,"pseudo":text,
 --                     "rang":int,"est_moi":bool}],
@@ -1750,13 +1870,25 @@ grant execute on function public.bande_next(uuid, text)
 -- peut demander cette ligne — la RPC ne prend pas de paramètre pour désigner
 -- un autre votant.
 --
--- ── `votes_exprimes` EST UN COMPTE, ET LE CAHIER L'AUTORISE ──
+-- ── `votes_exprimes` EST UN COMPTE, ET IL NE VA QU'À QUI A RÉPONDU ──
 --
 -- « Trois ont répondu, on attend deux personnes » est l'attente invisible : un
 -- fait sur le NOMBRE de gestes, jamais sur leur auteur ni sur leur contenu. Les
 -- passes y comptent — ils verrouillent la question comme un vote (arbitrage 1),
 -- et c'est le MÊME compte que celui qui déclenche la révélation, ce qui est la
 -- raison pour laquelle l'écran peut afficher une barre de progression honnête.
+--
+-- MAIS IL EST NUL POUR QUI N'A PAS ENCORE SCELLÉ LE SIEN (revue L18, E-1). Un
+-- non-votant qui regarde le compte monter apprend QUAND les autres répondent :
+-- assis à la même table, il voit qui vient de poser son téléphone, et le compte
+-- lui dit que c'était un vote. C'est le même renseignement que celui dont le
+-- plancher de `bande_reveal` prive l'hôte — l'y laisser entrer par la porte de
+-- la lecture aurait rendu le plancher décoratif. Le prix est nul : celui qui n'a
+-- pas répondu n'a rien à attendre, il a à répondre.
+--
+-- IL EST NUL, ET NON ABSENT. La clé reste dans le document, motif `resultats` :
+-- une forme STABLE se type une fois côté application. Et comme `resultats`, il
+-- n'est pas écarté à l'écriture — il n'est PAS CHERCHÉ.
 --
 -- ── LES SEPT CLÉS SONT TOUJOURS PRÉSENTES ──
 --
@@ -1798,7 +1930,9 @@ declare
   v_lobby public.player_lobbies%rowtype;
   v_partie public.bande_parties%rowtype;
   v_tour public.bande_tours%rowtype;
-  v_exprimes integer;
+  -- SANS VALEUR TANT QUE JE N'AI PAS RÉPONDU, et pour la même raison que
+  -- `v_resultats` ci-dessous : ce `null` initial EST la garde.
+  v_exprimes integer := null;
   v_mon_vote jsonb := null;
   -- SANS VALEUR TANT QUE LA QUESTION N'EST PAS RÉVÉLÉE. Ce `null` initial est
   -- la garde : il n'est pas écarté à l'écriture du document, il n'a jamais été
@@ -1855,14 +1989,9 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
-  -- LE COMPTE, ET RIEN QUE LE COMPTE — voir l'en-tête. Les passes y sont, parce
-  -- qu'ils verrouillent la question comme un vote.
-  select pg_catalog.count(*)::integer into v_exprimes
-    from public.bande_votes v
-   where v.tour_id = v_tour.id;
-
   -- MON vote : toujours lisible, c'est le mien, et il est lu sur MA ligne par
-  -- mon propre jeton.
+  -- mon propre jeton. IL EST LU EN PREMIER parce que c'est lui qui décide si le
+  -- compte a le droit de sortir.
   select pg_catalog.jsonb_build_object(
            'cible_member_id', v.cible_member_id,
            'cible_pseudo', v.cible_pseudo)
@@ -1870,6 +1999,18 @@ begin
     from public.bande_votes v
    where v.tour_id = v_tour.id
      and v.voter_token_hash = p_token_hash;
+
+  -- LE COMPTE, ET RIEN QUE LE COMPTE — voir l'en-tête. Les passes y sont, parce
+  -- qu'ils verrouillent la question comme un vote.
+  --
+  -- ET SEULEMENT POUR QUI A DÉJÀ SCELLÉ LE SIEN (revue L18, E-1). Comme
+  -- `resultats`, il n'est pas écarté à l'écriture du document : il n'est PAS
+  -- CHERCHÉ, et la garde tient par la STRUCTURE.
+  if v_mon_vote is not null then
+    select pg_catalog.count(*)::integer into v_exprimes
+      from public.bande_votes v
+     where v.tour_id = v_tour.id;
+  end if;
 
   -- ── LA BRANCHE RÉVÉLÉE, ET ELLE SEULE ──────────────────────
   if v_tour.status = 'revelee' then
@@ -1967,7 +2108,14 @@ comment on function public.bande_state(uuid, text) is
   'paramètre pour désigner un autre votant. votes_exprimes est un COMPTE — '
   '« trois ont répondu », jamais qui ni pour qui — et c''est l''attente '
   'invisible que le cahier autorise ; les passes y comptent, c''est le MÊME '
-  'compte que celui qui déclenche la révélation. Le POURCENTAGE est calculé ici '
+  'compte que celui qui déclenche la révélation. MAIS IL EST NUL POUR QUI N''A '
+  'PAS ENCORE SCELLÉ LE SIEN (revue L18, E-1) : à la même table, voir le compte '
+  'monter apprend QUAND le voisin répond, donc que ce qu''il vient de faire '
+  'était un vote — c''est le renseignement même dont le plancher de '
+  'bande_reveal prive l''hôte, et l''y laisser entrer par la lecture aurait '
+  'rendu ce plancher décoratif. NUL et non ABSENT : la clé reste, la forme est '
+  'stable, et le compte n''est pas écarté à l''écriture — il n''est pas '
+  'CHERCHÉ. Le POURCENTAGE est calculé ici '
   'sur le dénominateur FIGÉ et rendu ENTIER : deux arrondis, serveur et '
   'navigateur, finiraient par différer d''un point. Tous les EX ÆQUO sortent, '
   'sans borne. member_id SORT, contrairement à lobby_state, parce que l''écran '
