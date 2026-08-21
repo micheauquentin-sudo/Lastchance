@@ -97,10 +97,26 @@ describe("mapDuoChoix / mapDuoSuggestion", () => {
     });
   });
 
+  it("UN CHOIX SURVIT À LA DISPARITION DE SA FICHE — le nom suffit", () => {
+    // C'est la moitié applicative du remède M-1 : `duo_choices` grave le nom au
+    // moment du geste et sa FK est passée en `set null`. Un commerçant qui
+    // nettoie sa carte pendant la partie efface le LIEN, pas le choix. Exiger
+    // l'identifiant ici jetterait le choix survivant et rendrait la révélation
+    // muette pour ce joueur — c'est-à-dire exactement ce que le SQL vient
+    // d'empêcher.
+    expect(mapDuoChoix({ item_id: null, nom: "Tarte" })).toEqual({
+      item_id: null,
+      nom: "Tarte",
+    });
+    expect(mapDuoChoix({ nom: "Tarte" })).toEqual({
+      item_id: null,
+      nom: "Tarte",
+    });
+  });
+
   it.each([
     ["nul", null],
     ["sans nom", { item_id: ITEM_A }],
-    ["sans identifiant", { nom: "Tarte" }],
   ])("choix %s → null", (_cas, brut) => {
     expect(mapDuoChoix(brut)).toBeNull();
   });

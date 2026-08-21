@@ -77,7 +77,13 @@ export interface DuoOptionView {
  * type refuse de donner une place où atterrir à quoi que ce soit d'autre.
  */
 export interface DuoChoixView {
-  item_id: string;
+  /**
+   * NULLABLE, et c'est le remède M-1 : la fiche choisie peut avoir été
+   * supprimée de la carte pendant la partie. Le choix, lui, survit — son `nom`
+   * a été gravé au moment du geste. L'écran ne doit donc rien attendre de cet
+   * identifiant qu'il ne puisse rendre sans lui.
+   */
+  item_id: string | null;
   nom: string;
 }
 
@@ -242,13 +248,26 @@ export function mapDuoOptions(raw: unknown): DuoOptionView[] {
   return sortie.sort((a, b) => a.ordre - b.ordre);
 }
 
-/** Un choix — `item_id` ET `nom`, ou rien. Une carte sans nom ne s'affiche pas. */
+/**
+ * Un choix — LE NOM SUFFIT, et l'identifiant peut manquer.
+ *
+ * C'est la moitié applicative du remède M-1 : `duo_choices` grave le nom de la
+ * fiche AU MOMENT DU CHOIX (`nom_fige`) et sa FK est passée en `set null`, si
+ * bien qu'un commerçant qui nettoie sa carte pendant la partie ne fait plus
+ * disparaître un choix déjà scellé — il en efface seulement le lien vers une
+ * fiche qui n'existe plus. Exiger `item_id` ici aurait jeté le choix survivant
+ * et rendu le remède invisible : la révélation serait redevenue muette pour ce
+ * joueur, ce que le SQL vient précisément d'empêcher.
+ *
+ * Un choix sans NOM, en revanche, ne s'affiche pas : il n'y aurait rien à
+ * montrer.
+ */
 export function mapDuoChoix(raw: unknown): DuoChoixView | null {
   const root = asRecord(raw);
   if (!root) return null;
-  const item_id = asString(root.item_id);
   const nom = asString(root.nom);
-  return item_id && nom ? { item_id, nom } : null;
+  if (!nom) return null;
+  return { item_id: asString(root.item_id), nom };
 }
 
 /** La proposition de la maison. Mêmes exigences : identifiant et nom. */
