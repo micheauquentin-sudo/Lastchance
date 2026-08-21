@@ -7968,6 +7968,7 @@ export type Database = {
       }
       delete_vitrine_translation: {
         Args: {
+          p_actor: string
           p_champ: string
           p_cible_id: string
           p_cible_type: string
@@ -9476,6 +9477,7 @@ export type Database = {
       }
       upsert_vitrine_translation: {
         Args: {
+          p_actor: string
           p_champ: string
           p_cible_id: string
           p_cible_type: string

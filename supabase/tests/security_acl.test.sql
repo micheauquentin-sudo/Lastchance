@@ -658,12 +658,16 @@ select ok(not has_function_privilege('service_role', 'public.vitrine_cartes_json
 -- PAR TYPE — que la cible appartient bien à l'organisation. `cible_id` ne porte
 -- aucune FK (quatre tables cibles), donc rien d'autre dans le schéma ne peut le
 -- garantir.
+-- LES DEUX PORTES PRENNENT UN ACTEUR depuis VIT-5 (point M2 de la revue L15),
+-- revérifié `owner|editor` EN SQL : les signatures ci-dessous portent donc un
+-- `uuid` de plus, et les formes SANS acteur n'existent plus — ce sont ces
+-- assertions-là qui rougiraient si une surcharge les faisait revivre.
 select ok(not has_table_privilege('anon', 'public.vitrine_translations', 'SELECT'), 'anon cannot read storefront translations');
 select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'SELECT'), 'merchant session cannot read translations directly: RPC only');
 select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'INSERT'), 'merchant session cannot write a translation past the ownership check');
-select ok(has_function_privilege('service_role', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'server can store one translated field, audited');
-select ok(not has_function_privilege('authenticated', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'merchant session cannot bypass the server action to publish English');
-select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone)', 'EXECUTE'), 'anon cannot store translations');
+select ok(has_function_privilege('service_role', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'), 'server can store one translated field, audited');
+select ok(not has_function_privilege('authenticated', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'), 'merchant session cannot bypass the server action to publish English');
+select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(uuid,text,uuid,text,text,text,timestamp with time zone,uuid)', 'EXECUTE'), 'anon cannot store translations');
 select ok(has_function_privilege('service_role', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'server can report translation progress');
 select ok(not has_function_privilege('anon', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'anon cannot probe translation progress across tenants');
 select ok(not has_function_privilege('service_role', 'public.vitrine_champs_traduisibles(uuid,boolean)', 'EXECUTE'), 'the translatable-field definition is granted to nobody: it checks neither entitlement nor publication');
@@ -671,9 +675,9 @@ select ok(not has_function_privilege('service_role', 'public.vitrine_champs_trad
 -- fermée que la première. Ce qu'on ne peut pas écrire chez le voisin, on ne
 -- doit pas pouvoir l'effacer : la vérification d'appartenance PAR TYPE vit
 -- dans la RPC, donc la RPC doit rester le seul chemin.
-select ok(has_function_privilege('service_role', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'server can withdraw one translated field, audited');
-select ok(not has_function_privilege('authenticated', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'merchant session cannot bypass the server action to erase English');
-select ok(not has_function_privilege('anon', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'anon cannot erase translations');
+select ok(has_function_privilege('service_role', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'), 'server can withdraw one translated field, audited');
+select ok(not has_function_privilege('authenticated', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'), 'merchant session cannot bypass the server action to erase English');
+select ok(not has_function_privilege('anon', 'public.delete_vitrine_translation(uuid,text,uuid,text,text,uuid)', 'EXECUTE'), 'anon cannot erase translations');
 select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'DELETE'), 'merchant cannot delete a translation row directly either');
 -- LES TROIS VALIDATEURS SONT EXÉCUTABLES PAR LE COMMERÇANT, et c'est l'inverse
 -- de ce qui était écrit ici. Ces deux lignes affirmaient « granted to nobody
