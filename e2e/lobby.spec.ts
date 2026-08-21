@@ -237,7 +237,15 @@ test.describe("salons joueurs — socle (L16)", () => {
       await expect(invite.getByLabel(/prénom ou pseudo/i)).toBeVisible({
         timeout: 15_000,
       });
-      await expect(invite.getByText(/dans le salon/i)).toHaveCount(0);
+      // LE TITRE, PAS LE TEXTE LIBRE. L'écran « rejoindre » porte lui aussi les
+      // mots « dans le salon » — dans l'aide sous le champ pseudo (« le nom que
+      // les autres verront dans le salon »). Une recherche par texte trouvait
+      // donc toujours une occurrence, y compris sur l'écran attendu : l'ancienne
+      // assertion se contredisait avec celle qui la précède. Ce qui doit avoir
+      // disparu, c'est le TITRE de la salle d'attente, et lui seul.
+      await expect(
+        invite.getByRole("heading", { name: /dans le salon/i }),
+      ).toHaveCount(0);
       expect(invite.url()).toContain(`/lobby/${code}`);
     } finally {
       await contexteInvite.close();
