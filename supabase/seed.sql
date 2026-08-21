@@ -1865,3 +1865,56 @@ values
    repeat('7b', 32), 'niouz1@e2e.local', now() - interval '7 days',
    'confirmed', null)
 on conflict (id) do nothing;
+
+-- ── Socle session joueur — deux lobbies DÉTERMINISTES (L16) ─────────
+-- TOUT CE BLOC PORTE SUR « E2E Café » (e2e10000-…-01) ET SUR ELLE SEULE. Le
+-- droit `vitrine` lui est déjà semé plus haut par octroi daté, donc
+-- `create_player_lobby` accepterait ces lobbies — mais on les écrit EN DIRECT,
+-- avec un code FIXE : un code tiré au hasard par le trigger ne serait pas
+-- rejouable par un test E2E, et le trigger n'écrase jamais un code fourni.
+--
+-- E2EBND — VIVANT, deux membres. C'est la salle qu'un parcours E2E rejoint
+-- pour de bon : capacité 6, donc il reste quatre places, et l'ordre d'arrivée
+-- est posé à la main (joined_at) pour que le rang de l'hôte soit 1 sans
+-- dépendre de l'horloge de la machine qui sème.
+--
+-- E2EXPD — MORT il y a dix minutes, et il est là pour ÇA. Sans lui, « un code
+-- expiré rend le même refus qu'un code inventé » ne serait démontrable qu'en
+-- fabriquant l'expiration dans le test — c'est-à-dire en démontrant que le test
+-- sait vieillir une ligne, pas que le produit sait refuser. Son hôte est semé
+-- comme membre parce qu'un lobby sans son créateur n'existe pas : c'est
+-- l'invariant que `create_player_lobby` établit, et le seed ne doit pas semer
+-- un état que le produit ne sait pas produire.
+--
+-- L'alphabet des codes exclut I, O, 0 et 1 : E2EBND et E2EXPD n'en contiennent
+-- aucun.
+insert into public.player_lobbies
+  (id, organization_id, kind, status, join_code, capacite,
+   creator_token_hash, created_at, expires_at)
+values
+  ('e2eb0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 'bande', 'lobby', 'E2EBND', 6,
+   repeat('b1', 32),
+   now() - interval '5 minutes', now() + interval '25 minutes'),
+  ('e2eb0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 'bande', 'lobby', 'E2EXPD', 6,
+   repeat('b3', 32),
+   now() - interval '40 minutes', now() - interval '10 minutes')
+on conflict (id) do nothing;
+
+insert into public.player_lobby_members
+  (id, lobby_id, organization_id, token_hash, pseudo, joined_at)
+values
+  ('e2eb0000-0000-4000-8000-000000000011',
+   'e2eb0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', repeat('b1', 32), 'Hôte E2E',
+   now() - interval '5 minutes'),
+  ('e2eb0000-0000-4000-8000-000000000012',
+   'e2eb0000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', repeat('b2', 32), 'Invité E2E',
+   now() - interval '4 minutes'),
+  ('e2eb0000-0000-4000-8000-000000000021',
+   'e2eb0000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', repeat('b3', 32), 'Hôte Périmé',
+   now() - interval '40 minutes')
+on conflict (id) do nothing;

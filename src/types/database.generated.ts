@@ -4056,6 +4056,92 @@ export type Database = {
           },
         ]
       }
+      player_lobbies: {
+        Row: {
+          capacite: number
+          created_at: string
+          creator_token_hash: string
+          expires_at: string
+          id: string
+          join_code: string
+          kind: string
+          organization_id: string
+          status: string
+        }
+        Insert: {
+          capacite: number
+          created_at?: string
+          creator_token_hash: string
+          expires_at: string
+          id?: string
+          join_code: string
+          kind: string
+          organization_id: string
+          status?: string
+        }
+        Update: {
+          capacite?: number
+          created_at?: string
+          creator_token_hash?: string
+          expires_at?: string
+          id?: string
+          join_code?: string
+          kind?: string
+          organization_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_lobbies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_lobby_members: {
+        Row: {
+          id: string
+          joined_at: string
+          lobby_id: string
+          organization_id: string
+          pseudo: string
+          token_hash: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          lobby_id: string
+          organization_id: string
+          pseudo: string
+          token_hash: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          lobby_id?: string
+          organization_id?: string
+          pseudo?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_lobby_members_lobby_id_organization_id_fkey"
+            columns: ["lobby_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "player_lobbies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "player_lobby_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_organization_memberships: {
         Row: {
           first_seen_at: string
@@ -7789,6 +7875,16 @@ export type Database = {
         Args: { org_name: string; org_slug: string }
         Returns: string
       }
+      create_player_lobby: {
+        Args: {
+          p_capacite: number
+          p_creator_token_hash: string
+          p_kind: string
+          p_organization_id: string
+          p_pseudo: string
+        }
+        Returns: Json
+      }
       create_progression_badge: {
         Args: {
           p_description?: string
@@ -8192,6 +8288,10 @@ export type Database = {
         }
         Returns: Json
       }
+      join_player_lobby: {
+        Args: { p_join_code: string; p_pseudo: string; p_token_hash: string }
+        Returns: Json
+      }
       join_quiz: {
         Args: {
           p_avatar?: string
@@ -8215,8 +8315,20 @@ export type Database = {
         Args: { p_contest_id: string; p_league_id: string; p_player_id: string }
         Returns: boolean
       }
+      leave_player_lobby: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      lobby_state: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
       lock_event_question: {
         Args: { p_organization_id: string; p_session_id: string }
+        Returns: Json
+      }
+      lock_player_lobby: {
+        Args: { p_creator_token_hash: string; p_lobby_id: string }
         Returns: Json
       }
       lookup_player_identity: {
@@ -8549,6 +8661,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      player_lobby_rang: {
+        Args: { p_joined_at: string; p_lobby_id: string; p_member_id: string }
+        Returns: number
+      }
       player_progression_archive: {
         Args: { p_device_token_hash: string; p_organization_id: string }
         Returns: Json
@@ -8590,6 +8706,7 @@ export type Database = {
       purge_expired_experience_events: { Args: never; Returns: number }
       purge_expired_hunt_players: { Args: never; Returns: number }
       purge_expired_jackpot_players: { Args: never; Returns: number }
+      purge_expired_lobbies: { Args: never; Returns: number }
       purge_expired_loyalty_members: { Args: never; Returns: number }
       purge_expired_meta_progression: { Args: never; Returns: number }
       purge_expired_personal_data: {
