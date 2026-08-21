@@ -1543,8 +1543,12 @@ export async function setVitrineTraduction(
     p_champ: parsed.data.champ,
     p_texte: parsed.data.texte,
     // LA VERSION VUE, intacte : ni reformatée, ni remplacée par l'instant
-    // courant. Voir l'en-tête.
+    // courant. Voir l'en-tête. La RPC la borne de toute façon à l'updated_at
+    // réel de la cible (revue L15, M1) — une version future forgée naît
+    // fraîche et périt à la prochaine édition du français.
     p_version_source: parsed.data.version,
+    // L'ACTEUR DE LA SESSION, revérifié owner|editor en SQL (revue L15, M2).
+    p_actor: garde.userId,
   });
   if (error) {
     reportError("vitrine.set-traduction", error.message);
@@ -1613,6 +1617,8 @@ export async function deleteVitrineTraduction(
     p_cible_id: parsed.data.cible_id,
     p_lang: VITRINE_LANGUE_TRADUITE,
     p_champ: parsed.data.champ,
+    // L'ACTEUR DE LA SESSION, revérifié owner|editor en SQL (revue L15, M2).
+    p_actor: garde.userId,
   });
   if (error) {
     reportError("vitrine.delete-traduction", error.message);

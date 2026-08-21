@@ -1270,6 +1270,8 @@ describe("setVitrineTraduction — la version VUE est repostée telle quelle", (
       // aurait perdu la microseconde de Postgres, donc fait comparer égaux deux
       // instants distincts — une périmée se serait déclarée fraîche.
       p_version_source: "2026-08-20T10:00:00.123456+02:00",
+      // L'acteur de la GARDE, jamais du formulaire (revue L15, M2).
+      p_actor: USER_ID,
     });
   });
 
@@ -1405,6 +1407,8 @@ describe("deleteVitrineTraduction — le retrait, et son idempotence", () => {
       p_cible_id: CARTE_ID,
       p_lang: "en",
       p_champ: "accroche",
+      // L'acteur de la GARDE, jamais du formulaire (revue L15, M2).
+      p_actor: USER_ID,
     });
     expect(cheminsRevalides()).toContain("/v/le-comptoir/en");
   });
