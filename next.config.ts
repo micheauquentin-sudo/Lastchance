@@ -123,6 +123,18 @@ const nextConfig: NextConfig = {
         source: "/invite/:path*",
         headers: tokenPathSecurityHeaders,
       },
+      {
+        // Le code de salle vit dans le CHEMIN et le corps dépend d'un cookie
+        // (membre ou pas) : cinquième surface « l'URL est le secret » (revue
+        // L16, M-3). `Vary: Cookie` en plus — un cache clé-sur-URL (proxy
+        // d'entreprise, tablette de comptoir) ne doit jamais servir au
+        // visiteur suivant la page rendue pour un membre.
+        source: "/lobby/:path*",
+        headers: [
+          ...tokenPathSecurityHeaders,
+          { key: "Vary", value: "Cookie" },
+        ],
+      },
       // /play (ISR), /pronos, /v et /lobby (toutes quatre hors matcher du
       // proxy) ne reçoivent jamais de nonce : ce sont LES QUATRE surfaces
       // publiques — pas trois — où 'unsafe-inline' reste appliqué. Le canal

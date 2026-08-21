@@ -34,10 +34,14 @@ import {
 //
 // ── CONTRÔLE D'ABUS : CE QUI EXISTE, ET CE QUI A ÉTÉ ÉCARTÉ (ADR-109 §A4) ──
 //
-// Trois gardes, et une quatrième refusée :
-//   1. Seau IP-SEULE, ICI, en observabilité pure et fail-open (`lobbyIp`).
-//   2. Quota de vingt salles actives par organisation — EN SQL, sous verrou
-//      consultatif, dans `create_player_lobby`. Rien à rejouer ici.
+// §A4 nommait le seau IP « protection réelle contre l'abus » ; ADR-032
+// interdit pourtant le refus sur clé partagée en parcours public. La tension
+// est TRANCHÉE par l'amendement §A4 (revue L16, M-1) — la voici, honnête :
+//   1. Seau IP-SEULE, ICI, en observabilité pure et fail-open (`lobbyIp`) —
+//      il OBSERVE, il ne refuse pas.
+//   2. Quota par organisation — EN SQL, sous verrou consultatif, dans
+//      `create_player_lobby`, et DURCI : seules les salles habitées ou
+//      récentes comptent. C'est LUI le refus effectif. Rien à rejouer ici.
 //   3. TTL : trente minutes, quatre heures après verrouillage, plafond dur de
 //      vingt-quatre heures en `check`. En SQL également.
 //   4. Plafond par cookie joueur — ÉCARTÉ. §A4 le dit décoratif : il ne protège

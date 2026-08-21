@@ -731,14 +731,17 @@ export const RATE_LIMITS = {
    *  `vitrineSlug`, qui n'écrit qu'une ligne par appel. */
   vitrineImport: { limit: 10, windowSeconds: 3600 },
   /** PLAFOND PAR IP SEULE du socle de lobby (L16), tous commerces confondus —
-   *  compteur d'OBSERVABILITÉ, jamais un refus. C'est la GARDE 1 d'ADR-109 §A4,
-   *  et §A4 la décrit comme telle : « seau IP-seule — côté application
-   *  (observabilité, fail-open) ». Les deux autres gardes du lot vivent en SQL
-   *  (quota de vingt salles actives par organisation, TTL et plafond dur de
-   *  24 h) ; la quatrième — un plafond par cookie joueur — a été explicitement
-   *  ÉCARTÉE par §A4, qui la dit décorative (« elle ne protège rien qu'un joueur
-   *  motivé ne contourne en effaçant son cookie »). Ne pas la réintroduire ici
-   *  en croyant compléter le lot : elle a été pesée et refusée.
+   *  compteur d'OBSERVABILITÉ, jamais un refus. HONNÊTETÉ D'ABORD : ADR-109 §A4
+   *  écrit « seau IP-seule (protection réelle contre l'abus) » — la garde a
+   *  pourtant été livrée OBSERVATOIRE, parce qu'ADR-032 interdit le refus sur
+   *  clé partagée dans un parcours public (le Wi-Fi du café est l'IP de toute
+   *  la table). Cette tension est TRANCHÉE par l'amendement §A4 (revue L16,
+   *  M-1) : la garde 1 observe, et le REFUS effectif est porté par le quota
+   *  SQL durci — seules les salles habitées ou récentes comptent, une rafale
+   *  de salles vides cesse de peser à la fenêtre écoulée. Le plafond par
+   *  cookie joueur reste écarté par §A4, qui le dit décoratif (« il ne protège
+   *  rien qu'un joueur motivé ne contourne en effaçant son cookie ») — ne pas
+   *  le réintroduire en croyant compléter le lot.
    *
    *  IP SEULE, SANS AUCUNE CLÉ DE RESSOURCE, et c'est la raison de `pageOpenIp`
    *  (wagon 7) : `createLobby` reçoit un SLUG et `joinLobby` un CODE, tous deux
