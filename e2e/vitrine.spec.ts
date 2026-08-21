@@ -550,9 +550,16 @@ test.describe("vitrine — dashboard commerçant", () => {
     // ── Fiche ──
     // `.last()` : les `li` sont imbriqués (carte > rubrique) et le filtre
     // par texte matche AUSSI le parent — le plus profond est le bon.
+    // DEUX FILTRES, ET LE SECOND EST DEVENU NÉCESSAIRE : depuis L17, l'éditeur
+    // du Duo Miroir liste les fiches avec leur chemin « Carte · Rubrique », donc
+    // des `li` de CETTE page contiennent le nom de la rubrique sans être des
+    // rubriques — et ils viennent APRÈS, donc `.last()` tombait sur eux (CI
+    // L17). Le filtre `has` ancre sur ce qui définit vraiment une rubrique de
+    // l'éditeur : son champ d'ajout de plat.
     const rubriqueLi = page
       .locator("li")
       .filter({ hasText: nomRubrique })
+      .filter({ has: page.getByLabel("Nouveau plat") })
       .last();
     // HORODATÉ comme `nomCarte`, et pour la même raison : sur une base
     // accumulée (suite complète, reruns), un « Plat E2E » d'un run précédent
@@ -562,7 +569,13 @@ test.describe("vitrine — dashboard commerçant", () => {
     await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
 
-    const ficheLi = page.locator("li").filter({ hasText: nomFiche }).last();
+    // Même précaution : la fiche fraîchement créée apparaît AUSSI dans la liste
+    // à cocher de l'éditeur Duo. On vise celle qui porte son formulaire.
+    const ficheLi = page
+      .locator("li")
+      .filter({ hasText: nomFiche })
+      .filter({ has: page.getByRole("button", { name: "Enregistrer la fiche" }) })
+      .last();
     await expect(ficheLi).toBeVisible({ timeout: 20_000 });
 
     // Ouvrir le détail pour cocher badge + allergène. Le contrôle est un
@@ -769,9 +782,16 @@ test.describe("vitrine — dashboard commerçant", () => {
       timeout: 20_000,
     });
 
+    // DEUX FILTRES, ET LE SECOND EST DEVENU NÉCESSAIRE : depuis L17, l'éditeur
+    // du Duo Miroir liste les fiches avec leur chemin « Carte · Rubrique », donc
+    // des `li` de CETTE page contiennent le nom de la rubrique sans être des
+    // rubriques — et ils viennent APRÈS, donc `.last()` tombait sur eux (CI
+    // L17). Le filtre `has` ancre sur ce qui définit vraiment une rubrique de
+    // l'éditeur : son champ d'ajout de plat.
     const rubriqueLi = page
       .locator("li")
       .filter({ hasText: nomRubrique })
+      .filter({ has: page.getByLabel("Nouveau plat") })
       .last();
     await rubriqueLi.getByLabel("Nouveau plat").fill(nomFiche);
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
