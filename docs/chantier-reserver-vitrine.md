@@ -36,7 +36,7 @@ parallèle, fusions de migrations sérialisées.
 | L11 | VIT-1b — infra i18n + adaptateur neutre (**Vitrine OUVERTE au public**, ISR 60 s, sélecteur ≥95 %) | ✅ | #167 | 20261012120000 |
 | L12 | VIT-2 — import assisté (revue obligatoire, RPC atomique) + QR contextuels par ancres | ✅ | #168 | 20261013120000 |
 | L13 | VIT-3 — portes Réserver/quiz publiées en **opt-in** (blocs 5→7, purge sur drapeaux, acteur d'import) | ✅ | #169 | 20261014120000 |
-| L14 | VIT-4 — social + avis + analytics + CRM léger | ⏳ | — | — |
+| L14 | VIT-4 — À la une (3 contenus), audience (beacon vitrine), segments réservé/venu | ✅ | #170 | 20261015120000 |
 | L15 | VIT-5 — langues+ | ⏳ | — | — |
 | L16 | Socle session joueur | ⏳ | — | — |
 | L17 | Duo Miroir (A4) | ⏳ | — | — |
