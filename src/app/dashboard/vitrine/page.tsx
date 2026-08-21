@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
+import { BANDE_PACK_DEFAUT } from "@/lib/bande-packs";
+import { loadBandePack } from "@/lib/bande-context";
 import { loadDuoOptions } from "@/lib/duo-context";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -16,6 +18,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
+import { BandeEditeur } from "@/components/vitrine/bande-editeur";
 import { DuoEditeur } from "@/components/vitrine/duo-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
@@ -102,7 +105,19 @@ export default async function VitrineDashboardPage() {
     const ctx = await loadDuoOptions();
     return ctx.ok ? ctx.plateau : { options: [], suggestion: null };
   };
-  const [contenus, ouvertures, supervision, plateauDuo] =
+  /**
+   * LE PACK DU PORTRAIT DE LA BANDE (L18), lu avec les autres.
+   *
+   * Même arbitrage que `lireDuo`, avec une nuance : ce jeu n'a PAS d'état
+   * « non configuré ». Le pack a toujours une valeur, et le repli est le pack
+   * POSITIF — jamais `taquin` : un défaut de lecture ne doit pas pouvoir cocher
+   * pour le commerçant une case qu'il n'a pas cochée.
+   */
+  const lireBande = async (): Promise<string> => {
+    const ctx = await loadBandePack();
+    return ctx.ok ? ctx.pack : BANDE_PACK_DEFAUT;
+  };
+  const [contenus, ouvertures, supervision, plateauDuo, packBande] =
     settings && organizationId
       ? await Promise.all([
           supabase
@@ -114,12 +129,14 @@ export default async function VitrineDashboardPage() {
           readModulePageOpenCount(supabase, "vitrine", settings.id),
           lireSalons(),
           lireDuo(),
+          lireBande(),
         ])
       : [
           [] as ContenuVitrineView[],
           0,
           { liste: [] as OrgLobbyView[], luA: "" },
           { options: [], suggestion: null } as DuoOptionsAdminView,
+          BANDE_PACK_DEFAUT,
         ];
 
   return (
@@ -230,6 +247,16 @@ export default async function VitrineDashboardPage() {
             <DuoEditeur
               cartes={cartes}
               plateau={plateauDuo}
+              peutEditer={capacites.canEditDraft}
+            />
+
+            {/* LE PORTRAIT DE LA BANDE VIENT APRÈS LE DUO, et n'a PAS la même
+                dépendance : il ne se choisit pas parmi les fiches, il marche
+                sans carte. Il est ici parce que les deux jeux s'ouvrent depuis
+                la même vitrine et se règlent d'un même mouvement — pas parce
+                qu'un ordre de geste l'impose. */}
+            <BandeEditeur
+              pack={packBande}
               peutEditer={capacites.canEditDraft}
             />
 
