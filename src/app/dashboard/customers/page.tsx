@@ -59,8 +59,17 @@ export default async function CustomersPage({
   // abonné est dans la liste et hors du compteur, un abonné qui n'a jamais joué
   // l'inverse) — le libellé doit donc dire « abonnés », jamais « clients », et
   // ce chiffre n'est en aucun cas le total de la liste filtrée.
-  const inactiveCount =
-    ((segmentData ?? [])[0] as { inactive_count?: number } | undefined)?.inactive_count ?? 0;
+  const comptes = (segmentData ?? [])[0] as
+    | { inactive_count?: number; reserve_count?: number; venu_count?: number }
+    | undefined;
+  const inactiveCount = comptes?.inactive_count ?? 0;
+  // MÊME POPULATION QUE `inactiveCount`, donc même précaution de vocabulaire :
+  // ce sont des ABONNÉS newsletter ayant réservé (ou étant venus), et non les
+  // clients de la liste ci-dessous. La phrase le dit en toutes lettres — un
+  // « 12 ont réservé » posé à côté d'un tableau de joueurs se lirait comme le
+  // sous-total du tableau, ce qu'il n'est jamais.
+  const reserveCount = comptes?.reserve_count ?? 0;
+  const venuCount = comptes?.venu_count ?? 0;
   const params = customerSearchParams(filtres);
   const exportQuery = new URLSearchParams(
     Object.entries(params).filter((entry): entry is [string, string] => Boolean(entry[1])),
@@ -151,6 +160,20 @@ export default async function CustomersPage({
         )}
       </form>
 
+      {reserveCount > 0 || venuCount > 0 ? (
+        <p className="-mt-3 mb-6 text-sm text-zinc-600">
+          Parmi vos abonnés newsletter :{" "}
+          <span className="font-semibold text-zinc-700 tabular-nums">
+            {reserveCount}
+          </span>{" "}
+          {reserveCount > 1 ? "ont réservé" : "a réservé"},{" "}
+          <span className="font-semibold text-zinc-700 tabular-nums">
+            {venuCount}
+          </span>{" "}
+          {venuCount > 1 ? "sont venus" : "est venu"}.
+        </p>
+      ) : null}
+
       {profiles.length === 0 ? (
         <Card className="text-center py-12">
           <p className="text-zinc-500">
@@ -176,6 +199,10 @@ export default async function CustomersPage({
               {rows.map(({ profile: p, badges }) => (
                 <tr key={p.email} className="border-b border-zinc-100 last:border-0">
                   <td className="px-4 py-3">
+                    {/* `first_name` est NULLABLE depuis VIT-4 : la RPC part
+                        désormais aussi de profils sans prénom. `||` et non
+                        `??` — une chaîne vide doit rendre le tiret elle
+                        aussi, et c'est déjà ce que faisait cette ligne. */}
                     <p className="font-medium text-zinc-900">{p.first_name || "—"}</p>
                     <p className="text-zinc-500 text-xs">{p.email}</p>
                   </td>
@@ -193,6 +220,22 @@ export default async function CustomersPage({
                           {b.label}
                         </span>
                       ))}
+                      {/* LES DEUX FAITS « RÉSERVER » (VIT-4) sont RENDUS par la
+                          RPC, jamais dérivés ici : contrairement aux trois
+                          pastilles ci-dessus, ils ne se déduisent ni de `wins`
+                          ni de `last_win`. Ils s'ajoutent aux autres au lieu de
+                          les remplacer — un fidèle qui est venu est les deux, et
+                          le filtre les traite déjà sans priorité. */}
+                      {p.a_reserve ? (
+                        <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
+                          A réservé
+                        </span>
+                      ) : null}
+                      {p.est_venu ? (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                          Est venu
+                        </span>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

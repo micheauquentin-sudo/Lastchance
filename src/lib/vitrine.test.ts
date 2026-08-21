@@ -10,6 +10,7 @@ import {
   libelleBadge,
   libelleBloc,
   libelleStyleCartes,
+  mapContenusVitrine,
   mapPortesVitrine,
   mapSetVitrineSlug,
   mapThemeVitrine,
@@ -22,6 +23,8 @@ import {
   urlVitrine,
   VITRINE_BLOCS,
   VITRINE_BLOCS_DEFAUT,
+  VITRINE_CONTENUS_MAX,
+  VITRINE_CONTENU_URL_MAX,
   VITRINE_PORTES_MAX,
   VITRINE_PUBLIQUE_OUVERTE,
 } from "./vitrine";
@@ -523,6 +526,138 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       reserver: { activites: [], files: [], offres: [] },
       experiences: { quiz: [] },
     });
+  });
+
+  it("les contenus mis en avant remontent jusqu'à l'état public", () => {
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {},
+      cartes: [],
+      contenus: [
+        { titre: "Notre reportage", url: "https://presse.test/article", rang: 1 },
+      ],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    expect(etat.contenus).toEqual([
+      { titre: "Notre reportage", url: "https://presse.test/article", rang: 1 },
+    ]);
+  });
+
+  it("un document d'AVANT les contenus en rend une liste VIDE", () => {
+    // Même règle que les six listes de portes : une clé absente aurait obligé
+    // l'écran à distinguer « vitrine d'avant VIT-4 » de « aucun contenu choisi »,
+    // c'est-à-dire deux chemins pour un seul affichage.
+    const etat = mapVitrinePublicState({
+      state: "ok",
+      slug: "le-comptoir",
+      identite: {},
+      liens: {},
+      cartes: [],
+    });
+    if (etat.state !== "ok") throw new Error("état inattendu");
+    expect(etat.contenus).toEqual([]);
+  });
+});
+
+describe("mapContenusVitrine — l'adresse est revalidée À LA LECTURE", () => {
+  it("lit une liste nominale, sans retrier ni renuméroter", () => {
+    // L'ORDRE VIENT DE LA RPC (`order by rang`), et l'unicité (org, rang) le
+    // rend total : retrier ici aurait créé un second ordre à tenir.
+    expect(
+      mapContenusVitrine([
+        { titre: "Le reportage", url: "https://presse.test/nous", rang: 1 },
+        { titre: "La vidéo", url: "https://video.test/watch?v=1", rang: 3 },
+      ]),
+    ).toEqual([
+      { titre: "Le reportage", url: "https://presse.test/nous", rang: 1 },
+      { titre: "La vidéo", url: "https://video.test/watch?v=1", rang: 3 },
+    ]);
+  });
+
+  it("AUCUNE liste blanche d'hôtes, contrairement aux trois liens sociaux", () => {
+    // C'est la différence de RÉGIME entre `asLienContenu` et `asLienSortant` :
+    // là-bas trois services connus d'avance, ici une adresse arbitraire choisie
+    // par le commerçant. Passer `estLienInvitationSur` aurait fait disparaître
+    // en silence tout ce que la fonctionnalité existe pour montrer.
+    expect(
+      mapContenusVitrine([
+        { titre: "Article", url: "https://ouest-france.test/nous", rang: 1 },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ["non parseable comme URL absolue", "/interne/page"],
+    ["en clair", "http://presse.test/article"],
+    ["en javascript:", "javascript:alert(1)"],
+    ["en data:", "data:text/html,<script>alert(1)</script>"],
+    ["portant des identifiants", "https://qui:quoi@presse.test/article"],
+    ["portant un nom d'utilisateur seul", "https://qui@presse.test/article"],
+    ["portant un retour à la ligne", "https://presse.test/a\nb"],
+    ["vide", ""],
+  ])("une adresse %s fait disparaître le contenu ENTIER", (_cas, url) => {
+    // REPLI MUET, motif `asLienSortant` : `state` reste « ok » et la vitrine
+    // s'affiche. Ce qui disparaît est le contenu, pas la page — et il disparaît
+    // EN ENTIER, parce qu'un titre cliquable sans adresse serait un demi-contenu
+    // que l'écran devrait apprendre à rendre.
+    expect(mapContenusVitrine([{ titre: "Article", url, rang: 1 }])).toEqual([]);
+  });
+
+  it("une adresse plus longue que la borne SQL est écartée", () => {
+    // La valeur ne peut pas venir de la base (`char_length(url) <= 300`) : ce
+    // refus existe pour la ligne écrite avant que le `check` n'existe, ou par
+    // un chemin qui l'ignorerait.
+    const trop = `https://presse.test/${"a".repeat(VITRINE_CONTENU_URL_MAX)}`;
+    expect(mapContenusVitrine([{ titre: "Article", url: trop, rang: 1 }])).toEqual(
+      [],
+    );
+  });
+
+  it("un port n'est PAS refusé, contrairement aux liens sociaux", () => {
+    // Là-bas `https://instagram.com:1` sert à pointer un autre écouteur sur un
+    // hôte de confiance. Ici il n'y a aucun hôte de confiance à protéger : le
+    // commerçant a choisi l'hôte ET le port.
+    expect(
+      mapContenusVitrine([
+        { titre: "Notre page", url: "https://presse.test:8443/nous", rang: 2 },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ["sans titre", { url: "https://presse.test/a", rang: 1 }],
+    ["au titre vide", { titre: "", url: "https://presse.test/a", rang: 1 }],
+    ["sans place lisible", { titre: "A", url: "https://presse.test/a" }],
+    ["à la place non numérique", { titre: "A", url: "https://presse.test/a", rang: "1" }],
+    ["qui n'est pas un objet", "https://presse.test/a"],
+  ])("un contenu %s est écarté, motif mapFiche", (_cas, brut) => {
+    expect(mapContenusVitrine([brut])).toEqual([]);
+  });
+
+  it("TROIS au plus, et la borne compte les contenus RETENUS", () => {
+    // Une entrée sur deux corrompue rend quand même trois contenus valides : la
+    // troncature existe pour le poids de la page servie en ISR, pas pour punir
+    // un document abîmé.
+    const document = [
+      { titre: "Un", url: "https://presse.test/1", rang: 1 },
+      { titre: "Corrompu", url: "http://presse.test/2", rang: 2 },
+      { titre: "Deux", url: "https://presse.test/3", rang: 2 },
+      null,
+      { titre: "Trois", url: "https://presse.test/4", rang: 3 },
+      { titre: "Quatre", url: "https://presse.test/5", rang: 4 },
+    ];
+    const lus = mapContenusVitrine(document);
+    expect(lus).toHaveLength(VITRINE_CONTENUS_MAX);
+    expect(lus.map((c) => c.titre)).toEqual(["Un", "Deux", "Trois"]);
+  });
+
+  it("une liste absente ou illisible vaut la liste VIDE, jamais une exception", () => {
+    expect(mapContenusVitrine(undefined)).toEqual([]);
+    expect(mapContenusVitrine(null)).toEqual([]);
+    expect(mapContenusVitrine("nope")).toEqual([]);
+    expect(mapContenusVitrine({ titre: "A" })).toEqual([]);
   });
 });
 

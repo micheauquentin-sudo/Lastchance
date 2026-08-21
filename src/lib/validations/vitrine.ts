@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   absentSiNonRendu,
   caseACochee,
+  entierRequis,
   nonRenduVaut,
   texteOptionnel,
   videSiNonRendu,
@@ -12,6 +13,10 @@ import {
   VITRINE_BADGES,
   VITRINE_BLOCS,
   VITRINE_CARTE_NOM_MAX,
+  VITRINE_CONTENU_RANG_MAX,
+  VITRINE_CONTENU_RANG_MIN,
+  VITRINE_CONTENU_TITRE_MAX,
+  VITRINE_CONTENU_URL_MAX,
   VITRINE_FICHE_DESCRIPTION_MAX,
   VITRINE_FICHE_NOM_MAX,
   VITRINE_HISTOIRE_MAX,
@@ -230,6 +235,77 @@ export const saveVitrineSettingsSchema = z.object({
   style_cartes: styleCartesSchema,
   ordre_blocs: ordreBlocsSchema,
 });
+
+// ── LES CONTENUS MIS EN AVANT (VIT-4) ────────────────────────
+
+/**
+ * LA PLACE, 1 à 3 — et le même schéma sert à poser comme à retirer.
+ *
+ * C'est la CLÉ de la ligne côté commerçant : `vitrine_contenus` a bien un `id`,
+ * mais il ne sort d'aucune lecture (la RPC publique rend `{titre, url, rang}`,
+ * et l'écran de réglages travaille par place). Les deux actions écrivent donc
+ * par `(organisation, rang)`, et un rang hors bornes doit être refusé ICI :
+ * envoyé tel quel, il ne toucherait aucune ligne et la suppression rendrait un
+ * succès qui n'a rien supprimé.
+ *
+ * UN SEUL MESSAGE POUR LES QUATRE REFUS (absent, non numérique, hors bornes,
+ * décimal) : ils désignent tous le même écart, et l'écran n'offre que trois
+ * boutons — un commerçant ne peut produire ces valeurs qu'en forgeant le POST.
+ */
+const PLACE_INVALIDE = "La place du contenu doit être 1, 2 ou 3.";
+
+const rangContenuSchema = entierRequis({
+  absent: PLACE_INVALIDE,
+  nombre: PLACE_INVALIDE,
+  entier: PLACE_INVALIDE,
+  min: [VITRINE_CONTENU_RANG_MIN, PLACE_INVALIDE],
+  max: [VITRINE_CONTENU_RANG_MAX, PLACE_INVALIDE],
+});
+
+/**
+ * L'adresse d'un contenu — MIROIR EXACT du `check` SQL, détourée d'abord.
+ *
+ * `url ~ '^https://[^[:space:]]+$'` et `char_length(url) <= 300`. Le détourage
+ * précède la mesure pour la raison de `prix_affiche` : une adresse collée avec
+ * son espace de fin serait acceptée ici et refusée en base sur un 23514 que
+ * l'écran ne sait pas expliquer.
+ *
+ * AUCUNE LISTE BLANCHE D'HÔTES, contrairement aux trois liens sociaux
+ * d'`organizations` : c'est une adresse arbitraire, et le sens de la
+ * fonctionnalité est justement de montrer autre chose qu'un réseau social. Ce
+ * qui garde la page publique est la revalidation À LA LECTURE
+ * (`asLienContenu`), parce qu'une valeur écrite avant qu'une garde n'existe
+ * traverse toutes les gardes posées après elle.
+ */
+const urlContenuSchema = z
+  .string()
+  .trim()
+  .min(1, "L'adresse du contenu est requise")
+  .max(
+    VITRINE_CONTENU_URL_MAX,
+    `Adresse trop longue (${VITRINE_CONTENU_URL_MAX} caractères max)`,
+  )
+  .regex(
+    /^https:\/\/\S+$/,
+    "L'adresse doit commencer par https:// et ne contenir aucun espace",
+  );
+
+const titreContenuSchema = z
+  .string()
+  .trim()
+  .min(1, "Le titre du contenu est requis")
+  .max(
+    VITRINE_CONTENU_TITRE_MAX,
+    `Titre trop long (${VITRINE_CONTENU_TITRE_MAX} caractères max)`,
+  );
+
+export const setVitrineContenuSchema = z.object({
+  rang: rangContenuSchema,
+  titre: titreContenuSchema,
+  url: urlContenuSchema,
+});
+
+export const deleteVitrineContenuSchema = z.object({ rang: rangContenuSchema });
 
 // ── LES CARTES ───────────────────────────────────────────────
 

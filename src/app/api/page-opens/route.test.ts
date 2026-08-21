@@ -71,7 +71,9 @@ describe("POST /api/page-opens — validation de l'entrée", () => {
   it.each([
     ["absent", null],
     ["vide", ""],
-    ["trop court (3 caractères)", "abc"],
+    // DEUX caractères, et non trois : la borne basse est passée à trois en
+    // VIT-4 pour laisser passer les slugs de vitrine (`{3,60}` en base).
+    ["trop court (2 caractères)", "ab"],
     ["trop long (65 caractères)", "a".repeat(65)],
     ["avec un espace", "promo ete"],
     ["avec un souligné", "promo_ete"],
@@ -98,11 +100,16 @@ describe("POST /api/page-opens — validation de l'entrée", () => {
     expect(mocks.rateLimit).not.toHaveBeenCalled();
   });
 
-  it("accepte le format exact de la contrainte SQL sur qr_codes.slug", async () => {
-    // La borne haute et la borne basse sont testées des DEUX côtés : un
-    // format plus permissif que la colonne ferait écrire des seaux pour des
-    // slugs que la base ne peut pas porter ; plus strict, il ferait cesser
-    // de compter des QR pourtant valides et déjà imprimés.
+  it("accepte tout ce que la contrainte SQL sur qr_codes.slug peut porter", async () => {
+    // La borne HAUTE est celle de la colonne, et elle est testée des deux
+    // côtés : plus permissive, on écrirait des seaux pour des slugs que la
+    // base ne peut pas porter ; plus stricte, on cesserait de compter des QR
+    // valides et DÉJÀ IMPRIMÉS.
+    //
+    // La borne BASSE, elle, n'est plus celle de `qr_codes` depuis VIT-4 : la
+    // route accepte trois caractères pour les slugs de vitrine. Un `abc` sur
+    // ce chemin-ci ne désigne donc aucun QR — `increment_qr_scan` cherche un
+    // `qr_codes.slug`, dont le `check` reste `{4,64}` — et ne crée rien.
     for (const slug of ["abcd", "a".repeat(64), "Promo-Ete-2026", "1234"]) {
       mocks.rpc.mockClear();
       await POST(pageOpenRequest(slug));
@@ -319,7 +326,7 @@ describe("POST /api/page-opens — surface exposée", () => {
 
 /**
  * ── Le chemin MODULE (quiz, calendrier, jackpot, pronostics, fidélité, event,
- *    chasse au trésor)
+ *    chasse au trésor, vitrine)
  *
  * Même route, même seau, même 204 muette. Ce qui change : l'identifiant public
  * n'est plus forcément un slug (uuid pour le passeport, code de jonction à six
@@ -338,7 +345,7 @@ function moduleRequest(
 }
 
 describe("POST /api/page-opens — comptage par module", () => {
-  it("compte les sept modules équipés, chacun avec son identifiant public", async () => {
+  it("compte les huit modules équipés, chacun avec son identifiant public", async () => {
     // Rougirait sur une faute de frappe dans le vocabulaire : `event` au lieu
     // d'`events`, `contest` au lieu de `pronostics`. La RPC ne lèverait pas —
     // elle rendrait simplement sans rien compter, et le commerçant lirait 0
@@ -353,6 +360,9 @@ describe("POST /api/page-opens — comptage par module", () => {
       // La chasse passe le jeton de l'ÉTAPE (`/hunt/[token]`), pas
       // l'identifiant de la chasse : le compteur est par affiche.
       ["hunts", "aB3d-etape-1-9f2c"],
+      // La vitrine passe le slug de `/v/[slug]` : UNE page par commerce, donc
+      // une seule ligne de compteur — la RPC le résout vers vitrine_settings.id.
+      ["vitrine", "le-comptoir"],
     ];
     for (const [moduleKey, publicId] of cas) {
       mocks.rpc.mockClear();
@@ -393,7 +403,7 @@ describe("POST /api/page-opens — comptage par module", () => {
   it.each([
     ["absent", null],
     ["vide", ""],
-    ["trop court", "abc"],
+    ["trop court", "ab"],
     ["trop long", "a".repeat(65)],
     ["avec une barre oblique", "quiz/noel"],
     ["remontant dans l'arborescence", "../../etc/passwd"],
@@ -409,6 +419,36 @@ describe("POST /api/page-opens — comptage par module", () => {
       expect(mocks.rateLimit).not.toHaveBeenCalled();
     },
   );
+
+  it("un slug de vitrine de TROIS caractères atteint la base (VIT-4)", async () => {
+    // LE DÉFAUT QUE LA BORNE À QUATRE PRODUISAIT, et il était MUET : le slug
+    // d'une vitrine s'écrit `^[a-z0-9-]{3,60}$`, donc « bar » est une adresse
+    // valide et imprimable. La route la refusait avant la base — QR imprimé,
+    // compteur figé à zéro, aucune erreur nulle part.
+    const response = await POST(moduleRequest("vitrine", "bar"));
+
+    expect(response.status).toBe(204);
+    expect(mocks.rpc).toHaveBeenCalledWith("increment_module_page_open", {
+      p_module: "vitrine",
+      p_public_id: "bar",
+    });
+  });
+
+  it("l'élargissement ne décide de rien : la RPC reste juge par module", async () => {
+    // Trois caractères passent désormais la regex sur TOUS les modules — c'est
+    // le prix d'une borne partagée. Ce qui EXISTE reste tranché en SQL : la
+    // résolution d'un `quiz` de trois caractères ne rend aucune ligne, et
+    // `increment_module_page_open` ne crée alors rien. La route se contente de
+    // borner l'espace des clés de seau, elle ne prétend pas connaître le
+    // vocabulaire de chaque table.
+    const response = await POST(moduleRequest("quiz", "abc"));
+
+    expect(response.status).toBe(204);
+    expect(mocks.rpc).toHaveBeenCalledWith("increment_module_page_open", {
+      p_module: "quiz",
+      p_public_id: "abc",
+    });
+  });
 
   it("le format accepté couvre les TROIS formes d'identifiant public", async () => {
     // Un slug, un uuid (passeport et jackpot) et un code de jonction à six

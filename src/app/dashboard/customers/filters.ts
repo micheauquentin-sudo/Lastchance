@@ -18,10 +18,23 @@ export const LOYAL_FROM_WINS = 3;
 export const INACTIVE_AFTER_DAYS = 60;
 const DAY_MS = 86_400_000;
 
+/**
+ * Les segments, dans l'ordre de la RPC `customer_segment_matches`.
+ *
+ * Les deux derniers (VIT-4) ne sortent PAS des gains mais de `reservations` :
+ * « a réservé » au moins une fois, « est venu » au moins une fois (check-in).
+ * Ils n'ont donc ni seuil ni fenêtre — c'est un fait, pas un calcul — et c'est
+ * pourquoi ils n'apparaissent pas dans `customerBadges`, qui ne sait dériver
+ * que des trois premiers depuis `wins` et `last_win`. Leur pastille vient de
+ * deux colonnes rendues par la RPC (`a_reserve`, `est_venu`), et l'écran les
+ * lit telles quelles.
+ */
 export const SEGMENTS = [
   { value: "fidele", label: "Fidèles" },
   { value: "nouveau", label: "Nouveaux" },
   { value: "a_relancer", label: "À relancer" },
+  { value: "a_reserve", label: "A réservé" },
+  { value: "venu", label: "Est venu" },
 ] as const;
 
 export type SegmentValue = (typeof SEGMENTS)[number]["value"];
@@ -86,6 +99,10 @@ export interface ProfilExport {
   redeemed: number;
   first_win: string;
   last_win: string;
+  /** A réservé au moins une fois (VIT-4) — un fait, pas un seuil. */
+  a_reserve: boolean;
+  /** S'est présenté au moins une fois (check-in enregistré). */
+  est_venu: boolean;
   /** Total AVANT pagination, rendu en fenêtre sur chaque ligne par la RPC. */
   total_count: number;
 }
@@ -138,7 +155,14 @@ export function csvClients(
     "recuperes",
     "premier_gain",
     "dernier_gain",
+    "a_reserve",
+    "est_venu",
   ].join(";");
+
+  // « oui » / « non » et non `true` / `false` : ce fichier s'ouvre dans le
+  // tableur d'un commerçant, pas dans un débogueur, et un booléen anglais y
+  // devient une colonne qu'il faut traduire à la main avant de filtrer.
+  const ouiNon = (v: boolean) => (v ? "oui" : "non");
 
   const lines = rows.map((r) =>
     [
@@ -148,6 +172,8 @@ export function csvClients(
       csvCell(r.redeemed),
       csvCell(r.first_win),
       csvCell(r.last_win),
+      csvCell(ouiNon(r.a_reserve)),
+      csvCell(ouiNon(r.est_venu)),
     ].join(";"),
   );
 

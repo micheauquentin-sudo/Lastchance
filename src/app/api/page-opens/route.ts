@@ -7,7 +7,7 @@ import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
  * Compteur d'ouvertures de page publique. Deux formes :
  *
  *   POST /api/page-opens?slug=<slug>              → la roue (qr_codes.scan_count)
- *   POST /api/page-opens?module=<clé>&id=<idPub>  → les sept modules à QR
+ *   POST /api/page-opens?module=<clé>&id=<idPub>  → les huit modules à QR
  *
  * Appelé par <PageOpenBeacon /> à chaque chargement de page — les pages étant
  * servies depuis le cache ISR pour la roue, le comptage ne peut pas se faire
@@ -34,11 +34,36 @@ import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
 
 export const dynamic = "force-dynamic";
 
-// Même format que la contrainte SQL sur qr_codes.slug. Il couvre aussi les
-// autres formes d'identifiant public des modules — uuid (36 car.), code de
-// jonction (8 car.), slug, et jeton d'étape de chasse (`^[A-Za-z0-9-]{8,64}$`,
-// strictement inclus dans cette classe) — qui sont tous du `[A-Za-z0-9-]`.
-const SLUG_RE = /^[A-Za-z0-9-]{4,64}$/;
+// Même classe de caractères que la contrainte SQL sur qr_codes.slug. Elle
+// couvre aussi les autres formes d'identifiant public des modules — uuid
+// (36 car.), code de jonction (8 car.), slug, et jeton d'étape de chasse
+// (`^[A-Za-z0-9-]{8,64}$`, strictement inclus dans cette classe) — qui sont
+// tous du `[A-Za-z0-9-]`.
+//
+// ── LA BORNE BASSE EST PASSÉE DE QUATRE À TROIS (VIT-4) ──
+//
+// Le slug d'une VITRINE s'écrit `^[a-z0-9-]{3,60}$` (20261011120000) : trois
+// caractères y sont une adresse valide, imprimable sur un QR de comptoir. À
+// quatre, cette route les refusait AVANT d'atteindre la base — un QR imprimé,
+// un compteur figé à zéro, et aucune erreur nulle part. C'est exactement le
+// mode d'échec MUET que le vocabulaire des modules existe pour éviter.
+//
+// ── POURQUOI L'ÉLARGISSEMENT NE DÉCIDE DE RIEN ──
+//
+// Cette expression ne dit pas ce qui EXISTE, elle borne l'espace des CLÉS DE
+// SEAU (le motif du bloc ci-dessous). Ce qui existe reste tranché par module,
+// et par du SQL : `increment_qr_scan` cherche un `qr_codes.slug`, dont le
+// `check` reste `{4,64}` — une valeur de trois caractères n'y désigne rien ;
+// `increment_module_page_open` résout dans la table du module et NE CRÉE RIEN
+// quand la résolution est vide, ce qui est la ligne qui rend cet endpoint
+// public tenable et ne dépend pas de la borne basse. Les deux RPC restent donc
+// juges, chacune de son vocabulaire.
+//
+// Ce que l'élargissement coûte réellement : un seau ouvert pour un identifiant
+// de trois caractères qui ne désigne rien. Il est plafonné par le compteur
+// d'IP seule consommé juste en dessous, qui existe précisément parce que la
+// partie ressource de la clé est choisie par l'appelant.
+const SLUG_RE = /^[A-Za-z0-9-]{3,64}$/;
 
 export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -121,8 +146,10 @@ export async function POST(request: Request) {
   }
 
   // ── Chemin module : quiz, calendrier, jackpot, pronostics, fidélité, event,
-  // et chasse au trésor — celle-ci comptée PAR ÉTAPE, son `id` étant le jeton
-  // de l'étape (`/hunt/[token]`) et non l'identifiant de la chasse. ──
+  // chasse au trésor et vitrine. La chasse est comptée PAR ÉTAPE, son `id`
+  // étant le jeton de l'étape (`/hunt/[token]`) et non l'identifiant de la
+  // chasse ; la vitrine, à l'inverse, est UNE page par commerce et son `id` est
+  // le slug de `/v/[slug]`, résolu vers `vitrine_settings.id`. ──
   if (isModulePageOpenKey(moduleKey) && SLUG_RE.test(publicId)) {
     const allowed = await rateLimit(
       rateLimitBucket("scan", moduleKey, publicId, ip),

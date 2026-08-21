@@ -101,6 +101,11 @@ function fausseRpc(total: number) {
       redeemed: 0,
       first_win: "2026-01-01T00:00:00.000Z",
       last_win: "2026-01-01T00:00:00.000Z",
+      // Cette fausse RPC ne prouve que la PAGINATION : les deux faits
+      // « Réserver » y sont constants, faute de quoi ils feraient croire à une
+      // variation que rien ici ne teste.
+      a_reserve: false,
+      est_venu: false,
       total_count: total,
     }));
   };
@@ -154,6 +159,11 @@ describe("csvClients", () => {
     redeemed: 2,
     first_win: "2026-01-01T00:00:00.000Z",
     last_win: "2026-06-01T00:00:00.000Z",
+    // VIT-4 : les deux faits « Réserver » rendus par la RPC. Un `true` et un
+    // `false` plutôt que deux `true` — l'export doit prouver les DEUX
+    // rendus, « oui » et « non », sur la même ligne.
+    a_reserve: true,
+    est_venu: false,
     total_count: 1,
   };
 
@@ -162,10 +172,10 @@ describe("csvClients", () => {
     const lignes = csv.split("\n");
     expect(csv.startsWith("\ufeff")).toBe(true);
     expect(lignes[0]).toBe(
-      "\ufeffemail;prenom;gains;recuperes;premier_gain;dernier_gain",
+      "\ufeffemail;prenom;gains;recuperes;premier_gain;dernier_gain;a_reserve;est_venu",
     );
     expect(lignes[1]).toBe(
-      "momo@test.local;Momo;3;2;2026-01-01T00:00:00.000Z;2026-06-01T00:00:00.000Z",
+      "momo@test.local;Momo;3;2;2026-01-01T00:00:00.000Z;2026-06-01T00:00:00.000Z;oui;non",
     );
     expect(csv).not.toContain("telephone");
     expect(lignes).toHaveLength(2);

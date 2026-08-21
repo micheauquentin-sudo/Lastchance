@@ -1043,14 +1043,39 @@ export interface NewsletterCampaign {
   created_at: string;
 }
 
-/** Profil agrégé d'un joueur identifié (RPC org_customer_profiles). */
+/** Profil agrégé d'un joueur identifié (RPC org_customer_profiles_page). */
 export interface CustomerProfile {
   email: string;
-  first_name: string;
+  /**
+   * `null` QUAND AUCUNE PARTICIPATION N'A JAMAIS PORTÉ DE PRÉNOM — et ce
+   * `| null` est une CORRECTION, pas un ajout.
+   *
+   * `participations.first_name` est nullable depuis 00004, et la RPC retient le
+   * plus récent NON NUL : l'absence traverse donc jusqu'ici, et le type le
+   * niait. Le seul consommateur écrivait déjà `{p.first_name || "—"}` et
+   * `csvCell(r.first_name ?? "")` — le code savait, le type mentait.
+   */
+  first_name: string | null;
   wins: number;
   redeemed: number;
   first_win: string;
   last_win: string;
+  /**
+   * A LAISSÉ UNE TRACE DANS RÉSERVER, tout statut confondu (VIT-4) — les
+   * annulations comprises : quelqu'un qui a voulu venir reste quelqu'un qu'un
+   * commerçant veut pouvoir relancer.
+   *
+   * TOUJOURS un booléen, jamais `null` : la RPC pose le `coalesce` avant le
+   * prédicat de segment, pour que la colonne rendue et le segment appliqué
+   * lisent la même valeur.
+   */
+  a_reserve: boolean;
+  /**
+   * EST VENU : la caisse a enregistré l'arrivée (`checked_in`), la file a servi
+   * (`served`), ou l'offre a été retirée (`redeemed`). Le fait le plus rare des
+   * deux, et le plus précieux.
+   */
+  est_venu: boolean;
 }
 
 export interface OrganizationMember {

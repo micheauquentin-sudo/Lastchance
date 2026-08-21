@@ -166,6 +166,35 @@ export const VITRINE_HORAIRES_MAX = 600;
 /** Chemin d'image (couverture ou photo de fiche) : 300 caractères. */
 export const VITRINE_CHEMIN_IMAGE_MAX = 300;
 
+// ── LES CONTENUS MIS EN AVANT (VIT-4) ────────────────────────
+//
+// Miroir des `check` de `vitrine_contenus` (20261015120000). Trois bornes et
+// pas une de plus : la table ne porte qu'un titre, une adresse et une place.
+
+/** Titre d'un contenu mis en avant : 1..80 après détourage. */
+export const VITRINE_CONTENU_TITRE_MAX = 80;
+/** Adresse d'un contenu : 300, la même borne que les chemins d'image. */
+export const VITRINE_CONTENU_URL_MAX = 300;
+/**
+ * La PLACE d'un contenu : 1, 2 ou 3 — jamais un `ordre` libre.
+ *
+ * En base, le `check (rang between 1 and 3)` et l'`unique (organization_id,
+ * rang)` tiennent ENSEMBLE la spécification « un à trois » : au plus trois
+ * lignes par commerce, jamais deux à la même place. C'est aussi ce qui rend le
+ * tri de la RPC total sans colonne de départage.
+ */
+export const VITRINE_CONTENU_RANG_MIN = 1;
+export const VITRINE_CONTENU_RANG_MAX = 3;
+/**
+ * Combien de contenus la page publique rend — miroir de `c_max_contenus`.
+ *
+ * Redondant avec `VITRINE_CONTENU_RANG_MAX` par construction, et nommé à part
+ * pour la même raison que `VITRINE_PORTES_MAX` : c'est la borne du DOCUMENT, et
+ * elle se lit là où le document se relit. Une contrainte de table retirée un
+ * jour ne doit pas faire grossir sans borne ce que l'ISR sert à chaque visiteur.
+ */
+export const VITRINE_CONTENUS_MAX = 3;
+
 /** Rang d'affichage, aux trois niveaux : `ordre between 0 and 999`. */
 export const VITRINE_ORDRE_MIN = 0;
 export const VITRINE_ORDRE_MAX = 999;
@@ -686,6 +715,25 @@ export interface VitrineLiensView {
   tiktok_url: string | null;
 }
 
+/**
+ * Un contenu mis en avant — CLÉ SŒUR de `liens`, et non une extension.
+ *
+ * `liens` porte TROIS adresses FIXES ET NOMMÉES : l'écran sait d'avance qu'il
+ * rendra une icône Google, une Instagram et une TikTok. Un contenu mis en avant
+ * appartient à une LISTE ORDONNÉE de longueur variable, dont l'écran ne connaît
+ * ni le nombre ni les libellés — le commerçant les a écrits à la main.
+ *
+ * `rang` VOYAGE JUSQU'À L'ÉCRAN et n'est pas un détail de tri : c'est la PLACE,
+ * elle identifie la ligne pour le commerçant (« remplacer le contenu n° 2 »)
+ * comme pour les actions, qui écrivent par `(organisation, rang)` faute d'`id`
+ * exposé côté public.
+ */
+export interface ContenuVitrineView {
+  titre: string;
+  url: string;
+  rang: number;
+}
+
 // ────────────────────────────────────────────────────────────
 // LES PORTES (VIT-3) — l'annuaire des autres pages publiques
 //
@@ -784,6 +832,12 @@ export type VitrinePublicState =
       selecteurLangues: boolean;
       identite: VitrineIdentiteView;
       liens: VitrineLiensView;
+      /**
+       * Les UN À TROIS contenus mis en avant, ordonnés par `rang`. TOUJOURS
+       * présente, éventuellement vide — même règle que les six listes de
+       * `portes` : c'est l'écran qui masque un bloc vide, pas ce mappeur.
+       */
+      contenus: ContenuVitrineView[];
       cartes: VitrineCarteView[];
       /** L'annuaire des autres pages publiques du commerce — voir
        *  `PortesVitrineView`. Toujours présent, listes vides comprises. */
@@ -1134,6 +1188,100 @@ function asLienSortant(value: unknown): string | null {
   return lien !== null && estLienInvitationSur(lien) ? lien : null;
 }
 
+/**
+ * L'adresse d'un CONTENU MIS EN AVANT, revalidée à la lecture — et PAS avec la
+ * garde des trois liens sociaux.
+ *
+ * ── POURQUOI PAS `estLienInvitationSur` ──
+ *
+ * Cette fonction-là tient une LISTE BLANCHE D'HÔTES (Instagram, TikTok, les
+ * cinq formes de la fiche Google) parce que ses trois champs désignent trois
+ * services connus d'avance. Un contenu mis en avant est l'inverse exact : c'est
+ * une adresse ARBITRAIRE, choisie par le commerçant — un article de presse, une
+ * vidéo, une page de menu chez un tiers. La lui passer aurait refusé en silence
+ * tout ce qui n'est pas un réseau social, c'est-à-dire à peu près tout ce que
+ * la fonctionnalité existe pour montrer.
+ *
+ * Ce qui est gardé, ce n'est donc pas QUI est au bout, mais ce que la valeur
+ * peut faire une fois posée en `href` sur une page publique servie sous le nom
+ * du commerce. Quatre refus, plus la borne de longueur :
+ *
+ *   * ce qui ne se parse pas comme une URL absolue — un `href` relatif signé du
+ *     commerce enverrait le visiteur sur une page de l'application ;
+ *   * tout schéma autre que `https:` — `javascript:` et `data:` d'abord, mais
+ *     `http:` compte autant : bloqué par le navigateur depuis une page TLS,
+ *     sans que personne ne sache pourquoi ;
+ *   * les identifiants dans l'URL (`https://qui:quoi@ailleurs.test`), motif de
+ *     `lib/webhook-url.ts` — ils ne servent qu'à masquer l'hôte réel dans la
+ *     barre d'adresse ;
+ *   * tout caractère d'espacement, retour à la ligne compris : c'est le miroir
+ *     exact du `check` SQL (`url ~ '^https://[^[:space:]]+$'`), et il est
+ *     revérifié ICI parce que `new URL` ne le refuse pas — il ré-encode ou
+ *     supprime en silence, donc la chaîne BRUTE qu'on rend pourrait encore le
+ *     porter.
+ *
+ * LE PORT N'EST PAS REFUSÉ, contrairement aux liens sociaux : là-bas
+ * `https://instagram.com:1` n'est pas une adresse qu'Instagram sert, seulement
+ * une façon de pointer un autre écouteur sur un hôte de confiance. Ici il n'y a
+ * aucun hôte de confiance à protéger — le commerçant a choisi l'hôte ET le port.
+ *
+ * REPLI MUET, motif `asLienSortant` : une valeur refusée vaut `null`, et
+ * `mapContenusVitrine` fait alors disparaître le contenu ENTIER. Un titre
+ * cliquable sans adresse, ou pire une adresse rendue sans son titre, serait un
+ * demi-contenu que l'écran devrait apprendre à afficher.
+ */
+function asLienContenu(value: unknown): string | null {
+  const lien = asString(value);
+  if (lien === null || lien.length === 0) return null;
+  if (lien.length > VITRINE_CONTENU_URL_MAX) return null;
+  if (/\s/.test(lien)) return null;
+  let url: URL;
+  try {
+    url = new URL(lien);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:") return null;
+  if (url.username || url.password) return null;
+  return lien;
+}
+
+/**
+ * Lecture de la clé `contenus` de `vitrine_public_state`.
+ *
+ * Rend TOUJOURS une liste, y compris sur `undefined` — un document écrit avant
+ * VIT-4 n'a pas cette clé, et l'écran ne doit pas avoir à distinguer « vitrine
+ * d'avant les contenus » de « commerce qui n'en a mis aucun ».
+ *
+ * TROIS AU PLUS, et la borne compte les contenus RETENUS et non les entrées
+ * lues — même arbitrage que `mapListePortes` : la troncature existe pour le
+ * poids de la page, pas pour punir un document abîmé.
+ *
+ * L'ORDRE N'EST PAS RECALCULÉ, motif `mapVitrineCartes` : la RPC trie déjà par
+ * `rang`, et l'unicité `(organization_id, rang)` rend ce tri total. Retrier ici
+ * aurait créé un second ordre à tenir — celui qui, le jour où les deux
+ * divergent, gagne sans qu'on sache lequel.
+ *
+ * LES TROIS CHAMPS SONT EXIGÉS : un contenu sans titre, sans adresse servable
+ * ou sans place lisible est ÉCARTÉ EN ENTIER, motif `mapFiche`. Il n'y a ni
+ * texte à cliquer, ni `href` à poser, ni place où le poser — et un demi-contenu
+ * serait un état de plus que l'écran devrait apprendre à rendre.
+ */
+export function mapContenusVitrine(raw: unknown): ContenuVitrineView[] {
+  const sortie: ContenuVitrineView[] = [];
+  for (const brut of asArray(raw)) {
+    if (sortie.length >= VITRINE_CONTENUS_MAX) break;
+    const root = asRecord(brut);
+    if (!root) continue;
+    const titre = asString(root.titre);
+    const url = asLienContenu(root.url);
+    const rang = asInt(root.rang);
+    if (!titre || !url || rang === null) continue;
+    sortie.push({ titre, url, rang });
+  }
+  return sortie;
+}
+
 /** Lecture de `vitrine_public_state`. Tout ce qui n'est pas « ok » est muet. */
 export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
   const root = asRecord(raw);
@@ -1171,6 +1319,7 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       instagram_url: asLienSortant(liens.instagram_url),
       tiktok_url: asLienSortant(liens.tiktok_url),
     },
+    contenus: mapContenusVitrine(root.contenus),
     cartes: mapVitrineCartes(root.cartes),
     portes: mapPortesVitrine(root.portes),
   };

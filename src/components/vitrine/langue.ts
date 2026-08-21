@@ -32,6 +32,15 @@ export interface TextesVitrine {
   histoire: string;
   horaires: string;
   liens: string;
+  /**
+   * Titre des CONTENUS MIS EN AVANT (VIT-4) — un à trois liens choisis à la
+   * main par le commerçant. Du chrome, et rien d'autre : les titres, eux, sont
+   * saisis en base et ne se traduisent pas (`vitrine_contenus` n'entre pas dans
+   * `vitrine_translations.cible_type`). Un mot SOBRE des deux côtés — « À la
+   * une » / « Highlights » — parce que ce bloc voisine « Nous suivre » et que
+   * deux titres emphatiques côte à côte se neutralisent.
+   */
+  contenus: string;
   /** Destination, pas nom propre : « Avis Google » se traduit, « TikTok » non. */
   avisGoogle: string;
   nosCartes: string;
@@ -93,6 +102,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     histoire: "Notre histoire",
     horaires: "Horaires",
     liens: "Nous suivre",
+    contenus: "À la une",
     avisGoogle: "Avis Google",
     nosCartes: "Nos cartes",
     rubriques: "Rubriques",
@@ -120,6 +130,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     histoire: "Our story",
     horaires: "Opening hours",
     liens: "Follow us",
+    contenus: "Highlights",
     avisGoogle: "Google reviews",
     nosCartes: "Our menus",
     rubriques: "Sections",
