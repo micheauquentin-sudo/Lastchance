@@ -155,11 +155,29 @@ Après le train (2026-08-21/22), hors lots :
 - **Deux révocations de clés propriétaire** (`rk_live_`, jeton Vercel)
   étaient tombées de `CLAUDE.md` quand l'entrée du train a remplacé celle du
   wagon 7 ; restaurées.
-- **Course entre projets Playwright** sur la file d'accueil :
-  `mobile-chrome` et `mobile-safari` jouaient `e2e/reserver-file.spec.ts` sur
-  une file **unique**, et l'état « appelé, pas encore servi » est un
-  singleton par file. Corrigée par une file par projet dans le seed
-  (`File E2E WebKit`), pas par un durcissement de test supplémentaire.
+- **Le flake de la file d'accueil avait DEUX causes**, et la seconde comptait
+  plus que la première (PR #175). La première était une fixture disputée :
+  `mobile-chrome` et `mobile-safari` jouent `e2e/reserver-file.spec.ts` en même
+  temps sur la même base et se partageaient une file unique, alors que l'état
+  « appelé, pas encore servi » est un singleton par file — corrigée par une file
+  par projet dans le seed (`File E2E WebKit`), pas par un durcissement de test
+  supplémentaire. **La CI est alors repassée au vert, et le test échouait
+  toujours en local** — immédiatement, de façon reproductible. L'instantané de
+  Playwright a donné la vraie cause : la région ouverte n'était pas la nôtre
+  mais celle de la première file de l'organisation, qui est vide, d'où l'absence
+  totale du bouton « Appeler le suivant ». Un **clic parti avant l'hydratation**
+  ne fait rien : le bouton est déjà peint par le rendu serveur, donc actionnable
+  au sens de Playwright, mais aucun gestionnaire React n'y est encore attaché.
+  Aucun `waitForLoadState` ne couvre cela — le réseau est calme bien avant que
+  React soit prêt. Le remède est de ne plus croire le clic : `ouvrirOngletFile()`
+  reclique tant que le panneau attendu n'est pas ouvert.
+
+  **La leçon de méthode vaut plus que le correctif** : la CI verte après la
+  première cause aurait suffi à clore le sujet. C'est la machine **lente** qui a
+  rendu la seconde visible, parce qu'elle élargit la fenêtre où le défaut existe.
+  Quand un flake résiste, reproduire en local sous charge vaut mieux que relancer
+  la CI. Preuve retenue : deux exécutions concurrentes consécutives, 10 tests
+  passés chacune, là où la précédente tombait.
 
 **Traduction (arbitrage produit).** Aucun fournisseur n'est câblé :
 adaptateur neutre et repli français, la traduction se fait par l'écran
