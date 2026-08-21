@@ -20,6 +20,7 @@ import {
   createVitrineFicheSchema,
   createVitrineRubriqueSchema,
   deleteVitrineCarteSchema,
+  deleteVitrineContenuSchema,
   deleteVitrineFicheSchema,
   deleteVitrineRubriqueSchema,
   importVitrineCarteSchema,
@@ -27,6 +28,7 @@ import {
   reorderVitrineFichesSchema,
   reorderVitrineRubriquesSchema,
   saveVitrineSettingsSchema,
+  setVitrineContenuSchema,
   setVitrineSlugSchema,
   toggleVitrineFicheDisponibiliteSchema,
   updateVitrineCarteSchema,
@@ -1285,4 +1287,147 @@ export async function importVitrineCarte(
       message: `Carte créée : ${comptes.rubriques_creees} rubrique${s(comptes.rubriques_creees)}, ${comptes.fiches_creees} fiche${s(comptes.fiches_creees)}.`,
     },
   };
+}
+
+// ════════════════════════════════════════════════════════════
+// LES CONTENUS MIS EN AVANT (VIT-4, lot L14)
+//
+// Trois lignes au plus par commerce, indexées par leur PLACE. Aucun seau : le
+// CRUD commerçant de ce dépôt n'en porte pas, et les deux gestes qui en ont un
+// ici (`setVitrineSlug`, `importVitrineCarte`) le portent pour des raisons que
+// ces deux-là n'ont pas — ils passent par le `service_role`, écrivent une ligne
+// d'audit à chaque appel, et l'un répond une question sur un espace de noms
+// GLOBAL. Écrire trois lignes bornées de son propre locataire, sous RLS et
+// derrière `gardeEditeurVitrine`, n'est rien de tout cela.
+// ════════════════════════════════════════════════════════════
+
+const PLACE_PRISE =
+  "Cette place vient d'être occupée. Rechargez la page et réessayez.";
+
+/**
+ * Pose ou remplace LE contenu d'une place — 1, 2 ou 3.
+ *
+ * ── POURQUOI UN `update` PUIS UN `insert`, ET NON UN `upsert` ──
+ *
+ * La sémantique VOULUE est bien celle d'un upsert par `(organisation, rang)` :
+ * l'écran offre trois emplacements, et remplir un emplacement déjà rempli le
+ * remplace. Ce n'est pas la sémantique qui a été écartée, c'est son ÉCRITURE
+ * en une requête.
+ *
+ * `vitrine_contenus` n'accorde pas les mêmes colonnes à l'insertion et à la
+ * mise à jour (20261015120000) : `grant insert (organization_id, rang, titre,
+ * url)` mais `grant update (rang, titre, url)` — `organization_id` en est
+ * délibérément absent, « le locataire d'une ligne ne se corrige pas ». Or
+ * PostgREST traduit `.upsert()` en `insert … on conflict do update set` dont
+ * la clause `set` reprend TOUTES les colonnes du payload, `organization_id`
+ * comprise. Le privilège se vérifie sur la clause écrite, pas sur la valeur :
+ * un remplacement aurait donc échoué en 42501 — sur le geste le PLUS courant
+ * des trois, et seulement une fois la ligne existante, c'est-à-dire jamais au
+ * premier essai.
+ *
+ * Le coût de la forme retenue est un aller-retour supplémentaire à la seule
+ * CRÉATION (la mise à jour ne trouve rien, on insère). La course entre deux
+ * onglets retombe sur l'unique `(organization_id, rang)` en 23505, qui a son
+ * message — l'unicité reste tenue par la base, comme il se doit.
+ */
+export async function setVitrineContenu(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setVitrineContenuSchema.safeParse({
+    rang: formData.get("rang"),
+    titre: formData.get("titre"),
+    url: formData.get("url"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  // `rang` N'EST PAS DANS LE PAYLOAD de cette mise à jour, alors que le `grant`
+  // l'autoriserait : la place est la CLÉ du geste, pas sa matière. La déplacer
+  // ici ferait qu'enregistrer un titre déplacerait le contenu.
+  const { data, error } = await supabase
+    .from("vitrine_contenus")
+    .update({ titre: parsed.data.titre, url: parsed.data.url })
+    .eq("organization_id", garde.organizationId)
+    .eq("rang", parsed.data.rang)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    reportError("vitrine.set-contenu", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  if (!data) {
+    const { error: erreurInsertion } = await supabase
+      .from("vitrine_contenus")
+      .insert({
+        // DE LA SESSION. Jamais du formulaire — voir l'invariant 1 de l'en-tête.
+        organization_id: garde.organizationId,
+        rang: parsed.data.rang,
+        titre: parsed.data.titre,
+        url: parsed.data.url,
+      });
+    if (erreurInsertion) {
+      reportError("vitrine.set-contenu", erreurInsertion.message);
+      return {
+        ok: false,
+        // La seule course possible : un second onglet a rempli la même place
+        // entre la mise à jour et l'insertion. L'unique la refuse, et le
+        // commerçant est envoyé relire ce qui existe plutôt qu'à réessayer.
+        error: erreurInsertion.code === "23505" ? PLACE_PRISE : GENERIC_ERROR,
+      };
+    }
+  }
+
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Retire le contenu d'une place.
+ *
+ * AUCUNE GARDE DE COMPTAGE, contrairement à `deleteVitrineCarte` : il n'y a
+ * rien à compter avant de retirer un lien, et aucune cascade ne part d'ici — la
+ * migration ouvre d'ailleurs `grant delete` sans condition pour cette raison.
+ *
+ * La suppression d'une place VIDE n'est pas une erreur : elle ne touche aucune
+ * ligne et rend un succès. Le geste est idempotent, comme la bascule de
+ * disponibilité — deux clics sur « retirer » laissent la place vide, et lire la
+ * base pour pouvoir refuser le second aurait coûté un aller-retour pour rendre
+ * un message que personne n'attend.
+ */
+export async function deleteVitrineContenu(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = deleteVitrineContenuSchema.safeParse({
+    rang: formData.get("rang"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("vitrine_contenus")
+    .delete()
+    .eq("organization_id", garde.organizationId)
+    .eq("rang", parsed.data.rang);
+
+  if (error) {
+    reportError("vitrine.delete-contenu", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
 }

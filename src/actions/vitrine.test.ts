@@ -50,10 +50,20 @@ const { state, makeClient } = vi.hoisted(() => {
     row: { id: "row-1", slug: "le-comptoir", published: true } as unknown,
     /** Erreur simulée sur l'écriture suivante. */
     error: null as { message: string; code?: string } | null,
+    /**
+     * Erreur simulée sur les seules INSERTIONS.
+     *
+     * `setVitrineContenu` écrit en deux temps (mise à jour, puis insertion si
+     * la place était vide) : sans ce second canal, la course d'unicité serait
+     * intestable — `state.error` ferait échouer la mise à jour, donc l'insertion
+     * n'aurait jamais lieu.
+     */
+    erreurInsert: null as { message: string; code?: string } | null,
     reset() {
       state.calls = [];
       state.row = { id: "row-1", slug: "le-comptoir", published: true };
       state.error = null;
+      state.erreurInsert = null;
     },
   };
 
@@ -68,10 +78,13 @@ const { state, makeClient } = vi.hoisted(() => {
         };
         state.calls.push(call);
 
-        const settle = () =>
-          state.error
-            ? { data: null, error: state.error }
+        const settle = () => {
+          const erreur =
+            call.op === "insert" ? (state.erreurInsert ?? state.error) : state.error;
+          return erreur
+            ? { data: null, error: erreur }
             : { data: state.row, error: null };
+        };
 
         const builder = {
           select: () => builder,
@@ -143,10 +156,12 @@ import {
   createVitrineFiche,
   createVitrineRubrique,
   deleteVitrineCarte,
+  deleteVitrineContenu,
   importVitrineCarte,
   publishVitrine,
   reorderVitrineFiches,
   saveVitrineSettings,
+  setVitrineContenu,
   setVitrineSlug,
   toggleVitrineFicheDisponibilite,
   unpublishVitrine,
@@ -252,6 +267,15 @@ describe("la garde refuse AVANT d'écrire", () => {
       "saveVitrineSettings",
       () => saveVitrineSettings(null, fd({ accroche: "Bistrot" })),
     ],
+    [
+      "setVitrineContenu",
+      () =>
+        setVitrineContenu(
+          null,
+          fd({ rang: "1", titre: "Le reportage", url: "https://presse.test/a" }),
+        ),
+    ],
+    ["deleteVitrineContenu", () => deleteVitrineContenu(null, fd({ rang: "2" }))],
   ];
 
   it.each(gestes)("%s refuse le caissier sans émettre de requête", async (
@@ -979,5 +1003,193 @@ describe("la publication ne se garde pas ici, mais elle s'explique", () => {
     const maj = callsTo("vitrine_settings").find((c) => c.op === "update");
     expect((maj!.payload as Record<string, unknown>).published).toBe(false);
     expect(maj!.filters.organization_id).toBe(ORG_ID);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// L14 — les contenus mis en avant (VIT-4)
+// ────────────────────────────────────────────────────────────
+
+/** Le geste nominal : poser un contenu à la place demandée. */
+function poser(champs: Record<string, string> = {}) {
+  return setVitrineContenu(
+    null,
+    fd({
+      rang: "2",
+      titre: "Le reportage",
+      url: "https://presse.test/nous",
+      ...champs,
+    }),
+  );
+}
+
+describe("setVitrineContenu — un upsert par (organisation, place)", () => {
+  it("une place DÉJÀ occupée est mise à jour, sans insertion", async () => {
+    gardeOk();
+
+    const res = await poser();
+
+    expect(res.ok).toBe(true);
+    const appels = callsTo("vitrine_contenus");
+    const maj = appels.find((c) => c.op === "update");
+    expect(maj!.filters.organization_id).toBe(ORG_ID);
+    // La place est la CLÉ du geste, pas sa matière : elle est en filtre.
+    expect(maj!.filters.rang).toBe(2);
+    // Et elle n'est PAS dans le payload — l'y mettre ferait qu'enregistrer un
+    // titre déplacerait le contenu.
+    expect(maj!.payload).toEqual({
+      titre: "Le reportage",
+      url: "https://presse.test/nous",
+    });
+    expect(appels.some((c) => c.op === "insert")).toBe(false);
+  });
+
+  it("une place VIDE est insérée, avec l'organisation de la SESSION", async () => {
+    gardeOk();
+    // La mise à jour ne trouve rien : c'est la création.
+    state.row = null;
+
+    const res = await poser({ organization_id: "org-du-voisin" });
+
+    expect(res.ok).toBe(true);
+    const insertion = callsTo("vitrine_contenus").find((c) => c.op === "insert");
+    expect(insertion).toBeDefined();
+    expect(insertion!.payload).toEqual({
+      // `organization_id` posté est IGNORÉ : le schéma ne le lit pas.
+      organization_id: ORG_ID,
+      rang: 2,
+      titre: "Le reportage",
+      url: "https://presse.test/nous",
+    });
+  });
+
+  it("le CRUD des contenus n'utilise JAMAIS le service_role", async () => {
+    gardeOk();
+    state.row = null;
+    await poser();
+    await deleteVitrineContenu(null, fd({ rang: "1" }));
+
+    // Le service_role court-circuiterait « vitrine_contenus : editor write ».
+    expect(adminFromMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("AUCUN seau : trois lignes bornées de son propre locataire", async () => {
+    gardeOk();
+    await poser();
+    await deleteVitrineContenu(null, fd({ rang: "1" }));
+
+    // Les deux gestes de ce fichier qui portent un seau le portent pour des
+    // raisons que ceux-ci n'ont pas : service_role, ligne d'audit, et une
+    // question sur un espace de noms GLOBAL.
+    expect(rateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it("la course entre deux onglets rend un message, pas une erreur muette", async () => {
+    gardeOk();
+    state.row = null;
+    state.erreurInsert = {
+      code: "23505",
+      message:
+        'duplicate key value violates unique constraint "vitrine_contenus_org_rang_unique"',
+    };
+
+    const res = await poser();
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // L'unicité (organization_id, rang) reste tenue par la BASE : l'action ne
+    // compte pas avant d'écrire, elle traduit le refus.
+    expect(res.error).toContain("place");
+    // Et le texte de la base ne traverse pas : ni nom de contrainte, ni table.
+    expect(res.error).not.toContain("vitrine_contenus");
+  });
+
+  it("les mutations purgent le dashboard ET les deux pages publiques", async () => {
+    gardeOk();
+
+    await poser();
+
+    expect(cheminsRevalides()).toEqual([
+      "/dashboard/vitrine",
+      "/v/le-comptoir",
+      "/v/le-comptoir/en",
+    ]);
+  });
+
+  it.each([
+    ["hors bornes", { rang: "4" }],
+    ["à zéro", { rang: "0" }],
+    ["décimale", { rang: "1.5" }],
+    ["non numérique", { rang: "premier" }],
+  ])("une place %s est refusée AVANT toute requête", async (_cas, champs) => {
+    gardeOk();
+
+    const res = await poser(champs);
+
+    expect(res.ok).toBe(false);
+    // Envoyée telle quelle, elle ne toucherait aucune ligne : la mise à jour
+    // rendrait « pas trouvé » et l'insertion échouerait sur le `check`.
+    expect(state.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["en clair", "http://presse.test/a"],
+    ["en javascript:", "javascript:alert(1)"],
+    ["portant un espace", "https://presse.test/a b"],
+    ["vide", ""],
+  ])("une adresse %s est refusée AVANT toute requête", async (_cas, url) => {
+    gardeOk();
+
+    const res = await poser({ url });
+
+    expect(res.ok).toBe(false);
+    expect(state.calls).toHaveLength(0);
+  });
+
+  it("un titre trop long est refusé ici plutôt qu'en 23514", async () => {
+    gardeOk();
+
+    const res = await poser({ titre: "a".repeat(81) });
+
+    expect(res.ok).toBe(false);
+    expect(state.calls).toHaveLength(0);
+  });
+});
+
+describe("deleteVitrineContenu — retirer une place, sans rien compter", () => {
+  it("supprime par (organisation, place) et revalide", async () => {
+    gardeOk();
+
+    const res = await deleteVitrineContenu(null, fd({ rang: "3" }));
+
+    expect(res.ok).toBe(true);
+    const suppression = callsTo("vitrine_contenus").find(
+      (c) => c.op === "delete",
+    );
+    expect(suppression!.filters.organization_id).toBe(ORG_ID);
+    expect(suppression!.filters.rang).toBe(3);
+    expect(cheminsRevalides()).toContain("/v/le-comptoir");
+  });
+
+  it("retirer une place déjà vide reste un succès — le geste est idempotent", async () => {
+    gardeOk();
+    // Aucune ligne supprimée : PostgREST ne rend pas d'erreur pour autant.
+    state.row = null;
+
+    const res = await deleteVitrineContenu(null, fd({ rang: "3" }));
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("un échec de la base ne relaie jamais son texte", async () => {
+    gardeOk();
+    state.error = { code: "42501", message: "permission denied for table …" };
+
+    const res = await deleteVitrineContenu(null, fd({ rang: "1" }));
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).not.toContain("permission denied");
   });
 });

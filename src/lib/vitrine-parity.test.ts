@@ -13,6 +13,11 @@ import {
   VITRINE_BADGES,
   VITRINE_CARTE_NOM_MAX,
   VITRINE_CHEMIN_IMAGE_MAX,
+  VITRINE_CONTENUS_MAX,
+  VITRINE_CONTENU_RANG_MAX,
+  VITRINE_CONTENU_RANG_MIN,
+  VITRINE_CONTENU_TITRE_MAX,
+  VITRINE_CONTENU_URL_MAX,
   VITRINE_FICHE_DESCRIPTION_MAX,
   VITRINE_FICHE_NOM_MAX,
   VITRINE_HISTOIRE_MAX,
@@ -129,6 +134,15 @@ function definitionVivante(fonction: string): string {
 
 /** Les TABLES et leurs `check` : la migration fondatrice, jamais réécrite. */
 const SOURCE = lire("20261011120000_vitrine_catalogue.sql");
+
+/**
+ * `vitrine_contenus` vit dans SA migration (VIT-4), pas dans la fondatrice.
+ *
+ * La table est née en 20261015120000 précisément pour ne PAS toucher aux quatre
+ * tables de L10 — leur trigger `touch_updated_at` aurait périmé les traductions
+ * anglaises à chaque édition d'un lien. Ses `check` se lisent donc là-bas.
+ */
+const SOURCE_CONTENUS = lire("20261015120000_vitrine_social_crm.sql");
 
 /**
  * LE VALIDATEUR DU THÈME, DANS SA VERSION VIVANTE.
@@ -451,6 +465,50 @@ describe("parité Vitrine — les bornes des `check`", () => {
         SOURCE_ETAT_PUBLIC,
       ),
     ).toBe(VITRINE_PORTES_MAX);
+  });
+
+  it("les bornes des contenus mis en avant sont les mêmes des deux côtés", () => {
+    // Quatre nombres écrits DEUX fois — un `check` et un miroir — plus un
+    // cinquième (`c_max_contenus`) qui borne le document. Sans cette garde, un
+    // titre saisi à 81 caractères passerait l'écran et échouerait en 23514, et
+    // un miroir de lecture plus généreux que la fonction laisserait grossir ce
+    // que l'ISR sert à chaque visiteur.
+    expect(
+      nombre(
+        /char_length\(pg_catalog\.btrim\(titre\)\) between 1 and (\d+)/,
+        "titre d'un contenu",
+        SOURCE_CONTENUS,
+      ),
+    ).toBe(VITRINE_CONTENU_TITRE_MAX);
+    expect(
+      nombre(
+        /char_length\(url\) <= (\d+)/,
+        "adresse d'un contenu",
+        SOURCE_CONTENUS,
+      ),
+    ).toBe(VITRINE_CONTENU_URL_MAX);
+
+    const rang = /rang between (\d+) and (\d+)/.exec(SOURCE_CONTENUS);
+    if (!rang) throw new Error("Borne du rang d'un contenu introuvable");
+    expect(Number(rang[1])).toBe(VITRINE_CONTENU_RANG_MIN);
+    expect(Number(rang[2])).toBe(VITRINE_CONTENU_RANG_MAX);
+
+    // La borne du DOCUMENT, lue dans la RPC vivante — motif `c_max_portes`.
+    expect(
+      nombre(
+        /c_max_contenus constant integer := (\d+)/,
+        "borne des contenus",
+        SOURCE_ETAT_PUBLIC,
+      ),
+    ).toBe(VITRINE_CONTENUS_MAX);
+  });
+
+  it("le schéma des contenus est CLOS à https, des deux côtés", () => {
+    // La migration écrit `url ~ '^https://[^[:space:]]+$'` ; `asLienContenu` et
+    // `urlContenuSchema` en sont le miroir. Cette assertion garde la SOURCE :
+    // si le `check` cessait un jour d'exiger https, le miroir de lecture
+    // deviendrait la seule garde — et ce test le dirait avant la revue.
+    expect(SOURCE_CONTENUS).toContain("url ~ '^https://[^[:space:]]+$'");
   });
 
   it("le rang d'affichage est borné pareil des deux côtés", () => {

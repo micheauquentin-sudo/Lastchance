@@ -6,7 +6,9 @@ import { VITRINE_BLOCS } from "@/lib/vitrine";
 
 import {
   createVitrineCarteSchema,
+  deleteVitrineContenuSchema,
   importVitrineCarteSchema,
+  setVitrineContenuSchema,
   reorderVitrineFichesSchema,
   saveVitrineSettingsSchema,
   setVitrineSlugSchema,
@@ -51,6 +53,102 @@ describe("le slug est normalisé AVANT d'être validé", () => {
     expect(setVitrineSlugSchema.safeParse({ slug: "dashboard" }).success).toBe(
       true,
     );
+  });
+});
+
+describe("les contenus mis en avant — la place est une CLÉ (VIT-4)", () => {
+  const BASE = {
+    rang: "2",
+    titre: "  Le reportage  ",
+    url: "https://presse.test/nous",
+  };
+
+  it("détoure le titre et l'adresse, et rend la place en ENTIER", () => {
+    const res = setVitrineContenuSchema.safeParse(BASE);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    // Le `check` SQL mesure `btrim(titre)` : détourer APRÈS aurait accepté ici
+    // un titre de 81 caractères que la base refuse en 23514.
+    expect(res.data.titre).toBe("Le reportage");
+    expect(res.data.url).toBe("https://presse.test/nous");
+    // Un entier, pas la chaîne du formulaire : c'est lui qui part en `.eq()`.
+    expect(res.data.rang).toBe(2);
+  });
+
+  it.each([["0"], ["4"], ["-1"], ["1.5"], ["premier"], [""], [null]])(
+    "refuse la place %s",
+    (rang) => {
+      expect(setVitrineContenuSchema.safeParse({ ...BASE, rang }).success).toBe(
+        false,
+      );
+      expect(deleteVitrineContenuSchema.safeParse({ rang }).success).toBe(false);
+    },
+  );
+
+  it("les trois places de la spécification passent, des deux côtés", () => {
+    for (const rang of ["1", "2", "3"]) {
+      expect(setVitrineContenuSchema.safeParse({ ...BASE, rang }).success).toBe(
+        true,
+      );
+      expect(deleteVitrineContenuSchema.safeParse({ rang }).success).toBe(true);
+    }
+  });
+
+  it.each([
+    ["en clair", "http://presse.test/a"],
+    ["en javascript:", "javascript:alert(1)"],
+    ["en data:", "data:text/html,<b>"],
+    ["relative", "/interne/page"],
+    ["sans schéma", "presse.test/a"],
+    ["portant un espace", "https://presse.test/a b"],
+    ["portant un retour à la ligne", "https://presse.test/a\nb"],
+    ["réduite au schéma", "https://"],
+    ["vide", ""],
+  ])("refuse une adresse %s — miroir du `check` SQL", (_cas, url) => {
+    expect(setVitrineContenuSchema.safeParse({ ...BASE, url }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepte une adresse ARBITRAIRE — aucune liste blanche d'hôtes", () => {
+    // La différence de régime avec les trois liens sociaux d'`organizations` :
+    // ceux-là désignent trois services connus d'avance, celui-ci ce que le
+    // commerçant veut montrer. Une liste blanche aurait refusé en silence à peu
+    // près tout ce que la fonctionnalité existe pour servir.
+    for (const url of [
+      "https://ouest-france.test/notre-bistrot",
+      "https://presse.test:8443/nous",
+      "https://www.instagram.com/p/xyz",
+    ]) {
+      expect(
+        setVitrineContenuSchema.safeParse({ ...BASE, url }).success,
+        url,
+      ).toBe(true);
+    }
+  });
+
+  it("borne le titre à 80 et l'adresse à 300, comme la base", () => {
+    expect(
+      setVitrineContenuSchema.safeParse({ ...BASE, titre: "a".repeat(80) })
+        .success,
+    ).toBe(true);
+    expect(
+      setVitrineContenuSchema.safeParse({ ...BASE, titre: "a".repeat(81) })
+        .success,
+    ).toBe(false);
+    // Un titre réduit à des espaces est vide APRÈS détourage : le `check`
+    // exige `between 1 and 80` sur `btrim(titre)`.
+    expect(
+      setVitrineContenuSchema.safeParse({ ...BASE, titre: "   " }).success,
+    ).toBe(false);
+
+    const url = (n: number) => `https://presse.test/${"a".repeat(n)}`;
+    expect(
+      setVitrineContenuSchema.safeParse({ ...BASE, url: url(280) }).success,
+    ).toBe(true);
+    expect(
+      setVitrineContenuSchema.safeParse({ ...BASE, url: url(281) }).success,
+    ).toBe(false);
   });
 });
 
