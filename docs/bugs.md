@@ -4527,19 +4527,55 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     listes fermées du dépôt. Une police ajoutée d'un seul côté passerait le
     typecheck et le `check` SQL séparément sans qu'aucun test ne le
     signale. À poser, sur le modèle de la garde existante.
+  - **`CRON_SECRET` n'existe pas comme secret GitHub** — constaté 2026-08-21
+    (`gh secret list` sur ce dépôt ne rend qu'une seule entrée :
+    `VERCEL_AUTOMATION_BYPASS_SECRET`), alors que
+    `.github/workflows/production-health.yml:42` fait
+    `CRON_SECRET: ${{ secrets.CRON_SECRET }}`. Preuve dans les logs du run
+    32524123685 : la variable arrive vide et le script imprime « Production
+    saine (0.1.0) : verdict global (détail non demandé — CRON_SECRET
+    absent) ». Conséquence exacte, sans l'exagérer : la garde de santé
+    **fonctionne toujours** comme porte — le verdict public englobe base,
+    workers et sécurité (`route.ts:229-232`) — mais elle est **muette sur la
+    cause** : un échec dira « production malade » sans jamais nommer lequel
+    des trois est tombé, et il faudra aller le chercher à la main. Geste
+    propriétaire : poser le secret `CRON_SECRET` dans le dépôt GitHub avec la
+    valeur déjà en service côté Vercel.
 
 ---
 
 ## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
 
-**État : OUVERT. Remède POSÉ mais NON ARMÉ.** La formulation précédente disait
-« fermé sous condition de clés », ce qui se lit « fermé » — et la contre-revue
-L17 a eu raison de refuser ce mot : **tant que les clés ne sont pas posées, ce
-lot n'ajoute aucune protection.** Le code du remède existe (`createLobby`, L17,
-Turnstile sur la création seule) et s'armera au geste propriétaire **déjà requis
-pour « Réserver » depuis L4** — poser `TURNSTILE_SECRET_KEY` **et**
-`NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Aucun déploiement supplémentaire ne sera
-nécessaire ce jour-là.
+**État (mesuré le 2026-08-21) : remède très probablement ARMÉ, preuve
+indirecte — résidu nommé.** La formulation précédente disait « OUVERT. Remède
+POSÉ mais NON ARMÉ », en s'appuyant sur l'absence supposée des clés. Cette
+hypothèse ne tient plus face à la mesure : `GET /api/health` en production
+(`https://lastchance-mu.vercel.app/api/health`) rend `"status":"ok"`, et
+`src/app/api/health/route.ts:229-232` fait dépendre ce verdict public de
+`securityConfiguration.status === "ok"`, lui-même exigeant
+(`route.ts:213-219`) `!turnstileRequired() || turnstileConfigured` où
+`turnstileConfigured = Boolean(TURNSTILE_SECRET_KEY &&
+NEXT_PUBLIC_TURNSTILE_SITE_KEY)`. Or `turnstileRequired()`
+(`src/lib/turnstile.ts:14-19`) rend `true` en production **sauf** si
+`TURNSTILE_REQUIRED` vaut explicitement `"false"`. Donc production étant
+verte, soit les deux clés Turnstile sont posées, soit `TURNSTILE_REQUIRED=false`
+a été posé explicitement — ces deux états sont **indistinguables depuis
+l'extérieur**. Le propriétaire affirme que Turnstile est déjà configuré, ce
+qui est cohérent avec la première branche. Le code du remède existe
+(`createLobby`, L17, Turnstile sur la création seule) et s'arme au geste
+propriétaire **déjà requis pour « Réserver » depuis L4** — poser
+`TURNSTILE_SECRET_KEY` **et** `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Aucun
+déploiement supplémentaire n'est nécessaire ce jour-là.
+
+**Le résidu exact.** `lobbyChallengeDisponible()` (`src/actions/lobby.ts:158-161`)
+exige les deux clés et ne lit **pas** `TURNSTILE_REQUIRED`. Si le vert de
+production venait de la seconde branche (`TURNSTILE_REQUIRED=false`) plutôt
+que des deux clés posées, le challenge du salon resterait inerte malgré une
+santé publique verte — sans que rien ne le signale de l'extérieur. Ce qui
+lèverait le doute : `vercel env ls` (CLI Vercel non installée dans cet
+environnement, et son login est interactif), ou un appel à `/api/health`
+authentifié par `CRON_SECRET` (qui rend le détail par sous-système au lieu du
+seul verdict global — voir Notes ci-dessous sur l'état de ce secret).
 
 **LES DEUX CLÉS, JAMAIS UNE SEULE** (revue L17, I-3) : avec la clé publique
 seule, le widget s'affiche et bloque le bouton, mais le serveur ne vérifie
