@@ -4546,42 +4546,72 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
 
 ## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
 
-**État (mesuré le 2026-08-21) : remède très probablement ARMÉ, preuve
-indirecte — résidu nommé.** La formulation précédente disait « OUVERT. Remède
-POSÉ mais NON ARMÉ », en s'appuyant sur l'absence supposée des clés. Cette
-hypothèse ne tient plus face à la mesure : `GET /api/health` en production
-(`https://lastchance-mu.vercel.app/api/health`) rend `"status":"ok"`, et
-`src/app/api/health/route.ts:229-232` fait dépendre ce verdict public de
-`securityConfiguration.status === "ok"`, lui-même exigeant
-(`route.ts:213-219`) `!turnstileRequired() || turnstileConfigured` où
-`turnstileConfigured = Boolean(TURNSTILE_SECRET_KEY &&
-NEXT_PUBLIC_TURNSTILE_SITE_KEY)`. Or `turnstileRequired()`
-(`src/lib/turnstile.ts:14-19`) rend `true` en production **sauf** si
-`TURNSTILE_REQUIRED` vaut explicitement `"false"`. Donc production étant
-verte, soit les deux clés Turnstile sont posées, soit `TURNSTILE_REQUIRED=false`
-a été posé explicitement — ces deux états sont **indistinguables depuis
-l'extérieur**. Le propriétaire affirme que Turnstile est déjà configuré, ce
-qui est cohérent avec la première branche. Le code du remède existe
-(`createLobby`, L17, Turnstile sur la création seule) et s'arme au geste
-propriétaire **déjà requis pour « Réserver » depuis L4** — poser
-`TURNSTILE_SECRET_KEY` **et** `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Aucun
-déploiement supplémentaire n'est nécessaire ce jour-là.
+**État (mesuré le 2026-08-21) : remède ARMÉ.** La formulation précédente
+disait « OUVERT. Remède POSÉ mais NON ARMÉ », puis une première révision avait
+prudemment baissé cela à « très probablement armé, preuve indirecte » sur la
+seule foi de la santé publique. Une preuve **directe** referme désormais la
+moitié qui restait déduite :
 
-**Le résidu exact.** `lobbyChallengeDisponible()` (`src/actions/lobby.ts:158-161`)
-exige les deux clés et ne lit **pas** `TURNSTILE_REQUIRED`. Si le vert de
-production venait de la seconde branche (`TURNSTILE_REQUIRED=false`) plutôt
-que des deux clés posées, le challenge du salon resterait inerte malgré une
-santé publique verte — sans que rien ne le signale de l'extérieur. Ce qui
-lèverait le doute : `vercel env ls` (CLI Vercel non installée dans cet
-environnement, et son login est interactif), ou un appel à `/api/health`
-authentifié par `CRON_SECRET` (qui rend le détail par sous-système au lieu du
-seul verdict global — voir Notes ci-dessous sur l'état de ce secret).
+- **Moitié publique — preuve directe.** `src/app/(player)/lobby/nouveau/[slug]/page.tsx:25`
+  est `force-dynamic` et ne consulte ni le commerce ni ses droits (le
+  commentaire de tête le dit explicitement) : n'importe quel slug rend
+  `CreationLobbyForm`, donc le widget Turnstile. `curl` sur
+  `https://lastchance-mu.vercel.app/lobby/nouveau/verification-turnstile`
+  rend HTTP 200 (16 579 octets), et `NEXT_PUBLIC_TURNSTILE_SITE_KEY` étant un
+  `const` de module d'un composant client
+  (`src/components/wheel/turnstile-widget.tsx:6-7`), elle est inlinée au
+  build dans le chunk JS plutôt que dans le HTML servi. Parmi les 13 chunks
+  référencés par cette page, `/_next/static/chunks/22w352axy2ri1.js` contient
+  `challenges.cloudflare` **et** une clé de site de préfixe `0x4AAAAAAD…` — ce
+  n'est pas une clé de test Cloudflare (celles-ci sont `1x0000…`, `2x0000…`,
+  `3x0000…`), c'est une vraie clé. **`NEXT_PUBLIC_TURNSTILE_SITE_KEY` est donc
+  prouvée posée en production**, par mesure directe et non par déduction.
+- **Moitié serveur — preuve indirecte forte.** `GET /api/health`
+  (`https://lastchance-mu.vercel.app/api/health`) rend `"status":"ok"`, et
+  `src/app/api/health/route.ts:229-232` fait dépendre ce verdict public de
+  `securityConfiguration.status === "ok"`, lui-même exigeant
+  (`route.ts:213-219`) `!turnstileRequired() || turnstileConfigured` où
+  `turnstileConfigured = Boolean(TURNSTILE_SECRET_KEY &&
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY)`. La clé publique étant désormais prouvée,
+  `turnstileConfigured` ne dépend plus que de `TURNSTILE_SECRET_KEY` : la
+  santé verte ne peut donc plus s'expliquer par « aucune des deux clés posées »
+  — il ne reste qu'une seule combinaison alternative, écartée ci-dessous.
+  Le propriétaire affirme au demeurant que Turnstile est déjà configuré, ce
+  qui recoupe la conclusion.
 
-**LES DEUX CLÉS, JAMAIS UNE SEULE** (revue L17, I-3) : avec la clé publique
-seule, le widget s'affiche et bloque le bouton, mais le serveur ne vérifie
-**rien** — un POST direct crée le salon quand même. Une configuration à moitié
-faite est pire qu'aucune : elle donne l'apparence d'une protection. Le même
-piège existe déjà sur « Réserver ».
+Le code du remède (`createLobby`, L17, Turnstile sur la création seule) est
+donc considéré **armé** en production. Aucun déploiement supplémentaire n'est
+nécessaire.
+
+**Le résidu, et pourquoi ce n'est pas un accident plausible.**
+`turnstileRequired()` (`src/lib/turnstile.ts:14-19`) rend `true` en
+production **sauf** si `TURNSTILE_REQUIRED` vaut explicitement `"false"`, et
+`lobbyChallengeDisponible()` (`src/actions/lobby.ts:158-161`) exige les deux
+clés sans lire `TURNSTILE_REQUIRED`. La seule combinaison qui laisserait le
+challenge du salon inerte malgré une santé verte est donc : clé publique
+posée (prouvé) **et** `TURNSTILE_SECRET_KEY` absent **et**
+`TURNSTILE_REQUIRED=false` posé délibérément pour compenser. Cette
+combinaison exige un opt-out **volontaire** — elle ne peut pas résulter d'un
+oubli, puisqu'un oubli du secret laisserait `turnstileRequired()` à `true` et
+ferait retomber la santé en rouge. Et poser une vraie clé Cloudflare
+(`0x4AAAAAAD…`, du travail délibéré) sans jamais poser son secret n'a
+aucune utilité : c'est précisément le piège « les deux clés, jamais une
+seule » décrit ci-dessous, que personne ne tend exprès contre son propre
+module. Le résidu reste nommé par honnêteté de méthode, pas parce qu'il est
+plausible : ce qui le fermerait tout à fait est `vercel env ls` (CLI Vercel
+non installée dans cet environnement, login interactif) ou un appel à
+`/api/health` authentifié par `CRON_SECRET` (voir Notes ci-dessous sur l'état
+de ce secret).
+
+**LES DEUX CLÉS, JAMAIS UNE SEULE** (revue L17, I-3) — piège écarté, pas
+ouvert : avec la clé publique seule, le widget s'affiche et bloque le bouton,
+mais le serveur ne vérifie **rien** — un POST direct crée le salon quand
+même. Une configuration à moitié faite serait pire qu'aucune : elle donnerait
+l'apparence d'une protection. C'est ce piège précis qui rend le résidu
+ci-dessus implausible (poser la clé publique sans le secret n'aurait aucune
+utilité), et la mesure de 2026-08-21 ne montre aucun signe qu'il ait été
+tendu : la clé publique est vraie, et la santé serveur est verte. Le même
+piège existe par construction sur « Réserver ».
 
 **L17/L18 PEUVENT PUBLIER L'ENTRÉE DEPUIS LA VITRINE.** C'était la condition
 posée par la contre-revue L16, et elle est levée : le remède est en place et
