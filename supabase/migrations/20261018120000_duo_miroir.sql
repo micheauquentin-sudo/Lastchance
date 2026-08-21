@@ -15,7 +15,7 @@
 -- seule chose que la base retienne d'une partie, c'est deux identifiants de
 -- fiches — et la purge du lobby les emporte avec elle.
 --
--- ── LES SEPT ARBITRAGES QUI GOUVERNENT CE FICHIER ──
+-- ── LES HUIT ARBITRAGES QUI GOUVERNENT CE FICHIER ──
 --
 -- Ils sont tranchés, et écrits ici pour qu'on n'ait pas à les rouvrir :
 --
@@ -48,6 +48,14 @@
 --      AUCUNE VALEUR. Les quatre états de `player_lobbies` restent les quatre
 --      états de L16. Un cinquième — « revelee » — aurait fait porter au socle
 --      un vocabulaire de jeu que L18 n'a aucune raison de partager.
+--   8. LE CHOIX GRAVE LE NOM DE LA FICHE AU MOMENT DU GESTE. `duo_choices`
+--      porte `nom_fige`, copié à l'instant du sceau, et sa FK vers la fiche est
+--      en `on delete set null (item_id)` — jamais en cascade. Un choix scellé
+--      ne peut donc plus être effacé par un tiers : ni par le commerçant qui
+--      nettoie sa carte pendant la partie, ni par l'initié qui supprimait des
+--      fiches pour voir `autre_a_choisi` retomber à faux. Motif « graver au
+--      moment du geste » du dépôt : les bornes de retrait de L10, la question
+--      figée au verrou des concours. Voir §4.
 --
 -- ── LE CŒUR : LA RPC FILTRE, JAMAIS L'ÉCRAN (motif `event_etat_partage`) ──
 --
@@ -453,12 +461,49 @@ create index duo_rounds_org_idx
 -- d'une même personne d'une salle à l'autre. C'est ce qui fait tenir la ligne
 -- du cahier : « aucune collecte de profil ».
 --
+-- ── LE NOM EST GRAVÉ AU MOMENT DU GESTE, ET LA FICHE PEUT MOURIR ──
+--
+-- `nom_fige` porte le nom de la fiche COPIÉ à l'instant du sceau, et la FK vers
+-- `vitrine_items` est en `on delete set null (item_id)`. Les deux ensemble
+-- ferment deux trous que la CASCADE laissait ouverts (revue L17, M-1) :
+--
+--   · L'ORACLE DE L'INITIÉ. Un compte `owner|editor` de l'organisation hôte
+--     pouvait BINARISER le choix scellé de l'autre joueur : supprimer une
+--     fiche, regarder si `autre_a_choisi` retombait à faux, recommencer. Sur un
+--     plateau de six, trois à cinq suppressions identifiaient le choix AVANT
+--     d'avoir scellé le sien. Toute la §8 existe pour que ce choix soit
+--     invisible ; une cascade le rendait DEVINABLE, ce qui revient au même.
+--   · LE COMMERÇANT QUI NETTOIE SA CARTE. Celui-là ne triche pas — il retire un
+--     plat épuisé pendant qu'une partie est en cours — et la cascade faisait
+--     disparaître un choix DÉJÀ SCELLÉ. La révélation n'avait alors plus rien à
+--     montrer pour ce joueur, et c'est le cas le plus fréquent des deux.
+--
+-- POURQUOI `set null (item_id)` ET NON `set null` NU : la FK est COMPOSITE, et
+-- un `set null` nu viderait AUSSI `organization_id`, qui est `not null` — la
+-- suppression échouerait, rendant la fiche indélébile. La syntaxe colonnaire de
+-- PG 15 nomme la seule colonne à vider ; c'est celle que `duo_settings` (§2) ne
+-- pouvait pas s'offrir puisque sa seconde colonne EST sa clé primaire.
+--
+-- LE NOM RESTE, L'IDENTITÉ PART. `item_id` nul veut dire « cette fiche n'existe
+-- plus », et rien d'autre : le geste, lui, est intact et lisible. C'est le motif
+-- « graver au moment du geste » — les bornes de retrait de L10, la question
+-- figée au verrou des concours : ce qu'un joueur a sous les yeux quand il agit
+-- ne doit pas pouvoir changer sous lui après coup.
+--
+-- CE QUI EN DÉCOULE, ET QU'IL FAUT DIRE : `nom_fige` NE SE MET PAS À JOUR. Une
+-- fiche renommée après le sceau garde son ancien nom dans le choix — c'est la
+-- propriété, pas un défaut. Les OPTIONS, elles, continuent de venir de la carte
+-- VIVANTE (§5) : un plateau doit refléter la carte, un choix doit refléter le
+-- geste. Les deux lectures divergent volontairement.
+--
 -- ── CE QUI N'EST PAS ICI ──
 --
 -- Pas de `score`, pas de `rang`, pas de `gagnant`, pas de `points`. L'accord se
 -- CALCULE à la lecture (deux `item_id` égaux) et ne se STOCKE pas : une colonne
 -- « accord » aurait été le premier pas vers un historique, puis vers un
--- classement, que le cahier exclut explicitement.
+-- classement, que le cahier exclut explicitement. Et il ne se stocke pas MÊME
+-- MAINTENANT que l'identité peut disparaître : figer le verdict à la révélation
+-- aurait été précisément la colonne interdite. Le prix en est écrit en §8.
 -- ────────────────────────────────────────────────────────────
 
 create table public.duo_choices (
@@ -469,7 +514,18 @@ create table public.duo_choices (
   -- SHA-256 du cookie PAR LOBBY (motif L16 / event_players).
   member_token_hash text not null
     check (member_token_hash ~ '^[0-9a-f]{64}$'),
-  item_id uuid not null,
+  -- NULLABLE, et c'est le remède de M-1 : `on delete set null (item_id)`
+  -- ci-dessous. Nul veut dire « la fiche a été supprimée depuis », jamais
+  -- « ce joueur n'a rien choisi » — l'absence de choix, c'est l'absence de
+  -- LIGNE. `nom_fige` reste, lui, et c'est ce qui distingue les deux.
+  item_id uuid,
+  -- LE NOM GRAVÉ, copié de `vitrine_items.nom` à l'instant du sceau et jamais
+  -- réécrit ensuite (aucun `update` ne vise cette table). Le `check` est LE
+  -- MÊME que celui de `vitrine_items.nom` : il ne peut pas mordre sur une
+  -- écriture venue de `duo_choose`, qui recopie une valeur déjà conforme, et il
+  -- est le filet d'une écriture qui passerait un jour à côté de la RPC.
+  nom_fige text not null
+    check (pg_catalog.char_length(pg_catalog.btrim(nom_fige)) between 1 and 120),
   -- `clock_timestamp()` et NON `now()`, même écart et même raison qu'en L16 :
   -- deux choix écrits dans la même transaction (un pgTAP) porteraient sinon le
   -- MÊME instant, et « qui a scellé le premier » deviendrait l'ordre arbitraire
@@ -481,13 +537,19 @@ create table public.duo_choices (
   constraint duo_choices_round_membre_unique unique (round_id, member_token_hash),
   foreign key (round_id, organization_id)
     references public.duo_rounds(id, organization_id) on delete cascade,
-  -- CASCADE vers la fiche : le commerçant doit pouvoir retirer un plat de sa
-  -- carte, même s'il a été choisi dans une partie en cours. Le cas est
-  -- marginal (une partie dure quinze minutes) et l'alternative — `restrict` —
-  -- aurait rendu une fiche indélébile pour vingt-quatre heures parce que
-  -- quelqu'un l'avait désignée.
+  -- `set null (item_id)`, ET NON CASCADE — c'est le remède de M-1, et les trois
+  -- options ont été pesées (voir l'en-tête de section) :
+  --   · CASCADE effaçait un choix scellé, donc offrait un ORACLE à l'initié et
+  --     vidait la révélation du joueur dont le plat venait d'être retiré ;
+  --   · RESTRICT rendait la fiche indélébile tant qu'une partie la désignait —
+  --     jusqu'à vingt-quatre heures pour un plat épuisé au comptoir ;
+  --   · SET NULL laisse partir la fiche ET garde le geste, parce que le nom est
+  --     GRAVÉ à côté.
+  -- La LISTE DE COLONNES est obligatoire ici : sans elle Postgres viderait aussi
+  -- `organization_id`, qui est `not null`, et la suppression échouerait.
   foreign key (item_id, organization_id)
-    references public.vitrine_items(id, organization_id) on delete cascade
+    references public.vitrine_items(id, organization_id)
+    on delete set null (item_id)
 );
 
 comment on table public.duo_choices is
@@ -500,7 +562,29 @@ comment on table public.duo_choices is
   'jamais l''identité globale du joueur : la base ne peut pas recoudre les '
   'parties d''une même personne (« aucune collecte de profil »). Ni score, ni '
   'rang, ni gagnant : l''accord se CALCULE à la lecture et ne se stocke pas. '
+  'LE NOM DE LA FICHE EST GRAVÉ (nom_fige) et la FK est en on delete set null '
+  '(item_id), jamais en cascade : c''est le remède de M-1 (revue L17). La '
+  'cascade laissait un tiers EFFACER un choix scellé — l''initié qui supprimait '
+  'des fiches pour voir autre_a_choisi retomber à faux et binariser le choix de '
+  'l''autre, et surtout le commerçant qui nettoie sa carte pendant la partie et '
+  'vidait la révélation. La LISTE DE COLONNES est obligatoire : un set null nu '
+  'viderait aussi organization_id, qui est NOT NULL, et la suppression '
+  'échouerait. item_id nul veut dire « la fiche n''existe plus », jamais « ce '
+  'joueur n''a rien choisi » — l''absence de choix, c''est l''absence de LIGNE. '
   'RLS active et AUCUNE policy : service_role seul, par RPC.';
+comment on column public.duo_choices.nom_fige is
+  'Le nom de la fiche COPIÉ à l''instant du sceau, et jamais réécrit — motif '
+  '« graver au moment du geste » (bornes de retrait de L10, question figée au '
+  'verrou des concours). Une fiche RENOMMÉE après le choix garde ici son ancien '
+  'nom : c''est la propriété, pas un défaut. Les OPTIONS, elles, viennent de la '
+  'carte VIVANTE — un plateau doit refléter la carte, un choix doit refléter le '
+  'geste, et duo_state lit donc les deux à des endroits différents.';
+comment on column public.duo_choices.item_id is
+  'La fiche désignée, NULLABLE depuis le remède de M-1 : on delete set null '
+  '(item_id) la vide quand la fiche quitte la carte, au lieu d''emporter le '
+  'choix. Nul ne signifie donc PAS « pas de choix » mais « fiche disparue » — et '
+  'c''est aussi la seule chose que l''accord de duo_state ne sait plus trancher '
+  'quand les DEUX choix l''ont perdue (voir §8).';
 
 alter table public.duo_choices enable row level security;
 
@@ -511,7 +595,10 @@ revoke all on table public.duo_choices from public, anon, authenticated;
 create index duo_choices_org_idx
   on public.duo_choices (organization_id);
 
--- Index de tête de la FK composite vers `vitrine_items`, pour sa cascade.
+-- Index de tête de la FK composite vers `vitrine_items`. Il sert désormais le
+-- chemin du `set null` plutôt que celui d'une cascade — Postgres doit retrouver
+-- les mêmes lignes pour les vider qu'il retrouvait pour les supprimer, donc le
+-- besoin d'index est identique (motif IDX-1).
 create index duo_choices_item_idx
   on public.duo_choices (item_id, organization_id);
 
@@ -523,6 +610,14 @@ create index duo_choices_item_idx
 -- `duo_options_state` rendent tous les trois la liste des options, et deux
 -- formulations auraient fini par rendre deux plateaux différents sur deux
 -- écrans ouverts en même temps — celui qui choisit et celui qui regarde.
+--
+-- LE PLATEAU VIENT DE LA CARTE VIVANTE, et c'est le seul endroit du fichier où
+-- `vitrine_items` est encore joint pour un nom. Un plat renommé au comptoir se
+-- renomme ici, une fiche retirée disparaît d'ici : les joueurs choisissent dans
+-- ce que le commerce propose MAINTENANT. Les CHOIX, eux, sont gravés (§4) et ne
+-- rejoignent plus la carte — un plateau doit refléter la carte, un choix doit
+-- refléter le geste. Les deux lectures divergent volontairement, et §8 est
+-- l'endroit où l'on voit les deux côte à côte.
 --
 -- LES FICHES INDISPONIBLES RESTENT SUR LE PLATEAU. `disponible` n'est PAS
 -- filtré, et c'est une décision : la question posée est « que lui offririez-vous
@@ -792,11 +887,26 @@ grant execute on function public.duo_start(uuid, text)
 -- l'organisation — donc les trois cas partagent le chemin, ils ne se sont pas
 -- mis d'accord.
 --
+-- ── LE NOM SE GRAVE DANS LA MÊME LECTURE QUE LA VALIDATION ──
+--
+-- L'`exists` sur `duo_options` est devenu un `select … into v_nom` joignant la
+-- fiche : la question « cette fiche est-elle jouable » et la réponse « voici
+-- comment elle s'appelle » sortent d'une seule instruction, sous le verrou. Les
+-- refus n'ont pas bougé d'un iota — la FK composite de `duo_options` garantit
+-- que toute option a sa fiche, donc `not found` veut toujours dire « pas sur le
+-- plateau », et les trois cas restent indistincts par structure.
+--
+-- Ce nom est ensuite IMMUABLE : aucun `update` ne vise `duo_choices`, donc une
+-- fiche renommée après le sceau ne change pas ce que le joueur avait sous les
+-- yeux (§4, arbitrage 8).
+--
 -- ── L'IDEMPOTENCE ET LE SCEAU SONT LA MÊME LECTURE ──
 --
 -- Le choix déjà écrit est lu UNE fois, sous le verrou, et l'item est comparé :
 -- le même → `ok` (le double-clic ne doit pas punir) ; un autre → `scelle`, et
--- rien ne bouge. Il n'y a pas d'`update`, ici ni ailleurs (voir §4).
+-- rien ne bouge. Il n'y a pas d'`update`, ici ni ailleurs (voir §4). La
+-- comparaison est un `is distinct from` depuis que `item_id` est nullable : voir
+-- le commentaire sur place, c'est le sceau du joueur dont la fiche a disparu.
 --
 -- ── LA RÉVÉLATION EST DANS LA MÊME TRANSACTION QUE LE SECOND CHOIX ──
 --
@@ -837,6 +947,10 @@ declare
   v_lobby public.player_lobbies%rowtype;
   v_round public.duo_rounds%rowtype;
   v_choix public.duo_choices%rowtype;
+  -- LE NOM À GRAVER. Il sort de la MÊME lecture que la validation du plateau
+  -- ci-dessous : chercher le nom séparément aurait ouvert un intervalle entre
+  -- « cette fiche est jouable » et « voici comment elle s'appelle ».
+  v_nom text;
   v_membres integer;
   v_scelles integer;
   v_revelee boolean := false;
@@ -899,14 +1013,26 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
-  -- L'ITEM DOIT ÊTRE SUR LE PLATEAU. `duo_options` porte l'organisation, donc
-  -- ce seul `exists` couvre les trois refus d'un coup — inexistant, d'un autre
-  -- commerce, non épinglé — et ils sont indistincts par STRUCTURE.
-  if not exists (
-    select 1 from public.duo_options o
-     where o.organization_id = v_lobby.organization_id
-       and o.item_id = p_item_id
-  ) then
+  -- L'ITEM DOIT ÊTRE SUR LE PLATEAU, ET C'EST ICI QUE SON NOM SE GRAVE.
+  --
+  -- La jointure ne change RIEN aux refus : la FK composite de `duo_options`
+  -- garantit que toute option épinglée a sa fiche, donc `not found` veut dire
+  -- « pas sur le plateau » et rien d'autre. Les trois cas — fiche inexistante,
+  -- fiche d'un autre commerce, fiche du même commerce non épinglée — empruntent
+  -- toujours ce seul `return`, indistincts par STRUCTURE.
+  --
+  -- LA LECTURE EST UNIQUE, et c'est le point : le nom gravé est celui de la
+  -- fiche qu'on vient de déclarer jouable, dans la même instruction et sous le
+  -- même verrou. Deux lectures auraient laissé un intervalle où la fiche change
+  -- de nom entre sa validation et sa copie.
+  select i.nom into v_nom
+    from public.duo_options o
+    join public.vitrine_items i
+      on i.id = o.item_id
+     and i.organization_id = o.organization_id
+   where o.organization_id = v_lobby.organization_id
+     and o.item_id = p_item_id;
+  if not found then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
@@ -919,7 +1045,15 @@ begin
   if found then
     -- UN AUTRE ITEM APRÈS AVOIR SCELLÉ : refus, et RIEN n'est écrit. C'est ce
     -- qui empêche d'attendre `autre_a_choisi` pour changer d'avis.
-    if v_choix.item_id <> p_item_id then
+    --
+    -- `is distinct from` ET NON `<>`, depuis que `item_id` est nullable : un
+    -- joueur dont la fiche a été supprimée porte un `item_id` nul, et `null <>
+    -- p_item_id` rend NUL — donc FAUX pour un `if`. Le sceau se serait ouvert
+    -- exactement là où il compte le plus : celui à qui on vient d'effacer sa
+    -- fiche aurait vu son geste tomber dans la branche idempotente, reçu un
+    -- `ok` mentant sur ce qu'il a scellé, et RIEN n'aurait été écrit. Le sceau
+    -- tient sur ce que le joueur a fait, pas sur ce qu'il en reste.
+    if v_choix.item_id is distinct from p_item_id then
       return pg_catalog.jsonb_build_object('state', 'scelle');
     end if;
     -- LE MÊME ITEM : idempotent, et l'on RETOMBE DANS LE COMPTAGE ci-dessous
@@ -929,8 +1063,8 @@ begin
     -- la déclencher. Rejouer ne saute jamais une révélation.
   else
     insert into public.duo_choices
-      (round_id, organization_id, member_token_hash, item_id)
-    values (v_round.id, v_lobby.organization_id, p_token_hash, p_item_id);
+      (round_id, organization_id, member_token_hash, item_id, nom_fige)
+    values (v_round.id, v_lobby.organization_id, p_token_hash, p_item_id, v_nom);
   end if;
 
   -- ── LA RÉVÉLATION ────────────────────────────────────────
@@ -981,7 +1115,13 @@ comment on function public.duo_choose(uuid, text, uuid) is
   'est IMMUABLE : aucun update ne vise duo_choices, ici ni ailleurs. Rejouer le '
   'MÊME item est idempotent ; en désigner un AUTRE rend {"state":"scelle"} et '
   'n''écrit rien — sans quoi il suffirait d''attendre que autre_a_choisi passe à '
-  'vrai pour changer d''avis. Un item inexistant, d''un autre commerce ou non '
+  'vrai pour changer d''avis. La comparaison est un IS DISTINCT FROM, parce que '
+  'item_id est nullable depuis le remède de M-1 : avec un simple <>, le joueur '
+  'dont la fiche a été supprimée aurait vu son sceau s''ouvrir. LE NOM DE LA '
+  'FICHE EST GRAVÉ (nom_fige) dans la MÊME lecture que la validation du plateau '
+  '— une seule instruction sous le verrou, sans intervalle où la fiche change '
+  'de nom entre sa validation et sa copie. Un item inexistant, d''un autre '
+  'commerce ou non '
   'épinglé rendent le MÊME unavailable, par STRUCTURE (un seul exists sur '
   'duo_options, qui porte déjà l''organisation) : les distinguer ferait de cette '
   'RPC un oracle sur le catalogue d''en face. QUAND LES DEUX ONT SCELLÉ, la '
@@ -1003,14 +1143,38 @@ grant execute on function public.duo_choose(uuid, text, uuid)
 -- CONTRAT — HUIT CLÉS, TOUJOURS LES MÊMES :
 --   {"state":"ok",
 --    "status":"ouverte"|"revelee",
---    "mon_choix":{"item_id":uuid,"nom":text}|null,
+--    "mon_choix":{"item_id":uuid|null,"nom":text}|null,
 --    "options":[{item_id, nom, description, prix_affiche, photo_path, ordre}],
 --    "autre_a_choisi":bool,
---    "autre_choix":{"item_id":uuid,"nom":text}|null,   ← NULL TANT QU'OUVERTE
+--    "autre_choix":{"item_id":uuid|null,"nom":text}|null, ← NULL TANT QU'OUVERTE
 --    "suggestion":{"item_id":uuid,"nom":text,
 --                  "description":text|null,"prix_affiche":text|null}|null,
---    "accord":bool|null}                                ← NULL TANT QU'OUVERTE
+--    "accord":bool|null}                                  ← NULL TANT QU'OUVERTE
 --   {"state":"unavailable"}  — non-membre, lobby inconnu, manche absente
+--
+-- ── UN PLATEAU REFLÈTE LA CARTE, UN CHOIX REFLÈTE LE GESTE ──
+--
+-- Cette RPC lit délibérément à DEUX endroits, et l'écart est le sujet :
+--
+--   · les OPTIONS viennent de `duo_options_json`, donc de `vitrine_items`, donc
+--     de la carte VIVANTE. Un plat renommé au comptoir se renomme sur le
+--     plateau, et c'est ce qu'on veut : les joueurs choisissent dans ce que le
+--     commerce propose MAINTENANT ;
+--   · les CHOIX viennent de `duo_choices.nom_fige`, gravé à l'instant du sceau,
+--     et AUCUNE jointure sur `vitrine_items` ne les concerne plus. Ce que
+--     `mon_choix` et `autre_choix` montrent est ce que le joueur avait sous les
+--     yeux quand il a agi — même si la fiche a changé de nom depuis, même si
+--     elle a quitté la carte.
+--
+-- La jointure d'avant faisait les deux à la fois, et c'est ce qui rendait la
+-- révélation muette pour le joueur dont le plat avait été retiré : `item_id`
+-- pointait dans le vide, la jointure ne ramenait rien, et `mon_choix` valait
+-- `null` — c'est-à-dire « il n'a rien choisi », ce qui était faux.
+--
+-- `item_id` PEUT DONC ÊTRE NUL DANS UN CHOIX, et l'objet lui-même ne l'est pas :
+-- « la fiche n'existe plus » et « ce joueur n'a rien scellé » sont deux états
+-- différents, et ils se distinguent par la présence de l'OBJET, pas par celle de
+-- son identifiant.
 --
 -- ── LA RPC FILTRE, JAMAIS L'ÉCRAN (motif `event_etat_partage`, 20260929120000)
 --
@@ -1113,18 +1277,16 @@ begin
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
-  -- MON choix : toujours lisible, c'est le mien.
-  select c.item_id into v_mon_item
+  -- MON choix : toujours lisible, c'est le mien. UNE SEULE LECTURE, sur
+  -- `duo_choices` et rien d'autre — le nom sort de `nom_fige`, gravé au moment
+  -- du geste. La jointure sur `vitrine_items` a disparu, et c'est elle qui
+  -- faisait retomber `mon_choix` à `null` quand la fiche avait quitté la carte.
+  select c.item_id,
+         pg_catalog.jsonb_build_object('item_id', c.item_id, 'nom', c.nom_fige)
+    into v_mon_item, v_mon_choix
     from public.duo_choices c
    where c.round_id = v_round.id
      and c.member_token_hash = p_token_hash;
-  if found then
-    select pg_catalog.jsonb_build_object('item_id', i.id, 'nom', i.nom)
-      into v_mon_choix
-      from public.vitrine_items i
-     where i.id = v_mon_item
-       and i.organization_id = v_lobby.organization_id;
-  end if;
 
   -- L'AUTRE A-T-IL SCELLÉ : un BOOLÉEN, et rien de plus. `exists` et non
   -- `count` — un compte serait déjà une information de trop le jour où la
@@ -1142,25 +1304,42 @@ begin
   -- ce ne sont pas des valeurs écartées à l'écriture du document, ce sont des
   -- valeurs qui n'ont jamais été cherchées.
   if v_round.status = 'revelee' then
-    select c.item_id into v_autre_item
+    -- Même lecture unique que pour le mien : le nom gravé, jamais la carte.
+    select c.item_id,
+           pg_catalog.jsonb_build_object('item_id', c.item_id, 'nom', c.nom_fige)
+      into v_autre_item, v_autre_choix
       from public.duo_choices c
      where c.round_id = v_round.id
        and c.member_token_hash <> p_token_hash;
-    if found then
-      select pg_catalog.jsonb_build_object('item_id', i.id, 'nom', i.nom)
-        into v_autre_choix
-        from public.vitrine_items i
-       where i.id = v_autre_item
-         and i.organization_id = v_lobby.organization_id;
-    end if;
 
     -- L'ACCORD SE CALCULE, IL NE SE STOCKE PAS (voir §4). Booléen, sans note et
     -- sans récompense : « vous avez pensé à la même chose », et le cahier
-    -- interdit tout ce qu'on pourrait vouloir en faire ensuite. Il reste `null`
-    -- tant que les deux choix ne sont pas connus — un accord ne se prononce pas
-    -- sur un seul.
-    if v_mon_item is not null and v_autre_item is not null then
-      v_accord := v_mon_item = v_autre_item;
+    -- interdit tout ce qu'on pourrait vouloir en faire ensuite.
+    --
+    -- ── LES QUATRE CAS, ET POURQUOI UNE SEULE EXPRESSION LES DIT ──
+    --
+    -- L'accord porte sur l'IDENTITÉ des fiches, jamais sur leur nom : deux
+    -- fiches distinctes peuvent s'appeler pareil, et la MÊME fiche peut avoir
+    -- été renommée entre les deux sceaux — donc `nom_fige` ne peut trancher ni
+    -- dans un sens ni dans l'autre. Or `item_id` peut désormais avoir disparu.
+    --
+    --   · les DEUX identités connues → `=` tranche, comme toujours ;
+    --   · UNE SEULE connue → l'autre fiche a été SUPPRIMÉE, donc ce n'est pas
+    --     celle qui survit : `is not distinct from` rend faux, et c'est VRAI ;
+    --   · AUCUNE des deux → deux fiches effacées peuvent avoir été la même ou
+    --     non ; la garde `or` coupe et `accord` garde son `null` initial ;
+    --   · un seul joueur a scellé → `v_autre_choix` est `null`, la garde coupe.
+    --
+    -- LE TROISIÈME CAS EST LE PRIX ASSUMÉ DU REMÈDE, et il est le bon prix :
+    -- `null` dit « on ne peut plus le trancher », là où `false` DÉMENTIRAIT un
+    -- accord qui a peut-être eu lieu. Les deux noms gravés restent affichés côte
+    -- à côte — le joueur voit deux fois le même intitulé et conclut lui-même.
+    -- Figer le verdict à la révélation aurait fermé le cas, au prix exact de la
+    -- colonne « accord » que le cahier interdit.
+    if v_mon_choix is not null
+       and v_autre_choix is not null
+       and (v_mon_item is not null or v_autre_item is not null) then
+      v_accord := v_mon_item is not distinct from v_autre_item;
     end if;
 
     -- LA PROPOSITION DE LA MAISON, après les deux autres et jamais avant :
@@ -1203,7 +1382,20 @@ comment on function public.duo_state(uuid, text) is
   'des fuites graduées sur un plateau de six fiches. Les HUIT clés sont '
   'toujours présentes (null plutôt qu''absentes, motif lobby_state/join_code) : '
   'un document de forme stable se type une fois, une clé qui apparaît se teste '
-  'à chaque lecture. N''exige NI salle vivante NI salle ouverte, contrairement à '
+  'à chaque lecture. LES CHOIX SONT LUS SUR nom_fige, LES OPTIONS SUR LA CARTE '
+  'VIVANTE : un plateau doit refléter la carte, un choix doit refléter le geste. '
+  'AUCUNE jointure sur vitrine_items ne concerne plus mon_choix ni autre_choix — '
+  'c''est elle qui rendait la révélation MUETTE (mon_choix à null, c''est-à-dire '
+  '« il n''a rien choisi », ce qui était faux) pour le joueur dont le plat avait '
+  'été retiré de la carte pendant la partie. item_id peut donc être NUL dans un '
+  'choix sans que l''objet le soit : « fiche disparue » et « rien scellé » sont '
+  'deux états, distingués par la présence de l''OBJET. L''ACCORD porte sur '
+  'l''IDENTITÉ et jamais sur le nom (deux fiches peuvent s''appeler pareil, une '
+  'même fiche peut être renommée entre les deux sceaux) : les deux identités '
+  'connues → =, une seule connue → faux (une fiche effacée n''est pas celle qui '
+  'survit), AUCUNE des deux → null, le prix assumé du remède, parce que null dit '
+  '« on ne peut plus le trancher » là où false DÉMENTIRAIT un accord qui a '
+  'peut-être eu lieu. N''exige NI salle vivante NI salle ouverte, contrairement à '
   'duo_choose : la révélation ferme la salle, donc l''exiger rendrait '
   'unavailable à l''écran de résultat lui-même. Appartenance exigée, refus '
   'indistinct. Rendue à service_role.';

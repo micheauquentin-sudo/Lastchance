@@ -22,7 +22,12 @@
 --      un autre est refusé ET n'écrit rien.
 --   6. LES REFUS SONT INDISTINCTS. Item hors options = item inexistant = item
 --      du voisin ; non-membre = lobby inventé.
---   7. LES ACL. service_role seul sur les six RPC de jeu ; `anon` et
+--   7. LA FICHE PEUT MOURIR, LE CHOIX RESTE (revue L17, M-1). Le nom est GRAVÉ
+--      au moment du geste : un renommage ne le touche pas, une suppression ne
+--      l'emporte pas, et `autre_a_choisi` cesse d'être révocable par un tiers —
+--      c'est l'oracle de l'initié qui se ferme. Avec sa LIMITE, écrite plutôt
+--      que tue : les DEUX fiches effacées, l'accord ne se prononce plus.
+--   8. LES ACL. service_role seul sur les six RPC de jeu ; `anon` et
 --      `authenticated` nus sur les deux tables de partie, `references` /
 --      `trigger` / `truncate` compris (leçon SEC-4).
 --
@@ -887,8 +892,13 @@ select is(
      from pg_catalog.pg_attribute a
     where a.attrelid = 'public.duo_choices'::regclass
       and a.attnum > 0 and not a.attisdropped),
-  'created_at,id,item_id,member_token_hash,organization_id,round_id',
+  'created_at,id,item_id,member_token_hash,nom_fige,organization_id,round_id',
   'ACC-4 duo_choices ne porte NI score, NI rang, NI gagnant, NI accord : la liste est close');
+-- `nom_fige` EST DANS LA LISTE, ET IL N'EST PAS UN ACCROC À ACC-4. Il ne note
+-- rien et ne classe personne : il grave le NOM de la fiche au moment du geste,
+-- c'est-à-dire la seule chose qui, sans lui, disparaîtrait avec elle (§7 ter).
+-- La liste reste close — c'est le fait qu'elle soit ÉNUMÉRÉE qui l'empêche de
+-- s'allonger en silence, pas sa longueur.
 
 
 -- ════════════════════════════════════════════════════════════
@@ -1009,10 +1019,14 @@ select throws_ok(
     'd0000005-0000-4000-8000-000000000001'),
   '23503', null,
   'TENANT-1 la base refuse d''épingler la fiche d''un AUTRE commerce (FK composite)');
+-- `nom_fige` EST FOURNI ICI, ET SON ABSENCE AURAIT FAUSSÉ L'ASSERTION : la
+-- colonne est `not null`, donc un insert qui l'omet lève 23502 AVANT que la clé
+-- étrangère soit seulement regardée. L'assertion serait restée rouge en
+-- prouvant… l'existence d'une contrainte `not null`. Même raison en TENANT-4.
 select throws_ok(
   format($$insert into public.duo_choices
-             (round_id, organization_id, member_token_hash, item_id)
-           values (%L, %L, %L, %L)$$,
+             (round_id, organization_id, member_token_hash, item_id, nom_fige)
+           values (%L, %L, %L, %L, %L)$$,
     (select (j->>'round_id')::uuid from dm where nom = 'p3start'),
     'd0000000-0000-4000-8000-00000000000b',
     -- UNE EMPREINTE NEUVE, et c'est nécessaire : `repeat('c1',32)` a déjà un
@@ -1021,7 +1035,8 @@ select throws_ok(
     -- locataire. Deux gardes se recouvrent ici ; il faut désarmer la première
     -- pour éprouver la seconde.
     repeat('c9', 32),
-    'd0000005-0000-4000-8000-000000000001'),
+    'd0000005-0000-4000-8000-000000000001',
+    'Choix Voisin'),
   '23503', null,
   'TENANT-2 … ni de rattacher un choix à la manche d''un autre locataire');
 
@@ -1037,12 +1052,13 @@ select throws_ok(
 -- UN CHOIX PAR PERSONNE, sur la contrainte elle aussi.
 select throws_ok(
   format($$insert into public.duo_choices
-             (round_id, organization_id, member_token_hash, item_id)
-           values (%L, %L, %L, %L)$$,
+             (round_id, organization_id, member_token_hash, item_id, nom_fige)
+           values (%L, %L, %L, %L, %L)$$,
     (select (j->>'round_id')::uuid from dm where nom = 'p3start'),
     'd0000000-0000-4000-8000-00000000000a',
     repeat('c1', 32),
-    'd0000004-0000-4000-8000-000000000002'),
+    'd0000004-0000-4000-8000-000000000002',
+    'Choix Bravo'),
   '23505', null,
   'TENANT-4 … et un SECOND choix pour la même personne dans la même manche');
 
@@ -1062,7 +1078,203 @@ select is(
 
 
 -- ════════════════════════════════════════════════════════════
--- 7 bis. LE RETRAIT DE LA SUGGESTION
+-- 7 bis. LA FICHE DISPARAÎT, LE CHOIX RESTE (revue L17, M-1)
+--
+-- Ce que ce bloc prouve, et pourquoi il existe. `duo_choices.item_id` portait
+-- une FK `on delete cascade` vers `vitrine_items`, ce qui donnait à quiconque
+-- peut supprimer une fiche — un compte `owner|editor` de l'organisation hôte —
+-- le pouvoir d'EFFACER un choix déjà scellé. Deux dégâts, et le second est le
+-- plus fréquent :
+--
+--   · L'ORACLE. Supprimer une fiche, regarder si `autre_a_choisi` retombe à
+--     faux, recommencer : trois à cinq suppressions binarisaient le choix de
+--     l'autre AVANT d'avoir scellé le sien. Toute la §4 de ce fichier existe
+--     pour que ce choix soit invisible ; une cascade le rendait DEVINABLE.
+--   · LA RÉVÉLATION VIDE. Le commerçant qui retire un plat épuisé pendant une
+--     partie ne triche pas — et la cascade faisait disparaître le choix du
+--     joueur, dont la révélation n'avait plus rien à montrer.
+--
+-- Le remède est `nom_fige` + `on delete set null (item_id)`, et il se prouve en
+-- trois temps : le RENOMMAGE (le gravé ne bouge pas, le plateau si), la
+-- SUPPRESSION (le choix survit, l'oracle est fermé), et LA LIMITE ASSUMÉE (les
+-- deux fiches effacées, l'accord ne se prononce plus).
+--
+-- CE BLOC DÉMONTE SES PROPRES FIXTURES — il supprime deux fiches du plateau de
+-- A — donc il passe APRÈS tout ce qui les nomme, comme le §7 ter d'en dessous.
+-- ════════════════════════════════════════════════════════════
+
+-- ── PREMIER TEMPS : LE RENOMMAGE ─────────────────────────────
+-- On renomme la fiche que l'hôte de P3 a scellée au §6. Rien d'autre ne bouge :
+-- elle est toujours sur le plateau, la manche est toujours ouverte.
+update public.vitrine_items
+   set nom = 'Choix Alpha Renomme'
+ where id = 'd0000004-0000-4000-8000-000000000001';
+
+insert into dm values ('grave_p3_hote', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p3'), repeat('c1', 32)));
+
+select is(
+  (select j->'mon_choix'->>'nom' from dm where nom = 'grave_p3_hote'),
+  'Choix Alpha',
+  'GRAVE-1 renommer la fiche APRÈS le sceau ne touche pas le nom GRAVÉ : le choix reflète le GESTE');
+-- LA MÊME LECTURE, L'AUTRE MOITIÉ. C'est ce couple qui prouve la distinction, et
+-- non chaque assertion prise seule : sur LE MÊME document et pour LA MÊME fiche,
+-- le choix rend l'ancien nom et le plateau rend le nouveau. Une seule des deux
+-- aurait été verte même si `duo_state` lisait deux fois au même endroit.
+-- LE DOCUMENT EST CHOISI DANS UNE SOUS-REQUÊTE, ET NON PAR UN `where` SUR `dm`
+-- JOINT À LA FONCTION : `jsonb_array_elements` appliquée à toutes les lignes de
+-- `dm` lèverait sur celles dont `options` n'est pas un tableau — `conf` porte
+-- `{"options": 4}` — et l'assertion dépendrait alors de l'ordre dans lequel le
+-- planificateur applique le filtre. Une garde ne se confie pas à un plan.
+select is(
+  (select o.item->>'nom'
+     from pg_catalog.jsonb_array_elements(
+            (select j->'options' from dm where nom = 'grave_p3_hote')) as o(item)
+    where o.item->>'item_id' = 'd0000004-0000-4000-8000-000000000001'),
+  'Choix Alpha Renomme',
+  'GRAVE-2 … et le PLATEAU, lui, porte le NOUVEAU nom : le plateau reflète la CARTE');
+
+-- ── DEUXIÈME TEMPS : LA SUPPRESSION ──────────────────────────
+-- Le geste du commerçant qui nettoie sa carte, et celui de l'initié qui sonde :
+-- c'est la MÊME instruction, et c'est pour cela qu'aucune garde applicative ne
+-- pouvait les départager. Seule la base pouvait décider ce qu'il advient du
+-- choix, et elle décide désormais de le garder.
+delete from public.vitrine_items i
+ where i.id = 'd0000004-0000-4000-8000-000000000001';
+
+select is(
+  (select pg_catalog.count(*)::integer from public.duo_choices c
+    where c.round_id = (select (j->>'round_id')::uuid from dm where nom = 'p3start')),
+  1,
+  'GRAVE-3 le choix SURVIT à la suppression de sa fiche : la cascade ne l''emporte plus');
+select is(
+  (select c.nom_fige from public.duo_choices c
+    where c.round_id = (select (j->>'round_id')::uuid from dm where nom = 'p3start')
+      and c.member_token_hash = repeat('c1', 32)),
+  'Choix Alpha',
+  'GRAVE-4 … sous le nom gravé AU MOMENT DU GESTE, celui d''avant le renommage');
+-- CE QUE `set null (item_id)` FAIT, ET CE QU'UN `set null` NU AURAIT FAIT. La
+-- liste de colonnes n'est pas un raffinement : sans elle, Postgres tenterait de
+-- vider AUSSI `organization_id`, qui est `not null`, et la suppression de la
+-- fiche aurait ÉCHOUÉ — rendant tout plat indélébile tant qu'un joueur l'a
+-- désigné. L'assertion tient les deux moitiés à la fois.
+select ok(
+  (select c.item_id is null
+      and c.organization_id = 'd0000000-0000-4000-8000-00000000000a'
+     from public.duo_choices c
+    where c.round_id = (select (j->>'round_id')::uuid from dm where nom = 'p3start')
+      and c.member_token_hash = repeat('c1', 32)),
+  'GRAVE-5 … item_id VIDÉ mais LOCATAIRE INTACT : c''est ce que fait set null (item_id), et un set null NU aurait refusé la suppression');
+
+-- ── L'ASSERTION QUI FERME M-1 ────────────────────────────────
+-- L'invité de P3 n'a toujours rien scellé. Avant le remède, la suppression
+-- ci-dessus aurait fait retomber son `autre_a_choisi` à FAUX — et c'est
+-- exactement le signal que l'initié cherchait, une fiche à la fois.
+insert into dm values ('grave_p3_invite', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p3'), repeat('c2', 32)));
+
+select is(
+  (select j->'autre_a_choisi' from dm where nom = 'grave_p3_invite'),
+  'true'::jsonb,
+  'GRAVE-6 L''ORACLE EST FERMÉ (M-1) : supprimer la fiche ne fait PAS retomber autre_a_choisi à faux');
+select is(
+  (select j->'mon_choix' from dm where nom = 'grave_p3_invite'),
+  'null'::jsonb,
+  'GRAVE-7 … et l''invité n''a toujours rien scellé : « fiche disparue » et « rien choisi » restent deux états distincts');
+-- LE NOM GRAVÉ EST UN NOUVEL ENDROIT OÙ VIT LE CHOIX DE L'AUTRE, donc il doit
+-- obéir à la MÊME garde. La manche est ouverte : `nom_fige` est lu par la RPC,
+-- et il ne doit pas franchir le `if`. On cherche dans le document ENTIER et non
+-- « hors du plateau » comme en SEC-9 — la fiche vient de quitter la carte, donc
+-- toute occurrence de son nom serait forcément une fuite du choix.
+select ok(
+  (select j from dm where nom = 'grave_p3_invite')::text
+    not like '%Choix Alpha%',
+  'GRAVE-8 … et le nom GRAVÉ ne fuit pas plus que l''ancien : il ne se lit NULLE PART avant la révélation');
+-- LE CONTRÔLE DE PORTÉE DES TROIS PRÉCÉDENTES : la suppression a bien mordu.
+-- Sans lui, GRAVE-6 serait verte le jour où le `delete` ne supprimerait plus
+-- rien — et prouverait alors la persistance d'une fiche jamais partie.
+select is(
+  (select pg_catalog.jsonb_array_length(j->'options') from dm where nom = 'grave_p3_invite'),
+  3,
+  'GRAVE-9 CONTRÔLE DE PORTÉE : le plateau est bien AMPUTÉ (quatre fiches moins une) — il perd des options, jamais un choix');
+
+-- ── LA RÉVÉLATION MONTRE ENCORE LE GESTE ─────────────────────
+-- P1 est révélée depuis le §5 : l'hôte y avait scellé la fiche qu'on vient de
+-- supprimer, l'invité une autre. C'est le cas du commerçant qui nettoie sa
+-- carte, et l'écran de résultat doit lui survivre entier.
+insert into dm values ('grave_p1_invite', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p1'), repeat('a2', 32)));
+
+select is(
+  (select j->'autre_choix'->>'nom' from dm where nom = 'grave_p1_invite'),
+  'Choix Alpha',
+  'GRAVE-10 la RÉVÉLATION montre encore ce que l''autre avait choisi, sous son nom gravé');
+select is(
+  (select j->'autre_choix'->'item_id' from dm where nom = 'grave_p1_invite'),
+  'null'::jsonb,
+  'GRAVE-11 … avec item_id NUL, et l''OBJET bien présent : la fiche n''existe plus, le geste si');
+select is(
+  (select j->'accord' from dm where nom = 'grave_p1_invite'),
+  'false'::jsonb,
+  'GRAVE-12 … et l''accord reste FAUX : une fiche EFFACÉE n''est pas la fiche qui SURVIT, et cela se tranche encore');
+
+-- ── TROISIÈME TEMPS : LA LIMITE ASSUMÉE ──────────────────────
+-- Le seul cas que le remède ne referme pas, écrit ici pour qu'on ne le
+-- découvre pas en production. Deux joueurs scellent la MÊME fiche, puis elle est
+-- supprimée : les deux `item_id` valent nul, et deux nuls ne disent pas s'ils
+-- désignaient la même chose. L'accord porte sur l'IDENTITÉ et jamais sur le nom
+-- — deux fiches distinctes peuvent s'appeler pareil, et une même fiche peut
+-- avoir été renommée entre les deux sceaux — donc `nom_fige` ne peut pas
+-- trancher à sa place.
+-- LES EMPREINTES SONT HEXADÉCIMALES, et le motif `repeat('xx', 32)` de ce
+-- fichier le cache : `repeat('g1', 32)` a la bonne LONGUEUR mais pas le bon
+-- ALPHABET, et `create_player_lobby` le refuse par un `raise` — qui interrompt
+-- le fichier entier au lieu de rougir une assertion. Les paires disponibles
+-- doivent rester dans [0-9a-f].
+insert into dm values ('p4', public.create_player_lobby(
+  'd0000000-0000-4000-8000-00000000000a', 'duo', 2, repeat('ab', 32), 'Hote Cinq'));
+insert into dm values ('p4j', public.join_player_lobby(
+  (select j->>'join_code' from dm where nom = 'p4'), repeat('cd', 32), 'Invite Cinq'));
+insert into dm values ('p4l', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'), repeat('ab', 32)));
+insert into dm values ('p4start', public.duo_start(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'), repeat('ab', 32)));
+insert into dm values ('p4c1', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'),
+  repeat('ab', 32), 'd0000004-0000-4000-8000-000000000004'));
+insert into dm values ('p4c2', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'),
+  repeat('cd', 32), 'd0000004-0000-4000-8000-000000000004'));
+insert into dm values ('p4avant', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'), repeat('ab', 32)));
+
+select is(
+  (select j->'accord' from dm where nom = 'p4avant'),
+  'true'::jsonb,
+  'GRAVE-13 la même fiche des deux côtés : l''accord est NOMMÉ, tant que la fiche vit');
+
+delete from public.vitrine_items i
+ where i.id = 'd0000004-0000-4000-8000-000000000004';
+
+insert into dm values ('p4apres', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p4'), repeat('ab', 32)));
+
+select is(
+  (select j->'mon_choix'->>'nom' from dm where nom = 'p4apres'),
+  'Choix Delta',
+  'GRAVE-14 les DEUX noms gravés restent lisibles après la suppression…');
+select is(
+  (select j->'autre_choix'->>'nom' from dm where nom = 'p4apres'),
+  'Choix Delta',
+  'GRAVE-15 … côte à côte, et identiques : le joueur VOIT qu''ils ont pensé pareil');
+select is(
+  (select j->'accord' from dm where nom = 'p4apres'),
+  'null'::jsonb,
+  'GRAVE-16 LA LIMITE ASSUMÉE : les deux identités effacées, l''accord ne se PRONONCE plus (null) — il ne se DÉMENT pas (false), ce qui aurait été un mensonge');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 7 ter. LE RETRAIT DE LA SUGGESTION
 --
 -- Placé ICI, et pas au §1 avec les autres gestes de configuration, pour une
 -- raison bête et suffisante : il EFFACE ce dont REV-13 avait besoin. Un test

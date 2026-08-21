@@ -1366,24 +1366,27 @@ export type Database = {
         Row: {
           created_at: string
           id: string
-          item_id: string
+          item_id: string | null
           member_token_hash: string
+          nom_fige: string
           organization_id: string
           round_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          item_id: string
+          item_id?: string | null
           member_token_hash: string
+          nom_fige: string
           organization_id: string
           round_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          item_id?: string
+          item_id?: string | null
           member_token_hash?: string
+          nom_fige?: string
           organization_id?: string
           round_id?: string
         }
