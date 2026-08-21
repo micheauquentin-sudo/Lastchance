@@ -12,14 +12,19 @@
 --      contrainte, pas par la politesse de l'appelant.
 --   3. LE CHOIX DE L'AUTRE EST INVISIBLE AVANT LA RÉVÉLATION. C'est LA
 --      propriété du lot, et elle est prouvée DEUX FOIS : sur le JEU DE CLÉS
---      (huit, et la liste est close) et sur le TEXTE du document (ni le nom ni
+--      (neuf, et la liste est close) et sur le TEXTE du document (ni le nom ni
 --      l'identifiant de la fiche choisie par l'autre ne s'y lisent). Avec son
 --      CONTRÔLE DE PORTÉE : après la révélation, les deux mêmes assertions
 --      doivent s'inverser — sans quoi elles seraient vertes par vacuité.
 --   4. LA RÉVÉLATION EST AUTOMATIQUE AU SECOND CHOIX, dans la même transaction,
---      et elle FERME la salle.
+--      et elle FERME la salle. Cette fermeture — par la révélation OU par le
+--      commerçant — VOYAGE jusqu'au joueur, par la neuvième clé `salle_close` :
+--      le scrutin du lobby s'est arrêté au verrouillage, `duo_state` est le seul
+--      canal qui tourne encore, et la clé ne dit rien de plus qu'un booléen.
 --   5. LE CHOIX EST SCELLÉ. Rejouer le même item est idempotent ; en désigner
---      un autre est refusé ET n'écrit rien.
+--      un autre est refusé ET n'écrit rien — Y COMPRIS quand la fiche scellée a
+--      disparu (`item_id` nul), le cas où un `<>` rendrait NUL et ouvrirait le
+--      sceau de celui-là même que le remède protège.
 --   6. LES REFUS SONT INDISTINCTS. Item hors options = item inexistant = item
 --      du voisin ; non-membre = lobby inventé.
 --   7. LA FICHE PEUT MOURIR, LE CHOIX RESTE (revue L17, M-1). Le nom est GRAVÉ
@@ -695,14 +700,24 @@ select is(
 -- ── LA PREUVE, PREMIÈRE MOITIÉ : LE JEU DE CLÉS ──────────────
 -- L'assertion porte sur l'ENSEMBLE EXACT des clés, et non sur l'absence de
 -- trois d'entre elles : « pas d'autre_choix » serait vert le jour où une
--- QUATRIÈME donnée réservée apparaîtrait sous un autre nom. Huit clés, et la
+-- QUATRIÈME donnée réservée apparaîtrait sous un autre nom. Neuf clés, et la
 -- liste est close.
+--
+-- LA LISTE EST PASSÉE DE HUIT À NEUF, ET C'EST UN GESTE DÉLIBÉRÉ : `salle_close`
+-- a été ajoutée par la contre-revue L17 (R-2) pour que la fermeture de la salle
+-- atteigne un écran dont le scrutin de lobby s'est arrêté au verrouillage. Cette
+-- assertion est précisément ce qui rend l'ajout COÛTEUX, donc conscient — une
+-- dixième clé se paiera du même prix.
 select is(
   (select pg_catalog.string_agg(k, ',' order by k)
      from dm, pg_catalog.jsonb_object_keys(j) as k
     where nom = 'vue_invite'),
-  'accord,autre_a_choisi,autre_choix,mon_choix,options,state,status,suggestion',
-  'SEC-5 le document porte HUIT clés, et la liste est close');
+  'accord,autre_a_choisi,autre_choix,mon_choix,options,salle_close,state,status,suggestion',
+  'SEC-5 le document porte NEUF clés, et la liste est close');
+select is(
+  (select j->'salle_close' from dm where nom = 'vue_invite'),
+  'false'::jsonb,
+  'SEC-5a salle_close est FAUX : la salle est verrouillée, vivante, et la partie court');
 select is(
   (select j->'autre_choix' from dm where nom = 'vue_invite'),
   'null'::jsonb, 'SEC-6 autre_choix est NULL, la clé étant présente pour que la forme soit stable');
@@ -856,8 +871,16 @@ select is(
   (select pg_catalog.string_agg(k, ',' order by k)
      from dm, pg_catalog.jsonb_object_keys(j) as k
     where nom = 'apres_invite'),
-  'accord,autre_a_choisi,autre_choix,mon_choix,options,state,status,suggestion',
-  'REV-14 les HUIT clés sont les mêmes avant et après : la forme du document ne bouge pas');
+  'accord,autre_a_choisi,autre_choix,mon_choix,options,salle_close,state,status,suggestion',
+  'REV-14 les NEUF clés sont les mêmes avant et après : la forme du document ne bouge pas');
+-- LE MIROIR DE SEC-5a, et l'autre moitié de la promesse de `salle_close` : la
+-- révélation a fermé la salle (REV-4), et le joueur l'APPREND — par le seul
+-- canal qui tourne encore. Ce basculement est ce qui prouve que SEC-5a mesurait
+-- quelque chose : la clé SUIT la salle, elle n'est pas constante.
+select is(
+  (select j->'salle_close' from dm where nom = 'apres_invite'),
+  'true'::jsonb,
+  'REV-15 … et salle_close a BASCULÉ à vrai : la révélation ferme la salle, et le document le dit');
 
 -- ── L'ACCORD ─────────────────────────────────────────────────
 -- Salle 2 : les deux choisissent la MÊME fiche.
@@ -1004,6 +1027,94 @@ select is(
     where r.lobby_id = (select (j->>'lobby_id')::uuid from dm where nom = 'p1')),
   1,
   'SURVIE-3 … et n''a pas fabriqué une seconde manche au passage');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 6 bis. LA SALLE SE REFERME PENDANT QUE LA MANCHE EST OUVERTE
+--
+-- LE CAS QUE `salle_close` EXISTE POUR DIRE, et il n'est atteignable QUE par ce
+-- chemin : la révélation ferme la salle DANS LE MÊME GESTE qu'elle révèle la
+-- manche (§5), donc « salle close ET manche encore ouverte » ne se produit que
+-- si le COMMERÇANT referme. C'est aussi le seul état que l'écran ne peut pas
+-- déduire tout seul — son scrutin de lobby s'est arrêté au verrouillage,
+-- `locked` étant terminal, et son statut de salle est figé pour toute la partie.
+-- Sans cette clé, le joueur reste devant son plateau et boucle sur des
+-- `unavailable` génériques sans jamais apprendre pourquoi.
+--
+-- UNE SALLE NEUVE, ET PAS P3 : la fermeture est DÉFINITIVE. L'éprouver sur une
+-- salle dont les sections suivantes ont encore besoin (P3 sert au §7 bis, et
+-- son sceau y est rejoué) ferait dépendre celles-ci de l'ordre des blocs — et
+-- une garde ne se confie pas à un ordre.
+-- ════════════════════════════════════════════════════════════
+
+insert into dm values ('p5', public.create_player_lobby(
+  'd0000000-0000-4000-8000-00000000000a', 'duo', 2, repeat('0a', 32), 'Hote Quatre'));
+insert into dm values ('p5j', public.join_player_lobby(
+  (select j->>'join_code' from dm where nom = 'p5'), repeat('0b', 32), 'Invite Quatre'));
+insert into dm values ('p5l', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p5'), repeat('0a', 32)));
+insert into dm values ('p5start', public.duo_start(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p5'), repeat('0a', 32)));
+insert into dm values ('p5avant', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p5'), repeat('0b', 32)));
+
+select is(
+  (select j->'salle_close' from dm where nom = 'p5avant'),
+  'false'::jsonb,
+  'CLOSE-1 salle VERROUILLÉE ET VIVANTE, manche ouverte : salle_close est FAUX');
+
+-- LE COMMERÇANT REFERME. Rien d'autre ne bouge : personne n'a scellé, les deux
+-- joueurs restent membres, et la manche n'est pas touchée.
+insert into dm values ('p5close', public.close_player_lobby_as_org(
+  'd0000000-0000-4000-8000-00000000000a',
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p5'),
+  'd0000001-0000-4000-8000-000000000001'));
+select is(
+  (select j from dm where nom = 'p5close'),
+  '{"state": "ok", "closed": true}'::jsonb,
+  'CLOSE-2 CONTRÔLE DE PORTÉE : la fermeture a bien MORDU — sans elle, CLOSE-3 serait verte sur une salle jamais fermée');
+
+insert into dm values ('p5apres', public.duo_state(
+  (select (j->>'lobby_id')::uuid from dm where nom = 'p5'), repeat('0b', 32)));
+
+select is(
+  (select j->'salle_close' from dm where nom = 'p5apres'),
+  'true'::jsonb,
+  'CLOSE-3 … et le joueur l''APPREND par duo_state, le seul canal qui tourne encore après le verrouillage');
+-- CE COUPLE EST TOUT LE SUJET. `status` dit « ouverte » — la manche n'a pas
+-- bougé, donc rien dans le document ne trahirait la fermeture — et pourtant la
+-- salle est close. C'est la combinaison que la révélation ne peut PAS produire,
+-- et celle qu'aucune autre clé ne porte.
+select is(
+  (select j->>'status' from dm where nom = 'p5apres'),
+  'ouverte',
+  'CLOSE-4 … alors que la MANCHE, elle, est encore OUVERTE : l''état exact que l''écran ne pouvait pas déduire');
+-- LE JEU DE CLÉS SUR LA COMBINAISON NEUVE. SEC-5 l'éprouve sur « manche ouverte,
+-- salle vivante », REV-14 sur « manche révélée, salle close » ; il manquait
+-- « manche ouverte, salle close ». La forme ne doit pas dépendre de la salle.
+select is(
+  (select pg_catalog.string_agg(k, ',' order by k)
+     from dm, pg_catalog.jsonb_object_keys(j) as k
+    where nom = 'p5apres'),
+  'accord,autre_a_choisi,autre_choix,mon_choix,options,salle_close,state,status,suggestion',
+  'CLOSE-5 … et la forme du document ne bouge toujours pas : NEUF clés, salle close ou non');
+-- ELLE NE DIT RIEN DE PLUS QU'UN BOOLÉEN, et c'est ICI que ça rougira le jour
+-- où quelqu'un voudra « expliquer » la fermeture au joueur. Ni raison, ni
+-- auteur, ni date : `lobby.closed_by_org` grave déjà tout cela au journal, à
+-- l'usage de ceux qui y ont droit — le porteur d'un jeton de partie n'en est pas.
+select is(
+  (select pg_catalog.jsonb_typeof(j->'salle_close') from dm where nom = 'p5apres'),
+  'boolean',
+  'CLOSE-6 salle_close est un BOOLÉEN NU : pas un objet, pas une raison, pas un auteur, pas une date');
+-- LA CLÉ RENSEIGNE, ELLE NE RELÂCHE RIEN. Le refus de `duo_choose` reste
+-- exactement celui de §6 — le même mot que pour un non-membre. Ce qui change
+-- n'est pas le droit du joueur, c'est ce qu'il peut COMPRENDRE de son écran.
+select is(
+  public.duo_choose(
+    (select (j->>'lobby_id')::uuid from dm where nom = 'p5'),
+    repeat('0b', 32), 'd0000004-0000-4000-8000-000000000002'),
+  '{"state": "unavailable"}'::jsonb,
+  'CLOSE-7 on ne choisit plus dans une salle refermée par le commerçant, et le refus reste GÉNÉRIQUE');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -1197,6 +1308,56 @@ select is(
   (select pg_catalog.jsonb_array_length(j->'options') from dm where nom = 'grave_p3_invite'),
   3,
   'GRAVE-9 CONTRÔLE DE PORTÉE : le plateau est bien AMPUTÉ (quatre fiches moins une) — il perd des options, jamais un choix');
+
+-- ── LE SCEAU DU JOUEUR DONT LA FICHE A DISPARU ───────────────
+--
+-- LA GARDE QUE PERSONNE NE MARCHAIT (contre-revue L17, R-1). `duo_choose`
+-- compare le choix déjà scellé par un `is distinct from` et non par un `<>`,
+-- parce que `item_id` est devenu nullable avec le remède : sur un `item_id` NUL,
+-- `null <> p_item_id` rend NUL — donc FAUX pour un `if` — et le geste tomberait
+-- dans la branche IDEMPOTENTE. Le joueur recevrait un `ok` MENTANT sur ce qu'il
+-- a scellé, sans qu'une ligne soit écrite : le sceau s'ouvrirait exactement pour
+-- celui à qui l'on vient d'effacer sa fiche, c'est-à-dire pour celui que le
+-- remède existe pour protéger.
+--
+-- AUCUNE ASSERTION NE PARCOURAIT CE CHEMIN avant cette ligne, et le fichier
+-- restait ENTIÈREMENT VERT si l'on repassait à `<>`. La raison est mécanique :
+-- les seules tentatives de re-choix (§6) portaient sur une fiche VIVANTE, et les
+-- seules salles où un `item_id` était nul étaient DÉJÀ RÉVÉLÉES — `duo_choose`
+-- y sort en `unavailable` sur la salle close, puis sur la manche non `ouverte`,
+-- DEUX gardes avant d'atteindre la comparaison du sceau.
+--
+-- P3 EST LA SEULE SALLE QUI CONVIENNE, ET ELLE DOIT LE RESTER : verrouillée,
+-- VIVANTE, manche ENCORE OUVERTE (SCEAU-5), et son hôte porte depuis GRAVE-5 un
+-- choix à `item_id` nul sous son `nom_fige` intact. Révéler ou fermer P3 avant
+-- cette ligne ferait mordre les deux filets en amont, l'assertion redeviendrait
+-- verte par vacuité, et la garde cesserait d'être tenue par quoi que ce soit.
+-- C'est écrit ici pour que ce ne soit pas fait par distraction.
+--
+-- L'ITEM VISÉ DOIT ÊTRE SUR LE PLATEAU — `Choix Bravo`, vivant, et non la fiche
+-- supprimée. La validation du plateau précède la comparaison du sceau : viser
+-- une fiche effacée rendrait `unavailable` et prouverait autre chose.
+--
+-- ET L'ASSERTION EST PARCOURANTE PAR CONSTRUCTION : `{"state":"scelle"}` n'a
+-- qu'UN SEUL `return` dans toute la fonction, et il est DERRIÈRE la comparaison.
+-- Ce document ne peut donc pas sortir sans qu'elle ait tranché.
+select is(
+  public.duo_choose(
+    (select (j->>'lobby_id')::uuid from dm where nom = 'p3'),
+    repeat('c1', 32), 'd0000004-0000-4000-8000-000000000002'),
+  '{"state": "scelle"}'::jsonb,
+  'GRAVE-9a LE SCEAU TIENT SANS SA FICHE : item_id nul, un AUTRE item reste REFUSÉ — avec <> la comparaison rendrait NUL et le sceau s''ouvrirait');
+select ok(
+  (select c.item_id is null and c.nom_fige = 'Choix Alpha'
+     from public.duo_choices c
+    where c.round_id = (select (j->>'round_id')::uuid from dm where nom = 'p3start')
+      and c.member_token_hash = repeat('c1', 32)),
+  'GRAVE-9b … et RIEN n''a été réécrit : ni l''identifiant vidé, ni le nom gravé');
+select is(
+  (select pg_catalog.count(*)::integer from public.duo_choices c
+    where c.round_id = (select (j->>'round_id')::uuid from dm where nom = 'p3start')),
+  1,
+  'GRAVE-9c … ni ajouté : le refus n''écrit pas un second choix');
 
 -- ── LA RÉVÉLATION MONTRE ENCORE LE GESTE ─────────────────────
 -- P1 est révélée depuis le §5 : l'hôte y avait scellé la fiche qu'on vient de

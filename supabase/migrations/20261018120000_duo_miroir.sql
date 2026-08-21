@@ -1053,6 +1053,11 @@ begin
     -- fiche aurait vu son geste tomber dans la branche idempotente, reçu un
     -- `ok` mentant sur ce qu'il a scellé, et RIEN n'aurait été écrit. Le sceau
     -- tient sur ce que le joueur a fait, pas sur ce qu'il en reste.
+    --
+    -- CE CHEMIN EST MARCHÉ PAR UNE ASSERTION, et il faut qu'il le reste :
+    -- `GRAVE-9a` (duo_miroir.test.sql) rejoue ce cas sur la salle P3, dont la
+    -- manche doit demeurer OUVERTE pour cela — une salle révélée sortirait en
+    -- `unavailable` deux gardes plus haut et laisserait ce `if` non couvert.
     if v_choix.item_id is distinct from p_item_id then
       return pg_catalog.jsonb_build_object('state', 'scelle');
     end if;
@@ -1140,7 +1145,7 @@ grant execute on function public.duo_choose(uuid, text, uuid)
 -- ────────────────────────────────────────────────────────────
 -- 8. `duo_state` — LE CŒUR ANTI-TRICHE
 --
--- CONTRAT — HUIT CLÉS, TOUJOURS LES MÊMES :
+-- CONTRAT — NEUF CLÉS, TOUJOURS LES MÊMES :
 --   {"state":"ok",
 --    "status":"ouverte"|"revelee",
 --    "mon_choix":{"item_id":uuid|null,"nom":text}|null,
@@ -1149,7 +1154,8 @@ grant execute on function public.duo_choose(uuid, text, uuid)
 --    "autre_choix":{"item_id":uuid|null,"nom":text}|null, ← NULL TANT QU'OUVERTE
 --    "suggestion":{"item_id":uuid,"nom":text,
 --                  "description":text|null,"prix_affiche":text|null}|null,
---    "accord":bool|null}                                  ← NULL TANT QU'OUVERTE
+--    "accord":bool|null,                                  ← NULL TANT QU'OUVERTE
+--    "salle_close":bool}                   ← LE SEUL FAIT SUR LA SALLE PORTEUSE
 --   {"state":"unavailable"}  — non-membre, lobby inconnu, manche absente
 --
 -- ── UN PLATEAU REFLÈTE LA CARTE, UN CHOIX REFLÈTE LE GESTE ──
@@ -1202,7 +1208,7 @@ grant execute on function public.duo_choose(uuid, text, uuid)
 -- une empreinte — toutes ces variantes auraient été des fuites graduées, et un
 -- `item_id` haché reste un `item_id` quand le plateau ne compte que six fiches.
 --
--- ── LES HUIT CLÉS SONT TOUJOURS PRÉSENTES ──
+-- ── LES NEUF CLÉS SONT TOUJOURS PRÉSENTES ──
 --
 -- Les trois réservées valent `null` avant la révélation plutôt que de
 -- disparaître. Motif `lobby_state` (`join_code` rendu `null` aux non-hôtes) : un
@@ -1210,15 +1216,49 @@ grant execute on function public.duo_choose(uuid, text, uuid)
 -- apparaît et disparaît se teste à chaque lecture — et une clé qu'on oublie de
 -- tester est une clé qu'on affiche.
 --
+-- ── `salle_close` : LE FAIT VOYAGE SUR LE SONDAGE QUI TOURNE ENCORE ──
+--
+-- La NEUVIÈME clé, et la liste était close à huit : elle s'ouvre EN CONSCIENCE,
+-- au prix de deux assertions de jeu de clés à reprendre et d'un type applicatif
+-- à corriger. Voici ce que ce prix achète.
+--
+-- LE SCRUTIN DU LOBBY S'ARRÊTE AU VERROUILLAGE. `locked` est terminal pour
+-- l'écran de salle : il cesse alors d'interroger `lobby_state`, et son statut de
+-- salle est FIGÉ pour toute la partie. Le commerçant qui referme la salle
+-- pendant que les joueurs choisissent (`close_player_lobby_as_org`, L16) ne
+-- l'annonce donc à personne — le joueur reste devant son plateau, tente son
+-- choix, reçoit un refus GÉNÉRIQUE (`unavailable`, le même mot que pour un jeton
+-- volé) et le rejoue sans jamais apprendre pourquoi. `duo_state`, lui, TOURNE
+-- ENCORE : c'est le seul canal resté ouvert vers cet écran, donc c'est par lui
+-- que le fait doit voyager.
+--
+-- ELLE NE DIT RIEN DE PLUS QU'UN BOOLÉEN, et cette borne EST le sujet. Pas la
+-- RAISON (ménage, sanction, incident), pas l'AUTEUR (quel compte a fermé), pas
+-- la DATE. Chacun des trois aurait rendu un renseignement sur le commerce — ou
+-- sur un tiers — à un visiteur anonyme qui n'a fourni qu'un jeton de partie, et
+-- la ligne `lobby.closed_by_org` grave déjà tout cela au journal, à l'usage de
+-- ceux qui y ont droit. Ici : fermée, ou pas.
+--
+-- ELLE EST VRAIE DANS LES DEUX CAS où la salle a cessé d'accueillir : `closed`
+-- (par le commerçant, ou par la révélation elle-même, §7) et MORTE (`expired`,
+-- ou date de mort dépassée). Les deux moitiés du test sont nécessaires :
+-- l'expiration se CONSTATE et ne s'écrit pas (ADR-111), donc une salle dépassée
+-- porte encore `locked` dans sa colonne. L'écran n'a pas à connaître ces trois
+-- chemins — il en reçoit la conclusion.
+--
 -- ── NI SALLE VIVANTE, NI SALLE OUVERTE ──
 --
--- Contrairement à `duo_choose`, cette RPC ne regarde ni `status` ni
--- `expires_at` du lobby. C'est nécessaire : la révélation FERME la salle et
--- ramène sa date de mort à l'instant même (arbitrage 6), donc toute exigence de
--- ce genre rendrait `unavailable` exactement à l'écran de résultat qu'on vient
--- d'ouvrir. Ce qui est exigé, et qui suffit : ÊTRE MEMBRE, et que la manche
--- existe. Les données ne survivent pas plus longtemps que la salle — la purge
--- de L16 les emporte en cascade.
+-- Contrairement à `duo_choose`, cette RPC ne fait de `status` ni d'`expires_at`
+-- du lobby une CONDITION D'ACCÈS. C'est nécessaire : la révélation FERME la
+-- salle et ramène sa date de mort à l'instant même (arbitrage 6), donc toute
+-- exigence de ce genre rendrait `unavailable` exactement à l'écran de résultat
+-- qu'on vient d'ouvrir. Ce qui est exigé, et qui suffit : ÊTRE MEMBRE, et que la
+-- manche existe. Les données ne survivent pas plus longtemps que la salle — la
+-- purge de L16 les emporte en cascade.
+--
+-- Les deux colonnes sont LUES depuis `salle_close` (ci-dessus), et l'écart est
+-- exactement celui-là : cette RPC RAPPORTE l'état de la salle, elle ne s'en sert
+-- jamais pour refuser.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.duo_state(
@@ -1241,6 +1281,10 @@ declare
   v_accord boolean := null;
   v_autre_a_choisi boolean;
   v_autre_item uuid;
+  -- LE SEUL FAIT SUR LA SALLE PORTEUSE. Sans initialisation, contrairement aux
+  -- trois valeurs réservées : celles-là gardent un `null` qui SIGNIFIE « pas
+  -- encore », celle-ci est calculée sur tout chemin qui rend un document `ok`.
+  v_salle_close boolean;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
@@ -1269,6 +1313,18 @@ begin
   ) then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
+
+  -- LA SALLE A-T-ELLE CESSÉ D'ACCUEILLIR. Un booléen, calculé sur la MÊME ligne
+  -- `v_lobby` que tout le reste, et jamais transformé en refus (voir l'en-tête).
+  --
+  -- LES DEUX MOITIÉS SONT NÉCESSAIRES. `status` seul raterait la salle
+  -- simplement DÉPASSÉE : l'expiration se CONSTATE et ne s'écrit pas (ADR-111),
+  -- donc la colonne y porte encore `locked`. `expires_at` seul raterait la salle
+  -- fermée par le commerçant, dont la date de mort est ramenée à l'instant mais
+  -- reste, pendant cet instant, strictement postérieure à `now()` — `least(
+  -- clock_timestamp(), …)` avance sur le temps de la transaction.
+  v_salle_close := v_lobby.status in ('closed', 'expired')
+                   or v_lobby.expires_at <= pg_catalog.now();
 
   select r.* into v_round
     from public.duo_rounds r
@@ -1365,7 +1421,8 @@ begin
     'autre_a_choisi', v_autre_a_choisi,
     'autre_choix', v_autre_choix,
     'suggestion', v_suggestion,
-    'accord', v_accord
+    'accord', v_accord,
+    'salle_close', v_salle_close
   );
 end;
 $$;
@@ -1379,10 +1436,18 @@ comment on function public.duo_state(uuid, text) is
   'un `case` : la garde tient par la STRUCTURE, pas par l''accord de trois '
   'expressions qu''on réécrira un jour séparément. autre_a_choisi est un '
   'BOOLÉEN et ne peut être que cela — un compteur ou une empreinte auraient été '
-  'des fuites graduées sur un plateau de six fiches. Les HUIT clés sont '
+  'des fuites graduées sur un plateau de six fiches. Les NEUF clés sont '
   'toujours présentes (null plutôt qu''absentes, motif lobby_state/join_code) : '
   'un document de forme stable se type une fois, une clé qui apparaît se teste '
-  'à chaque lecture. LES CHOIX SONT LUS SUR nom_fige, LES OPTIONS SUR LA CARTE '
+  'à chaque lecture. salle_close EST LA NEUVIÈME, et un BOOLÉEN NU : ni raison, '
+  'ni auteur, ni date — le journal lobby.closed_by_org porte déjà tout cela pour '
+  'qui y a droit. Elle existe parce que le scrutin du LOBBY s''arrête au '
+  'verrouillage (locked est terminal côté écran) : le commerçant qui referme la '
+  'salle pendant la partie ne l''annonce à personne, et le joueur boucle sur des '
+  'unavailable génériques. duo_state, lui, tourne encore — c''est le seul canal '
+  'ouvert. VRAIE si closed OU expired OU date de mort dépassée : les deux '
+  'moitiés comptent, l''expiration se CONSTATE et ne s''écrit pas (ADR-111). '
+  'LES CHOIX SONT LUS SUR nom_fige, LES OPTIONS SUR LA CARTE '
   'VIVANTE : un plateau doit refléter la carte, un choix doit refléter le geste. '
   'AUCUNE jointure sur vitrine_items ne concerne plus mon_choix ni autre_choix — '
   'c''est elle qui rendait la révélation MUETTE (mon_choix à null, c''est-à-dire '
