@@ -111,5 +111,66 @@ Vitrine (VIT-1a, catalogue commerce/cartes/rubriques/fiches), migration
 ## Notes de mise à jour
 
 Ce fichier est mis à jour à chaque lot : statut, numéro de PR, migration
-associée le cas échéant. Le bilan global du train sera ajouté en fin de
-liste une fois L18 fusionné.
+associée le cas échéant.
+
+## Bilan du train
+
+Dix-neuf lots (L0→L18), tous fusionnés, PR #156 à #174, migrations
+`20261001120000` à `20261019120000`. Réserver est complet (RES-1 à RES-5),
+la Vitrine est complète (VIT-1 à VIT-5), et trois expériences joueur sont
+livrées : Signature, Duo Miroir, Portrait de la Bande. Hors lots, PR #158
+corrigeait un flake E2E rencontré en cours de route.
+
+Le fait le plus utile de ce bilan n'est pas la liste des livraisons : c'est
+ce que la vérification a trouvé et que la lecture n'avait pas vu.
+
+- **L11** : l'ISR n'existait pas. `export const revalidate = 60` sans
+  `generateStaticParams` laisse la route dynamique en Next 16 — prouvé par
+  `.next/prerender-manifest.json` (`fallback: null`), pas par relecture du
+  code.
+- **L8** : `is_valid_experience_steps` n'avait pas l'`EXECUTE` pour
+  `authenticated` — toute création de Moment Signature échouait en
+  `permission denied` — et une case à cocher postait `value="on"`, un enum
+  invalide, faisant échouer silencieusement l'enregistrement. Les deux
+  préexistaient au lot et n'avaient jamais été exercés par un E2E.
+- **L17** : une course de scrutin WebKit (un sondage parti avant
+  `lockLobby` revenait après et écrasait l'état), fermée par un compteur de
+  génération ; et un `<>` au lieu d'un `is distinct from` rouvrait le sceau
+  d'un joueur dont le plat avait été supprimé — la contre-revue a montré que
+  la garde n'était pas testée, en revenant au `<>` et en constatant 155/155
+  encore verts.
+- **L18** : l'hôte pouvait désanonymiser les votes un par un en révélant
+  avant tout plancher de participation ; fermé par un plancher
+  `least(3, dénominateur)`, un état `trop_tot`, et `votes_exprimes` rendu nul
+  pour les non-votants.
+
+Après le train (2026-08-21/22), hors lots :
+
+- **Turnstile vérifié ARMÉ.** LOBBY-1 affirmait « non armé » sans que
+  personne n'ait mesuré. La clé publique est prouvée dans le bundle de
+  production ; détail, méthode et résidu dans `docs/bugs.md`.
+- **`CRON_SECRET` absent des secrets GitHub** : la garde de santé
+  post-déploiement fonctionne comme porte mais ne nomme jamais la cause d'un
+  échec.
+- **Deux révocations de clés propriétaire** (`rk_live_`, jeton Vercel)
+  étaient tombées de `CLAUDE.md` quand l'entrée du train a remplacé celle du
+  wagon 7 ; restaurées.
+- **Course entre projets Playwright** sur la file d'accueil :
+  `mobile-chrome` et `mobile-safari` jouaient `e2e/reserver-file.spec.ts` sur
+  une file **unique**, et l'état « appelé, pas encore servi » est un
+  singleton par file. Corrigée par une file par projet dans le seed
+  (`File E2E WebKit`), pas par un durcissement de test supplémentaire.
+
+**Traduction (arbitrage produit).** Aucun fournisseur n'est câblé :
+adaptateur neutre et repli français, la traduction se fait par l'écran
+commerçant (VIT-5). Mesure : ~2 000 caractères traduisibles par Vitrine en
+hypothèse prudente (médiane réelle d'un échantillon de 10 cartes : ~270
+mots / ~1 800 caractères). Le quota gratuit de 500 000 caractères/mois de
+Google Cloud Translation couvrirait donc environ **250 commerces par mois
+et par langue cible** si un fournisseur était câblé plus tard. Détail :
+`docs/vitrine-traduction-benchmark-2026-08-19.md`.
+
+**Reste ouvert** : `CRON_SECRET` ; aucun mécanisme de présence dans les
+salons (l'hôte clôt chaque question) ; `robots: index false` sur la Vitrine
+(décision de commerce) ; les 5 packs de questions attendent la relecture du
+propriétaire ; les deux révocations de clés.
