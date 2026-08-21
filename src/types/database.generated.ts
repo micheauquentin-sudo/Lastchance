@@ -7966,6 +7966,16 @@ export type Database = {
         Args: { p_organization_id: string; p_season_id: string }
         Returns: boolean
       }
+      delete_vitrine_translation: {
+        Args: {
+          p_champ: string
+          p_cible_id: string
+          p_cible_type: string
+          p_lang: string
+          p_organization_id: string
+        }
+        Returns: Json
+      }
       draw_quiz_winners: {
         Args: { p_organization_id: string; p_quiz_id: string }
         Returns: Json

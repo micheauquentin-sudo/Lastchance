@@ -667,6 +667,14 @@ select ok(not has_function_privilege('anon', 'public.upsert_vitrine_translation(
 select ok(has_function_privilege('service_role', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'server can report translation progress');
 select ok(not has_function_privilege('anon', 'public.vitrine_translation_state(uuid)', 'EXECUTE'), 'anon cannot probe translation progress across tenants');
 select ok(not has_function_privilege('service_role', 'public.vitrine_champs_traduisibles(uuid,boolean)', 'EXECUTE'), 'the translatable-field definition is granted to nobody: it checks neither entitlement nor publication');
+-- VIT-5 (L15) : le RETRAIT est la seconde porte du calque, et elle est aussi
+-- fermée que la première. Ce qu'on ne peut pas écrire chez le voisin, on ne
+-- doit pas pouvoir l'effacer : la vérification d'appartenance PAR TYPE vit
+-- dans la RPC, donc la RPC doit rester le seul chemin.
+select ok(has_function_privilege('service_role', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'server can withdraw one translated field, audited');
+select ok(not has_function_privilege('authenticated', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'merchant session cannot bypass the server action to erase English');
+select ok(not has_function_privilege('anon', 'public.delete_vitrine_translation(uuid,text,uuid,text,text)', 'EXECUTE'), 'anon cannot erase translations');
+select ok(not has_table_privilege('authenticated', 'public.vitrine_translations', 'DELETE'), 'merchant cannot delete a translation row directly either');
 -- LES TROIS VALIDATEURS SONT EXÉCUTABLES PAR LE COMMERÇANT, et c'est l'inverse
 -- de ce qui était écrit ici. Ces deux lignes affirmaient « granted to nobody
 -- (checks evaluate without a privilege check) » — la même phrase fausse que
