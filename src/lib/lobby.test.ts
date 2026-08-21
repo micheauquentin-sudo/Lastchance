@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  mapCloseLobbyAsOrg,
   mapCreateLobby,
   mapJoinLobby,
   mapKickLobby,
@@ -8,6 +9,7 @@ import {
   mapLobbyMembres,
   mapLobbyState,
   mapLockLobby,
+  mapOrgLobbies,
   LOBBY_CAPACITE_MAX,
 } from "@/lib/lobby";
 
@@ -232,8 +234,10 @@ describe("mapLockLobby", () => {
     ["refus", { state: "unavailable" }],
     ["document nul", null],
   ])("%s → indisponible", (_cas, brut) => {
-    // La prolongation à quatre heures EST le contenu de cette réponse : un
-    // « locked » sans date ferait afficher un compte à rebours vide.
+    // La prolongation à UNE HEURE EST le contenu de cette réponse : un
+    // « locked » sans date ferait afficher un compte à rebours vide. (Quatre
+    // heures jusqu'à la contrepartie E-1 — c'était devenu la durée de vie d'une
+    // salle-squat, pour une partie qui dure quinze minutes.)
     expect(mapLockLobby(brut)).toEqual({ state: "unavailable" });
   });
 });
@@ -290,5 +294,136 @@ describe("mapKickLobby", () => {
     // et l'hôte recliquerait sur une ligne qui a peut-être déjà bougé — or les
     // rangs se DÉCALENT après un retrait.
     expect(mapKickLobby(brut)).toEqual({ state: "unavailable" });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LA SUPERVISION COMMERÇANT — contrepartie du finding E-1
+// ────────────────────────────────────────────────────────────
+
+/** Une ligne complète, telle que `org_player_lobbies` la construit. */
+function ligne(surcharge: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    kind: "bande",
+    status: "lobby",
+    membres: 4,
+    created_at: "2026-08-21T12:00:00Z",
+    expires_at: "2026-08-21T12:30:00Z",
+    ...surcharge,
+  };
+}
+
+describe("mapOrgLobbies", () => {
+  it("lit une liste complète, et n'invente aucune clé", () => {
+    expect(mapOrgLobbies({ lobbies: [ligne()] })).toEqual([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        kind: "bande",
+        status: "lobby",
+        membres: 4,
+        createdAt: "2026-08-21T12:00:00Z",
+        expiresAt: "2026-08-21T12:30:00Z",
+      },
+    ]);
+  });
+
+  it("ne fait remonter NI pseudo NI code de partage, même si la base en met", () => {
+    // La propriété tient des deux côtés : la RPC refuse de les rendre, et le
+    // mappeur refuse de leur donner une place où atterrir. Le code surtout —
+    // le laisser passer ferait de cet écran un annuaire ouvrant toutes les
+    // salles de la maison à un compte compromis.
+    const vue = mapOrgLobbies({
+      lobbies: [ligne({ join_code: "ABC234", pseudo: "Ana", token_hash: "ff" })],
+    });
+    expect(Object.keys(vue[0]).sort()).toEqual([
+      "createdAt",
+      "expiresAt",
+      "id",
+      "kind",
+      "membres",
+      "status",
+    ]);
+  });
+
+  it("garde l'ordre du SQL — il porte un départage par identifiant", () => {
+    // `created_at desc, id` : `now()` est constant dans une transaction, donc
+    // des salles nées ensemble portent la MÊME date. Re-trier sur la seule date
+    // jetterait le départage avec lequel le `limit 50` a coupé.
+    const meme = { created_at: "2026-08-21T12:00:00Z" };
+    const vue = mapOrgLobbies({
+      lobbies: [ligne({ id: "b", ...meme }), ligne({ id: "a", ...meme })],
+    });
+    expect(vue.map((s) => s.id)).toEqual(["b", "a"]);
+  });
+
+  it.each([
+    ["clé absente", { lobbies: [ligne({ id: undefined })] }],
+    ["format inconnu", { lobbies: [ligne({ kind: "trio" })] }],
+    ["statut hors des deux vivants", { lobbies: [ligne({ status: "closed" })] }],
+    ["statut expiré", { lobbies: [ligne({ status: "expired" })] }],
+    ["comptage négatif", { lobbies: [ligne({ membres: -1 })] }],
+    ["comptage textuel", { lobbies: [ligne({ membres: "4" })] }],
+    ["date de naissance absente", { lobbies: [ligne({ created_at: null })] }],
+    ["date de mort absente", { lobbies: [ligne({ expires_at: null })] }],
+    ["ligne non objet", { lobbies: ["salon"] }],
+  ])("saute la ligne illisible — %s", (_cas, brut) => {
+    // Une ligne amputée ne peut rien produire d'utile : ni le résumé, ni le
+    // bouton « Fermer », qui a besoin d'un identifiant. La sauter est plus
+    // honnête que peindre une ligne dont la moitié dit `undefined`.
+    expect(mapOrgLobbies(brut)).toEqual([]);
+  });
+
+  it("ne jette pas la liste entière pour une ligne corrompue", () => {
+    const vue = mapOrgLobbies({
+      lobbies: [ligne({ id: "bon" }), ligne({ kind: "trio" }), ligne({ id: "aussi" })],
+    });
+    expect(vue.map((s) => s.id)).toEqual(["bon", "aussi"]);
+  });
+
+  it.each([
+    ["document nul", null],
+    ["document sans clé `lobbies`", {}],
+    ["`lobbies` nul", { lobbies: null }],
+    ["`lobbies` scalaire", { lobbies: 3 }],
+    ["racine en tableau", []],
+    ["racine scalaire", "salons"],
+  ])("%s → tableau vide, jamais `undefined`", (_cas, brut) => {
+    // L'écran de supervision itère dessus : un `undefined` ici ferait tomber
+    // le tableau de bord entier pour une lecture qui n'a rien renvoyé.
+    expect(mapOrgLobbies(brut)).toEqual([]);
+  });
+});
+
+describe("mapCloseLobbyAsOrg", () => {
+  it("lit une fermeture effective", () => {
+    expect(mapCloseLobbyAsOrg({ state: "ok", closed: true })).toEqual({
+      state: "ok",
+      closed: true,
+    });
+  });
+
+  it("garde `closed:false` distinct — il n'y avait rien à fermer", () => {
+    // L'idempotence de la RPC : salle déjà close, déjà morte. C'est un SUCCÈS
+    // (l'état voulu est atteint) qui reste distinct, parce qu'il signale un
+    // écran en retard sur la base plutôt qu'un geste effectif.
+    expect(mapCloseLobbyAsOrg({ state: "ok", closed: false })).toEqual({
+      state: "ok",
+      closed: false,
+    });
+  });
+
+  it.each([
+    ["ok sans booléen", { state: "ok" }],
+    ["booléen textuel", { state: "ok", closed: "true" }],
+    ["booléen numérique", { state: "ok", closed: 1 }],
+    ["état inconnu", { state: "surprise", closed: true }],
+    ["document nul", null],
+    ["tableau", []],
+  ])("%s → indisponible", (_cas, brut) => {
+    // Motif de `mapKickLobby` : `closed` est le CONTENU de cette réponse. Le
+    // deviner à `false` ferait dire « déjà fermé » d'une fermeture dont on ne
+    // sait rien, et le commerçant recliquerait sur une ligne peut-être partie.
+    expect(mapCloseLobbyAsOrg(brut)).toEqual({ state: "unavailable" });
   });
 });

@@ -149,6 +149,42 @@ export const joinLobbySchema = z.object({
 export const lobbyIdSchema = z.object({ lobbyId: uuid });
 
 /**
+ * LA SUPERVISION COMMERÇANT (contrepartie E-1) — deux schémas, un invariant.
+ *
+ * ── L'ACTEUR N'EST PAS UN CHAMP, ET SON ABSENCE EST LE POINT ──
+ *
+ * `close_player_lobby_as_org` prend un `p_actor` et le vérifie EN SQL membre
+ * `owner|editor`, parce que le geste est journalisé (`lobby.closed_by_org`).
+ * Cet acteur sort de la SESSION — `gardeEditeurVitrine().userId` — et de nulle
+ * part ailleurs. Aucun schéma d'ici ne le nomme, donc aucun appelant ne peut
+ * l'apporter : un acteur reçu du client ferait de la ligne d'audit une
+ * déclaration sur l'honneur, et « qui a fermé la salle de mes clients » est
+ * exactement la question qu'on se pose après coup. Même arbitrage que
+ * `set_vitrine_slug`, même raison.
+ *
+ * ── `organizationId` NON PLUS NE VIENT PAS DU FORMULAIRE ──
+ *
+ * `org_player_lobbies` est `security definer` et n'interroge AUCUNE
+ * appartenance : elle rend les salles de l'organisation qu'on lui nomme. Sa
+ * sûreté tient ENTIÈREMENT au fait que l'appelant lui passe l'organisation de la
+ * session. Ce schéma existe pour qu'un `null` ne parte jamais — la RPC lèverait
+ * une 22023, une exception plutôt qu'un refus — pas pour accueillir une valeur
+ * venue du navigateur.
+ *
+ * ── `.strict()`, MOTIF `kickLobbySchema` ──
+ *
+ * Ces identifiants sont RELUS (session, liste rendue par le serveur), jamais
+ * saisis au clavier. Une clé de plus — `actor`, `organization_id` posté —
+ * viendrait d'un appelant qui s'est trompé de forme, ou qui tente sa chance ; la
+ * laisser passer en silence lui donnerait raison.
+ */
+export const orgLobbiesSchema = z.object({ organizationId: uuid }).strict();
+
+export const closeOrgLobbySchema = z
+  .object({ organizationId: uuid, lobbyId: uuid })
+  .strict();
+
+/**
  * RETIRER UNE PLACE — l'hôte désigne un RANG, jamais un jeton.
  *
  * ── CE SCHÉMA EXISTE POUR QU'UNE 22023 NE PARTE JAMAIS ──

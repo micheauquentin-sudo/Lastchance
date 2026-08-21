@@ -1,6 +1,9 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import {
+  mapCloseLobbyAsOrg,
   mapCreateLobby,
   mapJoinLobby,
   mapKickLobby,
@@ -25,11 +28,13 @@ import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
 import {
+  closeOrgLobbySchema,
   createLobbySchema,
   joinLobbySchema,
   kickLobbySchema,
   lobbyIdSchema,
 } from "@/lib/validations/lobby";
+import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 
 // ════════════════════════════════════════════════════════════
 // SOCLE DE LOBBY (L16) — ouvrir une salle, y entrer, la regarder vivre
@@ -548,6 +553,109 @@ export async function kickLobbyMember(
       };
     } catch (err) {
       reportError("lobby.kick", err);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+  });
+}
+
+/**
+ * Ce que rend `closeOrgLobby` : une salle fermée, une salle qui l'était déjà, ou
+ * le refus indistinct. Les deux premiers SONT des succès — l'état voulu par le
+ * commerçant est atteint — et ils restent distincts parce que la base les
+ * distingue, et parce qu'une fermeture qui n'a rien fermé signale un écran en
+ * retard sur la base plutôt qu'un geste effectif.
+ */
+export type CloseOrgLobbyOutcome =
+  | { etat: "ferme" }
+  | { etat: "deja-ferme" }
+  | { etat: "indisponible" };
+
+/**
+ * LE COMMERÇANT FERME UNE SALLE DE CHEZ LUI — contrepartie du finding E-1.
+ *
+ * ── POURQUOI CE GESTE EXISTE ──
+ *
+ * Le quota par organisation BORNE l'abus, il ne le ferme pas : un attaquant qui
+ * ouvre une salle, y entre avec son propre code et la verrouille tient une place
+ * pour trois requêtes, jusqu'à l'expiration. Le TTL raccourci (une heure après
+ * verrouillage) réduit la fenêtre ; celle-ci la referme À LA DEMANDE. Sans ce
+ * geste, le déni serait subi et invisible — avec lui, il est visible
+ * (`loadOrgLobbies`) et RÉVERSIBLE, et chaque fermeture rend immédiatement sa
+ * place au quota, sans attendre aucun cron.
+ *
+ * ── LA GARDE D'ABORD, ET AVANT DE LIRE LE FORMULAIRE ──
+ *
+ * `gardeEditeurVitrine` tranche la session et le rôle avant que `lobby_id` ne
+ * soit seulement regardé : un appelant sans droit ne doit pas apprendre, par la
+ * différence entre « non autorisé » et « identifiant invalide », qu'une salle
+ * existe. C'est aussi elle qui fournit les DEUX valeurs que le client ne fournit
+ * jamais — l'organisation et l'acteur.
+ *
+ * ── L'ACTEUR VIENT DE LA SESSION, ET LA RPC LE REVÉRIFIE ──
+ *
+ * `p_actor` reçoit `garde.userId`. La RPC ne le croit pas sur parole : elle le
+ * revérifie membre `owner|editor` EN SQL, parce que le geste est journalisé
+ * (`lobby.closed_by_org`). Les deux vérifications ne font pas double emploi —
+ * celle-ci rend un message utile, celle-là tient la ligne d'audit.
+ *
+ * ── LE 42501 EST UN RÉSULTAT, PAS UNE PANNE ──
+ *
+ * La RPC refuse d'un seul mot — acteur non habilité, salle inconnue, salle d'un
+ * AUTRE locataire — pour ne pas donner à un commerçant un compteur d'activité de
+ * ses voisins, une requête à la fois. Le cas le plus banal est bénin : la salle
+ * a été purgée entre l'affichage de la liste et le clic. Le remonter en panne
+ * ferait remplir la supervision d'erreurs que personne n'a à réparer, donc il
+ * rend `indisponible` sans passer par `reportError` (motif `refusVitrine`,
+ * src/actions/vitrine.ts).
+ *
+ * ── LA REVALIDATION VAUT AUSSI POUR `deja-ferme` ──
+ *
+ * C'est même le cas où elle sert le plus : la ligne cliquée ne correspond plus à
+ * rien en base, donc l'écran est en retard, et c'est exactement ce qu'un
+ * rafraîchissement corrige. Ne revalider que sur `closed` aurait laissé la ligne
+ * fantôme à l'écran précisément quand elle est fantôme.
+ */
+export async function closeOrgLobby(
+  _prev: ActionResult<CloseOrgLobbyOutcome> | null,
+  formData: FormData,
+): Promise<ActionResult<CloseOrgLobbyOutcome>> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const parsed = closeOrgLobbySchema.safeParse({
+    // DE LA SESSION, tous les deux. Seul `lobby_id` vient du formulaire, et il
+    // a été relu sur une liste que le serveur a rendue.
+    organizationId: garde.organizationId,
+    lobbyId: formData.get("lobby_id"),
+  });
+  if (!parsed.success) return REFUS_INDISPONIBLE;
+
+  return monitored("lobby.close_as_org", async () => {
+    try {
+      const admin = createAdminClient();
+      const { data, error } = await admin.rpc("close_player_lobby_as_org", {
+        p_organization_id: parsed.data.organizationId,
+        p_lobby_id: parsed.data.lobbyId,
+        p_actor: garde.userId,
+      });
+      if (error) {
+        if (error.code === "42501") return REFUS_INDISPONIBLE;
+        reportError("lobby.close_as_org", error.message);
+        return { ok: false as const, error: GENERIC_ERROR };
+      }
+
+      const result = mapCloseLobbyAsOrg(data);
+      if (result.state !== "ok") return REFUS_INDISPONIBLE;
+
+      revalidatePath("/dashboard/vitrine");
+      return {
+        ok: true as const,
+        data: result.closed
+          ? ({ etat: "ferme" } as const)
+          : ({ etat: "deja-ferme" } as const),
+      };
+    } catch (err) {
+      reportError("lobby.close_as_org", err);
       return { ok: false as const, error: GENERIC_ERROR };
     }
   });

@@ -24,8 +24,11 @@ const { etat } = vi.hoisted(() => ({
   etat: {
     /** Appels RPC observés : nom + arguments. */
     rpc: [] as Array<{ nom: string; args: Record<string, unknown> }>,
-    /** Réponses par nom de RPC. */
-    reponses: {} as Record<string, { data: unknown; error: { message: string } | null }>,
+    /** Réponses par nom de RPC. `code` porte le SQLSTATE quand il compte. */
+    reponses: {} as Record<
+      string,
+      { data: unknown; error: { message: string; code?: string } | null }
+    >,
     /** Cookies présents à l'ouverture de l'action. */
     cookies: {} as Record<string, string>,
     /** Cookies POSÉS par l'action. */
@@ -42,6 +45,15 @@ const { etat } = vi.hoisted(() => ({
     pressions: [] as Array<{ parts: unknown[]; evenement: string }>,
     /** Tâches confiées à `after()`. */
     taches: [] as Array<Promise<unknown>>,
+    /**
+     * Ce que rend `gardeEditeurVitrine` — la SEULE source de l'organisation et
+     * de l'acteur sur les deux chemins de supervision.
+     */
+    garde: {} as
+      | { ok: true; organizationId: string; userId: string }
+      | { ok: false; error: string },
+    /** Chemins revalidés par l'action. */
+    revalidations: [] as string[],
   },
 }));
 
@@ -66,9 +78,20 @@ vi.mock("next/server", () => ({
     etat.taches.push(Promise.resolve().then(fn));
   },
 }));
+vi.mock("next/cache", () => ({
+  revalidatePath: (chemin: string) => {
+    etat.revalidations.push(chemin);
+  },
+}));
 vi.mock("@/lib/monitoring", () => ({
   reportError: reportErrorMock,
   monitored: (_n: string, f: () => unknown) => f(),
+}));
+// La garde est DOUBLÉE, pas contournée : elle interroge une session et un
+// abonnement que ce harnais n'a pas. Ce qu'on vérifie ici est qu'elle passe la
+// PREMIÈRE, et que l'organisation comme l'acteur ne sortent que d'elle.
+vi.mock("@/lib/vitrine-context", () => ({
+  gardeEditeurVitrine: vi.fn(async () => etat.garde),
 }));
 vi.mock("@/lib/lobby-context", async (importOriginal) => ({
   // Le module RÉEL est conservé : le nom du cookie, la génération du jeton et le
@@ -117,6 +140,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 }));
 
 const {
+  closeOrgLobby,
   createLobby,
   getLobbyState,
   joinLobby,
@@ -124,9 +148,20 @@ const {
   leaveLobby,
   lockLobby,
 } = await import("./lobby");
-const { hashLobbyToken, lobbyTokenCookieName } = await import("@/lib/lobby-context");
+const { hashLobbyToken, lobbyTokenCookieName, loadOrgLobbies } = await import(
+  "@/lib/lobby-context"
+);
 
 const LOBBY_ID = "11111111-1111-4111-8111-111111111111";
+/**
+ * L'organisation et l'acteur de la SESSION — de vrais UUID, et c'est nécessaire :
+ * `orgLobbiesSchema` et `closeOrgLobbySchema` les exigent, précisément pour
+ * qu'un identifiant malformé ne parte jamais vers une RPC qui lèverait une 22023.
+ * Un harnais qui les aurait nourris de « org-1 » aurait testé le refus du schéma
+ * en croyant tester la fermeture.
+ */
+const ORG_ID = "33333333-3333-4333-8333-333333333333";
+const ACTEUR_ID = "44444444-4444-4444-8444-444444444444";
 /** Le refus indistinct, sous sa forme TYPÉE — plus une phrase à reconnaître. */
 const REFUS_INDISPONIBLE = { ok: true, data: { etat: "indisponible" } };
 /** La phrase, elle, ne survit que là où rien ne l'a remplacée : `lockLobby`. */
@@ -157,6 +192,8 @@ beforeEach(() => {
   etat.requetes = [];
   etat.pressions = [];
   etat.taches = [];
+  etat.garde = { ok: true, organizationId: ORG_ID, userId: ACTEUR_ID };
+  etat.revalidations = [];
 });
 
 describe("createLobby — ouvrir une salle", () => {
@@ -737,5 +774,276 @@ describe("kickLobbyMember — l'hôte retire une place", () => {
       "lobby.kick",
       expect.stringContaining("kick_player_lobby"),
     );
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LA SUPERVISION COMMERÇANT — contrepartie du finding E-1
+//
+// Le quota BORNE l'abus, il ne le ferme pas : trois requêtes suffisent à tenir
+// une place jusqu'à l'expiration. Ce qui a été décidé à la place est que le
+// déni soit VISIBLE (`loadOrgLobbies`) et RÉVERSIBLE (`closeOrgLobby`). Deux
+// propriétés se gravent ici, et aucune n'est du confort :
+//
+//   1. LA GARDE PASSE LA PREMIÈRE, sur les DEUX chemins. Les deux RPC sont
+//      `security definer` et `org_player_lobbies` ne vérifie AUCUNE
+//      appartenance : sans la garde, l'organisation deviendrait un paramètre.
+//   2. L'ORGANISATION ET L'ACTEUR VIENNENT DE LA SESSION. Le formulaire ne
+//      porte que `lobby_id` ; un acteur reçu du client ferait de la ligne
+//      d'audit `lobby.closed_by_org` une déclaration sur l'honneur.
+// ════════════════════════════════════════════════════════════
+
+/** Le formulaire de fermeture, tel que la ligne de supervision le poste. */
+function formFermer(champs: Record<string, string>): FormData {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(champs)) fd.set(k, v);
+  return fd;
+}
+
+describe("loadOrgLobbies — le commerçant VOIT ses salles", () => {
+  beforeEach(() => {
+    etat.reponses.org_player_lobbies = {
+      data: {
+        lobbies: [
+          {
+            id: LOBBY_ID,
+            kind: "bande",
+            status: "lobby",
+            membres: 4,
+            created_at: "2026-08-21T12:00:00Z",
+            expires_at: "2026-08-21T12:30:00Z",
+          },
+        ],
+      },
+      error: null,
+    };
+  });
+
+  it("passe l'organisation de la SESSION, et rend les salles lues", async () => {
+    const ctx = await loadOrgLobbies();
+
+    expect(ctx).toMatchObject({
+      ok: true,
+      organizationId: ORG_ID,
+      salons: [
+        {
+          id: LOBBY_ID,
+          kind: "bande",
+          status: "lobby",
+          membres: 4,
+          createdAt: "2026-08-21T12:00:00Z",
+          expiresAt: "2026-08-21T12:30:00Z",
+        },
+      ],
+    });
+    expect(etat.rpc).toEqual([
+      { nom: "org_player_lobbies", args: { p_organization_id: ORG_ID } },
+    ]);
+    // L'ORIGINE DES DURÉES est stampée par le chargeur, jamais par l'écran :
+    // « ouvert il y a 12 min » se compte depuis la LECTURE, et un composant qui
+    // lirait l'heure lui-même violerait la règle de pureté de React.
+    expect(ctx.ok && Number.isFinite(Date.parse(ctx.luA))).toBe(true);
+  });
+
+  it("LA GARDE D'ABORD : refusée, la base n'est pas touchée", async () => {
+    // `org_player_lobbies` rend les salles de l'organisation qu'on lui NOMME.
+    // C'est cette garde, et elle seule, qui tient l'appartenance : la placer
+    // après la lecture reviendrait à ne pas l'avoir.
+    etat.garde = { ok: false, error: "Votre offre ne comprend pas la Vitrine." };
+
+    expect(await loadOrgLobbies()).toEqual({
+      ok: false,
+      error: "Votre offre ne comprend pas la Vitrine.",
+    });
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("une panne de lecture rend la liste VIDE, jamais un refus de droit", async () => {
+    // Motif de `loadVitrineDashboardContext` : le commerçant a le droit, il n'a
+    // simplement rien à afficher. Confondre les deux lui ferait croire que son
+    // abonnement a changé.
+    etat.reponses.org_player_lobbies = {
+      data: null,
+      error: { message: 'function "org_player_lobbies" does not exist' },
+    };
+
+    expect(await loadOrgLobbies()).toMatchObject({
+      ok: true,
+      organizationId: ORG_ID,
+      salons: [],
+    });
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "lobby.org_lobbies",
+      expect.stringContaining("org_player_lobbies"),
+    );
+  });
+
+  it("un document corrompu rend une liste vide, pas un écran cassé", async () => {
+    etat.reponses.org_player_lobbies = {
+      data: { lobbies: "surprise" },
+      error: null,
+    };
+
+    expect(await loadOrgLobbies()).toMatchObject({ ok: true, salons: [] });
+  });
+
+  it("ne consomme AUCUN seau — c'est une lecture derrière une session", async () => {
+    await loadOrgLobbies();
+    await viderLesTaches();
+
+    expect(etat.pressions).toHaveLength(0);
+  });
+});
+
+describe("closeOrgLobby — le commerçant reprend sa place", () => {
+  beforeEach(() => {
+    etat.reponses.close_player_lobby_as_org = {
+      data: { state: "ok", closed: true },
+      error: null,
+    };
+  });
+
+  it("ferme, avec l'acteur de la SESSION, et revalide le tableau de bord", async () => {
+    const verdict = await closeOrgLobby(
+      null,
+      formFermer({ lobby_id: LOBBY_ID }),
+    );
+
+    expect(verdict).toEqual({ ok: true, data: { etat: "ferme" } });
+    expect(etat.rpc).toEqual([
+      {
+        nom: "close_player_lobby_as_org",
+        args: {
+          p_organization_id: ORG_ID,
+          p_lobby_id: LOBBY_ID,
+          p_actor: ACTEUR_ID,
+        },
+      },
+    ]);
+    expect(etat.revalidations).toEqual(["/dashboard/vitrine"]);
+  });
+
+  it("L'ACTEUR NE VIENT PAS DU FORMULAIRE, même posté en toutes lettres", async () => {
+    // `.strict()` refuserait une clé de plus, mais elle n'a même pas de chemin
+    // pour arriver : l'action ne lit que `lobby_id`. La ligne d'audit
+    // `lobby.closed_by_org` doit nommer qui a VRAIMENT fermé la salle.
+    await closeOrgLobby(
+      null,
+      formFermer({
+        lobby_id: LOBBY_ID,
+        actor: "22222222-2222-4222-8222-222222222222",
+        organization_id: "org-du-voisin",
+      }),
+    );
+
+    expect(etat.rpc[0].args).toEqual({
+      p_organization_id: ORG_ID,
+      p_lobby_id: LOBBY_ID,
+      p_actor: ACTEUR_ID,
+    });
+  });
+
+  it("LA GARDE D'ABORD : refusée, ni lecture du formulaire ni appel", async () => {
+    // Et le message est CELUI DE LA GARDE, pas le refus indistinct : un
+    // commerçant sans droit doit lire pourquoi, il n'est pas un inconnu qui
+    // sonde des identifiants de salle.
+    etat.garde = { ok: false, error: "Action non autorisée" };
+
+    expect(
+      await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
+    ).toEqual({ ok: false, error: "Action non autorisée" });
+    expect(etat.rpc).toHaveLength(0);
+    expect(etat.revalidations).toHaveLength(0);
+  });
+
+  it("garde « deja-ferme » distinct, ET revalide quand même", async () => {
+    // C'est le cas où la revalidation sert le PLUS : la ligne cliquée ne
+    // correspond plus à rien en base, donc l'écran est en retard — et c'est
+    // exactement ce qu'un rafraîchissement corrige.
+    etat.reponses.close_player_lobby_as_org = {
+      data: { state: "ok", closed: false },
+      error: null,
+    };
+
+    expect(
+      await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
+    ).toEqual({ ok: true, data: { etat: "deja-ferme" } });
+    expect(etat.revalidations).toEqual(["/dashboard/vitrine"]);
+  });
+
+  it("rejouer la fermeture est un non-événement, pas une erreur", async () => {
+    await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID }));
+    etat.reponses.close_player_lobby_as_org = {
+      data: { state: "ok", closed: false },
+      error: null,
+    };
+    const second = await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID }));
+
+    expect(second).toEqual({ ok: true, data: { etat: "deja-ferme" } });
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("le 42501 est un RÉSULTAT, pas une panne — et il ne remonte pas en erreur", async () => {
+    // Acteur non habilité, salle inconnue, salle d'un AUTRE locataire : un seul
+    // refus sans corps, pour ne pas donner à un commerçant un compteur
+    // d'activité de ses voisins. Le cas banal — la salle a été purgée entre
+    // l'affichage et le clic — n'a rien que personne doive réparer.
+    etat.reponses.close_player_lobby_as_org = {
+      data: null,
+      error: { message: "not authorized", code: "42501" },
+    };
+
+    expect(
+      await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
+    ).toEqual(REFUS_INDISPONIBLE);
+    expect(reportErrorMock).not.toHaveBeenCalled();
+    expect(etat.revalidations).toHaveLength(0);
+  });
+
+  it("une VRAIE panne reste une panne, et ne fuit pas le message de la base", async () => {
+    etat.reponses.close_player_lobby_as_org = {
+      data: null,
+      error: { message: 'function "close_player_lobby_as_org" does not exist' },
+    };
+
+    expect(
+      await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
+    ).toEqual({ ok: false, error: "Une erreur est survenue, réessayez." });
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "lobby.close_as_org",
+      expect.stringContaining("close_player_lobby_as_org"),
+    );
+  });
+
+  it.each([
+    ["identifiant absent", {}],
+    ["identifiant qui n'est pas un UUID", { lobby_id: "pas-un-uuid" }],
+  ])("%s → refus indistinct, sans toucher la base", async (_cas, champs) => {
+    expect(await closeOrgLobby(null, formFermer(champs))).toEqual(
+      REFUS_INDISPONIBLE,
+    );
+    expect(etat.rpc).toHaveLength(0);
+    expect(etat.revalidations).toHaveLength(0);
+  });
+
+  it("un document illisible retombe sur le refus indistinct", async () => {
+    // Motif de `mapKickLobby` : `closed` EST le contenu de la réponse. Le
+    // deviner ferait dire « déjà fermé » d'une fermeture dont on ne sait rien.
+    etat.reponses.close_player_lobby_as_org = {
+      data: { state: "ok" },
+      error: null,
+    };
+
+    expect(
+      await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
+    ).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.revalidations).toHaveLength(0);
+  });
+
+  it("ne consomme AUCUN seau — le geste est borné par la session commerçant", async () => {
+    await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID }));
+    await viderLesTaches();
+
+    expect(etat.pressions).toHaveLength(0);
   });
 });

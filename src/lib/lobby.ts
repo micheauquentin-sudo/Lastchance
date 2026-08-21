@@ -1,5 +1,5 @@
 /**
- * SOCLE DE LOBBY (L16) — le vocabulaire et la LECTURE DÉFENSIVE des six RPC.
+ * SOCLE DE LOBBY (L16) — le vocabulaire et la LECTURE DÉFENSIVE des huit RPC.
  *
  * ── CE FICHIER EST UN MIROIR, PAS UNE AUTORITÉ ──
  *
@@ -119,6 +119,57 @@ export type KickLobbyResult =
   | { state: "unavailable" };
 
 // ────────────────────────────────────────────────────────────
+// LA SUPERVISION COMMERÇANT — contrepartie du finding E-1
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Les deux statuts qu'une salle VIVANTE peut porter, et les deux seuls que
+ * `org_player_lobbies` rend.
+ *
+ * Liste PLUS ÉTROITE que `LOBBY_STATUTS`, délibérément : la RPC filtre
+ * `status in ('lobby','locked')` ET `expires_at > now()`, donc `closed` et
+ * `expired` ne peuvent pas en sortir. Recopier ici les quatre états aurait donné
+ * à l'écran de quoi peindre un bouton « Fermer » sur une salle déjà close —
+ * c'est-à-dire un geste qui ne fera rien, offert comme s'il faisait quelque
+ * chose.
+ */
+export const ORG_LOBBY_STATUTS = ["lobby", "locked"] as const;
+export type OrgLobbyStatut = (typeof ORG_LOBBY_STATUTS)[number];
+
+/**
+ * UNE SALLE VUE PAR LE COMMERÇANT — six clés, et pas une de plus.
+ *
+ * Ce que cette vue N'A PAS est aussi important que ce qu'elle a : ni pseudo, ni
+ * `joinCode`, ni empreinte de jeton. Le commerçant SUPERVISE des salles, il
+ * n'espionne pas ses clients — et rendre le code de partage ferait de cet écran
+ * un ANNUAIRE DE CODES, ouvrant toutes les salles de la maison à un compte
+ * compromis ou à un employé curieux. La RPC refuse déjà de les rendre ; ce type
+ * refuse de leur donner une place où atterrir.
+ */
+export interface OrgLobbyView {
+  id: string;
+  kind: LobbyKind;
+  status: OrgLobbyStatut;
+  /** Combien de personnes sont dedans. Un NOMBRE, jamais une liste. */
+  membres: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/**
+ * `close_player_lobby_as_org` — le commerçant reprend sa place.
+ *
+ * `closed` porte à lui seul la différence entre « la salle vivait, elle ne vit
+ * plus » et « il n'y avait rien à fermer » (déjà close, déjà morte). LES DEUX
+ * SONT DES SUCCÈS : l'état voulu par le commerçant est atteint. `unavailable`
+ * recouvre le 42501 indistinct de la RPC — acteur non habilité, salle inconnue,
+ * salle d'un AUTRE locataire — sans jamais dire lequel.
+ */
+export type CloseLobbyAsOrgResult =
+  | { state: "ok"; closed: boolean }
+  | { state: "unavailable" };
+
+// ────────────────────────────────────────────────────────────
 // Lecture défensive du jsonb (motif src/lib/vitrine.ts)
 // ────────────────────────────────────────────────────────────
 
@@ -158,6 +209,13 @@ function asStatut(value: unknown): LobbyStatut | null {
     : null;
 }
 
+function asOrgStatut(value: unknown): OrgLobbyStatut | null {
+  const mot = asString(value);
+  return mot && (ORG_LOBBY_STATUTS as readonly string[]).includes(mot)
+    ? (mot as OrgLobbyStatut)
+    : null;
+}
+
 /**
  * Capacité RELUE, jamais devinée. Hors bornes = document illisible : la base ne
  * peut pas produire un 13, donc en lire un signifie qu'on ne lit pas ce qu'on
@@ -171,7 +229,7 @@ function asCapacite(value: unknown): number | null {
 }
 
 // ────────────────────────────────────────────────────────────
-// Les six mappeurs
+// Les mappeurs
 // ────────────────────────────────────────────────────────────
 
 /** Lecture de `create_player_lobby`. */
@@ -266,9 +324,10 @@ export function mapLockLobby(raw: unknown): LockLobbyResult {
   const root = asRecord(raw);
   if (!root || asString(root.state) !== "locked") return INDISPONIBLE;
   const expiresAt = asString(root.expires_at);
-  // La prolongation à quatre heures EST le contenu de cette réponse : un
-  // « locked » sans date ne dit pas jusqu'à quand la salle vit, et l'écran
-  // afficherait un compte à rebours vide.
+  // La prolongation à UNE HEURE EST le contenu de cette réponse : un « locked »
+  // sans date ne dit pas jusqu'à quand la salle vit, et l'écran afficherait un
+  // compte à rebours vide. (Quatre heures, jusqu'à la contrepartie E-1 : c'était
+  // devenu la durée de vie d'une salle-squat, pour une partie de quinze minutes.)
   if (!expiresAt) return INDISPONIBLE;
   return { state: "locked", expiresAt };
 }
@@ -308,4 +367,68 @@ export function mapKickLobby(raw: unknown): KickLobbyResult {
   if (!root || asString(root.state) !== "ok") return INDISPONIBLE;
   if (typeof root.kicked !== "boolean") return INDISPONIBLE;
   return { state: "ok", kicked: root.kicked };
+}
+
+/**
+ * Lecture de `org_player_lobbies` — la liste que le commerçant supervise.
+ *
+ * ── TOUJOURS UN TABLEAU, ET LA LIGNE ILLISIBLE EST SAUTÉE ──
+ *
+ * Motif de `mapLobbyMembres` : un document tronqué ne doit pas faire tomber un
+ * écran de tableau de bord, et une ligne amputée d'une de ses six clés ne peut
+ * rien produire d'utile — ni un résumé (« bande · 4 personnes »), ni un bouton
+ * « Fermer », qui a besoin d'un identifiant. La sauter est plus honnête que
+ * peindre une ligne dont la moitié dit `undefined`.
+ *
+ * `membres` est REFUSÉ NÉGATIF pour la raison d'`asCapacite` : un comptage ne
+ * peut pas l'être, donc en lire un signifie qu'on ne lit pas ce qu'on croit.
+ * AUCUN PLAFOND en revanche — la capacité borne les membres en base, la relire
+ * ici poserait une seconde règle à tenir d'accord avec la première.
+ *
+ * ── L'ORDRE N'EST PAS RE-TRIÉ, ET C'EST L'INVERSE DE `mapLobbyMembres` ──
+ *
+ * L'ordre SQL est `created_at desc, id` — un départage par identifiant, posé
+ * parce que `now()` est constant dans une transaction et qu'une borne `limit 50`
+ * sur un ensemble non totalement ordonné coupe dans un sous-ensemble arbitraire.
+ * Re-trier ici sur `created_at` seul JETTERAIT ce départage : cinquante salles
+ * nées de la même transaction ressortiraient dans un ordre que le `limit` n'a
+ * pas choisi. On garde donc l'ordre avec lequel la borne a été appliquée.
+ */
+export function mapOrgLobbies(raw: unknown): OrgLobbyView[] {
+  const root = asRecord(raw);
+  const sortie: OrgLobbyView[] = [];
+  for (const brut of asArray(root?.lobbies)) {
+    const ligne = asRecord(brut);
+    if (!ligne) continue;
+    const id = asString(ligne.id);
+    const kind = asKind(ligne.kind);
+    const status = asOrgStatut(ligne.status);
+    const membres = asInt(ligne.membres);
+    const createdAt = asString(ligne.created_at);
+    const expiresAt = asString(ligne.expires_at);
+    if (!id || !kind || !status || !createdAt || !expiresAt) continue;
+    if (membres === null || membres < 0) continue;
+    sortie.push({ id, kind, status, membres, createdAt, expiresAt });
+  }
+  return sortie;
+}
+
+/**
+ * Lecture de `close_player_lobby_as_org`.
+ *
+ * ── UN « ok » SANS BOOLÉEN LISIBLE EST INDISPONIBLE ──
+ *
+ * Le motif est celui de `mapKickLobby`, et pour la même raison : `closed` est le
+ * CONTENU de cette réponse, pas une mise en forme. Le deviner à `false` ferait
+ * dire « ce salon était déjà fermé » d'une fermeture dont on ne sait rien, et le
+ * commerçant recliquerait sur une ligne qui a peut-être déjà disparu. Le booléen
+ * est donc exigé EXACT : un « true » textuel vient d'un document qu'on ne
+ * comprend pas, et le lire comme vrai affirmerait une fermeture qui n'a
+ * peut-être pas eu lieu.
+ */
+export function mapCloseLobbyAsOrg(raw: unknown): CloseLobbyAsOrgResult {
+  const root = asRecord(raw);
+  if (!root || asString(root.state) !== "ok") return INDISPONIBLE;
+  if (typeof root.closed !== "boolean") return INDISPONIBLE;
+  return { state: "ok", closed: root.closed };
 }

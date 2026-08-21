@@ -9,7 +9,12 @@ import { reportError } from "@/lib/monitoring";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { lobbyJoinCodeSchema } from "@/lib/validations/lobby";
+import { gardeEditeurVitrine } from "@/lib/vitrine-context";
+import { mapOrgLobbies, type OrgLobbyView } from "@/lib/lobby";
+import {
+  lobbyJoinCodeSchema,
+  orgLobbiesSchema,
+} from "@/lib/validations/lobby";
 import type { Organization } from "@/types/database";
 
 /**
@@ -276,4 +281,107 @@ export async function resoudreLobbyParCode(
     .maybeSingle();
 
   return data ? { lobbyId: data.id as string } : null;
+}
+
+// ────────────────────────────────────────────────────────────
+// LA SUPERVISION COMMERÇANT — contrepartie du finding E-1
+// ────────────────────────────────────────────────────────────
+
+export type OrgLobbiesContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      organizationId: string;
+      /** Au plus cinquante, les plus récentes d'abord. Jamais `undefined`. */
+      salons: OrgLobbyView[];
+      /**
+       * L'INSTANT DE LA LECTURE, en ISO — l'origine des durées que l'écran
+       * affiche (« ouvert il y a 12 min »).
+       *
+       * Il est stampé ICI et non dans le composant, pour deux raisons qui vont
+       * dans le même sens. La juste : ces durées sont relatives au moment où la
+       * liste a été LUE, pas au moment où elle est peinte — une carte rendue
+       * deux secondes après la requête ne doit pas prétendre le contraire. La
+       * mécanique : un composant qui appelle `Date.now()` lit une valeur
+       * instable d'un rendu à l'autre, et la règle de pureté de React le refuse.
+       * Un chargeur, lui, a parfaitement le droit de regarder l'heure.
+       */
+      luA: string;
+    };
+
+/**
+ * LES SALLES VIVANTES D'UN COMMERCE, pour son écran de supervision.
+ *
+ * ── POURQUOI ICI, ET PAS DANS UNE SERVER ACTION ──
+ *
+ * C'est une LECTURE DE PAGE : pas de `_prev`, pas de `FormData`, rien à
+ * revalider. L'exposer en `"use server"` en aurait fait un point POST de plus,
+ * atteignable sans qu'aucun écran ne le rende. Le dépôt range ces lectures dans
+ * les `*-context` — motif exact de `loadVitrineTraductions`.
+ *
+ * ── POURQUOI DANS CE FICHIER-CI ET PAS DANS `vitrine-context.ts` ──
+ *
+ * L'écran est celui de la Vitrine, mais la donnée est celle du lobby : le
+ * vocabulaire, le mappeur défensif et le contrat de la RPC vivent ici, avec les
+ * six autres. Poser le chargeur à côté de l'écran l'aurait séparé de ce qu'il
+ * lit, et `vitrine-context.ts` aurait fini par importer `@/lib/lobby` pour un
+ * type — c'est-à-dire la même dépendance, dans l'autre sens et moins lisible.
+ *
+ * ── C'EST LA GARDE QUI TIENT L'APPARTENANCE, PAS LA RPC ──
+ *
+ * `org_player_lobbies` est `security definer` / `service_role` et n'interroge
+ * AUCUNE appartenance : elle rend les salles de l'organisation qu'on lui nomme,
+ * point. Son en-tête l'assume en toutes lettres — elle ne rend rien de
+ * personnel et n'écrit rien, donc exiger un acteur aurait coûté une
+ * vérification par rafraîchissement d'écran pour garder six chiffres. Sa sûreté
+ * repose ENTIÈREMENT sur le fait que ce chargeur lui passe l'organisation de la
+ * SESSION, et jamais un paramètre venu du navigateur. La garde d'écriture, elle,
+ * est en SQL (voir `closeOrgLobby`).
+ *
+ * ── LE DROIT `vitrine` EST EXIGÉ ICI, ET C'EST PLUS STRICT QUE LA BASE ──
+ *
+ * `gardeEditeurVitrine` refuse sans le droit `vitrine` ; la RPC de fermeture,
+ * elle, ne l'exige pas — délibérément, pour qu'un commerçant dont l'offre vient
+ * d'expirer puisse encore fermer les salles ouvertes la veille. L'écart est
+ * assumé et borné : cet écran est servi sous `/dashboard/vitrine`, qui exige
+ * déjà ce droit, et une salle ne s'ouvre que sur une vitrine PUBLIÉE — donc sur
+ * un droit vivant. Le jour où la supervision devra survivre à l'expiration, elle
+ * changera de porte, pas de garde.
+ *
+ * ── UNE PANNE DE LECTURE REND LA LISTE VIDE, PAS UN REFUS ──
+ *
+ * Motif de `loadVitrineDashboardContext` : le commerçant a le droit, il n'a
+ * simplement rien à afficher. Confondre les deux lui ferait croire que son
+ * abonnement a changé — et la carte, qui ne se peint qu'avec au moins un salon,
+ * disparaît alors sans rien affirmer de faux.
+ */
+export async function loadOrgLobbies(): Promise<OrgLobbiesContext> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const vide = {
+    ok: true as const,
+    organizationId: garde.organizationId,
+    salons: [] as OrgLobbyView[],
+    luA: new Date().toISOString(),
+  };
+
+  // DE LA SESSION, et le schéma est là pour qu'un `null` ne parte jamais : la
+  // RPC lèverait une 22023, c'est-à-dire une exception là où il n'y a rien à
+  // réparer côté commerçant.
+  const parsed = orgLobbiesSchema.safeParse({
+    organizationId: garde.organizationId,
+  });
+  if (!parsed.success) return vide;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("org_player_lobbies", {
+    p_organization_id: parsed.data.organizationId,
+  });
+  if (error) {
+    reportError("lobby.org_lobbies", error.message);
+    return vide;
+  }
+
+  return { ...vide, salons: mapOrgLobbies(data) };
 }
