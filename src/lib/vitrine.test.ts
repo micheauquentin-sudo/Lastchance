@@ -11,12 +11,15 @@ import {
   libelleBloc,
   libelleStyleCartes,
   mapContenusVitrine,
+  mapDeleteVitrineTraduction,
   mapPortesVitrine,
   mapSetVitrineSlug,
   mapThemeVitrine,
+  mapUpsertVitrineTraduction,
   mapVitrineCartes,
   mapVitrineDashboardState,
   mapVitrinePublicState,
+  mapVitrineTraductionState,
   normaliserSlugVitrine,
   selecteurLanguesOuvert,
   SEUIL_COUVERTURE_SELECTEUR,
@@ -887,5 +890,324 @@ describe("mapSetVitrineSlug — quatre refus du contrat, un cinquième pour nous
     expect(mapSetVitrineSlug(null).state).toBe("error");
     expect(mapSetVitrineSlug({ state: "ok" }).state).toBe("error");
     expect(mapSetVitrineSlug({ state: "autre_chose" }).state).toBe("error");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// L'ÉTAT DE TRADUCTION (VIT-5, lot L15)
+// ────────────────────────────────────────────────────────────
+
+/** Un document complet, tel que la RPC le rend — base des variantes. */
+function etatBrut() {
+  return {
+    state: "ok",
+    lang: "en",
+    resume: {
+      total_champs_traduisibles: 4,
+      traduits_frais: 1,
+      perimes: 1,
+      manquants: 2,
+    },
+    cibles: [
+      {
+        cible_type: "settings",
+        cible_id: "s1",
+        libelle: "Réglages",
+        version: "2026-08-20T10:00:00+00:00",
+        champs: [
+          {
+            champ: "accroche",
+            etat: "frais",
+            texte_source: "Bistrot de quartier",
+            texte_traduit: "Neighbourhood bistro",
+          },
+          {
+            champ: "histoire",
+            etat: "absent",
+            texte_source: "Ouvert en 1972.",
+            texte_traduit: null,
+          },
+        ],
+      },
+      {
+        cible_type: "item",
+        cible_id: "i1",
+        libelle: "Velouté de potiron",
+        version: "2026-08-20T11:30:00+00:00",
+        champs: [
+          {
+            champ: "nom",
+            etat: "perime",
+            texte_source: "Velouté de potiron",
+            texte_traduit: "Pumpkin soup",
+          },
+          {
+            champ: "description",
+            etat: "absent",
+            texte_source: "Crème et noisettes.",
+            texte_traduit: null,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("mapVitrineTraductionState — le tableau que l'écran rend", () => {
+  it("lit un document complet, les trois états compris", () => {
+    const etat = mapVitrineTraductionState(etatBrut());
+
+    expect(etat.resume).toEqual({
+      total: 4,
+      frais: 1,
+      perimes: 1,
+      manquants: 2,
+    });
+    expect(etat.cibles).toHaveLength(2);
+    expect(etat.cibles[0]).toEqual({
+      cibleType: "settings",
+      cibleId: "s1",
+      libelle: "Réglages",
+      version: "2026-08-20T10:00:00+00:00",
+      champs: [
+        {
+          champ: "accroche",
+          etat: "frais",
+          texteSource: "Bistrot de quartier",
+          texteTraduit: "Neighbourhood bistro",
+        },
+        {
+          champ: "histoire",
+          etat: "absent",
+          texteSource: "Ouvert en 1972.",
+          texteTraduit: null,
+        },
+      ],
+    });
+    // LA PÉRIMÉE SORT AVEC SON TEXTE : c'est la raison d'être de la
+    // conservation décidée en L11 — une périmée se retouche, elle ne se
+    // réécrit pas.
+    expect(etat.cibles[1].champs[0].etat).toBe("perime");
+    expect(etat.cibles[1].champs[0].texteTraduit).toBe("Pumpkin soup");
+  });
+
+  it("la version traverse le mappeur SANS ÊTRE REFORMATÉE", () => {
+    // L'offset et la microseconde sont ceux de Postgres. Les normaliser ici
+    // (`new Date(…).toISOString()`) ferait comparer égaux deux instants
+    // distants d'une microseconde, donc déclarerait fraîche une périmée.
+    const brut = etatBrut();
+    brut.cibles[0].version = "2026-08-20T10:00:00.123456+02:00";
+    const etat = mapVitrineTraductionState(brut);
+    expect(etat.cibles[0].version).toBe("2026-08-20T10:00:00.123456+02:00");
+  });
+
+  it("un document corrompu vaut le tableau VIDE et le résumé à zéro", () => {
+    for (const brut of [
+      null,
+      undefined,
+      42,
+      "ok",
+      [],
+      {},
+      { state: "unavailable" },
+      { state: "autre_chose", cibles: [{ cible_type: "menu" }] },
+    ]) {
+      const etat = mapVitrineTraductionState(brut);
+      expect(etat.cibles, String(brut)).toEqual([]);
+      expect(etat.resume, String(brut)).toEqual({
+        total: 0,
+        frais: 0,
+        perimes: 0,
+        manquants: 0,
+      });
+    }
+  });
+
+  it("le repli ne PARTAGE pas sa liste entre deux appels", () => {
+    const premier = mapVitrineTraductionState(null);
+    premier.cibles.push({
+      cibleType: "menu",
+      cibleId: "x",
+      libelle: "x",
+      version: "",
+      champs: [],
+    });
+    expect(mapVitrineTraductionState(null).cibles).toEqual([]);
+  });
+
+  it("aucun compteur ne dépasse le total — le seuil ne s'allume pas sur un faux", () => {
+    const etat = mapVitrineTraductionState({
+      state: "ok",
+      resume: {
+        total_champs_traduisibles: 2,
+        traduits_frais: 99,
+        perimes: -4,
+        manquants: 7,
+      },
+      cibles: [],
+    });
+    expect(etat.resume).toEqual({
+      total: 2,
+      frais: 2,
+      perimes: 0,
+      manquants: 2,
+    });
+    // L'écran lit ces deux chiffres-là contre le seuil : `frais > total` aurait
+    // annoncé une vitrine traduite au-delà de 100 %.
+    expect(
+      selecteurLanguesOuvert({
+        total: etat.resume.total,
+        frais: etat.resume.frais,
+      }),
+    ).toBe(true);
+  });
+
+  it("une cible sans identité connue disparaît, le résumé ne bouge PAS", () => {
+    // Le résumé vient de la RPC et n'est jamais recompté depuis la liste : il
+    // porte sur tout le catalogue, y compris ce que ce mappeur n'a pas su lire.
+    const etat = mapVitrineTraductionState({
+      state: "ok",
+      resume: { total_champs_traduisibles: 3, traduits_frais: 0 },
+      cibles: [
+        null,
+        { cible_type: "quoi", cible_id: "z1", champs: [] },
+        { cible_type: "menu", cible_id: "", champs: [] },
+        {
+          cible_type: "menu",
+          cible_id: "m1",
+          libelle: "Carte du soir",
+          version: "2026-08-20T10:00:00Z",
+          champs: [
+            {
+              champ: "nom",
+              etat: "absent",
+              texte_source: "Carte du soir",
+              texte_traduit: null,
+            },
+          ],
+        },
+      ],
+    });
+    expect(etat.cibles.map((cible) => cible.cibleId)).toEqual(["m1"]);
+    expect(etat.resume.total).toBe(3);
+  });
+
+  it("un champ hors vocabulaire disparaît, et sa cible avec s'il était seul", () => {
+    const etat = mapVitrineTraductionState({
+      state: "ok",
+      resume: { total_champs_traduisibles: 2 },
+      cibles: [
+        {
+          cible_type: "item",
+          cible_id: "i1",
+          libelle: "Soupe",
+          version: "2026-08-20T10:00:00Z",
+          champs: [
+            { champ: "prix_affiche", etat: "absent", texte_source: "8 €" },
+          ],
+        },
+        {
+          cible_type: "item",
+          cible_id: "i2",
+          libelle: "Tarte",
+          version: "2026-08-20T10:00:00Z",
+          champs: [
+            { champ: "nom", etat: "chaud", texte_source: "Tarte" },
+            {
+              champ: "nom",
+              etat: "frais",
+              texte_source: "Tarte",
+              texte_traduit: "Tart",
+            },
+          ],
+        },
+      ],
+    });
+    // `prix_affiche` ne se traduit pas (le `check` par cible le refuse) et un
+    // état inconnu ne se rend pas : les deux lignes tombent, et la première
+    // cible n'a plus rien à montrer.
+    expect(etat.cibles.map((cible) => cible.cibleId)).toEqual(["i2"]);
+    expect(etat.cibles[0].champs).toHaveLength(1);
+  });
+
+  it("un texte source introuvable NE fait PAS disparaître la ligne", () => {
+    // Le `left join` de la migration est délibéré : « un `inner join` l'aurait
+    // fait disparaître de la liste tout en le laissant dans le résumé chiffré,
+    // soit un écran qui affirme "3 manquants" en n'en montrant que deux ».
+    const etat = mapVitrineTraductionState({
+      state: "ok",
+      resume: { total_champs_traduisibles: 1, manquants: 1 },
+      cibles: [
+        {
+          cible_type: "categorie",
+          cible_id: "k1",
+          libelle: null,
+          version: null,
+          champs: [{ champ: "nom", etat: "absent", texte_source: null }],
+        },
+      ],
+    });
+    expect(etat.cibles).toHaveLength(1);
+    expect(etat.cibles[0].champs[0].texteSource).toBe("");
+    expect(etat.cibles[0].champs[0].texteTraduit).toBeNull();
+    // Un libellé et une version illisibles ne suppriment rien non plus : la
+    // ligne reste montrée et comptée, et c'est le schéma de l'action qui
+    // refusera l'enregistrement.
+    expect(etat.cibles[0].libelle).toBe("Sans titre");
+    expect(etat.cibles[0].version).toBe("");
+  });
+});
+
+describe("les deux portes d'écriture — leurs refus et leurs drapeaux", () => {
+  it("relaie les quatre refus nommés de l'upsert", () => {
+    for (const refus of [
+      "invalid_cible",
+      "invalid_lang",
+      "invalid_champ",
+      "invalid_texte",
+    ] as const) {
+      expect(mapUpsertVitrineTraduction({ state: refus }).state).toBe(refus);
+    }
+  });
+
+  it("lit un succès d'upsert avec ses deux drapeaux", () => {
+    expect(
+      mapUpsertVitrineTraduction({ state: "ok", created: true, changed: true }),
+    ).toEqual({ state: "ok", created: true, changed: true });
+    // `changed: false` reste un SUCCÈS : le texte posté était déjà celui qui
+    // est stocké, pour la même version source. La RPC n'écrit rien et le dit.
+    expect(
+      mapUpsertVitrineTraduction({
+        state: "ok",
+        created: false,
+        changed: false,
+      }),
+    ).toEqual({ state: "ok", created: false, changed: false });
+  });
+
+  it("lit l'idempotence du retrait", () => {
+    expect(mapDeleteVitrineTraduction({ state: "ok", deleted: true })).toEqual({
+      state: "ok",
+      deleted: true,
+    });
+    expect(mapDeleteVitrineTraduction({ state: "ok", deleted: false })).toEqual({
+      state: "ok",
+      deleted: false,
+    });
+    // Un drapeau illisible vaut FAUX : « il n'y avait rien à retirer » est le
+    // repli qui ne promet rien.
+    expect(mapDeleteVitrineTraduction({ state: "ok" })).toEqual({
+      state: "ok",
+      deleted: false,
+    });
+  });
+
+  it("un document illisible vaut `error`, jamais un refus nommé", () => {
+    // Replier sur `invalid_texte` aurait envoyé le commerçant corriger un texte
+    // correct — le pire message possible, motif `mapSetVitrineSlug`.
+    for (const brut of [null, undefined, 42, "ok", { state: "quoi" }, {}]) {
+      expect(mapUpsertVitrineTraduction(brut).state, String(brut)).toBe("error");
+      expect(mapDeleteVitrineTraduction(brut).state, String(brut)).toBe("error");
+    }
   });
 });

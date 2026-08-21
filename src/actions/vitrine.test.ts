@@ -30,6 +30,8 @@ const USER_ID = "00000000-0000-4000-8000-0000000000f1";
 const CARTE_ID = "00000000-0000-4000-8000-0000000000b1";
 const RUBRIQUE_ID = "00000000-0000-4000-8000-0000000000c1";
 const FICHE_ID = "00000000-0000-4000-8000-0000000000d1";
+/** La VERSION VUE : ce que l'écran a reçu, ce qu'il reposte. */
+const VERSION_SOURCE = "2026-08-20T10:00:00+00:00";
 
 interface DbCall {
   table: string;
@@ -157,12 +159,14 @@ import {
   createVitrineRubrique,
   deleteVitrineCarte,
   deleteVitrineContenu,
+  deleteVitrineTraduction,
   importVitrineCarte,
   publishVitrine,
   reorderVitrineFiches,
   saveVitrineSettings,
   setVitrineContenu,
   setVitrineSlug,
+  setVitrineTraduction,
   toggleVitrineFicheDisponibilite,
   unpublishVitrine,
   updateVitrineFiche,
@@ -276,6 +280,28 @@ describe("la garde refuse AVANT d'écrire", () => {
         ),
     ],
     ["deleteVitrineContenu", () => deleteVitrineContenu(null, fd({ rang: "2" }))],
+    [
+      "setVitrineTraduction",
+      () =>
+        setVitrineTraduction(
+          null,
+          fd({
+            cible_type: "item",
+            cible_id: FICHE_ID,
+            champ: "nom",
+            texte: "Pumpkin soup",
+            version: VERSION_SOURCE,
+          }),
+        ),
+    ],
+    [
+      "deleteVitrineTraduction",
+      () =>
+        deleteVitrineTraduction(
+          null,
+          fd({ cible_type: "item", cible_id: FICHE_ID, champ: "nom" }),
+        ),
+    ],
   ];
 
   it.each(gestes)("%s refuse le caissier sans émettre de requête", async (
@@ -1191,5 +1217,251 @@ describe("deleteVitrineContenu — retirer une place, sans rien compter", () => 
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.error).not.toContain("permission denied");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LES TRADUCTIONS (VIT-5, lot L15)
+// ────────────────────────────────────────────────────────────
+
+function fdTraduction(
+  surcharge: Record<string, string> = {},
+): FormData {
+  return fd({
+    cible_type: "item",
+    cible_id: FICHE_ID,
+    champ: "description",
+    texte: "Cream and hazelnuts.",
+    version: VERSION_SOURCE,
+    ...surcharge,
+  });
+}
+
+describe("setVitrineTraduction — la version VUE est repostée telle quelle", () => {
+  it("passe l'organisation de la SESSION, la langue d'ICI, et la version INTACTE", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", created: true, changed: true },
+      error: null,
+    });
+
+    const res = await setVitrineTraduction(
+      null,
+      fdTraduction({
+        // Postés et IGNORÉS : ni la langue ni l'organisation ne viennent du
+        // formulaire. Le schéma est `.strict()`, mais l'action n'extrait de
+        // toute façon que les cinq clés qu'elle connaît.
+        version: "2026-08-20T10:00:00.123456+02:00",
+      }),
+    );
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data).toEqual({ created: true, changed: true });
+    expect(rpcMock).toHaveBeenCalledWith("upsert_vitrine_translation", {
+      p_organization_id: ORG_ID,
+      p_cible_type: "item",
+      p_cible_id: FICHE_ID,
+      p_lang: "en",
+      p_champ: "description",
+      p_texte: "Cream and hazelnuts.",
+      // NI REFORMATÉE, NI REMPLACÉE PAR `now()` : la traduction vaut pour la
+      // version du français que le commerçant avait sous les yeux. Normaliser
+      // aurait perdu la microseconde de Postgres, donc fait comparer égaux deux
+      // instants distincts — une périmée se serait déclarée fraîche.
+      p_version_source: "2026-08-20T10:00:00.123456+02:00",
+    });
+  });
+
+  it("revalide le tableau de bord ET LES DEUX PAGES PUBLIQUES", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", created: true, changed: true },
+      error: null,
+    });
+
+    await setVitrineTraduction(null, fdTraduction());
+
+    // La page `/en` change (le champ change de langue) ET la page française
+    // aussi (la couverture décide du sélecteur de langue).
+    expect(cheminsRevalides()).toContain("/dashboard/vitrine");
+    expect(cheminsRevalides()).toContain("/v/le-comptoir");
+    expect(cheminsRevalides()).toContain("/v/le-comptoir/en");
+  });
+
+  it("revalide MÊME quand rien n'a changé", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", created: false, changed: false },
+      error: null,
+    });
+
+    const res = await setVitrineTraduction(null, fdTraduction());
+
+    // `changed: false` est un succès — le texte posté était déjà celui qui est
+    // stocké. Conditionner la purge à ce drapeau aurait fait dépendre la
+    // fraîcheur d'une page publique d'un état que le commerçant ne voit pas.
+    expect(res.ok).toBe(true);
+    expect(cheminsRevalides()).toContain("/v/le-comptoir/en");
+  });
+
+  it("un texte vide est refusé AVANT l'aller-retour", async () => {
+    gardeOk();
+
+    const res = await setVitrineTraduction(null, fdTraduction({ texte: "   " }));
+
+    expect(res.ok).toBe(false);
+    // Le vide ne vaut PAS un retrait : celui-ci est une seconde porte, pour
+    // qu'un texte perdu en chemin n'efface pas un contenu publié.
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("un vocabulaire forgé est refusé AVANT l'aller-retour", async () => {
+    gardeOk();
+
+    const forges: Array<Record<string, string>> = [
+      { cible_type: "organisation" },
+      { champ: "prix_affiche" },
+      { cible_id: "pas-un-uuid" },
+      { version: "hier" },
+    ];
+    for (const surcharge of forges) {
+      const res = await setVitrineTraduction(null, fdTraduction(surcharge));
+      expect(res.ok, JSON.stringify(surcharge)).toBe(false);
+    }
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("les refus nommés de la RPC ont chacun leur message", async () => {
+    for (const [etat, attendu] of [
+      ["invalid_cible", "ne peut pas porter de traduction"],
+      ["invalid_champ", "ne se traduit pas"],
+      ["invalid_texte", "2000 caractères"],
+    ] as const) {
+      gardeOk();
+      rpcMock.mockResolvedValue({ data: { state: etat }, error: null });
+
+      const res = await setVitrineTraduction(null, fdTraduction());
+
+      expect(res.ok, etat).toBe(false);
+      if (res.ok) continue;
+      expect(res.error, etat).toContain(attendu);
+    }
+  });
+
+  it("une réponse illisible ne dit PAS « ce champ ne se traduit pas »", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({ data: { state: "quoi" }, error: null });
+
+    const res = await setVitrineTraduction(null, fdTraduction());
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Envoyer le commerçant corriger une saisie correcte est le pire message
+    // possible : l'illisible rend le générique.
+    expect(res.error).not.toContain("ne se traduit pas");
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it("le 42501 reste INDISTINCT et ne relaie pas le texte de la base", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "not authorized on vitrine_items" },
+    });
+
+    const res = await setVitrineTraduction(null, fdTraduction());
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // La RPC lève le MÊME code pour « la cible n'existe pas » et « elle est à
+    // quelqu'un d'autre » : le message doit recouvrir les deux sans nommer ni
+    // la table ni le voisin.
+    expect(res.error).toBe("Élément introuvable.");
+    expect(res.error).not.toContain("vitrine_items");
+  });
+});
+
+describe("deleteVitrineTraduction — le retrait, et son idempotence", () => {
+  it("passe la cible et la langue, sans texte ni version", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", deleted: true },
+      error: null,
+    });
+
+    const res = await deleteVitrineTraduction(
+      null,
+      fd({ cible_type: "settings", cible_id: CARTE_ID, champ: "accroche" }),
+    );
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data).toEqual({ deleted: true });
+    expect(rpcMock).toHaveBeenCalledWith("delete_vitrine_translation", {
+      p_organization_id: ORG_ID,
+      p_cible_type: "settings",
+      p_cible_id: CARTE_ID,
+      p_lang: "en",
+      p_champ: "accroche",
+    });
+    expect(cheminsRevalides()).toContain("/v/le-comptoir/en");
+  });
+
+  it("retirer une traduction absente est un SUCCÈS qui le dit", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: { state: "ok", deleted: false },
+      error: null,
+    });
+
+    const res = await deleteVitrineTraduction(
+      null,
+      fd({ cible_type: "item", cible_id: FICHE_ID, champ: "nom" }),
+    );
+
+    // « retirée » et « il n'y avait rien à retirer » ne se disent pas pareil :
+    // le drapeau remonte jusqu'à l'écran plutôt que d'être aplati en succès nu.
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data).toEqual({ deleted: false });
+  });
+
+  it("ferme les MÊMES vocabulaires que la pose, avant l'aller-retour", async () => {
+    gardeOk();
+
+    for (const forge of [
+      { cible_type: "organisation", cible_id: CARTE_ID, champ: "nom" },
+      { cible_type: "menu", cible_id: CARTE_ID, champ: "prix_affiche" },
+      { cible_type: "menu", cible_id: "pas-un-uuid", champ: "nom" },
+    ]) {
+      const res = await deleteVitrineTraduction(null, fd(forge));
+      expect(res.ok, JSON.stringify(forge)).toBe(false);
+    }
+    // Une divergence entre les deux portes serait un trou : ce qu'on ne peut
+    // pas écrire chez le voisin, on ne doit pas pouvoir l'effacer. Le COUPLAGE
+    // type ↔ champ, lui, reste tranché en SQL (`invalid_champ`).
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("le 42501 reste INDISTINCT ici aussi", async () => {
+    gardeOk();
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { code: "42501", message: "not authorized on vitrine_menus" },
+    });
+
+    const res = await deleteVitrineTraduction(
+      null,
+      fd({ cible_type: "menu", cible_id: CARTE_ID, champ: "nom" }),
+    );
+
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    // Ce qu'on ne peut pas écrire chez le voisin, on ne doit pas pouvoir
+    // l'effacer — ni apprendre qu'il existe.
+    expect(res.error).toBe("Élément introuvable.");
+    expect(res.error).not.toContain("vitrine_menus");
   });
 });

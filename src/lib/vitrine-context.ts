@@ -7,7 +7,9 @@ import { vitrineLangSchema } from "@/lib/validations/vitrine";
 import {
   mapVitrineDashboardState,
   mapVitrinePublicState,
+  mapVitrineTraductionState,
   VITRINE_PUBLIQUE_OUVERTE,
+  type TraductionEtatView,
   type VitrineCarteView,
   type VitrineDashboardState,
   type VitrinePublicState,
@@ -35,6 +37,9 @@ import {
  */
 export type {
   LangueVitrine,
+  TraductionCibleView,
+  TraductionChampView,
+  TraductionEtatView,
   VitrineCarteView,
   VitrineFicheView,
   VitrineIdentiteView,
@@ -277,5 +282,71 @@ export async function loadVitrineDashboardContext(): Promise<VitrineDashboardCon
     moduleAccess: etat.state === "ok" ? etat.module_access : true,
     settings: etat.state === "ok" ? etat.settings : null,
     cartes: etat.state === "ok" ? etat.cartes : [],
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// LE CONTEXTE DE TRADUCTION (VIT-5, lot L15)
+// ────────────────────────────────────────────────────────────
+
+export type VitrineTraductionsContext =
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      organizationId: string;
+      /** TOUT le catalogue, cartes désactivées comprises — voir la RPC. */
+      etat: TraductionEtatView;
+    };
+
+/**
+ * L'état de traduction complet, pour l'écran commerçant.
+ *
+ * ── POURQUOI ICI, ET PAS UNE SERVER ACTION ──
+ *
+ * C'est une LECTURE DE PAGE : elle n'a pas de `_prev`, pas de `FormData`, et
+ * rien à revalider. L'exposer en `"use server"` en aurait fait un point POST de
+ * plus, atteignable sans qu'aucun écran ne le rende, pour une valeur que le
+ * rendu serveur peut chercher lui-même. Le dépôt range ces lectures dans les
+ * `*-context`, et c'est ce que fait le voisin `loadVitrineDashboardContext`.
+ *
+ * ── ELLE REND UN MESSAGE, LÀ OÙ SON VOISIN REND UNE RAISON ──
+ *
+ * `loadVitrineDashboardContext` refait les trois questions à la main pour
+ * distinguer `unauthenticated` de `no_access` : sa page redirige dans le premier
+ * cas. Celle-ci n'a pas ce besoin — elle est servie sous le même segment
+ * `/dashboard/vitrine`, déjà gardé — et réutilise donc `gardeEditeurVitrine`,
+ * dont le message est déjà écrit pour le commerçant (« Votre offre ne comprend
+ * pas la Vitrine »). Une garde de moins à tenir d'accord.
+ *
+ * ── LA GARDE EST ICI PARCE QUE LA RPC NE LA FAIT PAS ──
+ *
+ * `vitrine_translation_state` est `security definer` / `service_role` et
+ * n'interroge AUCUNE appartenance : elle rend l'état de l'organisation qu'on lui
+ * nomme. Sa sûreté tient entièrement au fait que ce chargeur lui passe
+ * l'organisation de la SESSION, jamais un paramètre venu du navigateur.
+ *
+ * ── UNE PANNE DE LECTURE REND LE TABLEAU VIDE, PAS UN REFUS ──
+ *
+ * Motif du voisin : le commerçant a le droit, il n'a simplement rien à afficher.
+ * Confondre les deux lui ferait croire que son abonnement a changé. Le résumé
+ * tombe alors à zéro sur zéro, et `selecteurLanguesOuvert` reste donc fermé —
+ * le repli qui ne promet rien.
+ */
+export async function loadVitrineTraductions(): Promise<VitrineTraductionsContext> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("vitrine_translation_state", {
+    // DE LA SESSION. Jamais d'un paramètre de requête — voir ci-dessus.
+    p_organization_id: garde.organizationId,
+  });
+
+  return {
+    ok: true,
+    organizationId: garde.organizationId,
+    // `null` traverse le mappeur défensif et ressort en tableau vide : un seul
+    // chemin de repli, celui qui est testé.
+    etat: mapVitrineTraductionState(error ? null : data),
   };
 }

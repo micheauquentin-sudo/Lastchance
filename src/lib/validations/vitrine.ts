@@ -28,6 +28,9 @@ import {
   VITRINE_SLUG_MIN,
   VITRINE_STYLES_CARTES,
   VITRINE_THEME_POLICES,
+  VITRINE_TRADUCTION_CHAMPS,
+  VITRINE_TRADUCTION_CIBLES,
+  VITRINE_TRADUCTION_TEXTE_MAX,
 } from "@/lib/vitrine";
 
 // ────────────────────────────────────────────────────────────
@@ -132,6 +135,123 @@ export const setVitrineSlugSchema = z.object({
  * lisent `success ? data : undefined`.
  */
 export const vitrineLangSchema = z.literal("en").optional();
+
+// ── LE CALQUE DE TRADUCTION (VIT-5) ──────────────────────────
+//
+// LES CLÉS SONT CELLES DE LA BASE (`cible_type`, `cible_id`, `champ`), comme
+// partout ailleurs dans ce fichier : ce sont les `<input name=…>` du tableau de
+// traduction, et le tableau reposte exactement ce qu'il a reçu.
+//
+// LA LANGUE N'EST PAS UN CHAMP DE FORMULAIRE. `'en'` est la seule langue
+// traduisible (`check (lang in ('en'))`), l'action la pose elle-même, et le
+// navigateur n'a donc rien à en dire. L'accepter en entrée aurait créé un champ
+// qu'il faut valider, une valeur qu'il faut refuser, et un refus (`invalid_lang`)
+// qu'aucun écran ne peut provoquer.
+
+const CIBLE_INCONNUE = "Cet élément ne peut pas porter de traduction.";
+const CHAMP_INCONNU = "Ce champ ne se traduit pas.";
+const CLE_INCONNUE = "Traduction : champ de formulaire inconnu.";
+
+/**
+ * La version SOURCE, repostée telle quelle.
+ *
+ * ── CE QU'ELLE EST : LA VERSION VUE ──
+ *
+ * L'écran l'a reçue dans l'état de traduction (`cibles[].version`, l'`updated_at`
+ * de la cible au moment de la lecture) et la renvoie sans y toucher. La RPC en
+ * fait le `version_source` de la ligne, et la fraîcheur se lit ensuite par
+ * `version_source >= cible.updated_at`. Si la source a bougé entretemps, la
+ * traduction naît PÉRIMÉE — ce qui est exact.
+ *
+ * ── POURQUOI AUCUN REFORMATAGE, NI ICI NI DANS L'ACTION ──
+ *
+ * `new Date(v).toISOString()` aurait perdu la précision de la microseconde que
+ * Postgres écrit dans un `timestamptz`, et deux timestamps distants d'une
+ * microseconde se seraient mis à comparer égaux — c'est-à-dire qu'une traduction
+ * périmée aurait pu se déclarer fraîche. La chaîne traverse INTACTE ; le
+ * détourage est la seule retouche, et il ne change aucune date.
+ *
+ * ── CE QUE `Date.parse` GARDE, ET CE QU'IL NE GARDE PAS ──
+ *
+ * Il garde l'innocuité : ce qui part en paramètre d'une RPC `timestamptz` est
+ * une date que JavaScript sait lire, pas une chaîne arbitraire. Il ne garde PAS
+ * la véracité — le commerçant peut poster une version d'hier, et n'y gagne
+ * qu'une traduction déclarée périmée. Le seul mensonge utile serait une version
+ * du FUTUR, qui déclarerait fraîche une traduction qui ne l'est pas ; c'est un
+ * mensonge sur SA PROPRE vitrine, sans effet hors de son locataire, et le
+ * refuser aurait demandé de lire l'`updated_at` de la cible avant chaque
+ * enregistrement — un aller-retour par frappe pour empêcher un commerçant de se
+ * tromper lui-même.
+ */
+const VERSION_INVALIDE = "Rechargez la page avant d'enregistrer.";
+/** Borne d'innocuité, pas de format : un `timestamptz` ISO tient en ~35 signes. */
+const VERSION_SOURCE_MAX = 64;
+
+const versionSourceSchema = z
+  .string()
+  .trim()
+  .min(1, VERSION_INVALIDE)
+  .max(VERSION_SOURCE_MAX, VERSION_INVALIDE)
+  .refine((valeur) => !Number.isNaN(Date.parse(valeur)), VERSION_INVALIDE);
+
+/**
+ * Le texte traduit — MIROIR EXACT du `check`, détouré d'abord.
+ *
+ * `char_length(btrim(texte)) between 1 and 2000`, et la RPC détoure elle aussi
+ * avant de mesurer. Le vide est REFUSÉ et non lu comme un retrait : c'est la
+ * doctrine de la migration L15, qui a fait du retrait une SECONDE PORTE
+ * (`deleteVitrineTraduction`) précisément pour qu'« un `p_texte` nul valant
+ * suppression » ne transforme pas un bug d'appelant en effacement silencieux
+ * d'un contenu publié.
+ */
+const texteTraduitSchema = z
+  .string()
+  .trim()
+  .min(1, "La traduction ne peut pas être vide")
+  .max(
+    VITRINE_TRADUCTION_TEXTE_MAX,
+    `Traduction trop longue (${VITRINE_TRADUCTION_TEXTE_MAX} caractères max)`,
+  );
+
+const cibleTraductionSchema = z.enum(VITRINE_TRADUCTION_CIBLES, {
+  error: CIBLE_INCONNUE,
+});
+const champTraductionSchema = z.enum(VITRINE_TRADUCTION_CHAMPS, {
+  error: CHAMP_INCONNU,
+});
+
+/**
+ * `.strict()` SUR LES DEUX, et ce n'est pas décoratif.
+ *
+ * L'action extrait les clés une à une : aucune clé inventée ne peut atteindre
+ * ces schémas aujourd'hui. La strictesse garde le JOUR D'APRÈS — celui où
+ * quelqu'un recopie `Object.fromEntries(formData)` pour aller plus vite, et où
+ * un `lang` ou un `organization_id` posté passerait en silence. C'est le même
+ * raisonnement que pour l'import : un vocabulaire fermé se ferme aux deux bouts.
+ */
+export const setVitrineTraductionSchema = z
+  .object(
+    {
+      cible_type: cibleTraductionSchema,
+      cible_id: uuid,
+      champ: champTraductionSchema,
+      texte: texteTraduitSchema,
+      version: versionSourceSchema,
+    },
+    { error: CLE_INCONNUE },
+  )
+  .strict();
+
+export const deleteVitrineTraductionSchema = z
+  .object(
+    {
+      cible_type: cibleTraductionSchema,
+      cible_id: uuid,
+      champ: champTraductionSchema,
+    },
+    { error: CLE_INCONNUE },
+  )
+  .strict();
 
 // ── L'IDENTITÉ ET LE THÈME ───────────────────────────────────
 

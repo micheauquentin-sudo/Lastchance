@@ -9,8 +9,13 @@ import { toJson } from "@/lib/supabase/json";
 import type { ActionResult } from "@/lib/utils";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
+  mapDeleteVitrineTraduction,
   mapSetVitrineSlug,
+  mapUpsertVitrineTraduction,
+  VITRINE_LANGUE_TRADUITE,
   VITRINE_ORDRE_MAX,
+  VITRINE_TRADUCTION_TEXTE_MAX,
+  type RefusTraductionVitrine,
   type SetVitrineSlugResult,
   type ThemeVitrine,
 } from "@/lib/vitrine";
@@ -23,6 +28,7 @@ import {
   deleteVitrineContenuSchema,
   deleteVitrineFicheSchema,
   deleteVitrineRubriqueSchema,
+  deleteVitrineTraductionSchema,
   importVitrineCarteSchema,
   reorderVitrineCartesSchema,
   reorderVitrineFichesSchema,
@@ -30,6 +36,7 @@ import {
   saveVitrineSettingsSchema,
   setVitrineContenuSchema,
   setVitrineSlugSchema,
+  setVitrineTraductionSchema,
   toggleVitrineFicheDisponibiliteSchema,
   updateVitrineCarteSchema,
   updateVitrineFicheSchema,
@@ -1430,4 +1437,201 @@ export async function deleteVitrineContenu(
 
   await revaliderVitrine(supabase, garde.organizationId);
   return { ok: true, data: undefined };
+}
+
+// ════════════════════════════════════════════════════════════
+// LES TRADUCTIONS (VIT-5, lot L15)
+//
+// DEUX PORTES, PAS UNE. Poser et retirer sont deux gestes distincts parce que
+// la migration l'a voulu ainsi : « un `p_texte` nul valant suppression aurait
+// fait d'un bug d'appelant (texte perdu en chemin) un effacement silencieux de
+// contenu publié ».
+//
+// AUCUN SEAU, pour la raison exacte des contenus mis en avant ci-dessus : c'est
+// du CRUD commerçant sur son propre locataire, borné par le catalogue qu'il a
+// lui-même saisi. Le `service_role` apparaît ici — les deux RPC l'exigent — mais
+// il n'ouvre rien : elles vérifient l'appartenance de la cible EN SQL, par type,
+// et lèvent 42501 sinon.
+//
+// LA GARDE PASSE AVANT LE SCHÉMA, comme pour l'import et contrairement au CRUD
+// sous RLS. Les deux RPC tournent en `service_role` ; valider d'abord aurait
+// offert à un non-membre un oracle gratuit sur les vocabulaires acceptés, pour
+// un geste qu'il n'a de toute façon pas le droit de faire.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Les refus des deux portes, un message chacun.
+ *
+ * `invalid_lang` n'est pas atteignable depuis un écran — l'action pose la langue
+ * elle-même — et son message est donc le générique : le rendre parlant aurait
+ * écrit une phrase que personne ne peut lire.
+ */
+const MESSAGES_TRADUCTION: Record<RefusTraductionVitrine, string> = {
+  invalid_cible: "Cet élément ne peut pas porter de traduction.",
+  invalid_champ: "Ce champ ne se traduit pas.",
+  invalid_texte: `La traduction doit contenir de 1 à ${VITRINE_TRADUCTION_TEXTE_MAX} caractères.`,
+  invalid_lang: GENERIC_ERROR,
+  error: GENERIC_ERROR,
+};
+
+/**
+ * Le 42501 des deux RPC : INDISTINCT, et rendu comme tel.
+ *
+ * Les fonctions lèvent le même code pour « la cible n'existe pas » et « la cible
+ * appartient à quelqu'un d'autre », délibérément — « ce qu'on ne peut pas écrire
+ * chez le voisin, on ne doit pas pouvoir l'effacer ». `INTROUVABLE` dit
+ * exactement cela et rien de plus : il n'apprend l'existence d'aucun
+ * identifiant, puisqu'il recouvre les deux cas. Le distinguer aurait fait de ces
+ * actions l'oracle que le SQL refuse d'être.
+ */
+function messageTraduction(error: {
+  code?: string;
+  message: string;
+}): string {
+  return error.code === "42501" ? INTROUVABLE : GENERIC_ERROR;
+}
+
+/**
+ * Pose ou remplace la traduction anglaise d'UN champ.
+ *
+ * ── LA VERSION EST REPOSTÉE TELLE QUELLE, ET C'EST TOUT LE MODÈLE ──
+ *
+ * `p_version_source` reçoit LA VERSION VUE : l'`updated_at` que l'état de
+ * traduction portait au moment où l'écran a été rendu, jamais « maintenant » et
+ * jamais une valeur relue ici. Une traduction vaut pour la version du texte
+ * source que le commerçant avait sous les yeux — c'est ce que
+ * `version_source >= cible.updated_at` mesure ensuite.
+ *
+ * Poser `now()` à la place aurait déclaré fraîche une traduction écrite sur un
+ * français qui a changé entre l'affichage et l'envoi ; relire l'`updated_at`
+ * courant aurait fait la même chose, en plus cher. Le seul comportement honnête
+ * est celui-ci : si la source a bougé, la traduction naît périmée et l'écran le
+ * dira au prochain chargement.
+ *
+ * ── LA LANGUE VIENT D'ICI, PAS DU FORMULAIRE ──
+ *
+ * `VITRINE_LANGUE_TRADUITE` est la seule langue que le `check` accepte. La lire
+ * du POST aurait ajouté un champ à valider et un refus (`invalid_lang`) que rien
+ * ne peut provoquer.
+ */
+export async function setVitrineTraduction(
+  _prev: ActionResult<{ created: boolean; changed: boolean }> | null,
+  formData: FormData,
+): Promise<ActionResult<{ created: boolean; changed: boolean }>> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const parsed = setVitrineTraductionSchema.safeParse({
+    cible_type: formData.get("cible_type"),
+    cible_id: formData.get("cible_id"),
+    champ: formData.get("champ"),
+    texte: formData.get("texte"),
+    version: formData.get("version"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("upsert_vitrine_translation", {
+    // DE LA SESSION. Jamais du corps de la requête.
+    p_organization_id: garde.organizationId,
+    p_cible_type: parsed.data.cible_type,
+    p_cible_id: parsed.data.cible_id,
+    // D'ICI, voir ci-dessus.
+    p_lang: VITRINE_LANGUE_TRADUITE,
+    p_champ: parsed.data.champ,
+    p_texte: parsed.data.texte,
+    // LA VERSION VUE, intacte : ni reformatée, ni remplacée par l'instant
+    // courant. Voir l'en-tête.
+    p_version_source: parsed.data.version,
+  });
+  if (error) {
+    reportError("vitrine.set-traduction", error.message);
+    return { ok: false, error: messageTraduction(error) };
+  }
+
+  const resultat = mapUpsertVitrineTraduction(data);
+  if (resultat.state !== "ok") {
+    if (resultat.state === "error") {
+      reportError(
+        "vitrine.set-traduction",
+        "réponse illisible de upsert_vitrine_translation",
+      );
+    }
+    return { ok: false, error: MESSAGES_TRADUCTION[resultat.state] };
+  }
+
+  const supabase = await createClient();
+  // LES DEUX PAGES PUBLIQUES ET LE TABLEAU DE BORD, même sur `changed: false`.
+  // Une traduction touche la page `/en` (le champ change de langue) ET la page
+  // française (la couverture décide du sélecteur de langue). Conditionner la
+  // purge au drapeau aurait fait dépendre la fraîcheur d'une page publique d'un
+  // état que le commerçant ne voit pas, pour économiser une lecture de slug sur
+  // le seul cas où il réenregistre un texte identique.
+  await revaliderVitrine(supabase, garde.organizationId);
+  return {
+    ok: true,
+    data: { created: resultat.created, changed: resultat.changed },
+  };
+}
+
+/**
+ * Retire la traduction anglaise d'UN champ — le français reprend sa place.
+ *
+ * IDEMPOTENT PAR CONTRAT : retirer une traduction absente est un succès qui rend
+ * `deleted: false`, sans exception et sans ligne de journal. L'écran a besoin de
+ * la distinction — « retirée » et « il n'y avait rien à retirer » ne se disent
+ * pas pareil — et c'est pour cela que le drapeau remonte jusqu'ici.
+ *
+ * AUCUN `texte`, AUCUNE `version` dans le formulaire : le retrait ne dépend ni
+ * de l'un ni de l'autre. Les demander aurait fait échouer le geste le jour où la
+ * source a bougé — exactement le jour où l'on veut pouvoir retirer une
+ * traduction devenue fausse.
+ */
+export async function deleteVitrineTraduction(
+  _prev: ActionResult<{ deleted: boolean }> | null,
+  formData: FormData,
+): Promise<ActionResult<{ deleted: boolean }>> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const parsed = deleteVitrineTraductionSchema.safeParse({
+    cible_type: formData.get("cible_type"),
+    cible_id: formData.get("cible_id"),
+    champ: formData.get("champ"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("delete_vitrine_translation", {
+    // DE LA SESSION. Jamais du corps de la requête.
+    p_organization_id: garde.organizationId,
+    p_cible_type: parsed.data.cible_type,
+    p_cible_id: parsed.data.cible_id,
+    p_lang: VITRINE_LANGUE_TRADUITE,
+    p_champ: parsed.data.champ,
+  });
+  if (error) {
+    reportError("vitrine.delete-traduction", error.message);
+    return { ok: false, error: messageTraduction(error) };
+  }
+
+  const resultat = mapDeleteVitrineTraduction(data);
+  if (resultat.state !== "ok") {
+    if (resultat.state === "error") {
+      reportError(
+        "vitrine.delete-traduction",
+        "réponse illisible de delete_vitrine_translation",
+      );
+    }
+    return { ok: false, error: MESSAGES_TRADUCTION[resultat.state] };
+  }
+
+  const supabase = await createClient();
+  // Même sur `deleted: false` — voir `setVitrineTraduction`.
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: { deleted: resultat.deleted } };
 }
