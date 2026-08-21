@@ -325,8 +325,17 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   //
   // Une salle « duo » encore en attente (`lobby`) reste sous la règle commune :
   // elle expire comme les autres, et ce test ne la voit pas.
+  //
+  // ── LE STATUT VOYAGE AVEC, PARCE QUE `closed` A DEUX CAUSES ──
+  //
+  // La révélation en est une ; `close_player_lobby_as_org` — le commerçant
+  // referme la salle depuis son dashboard — en est une autre, et elle tombe
+  // AVANT la révélation. Vues d'ici les deux sont le même mot, et `duo_state`
+  // ne les distingue pas non plus (il ne regarde pas le lobby, à dessein). Seul
+  // cet endroit tient les deux moitiés à la fois : on passe donc le statut, et
+  // c'est `DuoExperience` qui les croise avec l'état de sa manche.
   if (vue.kind === "duo" && (vue.status === "locked" || vue.status === "closed")) {
-    return <DuoExperience lobbyId={lobbyId} />;
+    return <DuoExperience lobbyId={lobbyId} statutSalle={vue.status} />;
   }
 
   const restants = msRestants(vue.expiresAt);

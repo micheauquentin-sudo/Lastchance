@@ -42,6 +42,21 @@ import { LobbyCarton } from "@/components/lobby/lobby-shell";
  * pourquoi `duo_state` ne regarde ni `status` ni `expires_at` du lobby, et
  * pourquoi `SalonLobby` monte cet écran AVANT ses écrans « expiré » et
  * « refermé » : un résultat n'est pas une panne.
+ *
+ * ── MAIS LA SALLE FERMÉE **AVANT** LA RÉVÉLATION EN EST UNE, ET IL FAUT LE DIRE ──
+ *
+ * `close_player_lobby_as_org` — le commerçant referme la salle depuis son
+ * dashboard — produit le MÊME `closed`, à un moment tout autre : la manche est
+ * encore `ouverte`. `duo_start` rend alors la manche existante sans regarder le
+ * lobby, `duo_state` peint le plateau, et chaque doigt tombe sur le refus de
+ * `duo_choose` — le message générique, EN BOUCLE, pendant que le joueur cherche
+ * une panne de réseau qui n'existe pas.
+ *
+ * D'où `statutSalle` : la seule chose que cet écran ne peut PAS déduire de
+ * `duo_state`, puisque `duo_state` a de bonnes raisons de ne pas la regarder.
+ * Manche `ouverte` + salle `closed` ⇒ on ne peint pas un plateau cliquable, on
+ * dit ce qui s'est passé. Manche `revelee` ⇒ le statut de la salle n'a plus
+ * aucune importance, et l'écran de résultat passe avant tout le reste.
  */
 
 /** Cadence du scrutin, en millisecondes — celle du salon. */
@@ -63,7 +78,14 @@ type Ouverture = "attente" | "prete" | "non_configure" | "unavailable";
 const REFUS_CHOIX =
   "Ce choix n’a pas pu être enregistré. Réessayez dans un instant.";
 
-export function DuoExperience({ lobbyId }: { lobbyId: string }) {
+export function DuoExperience({
+  lobbyId,
+  statutSalle,
+}: {
+  lobbyId: string;
+  /** Le statut du lobby au moment du branchement — `SalonLobby` le détient. */
+  statutSalle: "locked" | "closed";
+}) {
   const [ouverture, setOuverture] = useState<Ouverture>("attente");
   const [optionsDepart, setOptionsDepart] = useState<DuoOptionView[]>([]);
   const [vue, setVue] = useState<VueDuo | null>(null);
@@ -93,8 +115,11 @@ export function DuoExperience({ lobbyId }: { lobbyId: string }) {
         const suivant = await getDuoState(lobbyId);
         if (!vivant || suivant.state !== "ok") return;
         setVue(suivant);
-        // Après la révélation, plus rien ne change : on cesse de lire.
-        if (suivant.status === "revelee") stopper();
+        // Après la révélation, plus rien ne change : on cesse de lire. Une
+        // manche encore ouverte dans une salle CLOSE ne changera pas non plus —
+        // plus personne ne peut sceller, donc plus rien ne peut la révéler :
+        // relire toutes les 3 s serait payer pour la même ligne, indéfiniment.
+        if (suivant.status === "revelee" || statutSalle === "closed") stopper();
       } catch {
         // Un échec isolé est la vie normale d'un téléphone en salle : le tic
         // suivant rattrape, l'écran garde son dernier état connu.
@@ -137,7 +162,7 @@ export function DuoExperience({ lobbyId }: { lobbyId: string }) {
       stopper();
       document.removeEventListener("visibilitychange", surVisibilite);
     };
-  }, [lobbyId]);
+  }, [lobbyId, statutSalle]);
 
   /**
    * SCELLER — irréversible, et l'écran ne propose donc jamais de « modifier ».
@@ -201,8 +226,16 @@ export function DuoExperience({ lobbyId }: { lobbyId: string }) {
     );
   }
 
+  // LA RÉVÉLATION D'ABORD, TOUJOURS : elle ferme la salle en même temps qu'elle
+  // arrive, donc `closed` est ici l'état NORMAL d'une partie réussie.
   if (vue.status === "revelee") {
     return <EcranRevelation vue={vue} />;
+  }
+
+  // Puis, et seulement sur une manche encore ouverte : la salle a été refermée
+  // sous les doigts des joueurs. Aucun plateau — chaque carte mènerait au refus.
+  if (statutSalle === "closed") {
+    return <EcranSalleRefermee />;
   }
 
   return (
@@ -213,6 +246,28 @@ export function DuoExperience({ lobbyId }: { lobbyId: string }) {
       enChoix={enChoix}
       onChoisir={choisir}
     />
+  );
+}
+
+/**
+ * LA SALLE REFERMÉE AVANT LA FIN — dire ce qui s'est passé, sans le déguiser.
+ *
+ * Ni « une erreur est survenue » (il n'y en a pas eu), ni « réessayez » (il n'y
+ * a rien à réessayer), ni le nom du geste ou de qui l'a fait : le joueur n'a
+ * besoin que de deux choses — savoir que la partie ne reprendra pas, et savoir
+ * où aller pour en avoir une autre. Le reste serait de la mise en cause.
+ */
+function EcranSalleRefermee() {
+  return (
+    <LobbyCarton className="text-center">
+      <h2 className="text-lg font-black text-k-ink">
+        Ce salon a été refermé avant la fin de la partie.
+      </h2>
+      <p className="mt-2 text-sm text-k-body">
+        Les choix ne seront pas révélés. Demandez une nouvelle partie au
+        comptoir&nbsp;: elle repart d’un plateau neuf.
+      </p>
+    </LobbyCarton>
   );
 }
 
