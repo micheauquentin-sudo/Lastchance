@@ -9,6 +9,16 @@
 --      lobbies actifs passent, le vingt et unième est refusé — et le verrou
 --      d'avis sur lequel repose ce comptage est DÉTENU par la transaction.
 --      Le quota est PAR ORGANISATION : la voisine saturée n'empêche rien.
+--   2 bis. IL NE COMPTE QUE LES SALLES HABITÉES OU RÉCENTES (revue L16). Les
+--      trois branches sont ISOLÉES une par une : vingt salles vides et vieilles
+--      ne bloquent RIEN, vingt salles verrouillées à un seul membre bloquent,
+--      vingt salles à deux membres bloquent. Chaque scénario est construit pour
+--      qu'une SEULE branche du prédicat puisse le rendre vrai — sans quoi un
+--      vert dirait « le quota marche » sans dire laquelle des trois marche.
+--   2 ter. LA VITRINE DOIT ÊTRE PUBLIÉE. Le droit `vitrine` ne suffit pas : une
+--      vitrine éteinte n'a pas d'adresse publique, donc pas de jeux. La garde
+--      tient PAR LA BASE, et la publier débloque la création — ce qui prouve que
+--      c'est bien elle qui refusait.
 --   3. LA CAPACITÉ TIENT jusqu'au douzième et refuse le treizième.
 --   4. REJOINDRE DEUX FOIS REND LE MÊME DOCUMENT, au caractère près, et
 --      n'écrit pas de seconde place.
@@ -20,6 +30,12 @@
 --      sort pour personne.
 --   7. L'HÔTE QUI PART FERME LA SALLE ; partir deux fois rend le même document
 --      qu'être parti une fois, et qu'un inconnu qui n'est jamais entré.
+--   7 bis. L'HÔTE RETIRE PAR RANG, et lui seul. Le refus opposé à un autre
+--      membre est INDISTINCT de celui d'un lobby inventé ; l'hôte ne se retire
+--      pas lui-même ; une partie verrouillée ne se re-négocie pas ; un rang
+--      inoccupé rend un succès muet. Et l'arbitrage est prouvé des DEUX côtés :
+--      la personne retirée ne revient pas toute seule, mais rien ne l'empêche
+--      de rejoindre à neuf — c'est un retrait de place, pas un bannissement.
 --   8. LE VERROUILLAGE PROLONGE, ET LA PROLONGATION EST BORNÉE. Sur un lobby
 --      né il y a vingt-trois heures, `now() + 4 h` est rabattu à
 --      `created_at + 24 h` — la garde 3 d'ADR-109 §A4 mord pour de vrai.
@@ -29,7 +45,7 @@
 --      est encore devant.
 --  10. ACL ET RLS. Les deux tables portent la RLS et ZÉRO policy, `anon` et
 --      `authenticated` n'y gardent AUCUN privilège (`references` / `trigger` /
---      `truncate` compris), les six RPC sont à `service_role` et à lui seul, et
+--      `truncate` compris), les SEPT RPC sont à `service_role` et à lui seul, et
 --      la formule du rang n'est exécutable par AUCUN rôle applicatif.
 --  11. LA RÈGLE CATALOGUE CHECK ⇒ EXECUTE ne peut pas mordre ici : aucun
 --      `check` des deux tables n'appelle une fonction du dépôt.
@@ -63,6 +79,13 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 --     sans son droit « la voisine n'empêche rien » se confondrait avec « la
 --     voisine n'a pas le module ».
 -- C : SANS le droit.
+-- D : AVEC le droit, mais vitrine NON PUBLIÉE. Sans elle, « pas le module » et
+--     « vitrine éteinte » se confondraient dans le même refus sans qu'on sache
+--     lequel des deux mord.
+-- E, F, G : les trois saturations du quota durci, une par branche du prédicat
+--     (vides et vieilles / verrouillées / habitées). Elles sont SÉPARÉES parce
+--     qu'un quota est par organisation : les mélanger ferait compter ensemble
+--     des salles que la RPC compte séparément.
 insert into public.organizations
   (id, name, slug, subscription_status, plan, timezone, data_retention_months)
 values
@@ -71,15 +94,43 @@ values
   ('6b0b1e00-0000-4000-8000-00000000000b', 'Lobby B', 'tap-lobby-b',
    'active', 'starter', 'Europe/Paris', 6),
   ('6b0b1e00-0000-4000-8000-00000000000c', 'Lobby C', 'tap-lobby-c',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-00000000000d', 'Lobby D', 'tap-lobby-d',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-00000000000e', 'Lobby E', 'tap-lobby-e',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-00000000000f', 'Lobby F', 'tap-lobby-f',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-000000000010', 'Lobby G', 'tap-lobby-g',
    'active', 'starter', 'Europe/Paris', 6);
 
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
+select o.id, 'vitrine', 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('6b0b1e00-0000-4000-8000-00000000000a'::uuid),
+    ('6b0b1e00-0000-4000-8000-00000000000b'::uuid),
+    ('6b0b1e00-0000-4000-8000-00000000000d'::uuid),
+    ('6b0b1e00-0000-4000-8000-00000000000e'::uuid),
+    ('6b0b1e00-0000-4000-8000-00000000000f'::uuid),
+    ('6b0b1e00-0000-4000-8000-000000000010'::uuid)) as o(id);
+
+-- LA VITRINE, ET SA PUBLICATION. `create_player_lobby` exige les DEUX (le droit
+-- ET `published`), donc sans ces lignes tout ce fichier rendrait `unavailable`.
+-- L'ordre compte : `vitrine_settings_guard_publication` refuse la TRANSITION
+-- vers `published = true` à qui n'a pas le droit — les octrois ci-dessus doivent
+-- donc précéder ces inserts, et C n'a volontairement aucune vitrine.
+insert into public.vitrine_settings (organization_id, slug, published)
 values
-  ('6b0b1e00-0000-4000-8000-00000000000a', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days'),
-  ('6b0b1e00-0000-4000-8000-00000000000b', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days');
+  ('6b0b1e00-0000-4000-8000-00000000000a', 'tap-vitrine-lobby-a', true),
+  ('6b0b1e00-0000-4000-8000-00000000000b', 'tap-vitrine-lobby-b', true),
+  -- D : la vitrine EXISTE et reste ÉTEINTE. C'est le cas que le droit seul ne
+  -- distingue pas.
+  ('6b0b1e00-0000-4000-8000-00000000000d', 'tap-vitrine-lobby-d', false),
+  ('6b0b1e00-0000-4000-8000-00000000000e', 'tap-vitrine-lobby-e', true),
+  ('6b0b1e00-0000-4000-8000-00000000000f', 'tap-vitrine-lobby-f', true),
+  ('6b0b1e00-0000-4000-8000-000000000010', 'tap-vitrine-lobby-g', true);
 
 create temporary table lb (nom text primary key, j jsonb);
 
@@ -220,6 +271,214 @@ select is(
     'facade00-0000-4000-8000-000000000000', 'bande', 4,
     repeat('cc', 32), 'Sans droit'),
   'DROIT-2 « pas le module » et « organisation inconnue » rendent le MÊME document');
+
+-- LA VITRINE DOIT ÊTRE PUBLIÉE, et pas seulement le droit vivant. D a payé, D
+-- n'a rien allumé : ses jeux n'existent pour personne.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
+     repeat('d0', 32), 'Vitrine éteinte'))->>'state',
+  'unavailable',
+  'PUB-1 une vitrine NON PUBLIÉE n''ouvre aucun lobby, même avec le droit');
+select is(
+  public.create_player_lobby(
+    '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
+    repeat('d0', 32), 'Vitrine éteinte'),
+  public.create_player_lobby(
+    'facade00-0000-4000-8000-000000000000', 'bande', 4,
+    repeat('d0', 32), 'Vitrine éteinte'),
+  'PUB-2 … et le refus est le MÊME document qu''« organisation inconnue »');
+
+-- LE CONTRÔLE DE PORTÉE de PUB-1 : sans lui, l'assertion serait verte le jour
+-- où D échouerait pour une tout autre raison. On allume la vitrine, et rien
+-- d'autre — si la création passe alors, c'est bien `published` qui refusait.
+update public.vitrine_settings
+   set published = true
+ where organization_id = '6b0b1e00-0000-4000-8000-00000000000d';
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
+     repeat('d0', 32), 'Vitrine allumée'))->>'state',
+  'created',
+  'PUB-3 publier la vitrine débloque la création : c''est bien elle qui refusait');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 2 bis. LE QUOTA NE COMPTE QUE LES SALLES HABITÉES OU RÉCENTES
+--
+-- Durci à la revue L16 (ADR-109 §A4 amendé : garde IP observatoire, donc le
+-- quota est le SEUL refus effectif du lot). Le prédicat a trois branches, et
+-- chacune est isolée par une organisation À ELLE :
+--
+--   E — vingt salles VIDES et VIEILLES : aucune branche ne les retient.
+--   F — vingt salles VERROUILLÉES, vieilles, à UN seul membre : seul `locked`.
+--   G — vingt salles à DEUX membres, vieilles, non verrouillées : seul l'EXISTS.
+--
+-- Chaque scénario est bâti pour qu'une SEULE branche puisse le rendre vrai. Un
+-- test qui saturerait vingt salles « fraîches, pleines et verrouillées » serait
+-- vert avec n'importe laquelle des trois — et le resterait après en avoir cassé
+-- deux.
+-- ════════════════════════════════════════════════════════════
+
+-- ── E : vingt salles vides ────────────────────────────────────
+do $$
+declare
+  i integer;
+  r jsonb;
+begin
+  for i in 1..20 loop
+    r := public.create_player_lobby(
+      '6b0b1e00-0000-4000-8000-00000000000e', 'bande', 4,
+      lpad(to_hex(400000 + i), 64, '0'), 'Hote E ' || i);
+    if r->>'state' <> 'created' then
+      raise exception 'fixture E : la création % a été refusée (%)', i, r;
+    end if;
+  end loop;
+end $$;
+
+-- L'ORDRE DE CES DEUX ASSERTIONS EST LA DÉMONSTRATION. Fraîches, les vingt
+-- salles vides SATURENT — c'est la branche « récente », et elle est ce qui
+-- empêche une rafale simultanée de passer entre les gouttes.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000e', 'bande', 4,
+     repeat('4e', 32), 'Vingt et un pressé'))->>'state',
+  'quota',
+  'E1-1 vingt salles vides mais RÉCENTES saturent : la rafale ne passe pas');
+
+-- On recule la naissance de quinze minutes, et RIEN D'AUTRE : `expires_at` ne
+-- bouge pas, donc les vingt salles restent VIVANTES (nées il y a 15 min, mortes
+-- dans 15). La seule chose qui a changé, c'est qu'elles ont passé la fenêtre.
+update public.player_lobbies
+   set created_at = created_at - interval '15 minutes'
+ where organization_id = '6b0b1e00-0000-4000-8000-00000000000e';
+
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000e'
+      and l.status = 'lobby'
+      and l.expires_at > now()
+      and l.created_at <= now() - interval '10 minutes'
+      and (select pg_catalog.count(*) from public.player_lobby_members m
+            where m.lobby_id = l.id) = 1),
+  20,
+  'E1-2 les vingt salles de E sont VIVANTES, vieilles et vides : aucune branche ne les retient');
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000e', 'bande', 4,
+     repeat('4f', 32), 'Vingt et un serein'))->>'state',
+  'created',
+  'E1-3 … donc la création PASSE : le quota n''est plus son propre levier de déni');
+
+-- ── F : vingt salles verrouillées, à un seul membre ───────────
+do $$
+declare
+  i integer;
+  r jsonb;
+  v_hote text;
+  v_id uuid;
+begin
+  for i in 1..20 loop
+    v_hote := lpad(to_hex(500000 + i), 64, '0');
+    r := public.create_player_lobby(
+      '6b0b1e00-0000-4000-8000-00000000000f', 'bande', 4, v_hote, 'Hote F ' || i);
+    if r->>'state' <> 'created' then
+      raise exception 'fixture F : la création % a été refusée (%)', i, r;
+    end if;
+    v_id := (r->>'lobby_id')::uuid;
+    -- Un second membre, UNIQUEMENT parce que verrouiller l'exige.
+    r := public.join_player_lobby(
+      r->>'join_code', lpad(to_hex(510000 + i), 64, '0'), 'Invite F ' || i);
+    if r->>'state' <> 'joined' then
+      raise exception 'fixture F : l''entrée % a été refusée (%)', i, r;
+    end if;
+    r := public.lock_player_lobby(v_id, v_hote);
+    if r->>'state' <> 'locked' then
+      raise exception 'fixture F : le verrouillage % a été refusé (%)', i, r;
+    end if;
+  end loop;
+end $$;
+
+-- LE SECOND MEMBRE PART EN DIRECT. Aucune RPC ne retire personne d'une salle
+-- verrouillée — c'est justement la garde de `kick`/`leave` — et c'est ce qu'on
+-- veut ici : des salles que SEUL leur statut peut faire compter.
+delete from public.player_lobby_members m
+ using public.player_lobbies l
+ where l.id = m.lobby_id
+   and l.organization_id = '6b0b1e00-0000-4000-8000-00000000000f'
+   and m.token_hash <> l.creator_token_hash;
+
+update public.player_lobbies
+   set created_at = created_at - interval '15 minutes'
+ where organization_id = '6b0b1e00-0000-4000-8000-00000000000f';
+
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-00000000000f'
+      and l.status = 'locked'
+      and l.expires_at > now()
+      and l.created_at <= now() - interval '10 minutes'
+      and (select pg_catalog.count(*) from public.player_lobby_members m
+            where m.lobby_id = l.id) = 1),
+  20,
+  'E1-4 les vingt salles de F sont verrouillées, vieilles et à UN membre : seul le statut peut les compter');
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000f', 'bande', 4,
+     repeat('5f', 32), 'Vingt et un'))->>'state',
+  'quota',
+  'E1-5 une partie commencée occupe sa place : vingt verrouillées saturent');
+
+-- ── G : vingt salles habitées, non verrouillées ───────────────
+do $$
+declare
+  i integer;
+  r jsonb;
+begin
+  for i in 1..20 loop
+    r := public.create_player_lobby(
+      '6b0b1e00-0000-4000-8000-000000000010', 'bande', 4,
+      lpad(to_hex(600000 + i), 64, '0'), 'Hote G ' || i);
+    if r->>'state' <> 'created' then
+      raise exception 'fixture G : la création % a été refusée (%)', i, r;
+    end if;
+    r := public.join_player_lobby(
+      r->>'join_code', lpad(to_hex(610000 + i), 64, '0'), 'Invite G ' || i);
+    if r->>'state' <> 'joined' then
+      raise exception 'fixture G : l''entrée % a été refusée (%)', i, r;
+    end if;
+  end loop;
+end $$;
+
+update public.player_lobbies
+   set created_at = created_at - interval '15 minutes'
+ where organization_id = '6b0b1e00-0000-4000-8000-000000000010';
+
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobbies l
+    where l.organization_id = '6b0b1e00-0000-4000-8000-000000000010'
+      and l.status = 'lobby'
+      and l.expires_at > now()
+      and l.created_at <= now() - interval '10 minutes'
+      and (select pg_catalog.count(*) from public.player_lobby_members m
+            where m.lobby_id = l.id) = 2),
+  20,
+  'E1-6 les vingt salles de G sont vieilles, ouvertes et à DEUX membres : seul l''EXISTS peut les compter');
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-000000000010', 'bande', 4,
+     repeat('60', 32), 'Vingt et un'))->>'state',
+  'quota',
+  'E1-7 une salle où quelqu''un est entré est vivante quel que soit son âge : elles saturent');
+
+-- LE QUOTA RESTE PAR ORGANISATION, y compris après le durcissement : trois
+-- voisines saturées de trois façons différentes n'empêchent rien chez E.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000e', 'bande', 4,
+     repeat('4a', 32), 'Voisin serein'))->>'state',
+  'created',
+  'E1-8 trois voisines saturées n''empêchent toujours rien chez la quatrième');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -507,6 +766,143 @@ select is(
 
 
 -- ════════════════════════════════════════════════════════════
+-- 7 bis. L'HÔTE RETIRE PAR RANG
+--
+-- Le rang, et non le jeton : `lobby_state` ne rend JAMAIS de `token_hash` à
+-- l'hôte (STATE-7 / STATE-8), donc lui demander un jeton l'obligerait à posséder
+-- ce que la base lui refuse. Ce que ces assertions prouvent, dans l'ordre : le
+-- refus indistinct opposé à qui n'est pas l'hôte, le retrait nominal et le
+-- DÉCALAGE des rangs qui s'ensuit, l'idempotence sur un rang inoccupé, les deux
+-- refus de statut, et enfin l'arbitrage — retrait de place, pas bannissement.
+-- ════════════════════════════════════════════════════════════
+
+insert into lb values ('kick', public.create_player_lobby(
+  '6b0b1e00-0000-4000-8000-00000000000a', 'bande', 4,
+  repeat('71', 32), 'Hôte Kick'));
+insert into lb values ('kick2', public.join_player_lobby(
+  (select j->>'join_code' from lb where nom = 'kick'),
+  repeat('72', 32), 'Deuxième'));
+insert into lb values ('kick3', public.join_player_lobby(
+  (select j->>'join_code' from lb where nom = 'kick'),
+  repeat('73', 32), 'Troisième'));
+
+-- UN MEMBRE ORDINAIRE NE RETIRE PERSONNE, et son refus ne lui apprend rien : le
+-- MÊME document que pour un identifiant de lobby inventé.
+select is(
+  public.kick_player_lobby(
+    (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    repeat('72', 32), 3),
+  public.kick_player_lobby(
+    '3f3f3f3f-0000-4000-8000-000000000000', repeat('72', 32), 3),
+  'KICK-1 un non-créateur reçoit EXACTEMENT ce que reçoit qui invente un identifiant');
+select is(
+  (public.kick_player_lobby(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+     repeat('72', 32), 3))->>'state',
+  'unavailable',
+  'KICK-2 … et ce document ne dit rien d''autre');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')),
+  3,
+  'KICK-3 … et n''a retiré personne');
+
+-- LE RETRAIT NOMINAL.
+select is(
+  public.kick_player_lobby(
+    (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    repeat('71', 32), 2),
+  '{"state": "ok", "kicked": true}'::jsonb,
+  'KICK-4 l''hôte retire le rang 2, et le document le dit sans détour');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')),
+  2,
+  'KICK-5 la place est libérée');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')
+      and m.token_hash = repeat('72', 32)),
+  0,
+  'KICK-6 c''est bien l''occupant du rang 2 qui est parti');
+
+-- LE RANG EST UN ORDRE, DONC IL SE DÉCALE. Le troisième devient deuxième —
+-- c'est la conséquence directe d'une formule de rang unique, et c'est ce que
+-- l'écran de l'hôte doit relire avant de proposer un second retrait.
+select is(
+  (public.lobby_state(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+     repeat('71', 32)))->'membres',
+  '[{"rang": 1, "pseudo": "Hôte Kick", "est_moi": true},
+    {"rang": 2, "pseudo": "Troisième", "est_moi": false}]'::jsonb,
+  'KICK-7 le rang 3 est devenu le rang 2 : la liste se referme derrière le retiré');
+
+-- L'IDEMPOTENCE PORTE SUR UN RANG INOCCUPÉ, et rend un succès muet.
+select is(
+  public.kick_player_lobby(
+    (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+    repeat('71', 32), 9),
+  '{"state": "ok", "kicked": false}'::jsonb,
+  'KICK-8 un rang que personne n''occupe est un succès muet, pas une erreur');
+
+-- L'HÔTE NE SE RETIRE PAS LUI-MÊME : ce serait un `leave` déguisé, qui
+-- laisserait une salle sans hôte au lieu de la fermer.
+select is(
+  (public.kick_player_lobby(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+     repeat('71', 32), 1))->>'state',
+  'unavailable',
+  'KICK-9 l''hôte ne se retire pas lui-même');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')),
+  2,
+  'KICK-10 … et ce refus non plus n''a rien écrit');
+
+-- UNE PARTIE COMMENCÉE NE SE RE-NÉGOCIE PAS. `vieux` est verrouillé depuis la
+-- section 6 ; `salon` est clos depuis la section 7.
+select is(
+  (public.kick_player_lobby(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'vieux'),
+     repeat('11', 32), 2))->>'state',
+  'unavailable',
+  'KICK-11 on ne retire personne d''une salle VERROUILLÉE');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'vieux')),
+  2,
+  'KICK-12 … et la partie garde ses joueurs');
+select is(
+  (public.kick_player_lobby(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'salon'),
+     repeat('b1', 32), 1))->>'state',
+  'unavailable',
+  'KICK-13 ni d''une salle CLOSE');
+
+-- ── L'ARBITRAGE, PROUVÉ DES DEUX CÔTÉS ────────────────────────
+-- Retrait de PLACE, pas bannissement : la personne ne revient pas toute seule,
+-- mais rien ne l'empêche de refaire le geste. Empêcher le retour demanderait une
+-- trace persistante des empreintes exclues — un autre lot, à décider comme tel.
+select is(
+  (public.lobby_state(
+     (select (j->>'lobby_id')::uuid from lb where nom = 'kick'),
+     repeat('72', 32)))->>'state',
+  'unavailable',
+  'KICK-14 le retiré ne revient pas tout seul : son ancien cookie ne le désigne plus');
+select is(
+  (public.join_player_lobby(
+     (select j->>'join_code' from lb where nom = 'kick'),
+     repeat('72', 32), 'Deuxième'))->>'state',
+  'joined',
+  'KICK-15 mais il PEUT rejoindre à neuf : c''est un retrait de place, pas un bannissement');
+select is(
+  (select pg_catalog.count(*)::integer from public.player_lobby_members m
+    where m.lobby_id = (select (j->>'lobby_id')::uuid from lb where nom = 'kick')),
+  3,
+  'KICK-16 … et il reprend une place, la salle étant ouverte et non pleine');
+
+
+-- ════════════════════════════════════════════════════════════
 -- 8. UN CODE MORT NE SE DISTINGUE PAS D'UN CODE INVENTÉ
 -- ════════════════════════════════════════════════════════════
 
@@ -703,18 +1099,21 @@ select ok(not has_function_privilege('anon', 'public.lock_player_lobby(uuid,text
 select ok(has_function_privilege('service_role', 'public.leave_player_lobby(uuid,text)', 'EXECUTE'), 'ACL-17 le serveur fait partir');
 select ok(not has_function_privilege('authenticated', 'public.leave_player_lobby(uuid,text)', 'EXECUTE'), 'ACL-18 un commerçant ne sort personne d''un lobby');
 select ok(not has_function_privilege('anon', 'public.leave_player_lobby(uuid,text)', 'EXECUTE'), 'ACL-19 anon non plus');
-select ok(has_function_privilege('service_role', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-20 le serveur purge');
-select ok(not has_function_privilege('authenticated', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-21 un commerçant ne déclenche pas la purge');
-select ok(not has_function_privilege('anon', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-22 anon non plus');
+select ok(has_function_privilege('service_role', 'public.kick_player_lobby(uuid,text,integer)', 'EXECUTE'), 'ACL-20 le serveur retire une place');
+select ok(not has_function_privilege('authenticated', 'public.kick_player_lobby(uuid,text,integer)', 'EXECUTE'), 'ACL-21 un commerçant ne retire personne à la place de l''hôte');
+select ok(not has_function_privilege('anon', 'public.kick_player_lobby(uuid,text,integer)', 'EXECUTE'), 'ACL-22 anon non plus — sinon un rang suffirait à vider une salle');
+select ok(has_function_privilege('service_role', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-23 le serveur purge');
+select ok(not has_function_privilege('authenticated', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-24 un commerçant ne déclenche pas la purge');
+select ok(not has_function_privilege('anon', 'public.purge_expired_lobbies()', 'EXECUTE'), 'ACL-25 anon non plus');
 
 -- LA FORMULE DU RANG n'est exécutable par AUCUN rôle applicatif, `service_role`
 -- compris : elle n'a de sens qu'à l'intérieur des RPC (motif
 -- `queue_entry_position`).
-select ok(not has_function_privilege('service_role', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-23 pas même le serveur n''appelle la formule du rang directement');
-select ok(not has_function_privilege('authenticated', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-24 ni un commerçant');
-select ok(not has_function_privilege('anon', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-25 ni anon');
-select ok(not has_function_privilege('authenticated', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-26 la génération de code n''est pas appelable par un commerçant');
-select ok(not has_function_privilege('anon', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-27 ni par anon');
+select ok(not has_function_privilege('service_role', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-26 pas même le serveur n''appelle la formule du rang directement');
+select ok(not has_function_privilege('authenticated', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-27 ni un commerçant');
+select ok(not has_function_privilege('anon', 'public.player_lobby_rang(uuid,timestamp with time zone,uuid)', 'EXECUTE'), 'ACL-28 ni anon');
+select ok(not has_function_privilege('authenticated', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-29 la génération de code n''est pas appelable par un commerçant');
+select ok(not has_function_privilege('anon', 'public.player_lobbies_set_join_code()', 'EXECUTE'), 'ACL-30 ni par anon');
 
 -- LA RÈGLE CATALOGUE CHECK ⇒ EXECUTE, appliquée aux deux tables neuves. Un
 -- `check` s'évalue AVEC LES PRIVILÈGES DU RÔLE QUI ÉCRIT : si l'un d'eux
@@ -738,7 +1137,7 @@ select is(
       and con.contype = 'c'
       and c.relname in ('player_lobbies', 'player_lobby_members')),
   '',
-  'ACL-28 aucun check des deux tables n''appelle une fonction du dépôt : rien à accorder, rien à oublier');
+  'ACL-31 aucun check des deux tables n''appelle une fonction du dépôt : rien à accorder, rien à oublier');
 -- CONTRÔLE DE PORTÉE : sans lui, l'assertion ci-dessus serait verte le jour où
 -- les deux tables disparaîtraient du schéma. Neuf `check` mesurés.
 select cmp_ok(
@@ -749,7 +1148,7 @@ select cmp_ok(
     where n.nspname = 'public' and con.contype = 'c'
       and c.relname in ('player_lobbies', 'player_lobby_members')),
   '>=', 8,
-  'ACL-29 la règle porte bien sur les check réellement posés, pas sur un ensemble vide');
+  'ACL-32 la règle porte bien sur les check réellement posés, pas sur un ensemble vide');
 
 select * from finish();
 rollback;

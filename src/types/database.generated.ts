@@ -8303,6 +8303,14 @@ export type Database = {
         }
         Returns: Json
       }
+      kick_player_lobby: {
+        Args: {
+          p_creator_token_hash: string
+          p_lobby_id: string
+          p_rang: number
+        }
+        Returns: Json
+      }
       launch_event_question: {
         Args: {
           p_organization_id: string

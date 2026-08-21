@@ -8,22 +8,44 @@
 -- ── CE QUE ADR-109 §A4 A TRANCHÉ, ET QUI GOUVERNE CE FICHIER ──
 --
 -- Les lobbies joueurs sont GRATUITS, distincts des paliers événement facturés.
--- Trois gardes ont été retenues, et une quatrième explicitement écartée :
+-- La décision est CITÉE ici, pas résumée — une paraphrase dérive du texte
+-- qu'elle prétend appliquer, et c'est ce texte-là qui gouverne le fichier
+-- (docs/decisions.md, ADR-109 §A4) :
 --
---   1. Seau IP-seule — côté APPLICATION (observabilité, fail-open). Rien ici.
+--   « **Gardes retenues** : seau IP-seule (protection réelle contre l'abus),
+--     quota par organisation, TTL d'expiration des lobbies non verrouillés. Le
+--     plafond par cookie joueur est reconnu comme décoratif — il ne protège
+--     rien qu'un joueur motivé ne contourne en effaçant son cookie — et n'est
+--     donc pas compté comme une garde à part entière. »
+--
+-- Et son amendement, daté du jour de la revue :
+--
+--   « §A4 amendé (revue L16) : la garde IP est livrée observatoire — ADR-032
+--     interdit le refus sur clé partagée en parcours public — et le quota durci
+--     (salles habitées ou récentes) porte le refus effectif. »
+--
+-- CE QUE CE FICHIER EN FAIT, garde par garde :
+--
+--   1. Seau IP-seule — côté APPLICATION, et OBSERVATOIRE : il compte, il ne
+--      refuse pas (ADR-032, clé partagée en parcours public). Rien ici, et
+--      surtout aucune illusion de refus ailleurs dans le lot.
 --   2. QUOTA PAR ORGANISATION — **EN SQL**, et c'est `create_player_lobby` qui
---      le tient. Vingt lobbies actifs par organisation, comptés SOUS VERROU
---      CONSULTATIF : un plafond lu hors verrou n'est pas un plafond, c'est une
---      estimation que deux appels simultanés dépassent ensemble.
+--      le tient. Vingt salles HABITÉES OU RÉCENTES par organisation, comptées
+--      SOUS VERROU CONSULTATIF : un plafond lu hors verrou n'est pas un
+--      plafond, c'est une estimation que deux appels simultanés dépassent
+--      ensemble. La garde 1 étant observatoire, ce quota est le SEUL refus
+--      effectif du lot — d'où son durcissement à la revue L16 : compter les
+--      salles vides en faisait son propre levier de déni, vingt requêtes
+--      d'affilée suffisant à fermer un commerce à ses propres clients.
 --   3. TTL D'EXPIRATION des lobbies non verrouillés — trente minutes à la
 --      création, prolongées à quatre heures par le VERROUILLAGE, et un plafond
 --      dur de vingt-quatre heures écrit en `check` : aucune prolongation, aucun
 --      bogue de calcul, aucune horloge dérivante ne peut faire vivre un lobby
 --      plus d'un jour.
---   4. Le plafond par cookie joueur est DÉCORATIF (ADR-109 §A4 le dit en
---      toutes lettres : « il ne protège rien qu'un joueur motivé ne contourne
---      en effaçant son cookie »). Il n'est donc pas implémenté ici, et surtout
---      il n'est compté nulle part comme une garde.
+--   4. Le plafond par cookie joueur est DÉCORATIF — la citation ci-dessus le
+--      dit en toutes lettres, et ce fichier ne la redouble pas. Il n'est donc
+--      pas implémenté ici, et surtout il n'est compté nulle part comme une
+--      garde.
 --
 -- ── L'EXPIRATION EST CONSTATÉE À LA LECTURE, JAMAIS ÉCRITE (ADR-111) ──
 --
@@ -130,8 +152,10 @@ comment on table public.player_lobbies is
   'Salle d''attente d''une session joueur gratuite (L16, socle de L17 Duo '
   'Miroir et L18 Portrait de la Bande). Un lobby = un code court non rejouable, '
   'une capacité, une date de mort. Les gardes d''ADR-109 §A4 vivent ici : quota '
-  'par organisation dans create_player_lobby, TTL en colonne, plafond dur de 24 h '
-  'en check. L''expiration se CONSTATE à la lecture (ADR-111), aucun worker ne '
+  'par organisation dans create_player_lobby — vingt salles HABITÉES OU RÉCENTES, '
+  'durci à la revue L16 parce qu''il est le seul refus effectif du lot —, TTL en '
+  'colonne, plafond dur de 24 h en check. '
+  'L''expiration se CONSTATE à la lecture (ADR-111), aucun worker ne '
   'l''écrit. RLS active et AUCUNE policy : service_role seul, tout passe par les '
   'RPC de 20261017120000 (motif vitrine_translations).';
 comment on column public.player_lobbies.join_code is
@@ -161,8 +185,15 @@ revoke all on table public.player_lobbies from public, anon, authenticated;
 
 -- L'index du QUOTA, et il est aussi l'index de tête de `organization_id` que la
 -- FK vers `organizations` n'aurait pas eu (`player_lobbies_org_unique` porte
--- `id` en tête). Les trois colonnes sont exactement le prédicat de comptage de
--- `create_player_lobby`.
+-- `id` en tête). Les trois colonnes sont le filtre D'ACTIVITÉ de
+-- `create_player_lobby` — celui qui coupe le gros du volume.
+--
+-- LES DEUX AUTRES TERMES DU PRÉDICAT NE SONT PAS DANS L'INDEX, et c'est
+-- délibéré : « née depuis moins de dix minutes » (`created_at`) et « au moins
+-- deux membres » (un `exists` sur `player_lobby_members`) s'évaluent sur ce
+-- que l'index a déjà retenu — au plus quelques dizaines de lignes, puisque le
+-- quota lui-même les borne à vingt. Une quatrième colonne coûterait sa
+-- maintenance à chaque écriture pour trier un ensemble déjà trié par sa borne.
 create index player_lobbies_org_actifs_idx
   on public.player_lobbies (organization_id, status, expires_at);
 
@@ -284,8 +315,11 @@ create trigger player_lobbies_set_join_code
 --
 -- Motif `queue_entry_position` (20261005120000) : deux formules de rang
 -- montreraient deux rangs différents de la même personne sur deux écrans
--- ouverts en même temps. Celle-ci est appelée par `join_player_lobby` ET par
--- `lobby_state`, et par personne d'autre.
+-- ouverts en même temps. Celle-ci est appelée par `join_player_lobby`, par
+-- `lobby_state` et par `kick_player_lobby` — et par personne d'autre. Le
+-- troisième est celui qui rend la propriété visible : l'hôte retire le rang
+-- qu'il LIT dans `lobby_state`, donc les deux doivent être le même calcul, pas
+-- deux calculs qui s'accordent.
 --
 -- Accordée à AUCUN rôle applicatif, `service_role` compris : elle n'a de sens
 -- qu'à l'intérieur des RPC, qui l'exécutent avec les privilèges de leur
@@ -321,17 +355,27 @@ revoke all on function public.player_lobby_rang(uuid, timestamptz, uuid)
 --
 -- CONTRAT :
 --   {"state":"created","lobby_id":uuid,"join_code":text,"expires_at":timestamptz}
---   {"state":"quota"}        — 20 lobbies actifs déjà ouverts par ce commerce
---   {"state":"unavailable"}  — organisation inconnue OU sans le module vitrine
+--   {"state":"quota"}        — 20 salles HABITÉES OU RÉCENTES déjà ouvertes ici
+--   {"state":"unavailable"}  — organisation inconnue, OU sans le module vitrine,
+--                              OU dont la vitrine n'est pas publiée
 --
--- `unavailable` couvre les deux derniers cas d'un seul mot, et c'est délibéré :
+-- `unavailable` couvre les trois derniers cas d'un seul mot, et c'est délibéré :
 -- distinguer « ce commerce n'existe pas » de « ce commerce n'a pas payé »
 -- donnerait à un appelant public un oracle sur le carnet de commandes d'en
--- face.
+-- face. Les trois refus partagent d'ailleurs un seul `return`, plus bas : une
+-- indistinction qui tient par la STRUCTURE ne se perd pas au prochain ajout.
 --
 -- POURQUOI LE MODULE `vitrine` : les lobbies sont les jeux de la Vitrine, et
 -- ADR-109 §A1 a tranché un entitlement unique pour toute la Vitrine. Un
 -- deuxième droit ne serait pas plus sûr, seulement plus long à vérifier.
+--
+-- POURQUOI AUSSI `published` : une vitrine non publiée n'a pas d'adresse
+-- publique, donc ses jeux n'existent pour personne — ouvrir un lobby chez elle
+-- reviendrait à faire fuir par une RPC ce que la page refuse d'afficher. C'est
+-- la MÊME paire que `vitrine_public_state` (`published` ET le droit vivant), et
+-- elle est tenue ICI, par la base : l'application la garde en doublon côté
+-- appelant, tant mieux, mais un doublon applicatif n'est pas une garde — il
+-- disparaît au premier appelant qui l'oublie.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.create_player_lobby(
@@ -390,7 +434,18 @@ begin
     raise exception 'invalid capacity' using errcode = '22023';
   end if;
 
-  if not public.org_has_module_access(p_organization_id, 'vitrine') then
+  -- LE DROIT ET LA PUBLICATION DANS LE MÊME `if`, donc dans le MÊME `return` :
+  -- « organisation inconnue », « pas le module » et « vitrine non publiée »
+  -- rendent le même document parce qu'ils empruntent le même chemin, et non
+  -- parce que trois branches se sont mises d'accord. La paire est celle de
+  -- `vitrine_public_state` (20261011120000).
+  if not public.org_has_module_access(p_organization_id, 'vitrine')
+     or not exists (
+       select 1
+         from public.vitrine_settings s
+        where s.organization_id = p_organization_id
+          and s.published
+     ) then
     return pg_catalog.jsonb_build_object('state', 'unavailable');
   end if;
 
@@ -405,11 +460,44 @@ begin
   -- « Actif » = ni clos, ni mort. L'expiration se CONSTATE ici aussi (ADR-111) :
   -- un lobby dépassé cesse de peser sur le quota sans qu'aucun cron l'ait
   -- touché, donc une panne de purge ne bloque jamais un commerce.
+  --
+  -- ET « HABITÉ OU RÉCENT » (revue L16) — une salle réelle se remplit en
+  -- minutes ; vingt salles vides d'une rafale cessent de peser à la fenêtre
+  -- écoulée — le quota reste la seule garde de refus (ADR-109 §A4 amendé ce
+  -- jour, garde 1 observatoire) mais il n'est plus son propre levier de déni.
+  --
+  -- Les trois branches, et ce que chacune rattrape :
+  --   · `locked`   — une partie a commencé, elle occupe la place quoi qu'il
+  --                  arrive, et son hôte ne repassera plus par ici ;
+  --   · `created_at` récent — la salle qu'on vient d'ouvrir n'a pas encore eu
+  --                  le temps de se remplir ; la lui compter est le seul moyen
+  --                  qu'une rafale simultanée ne passe pas entre les gouttes ;
+  --   · deux membres — quelqu'un est entré, donc la salle est vivante, quel que
+  --                  soit son âge.
+  -- Ce qui tombe, c'est exactement le reste : la salle ouverte il y a plus de
+  -- dix minutes où personne n'est jamais venu.
   select pg_catalog.count(*)::integer into v_actifs
     from public.player_lobbies l
    where l.organization_id = p_organization_id
      and l.status in ('lobby', 'locked')
-     and l.expires_at > pg_catalog.now();
+     and l.expires_at > pg_catalog.now()
+     and (
+       l.status = 'locked'
+       or l.created_at > pg_catalog.now() - interval '10 minutes'
+       -- `exists … offset 1` : « au moins DEUX membres », et le seuil est dans
+       -- l'`exists` lui-même. Une jointure agrégée (`group by … having
+       -- count(*) >= 2`) lirait TOUS les membres de TOUTES les salles de
+       -- l'organisation pour une question à laquelle deux lignes répondent ;
+       -- ici le parcours s'arrête à la seconde. L'hôte étant membre de son
+       -- propre lobby dès sa création, « deux » veut bien dire « quelqu'un
+       -- d'autre est venu ».
+       or exists (
+         select 1
+           from public.player_lobby_members m
+          where m.lobby_id = l.id
+          offset 1
+       )
+     );
 
   if v_actifs >= 20 then
     return pg_catalog.jsonb_build_object('state', 'quota');
@@ -889,7 +977,172 @@ grant execute on function public.leave_player_lobby(uuid, text)
 
 
 -- ────────────────────────────────────────────────────────────
--- 10. `purge_expired_lobbies` — effacer la session privée éphémère
+-- 10. `kick_player_lobby` — l'hôte retire une place
+--
+-- CONTRAT :
+--   {"state":"ok","kicked":true}   — la place du rang demandé est libérée
+--   {"state":"ok","kicked":false}  — ce rang n'est occupé par personne
+--   {"state":"unavailable"}        — TOUT le reste
+--
+-- PAR RANG, ET NON PAR JETON. L'hôte voit `lobby_state`, qui lui rend des
+-- pseudos et des rangs — jamais un `token_hash`, et c'est la propriété STATE-7 /
+-- STATE-8 du lot. Lui demander un jeton pour retirer quelqu'un l'obligerait à
+-- posséder ce que la base refuse précisément de lui donner. Le rang est ce qu'il
+-- a sous les yeux, c'est donc ce que la RPC prend.
+--
+-- LE RANG SE RÉSOUT PAR `player_lobby_rang`, la formule UNIQUE (motif
+-- `queue_entry_position`). Un `order by joined_at, id offset p_rang - 1` aurait
+-- donné le même membre aujourd'hui et une SECONDE formule de rang à maintenir
+-- demain : le jour où l'une des deux change, l'hôte retire quelqu'un d'autre que
+-- celui qu'il a désigné à l'écran. Le coût quadratique est celui d'une boucle de
+-- douze, et il achète l'impossibilité de cette divergence.
+--
+-- L'HÔTE SEUL, ET LE REFUS EST INDISTINCT. Un non-créateur reçoit exactement ce
+-- que reçoit qui invente un identifiant de lobby : `unavailable`, sans un mot de
+-- plus. Sans cela, un membre ordinaire apprendrait par la différence entre
+-- « refusé » et « rang vide » qui est présent dans une salle où il n'a rien à
+-- lire.
+--
+-- L'HÔTE NE SE RETIRE PAS LUI-MÊME. Ce serait un `leave` déguisé, qui laisserait
+-- une salle sans hôte au lieu de la fermer — exactement l'état que
+-- `leave_player_lobby` existe pour éviter. Le refus est le mot unique, comme
+-- pour `lock_player_lobby` : l'interface, qui tient déjà la liste, n'affiche pas
+-- le bouton sur la ligne de l'hôte ; cette RPC est le filet, pas le message.
+--
+-- EN `locked`, RIEN. Une partie commencée ne se re-négocie pas : qui joue est
+-- fixé au verrouillage, et ce que devient une partie à qui il manque un joueur
+-- est une décision de L17 / L18. Ce lot ne la prend pas à leur place.
+--
+-- L'IDEMPOTENCE EST UN `kicked:false`, PAS UN REFUS. Un clic sur une ligne dont
+-- l'occupant venait de partir de lui-même, ou un rang au-delà de la liste,
+-- rendent `{"state":"ok","kicked":false}` : l'état voulu par l'hôte est atteint,
+-- il n'y a pas d'erreur à afficher. Distinguer ne coûte ici aucun oracle —
+-- l'appelant est déjà prouvé hôte quand il lit cette réponse.
+--
+-- ── LE RANG SE DÉCALE, ET L'ÉCRAN DOIT LE RELIRE ──
+--
+-- Conséquence directe d'un rang qui est un ORDRE et non un identifiant : retirer
+-- le rang 2 fait REMONTER l'ancien rang 3 à la place 2. Rejouer le même appel
+-- ne re-retire donc pas la même personne — il retire CELLE QUI A PRIS SA PLACE.
+-- Ce n'est pas un défaut d'idempotence, c'est ce que « retirer une place »
+-- signifie ; mais l'appelant doit relire `lobby_state` entre deux retraits
+-- plutôt que d'envoyer deux rangs lus sur la même liste. Écrit ici parce que
+-- c'est la base qui crée la propriété, et que le code appelant est le seul
+-- endroit où elle peut faire un dégât.
+--
+-- ── L'ARBITRAGE : C'EST UN RETRAIT DE PLACE, PAS UN BANNISSEMENT ──
+--
+-- La ligne du membre est SUPPRIMÉE, et rien d'autre n'est écrit. Deux
+-- conséquences, toutes deux voulues :
+--
+--   · la personne retirée ne REVIENT PAS TOUTE SEULE : son cookie de lobby ne
+--     la désigne plus comme membre, donc `lobby_state` lui rend `unavailable` et
+--     rouvrir son onglet ne la remet pas dans la salle ;
+--   · mais elle PEUT rejoindre à neuf, en refaisant le geste, tant que la salle
+--     est ouverte et qu'il reste une place.
+--
+-- C'est délibéré. Empêcher le retour demanderait de garder une trace des
+-- empreintes exclues — donc une table, donc une durée de vie et une purge pour
+-- elle, donc une décision sur ce qu'est un bannissement et sur qui le lève.
+-- C'est un autre lot, et il devra être décidé comme tel plutôt que tomber en
+-- effet de bord d'un bouton « retirer ». Ce que ce lot livre est l'outil du cas
+-- réel : récupérer une place prise par erreur, ou par quelqu'un qui s'est
+-- trompé de salle. Contre un importun déterminé, l'hôte a `lock_player_lobby` —
+-- porte fermée, et elle l'est pour tout le monde.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.kick_player_lobby(
+  p_lobby_id uuid,
+  p_creator_token_hash text,
+  p_rang integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_org uuid;
+  v_lobby public.player_lobbies%rowtype;
+  v_member public.player_lobby_members%rowtype;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+  if p_creator_token_hash is null
+     or p_creator_token_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'invalid player key' using errcode = '22023';
+  end if;
+  -- Un rang INOCCUPÉ est une réponse (`kicked:false`, plus bas) ; un rang NUL ou
+  -- absent est un bogue de l'appelant, et celui-là se dit fort — même partage
+  -- que `p_organization_id` dans `create_player_lobby`.
+  if p_rang is null or p_rang < 1 then
+    raise exception 'invalid rank' using errcode = '22023';
+  end if;
+  if p_lobby_id is null then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  -- Localisation, jamais décision — même motif que `join_player_lobby`.
+  select l.organization_id into v_org
+    from public.player_lobbies l
+   where l.id = p_lobby_id;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  -- LE MÊME VERROU QUE `join_player_lobby` ET `lock_player_lobby`, sur la MÊME
+  -- clé : sans lui, un joueur pourrait entrer entre la résolution du rang et la
+  -- suppression, et l'hôte retirerait quelqu'un d'autre que celui qu'il a
+  -- désigné — le rang est un ORDRE, il bouge quand la liste bouge.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'player_lobby:' || v_org::text || ':' || p_lobby_id::text, 0)
+  );
+
+  select l.* into v_lobby
+    from public.player_lobbies l
+   where l.id = p_lobby_id;
+  -- Les quatre refus d'un seul `return` : lobby disparu entre-temps, appelant
+  -- qui n'est pas l'hôte, salle qui n'est plus en attente (`locked`, `closed`,
+  -- `expired`), salle morte. Aucun ne se distingue des autres.
+  if not found
+     or v_lobby.creator_token_hash <> p_creator_token_hash
+     or v_lobby.status <> 'lobby'
+     or v_lobby.expires_at <= pg_catalog.now() then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  select m.* into v_member
+    from public.player_lobby_members m
+   where m.lobby_id = v_lobby.id
+     and public.player_lobby_rang(m.lobby_id, m.joined_at, m.id) = p_rang;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'ok', 'kicked', false);
+  end if;
+
+  -- L'HÔTE NE SE RETIRE PAS LUI-MÊME. Comparé sur le JETON et non sur « rang
+  -- 1 » : le rang de l'hôte est 1 par construction aujourd'hui, mais s'appuyer
+  -- dessus ferait dépendre une garde d'identité d'un ordre d'arrivée.
+  if v_member.token_hash = v_lobby.creator_token_hash then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  delete from public.player_lobby_members m
+   where m.id = v_member.id;
+
+  return pg_catalog.jsonb_build_object('state', 'ok', 'kicked', true);
+end;
+$$;
+
+revoke all on function public.kick_player_lobby(uuid, text, integer)
+  from public, anon, authenticated;
+grant execute on function public.kick_player_lobby(uuid, text, integer)
+  to service_role;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 11. `purge_expired_lobbies` — effacer la session privée éphémère
 --
 -- CONTRAT : `bigint`, le nombre de lobbies effacés. Les membres partent en
 -- CASCADE, donc la purge efface la salle ET les gens qui y étaient — c'est le
