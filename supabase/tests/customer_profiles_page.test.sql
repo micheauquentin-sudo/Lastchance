@@ -144,16 +144,21 @@ select is(
   'customer_segment_matches fige son search_path a la chaine vide'
 );
 
+-- La signature a gagné deux booléens en 20261015120000 (`a_reserve`,
+-- `est_venu`) : le `drop`/`create` de cette migration a emporté l'ACL d'origine,
+-- donc ces deux assertions gardent une fermeture RÉÉMISE, pas héritée.
 select is(
   has_function_privilege('anon',
-    'public.customer_segment_matches(text, bigint, timestamptz)', 'execute'),
+    'public.customer_segment_matches(text, bigint, timestamptz, boolean, boolean)',
+    'execute'),
   false,
   'anon ne peut pas executer customer_segment_matches'
 );
 
 select is(
   has_function_privilege('authenticated',
-    'public.customer_segment_matches(text, bigint, timestamptz)', 'execute'),
+    'public.customer_segment_matches(text, bigint, timestamptz, boolean, boolean)',
+    'execute'),
   false,
   'authenticated non plus : la fonction est INTERNE aux deux RPC security definer'
 );

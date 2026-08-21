@@ -1777,3 +1777,90 @@ select v.id::uuid, i.organization_id, 'item', i.id, 'en', v.champ,
   ) as v(id, champ, texte)
  where i.id = 'e2f20000-0000-4000-8000-000000000031'
 on conflict on constraint vitrine_translations_cible_unique do nothing;
+
+
+-- ══ VIT-4 — CONTENUS MIS EN AVANT, ET LES FAITS « RÉSERVER » ══════════
+--
+-- TOUT CE BLOC PORTE SUR « E2E Café » (e2e10000-…-01) ET SUR ELLE SEULE.
+-- `e2e-traduit` (e2f20000-…) n'est TOUCHÉE PAR RIEN ici : c'est la vitrine
+-- réservée aux assertions publiques, et sa couverture de traduction à 100 %
+-- est ce qui fait apparaître le sélecteur de langue. Une écriture de plus chez
+-- elle — même sur une table à part — n'aurait aucune raison d'exister.
+--
+-- ET AUCUNE ÉCRITURE, NULLE PART, SUR vitrine_settings / _menus / _categories /
+-- _items. Ces quatre tables portent le trigger `touch_updated_at` : les toucher
+-- ferait avancer leur `updated_at` et PÉRIMER les dix-neuf traductions semées
+-- plus haut, exactement l'accident que le commentaire de la ligne 1440 décrit
+-- avoir évité. Les contenus mis en avant vivent dans leur propre table, et c'est
+-- une des raisons pour lesquelles elle existe.
+
+-- ── Deux contenus mis en avant, rangs 1 et 2 ────────────────────────
+-- DEUX et non trois : la table en accepte trois, et un jeu de données qui
+-- occupe toutes les places ne permettrait pas de tester l'ajout d'un troisième
+-- depuis l'écran. Les adresses sont en `https` — le `check` de la table refuse
+-- tout le reste, `http:` compris.
+insert into public.vitrine_contenus (id, organization_id, rang, titre, url)
+values
+  ('e2f30000-0000-4000-8000-000000000001',
+   'e2e10000-0000-4000-8000-000000000001', 1,
+   'Le comptoir en vidéo', 'https://exemple.test/e2e/comptoir-video'),
+  ('e2f30000-0000-4000-8000-000000000002',
+   'e2e10000-0000-4000-8000-000000000001', 2,
+   'Notre torréfaction, expliquée', 'https://exemple.test/e2e/torrefaction')
+on conflict (id) do nothing;
+
+-- ── Deux réservations, pour que les segments réservé/venu disent quelque chose
+--
+-- SUR UN CRÉNEAU DÉDIÉ, PASSÉ ET FERMÉ, et c'est la précaution centrale de ce
+-- bloc. Les quatre créneaux existants sont chacun la fixture d'un parcours E2E
+-- précis — capacité pleine pour la liste d'attente, place libre pour la
+-- réservation, fenêtre de check-in ouverte pour la caisse — et y glisser deux
+-- réservations de plus aurait changé le remplissage que ces parcours lisent.
+-- Un créneau `closed` et déjà passé n'est proposé par AUCUNE page publique
+-- (`reservation_slot_state` refuse « créneau non ouvert » et « créneau passé »
+-- sous le même mot) : il ne peut donc être choisi par aucun spec, et il porte
+-- exactement ce qu'on veut ici — de l'HISTORIQUE.
+insert into public.reservation_slots
+  (id, activity_id, organization_id, starts_at, ends_at, capacity, status)
+values (
+  'e2f30000-0000-4000-8000-000000000011',
+  'e2ea0000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+  now() - interval '7 days', now() - interval '7 days' + interval '30 minutes',
+  4, 'closed'
+)
+on conflict (id) do nothing;
+
+-- GASTON EST DÉJÀ UN CLIENT DU SEED : sa participation (e2e90000-…-01) porte
+-- `gaston@e2e.local`, et c'est le SEUL e-mail de `participations` chez E2E Café.
+-- C'est ce qui fait de cette ligne une fixture utile : le profil qu'affiche
+-- l'écran Clients gagne `a_reserve` ET `est_venu`, sans qu'aucun e-mail nouveau
+-- n'entre dans la liste. Poser la réservation sur une adresse inédite n'aurait
+-- rien montré du tout — la RPC part des participations, pas des réservations.
+--
+-- `checked_in_at` est OBLIGATOIRE : `reservations_checkin_state` fait du statut
+-- et de la date une ÉQUIVALENCE. `consent_transactional_at` de même dès qu'un
+-- e-mail est posé. Le `code` est posé par le trigger `reservations_set_code`,
+-- jamais ici.
+--
+-- NIOUZ1 EST UN ABONNÉ NEWSLETTER (e2e80000-…-01) et n'a jamais joué : sa
+-- réservation `confirmed` fait donc bouger le COMPTEUR (`reserve_count`) sans
+-- toucher la liste, et elle est l'autre moitié de la démonstration —
+-- « a réservé » sans « est venu ».
+--
+-- CE QUE CE JEU DE DONNÉES NE PRODUIT PAS, ET IL FAUT LE DIRE : `venu_count`
+-- vaut 0 sur base semée, parce que le seul « venu » est Gaston et qu'il n'est
+-- pas abonné à la newsletter. C'est une conséquence exacte des deux populations
+-- (la liste compte des joueurs, le compteur des abonnés), pas un oubli.
+insert into public.reservations
+  (id, slot_id, organization_id, player_key_hash, email,
+   consent_transactional_at, status, checked_in_at)
+values
+  ('e2f30000-0000-4000-8000-000000000021',
+   'e2f30000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+   repeat('7a', 32), 'gaston@e2e.local', now() - interval '7 days',
+   'checked_in', now() - interval '7 days'),
+  ('e2f30000-0000-4000-8000-000000000022',
+   'e2f30000-0000-4000-8000-000000000011', 'e2e10000-0000-4000-8000-000000000001',
+   repeat('7b', 32), 'niouz1@e2e.local', now() - interval '7 days',
+   'confirmed', null)
+on conflict (id) do nothing;

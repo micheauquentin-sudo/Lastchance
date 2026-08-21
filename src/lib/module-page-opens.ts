@@ -15,9 +15,13 @@ import type { Database } from "@/lib/supabase/types";
  *  - `referral` n'a pas de QR commerçant (lien fabriqué côté joueur).
  *
  * Cette liste DOIT rester égale au `check` de `module_page_opens.module`
- * (posé par 20260911120000, ÉLARGI à `hunts` par 20260912120000) : une valeur
- * ici absente du CHECK ferait lever la RPC, une valeur du CHECK absente ici
- * serait un module jamais compté.
+ * (posé par 20260911120000, ÉLARGI à `hunts` par 20260912120000, puis à
+ * `vitrine` par 20261015120000) : une valeur ici absente du CHECK ferait lever
+ * la RPC, une valeur du CHECK absente ici serait un module jamais compté.
+ *
+ * `vitrine` compte par LIGNE DE RÉGLAGES (`vitrine_settings.id`), une par
+ * commerce : `/v/[slug]` est une page unique, contrairement à `events` et
+ * `hunts` qui impriment une affiche par sous-objet.
  */
 export const MODULE_PAGE_OPEN_KEYS = [
   "quiz",
@@ -27,6 +31,7 @@ export const MODULE_PAGE_OPEN_KEYS = [
   "loyalty",
   "events",
   "hunts",
+  "vitrine",
 ] as const;
 
 export type ModulePageOpenKey = (typeof MODULE_PAGE_OPEN_KEYS)[number];

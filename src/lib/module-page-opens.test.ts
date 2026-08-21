@@ -100,7 +100,11 @@ describe("vocabulaire des modules comptés", () => {
     }
   });
 
-  it("compte les sept modules qui exposent un QR commerçant", () => {
+  it("compte les huit modules qui exposent un QR commerçant", () => {
+    // `vitrine` est la huitième depuis VIT-4 (20261015120000). Son grain est la
+    // LIGNE DE RÉGLAGES — une par commerce — et non un sous-objet : `/v/[slug]`
+    // est une page unique, là où `events` et `hunts` impriment une affiche par
+    // session et par étape.
     expect([...MODULE_PAGE_OPEN_KEYS].sort()).toEqual([
       "calendar",
       "events",
@@ -109,6 +113,7 @@ describe("vocabulaire des modules comptés", () => {
       "loyalty",
       "pronostics",
       "quiz",
+      "vitrine",
     ]);
   });
 

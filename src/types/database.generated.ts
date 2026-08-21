@@ -6948,6 +6948,44 @@ export type Database = {
           },
         ]
       }
+      vitrine_contenus: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          rang: number
+          titre: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          rang: number
+          titre: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          rang?: number
+          titre?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_contenus_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vitrine_items: {
         Row: {
           allergenes: string[]
@@ -7857,7 +7895,13 @@ export type Database = {
       current_jackpot_code: { Args: { p_campaign_id: string }; Returns: string }
       current_loyalty_code: { Args: { p_program_id: string }; Returns: string }
       customer_segment_matches: {
-        Args: { p_last_win: string; p_segment: string; p_wins: number }
+        Args: {
+          p_a_reserve: boolean
+          p_est_venu: boolean
+          p_last_win: string
+          p_segment: string
+          p_wins: number
+        }
         Returns: boolean
       }
       debit_sms_balance_for_refund: {
@@ -8284,13 +8328,23 @@ export type Database = {
           p_tri?: string
         }
         Returns: {
+          a_reserve: boolean
           email: string
+          est_venu: boolean
           first_name: string
           first_win: string
           last_win: string
           redeemed: number
           total_count: number
           wins: number
+        }[]
+      }
+      org_customer_reserver_facts: {
+        Args: { p_organization_id: string }
+        Returns: {
+          a_reserve: boolean
+          email: string
+          est_venu: boolean
         }[]
       }
       org_dashboard_summary: {
@@ -8416,6 +8470,8 @@ export type Database = {
           inactive_count: number
           loyal_count: number
           new_count: number
+          reserve_count: number
+          venu_count: number
         }[]
       }
       org_segment_emails: {
