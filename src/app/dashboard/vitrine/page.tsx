@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -120,6 +121,31 @@ export default async function VitrineDashboardPage() {
                 </span>{" "}
                 ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
               </p>
+            </Card>
+
+            {/* LA PORTE DE L'ÉCRAN DE TRADUCTION (VIT-5), ET ELLE NE COMPTE
+                RIEN. Le résumé chiffré existe — `vitrine_translation_state` le
+                rend — mais l'afficher ici coûterait une RPC de plus sur CHAQUE
+                ouverture de la page Vitrine, payée par tous pour un chiffre que
+                seul celui qui va traduire regarde. La page de traduction le
+                charge elle-même, une fois, au moment où il sert.
+
+                L'arbitrage inverse aurait été défendable si le chiffre appelait
+                un geste urgent : ce n'est pas le cas — une couverture qui baisse
+                ne casse rien, elle referme le sélecteur de langue, et l'écran de
+                traduction le dit dès qu'on l'ouvre. */}
+            <Card>
+              <h2>Traductions (anglais)</h2>
+              <p className="mt-2 text-sm text-k-body">
+                Vos visiteurs étrangers peuvent lire votre carte en anglais.
+                Traduisez vos champs un par un, le français sous les yeux.
+              </p>
+              <Link
+                href="/dashboard/vitrine/traductions"
+                className="mt-3 inline-block text-sm font-bold text-k-orange-text underline underline-offset-2 hover:text-k-ink"
+              >
+                Traduire ma vitrine en anglais →
+              </Link>
             </Card>
 
             <ContenusEditeur
