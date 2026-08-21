@@ -248,6 +248,9 @@ grant execute on function public.delete_vitrine_translation(uuid, text, uuid, te
 --
 -- CE QUI EST AJOUTÉ, ET RIEN D'AUTRE :
 --   * `cibles[].libelle`   — le nom lisible de la cible ;
+--   * `cibles[].version`   — l'`updated_at` COURANT de la cible, celui que
+--     l'écran devra rendre à l'upsert (voir plus bas, c'est le point le moins
+--     évident de ce fichier) ;
 --   * `cibles[].champs[].texte_source`  — le FRANÇAIS courant, la référence ;
 --   * `cibles[].champs[].texte_traduit` — l'anglais stocké, `null` si absent.
 --
@@ -278,6 +281,40 @@ grant execute on function public.delete_vitrine_translation(uuid, text, uuid, te
 -- effacée pour autant — l'écran commerçant la montre "à revoir", et un
 -- rafraîchissement la revalide ». Une périmée est presque toujours à retoucher,
 -- pas à réécrire ; l'ouvrir vide aurait rendu la conservation inutile.
+--
+-- ── `version` : LA FRAÎCHEUR SE DÉCIDE À L'AFFICHAGE, PAS À L'ENVOI ──
+--
+-- `upsert_vitrine_translation` exige un `p_version_source` : la version du texte
+-- français que la traduction traduit. La question est QUI la fournit, et la
+-- réponse change le sens de tout le calque.
+--
+-- SANS cette clé, l'action serveur n'a qu'un seul choix — relire `updated_at` au
+-- moment de l'envoi. Elle enregistre alors la version d'ARRIVÉE, pas celle que
+-- le commerçant avait sous les yeux, et le trou qui s'ouvre est étroit mais
+-- parfaitement atteignable : il ouvre l'écran, part traduire une fiche, et
+-- pendant ce temps le français bouge — lui-même dans un autre onglet, son
+-- associé, un import de carte (`vitrine_import_carte`, L12, qui écrit dans les
+-- mêmes tables). Son anglais traduit l'ANCIEN texte et il est enregistré FRAIS.
+-- La péremption ne le rattrapera JAMAIS : `version_source >= version_courante`
+-- est vrai, donc la page publique sert cet anglais faux jusqu'à la prochaine
+-- correction du français — c'est-à-dire indéfiniment. Le pire cas d'un calque de
+-- traduction n'est pas le champ manquant, c'est le champ faux qui se croit bon.
+--
+-- AVEC la clé, la version voyage avec le formulaire : l'écran la reçoit ici, la
+-- renvoie telle quelle, l'upsert l'enregistre sans la recalculer. Une saisie
+-- faite sur un texte qui a bougé entre-temps atterrit DÉJÀ PÉRIMÉE — le champ
+-- ressort « à revoir » dès la relecture suivante de l'écran, et le français
+-- continue d'être servi en attendant. Honnête PAR CONSTRUCTION : aucun verrou,
+-- aucune relecture, aucune comparaison à écrire dans l'action serveur, et
+-- surtout aucune fenêtre à refermer — il n'y en a plus.
+--
+-- PAR CIBLE ET NON PAR CHAMP, parce que c'est la portée RÉELLE de la clé de
+-- version : `touch_updated_at` avance l'`updated_at` de la LIGNE, donc corriger
+-- une description périme aussi la traduction du nom. L11 l'a assumé et chiffré
+-- (« le coût de cette imprécision est une retraduction de trop ; le coût de
+-- l'inverse serait un anglais faux »). Rendre une version par champ aurait
+-- laissé croire à une granularité que la base n'a pas, et le premier appelant à
+-- s'y fier aurait écrit un fraîchissement sélectif qui ne marche pas.
 -- ────────────────────────────────────────────────────────────
 
 create or replace function public.vitrine_translation_state(
@@ -387,6 +424,14 @@ begin
            -- l'autre. Un `group by` scinderait alors la fiche en deux entrées,
            -- l'une sans titre ; `max()` ignore le nul et garde la fiche entière.
            pg_catalog.max(ch.libelle) as libelle,
+           -- LA VERSION DE LA CIBLE. `max()` et non `min()` alors que les deux
+           -- rendent ici la même chose — `version_courante` est l'`updated_at`
+           -- de la LIGNE, identique pour tous les champs d'une même cible. Le
+           -- choix se justifie le jour où ce ne serait plus vrai : rendre la
+           -- version la PLUS RÉCENTE fait atterrir une traduction douteuse en
+           -- « périmée », rendre la plus ancienne l'aurait fait atterrir
+           -- « fraîche ». Entre deux erreurs, on prend celle qui se voit.
+           pg_catalog.max(ch.version_courante) as version,
            pg_catalog.jsonb_agg(
              pg_catalog.jsonb_build_object(
                'champ', ch.champ,
@@ -406,6 +451,7 @@ begin
           'cible_type', p.cible_type,
           'cible_id', p.cible_id,
           'libelle', p.libelle,
+          'version', p.version,
           'champs', p.champs
         )
         -- ORDRE STABLE, inchangé depuis L11 : (cible_type, cible_id). Le tri par
@@ -445,6 +491,13 @@ comment on function public.vitrine_translation_state(uuid) is
   'titre — et chaque champ porte son `texte_source` FRANÇAIS COURANT (celui qui '
   'a péri la traduction, jamais celui d''alors) et son `texte_traduit` s''il en '
   'existe un, PÉRIMÉ COMPRIS : une périmée se retouche, elle ne se réécrit pas. '
+  'Chaque cible porte aussi sa `version` — l''`updated_at` COURANT — et c''est '
+  'elle que l''écran doit renvoyer à upsert_vitrine_translation, TELLE QUELLE : '
+  'une action serveur qui relirait `updated_at` à l''envoi enregistrerait FRAÎCHE '
+  'une traduction du texte d''AVANT si le français a bougé entre l''affichage et '
+  'l''envoi, et rien ne la périmerait jamais. Avec la version vue, une telle '
+  'saisie atterrit déjà périmée — honnête par construction, sans verrou. Par '
+  'CIBLE et non par champ : touch_updated_at avance l''updated_at de la LIGNE. '
   'Trois états et non deux — « il reste des plats à traduire » et « vos '
   'modifications d''hier ont périmé six fiches » sont deux écrans différents. '
   'Mesure TOUT le catalogue, cartes désactivées comprises : le compte diffère '

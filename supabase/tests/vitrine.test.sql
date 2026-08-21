@@ -2341,7 +2341,13 @@ select is(
 --      geste. Puis il est IDEMPOTENT — et les deux appels prouvent au passage
 --      que « EN » et « en » désignent la même ligne, sans quoi une traduction
 --      posée dans une casse serait ineffaçable dans l'autre.
---   5. LE RETRAIT NE FRANCHIT PAS LA FRONTIÈRE, et il refuse SANS RIEN
+--   5. LA VERSION RENDUE EST CELLE QUE L'ÉCRAN DEVRA RENVOYER, et le scénario
+--      complet est joué : état lu, français modifié entre-temps, traduction
+--      envoyée avec la version VUE — elle atterrit périmée d'emblée. C'est la
+--      preuve que la fraîcheur se décide à l'AFFICHAGE et non à l'envoi ; sans
+--      elle, la même saisie serait enregistrée fraîche et rien ne la périmerait
+--      jamais.
+--   6. LE RETRAIT NE FRANCHIT PAS LA FRONTIÈRE, et il refuse SANS RIEN
 --      APPRENDRE : le même code et le même message pour « cible d'autrui » et
 --      « cible inexistante ». Les distinguer aurait fait de cette RPC un oracle
 --      sur les identifiants des autres locataires — ce que l'upsert refuse
@@ -2463,8 +2469,8 @@ select results_eq(
       public.vitrine_translation_state('f1000000-0000-4000-8000-000000001500')
         #> '{cibles,0}')
      order by key$$,
-  array['champs', 'cible_id', 'cible_type', 'libelle'],
-  'une cible porte EXACTEMENT son type, son identifiant, son LIBELLÉ lisible et ses champs — sans le libellé, l''écran afficherait une liste d''UUID');
+  array['champs', 'cible_id', 'cible_type', 'libelle', 'version'],
+  'une cible porte EXACTEMENT son type, son identifiant, son LIBELLÉ lisible, sa VERSION et ses champs — sans le libellé l''écran afficherait une liste d''UUID, sans la version il enregistrerait des traductions faussement fraîches');
 
 select results_eq(
   $$select key from jsonb_each(
@@ -2814,6 +2820,109 @@ select is(
     where n.nspname = 'public' and p.proname = 'vitrine_translation_state'),
   1::bigint,
   '… et une seule `vitrine_translation_state` : la redéfinition de L15 garde la signature de L11, donc ses privilèges');
+
+
+-- ── 15g. LA VERSION VUE — la fraîcheur se décide à l'AFFICHAGE ──
+--
+-- `upsert_vitrine_translation` exige la version du texte français que la
+-- traduction traduit. SANS la clé `version`, l'action serveur n'aurait qu'un
+-- choix — relire `updated_at` au moment de l'envoi — et elle enregistrerait la
+-- version d'ARRIVÉE. Le trou est étroit et parfaitement atteignable : le
+-- commerçant ouvre l'écran, part traduire, et pendant ce temps le français bouge
+-- (autre onglet, associé, import de carte). Son anglais traduit l'ANCIEN texte
+-- et il est enregistré FRAIS — `version_source >= version_courante` est vrai,
+-- donc rien ne le périmera jamais et la page publique sert cet anglais faux
+-- indéfiniment. Le pire cas d'un calque n'est pas le champ manquant, c'est le
+-- champ faux qui se croit bon.
+--
+-- Les deux assertions qui suivent tiennent la clé ; les quatre d'après jouent le
+-- SCÉNARIO COMPLET, qui est la seule preuve qui vaille : lire, laisser le
+-- français bouger, envoyer la version vue, constater que la traduction est
+-- périmée D'EMBLÉE.
+
+select is(
+  (select (cb ->> 'version')::timestamptz
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'item'),
+  (select i.updated_at from public.vitrine_items i
+    where i.id = 'f1000000-0000-4000-8000-000000001504'),
+  'la version rendue est l''`updated_at` COURANT de la cible — et elle survit à l''aller-retour par JSON au microseconde près, sans quoi l''upsert la recevrait décalée et périmerait tout');
+
+-- UNE SEULE VERSION POUR LES DEUX CHAMPS DE LA FICHE, et c'est la portée réelle
+-- de la clé : `touch_updated_at` avance l'`updated_at` de la LIGNE. Une version
+-- par champ aurait laissé croire à une granularité que la base n'a pas.
+select is(
+  (select count(distinct cb ->> 'version')::bigint
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'item'),
+  1::bigint,
+  '… et la fiche n''en porte qu''UNE pour son nom et sa description : la clé de version porte sur la LIGNE, pas sur le champ');
+
+-- ── LE SCÉNARIO, EN QUATRE TEMPS ──
+-- 1. L'écran lit l'état et EMBARQUE la version de la rubrique dans son
+--    formulaire. `set_config` tient lieu de champ caché : la valeur est celle
+--    qui SORT de la RPC, pas un `updated_at` relu à côté — c'est tout l'objet
+--    de la preuve.
+select set_config('tap.l15_version_vue',
+  (select cb ->> 'version'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb
+    where cb ->> 'cible_type' = 'categorie'), true);
+
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'absent',
+  'la rubrique part d''un état ABSENT : ce qui suit ne peut donc pas être un reste de la section précédente');
+
+-- 2. LE FRANÇAIS BOUGE pendant que le commerçant traduit. Le trigger avance
+--    `updated_at` — c'est le geste qui rend la version vue OBSOLÈTE.
+update public.vitrine_categories
+   set nom = 'Desserts et douceurs'
+ where id = 'f1000000-0000-4000-8000-000000001503';
+
+-- 3. LE FORMULAIRE REVIENT, avec la version VUE et une traduction de l'ANCIEN
+--    nom. L'upsert l'accepte sans protester : ce n'est pas son rôle de refuser
+--    une version ancienne — L11 l'a écrit noir sur blanc (« c'est la lecture qui
+--    l'ignorera »).
+select is(public.upsert_vitrine_translation(
+  'f1000000-0000-4000-8000-000000001500', 'categorie',
+  'f1000000-0000-4000-8000-000000001503', 'en', 'nom', 'Desserts',
+  current_setting('tap.l15_version_vue')::timestamptz) ->> 'state', 'ok',
+  'la traduction de l''ANCIEN nom s''enregistre avec la version VUE — l''upsert n''a pas à juger, il enregistre ce que l''écran avait sous les yeux');
+
+-- 4. ET ELLE ATTERRIT DÉJÀ PÉRIMÉE. C'est toute la démonstration : sans la clé,
+--    l'action serveur aurait relu `updated_at` à cet instant et cette même
+--    traduction serait « fraîche » — un anglais qui traduit « Desserts » servi
+--    sous « Desserts et douceurs », que RIEN n'aurait jamais périmé.
+select is(
+  (select ch ->> 'etat'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'perime',
+  'la traduction saisie sur un texte modifié entre-temps atterrit DÉJÀ PÉRIMÉE — honnête par construction, sans verrou ni relecture dans l''action serveur');
+
+select is(
+  (select ch ->> 'texte_source'
+     from jsonb_array_elements(
+            public.vitrine_translation_state(
+              'f1000000-0000-4000-8000-000000001500') -> 'cibles') cb,
+          lateral jsonb_array_elements(cb -> 'champs') ch
+    where cb ->> 'cible_type' = 'categorie'),
+  'Desserts et douceurs',
+  '… et l''écran la ressort « à revoir » en face du français COURANT : le commerçant voit exactement ce qui a changé sous lui');
 
 
 
