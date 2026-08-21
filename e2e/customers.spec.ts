@@ -58,4 +58,64 @@ test.describe("dashboard — clients", () => {
 
     await expectNoA11yViolations(page, testInfo);
   });
+
+  /**
+   * LES DEUX SEGMENTS « RÉSERVER » (VIT-4) — et le seul profil qui les porte.
+   *
+   * Le seed pose deux réservations sur un créneau PASSÉ ET FERMÉ d'E2E Café :
+   * Gaston (`gaston@e2e.local`) est `checked_in`, niouz1 est `confirmed` sans
+   * check-in. Gaston est le SEUL e-mail de `participations` chez E2E Café,
+   * donc le seul à apparaître dans la liste — qui part des joueurs, pas des
+   * réservations. Il est à la fois « a réservé » et « est venu ».
+   *
+   * L'assertion porte sur son E-MAIL et non sur un prénom : `first_name` est
+   * nullable depuis ce lot, et un profil sans prénom rend « — ».
+   */
+  test("les segments « A réservé » et « Est venu » rendent le profil semé", async ({
+    page,
+  }) => {
+    const segment = page.getByLabel("Segment");
+    const filtrer = page.getByRole("button", { name: "Filtrer" });
+
+    for (const [valeur, pastille] of [
+      ["a_reserve", "A réservé"],
+      ["venu", "Est venu"],
+    ] as const) {
+      await page.goto("/dashboard/customers");
+      await segment.selectOption(valeur);
+      await filtrer.click();
+      await expect(page).toHaveURL(new RegExp(`segment=${valeur}`));
+
+      const ligne = page.locator("tbody tr", {
+        hasText: "gaston@e2e.local",
+      });
+      await expect(ligne).toHaveCount(1, { timeout: 20_000 });
+      // La pastille est rendue depuis les colonnes de la RPC, pas dérivée de
+      // `wins` : elle doit être là sur la ligne filtrée par ce même fait.
+      await expect(ligne.getByText(pastille)).toBeVisible();
+    }
+  });
+
+  /**
+   * L'EXPORT PORTE LES DEUX COLONNES DE PLUS, et la dernière ligne de
+   * troncature reste intacte : elle n'est pas une ligne de données et ne gagne
+   * donc aucune colonne. On lit l'EN-TÊTE, jamais un nombre de lignes — le seed
+   * évolue, l'en-tête est un contrat.
+   *
+   * `page.context().request` et non un `fetch` nu : la session du propriétaire
+   * vit dans les cookies du contexte, et la route refuse tout le reste par 401.
+   */
+  test("l'export CSV porte a_reserve et est_venu dans son en-tête", async ({
+    page,
+  }) => {
+    const reponse = await page
+      .context()
+      .request.get("/dashboard/customers/export");
+    expect(reponse.status()).toBe(200);
+
+    const premiere = (await reponse.text()).split("\n")[0] ?? "";
+    expect(premiere).toContain(
+      "email;prenom;gains;recuperes;premier_gain;dernier_gain;a_reserve;est_venu",
+    );
+  });
 });

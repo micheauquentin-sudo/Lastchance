@@ -21,6 +21,7 @@ import {
   type VitrineThemeResolu,
 } from "@/components/vitrine/theme";
 import { SkipLink } from "@/components/ui/skip-link";
+import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
  * LA VITRINE PUBLIQUE — ce que voit le client attablé qui scanne le QR.
@@ -183,6 +184,21 @@ export default async function VitrinePage({
       ))}
       <SkipLink />
 
+      {/* LE COMPTAGE EST CLIENT, ET C'EST LA CONSÉQUENCE DIRECTE DE `revalidate`.
+          Cette page est servie depuis le cache ISR : le rendu serveur n'a lieu
+          qu'une fois par minute au plus, donc compter là aurait rendu « 1
+          ouverture par minute quel que soit le trafic ». Le beacon part du
+          navigateur, à chaque chargement réel — rechargement, retour arrière et
+          lien partagé compris. Il n'introduit AUCUNE lecture de `headers()` ni
+          de `cookies()` côté serveur : l'invariant de cache posé en tête de ce
+          fichier tient.
+
+          L'identifiant public est le SLUG, jamais `vitrine_settings.id` : ce
+          qui part d'ici est recopié en clair dans le payload RSC, et le slug
+          est déjà dans l'adresse. C'est `/api/page-opens` qui le traduit en
+          `resource_id` pour le compteur que lit le dashboard. */}
+      <PageOpenBeacon module="vitrine" publicId={etat.slug} />
+
       <main id="contenu" tabIndex={-1} className="outline-none">
         <div className="mx-auto max-w-2xl px-4 pb-16 pt-8">
           <SelecteurLangue
@@ -253,15 +269,30 @@ export default async function VitrinePage({
                     lang={lang}
                   />
                 );
+              // ── LE BLOC « SOCIAL » EN PORTE DEUX (VIT-4) ──────────
+              //
+              // « À la une » et « Nous suivre » vivent sous le MÊME bloc
+              // ordonnable, et non sous deux : `ordre_blocs` est une
+              // permutation de `VITRINE_BLOCS`, une liste fermée, et y ajouter
+              // une valeur aurait périmé l'ordre enregistré par chaque
+              // commerçant depuis L10. Ce sont deux `<section>` distinctes —
+              // chacune se masque seule quand elle n'a rien à dire — mais une
+              // seule place dans l'ordre.
               case "social":
                 return (
-                  <BlocLiens
-                    key={bloc}
-                    liens={etat.liens}
-                    theme={theme}
-                    titre={t.liens}
-                    avisGoogle={t.avisGoogle}
-                  />
+                  <div key={bloc}>
+                    <BlocContenus
+                      contenus={etat.contenus}
+                      theme={theme}
+                      titre={t.contenus}
+                    />
+                    <BlocLiens
+                      liens={etat.liens}
+                      theme={theme}
+                      titre={t.liens}
+                      avisGoogle={t.avisGoogle}
+                    />
+                  </div>
                 );
               default:
                 return null;
@@ -392,6 +423,80 @@ function BlocTexte({ titre, texte }: { titre: string; texte: string }) {
       <p className="whitespace-pre-line leading-relaxed text-[var(--vitrine-sur-secondary)]/85">
         {texte}
       </p>
+    </section>
+  );
+}
+
+/**
+ * LES CONTENUS MIS EN AVANT (VIT-4) — un à trois liens choisis à la main.
+ *
+ * ── AUCUNE VIGNETTE, AUCUN OAUTH, ET C'EST LE CAHIER ──
+ *
+ * Ce bloc rend un TITRE et une ADRESSE, saisis par le commerçant. Pas
+ * d'aperçu de la vidéo, pas de miniature récupérée chez la plateforme, pas de
+ * jeton par commerce : une vignette distante ferait de la page la plus légère
+ * du dépôt — un téléphone, en salle, sur un réseau de comptoir — une page qui
+ * attend trois hôtes tiers, et un jeton OAuth par commerce serait une panne
+ * silencieuse le jour où il expire. Hors-lot acté, et il l'est ici en toutes
+ * lettres pour que ce ne soit pas relu comme un oubli.
+ *
+ * ── LA REVALIDATION EST FAITE, ET ON NE LA REFAIT PAS ──
+ *
+ * `url` est refusé par la base hors `^https://[^[:space:]]+$` (check de
+ * `vitrine_contenus`) ET revalidé à la lecture côté bibliothèque, motif
+ * `asLienSortant` : la liste qui arrive ici ne porte que des `https`. Le seul
+ * reste de prudence est `rel="noopener noreferrer"`, qui vaut pour la fenêtre
+ * ouverte et non pour le schéma.
+ *
+ * Rien si vide — comme les portes et les liens : la base rend `[]` et c'est
+ * l'écran qui décide de ne rien mettre en page.
+ */
+function BlocContenus({
+  contenus,
+  theme,
+  titre,
+}: {
+  contenus: readonly { titre: string; url: string; rang: number }[];
+  theme: VitrineThemeResolu;
+  titre: string;
+}) {
+  if (contenus.length === 0) return null;
+
+  return (
+    <section className="mb-10" aria-labelledby="vitrine-contenus">
+      <h2
+        id="vitrine-contenus"
+        className="mb-3 font-[family-name:var(--vitrine-titre)] text-lg font-bold uppercase tracking-[0.12em] text-[var(--vitrine-primary)]"
+      >
+        {titre}
+      </h2>
+      {/* UNE COLONNE, ET PAS UNE GRILLE. Trois cartes au plus, sur un écran
+          de téléphone tenu d'une main : une grille à deux colonnes les
+          réduirait à des vignettes de texte tronqué pour gagner une hauteur
+          qu'un pouce parcourt en un geste. */}
+      <ul className="flex flex-col gap-2">
+        {contenus.map((contenu) => (
+          <li key={contenu.rang}>
+            <a
+              href={contenu.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              // `min-h-11` : cible tactile d'au moins 44 px, comme les liens
+              // et le sélecteur de langue.
+              className="flex min-h-11 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]"
+              style={{ borderColor: theme.primary, color: theme.primary }}
+            >
+              <span className="min-w-0">{contenu.titre}</span>
+              {/* La flèche dit « on sort du site » et est PUREMENT décorative :
+                  le lien a déjà son texte, et la faire lire ferait entendre
+                  « lien externe » après chaque titre. */}
+              <span aria-hidden className="shrink-0">
+                ↗
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -79,6 +79,48 @@ test.describe("vitrine — la page publique, en français", () => {
     await expect(page.getByText("Indisponible aujourd'hui")).toBeVisible();
   });
 
+  /**
+   * LES CONTENUS MIS EN AVANT (VIT-4) — sur `e2e-comptoir`, et c'est correct.
+   *
+   * Ils vivent dans `vitrine_contenus`, une table À PART qui ne porte AUCUN
+   * champ traduisible : les ajouter ne change ni le total de champs
+   * traduisibles ni leur fraîcheur, donc rien ici ne peut déplacer le seuil de
+   * 95 % du sélecteur de langue. C'est exactement le critère de placement posé
+   * en tête de ce fichier.
+   *
+   * AUCUN COMPTE EXACT n'est asserté : le test du dashboard plus bas pose puis
+   * retire un troisième contenu sur cette même vitrine, et les projets
+   * Playwright tournent en parallèle. Les deux contenus du seed, eux, ne sont
+   * touchés par personne.
+   */
+  test("les contenus mis en avant du seed sont rendus, en https", async ({
+    page,
+  }) => {
+    await page.goto("/v/e2e-comptoir");
+    await expect(page.getByRole("heading", { name: "E2E Café" })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await expect(
+      page.getByRole("heading", { name: "À la une" }),
+    ).toBeVisible();
+
+    for (const [titre, url] of [
+      ["Le comptoir en vidéo", "https://exemple.test/e2e/comptoir-video"],
+      ["Notre torréfaction, expliquée", "https://exemple.test/e2e/torrefaction"],
+    ] as const) {
+      const lien = page.getByRole("link", { name: titre });
+      await expect(lien).toBeVisible();
+      // L'ADRESSE EST DITE EN ENTIER : le `check` de la table clôt le schéma à
+      // `https`, et une régression qui laisserait passer `http:` ou
+      // `javascript:` se verrait ici avant de se voir en salle.
+      await expect(lien).toHaveAttribute("href", url);
+      await expect(lien).toHaveAttribute("target", "_blank");
+      await expect(lien).toHaveAttribute("rel", /noopener/);
+      await expect(lien).toHaveAttribute("rel", /noreferrer/);
+    }
+  });
+
   test("une langue inconnue dans le chemin rend 404", async ({ page }) => {
     // PAS de repli silencieux sur le français : `/v/x/xx` servirait la même
     // page sous une adresse de plus, avec sa propre entrée de cache ISR.
@@ -413,6 +455,57 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(
       page.getByRole("link", { name: /\/v\/e2e-comptoir$/ }),
     ).toBeVisible();
+  });
+
+  /**
+   * « À LA UNE » — LA PLACE 3, ET ELLE SEULE.
+   *
+   * Le seed occupe volontairement DEUX places sur trois (`vitrine_contenus`,
+   * rangs 1 et 2) précisément pour laisser celle-ci libre : le test peut donc
+   * poser puis retirer sans jamais toucher aux deux contenus que le test public
+   * plus haut asserte. Il se referme sur lui-même — la place repart vide —, ce
+   * qui le rend rejouable et laisse la base dans l'état du seed.
+   *
+   * Le compteur d'ouvertures est vérifié dans la foulée : il est sur le même
+   * écran, il n'a aucune valeur stable (le beacon des tests publics
+   * l'incrémente en parallèle), et c'est donc sa PHRASE qui est assertée, pas
+   * son nombre.
+   */
+  test("à la une : poser un contenu à la place 3, puis le retirer", async ({
+    page,
+  }) => {
+    await page.goto("/dashboard/vitrine");
+    await expect(page.getByRole("heading", { name: "À la une (3 max)" })).toBeVisible(
+      { timeout: 30_000 },
+    );
+
+    // Le compteur d'audience, sur le même écran : « N ouvertures de la page
+    // publique », quel que soit N.
+    await expect(
+      page.getByText(/\d+ ouvertures? de la page publique/),
+    ).toBeVisible();
+
+    // Les étiquettes portent le numéro de place : aucun `nth()` à tenir
+    // d'accord avec l'ordre du rendu, et « Adresse » seul aurait aussi
+    // désigné le champ du slug plus haut sur la page.
+    const champTitre = page.getByLabel("Titre de la place 3");
+    const champUrl = page.getByLabel("Adresse de la place 3");
+
+    const titre = `Notre menu de saison ${Date.now()}`;
+    await champTitre.fill(titre);
+    await champUrl.fill("https://exemple.test/e2e/place-trois");
+    await page.getByRole("button", { name: "Mettre en avant" }).last().click();
+
+    // Le bouton de retrait N'EXISTE QUE SUR UNE PLACE OCCUPÉE : sa présence est
+    // la preuve que la ligne est en base, sans lire l'écran public (servi
+    // depuis le cache ISR, il ne l'aurait pas encore montrée).
+    const retirer = page.getByRole("button", { name: "Retirer la place 3" });
+    await expect(retirer).toBeVisible({ timeout: 20_000 });
+    await expect(champTitre).toHaveValue(titre);
+
+    await retirer.click();
+    await expect(retirer).toHaveCount(0, { timeout: 20_000 });
+    await expect(champTitre).toHaveValue("");
   });
 
   test("créer une carte, une rubrique et une fiche avec badges et allergènes", async ({

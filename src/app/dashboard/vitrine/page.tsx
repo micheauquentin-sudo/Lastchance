@@ -2,11 +2,15 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
+import { readModulePageOpenCount } from "@/lib/module-page-opens";
+import { createClient } from "@/lib/supabase/server";
 import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
+import type { ContenuVitrineView } from "@/lib/vitrine";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
+import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
 import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
@@ -43,6 +47,32 @@ export default async function VitrineDashboardPage() {
   const settings = ctx.ok ? ctx.settings : null;
   const cartes = ctx.ok ? ctx.cartes : [];
 
+  /**
+   * LES CONTENUS MIS EN AVANT ET LES OUVERTURES — deux lectures, un seul aller.
+   *
+   * Elles passent par le client de SESSION et non par l'admin : les deux
+   * tables sont sous RLS de membre (`vitrine_contenus: member select`,
+   * `module_page_opens: member select`), le cloisonnement est donc fait par la
+   * base et cette page n'a aucune organisation à nommer. C'est le motif des
+   * pages `dashboard/calendar/[id]` et `dashboard/jackpot/[id]`.
+   *
+   * `resource_id` est `vitrine_settings.id`, jamais le slug : le beacon public
+   * envoie le slug, `/api/page-opens` le traduit, et le compteur est indexé sur
+   * la LIGNE DE RÉGLAGES — une par commerce, contrairement aux événements et
+   * aux chasses qui comptent par sous-objet.
+   */
+  const supabase = await createClient();
+  const [contenus, ouvertures] = settings
+    ? await Promise.all([
+        supabase
+          .from("vitrine_contenus")
+          .select("rang, titre, url")
+          .order("rang")
+          .then(({ data }) => (data ?? []) as ContenuVitrineView[]),
+        readModulePageOpenCount(supabase, "vitrine", settings.id),
+      ])
+    : [[] as ContenuVitrineView[], 0];
+
   return (
     <div>
       <PageHeader
@@ -71,6 +101,28 @@ export default async function VitrineDashboardPage() {
             seront servies revient à préparer une vitrine sans magasin. */}
         {settings ? (
           <>
+            {/* CE QUE LA VITRINE A RAPPORTÉ, EN UN NOMBRE. Le seul retour
+                mesurable d'un QR posé sur une table, et il vaut d'être dit tôt :
+                un commerçant qui a imprimé ses planches veut savoir si on les
+                scanne avant de relire ses cartes. Le mot est « ouvertures » et
+                non « scans » — un rechargement, un retour arrière et un lien
+                partagé comptent tous, et prétendre compter des scans distincts
+                serait faux (voir `page-open-beacon`). */}
+            <Card>
+              <h2>Audience</h2>
+              <p className="mt-2 text-sm text-k-body">
+                <span className="font-black tabular-nums text-k-ink">
+                  {ouvertures}
+                </span>{" "}
+                ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
+              </p>
+            </Card>
+
+            <ContenusEditeur
+              contenus={contenus}
+              peutEditer={capacites.canEditDraft}
+            />
+
             {/* L'IMPORT EST AVANT L'ÉDITEUR, et c'est l'ordre du geste réel :
                 un commerçant qui arrive avec sa carte dans un document ne veut
                 pas saisir trente fiches à la main pour découvrir ensuite
