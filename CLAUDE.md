@@ -14,9 +14,10 @@ choix de ses agents et de son organisation de travail.
 
 *Cette ligne ne porte plus l'historique des livraisons.* Elle l'a porté pendant une semaine, sous forme d'une trentaine de corrections « ↳ » empilées, dont plusieurs se contredisaient — et un audit y a confirmé trois modules encore décrits comme « NON POUSSÉ / NON DÉPLOYÉ » alors qu'ils tournaient en production. Un document qui raconte l'histoire de son propre retard finit par mentir sur le présent. **Pour l'état de livraison : [`docs/roadmap.md`](./docs/roadmap.md). Pour ce qui est cassé : [`docs/bugs.md`](./docs/bugs.md). Pour le pourquoi des choix : [`docs/decisions.md`](./docs/decisions.md).**
 
-**Branch** : `main`, sur **les deux dépôts**, arbres propres. Aucune branche de
-chantier ; il ne subsiste sur le distant que `claude/merchant-mvp-build-w8j7et`
-(direction artistique jamais appliquée, gardée en archive).
+**Branch** : `main`, sur **les deux dépôts**, arbres propres. Le distant garde
+des branches de chantier fusionnées en squash (reliquats) ; deux ne le sont pas
+— `claude/merchant-mvp-build-w8j7et` (archive) et `chantier/cache-etat-event`
+(WIP jamais proposé, `docs/bugs.md`).
 Le dépôt de référence est `~/workspaces/lastchance` (WSL) — voir la section
 « Environnement d'exécution » ci-dessous.
 

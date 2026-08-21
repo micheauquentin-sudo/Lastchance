@@ -4542,6 +4542,40 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     propriétaire : poser le secret `CRON_SECRET` dans le dépôt GitHub avec la
     valeur déjà en service côté Vercel.
 
+- **Dix branches `chantier/*` encore sur `origin`**, alors que `CLAUDE.md`
+  affirmait « aucune branche de chantier » — constaté 2026-08-22 (audit des
+  branches distantes), et cette ligne de `CLAUDE.md` a été corrigée dans le même
+  lot. Neuf sont inoffensives et n'appellent aucune action :
+  ce sont des reliquats de fusions en **squash** (PR #128, #129, #130, #131,
+  #132, #133, #150, #156, #158, toutes fusionnées) — un squash crée un
+  nouveau commit sur `main`, si bien que la pointe de la branche d'origine
+  n'en est jamais un ancêtre. Point de méthode à retenir, parce qu'il induit
+  en erreur : `git merge-base --is-ancestor` répond « non fusionnée » pour
+  toute branche squashée, quel que soit son état réel — le test qui tranche
+  est l'état de la PR, pas l'ascendance des commits.
+  La dixième, `chantier/cache-etat-event`, est une vraie trouvaille : aucune
+  PR, d'aucun état, jamais proposée. Trois commits du 2026-08-08 (« WIP cache
+  etat partage (pour application WSL) », « Interrupteur
+  EVENT_ETAT_CACHE=off pour comparer les deux chemins dos à dos », « Types
+  Supabase regeneres ») portent une migration
+  `20260919120000_event_etat_partage.sql` (285 lignes) et un nouveau
+  `src/lib/event-etat-cache.ts` (115 lignes), plus un bump d'
+  `EXPECTED_MIGRATION` et les types régénérés — absents de `main` : ni la
+  migration ni le fichier n'y existent. Ce n'est pas du travail fini perdu :
+  un WIP de performance explicitement étiqueté comme tel, abandonné depuis
+  deux semaines. Le concept qu'il visait à accélérer, lui, est bien en
+  production — `event_etat_partage` est référencé par `src/lib/event-etat.ts`,
+  `src/lib/event-context.ts`, `src/actions/events.ts` et la migration
+  `20260929120000_soiree_live.sql` — c'est donc le cache qui n'a jamais
+  atterri, pas le partage d'état lui-même. Une reprise ne serait pas un
+  simple `git merge` : sa migration porte le numéro `20260919120000`, très en
+  arrière de la tête actuelle (`20261019120000`, 153 migrations), et son bump
+  d'`EXPECTED_MIGRATION` est périmé — il faudrait renuméroter et revalider
+  entièrement. Question ouverte pour le propriétaire : reprendre le travail,
+  ou supprimer la branche. À noter aussi, sans les traiter : trois PR
+  Dependabot ouvertes attendent un arbitrage (#140 `actions/cache` 4→6, #148
+  sur `site/`, #155 à la racine).
+
 ---
 
 ## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
