@@ -224,12 +224,26 @@ export function BandeExperience({
     });
   };
 
-  /** L'HÔTE CLÔT LA QUESTION. Idempotent côté base : le double-clic ne punit pas. */
+  /**
+   * L'HÔTE CLÔT LA QUESTION. Idempotent côté base : le double-clic ne punit pas.
+   *
+   * `trop_tot` EST UNE RÉPONSE, PAS UNE PANNE (revue L18, E-1) : sous trois
+   * réponses, révéler reviendrait à lire le vote d'une personne qu'on vient de
+   * voir taper. L'hôte doit lire ce qui manque — le taire lui ferait croire à
+   * un bouton cassé, et recommencer.
+   */
   const reveler = () => {
     demarrerGeste(async () => {
       setRefus(null);
       try {
-        await revealBande(lobbyId);
+        const verdict = await revealBande(lobbyId);
+        if (verdict.state === "trop_tot") {
+          const manque = verdict.requis - verdict.exprimes;
+          setRefus(
+            `Encore ${manque} réponse${manque > 1 ? "s" : ""} avant de pouvoir révéler : ` +
+              "en dessous, on devinerait qui a voté quoi.",
+          );
+        }
       } catch {
         // Le sondage rattrape : rien à dire de plus qu'un écran inchangé.
       }
@@ -366,7 +380,11 @@ function EcranTour({
         />
       ) : monVote ? (
         <EcranAttente
-          votesExprimes={tour.votesExprimes}
+          // `?? 0` PLUTÔT QU'UN TEST : ce compte n'est nul que pour qui n'a pas
+          // voté (revue L18, E-1), et cette branche exige `monVote`. Le repli
+          // n'est donc atteignable que sur un document incohérent, où « 0 sur
+          // N » est la seule phrase qui n'affirme rien de faux.
+          votesExprimes={tour.votesExprimes ?? 0}
           denominateur={tour.denominateur}
         />
       ) : (

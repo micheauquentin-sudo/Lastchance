@@ -138,8 +138,16 @@ export interface BandeTourView {
   status: BandeTourStatut;
   /** FIGÉ à l'ouverture du tour. Il ne baisse pas quand quelqu'un part. */
   denominateur: number;
-  /** Un COMPTE de gestes — jamais qui, jamais pour qui. Les passes y sont. */
-  votesExprimes: number;
+  /**
+   * Un COMPTE de gestes — jamais qui, jamais pour qui. Les passes y sont.
+   *
+   * `null` TANT QU'ON N'A PAS SOI-MÊME VOTÉ, et c'est une défense, pas un
+   * oubli : l'hôte votait, regardait ce compte passer de un à deux, révélait,
+   * et le résultat ne portait alors que le vote du voisin qu'il venait de voir
+   * taper (revue L18, E-1). Le plancher de participation ferme la révélation ;
+   * ceci ferme l'observation. Qui n'a rien scellé n'a rien à compter.
+   */
+  votesExprimes: number | null;
 }
 
 /**
@@ -204,9 +212,17 @@ export type BandeVoteResult =
   | { state: "scelle" }
   | { state: "unavailable" };
 
-/** `bande_reveal` — l'hôte clôt la question. IDEMPOTENTE côté base. */
+/**
+ * `bande_reveal` — l'hôte clôt la question. IDEMPOTENTE côté base.
+ *
+ * `trop_tot` N'EST PAS UNE PANNE, c'est une règle du jeu : sous trois réponses
+ * (ou sous le dénominateur s'il est plus petit), révéler reviendrait à lire le
+ * vote d'une personne qu'on vient de voir taper. L'écran doit dire combien il
+ * en manque — d'où les deux compteurs, qui voyagent par contrat.
+ */
 export type BandeRevealResult =
   | { state: "ok"; revelee: true }
+  | { state: "trop_tot"; requis: number; exprimes: number }
   | { state: "unavailable" };
 
 /** `bande_next` — question suivante, ou récapitulatif. */
@@ -435,7 +451,22 @@ export function mapBandeVote(raw: unknown): BandeVoteResult {
  */
 export function mapBandeReveal(raw: unknown): BandeRevealResult {
   const root = asRecord(raw);
-  if (!root || asString(root.state) !== "ok") return INDISPONIBLE;
+  if (!root) return INDISPONIBLE;
+  const etat = asString(root.state);
+
+  // TROP TÔT N'EST PAS UNE PANNE. Le rabattre sur `unavailable` ferait dire à
+  // l'écran « ce salon n'est pas disponible » là où la seule chose vraie est
+  // « il manque des réponses » — et l'hôte chercherait une panne au lieu
+  // d'attendre sa tablée. Les deux compteurs sont exigés : sans eux, l'écran ne
+  // pourrait pas dire combien il en manque, et le message redeviendrait vague.
+  if (etat === "trop_tot") {
+    const requis = asInt(root.requis);
+    const exprimes = asInt(root.exprimes);
+    if (requis === null || exprimes === null) return INDISPONIBLE;
+    return { state: "trop_tot", requis, exprimes };
+  }
+
+  if (etat !== "ok") return INDISPONIBLE;
   if (root.revelee !== true) return INDISPONIBLE;
   return { state: "ok", revelee: true };
 }
@@ -509,13 +540,16 @@ export function mapBandeState(raw: unknown): BandeStateView {
   const questionCle = asString(tourBrut.question_cle);
   const tourStatut = asTourStatut(tourBrut.status);
   const denominateur = asInt(tourBrut.denominateur);
+  // `votes_exprimes` EST NUL POUR QUI N'A PAS VOTÉ, par contrat (revue L18,
+  // E-1) : ce n'est donc plus un champ manquant, c'est une réponse. L'exiger
+  // ferait tomber en « indisponible » l'écran de TOUT joueur qui n'a pas encore
+  // scellé — c'est-à-dire au moment précis où il doit voir sa question.
   const votesExprimes = asInt(tourBrut.votes_exprimes);
   if (
     tourPosition === null ||
     !questionCle ||
     !tourStatut ||
-    denominateur === null ||
-    votesExprimes === null
+    denominateur === null
   ) {
     return INDISPONIBLE;
   }
