@@ -5,20 +5,49 @@ import { expect, test } from "@playwright/test";
  * comptoir, aucun ETA — de la page publique `/reserver/file/[queueId]`
  * jusqu'à la console caissier du dashboard, et retour.
  *
- * Seed (`supabase/seed.sql`) : file « Comptoir E2E »
- * (e2ea0000-0000-4000-8000-000000000061), sans activité, DEUX entrées
- * `waiting` pré-semées (Camille, Dominique) — PARTAGÉE entre les projets
- * Playwright parallèles (`mobile-chrome`/`mobile-safari`), qui jouent ce
- * fichier EN MÊME TEMPS sur la même base. Toute assertion sur le rang porte
- * donc sur sa PRÉSENCE ou sa DÉCROISSANCE, jamais sur une valeur exacte —
- * même règle que la liste prioritaire dans `reserver.spec.ts`.
+ * Seed (`supabase/seed.sql`) : DEUX files jumelles, une par projet
+ * Playwright qui joue ce fichier — « Comptoir E2E »
+ * (e2ea0000-0000-4000-8000-000000000061, Camille/Dominique) pour
+ * `mobile-chrome`, « File E2E WebKit »
+ * (e2ea0000-0000-4000-8000-000000000062, Solveig/Nolwenn) pour tout autre
+ * projet (`mobile-safari`). Ce n'était PAS le cas avant : les deux projets
+ * partageaient une seule file, et `queue_call_next` sert le PREMIER de la
+ * file — un singleton par file que deux exécutants concurrents se
+ * disputaient. Constaté en CI (run 32527676441) : au retry, le bouton
+ * « Appeler le suivant » n'était même plus affiché côté `mobile-safari`, la
+ * file ayant déjà été vidée par l'autre projet. Aucun durcissement du test
+ * (délais, `expect.poll`) ne peut réparer une fixture disputée — seule une
+ * file par projet retire la course. **Si un projet Playwright supplémentaire
+ * doit un jour jouer ce fichier, il lui faut SA PROPRE file dans le seed** ;
+ * ne pas le faire retomber sur l'une des deux ci-dessus.
+ *
+ * Toute assertion sur le rang porte sur sa PRÉSENCE ou sa DÉCROISSANCE,
+ * jamais sur une valeur exacte — même règle que la liste prioritaire dans
+ * `reserver.spec.ts` (au cas où un projet retombait un jour sur une file déjà
+ * partagée).
  *
  * Aucun `waitForTimeout` : les deux écrans vivent sur un scrutin
  * (`useFilePoll`, cadence 2,5 à 10 s côté joueur, 5 s côté comptoir) — on
  * attend l'ÉTAT qu'un tic doit produire, avec des timeouts généreux, jamais
  * une pause fixe.
  */
-const QUEUE_ID = "e2ea0000-0000-4000-8000-000000000061";
+const QUEUE_FIXTURES = {
+  "mobile-chrome": {
+    id: "e2ea0000-0000-4000-8000-000000000061",
+    name: "Comptoir E2E",
+  },
+  default: {
+    id: "e2ea0000-0000-4000-8000-000000000062",
+    name: "File E2E WebKit",
+  },
+} as const;
+
+function fixtureDeFile(nomProjet: string) {
+  return (
+    QUEUE_FIXTURES[nomProjet as keyof typeof QUEUE_FIXTURES] ??
+    QUEUE_FIXTURES.default
+  );
+}
 
 test.describe("réserver — file d'accueil (RES-3)", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
@@ -26,7 +55,10 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
   test("rejoindre la file, être appelé, être servi : le compteur du jour s'incrémente", async ({
     page,
     browser,
-  }) => {
+  }, testInfo) => {
+    const { id: QUEUE_ID, name: NOM_FILE } = fixtureDeFile(
+      testInfo.project.name,
+    );
     // Deux acteurs distincts, chacun sur SA page : le staff (dashboard,
     // storageState owner) sur `page`, le joueur (public, sans session) sur
     // `playerPage`. Un seul et même `page` naviguant entre les deux écrans
@@ -47,7 +79,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // ── 1. Le joueur pousse la porte : rejoint la file, sans prénom.
       await playerPage.goto(`/reserver/file/${QUEUE_ID}`);
       await expect(
-        playerPage.getByRole("heading", { name: "Comptoir E2E" }),
+        playerPage.getByRole("heading", { name: NOM_FILE, exact: true }),
       ).toBeVisible({ timeout: 30_000 });
 
       await playerPage.getByRole("button", { name: "Prendre mon tour" }).click();
@@ -80,7 +112,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
         page.getByRole("heading", { name: "Réservations" }),
       ).toBeVisible({ timeout: 30_000 });
 
-      const ongletFile = page.getByRole("button", { name: /Comptoir E2E/ });
+      const ongletFile = page.getByRole("button", {
+        name: new RegExp(`^${NOM_FILE}\\b`),
+      });
       await ongletFile.click();
 
       const boutonAppeler = page.getByRole("button", {
@@ -110,7 +144,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
                 .waitFor({ timeout: 5_000 })
                 .catch(() => {});
             }
-            return estJoueurAppele(playerPage);
+            return estJoueurAppele(playerPage, QUEUE_ID);
           },
           {
             timeout: 120_000,
@@ -135,7 +169,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // another navigation to …/dashboard/reservations » — vers la MÊME URL).
       // On le rejoue une fois plutôt que d'espérer.
       await gotoApresNavigation(page, "/dashboard/reservations");
-      await page.getByRole("button", { name: /Comptoir E2E/ }).click();
+      await page
+        .getByRole("button", { name: new RegExp(`^${NOM_FILE}\\b`) })
+        .click();
       await expect(
         page.getByText("Au comptoir", { exact: true }),
       ).toBeVisible({ timeout: 30_000 });
@@ -168,14 +204,17 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
   test("un second joueur voit son rang décroître quand le premier est servi, et peut quitter la file", async ({
     page,
     browser,
-  }) => {
+  }, testInfo) => {
+    const { id: QUEUE_ID, name: NOM_FILE } = fixtureDeFile(
+      testInfo.project.name,
+    );
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
     try {
       // ── 1. Navigateur A rejoint la file.
       await page.goto(`/reserver/file/${QUEUE_ID}`);
       await expect(
-        page.getByRole("heading", { name: "Comptoir E2E" }),
+        page.getByRole("heading", { name: NOM_FILE, exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", { name: "Prendre mon tour" }).click();
       await expect(page.getByText("Vous êtes", { exact: true })).toBeVisible({
@@ -186,7 +225,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // postérieur à celui de A (ordre d'inscription).
       await pageB.goto(`/reserver/file/${QUEUE_ID}`);
       await expect(
-        pageB.getByRole("heading", { name: "Comptoir E2E" }),
+        pageB.getByRole("heading", { name: NOM_FILE, exact: true }),
       ).toBeVisible({ timeout: 30_000 });
       await pageB.getByRole("button", { name: "Prendre mon tour" }).click();
       await expect(pageB.getByText("Vous êtes", { exact: true })).toBeVisible(
@@ -214,12 +253,15 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
 
   test("aucune estimation temporelle n'apparaît sur le parcours file (joueur et comptoir)", async ({
     page,
-  }) => {
+  }, testInfo) => {
+    const { id: QUEUE_ID, name: NOM_FILE } = fixtureDeFile(
+      testInfo.project.name,
+    );
     const motifEstimation = /[~≈]|environ|estimation/i;
 
     await page.goto(`/reserver/file/${QUEUE_ID}`);
     await expect(
-      page.getByRole("heading", { name: "Comptoir E2E" }),
+      page.getByRole("heading", { name: NOM_FILE, exact: true }),
     ).toBeVisible({ timeout: 30_000 });
     expect(await page.locator("body").innerText()).not.toMatch(
       motifEstimation,
@@ -229,7 +271,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
     await expect(
       page.getByRole("heading", { name: "Réservations" }),
     ).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: /Comptoir E2E/ }).click();
+    await page
+      .getByRole("button", { name: new RegExp(`^${NOM_FILE}\\b`) })
+      .click();
     // LE GESTE PRINCIPAL DE LA CONSOLE, sous ses TROIS libellés — c'est le même
     // bouton, et son nom accessible dépend de l'état de la file : « Appeler le
     // suivant », « Appeler le suivant aussi » quand quelqu'un est déjà au
@@ -283,8 +327,11 @@ async function lireRang(page: import("@playwright/test").Page) {
  * prédicat d'un scrutin. Trop long, chaque tour négatif coûterait cher et la
  * boucle appellerait trop peu ; trop court, on retombe dans le faux négatif.
  */
-async function estJoueurAppele(page: import("@playwright/test").Page) {
-  await page.goto(`/reserver/file/${QUEUE_ID}`);
+async function estJoueurAppele(
+  page: import("@playwright/test").Page,
+  queueId: string,
+) {
+  await page.goto(`/reserver/file/${queueId}`);
   return page
     .getByText("Présentez-vous au comptoir.", { exact: true })
     .waitFor({ state: "visible", timeout: 4_000 })
