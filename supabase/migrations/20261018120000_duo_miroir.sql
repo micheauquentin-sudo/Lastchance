@@ -570,6 +570,51 @@ revoke all on function public.duo_options_json(uuid)
 
 
 -- ────────────────────────────────────────────────────────────
+-- 5 bis. `duo_jouable` — « LE JEU PEUT-IL SE JOUER ICI »
+--
+-- UNE SEULE DÉFINITION, DEUX APPELANTS. `duo_start` s'en sert pour refuser
+-- d'ouvrir une manche injouable (`non_configure`) ; `vitrine_public_state`
+-- s'en sert pour décider si la PORTE du jeu s'affiche sur la vitrine publique
+-- (§12). Deux seuils écrits séparément auraient fini par diverger, et la
+-- divergence aurait la pire forme possible : une porte visible menant à un jeu
+-- qui refuse de démarrer, ou un jeu jouable que personne ne peut trouver.
+-- Motif `player_lobby_rang` (L16), pour exactement la même raison.
+--
+-- `exists … offset 1` ET NON `count(*) >= 2` : le parcours s'arrête à la
+-- seconde ligne au lieu de lire les six. Motif `create_player_lobby`
+-- (20261017120000), à la lettre.
+--
+-- LE SEUIL EST DEUX, ET C'EST L'ARITHMÉTIQUE DU JEU, pas le cahier : avec une
+-- seule fiche, l'accord serait certain et le choix nul. Le cahier demande trois
+-- à six et `set_duo_options` tient cette borne-là à l'ÉCRITURE ; ici on CONSTATE
+-- ce qui reste jouable après une cascade de suppression de fiche.
+--
+-- Accordée à AUCUN rôle applicatif, `service_role` compris : elle n'a de sens
+-- qu'à l'intérieur des fonctions qui l'appellent.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.duo_jouable(
+  p_organization_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1
+      from public.duo_options o
+     where o.organization_id = p_organization_id
+     offset 1
+  );
+$$;
+
+revoke all on function public.duo_jouable(uuid)
+  from public, anon, authenticated, service_role;
+
+
+-- ────────────────────────────────────────────────────────────
 -- 6. `duo_start` — OUVRIR LE PLATEAU
 --
 -- CONTRAT :
@@ -621,7 +666,6 @@ declare
   v_org uuid;
   v_lobby public.player_lobbies%rowtype;
   v_round public.duo_rounds%rowtype;
-  v_options integer;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
     raise exception 'not authorized' using errcode = '42501';
@@ -688,15 +732,12 @@ begin
     end if;
 
     -- LE PLATEAU AVANT LA MANCHE : on ne crée pas une partie qui ne peut pas se
-    -- jouer. Deux options est le minimum ARITHMÉTIQUE du jeu (avec une seule,
-    -- l'accord serait certain et le choix nul) ; le cahier en demande trois à
-    -- six, et `set_duo_options` tient cette borne-là à l'écriture. Ici on
-    -- CONSTATE, parce qu'une cascade de suppression de fiche peut avoir vidé la
-    -- sélection depuis.
-    select pg_catalog.count(*)::integer into v_options
-      from public.duo_options o
-     where o.organization_id = v_lobby.organization_id;
-    if v_options < 2 then
+    -- jouer. Le seuil n'est PAS écrit ici — il est dans `duo_jouable` (§5 bis),
+    -- qui est aussi ce que lit `vitrine_public_state` pour décider d'afficher la
+    -- porte du jeu. Une seconde écriture du même seuil aurait fini par diverger
+    -- de la première, et la divergence se serait vue de la pire façon : une
+    -- porte publique menant à un `non_configure`.
+    if not public.duo_jouable(v_lobby.organization_id) then
       return pg_catalog.jsonb_build_object('state', 'non_configure');
     end if;
 
@@ -1514,3 +1555,315 @@ revoke all on function public.duo_options_state(uuid)
   from public, anon, authenticated;
 grant execute on function public.duo_options_state(uuid)
   to service_role;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 12. `vitrine_public_state` — LA PORTE MANQUANTE
+--
+-- ── SANS PORTE, LE JEU EXISTE ET PERSONNE NE LE TROUVE ──
+--
+-- Tout ce qui précède fabrique un jeu jouable, et rien de tout cela n'était
+-- ANNONCÉ nulle part : `portes.experiences` ne portait que `quiz`, et aucune
+-- page publique ne menait à un salon. Un module qu'on ne peut pas atteindre
+-- depuis la vitrine du commerce n'a pas été livré à moitié — il n'a pas été
+-- livré. C'est le sens de cette section, et c'est la seule raison pour laquelle
+-- une migration Duo Miroir touche à une fonction Vitrine.
+--
+-- ── UN BOOLÉEN, ET RIEN D'AUTRE ──
+--
+-- `duo: true|false`, jamais un objet ni une liste. La différence avec `quiz`
+-- n'est pas un caprice de forme : un quiz est une COLLECTION — le commerce en
+-- publie plusieurs, chacun avec son adresse propre, donc l'écran a besoin de
+-- leurs slugs et de leurs titres pour peindre N liens. Duo Miroir est UN jeu par
+-- commerce, à UNE adresse déductible du slug de la vitrine
+-- (`/lobby/nouveau/{slug}`). L'écran n'a besoin de rien de plus que « oui » ou
+-- « non », et publier davantage — le nombre de fiches épinglées, leurs noms —
+-- serait publier ce que le commerçant a rangé dans sa configuration, pas dans sa
+-- vitrine.
+--
+-- ── LE SEUIL N'EST PAS ÉCRIT ICI ──
+--
+-- `duo_jouable` (§5 bis) est la MÊME fonction que celle dont `duo_start` tire
+-- son `non_configure`. C'est ce qui garantit la propriété qui compte pour le
+-- visiteur : la porte est visible si et seulement si le jeu démarre. Recopier
+-- « au moins deux options » ici aurait créé deux vérités qui se ressemblent
+-- aujourd'hui et divergeront un jour — en laissant soit une porte ouverte sur
+-- un refus, soit un jeu que personne ne trouve.
+--
+-- ── AUCUN DROIT SUPPLÉMENTAIRE N'EST DEMANDÉ ──
+--
+-- Contrairement à `quiz`, qui redemande `org_has_module_access(…, 'quiz')`
+-- parce qu'il n'est pas couvert par `vitrine`. Les salons joueurs, eux, SONT la
+-- Vitrine : ADR-109 §A1 a tranché un entitlement unique, et
+-- `create_player_lobby` (L16) n'exige rien d'autre que `vitrine` + `published`
+-- — les deux étant déjà acquis à ce point de la fonction. Redemander un droit
+-- ici aurait annoncé une porte selon une règle, et l'aurait ouverte selon une
+-- autre.
+--
+-- ── MÊME SIGNATURE, DONC PAS DE `drop` ──
+--
+-- `src/lib/vitrine-context.ts` appelle à deux arguments depuis L11, et
+-- `vitrine.test.sql` compte qu'il n'existe qu'UN exemplaire de cette fonction.
+-- Le corps est celui de 20261015120000, à l'identique, plus la clé `duo` : une
+-- réécriture partielle par `alter` n'existe pas pour une fonction, donc la
+-- recopie intégrale est le seul geste possible — et c'est pourquoi cette
+-- migration doit rester la DERNIÈRE à toucher `vitrine_public_state`.
+-- ────────────────────────────────────────────────────────────
+
+create or replace function public.vitrine_public_state(
+  p_slug text,
+  p_lang text default null
+)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_settings   public.vitrine_settings%rowtype;
+  v_org        public.organizations%rowtype;
+  v_lang       text;
+  v_accroche   text;
+  v_histoire   text;
+  v_horaires   text;
+  v_total      integer;
+  v_frais      integer;
+  v_lang_traduite constant text := 'en';
+  c_max_portes constant integer := 12;
+  c_max_contenus constant integer := 3;
+  v_activites  jsonb;
+  v_files      jsonb;
+  v_offres     jsonb;
+  v_quiz       jsonb;
+  v_contenus   jsonb;
+  -- LA PORTE DU JEU (L17). Un booléen : voir l'en-tête de section.
+  v_duo        boolean;
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'not authorized' using errcode = '42501';
+  end if;
+
+  -- FORME D'ABORD, et le refus est déjà `unavailable` : une adresse mal formée
+  -- ne peut désigner aucune vitrine, et lever ici aurait donné à l'appelant un
+  -- moyen de distinguer « impossible » de « inconnu ».
+  if p_slug is null or p_slug !~ '^[a-z0-9-]{3,60}$' then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  v_lang := pg_catalog.lower(pg_catalog.btrim(coalesce(p_lang, 'fr')));
+  if v_lang <> v_lang_traduite then
+    v_lang := 'fr';
+  end if;
+
+  select * into v_settings
+    from public.vitrine_settings s
+   where s.slug = p_slug;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  if not v_settings.published then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  if not public.org_has_module_access(v_settings.organization_id, 'vitrine') then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  select * into v_org
+    from public.organizations o
+   where o.id = v_settings.organization_id;
+  if not found then
+    return pg_catalog.jsonb_build_object('state', 'unavailable');
+  end if;
+
+  select
+    pg_catalog.max(t.texte) filter (where t.champ = 'accroche'),
+    pg_catalog.max(t.texte) filter (where t.champ = 'histoire'),
+    pg_catalog.max(t.texte) filter (where t.champ = 'horaires_texte')
+  into v_accroche, v_histoire, v_horaires
+    from public.vitrine_translations t
+   where t.organization_id = v_settings.organization_id
+     and t.cible_type = 'settings'
+     and t.cible_id = v_settings.id
+     and t.lang = v_lang
+     and t.version_source >= v_settings.updated_at;
+
+  -- NI LES PORTES, NI LES CONTENUS, NI LA PORTE DUO n'entrent dans la
+  -- couverture : aucun ne passe par `vitrine_champs_traduisibles`, donc ni le
+  -- numérateur ni le dénominateur ne bougent. Un booléen n'a d'ailleurs rien à
+  -- traduire — mais il fallait que l'ajout de L17 laisse ce calcul EXACTEMENT
+  -- où il était, sans quoi les vitrines traduites seraient retombées sous le
+  -- seuil du sélecteur de langue (19/19 et 5/5 du seed restent invariants).
+  select pg_catalog.count(*)::integer,
+         pg_catalog.count(t.id)::integer
+    into v_total, v_frais
+    from public.vitrine_champs_traduisibles(v_settings.organization_id, true) c
+    left join public.vitrine_translations t
+      on t.organization_id = v_settings.organization_id
+     and t.cible_type = c.cible_type
+     and t.cible_id = c.cible_id
+     and t.champ = c.champ
+     and t.lang = v_lang_traduite
+     and t.version_source >= c.version_courante;
+
+  -- ── LES PORTES (VIT-3) ─────────────────────────────────────
+  select coalesce(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object('id', x.id::text, 'nom', x.nom)
+             order by x.nom, x.id),
+           '[]'::jsonb)
+    into v_activites
+    from (select a.id, a.name as nom
+            from public.reservation_activities a
+           where a.organization_id = v_settings.organization_id
+             and a.active
+           order by a.name, a.id
+           limit c_max_portes) x;
+
+  select coalesce(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object('id', x.id::text, 'nom', x.nom)
+             order by x.nom, x.id),
+           '[]'::jsonb)
+    into v_files
+    from (select q.id, q.name as nom
+            from public.reservation_queues q
+           where q.organization_id = v_settings.organization_id
+             and q.status = 'open'
+           order by q.name, q.id
+           limit c_max_portes) x;
+
+  select coalesce(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object(
+               'id', x.id::text,
+               'nom', x.nom,
+               'window_starts_at', x.window_starts_at,
+               'window_ends_at', x.window_ends_at)
+             order by x.nom, x.id),
+           '[]'::jsonb)
+    into v_offres
+    from (select o.id, o.title as nom, o.window_starts_at, o.window_ends_at
+            from public.reservation_stock_offers o
+           where o.organization_id = v_settings.organization_id
+             and o.status = 'open'
+             and o.window_starts_at <= pg_catalog.now()
+             and o.window_ends_at > pg_catalog.now()
+           order by o.title, o.id
+           limit c_max_portes) x;
+
+  -- LE SEUL DROIT REDEMANDÉ ICI. `quiz` n'est pas couvert par `vitrine` : sans
+  -- ce test, une vitrine servie aurait annoncé un quiz que sa propre page
+  -- publique refuse d'ouvrir. Duo Miroir, lui, EST la Vitrine (ADR-109 §A1) et
+  -- ne redemande rien — voir l'en-tête de section.
+  if public.org_has_module_access(v_settings.organization_id, 'quiz') then
+    select coalesce(
+             pg_catalog.jsonb_agg(
+               pg_catalog.jsonb_build_object('slug', x.slug, 'titre', x.titre)
+               order by x.titre, x.id),
+             '[]'::jsonb)
+      into v_quiz
+      from (select q.id, q.public_slug as slug, q.name as titre
+              from public.quizzes q
+             where q.organization_id = v_settings.organization_id
+               and q.status = 'active'
+             order by q.name, q.id
+             limit c_max_portes) x;
+  else
+    v_quiz := '[]'::jsonb;
+  end if;
+
+  -- LA PORTE DU JEU (L17). Le seuil vit dans `duo_jouable`, partagé avec
+  -- `duo_start` : la porte est visible si et seulement si le jeu démarre.
+  v_duo := public.duo_jouable(v_settings.organization_id);
+
+  -- ── LES CONTENUS MIS EN AVANT (VIT-4) ──────────────────────
+  select coalesce(
+           pg_catalog.jsonb_agg(
+             pg_catalog.jsonb_build_object(
+               'titre', x.titre, 'url', x.url, 'rang', x.rang)
+             order by x.rang),
+           '[]'::jsonb)
+    into v_contenus
+    from (select c.titre, c.url, c.rang
+            from public.vitrine_contenus c
+           where c.organization_id = v_settings.organization_id
+           order by c.rang
+           limit c_max_contenus) x;
+
+  return pg_catalog.jsonb_build_object(
+    'state', 'ok',
+    'slug', v_settings.slug,
+    'lang', v_lang,
+    'lang_coverage', pg_catalog.jsonb_build_object(
+      'lang', v_lang_traduite,
+      'total_champs_traduisibles', v_total,
+      'traduits_frais', v_frais
+    ),
+    'identite', pg_catalog.jsonb_build_object(
+      'nom', v_org.name,
+      'logo_url', v_org.logo_url,
+      'accroche', coalesce(v_accroche, v_settings.accroche),
+      'histoire', coalesce(v_histoire, v_settings.histoire),
+      'horaires_texte', coalesce(v_horaires, v_settings.horaires_texte),
+      'cover_path', v_settings.cover_path,
+      'theme', v_settings.theme
+    ),
+    'liens', pg_catalog.jsonb_build_object(
+      'google_review_url', v_org.google_review_url,
+      'instagram_url', v_org.instagram_url,
+      'tiktok_url', v_org.tiktok_url
+    ),
+    'contenus', v_contenus,
+    'cartes', public.vitrine_cartes_json(
+      v_settings.organization_id, true, v_lang),
+    -- LES PORTES DES MODULES (VIT-3, plus la porte Duo de L17). Les quatre
+    -- listes et le drapeau existent TOUJOURS, même vides et même à faux : c'est
+    -- l'écran qui masque un bloc sans contenu, pas la base. `duo` à `false` est
+    -- une réponse, pas une absence — et une clé qui apparaît et disparaît se
+    -- teste à chaque lecture, là où une forme stable se type une fois.
+    'portes', pg_catalog.jsonb_build_object(
+      'reserver', pg_catalog.jsonb_build_object(
+        'activites', v_activites,
+        'files', v_files,
+        'offres', v_offres
+      ),
+      'experiences', pg_catalog.jsonb_build_object(
+        'quiz', v_quiz,
+        'duo', v_duo
+      )
+    )
+  );
+end;
+$$;
+
+comment on function public.vitrine_public_state(text, text) is
+  'État PUBLIC d''une vitrine, par son slug et dans une langue (VIT-1a, langue '
+  'ajoutée en VIT-1b, PORTES en VIT-3, CONTENUS MIS EN AVANT en VIT-4, PORTE DUO '
+  'MIROIR en L17). Exige `published` ET org_has_module_access(…, ''vitrine''), '
+  'relu à CHAQUE consultation. Rend `unavailable` INDISTINCTEMENT pour un slug '
+  'mal formé, inconnu, non publié ou sans droit — ce point d''entrée non '
+  'authentifié n''est pas un oracle. `p_lang` null, ''fr'' ou INCONNUE → '
+  'français : le repli est silencieux. En anglais, les traductions FRAÎCHES se '
+  'superposent champ à champ et les périmées sont ignorées. Rend `lang` — la '
+  'langue RÉELLEMENT servie — et `lang_coverage` DANS LES DEUX LANGUES ; le '
+  'SEUIL reste dans l''application. `portes` rend l''annuaire des pages publiques '
+  'du commerce : {reserver: {activites, files, offres}, experiences: {quiz, '
+  'duo}} — QUATRE listes toujours présentes (douze par liste, identifiants en '
+  'TEXTE) et UN drapeau toujours présent. `duo` est un BOOLÉEN et non une '
+  'liste : Duo Miroir est UN jeu par commerce, à une adresse déductible du slug '
+  '(/lobby/nouveau/{slug}), là où les quiz sont une collection dont l''écran a '
+  'besoin des slugs. Il vaut vrai si et seulement si duo_jouable() — la MÊME '
+  'fonction dont duo_start tire son non_configure, pour que la porte soit '
+  'visible si et seulement si le jeu démarre. Il ne redemande AUCUN droit, '
+  'contrairement à quiz : les salons SONT la Vitrine (ADR-109 §A1). NI LES '
+  'PORTES, NI LES CONTENUS, NI LA PORTE DUO NE SONT TRADUISIBLES : ils '
+  'n''entrent ni au numérateur ni au dénominateur de `lang_coverage`, sans quoi '
+  'toute vitrine traduite retomberait sous le seuil du sélecteur de langue. '
+  'N''expose aucune donnée de client, aucun identifiant d''organisation.';
+
+revoke all on function public.vitrine_public_state(text, text)
+  from public, anon, authenticated;
+grant execute on function public.vitrine_public_state(text, text) to service_role;

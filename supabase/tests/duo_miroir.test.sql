@@ -420,6 +420,59 @@ values ('d0000000-0000-4000-8000-00000000000c',
         'd0000006-0000-4000-8000-000000000001', 1);
 
 
+-- ── LA PORTE SUR LA VITRINE PUBLIQUE ─────────────────────────
+--
+-- Sans porte, le jeu existe et personne ne le trouve. `duo` vaut vrai si et
+-- seulement si `duo_jouable` — LA MÊME fonction dont `duo_start` tire son
+-- `non_configure` — et c'est cette identité qui garantit la seule propriété qui
+-- compte pour le visiteur : la porte est visible si et seulement si le jeu
+-- démarre. Les trois cas du seuil sont éprouvés (0, 1, puis 2 fiches), parce
+-- qu'un seuil ne se prouve pas d'un seul côté.
+
+select is(
+  public.vitrine_public_state('tap-vitrine-duo-a') #> '{portes,experiences,duo}',
+  'true'::jsonb,
+  'PORTE-1 A épingle trois fiches : sa vitrine annonce le jeu');
+select is(
+  public.vitrine_public_state('tap-vitrine-duo-b') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'PORTE-2 B n''a AUCUNE fiche épinglée : sa vitrine ne l''annonce pas');
+select is(
+  public.vitrine_public_state('tap-vitrine-duo-c') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'PORTE-3 C n''en a QU''UNE : le seuil est deux, et une seule ne suffit pas');
+
+-- LA CLÉ EXISTE TOUJOURS, MÊME À FAUX. Motif des listes de VIT-3 : une clé
+-- absente aurait obligé l'écran à porter deux chemins pour un seul état, et une
+-- clé qu'on oublie de tester est une clé qu'on affiche. On l'éprouve sur B —
+-- celle qui n'a rien, c'est-à-dire là où une implémentation paresseuse aurait
+-- omis la clé.
+select results_eq(
+  $$select key from pg_catalog.jsonb_each(
+      public.vitrine_public_state('tap-vitrine-duo-b')
+        #> '{portes,experiences}') order by key$$,
+  array['duo', 'quiz'],
+  'PORTE-4 le bloc Expériences porte DEUX clés, et cette liste est close');
+
+-- LA PORTE N'EST PAS TRADUISIBLE, ET LA PREUVE SE FAIT SUR UNE SEULE VITRINE,
+-- DE PART ET D'AUTRE DE SA TRANSITION.
+--
+-- Comparer A (avec porte) à B (sans) n'aurait RIEN prouvé : les deux n'ont pas
+-- le même catalogue, donc pas le même dénominateur — onze champs contre trois —
+-- et l'écart mesuré aurait été celui de leurs CARTES, pas celui de la porte.
+-- C'est l'erreur qu'une première version de ce fichier a commise, et elle est
+-- écrite ici pour qu'on ne la refasse pas : une invariance se montre en faisant
+-- varier UNE chose sur UN sujet.
+--
+-- On mémorise donc la couverture de C MAINTENANT, porte fermée. START-15
+-- l'ouvrira en épinglant une seconde fiche, et PORTE-7 relira le même document
+-- sur la même vitrine. C'est la garde qui protège le sélecteur de langue : la
+-- même arithmétique appliquée à l'envers ferait tomber toute vitrine traduite
+-- sous le seuil (leçon VIT-3, rejouée pour L17).
+insert into dm values ('couv_c_porte_fermee',
+  public.vitrine_public_state('tap-vitrine-duo-c') -> 'lang_coverage');
+
+
 -- ════════════════════════════════════════════════════════════
 -- 2. LES SALLES — on passe par les VRAIES RPC de L16
 --
@@ -582,6 +635,27 @@ select is(
     (select (j->>'lobby_id')::uuid from dm where nom = 'pc'), repeat('f1', 32)))->>'state',
   'ok',
   'START-15 une seconde fiche débloque la manche : c''est bien le COMPTE qui refusait');
+
+-- ET LA PORTE S'OUVRE AU MÊME INSTANT — c'est l'assertion qui prouve que
+-- `duo_start` et `vitrine_public_state` lisent bien LE MÊME seuil. PORTE-3 a vu
+-- C fermée à une fiche ; la seconde fiche qui débloque la manche débloque aussi
+-- sa vitrine, sans qu'aucun autre geste ait été posé. Deux seuils écrits
+-- séparément auraient laissé cette paire diverger en silence.
+select is(
+  public.vitrine_public_state('tap-vitrine-duo-c') #> '{portes,experiences,duo}',
+  'true'::jsonb,
+  'PORTE-6 … et la porte de C s''ouvre au MÊME instant : un seul seuil, deux lecteurs');
+
+-- L'INVARIANCE, RELUE SUR LA MÊME VITRINE. Entre la capture et cette ligne, C a
+-- gagné sa porte Duo et RIEN d'autre. Le document de couverture doit être
+-- identique au caractère près — pas seulement le dénominateur : le jour où la
+-- porte entrerait dans `vitrine_champs_traduisibles`, le numérateur bougerait
+-- aussi, et c'est le sélecteur de langue de toutes les vitrines traduites qui
+-- tomberait.
+select is(
+  public.vitrine_public_state('tap-vitrine-duo-c') -> 'lang_coverage',
+  (select j from dm where nom = 'couv_c_porte_fermee'),
+  'PORTE-7 gagner sa porte ne change RIEN à la couverture de traduction de C');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -1145,18 +1219,22 @@ select ok(not has_function_privilege('service_role', 'public.duo_options_json(uu
   'ACL-29 duo_options_json n''est rendue à PERSONNE, service_role compris');
 select ok(not has_function_privilege('authenticated', 'public.duo_options_json(uuid)', 'EXECUTE'),
   'ACL-30 … ni à authenticated');
+select ok(not has_function_privilege('service_role', 'public.duo_jouable(uuid)', 'EXECUTE'),
+  'ACL-30a duo_jouable non plus : c''est un seuil partagé, pas un point d''entrée');
 
--- LES SEPT FONCTIONS PORTENT `search_path = ''`. La garde globale
+-- LES HUIT FONCTIONS PORTENT `search_path = ''`. La garde globale
 -- (search_path_invariant.test.sql) le vérifie sur tout le schéma ; on le vérifie
 -- ICI aussi, parce qu'une garde globale nomme la faute sans dire de quel lot
--- elle vient.
+-- elle vient. `vitrine_public_state` n'y figure pas : elle est RECRÉÉE par ce
+-- lot mais elle appartient à Vitrine, et c'est vitrine.test.sql qui en répond.
 select is(
   (select coalesce(pg_catalog.string_agg(p.proname, ',' order by p.proname), '')
      from pg_catalog.pg_proc p
      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in ('duo_start', 'duo_choose', 'duo_state', 'set_duo_options',
-                        'set_duo_suggestion', 'duo_options_state', 'duo_options_json')
+                        'set_duo_suggestion', 'duo_options_state', 'duo_options_json',
+                        'duo_jouable')
       -- LE PRÉDICAT EST CELUI DE `search_path_invariant.test.sql`, à la lettre :
       -- « aucun search_path du tout » OU « search_path = public ». Comparer à un
       -- littéral `search_path=` supposerait de deviner comment Postgres CITE la
@@ -1167,7 +1245,7 @@ select is(
                            where c like 'search_path=%')
            or 'search_path=public' = any(p.proconfig))),
   '',
-  'ACL-31 les sept fonctions du lot portent un search_path, et ce n''est pas `public`');
+  'ACL-31 les huit fonctions du lot portent un search_path, et ce n''est pas `public`');
 
 -- ── LA RÈGLE CATALOGUE : CHECK ⇒ EXECUTE ─────────────────────
 -- Une contrainte `check` s'évalue sous le rôle qui ÉCRIT la table. Toute

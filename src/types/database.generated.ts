@@ -8251,6 +8251,7 @@ export type Database = {
         Args: { p_item_id: string; p_lobby_id: string; p_token_hash: string }
         Returns: Json
       }
+      duo_jouable: { Args: { p_organization_id: string }; Returns: boolean }
       duo_options_json: { Args: { p_organization_id: string }; Returns: Json }
       duo_options_state: { Args: { p_organization_id: string }; Returns: Json }
       duo_start: {
