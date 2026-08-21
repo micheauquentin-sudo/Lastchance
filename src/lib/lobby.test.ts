@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   mapCreateLobby,
   mapJoinLobby,
+  mapKickLobby,
   mapLeaveLobby,
   mapLobbyMembres,
   mapLobbyState,
@@ -252,5 +253,42 @@ describe("mapLeaveLobby", () => {
     // « indisponible » n'existe pas dans ce contrat, et le fabriquer laisserait
     // un joueur bloqué dans une salle qu'il vient de quitter.
     expect(mapLeaveLobby(brut)).toEqual({ state: "left" });
+  });
+});
+
+describe("mapKickLobby", () => {
+  it("lit un retrait effectif", () => {
+    expect(mapKickLobby({ state: "ok", kicked: true })).toEqual({
+      state: "ok",
+      kicked: true,
+    });
+  });
+
+  it("garde `kicked:false` distinct — la place était DÉJÀ libre, ce n'est pas un refus", () => {
+    // L'idempotence de `kick_player_lobby` : un clic sur une ligne dont
+    // l'occupant venait de partir de lui-même. L'état voulu par l'hôte est
+    // atteint, il n'y a rien à lui signaler — mais le replier sur « retiré »
+    // affirmerait un geste qui n'a rien fait.
+    expect(mapKickLobby({ state: "ok", kicked: false })).toEqual({
+      state: "ok",
+      kicked: false,
+    });
+  });
+
+  it.each([
+    ["refus explicite", { state: "unavailable" }],
+    ["ok sans booléen", { state: "ok" }],
+    ["booléen textuel", { state: "ok", kicked: "true" }],
+    ["booléen numérique", { state: "ok", kicked: 1 }],
+    ["état inconnu", { state: "surprise", kicked: true }],
+    ["document nul", null],
+    ["tableau", []],
+  ])("%s → indisponible", (_cas, brut) => {
+    // LE MOTIF DES QUATRE PREMIERS MAPPEURS, PAS CELUI DE `mapLeaveLobby` :
+    // `kicked` EST le contenu de cette réponse. Le deviner à `false` ferait
+    // afficher « ce rang était déjà libre » d'un retrait dont on ne sait rien,
+    // et l'hôte recliquerait sur une ligne qui a peut-être déjà bougé — or les
+    // rangs se DÉCALENT après un retrait.
+    expect(mapKickLobby(brut)).toEqual({ state: "unavailable" });
   });
 });

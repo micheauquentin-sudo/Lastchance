@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLobbySchema,
   joinLobbySchema,
+  kickLobbySchema,
   lobbyIdSchema,
   lobbyJoinCodeSchema,
   lobbyPseudoSchema,
@@ -160,5 +161,45 @@ describe("lobbyIdSchema", () => {
         .success,
     ).toBe(true);
     expect(lobbyIdSchema.safeParse({ lobbyId: "pas-un-uuid" }).success).toBe(false);
+  });
+});
+
+describe("kickLobbySchema", () => {
+  const LOBBY = "11111111-1111-4111-8111-111111111111";
+
+  it("accepte un rang lu sur `lobby_state`", () => {
+    expect(kickLobbySchema.parse({ lobbyId: LOBBY, rang: 2 })).toEqual({
+      lobbyId: LOBBY,
+      rang: 2,
+    });
+  });
+
+  it.each([0, -1, null, undefined, 1.5, "2"])(
+    "refuse le rang %s — c'est la 22023 de `kick_player_lobby` qui est évitée",
+    (rang) => {
+      // `invalid rank` est une EXCEPTION, pas une réponse : elle remonterait en
+      // panne générique là où il n'y a rien à réparer côté joueur. Ce schéma
+      // existe pour qu'elle n'ait jamais l'occasion de partir.
+      expect(kickLobbySchema.safeParse({ lobbyId: LOBBY, rang }).success).toBe(false);
+    },
+  );
+
+  it("n'oppose AUCUN plafond — un rang au-delà de la liste est une réponse", () => {
+    // La RPC rend `kicked:false` sur un rang inoccupé : la place visée était
+    // déjà libre, l'état voulu est atteint. Borner à douze ici refuserait à
+    // l'écran une valeur que la base accepte, et personne ne saurait pourquoi.
+    expect(kickLobbySchema.safeParse({ lobbyId: LOBBY, rang: 99 }).success).toBe(true);
+  });
+
+  it("refuse une clé de plus — ces deux valeurs sont RELUES, jamais saisies", () => {
+    expect(
+      kickLobbySchema.safeParse({ lobbyId: LOBBY, rang: 2, tokenHash: "abc" }).success,
+    ).toBe(false);
+  });
+
+  it("refuse un lobbyId qui n'est pas un UUID", () => {
+    expect(kickLobbySchema.safeParse({ lobbyId: "pas-un-uuid", rang: 2 }).success).toBe(
+      false,
+    );
   });
 });

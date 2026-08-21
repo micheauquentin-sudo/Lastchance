@@ -3,6 +3,7 @@
 import {
   mapCreateLobby,
   mapJoinLobby,
+  mapKickLobby,
   mapLeaveLobby,
   mapLobbyState,
   mapLockLobby,
@@ -26,6 +27,7 @@ import type { ActionResult } from "@/lib/utils";
 import {
   createLobbySchema,
   joinLobbySchema,
+  kickLobbySchema,
   lobbyIdSchema,
 } from "@/lib/validations/lobby";
 
@@ -449,6 +451,95 @@ export async function leaveLobby(
       return { ok: true as const, data: result };
     } catch (err) {
       reportError("lobby.leave", err);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+  });
+}
+
+/**
+ * Ce que rend `kickLobbyMember` : une place libérée, une place qui l'était déjà,
+ * ou le refus indistinct. Les deux premiers SONT des succès — l'état voulu par
+ * l'hôte est atteint dans les deux cas — et ils restent malgré tout distincts
+ * parce que la base les distingue, et parce qu'un retrait qui n'a rien retiré
+ * mérite d'être visible en supervision plutôt que confondu avec un retrait.
+ */
+export type KickLobbyOutcome =
+  | { etat: "retire" }
+  | { etat: "deja-parti" }
+  | { etat: "indisponible" };
+
+/**
+ * RETIRER UNE PLACE — l'hôte récupère un siège pris par erreur.
+ *
+ * ── C'EST LE JETON DE L'HÔTE QUI PART, JAMAIS CELUI DE LA CIBLE ──
+ *
+ * `p_creator_token_hash` reçoit le jeton du COOKIE DE L'APPELANT : c'est lui
+ * qui doit prouver qu'il est le créateur de cette salle, et c'est la seule
+ * chose que la RPC vérifie. La cible, elle, est désignée par son RANG — le
+ * nombre que l'hôte a sous les yeux dans `lobby_state`, qui ne lui rend jamais
+ * l'empreinte de personne (propriétés STATE-7 / STATE-8 du lot). Envoyer ici le
+ * jeton d'un autre membre serait à la fois impossible (l'application ne le
+ * possède pas) et le contraire de ce que la garde mesure.
+ *
+ * ── SANS COOKIE, AUCUN APPEL ──
+ *
+ * Motif de `lockLobby` et `getLobbyState` : sans jeton de CETTE salle, il n'y a
+ * pas d'hôte à présenter, et fabriquer une empreinte pour l'occasion écrirait
+ * une identité à quelqu'un qui n'a rien ouvert. Le refus est rendu ici, sans
+ * toucher la base.
+ *
+ * ── LE RANG EST VALIDÉ AVANT LE DÉPART, ET C'EST TOUT L'OBJET DU SCHÉMA ──
+ *
+ * `kick_player_lobby` lève une 22023 sur un rang nul ou < 1. Une exception
+ * n'est pas un refus : elle remonterait en panne générique là où il n'y a rien
+ * à réparer. `kickLobbySchema` la rend impossible à provoquer.
+ *
+ * ── LE RANG SE DÉCALE, ET L'APPELANT DOIT RELIRE ──
+ *
+ * Retirer le rang 2 fait REMONTER l'ancien rang 3 à la place 2. Rejouer cette
+ * action avec un rang lu sur une liste d'avant retirerait donc CELLE QUI A PRIS
+ * LA PLACE. Rien ici ne peut l'empêcher — le rang est un ordre, pas un
+ * identifiant, et c'est la propriété que la base crée. L'écran relit
+ * `lobby_state` entre deux retraits (voir `salon-lobby.tsx`).
+ */
+export async function kickLobbyMember(
+  lobbyId: string,
+  rang: number,
+): Promise<ActionResult<KickLobbyOutcome>> {
+  const parsed = kickLobbySchema.safeParse({ lobbyId, rang });
+  if (!parsed.success) return REFUS_INDISPONIBLE;
+
+  // LE JETON DE L'HÔTE — celui du cookie de cette salle, porté par l'appelant.
+  const token = await lireJetonLobby(parsed.data.lobbyId);
+  if (!token) return REFUS_INDISPONIBLE;
+
+  return monitored("lobby.kick", async () => {
+    try {
+      const admin = createAdminClient();
+      const { data, error } = await admin.rpc("kick_player_lobby", {
+        p_lobby_id: parsed.data.lobbyId,
+        p_creator_token_hash: hashLobbyToken(token),
+        p_rang: parsed.data.rang,
+      });
+      if (error) {
+        reportError("lobby.kick", error.message);
+        return { ok: false as const, error: GENERIC_ERROR };
+      }
+
+      // Non-créateur, salle verrouillée, close, morte, ou rang de l'hôte : un
+      // seul mot pour les cinq. Les séparer apprendrait à un membre ordinaire,
+      // par la différence entre « refusé » et « rang vide », qui se trouve dans
+      // une salle dont la base lui refuse justement la liste.
+      const result = mapKickLobby(data);
+      if (result.state !== "ok") return REFUS_INDISPONIBLE;
+      return {
+        ok: true as const,
+        data: result.kicked
+          ? ({ etat: "retire" } as const)
+          : ({ etat: "deja-parti" } as const),
+      };
+    } catch (err) {
+      reportError("lobby.kick", err);
       return { ok: false as const, error: GENERIC_ERROR };
     }
   });

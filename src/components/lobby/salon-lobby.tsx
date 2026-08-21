@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   getLobbyState,
   joinLobby,
+  kickLobbyMember,
   leaveLobby,
   lockLobby,
   type JoinLobbyOutcome,
 } from "@/actions/lobby";
-import type { LobbyStateView } from "@/lib/lobby";
+import type { LobbyMembreView, LobbyStateView } from "@/lib/lobby";
 import type { ActionResult } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -162,7 +163,11 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   const [vue, setVue] = useState<SalleView | null>(null);
   const [perdu, setPerdu] = useState(false);
   const [enAction, demarrer] = useTransition();
-  const lireRef = useRef<() => void>(() => undefined);
+  // RELECTURE ATTENDABLE, et ce n'est pas une commodité : un geste qui modifie
+  // la salle doit tenir ses boutons désactivés JUSQU'AU RETOUR de la relecture,
+  // sinon l'hôte reclique sur une liste périmée (voir `retirer`). Une relecture
+  // en tir-et-oublie rendait la main avant que la liste n'ait bougé.
+  const lireRef = useRef<() => Promise<void>>(async () => undefined);
   const router = useRouter();
 
   useEffect(() => {
@@ -200,9 +205,7 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
       }
     };
 
-    lireRef.current = () => {
-      void lire();
-    };
+    lireRef.current = lire;
     void lire();
     minuterie = window.setInterval(() => {
       void lire();
@@ -215,7 +218,7 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
 
     return () => {
       vivant = false;
-      lireRef.current = () => undefined;
+      lireRef.current = async () => undefined;
       stopper();
       document.removeEventListener("visibilitychange", surVisibilite);
     };
@@ -239,7 +242,35 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   const verrouiller = () => {
     demarrer(async () => {
       await lockLobby(lobbyId);
-      lireRef.current();
+      await lireRef.current();
+    });
+  };
+
+  // RETIRER UNE PLACE — hôte seulement, salle encore ouverte seulement.
+  //
+  // ── LE RANG SE DÉCALE, ET C'EST POURQUOI ON RELIT AVANT DE REPRENDRE ──
+  //
+  // `kick_player_lobby` désigne la cible par son RANG, qui est un ORDRE et non
+  // un identifiant : retirer le rang 2 fait REMONTER l'ancien rang 3 à la place
+  // 2. Deux clics enchaînés sur une liste d'AVANT retireraient donc la personne
+  // qui vient de prendre la place, pas celle qu'on visait. La relecture est
+  // attendue à l'intérieur de la transition — `enAction` tient tous les boutons
+  // désactivés jusqu'à son retour, donc il n'existe aucun instant où l'écran
+  // accepte un second rang lu sur la liste périmée.
+  //
+  // ON RELIT DANS TOUS LES CAS, y compris sur un refus : « indisponible »
+  // signifie ici que la salle a changé sous les doigts de l'hôte — verrouillée,
+  // close, morte — et c'est le scrutin, pas un message, qui peint le bon écran.
+  //
+  // La confirmation est native : retirer quelqu'un est irréversible du point de
+  // vue du clic, mais réparable du point de vue de la personne — elle peut
+  // rejoindre à nouveau (c'est un retrait de place, pas un bannissement). Une
+  // boîte de dialogue dessinée coûterait plus que ce que ce geste engage.
+  const retirer = (membre: LobbyMembreView) => {
+    if (!window.confirm(`Retirer ${membre.pseudo} de la salle ?`)) return;
+    demarrer(async () => {
+      await kickLobbyMember(lobbyId, membre.rang);
+      await lireRef.current();
     });
   };
 
@@ -354,6 +385,26 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
                 <span className="shrink-0 rounded-full border-2 border-k-ink bg-k-yellow px-2 py-0.5 text-[11px] font-black text-k-ink">
                   vous
                 </span>
+              )}
+              {/* L'HÔTE SEUL, ET JAMAIS SUR SA PROPRE LIGNE. Les deux gardes
+                  sont ici pour ne pas MONTRER un geste refusé, pas pour le
+                  garder : `kick_player_lobby` refuse le non-créateur et
+                  l'auto-retrait de son côté, et c'est LUI le filet. Le troisième
+                  garde — « salle encore en attente » — est structurel : les
+                  statuts `locked`, `closed` et `expired` sont sortis plus haut,
+                  donc cette liste n'est peinte que sur un salon ouvert.
+                  Le nom accessible porte le pseudo : douze boutons « Retirer »
+                  identiques ne se distinguent pas au lecteur d'écran. */}
+              {hote && !membre.estMoi && (
+                <Button
+                  variant="ghost"
+                  className="shrink-0 px-2 py-1 text-xs"
+                  disabled={enAction}
+                  onClick={() => retirer(membre)}
+                >
+                  Retirer
+                  <span className="sr-only"> {membre.pseudo} de la salle</span>
+                </Button>
               )}
             </li>
           ))}

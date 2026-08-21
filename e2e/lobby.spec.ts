@@ -243,4 +243,93 @@ test.describe("salons joueurs — socle (L16)", () => {
       await contexteInvite.close();
     }
   });
+
+  test("l'hôte retire une place — et la personne retirée PEUT revenir", async ({
+    page,
+    browser,
+  }) => {
+    // ── CE QUE CE TEST FIXE : L'ARBITRAGE, PAS LE BOUTON ──
+    //
+    // `kick_player_lobby` SUPPRIME la ligne du membre et n'écrit rien d'autre.
+    // C'est un retrait de PLACE, pas un bannissement : la personne ne revient
+    // pas toute seule (son cookie ne la désigne plus comme membre, et
+    // `lobby_state` lui rend le refus muet), mais elle peut rejoindre à neuf
+    // tant qu'il reste une place. Empêcher le retour demanderait une table
+    // d'empreintes exclues, sa durée de vie et sa purge — un autre lot, à
+    // décider comme tel plutôt qu'à subir en effet de bord d'un bouton.
+    // C'est ce dernier aller-retour qui est vérifié ici ; le reste (la place
+    // libérée, l'écran d'en face qui bascule) n'en est que la mise en scène.
+    const nomHote = pseudo("Hote");
+    const code = await ouvrirSalon(page, nomHote);
+
+    const contexteInvite = await browser.newContext();
+    try {
+      const invite = await contexteInvite.newPage();
+      const nomInvite = pseudo("Retire");
+      await rejoindreSalon(invite, code, nomInvite);
+
+      await expect(page.getByText("2/6", { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // LE BOUTON N'EXISTE QUE CHEZ L'HÔTE, ET JAMAIS SUR SA PROPRE LIGNE.
+      // L'invité voit la même liste sans aucun bouton de retrait : `lobby_state`
+      // ne lui rend pas `join_code`, donc l'écran ne le prend pas pour l'hôte.
+      await expect(
+        invite.getByRole("button", { name: /^Retirer/i }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: new RegExp(`Retirer ${nomHote}`, "i") }),
+      ).toHaveCount(0);
+
+      // La confirmation est native : Playwright REFUSE les dialogues par défaut,
+      // donc sans ce gestionnaire le clic ci-dessous ne retirerait personne et
+      // le test échouerait sur une assertion parfaitement juste.
+      page.on("dialog", (dialogue) => {
+        void dialogue.accept();
+      });
+      await page
+        .getByRole("button", { name: new RegExp(`Retirer ${nomInvite}`, "i") })
+        .click();
+
+      // LA PLACE EST LIBRE, et l'écran de l'hôte le dit sans rechargement :
+      // l'action relit `lobby_state` avant de rendre la main — c'est ce qui
+      // empêche un second retrait sur des rangs périmés, puisqu'ils SE DÉCALENT
+      // (retirer le 2 fait remonter le 3 en 2).
+      await expect(page.getByText("1/6", { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText(nomInvite)).toHaveCount(0);
+
+      // Côté retiré : le scrutin suivant ne le reconnaît plus, et l'écran rend
+      // le refus INDISTINCT — le même que pour un code inventé. Il n'apprend pas
+      // qu'on l'a retiré, il apprend que ce salon ne lui répond plus.
+      await expect(invite.getByText(REFUS_INDISTINCT)).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // Son cookie de salle est mort : c'est le serveur qui le lui retire, sur
+      // ce bouton — un simple rechargement repeindrait la même impasse, cookie
+      // périmé en main.
+      await invite
+        .getByRole("button", { name: /réessayer avec ce code/i })
+        .click();
+      await expect(invite.getByLabel(/prénom ou pseudo/i)).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // ET IL REVIENT. Voilà l'arbitrage, rendu visible : rien n'a été écrit
+      // contre lui, la salle est ouverte, il reste une place.
+      await invite.getByLabel(/prénom ou pseudo/i).fill(nomInvite);
+      await invite.getByRole("button", { name: /rejoindre le salon/i }).click();
+      await expect(invite.getByText("2/6", { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText("2/6", { exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+    } finally {
+      await contexteInvite.close();
+    }
+  });
 });

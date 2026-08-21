@@ -116,8 +116,14 @@ vi.mock("@/lib/supabase/admin", () => ({
   })),
 }));
 
-const { createLobby, getLobbyState, joinLobby, leaveLobby, lockLobby } =
-  await import("./lobby");
+const {
+  createLobby,
+  getLobbyState,
+  joinLobby,
+  kickLobbyMember,
+  leaveLobby,
+  lockLobby,
+} = await import("./lobby");
 const { hashLobbyToken, lobbyTokenCookieName } = await import("@/lib/lobby-context");
 
 const LOBBY_ID = "11111111-1111-4111-8111-111111111111";
@@ -598,5 +604,138 @@ describe("leaveLobby — sortir", () => {
 
     expect(await leaveLobby(LOBBY_ID)).toEqual({ ok: true, data: { state: "locked" } });
     expect(etat.effaces).toHaveLength(0);
+  });
+});
+
+describe("kickLobbyMember — l'hôte retire une place", () => {
+  beforeEach(() => {
+    etat.reponses.kick_player_lobby = {
+      data: { state: "ok", kicked: true },
+      error: null,
+    };
+  });
+
+  it("présente le jeton de L'HÔTE et le RANG de la cible", async () => {
+    // Le cookie de l'appelant sert à prouver qu'il est le créateur — c'est la
+    // seule chose que la RPC vérifie. La cible, elle, est désignée par le rang
+    // que `lobby_state` affiche : cette lecture ne rend jamais l'empreinte de
+    // personne (STATE-7 / STATE-8), donc l'application ne POURRAIT pas envoyer
+    // le jeton d'un autre membre même si elle le voulait.
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+
+    const verdict = await kickLobbyMember(LOBBY_ID, 2);
+
+    expect(verdict).toEqual({ ok: true, data: { etat: "retire" } });
+    expect(etat.rpc[0]).toEqual({
+      nom: "kick_player_lobby",
+      args: {
+        p_lobby_id: LOBBY_ID,
+        p_creator_token_hash: hashLobbyToken("jeton-hote"),
+        p_rang: 2,
+      },
+    });
+  });
+
+  it("`kicked:false` est un SUCCÈS distinct — la place était déjà libre", async () => {
+    // L'occupant venait de partir de lui-même : l'état voulu par l'hôte est
+    // atteint, et lui montrer une erreur l'enverrait réparer ce qui est fait.
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+    etat.reponses.kick_player_lobby = {
+      data: { state: "ok", kicked: false },
+      error: null,
+    };
+
+    expect(await kickLobbyMember(LOBBY_ID, 5)).toEqual({
+      ok: true,
+      data: { etat: "deja-parti" },
+    });
+  });
+
+  it("un membre ordinaire est refusé PAR LA BASE, comme le verrou", async () => {
+    // Aucune garde d'hôte n'est recopiée ici : `kick_player_lobby` compare le
+    // hash à `creator_token_hash`, et une copie côté application finirait par
+    // diverger de l'original.
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-simple-membre";
+    etat.reponses.kick_player_lobby = { data: { state: "unavailable" }, error: null };
+
+    expect(await kickLobbyMember(LOBBY_ID, 1)).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(1);
+  });
+
+  it.each([
+    ["rang nul", 0],
+    ["rang négatif", -3],
+    ["rang fractionnaire", 1.5],
+  ])("%s ne part JAMAIS en base — la 22023 est une exception, pas un refus", async (
+    _cas,
+    rang,
+  ) => {
+    // `kick_player_lobby` lève `invalid rank` (22023) sur ces valeurs. La
+    // laisser partir ferait remonter une panne générique là où il n'y a rien à
+    // réparer : le schéma la rend impossible à provoquer.
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+
+    expect(await kickLobbyMember(LOBBY_ID, rang)).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("un rang au-delà de la liste PART, lui — c'est la base qui répond", async () => {
+    // Parité dans l'autre sens : la RPC rend `kicked:false` sur un rang
+    // inoccupé. Le refuser ici ajouterait une garde que le SQL n'a pas.
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+    etat.reponses.kick_player_lobby = {
+      data: { state: "ok", kicked: false },
+      error: null,
+    };
+
+    expect(await kickLobbyMember(LOBBY_ID, 99)).toEqual({
+      ok: true,
+      data: { etat: "deja-parti" },
+    });
+    expect(etat.rpc[0].args.p_rang).toBe(99);
+  });
+
+  it("sans cookie, rien n'est tenté — il n'y a pas d'hôte à présenter", async () => {
+    expect(await kickLobbyMember(LOBBY_ID, 2)).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("le cookie d'une AUTRE salle ne retire personne ici", async () => {
+    etat.cookies[lobbyTokenCookieName("22222222-2222-4222-8222-222222222222")] =
+      "jeton-hote-ailleurs";
+
+    expect(await kickLobbyMember(LOBBY_ID, 2)).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("un identifiant qui n'est pas un UUID ne touche pas la base", async () => {
+    expect(await kickLobbyMember("pas-un-uuid", 2)).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("ne consomme AUCUN seau — le geste est borné par le cookie de la salle", async () => {
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+
+    await kickLobbyMember(LOBBY_ID, 2);
+    await viderLesTaches();
+
+    expect(etat.pressions).toHaveLength(0);
+  });
+
+  it("une panne de transport reste une PANNE, et ne fuit pas le message de la base", async () => {
+    etat.cookies[lobbyTokenCookieName(LOBBY_ID)] = "jeton-hote";
+    etat.reponses.kick_player_lobby = {
+      data: null,
+      error: { message: 'function "kick_player_lobby" does not exist' },
+    };
+
+    expect(await kickLobbyMember(LOBBY_ID, 2)).toEqual({
+      ok: false,
+      error: "Une erreur est survenue, réessayez.",
+    });
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "lobby.kick",
+      expect.stringContaining("kick_player_lobby"),
+    );
   });
 });

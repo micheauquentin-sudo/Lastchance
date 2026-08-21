@@ -147,3 +147,33 @@ export const joinLobbySchema = z.object({
 
 /** Les trois gestes qui ne prennent qu'un lobby : état, verrou, sortie. */
 export const lobbyIdSchema = z.object({ lobbyId: uuid });
+
+/**
+ * RETIRER UNE PLACE — l'hôte désigne un RANG, jamais un jeton.
+ *
+ * ── CE SCHÉMA EXISTE POUR QU'UNE 22023 NE PARTE JAMAIS ──
+ *
+ * `kick_player_lobby` lève `invalid rank` (22023) sur un rang nul ou inférieur
+ * à un : la base traite cela comme un bogue de l'appelant, et elle a raison —
+ * ces deux valeurs ne peuvent pas venir de `lobby_state`, qui ne rend que des
+ * rangs à partir de 1. Une exception n'est pas un refus : elle remonterait en
+ * panne générique là où il n'y a rien à réparer côté joueur.
+ *
+ * AUCUN PLAFOND, ET C'EST LA PARITÉ QUI L'EXIGE. Un rang au-delà de la liste est
+ * une RÉPONSE de la RPC (`kicked:false`, l'occupant venait de partir), pas un
+ * refus. Borner à douze ici refuserait à l'écran une valeur que la base accepte,
+ * et le joueur n'aurait aucun moyen de le savoir.
+ *
+ * `.strict()` : ces deux valeurs sont RELUES sur `lobby_state`, jamais saisies
+ * au clavier. Une troisième clé viendrait d'un appelant qui s'est trompé de
+ * forme, et la laisser passer en silence lui donnerait raison.
+ */
+export const kickLobbySchema = z
+  .object({
+    lobbyId: uuid,
+    rang: z
+      .number("Rang invalide")
+      .int("Rang invalide")
+      .min(1, "Rang invalide"),
+  })
+  .strict();

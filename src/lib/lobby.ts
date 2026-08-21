@@ -104,6 +104,20 @@ export type LockLobbyResult =
  */
 export type LeaveLobbyResult = { state: "left" } | { state: "locked" };
 
+/**
+ * `kick_player_lobby` — l'hôte retire une place, par RANG.
+ *
+ * `kicked` porte à lui seul la différence entre « la place est libérée » et
+ * « ce rang n'était occupé par personne » — un clic sur une ligne dont
+ * l'occupant venait de partir de lui-même. LES DEUX SONT DES SUCCÈS : l'état
+ * voulu par l'hôte est atteint, il n'y a rien à lui signaler. `unavailable`
+ * recouvre tout le reste, indistinctement : salle inconnue, appelant qui n'est
+ * pas l'hôte, salle verrouillée, close, morte, ou rang de l'hôte lui-même.
+ */
+export type KickLobbyResult =
+  | { state: "ok"; kicked: boolean }
+  | { state: "unavailable" };
+
 // ────────────────────────────────────────────────────────────
 // Lecture défensive du jsonb (motif src/lib/vitrine.ts)
 // ────────────────────────────────────────────────────────────
@@ -157,7 +171,7 @@ function asCapacite(value: unknown): number | null {
 }
 
 // ────────────────────────────────────────────────────────────
-// Les cinq mappeurs
+// Les six mappeurs
 // ────────────────────────────────────────────────────────────
 
 /** Lecture de `create_player_lobby`. */
@@ -273,4 +287,25 @@ export function mapLeaveLobby(raw: unknown): LeaveLobbyResult {
   return root && asString(root.state) === "locked"
     ? { state: "locked" }
     : { state: "left" };
+}
+
+/**
+ * Lecture de `kick_player_lobby`.
+ *
+ * ── UN « ok » SANS BOOLÉEN LISIBLE EST INDISPONIBLE ──
+ *
+ * Le motif est celui des quatre premiers mappeurs, PAS celui de
+ * `mapLeaveLobby`, et la raison tient à ce que `kicked` est : le CONTENU de
+ * cette réponse, pas un détail de mise en forme. Le deviner — `false` par
+ * défaut — ferait afficher « ce rang était déjà libre » d'un retrait dont on ne
+ * sait rien, et l'hôte recliquerait sur une ligne qui a peut-être déjà bougé.
+ * Le booléen est donc exigé EXACT, comme `est_moi` : un « true » textuel vient
+ * d'un document qu'on ne comprend pas, et le lire comme vrai reviendrait à
+ * affirmer un retrait qui n'a peut-être pas eu lieu.
+ */
+export function mapKickLobby(raw: unknown): KickLobbyResult {
+  const root = asRecord(raw);
+  if (!root || asString(root.state) !== "ok") return INDISPONIBLE;
+  if (typeof root.kicked !== "boolean") return INDISPONIBLE;
+  return { state: "ok", kicked: root.kicked };
 }
