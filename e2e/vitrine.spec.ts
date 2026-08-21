@@ -570,11 +570,18 @@ test.describe("vitrine — dashboard commerçant", () => {
     await rubriqueLi.getByRole("button", { name: "Ajouter" }).click();
 
     // Même précaution : la fiche fraîchement créée apparaît AUSSI dans la liste
-    // à cocher de l'éditeur Duo. On vise celle qui porte son formulaire.
+    // à cocher de l'éditeur Duo. On vise celle qui porte son PLI.
+    //
+    // `has: locator("summary")` et NON `getByRole("button", …)` : le bouton
+    // « Enregistrer la fiche » vit à l'intérieur du `<details>`, donc l'arbre
+    // d'accessibilité le tient pour CACHÉ tant que le pli est fermé — et
+    // `getByRole` ignore le caché par défaut, si bien que le filtre ne matchait
+    // jamais (CI L17). Le `<summary>`, lui, est toujours visible, et la ligne à
+    // cocher de l'éditeur Duo n'en a pas.
     const ficheLi = page
       .locator("li")
       .filter({ hasText: nomFiche })
-      .filter({ has: page.getByRole("button", { name: "Enregistrer la fiche" }) })
+      .filter({ has: page.locator("summary") })
       .last();
     await expect(ficheLi).toBeVisible({ timeout: 20_000 });
 
