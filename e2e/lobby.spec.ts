@@ -119,7 +119,13 @@ test.describe("salons joueurs — socle (L16)", () => {
       await expect(page.getByText("2/6", { exact: true })).toBeVisible({
         timeout: 15_000,
       });
-      await expect(page.getByText(nomInvite)).toBeVisible();
+      // ANCRÉ SUR LA LIGNE DE MEMBRE : chez l'hôte, le pseudo d'un invité
+      // apparaît DEUX fois depuis le câblage du retrait — dans la liste, et
+      // dans le nom accessible du bouton « Retirer {pseudo} ». Le mode strict
+      // de Playwright a raison de refuser l'ambiguïté.
+      await expect(
+        page.getByRole("listitem").filter({ hasText: nomInvite }),
+      ).toBeVisible();
       await expect(verrou).toBeEnabled();
 
       // Le verrouillage bascule LES DEUX écrans — celui qui l'a demandé
