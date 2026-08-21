@@ -123,18 +123,20 @@ const nextConfig: NextConfig = {
         source: "/invite/:path*",
         headers: tokenPathSecurityHeaders,
       },
-      // /play (ISR), /pronos et /v (toutes trois hors matcher du proxy) ne
-      // reçoivent jamais de nonce : ce sont LES TROIS surfaces publiques —
-      // pas deux — où 'unsafe-inline' reste appliqué. Le canal Report-Only y
-      // mesure la politique candidate sans rien bloquer, et n'existe que si
-      // CSP_REPORT_URI est configuré. Le proxy ne passant pas ici, aucun
-      // conflit d'en-tête possible.
+      // /play (ISR), /pronos, /v et /lobby (toutes quatre hors matcher du
+      // proxy) ne reçoivent jamais de nonce : ce sont LES QUATRE surfaces
+      // publiques — pas trois — où 'unsafe-inline' reste appliqué. Le canal
+      // Report-Only y mesure la politique candidate sans rien bloquer, et
+      // n'existe que si CSP_REPORT_URI est configuré. Le proxy ne passant pas
+      // ici, aucun conflit d'en-tête possible.
       //
-      // /v y est entrée avec sa sortie du matcher : le proxy lui servait ce
-      // même canal, et l'exclure sans l'ajouter ici l'aurait rendue muette —
-      // une surface sous 'unsafe-inline' qui ne remonte plus rien.
+      // /v y est entrée avec sa sortie du matcher, /lobby (L16) de même : le
+      // proxy leur servait ce même canal, et les exclure sans les ajouter ici
+      // les aurait rendues muettes — des surfaces sous 'unsafe-inline' qui ne
+      // remontent plus rien. C'est la contrepartie INDISSOCIABLE de la sortie
+      // du matcher, et elle se paie dans le même commit.
       ...(cspReportOnly
-        ? ["/play/:path*", "/pronos/:path*", "/v/:path*"].map((source) => ({
+        ? ["/play/:path*", "/pronos/:path*", "/v/:path*", "/lobby/:path*"].map((source) => ({
             source,
             headers: [
               { key: "Content-Security-Policy-Report-Only", value: cspReportOnly },

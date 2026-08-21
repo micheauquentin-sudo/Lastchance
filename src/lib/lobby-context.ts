@@ -1,0 +1,279 @@
+import "server-only";
+
+import { createHash, randomBytes } from "node:crypto";
+import { cookies, headers } from "next/headers";
+import { after } from "next/server";
+
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
+import { reportError } from "@/lib/monitoring";
+import { RATE_LIMITS } from "@/lib/rate-limit";
+import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { lobbyJoinCodeSchema } from "@/lib/validations/lobby";
+import type { Organization } from "@/types/database";
+
+/**
+ * L'IDENTITÉ D'UN LOBBY, ET RIEN QUE DE CE LOBBY (L16).
+ *
+ * ── UN COOKIE PAR SALLE, JAMAIS L'IDENTITÉ GLOBALE ──
+ *
+ * Le motif est celui d'`event-context.ts` : un cookie httpOnly nommé d'après
+ * l'identifiant de la salle, dont seul le SHA-256 atteint la base. L'identité
+ * globale `lc-player` n'est ni recopiée ici ni envoyée à la moindre RPC de ce
+ * module — et ce n'est pas une commodité, c'est la propriété qu'on achète :
+ *
+ *   · un téléphone PRÊTÉ le temps d'une partie ne lie pas deux identités. La
+ *     personne à qui on tend l'appareil pour taper son pseudo repart avec un
+ *     cookie propre à cette salle, et rien de ce qu'elle a fait ailleurs sur ce
+ *     téléphone n'y est rattaché ;
+ *   · la base ne peut PAS recoudre les salles entre elles. Chaque
+ *     `token_hash` est l'empreinte d'un secret distinct, donc deux
+ *     participations du même navigateur à deux salles sont, en base, deux
+ *     inconnus — il n'existe aucune requête qui les rapproche.
+ *
+ * ── LE JETON NE QUITTE JAMAIS LE SERVEUR ──
+ *
+ * `httpOnly` interdit sa lecture par script ; aucune action ne le renvoie dans
+ * sa réponse. Ce qui voyage vers la base est son hash, et ce qui voyage vers
+ * l'écran est ce que `lobby_state` rend — des pseudos, jamais des empreintes.
+ */
+
+/**
+ * Longueur du secret, en octets. 32 → 43 caractères base64url, soit 256 bits
+ * d'entropie.
+ *
+ * PLUS LONG QUE `generatePlayerToken` (24 octets, 32 caractères), et
+ * délibérément : ce jeton-là est le SEUL titre d'appartenance à une salle, sans
+ * aucun second facteur derrière lui — pas de ligne `event_players` reliée à une
+ * session résolue par ailleurs, pas de code court à connaître en plus. Le voler
+ * ou le deviner, c'est être ce membre. On ne partage pas non plus le générateur
+ * de `pronostics.ts` : l'y modifier pour ce lot aurait rallongé, sans le dire,
+ * les jetons de six modules déjà en production.
+ */
+const LOBBY_TOKEN_BYTES = 32;
+
+/**
+ * Durée de vie du cookie : 24 heures, le PLAFOND DUR de la salle.
+ *
+ * Pas un jour de plus, et le calcul n'est pas prudentiel : `player_lobbies`
+ * porte un `check` (`expires_at - created_at <= interval '24 hours'`) qui rend
+ * impossible l'existence d'une salle plus vieille que ça. Un cookie qui
+ * survivrait à sa salle serait un cookie qui ne peut plus rien ouvrir — du
+ * stockage laissé sur l'appareil d'un joueur pour une salle qui n'existe plus.
+ */
+export const LOBBY_COOKIE_MAX_AGE = 60 * 60 * 24;
+
+/** Nom du cookie httpOnly portant le jeton joueur d'UNE salle. */
+export function lobbyTokenCookieName(lobbyId: string): string {
+  return `lc-lobby-${lobbyId}`;
+}
+
+/** Un secret de salle. Généré SERVEUR, jamais dérivé d'une donnée du client. */
+export function genererJetonLobby(): string {
+  return randomBytes(LOBBY_TOKEN_BYTES).toString("base64url");
+}
+
+/**
+ * L'empreinte qui part en base — SHA-256 hexadécimal, la forme exacte
+ * qu'exigent les `check (… ~ '^[0-9a-f]{64}$')` des deux tables.
+ *
+ * DOMAINE SÉPARÉ : le jeton est préfixé avant d'être haché, si bien qu'une
+ * empreinte de lobby ne peut jamais coïncider avec celle d'un autre module,
+ * même si le même secret venait à être présenté aux deux. Sans ce préfixe, la
+ * fonction serait `hashPlayerToken` — et deux modules qui partagent une
+ * fonction de hachage partagent, de fait, un espace d'identités.
+ */
+export function hashLobbyToken(token: string): string {
+  return createHash("sha256").update(`lobby:${token}`).digest("hex");
+}
+
+/** Le jeton de CETTE salle, s'il existe. Lecture seule : rien n'est posé ici. */
+export async function lireJetonLobby(lobbyId: string): Promise<string | null> {
+  const store = await cookies();
+  return store.get(lobbyTokenCookieName(lobbyId))?.value ?? null;
+}
+
+/**
+ * Pose le cookie de la salle — APRÈS le succès, jamais avant (motif `joinEvent`).
+ *
+ * Poser en amont laisserait un cookie orphelin sur une salle pleine, close ou
+ * inventée : l'appareil garderait une identité pour un endroit où il n'est
+ * jamais entré, et la purge n'a aucune prise sur ce qui vit dans un navigateur.
+ */
+export async function poserJetonLobby(
+  lobbyId: string,
+  token: string,
+): Promise<void> {
+  const store = await cookies();
+  store.set(lobbyTokenCookieName(lobbyId), token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: LOBBY_COOKIE_MAX_AGE,
+  });
+}
+
+/**
+ * Efface le cookie de la salle — le pendant exact d'une SORTIE réussie.
+ *
+ * Sans lui, l'appartenance vivrait plus longtemps que l'appartenance : la page
+ * `/lobby/[code]` décide quel écran peindre en REGARDANT ce cookie, et un
+ * joueur qui vient de quitter retomberait, au rechargement suivant, sur une
+ * salle d'attente où `lobby_state` ne le reconnaît plus. C'est l'écriture qui
+ * remplace l'ancien oubli côté onglet (`memoire-salon`, supprimé) — la
+ * différence est qu'elle est faite là où l'identité vit vraiment.
+ */
+export async function supprimerJetonLobby(lobbyId: string): Promise<void> {
+  const store = await cookies();
+  store.delete(lobbyTokenCookieName(lobbyId));
+}
+
+// ────────────────────────────────────────────────────────────
+// Pression d'abus — IP SEULE, fail-open, jamais attendue
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Le compteur de pression du module — IP SEULE, fail-open, et jamais attendu.
+ *
+ * `after()` plutôt qu'un `void` (motif `getEventState`) : sous Fluid Compute
+ * l'instance peut geler dès la réponse rendue, et la mesure disparaîtrait — or
+ * ADR-032 fait de ce compteur le SEUL signal d'abus de ce chemin, puisqu'aucun
+ * refus n'y est opposé. Le `.catch` reste : un rejet non géré ne vaut jamais un
+ * compteur.
+ *
+ * AUCUNE CLÉ DE RESSOURCE, et c'est la raison de `pageOpenIp` (wagon 7) : slug
+ * et code viennent du client, donc un seau composé avec eux se disperserait sur
+ * autant de valeurs inventées que la rafale en essaie. `etape` n'est qu'une
+ * ÉTIQUETTE de contexte — elle voyage dans les métadonnées, jamais dans la clé.
+ */
+export async function observerPressionLobby(
+  etape: "create" | "join" | "page",
+): Promise<void> {
+  const ip = clientIpFromHeaders(await headers());
+  after(() =>
+    observerPressionIp(["lobby:ip"], ip, RATE_LIMITS.lobbyIp, "lobby_ip_ceiling", {
+      etape,
+    }).catch((err) => reportError("lobby.pressure", err)),
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Résolution du commerce hôte — motif `loadReserverActivityContext`
+// ────────────────────────────────────────────────────────────
+
+type LobbyOrganization = Pick<
+  Organization,
+  | "id"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "addon_vitrine"
+  | "comp_access"
+  | "comp_access_until"
+>;
+
+/**
+ * Les seules colonnes que la garde de module consulte. Ni nom ni logo : ce
+ * chemin n'affiche rien du commerce, il décide seulement s'il a le droit
+ * d'héberger une salle. Lire de quoi peindre un en-tête qu'on ne peint pas,
+ * c'est faire sortir des données du locataire sans destinataire.
+ */
+const ORG_COLUMNS =
+  "id, subscription_status, trial_ends_at, past_due_since, addon_vitrine, comp_access, comp_access_until";
+
+interface VitrineRow {
+  organization_id: string;
+  organizations: LobbyOrganization | null;
+}
+
+/**
+ * Le commerce derrière une adresse publique, ou rien.
+ *
+ * ── UN SEUL VERDICT, QUATRE CAUSES ──
+ *
+ * Adresse inconnue, jointure inter-locataire incohérente, droit `vitrine`
+ * fermé, transport en panne : `null` dans les quatre cas. Les distinguer aurait
+ * donné à n'importe qui un oracle — sur les adresses qui existent d'abord, sur
+ * l'état COMMERCIAL d'un tiers ensuite, ce qui est la fuite que
+ * `loadReserverActivityContext` nomme déjà pour son propre chemin.
+ *
+ * ── LA GARDE INTER-TENANT EST OBLIGATOIRE ICI ──
+ *
+ * La service role contourne la RLS : rien, dans le transport, ne garantit que
+ * la jointure rapporte l'organisation de la ligne lue. Le vérifier coûte une
+ * comparaison ; ne pas le vérifier coûterait une salle ouverte au nom d'un
+ * commerce qui n'a rien demandé.
+ */
+export async function resoudreCommerceLobby(
+  slug: string,
+): Promise<{ organizationId: string } | null> {
+  const admin = createAdminClient();
+  // `published` EXIGÉ, comme tout ce que la Vitrine sert au public : un salon
+  // ne s'ouvre pas sur une adresse que le commerçant n'a pas ouverte. Sans ce
+  // filtre, deviner le slug d'une vitrine jamais publiée suffisait à créer des
+  // lobbies au nom de l'organisation (revue L16, préemptée).
+  const { data } = await admin
+    .from("vitrine_settings")
+    .select(`organization_id, organizations(${ORG_COLUMNS})`)
+    .eq("slug", slug)
+    .eq("published", true)
+    .maybeSingle();
+  if (!data) return null;
+
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const row = data as unknown as VitrineRow;
+  const organization = row.organizations ?? null;
+  if (!organization || organization.id !== row.organization_id) {
+    console.error("[lobby-context] organisation incohérente", { slug });
+    return null;
+  }
+  if (!(await moduleOuvertAuJoueur("vitrine", organization))) return null;
+
+  return { organizationId: organization.id };
+}
+
+// ────────────────────────────────────────────────────────────
+// Résolution d'une salle par son code de partage
+// ────────────────────────────────────────────────────────────
+
+/**
+ * La salle derrière un code de partage, ou rien.
+ *
+ * ── UN CODE MORT EST UN CODE INVENTÉ, ET `null` NE DIT PAS LEQUEL ──
+ *
+ * Le filtre est délibérément le MÊME que celui de `join_player_lobby` : seuls
+ * `lobby` et `locked` sont des salles ouvrables, et une salle dont la date de
+ * mort est passée est morte même si sa colonne `status` dit encore « lobby »
+ * (l'expiration se CONSTATE, aucune RPC ne l'écrit — ADR-111). Code jamais
+ * attribué, code mal formé, salle close, salle expirée : quatre causes, un seul
+ * `null`. Les séparer — fût-ce par un code HTTP ou un écran différent — rendrait
+ * à qui sonde l'oracle que la base ferme exprès : six caractères à la fois, la
+ * vie sociale des commerces d'à côté.
+ *
+ * ── CE QUI SORT D'ICI N'OUVRE RIEN ──
+ *
+ * Seul l'identifiant est rendu. Il ne donne accès à aucune donnée : `lobby_state`
+ * exige EN PLUS l'empreinte du cookie de cette salle, et rend le même refus muet
+ * à qui n'est pas membre. C'est ce qui permet à la page de résoudre le code sans
+ * rien apprendre à celui qui l'a tapé au hasard.
+ */
+export async function resoudreLobbyParCode(
+  code: string,
+): Promise<{ lobbyId: string } | null> {
+  // Normalisation ET forme, par le schéma qui sert déjà l'action : un code
+  // malformé ne mérite pas un aller-retour, et il rend le même `null`.
+  const parsed = lobbyJoinCodeSchema.safeParse(code);
+  if (!parsed.success) return null;
+
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("player_lobbies")
+    .select("id")
+    .eq("join_code", parsed.data)
+    .in("status", ["lobby", "locked"])
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  return data ? { lobbyId: data.id as string } : null;
+}

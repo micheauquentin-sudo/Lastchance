@@ -109,6 +109,58 @@ describe("GET /api/cron/purge-data", () => {
     );
   });
 
+  it("purge les lobbies expirés au même passage que les autres modules", async () => {
+    // L16 — la purge existait en base (`purge_expired_lobbies`, migration
+    // 20261017120000) et n'était appelée par personne. C'est exactement le
+    // défaut qu'`experience_events` a porté pendant des mois : une fonction qui
+    // dort pendant que la table croît sans borne. L'EXISTENCE N'EST PAS
+    // L'EXÉCUTION — ce test est ce qui fait la différence entre les deux.
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "purge_expired_lobbies"
+        ? Promise.resolve({ data: 4, error: null })
+        : defaultRpc(name),
+    );
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("purge_expired_lobbies");
+    expect(body).toEqual(expect.objectContaining({ ok: true, lobbiesDeleted: 4 }));
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "run-1" }),
+      "succeeded",
+      expect.objectContaining({ lobbiesDeleted: 4 }),
+      undefined,
+    );
+  });
+
+  it("échoue le passage si la purge des lobbies échoue", async () => {
+    // Le contre-test : sans lui, retirer `lobbies.error` de l'agrégat laisserait
+    // le test ci-dessus passer, et une purge RGPD muette se signalerait 200.
+    mocks.rpc.mockImplementation((name: string) =>
+      name === "purge_expired_lobbies"
+        ? Promise.resolve({ data: null, error: { message: "permission denied" } })
+        : defaultRpc(name),
+    );
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(500);
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "cron.purge-data",
+      "permission denied",
+    );
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: "run-1" }),
+      "failed",
+      expect.anything(),
+      "purge_failed",
+    );
+  });
+
   it("dégrade le passage sans faire échouer la purge RGPD si l'hygiène échoue", async () => {
     // Le point du best-effort : une purge RGPD réussie reste un succès pour
     // l'appelant, mais le journal de santé dit que quelque chose a manqué.

@@ -182,7 +182,7 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Tout sauf assets statiques, parcours publics /play, /pronos et /v
+  // Tout sauf assets statiques, parcours publics /play, /pronos, /v et /lobby
   // (aucune session requise), /api/page-opens (beacon de comptage anonyme) et
   // /api/health (pingé par les moniteurs d'uptime)
   //
@@ -195,11 +195,25 @@ export const config = {
   // lu par personne. Son canal CSP Report-Only, servi ici jusqu'alors, est
   // repris par `next.config.ts` — qui le pose déjà pour /play et /pronos.
   //
-  // `v(?:/|$)` et non `v` nu : une lettre unique a un rayon d'action sans
-  // commune mesure avec un mot — un futur `/verify` ou `/videos` sortirait
-  // silencieusement du proxy, perdant session, redirection de connexion et
-  // isolation du domaine admin (contre-revue L11).
+  // `/lobby` (socle de session joueur, L16) y entre à son tour, et le calcul y
+  // est PIRE qu'ailleurs : la salle d'attente se sonde toutes les trois
+  // secondes, par téléphone présent. Une tablée de six laissée dix minutes,
+  // c'est 1 200 traversées de proxy — donc, dès qu'un cookie de session existe
+  // (l'organisateur qui regarde depuis son propre compte), 1 200 allers-retours
+  // RÉSEAU vers l'API Auth Supabase dont AUCUN n'est lu : le joueur d'un lobby
+  // est un cookie anonyme par salle (`lc-lobby-…`), jamais un utilisateur
+  // Supabase. C'est le finding L11 en pire — même cause, cadence multipliée.
+  // Comme `/v`, elle n'est pas dans `PUBLIC_NONCE_PREFIXES`, donc elle était
+  // déjà en régime `static` et ne perd aucun durcissement ; son canal CSP
+  // Report-Only est repris par `next.config.ts`, sans quoi elle deviendrait une
+  // surface publique muette.
+  //
+  // `v(?:/|$)` et `lobby(?:/|$)`, et non `v` ni `lobby` nus : un préfixe sans
+  // borne a un rayon d'action sans commune mesure avec un mot — un futur
+  // `/verify`, `/videos` ou `/lobbyiste` sortirait silencieusement du proxy,
+  // perdant session, redirection de connexion et isolation du domaine admin
+  // (contre-revue L11).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|lobby(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

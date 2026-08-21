@@ -730,6 +730,37 @@ export const RATE_LIMITS = {
    *  que des visiteurs lisent. C'est délibérément deux fois plus serré que
    *  `vitrineSlug`, qui n'écrit qu'une ligne par appel. */
   vitrineImport: { limit: 10, windowSeconds: 3600 },
+  /** PLAFOND PAR IP SEULE du socle de lobby (L16), tous commerces confondus —
+   *  compteur d'OBSERVABILITÉ, jamais un refus. C'est la GARDE 1 d'ADR-109 §A4,
+   *  et §A4 la décrit comme telle : « seau IP-seule — côté application
+   *  (observabilité, fail-open) ». Les deux autres gardes du lot vivent en SQL
+   *  (quota de vingt salles actives par organisation, TTL et plafond dur de
+   *  24 h) ; la quatrième — un plafond par cookie joueur — a été explicitement
+   *  ÉCARTÉE par §A4, qui la dit décorative (« elle ne protège rien qu'un joueur
+   *  motivé ne contourne en effaçant son cookie »). Ne pas la réintroduire ici
+   *  en croyant compléter le lot : elle a été pesée et refusée.
+   *
+   *  IP SEULE, SANS AUCUNE CLÉ DE RESSOURCE, et c'est la raison de `pageOpenIp`
+   *  (wagon 7) : `createLobby` reçoit un SLUG et `joinLobby` un CODE, tous deux
+   *  fournis par le client. Un compteur composé avec eux ouvrirait une série
+   *  neuve à chaque valeur inventée — donc un balayage de codes à six
+   *  caractères se disperserait sur autant de seaux, invisible en supervision,
+   *  et chaque tour paierait une écriture de rate-limit. L'agrégat par IP est le
+   *  SEUL endroit d'où cette rafale se voit. Il n'existe volontairement pas de
+   *  second seau par salle : une salle n'a que douze places, sa borne est sa
+   *  capacité.
+   *
+   *  FAIL-OPEN, ET NE PAS LE REPASSER EN `failClosed` (ADR-032) : une salle
+   *  s'ouvre depuis le Wi-Fi ou le CGNAT PARTAGÉ d'un café — l'IP est commune à
+   *  toute la table. Un refus posé sur cette clé serait un interrupteur qu'un
+   *  tiers allume en la saturant (« déni de retrouvailles pour tout le lieu »),
+   *  et il n'y a ici ni lot ni argent à protéger qui le justifierait : le
+   *  lobby est GRATUIT et ne distribue rien.
+   *
+   *  600/600 s : calibrage repris de `reserverIpCeiling`, même public et même
+   *  Wi-Fi partagé. Une tablée qui ouvre une salle et s'y retrouve consomme
+   *  quelques unités ; le seuil reste un signal, pas une porte. */
+  lobbyIp: { limit: 600, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */

@@ -1,0 +1,149 @@
+import { z } from "zod";
+
+import { formatPlayerAlias, isAllowedPlayerAlias } from "@/lib/player-alias";
+import { entierRequis } from "@/lib/validations/champ-formulaire";
+import {
+  LOBBY_CAPACITE_MAX,
+  LOBBY_CAPACITE_MIN,
+  LOBBY_DUO_CAPACITE,
+  LOBBY_KINDS,
+} from "@/lib/lobby";
+
+// ────────────────────────────────────────────────────────────
+// SOCLE DE LOBBY (L16) — les entrées, et rien d'autre
+//
+// Bornes applicatives STRICTEMENT égales aux `check` SQL de la migration
+// 20261017120000 : la base refuserait de toute façon, mais elle refuserait en
+// 22023 — une exception, pas un message. Ce qui vit ici sert à rendre une phrase
+// utile AVANT l'aller-retour, jamais à décider à la place de la base.
+//
+// AUCUN SCHÉMA DE CE FICHIER N'AJOUTE UNE GARDE que le SQL n'aurait pas. Un
+// schéma plus permissif que le `check` produirait une 22023 illisible ; un
+// schéma plus strict refuserait ici ce que la base accepte, et le joueur ne
+// pourrait pas le savoir. La parité est donc l'objectif, dans les deux sens.
+// ────────────────────────────────────────────────────────────
+
+/** UUID d'un lobby — l'identifiant que l'écran porte d'un appel à l'autre. */
+const uuid = z.string().uuid("Identifiant invalide");
+
+/**
+ * Adresse publique du commerce qui HÉBERGE le lobby (`vitrine_settings.slug`).
+ *
+ * Miroir du `check (slug ~ '^[a-z0-9-]{3,60}$')` de la migration
+ * 20261011120000. Recopié ici plutôt qu'importé de `validations/vitrine.ts` :
+ * le schéma de là-bas est un schéma de SAISIE COMMERÇANT — il porte des
+ * messages qui parlent de « votre adresse » et refuse le vocabulaire réservé,
+ * deux choses qui n'ont aucun sens sur un chemin public où le slug vient de
+ * l'URL et jamais d'un clavier.
+ *
+ * SON REFUS N'EST PAS UN MESSAGE : l'appelant le replie sur le refus indistinct
+ * (voir `createLobby`), sans quoi un slug malformé se distinguerait d'un slug
+ * inconnu — c'est-à-dire un oracle sur les adresses qui existent.
+ */
+export const lobbySlugSchema = z
+  .string()
+  .transform((saisie) => saisie.trim().toLowerCase())
+  .pipe(z.string().regex(/^[a-z0-9-]{3,60}$/, "Adresse invalide"));
+
+/**
+ * Code de partage à six caractères, alphabet SANS I/O/0/1 — miroir exact du
+ * `check` de `player_lobbies.join_code` et de la normalisation que
+ * `join_player_lobby` applique en tête (`upper` + `btrim`).
+ *
+ * La casse et les espaces sont TOLÉRÉS ici parce qu'ils le sont là-bas : le
+ * code se dicte à voix haute à une table de café, et refuser « abc def » aurait
+ * fait porter au joueur une exigence que la base ne pose pas.
+ */
+export const lobbyJoinCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-HJ-NP-Z2-9]{6}$/, "Code d'accès invalide");
+
+/**
+ * Pseudo affiché aux autres membres — 1..24, miroir du `check` SQL, avec le
+ * détourage de `player-alias` (motif `validations/events.ts`).
+ *
+ * Les caractères de CONTRÔLE et de FORMATAGE Unicode sont refusés : aucun
+ * risque XSS (React échappe), mais un `U+202E` permettrait d'usurper
+ * visuellement le pseudo d'un autre membre de la salle — et une salle est
+ * précisément l'endroit où l'on se reconnaît par son pseudo.
+ *
+ * REFUSÉ, JAMAIS TRONQUÉ : c'est le choix de `create_player_lobby`, et il vaut
+ * ici pour la même raison — la personne est devant un clavier et peut corriger.
+ */
+export const lobbyPseudoSchema = z
+  .string()
+  .transform(formatPlayerAlias)
+  .pipe(
+    z
+      .string()
+      .min(1, "Votre pseudo est requis")
+      .max(24, "Pseudo trop long (24 caractères max)")
+      .refine(isAllowedPlayerAlias, { message: "Choisissez un autre pseudo" }),
+  );
+
+/** Les deux formats de salle. Liste FERMÉE, miroir du `check (kind in …)`. */
+export const lobbyKindSchema = z.enum(LOBBY_KINDS, {
+  error: "Format de salle inconnu",
+});
+
+/**
+ * Capacité d'une BANDE — deux à douze, miroir du `check (capacite between 2
+ * and 12)`. Jamais consultée pour un duo (voir `createLobbySchema`).
+ */
+const lobbyCapaciteSchema = entierRequis({
+  absent: "Indiquez combien vous serez",
+  nombre: "Le nombre de joueurs doit être un nombre",
+  entier: "Le nombre de joueurs doit être un nombre entier",
+  min: [LOBBY_CAPACITE_MIN, `Une salle accueille au moins ${LOBBY_CAPACITE_MIN} joueurs`],
+  max: [LOBBY_CAPACITE_MAX, `Une salle accueille au plus ${LOBBY_CAPACITE_MAX} joueurs`],
+});
+
+/**
+ * Ouvrir une salle.
+ *
+ * ── DUO NE NÉGOCIE PAS SA CAPACITÉ, ET NE LA CONTESTE PAS NON PLUS ──
+ *
+ * `create_player_lobby` IGNORE `p_capacite` quand `p_kind = 'duo'` ; ce schéma
+ * fait exactement la même chose, et c'est délibéré. Valider la capacité d'un duo
+ * aurait refusé un formulaire dont le champ « combien serez-vous » n'est même
+ * pas rendu — le joueur aurait lu un message sur un champ qu'il n'a jamais vu.
+ *
+ * Le champ absent (`null`) reste donc un refus PARLANT pour une bande, et un
+ * non-événement pour un duo. C'est la distinction que `entierRequis` existe pour
+ * tenir, appliquée à la seule branche qui la demande.
+ */
+export const createLobbySchema = z
+  .object({
+    slug: lobbySlugSchema,
+    kind: lobbyKindSchema,
+    // Non validé à ce rang : la branche `duo` ne doit pas payer le refus d'un
+    // champ qu'elle n'a pas rendu. Le verdict est rendu dans le `transform`.
+    capacite: z.union([z.string(), z.number(), z.null()]).optional(),
+    pseudo: lobbyPseudoSchema,
+  })
+  .transform((saisie, ctx) => {
+    if (saisie.kind === "duo") {
+      return { ...saisie, capacite: LOBBY_DUO_CAPACITE };
+    }
+    const verdict = lobbyCapaciteSchema.safeParse(saisie.capacite ?? null);
+    if (!verdict.success) {
+      ctx.addIssue({
+        code: "custom",
+        message: verdict.error.issues[0].message,
+        path: ["capacite"],
+      });
+      return z.NEVER;
+    }
+    return { ...saisie, capacite: verdict.data };
+  });
+
+/** Entrer par le code. Aucune organisation : le code désigne son locataire. */
+export const joinLobbySchema = z.object({
+  code: lobbyJoinCodeSchema,
+  pseudo: lobbyPseudoSchema,
+});
+
+/** Les trois gestes qui ne prennent qu'un lobby : état, verrou, sortie. */
+export const lobbyIdSchema = z.object({ lobbyId: uuid });
