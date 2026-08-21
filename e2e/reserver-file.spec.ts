@@ -68,9 +68,10 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
     // LA BOUCLE D'APPEL A BESOIN DE PLUS QUE LE DÉLAI ORDINAIRE. Son
     // `expect.poll` est borné à 90 s — exactement le délai global d'un test :
     // il ne pouvait donc JAMAIS épuiser son propre budget, le test mourait
-    // d'abord. Et la file est partagée avec l'autre projet Playwright, qui
-    // consomme des tours d'appel en parallèle. `test.slow()` triple le délai ;
-    // le budget du scrutin reste, lui, la vraie borne.
+    // d'abord. `test.slow()` triple le délai ; le budget du scrutin reste, lui,
+    // la vraie borne. La file n'est plus disputée avec l'autre projet — chacun
+    // a la sienne — mais le parcours reste long : rejoindre, appeler jusqu'à
+    // nous, servir, relire un compteur.
     test.slow();
 
     const playerContext = await browser.newContext();
@@ -104,31 +105,27 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       expect(texteApresJointe).not.toMatch(/[~≈]|environ|estimation/i);
 
       // ── 2. Le comptoir appelle le suivant, en boucle jusqu'à ce que ce
-      // soit NOTRE entrée qui passe « appelée » — la seed partagée peut
-      // placer Camille et Dominique devant nous selon le projet Playwright
-      // qui démarre en premier.
+      // soit NOTRE entrée qui passe « appelée » — les deux entrées pré-semées
+      // de notre file passent devant nous.
       await page.goto("/dashboard/reservations");
       await expect(
         page.getByRole("heading", { name: "Réservations" }),
       ).toBeVisible({ timeout: 30_000 });
 
-      const ongletFile = page.getByRole("button", {
-        name: new RegExp(`^${NOM_FILE}\\b`),
-      });
-      await ongletFile.click();
+      await ouvrirOngletFile(page, NOM_FILE);
 
       const boutonAppeler = page.getByRole("button", {
         name: /Appeler le suivant/,
       });
       await expect(boutonAppeler).toBeVisible({ timeout: 30_000 });
 
-      // On appelle jusqu'à ce que CE joueur bascule « appelé ». La file est
-      // PARTAGÉE entre projets Playwright (chrome/safari tournent en même
-      // temps sur la même base) : l'autre projet peut vider la file avant
-      // notre tour, ou y ajouter des entrées après. Un compte de tours fixe
-      // ne suffit donc pas — `expect.poll` retente l'appel à chaque tic tant
-      // que notre entrée n'est pas passée « appelée », borné par un timeout
-      // généreux plutôt qu'un nombre d'essais. `page` (staff) et `playerPage`
+      // On appelle jusqu'à ce que CE joueur bascule « appelé ». La file n'est
+      // plus partagée avec l'autre projet Playwright (chacun a la sienne), mais
+      // le `expect.poll` reste : deux entrées pré-semées passent devant nous, et
+      // le nombre de tours à jouer dépend de l'ordre d'inscription plutôt que
+      // d'une constante. Il retente donc l'appel à chaque tic tant que notre
+      // entrée n'est pas passée « appelée », borné par un timeout généreux
+      // plutôt que par un compte d'essais. `page` (staff) et `playerPage`
       // (joueur) restent chacune sur leur écran tout du long.
       await expect
         .poll(
@@ -169,9 +166,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // another navigation to …/dashboard/reservations » — vers la MÊME URL).
       // On le rejoue une fois plutôt que d'espérer.
       await gotoApresNavigation(page, "/dashboard/reservations");
-      await page
-        .getByRole("button", { name: new RegExp(`^${NOM_FILE}\\b`) })
-        .click();
+      await ouvrirOngletFile(page, NOM_FILE);
       await expect(
         page.getByText("Au comptoir", { exact: true }),
       ).toBeVisible({ timeout: 30_000 });
@@ -271,9 +266,7 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
     await expect(
       page.getByRole("heading", { name: "Réservations" }),
     ).toBeVisible({ timeout: 30_000 });
-    await page
-      .getByRole("button", { name: new RegExp(`^${NOM_FILE}\\b`) })
-      .click();
+    await ouvrirOngletFile(page, NOM_FILE);
     // LE GESTE PRINCIPAL DE LA CONSOLE, sous ses TROIS libellés — c'est le même
     // bouton, et son nom accessible dépend de l'état de la file : « Appeler le
     // suivant », « Appeler le suivant aussi » quand quelqu'un est déjà au
@@ -327,6 +320,71 @@ async function lireRang(page: import("@playwright/test").Page) {
  * prédicat d'un scrutin. Trop long, chaque tour négatif coûterait cher et la
  * boucle appellerait trop peu ; trop court, on retombe dans le faux négatif.
  */
+/**
+ * OUVRIR L'ONGLET DE SA FILE — ET VÉRIFIER QUE LE CLIC A PRIS.
+ *
+ * ── CE QUE RÉPARE CETTE FONCTION, ET COMMENT ON L'A SU ──
+ *
+ * `files-accueil-panneau.tsx` garde la file ouverte dans un `useState`
+ * initialisé sur `files[0]`. Or `files[0]` de cette organisation est
+ * « Comptoir Attente E2E », qui est VIDE. Un clic d'onglet perdu laisse donc
+ * l'écran sur une file sans personne — et « Appeler le suivant », qui n'existe
+ * que s'il y a quelqu'un à appeler, n'est alors nulle part. C'est exactement
+ * l'`element(s) not found` qu'on lisait, et l'instantané de Playwright l'a
+ * montré noir sur blanc : la région ouverte était « Comptoir Attente E2E »,
+ * pas celle qu'on venait de cliquer.
+ *
+ * ── POURQUOI UN CLIC SE PERD ──
+ *
+ * Il arrive AVANT l'hydratation. Le bouton est déjà peint par le rendu serveur,
+ * donc visible, activé, actionnable au sens de Playwright — mais aucun
+ * gestionnaire React n'y est encore attaché. Le clic part dans le vide, sans
+ * erreur, et le test continue sur le mauvais panneau.
+ *
+ * C'est invisible sur une machine rapide et fréquent sur une machine chargée :
+ * le profil exact d'un flake de CI, qui passe cent fois et tombe la cent-unième
+ * sans qu'on ait touché au code. Aucun `waitForLoadState` ne le couvre — le
+ * réseau est calme bien avant que React ne soit prêt.
+ *
+ * ── LA GARDE ──
+ *
+ * On ne fait pas confiance au clic : on reclique tant que le panneau de NOTRE
+ * file n'est pas ouvert. Le `h3` de la section (`aria-labelledby`,
+ * `files-accueil-panneau.tsx`) rend cet état observable — `level: 3` et
+ * `exact: true` le distinguent du bouton d'onglet, dont le nom accessible porte
+ * en plus le compteur d'attente (« File E2E WebKit 3 »).
+ */
+async function ouvrirOngletFile(
+  page: import("@playwright/test").Page,
+  nomFile: string,
+) {
+  const onglet = page.getByRole("button", {
+    name: new RegExp(`^${nomFile}\\b`),
+  });
+  const titrePanneau = page.getByRole("heading", {
+    name: nomFile,
+    exact: true,
+    level: 3,
+  });
+
+  await expect
+    .poll(
+      async () => {
+        if (await titrePanneau.isVisible().catch(() => false)) return true;
+        await onglet.click().catch(() => {});
+        return titrePanneau
+          .waitFor({ state: "visible", timeout: 2_000 })
+          .then(() => true)
+          .catch(() => false);
+      },
+      {
+        timeout: 30_000,
+        message: `le panneau de « ${nomFile} » doit finir par s'ouvrir`,
+      },
+    )
+    .toBe(true);
+}
+
 async function estJoueurAppele(
   page: import("@playwright/test").Page,
   queueId: string,
