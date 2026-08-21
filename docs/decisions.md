@@ -7403,3 +7403,56 @@ statistique de jeu — voir le bug analytics associé dans `docs/bugs.md`.
 **Références** :
 - PR #165, migration `20261010120000`
 - ADR-112, ADR-113 · `docs/chantier-reserver-vitrine.md`
+
+---
+
+## ADR-109 §A4 — Amendement : la garde IP observe, le quota durci refuse (2026-08-21, revue L16)
+
+**Constat.** §A4 nommait le seau IP-seule « protection réelle contre l'abus ».
+À la livraison du socle (L16), cette garde a été posée en **observabilité pure**
+(fail-open) — parce qu'ADR-032 interdit tout refus sur une clé partagée dans un
+parcours public : l'IP d'un café est celle de toute la tablée, et un refus posé
+dessus serait un interrupteur qu'un tiers allume en le saturant. La revue L16 a
+relevé que trois commentaires justifiaient cette dégradation par une citation
+de §A4 qui n'existait pas (M-1), et que le quota — devenu de fait la seule
+garde de refus — était son propre levier de déni : vingt salles vides gelaient
+la création pour les vrais clients à quarante requêtes par heure (E-1).
+
+**Décision.**
+1. La garde 1 de §A4 est actée **observatoire** : le seau `lobbyIp` compte,
+   alerte, et ne refuse jamais. ADR-032 prime.
+2. Le quota SQL est **durci** — seules les salles *habitées ou récentes*
+   comptent (verrouillée, OU créée depuis moins de dix minutes, OU au moins
+   deux membres) — mais **il ne ferme pas E-1, et il ne le fermera jamais**.
+   La contre-revue l'a démontré chiffres en main : l'attaquant reçoit le
+   `join_code` de sa propre salle, la rejoint avec un second cookie, la
+   verrouille, et tient une place pour trois requêtes ; le déni se maintient à
+   **~15 requêtes par heure**, moins cher que les 40 de l'attaque d'origine.
+   La raison est structurelle et vaut d'être écrite une fois pour toutes :
+   **aucun prédicat portant sur une appartenance attestée par cookie ne peut
+   distinguer un attaquant qui frappe N cookies de N personnes.** Le levier
+   n'est pas en SQL.
+   **Ce qui est fait à la place** : rendre le déni COURT, VISIBLE et
+   RÉVERSIBLE — TTL des salles verrouillées ramené de quatre heures à une
+   heure (une partie dure quinze minutes), liste des salles actives dans le
+   dashboard du commerçant, et geste de fermeture par salle. Vingt salles-squat
+   se ferment en vingt clics au lieu de se subir.
+   **Ce qui reste à trancher par le propriétaire** (porté au bilan, condition
+   avant que L17/L18 publient l'entrée depuis la Vitrine) : Turnstile sur la
+   création seule, ou seau `failClosed` par IP sur la création seule. Le second
+   heurte ADR-032, mais la comparaison de rayon d'action n'avait jamais été
+   posée — saturer ce seau coûterait « cette IP n'ouvre pas de salon pendant
+   une heure », là où le déni actuel coûte « plus personne dans ce commerce
+   n'ouvre de salon ». C'est cet arbitrage-là, et lui seul, qui referme E-1.
+3. L'hôte dispose d'un **retrait par rang** (`kick_player_lobby`) : un porteur
+   de code qui occupe les places se retire sans consommer le quota (M-2). C'est
+   un retrait de place, pas un bannissement — le bannissement serait un autre
+   arbitrage.
+4. Les commentaires du code citent §A4 **verbatim ou pas du tout** ; toute
+   tension entre deux ADR se tranche par amendement écrit, jamais par
+   reformulation en commentaire.
+
+**Pourquoi.** Une décision qui ne vit que dans un commentaire finit par être
+relue comme la décision elle-même — c'est précisément ainsi que la prochaine
+revue aurait refermé E-1 sans le voir. Le document de décision reste la seule
+source ; le code le cite, il ne le réécrit pas.

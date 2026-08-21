@@ -112,10 +112,26 @@ describe("proxy — là où la session compte, elle est toujours rafraîchie", (
  * chez Supabase PAR LE RÉSEAU. Le test ci-dessus ne peut pas la couvrir : le
  * matcher est appliqué par Next AVANT la fonction, jamais par elle.
  */
-describe("matcher — /v rejoint /play et /pronos hors du proxy", () => {
+describe("matcher — /v et /lobby rejoignent /play et /pronos hors du proxy", () => {
   const matcher = new RegExp(`^${config.matcher[0]}$`);
 
   it.each(["/v", "/v/le-comptoir", "/v/le-comptoir/en"])(
+    "%s ne traverse pas le proxy",
+    (chemin) => {
+      expect(matcher.test(chemin)).toBe(false);
+    },
+  );
+
+  /**
+   * L16 — le socle de lobby, et c'est le finding ci-dessus À CADENCE MULTIPLIÉE.
+   *
+   * `getLobbyState` est rappelée toutes les TROIS secondes par chaque téléphone
+   * de la salle. Un `auth.getUser()` par tour — donc, dès qu'un cookie de
+   * session existe, un aller-retour RÉSEAU vers l'API Auth Supabase — pour un
+   * résultat que personne ne lit : le membre d'un lobby est un cookie anonyme
+   * par salle, jamais un utilisateur Supabase.
+   */
+  it.each(["/lobby", "/lobby/abc", "/lobby/8f1c-uuid/salon"])(
     "%s ne traverse pas le proxy",
     (chemin) => {
       expect(matcher.test(chemin)).toBe(false);
@@ -127,6 +143,11 @@ describe("matcher — /v rejoint /play et /pronos hors du proxy", () => {
     // `/verify` et `/videos` : la borne de mot du matcher (`v(?:/|$)`) est ce
     // qui les garde dans le proxy — un `v` nu les en aurait sortis en silence,
     // et aucun chemin en `v…` ne le signalait ici (contre-revue L11).
+    //
+    // `/lobbyiste` et `/lobbying` jouent le même rôle pour `lobby(?:/|$)` : un
+    // préfixe non borné aurait sorti du proxy tout chemin COMMENÇANT par ces
+    // cinq lettres, silencieusement, et avec lui la session, la redirection de
+    // connexion et l'isolation du domaine admin.
     for (const chemin of [
       "/dashboard",
       "/login",
@@ -134,6 +155,8 @@ describe("matcher — /v rejoint /play et /pronos hors du proxy", () => {
       "/quiz/ABC",
       "/verify",
       "/videos/promo",
+      "/lobbyiste",
+      "/lobbying/2026",
     ]) {
       expect(matcher.test(chemin)).toBe(true);
     }
@@ -149,8 +172,8 @@ describe("matcher — /v rejoint /play et /pronos hors du proxy", () => {
  * Garde de SOURCE, même motif que `wallet-cache-headers.test.ts` :
  * `next.config.ts` n'est pas exécutable depuis Vitest sans monter Next.
  */
-describe("next.config — le Report-Only couvre les TROIS surfaces sans nonce", () => {
-  it("/play, /pronos et /v y sont toutes les trois", () => {
+describe("next.config — le Report-Only couvre les QUATRE surfaces sans nonce", () => {
+  it("/play, /pronos, /v et /lobby y sont toutes les quatre", () => {
     const src = readFileSync("next.config.ts", "utf8").replace(/\r\n/g, "\n");
     const i = src.indexOf("...(cspReportOnly");
     expect(i, "bloc Report-Only introuvable").toBeGreaterThan(-1);
@@ -159,5 +182,6 @@ describe("next.config — le Report-Only couvre les TROIS surfaces sans nonce", 
     expect(bloc).toContain('"/play/:path*"');
     expect(bloc).toContain('"/pronos/:path*"');
     expect(bloc).toContain('"/v/:path*"');
+    expect(bloc).toContain('"/lobby/:path*"');
   });
 });

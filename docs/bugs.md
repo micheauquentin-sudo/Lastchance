@@ -4527,3 +4527,35 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     listes fermées du dépôt. Une police ajoutée d'un seul côté passerait le
     typecheck et le `check` SQL séparément sans qu'aucun test ne le
     signale. À poser, sur le modèle de la garde existante.
+
+---
+
+## LOBBY-1 — Déni intra-organisation sur la création de salons (E-1, revue L16)
+
+**État : OUVERT, borné, consigné. Condition avant que L17/L18 publient l'entrée
+depuis la Vitrine.** Aujourd'hui sans impact : aucun lien du produit ne mène à
+`/lobby` (vérifié à la revue).
+
+**Le fait.** Un anonyme qui connaît un slug de vitrine peut occuper le quota de
+salons d'un commerce : `create` + rejoindre sa propre salle avec un second
+cookie + `lock` = trois requêtes pour une place tenue une heure. Régime
+soutenu : **~15 requêtes/heure**, très en dessous du seuil d'observation
+(`lobbyIp`, 3 600/h) — le capteur ne se déclenche jamais. Les vrais clients du
+commerce reçoivent alors « Beaucoup de salles sont déjà ouvertes ici ».
+
+**Pourquoi ce n'est pas réparable en SQL.** Aucun prédicat portant sur une
+appartenance attestée par cookie ne distingue *un attaquant qui frappe N
+cookies* de *N personnes*. Le durcissement du quota (salles habitées ou
+récentes) a été livré et **ne ferme pas** le chemin — il le borne.
+
+**Ce qui est livré comme contrepartie** (L16) : TTL des salles verrouillées
+ramené à une heure, liste des salons actifs dans le dashboard commerçant, geste
+de fermeture par salon. Le déni est devenu court, visible et réversible.
+
+**Ce qui le fermerait, et qui appartient au propriétaire** : Turnstile sur la
+création seule (friction et tiers script sur un parcours gratuit), ou seau
+`failClosed` par IP sur la création seule (heurte ADR-032, mais le rayon d'action
+est plus petit que celui du déni qu'il empêche : « cette IP n'ouvre pas de salon
+pendant une heure » contre « plus personne dans ce commerce n'ouvre de salon »).
+
+**Voir** : ADR-109 §A4 amendé (`docs/decisions.md`), revue et contre-revue L16.

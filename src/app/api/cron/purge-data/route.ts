@@ -30,6 +30,9 @@ import { finishWorkerRunSafely, startWorkerRunSafely } from "@/lib/worker-health
  *    ouvertures de coffre en cascade), bornés à la dernière activité de
  *    l'appartenance joueur ; la configuration du commerçant reste intacte
  *    (voir purge_expired_meta_progression).
+ *  - les LOBBIES joueurs expirés et leurs membres (pseudos saisis en salle
+ *    d'attente), datés sur `expires_at` et non sur l'heure du cron — ADR-111,
+ *    voir purge_expired_lobbies.
  * ⚠️ CE N'EST PAS UN OPT-IN, et l'écrire ici était faux — sur le premier
  * fichier qu'on ouvre pour savoir QUI est purgé. `00019:18-19` a posé
  * `data_retention_months default 12` ET rempli toutes les lignes existantes :
@@ -84,6 +87,7 @@ export async function GET(request: Request) {
     progression,
     experienceEvents,
     rewardIssuances,
+    lobbies,
   ] = await Promise.all([
     admin.rpc("purge_expired_personal_data"),
     admin.rpc("purge_expired_contest_players"),
@@ -163,6 +167,18 @@ export async function GET(request: Request) {
     // hors de ce cron sans poser le réglage, rendrait cette phrase fausse une
     // seconde fois sans qu'aucun appel de ce fichier n'ait changé.
     admin.rpc("purge_expired_reward_issuances"),
+    // Lobbies joueurs (L16) : salles d'attente gratuites, et les pseudos qu'on
+    // y saisit. Aucune donnée d'abonné, aucun code encaissable — mais un pseudo
+    // reste une saisie de personne, et une salle morte n'a plus de raison
+    // d'exister une seconde de plus que son `expires_at`.
+    //
+    // SON SEUIL EST DATÉ SUR `expires_at`, PAS SUR `now()` (ADR-111), et c'est
+    // ce qui la distingue des purges ci-dessus : l'expiration d'un lobby est
+    // CONSTATÉE à la lecture, aucun worker ne l'écrit. Un cron qui rattrape
+    // trois jours de retard efface donc exactement ce qu'il aurait effacé à
+    // l'heure — et une panne de ce cron ne prolonge la vie d'aucune salle,
+    // puisque rien n'attendait le cron pour qu'elle soit morte.
+    admin.rpc("purge_expired_lobbies"),
   ]);
 
   // Seaux de rate-limit expirés : `public.rate_limits` est une table de
@@ -252,7 +268,8 @@ export async function GET(request: Request) {
     quizzes.error ||
     progression.error ||
     experienceEvents.error ||
-    rewardIssuances.error
+    rewardIssuances.error ||
+    lobbies.error
   ) {
     reportError(
       "cron.purge-data",
@@ -268,6 +285,7 @@ export async function GET(request: Request) {
         progression.error?.message ??
         experienceEvents.error?.message ??
         rewardIssuances.error?.message ??
+        lobbies.error?.message ??
         "unknown",
     );
     // Le message d'origine part à Sentry ; le journal de santé ne garde
@@ -313,6 +331,7 @@ export async function GET(request: Request) {
       referralDataPurged: Number(referral.data ?? 0),
       quizPlayersAnonymized: Number(quizzes.data ?? 0),
       progressionScopesDeleted: Number(progression.data ?? 0),
+      lobbiesDeleted: Number(lobbies.data ?? 0),
       workerRunsReaped,
       workerRunsDeleted,
     },
@@ -334,6 +353,7 @@ export async function GET(request: Request) {
       referralDataPurged: Number(referral.data ?? 0),
       quizPlayersAnonymized: Number(quizzes.data ?? 0),
       progressionScopesDeleted: Number(progression.data ?? 0),
+      lobbiesDeleted: Number(lobbies.data ?? 0),
       workerRunsReaped,
       workerRunsDeleted,
     },

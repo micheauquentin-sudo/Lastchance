@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
+import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { createClient } from "@/lib/supabase/server";
 import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
 import type { ContenuVitrineView } from "@/lib/vitrine";
+import type { OrgLobbyView } from "@/lib/lobby";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -14,6 +16,7 @@ import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
+import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
 import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
 
 export const metadata: Metadata = { title: "Vitrine" };
@@ -65,8 +68,26 @@ export default async function VitrineDashboardPage() {
    * la LIGNE DE RÉGLAGES — une par commerce, contrairement aux événements et
    * aux chasses qui comptent par sous-objet.
    */
+  /**
+   * LES SALONS SONT LUS ICI, avec les deux autres — et seulement si une adresse
+   * existe. Une salle ne s'ouvre que sur une vitrine PUBLIÉE
+   * (`resoudreCommerceLobby` exige `published = true`), donc sans `settings` il
+   * ne peut y en avoir aucune : la RPC répondrait `{"lobbies":[]}` pour tout le
+   * monde, une fois par ouverture d'écran. `loadOrgLobbies` refait sa propre
+   * garde de session, mais `getUserAndOrg` est mémoïsé par `cache()` sur le
+   * rendu — la porte est retenue, la requête ne l'est pas.
+   */
   const supabase = await createClient();
-  const [contenus, ouvertures] = settings && organizationId
+  const lireSalons = async () => {
+    const ctx = await loadOrgLobbies();
+    // Le refus de garde ne se distingue pas d'une absence de salon À L'ÉCRAN :
+    // la carte ne se peint qu'avec au moins une salle, donc les deux cas sont
+    // le même silence. Ce qui compte est que le refus n'invente pas de liste.
+    return ctx.ok
+      ? { liste: ctx.salons, luA: ctx.luA }
+      : { liste: [] as OrgLobbyView[], luA: "" };
+  };
+  const [contenus, ouvertures, supervision] = settings && organizationId
     ? await Promise.all([
         supabase
           .from("vitrine_contenus")
@@ -75,8 +96,13 @@ export default async function VitrineDashboardPage() {
           .order("rang")
           .then(({ data }) => (data ?? []) as ContenuVitrineView[]),
         readModulePageOpenCount(supabase, "vitrine", settings.id),
+        lireSalons(),
       ])
-    : [[] as ContenuVitrineView[], 0];
+    : [
+        [] as ContenuVitrineView[],
+        0,
+        { liste: [] as OrgLobbyView[], luA: "" },
+      ];
 
   return (
     <div>
@@ -122,6 +148,17 @@ export default async function VitrineDashboardPage() {
                 ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
               </p>
             </Card>
+
+            {/* LA SUPERVISION DES SALONS — contrepartie du finding E-1. Elle
+                vient JUSTE APRÈS « Audience » parce qu'elle répond à la même
+                question, dans l'autre sens : « Audience » dit ce que la vitrine
+                a rapporté, celle-ci dit ce qui s'y passe MAINTENANT et ce que
+                le commerçant peut y faire. Et elle ne se peint qu'avec au moins
+                un salon — la carte porte le pourquoi en entier. */}
+            <SalonsOuverts
+              salons={supervision.liste}
+              luA={supervision.luA}
+            />
 
             {/* LA PORTE DE L'ÉCRAN DE TRADUCTION (VIT-5), ET ELLE NE COMPTE
                 RIEN. Le résumé chiffré existe — `vitrine_translation_state` le

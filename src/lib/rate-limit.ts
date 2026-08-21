@@ -730,6 +730,43 @@ export const RATE_LIMITS = {
    *  que des visiteurs lisent. C'est délibérément deux fois plus serré que
    *  `vitrineSlug`, qui n'écrit qu'une ligne par appel. */
   vitrineImport: { limit: 10, windowSeconds: 3600 },
+  /** PLAFOND PAR IP SEULE du socle de lobby (L16), tous commerces confondus —
+   *  compteur d'OBSERVABILITÉ, jamais un refus. HONNÊTETÉ D'ABORD : ADR-109 §A4
+   *  écrit « seau IP-seule (protection réelle contre l'abus) » — la garde a
+   *  pourtant été livrée OBSERVATOIRE, parce qu'ADR-032 interdit le refus sur
+   *  clé partagée dans un parcours public (le Wi-Fi du café est l'IP de toute
+   *  la table). Cette tension est TRANCHÉE par l'amendement §A4 (revue L16,
+   *  M-1) : la garde 1 observe. Le quota SQL durci BORNE l'abus sans le
+   *  fermer — un attaquant qui rejoint et verrouille sa propre salle tient
+   *  une place pour trois requêtes (E-1) —, et ce qui referme vraiment E-1
+   *  est un arbitrage porté au propriétaire : Turnstile ou `failClosed` sur
+   *  la CRÉATION seule. En attendant, le déni est court (TTL verrouillé d'une
+   *  heure), visible et réversible (le commerçant voit et ferme). Le plafond par
+   *  cookie joueur reste écarté par §A4, qui le dit décoratif (« il ne protège
+   *  rien qu'un joueur motivé ne contourne en effaçant son cookie ») — ne pas
+   *  le réintroduire en croyant compléter le lot.
+   *
+   *  IP SEULE, SANS AUCUNE CLÉ DE RESSOURCE, et c'est la raison de `pageOpenIp`
+   *  (wagon 7) : `createLobby` reçoit un SLUG et `joinLobby` un CODE, tous deux
+   *  fournis par le client. Un compteur composé avec eux ouvrirait une série
+   *  neuve à chaque valeur inventée — donc un balayage de codes à six
+   *  caractères se disperserait sur autant de seaux, invisible en supervision,
+   *  et chaque tour paierait une écriture de rate-limit. L'agrégat par IP est le
+   *  SEUL endroit d'où cette rafale se voit. Il n'existe volontairement pas de
+   *  second seau par salle : une salle n'a que douze places, sa borne est sa
+   *  capacité.
+   *
+   *  FAIL-OPEN, ET NE PAS LE REPASSER EN `failClosed` (ADR-032) : une salle
+   *  s'ouvre depuis le Wi-Fi ou le CGNAT PARTAGÉ d'un café — l'IP est commune à
+   *  toute la table. Un refus posé sur cette clé serait un interrupteur qu'un
+   *  tiers allume en la saturant (« déni de retrouvailles pour tout le lieu »),
+   *  et il n'y a ici ni lot ni argent à protéger qui le justifierait : le
+   *  lobby est GRATUIT et ne distribue rien.
+   *
+   *  600/600 s : calibrage repris de `reserverIpCeiling`, même public et même
+   *  Wi-Fi partagé. Une tablée qui ouvre une salle et s'y retrouve consomme
+   *  quelques unités ; le seuil reste un signal, pas une porte. */
+  lobbyIp: { limit: 600, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */
