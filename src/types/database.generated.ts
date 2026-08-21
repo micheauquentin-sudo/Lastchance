@@ -1362,6 +1362,172 @@ export type Database = {
           },
         ]
       }
+      duo_choices: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          member_token_hash: string
+          organization_id: string
+          round_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          member_token_hash: string
+          organization_id: string
+          round_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          member_token_hash?: string
+          organization_id?: string
+          round_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duo_choices_item_id_organization_id_fkey"
+            columns: ["item_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_items"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "duo_choices_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duo_choices_round_id_organization_id_fkey"
+            columns: ["round_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "duo_rounds"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      duo_options: {
+        Row: {
+          created_at: string
+          id: string
+          item_id: string
+          ordre: number
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          item_id: string
+          ordre: number
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          item_id?: string
+          ordre?: number
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duo_options_item_id_organization_id_fkey"
+            columns: ["item_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_items"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "duo_options_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      duo_rounds: {
+        Row: {
+          created_at: string
+          id: string
+          lobby_id: string
+          organization_id: string
+          revealed_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lobby_id: string
+          organization_id: string
+          revealed_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lobby_id?: string
+          organization_id?: string
+          revealed_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duo_rounds_lobby_id_organization_id_fkey"
+            columns: ["lobby_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "player_lobbies"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "duo_rounds_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      duo_settings: {
+        Row: {
+          created_at: string
+          organization_id: string
+          suggestion_item_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          suggestion_item_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          suggestion_item_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duo_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duo_settings_suggestion_item_id_organization_id_fkey"
+            columns: ["suggestion_item_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "vitrine_items"
+            referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
       economic_policy_events: {
         Row: {
           created_at: string
@@ -8081,6 +8247,20 @@ export type Database = {
         Args: { p_organization_id: string; p_quiz_id: string }
         Returns: Json
       }
+      duo_choose: {
+        Args: { p_item_id: string; p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      duo_options_json: { Args: { p_organization_id: string }; Returns: Json }
+      duo_options_state: { Args: { p_organization_id: string }; Returns: Json }
+      duo_start: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
+      duo_state: {
+        Args: { p_lobby_id: string; p_token_hash: string }
+        Returns: Json
+      }
       end_event_session: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
@@ -9281,6 +9461,18 @@ export type Database = {
           p_status: string
         }
         Returns: boolean
+      }
+      set_duo_options: {
+        Args: {
+          p_actor: string
+          p_item_ids: string[]
+          p_organization_id: string
+        }
+        Returns: Json
+      }
+      set_duo_suggestion: {
+        Args: { p_actor: string; p_item_id: string; p_organization_id: string }
+        Returns: Json
       }
       set_event_game_status: {
         Args: {
