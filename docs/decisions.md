@@ -7456,3 +7456,92 @@ la création pour les vrais clients à quarante requêtes par heure (E-1).
 relue comme la décision elle-même — c'est précisément ainsi que la prochaine
 revue aurait refermé E-1 sans le voir. Le document de décision reste la seule
 source ; le code le cite, il ne le réécrit pas.
+
+## ADR-115 : Le train Vitrine et salons joueurs — ce qui a été tranché
+
+**Date** : 2026-08-21
+**Statut** : Accepté
+**Contexte** : les huit lots L11 à L18 du train Réserver & Vitrine (ADR-109)
+sont fusionnés et en production — la Vitrine publique bilingue (L11-L15) et
+le socle lobby avec ses deux jeux, Duo Miroir et Portrait de la Bande
+(L16-L18). Cet ADR clôt le train : il consigne les décisions structurantes
+prises pendant l'exécution et ce que la vérification a trouvé que la lecture
+seule n'aurait pas montré.
+
+**Décision — traduction sans fournisseur.** L'adaptateur i18n de L11 reste
+neutre : aucune IA payante, aucune clé Anthropic, DeepL écarté (son compte
+est un geste propriétaire hors périmètre d'exécution autonome). Le français
+est la langue de référence ; une traduction absente ou périmée replie sur le
+FR plutôt que d'afficher un texte à moitié traduit. Confirme et clôt
+l'arbitrage ouvert par ADR-109 « Décision traduction ».
+
+**Décision — portes de publication en opt-in.** Réserver et le quiz ne
+s'affichent sur la Vitrine que si le commerçant les active explicitement
+(L13) ; le geste du commerçant EST le consentement, il n'existe pas d'ouverture
+par défaut. Le même principe gouverne l'affichage des portes lobby ajoutées en
+L17/L18 : elles ne s'affichent que chez les commerçants qui ont déjà ouvert
+l'annuaire, ces lots ne l'ouvrent chez personne.
+
+**Décision — QR contextuels par ancre, jamais par paramètre d'URL.** L'ISR de
+la Vitrine (revalidate 60 s) rend une page par ancre de slug ; un QR encodé
+avec un paramètre de requête casserait le cache statique à chaque scan. Les
+QR imprimables de L12 pointent donc sur des ancres de route, pas des query
+strings.
+
+**Décision — identité par salle, jamais recousable.** Un joueur de lobby
+(L16) n'a pas d'identité stable entre deux salons : son identité est locale à
+la salle qu'il a rejointe, par construction, pour qu'aucune session ne
+permette de relier deux parties d'un même joueur.
+
+**Décision — le secret du vote est garanti « dès trois joueurs », pas avant.**
+Portrait de la Bande (L18) a d'abord affirmé le secret du vote sans condition.
+La revue a montré qu'à deux joueurs le secret n'existe pas : celui qui passe
+sait que l'unique voix restante est celle de l'autre, qui le désigne donc de
+fait. `bande_reveal` exige désormais `least(3, dénominateur)` réponses avant
+de révéler, et le produit énonce le seuil du même mot partout, y compris à
+l'éditeur commerçant avant qu'on propose le jeu.
+
+**Décision — packs de plateforme en code, pas en table.** Les cinq packs de
+questions de Portrait de la Bande (Entre amis, En duo, Équipe, Anniversaire,
+Taquin) sont écrits en TypeScript et gardés par une garde de parité SQL⇄TS,
+plutôt que stockés en table éditable — décision d'ADR-109 confirmée : le
+contenu est un artefact de release, pas une donnée commerçante, et une garde
+de contenu vérifie mot à mot les huit familles exclues du cahier.
+
+**Ce que la vérification a trouvé que la lecture ne montrait pas.**
+
+- **L'ISR qui n'existait pas.** La route `/v/[slug]/[[...langue]]` posait
+  `revalidate = 60` sans `generateStaticParams` : Next ne préconstruit alors
+  aucune page, et sans elle chaque requête retombe en rendu dynamique — l'ISR
+  affichée dans le code ne s'exécutait jamais. Prouvé par le manifeste de
+  build (`.next/server/app` ne contenait aucune page pré-rendue pour la
+  route), pas par simple lecture du fichier.
+- **La course du scrutin.** Sur `bande_reveal`, un tic de minuterie déclenché
+  côté client pouvait partir avant la pose du verrou serveur et revenir après
+  lui — un « déjà révélé » écrasé par un révélateur tardif. Fermé par
+  transaction verrouillée en base, pas par un délai côté client.
+- **L'hôte qui désanonymisait les votes un par un.** Avant le plancher de
+  3 réponses (revue L18, E-1), l'hôte votait, regardait le compteur passer à
+  deux, révélait, puis retranchait mentalement sa propre voix pour connaître
+  le choix exact du voisin qu'il venait de voir taper — six fois par partie,
+  sans qu'aucun test ne le signale puisque le mécanisme livré fonctionnait
+  « comme prévu ». `bande_reveal` refuse désormais sous le plancher.
+- **Le `is distinct from` qui aurait rouvert la brèche que son propre remède
+  fermait.** Un correctif de garde écrit avec `is distinct from` au lieu de
+  `is not null and <>` traitait `null` comme distinct de la valeur interdite
+  — donc silencieusement permissif sur exactement le cas que la garde
+  existait pour fermer. Trouvé en confrontant la garde à une valeur `null`
+  explicite en pgTAP, pas en la relisant.
+
+**Reste ouvert** (voir `docs/bugs.md`) : LOBBY-1 (Turnstile posé, non armé —
+clés de production à poser par le propriétaire, geste déjà requis pour
+Réserver depuis L4) ; aucun mécanisme de présence dans les salons, l'hôte doit
+clore chaque question lui-même ; `robots: index false` sur la Vitrine, décision
+de commerce en attente ; les cinq packs de questions Portrait de la Bande
+attendent la relecture du propriétaire.
+
+**Références** :
+- ADR-109 (plan de lots), ADR-110/111/113/114 (RES-2/RES-3/L8/L9)
+- `docs/chantier-reserver-vitrine.md`
+- `docs/roadmap.md` V1.64
+- `docs/bugs.md` LOBBY-1

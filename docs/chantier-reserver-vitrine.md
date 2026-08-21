@@ -40,7 +40,7 @@ parallèle, fusions de migrations sérialisées.
 | L15 | VIT-5 — écran de traduction (version vue bornée, acteur signé) ; langues+ = extension documentée | ✅ | #171 | 20261016120000 |
 | L16 | Socle session joueur — salons 2-12, code court, TTL, kick, supervision commerçant (E-1 borné : voir `bugs.md` LOBBY-1) | ✅ | #172 | 20261017120000 |
 | L17 | Duo Miroir — choix scellés, révélation simultanée, nom gravé au geste ; porte Vitrine ; Turnstile posé sur la création de salon (LOBBY-1 non armé) | ✅ | #173 | 20261018120000 |
-| L18 | Portrait de la Bande (A4, packs de questions) | ⏳ | — | — |
+| L18 | Portrait de la Bande — vote secret (plancher de 3 réponses), dénominateur figé, 5 packs livrés et gardés | ✅ | #174 | 20261019120000 |
 
 Légende : ⏳ à faire · 🔨 en cours · ✅ fusionné.
 

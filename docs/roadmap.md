@@ -1,6 +1,6 @@
 # Roadmap — Lastchance
 
-## V1.64 — Train Réserver & Vitrine — EN COURS (2026-08-19)
+## V1.64 — Train Réserver & Vitrine (✅ 2026-08-21)
 
 **Objectif** : livrer LastChance Réserver (RES-1..5) et la Vitrine (VIT-1..5),
 plus les Expériences Signature, Duo Miroir et Portrait de la Bande, selon le
@@ -9,36 +9,49 @@ d'exécution autonome : push/fusion/enchaînement des lots sans intervention,
 bilan global en fin de train). Suivi détaillé, statut lot par lot et
 arbitrages : [`docs/chantier-reserver-vitrine.md`](./chantier-reserver-vitrine.md).
 Cahier produit source : [`docs/lastchance-reserver.md`](./lastchance-reserver.md).
-Arbitrages A1-A4 et décision traduction : ADR-109.
+Arbitrages A1-A4 et décision traduction : ADR-109. Clôture : ADR-115.
 
-**Lots** :
-- L0 cadrage docs
-- L1 benchmark Mennoo (lecture seule)
-- L2 droit serveur vitrine
-- L3 RES-1a schéma + RPC
-- L4 RES-1b surfaces + email
-- L5 RES-2 liste prioritaire + invitations
-- L6 RES-3 file sereine
-- L7 RES-4 attente active
-- L8 Expériences Signature
-- L9 RES-5 hold stock + RESA- + Drop
-- L10 VIT-1a marque + catalogue FR (sous drapeau)
-- L11 VIT-1b infra i18n + adaptateur neutre (ouverture publique Vitrine)
-- L12 VIT-2 import assisté + QR imprimables
-- L13 VIT-3 branchement
-- L14 VIT-4 social + avis + analytics + CRM léger
-- L15 VIT-5 langues+
-- L16 socle session joueur
-- L17 Duo Miroir
-- L18 Portrait de la Bande
+**Les 19 lots, tous livrés et fusionnés** :
+- L0 cadrage docs · L1 benchmark Mennoo (lecture seule) · L2 droit serveur
+  vitrine · L3 RES-1a schéma + RPC · L4 RES-1b surfaces + email · L5 RES-2
+  liste prioritaire + invitations · L6 RES-3 file sereine · L7 RES-4 attente
+  active · L8 Expériences Signature · L9 RES-5 hold stock + RESA- + Drop
+  (PR #156 à #165, migrations `20261001120000` à `20261010120000`) — **le
+  périmètre Réserver est complet**.
+- L10 VIT-1a marque + catalogue FR sous drapeau (migration `20261011120000`).
+- **L11 VIT-1b** (#167, `20261012120000`) — la Vitrine s'ouvre au public :
+  route bilingue `/v/[slug]/[[...langue]]` en ISR 60 s, infra i18n à
+  adaptateur neutre (aucun fournisseur, zéro IA payante — ADR-109/ADR-115),
+  traduction par version de contenu à péremption automatique, sélecteur de
+  langue au-delà de 95 % de couverture.
+- **L12 VIT-2** (#168, `20261013120000`) — import assisté de carte sans IA
+  (parseur heuristique + aperçu éditable obligatoire), RPC atomique bornée
+  12 rubriques / 120 fiches, QR contextuels imprimables par ancre.
+- **L13 VIT-3** (#169, `20261014120000`) — portes Réserver/quiz sur la
+  Vitrine, en opt-in (le geste du commerçant est le consentement).
+- **L14 VIT-4** (#170, `20261015120000`) — « À la une », audience (beacon
+  vitrine), segments factuels « a réservé / est venu ».
+- **L15 VIT-5** (#171, `20261016120000`) — écran de traduction commerçant :
+  la version vue voyage avec le formulaire.
+- **L16** socle lobby (#172, `20261017120000`) — salons joueurs 2-12 par
+  code court, identité par salle, quota organisation sous verrou, TTL,
+  supervision commerçant (déni intra-organisation borné, pas fermé — voir
+  `docs/bugs.md` LOBBY-1).
+- **L17 Duo Miroir** (#173, `20261018120000`) — choix scellés, révélation
+  simultanée, nom gravé au geste ; porte Vitrine ; Turnstile posé (non armé)
+  sur la création de salon.
+- **L18 Portrait de la Bande** (#174, `20261019120000`) — vote secret,
+  plancher de 3 réponses, dénominateur figé par question, 5 packs de
+  questions en attente de relecture propriétaire.
 
-**Statut** : L0 à L9 livrés et fusionnés (PR #156, #157, #159, #160, #161,
-#162, #163, #164, #165 ; migrations `20261001120000` à `20261010120000`) —
-**le périmètre Réserver (RES-1 à RES-5) est complet**. L10 (VIT-1a, catalogue
-Vitrine) en cours sur `chantier/rv-l10-vitrine-catalogue`, migration
-`20261011120000`. L11 à L18 inchangés, à faire. Arbitrages RES-2/RES-3/L8/L9 :
-ADR-110, ADR-111, ADR-113, ADR-114. Suivi détaillé :
+Arbitrages détaillés : ADR-109 à ADR-115. Suivi lot par lot :
 [`docs/chantier-reserver-vitrine.md`](./chantier-reserver-vitrine.md).
+
+**Reste ouvert** (voir `docs/bugs.md`) : LOBBY-1 (Turnstile posé, clés de
+production à poser par le propriétaire), aucun mécanisme de présence dans les
+salons (l'hôte doit clore chaque question), `robots: index false` sur la
+Vitrine (décision de commerce en attente), les 5 packs de questions Portrait
+de la Bande en attente de relecture propriétaire.
 
 ## V1 — MVP SaaS (✅ livrée)
 **Objectif** : MVP robuste testable chez un premier commerce réel.
