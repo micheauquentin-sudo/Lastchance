@@ -138,7 +138,19 @@ export function BlocExperiences({
 }) {
   const t = TEXTES_VITRINE[lang];
   const duo = duoOuvert(portes);
-  if (portes.quiz.length === 0 && !duo) return null;
+  // LA CONDITION DE RENDU A SAUTÉ EN L18, ET VOICI CE QUI LE PERMET.
+  //
+  // Elle existait pour ne pas peindre un bloc « Jeux » vide. Le Portrait de la
+  // Bande, lui, ouvre TOUJOURS — pack par défaut, aucune configuration — donc
+  // le bloc n'est plus jamais vide, et la garder revenait à cacher le seul jeu
+  // disponible à ceux qui n'avaient ni quiz ni plateau duo.
+  //
+  // CE QUI REND LA SUPPRESSION SÛRE, ET IL FAUT LE DIRE : ce bloc est en OPT-IN
+  // depuis VIT-3. Il n'apparaît que sur les vitrines dont le commerçant l'a
+  // remonté lui-même depuis la colonne « Masqués » de ses réglages — le geste
+  // EST le consentement (`VITRINE_BLOCS_DEFAUT`, `src/lib/vitrine.ts`). Ce lot
+  // n'ouvre donc l'annuaire chez personne : il finit de servir ceux qui l'ont
+  // déjà ouvert.
 
   return (
     <section
@@ -157,6 +169,20 @@ export function BlocExperiences({
         {/* « Duo Miroir » NE SE TRADUIT PAS — nom propre de produit, motif
             « Instagram » / « TikTok ». La ligne qui l'explique, elle, suit la
             langue de la page. */}
+        {/* PORTRAIT DE LA BANDE (L18) — SANS DRAPEAU, ET C'EST DÉLIBÉRÉ.
+            `portes.experiences` n'a PAS reçu de clé `bande` : le jeu marche sans
+            configuration (le pack a un défaut, les questions vivent dans le
+            code), il n'existe donc aucun état « pas prêt » à refléter. La porte
+            du Duo est un booléen parce que son plateau, lui, peut être vide —
+            offrir un jeu qui n'ouvrira pas est une promesse rompue. Ici, la
+            porte ouvre toujours, et un drapeau n'aurait gardé que lui-même.
+            Elle est PREMIÈRE parce que c'est le format par défaut d'un salon
+            (`creation-lobby-form`), et le seul qui accueille une tablée. */}
+        <CarteLien href={`/lobby/nouveau/${slug}`} nom="Portrait de la Bande">
+          <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
+            {t.bandeInvite}
+          </span>
+        </CarteLien>
         {duo && (
           <CarteLien href={`/lobby/nouveau/${slug}`} nom="Duo Miroir">
             <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">

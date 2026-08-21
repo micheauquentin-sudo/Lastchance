@@ -17,6 +17,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
 import { messageRefusEntree } from "@/components/lobby/refus";
 import { DuoExperience } from "@/components/duo/duo-experience";
+import { BandeExperience } from "@/components/bande/bande-experience";
 
 /**
  * `/lobby/[code]` — l'écran unique du socle : on y entre, puis on y attend.
@@ -357,6 +358,36 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   // c'est `DuoExperience` qui les croise avec l'état de sa manche.
   if (vue.kind === "duo" && (vue.status === "locked" || vue.status === "closed")) {
     return <DuoExperience lobbyId={lobbyId} statutSalle={vue.status} />;
+  }
+
+  // ── PORTRAIT DE LA BANDE (L18) — LE MÊME BRANCHEMENT, POUR LA MÊME RAISON ──
+  //
+  // Tout ce qui est écrit ci-dessus pour « duo » vaut mot pour mot ici : le
+  // verrou n'est plus une fin mais un départ, ce test passe AVANT « expiré » et
+  // « refermé » parce que le RÉCAPITULATIF ferme la salle et ramène sa date de
+  // mort à l'instant même, et le statut voyage parce que `closed` a deux causes
+  // que `bande_state` ne distingue pas (il ne regarde pas le lobby, à dessein).
+  //
+  // ── CE QUI S'AJOUTE EN L18 : L'HÔTE EST DÉSIGNÉ ──
+  //
+  // Une partie à douze ne peut pas s'arrêter d'attendre toute seule — quelqu'un
+  // qui range son téléphone au milieu d'une question bloquerait la table. Deux
+  // gestes (« Révéler maintenant », « Question suivante ») n'appartiennent donc
+  // qu'à l'hôte, et `joinCode` est la seule marque d'hôte que cet écran
+  // possède : `lobby_state` ne le rend qu'au créateur. Ce n'est PAS la garde —
+  // `bande_reveal` et `bande_next` recomparent l'empreinte au créateur — c'est
+  // ce qui évite de montrer à onze personnes deux boutons qui les refuseront.
+  if (
+    vue.kind === "bande" &&
+    (vue.status === "locked" || vue.status === "closed")
+  ) {
+    return (
+      <BandeExperience
+        lobbyId={lobbyId}
+        statutSalle={vue.status}
+        hote={vue.joinCode !== null}
+      />
+    );
   }
 
   const restants = msRestants(vue.expiresAt);

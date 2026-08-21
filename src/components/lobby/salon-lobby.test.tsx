@@ -25,6 +25,24 @@ vi.mock("@/actions/lobby", () => ({
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
+/**
+ * LE JEU EST REMPLACÉ PAR UN MARQUEUR, ET C'EST LE SUJET DE CE FICHIER.
+ *
+ * Depuis L18, `locked` et `closed` sur une salle « bande » ne mènent plus à
+ * « la partie commence » mais au jeu, qui ouvre sa propre partie et tient son
+ * propre scrutin. Ce que ces tests vérifient reste le ROUTAGE de `SalonLobby` —
+ * quel écran pour quel statut — et non ce que le jeu peint ensuite : monter le
+ * vrai composant ferait entrer sept RPC dans un fichier qui teste une salle
+ * d'attente, et ses minuteries se mêleraient à celles du scrutin sous faux
+ * temps. Le marqueur porte `statutSalle` parce que c'est la seule chose que le
+ * branchement transmet et qu'il doit transmettre juste.
+ */
+vi.mock("@/components/bande/bande-experience", () => ({
+  BandeExperience: ({ statutSalle }: { statutSalle: string }) => (
+    <p>jeu de la bande ({statutSalle})</p>
+  ),
+}));
+
 const { SalonLobby } = await import("@/components/lobby/salon-lobby");
 
 /**
@@ -97,22 +115,29 @@ describe("SalonLobby — salle d'attente", () => {
     ).toBeTruthy();
   });
 
-  it("bascule sur l'écran de départ quand la salle est verrouillée", async () => {
+  // LE VERROU N'EST PLUS UNE FIN, C'EST LE DÉPART (L18) : sur une salle
+  // « bande », il monte le jeu. Ce que ce test garde est inchangé — la salle
+  // d'attente ne survit pas au verrou.
+  it("monte le jeu quand la salle est verrouillée", async () => {
     getLobbyState.mockResolvedValue(salle("locked"));
     peindre();
 
     await waitFor(() =>
-      expect(screen.getByText(/la partie commence/i)).toBeTruthy(),
+      expect(screen.getByText(/jeu de la bande \(locked\)/i)).toBeTruthy(),
     );
     expect(titreSalle()).toBeNull();
   });
 
-  it("dit la salle refermée quand l'hôte est parti (closed), sans salle d'attente", async () => {
+  // `closed` PASSE AUSSI PAR LE JEU, et le statut voyage avec : c'est le jeu qui
+  // croise « salle refermée » avec l'état de sa partie — un récapitulatif ferme
+  // la salle, et une partie terminée n'est pas une panne. Ce que ce test garde
+  // est la même propriété qu'avant : plus de liste d'attente sur une salle close.
+  it("ne laisse pas la salle d'attente peinte sur « closed »", async () => {
     getLobbyState.mockResolvedValue(salle("closed"));
     peindre();
 
     await waitFor(() =>
-      expect(screen.getByText(/salon a été refermé/i)).toBeTruthy(),
+      expect(screen.getByText(/jeu de la bande \(closed\)/i)).toBeTruthy(),
     );
     expect(titreSalle()).toBeNull();
     expect(screen.queryByText("Sacha")).toBeNull();
@@ -152,7 +177,7 @@ describe("SalonLobby — salle d'attente", () => {
     });
 
     expect(getLobbyState).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/salon a été refermé/i)).toBeTruthy();
+    expect(screen.getByText(/jeu de la bande \(closed\)/i)).toBeTruthy();
   });
 
   /**
@@ -204,14 +229,14 @@ describe("SalonLobby — salle d'attente", () => {
       apresVerrou.resoudre(salle("locked", { joinCode: "ABC123" }));
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByText(/la partie commence/i)).toBeTruthy();
+    expect(screen.getByText(/jeu de la bande \(locked\)/i)).toBeTruthy();
 
     // Puis l'ANCIENNE, avec son `lobby` périmé. Elle ne repeint rien…
     await act(async () => {
       scrutin.resoudre(salle("lobby", { joinCode: "ABC123" }));
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(screen.getByText(/la partie commence/i)).toBeTruthy();
+    expect(screen.getByText(/jeu de la bande \(locked\)/i)).toBeTruthy();
     expect(titreSalle()).toBeNull();
 
     // …et elle ne relance pas non plus le scrutin que l'état terminal a arrêté.

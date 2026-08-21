@@ -129,12 +129,17 @@ test.describe("salons joueurs — socle (L16)", () => {
       await expect(verrou).toBeEnabled();
 
       // Le verrouillage bascule LES DEUX écrans — celui qui l'a demandé
-      // immédiatement, celui d'en face au scrutin suivant.
+      // immédiatement, celui d'en face au scrutin suivant. `bande` est le
+      // format PAR DÉFAUT du formulaire d'ouverture (creation-lobby-form.tsx) :
+      // le verrou ne mène donc plus à l'écran générique « la partie commence »
+      // (EcranDepart, mort pour ce chemin depuis que le formulaire ne pose
+      // jamais un kind neutre) mais directement à la première question de
+      // `BandeExperience` — même repère que `e2e/bande.spec.ts`.
       await verrou.click();
-      await expect(page.getByText(/la partie commence/i)).toBeVisible({
+      await expect(page.getByText(/question 1 sur \d+/i)).toBeVisible({
         timeout: 15_000,
       });
-      await expect(invite.getByText(/la partie commence/i)).toBeVisible({
+      await expect(invite.getByText(/question 1 sur \d+/i)).toBeVisible({
         timeout: 15_000,
       });
     } finally {
