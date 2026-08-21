@@ -1,5 +1,12 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DuoStateView } from "@/lib/duo";
@@ -48,7 +55,10 @@ const OPTIONS = [
   },
 ];
 
-function mancheOuverte(): DuoStateView {
+/** La moitié LISIBLE de `DuoStateView` — `mancheScellee` part de là. */
+type VueDuo = Extract<DuoStateView, { state: "ok" }>;
+
+function mancheOuverte(): VueDuo {
   return {
     state: "ok",
     status: "ouverte",
@@ -74,6 +84,23 @@ function mancheRevelee(): DuoStateView {
   };
 }
 
+/** La même manche, une fois le sceau posé — ce que la relecture doit peindre. */
+function mancheScellee(): VueDuo {
+  return {
+    ...mancheOuverte(),
+    monChoix: { item_id: "it-1", nom: "Le cookie" },
+  };
+}
+
+/** Une promesse dont le test décide l'instant de retour. */
+function differe<T>() {
+  let resoudre!: (valeur: T) => void;
+  const promesse = new Promise<T>((r) => {
+    resoudre = r;
+  });
+  return { promesse, resoudre };
+}
+
 function peindre(statutSalle: "locked" | "closed") {
   render(<DuoExperience lobbyId="lob-1" statutSalle={statutSalle} />);
 }
@@ -89,6 +116,7 @@ const revelation = () => screen.queryByRole("heading", { name: /la révélation/
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("DuoExperience — la manche et la salle se croisent", () => {
@@ -144,5 +172,62 @@ describe("DuoExperience — la manche et la salle se croisent", () => {
 
     await waitFor(() => expect(revelation()).not.toBeNull());
     expect(fermeture()).toBeNull();
+  });
+
+  /**
+   * DEUX LECTURES EN VOL, LA PLUS ANCIENNE RENDUE EN DERNIER — même course que
+   * `SalleAttente`, même correctif.
+   *
+   * Le joueur touche une fiche pendant qu'un tic de scrutin est déjà parti. Ce
+   * tic a lu la manche AVANT le sceau : il rapportera `monChoix: null`. S'il
+   * revient après la relecture de `chooseDuo`, l'écran défait le sceau — les
+   * cartes redeviennent cliquables sur une manche que `duo_choose` refusera
+   * désormais, et le joueur croit son choix perdu.
+   */
+  it("jette une lecture périmée revenue après une plus récente", async () => {
+    vi.useFakeTimers();
+    const scrutin = differe<DuoStateView>();
+    const apresChoix = differe<DuoStateView>();
+    getDuoState
+      .mockResolvedValueOnce(mancheOuverte()) // ouverture
+      .mockReturnValueOnce(scrutin.promesse) // tic parti AVANT le sceau
+      .mockReturnValueOnce(apresChoix.promesse); // relecture du choix
+    chooseDuo.mockResolvedValue({ ok: true, data: { etat: "scelle" } });
+
+    peindre("locked");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(cartes()).toHaveLength(2);
+
+    // Le tic de 3 s part, et reste en vol.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(getDuoState).toHaveBeenCalledTimes(2);
+
+    // Le doigt tombe : troisième lecture, émise APRÈS la deuxième.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /le cookie/i }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getDuoState).toHaveBeenCalledTimes(3);
+
+    // La RÉCENTE rentre la première : le sceau est posé.
+    await act(async () => {
+      apresChoix.resoudre(mancheScellee());
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(/votre choix est scellé/i)).toBeTruthy();
+
+    // Puis l'ANCIENNE, sans choix. Elle ne défait pas le sceau.
+    await act(async () => {
+      scrutin.resoudre(mancheOuverte());
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(/votre choix est scellé/i)).toBeTruthy();
+    expect(
+      cartes().every((carte) => (carte as HTMLButtonElement).disabled),
+    ).toBe(true);
   });
 });

@@ -1,17 +1,25 @@
 // @vitest-environment happy-dom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { LobbyStateView } from "@/lib/lobby";
 
 const getLobbyState = vi.fn();
 const leaveLobby = vi.fn();
+const lockLobby = vi.fn();
 vi.mock("@/actions/lobby", () => ({
   getLobbyState,
   leaveLobby,
+  lockLobby,
   joinLobby: vi.fn(),
   kickLobbyMember: vi.fn(),
-  lockLobby: vi.fn(),
 }));
 
 const refresh = vi.fn();
@@ -40,7 +48,7 @@ const MEMBRES = [
 
 function salle(
   status: "lobby" | "locked" | "closed" | "expired",
-  { expiresAt }: { expiresAt?: string } = {},
+  { expiresAt, joinCode }: { expiresAt?: string; joinCode?: string } = {},
 ): LobbyStateView {
   return {
     state: "ok",
@@ -48,9 +56,20 @@ function salle(
     kind: "bande",
     capacite: 6,
     expiresAt: expiresAt ?? new Date(Date.now() + 10 * 60_000).toISOString(),
-    joinCode: null,
+    // `joinCode` non nul = c'est l'HÔTE : la seule vue qui porte le bouton
+    // « Verrouiller et commencer ».
+    joinCode: joinCode ?? null,
     membres: MEMBRES,
   };
+}
+
+/** Une promesse dont le test décide l'instant de retour. */
+function differe<T>() {
+  let resoudre!: (valeur: T) => void;
+  const promesse = new Promise<T>((r) => {
+    resoudre = r;
+  });
+  return { promesse, resoudre };
 }
 
 function peindre() {
@@ -134,6 +153,72 @@ describe("SalonLobby — salle d'attente", () => {
 
     expect(getLobbyState).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/salon a été refermé/i)).toBeTruthy();
+  });
+
+  /**
+   * DEUX LECTURES EN VOL, LA PLUS ANCIENNE RENDUE EN DERNIER.
+   *
+   * Le scénario exact du terrain : l'hôte clique « Verrouiller et commencer »
+   * alors qu'un tic de scrutin est DÉJÀ PARTI. Ce tic a lu la salle avant le
+   * verrou — il rapportera `lobby` — et rien ne l'oblige à revenir avant la
+   * relecture déclenchée par le verrou, qui rapporte `locked`. Sans compteur de
+   * génération, l'écran affichait « la partie commence » une demi-seconde puis
+   * RETOMBAIT sur la liste d'attente, sur une salle verrouillée en base.
+   *
+   * Le test force l'ordre défavorable : la récente rentre d'abord, l'ancienne
+   * après. La propriété est que l'écran ne bouge plus.
+   */
+  it("jette une lecture périmée revenue après une plus récente", async () => {
+    vi.useFakeTimers();
+    const scrutin = differe<LobbyStateView>();
+    const apresVerrou = differe<LobbyStateView>();
+    getLobbyState
+      .mockResolvedValueOnce(salle("lobby", { joinCode: "ABC123" })) // montage
+      .mockReturnValueOnce(scrutin.promesse) // tic parti AVANT le verrou
+      .mockReturnValueOnce(apresVerrou.promesse); // relecture du verrou
+    lockLobby.mockResolvedValue({ ok: true });
+
+    peindre();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(titreSalle()).not.toBeNull();
+
+    // Le tic de 3 s part, et reste en vol.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(getLobbyState).toHaveBeenCalledTimes(2);
+
+    // L'hôte verrouille : troisième lecture, émise APRÈS la deuxième.
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /verrouiller et commencer/i }),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getLobbyState).toHaveBeenCalledTimes(3);
+
+    // La RÉCENTE rentre la première : l'écran de départ.
+    await act(async () => {
+      apresVerrou.resoudre(salle("locked", { joinCode: "ABC123" }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(/la partie commence/i)).toBeTruthy();
+
+    // Puis l'ANCIENNE, avec son `lobby` périmé. Elle ne repeint rien…
+    await act(async () => {
+      scrutin.resoudre(salle("lobby", { joinCode: "ABC123" }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText(/la partie commence/i)).toBeTruthy();
+    expect(titreSalle()).toBeNull();
+
+    // …et elle ne relance pas non plus le scrutin que l'état terminal a arrêté.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(getLobbyState).toHaveBeenCalledTimes(3);
   });
 
   // Le refus muet de `lobby_state` (cookie effacé, jeton non membre, salle

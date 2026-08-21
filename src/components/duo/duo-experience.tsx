@@ -95,6 +95,20 @@ export function DuoExperience({
   // désactivé JUSQU'AU RETOUR de la relecture, sinon l'écran rend la main sur un
   // plateau qui n'a pas encore appris que le choix est scellé.
   const lireRef = useRef<() => Promise<void>>(async () => undefined);
+  // COMPTEUR DE GÉNÉRATION — motif `SalleAttente`, et pour la même course.
+  //
+  // Le scrutin (3 s), l'ouverture (`ouvrir`) et la relecture qui suit `choisir`
+  // partent du même écran à quelques centaines de millisecondes d'écart. Une
+  // lecture EN VOL depuis avant le sceau rapporte une manche encore sans choix
+  // et, si elle revient après la relecture post-`chooseDuo`, ramène le plateau
+  // à l'état « rien de scellé » — cartes redevenues cliquables sur une manche
+  // qui refusera chaque doigt. Pire à la révélation : le `stopper()` du tic
+  // récent serait suivi d'un `setVue` périmé, laissant l'écran sur le plateau
+  // sans plus aucune lecture pour le corriger.
+  //
+  // Chaque lecture prend un numéro AU DÉPART ; au retour, si ce numéro n'est
+  // plus le dernier émis, le résultat est jeté — arrêt du scrutin compris.
+  const generationRef = useRef(0);
 
   useEffect(() => {
     let vivant = true;
@@ -111,9 +125,13 @@ export function DuoExperience({
 
     const lire = async () => {
       if (arrete || document.hidden) return;
+      const generation = ++generationRef.current;
       try {
         const suivant = await getDuoState(lobbyId);
-        if (!vivant || suivant.state !== "ok") return;
+        // DÉPASSÉE PENDANT LE VOL : une lecture plus récente est partie après
+        // celle-ci, sa réponse fait foi. On ne peint rien, on n'arrête rien.
+        if (!vivant || generation !== generationRef.current) return;
+        if (suivant.state !== "ok") return;
         setVue(suivant);
         // Après la révélation, plus rien ne change : on cesse de lire. Une
         // manche encore ouverte dans une salle CLOSE ne changera pas non plus —

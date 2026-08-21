@@ -169,6 +169,24 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   // sinon l'hôte reclique sur une liste périmée (voir `retirer`). Une relecture
   // en tir-et-oublie rendait la main avant que la liste n'ait bougé.
   const lireRef = useRef<() => Promise<void>>(async () => undefined);
+  // COMPTEUR DE GÉNÉRATION — la seule chose qui empêche une réponse ANCIENNE
+  // d'écraser une récente.
+  //
+  // Le scrutin (3 s) et la relecture explicite de `verrouiller` / `retirer`
+  // partent du MÊME écran à quelques centaines de millisecondes d'écart, et
+  // rien dans le transport ne garantit qu'elles reviennent dans l'ordre où
+  // elles sont parties. Le cas qui coûte : l'hôte verrouille, un scrutin déjà
+  // EN VOL depuis avant le verrou rapporte `status: "lobby"` et arrive APRÈS le
+  // `locked` — l'écran retombe sur « la partie commence » (ou, en duo, démonte
+  // `DuoExperience`) alors que la base dit le contraire.
+  //
+  // Chaque lecture prend donc un numéro AU DÉPART ; au retour, si ce numéro
+  // n'est plus le dernier émis, le résultat est jeté — état, refus muet ET
+  // arrêt du scrutin compris : une lecture périmée n'a pas plus le droit de
+  // tuer la minuterie que de repeindre l'écran. Un délai n'aurait fait que
+  // déplacer la fenêtre ; l'ordre d'émission, lui, est connu avec certitude
+  // côté client.
+  const generationRef = useRef(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -187,9 +205,12 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
     const lire = async () => {
       // Onglet en arrière-plan : rien n'est lu. C'est la moitié du budget.
       if (arrete || document.hidden) return;
+      const generation = ++generationRef.current;
       try {
         const suivant = await getLobbyState(lobbyId);
-        if (!vivant) return;
+        // DÉPASSÉE PENDANT LE VOL : une lecture plus récente est partie après
+        // celle-ci, sa réponse fait foi. On ne peint rien, on n'arrête rien.
+        if (!vivant || generation !== generationRef.current) return;
         if (suivant.state !== "ok") {
           // Refus MUET de `lobby_state` : salle inconnue, cookie effacé OU
           // jeton non membre, indistinctement — et l'écran n'en dira pas plus
