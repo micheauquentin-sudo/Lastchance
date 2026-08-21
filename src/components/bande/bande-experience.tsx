@@ -451,8 +451,14 @@ function EcranBulletin({
 }) {
   return (
     <LobbyCarton>
+      {/* LE SEUIL EST ÉCRIT, PARCE QUE LA PROMESSE NE TIENT QU'À PARTIR DE LÀ.
+          À deux, il n'y a qu'une voix par question : celui qui passe sait que
+          l'unique bulletin est celui de l'autre, et la révélation le lui nomme.
+          Promettre le secret sans condition serait faux sur l'écran même où le
+          joueur le vérifierait. */}
       <p className="text-sm text-k-body">
-        Nommez quelqu’un — ou passez. Personne ne saura ce que vous avez répondu.
+        Nommez quelqu’un — ou passez. Dès trois joueurs, personne ne saura ce que
+        vous avez répondu.
       </p>
       <ul className="mt-3 space-y-2">
         {autres.map((participant) => (
@@ -696,12 +702,16 @@ function EcranRecapitulatif({ lobbyId }: { lobbyId: string }) {
 
       {/* LA PHRASE DE FIN, ET ELLE N'EST PAS DÉCORATIVE. C'est la promesse du
           cahier écrite là où elle se vérifie : aucun votant n'a été nommé de la
-          partie, et ce portrait ne quitte pas cette table. */}
+          partie, et ce portrait ne quitte pas cette table.
+          ELLE PORTE SON SEUIL. La couche technique ne nomme jamais de votant,
+          mais à deux l'arithmétique le fait à sa place : une question, une voix,
+          et celui qui passe la déduit. Le secret est une propriété du nombre,
+          pas seulement du code — la phrase le dit donc. */}
       <LobbyCarton className="text-center">
         <p className="text-sm text-k-body">
-          Personne ne saura jamais qui a voté pour qui. Rien de tout ceci ne sort
-          de cette table&nbsp;: il n’y a ni gagnant, ni classement, ni lot — vous
-          pouvez refermer cet écran.
+          Dès trois joueurs, personne ne saura jamais qui a voté pour qui. Rien
+          de tout ceci ne sort de cette table&nbsp;: il n’y a ni gagnant, ni
+          classement, ni lot — vous pouvez refermer cet écran.
         </p>
       </LobbyCarton>
     </div>

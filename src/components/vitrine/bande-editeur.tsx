@@ -51,10 +51,20 @@ export function BandeEditeur({
   return (
     <Card>
       <h2>Portrait de la Bande</h2>
+      {/* CE QUE LE COMMERÇANT DOIT SAVOIR AVANT DE PROPOSER LE JEU EN SALLE.
+          Il répondra de cette promesse devant sa table : si elle est absolue à
+          l'écran et fausse à deux, c'est lui qui la démentira. À deux, une
+          question ne porte qu'une voix — celui qui passe sait qu'elle est de
+          l'autre. Ce n'est pas un défaut, c'est la nature d'un vote à deux, et
+          le pack « En duo » l'assume déjà (voir `src/lib/bande-packs.ts`, où
+          les questions sont écrites pour que LES DEUX réponses fassent
+          sourire). */}
       <p className="mb-5 mt-2 text-sm text-zinc-500">
         De deux à douze clients autour d&apos;une table&nbsp;: une question, chacun
-        nomme quelqu&apos;un — ou passe —, et la table découvre sa réponse. Personne
-        ne saura jamais qui a voté pour qui. Choisissez le ton des questions.
+        nomme quelqu&apos;un — ou passe —, et la table découvre sa réponse. Dès trois
+        joueurs, personne ne saura jamais qui a voté pour qui&nbsp;; à deux, chacun
+        devine forcément la réponse de l&apos;autre — le pack «&nbsp;En duo&nbsp;» est
+        écrit pour ça. Choisissez le ton des questions.
       </p>
 
       <form onSubmit={enregistrer.onSubmit}>

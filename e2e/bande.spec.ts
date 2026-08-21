@@ -212,8 +212,15 @@ test.describe("Portrait de la Bande (L18)", () => {
       await expect(
         page.getByText(new RegExp(`nommée? ${total} fois`, "i")),
       ).toBeVisible();
+      // LE SEUIL FAIT PARTIE DE L'ASSERTION, ET C'EST LE POINT. La promesse
+      // était écrite sans condition alors qu'elle ne tient qu'à trois : à deux,
+      // une question ne porte qu'une voix, celui qui passe sait qu'elle est de
+      // l'autre, et la révélation la lui nomme. Figer « dès trois joueurs »
+      // empêche la phrase de redevenir absolue sans que personne le voie.
       await expect(
-        page.getByText(/personne ne saura jamais qui a voté pour qui/i),
+        page.getByText(
+          /dès trois joueurs, personne ne saura jamais qui a voté pour qui/i,
+        ),
       ).toBeVisible();
 
       // ── PAS DE SCORE, PAS DE GAIN, ET C'EST LE CAHIER ──

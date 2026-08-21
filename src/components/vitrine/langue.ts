@@ -95,7 +95,13 @@ export interface TextesVitrine {
    * variantes — c'est un nom propre de produit, et c'est le mot que la tablée se
    * dit à voix haute autour d'une même table. Ce qui se traduit est ce qui
    * EXPLIQUE, et l'explication porte la seule chose qu'un visiteur doit savoir
-   * avant d'entrer : personne ne saura qui a voté.
+   * avant d'entrer : à partir de trois joueurs, personne ne saura qui a voté.
+   *
+   * LE SEUIL EST DIT, ET IL N'EST PAS UNE PRÉCAUTION DE JURISTE. À deux, le
+   * secret n'existe pas : celui qui passe déduit que l'unique voix est celle de
+   * l'autre, et la révélation la lui nomme. La phrase est lue par des clients,
+   * en salle, sur une page publique — elle ne peut pas promettre à deux ce que
+   * l'arithmétique ne tient qu'à trois.
    */
   bandeInvite: string;
   /**
@@ -142,7 +148,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     experiencesInvite: "À vous de jouer, quand vous voulez.",
     duoInvite: "À deux : chacun choisit ce qu’il offrirait à l’autre.",
     bandeInvite:
-      "De 2 à 12 : la table nomme quelqu’un à chaque question, sans jamais savoir qui a voté.",
+      "De 2 à 12 : la table nomme quelqu’un à chaque question. Dès trois joueurs, personne ne sait qui a voté.",
     localeFenetre: "fr-FR",
     fenetreOffre: (debut, fin) => `À retirer de ${debut} à ${fin}`,
     rechercherDans: (carte) => `Rechercher dans ${carte}`,
@@ -173,7 +179,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     experiencesInvite: "Your call — start whenever you like.",
     duoInvite: "For two: each picks what they would offer the other.",
     bandeInvite:
-      "From 2 to 12: the table names someone each round, and no one ever learns who voted.",
+      "From 2 to 12: the table names someone each round. With three players or more, no one learns who voted.",
     localeFenetre: "en-GB",
     fenetreOffre: (debut, fin) => `Pick up from ${debut} to ${fin}`,
     rechercherDans: (carte) => `Search in ${carte}`,
