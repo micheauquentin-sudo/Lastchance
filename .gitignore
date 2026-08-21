@@ -68,6 +68,26 @@ Input/
 # `.claude/agents/`, `.claude/hooks/` et `.claude/commands/`, eux, RESTENT
 # suivis : ils sont ecrits pour ce projet et leur perte serait une perte de
 # travail.
-.agents/
 .claude/skills/
 skills-lock.json
+
+# `.agents/` est la racine de personnalisation d'Antigravity. Elle a ete ignoree
+# en bloc a l'epoque ou elle ne contenait que des copies de skills de plugin.
+# Elle porte desormais de la configuration ecrite POUR ce projet — hooks, skills
+# operationnelles, generateur de skills depuis `.claude/agents/` — dont la perte
+# serait une perte de travail, exactement comme `.claude/agents/` et
+# `.claude/hooks/`. On suit donc le contenu propre au projet, et on continue
+# d'ignorer les copies de plugin et l'etat local des hooks.
+.agents/*
+!.agents/README.md
+!.agents/hooks.json
+!.agents/hooks/
+!.agents/scripts/
+!.agents/skills/
+.agents/.etat/
+.agents/skills/connect-recommend/
+.agents/skills/stripe-best-practices/
+.agents/skills/stripe-directory/
+.agents/skills/stripe-docs/
+.agents/skills/stripe-projects/
+.agents/skills/upgrade-stripe/

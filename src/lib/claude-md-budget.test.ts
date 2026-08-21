@@ -48,6 +48,7 @@ const PLANCHER_OCTETS = 3_000;
 
 const racine = process.cwd();
 const claudeMd = join(racine, "CLAUDE.md");
+const agentsMd = join(racine, "AGENTS.md");
 const journal = join(racine, "docs", "journal.md");
 
 describe("budget de contexte — CLAUDE.md", () => {
@@ -60,6 +61,34 @@ describe("budget de contexte — CLAUDE.md", () => {
     // lu comme un succès de sobriété.
     expect(octets).toBeGreaterThan(PLANCHER_OCTETS);
     expect(octets).toBeLessThanOrEqual(BUDGET_OCTETS);
+  });
+
+  /**
+   * CLAUDE.md importe `AGENTS.md` (ligne `@AGENTS.md`) depuis le 2026-08-19 :
+   * le socle opérationnel — environnement, pièges, boucle de vérification — a
+   * été déplacé là-bas parce qu'il ne dépend d'aucun outil et qu'Antigravity et
+   * Codex en ont le même besoin, or ils ne lisent pas CLAUDE.md.
+   *
+   * SANS CETTE ASSERTION, LE DÉPLACEMENT AURAIT DÉSARMÉ LE GARDE. Un import est
+   * inliné : le contexte hérité par chaque agent reste celui des DEUX fichiers,
+   * mais la mesure n'en voyait plus qu'un. Le plafond serait devenu satisfaisable
+   * en poussant n'importe quel volume dans l'autre fichier — exactement la
+   * quatorzième forme du motif « le détecteur ment » que ce dépôt collectionne.
+   *
+   * C'est donc la SOMME qui est bornée, et le plafond ne bouge pas : au moment
+   * du déplacement, les deux fichiers pesaient ensemble 21 470 octets, soit
+   * moins que les 21 981 du seul CLAUDE.md la veille.
+   */
+  it("borne la SOMME des deux fichiers, puisque l'un importe l'autre", () => {
+    expect(existsSync(agentsMd)).toBe(true);
+
+    const contenu = readFileSync(claudeMd, "utf8");
+    expect(contenu).toContain("@AGENTS.md");
+
+    const somme = statSync(claudeMd).size + statSync(agentsMd).size;
+
+    expect(somme).toBeGreaterThan(PLANCHER_OCTETS);
+    expect(somme).toBeLessThanOrEqual(BUDGET_OCTETS);
   });
 
   it("a déporté l'historique plutôt que de le détruire", () => {

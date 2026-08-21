@@ -47,142 +47,23 @@ vrai, c'est l'invariant — deux dépôts sur `main`, propres, rien en suspens.
 - [Performance Report](./docs/perf-report.md)
 - [Production Readiness](./docs/production-readiness.md)
 
-## Environnement d'exécution — Docker + Linux disponibles (vérifié 2026-07-28)
+## Socle opérationnel — dans AGENTS.md
 
-**La contrainte historique est levée.** Toutes les mentions antérieures du type
-« pgTAP / E2E JAMAIS EXÉCUTÉS — Docker exige un build Windows ≥ 19045, cette
-machine est figée en LTSC 2021 / 19044 » sont **périmées** : Docker ne tourne plus
-via Docker Desktop mais **nativement dans WSL2**, ce qui contourne l'exigence de
-build Windows. Ne plus jamais écrire qu'une vérification est impossible faute de
-Docker — l'exécuter.
+@AGENTS.md
 
-| Ressource | État vérifié |
-|---|---|
-| Distro | WSL2 `Ubuntu` 26.04 LTS, noyau 6.18, **systemd actif** |
-| Docker | Engine **29.6.2** natif Linux + Compose v5.3.1 (pas Docker Desktop) |
-| Node | **v22.22.1** / npm 10.9.4, dans `~/.local/bin` |
-| Stack Supabase locale | démarrée, Postgres 15.8, projet `lastchance` — pour la migration en tête, lire `EXPECTED_MIGRATION` dans `src/lib/release.ts`, pas ce tableau (le chiffre qui figurait ici était périmé de trois migrations) ; pgTAP vérifié le 2026-08-08 à **56 fichiers / 3203 assertions** PASS (le compte « 22 fichiers, 1804 assertions » plus bas dans ce document date du 2026-07-28 et est périmé) |
-| Playwright | **chromium + WebKit 26.5** (+ headless shell, ffmpeg) — les trois projets `mobile-chrome`, `mobile-safari` et `desktop-smoke` sont jouables en local |
+**Pourquoi là-bas et plus ici.** L'environnement d'exécution, les pièges WSL et
+la boucle de vérification ne dépendent d'aucun outil : ils étaient enfermés dans
+un fichier que Claude Code est seul à lire, alors qu'Antigravity et Codex en ont
+exactement le même besoin. Ils vivent désormais dans `AGENTS.md`, que les trois
+lisent, et que la ligne ci-dessus importe ici — le contenu reste donc présent en
+contexte, sans être dupliqué.
 
-### Dépôt de travail Linux
-- **`~/workspaces/lastchance`** = le clone à utiliser : remote GitHub réel,
-  `node_modules` Linux installés, `.next` construit. C'est là que tournent
-  Docker, pgTAP et l'app.
-- `~/lc` — supprimé le 2026-07-28. C'était un miroir du répertoire Windows en
-  HEAD détaché ; son seul travail unique s'est révélé être un brouillon déjà
-  dépassé par `main`. Ne pas le recréer.
-- Le répertoire Windows `C:\Users\MISHOW\Documents\LastChance\Lastchance` reste
-  le point d'entrée de session, mais peut être en retard sur `origin/main`.
-  Vérifier avant d'agir.
+Ce qui suit est ce qui reste **propre à Claude Code** : le routage des
+sous-agents et l'économie de tokens de l'orchestration.
 
-### Douze pièges, appris à la dure
-1. **`bash -l` obligatoire.** Node vit dans `~/.local/bin`, absent du PATH d'un
-   shell non-login : `npx` retombe alors sur le `npx.cmd` **Windows** via
-   l'interop et échoue sur « chemins UNC non pris en charge ».
-2. **Une seule invocation `wsl` par tâche.** La distro s'éteint entre deux
-   appels : les conteneurs Supabase redémarrent et Postgres repart en recovery
-   (~20 s). Attendre la santé de `supabase_db_lastchance` en début de script.
-3. **Ne pas passer de commande inline.** Le quoting PowerShell → `wsl.exe` mange
-   guillemets, `$` et parenthèses. Écrire un `.sh` dans le scratchpad puis
-   `wsl -d Ubuntu -- bash -l /mnt/c/<chemin>/script.sh`.
-4. **`supabase db reset` NE SÈME RIEN.** `supabase/config.toml` porte
-   `[db.seed] enabled = false` : la CI applique le seed explicitement
-   (`psql -f supabase/seed.sql`), il faut faire pareil en local. Sans cela l'app
-   tourne sur une base **vide** et tous les E2E échouent sans cause visible.
-5. **Attendre un Postgres qui RÉPOND, pas seulement « healthy ».** Le conteneur
-   passe `healthy` avant d'accepter les connexions. Boucler sur
-   `psql -tAc "select 1;"` en tête de script, jamais sur `docker inspect` seul —
-   sinon on lit une base à moitié levée et on en tire de fausses conclusions.
-6. **Un `supabase test db` interrompu laisse un conteneur `pg_prove` orphelin
-   qui GÈLE tous les runs suivants** — sans message, sans erreur : la commande
-   semble simplement ne jamais finir. Trois « échecs » d'une même soirée
-   venaient de là (2026-07-30). Nettoyer AVANT toute campagne de tests, et ne
-   toucher qu'aux conteneurs non `supabase_` :
-   ```bash
-   for id in $(docker ps --format '{{.ID}} {{.Names}}' | grep -v supabase_ | awk '{print $1}'); do
-     docker stop -t 5 "$id"
-   done
-   ```
-   Symptômes voisins, à ne pas confondre : le service WSL qui expire
-   (`Wsl/Service/0x8007274c` → `wsl --shutdown` puis relance) et une base
-   laissée sans `supabase_migrations.schema_migrations` après un reset coupé
-   (→ `supabase stop --no-backup` puis `supabase start`).
-7. **Semer AVANT pgTAP.** La CI le fait depuis le 2026-07-29 et la suite doit
-   passer sur base **vide ET semée** : cinq assertions en dépendaient sans le
-   dire, vertes en CI par accident d'ordonnancement des jobs, rouges chez tout
-   développeur ayant semé sa base.
-8. **Le démon Docker de WSL2 peut geler sans message** (2026-07-31) — voisin
-   du piège 6 mais distinct : pas un conteneur `pg_prove` orphelin, le démon
-   lui-même. Symptôme : `docker ps -a` ne rend plus la main et le script reste
-   bloqué sur sa toute première commande, sans erreur. Pour trancher entre
-   « la sortie bufferise » et « c'est gelé », regarder la **date de
-   modification du fichier de sortie** — 26 min sans qu'elle bouge, zéro
-   octet, confirme le gel. Remède : `wsl --shutdown` puis relance (pas le
-   nettoyage de conteneurs du piège 6, qui ne s'applique pas ici).
-9. **WSL se fige sous charge lourde** (build + serveur + Playwright + les
-   conteneurs Docker en même temps) (2026-07-31) — deux symptômes constatés
-   la même journée : le démon Docker seul (piège 8, `docker ps` ne rend plus
-   la main), puis le **service WSL entier** (`Wsl/Service/0x8007274c`).
-   Même remède : `wsl --shutdown` puis relance. Même diagnostic que le
-   piège 8 pour séparer « ça travaille » de « c'est gelé » : la **date de
-   modification du fichier de sortie**, jamais son contenu. **Conséquence
-   pratique adoptée** : local d'abord — pgTAP (~15 s) et l'E2E **ciblé**
-   via `scripts/run-e2e-local.sh` (6 Go WSL + swap le rendent jouable) ; la
-   CI distante en recours (suite E2E complète, build lourd, ou gel WSL).
-   **Le clone `~/workspaces/lastchance` n'admet qu'un seul run E2E à la
-   fois** (2026-08-09) : deux agents télescopés, builds concurrents sur le
-   même `.next` — `ENOENT _buildManifest`, `TurbopackInternalError`. Comme
-   le piège 12 côté Windows : jamais deux agents E2E en parallèle dessus.
-10. **Un `| tail` en fin de script E2E WSL simule un gel** (2026-08-09) — le
-    tube reste tenu par `next-server`, vivant après la fin du run : le
-    script ne rend jamais la main bien que la suite ait fini. Écrire dans
-    un **fichier**, juger par `test-results/.last-run.json`, jamais par un
-    pipe.
-11. **`/tmp` de la distro est VIDÉ à chaque coupure entre invocations
-    `wsl`** (2026-08-09, conséquence du piège 2) — loger sous `/mnt/c/...`
-    ou le dépôt, jamais `/tmp`.
-12. **Jamais deux runs Vitest concurrents sur le même arbre Windows**
-    (2026-08-09) — cache `.vite` corrompu : **261 fichiers « no tests »**
-    alors que la suite est verte isolément. Un seul run à la fois sur cet
-    arbre ; en parallèle, utiliser la copie WSL. Le symptôme est réapparu
-    le 2026-08-09 après-midi **sans run concurrent** : au moindre
-    « no tests », purger `node_modules/.vite` et rejouer avant de conclure
-    quoi que ce soit sur l'état de la suite.
-
-### Commandes de référence
-
-Reproduire l'ordre de la CI en local (reset → seed → suite) :
-
-```powershell
-# reset, seed, puis suite complete
-wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supabase db reset --no-seed && docker exec -i supabase_db_lastchance psql -U postgres -d postgres -q -f - < supabase/seed.sql && npx --no-install supabase test db"
-```
-
-```powershell
-# pgTAP complet — 56 fichiers, 3203 assertions PASS (vérifié le 2026-08-08)
-wsl -d Ubuntu -- bash -lc "cd ~/workspaces/lastchance && npx --no-install supabase test db"
-# Docker depuis PowerShell : le shim %APPDATA%\npm\docker.cmd relaie vers WSL
-docker ps
-```
-E2E : les trois projets tournent. WebKit a été installé le 2026-07-28 via
-`~/install-webkit.sh` (238 paquets système, `sudo` interactif obligatoire) et
-vérifié : il démarre en headless et `mobile-safari` collecte 60 tests sur 20
-fichiers. Deux pièges si l'installation est à refaire : `sudo` remet un `PATH`
-minimal alors que `node`/`npx` vivent dans `~/.local/bin`, et le navigateur doit
-être installé **en tant qu'utilisateur** sinon son cache atterrit dans
-`/root/.cache` où Playwright ne le cherche pas.
-
-**Vérifié le 2026-07-28 dans `~/workspaces/lastchance`** : `npm run typecheck`
-→ 0 ; `npm test` → **83 fichiers, 1318 tests verts** (55 s) ; Playwright
-1.61.1. Le compte pgTAP a évolué depuis : **56 fichiers / 3203 assertions
-PASS**, vérifié le 2026-08-08 (chantier « Partage après jeu »).
-
-## Development Guidelines
-- Travailler sur la branche explicitement demandée pour la tâche en cours
-- Priorité : simplicité, stabilité, qualité du code, expérience commerçant
-- Après chaque fonctionnalité : vérifier (tests, typecheck, lint, build), corriger, documenter
-- **Vérifier en local d'abord** : typecheck, tests, pgTAP et E2E ciblé (`scripts/run-e2e-local.sh`, `--project`/spec pour rester léger sur 8 Go) dans WSL ; la CI distante n'est le **recours** qu'en cas de blocage local (Docker/WSL gelé, RAM saturée), pas le premier réflexe — on gagne l'aller-retour.
-- Commit changes with clear descriptive messages
+Le détail complet est à un chargement de skill : `environnement-wsl` (les douze
+pièges, les commandes de référence) et `verification-locale` (l'ordre des
+vérifications, les gardes SQL, la régénération des types).
 
 ## Orchestrator & Agents
 Le projet utilise un orchestrateur avec 8 agents spécialisés définis dans `.claude/agents/`.
@@ -288,9 +169,9 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-08-18
-- **Dernier chantier**: **Les capteurs disent vrai, le fond tient — wagon 7 (dernier) du train de correction de l'audit transverse** (branche `chantier/audit-p2-fond`, tête `3f53691`, 26 commits, PR en ouverture, migration `20260930120000`), 2026-08-18. Privilèges par défaut révoqués pour `authenticated` (symétrique à `anon`) + 7 revokes explicites sur tables hors-locataire ; `org_segment_emails` ordonnée ; pgTAP liste manuelle → règle catalogue (≥110) + 2e org « voisine », 64f/3566 PASS ×2. `timing-safe.ts` sur les 10 routes cron ; drain webhook budgété (limit 8, 45 s) ; newsletter par tranches de 100, double borne anti-boucle (progression constatée + plafond 24 h) ; seau IP-seule avant seau ressource sur page-opens/pronos TV ; `/api/health` détail derrière `CRON_SECRET` + garde proxy de confiance ; sonde de santé toutes les 20 min. Lumoz retiré (647 l + 812 Ko), miroirs TS de barèmes SQL et `experience-analytics.ts` supprimés. 5 specs E2E neuves. Preuve : verif-complete 0 échec, E2E complet vert, sécu GO (2 MOYEN + 2 INFO fermés dans le wagon). ADR-108, roadmap V1.63.
-  **Reste ouvert** : 6 points dans `docs/bugs.md` (wagon 7 : `enabled=true` propriétaire, supervision pg_cron 5 min `jackpot-draws`, `record_experience_event` orpheline, `sync-contests` sans raison écrite, secret SMS en query-string, JOB-5 moniteur externe). **Train de l'audit transverse terminé côté code** — voir `docs/chantier-audit-2026-08-16.md`. Gestes hérités : révoquer `rk_live_` et le jeton Vercel.
+- **Date**: 2026-08-21
+- **Dernier chantier**: **Le train Réserver & Vitrine, huit lots (L11→L18) fusionnés et en production** (ADR-115). La Vitrine publique bilingue ouvre (`/v/[slug]/[[...langue]]`, ISR 60 s, adaptateur i18n neutre sans fournisseur ni IA payante — ADR-109), avec import de carte sans IA, portes Réserver/quiz en opt-in, « À la une », traduction commerçant. Le socle lobby ajoute deux jeux joueurs : Duo Miroir (choix scellés, révélation simultanée) et Portrait de la Bande (vote secret, plancher de 3 réponses avant révélation, dénominateur figé par question, 5 packs de questions). PR #167 à #174, migrations `20261012120000` à `20261019120000`. Trois défauts trouvés par la vérification, pas par la lecture : l'ISR n'existait pas (`generateStaticParams` manquant, prouvé par le manifeste de build), une course de scrutin sur `bande_reveal` fermée par verrou en base, et un hôte qui désanonymisait les votes un par un avant le plancher de 3 réponses.
+  **Reste ouvert** : LOBBY-1 dans `docs/bugs.md` (Turnstile posé, non armé — attend les deux clés de production, geste propriétaire déjà requis pour Réserver depuis L4) ; aucun mécanisme de présence dans les salons (l'hôte clôt chaque question) ; `robots: index false` sur la Vitrine (décision de commerce en attente) ; les 5 packs de questions Portrait de la Bande attendent la relecture du propriétaire.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

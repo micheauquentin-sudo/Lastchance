@@ -1,0 +1,30 @@
+{
+  "verrou-tests": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          { "type": "command", "command": "node hooks/pre-commande.mjs", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          { "type": "command", "command": "node hooks/apres-outil.mjs", "timeout": 10 }
+        ]
+      }
+    ]
+  },
+  "rappels-ecriture": {
+    "PreInvocation": [
+      { "type": "command", "command": "node hooks/rappels.mjs", "timeout": 60 }
+    ]
+  },
+  "journal-partage": {
+    "Stop": [
+      { "type": "command", "command": "node hooks/fin-de-tour.mjs", "timeout": 20 }
+    ]
+  }
+}
