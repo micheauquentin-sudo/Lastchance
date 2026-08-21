@@ -2,18 +2,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
+import { loadDuoOptions } from "@/lib/duo-context";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { createClient } from "@/lib/supabase/server";
 import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
 import type { ContenuVitrineView } from "@/lib/vitrine";
+import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { OrgLobbyView } from "@/lib/lobby";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
+import { DuoEditeur } from "@/components/vitrine/duo-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
 import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
@@ -87,22 +90,37 @@ export default async function VitrineDashboardPage() {
       ? { liste: ctx.salons, luA: ctx.luA }
       : { liste: [] as OrgLobbyView[], luA: "" };
   };
-  const [contenus, ouvertures, supervision] = settings && organizationId
-    ? await Promise.all([
-        supabase
-          .from("vitrine_contenus")
-          .select("rang, titre, url")
-          .eq("organization_id", organizationId)
-          .order("rang")
-          .then(({ data }) => (data ?? []) as ContenuVitrineView[]),
-        readModulePageOpenCount(supabase, "vitrine", settings.id),
-        lireSalons(),
-      ])
-    : [
-        [] as ContenuVitrineView[],
-        0,
-        { liste: [] as OrgLobbyView[], luA: "" },
-      ];
+  /**
+   * LE PLATEAU DU DUO MIROIR (L17), lu avec les trois autres.
+   *
+   * Il ne rend JAMAIS un refus : `loadDuoOptions` répond par un plateau vide
+   * quand la garde ou la lecture échoue — le commerçant a le droit, il n'a
+   * simplement rien d'épinglé, et les deux cas affichent exactement la même
+   * chose : une invitation à composer.
+   */
+  const lireDuo = async (): Promise<DuoOptionsAdminView> => {
+    const ctx = await loadDuoOptions();
+    return ctx.ok ? ctx.plateau : { options: [], suggestion: null };
+  };
+  const [contenus, ouvertures, supervision, plateauDuo] =
+    settings && organizationId
+      ? await Promise.all([
+          supabase
+            .from("vitrine_contenus")
+            .select("rang, titre, url")
+            .eq("organization_id", organizationId)
+            .order("rang")
+            .then(({ data }) => (data ?? []) as ContenuVitrineView[]),
+          readModulePageOpenCount(supabase, "vitrine", settings.id),
+          lireSalons(),
+          lireDuo(),
+        ])
+      : [
+          [] as ContenuVitrineView[],
+          0,
+          { liste: [] as OrgLobbyView[], luA: "" },
+          { options: [], suggestion: null } as DuoOptionsAdminView,
+        ];
 
   return (
     <div>
@@ -200,6 +218,18 @@ export default async function VitrineDashboardPage() {
 
             <CatalogueEditeur
               cartes={cartes}
+              peutEditer={capacites.canEditDraft}
+            />
+
+            {/* LE DUO MIROIR VIENT APRÈS LE CATALOGUE, et pas ailleurs : son
+                plateau se choisit PARMI les fiches de la carte. Le placer plus
+                haut aurait demandé de cocher des fiches avant d'en avoir —
+                l'écran n'y aurait affiché qu'une liste vide et une consigne
+                d'aller composer sa carte, c'est-à-dire l'ordre du geste réel à
+                l'envers. */}
+            <DuoEditeur
+              cartes={cartes}
+              plateau={plateauDuo}
               peutEditer={capacites.canEditDraft}
             />
 

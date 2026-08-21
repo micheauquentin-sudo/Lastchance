@@ -79,6 +79,16 @@ export interface TextesVitrine {
    */
   experiencesInvite: string;
   /**
+   * LA LIGNE SOUS LA PORTE « DUO MIROIR » (L17).
+   *
+   * Le NOM du jeu, lui, n'est pas ici et reste « Duo Miroir » sur les deux
+   * variantes : c'est un nom propre de produit, au même titre qu'« Instagram »
+   * et « TikTok » dans `BlocLiens`, et le traduire aurait donné deux noms à une
+   * chose que les deux joueurs se désignent l'un à l'autre à voix haute, à la
+   * même table. Ce qui se traduit est ce qui EXPLIQUE — cette phrase-là.
+   */
+  duoInvite: string;
+  /**
    * L'étiquette BCP 47 pour `Intl.DateTimeFormat`. `en-GB` et non `en-US` :
    * l'anglais servi ici s'adresse à un visiteur EN EUROPE, à qui « 6:00 PM »
    * pour une fermeture à 18 h se lit moins vite que « 18:00 ».
@@ -120,6 +130,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     reserverOffres: "Offres du moment",
     experiencesTitre: "Jeux",
     experiencesInvite: "À vous de jouer, quand vous voulez.",
+    duoInvite: "À deux : chacun choisit ce qu’il offrirait à l’autre.",
     localeFenetre: "fr-FR",
     fenetreOffre: (debut, fin) => `À retirer de ${debut} à ${fin}`,
     rechercherDans: (carte) => `Rechercher dans ${carte}`,
@@ -148,6 +159,7 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     reserverOffres: "Offers right now",
     experiencesTitre: "Games",
     experiencesInvite: "Your call — start whenever you like.",
+    duoInvite: "For two: each picks what they would offer the other.",
     localeFenetre: "en-GB",
     fenetreOffre: (debut, fin) => `Pick up from ${debut} to ${fin}`,
     rechercherDans: (carte) => `Search in ${carte}`,

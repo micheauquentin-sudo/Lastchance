@@ -266,6 +266,10 @@ export default async function VitrinePage({
                   <BlocExperiences
                     key={bloc}
                     portes={etat.portes.experiences}
+                    // LE SLUG SERVI, pas celui de l'adresse : la porte du Duo
+                    // Miroir mène à `/lobby/nouveau/{slug}`, et c'est la base
+                    // qui dit sous quel slug cette vitrine existe.
+                    slug={etat.slug}
                     lang={lang}
                   />
                 );

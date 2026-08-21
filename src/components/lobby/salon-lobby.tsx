@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
 import { messageRefusEntree } from "@/components/lobby/refus";
+import { DuoExperience } from "@/components/duo/duo-experience";
 
 /**
  * `/lobby/[code]` — l'écran unique du socle : on y entre, puis on y attend.
@@ -303,6 +304,29 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
         </p>
       </LobbyCarton>
     );
+  }
+
+  // ── DUO MIROIR (L17) — LE VERROU N'EST PLUS UNE FIN, C'EST LE DÉPART ──
+  //
+  // Sur une salle « duo », `locked` ne mène pas à l'écran « la partie commence »
+  // mais au jeu lui-même, qui ouvre sa propre manche et tient son propre
+  // scrutin. Le scrutin de la salle, lui, s'est déjà arrêté (`TERMINAUX`) : plus
+  // rien de la SALLE ne bouge, tout ce qui bouge est dans `duo_rounds`.
+  //
+  // CE TEST PASSE AVANT « EXPIRÉ » ET AVANT « REFERMÉ », ET C'EST LA CONDITION
+  // POUR QUE LE RÉSULTAT S'AFFICHE. La révélation FERME la salle et ramène sa
+  // date de mort à l'instant même : à la seconde où les deux choix se
+  // rencontrent, la salle est `closed` ET périmée. Placé plus bas, ce test
+  // n'aurait jamais été atteint — l'écran de résultat aurait été remplacé par
+  // « ce salon a pris fin », c'est-à-dire par une panne, sur une partie qui vient
+  // de parfaitement se dérouler. C'est aussi pourquoi `duo_state` ne regarde ni
+  // `status` ni `expires_at` du lobby : les deux moitiés tiennent le même
+  // arbitrage.
+  //
+  // Une salle « duo » encore en attente (`lobby`) reste sous la règle commune :
+  // elle expire comme les autres, et ce test ne la voit pas.
+  if (vue.kind === "duo" && (vue.status === "locked" || vue.status === "closed")) {
+    return <DuoExperience lobbyId={lobbyId} />;
   }
 
   const restants = msRestants(vue.expiresAt);
