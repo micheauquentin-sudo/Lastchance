@@ -68,6 +68,9 @@ function mancheOuverte(): VueDuo {
     autreChoix: null,
     suggestion: null,
     accord: null,
+    // La salle VIT : c'est l'état ordinaire d'une manche ouverte. Les cas où
+    // elle ne vit plus sont montés explicitement par les tests qui les visent.
+    salleClose: false,
   };
 }
 
@@ -81,6 +84,9 @@ function mancheRevelee(): DuoStateView {
     autreChoix: { item_id: "it-1", nom: "Le cookie" },
     suggestion: null,
     accord: true,
+    // VRAI, et c'est l'état NORMAL d'une partie réussie : la révélation ferme
+    // la salle dans le même geste. L'écran de résultat passe avant ce drapeau.
+    salleClose: true,
   };
 }
 
@@ -129,6 +135,21 @@ describe("DuoExperience — la manche et la salle se croisent", () => {
       roundId: "rnd-1",
       options: OPTIONS,
     });
+  });
+
+  it("LA SALLE REFERMÉE PENDANT LA PARTIE : le sondage l'apprend, l'écran suit", async () => {
+    // LE CAS QUE `statutSalle` NE PEUT PAS VOIR (contre-revue L17, R-2). Il est
+    // figé au branchement — le scrutin du SALON s'arrête au verrouillage —,
+    // donc un joueur qui garde son écran ouvert pendant que le commerçant
+    // referme la salle restait devant un plateau cliquable dont chaque carte
+    // tombait sur un refus générique. Ici la salle est `locked` au montage, et
+    // c'est `salleClose` — porté par le seul sondage qui tourne encore — qui
+    // fait basculer l'écran.
+    getDuoState.mockResolvedValue({ ...mancheOuverte(), salleClose: true });
+    peindre("locked");
+
+    await waitFor(() => expect(fermeture()).not.toBeNull());
+    expect(cartes()).toHaveLength(0);
   });
 
   it("manche ouverte + salle verrouillée : le plateau, cliquable", async () => {

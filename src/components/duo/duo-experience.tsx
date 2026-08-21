@@ -137,7 +137,18 @@ export function DuoExperience({
         // manche encore ouverte dans une salle CLOSE ne changera pas non plus —
         // plus personne ne peut sceller, donc plus rien ne peut la révéler :
         // relire toutes les 3 s serait payer pour la même ligne, indéfiniment.
-        if (suivant.status === "revelee" || statutSalle === "closed") stopper();
+        if (
+          suivant.status === "revelee" ||
+          statutSalle === "closed" ||
+          // ET LE FAIT FRAIS, celui que le montage ne pouvait pas connaître :
+          // `statutSalle` est figé à l'instant du branchement (le scrutin du
+          // salon s'arrête au verrouillage), donc une salle refermée PENDANT la
+          // partie n'y apparaît jamais. `salleClose` voyage sur le sondage qui,
+          // lui, tourne encore — c'est par là que le joueur l'apprend.
+          suivant.salleClose
+        ) {
+          stopper();
+        }
       } catch {
         // Un échec isolé est la vie normale d'un téléphone en salle : le tic
         // suivant rattrape, l'écran garde son dernier état connu.
@@ -252,7 +263,12 @@ export function DuoExperience({
 
   // Puis, et seulement sur une manche encore ouverte : la salle a été refermée
   // sous les doigts des joueurs. Aucun plateau — chaque carte mènerait au refus.
-  if (statutSalle === "closed") {
+  //
+  // DEUX SOURCES, ET IL EN FAUT DEUX : `statutSalle` connaît le cas de celui
+  // qui ARRIVE sur une salle déjà close (rechargement, second appareil), et
+  // `vue.salleClose` celui de celui qui ÉTAIT LÀ quand elle s'est refermée —
+  // que le premier ne peut pas voir, puisqu'il est figé au branchement.
+  if (statutSalle === "closed" || vue.salleClose) {
     return <EcranSalleRefermee />;
   }
 

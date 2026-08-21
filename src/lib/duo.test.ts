@@ -230,7 +230,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
     accord: null,
   };
 
-  it("rend les huit clés d'une manche ouverte", () => {
+  it("rend les neuf clés d'une manche ouverte", () => {
     expect(mapDuoState(ouverte)).toEqual({
       state: "ok",
       status: "ouverte",
@@ -257,6 +257,11 @@ describe("mapDuoState — le cœur anti-triche", () => {
       autreChoix: null,
       suggestion: null,
       accord: null,
+      // La NEUVIÈME, arrivée en conscience (contre-revue L17, R-2) : le
+      // document ne la portait pas, et le repli sûr est « la salle vit » — un
+      // document illisible qui déclarerait la partie finie arrêterait un jeu
+      // en cours.
+      salleClose: false,
     });
   });
 

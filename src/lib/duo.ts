@@ -125,12 +125,19 @@ export type DuoChooseResult =
   | { state: "unavailable" };
 
 /**
- * `duo_state` — ce que voit un joueur. HUIT clés, toujours les mêmes.
+ * `duo_state` — ce que voit un joueur. NEUF clés, toujours les mêmes.
  *
  * Les trois valeurs réservées valent `null` avant la révélation plutôt que de
  * disparaître (motif `lobby_state` / `join_code`) : un document de forme STABLE
  * se type une fois, là où une clé qui apparaît et disparaît se teste à chaque
  * lecture — et une clé qu'on oublie de tester est une clé qu'on affiche.
+ *
+ * La NEUVIÈME (`salleClose`) est arrivée en connaissance de cause : le scrutin
+ * du salon s'arrête au verrouillage, donc le statut de la salle y est figé pour
+ * toute la partie. Un joueur qui garde son écran ouvert pendant que le
+ * commerçant referme la salle ne l'apprenait jamais — il bouclait sur des refus
+ * génériques en cherchant une panne de réseau. Ce booléen voyage sur le seul
+ * sondage qui tourne encore.
  */
 export type DuoStateView =
   | { state: "unavailable" }
@@ -153,6 +160,13 @@ export type DuoStateView =
       suggestion: DuoSuggestionView | null;
       /** `null` TANT QUE LA MANCHE EST OUVERTE, et `null` sur un seul choix. */
       accord: boolean | null;
+      /**
+       * La salle porteuse est-elle finie (close ou expirée) ? UN BOOLÉEN SEC —
+       * ni raison, ni auteur, ni date : le joueur n'a pas à savoir qui a
+       * refermé, seulement que la partie ne continuera pas. Une assertion pgTAP
+       * (`CLOSE-6`) rougit si quelqu'un veut y ajouter davantage.
+       */
+      salleClose: boolean;
     };
 
 /**
@@ -389,6 +403,11 @@ export function mapDuoState(raw: unknown): DuoStateView {
     autreChoix: revelee ? mapDuoChoix(root.autre_choix) : null,
     suggestion: revelee ? mapDuoSuggestion(root.suggestion) : null,
     accord: revelee && typeof root.accord === "boolean" ? root.accord : null,
+    // MÊME EXIGENCE, REPLI INVERSE : ici le repli sûr est `false`, c'est-à-dire
+    // « la salle vit encore ». Un document illisible qui déclarerait la partie
+    // finie arrêterait un jeu en cours ; l'inverse ne coûte qu'un tour de
+    // scrutin de plus, et la base refusera de toute façon le geste suivant.
+    salleClose: root.salle_close === true,
   };
 }
 
