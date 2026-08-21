@@ -43,6 +43,16 @@ const { etat } = vi.hoisted(() => ({
     requetes: [] as Array<{ table: string; filtres: Record<string, unknown> }>,
     /** Seaux d'observabilité consommés : clé + règle + événement. */
     pressions: [] as Array<{ parts: unknown[]; evenement: string }>,
+    /** `TURNSTILE_SECRET_KEY` est-elle posée ? (moitié serveur de la condition) */
+    turnstileConfigure: false,
+    /** Ce que rend Cloudflare pour le jeton présenté. */
+    turnstileVerdict: true,
+    /** Ce qui est réellement parti vers Cloudflare : jeton + IP + action. */
+    turnstileAppels: [] as Array<{
+      jeton: string | undefined;
+      ip: string | undefined;
+      action: string | undefined;
+    }>,
     /** Tâches confiées à `after()`. */
     taches: [] as Array<Promise<unknown>>,
     /**
@@ -86,6 +96,16 @@ vi.mock("next/cache", () => ({
 vi.mock("@/lib/monitoring", () => ({
   reportError: reportErrorMock,
   monitored: (_n: string, f: () => unknown) => f(),
+}));
+// Le challenge est DOUBLÉ jusqu'à Cloudflare exclu — ce qu'on vérifie ici est la
+// CONDITION (les deux clés) et l'ORDRE (avant toute lecture), pas le protocole
+// de vérification, qui a ses propres tests.
+vi.mock("@/lib/turnstile", () => ({
+  turnstileEnabled: () => etat.turnstileConfigure,
+  verifyTurnstile: (jeton: string | undefined, ip?: string, action?: string) => {
+    etat.turnstileAppels.push({ jeton, ip, action });
+    return Promise.resolve(etat.turnstileVerdict);
+  },
 }));
 // La garde est DOUBLÉE, pas contournée : elle interroge une session et un
 // abonnement que ce harnais n'a pas. Ce qu'on vérifie ici est qu'elle passe la
@@ -194,6 +214,13 @@ beforeEach(() => {
   etat.taches = [];
   etat.garde = { ok: true, organizationId: ORG_ID, userId: ACTEUR_ID };
   etat.revalidations = [];
+  // L'ÉTAT DE PRODUCTION D'AUJOURD'HUI, et le défaut de tous les tests de ce
+  // fichier : aucune clé posée, donc aucun challenge opposé. Les seuls tests qui
+  // en dévient sont ceux qui l'annoncent.
+  etat.turnstileConfigure = false;
+  etat.turnstileVerdict = true;
+  etat.turnstileAppels = [];
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "";
 });
 
 describe("createLobby — ouvrir une salle", () => {
@@ -373,6 +400,212 @@ describe("createLobby — ouvrir une salle", () => {
 
     expect(verdict).toEqual({ ok: false, error: "Une erreur est survenue, réessayez." });
     expect(reportErrorMock).toHaveBeenCalledWith("lobby.create", expect.stringContaining("relation"));
+  });
+});
+
+/**
+ * LE CHALLENGE ANTI-ROBOT DE LA CRÉATION (LOBBY-1, fermeture de E-1).
+ *
+ * Ce que ces tests achètent tient en trois propriétés, et la PREMIÈRE est la
+ * plus importante : le remède est **inerte tant que les clés ne sont pas
+ * posées**. C'est ce qui autorise à le livrer aujourd'hui sans rien changer au
+ * parcours d'une tablée de café — et à le laisser s'armer seul le jour où le
+ * propriétaire pose les clés déjà requises par « Réserver » depuis L4.
+ *
+ *   1. Sans clés → création INCHANGÉE, aucun appel sortant.
+ *   2. Avec clés + jeton valide → création inchangée elle aussi.
+ *   3. Avec clés + jeton invalide ou absent → refus, et AUCUNE RPC : rien n'est
+ *      lu, rien n'est écrit, aucun quota consommé, aucun oracle sur le slug.
+ *
+ * Le seau d'observation, lui, est consommé DANS TOUS LES CAS — y compris au
+ * refus. Une attaque bloquée mais invisible au capteur serait un mauvais
+ * échange : on saurait qu'elle ne passe plus, jamais qu'elle a lieu.
+ */
+describe("createLobby — le challenge anti-robot (LOBBY-1)", () => {
+  beforeEach(() => {
+    etat.reponses.create_player_lobby = {
+      data: {
+        state: "created",
+        lobby_id: LOBBY_ID,
+        join_code: "ABC234",
+        expires_at: "2026-08-21T12:30:00Z",
+      },
+      error: null,
+    };
+  });
+
+  it("n'oppose AUCUN challenge tant que les clés ne sont pas posées", async () => {
+    // L'état de la production au jour de la livraison. `turnstileVerdict` est
+    // mis à `false` exprès : si le challenge était consulté, la création
+    // échouerait — le succès prouve donc qu'il ne l'est pas.
+    etat.turnstileConfigure = false;
+    etat.turnstileVerdict = false;
+
+    const verdict = await createLobby(
+      null,
+      formCreate({ slug: "le-comptoir", kind: "duo", pseudo: "Ana" }),
+    );
+
+    expect(verdict).toEqual({
+      ok: true,
+      data: { etat: "cree", lobbyId: LOBBY_ID, joinCode: "ABC234" },
+    });
+    // Aucun octet n'est parti vers Cloudflare : pas de tiers script, pas de
+    // latence, rien à expliquer au joueur.
+    expect(etat.turnstileAppels).toHaveLength(0);
+  });
+
+  it("exige la clé PUBLIQUE aussi : sans widget, pas de refus sans issue", async () => {
+    // La moitié serveur seule ne suffit pas. Un secret posé sans clé publique
+    // donnerait un écran sans contrôle à valider et un refus qu'aucun geste ne
+    // lève — motif `reserverChallengeDisponible`.
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = false;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "";
+
+    const verdict = await createLobby(
+      null,
+      formCreate({ slug: "le-comptoir", kind: "duo", pseudo: "Ana" }),
+    );
+
+    expect(verdict.ok).toBe(true);
+    expect(etat.turnstileAppels).toHaveLength(0);
+  });
+
+  it("laisse passer la création quand le jeton est valide", async () => {
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    const verdict = await createLobby(
+      null,
+      formCreate({
+        slug: "le-comptoir",
+        kind: "duo",
+        pseudo: "Ana",
+        turnstileToken: "jeton-valide",
+      }),
+    );
+
+    expect(verdict).toEqual({
+      ok: true,
+      data: { etat: "cree", lobbyId: LOBBY_ID, joinCode: "ABC234" },
+    });
+    // Le jeton VALIDÉ part, avec l'IP du seau et le littéral d'action que le
+    // widget déclare. Une divergence d'orthographe ferait échouer la
+    // vérification côté Cloudflare sans qu'aucun type ne bronche.
+    expect(etat.turnstileAppels).toEqual([
+      { jeton: "jeton-valide", ip: "203.0.113.9", action: "lobby-create" },
+    ]);
+  });
+
+  it("REFUSE avant toute RPC quand le jeton est invalide", async () => {
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = false;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    const verdict = await createLobby(
+      null,
+      formCreate({
+        slug: "le-comptoir",
+        kind: "duo",
+        pseudo: "Ana",
+        turnstileToken: "jeton-refuse",
+      }),
+    );
+
+    // Une PANNE du point de vue du joueur, pas un refus doux typé : il n'a rien
+    // à corriger dans sa saisie, il a un contrôle à rejouer.
+    expect(verdict).toEqual({
+      ok: false,
+      error: "Vérification anti-robot échouée, réessayez.",
+    });
+    // LE POINT DE E-1 : le quota n'est pas touché, parce que rien n'est appelé.
+    expect(etat.rpc).toHaveLength(0);
+    expect(etat.poses).toHaveLength(0);
+  });
+
+  it("REFUSE de la même façon quand aucun jeton n'accompagne le formulaire", async () => {
+    // Le cas de l'appel POSTé en direct, sans passer par l'écran : c'est
+    // exactement celui de l'attaquant de E-1, qui n'a aucun widget à résoudre.
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = false;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    const verdict = await createLobby(
+      null,
+      formCreate({ slug: "le-comptoir", kind: "duo", pseudo: "Ana" }),
+    );
+
+    expect(verdict).toEqual({
+      ok: false,
+      error: "Vérification anti-robot échouée, réessayez.",
+    });
+    expect(etat.turnstileAppels).toEqual([
+      { jeton: undefined, ip: "203.0.113.9", action: "lobby-create" },
+    ]);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("compte la pression MÊME au refus — une attaque bloquée reste visible", async () => {
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = false;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    await createLobby(null, formCreate({ slug: "le-comptoir", kind: "duo", pseudo: "Ana" }));
+    await viderLesTaches();
+
+    // Le seau est consommé AVANT le challenge : sans cela, une rafale refusée
+    // n'apparaîtrait nulle part et le capteur `lobbyIp` mesurerait le trafic
+    // honnête seul.
+    expect(etat.pressions).toEqual([
+      { parts: ["lobby:ip"], evenement: "lobby_ip_ceiling" },
+    ]);
+  });
+
+  it("refuse un jeton hors borne SANS rien envoyer à Cloudflare", async () => {
+    etat.turnstileConfigure = true;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+
+    const verdict = await createLobby(
+      null,
+      formCreate({
+        slug: "le-comptoir",
+        kind: "duo",
+        pseudo: "Ana",
+        turnstileToken: "x".repeat(2049),
+      }),
+    );
+
+    // Le schéma tranche en premier : la requête sortante ne part jamais, et le
+    // joueur lit la phrase du challenge et non le message par défaut de zod.
+    expect(verdict).toEqual({
+      ok: false,
+      error: "Vérification anti-robot échouée, réessayez.",
+    });
+    expect(etat.turnstileAppels).toHaveLength(0);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("n'oppose AUCUN challenge à `joinLobby` — l'invité ne crée rien", async () => {
+    // Le cœur de l'arbitrage : le quota se prend à la CRÉATION. Quelqu'un qui
+    // scanne un code est déjà assis à la table ; lui faire résoudre un contrôle
+    // mettrait la friction là où elle ne protège rien.
+    etat.turnstileConfigure = true;
+    etat.turnstileVerdict = false;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "site-key";
+    etat.reponses.join_player_lobby = {
+      data: { state: "joined", lobby_id: LOBBY_ID, kind: "bande", capacite: 6, rang: 3 },
+      error: null,
+    };
+
+    const fd = new FormData();
+    fd.set("code", "abc234");
+    fd.set("pseudo", "Bo");
+    const verdict = await joinLobby(null, fd);
+
+    expect(verdict.ok).toBe(true);
+    expect(etat.turnstileAppels).toHaveLength(0);
   });
 });
 

@@ -26,6 +26,7 @@ import {
 } from "@/lib/lobby-context";
 import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import type { ActionResult } from "@/lib/utils";
 import {
   closeOrgLobbySchema,
@@ -53,8 +54,8 @@ import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 //      requêtes (E-1, contre-revue L16). Aucun prédicat sur une appartenance
 //      attestée par cookie ne distingue N cookies de N personnes — le levier
 //      n'est pas ici. Ce qui est fait : TTL verrouillé d'une heure, et le
-//      commerçant voit et ferme ses salles. Ce qui reste à trancher est au
-//      bilan (Turnstile ou failClosed sur la création seule).
+//      commerçant voit et ferme ses salles. E-1 est FERMÉ par le challenge
+//      ci-dessous (LOBBY-1), sous condition des clés.
 //   3. TTL : trente minutes, UNE heure après verrouillage (ramené de quatre —
 //      une partie dure quinze minutes, et quatre heures étaient devenues la
 //      durée de vie d'une salle-squat), plafond dur de vingt-quatre heures en
@@ -62,16 +63,39 @@ import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 //   4. Plafond par cookie joueur — ÉCARTÉ. §A4 le dit décoratif : il ne protège
 //      rien qu'un joueur motivé ne contourne en effaçant son cookie.
 //
-// ── AUCUN TURNSTILE, ET C'EST UNE DÉCISION, PAS UN OUBLI ──
+// ── TURNSTILE SUR LA CRÉATION SEULE, ET INERTE JUSQU'AUX CLÉS (LOBBY-1) ──
 //
-// Le challenge anti-robot est opposé, partout ailleurs dans ce produit, sur les
-// chemins qui DISTRIBUENT quelque chose : un lot, un code encaissable en caisse,
-// une place limitée. Un lobby ne distribue RIEN — il est gratuit, il n'émet
-// aucun code de retrait, et le remplir de faux joueurs ne prend rien à personne
-// d'autre que ses onze voisins de salle. Y poser un Turnstile ferait payer une
-// friction (et un tiers script) à tous les joueurs pour borner un abus dont le
-// seul gain est de gêner une tablée de café. Les gardes actées sont l'IP, le
-// quota et le TTL — elles suffisent, et §A4 les a arbitrées comme telles.
+// Ce fichier a d'abord porté « aucun Turnstile, et c'est une décision » : un
+// lobby ne DISTRIBUE rien, et faire payer une friction plus un tiers script à
+// une tablée de café pour un jeu gratuit était le mauvais échange. Ce
+// raisonnement tenait sur le GAIN de l'attaquant ; la contre-revue L16 a montré
+// qu'il passait à côté du COÛT de la victime. Ce que E-1 prend n'est pas un lot,
+// c'est le QUOTA DE SALONS DU COMMERCE : trois requêtes tiennent une place une
+// heure, ~60 req/h en régime soutenu — sous le seuil du capteur `lobbyIp`, donc
+// invisible — et les vrais clients lisent « Beaucoup de salles sont déjà
+// ouvertes ici ». Aucun prédicat SQL ne le ferme (démontré : rien ne distingue
+// N cookies de N personnes). Restaient deux remèdes ; voici lequel, et pourquoi.
+//
+//   · SUR `createLobby`, JAMAIS SUR `joinLobby`. L'invité qui scanne un code ne
+//     CRÉE rien : il ne peut pas occuper le quota, et lui opposer un contrôle
+//     anti-robot mettrait la friction exactement là où elle ne protège rien —
+//     devant quelqu'un qui est déjà assis à la table.
+//   · PLUTÔT QU'UN SEAU `failClosed` PAR IP, qui heurte ADR-032 : sur une clé
+//     partagée, refuser coupe le NAT d'un centre commercial entier.
+//
+// ── ET IL EST INERTE AUJOURD'HUI, C'EST LA MOITIÉ DE LA DÉCISION ──
+//
+// Le challenge n'est opposé QUE si `lobbyChallengeDisponible()` est vrai —
+// c'est-à-dire si `TURNSTILE_SECRET_KEY` ET `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+// sont posées (motif EXACT de `reserverChallengeDisponible`, `actions/reserver.
+// ts`). Ces clés N'EXISTENT PAS en production : le geste propriétaire qui les
+// pose est en attente depuis L4, où il est déjà requis pour « Réserver ». Donc
+// aujourd'hui, ce code ne change RIEN : aucune friction, aucun script tiers,
+// aucun octet de plus sur la vitrine — la tablée de café ne voit pas la
+// différence. Et le jour où le propriétaire pose ses clés pour « Réserver »,
+// E-1 se ferme MÉCANIQUEMENT, sans nouveau déploiement et sans qu'on ait à s'en
+// souvenir. C'est ce qui rend le compromis acceptable : le coût est payé
+// seulement le jour où la protection sert.
 //
 // ── LE REFUS EST INDISTINCT, ET IL LE RESTE ICI ──
 //
@@ -99,6 +123,43 @@ import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 /** LA phrase du refus indistinct — ce qu'il en reste : `lockLobby`. */
 const INDISPONIBLE = "Cette salle n'est pas disponible.";
+
+/**
+ * LE CHALLENGE ÉCHOUÉ — et pourquoi il part par `{ ok: false }`.
+ *
+ * Ce fichier réserve `{ ok: false }` aux vraies pannes et aux saisies que le
+ * joueur peut corriger, et fait voyager les refus DOUX dans `data.etat`. Un
+ * contrôle anti-robot qui ne passe pas n'est ni l'un ni l'autre au sens strict
+ * — mais du point de vue de qui vient d'appuyer sur « Ouvrir le salon », c'est
+ * bien une PANNE : il n'a rien demandé d'anormal, rien à corriger dans son
+ * pseudo, et la seule chose à faire est de rejouer le contrôle et de réessayer.
+ * Un `etat: "challenge"` de plus dans `CreateLobbyOutcome` aurait obligé
+ * `refus.ts` — et le futur L17/L18 — à traduire un motif qui ne dit rien de la
+ * SALLE, alors que cette union existe pour dire pourquoi la salle n'a pas
+ * ouvert. La phrase suffit, et elle est la même pour toutes les causes
+ * d'échec du contrôle (jeton absent, expiré, refusé par Cloudflare).
+ */
+const CHALLENGE_ECHOUE = "Vérification anti-robot échouée, réessayez.";
+
+/**
+ * Le challenge anti-robot est-il opposable ?
+ *
+ * Motif EXACT de `reserverChallengeDisponible` (`src/actions/reserver.ts`) :
+ * la clé PUBLIQUE doit exister aussi, sans quoi l'écran n'a aucun widget à
+ * afficher et le refus serait sans issue pour le joueur — il lirait « échouée »
+ * devant un formulaire où rien n'est à valider.
+ *
+ * C'est cette condition, et elle seule, qui rend LOBBY-1 fermé « sous condition
+ * de clés » : les deux variables ne sont pas posées en production, donc cette
+ * fonction rend `false` et le chemin ci-dessous est un test qui ne se déclenche
+ * jamais. Le jour où le propriétaire les pose — geste déjà requis par
+ * « Réserver » depuis L4 — elle rend `true` partout à la fois.
+ */
+function lobbyChallengeDisponible(): boolean {
+  return (
+    turnstileEnabled() && Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY)
+  );
+}
 
 /**
  * LE refus indistinct, sous sa forme typée. Une seule valeur, partagée par
@@ -139,6 +200,9 @@ export async function createLobby(
     kind: formData.get("kind"),
     capacite: formData.get("capacite"),
     pseudo: formData.get("pseudo"),
+    // `?? undefined` et non la valeur brute : un champ absent donne `null`, que
+    // `.optional()` refuserait — et un formulaire sans challenge n'en poste pas.
+    turnstileToken: formData.get("turnstileToken") ?? undefined,
   });
   // Un slug malformé ne se distingue pas d'un slug inconnu : les deux sont LE
   // MÊME résultat `indisponible`, et pas une panne — l'adresse vient de l'URL,
@@ -148,6 +212,14 @@ export async function createLobby(
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     if (issue.path[0] === "slug") return REFUS_INDISPONIBLE;
+    // Un jeton hors borne n'est pas une saisie que le joueur puisse corriger :
+    // c'est le contrôle qui a mal tourné, et le message par défaut de zod ne lui
+    // apprendrait rien. Le refus est le même que celui d'un jeton invalide — et
+    // il tombe AVANT le moindre octet envoyé à Cloudflare, ce qui est tout
+    // l'intérêt d'avoir borné la longueur dans le schéma.
+    if (issue.path[0] === "turnstileToken") {
+      return { ok: false, error: CHALLENGE_ECHOUE };
+    }
     return { ok: false, error: issue.message };
   }
 
@@ -156,7 +228,29 @@ export async function createLobby(
   // jamais un commerce résolu. Un compteur posé après la résolution ne verrait
   // rien d'elle — c'est-à-dire exactement le balayage qu'il existe pour rendre
   // visible (motif `reserverPageIpCeiling`, wagon 7).
-  await observerPressionLobby("create");
+  const ip = await observerPressionLobby("create");
+
+  // LE CHALLENGE, ENSUITE, ET AVANT LA RÉSOLUTION DU COMMERCE (LOBBY-1).
+  //
+  // Cet ordre est le même que celui de `queueJoin` et il se lit de la même
+  // façon : le compteur d'abus est consommé même par une rafale qui échoue au
+  // contrôle — sans quoi l'attaque deviendrait invisible au capteur en plus
+  // d'être bloquée — et rien n'est lu en base tant que l'appelant n'a pas
+  // prouvé qu'il est humain. Un refus ici ne touche donc AUCUNE table, ne
+  // révèle pas si le slug existe, et ne consomme pas de quota.
+  //
+  // `parsed.data.turnstileToken`, jamais `formData.get(…)` : ce jeton part en
+  // requête sortante vers Cloudflare, donc c'est la valeur BORNÉE qui doit
+  // partir (INFO-1 de la revue L4).
+  //
+  // Inerte tant que les clés ne sont pas posées — voir `lobbyChallengeDisponible`
+  // et l'en-tête de ce fichier.
+  if (
+    lobbyChallengeDisponible() &&
+    !(await verifyTurnstile(parsed.data.turnstileToken, ip, "lobby-create"))
+  ) {
+    return { ok: false, error: CHALLENGE_ECHOUE };
+  }
 
   return monitored("lobby.create", () => createLobbyInner(parsed.data));
 }

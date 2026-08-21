@@ -151,16 +151,25 @@ export async function supprimerJetonLobby(lobbyId: string): Promise<void> {
  * et code viennent du client, donc un seau composé avec eux se disperserait sur
  * autant de valeurs inventées que la rafale en essaie. `etape` n'est qu'une
  * ÉTIQUETTE de contexte — elle voyage dans les métadonnées, jamais dans la clé.
+ *
+ * ── POURQUOI L'IP EST RENDUE ──
+ *
+ * `createLobby` en a besoin JUSTE APRÈS, pour la joindre à la vérification
+ * Turnstile (LOBBY-1). La relire de son côté aurait donné deux lectures d'en-
+ * têtes pour une seule requête, et surtout deux endroits où l'ordre « seau
+ * d'abord, challenge ensuite » pourrait diverger. Les appelants qui n'en ont
+ * pas l'usage — `join`, `page` — l'ignorent sans rien changer.
  */
 export async function observerPressionLobby(
   etape: "create" | "join" | "page",
-): Promise<void> {
+): Promise<string> {
   const ip = clientIpFromHeaders(await headers());
   after(() =>
     observerPressionIp(["lobby:ip"], ip, RATE_LIMITS.lobbyIp, "lobby_ip_ceiling", {
       etape,
     }).catch((err) => reportError("lobby.pressure", err)),
   );
+  return ip;
 }
 
 // ────────────────────────────────────────────────────────────

@@ -122,6 +122,18 @@ export const createLobbySchema = z
     // champ qu'elle n'a pas rendu. Le verdict est rendu dans le `transform`.
     capacite: z.union([z.string(), z.number(), z.null()]).optional(),
     pseudo: lobbyPseudoSchema,
+    /**
+     * Jeton Turnstile (LOBBY-1) — borne de LONGUEUR, rien d'autre.
+     *
+     * Ce champ est la seule exception à « aucun schéma d'ici n'ajoute une garde
+     * que le SQL n'aurait pas » : il n'a aucun `check` en face, parce qu'il ne
+     * part JAMAIS en base. Il part vers Cloudflare, et c'est précisément ce qui
+     * exige la borne — `verifyTurnstile` refuse au-delà de 2048, mais il le
+     * ferait après avoir accepté la valeur. La franchir ICI garantit que
+     * l'appel sortant se fait sur `parsed.data`, jamais sur le corps brut
+     * (INFO-1 de la revue L4, même arbitrage que `validations/reserver.ts`).
+     */
+    turnstileToken: z.string().max(2048).optional(),
   })
   .transform((saisie, ctx) => {
     if (saisie.kind === "duo") {

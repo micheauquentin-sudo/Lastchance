@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
 import { messageRefusCreation } from "@/components/lobby/refus";
+import { TurnstileGate } from "@/components/wheel/turnstile-gate";
+import { turnstileClientEnabled } from "@/components/wheel/turnstile-widget";
 import {
   LOBBY_CAPACITE_MAX,
   LOBBY_CAPACITE_MIN,
@@ -26,6 +28,20 @@ import {
  * n'y est pas négociable — la contrainte `player_lobbies_duo_fige` la fige à
  * deux en base ; l'écran n'a donc rien à demander, et un champ grisé serait
  * une question posée pour rien.
+ *
+ * ── Le contrôle anti-robot, et pourquoi il est là sans se voir ──
+ *
+ * `createLobby` oppose un défi Turnstile (LOBBY-1 : occuper le quota de salons
+ * d'un commerce coûte trois requêtes à un anonyme). Le composant réutilisé est
+ * `TurnstileGate` — celui du parcours principal, avec sa porte de sortie quand
+ * le script Cloudflare ne charge pas — et non un second widget écrit ici.
+ *
+ * IL NE REND RIEN TANT QU'AUCUNE CLÉ PUBLIQUE N'EST POSÉE : `TurnstileGate`
+ * s'efface de lui-même, et `turnstileClientEnabled()` empêche de bloquer le
+ * bouton en attendant un jeton qui ne viendrait jamais. Aujourd'hui les clés ne
+ * sont pas configurées, donc cet écran est exactement celui d'avant — pas de
+ * cadre, pas de script tiers, pas d'attente. Le serveur suit la MÊME condition
+ * (`lobbyChallengeDisponible`), de sorte que les deux moitiés s'arment ensemble.
  *
  * ── Le succès ne rend pas une page, il rend un code ──
  *
@@ -70,6 +86,14 @@ function messageEchecCreation(
 export function CreationLobbyForm({ slug }: { slug: string }) {
   const [etat, action, enCours] = useActionState(createLobby, null);
   const [duo, setDuo] = useState(false);
+  // `null` tant que le contrôle n'a rien rendu — expiration comprise, auquel cas
+  // `TurnstileGate` le remet à `null` et le bouton se referme tout seul.
+  const [jeton, setJeton] = useState<string | null>(null);
+  // Lu UNE FOIS, hors du rendu conditionnel : la clé est inlinée au build, donc
+  // sa valeur est identique côté serveur et côté client — aucun risque
+  // d'hydratation, et le bouton ne se bloque que si un jeton peut réellement
+  // arriver.
+  const challengeActif = turnstileClientEnabled();
   const router = useRouter();
   const idPseudo = useId();
   const idCapacite = useId();
@@ -147,9 +171,27 @@ export function CreationLobbyForm({ slug }: { slug: string }) {
           </label>
         </div>
 
+        {/* Le jeton voyage par le formulaire, comme le reste : cette action est
+            une action de FormData, et un champ caché est le seul canal qu'elle
+            ait. Absent tant qu'aucun jeton n'est là — l'action lit alors
+            `undefined` et refuse, ce qui est le comportement voulu. */}
+        {jeton && <input type="hidden" name="turnstileToken" value={jeton} />}
+        <TurnstileGate
+          action="lobby-create"
+          onToken={setJeton}
+          conseil="Le temps d’ouvrir votre salon."
+          className="pt-1"
+        />
+
         <FieldError message={messageEchecCreation(etat)} />
 
-        <Button disabled={enCours || ouvert} className="w-full">
+        {/* Bloqué en attente du jeton UNIQUEMENT si un jeton peut arriver : sans
+            clé publique, `challengeActif` est faux et le bouton reste tel qu'il
+            était avant LOBBY-1. */}
+        <Button
+          disabled={enCours || ouvert || (challengeActif && !jeton)}
+          className="w-full"
+        >
           {enCours || ouvert ? "Ouverture…" : "Ouvrir le salon"}
         </Button>
       </form>
