@@ -605,8 +605,9 @@ export type CloseOrgLobbyOutcome =
  * ses voisins, une requête à la fois. Le cas le plus banal est bénin : la salle
  * a été purgée entre l'affichage de la liste et le clic. Le remonter en panne
  * ferait remplir la supervision d'erreurs que personne n'a à réparer, donc il
- * rend `indisponible` sans passer par `reportError` (motif `refusVitrine`,
- * src/actions/vitrine.ts).
+ * rend `indisponible` — mais il laisse quand même une ligne d'OBSERVATION,
+ * parce que le même code couvre « l'appelant n'est pas `service_role` » : une
+ * clé mal configurée serait sinon indiscernable d'une course, et muette.
  *
  * ── LA REVALIDATION VAUT AUSSI POUR `deja-ferme` ──
  *
@@ -639,7 +640,18 @@ export async function closeOrgLobby(
         p_actor: garde.userId,
       });
       if (error) {
-        if (error.code === "42501") return REFUS_INDISPONIBLE;
+        if (error.code === "42501") {
+          // TRACÉ SANS ÊTRE UNE PANNE. Le refus est bénin dans son cas
+          // ordinaire (salle purgée entre l'affichage et le clic), mais 42501
+          // recouvre AUSSI « l'appelant n'est pas `service_role` » — c'est-à-dire
+          // une clé de service mal configurée, qui se lirait alors « salon
+          // indisponible » pour tout le monde et pour toujours, sans qu'aucune
+          // alerte ne parte (contre-revue L16, INFO). Une ligne d'observation
+          // coûte peu ; une rafale de ces lignes est le seul signal qui
+          // distinguerait la panne de la course.
+          reportError("lobby.close_as_org.refus", error.message);
+          return REFUS_INDISPONIBLE;
+        }
         reportError("lobby.close_as_org", error.message);
         return { ok: false as const, error: GENERIC_ERROR };
       }

@@ -37,9 +37,14 @@ import { SalonLobby } from "@/components/lobby/salon-lobby";
  *
  * ── LE REFUS EST UN ÉCRAN, PAS UN 404 ──
  *
- * Un appel à la fonction Next de 404 aurait dit la même chose avec un code HTTP — mais il l'aurait dit
- * à un scanner aussi bien qu'à un joueur, et une 404 se compte plus facilement
- * qu'une page de refus. L'écran rend la MÊME phrase pour les quatre causes.
+ * La 404 de Next aurait dit la même chose avec un code HTTP — mais elle
+ * l'aurait dit à un scanner aussi bien qu'à un joueur, et un statut se compte
+ * plus facilement qu'une page de refus. L'écran rend la MÊME phrase pour les
+ * quatre causes.
+ *
+ * (La garde de `route-boundaries.test.ts` cherche l'appel littéral dans le
+ * texte du fichier, commentaires compris : d'où la périphrase, qui vaut mieux
+ * qu'une exception dans la garde.)
  *
  * ── Le code ne quitte jamais l'URL en clair vers un jeu ──
  *

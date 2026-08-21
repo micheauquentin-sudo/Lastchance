@@ -983,11 +983,19 @@ describe("closeOrgLobby — le commerçant reprend sa place", () => {
     expect(reportErrorMock).not.toHaveBeenCalled();
   });
 
-  it("le 42501 est un RÉSULTAT, pas une panne — et il ne remonte pas en erreur", async () => {
+  it("le 42501 est un RÉSULTAT et non une panne, mais il laisse une trace", async () => {
     // Acteur non habilité, salle inconnue, salle d'un AUTRE locataire : un seul
     // refus sans corps, pour ne pas donner à un commerçant un compteur
     // d'activité de ses voisins. Le cas banal — la salle a été purgée entre
-    // l'affichage et le clic — n'a rien que personne doive réparer.
+    // l'affichage et le clic — n'a rien que personne doive réparer, d'où
+    // l'issue `indisponible` et non `{ ok: false }`.
+    //
+    // MAIS LE MÊME CODE COUVRE « l'appelant n'est pas `service_role` »
+    // (contre-revue L16, INFO) : une clé de service mal configurée rendrait
+    // alors « indisponible » à tout le monde et pour toujours, sans qu'aucune
+    // alerte ne parte. La ligne d'observation est le seul signal qui
+    // distinguerait cette panne d'une course — elle ne change ni l'issue rendue
+    // au commerçant, ni l'absence de revalidation.
     etat.reponses.close_player_lobby_as_org = {
       data: null,
       error: { message: "not authorized", code: "42501" },
@@ -996,7 +1004,10 @@ describe("closeOrgLobby — le commerçant reprend sa place", () => {
     expect(
       await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
     ).toEqual(REFUS_INDISPONIBLE);
-    expect(reportErrorMock).not.toHaveBeenCalled();
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "lobby.close_as_org.refus",
+      "not authorized",
+    );
     expect(etat.revalidations).toHaveLength(0);
   });
 
