@@ -4838,3 +4838,31 @@ checklist commerçante (couverture ajoutée dans ce même chantier), mais la
 cause — la dépendance du Duo à un seuil de fiches qui peut tomber sans geste
 explicite du commerçant — n'est pas corrigée. C'est un signalement, pas une
 correction.
+
+## OUVERT (2026-08-22, signalé, non corrigé) — deux assertions pgTAP mesurent le vide dans `droits_par_produit.test.sql`
+
+`PUBLIQUE-3` (« la porte des files est vide ») et `PUBLIQUE-4` (« idem pour
+les offres de stock ») vérifient que `vitrine_public_state` rend des listes
+vides quand le droit `reserver` n'est pas détenu. Mais la fixture de cette
+organisation ne crée ni file d'accueil ni offre de stock : ces deux listes
+valent `[]` avec ou sans le droit, et les deux assertions passeraient même si
+la migration ne filtrait rien — elles n'attestent que la forme de la réponse,
+ce que `PUBLIQUE-5` fait déjà et mieux. Leur voisine `PUBLIQUE-2` (« la porte
+des activités est vide »), elle, est réellement portante : `PORTÉE-2` prouve
+que la même liste **se remplit** quand le droit revient, et c'est ce couple
+vide-puis-plein qui manque aux deux autres.
+
+**Même motif que les entrées ci-dessus** (`fileAccepteEntree`, le pgTAP absent
+de la commande CI, le snapshot de types incomplet) — du code de vérification
+produit puis jamais branché sur ce qu'il devait prouver — mais dans une
+variante plus sournoise : ici la garde est branchée, elle s'exécute, elle est
+verte, et elle ne mesure rien. Une garde qui mesure le vide est pire qu'une
+garde absente, parce qu'elle rassure.
+
+Non corrigé délibérément : le remède demande d'ajouter une file d'accueil et
+une offre de stock à la fixture `PORTE` (colonnes obligatoires de
+`reservation_queues` et `reservation_stock_offers`), puis de vérifier que les
+deux assertions rougissent si l'on retire le filtre de la migration — sans
+pouvoir exécuter le fichier, la base ne se montant pas sur cette machine (voir
+l'entrée voisine sur `supabase db reset`). Une insertion fautive aurait fait
+avorter les 36 assertions du fichier au lieu d'en réparer deux.
