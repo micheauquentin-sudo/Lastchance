@@ -7664,3 +7664,117 @@ troisième fois.
 - `docs/roadmap.md` (back-office à jour)
 - `docs/bugs.md` (pastille files d'accueil, garde de parité, Duo sous 2
   fiches, échec local de `supabase db reset`)
+
+## ADR-117 — Sur Place : la cinquième offre, et les quatre droits que le webhook refusait
+
+**Date** : 2026-08-22 · **Statut** : acté
+
+**Contexte** : quatre produits étaient livrés, en production, gardés par leurs
+propres droits serveur depuis la PR #176 — et invendables. `vitrine`,
+`reserver`, `duo` et `bande` ne figuraient dans aucune offre de `PLAN_TIERS`
+ni dans `ADDON_OFFERS` ; le seul chemin d'octroi restait le back-office, ce
+que la roadmap V1.65 assumait explicitement (« un produit et un prix Stripe
+étant un geste propriétaire hors périmètre de ce lot »). Dix-neuf lots,
+dix-neuf migrations, dix-neuf PR — zéro euro.
+
+Un audit tarifaire demandé par le propriétaire a d'abord proposé de créer une
+seconde ligne de produit à cinq offres, avec les tarifs de jeu revus à la
+hausse (29/69/99). **Le relevé concurrentiel a invalidé cette moitié-là** :
+le jeu au QR se vend 9,90 €/mois (QronoPlay), la fourchette du marché SaaS va
+de 10 à 100 €, et la fidélité commerce plafonne à 49 € (Loyeo, Zerosix). Les
+tarifs de jeu étaient déjà dans le haut de leur marché ; les monter aurait été
+excessif. Le propriétaire a tranché : **on ne touche pas aux tarifs de jeu**.
+
+**Décision** — une cinquième offre, et deux options remises à plus tard.
+
+1. **`place` / « Sur Place », 79 €/mois** = socle + `vitrine` + `reserver` +
+   `duo` + `bande` + `quiz`. Le prix est exactement 29 + 20 + 30, sans remise :
+   la grille reste calculable de tête, ce qui était la demande explicite
+   (« comment on pourrait articuler tout ça plus simplement ? »).
+2. **La Totale absorbe les quatre droits SANS changer de prix** (129 €).
+   Décision propriétaire, assumée comme une baisse relative. Elle rend surtout
+   son sous-titre à nouveau vrai : « toute la plateforme » serait devenu faux
+   le jour où Sur Place a existé.
+3. **Le nom est commercial, l'identifiant est définitif.** `place` part dans
+   `organizations.plan` et sert de clé au price Stripe. « Sur Place » a été
+   arrêté après trois candidats — « La Table » a été écarté parce qu'il
+   enfermait dans la restauration, alors que la même formule sert un salon de
+   coiffure, un institut ou un garage. Le nom peut encore bouger ; l'id, non.
+4. **Les options Vitrine (+20 €) et Réserver (+30 €) ne sont pas dans ce lot.**
+   Elles demandent deux corrections que Sur Place n'exige pas : voir « ce qui
+   reste ouvert » plus bas.
+
+**Ce que la vérification a trouvé, et que la lecture avait manqué.** Le
+document d'audit affirmait « aucune migration nécessaire : les colonnes
+d'octroi existent depuis `20261020120000` ». **C'était faux, et le défaut
+n'aurait pas été borné au produit neuf.**
+`apply_stripe_subscription_event_v2` porte deux listes fermées :
+`p_plan_id not in ('starter','core','engagement','live','full')` et
+`if not v_entitlements <@ v_allowed`, ce dernier sur neuf valeurs. Le premier
+abonnement vendu — Sur Place **comme** La Totale — aurait levé une exception.
+Or un webhook qui échoue est rejoué par Stripe trois jours durant, puis le
+point d'entrée est désactivé : la synchronisation des abonnements **existants**
+serait tombée avec lui.
+
+**Ce qui a été vérifié avant d'écrire plutôt que supposé.** Élargir l'`update`
+aux quatre colonnes écrit `false` chez tout abonné qui n'est ni sur Sur Place
+ni sur La Totale — en apparence, une révocation de masse. Deux constats
+ferment le risque : (1) les quatre colonnes sont nées `not null default false`
+et **aucun chemin ne les écrit** — le `grep` sur `src/` ne rend que des
+`select` — donc y réécrire `false` est un no-op ; (2) le back-office n'accorde
+pas par ces colonnes mais par `organization_module_grants`, et
+`org_has_module_access` répond « colonne OU octroi vivant » : un accès offert
+survit intact, c'est la moitié de la disjonction que la migration ne touche
+pas.
+
+**Trois conséquences structurelles.**
+
+- **`duo` et `bande` entrent dans l'union `Entitlement`.** Ils étaient
+  `GrantableModule` sans être des droits — asymétrie tenable tant que le seul
+  chemin était l'octroi manuel, intenable dès qu'une offre les déclare, le
+  webhook ne faisant passer les droits d'une offre que par `Entitlement`.
+- **`MODULE_CATALOG` : le second registre qui manquait.** Les deux gardes de
+  `plans.test.ts` — « aucun droit hors du catalogue produit » et « aucune offre
+  sans expérience listée » — tiraient leur vocabulaire du seul
+  `EXPERIENCE_CATALOG`. Elles refusaient donc une carte de restaurant, faute
+  d'un `kind` jouable. Le registre décrit ce qu'une offre peut CONTENIR, dont
+  les expériences ne sont qu'une moitié ; `describeTier` lit désormais les deux.
+- **`protect_stripe_managed_entitlements` suit les colonnes qu'il garde.** Il
+  en énumérait huit ; le webhook en écrit douze. Laisser les quatre neuves
+  dehors n'aurait produit aucun défaut immédiat — rien ne les écrit — mais une
+  asymétrie invisible : Stripe ferait autorité sur des colonnes que le
+  garde-fou ne défendrait pas, et le premier écran de back-office à les
+  basculer serait écrasé au prochain événement sans explication.
+
+**Un arbitrage de portée pris pendant l'écriture** : `quiz` est dans Sur Place.
+La Vitrine porte une porte quiz depuis le lot L13 ; la vendre sans le droit
+aurait livré une page dont un bouton configurable mène à un refus — le
+commerçant l'aurait ouvert, pas le joueur. Sans effet sur l'échelle :
+`cheapestTierFor("quiz")` reste Le Club, à 59 €.
+
+**Ce qui reste ouvert.**
+
+- **Les deux options mensuelles** exigent d'abord un `subscriptions.update`
+  posant l'option comme LIGNE de l'abonnement en cours. Aujourd'hui
+  `createAddonCheckoutSession` ouvre une session en `mode: "subscription"` avec
+  un seul `line_items`, ce qui crée un abonnement **séparé** — le fichier le
+  dit lui-même — et aucun `subscriptions.update` n'existe dans `src/`
+  (zéro occurrence). Un commerçant qui prend Passeport **et** Parrainage a donc
+  déjà deux prélèvements à deux dates. Elles exigent aussi qu'un seul prix
+  Vitrine ouvre TROIS colonnes, `AddonOffer.entitlement` étant singulier.
+- **Le produit et le prix Stripe en mode live.** La clé `rk_live_` de la CLI
+  n'a ni `product_write` ni `feature_write`, et c'est celle dont
+  `docs/chantier-audit-2026-08-16.md` demande la révocation : élargir ses
+  permissions irait contre cette consigne.
+
+**Références** :
+- Migration `20261021120000_offre_sur_place.sql`
+- Branche `chantier/packaging-sur-place`
+- `src/lib/plans.ts` (`PACKAGING_VERSION` → `2026-08-b`),
+  `src/platform/experiences/catalog.ts` (`MODULE_CATALOG`),
+  `src/platform/experiences/contract.ts` (`duo`, `bande`)
+- Relevé concurrentiel du 2026-08-22 : Zenchef 129/169/249 €, TheFork ~139 € +
+  2 à 2,60 €/couvert, ClickTable 29/69/149 €, Restomatik 49/79/109 €,
+  Resatable 39 €, ViteUneTable dès 29 € (anti no-show 49 € en option),
+  Guestonline 17 €, Planity 74/94/114 €, MenuOnline 49 € + 595 € d'entrée,
+  Loyeo 0/29/49 €, Zerosix 49 € + 190 €, QronoPlay 9,90 €.
