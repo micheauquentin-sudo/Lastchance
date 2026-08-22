@@ -392,9 +392,10 @@ export default async function SettingsPage({
             <h3 className="font-semibold text-sm mb-1">Offres</h3>
             <p className="text-xs text-zinc-500 mb-3">
               Chaque offre ouvre les modules listés ; les autres restent
-              désactivés. {getPlanTier("engagement").name} et{" "}
-              {getPlanTier("live").name} sont deux périmètres différents,{" "}
-              {getPlanTier("full").name} les réunit.
+              désactivés. {getPlanTier("engagement").name},{" "}
+              {getPlanTier("place").name} et {getPlanTier("live").name} sont
+              trois périmètres différents — fidéliser, se faire réserver,
+              animer en direct — et {getPlanTier("full").name} les réunit.
             </p>
             <PlanCatalog
               tiers={planCatalog}
