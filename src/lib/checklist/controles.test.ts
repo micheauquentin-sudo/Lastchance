@@ -65,6 +65,32 @@ describe("normaliserContrôles — les modules dont la table décide", () => {
     }
   });
 
+  it("la vitrine bloque sur l'adresse, la carte et le plateau du Duo", () => {
+    for (const cle of ["adresse", "catalogue", "duo-plateau"]) {
+      expect(bloquantDe("vitrine", brut(cle))).toBe(true);
+    }
+    // `publiee` avertit et ne bloque pas : « ouvrir aux joueurs » EST publier,
+    // donc en faire une précondition de l'ouverture serait une tautologie. Il
+    // sert là où il vaut quelque chose — sur le bloc des QR, avant l'impression.
+    expect(bloquantDe("vitrine", brut("publiee"))).toBe(false);
+  });
+
+  it("le Portrait de la Bande n'a AUCUNE clé bloquante, et c'est la mesure", () => {
+    // Son unique réglage a un défaut en base (`pack not null default 'amis'`) et
+    // trois replis en TypeScript : il n'existe aucun état « pas configuré ». Une
+    // case à cocher verte pour toujours n'aurait protégé de rien.
+    expect(bloquantDe("vitrine", brut("bande-pack"))).toBe(false);
+  });
+
+  it("Réserver bloque sur l'existence d'une activité et d'un créneau ouvert", () => {
+    expect(bloquantDe("reserver", brut("activites"))).toBe(true);
+    expect(bloquantDe("reserver", brut("creneaux"))).toBe(true);
+    // Complet n'est pas une panne (la liste prioritaire prend le relais), et une
+    // file muette se rouvre en un clic : les deux avertissent.
+    expect(bloquantDe("reserver", brut("places"))).toBe(false);
+    expect(bloquantDe("reserver", brut("files-activite"))).toBe(false);
+  });
+
   it("ignore un `bloquant` porté par un contrôle d'un module à table", () => {
     // La table est la vérité pour ces quatre modules : un champ qui traînerait
     // sur le contrôle ne doit pas la contredire en silence.

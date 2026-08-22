@@ -269,6 +269,82 @@ export const TUILES_PRONOSTICS: readonly TuileChecklist[] = [
   },
 ];
 
+/**
+ * LA VITRINE — `src/app/dashboard/vitrine/page.tsx`.
+ *
+ * Cette page porte QUATRE modules livrés : la Vitrine elle-même, et les deux
+ * jeux de salon qui s'y règlent, Duo Miroir et Portrait de la Bande. (Réserver
+ * a sa page à lui, plus bas.) Ils sont ici parce qu'ils sont des BLOCS DE CETTE
+ * PAGE — voir le commentaire de `ModuleChecklist` sur ce qu'une entrée d'union
+ * désigne vraiment.
+ *
+ * ── DEUX BLOCS RENDUS QUI NE SONT PAS DES TUILES, ET C'EST VOULU ──
+ *
+ * · `SommaireVitrine` (« Aller directement à ») est une TABLE DES MATIÈRES, pas
+ *   une étape. La numéroter ferait de « lire le sommaire » la deuxième chose à
+ *   faire pour ouvrir sa vitrine.
+ * · `SalonsOuverts` est une console de SUPERVISION en direct, et elle ne se
+ *   peint qu'avec au moins une salle ouverte. Un rang qui disparaît de l'écran
+ *   selon l'heure de la journée n'est pas un rang.
+ *
+ * Aucun des deux ne porte donc de pastille : la suite des blocs NUMÉROTÉS reste
+ * 1 → 9 dans l'ordre du rendu, exactement comme l'en-tête l'exige.
+ *
+ * ── LE PORTRAIT DE LA BANDE : UNE TUILE, ZÉRO CONTRÔLE ──
+ *
+ * Ce n'est pas un oubli et ce n'est pas de la place gardée au chaud. Son unique
+ * réglage — le pack de questions — a un défaut en base et trois replis en
+ * TypeScript : il n'existe aucun état « pas configuré », donc aucun contrôle qui
+ * ne serait pas vert pour toujours. La tuile existe parce que le bloc existe et
+ * qu'un commerçant doit pouvoir le situer dans la page ; elle ne prétend rien
+ * vérifier.
+ */
+export const TUILES_VITRINE: readonly TuileChecklist[] = [
+  { cle: "reglages", titre: "Réglages de la vitrine", controles: ["adresse"] },
+  { cle: "audience", titre: "Audience", controles: [] },
+  { cle: "traductions", titre: "Traductions (anglais)", controles: [] },
+  { cle: "alaune", titre: "À la une (3 max)", controles: [] },
+  { cle: "import", titre: "Importer une carte existante", controles: [] },
+  { cle: "catalogue", titre: "Vos cartes", controles: ["catalogue"] },
+  {
+    cle: "duo",
+    titre: "Duo Miroir",
+    ancre: "duo-miroir",
+    controles: ["duo-plateau"],
+  },
+  {
+    cle: "bande",
+    titre: "Portrait de la Bande",
+    ancre: "portrait-bande",
+    controles: [],
+  },
+  { cle: "qr", titre: "QR et impression", controles: ["publiee"] },
+];
+
+/**
+ * RÉSERVER — `src/app/dashboard/reservations/page.tsx`.
+ *
+ * Les trois contrôles d'agenda vivent sur la liste des activités : c'est de là
+ * qu'on ouvre une activité, et c'est de là qu'on entre dans son agenda pour
+ * ouvrir un créneau. « Arrivées » et « Offres de stock » n'en portent aucun —
+ * la première est une console de comptoir, la seconde n'a aucun état qu'un
+ * contrôle honnête puisse distinguer (voir `activation/reserver.ts`).
+ */
+export const TUILES_RESERVER: readonly TuileChecklist[] = [
+  {
+    cle: "activites",
+    titre: "Vos activités",
+    controles: ["activites", "creneaux", "places"],
+  },
+  { cle: "arrivees", titre: "Arrivées", controles: [] },
+  {
+    cle: "files",
+    titre: "Files d'accueil",
+    controles: ["files-activite"],
+  },
+  { cle: "offres", titre: "Offres de stock", controles: [] },
+];
+
 export const TUILES_PAR_MODULE: Record<
   ModuleChecklist,
   readonly TuileChecklist[]
@@ -281,6 +357,8 @@ export const TUILES_PAR_MODULE: Record<
   jackpot: TUILES_JACKPOT,
   evenement: TUILES_EVENEMENT,
   pronostics: TUILES_PRONOSTICS,
+  vitrine: TUILES_VITRINE,
+  reserver: TUILES_RESERVER,
 };
 
 export type StatutTuile = "complet" | "attention" | "incomplet";

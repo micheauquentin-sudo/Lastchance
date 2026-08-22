@@ -11,6 +11,8 @@ import { construireVerificationFidelite } from "@/lib/activation/loyalty";
 import { construireActivationJackpot } from "@/lib/activation/jackpot";
 import { construireActivationEvent } from "@/lib/activation/events";
 import { construireVerificationContest } from "@/lib/activation/pronostics";
+import { construireVerificationVitrine } from "@/lib/activation/vitrine";
+import { construireVerificationReserver } from "@/lib/activation/reserver";
 
 import type { ControleBrut, ModuleChecklist } from "@/lib/checklist/controles";
 import {
@@ -194,6 +196,52 @@ const CONTROLES_REELS: Record<ModuleChecklist, ControleBrut[][]> = {
       tiebreakerAnswer: 42,
       collectEmail: true,
       collectPhone: false,
+      now: MAINTENANT,
+    }).controles,
+  ],
+
+  vitrine: [
+    // Aucune adresse : la vitrine n'émet QUE `adresse`. Les trois autres points
+    // n'existent pas encore — il n'y a ni carte, ni publication, ni plateau.
+    construireVerificationVitrine({
+      settings: null,
+      cartes: [],
+      nbFichesDuo: 0,
+    }).controles,
+    // Adresse posée : `catalogue` et `publiee` apparaissent. Le plateau du Duo
+    // est entamé, donc `duo-plateau` aussi.
+    construireVerificationVitrine({
+      settings: { slug: "chez-marcel", published: false },
+      cartes: [{ active: true, categories: [{ fiches: [{}, {}] }] }],
+      nbFichesDuo: 1,
+    }).controles,
+  ],
+
+  reserver: [
+    // Aucune activité : seul `activites` est émis.
+    construireVerificationReserver({
+      activites: [],
+      files: [],
+      now: MAINTENANT,
+    }).controles,
+    // Une activité ouverte avec un créneau ouvert à venir : `creneaux` ET
+    // `places` apparaissent. Une file ouverte fait naître `files-activite`.
+    construireVerificationReserver({
+      activites: [
+        {
+          id: "a1",
+          active: true,
+          kind: "standard",
+          slots: [
+            {
+              status: "open",
+              startsAt: "2026-08-08T18:00:00.000Z",
+              remaining: 4,
+            },
+          ],
+        },
+      ],
+      files: [{ status: "open", activityId: "a1" }],
       now: MAINTENANT,
     }).controles,
   ],
@@ -415,7 +463,7 @@ describe("tuilesDuModule", () => {
     );
   });
 
-  it("rend une tuile par bloc, pour les huit modules", () => {
+  it("rend une tuile par bloc, pour les dix modules", () => {
     for (const mod of MODULES) {
       expect(tuilesDuModule(mod, []).length).toBe(
         TUILES_PAR_MODULE[mod].length,

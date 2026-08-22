@@ -1,10 +1,11 @@
 /**
- * HUIT MODULES, HUIT FORMES DE CONTRÔLE — UNE SEULE POUR LES TUILES.
+ * DIX MODULES, DEUX FORMES DE CONTRÔLE — UNE SEULE POUR LES TUILES.
  *
- * Les huit calculs « peut-on ouvrir ? » ne rendent pas la même chose :
+ * Les dix calculs « peut-on ouvrir ? » ne rendent pas la même chose :
  *  · quiz, calendrier, jackpot, événement portent un champ `bloquant` ;
- *  · roue, chasse, fidélité et pronostics rendent `{cle, ok, titre, detail}`
- *    sans plus — leur caractère bloquant est tranché par la table ci-dessous.
+ *  · roue, chasse, fidélité, pronostics, vitrine et réserver rendent
+ *    `{cle, ok, titre, detail}` sans plus — leur caractère bloquant est tranché
+ *    par la table ci-dessous.
  *
  * Une tuile de page doit pourtant dire « complet » ou « il manque quelque
  * chose », et ce verdict n'a de sens que si l'on sait CE QUI BLOQUE. Recopier
@@ -28,7 +29,25 @@ export type ModuleChecklist =
   | "fidelite"
   | "jackpot"
   | "evenement"
-  | "pronostics";
+  | "pronostics"
+  /**
+   * VITRINE ET RÉSERVER SONT DEUX ENTRÉES, PAS QUATRE.
+   *
+   * Quatre modules ont été livrés (Vitrine, Réserver, Duo Miroir, Portrait de la
+   * Bande) et les quatre sont couverts ici — mais cette union ne nomme pas des
+   * FONCTIONNALITÉS, elle nomme des PAGES : une tuile est « un bloc de la page,
+   * avec son rang », et le rang se lit de la position dans la liste.
+   *
+   * Or le Duo Miroir et le Portrait de la Bande n'ont pas de page à eux : ils
+   * sont deux BLOCS de `/dashboard/vitrine`, réglés là, entre le catalogue et
+   * les QR (`DuoEditeur`, `BandeEditeur`). Leur donner une entrée d'union aurait
+   * fait rendre trois listes numérotées sur un seul écran — deux pastilles « 1 »
+   * à quelques centimètres l'une de l'autre — et le rang aurait cessé de vouloir
+   * dire quoi que ce soit. Leurs tuiles et leurs contrôles vivent donc dans
+   * `vitrine`, à leur vraie place dans l'ordre de la page.
+   */
+  | "vitrine"
+  | "reserver";
 
 /** Ce que les modules d'activation rendent — `bloquant` optionnel. */
 export interface ControleBrut extends PointControle {
@@ -113,6 +132,36 @@ const DEFAUTS_BLOQUANT: Record<
   // et c'était le défaut FIA-2 — il est fermé, la table le suit.
   pronostics: {
     matiere: true,
+  },
+
+  // La vitrine : sans adresse il n'y a pas de page, sans une fiche visible il y
+  // a une page vide, et sous deux fiches épinglées le Duo Miroir disparaît de la
+  // vitrine — trois façons pour le client de repartir les mains vides.
+  //
+  // `publiee` n'est PAS bloquant, et pas par indulgence : « ouvrir aux joueurs »
+  // est exactement ce que publier veut dire, donc en faire une précondition de
+  // l'ouverture serait une tautologie. Il avertit, là où il sert : sur le bloc
+  // des QR, avant l'impression.
+  //
+  // Le Portrait de la Bande n'a AUCUNE clé ici, et c'en est la mesure : son seul
+  // réglage a un défaut en base (`pack not null default 'amis'`) et trois replis
+  // en TypeScript. Il n'existe pas d'état « pas configuré » à bloquer.
+  vitrine: {
+    adresse: true,
+    catalogue: true,
+    "duo-plateau": true,
+    publiee: false,
+  },
+
+  // Réserver : rien à réserver, ou rien d'ouvert à venir, et le client repart
+  // sans date. `places` (tout est complet) et `files-activite` (une file dite
+  // « ouverte » que `queue_join` referme) avertissent — la première est une
+  // salle pleine, pas une panne ; la seconde se répare en un clic.
+  reserver: {
+    activites: true,
+    creneaux: true,
+    places: false,
+    "files-activite": false,
   },
 };
 
