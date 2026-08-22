@@ -246,7 +246,12 @@ export const LIBELLE_MODULE: Record<string, string> = {
   events: "Soirée en jeu",
   referral: "Bouche-à-oreille",
   pronostics: "Saison de pronostics",
-  vitrine: "Vitrine & Réserver",
+  // UNE clé, CINQ surfaces. « Vitrine & Réserver » datait du lot L2 et est
+  // resté tel quel pendant que la même clé ouvrait Duo Miroir, Portrait de la
+  // Bande et les salons joueurs. L'opérateur qui octroie lit ce libellé : lui
+  // laisser croire qu'il n'ouvre que deux surfaces sur cinq lui fait accorder
+  // — ou refuser — autre chose que ce qu'il croit.
+  vitrine: "Vitrine, Réserver & salons de jeu",
 };
 
 /**

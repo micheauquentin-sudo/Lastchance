@@ -66,15 +66,40 @@ type RessourceModuleTypee = {
 }[TableDuSchema];
 
 /**
- * Les modules qui ONT une ressource publiable — c'est-à-dire tous sauf
- * `vitrine`, qui n'a ni table, ni trigger `guard_module_publication` : le lot
- * L2 ne livre que le droit serveur, il n'y a encore rien à publier.
+ * Les modules qui ONT une ressource DONT LES BROUILLONS SE COMPTENT — c'est-à-
+ * dire tous sauf `vitrine`.
  *
- * EXEMPTION ÉCRITE ET NON DÉDUITE. La faire porter par le type plutôt que par
- * une clé absente est ce qui la rend visible : le jour où Vitrine gagne sa
- * table, `tsc` réclame son entrée ci-dessous dès qu'on la retire de
- * l'`Exclude`, alors qu'une clé simplement manquante n'aurait jamais rien
- * réclamé à personne.
+ * ── CE QUE CETTE EXEMPTION NE DIT PAS, ET DISAIT ENCORE ──
+ *
+ * Elle a longtemps porté le motif « `vitrine` n'a ni table, ni trigger
+ * `guard_module_publication` : le lot L2 ne livre que le droit serveur, il n'y
+ * a encore rien à publier ». C'était vrai de L2 ; c'est FAUX depuis L10.
+ * `vitrine_settings` existe, elle porte `published`, et le trigger
+ * `vitrine_settings_guard_publication` (migration 20261011120000) la garde
+ * exactement comme les neuf autres. La publication de la vitrine EST gardée en
+ * base — la lire ici comme « non gardée » était l'erreur la plus coûteuse que
+ * ce commentaire pouvait induire.
+ *
+ * ── CE QUI RESTE VRAI, ET QUI EST LE MOTIF ACTUEL ──
+ *
+ * Aucun QUOTA DE BROUILLONS ne s'applique à la vitrine : une organisation a UNE
+ * vitrine, pas N brouillons de vitrine, et aucune action de création ne passe
+ * par `refuserSiQuotaBrouillonAtteint` pour elle. Cette table sert à COMPTER
+ * des brouillons ; un module qui n'en a pas à compter n'y a pas d'entrée. C'est
+ * ce que mesure `estPubliable`, et rien d'autre — surtout pas l'existence d'un
+ * trigger.
+ *
+ * ── CE QUI LA FERAIT TOMBER ──
+ *
+ * Non plus « le lot qui livre la Vitrine », qui est livré : le jour où la
+ * vitrine devient CONTINGENTÉE — plusieurs vitrines par organisation, ou une
+ * action de création qui doit borner sa gratuité. Il faudra alors la retirer de
+ * l'`Exclude` ci-dessous, et `tsc` réclamera son entrée dans
+ * `RESSOURCE_MODULE` (`vitrine_settings` / `published` / `["true"]`).
+ *
+ * EXEMPTION ÉCRITE ET NON DÉDUITE : la faire porter par le type plutôt que par
+ * une clé absente est ce qui la rend visible — une clé simplement manquante
+ * n'aurait jamais rien réclamé à personne.
  */
 export type ModulePubliable = Exclude<GrantableModule, "vitrine">;
 

@@ -89,7 +89,12 @@ describe("calculerFenetres — un pass acheté mais pas démarré", () => {
     if (v.ok) return;
     // Le message NOMME le module comme le panneau juste au-dessus le nomme, et
     // dit la sortie — sans quoi l'admin recommence le même geste.
-    expect(v.erreur).toContain("Vitrine & Réserver");
+    // DÉRIVÉ de `LIBELLE_MODULE`, et non recopié : le littéral « Vitrine &
+    // Réserver » épinglé ici a survécu à cinq surfaces livrées sous la même
+    // clé, et il fallait le corriger à deux endroits au lieu d'un. Ce qui doit
+    // rester vrai est « le message nomme le module COMME le panneau le nomme »,
+    // pas la chaîne d'un jour.
+    expect(v.erreur).toContain(LIBELLE_MODULE.vitrine);
     expect(v.erreur).toContain("démarrage immédiat");
   });
 

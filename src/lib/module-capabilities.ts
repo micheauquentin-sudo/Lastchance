@@ -135,7 +135,14 @@ export interface EntreeCapacites {
   passTermineLe?: string | null;
 }
 
-/** Libellé du module tel qu'on le nomme au commerçant. */
+/**
+ * Libellé du module tel qu'on le nomme au commerçant.
+ *
+ * S'INSÈRE DANS UNE PHRASE, d'où l'article en tête : « Préparez {nom}
+ * librement », « Pour publier {nom}, demandez… », « Le pass pour {nom} s'est
+ * terminé le … ». Un libellé de bouton, sans article, y produirait des phrases
+ * fausses aux trois endroits.
+ */
 const NOM_MODULE: Record<GrantableModule, string> = {
   wheel: "la roue de la fortune",
   hunts: "la chasse au trésor",
@@ -146,7 +153,12 @@ const NOM_MODULE: Record<GrantableModule, string> = {
   events: "la soirée en jeu",
   referral: "le bouche-à-oreille",
   pronostics: "la saison de pronostics",
-  vitrine: "la vitrine et l'agenda Réserver",
+  // La clé `vitrine` ouvre CINQ surfaces, pas deux : vitrine publique, agenda
+  // Réserver, Duo Miroir, Portrait de la Bande et les salons joueurs. Le
+  // commerçant à qui l'on dit « ouvrez ce module pour publier la vitrine et
+  // l'agenda » sous-estimait ce qu'il achète — et cherchait ailleurs le droit
+  // de ses salons, qui était dans celui-ci.
+  vitrine: "la vitrine, Réserver et les salons de jeu",
 };
 
 export function capacitesModule(entree: EntreeCapacites): CapacitesModule {

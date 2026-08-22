@@ -50,10 +50,23 @@ const FICHIER_ACTION: Record<GrantableModule, string | null> = {
   pronostics: "pronostics.ts",
   // EXEMPTÉ, avec son motif : pas de création, un réglage booléen par campagne.
   referral: null,
-  // EXEMPTÉ, avec son motif : le lot L2 (migration 20261001120000) livre le
-  // DROIT SERVEUR « vitrine » et rien d'autre — ni table, ni ressource, donc
-  // aucune action de création à border. L'exemption tombera le jour où le lot
-  // qui livre la Vitrine ajoutera son action ; ce test le réclamera alors.
+  // EXEMPTÉ, avec son motif — RÉÉCRIT, car le précédent est périmé depuis L10.
+  //
+  // Il disait : « le lot L2 livre le DROIT SERVEUR "vitrine" et rien d'autre —
+  // ni table, ni ressource », et annonçait sa propre chute « le jour où le lot
+  // qui livre la Vitrine ajoutera son action ». Ce lot est livré : la table
+  // `vitrine_settings` existe, et le trigger `vitrine_settings_guard_publication`
+  // (migration 20261011120000) garde sa colonne `published` en base, comme pour
+  // les neuf autres modules. La vitrine se publie, et sa publication est gardée.
+  //
+  // CE QUI RESTE VRAI, et qui est le motif actuel : aucune action de création
+  // de la vitrine ne passe par `refuserSiQuotaBrouillonAtteint`, parce qu'il n'y
+  // a rien à contingenter — une organisation a UNE vitrine, pas N brouillons de
+  // vitrine. Ce test garde des quotas, pas des gardes de publication.
+  //
+  // CE QUI LA FERAIT TOMBER : que la vitrine devienne contingentée — plusieurs
+  // vitrines par organisation, ou une action de création dont la gratuité doit
+  // être bornée. Le critère est là, et non plus une date déjà passée.
   vitrine: null,
 };
 
