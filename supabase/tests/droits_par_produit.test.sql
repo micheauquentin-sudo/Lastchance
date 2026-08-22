@@ -64,9 +64,26 @@ select no_plan();
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
--- Instant de référence unique : les fenêtres sont posées relativement à lui, et
--- jamais à `now()`, pour que le fichier ne devienne pas intermittent selon la
--- durée de sa propre exécution.
+-- ── DEUX HORLOGES, ET LA SECONDE N'EST PAS UN CHOIX ─────────
+--
+-- `t0` est l'instant de référence des sections 1 à 3. Elles n'interrogent
+-- qu'`org_has_module_access`, qui PREND un `p_now`, et chacune de leurs
+-- assertions le passe explicitement : aucune ne lit l'heure réelle, une date
+-- absolue y est donc parfaitement stable, et c'est pourquoi elle est conservée.
+--
+-- LES SECTIONS 4 ET 5 SONT D'UNE AUTRE NATURE. `reserve_slot` et
+-- `vitrine_public_state` n'ont AUCUN paramètre d'instant : elles lisent
+-- `now()`, et rien d'autre. Une fenêtre d'octroi posée sur `t0` y est donc lue
+-- à une heure qui n'a aucun rapport avec elle — c'est ce qui a rendu la page
+-- `unavailable` et vidé ses portes alors que la base faisait exactement ce
+-- qu'on lui demandait. Les octrois de PORTE sont pour cette seule raison posés
+-- sur `now()` : L'INSTANT DE RÉFÉRENCE D'UNE ASSERTION EST CELUI QUE LA
+-- FONCTION SOUS TEST LIT VRAIMENT.
+--
+-- Et `now()` n'y réintroduit aucune intermittence : c'est
+-- `transaction_timestamp()`, figé pour toute la transaction de ce fichier, donc
+-- aussi constant que la table ci-dessous. Les sections 4 et 5 s'en servaient
+-- déjà pour le créneau et pour l'octroi du contrôle de portée.
 create temporary table t0 (v timestamptz);
 insert into t0 values (timestamptz '2026-09-15 12:00:00+00');
 
@@ -85,7 +102,11 @@ insert into t0 values (timestamptz '2026-09-15 12:00:00+00');
 -- PORTE : le témoin de Réserver et de la page publique. `vitrine` vivant,
 --       PAS `reserver`, une vitrine publiée, une activité active, un créneau
 --       ouvert. Elle est SERVIE en tant que vitrine et FERMÉE en tant que
---       Réserver — c'est tout l'objet du lot.
+--       Réserver — c'est tout l'objet du lot. SES BORNES SONT POSÉES SUR
+--       `now()` ET NON SUR `t0`, pour la raison écrite plus haut : les deux RPC
+--       qui la jugent ne prennent pas d'instant. Le miroir de §3 recopiera ces
+--       bornes-là dans ses trois octrois, donc `reserver` naîtra vivant au même
+--       instant — ce qui est justement ce que §4 doit pouvoir lui retirer.
 insert into public.organizations
   (id, name, slug, subscription_status, plan, timezone, data_retention_months,
    addon_vitrine)
@@ -107,7 +128,7 @@ values
   ('d40a0000-0000-4000-8000-000000000002', 'vitrine', 'pass', 'backoffice',
    (select v from t0) - interval '1 day', (select v from t0) + interval '30 days'),
   ('d40a0000-0000-4000-8000-000000000005', 'vitrine', 'pass', 'backoffice',
-   (select v from t0) - interval '1 day', (select v from t0) + interval '30 days');
+   now() - interval '1 day', now() + interval '30 days');
 
 -- L'ÉCHU et le RÉVOQUÉ. Le second passe par un `update` : `revoked_at` n'est pas
 -- une colonne que l'insert de fixture doit deviner, et le trigger de gel des
@@ -307,17 +328,23 @@ select results_eq(
 -- ════════════════════════════════════════════════════════════
 
 update public.organization_module_grants
-   set revoked_at = (select v from t0) - interval '1 hour',
+   set revoked_at = now() - interval '1 hour',
        revoked_reason = 'témoin du test'
  where organization_id = 'd40a0000-0000-4000-8000-000000000005'
    and module = 'reserver';
 
+-- PORTE-0 EST INTERROGÉE À `now()`, ET C'EST LA MOITIÉ QUI PORTE TOUT LE RESTE.
+-- `reserve_slot` et `vitrine_public_state` jugent à cet instant-là et à aucun
+-- autre : une PORTE-0 verte à `t0` au-dessus de quatre assertions lues à `now()`
+-- ne dirait rien d'elles. C'est précisément ce qui s'était produit — PORTE-1 à
+-- PORTE-3 étaient vertes sur une organisation qui n'avait AUCUN droit, donc pour
+-- une tout autre raison que celle qu'elles annoncent.
 select ok(
   public.org_has_module_access(
-    'd40a0000-0000-4000-8000-000000000005', 'vitrine', (select v from t0))
+    'd40a0000-0000-4000-8000-000000000005', 'vitrine')
   and not public.org_has_module_access(
-    'd40a0000-0000-4000-8000-000000000005', 'reserver', (select v from t0)),
-  'PORTE-0 PORTE a la Vitrine et n''a PAS Réserver : c''est l''état que ce lot rend possible');
+    'd40a0000-0000-4000-8000-000000000005', 'reserver'),
+  'PORTE-0 PORTE a la Vitrine et n''a PAS Réserver, À L''INSTANT QUE LES RPC LISENT : c''est l''état que ce lot rend possible');
 
 insert into public.reservation_activities
   (id, organization_id, name, description, active)
@@ -394,11 +421,20 @@ values
   ('d40a0000-0000-4000-8000-000000000005', 'reserver', 'pass', 'backoffice',
    now() - interval '1 day', now() + interval '365 days');
 
+-- `reserved` ET NON `confirmed` : ce sont deux vocabulaires distincts, et les
+-- confondre ici avait fait rougir une assertion sur une base qui répondait
+-- juste. `state` est l'issue de l'APPEL — `reserved`, `already_reserved`,
+-- `full`, `unavailable`, `invalid_email`, `invalid_party_size` — tandis que
+-- `confirmed` est le `status` de la LIGNE écrite dans `public.reservations`,
+-- que la RPC ne ressort que dans sa branche `already_reserved`, sous la clé
+-- `status`. Le contrat de `reserve_slot` est antérieur à ce lot (20261007120000)
+-- et cette migration n'a substitué qu'un nom de module dans sa garde :
+-- `reserver.test.sql` l'épingle sur `reserved` en quatre endroits, et passe.
 select is(
   (public.reserve_slot(
     'd40a0000-0000-4000-8000-000000000005',
     'd40a0000-0000-4000-8000-000000000301', repeat('f1', 32)))->>'state',
-  'confirmed',
+  'reserved',
   'PORTÉE-1 le droit `reserver` reposé, la MÊME demande est acceptée : c''était bien lui qui refusait');
 select results_eq(
   $$select jsonb_array_length(
