@@ -4700,3 +4700,141 @@ consommé AVANT le challenge, pour qu'une rafale bloquée reste visible du capte
 8 tests dans `src/actions/lobby.test.ts`.
 
 **Voir** : ADR-109 §A4 amendé (`docs/decisions.md`), revue et contre-revue L16.
+
+## OUVERT (2026-08-22, BAS) — `supabase db reset` échoue sur la machine locale, apparu en cours de journée
+
+Constaté pendant le chantier de la clé par produit (ADR-116, PR #176) : la
+base locale refuse de se monter. L'erreur porte sur `sync_reward_issuance`,
+avec le message « porte 0 occurrence(s) de l'ancre « hc.completed_at as
+issued_at » », levée par la migration `20260904120000_reward_expiry_days.sql`
+— une migration qui dérive la définition **vivante** de la fonction et lui
+applique des substitutions ancrées sur un texte précis. La fonction, telle
+qu'elle existe réellement sur cette machine, ne porte plus cette ancre.
+
+**Le défaut n'est pas préexistant : il est apparu le 2026-08-22 en cours de
+journée**, sur un jeu de migrations identique. Le même clone avait réussi un
+`db reset` complet le matin même, pendant une campagne E2E ; l'échec n'a été
+constaté que l'après-midi. Ce qui a changé entre les deux n'a pas été trouvé
+— ce n'est donc pas une machine qui a toujours été cassée, c'est un état qui
+s'est dégradé sans cause identifiée.
+
+**Quatre causes éliminées par mesure**, écrites ici pour éviter à la
+prochaine personne de refaire le chemin :
+- **Ce n'est pas la migration `20261020120000`** (celle de ce chantier) —
+  rejouée sans elle, l'échec est identique.
+- **Ce n'est pas la version de la CLI Supabase** — `npx supabase@latest`
+  échoue de la même façon.
+- **Ce n'est pas le volume Postgres réutilisé** — un conteneur entièrement
+  neuf (`supabase stop --no-backup` puis `supabase start`) échoue à
+  l'identique.
+- **Ce n'est pas `config.toml`** — identique à git et entre les deux arbres
+  (Windows et WSL), Postgres 15 épinglé des deux côtés.
+
+**La cause reste inconnue.** Dit franchement, plutôt que de laisser croire à
+un diagnostic : ce qui précède élimine des suspects, ça n'en désigne aucun.
+
+**Piste non explorée, la plus probable, à laisser au prochain** : quatre
+migrations dérivent successivement `sync_reward_issuance` de sa définition
+vivante (`20260814120000`, `20260901120000`, `20260904120000`,
+`20261010120000`). Si l'une réécrit la branche que la suivante cherche à
+ancrer, l'ancre attendue par la troisième disparaît. Le geste qui
+trancherait : appliquer les migrations jusqu'à `20260903120000` seulement,
+puis inspecter la fonction obtenue par `pg_get_functiondef` pour voir si
+l'ancre `hc.completed_at as issued_at` y est encore.
+
+**Verdict de la CI : `main` n'est pas cassée.** Le job
+`PostgreSQL · ACL · RLS · Intégrité` de la PR #176 a appliqué les 154
+migrations sans aucune erreur — y compris `20260904120000`, sur une base
+neuve. L'échec est donc **purement local à cette machine**, pas un défaut du
+dépôt. (Ce même job a par ailleurs échoué sur une étape différente, sans
+rapport avec ce bug — voir l'entrée « snapshot de types » ci-dessous.)
+
+**Conséquence pratique, qui devient l'essentiel de cette entrée maintenant
+que la gravité tombe** : `scripts/verif-complete.sh --db-seul` ne peut plus
+tourner sur cette machine tant que le défaut dure — la boucle de
+vérification canonique du dépôt en local est cassée, alors que le dépôt lui
+ne l'est pas. Toute vérification de la couche base doit donc passer par la
+CI d'une PR en attendant, et **cela doit être dit explicitement dans le
+rapport de tout lot vérifié depuis cette machine** — sans quoi le rapport
+laisserait croire à une vérification locale qui n'a pas eu lieu.
+
+## ✅ CLOS le 2026-08-22 (PR #176, ADR-116) — le snapshot de types édité à la main avait oublié la fonction
+
+`database.generated.ts` a été complété **à la main** pendant ce chantier,
+faute de migration applicable en local (voir l'entrée `supabase db reset`
+ci-dessus). Le typecheck passait, les trois colonnes neuves
+(`addon_reserver`, `addon_duo`, `addon_bande`) étaient bien présentes — et la
+CI a quand même rougi sur l'étape « Types TypeScript — dérive schéma vs
+snapshot ». Il manquait une ligne : la signature de
+`mirror_vitrine_entitlements`.
+
+**La leçon, qui est la vraie matière** : une édition manuelle voit les
+colonnes qu'on vient d'ajouter, parce qu'elles sont ce qu'on avait en tête en
+écrivant la migration — elle ne pense pas à la fonction créée dans la même
+migration, qui n'est pas ce qu'on cherchait à représenter. Le remède était
+déjà outillé et n'a pas eu besoin d'être inventé : le job CI publie
+l'artefact `database-generated-types` exactement pour ce cas, et c'est de là
+que le snapshot correct a été récupéré.
+
+## ✅ CLOS le 2026-08-22 (PR #176, ADR-116) — un pgTAP écrit mais jamais joué
+
+`droits_par_produit.test.sql` — les 23 assertions qui prouvent le
+remplissage rétroactif de `mirror_vitrine_entitlements()` (voir ADR-116) —
+n'était pas dans la ligne de commande du job pgTAP : écrit, correct, et
+absent de l'exécution qui aurait dû le lancer. La garde
+`src/lib/pgtap-coverage.test.ts` l'a signalé en local, en quelques secondes,
+en nommant le fichier exact resté hors de la liste.
+
+**Un motif récurrent, pas deux accidents isolés** : ce chantier a produit
+deux fois le même défaut — du code de vérification écrit, correct, testé
+pour lui-même, puis jamais branché dans le chemin qui l'exécute réellement.
+La pastille `fileAccepteEntree` (entrée ci-dessous) en est l'autre occurrence
+côté TypeScript : une fonction juste, testée, appelée nulle part en
+production. Les deux ont été trouvés par une garde de couverture, jamais par
+une relecture — c'est la même leçon que le train Vitrine avait déjà tirée de
+l'ISR manquante (ADR-115) : un mécanisme qui existe dans le code mais n'est
+jamais invoqué se lit comme un succès jusqu'à ce qu'on vérifie qu'il tourne.
+
+## ✅ CLOS le 2026-08-22 (PR #176, ADR-116) — la pastille des files d'accueil mentait sur une file dont l'activité est coupée
+
+`queue_join` referme une file d'accueil quand l'activité qui la porte est
+désactivée (`activiteActive = false`), mais la pastille commerçante se
+peignait sur le seul `status` de la file : elle affichait « Ouverte » sur une
+file qui refusait déjà tout le monde. `fileAccepteEntree()` (`src/lib/reserver.ts`)
+combinait pourtant déjà les deux conditions — écrite, testée, mais
+**appelée nulle part en production**. La pastille (`src/components/reserver/pastilles.tsx`)
+importe désormais `fileAccepteEntree` au lieu de relire `status` seule, et le
+libellé « Ouverte mais l'activité est coupée » porte le motif plutôt que de
+laisser croire à une ouverture qui n'a pas lieu.
+
+## ✅ CLOS le 2026-08-22 (PR #176, ADR-116) — une garde d'autorisation gardait du mort
+
+`src/lib/module-access-parity.test.ts` passait au vert pendant que le SQL
+déclarait 13 modules et le TypeScript 10 : sa constante `MIGRATION` pointait
+une migration antérieure à `20261020120000`, qui redéfinit
+`org_has_module_access` pour y ajouter `reserver`, `duo` et `bande`. Le test
+lisait donc une définition périmée de la fonction et ne pouvait
+structurellement pas voir les trois clés neuves. L'ancre avait déjà été
+déplacée pour ce même motif les 2026-08-16 et 2026-08-19 ; celui-ci est le
+troisième déplacement.
+
+**Règle générale à retenir** : une garde qui lit le corps d'une fonction
+migrée doit pointer sa **dernière redéfinition**, jamais sa première
+écriture — sans quoi elle vérifie fidèlement un code qui n'est plus celui en
+production. La contre-mesure retenue cette fois va au-delà du simple
+déplacement d'ancre : le test porte désormais une assertion que les clés
+d'un même produit possèdent chacune **sa propre colonne** (`addon_reserver`,
+`addon_duo`, `addon_bande` distinctes), un invariant structurel qu'une boucle
+comptant seulement les noms de modules ne pouvait pas voir.
+
+## OUVERT (2026-08-22, signalé, non corrigé, ADR-116) — sous 2 fiches épinglées, le Duo Miroir disparaît de la vitrine publique sans le dire
+
+Constaté pendant la couverture checklist complète du back-office (ADR-116) :
+si une vitrine descend sous deux fiches épinglées — ce qui peut arriver
+**tout seul**, par cascade de suppression d'une fiche — la porte Duo Miroir
+disparaît de la page publique sans qu'aucun écran, commerçant ou joueur,
+ne le signale. Désormais **attrapé** par le contrôle `duo-plateau` de la
+checklist commerçante (couverture ajoutée dans ce même chantier), mais la
+cause — la dépendance du Duo à un seuil de fiches qui peut tomber sans geste
+explicite du commerçant — n'est pas corrigée. C'est un signalement, pas une
+correction.
