@@ -72,26 +72,15 @@ Le projet utilise un orchestrateur avec 8 agents spécialisés définis dans `.c
 `.claude/settings.json` conserve le routage Claude.
 
 **Règle de routage — IMPORTANT** : pour toute demande de modification, déléguer le travail
-à l'agent dont le périmètre correspond (via le tool Agent, `subagent_type` = nom ci-dessous).
+à l'agent dont le périmètre correspond (via le tool Agent, `subagent_type` = nom du périmètre).
 Ne pas coder soi-même dans un périmètre couvert par un agent, sauf micro-changement trivial
 (< ~5 lignes, un seul fichier).
 
-| Agent | Périmètre |
-|---|---|
-| `db-supabase` | Schéma, migrations SQL, RLS, seed, tests SQL (`supabase/`) |
-| `backend-api` | Server actions, routes API, logique métier `src/lib/` (hors Stripe) |
-| `frontend-ui` | Composants React, pages, Tailwind, roue 3D, dashboard, parcours joueur |
-| `stripe-billing` | Stripe : webhooks, abonnements, checkout, billing |
-| `vercel-release` | Vercel : environnements, previews, production, logs, promotion et rollback |
-| `qa-verify` | Typecheck, lint, tests Vitest/Playwright, build — valide chaque chantier |
-| `security-review` | Revue sécurité lecture seule : multi-tenant, RLS, endpoints publics |
-| `docs-scribe` | Documentation `docs/`, CLAUDE.md, ADR, état de session |
-
-- Tâche transverse → découper : chaque agent traite sa part, en parallèle si indépendantes.
-- Après tout changement significatif → `qa-verify` valide (typecheck, tests ciblés, build si besoin).
-- Changement touchant auth / RLS / endpoint public / webhook / token → passer aussi `security-review`.
-- Livraison → `vercel-release` intervient après QA ; production, promotion et rollback uniquement sur demande explicite.
-- Fin de chantier notable → `docs-scribe` met à jour la doc et l'état de session.
+Les huit périmètres, ce qu'ils couvrent et leurs règles d'enchaînement (QA après
+tout changement significatif, `security-review` sur auth/RLS/public/webhook,
+`vercel-release` après QA, `docs-scribe` en fin de chantier) sont dans
+`AGENTS.md`, importé ci-dessus. Le `subagent_type` du tool Agent reprend
+exactement ces noms.
 
 ## Token Optimization & Orchestration
 
@@ -123,16 +112,9 @@ Chaque agent :
 - Rend un rapport **ultra-court** : vert = « N tests ✓, build OK, commit {hash} » ; rouge = corrige, relance, court résumé du fix.
 - Pas de listing exhaustif de fichiers ni de snapshot de code.
 
-**Ce que « brief complet » veut dire, concrètement.** Un brief qui oblige l'agent
-à redécouvrir coûte deux fois : sa recherche, puis la relecture de ce qu'il en
-rapporte. Il porte donc :
-1. Les **chemins exacts** des fichiers à ouvrir, jamais une description — « le
-   module de spin » fait ouvrir dix fichiers pour en trouver un.
-2. Ce qui est **déjà établi** : la mesure faite, la décision prise, ce qui a été
-   écarté **et pourquoi**. Sans ce dernier point l'agent rouvre un arbitrage
-   déjà tranché et le rejoue à sa façon.
-3. Le **critère de sortie** — ce qui doit être vrai pour que ce soit fini.
-4. Ce qu'il ne doit **pas** toucher, quand son périmètre jouxte celui d'un autre.
+**Ce que « brief complet » veut dire** — chemins exacts, ce qui est déjà tranché
+et pourquoi, critère de sortie, ce qu'il ne faut pas toucher — est détaillé dans
+`AGENTS.md`, section « Ce qu'un brief doit porter ».
 
 Raison : chaque agent inhère le contexte de session complet (architecture, mémoire). Les parallélisations excessives (5 agents à la fois) amplifient ce coût sans gain wallclock significatif pour des tâches séquentielles. Seules `qa-verify` et `security-review` sont vraiment indépendantes. Le poids de ce contexte hérité est borné par `src/lib/claude-md-budget.test.ts`.
 
