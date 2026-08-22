@@ -258,7 +258,7 @@ vi.mock("@/lib/reserver-context", () => ({
   assurerIdentiteReserver: () => Promise.resolve(EMPREINTE),
   ouvrirSessionAttente: vi.fn(),
   lireEtatFilePublic: vi.fn(),
-  droitVitrineOuvertPourFile: () => Promise.resolve(true),
+  droitReserverOuvertPourFile: () => Promise.resolve(true),
   generateInvitationToken: () => "jeton",
   hashInvitationToken: () => null,
 }));

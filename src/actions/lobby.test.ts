@@ -37,6 +37,8 @@ const { etat } = vi.hoisted(() => ({
     effaces: [] as string[],
     /** Commerce résolu par slug, ou `null` (inconnu / droit fermé). */
     commerce: null as { organizationId: string } | null,
+    /** Le JEU passé au résolveur de commerce — voir le test dédié. */
+    jeuResolu: null as string | null,
     /**
      * Lignes rendues par la résolution de `player_lobbies` par code.
      *
@@ -129,7 +131,10 @@ vi.mock("@/lib/lobby-context", async (importOriginal) => ({
   // d'identité ci-dessous ne prouveraient plus rien. Seule la résolution du
   // commerce est doublée — elle interroge une base que ce harnais n'a pas.
   ...(await importOriginal<typeof import("@/lib/lobby-context")>()),
-  resoudreCommerceLobby: vi.fn(async () => etat.commerce),
+  resoudreCommerceLobby: vi.fn(async (_slug: string, jeu: string) => {
+    etat.jeuResolu = jeu;
+    return etat.commerce;
+  }),
 }));
 vi.mock("@/lib/request-ip", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/request-ip")>()),
@@ -274,6 +279,26 @@ describe("createLobby — ouvrir une salle", () => {
       sameSite: "lax",
       path: "/",
     });
+  });
+
+  it("le JEU demandé est passé au résolveur, et non déduit après coup", async () => {
+    // CE QUE ÇA GARDE : `create_player_lobby` exige `vitrine` ET la clé du jeu
+    // depuis 20261020120000, et `resoudreCommerceLobby` pose la même double
+    // question AVANT d'écrire. Si l'action cessait de lui transmettre `kind`,
+    // le chargeur ne pourrait plus poser que la moitié de la question — et
+    // laisserait partir un appel dont il a déjà la réponse.
+    // REMIS À NUL D ABORD : sans cela, la valeur laissée par un test
+    // précédent ferait passer l assertion sans que rien ait été transmis.
+    etat.jeuResolu = null;
+    // La bande exige sa capacité — le duo la reçoit du schéma.
+    await createLobby(
+      null,
+      formCreate({ slug: "le-comptoir", kind: "bande", capacite: "6", pseudo: "Ana" }),
+    );
+    expect(etat.jeuResolu).toBe("bande");
+
+    await createLobby(null, formCreate({ slug: "le-comptoir", kind: "duo", pseudo: "Ana" }));
+    expect(etat.jeuResolu).toBe("duo");
   });
 
   it("le JETON ne quitte jamais le serveur — seul son hash part en base", async () => {

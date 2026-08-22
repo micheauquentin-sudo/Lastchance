@@ -192,7 +192,7 @@ vi.mock("@/lib/reserver-context", () => ({
   // serveur, jamais une valeur du corps.
   ouvrirSessionAttente: ouvrirMock,
   lireEtatFilePublic: vi.fn(),
-  droitVitrineOuvertPourFile: () => Promise.resolve(true),
+  droitReserverOuvertPourFile: () => Promise.resolve(true),
   generateInvitationToken: () => "jeton",
   hashInvitationToken: () => null,
 }));

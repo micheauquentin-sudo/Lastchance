@@ -49,12 +49,26 @@ import {
  * Déplacée une seconde fois le 2026-08-19 : `20261001120000_droit_vitrine.sql`
  * redéfinit à son tour la fonction pour y faire entrer `vitrine`. Même geste,
  * même motif — l'ancre suit la dernière redéfinition, jamais la première.
+ *
+ * Déplacée une TROISIÈME fois le 2026-08-22 :
+ * `20261020120000_cle_par_produit.sql` redéfinit `org_has_module_access` pour
+ * détacher `reserver`, `duo` et `bande` de `vitrine`. Et cette fois la garde a
+ * été prise en flagrant délit de garder du mort — elle rendait QUINZE TESTS
+ * VERTS pendant que le SQL déclarait treize modules et le TypeScript dix : elle
+ * comparait la constante à la version de `20261001120000`, où les dix
+ * concordaient encore. Un écart de trois clés, invisible, dans le fichier dont
+ * c'est l'unique métier de le voir.
+ *
+ * LA LEÇON N'EST PAS « penser à déplacer l'ancre » — on l'a pensé deux fois et
+ * oublié la troisième. C'est que ce chemin est la SEULE ligne de ce fichier qui
+ * ne se dérive de rien, et qu'il faut donc la relire à chaque migration qui
+ * touche à la fonction.
  */
 const MIGRATION = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20261001120000_droit_vitrine.sql",
+  "20261020120000_cle_par_produit.sql",
 );
 
 /**
@@ -144,6 +158,25 @@ describe("parité MODULE_ADDON_COLUMN ↔ org_has_module_access", () => {
     // existants exactement où ils étaient.
     expect(TABLE_SQL.get("vitrine")).toBe("addon_vitrine");
     expect(MODULE_ADDON_COLUMN.vitrine).toBe("addon_vitrine");
+  });
+
+  it("les quatre clés de la Vitrine ont chacune SA colonne", () => {
+    // ÉPINGLÉ À PART parce que le `it.each` ci-dessus ne peut pas voir ce
+    // défaut-ci : il compare le SQL au TypeScript, et quatre clés pointant
+    // toutes `addon_vitrine` des DEUX côtés lui paraîtraient parfaitement
+    // d'accord. Ce serait pourtant le détachement de 20261020120000 rendu
+    // décoratif — un opérateur croyant vendre l'agenda seul rouvrirait les
+    // quatre produits d'un coup.
+    const colonnes = ["vitrine", "reserver", "duo", "bande"].map((m) =>
+      TABLE_SQL.get(m),
+    );
+    expect(colonnes).toEqual([
+      "addon_vitrine",
+      "addon_reserver",
+      "addon_duo",
+      "addon_bande",
+    ]);
+    expect(new Set(colonnes).size).toBe(4);
   });
 
   it("un SEUL module est sans add-on, des deux côtés", () => {

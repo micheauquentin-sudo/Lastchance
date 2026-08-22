@@ -2,7 +2,7 @@ import { ADDON_OFFERS } from "@/lib/plans";
 import type { Organization, SubscriptionStatus } from "@/types/database";
 
 /**
- * Les dix modules qui peuvent porter un octroi daté. Miroir du `check` de
+ * Les treize modules qui peuvent porter un octroi daté. Miroir du `check` de
  * `organization_module_grants.module` et du `if not in` de
  * `org_has_module_access` — les trois listes sont comparées entre elles par
  * `supabase/tests/module_grants.test.sql`, dans le catalogue vivant.
@@ -32,6 +32,25 @@ export const GRANTABLE_MODULES = [
    * seconde dirait que tout abonné l'a déjà.
    */
   "vitrine",
+  /**
+   * LES TROIS PRODUITS QUE `vitrine` OUVRAIT SANS ÊTRE EUX (migration
+   * 20261020120000). Une clé pour quatre produits n'était pas une économie :
+   * accorder une vitrine accordait aussi l'agenda Réserver, le Duo Miroir et
+   * le Portrait de la Bande, et refuser l'un obligeait à refuser les quatre.
+   * L'opérateur du back-office n'avait aucun moyen de vendre l'agenda seul.
+   *
+   * Elles se lisent EXACTEMENT comme `vitrine` ci-dessus : octroyables,
+   * porteuses de leur colonne `addon_*`, sans offre au catalogue et sans
+   * ressource publiable — les gardes qui énumèrent l'une ou l'autre les
+   * exemptent nommément.
+   *
+   * Aucun droit n'a été retiré à personne au passage : la migration a
+   * recopié, aux mêmes bornes, les octrois `vitrine` existants sur les trois
+   * clés (`mirror_vitrine_entitlements`).
+   */
+  "reserver",
+  "duo",
+  "bande",
 ] as const;
 
 /**
@@ -239,6 +258,12 @@ export function pastDueGraceEndsAt(org: OrgAccessFields): Date | null {
 export const MODULE_ADDON_COLUMN = {
   wheel: null,
   vitrine: "addon_vitrine",
+  // Les trois clés détachées de `vitrine` par 20261020120000. Chacune porte SA
+  // colonne : les faire retomber sur `addon_vitrine` aurait rendu le
+  // détachement décoratif — quatre clés, un seul interrupteur.
+  reserver: "addon_reserver",
+  duo: "addon_duo",
+  bande: "addon_bande",
   hunts: "addon_hunts",
   calendar: "addon_calendar",
   loyalty: "addon_loyalty",

@@ -82,7 +82,7 @@ import {
 } from "@/lib/reserver";
 import {
   assurerIdentiteReserver,
-  droitVitrineOuvertPourFile,
+  droitReserverOuvertPourFile,
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
@@ -138,8 +138,12 @@ const NOT_EDITOR = "Action non autorisée";
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 const TOO_MANY = "Trop de tentatives. Patientez un instant.";
 const INDISPONIBLE = "Cette réservation n'est pas disponible.";
+// « fait partie de l'offre Vitrine » était exact tant qu'une clé unique ouvrait
+// les quatre produits ; depuis 20261020120000 l'agenda a la sienne, et envoyer
+// le commerçant activer la Vitrine pour ouvrir des créneaux lui ferait acheter
+// le mauvais produit.
 const SANS_DROIT =
-  "L'agenda Réserver fait partie de l'offre Vitrine. Activez-la pour ouvrir des créneaux.";
+  "L'agenda Réserver n'est pas compris dans votre offre. Ouvrez ce module pour proposer des créneaux.";
 /**
  * Refus d'une FK composite d'ANIMATION D'ATTENTE (RES-4). UN SEUL message pour
  * le quiz et pour la campagne, et pour les deux causes (inexistant, ou d'un
@@ -1262,7 +1266,7 @@ export async function checkinReservation(
 // `status = 'closed'` (créneau) sont les interrupteurs, et ils n'effacent rien.
 // ════════════════════════════════════════════════════════════
 
-/** Session + rôle éditeur + droit `vitrine`, en un seul geste. */
+/** Session + rôle éditeur + droit `reserver`, en un seul geste. */
 async function gardeEditeurReserver(): Promise<
   | { ok: true; organizationId: string; userId: string; timezone: string }
   | { ok: false; error: string }
@@ -1274,7 +1278,14 @@ async function gardeEditeurReserver(): Promise<
   }
   // Le droit est REVÉRIFIÉ côté serveur : l'écran cache déjà le formulaire, mais
   // une server action reste POSTable en direct.
-  if (!droitEffectifModule("vitrine", organization)) {
+  //
+  // `reserver` DEPUIS 20261020120000, et non plus `vitrine` : la migration a
+  // détaché l'agenda et réécrit les seize appels SQL du module. Laisser cette
+  // garde-ci sur `vitrine` aurait fendu Réserver en deux — les chargeurs de
+  // `reserver-context.ts` demandant un droit, les écritures un autre — donc un
+  // commerçant à qui l'on vend l'agenda seul verrait ses écrans et n'y pourrait
+  // rien changer.
+  if (!droitEffectifModule("reserver", organization)) {
     return { ok: false, error: SANS_DROIT };
   }
   return {
@@ -2122,9 +2133,9 @@ export type QueueJoinActionResult =
  * exactement ce que coûte un créneau vidé — sauf qu'ici les gens sont debout
  * dans le magasin et voient la file refuser du monde.
  *
- * ── LE DROIT `vitrine` EST TENU PAR LA RPC ──
+ * ── LE DROIT `reserver` EST TENU PAR LA RPC ──
  *
- * `queue_join` interroge `org_has_module_access(…, 'vitrine')` sous son verrou
+ * `queue_join` interroge `org_has_module_access(…, 'reserver')` sous son verrou
  * et rend `unavailable` sans le droit — c'est la vraie défense, et elle tient
  * même sur une action POSTée en direct. La page publique le vérifie AUSSI
  * (`loadReserverQueuePublicContext`), pour ne pas afficher un bouton sans issue.
@@ -2669,7 +2680,7 @@ export async function getQueuePublicState(input: {
     // `in_queue` sort tel quel, et `unavailable` n'a rien à protéger : la
     // résolution du droit ne coûte une lecture que sur la branche qui l'exige.
     if (etat.state !== "not_in_queue") return etat;
-    if (await droitVitrineOuvertPourFile(parsed.data.queueId)) return etat;
+    if (await droitReserverOuvertPourFile(parsed.data.queueId)) return etat;
     return mapQueuePublicState({ state: "unavailable" });
   });
 }

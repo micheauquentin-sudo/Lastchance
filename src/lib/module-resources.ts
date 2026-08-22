@@ -67,7 +67,7 @@ type RessourceModuleTypee = {
 
 /**
  * Les modules qui ONT une ressource DONT LES BROUILLONS SE COMPTENT — c'est-à-
- * dire tous sauf `vitrine`.
+ * dire tous sauf les QUATRE clés de la Vitrine.
  *
  * ── CE QUE CETTE EXEMPTION NE DIT PAS, ET DISAIT ENCORE ──
  *
@@ -97,15 +97,41 @@ type RessourceModuleTypee = {
  * l'`Exclude` ci-dessous, et `tsc` réclamera son entrée dans
  * `RESSOURCE_MODULE` (`vitrine_settings` / `published` / `["true"]`).
  *
+ * ── LES TROIS CLÉS DÉTACHÉES SONT EXEMPTÉES POUR LEUR PROPRE MOTIF ──
+ *
+ * `reserver`, `duo` et `bande` (20261020120000) ne sont PAS exemptées « parce
+ * qu'elles viennent de vitrine » : une exemption héritée est une exemption que
+ * personne n'a examinée. Chacune l'est parce qu'elle n'a rien à contingenter.
+ *
+ *   * `reserver` : ce qui se publie y est un CRÉNEAU, pas une ressource à
+ *     l'échelle du module — l'agenda n'a pas d'état brouillon/actif, et aucune
+ *     action de création de créneau ne borne sa gratuité.
+ *   * `duo` et `bande` : rien ne s'y publie du tout. Une salle est OUVERTE par
+ *     un joueur, elle vit quelques heures et meurt ; le commerçant ne prépare
+ *     qu'un plateau d'options, qui est un réglage et non une ressource. Un
+ *     brouillon de salon n'existe pas.
+ *
+ * CE QUI LES FERAIT TOMBER : la même chose que pour `vitrine` — le jour où
+ * l'une devient contingentée. `tsc` réclamera alors son entrée ci-dessous.
+ *
  * EXEMPTION ÉCRITE ET NON DÉDUITE : la faire porter par le type plutôt que par
  * une clé absente est ce qui la rend visible — une clé simplement manquante
  * n'aurait jamais rien réclamé à personne.
  */
-export type ModulePubliable = Exclude<GrantableModule, "vitrine">;
+export type ModulePubliable = Exclude<GrantableModule, ModuleSansRessource>;
+
+/**
+ * Les quatre clés SANS ressource publiable, énumérées une seule fois : le type
+ * ci-dessus et le prédicat ci-dessous en dérivent tous deux, si bien qu'ils ne
+ * peuvent pas diverger — le défaut exact qu'un `!== "vitrine"` recopié à côté
+ * d'un `Exclude<…, "vitrine">` aurait fini par produire.
+ */
+const MODULES_SANS_RESSOURCE = ["vitrine", "reserver", "duo", "bande"] as const;
+type ModuleSansRessource = (typeof MODULES_SANS_RESSOURCE)[number];
 
 /** Ce module a-t-il une ressource publiable, donc une entrée ci-dessous ? */
 export function estPubliable(module: GrantableModule): module is ModulePubliable {
-  return module !== "vitrine";
+  return !(MODULES_SANS_RESSOURCE as readonly string[]).includes(module);
 }
 
 export const RESSOURCE_MODULE = {

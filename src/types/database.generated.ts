@@ -3879,7 +3879,9 @@ export type Database = {
       }
       organizations: {
         Row: {
+          addon_bande: boolean
           addon_calendar: boolean
+          addon_duo: boolean
           addon_events: boolean
           addon_hunts: boolean
           addon_jackpot: boolean
@@ -3887,6 +3889,7 @@ export type Database = {
           addon_pronostics: boolean
           addon_quiz: boolean
           addon_referral: boolean
+          addon_reserver: boolean
           addon_vitrine: boolean
           auto_reengage: boolean
           comp_access: boolean
@@ -3915,7 +3918,9 @@ export type Database = {
           weekly_digest: boolean
         }
         Insert: {
+          addon_bande?: boolean
           addon_calendar?: boolean
+          addon_duo?: boolean
           addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
@@ -3923,6 +3928,7 @@ export type Database = {
           addon_pronostics?: boolean
           addon_quiz?: boolean
           addon_referral?: boolean
+          addon_reserver?: boolean
           addon_vitrine?: boolean
           auto_reengage?: boolean
           comp_access?: boolean
@@ -3951,7 +3957,9 @@ export type Database = {
           weekly_digest?: boolean
         }
         Update: {
+          addon_bande?: boolean
           addon_calendar?: boolean
+          addon_duo?: boolean
           addon_events?: boolean
           addon_hunts?: boolean
           addon_jackpot?: boolean
@@ -3959,6 +3967,7 @@ export type Database = {
           addon_pronostics?: boolean
           addon_quiz?: boolean
           addon_referral?: boolean
+          addon_reserver?: boolean
           addon_vitrine?: boolean
           auto_reengage?: boolean
           comp_access?: boolean

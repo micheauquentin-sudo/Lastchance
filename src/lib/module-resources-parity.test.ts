@@ -94,6 +94,15 @@ const DECLARATIONS = declarationsDepuisMigration(readFileSync(MIGRATION, "utf8")
  * et l'assertion d'exemption ci-dessous rougit — ce qui est le bon sens de
  * l'échec.
  *
+ * ── ET DEPUIS 20261020120000, TROIS EXEMPTÉES DE PLUS ──
+ *
+ * `reserver`, `duo` et `bande` ont été détachées de `vitrine`. Elles n'héritent
+ * pas de son exemption, elles ont la leur, écrite sur `MODULES_SANS_RESSOURCE`
+ * (src/lib/module-resources.ts) : l'agenda publie des CRÉNEAUX et non une
+ * ressource de module, les deux salons ne publient rien du tout — une salle est
+ * ouverte par un joueur, vit quelques heures et meurt. Aucun brouillon à
+ * compter dans les trois cas.
+ *
  * DÉRIVÉE de `GRANTABLE_MODULES` par le prédicat `estPubliable`, jamais
  * recopiée : le onzième module ajouté demain entre ici tout seul et fait
  * rougir la comparaison tant que son trigger n'existe pas. C'est l'inverse
@@ -111,7 +120,7 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     expect(DECLARATIONS).toHaveLength(MODULES_PUBLIABLES.length);
   });
 
-  it("vitrine est le seul module hors RESSOURCE_MODULE, et il est nommé", () => {
+  it("les quatre modules hors RESSOURCE_MODULE sont nommés", () => {
     // L'EXEMPTION EST ÉPINGLÉE, pas déduite du vide. Sans cette assertion, un
     // module dont quelqu'un retirerait le trigger par erreur pourrait être
     // « réparé » en l'ajoutant à l'exemption, et les deux tests ci-dessus
@@ -121,7 +130,7 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     // de sa propre migration (20261011120000). Elle dit qu'aucun quota de
     // brouillons ne s'y applique — voir le commentaire de MODULES_PUBLIABLES.
     const exemptes = GRANTABLE_MODULES.filter((m) => !estPubliable(m));
-    expect(exemptes).toEqual(["vitrine"]);
+    expect(exemptes).toEqual(["vitrine", "reserver", "duo", "bande"]);
   });
 
   it("les modules gardés en base sont exactement ceux que l'application connaît", () => {

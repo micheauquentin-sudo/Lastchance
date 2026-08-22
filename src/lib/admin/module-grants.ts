@@ -246,12 +246,17 @@ export const LIBELLE_MODULE: Record<string, string> = {
   events: "Soirée en jeu",
   referral: "Bouche-à-oreille",
   pronostics: "Saison de pronostics",
-  // UNE clé, CINQ surfaces. « Vitrine & Réserver » datait du lot L2 et est
-  // resté tel quel pendant que la même clé ouvrait Duo Miroir, Portrait de la
-  // Bande et les salons joueurs. L'opérateur qui octroie lit ce libellé : lui
-  // laisser croire qu'il n'ouvre que deux surfaces sur cinq lui fait accorder
-  // — ou refuser — autre chose que ce qu'il croit.
-  vitrine: "Vitrine, Réserver & salons de jeu",
+  // QUATRE CLÉS, QUATRE LIGNES (20261020120000). Ce libellé a dit « Vitrine,
+  // Réserver & salons de jeu » aussi longtemps qu'une seule clé les ouvrait
+  // tous, précisément pour que l'opérateur ne croie pas n'accorder qu'une
+  // vitrine. Le détachement rend l'avertissement faux dans l'autre sens : c'est
+  // le formulaire qui offre désormais quatre lignes distinctes, et chacune doit
+  // nommer ce qu'ELLE ouvre — sinon l'opérateur qui veut vendre l'agenda seul
+  // ne saurait pas laquelle cocher.
+  vitrine: "Vitrine publique",
+  reserver: "Réserver (agenda & files)",
+  duo: "Duo Miroir (salon)",
+  bande: "Portrait de la Bande (salon)",
 };
 
 /**
