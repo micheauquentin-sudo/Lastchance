@@ -1,4 +1,7 @@
-import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
+import {
+  EXPERIENCE_CATALOG,
+  MODULE_CATALOG,
+} from "@/platform/experiences/catalog";
 import type { Entitlement } from "@/platform/experiences/contract";
 
 /**
@@ -25,9 +28,9 @@ import type { Entitlement } from "@/platform/experiences/contract";
  * périmètre ou de limite — les tests figent la proposition associée, et un
  * changement non intentionnel casse la suite au lieu de passer inaperçu.
  */
-export const PACKAGING_VERSION = "2026-08-a";
+export const PACKAGING_VERSION = "2026-08-b";
 
-export type PlanTierId = "core" | "engagement" | "live" | "full";
+export type PlanTierId = "core" | "engagement" | "place" | "live" | "full";
 
 export interface PlanLimits {
   /**
@@ -127,6 +130,45 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     ],
   },
   {
+    /**
+     * L'IDENTIFIANT EST `place` ET NON `surplace`, DÉLIBÉRÉMENT.
+     *
+     * Il part dans `organizations.plan` et sert de clé au price Stripe : le
+     * renommer casserait les abonnements en cours, comme le dit l'en-tête de
+     * `PLAN_TIERS`. « Sur Place » est un nom COMMERCIAL, arrêté le 2026-08-22
+     * après trois candidats — il vit donc dans `name`, où il peut changer sans
+     * qu'une ligne de facturation bouge.
+     */
+    id: "place",
+    legacyIds: [],
+    name: "Sur Place",
+    tagline:
+      "Se faire lire et réserver : votre carte au QR code et votre agenda, dans un seul abonnement.",
+    priceMonthly: 79,
+    currency: "EUR",
+    trialDays: 7,
+    /**
+     * `quiz` EST ICI, ET CE N'EST PAS UNE GÉNÉROSITÉ.
+     *
+     * La Vitrine porte une porte quiz depuis le lot L13 : le commerçant
+     * l'ouvre en opt-in depuis une rubrique. Vendre la Vitrine sans le droit
+     * quiz aurait livré une page dont un bouton configurable mène à un refus —
+     * le commerçant l'aurait ouvert, pas le joueur. Un module qu'on affiche et
+     * qu'on ferme coûte plus cher en confiance qu'il ne rapporte en upsell.
+     *
+     * Sans conséquence sur l'échelle : `cheapestTierFor("quiz")` reste
+     * Le Club, à 59 €.
+     */
+    entitlements: ["core", "vitrine", "reserver", "duo", "bande", "quiz"],
+    // Aucun temps réel dans cette offre : la jauge reste celle du socle.
+    limits: { eventParticipants: 100 },
+    highlights: [
+      "Tout Coup d'envoi",
+      "Carte publique bilingue et agenda dans la même offre",
+      "Duo Miroir et Portrait de la Bande, jouables à table",
+    ],
+  },
+  {
     id: "live",
     legacyIds: [],
     name: "Le Grand Jeu",
@@ -161,12 +203,24 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "calendar",
       "quiz",
       "referral",
+      // Les quatre droits du lieu (2026-08-22). Ils entrent SANS que le prix
+      // bouge : décision propriétaire, assumée comme une baisse relative. Ce
+      // qu'ils rendent surtout, c'est la vérité du sous-titre — « toute la
+      // plateforme » serait devenu faux le jour où Sur Place a existé, et une
+      // offre qui promet tout doit contenir tout.
+      "vitrine",
+      "reserver",
+      "duo",
+      "bande",
     ],
     // VEN-1 : 500 et non 1000. La Totale ne perd rien d'ÉPROUVÉ — elle cesse
     // de promettre une capacité que personne n'a mesurée. Voir `PlanLimits`.
     limits: { eventParticipants: 500 },
     // Même raison qu'au-dessus : la capacité vient de `limits`, pas d'ici.
-    highlights: ["Le Club + Le Grand Jeu réunis", "Accès à tout nouveau module inclus"],
+    highlights: [
+      "Le Club + Le Grand Jeu + Sur Place réunis",
+      "Accès à tout nouveau module inclus",
+    ],
   },
 ] as const;
 
@@ -272,9 +326,19 @@ export interface PlanTierView {
  * recopiée — un module ajouté au catalogue apparaît ici sans retouche.
  */
 export function describeTier(tier: PlanTier): PlanTierView {
-  const experiences = EXPERIENCE_CATALOG.filter((entry) =>
-    tier.entitlements.includes(entry.entitlement),
-  ).map((entry) => entry.label);
+  // LES DEUX CATALOGUES, ET NON LE SEUL PREMIER. Une offre peut contenir des
+  // expériences jouables ET des modules qui n'en sont pas — Vitrine, Réserver,
+  // les deux salons. N'en lire qu'un revenait à vendre « Sur Place » en
+  // n'affichant que la roue. L'ordre reste stable : expériences dans l'ordre
+  // produit, puis modules dans l'ordre de vente.
+  const experiences = [
+    ...EXPERIENCE_CATALOG.filter((entry) =>
+      tier.entitlements.includes(entry.entitlement),
+    ),
+    ...MODULE_CATALOG.filter((entry) =>
+      tier.entitlements.includes(entry.entitlement),
+    ),
+  ].map((entry) => entry.label);
 
   const limits: string[] = [];
   if (tierIncludes(tier, "events")) {

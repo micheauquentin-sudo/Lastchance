@@ -14,7 +14,7 @@
  * vit dans `site/src/content/pricing.ts`, qui consomme ce fichier pour les faits.
  */
 
-export type GeneratedPlanId = "core" | "engagement" | "live" | "full";
+export type GeneratedPlanId = "core" | "engagement" | "place" | "live" | "full";
 
 export interface GeneratedPlan {
   id: GeneratedPlanId;
@@ -58,7 +58,7 @@ export interface GeneratedAddon {
 }
 
 /** Version du packaging côté application au moment de la génération. */
-export const PACKAGING_VERSION = "2026-08-a";
+export const PACKAGING_VERSION = "2026-08-b";
 
 export const GENERATED_PLANS: readonly GeneratedPlan[] = [
   {
@@ -101,6 +101,28 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "limits": []
   },
   {
+    "id": "place",
+    "name": "Sur Place",
+    "tagline": "Se faire lire et réserver : votre carte au QR code et votre agenda, dans un seul abonnement.",
+    "priceMonthly": 79,
+    "priceLabel": "79 €/mois",
+    "trialDays": 7,
+    "experiences": [
+      "Jeux instantanés",
+      "Quiz",
+      "Vitrine",
+      "Réserver",
+      "Duo Miroir",
+      "Portrait de la Bande"
+    ],
+    "highlights": [
+      "Tout Coup d'envoi",
+      "Carte publique bilingue et agenda dans la même offre",
+      "Duo Miroir et Portrait de la Bande, jouables à table"
+    ],
+    "limits": []
+  },
+  {
     "id": "live",
     "name": "Le Grand Jeu",
     "tagline": "Animer régulièrement : soirées, compétitions, temps réel dans votre salle.",
@@ -138,10 +160,14 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Pronostics",
       "Jackpot collectif",
       "Quiz",
-      "Chasse au trésor"
+      "Chasse au trésor",
+      "Vitrine",
+      "Réserver",
+      "Duo Miroir",
+      "Portrait de la Bande"
     ],
     "highlights": [
-      "Le Club + Le Grand Jeu réunis",
+      "Le Club + Le Grand Jeu + Sur Place réunis",
       "Accès à tout nouveau module inclus"
     ],
     "limits": [

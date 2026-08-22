@@ -24,15 +24,17 @@ import {
   type AddonOffer,
   type PlanTier,
 } from "./plans";
-import { EXPERIENCE_CATALOG } from "@/platform/experiences/catalog";
+import { SELLABLE_ENTITLEMENTS } from "@/platform/experiences/catalog";
 import type { Entitlement } from "@/platform/experiences/contract";
 
-const ALL_ENTITLEMENTS: Entitlement[] = [
-  ...new Set<Entitlement>([
-    "core",
-    ...EXPERIENCE_CATALOG.map((entry) => entry.entitlement),
-  ]),
-];
+/**
+ * DÉRIVÉ DES DEUX CATALOGUES depuis le 2026-08-22, et non plus du seul
+ * catalogue d'expériences. Une offre peut contenir des modules qui ne sont pas
+ * jouables — Vitrine, Réserver, Duo Miroir, Portrait de la Bande — et la garde
+ * « aucun droit hors du catalogue produit » les refusait justement parce
+ * qu'elle ne connaissait qu'une moitié du vocabulaire.
+ */
+const ALL_ENTITLEMENTS: readonly Entitlement[] = SELLABLE_ENTITLEMENTS;
 
 function tier(id: string): PlanTier {
   const found = findPlanTier(id);
@@ -45,20 +47,25 @@ describe("proposition tarifaire — valeurs figées", () => {
     expect(PACKAGING_VERSION).toMatch(/^\d{4}-\d{2}-[a-z]$/);
     // Renommage des offres + catalogue d'add-ons du 2026-08-04 : changer le
     // packaging sans changer sa version doit être impossible par inadvertance.
-    expect(PACKAGING_VERSION).toBe("2026-08-a");
+    expect(PACKAGING_VERSION).toBe("2026-08-b");
   });
 
   /**
    * Ce test EST la proposition commerciale. Le faire tomber doit être un
    * acte délibéré (nouveau PACKAGING_VERSION), jamais un effet de bord.
    */
-  it("29 / 59 / 89 / 129 € par mois", () => {
+  it("29 / 59 / 79 / 89 / 129 € par mois", () => {
     expect(
       PLAN_TIERS.map((plan) => [plan.id, plan.priceMonthly, plan.currency]),
     ).toEqual([
       ["core", 29, "EUR"],
       ["engagement", 59, "EUR"],
+      // « Sur Place » (2026-08-22) : 29 + 20 + 30, sans remise. L'addition
+      // reste calculable de tête, ce qui était la demande.
+      ["place", 79, "EUR"],
       ["live", 89, "EUR"],
+      // La Totale ne bouge pas alors qu'elle gagne quatre droits : décision
+      // propriétaire, et c'est ce qui rend son sous-titre à nouveau vrai.
       ["full", 129, "EUR"],
     ]);
   });
@@ -77,11 +84,15 @@ describe("proposition tarifaire — valeurs figées", () => {
     expect(PLAN_TIERS.map((plan) => [plan.id, plan.name])).toEqual([
       ["core", "Coup d'envoi"],
       ["engagement", "Le Club"],
+      // Nom commercial arrêté le 2026-08-22 ; l'id technique `place` est
+      // définitif — il part dans `organizations.plan` et dans le price Stripe.
+      ["place", "Sur Place"],
       ["live", "Le Grand Jeu"],
       ["full", "La Totale"],
     ]);
     expect(PLAN_TIERS.map((plan) => [...plan.legacyIds])).toEqual([
       ["starter"],
+      [],
       [],
       [],
       [],
@@ -96,6 +107,7 @@ describe("proposition tarifaire — valeurs figées", () => {
     const promesses: Record<string, string> = {
       core: "lancer une animation",
       engagement: "fidéliser",
+      place: "se faire lire et réserver",
       live: "animer régulièrement",
       full: "réunir toutes les briques",
     };
@@ -188,9 +200,15 @@ describe("transitions et upsell", () => {
   it("établit le chemin d'upgrade attendu", () => {
     expect(upgradeTargetsFor("core").map((plan) => plan.id)).toEqual([
       "engagement",
+      "place",
       "live",
       "full",
     ]);
+    // Sur Place est PARALLÈLE au Club et au Grand Jeu, jamais au-dessus : y
+    // monter depuis Le Club retirerait fidélité, calendrier, parrainage et
+    // chasses. Seule La Totale reste proposable — exactement la relation qui
+    // existe entre Le Club et Le Grand Jeu depuis le premier jour.
+    expect(upgradeTargetsFor("place").map((plan) => plan.id)).toEqual(["full"]);
     // Live coûte plus cher qu'Engagement mais retirerait fidélité, calendrier,
     // parrainage et chasses : ce n'est pas une montée en gamme.
     expect(upgradeTargetsFor("engagement").map((plan) => plan.id)).toEqual([
@@ -212,6 +230,19 @@ describe("transitions et upsell", () => {
       "pronostics",
       "jackpot",
       "events",
+      "vitrine",
+      "reserver",
+      "duo",
+      "bande",
+    ]);
+    // Ce que Sur Place apporte à qui vient du socle : le lieu, plus le quiz
+    // que sa porte Vitrine exige — et rien d'autre du jeu.
+    expect(entitlementsGainedBy("core", "place")).toEqual([
+      "vitrine",
+      "reserver",
+      "duo",
+      "bande",
+      "quiz",
     ]);
     expect(entitlementsGainedBy("full", "core")).toEqual([]);
   });

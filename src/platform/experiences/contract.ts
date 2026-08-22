@@ -42,14 +42,34 @@ export type Entitlement =
    * L'agenda Réserver — sa propre clé d'octroi depuis la migration
    * 20261020120000 (`addon_reserver`), au même titre que `duo` et `bande`.
    *
-   * Même statut que `vitrine` ci-dessus sur les deux points qui comptent ici :
-   * pas une expérience jouable, et AUCUNE offre du catalogue ne la vend — les
-   * écrans Réserver affichent donc « Option à activer sur votre abonnement »
-   * plutôt qu'un prix. Le jour où un produit Stripe existe, il s'ajoute à
-   * `PLAN_TIERS` et l'encart nomme l'offre tout seul. Ne rien inscrire ici
-   * en attendant : un tarif recopié serait une seconde source de vérité.
+   * Même statut que `vitrine` ci-dessus sur le point qui compte ici : ce n'est
+   * pas une expérience jouable, donc rien à chercher dans `ExperienceKind`.
+   *
+   * CE JOUR EST ARRIVÉ (2026-08-22) : l'offre « Sur Place » et La Totale les
+   * vendent toutes les deux, `MODULE_CATALOG` les décrit et
+   * `apply_stripe_subscription_event_v2` sait les inscrire
+   * (migration 20261021120000). L'encart nomme donc l'offre tout seul, et
+   * aucun tarif n'a été recopié ici.
    */
-  | "reserver";
+  | "reserver"
+  /**
+   * Duo Miroir et Portrait de la Bande — les deux jeux de salon, détachés de
+   * `vitrine` par la migration 20261020120000 et vendus depuis le 2026-08-22.
+   *
+   * ── POURQUOI ILS ENTRENT DANS CETTE UNION MAINTENANT ──
+   *
+   * Ils étaient jusqu'ici des `GrantableModule` sans être des `Entitlement` :
+   * le back-office pouvait les accorder, aucune offre ne pouvait les contenir.
+   * L'asymétrie tenait tant que le seul chemin était l'octroi manuel ; elle
+   * cesse dès qu'un `PLAN_TIERS` les déclare, parce que le webhook fait passer
+   * les droits d'une offre par `Entitlement` et par rien d'autre.
+   *
+   * Ils restent hors d'`ExperienceKind` pour la même raison que leurs deux
+   * voisins : un salon de 2 à 12 joueurs n'a ni route publique de campagne, ni
+   * adaptateur de récompense — il se joue par code court, depuis un lobby.
+   */
+  | "duo"
+  | "bande";
 
 export interface Experience {
   id: string;
