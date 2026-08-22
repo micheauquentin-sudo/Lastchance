@@ -10,7 +10,6 @@ import type { VitrineCarteView } from "@/lib/vitrine";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError, Label } from "@/components/ui/input";
-import { ANCRE_DUO } from "@/components/vitrine/ancres";
 
 /**
  * DUO MIROIR (L17) — l'écran où le commerçant compose son plateau.
@@ -92,11 +91,12 @@ export function DuoEditeur({
   const fiches = aplatirFiches(cartes);
 
   return (
-    // L'ANCRE DU SOMMAIRE (`scroll-mt-4` : la cible ne doit pas passer sous
-    // l'entête). Le sommaire ne la propose qu'avec au moins une fiche — sans
-    // catalogue, cette carte n'affiche qu'une consigne, et y envoyer quelqu'un
-    // serait le promener pour rien.
-    <Card id={ANCRE_DUO} className="scroll-mt-4">
+    // L'ANCRE DU SOMMAIRE N'EST PLUS ICI : elle est portée par la
+    // `CarteRepliable` qui enveloppe ce bloc sur `/dashboard/vitrine`, avec son
+    // rang et son verdict — un seul `id` par cible, et l'ancre ROUVRE le bloc
+    // qu'elle vise, ce que cette carte ne savait pas faire. Le nom de l'ancre
+    // reste celui d'`ancres.ts`, que le sommaire lit pour composer son lien.
+    <Card>
       <h2>Duo Miroir</h2>
       <p className="mb-5 mt-2 text-sm text-zinc-500">
         Deux clients choisissent chacun, sans se voir, ce qu&apos;ils offriraient

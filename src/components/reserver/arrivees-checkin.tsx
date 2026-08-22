@@ -72,7 +72,7 @@ export function ArriveesCheckin({ timeZone }: { timeZone: string }) {
   const message = resultat ? messageArrivee(resultat.verdict) : null;
 
   return (
-    <Card className="mt-8">
+    <Card>
       <h2>Arrivées</h2>
       <p className="mt-2 text-sm font-semibold text-k-body">
         Le client vous donne le code reçu à la réservation : saisissez-le pour
