@@ -369,6 +369,26 @@ select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_q
 select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'SELECT'), 'merchant can read vitrine entitlement');
 select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_vitrine', 'UPDATE'), 'merchant cannot grant itself the vitrine entitlement');
 
+-- UNE CLÉ PAR PRODUIT (20261020120000). Trois colonnes de plus, même régime que
+-- les neuf autres : lisibles, jamais inscriptibles. Le `UPDATE` refusé est celui
+-- qui compte — sans lui, un commerçant s'ouvrirait Réserver, Duo et Portrait de
+-- la Bande depuis son propre tableau de bord.
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_reserver', 'SELECT'), 'merchant can read reserver entitlement');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_reserver', 'UPDATE'), 'merchant cannot grant itself the reserver entitlement');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_duo', 'SELECT'), 'merchant can read duo entitlement');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_duo', 'UPDATE'), 'merchant cannot grant itself the duo entitlement');
+select ok(has_column_privilege('authenticated', 'public.organizations', 'addon_bande', 'SELECT'), 'merchant can read bande entitlement');
+select ok(not has_column_privilege('authenticated', 'public.organizations', 'addon_bande', 'UPDATE'), 'merchant cannot grant itself the bande entitlement');
+
+-- LE MIROIR DU REMPLISSAGE RÉTROACTIF N'EST EXÉCUTABLE PAR PERSONNE. Une
+-- fonction qui distribue des droits de module à toute une base ne s'appelle ni
+-- depuis le navigateur, ni depuis le serveur applicatif : elle a été appelée une
+-- fois, par la migration, et reste au catalogue pour que le pgTAP puisse la
+-- rejouer sous l'identité du propriétaire.
+select ok(not has_function_privilege('anon', 'public.mirror_vitrine_entitlements()', 'EXECUTE'), 'anon cannot mirror entitlements');
+select ok(not has_function_privilege('authenticated', 'public.mirror_vitrine_entitlements()', 'EXECUTE'), 'merchant cannot mirror entitlements');
+select ok(not has_function_privilege('service_role', 'public.mirror_vitrine_entitlements()', 'EXECUTE'), 'not even the server can mirror entitlements');
+
 -- Socle Réserver (20261002120000). Trois tables, et trois régimes distincts :
 -- le catalogue d'activités et les créneaux sont ÉDITEURS (motif
 -- campaign_templates) ; les réservations sont en LECTURE SEULE pour tous les

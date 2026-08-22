@@ -114,6 +114,19 @@ export interface Organization {
    * Le chemin de la bêta reste l'octroi daté, lu par `live_module_grants`.
    */
   addon_vitrine: boolean;
+  /**
+   * Agenda Réserver activé au titre d'une OFFRE d'abonnement
+   * (migration 20261020120000). DÉTACHÉ d'`addon_vitrine` : la clé unique
+   * ouvrait quatre produits à la fois, si bien qu'accorder une vitrine
+   * accordait aussi l'agenda et les deux jeux de salon. Mêmes propriétés que
+   * ses trois sœurs — offre distincte, `false` par défaut, chemin de bêta par
+   * octroi daté.
+   */
+  addon_reserver: boolean;
+  /** Duo Miroir activé au titre d'une offre. Voir `addon_reserver`. */
+  addon_duo: boolean;
+  /** Portrait de la Bande activé au titre d'une offre. Voir `addon_reserver`. */
+  addon_bande: boolean;
   /** Accès offert (premium sans paiement) accordé depuis le back-office. */
   comp_access: boolean;
   /** Fin de l'accès offert (null = illimité). */

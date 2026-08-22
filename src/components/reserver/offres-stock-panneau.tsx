@@ -66,7 +66,7 @@ export function OffresStockPanneau({
   const [enEdition, setEnEdition] = useState<string | null>(null);
 
   return (
-    <Card className="mt-8">
+    <Card>
       <h2>Offres de stock</h2>
       <p className="mt-2 text-sm font-semibold text-k-body">
         Une quantité finie, une fenêtre de retrait : vos clients bloquent leur

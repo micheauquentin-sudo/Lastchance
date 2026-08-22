@@ -153,12 +153,17 @@ const NOM_MODULE: Record<GrantableModule, string> = {
   events: "la soirée en jeu",
   referral: "le bouche-à-oreille",
   pronostics: "la saison de pronostics",
-  // La clé `vitrine` ouvre CINQ surfaces, pas deux : vitrine publique, agenda
-  // Réserver, Duo Miroir, Portrait de la Bande et les salons joueurs. Le
-  // commerçant à qui l'on dit « ouvrez ce module pour publier la vitrine et
-  // l'agenda » sous-estimait ce qu'il achète — et cherchait ailleurs le droit
-  // de ses salons, qui était dans celui-ci.
-  vitrine: "la vitrine, Réserver et les salons de jeu",
+  // REDEVENUE LA SEULE VITRINE (20261020120000). Elle a dit « la vitrine,
+  // Réserver et les salons de jeu » tant qu'une clé unique ouvrait les quatre
+  // produits : le libellé était alors exact et c'était la CLÉ qui était trop
+  // large. Les trois autres portent désormais la leur, et laisser cette phrase
+  // ferait maintenant l'erreur inverse — promettre au commerçant, dans « Pour
+  // publier la vitrine, Réserver et les salons de jeu, demandez… », trois
+  // produits que ce module-ci n'ouvre plus.
+  vitrine: "la vitrine du commerce",
+  reserver: "l'agenda Réserver",
+  duo: "le Duo Miroir",
+  bande: "le Portrait de la Bande",
 };
 
 export function capacitesModule(entree: EntreeCapacites): CapacitesModule {

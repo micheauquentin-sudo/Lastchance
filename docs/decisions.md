@@ -7545,3 +7545,122 @@ attendent la relecture du propriétaire.
 - `docs/chantier-reserver-vitrine.md`
 - `docs/roadmap.md` V1.64
 - `docs/bugs.md` LOBBY-1
+
+---
+
+## ADR-116 — Une clé d'octroi par produit : Réserver, Duo et Bande se détachent de la Vitrine
+
+**Date** : 2026-08-22 · **Statut** : acté
+
+**Contexte** : le train Vitrine (ADR-109, clos par ADR-115) avait posé une
+règle unique — « UN seul entitlement les porte toutes les trois » — recopiée
+en tête de la migration `20261001120000`, qui annonçait elle-même le jour où
+l'une devrait s'en détacher. Ce jour est arrivé par une demande du
+propriétaire, après le train de dix-neuf lots : mettre le back-office à jour
+avec ce qui a été livré. Deux décisions ont été prises en cours de route —
+couverture checklist complète des quatre modules, et une clé d'octroi par
+produit — et c'est la seconde qui structure ce chantier (PR #176, branche
+`chantier/cle-par-produit`, 4 commits). Mesuré au catalogue SQL **vivant**, et
+non aux fichiers de migration qu'une redéfinition ultérieure rend muets :
+quinze fonctions interrogeaient `org_has_module_access(…, 'vitrine')`, pour
+seize appels — les douze portes de Réserver (activités, files, offres de
+stock, attente active), et trois fonctions propres à la Vitrine
+(`create_player_lobby`, `vitrine_dashboard_state`, `vitrine_public_state`,
+cette dernière deux fois). La liste de départ du chantier n'en citait que
+cinq ; les sept autres avaient été écrites par des migrations plus anciennes
+et jamais recopiées depuis. Sous une seule clé, un commerçant ne pouvait ni
+ouvrir Réserver sans la Vitrine, ni faire facturer un jeu à part, et
+l'opérateur de back-office lisait un libellé qui n'annonçait que deux
+surfaces sur les cinq réellement gouvernées.
+
+**Décision** :
+- Trois clés neuves — `reserver`, `duo`, `bande` — avec leurs colonnes
+  `addon_reserver` / `addon_duo` / `addon_bande`, miroirs exacts d'
+  `addon_vitrine` (migration `20261020120000_cle_par_produit.sql`). `vitrine`
+  ne porte plus que la page publique et les salons ; les douze portes de
+  Réserver et la porte Duo de `vitrine_public_state` sont converties.
+- La vraie difficulté de ce lot n'est pas la migration, c'est le
+  **remplissage rétroactif** : toute organisation détenant déjà `vitrine` —
+  par addon ou par octroi daté — reçoit les trois droits neufs dans la même
+  transaction, aux mêmes bornes. Sans ce remplissage, des commerçants réels
+  auraient perdu Réserver, Duo et Bande à la seconde où la migration
+  s'applique.
+- Le remplissage est écrit comme **fonction cataloguée**
+  (`mirror_vitrine_entitlements()`), pas en ligne : pgTAP s'exécute après les
+  migrations et ne peut donc pas fabriquer un « avant ». En extrayant le
+  geste en fonction, le test rejoue *le* code du remplissage, et non une
+  copie qui lui ressemble — c'est la forme de détecteur muet que ce dépôt
+  s'est déjà fait prendre plusieurs fois. La fonction reste au catalogue pour
+  cette seule raison, sans privilège pour aucun rôle applicatif.
+- La fonction **refuse de s'exécuter** — elle lève — si un octroi `vitrine`
+  d'origine Stripe existe. Un acte de back-office ne peut pas recopier un
+  droit que Stripe gouverne et révoque par webhook : trois miroirs que
+  Stripe ignorerait survivraient à la fin de l'abonnement. Aucun octroi de
+  ce genre n'existe aujourd'hui (aucun produit Stripe ne pilote `vitrine`) ;
+  si cela change un jour, un déploiement qui s'arrête en le disant vaut
+  mieux qu'un sur-octroi silencieux et perpétuel.
+- Sa garde d'unicité (éviter de miroiter deux fois le même octroi) compare
+  les bornes par `is not distinct from`, pas par `<>` : avec `<>`, deux
+  octrois partageant un `ends_at` nul auraient été vus comme distincts et
+  miroités deux fois. C'est la leçon déjà payée en L17 (ADR-115, garde
+  `is distinct from` qui rouvrait la brèche que son propre remède fermait),
+  reproduite ici volontairement dans le sens correct.
+- **Principe des gardes : additives, jamais en substitution.**
+  `create_player_lobby` garde `vitrine` et ajoute la clé du jeu demandé
+  (`duo` ou `bande` selon `p_kind`) dans le même `if`, donc le même refus —
+  l'indistinguabilité des quatre motifs de refus (organisation inconnue, pas
+  de droit vitrine, vitrine non publiée, pas de droit du jeu) tient par la
+  structure, pas par un accord entre branches.
+- **Arbitrage sur Duo et Bande** : leur éditeur commerçant (le réglage du
+  plateau, avant toute salle) reste gardé par le seul droit `vitrine`, pas
+  par leur clé propre. Motif : régler un plateau est une **préparation**, et
+  la doctrine du dépôt met le verrou payant sur la **publication** ; pour un
+  salon, l'équivalent de la publication est son **ouverture**
+  (`create_player_lobby`), déjà gardée par la clé du jeu en SQL. Exiger
+  `duo` dès l'édition mettrait un péage sur l'essai, avant même de savoir si
+  le commerçant veut ouvrir un salon.
+- **Ce qui n'a pas été fait, et pourquoi** : rien de ce train n'est
+  achetable en ligne. `vitrine` et `reserver` sont absents de toute offre
+  d'abonnement et de tout catalogue d'add-ons Stripe, exactement comme
+  `addon_vitrine` l'était déjà — le seul chemin d'octroi reste le
+  back-office pendant la bêta. Rendre l'une de ces clés vendable exigerait
+  de créer un produit et un prix Stripe : un geste propriétaire, hors du
+  périmètre de ce lot.
+
+**Justification** : une seule clé pour cinq surfaces empêchait toute
+tarification différenciée et forçait un commerçant intéressé par Réserver
+seul à recevoir (ou attendre) la Vitrine entière. Détacher les clés rend
+chaque produit facturable et coupable séparément, sans toucher à la forme
+des réponses publiques : les portes de `vitrine_public_state` restent
+toujours présentes (quatre listes, jamais absentes), seul leur contenu se
+vide quand le droit du produit qu'elles ouvrent manque — une porte annoncée
+vers un module fermé serait une promesse rompue faite à un client qui lit la
+page pendant son repas.
+
+**Conséquences** : une organisation peut désormais publier sa Vitrine avec
+le seul droit `vitrine`, et la page servie n'affichera aucune porte Réserver
+ni Duo — avant ce lot, « vitrine publiée » impliquait « Réserver ouvert »,
+les deux faits sont maintenant séparés. Le mode de défaillance reste
+« moins de portes », jamais « plus de droits ». Aucun trigger de publication
+n'est ajouté pour `reserver`, `duo` ou `bande` : aucune ressource « publiée »
+de Duo ou de Bande n'existe (les salons naissent par une RPC déjà gardée),
+et les ressources de Réserver n'en ont jamais porté non plus — leur en poser
+un serait une restriction nouvelle sur le geste des commerçants, hors de ce
+lot. `vitrine_dashboard_state` (le tableau de bord) continue de garder
+`vitrine` seule et rend un booléen unique : si l'écran commerçant doit un
+jour distinguer Réserver / Duo / Bande, il lui faudra plus d'un booléen —
+c'est un changement de forme laissé à un futur lot. Deux dettes de couverture
+ont été fermées dans la foulée du même chantier (voir `docs/bugs.md`) : la
+pastille des files d'accueil qui ignorait l'activité coupée, et une garde de
+parité TypeScript⇄SQL (`module-access-parity.test.ts`) dont l'ancre de
+migration pointait une définition périmée d'`org_has_module_access` pour la
+troisième fois.
+
+**Références** :
+- ADR-109 §A1 (arbitrage initial « une seule clé »), ADR-115 (clôture du
+  train Vitrine)
+- Migration `20261020120000_cle_par_produit.sql`
+- PR #176, branche `chantier/cle-par-produit`
+- `docs/roadmap.md` (back-office à jour)
+- `docs/bugs.md` (pastille files d'accueil, garde de parité, Duo sous 2
+  fiches, échec local de `supabase db reset`)

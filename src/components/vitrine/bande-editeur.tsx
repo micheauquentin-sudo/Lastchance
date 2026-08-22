@@ -6,7 +6,6 @@ import { useActionForm } from "@/lib/use-action-form";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FieldError } from "@/components/ui/input";
-import { ANCRE_BANDE } from "@/components/vitrine/ancres";
 
 /**
  * PORTRAIT DE LA BANDE (L18) — l'écran où le commerçant choisit le TON.
@@ -50,10 +49,11 @@ export function BandeEditeur({
   const etat = enregistrer.state;
 
   return (
-    // L'ANCRE DU SOMMAIRE (`scroll-mt-4` comme les blocs publics). Elle est
-    // TOUJOURS proposée : ce jeu n'a pas d'état « pas prêt » — pack par défaut,
-    // questions dans le code — donc la section est là dès que l'adresse l'est.
-    <Card id={ANCRE_BANDE} className="scroll-mt-4">
+    // L'ANCRE DU SOMMAIRE N'EST PLUS ICI, même raison que le Duo : elle est
+    // portée par la `CarteRepliable` qui enveloppe ce bloc, laquelle rouvre le
+    // bloc quand l'ancre le vise. Le sommaire, lui, la propose TOUJOURS : ce jeu
+    // n'a pas d'état « pas prêt » — pack par défaut, questions dans le code.
+    <Card>
       <h2>Portrait de la Bande</h2>
       {/* CE QUE LE COMMERÇANT DOIT SAVOIR AVANT DE PROPOSER LE JEU EN SALLE.
           Il répondra de cette promesse devant sa table : si elle est absolue à

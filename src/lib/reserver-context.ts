@@ -70,13 +70,21 @@ import type { Organization } from "@/types/database";
  * requête du dashboard et celle du parcours public ne divergent pas le jour où
  * l'une passe de l'autre côté.
  *
- * ── LE DROIT `vitrine` EST VÉRIFIÉ ICI AUSSI ──
+ * ── LE DROIT `reserver` EST VÉRIFIÉ ICI AUSSI ──
  *
  * `reserve_slot` l'interroge déjà en SQL, et c'est la vraie défense. Ce chargeur
  * le vérifie pour une raison différente : une organisation sans le droit doit
  * rendre le MÊME contexte « indisponible » qu'une activité inexistante — sans
  * quoi la page publique deviendrait un oracle sur l'état commercial d'un
  * commerce qui n'est pas celui du visiteur.
+ *
+ * LA CLÉ EST `reserver` DEPUIS 20261020120000, ET PLUS `vitrine`. Les deux
+ * désignaient le même booléen tant qu'une clé unique ouvrait quatre produits ;
+ * la migration a détaché l'agenda, recopié aux mêmes bornes les octrois
+ * existants (`mirror_vitrine_entitlements`), et réécrit les seize appels SQL de
+ * ce module. Continuer à demander `vitrine` ici aurait rouvert l'écart que ce
+ * fichier passe son temps à fermer : la base accordant ce que l'écran refuse,
+ * pour un commerçant à qui l'on vient de vendre l'agenda seul.
  */
 
 /** Erreur générique unique : aucun oracle sur l'existence ni sur l'état. */
@@ -93,7 +101,7 @@ const CRENEAUX_PUBLICS_MAX = 20;
 const RESERVATIONS_COMPTAGE_MAX = 10_000;
 
 const ORG_COLUMNS =
-  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_vitrine, comp_access, comp_access_until, timezone";
+  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_reserver, comp_access, comp_access_until, timezone";
 
 /**
  * Les CINQ COLONNES D'EXPÉRIENCE (RES-5) sont dans la liste COMMUNE, à la
@@ -198,7 +206,7 @@ type ReserverOrganization = Pick<
   | "subscription_status"
   | "trial_ends_at"
   | "past_due_since"
-  | "addon_vitrine"
+  | "addon_reserver"
   | "comp_access"
   | "comp_access_until"
   | "timezone"
@@ -418,7 +426,7 @@ export function hashInvitationToken(jeton: string): string | null {
  * vivante, et rend de quoi peupler l'écran d'attente.
  *
  * `null` dès que la RPC refuse (source inconnue, d'un autre commerce, d'un
- * autre joueur, morte, ou organisation sans le droit `vitrine`) : le Mode
+ * autre joueur, morte, ou organisation sans le droit `reserver`) : le Mode
  * Attente active est FACULTATIF, son absence n'est pas une panne.
  */
 export async function ouvrirSessionAttente(
@@ -666,9 +674,9 @@ export async function loadReserverPublicContext(
   if (!organization || organization.id !== row.organization_id) {
     return { ok: false, error: INDISPONIBLE };
   }
-  // Organisation sans le droit `vitrine` : MÊME rendu qu'une activité
+  // Organisation sans le droit `reserver` : MÊME rendu qu'une activité
   // inexistante. Aucun oracle sur l'état commercial d'un tiers.
-  if (!(await moduleOuvertAuJoueur("vitrine", organization))) {
+  if (!(await moduleOuvertAuJoueur("reserver", organization))) {
     return { ok: false, error: INDISPONIBLE };
   }
   if (!row.active) return { ok: false, error: INDISPONIBLE };
@@ -885,7 +893,7 @@ export type ReserverInvitationContext =
  * ── UNE SEULE RÉPONSE POUR TOUS LES REFUS ──
  *
  * Jeton malformé, inconnu, révoqué, fermé, expiré, épuisé ; activité coupée,
- * organisation sans droit `vitrine` : `INDISPONIBLE`, mot pour mot. C'est la
+ * organisation sans droit `reserver` : `INDISPONIBLE`, mot pour mot. C'est la
  * même discipline que `redeem_invitation`, et elle ne vaut que si les DEUX
  * couches la tiennent — une page qui distinguerait « révoquée » d'« inconnue »
  * rendrait l'oracle que la RPC refuse de donner, sans même avoir à l'appeler.
@@ -978,7 +986,7 @@ export async function loadReserverInvitationContext(
   if (!organization || organization.id !== activity.organization_id) {
     return { ok: false, error: INDISPONIBLE };
   }
-  if (!(await moduleOuvertAuJoueur("vitrine", organization))) {
+  if (!(await moduleOuvertAuJoueur("reserver", organization))) {
     return { ok: false, error: INDISPONIBLE };
   }
   if (!activity.active) return { ok: false, error: INDISPONIBLE };
@@ -1268,7 +1276,7 @@ const INVITATIONS_DASHBOARD_MAX = 500;
 export async function loadReserverDashboardContext(): Promise<ReserverDashboardContext> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) return { ok: false, reason: "unauthenticated" };
-  if (!droitEffectifModule("vitrine", organization)) {
+  if (!droitEffectifModule("reserver", organization)) {
     return { ok: false, reason: "no_access" };
   }
 
@@ -1570,9 +1578,9 @@ async function lireCiblesAttente(
 // l'invariant, et il se lit sur leur signature.
 //
 // `queue_public_state`, à l'inverse, autorise PAR POSSESSION (identifiant de
-// file + empreinte du cookie) et ne vérifie ni le droit `vitrine` ni le statut
+// file + empreinte du cookie) et ne vérifie ni le droit `reserver` ni le statut
 // de la file : lire son propre rang n'est pas un acte commercial. Le chargeur
-// public, lui, VÉRIFIE le droit `vitrine` — parce qu'il décide d'AFFICHER une
+// public, lui, VÉRIFIE le droit `reserver` — parce qu'il décide d'AFFICHER une
 // file, ce qui est une capacité de l'offre Vitrine, là où la RPC ne fait que
 // répondre à quelqu'un qui attend déjà.
 // ════════════════════════════════════════════════════════════
@@ -1654,7 +1662,7 @@ export type ReserverQueuePublicContext =
  * identité existe, c'est la RPC qui fait foi — un seul juge.
  */
 /**
- * L'organisation qui PORTE cette file a-t-elle encore le droit `vitrine` ?
+ * L'organisation qui PORTE cette file a-t-elle encore le droit `reserver` ?
  *
  * ── CE QU'ELLE FERME, ET POURQUOI ELLE N'EST PAS DANS `lireEtatFilePublic` ──
  *
@@ -1680,7 +1688,7 @@ export type ReserverQueuePublicContext =
  * Introuvable, jointure inter-locataire, droit fermé : `false` dans les trois
  * cas, et l'appelant en fait un seul état muet.
  */
-export async function droitVitrineOuvertPourFile(
+export async function droitReserverOuvertPourFile(
   queueId: string,
 ): Promise<boolean> {
   const admin = createAdminClient();
@@ -1697,7 +1705,7 @@ export async function droitVitrineOuvertPourFile(
   // Garde inter-tenant : la jointure ne doit jamais rapporter une organisation
   // qui n'est pas celle de la ligne (motif `loadReserverQueuePublicContext`).
   if (!organization || organization.id !== row.organization_id) return false;
-  return moduleOuvertAuJoueur("vitrine", organization);
+  return moduleOuvertAuJoueur("reserver", organization);
 }
 
 async function compterEnAttente(
@@ -1769,7 +1777,7 @@ export async function lireEtatFilePublic(
 /**
  * Contexte de la page publique d'une file d'accueil.
  *
- * ── LE DROIT `vitrine` EST VÉRIFIÉ ICI, ET LA RPC NE LE VÉRIFIE PAS ──
+ * ── LE DROIT `reserver` EST VÉRIFIÉ ICI, ET LA RPC NE LE VÉRIFIE PAS ──
  *
  * Ce n'est pas une divergence, c'est la répartition. `queue_public_state` répond
  * à quelqu'un qui attend DÉJÀ, et lui refuser son rang parce qu'un abonnement a
@@ -1814,7 +1822,7 @@ export async function loadReserverQueuePublicContext(
   if (!organization || organization.id !== row.organization_id) {
     return { ok: false, error: INDISPONIBLE };
   }
-  if (!(await moduleOuvertAuJoueur("vitrine", organization))) {
+  if (!(await moduleOuvertAuJoueur("reserver", organization))) {
     return { ok: false, error: INDISPONIBLE };
   }
 
@@ -1945,7 +1953,7 @@ export type ReserverQueuesDashboardContext =
 export async function loadReserverQueuesDashboardContext(): Promise<ReserverQueuesDashboardContext> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) return { ok: false, reason: "unauthenticated" };
-  if (!droitEffectifModule("vitrine", organization)) {
+  if (!droitEffectifModule("reserver", organization)) {
     return { ok: false, reason: "no_access" };
   }
 
@@ -2100,7 +2108,7 @@ export type ReserverStockOfferPublicContext =
 /**
  * Contexte de la page publique d'une offre de stock.
  *
- * ── LE DROIT `vitrine` EST TRANCHÉ PAR LA RPC, ET PAS ICI ──
+ * ── LE DROIT `reserver` EST TRANCHÉ PAR LA RPC, ET PAS ICI ──
  *
  * Différence assumée avec `loadReserverQueuePublicContext`, qui le résout
  * lui-même : `stock_offer_public_state` l'interroge DÉJÀ et rend `unavailable` —
@@ -2238,7 +2246,7 @@ export async function loadStockOffersDashboardContext(): Promise<ReserverStockOf
   if (role !== "owner" && role !== "editor") {
     return { ok: false, reason: "no_access" };
   }
-  if (!droitEffectifModule("vitrine", organization)) {
+  if (!droitEffectifModule("reserver", organization)) {
     return { ok: false, reason: "no_access" };
   }
 

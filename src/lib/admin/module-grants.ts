@@ -246,13 +246,116 @@ export const LIBELLE_MODULE: Record<string, string> = {
   events: "Soirée en jeu",
   referral: "Bouche-à-oreille",
   pronostics: "Saison de pronostics",
-  // UNE clé, CINQ surfaces. « Vitrine & Réserver » datait du lot L2 et est
-  // resté tel quel pendant que la même clé ouvrait Duo Miroir, Portrait de la
-  // Bande et les salons joueurs. L'opérateur qui octroie lit ce libellé : lui
-  // laisser croire qu'il n'ouvre que deux surfaces sur cinq lui fait accorder
-  // — ou refuser — autre chose que ce qu'il croit.
-  vitrine: "Vitrine, Réserver & salons de jeu",
+  // QUATRE CLÉS, QUATRE LIGNES (20261020120000). Ce libellé a dit « Vitrine,
+  // Réserver & salons de jeu » aussi longtemps qu'une seule clé les ouvrait
+  // tous, précisément pour que l'opérateur ne croie pas n'accorder qu'une
+  // vitrine. Le détachement rend l'avertissement faux dans l'autre sens : c'est
+  // le formulaire qui offre désormais quatre lignes distinctes, et chacune doit
+  // nommer ce qu'ELLE ouvre — sinon l'opérateur qui veut vendre l'agenda seul
+  // ne saurait pas laquelle cocher.
+  vitrine: "Vitrine publique",
+  reserver: "Réserver (agenda & files)",
+  duo: "Duo Miroir (salon)",
+  bande: "Portrait de la Bande (salon)",
 };
+
+/**
+ * Les trois clés que `20261020120000` a détachées de `vitrine`.
+ *
+ * Avant cette migration, UN octroi `vitrine` ouvrait la Vitrine, Réserver et
+ * les deux salons. La migration a posé, pour chaque octroi `vitrine`, trois
+ * octrois MIROIRS aux mêmes bornes — de sorte que toute question posée aux
+ * clés neuves reçoive la même réponse qu'à `vitrine`.
+ */
+export const MODULES_MIROIRS_VITRINE = ["reserver", "duo", "bande"] as const;
+
+const ENSEMBLE_MIROIRS: ReadonlySet<string> = new Set(MODULES_MIROIRS_VITRINE);
+
+/** Ce qu'il faut d'un octroi pour décider s'il appartient au même geste. */
+export interface OctroiCorrele {
+  id: string;
+  module: string;
+  kind: string;
+  source: string;
+  resource_id: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  revoked_at: string | null;
+}
+
+/**
+ * `is not distinct from` en TypeScript — la leçon L17.
+ *
+ * Deux bornes NULLES sont ÉGALES : un droit récurrent n'a pas de terme, et ses
+ * miroirs non plus. Comparer par `===` sur `null` donne déjà ce résultat ; ce
+ * qui n'irait pas de soi, c'est de tomber sur `null == undefined` ou de rater
+ * deux écritures différentes du même instant. On compare donc les INSTANTS dès
+ * que les deux bornes sont posées.
+ */
+function memeBorne(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a === b) return true;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
+}
+
+/**
+ * LES MIROIRS D'UN OCTROI `vitrine`, ET POURQUOI ON LES CHERCHE.
+ *
+ * La migration a créé trois lignes indépendantes là où l'opérateur n'avait posé
+ * qu'un geste. Le back-office, lui, ne révoque que par `grantId` : couper
+ * « Vitrine publique » fermait la Vitrine et les deux salons, et laissait
+ * **Réserver vivant** — les douze RPC répondaient encore, `/dashboard/reservations`
+ * restait ouvert, et un commerçant révoqué continuait de prendre des
+ * réservations jusqu'à l'échéance. La migration avait raisonné cette classe de
+ * risque pour Stripe (elle LÈVE plutôt que de recopier un octroi Stripe) ; le
+ * même raisonnement n'avait pas été appliqué au back-office, où le geste de
+ * révocation existe pourtant.
+ *
+ * ── LA CLÉ DE CORRÉLATION ──
+ *
+ * Exactement celle que la migration a employée pour se dédupliquer :
+ * `(organization_id, kind, starts_at, ends_at)` avec un module parmi les trois.
+ * `source_reference` NE PEUT PAS servir : il est facultatif, et nul dans le cas
+ * courant. Le scope organisation est tenu par l'appelant, qui ne fournit ici
+ * que les octrois d'UNE organisation.
+ *
+ * ── TROIS EXCLUSIONS, ÉCRITES PLUTÔT QUE TUES ──
+ *
+ *   * Les octrois BORNÉS À UNE RESSOURCE (`resource_id`) : la migration ne les
+ *     a pas recopiés, donc aucun n'est un miroir. Un octroi `reserver` borné à
+ *     une ressource est un droit fin, vendu à part ; le fermer parce qu'il
+ *     partage des bornes serait la sur-révocation symétrique du défaut corrigé.
+ *   * Les octrois DÉJÀ RÉVOQUÉS : les rouvrir au motif du jour effacerait le
+ *     motif d'origine et la date réelle de la coupure.
+ *   * Les octrois d'origine STRIPE : cette action refuse d'y toucher, et il ne
+ *     peut pas en exister ici (la migration lève sur un `vitrine` Stripe). La
+ *     garde est écrite quand même — le jour où ce monde change, le geste juste
+ *     reste un remboursement côté Stripe.
+ *
+ * Ne décide RIEN d'autre : c'est le même relevé qui alimente l'avertissement
+ * affiché à l'opérateur et la révocation exécutée par le serveur, pour qu'ils
+ * ne puissent pas diverger.
+ */
+export function miroirsDeVitrine<T extends OctroiCorrele>(
+  cible: T,
+  tous: readonly T[],
+): T[] {
+  if (cible.module !== "vitrine") return [];
+  if ((cible.resource_id ?? null) !== null) return [];
+  return tous.filter(
+    (ligne) =>
+      ligne.id !== cible.id &&
+      ENSEMBLE_MIROIRS.has(ligne.module) &&
+      (ligne.resource_id ?? null) === null &&
+      ligne.kind === cible.kind &&
+      ligne.revoked_at === null &&
+      ligne.source !== "stripe" &&
+      memeBorne(ligne.starts_at, cible.starts_at) &&
+      memeBorne(ligne.ends_at, cible.ends_at),
+  );
+}
 
 /**
  * L'index unique partiel livré par `20260910120000` (P0 lot 5) : un seul

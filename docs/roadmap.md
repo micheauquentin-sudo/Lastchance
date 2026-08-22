@@ -53,6 +53,39 @@ salons (l'hôte doit clore chaque question), `robots: index false` sur la
 Vitrine (décision de commerce en attente), les 5 packs de questions Portrait
 de la Bande en attente de relecture propriétaire.
 
+## V1.65 — Le back-office rejoint le train, une clé par produit (✅ 2026-08-22, PR #176, ADR-116)
+
+**Objectif** : demande du propriétaire après le train de 19 lots — mettre le
+back-office à jour avec ce qui a été livré. Deux décisions prises en cours de
+route : couverture checklist complète des quatre modules (Vitrine, Réserver,
+Duo Miroir, Portrait de la Bande) et une clé d'octroi par produit. Migration
+`20261020120000`. Arbitrages complets : ADR-116.
+
+- **Une clé par produit** : `reserver`, `duo` et `bande` se détachent de
+  `vitrine`, avec leurs colonnes `addon_*` propres. Les douze portes de
+  Réserver et la porte Duo de la Vitrine publique demandent désormais leur
+  propre droit ; les organisations qui détenaient déjà `vitrine` ont reçu
+  les trois droits neufs par remplissage rétroactif, aux mêmes bornes —
+  aucune n'a rien perdu.
+- **Le back-office nomme enfin les cinq surfaces** : le libellé opérateur
+  qui n'annonçait que Vitrine et Réserver couvre désormais aussi Duo Miroir
+  et Portrait de la Bande.
+- **La checklist commerçante couvre les quatre modules**, y compris un
+  contrôle `duo-plateau` qui attrape la disparition silencieuse du Duo
+  Miroir sous 2 fiches épinglées (signalé, non corrigé — voir `docs/bugs.md`).
+- **Deux dettes de couverture fermées au passage** : la pastille des files
+  d'accueil ignorait l'activité coupée d'une file « ouverte » ; une garde de
+  parité TypeScript⇄SQL pointait une définition périmée d'`org_has_module_access`
+  pour la troisième fois (voir `docs/bugs.md`).
+
+**Reste ouvert** : rien de ce train (Vitrine, Réserver, Duo, Bande) n'est
+achetable en ligne — `vitrine` et `reserver` restent absents de toute offre
+et de tout catalogue d'add-ons Stripe, le seul chemin d'octroi est le
+back-office ; c'est une décision assumée, un produit et un prix Stripe étant
+un geste propriétaire hors périmètre de ce lot. Aucun écran back-office
+opérateur ne montre encore les données produites par ces modules
+(réservations, salons, fiches vitrine) — c'est une absence, pas un défaut.
+
 ## V1 — MVP SaaS (✅ livrée)
 **Objectif** : MVP robuste testable chez un premier commerce réel.
 

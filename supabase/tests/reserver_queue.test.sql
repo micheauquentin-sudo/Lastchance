@@ -58,7 +58,7 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ── Fixtures ─────────────────────────────────────────────────
--- A : SERVIE — droit `vitrine` par OCTROI daté vivant (seul chemin ouvert en
+-- A : SERVIE — droits `vitrine` ET `reserver` par OCTROI daté vivant (seul chemin ouvert en
 --     bêta, 20261001120000).
 -- B : VOISINE, servie elle aussi — sans quoi « le voisin ne voit rien » se
 --     confondrait avec « le voisin n'a pas le module ».
@@ -73,13 +73,17 @@ values
   ('4f11e000-0000-4000-8000-00000000000c', 'File C', 'tap-file-c',
    'active', 'starter', 'Europe/Paris', 6);
 
+-- `reserver` EN PLUS DE `vitrine` DEPUIS 20261020120000 : `queue_join` et
+-- `queue_public_state` interrogent désormais la clé du produit. `vitrine` reste
+-- semé parce que la page publique du commerce en dépend.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-values
-  ('4f11e000-0000-4000-8000-00000000000a', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days'),
-  ('4f11e000-0000-4000-8000-00000000000b', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days');
+select o.id, m.module, 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('4f11e000-0000-4000-8000-00000000000a'::uuid),
+    ('4f11e000-0000-4000-8000-00000000000b'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('reserver')) as m(module);
 
 insert into auth.users (id, email) values
   ('4f11e000-0000-4000-8000-000000000101', 'proprio-a@tap-file.local'),
@@ -142,7 +146,7 @@ values
   -- VOISINE.
   ('4f11e000-0000-4000-8000-000000000351',
    '4f11e000-0000-4000-8000-00000000000b', null, 'Comptoir voisin', 'open', 50),
-  -- SANS le droit `vitrine`.
+  -- SANS le droit `reserver`.
   ('4f11e000-0000-4000-8000-000000000371',
    '4f11e000-0000-4000-8000-00000000000c', null, 'Comptoir sans droit', 'open', 50);
 
@@ -261,7 +265,7 @@ select is(
   (public.queue_join('4f11e000-0000-4000-8000-00000000000c',
     '4f11e000-0000-4000-8000-000000000371', repeat('b1', 32)))->>'state',
   'unavailable',
-  'JOIN-18 sans le droit `vitrine`, aucune file ne s''ouvre');
+  'JOIN-18 sans le droit `reserver`, aucune file ne s''ouvre');
 select results_eq(
   $$select count(*) from public.reservation_queue_entries
      where organization_id in ('4f11e000-0000-4000-8000-00000000000b',
@@ -754,7 +758,7 @@ select is(
   'unavailable',
   'PUB-4 une file inconnue rend `unavailable`');
 
--- ── LE DROIT `vitrine` GARDE LA DÉCOUVERTE, JAMAIS LA POSSESSION (VIT-3) ──
+-- ── LE DROIT `reserver` GARDE LA DÉCOUVERTE, JAMAIS LA POSSESSION (VIT-3) ──
 --
 -- Dette de la revue L6, échue au lot L13 : jusque-là cette RPC répondait à qui
 -- que ce soit sur sa branche `not_in_queue`, droit éteint compris. Tant qu'une
@@ -769,7 +773,7 @@ select is(
   (public.queue_public_state(
     '4f11e000-0000-4000-8000-000000000371', repeat('bb', 32)))->>'state',
   'unavailable',
-  'PUB-4b sans le droit `vitrine`, un visiteur qui n''est PAS dans la file reçoit le mot INDISTINCT de la file inconnue');
+  'PUB-4b sans le droit `reserver`, un visiteur qui n''est PAS dans la file reçoit le mot INDISTINCT de la file inconnue');
 
 -- ET LE MOT EST VRAIMENT INDISTINCT : la réponse ne porte QUE `state`. Rendre
 -- `queue_name` ou `waiting_count` à côté d'un `unavailable` aurait fait de ce

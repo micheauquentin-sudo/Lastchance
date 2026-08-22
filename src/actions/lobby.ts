@@ -262,7 +262,11 @@ async function createLobbyInner(parsed: {
   pseudo: string;
 }): Promise<ActionResult<CreateLobbyOutcome>> {
   try {
-    const commerce = await resoudreCommerceLobby(parsed.slug);
+    // `parsed.kind` et non une valeur libre : le chargeur pose la clé du jeu à
+    // `org_has_module_access`, exactement comme `create_player_lobby` (§6 de
+    // 20261020120000). Il vient du schéma Zod, qui l'a déjà borné à
+    // `LobbyKind`.
+    const commerce = await resoudreCommerceLobby(parsed.slug, parsed.kind);
     if (!commerce) return REFUS_INDISPONIBLE;
 
     // Le jeton est fabriqué AVANT l'appel — la RPC en a besoin pour inscrire

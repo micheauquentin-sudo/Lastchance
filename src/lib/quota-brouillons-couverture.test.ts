@@ -68,6 +68,28 @@ const FICHIER_ACTION: Record<GrantableModule, string | null> = {
   // vitrines par organisation, ou une action de création dont la gratuité doit
   // être bornée. Le critère est là, et non plus une date déjà passée.
   vitrine: null,
+  // EXEMPTÉ — l'agenda Réserver (clé détachée de `vitrine` en 20261020120000).
+  //
+  // Ce qui s'y crée est un CRÉNEAU, et un créneau n'a pas d'état brouillon : il
+  // est ouvert ou il n'existe pas. `refuserSiQuotaBrouillonAtteint` borne le
+  // nombre de RESSOURCES DE MODULE non payées qu'une organisation peut tenir ;
+  // l'agenda n'en a qu'une, l'activité, et elle ne se publie pas non plus.
+  //
+  // CE QUI LA FERAIT TOMBER : une action de création d'agenda ou d'activité
+  // dont la gratuité devrait être bornée.
+  reserver: null,
+  // EXEMPTÉS — les deux salons de jeu (clés détachées en 20261020120000).
+  //
+  // Rien ne s'y crée côté commerçant : une salle est ouverte par un JOUEUR
+  // (`createLobby`), vit quelques heures et meurt. Ce que le commerçant règle
+  // est un plateau d'options, c'est-à-dire un réglage d'organisation — pas une
+  // ressource, donc pas un brouillon. Compter les brouillons d'un salon
+  // reviendrait à contingenter les parties de ses clients.
+  //
+  // CE QUI LES FERAIT TOMBER : une action commerçant qui CRÉERAIT des salles,
+  // ou un plateau d'options devenu ressource multiple et publiable.
+  duo: null,
+  bande: null,
 };
 
 function source(fichier: string): string {
@@ -83,12 +105,12 @@ describe("couverture du quota de brouillons", () => {
     );
   });
 
-  it("deux modules sont exemptés, et on sait lesquels", () => {
+  it("cinq modules sont exemptés, et on sait lesquels", () => {
     // ÉPINGLÉ NOMMÉMENT plutôt que compté : un module retiré du quota par
     // erreur se « réparerait » sinon en le passant à `null`, et ce test
     // resterait vert en ayant cessé de garder quoi que ce soit.
     const exemptes = GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] === null);
-    expect(exemptes).toEqual(["referral", "vitrine"]);
+    expect(exemptes).toEqual(["referral", "vitrine", "reserver", "duo", "bande"]);
   });
 
   it.each(GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] !== null))(

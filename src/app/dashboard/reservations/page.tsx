@@ -10,8 +10,12 @@ import {
   loadReserverQueuesDashboardContext,
   loadStockOffersDashboardContext,
 } from "@/lib/reserver-context";
+import { construireVerificationReserver } from "@/lib/activation/reserver";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { ArriveesCheckin } from "@/components/reserver/arrivees-checkin";
 import { FilesAccueilPanneau } from "@/components/reserver/files-accueil-panneau";
@@ -24,13 +28,15 @@ export const metadata: Metadata = { title: "Réservations" };
 /**
  * L'AGENDA DU COMMERÇANT — ses activités réservables, et son écran d'arrivées.
  *
- * ── LE MODULE S'APPELLE `vitrine`, PAS `reservations` ──
+ * ── LE MODULE S'APPELLE `reserver`, PAS `reservations` ──
  *
- * Un seul droit couvre trois capacités serveur : publier la Vitrine, le CRM
- * léger, l'agenda Réserver (migration 20261001120000). `capacitesDuModule` prend
- * donc `"vitrine"`, et l'encart d'offre porte l'entitlement `vitrine` —
- * « Vitrine & Réserver ». Nommer ici un module qui n'existe pas ferait échouer
- * `tsc` sur `GrantableModule`, ce qui est le comportement souhaité.
+ * L'agenda a longtemps été une des trois capacités du droit `vitrine`, avec la
+ * publication de la carte et le CRM léger. La migration 20261020120000 lui a
+ * donné SA PROPRE CLÉ, `reserver` : l'agenda se vend seul, et la Vitrine aussi.
+ * `capacitesDuModule` prend donc `"reserver"`, et l'encart d'offre porte le même
+ * entitlement — sans quoi il proposerait à l'achat un produit qui n'ouvre plus
+ * cet écran. Nommer ici un module qui n'existe pas ferait échouer `tsc` sur
+ * `GrantableModule`, ce qui est le comportement souhaité.
  *
  * ── DEUX VERDICTS, ET ILS NE DISENT PAS LA MÊME CHOSE ──
  *
@@ -57,7 +63,7 @@ export default async function ReservationsPage() {
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3).
-  const capacites = await capacitesDuModule("vitrine");
+  const capacites = await capacitesDuModule("reserver");
   if (!capacites.canExplore) notFound();
 
   // Les deux lectures sont INDÉPENDANTES — l'agenda des créneaux d'un côté, les
@@ -72,9 +78,23 @@ export default async function ReservationsPage() {
     loadStockOffersDashboardContext(),
   ]);
   const activites = agenda.ok ? agenda.activities : [];
+  const files = filesAccueil.ok ? filesAccueil.queues : [];
   const timeZone = agenda.ok
     ? agenda.timezone
     : (organization?.timezone ?? RESERVER_FUSEAU_DEFAUT);
+
+  // LES QUATRE TUILES DE CETTE PAGE, dans l'ordre du rendu — `TUILES_RESERVER`
+  // le tient, pas ce fichier : le rang se lit de la position dans la table, et
+  // le recopier ici en ferait une seconde table à tenir d'accord.
+  //
+  // Les deux entrées se passent telles quelles : `agenda.activities` porte déjà
+  // `id`, `active`, `kind` et ses créneaux, et les files leur `status` et leur
+  // `activityId` — c'est de ce croisement que naît le contrôle `files-activite`,
+  // le même défaut que la pastille corrigée dans `FilesAccueilPanneau`.
+  const tuiles = tuilesDuModule(
+    "reserver",
+    construireVerificationReserver({ activites, files }).controles,
+  );
 
   return (
     <div>
@@ -85,14 +105,31 @@ export default async function ReservationsPage() {
         actions={capacites.canEditDraft ? <NouvelleActiviteForm /> : null}
       />
 
-      <ModuleCapabilityNotice capacites={capacites} entitlement="vitrine">
+      <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
         Activités et créneaux à places limitées, réservation sans compte,
         confirmation par email au choix du client, et enregistrement des arrivées
         en caisse par code court.
       </ModuleCapabilityNotice>
 
+      {/* LES QUATRE BLOCS NUMÉROTÉS. L'espacement est porté ICI, par
+          `space-y-8`, et non plus par un `mt-8` à l'intérieur de chaque carte :
+          une marge interne aurait laissé la pastille de rang — posée sur le
+          coin haut-gauche de l'enveloppe — flotter 32 px au-dessus du titre
+          qu'elle numérote. */}
+      <div className="mt-8 space-y-8">
+      {/* LE PREMIER BLOC DEVIENT UNE CARTE TITRÉE, DEPUIS QU'IL PORTE UN RANG.
+          La liste des activités flottait sous l'en-tête de page, sans titre ni
+          cadre : une pastille « 1 » et un badge de verdict s'y seraient posés
+          sur la première ligne de la liste, sans rien qui dise de quoi ils sont
+          le rang. Elle prend donc la même forme que les trois blocs suivants —
+          `<Card>` et `<h2>` — et son état vide le motif de `FilesAccueilPanneau`
+          plutôt qu'une carte dans une carte. Le titre est celui de la tuile,
+          écrit une seule fois dans `TUILES_RESERVER`. */}
+      <CarteRepliable {...carteTuile(tuiles, "activites")}>
+        <Card>
+        <h2>Vos activités</h2>
       {activites.length === 0 ? (
-        <Card className="py-12 text-center">
+        <div className="mt-5 rounded-xl border-2 border-dashed border-k-ink/25 px-4 py-8 text-center">
           <p className="text-sm font-semibold text-k-body">
             Aucune activité pour l&apos;instant. Créez la première !
           </p>
@@ -104,9 +141,9 @@ export default async function ReservationsPage() {
               <NouvelleActiviteForm instanceId="-vide" />
             </div>
           ) : null}
-        </Card>
+        </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="mt-5 space-y-3">
           {activites.map((activite) => {
             // « Ouverts à venir » au sens du joueur : c'est `etatUiCreneau` qui
             // en décide, comme sur la page publique. Un compte calculé
@@ -174,21 +211,34 @@ export default async function ReservationsPage() {
           })}
         </ul>
       )}
+        </Card>
+      </CarteRepliable>
 
       {/* L'écran d'arrivées est SOUS la liste et HORS d'une activité : le code
           d'un client ne dit pas laquelle il a réservée, et demander au caissier
           de choisir d'abord l'activité lui ferait chercher l'information qu'il
           vient précisément d'obtenir. La RPC, elle, résout le code dans toute
           l'organisation. */}
-      <ArriveesCheckin timeZone={timeZone} />
+      <CarteRepliable {...carteTuile(tuiles, "arrivees")}>
+        <ArriveesCheckin timeZone={timeZone} />
+      </CarteRepliable>
 
       {/* LES FILES D'ACCUEIL SONT SOUS L'AGENDA, ET C'EST L'ORDRE DE LA JOURNÉE :
           on prépare ses créneaux le matin, on tient sa file toute la journée. La
           console est ouverte au CAISSIER — elle ne dépend pas de `canEditDraft`,
           qui ne gouverne que la création et les réglages, passés en `peutEditer`. */}
+      <CarteRepliable {...carteTuile(tuiles, "files")}>
       <FilesAccueilPanneau
-        files={filesAccueil.ok ? filesAccueil.queues : []}
-        activites={activites.map((a) => ({ id: a.id, name: a.name }))}
+        files={files}
+        // `active` EN PLUS DU NOM : couper une activité referme ses files côté
+        // `queue_join`, et la vue d'une file ne porte que son propre `status`.
+        // Sans ce drapeau, la pastille lisait « Ouverte » sur une file qui
+        // refusait tout le monde.
+        activites={activites.map((a) => ({
+          id: a.id,
+          name: a.name,
+          active: a.active,
+        }))}
         peutEditer={capacites.canEditDraft}
         appUrl={APP_URL}
         // Le Mode Attente active (RES-4) : ce qu'on peut proposer pendant
@@ -197,18 +247,22 @@ export default async function ReservationsPage() {
         quiz={agenda.ok ? agenda.waitQuiz : []}
         campagnes={agenda.ok ? agenda.waitCampaigns : []}
       />
+      </CarteRepliable>
 
       {/* LES OFFRES DE STOCK EN DERNIER, ET C'EST LA MÊME LOGIQUE DE JOURNÉE :
           on prépare ses créneaux le matin, on tient sa file toute la journée, et
           on solde son invendu en fin de service. Le geste du caissier n'est pas
           ici — le retrait se fait en CAISSE, par le code — d'où l'absence de
           console et le seul droit d'édition. */}
-      <OffresStockPanneau
-        offres={offresStock.ok ? offresStock.offers : []}
-        peutEditer={capacites.canEditDraft}
-        appUrl={APP_URL}
-        timeZone={timeZone}
-      />
+      <CarteRepliable {...carteTuile(tuiles, "offres")}>
+        <OffresStockPanneau
+          offres={offresStock.ok ? offresStock.offers : []}
+          peutEditer={capacites.canEditDraft}
+          appUrl={APP_URL}
+          timeZone={timeZone}
+        />
+      </CarteRepliable>
+      </div>
     </div>
   );
 }

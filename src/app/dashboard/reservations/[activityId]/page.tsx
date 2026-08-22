@@ -41,7 +41,9 @@ export default async function ActiviteReservablePage({
 }) {
   const { activityId } = await params;
 
-  const capacites = await capacitesDuModule("vitrine");
+  // Le droit de CET écran est `reserver`, sa propre clé depuis la migration
+  // 20261020120000 — plus `vitrine`, qui ne couvre plus que la carte publique.
+  const capacites = await capacitesDuModule("reserver");
   if (!capacites.canExplore) notFound();
 
   const agenda = await loadReserverDashboardContext();
@@ -78,7 +80,7 @@ export default async function ActiviteReservablePage({
         }}
       />
 
-      <ModuleCapabilityNotice capacites={capacites} entitlement="vitrine">
+      <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
         Activités et créneaux à places limitées, réservation sans compte, et
         enregistrement des arrivées en caisse par code court.
       </ModuleCapabilityNotice>

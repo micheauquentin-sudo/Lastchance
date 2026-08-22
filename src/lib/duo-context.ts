@@ -52,6 +52,14 @@ export type DuoOptionsContext =
  * gardes d'écriture, elles, sont en SQL (`set_duo_options`,
  * `set_duo_suggestion`, qui revérifient l'acteur `owner|editor`).
  *
+ * ── LA GARDE RESTE CELLE DE LA VITRINE, ET NON `duo` (20261020120000) ──
+ *
+ * `duo` est une clé à part entière depuis le détachement, et cette garde-ci
+ * pouvait donc devenir `gardeEditeurDuo`. Elle ne l'est pas : composer un
+ * plateau est une PRÉPARATION, que le dépôt laisse ouverte, et le verrou payant
+ * du Duo est en SQL, sur l'ouverture de la salle (`create_player_lobby` exige
+ * `vitrine` ET `duo`). Le raisonnement complet est sur `gardeEditeurVitrine`.
+ *
  * ── UNE PANNE DE LECTURE REND LE PLATEAU VIDE, PAS UN REFUS ──
  *
  * Motif de `loadOrgLobbies` : le commerçant a le droit, il n'a simplement rien à

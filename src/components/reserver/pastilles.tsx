@@ -4,6 +4,7 @@ import {
   etatUiEntreeFile,
   etatUiOffreStock,
   etatUiReservation,
+  fileAccepteEntree,
   type EtatUiCreneau,
   type EtatUiEntreeFile,
   type EtatUiOffreStock,
@@ -153,14 +154,45 @@ const LIBELLE_FILE_ACCUEIL: Record<
   closed: { label: "Fermée", ton: "bg-zinc-200 text-k-ink" },
 };
 
+/**
+ * LE QUATRIÈME ÉTAT, QUI N'EST PAS DANS LA COLONNE `status`.
+ *
+ * `queue_join` referme une file quand SON ACTIVITÉ est coupée
+ * (`not coalesce(v_activity_active, true)`, migration
+ * `20261005120000_reserver_file_sereine.sql`) : la ligne reste `open` en base,
+ * et l'entrée est refusée à tout le monde. Peindre la pastille sur le seul
+ * `status` faisait donc lire « Ouverte » sur une file qui ne prenait plus
+ * personne — le commerçant croyait accueillir, et cherchait la panne ailleurs.
+ *
+ * Le libellé DIT LE MOTIF plutôt que « Fermée » tout court : corriger le
+ * mensonge sans nommer sa cause aurait remplacé une énigme par une autre —
+ * une file qu'on n'a jamais fermée et qui s'affiche fermée.
+ */
+const FILE_ACCUEIL_ACTIVITE_COUPEE = {
+  label: "Fermée — activité coupée",
+  ton: "bg-zinc-200 text-k-ink",
+};
+
 export function PastilleFileAccueil({
   status,
+  activiteActive = true,
   className,
 }: {
   status: ReservationQueueStatus;
+  /**
+   * L'activité liée tourne-t-elle ? `true` par défaut, ce qui couvre la file
+   * « Comptoir » — sans activité, rien ne la referme, exactement comme le
+   * `coalesce(…, true)` de la RPC.
+   */
+  activiteActive?: boolean;
   className?: string;
 }) {
-  const { label, ton } = LIBELLE_FILE_ACCUEIL[status];
+  // `fileAccepteEntree` est LE juge, importé et non recopié : c'est lui qui
+  // combine les deux conditions, et il est déjà testé contre la RPC.
+  const { label, ton } =
+    status === "open" && !fileAccepteEntree({ status, activiteActive })
+      ? FILE_ACCUEIL_ACTIVITE_COUPEE
+      : LIBELLE_FILE_ACCUEIL[status];
   return <span className={cn(BASE, ton, className)}>{label}</span>;
 }
 

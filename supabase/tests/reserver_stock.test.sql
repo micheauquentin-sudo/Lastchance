@@ -64,7 +64,7 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ── Fixtures ─────────────────────────────────────────────────
--- A : SERVIE — droit `vitrine` par OCTROI daté vivant (seul chemin ouvert en
+-- A : SERVIE — droits `vitrine` ET `reserver` par OCTROI daté vivant (seul chemin ouvert en
 --     bêta, 20261001120000).
 -- B : VOISINE, servie elle aussi — sans quoi « le voisin ne voit rien » se
 --     confondrait avec « le voisin n'a pas le module ».
@@ -76,13 +76,17 @@ values
   ('5c100000-0000-4000-8000-00000000000b', 'Stock B', 'tap-stock-b',
    'active', 'starter', 'Europe/Paris', 6);
 
+-- `reserver` EN PLUS DE `vitrine` DEPUIS 20261020120000 : `hold_stock_offer` et
+-- `stock_offer_public_state` interrogent désormais la clé du produit. `vitrine`
+-- reste semé parce que la page publique du commerce en dépend.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-values
-  ('5c100000-0000-4000-8000-00000000000a', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days'),
-  ('5c100000-0000-4000-8000-00000000000b', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days');
+select o.id, m.module, 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('5c100000-0000-4000-8000-00000000000a'::uuid),
+    ('5c100000-0000-4000-8000-00000000000b'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('reserver')) as m(module);
 
 -- Les acteurs de comptoir. Le CAISSIER suffit à remettre une unité : c'est un
 -- geste de comptoir, et le vérifier ici évite qu'un durcissement futur ferme la

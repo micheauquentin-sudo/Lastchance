@@ -57,6 +57,14 @@ export type BandePackContext =
  * d'écriture, elle, est en SQL (`set_bande_pack` revérifie l'acteur
  * `owner|editor`).
  *
+ * ── LA GARDE RESTE CELLE DE LA VITRINE, ET NON `bande` (20261020120000) ──
+ *
+ * Même arbitrage que `loadDuoOptions`, et pour les mêmes trois raisons :
+ * choisir un pack de questions est une PRÉPARATION, le verrou payant du salon
+ * est en SQL sur son ouverture (`create_player_lobby` exige `vitrine` ET
+ * `bande`), et cet écran est servi sous `/dashboard/vitrine`. Le raisonnement
+ * complet est sur `gardeEditeurVitrine`.
+ *
  * ── UNE PANNE DE LECTURE REND LE DÉFAUT, PAS UN REFUS ──
  *
  * Motif de `loadDuoOptions` : le commerçant a le droit, il n'a simplement rien

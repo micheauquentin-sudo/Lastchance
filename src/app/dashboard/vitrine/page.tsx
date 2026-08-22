@@ -13,8 +13,12 @@ import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
 import type { ContenuVitrineView } from "@/lib/vitrine";
 import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { OrgLobbyView } from "@/lib/lobby";
+import { construireVerificationVitrine } from "@/lib/activation/vitrine";
+import { carteTuile } from "@/lib/checklist/carte-tuile";
+import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
@@ -140,6 +144,31 @@ export default async function VitrineDashboardPage() {
           BANDE_PACK_DEFAUT,
         ];
 
+  /**
+   * LES NEUF TUILES DE CET ÉCRAN — et elles ne sont TOUTES rendues qu'avec une
+   * adresse. `TUILES_VITRINE` tient l'ordre et les rangs ; la page ne fait que
+   * nommer ses blocs.
+   *
+   * Sans `settings`, le module n'émet que le contrôle `adresse` et la page ne
+   * rend que le bloc « Réglages » : seule la tuile 1 est donc posée, sur le seul
+   * bloc à l'écran. Les huit autres ne sont pas « vertes par défaut », elles
+   * n'existent pas — un rang sans bloc n'aurait rien à numéroter.
+   *
+   * `SommaireVitrine` et `SalonsOuverts` ne portent volontairement PAS de
+   * pastille : le premier est une table des matières, le second ne se peint
+   * qu'avec au moins un salon ouvert. Le motif est écrit en tête de
+   * `TUILES_VITRINE`, et c'est ce qui laisse la suite numérotée aller de 1 à 9
+   * dans l'ordre exact du rendu.
+   */
+  const tuiles = tuilesDuModule(
+    "vitrine",
+    construireVerificationVitrine({
+      settings,
+      cartes,
+      nbFichesDuo: plateauDuo.options.length,
+    }).controles,
+  );
+
   return (
     <div>
       <PageHeader
@@ -154,12 +183,14 @@ export default async function VitrineDashboardPage() {
       </ModuleCapabilityNotice>
 
       <div className="space-y-6">
-        <ReglagesVitrine
-          settings={settings}
-          appUrl={APP_URL}
-          peutEditer={capacites.canEditDraft}
-          peutPublier={capacites.canPublish}
-        />
+        <CarteRepliable {...carteTuile(tuiles, "reglages")}>
+          <ReglagesVitrine
+            settings={settings}
+            appUrl={APP_URL}
+            peutEditer={capacites.canEditDraft}
+            peutPublier={capacites.canPublish}
+          />
+        </CarteRepliable>
 
         {/* LE CATALOGUE N'APPARAÎT QU'APRÈS L'ADRESSE, et c'est le premier pas
             que la base elle-même a dessiné : `vitrine_dashboard_state` rend
@@ -192,15 +223,17 @@ export default async function VitrineDashboardPage() {
                 non « scans » — un rechargement, un retour arrière et un lien
                 partagé comptent tous, et prétendre compter des scans distincts
                 serait faux (voir `page-open-beacon`). */}
-            <Card>
-              <h2>Audience</h2>
-              <p className="mt-2 text-sm text-k-body">
-                <span className="font-black tabular-nums text-k-ink">
-                  {ouvertures}
-                </span>{" "}
-                ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
-              </p>
-            </Card>
+            <CarteRepliable {...carteTuile(tuiles, "audience")}>
+              <Card>
+                <h2>Audience</h2>
+                <p className="mt-2 text-sm text-k-body">
+                  <span className="font-black tabular-nums text-k-ink">
+                    {ouvertures}
+                  </span>{" "}
+                  ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
+                </p>
+              </Card>
+            </CarteRepliable>
 
             {/* LA SUPERVISION DES SALONS — contrepartie du finding E-1. Elle
                 vient JUSTE APRÈS « Audience » parce qu'elle répond à la même
@@ -224,24 +257,28 @@ export default async function VitrineDashboardPage() {
                 un geste urgent : ce n'est pas le cas — une couverture qui baisse
                 ne casse rien, elle referme le sélecteur de langue, et l'écran de
                 traduction le dit dès qu'on l'ouvre. */}
-            <Card>
-              <h2>Traductions (anglais)</h2>
-              <p className="mt-2 text-sm text-k-body">
-                Vos visiteurs étrangers peuvent lire votre carte en anglais.
-                Traduisez vos champs un par un, le français sous les yeux.
-              </p>
-              <Link
-                href="/dashboard/vitrine/traductions"
-                className="mt-3 inline-block text-sm font-bold text-k-orange-text underline underline-offset-2 hover:text-k-ink"
-              >
-                Traduire ma vitrine en anglais →
-              </Link>
-            </Card>
+            <CarteRepliable {...carteTuile(tuiles, "traductions")}>
+              <Card>
+                <h2>Traductions (anglais)</h2>
+                <p className="mt-2 text-sm text-k-body">
+                  Vos visiteurs étrangers peuvent lire votre carte en anglais.
+                  Traduisez vos champs un par un, le français sous les yeux.
+                </p>
+                <Link
+                  href="/dashboard/vitrine/traductions"
+                  className="mt-3 inline-block text-sm font-bold text-k-orange-text underline underline-offset-2 hover:text-k-ink"
+                >
+                  Traduire ma vitrine en anglais →
+                </Link>
+              </Card>
+            </CarteRepliable>
 
-            <ContenusEditeur
-              contenus={contenus}
-              peutEditer={capacites.canEditDraft}
-            />
+            <CarteRepliable {...carteTuile(tuiles, "alaune")}>
+              <ContenusEditeur
+                contenus={contenus}
+                peutEditer={capacites.canEditDraft}
+              />
+            </CarteRepliable>
 
             {/* L'IMPORT EST AVANT L'ÉDITEUR, et c'est l'ordre du geste réel :
                 un commerçant qui arrive avec sa carte dans un document ne veut
@@ -249,12 +286,16 @@ export default async function VitrineDashboardPage() {
                 qu'un import existait. Il ne remplace PAS l'éditeur — les
                 badges, les allergènes et la disponibilité ne s'importent pas —
                 il le remplit. */}
-            <ImportCarte peutEditer={capacites.canEditDraft} />
+            <CarteRepliable {...carteTuile(tuiles, "import")}>
+              <ImportCarte peutEditer={capacites.canEditDraft} />
+            </CarteRepliable>
 
-            <CatalogueEditeur
-              cartes={cartes}
-              peutEditer={capacites.canEditDraft}
-            />
+            <CarteRepliable {...carteTuile(tuiles, "catalogue")}>
+              <CatalogueEditeur
+                cartes={cartes}
+                peutEditer={capacites.canEditDraft}
+              />
+            </CarteRepliable>
 
             {/* LE DUO MIROIR VIENT APRÈS LE CATALOGUE, et pas ailleurs : son
                 plateau se choisit PARMI les fiches de la carte. Le placer plus
@@ -262,31 +303,46 @@ export default async function VitrineDashboardPage() {
                 l'écran n'y aurait affiché qu'une liste vide et une consigne
                 d'aller composer sa carte, c'est-à-dire l'ordre du geste réel à
                 l'envers. */}
-            <DuoEditeur
-              cartes={cartes}
-              plateau={plateauDuo}
-              peutEditer={capacites.canEditDraft}
-            />
+            {/* L'ANCRE `duo-miroir` EST PORTÉE PAR L'ENVELOPPE, plus par la
+                carte : deux `id` identiques dans le même document rendraient le
+                saut du sommaire indéfini, et `CarteRepliable` rouvre le bloc que
+                l'ancre vise — ce que la carte seule ne savait pas faire. */}
+            <CarteRepliable {...carteTuile(tuiles, "duo")}>
+              <DuoEditeur
+                cartes={cartes}
+                plateau={plateauDuo}
+                peutEditer={capacites.canEditDraft}
+              />
+            </CarteRepliable>
 
             {/* LE PORTRAIT DE LA BANDE VIENT APRÈS LE DUO, et n'a PAS la même
                 dépendance : il ne se choisit pas parmi les fiches, il marche
                 sans carte. Il est ici parce que les deux jeux s'ouvrent depuis
                 la même vitrine et se règlent d'un même mouvement — pas parce
                 qu'un ordre de geste l'impose. */}
-            <BandeEditeur
-              pack={packBande}
-              peutEditer={capacites.canEditDraft}
-            />
+            {/* Même remarque d'ancre que pour le Duo. Cette tuile ne porte
+                AUCUN contrôle — le pack a toujours une valeur, il n'existe pas
+                d'état « pas configuré » — et son verdict est donc « complet »
+                pour toujours : elle situe le bloc dans la page, elle ne prétend
+                rien vérifier. */}
+            <CarteRepliable {...carteTuile(tuiles, "bande")}>
+              <BandeEditeur
+                pack={packBande}
+                peutEditer={capacites.canEditDraft}
+              />
+            </CarteRepliable>
 
             {/* LES QR VIENNENT APRÈS LES CARTES : ils les visent. La section
                 n'apparaît qu'avec une adresse posée (`settings` non nul), et
                 elle rappelle elle-même de publier avant d'imprimer. */}
-            <VitrineQrPlanche
-              slug={settings.slug}
-              publiee={settings.published}
-              cartes={cartes}
-              appUrl={APP_URL}
-            />
+            <CarteRepliable {...carteTuile(tuiles, "qr")}>
+              <VitrineQrPlanche
+                slug={settings.slug}
+                publiee={settings.published}
+                cartes={cartes}
+                appUrl={APP_URL}
+              />
+            </CarteRepliable>
           </>
         ) : (
           <Card className="py-10 text-center">

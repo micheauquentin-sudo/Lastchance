@@ -239,6 +239,14 @@ export interface MerchantDetail {
     module: string;
     kind: string;
     source: string;
+    /**
+     * Rendu pour que l'écran puisse RECONNAÎTRE les miroirs d'un octroi
+     * `vitrine` (20261020120000) sans les confondre avec un droit borné à une
+     * ressource, que la migration n'a jamais recopié. Sans cette colonne,
+     * l'avertissement affiché et la révocation exécutée ne pourraient pas
+     * appliquer la même règle.
+     */
+    resource_id: string | null;
     source_reference: string | null;
     purchased_at: string;
     activate_by: string | null;
@@ -300,7 +308,7 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
       db
         .from("organization_module_grants")
         .select(
-          "id, module, kind, source, source_reference, purchased_at, activate_by, starts_at, ends_at, capacity, revoked_at, revoked_reason",
+          "id, module, kind, source, resource_id, source_reference, purchased_at, activate_by, starts_at, ends_at, capacity, revoked_at, revoked_reason",
         )
         .eq("organization_id", id)
         .order("purchased_at", { ascending: false }),

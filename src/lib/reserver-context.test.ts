@@ -20,7 +20,7 @@ const SLOT_ID = "22222222-2222-4222-8222-222222222222";
 
 const { state, makeAdmin } = vi.hoisted(() => {
   const state = {
-    droitVitrine: true,
+    droitReserver: true,
     activityRow: null as Record<string, unknown> | null,
     slots: [] as Array<Record<string, unknown>>,
     vivantes: [] as Array<Record<string, unknown>>,
@@ -64,7 +64,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
     rpcArgs: [] as Array<Record<string, unknown>>,
     pressions: [] as Array<{ parts: string; evenement: string }>,
     reset() {
-      state.droitVitrine = true;
+      state.droitReserver = true;
       state.session = null;
       state.stockOffersStaffState = { state: "ok", offers: [] };
       state.activityRow = {
@@ -81,7 +81,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
           subscription_status: "active",
           trial_ends_at: "2030-01-01T00:00:00Z",
           past_due_since: null,
-          addon_vitrine: true,
+          addon_reserver: true,
           comp_access: false,
           comp_access_until: null,
           timezone: "Indian/Reunion",
@@ -127,7 +127,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
           subscription_status: "active",
           trial_ends_at: "2030-01-01T00:00:00Z",
           past_due_since: null,
-          addon_vitrine: true,
+          addon_reserver: true,
           comp_access: false,
           comp_access_until: null,
           timezone: "Indian/Reunion",
@@ -262,8 +262,8 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/module-acces-public", () => ({
   moduleOuvertAuJoueur: (module: string) => {
-    expect(module).toBe("vitrine");
-    return Promise.resolve(state.droitVitrine);
+    expect(module).toBe("reserver");
+    return Promise.resolve(state.droitReserver);
   },
 }));
 vi.mock("@/lib/player-identity", () => ({
@@ -276,7 +276,7 @@ vi.mock("@/lib/player-identity", () => ({
 }));
 
 import {
-  droitVitrineOuvertPourFile,
+  droitReserverOuvertPourFile,
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
@@ -340,10 +340,10 @@ describe("loadReserverPublicContext", () => {
   });
 
   it("REFUSE — indistinctement — une organisation sans le droit `vitrine`", async () => {
-    state.droitVitrine = false;
+    state.droitReserver = false;
     const sansDroit = await loadReserverPublicContext(ACTIVITY_ID);
 
-    state.droitVitrine = true;
+    state.droitReserver = true;
     state.activityRow = null;
     const inexistante = await loadReserverPublicContext(ACTIVITY_ID);
 
@@ -776,7 +776,7 @@ describe("loadReserverInvitationContext", () => {
   });
 
   it("refuse — de la même façon — une organisation sans le droit `vitrine`", async () => {
-    state.droitVitrine = false;
+    state.droitReserver = false;
     const contexte = await loadReserverInvitationContext(JETON);
     expect(contexte.ok).toBe(false);
   });
@@ -832,7 +832,7 @@ describe("loadReserverQueuePublicContext", () => {
   it("rend le MÊME contexte indisponible sans le droit `vitrine`", async () => {
     // Aucun oracle sur l'état commercial d'un commerce qui n'est pas celui du
     // visiteur : afficher une file EST une capacité de l'offre Vitrine.
-    state.droitVitrine = false;
+    state.droitReserver = false;
     const contexte = await loadReserverQueuePublicContext(QUEUE_ID);
 
     expect(contexte.ok).toBe(false);
@@ -1073,9 +1073,9 @@ describe("lireEtatFilePublic — UNE lecture, partagée par la page et son scrut
   });
 });
 
-describe("droitVitrineOuvertPourFile — la garde que le SCRUTIN oppose", () => {
+describe("droitReserverOuvertPourFile — la garde que le SCRUTIN oppose", () => {
   it("rend `true` quand l'organisation qui porte la file a le droit", async () => {
-    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(true);
+    expect(await droitReserverOuvertPourFile(QUEUE_ID)).toBe(true);
     // La jointure est ÉNUMÉRÉE, comme partout dans ce fichier.
     const lecture = state.selects.at(-1);
     expect(lecture?.table).toBe("reservation_queues");
@@ -1083,13 +1083,13 @@ describe("droitVitrineOuvertPourFile — la garde que le SCRUTIN oppose", () => 
   });
 
   it("rend `false` sans le droit `vitrine`", async () => {
-    state.droitVitrine = false;
-    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+    state.droitReserver = false;
+    expect(await droitReserverOuvertPourFile(QUEUE_ID)).toBe(false);
   });
 
   it("rend `false` sur une file inconnue — le même refus, indistinctement", async () => {
     state.queueRow = null;
-    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+    expect(await droitReserverOuvertPourFile(QUEUE_ID)).toBe(false);
   });
 
   it("rend `false` sur une jointure inter-locataire", async () => {
@@ -1097,7 +1097,7 @@ describe("droitVitrineOuvertPourFile — la garde que le SCRUTIN oppose", () => 
       ...(state.queueRow as Record<string, unknown>),
       organization_id: "99999999-9999-4999-8999-999999999999",
     };
-    expect(await droitVitrineOuvertPourFile(QUEUE_ID)).toBe(false);
+    expect(await droitReserverOuvertPourFile(QUEUE_ID)).toBe(false);
   });
 });
 
@@ -1327,7 +1327,7 @@ describe("loadStockOffersDashboardContext — la garde d'éditeur", () => {
     subscription_status: "active",
     trial_ends_at: "2030-01-01T00:00:00Z",
     past_due_since: null,
-    addon_vitrine: true,
+    addon_reserver: true,
     comp_access: false,
     comp_access_until: null,
     timezone: "Indian/Reunion",

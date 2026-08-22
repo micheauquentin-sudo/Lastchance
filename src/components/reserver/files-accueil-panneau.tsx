@@ -55,8 +55,15 @@ export function FilesAccueilPanneau({
   campagnes = [],
 }: {
   files: ReserverQueueDashboardView[];
-  /** Les activités auxquelles une file peut être rattachée (facultatif). */
-  activites: { id: string; name: string }[];
+  /**
+   * Les activités auxquelles une file peut être rattachée (facultatif).
+   *
+   * `active` n'est pas décoratif : couper une activité REFERME ses files côté
+   * `queue_join`, et la vue d'une file ne porte que son propre `status`. Sans
+   * ce drapeau, la pastille ne pourrait pas dire autre chose qu'« Ouverte »
+   * sur une file qui refuse tout le monde.
+   */
+  activites: { id: string; name: string; active: boolean }[];
   /** Rôle propriétaire ou éditeur : le CRUD des files. La console, elle, est ouverte au caissier. */
   peutEditer: boolean;
   /** Base publique, pour montrer le lien à mettre sur l'affiche. */
@@ -77,8 +84,18 @@ export function FilesAccueilPanneau({
 
   const fileActive = files.find((f) => f.id === selection) ?? null;
 
+  // Une file « Comptoir » n'a pas d'activité, et rien ne la referme : `true`.
+  // Une activité introuvable dans la liste (droit partiel, course de lecture)
+  // vaut `true` elle aussi — on ne peint pas un refus qu'on n'a pas constaté.
+  const activiteActive =
+    fileActive === null || fileActive.activityId === null
+      ? true
+      : (activites.find((a) => a.id === fileActive.activityId)?.active ?? true);
+  const muette =
+    fileActive !== null && fileActive.status === "open" && !activiteActive;
+
   return (
-    <Card className="mt-8">
+    <Card>
       <h2>Files d&apos;accueil</h2>
       <p className="mt-2 text-sm font-semibold text-k-body">
         Sans rendez-vous : le client scanne le QR à l&apos;entrée, voit son rang
@@ -160,7 +177,10 @@ export function FilesAccueilPanneau({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <PastilleFileAccueil status={fileActive.status} />
+                  <PastilleFileAccueil
+                    status={fileActive.status}
+                    activiteActive={activiteActive}
+                  />
                   {peutEditer ? (
                     <Button
                       variant="secondary"
@@ -172,6 +192,28 @@ export function FilesAccueilPanneau({
                   ) : null}
                 </div>
               </div>
+
+              {/* LE MOTIF, EN TOUTES LETTRES ET PAS SEULEMENT DANS LA
+                  PASTILLE. Le commerçant n'a rien fermé lui-même : il a coupé
+                  une ACTIVITÉ, ailleurs sur cette page, et cette file s'est
+                  refermée avec elle. Sans cette phrase, la pastille corrigée
+                  remplacerait une énigme (« pourquoi personne n'entre ? ») par
+                  une autre (« qui a fermé ma file ? »). Le geste de sortie est
+                  nommé : rouvrir l'activité, ou fermer la file pour de bon. */}
+              {muette ? (
+                <p
+                  role="status"
+                  className="mb-4 rounded-xl border-2 border-k-ink bg-amber-100 px-4 py-3 text-sm font-bold text-k-ink"
+                >
+                  L&apos;activité «&nbsp;{fileActive.activityName}&nbsp;» est
+                  coupée : cette file n&apos;accepte plus aucune inscription,
+                  même si vous l&apos;avez laissée sur «&nbsp;Ouverte&nbsp;».
+                  Rouvrez l&apos;activité dans votre agenda ci-dessus, ou passez
+                  la file en «&nbsp;Fermée&nbsp;» pour que ce soit dit à vos
+                  clients. Ceux qui attendent déjà peuvent toujours être
+                  appelés.
+                </p>
+              ) : null}
 
               {peutEditer && reglagesOuverts ? (
                 <ReglagesFileForm

@@ -10,7 +10,7 @@ import { RATE_LIMITS } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { gardeEditeurVitrine } from "@/lib/vitrine-context";
-import { mapOrgLobbies, type OrgLobbyView } from "@/lib/lobby";
+import { mapOrgLobbies, type LobbyKind, type OrgLobbyView } from "@/lib/lobby";
 import {
   lobbyJoinCodeSchema,
   orgLobbiesSchema,
@@ -183,6 +183,12 @@ type LobbyOrganization = Pick<
   | "trial_ends_at"
   | "past_due_since"
   | "addon_vitrine"
+  // Les deux colonnes des JEUX, exigées par `tsc` dès que `moduleOuvertAuJoueur`
+  // est appelé sur `duo | bande` : `ChampsModule` réclame la colonne du module
+  // qu'on interroge, ce qui est exactement la garde contre la colonne jamais
+  // chargée qui se lit `undefined` et se comporte comme `false`.
+  | "addon_duo"
+  | "addon_bande"
   | "comp_access"
   | "comp_access_until"
 >;
@@ -194,7 +200,7 @@ type LobbyOrganization = Pick<
  * c'est faire sortir des données du locataire sans destinataire.
  */
 const ORG_COLUMNS =
-  "id, subscription_status, trial_ends_at, past_due_since, addon_vitrine, comp_access, comp_access_until";
+  "id, subscription_status, trial_ends_at, past_due_since, addon_vitrine, addon_duo, addon_bande, comp_access, comp_access_until";
 
 interface VitrineRow {
   organization_id: string;
@@ -207,10 +213,26 @@ interface VitrineRow {
  * ── UN SEUL VERDICT, QUATRE CAUSES ──
  *
  * Adresse inconnue, jointure inter-locataire incohérente, droit `vitrine`
- * fermé, transport en panne : `null` dans les quatre cas. Les distinguer aurait
- * donné à n'importe qui un oracle — sur les adresses qui existent d'abord, sur
- * l'état COMMERCIAL d'un tiers ensuite, ce qui est la fuite que
- * `loadReserverActivityContext` nomme déjà pour son propre chemin.
+ * fermé, droit du JEU fermé, transport en panne : `null` dans les cinq cas. Les
+ * distinguer aurait donné à n'importe qui un oracle — sur les adresses qui
+ * existent d'abord, sur l'état COMMERCIAL d'un tiers ensuite, ce qui est la
+ * fuite que `loadReserverActivityContext` nomme déjà pour son propre chemin.
+ *
+ * ── DEUX DROITS, ET NON PLUS UN (20261020120000) ──
+ *
+ * `create_player_lobby` exigeait `vitrine` ; il exige désormais `vitrine` ET la
+ * clé du jeu demandé, `duo` ou `bande` selon `p_kind`. Ce chargeur POSE LA MÊME
+ * QUESTION, et c'est le seul état correct pour lui : il n'est pas la défense —
+ * la RPC l'est — mais il doit refuser exactement ce qu'elle refuse, sinon il
+ * laisse passer un appel dont il a déjà la réponse.
+ *
+ * D'où le paramètre `jeu`, qui n'est pas un confort : sans lui, la fonction ne
+ * PEUT pas poser la seconde question. Il vient de l'entrée validée de
+ * `createLobby` (`LobbyKind`, borné par Zod), jamais d'une chaîne libre.
+ *
+ * Le refus reste indistinct : la RPC répond déjà `unavailable` dans ce cas et
+ * l'action rend le même `REFUS_INDISPONIBLE`. Ce qui change est qu'aucune
+ * écriture n'est tentée pour un droit qu'on sait fermé.
  *
  * ── LA GARDE INTER-TENANT EST OBLIGATOIRE ICI ──
  *
@@ -221,6 +243,7 @@ interface VitrineRow {
  */
 export async function resoudreCommerceLobby(
   slug: string,
+  jeu: LobbyKind,
 ): Promise<{ organizationId: string } | null> {
   const admin = createAdminClient();
   // `published` EXIGÉ, comme tout ce que la Vitrine sert au public : un salon
@@ -243,6 +266,12 @@ export async function resoudreCommerceLobby(
     return null;
   }
   if (!(await moduleOuvertAuJoueur("vitrine", organization))) return null;
+  // LA CLÉ DU JEU, ensuite et séparément — miroir du `case p_kind` de
+  // `create_player_lobby`. La seconde lecture d'octrois n'est payée que par les
+  // organisations que la première a déjà laissées passer et que celle-ci
+  // refusera : le cas courant, `vitrine` et le jeu tous deux ouverts par la
+  // colonne, ne coûte aucune requête (voir `moduleOuvertAuJoueur`).
+  if (!(await moduleOuvertAuJoueur(jeu, organization))) return null;
 
   return { organizationId: organization.id };
 }

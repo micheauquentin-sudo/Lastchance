@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ADMIN_ROLES, type AdminRole } from "@/types/admin";
 import { can, type Permission } from "@/lib/admin/rbac";
-import { INDEX_RECURRENT_UNIQUE } from "@/lib/admin/module-grants";
+import {
+  INDEX_RECURRENT_UNIQUE,
+  type OctroiCorrele,
+} from "@/lib/admin/module-grants";
 import { formatDate, type ActionResult } from "@/lib/utils";
 
 // ────────────────────────────────────────────────────────────
@@ -162,6 +165,11 @@ const { state, makeDb, JOB_ID, ENTRY_ID, GRANT_ID } = vi.hoisted(() => {
      * refus. `null` = la ligne a quitté le prédicat entre-temps.
      */
     grantBloquant: null as { starts_at: string | null; source: string } | null,
+    /**
+     * Le relevé des octrois de l'organisation, tel que le lit la révocation :
+     * elle y cherche sa cible ET les miroirs posés par `20261020120000`.
+     */
+    grants: [] as OctroiCorrele[],
 
     jobInsertError: null as string | null,
     /** Erreur d'écriture du journal, indexée par le statut qu'on tentait d'y poser. */
@@ -198,6 +206,7 @@ const { state, makeDb, JOB_ID, ENTRY_ID, GRANT_ID } = vi.hoisted(() => {
       state.membershipCountError = null;
       state.grantInsertError = null;
       state.grantBloquant = null;
+      state.grants = [];
       state.jobInsertError = null;
       state.jobUpdateErrors = {};
       state.auditInsertError = null;
@@ -317,9 +326,15 @@ const { state, makeDb, JOB_ID, ENTRY_ID, GRANT_ID } = vi.hoisted(() => {
               : { data: state.members.map((user_id) => ({ user_id })), error: null };
           }
           if (table === "organization_module_grants") {
-            // La relecture qui suit un refus de cumul : elle rend l'octroi
-            // récurrent vivant, ou rien.
-            return { data: state.grantBloquant, error: null };
+            // DEUX lectures distinctes, séparées par le filtre `module` :
+            //   * avec `module` — la relecture qui suit un refus de cumul, qui
+            //     rend l'octroi récurrent vivant, ou rien ;
+            //   * sans — le relevé de l'organisation que lit la révocation,
+            //     où elle cherche sa cible et les miroirs de `vitrine`.
+            if (call.filters.module !== undefined) {
+              return { data: state.grantBloquant, error: null };
+            }
+            return { data: state.grants, error: null };
           }
           if (table === "admin_users") {
             if (state.adminsError) {
@@ -2351,5 +2366,187 @@ describe("grantMerchantModule — le cumul récurrent se dit, il ne s'avale pas"
 
     expect(res).toEqual({ ok: false, error: "Échec de la création de l'octroi." });
     expect(grantLookups()).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * 7. revokeMerchantModuleGrant — COUPER, c'est couper les quatre
+ *
+ * `20261020120000` a détaché `reserver`, `duo` et `bande` de `vitrine` en
+ * posant, pour chaque octroi `vitrine`, trois octrois MIROIRS aux mêmes
+ * bornes. La révocation, elle, ne connaissait qu'un `grantId` : l'opérateur
+ * qui coupait l'accès d'un commerçant — impayé, abus, fin d'essai — fermait la
+ * Vitrine et les deux salons, et laissait **Réserver vivant**. Les douze RPC
+ * répondaient encore, `/dashboard/reservations` restait ouvert, et le
+ * commerçant révoqué continuait de prendre des réservations jusqu'à
+ * l'échéance — six mois plus tard.
+ *
+ * La migration avait pourtant tenu ce raisonnement pour Stripe : elle LÈVE
+ * plutôt que de recopier un octroi Stripe, au motif que « trois miroirs de
+ * back-office qu'aucun webhook ne connaît survivraient à la fin de
+ * l'abonnement ». Le back-office, où le geste de révocation existe, avait été
+ * oublié.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("revokeMerchantModuleGrant — un geste ferme le groupe entier", () => {
+  const DEBUT = "2026-03-12T09:00:00.000Z";
+  const FIN = "2026-09-12T09:00:00.000Z";
+  const MIROIR_RESERVER = "00000000-0000-4000-8000-0000000000f1";
+  const MIROIR_DUO = "00000000-0000-4000-8000-0000000000f2";
+  const MIROIR_BANDE = "00000000-0000-4000-8000-0000000000f3";
+  const MOTIF = "Impayé : accès coupé.";
+
+  function octroi(over: Partial<OctroiCorrele> & { id: string }): OctroiCorrele {
+    return {
+      module: "vitrine",
+      kind: "pass",
+      source: "backoffice",
+      resource_id: null,
+      starts_at: DEBUT,
+      ends_at: FIN,
+      revoked_at: null,
+      ...over,
+    };
+  }
+
+  /** La photo d'après-migration : un octroi voulu, trois miroirs subis. */
+  function vitrineEtSesMiroirs(): OctroiCorrele[] {
+    return [
+      octroi({ id: GRANT_ID }),
+      octroi({ id: MIROIR_RESERVER, module: "reserver" }),
+      octroi({ id: MIROIR_DUO, module: "duo" }),
+      octroi({ id: MIROIR_BANDE, module: "bande" }),
+    ];
+  }
+
+  function revokeForm(grantId = GRANT_ID): FormData {
+    return form({ organizationId: ORG_ID, grantId, reason: MOTIF });
+  }
+
+  function revocation(): DbCall {
+    const updates = callsTo("organization_module_grants", "update");
+    expect(updates, "une seule écriture de révocation").toHaveLength(1);
+    return updates[0];
+  }
+
+  it("révoquer « Vitrine publique » ferme AUSSI les trois miroirs", async () => {
+    // LE POINT QUI COMPTE. ROUGE SI la révocation redevient un `.eq("id", …)` :
+    // Réserver resterait vivant sous un commerçant coupé.
+    state.grants = vitrineEtSesMiroirs();
+
+    const res = await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    const update = revocation();
+    expect(update.filters.id).toEqual([
+      GRANT_ID,
+      MIROIR_RESERVER,
+      MIROIR_DUO,
+      MIROIR_BANDE,
+    ]);
+    expect(update.payload).toMatchObject({ revoked_reason: MOTIF });
+    // L'écriture reste scopée, et ne réécrit pas un octroi déjà révoqué entre
+    // la lecture et l'écriture : son motif et sa date sont les vrais.
+    expect(update.filters).toMatchObject({
+      organization_id: ORG_ID,
+      revoked_at: null,
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith(`/admin/merchants/${ORG_ID}`);
+  });
+
+  it("l'audit nomme les QUATRE lignes tombées, sous le même motif", async () => {
+    // ROUGE SI : la trace ne garde que la ligne désignée. Trois droits payants
+    // se fermeraient sans qu'aucun journal ne puisse le dire.
+    state.grants = vitrineEtSesMiroirs();
+
+    await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(auditEntry("merchant.module_grant.revoke").metadata).toMatchObject({
+      // La ligne DÉSIGNÉE reste à sa place : les relectures existantes ne
+      // changent pas de sens.
+      grant_id: GRANT_ID,
+      module: "vitrine",
+      grant_ids: [GRANT_ID, MIROIR_RESERVER, MIROIR_DUO, MIROIR_BANDE],
+      modules: ["vitrine", "reserver", "duo", "bande"],
+      reason: MOTIF,
+    });
+  });
+
+  it("un octroi d'un AUTRE module ne ferme que lui", async () => {
+    // ROUGE SI : le groupement déborde. Une révocation qui emporterait des
+    // droits voisins serait la sur-révocation symétrique du défaut corrigé.
+    state.grants = [
+      octroi({ id: GRANT_ID, module: "hunts" }),
+      octroi({ id: MIROIR_RESERVER, module: "reserver" }),
+      octroi({ id: MIROIR_DUO, module: "duo" }),
+    ];
+
+    const res = await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(res).toEqual({ ok: true, data: undefined });
+    expect(revocation().filters.id).toEqual([GRANT_ID]);
+    expect(auditEntry("merchant.module_grant.revoke").metadata).toMatchObject({
+      grant_ids: [GRANT_ID],
+      modules: ["hunts"],
+    });
+  });
+
+  it("un miroir DÉJÀ révoqué n'est pas repris — son motif d'origine survit", async () => {
+    state.grants = [
+      octroi({ id: GRANT_ID }),
+      octroi({ id: MIROIR_RESERVER, module: "reserver" }),
+      octroi({
+        id: MIROIR_DUO,
+        module: "duo",
+        revoked_at: "2026-04-01T10:00:00.000Z",
+      }),
+      // Bornes différentes : ce n'est pas un miroir de CET octroi, mais un
+      // droit vendu à part. La clé de corrélation est
+      // (organisation, kind, starts_at, ends_at) — celle de la migration.
+      octroi({ id: MIROIR_BANDE, module: "bande", starts_at: FIN, ends_at: null }),
+    ];
+
+    await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(revocation().filters.id).toEqual([GRANT_ID, MIROIR_RESERVER]);
+  });
+
+  it("la lecture est scopée : l'octroi d'un voisin reste introuvable", async () => {
+    // ROUGE SI : la lecture perd son `.eq("organization_id", …)`. Elle
+    // deviendrait une sonde d'existence, et pire, la révocation grouperait
+    // depuis le relevé d'un autre commerçant.
+    state.grants = [];
+
+    const res = await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(res).toEqual({ ok: false, error: "Octroi introuvable." });
+    expect(callsTo("organization_module_grants", "select")[0].filters).toMatchObject(
+      { organization_id: ORG_ID },
+    );
+    expect(callsTo("organization_module_grants", "update")).toHaveLength(0);
+  });
+
+  it("un octroi Stripe reste hors de portée, miroirs ou non", async () => {
+    state.grants = [octroi({ id: GRANT_ID, source: "stripe" })];
+
+    const res = await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(res).toEqual({
+      ok: false,
+      error: "Cet octroi vient de Stripe : il se révoque depuis Stripe, pas ici.",
+    });
+    expect(callsTo("organization_module_grants", "update")).toHaveLength(0);
+  });
+
+  it("un octroi déjà révoqué se refuse, sans toucher ses miroirs", async () => {
+    state.grants = [
+      octroi({ id: GRANT_ID, revoked_at: "2026-04-01T10:00:00.000Z" }),
+      octroi({ id: MIROIR_RESERVER, module: "reserver" }),
+    ];
+
+    const res = await run("revokeMerchantModuleGrant", revokeForm());
+
+    expect(res).toEqual({ ok: false, error: "Cet octroi est déjà révoqué." });
+    expect(callsTo("organization_module_grants", "update")).toHaveLength(0);
   });
 });

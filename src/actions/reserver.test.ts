@@ -192,11 +192,11 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     emailLeve: false,
     taches: [] as Array<Promise<unknown>>,
     role: "owner" as string | null,
-    orgAddonVitrine: true,
+    orgAddonReserver: true,
     /** Le droit `vitrine` de l'organisation qui PORTE la file scrutée. */
-    droitVitrineFile: true,
+    droitReserverFile: true,
     /** Combien de fois le scrutin a résolu ce droit — une lecture se compte. */
-    droitVitrineFileAppels: 0,
+    droitReserverFileAppels: 0,
     evenementsSecurite: [] as string[],
     rlsWrites: [] as Array<{ table: string; op: string; values: Record<string, unknown>; filters: Record<string, unknown> }>,
     rlsError: null as { message: string; code?: string } | null,
@@ -345,9 +345,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.emailLeve = false;
       state.taches = [];
       state.role = "owner";
-      state.orgAddonVitrine = true;
-      state.droitVitrineFile = true;
-      state.droitVitrineFileAppels = 0;
+      state.orgAddonReserver = true;
+      state.droitReserverFile = true;
+      state.droitReserverFileAppels = 0;
       state.evenementsSecurite = [];
       state.rlsWrites = [];
       state.rlsError = null;
@@ -595,13 +595,13 @@ vi.mock("@/lib/reserver-context", async (importOriginal) => {
         empreinte ? state.queuePublicResponse : { state: "not_in_queue" },
       );
     },
-    // La garde vitrine du scrutin : sa lecture réelle (jointure + garde
+    // La garde du droit `reserver` opposée par le scrutin : sa lecture réelle (jointure + garde
     // inter-tenant + `moduleOuvertAuJoueur`) a ses tests dans
     // `reserver-context.test.ts`. Ce que l'action doit tenir, c'est QUAND elle
     // l'appelle — et le compteur ci-dessous l'atteste.
-    droitVitrineOuvertPourFile: () => {
-      state.droitVitrineFileAppels += 1;
-      return Promise.resolve(state.droitVitrineFile);
+    droitReserverOuvertPourFile: () => {
+      state.droitReserverFileAppels += 1;
+      return Promise.resolve(state.droitReserverFile);
     },
     // La lecture d'état d'une offre de stock passe par le MÊME lecteur partagé
     // que la page (motif `lireEtatFilePublic`). Ce faux ne rend que ce que la
@@ -670,7 +670,7 @@ vi.mock("@/lib/auth", () => ({
             past_due_since: null,
             comp_access: false,
             comp_access_until: null,
-            addon_vitrine: state.orgAddonVitrine,
+            addon_reserver: state.orgAddonReserver,
             live_module_grants: [],
           }
         : null,
@@ -1150,7 +1150,7 @@ describe("cancelReservationStaff — le commerçant libère une place", () => {
     // Contrairement au check-in, qui l'exclut délibérément : ici l'écran qui
     // porte le bouton est lui-même derrière le droit, donc refuser n'abandonne
     // personne qui voyait le bouton.
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await cancelReservationStaff(
       null,
       formData({ reservationId: RESERVATION_ID }),
@@ -1215,7 +1215,7 @@ describe("checkinReservation — l'acteur vient de la session", () => {
   it("N'EXIGE PAS le droit `vitrine` : honorer une arrivée déjà confirmée reste possible", async () => {
     // La sanction d'un abonnement expiré ne doit pas tomber sur des clients
     // venus, confirmés, présents au comptoir.
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await checkinReservation(null, formData({ code: "ABCD2345" }));
     expect(resultat.ok).toBe(true);
   });
@@ -1261,7 +1261,7 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
   });
 
   it("REFUSE sans le droit `vitrine`, même à un propriétaire", async () => {
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await createReserverActivity(null, formData({ name: "Atelier" }));
     expect(resultat.ok).toBe(false);
     expect(state.rlsWrites).toHaveLength(0);
@@ -1957,7 +1957,7 @@ describe("createInvitation — le clair, une seule fois", () => {
   });
 
   it("REFUSE sans le droit `vitrine`", async () => {
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await createInvitation(
       null,
       formData({ label: "Habitués", activityId: ACTIVITY_ID, maxUses: "5" }),
@@ -2202,7 +2202,7 @@ describe("comptoir de la file — l'acteur vient de la SESSION", () => {
     // Motif `checkinReservation`, et l'inverse de `cancelReservationStaff` :
     // refuser d'appeler le suivant laisserait le commerçant devant douze
     // personnes debout, sans aucun geste. La sanction tomberait sur elles.
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await queueCallNext(null, formData({ queueId: QUEUE_ID }));
 
     expect(resultat.ok).toBe(true);
@@ -2315,13 +2315,13 @@ describe("scrutin de la file", () => {
   it("getQueuePublicState laisse passer `in_queue` SANS résoudre le droit vitrine", async () => {
     // Quelqu'un qui attend physiquement doit voir son appel, abonnement expiré
     // ou non : la sanction ne tombe pas sur lui (motif `queueCallNext`).
-    state.droitVitrineFile = false;
+    state.droitReserverFile = false;
     const etat = await getQueuePublicState({ queueId: QUEUE_ID });
 
     expect(etat?.state).toBe("in_queue");
     expect(etat?.position).toBe(2);
     // Et la lecture du droit n'est même pas payée sur cette branche.
-    expect(state.droitVitrineFileAppels).toBe(0);
+    expect(state.droitReserverFileAppels).toBe(0);
   });
 
   it("getQueuePublicState rend `unavailable` sur `not_in_queue` quand le droit vitrine est fermé", async () => {
@@ -2329,11 +2329,11 @@ describe("scrutin de la file", () => {
     // et le nombre de personnes en attente à n'importe qui — c'est-à-dire
     // l'oracle sur l'état commercial d'un tiers que la PAGE refuse d'être.
     state.empreinte = null;
-    state.droitVitrineFile = false;
+    state.droitReserverFile = false;
 
     const etat = await getQueuePublicState({ queueId: QUEUE_ID });
 
-    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(state.droitReserverFileAppels).toBe(1);
     expect(etat?.state).toBe("unavailable");
     // INDISTINGUABLE d'une file inexistante : rien du document n'a fuité.
     expect(etat?.queueName).toBeNull();
@@ -2345,7 +2345,7 @@ describe("scrutin de la file", () => {
     state.empreinte = null;
     const etat = await getQueuePublicState({ queueId: QUEUE_ID });
 
-    expect(state.droitVitrineFileAppels).toBe(1);
+    expect(state.droitReserverFileAppels).toBe(1);
     expect(etat?.state).toBe("not_in_queue");
   });
 });
@@ -2392,7 +2392,7 @@ describe("files d'accueil — configuration", () => {
   });
 
   it("REFUSE sans le droit `vitrine`", async () => {
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     const resultat = await createReserverQueue(
       null,
       formData({ name: "Comptoir", maxLiveEntries: "50" }),
@@ -2993,7 +2993,7 @@ describe("createStockOffer / updateStockOffer — le panneau du commerçant", ()
     state.role = "cashier";
     expect((await createStockOffer(null, formData(champs))).ok).toBe(false);
     state.role = "owner";
-    state.orgAddonVitrine = false;
+    state.orgAddonReserver = false;
     expect((await createStockOffer(null, formData(champs))).ok).toBe(false);
     expect(state.rlsWrites).toHaveLength(0);
   });
