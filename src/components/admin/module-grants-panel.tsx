@@ -9,6 +9,7 @@ import {
   estVivant,
   LIBELLE_ETAT,
   LIBELLE_MODULE,
+  miroirsDeVitrine,
   type EtatOctroi,
 } from "@/lib/admin/module-grants";
 import { GRANTABLE_MODULES } from "@/lib/subscription";
@@ -24,6 +25,8 @@ export interface OctroiLigne {
   module: string;
   kind: string;
   source: string;
+  /** Distingue un miroir de `vitrine` d'un droit borné à une ressource. */
+  resource_id: string | null;
   source_reference: string | null;
   purchased_at: string;
   activate_by: string | null;
@@ -144,7 +147,16 @@ export function ModuleGrantsPanel({
                       {LIBELLE_ETAT[etat]}
                     </span>
                     {!g.revoked_at && g.source !== "stripe" && (
-                      <RevokeForm organizationId={organizationId} grantId={g.id} />
+                      <RevokeForm
+                        organizationId={organizationId}
+                        grantId={g.id}
+                        // MÊME RELEVÉ QUE LE SERVEUR. L'action révoque le
+                        // groupe rendu par `miroirsDeVitrine` : le lui faire
+                        // recalculer ici sur les mêmes lignes est ce qui
+                        // garantit que l'avertissement nomme exactement ce qui
+                        // va tomber, ni plus ni moins.
+                        aussi={miroirsDeVitrine(g, grants)}
+                      />
                     )}
                   </div>
                 </div>
@@ -272,12 +284,24 @@ export function ModuleGrantsPanel({
   );
 }
 
+/**
+ * Le bouton de révocation, et l'AVERTISSEMENT qui va avec.
+ *
+ * Un octroi `vitrine` traîne trois octrois miroirs (`reserver`, `duo`,
+ * `bande`) que l'opérateur n'a jamais créés — `20261020120000` les a posés. Le
+ * serveur les révoque avec lui, sans quoi un commerçant coupé continuerait de
+ * prendre des réservations. Mais un geste qui ferme silencieusement quatre
+ * droits quand on en désignait un serait le symétrique du défaut corrigé : la
+ * liste est donc NOMMÉE, au moment où l'opérateur s'apprête à confirmer.
+ */
 function RevokeForm({
   organizationId,
   grantId,
+  aussi,
 }: {
   organizationId: string;
   grantId: string;
+  aussi: OctroiLigne[];
 }) {
   const [ouvert, setOuvert] = useState(false);
   const { state, pending, onSubmit } = useActionForm(
@@ -298,33 +322,44 @@ function RevokeForm({
         onClick={() => setOuvert(true)}
         className="text-xs text-zinc-400 underline underline-offset-2 hover:text-red-300"
       >
-        Révoquer
+        {aussi.length > 0 ? `Révoquer (${aussi.length + 1} droits)` : "Révoquer"}
       </button>
     );
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex items-center gap-1.5">
-      <input type="hidden" name="organizationId" value={organizationId} />
-      <input type="hidden" name="grantId" value={grantId} />
-      <input
-        name="reason"
-        required
-        minLength={3}
-        maxLength={300}
-        placeholder="Motif (obligatoire)"
-        aria-label="Motif de révocation"
-        className="w-44 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white"
-      />
-      <button
-        disabled={pending}
-        className="rounded-lg bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 ring-1 ring-inset ring-red-500/30 disabled:opacity-60"
-      >
-        {pending ? "…" : "Confirmer"}
-      </button>
-      {state && !state.ok && (
-        <span className="text-xs text-red-400">{state.error}</span>
+    <div className="flex flex-col items-end gap-1">
+      {aussi.length > 0 && (
+        <p className="max-w-xs text-right text-xs text-amber-300">
+          Ferme aussi, aux mêmes dates et sous le même motif :{" "}
+          <strong className="font-medium">
+            {aussi.map((m) => LIBELLE_MODULE[m.module] ?? m.module).join(", ")}
+          </strong>
+          .
+        </p>
       )}
-    </form>
+      <form onSubmit={onSubmit} className="flex items-center gap-1.5">
+        <input type="hidden" name="organizationId" value={organizationId} />
+        <input type="hidden" name="grantId" value={grantId} />
+        <input
+          name="reason"
+          required
+          minLength={3}
+          maxLength={300}
+          placeholder="Motif (obligatoire)"
+          aria-label="Motif de révocation"
+          className="w-44 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white"
+        />
+        <button
+          disabled={pending}
+          className="rounded-lg bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-300 ring-1 ring-inset ring-red-500/30 disabled:opacity-60"
+        >
+          {pending ? "…" : "Confirmer"}
+        </button>
+        {state && !state.ok && (
+          <span className="text-xs text-red-400">{state.error}</span>
+        )}
+      </form>
+    </div>
   );
 }

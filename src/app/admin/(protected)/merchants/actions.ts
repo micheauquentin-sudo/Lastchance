@@ -9,7 +9,9 @@ import {
   calculerFenetres,
   INDEX_RECURRENT_UNIQUE,
   messageCumulRecurrent,
+  miroirsDeVitrine,
   violeContrainte,
+  type OctroiCorrele,
 } from "@/lib/admin/module-grants";
 import {
   addNoteSchema,
@@ -1512,6 +1514,16 @@ export async function grantMerchantModule(
 /**
  * Révoque un octroi. La ligne est CONSERVÉE — « les données et exports
  * restent lisibles » (cahier §2) — et cesse simplement d'être vivante.
+ *
+ * ── UN GESTE, UN GROUPE (20261020120000) ──
+ *
+ * Un octroi `vitrine` porte depuis cette migration trois octrois MIROIRS
+ * (`reserver`, `duo`, `bande`) aux mêmes bornes, que l'opérateur n'a jamais
+ * créés. Révoquer par `grantId` seul refermait la Vitrine et les deux salons
+ * en laissant **Réserver vivant** : douze RPC qui répondent encore et un
+ * commerçant coupé qui continue de prendre des réservations. On révoque donc
+ * le groupe, d'un seul `update`, sous un seul motif — et le panneau annonce à
+ * l'opérateur, avant qu'il confirme, exactement ce qui va tomber avec.
  */
 export async function revokeMerchantModuleGrant(
   formData: FormData,
@@ -1536,13 +1548,18 @@ export async function revokeMerchantModuleGrant(
   const db = createAdminBackofficeClient();
   // La lecture est SCOPÉE à l'organisation, et pas seulement l'écriture : sans
   // cela, un identifiant d'octroi appartenant à un autre commerçant serait lu
-  // ici puis refusé plus loin, ce qui en ferait une sonde d'existence.
-  const { data: avant } = await db
+  // ici puis refusé plus loin, ce qui en ferait une sonde d'existence. La cible
+  // est cherchée DANS ce relevé — un `grantId` étranger n'y figure pas et rend
+  // « introuvable », exactement comme avant.
+  //
+  // UNE SEULE LECTURE pour la cible ET ses miroirs : deux requêtes donneraient
+  // deux photos, et le groupe révoqué pourrait ne pas être celui qui a été lu.
+  const { data: releve } = await db
     .from("organization_module_grants")
-    .select("id, module, source, revoked_at")
-    .eq("id", grantId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
+    .select("id, module, kind, source, resource_id, starts_at, ends_at, revoked_at")
+    .eq("organization_id", organizationId);
+  const octrois = (releve as OctroiCorrele[] | null) ?? [];
+  const avant = octrois.find((ligne) => ligne.id === grantId);
   if (!avant) return fail("Octroi introuvable.");
   if (avant.revoked_at) return fail("Cet octroi est déjà révoqué.");
   // Un octroi né d'un paiement Stripe ne se révoque pas à la main : le
@@ -1554,11 +1571,19 @@ export async function revokeMerchantModuleGrant(
     );
   }
 
+  // Le groupe : la cible d'abord, puis ses miroirs éventuels. Hors `vitrine`,
+  // `miroirsDeVitrine` rend un tableau vide et le geste reste ce qu'il était.
+  const groupe = [avant, ...miroirsDeVitrine(avant, octrois)];
+  const ids = groupe.map((ligne) => ligne.id);
+
   const { error } = await db
     .from("organization_module_grants")
     .update({ revoked_at: new Date().toISOString(), revoked_reason: reason })
-    .eq("id", grantId)
-    .eq("organization_id", organizationId);
+    .in("id", ids)
+    .eq("organization_id", organizationId)
+    // Une révocation concurrente arrivée entre la lecture et l'écriture a posé
+    // SON motif et SA date : les écraser effacerait la vraie coupure.
+    .is("revoked_at", null);
   if (error) return fail("Échec de la révocation.");
 
   await logAdminAction({
@@ -1566,7 +1591,18 @@ export async function revokeMerchantModuleGrant(
     action: "merchant.module_grant.revoke",
     targetType: "organization",
     targetId: organizationId,
-    metadata: { grant_id: grantId, module: avant.module, reason },
+    // `grant_id` et `module` désignent toujours la ligne DÉSIGNÉE — les
+    // relectures existantes ne changent pas de sens. `grant_ids` et `modules`
+    // disent le groupe entier : si quatre droits tombent, les quatre sont
+    // traçables, sous le même motif et dans la même entrée, parce que c'est UN
+    // seul geste d'opérateur et non quatre.
+    metadata: {
+      grant_id: grantId,
+      module: avant.module,
+      grant_ids: ids,
+      modules: groupe.map((ligne) => ligne.module),
+      reason,
+    },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };

@@ -8,9 +8,12 @@ import {
   LIBELLE_ETAT,
   LIBELLE_MODULE,
   messageCumulRecurrent,
+  miroirsDeVitrine,
+  MODULES_MIROIRS_VITRINE,
   ouvreLeModule,
   violeContrainte,
   type EtatOctroi,
+  type OctroiCorrele,
 } from "./module-grants";
 import { formatDate } from "@/lib/utils";
 import { GRANTABLE_MODULES } from "@/lib/subscription";
@@ -365,5 +368,122 @@ describe("messageCumulRecurrent — dire le refus, l'obstacle et la sortie", () 
     expect(messageCumulRecurrent("module_inconnu", null)).toContain(
       "« module_inconnu »",
     );
+  });
+});
+
+describe("miroirsDeVitrine — ce qu'un seul geste doit refermer", () => {
+  const DEBUT = "2026-03-12T09:00:00.000Z";
+  const FIN = "2026-09-12T09:00:00.000Z";
+
+  function octroi(over: Partial<OctroiCorrele> & { id: string }): OctroiCorrele {
+    return {
+      module: "vitrine",
+      kind: "pass",
+      source: "backoffice",
+      resource_id: null,
+      starts_at: DEBUT,
+      ends_at: FIN,
+      revoked_at: null,
+      ...over,
+    };
+  }
+
+  const CIBLE = octroi({ id: "cible" });
+  const MIROIRS = [
+    octroi({ id: "r", module: "reserver" }),
+    octroi({ id: "d", module: "duo" }),
+    octroi({ id: "b", module: "bande" }),
+  ];
+
+  function ids(cible: OctroiCorrele, tous: OctroiCorrele[]): string[] {
+    return miroirsDeVitrine(cible, tous).map((l) => l.id);
+  }
+
+  it("rend les trois miroirs posés par la migration, jamais la cible", () => {
+    // ROUGE SI : la corrélation change de clé. Le back-office ne révoque que
+    // par `grantId` — sans ces trois lignes, couper « Vitrine publique »
+    // laisserait Réserver vivant sous un commerçant révoqué.
+    expect(ids(CIBLE, [CIBLE, ...MIROIRS])).toEqual(["r", "d", "b"]);
+  });
+
+  it("DEUX BORNES NULLES SONT ÉGALES — la leçon L17", () => {
+    // Un droit récurrent n'a pas de terme, et ses miroirs non plus. Comparer
+    // `null` par égalité stricte de dates les rendrait tous distincts, et le
+    // groupement ne marcherait que pour les pass.
+    const cible = octroi({ id: "cible", kind: "recurring", ends_at: null });
+    const miroir = octroi({
+      id: "r",
+      module: "reserver",
+      kind: "recurring",
+      ends_at: null,
+    });
+    expect(ids(cible, [cible, miroir])).toEqual(["r"]);
+  });
+
+  it("le même instant écrit autrement reste le même instant", () => {
+    // `+00:00` et `Z`, millisecondes présentes ou non : PostgREST peut rendre
+    // l'une ou l'autre écriture selon la colonne et la version.
+    const cible = octroi({ id: "cible", starts_at: "2026-03-12T09:00:00+00:00" });
+    const miroir = octroi({ id: "r", module: "reserver", starts_at: DEBUT });
+    expect(ids(cible, [cible, miroir])).toEqual(["r"]);
+  });
+
+  it("ne groupe RIEN quand la cible n'est pas `vitrine`", () => {
+    // La révocation d'un module quelconque doit rester ce qu'elle était : une
+    // ligne, une coupure.
+    expect(ids(octroi({ id: "cible", module: "hunts" }), [...MIROIRS])).toEqual([]);
+    expect(ids(octroi({ id: "cible", module: "reserver" }), [...MIROIRS])).toEqual(
+      [],
+    );
+  });
+
+  it("écarte ce qui n'est pas un miroir de CET octroi", () => {
+    // Chaque ligne diffère de la cible par UN attribut de la clé de corrélation
+    // — celle-là même que la migration a employée pour se dédupliquer.
+    const voisins = [
+      octroi({ id: "autre-kind", module: "reserver", kind: "recurring" }),
+      octroi({ id: "autre-debut", module: "duo", starts_at: FIN }),
+      octroi({ id: "autre-fin", module: "bande", ends_at: null }),
+      octroi({ id: "autre-module", module: "quiz" }),
+    ];
+    expect(ids(CIBLE, [CIBLE, ...voisins])).toEqual([]);
+  });
+
+  it("laisse en paix un octroi DÉJÀ révoqué : son motif d'origine est le vrai", () => {
+    const dejaFerme = octroi({
+      id: "r",
+      module: "reserver",
+      revoked_at: "2026-04-01T10:00:00.000Z",
+    });
+    expect(ids(CIBLE, [CIBLE, dejaFerme])).toEqual([]);
+  });
+
+  it("laisse en paix un droit BORNÉ À UNE RESSOURCE", () => {
+    // La migration ne les a pas recopiés (`resource_id is null` dans son
+    // insert) : aucun n'est un miroir. Les emporter serait la sur-révocation
+    // symétrique du défaut corrigé.
+    const fin = octroi({ id: "r", module: "reserver", resource_id: "res-1" });
+    expect(ids(CIBLE, [CIBLE, fin])).toEqual([]);
+    // Et une cible elle-même bornée à une ressource ne porte pas le droit du
+    // module entier : elle n'a pas de miroir à fermer.
+    const cibleBornee = octroi({ id: "cible", resource_id: "res-1" });
+    expect(ids(cibleBornee, [cibleBornee, ...MIROIRS])).toEqual([]);
+  });
+
+  it("laisse en paix un octroi d'origine STRIPE", () => {
+    // Il n'en existe pas (la migration lève sur un `vitrine` Stripe), et le
+    // geste juste resterait un remboursement côté Stripe. La garde est écrite
+    // pour le jour où ce monde changerait.
+    const stripe = octroi({ id: "r", module: "reserver", source: "stripe" });
+    expect(ids(CIBLE, [CIBLE, stripe])).toEqual([]);
+  });
+
+  it("les trois clés détachées sont NOMMÉES, pas devinées", () => {
+    // L'avertissement affiché à l'opérateur lit `LIBELLE_MODULE` : une clé sans
+    // libellé s'y montrerait telle quelle, et personne ne saurait ce qui tombe.
+    expect([...MODULES_MIROIRS_VITRINE]).toEqual(["reserver", "duo", "bande"]);
+    for (const cle of MODULES_MIROIRS_VITRINE) {
+      expect(LIBELLE_MODULE[cle], cle).toBeTruthy();
+    }
   });
 });
