@@ -1,4 +1,4 @@
-import { ADDON_OFFERS } from "@/lib/plans";
+import { ADDON_OFFERS, ADDONS_STANDALONE } from "@/lib/plans";
 import type { Organization, SubscriptionStatus } from "@/types/database";
 
 /**
@@ -316,7 +316,19 @@ export const MODULES_AVEC_OFFRE: ReadonlySet<GrantableModule> = new Set(
  * vitrine ouvre Vitrine, il n'ouvre simplement plus la roue et les campagnes.
  */
 const MODULES_PORTANT_LE_SOCLE: ReadonlySet<GrantableModule> = new Set([
-  ...MODULES_AVEC_OFFRE,
+  // ── POURQUOI `ADDONS_STANDALONE` ET NON `MODULES_AVEC_OFFRE` ──
+  //
+  // Les deux ensembles ont coïncidé tant que TOUTE option du catalogue
+  // s'achetait seule. Vitrine et Réserver cassent l'équivalence : elles ont un
+  // prix et une entrée au catalogue — donc elles sont dans
+  // `MODULES_AVEC_OFFRE`, ce que le back-office attend — mais elles ne se
+  // vendent qu'en LIGNE d'un abonnement existant.
+  //
+  // Un octroi vivant sur elles ne prouve donc AUCUN paiement : il vient du
+  // back-office, gratuitement, pendant la bêta. Les laisser porter le socle
+  // rouvrirait mot pour mot le défaut MOYEN-2 du lot L2 — « un octroi bêta
+  // gratuit n'achète pas le socle ».
+  ...ADDONS_STANDALONE.map((offre) => offre.entitlement as GrantableModule),
   ...GRANTABLE_MODULES.filter((module) => MODULE_ADDON_COLUMN[module] === null),
 ]);
 

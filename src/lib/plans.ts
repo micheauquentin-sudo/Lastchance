@@ -486,6 +486,31 @@ export interface AddonOffer {
   currency: "EUR";
   billing: AddonBilling;
   /**
+   * CETTE OPTION S'ACHÈTE-T-ELLE SANS ABONNEMENT ?
+   *
+   * Le champ n'est pas décoratif : c'est lui qui décide si un octroi vivant de
+   * ce module IMPLIQUE que le socle a été payé (`MODULES_PORTANT_LE_SOCLE`,
+   * src/lib/subscription.ts). Les huit options historiques s'achètent seules et
+   * « embarquent les briques communes » — un octroi vaut donc socle payé.
+   *
+   * Vitrine et Réserver, non : elles ne se vendent qu'en LIGNE d'un abonnement
+   * existant. Un octroi vivant sur elles peut donc parfaitement venir du
+   * back-office, gratuitement, et n'achète rien. Les faire porter le socle
+   * rouvrirait exactement le défaut MOYEN-2 que le lot L2 a fermé.
+   */
+  soldStandalone: boolean;
+  /**
+   * Droits SUPPLÉMENTAIRES ouverts par le même prix.
+   *
+   * Un prix Stripe désigne un droit, et c'est vrai partout sauf ici : la PR
+   * #176 a détaché `duo` et `bande` de `vitrine` en trois colonnes, alors
+   * qu'elles se vendent comme un seul produit. Sans ce champ, le commerçant
+   * paierait sa Vitrine et trouverait les deux jeux de salon fermés.
+   *
+   * Vide partout ailleurs — et c'est la forme normale.
+   */
+  alsoGrants: readonly Entitlement[];
+  /**
    * Règles validées, écrites en clair. Elles ne sont appliquées par aucun
    * code : elles disent ce que le P0 devra faire respecter.
    */
@@ -507,7 +532,6 @@ export const ADDON_TRIAL_DAYS = 0;
  *
  * Descriptif : aucun chemin de code ne dérive aujourd'hui de droit d'ici.
  */
-export const ADDONS_PURCHASABLE_STANDALONE = true;
 
 /**
  * Règles d'échéance communes à tous les add-ons à durée (cahier §2, dernier
@@ -526,9 +550,58 @@ export const ADDON_EXPIRY_RULES: readonly string[] = [
  */
 export const ADDON_OFFERS: readonly AddonOffer[] = [
   {
+    /**
+     * LA VITRINE VEND TROIS DROITS SOUS UN SEUL PRIX.
+     *
+     * `alsoGrants` porte Duo Miroir et Portrait de la Bande : la PR #176 les a
+     * détachés en colonnes distinctes, mais le commerce n'a jamais vendu que
+     * « la carte et les jeux qui vont avec ». Trois colonnes, un produit.
+     */
+    entitlement: "vitrine",
+    name: "Vitrine",
+    currency: "EUR",
+    /**
+     * PAS ACHETABLE SEULE, et c'est ce qui la distingue des huit autres.
+     * Elle s'ajoute en ligne d'un abonnement en cours — 29 + 20 pour le socle
+     * le moins cher. La vendre seule à 20 € donnerait le socle à 20 €.
+     */
+    soldStandalone: false,
+    alsoGrants: ["duo", "bande"],
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 20,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Ouvre aussi Duo Miroir et Portrait de la Bande.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  {
+    entitlement: "reserver",
+    name: "Réserver",
+    currency: "EUR",
+    soldStandalone: false,
+    alsoGrants: [],
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 30,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  {
     entitlement: "loyalty",
     name: "Passeport des habitués",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 19,
@@ -544,6 +617,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "referral",
     name: "Bouche-à-oreille / Parrainage",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 12,
@@ -559,6 +634,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "hunts",
     name: "Chasse au trésor",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -575,6 +652,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "calendar",
     name: "Calendrier à surprises",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -591,6 +670,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "quiz",
     name: "Quiz express",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 15,
@@ -607,6 +688,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "jackpot",
     name: "Cagnotte collective",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -623,6 +706,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "pronostics",
     name: "Saison de pronostics",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "single-competition",
       price: 39,
@@ -643,6 +728,8 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     entitlement: "events",
     name: "Soirée en jeu",
     currency: "EUR",
+    soldStandalone: true,
+    alsoGrants: [],
     billing: {
       model: "capacity-pass",
       steps: [
@@ -665,6 +752,32 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     ],
   },
 ] as const;
+
+export const ADDONS_PURCHASABLE_STANDALONE: boolean = ADDON_OFFERS.every(
+  (offre) => offre.soldStandalone,
+);
+
+/** Les options vendables SANS abonnement — celles qui embarquent le socle. */
+export const ADDONS_STANDALONE: readonly AddonOffer[] = ADDON_OFFERS.filter(
+  (offre) => offre.soldStandalone,
+);
+
+/**
+ * Les options qui ne se vendent qu'en LIGNE d'un abonnement en cours.
+ *
+ * Elles n'ont pas de prix `STRIPE_PRICE_ID_PASS_*` et ne doivent jamais passer
+ * par le tunnel d'achat autonome : celui-ci ouvre un SECOND abonnement Stripe,
+ * donc un second prélèvement à une seconde date.
+ */
+export const ADDONS_LIGNE_ABONNEMENT: readonly AddonOffer[] = ADDON_OFFERS.filter(
+  (offre) => !offre.soldStandalone,
+);
+
+/** Droits réellement ouverts par le prix de cette option, `alsoGrants` compris. */
+export function droitsDeLOption(offre: AddonOffer): Entitlement[] {
+  return [offre.entitlement, ...offre.alsoGrants];
+}
+
 
 /** Add-on décrivant ce droit, sinon `null`. */
 export function findAddonOffer(entitlement: Entitlement): AddonOffer | null {

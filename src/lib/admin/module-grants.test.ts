@@ -85,7 +85,12 @@ describe("calculerFenetres — un pass acheté mais pas démarré", () => {
    */
   it("REFUSE un pass différé sur un module sans offre au catalogue", () => {
     const v = calculerFenetres(
-      { module: "vitrine", kind: "pass", demarrage: "a_activer", delaiActivationJours: 90 },
+      // `duo` ET NON `vitrine`, depuis le 2026-08-22 : la Vitrine est entrée au
+      // catalogue comme option de ligne d'abonnement, donc elle a désormais une
+      // offre et un écran de démarrage. Duo Miroir, lui, se vend AVEC la
+      // Vitrine (`alsoGrants`) et n'a pas d'entrée propre — c'est exactement le
+      // cas que cette garde protège : un module octroyable, sans offre à lui.
+      { module: "duo", kind: "pass", demarrage: "a_activer", delaiActivationJours: 90 },
       MAINTENANT,
     );
     expect(v.ok).toBe(false);
@@ -97,7 +102,7 @@ describe("calculerFenetres — un pass acheté mais pas démarré", () => {
     // clé, et il fallait le corriger à deux endroits au lieu d'un. Ce qui doit
     // rester vrai est « le message nomme le module COMME le panneau le nomme »,
     // pas la chaîne d'un jour.
-    expect(v.erreur).toContain(LIBELLE_MODULE.vitrine);
+    expect(v.erreur).toContain(LIBELLE_MODULE.duo);
     expect(v.erreur).toContain("démarrage immédiat");
   });
 

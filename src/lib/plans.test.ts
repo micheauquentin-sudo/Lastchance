@@ -6,7 +6,10 @@ import {
   ADDON_EXPIRY_RULES,
   ADDON_OFFERS,
   ADDON_TRIAL_DAYS,
+  ADDONS_LIGNE_ABONNEMENT,
   ADDONS_PURCHASABLE_STANDALONE,
+  ADDONS_STANDALONE,
+  droitsDeLOption,
   cheapestTierFor,
   describeTier,
   entitlementsGainedBy,
@@ -453,8 +456,12 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     return found;
   }
 
-  it("nomme les huit add-ons comme le cahier", () => {
+  it("nomme les dix options, les deux de lieu en tête", () => {
     expect(ADDON_OFFERS.map((item) => [item.entitlement, item.name])).toEqual([
+      // Les deux options de ligne d'abonnement (2026-08-22). En tête parce
+      // qu'elles ouvrent le catalogue commercial, pas par ancienneté.
+      ["vitrine", "Vitrine"],
+      ["reserver", "Réserver"],
       ["loyalty", "Passeport des habitués"],
       ["referral", "Bouche-à-oreille / Parrainage"],
       ["hunts", "Chasse au trésor"],
@@ -557,8 +564,35 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     }
   });
 
-  it("rend tout add-on achetable seul", () => {
-    expect(ADDONS_PURCHASABLE_STANDALONE).toBe(true);
+  /**
+   * LE BOOLÉEN GLOBAL A CESSÉ D'ÊTRE VRAI, ET C'EST LE POINT DU LOT.
+   *
+   * « Tout add-on est achetable seul » valait des huit premiers. Vitrine et
+   * Réserver ne se vendent qu'en ligne d'un abonnement en cours : les vendre
+   * seules donnerait le socle à 20 €, alors qu'il en coûte 29. Le booléen est
+   * désormais DÉRIVÉ, donc il dit la vérité au lieu de la promettre.
+   */
+  it("distingue les options achetables seules de celles qui sont des lignes", () => {
+    expect(ADDONS_PURCHASABLE_STANDALONE).toBe(false);
+    expect(ADDONS_STANDALONE).toHaveLength(8);
+    expect(ADDONS_LIGNE_ABONNEMENT.map((o) => o.entitlement)).toEqual([
+      "vitrine",
+      "reserver",
+    ]);
+    for (const offre of ADDONS_STANDALONE) {
+      expect(offre.soldStandalone).toBe(true);
+    }
+  });
+
+  /** Un prix, trois colonnes : la Vitrine vend aussi les deux jeux de salon. */
+  it("fait ouvrir Duo et Bande par le seul prix Vitrine", () => {
+    const vitrine = findAddonOffer("vitrine");
+    expect(vitrine?.alsoGrants).toEqual(["duo", "bande"]);
+    expect(droitsDeLOption(vitrine!)).toEqual(["vitrine", "duo", "bande"]);
+    // Et nulle part ailleurs : un droit qui en ouvre d'autres est l'exception.
+    for (const offre of ADDON_OFFERS.filter((o) => o.entitlement !== "vitrine")) {
+      expect(offre.alsoGrants).toEqual([]);
+    }
   });
 
   it("écrit la mise en pause sûre à l'échéance", () => {

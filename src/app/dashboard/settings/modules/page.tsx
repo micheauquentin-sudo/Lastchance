@@ -7,6 +7,8 @@ import {
   chargerOctroisVivants,
   etatOctroiModule,
 } from "@/lib/module-grants-loader";
+import { OptionAbonnement } from "@/components/dashboard/option-abonnement";
+import { getAddonLinePriceId } from "@/lib/stripe";
 import {
   addonAchetableEnLigne,
   paliersDisponibles,
@@ -294,7 +296,27 @@ function CarteAddon({
         ))}
       </ul>
 
-      {!proprietaire ? null : achetable ? (
+      {!proprietaire ? null : !offre.soldStandalone ? (
+        // ── UNE OPTION DE LIGNE, PAS UN ACHAT ──
+        //
+        // Vitrine et Réserver s'ajoutent à l'abonnement en cours. Leur
+        // disponibilité tient à l'AUTRE famille de variables Stripe — celle
+        // des items d'abonnement — d'où `getAddonLinePriceId` plutôt que
+        // `addonAchetableEnLigne`, qui interroge les prix de pass.
+        getAddonLinePriceId(offre.entitlement) ? (
+          <OptionAbonnement
+            entitlement={offre.entitlement}
+            nom={offre.name}
+            prixMensuel={prixAffiche(offre.billing) ?? 0}
+            active={ouvert}
+          />
+        ) : (
+          <p className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+            Cette option n&apos;est pas encore en vente en ligne.
+            Écrivez-nous et nous l&apos;ouvrirons sur votre compte.
+          </p>
+        )
+      ) : achetable ? (
         <AchatAddon
           entitlement={offre.entitlement}
           price={prixAffiche(offre.billing)}

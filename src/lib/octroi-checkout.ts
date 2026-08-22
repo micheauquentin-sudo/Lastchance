@@ -184,6 +184,25 @@ export function resolveAddonCheckout(
     return { ok: false, erreur: "Cette option n'existe pas." };
   }
 
+  // ── LE TUNNEL AUTONOME EST FERMÉ AUX OPTIONS DE LIGNE ──
+  //
+  // Vitrine et Réserver ne se vendent qu'en item d'un abonnement en cours.
+  // Les laisser passer ici serait pire qu'un refus : `modeCheckout` rendrait
+  // `"subscription"` pour un mensuel, Stripe ouvrirait un SECOND abonnement,
+  // et le commerçant recevrait deux prélèvements à deux dates — exactement le
+  // défaut que `toggleSubscriptionOption` a été écrite pour fermer.
+  //
+  // Le refus est ici plutôt qu'à l'écran parce qu'un écran ne garde rien : il
+  // évite seulement de proposer un bouton qui échouera.
+  if (!offre.soldStandalone) {
+    return {
+      ok: false,
+      erreur:
+        `« ${offre.name} » s'ajoute à une offre en cours, depuis vos réglages `
+        + `— elle ne s'achète pas séparément.`,
+    };
+  }
+
   // AUCUNE GARDE DE MODÈLE ICI, ET C'EST LE GESTE FINAL DE CE LOT.
   // `venteEnLigneOuverte` refusait `recurring-monthly` tant que le webhook ne
   // savait pas isoler un abonnement de pass (ADR-079). Il le sait : il
@@ -243,6 +262,11 @@ function indisponible(offre: AddonOffer): string {
 export function addonAchetableEnLigne(entitlement: Entitlement): boolean {
   const offre = ADDON_OFFERS.find((o) => o.entitlement === entitlement);
   if (!offre) return false;
+  // Une option de LIGNE ne se vend pas par ce tunnel : sa disponibilité tient
+  // à l'autre famille de variables, celle des items d'abonnement. Répondre
+  // `true` ici afficherait un bouton « Acheter » qui mène au refus posé dans
+  // `resolveAddonCheckout`.
+  if (!offre.soldStandalone) return false;
   if (offre.billing.model === "capacity-pass") {
     return offre.billing.steps.some(
       (s) => optionalEnv(envPalier(entitlement, s.maxPlayers)) !== undefined,

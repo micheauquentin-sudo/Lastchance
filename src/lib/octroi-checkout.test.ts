@@ -37,8 +37,19 @@ function envPass(entitlement: string, jauge?: number): string {
   return jauge === undefined ? base : `${base}_${jauge}`;
 }
 
+/**
+ * Les mensuels VENDABLES PAR CE TUNNEL. Depuis le 2026-08-22, « mensuel » et
+ * « achetable seul » ont cessé d'être la même chose : Vitrine et Réserver sont
+ * des récurrents qui ne se vendent qu'en LIGNE d'un abonnement en cours, donc
+ * jamais par `resolveAddonCheckout`. Les confondre ferait passer ce tunnel
+ * pour un chemin d'achat de la Vitrine — c'est-à-dire un second abonnement.
+ */
 const MENSUELS = ADDON_OFFERS.filter(
-  (o) => o.billing.model === "recurring-monthly",
+  (o) => o.billing.model === "recurring-monthly" && o.soldStandalone,
+);
+/** Les récurrents qui ne passent PAS par ici, et dont le refus est prouvé plus bas. */
+const MENSUELS_DE_LIGNE = ADDON_OFFERS.filter(
+  (o) => o.billing.model === "recurring-monthly" && !o.soldStandalone,
 );
 const ACHATS_UNIQUES = ADDON_OFFERS.filter(
   (o) => o.billing.model !== "recurring-monthly",
@@ -75,6 +86,31 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
       "loyalty",
       "referral",
     ]);
+    // Et les deux récurrents qui ne sont PAS de ce tunnel.
+    expect(MENSUELS_DE_LIGNE.map((o) => o.entitlement).sort()).toEqual([
+      "reserver",
+      "vitrine",
+    ]);
+  });
+
+  /**
+   * LE REFUS QUI FERME LE SECOND PRÉLÈVEMENT.
+   *
+   * Sans lui, `modeCheckout` rendrait `"subscription"` pour la Vitrine — c'est
+   * un récurrent — et Stripe ouvrirait un abonnement SÉPARÉ du sien. Le
+   * commerçant paierait deux fois, à deux dates, et résilierait deux fois.
+   */
+  it("refuse les options de ligne, même avec un prix de pass configuré", () => {
+    for (const offre of MENSUELS_DE_LIGNE) {
+      // Le prix est posé exprès : le refus doit tenir au MODÈLE DE VENTE, pas
+      // à une variable manquante. Une garde qui ne tient qu'à l'absence de
+      // configuration cède le jour où quelqu'un configure.
+      vi.stubEnv(envPass(offre.entitlement), "price_pose_par_erreur");
+
+      const v = resolveAddonCheckout(offre.entitlement);
+      expect(v.ok, offre.entitlement).toBe(false);
+      if (!v.ok) expect(v.erreur).toContain("offre en cours");
+    }
   });
 
   it("un add-on absent du catalogue est refusé, jamais replié sur un voisin", () => {
@@ -271,7 +307,16 @@ describe("modeCheckout — un récurrent est un abonnement, tout le reste un pai
     const abonnements = ADDON_OFFERS.filter(
       (o) => modeCheckout(o) === "subscription",
     ).map((o) => o.entitlement);
-    expect(abonnements.sort()).toEqual(["loyalty", "referral"]);
+    // QUATRE récurrents au catalogue depuis le 2026-08-22, et `modeCheckout`
+    // dit vrai sur les quatre : ce sont bien des abonnements. Ce qui les
+    // sépare n'est pas le mode mais le CHEMIN — deux passent par ce tunnel,
+    // deux par `toggleSubscriptionOption`.
+    expect(abonnements.sort()).toEqual([
+      "loyalty",
+      "referral",
+      "reserver",
+      "vitrine",
+    ]);
   });
 });
 

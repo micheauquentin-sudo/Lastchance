@@ -7778,3 +7778,73 @@ commerçant l'aurait ouvert, pas le joueur. Sans effet sur l'échelle :
   Resatable 39 €, ViteUneTable dès 29 € (anti no-show 49 € en option),
   Guestonline 17 €, Planity 74/94/114 €, MenuOnline 49 € + 595 € d'entrée,
   Loyeo 0/29/49 €, Zerosix 49 € + 190 €, QronoPlay 9,90 €.
+
+## ADR-118 — Les options de lieu : une ligne de l'abonnement, jamais un second
+
+**Date** : 2026-08-22 · **Statut** : acté
+
+**Contexte** : ADR-117 a livré l'offre Sur Place et laissé les deux options
+Vitrine (+20 €) et Réserver (+30 €) hors périmètre, pour une raison précise.
+`createAddonCheckoutSession` vend un mensuel en ouvrant une session Stripe en
+`mode: "subscription"` avec un seul `line_items` — ce qui crée un abonnement
+**séparé**. Le commentaire du fichier le dit lui-même, et `grep` confirmait
+l'autre moitié : **aucun `subscriptions.update` n'existait dans `src/`**, zéro
+occurrence. Ce n'était pas une lacune théorique : un commerçant qui prenait le
+Passeport *et* le Parrainage recevait déjà deux prélèvements, à deux dates, sur
+deux factures, et devait résilier deux fois.
+
+**Décision** — une option est un **item** de l'abonnement en cours.
+
+1. **`toggleSubscriptionOption`** (`src/actions/billing.ts`) modifie
+   l'abonnement existant plutôt que d'en ouvrir un second, avec
+   `proration_behavior: "create_prorations"` dans les deux sens : une option
+   ajoutée le 20 n'est facturée que pour ses onze jours, une option retirée
+   rend le reste en avoir. L'action n'écrit **rien** en base — Stripe émet
+   `customer.subscription.updated`, le webhook relit la photographie complète
+   des prix et `resolveStripeEntitlements` en dérive les droits. Écrire ici
+   aussi créerait un second juge.
+2. **Pas d'abonnement, pas d'option.** Refus délibéré et commercial : ces deux
+   options se vendent « sur Coup d'envoi, Le Club ou Le Grand Jeu ». Les ouvrir
+   seules donnerait le socle à 20 €, alors qu'il en coûte 29.
+3. **Le tunnel autonome leur est fermé** (`resolveAddonCheckout`), et le refus
+   tient au **modèle de vente**, pas à une variable manquante — le test pose
+   exprès un `STRIPE_PRICE_ID_PASS_VITRINE` pour le prouver. Une garde qui ne
+   tient qu'à l'absence de configuration cède le jour où quelqu'un configure.
+
+**Trois coutures que la lecture seule n'aurait pas trouvées.**
+
+- **`MODULES_PORTANT_LE_SOCLE` dérivait du catalogue entier.** Y faire entrer
+  Vitrine aurait fait porter le socle payant à *tout* octroi vitrine — y compris
+  ceux que le back-office accorde **gratuitement** en bêta. C'est mot pour mot
+  le défaut MOYEN-2 que le lot L2 avait fermé. La sortie n'est pas d'exclure
+  ces deux-là à la main mais de nommer la propriété qui compte : `soldStandalone`
+  sur l'offre. `MODULES_AVEC_OFFRE` reste le catalogue entier — le back-office
+  y gagne d'ailleurs de pouvoir accorder Vitrine en pass différé, ce qu'il
+  refusait — et seul `MODULES_PORTANT_LE_SOCLE` se restreint aux huit
+  achetables seules.
+- **Un prix Stripe désigne un droit — sauf un.** La PR #176 a détaché `duo` et
+  `bande` de `vitrine` en trois colonnes, alors que le commerce n'a jamais
+  vendu que « la carte et les jeux qui vont avec ». D'où `alsoGrants` sur
+  l'offre, expansé dans `resolveStripeEntitlements`. Sans lui, le commerçant
+  aurait payé sa Vitrine et trouvé les deux jeux fermés — un défaut **muet**,
+  puisque le paiement, lui, aurait réussi.
+- **`ADDONS_PURCHASABLE_STANDALONE` a cessé d'être vrai.** Le booléen global
+  promettait « tout add-on est achetable seul ». Il est désormais **dérivé**,
+  donc il dit la vérité au lieu de la promettre — et l'éditorial du site, qui
+  s'appuyait sur un ternaire tout-ou-rien, distingue maintenant les deux
+  familles.
+
+**Ce que le lot ne fait pas.** Aucune migration : les droits passent par
+`ADDON_PRICE_ENV`, que `20261021120000` a déjà rendu inscriptibles. Et aucune
+vente n'est ouverte tant que `STRIPE_PRICE_ID_ADDON_VITRINE` et
+`STRIPE_PRICE_ID_ADDON_RESERVER` ne sont pas posées : l'écran affiche alors
+« pas encore en vente en ligne » plutôt qu'un bouton qui échoue.
+
+**Références** :
+- `src/actions/billing.ts` (`toggleSubscriptionOption`),
+  `src/lib/stripe.ts` (`findOfferSubscription`, `getAddonLinePriceId`,
+  expansion `alsoGrants`), `src/lib/plans.ts` (`soldStandalone`, `alsoGrants`),
+  `src/lib/subscription.ts` (`MODULES_PORTANT_LE_SOCLE`),
+  `src/lib/octroi-checkout.ts` (fermeture du tunnel),
+  `src/components/dashboard/option-abonnement.tsx`
+- Branche `chantier/options-lieu`

@@ -178,6 +178,33 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
 
 export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
   {
+    "entitlement": "vitrine",
+    "name": "Vitrine",
+    "priceLabel": "20 €/mois",
+    "model": "recurring-monthly",
+    "cadence": "Abonnement mensuel",
+    "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",
+    "steps": [],
+    "rules": [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Ouvre aussi Duo Miroir et Portrait de la Bande.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée."
+    ]
+  },
+  {
+    "entitlement": "reserver",
+    "name": "Réserver",
+    "priceLabel": "30 €/mois",
+    "model": "recurring-monthly",
+    "cadence": "Abonnement mensuel",
+    "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",
+    "steps": [],
+    "rules": [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée."
+    ]
+  },
+  {
     "entitlement": "loyalty",
     "name": "Passeport des habitués",
     "priceLabel": "19 €/mois",
@@ -306,7 +333,7 @@ export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
 export const ADDON_TRIAL_DAYS = 0;
 
 /** Tout add-on est achetable seul, sans abonnement. */
-export const ADDONS_PURCHASABLE_STANDALONE = true;
+export const ADDONS_PURCHASABLE_STANDALONE = false;
 
 export const ADDON_EXPIRY_RULES: readonly string[] = [
   "À l'expiration d'un pass, la ressource est mise en pause de façon sûre.",
