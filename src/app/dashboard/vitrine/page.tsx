@@ -23,6 +23,7 @@ import { DuoEditeur } from "@/components/vitrine/duo-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
 import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
+import { SommaireVitrine } from "@/components/vitrine/sommaire-vitrine";
 import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
 
 export const metadata: Metadata = { title: "Vitrine" };
@@ -167,6 +168,23 @@ export default async function VitrineDashboardPage() {
             seront servies revient à préparer une vitrine sans magasin. */}
         {settings ? (
           <>
+            {/* LE SOMMAIRE EST EN TÊTE DE LA PARTIE BASSE, et il ne liste que
+                les trois surfaces qu'on ne trouvait pas : superviser les
+                salons, le Duo, le Portrait de la Bande. Les autres sections de
+                cet écran (audience, traductions, « À la une », import,
+                catalogue, QR) se voient en défilant depuis les réglages —
+                celles-ci étaient sous huit cartes, sans rien qui y mène.
+
+                Il n'est PAS un plan de la page : un sommaire exhaustif de dix
+                entrées aurait ajouté une deuxième page à parcourir avant la
+                première. */}
+            <SommaireVitrine
+              salonsOuverts={supervision.liste.length}
+              duoComposable={cartes.some((carte) =>
+                carte.categories.some((rubrique) => rubrique.fiches.length > 0),
+              )}
+            />
+
             {/* CE QUE LA VITRINE A RAPPORTÉ, EN UN NOMBRE. Le seul retour
                 mesurable d'un QR posé sur une table, et il vaut d'être dit tôt :
                 un commerçant qui a imprimé ses planches veut savoir si on les

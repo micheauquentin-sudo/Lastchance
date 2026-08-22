@@ -1,6 +1,7 @@
 import type { OrgLobbyView } from "@/lib/lobby";
 import { Card } from "@/components/ui/card";
 import { FermerSalon } from "@/components/vitrine/fermer-salon";
+import { ANCRE_SALONS } from "@/components/vitrine/ancres";
 
 /**
  * « SALONS OUVERTS » — POURQUOI CETTE CARTE EXISTE (contrepartie du finding E-1).
@@ -54,7 +55,11 @@ export function SalonsOuverts({
   const maintenant = Date.parse(luA);
 
   return (
-    <Card>
+    // L'ANCRE DU SOMMAIRE EST POSÉE ICI, à l'intérieur de la garde ci-dessus :
+    // sans salle vivante, il n'y a pas de carte, donc pas d'ancre orpheline vers
+    // laquelle un lien pourrait pointer. `scroll-mt-4` comme les blocs publics —
+    // la cible ne doit pas venir se coller sous l'entête.
+    <Card id={ANCRE_SALONS} className="scroll-mt-4">
       <h2>Salons ouverts</h2>
       <p className="mt-2 text-sm text-k-body">
         <span className="font-black tabular-nums text-k-ink">
