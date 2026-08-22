@@ -8775,6 +8775,7 @@ export type Database = {
           redeemed_at: string
         }[]
       }
+      mirror_vitrine_entitlements: { Args: never; Returns: Json }
       moderate_event_player: {
         Args: {
           p_moderation_state: string
