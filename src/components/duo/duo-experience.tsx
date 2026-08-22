@@ -5,6 +5,8 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { chooseDuo, getDuoState, startDuo } from "@/actions/duo";
 import type { DuoChoixView, DuoOptionView, DuoStateView } from "@/lib/duo";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
+import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
+import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
 
 /**
  * DUO MIROIR (L17) — l'écran de jeu, monté à la place de « la partie commence ».
@@ -81,10 +83,13 @@ const REFUS_CHOIX =
 export function DuoExperience({
   lobbyId,
   statutSalle,
+  sortie,
 }: {
   lobbyId: string;
   /** Le statut du lobby au moment du branchement — `SalonLobby` le détient. */
   statutSalle: "locked" | "closed";
+  /** VIT-11 : proposé sous la révélation, jamais avant. */
+  sortie: SortieApresJeuView | null;
 }) {
   const [ouverture, setOuverture] = useState<Ouverture>("attente");
   const [optionsDepart, setOptionsDepart] = useState<DuoOptionView[]>([]);
@@ -258,7 +263,7 @@ export function DuoExperience({
   // LA RÉVÉLATION D'ABORD, TOUJOURS : elle ferme la salle en même temps qu'elle
   // arrive, donc `closed` est ici l'état NORMAL d'une partie réussie.
   if (vue.status === "revelee") {
-    return <EcranRevelation vue={vue} />;
+    return <EcranRevelation vue={vue} sortie={sortie} />;
   }
 
   // Puis, et seulement sur une manche encore ouverte : la salle a été refermée
@@ -486,7 +491,13 @@ function CarteOption({
  * choix aurait surligné une réponse sur le plateau. Elle arrive ici pour ce
  * qu'elle est — la maison qui propose ce à quoi aucun des deux n'avait pensé.
  */
-function EcranRevelation({ vue }: { vue: VueDuo }) {
+function EcranRevelation({
+  vue,
+  sortie,
+}: {
+  vue: VueDuo;
+  sortie: SortieApresJeuView | null;
+}) {
   return (
     <div className="space-y-4">
       <LobbyCarton className="text-center">
@@ -530,6 +541,8 @@ function EcranRevelation({ vue }: { vue: VueDuo }) {
           écran.
         </p>
       </LobbyCarton>
+
+      <SortieApresJeu sortie={sortie} />
     </div>
   );
 }

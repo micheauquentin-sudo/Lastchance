@@ -18,6 +18,7 @@ import { LobbyCarton } from "@/components/lobby/lobby-shell";
 import { messageRefusEntree } from "@/components/lobby/refus";
 import { DuoExperience } from "@/components/duo/duo-experience";
 import { BandeExperience } from "@/components/bande/bande-experience";
+import type { SortieApresJeu } from "@/lib/sortie-apres-jeu";
 
 /**
  * `/lobby/[code]` — l'écran unique du socle : on y entre, puis on y attend.
@@ -90,13 +91,16 @@ export function SalonLobby({
   code,
   lobbyId,
   dejaMembre,
+  sortie,
 }: {
   code: string;
   lobbyId: string;
   dejaMembre: boolean;
+  /** VIT-11 : ce que les ecrans terminaux du Duo et de la Bande proposent. */
+  sortie: SortieApresJeu | null;
 }) {
   return dejaMembre ? (
-    <SalleAttente lobbyId={lobbyId} />
+    <SalleAttente lobbyId={lobbyId} sortie={sortie} />
   ) : (
     <EcranRejoindre code={code} />
   );
@@ -161,7 +165,13 @@ function EcranRejoindre({ code }: { code: string }) {
    Salle d'attente
    ──────────────────────────────────────────────────────────── */
 
-function SalleAttente({ lobbyId }: { lobbyId: string }) {
+function SalleAttente({
+  lobbyId,
+  sortie,
+}: {
+  lobbyId: string;
+  sortie: SortieApresJeu | null;
+}) {
   const [vue, setVue] = useState<SalleView | null>(null);
   const [perdu, setPerdu] = useState(false);
   const [enAction, demarrer] = useTransition();
@@ -357,7 +367,13 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
   // cet endroit tient les deux moitiés à la fois : on passe donc le statut, et
   // c'est `DuoExperience` qui les croise avec l'état de sa manche.
   if (vue.kind === "duo" && (vue.status === "locked" || vue.status === "closed")) {
-    return <DuoExperience lobbyId={lobbyId} statutSalle={vue.status} />;
+    return (
+      <DuoExperience
+        lobbyId={lobbyId}
+        statutSalle={vue.status}
+        sortie={sortie}
+      />
+    );
   }
 
   // ── PORTRAIT DE LA BANDE (L18) — LE MÊME BRANCHEMENT, POUR LA MÊME RAISON ──
@@ -386,6 +402,7 @@ function SalleAttente({ lobbyId }: { lobbyId: string }) {
         lobbyId={lobbyId}
         statutSalle={vue.status}
         hote={vue.joinCode !== null}
+        sortie={sortie}
       />
     );
   }

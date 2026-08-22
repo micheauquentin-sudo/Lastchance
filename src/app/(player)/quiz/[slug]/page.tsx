@@ -10,6 +10,7 @@ import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { fondPourQuizTheme } from "@/lib/fonds-ecran";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { QuizExperience } from "@/components/quiz/quiz-experience";
+import { sortieDeLOrganisation } from "@/lib/sortie-apres-jeu";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import type { QuizLeaderboardEntry } from "@/lib/quiz";
 
@@ -98,6 +99,12 @@ export default async function QuizPage({
 
   const tokens = quizThemeTokens(quiz.theme);
 
+  // VIT-11 : lu au serveur, en même temps que le reste de la page. L'écran
+  // terminal ne peut pas aller le chercher lui-même — il est client — et le
+  // faire chercher par un aller-retour après la partie aurait fait clignoter
+  // la sortie une seconde après le résultat.
+  const sortie = await sortieDeLOrganisation(ctx.organization.id);
+
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
@@ -114,6 +121,7 @@ export default async function QuizPage({
         initialLeaderboard={leaderboard}
         initialSpinBundle={spinBundle}
         shareEnabled={ctx.shareEnabled}
+        sortie={sortie}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

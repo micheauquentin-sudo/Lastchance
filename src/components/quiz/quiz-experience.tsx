@@ -46,6 +46,8 @@ import { QuizSpinExperience } from "./quiz-spin-experience";
 import { quizPresetInfo } from "./quiz-presets";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
+import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
 import { quizThemeTokens } from "./quiz-theme";
 
 /* Parcours joueur du Créateur de quiz — DA « Kermesse » (crème, encre, ombres
@@ -140,6 +142,12 @@ function exposesLeaderboard(mode: string): boolean {
 }
 
 export interface QuizExperienceProps {
+  /**
+   * VIT-11 — ce qu'on propose une fois la partie finie : retour à la carte,
+   * avis Google, Instagram, TikTok. `null` quand le commerce n'a rien
+   * configuré, et l'écran terminal ne peint alors rien.
+   */
+  sortie: SortieApresJeuView | null;
   quizId: string;
   publicSlug: string;
   organizationName: string;
@@ -171,6 +179,7 @@ export function QuizExperience({
   initialLeaderboard,
   initialSpinBundle,
   shareEnabled,
+  sortie,
 }: QuizExperienceProps) {
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<QuizPublicState>(initialState);
@@ -576,6 +585,9 @@ export function QuizExperience({
           onSpin={(grantToken, bundle) => setActiveSpin({ grantToken, bundle })}
         />
       )}
+
+      {/* ── 2 bis. La sortie (VIT-11) : sous le résultat, jamais avant ── */}
+      {player && finished && <SortieApresJeu sortie={sortie} />}
 
       {/* ── 3. En cours de jeu ── */}
       {player && !finished && (
