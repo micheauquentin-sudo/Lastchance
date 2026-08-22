@@ -82,6 +82,12 @@ npx vitest run <chemin>            # ciblé, secondes
 npm test                           # complet, ~55 s
 ```
 
+**Quelle suite pour quel périmètre.** `npm test` complet est un recours, pas un
+réflexe — `npx vitest run <mot-clé>` couvre le même terrain en secondes.
+Fichiers trouvés le 2026-08-22 : `vitrine` 12, `reserver` 7, `quiz duo bande` 14,
+`analytics` 5, `plans stripe release` 4, `portefeuille caisse` 3. Un « no tests »
+ne prouve rien : suite absente, ou cache `node_modules/.vite` corrompu (piège n°4).
+
 **Dès qu'une migration est touchée** — ces deux gardes échouent en secondes là
 où la CI met huit minutes :
 
@@ -114,6 +120,25 @@ Les briefs font foi dans `.claude/agents/` et sont dérivés en skills par
 - Auth / RLS / endpoint public / webhook / token → aussi `security-review`.
 - Livraison → `vercel-release`, **après** QA.
 - Fin de chantier notable → `docs-scribe`.
+
+### Ce qu'un brief doit porter
+
+Un brief qui oblige à redécouvrir se paie deux fois : la recherche, puis la
+relecture de ce qu'elle rapporte. Quel que soit l'outil, un travail confié porte
+donc quatre choses.
+
+1. Les **chemins exacts** des fichiers à ouvrir, jamais une description — « le
+   module de spin » fait ouvrir dix fichiers pour en trouver un.
+2. Ce qui est **déjà établi** : la mesure faite, la décision prise, ce qui a été
+   écarté **et pourquoi**. Sans ce dernier point, un arbitrage déjà tranché est
+   rouvert et rejoué autrement.
+3. Le **critère de sortie** — ce qui doit être vrai pour que ce soit fini,
+   exprimé en commandes vérifiables et non en intention.
+4. Ce qu'il ne faut **pas** toucher, quand le périmètre en jouxte un autre.
+
+`docs/codex-handoff.md` applique ce format aux lots produit : un bloc
+« Terrain » pour le point 1, « Écarté » pour le point 2, « Fini quand » pour le
+point 3.
 
 ## Orchestration
 

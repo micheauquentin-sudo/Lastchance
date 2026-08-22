@@ -1,5 +1,14 @@
 # LastChance Réserver — périmètre de développement validé
 
+> **Cadrage d'origine, conservé pour le *pourquoi*.** Ce document explique la
+> direction produit — Réserver, Vitrine, Boussole de choix, Expériences
+> Signature, Duo Miroir, Portrait de la Bande — et reste la référence sur les
+> intentions et les limites.
+> **Pour ce qui reste à construire, la source est
+> [`docs/codex-handoff.md`](./codex-handoff.md)**, qui porte les lots actifs,
+> leur ordre, leur état et leurs chemins de code. En cas de désaccord entre les
+> deux fichiers, le handoff l'emporte.
+
 > Statut : décision produit validée le 2026-08-17. Aucun code, commit, déploiement ou migration distante n'est autorisé par ce document seul.
 
 ## Promesse
