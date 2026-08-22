@@ -197,6 +197,13 @@ export default async function DashboardLayout({
             reserverActif={
               compActive || droitEffectifModule("reserver", organization)
             }
+            /* Les deux jeux de salon, lus comme leurs voisins et pour la même
+               raison : ils ont leur propre clé depuis 20261020120000. Ils sont
+               du socle depuis le 2026-08-22 — toutes les offres les portent —
+               mais le menu ne le SUPPOSE pas : un abonnement résilié doit faire
+               disparaître l'entrée comme n'importe quelle autre. */
+            duoActif={compActive || droitEffectifModule("duo", organization)}
+            bandeActif={compActive || droitEffectifModule("bande", organization)}
           />
 
           <form action={logout} className="mt-auto hidden lg:block">

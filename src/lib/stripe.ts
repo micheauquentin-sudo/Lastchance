@@ -5,7 +5,7 @@ import { optionalEnv, requiredEnv } from "@/lib/env";
 // La grammaire des prix de pass vit dans `octroi-checkout` et NULLE PART
 // ailleurs (voir son en-tête) : on l'importe, on ne la recopie pas.
 import { partitionnerPrix } from "@/lib/octroi-checkout";
-import { findAddonOffer, PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
+import { PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 // Le plafond est celui du geste manuel, et il est repris ici volontairement :
 // « un crédit SMS ne se reprend pas » est la même propriété, quelle que soit
@@ -547,12 +547,6 @@ export function resolveStripeEntitlements(priceIds: string[]): {
     );
     if (addon) {
       entitlements.add(addon.entitlement);
-      // UN PRIX PEUT OUVRIR PLUS D'UN DROIT. Le prix Vitrine ouvre aussi Duo
-      // Miroir et Portrait de la Bande : trois colonnes détachées par la PR
-      // #176, un seul produit vendu. Sans cette expansion, le commerçant
-      // paierait sa Vitrine et trouverait les deux jeux fermés.
-      const offre = findAddonOffer(addon.entitlement);
-      offre?.alsoGrants.forEach((droit) => entitlements.add(droit));
       continue;
     }
     unknownPriceIds.push(priceId);

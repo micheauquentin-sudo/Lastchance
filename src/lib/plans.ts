@@ -28,7 +28,7 @@ import type { Entitlement } from "@/platform/experiences/contract";
  * périmètre ou de limite — les tests figent la proposition associée, et un
  * changement non intentionnel casse la suite au lieu de passer inaperçu.
  */
-export const PACKAGING_VERSION = "2026-08-b";
+export const PACKAGING_VERSION = "2026-08-c";
 
 export type PlanTierId = "core" | "engagement" | "place" | "live" | "full";
 
@@ -104,10 +104,24 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     priceMonthly: 29,
     currency: "EUR",
     trialDays: 7,
-    entitlements: ["core"],
+    /**
+     * LES DEUX SALONS SONT DU SOCLE (2026-08-22), ET C'EST UN CHANGEMENT DE
+     * NATURE, PAS DE PÉRIMÈTRE.
+     *
+     * Duo Miroir et Portrait de la Bande sont nés attachés à la Vitrine — même
+     * droit, même écran, même adresse publique. Ils n'y avaient leur place que
+     * par leur histoire : ce sont des JEUX, au même titre que les quinze jeux
+     * rapides, et un jeu ne se vend pas avec une carte de restaurant.
+     *
+     * Les mettre dans `core` les met dans les cinq offres d'un coup, puisque
+     * toutes s'assoient sur le socle. Le détachement technique — garde SQL et
+     * adresse publique — vit dans la migration 20261022120000.
+     */
+    entitlements: ["core", "duo", "bande"],
     limits: { eventParticipants: 100 },
     highlights: [
       "QR codes et roues illimités",
+      "Duo Miroir et Portrait de la Bande, jouables à table",
       "Lots remis en caisse avec code",
       "Studio créatif et affiches",
       "Emails automatiques et webhooks sortants",
@@ -122,7 +136,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     priceMonthly: 59,
     currency: "EUR",
     trialDays: 7,
-    entitlements: ["core", "loyalty", "calendar", "referral", "hunts", "quiz"],
+    entitlements: ["core", "duo", "bande", "loyalty", "calendar", "referral", "hunts", "quiz"],
     limits: { eventParticipants: 100 },
     highlights: [
       "Tout Coup d'envoi",
@@ -159,13 +173,12 @@ export const PLAN_TIERS: readonly PlanTier[] = [
      * Sans conséquence sur l'échelle : `cheapestTierFor("quiz")` reste
      * Le Club, à 59 €.
      */
-    entitlements: ["core", "vitrine", "reserver", "duo", "bande", "quiz"],
+    entitlements: ["core", "duo", "bande", "vitrine", "reserver", "quiz"],
     // Aucun temps réel dans cette offre : la jauge reste celle du socle.
     limits: { eventParticipants: 100 },
     highlights: [
       "Tout Coup d'envoi",
       "Carte publique bilingue et agenda dans la même offre",
-      "Duo Miroir et Portrait de la Bande, jouables à table",
     ],
   },
   {
@@ -177,7 +190,7 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     priceMonthly: 89,
     currency: "EUR",
     trialDays: 7,
-    entitlements: ["core", "events", "pronostics", "jackpot", "quiz"],
+    entitlements: ["core", "duo", "bande", "events", "pronostics", "jackpot", "quiz"],
     limits: { eventParticipants: 500 },
     // La capacité live n'est PAS répétée ici : `describeTier()` la dérive de
     // `limits.eventParticipants`, et la recopier affichait la même limite deux
@@ -195,6 +208,8 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     trialDays: 7,
     entitlements: [
       "core",
+      "duo",
+      "bande",
       "pronostics",
       "hunts",
       "loyalty",
@@ -210,8 +225,6 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       // offre qui promet tout doit contenir tout.
       "vitrine",
       "reserver",
-      "duo",
-      "bande",
     ],
     // VEN-1 : 500 et non 1000. La Totale ne perd rien d'ÉPROUVÉ — elle cesse
     // de promettre une capacité que personne n'a mesurée. Voir `PlanLimits`.
@@ -500,17 +513,6 @@ export interface AddonOffer {
    */
   soldStandalone: boolean;
   /**
-   * Droits SUPPLÉMENTAIRES ouverts par le même prix.
-   *
-   * Un prix Stripe désigne un droit, et c'est vrai partout sauf ici : la PR
-   * #176 a détaché `duo` et `bande` de `vitrine` en trois colonnes, alors
-   * qu'elles se vendent comme un seul produit. Sans ce champ, le commerçant
-   * paierait sa Vitrine et trouverait les deux jeux de salon fermés.
-   *
-   * Vide partout ailleurs — et c'est la forme normale.
-   */
-  alsoGrants: readonly Entitlement[];
-  /**
    * Règles validées, écrites en clair. Elles ne sont appliquées par aucun
    * code : elles disent ce que le P0 devra faire respecter.
    */
@@ -550,13 +552,6 @@ export const ADDON_EXPIRY_RULES: readonly string[] = [
  */
 export const ADDON_OFFERS: readonly AddonOffer[] = [
   {
-    /**
-     * LA VITRINE VEND TROIS DROITS SOUS UN SEUL PRIX.
-     *
-     * `alsoGrants` porte Duo Miroir et Portrait de la Bande : la PR #176 les a
-     * détachés en colonnes distinctes, mais le commerce n'a jamais vendu que
-     * « la carte et les jeux qui vont avec ». Trois colonnes, un produit.
-     */
     entitlement: "vitrine",
     name: "Vitrine",
     currency: "EUR",
@@ -566,7 +561,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
      * le moins cher. La vendre seule à 20 € donnerait le socle à 20 €.
      */
     soldStandalone: false,
-    alsoGrants: ["duo", "bande"],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 20,
@@ -575,7 +569,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     },
     rules: [
       "S'ajoute à une offre en cours, comme ligne du même abonnement.",
-      "Ouvre aussi Duo Miroir et Portrait de la Bande.",
       "Récurrent, sans engagement, actif jusqu'à la fin de la période payée.",
     ],
   },
@@ -584,7 +577,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Réserver",
     currency: "EUR",
     soldStandalone: false,
-    alsoGrants: [],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 30,
@@ -601,7 +593,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Passeport des habitués",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 19,
@@ -618,7 +609,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Bouche-à-oreille / Parrainage",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "recurring-monthly",
       priceMonthly: 12,
@@ -635,7 +625,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Chasse au trésor",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -653,7 +642,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Calendrier à surprises",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -671,7 +659,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Quiz express",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 15,
@@ -689,7 +676,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Cagnotte collective",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "one-off-window",
       price: 29,
@@ -707,7 +693,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Saison de pronostics",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "single-competition",
       price: 39,
@@ -729,7 +714,6 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     name: "Soirée en jeu",
     currency: "EUR",
     soldStandalone: true,
-    alsoGrants: [],
     billing: {
       model: "capacity-pass",
       steps: [
@@ -773,10 +757,6 @@ export const ADDONS_LIGNE_ABONNEMENT: readonly AddonOffer[] = ADDON_OFFERS.filte
   (offre) => !offre.soldStandalone,
 );
 
-/** Droits réellement ouverts par le prix de cette option, `alsoGrants` compris. */
-export function droitsDeLOption(offre: AddonOffer): Entitlement[] {
-  return [offre.entitlement, ...offre.alsoGrants];
-}
 
 
 /** Add-on décrivant ce droit, sinon `null`. */

@@ -9,7 +9,6 @@ import {
   ADDONS_LIGNE_ABONNEMENT,
   ADDONS_PURCHASABLE_STANDALONE,
   ADDONS_STANDALONE,
-  droitsDeLOption,
   cheapestTierFor,
   describeTier,
   entitlementsGainedBy,
@@ -50,7 +49,7 @@ describe("proposition tarifaire — valeurs figées", () => {
     expect(PACKAGING_VERSION).toMatch(/^\d{4}-\d{2}-[a-z]$/);
     // Renommage des offres + catalogue d'add-ons du 2026-08-04 : changer le
     // packaging sans changer sa version doit être impossible par inadvertance.
-    expect(PACKAGING_VERSION).toBe("2026-08-b");
+    expect(PACKAGING_VERSION).toBe("2026-08-c");
   });
 
   /**
@@ -235,16 +234,13 @@ describe("transitions et upsell", () => {
       "events",
       "vitrine",
       "reserver",
-      "duo",
-      "bande",
     ]);
     // Ce que Sur Place apporte à qui vient du socle : le lieu, plus le quiz
     // que sa porte Vitrine exige — et rien d'autre du jeu.
+    // Les deux salons ne sont plus gagnés en montant : ils sont déjà du socle.
     expect(entitlementsGainedBy("core", "place")).toEqual([
       "vitrine",
       "reserver",
-      "duo",
-      "bande",
       "quiz",
     ]);
     expect(entitlementsGainedBy("full", "core")).toEqual([]);
@@ -584,15 +580,23 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     }
   });
 
-  /** Un prix, trois colonnes : la Vitrine vend aussi les deux jeux de salon. */
-  it("fait ouvrir Duo et Bande par le seul prix Vitrine", () => {
-    const vitrine = findAddonOffer("vitrine");
-    expect(vitrine?.alsoGrants).toEqual(["duo", "bande"]);
-    expect(droitsDeLOption(vitrine!)).toEqual(["vitrine", "duo", "bande"]);
-    // Et nulle part ailleurs : un droit qui en ouvre d'autres est l'exception.
-    for (const offre of ADDON_OFFERS.filter((o) => o.entitlement !== "vitrine")) {
-      expect(offre.alsoGrants).toEqual([]);
+  /**
+   * LES DEUX SALONS SONT DU SOCLE, DONC DANS LES CINQ OFFRES.
+   *
+   * Ils ont d'abord été vendus avec la Vitrine — un prix, trois colonnes. Ce
+   * n'était pas un modèle de vente, c'était leur histoire : ils sont nés sous
+   * son droit. Ce sont des jeux, et un jeu ne se vend pas avec une carte de
+   * restaurant. Le test vaut donc sur les CINQ offres, pas sur une option.
+   */
+  it("met Duo Miroir et Portrait de la Bande dans toutes les offres", () => {
+    for (const plan of PLAN_TIERS) {
+      expect(tierIncludes(plan, "duo"), plan.id).toBe(true);
+      expect(tierIncludes(plan, "bande"), plan.id).toBe(true);
     }
+    // Et l'offre d'entrée les liste bien au commerçant.
+    const vue = describeTier(tier("core")).experiences;
+    expect(vue).toContain("Duo Miroir");
+    expect(vue).toContain("Portrait de la Bande");
   });
 
   it("écrit la mise en pause sûre à l'échéance", () => {
