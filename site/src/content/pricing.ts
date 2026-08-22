@@ -49,6 +49,12 @@ const PLAN_EDITORIAL: PlanEditorial[] = [
     highlighted: false,
   },
   {
+    id: "place",
+    description:
+      "Pour tout lieu qui reçoit : votre carte se lit au QR code, vos créneaux se réservent, et une table qui attend a de quoi jouer.",
+    highlighted: false,
+  },
+  {
     id: "live",
     description:
       "Pour animer une salle, une soirée ou une compétition, avec l'écran et les téléphones de vos clients.",

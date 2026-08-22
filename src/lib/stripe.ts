@@ -358,6 +358,7 @@ export async function cancelCustomerSubscriptions(
 const PLAN_PRICE_ENV: Record<PlanTierId, readonly string[]> = {
   core: ["STRIPE_PRICE_ID_CORE", "STRIPE_PRICE_ID_STARTER"],
   engagement: ["STRIPE_PRICE_ID_ENGAGEMENT"],
+  place: ["STRIPE_PRICE_ID_PLACE"],
   live: ["STRIPE_PRICE_ID_LIVE"],
   full: ["STRIPE_PRICE_ID_FULL"],
 };

@@ -1,5 +1,39 @@
 # Roadmap — Lastchance
 
+## V1.66 — Sur Place : la cinquième offre rend vendables quatre produits livrés (✅ 2026-08-22, ADR-117)
+
+**Objectif** : demande du propriétaire après un audit tarifaire — la Vitrine,
+Réserver, Duo Miroir et Portrait de la Bande étaient en production et
+invendables, aucune offre ne les portant. Migration `20261021120000`.
+Arbitrages complets : ADR-117.
+
+- **Une cinquième offre, `place` / « Sur Place », 79 €/mois** : socle +
+  Vitrine + Réserver + les deux jeux de salon + quiz. Prix = 29 + 20 + 30,
+  sans remise, pour que la grille reste calculable de tête.
+- **Les tarifs de jeu ne bougent pas.** Le relevé concurrentiel les a validés
+  tels quels : le jeu au QR se vend 9,90 €/mois, la fidélité commerce plafonne
+  à 49 €. La proposition initiale de les monter à 29/69/99 a été écartée.
+- **La Totale absorbe les quatre droits sans changer de prix** (129 €), ce qui
+  rend son sous-titre à nouveau vrai.
+- **Ce que la vérification a trouvé** : le document d'audit affirmait « aucune
+  migration nécessaire ». Faux — `apply_stripe_subscription_event_v2` aurait
+  levé « invalid plan » puis « invalid entitlement » sur le PREMIER abonnement
+  vendu, et un webhook en échec est rejoué trois jours avant que Stripe
+  désactive le point d'entrée : la synchronisation des abonnements existants
+  serait tombée avec.
+- **Deux registres neufs** : `MODULE_CATALOG` (les modules vendables qui ne
+  sont pas des expériences jouables) et `duo`/`bande` promus au rang de
+  droits. `protect_stripe_managed_entitlements` suit les quatre colonnes
+  passées sous autorité Stripe.
+
+**Reste ouvert** : les options Vitrine (+20 €) et Réserver (+30 €) ne sont pas
+vendables — il manque un `subscriptions.update` (aujourd'hui une option
+mensuelle crée un abonnement Stripe **séparé**, donc un second prélèvement) et
+un prix Vitrine capable d'ouvrir trois colonnes. **Geste propriétaire dû** :
+créer le produit et le prix Stripe en mode LIVE, puis poser
+`STRIPE_PRICE_ID_PLACE` sur Vercel — la clé `rk_live_` de la CLI n'a pas
+`product_write`, et c'est celle que l'audit du 2026-08-16 demande de révoquer.
+
 ## V1.64 — Train Réserver & Vitrine (✅ 2026-08-21)
 
 **Objectif** : livrer LastChance Réserver (RES-1..5) et la Vitrine (VIT-1..5),
