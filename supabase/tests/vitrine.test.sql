@@ -2111,6 +2111,12 @@ values
    now() - interval '1 day', now() + interval '365 days'),
   ('f1000000-0000-4000-8000-000000001300', 'quiz', 'pass', 'backoffice',
    now() - interval '1 day', now() + interval '365 days'),
+  -- `reserver` DEPUIS 20261020120000 : les trois listes de `portes.reserver`
+  -- reflètent le droit du PRODUIT qu'elles ouvrent, plus celui de la vitrine.
+  -- Sans cet octroi, G annoncerait une page sans aucune porte — et les
+  -- assertions ci-dessous liraient des listes vides sans savoir pourquoi.
+  ('f1000000-0000-4000-8000-000000001300', 'reserver', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
   -- H n'a QUE `vitrine` : c'est toute la fixture.
   ('f1000000-0000-4000-8000-000000001301', 'vitrine', 'pass', 'backoffice',
    now() - interval '1 day', now() + interval '365 days');

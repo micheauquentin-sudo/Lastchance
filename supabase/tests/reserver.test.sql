@@ -25,7 +25,7 @@
 --      public d'un joueur est borné à l'organisation interrogée. La RLS ne
 --      laisse lire ni à `anon`, ni au voisin, et l'email n'est lisible par
 --      PERSONNE en session marchande.
---   6. LE DROIT `vitrine`. Une organisation qui ne l'a pas ne prend aucune
+--   6. LE DROIT `reserver`. Une organisation qui ne l'a pas ne prend aucune
 --      réservation, même sur un créneau parfaitement ouvert.
 --   7. LA FENÊTRE DE CHECK-IN. Trois jours avant, ou trois jours après, le
 --      code ne s'échange pas : `too_early` / `too_late`, et la réservation
@@ -122,7 +122,7 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ── Fixtures ─────────────────────────────────────────────────
--- A : SERVIE — le droit `vitrine` par OCTROI daté vivant (le chemin de la
+-- A : SERVIE — les droits `vitrine` ET `reserver` par OCTROI daté vivant (le chemin de la
 -- bêta, 20261001120000). C'est volontairement l'octroi et non `addon_vitrine` :
 -- c'est le seul chemin ouvert aujourd'hui, donc le seul qui mérite d'être joué.
 -- B : VOISINE, servie elle aussi — sans quoi « le voisin ne voit rien » se
@@ -138,13 +138,19 @@ values
   ('4e5e0000-0000-4000-8000-00000000000c', 'Réserver C', 'tap-rv-c',
    'active', 'starter', 'Europe/Paris', 6);
 
+-- `reserver` EN PLUS DE `vitrine` DEPUIS 20261020120000 : les cinq RPC
+-- d'activité interrogent désormais la clé du produit, et non plus celle de la
+-- Vitrine. `vitrine` reste semé parce que la page publique du commerce en
+-- dépend ; C n'a toujours NI l'un NI l'autre, et c'est ce qui fait d'elle le
+-- témoin « sans le droit ».
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-values
-  ('4e5e0000-0000-4000-8000-00000000000a', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days'),
-  ('4e5e0000-0000-4000-8000-00000000000b', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days');
+select o.id, m.module, 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('4e5e0000-0000-4000-8000-00000000000a'::uuid),
+    ('4e5e0000-0000-4000-8000-00000000000b'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('reserver')) as m(module);
 
 insert into auth.users (id, email) values
   ('4e5e0000-0000-4000-8000-000000000101', 'proprio-a@tap-rv.local'),
@@ -208,7 +214,7 @@ values
    '4e5e0000-0000-4000-8000-000000000203',
    '4e5e0000-0000-4000-8000-00000000000b',
    now() + interval '2 days', now() + interval '2 days 1 hour', 5, 'open'),
-  -- S7 : chez l'organisation SANS le droit `vitrine`, tout aussi ouvert.
+  -- S7 : chez l'organisation SANS le droit `reserver`, tout aussi ouvert.
   ('4e5e0000-0000-4000-8000-000000000307',
    '4e5e0000-0000-4000-8000-000000000204',
    '4e5e0000-0000-4000-8000-00000000000c',
@@ -387,7 +393,7 @@ select is(
     '4e5e0000-0000-4000-8000-00000000000c',
     '4e5e0000-0000-4000-8000-000000000307', repeat('c', 64)))->>'state',
   'unavailable',
-  'REF-4 VITRINE une organisation sans le droit ne prend aucune réservation');
+  'REF-4 RESERVER une organisation sans le droit ne prend aucune réservation');
 select is(
   (public.reserve_slot(
     '4e5e0000-0000-4000-8000-00000000000a',
@@ -1741,7 +1747,7 @@ select is(
     '4e5e0000-0000-4000-8000-00000000000c',
     '4e5e0000-0000-4000-8000-000000000307', repeat('cd', 32)))->>'state',
   'unavailable',
-  'LIST-12 une organisation sans le droit `vitrine` non plus');
+  'LIST-12 une organisation sans le droit `reserver` non plus');
 select is(
   (public.waitlist_join(
     '4e5e0000-0000-4000-8000-00000000000a',

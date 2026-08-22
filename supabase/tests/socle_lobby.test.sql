@@ -19,6 +19,13 @@
 --      vitrine éteinte n'a pas d'adresse publique, donc pas de jeux. La garde
 --      tient PAR LA BASE, et la publier débloque la création — ce qui prouve que
 --      c'est bien elle qui refusait.
+--   2 quater. CHAQUE JEU DEMANDE SA PROPRE CLÉ (20261020120000). `vitrine` ne
+--      les ouvre plus : un salon `bande` exige `bande`, un salon `duo` exige
+--      `duo`. Prouvé DANS LES DEUX SENS, sur deux organisations servies et
+--      publiées qui ne portent qu'une clé de jeu chacune — celle qui se voit
+--      refuser un jeu ouvre l'autre à la ligne suivante, donc aucun refus ne
+--      peut être imputé au droit `vitrine`, à la publication ni au quota. Et les
+--      QUATRE causes de refus rendent UN SEUL document, au caractère près.
 --   3. LA CAPACITÉ TIENT jusqu'au douzième et refuse le treizième.
 --   4. REJOINDRE DEUX FOIS REND LE MÊME DOCUMENT, au caractère près, et
 --      n'écrit pas de seconde place.
@@ -111,6 +118,13 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 --     fois de suite pour prouver une propriété qui n'a rien à voir avec lui.
 --     Elle n'a ni module ni vitrine : la lecture de supervision n'en demande
 --     pas, et le vérifier ici coûte une ligne.
+-- I, J : LES DEUX TÉMOINS D'UNE CLÉ PAR PRODUIT (20261020120000). Servies toutes
+--     les deux — droit `vitrine` vivant, vitrine PUBLIÉE — mais ne portant
+--     qu'UN SEUL des deux droits de jeu : I a `duo` sans `bande`, J a `bande`
+--     sans `duo`. Chacune est le CONTRÔLE DE PORTÉE de l'autre refus : la même
+--     organisation qui se voit refuser un jeu ouvre l'autre dans la ligne
+--     suivante, donc le refus ne peut être imputé ni au droit `vitrine`, ni à la
+--     publication, ni au quota.
 insert into public.organizations
   (id, name, slug, subscription_status, plan, timezone, data_retention_months)
 values
@@ -129,6 +143,10 @@ values
   ('6b0b1e00-0000-4000-8000-000000000010', 'Lobby G', 'tap-lobby-g',
    'active', 'starter', 'Europe/Paris', 6),
   ('6b0b1e00-0000-4000-8000-000000000011', 'Lobby H', 'tap-lobby-h',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-000000000012', 'Lobby I', 'tap-lobby-i',
+   'active', 'starter', 'Europe/Paris', 6),
+  ('6b0b1e00-0000-4000-8000-000000000013', 'Lobby J', 'tap-lobby-j',
    'active', 'starter', 'Europe/Paris', 6);
 
 -- LES ACTEURS. `close_player_lobby_as_org` vérifie l'appartenance EN SQL, donc
@@ -152,9 +170,16 @@ insert into public.organization_members (organization_id, user_id, role) values
   ('6b0b1e00-0000-4000-8000-00000000000b',
    '6b0b1e01-0000-4000-8000-000000000004', 'owner');
 
+-- TROIS DROITS DEPUIS 20261020120000, et c'est la conséquence directe de « une
+-- clé par produit » : `create_player_lobby` exige `vitrine` (les salons SONT la
+-- Vitrine, ADR-109 §A1, rien n'est retiré) ET la clé du JEU demandé, dérivée de
+-- `p_kind`. Ces six organisations ouvrent des salons des DEUX sortes, elles
+-- portent donc les deux clés de jeu. `reserver` n'est PAS semé : aucune
+-- assertion de ce fichier ne le demande, et un octroi de trop rendrait vert le
+-- jour où la garde du salon retomberait sur la mauvaise clé.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-select o.id, 'vitrine', 'pass', 'backoffice',
+select o.id, m.module, 'pass', 'backoffice',
        now() - interval '1 day', now() + interval '365 days'
   from (values
     ('6b0b1e00-0000-4000-8000-00000000000a'::uuid),
@@ -162,7 +187,22 @@ select o.id, 'vitrine', 'pass', 'backoffice',
     ('6b0b1e00-0000-4000-8000-00000000000d'::uuid),
     ('6b0b1e00-0000-4000-8000-00000000000e'::uuid),
     ('6b0b1e00-0000-4000-8000-00000000000f'::uuid),
-    ('6b0b1e00-0000-4000-8000-000000000010'::uuid)) as o(id);
+    ('6b0b1e00-0000-4000-8000-000000000010'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('duo'), ('bande')) as m(module);
+
+-- I ET J : UN SEUL DROIT DE JEU CHACUNE. C'est toute la fixture — et c'est ce
+-- déséquilibre, et lui seul, que les assertions DROIT-3 à DROIT-8 lisent.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('6b0b1e00-0000-4000-8000-000000000012', 'vitrine', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('6b0b1e00-0000-4000-8000-000000000012', 'duo', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('6b0b1e00-0000-4000-8000-000000000013', 'vitrine', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('6b0b1e00-0000-4000-8000-000000000013', 'bande', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
 
 -- LA VITRINE, ET SA PUBLICATION. `create_player_lobby` exige les DEUX (le droit
 -- ET `published`), donc sans ces lignes tout ce fichier rendrait `unavailable`.
@@ -178,7 +218,12 @@ values
   ('6b0b1e00-0000-4000-8000-00000000000d', 'tap-vitrine-lobby-d', false),
   ('6b0b1e00-0000-4000-8000-00000000000e', 'tap-vitrine-lobby-e', true),
   ('6b0b1e00-0000-4000-8000-00000000000f', 'tap-vitrine-lobby-f', true),
-  ('6b0b1e00-0000-4000-8000-000000000010', 'tap-vitrine-lobby-g', true);
+  ('6b0b1e00-0000-4000-8000-000000000010', 'tap-vitrine-lobby-g', true),
+  -- I ET J SONT PUBLIÉES. Sans cela leur refus se confondrait avec celui de D,
+  -- et DROIT-4 comme DROIT-7 prouveraient « vitrine éteinte » en croyant
+  -- prouver « pas le droit du jeu ».
+  ('6b0b1e00-0000-4000-8000-000000000012', 'tap-vitrine-lobby-i', true),
+  ('6b0b1e00-0000-4000-8000-000000000013', 'tap-vitrine-lobby-j', true);
 
 create temporary table lb (nom text primary key, j jsonb);
 
@@ -319,6 +364,71 @@ select is(
     'facade00-0000-4000-8000-000000000000', 'bande', 4,
     repeat('cc', 32), 'Sans droit'),
   'DROIT-2 « pas le module » et « organisation inconnue » rendent le MÊME document');
+
+-- ── UNE CLÉ PAR PRODUIT (20261020120000) ────────────────────
+-- Le droit `vitrine` ne suffit plus : chaque JEU demande le sien. I a `duo` et
+-- pas `bande` ; J a `bande` et pas `duo`. Les deux sont servies et publiées, ce
+-- qui fait de chacune le contrôle de portée de son propre refus.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-000000000012', 'bande', 4,
+     repeat('e1', 32), 'Sans bande'))->>'state',
+  'unavailable',
+  'DROIT-3 le droit `vitrine` n''ouvre PAS un salon Portrait de la Bande : il faut `bande`');
+select is(
+  public.create_player_lobby(
+    '6b0b1e00-0000-4000-8000-000000000012', 'bande', 4,
+    repeat('e1', 32), 'Sans bande'),
+  public.create_player_lobby(
+    'facade00-0000-4000-8000-000000000000', 'bande', 4,
+    repeat('e1', 32), 'Sans bande'),
+  'DROIT-4 … et le refus est le MÊME document qu''« organisation inconnue » : la clé manquante ne se lit pas de dehors');
+-- LE CONTRÔLE DE PORTÉE : la MÊME organisation, au MÊME instant, ouvre un duo.
+-- Sans lui, DROIT-3 serait vert le jour où I échouerait pour une tout autre
+-- raison — un quota, une vitrine éteinte, une fixture oubliée.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-000000000012', 'duo', 2,
+     repeat('e2', 32), 'Avec duo'))->>'state',
+  'created',
+  'DROIT-5 … et c''est bien `bande` qui manquait : la même organisation ouvre un Duo Miroir');
+
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-000000000013', 'duo', 2,
+     repeat('e3', 32), 'Sans duo'))->>'state',
+  'unavailable',
+  'DROIT-6 symétriquement, le droit `vitrine` n''ouvre PAS un Duo Miroir : il faut `duo`');
+select is(
+  public.create_player_lobby(
+    '6b0b1e00-0000-4000-8000-000000000013', 'duo', 2,
+    repeat('e3', 32), 'Sans duo'),
+  public.create_player_lobby(
+    'facade00-0000-4000-8000-000000000000', 'duo', 2,
+    repeat('e3', 32), 'Sans duo'),
+  'DROIT-7 … même document, même indistinction');
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-000000000013', 'bande', 4,
+     repeat('e4', 32), 'Avec bande'))->>'state',
+  'created',
+  'DROIT-8 … et c''est bien `duo` qui manquait : la même organisation ouvre un Portrait de la Bande');
+
+-- LES QUATRE REFUS SONT UN SEUL DOCUMENT. C'est la propriété que la structure
+-- de la garde tient (un `if`, un `return`) et non un accord entre branches :
+-- organisation inconnue, pas de `vitrine`, pas la clé du jeu, vitrine éteinte.
+select is(
+  (select count(distinct j)::int from (values
+     (public.create_player_lobby('facade00-0000-4000-8000-000000000000', 'bande', 4,
+        repeat('e5', 32), 'Témoin')),
+     (public.create_player_lobby('6b0b1e00-0000-4000-8000-00000000000c', 'bande', 4,
+        repeat('e5', 32), 'Témoin')),
+     (public.create_player_lobby('6b0b1e00-0000-4000-8000-000000000012', 'bande', 4,
+        repeat('e5', 32), 'Témoin')),
+     (public.create_player_lobby('6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
+        repeat('e5', 32), 'Témoin'))) as t(j)),
+  1,
+  'DROIT-9 les QUATRE refus rendent un seul et même document, au caractère près');
 
 -- LA VITRINE DOIT ÊTRE PUBLIÉE, et pas seulement le droit vivant. D a payé, D
 -- n'a rien allumé : ses jeux n'existent pour personne.

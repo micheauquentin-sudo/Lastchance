@@ -548,16 +548,17 @@ select (regexp_matches(
 -- CONTRÔLE DU CONTRÔLE : deux extractions vides seraient « d'accord » et ne
 -- prouveraient rien. C'est la forme de détecteur muet que ce dépôt s'est déjà
 -- fait prendre plusieurs fois — un zéro rouge indistinguable d'un succès.
--- DIX depuis 20261001120000 (« vitrine »), neuf auparavant. Ce nombre est
--- ÉCRIT et non dérivé, délibérément : c'est lui qui a attrapé le filtre par nom
--- de contrainte qui ramenait treize valeurs, et c'est lui qui attraperait une
+-- TREIZE depuis 20261020120000 (« reserver », « duo », « bande »), dix depuis
+-- 20261001120000 (« vitrine »), neuf auparavant. Ce nombre est ÉCRIT et non
+-- dérivé, délibérément : c'est lui qui a attrapé le filtre par nom de
+-- contrainte qui ramenait treize valeurs, et c'est lui qui attraperait une
 -- ancienne contrainte survivant à côté de la neuve — le `drop constraint if
 -- exists` de la migration se lirait alors comme un succès, et la table
 -- porterait deux vocabulaires dont le plus étroit gagnerait.
-select is((select count(*)::int from vocab_table), 10,
-  'la contrainte de table énumère bien dix modules (sinon l''accord ci-dessous est vide)');
-select is((select count(*)::int from vocab_fonction), 10,
-  'la fonction énumère bien dix modules');
+select is((select count(*)::int from vocab_table), 13,
+  'la contrainte de table énumère bien treize modules (sinon l''accord ci-dessous est vide)');
+select is((select count(*)::int from vocab_fonction), 13,
+  'la fonction énumère bien treize modules');
 
 select is_empty(
   $$ (select m from vocab_table except select m from vocab_fonction)

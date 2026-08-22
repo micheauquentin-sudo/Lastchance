@@ -974,6 +974,31 @@ values (
 )
 on conflict (id) do nothing;
 
+-- LES TROIS CLÉS DE PRODUIT (20261020120000). Depuis que le droit unique de la
+-- Vitrine s'est détaché, `vitrine` n'ouvre plus ni Réserver, ni Duo Miroir, ni
+-- Portrait de la Bande : ces trois octrois sont ce qui garde les parcours E2E
+-- de ce commerce ouverts. Le remplissage rétroactif de la migration ne peut pas
+-- les poser à notre place — il s'exécute avant que la seed n'ait semé quoi que
+-- ce soit.
+--
+-- LES BORNES SONT LUES SUR L'OCTROI `vitrine` CI-DESSUS, jamais recalculées.
+-- Deux raisons, et la seconde est celle qui mord : d'abord c'est ce que dit le
+-- lot (mêmes bornes) ; ensuite psql valide chaque instruction séparément, donc
+-- deux `now()` écrits dans deux `insert` voisins ne rendent PAS le même
+-- instant. Des bornes décalées de quelques millisecondes suffiraient à faire
+-- voir quatre octrois distincts là où il n'y a qu'un droit, et le pgTAP du
+-- remplissage compterait faux.
+insert into public.organization_module_grants
+  (id, organization_id, module, kind, source, starts_at, ends_at)
+select v.id, g.organization_id, v.module, g.kind, g.source, g.starts_at, g.ends_at
+  from public.organization_module_grants g
+ cross join (values
+    ('e2ea0000-0000-4000-8000-000000000003'::uuid, 'reserver'),
+    ('e2ea0000-0000-4000-8000-000000000004'::uuid, 'duo'),
+    ('e2ea0000-0000-4000-8000-000000000005'::uuid, 'bande')) as v(id, module)
+ where g.id = 'e2ea0000-0000-4000-8000-000000000001'
+on conflict (id) do nothing;
+
 -- Une activité ACTIVE et un créneau OUVERT dans le futur proche, à capacité
 -- petite mais PLURIELLE (4) : une place unique ferait échouer le second
 -- parcours d'une même exécution E2E sur « full » plutôt que sur ce qu'il
@@ -1729,6 +1754,21 @@ values (
   'e2ea0000-0000-4000-8000-000000000002', 'e2e10000-0000-4000-8000-000000000003',
   'vitrine', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days'
 )
+on conflict (id) do nothing;
+
+-- LES TROIS CLÉS DE PRODUIT (20261020120000), aux mêmes bornes — même raison
+-- qu'au Comptoir : `vitrine` seule ne porte plus que la page publique et les
+-- salons, et cette vitrine-ci sert de témoin aux portes de `vitrine_public_state`,
+-- qui sont désormais vides sans le droit du produit qu'elles ouvrent.
+insert into public.organization_module_grants
+  (id, organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('e2ea0000-0000-4000-8000-000000000006', 'e2e10000-0000-4000-8000-000000000003',
+   'reserver', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days'),
+  ('e2ea0000-0000-4000-8000-000000000007', 'e2e10000-0000-4000-8000-000000000003',
+   'duo', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days'),
+  ('e2ea0000-0000-4000-8000-000000000008', 'e2e10000-0000-4000-8000-000000000003',
+   'bande', 'pass', 'backoffice', now() - interval '1 day', now() + interval '365 days')
 on conflict (id) do nothing;
 
 -- UNE CARTE, UNE RUBRIQUE, UNE FICHE, et `histoire` / `horaires_texte` laissés

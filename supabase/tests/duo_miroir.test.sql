@@ -100,14 +100,19 @@ insert into public.organization_members (organization_id, user_id, role) values
   ('d0000000-0000-4000-8000-00000000000b',
    'd0000001-0000-4000-8000-000000000004', 'owner');
 
+-- DEUX DROITS DEPUIS 20261020120000, et pas quatre : `vitrine` pour la page et
+-- sa publication, `duo` pour le jeu. Ne PAS semer `reserver` ni `bande` est
+-- délibéré — un octroi qu'aucune assertion n'exige rendrait ce fichier vert le
+-- jour où la garde du salon retomberait sur la mauvaise clé.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-select o.id, 'vitrine', 'pass', 'backoffice',
+select o.id, m.module, 'pass', 'backoffice',
        now() - interval '1 day', now() + interval '365 days'
   from (values
     ('d0000000-0000-4000-8000-00000000000a'::uuid),
     ('d0000000-0000-4000-8000-00000000000b'::uuid),
-    ('d0000000-0000-4000-8000-00000000000c'::uuid)) as o(id);
+    ('d0000000-0000-4000-8000-00000000000c'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('duo')) as m(module);
 
 -- LA VITRINE, ET SA PUBLICATION. `create_player_lobby` exige les DEUX (le droit
 -- ET `published`). L'ordre compte : `vitrine_settings_guard_publication` refuse

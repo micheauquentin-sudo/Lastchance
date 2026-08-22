@@ -35,7 +35,7 @@
 --      par guichet est éprouvé sur les deux formes d'attente, avec ses deux
 --      bords — un AUTRE joueur au même guichet passe, la même personne repasse
 --      après 25 h simulées.
---  10. LE DROIT `vitrine` EST EXIGÉ AUX TROIS ÉTAGES. Une session ouverte du
+--  10. LE DROIT `reserver` EST EXIGÉ AUX TROIS ÉTAGES. Une session ouverte du
 --      temps de l'abonnement ne sert plus rien après sa fermeture — ni octroi,
 --      ni tirage — et le tirage est celui qui décrémente le stock.
 --
@@ -61,7 +61,7 @@ select no_plan();
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ── Fixtures ─────────────────────────────────────────────────
--- A : SERVIE — droit `vitrine` par OCTROI daté vivant (seul chemin ouvert en
+-- A : SERVIE — droits `vitrine` ET `reserver` par OCTROI daté vivant (seul chemin ouvert en
 --     bêta, 20261001120000).
 -- B : VOISINE, servie elle aussi — sans quoi « le voisin ne voit rien » se
 --     confondrait avec « le voisin n'a pas le module ».
@@ -76,13 +76,17 @@ values
   ('4f22e000-0000-4000-8000-00000000000c', 'Attente C', 'tap-attente-c',
    'active', 'starter', 'Europe/Paris', 6);
 
+-- `reserver` EN PLUS DE `vitrine` DEPUIS 20261020120000 : les trois RPC
+-- d'attente active interrogent désormais la clé du produit. `vitrine` reste
+-- semé parce que la page publique du commerce en dépend.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-values
-  ('4f22e000-0000-4000-8000-00000000000a', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days'),
-  ('4f22e000-0000-4000-8000-00000000000b', 'vitrine', 'pass', 'backoffice',
-   now() - interval '1 day', now() + interval '365 days');
+select o.id, m.module, 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('4f22e000-0000-4000-8000-00000000000a'::uuid),
+    ('4f22e000-0000-4000-8000-00000000000b'::uuid)) as o(id)
+ cross join (values ('vitrine'), ('reserver')) as m(module);
 
 -- ── Les deux animations, qui sont des fixtures EXISTANTES du produit ──
 -- Un quiz ACTIF et un quiz ARCHIVÉ : le second prouve que la configuration
@@ -182,7 +186,7 @@ values
   ('4f22e000-0000-4000-8000-000000000651',
    '4f22e000-0000-4000-8000-00000000000b', null, 'Comptoir voisin', 'open', 50,
    '4f22e000-0000-4000-8000-000000000451', '4f22e000-0000-4000-8000-000000000551'),
-  -- SANS le droit `vitrine`.
+  -- SANS le droit `reserver`.
   ('4f22e000-0000-4000-8000-000000000671',
    '4f22e000-0000-4000-8000-00000000000c', null, 'Comptoir sans droit', 'open', 50,
    null, null);
@@ -250,7 +254,7 @@ values
   ('4f22e000-0000-4000-8000-000000000751', '4f22e000-0000-4000-8000-000000000651',
    '4f22e000-0000-4000-8000-00000000000b', repeat('a1', 32), 'waiting');
 
--- EC : dans l'organisation SANS le droit `vitrine`.
+-- EC : dans l'organisation SANS le droit `reserver`.
 insert into public.reservation_queue_entries
   (id, queue_id, organization_id, player_key_hash, status)
 values
@@ -538,7 +542,7 @@ insert into s2 values (6, public.wait_session_open(
   '4f22e000-0000-4000-8000-00000000000c', repeat('a8', 32),
   '4f22e000-0000-4000-8000-000000000771', null));
 select is((select j->>'state' from s2 where n = 6), 'unknown',
-  'REFUS-6 une organisation SANS le droit `vitrine` n''ouvre aucune animation (défense en profondeur)');
+  'REFUS-6 une organisation SANS le droit `reserver` n''ouvre aucune animation (défense en profondeur)');
 
 select results_eq(
   $$select count(*) from public.reservation_wait_sessions
@@ -1141,7 +1145,7 @@ select is((select j->>'state' from s8 where n = 10), 'cooldown',
 
 
 -- ════════════════════════════════════════════════════════════
--- 9. LE DROIT `vitrine` EST EXIGÉ AUX TROIS ÉTAGES, PAS AU PREMIER SEULEMENT
+-- 9. LE DROIT `reserver` EST EXIGÉ AUX TROIS ÉTAGES, PAS AU PREMIER SEULEMENT
 --
 -- `wait_session_open` le vérifiait déjà (REFUS-6) ; les deux autres RPC ne le
 -- vérifiaient pas. Une session ouverte DU TEMPS de l'abonnement continuait donc
@@ -1164,7 +1168,7 @@ insert into s9 values (1, public.wait_session_use_pause(
   '4f22e000-0000-4000-8000-00000000000c',
   '4f22e000-0000-4000-8000-0000000009c1', repeat('a8', 32)));
 select is((select j->>'state' from s9 where n = 1), 'unknown',
-  'DROIT-1 sans le droit `vitrine`, l''octroi de Pause Chance est muet — le MÊME état que les autres refus');
+  'DROIT-1 sans le droit `reserver`, l''octroi de Pause Chance est muet — le MÊME état que les autres refus');
 
 insert into s9 values (2, public.consume_reserver_wait_spin_grant(
   '4f22e000-0000-4000-8000-0000000009c1', repeat('a8', 32), repeat('cd', 24)));
@@ -1179,9 +1183,14 @@ select is(
 -- ET C'EST BIEN LE DROIT QUI REFUSE, pas une fixture bancale : l'octroi posé, la
 -- MÊME session passe de `unknown` à `unconfigured` — elle est lue, comprise, et
 -- refusée pour la seule raison qui reste (cette file n'a pas de campagne).
+--
+-- L'OCTROI POSÉ EST `reserver` SEUL, et C n'a toujours PAS `vitrine`
+-- (20261020120000). C'est ce qui rend le contrôle de portée plus fort qu'avant :
+-- si la garde retombait sur la clé de la Vitrine, cette assertion resterait
+-- rouge au lieu de passer.
 insert into public.organization_module_grants
   (organization_id, module, kind, source, starts_at, ends_at)
-values ('4f22e000-0000-4000-8000-00000000000c', 'vitrine', 'pass', 'backoffice',
+values ('4f22e000-0000-4000-8000-00000000000c', 'reserver', 'pass', 'backoffice',
         now() - interval '1 day', now() + interval '365 days');
 
 insert into s9 values (3, public.wait_session_use_pause(
