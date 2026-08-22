@@ -5,12 +5,15 @@ import { requireOrganizationOwner } from "@/lib/authorization";
 import { reportError } from "@/lib/monitoring";
 import {
   ensureStripeCustomer,
+  findOfferSubscription,
+  getAddonLinePriceId,
   getStripe,
   hasLiveOfferSubscription,
   resolveCheckoutPlan,
   resolveSmsPackCheckout,
   SMS_CREDIT_PURCHASE,
 } from "@/lib/stripe";
+import { ADDONS_LIGNE_ABONNEMENT } from "@/lib/plans";
 import { MODULE_GRANT_PURCHASE } from "@/lib/octroi-achat";
 import { resolveAddonCheckout } from "@/lib/octroi-checkout";
 import { moduleDepuisEntitlement, termesActivation } from "@/lib/octroi-termes";
@@ -476,6 +479,120 @@ async function ressourceDuPass(
 }
 
 /** Ouvre le portail client Stripe (moyens de paiement, annulation…). */
+
+/* ════════════════════════════════════════════════════════════
+ * LES OPTIONS DE LIEU — UNE LIGNE DE L'ABONNEMENT, PAS UN SECOND
+ *
+ * ── CE QUE CETTE ACTION FAIT AUTREMENT QUE SA VOISINE ──
+ *
+ * `createAddonCheckoutSession` ouvre une session Stripe, donc un abonnement
+ * SÉPARÉ pour un mensuel. Ici, on modifie l'abonnement EXISTANT : la Vitrine
+ * et Réserver arrivent comme items du même abonnement, sur la même facture, à
+ * la même date, et se résilient d'un seul geste.
+ *
+ * Stripe proratise seul, dans les deux sens — c'est `create_prorations`. Une
+ * option ajoutée le 20 d'un mois payé n'est facturée que pour ses onze jours,
+ * et une option retirée rend le reste en avoir.
+ *
+ * ── PAS D'ABONNEMENT, PAS D'OPTION ──
+ *
+ * Le refus est délibéré et il est commercial, pas technique : ces deux
+ * options se vendent « sur Coup d'envoi, Le Club ou Le Grand Jeu ». Les
+ * ouvrir seules donnerait le socle à 20 €, alors qu'il en coûte 29.
+ *
+ * ── AUCUNE ÉCRITURE EN BASE ICI ──
+ *
+ * L'action ne touche pas `organizations`. Stripe émet
+ * `customer.subscription.updated`, le webhook relit la photographie complète
+ * des prix et `resolveStripeEntitlements` en dérive les droits — expansion
+ * `alsoGrants` comprise, donc Duo Miroir et Portrait de la Bande avec la
+ * Vitrine. Écrire ici en plus créerait un second juge.
+ * ════════════════════════════════════════════════════════════ */
+export async function toggleSubscriptionOption(
+  _prevState?: unknown,
+  formData?: FormData,
+): Promise<ActionResult> {
+  const { organization } = await requireOrganizationOwner();
+
+  const demande = formData?.get("option");
+  const geste = formData?.get("geste");
+  const offre = ADDONS_LIGNE_ABONNEMENT.find(
+    (candidate) => candidate.entitlement === demande,
+  );
+  if (!offre) {
+    return { ok: false, error: "Option inconnue" };
+  }
+  if (geste !== "ajouter" && geste !== "retirer") {
+    return { ok: false, error: "Geste inconnu" };
+  }
+
+  const priceId = getAddonLinePriceId(offre.entitlement);
+  if (!priceId) {
+    // Même doctrine que les packs SMS : une option dont le prix n'est pas
+    // configuré est ABSENTE de l'écran, jamais une erreur au clic. Si on
+    // arrive ici, c'est que l'écran a été contourné.
+    return { ok: false, error: `« ${offre.name} » n'est pas encore en vente.` };
+  }
+
+  if (!organization.stripe_customer_id) {
+    return {
+      ok: false,
+      error: `« ${offre.name} » s'ajoute à une offre en cours. Souscrivez d'abord une offre.`,
+    };
+  }
+
+  try {
+    const stripe = getStripe();
+    const abonnement = await findOfferSubscription(
+      stripe,
+      organization.stripe_customer_id,
+    );
+    if (!abonnement) {
+      return {
+        ok: false,
+        error: `« ${offre.name} » s'ajoute à une offre en cours. Souscrivez d'abord une offre.`,
+      };
+    }
+
+    const itemExistant = abonnement.itemParPrix.get(priceId);
+
+    if (geste === "ajouter") {
+      if (itemExistant) {
+        // Le message dit ce qu'il A, pas ce qui a échoué : même doctrine que
+        // le refus de cumul de `createAddonCheckoutSession`.
+        return {
+          ok: false,
+          error: `« ${offre.name} » est déjà sur votre abonnement.`,
+        };
+      }
+      await stripe.subscriptions.update(abonnement.id, {
+        items: [{ price: priceId }],
+        proration_behavior: "create_prorations",
+      });
+    } else {
+      if (!itemExistant) {
+        return {
+          ok: false,
+          error: `« ${offre.name} » n'est pas sur votre abonnement.`,
+        };
+      }
+      await stripe.subscriptions.update(abonnement.id, {
+        items: [{ id: itemExistant, deleted: true }],
+        proration_behavior: "create_prorations",
+      });
+    }
+  } catch (err) {
+    reportError("billing.option-abonnement", err);
+    return { ok: false, error: "Impossible de modifier votre abonnement" };
+  }
+
+  // Le droit lui-même arrive par le webhook ; on rafraîchit l'écran pour que
+  // l'état affiché cesse d'être celui d'avant le clic.
+  revalidatePath("/dashboard/settings/modules");
+  revalidatePath("/dashboard/settings");
+  return { ok: true, data: undefined };
+}
+
 export async function createPortalSession(): Promise<ActionResult> {
   const { organization } = await requireOrganizationOwner();
 

@@ -126,9 +126,18 @@ export const PRICING_NOTES = [
 ];
 
 /** Phrase d'introduction de la section options — dérivée, pas retapée. */
+/**
+ * DEUX FAMILLES D'OPTIONS DEPUIS LE 2026-08-22, et la phrase doit le dire.
+ *
+ * Le ternaire d'origine supposait que le catalogue était homogène : soit tout
+ * s'achète seul, soit rien. Vitrine et Réserver ont cassé ça — ce sont des
+ * lignes d'abonnement, jamais des achats séparés. Annoncer « chaque option
+ * s'achète seule » les vendrait pour ce qu'elles ne sont pas ; annoncer
+ * l'inverse mentirait sur les huit autres.
+ */
 export const ADDONS_INTRO = ADDONS_PURCHASABLE_STANDALONE
   ? "Chaque option s'achète seule, sans abonnement : elle embarque le strict nécessaire (organisation, QR, lots, caisse) sans déverrouiller les autres modules. Vous pouvez aussi en cumuler plusieurs."
-  : "Chaque option vient compléter un abonnement en cours.";
+  : "La plupart des options s'achètent seules, sans abonnement : elles embarquent le strict nécessaire (organisation, QR, lots, caisse) sans déverrouiller les autres modules. Vitrine et Réserver font exception — elles s'ajoutent à une offre en cours, sur la même facture et à la même date.";
 
 export const ADDON_NOTES: readonly string[] = ADDON_EXPIRY_RULES;
 

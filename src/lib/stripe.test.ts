@@ -372,6 +372,70 @@ describe("resolveCheckoutPlan", () => {
 });
 
 describe("resolveStripeEntitlements", () => {
+  /**
+   * UN PRIX, TROIS COLONNES — la seule exception du catalogue.
+   *
+   * La PR #176 a détaché `duo` et `bande` de `vitrine`, alors que le commerce
+   * n'a jamais vendu que « la carte et les jeux qui vont avec ». Sans
+   * l'expansion `alsoGrants`, le commerçant paierait sa Vitrine et trouverait
+   * les deux jeux de salon fermés — un défaut muet, puisque le paiement, lui,
+   * aurait réussi.
+   */
+  it("fait ouvrir Duo et Bande par le seul prix Vitrine", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_VITRINE", "price_vitrine");
+
+    const resolu = resolveStripeEntitlements(["price_core", "price_vitrine"]);
+
+    expect(resolu.planId).toBe("core");
+    expect(resolu.unknownPriceIds).toEqual([]);
+    expect([...resolu.entitlements].sort()).toEqual([
+      "bande",
+      "core",
+      "duo",
+      "vitrine",
+    ]);
+  });
+
+  /** Réserver n'embarque rien : l'expansion est l'exception, pas la règle. */
+  it("n'ouvre que son propre droit pour Réserver", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_RESERVER", "price_reserver");
+
+    const resolu = resolveStripeEntitlements(["price_core", "price_reserver"]);
+
+    expect([...resolu.entitlements].sort()).toEqual(["core", "reserver"]);
+  });
+
+  /**
+   * LES DEUX OPTIONS SUR LA MÊME LIGNE, ce qui est le cas de vente réel : un
+   * commerçant qui prend la carte ET l'agenda a UN abonnement à trois items.
+   * C'est précisément ce que `toggleSubscriptionOption` produit, et ce que
+   * l'ancien tunnel d'achat autonome rendait impossible.
+   */
+  it("résout un abonnement portant l'offre et ses deux options", () => {
+    vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_VITRINE", "price_vitrine");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_RESERVER", "price_reserver");
+
+    const resolu = resolveStripeEntitlements([
+      "price_core",
+      "price_vitrine",
+      "price_reserver",
+    ]);
+
+    expect(resolu.planId).toBe("core");
+    expect(resolu.unknownPriceIds).toEqual([]);
+    expect([...resolu.entitlements].sort()).toEqual([
+      "bande",
+      "core",
+      "duo",
+      "reserver",
+      "vitrine",
+    ]);
+  });
+
+
   it("dérive les droits du plan et de ses items additionnels", () => {
     vi.stubEnv("STRIPE_PRICE_ID_LIVE", "price_live");
     vi.stubEnv("STRIPE_PRICE_ID_ADDON_HUNTS", "price_hunts");

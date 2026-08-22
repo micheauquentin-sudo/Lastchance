@@ -5,7 +5,7 @@ import { optionalEnv, requiredEnv } from "@/lib/env";
 // La grammaire des prix de pass vit dans `octroi-checkout` et NULLE PART
 // ailleurs (voir son en-tête) : on l'importe, on ne la recopie pas.
 import { partitionnerPrix } from "@/lib/octroi-checkout";
-import { PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
+import { findAddonOffer, PLAN_TIERS, type PlanTier, type PlanTierId } from "@/lib/plans";
 import { createAdminClient } from "@/lib/supabase/admin";
 // Le plafond est celui du geste manuel, et il est repris ici volontairement :
 // « un crédit SMS ne se reprend pas » est la même propriété, quelle que soit
@@ -276,6 +276,66 @@ export async function hasLiveOfferSubscription(
 }
 
 /**
+ * L'ABONNEMENT D'OFFRE D'UN CLIENT — celui auquel une option s'ajoute.
+ *
+ * ── LE DÉFAUT QUE CETTE FONCTION EXISTE POUR FERMER ──
+ *
+ * `createAddonCheckoutSession` vend un mensuel en ouvrant une session Stripe
+ * en `mode: "subscription"`, ce qui crée un abonnement SÉPARÉ. Un commerçant
+ * qui prend deux options mensuelles reçoit donc deux prélèvements, à deux
+ * dates, sur deux factures, et doit résilier deux fois. C'est vrai aujourd'hui
+ * du Passeport et du Parrainage.
+ *
+ * Une option doit être une LIGNE de l'abonnement en cours. Encore faut-il
+ * savoir lequel : c'est ce que rend cette fonction.
+ *
+ * ── CE QU'ELLE REFUSE DE DEVINER ──
+ *
+ * Même prudence que `hasLiveOfferSubscription`, dont elle reprend la boucle :
+ * une liste d'items PAGINÉE (`has_more`) rend `null`. On ne pose pas une
+ * ligne sur un abonnement dont on n'a vu qu'une partie — le doublon qu'on
+ * créerait serait un second prélèvement, exactement ce qu'on vient de fermer.
+ */
+export interface AbonnementDOffre {
+  id: string;
+  /** Identifiant d'item Stripe par prix — ce qu'il faut pour retirer une ligne. */
+  itemParPrix: ReadonlyMap<string, string>;
+}
+
+export async function findOfferSubscription(
+  stripe: Stripe,
+  customerId: string,
+): Promise<AbonnementDOffre | null> {
+  for await (const subscription of stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  })) {
+    if (isTerminalSubscriptionStatus(subscription.status)) continue;
+    if (subscription.items?.has_more) continue;
+    const items = subscription.items?.data ?? [];
+    if (items.length === 0) continue;
+    const porteUneOffre = items.some((item) =>
+      PLAN_TIERS.some((tier) => getPlanPriceId(tier.id) === item.price.id),
+    );
+    if (!porteUneOffre) continue;
+    return {
+      id: subscription.id,
+      itemParPrix: new Map(items.map((item) => [item.price.id, item.id])),
+    };
+  }
+  return null;
+}
+
+/** Prix Stripe de l'option vendue en ligne d'abonnement, si configuré. */
+export function getAddonLinePriceId(entitlement: string): string | undefined {
+  const entree = ADDON_PRICE_ENV.find(
+    (candidate) => candidate.entitlement === entitlement,
+  );
+  return entree ? optionalEnv(entree.env) : undefined;
+}
+
+/**
  * Stripe a-t-il DÉJÀ annoncé un abonnement pour cette organisation ?
  *
  * Lit `organizations.stripe_event_created_at`, écrite uniquement par
@@ -449,6 +509,11 @@ const ADDON_PRICE_ENV: ReadonlyArray<{
   { entitlement: "calendar", env: "STRIPE_PRICE_ID_ADDON_CALENDAR" },
   { entitlement: "quiz", env: "STRIPE_PRICE_ID_ADDON_QUIZ" },
   { entitlement: "referral", env: "STRIPE_PRICE_ID_ADDON_REFERRAL" },
+  // Les deux options de lieu (2026-08-22). Elles n'existent QUE dans cette
+  // famille : aucune variable `STRIPE_PRICE_ID_PASS_*` ne leur correspond,
+  // parce qu'elles ne se vendent pas en achat autonome.
+  { entitlement: "vitrine", env: "STRIPE_PRICE_ID_ADDON_VITRINE" },
+  { entitlement: "reserver", env: "STRIPE_PRICE_ID_ADDON_RESERVER" },
 ];
 
 /**
@@ -482,6 +547,12 @@ export function resolveStripeEntitlements(priceIds: string[]): {
     );
     if (addon) {
       entitlements.add(addon.entitlement);
+      // UN PRIX PEUT OUVRIR PLUS D'UN DROIT. Le prix Vitrine ouvre aussi Duo
+      // Miroir et Portrait de la Bande : trois colonnes détachées par la PR
+      // #176, un seul produit vendu. Sans cette expansion, le commerçant
+      // paierait sa Vitrine et trouverait les deux jeux fermés.
+      const offre = findAddonOffer(addon.entitlement);
+      offre?.alsoGrants.forEach((droit) => entitlements.add(droit));
       continue;
     }
     unknownPriceIds.push(priceId);
