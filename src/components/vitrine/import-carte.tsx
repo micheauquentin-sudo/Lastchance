@@ -5,6 +5,11 @@ import { useActionForm } from "@/lib/use-action-form";
 import { VITRINE_CARTE_NOM_MAX } from "@/lib/vitrine";
 import { importVitrineCarte } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
+import {
+  EXTENSIONS_ACCEPTEES,
+  extraireTexteDeFichier,
+  type SourceImport,
+} from "@/components/vitrine/import-fichier";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import {
@@ -52,6 +57,9 @@ import {
  */
 export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
   const [texte, setTexte] = useState("");
+  /** Ce que la lecture d'un fichier a donné — succès compté ou refus expliqué. */
+  const [messageFichier, setMessageFichier] = useState<string | null>(null);
+  const [lectureEnCours, setLectureEnCours] = useState(false);
   const [lignes, setLignes] = useState<LigneImport[] | null>(null);
   const [nomCarte, setNomCarte] = useState("");
   const [messageSucces, setMessageSucces] = useState<string | null>(null);
@@ -127,6 +135,48 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
    * NEUVES à chaque frappe — donc des `key` portant des objets neufs, donc des
    * champs remontés, et toute correction manuelle écrasée au caractère suivant.
    */
+  /** Comment nommer la provenance du texte, une fois le fichier lu. */
+  const LIBELLE_SOURCE: Record<SourceImport, string> = {
+    texte: "fichier texte",
+    csv: "fichier CSV",
+    tableur: "feuille de calcul",
+    pdf: "PDF",
+  };
+
+  /**
+   * LE FICHIER NE PART NULLE PART. Il est lu dans ce navigateur, converti en
+   * texte, et posé dans la zone ci-dessous — d'où il repart par le SEUL chemin
+   * qui existait déjà : relecture ligne à ligne, puis import. Aucune écriture
+   * n'est ajoutée, et rien n'atteint la base sans être passé sous les yeux du
+   * commerçant.
+   */
+  const choisirFichier = async (
+    evenement: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const fichier = evenement.target.files?.[0];
+    // Vidé tout de suite : sans cela, rechoisir LE MÊME fichier après une
+    // correction ne déclenche aucun `change`, et l'écran paraît figé.
+    evenement.target.value = "";
+    if (!fichier) return;
+
+    setLectureEnCours(true);
+    setMessageFichier(null);
+    const resultat = await extraireTexteDeFichier(fichier);
+    setLectureEnCours(false);
+
+    if (!resultat.ok) {
+      setMessageFichier(resultat.raison);
+      return;
+    }
+
+    setTexte(resultat.texte);
+    setMessageFichier(
+      `${resultat.lignes} ligne${resultat.lignes > 1 ? "s" : ""} lue${
+        resultat.lignes > 1 ? "s" : ""
+      } depuis ce ${LIBELLE_SOURCE[resultat.source]}. Relisez-les ci-dessous, corrigez si besoin, puis analysez.`,
+    );
+  };
+
   const analyser = () => {
     const trouvees = analyserCarte(texte);
     setLignes(trouvees);
@@ -143,8 +193,8 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
     <Card>
       <h2>Importer une carte existante</h2>
       <p className="mb-4 mt-2 text-sm text-zinc-500">
-        Collez votre carte telle quelle — depuis un document, un PDF ou un site.
-        Rien n&apos;est créé tout de suite : vous relisez et corrigez le
+        Envoyez votre fichier — PDF, tableur, CSV — ou collez votre carte telle
+        quelle. Rien n&apos;est créé tout de suite : vous relisez et corrigez le
         classement avant d&apos;importer.
       </p>
 
@@ -164,6 +214,42 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
         </p>
       ) : lignes === null ? (
         <div className="space-y-3">
+          <div>
+            <Label htmlFor="vitrine-import-fichier">
+              Votre carte, en fichier
+            </Label>
+            <input
+              id="vitrine-import-fichier"
+              type="file"
+              accept={EXTENSIONS_ACCEPTEES}
+              onChange={choisirFichier}
+              disabled={lectureEnCours}
+              className="block w-full text-sm text-k-ink file:mr-3 file:rounded-xl file:border-2 file:border-k-ink file:bg-k-yellow file:px-3.5 file:py-2 file:text-sm file:font-bold file:text-k-ink hover:file:bg-k-yellow/80 disabled:opacity-60"
+              aria-describedby="vitrine-import-fichier-aide"
+            />
+            <p
+              id="vitrine-import-fichier-aide"
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              .pdf, .csv, .tsv, .xlsx ou .txt — le fichier est lu sur votre
+              appareil et ne quitte jamais votre navigateur. Une photo ou un PDF
+              scanné n&apos;ont pas de texte à lire.
+            </p>
+            {lectureEnCours ? (
+              <p className="mt-1.5 text-xs font-semibold text-zinc-500">
+                Lecture du fichier…
+              </p>
+            ) : null}
+            {messageFichier ? (
+              <p
+                role="status"
+                className="mt-1.5 text-xs font-semibold text-k-ink"
+              >
+                {messageFichier}
+              </p>
+            ) : null}
+          </div>
+
           <div>
             <Label htmlFor="vitrine-import-texte">Votre carte, en texte</Label>
             <textarea
