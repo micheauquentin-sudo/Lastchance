@@ -28,13 +28,15 @@ export const metadata: Metadata = { title: "Réservations" };
 /**
  * L'AGENDA DU COMMERÇANT — ses activités réservables, et son écran d'arrivées.
  *
- * ── LE MODULE S'APPELLE `vitrine`, PAS `reservations` ──
+ * ── LE MODULE S'APPELLE `reserver`, PAS `reservations` ──
  *
- * Un seul droit couvre trois capacités serveur : publier la Vitrine, le CRM
- * léger, l'agenda Réserver (migration 20261001120000). `capacitesDuModule` prend
- * donc `"vitrine"`, et l'encart d'offre porte l'entitlement `vitrine` —
- * « Vitrine & Réserver ». Nommer ici un module qui n'existe pas ferait échouer
- * `tsc` sur `GrantableModule`, ce qui est le comportement souhaité.
+ * L'agenda a longtemps été une des trois capacités du droit `vitrine`, avec la
+ * publication de la carte et le CRM léger. La migration 20261020120000 lui a
+ * donné SA PROPRE CLÉ, `reserver` : l'agenda se vend seul, et la Vitrine aussi.
+ * `capacitesDuModule` prend donc `"reserver"`, et l'encart d'offre porte le même
+ * entitlement — sans quoi il proposerait à l'achat un produit qui n'ouvre plus
+ * cet écran. Nommer ici un module qui n'existe pas ferait échouer `tsc` sur
+ * `GrantableModule`, ce qui est le comportement souhaité.
  *
  * ── DEUX VERDICTS, ET ILS NE DISENT PAS LA MÊME CHOSE ──
  *
@@ -61,7 +63,7 @@ export default async function ReservationsPage() {
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3).
-  const capacites = await capacitesDuModule("vitrine");
+  const capacites = await capacitesDuModule("reserver");
   if (!capacites.canExplore) notFound();
 
   // Les deux lectures sont INDÉPENDANTES — l'agenda des créneaux d'un côté, les
@@ -103,7 +105,7 @@ export default async function ReservationsPage() {
         actions={capacites.canEditDraft ? <NouvelleActiviteForm /> : null}
       />
 
-      <ModuleCapabilityNotice capacites={capacites} entitlement="vitrine">
+      <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
         Activités et créneaux à places limitées, réservation sans compte,
         confirmation par email au choix du client, et enregistrement des arrivées
         en caisse par code court.

@@ -179,17 +179,23 @@ export default async function DashboardLayout({
               marque « Actif » (discover/page.tsx passe bien `fullAccess`)…
               et le menu n'en montrait aucun. Deux écrans se contredisaient
               sur le même fait. */}
-          {/* `reserverActif` en PLUS d'`activeExperiences`, et non dedans :
-              le droit « Vitrine & Réserver » s'appelle `vitrine` et n'est pas
-              un `ExperienceKind` — ce n'est pas une expérience jouable. Il est
-              lu par `droitEffectifModule`, miroir TypeScript
-              d'`org_has_module_access`, et l'accès offert le force au même
-              titre que les huit autres modules. */}
+          {/* DEUX DRAPEAUX EN PLUS d'`activeExperiences`, et non dedans : ni
+              `vitrine` ni `reserver` n'est un `ExperienceKind` — ce ne sont pas
+              des expériences jouables. Ce sont DEUX droits distincts depuis la
+              migration 20261020120000, qui a donné sa propre clé à l'agenda
+              Réserver : un seul drapeau pour les deux entrées de menu cachait
+              « Réservations » à qui a payé l'agenda seul, et « Vitrine » à qui a
+              payé la carte seule. Chacun est lu par `droitEffectifModule`,
+              miroir TypeScript d'`org_has_module_access`, et l'accès offert les
+              force au même titre que les autres modules. */}
           <DashboardNav
             role={role}
             activeExperiences={activeExperienceKinds(organization, compActive)}
-            reserverActif={
+            vitrineActif={
               compActive || droitEffectifModule("vitrine", organization)
+            }
+            reserverActif={
+              compActive || droitEffectifModule("reserver", organization)
             }
           />
 

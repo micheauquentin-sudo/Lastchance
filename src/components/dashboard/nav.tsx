@@ -73,18 +73,20 @@ const PROGRESSION_LINK: DashboardLink = {
  * L'AGENDA « RÉSERVER » — ajouté À LA MAIN, exactement comme la
  * méta-progression au-dessus, et pour une raison de même nature.
  *
- * Son droit s'appelle `vitrine` (« Vitrine & Réserver », migration
- * 20261001120000) et il est VOLONTAIREMENT absent d'`ExperienceKind` et
- * d'`EXPERIENCE_CATALOG` : ce n'est pas une expérience jouable. Le faire passer
- * par le catalogue le ferait donc purement disparaître du menu — `activeExperiences`
- * ne peut pas contenir un `kind` qui n'existe pas.
+ * Son droit s'appelle `reserver` — SA PROPRE CLÉ depuis la migration
+ * 20261020120000, qui a détaché de `vitrine` les trois produits qu'elle ouvrait
+ * sans être eux (Réserver, Duo Miroir, Portrait de la Bande). Il est
+ * VOLONTAIREMENT absent d'`ExperienceKind` et d'`EXPERIENCE_CATALOG` : ce n'est
+ * pas une expérience jouable. Le faire passer par le catalogue le ferait donc
+ * purement disparaître du menu — `activeExperiences` ne peut pas contenir un
+ * `kind` qui n'existe pas.
  *
  * Il est en revanche GARDÉ comme les autres : `reserverActif` est calculé par le
- * layout à partir du droit effectif du module (`droitEffectifModule("vitrine")`,
+ * layout à partir du droit effectif du module (`droitEffectifModule("reserver")`,
  * miroir TypeScript d'`org_has_module_access`), au même titre
  * qu'`activeExperienceKinds` garde les huit expériences. Le menu ne montre donc
  * pas plus que ce que l'établissement a ouvert — et la page, elle, reste gardée
- * par `capacitesDuModule("vitrine")`, qui décide seule.
+ * par `capacitesDuModule("reserver")`, qui décide seule.
  */
 const RESERVATIONS_LINK: DashboardLink = {
   href: "/dashboard/reservations",
@@ -93,14 +95,15 @@ const RESERVATIONS_LINK: DashboardLink = {
 };
 
 /**
- * LA VITRINE — même droit, même garde, même raison que « Réservations »
- * ci-dessus.
+ * LA VITRINE — même forme et même raison que « Réservations » ci-dessus, mais
+ * SON PROPRE DROIT.
  *
- * Le droit `vitrine` couvre TROIS capacités (migration 20261001120000) :
- * publier la vitrine, le CRM léger, l'agenda Réserver. Les deux entrées de menu
- * partagent donc exactement le même verrou (`reserverActif`) — et il n'y en a
- * pas de troisième à inventer : ajouter un second drapeau ferait apparaître une
- * des deux portes sans l'autre pour un droit unique.
+ * `vitrine` a longtemps ouvert aussi l'agenda Réserver, et les deux entrées
+ * partageaient alors un verrou unique. La migration 20261020120000 a séparé les
+ * clés : on peut acheter la carte sans l'agenda, ou l'inverse. Chaque entrée
+ * porte donc désormais son propre drapeau — `vitrineActif` ici, `reserverActif`
+ * au-dessus — sans quoi une porte payée resterait cachée derrière un droit que
+ * le commerçant n'a pas pris.
  *
  * Elle est placée AVANT « Réservations » : on publie sa carte avant d'ouvrir
  * son agenda, et c'est aussi l'entrée que le commerçant ouvrira le plus souvent
@@ -239,15 +242,22 @@ function lienCourant(
 export function DashboardNav({
   role = null,
   activeExperiences = ["campaign"],
+  vitrineActif = false,
   reserverActif = false,
 }: {
   role?: MemberRole | null;
   activeExperiences?: ExperienceKind[];
   /**
-   * Le droit `vitrine` est-il ouvert ? Il ne peut pas voyager dans
-   * `activeExperiences` : `vitrine` n'est pas un `ExperienceKind`. Défaut
-   * `false` — un menu ne montre pas une porte qu'il n'a pas vérifiée.
+   * DEUX DRAPEAUX, PARCE QU'IL Y A DEUX DROITS (migration 20261020120000).
+   *
+   * `vitrine` et `reserver` sont deux clés octroyables distinctes : un
+   * commerçant peut acheter l'agenda seul, ou la carte seule. Un drapeau unique
+   * cachait alors la porte payée ou ouvrait celle qui ne l'est pas. Ni l'un ni
+   * l'autre ne peut voyager dans `activeExperiences` — ce ne sont pas des
+   * `ExperienceKind`. Défaut `false` des deux côtés : un menu ne montre pas une
+   * porte qu'il n'a pas vérifiée.
    */
+  vitrineActif?: boolean;
   reserverActif?: boolean;
 }) {
   const pathname = usePathname();
@@ -276,7 +286,8 @@ export function DashboardNav({
             cle: "animations",
             links: [
               ...experienceLinks,
-              ...(reserverActif ? [VITRINE_LINK, RESERVATIONS_LINK] : []),
+              ...(vitrineActif ? [VITRINE_LINK] : []),
+              ...(reserverActif ? [RESERVATIONS_LINK] : []),
               PROGRESSION_LINK,
             ],
           },
