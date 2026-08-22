@@ -7848,3 +7848,76 @@ vente n'est ouverte tant que `STRIPE_PRICE_ID_ADDON_VITRINE` et
   `src/lib/octroi-checkout.ts` (fermeture du tunnel),
   `src/components/dashboard/option-abonnement.tsx`
 - Branche `chantier/options-lieu`
+
+## ADR-119 — Duo Miroir et Portrait de la Bande deviennent des jeux du socle
+
+**Date** : 2026-08-22 · **Statut** : acté
+
+**Contexte** : demande du propriétaire — « que ce soit considéré comme des jeux
+en plus, produit ». Les deux salons étaient dans Sur Place et La Totale
+seulement, vendus comme un supplément de la Vitrine (`alsoGrants`, ADR-118).
+C'était leur histoire, pas leur nature : ils sont nés sous le droit `vitrine`
+au lot L17, et la PR #176 les en avait détachés en colonnes sans les détacher
+en produit.
+
+**Ce que la lecture du catalogue ne montrait pas.** Les changer d'offre
+n'aurait rien changé : **trois attaches** liaient les salons à la Vitrine, et
+le catalogue n'en était qu'une.
+
+1. `create_player_lobby` exigeait le droit `vitrine` — et, **en plus**, une
+   ligne `vitrine_settings` **publiée**.
+2. L'adresse joueur est `/lobby/nouveau/[slug]`, où `slug` était résolu par
+   `resoudreCommerceLobby` **depuis `vitrine_settings`**. Sans carte publiée,
+   il n'existait aucune URL pour atteindre le jeu.
+3. La surface commerçant — QR, supervision des salons — vivait dans
+   `/dashboard/vitrine`, qui rend `notFound()` sans le droit `vitrine`.
+
+Une boulangerie sur Coup d'envoi aurait donc eu Duo Miroir « inclus » dans son
+offre et **strictement injouable**. C'est la définition d'une demi-livraison,
+et c'est ce qui a fait de ce lot un chantier plutôt qu'une ligne de catalogue.
+
+**Décision** — les quatre attaches tombent ensemble.
+
+1. **Catalogue** : `duo` et `bande` entrent dans `core`, donc dans les cinq
+   offres (packaging `2026-08-c`). Sur Place cesse de les annoncer : elle ne
+   vend plus que ce qui lui est propre.
+2. **SQL** (`20261022120000`) : `create_player_lobby` ne garde que le droit du
+   jeu, dérivé de `p_kind`. La garde `vitrine` et l'exigence de vitrine publiée
+   disparaissent. La migration `20261020120000` l'avait annoncé mot pour mot :
+   « on ajoute un cran, dérivé de `p_kind`, que l'opérateur pourra desserrer
+   seul le jour où il vendra les salons sans la Vitrine ».
+3. **Adresse** : `resoudreCommerceLobby` se replie sur `organizations.slug`
+   quand aucune vitrine publiée ne répond. **L'ordre compte** — la vitrine
+   d'abord, parce que c'est l'adresse déjà imprimée sur les QR, et la faire
+   passer après changerait la page servie à un client qui scanne.
+4. **Surface** : `/dashboard/salons/[jeu]`, gardée par `capacitesDuModule(jeu)`
+   et non par le droit vitrine. Elle réutilise `PublicShare` (QR, copie,
+   téléchargement) et `SalonsOuverts`.
+
+**La navigation change de rangement, à la demande du propriétaire.** Un groupe
+« Vos applications » accueille Vitrine et Réservations ; les deux salons
+rejoignent « Vos animations », auprès de la roue et des jeux rapides. Vitrine
+et Réservations n'y avaient leur place que faute d'ailleurs où aller : l'une
+publie un catalogue, l'autre tient un carnet de rendez-vous — ce ne sont pas
+des animations, et les mêler aux jeux obligeait le commerçant à relire toute la
+liste pour trouver ce qu'il ouvre plusieurs fois par service.
+
+**`alsoGrants` est retiré, un lot après avoir été posé.** Il existait pour que
+le prix Vitrine ouvre trois colonnes. Les salons étant désormais dans toutes
+les offres, ce mécanisme ne peut plus rien ouvrir : il ne garderait plus que le
+vide. Le retirer suit la doctrine du dépôt — une garde qui ne garde plus rien
+finit par empêcher ce qu'elle protégeait.
+
+**Ce qui n'est pas perdu.** Le corps de `create_player_lobby` est repris
+caractère pour caractère : quota par organisation, verrou d'avance, fenêtre
+« habité ou récent », invariant « l'hôte est membre de son lobby »,
+indistinction des refus. Ce que `published` gardait — « on ne s'ouvre pas sur
+une adresse que le commerçant n'a pas ouverte » — reste vrai sur la branche
+vitrine et n'a plus d'objet sur l'autre : un slug d'organisation n'est pas une
+page qu'on publie, c'est l'identité du commerce, et la porte est le droit du
+jeu, qui vient d'un abonnement actif.
+
+**Références** : migration `20261022120000_salons_sans_vitrine.sql`,
+`src/lib/plans.ts`, `src/lib/lobby-context.ts`,
+`src/app/dashboard/salons/[jeu]/page.tsx`, `src/components/dashboard/nav.tsx`,
+`src/app/dashboard/layout.tsx`. Branche `chantier/salons-jeux-de-base`.

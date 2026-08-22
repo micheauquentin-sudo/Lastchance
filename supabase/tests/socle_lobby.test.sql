@@ -147,6 +147,11 @@ values
   ('6b0b1e00-0000-4000-8000-000000000012', 'Lobby I', 'tap-lobby-i',
    'active', 'starter', 'Europe/Paris', 6),
   ('6b0b1e00-0000-4000-8000-000000000013', 'Lobby J', 'tap-lobby-j',
+   'active', 'starter', 'Europe/Paris', 6),
+  -- K : LA BOULANGERIE. Les deux jeux, aucune Vitrine — ni droit, ni ligne
+  -- `vitrine_settings`. Ce cas etait IMPOSSIBLE avant 20261022120000 : la garde
+  -- exigeait la carte. C'est lui que le lot existe pour rendre jouable.
+  ('6b0b1e00-0000-4000-8000-000000000014', 'Lobby K', 'tap-lobby-k',
    'active', 'starter', 'Europe/Paris', 6);
 
 -- LES ACTEURS. `close_player_lobby_as_org` vérifie l'appartenance EN SQL, donc
@@ -170,9 +175,12 @@ insert into public.organization_members (organization_id, user_id, role) values
   ('6b0b1e00-0000-4000-8000-00000000000b',
    '6b0b1e01-0000-4000-8000-000000000004', 'owner');
 
--- TROIS DROITS DEPUIS 20261020120000, et c'est la conséquence directe de « une
--- clé par produit » : `create_player_lobby` exige `vitrine` (les salons SONT la
--- Vitrine, ADR-109 §A1, rien n'est retiré) ET la clé du JEU demandé, dérivée de
+-- LA CLÉ DU JEU, ET ELLE SEULE, DEPUIS 20261022120000. `create_player_lobby`
+-- a cessé d'exiger `vitrine` : les salons sont devenus des jeux du socle,
+-- présents dans les cinq offres (ADR-119). Le droit `vitrine` reste semé
+-- ci-dessous parce que d'autres assertions de ce fichier passent par la Vitrine
+-- publique ; il n'est simplement plus ce qui ouvre un salon. La clé qui décide
+-- est celle du JEU demandé, dérivée de
 -- `p_kind`. Ces six organisations ouvrent des salons des DEUX sortes, elles
 -- portent donc les deux clés de jeu. `reserver` n'est PAS semé : aucune
 -- assertion de ce fichier ne le demande, et un octroi de trop rendrait vert le
@@ -202,6 +210,11 @@ values
   ('6b0b1e00-0000-4000-8000-000000000013', 'vitrine', 'pass', 'backoffice',
    now() - interval '1 day', now() + interval '365 days'),
   ('6b0b1e00-0000-4000-8000-000000000013', 'bande', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  -- K porte les deux JEUX et rien d'autre : pas de `vitrine`, volontairement.
+  ('6b0b1e00-0000-4000-8000-000000000014', 'duo', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('6b0b1e00-0000-4000-8000-000000000014', 'bande', 'pass', 'backoffice',
    now() - interval '1 day', now() + interval '365 days');
 
 -- LA VITRINE, ET SA PUBLICATION. `create_player_lobby` exige les DEUX (le droit
@@ -414,9 +427,14 @@ select is(
   'created',
   'DROIT-8 … et c''est bien `duo` qui manquait : la même organisation ouvre un Portrait de la Bande');
 
--- LES QUATRE REFUS SONT UN SEUL DOCUMENT. C'est la propriété que la structure
--- de la garde tient (un `if`, un `return`) et non un accord entre branches :
--- organisation inconnue, pas de `vitrine`, pas la clé du jeu, vitrine éteinte.
+-- LES REFUS SONT UN SEUL DOCUMENT, et ils sont TROIS depuis 20261022120000 :
+-- organisation inconnue, aucun droit, la clé de l'AUTRE jeu. « Vitrine éteinte »
+-- a quitté cette liste — ce n'est plus un refus mais le cas normal d'un commerce
+-- sans carte, et PUB-1 le prouve juste en dessous.
+--
+-- La propriété reste tenue par la STRUCTURE de la garde — un `if`, un `return`
+-- — et non par un accord entre branches. C'est elle qui empêche de sonder
+-- l'existence d'une organisation depuis dehors.
 select is(
   (select count(distinct j)::int from (values
      (public.create_player_lobby('facade00-0000-4000-8000-000000000000', 'bande', 4,
@@ -424,41 +442,46 @@ select is(
      (public.create_player_lobby('6b0b1e00-0000-4000-8000-00000000000c', 'bande', 4,
         repeat('e5', 32), 'Témoin')),
      (public.create_player_lobby('6b0b1e00-0000-4000-8000-000000000012', 'bande', 4,
-        repeat('e5', 32), 'Témoin')),
-     (public.create_player_lobby('6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
         repeat('e5', 32), 'Témoin'))) as t(j)),
   1,
-  'DROIT-9 les QUATRE refus rendent un seul et même document, au caractère près');
+  'DROIT-9 les TROIS refus rendent un seul et même document, au caractère près');
 
--- LA VITRINE DOIT ÊTRE PUBLIÉE, et pas seulement le droit vivant. D a payé, D
--- n'a rien allumé : ses jeux n'existent pour personne.
+-- LA VITRINE N'EST PLUS UNE CONDITION (20261022120000, ADR-119).
+--
+-- Ces assertions ont dit l'inverse jusqu'au 2026-08-22 : « une vitrine non
+-- publiée n'ouvre aucun lobby, même avec le droit ». C'était juste tant que les
+-- salons SE VENDAIENT avec la carte. Ils sont devenus des jeux du socle, donc
+-- présents chez des commerces qui n'auront jamais de carte — et les laisser
+-- derrière elle rendait le jeu « inclus » et injouable.
+--
+-- D a le droit et une vitrine ÉTEINTE : il ouvre.
 select is(
   (public.create_player_lobby(
      '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
      repeat('d0', 32), 'Vitrine éteinte'))->>'state',
-  'unavailable',
-  'PUB-1 une vitrine NON PUBLIÉE n''ouvre aucun lobby, même avec le droit');
-select is(
-  public.create_player_lobby(
-    '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
-    repeat('d0', 32), 'Vitrine éteinte'),
-  public.create_player_lobby(
-    'facade00-0000-4000-8000-000000000000', 'bande', 4,
-    repeat('d0', 32), 'Vitrine éteinte'),
-  'PUB-2 … et le refus est le MÊME document qu''« organisation inconnue »');
+  'created',
+  'PUB-1 une vitrine non publiée n''empêche plus rien : le droit du jeu suffit');
 
--- LE CONTRÔLE DE PORTÉE de PUB-1 : sans lui, l'assertion serait verte le jour
--- où D échouerait pour une tout autre raison. On allume la vitrine, et rien
--- d'autre — si la création passe alors, c'est bien `published` qui refusait.
-update public.vitrine_settings
-   set published = true
- where organization_id = '6b0b1e00-0000-4000-8000-00000000000d';
+-- K N'A AUCUNE VITRINE DU TOUT — ni droit, ni ligne. C'est la boulangerie sur
+-- Coup d'envoi, et c'est L'ASSERTION QUI PORTE LE LOT : sans elle, PUB-1 seule
+-- resterait verte le jour où la garde retomberait sur l'existence d'une ligne
+-- `vitrine_settings`, éteinte ou non.
 select is(
   (public.create_player_lobby(
-     '6b0b1e00-0000-4000-8000-00000000000d', 'bande', 4,
-     repeat('d0', 32), 'Vitrine allumée'))->>'state',
+     '6b0b1e00-0000-4000-8000-000000000014', 'duo', 2,
+     repeat('d1', 32), 'Sans vitrine'))->>'state',
   'created',
-  'PUB-3 publier la vitrine débloque la création : c''est bien elle qui refusait');
+  'PUB-2 un commerce SANS aucune vitrine ouvre un salon : le droit du jeu suffit');
+
+-- LE CONTRÔLE DE PORTÉE : ce qu'on vérifie ici est que le refus tient toujours
+-- à la clé du jeu et à rien d'autre. C, qui n'a ni vitrine ni droit de jeu,
+-- reste refusée — sinon le lot aurait ouvert la porte à tout le monde.
+select is(
+  (public.create_player_lobby(
+     '6b0b1e00-0000-4000-8000-00000000000c', 'duo', 2,
+     repeat('d2', 32), 'Ni vitrine ni jeu'))->>'state',
+  'unavailable',
+  'PUB-3 … mais sans la clé du jeu, l''absence de vitrine n''ouvre rien non plus');
 
 
 -- ════════════════════════════════════════════════════════════

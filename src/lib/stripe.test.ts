@@ -373,38 +373,34 @@ describe("resolveCheckoutPlan", () => {
 
 describe("resolveStripeEntitlements", () => {
   /**
-   * UN PRIX, TROIS COLONNES — la seule exception du catalogue.
+   * LES DEUX SALONS ARRIVENT PAR L'OFFRE, PLUS PAR L'OPTION.
    *
-   * La PR #176 a détaché `duo` et `bande` de `vitrine`, alors que le commerce
-   * n'a jamais vendu que « la carte et les jeux qui vont avec ». Sans
-   * l'expansion `alsoGrants`, le commerçant paierait sa Vitrine et trouverait
-   * les deux jeux de salon fermés — un défaut muet, puisque le paiement, lui,
-   * aurait réussi.
+   * Ils ont d'abord voyagé avec le prix Vitrine — un prix, trois colonnes. Ils
+   * sont désormais dans `core`, donc dans les cinq offres : l'offre d'entrée
+   * seule suffit à les ouvrir, sans aucune option.
    */
-  it("fait ouvrir Duo et Bande par le seul prix Vitrine", () => {
+  it("ouvre les deux salons sur la seule offre d'entrée", () => {
     vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
-    vi.stubEnv("STRIPE_PRICE_ID_ADDON_VITRINE", "price_vitrine");
 
-    const resolu = resolveStripeEntitlements(["price_core", "price_vitrine"]);
+    const resolu = resolveStripeEntitlements(["price_core"]);
 
     expect(resolu.planId).toBe("core");
     expect(resolu.unknownPriceIds).toEqual([]);
-    expect([...resolu.entitlements].sort()).toEqual([
-      "bande",
-      "core",
-      "duo",
-      "vitrine",
-    ]);
+    expect([...resolu.entitlements].sort()).toEqual(["bande", "core", "duo"]);
   });
 
-  /** Réserver n'embarque rien : l'expansion est l'exception, pas la règle. */
-  it("n'ouvre que son propre droit pour Réserver", () => {
+  /** L'option Vitrine n'ouvre plus qu'elle-même : les salons sont ailleurs. */
+  it("n'ouvre que son propre droit pour Vitrine et pour Réserver", () => {
     vi.stubEnv("STRIPE_PRICE_ID_CORE", "price_core");
+    vi.stubEnv("STRIPE_PRICE_ID_ADDON_VITRINE", "price_vitrine");
     vi.stubEnv("STRIPE_PRICE_ID_ADDON_RESERVER", "price_reserver");
 
-    const resolu = resolveStripeEntitlements(["price_core", "price_reserver"]);
-
-    expect([...resolu.entitlements].sort()).toEqual(["core", "reserver"]);
+    expect(
+      [...resolveStripeEntitlements(["price_core", "price_vitrine"]).entitlements].sort(),
+    ).toEqual(["bande", "core", "duo", "vitrine"]);
+    expect(
+      [...resolveStripeEntitlements(["price_core", "price_reserver"]).entitlements].sort(),
+    ).toEqual(["bande", "core", "duo", "reserver"]);
   });
 
   /**
@@ -445,7 +441,11 @@ describe("resolveStripeEntitlements", () => {
     ).toEqual({
       planId: "live",
       entitlements: [
+        // Les deux salons sont du socle depuis le 2026-08-c : toute offre les
+        // porte, y compris Le Grand Jeu.
         "core",
+        "duo",
+        "bande",
         "events",
         "pronostics",
         "jackpot",
@@ -475,7 +475,9 @@ describe("resolveStripeEntitlements", () => {
     // fait échouer le webhook AVANT l'appel à la RPC, donc cette sortie n'est
     // jamais écrite en base. Si un jour cette garde amont disparaissait, ce
     // serait ELLE qu'il faudrait rétablir, pas ce test qu'il faudrait relâcher.
-    expect(resolved.entitlements).toEqual(["core"]);
+    // Les deux salons suivent, puisqu'ils sont du socle depuis le 2026-08-c :
+    // ce sont « les droits du plan annoncé », et le plan annoncé les porte.
+    expect(resolved.entitlements).toEqual(["core", "duo", "bande"]);
   });
 
   /* ────────────────────────────────────────────────────────────

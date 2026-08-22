@@ -58,7 +58,7 @@ export interface GeneratedAddon {
 }
 
 /** Version du packaging côté application au moment de la génération. */
-export const PACKAGING_VERSION = "2026-08-b";
+export const PACKAGING_VERSION = "2026-08-c";
 
 export const GENERATED_PLANS: readonly GeneratedPlan[] = [
   {
@@ -69,10 +69,13 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     "priceLabel": "29 €/mois",
     "trialDays": 7,
     "experiences": [
-      "Jeux instantanés"
+      "Jeux instantanés",
+      "Duo Miroir",
+      "Portrait de la Bande"
     ],
     "highlights": [
       "QR codes et roues illimités",
+      "Duo Miroir et Portrait de la Bande, jouables à table",
       "Lots remis en caisse avec code",
       "Studio créatif et affiches",
       "Emails automatiques et webhooks sortants"
@@ -92,7 +95,9 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Passeport fidélité",
       "Calendrier",
       "Quiz",
-      "Chasse au trésor"
+      "Chasse au trésor",
+      "Duo Miroir",
+      "Portrait de la Bande"
     ],
     "highlights": [
       "Tout Coup d'envoi",
@@ -117,8 +122,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
     ],
     "highlights": [
       "Tout Coup d'envoi",
-      "Carte publique bilingue et agenda dans la même offre",
-      "Duo Miroir et Portrait de la Bande, jouables à table"
+      "Carte publique bilingue et agenda dans la même offre"
     ],
     "limits": []
   },
@@ -134,7 +138,9 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Événements live",
       "Pronostics",
       "Jackpot collectif",
-      "Quiz"
+      "Quiz",
+      "Duo Miroir",
+      "Portrait de la Bande"
     ],
     "highlights": [
       "Tout Coup d'envoi",
@@ -187,7 +193,6 @@ export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
     "steps": [],
     "rules": [
       "S'ajoute à une offre en cours, comme ligne du même abonnement.",
-      "Ouvre aussi Duo Miroir et Portrait de la Bande.",
       "Récurrent, sans engagement, actif jusqu'à la fin de la période payée."
     ]
   },

@@ -246,31 +246,55 @@ export async function resoudreCommerceLobby(
   jeu: LobbyKind,
 ): Promise<{ organizationId: string } | null> {
   const admin = createAdminClient();
-  // `published` EXIGÉ, comme tout ce que la Vitrine sert au public : un salon
-  // ne s'ouvre pas sur une adresse que le commerçant n'a pas ouverte. Sans ce
-  // filtre, deviner le slug d'une vitrine jamais publiée suffisait à créer des
-  // lobbies au nom de l'organisation (revue L16, préemptée).
+
+  // ── DEUX ADRESSES POSSIBLES, ET LA VITRINE N'EST PLUS LA SEULE ──
+  //
+  // Les salons se jouaient à l'adresse de la Vitrine, `published` exigé. C'était
+  // juste tant qu'ils SE VENDAIENT avec elle. Depuis le 2026-08-22 ce sont des
+  // jeux du socle, présents dans les cinq offres : une boulangerie sur Coup
+  // d'envoi n'a pas de vitrine, donc pas de slug, donc — sans ce repli — aucune
+  // adresse où faire jouer un jeu qu'elle paie.
+  //
+  // L'ORDRE COMPTE. La vitrine d'abord : c'est l'adresse déjà imprimée sur les
+  // QR, et la faire passer après changerait la page servie à un client qui
+  // scanne. Le slug d'organisation ensuite, et seulement si aucune vitrine
+  // publiée ne répond.
+  //
+  // Ce que `published` gardait — « on ne s'ouvre pas sur une adresse que le
+  // commerçant n'a pas ouverte » — reste vrai sur la première branche et n'a
+  // plus d'objet sur la seconde : le slug d'organisation n'est pas une page
+  // qu'on publie, c'est l'identité du commerce. La porte, là, est le droit du
+  // jeu lui-même.
   const { data } = await admin
     .from("vitrine_settings")
     .select(`organization_id, organizations(${ORG_COLUMNS})`)
     .eq("slug", slug)
     .eq("published", true)
     .maybeSingle();
-  if (!data) return null;
 
-  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
-  const row = data as unknown as VitrineRow;
-  const organization = row.organizations ?? null;
-  if (!organization || organization.id !== row.organization_id) {
-    console.error("[lobby-context] organisation incohérente", { slug });
-    return null;
+  let organization: LobbyOrganization | null = null;
+  if (data) {
+    // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+    const row = data as unknown as VitrineRow;
+    organization = row.organizations ?? null;
+    if (!organization || organization.id !== row.organization_id) {
+      console.error("[lobby-context] organisation incohérente", { slug });
+      return null;
+    }
+  } else {
+    const { data: org } = await admin
+      .from("organizations")
+      .select(ORG_COLUMNS)
+      .eq("slug", slug)
+      .maybeSingle();
+    organization = (org as LobbyOrganization | null) ?? null;
   }
-  if (!(await moduleOuvertAuJoueur("vitrine", organization))) return null;
-  // LA CLÉ DU JEU, ensuite et séparément — miroir du `case p_kind` de
-  // `create_player_lobby`. La seconde lecture d'octrois n'est payée que par les
-  // organisations que la première a déjà laissées passer et que celle-ci
-  // refusera : le cas courant, `vitrine` et le jeu tous deux ouverts par la
-  // colonne, ne coûte aucune requête (voir `moduleOuvertAuJoueur`).
+  if (!organization) return null;
+
+  // LA CLÉ DU JEU, ET ELLE SEULE — miroir du `case p_kind` de
+  // `create_player_lobby`, dont la garde `vitrine` est tombée le même jour
+  // (20261022120000). Exiger encore `vitrine` ici rendrait le repli ci-dessus
+  // sans effet : le commerçant sans carte serait refusé une ligne plus bas.
   if (!(await moduleOuvertAuJoueur(jeu, organization))) return null;
 
   return { organizationId: organization.id };

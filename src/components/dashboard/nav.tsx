@@ -27,6 +27,8 @@ type IconKey =
   | "progression"
   | "reservations"
   | "vitrine"
+  | "duo"
+  | "bande"
   | "discover";
 
 interface DashboardLink {
@@ -116,6 +118,32 @@ const VITRINE_LINK: DashboardLink = {
 };
 
 /**
+ * LES DEUX JEUX DE SALON — dans « Vos animations », avec les autres jeux.
+ *
+ * Ils ont vécu sous la Vitrine, dont ils partageaient le droit, l'écran et
+ * l'adresse. Ce n'était pas un rangement, c'était leur histoire. Depuis le
+ * 2026-08-22 ils sont du socle : toutes les offres les portent, une boulangerie
+ * les a comme un bar. Leur place est donc auprès de la roue et des jeux
+ * rapides, pas auprès d'une carte de restaurant.
+ *
+ * Ils ne passent pas par `EXPERIENCE_CATALOG` pour la même raison que Vitrine
+ * et Réservations : un salon de 2 à 12 joueurs n'est pas un `ExperienceKind` —
+ * ni route publique de campagne, ni adaptateur de récompense. Chacun porte donc
+ * son propre drapeau, calculé par le layout depuis son droit effectif.
+ */
+const DUO_LINK: DashboardLink = {
+  href: "/dashboard/salons/duo",
+  label: "Duo Miroir",
+  icon: "duo",
+};
+
+const BANDE_LINK: DashboardLink = {
+  href: "/dashboard/salons/bande",
+  label: "Portrait de la Bande",
+  icon: "bande",
+};
+
+/**
  * Outils TRANSVERSES, servis après les expériences. Ils ne dépendent d'aucun
  * addon et ne sont donc pas filtrés par `activeExperiences`.
  */
@@ -165,6 +193,12 @@ const EMOJIS: Record<IconKey, string> = {
   // la restauration, alors qu'un fleuriste ou un coiffeur y publie aussi ses
   // prestations.
   vitrine: "📖",
+  // 🪞 : le Duo Miroir tient dans son nom — deux joueurs qui se répondent. Et
+  // 👥 : le Portrait de la Bande est un groupe qui se peint lui-même. Ni l'un
+  // ni l'autre n'emprunte 🎲 ou 🎯, déjà pris par les jeux de tirage : ces
+  // deux-là ne se jouent pas contre le hasard mais contre les autres.
+  duo: "🪞",
+  bande: "👥",
   discover: "🧭",
   qr: "📱",
   list: "📋",
@@ -243,6 +277,8 @@ export function DashboardNav({
   role = null,
   activeExperiences = ["campaign"],
   vitrineActif = false,
+  duoActif = false,
+  bandeActif = false,
   reserverActif = false,
 }: {
   role?: MemberRole | null;
@@ -259,6 +295,12 @@ export function DashboardNav({
    */
   vitrineActif?: boolean;
   reserverActif?: boolean;
+  /**
+   * Les deux jeux de salon. Défaut `false` pour la même raison que leurs
+   * voisins : un menu ne montre pas une porte qu'il n'a pas vérifiée.
+   */
+  duoActif?: boolean;
+  bandeActif?: boolean;
 }) {
   const pathname = usePathname();
   const experienceLinks: DashboardLink[] = EXPERIENCE_CATALOG.flatMap((entry) => {
@@ -286,9 +328,30 @@ export function DashboardNav({
             cle: "animations",
             links: [
               ...experienceLinks,
+              ...(duoActif ? [DUO_LINK] : []),
+              ...(bandeActif ? [BANDE_LINK] : []),
+              PROGRESSION_LINK,
+            ],
+          },
+          /**
+           * « VOS APPLICATIONS » — la carte et l'agenda, séparés des jeux.
+           *
+           * Vitrine et Réservations vivaient dans « Vos animations » faute
+           * d'ailleurs où aller. Ce ne sont pas des animations : l'une publie
+           * un catalogue, l'autre tient un carnet de rendez-vous. Les mêler aux
+           * jeux obligeait le commerçant à relire toute la liste pour trouver
+           * ce qu'il ouvre plusieurs fois par service.
+           *
+           * Le groupe DISPARAÎT quand aucune des deux n'est ouverte —
+           * `visibles` filtre les groupes vides — donc un commerce sans
+           * application ne voit pas un titre orphelin.
+           */
+          {
+            titre: "Vos applications",
+            cle: "applications",
+            links: [
               ...(vitrineActif ? [VITRINE_LINK] : []),
               ...(reserverActif ? [RESERVATIONS_LINK] : []),
-              PROGRESSION_LINK,
             ],
           },
           { titre: "Outils", cle: "outils", links: EDITOR_TOOL_LINKS },
