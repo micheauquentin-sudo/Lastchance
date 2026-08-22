@@ -91,7 +91,7 @@ function differe<T>() {
 }
 
 function peindre() {
-  render(<SalonLobby code="ABC123" lobbyId="lob-1" dejaMembre />);
+  render(<SalonLobby code="ABC123" lobbyId="lob-1" dejaMembre sortie={null} />);
 }
 
 /** Le titre de la salle d'attente — pas le texte d'aide de l'écran d'entrée. */

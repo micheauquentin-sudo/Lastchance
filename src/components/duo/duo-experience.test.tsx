@@ -108,7 +108,7 @@ function differe<T>() {
 }
 
 function peindre(statutSalle: "locked" | "closed") {
-  render(<DuoExperience lobbyId="lob-1" statutSalle={statutSalle} />);
+  render(<DuoExperience lobbyId="lob-1" statutSalle={statutSalle} sortie={null} />);
 }
 
 /** Les fiches du plateau, telles qu'un pouce les trouve. */

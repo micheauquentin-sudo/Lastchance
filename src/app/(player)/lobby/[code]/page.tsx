@@ -6,6 +6,7 @@ import {
 } from "@/lib/lobby-context";
 import { LobbyCarton, LobbyShell } from "@/components/lobby/lobby-shell";
 import { SalonLobby } from "@/components/lobby/salon-lobby";
+import { sortieDuLobby } from "@/lib/sortie-apres-jeu";
 
 /**
  * Le salon lui-même : on y entre par son code, puis on y attend les autres.
@@ -103,6 +104,12 @@ export default async function LobbyPage({
   // et le booléen est tout ce dont l'écran a besoin pour choisir sa moitié.
   const dejaMembre = (await lireJetonLobby(salle.lobbyId)) !== null;
 
+  // VIT-11, ET SEULEMENT POUR UN MEMBRE. La sortie décore les écrans terminaux
+  // du Duo Miroir et du Portrait de la Bande, que seul un membre atteint : la
+  // lire pour quelqu'un qui n'a pas le cookie aurait payé deux requêtes pour
+  // peindre un formulaire d'entrée.
+  const sortie = dejaMembre ? await sortieDuLobby(salle.lobbyId) : null;
+
   // UNE SALLE FINIE NE SE REJOINT PAS, MAIS ELLE SE RELIT. Le résolveur laisse
   // passer les salles closes de quelques heures pour que le résultat d'une
   // partie survive à un rechargement (la révélation ferme la salle). Celui qui
@@ -131,6 +138,7 @@ export default async function LobbyPage({
         code={codeAffiche}
         lobbyId={salle.lobbyId}
         dejaMembre={dejaMembre}
+        sortie={sortie}
       />
     </LobbyShell>
   );

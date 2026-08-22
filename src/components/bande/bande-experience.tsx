@@ -16,6 +16,8 @@ import type {
   BandeStateView,
 } from "@/lib/bande";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
+import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
+import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
 
 /**
  * PORTRAIT DE LA BANDE (L18) — l'écran de jeu, monté à la place de « la partie
@@ -97,6 +99,7 @@ export function BandeExperience({
   lobbyId,
   statutSalle,
   hote,
+  sortie,
 }: {
   lobbyId: string;
   /** Le statut du lobby au moment du branchement — `SalonLobby` le détient. */
@@ -109,6 +112,8 @@ export function BandeExperience({
    * presser.
    */
   hote: boolean;
+  /** VIT-11 : proposé sous le récapitulatif, jamais avant. */
+  sortie: SortieApresJeuView | null;
 }) {
   const [ouverture, setOuverture] = useState<Ouverture>("attente");
   const [vue, setVue] = useState<VueBande | null>(null);
@@ -287,7 +292,7 @@ export function BandeExperience({
   // déroulée. Placé plus bas, il aurait été remplacé par « ce salon a été
   // refermé » — une panne affichée à la fin d'une partie réussie.
   if (vue.partie.status === "recap") {
-    return <EcranRecapitulatif lobbyId={lobbyId} />;
+    return <EcranRecapitulatif lobbyId={lobbyId} sortie={sortie} />;
   }
 
   // Puis, et seulement sur une partie encore en cours : la salle a été refermée
@@ -641,7 +646,13 @@ function EcranRevelation({
  * classement que le cahier exclut — un tableau où chacun lit son rang par le
  * bas. Il n'y a ni gain, ni point, ni podium dans ce fichier.
  */
-function EcranRecapitulatif({ lobbyId }: { lobbyId: string }) {
+function EcranRecapitulatif({
+  lobbyId,
+  sortie,
+}: {
+  lobbyId: string;
+  sortie: SortieApresJeuView | null;
+}) {
   const [portrait, setPortrait] = useState<BandeRecapLigneView[] | null>(null);
   const [echec, setEchec] = useState(false);
 
@@ -732,6 +743,8 @@ function EcranRecapitulatif({ lobbyId }: { lobbyId: string }) {
           classement, ni lot — vous pouvez refermer cet écran.
         </p>
       </LobbyCarton>
+
+      <SortieApresJeu sortie={sortie} />
     </div>
   );
 }
