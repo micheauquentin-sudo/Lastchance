@@ -365,7 +365,22 @@ describe("aucun montant construit dans le code", () => {
     const offenders = walk(join(process.cwd(), "src")).filter((file) => {
       if (file.endsWith("plans.test.ts")) return false;
       const source = readFileSync(file, "utf8");
-      return source.includes("price_data") || source.includes("unit_amount");
+      // `price_data` reste interdit PARTOUT : c'est lui qui invente un prix
+      // au moment de facturer.
+      if (source.includes("price_data")) return true;
+      // `unit_amount` ne se juge pas au mot mais a la POSITION. En CLÉ
+      // (`unit_amount:`), on compose un montant a envoyer — c'est ce que
+      // l'invariant refuse. En LECTURE (`item.price.unit_amount`), on rapporte
+      // ce que Stripe dit deja, et l'interdire empechait d'AFFICHER un prix
+      // qu'on n'a pas choisi : la projection de facturation du back-office
+      // (2026-08-23) s'y est heurtee. Le suffixe `_cents` de nos propres
+      // champs ne matche pas, faute de deux-points colles.
+      const construit = source.includes("unit_amount:")
+        || source.includes("unit_amount :");
+      // Une fixture de test ne facture personne.
+      const estUnTest =
+        file.endsWith(".test.ts") || file.endsWith(".test.tsx");
+      return construit && !estUnTest;
     });
     expect(offenders).toEqual([]);
   });
