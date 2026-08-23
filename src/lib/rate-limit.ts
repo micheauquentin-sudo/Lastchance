@@ -705,14 +705,26 @@ export const RATE_LIMITS = {
    *  et bornent la boucle qui énumérerait le vocabulaire réservé ou sonderait
    *  quelles adresses sont déjà prises. */
   vitrineSlug: { limit: 20, windowSeconds: 3600 },
-  /** ENVOI D UNE PHOTO de vitrine, par ORGANISATION — failClosed, 60 par heure.
+  /** TRADUCTION AUTOMATIQUE d'une vitrine, par ORGANISATION —
+   *  `failClosed`, 10 par heure.
    *
-   *  Le geste le plus cher de l ecran : deux conversions sharp et deux
-   *  ecritures Storage par image. Soixante par heure laisse illustrer une
-   *  carte entiere d une traite, et borne la boucle qui remplirait le bucket.
+   *  C'EST UNE LIMITE DE DÉPENSE, pas seulement de débit : chaque appel part
+   *  chez un fournisseur qui facture au caractère. Le cache rend les relances
+   *  gratuites (un champ frais ne repart pas), donc dix par heure ne gêne
+   *  aucun usage réel — mais borne la boucle d'un script qui éditerait le
+   *  français pour faire retraduire.
    *
-   *  CLE NON PUBLIQUE, motif vitrineSlug : la saturer ne gene que ses propres
-   *  collegues, d ou failClosed legitime. */
+   *  CLÉ NON PUBLIQUE, motif `vitrineSlug` : la saturer ne peut gêner que ses
+   *  propres collègues, d'où `failClosed` légitime. */
+  vitrineTraductionAuto: { limit: 10, windowSeconds: 3600 },
+  /** ENVOI D'UNE PHOTO de vitrine, par ORGANISATION — `failClosed`,
+   *  60 par heure.
+   *
+   *  Le geste le plus cher de l'écran : deux conversions `sharp` et deux
+   *  écritures Storage par image. Soixante par heure laisse illustrer une
+   *  carte entière d'une traite, et borne la boucle qui remplirait le bucket.
+   *
+   *  CLÉ NON PUBLIQUE, même motif que les deux au-dessus. */
   vitrinePhoto: { limit: 60, windowSeconds: 3600 },
   /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
    *  `failClosed`, 10 par heure.
