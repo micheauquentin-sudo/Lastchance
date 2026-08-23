@@ -45,7 +45,7 @@
 --   3. une policy PERMISSIVE INSERT/UPDATE/DELETE/ALL visant `anon`,
 --      `authenticated` ou `public` → assertion 3, qui NOMME la policy
 --      fautive dans son diff au lieu d'annoncer un simple « 0 attendu ».
---   4. un troisième bucket, ou le passage d'un bucket en `public` →
+--   4. un quatrième bucket, ou le passage d'un bucket en `public` →
 --      assertions 4 et 5.
 --   5. retirer `file_size_limit` ou `allowed_mime_types` d'un bucket public,
 --      ou élargir la liste MIME de `logos` → assertions 6 et 7.
@@ -145,33 +145,37 @@ select is(
 
 -- ── 4. Les buckets attendus, et EUX SEULS ────────────────────
 -- La liste est écrite en toutes lettres pour qu'un bucket supplémentaire soit
--- un geste relu : les deux buckets naissent d'un `insert into storage.buckets`
--- (00006_branding_and_customization.sql et
--- 20260719040000_poster_storage_and_contest_audit.sql), un troisième passera
--- par une migration et devra donc passer ici.
+-- un geste relu : les trois buckets naissent d'un `insert into storage.buckets`
+-- (00006_branding_and_customization.sql,
+-- 20260719040000_poster_storage_and_contest_audit.sql et
+-- 20261023120000_vitrine_images.sql), un quatrième passera par une migration
+-- et devra donc passer ici.
+-- CETTE ASSERTION A FAIT SON TRAVAIL le 2026-08-23 : `vitrine-images` (VIT-7)
+-- est arrivé sans elle, et la CI l'a dit avant la production.
 -- NE PAS LIRE CETTE ASSERTION COMME UNE SURVEILLANCE DES BUCKETS RÉELS : elle
 -- inventorie la base de la CI, reconstruite depuis les migrations. Un bucket
 -- créé au tableau de bord de production n'y apparaît pas — voir
 -- l'avertissement en tête de fichier.
 select is(
   coalesce((select string_agg(id, ', ' order by id) from storage.buckets), ''),
-  'logos, poster-images',
-  'les seuls buckets sont logos et poster-images'
+  'logos, poster-images, vitrine-images',
+  'les seuls buckets sont logos, poster-images et vitrine-images'
 );
 
 -- ── 5. Les buckets publics, NOMMÉS ───────────────────────────
 -- Un bucket public sert ses objets sans jeton : toute URL devinée ou fuitée
 -- est lisible par Internet, et la RLS ne s'applique pas à ce chemin de
--- lecture. Les deux buckets actuels l'assument (un logo et une affiche sont
--- faits pour être vus, comme le disent leurs migrations). Un troisième doit
--- l'assumer explicitement, pas hériter d'une case cochée.
+-- lecture. Les trois buckets actuels l'assument (un logo, une affiche et la
+-- photo d'une carte sont faits pour être vus, comme le disent leurs
+-- migrations). Un quatrième doit l'assumer explicitement, pas hériter d'une
+-- case cochée.
 -- `b.public` qualifié partout : `public` est aussi un mot-clé et un nom de
 -- schéma, une référence nue est illisible avant d'être risquée.
 select is(
   coalesce((select string_agg(b.id, ', ' order by b.id)
               from storage.buckets b where b.public), ''),
-  'logos, poster-images',
-  'les buckets publics sont exactement logos et poster-images'
+  'logos, poster-images, vitrine-images',
+  'les buckets publics sont exactement logos, poster-images et vitrine-images'
 );
 
 -- ── 6. Tout bucket public reste borné ────────────────────────
