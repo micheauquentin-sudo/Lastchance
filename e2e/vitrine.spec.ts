@@ -680,21 +680,29 @@ test.describe("vitrine — dashboard commerçant", () => {
     // locator qui ne pouvait pas résoudre.
     const marque = Date.now();
     const soupe = `Soupe E2E ${marque}`;
-    await page
-      .getByLabel("Votre carte, en texte")
-      .fill(
-        [
-          "ENTRÉES",
-          `Houmous E2E ${marque} — pois chiches — 7 €`,
-          `${soupe} — 6,50`,
-          "PLATS",
-          `Risotto E2E ${marque} — 18 €`,
-        ].join("\n"),
-      );
+    const carte = [
+      "ENTRÉES",
+      `Houmous E2E ${marque} — pois chiches — 7 €`,
+      `${soupe} — 6,50`,
+      "PLATS",
+      `Risotto E2E ${marque} — 18 €`,
+    ].join("\n");
+    const analyser = page.getByRole("button", { name: "Analyser ma carte" });
+
+    // UN REMPLISSAGE AVANT L'HYDRATATION EST PERDU, ET SANS RETOUR. Le DOM
+    // porte le texte, React ne l'a jamais vu, et `disabled={!texte.trim()}` ne
+    // se relèvera plus : `click()` attend alors 90 s un bouton qui ne peut plus
+    // s'activer. Vu en CI sur mobile-safari seulement, à la reprise comme au
+    // premier essai. On n'attend donc pas le remplissage, on attend son EFFET —
+    // et on recommence tant qu'il n'a pas eu lieu.
+    await expect(async () => {
+      await page.getByLabel("Votre carte, en texte").fill(carte);
+      await expect(analyser).toBeEnabled({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
 
     // « Analyser » N'ENVOIE RIEN : il affiche. C'est la garantie que ce test
     // vérifie d'abord — l'aperçu existe avant qu'aucune carte n'ait été créée.
-    await page.getByRole("button", { name: "Analyser ma carte" }).click();
+    await analyser.click();
 
     const nomChamp = page.locator("#vitrine-import-nom");
     await expect(nomChamp).toBeVisible({ timeout: 10_000 });
