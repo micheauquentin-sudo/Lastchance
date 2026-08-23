@@ -7347,6 +7347,115 @@ export type Database = {
           },
         ]
       }
+      tickets_or: {
+        Row: {
+          code: string
+          emis_le: string
+          emis_par: string | null
+          expire_le: string
+          id: string
+          lot_id: string | null
+          organization_id: string
+          reward_issuance_id: string | null
+          tire_le: string | null
+        }
+        Insert: {
+          code: string
+          emis_le?: string
+          emis_par?: string | null
+          expire_le: string
+          id?: string
+          lot_id?: string | null
+          organization_id: string
+          reward_issuance_id?: string | null
+          tire_le?: string | null
+        }
+        Update: {
+          code?: string
+          emis_le?: string
+          emis_par?: string | null
+          expire_le?: string
+          id?: string
+          lot_id?: string | null
+          organization_id?: string
+          reward_issuance_id?: string | null
+          tire_le?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_or_lot_id_fkey"
+            columns: ["lot_id"]
+            isOneToOne: false
+            referencedRelation: "tickets_or_lots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_or_lot_org_fk"
+            columns: ["lot_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "tickets_or_lots"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "tickets_or_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tickets_or_reward_issuance_id_fkey"
+            columns: ["reward_issuance_id"]
+            isOneToOne: false
+            referencedRelation: "reward_issuances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tickets_or_lots: {
+        Row: {
+          actif: boolean
+          created_at: string
+          id: string
+          libelle: string
+          ordre: number
+          organization_id: string
+          poids: number
+          stock: number | null
+          updated_at: string
+        }
+        Insert: {
+          actif?: boolean
+          created_at?: string
+          id?: string
+          libelle: string
+          ordre?: number
+          organization_id: string
+          poids?: number
+          stock?: number | null
+          updated_at?: string
+        }
+        Update: {
+          actif?: boolean
+          created_at?: string
+          id?: string
+          libelle?: string
+          ordre?: number
+          organization_id?: string
+          poids?: number
+          stock?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tickets_or_lots_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vitrine_categories: {
         Row: {
           action: string | null
@@ -8544,6 +8653,10 @@ export type Database = {
         Args: { p_lobby_id: string; p_token_hash: string }
         Returns: Json
       }
+      emettre_ticket_or: {
+        Args: { p_jours?: number; p_organization_id: string }
+        Returns: Json
+      }
       end_event_session: {
         Args: { p_organization_id: string; p_session_id: string }
         Returns: Json
@@ -9539,6 +9652,16 @@ export type Database = {
           status: string
         }[]
       }
+      redeem_ticket_or: {
+        Args: { p_actor: string; p_code: string; p_organization_id: string }
+        Returns: {
+          code: string
+          id: string
+          label: string
+          redeemed_at: string
+          redeemed_now: boolean
+        }[]
+      }
       referral_emit_reward: {
         Args: {
           p_beneficiary: string
@@ -9944,6 +10067,8 @@ export type Database = {
         Args: { p_legacy_table: string; p_source_id: string }
         Returns: undefined
       }
+      tickets_or_state: { Args: { p_organization_id: string }; Returns: Json }
+      tirer_ticket_or: { Args: { p_code: string }; Returns: Json }
       update_admin_safely: {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
         Returns: boolean

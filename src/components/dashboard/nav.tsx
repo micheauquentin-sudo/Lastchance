@@ -29,6 +29,7 @@ type IconKey =
   | "vitrine"
   | "duo"
   | "bande"
+  | "ticket"
   | "discover";
 
 interface DashboardLink {
@@ -137,6 +138,19 @@ const DUO_LINK: DashboardLink = {
   icon: "duo",
 };
 
+/**
+ * LE TICKET D OR (TKT-1) — un jeu du SOCLE, donc SANS DRAPEAU.
+ *
+ * Contrairement au Duo et a la Bande, il ne depend d aucune cle : il est
+ * inclus dans les cinq offres. Le seul refus possible est l absence d abonnement
+ * actif, et il est rendu par la page elle-meme — pas par un lien absent.
+ */
+const TICKET_LINK: DashboardLink = {
+  href: "/dashboard/ticket-or",
+  label: "Ticket d’Or",
+  icon: "ticket",
+};
+
 const BANDE_LINK: DashboardLink = {
   href: "/dashboard/salons/bande",
   label: "Portrait de la Bande",
@@ -199,6 +213,7 @@ const EMOJIS: Record<IconKey, string> = {
   // deux-là ne se jouent pas contre le hasard mais contre les autres.
   duo: "🪞",
   bande: "👥",
+  ticket: "🎟️",
   discover: "🧭",
   qr: "📱",
   list: "📋",
@@ -330,6 +345,7 @@ export function DashboardNav({
               ...experienceLinks,
               ...(duoActif ? [DUO_LINK] : []),
               ...(bandeActif ? [BANDE_LINK] : []),
+              TICKET_LINK,
               PROGRESSION_LINK,
             ],
           },
