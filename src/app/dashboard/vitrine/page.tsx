@@ -14,6 +14,8 @@ import {
   loadVitrineMesures,
 } from "@/lib/vitrine-context";
 import { MesuresTableau } from "@/components/vitrine/mesures-tableau";
+import { IndexationVitrine } from "@/components/vitrine/indexation-vitrine";
+import { etatIndexation } from "@/lib/vitrine-indexation";
 import type { ContenuVitrineView } from "@/lib/vitrine";
 import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { OrgLobbyView } from "@/lib/lobby";
@@ -355,6 +357,19 @@ export default async function VitrineDashboardPage() {
             {/* HORS DU SYSTÈME DE TUILES, et c'est délibéré : les neuf tuiles
                 sont une checklist de mise en route, numérotée et gardée. Un
                 rapport en lecture seule n'est pas une étape à cocher. */}
+            {/* VIT-12 — hors tuiles, comme le rapport : autoriser Google est
+                une décision de commerce, pas une étape de mise en route. */}
+            <IndexationVitrine
+              indexable={settings.indexable}
+              etat={etatIndexation({
+                published: settings.published,
+                indexable: settings.indexable,
+                accroche: settings.accroche,
+                cartes,
+              })}
+              peutEditer={capacites.canEditDraft}
+            />
+
             {rapport.ok ? (
               <MesuresTableau mesures={rapport.mesures} cartes={cartes} />
             ) : null}

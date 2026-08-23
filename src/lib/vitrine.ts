@@ -868,6 +868,8 @@ export interface VitrineIdentiteView {
   horaires_texte: string | null;
   cover_path: string | null;
   cover_alt: string | null;
+  /** VIT-12 : le commerçant autorise-t-il l'indexation ? Ne suffit pas à indexer. */
+  indexable: boolean;
   theme: ThemeVitrine;
 }
 
@@ -1026,6 +1028,8 @@ export interface VitrineSettingsView {
   theme: ThemeVitrine;
   cover_path: string | null;
   cover_alt: string | null;
+  /** VIT-12 : le commerçant autorise-t-il l'indexation ? Ne suffit pas à indexer. */
+  indexable: boolean;
   updated_at: string | null;
 }
 
@@ -1494,6 +1498,7 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       horaires_texte: asString(identite.horaires_texte),
       cover_path: asString(identite.cover_path),
       cover_alt: asString(identite.cover_alt),
+      indexable: identite.indexable === true,
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
@@ -1531,6 +1536,7 @@ export function mapVitrineDashboardState(raw: unknown): VitrineDashboardState {
         theme: mapThemeVitrine(brut.theme),
         cover_path: asString(brut.cover_path),
         cover_alt: asString(brut.cover_alt),
+        indexable: brut.indexable === true,
         updated_at: asString(brut.updated_at),
       };
     }
