@@ -7,7 +7,7 @@ import { revalidatePlaySlugs } from "@/lib/revalidate-play";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
-import sharp from "sharp";
+import { chargerSharp } from "@/lib/sharp-differe";
 
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 Mo (aligné sur le bucket)
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -55,6 +55,7 @@ export async function uploadLogo(
 
   let normalized: Buffer;
   try {
+    const sharp = await chargerSharp();
     // Décode réellement l'image : le type déclaré par le navigateur ne
     // suffit pas. La ré-encodage retire EXIF, profils et contenu annexe.
     normalized = await sharp(Buffer.from(await file.arrayBuffer()), {

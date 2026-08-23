@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import sharp from "sharp";
+import { chargerSharp } from "@/lib/sharp-differe";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -85,6 +85,7 @@ async function normaliser(
   }
 
   try {
+    const sharp = await chargerSharp();
     const encoder = (largeur: number, qualite: number) =>
       sharp(entree, { failOn: "warning", limitInputPixels: PIXELS_MAX })
         .rotate()

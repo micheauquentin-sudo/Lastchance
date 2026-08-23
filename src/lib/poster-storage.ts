@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import sharp from "sharp";
+import { chargerSharp } from "@/lib/sharp-differe";
 import {
   posterConfigSchema,
   posterImageRef,
@@ -43,6 +43,7 @@ async function normalizeDataImage(src: string): Promise<Buffer> {
   }
 
   try {
+    const sharp = await chargerSharp();
     const normalized = await sharp(input, {
       failOn: "warning",
       limitInputPixels: MAX_INPUT_PIXELS,

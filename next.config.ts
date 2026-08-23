@@ -95,6 +95,28 @@ const tokenPathSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // ── LES BINAIRES DE `sharp` DOIVENT SUIVRE LA FONCTION ──
+  //
+  // `sharp` charge un `.node` qui charge lui-même `libvips-cpp.so`. Le second
+  // n'est référencé par AUCUN `import` : il est résolu au moment du `dlopen`.
+  // L'analyse statique qui décide des fichiers embarqués ne peut donc pas le
+  // voir, et la fonction déployée part sans lui. La production l'a dit mot pour
+  // mot le 2026-08-23 :
+  //
+  //     ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file
+  //
+  // Le défaut est INVISIBLE en local et en CI : `next start` y tourne sur un
+  // `node_modules` complet, où le fichier est là. Seul un déploiement tracé le
+  // révèle — ce qui explique qu'une suite E2E verte ait pu le laisser passer.
+  //
+  // Les quatre familles de routes listées sont celles qui traitent une image :
+  // logo (réglages), affiche QR, photos de vitrine. Les nommer plutôt que
+  // d'inclure partout évite d'alourdir de dix mégaoctets des fonctions qui
+  // n'encodent jamais rien.
+  outputFileTracingIncludes: {
+    "/dashboard/**": ["./node_modules/@img/**"],
+    "/poster/**": ["./node_modules/@img/**"],
+  },
   async headers() {
     return [
       {
