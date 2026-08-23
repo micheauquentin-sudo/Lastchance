@@ -689,14 +689,18 @@ test.describe("vitrine — dashboard commerçant", () => {
     ].join("\n");
     const analyser = page.getByRole("button", { name: "Analyser ma carte" });
 
-    // UN REMPLISSAGE AVANT L'HYDRATATION EST PERDU, ET SANS RETOUR. Le DOM
-    // porte le texte, React ne l'a jamais vu, et `disabled={!texte.trim()}` ne
-    // se relèvera plus : `click()` attend alors 90 s un bouton qui ne peut plus
-    // s'activer. Vu en CI sur mobile-safari seulement, à la reprise comme au
-    // premier essai. On n'attend donc pas le remplissage, on attend son EFFET —
-    // et on recommence tant qu'il n'a pas eu lieu.
+    // UN REMPLISSAGE AVANT L'HYDRATATION EST PERDU, ET LE REJOUER À L'IDENTIQUE
+    // NE LE RATTRAPE PAS. La trace CI (mobile-safari) montre les deux moitiés
+    // du piège : le `textarea` PORTE le texte, et « Analyser ma carte » reste
+    // `disabled` — l'état React `texte` est vide, parce que l'événement `input`
+    // du premier remplissage n'avait pas encore de gestionnaire. Les seize
+    // reprises suivantes n'ont alors rien émis du tout : la valeur du DOM était
+    // déjà celle qu'elles voulaient poser. Vider avant de remplir garantit une
+    // vraie TRANSITION de valeur à chaque tentative — donc un vrai événement.
     await expect(async () => {
-      await page.getByLabel("Votre carte, en texte").fill(carte);
+      const zone = page.getByLabel("Votre carte, en texte");
+      await zone.fill("");
+      await zone.fill(carte);
       await expect(analyser).toBeEnabled({ timeout: 2_000 });
     }).toPass({ timeout: 30_000 });
 
