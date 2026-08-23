@@ -1,5 +1,53 @@
 # Roadmap — Lastchance
 
+## V1.67 — Sept lots Vitrine et le Ticket d'Or, enchaînés (✅ 2026-08-23, PR #180 → #188)
+
+**Objectif** : dérouler d'un trait les huit lots définis dans le handoff Codex —
+sept sur la Vitrine, un jeu neuf — chacun poussé sur `main` avant d'enchaîner.
+
+- **Documentation** (#180, aucune migration) — chaque lot du handoff porte
+  désormais **Terrain / Écarté / Fini quand** ; la règle du brief passe dans
+  `AGENTS.md`, que les trois outils lisent.
+- **VIT-11 Fin de jeu** (#181, aucune migration) — les trois écrans terminaux
+  proposent la suite. Rien au schéma : les liens sociaux existaient déjà.
+- **VIT-8 Import de carte** (#182, aucune migration) — CSV, XLSX et PDF lus
+  **dans le navigateur**, sans dépendance neuve : le fichier ne quitte pas
+  l'appareil du commerçant. L'import ajoute une carte, n'en écrase aucune.
+- **VIT-6 Traduction automatique** (#183, aucune migration) — déclenchée par le
+  commerçant, jamais par un visiteur : l'API se facture au caractère, et un
+  point d'entrée anonyme s'y serait vidé. `vitrine_translations` était le cache.
+- **VIT-7 Photos** (#184, migration `20261023120000`) — bucket `vitrine-images`,
+  deux variantes, EXIF retiré, écriture ordonnée (l'ancienne image ne meurt
+  qu'une fois la nouvelle écrite).
+- **VIT-10 Boussole** (#185, migration `20261024120000`) — facettes fermées
+  posées par le commerçant sur ses fiches ; la Boussole filtre. Une fiche sans
+  facette n'est jamais proposée, une dimension neutre passe toujours.
+- **VIT-9 Mesures** (#186, migration `20261026130000`) — **aucun identifiant** :
+  compteurs agrégés par jour, langue et type. Ni cookie, ni session, ni
+  empreinte. Le commerçant voit ce qui attire, pas qui regarde.
+- **VIT-12 Indexation** (#187, migration `20261027120000`) — la Vitrine entre
+  dans Google **sur consentement explicite**, et jamais avant d'être publiée,
+  accrochée et garnie de trois fiches. Aucune note, aucun prix, aucun horaire
+  dans les données structurées.
+- **TKT-1 Ticket d'Or** (#188, migrations `20261028120000` et
+  `20261029120000`) — un jeu du socle, gardé par la clé de l'offre de base : le
+  staff remet un code après une visite constatée, le client tire un lot au
+  passage suivant et le retire à la caisse habituelle. Code de tirage et code de
+  retrait distincts — les confondre aurait fait d'une capture d'écran une preuve
+  de gain.
+
+**Ce que la vérification a trouvé** — un `create or replace` de VIT-7 avait
+**annulé en production** un patch en place de `20261020120000`, réparé par
+`20261026120000` ; le capteur `fk_composites_couverture` a refusé les deux clés
+étrangères simples du Ticket d'Or, dont `lot_id` est désormais fermée par une
+composite ; et le fichier de types généré portait `remettre_ticket_or`, fonction
+fantôme d'un brouillon renommé, jamais présente dans une migration.
+
+**Reste ouvert** : `GOOGLE_TRANSLATE_API_KEY` n'est pas posée sur Vercel — sans
+elle, VIT-6 ne traduit pas. Et `reward_issuances` n'a toujours pas de clé
+`(id, organization_id)` : la dette est **inscrite** dans
+`fk_composites_couverture`, à côté de son précédent `experience_events`.
+
 ## V1.66 — Sur Place : la cinquième offre rend vendables quatre produits livrés (✅ 2026-08-22, ADR-117)
 
 **Objectif** : demande du propriétaire après un audit tarifaire — la Vitrine,

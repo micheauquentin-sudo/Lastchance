@@ -680,21 +680,33 @@ test.describe("vitrine — dashboard commerçant", () => {
     // locator qui ne pouvait pas résoudre.
     const marque = Date.now();
     const soupe = `Soupe E2E ${marque}`;
-    await page
-      .getByLabel("Votre carte, en texte")
-      .fill(
-        [
-          "ENTRÉES",
-          `Houmous E2E ${marque} — pois chiches — 7 €`,
-          `${soupe} — 6,50`,
-          "PLATS",
-          `Risotto E2E ${marque} — 18 €`,
-        ].join("\n"),
-      );
+    const carte = [
+      "ENTRÉES",
+      `Houmous E2E ${marque} — pois chiches — 7 €`,
+      `${soupe} — 6,50`,
+      "PLATS",
+      `Risotto E2E ${marque} — 18 €`,
+    ].join("\n");
+    const analyser = page.getByRole("button", { name: "Analyser ma carte" });
+
+    // UN REMPLISSAGE AVANT L'HYDRATATION EST PERDU, ET LE REJOUER À L'IDENTIQUE
+    // NE LE RATTRAPE PAS. La trace CI (mobile-safari) montre les deux moitiés
+    // du piège : le `textarea` PORTE le texte, et « Analyser ma carte » reste
+    // `disabled` — l'état React `texte` est vide, parce que l'événement `input`
+    // du premier remplissage n'avait pas encore de gestionnaire. Les seize
+    // reprises suivantes n'ont alors rien émis du tout : la valeur du DOM était
+    // déjà celle qu'elles voulaient poser. Vider avant de remplir garantit une
+    // vraie TRANSITION de valeur à chaque tentative — donc un vrai événement.
+    await expect(async () => {
+      const zone = page.getByLabel("Votre carte, en texte");
+      await zone.fill("");
+      await zone.fill(carte);
+      await expect(analyser).toBeEnabled({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
 
     // « Analyser » N'ENVOIE RIEN : il affiche. C'est la garantie que ce test
     // vérifie d'abord — l'aperçu existe avant qu'aucune carte n'ait été créée.
-    await page.getByRole("button", { name: "Analyser ma carte" }).click();
+    await analyser.click();
 
     const nomChamp = page.locator("#vitrine-import-nom");
     await expect(nomChamp).toBeVisible({ timeout: 10_000 });
