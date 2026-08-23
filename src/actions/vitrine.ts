@@ -12,6 +12,7 @@ import {
   mapDeleteVitrineTraduction,
   mapSetVitrineSlug,
   mapUpsertVitrineTraduction,
+  mapVitrineTraductionState,
   VITRINE_LANGUE_TRADUITE,
   VITRINE_ORDRE_MAX,
   VITRINE_TRADUCTION_TEXTE_MAX,
@@ -20,6 +21,15 @@ import {
   type ThemeVitrine,
 } from "@/lib/vitrine";
 import { gardeEditeurVitrine } from "@/lib/vitrine-context";
+import {
+  champsATraduire,
+  decouperEnLots,
+  messageCompteRendu,
+} from "@/lib/traduction-auto";
+import {
+  fournisseurConfigure,
+  TRADUCTION_LOT,
+} from "@/lib/traduction-fournisseur";
 import {
   createVitrineCarteSchema,
   createVitrineFicheSchema,
@@ -1083,6 +1093,23 @@ const IMPORT_LIGNE_REFUSEE =
 const TROP_D_IMPORTS =
   "Trop d'imports en peu de temps. Réessayez dans une heure.";
 
+const TROP_DE_TRADUCTIONS =
+  "Trop de traductions automatiques en peu de temps. Réessayez dans une heure.";
+
+/**
+ * SANS CLÉ, RIEN NE PART — et ce n'est pas une panne.
+ *
+ * L'environnement n'a simplement pas activé la traduction automatique. La
+ * Vitrine continue de servir le français, et l'éditeur manuel reste ouvert :
+ * dire « erreur » aurait envoyé le commerçant chercher un défaut qui n'existe
+ * pas.
+ */
+const TRADUCTION_NON_ACTIVEE =
+  "La traduction automatique n'est pas activée. Vous pouvez traduire à la main ci-dessous.";
+
+const TRADUCTION_INDISPONIBLE =
+  "La traduction automatique n'a pas pu démarrer. Réessayez dans un instant.";
+
 /**
  * DU NOM DE CONTRAINTE AU NOM DE CHAMP — une table FERMÉE, jamais un relais.
  *
@@ -1640,4 +1667,145 @@ export async function deleteVitrineTraduction(
   // Même sur `deleted: false` — voir `setVitrineTraduction`.
   await revaliderVitrine(supabase, garde.organizationId);
   return { ok: true, data: { deleted: resultat.deleted } };
+}
+
+/**
+ * TRADUIRE AUTOMATIQUEMENT CE QUI MANQUE (VIT-6).
+ *
+ * ── POURQUOI LE COMMERÇANT DÉCLENCHE, ET PAS LE VISITEUR ──
+ *
+ * Faire traduire par le visiteur qui choisit « English » aurait ouvert un point
+ * d'entrée ANONYME sur une API facturée au caractère, et fait attendre le
+ * premier visiteur pendant l'aller-retour. Ici, le commerçant clique une fois :
+ * toute sa carte est traduite, mise en cache dans `vitrine_translations`, et
+ * chaque visiteur suivant lit l'anglais instantanément, sans un caractère
+ * facturé de plus. La dépense est déclenchée par quelqu'un d'identifié, sur sa
+ * propre organisation.
+ *
+ * ── CE QUI PART, ET CE QUI NE PART PAS ──
+ *
+ * Seulement les champs `absent` ou `perime` de `vitrine_translation_state` :
+ * ce qui est déjà frais ne repart pas. Prix, disponibilité, badges et
+ * allergènes ne sont pas traduisibles — la base l'impose par un `check`, et
+ * aucune information alimentaire n'est jamais déduite d'un texte.
+ *
+ * ── TROIS BORNES, ET UN ARRÊT PROPRE ──
+ *
+ * Un seau par organisation (dépense), un plafond de caractères et un plafond de
+ * champs par appel (volume). Sans clé, rien ne part et l'écran le dit. Si le
+ * fournisseur tombe en cours de route, ce qui a été écrit RESTE écrit et le
+ * compte rendu dit combien : perdre dix traductions déjà payées pour cause de
+ * onzième en échec serait le pire des deux mondes.
+ *
+ * ── LA VERSION VUE, ENCORE ──
+ *
+ * `p_version_source` reçoit la version que l'état PORTAIT à la lecture, comme
+ * pour une traduction manuelle. Si le français a bougé entre-temps, la
+ * traduction naît périmée — exact, et préférable à une fraîcheur déclarée sur
+ * un texte jamais lu.
+ */
+export async function traduireVitrineAutomatiquement(
+  _prev: ActionResult<{ message: string; caracteres: number }> | null,
+  _formData: FormData,
+): Promise<ActionResult<{ message: string; caracteres: number }>> {
+  // AUCUNE ENTRÉE, ET C'EST VOULU. Le geste est « traduis ce qui manque » : la
+  // liste des champs se lit en base, jamais dans le formulaire. Un paramètre
+  // posté aurait permis de désigner une cible, donc à valider, donc à refuser.
+  // Motif `void` de `play-context.ts` pour la signature imposée par
+  // `useActionForm`.
+  void _prev;
+  void _formData;
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  // APRÈS la garde, sur la clé du locataire authentifié — motif `vitrine:slug`.
+  const autorise = await rateLimit(
+    rateLimitBucket("vitrine:traduction-auto", garde.organizationId),
+    RATE_LIMITS.vitrineTraductionAuto,
+    { failClosed: true },
+  );
+  if (!autorise) return { ok: false, error: TROP_DE_TRADUCTIONS };
+
+  const fournisseur = fournisseurConfigure();
+  if (!fournisseur) return { ok: false, error: TRADUCTION_NON_ACTIVEE };
+
+  const admin = createAdminClient();
+  const { data: brut, error: erreurEtat } = await admin.rpc(
+    "vitrine_translation_state",
+    { p_organization_id: garde.organizationId },
+  );
+  if (erreurEtat) {
+    reportError("vitrine.traduction-auto", erreurEtat.message);
+    return { ok: false, error: TRADUCTION_INDISPONIBLE };
+  }
+
+  const selection = champsATraduire(mapVitrineTraductionState(brut));
+  if (selection.retenus.length === 0) {
+    return {
+      ok: true,
+      data: { message: messageCompteRendu(0, 0, false), caracteres: 0 },
+    };
+  }
+
+  let ecrits = 0;
+  let caracteres = 0;
+  let interrompu = false;
+
+  for (const lot of decouperEnLots(selection.retenus, TRADUCTION_LOT)) {
+    let traduits: string[];
+    try {
+      traduits = await fournisseur.traduire(
+        lot.map((champ) => champ.texte),
+        "fr",
+        VITRINE_LANGUE_TRADUITE,
+      );
+    } catch (cause) {
+      reportError(
+        "vitrine.traduction-auto",
+        cause instanceof Error ? cause.message : "fournisseur injoignable",
+      );
+      interrompu = true;
+      break;
+    }
+
+    for (let i = 0; i < lot.length; i += 1) {
+      const champ = lot[i];
+      // Borné à la contrainte de la colonne : une traduction plus longue que
+      // 2000 serait refusée par la base, et perdre le lot entier pour un champ
+      // trop bavard coûterait plus cher que de le couper.
+      const texte = (traduits[i] ?? "").trim().slice(0, VITRINE_TRADUCTION_TEXTE_MAX);
+      if (!texte) continue;
+
+      const { error: erreurEcriture } = await admin.rpc(
+        "upsert_vitrine_translation",
+        {
+          p_organization_id: garde.organizationId,
+          p_cible_type: champ.cibleType,
+          p_cible_id: champ.cibleId,
+          p_lang: VITRINE_LANGUE_TRADUITE,
+          p_champ: champ.champ,
+          p_texte: texte,
+          p_version_source: champ.version,
+          p_actor: garde.userId,
+        },
+      );
+      if (erreurEcriture) {
+        reportError("vitrine.traduction-auto", erreurEcriture.message);
+        continue;
+      }
+      ecrits += 1;
+      caracteres += champ.texte.length;
+    }
+  }
+
+  const supabase = await createClient();
+  await revaliderVitrine(supabase, garde.organizationId);
+
+  const message = messageCompteRendu(
+    ecrits,
+    caracteres,
+    selection.tronquee || interrompu,
+  );
+  return { ok: true, data: { message, caracteres } };
 }

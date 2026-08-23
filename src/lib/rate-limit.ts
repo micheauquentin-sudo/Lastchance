@@ -705,6 +705,18 @@ export const RATE_LIMITS = {
    *  et bornent la boucle qui énumérerait le vocabulaire réservé ou sonderait
    *  quelles adresses sont déjà prises. */
   vitrineSlug: { limit: 20, windowSeconds: 3600 },
+  /** TRADUCTION AUTOMATIQUE d'une vitrine, par ORGANISATION —
+   *  `failClosed`, 10 par heure.
+   *
+   *  C'EST UNE LIMITE DE DÉPENSE, pas seulement de débit : chaque appel part
+   *  chez un fournisseur qui facture au caractère. Le cache rend les relances
+   *  gratuites (un champ frais ne repart pas), donc dix par heure ne gêne
+   *  aucun usage réel — mais borne la boucle d'un script qui éditerait le
+   *  français pour faire retraduire.
+   *
+   *  CLÉ NON PUBLIQUE, motif `vitrineSlug` : la saturer ne peut gêner que ses
+   *  propres collègues, d'où `failClosed` légitime. */
+  vitrineTraductionAuto: { limit: 10, windowSeconds: 3600 },
   /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
    *  `failClosed`, 10 par heure.
    *
