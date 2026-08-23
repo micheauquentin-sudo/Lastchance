@@ -723,6 +723,8 @@ export interface VitrineFicheView {
   prix_affiche: string | null;
   /** Toujours `null` en L10 : aucun pipeline d'images n'est livré. */
   photo_path: string | null;
+  /** Description saisie à la main (VIT-7). `null` = image décorative. */
+  photo_alt: string | null;
   badges: BadgeVitrine[];
   allergenes: AllergeneVitrine[];
   /**
@@ -763,6 +765,7 @@ export interface VitrineIdentiteView {
   histoire: string | null;
   horaires_texte: string | null;
   cover_path: string | null;
+  cover_alt: string | null;
   theme: ThemeVitrine;
 }
 
@@ -920,6 +923,7 @@ export interface VitrineSettingsView {
   horaires_texte: string | null;
   theme: ThemeVitrine;
   cover_path: string | null;
+  cover_alt: string | null;
   updated_at: string | null;
 }
 
@@ -1066,6 +1070,7 @@ function mapFiche(raw: unknown): VitrineFicheView | null {
     description: asString(root.description),
     prix_affiche: asString(root.prix_affiche),
     photo_path: asString(root.photo_path),
+    photo_alt: asString(root.photo_alt),
     badges: motsDuVocabulaireVitrine(root.badges, VITRINE_BADGES),
     allergenes: motsDuVocabulaireVitrine(root.allergenes, VITRINE_ALLERGENES),
     // Repli FERMÉ : un drapeau illisible affiche « indisponible » plutôt que de
@@ -1383,6 +1388,7 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       histoire: asString(identite.histoire),
       horaires_texte: asString(identite.horaires_texte),
       cover_path: asString(identite.cover_path),
+      cover_alt: asString(identite.cover_alt),
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
@@ -1419,6 +1425,7 @@ export function mapVitrineDashboardState(raw: unknown): VitrineDashboardState {
         horaires_texte: asString(brut.horaires_texte),
         theme: mapThemeVitrine(brut.theme),
         cover_path: asString(brut.cover_path),
+        cover_alt: asString(brut.cover_alt),
         updated_at: asString(brut.updated_at),
       };
     }

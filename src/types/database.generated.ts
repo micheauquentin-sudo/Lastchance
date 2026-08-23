@@ -7442,6 +7442,7 @@ export type Database = {
           nom: string
           ordre: number
           organization_id: string
+          photo_alt: string | null
           photo_path: string | null
           prix_affiche: string | null
           updated_at: string
@@ -7457,6 +7458,7 @@ export type Database = {
           nom: string
           ordre?: number
           organization_id: string
+          photo_alt?: string | null
           photo_path?: string | null
           prix_affiche?: string | null
           updated_at?: string
@@ -7472,6 +7474,7 @@ export type Database = {
           nom?: string
           ordre?: number
           organization_id?: string
+          photo_alt?: string | null
           photo_path?: string | null
           prix_affiche?: string | null
           updated_at?: string
@@ -7534,6 +7537,7 @@ export type Database = {
       vitrine_settings: {
         Row: {
           accroche: string | null
+          cover_alt: string | null
           cover_path: string | null
           created_at: string
           histoire: string | null
@@ -7547,6 +7551,7 @@ export type Database = {
         }
         Insert: {
           accroche?: string | null
+          cover_alt?: string | null
           cover_path?: string | null
           created_at?: string
           histoire?: string | null
@@ -7560,6 +7565,7 @@ export type Database = {
         }
         Update: {
           accroche?: string | null
+          cover_alt?: string | null
           cover_path?: string | null
           created_at?: string
           histoire?: string | null

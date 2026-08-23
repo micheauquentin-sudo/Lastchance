@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { chooseDuo, getDuoState, startDuo } from "@/actions/duo";
 import type { DuoChoixView, DuoOptionView, DuoStateView } from "@/lib/duo";
 import { LobbyCarton } from "@/components/lobby/lobby-shell";
+import { urlPhotoVitrine } from "@/lib/vitrine-photo";
 import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
 import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
 
@@ -574,7 +575,15 @@ function ChoixRevele({
   );
 }
 
-/** Une adresse d'image utilisable, ou rien. Voir l'en-tête de `CarteOption`. */
+/**
+ * Une adresse d'image utilisable, ou rien. Voir l'en-tête de `CarteOption`.
+ *
+ * DEPUIS VIT-7, `photo_path` porte une CLÉ Storage (`org/uuid.webp`) et non
+ * une URL. L'ancien test — « ça commence par https:// » — écrivait `null` pour
+ * toute photo réellement déposée : les fiches illustrées seraient restées
+ * muettes ici, sans que rien ne le signale, puisqu'une absence de photo est un
+ * état parfaitement normal.
+ */
 function adressePhoto(photoPath: string | null): string | null {
-  return photoPath && photoPath.startsWith("https://") ? photoPath : null;
+  return urlPhotoVitrine(photoPath);
 }

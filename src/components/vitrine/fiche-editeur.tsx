@@ -19,6 +19,7 @@ import {
   updateVitrineFiche,
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
+import { PhotoChamp } from "@/components/vitrine/photo-champ";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { FlechesOrdre } from "@/components/vitrine/fleches-ordre";
 
@@ -382,6 +383,15 @@ function FicheForm({
           </Button>
         ) : null}
       </form>
+
+      <PhotoChamp
+        cible="fiche"
+        ficheId={fiche.id}
+        chemin={fiche.photo_path}
+        alt={fiche.photo_alt}
+        peutEditer={peutEditer}
+        titre="Photo de la fiche"
+      />
 
       {peutEditer ? (
         <form onSubmit={supprimer.onSubmit}>

@@ -705,6 +705,15 @@ export const RATE_LIMITS = {
    *  et bornent la boucle qui énumérerait le vocabulaire réservé ou sonderait
    *  quelles adresses sont déjà prises. */
   vitrineSlug: { limit: 20, windowSeconds: 3600 },
+  /** ENVOI D UNE PHOTO de vitrine, par ORGANISATION — failClosed, 60 par heure.
+   *
+   *  Le geste le plus cher de l ecran : deux conversions sharp et deux
+   *  ecritures Storage par image. Soixante par heure laisse illustrer une
+   *  carte entiere d une traite, et borne la boucle qui remplirait le bucket.
+   *
+   *  CLE NON PUBLIQUE, motif vitrineSlug : la saturer ne gene que ses propres
+   *  collegues, d ou failClosed legitime. */
+  vitrinePhoto: { limit: 60, windowSeconds: 3600 },
   /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
    *  `failClosed`, 10 par heure.
    *

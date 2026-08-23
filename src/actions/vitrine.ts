@@ -21,6 +21,13 @@ import {
 } from "@/lib/vitrine";
 import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 import {
+  cheminsDeLaPhoto,
+  deposerPhotoVitrine,
+  effacerPhotos,
+  verifierQuotaPhotos,
+  VitrinePhotoError,
+} from "@/lib/vitrine-photo-storage";
+import {
   createVitrineCarteSchema,
   createVitrineFicheSchema,
   createVitrineRubriqueSchema,
@@ -29,7 +36,9 @@ import {
   deleteVitrineFicheSchema,
   deleteVitrineRubriqueSchema,
   deleteVitrineTraductionSchema,
+  deleteVitrinePhotoSchema,
   importVitrineCarteSchema,
+  setVitrinePhotoSchema,
   reorderVitrineCartesSchema,
   reorderVitrineFichesSchema,
   reorderVitrineRubriquesSchema,
@@ -1640,4 +1649,201 @@ export async function deleteVitrineTraduction(
   // Même sur `deleted: false` — voir `setVitrineTraduction`.
   await revaliderVitrine(supabase, garde.organizationId);
   return { ok: true, data: { deleted: resultat.deleted } };
+}
+
+/* ────────────────────────────────────────────────────────────
+   LES PHOTOS (VIT-7)
+
+   Les colonnes `photo_path` et `cover_path` existaient depuis
+   20261011120000, bornées et accordées en écriture, et valaient `null`
+   partout : « la photo n'a pas de pipeline ». Ces deux actions sont ce
+   pipeline, et l'en-tête de ce fichier cesse d'être vrai sur ce point.
+
+   TROIS TEMPS, ET L'ORDRE COMPTE :
+
+     1. déposer les fichiers ;
+     2. écrire la ligne ;
+     3. effacer l'ANCIENNE photo — seulement si (2) a réussi.
+
+   L'inverse — effacer d'abord — aurait laissé une fiche sans image et
+   sans moyen de revenir en arrière au premier échec d'écriture. Et si
+   (2) échoue, ce sont les fichiers NEUFS qui redescendent : on ne laisse
+   jamais d'orphelins dans le bucket.
+   ──────────────────────────────────────────────────────────── */
+
+const PHOTO_ERREUR = "Cette photo n'a pas pu être enregistrée.";
+const TROP_DE_PHOTOS =
+  "Trop d'envois d'images en peu de temps. Réessayez dans une heure.";
+
+/** Le chemin actuellement en base, pour savoir quoi effacer ensuite. */
+async function photoCourante(
+  admin: ReturnType<typeof createAdminClient>,
+  cible: "fiche" | "couverture",
+  organizationId: string,
+  ficheId?: string,
+): Promise<string | null> {
+  if (cible === "couverture") {
+    const { data } = await admin
+      .from("vitrine_settings")
+      .select("cover_path")
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    return (data?.cover_path as string | null) ?? null;
+  }
+  const { data } = await admin
+    .from("vitrine_items")
+    .select("photo_path")
+    .eq("id", ficheId ?? "")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  return (data?.photo_path as string | null) ?? null;
+}
+
+/**
+ * Pose ou remplace la photo d'une fiche, ou la couverture du lieu.
+ *
+ * ── LE QUOTA EST VÉRIFIÉ AVANT LA CONVERSION ──
+ *
+ * Convertir puis refuser aurait fait payer deux redimensionnements `sharp`
+ * pour rien. Et il n'est vérifié que sur un AJOUT : remplacer la photo d'une
+ * fiche qui en a déjà une ne change pas le compte, et refuser un remplacement
+ * à un commerçant au quota l'aurait enfermé — il ne pourrait plus corriger une
+ * image ratée sans d'abord en supprimer une autre.
+ */
+export async function setVitrinePhoto(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setVitrinePhotoSchema.safeParse({
+    cible: formData.get("cible"),
+    fiche_id: formData.get("fiche_id") ?? undefined,
+    image: formData.get("image"),
+    alt: formData.get("alt"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  // APRÈS la garde, sur la clé du locataire — motif `vitrine:slug`. Un envoi
+  // d'image coûte deux conversions et deux écritures Storage : c'est le geste
+  // le plus cher de l'écran.
+  const autorise = await rateLimit(
+    rateLimitBucket("vitrine:photo", garde.organizationId),
+    RATE_LIMITS.vitrinePhoto,
+    { failClosed: true },
+  );
+  if (!autorise) return { ok: false, error: TROP_DE_PHOTOS };
+
+  const admin = createAdminClient();
+  const cible = parsed.data.cible;
+  const ficheId = cible === "fiche" ? parsed.data.fiche_id : undefined;
+  const ancienne = await photoCourante(admin, cible, garde.organizationId, ficheId);
+
+  let depot;
+  try {
+    if (cible === "fiche" && !ancienne) {
+      await verifierQuotaPhotos(garde.organizationId, admin);
+    }
+    depot = await deposerPhotoVitrine(
+      parsed.data.image,
+      { organizationId: garde.organizationId, couverture: cible === "couverture" },
+      admin,
+    );
+  } catch (cause) {
+    if (cause instanceof VitrinePhotoError) {
+      return { ok: false, error: cause.message };
+    }
+    reportError("vitrine.photo", cause instanceof Error ? cause.message : "dépôt");
+    return { ok: false, error: PHOTO_ERREUR };
+  }
+
+  const alt = parsed.data.alt || null;
+  const supabase = await createClient();
+  const { data, error } =
+    cible === "couverture"
+      ? await supabase
+          .from("vitrine_settings")
+          .update({ cover_path: depot.chemin, cover_alt: alt })
+          .eq("organization_id", garde.organizationId)
+          .select("id")
+          .maybeSingle()
+      : await supabase
+          .from("vitrine_items")
+          .update({ photo_path: depot.chemin, photo_alt: alt })
+          .eq("id", ficheId ?? "")
+          .eq("organization_id", garde.organizationId)
+          .select("id")
+          .maybeSingle();
+
+  if (error || !data) {
+    // L'écriture a échoué : les fichiers neufs n'ont plus de porteur.
+    await effacerPhotos(depot.deposees, admin);
+    if (error) reportError("vitrine.photo", error.message);
+    return { ok: false, error: PHOTO_ERREUR };
+  }
+
+  // SEULEMENT MAINTENANT. L'ancienne image n'est plus référencée par personne.
+  if (ancienne) await effacerPhotos(cheminsDeLaPhoto(ancienne), admin);
+
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Retire une photo.
+ *
+ * MÊME ORDRE, INVERSÉ DE LA MÊME FAÇON : la ligne d'abord, les fichiers
+ * ensuite. Effacer le fichier puis échouer sur l'écriture aurait laissé une
+ * fiche pointant vers une image qui n'existe plus — une case cassée sur une
+ * page publique, ce qui est pire que la photo qu'on voulait retirer.
+ */
+export async function deleteVitrinePhoto(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = deleteVitrinePhotoSchema.safeParse({
+    cible: formData.get("cible"),
+    fiche_id: formData.get("fiche_id") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const admin = createAdminClient();
+  const cible = parsed.data.cible;
+  const ficheId = cible === "fiche" ? parsed.data.fiche_id : undefined;
+  const ancienne = await photoCourante(admin, cible, garde.organizationId, ficheId);
+
+  const supabase = await createClient();
+  const { data, error } =
+    cible === "couverture"
+      ? await supabase
+          .from("vitrine_settings")
+          .update({ cover_path: null, cover_alt: null })
+          .eq("organization_id", garde.organizationId)
+          .select("id")
+          .maybeSingle()
+      : await supabase
+          .from("vitrine_items")
+          .update({ photo_path: null, photo_alt: null })
+          .eq("id", ficheId ?? "")
+          .eq("organization_id", garde.organizationId)
+          .select("id")
+          .maybeSingle();
+
+  if (error || !data) {
+    if (error) reportError("vitrine.photo", error.message);
+    return { ok: false, error: PHOTO_ERREUR };
+  }
+
+  if (ancienne) await effacerPhotos(cheminsDeLaPhoto(ancienne), admin);
+
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
 }
