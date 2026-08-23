@@ -16,6 +16,7 @@ import {
 import {
   getStripe,
   mapStripeStatus,
+  projectStripeSubscriptionItems,
   readSmsCreditPurchase,
   resolveStripeEntitlements,
 } from "@/lib/stripe";
@@ -118,6 +119,43 @@ async function handleWebhook(request: Request) {
           );
         }
         const priceIds = current.items.data.map((item) => item.price.id);
+
+        // Projection de facturation distincte de la projection de droits.
+        // Tous les abonnements y passent depuis l'objet courant relu chez
+        // Stripe. Le back-office n'appelle ainsi jamais Stripe au rendu et
+        // son MRR provient des lignes payees, pas des booleens d'acces.
+        const billing = projectStripeSubscriptionItems(current);
+        const { error: projectionError } = await rpcStrict(
+          admin,
+          "apply_stripe_subscription_projection_v1",
+          {
+            p_event_id: event.id,
+            p_event_created_at: new Date(event.created * 1000).toISOString(),
+            p_customer_id: customerId,
+            p_subscription_id: current.id,
+            p_stripe_status: current.status,
+            p_cancel_at_period_end: current.cancel_at_period_end,
+            p_cancel_at: current.cancel_at
+              ? new Date(current.cancel_at * 1000).toISOString()
+              : null,
+            p_canceled_at: current.canceled_at
+              ? new Date(current.canceled_at * 1000).toISOString()
+              : null,
+            p_ended_at: current.ended_at
+              ? new Date(current.ended_at * 1000).toISOString()
+              : null,
+            p_next_billing_at: billing.nextBillingAt,
+            p_items: billing.items,
+            p_mrr_monthly_cents: billing.mrrMonthlyCents,
+          },
+        );
+        if (projectionError) {
+          reportError("stripe.subscription-projection", projectionError.message);
+          return NextResponse.json(
+            { error: "Projection de facturation echouee" },
+            { status: 500 },
+          );
+        }
 
         // ── LE TRI QUI PROTÈGE LE PLAN PAYÉ (P0.5) ─────────────
         //

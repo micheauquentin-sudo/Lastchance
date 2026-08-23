@@ -90,6 +90,7 @@ import {
   listSmsCreditPacks,
   mapStripeStatus,
   PLANS,
+  projectStripeSubscriptionItems,
   readSmsCreditPurchase,
   resolveCheckoutPlan,
   resolveSmsPackCheckout,
@@ -188,6 +189,92 @@ function fakeSubscriptionList(
     yielded,
   };
 }
+
+describe("projectStripeSubscriptionItems", () => {
+  function subscriptionWithItems(
+    items: Array<
+      Omit<Partial<Stripe.SubscriptionItem>, "price">
+      & { price: Partial<Stripe.Price> }
+    >,
+  ): Stripe.Subscription {
+    return {
+      items: { data: items },
+    } as unknown as Stripe.Subscription;
+  }
+
+  it("normalise les montants mensuels et retient la premiere echeance", () => {
+    const projected = projectStripeSubscriptionItems(subscriptionWithItems([
+      {
+        id: "si_month",
+        quantity: 2,
+        current_period_end: 1_800_000_000,
+        price: {
+          id: "price_month",
+          product: "prod_month",
+          nickname: "Option Vitrine",
+          currency: "eur",
+          unit_amount: 2_000,
+          recurring: {
+            interval: "month",
+            interval_count: 1,
+            usage_type: "licensed",
+          } as Stripe.Price.Recurring,
+        },
+      },
+      {
+        id: "si_year",
+        quantity: 1,
+        current_period_end: 1_900_000_000,
+        price: {
+          id: "price_year",
+          product: "prod_year",
+          nickname: null,
+          currency: "eur",
+          unit_amount: 12_000,
+          recurring: {
+            interval: "year",
+            interval_count: 1,
+            usage_type: "licensed",
+          } as Stripe.Price.Recurring,
+        },
+      },
+    ]));
+
+    expect(projected.items.map((item) => item.monthly_amount_cents)).toEqual([
+      4_000,
+      1_000,
+    ]);
+    expect(projected.mrrMonthlyCents).toBe(5_000);
+    expect(projected.nextBillingAt).toBe(
+      new Date(1_800_000_000 * 1000).toISOString(),
+    );
+  });
+
+  it("rend le MRR entier inconnu si une ligne est a l'usage", () => {
+    const projected = projectStripeSubscriptionItems(subscriptionWithItems([
+      {
+        id: "si_metered",
+        quantity: 1,
+        current_period_end: 1_800_000_000,
+        price: {
+          id: "price_metered",
+          product: "prod_metered",
+          nickname: null,
+          currency: "eur",
+          unit_amount: 10,
+          recurring: {
+            interval: "month",
+            interval_count: 1,
+            usage_type: "metered",
+          } as Stripe.Price.Recurring,
+        },
+      },
+    ]));
+
+    expect(projected.items[0]?.monthly_amount_cents).toBeNull();
+    expect(projected.mrrMonthlyCents).toBeNull();
+  });
+});
 
 describe("hasLiveStripeSubscription — la vérité vient de Stripe", () => {
   it("un IMPAYÉ est un abonnement vivant : aucun second checkout à ouvrir", async () => {

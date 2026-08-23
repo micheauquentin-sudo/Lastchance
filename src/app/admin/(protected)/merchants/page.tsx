@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/auth";
+import { can } from "@/lib/admin/rbac";
 import { listMerchants } from "@/lib/admin/data";
+import { getPlanTier } from "@/lib/plans";
 import { displaySubscriptionStatus } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, PageHeader, StatusBadge, Table } from "@/components/admin/ui";
+import { MerchantBillingSummary } from "@/components/admin/merchant-billing-summary";
 
 export const metadata: Metadata = { title: "Commerçants · Back-office", robots: { index: false } };
 
@@ -27,13 +30,15 @@ export default async function MerchantsPage({
     deletion?: "success" | "warning";
   }>;
 }) {
-  await requireAdmin("merchants.view");
+  const admin = await requireAdmin("merchants.view");
+  const canViewBilling = can(admin.role, "stripe.view");
   const sp = await searchParams;
   const page = Number(sp.page ?? "1") || 1;
   const { rows, total, pageSize } = await listMerchants({
     search: sp.q,
     status: sp.status,
     page,
+    includeBilling: canViewBilling,
   });
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -108,6 +113,7 @@ export default async function MerchantsPage({
                 <th className="px-4 py-2.5">Nom</th>
                 <th className="px-4 py-2.5">Statut</th>
                 <th className="px-4 py-2.5">Plan</th>
+                {canViewBilling && <th className="px-4 py-2.5">Facturation</th>}
                 <th className="px-4 py-2.5">Inscription</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -122,7 +128,13 @@ export default async function MerchantsPage({
                 <td className="px-4 py-3">
                   <StatusBadge status={displaySubscriptionStatus(r)} />
                 </td>
-                <td className="px-4 py-3 capitalize">{r.plan}</td>
+                <td className="px-4 py-3">
+                  <p className="text-zinc-200">{getPlanTier(r.plan).name}</p>
+                  <p className="text-xs text-zinc-500">{getPlanTier(r.plan).tagline}</p>
+                </td>
+                {canViewBilling && r.billing && (
+                  <td className="px-4 py-3"><MerchantBillingSummary billing={r.billing} /></td>
+                )}
                 <td className="px-4 py-3 text-zinc-400">{formatDate(r.created_at)}</td>
                 <td className="px-4 py-3 text-right">
                   <Link href={`/admin/merchants/${r.id}`} className="text-violet-300 hover:text-violet-200">

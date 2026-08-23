@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireAdmin } from "@/lib/admin/auth";
+import { can } from "@/lib/admin/rbac";
 import { getDashboardMetrics, getTopMerchants } from "@/lib/admin/data";
 import { PageHeader, Panel, StatCard } from "@/components/admin/ui";
 
@@ -10,10 +11,14 @@ function euros(n: number): string {
 }
 
 export default async function AdminDashboardPage() {
-  await requireAdmin("dashboard.view");
-  const [m, top] = await Promise.all([getDashboardMetrics(), getTopMerchants(6)]);
+  const admin = await requireAdmin("dashboard.view");
+  const canViewBilling = can(admin.role, "stripe.view");
+  const [m, top] = await Promise.all([
+    getDashboardMetrics({ includeBilling: canViewBilling }),
+    getTopMerchants(6),
+  ]);
 
-  const arr = m.mrr * 12;
+  const arr = m.mrr == null ? null : m.mrr * 12;
   const maxSpins = Math.max(1, ...top.map((t) => t.spins));
 
   return (
@@ -21,7 +26,14 @@ export default async function AdminDashboardPage() {
       <PageHeader title="Dashboard" description="Vue d'ensemble de l'activité LastChance." />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="MRR" value={euros(m.mrr)} sub={`ARR ${euros(arr)}`} accent />
+        {canViewBilling && (
+          <StatCard
+            label="MRR"
+            value={m.mrr == null ? "À resynchroniser" : euros(m.mrr)}
+            sub={m.mrr == null ? `${m.mrrIncompleteSubscriptions} abonnement(s) incomplet(s)` : `ARR ${euros(arr ?? 0)}`}
+            accent={m.mrr != null}
+          />
+        )}
         <StatCard label="Abonnements actifs" value={m.activeSubs} sub={`${m.trialing} en essai`} />
         <StatCard
           label="Impayés"

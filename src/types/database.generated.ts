@@ -7303,6 +7303,68 @@ export type Database = {
         }
         Relationships: []
       }
+      stripe_subscription_projections: {
+        Row: {
+          cancel_at: string | null
+          cancel_at_period_end: boolean
+          canceled_at: string | null
+          ended_at: string | null
+          items: Json
+          last_event_created_at: string
+          last_event_id: string
+          mrr_monthly_cents: number | null
+          next_billing_at: string | null
+          organization_id: string
+          projection_version: number
+          stripe_customer_id: string
+          stripe_status: string
+          subscription_id: string
+          synced_at: string
+        }
+        Insert: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
+          canceled_at?: string | null
+          ended_at?: string | null
+          items?: Json
+          last_event_created_at: string
+          last_event_id: string
+          mrr_monthly_cents?: number | null
+          next_billing_at?: string | null
+          organization_id: string
+          projection_version?: number
+          stripe_customer_id: string
+          stripe_status: string
+          subscription_id: string
+          synced_at?: string
+        }
+        Update: {
+          cancel_at?: string | null
+          cancel_at_period_end?: boolean
+          canceled_at?: string | null
+          ended_at?: string | null
+          items?: Json
+          last_event_created_at?: string
+          last_event_id?: string
+          mrr_monthly_cents?: number | null
+          next_billing_at?: string | null
+          organization_id?: string
+          projection_version?: number
+          stripe_customer_id?: string
+          stripe_status?: string
+          subscription_id?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stripe_subscription_projections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       team_invitations: {
         Row: {
           accepted_at: string | null
@@ -8013,6 +8075,27 @@ export type Database = {
           p_status: string
           p_subscription_id: string
           p_trial_ends_at: string
+        }
+        Returns: {
+          applied: boolean
+          duplicate: boolean
+          organization_id: string
+        }[]
+      }
+      apply_stripe_subscription_projection_v1: {
+        Args: {
+          p_cancel_at: string
+          p_cancel_at_period_end: boolean
+          p_canceled_at: string
+          p_customer_id: string
+          p_ended_at: string
+          p_event_created_at: string
+          p_event_id: string
+          p_items: Json
+          p_mrr_monthly_cents: number
+          p_next_billing_at: string
+          p_stripe_status: string
+          p_subscription_id: string
         }
         Returns: {
           applied: boolean

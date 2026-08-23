@@ -18,10 +18,30 @@
 `src/components/dashboard/nav.tsx`. Ce travail appartient à l'utilisateur :
 ne pas l'écraser, ne pas l'inclure dans un commit.
 
-**Ouvert côté offre, hors lots ci-dessous :** les options Vitrine (+20 €) et
-Réserver (+30 €) ne sont pas vendables — il manque un `subscriptions.update`
-(une option mensuelle crée aujourd'hui un abonnement Stripe **séparé**) et un
-prix Vitrine ouvrant trois colonnes.
+**Ouvert côté offre, hors lots ci-dessous :** Vitrine (+20 €) et Réserver
+(+30 €) s'ajoutent désormais comme lignes de l'abonnement existant
+(`subscriptions.update`), jamais comme second abonnement. Leur vente effective
+dépend encore des Price IDs Stripe configurés par environnement ; ne pas les
+annoncer vendables sans cette vérification.
+
+## Back-office — audit du 2026-08-23, livré
+
+**État :** livré · projection Stripe locale · migration `20261030120000`
+
+**Terrain :** `src/app/admin/(protected)/merchants/`,
+`src/app/admin/(protected)/stripe/`, `src/lib/admin/data.ts`,
+`src/app/api/stripe/webhook/`, `src/lib/stripe.ts` et
+`supabase/migrations/20261030120000_stripe_subscription_projection.sql`.
+
+**Livré :** les fiches et la liste commerçants affichent les noms commerciaux,
+les droits de lieu et leur source. Le webhook signé conserve une projection
+idempotente des lignes récurrentes, de l'échéance et de la résiliation Stripe ;
+le MRR vient de cette projection, jamais des booléens de droit, et devient
+explicitement indisponible si une souscription ne peut pas être rapprochée.
+
+**Garde :** seuls les rôles `stripe.view` chargent ou voient montants, items,
+échéances et MRR. Support et lecture seule conservent les informations
+opérationnelles sans accéder aux données de facturation.
 
 ## Prérequis à poser
 

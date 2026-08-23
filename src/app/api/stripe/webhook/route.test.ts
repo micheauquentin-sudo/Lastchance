@@ -90,6 +90,7 @@ vi.mock("@/lib/stripe", async () => {
       },
     }),
     mapStripeStatus: (status: string) => status,
+    projectStripeSubscriptionItems: actual.projectStripeSubscriptionItems,
     resolveStripeEntitlements: (...args: unknown[]) =>
       mocks.resolveStripeEntitlements(...args),
   };
@@ -401,11 +402,40 @@ beforeEach(() => {
     status: "active",
     customer: "cus_1",
     trial_end: null,
+    cancel_at_period_end: false,
+    cancel_at: null,
+    canceled_at: null,
+    ended_at: null,
     items: {
       data: [
-        { price: { id: "price_live" } },
-        { price: { id: "price_hunts" } },
+        {
+          id: "si_live",
+          quantity: 1,
+          current_period_end: 1_800_000_000,
+          price: {
+            id: "price_live",
+            product: "prod_live",
+            nickname: "Le Grand Jeu",
+            currency: "eur",
+            unit_amount: 69_00,
+            recurring: { interval: "month", interval_count: 1, usage_type: "licensed" },
+          },
+        },
+        {
+          id: "si_hunts",
+          quantity: 1,
+          current_period_end: 1_800_000_000,
+          price: {
+            id: "price_hunts",
+            product: "prod_hunts",
+            nickname: "Chasse",
+            currency: "eur",
+            unit_amount: 10_00,
+            recurring: { interval: "month", interval_count: 1, usage_type: "licensed" },
+          },
+        },
       ],
+      has_more: false,
     },
   });
   mocks.resolveStripeEntitlements.mockReturnValue({
@@ -431,6 +461,19 @@ describe("webhook Stripe — droits", () => {
     const response = await POST(request());
 
     expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "apply_stripe_subscription_projection_v1",
+      expect.objectContaining({
+        p_subscription_id: "sub_1",
+        p_stripe_status: "active",
+        p_mrr_monthly_cents: 79_00,
+        p_next_billing_at: new Date(1_800_000_000 * 1000).toISOString(),
+        p_items: expect.arrayContaining([
+          expect.objectContaining({ item_id: "si_live", price_id: "price_live" }),
+          expect.objectContaining({ item_id: "si_hunts", price_id: "price_hunts" }),
+        ]),
+      }),
+    );
     expect(mocks.rpc).toHaveBeenCalledWith(
       "apply_stripe_subscription_event_v2",
       expect.objectContaining({
@@ -477,7 +520,14 @@ describe("webhook Stripe — droits", () => {
 
     expect(response.status).toBe(500);
     expect(body.error).toBe("Prix Stripe non configuré");
-    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "apply_stripe_subscription_projection_v1",
+      expect.anything(),
+    );
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "apply_stripe_subscription_event_v2",
+      expect.anything(),
+    );
     expect(mocks.reportError).toHaveBeenCalledWith(
       "stripe.unknown-price",
       expect.stringContaining("1 prix Stripe"),

@@ -194,6 +194,123 @@ export function isTerminalSubscriptionStatus(
   return status === "canceled" || status === "incomplete_expired";
 }
 
+export interface StripeRecurringItemProjection {
+  [key: string]: string | number | null;
+  item_id: string;
+  price_id: string;
+  product_id: string | null;
+  price_nickname: string | null;
+  quantity: number;
+  currency: string;
+  unit_amount_cents: number | null;
+  recurring_interval: Stripe.Price.Recurring.Interval | null;
+  recurring_interval_count: number | null;
+  usage_type: Stripe.Price.Recurring.UsageType | null;
+  current_period_end: string | null;
+  /** NULL si Stripe ne fournit pas un montant recurrent fixe calculable. */
+  monthly_amount_cents: number | null;
+}
+
+export interface StripeSubscriptionProjectionV1 {
+  items: StripeRecurringItemProjection[];
+  /** NULL interdit de presenter un total partiel comme le MRR reel. */
+  mrrMonthlyCents: number | null;
+  /** Premiere echeance d'item a venir dans la photographie Stripe. */
+  nextBillingAt: string | null;
+}
+
+function unixSecondsToIso(value: number | null | undefined): string | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? new Date(value * 1000).toISOString()
+    : null;
+}
+
+/**
+ * Normalise une ligne Stripe recurrente en montant mensuel.
+ *
+ * Les tarifs a l'usage et les prix sans `unit_amount` sont volontairement
+ * non calculables : la projection rend alors NULL pour tout le MRR de
+ * l'abonnement, plutot qu'une sous-estimation silencieuse.
+ */
+function monthlyAmountForSubscriptionItem(
+  item: Stripe.SubscriptionItem,
+): number | null {
+  const recurring = item.price.recurring;
+  const amount = item.price.unit_amount;
+  const quantity = item.quantity ?? 1;
+  if (
+    !recurring
+    || recurring.usage_type === "metered"
+    || amount === null
+    || !Number.isSafeInteger(amount)
+    || !Number.isSafeInteger(quantity)
+    || quantity < 0
+    || recurring.interval_count < 1
+  ) {
+    return null;
+  }
+
+  const billed = amount * quantity;
+  const monthly = (() => {
+    switch (recurring.interval) {
+      case "day":
+        return (billed * 365) / (12 * recurring.interval_count);
+      case "week":
+        return (billed * 52) / (12 * recurring.interval_count);
+      case "month":
+        return billed / recurring.interval_count;
+      case "year":
+        return billed / (12 * recurring.interval_count);
+      default:
+        return Number.NaN;
+    }
+  })();
+  return Number.isSafeInteger(Math.round(monthly)) ? Math.round(monthly) : null;
+}
+
+/** Construit le snapshot persiste a partir des items relus chez Stripe. */
+export function projectStripeSubscriptionItems(
+  subscription: Stripe.Subscription,
+): StripeSubscriptionProjectionV1 {
+  const items = subscription.items.data.map((item) => {
+    const recurring = item.price.recurring;
+    return {
+      item_id: item.id,
+      price_id: item.price.id,
+      product_id:
+        typeof item.price.product === "string"
+          ? item.price.product
+          : item.price.product?.id ?? null,
+      price_nickname: item.price.nickname,
+      quantity: item.quantity ?? 1,
+      currency: item.price.currency,
+      unit_amount_cents: item.price.unit_amount,
+      recurring_interval: recurring?.interval ?? null,
+      recurring_interval_count: recurring?.interval_count ?? null,
+      usage_type: recurring?.usage_type ?? null,
+      current_period_end: unixSecondsToIso(item.current_period_end),
+      monthly_amount_cents: monthlyAmountForSubscriptionItem(item),
+    } satisfies StripeRecurringItemProjection;
+  });
+
+  const itemEnds = items
+    .map((item) => item.current_period_end)
+    .filter((value): value is string => value !== null)
+    .sort();
+  const allAmountsKnown = items.every(
+    (item) => item.monthly_amount_cents !== null,
+  );
+  const total = allAmountsKnown
+    ? items.reduce((sum, item) => sum + (item.monthly_amount_cents ?? 0), 0)
+    : null;
+
+  return {
+    items,
+    mrrMonthlyCents: total,
+    nextBillingAt: itemEnds[0] ?? null,
+  };
+}
+
 /**
  * Ce client a-t-il encore, chez Stripe, un abonnement vivant ?
  *

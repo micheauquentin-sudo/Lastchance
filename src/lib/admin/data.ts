@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createAdminBackofficeClient } from "@/lib/admin/db";
-import { getPlan } from "@/lib/stripe";
+import type { StripeRecurringItemProjection } from "@/lib/stripe";
 import { displaySubscriptionStatus } from "@/lib/subscription";
 import { sanitizeSearchTerm } from "@/lib/utils";
 import type { SubscriptionStatus } from "@/types/database";
@@ -17,6 +17,83 @@ import type { AdminAuditLog, AdminNote, AdminUser } from "@/types/admin";
 type Db = ReturnType<typeof createAdminBackofficeClient>;
 type FilterQ = ReturnType<ReturnType<Db["from"]>["select"]>;
 
+const PLACE_ENTITLEMENTS = ["vitrine", "reserver", "duo", "bande"] as const;
+export type PlaceEntitlement = (typeof PLACE_ENTITLEMENTS)[number];
+export type EntitlementSource = "stripe" | "grant" | "legacy";
+
+export interface StripeSubscriptionProjection {
+  subscription_id: string;
+  stripe_status: string;
+  cancel_at_period_end: boolean;
+  cancel_at: string | null;
+  canceled_at: string | null;
+  ended_at: string | null;
+  next_billing_at: string | null;
+  items: StripeRecurringItemProjection[];
+  mrr_monthly_cents: number | null;
+  projection_version: number;
+  synced_at: string;
+}
+
+interface BillingProjectionRow extends Omit<StripeSubscriptionProjection, "items"> {
+  organization_id: string;
+  items: unknown;
+}
+
+export interface MerchantBillingSummary {
+  mrrMonthlyCents: number | null;
+  recurringItemCount: number;
+  activeSubscriptionCount: number;
+  nextBillingAt: string | null;
+  cancelAtPeriodEnd: boolean;
+}
+
+function parseBillingItems(value: unknown): StripeRecurringItemProjection[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is StripeRecurringItemProjection => {
+    if (!item || typeof item !== "object") return false;
+    const row = item as Record<string, unknown>;
+    return (
+      typeof row.item_id === "string"
+      && typeof row.price_id === "string"
+      && typeof row.currency === "string"
+      && typeof row.quantity === "number"
+    );
+  });
+}
+
+function toSubscriptionProjection(
+  row: BillingProjectionRow,
+): StripeSubscriptionProjection {
+  return { ...row, items: parseBillingItems(row.items) };
+}
+
+function summarizeBilling(
+  rows: BillingProjectionRow[],
+  organizationStatus?: SubscriptionStatus,
+): MerchantBillingSummary {
+  const active = rows.filter((row) => row.stripe_status === "active");
+  const incomplete = active.some((row) => row.mrr_monthly_cents === null)
+    || (organizationStatus === "active" && active.length === 0);
+  const nextBillingAt = active
+    .map((row) => row.next_billing_at)
+    .filter((value): value is string => value !== null)
+    .sort()[0] ?? null;
+
+  return {
+    mrrMonthlyCents: incomplete
+      ? null
+      : active.reduce((sum, row) => sum + (row.mrr_monthly_cents ?? 0), 0),
+    recurringItemCount: active.reduce(
+      (sum, row) => sum + parseBillingItems(row.items).length,
+      0,
+    ),
+    activeSubscriptionCount: active.length,
+    nextBillingAt,
+    cancelAtPeriodEnd: active.some((row) => row.cancel_at_period_end),
+  };
+}
+
 async function count(
   db: Db,
   table: string,
@@ -29,7 +106,8 @@ async function count(
 }
 
 export interface DashboardMetrics {
-  mrr: number;
+  mrr: number | null;
+  mrrIncompleteSubscriptions: number;
   activeSubs: number;
   trialing: number;
   pastDue: number;
@@ -48,14 +126,29 @@ export interface DashboardMetrics {
   pendingRedemptions: number;
 }
 
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+export async function getDashboardMetrics(
+  opts: { includeBilling?: boolean } = {},
+): Promise<DashboardMetrics> {
   const db = createAdminBackofficeClient();
+  const includeBilling = opts.includeBilling === true;
 
-  const [{ data: orgs }, totalSpins, totalParticipations, activeCampaigns, pending] =
+  const [
+    { data: orgs },
+    { data: billingRows },
+    totalSpins,
+    totalParticipations,
+    activeCampaigns,
+    pending,
+  ] =
     await Promise.all([
       db
         .from("organizations")
-        .select("subscription_status, stripe_event_created_at, plan"),
+        .select("id, subscription_status, stripe_event_created_at, plan"),
+      includeBilling
+        ? db
+            .from("stripe_subscription_projections")
+            .select("organization_id, stripe_status, mrr_monthly_cents")
+        : Promise.resolve({ data: [] }),
       count(db, "spins"),
       count(db, "participations"),
       count(db, "campaigns", (q) => q.eq("status", "active")),
@@ -63,6 +156,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     ]);
 
   const rows = (orgs ?? []) as Array<{
+    id: string;
     subscription_status: SubscriptionStatus;
     stripe_event_created_at: string | null;
     plan: string;
@@ -72,13 +166,34 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   const byDisplay = (s: ReturnType<typeof displaySubscriptionStatus>) =>
     rows.filter((o) => displaySubscriptionStatus(o) === s).length;
 
-  // MRR : somme du prix mensuel du plan de chaque abonnement actif.
-  const mrr = rows
-    .filter((o) => o.subscription_status === "active")
-    .reduce((sum, o) => sum + (getPlan(o.plan).priceMonthly ?? 0), 0);
+  const activeBilling = ((billingRows ?? []) as Array<{
+    organization_id: string;
+    stripe_status: string;
+    mrr_monthly_cents: number | null;
+  }>).filter((row) => row.stripe_status === "active");
+  const projectedActiveOrgIds = new Set(
+    activeBilling.map((row) => row.organization_id),
+  );
+  const missingActiveOrganizations = rows.filter(
+    (row) => row.subscription_status === "active"
+      && !projectedActiveOrgIds.has(row.id),
+  ).length;
+  const unpricedActiveSubscriptions = activeBilling.filter(
+    (row) => row.mrr_monthly_cents === null,
+  ).length;
+  const mrrIncompleteSubscriptions = includeBilling
+    ? missingActiveOrganizations + unpricedActiveSubscriptions
+    : 0;
+  const mrr = !includeBilling || mrrIncompleteSubscriptions > 0
+    ? null
+    : activeBilling.reduce(
+        (sum, row) => sum + (row.mrr_monthly_cents ?? 0),
+        0,
+      ) / 100;
 
   return {
     mrr,
+    mrrIncompleteSubscriptions,
     activeSubs: byStatus("active"),
     trialing: byStatus("trialing"),
     pastDue: byStatus("past_due"),
@@ -102,6 +217,7 @@ export interface MerchantRow {
   plan: string;
   trial_ends_at: string;
   created_at: string;
+  billing?: MerchantBillingSummary;
 }
 
 export interface MerchantListResult {
@@ -134,6 +250,8 @@ export async function listMerchants(opts: {
   status?: string;
   page?: number;
   pageSize?: number;
+  /** A activer uniquement apres `stripe.view`. */
+  includeBilling?: boolean;
 }): Promise<MerchantListResult> {
   const db = createAdminBackofficeClient();
   const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 100);
@@ -165,8 +283,32 @@ export async function listMerchants(opts: {
   if (term) q = q.or(`name.ilike.%${term}%,slug.ilike.%${term}%`);
 
   const { data, count: total } = await q;
+  const merchantRows = (data as Array<Omit<MerchantRow, "billing">>) ?? [];
+  const ids = merchantRows.map((row) => row.id);
+  const { data: billingData } = opts.includeBilling === true && ids.length > 0
+    ? await db
+        .from("stripe_subscription_projections")
+        .select(
+          "organization_id, subscription_id, stripe_status, cancel_at_period_end, cancel_at, canceled_at, ended_at, next_billing_at, items, mrr_monthly_cents, projection_version, synced_at",
+        )
+        .in("organization_id", ids)
+    : { data: [] };
+  const billingByOrg = new Map<string, BillingProjectionRow[]>();
+  for (const row of (billingData ?? []) as BillingProjectionRow[]) {
+    const current = billingByOrg.get(row.organization_id) ?? [];
+    current.push(row);
+    billingByOrg.set(row.organization_id, current);
+  }
   return {
-    rows: (data as MerchantRow[]) ?? [],
+    rows: merchantRows.map((row) => opts.includeBilling === true
+      ? {
+          ...row,
+          billing: summarizeBilling(
+            billingByOrg.get(row.id) ?? [],
+            row.subscription_status,
+          ),
+        }
+      : row),
     total: total ?? 0,
     page,
     pageSize,
@@ -193,6 +335,9 @@ export interface MerchantDetail {
     addon_referral: boolean;
     addon_quiz: boolean;
     addon_vitrine: boolean;
+    addon_reserver: boolean;
+    addon_duo: boolean;
+    addon_bande: boolean;
     comp_access: boolean;
     comp_access_until: string | null;
     comp_access_note: string;
@@ -256,14 +401,24 @@ export interface MerchantDetail {
     revoked_at: string | null;
     revoked_reason: string | null;
   }[];
+  entitlements: {
+    entitlement: PlaceEntitlement;
+    active: boolean;
+    sources: EntitlementSource[];
+  }[];
+  subscriptions: StripeSubscriptionProjection[];
 }
 
-export async function getMerchantDetail(id: string): Promise<MerchantDetail | null> {
+export async function getMerchantDetail(
+  id: string,
+  opts: { includeBilling?: boolean } = {},
+): Promise<MerchantDetail | null> {
   const db = createAdminBackofficeClient();
+  const includeBilling = opts.includeBilling === true;
   const { data: org } = await db
     .from("organizations")
     .select(
-      "id, name, slug, subscription_status, stripe_event_created_at, plan, stripe_customer_id, trial_ends_at, past_due_since, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, addon_quiz, addon_vitrine, comp_access, comp_access_until, comp_access_note, created_at",
+      "id, name, slug, subscription_status, stripe_event_created_at, plan, stripe_customer_id, trial_ends_at, past_due_since, addon_pronostics, addon_hunts, addon_loyalty, addon_jackpot, addon_events, addon_calendar, addon_referral, addon_quiz, addon_vitrine, addon_reserver, addon_duo, addon_bande, comp_access, comp_access_until, comp_access_note, created_at",
     )
     .eq("id", id)
     .maybeSingle();
@@ -279,6 +434,8 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
     { data: smsSenders },
     { data: smsCredits },
     { data: moduleGrants },
+    { data: entitlementRows },
+    { data: subscriptionRows },
   ] = await Promise.all([
       db
         .from("organization_members")
@@ -312,16 +469,89 @@ export async function getMerchantDetail(id: string): Promise<MerchantDetail | nu
         )
         .eq("organization_id", id)
         .order("purchased_at", { ascending: false }),
+      includeBilling
+        ? db
+            .from("organization_entitlements")
+            .select("entitlement, source, active")
+            .eq("organization_id", id)
+            .in("entitlement", [...PLACE_ENTITLEMENTS])
+        : Promise.resolve({ data: [] }),
+      includeBilling
+        ? db
+            .from("stripe_subscription_projections")
+            .select(
+              "organization_id, subscription_id, stripe_status, cancel_at_period_end, cancel_at, canceled_at, ended_at, next_billing_at, items, mrr_monthly_cents, projection_version, synced_at",
+            )
+            .eq("organization_id", id)
+            .order("last_event_created_at", { ascending: false })
+        : Promise.resolve({ data: [] }),
     ]);
 
+  const typedOrg = org as MerchantDetail["org"];
+  const typedGrants = (moduleGrants as MerchantDetail["moduleGrants"]) ?? [];
+  const entitlementRegistry = (entitlementRows ?? []) as Array<{
+    entitlement: string;
+    source: "stripe" | "legacy";
+    active: boolean;
+  }>;
+  const hasStripeSnapshot = entitlementRegistry.some(
+    (row) => row.source === "stripe",
+  );
+  const now = Date.now();
+  const entitlements = includeBilling
+    ? PLACE_ENTITLEMENTS.map((entitlement) => {
+    const sources = new Set<EntitlementSource>();
+    if (entitlementRegistry.some(
+      (row) => row.entitlement === entitlement
+        && row.source === "stripe"
+        && row.active,
+    )) {
+      sources.add("stripe");
+    }
+    const liveGrant = typedGrants.some((grant) => {
+      const startsAt = grant.starts_at ? Date.parse(grant.starts_at) : NaN;
+      const endsAt = grant.ends_at ? Date.parse(grant.ends_at) : null;
+      return grant.module === entitlement
+        && grant.resource_id === null
+        && grant.revoked_at === null
+        && Number.isFinite(startsAt)
+        && startsAt <= now
+        && (endsAt === null || (Number.isFinite(endsAt) && endsAt > now));
+    });
+    if (liveGrant) sources.add("grant");
+
+    const legacyRegistryActive = entitlementRegistry.some(
+      (row) => row.entitlement === entitlement
+        && row.source === "legacy"
+        && row.active,
+    );
+    if (
+      !hasStripeSnapshot
+      && (legacyRegistryActive || typedOrg[`addon_${entitlement}`])
+    ) {
+      sources.add("legacy");
+    }
+    return {
+      entitlement,
+      active: sources.size > 0,
+      sources: [...sources],
+    };
+      })
+    : [];
+
   return {
-    org: org as MerchantDetail["org"],
+    org: typedOrg,
     members: (members as MerchantDetail["members"]) ?? [],
     counts: { campaigns, spins, participations, qrCodes },
     notes: (notes as AdminNote[]) ?? [],
     smsSenders: (smsSenders as MerchantDetail["smsSenders"]) ?? [],
     smsBalanceUnits: smsCredits?.balance_units ?? 0,
-    moduleGrants: (moduleGrants as MerchantDetail["moduleGrants"]) ?? [],
+    moduleGrants: typedGrants,
+    entitlements,
+    subscriptions: includeBilling
+      ? ((subscriptionRows ?? []) as BillingProjectionRow[])
+          .map(toSubscriptionProjection)
+      : [],
   };
 }
 

@@ -3,7 +3,9 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/auth";
 import { getDashboardMetrics, listMerchants } from "@/lib/admin/data";
 import { optionalEnv } from "@/lib/env";
+import { getPlanTier } from "@/lib/plans";
 import { PageHeader, Panel, StatCard, StatusBadge, Table } from "@/components/admin/ui";
+import { MerchantBillingSummary } from "@/components/admin/merchant-billing-summary";
 
 export const metadata: Metadata = { title: "Stripe · Back-office", robots: { index: false } };
 
@@ -15,7 +17,7 @@ export default async function StripePage() {
   await requireAdmin("stripe.view");
   const [m, active] = await Promise.all([
     getDashboardMetrics(),
-    listMerchants({ status: "active", pageSize: 50 }),
+    listMerchants({ status: "active", pageSize: 50, includeBilling: true }),
   ]);
 
   // Détection best-effort du mode clé Stripe (sans exposer la clé).
@@ -30,7 +32,12 @@ export default async function StripePage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="MRR" value={euros(m.mrr)} sub={`ARR ${euros(m.mrr * 12)}`} accent />
+        <StatCard
+          label="MRR"
+          value={m.mrr == null ? "À resynchroniser" : euros(m.mrr)}
+          sub={m.mrr == null ? `${m.mrrIncompleteSubscriptions} abonnement(s) incomplet(s)` : `ARR ${euros(m.mrr * 12)}`}
+          accent={m.mrr != null}
+        />
         <StatCard label="Abonnements actifs" value={m.activeSubs} />
         <StatCard label="Impayés" value={m.pastDue} sub="à relancer" />
         <StatCard label="Mode clé Stripe" value={<span className="text-base capitalize">{mode}</span>} />
@@ -49,6 +56,7 @@ export default async function StripePage() {
               <tr>
                 <th className="px-4 py-2.5">Commerçant</th>
                 <th className="px-4 py-2.5">Plan</th>
+                <th className="px-4 py-2.5">Lignes</th>
                 <th className="px-4 py-2.5">Statut</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -57,7 +65,10 @@ export default async function StripePage() {
             {active.rows.map((r) => (
               <tr key={r.id} className="text-zinc-300 hover:bg-white/[0.02]">
                 <td className="px-4 py-3 font-medium text-white">{r.name}</td>
-                <td className="px-4 py-3 capitalize">{r.plan}</td>
+                <td className="px-4 py-3">{getPlanTier(r.plan).name}</td>
+                <td className="px-4 py-3">
+                  {r.billing ? <MerchantBillingSummary billing={r.billing} /> : "—"}
+                </td>
                 <td className="px-4 py-3"><StatusBadge status={r.subscription_status} /></td>
                 <td className="px-4 py-3 text-right">
                   <Link href={`/admin/merchants/${r.id}`} className="text-violet-300 hover:text-violet-200">

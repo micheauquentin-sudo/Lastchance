@@ -5,11 +5,13 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/admin/auth";
 import { can } from "@/lib/admin/rbac";
 import { getMerchantDetail } from "@/lib/admin/data";
+import { getPlanTier } from "@/lib/plans";
 import { PLANS } from "@/lib/stripe";
 import { displaySubscriptionStatus } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 import { EmptyState, Panel, StatusBadge } from "@/components/admin/ui";
 import { ModuleGrantsPanel } from "@/components/admin/module-grants-panel";
+import { MerchantBillingAndRights } from "@/components/admin/merchant-billing-summary";
 import {
   CalendarAddonControl,
   CompAccessControl,
@@ -39,9 +41,10 @@ export default async function MerchantDetailPage({
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) notFound();
 
-  const detail = await getMerchantDetail(id);
+  const canViewBilling = can(admin.role, "stripe.view");
+  const detail = await getMerchantDetail(id, { includeBilling: canViewBilling });
   if (!detail) notFound();
-  const { org, members, counts, notes, smsSenders, smsBalanceUnits, moduleGrants } = detail;
+  const { org, members, counts, notes, smsSenders, smsBalanceUnits, moduleGrants, subscriptions, entitlements } = detail;
 
   const canEdit = can(admin.role, "merchants.edit");
   const canCompAccess = can(admin.role, "merchants.comp_access");
@@ -78,7 +81,7 @@ export default async function MerchantDetailPage({
         <div className="flex items-center gap-2">
           <StatusBadge status={displaySubscriptionStatus(org)} />
           <span className="rounded-md bg-white/5 px-2 py-0.5 text-xs capitalize text-zinc-300 ring-1 ring-inset ring-white/10">
-            {org.plan}
+            {getPlanTier(org.plan).name}
           </span>
           {compActive && (
             <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300 ring-1 ring-inset ring-emerald-500/20">
@@ -96,6 +99,15 @@ export default async function MerchantDetailPage({
           </Panel>
         ))}
       </div>
+
+      {canViewBilling && (
+        <MerchantBillingAndRights
+          org={org}
+          subscriptions={subscriptions}
+          entitlements={entitlements}
+          moduleGrants={moduleGrants}
+        />
+      )}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Panel className="p-5">
