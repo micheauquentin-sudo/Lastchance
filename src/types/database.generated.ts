@@ -7390,6 +7390,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tickets_or_lot_org_fk"
+            columns: ["lot_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "tickets_or_lots"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
             foreignKeyName: "tickets_or_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -9675,7 +9682,6 @@ export type Database = {
         Args: { p_entry_id: string; p_reference?: string }
         Returns: string
       }
-      remettre_ticket_or: { Args: { p_code: string }; Returns: Json }
       request_sms_sender: {
         Args: { p_organization_id: string; p_sender_id: string }
         Returns: string
