@@ -27,6 +27,11 @@ export function PorteVitrine({
   return (
     <a
       href={hrefAction(action)}
+      // VIT-9 : le compteur lit CETTE valeur, pas l'ancre. Six portes mènent
+      // à trois blocs — déduire l'action du fragment aurait compté un clic sur
+      // « jouer au quiz » comme un clic sur « expériences », et le vocabulaire
+      // fermé des compteurs l'aurait de toute façon refusé.
+      data-porte={action}
       className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--vitrine-primary)]/40 bg-[var(--vitrine-primary)]/5 px-4 py-2 text-sm font-bold text-[var(--vitrine-primary)] transition-colors hover:bg-[var(--vitrine-primary)]/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]"
     >
       {ACTIONS_PUBLIC_FR[action]}

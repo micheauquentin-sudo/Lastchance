@@ -5,6 +5,11 @@ import { droitEffectifModule } from "@/lib/subscription";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { vitrineLangSchema } from "@/lib/validations/vitrine";
 import {
+  mapMesuresVitrine,
+  mesuresVides,
+  type MesuresVitrineView,
+} from "@/lib/vitrine-mesures";
+import {
   mapVitrineDashboardState,
   mapVitrinePublicState,
   mapVitrineTraductionState,
@@ -375,4 +380,30 @@ export async function loadVitrineTraductions(): Promise<VitrineTraductionsContex
     // chemin de repli, celui qui est testé.
     etat: mapVitrineTraductionState(error ? null : data),
   };
+}
+
+/**
+ * VIT-9 — les compteurs agrégés de la vitrine de la SESSION.
+ *
+ * Motif exact de `loadVitrineTraductions` : la RPC est `security definer` et
+ * ne vérifie AUCUNE appartenance — sa sûreté tient entièrement au fait que ce
+ * chargeur lui passe l'organisation de la session, jamais un paramètre venu
+ * du navigateur.
+ *
+ * UNE PANNE DE LECTURE REND UNE FENÊTRE VIDE, pas un refus : le commerçant a
+ * le droit de voir cet écran, il n'a simplement rien à y lire.
+ */
+export async function loadVitrineMesures(
+  jours = 7,
+): Promise<{ ok: false; error: string } | { ok: true; mesures: MesuresVitrineView }> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("vitrine_mesures_state", {
+    p_organization_id: garde.organizationId,
+    p_jours: jours,
+  });
+
+  return { ok: true, mesures: error ? mesuresVides(jours) : mapMesuresVitrine(data) };
 }

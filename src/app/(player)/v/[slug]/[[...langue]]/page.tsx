@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { Boussole } from "@/components/vitrine/boussole";
+import { MesureVitrine } from "@/components/vitrine/mesure-vitrine";
 import {
   actionOuverte,
   ANCRE_EXPERIENCES,
@@ -225,6 +226,7 @@ export default async function VitrinePage({
           qui part d'ici est recopié en clair dans le payload RSC, et le slug
           est déjà dans l'adresse. C'est `/api/page-opens` qui le traduit en
           `resource_id` pour le compteur que lit le dashboard. */}
+      <MesureVitrine slug={etat.slug} langue={lang} />
       <PageOpenBeacon module="vitrine" publicId={etat.slug} />
 
       <main id="contenu" tabIndex={-1} className="outline-none">

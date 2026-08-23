@@ -9,7 +9,11 @@ import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { createClient } from "@/lib/supabase/server";
-import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
+import {
+  loadVitrineDashboardContext,
+  loadVitrineMesures,
+} from "@/lib/vitrine-context";
+import { MesuresTableau } from "@/components/vitrine/mesures-tableau";
 import type { ContenuVitrineView } from "@/lib/vitrine";
 import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { OrgLobbyView } from "@/lib/lobby";
@@ -59,6 +63,11 @@ export default async function VitrineDashboardPage() {
   if (!capacites.canExplore) notFound();
 
   const ctx = await loadVitrineDashboardContext();
+  // VIT-9 : lecture SÉPARÉE et non ajoutée au contexte du tableau de bord.
+  // Les compteurs sont un rapport, pas un état d'édition : les mêler aurait
+  // fait payer une agrégation sur 7 jours à chaque ouverture de l'écran, y
+  // compris quand la Vitrine n'a pas encore d'adresse.
+  const rapport = await loadVitrineMesures();
   const settings = ctx.ok ? ctx.settings : null;
   const cartes = ctx.ok ? ctx.cartes : [];
   const organizationId = ctx.ok ? ctx.organizationId : null;
@@ -343,6 +352,12 @@ export default async function VitrineDashboardPage() {
                 appUrl={APP_URL}
               />
             </CarteRepliable>
+            {/* HORS DU SYSTÈME DE TUILES, et c'est délibéré : les neuf tuiles
+                sont une checklist de mise en route, numérotée et gardée. Un
+                rapport en lecture seule n'est pas une étape à cocher. */}
+            {rapport.ok ? (
+              <MesuresTableau mesures={rapport.mesures} cartes={cartes} />
+            ) : null}
           </>
         ) : (
           <Card className="py-10 text-center">
