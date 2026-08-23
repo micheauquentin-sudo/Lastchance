@@ -726,6 +726,15 @@ export const RATE_LIMITS = {
    *
    *  CLÉ NON PUBLIQUE, même motif que les deux au-dessus. */
   vitrinePhoto: { limit: 60, windowSeconds: 3600 },
+  /** COMPTEURS AGRÉGÉS d'une vitrine, par IP — failClosed, 30 par minute.
+   *
+   *  Motif `pageOpenIp` : plafond posé sur l'IP SEULE, avant toute lecture du
+   *  corps, parce que le corps est choisi par l'appelant. Refuser ne ferme
+   *  rien — la route répond 204 dans tous les cas — et le seul effet est une
+   *  poignée de vues non comptées sur un indicateur d'affichage.
+   *
+   *  Trente par minute : un visiteur envoie UNE fois par chargement de page. */
+  vitrineMesureIp: { limit: 30, windowSeconds: 60 },
   /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
    *  `failClosed`, 10 par heure.
    *

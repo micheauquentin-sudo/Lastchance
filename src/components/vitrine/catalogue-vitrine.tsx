@@ -202,6 +202,10 @@ export function CatalogueVitrine({
                     type="button"
                     onClick={() => changerDeCarte(c.id)}
                     aria-pressed={active}
+                    // VIT-9 : le compteur lit cet attribut au clic. Un
+                    // `onClick` supplémentaire aurait fait connaître la mesure
+                    // au catalogue, qui n'a rien à en savoir.
+                    data-carte-id={c.id}
                     className={cn(
                       "rounded-full border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]",
                       active

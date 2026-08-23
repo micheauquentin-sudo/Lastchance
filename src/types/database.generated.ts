@@ -7543,6 +7543,41 @@ export type Database = {
           },
         ]
       }
+      vitrine_mesures: {
+        Row: {
+          compteur: number
+          jour: string
+          langue: string
+          organization_id: string
+          ref: string
+          type: string
+        }
+        Insert: {
+          compteur?: number
+          jour: string
+          langue: string
+          organization_id: string
+          ref: string
+          type: string
+        }
+        Update: {
+          compteur?: number
+          jour?: string
+          langue?: string
+          organization_id?: string
+          ref?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vitrine_mesures_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vitrine_settings: {
         Row: {
           accroche: string | null
@@ -8134,6 +8169,10 @@ export type Database = {
           p_organization_id: string
         }
         Returns: Json
+      }
+      compter_vues_vitrine: {
+        Args: { p_langue: string; p_mesures: Json; p_slug: string }
+        Returns: undefined
       }
       consume_calendar_spin_grant: {
         Args: {
@@ -10086,6 +10125,10 @@ export type Database = {
       }
       vitrine_dashboard_state: {
         Args: { p_organization_id: string }
+        Returns: Json
+      }
+      vitrine_mesures_state: {
+        Args: { p_jours?: number; p_organization_id: string }
         Returns: Json
       }
       vitrine_public_state: {
