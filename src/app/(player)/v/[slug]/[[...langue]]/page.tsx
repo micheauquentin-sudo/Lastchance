@@ -1,4 +1,9 @@
 import { cache } from "react";
+import { APP_URL } from "@/lib/env";
+import {
+  donneesStructureesVitrine,
+  etatIndexation,
+} from "@/lib/vitrine-indexation";
 import { Boussole } from "@/components/vitrine/boussole";
 import { MesureVitrine } from "@/components/vitrine/mesure-vitrine";
 import {
@@ -12,6 +17,7 @@ import {
   altPhotoVitrine,
   sourcesPhotoVitrine,
   srcSetPhotoVitrine,
+  urlPhotoVitrine,
 } from "@/lib/vitrine-photo";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
@@ -135,15 +141,44 @@ export async function generateMetadata({
   if (etat.state !== "ok") notFound();
 
   const nom = etat.identite.nom;
+  // VIT-12 : trois conditions, et l'accord du commerçant en est une.
+  const indexation = etatIndexation({
+    published: true,
+    indexable: etat.identite.indexable,
+    accroche: etat.identite.accroche,
+    cartes: etat.cartes,
+  });
+  const adresse = `${APP_URL}${cheminVitrineLangue(etat.slug, etat.lang)}`;
+  const description =
+    etat.identite.accroche ?? `Découvrez ${nom} et ce que le lieu propose.`;
+
   return {
     title: nom,
-    description:
-      etat.identite.accroche ?? `Découvrez ${nom} et ce que le lieu propose.`,
-    // Adresse portée par un QR posé sur une table : atteignable par lien, pas
-    // indexée. L'indexation est une décision de COMMERCE et non d'ingénierie —
-    // elle se prendra pour de bon, avec un plan de site et des adresses
-    // canoniques, et pas en marge d'une ouverture technique.
-    robots: { index: false },
+    description,
+    /**
+     * VIT-12 — L'INDEXATION EST DÉSORMAIS POSSIBLE, ET RESTE UN CHOIX.
+     *
+     * Le `false` d'origine disait : « l'indexation est une décision de commerce
+     * et non d'ingénierie — elle se prendra pour de bon, avec un plan de site
+     * et des adresses canoniques ». C'est fait, et la décision revient au
+     * commerçant : `etatIndexation` exige sa case cochée EN PLUS de la
+     * publication et d'une carte qui vaut d'être trouvée.
+     *
+     * `follow` reste vrai dans les deux cas : même non indexée, une page a
+     * intérêt à ce que ses liens internes soient suivis — c'est ainsi qu'une
+     * vitrine indexée fait découvrir sa version anglaise.
+     */
+    robots: { index: indexation.indexee, follow: true },
+    // LA CARTE D'APERÇU, dans les deux cas : elle sert un partage sur un
+    // téléphone autant qu'un résultat de recherche, et un lien collé dans une
+    // conversation n'attend pas l'accord d'indexation pour être lisible.
+    openGraph: {
+      type: "website",
+      title: nom,
+      description,
+      url: adresse,
+      locale: etat.lang === "en" ? "en_US" : "fr_FR",
+    },
     // Les deux variantes se déclarent l'une l'autre : même si la page n'est pas
     // indexée aujourd'hui, un partage de lien et les traducteurs de navigateur
     // lisent ces relations, et elles ne coûtent rien.
@@ -190,6 +225,17 @@ export default async function VitrinePage({
     carte.categories.flatMap((rubrique) => rubrique.fiches),
   );
   const boussoleOuverte = boussoleUtilisable(toutesLesFiches);
+
+  // VIT-12 — LES DONNÉES STRUCTURÉES NE SORTENT QUE SI LA PAGE EST INDEXÉE.
+  // Les servir sur une page `noindex` ne tromperait personne, mais décrirait à
+  // un moteur un lieu qu'on lui demande d'ignorer — deux instructions
+  // contraires dans le même document.
+  const indexation = etatIndexation({
+    published: true,
+    indexable: etat.identite.indexable,
+    accroche: etat.identite.accroche,
+    cartes: etat.cartes,
+  });
   // L'INTERSECTION, EN UN SEUL ENDROIT : ce que la fiche demande croisé avec
   // ce que la base publie. Le RÉSULTAT descend, pas le prédicat — le catalogue
   // est un composant client, et une fonction ne traverse pas cette frontière.
@@ -226,6 +272,27 @@ export default async function VitrinePage({
           qui part d'ici est recopié en clair dans le payload RSC, et le slug
           est déjà dans l'adresse. C'est `/api/page-opens` qui le traduit en
           `resource_id` pour le compteur que lit le dashboard. */}
+      {indexation.indexee ? (
+        // `dangerouslySetInnerHTML` est la seule façon d'émettre un
+        // `application/ld+json` : React échapperait le contenu d'un enfant
+        // texte, et un moteur lirait alors du JSON invalide. Ce qui entre ici
+        // vient de `JSON.stringify`, donc d'un document dont chaque chaîne est
+        // déjà échappée — aucune valeur du commerçant n'y arrive brute.
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(
+              donneesStructureesVitrine({
+                nom,
+                accroche: etat.identite.accroche,
+                url: `${APP_URL}${cheminVitrineLangue(etat.slug, etat.lang)}`,
+                image: urlPhotoVitrine(etat.identite.cover_path),
+              }),
+            ),
+          }}
+        />
+      ) : null}
+
       <MesureVitrine slug={etat.slug} langue={lang} />
       <PageOpenBeacon module="vitrine" publicId={etat.slug} />
 

@@ -48,6 +48,7 @@ import {
   deleteVitrineTraductionSchema,
   deleteVitrinePhotoSchema,
   importVitrineCarteSchema,
+  setVitrineIndexationSchema,
   setVitrinePhotoSchema,
   reorderVitrineCartesSchema,
   reorderVitrineFichesSchema,
@@ -2016,6 +2017,54 @@ export async function deleteVitrinePhoto(
   }
 
   if (ancienne) await effacerPhotos(cheminsDeLaPhoto(ancienne), admin);
+
+  await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * VIT-12 — L'ACCORD D'INDEXATION, POSÉ OU RETIRÉ.
+ *
+ * ── CE QUE CETTE ACTION NE DÉCIDE PAS ──
+ *
+ * Elle enregistre un VOULOIR, pas un résultat. La page publique exige en plus
+ * `published` et une carte qui vaut d'être trouvée : cocher la case sur une
+ * vitrine vide ne l'indexe pas, et l'écran dit ce qui manque plutôt que de
+ * refuser l'enregistrement. Séparer les deux évite le pire des messages —
+ * « impossible » sur un geste qui, lui, est parfaitement possible.
+ *
+ * ── LE RETRAIT EST IMMÉDIAT CÔTÉ APPLICATION, ET SEULEMENT LÀ ──
+ *
+ * `revaliderVitrine` purge le cache ISR : le chargement suivant sert
+ * `noindex`. L'oubli par les moteurs ne se commande pas — il dépend de leur
+ * prochaine visite — et rien ici ne promet le contraire.
+ */
+export async function setVitrineIndexation(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setVitrineIndexationSchema.safeParse({
+    indexable: formData.get("indexable"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("vitrine_settings")
+    .update({ indexable: parsed.data.indexable })
+    .eq("organization_id", garde.organizationId)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) reportError("vitrine.indexation", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
 
   await revaliderVitrine(supabase, garde.organizationId);
   return { ok: true, data: undefined };

@@ -7587,6 +7587,7 @@ export type Database = {
           histoire: string | null
           horaires_texte: string | null
           id: string
+          indexable: boolean
           organization_id: string
           published: boolean
           slug: string
@@ -7601,6 +7602,7 @@ export type Database = {
           histoire?: string | null
           horaires_texte?: string | null
           id?: string
+          indexable?: boolean
           organization_id: string
           published?: boolean
           slug: string
@@ -7615,6 +7617,7 @@ export type Database = {
           histoire?: string | null
           horaires_texte?: string | null
           id?: string
+          indexable?: boolean
           organization_id?: string
           published?: boolean
           slug?: string
@@ -10138,6 +10141,13 @@ export type Database = {
       vitrine_translation_state: {
         Args: { p_organization_id: string }
         Returns: Json
+      }
+      vitrines_indexables: {
+        Args: never
+        Returns: {
+          mise_a_jour: string
+          slug: string
+        }[]
       }
       wait_session_open: {
         Args: {

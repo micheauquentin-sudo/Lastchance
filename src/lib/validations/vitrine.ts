@@ -625,6 +625,18 @@ export const setVitrinePhotoSchema = z.discriminatedUnion("cible", [
   }),
 ]);
 
+/**
+ * VIT-12 — l'accord d'indexation, une case et rien d'autre.
+ *
+ * `caseACochee` et non `caseNative` : le geste est un BOUTON qui poste un état
+ * voulu dans un champ caché, pas une case qu'on décoche dans un formulaire.
+ * Un navigateur n'envoie pas une case décochée — l'état « je retire mon
+ * accord » n'aurait alors jamais atteint le serveur.
+ */
+export const setVitrineIndexationSchema = z.object({
+  indexable: caseACochee,
+});
+
 export const deleteVitrinePhotoSchema = z.discriminatedUnion("cible", [
   z.object({ cible: z.literal("fiche"), fiche_id: uuid }),
   z.object({ cible: z.literal("couverture") }),
