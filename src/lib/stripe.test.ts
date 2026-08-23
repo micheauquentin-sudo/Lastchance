@@ -199,6 +199,7 @@ describe("projectStripeSubscriptionItems", () => {
   ): Stripe.Subscription {
     return {
       items: { data: items },
+    // unsafe-cast-justification: fixture reduite aux `items` que la projection lit.
     } as unknown as Stripe.Subscription;
   }
 
