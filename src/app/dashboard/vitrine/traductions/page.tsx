@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { TraduireAuto } from "@/components/vitrine/traduire-auto";
 import { notFound } from "next/navigation";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
@@ -97,6 +98,7 @@ export default async function VitrineTraductionsPage() {
       ) : (
         <div className="space-y-6">
           <JaugeTraductions resume={etat.resume} />
+          <TraduireAuto peutEditer={capacites.canEditDraft} />
           <TraductionsEditeur
             etat={etat}
             cartes={cartes}
