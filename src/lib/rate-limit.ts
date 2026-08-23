@@ -726,6 +726,15 @@ export const RATE_LIMITS = {
    *
    *  CLÉ NON PUBLIQUE, même motif que les deux au-dessus. */
   vitrinePhoto: { limit: 60, windowSeconds: 3600 },
+  /** EMISSION D UN TICKET D OR, par ORGANISATION — failClosed, 200 par heure.
+   *
+   *  Un ticket est un DROIT DE GAIN : une boucle en emettrait mille en une
+   *  minute, et chacun vaut un lot du stock. Deux cents par heure couvrent un
+   *  service complet dans un commerce charge, et bornent la boucle.
+   *
+   *  CLE NON PUBLIQUE, motif vitrineSlug : la saturer ne gene que ses propres
+   *  collegues, d ou failClosed legitime. */
+  ticketOrEmission: { limit: 200, windowSeconds: 3600 },
   /** COMPTEURS AGRÉGÉS d'une vitrine, par IP — failClosed, 30 par minute.
    *
    *  Motif `pageOpenIp` : plafond posé sur l'IP SEULE, avant toute lecture du
