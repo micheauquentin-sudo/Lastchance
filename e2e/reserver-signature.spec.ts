@@ -390,11 +390,29 @@ test.describe("réserver — formulaire d'activité, préservation des étapes a
       page.getByRole("heading", { name: "Réservations" }),
     ).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: "+ Nouvelle activité" }).click();
     const formulaireCreation = page
       .locator("form")
       .filter({ has: page.getByRole("button", { name: "Créer l'activité" }) });
-    await formulaireCreation.getByLabel("Nom de l'activité").fill(nomActivite);
+    const champNom = formulaireCreation.getByLabel("Nom de l'activité");
+
+    // LE CLIC QUI OUVRE LE FORMULAIRE PEUT PRÉCÉDER L'HYDRATATION. Le bouton
+    // est déjà peint par le rendu serveur — visible, activé, cliquable au sens
+    // de Playwright — mais React n'y a pas encore attaché de gestionnaire. Le
+    // clic part alors dans le vide SANS ERREUR, le formulaire ne s'ouvre
+    // jamais, et le `fill()` suivant attend 90 s un champ qui n'existe pas.
+    // Vu en CI sur mobile-safari, une fois sur deux.
+    //
+    // On ne fait donc pas confiance au clic : on assure l'ÉTAT qu'il devait
+    // produire. Le `if` est indispensable — recliquer un formulaire déjà
+    // ouvert le refermerait, et la reprise se mordrait la queue.
+    await expect(async () => {
+      if (!(await champNom.isVisible().catch(() => false))) {
+        await page.getByRole("button", { name: "+ Nouvelle activité" }).click();
+      }
+      await expect(champNom).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    await champNom.fill(nomActivite);
     await formulaireCreation
       .getByLabel("Format de l'activité")
       .selectOption("signature");
