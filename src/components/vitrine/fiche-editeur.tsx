@@ -20,6 +20,12 @@ import {
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
 import { PhotoChamp } from "@/components/vitrine/photo-champ";
+import {
+  ACTIONS_FR,
+  FACETTES_FR,
+  VITRINE_ACTIONS,
+  VITRINE_FACETTES,
+} from "@/lib/vitrine";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { FlechesOrdre } from "@/components/vitrine/fleches-ordre";
 
@@ -314,6 +320,71 @@ function FicheForm({
             ))}
           </ul>
         </fieldset>
+
+        {/* LES FACETTES DE LA BOUSSOLE (VIT-10) — repliées, comme les
+            allergènes, et pour la même raison : onze cases dépliées sur chaque
+            fiche noieraient le nom et le prix. Ouvert d'emblée quand la fiche
+            en porte déjà, pour que le commerçant voie ce qu'il a coché sans
+            avoir à chercher. */}
+        <details
+          open={fiche.facettes.length > 0}
+          className="rounded-xl border-2 border-k-ink/15 px-3 py-2"
+        >
+          <summary className="cursor-pointer text-sm font-bold text-k-ink">
+            Boussole — quand proposer cette fiche
+          </summary>
+          <p className="mb-2 mt-2 text-xs text-zinc-500">
+            Cochez seulement ce qui DISTINGUE ce plat. Une dimension laissée
+            vide veut dire « ça va avec tout ». Une fiche sans aucune case n
+            &apos;est jamais proposée par la Boussole.
+          </p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-2">
+            {VITRINE_FACETTES.map((facette) => (
+              <li key={facette}>
+                <label className="flex items-center gap-2 text-sm font-semibold text-k-ink">
+                  <input
+                    type="checkbox"
+                    name="facettes"
+                    value={facette}
+                    defaultChecked={fiche.facettes.includes(facette)}
+                    disabled={!peutEditer}
+                    className="size-4 accent-k-ink"
+                  />
+                  {FACETTES_FR[facette]}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </details>
+
+        {/* AU PLUS UNE PORTE, et c'est un `<select>` : la contrainte du cahier
+            devient la forme du champ. Six cases à cocher auraient laissé le
+            commerçant en choisir trois, et l'écran aurait dû lui expliquer
+            pourquoi il n'en garde qu'une. */}
+        <div>
+          <Label htmlFor={`fiche-action-${fiche.id}`}>
+            Proposer une action sous cette fiche
+          </Label>
+          <select
+            id={`fiche-action-${fiche.id}`}
+            name="action"
+            defaultValue={fiche.action ?? ""}
+            disabled={!peutEditer}
+            className="w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+          >
+            <option value="">Aucune</option>
+            {VITRINE_ACTIONS.map((action) => (
+              <option key={action} value={action}>
+                {ACTIONS_FR[action]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Le bouton n&apos;apparaît que si ce module a réellement quelque
+            chose d&apos;ouvert. Rien à désactiver le jour où vous fermez : il
+            disparaît tout seul.
+          </p>
+        </div>
 
         {/* LES ALLERGÈNES SONT REPLIÉS DANS L'ÉDITEUR AUSSI — quatorze cases
             dépliées sur chaque fiche noieraient les champs qu'on vient

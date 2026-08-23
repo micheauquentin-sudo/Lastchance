@@ -675,6 +675,7 @@ export async function updateVitrineRubrique(
   const parsed = updateVitrineRubriqueSchema.safeParse({
     id: formData.get("id"),
     nom: formData.get("nom"),
+    action: formData.get("action"),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -690,7 +691,7 @@ export async function updateVitrineRubrique(
     // d'une carte à l'autre, mais aucun écran ne le propose dans ce lot, et
     // l'envoyer depuis un formulaire de renommage aurait ouvert un geste que
     // personne n'a demandé — sur un champ que le navigateur choisit.
-    .update({ nom: parsed.data.nom })
+    .update({ nom: parsed.data.nom, action: parsed.data.action })
     .eq("id", parsed.data.id)
     .eq("organization_id", garde.organizationId)
     .select("id")
@@ -821,6 +822,8 @@ export async function updateVitrineFiche(
     prix_affiche: formData.get("prix_affiche"),
     badges: vocabulaireDepuisFormData(formData, "badges"),
     allergenes: vocabulaireDepuisFormData(formData, "allergenes"),
+    facettes: vocabulaireDepuisFormData(formData, "facettes"),
+    action: formData.get("action"),
     disponible: formData.get("disponible"),
   });
   if (!parsed.success) {
@@ -839,6 +842,8 @@ export async function updateVitrineFiche(
       prix_affiche: parsed.data.prix_affiche || null,
       badges: parsed.data.badges,
       allergenes: parsed.data.allergenes,
+      facettes: parsed.data.facettes,
+      action: parsed.data.action,
       disponible: parsed.data.disponible,
       // `categorie_id`, `ordre` et `photo_path` sont ABSENTS, et pas par oubli :
       // le déplacement n'est offert par aucun écran de ce lot, le rang est la

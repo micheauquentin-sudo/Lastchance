@@ -1,4 +1,12 @@
 import { cache } from "react";
+import { Boussole } from "@/components/vitrine/boussole";
+import {
+  actionOuverte,
+  ANCRE_EXPERIENCES,
+  ANCRE_RESERVER,
+} from "@/lib/vitrine-action";
+import { boussoleUtilisable } from "@/lib/vitrine-boussole";
+import { VITRINE_ACTIONS, type ActionVitrine } from "@/lib/vitrine";
 import {
   altPhotoVitrine,
   sourcesPhotoVitrine,
@@ -174,6 +182,21 @@ export default async function VitrinePage({
   const theme = resoudreThemeVitrine(etat.identite.theme);
   const polices = policesVitrine(theme);
 
+  // VIT-10 — TOUTES LES FICHES, À PLAT. La Boussole ne connaît ni carte ni
+  // rubrique : elle filtre des plats. Aplatir ici plutôt que dans le composant
+  // garde ce dernier pur, donc testable sans construire un catalogue entier.
+  const toutesLesFiches = etat.cartes.flatMap((carte) =>
+    carte.categories.flatMap((rubrique) => rubrique.fiches),
+  );
+  const boussoleOuverte = boussoleUtilisable(toutesLesFiches);
+  // L'INTERSECTION, EN UN SEUL ENDROIT : ce que la fiche demande croisé avec
+  // ce que la base publie. Le RÉSULTAT descend, pas le prédicat — le catalogue
+  // est un composant client, et une fonction ne traverse pas cette frontière.
+  // Six valeurs au plus : le tableau coûte moins que le commentaire.
+  const portesOuvertes: ActionVitrine[] = VITRINE_ACTIONS.filter((action) =>
+    actionOuverte(action, etat.portes, boussoleOuverte),
+  );
+
   return (
     <div
       // `lang` sur le CONTENEUR et non sur `<html>` : la balise racine est
@@ -249,10 +272,20 @@ export default async function VitrinePage({
               case "cartes":
                 return (
                   <div key={bloc} className="mb-10">
+                    {/* LA BOUSSOLE AU-DESSUS DE LA CARTE, et seulement si
+                        au moins une fiche est étiquetée : ouvrir une porte qui
+                        rend une liste vide à chaque question serait pire que
+                        ne pas l'ouvrir. */}
+                    {boussoleOuverte ? (
+                      <div className="mb-6">
+                        <Boussole fiches={toutesLesFiches} />
+                      </div>
+                    ) : null}
                     <CatalogueVitrine
                       cartes={etat.cartes}
                       styleCartes={theme.styleCartes}
                       lang={lang}
+                      portesOuvertes={portesOuvertes}
                     />
                   </div>
                 );
@@ -265,16 +298,17 @@ export default async function VitrinePage({
               // reste une simple permutation.
               case "reserver":
                 return (
-                  <BlocReserver
-                    key={bloc}
-                    portes={etat.portes.reserver}
-                    lang={lang}
-                  />
+                  // L'ANCRE EST POSÉE ICI, PAS DANS LE BLOC : elle sert les
+                  // portes de fiches (VIT-10), et le bloc n'a pas à savoir
+                  // qu'on lui écrit depuis la carte.
+                  <div key={bloc} id={ANCRE_RESERVER} className="scroll-mt-4">
+                    <BlocReserver portes={etat.portes.reserver} lang={lang} />
+                  </div>
                 );
               case "experiences":
                 return (
+                  <div key={bloc} id={ANCRE_EXPERIENCES} className="scroll-mt-4">
                   <BlocExperiences
-                    key={bloc}
                     portes={etat.portes.experiences}
                     // LE SLUG SERVI, pas celui de l'adresse : la porte du Duo
                     // Miroir mène à `/lobby/nouveau/{slug}`, et c'est la base
@@ -282,6 +316,7 @@ export default async function VitrinePage({
                     slug={etat.slug}
                     lang={lang}
                   />
+                  </div>
                 );
               // ── LE BLOC « SOCIAL » EN PORTE DEUX (VIT-4) ──────────
               //

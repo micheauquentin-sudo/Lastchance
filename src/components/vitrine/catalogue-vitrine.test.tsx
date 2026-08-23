@@ -40,6 +40,7 @@ const CARTES: VitrineCarteView[] = [
         id: "e2f10000-0000-4000-8000-000000000021",
         nom: "Entrées",
         ordre: 1,
+        action: null,
         fiches: [
           {
             id: "e2f10000-0000-4000-8000-000000000031",
@@ -48,6 +49,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "à partir de 8 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: ["vegetarien", "sain", "fait_maison"],
             allergenes: ["lait", "celeri"],
             disponible: true,
@@ -60,6 +63,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "7 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: ["vegan", "sain"],
             allergenes: ["sesame"],
             disponible: true,
@@ -71,6 +76,7 @@ const CARTES: VitrineCarteView[] = [
         id: "e2f10000-0000-4000-8000-000000000022",
         nom: "Plats",
         ordre: 2,
+        action: null,
         fiches: [
           {
             id: "e2f10000-0000-4000-8000-000000000033",
@@ -79,6 +85,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "19 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: ["traditionnel"],
             allergenes: ["oeufs", "moutarde"],
             disponible: true,
@@ -92,6 +100,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "16 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: ["vegan", "epice", "grille"],
             allergenes: ["fruits_a_coque", "soja"],
             disponible: false,
@@ -111,6 +121,7 @@ const CARTES: VitrineCarteView[] = [
         id: "e2f10000-0000-4000-8000-000000000023",
         nom: "Au verre",
         ordre: 1,
+        action: null,
         fiches: [
           // BADGES ET ALLERGÈNES VIDES — le cas qu'un rendu naïf transforme
           // en « [] ».
@@ -121,6 +132,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "5,5 / 24 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: [],
             allergenes: ["sulfites"],
             disponible: true,
@@ -133,6 +146,8 @@ const CARTES: VitrineCarteView[] = [
             prix_affiche: "4 €",
             photo_path: null,
             photo_alt: null,
+            facettes: [],
+            action: null,
             badges: ["nouveau", "fait_maison"],
             allergenes: [],
             disponible: true,
@@ -146,7 +161,7 @@ const CARTES: VitrineCarteView[] = [
 
 describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   it("rend les deux cartes en onglets et la première carte par défaut", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     expect(
       screen
@@ -166,7 +181,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("la fiche épuisée est grisée ET dite, jamais retirée", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Curry de légumes grillés")
@@ -179,7 +194,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("badges et allergènes vides ne rendent aucun « [] »", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     // Onglet "Vins & boissons" pour atteindre la fiche sans badges.
     fireEvent.click(screen.getByRole("button", { name: "Vins & boissons" }));
@@ -190,7 +205,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("le filet nom/prix et le prix s'affichent sur une même ligne", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -199,7 +214,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("les allergènes sont repliés dans un <details>", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -216,7 +231,7 @@ describe("FicheVitrine — rendu isolé", () => {
   const ficheIndisponible = CARTES[0].categories[1].fiches[1];
 
   it("nom, description, prix et badges d'une fiche disponible", () => {
-    render(<FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" />);
+    render(<FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />);
     expect(screen.getByText("Velouté de potiron")).toBeTruthy();
     expect(
       screen.getByText("Crème légère, graines torréfiées maison."),
@@ -227,7 +242,7 @@ describe("FicheVitrine — rendu isolé", () => {
 
   it("le monogramme n'apparaît qu'en dehors du style liste", () => {
     const { container: liste } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" />,
+      <FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />,
     );
     // Le monogramme porte `h-16`/`h-28` ; le filet nom/prix porte aussi
     // `aria-hidden`, donc on cible la classe propre au monogramme.
@@ -235,13 +250,13 @@ describe("FicheVitrine — rendu isolé", () => {
     cleanup();
 
     const { container: grille } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="grille" lang="fr" />,
+      <FicheVitrine fiche={ficheDisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />,
     );
     expect(grille.textContent).toContain("V");
   });
 
   it("une fiche indisponible est grisée avec la mention textuelle", () => {
-    render(<FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="fr" />);
+    render(<FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
     expect(screen.getByText("Indisponible aujourd'hui")).toBeTruthy();
   });
 });
@@ -260,7 +275,7 @@ describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
 
   it("la mention d'indisponibilité et le pli des allergènes sont en anglais", () => {
     render(
-      <FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="en" />,
+      <FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="en" portesOuvertes={[]} />,
     );
     expect(screen.getByText("Unavailable today")).toBeTruthy();
     expect(screen.queryByText("Indisponible aujourd'hui")).toBeNull();
@@ -268,7 +283,7 @@ describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
   });
 
   it("le libellé de recherche et l'état vide basculent aussi", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="en" />);
+    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="en" portesOuvertes={[]} />);
     expect(screen.getByLabelText("Search in Carte du midi")).toBeTruthy();
 
     // Le nom de la carte, lui, reste tel que la base l'a rendu : le chrome se

@@ -9,8 +9,10 @@ import {
   BADGES_EN,
   BADGES_FR,
   VITRINE_ACCROCHE_MAX,
+  VITRINE_ACTIONS,
   VITRINE_ALLERGENES,
   VITRINE_BADGES,
+  VITRINE_FACETTES,
   VITRINE_CARTE_NOM_MAX,
   VITRINE_CHEMIN_IMAGE_MAX,
   VITRINE_CONTENUS_MAX,
@@ -201,6 +203,24 @@ const BADGES_SQL = motsQuotes(fragment("badges,\n      array[", "]::text[]"));
 const ALLERGENES_SQL = motsQuotes(
   fragment("allergenes,\n      array[", "]::text[]"),
 );
+/**
+ * LES DEUX VOCABULAIRES DE LA BOUSSOLE (VIT-10), lus dans LEUR migration.
+ *
+ * Même raison que `vitrine_contenus` : ajouter deux colonnes à la fondatrice
+ * aurait demandé de la réécrire, ce que ce dépôt ne fait jamais.
+ *
+ * `ACTIONS_SQL` est dédoublonné : la même liste de six est écrite DEUX FOIS
+ * dans la migration — une par table — et c'est voulu, un `check` ne se partage
+ * pas. La garde compare donc l'ensemble, pas la suite.
+ */
+const SOURCE_BOUSSOLE = lire("20261024120000_vitrine_boussole.sql");
+const FACETTES_SQL = motsQuotes(
+  fragment("        facettes,", "]::text[]", SOURCE_BOUSSOLE),
+);
+const ACTIONS_SQL = motsQuotes(
+  fragment("      check (action is null", "));", SOURCE_BOUSSOLE),
+);
+
 // Les trois vocabulaires du thème se lisent dans le validateur VIVANT.
 const STYLES_SQL = motsQuotes(
   fragment("->> 'style_cartes') not in (", ")", SOURCE_THEME),
@@ -260,6 +280,16 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
 
   it("les huit badges de régime sont les mêmes des deux côtés", () => {
     expect(BADGES_SQL.slice().sort()).toEqual([...VITRINE_BADGES].sort());
+  });
+
+  it("les onze facettes de la Boussole sont les mêmes des deux côtés", () => {
+    expect(FACETTES_SQL.slice().sort()).toEqual([...VITRINE_FACETTES].sort());
+  });
+
+  it("les six portes de fiche sont les mêmes des deux côtés", () => {
+    expect([...new Set(ACTIONS_SQL)].sort()).toEqual(
+      [...VITRINE_ACTIONS].sort(),
+    );
   });
 
   it("les quatorze allergènes UE-14 sont les mêmes des deux côtés", () => {

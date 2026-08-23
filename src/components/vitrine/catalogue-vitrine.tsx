@@ -10,10 +10,12 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import type {
+  ActionVitrine,
   LangueVitrine,
   StyleCartesVitrine,
   VitrineCarteView,
 } from "@/lib/vitrine";
+import { PorteVitrine } from "@/components/vitrine/porte-vitrine";
 import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 import { TEXTES_VITRINE } from "@/components/vitrine/langue";
 
@@ -52,6 +54,7 @@ export function CatalogueVitrine({
   cartes,
   styleCartes,
   lang,
+  portesOuvertes,
 }: {
   /** Cartes ACTIVES, déjà ordonnées par le serveur. */
   cartes: VitrineCarteView[];
@@ -62,6 +65,19 @@ export function CatalogueVitrine({
    * l'écran (libellé de recherche, compte de résultats, états vides).
    */
   lang: LangueVitrine;
+  /**
+   * VIT-10 : les portes qui ont vraiment quelque chose derrière.
+   *
+   * UN TABLEAU, ET SURTOUT PAS UN PRÉDICAT. Ce composant est un composant
+   * CLIENT : une fonction ne traverse pas la frontière serveur → client, et
+   * Next répond 500 sur la page publique entière. La première version passait
+   * bel et bien `(action) => boolean`, avec un commentaire expliquant que
+   * c'était plus économique — ça l'était, ce n'était simplement pas possible.
+   * Vingt-quatre tests E2E l'ont dit avant la production.
+   *
+   * Six valeurs au plus, sérialisables : le coût est nul, la frontière tient.
+   */
+  portesOuvertes: readonly ActionVitrine[];
 }) {
   const t = TEXTES_VITRINE[lang];
   const rechercheId = useId();
@@ -285,6 +301,19 @@ export function CatalogueVitrine({
               >
                 {rubrique.nom}
               </h2>
+
+              {/* LA PORTE DE LA RUBRIQUE (VIT-10) : sous le titre, au-dessus
+                  des fiches. Une rubrique entière peut ouvrir une porte que
+                  ses plats ne portent pas individuellement — « nos formules »
+                  vers Réserver, par exemple. */}
+              {rubrique.action ? (
+                <div className="mb-3">
+                  <PorteVitrine
+                    action={rubrique.action}
+                    ouverte={portesOuvertes.includes(rubrique.action)}
+                  />
+                </div>
+              ) : null}
               <ul
                 className={cn(
                   styleCartes === "grille"
@@ -298,6 +327,7 @@ export function CatalogueVitrine({
                       fiche={fiche}
                       styleCartes={styleCartes}
                       lang={lang}
+                      portesOuvertes={portesOuvertes}
                     />
                   </li>
                 ))}

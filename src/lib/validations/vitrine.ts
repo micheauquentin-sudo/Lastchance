@@ -15,12 +15,14 @@ import {
   VITRINE_ACCROCHE_MAX,
   VITRINE_ALLERGENES,
   VITRINE_BADGES,
+  VITRINE_ACTIONS,
   VITRINE_BLOCS,
   VITRINE_CARTE_NOM_MAX,
   VITRINE_CONTENU_RANG_MAX,
   VITRINE_CONTENU_RANG_MIN,
   VITRINE_CONTENU_TITRE_MAX,
   VITRINE_CONTENU_URL_MAX,
+  VITRINE_FACETTES,
   VITRINE_FICHE_DESCRIPTION_MAX,
   VITRINE_FICHE_NOM_MAX,
   VITRINE_HISTOIRE_MAX,
@@ -442,6 +444,22 @@ const nomCarteSchema = z
     `Nom trop long (${VITRINE_CARTE_NOM_MAX} caractères max)`,
   );
 
+/**
+ * La porte d'une fiche ou d'une rubrique : une valeur de la liste, ou RIEN.
+ *
+ * Le `<select>` poste la chaîne vide pour « aucune » — un navigateur n'a pas
+ * d'autre façon de dire « pas de choix » dans une liste déroulante. La traduire
+ * en `null` ICI, plutôt que dans l'action, garde la règle avec le reste du
+ * contrat d'entrée.
+ */
+const actionFermee = nonRenduVaut(z.string(), "")
+  .transform((valeur) => valeur.trim())
+  .pipe(
+    z
+      .union([z.literal(""), z.enum(VITRINE_ACTIONS)])
+      .transform((valeur) => (valeur === "" ? null : valeur)),
+  );
+
 export const createVitrineCarteSchema = z.object({ nom: nomCarteSchema });
 
 export const updateVitrineCarteSchema = z.object({
@@ -471,6 +489,7 @@ export const createVitrineRubriqueSchema = z.object({
 export const updateVitrineRubriqueSchema = z.object({
   id: uuid,
   nom: nomRubriqueSchema,
+  action: actionFermee,
 });
 
 export const deleteVitrineRubriqueSchema = z.object({ id: uuid });
@@ -542,6 +561,8 @@ export const updateVitrineFicheSchema = z.object({
   ),
   badges: vocabulaireFerme(VITRINE_BADGES),
   allergenes: vocabulaireFerme(VITRINE_ALLERGENES),
+  facettes: vocabulaireFerme(VITRINE_FACETTES),
+  action: actionFermee,
   disponible: caseNative,
 });
 
