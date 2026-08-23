@@ -95,6 +95,33 @@ const tokenPathSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // ── LES BINAIRES DE `sharp` DOIVENT SUIVRE LA FONCTION ──
+  //
+  // `sharp` charge un `.node` qui charge lui-même `libvips-cpp.so`. Le second
+  // n'est référencé par AUCUN `import` : il est résolu au moment du `dlopen`.
+  // L'analyse statique qui décide des fichiers embarqués ne peut donc pas le
+  // voir, et la fonction déployée part sans lui. La production l'a dit mot pour
+  // mot le 2026-08-23 :
+  //
+  //     ERR_DLOPEN_FAILED: libvips-cpp.so.8.18.3: cannot open shared object file
+  //
+  // Le défaut est INVISIBLE en local et en CI : `next start` y tourne sur un
+  // `node_modules` complet, où le fichier est là. Seul un déploiement tracé le
+  // révèle — ce qui explique qu'une suite E2E verte ait pu le laisser passer.
+  //
+  // LE GLOB EST LARGE À DESSEIN, et c'est un arbitrage, pas une paresse. Une
+  // action serveur s'exécute dans la route qui porte SON FORMULAIRE : la liste
+  // exacte des routes qui encodent une image se déduit donc des composants, pas
+  // des imports, et s'en tromper d'une ferait revenir un défaut que ni le local
+  // ni la CI ne voient. On paie la sûreté en octets.
+  //
+  // Mesuré sur une construction Linux le 2026-08-23 : 44 traces sur 118
+  // embarquent libvips (~10 Mo chacune), et aucune hors de ces deux globs —
+  // `/dashboard/redeem` le porte donc sans jamais encoder quoi que ce soit.
+  outputFileTracingIncludes: {
+    "/dashboard/**": ["./node_modules/@img/**"],
+    "/poster/**": ["./node_modules/@img/**"],
+  },
   async headers() {
     return [
       {

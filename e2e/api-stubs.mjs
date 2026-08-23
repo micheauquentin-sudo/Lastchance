@@ -27,16 +27,54 @@ const items = () => ({
       id: "si_e2e_engagement",
       object: "subscription_item",
       quantity: 1,
-      price: { id: PRICE_ID, object: "price", recurring: { interval: "month" } },
+      // `currency` N'EST PAS DÉCORATIF. La projection de facturation
+      // (20261030120000) refuse un item dont la devise n'est pas une chaîne :
+      // `apply_stripe_subscription_projection_v1` lève « invalid stripe
+      // projection items », le webhook rend 500, et deux tests E2E tombent sur
+      // un abonnement qui ne s'active jamais. Un prix Stripe RÉEL porte
+      // toujours sa devise — c'est la doublure qui était incomplète, pas la
+      // validation qui était trop stricte.
+      price: {
+        id: PRICE_ID,
+        object: "price",
+        currency: "eur",
+        recurring: { interval: "month" },
+      },
     },
   ],
 });
 
+// `cancel_at_period_end` EST OBLIGATOIRE, ET SON ABSENCE NE SE VOIT PAS.
+//
+// La route le transmet BRUT a `apply_stripe_subscription_projection_v1`.
+// Absent de la doublure, il valait `undefined` — que `JSON.stringify` EFFACE.
+// PostgREST recevait donc onze arguments pour une fonction qui en declare
+// douze, et repondait « Could not find the function ... in the schema cache ».
+// Le webhook rendait 500 sur quatre tests, et le message ne parlait ni du
+// champ manquant ni de la doublure.
+//
+// Un abonnement Stripe REEL porte toujours ce booleen. C'est la doublure qui
+// etait incomplete.
 const SUBSCRIPTIONS = {
-  sub_e2e_active: { status: "active", customer: "cus_e2e_stripe", trial_end: null },
-  sub_e2e_canceled: { status: "canceled", customer: "cus_e2e_stripe", trial_end: null },
+  sub_e2e_active: {
+    status: "active",
+    customer: "cus_e2e_stripe",
+    trial_end: null,
+    cancel_at_period_end: false,
+  },
+  sub_e2e_canceled: {
+    status: "canceled",
+    customer: "cus_e2e_stripe",
+    trial_end: null,
+    cancel_at_period_end: false,
+  },
   // Client Stripe inconnu de la base : la RPC doit refuser (500 attendu).
-  sub_e2e_ghost: { status: "active", customer: "cus_e2e_ghost", trial_end: null },
+  sub_e2e_ghost: {
+    status: "active",
+    customer: "cus_e2e_ghost",
+    trial_end: null,
+    cancel_at_period_end: false,
+  },
 };
 
 createServer((req, res) => {

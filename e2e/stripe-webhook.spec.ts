@@ -221,7 +221,13 @@ test.describe("stripe — webhook signé", () => {
       headers: { "Content-Type": "application/json", "Stripe-Signature": signature },
     });
     expect(res.status()).toBe(500);
-    expect(await res.json()).toEqual({ error: "Sync échouée" });
+    // LE MESSAGE A CHANGE DE MAIN, PAS DE SENS. Depuis la projection de
+    // facturation (20261030120000), c'est ELLE qui rencontre la premiere un
+    // client Stripe inconnu et refuse. Ce que ce test protege — 500, donc
+    // Stripe rejoue, et aucun effet sur l'organisation — est inchange.
+    expect(await res.json()).toEqual({
+      error: "Projection de facturation echouee",
+    });
     expect(await orgStatus()).toBe(before);
   });
 
