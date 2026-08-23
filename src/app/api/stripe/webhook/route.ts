@@ -134,7 +134,12 @@ async function handleWebhook(request: Request) {
             p_customer_id: customerId,
             p_subscription_id: current.id,
             p_stripe_status: current.status,
-            p_cancel_at_period_end: current.cancel_at_period_end,
+            // `?? false` N'EST PAS UNE COQUETTERIE. Ce parametre n'a pas de
+            // valeur par defaut en SQL : `undefined` disparait a la
+            // serialisation, PostgREST cherche alors une fonction a onze
+            // arguments, ne la trouve pas, et le webhook rend 500 en
+            // annoncant une fonction absente plutot qu'un champ manquant.
+            p_cancel_at_period_end: current.cancel_at_period_end ?? false,
             p_cancel_at: current.cancel_at
               ? new Date(current.cancel_at * 1000).toISOString()
               : null,
