@@ -69,9 +69,18 @@ export function MerchantBillingAndRights({
   subscriptions,
   entitlements,
   moduleGrants,
-}: Pick<MerchantDetail, "org" | "subscriptions" | "entitlements" | "moduleGrants">) {
+  canManageModuleGrants,
+}: Pick<MerchantDetail, "org" | "subscriptions" | "entitlements" | "moduleGrants"> & {
+  /** Les octrois datés restent le chemin manuel, séparé de Stripe. */
+  canManageModuleGrants: boolean;
+}) {
   const plan = getPlanTier(org.plan);
   const liveGrants = moduleGrants.filter((grant) => !grant.revoked_at);
+  const missingPlanEntitlements = entitlements.filter(
+    (entitlement) =>
+      plan.entitlements.includes(entitlement.entitlement)
+      && !entitlement.active,
+  );
 
   return (
     <Panel className="mt-6 p-5">
@@ -134,6 +143,13 @@ export function MerchantBillingAndRights({
         <h3 id="effective-rights" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
           Droits Vitrine et salons
         </h3>
+        {missingPlanEntitlements.length > 0 && (
+          <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+            L&apos;offre {plan.name} est affichée, mais {missingPlanEntitlements.map(
+              ({ entitlement }) => ENTITLEMENT_LABELS[entitlement],
+            ).join(", ")} {missingPlanEntitlements.length > 1 ? "sont" : "est"} encore inactif{missingPlanEntitlements.length > 1 ? "s" : ""}. La synchronisation Stripe doit être corrigée ; un octroi manuel peut ouvrir le droit nécessaire.
+          </p>
+        )}
         <ul className="mt-3 space-y-2 text-sm">
           {entitlements.map((entitlement) => (
             <li key={entitlement.entitlement} className="flex flex-wrap items-center justify-between gap-2">
@@ -145,6 +161,18 @@ export function MerchantBillingAndRights({
             </li>
           ))}
         </ul>
+        {canManageModuleGrants ? (
+          <a
+            href="#droits-dates"
+            className="mt-4 inline-flex rounded-lg bg-white px-3 py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-200"
+          >
+            Accorder un droit manuellement
+          </a>
+        ) : (
+          <p className="mt-4 text-xs text-zinc-500">
+            L&apos;activation manuelle se fait par un octroi daté et requiert le droit de modification des commerçants.
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="grants" className="mt-6 border-t border-white/10 pt-5">

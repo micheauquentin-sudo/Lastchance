@@ -128,6 +128,7 @@ export default async function MerchantDetailPage({
           subscriptions={subscriptions}
           entitlements={entitlements}
           moduleGrants={moduleGrants}
+          canManageModuleGrants={canEdit}
         />
       )}
 
@@ -316,7 +317,7 @@ export default async function MerchantDetailPage({
         </Panel>
       </div>
 
-      <Panel className="mt-6 p-5">
+      <Panel id="droits-dates" className="mt-6 scroll-mt-6 p-5">
         <h2 className="mb-1 text-sm font-semibold text-white">Droits datés</h2>
         <p className="mb-4 text-xs text-zinc-400">
           Un octroi est le seul droit qui porte une échéance. Il se suffit à
