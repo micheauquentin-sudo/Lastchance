@@ -1,5 +1,10 @@
 import { cn } from "@/lib/utils";
 import {
+  altPhotoVitrine,
+  sourcesPhotoVitrine,
+  srcSetPhotoVitrine,
+} from "@/lib/vitrine-photo";
+import {
   libelleAllergene,
   libelleBadge,
   type LangueVitrine,
@@ -64,6 +69,7 @@ export function FicheVitrine({
   const t = TEXTES_VITRINE[lang];
   const indisponible = !fiche.disponible;
   const monogramme = styleCartes !== "liste";
+  const photo = sourcesPhotoVitrine(fiche.photo_path);
   const magazine = styleCartes === "magazine";
   const titreId = `fiche-titre-${fiche.id}`;
 
@@ -94,7 +100,20 @@ export function FicheVitrine({
       )}
     >
       <div className={cn(magazine ? "space-y-3" : "space-y-2")}>
-        {monogramme ? <Monogramme nom={fiche.nom} grand={magazine} /> : null}
+        {/* LA PHOTO PREND LA PLACE DU MONOGRAMME, elle ne s'y ajoute pas :
+            l'initiale existe précisément pour tenir la mise en page quand il
+            n'y a pas d'image. Les deux ensemble auraient donné deux objets
+            décoratifs empilés au-dessus du nom. */}
+        {photo ? (
+          <PhotoFiche
+            chemin={fiche.photo_path}
+            photo={photo}
+            alt={altPhotoVitrine(fiche.photo_alt)}
+            grand={magazine}
+          />
+        ) : monogramme ? (
+          <Monogramme nom={fiche.nom} grand={magazine} />
+        ) : null}
 
         {/* NOM ── FILET ── PRIX. Le filet est `aria-hidden` : il fait lire la
             ligne à l'œil, il n'a rien à dire à l'oreille. */}
@@ -189,5 +208,47 @@ function Monogramme({ nom, grand }: { nom: string; grand: boolean }) {
     >
       {lettre}
     </div>
+  );
+}
+
+/**
+ * La photo d'une fiche — deux sources, et la petite d'abord pour un téléphone.
+ *
+ * `loading="lazy"` et `decoding="async"` : une carte de soixante plats porte
+ * soixante images, dont deux sont visibles au chargement. Les charger toutes
+ * d'un coup ferait payer au visiteur la carte entière pour lire l'entrée.
+ *
+ * `aspect-[4/3]` avec `object-cover` : le cadre est STABLE avant même que
+ * l'image n'arrive, donc la page ne saute pas sous le pouce au moment où elle
+ * se pose. Le recadrage est celui du navigateur, centré — le serveur, lui, ne
+ * recadre jamais : il réduit, et n'ampute aucun plat d'autorité.
+ */
+function PhotoFiche({
+  chemin,
+  photo,
+  alt,
+  grand,
+}: {
+  chemin: string | null;
+  photo: { grande: string; mobile: string };
+  alt: string;
+  grand: boolean;
+}) {
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element -- Storage public, hors
+       du domaine servi par l'optimiseur : `next/image` exigerait de déclarer le
+       hôte distant pour un gain nul sur un webp déjà dimensionné par le serveur. */
+    <img
+      src={photo.grande}
+      srcSet={srcSetPhotoVitrine(chemin)}
+      sizes="(max-width: 640px) 100vw, 480px"
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      className={cn(
+        "w-full rounded-xl border border-black/10 object-cover",
+        grand ? "aspect-[4/3]" : "aspect-[16/9]",
+      )}
+    />
   );
 }

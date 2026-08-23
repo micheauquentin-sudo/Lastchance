@@ -31,6 +31,7 @@ import {
   unpublishVitrine,
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
+import { PhotoChamp } from "@/components/vitrine/photo-champ";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { resoudreThemeVitrine } from "@/components/vitrine/theme";
@@ -260,6 +261,19 @@ function IdentiteEtThemeForm({
         Le nom et le logo de votre établissement viennent de vos réglages
         généraux — ils ne sont saisis qu&apos;une fois.
       </p>
+
+      {/* HORS DU FORMULAIRE, ET PAS PAR MISE EN PAGE : la couverture a ses
+          propres actions, donc ses propres <form>, et un formulaire imbriqué
+          n'est pas du HTML valide — le navigateur le déplierait en silence. */}
+      <div className="mb-6">
+        <PhotoChamp
+          cible="couverture"
+          chemin={settings.cover_path}
+          alt={settings.cover_alt}
+          peutEditer={peutEditer}
+          titre="Couverture du lieu"
+        />
+      </div>
 
       <form onSubmit={onSubmit} className="space-y-6">
         <div>

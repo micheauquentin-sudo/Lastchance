@@ -7,6 +7,9 @@ vi.mock("@/actions/vitrine", () => ({
   updateVitrineFiche: vi.fn(),
   deleteVitrineFiche: vi.fn(),
   toggleVitrineFicheDisponibilite: vi.fn(),
+  // VIT-7 : `FicheEditeur` monte `PhotoChamp`, qui appelle ces deux actions.
+  setVitrinePhoto: vi.fn(),
+  deleteVitrinePhoto: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
@@ -142,6 +145,7 @@ function fiche(champs: Partial<VitrineFicheView> = {}): VitrineFicheView {
     description: null,
     prix_affiche: "18 €",
     photo_path: null,
+    photo_alt: null,
     badges: [],
     allergenes: [],
     disponible: true,

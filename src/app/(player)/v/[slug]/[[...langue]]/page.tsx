@@ -1,4 +1,9 @@
 import { cache } from "react";
+import {
+  altPhotoVitrine,
+  sourcesPhotoVitrine,
+  srcSetPhotoVitrine,
+} from "@/lib/vitrine-photo";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -207,7 +212,12 @@ export default async function VitrinePage({
             propose={etat.selecteurLangues}
           />
 
-          <EnTeteVitrine nom={nom} logoUrl={etat.identite.logo_url} />
+          <EnTeteVitrine
+            nom={nom}
+            logoUrl={etat.identite.logo_url}
+            couverture={etat.identite.cover_path}
+            couvertureAlt={etat.identite.cover_alt}
+          />
 
           {theme.blocs.map((bloc) => {
             switch (bloc) {
@@ -381,12 +391,36 @@ function SelecteurLangue({
 function EnTeteVitrine({
   nom,
   logoUrl,
+  couverture,
+  couvertureAlt,
 }: {
   nom: string;
   logoUrl: string | null;
+  /** Chemin Storage de la couverture (VIT-7), ou `null`. */
+  couverture: string | null;
+  couvertureAlt: string | null;
 }) {
+  const cover = sourcesPhotoVitrine(couverture);
+
   return (
     <header className="mb-6 text-center">
+      {cover ? (
+        // LA COUVERTURE PASSE AVANT LE LOGO, et sans le remplacer : elle donne
+        // l'ambiance du lieu, il donne son identité. `eager` ici, contrairement
+        // aux photos de fiches : c'est la première image de la page, celle que
+        // le visiteur voit en arrivant, et la retarder ferait clignoter le haut
+        // de l'écran. `aspect-[16/9]` réserve sa place avant qu'elle n'arrive.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={cover.grande}
+          srcSet={srcSetPhotoVitrine(couverture)}
+          sizes="(max-width: 768px) 100vw, 768px"
+          alt={altPhotoVitrine(couvertureAlt)}
+          fetchPriority="high"
+          decoding="async"
+          className="mb-4 aspect-[16/9] w-full rounded-2xl border border-black/10 object-cover"
+        />
+      ) : null}
       {logoUrl ? (
         // Le logo DÉJÀ RÉGLÉ par le commerçant (`organizations.logo_url`) :
         // aucune seconde identité à tenir d'accord avec celle de la roue.

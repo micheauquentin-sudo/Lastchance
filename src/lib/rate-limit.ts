@@ -717,6 +717,15 @@ export const RATE_LIMITS = {
    *  CLÉ NON PUBLIQUE, motif `vitrineSlug` : la saturer ne peut gêner que ses
    *  propres collègues, d'où `failClosed` légitime. */
   vitrineTraductionAuto: { limit: 10, windowSeconds: 3600 },
+  /** ENVOI D'UNE PHOTO de vitrine, par ORGANISATION — `failClosed`,
+   *  60 par heure.
+   *
+   *  Le geste le plus cher de l'écran : deux conversions `sharp` et deux
+   *  écritures Storage par image. Soixante par heure laisse illustrer une
+   *  carte entière d'une traite, et borne la boucle qui remplirait le bucket.
+   *
+   *  CLÉ NON PUBLIQUE, même motif que les deux au-dessus. */
+  vitrinePhoto: { limit: 60, windowSeconds: 3600 },
   /** IMPORT D'UNE CARTE EN LOT dans une vitrine, par ORGANISATION —
    *  `failClosed`, 10 par heure.
    *

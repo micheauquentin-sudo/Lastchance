@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  VITRINE_PHOTO_ALT_MAX,
+  VITRINE_PHOTO_DATA_URL_MAX,
+} from "@/lib/vitrine-photo";
+import {
   absentSiNonRendu,
   caseACochee,
   entierRequis,
@@ -542,6 +546,68 @@ export const updateVitrineFicheSchema = z.object({
 });
 
 export const deleteVitrineFicheSchema = z.object({ id: uuid });
+
+/* ────────────────────────────────────────────────────────────
+   Les photos (VIT-7)
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * L'image arrive en data URL, pas en fichier.
+ *
+ * Motif des affiches (`poster-storage.ts`) : l'écran réduit et ré-encode avant
+ * d'envoyer, ce qui garde le corps de l'action sous sa limite et évite de faire
+ * transiter quatre méga-octets pour en stocker deux cents kilos. Le serveur
+ * ré-encode DE TOUTE FAÇON — rien de ce que le navigateur affirme n'est cru.
+ *
+ * PAS DE REGEX SUR LE CONTENU ICI : une expression rationnelle appliquée à
+ * neuf cent mille caractères de base64 coûterait plus cher que le décodage
+ * lui-même, et `sharp` refuse de toute manière ce qui n'est pas une image. On
+ * ne vérifie que ce qui est bon marché : le préfixe et la longueur.
+ */
+const imageDataUrl = z
+  .string()
+  .min(32, "Image manquante")
+  .max(
+    VITRINE_PHOTO_DATA_URL_MAX,
+    "Image trop lourde — réessayez avec une photo plus légère",
+  )
+  .refine((valeur) => valeur.startsWith("data:image/"), "Image invalide");
+
+const altSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(
+      VITRINE_PHOTO_ALT_MAX,
+      `Description trop longue (${VITRINE_PHOTO_ALT_MAX} caractères max)`,
+    ),
+);
+
+/**
+ * DEUX CIBLES, UNE UNION DISCRIMINÉE — et non un `fiche_id` facultatif.
+ *
+ * Avec un champ optionnel, « couverture avec un `fiche_id` » et « fiche sans
+ * `fiche_id` » auraient été des états représentables, à refuser à la main dans
+ * l'action. L'union les rend inexprimables.
+ */
+export const setVitrinePhotoSchema = z.discriminatedUnion("cible", [
+  z.object({
+    cible: z.literal("fiche"),
+    fiche_id: uuid,
+    image: imageDataUrl,
+    alt: altSchema,
+  }),
+  z.object({
+    cible: z.literal("couverture"),
+    image: imageDataUrl,
+    alt: altSchema,
+  }),
+]);
+
+export const deleteVitrinePhotoSchema = z.discriminatedUnion("cible", [
+  z.object({ cible: z.literal("fiche"), fiche_id: uuid }),
+  z.object({ cible: z.literal("couverture") }),
+]);
 
 /**
  * La bascule rapide du service : `disponible` est un champ CACHÉ portant l'état
