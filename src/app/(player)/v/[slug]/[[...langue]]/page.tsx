@@ -6,7 +6,7 @@ import {
   ANCRE_RESERVER,
 } from "@/lib/vitrine-action";
 import { boussoleUtilisable } from "@/lib/vitrine-boussole";
-import type { ActionVitrine } from "@/lib/vitrine";
+import { VITRINE_ACTIONS, type ActionVitrine } from "@/lib/vitrine";
 import {
   altPhotoVitrine,
   sourcesPhotoVitrine,
@@ -190,10 +190,12 @@ export default async function VitrinePage({
   );
   const boussoleOuverte = boussoleUtilisable(toutesLesFiches);
   // L'INTERSECTION, EN UN SEUL ENDROIT : ce que la fiche demande croisé avec
-  // ce que la base publie. Passée en fonction, elle descend sans obliger chaque
-  // rang du catalogue à porter `portes` entier.
-  const porteOuverte = (action: ActionVitrine) =>
-    actionOuverte(action, etat.portes, boussoleOuverte);
+  // ce que la base publie. Le RÉSULTAT descend, pas le prédicat — le catalogue
+  // est un composant client, et une fonction ne traverse pas cette frontière.
+  // Six valeurs au plus : le tableau coûte moins que le commentaire.
+  const portesOuvertes: ActionVitrine[] = VITRINE_ACTIONS.filter((action) =>
+    actionOuverte(action, etat.portes, boussoleOuverte),
+  );
 
   return (
     <div
@@ -283,7 +285,7 @@ export default async function VitrinePage({
                       cartes={etat.cartes}
                       styleCartes={theme.styleCartes}
                       lang={lang}
-                      porteOuverte={porteOuverte}
+                      portesOuvertes={portesOuvertes}
                     />
                   </div>
                 );

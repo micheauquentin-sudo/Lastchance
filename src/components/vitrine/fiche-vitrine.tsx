@@ -63,13 +63,18 @@ export function FicheVitrine({
   fiche,
   styleCartes,
   lang,
-  porteOuverte,
+  portesOuvertes,
 }: {
   fiche: VitrineFicheView;
   styleCartes: StyleCartesVitrine;
   lang: LangueVitrine;
-  /** VIT-10 : ce module a-t-il vraiment quelque chose d'ouvert ? */
-  porteOuverte: (action: ActionVitrine) => boolean;
+  /**
+   * VIT-10 : les modules qui ont vraiment quelque chose d'ouvert.
+   *
+   * Un tableau et non un prédicat — voir `catalogue-vitrine.tsx` : une
+   * fonction ne traverse pas la frontière serveur → client.
+   */
+  portesOuvertes: readonly ActionVitrine[];
 }) {
   const t = TEXTES_VITRINE[lang];
   const indisponible = !fiche.disponible;
@@ -182,7 +187,7 @@ export function FicheVitrine({
         {!indisponible && fiche.action ? (
           <PorteVitrine
             action={fiche.action}
-            ouverte={porteOuverte(fiche.action)}
+            ouverte={portesOuvertes.includes(fiche.action)}
           />
         ) : null}
 

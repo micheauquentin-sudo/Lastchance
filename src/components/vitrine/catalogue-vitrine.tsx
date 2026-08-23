@@ -54,7 +54,7 @@ export function CatalogueVitrine({
   cartes,
   styleCartes,
   lang,
-  porteOuverte,
+  portesOuvertes,
 }: {
   /** Cartes ACTIVES, déjà ordonnées par le serveur. */
   cartes: VitrineCarteView[];
@@ -66,13 +66,18 @@ export function CatalogueVitrine({
    */
   lang: LangueVitrine;
   /**
-   * VIT-10 : cette porte a-t-elle vraiment quelque chose derrière ?
+   * VIT-10 : les portes qui ont vraiment quelque chose derrière.
    *
-   * La question se tranche AU-DESSUS, avec `portes` et l'état de la Boussole,
-   * et descend en fonction. La faire descendre en DONNÉES aurait obligé chaque
-   * rang du catalogue à porter `portes` entier pour n'en lire qu'un booléen.
+   * UN TABLEAU, ET SURTOUT PAS UN PRÉDICAT. Ce composant est un composant
+   * CLIENT : une fonction ne traverse pas la frontière serveur → client, et
+   * Next répond 500 sur la page publique entière. La première version passait
+   * bel et bien `(action) => boolean`, avec un commentaire expliquant que
+   * c'était plus économique — ça l'était, ce n'était simplement pas possible.
+   * Vingt-quatre tests E2E l'ont dit avant la production.
+   *
+   * Six valeurs au plus, sérialisables : le coût est nul, la frontière tient.
    */
-  porteOuverte: (action: ActionVitrine) => boolean;
+  portesOuvertes: readonly ActionVitrine[];
 }) {
   const t = TEXTES_VITRINE[lang];
   const rechercheId = useId();
@@ -305,7 +310,7 @@ export function CatalogueVitrine({
                 <div className="mb-3">
                   <PorteVitrine
                     action={rubrique.action}
-                    ouverte={porteOuverte(rubrique.action)}
+                    ouverte={portesOuvertes.includes(rubrique.action)}
                   />
                 </div>
               ) : null}
@@ -322,7 +327,7 @@ export function CatalogueVitrine({
                       fiche={fiche}
                       styleCartes={styleCartes}
                       lang={lang}
-                      porteOuverte={porteOuverte}
+                      portesOuvertes={portesOuvertes}
                     />
                   </li>
                 ))}
