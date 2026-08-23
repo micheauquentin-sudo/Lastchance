@@ -40,7 +40,8 @@ import type { ActionResult } from "@/lib/utils";
  */
 
 type FdAction = (fd: FormData) => Promise<ActionResult>;
-const adapt = (fn: FdAction) => (_prev: ActionResult | null, fd: FormData) => fn(fd);
+const adapt = (fn: FdAction) => (_prev: ActionResult | null, fd: FormData) =>
+  fn(fd);
 
 /**
  * Options des BASCULES de cette fiche — statut, offre, modules, accès offert,
@@ -80,15 +81,27 @@ const STATUSES = [
   { value: "inactive", label: "Inactif" },
 ];
 
-export function StatusControl({ organizationId, current }: { organizationId: string; current: string }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantStatus), BASCULE);
+export function StatusControl({
+  organizationId,
+  current,
+}: {
+  organizationId: string;
+  current: string;
+}) {
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantStatus),
+    BASCULE,
+  );
   return (
-    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
+    <form
+      onSubmit={onSubmit}
+      className="flex w-full flex-col gap-2 sm:flex-row sm:items-center"
+    >
       <input type="hidden" name="organizationId" value={organizationId} />
       <select
         name="status"
         defaultValue={current}
-        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        className="w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 sm:flex-1"
       >
         {STATUSES.map((s) => (
           <option key={s.value} value={s.value} className="bg-zinc-900">
@@ -98,7 +111,7 @@ export function StatusControl({ organizationId, current }: { organizationId: str
       </select>
       <button
         disabled={pending}
-        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+        className="w-full rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 sm:w-auto"
       >
         Appliquer
       </button>
@@ -116,14 +129,20 @@ export function PlanControl({
   current: string;
   plans: { id: string; name: string }[];
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPlan), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantPlan),
+    BASCULE,
+  );
   return (
-    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
+    <form
+      onSubmit={onSubmit}
+      className="flex w-full flex-col gap-2 sm:flex-row sm:items-center"
+    >
       <input type="hidden" name="organizationId" value={organizationId} />
       <select
         name="plan"
         defaultValue={current}
-        className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+        className="w-full min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 sm:flex-1"
       >
         {plans.map((p) => (
           <option key={p.id} value={p.id} className="bg-zinc-900">
@@ -133,7 +152,7 @@ export function PlanControl({
       </select>
       <button
         disabled={pending}
-        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+        className="w-full rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 sm:w-auto"
       >
         Appliquer
       </button>
@@ -149,12 +168,19 @@ export function PronosticsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantPronosticsAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantPronosticsAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -175,12 +201,19 @@ export function HuntsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantHuntsAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantHuntsAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -201,12 +234,19 @@ export function LoyaltyAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantLoyaltyAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantLoyaltyAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -227,12 +267,19 @@ export function JackpotAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantJackpotAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantJackpotAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -253,12 +300,19 @@ export function CalendarAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantCalendarAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantCalendarAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -279,12 +333,19 @@ export function EventsAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantEventsAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantEventsAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -305,12 +366,19 @@ export function ReferralAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantReferralAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantReferralAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -331,12 +399,19 @@ export function QuizAddonControl({
   organizationId: string;
   enabled: boolean;
 }) {
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantQuizAddon), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantQuizAddon),
+    BASCULE,
+  );
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(!enabled)} />
-      <span className={enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"}>
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
         {enabled ? "Activé" : "Désactivé"}
       </span>
       <button
@@ -374,7 +449,10 @@ export function CompAccessControl({
    * contrôlés à `defaultValue`. Les vider avant que `router.refresh()` n'ait
    * remonté les props les remettrait sur des valeurs déjà périmées.
    */
-  const { state, pending, onSubmit } = useActionForm(adapt(setMerchantCompAccess), BASCULE);
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantCompAccess),
+    BASCULE,
+  );
   const [on, setOn] = useState(enabled);
   const [includePronostics, setIncludePronostics] = useState(false);
   const [includeHunts, setIncludeHunts] = useState(false);
@@ -385,10 +463,22 @@ export function CompAccessControl({
     <form onSubmit={onSubmit} className="space-y-3">
       <input type="hidden" name="organizationId" value={organizationId} />
       <input type="hidden" name="enabled" value={String(on)} />
-      <input type="hidden" name="includePronostics" value={String(includePronostics)} />
+      <input
+        type="hidden"
+        name="includePronostics"
+        value={String(includePronostics)}
+      />
       <input type="hidden" name="includeHunts" value={String(includeHunts)} />
-      <input type="hidden" name="includeLoyalty" value={String(includeLoyalty)} />
-      <input type="hidden" name="includeJackpot" value={String(includeJackpot)} />
+      <input
+        type="hidden"
+        name="includeLoyalty"
+        value={String(includeLoyalty)}
+      />
+      <input
+        type="hidden"
+        name="includeJackpot"
+        value={String(includeJackpot)}
+      />
 
       <label className="flex items-center gap-2 text-sm text-zinc-200">
         <input
@@ -505,10 +595,13 @@ export function DeleteMerchantControl({
 
   return (
     <div className="rounded-xl border border-red-500/30 bg-red-500/[0.04] p-5">
-      <h2 className="mb-1 text-sm font-semibold text-red-300">Zone de danger</h2>
+      <h2 className="mb-1 text-sm font-semibold text-red-300">
+        Zone de danger
+      </h2>
       <p className="mb-4 text-sm text-zinc-400">
-        Supprime définitivement <span className="font-semibold text-zinc-200">{name}</span> et
-        toutes ses données : campagnes, roues, participations, QR codes, newsletter,
+        Supprime définitivement{" "}
+        <span className="font-semibold text-zinc-200">{name}</span> et toutes
+        ses données : campagnes, roues, participations, QR codes, newsletter,
         championnats de pronostics, adhésions de l&apos;équipe, comptes devenus
         orphelins (hors comptes administrateurs) et abonnement Stripe.{" "}
         <span className="font-semibold text-red-300">Irréversible.</span>
@@ -622,10 +715,8 @@ export function SmsSenderControls({
           <span className="font-mono">{suspension.senderId}</span>. Aucune
           déclaration n&apos;aboutira pour cette organisation, quel que soit le
           nom — la base refuse. Pour la lever :{" "}
-          <span className="font-mono text-xs">
-            Remettre en attente
-          </span>{" "}
-          sur la ligne sanctionnée, avec un motif. Un retrait ne la lève pas.
+          <span className="font-mono text-xs">Remettre en attente</span> sur la
+          ligne sanctionnée, avec un motif. Un retrait ne la lève pas.
         </li>
       )}
       {senders.map((sender) => (
@@ -777,7 +868,11 @@ function SmsSenderRow({
           className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-violet-500/30"
         >
           {SMS_SENDER_STATUSES.map((option) => (
-            <option key={option.value} value={option.value} className="bg-zinc-900">
+            <option
+              key={option.value}
+              value={option.value}
+              className="bg-zinc-900"
+            >
               {option.label}
             </option>
           ))}

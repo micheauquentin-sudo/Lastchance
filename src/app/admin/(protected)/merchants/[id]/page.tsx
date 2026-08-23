@@ -30,7 +30,10 @@ import {
   StatusControl,
 } from "@/components/admin/merchant-controls";
 
-export const metadata: Metadata = { title: "Fiche commerçant · Back-office", robots: { index: false } };
+export const metadata: Metadata = {
+  title: "Fiche commerçant · Back-office",
+  robots: { index: false },
+};
 
 export default async function MerchantDetailPage({
   params,
@@ -42,9 +45,21 @@ export default async function MerchantDetailPage({
   if (!z.string().uuid().safeParse(id).success) notFound();
 
   const canViewBilling = can(admin.role, "stripe.view");
-  const detail = await getMerchantDetail(id, { includeBilling: canViewBilling });
+  const detail = await getMerchantDetail(id, {
+    includeBilling: canViewBilling,
+  });
   if (!detail) notFound();
-  const { org, members, counts, notes, smsSenders, smsBalanceUnits, moduleGrants, subscriptions, entitlements } = detail;
+  const {
+    org,
+    members,
+    counts,
+    notes,
+    smsSenders,
+    smsBalanceUnits,
+    moduleGrants,
+    subscriptions,
+    entitlements,
+  } = detail;
 
   const canEdit = can(admin.role, "merchants.edit");
   const canCompAccess = can(admin.role, "merchants.comp_access");
@@ -69,7 +84,10 @@ export default async function MerchantDetailPage({
 
   return (
     <div>
-      <Link href="/admin/merchants" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-white">
+      <Link
+        href="/admin/merchants"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-400 hover:text-white"
+      >
         ← Commerçants
       </Link>
 
@@ -94,8 +112,12 @@ export default async function MerchantDetailPage({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map(([label, value]) => (
           <Panel key={label} className="p-4">
-            <p className="text-xs uppercase tracking-wide text-zinc-500">{label}</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-white">{value.toLocaleString("fr-FR")}</p>
+            <p className="text-xs uppercase tracking-wide text-zinc-500">
+              {label}
+            </p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-white">
+              {value.toLocaleString("fr-FR")}
+            </p>
           </Panel>
         ))}
       </div>
@@ -109,13 +131,19 @@ export default async function MerchantDetailPage({
         />
       )}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Panel className="p-5">
-          <h2 className="mb-4 text-sm font-semibold text-white">Informations</h2>
+          <h2 className="mb-4 text-sm font-semibold text-white">
+            Informations
+          </h2>
           <dl className="space-y-2.5 text-sm">
             <Row label="Inscription" value={formatDate(org.created_at)} />
             <Row label="Fin d'essai" value={formatDate(org.trial_ends_at)} />
-            <Row label="Client Stripe" value={org.stripe_customer_id ?? "—"} mono />
+            <Row
+              label="Client Stripe"
+              value={org.stripe_customer_id ?? "—"}
+              mono
+            />
             <Row
               label="Impayé depuis"
               value={org.past_due_since ? formatDate(org.past_due_since) : "—"}
@@ -130,91 +158,134 @@ export default async function MerchantDetailPage({
             <div className="space-y-5">
               {canSuspend && (
                 <div>
-                  <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Statut</p>
-                  <StatusControl organizationId={org.id} current={org.subscription_status} />
+                  <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                    Statut
+                  </p>
+                  <StatusControl
+                    organizationId={org.id}
+                    current={org.subscription_status}
+                  />
                 </div>
               )}
               {canEdit && (
                 <>
                   <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">Plan</p>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Plan
+                    </p>
                     <PlanControl
                       organizationId={org.id}
                       current={org.plan}
                       plans={PLANS.map((p) => ({ id: p.id, name: p.name }))}
                     />
+                    <div
+                      className="mt-3 flex flex-wrap gap-1.5"
+                      aria-label="Offres disponibles"
+                    >
+                      {PLANS.map((plan) => (
+                        <span
+                          key={plan.id}
+                          className="rounded-md bg-white/5 px-2 py-1 text-xs text-zinc-300 ring-1 ring-inset ring-white/10"
+                        >
+                          {plan.name}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Pronostics
+                      Options historiques gérables ici
                     </p>
-                    <PronosticsAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_pronostics}
-                    />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Pronostics
+                        </p>
+                        <PronosticsAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_pronostics}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Chasse au trésor
+                        </p>
+                        <HuntsAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_hunts}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Passeport de fidélité
+                        </p>
+                        <LoyaltyAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_loyalty}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Jackpot collectif
+                        </p>
+                        <JackpotAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_jackpot}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Mode événement en direct
+                        </p>
+                        <EventsAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_events}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Calendrier
+                        </p>
+                        <CalendarAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_calendar}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Parrainage ludique
+                        </p>
+                        <ReferralAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_referral}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Addon Quiz
+                        </p>
+                        <QuizAddonControl
+                          organizationId={org.id}
+                          enabled={org.addon_quiz}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Chasse au trésor
+                  <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.04] p-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-violet-200">
+                      Options gérées par Stripe
                     </p>
-                    <HuntsAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_hunts}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Passeport de fidélité
+                    <p className="mt-1 text-sm text-zinc-300">
+                      Vitrine et Réserver se modifient dans les lignes
+                      d&apos;abonnement Stripe. Duo Miroir et Portrait de la
+                      Bande sont inclus par les offres : aucune bascule locale
+                      ne peut les modifier.
                     </p>
-                    <LoyaltyAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_loyalty}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Jackpot collectif
+                    <p className="mt-2 text-xs text-zinc-500">
+                      {canViewBilling
+                        ? "Le détail des lignes et des droits effectifs est affiché dans Abonnement et droits ci-dessus."
+                        : "Le détail des lignes Stripe est réservé aux rôles disposant de l&apos;accès facturation."}
                     </p>
-                    <JackpotAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_jackpot}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Mode événement en direct
-                    </p>
-                    <EventsAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_events}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Calendrier
-                    </p>
-                    <CalendarAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_calendar}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Parrainage ludique
-                    </p>
-                    <ReferralAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_referral}
-                    />
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                      Addon Quiz
-                    </p>
-                    <QuizAddonControl
-                      organizationId={org.id}
-                      enabled={org.addon_quiz}
-                    />
                   </div>
                 </>
               )}
@@ -238,7 +309,8 @@ export default async function MerchantDetailPage({
             </div>
           ) : (
             <p className="text-sm text-zinc-500">
-              Lecture seule — votre rôle ne permet pas de modifier l&apos;abonnement.
+              Lecture seule — votre rôle ne permet pas de modifier
+              l&apos;abonnement.
             </p>
           )}
         </Panel>
@@ -297,18 +369,26 @@ export default async function MerchantDetailPage({
       </Panel>
 
       <Panel className="mt-6 p-5">
-        <h2 className="mb-4 text-sm font-semibold text-white">Notes internes</h2>
+        <h2 className="mb-4 text-sm font-semibold text-white">
+          Notes internes
+        </h2>
         {canNote && (
           <div className="mb-5">
             <NoteForm organizationId={org.id} />
           </div>
         )}
         {notes.length === 0 ? (
-          <EmptyState title="Aucune note" hint="Ajoutez un premier commentaire de suivi." />
+          <EmptyState
+            title="Aucune note"
+            hint="Ajoutez un premier commentaire de suivi."
+          />
         ) : (
           <ul className="space-y-3">
             {notes.map((n) => (
-              <li key={n.id} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+              <li
+                key={n.id}
+                className="rounded-lg border border-white/10 bg-white/[0.02] p-3"
+              >
                 <p className="text-sm text-zinc-200">{n.body}</p>
                 <p className="mt-1.5 text-xs text-zinc-500">
                   {n.author_email} · {formatDate(n.created_at)}
@@ -332,11 +412,23 @@ export default async function MerchantDetailPage({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-4">
       <dt className="text-zinc-500">{label}</dt>
-      <dd className={`text-right text-zinc-200 ${mono ? "font-mono text-xs" : ""}`}>{value}</dd>
+      <dd
+        className={`text-right text-zinc-200 ${mono ? "font-mono text-xs" : ""}`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
