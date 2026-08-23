@@ -27,7 +27,19 @@ const items = () => ({
       id: "si_e2e_engagement",
       object: "subscription_item",
       quantity: 1,
-      price: { id: PRICE_ID, object: "price", recurring: { interval: "month" } },
+      // `currency` N'EST PAS DÉCORATIF. La projection de facturation
+      // (20261030120000) refuse un item dont la devise n'est pas une chaîne :
+      // `apply_stripe_subscription_projection_v1` lève « invalid stripe
+      // projection items », le webhook rend 500, et deux tests E2E tombent sur
+      // un abonnement qui ne s'active jamais. Un prix Stripe RÉEL porte
+      // toujours sa devise — c'est la doublure qui était incomplète, pas la
+      // validation qui était trop stricte.
+      price: {
+        id: PRICE_ID,
+        object: "price",
+        currency: "eur",
+        recurring: { interval: "month" },
+      },
     },
   ],
 });
