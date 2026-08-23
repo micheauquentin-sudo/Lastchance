@@ -22,6 +22,7 @@ import {
   updateVitrineRubrique,
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
+import { ACTIONS_FR, VITRINE_ACTIONS } from "@/lib/vitrine";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { FicheEditeur } from "@/components/vitrine/fiche-editeur";
@@ -423,6 +424,24 @@ function RubriqueEditeur({
                     required
                     maxLength={VITRINE_RUBRIQUE_NOM_MAX}
                   />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Label htmlFor={`rubrique-action-${rubrique.id}`}>
+                    Action sous la rubrique
+                  </Label>
+                  <select
+                    id={`rubrique-action-${rubrique.id}`}
+                    name="action"
+                    defaultValue={rubrique.action ?? ""}
+                    className="w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+                  >
+                    <option value="">Aucune</option>
+                    {VITRINE_ACTIONS.map((action) => (
+                      <option key={action} value={action}>
+                        {ACTIONS_FR[action]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <Button type="submit" variant="secondary" disabled={modifier.pending}>
                   {modifier.pending ? "Enregistrement…" : "Enregistrer"}

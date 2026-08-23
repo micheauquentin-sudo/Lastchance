@@ -7349,6 +7349,7 @@ export type Database = {
       }
       vitrine_categories: {
         Row: {
+          action: string | null
           created_at: string
           id: string
           menu_id: string
@@ -7358,6 +7359,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          action?: string | null
           created_at?: string
           id?: string
           menu_id: string
@@ -7367,6 +7369,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          action?: string | null
           created_at?: string
           id?: string
           menu_id?: string
@@ -7432,12 +7435,14 @@ export type Database = {
       }
       vitrine_items: {
         Row: {
+          action: string | null
           allergenes: string[]
           badges: string[]
           categorie_id: string
           created_at: string
           description: string | null
           disponible: boolean
+          facettes: string[]
           id: string
           nom: string
           ordre: number
@@ -7448,12 +7453,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          action?: string | null
           allergenes?: string[]
           badges?: string[]
           categorie_id: string
           created_at?: string
           description?: string | null
           disponible?: boolean
+          facettes?: string[]
           id?: string
           nom: string
           ordre?: number
@@ -7464,12 +7471,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          action?: string | null
           allergenes?: string[]
           badges?: string[]
           categorie_id?: string
           created_at?: string
           description?: string | null
           disponible?: boolean
+          facettes?: string[]
           id?: string
           nom?: string
           ordre?: number

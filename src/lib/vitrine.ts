@@ -398,6 +398,102 @@ export const ALLERGENES_FR: Record<AllergeneVitrine, string> = {
   mollusques: "Mollusques",
 };
 
+/* ────────────────────────────────────────────────────────────
+   LA BOUSSOLE (VIT-10) — deux vocabulaires fermés de plus
+   ──────────────────────────────────────────────────────────── */
+
+/**
+ * Les facettes d'une fiche, PRÉFIXÉES PAR DIMENSION.
+ *
+ * Le préfixe n'est pas décoratif : c'est lui qui sépare les quatre questions
+ * de la Boussole sans que la base ait à connaître la notion de « question ».
+ * Une seule colonne, un seul `check`, un seul `grant` — et un seul endroit où
+ * ajouter une dimension le jour où il en faudra une cinquième.
+ *
+ * PARITÉ AVEC LE `check` de `20261024120000`, gardée par
+ * `src/lib/vitrine-parity.test.ts` : les deux listes se comptent.
+ */
+export const VITRINE_FACETTES = [
+  "occasion_repas",
+  "occasion_apero",
+  "occasion_cafe",
+  "occasion_fete",
+  "temps_rapide",
+  "temps_pose",
+  "envie_sale",
+  "envie_sucre",
+  "envie_boisson",
+  "table_seul",
+  "table_groupe",
+] as const;
+
+export type FacetteVitrine = (typeof VITRINE_FACETTES)[number];
+
+export const FACETTES_FR: Record<FacetteVitrine, string> = {
+  occasion_repas: "Un repas",
+  occasion_apero: "Un apéro",
+  occasion_cafe: "Un café, une pause",
+  occasion_fete: "Une occasion à fêter",
+  temps_rapide: "Vite fait",
+  temps_pose: "On prend le temps",
+  envie_sale: "Salé",
+  envie_sucre: "Sucré",
+  envie_boisson: "À boire",
+  table_seul: "Seul",
+  table_groupe: "À plusieurs",
+};
+
+/**
+ * Les six portes qu'une fiche ou une rubrique peut ouvrir. AU PLUS UNE.
+ *
+ * Ce sont des MODULES, jamais des objets : `reserver` et non « l'activité
+ * n° 42 ». La porte se referme d'elle-même quand `portes` ne publie plus rien
+ * pour ce module — aucune suppression à propager, aucune jointure à tenir.
+ */
+export const VITRINE_ACTIONS = [
+  "boussole",
+  "reserver",
+  "offre",
+  "quiz",
+  "duo",
+  "bande",
+] as const;
+
+export type ActionVitrine = (typeof VITRINE_ACTIONS)[number];
+
+export const ACTIONS_FR: Record<ActionVitrine, string> = {
+  boussole: "Aider à choisir (Boussole)",
+  reserver: "Réserver un créneau",
+  offre: "Voir les offres à retirer",
+  quiz: "Proposer un quiz",
+  duo: "Proposer le Duo Miroir",
+  bande: "Proposer le Portrait de la Bande",
+};
+
+/** Le libellé vu par le CLIENT sur la fiche — un geste, pas un nom de module. */
+/**
+ * Une action relue, ou `null`.
+ *
+ * REPLI FERMÉ, motif du vocabulaire : une valeur inconnue — écrite avant que
+ * la liste n'existe, ou par un chemin qui l'ignorerait — vaut « aucune porte »
+ * plutôt qu'un bouton que l'écran ne saurait pas peindre.
+ */
+export function actionVitrine(brut: unknown): ActionVitrine | null {
+  return typeof brut === "string" &&
+    (VITRINE_ACTIONS as readonly string[]).includes(brut)
+    ? (brut as ActionVitrine)
+    : null;
+}
+export const ACTIONS_PUBLIC_FR: Record<ActionVitrine, string> = {
+  boussole: "Aidez-moi à choisir",
+  reserver: "Réserver",
+  offre: "Voir les offres",
+  quiz: "Jouer au quiz",
+  duo: "Jouer au Duo Miroir",
+  bande: "Jouer au Portrait de la Bande",
+};
+
+
 /**
  * LES QUATORZE ALLERGÈNES EN ANGLAIS — les termes de l'annexe II elle-même.
  *
@@ -725,6 +821,10 @@ export interface VitrineFicheView {
   photo_path: string | null;
   /** Description saisie à la main (VIT-7). `null` = image décorative. */
   photo_alt: string | null;
+  /** VIT-10 : le vocabulaire de la Boussole. Vide = jamais proposée. */
+  facettes: FacetteVitrine[];
+  /** VIT-10 : au plus une porte, ou aucune. */
+  action: ActionVitrine | null;
   badges: BadgeVitrine[];
   allergenes: AllergeneVitrine[];
   /**
@@ -739,6 +839,8 @@ export interface VitrineRubriqueView {
   id: string;
   nom: string;
   ordre: number;
+  /** VIT-10 : au plus une porte au rang de la rubrique, ou aucune. */
+  action: ActionVitrine | null;
   fiches: VitrineFicheView[];
 }
 
@@ -1071,6 +1173,8 @@ function mapFiche(raw: unknown): VitrineFicheView | null {
     prix_affiche: asString(root.prix_affiche),
     photo_path: asString(root.photo_path),
     photo_alt: asString(root.photo_alt),
+    facettes: motsDuVocabulaireVitrine(root.facettes, VITRINE_FACETTES),
+    action: actionVitrine(root.action),
     badges: motsDuVocabulaireVitrine(root.badges, VITRINE_BADGES),
     allergenes: motsDuVocabulaireVitrine(root.allergenes, VITRINE_ALLERGENES),
     // Repli FERMÉ : un drapeau illisible affiche « indisponible » plutôt que de
@@ -1090,6 +1194,7 @@ function mapRubrique(raw: unknown): VitrineRubriqueView | null {
     id,
     nom,
     ordre: asInt(root.ordre) ?? 0,
+    action: actionVitrine(root.action),
     fiches: asArray(root.fiches)
       .map(mapFiche)
       .filter((f): f is VitrineFicheView => f !== null),

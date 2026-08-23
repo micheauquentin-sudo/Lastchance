@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { PorteVitrine } from "@/components/vitrine/porte-vitrine";
+import type { ActionVitrine } from "@/lib/vitrine";
 import {
   altPhotoVitrine,
   sourcesPhotoVitrine,
@@ -61,10 +63,13 @@ export function FicheVitrine({
   fiche,
   styleCartes,
   lang,
+  porteOuverte,
 }: {
   fiche: VitrineFicheView;
   styleCartes: StyleCartesVitrine;
   lang: LangueVitrine;
+  /** VIT-10 : ce module a-t-il vraiment quelque chose d'ouvert ? */
+  porteOuverte: (action: ActionVitrine) => boolean;
 }) {
   const t = TEXTES_VITRINE[lang];
   const indisponible = !fiche.disponible;
@@ -168,6 +173,17 @@ export function FicheVitrine({
               </li>
             ))}
           </ul>
+        ) : null}
+
+        {/* LA PORTE, SOUS LA FICHE ET APRÈS LES BADGES : elle vient après ce
+            qui décrit le plat, jamais avant. Une fiche indisponible n'en porte
+            pas — proposer de réserver ce que la cuisine n'a plus serait la
+            seule chose pire que de ne rien proposer. */}
+        {!indisponible && fiche.action ? (
+          <PorteVitrine
+            action={fiche.action}
+            ouverte={porteOuverte(fiche.action)}
+          />
         ) : null}
 
         {fiche.allergenes.length > 0 ? (

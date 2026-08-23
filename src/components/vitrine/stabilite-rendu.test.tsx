@@ -146,6 +146,8 @@ function fiche(champs: Partial<VitrineFicheView> = {}): VitrineFicheView {
     prix_affiche: "18 €",
     photo_path: null,
     photo_alt: null,
+    facettes: [],
+    action: null,
     badges: [],
     allergenes: [],
     disponible: true,

@@ -10,10 +10,12 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import type {
+  ActionVitrine,
   LangueVitrine,
   StyleCartesVitrine,
   VitrineCarteView,
 } from "@/lib/vitrine";
+import { PorteVitrine } from "@/components/vitrine/porte-vitrine";
 import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 import { TEXTES_VITRINE } from "@/components/vitrine/langue";
 
@@ -52,6 +54,7 @@ export function CatalogueVitrine({
   cartes,
   styleCartes,
   lang,
+  porteOuverte,
 }: {
   /** Cartes ACTIVES, déjà ordonnées par le serveur. */
   cartes: VitrineCarteView[];
@@ -62,6 +65,14 @@ export function CatalogueVitrine({
    * l'écran (libellé de recherche, compte de résultats, états vides).
    */
   lang: LangueVitrine;
+  /**
+   * VIT-10 : cette porte a-t-elle vraiment quelque chose derrière ?
+   *
+   * La question se tranche AU-DESSUS, avec `portes` et l'état de la Boussole,
+   * et descend en fonction. La faire descendre en DONNÉES aurait obligé chaque
+   * rang du catalogue à porter `portes` entier pour n'en lire qu'un booléen.
+   */
+  porteOuverte: (action: ActionVitrine) => boolean;
 }) {
   const t = TEXTES_VITRINE[lang];
   const rechercheId = useId();
@@ -285,6 +296,19 @@ export function CatalogueVitrine({
               >
                 {rubrique.nom}
               </h2>
+
+              {/* LA PORTE DE LA RUBRIQUE (VIT-10) : sous le titre, au-dessus
+                  des fiches. Une rubrique entière peut ouvrir une porte que
+                  ses plats ne portent pas individuellement — « nos formules »
+                  vers Réserver, par exemple. */}
+              {rubrique.action ? (
+                <div className="mb-3">
+                  <PorteVitrine
+                    action={rubrique.action}
+                    ouverte={porteOuverte(rubrique.action)}
+                  />
+                </div>
+              ) : null}
               <ul
                 className={cn(
                   styleCartes === "grille"
@@ -298,6 +322,7 @@ export function CatalogueVitrine({
                       fiche={fiche}
                       styleCartes={styleCartes}
                       lang={lang}
+                      porteOuverte={porteOuverte}
                     />
                   </li>
                 ))}
