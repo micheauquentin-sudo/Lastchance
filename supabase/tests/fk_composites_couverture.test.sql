@@ -14,12 +14,12 @@
 -- Il ne pose AUCUNE contrainte et n'en corrige aucune : c'est un CAPTEUR. Il
 -- énumère, dans le catalogue vivant, les FK d'une colonne unique reliant deux
 -- tables porteuses d'`organization_id`, et il exige que cet ensemble soit
--- exactement la liste d'exceptions écrite ci-dessous. Une VINGT-DEUXIÈME fera
+-- exactement la liste d'exceptions écrite ci-dessous. Une VINGT-TROISIÈME fera
 -- rougir — c'est tout ce qu'on lui demande : qu'aucune nouvelle ne s'ajoute en
 -- silence, dans une migration de trois cents lignes que personne ne relit à la
 -- loupe.
 --
--- ── POURQUOI VINGT ET UNE, QUAND L'AUDIT EN ANNONÇAIT NEUF ──
+-- ── POURQUOI VINGT-DEUX, QUAND L'AUDIT EN ANNONÇAIT NEUF ──
 --
 -- Les neuf lignes de l'audit ont DÉRIVÉ : elles ont été relevées à une date, et
 -- six modules ont livré depuis. Le catalogue a donc été réinterrogé, et la liste
@@ -28,7 +28,7 @@
 -- vieillit sans prévenir, une liste qu'une requête compare rougit le jour où
 -- elle se périme.
 --
--- ── LE STATUT DE CES VINGT ET UNE EXCEPTIONS ──
+-- ── LE STATUT DE CES VINGT-DEUX EXCEPTIONS ──
 --
 -- Elles sont ASSUMÉES, pas innocentées. Deux natures s'y mêlent, et il serait
 -- malhonnête de les présenter comme une seule :
@@ -119,7 +119,7 @@ assumees (paire) as (values
   ('contest_recovery_tokens.contest_id -> contests'),
   ('contest_recovery_tokens.player_id -> contest_players'),
   ('contest_leagues.created_by -> contest_players'),
-  -- ── Le reste (6) ──
+  -- ── Le reste (7) ──
   -- `email_log.participation_id` et `loyalty_order_codes.consumed_member_id`
   -- sont écrits par des chemins service role ; les deux `sms_*` et les deux
   -- `experience_*`/`economic_*` relient des lignes créées par le même appel.
@@ -129,6 +129,14 @@ assumees (paire) as (values
   ('loyalty_order_codes.consumed_member_id -> loyalty_members'),
   ('economic_policy_events.policy_id -> experience_economic_policies'),
   ('experience_events.reward_issuance_id -> reward_issuances'),
+  -- Le Ticket d'Or (TKT-1) pose la même, pour la même raison : `tirer_ticket_or`
+  -- crée la récompense puis écrit son identifiant sur le ticket, dans la même
+  -- transaction et sur la même organisation. La fermer demanderait un index
+  -- unique `(id, organization_id)` sur `reward_issuances` — écrite à chaque gain
+  -- des onze familles, et hors du périmètre du Ticket d'Or. Son voisin `lot_id`,
+  -- lui, EST fermé par une composite (20261029120000) : les deux tables étaient
+  -- neuves, elle ne coûtait rien. Fermer ce qui est gratuit, nommer le reste.
+  ('tickets_or.reward_issuance_id -> reward_issuances'),
   ('sms_credit_entries.reverses_entry_id -> sms_credit_entries'),
   ('sms_log.credit_entry_id -> sms_credit_entries')
 )
