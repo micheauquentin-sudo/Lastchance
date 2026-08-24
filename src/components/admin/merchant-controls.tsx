@@ -13,6 +13,7 @@ import {
   setMerchantHuntsAddon,
   setMerchantJackpotAddon,
   setMerchantLoyaltyAddon,
+  setMerchantModuleAddon,
   setMerchantPronosticsAddon,
   setMerchantQuizAddon,
   setMerchantReferralAddon,
@@ -155,6 +156,50 @@ export function PlanControl({
         className="w-full rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 sm:w-auto"
       >
         Appliquer
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+/**
+ * LES QUATRE DROITS DE LIEU — Vitrine, Réserver, Duo Miroir, Portrait de la
+ * Bande. Un seul composant, parce qu'un seul geste : le module voyage dans
+ * le formulaire, l'action le valide contre sa liste fermée.
+ *
+ * Les huit add-ons historiques gardent chacun le leur — les toucher pour les
+ * unifier aurait mêlé un chantier de forme à un chantier de fond.
+ */
+export function ModuleAddonControl({
+  organizationId,
+  module,
+  enabled,
+}: {
+  organizationId: string;
+  module: "vitrine" | "reserver" | "duo" | "bande";
+  enabled: boolean;
+}) {
+  const { state, pending, onSubmit } = useActionForm(
+    adapt(setMerchantModuleAddon),
+    BASCULE,
+  );
+  return (
+    <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="module" value={module} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <span
+        className={
+          enabled ? "text-sm text-emerald-400" : "text-sm text-zinc-500"
+        }
+      >
+        {enabled ? "Activé" : "Désactivé"}
+      </span>
+      <button
+        disabled={pending}
+        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60"
+      >
+        {pending ? "…" : enabled ? "Désactiver" : "Activer"}
       </button>
       <Feedback state={state} />
     </form>

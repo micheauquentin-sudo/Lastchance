@@ -641,6 +641,17 @@ const ACTION_CASES: ActionCase[] = [
   addonCase("setMerchantReferralAddon", "referral"),
   addonCase("setMerchantQuizAddon", "quiz"),
   {
+    // Les quatre droits de lieu passent par UNE action, dont le nom d'audit
+    // dépend du module reçu. Le catalogue en décrit donc un exemplaire ; la
+    // liste fermée elle-même est éprouvée plus bas.
+    name: "setMerchantModuleAddon",
+    permission: "merchants.edit",
+    sudo: true,
+    deniedAction: "merchant.addon_vitrine.change.denied",
+    form: () =>
+      form({ organizationId: ORG_ID, module: "vitrine", enabled: "true" }),
+  },
+  {
     name: "setMerchantCompAccess",
     permission: "merchants.comp_access",
     sudo: true,
@@ -2548,5 +2559,77 @@ describe("revokeMerchantModuleGrant — un geste ferme le groupe entier", () => 
 
     expect(res).toEqual({ ok: false, error: "Cet octroi est déjà révoqué." });
     expect(callsTo("organization_module_grants", "update")).toHaveLength(0);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * L'OFFRE POSE SES DROITS, ET LES QUATRE SE BASCULENT
+ * ════════════════════════════════════════════════════════════ */
+
+describe("appliquer une offre", () => {
+  it("pose les droits inclus, et retire ceux que l'offre ne contient pas", async () => {
+    // ROUGE SI : `setMerchantPlan` recommence à n'écrire que `plan`. C'est le
+    // défaut constaté en production le 2026-08-24 — La Totale affichée, aucun
+    // droit accordé, et un tableau de bord qui refusait Vitrine, Réserver,
+    // Duo Miroir et Portrait de la Bande à un commerçant qui payait tout.
+    await run("setMerchantPlan", form({ organizationId: ORG_ID, plan: "full" }));
+
+    const totale = callsTo("organizations", "update").at(-1);
+    expect(totale?.payload).toMatchObject({
+      plan: "full",
+      addon_vitrine: true,
+      addon_reserver: true,
+      addon_duo: true,
+      addon_bande: true,
+      addon_quiz: true,
+      addon_pronostics: true,
+    });
+  });
+
+  it("retire ce que l'offre visée ne contient pas", async () => {
+    // ROUGE SI : l'application ne fait qu'ajouter. Une rétrogradation
+    // laisserait alors des droits payés par l'offre précédente — le même
+    // geste que le webhook Stripe, qui écrit `false` sur ce qui sort.
+    //
+    // Coup d'envoi ne contient QUE la roue, le Duo Miroir et le Portrait de
+    // la Bande : ce sont des jeux du socle, pas des options.
+    await run("setMerchantPlan", form({ organizationId: ORG_ID, plan: "core" }));
+
+    const socle = callsTo("organizations", "update").at(-1);
+    expect(socle?.payload).toMatchObject({
+      plan: "core",
+      addon_duo: true,
+      addon_bande: true,
+      addon_vitrine: false,
+      addon_reserver: false,
+      addon_quiz: false,
+    });
+  });
+});
+
+describe("bascule d'un droit de lieu", () => {
+  it("écrit la colonne du module demandé, et elle seule", async () => {
+    const res = await run(
+      "setMerchantModuleAddon",
+      form({ organizationId: ORG_ID, module: "reserver", enabled: "true" }),
+    );
+
+    expect(res?.ok).toBe(true);
+    const maj = callsTo("organizations", "update").at(-1);
+    expect(maj?.payload).toEqual({ addon_reserver: true });
+  });
+
+  it("refuse un module hors de la liste fermée, AVANT toute écriture", async () => {
+    // ROUGE SI : le nom du module arrive du formulaire jusqu'à la requête sans
+    // contrôle. Une colonne inventée ferait échouer la mise à jour — ou pire,
+    // une colonne existante mais hors périmètre serait écrite depuis un
+    // formulaire forgé.
+    const res = await run(
+      "setMerchantModuleAddon",
+      form({ organizationId: ORG_ID, module: "comp_access", enabled: "true" }),
+    );
+
+    expect(res).toEqual({ ok: false, error: "Module inconnu." });
+    expectNoEffect();
   });
 });

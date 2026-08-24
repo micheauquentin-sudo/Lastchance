@@ -20,6 +20,7 @@ import {
   HuntsAddonControl,
   JackpotAddonControl,
   LoyaltyAddonControl,
+  ModuleAddonControl,
   NoteForm,
   PlanControl,
   PronosticsAddonControl,
@@ -272,15 +273,66 @@ export default async function MerchantDetailPage({
                       </div>
                     </div>
                   </div>
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                      Droits de lieu et jeux de salon
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Vitrine
+                        </p>
+                        <ModuleAddonControl
+                          organizationId={org.id}
+                          module="vitrine"
+                          enabled={org.addon_vitrine}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Réserver
+                        </p>
+                        <ModuleAddonControl
+                          organizationId={org.id}
+                          module="reserver"
+                          enabled={org.addon_reserver}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Duo Miroir
+                        </p>
+                        <ModuleAddonControl
+                          organizationId={org.id}
+                          module="duo"
+                          enabled={org.addon_duo}
+                        />
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                          Portrait de la Bande
+                        </p>
+                        <ModuleAddonControl
+                          organizationId={org.id}
+                          module="bande"
+                          enabled={org.addon_bande}
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <div className="rounded-lg border border-violet-500/20 bg-violet-500/[0.04] p-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-violet-200">
                       Options gérées par Stripe
                     </p>
                     <p className="mt-1 text-sm text-zinc-300">
-                      Vitrine et Réserver se modifient dans les lignes
-                      d&apos;abonnement Stripe. Duo Miroir et Portrait de la
-                      Bande sont inclus par les offres : aucune bascule locale
-                      ne peut les modifier.
+                      Sur une organisation réellement pilotée par Stripe, les
+                      bascules ci-dessus sont refusées : les lignes
+                      d&apos;abonnement font autorité, et une modification
+                      locale serait écrasée au prochain événement. Elles
+                      servent aux organisations qui ne le sont pas — accès
+                      offert, bêta, dépannage. Appliquer une offre pose ses
+                      droits inclus, et retire ceux qu&apos;elle ne contient
+                      pas.
                     </p>
                     <p className="mt-2 text-xs text-zinc-500">
                       {canViewBilling
