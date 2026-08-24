@@ -52,10 +52,29 @@ const agentsMd = join(racine, "AGENTS.md");
 const journal = join(racine, "docs", "journal.md");
 
 describe("budget de contexte — CLAUDE.md", () => {
+  /**
+   * LA MESURE NE DOIT PAS DÉPENDRE DE LA PLATEFORME QUI A FAIT LE CHECKOUT.
+   *
+   * `statSync().size` compte les octets du DISQUE. Sur un clone Windows,
+   * git rend les fichiers en CRLF : chaque ligne y pèse un octet de plus, et
+   * les deux fichiers en portent trois cent cinquante. La garde rougissait
+   * donc en local à 22 023 octets là où la CI, qui checkout en LF, en
+   * mesurait 21 856 et passait — un rouge que personne ne pouvait
+   * reproduire, sur un budget que personne n'avait dépassé. Vu le
+   * 2026-08-24.
+   *
+   * Ce que le plafond veut borner, c'est le CONTEXTE hérité par chaque
+   * agent, et un `\r` n'en fait pas partie : il disparaît avant le modèle.
+   * On compte donc le contenu normalisé, identique des deux côtés.
+   */
+  function octetsNormalises(chemin: string): number {
+    return Buffer.byteLength(readFileSync(chemin, "utf8").replace(/\r\n/g, "\n"), "utf8");
+  }
+
   it("reste sous le plafond de contexte hérité par chaque agent", () => {
     expect(existsSync(claudeMd)).toBe(true);
 
-    const octets = statSync(claudeMd).size;
+    const octets = octetsNormalises(claudeMd);
 
     // Non-vacuité d'abord : un fichier vide ou tronqué ne doit jamais être
     // lu comme un succès de sobriété.
@@ -85,7 +104,7 @@ describe("budget de contexte — CLAUDE.md", () => {
     const contenu = readFileSync(claudeMd, "utf8");
     expect(contenu).toContain("@AGENTS.md");
 
-    const somme = statSync(claudeMd).size + statSync(agentsMd).size;
+    const somme = octetsNormalises(claudeMd) + octetsNormalises(agentsMd);
 
     expect(somme).toBeGreaterThan(PLANCHER_OCTETS);
     expect(somme).toBeLessThanOrEqual(BUDGET_OCTETS);
