@@ -27,6 +27,7 @@ import {
   merchantStatusSchema,
 } from "@/lib/validations/admin";
 import { PLANS, cancelCustomerSubscriptions } from "@/lib/stripe";
+import { MODULE_ADDON_COLUMN } from "@/lib/subscription";
 import { endOfLocalDayToIso } from "@/lib/date-time";
 import {
   cleanupErrorMessage,
@@ -254,7 +255,8 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
   if (!parsed.success) return fail(parsed.error.issues[0].message);
   const { organizationId, plan } = parsed.data;
 
-  if (!PLANS.some((p) => p.id === plan)) return fail("Plan inconnu.");
+  const offre = PLANS.find((p) => p.id === plan);
+  if (!offre) return fail("Plan inconnu.");
 
   const db = createAdminBackofficeClient();
   const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
@@ -269,9 +271,33 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
     .maybeSingle();
   if (!before) return fail("Commerçant introuvable.");
 
+  // ── APPLIQUER UNE OFFRE, C'EST POSER SES DROITS ──
+  //
+  // Cette action n'écrivait que `plan`. Une organisation passée à La Totale
+  // depuis le back-office se retrouvait donc avec l'offre affichée et AUCUN
+  // de ses droits : l'écran promettait « tout inclus » et le tableau de bord
+  // refusait la Vitrine, Réserver, le Duo Miroir et le Portrait de la Bande.
+  // Constaté en production le 2026-08-24.
+  //
+  // Les colonnes sont DÉRIVÉES du catalogue, jamais énumérées ici : ajouter
+  // un droit à une offre dans `PLANS` suffit désormais à le rendre effectif.
+  // Le geste est le MÊME que celui du webhook Stripe
+  // (`addon_x = 'x' = any(entitlements)`), y compris pour ce qu'il retire :
+  // appliquer une offre rend l'organisation conforme à CETTE offre, sinon
+  // une rétrogradation laisserait des droits payés par l'offre précédente.
+  const droitsDeLOffre: Record<string, boolean> = {};
+  for (const [cle, colonne] of Object.entries(MODULE_ADDON_COLUMN)) {
+    // `wheel` n'a pas de colonne : la roue est le produit de base, elle tient
+    // à l'abonnement lui-même et non à un add-on.
+    if (!colonne) continue;
+    droitsDeLOffre[colonne] = offre.entitlements.includes(
+      cle as (typeof offre.entitlements)[number],
+    );
+  }
+
   const { error } = await db
     .from("organizations")
-    .update({ plan })
+    .update({ plan, ...droitsDeLOffre })
     .eq("id", organizationId);
   if (error) return fail("Échec de la mise à jour.");
 
@@ -280,7 +306,13 @@ export async function setMerchantPlan(formData: FormData): Promise<ActionResult>
     action: "merchant.plan.change",
     targetType: "organization",
     targetId: organizationId,
-    metadata: { from: before.plan, to: plan },
+    // Les droits posés sont TRACÉS : sans eux, le journal dirait qu'on a
+    // change une offre sans dire ce que l'organisation a gagné ou perdu.
+    metadata: {
+      from: before.plan,
+      to: plan,
+      entitlements: offre.entitlements,
+    },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
   return { ok: true, data: undefined };
@@ -1605,5 +1637,100 @@ export async function revokeMerchantModuleGrant(
     },
   });
   revalidatePath(`/admin/merchants/${organizationId}`);
+  return { ok: true, data: undefined };
+}
+
+/* ════════════════════════════════════════════════════════════
+ * LES QUATRE DROITS DE LIEU — une seule action pour quatre bascules
+ *
+ * ── POURQUOI PAS QUATRE FONCTIONS DE PLUS ──
+ *
+ * Les huit add-ons historiques ont chacun la leur, à cinquante lignes
+ * identiques près. Recopier ce patron quatre fois de plus aurait ajouté deux
+ * cents lignes dont la seule différence tient dans un nom de colonne — et
+ * autant d'endroits où l'un des quatre peut être oublié le jour où le garde-
+ * fou change. Le module arrive donc par le formulaire, validé contre une
+ * liste FERMÉE : un nom inconnu est refusé avant toute écriture.
+ *
+ * ── CE QUE CETTE ACTION NE CONTOURNE PAS ──
+ *
+ * `rejectStripeManagedEntitlements` s'applique comme aux huit autres. Une
+ * organisation réellement pilotée par Stripe reste hors de portée du back-
+ * office : la bascule n'existe que pour celles qui ne le sont pas — accès
+ * offert, bêta, dépannage. C'est exactement la règle des huit, étendue aux
+ * quatre produits que l'offre Sur Place a fait naître.
+ * ════════════════════════════════════════════════════════════ */
+
+/** Les quatre droits de lieu, et le chemin que leur bascule périme. */
+const MODULES_DE_LIEU = {
+  vitrine: { colonne: "addon_vitrine", chemin: "/dashboard/vitrine" },
+  reserver: { colonne: "addon_reserver", chemin: "/dashboard/reservations" },
+  duo: { colonne: "addon_duo", chemin: "/dashboard/salons/duo" },
+  bande: { colonne: "addon_bande", chemin: "/dashboard/salons/bande" },
+} as const;
+
+type ModuleDeLieu = keyof typeof MODULES_DE_LIEU;
+
+function estModuleDeLieu(valeur: unknown): valeur is ModuleDeLieu {
+  return typeof valeur === "string" && valeur in MODULES_DE_LIEU;
+}
+
+/** Active ou coupe l'un des quatre droits de lieu, avec la même traçabilité. */
+export async function setMerchantModuleAddon(
+  formData: FormData,
+): Promise<ActionResult> {
+  const cleModule = formData.get("module");
+  if (!estModuleDeLieu(cleModule)) return fail("Module inconnu.");
+  const { colonne, chemin } = MODULES_DE_LIEU[cleModule];
+  const journal = `merchant.${colonne}.change`;
+
+  const guard = await authorizeOrTrace(
+    "merchants.edit",
+    `${journal}.denied`,
+    { type: "organization", id: auditTargetId(formData, "organizationId") },
+    { requireFresh: true },
+  );
+  if (!guard.granted) return guard.denied;
+  const actor = guard.actor;
+
+  const parsed = merchantAddonSchema.safeParse({
+    organizationId: formData.get("organizationId"),
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return fail(parsed.error.issues[0].message);
+  const { organizationId, enabled } = parsed.data;
+
+  const db = createAdminBackofficeClient();
+  const stripeManaged = await rejectStripeManagedEntitlements(db, organizationId, {
+    actor,
+    action: journal,
+  });
+  if (stripeManaged) return stripeManaged;
+
+  const { data: before } = await db
+    .from("organizations")
+    .select(colonne)
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (!before) return fail("Commerçant introuvable.");
+
+  const { error } = await db
+    .from("organizations")
+    .update({ [colonne]: enabled })
+    .eq("id", organizationId);
+  if (error) return fail("Échec de la mise à jour.");
+
+  await logAdminAction({
+    actor,
+    action: journal,
+    targetType: "organization",
+    targetId: organizationId,
+    metadata: {
+      from: (before as Record<string, unknown>)[colonne],
+      to: enabled,
+    },
+  });
+  revalidatePath(`/admin/merchants/${organizationId}`);
+  revalidatePath(chemin);
   return { ok: true, data: undefined };
 }
