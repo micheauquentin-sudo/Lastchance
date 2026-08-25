@@ -353,8 +353,14 @@ export async function updateCampaign(
     }
   }
 
-  revalidatePath("/dashboard/campaigns");
-  revalidatePath(`/dashboard/campaigns/${id}`);
+  // La transition rend son statut canonique au composant local : revalider la
+  // page courante provoquerait une navigation intermédiaire, alors que la
+  // pastille et les commandes sont déjà mises à jour sans perte de contexte.
+  // Les autres réglages gardent leur revalidation dashboard habituelle.
+  if (status === undefined) {
+    revalidatePath("/dashboard/campaigns");
+    revalidatePath(`/dashboard/campaigns/${id}`);
+  }
   // Le statut (active/paused) gate la page publique : purge ISR /play.
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: status === undefined ? {} : { status } };

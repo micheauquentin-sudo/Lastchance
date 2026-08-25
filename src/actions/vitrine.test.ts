@@ -752,13 +752,13 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
   it("sans adresse publique, seul le dashboard est purgé", async () => {
     gardeOk();
     // `set_vitrine_slug` est le seul geste qui fasse naître la ligne de
-    // réglages : l'insertion renvoie bien sa ligne canonique, mais la lecture
-    // suivante n'a aucun `slug` public à purger.
+    // réglages : la création rend sa ligne canonique à l'éditeur local, sans
+    // revalidation dashboard, et aucun `slug` public n'est à purger.
     state.row = { id: CARTE_ID, nom: "Midi", ordre: 0, active: true };
 
     await createVitrineCarte(null, fd({ nom: "Midi" }));
 
-    expect(cheminsRevalides()).toEqual(["/dashboard/vitrine"]);
+    expect(cheminsRevalides()).toEqual([]);
   });
 
   it("setVitrineSlug purge le NOUVEAU slug sans relire la base", async () => {
