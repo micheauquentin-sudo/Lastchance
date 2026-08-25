@@ -44,21 +44,25 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
-## Correctif local en attente de publication (2026-08-25)
+## Correctifs Duo et Bande (2026-08-25)
 
-- **Constat prouvé** : Duo Miroir et Portrait de la Bande étaient absents de la
-  vitrine publique lorsque le bloc facultatif `experiences` n'avait jamais été
-  ajouté à `theme.ordre_blocs`. Le défaut protège volontairement les portes
-  publiques non configurées ; il ne devait pas être modifié globalement.
-- **Correctif** : `activerExperiencesVitrine` ajoute seulement `experiences` à
-  l'ordre effectif de l'organisation active, avec garde éditeur, filtre
-  d'organisation et purge ISR française/anglaise. La Vitrine affiche désormais
-  une carte explicite « Afficher vos jeux » tant que ce bloc est masqué.
-- **Preuves locales** : typecheck vert ; 183 tests ciblés verts ; lint vert ;
-  `npm run build` vert. Revue du diff : aucune entrée navigateur, aucune
-  écriture inter-tenant ni changement SQL/Stripe.
-- **À faire** : obtenir l'accord explicite pour commit/push, puis laisser la CI
-  GitHub confirmer le même SHA avant toute publication Vercel.
+- **Vitrine publique, livré** : le commit `a135a18c` sur `main` rend le bloc
+  facultatif `experiences` explicitement activable depuis le dashboard, sans
+  changer le défaut protecteur des vitrines non configurées.
+- **Dashboard, constat P0** : les pages `/dashboard/salons/duo` et
+  `/dashboard/salons/bande` montaient bien leur en-tête, mais
+  `ModuleCapabilityNotice` retournait `null` lorsque `canPublish` était vrai.
+  Il supprimait ainsi son propre contenu chez les commerçants autorisés, au
+  lieu de seulement retirer le bandeau d'offre.
+- **Correctif** : le composant rend désormais `children` sans bandeau pour un
+  module publiable. La protection, le message et l'offre restent inchangés
+  lorsque la publication est fermée. Le test prouve les deux états.
+- **Portée vérifiée** : le même composant enveloppe aussi d'autres écrans de
+  modules ; le correctif rétablit leur contenu pour les comptes concernés,
+  sans changement SQL, Stripe, autorisation ou route publique.
+- **Preuves locales** : 10 tests ciblés verts ; typecheck vert ; lint vert ;
+  `npm run build` vert. La CI GitHub doit confirmer le SHA livré avant toute
+  publication Vercel.
 
 ## À LIRE EN PREMIER — dossier de reprise Claude (2026-08-03)
 

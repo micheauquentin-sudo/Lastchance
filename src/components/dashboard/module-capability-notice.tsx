@@ -36,10 +36,11 @@ export function ModuleCapabilityNotice({
   /** Argument de vente : ce que le module apporte, en une phrase. */
   children: React.ReactNode;
 }) {
-  // Rendu seulement quand la publication est fermée. Un module payé n'a aucune
-  // raison de porter un bandeau — et l'oublier ferait un dashboard qui vend
-  // quelque chose au client qui l'a déjà acheté.
-  if (capacites.canPublish) return null;
+  // Un module payé n'a aucune raison de porter un bandeau — mais son contenu
+  // reste la page elle-même. Retourner `null` ici effaçait tout ce que les
+  // pages enveloppées rendaient (dont les salons Duo et Bande), précisément
+  // pour les commerçants autorisés à publier.
+  if (capacites.canPublish) return <>{children}</>;
 
   return (
     <Card className="mb-6 border-dashed">
