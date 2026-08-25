@@ -32,6 +32,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { FicheEditeur } from "@/components/vitrine/fiche-editeur";
 import { FlechesOrdre } from "@/components/vitrine/fleches-ordre";
 import { useReordonner } from "@/components/vitrine/use-reordonner";
+import { revaliderVitrineApresCreation } from "@/lib/revalidate-vitrine-client";
 
 /**
  * L'ÉDITEUR DU CATALOGUE : cartes → rubriques → fiches.
@@ -119,12 +120,13 @@ function CatalogueEditeurLocal({
 
         {peutEditer ? (
           <CreerCarteForm
-            onCree={(carte) =>
+            onCree={(carte) => {
               setCartesAffichees((precedentes) => [
                 ...precedentes,
                 { ...carte, categories: [] },
-              ])
-            }
+              ]);
+              revaliderVitrineApresCreation();
+            }}
           />
         ) : null}
       </Card>
@@ -317,12 +319,13 @@ function CarteEditeur({
         {peutEditer ? (
           <CreerRubriqueForm
             menuId={carte.id}
-            onCree={(rubrique) =>
+            onCree={(rubrique) => {
               setCategoriesAffichees((precedentes) => [
                 ...precedentes,
                 { ...rubrique, action: null, fiches: [] },
-              ])
-            }
+              ]);
+              revaliderVitrineApresCreation();
+            }}
           />
         ) : null}
       </div>
@@ -487,9 +490,10 @@ function RubriqueEditeur({
         <div className="mt-3 space-y-3">
           <CreerFicheForm
             categorieId={rubrique.id}
-            onCree={(fiche) =>
-              setFichesAffichees((precedentes) => [...precedentes, fiche])
-            }
+            onCree={(fiche) => {
+              setFichesAffichees((precedentes) => [...precedentes, fiche]);
+              revaliderVitrineApresCreation();
+            }}
           />
 
           <details>

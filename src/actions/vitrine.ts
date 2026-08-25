@@ -218,9 +218,8 @@ async function revaliderVitrine(
   supabase: Awaited<ReturnType<typeof createClient>>,
   organizationId: string,
   slugConnu?: string | null,
-  { dashboard = true }: { dashboard?: boolean } = {},
 ): Promise<void> {
-  if (dashboard) revalidatePath(CHEMIN_DASHBOARD);
+  revalidatePath(CHEMIN_DASHBOARD);
   await revaliderVitrinePublique(supabase, organizationId, slugConnu);
 }
 
@@ -559,9 +558,9 @@ export async function createVitrineCarte(
   }
   if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId, undefined, {
-    dashboard: false,
-  });
+  // L'éditeur insère la ligne canonique rendue ci-dessous dans son état local.
+  // Revalider depuis une Server Action provoquerait une navigation RSC, donc la
+  // purge ISR publique est demandée séparément après le succès par le client.
   return { ok: true, data };
 }
 
@@ -707,9 +706,7 @@ export async function createVitrineRubrique(
   }
   if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId, undefined, {
-    dashboard: false,
-  });
+  // Voir `createVitrineCarte` : pas de revalidation dans cette réponse.
   return { ok: true, data };
 }
 
@@ -855,9 +852,7 @@ export async function createVitrineFiche(
   }
   if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId, undefined, {
-    dashboard: false,
-  });
+  // Voir `createVitrineCarte` : pas de revalidation dans cette réponse.
   return {
     ok: true,
     data: {

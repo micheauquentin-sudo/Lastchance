@@ -274,6 +274,19 @@ describe("les créations rendent l'état local minimal", () => {
       },
     });
   });
+
+  it("ne revalide pas dans la réponse de création", async () => {
+    gardeOk();
+
+    await createVitrineCarte(null, fd({ nom: "Carte du midi" }));
+    await createVitrineRubrique(null, fd({ menu_id: CARTE_ID, nom: "Entrées" }));
+    await createVitrineFiche(null, fd({ categorie_id: RUBRIQUE_ID, nom: "Soupe" }));
+
+    // Le routeur Next transforme une revalidation dans une Server Action en
+    // navigation RSC. La purge publique est donc faite par la route POST
+    // authentifiée, après que l'éditeur a affiché le retour canonique.
+    expect(cheminsRevalides()).toEqual([]);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -749,11 +762,10 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     ]);
   });
 
-  it("sans adresse publique, seul le dashboard est purgé", async () => {
+  it("une création ne revalide pas dans sa réponse", async () => {
     gardeOk();
-    // `set_vitrine_slug` est le seul geste qui fasse naître la ligne de
-    // réglages : la création rend sa ligne canonique à l'éditeur local, sans
-    // revalidation dashboard, et aucun `slug` public n'est à purger.
+    // Même quand une adresse existe, la création rend sa ligne canonique à
+    // l'éditeur local sans réponse RSC intermédiaire.
     state.row = { id: CARTE_ID, nom: "Midi", ordre: 0, active: true };
 
     await createVitrineCarte(null, fd({ nom: "Midi" }));
