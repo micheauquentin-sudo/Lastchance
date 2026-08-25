@@ -10,6 +10,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { repriseGeneriqueImpossible } from "@/lib/campaign-window";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
+import { useCampaignStatus } from "@/components/dashboard/campaign-status-live";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
 import type { Campaign, CampaignStatus } from "@/types/database";
 
@@ -95,17 +96,19 @@ export function CampaignStatusControls({
   /** URL joueur du premier QR de la campagne, `null` s'il n'y en a aucun. */
   hrefJeu?: string | null;
 }) {
+  const { status, setStatus } = useCampaignStatus();
   const {
     state: statusState,
     pending: statusPending,
     onSubmit: statusSubmit,
   } = useActionForm(updateCampaign, {
-    // `reloadOnSuccess` : la pastille de statut, la liste des transitions
-    // offertes et la bannière sont TOUTES des props serveur. Le commerçant
-    // ouvrait son jeu au public — l'ISR de /play est purgé dans la foulée — et
-    // son écran continuait d'afficher « brouillon ». Les formulaires ne
-    // portent que des champs cachés : le rechargement ne coûte rien.
-    reloadOnSuccess: true,
+    // Le statut canonique revient de l'action et met à jour la pastille et les
+    // transitions locales. Le commerçant voit donc l'ouverture immédiatement,
+    // sans navigation vers un rendu intermédiaire qui pourrait échouer.
+    refreshOnSuccess: false,
+    onSuccess: ({ status: nextStatus }) => {
+      if (nextStatus) setStatus(nextStatus);
+    },
     networkError: "Changement de statut impossible, réessayez.",
   });
 
@@ -122,11 +125,12 @@ export function CampaignStatusControls({
    * Les quatre autres transitions ne bougent pas — « Clôturer » notamment doit
    * rester offerte : un commerçant qui renonce ne doit jamais être enfermé.
    */
-  const repriseIndisponible = repriseGeneriqueImpossible(campaign);
+  const campagneAffichee = { ...campaign, status };
+  const repriseIndisponible = repriseGeneriqueImpossible(campagneAffichee);
   const transitions = STATUS_ACTIONS.filter(
     (a) =>
-      a.from.includes(campaign.status) &&
-      !(campaign.status === "paused" && a.to === "active" && repriseIndisponible),
+      a.from.includes(status) &&
+      !(status === "paused" && a.to === "active" && repriseIndisponible),
   );
   // La même conséquence est portée par trois boutons, dont deux coexistent sur
   // une campagne ouverte : la phrase n'est écrite qu'une fois, sous le premier
@@ -163,7 +167,7 @@ export function CampaignStatusControls({
           </form>
         ))}
       </div>
-      {campaign.status === "active" && (
+      {status === "active" && (
         <p className="mt-3 text-sm text-zinc-500">
           Ouverte aux joueurs — un client qui scanne le QR code peut jouer.
         </p>

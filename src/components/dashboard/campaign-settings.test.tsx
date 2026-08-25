@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/actions/campaigns", () => ({
@@ -14,6 +14,10 @@ vi.mock("next/navigation", () => ({
 const { CampaignStatusControls } = await import(
   "@/components/dashboard/campaign-settings"
 );
+const { CampaignStatusProvider } = await import(
+  "@/components/dashboard/campaign-status-live"
+);
+const { updateCampaign } = await import("@/actions/campaigns");
 
 import type { Campaign } from "@/types/database";
 
@@ -33,7 +37,10 @@ import type { Campaign } from "@/types/database";
  * une correction.
  */
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.mocked(updateCampaign).mockReset();
+});
 
 function campagne(patch: Partial<Campaign> = {}): Campaign {
   return {
@@ -60,16 +67,42 @@ function campagne(patch: Partial<Campaign> = {}): Campaign {
 
 const bouton = (nom: string) => screen.queryByRole("button", { name: nom });
 
+function renderStatus(campaign: Campaign) {
+  return render(
+    <CampaignStatusProvider initialStatus={campaign.status}>
+      <CampaignStatusControls campaign={campaign} />
+    </CampaignStatusProvider>,
+  );
+}
+
 describe("CampaignStatusControls — reprise après budget", () => {
+  it("applique immédiatement le statut renvoyé après la publication", async () => {
+    vi.mocked(updateCampaign).mockResolvedValue({
+      ok: true,
+      data: { status: "active" },
+    });
+    renderStatus(campagne({ status: "draft" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Ouvrir aux joueurs" }));
+
+    await waitFor(() => {
+      expect(bouton("Ouvrir aux joueurs")).toBeNull();
+    });
+    expect(bouton("Mettre en pause")).not.toBeNull();
+    expect(
+      screen.getByText(
+        "Ouverte aux joueurs — un client qui scanne le QR code peut jouer.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("retire « Rouvrir aux joueurs » sur une pause budget non résorbée", () => {
-    render(
-      <CampaignStatusControls
-        campaign={campagne({
-          paused_reason: "budget_reached",
-          budget_cents: 20000,
-          budget_spent_cents: 30000,
-        })}
-      />,
+    renderStatus(
+      campagne({
+        paused_reason: "budget_reached",
+        budget_cents: 20000,
+        budget_spent_cents: 30000,
+      }),
     );
     expect(bouton("Rouvrir aux joueurs")).toBeNull();
     // Témoin de non-vacuité : la carte rend bien ses autres transitions.
@@ -80,29 +113,23 @@ describe("CampaignStatusControls — reprise après budget", () => {
     // Le planificateur rouvre la campagne de lui-même au rachat, et la base
     // refuserait le geste manuel : la bannière le dit, le bouton ne doit pas
     // le contredire.
-    render(
-      <CampaignStatusControls
-        campaign={campagne({ paused_reason: "droit_expire" })}
-      />,
-    );
+    renderStatus(campagne({ paused_reason: "droit_expire" }));
     expect(bouton("Rouvrir aux joueurs")).toBeNull();
     expect(bouton("Clôturer")).not.toBeNull();
   });
 
   it("laisse le bouton sur une pause manuelle (aucun motif)", () => {
-    render(<CampaignStatusControls campaign={campagne({ paused_reason: null })} />);
+    renderStatus(campagne({ paused_reason: null }));
     expect(bouton("Rouvrir aux joueurs")).not.toBeNull();
   });
 
   it("laisse le bouton dès que le plafond a été relevé", () => {
-    render(
-      <CampaignStatusControls
-        campaign={campagne({
-          paused_reason: "budget_reached",
-          budget_cents: 50000,
-          budget_spent_cents: 30000,
-        })}
-      />,
+    renderStatus(
+      campagne({
+        paused_reason: "budget_reached",
+        budget_cents: 50000,
+        budget_spent_cents: 30000,
+      }),
     );
     expect(bouton("Rouvrir aux joueurs")).not.toBeNull();
   });
@@ -110,11 +137,7 @@ describe("CampaignStatusControls — reprise après budget", () => {
 
 describe("CampaignStatusControls — désarmement de la programmation", () => {
   it("annonce le désarmement sous les boutons qui le produisent", () => {
-    render(
-      <CampaignStatusControls
-        campaign={campagne({ status: "active", auto_schedule: true })}
-      />,
-    );
+    renderStatus(campagne({ status: "active", auto_schedule: true }));
     expect(bouton("Mettre en pause")).not.toBeNull();
     expect(
       screen.getAllByText(/programmation automatique est désarmée/).length,
@@ -123,7 +146,7 @@ describe("CampaignStatusControls — désarmement de la programmation", () => {
   });
 
   it("ne parle pas de désarmement sur « Ouvrir aux joueurs »", () => {
-    render(<CampaignStatusControls campaign={campagne({ status: "draft" })} />);
+    renderStatus(campagne({ status: "draft" }));
     expect(bouton("Ouvrir aux joueurs")).not.toBeNull();
     // « Clôturer » est offerte depuis un brouillon et porte la note : c'est
     // elle qui doit la porter, pas l'ouverture.

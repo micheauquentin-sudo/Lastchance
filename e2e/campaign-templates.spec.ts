@@ -107,7 +107,29 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
       page.getByRole("button", { name: "Mettre en pause", exact: true }),
     ).toHaveCount(0);
 
-    // ── 6. Le brouillon est CONFIGURÉ : le jeu du modèle est en place.
+    // La publication est une mutation locale : le statut canonique renvoyé par
+    // l'action remplace les commandes et la pastille sans recharger la page.
+    // Une erreur de lecture transitoire ne doit donc plus détourner le
+    // commerçant vers la fausse page « introuvable ».
+    let navigations = 0;
+    const compterNavigation = (frame: ReturnType<typeof page.mainFrame>) => {
+      if (frame === page.mainFrame()) navigations++;
+    };
+    page.on("framenavigated", compterNavigation);
+    await page
+      .getByRole("button", { name: "Ouvrir aux joueurs", exact: true })
+      .click();
+    await expect(statusBadge).toHaveText("Ouverte aux joueurs");
+    await expect(
+      page.getByRole("button", { name: "Mettre en pause", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Page introuvable" }),
+    ).toHaveCount(0);
+    expect(navigations).toBe(0);
+    page.off("framenavigated", compterNavigation);
+
+    // ── 6. Le brouillon initial était CONFIGURÉ : le jeu du modèle est en place.
     await ouvrirTuile(page, /Développer «.*Vos jeux/);
     await expect(page.getByText(/La machine de l.happy hour/)).toBeVisible();
   });

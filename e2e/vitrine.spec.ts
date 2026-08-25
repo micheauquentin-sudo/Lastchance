@@ -522,11 +522,17 @@ test.describe("vitrine — dashboard commerçant", () => {
     // ensuite pour chaque carte existante (formulaire de renommage) — seul le
     // premier, dans le bloc de création, est ciblé ici.
     const nomCarte = `Brunch E2E ${Date.now()}`;
+    let navigations = 0;
+    const compterNavigation = (frame: ReturnType<typeof page.mainFrame>) => {
+      if (frame === page.mainFrame()) navigations++;
+    };
+    page.on("framenavigated", compterNavigation);
     await page.getByLabel("Nom de la carte").first().fill(nomCarte);
     await page.getByRole("button", { name: "Créer la carte" }).click();
     await expect(page.getByRole("heading", { name: nomCarte })).toBeVisible({
       timeout: 20_000,
     });
+    expect(navigations).toBe(0);
 
     // Deux conditions plutôt qu'une : un div ne contenant QUE le titre serait
     // le petit conteneur flex des flèches d'ordre (motif de
@@ -546,6 +552,7 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(carteCard.getByText(nomRubrique)).toBeVisible({
       timeout: 20_000,
     });
+    expect(navigations).toBe(0);
 
     // ── Fiche ──
     // `.last()` : les `li` sont imbriqués (carte > rubrique) et le filtre
@@ -584,6 +591,8 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ has: page.locator("summary") })
       .last();
     await expect(ficheLi).toBeVisible({ timeout: 20_000 });
+    expect(navigations).toBe(0);
+    page.off("framenavigated", compterNavigation);
 
     // Ouvrir le détail pour cocher badge + allergène. Le contrôle est un
     // <summary> natif (fiche-editeur.tsx) : Playwright l'expose en `generic`,

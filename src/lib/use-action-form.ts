@@ -110,6 +110,14 @@ export function useActionForm<T = void>(
      */
     reloadOnSuccess?: boolean;
     /**
+     * Réclame le rafraîchissement RSC habituel après le succès.
+     *
+     * À désactiver uniquement quand le composant applique lui-même la donnée
+     * canonique renvoyée par l'action. Cela évite de remplacer l'écran courant
+     * par un rendu serveur intermédiaire tout en gardant le résultat visible.
+     */
+    refreshOnSuccess?: boolean;
+    /**
      * Paramètres d'URL ajoutés au rechargement, pour que la page rechargée
      * sache qu'elle vient de CE geste.
      *
@@ -193,7 +201,7 @@ export function useActionForm<T = void>(
             annoncerToast({ message: options.toastOnSuccess, ton: "succes" });
           }
           if (options.reloadOnSuccess) rechargerAvec(options.reloadWith);
-          else router.refresh();
+          else if (options.refreshOnSuccess !== false) router.refresh();
         }
       } catch {
         // Réseau coupé ou action injoignable : on le DIT, plutôt que de
