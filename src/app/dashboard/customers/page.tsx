@@ -80,7 +80,7 @@ export default async function CustomersPage({
       <PageHeader
         surtitre="Gestion"
         titre="Clients"
-        sousTitre="Les joueurs identifiés lors d'un gain (coordonnées collectées)."
+        sousTitre="Les clients identifiés après un gain ou un opt-in Calendrier."
         actions={
           <div className="flex flex-wrap items-center gap-4">
             <a
@@ -179,7 +179,7 @@ export default async function CustomersPage({
           <p className="text-zinc-500">
             {customerFiltersActifs(filtres)
               ? "Aucun client ne correspond à ces filtres."
-              : "Aucun client identifié pour l'instant — dès qu'un joueur gagne et laisse son email, il apparaît ici."}
+              : "Aucun client identifié pour l'instant — un gain avec email ou un opt-in Calendrier les fera apparaître ici."}
           </p>
         </Card>
       ) : (
@@ -208,8 +208,12 @@ export default async function CustomersPage({
                   </td>
                   <td className="px-4 py-3 tabular-nums">{p.wins}</td>
                   <td className="px-4 py-3 tabular-nums">{p.redeemed}</td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.first_win, fuseau)}</td>
-                  <td className="px-4 py-3 text-zinc-500">{formatDate(p.last_win, fuseau)}</td>
+                  <td className="px-4 py-3 text-zinc-500">
+                    {p.first_win ? formatDate(p.first_win, fuseau) : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-500">
+                    {p.last_win ? formatDate(p.last_win, fuseau) : "—"}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {badges.map((b) => (

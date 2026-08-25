@@ -193,6 +193,20 @@ export function BlocExperiences({
         {portes.quiz.map((q) => (
           <CarteLien key={q.slug} href={`/quiz/${q.slug}`} nom={q.titre} />
         ))}
+        {portes.calendars.map((calendar) => (
+          <CarteLien
+            key={calendar.slug}
+            href={`/calendar/${calendar.slug}`}
+            nom={calendar.titre}
+          />
+        ))}
+        {portes.pronostics.map((pronostic) => (
+          <CarteLien
+            key={pronostic.slug}
+            href={`/pronos/${pronostic.slug}`}
+            nom={pronostic.titre}
+          />
+        ))}
       </ul>
     </section>
   );

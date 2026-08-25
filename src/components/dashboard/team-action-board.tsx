@@ -13,12 +13,6 @@ type TeamActionBoardProps = {
   /** Rôle lu côté serveur ; il ne remplace pas la garde de la destination. */
   actorRole: MemberRole | null;
   title?: string;
-  /**
-   * Clés d'actions que le bloc « Votre prochaine action » affiche déjà, en gros
-   * et avec le MÊME bouton vers la MÊME destination. Les répéter ici, c'est
-   * écrire deux fois le même geste sur un écran qui en comptait cinq.
-   */
-  masquer?: readonly string[];
 };
 
 /**
@@ -36,8 +30,8 @@ type TeamActionBoardProps = {
  *   2. une action que ce rôle ne peut pas accomplir ne s'affiche plus en rouge
  *      avec sa phrase d'excuse : elle compte dans une ligne neutre. Un employé
  *      lisait des alertes rouges qu'il n'avait aucun moyen de résoudre ;
- *   3. plus de pastille de score — la progression du commerce se lit dans le
- *      hero « Votre prochaine action », une seule fois.
+ *   3. plus de pastille de score — la liste reste centrée sur les gestes
+ *      réellement disponibles à l'équipe.
  *
  * Une liste vide n'est PAS un bloc qui disparaît : sans rien à afficher, le
  * commerçant ne saurait pas s'il n'a rien à faire ou si l'écran a échoué.
@@ -46,11 +40,9 @@ export function TeamActionBoard({
   actions,
   actorRole,
   title = "Les prochains coups de main",
-  masquer,
 }: TeamActionBoardProps) {
-  const promues = new Set(masquer ?? []);
   const snapshot = getTeamActionBoardSnapshot(
-    actions.filter((action) => !promues.has(action.key)),
+    actions,
     actorRole,
   );
   const titleId = useId();

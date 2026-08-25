@@ -5,8 +5,8 @@ import { KINDS_RELANCE } from "@/lib/experience-relance";
 /**
  * GARDE MÉCANIQUE — « une surface sans chemin ».
  *
- * Trois modules ont été livrés — la Carte de l'Aventure, « Relancer une
- * formule », le Centre d'animation — et chacun est PUR : ses tests unitaires
+ * Deux modules ont été livrés — « Relancer une formule », le Centre d'animation
+ * — et chacun est PUR : ses tests unitaires
  * passeraient à l'identique si plus aucune page ne le montait. C'est
  * exactement le défaut que ce dépôt a déjà payé ailleurs : du code correct,
  * testé, vert en CI, et invisible pour le commerçant.
@@ -26,63 +26,26 @@ import { KINDS_RELANCE } from "@/lib/experience-relance";
  *
  * ── LES DEUX LISTES NE SONT PAS LES MÊMES, ET C'EST LE SUJET ──
  *
- * Huit pages portent la Carte, six seulement portent la relance. Les deux
- * absences sont des DÉCISIONS, écrites ici pour qu'on ne les corrige pas par
- * distraction : le jackpot n'est pas relançable (son économie — jauge, cycle,
- * seuil — est vivante) et la campagne ne l'est pas non plus (« Dupliquer » et
- * les modèles font mieux, en emportant la roue et ses lots).
+ * Six pages portent la relance. La campagne et le jackpot ne sont pas
+ * relançables : « Dupliquer » et les modèles font mieux pour la campagne, et
+ * l'économie du jackpot est vivante.
  */
 
 const RACINE = "src/app/dashboard";
 
-/** Les huit modules qui portent une Carte de l'Aventure. Le parrainage n'en a
- * pas : `referral_programs.enabled` est un booléen sous une campagne, sans
- * brouillon, sans répétition et sans clôture. */
-const PAGES_CARTE = {
-  campaign: `${RACINE}/campaigns/[id]/page.tsx`,
+/** Les six kinds que le moteur universel sait recopier. */
+const PAGES_RELANCE = {
   hunt: `${RACINE}/hunts/[id]/page.tsx`,
   quiz: `${RACINE}/quiz/[id]/page.tsx`,
   calendar: `${RACINE}/calendar/[id]/page.tsx`,
-  jackpot: `${RACINE}/jackpot/[id]/page.tsx`,
   event: `${RACINE}/events/[id]/page.tsx`,
   pronostics: `${RACINE}/pronostics/[id]/page.tsx`,
   loyalty: `${RACINE}/loyalty/[id]/page.tsx`,
 } as const;
 
-/** Les six kinds que le moteur universel sait recopier. */
-const PAGES_RELANCE = {
-  hunt: PAGES_CARTE.hunt,
-  quiz: PAGES_CARTE.quiz,
-  calendar: PAGES_CARTE.calendar,
-  event: PAGES_CARTE.event,
-  pronostics: PAGES_CARTE.pronostics,
-  loyalty: PAGES_CARTE.loyalty,
-} as const;
-
-/** Sans carte de relance, sur décision — voir l'en-tête. */
-const SANS_RELANCE = ["campaign", "jackpot"] as const;
-
 function lire(chemin: string): string {
   return readFileSync(chemin, "utf8");
 }
-
-describe("Carte de l'Aventure — montée sur les huit pages de détail", () => {
-  for (const [kind, chemin] of Object.entries(PAGES_CARTE)) {
-    it(`${kind} construit ses étapes et rend la Carte de l'Aventure`, () => {
-      const source = lire(chemin);
-      expect(source).toContain("construireEtapesAventure");
-      // Depuis que la carte naît repliée, les pages ne montent plus
-      // `GuidedJourney` en direct : elles montent `CarteAventure`, qui pose la
-      // barre repliable ET rend `GuidedJourney` à l'intérieur — le chemin
-      // module → écran est le même, il passe par une enveloppe de plus.
-      expect(source).toContain("<CarteAventure");
-      // Le kind passé doit être CELUI du module : une page qui construirait
-      // les marqueurs d'un autre afficherait une clôture qui n'est pas la
-      // sienne, sans erreur de compilation puisque l'union les accepte tous.
-      expect(source).toContain(`kind: "${kind}"`);
-    });
-  }
-});
 
 describe("Relancer une formule — montée sur les six kinds supportés", () => {
   for (const [kind, chemin] of Object.entries(PAGES_RELANCE)) {
@@ -114,12 +77,6 @@ describe("Relancer une formule — montée sur les six kinds supportés", () => 
   it("les six kinds montés sont exactement ceux que le moteur supporte", () => {
     expect(Object.keys(PAGES_RELANCE).sort()).toEqual([...KINDS_RELANCE].sort());
   });
-
-  for (const kind of SANS_RELANCE) {
-    it(`${kind} n'en porte PAS — décision, pas oubli`, () => {
-      expect(lire(PAGES_CARTE[kind])).not.toContain("<RelaunchFormulaCard");
-    });
-  }
 });
 
 describe("Centre d'animation — monté sur la vue d'ensemble", () => {

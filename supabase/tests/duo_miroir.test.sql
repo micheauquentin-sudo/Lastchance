@@ -466,8 +466,8 @@ select results_eq(
   $$select key from pg_catalog.jsonb_each(
       public.vitrine_public_state('tap-vitrine-duo-b')
         #> '{portes,experiences}') order by key$$,
-  array['duo', 'quiz'],
-  'PORTE-4 le bloc Expériences porte DEUX clés, et cette liste est close');
+  array['calendars', 'duo', 'pronostics', 'quiz'],
+  'PORTE-4 le bloc Expériences porte ses quatre clés, et cette liste est close');
 
 -- LA PORTE N'EST PAS TRADUISIBLE, ET LA PREUVE SE FAIT SUR UNE SEULE VITRINE,
 -- DE PART ET D'AUTRE DE SA TRANSITION.

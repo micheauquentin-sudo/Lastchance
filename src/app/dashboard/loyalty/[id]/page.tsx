@@ -24,7 +24,6 @@ import {
   AtelierNavigationEtape,
   AtelierStepper,
 } from "@/components/dashboard/atelier-stepper";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
@@ -33,10 +32,6 @@ import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireVerificationFidelite } from "@/lib/activation/loyalty";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -115,8 +110,7 @@ function toWheelOptions(wheels: WheelRow[], prizes: PrizeRow[]): WheelOption[] {
 /**
  * LA PAGE D'UN PASSEPORT — DEUX VISAGES SUR UNE SEULE ROUTE.
  *
- * · URL nue → la vue SUIVI : Carte de l'Aventure, statut, QR public, écran
- *   comptoir, relance.
+ * · URL nue → la vue SUIVI : statut, QR public, écran comptoir, relance.
  * · `?etape=…` → l'ATELIER : le fil des quatre étapes et LA carte de l'étape.
  *
  * L'étape reste dans la query string : les dix `revalidatePath` de
@@ -242,26 +236,10 @@ export default async function LoyaltyDetailPage({
     rewardsRedeemed = redeemedCount ?? 0;
   }
 
-  // Carte de l'Aventure et relance. Un passeport n'a AUCUNE borne temporelle :
+  // Relance : un passeport n'a aucune borne temporelle :
   // seul l'archivage le clôt, et c'est bien pourquoi `MarqueursParKind` ne lui
   // demande que son statut.
   const marqueurs = { status: p.status };
-  const etapesAventure = construireEtapesAventure({
-    marqueurs: { kind: "loyalty", ...marqueurs },
-    capacites,
-    liens: {
-      // Une URL d'étape, plus une ancre — et l'étape « Le programme », car
-      // `#reglages` désignait l'éditeur de PALIERS : « Compléter les réglages »
-      // n'a jamais mené au mode de validation ni aux niveaux.
-      editeur: hrefEtapeFidelite(p.id, "programme"),
-      apercu: p.status === "active" ? publicUrl : null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  const conclusion = conclusionAventure(etapesAventure, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT : la vue suivi
@@ -323,10 +301,8 @@ export default async function LoyaltyDetailPage({
 
       {etape === null ? (
         <>
-          {/* Seul le Statut reste OUVERT — c'est le geste de publication. Tout
-              le reste naît replié, Carte de l'Aventure et porte de l'atelier
-              comprises ; l'ancre rouvre le bloc qu'elle vise (voir
-              `carte-repliable.tsx`). */}
+          {/* Seul le statut reste ouvert : c'est le geste de publication. Tout
+              le reste naît replié ; l'ancre rouvre le bloc qu'elle vise. */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <LoyaltyStatusControls
               program={p}
@@ -334,8 +310,6 @@ export default async function LoyaltyDetailPage({
               hrefJeu={p.status === "active" ? publicUrl : null}
             />
           </CarteRepliable>
-
-          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
 
           <CarteRepliable
             {...carteTuile(tuiles, "atelier")}

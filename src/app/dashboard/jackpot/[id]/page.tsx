@@ -6,11 +6,6 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
@@ -119,35 +114,6 @@ export default async function JackpotDetailPage({
   const etape = parseEtape(etapesAtelier, etapeParam, "nulle");
   const hrefPour = (cle: string) => hrefEtapeJackpot(c.id, cle);
 
-  // Carte de l'Aventure seule : une cagnotte ne se relance pas en brouillon —
-  // son économie (jauge, cycle, seuil) est vivante, et « Relancer une formule »
-  // ne sait pas la transporter sans mentir sur ce qu'elle recopie.
-  //
-  // `editeur` vise désormais l'ATELIER (`?etape=reglages`) et non l'ancre
-  // `#reglages` : la carte de réglages a quitté la vue par défaut, l'ancre
-  // serait un clic mort.
-  const etapesAventure = construireEtapesAventure({
-    marqueurs: {
-      kind: "jackpot",
-      status: c.status,
-      draw_mode: c.draw_mode,
-      draw_at: c.draw_at,
-      cycle: c.cycle,
-    },
-    capacites,
-    liens: {
-      editeur: hrefPour("reglages"),
-      apercu: c.status === "active" ? publicUrl : null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  // Une cagnotte ne se relance PAS (son économie est vivante) : la conclusion
-  // constate la clôture sans proposer de geste qui n'existe pas ici.
-  const conclusion = conclusionAventure(etapesAventure, {
-    relanceHref: null,
-  });
-
   // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT : la vue suivi
   // en tire le verdict de ses tuiles, l'atelier la donne à son étape « La
   // vérification ». Les cinq contrôles pointent tous l'étape « reglages » — mais
@@ -204,17 +170,14 @@ export default async function JackpotDetailPage({
 
       {etape === null ? (
         <>
-          {/* Le bloc qui décide — publier — reste OUVERT ; tout le reste naît
-              replié, Carte de l'Aventure et porte de l'atelier comprises.
-              L'ancre rouvre le bloc qu'elle vise (voir `carte-repliable.tsx`). */}
+          {/* Le bloc qui décide — publier — reste ouvert ; tout le reste naît
+              replié. L'ancre rouvre le bloc qu'elle vise. */}
           <CarteRepliable {...carteTuile(tuiles, "statut")}>
             <JackpotStatusControls
               campaign={c}
               hrefJeu={c.status === "active" ? publicUrl : null}
             />
           </CarteRepliable>
-
-          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
 
           {canViewStats && (
             <CarteRepliable

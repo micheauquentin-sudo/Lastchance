@@ -153,7 +153,7 @@ describe("boussoleUtilisable", () => {
 describe("actionOuverte — la porte se ferme d'elle-même", () => {
   const vide: PortesVitrineView = {
     reserver: { activites: [], files: [], offres: [] },
-    experiences: { quiz: [], duo: false },
+    experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
   };
 
   it("refuse chaque module qui n'a rien d'ouvert", () => {

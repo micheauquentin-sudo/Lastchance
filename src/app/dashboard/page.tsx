@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
@@ -8,24 +7,9 @@ import {
   type AnimationCenterLinks,
 } from "@/components/dashboard/animation-center";
 import { teamTasksAffichees } from "@/components/dashboard/animation-center-state";
-import { ConseillerPanel } from "@/components/dashboard/conseiller-panel";
 import { ExperienceAnalytics } from "@/components/dashboard/experience-analytics";
-import { visibleOnboardingSteps } from "@/components/dashboard/onboarding-checklist";
-import { ProchaineActionPanel } from "@/components/dashboard/prochaine-action";
-import {
-  conseilsRecouvertsParHero,
-  construireProchaineAction,
-  tachesRecouvertesParHero,
-} from "@/components/dashboard/prochaine-action-state";
 import { TeamActionBoard } from "@/components/dashboard/team-action-board";
 import { chargerCentreAnimation } from "@/lib/centre-animation-server";
-import {
-  cleRappelConseils,
-  construireConseils,
-} from "@/lib/conseiller-commercant";
-import { estRappelFerme, RAPPELS_COOKIE } from "@/lib/rappels";
-import { hasCompAccess } from "@/lib/subscription";
-import { activeExperienceKinds } from "@/platform/experiences/catalog";
 import { parseExperienceAnalytics } from "@/lib/experience-analytics-dashboard";
 import { lienSelonRole } from "@/lib/liens-proprietaire";
 import { redirect } from "next/navigation";
@@ -35,22 +19,16 @@ export const metadata: Metadata = { title: "Vue d'ensemble" };
 /**
  * LA VUE D'ENSEMBLE RACONTE UNE SEULE HISTOIRE.
  *
- * Elle empilait quatre systèmes de guidage concurrents — checklist de
- * démarrage, tableau d'équipe, conseiller, tuiles — qui affichaient jusqu'à
- * trois scores de progression contradictoires pour un même commerce, écrivaient
- * « gains à remettre » à CINQ endroits (dont deux avec des calculs différents,
- * donc deux nombres possibles), et ne portaient aucun bouton d'action.
+ * Elle empilait plusieurs systèmes de guidage concurrents, qui affichaient des
+ * scores de progression contradictoires pour un même commerce et répétaient
+ * « gains à remettre » avec des calculs différents.
  *
  * L'ordre est désormais celui d'une lecture :
  *   1. qui je suis (en-tête) ;
- *   2. ce que je fais maintenant (UN hero, UN bouton) ;
- *   3. où en sont mes animations (UNE section : repères + coups de main) ;
- *   4. ce qu'on peut encore me signaler (le Conseiller, plafonné à 4, privé du
- *      conseil que le hero affiche déjà, et FERMABLE — il ne garde que les
- *      croisements d'activité, l'opérationnel étant porté par les tuiles) ;
- *   5. mes résultats, toujours affichés — la page ne change plus de forme au
+ *   2. où en sont mes animations (une section : repères + coups de main) ;
+ *   3. mes résultats, toujours affichés — la page ne change plus de forme au
  *      premier événement mesuré ;
- *   6. la protection anti-abus, une ligne tant qu'il n'y a rien à dire.
+ *   4. la protection anti-abus, une ligne tant qu'il n'y a rien à dire.
  *
  * ZÉRO RPC SUPPLÉMENTAIRE : tout est recomposé depuis les trois appels du
  * `Promise.all` ci-dessous, exactement comme avant.
@@ -168,121 +146,10 @@ export default async function DashboardPage() {
   if (lienParticipations) centreLiens.rewardsToHandOver = lienParticipations;
 
   const blockedCount = summary.blocked;
-  const firstCampaignId = summary.first_campaign_id;
-
-  const onboardingSteps = [
-    {
-      key: "campaign",
-      label: "Créer votre première campagne",
-      href: "/dashboard/campaigns",
-      done: summary.campaigns > 0,
-    },
-    {
-      key: "prize",
-      label: "Configurer au moins un lot",
-      href: firstCampaignId
-        ? `/dashboard/campaigns/${firstCampaignId}/wheel`
-        : "/dashboard/campaigns",
-      done: summary.active_prizes > 0,
-    },
-    {
-      key: "qr",
-      label: "Générer un QR code",
-      href: "/dashboard/qr-codes",
-      done: summary.qr_codes > 0,
-    },
-    {
-      key: "poster",
-      label: "Personnaliser votre affiche",
-      href: summary.first_qr_id ? `/poster/${summary.first_qr_id}` : "/dashboard/qr-codes",
-      done: summary.poster_customized,
-    },
-    {
-      key: "logo",
-      label: "Ajouter votre logo",
-      href: "/dashboard/settings",
-      done: !!organization!.logo_url,
-      // `/dashboard/settings` est owner-only (redirect vers /dashboard) :
-      // l'étape n'est présentée qu'au propriétaire.
-      ownerOnly: true,
-    },
-    {
-      key: "activate",
-      label: "Activer votre campagne",
-      href: firstCampaignId
-        ? `/dashboard/campaigns/${firstCampaignId}`
-        : "/dashboard/campaigns",
-      done: summary.active_campaigns > 0,
-    },
-  ];
-
-  /*
-   * LE HERO ABSORBE LA CHECKLIST.
-   *
-   * `OnboardingChecklist` n'est plus montée en bas de page : elle y arrivait en
-   * dixième position, après dix cartes de zéros, alors qu'elle est exactement
-   * ce dont un commerce du premier jour a besoin. Le hero la DEVIENT tant que
-   * le démarrage est incomplet ; `visibleOnboardingSteps` continue d'écarter
-   * l'étape que le rôle ne peut pas accomplir, donc le dénominateur suit.
-   */
-  const prochaineAction = construireProchaineAction({
-    role,
-    etapesDemarrage: visibleOnboardingSteps(onboardingSteps, role),
-    compteurs: centreAnimation?.compteurs ?? null,
-  });
-
-  // Le conseiller RÉUTILISE les trois états déjà chargés — compteurs du Centre
-  // d'animation, `org_dashboard_summary`, `org_experience_analytics`.
-  // `construireConseils` est pure : aucune RPC de plus. `exclure` lui retire le
-  // conseil que le hero affiche déjà en gros, avec son bouton.
-  // `role` null → liste vide, le panneau se tait.
-  const conseils =
-    role && organization
-      ? construireConseils({
-          role,
-          compteurs: centreAnimation?.compteurs ?? null,
-          activeKinds: activeExperienceKinds(
-            organization,
-            hasCompAccess(organization),
-          ),
-          sommaire: summary,
-          analytics,
-          exclure: conseilsRecouvertsParHero(prochaineAction),
-        })
-      : [];
-
-  /*
-   * LE CONSEILLER SE FERME — ET REVIENT DÈS QU'IL A DU NEUF.
-   *
-   * Même mécanisme que les bandeaux du layout : le cookie est lu AVANT le
-   * rendu, donc un panneau tu n'est jamais monté puis caché. La clé est
-   * versionnée par la LISTE des conseils (`cleRappelConseils`) : fermer
-   * n'éteint que le contenu affiché ce jour-là, pas le prochain signal.
-   */
-  const cleConseils =
-    conseils.length > 0 && organization
-      ? cleRappelConseils(organization.id, conseils)
-      : null;
-  const montrerConseiller =
-    cleConseils !== null &&
-    !estRappelFerme((await cookies()).get(RAPPELS_COOKIE)?.value, cleConseils);
-
-  /*
-   * LA TUILE « TÂCHES D'ÉQUIPE » COMPTE CE QUE LA LISTE MONTRE.
-   *
-   * `teamTasks` est dérivé côté serveur AVANT que le hero ne s'approprie une
-   * tâche : la tuile affichait 4 et la liste juste en dessous, dans la même
-   * carte, en montrait 3. Le recalcul se fait ici, où le masquage est connu —
-   * la RPC, elle, ne change pas.
-   */
-  const tachesMasquees = tachesRecouvertesParHero(prochaineAction);
   const compteursCentre = centreAnimation
     ? {
         ...centreAnimation.compteurs,
-        teamTasks: teamTasksAffichees(
-          centreAnimation.actionsEquipe,
-          tachesMasquees,
-        ),
+        teamTasks: teamTasksAffichees(centreAnimation.actionsEquipe),
       }
     : null;
 
@@ -370,15 +237,12 @@ export default async function DashboardPage() {
         <p className="mt-1 font-bold text-k-body">{organization!.name}</p>
       </div>
 
-      <ProchaineActionPanel action={prochaineAction} />
-
       <div className="mb-8">
         {centreAnimation && compteursCentre ? (
           <AnimationCenter counts={compteursCentre} links={centreLiens}>
             <TeamActionBoard
               actions={centreAnimation.actionsEquipe}
               actorRole={role}
-              masquer={tachesMasquees}
             />
           </AnimationCenter>
         ) : (
@@ -389,10 +253,6 @@ export default async function DashboardPage() {
           </p>
         )}
       </div>
-
-      {montrerConseiller && cleConseils !== null && (
-        <ConseillerPanel conseils={conseils} cleFermeture={cleConseils} />
-      )}
 
       <section aria-labelledby="vos-resultats-titre" id="vos-resultats" className="mb-8">
         <h2
