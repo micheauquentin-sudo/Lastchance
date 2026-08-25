@@ -69,12 +69,12 @@ describe("ModuleCapabilityNotice", () => {
   });
 
   /**
-   * Un module payé ne porte AUCUN bandeau : le silence est la garantie qu'on ne
-   * vend rien à qui a déjà acheté. C'est aussi pourquoi les pages le rendent
-   * sans conteneur porteur de marge.
+   * Un module payé ne porte AUCUN bandeau, mais il rend bien le contenu de sa
+   * page. Le perdre avec le bandeau rendrait un dashboard vide exactement pour
+   * les commerçants qui peuvent publier.
    */
-  it("ne rend rien du tout quand la publication est ouverte", () => {
-    const { container } = render(
+  it("rend le contenu sans bandeau quand la publication est ouverte", () => {
+    render(
       <ModuleCapabilityNotice
         capacites={capacites({ canPublish: true, raison: null, message: null })}
         entitlement="core"
@@ -82,6 +82,7 @@ describe("ModuleCapabilityNotice", () => {
         Roue et lots.
       </ModuleCapabilityNotice>,
     );
-    expect(container.innerHTML).toBe("");
+    expect(screen.getByText("Roue et lots.")).toBeTruthy();
+    expect(screen.queryByText("Pass terminé le 12/08/2026.")).toBeNull();
   });
 });
