@@ -35,6 +35,7 @@ import {
 } from "@/lib/validations/campaigns";
 import { formatEuros, type ActionResult } from "@/lib/utils";
 import type {
+  CampaignStatus,
   EngagementConfig,
   Organization,
   Prize,
@@ -151,10 +152,13 @@ export async function createCampaign(
   redirect(`/dashboard/campaigns/${campaignId}/wheel`);
 }
 
+/** État utile à l'écran après une mise à jour sans rechargement complet. */
+export type UpdateCampaignResult = { status?: CampaignStatus };
+
 export async function updateCampaign(
-  _prev: ActionResult | null,
+  _prev: ActionResult<UpdateCampaignResult> | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<UpdateCampaignResult>> {
   const parsed = updateCampaignSchema.safeParse({
     id: formData.get("id"),
     // `?? undefined` retiré : `absentSiNonRendu` lit le champ non rendu comme
@@ -181,7 +185,7 @@ export async function updateCampaign(
   }
 
   const { id, ...fields } = parsed.data;
-  if (Object.keys(fields).length === 0) return { ok: true, data: undefined };
+  if (Object.keys(fields).length === 0) return { ok: true, data: {} };
 
   // Essai expiré / abonnement inactif : les QR codes restent créables,
   // mais aucune campagne ne peut être (ré)activée. Le MOTIF est nommé, pas
@@ -349,11 +353,17 @@ export async function updateCampaign(
     }
   }
 
-  revalidatePath("/dashboard/campaigns");
-  revalidatePath(`/dashboard/campaigns/${id}`);
+  // La transition rend son statut canonique au composant local : revalider la
+  // page courante provoquerait une navigation intermédiaire, alors que la
+  // pastille et les commandes sont déjà mises à jour sans perte de contexte.
+  // Les autres réglages gardent leur revalidation dashboard habituelle.
+  if (status === undefined) {
+    revalidatePath("/dashboard/campaigns");
+    revalidatePath(`/dashboard/campaigns/${id}`);
+  }
   // Le statut (active/paused) gate la page publique : purge ISR /play.
   await revalidatePlaySlugs(supabase, { campaignId: id });
-  return { ok: true, data: undefined };
+  return { ok: true, data: status === undefined ? {} : { status } };
 }
 
 /**

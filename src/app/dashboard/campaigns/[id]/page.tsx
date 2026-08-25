@@ -10,7 +10,10 @@ import { CampaignPrejeuInvitation } from "@/components/dashboard/campaign-prejeu
 import { CampaignShareSettings } from "@/components/dashboard/campaign-share-settings";
 import { NewQrForm } from "@/components/dashboard/qr-forms";
 import { QrCodeCard } from "@/components/dashboard/qr-code-card";
-import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
+import {
+  CampaignStatusBadgeLive,
+  CampaignStatusProvider,
+} from "@/components/dashboard/campaign-status-live";
 import {
   CampaignAutomationSettings,
   CampaignStateBanner,
@@ -66,7 +69,7 @@ export default async function CampaignDetailPage({
   // Campagne, roues (multi-roues, triées par position) et performance
   // par lot en parallèle. Si la campagne n'existe pas, on 404.
   const [
-    { data: campaign },
+    { data: campaign, error: campaignError },
     { data: wheels },
     { data: perf },
     { count: shareCount },
@@ -129,6 +132,10 @@ export default async function CampaignDetailPage({
       .maybeSingle(),
   ]);
 
+  // Une panne de lecture ne veut pas dire que la campagne n'existe pas. La
+  // confondre avec un 404 envoyait le commerçant sur une page "introuvable"
+  // juste après une publication pourtant réussie.
+  if (campaignError) throw new Error("Impossible de charger la campagne");
   if (!campaign) notFound();
 
   const c = campaign as Campaign;
@@ -241,7 +248,8 @@ export default async function CampaignDetailPage({
   const nbQr = qrCodes.length;
 
   return (
-    <div>
+    <CampaignStatusProvider key={c.status} initialStatus={c.status}>
+      <div>
       <Link
         href="/dashboard/campaigns"
         className="text-sm text-zinc-500 hover:text-zinc-900"
@@ -251,7 +259,7 @@ export default async function CampaignDetailPage({
 
       <div className="flex items-center justify-between gap-4 mt-3 mb-8">
         <h1 className="text-2xl font-bold truncate">{c.name}</h1>
-        <CampaignStatusBadge status={c.status} windowState={windowState} />
+        <CampaignStatusBadgeLive windowState={windowState} />
       </div>
 
       {/* LE BANDEAU D'OFFRE — la seule page détail de module qui l'oubliait.
@@ -551,7 +559,8 @@ export default async function CampaignDetailPage({
       >
         <CampaignSettings campaign={c} />
       </CarteRepliable>
-    </div>
+      </div>
+    </CampaignStatusProvider>
   );
 }
 

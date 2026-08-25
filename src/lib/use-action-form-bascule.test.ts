@@ -153,6 +153,18 @@ export function porteLeRechargement(
   );
 }
 
+/**
+ * Exception stricte : l'action renvoie la valeur canonique, et le composant
+ * l'applique à son état local. Un simple message de succès ne suffit pas.
+ */
+export function porteLaValeurCanoniqueLocale(declaration: string): boolean {
+  return (
+    /refreshOnSuccess:\s*false/.test(declaration) &&
+    /onSuccess:\s*\(\{\s*status:\s*\w+\s*\}\)\s*=>/.test(declaration) &&
+    /setStatus\(\w+\)/.test(declaration)
+  );
+}
+
 function fichiersTsx(dossier: string): string[] {
   const out: string[] = [];
   for (const e of readdirSync(dossier, { withFileTypes: true })) {
@@ -193,7 +205,9 @@ function bascules(): Bascule[] {
         fichier: chemin.split(sep).join("/"),
         ligne: i + 1,
         gestionnaire: m[1],
-        recharge: porteLeRechargement(declaration, constantes),
+        recharge:
+          porteLeRechargement(declaration, constantes) ||
+          porteLaValeurCanoniqueLocale(declaration),
       });
     }
   }
@@ -307,14 +321,15 @@ function nommer(liste: Bascule[]): string {
   return liste.map((b) => `  ${b.fichier}:${b.ligne} → ${b.gestionnaire}`).join("\n");
 }
 
-describe("useActionForm — la bascule d'état recharge", () => {
-  it("tout formulaire qui poste un état dérivé porte reloadOnSuccess", () => {
+describe("useActionForm — la bascule d'état reste cohérente", () => {
+  it("tout formulaire qui poste un état dérivé recharge ou applique la valeur canonique", () => {
     const manquants = bascules().filter((b) => !b.recharge);
     expect(
       manquants,
       `Ces formulaires postent une valeur d'état DÉRIVÉE de la prop serveur (champ caché\n` +
         `ou liste déroulante), et changent un état que la surface publique lit aussitôt.\n` +
-        `Sans \`reloadOnSuccess: true\`, l'écran affirme le CONTRAIRE de ce que voient les\n` +
+        `Sans \`reloadOnSuccess: true\` ou valeur canonique appliquée localement, l'écran\n` +
+        `affirme le CONTRAIRE de ce que voient les\n` +
         `clients, et le geste suivant repart de la même prop périmée — il ne peut pas se\n` +
         `corriger de lui-même.\n` +
         nommer(manquants),
@@ -387,6 +402,25 @@ describe("useActionForm — la bascule d'état recharge", () => {
     expect(porteLeRechargement(d.get("onSubmit")!)).toBe(false);
     expect(porteLeRechargement(d.get("statusSubmit")!)).toBe(true);
     expect(d.has("statusForm.onSubmit")).toBe(true);
+  });
+
+  it("n'accepte le rendu local que si le statut canonique est réellement appliqué", () => {
+    const renduLocal = [
+      "const { onSubmit } = useActionForm(updateCampaign, {",
+      "  refreshOnSuccess: false,",
+      "  onSuccess: ({ status: nextStatus }) => {",
+      "    if (nextStatus) setStatus(nextStatus);",
+      "  },",
+      "});",
+    ].join("\n");
+    const simpleSucces = [
+      "const { onSubmit } = useActionForm(updateCampaign, {",
+      "  refreshOnSuccess: false,",
+      "  onSuccess: () => setStatus(\"active\"),",
+      "});",
+    ].join("\n");
+    expect(porteLaValeurCanoniqueLocale(renduLocal)).toBe(true);
+    expect(porteLaValeurCanoniqueLocale(simpleSucces)).toBe(false);
   });
 
   it("suit une constante d'options, sinon la factorisation défait la garde", () => {

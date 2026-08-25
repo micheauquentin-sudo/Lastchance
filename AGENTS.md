@@ -158,6 +158,9 @@ point 3.
 
 ## Contrat de livraison
 
+- **Codex.** Avant code : périmètre, régression et contrôles WSL séquentiels ; local ≠ CI.
+- **Livraison.** Après push/PR, SHA lié au run GitHub ; toute anomalie bloque jusqu'au vert.
+- **CI/accès.** Job requis renommé → protection `main` + PR ; écriture distante explicitement autorisée.
 - Diff minimal, aucune refonte opportuniste.
 - Travailler sur la branche explicitement demandée. Priorité : simplicité,
   stabilité, qualité du code, expérience commerçant.

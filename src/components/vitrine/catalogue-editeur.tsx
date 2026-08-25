@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useActionForm } from "@/lib/use-action-form";
 import {
@@ -20,6 +21,9 @@ import {
   reorderVitrineRubriques,
   updateVitrineCarte,
   updateVitrineRubrique,
+  type VitrineCarteCreee,
+  type VitrineFicheCreee,
+  type VitrineRubriqueCreee,
 } from "@/actions/vitrine";
 import { Button } from "@/components/ui/button";
 import { ACTIONS_FR, VITRINE_ACTIONS } from "@/lib/vitrine";
@@ -28,6 +32,7 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { FicheEditeur } from "@/components/vitrine/fiche-editeur";
 import { FlechesOrdre } from "@/components/vitrine/fleches-ordre";
 import { useReordonner } from "@/components/vitrine/use-reordonner";
+import { revaliderVitrineApresCreation } from "@/lib/revalidate-vitrine-client";
 
 /**
  * L'ÉDITEUR DU CATALOGUE : cartes → rubriques → fiches.
@@ -41,11 +46,10 @@ import { useReordonner } from "@/components/vitrine/use-reordonner";
  *
  * ── CE QUE LES CRÉATIONS FONT DE PARTICULIER ──
  *
- * Elles RECHARGENT (`reloadOnSuccess`). C'est le motif imposé par la garde
- * `use-action-form-coverage` à toute action qui insère une ligne dans une liste
- * rendue par le serveur : sans elle, un rafraîchissement qui ne s'applique pas
- * — mesuré 5 à 32 % du temps — laisse l'écran inchangé, le commerçant reclique,
- * et la carte porte deux fois « Entrées ».
+ * Elles reçoivent la ligne canonique créée, puis l'ajoutent à l'état local du
+ * niveau concerné. Le commerçant voit donc immédiatement sa carte, sa rubrique
+ * ou son plat, sans navigation ni rafraîchissement RSC intermédiaire. La page
+ * serveur reste réconciliée au prochain rafraîchissement normal.
  */
 export function CatalogueEditeur({
   cartes,
@@ -54,7 +58,39 @@ export function CatalogueEditeur({
   cartes: VitrineCarteView[];
   peutEditer: boolean;
 }) {
-  const ordre = useReordonner(cartes, (ids) => {
+  // Les mutations qui demandent un refresh (suppression, renommage, ordre)
+  // changent cette empreinte et recréent l'état local depuis le serveur. Les
+  // créations, elles, n'en ont pas besoin : leur retour canonique est ajouté
+  // dans le composant local, sans navigation.
+  const empreinte = cartes
+    .map(
+      (carte) =>
+        `${carte.id}:${carte.nom}:${carte.active}:${carte.categories
+          .map(
+            (rubrique) =>
+              `${rubrique.id}:${rubrique.nom}:${rubrique.action}:${rubrique.fiches
+                .map((fiche) => `${fiche.id}:${fiche.nom}:${fiche.disponible}`)
+                .join(",")}`,
+          )
+          .join("|")}`,
+    )
+    .join(";");
+
+  return (
+    <CatalogueEditeurLocal key={empreinte} cartes={cartes} peutEditer={peutEditer} />
+  );
+}
+
+function CatalogueEditeurLocal({
+  cartes,
+  peutEditer,
+}: {
+  cartes: VitrineCarteView[];
+  peutEditer: boolean;
+}) {
+  const [cartesAffichees, setCartesAffichees] = useState(cartes);
+
+  const ordre = useReordonner(cartesAffichees, (ids) => {
     const fd = new FormData();
     fd.set("order", JSON.stringify(ids));
     return reorderVitrineCartes(null, fd);
@@ -76,13 +112,23 @@ export function CatalogueEditeur({
           </p>
         ) : null}
 
-        {cartes.length === 0 ? (
+        {cartesAffichees.length === 0 ? (
           <p className="mb-4 text-sm text-zinc-500">
             Aucune carte pour l&apos;instant — créez la première ci-dessous.
           </p>
         ) : null}
 
-        {peutEditer ? <CreerCarteForm /> : null}
+        {peutEditer ? (
+          <CreerCarteForm
+            onCree={(carte) => {
+              setCartesAffichees((precedentes) => [
+                ...precedentes,
+                { ...carte, categories: [] },
+              ]);
+              revaliderVitrineApresCreation();
+            }}
+          />
+        ) : null}
       </Card>
 
       {ordre.affiches.map((carte, index) => (
@@ -100,11 +146,16 @@ export function CatalogueEditeur({
   );
 }
 
-function CreerCarteForm() {
+function CreerCarteForm({
+  onCree,
+}: {
+  onCree: (carte: VitrineCarteCreee) => void;
+}) {
   const { state, pending, onSubmit } = useActionForm(createVitrineCarte, {
     networkError: "Création impossible, réessayez.",
     resetOnSuccess: true,
-    reloadOnSuccess: true,
+    refreshOnSuccess: false,
+    onSuccess: onCree,
   });
 
   return (
@@ -127,6 +178,11 @@ function CreerCarteForm() {
           <FieldError message={state.error} />
         </div>
       ) : null}
+      {state?.ok ? (
+        <p className="w-full text-sm font-semibold text-green-700">
+          Carte ajoutée.
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -146,6 +202,10 @@ function CarteEditeur({
   reorderPending: boolean;
   onDeplacer: (index: number, direction: -1 | 1) => void;
 }) {
+  const [categoriesAffichees, setCategoriesAffichees] = useState(
+    carte.categories,
+  );
+
   const modifier = useActionForm(updateVitrineCarte, {
     networkError: "Enregistrement impossible, réessayez.",
     toastOnSuccess: "Enregistré.",
@@ -156,14 +216,14 @@ function CarteEditeur({
 
   // LE PARENT PART AVEC LA LISTE : l'action borne l'écriture aux frères d'une
   // même carte, en plus du filtre d'organisation.
-  const ordre = useReordonner(carte.categories, (ids) => {
+  const ordre = useReordonner(categoriesAffichees, (ids) => {
     const fd = new FormData();
     fd.set("menu_id", carte.id);
     fd.set("order", JSON.stringify(ids));
     return reorderVitrineRubriques(null, fd);
   });
 
-  const vide = carte.categories.length === 0;
+  const vide = categoriesAffichees.length === 0;
 
   return (
     <Card className={cn(!carte.active && "bg-zinc-50")}>
@@ -256,7 +316,18 @@ function CarteEditeur({
           </ul>
         )}
 
-        {peutEditer ? <CreerRubriqueForm menuId={carte.id} /> : null}
+        {peutEditer ? (
+          <CreerRubriqueForm
+            menuId={carte.id}
+            onCree={(rubrique) => {
+              setCategoriesAffichees((precedentes) => [
+                ...precedentes,
+                { ...rubrique, action: null, fiches: [] },
+              ]);
+              revaliderVitrineApresCreation();
+            }}
+          />
+        ) : null}
       </div>
 
       {peutEditer ? (
@@ -283,8 +354,8 @@ function CarteEditeur({
             // par un message d'erreur.
             <p className="text-sm text-zinc-500">
               Pour retirer cette carte, videz-la de ses{" "}
-              {carte.categories.length} rubrique
-              {carte.categories.length > 1 ? "s" : ""} — ou décochez
+              {categoriesAffichees.length} rubrique
+              {categoriesAffichees.length > 1 ? "s" : ""} — ou décochez
               simplement « Afficher cette carte », ce qui la retire de la vue de
               vos clients sans rien effacer.
             </p>
@@ -295,11 +366,18 @@ function CarteEditeur({
   );
 }
 
-function CreerRubriqueForm({ menuId }: { menuId: string }) {
+function CreerRubriqueForm({
+  menuId,
+  onCree,
+}: {
+  menuId: string;
+  onCree: (rubrique: VitrineRubriqueCreee) => void;
+}) {
   const { state, pending, onSubmit } = useActionForm(createVitrineRubrique, {
     networkError: "Création impossible, réessayez.",
     resetOnSuccess: true,
-    reloadOnSuccess: true,
+    refreshOnSuccess: false,
+    onSuccess: onCree,
   });
 
   return (
@@ -323,6 +401,11 @@ function CreerRubriqueForm({ menuId }: { menuId: string }) {
           <FieldError message={state.error} />
         </div>
       ) : null}
+      {state?.ok ? (
+        <p className="w-full text-sm font-semibold text-green-700">
+          Rubrique ajoutée.
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -342,6 +425,8 @@ function RubriqueEditeur({
   reorderPending: boolean;
   onDeplacer: (index: number, direction: -1 | 1) => void;
 }) {
+  const [fichesAffichees, setFichesAffichees] = useState(rubrique.fiches);
+
   const modifier = useActionForm(updateVitrineRubrique, {
     networkError: "Enregistrement impossible, réessayez.",
     toastOnSuccess: "Enregistré.",
@@ -350,7 +435,7 @@ function RubriqueEditeur({
     networkError: "Suppression impossible, réessayez.",
   });
 
-  const ordre = useReordonner(rubrique.fiches, (ids) => {
+  const ordre = useReordonner(fichesAffichees, (ids) => {
     const fd = new FormData();
     fd.set("categorie_id", rubrique.id);
     fd.set("order", JSON.stringify(ids));
@@ -372,8 +457,8 @@ function RubriqueEditeur({
         <div className="min-w-0 flex-1">
           <p className="font-bold text-k-ink">{rubrique.nom}</p>
           <p className="text-xs text-zinc-500">
-            {rubrique.fiches.length} fiche
-            {rubrique.fiches.length > 1 ? "s" : ""}
+            {fichesAffichees.length} fiche
+            {fichesAffichees.length > 1 ? "s" : ""}
           </p>
         </div>
       </div>
@@ -384,7 +469,7 @@ function RubriqueEditeur({
         </p>
       ) : null}
 
-      {rubrique.fiches.length > 0 ? (
+      {fichesAffichees.length > 0 ? (
         <ul className="mt-3 space-y-2">
           {ordre.affiches.map((fiche, i) => (
             <FicheEditeur
@@ -403,7 +488,13 @@ function RubriqueEditeur({
 
       {peutEditer ? (
         <div className="mt-3 space-y-3">
-          <CreerFicheForm categorieId={rubrique.id} />
+          <CreerFicheForm
+            categorieId={rubrique.id}
+            onCree={(fiche) => {
+              setFichesAffichees((precedentes) => [...precedentes, fiche]);
+              revaliderVitrineApresCreation();
+            }}
+          />
 
           <details>
             <summary className="cursor-pointer list-none text-sm font-bold text-k-body underline underline-offset-2">
@@ -488,11 +579,18 @@ function RubriqueEditeur({
   );
 }
 
-function CreerFicheForm({ categorieId }: { categorieId: string }) {
+function CreerFicheForm({
+  categorieId,
+  onCree,
+}: {
+  categorieId: string;
+  onCree: (fiche: VitrineFicheCreee) => void;
+}) {
   const { state, pending, onSubmit } = useActionForm(createVitrineFiche, {
     networkError: "Création impossible, réessayez.",
     resetOnSuccess: true,
-    reloadOnSuccess: true,
+    refreshOnSuccess: false,
+    onSuccess: onCree,
   });
 
   return (
@@ -522,6 +620,11 @@ function CreerFicheForm({ categorieId }: { categorieId: string }) {
         <div className="w-full">
           <FieldError message={state.error} />
         </div>
+      ) : null}
+      {state?.ok ? (
+        <p className="w-full text-sm font-semibold text-green-700">
+          Plat ajouté.
+        </p>
       ) : null}
     </form>
   );

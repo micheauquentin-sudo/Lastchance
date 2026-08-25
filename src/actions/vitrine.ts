@@ -105,6 +105,35 @@ const RATTACHEMENT_INTROUVABLE =
 
 const CHEMIN_DASHBOARD = "/dashboard/vitrine";
 
+/** Données sûres après une création, sans organisation ni horodatages internes. */
+export type VitrineCarteCreee = {
+  id: string;
+  nom: string;
+  ordre: number;
+  active: boolean;
+};
+
+export type VitrineRubriqueCreee = {
+  id: string;
+  nom: string;
+  ordre: number;
+};
+
+export type VitrineFicheCreee = {
+  id: string;
+  nom: string;
+  ordre: number;
+  description: null;
+  prix_affiche: null;
+  photo_path: null;
+  photo_alt: null;
+  facettes: [];
+  action: null;
+  badges: [];
+  allergenes: [];
+  disponible: true;
+};
+
 /** Le refus du seau de `setVitrineSlug` — il DATE la réessayabilité. */
 const TROP_D_ESSAIS_SLUG =
   "Trop de changements d'adresse en peu de temps. Réessayez dans une heure.";
@@ -484,9 +513,9 @@ export async function unpublishVitrine(): Promise<
 // ════════════════════════════════════════════════════════════
 
 export async function createVitrineCarte(
-  _prev: ActionResult | null,
+  _prev: ActionResult<VitrineCarteCreee> | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<VitrineCarteCreee>> {
   const parsed = createVitrineCarteSchema.safeParse({
     nom: formData.get("nom"),
   });
@@ -508,11 +537,15 @@ export async function createVitrineCarte(
 
   // `active` n'est pas envoyé : le défaut de la colonne est `true`, et une carte
   // créée invisible serait un piège — le commerçant la chercherait sur sa page.
-  const { error } = await supabase.from("vitrine_menus").insert({
-    organization_id: garde.organizationId,
-    nom: parsed.data.nom,
-    ordre: rangSuivant(derniere?.ordre),
-  });
+  const { data, error } = await supabase
+    .from("vitrine_menus")
+    .insert({
+      organization_id: garde.organizationId,
+      nom: parsed.data.nom,
+      ordre: rangSuivant(derniere?.ordre),
+    })
+    .select("id, nom, ordre, active")
+    .single();
   if (error) {
     return {
       ok: false,
@@ -523,9 +556,12 @@ export async function createVitrineCarte(
       ),
     };
   }
+  if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId);
-  return { ok: true, data: undefined };
+  // L'éditeur insère la ligne canonique rendue ci-dessous dans son état local.
+  // Revalider depuis une Server Action provoquerait une navigation RSC, donc la
+  // purge ISR publique est demandée séparément après le succès par le client.
+  return { ok: true, data };
 }
 
 export async function updateVitrineCarte(
@@ -621,9 +657,9 @@ export async function deleteVitrineCarte(
 // ════════════════════════════════════════════════════════════
 
 export async function createVitrineRubrique(
-  _prev: ActionResult | null,
+  _prev: ActionResult<VitrineRubriqueCreee> | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<VitrineRubriqueCreee>> {
   const parsed = createVitrineRubriqueSchema.safeParse({
     menu_id: formData.get("menu_id"),
     nom: formData.get("nom"),
@@ -648,12 +684,16 @@ export async function createVitrineRubrique(
   // `organization_id` est POSÉ ICI et vient de la session : c'est lui qui, avec
   // `menu_id`, forme la FK composite — une carte du voisin fait échouer la
   // référence en 23503 au lieu d'être cousue en silence.
-  const { error } = await supabase.from("vitrine_categories").insert({
-    menu_id: parsed.data.menu_id,
-    organization_id: garde.organizationId,
-    nom: parsed.data.nom,
-    ordre: rangSuivant(derniere?.ordre),
-  });
+  const { data, error } = await supabase
+    .from("vitrine_categories")
+    .insert({
+      menu_id: parsed.data.menu_id,
+      organization_id: garde.organizationId,
+      nom: parsed.data.nom,
+      ordre: rangSuivant(derniere?.ordre),
+    })
+    .select("id, nom, ordre")
+    .single();
   if (error) {
     return {
       ok: false,
@@ -664,9 +704,10 @@ export async function createVitrineRubrique(
       ),
     };
   }
+  if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId);
-  return { ok: true, data: undefined };
+  // Voir `createVitrineCarte` : pas de revalidation dans cette réponse.
+  return { ok: true, data };
 }
 
 export async function updateVitrineRubrique(
@@ -770,9 +811,9 @@ function vocabulaireDepuisFormData(formData: FormData, champ: string): string[] 
  * le plat qu'on vient de mettre à la carte.
  */
 export async function createVitrineFiche(
-  _prev: ActionResult | null,
+  _prev: ActionResult<VitrineFicheCreee> | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<ActionResult<VitrineFicheCreee>> {
   const parsed = createVitrineFicheSchema.safeParse({
     categorie_id: formData.get("categorie_id"),
     nom: formData.get("nom"),
@@ -794,7 +835,7 @@ export async function createVitrineFiche(
     .limit(1)
     .maybeSingle();
 
-  const { error } = await supabase.from("vitrine_items").insert({
+  const { data, error } = await supabase.from("vitrine_items").insert({
     categorie_id: parsed.data.categorie_id,
     organization_id: garde.organizationId,
     nom: parsed.data.nom,
@@ -803,13 +844,30 @@ export async function createVitrineFiche(
     // `disponible` n'est pas envoyé : le défaut de la colonne est `true`. Une
     // fiche créée grisée serait un plat qu'on ajoute pour dire qu'il manque.
     ordre: rangSuivant(derniere?.ordre),
-  });
+  })
+    .select("id, nom, ordre")
+    .single();
   if (error) {
     return { ok: false, error: messagePostgrest("vitrine.create-fiche", error) };
   }
+  if (!data) return { ok: false, error: GENERIC_ERROR };
 
-  await revaliderVitrine(supabase, garde.organizationId);
-  return { ok: true, data: undefined };
+  // Voir `createVitrineCarte` : pas de revalidation dans cette réponse.
+  return {
+    ok: true,
+    data: {
+      ...data,
+      description: null,
+      prix_affiche: null,
+      photo_path: null,
+      photo_alt: null,
+      facettes: [],
+      action: null,
+      badges: [],
+      allergenes: [],
+      disponible: true,
+    },
+  };
 }
 
 export async function updateVitrineFiche(

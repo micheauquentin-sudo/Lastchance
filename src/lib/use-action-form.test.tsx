@@ -198,6 +198,19 @@ describe("useActionForm — la soumission concurrente est mise en file, pas jet�
  * gardes mécaniques du dépôt le cherchent tel quel dans les `.tsx`), et
  * `useAutoSave` s'ajoute À CÔTÉ pour déclencher la soumission.
  */
+describe("useActionForm — rendu local", () => {
+  it("ne rafraîchit pas quand le composant applique lui-même le résultat", async () => {
+    const { action, repondre } = actionDifferee();
+    render(<Formulaire action={action} options={{ refreshOnSuccess: false }} />);
+
+    fireEvent.submit(screen.getByRole("form", { name: "essai" }));
+    await repondre(0);
+
+    expect(screen.getByText("Enregistré.")).toBeTruthy();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
 function FormulaireAutoEnregistre({ action }: { action: Action }) {
   const formRef = useRef<HTMLFormElement>(null);
   const { state, onSubmit } = useActionForm(action, {

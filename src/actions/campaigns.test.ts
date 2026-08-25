@@ -48,6 +48,10 @@ const { state, makeClient } = vi.hoisted(() => {
      * une écriture qui n'a pas eu lieu.
      */
     updatedRows: [{ id: "campagne-touchee" }] as Array<{ id: string }>,
+    campaignTransition: { data: true, error: null } as {
+      data: boolean | null;
+      error: { message: string } | null;
+    },
     /**
      * Roues de la campagne, avec leurs lots — ce que la garde métier
      * d'ouverture (FIA-2) relit avant d'appeler la RPC. VIDE par défaut :
@@ -58,6 +62,7 @@ const { state, makeClient } = vi.hoisted(() => {
       state.calls = [];
       state.sourceCampaign = null;
       state.updatedRows = [{ id: "campagne-touchee" }];
+      state.campaignTransition = { data: true, error: null };
       state.wheels = [];
     },
   };
@@ -135,6 +140,7 @@ const { state, makeClient } = vi.hoisted(() => {
         };
         return builder;
       },
+      rpc: () => Promise.resolve(state.campaignTransition),
     };
   }
 
@@ -355,12 +361,11 @@ describe("updateCampaign — le refus d'activation dit la VRAIE cause", () => {
       },
     ];
 
-    // La garde passe : l'action atteint la RPC, que ce harnais n'expose pas.
-    // C'est ce `TypeError` qui prouve qu'aucun refus métier n'est tombé — le
-    // chemin nominal complet est mesuré dans `publication-refus.test.ts`.
-    await expect(updateCampaign(null, activationForm())).rejects.toThrow(
-      /supabase\.rpc is not a function/,
-    );
+    // La garde passe et la transition aboutit.
+    await expect(updateCampaign(null, activationForm())).resolves.toEqual({
+      ok: true,
+      data: { status: "active" },
+    });
   });
 
   it("BUDGET NON RÉSORBÉ : « Rouvrir aux joueurs » est refusé, et le montant est nommé", async () => {
@@ -406,6 +411,24 @@ describe("updateCampaign — le refus d'activation dit la VRAIE cause", () => {
 
     expect(res.ok).toBe(true);
     expect(callsTo("campaigns").some((c) => c.op === "update")).toBe(true);
+  });
+
+  it("une transition réussie rend le statut final, un renommage n'en invente pas", async () => {
+    getUserAndOrgMock.mockResolvedValue(session(org()));
+    const transition = new FormData();
+    transition.set("id", CAMPAIGN_ID);
+    transition.set("status", "paused");
+
+    const transitionRes = await updateCampaign(null, transition);
+
+    expect(transitionRes).toEqual({ ok: true, data: { status: "paused" } });
+
+    const renommage = new FormData();
+    renommage.set("id", CAMPAIGN_ID);
+    renommage.set("name", "Roue de Noël");
+    const renommageRes = await updateCampaign(null, renommage);
+
+    expect(renommageRes).toEqual({ ok: true, data: {} });
   });
 });
 

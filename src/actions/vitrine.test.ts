@@ -216,6 +216,79 @@ function cheminsRevalides(): string[] {
   return revalidateMock.mock.calls.map((appel) => String(appel[0]));
 }
 
+// Les créations servent désormais l'éditeur local : il peut insérer la ligne
+// créée sans recharger la page ni relire toute la vitrine.
+describe("les créations rendent l'état local minimal", () => {
+  it("une carte rend ses champs éditables, sans métadonnée interne", async () => {
+    gardeOk();
+    state.row = { id: CARTE_ID, nom: "Carte du midi", ordre: 2, active: true };
+
+    const res = await createVitrineCarte(null, fd({ nom: "Carte du midi" }));
+
+    expect(res).toEqual({
+      ok: true,
+      data: { id: CARTE_ID, nom: "Carte du midi", ordre: 2, active: true },
+    });
+    expect(res.ok && res.data).not.toHaveProperty("organization_id");
+  });
+
+  it("une rubrique rend son identité et son rang", async () => {
+    gardeOk();
+    state.row = { id: RUBRIQUE_ID, nom: "Entrées", ordre: 1 };
+
+    const res = await createVitrineRubrique(
+      null,
+      fd({ menu_id: CARTE_ID, nom: "Entrées" }),
+    );
+
+    expect(res).toEqual({
+      ok: true,
+      data: { id: RUBRIQUE_ID, nom: "Entrées", ordre: 1 },
+    });
+  });
+
+  it("une fiche rend aussi les valeurs par défaut attendues par l'éditeur", async () => {
+    gardeOk();
+    state.row = { id: FICHE_ID, nom: "Soupe", ordre: 4 };
+
+    const res = await createVitrineFiche(
+      null,
+      fd({ categorie_id: RUBRIQUE_ID, nom: "Soupe" }),
+    );
+
+    expect(res).toEqual({
+      ok: true,
+      data: {
+        id: FICHE_ID,
+        nom: "Soupe",
+        ordre: 4,
+        description: null,
+        prix_affiche: null,
+        photo_path: null,
+        photo_alt: null,
+        facettes: [],
+        action: null,
+        badges: [],
+        allergenes: [],
+        disponible: true,
+      },
+    });
+  });
+
+  it("ne revalide pas dans la réponse de création", async () => {
+    gardeOk();
+
+    await createVitrineCarte(null, fd({ nom: "Carte du midi" }));
+    await createVitrineRubrique(null, fd({ menu_id: CARTE_ID, nom: "Entrées" }));
+    await createVitrineFiche(null, fd({ categorie_id: RUBRIQUE_ID, nom: "Soupe" }));
+
+    // Le routeur Next transforme une revalidation dans une Server Action en
+    // navigation RSC. La purge publique est donc faite par la route POST
+    // authentifiée, après que l'éditeur a affiché le retour canonique.
+    expect(cheminsRevalides()).toEqual([]);
+  });
+});
+
 // ────────────────────────────────────────────────────────────
 // Invariant 1 — aucune écriture sans la garde
 // ────────────────────────────────────────────────────────────
@@ -689,15 +762,15 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
     ]);
   });
 
-  it("sans adresse publique, seul le dashboard est purgé", async () => {
+  it("une création ne revalide pas dans sa réponse", async () => {
     gardeOk();
-    // `set_vitrine_slug` est le seul geste qui fasse naître la ligne de
-    // réglages : avant lui, il n'y a aucune page publique à purger.
-    state.row = null;
+    // Même quand une adresse existe, la création rend sa ligne canonique à
+    // l'éditeur local sans réponse RSC intermédiaire.
+    state.row = { id: CARTE_ID, nom: "Midi", ordre: 0, active: true };
 
     await createVitrineCarte(null, fd({ nom: "Midi" }));
 
-    expect(cheminsRevalides()).toEqual(["/dashboard/vitrine"]);
+    expect(cheminsRevalides()).toEqual([]);
   });
 
   it("setVitrineSlug purge le NOUVEAU slug sans relire la base", async () => {
