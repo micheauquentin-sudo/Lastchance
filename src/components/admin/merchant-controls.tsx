@@ -579,7 +579,7 @@ export function CompAccessControl({
                 onChange={(e) => setIncludeHunts(e.target.checked)}
                 className="h-4 w-4 accent-emerald-500"
               />
-              Inclure aussi le module Chasse au trésor
+              Inclure aussi le module Chasse au QR
             </label>
           )}
           {!addonLoyalty && (

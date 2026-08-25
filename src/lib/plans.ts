@@ -622,7 +622,7 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
   },
   {
     entitlement: "hunts",
-    name: "Chasse au trésor",
+    name: "Chasse au QR",
     currency: "EUR",
     soldStandalone: true,
     billing: {

@@ -282,7 +282,7 @@ export default async function SettingsPage({
         <Card>
           <h2 className="font-semibold mb-1">Options</h2>
           <p className="text-sm text-zinc-500 mb-4">
-            Chasse au trésor, Quiz express, Soirée en jeu… Chaque option
+            Chasse au QR, Quiz express, Soirée en jeu… Chaque option
             s&apos;achète seule, sans abonnement, et n&apos;ouvre que son
             module.
           </p>

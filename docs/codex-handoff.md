@@ -44,13 +44,31 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Chasse au QR — gain, Passeport et caisse (2026-08-26)
+
+- **Décision produit appliquée localement** : le nom commercial visible
+  devient « Chasse au QR » sur le dashboard, le parcours joueur, les
+  emails, les plans et le site vitrine. Les routes `/hunt`, clés `hunts`,
+  jetons existants et codes `CHASSE-…` restent inchangés.
+- **Parcours gagnant** : après un code de retrait effectivement attribué, le
+  joueur voit aussi son QR contenant ce code, directement lisible par le
+  scanner de caisse existant. Le Passeport n'est proposé qu'à ce gagnant,
+  reste absent sans programme Fidélité actif de la même organisation et
+  aucune écriture n'a lieu sans clic volontaire du joueur.
+- **Preuves** : 6 022 tests unitaires, typecheck, lint, build racine (201 s)
+  et typecheck/lint/build du site vitrine verts. Le catalogue du site a été
+  régénéré depuis `src/lib/plans.ts`. Revue sécurité ciblée : le QR ne
+  transporte que le code déjà affiché et la caisse revalide toujours
+  organisation, session et code côté serveur.
+- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+
 ## Ticket d'Or — émission bloquée (2026-08-25)
 
 - **Cause confirmée** : `emettreTicketOr` appelait `emettre_ticket_or` avec
   le client `service_role`, alors que la RPC exige le `auth.uid()` d'un membre
   via `is_org_member`. Elle renvoyait donc `not_authorized`, masqué par le
   message générique observé au comptoir.
-- **Lot local, non committé et non poussé** : l'émission utilise désormais
+- **Corrigé** : l'émission utilise désormais
   le client de session dans `src/actions/ticket-or.ts`; le rate-limit, la
   validation des jours et l'organisation active sont conservés. Le test
   `src/actions/ticket-or.test.ts` couvre le client de session, l'absence
@@ -59,7 +77,8 @@ constat, proposition et décision Codex doit être consigné ici.
   Next.js (181 s) verts. Revue de sécurité : la RPC reçoit de nouveau
   l'identité qui permet son contrôle multi-tenant ; aucun droit n'est
   élargi, aucune migration n'est requise.
-- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+- **Publication** : commit `f393072`, PR #201 fusionnée dans `main` après CI
+  entièrement verte. Aucun déploiement de production n'a été demandé.
 
 ## Ticket d'Or — lots invisibles après création (2026-08-25)
 

@@ -191,7 +191,7 @@ import {
 } from "./hunt-context";
 
 /** Le refus unique du module — recopié, car c'est sa stabilité qu'on teste. */
-const UNAVAILABLE = "Cette chasse au trésor n'est pas disponible.";
+const UNAVAILABLE = "Cette chasse au QR n'est pas disponible.";
 
 const HUNT_ID = "hunt-1";
 const ORG_ID = "org-marcel";

@@ -71,7 +71,7 @@ export const EXPERIENCE_BLUEPRINT_ADAPTERS = {
   }),
   hunt: defineAdapter({
     kind: "hunt",
-    label: "Chasse au trésor",
+    label: "Chasse au QR",
     support: { supported: true },
     supportedSchemaVersions: [1],
     configurationSchema: huntBlueprintSchema,

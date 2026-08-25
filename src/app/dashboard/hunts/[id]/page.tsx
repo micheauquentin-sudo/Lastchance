@@ -43,7 +43,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import type { Hunt, HuntStep } from "@/types/database";
 
-export const metadata: Metadata = { title: "Chasse au trésor" };
+export const metadata: Metadata = { title: "Chasse au QR" };
 
 /**
  * LA PAGE D'UNE CHASSE — DEUX VISAGES SUR UNE SEULE ROUTE.
@@ -189,7 +189,7 @@ export default async function HuntDetailPage({
   // (Il ne rend rien du tout quand le module est payé — voir le composant.)
   const bandeauModule = (
     <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
-      2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
+      2 à 10 étapes par Chasse au QR, ordre libre ou imposé, lot final remis en
       caisse.
     </ModuleCapabilityNotice>
   );
@@ -201,7 +201,7 @@ export default async function HuntDetailPage({
           href="/dashboard/hunts"
           className="text-sm text-zinc-600 hover:text-k-ink"
         >
-          ← Chasse au trésor
+          ← Chasse au QR
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <span className="text-3xl" aria-hidden>
@@ -287,7 +287,7 @@ export default async function HuntDetailPage({
             <CarteRepliable
               {...carteTuile(tuiles, "relance")}
               defaultOuvert={false}
-              resume="Repartir d'une chasse existante pour en créer une nouvelle"
+              resume="Repartir d'une Chasse au QR existante pour en créer une nouvelle"
             >
               <RelaunchFormulaCard
                 sourceName={h.name}
@@ -338,7 +338,7 @@ export default async function HuntDetailPage({
                   comptent aussi. C&apos;est ce qui vous dit lequel de vos
                   emplacements travaille. Le QR de la première étape sert
                   d&apos;aperçu même en brouillon, mais les pages ne s&apos;
-                  ouvrent aux joueurs qu&apos;une fois la chasse publiée.
+                  ouvrent aux joueurs qu&apos;une fois la Chasse au QR publiée.
                 </InfoBulle>
                 <HuntPosters huntName={h.name} steps={posterSteps} />
               </Card>
@@ -360,7 +360,7 @@ export default async function HuntDetailPage({
               href={`/dashboard/hunts/${h.id}`}
               className="text-sm font-bold text-k-body hover:text-k-ink"
             >
-              ← Retour au suivi de la chasse
+              ← Retour au suivi de la Chasse au QR
             </Link>
           </p>
         </>
@@ -380,8 +380,8 @@ function CarteEntreeAtelier({ huntId }: { huntId: string }) {
     <AtelierEntree
       etapes={ETAPES_CHASSE}
       hrefPour={(cle) => hrefEtapeChasse(huntId, cle as EtapeChasse)}
-      titre="L'atelier de la chasse"
-      sousTitre="Quatre étapes pour préparer votre chasse, du lot final aux affiches. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+      titre="L'atelier de la Chasse au QR"
+      sousTitre="Quatre étapes pour préparer votre Chasse au QR, du lot final aux affiches. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
     />
   );
 }

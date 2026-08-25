@@ -86,7 +86,7 @@ export function HuntSettings({
         <input type="hidden" name="id" value={hunt.id} />
 
         <div className="max-w-sm">
-          <Label htmlFor="hunt-name">Nom de la chasse</Label>
+          <Label htmlFor="hunt-name">Nom de la Chasse au QR</Label>
           <Input
             id="hunt-name"
             name="name"
@@ -270,7 +270,7 @@ export function HuntSettings({
           <AutoSaveEtat
             enAttente={enAttente}
             bloqueParValidation={bloqueParValidation}
-            messageBloque="Non enregistré : le nom de la chasse est vide."
+            messageBloque="Non enregistré : le nom de la Chasse au QR est vide."
           />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />
@@ -409,8 +409,8 @@ export function HuntStepsEditor({
       )}
       {full && (
         <p className="mb-4 text-xs text-zinc-500">
-          Chasse pleine ({MAX_STEPS} étapes). Pour réorganiser une chasse
-          pleine, retirez une étape, réordonnez, puis rajoutez-la.
+          Chasse au QR complète ({MAX_STEPS} étapes). Pour la réorganiser,
+          retirez une étape, réordonnez, puis rajoutez-la.
         </p>
       )}
 

@@ -132,7 +132,7 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
     const refus = resolveAddonCheckout("hunts");
     expect(refus.ok).toBe(false);
     if (!refus.ok) {
-      expect(refus.erreur).toContain("Chasse au trésor");
+      expect(refus.erreur).toContain("Chasse au QR");
       // Le commerçant n'a que faire de notre configuration : « price ID
       // absent » ne lui apprend rien et l'inquiète sur un service qu'il paie.
       expect(refus.erreur).not.toMatch(/price|env|STRIPE/i);

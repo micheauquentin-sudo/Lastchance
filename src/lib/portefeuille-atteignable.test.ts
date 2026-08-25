@@ -112,7 +112,7 @@ describe("le portefeuille est atteignable depuis les écrans de gain", () => {
         const src = readFileSync(f, "utf8");
         // « en caisse » près d'un code de retrait, hors partage social
         // (`text:` d'un navigator.share) qui n'est pas un écran.
-        return /Présente(z)? ce code en caisse|Présentez ce code en caisse/.test(
+        return /Présente(z)? ce code(?: ou faites scanner le QR)? en caisse/.test(
           src,
         );
       })

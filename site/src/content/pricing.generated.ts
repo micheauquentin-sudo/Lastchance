@@ -95,7 +95,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Passeport fidélité",
       "Calendrier",
       "Quiz",
-      "Chasse au trésor",
+      "Chasse au QR",
       "Duo Miroir",
       "Portrait de la Bande"
     ],
@@ -166,7 +166,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Pronostics",
       "Jackpot collectif",
       "Quiz",
-      "Chasse au trésor",
+      "Chasse au QR",
       "Vitrine",
       "Réserver",
       "Duo Miroir",
@@ -237,7 +237,7 @@ export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
   },
   {
     "entitlement": "hunts",
-    "name": "Chasse au trésor",
+    "name": "Chasse au QR",
     "priceLabel": "29 € / 30 jours",
     "model": "one-off-window",
     "cadence": "Achat unique",

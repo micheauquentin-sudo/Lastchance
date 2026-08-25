@@ -492,7 +492,7 @@ function HuntResult({
     >
       <p className="font-mono text-sm text-zinc-600 mb-1">{completion.code}</p>
       <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
-        🗺️ Chasse au trésor
+        🗺️ Chasse au QR
       </span>
       <p className="text-2xl font-bold mb-1">
         {nomGagne || completion.reward_label || "Lot de la chasse"}

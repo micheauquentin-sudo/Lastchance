@@ -190,7 +190,7 @@ function huntRewardEmailHtml(p: {
       <p style="color:#71717a;font-size:13px;margin:0;">Présentez ce code en caisse pour récupérer votre lot.</p>
     </div>
     <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
-      Vous recevez cet email car vous avez participé à la chasse au trésor de ${org}.
+      Vous recevez cet email car vous avez participé à la chasse au QR de ${org}.
     </p>
   </div>
 </body>

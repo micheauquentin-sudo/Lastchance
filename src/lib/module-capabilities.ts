@@ -145,7 +145,7 @@ export interface EntreeCapacites {
  */
 const NOM_MODULE: Record<GrantableModule, string> = {
   wheel: "la roue de la fortune",
-  hunts: "la chasse au trésor",
+  hunts: "la chasse au QR",
   calendar: "le calendrier à surprises",
   loyalty: "le passeport des habitués",
   quiz: "le quiz express",

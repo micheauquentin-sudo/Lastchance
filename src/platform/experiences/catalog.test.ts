@@ -17,6 +17,12 @@ const addons = {
 };
 
 describe("experience catalog", () => {
+  it("nomme la chasse de manière cohérente", () => {
+    expect(EXPERIENCE_CATALOG.find((item) => item.kind === "hunt")?.label).toBe(
+      "Chasse au QR",
+    );
+  });
+
   it("possède des kinds et droits uniques", () => {
     expect(new Set(EXPERIENCE_CATALOG.map((item) => item.kind)).size).toBe(
       EXPERIENCE_CATALOG.length,

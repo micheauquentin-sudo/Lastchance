@@ -61,7 +61,7 @@ export async function generateMetadata({
   const { token } = await params;
   const ctx = await loadContext(token);
   if (!ctx.ok) notFound();
-  return { title: "Chasse au trésor", robots: { index: false } };
+  return { title: "Chasse au QR", robots: { index: false } };
 }
 
 export default async function HuntStepPage({
