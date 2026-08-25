@@ -54,7 +54,7 @@
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(61);
+select plan(67);
 
 -- ════════════════════════════════════════════════════════════
 -- PRÉAMBULE — CATALOGUE ET ACL (ADR-082)
@@ -334,19 +334,25 @@ values
 -- que la comparaison des deux fonctions porte sur le PRÉDICAT et non sur
 -- l'écart de population.
 --
--- `jamais-joue@` est l'écart volontaire : abonné, zéro gain, donc dans le
--- compteur `all` et dans AUCUN segment ni AUCUNE ligne de la liste. Il prouve
--- au passage que « nouveau » est bien `wins = 1` et non `wins <= 1`.
+-- `jamais-joue@` reste l'écart volontaire : abonné par une AUTRE source,
+-- zéro gain, donc dans le compteur `all` et hors de la liste. À l'inverse,
+-- `calendrier@` est un opt-in Calendrier : il doit désormais remonter, sans
+-- qu'aucun gain ne soit fabriqué.
 --
 -- `moyen@`, `exaequo@` et `sansprenom@` sont l'écart inverse : ils jouent sans
 -- être abonnés. Comme ils ne tombent dans aucun segment, leur absence ne fausse
 -- aucune des trois comparaisons.
-insert into public.newsletter_subscribers (organization_id, email) values
-  ('ae000000-0000-4000-8000-000000000001', 'fidele@tap-cli.local'),
-  ('ae000000-0000-4000-8000-000000000001', 'ancienne@tap-cli.local'),
-  ('ae000000-0000-4000-8000-000000000001', 'nouveau@tap-cli.local'),
-  ('ae000000-0000-4000-8000-000000000001', 'dormeur@tap-cli.local'),
-  ('ae000000-0000-4000-8000-000000000001', 'jamais-joue@tap-cli.local');
+insert into public.newsletter_subscribers (organization_id, email, source) values
+  ('ae000000-0000-4000-8000-000000000001', 'fidele@tap-cli.local', 'wheel'),
+  ('ae000000-0000-4000-8000-000000000001', 'ancienne@tap-cli.local', 'wheel'),
+  ('ae000000-0000-4000-8000-000000000001', 'nouveau@tap-cli.local', 'calendar'),
+  ('ae000000-0000-4000-8000-000000000001', 'dormeur@tap-cli.local', 'wheel'),
+  ('ae000000-0000-4000-8000-000000000001', 'jamais-joue@tap-cli.local', 'wheel');
+
+insert into public.newsletter_subscribers (organization_id, email, source, unsubscribed_at) values
+  ('ae000000-0000-4000-8000-000000000001', 'calendrier@tap-cli.local', 'calendar', null),
+  ('ae000000-0000-4000-8000-000000000001', 'calendrier-desabonne@tap-cli.local', 'calendar', now()),
+  ('ae000000-0000-4000-8000-000000000002', 'calendrier-b@tap-cli.local', 'calendar', null);
 
 -- ════════════════════════════════════════════════════════════
 -- LECTURES
@@ -692,14 +698,14 @@ select is(
 -- ════════════════════════════════════════════════════════════
 select is(
   (select count(*)::int from tap_cli_a),
-  7,
-  'A voit SEPT profils, un par e-mail distinct'
+  8,
+  'A voit HUIT profils, dont un opt-in Calendrier sans gain'
 );
 
 select is(
   (select max(total_count) from tap_cli_a),
-  7::bigint,
-  'total_count vaut 7 sur chaque ligne — le total AVANT pagination'
+  8::bigint,
+  'total_count vaut 8 sur chaque ligne — le total AVANT pagination'
 );
 
 select is(
@@ -738,6 +744,42 @@ select is(
   'first_name retient le plus recent NON NUL, pas le plus recent tout court'
 );
 
+select is(
+  (select count(*)::int from tap_cli_a where email = 'calendrier@tap-cli.local'),
+  1,
+  'un opt-in Calendrier actif sans gain apparait une seule fois'
+);
+
+select ok(
+  (select wins = 0 and redeemed = 0 and first_win is null and last_win is null
+     from tap_cli_a where email = 'calendrier@tap-cli.local'),
+  'un opt-in Calendrier sans gain ne recoit ni gain ni date de gain inventes'
+);
+
+select is(
+  (select count(*)::int from tap_cli_a where email = 'jamais-joue@tap-cli.local'),
+  0,
+  'un abonne sans gain issu dune autre source ne change pas la liste Clients'
+);
+
+select is(
+  (select count(*)::int from tap_cli_a where email = 'calendrier-desabonne@tap-cli.local'),
+  0,
+  'un opt-in Calendrier desabonne ne reste pas expose dans la liste Clients'
+);
+
+select is(
+  (select count(*)::int from tap_cli_a where email = 'calendrier-b@tap-cli.local'),
+  0,
+  'un opt-in Calendrier du voisin ne fuit jamais dans la liste de A'
+);
+
+select is(
+  (select count(*)::int from tap_cli_a where email = 'nouveau@tap-cli.local'),
+  1,
+  'un joueur deja issu du Calendrier conserve un unique profil et ses vrais gains'
+);
+
 -- ════════════════════════════════════════════════════════════
 -- 3. `p_q` — LA RECHERCHE, ET SON ÉCHAPPEMENT
 -- ════════════════════════════════════════════════════════════
@@ -773,8 +815,8 @@ select is(
 
 select is(
   (select n from tap_cli_cas where cas = 'q partiel'),
-  7,
-  'p_q sur un fragment commun a tous les e-mails les rend tous les sept'
+  8,
+  'p_q sur un fragment commun a tous les e-mails les rend tous les huit'
 );
 
 -- Non échappé, `_` serait le joker « un caractère quelconque » et rendrait les
@@ -851,13 +893,13 @@ select is(
 
 select is(
   (select n from tap_cli_cas where cas = 'segment tous'),
-  7,
+  8,
   'segment « all » ne filtre rien'
 );
 
 select is(
   (select n from tap_cli_cas where cas = 'segment vide'),
-  7,
+  8,
   'p_segment null ne filtre rien non plus — c''est le defaut de la page'
 );
 
@@ -915,16 +957,16 @@ select is(
   'et ces nombres ne sont pas nuls : deux par segment — l''egalite n''est pas 0 = 0'
 );
 
--- L'écart de POPULATION, mesuré plutôt que sous-entendu. Sept joueurs listés,
--- cinq abonnés comptés : les deux fonctions partagent le PRÉDICAT, pas
+-- L'écart de POPULATION, mesuré plutôt que sous-entendu. Huit clients listés,
+-- six abonnés comptés : les deux fonctions partagent le PRÉDICAT, pas
 -- l'ensemble sur lequel il porte. Un lecteur qui verrait les trois égalités
 -- ci-dessus pourrait croire les deux populations interchangeables — elles ne le
 -- sont pas, et le jour où quelqu'un fera l'un des deux compteurs à partir de
 -- l'autre, cette assertion le dira.
 select is(
-  (select liste::text || ' joueurs / ' || compteur::text || ' abonnes'
+  (select liste::text || ' clients / ' || compteur::text || ' abonnes'
      from tap_cli_parite where segment = 'population'),
-  '7 joueurs / 5 abonnes',
+  '8 clients / 6 abonnes',
   'les POPULATIONS restent differentes — la factorisation unifie le predicat, pas l''ensemble'
 );
 
@@ -1003,8 +1045,8 @@ select is(
 
 select is(
   (select total from tap_cli_cas where cas = 'page 1'),
-  7::bigint,
-  'total_count reste 7 malgre la limite — le total AVANT pagination'
+  8::bigint,
+  'total_count reste 8 malgre la limite — le total AVANT pagination'
 );
 
 select is(

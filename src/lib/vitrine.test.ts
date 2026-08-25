@@ -506,7 +506,7 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       cartes: [],
       portes: {
         reserver: { activites: [{ id: "a1", nom: "Table" }], files: [], offres: [] },
-        experiences: { quiz: [] },
+        experiences: { quiz: [], calendars: [], pronostics: [] },
       },
     });
     if (etat.state !== "ok") throw new Error("état inattendu");
@@ -530,7 +530,7 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       // `duo` est absent du document d'avant L17 : le repli le rend FALSE, et
       // c'est le seul sens acceptable — une porte qui s'ouvrirait sur une clé
       // manquante promettrait un jeu que le commerçant n'a pas configuré.
-      experiences: { quiz: [], duo: false },
+      experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
     });
   });
 
@@ -682,7 +682,11 @@ describe("mapPortesVitrine — l'annuaire, et ce qu'il refuse d'inventer", () =>
           },
         ],
       },
-      experiences: { quiz: [{ slug: "quiz-du-midi", titre: "Quiz du midi" }] },
+      experiences: {
+        quiz: [{ slug: "quiz-du-midi", titre: "Quiz du midi" }],
+        calendars: [{ slug: "calendrier-noel", titre: "Calendrier de Noël" }],
+        pronostics: [{ slug: "euro-2028", titre: "Euro 2028" }],
+      },
     });
 
     expect(portes.reserver.activites).toEqual([{ id: "a1", nom: "Table pour deux" }]);
@@ -701,12 +705,18 @@ describe("mapPortesVitrine — l'annuaire, et ce qu'il refuse d'inventer", () =>
     expect(portes.experiences.quiz).toEqual([
       { slug: "quiz-du-midi", titre: "Quiz du midi" },
     ]);
+    expect(portes.experiences.calendars).toEqual([
+      { slug: "calendrier-noel", titre: "Calendrier de Noël" },
+    ]);
+    expect(portes.experiences.pronostics).toEqual([
+      { slug: "euro-2028", titre: "Euro 2028" },
+    ]);
   });
 
   it("les six listes existent TOUJOURS, même sur un document vide", () => {
     const vide = {
       reserver: { activites: [], files: [], offres: [] },
-      experiences: { quiz: [], duo: false },
+      experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
     };
     expect(mapPortesVitrine({})).toEqual(vide);
     expect(mapPortesVitrine(null)).toEqual(vide);

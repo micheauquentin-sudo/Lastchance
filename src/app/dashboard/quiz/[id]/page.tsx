@@ -38,14 +38,9 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
@@ -261,34 +256,13 @@ export default async function QuizDetailPage({
     quiz.id,
   );
 
-  // Carte de l'Aventure et relance : les marqueurs viennent des colonnes déjà
+  // Relance : les marqueurs viennent des colonnes déjà
   // sélectionnées par `QUIZ_COLUMNS`, sans requête supplémentaire.
   const marqueurs = {
     status: quiz.status,
     draw_state: quiz.drawState,
     drawn_at: quiz.drawnAt,
   };
-  const etapes = construireEtapesAventure({
-    marqueurs: { kind: "quiz", ...marqueurs },
-    capacites,
-    // Les ancres de SUIVI restent des ancres (elles vivent sur cette vue), mais
-    // « Compléter les réglages » désigne désormais une ÉTAPE : les cartes
-    // d'édition ne sont plus rendues sur la vue nue, `#reglages` y serait un
-    // clic mort. C'est le patron de la campagne, qui pointe déjà une route.
-    liens: {
-      editeur: hrefEtapeQuiz(quiz.id, "quiz"),
-      // La page publique n'est ouverte qu'une fois le quiz actif : proposer son
-      // lien avant, c'est promettre un écran fermé.
-      apercu: quiz.status === "active" ? publicUrl : null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  // Pas de CTA vers une ancre qui n'existera pas : sans droit d'exploration, la
-  // carte de relance n'est pas montée.
-  const conclusion = conclusionAventure(etapes, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   // LES MÊMES CONTRÔLES POUR LES DEUX VUES, calculés UNE fois.
@@ -342,9 +316,8 @@ export default async function QuizDetailPage({
 
   // ── LE MODE ATELIER : une seule étape à l'écran, rien d'autre ──
   //
-  // Ni Carte de l'Aventure ni carte de relance ici : le fil des étapes EST la
-  // progression, et un geste d'exploitation n'a rien à faire au milieu d'une
-  // préparation. La vue suivi reste à un clic.
+  // Le fil des étapes est la progression : un geste d'exploitation n'a rien à
+  // faire au milieu d'une préparation. La vue suivi reste à un clic.
   if (etape) {
     const definition = definitionEtapeQuiz(etape);
     const numero = numeroEtape(ETAPES_QUIZ, etape);
@@ -417,11 +390,6 @@ export default async function QuizDetailPage({
       {enTete}
       {bandeauModule}
 
-      {/* ── LA CHECKLIST ──
-          Chaque bloc porte son rang et son verdict, et TOUT naît replié : seul
-          le Statut reste ouvert, parce qu'il porte le geste qui ouvre le jeu
-          aux joueurs. La Carte de l'Aventure se glisse juste après lui, sans
-          rang ni verdict (voir `carte-aventure.tsx`). */}
       <CarteRepliable
         {...carteTuile(tuiles, "statut")}
         resume={
@@ -437,8 +405,6 @@ export default async function QuizDetailPage({
           hrefJeu={quiz.status === "active" ? publicUrl : null}
         />
       </CarteRepliable>
-
-      <CarteAventure steps={etapes} conclusion={conclusion} />
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le quiz est publié — un QR imprimé et

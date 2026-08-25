@@ -6,14 +6,12 @@ import { expectNoA11yViolations } from "./axe";
  * histoire au lieu de quatre systèmes de guidage empilés.
  *
  * Ce que la spec tient :
- *   1. le hero « Votre prochaine action » existe et porte un vrai bouton — la
- *      page n'en avait aucun ;
- *   2. la section « Où en sont vos animations » garde son nom accessible et ses
+ *   1. la section « Où en sont vos animations » garde son nom accessible et ses
  *      6 tuiles `<li>` (le tableau d'équipe y est fondu, il n'a plus de carte
  *      ni de landmark à lui) ;
- *   3. le filet anti « clic mort » : sur un chemin réservé au propriétaire,
+ *   2. le filet anti « clic mort » : sur un chemin réservé au propriétaire,
  *      c'est le LIEN qui tombe, pas la tuile ;
- *   4. « Vos résultats » est affiché en permanence — la page ne change plus de
+ *   3. « Vos résultats » est affiché en permanence — la page ne change plus de
  *      forme au premier événement mesuré.
  *
  * Volontairement sobre : aucune assertion sur les chiffres (dépendants du
@@ -25,20 +23,16 @@ test.describe("dashboard — vue d'ensemble", () => {
   test.describe("avec session owner", () => {
     test.use({ storageState: "e2e/.auth/owner.json" });
 
-    test("owner : hero, section d'animations (6 tuiles) et résultats @smoke", async ({
+    test("owner : section d'animations (6 tuiles) et résultats @smoke", async ({
       page,
     }, testInfo) => {
       await page.goto("/dashboard");
       await expect(page).toHaveURL(/\/dashboard$/);
+      await expect(
+        page.getByText("Votre prochaine action", { exact: true }),
+      ).toHaveCount(0);
 
-      // 1. UNE seule réponse en haut d'écran, avec un vrai bouton.
-      const hero = page
-        .locator("section", { hasText: "Votre prochaine action" })
-        .first();
-      await expect(hero.getByText("Votre prochaine action")).toBeVisible();
-      await expect(hero.getByRole("link").first()).toBeVisible();
-
-      // 2. La section fusionnée garde son nom accessible et ses six tuiles.
+      // 1. La section fusionnée garde son nom accessible et ses six tuiles.
       const centre = page.getByRole("region", {
         name: "Où en sont vos animations",
       });
@@ -62,7 +56,7 @@ test.describe("dashboard — vue d'ensemble", () => {
       ).toBeVisible();
       await expect(page.getByText("Tableau d'équipe")).toHaveCount(0);
 
-      // 3. Le propriétaire a le droit d'ouvrir « Gains à remettre » : la tuile
+      // 2. Le propriétaire a le droit d'ouvrir « Gains à remettre » : la tuile
       //    reste un lien. On scope à la liste des tuiles — la liste des coups
       //    de main, dans le même landmark, peut porter un <li> qui mentionne
       //    les mêmes mots (« Tester les QR jamais scannés »).
@@ -70,7 +64,7 @@ test.describe("dashboard — vue d'ensemble", () => {
         tuiles.locator("li", { hasText: "Gains à remettre" }).locator("a"),
       ).toHaveCount(1);
 
-      // 3 bis. Les trois tuiles qui mènent au hub QR y mènent FILTRÉES : une
+      // 2 bis. Les trois tuiles qui mènent au hub QR y mènent FILTRÉES : une
       //        tuile qui compte puis renvoie sur la liste entière fait
       //        recommencer à la main le tri qu'elle vient de faire.
       for (const [label, motif] of [
@@ -83,7 +77,7 @@ test.describe("dashboard — vue d'ensemble", () => {
         ).toHaveAttribute("href", new RegExp(`/dashboard/qr-codes\\?.*${motif}`));
       }
 
-      // 4. Les repères ne disparaissent plus au premier événement mesuré.
+      // 3. Les repères ne disparaissent plus au premier événement mesuré.
       const resultats = page.getByRole("region", { name: "Vos résultats" });
       await expect(resultats).toBeVisible();
       for (const label of [
@@ -112,7 +106,7 @@ test.describe("dashboard — vue d'ensemble", () => {
 
       await expectNoA11yViolations(page, testInfo);
 
-      // 5. Et le lien ARRIVE là où il promet : on le suit pour de bon, en
+      // 4. Et le lien ARRIVE là où il promet : on le suit pour de bon, en
       //    dernier — la case du hub revient cochée, donc le filtre a été lu.
       await tuiles
         .locator("li", { hasText: "QR jamais scannés" })

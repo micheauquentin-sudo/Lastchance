@@ -76,22 +76,12 @@ describe("prédicat de fenêtre de campagne", () => {
   });
 });
 
-describe("checklist de démarrage", () => {
-  it("connaît le rôle et marque l'étape owner-only", () => {
+describe("accueil dashboard simplifié", () => {
+  it("ne remonte plus les trois parcours de guidage retirés", () => {
     const src = lire("app/dashboard/page.tsx");
-    // La checklist n'a plus sa carte en bas de page : le bloc « Votre prochaine
-    // action » l'absorbe (elle y arrivait en dixième position, après dix cartes
-    // de zéros). Le filtrage par rôle des étapes, lui, reste le même module.
-    expect(src).toContain(
-      "visibleOnboardingSteps(onboardingSteps, role)",
-    );
-    expect(src).not.toContain("<OnboardingChecklist");
-    // L'étape qui pointe sur /dashboard/settings (owner-only) est marquée.
-    const etapeLogo = src.slice(
-      src.indexOf('key: "logo"'),
-      src.indexOf('key: "activate"'),
-    );
-    expect(etapeLogo).toContain('href: "/dashboard/settings"');
-    expect(etapeLogo).toContain("ownerOnly: true");
+    expect(src).not.toContain("Votre prochaine action");
+    expect(src).not.toContain("Bien démarrer");
+    expect(src).not.toContain("ConseillerPanel");
+    expect(src).not.toContain("OnboardingChecklist");
   });
 });

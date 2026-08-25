@@ -974,6 +974,10 @@ export interface PortesVitrineView {
   };
   experiences: {
     quiz: PorteQuizVitrineView[];
+    /** Calendriers actifs, identifiés par leur adresse publique. */
+    calendars: PorteQuizVitrineView[];
+    /** Pronostics publiés, y compris un classement final encore consultable. */
+    pronostics: PorteQuizVitrineView[];
     /**
      * Duo Miroir est-il JOUABLE ici (L17) — un booléen, et rien de plus.
      *
@@ -1318,6 +1322,8 @@ export function mapPortesVitrine(raw: unknown): PortesVitrineView {
     },
     experiences: {
       quiz: mapListePortes(experiences?.quiz, mapPorteQuiz),
+      calendars: mapListePortes(experiences?.calendars, mapPorteQuiz),
+      pronostics: mapListePortes(experiences?.pronostics, mapPorteQuiz),
       // REPLI FERMÉ : tout ce qui n'est pas exactement `true` vaut « pas de
       // jeu ici ». Un document ancien (d'avant L17) n'a pas la clé, et la
       // porte ne doit pas s'ouvrir sur une absence.

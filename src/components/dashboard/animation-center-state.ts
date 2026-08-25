@@ -112,23 +112,18 @@ export function getAnimationCenterMetrics(
 /**
  * LE CHIFFRE DE LA TUILE = LE NOMBRE DE LIGNES DE LA LISTE, TOUJOURS.
  *
- * `teamTasks` est calculé côté serveur AVANT que le hero « Votre prochaine
- * action » ne s'approprie une tâche : la tuile annonçait « 4 » et la liste juste
- * en dessous, dans la MÊME carte, en affichait 3. Un compteur qu'on peut
- * démentir en comptant à l'écran discrédite les cinq autres.
+ * `teamTasks` doit rester égal au nombre de lignes disponibles dans la liste
+ * rendue juste sous les repères. Un compteur qu'on peut démentir en comptant à
+ * l'écran discrédite les cinq autres.
  *
  * Recalculé ici sur exactement le même prédicat que `getTeamActionBoardSnapshot`
- * (`status === "ready"`, après retrait des clés masquées) : deux endroits, une
- * seule règle, et un test qui les tient ensemble.
+ * (`status === "ready"`) : deux endroits, une seule règle, et un test qui les
+ * tient ensemble.
  */
 export function teamTasksAffichees(
   actionsEquipe: readonly { key: string; status: "ready" | "done" | "blocked" }[],
-  masquees: readonly string[],
 ): number {
-  const promues = new Set(masquees);
-  return actionsEquipe.filter(
-    (action) => action.status === "ready" && !promues.has(action.key),
-  ).length;
+  return actionsEquipe.filter((action) => action.status === "ready").length;
 }
 
 export function attentionCount(metrics: AnimationCenterMetric[]): number {

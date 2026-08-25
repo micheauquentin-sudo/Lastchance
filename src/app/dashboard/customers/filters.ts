@@ -97,8 +97,8 @@ export interface ProfilExport {
   first_name: string | null;
   wins: number;
   redeemed: number;
-  first_win: string;
-  last_win: string;
+  first_win: string | null;
+  last_win: string | null;
   /** A réservé au moins une fois (VIT-4) — un fait, pas un seuil. */
   a_reserve: boolean;
   /** S'est présenté au moins une fois (check-in enregistré). */
@@ -203,7 +203,7 @@ export function csvClients(
  * l'écran afficherait « À relancer ».
  */
 export function customerBadges(
-  profile: { wins: number; last_win: string },
+  profile: { wins: number; last_win: string | null },
   now: number = Date.now(),
 ): { label: string; className: string }[] {
   const badges: { label: string; className: string }[] = [];
@@ -213,7 +213,7 @@ export function customerBadges(
   if (profile.wins === 1) {
     badges.push({ label: "Nouveau", className: "bg-sky-50 text-sky-700" });
   }
-  const last = new Date(profile.last_win).getTime();
+  const last = profile.last_win ? new Date(profile.last_win).getTime() : Number.NaN;
   if (
     Number.isFinite(last) &&
     (now - last) / DAY_MS > INACTIVE_AFTER_DAYS

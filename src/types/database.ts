@@ -1056,7 +1056,7 @@ export interface NewsletterCampaign {
   created_at: string;
 }
 
-/** Profil agrégé d'un joueur identifié (RPC org_customer_profiles_page). */
+/** Profil agrégé d'un client identifié (RPC org_customer_profiles_page). */
 export interface CustomerProfile {
   email: string;
   /**
@@ -1071,8 +1071,10 @@ export interface CustomerProfile {
   first_name: string | null;
   wins: number;
   redeemed: number;
-  first_win: string;
-  last_win: string;
+  /** Null pour un abonné Calendrier sans gain : aucune date ne doit être inventée. */
+  first_win: string | null;
+  /** Null pour un abonné Calendrier sans gain : aucune date ne doit être inventée. */
+  last_win: string | null;
   /**
    * A LAISSÉ UNE TRACE DANS RÉSERVER, tout statut confondu (VIT-4) — les
    * annulations comprises : quelqu'un qui a voulu venir reste quelqu'un qu'un

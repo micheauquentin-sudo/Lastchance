@@ -116,22 +116,6 @@ describe("TeamActionBoard — ce qui se replie au lieu de crier", () => {
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 
-  it("ne répète pas la tâche que le hero a déjà promue", () => {
-    render(
-      <TeamActionBoard
-        actions={actions}
-        actorRole="owner"
-        masquer={["offer"]}
-      />,
-    );
-
-    expect(screen.queryByText("Vérifier l'offre")).toBeNull();
-    expect(screen.getByText("Relire les questions")).toBeTruthy();
-    // Elle ne bascule pas non plus dans les « déjà faites » : elle est ailleurs
-    // sur l'écran, pas terminée.
-    expect(screen.getAllByRole("listitem")).toHaveLength(1);
-  });
-
   it("affiche un état vide EXPLICITE plutôt que de disparaître", () => {
     render(<TeamActionBoard actions={[]} actorRole="owner" />);
 

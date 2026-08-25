@@ -6,14 +6,9 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -175,30 +170,13 @@ export default async function CalendarDetailPage({
     c.id,
   );
 
-  // Carte de l'Aventure et relance. Un calendrier n'a pas d'`ends_at` : sa fin
+  // Relance : un calendrier n'a pas d'`ends_at` : sa fin
   // se déduit de `start_date` et `day_count`, tous deux dans `CALENDAR_COLUMNS`.
   const marqueurs = {
     status: c.status,
     start_date: c.start_date,
     day_count: c.day_count,
   };
-  // Les ancres de SUIVI restent des ancres (elles vivent sur cette vue), mais
-  // « Compléter les réglages » désigne désormais une ÉTAPE : les cartes
-  // d'édition ne sont plus rendues sur la vue nue, `#reglages` y serait un clic
-  // mort.
-  const etapes = construireEtapesAventure({
-    marqueurs: { kind: "calendar", ...marqueurs },
-    capacites,
-    liens: {
-      editeur: hrefEtapeCalendrier(c.id, "reglages"),
-      apercu: c.status === "active" ? publicUrl : null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  const conclusion = conclusionAventure(etapes, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   // Les cases telles que la vérification et le compteur d'entrée les lisent :
@@ -344,10 +322,6 @@ export default async function CalendarDetailPage({
       {enTete}
       {bandeauModule}
 
-      {/* ── LA CHECKLIST ──
-          Même règle que sur le quiz : tout naît replié, seul le Statut reste
-          ouvert — c'est lui qui ouvre la page publique. La Carte de l'Aventure
-          le suit, repliée et sans rang (voir `carte-aventure.tsx`). */}
       <CarteRepliable
         {...carteTuile(tuiles, "statut")}
         resume={
@@ -363,8 +337,6 @@ export default async function CalendarDetailPage({
           hrefJeu={c.status === "active" ? publicUrl : null}
         />
       </CarteRepliable>
-
-      <CarteAventure steps={etapes} conclusion={conclusion} />
 
       {/* §4 du cahier : le QR ne rend pas jouable un brouillon. On n'affiche
           donc le QR et le lien QUE si le calendrier est publié — un QR imprimé

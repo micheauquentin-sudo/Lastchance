@@ -100,17 +100,15 @@ test.describe("Ateliers des 7 modules — navigation par étape @smoke", () => {
     }) => {
       // ── URL nue → vue SUIVI ──
       //
-      // Depuis « tout replié », seul le Statut s'ouvre de lui-même : la Carte
-      // de l'Aventure et la porte de l'atelier naissent en barre repliée. On
-      // déplie donc avant d'exiger leur contenu — ce qui vérifie AUSSI que la
-      // barre existe, puisque `ouvrirTuile` cliquerait dans le vide sinon.
+      // Depuis « tout replié », seul le Statut s'ouvre de lui-même. La porte
+      // de l'atelier naît en barre repliée : on la déplie avant d'exiger son
+      // contenu, ce qui vérifie AUSSI que la barre existe, puisque
+      // `ouvrirTuile` cliquerait dans le vide sinon.
       await page.goto(mod.base);
       await expect(page.locator("#statut")).toBeVisible();
-
-      await ouvrirTuile(page, /Développer «.*Carte de l'Aventure/);
       await expect(
         page.getByRole("heading", { name: "Carte de l'Aventure" }),
-      ).toBeVisible();
+      ).toHaveCount(0);
 
       await ouvrirTuile(
         page,

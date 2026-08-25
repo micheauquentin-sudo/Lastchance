@@ -30,7 +30,6 @@ import {
 } from "@/components/dashboard/hunt-editor";
 import { HuntPosters } from "@/components/dashboard/hunt-posters";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
@@ -39,10 +38,6 @@ import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireVerificationChasse } from "@/lib/activation/hunts";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
@@ -53,9 +48,8 @@ export const metadata: Metadata = { title: "Chasse au trésor" };
 /**
  * LA PAGE D'UNE CHASSE — DEUX VISAGES SUR UNE SEULE ROUTE.
  *
- * · URL nue → la vue SUIVI : la Carte de l'Aventure, le statut, ce que font
- *   vos joueurs, la relance. Ce qu'on vient regarder une fois la chasse en
- *   place.
+ * · URL nue → la vue SUIVI : le statut, ce que font vos joueurs, la relance.
+ *   Ce qu'on vient regarder une fois la chasse en place.
  * · `?etape=…` → l'ATELIER : le fil des quatre étapes et LA carte de l'étape
  *   courante. Ce qu'on vient faire avant d'ouvrir.
  *
@@ -155,32 +149,13 @@ export default async function HuntDetailPage({
   const remainingStock =
     h.reward_stock === null ? null : Math.max(0, h.reward_stock - h.reward_claimed_count);
 
-  // Carte de l'Aventure et relance : les marqueurs sortent de la ligne DÉJÀ
-  // lue ci-dessus, aucune requête n'est ajoutée pour eux.
+  // Relance : les marqueurs sortent de la ligne déjà lue ci-dessus, aucune
+  // requête n'est ajoutée pour eux.
   const marqueurs = {
     status: h.status,
     starts_at: h.starts_at,
     ends_at: h.ends_at,
   };
-  const etapesAventure = construireEtapesAventure({
-    marqueurs: { kind: "hunt", ...marqueurs },
-    capacites,
-    liens: {
-      // L'ÉDITEUR EST MAINTENANT UNE URL, plus une ancre. Et pas n'importe
-      // laquelle : `#reglages` désignait l'éditeur d'ÉTAPES, pas les réglages
-      // — « Compléter les réglages » n'a jamais mené au lot final, qui est
-      // pourtant la précondition d'ouverture qu'on demande de remplir.
-      editeur: hrefEtapeChasse(h.id, "chasse"),
-      // L'aperçu d'une chasse est le QR de sa première étape : c'est ce que le
-      // joueur scanne en premier.
-      apercu: posterSteps[0]?.url ?? null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  const conclusion = conclusionAventure(etapesAventure, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT. Les deux
@@ -252,8 +227,6 @@ export default async function HuntDetailPage({
               hrefJeu={posterSteps[0]?.url ?? null}
             />
           </CarteRepliable>
-
-          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
 
           <CarteRepliable
             {...carteTuile(tuiles, "atelier")}

@@ -44,6 +44,34 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Simplification dashboard, Clients Calendrier et portes Vitrine (2026-08-25)
+
+- **Décision produit, faite localement** : la Carte de l'Aventure est retirée
+  de toutes les pages dashboard qui la proposaient. L'accueil ne montre plus
+  « Votre prochaine action », le Conseiller ni « Bien démarrer » ; le Centre
+  d'animation et le tableau d'équipe restent les seuls repères d'action.
+- **Défaut Clients corrigé** : `joinCalendar` enregistrait déjà l'opt-in
+  newsletter, mais la RPC Clients ne partait que des gains. Un abonné actif issu
+  du Calendrier apparaît désormais dans son organisation avec `0` gain et des
+  dates de gain absentes (jamais une date inventée), sans dupliquer un joueur.
+  Les sources non-Calendrier, désabonnements et organisations voisines restent
+  exclus.
+- **Vitrine publique** : le bloc d'expériences déjà activé par le commerçant
+  propose aussi les Calendriers actifs et les Pronostics accessibles, après les
+  jeux existants. Les droits module Calendrier et droit Pronostics par ressource
+  sont revalidés dans la lecture publique ; aucun brouillon, contact ou donnée
+  inter-tenant n'est exposé.
+- **Preuves** : 6 013 tests unitaires, 5 530 assertions pgTAP, typecheck, lint,
+  gardes SQL/migrations et build Next.js sont verts. Revue sécurité ciblée :
+  aucun finding critique ou moyen sur ce lot.
+- **Reste** : aucun commit, push, migration distante ou déploiement n'a été
+  effectué. Attendre l'accord propriétaire explicite pour créer le commit et
+  pousser ce lot vérifié vers `main`.
+
+> Cette décision remplace les propositions historiques ci-dessous qui suggèrent
+> encore la Carte de l'Aventure ou un parcours de guidage sur l'accueil : elles
+> ne doivent plus être reprises.
+
 ## Correctifs Duo et Bande (2026-08-25)
 
 - **Vitrine publique, livré** : le commit `a135a18c` sur `main` rend le bloc
@@ -82,9 +110,9 @@ propriétaire prévus ci-dessous.
    sans droit effectif. C'est le préalable de tout dashboard/QR.
 3. **P1 — QR universels** : chaque expérience joueur publiable possède son QR
    imprimable, sans exposer un brouillon ou un droit suspendu.
-4. **P1 — dashboard guidé** : création par objectif et étapes, puis Carte de
-   l'Aventure, Relancer une formule et Tableau d'équipe. Le Centre d'animation
-   vient après les QR et ce dashboard, car il en agrège les états réels.
+4. **P1 — dashboard** : le Centre d'animation et le Tableau d'équipe sont
+   conservés ; la Carte de l'Aventure et les parcours de guidage ont été
+   écartés par décision propriétaire le 2026-08-25.
 5. **P1/P2 — continuité Passeport** : proposer au joueur de créer/continuer
    son passeport après un jeu ; livraison/e-commerce par cartes QR uniques
    seulement après le QR universel.
@@ -102,8 +130,9 @@ propriétaire prévus ci-dessous.
   officiel éligible ou achat/caisse validé : tampon, de façon idempotente.
 - Carte QR unique dans un sac/colis : crée ou continue le Passeport et ajoute
   un tampon après confirmation du joueur ; cartes génériques = zéro tampon.
-- Dashboard : parcours guidé, Carte de l'Aventure, Relancer une formule,
-  Tableau d'équipe et Centre d'animation sont les améliorations retenues.
+- Dashboard : Tableau d'équipe et Centre d'animation sont conservés. Carte de
+  l'Aventure, Conseiller, « Votre prochaine action » et « Bien démarrer » sont
+  retirés par décision propriétaire le 2026-08-25.
 - IA : aide au choix et trois idées éditables, sortie structurée côté serveur,
   sans PII joueur, publication, paiement ni action automatique.
 
@@ -139,7 +168,7 @@ le connecter a une source de verite, tester, puis seulement passer au suivant.
 | --- | --- | --- | --- | --- |
 | 0 | P0 droits/publication | aucune | droits effectifs dans actions, routes et SQL | owner/editor/cashier, org etrangere, droit suspendu, brouillon |
 | 1 | QR — `Lastchance-qr-share-starter` | P0 prouve | un editeur pilote, URL publique server-side | brouillon masque ; QR/lien sans secret ; scan public autorise seulement |
-| 2 | Carte de l'Aventure — `Lastchance-guided-journey-starter` | P0 + etapes reelles | ce meme editeur pilote | aucun jalon inaccessible compte ou cliquable |
+| 2 | Carte de l'Aventure — `Lastchance-guided-journey-starter` | **Écarté le 2026-08-25** | ne pas reprendre | décision propriétaire de simplification |
 | 3 | Relancer — `Lastchance-relaunch-card-starter` | garde serveur de duplication renforcee | campagnes uniquement au debut | source terminee, owner/editor, meme org ; aucune donnee joueur/QR/date copiee |
 | 4 | Centre + Tableau d'equipe — `Lastchance-animation-center-starter` puis `Lastchance-team-board-starter` | projection serveur org-scopee | accueil dashboard, sans liens d'abord | six compteurs justes ; aucune donnee contact ; lien absent hors `availableTo` |
 
@@ -182,7 +211,7 @@ ces trois props a la carte. Commencer par l'experience la plus simple et couvrir
 un brouillon, un droit suspendu, une organisation etrangere et un QR scanne.
 Le QR ne contient aucun secret et ne donne aucun droit par lui-meme.
 
-### Socle Carte de l'Aventure deja prepare par Codex (non integre, 2026-08-03)
+### Socle Carte de l'Aventure préparé par Codex (historique écarté le 2026-08-25)
 
 Un second micro-lot frontend, independant du QR, est pret dans le worktree
 local `C:\Users\MISHOW\Documents\LastChance\Lastchance-guided-journey-starter`

@@ -6,14 +6,9 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import {
@@ -196,31 +191,13 @@ export default async function EventGamePage({
   const etape = parseEtape(ETAPES_EVENEMENT, etapeParam, "nulle");
   const hrefPour = (cle: string) => hrefEtapeEvenement(game.id, cle);
 
-  // Carte de l'Aventure et relance. Le Mode événement est le seul module à
+  // Relance : le Mode événement est le seul module à
   // porter une vraie RÉPÉTITION : un jeu encore en brouillon dont une salle est
   // déjà ouverte. Les statuts de salle viennent de `sessions`, déjà chargées.
   const marqueurs = {
     status,
     sessions: sessions.map((session) => ({ status: session.status })),
   };
-  // `editeur` vise désormais l'ATELIER (`?etape=jeu`) et non l'ancre
-  // `#reglages` : les cartes de préparation ont quitté la vue par défaut,
-  // l'ancre serait un clic mort.
-  const etapesAventure = construireEtapesAventure({
-    marqueurs: { kind: "event", ...marqueurs },
-    capacites,
-    liens: {
-      editeur: hrefPour("jeu"),
-      // La salle la plus récente est celle qu'on vient d'ouvrir : c'est son
-      // lien qu'on teste avant de le lire à voix haute en salle.
-      apercu: sessions[0]?.publicUrl ?? null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  const conclusion = conclusionAventure(etapesAventure, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   const numero = etape ? numeroEtape(ETAPES_EVENEMENT, etape) : 0;
@@ -299,11 +276,7 @@ export default async function EventGamePage({
             />
           </CarteRepliable>
 
-          <CarteAventure steps={etapesAventure} conclusion={conclusion} />
-
-          {/* REPLIÉ : ce qui s'ANIME le soir venu, pas ce qui se prépare. Le
-              résumé dit combien de salles attendent, l'ancre `#suivi` rouvre
-              le bloc quand la Carte de l'Aventure y saute. */}
+          {/* REPLIÉ : ce qui s'anime le soir venu, pas ce qui se prépare. */}
           <CarteRepliable
             {...bloc("suivi")}
             defaultOuvert={false}

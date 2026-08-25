@@ -2223,8 +2223,8 @@ select results_eq(
   $$select key from pg_catalog.jsonb_each(
       public.vitrine_public_state('tap-portes') #> '{portes,experiences}')
      order by key$$,
-  array['duo', 'quiz'],
-  'le bloc Expériences porte SA liste de quiz et SON drapeau duo, et cette liste de clés est close');
+  array['calendars', 'duo', 'pronostics', 'quiz'],
+  'le bloc Expériences porte ses listes quiz, calendrier, pronostics et son drapeau duo, et cette liste de clés est close');
 
 -- G n'a aucune fiche Duo épinglée : la porte est FAUSSE, et surtout elle est
 -- PRÉSENTE. Une clé absente aurait obligé l'écran à distinguer « pas de jeu » de

@@ -66,14 +66,9 @@ import {
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -292,29 +287,9 @@ export default async function ContestDetailPage({
     c.id,
   );
 
-  // Carte de l'Aventure et relance. Pour un championnat, la finalisation fait
+  // Relance : pour un championnat, la finalisation fait
   // foi : `finalized` est déjà calculé au-dessus, `status` vient de la ligne.
   const marqueurs = { status: c.status, finalized_at: c.finalized_at };
-  // ANCRES pour tout ce qui vit sur CETTE vue (un href vers la page produirait
-  // un « Continuer » qui la recharge) — mais l'ÉDITEUR est désormais une URL
-  // d'étape : depuis l'Atelier, `#reglages` désignerait un bloc absent du DOM.
-  // Au passage, l'ancre mentait déjà : elle pointait sur la carte « Questions »,
-  // pas sur les réglages.
-  const etapes = construireEtapesAventure({
-    marqueurs: { kind: "pronostics", ...marqueurs },
-    capacites,
-    liens: {
-      editeur: hrefEtapeContest(c.id, "championnat"),
-      // Même condition que le bloc QR ci-dessous : un brouillon n'a pas de page
-      // publique ouverte.
-      apercu: c.status !== "draft" ? publicUrl : null,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  const conclusion = conclusionAventure(etapes, {
-    relanceHref: capacites.canExplore ? "#relance" : null,
-  });
   const peutCreerBrouillon = role === "owner" || role === "editor";
 
   // ── L'ATELIER (rendu seulement quand `?etape=` est présent) ──
@@ -532,16 +507,13 @@ export default async function ContestDetailPage({
         </>
       ) : (
         <>
-      {/* OUVERT : c'est le geste de publication, et la Carte de l'Aventure y
-          renvoie. Seul bloc de la page à le rester. */}
+      {/* OUVERT : c'est le geste de publication, seul bloc de la page à le rester. */}
       <CarteRepliable {...bloc("statut")}>
         <ContestStatusControls
           contest={c}
           hrefJeu={c.status !== "draft" ? publicUrl : null}
         />
       </CarteRepliable>
-
-      <CarteAventure steps={etapes} conclusion={conclusion} />
 
       {/* REPLIÉ comme le reste : la porte de l'atelier est le seul chemin vers
           ce qui se règle, son résumé dit donc ce qui attend derrière. */}
@@ -579,9 +551,7 @@ export default async function ContestDetailPage({
         </CarteRepliable>
       )}
 
-      {/* REPLIÉ : on consulte le classement, on ne le règle pas. L'ancre
-          `#suivi` le rouvre — c'est la cible de la Carte de l'Aventure et de
-          la pagination. */}
+      {/* REPLIÉ : on consulte le classement, on ne le règle pas. */}
       <CarteRepliable
         {...bloc("suivi")}
         defaultOuvert={false}

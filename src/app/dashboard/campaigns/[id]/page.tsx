@@ -35,16 +35,11 @@ import {
   type ReferralProgramRow,
 } from "@/components/dashboard/referral-program-settings";
 import { SaveCampaignAsTemplate } from "@/components/dashboard/save-campaign-as-template";
-import { CarteAventure } from "@/components/dashboard/carte-aventure";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { construireVerification } from "@/components/dashboard/atelier-verification-state";
 import type { ControleBrut } from "@/lib/checklist/controles";
 import { tuilesDuModule, type TuileRendue } from "@/lib/checklist/tuiles";
 import { campaignWindowState } from "@/lib/campaign-window";
-import {
-  conclusionAventure,
-  construireEtapesAventure,
-} from "@/lib/experience-lifecycle";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { hasReferralAccess } from "@/lib/referral-context";
 import { selectActiveWheel } from "@/lib/wheel-schedule";
@@ -162,37 +157,11 @@ export default async function CampaignDetailPage({
     liensOrg?.google_review_url || liensOrg?.instagram_url || liensOrg?.tiktok_url,
   );
 
-  // Carte de l'Aventure seule : une campagne se recopie déjà par « Dupliquer »
-  // et par les modèles, qui emportent la roue, ses lots et son style — ce que
-  // « Relancer une formule » ne saurait pas faire.
+  // Une campagne se recopie déjà par « Dupliquer » et par les modèles, qui
+  // emportent la roue, ses lots et son style — ce que « Relancer une formule »
+  // ne saurait pas faire.
   //
-  // Les marqueurs portent `starts_at`/`ends_at` bruts : `construireEtapesAventure`
-  // repasse par `campaignWindowState`, la MÊME fonction que `windowState`
-  // ci-dessus. Rien n'est recalculé deux fois de deux façons.
   const capacites = await capacitesDuModule("wheel");
-  const etapes = construireEtapesAventure({
-    marqueurs: {
-      kind: "campaign",
-      status: c.status,
-      starts_at: c.starts_at,
-      ends_at: c.ends_at,
-    },
-    capacites,
-    liens: {
-      // Le vrai travail de brouillon d'une campagne, c'est la roue et ses lots :
-      // l'étape mène donc à SA page, pas à un ancrage de la page courante.
-      editeur: `/dashboard/campaigns/${c.id}/wheel`,
-      // Une campagne n'a pas d'URL publique unique : ses QR sont sa porte
-      // d'entrée, et c'est de là qu'on teste.
-      apercu: `/dashboard/qr-codes?campaign=${c.id}`,
-      suivi: "#suivi",
-      statut: "#statut",
-    },
-  });
-  // Pas de carte « Repartir de cette formule » sur une campagne (décision :
-  // « Dupliquer » et les modèles font mieux) — le CTA vise donc les réglages,
-  // où vit « Dupliquer cette campagne ».
-  const conclusion = conclusionAventure(etapes, { relanceHref: "#reglages" });
 
   // ── LA CHECKLIST DE LA PAGE ──
   //
@@ -297,13 +266,6 @@ export default async function CampaignDetailPage({
           // il n'y a encore aucune porte à montrer.
           hrefJeu={qrCodes[0] ? `${APP_URL}/play/${qrCodes[0].slug}` : null}
         />
-      </div>
-
-      {/* La Carte de l'Aventure vient APRÈS le statut : ce qui décide de
-          l'ouverture aux joueurs reste le premier bloc lisible, la boussole se
-          consulte ensuite — et repliée, comme tout le reste de la page. */}
-      <div className="mb-6">
-        <CarteAventure steps={etapes} conclusion={conclusion} />
       </div>
 
       <div className="mb-6">
