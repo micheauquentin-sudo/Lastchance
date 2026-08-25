@@ -44,6 +44,24 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Réglages dashboard — grille large (2026-08-25)
+
+- **Constat traité localement** : la page Réglages empilait toutes ses cartes
+  dans une unique colonne étroite, sans utiliser l'espace disponible sur grand
+  écran.
+- **Lot local, non committé et non poussé** :
+  `src/app/dashboard/settings/page.tsx` utilise désormais une grille d'une
+  colonne puis deux colonnes à partir de `lg`; les cartes Webhooks sortants et
+  Abonnement occupent les deux colonnes. Le squelette associé
+  (`src/app/dashboard/settings/loading.tsx`) suit la même structure avec onze
+  cartes, dont les deux dernières étendues. Le test statique
+  `src/app/dashboard/settings/settings-layout.test.ts` verrouille cette
+  convention.
+- **Preuves locales** : test ciblé 12/12, `npm run typecheck`, `npm run lint`
+  et `npm run build` (175 s) verts.
+- **Reste** : relire le diff dans son arbre de travail, puis obtenir l'accord
+  propriétaire avant commit, push ou déploiement.
+
 ## Simplification dashboard, Clients Calendrier et portes Vitrine (2026-08-25)
 
 - **Décision produit, faite localement** : la Carte de l'Aventure est retirée
