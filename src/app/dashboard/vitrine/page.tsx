@@ -16,7 +16,11 @@ import {
 import { MesuresTableau } from "@/components/vitrine/mesures-tableau";
 import { IndexationVitrine } from "@/components/vitrine/indexation-vitrine";
 import { etatIndexation } from "@/lib/vitrine-indexation";
-import type { ContenuVitrineView } from "@/lib/vitrine";
+import {
+  VITRINE_BLOCS_DEFAUT,
+  type BlocVitrine,
+  type ContenuVitrineView,
+} from "@/lib/vitrine";
 import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { OrgLobbyView } from "@/lib/lobby";
 import { construireVerificationVitrine } from "@/lib/activation/vitrine";
@@ -30,6 +34,7 @@ import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
 import { BandeEditeur } from "@/components/vitrine/bande-editeur";
 import { DuoEditeur } from "@/components/vitrine/duo-editeur";
+import { ExperiencesVisibilite } from "@/components/vitrine/experiences-visibilite";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
 import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
@@ -73,6 +78,10 @@ export default async function VitrineDashboardPage() {
   const settings = ctx.ok ? ctx.settings : null;
   const cartes = ctx.ok ? ctx.cartes : [];
   const organizationId = ctx.ok ? ctx.organizationId : null;
+  const blocsVitrine: readonly BlocVitrine[] =
+    settings?.theme.ordre_blocs && settings.theme.ordre_blocs.length > 0
+      ? settings.theme.ordre_blocs
+      : VITRINE_BLOCS_DEFAUT;
 
   /**
    * LES CONTENUS MIS EN AVANT ET LES OUVERTURES — deux lectures, un seul aller.
@@ -307,6 +316,15 @@ export default async function VitrineDashboardPage() {
                 peutEditer={capacites.canEditDraft}
               />
             </CarteRepliable>
+
+            {/* Les jeux sont configurés ici mais annoncés par un bloc facultatif
+                de la vitrine publique. Sans cette indication, un plateau Duo
+                valide ou un pack Bande enregistré restait invisible, alors que
+                le choix de masquer les autres portes doit continuer d'être
+                respecté. */}
+            {!blocsVitrine.includes("experiences") ? (
+              <ExperiencesVisibilite peutEditer={capacites.canEditDraft} />
+            ) : null}
 
             {/* LE DUO MIROIR VIENT APRÈS LE CATALOGUE, et pas ailleurs : son
                 plateau se choisit PARMI les fiches de la carte. Le placer plus

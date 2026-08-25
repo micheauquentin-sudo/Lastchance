@@ -13,6 +13,8 @@ import {
   mapSetVitrineSlug,
   mapUpsertVitrineTraduction,
   mapVitrineTraductionState,
+  mapThemeVitrine,
+  VITRINE_BLOCS_DEFAUT,
   VITRINE_LANGUE_TRADUITE,
   VITRINE_ORDRE_MAX,
   VITRINE_TRADUCTION_TEXTE_MAX,
@@ -448,6 +450,61 @@ export async function saveVitrineSettings(
 
   await revaliderVitrine(supabase, garde.organizationId, data.slug);
   return { ok: true, data: undefined };
+}
+
+/**
+ * Rend l'annuaire des jeux visible sur la Vitrine publique.
+ *
+ * Les portes publiques restent volontairement masquées tant que le commerçant
+ * n'a rien demandé : elles peuvent contenir des libellés opérationnels. Ce
+ * geste explicite ne touche qu'à la vitrine de l'organisation active et ajoute
+ * `experiences` à la fin de l'ordre actuellement effectif ; il ne rend ni
+ * Réserver ni un autre bloc visible par effet de bord.
+ */
+export async function activerExperiencesVitrine(): Promise<
+  ActionResult<{ active: true }>
+> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: settings, error: lectureError } = await supabase
+    .from("vitrine_settings")
+    .select("slug, theme")
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+
+  if (lectureError) {
+    reportError("vitrine.activate-experiences.read", lectureError.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  if (!settings) return { ok: false, error: SANS_ADRESSE };
+
+  const theme = mapThemeVitrine(settings.theme);
+  const ordreActuel =
+    theme.ordre_blocs && theme.ordre_blocs.length > 0
+      ? theme.ordre_blocs
+      : [...VITRINE_BLOCS_DEFAUT];
+
+  if (!ordreActuel.includes("experiences")) {
+    const { error: ecritureError } = await supabase
+      .from("vitrine_settings")
+      .update({
+        theme: toJson({
+          ...theme,
+          ordre_blocs: [...ordreActuel, "experiences"],
+        }),
+      })
+      .eq("organization_id", garde.organizationId);
+
+    if (ecritureError) {
+      reportError("vitrine.activate-experiences.write", ecritureError.message);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+  }
+
+  await revaliderVitrine(supabase, garde.organizationId, settings.slug);
+  return { ok: true, data: { active: true } };
 }
 
 // ════════════════════════════════════════════════════════════

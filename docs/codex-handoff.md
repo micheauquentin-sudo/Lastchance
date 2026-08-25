@@ -44,6 +44,22 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Correctif local en attente de publication (2026-08-25)
+
+- **Constat prouvé** : Duo Miroir et Portrait de la Bande étaient absents de la
+  vitrine publique lorsque le bloc facultatif `experiences` n'avait jamais été
+  ajouté à `theme.ordre_blocs`. Le défaut protège volontairement les portes
+  publiques non configurées ; il ne devait pas être modifié globalement.
+- **Correctif** : `activerExperiencesVitrine` ajoute seulement `experiences` à
+  l'ordre effectif de l'organisation active, avec garde éditeur, filtre
+  d'organisation et purge ISR française/anglaise. La Vitrine affiche désormais
+  une carte explicite « Afficher vos jeux » tant que ce bloc est masqué.
+- **Preuves locales** : typecheck vert ; 183 tests ciblés verts ; lint vert ;
+  `npm run build` vert. Revue du diff : aucune entrée navigateur, aucune
+  écriture inter-tenant ni changement SQL/Stripe.
+- **À faire** : obtenir l'accord explicite pour commit/push, puis laisser la CI
+  GitHub confirmer le même SHA avant toute publication Vercel.
+
 ## À LIRE EN PREMIER — dossier de reprise Claude (2026-08-03)
 
 Ce bloc est l'index opérationnel du fichier. Les sections détaillées plus bas

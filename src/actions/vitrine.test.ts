@@ -157,6 +157,7 @@ import {
   createVitrineCarte,
   createVitrineFiche,
   createVitrineRubrique,
+  activerExperiencesVitrine,
   deleteVitrineCarte,
   deleteVitrineContenu,
   deleteVitrineTraduction,
@@ -790,6 +791,44 @@ describe("les mutations purgent LES DEUX pages publiques (ISR 60 s)", () => {
       "/v/chez-marie/en",
     ]);
     expect(callsTo("vitrine_settings")).toHaveLength(0);
+  });
+});
+
+describe("activerExperiencesVitrine — annoncer les jeux avec consentement", () => {
+  it("ajoute uniquement le bloc jeux à l'ordre déjà choisi et purge les deux langues", async () => {
+    gardeOk();
+    state.row = {
+      id: "row-1",
+      slug: "le-comptoir",
+      theme: { ordre_blocs: ["cartes", "horaires"] },
+    };
+
+    await expect(activerExperiencesVitrine()).resolves.toEqual({
+      ok: true,
+      data: { active: true },
+    });
+
+    const maj = callsTo("vitrine_settings").find((c) => c.op === "update");
+    expect(maj?.payload).toEqual({
+      theme: { ordre_blocs: ["cartes", "horaires", "experiences"] },
+    });
+    expect(maj?.filters.organization_id).toBe(ORG_ID);
+    expect(cheminsRevalides()).toEqual([
+      "/dashboard/vitrine",
+      "/v/le-comptoir",
+      "/v/le-comptoir/en",
+    ]);
+  });
+
+  it("refuse avant toute lecture quand l'éditeur n'a plus le droit", async () => {
+    gardeRefusee();
+
+    await expect(activerExperiencesVitrine()).resolves.toEqual({
+      ok: false,
+      error: "Action non autorisée",
+    });
+
+    expect(state.calls).toHaveLength(0);
   });
 });
 
