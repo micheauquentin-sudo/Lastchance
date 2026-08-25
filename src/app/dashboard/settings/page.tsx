@@ -174,7 +174,7 @@ export default async function SettingsPage({
         </div>
       )}
 
-      <div className="space-y-4 max-w-lg">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <Card>
           <h2 className="font-semibold mb-4">Établissement</h2>
           <dl className="space-y-2 text-sm">
@@ -317,7 +317,7 @@ export default async function SettingsPage({
           <DataRetentionForm months={org.data_retention_months} />
         </Card>
 
-        <Card>
+        <Card className="lg:col-span-2">
           <h2 className="font-semibold mb-1">Webhooks sortants</h2>
           <p className="text-sm text-zinc-500 mb-4">
             Branchez votre caisse, votre CRM ou Zapier/Make sur les
@@ -331,7 +331,7 @@ export default async function SettingsPage({
           />
         </Card>
 
-        <Card id="subscription">
+        <Card id="subscription" className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
               Abonnement

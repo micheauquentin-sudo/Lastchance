@@ -19,11 +19,11 @@ export default function SettingsLoading() {
     <div aria-busy="true" className="animate-pulse">
       <div className="mb-2 h-8 w-44 rounded-lg bg-orange-100/70" />
       <div className="mb-8 h-4 w-96 max-w-full rounded bg-zinc-100" />
-      <div className="space-y-6">
-        {Array.from({ length: 4 }, (_, i) => (
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        {Array.from({ length: 11 }, (_, i) => (
           <div
             key={i}
-            className="h-44 rounded-2xl border border-orange-900/[0.06] bg-white shadow-[0_10px_30px_-14px_rgba(120,40,20,0.15)]"
+            className={`rounded-2xl border border-orange-900/[0.06] bg-white shadow-[0_10px_30px_-14px_rgba(120,40,20,0.15)] ${i >= 9 ? "lg:col-span-2" : ""} ${i === 10 ? "h-80" : "h-44"}`}
           />
         ))}
       </div>
