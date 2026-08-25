@@ -44,12 +44,30 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Ticket d'Or — lots invisibles après création (2026-08-25)
+
+- **Cause confirmée** : la création insérait correctement le lot, mais
+  `loadTicketOr` appelait `tickets_or_state` avec le client `service_role`.
+  Cette RPC exige `auth.uid()` via `is_org_member`, retournait
+  `not_authorized`, puis l'écran le transformait silencieusement en liste vide.
+- **Lot local, non committé et non poussé** : la lecture de l'état passe
+  maintenant par le client de session dans `src/lib/ticket-or-context.ts` ;
+  l'insertion reste côté serveur avec sa garde propriétaire/éditeur. La
+  création dans `src/components/ticket/lots-ticket.tsx` recharge ensuite la
+  page canoniquement, pour rendre le lot visible même si le rafraîchissement
+  RSC ne s'applique pas.
+- **Preuves** : 22 tests ciblés puis 6 018 tests unitaires complets, typecheck,
+  lint et build Next.js (177 s) verts. Revue de sécurité ciblée : lecture
+  bornée à la session et au
+  tenant, aucun élargissement des droits d'écriture. Aucune migration requise.
+- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+
 ## Réglages dashboard — grille large (2026-08-25)
 
 - **Constat traité localement** : la page Réglages empilait toutes ses cartes
   dans une unique colonne étroite, sans utiliser l'espace disponible sur grand
   écran.
-- **Lot local, non committé et non poussé** :
+- **Livré** :
   `src/app/dashboard/settings/page.tsx` utilise désormais une grille d'une
   colonne puis deux colonnes à partir de `lg`; les cartes Webhooks sortants et
   Abonnement occupent les deux colonnes. Le squelette associé
@@ -59,8 +77,8 @@ constat, proposition et décision Codex doit être consigné ici.
   convention.
 - **Preuves locales** : test ciblé 12/12, `npm run typecheck`, `npm run lint`
   et `npm run build` (175 s) verts.
-- **Reste** : relire le diff dans son arbre de travail, puis obtenir l'accord
-  propriétaire avant commit, push ou déploiement.
+- **Publication** : commit `51341cf`, PR #199 fusionnée dans `main` après CI
+  entièrement verte. Aucun déploiement de production n'a été demandé.
 
 ## Simplification dashboard, Clients Calendrier et portes Vitrine (2026-08-25)
 

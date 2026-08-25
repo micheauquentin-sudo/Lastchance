@@ -40,6 +40,7 @@ export function LotsTicket({
   const creer = useActionForm(creerLotTicketOr, {
     networkError: "Création impossible, réessayez.",
     resetOnSuccess: true,
+    reloadOnSuccess: true,
   });
 
   if (!peutRegler) {

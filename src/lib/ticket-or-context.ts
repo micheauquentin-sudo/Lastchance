@@ -2,7 +2,7 @@ import "server-only";
 
 import { getUserAndOrg } from "@/lib/auth";
 import { droitEffectifModule } from "@/lib/subscription";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { mapTicketOrState, ticketOrVide, type TicketOrView } from "@/lib/ticket-or";
 
 /**
@@ -72,8 +72,10 @@ export async function loadTicketOr(): Promise<ContexteTicketOr> {
   const garde = await gardeTicketOr();
   if (!garde.ok) return { ok: false, error: garde.error };
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("tickets_or_state", {
+  // La RPC vérifie `is_org_member` avec `auth.uid()`: elle doit donc porter la
+  // session du commerçant, et non la service role qui n'a pas de sujet utilisateur.
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("tickets_or_state", {
     // DE LA SESSION. Jamais d'un paramètre de requête : la RPC vérifie
     // l'appartenance, mais elle la vérifie sur ce qu'on lui donne.
     p_organization_id: garde.organizationId,
