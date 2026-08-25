@@ -44,13 +44,30 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Ticket d'Or — émission bloquée (2026-08-25)
+
+- **Cause confirmée** : `emettreTicketOr` appelait `emettre_ticket_or` avec
+  le client `service_role`, alors que la RPC exige le `auth.uid()` d'un membre
+  via `is_org_member`. Elle renvoyait donc `not_authorized`, masqué par le
+  message générique observé au comptoir.
+- **Lot local, non committé et non poussé** : l'émission utilise désormais
+  le client de session dans `src/actions/ticket-or.ts`; le rate-limit, la
+  validation des jours et l'organisation active sont conservés. Le test
+  `src/actions/ticket-or.test.ts` couvre le client de session, l'absence
+  d'appel admin, les bornes et la réponse de succès.
+- **Preuves** : 6 019 tests unitaires complets, typecheck, lint et build
+  Next.js (181 s) verts. Revue de sécurité : la RPC reçoit de nouveau
+  l'identité qui permet son contrôle multi-tenant ; aucun droit n'est
+  élargi, aucune migration n'est requise.
+- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+
 ## Ticket d'Or — lots invisibles après création (2026-08-25)
 
 - **Cause confirmée** : la création insérait correctement le lot, mais
   `loadTicketOr` appelait `tickets_or_state` avec le client `service_role`.
   Cette RPC exige `auth.uid()` via `is_org_member`, retournait
   `not_authorized`, puis l'écran le transformait silencieusement en liste vide.
-- **Lot local, non committé et non poussé** : la lecture de l'état passe
+- **Corrigé** : la lecture de l'état passe
   maintenant par le client de session dans `src/lib/ticket-or-context.ts` ;
   l'insertion reste côté serveur avec sa garde propriétaire/éditeur. La
   création dans `src/components/ticket/lots-ticket.tsx` recharge ensuite la
@@ -60,7 +77,8 @@ constat, proposition et décision Codex doit être consigné ici.
   lint et build Next.js (177 s) verts. Revue de sécurité ciblée : lecture
   bornée à la session et au
   tenant, aucun élargissement des droits d'écriture. Aucune migration requise.
-- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+- **Publication** : commit `281c625`, PR #200 fusionnée dans `main` après CI
+  entièrement verte. Aucun déploiement de production n'a été demandé.
 
 ## Réglages dashboard — grille large (2026-08-25)
 

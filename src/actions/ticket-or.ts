@@ -6,6 +6,7 @@ import { z } from "zod";
 import { reportError } from "@/lib/monitoring";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import {
   gardeTicketOr,
   TICKET_PAS_LE_ROLE,
@@ -98,8 +99,10 @@ export async function emettreTicketOr(
     .catch(TICKET_JOURS_DEFAUT)
     .parse(formData.get("jours"));
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("emettre_ticket_or", {
+  // La RPC vérifie `is_org_member` avec `auth.uid()` : l'émission doit porter
+  // la session du commerçant, pas la service role sans sujet utilisateur.
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("emettre_ticket_or", {
     p_organization_id: garde.organizationId,
     p_jours: jours,
   });
