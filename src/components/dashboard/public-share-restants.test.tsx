@@ -106,7 +106,9 @@ describe("URL publique d'une session d'événement en direct", () => {
 
     expect(editor.slice(start, elseAt)).toContain("<PublicShare");
     expect(editor.slice(elseAt)).not.toContain("<PublicShare");
-    expect(editor.slice(elseAt)).toMatch(/Ouvrez le salon/);
+    expect(editor.slice(elseAt)).toMatch(
+      /Cliquez sur « Piloter », puis sur « Démarrer la session » pour\s+ouvrir le salon/,
+    );
   });
 
   it("garde le QR d'écran de salle intact : ce n'est pas le même besoin", () => {
