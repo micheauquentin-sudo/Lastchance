@@ -7,6 +7,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { salleOuverteAuJoueur, type EventPublicState } from "@/lib/event";
 import { chargerEtatLive } from "@/lib/event-etat";
 import { hashPlayerToken } from "@/lib/pronostics";
+import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -210,7 +211,7 @@ export async function loadEventRemoteContext(
   if (role !== "owner" && role !== "editor") return { ok: false, error: UNAVAILABLE };
 
   const supabase = await createClient();
-  const { data: sessionRow } = await supabase
+  const { data: sessionRow, error: sessionError } = await supabase
     .from("event_sessions")
     .select(
       "id, game_id, label, join_code, status, phase, current_question_id, current_question_started_at, prono_correct_option_id, reward_label, reward_stock, reward_claimed_count, max_participants",
@@ -218,6 +219,15 @@ export async function loadEventRemoteContext(
     .eq("id", sessionId)
     .eq("organization_id", organization.id)
     .maybeSingle();
+  // L'ERREUR DE LECTURE SE SIGNALE, le refus reste indistinct.
+  //
+  // `error` était ignoré : une colonne absente, un droit manquant ou une base
+  // indisponible rendaient exactement la même chose qu'un identifiant inconnu
+  // — « Page introuvable », sans un mot ni dans les journaux ni dans Sentry.
+  // La réponse rendue ne change PAS (aucun oracle) ; c'est la trace qui
+  // manquait, et c'est elle qui permet de distinguer les deux la fois
+  // suivante.
+  if (sessionError) reportError("event.remote.session", sessionError);
   if (!sessionRow) return { ok: false, error: UNAVAILABLE };
 
   // Questions + options du game (org-scopé RLS), + réponses existantes pour

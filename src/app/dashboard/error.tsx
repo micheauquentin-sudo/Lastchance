@@ -18,7 +18,8 @@ export default function DashboardError({
   error,
   reset,
 }: {
-  error: Error;
+  /** Next attache un `digest` aux erreurs serveur : c'est la clé du journal. */
+  error: Error & { digest?: string };
   reset: () => void;
 }) {
   useEffect(() => {
@@ -34,6 +35,19 @@ export default function DashboardError({
       <Button onClick={reset} className="mt-5">
         Réessayer
       </Button>
+      {/* LE DIGEST, ET RIEN D'AUTRE.
+          Le message d'erreur n'est JAMAIS affiché — il peut porter un fragment
+          de requête ou un nom de colonne. Le `digest` est un condensé opaque
+          que Next attache aux erreurs serveur et qui accompagne l'événement
+          Sentry capturé juste au-dessus : c'est le seul moyen, pour quelqu'un
+          qui voit cet écran, de désigner SON incident plutôt que « une
+          erreur ». Sans lui, chaque signalement repart de zéro. */}
+      {error.digest && (
+        <p className="mt-4 text-xs font-bold text-k-body">
+          Code de l&apos;incident :{" "}
+          <span className="font-mono">{error.digest}</span>
+        </p>
+      )}
     </Card>
   );
 }
