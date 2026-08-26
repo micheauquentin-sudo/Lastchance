@@ -42,7 +42,25 @@ const admin = () =>
 test.describe("mode événement — de la session créée au salon ouvert", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
-  test.beforeEach(async () => {
+  /**
+   * UN SEUL PROJET, ET LE TAG N'Y SUFFIT PAS.
+   *
+   * `@smoke` ne borne rien : seul `desktop-smoke` porte un `grep` dans
+   * `playwright.config.ts` ; `mobile-chrome` et `mobile-safari` n'en ont
+   * aucun et exécutent TOUT, tag compris. Ce parcours MUTE l'état d'une session
+   * (draft → lobby) et démarre le jeu partagé : joué sur trois projets, les
+   * navigateurs se courent après — c'est ce qui a fait tomber ce fichier ET
+   * `event-remote-cycle.spec.ts` au premier passage en CI.
+   *
+   * Le filtre par nom de projet, lui, borne réellement.
+   */
+  test.beforeEach(async ({}, infos) => {
+    // AVANT toute écriture : sur les autres projets on ne sème rien, donc rien
+    // à nettoyer et aucune ligne partagée à disputer.
+    test.skip(
+      infos.project.name !== "desktop-smoke",
+      "Parcours mutant : un seul projet, sinon deux navigateurs visent la même session.",
+    );
     const supabase = admin();
     await supabase.from("event_sessions").delete().eq("id", SESSION_ID);
     const { error } = await supabase.from("event_sessions").insert({
@@ -81,7 +99,14 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
       await developper.first().click();
     }
     const ligne = page.locator("li").filter({ hasText: LABEL });
-    await expect(ligne.getByText("Brouillon")).toBeVisible();
+    // Une seule ligne, sinon la suite viserait au hasard — et le message dirait
+    // pourquoi plutôt que « strict mode violation » sur l'assertion suivante.
+    await expect(ligne).toHaveCount(1);
+    // `exact` OBLIGATOIRE : `getByText("Brouillon")` cherche une SOUS-CHAÎNE
+    // insensible à la casse, et l'encart QR de la même ligne porte « tant
+    // qu'elle est en brouillon (ou archivée)… ». Deux éléments, donc un échec
+    // en mode strict — sur une page pourtant correcte.
+    await expect(ligne.getByText("Brouillon", { exact: true })).toBeVisible();
     await expect(ligne.getByRole("link", { name: /Écran/ })).toHaveCount(0);
 
     // « Piloter » reste, LUI, toujours offert : c'est la seule porte du salon.
