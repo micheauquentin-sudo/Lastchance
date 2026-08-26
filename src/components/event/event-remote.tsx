@@ -305,7 +305,7 @@ export function EventRemote({
               )
             }
           >
-            👁 Révéler
+            👁️ Révéler
           </PrimaryButton>
         </ControlCard>
       ) : phase === "reveal" ? (
@@ -360,7 +360,7 @@ function phaseLabel(status: EventSessionStatus, phase: EventSessionPhase): strin
     case "question_locked":
       return "🔒 Réponses closes";
     case "reveal":
-      return "👁 Révélation";
+      return "👁️ Révélation";
     case "leaderboard":
       return "🏆 Classement";
     case "lobby":
