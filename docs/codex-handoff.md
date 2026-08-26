@@ -44,6 +44,20 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Événement live — accès joueur et télécommande (2026-08-27)
+
+- **Cause du crash Piloter** : la capture provenait d'une révision antérieure.
+  Le correctif #207 sur `main` isole les lectures initiales non essentielles ;
+  les contrôles propriétaire/éditeur et l'isolation par organisation restent
+  conservés.
+- **Lot local `370d8c3b`** : le bouton Joueurs, ainsi que le QR et le lien de
+  partage, sont visibles uniquement pour une session en salon, en direct ou
+  terminée. En brouillon, l'interface explique d'abord Piloter puis Démarrer ;
+  aucun accès joueur public n'est ouvert avant le démarrage.
+- **Preuves** : 12 tests ciblés, typecheck, lint et build verts. Revue sécurité
+  ciblée : aucune faille critique, haute ou moyenne relevée.
+- **Reste** : ouvrir la PR, attendre la CI complète puis fusionner dans `main`.
+
 ## Chasse au QR — gain, Passeport et caisse (2026-08-26)
 
 - **Décision produit appliquée localement** : le nom commercial visible
