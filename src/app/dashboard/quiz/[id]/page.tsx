@@ -40,6 +40,7 @@ import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -264,6 +265,15 @@ export default async function QuizDetailPage({
     drawn_at: quiz.drawnAt,
   };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("quiz", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   // LES MÊMES CONTRÔLES POUR LES DEUX VUES, calculés UNE fois.
   //
@@ -476,7 +486,7 @@ export default async function QuizDetailPage({
 
       <RelanceErreur message={relanceError} />
 
-      {capacites.canExplore && (
+      {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
         <CarteRepliable
           {...carteTuile(tuiles, "relance")}
           defaultOuvert={false}
@@ -484,9 +494,7 @@ export default async function QuizDetailPage({
         >
           <RelaunchFormulaCard
             sourceName={quiz.name}
-            sourceState={etatSourceRelance("quiz", marqueurs)}
-            canCreateDraft={peutCreerBrouillon}
-            isSupported
+            {...relance}
             action={<RelaunchFormulaAction kind="quiz" sourceId={quiz.id} />}
           />
         </CarteRepliable>

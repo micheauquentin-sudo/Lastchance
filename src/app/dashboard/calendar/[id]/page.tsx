@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -178,6 +179,15 @@ export default async function CalendarDetailPage({
     day_count: c.day_count,
   };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("calendar", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   // Les cases telles que la vérification et le compteur d'entrée les lisent :
   // même module que le refus serveur, plus le `day_index` qui NOMME la case.
@@ -393,7 +403,7 @@ export default async function CalendarDetailPage({
 
       <RelanceErreur message={relanceError} />
 
-      {capacites.canExplore && (
+      {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
         <CarteRepliable
           {...carteTuile(tuiles, "relance")}
           defaultOuvert={false}
@@ -402,9 +412,7 @@ export default async function CalendarDetailPage({
           <RelaunchFormulaCard
             sourceName={c.name}
             occasionLabel="la prochaine saison"
-            sourceState={etatSourceRelance("calendar", marqueurs)}
-            canCreateDraft={peutCreerBrouillon}
-            isSupported
+            {...relance}
             action={<RelaunchFormulaAction kind="calendar" sourceId={c.id} />}
           />
         </CarteRepliable>

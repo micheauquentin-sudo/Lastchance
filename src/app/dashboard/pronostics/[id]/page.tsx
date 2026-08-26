@@ -68,6 +68,7 @@ import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability
 import { PublicShare } from "@/components/dashboard/public-share";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -291,6 +292,15 @@ export default async function ContestDetailPage({
   // foi : `finalized` est déjà calculé au-dessus, `status` vient de la ligne.
   const marqueurs = { status: c.status, finalized_at: c.finalized_at };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("pronostics", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   // ── L'ATELIER (rendu seulement quand `?etape=` est présent) ──
   const definition = etape ? definitionEtapeContest(etape) : null;
@@ -694,7 +704,7 @@ export default async function ContestDetailPage({
 
       <RelanceErreur message={relanceError} />
 
-      {capacites.canExplore && (
+      {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
         <CarteRepliable
           {...bloc("relance")}
           defaultOuvert={false}
@@ -703,9 +713,7 @@ export default async function ContestDetailPage({
           <RelaunchFormulaCard
             sourceName={c.name}
             occasionLabel="la prochaine journée"
-            sourceState={etatSourceRelance("pronostics", marqueurs)}
-            canCreateDraft={peutCreerBrouillon}
-            isSupported
+            {...relance}
             action={<RelaunchFormulaAction kind="pronostics" sourceId={c.id} />}
           />
         </CarteRepliable>

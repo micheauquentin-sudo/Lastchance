@@ -6,6 +6,7 @@ import {
   mapEventPublicState,
   mapEventSubmit,
   mapEventTransition,
+  salleOuverteAuJoueur,
 } from "./event";
 import { normalizeEventCode, normalizeJackpotCode } from "./utils";
 
@@ -332,5 +333,27 @@ describe("ADR-032 — clés partagées jamais fail-closed (actions/events.ts)", 
       "broadcastEventRefresh",
     );
     expect(src).toContain("broadcastEventRefresh(sessionId, revision)");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// salleOuverteAuJoueur
+// ────────────────────────────────────────────────────────────
+
+describe("salleOuverteAuJoueur", () => {
+  // Ces deux cas SONT la raison d'être du helper : ils échouent le jour où
+  // quelqu'un ouvre `draft` d'un côté sans toucher `event_etat_partage` de
+  // l'autre — la divergence exacte qui affichait « Voir le jeu » sur une salle
+  // que le joueur recevait en « page introuvable ».
+  it("refuse les deux statuts que la RPC rend indisponibles", () => {
+    expect(salleOuverteAuJoueur("draft")).toBe(false);
+    expect(salleOuverteAuJoueur("archived")).toBe(false);
+  });
+
+  it("accepte les trois statuts joignables, fin de soirée comprise", () => {
+    expect(salleOuverteAuJoueur("lobby")).toBe(true);
+    expect(salleOuverteAuJoueur("live")).toBe(true);
+    // `ended` reste ouvert : le podium se consulte après la soirée.
+    expect(salleOuverteAuJoueur("ended")).toBe(true);
   });
 });
