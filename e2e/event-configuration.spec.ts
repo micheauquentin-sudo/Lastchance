@@ -32,6 +32,31 @@ const SESSION_ID = "e2ed0000-0000-4000-8000-0000000000c1";
 const JOIN_CODE = "E2ECFG";
 const LABEL = "Configuration E2E";
 
+/**
+ * DÉPLIER LES BLOCS, PUIS LE PROUVER.
+ *
+ * `CarteRepliable` ne rend PAS ses enfants tant qu'elle est repliée — la
+ * liste des sessions n'existe donc pas dans le DOM, et un locator qui la vise
+ * rend zéro. Un premier jet se contentait de cliquer sur les boutons
+ * « Développer » : quand le dépli n'aboutissait pas, l'échec tombait vingt
+ * lignes plus bas sur « 0 élément », en désignant la mauvaise cause.
+ *
+ * On attend donc le titre du bloc visé — `EventSessionsSection` rend
+ * « Sessions en direct » — avant de chercher quoi que ce soit dedans.
+ */
+async function ouvrirLesBlocs(page: import("@playwright/test").Page) {
+  const developper = page.getByRole("button", { name: /Développer/ });
+  // Re-résolu à chaque tour : chaque dépli retire son propre bouton et
+  // re-rend la liste. La borne évite une boucle infinie si un clic n'aboutit
+  // pas — l'assertion qui suit dira alors ce qui manque.
+  for (let garde = 0; garde < 10 && (await developper.count()) > 0; garde += 1) {
+    await developper.first().click();
+  }
+  await expect(
+    page.getByRole("heading", { name: "Sessions en direct" }),
+  ).toBeVisible({ timeout: 15_000 });
+}
+
 const admin = () =>
   createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,10 +119,7 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
 
     // ── 2. Le panel n'offre donc AUCUN lien vers ces pages.
     await page.goto(`/dashboard/events/${GAME_ID}`);
-    const developper = page.getByRole("button", { name: /Développer/ });
-    for (let restants = await developper.count(); restants > 0; restants -= 1) {
-      await developper.first().click();
-    }
+    await ouvrirLesBlocs(page);
     const ligne = page.locator("li").filter({ hasText: LABEL });
     // Une seule ligne, sinon la suite viserait au hasard — et le message dirait
     // pourquoi plutôt que « strict mode violation » sur l'assertion suivante.
@@ -133,13 +155,7 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
     expect((await page.request.get(`/event/${JOIN_CODE}`)).status()).toBe(200);
 
     await page.goto(`/dashboard/events/${GAME_ID}`);
-    for (
-      let restants = await page.getByRole("button", { name: /Développer/ }).count();
-      restants > 0;
-      restants -= 1
-    ) {
-      await page.getByRole("button", { name: /Développer/ }).first().click();
-    }
+    await ouvrirLesBlocs(page);
     const ligneOuverte = page.locator("li").filter({ hasText: LABEL });
     await expect(ligneOuverte.getByRole("link", { name: /Écran/ })).toBeVisible();
   });
