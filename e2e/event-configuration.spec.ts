@@ -27,8 +27,27 @@ import { ouvrirTuile } from "./helpers";
  * `desktop-smoke`.
  */
 
-const GAME_ID = "e2ed0000-0000-4000-8000-000000000001";
+/**
+ * UN JEU À SOI, ET C'EST LE SEED QUI L'EXIGE.
+ *
+ * Le jeu seedé « Quiz du bar E2E » est PARTAGÉ : `event.spec.ts` y lit un
+ * état initial immuable sur la session E2EVNT, et `event-remote-cycle.spec.ts`
+ * pilote la session E2ERMT — la seule que le seed réserve au pilotage. Le
+ * commentaire du seed est explicite : « toute spec qui lance/verrouille/révèle
+ * une question ou qui inscrit un joueur doit utiliser la session dédiée ».
+ *
+ * Ce parcours DÉMARRE une session : c'est du pilotage. Y ajouter une troisième
+ * session sur le jeu partagé, et l'ouvrir, c'était se coucher dans le lit du
+ * voisin — `event-remote-cycle` est tombé en timeout dès le premier passage
+ * en CI. Le voisin s'était d'ailleurs donné un game dédié pour la même raison,
+ * face à `event.spec.ts`.
+ *
+ * D'où un jeu créé et détruit ici, avec sa question : plus aucune surface
+ * commune, donc plus aucune interférence possible dans un sens ou dans l'autre.
+ */
 const ORG_ID = "e2e10000-0000-4000-8000-000000000001";
+const GAME_ID = "e2ed0000-0000-4000-8000-0000000000d1";
+const QUESTION_ID = "e2ed0000-0000-4000-8000-0000000000d2";
 const SESSION_ID = "e2ed0000-0000-4000-8000-0000000000c1";
 const JOIN_CODE = "E2ECFG";
 const LABEL = "Configuration E2E";
@@ -93,7 +112,38 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
       "Parcours mutant : un seul projet, sinon deux navigateurs visent la même session.",
     );
     const supabase = admin();
-    await supabase.from("event_sessions").delete().eq("id", SESSION_ID);
+    // Le jeu d'abord : sa suppression emporte ses sessions et ses questions
+    // (FK on delete cascade), donc chaque tentative — première, retry —
+    // repart d'un terrain vierge sans dépendre de ce que la précédente a
+    // laissé.
+    await supabase.from("event_games").delete().eq("id", GAME_ID);
+    const { error: erreurJeu } = await supabase.from("event_games").insert({
+      id: GAME_ID,
+      organization_id: ORG_ID,
+      name: "Jeu de configuration E2E",
+      // ACTIF : « Démarrer la session » refuse un jeu en brouillon, côté
+      // action ET côté RPC. Ce parcours vérifie l'ouverture d'un SALON, pas
+      // l'activation d'un jeu — celle-ci a ses propres tests.
+      status: "active",
+    });
+    if (erreurJeu) throw new Error(`seed jeu configuration : ${erreurJeu.message}`);
+    // Une question : un jeu actif sans manche n'existe pas dans le produit,
+    // et la télécommande afficherait un écran que personne ne voit jamais.
+    const { error: erreurQuestion } = await supabase
+      .from("event_questions")
+      .insert({
+        id: QUESTION_ID,
+        game_id: GAME_ID,
+        organization_id: ORG_ID,
+        position: 0,
+        question_type: "poll",
+        prompt: "Question de configuration E2E ?",
+        time_limit_seconds: 30,
+        points_base: 1000,
+      });
+    if (erreurQuestion) {
+      throw new Error(`seed question configuration : ${erreurQuestion.message}`);
+    }
     const { error } = await supabase.from("event_sessions").insert({
       id: SESSION_ID,
       game_id: GAME_ID,
@@ -110,7 +160,8 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
   });
 
   test.afterAll(async () => {
-    await admin().from("event_sessions").delete().eq("id", SESSION_ID);
+    // Le jeu emporte tout le reste en cascade.
+    await admin().from("event_games").delete().eq("id", GAME_ID);
   });
 
   test("une session neuve ne fuit pas côté joueur, puis s'ouvre depuis la télécommande @smoke", async ({
