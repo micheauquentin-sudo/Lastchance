@@ -1570,7 +1570,7 @@ export function ContestAwardsList({
                 }
               >
                 {award.expired
-                  ? `⏱ Code expiré le ${formatDate(award.redeem_expires_at)} — la caisse le refuse désormais`
+                  ? `⏱️ Code expiré le ${formatDate(award.redeem_expires_at)} — la caisse le refuse désormais`
                   : `Code valable jusqu'au ${formatDate(award.redeem_expires_at)}`}
               </span>
             )}

@@ -108,7 +108,7 @@ export function HuntPosters({
           onClick={printPosters}
           className="k-btn-sm rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink"
         >
-          🖨 Imprimer les {steps.length} affiches
+          🖨️ Imprimer les {steps.length} affiches
         </button>
         <button
           type="button"

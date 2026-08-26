@@ -1888,7 +1888,7 @@ function QuestionRow({
               : ""}
             {question.tolerance !== null ? ` · à ±${question.tolerance} près` : ""}
             {question.timeLimitSeconds !== null
-              ? ` · ⏱ ${question.timeLimitSeconds} s`
+              ? ` · ⏱️ ${question.timeLimitSeconds} s`
               : ""}
             {` · ${question.points} pt${question.points > 1 ? "s" : ""}`}
             {question.imageUrl ? " · 🖼️ image" : ""}

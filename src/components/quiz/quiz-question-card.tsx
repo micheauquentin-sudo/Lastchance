@@ -117,7 +117,7 @@ function Timer({
     >
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <span className="text-xs font-bold uppercase tracking-wide text-k-body">
-          ⏱ Temps restant
+          ⏱️ Temps restant
         </span>
         <span
           className={`font-mono text-lg font-black tabular-nums ${
@@ -460,7 +460,7 @@ export function QuizQuestionCard({
           {expired && (
             <>
               <p className="mt-2 text-center text-sm font-bold text-red-600">
-                ⏱ Temps écoulé — cette question ne rapportera plus aucun point,
+                ⏱️ Temps écoulé — cette question ne rapportera plus aucun point,
                 que vous répondiez ou non.
               </p>
               <button

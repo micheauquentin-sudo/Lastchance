@@ -7,7 +7,7 @@ import { quizGateReprise } from "@/lib/quiz";
  * Le joueur atteint une question chronométrée, appuie « Je suis prêt·e »,
  * commence à lire — et son téléphone se verrouille. Il revient, retrouve le
  * MÊME sas, y lit « Vous aurez 30 secondes dès que vous lancez » et « prenez le
- * temps de vous installer », appuie de nouveau, et tombe sur « ⏱ Temps
+ * temps de vous installer », appuie de nouveau, et tombe sur « ⏱️ Temps
  * écoulé ». Zéro point, sans seconde chance ; en mode `threshold`, cela peut
  * lui coûter son lot.
  *

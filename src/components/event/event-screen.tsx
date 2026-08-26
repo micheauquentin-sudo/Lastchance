@@ -282,7 +282,7 @@ function QuestionView({
           {locked
             ? "⏹ Réponses closes"
             : countdown.expired
-              ? "⏱ Temps écoulé"
+              ? "⏱️ Temps écoulé"
               : `${countdown.secondsLeft} s`}
         </p>
       </div>

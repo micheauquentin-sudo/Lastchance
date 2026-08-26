@@ -199,8 +199,25 @@ export function CarteRepliable({
     );
   }
 
+  // ── LE LISERÉ SUIT LE CADRE, il ne le longe plus ──
+  //
+  // Ce conteneur ne portait qu'un `border-l-4` : une barre DROITE, de la
+  // hauteur pleine du bloc, posée contre une carte à coins arrondis. En haut
+  // et en bas, le trait dépassait donc là où la carte s'incurve — un angle vif
+  // contre une courbe, visible sur chaque bloc ouvert du panel.
+  //
+  // `rounded-2xl` plus deux bordures transparentes reprennent EXACTEMENT la
+  // géométrie de la barre REPLIÉE juste au-dessus (`rounded-2xl border-2
+  // border-l-4`) : le trait coloré s'incurve aux quatre coins et épouse la
+  // carte. Les deux états ont enfin le même contour.
+  //
+  // PAS d'`overflow-hidden` : la pastille numérotée déborde volontairement du
+  // coin haut-gauche (`-left-2 -top-2`), et le rognage l'amputerait.
   return (
-    <div id={id} className={`relative scroll-mt-24 border-l-4 ${lisere}`}>
+    <div
+      id={id}
+      className={`relative scroll-mt-24 rounded-2xl border-2 border-transparent border-l-4 ${lisere}`}
+    >
       {/* EN DÉBORD du coin haut-gauche, jamais DANS la marge `p-6` : le bloc
           enveloppé y place déjà son `<h2>` (24 px du bord, 28 px de haut) et
           une pastille posée dans la marge le chevaucherait. Le débord de 8 px

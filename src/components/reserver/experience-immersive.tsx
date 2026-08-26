@@ -54,7 +54,7 @@ export function ExergueExperience({
       {durationMinutes !== null ? (
         <p className="mt-3 flex justify-center">
           <span className="inline-flex items-center gap-1.5 rounded-full border-2 border-k-ink bg-k-yellow/50 px-3 py-1 text-xs font-black uppercase tracking-wide text-k-ink">
-            <span aria-hidden>⏱</span>
+            <span aria-hidden>⏱️</span>
             {/* Le mot « Durée » est DANS le badge et non seulement à côté de
                 l'icône : lu seul par un lecteur d'écran, « 45 min » ne dit pas
                 de quoi il est la mesure. */}

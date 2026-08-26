@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // question — passait en `lobby`, l'écran de salle affichait un code d'accès, et
 // les joueurs connectés attendaient une manche qui ne viendrait jamais.
 //
-// Le lien « 🎛 Piloter » est rendu inconditionnellement sur la page de suivi, et
+// Le lien « 🎛️ Piloter » est rendu inconditionnellement sur la page de suivi, et
 // le bandeau ambre de l'éditeur n'a jamais suffi : ce n'est pas un avertissement
 // qui manquait, c'est un refus.
 //

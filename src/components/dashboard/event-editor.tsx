@@ -1,7 +1,10 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { salleOuverteAuJoueur } from "@/lib/event";
+import { annoncerToast } from "@/lib/toast-bus";
 import {
   createEventQuestion,
   createEventSession,
@@ -44,6 +47,59 @@ import {
 
 const textareaClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
+
+/**
+ * CE QUI VIENT D'ÊTRE CRÉÉ, ET QUE LE SERVEUR N'A PAS ENCORE RENVOYÉ.
+ *
+ * Ces deux formulaires rechargeaient la page entière (`window.location.reload`)
+ * après un enregistrement. C'était délibéré : `router.refresh()` a été mesuré
+ * défaillant ~5 % du temps (docs/bugs.md) et il était ici le SEUL moyen de
+ * montrer le résultat — les listes viennent du serveur, sans état local, et ces
+ * formulaires n'avaient aucun accusé de succès. Sans rien à l'écran, le
+ * commerçant ressaisissait : question dupliquée lançable deux fois en soirée,
+ * sessions `draft` fantômes avec leur code et leur stock.
+ *
+ * Le rechargement réglait le symptôme au prix d'un saut complet — position
+ * perdue, blocs repliés, écran qui clignote à chaque validation.
+ *
+ * Ce qui le remplace tient en deux garanties, et non une :
+ *   1. un TOAST annonce l'enregistrement, indépendamment de tout rendu ;
+ *   2. la ligne créée s'affiche ICI, en local, jusqu'à ce que le serveur la
+ *      renvoie.
+ *
+ * Le recouvrement ne vit QUE le temps d'un rafraîchissement manqué : l'arrivée
+ * d'une nouvelle liste serveur l'efface en bloc. Modèle repris de
+ * `moderationsLocales` dans `event-remote.tsx`, pas inventé ici.
+ */
+export interface AjoutEnAttente {
+  id: string;
+  titre: string;
+}
+
+function useAjoutsEnAttente(listeServeur: unknown) {
+  const [ajouts, setAjouts] = useState<AjoutEnAttente[]>([]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- l'arrivée d'une nouvelle liste serveur EST l'événement ; rien d'autre ne la signale.
+    setAjouts((liste) => (liste.length === 0 ? liste : []));
+  }, [listeServeur]);
+  const noter = (ajout?: AjoutEnAttente) => {
+    if (ajout) setAjouts((liste) => [...liste, ajout]);
+  };
+  return { ajouts, noter };
+}
+
+/** La ligne d'attente : elle dit que c'est enregistré, sans se faire passer
+ *  pour la vraie ligne — celle-ci arrive avec le rafraîchissement. */
+function LigneAjoutee({ titre }: { titre: string }) {
+  return (
+    <div className="rounded-xl border-2 border-dashed border-k-green/70 bg-k-green/10 p-4">
+      <p className="font-black text-k-ink">{titre}</p>
+      <p className="mt-1 text-sm font-bold text-k-body">
+        Enregistré — la liste se met à jour…
+      </p>
+    </div>
+  );
+}
 
 export interface EditorOption {
   id: string;
@@ -297,6 +353,7 @@ export function EventQuestionsSection({
   questions: EditorQuestion[];
 }) {
   const [adding, setAdding] = useState(false);
+  const { ajouts, noter } = useAjoutsEnAttente(questions);
 
   return (
     <Card>
@@ -335,13 +392,20 @@ export function EventQuestionsSection({
         <div className="mb-4">
           <QuestionForm
             gameId={gameId}
-            onDone={() => setAdding(false)}
+            onDone={(ajout) => {
+              setAdding(false);
+              noter(ajout);
+            }}
             onCancel={() => setAdding(false)}
           />
         </div>
       )}
 
-      {questions.length === 0 ? (
+      {/* `ajouts` COMPTE AUTANT QUE LA LISTE SERVEUR dans ce test : sans lui,
+          « Aucune question. Ajoutez-en une pour commencer. » se réafficherait
+          juste après une création réussie — la phrase même qui faisait
+          ressaisir, et donc dupliquer. */}
+      {questions.length === 0 && ajouts.length === 0 ? (
         !adding && (
           <p className="rounded-xl border-2 border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500">
             Aucune question. Ajoutez-en une pour commencer.
@@ -352,6 +416,11 @@ export function EventQuestionsSection({
           {questions.map((q, i) => (
             <li key={q.id}>
               <QuestionRow gameId={gameId} index={i} question={q} />
+            </li>
+          ))}
+          {ajouts.map((a) => (
+            <li key={a.id}>
+              <LigneAjoutee titre={a.titre} />
             </li>
           ))}
         </ul>
@@ -473,9 +542,11 @@ function QuestionForm({
 }: {
   gameId: string;
   question?: EditorQuestion;
-  onDone: () => void;
+  /** Reçoit la ligne créée pour l'afficher tout de suite ; rien en modification. */
+  onDone: (ajout?: AjoutEnAttente) => void;
   onCancel: () => void;
 }) {
+  const router = useRouter();
   const [type, setType] = useState<EventQuestionType>(
     question?.questionType ?? "quiz",
   );
@@ -551,14 +622,15 @@ function QuestionForm({
             options,
           });
       if (result.ok) {
-        // RECHARGEMENT FRANC, et non `router.refresh()` : ce dernier a été
-        // mesuré défaillant ~5 % du temps (docs/bugs.md), et il était ici le
-        // seul moyen de montrer le résultat — la liste vient du serveur, sans
-        // état local, et ce formulaire n'a pas d'accusé de succès (contrairement
-        // à `EventGameSettings` juste à côté, qui affiche « Enregistré. »).
-        // Pire : l'encart « Aucune question. Ajoutez-en une pour commencer. » REVIENT après la fermeture. Le commerçant ressaisit, et la question dupliquée est lançable deux fois depuis la télécommande, en soirée devant le public.
-        window.location.reload();
-        onDone();
+        // Voir `AjoutEnAttente` : le toast et la ligne locale remplacent le
+        // rechargement franc, et couvrent ensemble le cas où le
+        // rafraîchissement n'atterrit pas.
+        annoncerToast({
+          message: question ? "Question enregistrée." : "Question ajoutée.",
+        });
+        router.refresh();
+        const nouvelId = question ? null : (result.data?.id ?? null);
+        onDone(nouvelId ? { id: nouvelId, titre: prompt.trim() } : undefined);
       } else {
         setError(result.error);
       }
@@ -811,6 +883,7 @@ export function EventSessionsPrepareSection({
   sessions: EditorSession[];
 }) {
   const [creating, setCreating] = useState(false);
+  const { ajouts, noter } = useAjoutsEnAttente(sessions);
 
   return (
     <Card>
@@ -855,13 +928,19 @@ export function EventSessionsPrepareSection({
         <div className="mb-4">
           <SessionForm
             gameId={gameId}
-            onDone={() => setCreating(false)}
+            onDone={(ajout) => {
+              setCreating(false);
+              noter(ajout);
+            }}
             onCancel={() => setCreating(false)}
           />
         </div>
       )}
 
-      {sessions.length === 0 ? (
+      {/* Même raison que pour les questions : sans `ajouts`, l'encart « Aucune
+          session » revenait après une création réussie, et des sessions
+          fantômes s'accumulaient — chacune avec son code et son stock. */}
+      {sessions.length === 0 && ajouts.length === 0 ? (
         !creating && (
           <p className="rounded-xl border-2 border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500">
             Aucune session. Créez-en une pour animer une soirée.
@@ -872,6 +951,11 @@ export function EventSessionsPrepareSection({
           {sessions.map((s) => (
             <li key={s.id}>
               <SessionPrepareRow session={s} />
+            </li>
+          ))}
+          {ajouts.map((a) => (
+            <li key={a.id}>
+              <LigneAjoutee titre={a.titre} />
             </li>
           ))}
         </ul>
@@ -941,15 +1025,25 @@ function SessionRow({ session }: { session: EditorSession }) {
             href={`/dashboard/events/${session.id}/remote`}
             className="rounded-lg border-2 border-k-ink bg-k-yellow px-3 py-1.5 text-xs font-black text-k-ink"
           >
-            🎛 Piloter
+            🎛️ Piloter
           </Link>
-          <Link
-            href={`/event/${session.joinCode}/screen`}
-            target="_blank"
-            className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
-          >
-            📺 Écran
-          </Link>
+          {/* « ÉCRAN » NE S'AFFICHE QUE SI LA SALLE EST OUVERTE.
+              `/event/[code]/screen` passe par `loadEventPublicContext`, qui
+              refuse `draft` et `archived` : sur une session fraîchement créée
+              — statut `draft` par défaut — ce bouton menait à « Page
+              introuvable », à tous les coups. « Piloter » reste, lui, TOUJOURS
+              affiché : c'est par là qu'on ouvre le salon, et le masquer
+              fermerait la seule porte. L'encart QR juste en dessous dit déjà
+              pourquoi la page joueur est fermée. */}
+          {salleOuverteAuJoueur(session.status) && (
+            <Link
+              href={`/event/${session.joinCode}/screen`}
+              target="_blank"
+              className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
+            >
+              📺 Écran
+            </Link>
+          )}
         </div>
       </div>
 
@@ -967,7 +1061,7 @@ function SessionRow({ session }: { session: EditorSession }) {
         <p className="mb-2 text-xs font-black uppercase tracking-wide text-zinc-500">
           QR code et lien de la session
         </p>
-        {session.status !== "draft" && session.status !== "archived" ? (
+        {salleOuverteAuJoueur(session.status) ? (
           <PublicShare
             url={session.publicUrl}
             fileName={`evenement-${session.joinCode}`}
@@ -1060,9 +1154,11 @@ function SessionForm({
 }: {
   gameId?: string;
   session?: EditorSession;
-  onDone: () => void;
+  /** Reçoit la ligne créée pour l'afficher tout de suite ; rien en modification. */
+  onDone: (ajout?: AjoutEnAttente) => void;
   onCancel: () => void;
 }) {
+  const router = useRouter();
   const [label, setLabel] = useState(session?.label ?? "");
   const [rewardLabel, setRewardLabel] = useState(session?.rewardLabel ?? "");
   const [rewardDetails, setRewardDetails] = useState(session?.rewardDetails ?? "");
@@ -1102,14 +1198,19 @@ function SessionForm({
             rewardStock,
           });
       if (result.ok) {
-        // RECHARGEMENT FRANC, et non `router.refresh()` : ce dernier a été
-        // mesuré défaillant ~5 % du temps (docs/bugs.md), et il était ici le
-        // seul moyen de montrer le résultat — la liste vient du serveur, sans
-        // état local, et ce formulaire n'a pas d'accusé de succès (contrairement
-        // à `EventGameSettings` juste à côté, qui affiche « Enregistré. »).
-        // Le commerçant ressaisit, et des sessions `draft` fantômes s'accumulent — chacune avec son code d'accès et son stock de lots, invisibles jusqu'à ce qu'il les découvre.
-        window.location.reload();
-        onDone();
+        // Voir `AjoutEnAttente` : le toast et la ligne locale remplacent le
+        // rechargement franc, et couvrent ensemble le cas où le
+        // rafraîchissement n'atterrit pas.
+        annoncerToast({
+          message: session ? "Session enregistrée." : "Session créée.",
+        });
+        router.refresh();
+        const nouvelId = session ? null : (result.data?.id ?? null);
+        onDone(
+          nouvelId
+            ? { id: nouvelId, titre: label.trim() || "Session sans nom" }
+            : undefined,
+        );
       } else {
         setError(result.error);
       }
