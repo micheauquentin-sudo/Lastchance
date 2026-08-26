@@ -475,7 +475,7 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
       ["reserver", "Réserver"],
       ["loyalty", "Passeport des habitués"],
       ["referral", "Bouche-à-oreille / Parrainage"],
-      ["hunts", "Chasse au trésor"],
+      ["hunts", "Chasse au QR"],
       ["calendar", "Calendrier à surprises"],
       ["quiz", "Quiz express"],
       ["jackpot", "Cagnotte collective"],

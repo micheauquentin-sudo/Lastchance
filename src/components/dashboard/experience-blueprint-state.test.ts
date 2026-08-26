@@ -51,7 +51,7 @@ describe("starterKinds", () => {
 describe("kindLabel", () => {
   it("rend le libellé du catalogue", () => {
     expect(kindLabel("quiz")).toBe("Quiz");
-    expect(kindLabel("hunt")).toBe("Chasse au trésor");
+    expect(kindLabel("hunt")).toBe("Chasse au QR");
   });
 });
 

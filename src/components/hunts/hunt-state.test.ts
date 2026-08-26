@@ -43,7 +43,10 @@ describe("messageForScanState", () => {
 
   it("hunt_full et unavailable sont des erreurs", () => {
     expect(messageForScanState("hunt_full").tone).toBe("error");
-    expect(messageForScanState("unavailable").tone).toBe("error");
+    expect(messageForScanState("unavailable")).toMatchObject({
+      tone: "error",
+      body: "Cette chasse au QR n'est pas accessible pour le moment.",
+    });
   });
 
   it("completed → succès", () => {

@@ -11,6 +11,7 @@ import { jetonDeLAdresse } from "@/lib/jeton-de-l-adresse";
 import type { HuntScanResult } from "@/lib/hunts";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { RedeemQr } from "@/components/wheel/redeem-qr";
 import type { ActionResult } from "@/lib/utils";
 import type { HuntOrderMode } from "@/types/database";
 import {
@@ -346,7 +347,7 @@ function CompletionCard({
     if (!code) return;
     try {
       await navigator.share({
-        text: `J'ai terminé la chasse au trésor ! Mon code de retrait : ${code}`,
+        text: `J'ai terminé la Chasse au QR ! Mon code de retrait : ${code}`,
       });
     } catch {
       // Partage annulé : rien à faire.
@@ -360,7 +361,7 @@ function CompletionCard({
           🏆
         </div>
         <h2 className="mt-2 text-xl font-black text-k-ink">
-          Chasse terminée — bravo !
+          Chasse au QR terminée — bravo !
         </h2>
 
         {reward.label && (
@@ -385,6 +386,7 @@ function CompletionCard({
             <p className="mt-1 break-all font-mono text-2xl font-black tracking-wider text-k-ink">
               {code}
             </p>
+            <RedeemQr value={code} />
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
@@ -404,7 +406,8 @@ function CompletionCard({
               )}
             </div>
             <p className="mt-4 text-sm font-bold text-k-body">
-              Présentez ce code en caisse pour récupérer votre lot.
+              Présentez ce code ou faites scanner le QR en caisse pour récupérer
+              votre lot.
             </p>
             <p className="mt-2">
               <LienPortefeuille />
@@ -414,7 +417,7 @@ function CompletionCard({
         {/* Hors du bloc du code : la chasse terminée SANS lot (stock épuisé,
             ou aucun lot configuré) est exactement le moment où revenir a le
             plus de valeur pour le joueur. */}
-        {organizationId && (
+        {organizationId && code && (
           <ProposerPasseport organizationId={organizationId} />
         )}
       </div>

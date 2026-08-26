@@ -237,7 +237,7 @@ describe("le refus de droit de la base arrive à l'écran, module par module", (
 
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.error).toBe(
-      "Le module Chasse au trésor n'est pas activé sur votre compte.",
+      "Le module Chasse au QR n'est pas activé sur votre compte.",
     );
     // La RPC a bien été atteinte : sans cette assertion, un refus arrivé plus
     // tôt (garde métier, lecture manquée) rendrait le test vert pour une

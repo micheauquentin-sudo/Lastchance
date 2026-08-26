@@ -306,7 +306,7 @@ describe("deleteHuntStep — les joueurs en cours", () => {
     const res = await deleteHuntStep(null, form(true));
 
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain("Chasse au trésor");
+    if (!res.ok) expect(res.error).toContain("Chasse au QR");
     expect(state.rpcCalls).toEqual([]);
     expect(state.deletes).toEqual([]);
   });

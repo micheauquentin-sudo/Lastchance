@@ -79,7 +79,7 @@ export function messageForScanState(
       return {
         tone: "error",
         title: "Chasse indisponible",
-        body: "Cette chasse au trésor n'est pas accessible pour le moment.",
+        body: "Cette chasse au QR n'est pas accessible pour le moment.",
       };
   }
 }

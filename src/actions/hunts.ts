@@ -221,7 +221,7 @@ export async function setHuntStatus(
     if (!hasHuntsAccess(organization)) {
       return {
         ok: false,
-        error: "Le module Chasse au trésor n'est pas activé sur votre compte.",
+        error: "Le module Chasse au QR n'est pas activé sur votre compte.",
       };
     }
     // Les deux faits partent ENSEMBLE (le lot était lu avant les étapes, en
@@ -264,7 +264,7 @@ export async function setHuntStatus(
     { data: transition, error },
     {
       introuvable: "Chasse introuvable",
-      module: "Le module Chasse au trésor n'est pas activé sur votre compte.",
+      module: "Le module Chasse au QR n'est pas activé sur votre compte.",
       role: NOT_EDITOR,
       transition: "Ce changement de statut n'est pas permis.",
       echec: "Mise à jour impossible",
@@ -496,7 +496,7 @@ export async function deleteHuntStep(
   if (!hasHuntsAccess(organization)) {
     return {
       ok: false,
-      error: "Le module Chasse au trésor n'est pas activé sur votre compte.",
+      error: "Le module Chasse au QR n'est pas activé sur votre compte.",
     };
   }
 

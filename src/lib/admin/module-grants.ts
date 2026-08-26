@@ -238,7 +238,7 @@ export function estVivant(
  */
 export const LIBELLE_MODULE: Record<string, string> = {
   wheel: "Roue / campagnes",
-  hunts: "Chasse au trésor",
+  hunts: "Chasse au QR",
   calendar: "Calendrier à surprises",
   loyalty: "Passeport des habitués",
   quiz: "Quiz express",

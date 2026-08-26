@@ -103,7 +103,7 @@ export const EXPERIENCE_CATALOG: readonly ExperienceCatalogEntry[] = [
   {
     kind: "hunt",
     entitlement: "hunts",
-    label: "Chasse au trésor",
+    label: "Chasse au QR",
     shortDescription: "Reliez plusieurs lieux et faites progresser le trafic physique.",
     objective: "Créer du trafic",
     dashboardHref: "/dashboard/hunts",

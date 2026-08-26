@@ -31,7 +31,7 @@ const ORG_COLUMNS =
   "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_hunts, comp_access, comp_access_until, timezone";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
-const UNAVAILABLE = "Cette chasse au trésor n'est pas disponible.";
+const UNAVAILABLE = "Cette chasse au QR n'est pas disponible.";
 
 /**
  * Préfixe commun des cookies de chasse. Isolé pour que la garde à zéro requête

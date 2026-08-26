@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
 
 /**
- * Parcours joueur de la Chasse au trésor multi-QR (seed supabase/seed.sql :
+ * Parcours joueur de la Chasse au QR multi-QR (seed supabase/seed.sql :
  * chasse « Chasse E2E », 3 étapes, ordre libre, sans délai, stock illimité —
  * jetons d'étapes déterministes E2EHUNT100000001..3, 16 car.). Le joueur scanne chaque QR,
  * valide son passage, et obtient à la complétion un code de retrait au
@@ -16,7 +16,7 @@ import { expectNoA11yViolations } from "./axe";
  */
 const STEP_TOKENS = ["E2EHUNT100000001", "E2EHUNT200000002", "E2EHUNT300000003"] as const;
 
-test.describe("chasse au trésor — parcours joueur complet", () => {
+test.describe("chasse au QR — parcours joueur complet", () => {
   test("scanner les trois étapes mène au code de retrait", async ({
     page,
   }, testInfo) => {
@@ -52,14 +52,17 @@ test.describe("chasse au trésor — parcours joueur complet", () => {
       }
     }
 
-    // ── Complétion : l'écran final affiche le code de retrait au format
-    // maison (CHASSE-XXXXXXXX, alphabet sans I/O/0/1) et l'instruction caisse.
+    // ── Complétion : l'écran final affiche le code de retrait, le QR du même
+    // code (scanner caisse) et l'instruction caisse.
     await expect(
-      page.getByRole("heading", { name: /Chasse terminée/ }),
+      page.getByRole("heading", { name: /Chasse au QR terminée/ }),
     ).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/CHASSE-[A-HJ-NP-Z2-9]{8}/)).toBeVisible();
     await expect(
-      page.getByText("Présentez ce code en caisse pour récupérer votre lot."),
+      page.getByAltText(/QR code du gain CHASSE-[A-HJ-NP-Z2-9]{8}/),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByText("Présentez ce code ou faites scanner le QR en caisse pour récupérer votre lot."),
     ).toBeVisible();
 
     // ── Scan a11y de l'écran final (code + formulaire optionnel de rappel

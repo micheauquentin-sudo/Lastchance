@@ -210,7 +210,7 @@ export default async function MerchantDetailPage({
                       </div>
                       <div>
                         <p className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
-                          Addon Chasse au trésor
+                          Addon Chasse au QR
                         </p>
                         <HuntsAddonControl
                           organizationId={org.id}

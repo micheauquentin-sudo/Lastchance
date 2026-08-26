@@ -56,7 +56,7 @@ export const PROGRESSION_EXPERIENCE_LABELS: Record<
   string
 > = {
   campaign: "Jeux instantanés",
-  hunt: "Chasse au trésor",
+  hunt: "Chasse au QR",
   loyalty: "Passeport fidélité",
   jackpot: "Jackpot collectif",
   event: "Événement live",

@@ -25,7 +25,7 @@ import {
 } from "@/components/dashboard/module-list-counts";
 import type { Hunt } from "@/types/database";
 
-export const metadata: Metadata = { title: "Chasse au trésor" };
+export const metadata: Metadata = { title: "Chasse au QR" };
 
 /** Le `check` de `hunts.status` : trois valeurs, pas de `paused`. */
 const STATUTS: readonly StatutModule[] = [
@@ -98,13 +98,13 @@ export default async function HuntsPage({
     <div>
       <PageHeader
         surtitre="Vos animations"
-        titre="Chasse au trésor"
-        sousTitre="Un parcours de QR codes à tamponner, un lot final remis en caisse."
+        titre="Chasse au QR"
+        sousTitre="Un parcours de QR codes à tamponner, avec un lot final remis en caisse."
         actions={capacites.canEditDraft ? <NewHuntForm /> : null}
       />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="hunts">
-        2 à 10 étapes par chasse, ordre libre ou imposé, lot final remis en
+        2 à 10 étapes par Chasse au QR, ordre libre ou imposé, lot final remis en
         caisse.
       </ModuleCapabilityNotice>
 
@@ -112,17 +112,17 @@ export default async function HuntsPage({
         idPrefix="hunt-filtre"
         filtres={filtres}
         statuts={STATUTS}
-        placeholder="Nom de la chasse…"
+        placeholder="Nom de la Chasse au QR…"
       />
 
       {!huntList.length ? (
         <Card className="text-center py-12">
           {filtres.actif ? (
-            <ModuleListAucunResultat quoi="chasse" />
+            <ModuleListAucunResultat quoi="parcours QR" />
           ) : (
             <>
               <p className="text-zinc-500">
-                Aucune chasse pour l&apos;instant. Créez la première !
+                Aucune Chasse au QR pour l&apos;instant. Créez la première !
               </p>
               {/* LE BOUTON EST ICI AUSSI, et ce n'est pas un doublon : l'état
                   vide disait « créez la première » sans rien à cliquer, et le
