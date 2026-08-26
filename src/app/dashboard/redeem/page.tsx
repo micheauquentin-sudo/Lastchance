@@ -445,7 +445,7 @@ export function WheelResult({
         />
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-          ⏱ Code expiré le {formatDate(participation.redeem_expires_at!, fuseau)} — délai
+          ⏱️ Code expiré le {formatDate(participation.redeem_expires_at!, fuseau)} — délai
           de retrait dépassé
         </p>
       ) : (
@@ -952,7 +952,7 @@ export function ContestResult({
         </div>
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-          ⏱ Code expiré le {formatDate(award.redeem_expires_at!, fuseau)} — délai de
+          ⏱️ Code expiré le {formatDate(award.redeem_expires_at!, fuseau)} — délai de
           retrait dépassé
         </p>
       ) : (
@@ -1077,7 +1077,7 @@ function StockHoldResult({
         </div>
       ) : expired ? (
         <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
-          ⏱ Fenêtre close le {formatDate(hold.redeem_expires_at!, fuseau)} —
+          ⏱️ Fenêtre close le {formatDate(hold.redeem_expires_at!, fuseau)} —
           l&apos;unité est repartie en vente
         </p>
       ) : (

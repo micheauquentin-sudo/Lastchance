@@ -589,7 +589,7 @@ export function RedeemCodeScreen({
       )}
       {secondsLeft != null && (
         <p className={`mt-3 text-xs font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
-          ⏱ Ce code disparaît dans {secondsLeft} s
+          ⏱️ Ce code disparaît dans {secondsLeft} s
         </p>
       )}
       {passeport}

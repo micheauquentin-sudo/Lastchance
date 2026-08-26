@@ -1078,7 +1078,7 @@ export type QuizGateReprise =
  * Le sas annonçait « Vous aurez N secondes dès que vous lancez » et « prenez le
  * temps de vous installer » de façon INCONDITIONNELLE. Un joueur dont le
  * téléphone se verrouille pendant qu'il lit l'intitulé revient sur ce même sas,
- * y lit une promesse de temps plein, appuie — et tombe sur « ⏱ Temps écoulé ».
+ * y lit une promesse de temps plein, appuie — et tombe sur « ⏱️ Temps écoulé ».
  * Zéro point, sans seconde chance, et en mode `threshold` cela peut lui coûter
  * son lot. L'information manquante était pourtant déjà servie par
  * `quiz_public_state` (`status`, `startedAt`) : elle n'était simplement jamais

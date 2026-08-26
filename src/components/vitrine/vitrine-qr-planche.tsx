@@ -220,7 +220,7 @@ export function VitrineQrPlanche({
               void document.fonts?.ready.then(() => window.print());
             }}
           >
-            🖨 Imprimer la planche
+            🖨️ Imprimer la planche
           </Button>
         </div>
 

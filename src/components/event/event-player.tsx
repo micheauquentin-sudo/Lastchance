@@ -546,7 +546,7 @@ function QuestionPlay({
         ) : locked ? (
           <p className="text-sm font-bold text-k-body">⏹ Les réponses sont closes.</p>
         ) : countdown.expired ? (
-          <p className="text-sm font-bold text-k-body">⏱ Temps écoulé.</p>
+          <p className="text-sm font-bold text-k-body">⏱️ Temps écoulé.</p>
         ) : null}
         {error && (
           <p role="alert" className="mt-2 text-sm font-semibold text-red-600">

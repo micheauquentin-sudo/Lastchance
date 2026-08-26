@@ -137,7 +137,7 @@ export function PlayerHub({
                 <>Lot remis — merci d&apos;avoir joué !</>
               ) : award.expired ? (
                 <>
-                  ⏱ Ce code a expiré
+                  ⏱️ Ce code a expiré
                   {award.redeemExpiresAt
                     ? ` le ${formatDate(award.redeemExpiresAt)}`
                     : ""}{" "}
@@ -158,7 +158,7 @@ export function PlayerHub({
               !award.expired &&
               award.redeemExpiresAt && (
                 <p className="mt-0.5 text-xs font-bold text-k-ink">
-                  ⏱ À retirer avant le {formatDate(award.redeemExpiresAt)}
+                  ⏱️ À retirer avant le {formatDate(award.redeemExpiresAt)}
                 </p>
               )}
             <p className="mt-1.5">

@@ -88,9 +88,16 @@ describe("URL publique d'une session d'événement en direct", () => {
   it("ne rend aucun QR pour une session en brouillon ou archivée", () => {
     expect(editor.match(/<PublicShare/g)).toHaveLength(1);
 
-    // Miroir EXACT de loadEventPublicContext : draft et archived → 404.
-    const gate =
-      'session.status !== "draft" && session.status !== "archived" ? (';
+    // Miroir de loadEventPublicContext : draft et archived → 404. La règle
+    // n'est plus RECOPIÉE ici — elle est lue depuis `salleOuverteAuJoueur`
+    // (`src/lib/event.ts`), désormais le seul endroit où elle s'écrit, et que
+    // `event.test.ts` compare aux cinq statuts. Trois copies littérales
+    // vivaient jusque-là côté SQL, côté contexte et côté éditeur ; c'est cette
+    // dispersion qui avait laissé « Écran » pointer sur un 404.
+    expect(editor).toContain(
+      'import { salleOuverteAuJoueur } from "@/lib/event"',
+    );
+    const gate = "salleOuverteAuJoueur(session.status) ? (";
     const start = editor.indexOf(gate);
     expect(start).toBeGreaterThan(-1);
 

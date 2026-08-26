@@ -561,7 +561,7 @@ export async function startEventSession(input: {
     // `start_event_session` ne joignait JAMAIS `event_games` : une session
     // d'un jeu encore en brouillon — donc éventuellement sans une seule
     // question — ouvrait son lobby au public, et l'écran de salle affichait
-    // une soirée qui n'avait rien à projeter. Le lien « 🎛 Piloter » est
+    // une soirée qui n'avait rien à projeter. Le lien « 🎛️ Piloter » est
     // rendu inconditionnellement, le bandeau ambre de l'éditeur n'a jamais
     // suffi.
     //

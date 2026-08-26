@@ -460,7 +460,7 @@ export function PlayExperience({
           <p className={playText.body(kermesse)}>{error}</p>
           {nextEligibleAt && (
             <p className={`mt-4 text-sm font-mono ${kermesse ? "text-k-orange-text font-bold" : "text-amber-300"}`}>
-              ⏱ Revenez dans <Countdown target={nextEligibleAt} />
+              ⏱️ Revenez dans <Countdown target={nextEligibleAt} />
             </p>
           )}
           {repriseIndisponible && (
