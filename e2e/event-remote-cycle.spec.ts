@@ -157,7 +157,21 @@ test.describe("mode événement — cycle question → révélation (télécomma
       await expect(
         page.getByRole("heading", { name: "Révéler la réponse" }),
       ).toBeVisible({ timeout: 30_000 });
-      await page.getByRole("button", { name: "👁 Révéler" }).click();
+      // L'EMOJI EST HORS DU SÉLECTEUR, ET C'EST LA LEÇON D'UN ÉCHEC.
+      //
+      // Ce clic visait le nom accessible complet, « 👁 Révéler ». Le jour où
+      // l'œil a reçu son sélecteur de variation U+FE0F — invisible à l'écran,
+      // mais nécessaire pour que Windows le dessine au lieu d'un carré vide —
+      // le nom est devenu « 👁️ Révéler » et ne correspondait plus. Playwright
+      // normalise les espaces, PAS les sélecteurs de variation.
+      //
+      // Le clic attendait alors un bouton qui n'arrivait jamais : `click()`
+      // n'a pas de délai propre, il patiente jusqu'au timeout du TEST. D'où un
+      // « Test timeout of 150000ms exceeded » sans nom de locator, qui ne
+      // désignait rien et a coûté plusieurs cycles à imputer.
+      //
+      // Le libellé porte le sens, pas l'ornement : on ancre sur le mot.
+      await page.getByRole("button", { name: /Révéler$/ }).click();
 
       // ── 4. Révélation visible à la fois côté joueur et côté télécommande.
       await expect(
