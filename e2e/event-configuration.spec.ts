@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { ouvrirTuile } from "./helpers";
 
 /**
  * DE LA SESSION CRÉÉE AU SALON OUVERT — le parcours que personne ne couvrait.
@@ -33,28 +34,33 @@ const JOIN_CODE = "E2ECFG";
 const LABEL = "Configuration E2E";
 
 /**
- * DÉPLIER LES BLOCS, PUIS LE PROUVER.
+ * OUVRIR LA TUILE DES SESSIONS, PUIS LE PROUVER.
  *
- * `CarteRepliable` ne rend PAS ses enfants tant qu'elle est repliée — la
- * liste des sessions n'existe donc pas dans le DOM, et un locator qui la vise
- * rend zéro. Un premier jet se contentait de cliquer sur les boutons
- * « Développer » : quand le dépli n'aboutissait pas, l'échec tombait vingt
- * lignes plus bas sur « 0 élément », en désignant la mauvaise cause.
+ * `CarteRepliable` ne rend PAS ses enfants tant qu'elle est repliée : la
+ * liste des sessions n'existe pas dans le DOM, et un locator qui la vise rend
+ * zéro. Un premier jet balayait tous les boutons « Développer » en boucle ;
+ * quand le dépli n'aboutissait pas, l'échec tombait vingt lignes plus bas sur
+ * « 0 élément » et désignait la mauvaise cause.
  *
- * On attend donc le titre du bloc visé — `EventSessionsSection` rend
- * « Sessions en direct » — avant de chercher quoi que ce soit dedans.
+ * On vise donc LA tuile — `TUILES_EVENEMENT` la nomme « Les sessions » — avec
+ * le helper maison, puis on exige le titre que son contenu rend,
+ * « Sessions en direct » (`EventSessionsSection`).
+ *
+ * LE `toPass` N'EST PAS DE LA PRÉCAUTION DÉCORATIVE. Un clic envoyé avant que
+ * React ait hydraté la page est ACCEPTÉ par le navigateur et perdu par
+ * l'application : c'est la première cause d'instabilité de cette suite, et
+ * `ouvrirTuile` avale volontairement l'échec de son clic (la tuile peut être
+ * déjà ouverte). On rejoue donc le couple geste + preuve jusqu'à ce que l'état
+ * VOULU soit là, au lieu de faire confiance au clic. Cette page est visitée
+ * deux fois dans le test, et la tuile se replie entre les deux.
  */
-async function ouvrirLesBlocs(page: import("@playwright/test").Page) {
-  const developper = page.getByRole("button", { name: /Développer/ });
-  // Re-résolu à chaque tour : chaque dépli retire son propre bouton et
-  // re-rend la liste. La borne évite une boucle infinie si un clic n'aboutit
-  // pas — l'assertion qui suit dira alors ce qui manque.
-  for (let garde = 0; garde < 10 && (await developper.count()) > 0; garde += 1) {
-    await developper.first().click();
-  }
-  await expect(
-    page.getByRole("heading", { name: "Sessions en direct" }),
-  ).toBeVisible({ timeout: 15_000 });
+async function ouvrirLesSessions(page: import("@playwright/test").Page) {
+  await expect(async () => {
+    await ouvrirTuile(page, /Développer «.*Les sessions/);
+    await expect(
+      page.getByRole("heading", { name: "Sessions en direct" }),
+    ).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 const admin = () =>
@@ -119,7 +125,7 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
 
     // ── 2. Le panel n'offre donc AUCUN lien vers ces pages.
     await page.goto(`/dashboard/events/${GAME_ID}`);
-    await ouvrirLesBlocs(page);
+    await ouvrirLesSessions(page);
     const ligne = page.locator("li").filter({ hasText: LABEL });
     // Une seule ligne, sinon la suite viserait au hasard — et le message dirait
     // pourquoi plutôt que « strict mode violation » sur l'assertion suivante.
@@ -155,7 +161,7 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
     expect((await page.request.get(`/event/${JOIN_CODE}`)).status()).toBe(200);
 
     await page.goto(`/dashboard/events/${GAME_ID}`);
-    await ouvrirLesBlocs(page);
+    await ouvrirLesSessions(page);
     const ligneOuverte = page.locator("li").filter({ hasText: LABEL });
     await expect(ligneOuverte.getByRole("link", { name: /Écran/ })).toBeVisible();
   });
