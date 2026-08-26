@@ -327,7 +327,22 @@ export default async function DashboardLayout({
             </div>
           </RappelFermable>
         )}
-        <div className="p-6 lg:p-10 max-w-6xl">{children}</div>
+        {/* LARGEUR DU PANEL — un seul point pour TOUTES les pages du
+            dashboard : elles sont toutes rendues ici, et aucune ne repose sa
+            propre borne large (les `max-w-lg` / `max-w-2xl` qui subsistent
+            ailleurs cadrent des formulaires, pas la page).
+
+            `max-w-6xl` valait 1152 px. Sur un écran de 1920, la barre
+            latérale en prend 256 et il reste 1664 px utiles : plus de 500 px
+            de vide à droite du contenu, visibles sur toutes les listes et
+            toutes les cartes repliables du panel.
+
+            Une borne SUBSISTE, et volontairement : sans elle, les lignes de
+            texte des pages de réglages atteindraient 1600 px, largeur à
+            laquelle l'œil perd le début de la ligne suivante. 88 rem
+            (1408 px) laisse une marge de l'ordre de la largeur du menu — la
+            page reste visiblement bornée au lieu de coller au bord droit. */}
+        <div className="p-6 lg:p-10 max-w-[88rem]">{children}</div>
       </main>
     </div>
   );
