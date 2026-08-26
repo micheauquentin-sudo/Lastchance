@@ -3,11 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
+import { salleOuverteAuJoueur } from "@/lib/event";
 import { createClient } from "@/lib/supabase/server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { etatSourceRelance } from "@/lib/experience-relance";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -187,6 +189,25 @@ export default async function EventGamePage({
     codeTtlDays: s.code_ttl_days,
   }));
 
+  /**
+   * LA PREMIÈRE SALLE QUE LE JOUEUR PEUT RÉELLEMENT OUVRIR.
+   *
+   * `sessions[0]` était pris tel quel, sans regarder son statut — et une
+   * session naît `draft` : le défaut de `event_sessions`, que
+   * `createEventSession` ne pose jamais. Or `event_etat_partage` refuse
+   * `draft`, donc « Voir le jeu » menait à « page introuvable » tant que
+   * l'organisateur n'avait pas ouvert la salle depuis la télécommande.
+   *
+   * `find` et non `[0]` : une soirée porte plusieurs salles, et la plus
+   * ancienne peut rester un brouillon pendant qu'une autre tourne — le lien
+   * doit viser celle qui s'ouvre, pas celle qui a été créée en premier.
+   *
+   * `null` quand aucune ne s'ouvre : `VoirLeJeu` ne rend alors rien, ce qui
+   * est son contrat (« un bouton qui mène à un écran fermé est pire que pas
+   * de bouton »).
+   */
+  const salleVisitable = sessions.find((s) => salleOuverteAuJoueur(s.status));
+
   const status = game.status as EventGameStatus;
   const etape = parseEtape(ETAPES_EVENEMENT, etapeParam, "nulle");
   const hrefPour = (cle: string) => hrefEtapeEvenement(game.id, cle);
@@ -199,6 +220,15 @@ export default async function EventGamePage({
     sessions: sessions.map((session) => ({ status: session.status })),
   };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("event", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   const numero = etape ? numeroEtape(ETAPES_EVENEMENT, etape) : 0;
 
@@ -272,7 +302,7 @@ export default async function EventGamePage({
             <EventGameStatusControls
               gameId={game.id}
               status={status}
-              hrefJeu={sessions[0]?.publicUrl ?? null}
+              hrefJeu={salleVisitable?.publicUrl ?? null}
             />
           </CarteRepliable>
 
@@ -310,7 +340,7 @@ export default async function EventGamePage({
           {/* REPLIÉ : on relance une formule APRÈS la soirée, pas pendant
               qu'on la prépare. Le lien « Relancer » de la conclusion vise
               `#relance`, qui rouvre le bloc. */}
-          {capacites.canExplore && (
+          {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
             <CarteRepliable
               {...bloc("relance")}
               defaultOuvert={false}
@@ -319,9 +349,7 @@ export default async function EventGamePage({
               <RelaunchFormulaCard
                 sourceName={game.name}
                 occasionLabel="la prochaine soirée"
-                sourceState={etatSourceRelance("event", marqueurs)}
-                canCreateDraft={peutCreerBrouillon}
-                isSupported
+                {...relance}
                 action={<RelaunchFormulaAction kind="event" sourceId={game.id} />}
               />
             </CarteRepliable>

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import {
   getRelaunchFormulaState,
+  relanceADeQuoiSAfficher,
   type RelaunchFormulaInput,
 } from "@/components/dashboard/relaunch-formula-state";
 
@@ -54,8 +55,8 @@ export function RelaunchFormulaCard({
    * animation clôturée doit savoir pourquoi il n'a pas le bouton, sinon il
    * cherche. C'est la seule situation où quelqu'un attend quelque chose ici.
    */
-  if (state.kind === "blocked" && sourceState !== "completed") return null;
-  if (state.kind === "blocked" && !isSupported) return null;
+  if (!relanceADeQuoiSAfficher({ sourceState, canCreateDraft, isSupported }))
+    return null;
 
   return (
     <Card className="space-y-4 bg-k-bg">

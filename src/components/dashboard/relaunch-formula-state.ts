@@ -67,3 +67,30 @@ export function getRelaunchFormulaState({
     ],
   };
 }
+
+/**
+ * LA CARTE A-T-ELLE QUELQUE CHOSE À MONTRER ?
+ *
+ * `RelaunchFormulaCard` se tait dans deux cas — une animation qui n'est pas
+ * terminée, et un type d'animation que l'éditeur ne sait pas copier — et rend
+ * alors `null`. C'est une décision assumée : un refus n'a de sens qu'après
+ * une tentative, et il n'y en a eu aucune sur un brouillon créé dix secondes
+ * plus tôt.
+ *
+ * Mais les six pages détail enveloppent cette carte dans une
+ * `CarteRepliable` repliée par défaut, qui n'en savait rien : le titre
+ * « Relancer la formule », sa pastille de checklist, son résumé et son « + »
+ * restaient à l'écran. Le commerçant dépliait et trouvait un bloc vide — le
+ * bouton paraissait cassé, et le silence voulu par la carte devenait un
+ * défaut visible.
+ *
+ * Le verdict est donc rendu lisible ICI plutôt que déduit deux fois : la
+ * carte s'en sert pour se taire, la page pour ne pas poser l'enveloppe, et
+ * les deux ne peuvent plus diverger.
+ */
+export function relanceADeQuoiSAfficher(input: RelaunchFormulaInput): boolean {
+  if (getRelaunchFormulaState(input).kind !== "blocked") return true;
+  // Seul le refus de RÔLE reste affiché : un éditeur qui voit la carte sur une
+  // animation clôturée doit savoir pourquoi le bouton lui manque.
+  return input.sourceState === "completed" && input.isSupported;
+}

@@ -4,7 +4,7 @@ import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
 import { getUserAndOrg } from "@/lib/auth";
-import type { EventPublicState } from "@/lib/event";
+import { salleOuverteAuJoueur, type EventPublicState } from "@/lib/event";
 import { chargerEtatLive } from "@/lib/event-etat";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -371,7 +371,7 @@ export async function loadEventActionContext(
   const org = row.organizations;
   if (!org || org.id !== row.organization_id) return { ok: false };
   if (!await moduleOuvertAuJoueur("events", org)) return { ok: false };
-  if (row.status === "draft" || row.status === "archived") return { ok: false };
+  if (!salleOuverteAuJoueur(row.status)) return { ok: false };
 
   return { ok: true, admin, sessionId: row.id };
 }

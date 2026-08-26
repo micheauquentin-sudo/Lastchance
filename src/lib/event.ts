@@ -66,6 +66,27 @@ const SESSION_PHASES: readonly EventSessionPhase[] = [
   "ended",
 ];
 
+/**
+ * UNE SALLE EST-ELLE OUVERTE AU GRAND PUBLIC ?
+ *
+ * Miroir TypeScript de la garde portée par `event_etat_partage` (migration
+ * 20260929120000) : `draft` et `archived` y rendent
+ * `{"state":"unavailable"}`, indistinctement d'un code inconnu. `lobby`,
+ * `live` et `ended` restent joignables — on suit encore le podium une fois
+ * la soirée finie.
+ *
+ * La règle vivait en SQL et, en double, dans `event-context.ts`. Elle
+ * n'existait NULLE PART dans le panel, et c'est exactement ce qui manquait :
+ * le bouton « Voir le jeu » visait `sessions[0]` sans regarder son statut,
+ * alors qu'une session naît `draft` (défaut de la table, jamais posé par
+ * `createEventSession`). Le commerçant cliquait et lisait « page
+ * introuvable ». Les sept autres modules filtrent déjà leur `hrefJeu` sur un
+ * statut ; celui-ci était le seul à ne pas le faire.
+ */
+export function salleOuverteAuJoueur(status: EventSessionStatus): boolean {
+  return status !== "draft" && status !== "archived";
+}
+
 function asStatus(value: unknown): EventSessionStatus {
   return SESSION_STATUSES.includes(value as EventSessionStatus)
     ? (value as EventSessionStatus)

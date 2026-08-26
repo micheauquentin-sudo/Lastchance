@@ -28,6 +28,7 @@ import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireVerificationFidelite } from "@/lib/activation/loyalty";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
@@ -241,6 +242,15 @@ export default async function LoyaltyDetailPage({
   // demande que son statut.
   const marqueurs = { status: p.status };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("loyalty", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT : la vue suivi
   // en tire le verdict de ses tuiles, l'atelier la donne à son étape « La
@@ -405,7 +415,7 @@ export default async function LoyaltyDetailPage({
 
           <RelanceErreur message={relanceError} />
 
-          {capacites.canExplore && (
+          {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
             <CarteRepliable
               {...carteTuile(tuiles, "relance")}
               defaultOuvert={false}
@@ -413,9 +423,7 @@ export default async function LoyaltyDetailPage({
             >
               <RelaunchFormulaCard
                 sourceName={p.name}
-                sourceState={etatSourceRelance("loyalty", marqueurs)}
-                canCreateDraft={peutCreerBrouillon}
-                isSupported
+                {...relance}
                 action={<RelaunchFormulaAction kind="loyalty" sourceId={p.id} />}
               />
             </CarteRepliable>

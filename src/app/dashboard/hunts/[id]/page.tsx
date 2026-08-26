@@ -34,6 +34,7 @@ import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { RelaunchFormulaAction } from "@/components/dashboard/relaunch-formula-action";
 import { RelaunchFormulaCard } from "@/components/dashboard/relaunch-formula-card";
+import { relanceADeQuoiSAfficher } from "@/components/dashboard/relaunch-formula-state";
 import { RelanceErreur } from "@/components/dashboard/relance-erreur";
 import { construireVerificationChasse } from "@/lib/activation/hunts";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
@@ -157,6 +158,15 @@ export default async function HuntDetailPage({
     ends_at: h.ends_at,
   };
   const peutCreerBrouillon = role === "owner" || role === "editor";
+  // L'enveloppe repliable suit le MÊME verdict que la carte qu'elle contient :
+  // sans ce test, elle restait à l'écran et s'ouvrait sur du vide, parce que
+  // `RelaunchFormulaCard` rend `null` tant que l'animation n'est pas
+  // terminée. Le pourquoi est écrit une fois, sur `relanceADeQuoiSAfficher`.
+  const relance = {
+    sourceState: etatSourceRelance("hunt", marqueurs),
+    canCreateDraft: peutCreerBrouillon,
+    isSupported: true,
+  };
 
   // LA VÉRIFICATION, CALCULÉE UNE FOIS, AU-DESSUS DU BRANCHEMENT. Les deux
   // visages en vivent : la vue suivi en tire le verdict de ses tuiles, l'atelier
@@ -283,7 +293,7 @@ export default async function HuntDetailPage({
 
           <RelanceErreur message={relanceError} />
 
-          {capacites.canExplore && (
+          {capacites.canExplore && relanceADeQuoiSAfficher(relance) && (
             <CarteRepliable
               {...carteTuile(tuiles, "relance")}
               defaultOuvert={false}
@@ -291,9 +301,7 @@ export default async function HuntDetailPage({
             >
               <RelaunchFormulaCard
                 sourceName={h.name}
-                sourceState={etatSourceRelance("hunt", marqueurs)}
-                canCreateDraft={peutCreerBrouillon}
-                isSupported
+                {...relance}
                 action={<RelaunchFormulaAction kind="hunt" sourceId={h.id} />}
               />
             </CarteRepliable>
