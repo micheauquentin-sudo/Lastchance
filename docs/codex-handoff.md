@@ -60,7 +60,10 @@ constat, proposition et décision Codex doit être consigné ici.
   régénéré depuis `src/lib/plans.ts`. Revue sécurité ciblée : le QR ne
   transporte que le code déjà affiché et la caisse revalide toujours
   organisation, session et code côté serveur.
-- **Reste** : obtenir l'accord propriétaire avant commit, push ou déploiement.
+- **Publication** : accord propriétaire reçu ; PR #202 ouverte avec le commit
+  `ccf3f3b`, complété par `fc8e346` pour faire évoluer l'E2E avec le nouveau
+  libellé et le QR. La fusion vers `main` reste conditionnée à la CI complète
+  verte. Aucun déploiement de production n'est demandé.
 
 ## Ticket d'Or — émission bloquée (2026-08-25)
 
