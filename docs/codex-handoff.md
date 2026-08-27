@@ -58,9 +58,14 @@ constat, proposition et décision Codex doit être consigné ici.
 - **Sécurité** : revue ciblée verte ; aucune faille critique, haute ou moyenne
   relevée. Les contrôles propriétaire/éditeur, l'isolation par organisation et
   l'absence de participation publique avant l'ouverture sont conservés.
-- **Vérifications disponibles** : typecheck, lint et 35 tests ciblés verts. Le
-  build lancé sous Windows a expiré et ne constitue pas une validation ; la CI
-  complète reste requise avant toute conclusion de livraison.
+- **Reprise télécommande (2026-08-27, en attente de CI)** : le rendu initial
+  pouvait encore être remplacé par la frontière d'erreur du dashboard après
+  hydratation. Le bootstrap Realtime est désormais strictement facultatif : une
+  exception à la création du client ou à l'abonnement laisse la télécommande et
+  son polling fonctionner. Deux tests unitaires couvrent ces deux pannes.
+- **Vérifications locales** : `git diff --check`, typecheck, lint, build et les
+  6 tests `use-event-poll` sont verts. Le parcours navigateur de la
+  télécommande doit être rejoué sur la branche puis dans la CI avant livraison.
 
 ## Chasse au QR — gain, Passeport et caisse (2026-08-26)
 

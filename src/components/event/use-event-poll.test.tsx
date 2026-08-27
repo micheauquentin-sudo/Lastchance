@@ -1,12 +1,15 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
+import { createBrowserClient } from "@supabase/ssr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventPublicState } from "@/lib/event";
+import type { Database } from "@/types/database.generated";
 
 vi.mock("@/actions/events", () => ({ getEventState: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: vi.fn() }));
 
 const { getEventState } = await import("@/actions/events");
+const { createClient } = await import("@/lib/supabase/client");
 const { useEventPoll } = await import("./use-event-poll");
 
 /**
@@ -50,6 +53,7 @@ async function attendreLectures(n: number) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.mocked(getEventState).mockReset();
+  vi.mocked(createClient).mockReset();
 });
 
 afterEach(() => {
@@ -102,5 +106,30 @@ describe("useEventPoll — aveu de désynchronisation", () => {
     await attendreLectures(2);
     expect(result.current.state.state).toBe("ok");
     expect(result.current.state.leaderboard).toHaveLength(1);
+  });
+
+  it("continue le polling si Realtime ne peut pas s'initialiser", async () => {
+    vi.mocked(getEventState).mockResolvedValue(etat());
+    vi.mocked(createClient).mockImplementation(() => {
+      throw new Error("Supabase public configuration missing");
+    });
+
+    expect(() => renderHook(() => useEventPoll("s-5", etat(), true))).not.toThrow();
+    await attendreLectures(1);
+  });
+
+  it("continue le polling si l'abonnement Realtime jette", async () => {
+    vi.mocked(getEventState).mockResolvedValue(etat());
+    const client = createBrowserClient<Database>(
+      "https://example.supabase.co",
+      "anonymous-test-key",
+    );
+    vi.spyOn(client, "channel").mockImplementation(() => {
+      throw new Error("Realtime unavailable");
+    });
+    vi.mocked(createClient).mockReturnValue(client);
+
+    expect(() => renderHook(() => useEventPoll("s-6", etat(), true))).not.toThrow();
+    await attendreLectures(1);
   });
 });
