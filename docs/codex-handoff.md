@@ -44,6 +44,27 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Événement live — accès joueur et télécommande (2026-08-27)
+
+- **Cause du crash Piloter** : la capture provenait d'une révision antérieure.
+  Le correctif #207 sur `main` isole les lectures initiales non essentielles ;
+  les contrôles propriétaire/éditeur et l'isolation par organisation restent
+  conservés.
+- **Lot local `370d8c3b` + ACL `a36bc9f`** : le bouton Joueurs, ainsi que le QR et le lien de
+  partage, sont visibles uniquement pour une session en salon, en direct ou
+  terminée. En brouillon, l'interface explique d'abord Piloter puis Démarrer ;
+  aucun accès joueur public n'est ouvert avant le démarrage.
+- **ACL corrigées** : une migration additive retire `UPDATE` à `authenticated`
+  sur `organizations` et `organization_members`. Elle ferme les écritures
+  directes de liens sociaux/droits et des rôles ; les actions propriétaires via
+  `service_role` et la RPC de rôle restent les seules portes légitimes. Le pgTAP
+  local passe 702 assertions après reset et seed explicite.
+- **Preuves** : 17 tests ciblés, gardes SQL/migrations et pgTAP verts. Revue
+  sécurité ciblée : aucune faille critique, haute ou moyenne relevée. Le build
+  local sature anormalement ses workers ; le build CI reste le verrou final.
+- **Reste** : pousser la PR #210 mise à jour, attendre la CI complète puis
+  fusionner dans `main`.
+
 ## Chasse au QR — gain, Passeport et caisse (2026-08-26)
 
 - **Décision produit appliquée localement** : le nom commercial visible

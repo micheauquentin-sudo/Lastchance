@@ -1036,13 +1036,23 @@ function SessionRow({ session }: { session: EditorSession }) {
               fermerait la seule porte. L'encart QR juste en dessous dit déjà
               pourquoi la page joueur est fermée. */}
           {salleOuverteAuJoueur(session.status) && (
-            <Link
-              href={`/event/${session.joinCode}/screen`}
-              target="_blank"
-              className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
-            >
-              📺 Écran
-            </Link>
+            <>
+              <Link
+                href={`/event/${session.joinCode}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
+              >
+                👥 Joueurs
+              </Link>
+              <Link
+                href={`/event/${session.joinCode}/screen`}
+                target="_blank"
+                className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
+              >
+                📺 Écran
+              </Link>
+            </>
           )}
         </div>
       </div>
@@ -1070,7 +1080,8 @@ function SessionRow({ session }: { session: EditorSession }) {
           />
         ) : (
           <p className="text-sm text-zinc-500">
-            Ouvrez le salon de la session pour obtenir son QR code et son lien :
+            Cliquez sur « Piloter », puis sur « Démarrer la session » pour
+            ouvrir le salon. Son QR code et son lien joueur apparaîtront ici ;
             tant qu&apos;elle est en brouillon (ou archivée), la page de
             participation reste fermée aux joueurs.
           </p>
