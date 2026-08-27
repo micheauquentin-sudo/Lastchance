@@ -40,6 +40,12 @@ test.describe("Atelier du jeu — navigation par étape", () => {
       { etape: "lots", heading: /^Lots \(/ as unknown as string },
       { etape: "habillage", heading: "" },
       { etape: "creneau", heading: "" },
+      // Les deux étapes entrées dans l'atelier : « Avant de jouer » et
+      // « Après le gain » d'un côté, le partage et le parrainage de l'autre.
+      // Pas d'assertion de titre — comme habillage et créneau, leur contenu
+      // porte plusieurs cartes et aucun heading unique ne les résume.
+      { etape: "parcours", heading: "" },
+      { etape: "partage", heading: "" },
       { etape: "verification", heading: "Tout est-il prêt ?" },
     ];
 
@@ -84,7 +90,11 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     });
     await expect(stepper).toBeVisible();
     const pastilles = stepper.getByRole("listitem");
-    await expect(pastilles).toHaveCount(5);
+    // SEPT depuis que « Le parcours joueur » et « Le partage » sont entrés
+    // dans l'atelier. Ce compte est la garde qui dit que le fil suit vraiment
+    // `ETAPES_ROUE` — le jour où une étape y est ajoutée sans être rendue,
+    // c'est ici que ça se voit.
+    await expect(pastilles).toHaveCount(7);
 
     const courante = stepper.locator('[aria-current="step"]');
     await expect(courante).toHaveCount(1);
@@ -206,7 +216,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
       "Scan a11y, un seul contexte suffit — 3 chargements par test suffisent",
     );
 
-    for (const etape of ["lots", "habillage", "creneau"]) {
+    for (const etape of ["lots", "habillage", "creneau", "parcours", "partage"]) {
       await page.goto(
         `/dashboard/campaigns/${CAMPAIGN_GAGNANTE}/wheel?wheel=${WHEEL_GAGNANTE}&etape=${etape}`,
       );

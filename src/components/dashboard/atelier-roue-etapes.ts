@@ -24,6 +24,8 @@ export type EtapeRoue =
   | "lots"
   | "habillage"
   | "creneau"
+  | "parcours"
+  | "partage"
   | "verification";
 
 export const ETAPES_ROUE = [
@@ -46,6 +48,29 @@ export const ETAPES_ROUE = [
     cle: "creneau",
     titre: "Le créneau",
     resume: "Les jours et les heures où le jeu est ouvert.",
+  },
+  {
+    // ── DEUX ÉTAPES QUE L'ATELIER NE POSAIT PAS ──
+    //
+    // « Avant de jouer », « Après le gain » et « Partage et parrainage »
+    // existaient UNIQUEMENT en cartes sur la page de suivi. Un commerçant qui
+    // créait une animation en suivant l'atelier de bout en bout n'était donc
+    // JAMAIS interrogé dessus : il ouvrait aux joueurs sans savoir qu'on
+    // pouvait proposer un avis avant la partie, ni ce qu'on demanderait au
+    // gagnant. Ces réglages ne se découvraient qu'en dépliant, plus tard, des
+    // cartes dont rien n'annonçait le contenu.
+    //
+    // Ils entrent dans le parcours, sans quitter la page de suivi : les deux
+    // chemins mènent aux mêmes actions serveur, et le commerçant qui connaît
+    // déjà ses cartes n'a rien à désapprendre.
+    cle: "parcours",
+    titre: "Le parcours joueur",
+    resume: "Ce qu'on propose avant la partie, et ce qu'on demande au gagnant.",
+  },
+  {
+    cle: "partage",
+    titre: "Le partage",
+    resume: "L'invitation à partager la partie, et le parrainage.",
   },
   {
     cle: "verification",
