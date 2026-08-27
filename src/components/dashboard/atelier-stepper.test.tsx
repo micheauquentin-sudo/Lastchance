@@ -50,6 +50,56 @@ describe("AtelierStepper", () => {
     ).toHaveLength(1);
   });
 
+  it("sort le résumé du fil : il ne s'affiche que pour l'étape ouverte", () => {
+    render(
+      <AtelierStepper
+        etapes={ETAPES}
+        courante="regles"
+        hrefPour={(cle) => `/dashboard/x?etape=${cle}`}
+      />,
+    );
+
+    // LE RÉSUMÉ NE VIT PLUS DANS LA CASE. Chaque case en portait un, ce qui
+    // faisait du fil un mur de texte et bornait la grille à cinq colonnes.
+    const fil = screen.getByRole("navigation", {
+      name: "Étapes de l'atelier",
+    });
+    expect(fil.textContent).not.toContain("Qui joue, et combien");
+
+    // Il s'affiche UNE fois, hors du fil, pour l'étape courante seulement.
+    expect(screen.getAllByText("Qui joue, et combien")).toHaveLength(1);
+  });
+
+  it("n'affiche aucun résumé quand l'étape courante n'en a pas", () => {
+    render(
+      <AtelierStepper
+        etapes={ETAPES}
+        courante="lots"
+        hrefPour={(cle) => `/dashboard/x?etape=${cle}`}
+      />,
+    );
+
+    // « Les lots » n'a pas de résumé : rien ne doit fuir de l'étape voisine.
+    expect(screen.queryByText("Qui joue, et combien")).toBeNull();
+  });
+
+  it("garde le titre de CHAQUE étape dans le fil — c'est ce qui reste navigable", () => {
+    render(
+      <AtelierStepper
+        etapes={ETAPES}
+        courante="regles"
+        hrefPour={(cle) => `/dashboard/x?etape=${cle}`}
+      />,
+    );
+
+    const fil = screen.getByRole("navigation", {
+      name: "Étapes de l'atelier",
+    });
+    for (const etape of ETAPES) {
+      expect(fil.textContent).toContain(etape.titre);
+    }
+  });
+
   it("garde les liens précédent/suivant HORS du fil, qui n'a que ses étapes", () => {
     render(
       <AtelierStepper
