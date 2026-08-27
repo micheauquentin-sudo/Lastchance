@@ -84,7 +84,38 @@ export default async function EventRemotePage({
 }) {
   const { id } = await params;
   const ctx = await loadEventRemoteContext(id);
-  if (!ctx.ok) notFound();
+  if (!ctx.ok) {
+    if (ctx.reason === "technical") {
+      return (
+        <section
+          role="alert"
+          className="mx-auto max-w-lg rounded-2xl border-2 border-k-ink bg-white p-6 text-center shadow-[6px_6px_0_rgba(33,29,22,0.9)]"
+        >
+          <h1 className="text-xl font-black text-k-ink">
+            La télécommande est momentanément indisponible
+          </h1>
+          <p className="mt-2 text-sm font-bold text-k-body">
+            La session n&apos;a pas été modifiée. Réessayez ; si cela persiste, revenez à vos événements.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link
+              href={`/dashboard/events/${id}/remote`}
+              className="rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink"
+            >
+              Réessayer
+            </Link>
+            <Link
+              href="/dashboard/events"
+              className="rounded-xl border-2 border-k-ink bg-white px-4 py-2 text-sm font-bold text-k-ink"
+            >
+              Retour aux événements
+            </Link>
+          </div>
+        </section>
+      );
+    }
+    notFound();
+  }
 
   const { session, questions, players } = ctx;
 

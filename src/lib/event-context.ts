@@ -50,6 +50,20 @@ export type EventPublicContext =
   | { ok: false; error: string }
   | {
       ok: true;
+      /**
+       * La session est joignable mais l'animateur ne l'a pas encore ouverte.
+       * Cette vue ne porte ni état du jeu, ni identité joueur, ni question :
+       * elle sert uniquement à garder un lien partagé avant le début.
+       */
+      mode: "waiting";
+      sessionId: string;
+      joinCode: string;
+      organization: PublicEventOrganization;
+    }
+  | {
+      ok: true;
+      /** Session effectivement ouverte : le joueur peut alors rejoindre. */
+      mode: "active";
       sessionId: string;
       joinCode: string;
       organization: PublicEventOrganization;
@@ -74,6 +88,7 @@ export type EventPublicContext =
  */
 export async function loadEventPublicContext(
   joinCodeOrSessionId: string,
+  options: { allowDraftWaiting?: boolean } = {},
 ): Promise<EventPublicContext> {
   const admin = createAdminClient();
 
@@ -100,6 +115,29 @@ export async function loadEventPublicContext(
   if (!org || org.id !== row.organization_id) {
     console.error("[event-context] organisation incohérente", { joinCodeOrSessionId });
     return { ok: false, error: UNAVAILABLE };
+  }
+
+  // Le lien joueur peut être partagé AVANT le coup d'envoi, mais il ne devient
+  // pas pour autant une inscription anticipée. Cette branche est appelée
+  // uniquement par `/event/[code]` : l'écran de salle reste fermé tant que la
+  // session n'est pas réellement lancée. Aucun cookie joueur n'est lu et la
+  // RPC d'état n'est pas appelée : pas de question, de lot, de capacité, de
+  // joueur ni d'état à révéler.
+  //
+  // La garde de module reste indispensable ici. Une session en brouillon d'un
+  // compte dont le module est fermé doit rester indiscernable d'un code absent,
+  // comme les autres états non publics.
+  if (options.allowDraftWaiting && row.status === "draft") {
+    if (!await moduleOuvertAuJoueur("events", org)) {
+      return { ok: false, error: UNAVAILABLE };
+    }
+    return {
+      ok: true,
+      mode: "waiting",
+      sessionId: row.id,
+      joinCode: row.join_code,
+      organization: org,
+    };
   }
   // ── LA GARDE MODULE + STATUT N'EST PLUS REJOUÉE ICI ──
   //
@@ -128,6 +166,7 @@ export async function loadEventPublicContext(
 
   return {
     ok: true,
+    mode: "active",
     sessionId: row.id,
     joinCode: row.join_code,
     organization: org,
@@ -186,7 +225,8 @@ export interface EventRemotePlayer {
 }
 
 export type EventRemoteContext =
-  | { ok: false; error: string }
+  | { ok: false; reason: "unavailable" }
+  | { ok: false; reason: "technical" }
   | {
       ok: true;
       organizationId: string;
@@ -206,19 +246,22 @@ export type EventRemoteContext =
 export async function loadEventRemoteContext(
   sessionId: string,
 ): Promise<EventRemoteContext> {
-  const { user, organization, role } = await getUserAndOrg();
-  if (!user || !organization) return { ok: false, error: UNAVAILABLE };
-  if (role !== "owner" && role !== "editor") return { ok: false, error: UNAVAILABLE };
+  try {
+    const { user, organization, role } = await getUserAndOrg();
+    if (!user || !organization) return { ok: false, reason: "unavailable" };
+    if (role !== "owner" && role !== "editor") {
+      return { ok: false, reason: "unavailable" };
+    }
 
-  const supabase = await createClient();
-  const { data: sessionRow, error: sessionError } = await supabase
-    .from("event_sessions")
-    .select(
-      "id, game_id, label, join_code, status, phase, current_question_id, current_question_started_at, prono_correct_option_id, reward_label, reward_stock, reward_claimed_count, max_participants",
-    )
-    .eq("id", sessionId)
-    .eq("organization_id", organization.id)
-    .maybeSingle();
+    const supabase = await createClient();
+    const { data: sessionRow, error: sessionError } = await supabase
+      .from("event_sessions")
+      .select(
+        "id, game_id, label, join_code, status, phase, current_question_id, current_question_started_at, prono_correct_option_id, reward_label, reward_stock, reward_claimed_count, max_participants",
+      )
+      .eq("id", sessionId)
+      .eq("organization_id", organization.id)
+      .maybeSingle();
   // L'ERREUR DE LECTURE SE SIGNALE, le refus reste indistinct.
   //
   // `error` était ignoré : une colonne absente, un droit manquant ou une base
@@ -227,17 +270,20 @@ export async function loadEventRemoteContext(
   // La réponse rendue ne change PAS (aucun oracle) ; c'est la trace qui
   // manquait, et c'est elle qui permet de distinguer les deux la fois
   // suivante.
-  if (sessionError) reportError("event.remote.session", sessionError);
-  if (!sessionRow) return { ok: false, error: UNAVAILABLE };
+    if (sessionError) {
+      reportError("event.remote.context", sessionError);
+      return { ok: false, reason: "technical" };
+    }
+    if (!sessionRow) return { ok: false, reason: "unavailable" };
 
   // Questions + options du game (org-scopé RLS), + réponses existantes pour
   // marquer les questions déjà jouées (une question ne se relance pas).
-  const [
-    { data: questionRows },
-    { data: optionRows },
-    { data: answeredRows },
-    { data: playerRows },
-  ] = await Promise.all([
+    const [
+      { data: questionRows, error: questionError },
+      { data: optionRows, error: optionError },
+      { data: answeredRows, error: answerError },
+      { data: playerRows, error: playerError },
+    ] = await Promise.all([
       supabase
         .from("event_questions")
         .select("id, position, question_type, prompt, time_limit_seconds, points_base")
@@ -263,28 +309,34 @@ export async function loadEventRemoteContext(
         .order("joined_at", { ascending: true }),
     ]);
 
-  const optionsByQuestion = new Map<string, EventRemoteOption[]>();
-  for (const o of (optionRows ?? []) as Array<{
+    const contextError = questionError ?? optionError ?? answerError ?? playerError;
+    if (contextError) {
+      reportError("event.remote.context", contextError);
+      return { ok: false, reason: "technical" };
+    }
+
+    const optionsByQuestion = new Map<string, EventRemoteOption[]>();
+    for (const o of (optionRows ?? []) as Array<{
     id: string;
     question_id: string;
     position: number;
     label: string;
     is_correct: boolean;
-  }>) {
-    const list = optionsByQuestion.get(o.question_id) ?? [];
-    list.push({ id: o.id, label: o.label, position: o.position, isCorrect: o.is_correct });
-    optionsByQuestion.set(o.question_id, list);
-  }
-  for (const list of optionsByQuestion.values()) {
-    list.sort((a, b) => a.position - b.position);
-  }
+    }>) {
+      const list = optionsByQuestion.get(o.question_id) ?? [];
+      list.push({ id: o.id, label: o.label, position: o.position, isCorrect: o.is_correct });
+      optionsByQuestion.set(o.question_id, list);
+    }
+    for (const list of optionsByQuestion.values()) {
+      list.sort((a, b) => a.position - b.position);
+    }
 
-  const playedQuestionIds = new Set(
-    ((answeredRows ?? []) as Array<{ question_id: string }>).map((r) => r.question_id),
-  );
+    const playedQuestionIds = new Set(
+      ((answeredRows ?? []) as Array<{ question_id: string }>).map((r) => r.question_id),
+    );
 
-  const questions: EventRemoteQuestion[] = (
-    (questionRows ?? []) as Array<{
+    const questions: EventRemoteQuestion[] = (
+      (questionRows ?? []) as Array<{
       id: string;
       position: number;
       question_type: EventQuestionType;
@@ -292,7 +344,7 @@ export async function loadEventRemoteContext(
       time_limit_seconds: number;
       points_base: number;
     }>
-  ).map((q) => ({
+    ).map((q) => ({
     id: q.id,
     position: q.position,
     questionType: q.question_type,
@@ -301,10 +353,10 @@ export async function loadEventRemoteContext(
     pointsBase: q.points_base,
     options: optionsByQuestion.get(q.id) ?? [],
     alreadyPlayed: playedQuestionIds.has(q.id),
-  }));
+    }));
 
-  const players: EventRemotePlayer[] = (
-    (playerRows ?? []) as Array<{
+    const players: EventRemotePlayer[] = (
+      (playerRows ?? []) as Array<{
       id: string;
       pseudo: string;
       moderation_original_pseudo: string | null;
@@ -313,19 +365,19 @@ export async function loadEventRemoteContext(
       moderation_state: "active" | "hidden" | "banned";
       moderation_reason: string | null;
     }>
-  ).map((player) => ({
+    ).map((player) => ({
     id: player.id,
     pseudo: player.moderation_original_pseudo ?? player.pseudo,
     avatar: player.avatar,
     score: player.score,
     moderationState: player.moderation_state,
     moderationReason: player.moderation_reason,
-  }));
+    }));
 
-  return {
-    ok: true,
-    organizationId: organization.id,
-    session: {
+    return {
+      ok: true,
+      organizationId: organization.id,
+      session: {
       id: sessionRow.id,
       gameId: sessionRow.game_id,
       label: sessionRow.label,
@@ -339,10 +391,14 @@ export async function loadEventRemoteContext(
       rewardStock: sessionRow.reward_stock,
       rewardClaimedCount: sessionRow.reward_claimed_count,
       maxParticipants: sessionRow.max_participants,
-    },
-    questions,
-    players,
-  };
+      },
+      questions,
+      players,
+    };
+  } catch (error) {
+    reportError("event.remote.context", error);
+    return { ok: false, reason: "technical" };
+  }
 }
 
 /**

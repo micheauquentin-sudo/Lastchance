@@ -171,31 +171,39 @@ test.describe("mode événement — de la session créée au salon ouvert", () =
     await admin().from("event_games").delete().eq("id", GAME_ID);
   });
 
-  test("une session neuve ne fuit pas côté joueur, puis s'ouvre depuis la télécommande @smoke", async ({
+  test("une session neuve attend les joueurs, puis s'ouvre depuis la télécommande @smoke", async ({
     page,
   }) => {
     test.setTimeout(120_000);
 
-    // ── 1. La page joueur et l'écran de salle sont FERMÉS tant que c'est un
-    // brouillon. C'est la garde de `event_etat_partage`, vue du dehors.
+    // ── 1. Le lien joueur est partageable avant la soirée : il affiche une
+    // attente inerte, sans inscription ni réponse. L'écran projeté reste fermé
+    // tant que le salon n'est pas ouvert.
     expect((await page.request.get(`/event/${JOIN_CODE}/screen`)).status()).toBe(404);
-    expect((await page.request.get(`/event/${JOIN_CODE}`)).status()).toBe(404);
+    expect((await page.request.get(`/event/${JOIN_CODE}`)).status()).toBe(200);
 
-    // ── 2. Le panel n'offre donc AUCUN lien vers ces pages.
+    await page.goto(`/event/${JOIN_CODE}`);
+    await expect(page.getByRole("status")).toContainText(/salle d'attente arrive bientôt/i);
+    await expect(page.getByLabel("Votre pseudo")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /rejoindre|répondre/i })).toHaveCount(0);
+
+    // ── 2. Le panel offre déjà le lien et le QR joueurs, mais pas l'écran de
+    // salle. Le commerçant peut donc les distribuer avant le lancement.
     await page.goto(`/dashboard/events/${GAME_ID}`);
     await ouvrirLesSessions(page);
     const ligne = page.locator("li").filter({ hasText: LABEL });
     // Une seule ligne, sinon la suite viserait au hasard — et le message dirait
     // pourquoi plutôt que « strict mode violation » sur l'assertion suivante.
     await expect(ligne).toHaveCount(1);
-    // `exact` OBLIGATOIRE : `getByText("Brouillon")` cherche une SOUS-CHAÎNE
-    // insensible à la casse, et l'encart QR de la même ligne porte « tant
-    // qu'elle est en brouillon (ou archivée)… ». Deux éléments, donc un échec
-    // en mode strict — sur une page pourtant correcte.
+    // `exact` OBLIGATOIRE : l'encart QR mentionne aussi le brouillon ; on doit
+    // cibler le statut de la session, pas une sous-chaîne ambiguë.
     await expect(ligne.getByText("Brouillon", { exact: true })).toBeVisible();
+    await expect(ligne.getByRole("link", { name: /Joueurs/ })).toBeVisible();
+    await expect(ligne.getByRole("img", { name: /QR code de/ })).toBeVisible();
+    await expect(ligne.getByRole("button", { name: /Copier le lien/ })).toBeVisible();
     await expect(ligne.getByRole("link", { name: /Écran/ })).toHaveCount(0);
 
-    // « Piloter » reste, LUI, toujours offert : c'est la seule porte du salon.
+    // « Piloter » reste la porte qui transforme l'attente en salon ouvert.
     const piloter = ligne.getByRole("link", { name: /Piloter/ });
     await expect(piloter).toBeVisible();
 
