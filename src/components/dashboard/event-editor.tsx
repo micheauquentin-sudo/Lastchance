@@ -24,6 +24,8 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -153,6 +155,15 @@ export interface EditorSession {
  * autres modules, il a sa carte propre, juste sous la Carte de l'Aventure. Un
  * seul endroit pour un seul geste, quel que soit le module.
  */
+/** Ce qui est vrai maintenant — les trois états de la soirée, côté client. */
+const PHRASE_ETAT: Record<EventGameStatus, string> = {
+  draft:
+    "Le jeu n'est pas ouvert : aucune session en direct ne peut accueillir de joueur.",
+  active: "Le jeu est ouvert : vous pouvez lancer des sessions en direct.",
+  archived:
+    "Le jeu est clôturé : plus aucune session ne s'ouvre, et les codes déjà gagnés restent retirables.",
+};
+
 export function EventGameStatusControls({
   gameId,
   status,
@@ -175,10 +186,12 @@ export function EventGameStatusControls({
   });
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut du jeu</h2>
-      <div className="flex flex-wrap items-center gap-3">
-        {status !== "active" ? (
+    <CarteStatutAnimation
+      titre="Statut du jeu"
+      badge={<EventStatusBadge status={status} />}
+      phrase={PHRASE_ETAT[status] ?? PHRASE_ETAT.draft}
+      actions={
+        status !== "active" ? (
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={gameId} />
             <input type="hidden" name="status" value="active" />
@@ -194,36 +207,33 @@ export function EventGameStatusControls({
               {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
-        )}
-        {status === "active" && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
-            Ouverte aux joueurs — vous pouvez lancer des sessions live
-          </span>
-        )}
-      </div>
-      {/* Ce paragraphe ne calculait RIEN : le composant ne reçoit même pas le
-          nombre de questions. L'étape « La vérification » de l'atelier le
-          calcule, sur le module que le serveur oppose lui-même. */}
-      {status !== "active" && (
-        <p className="mt-3 text-sm text-zinc-500">
-          Ajoutez au moins une question, puis ouvrez le jeu aux joueurs pour
-          pouvoir lancer une session en direct.{" "}
-          <Link
-            href={hrefEtapeEvenement(gameId, "verification")}
-            className="font-bold text-k-ink underline underline-offset-2"
-          >
-            Voir ce qu&apos;il manque
-          </Link>
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeEvenement(gameId, "jeu")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
-    </Card>
+        )
+      }
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeEvenement(gameId, "jeu")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        /* Ce paragraphe ne calcule RIEN : le composant ne reçoit même pas le
+           nombre de questions. L'étape « La vérification » de l'atelier le
+           calcule, sur le module que le serveur oppose lui-même. */
+        status !== "active" ? (
+          <p className="mt-2 text-xs font-bold text-k-body">
+            Ajoutez au moins une question, puis ouvrez le jeu aux joueurs pour
+            pouvoir lancer une session en direct.{" "}
+            <Link
+              href={hrefEtapeEvenement(gameId, "verification")}
+              className="font-bold text-k-ink underline underline-offset-2"
+            >
+              Voir ce qu&apos;il manque
+            </Link>
+          </p>
+        ) : null
+      }
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    />
   );
 }
 

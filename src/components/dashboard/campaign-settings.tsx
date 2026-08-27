@@ -3,7 +3,6 @@
 import { useActionState, useRef } from "react";
 import { deleteCampaign, duplicateCampaign, updateCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeRoue } from "@/components/dashboard/atelier-roue-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -15,6 +14,7 @@ import {
 } from "@/lib/campaign-window";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
 import { CampaignStatusBadge } from "@/components/dashboard/campaign-status";
 import { useCampaignStatus } from "@/components/dashboard/campaign-status-live";
 import { CAMPAIGN_OUTSTANDING_LOSS_HINT } from "@/lib/validations/campaigns";
@@ -222,54 +222,36 @@ export function CampaignStatusControls({
   const notes = [...new Set(transitions.map((t) => t.note).filter(Boolean))];
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut de la campagne</h2>
-
-      {/* ── L'ÉTAT SE LIT AVANT DE SE CHANGER ──
-          La carte ouvrait sur une rangée de boutons. « Ouvrir aux joueurs »
-          à côté de « Clôturer » ne dit pas, à lui seul, si les clients jouent
-          EN CE MOMENT — et seule l'ouverture avait droit à une phrase. La
-          pastille et la phrase se lisent d'un coup, pour les quatre états. */}
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border-2 border-k-ink/15 bg-k-bg px-4 py-3">
-        <CampaignStatusBadge status={status} windowState={windowState} />
-        <p className="min-w-0 flex-1 text-sm font-bold text-k-body">
-          {PHRASE_ETAT[campaignDisplayStatus(status, windowState)]}
-        </p>
-      </div>
-
-      {/* ── UNE SEULE RANGÉE : changer l'état, ou aller voir ──
-          Les transitions et les deux raccourcis étaient sur deux rangées
-          séparées par une phrase. Ce sont les mêmes gestes — agir sur cette
-          campagne — et ils tiennent sur une ligne, séparés par un filet. */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {transitions.map((t) => (
-          <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
-            <input type="hidden" name="id" value={campaign.id} />
-            <input type="hidden" name="status" value={t.to} />
-            <Button
-              type="submit"
-              variant={t.to === "active" ? "primary" : "secondary"}
-              disabled={statusPending}
-            >
-              {t.label}
-            </Button>
-          </form>
-        ))}
-        <span
-          aria-hidden
-          className="mx-1 hidden h-7 w-px shrink-0 bg-zinc-200 sm:block"
-        />
-        <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      {notes.map((note) => (
+    <CarteStatutAnimation
+      titre="Statut de la campagne"
+      badge={<CampaignStatusBadge status={status} windowState={windowState} />}
+      phrase={PHRASE_ETAT[campaignDisplayStatus(status, windowState)]}
+      actions={transitions.map((t) => (
+        <form key={`${t.to}-${t.label}`} onSubmit={statusSubmit}>
+          <input type="hidden" name="id" value={campaign.id} />
+          <input type="hidden" name="status" value={t.to} />
+          <Button
+            type="submit"
+            variant={t.to === "active" ? "primary" : "secondary"}
+            disabled={statusPending}
+          >
+            {t.label}
+          </Button>
+        </form>
+      ))}
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={notes.map((note) => (
         <p key={note} className="mt-2 text-xs font-bold text-k-body">
           {note}
         </p>
       ))}
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    >
 
       {/* ── CE QU'ON FAIT D'UNE CAMPAGNE, AU MÊME ENDROIT ──
           Renommer, dupliquer, enregistrer comme modèle et lire la performance
@@ -354,7 +336,7 @@ export function CampaignStatusControls({
       {performance && (
         <div className="mt-6 border-t border-zinc-100 pt-5">{performance}</div>
       )}
-    </Card>
+    </CarteStatutAnimation>
   );
 }
 

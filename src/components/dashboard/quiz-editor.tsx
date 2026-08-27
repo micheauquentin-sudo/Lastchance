@@ -22,6 +22,9 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
+import type { QuizStatus } from "@/lib/quiz";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -141,6 +144,20 @@ export interface DashboardQuizQuestion {
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
+/**
+ * CE QUI EST VRAI MAINTENANT — les trois états du quiz, du point de vue du
+ * client. La carte n'annonçait la conséquence QUE sur « ouverte », et par une
+ * pastille verte dessinée à la main plutôt que par le badge commun : un
+ * brouillon et un quiz clôturé n'affichaient rien.
+ */
+const PHRASE_ETAT: Record<QuizStatus, string> = {
+  draft:
+    "Vos clients ne peuvent pas encore jouer : la page du quiz n'est pas ouverte.",
+  active: "La page du quiz est accessible à vos clients.",
+  archived:
+    "Le quiz est terminé : la page n'accepte plus de partie, et les codes déjà gagnés restent retirables.",
+};
+
 export function QuizStatusControls({
   quiz,
   hrefJeu = null,
@@ -175,11 +192,12 @@ export function QuizStatusControls({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut du quiz</h2>
-
-      <div className="flex flex-wrap items-center gap-3">
-        {quiz.status !== "active" ? (
+    <CarteStatutAnimation
+      titre="Statut du quiz"
+      badge={<QuizStatusBadge status={quiz.status} />}
+      phrase={PHRASE_ETAT[quiz.status] ?? PHRASE_ETAT.draft}
+      actions={
+        quiz.status !== "active" ? (
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={quiz.id} />
             <input type="hidden" name="status" value="active" />
@@ -195,29 +213,26 @@ export function QuizStatusControls({
               {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
-        )}
-
-        {quiz.status === "active" && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
-            Ouverte aux joueurs — la page du quiz est accessible à vos clients
-          </span>
-        )}
-      </div>
-
-      {quiz.status !== "active" && (
-        <p className="mt-3 text-sm text-zinc-500">
-          Pour ouvrir aux joueurs : au moins une question, et — dès qu&apos;un mode remet un
-          lot — un lot nommé (ou une roue offerte) avec son stock.
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeQuiz(quiz.id, "quiz")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      {/* Le refus d'activation vient du serveur : on affiche SON message tel quel. */}
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
+        )
+      }
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeQuiz(quiz.id, "quiz")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        quiz.status !== "active" ? (
+          <p className="mt-2 text-xs font-bold text-k-body">
+            Pour ouvrir aux joueurs : au moins une question, et — dès qu&apos;un
+            mode remet un lot — un lot nommé (ou une roue offerte) avec son
+            stock.
+          </p>
+        ) : null
+      }
+      /* Le refus d'activation vient du serveur : on affiche SON message tel quel. */
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    >
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
@@ -269,7 +284,7 @@ export function QuizStatusControls({
           message={deleteState && !deleteState.ok ? deleteState.error : undefined}
         />
       </div>
-    </Card>
+    </CarteStatutAnimation>
   );
 }
 

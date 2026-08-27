@@ -25,6 +25,8 @@ import { useAutoSave } from "@/lib/use-auto-save";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Card } from "@/components/ui/card";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeContest } from "@/components/dashboard/atelier-contest-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -132,6 +134,15 @@ function ReasonInput({ id }: { id: string }) {
  * juste sous la Carte de l'Aventure ; « Réglages » garde le renommage, les
  * données demandées à l'inscription et la suppression.
  */
+/** Ce qui est vrai maintenant — les trois états du championnat, côté client. */
+const PHRASE_ETAT: Record<ContestStatus, string> = {
+  draft:
+    "Vos clients ne peuvent pas encore pronostiquer : la page du championnat n'est pas ouverte.",
+  active: "La page du championnat est accessible à vos clients.",
+  finished:
+    "Le championnat est clôturé : plus aucun pronostic n'est pris, et les codes déjà gagnés restent retirables.",
+};
+
 export function ContestStatusControls({
   contest,
   hrefJeu = null,
@@ -161,45 +172,48 @@ export function ContestStatusControls({
     : STATUS_ACTIONS.filter((a) => a.from.includes(contest.status));
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut du championnat</h2>
-      <div className="space-y-2">
-        {finalized && (
-          <p className="text-sm text-zinc-500">
+    <CarteStatutAnimation
+      titre="Statut du championnat"
+      badge={<ContestStatusBadge status={contest.status} />}
+      phrase={PHRASE_ETAT[contest.status] ?? PHRASE_ETAT.draft}
+      actions={transitions.map((t) => (
+        <form key={t.to} onSubmit={statusSubmit} className="flex items-end gap-2">
+          <input type="hidden" name="id" value={contest.id} />
+          <input type="hidden" name="status" value={t.to} />
+          {t.needsReason && (
+            <div className="max-w-xs">
+              <ReasonInput id={`status-reason-${t.to}`} />
+            </div>
+          )}
+          <Button
+            type="submit"
+            variant={t.to === "active" ? "primary" : "secondary"}
+            disabled={statusPending}
+          >
+            {t.label}
+          </Button>
+        </form>
+      ))}
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        /* La clôture est DÉFINITIVE : la date le dit, et c'est la seule note
+           que ce module ait jamais eue. Elle passe sous la rangée, comme les
+           conséquences des sept autres modules. */
+        finalized ? (
+          <p className="mt-2 text-xs font-bold text-k-body">
             🔒 Championnat clôturé le{" "}
             {new Date(contest.finalized_at!).toLocaleDateString("fr-FR")} —
             statut définitif.
           </p>
-        )}
-        <div className="flex flex-wrap items-end gap-2">
-          {transitions.map((t) => (
-            <form key={t.to} onSubmit={statusSubmit} className="flex items-end gap-2">
-              <input type="hidden" name="id" value={contest.id} />
-              <input type="hidden" name="status" value={t.to} />
-              {t.needsReason && (
-                <div className="max-w-xs">
-                  <ReasonInput id={`status-reason-${t.to}`} />
-                </div>
-              )}
-              <Button
-                type="submit"
-                variant={t.to === "active" ? "primary" : "secondary"}
-                disabled={statusPending}
-              >
-                {t.label}
-              </Button>
-            </form>
-          ))}
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeContest(contest.id, "championnat")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
-    </Card>
+        ) : null
+      }
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    />
   );
 }
 
