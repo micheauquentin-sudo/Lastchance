@@ -16,6 +16,9 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
+import type { CalendarStatus } from "@/types/database";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeCalendrier } from "@/components/dashboard/atelier-calendar-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -848,6 +851,20 @@ function DayRow({
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
+/**
+ * CE QUI EST VRAI MAINTENANT — les trois états du calendrier. La carte
+ * n'annonçait la conséquence QUE sur « ouverte », par une pastille verte
+ * dessinée à la main au lieu du badge commun ; brouillon et clôture
+ * n'affichaient rien.
+ */
+const PHRASE_ETAT: Record<CalendarStatus, string> = {
+  draft:
+    "Vos clients ne peuvent pas encore ouvrir de case : la page du calendrier n'est pas ouverte.",
+  active: "La page du calendrier est accessible à vos clients.",
+  archived:
+    "Le calendrier est terminé : plus aucune case ne s'ouvre, et les codes déjà gagnés restent retirables.",
+};
+
 export function CalendarStatusControls({
   calendar,
   hrefJeu = null,
@@ -888,11 +905,12 @@ export function CalendarStatusControls({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut du calendrier</h2>
-
-      <div className="flex flex-wrap items-center gap-3">
-        {calendar.status !== "active" ? (
+    <CarteStatutAnimation
+      titre="Statut du calendrier"
+      badge={<CalendarStatusBadge status={calendar.status} />}
+      phrase={PHRASE_ETAT[calendar.status] ?? PHRASE_ETAT.draft}
+      actions={
+        calendar.status !== "active" ? (
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={calendar.id} />
             <input type="hidden" name="status" value="active" />
@@ -908,30 +926,26 @@ export function CalendarStatusControls({
               {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
-        )}
-
-        {calendar.status === "active" && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
-            Ouverte aux joueurs — la page du calendrier est accessible aux clients
-          </span>
-        )}
-      </div>
-
-      {calendar.status !== "active" && (
-        <p className="mt-3 text-sm text-zinc-500">
-          Pour ouvrir aux joueurs : chaque case qui promet quelque chose doit
-          pouvoir le tenir (un lot avec son libellé et son stock, un tour de
-          roue avec sa roue). Une case message laissée vide ne bloque rien —
-          elle s&apos;ouvrira sur un « pas de chance ».
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeCalendrier(calendar.id, "reglages")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
+        )
+      }
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeCalendrier(calendar.id, "reglages")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        calendar.status !== "active" ? (
+          <p className="mt-2 text-xs font-bold text-k-body">
+            Pour ouvrir aux joueurs : chaque case qui promet quelque chose doit
+            pouvoir le tenir (un lot avec son libellé et son stock, un tour de
+            roue avec sa roue). Une case message laissée vide ne bloque rien —
+            elle s&apos;ouvrira sur un « pas de chance ».
+          </p>
+        ) : null
+      }
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    >
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
@@ -983,6 +997,6 @@ export function CalendarStatusControls({
           message={deleteState && !deleteState.ok ? deleteState.error : undefined}
         />
       </div>
-    </Card>
+    </CarteStatutAnimation>
   );
 }
