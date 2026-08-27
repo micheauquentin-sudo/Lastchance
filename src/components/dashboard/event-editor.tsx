@@ -1027,24 +1027,24 @@ function SessionRow({ session }: { session: EditorSession }) {
           >
             🎛️ Piloter
           </Link>
-          {/* « ÉCRAN » NE S'AFFICHE QUE SI LA SALLE EST OUVERTE.
-              `/event/[code]/screen` passe par `loadEventPublicContext`, qui
-              refuse `draft` et `archived` : sur une session fraîchement créée
-              — statut `draft` par défaut — ce bouton menait à « Page
-              introuvable », à tous les coups. « Piloter » reste, lui, TOUJOURS
-              affiché : c'est par là qu'on ouvre le salon, et le masquer
-              fermerait la seule porte. L'encart QR juste en dessous dit déjà
-              pourquoi la page joueur est fermée. */}
+          {/* Le lien joueur et son QR servent aussi à INVITER avant le début :
+              une session en brouillon mène à sa salle d'attente, sans permettre
+              d'inscription avant le lancement. Seule une session archivée ne
+              doit plus être distribuée. L'écran de salle, lui, reste fermé tant
+              que le salon n'est pas ouvert : il projette une partie en cours,
+              pas une invitation. */}
+          {session.status !== "archived" && (
+            <Link
+              href={`/event/${session.joinCode}`}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
+            >
+              👥 Joueurs
+            </Link>
+          )}
           {salleOuverteAuJoueur(session.status) && (
             <>
-              <Link
-                href={`/event/${session.joinCode}`}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink hover:bg-k-yellow/30"
-              >
-                👥 Joueurs
-              </Link>
               <Link
                 href={`/event/${session.joinCode}/screen`}
                 target="_blank"
@@ -1064,26 +1064,33 @@ function SessionRow({ session }: { session: EditorSession }) {
           encre franche sur blanc, bannière « SCANNEZ-MOI »), à coller sur les
           tables ou en vitrine. D'où `PublicShare` et non le QR d'écran.
 
-          La garde reprend EXACTEMENT celle de `loadEventPublicContext`
-          (`draft` et `archived` → 404) : aucun QR tant que la session n'est pas
-          ouverte, un QR imprimé survivant à la session qui l'a produit. */}
+          Le lien peut être imprimé avant le début : la page joueur rend alors
+          une salle d'attente. Une session archivée, elle, reste fermée et son
+          QR ne doit plus être distribué. */}
       <div className="mt-3 border-t border-zinc-200 pt-3">
         <p className="mb-2 text-xs font-black uppercase tracking-wide text-zinc-500">
           QR code et lien de la session
         </p>
-        {salleOuverteAuJoueur(session.status) ? (
-          <PublicShare
-            url={session.publicUrl}
-            fileName={`evenement-${session.joinCode}`}
-            qrLabel={session.label || `Session ${session.joinCode}`}
-            openCount={session.openCount}
-          />
+        {session.status !== "archived" ? (
+          <>
+            <PublicShare
+              url={session.publicUrl}
+              fileName={`evenement-${session.joinCode}`}
+              qrLabel={session.label || `Session ${session.joinCode}`}
+              openCount={session.openCount}
+            />
+            {session.status === "draft" && (
+              <p className="mt-3 text-sm text-zinc-500">
+                Le lien et le QR sont prêts à partager : les joueurs verront la salle
+                d&apos;attente. Lancez la session depuis « Piloter » quand vous êtes prêt
+                à ouvrir les inscriptions.
+              </p>
+            )}
+          </>
         ) : (
           <p className="text-sm text-zinc-500">
-            Cliquez sur « Piloter », puis sur « Démarrer la session » pour
-            ouvrir le salon. Son QR code et son lien joueur apparaîtront ici ;
-            tant qu&apos;elle est en brouillon (ou archivée), la page de
-            participation reste fermée aux joueurs.
+            Cette session est archivée : son lien joueur et son QR ne sont plus
+            proposés.
           </p>
         )}
       </div>

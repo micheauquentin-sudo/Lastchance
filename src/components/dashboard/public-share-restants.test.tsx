@@ -85,19 +85,12 @@ describe("URL publique d'une session d'événement en direct", () => {
     expect(editor).toMatch(/<PublicShare\s+url=\{session\.publicUrl\}/);
   });
 
-  it("ne rend aucun QR pour une session en brouillon ou archivée", () => {
+  it("rend le QR dès le brouillon, mais jamais pour une session archivée", () => {
     expect(editor.match(/<PublicShare/g)).toHaveLength(1);
 
-    // Miroir de loadEventPublicContext : draft et archived → 404. La règle
-    // n'est plus RECOPIÉE ici — elle est lue depuis `salleOuverteAuJoueur`
-    // (`src/lib/event.ts`), désormais le seul endroit où elle s'écrit, et que
-    // `event.test.ts` compare aux cinq statuts. Trois copies littérales
-    // vivaient jusque-là côté SQL, côté contexte et côté éditeur ; c'est cette
-    // dispersion qui avait laissé « Écran » pointer sur un 404.
-    expect(editor).toContain(
-      'import { salleOuverteAuJoueur } from "@/lib/event"',
-    );
-    const gate = "salleOuverteAuJoueur(session.status) ? (";
+    // Le lien est une invitation distribuable avant la soirée : le brouillon
+    // mène à la salle d'attente. Seule l'archive sort de toute distribution.
+    const gate = 'session.status !== "archived" ? (';
     const start = editor.indexOf(gate);
     expect(start).toBeGreaterThan(-1);
 
@@ -106,9 +99,8 @@ describe("URL publique d'une session d'événement en direct", () => {
 
     expect(editor.slice(start, elseAt)).toContain("<PublicShare");
     expect(editor.slice(elseAt)).not.toContain("<PublicShare");
-    expect(editor.slice(elseAt)).toMatch(
-      /Cliquez sur « Piloter », puis sur « Démarrer la session » pour\s+ouvrir le salon/,
-    );
+    expect(editor.slice(start, elseAt)).toMatch(/salle\s+d&apos;attente/);
+    expect(editor.slice(elseAt)).toMatch(/Cette session est archivée/);
   });
 
   it("garde le QR d'écran de salle intact : ce n'est pas le même besoin", () => {

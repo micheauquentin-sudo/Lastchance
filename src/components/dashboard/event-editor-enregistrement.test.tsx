@@ -67,10 +67,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("« Écran » ne s'affiche que sur une salle ouverte", () => {
-  it("est absent sur un brouillon — la page joueur y répondrait 404", () => {
+  it("garde le lien et le QR joueur sur un brouillon, mais pas l'écran de salle", () => {
     render(<EventSessionsSection sessions={[session({ status: "draft" })]} />);
     expect(screen.queryByRole("link", { name: /Écran/ })).toBeNull();
-    expect(screen.queryByRole("link", { name: /Joueurs/ })).toBeNull();
+    const joueurs = screen.getByRole("link", { name: /Joueurs/ });
+    expect(joueurs.getAttribute("href")).toBe("/event/HD53GZ");
+    expect(screen.getByRole("button", { name: "Copier le lien" })).toBeTruthy();
+    expect(screen.getByText(/salle d'attente/)).toBeTruthy();
     // La porte du salon, elle, reste ouverte : sans « Piloter », la session
     // créée ne pourrait JAMAIS être démarrée.
     expect(screen.getByRole("link", { name: /Piloter/ })).toBeTruthy();
@@ -80,6 +83,7 @@ describe("« Écran » ne s'affiche que sur une salle ouverte", () => {
     render(<EventSessionsSection sessions={[session({ status: "archived" })]} />);
     expect(screen.queryByRole("link", { name: /Écran/ })).toBeNull();
     expect(screen.queryByRole("link", { name: /Joueurs/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copier le lien" })).toBeNull();
   });
 
   it.each(["lobby", "live", "ended"] as const)(

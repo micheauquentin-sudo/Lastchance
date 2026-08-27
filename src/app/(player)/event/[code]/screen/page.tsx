@@ -27,7 +27,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { code } = await params;
   const ctx = await loadContext(code);
-  if (!ctx.ok) notFound();
+  if (!ctx.ok || ctx.mode !== "active") notFound();
   return {
     title: "Écran de salle — Événement en direct",
     // Écran privé par commerce : suivable par lien, jamais indexé.
@@ -51,7 +51,7 @@ export default async function EventScreenPage({
 }) {
   const { code } = await params;
   const ctx = await loadContext(code);
-  if (!ctx.ok) notFound();
+  if (!ctx.ok || ctx.mode !== "active") notFound();
 
   const joinUrl = `${APP_URL}/event/${ctx.joinCode}`;
 
