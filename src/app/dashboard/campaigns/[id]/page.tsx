@@ -19,7 +19,7 @@ import {
   CampaignStateBanner,
 } from "@/components/dashboard/campaign-automation";
 import {
-  CampaignSettings,
+  SupprimerCampagne,
   CampaignStatusControls,
 } from "@/components/dashboard/campaign-settings";
 import { CampaignWheels } from "@/components/dashboard/campaign-wheels";
@@ -265,6 +265,20 @@ export default async function CampaignDetailPage({
           // récente d'abord, même ordre que le bloc QR ci-dessous) ; sans QR,
           // il n'y a encore aucune porte à montrer.
           hrefJeu={qrCodes[0] ? `${APP_URL}/play/${qrCodes[0].slug}` : null}
+          // TROIS TUILES DEVENUES SECTIONS. « Enregistrer comme modèle » et
+          // « Performance par lot » étaient deux blocs repliés qu'il fallait
+          // ouvrir pour trouver, chaque fois, un seul geste. Ils sont rendus
+          // ICI — la page reste leur lieu de rendu, seule leur place change —
+          // et posés en sections de la carte qui répond déjà à la même
+          // question : que fait-on de cette campagne ?
+          modele={
+            <SaveCampaignAsTemplate
+              campaignId={c.id}
+              campaignName={c.name}
+              enSection
+            />
+          }
+          performance={<PrizePerformance rows={perfRows} enSection />}
         />
       </div>
 
@@ -375,29 +389,13 @@ export default async function CampaignDetailPage({
       </div>
 
       {/* LES BLOCS NAISSENT REPLIÉS, ET CE N'EST PLUS UN RISQUE POUR LES ANCRES.
-          `CarteRepliable` rouvre le bloc que vise `#qr`, `#suivi` ou
-          `#reglages` — au montage ET à chaque `hashchange` : sauter dessus
-          montre toujours du contenu. Ce qui reste ouvert au-dessus, c'est ce
-          qui se lit sans être cherché : le titre, la bannière d'état, la Carte
-          de l'Aventure et le bloc `#statut`, seul endroit qui publie.
+          `CarteRepliable` rouvre le bloc que vise `#qr` — au montage ET à
+          chaque `hashchange` : sauter dessus montre toujours du contenu. Ce
+          qui reste ouvert au-dessus, c'est ce qui se lit sans être cherché :
+          le titre, la bannière d'état, la Carte de l'Aventure et le bloc
+          `#statut`, seul endroit qui publie.
           En revanche les parcours E2E qui cliquaient DANS un bloc sans le
-          déplier doivent désormais l'ouvrir (voir le rapport de ce lot). */}
-      <div className="mb-6">
-        <CarteRepliable
-          titre="Performance par lot"
-          id="suivi"
-          defaultOuvert={false}
-          {...marques("performance")}
-          resume={resumeTuile(
-            "performance",
-            perfRows.length > 0
-              ? `${perfRows.length} lot${perfRows.length > 1 ? "s" : ""} suivi${perfRows.length > 1 ? "s" : ""}.`
-              : "Aucune partie jouée pour l'instant.",
-          )}
-        >
-          <PrizePerformance rows={perfRows} />
-        </CarteRepliable>
-      </div>
+          déplier doivent désormais l'ouvrir. */}
 
       <div className="mb-6">
         <CarteRepliable
@@ -498,29 +496,12 @@ export default async function CampaignDetailPage({
         </CarteRepliable>
       </div>
 
-      <div className="mb-6">
-        <CarteRepliable
-          titre="Enregistrer comme modèle"
-          defaultOuvert={false}
-          {...marques("modele")}
-          resume={resumeTuile(
-            "modele",
-            "Rejouez ce jeu plus tard, sans tout reconfigurer.",
-          )}
-        >
-          <SaveCampaignAsTemplate campaignId={c.id} campaignName={c.name} />
-        </CarteRepliable>
-      </div>
-
-      <CarteRepliable
-        titre="Réglages"
-        id="reglages"
-        defaultOuvert={false}
-        {...marques("reglages")}
-        resume={resumeTuile("reglages", "Renommer, dupliquer, supprimer.")}
-      >
-        <CampaignSettings campaign={c} />
-      </CarteRepliable>
+      {/* TOUT EN BAS, ET SEULE. Renommer, dupliquer et supprimer vivaient
+          sous un même titre « Réglages » : trois gestes de nature opposée,
+          dont deux se refont et un ne se défait pas. Les deux premiers ont
+          rejoint la carte de statut ; la suppression reste à part, là où on
+          ne tombe pas dessus par hasard. */}
+      <SupprimerCampagne campaign={c} />
       </div>
     </CampaignStatusProvider>
   );

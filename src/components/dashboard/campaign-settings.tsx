@@ -84,6 +84,8 @@ export function CampaignStatusControls({
   campaign,
   wheelId,
   hrefJeu = null,
+  modele = null,
+  performance = null,
 }: {
   campaign: Campaign;
   /**
@@ -95,8 +97,38 @@ export function CampaignStatusControls({
   wheelId?: string | null;
   /** URL joueur du premier QR de la campagne, `null` s'il n'y en a aucun. */
   hrefJeu?: string | null;
+  /**
+   * « Enregistrer comme modèle » et « Performance par lot », rendus par la
+   * page (Server Component) et POSÉS ici en sections.
+   *
+   * Passés en nœuds plutôt qu'importés : `PrizePerformance` n'est pas un
+   * composant client, et l'importer depuis ce fichier-ci le ferait basculer
+   * côté navigateur pour rien. La page les rend là où elle les a toujours
+   * rendus ; seule leur PLACE change.
+   */
+  modele?: React.ReactNode;
+  performance?: React.ReactNode;
 }) {
   const { status, setStatus } = useCampaignStatus();
+  // ENREGISTREMENT AUTOMATIQUE — sur le RENOMMAGE SEUL, et délibérément :
+  // « Dupliquer » crée une campagne, « Supprimer » est irréversible, et rien
+  // de tout cela ne doit partir d'une frappe au clavier. Le champ est
+  // `required` : une saisie effacée fait afficher le refus de validation
+  // plutôt que d'enregistrer un nom vide.
+  const formRef = useRef<HTMLFormElement>(null);
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
+  const {
+    state: renameState,
+    pending: renamePending,
+    onSubmit: renameSubmit,
+  } = useActionForm(updateCampaign, {
+    networkError: "Renommage impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
+  });
+  const [duplicateState, duplicateAction, duplicatePending] = useActionState(
+    duplicateCampaign,
+    null,
+  );
   const {
     state: statusState,
     pending: statusPending,
@@ -179,93 +211,63 @@ export function CampaignStatusControls({
       <FieldError
         message={statusState && !statusState.ok ? statusState.error : undefined}
       />
-    </Card>
-  );
-}
 
-export function CampaignSettings({ campaign }: { campaign: Campaign }) {
-  // useActionForm et non useActionState : l'état de chargement doit retomber
-  // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
-  const {
-    state: renameState,
-    pending: renamePending,
-    onSubmit: renameSubmit,
-  } = useActionForm(updateCampaign, {
-    networkError: "Renommage impossible, réessayez.",
-    toastOnSuccess: "Enregistré.",
-  });
-  // ENREGISTREMENT AUTOMATIQUE — sur le RENOMMAGE SEUL. Il s'arrête là, et de
-  // façon délibérée : « Dupliquer » crée une campagne, « Supprimer » est
-  // irréversible, et rien de tout cela ne doit partir d'une frappe au clavier.
-  // Le champ est `required` : une saisie effacée fait afficher le refus de
-  // validation plutôt que d'enregistrer un nom vide.
-  const formRef = useRef<HTMLFormElement>(null);
-  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
-  const [deleteState, deleteAction, deletePending] = useActionState(
-    deleteCampaign,
-    null,
-  );
-  const [duplicateState, duplicateAction, duplicatePending] = useActionState(
-    duplicateCampaign,
-    null,
-  );
+      {/* ── CE QU'ON FAIT D'UNE CAMPAGNE, AU MÊME ENDROIT ──
+          Renommer, dupliquer, enregistrer comme modèle et lire la performance
+          étaient trois tuiles séparées, chacune repliée, chacune à déplier
+          pour découvrir un seul bouton. Elles deviennent des sections de la
+          carte qui porte déjà le statut : c'est la même question — que
+          fait-on de cette campagne ? — et elle se répond d'un seul regard.
+          La suppression, elle, N'EST PAS ici : voir `SupprimerCampagne`. */}
+      <div className="mt-5 border-t border-zinc-100 pt-4">
+        <h3 className="mb-1 font-black text-k-ink">Nom de la campagne</h3>
+        <form
+          ref={formRef}
+          onSubmit={renameSubmit}
+          className="mt-3 flex items-end gap-2"
+        >
+          <input type="hidden" name="id" value={campaign.id} />
+          <div className="max-w-xs flex-1">
+            <Label htmlFor="campaign-name">Nom</Label>
+            <Input
+              id="campaign-name"
+              name="name"
+              defaultValue={campaign.name}
+              required
+              maxLength={120}
+            />
+          </div>
+          <Button type="submit" variant="secondary" disabled={renamePending}>
+            {renamePending ? "…" : "Renommer"}
+          </Button>
+        </form>
+        {enAttente && !renamePending && (
+          <p className="mt-2 text-sm font-semibold text-k-body">
+            Modification en attente d&apos;enregistrement…
+          </p>
+        )}
+        {bloqueParValidation && (
+          <p role="alert" className="mt-2 text-sm font-semibold text-red-700">
+            Non enregistré : le nom de la campagne ne peut pas être vide.
+          </p>
+        )}
+        <FieldError
+          message={renameState && !renameState.ok ? renameState.error : undefined}
+        />
+      </div>
 
-  return (
-    /* UNE SEULE Card, et c'est la racine du composant. Il en rendait DEUX
-       (« Réglages » puis « Zone dangereuse ») dans un `space-y-4` ; la tuile
-       repliable qui l'enveloppe n'encadre rien — elle pose un liseré à gauche
-       et suppose une carte unique — si bien que la carte rouge sortait du
-       cadre, seule au milieu de la page. La zone dangereuse devient une
-       SECTION séparée par un filet, comme les six autres modules ; le filet
-       reste rouge, c'est lui qui porte l'avertissement. */
-    <Card>
-      <h2 className="font-semibold mb-4">Réglages</h2>
-
-      <form
-        ref={formRef}
-        onSubmit={renameSubmit}
-        className="flex items-end gap-2 mb-6"
-      >
-        <input type="hidden" name="id" value={campaign.id} />
-        <div className="flex-1 max-w-xs">
-          <Label htmlFor="campaign-name">Nom de la campagne</Label>
-          <Input
-            id="campaign-name"
-            name="name"
-            defaultValue={campaign.name}
-            required
-            maxLength={120}
-          />
-        </div>
-        <Button type="submit" variant="secondary" disabled={renamePending}>
-          {renamePending ? "…" : "Renommer"}
-        </Button>
-      </form>
-      {enAttente && !renamePending && (
-        <p className="text-sm font-semibold text-k-body">
-          Modification en attente d&apos;enregistrement…
+      <div className="mt-5 border-t border-zinc-100 pt-4">
+        <h3 className="mb-1 font-black text-k-ink">Dupliquer</h3>
+        <p className="mb-3 text-sm text-zinc-500">
+          Crée une copie en brouillon (roues, lots, réglages) — utile pour
+          relancer un jeu saisonnier.
         </p>
-      )}
-      {bloqueParValidation && (
-        <p role="alert" className="text-sm font-semibold text-red-700">
-          Non enregistré : le nom de la campagne ne peut pas être vide.
-        </p>
-      )}
-      <FieldError
-        message={renameState && !renameState.ok ? renameState.error : undefined}
-      />
-
-      <div className="mt-4 pt-4 border-t border-zinc-100">
         <form action={duplicateAction}>
           <input type="hidden" name="id" value={campaign.id} />
           <Button type="submit" variant="secondary" disabled={duplicatePending}>
             {duplicatePending ? "Duplication…" : "Dupliquer cette campagne"}
           </Button>
         </form>
-        <p className="mt-2 text-xs text-zinc-500">
-          Crée une copie en brouillon (roues, lots, réglages) — utile pour
-          relancer un jeu saisonnier.
-        </p>
         <FieldError
           message={
             duplicateState && !duplicateState.ok ? duplicateState.error : undefined
@@ -273,55 +275,75 @@ export function CampaignSettings({ campaign }: { campaign: Campaign }) {
         />
       </div>
 
-      {/* ZONE DANGEREUSE — une section, plus une carte. Le filet est rouge et
-          doublé : c'est lui qui dit « on change de registre », sans avoir à
-          sortir un second cadre de la tuile. Le titre passe en `<h3>` — il
-          échappe ainsi naturellement au trait de marqueur jaune que `Card`
-          pose sur ses `<h2>` directs, et le hack `!` qu'il fallait pour
-          l'annuler disparaît. */}
-      <div className="mt-5 border-t-2 border-red-200 pt-4">
-        <h3 className="font-black text-red-700 mb-1">Zone dangereuse</h3>
-        <p className="text-sm text-zinc-500 mb-4">
-          Supprime la campagne, sa roue, ses lots, ses QR codes et ses
-          participations. Irréversible.
-        </p>
-        <form
-          action={deleteAction}
-          onSubmit={(e) => {
-            if (!confirm("Supprimer définitivement cette campagne ?")) {
-              e.preventDefault();
-            }
-          }}
-        >
-          <input type="hidden" name="id" value={campaign.id} />
-          {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après CE refus
-              précis, lequel NOMME le nombre de lots en attente. Demander la
-              confirmation avant de savoir combien serait du bruit ; la
-              demander après, c'est un choix informé. Le filtre porte sur le
-              marqueur partagé et non sur `!ok` : « Suppression impossible »
-              ou une coupure réseau montraient la même case destructive. */}
-          {deleteState &&
-            !deleteState.ok &&
-            deleteState.error.includes(CAMPAIGN_OUTSTANDING_LOSS_HINT) && (
-              <label className="mb-2 flex items-start gap-2 text-sm font-semibold text-red-700">
-                <input
-                  type="checkbox"
-                  name="confirm_outstanding"
-                  value="1"
-                  className="mt-0.5 h-4 w-4 shrink-0"
-                />
-                Je comprends que les codes non retirés deviendront introuvables
-                en caisse.
-              </label>
-            )}
-          <Button type="submit" variant="danger" disabled={deletePending}>
-            {deletePending ? "Suppression…" : "Supprimer la campagne"}
-          </Button>
-        </form>
-        <FieldError
-          message={deleteState && !deleteState.ok ? deleteState.error : undefined}
-        />
-      </div>
+      {modele}
+      {performance}
     </Card>
+  );
+}
+
+/**
+ * SUPPRIMER LA CAMPAGNE — seule, simple, tout en bas de la page.
+ *
+ * Ce geste vivait dans une tuile « Réglages » qu'il fallait déplier, en
+ * compagnie du renommage et de la duplication. Trois gestes de nature
+ * opposée sous un même titre : deux se refont, le troisième ne se défait
+ * pas. Renommer et dupliquer ont rejoint la carte « Statut de la campagne » ;
+ * la suppression reste à part, en pied de page, là où on ne tombe pas dessus
+ * par hasard.
+ *
+ * PAS DE `Card` : un cadre l'aurait remise au rang des autres réglages. Un
+ * filet rouge, un titre, une phrase qui énumère ce qui disparaît — et le
+ * bouton.
+ */
+export function SupprimerCampagne({ campaign }: { campaign: Campaign }) {
+  const [deleteState, deleteAction, deletePending] = useActionState(
+    deleteCampaign,
+    null,
+  );
+
+  return (
+    <div className="mt-10 border-t-2 border-red-200 pt-5">
+      <h2 className="mb-1 font-black text-red-700">Supprimer la campagne</h2>
+      <p className="mb-4 text-sm text-zinc-500">
+        Supprime la campagne, sa roue, ses lots, ses QR codes et ses
+        participations. Irréversible.
+      </p>
+      <form
+        action={deleteAction}
+        onSubmit={(e) => {
+          if (!confirm("Supprimer définitivement cette campagne ?")) {
+            e.preventDefault();
+          }
+        }}
+      >
+        <input type="hidden" name="id" value={campaign.id} />
+        {/* La case n'apparaît PAS d'emblée : elle ne sert qu'après CE refus
+            précis, lequel NOMME le nombre de lots en attente. Demander la
+            confirmation avant de savoir combien serait du bruit ; la demander
+            après, c'est un choix informé. Le filtre porte sur le marqueur
+            partagé et non sur `!ok` : « Suppression impossible » ou une
+            coupure réseau montraient la même case destructive. */}
+        {deleteState &&
+          !deleteState.ok &&
+          deleteState.error.includes(CAMPAIGN_OUTSTANDING_LOSS_HINT) && (
+            <label className="mb-2 flex items-start gap-2 text-sm font-semibold text-red-700">
+              <input
+                type="checkbox"
+                name="confirm_outstanding"
+                value="1"
+                className="mt-0.5 h-4 w-4 shrink-0"
+              />
+              Je comprends que les codes non retirés deviendront introuvables
+              en caisse.
+            </label>
+          )}
+        <Button type="submit" variant="danger" disabled={deletePending}>
+          {deletePending ? "Suppression…" : "Supprimer la campagne"}
+        </Button>
+      </form>
+      <FieldError
+        message={deleteState && !deleteState.ok ? deleteState.error : undefined}
+      />
+    </div>
   );
 }

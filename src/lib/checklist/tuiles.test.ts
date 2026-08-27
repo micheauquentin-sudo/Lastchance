@@ -406,8 +406,13 @@ describe("tuilesDuModule", () => {
   });
 
   it("porte les ancres attendues par la Carte de l'Aventure", () => {
+    // DEUX ANCRES, ET PLUS QUATRE. `suivi` désignait « Performance par lot »
+    // et `reglages` la tuile du même nom : les deux ont rejoint la carte
+    // « Statut de la campagne », donc l'ancre `statut`. Garder des ancres
+    // sans bloc serait pire que de les retirer — un lien qui saute sur du
+    // vide ne raconte rien.
     const ancres = TUILES_ROUE.filter((t) => t.ancre).map((t) => t.ancre);
-    expect(ancres).toEqual(["statut", "qr", "suivi", "reglages"]);
+    expect(ancres).toEqual(["statut", "qr"]);
   });
 
   it("applique la table des bloquants : le QR rouge alerte sans rougir", () => {

@@ -19,12 +19,54 @@ import { FieldError, Input, Label } from "@/components/ui/input";
  * Pending manuel et non `useTransition` : l'état de chargement doit retomber
  * même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
  */
+
+/**
+ * LE CADRE, OU LA SECTION — le même contenu, deux places possibles.
+ *
+ * Ce bloc vivait en tuile autonome sur la page de la campagne. Il rejoint la
+ * carte « Statut de la campagne », qui regroupe désormais ce qu'on FAIT d'une
+ * campagne. Un `<Card>` dans un `<Card>` dessinerait un cadre dans un cadre :
+ * en section, le titre passe en `<h3>` — il échappe ainsi au trait de marqueur
+ * jaune que `Card` pose sur ses `<h2>` directs — et un filet le sépare du
+ * bloc précédent.
+ *
+ * Un wrapper conditionnel plutôt que deux rendus : le contenu ne se recopie
+ * pas, et il ne peut pas diverger entre les deux places.
+ */
+function CadreModele({
+  enSection,
+  titre,
+  children,
+}: {
+  enSection: boolean;
+  titre: string;
+  children: React.ReactNode;
+}) {
+  if (enSection) {
+    return (
+      <div className="mt-5 border-t border-zinc-100 pt-4">
+        <h3 className="mb-1 font-black text-k-ink">{titre}</h3>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <Card>
+      <h2 className="font-semibold mb-1">{titre}</h2>
+      {children}
+    </Card>
+  );
+}
+
 export function SaveCampaignAsTemplate({
   campaignId,
   campaignName,
+  enSection = false,
 }: {
   campaignId: string;
   campaignName: string;
+  /** Rendu en section d'une carte hôte plutôt qu'en tuile autonome. */
+  enSection?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -63,8 +105,7 @@ export function SaveCampaignAsTemplate({
   };
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-1">Enregistrer comme modèle</h2>
+    <CadreModele enSection={enSection} titre="Enregistrer comme modèle">
       <p className="text-sm text-zinc-500 mb-4">
         Range cette campagne dans vos modèles pour la rejouer en un clic plus
         tard. Le modèle reste privé&nbsp;: seule votre équipe le voit.
@@ -147,6 +188,6 @@ export function SaveCampaignAsTemplate({
           </div>
         </form>
       )}
-    </Card>
+    </CadreModele>
   );
 }

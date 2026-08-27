@@ -45,7 +45,17 @@ export interface TuileChecklist {
  *
  * Les quatre contrôles de mécanique et de lots se corrigent dans l'éditeur de
  * roue, atteint depuis le bloc « Vos jeux » : c'est donc lui qui les porte.
- * `fenetre` (les dates de la campagne) va aux Réglages, où vit son formulaire.
+ *
+ * `fenetre` (les dates de la campagne) VA À « Programmation et budget », et
+ * non aux Réglages : c'est là que vit son formulaire
+ * (`campaign-automation.tsx`). Le commentaire précédent désignait les
+ * Réglages — une tuile qui n'a jamais porté ce champ, et qui n'existe plus.
+ *
+ * TROIS TUILES ONT DISPARU. « Performance par lot », « Enregistrer comme
+ * modèle » et « Réglages » étaient trois blocs repliés qu'il fallait déplier
+ * pour trouver, chaque fois, un seul bouton. Leur contenu a rejoint la carte
+ * « Statut de la campagne », qui répond déjà à la même question — que fait-on
+ * de cette campagne ? La suppression, elle, est descendue en pied de page.
  */
 export const TUILES_ROUE: readonly TuileChecklist[] = [
   { cle: "statut", titre: "Statut", ancre: "statut", controles: [] },
@@ -55,23 +65,14 @@ export const TUILES_ROUE: readonly TuileChecklist[] = [
     controles: ["mecanique", "defi", "lot-gagnant", "poids"],
   },
   { cle: "qr", titre: "QR codes", ancre: "qr", controles: ["qr"] },
-  {
-    cle: "performance",
-    titre: "Performance par lot",
-    ancre: "suivi",
-    controles: [],
-  },
   { cle: "prejeu", titre: "Avant de jouer", controles: [] },
   { cle: "gain", titre: "Après le gain", controles: [] },
-  { cle: "programmation", titre: "Programmation et budget", controles: [] },
-  { cle: "parrainage", titre: "Partage et parrainage", controles: [] },
-  { cle: "modele", titre: "Enregistrer comme modèle", controles: [] },
   {
-    cle: "reglages",
-    titre: "Réglages",
-    ancre: "reglages",
+    cle: "programmation",
+    titre: "Programmation et budget",
     controles: ["fenetre"],
   },
+  { cle: "parrainage", titre: "Partage et parrainage", controles: [] },
 ];
 
 /**
