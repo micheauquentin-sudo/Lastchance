@@ -265,6 +265,9 @@ export default async function CampaignDetailPage({
           // récente d'abord, même ordre que le bloc QR ci-dessous) ; sans QR,
           // il n'y a encore aucune porte à montrer.
           hrefJeu={qrCodes[0] ? `${APP_URL}/play/${qrCodes[0].slug}` : null}
+          // La MÊME fenêtre que la pastille du titre : deux calculs auraient
+          // fini par se contredire à l'écran, sur la même page.
+          windowState={windowState}
           // TROIS TUILES DEVENUES SECTIONS. « Enregistrer comme modèle » et
           // « Performance par lot » étaient deux blocs repliés qu'il fallait
           // ouvrir pour trouver, chaque fois, un seul geste. Ils sont rendus

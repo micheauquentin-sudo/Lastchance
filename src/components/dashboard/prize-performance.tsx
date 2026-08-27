@@ -45,8 +45,12 @@ function CadrePerformance({
   children: React.ReactNode;
 }) {
   if (enSection) {
+    // NI MARGE NI FILET ICI : l'hôte place ce bloc — en colonne d'une grille
+    // ou en pleine largeur sous un filet — et lui seul sait ce qui le sépare
+    // du précédent. Un filet pose d'office se retrouvait en travers d'une
+    // colonne.
     return (
-      <div className="mt-5 border-t border-zinc-100 pt-4">
+      <div>
         <h3 className="mb-1 font-black text-k-ink">{titre}</h3>
         {children}
       </div>
