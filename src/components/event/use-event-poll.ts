@@ -145,7 +145,16 @@ export function useEventPoll(
   useEffect(() => {
     if (!realtimeEnabled) return;
 
-    const supabase = createClient();
+    // Realtime raccourcit le délai de rafraîchissement, mais le polling reste
+    // la source de vérité. Une configuration navigateur incomplète (URL/clé
+    // publique absente) ne doit donc jamais faire tomber la télécommande après
+    // son premier rendu : `createBrowserClient` lève dans ce cas précis.
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch {
+      return;
+    }
     let disposed = false;
     let refreshTimer: number | null = null;
 
@@ -166,49 +175,53 @@ export function useEventPoll(
       }, delay);
     };
 
-    const channel = supabase
-      .channel(eventChannelName(sessionId), {
-        config: { broadcast: { self: false } },
-      })
-      .on(
-        "broadcast",
-        { event: EVENT_REALTIME_REFRESH },
-        ({ payload }: { payload: unknown }) => {
-          const revision = eventRefreshRevision(payload);
-          const currentRevision = stateRef.current.session?.revision ?? 0;
-          if (
-            revision === null ||
-            revision <= currentRevision ||
-            (pendingRevisionRef.current !== null &&
-              revision <= pendingRevisionRef.current)
-          ) {
-            return;
+    try {
+      const channel = supabase
+        .channel(eventChannelName(sessionId), {
+          config: { broadcast: { self: false } },
+        })
+        .on(
+          "broadcast",
+          { event: EVENT_REALTIME_REFRESH },
+          ({ payload }: { payload: unknown }) => {
+            const revision = eventRefreshRevision(payload);
+            const currentRevision = stateRef.current.session?.revision ?? 0;
+            if (
+              revision === null ||
+              revision <= currentRevision ||
+              (pendingRevisionRef.current !== null &&
+                revision <= pendingRevisionRef.current)
+            ) {
+              return;
+            }
+            pendingRevisionRef.current = revision;
+            queueRefresh();
+          },
+        )
+        .subscribe((status) => {
+          if (disposed) return;
+          const connected = status === "SUBSCRIBED";
+          if (connected !== realtimeConnectedRef.current) {
+            realtimeConnectedRef.current = connected;
+            schedulePollRef.current(!connected);
           }
-          pendingRevisionRef.current = revision;
-          queueRefresh();
-        },
-      )
-      .subscribe((status) => {
-        if (disposed) return;
-        const connected = status === "SUBSCRIBED";
-        if (connected !== realtimeConnectedRef.current) {
-          realtimeConnectedRef.current = connected;
-          schedulePollRef.current(!connected);
-        }
-      });
+        });
 
-    const onVisibilityChange = () => {
-      if (!document.hidden && pendingRevisionRef.current !== null) queueRefresh();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
+      const onVisibilityChange = () => {
+        if (!document.hidden && pendingRevisionRef.current !== null) queueRefresh();
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
 
-    return () => {
-      disposed = true;
-      realtimeConnectedRef.current = false;
-      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      void supabase.removeChannel(channel);
-    };
+      return () => {
+        disposed = true;
+        realtimeConnectedRef.current = false;
+        if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        void supabase.removeChannel(channel);
+      };
+    } catch {
+      return;
+    }
   }, [fetchOnce, realtimeEnabled, sessionId]);
 
   const refresh = useCallback(() => {
