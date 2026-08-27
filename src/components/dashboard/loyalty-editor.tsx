@@ -17,6 +17,9 @@ import {
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
+import type { LoyaltyProgramStatus } from "@/types/database";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeFidelite } from "@/components/dashboard/atelier-loyalty-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
@@ -838,6 +841,15 @@ function AddMilestoneForm({
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
+/** Ce qui est vrai maintenant — les trois états du passeport, côté client. */
+const PHRASE_ETAT: Record<LoyaltyProgramStatus, string> = {
+  draft:
+    "Vos clients ne peuvent pas encore tamponner : le passeport n'est pas ouvert.",
+  active: "Le passeport est accessible à vos clients.",
+  archived:
+    "Le programme est terminé : plus aucun tampon n'est pris, et les codes déjà gagnés restent retirables.",
+};
+
 export function LoyaltyStatusControls({
   program,
   milestoneCount,
@@ -877,11 +889,12 @@ export function LoyaltyStatusControls({
   const canActivate = milestoneCount >= 1;
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut du programme</h2>
-
-      <div className="flex flex-wrap items-center gap-3">
-        {program.status !== "active" ? (
+    <CarteStatutAnimation
+      titre="Statut du programme"
+      badge={<LoyaltyStatusBadge status={program.status} />}
+      phrase={PHRASE_ETAT[program.status] ?? PHRASE_ETAT.draft}
+      actions={
+        program.status !== "active" ? (
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={program.id} />
             <input type="hidden" name="status" value="active" />
@@ -897,27 +910,23 @@ export function LoyaltyStatusControls({
               {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
-        )}
-
-        {program.status === "active" && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
-            Ouverte aux joueurs — le passeport est accessible aux clients
-          </span>
-        )}
-      </div>
-
-      {program.status !== "active" && !canActivate && (
-        <p className="mt-3 text-sm text-amber-700">
-          Pour ouvrir aux joueurs, ajoutez au moins un palier.
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeFidelite(program.id, "programme")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
+        )
+      }
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeFidelite(program.id, "programme")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        program.status !== "active" && !canActivate ? (
+          <p className="mt-2 text-xs font-bold text-amber-700">
+            Pour ouvrir aux joueurs, ajoutez au moins un palier.
+          </p>
+        ) : null
+      }
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    >
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
@@ -971,6 +980,6 @@ export function LoyaltyStatusControls({
           message={deleteState && !deleteState.ok ? deleteState.error : undefined}
         />
       </div>
-    </Card>
+    </CarteStatutAnimation>
   );
 }

@@ -16,6 +16,9 @@ import {
 } from "@/components/dashboard/code-ttl-days-field";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
+import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
+import { JackpotStatusBadge } from "@/components/dashboard/jackpot-status";
+import type { JackpotCampaignStatus } from "@/types/database";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
@@ -503,6 +506,15 @@ export function JackpotSettings({
 // Statut (activer / archiver) + suppression
 // ────────────────────────────────────────────────────────────
 
+/** Ce qui est vrai maintenant — les trois états de la cagnotte, côté client. */
+const PHRASE_ETAT: Record<JackpotCampaignStatus, string> = {
+  draft:
+    "Vos clients ne peuvent pas encore participer : la page de la cagnotte n'est pas ouverte.",
+  active: "La page de la cagnotte est accessible à vos clients.",
+  archived:
+    "La cagnotte est terminée : plus aucune participation n'est prise, et les codes déjà gagnés restent retirables.",
+};
+
 export function JackpotStatusControls({
   campaign,
   hrefJeu = null,
@@ -539,11 +551,12 @@ export function JackpotStatusControls({
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <Card>
-      <h2 className="font-semibold mb-4">Statut de la campagne</h2>
-
-      <div className="flex flex-wrap items-center gap-3">
-        {campaign.status !== "active" ? (
+    <CarteStatutAnimation
+      titre="Statut de la cagnotte"
+      badge={<JackpotStatusBadge status={campaign.status} />}
+      phrase={PHRASE_ETAT[campaign.status] ?? PHRASE_ETAT.draft}
+      actions={
+        campaign.status !== "active" ? (
           <form onSubmit={statusSubmit}>
             <input type="hidden" name="id" value={campaign.id} />
             <input type="hidden" name="status" value="active" />
@@ -559,39 +572,36 @@ export function JackpotStatusControls({
               {statusPending ? "…" : "Clôturer"}
             </Button>
           </form>
-        )}
-
-        {campaign.status === "active" && (
-          <span className="rounded-full border-2 border-k-ink bg-k-green/40 px-3 py-1 text-xs font-black text-k-ink">
-            Ouverte aux joueurs — la page jackpot est accessible aux clients
-          </span>
-        )}
-      </div>
-
-      {/* Ce paragraphe ÉNUMÉRAIT les préconditions sans en calculer aucune :
-          le composant ne reçoit que la campagne, et le commerçant découvrait ce
-          qui manquait après avoir cliqué, un refus à la fois. L'étape « La
-          vérification » de l'atelier les calcule toutes, sur le même module que
-          celui qu'oppose le serveur — on y renvoie plutôt que de réciter. */}
-      {campaign.status !== "active" && (
-        <p className="mt-3 text-sm text-zinc-500">
-          Pour activer : un lot, un stock d&apos;au moins 1 gagnant, un objectif
-          ≥ 1, et (en mode « Tirage à date ») une date future.{" "}
-          <Link
-            href={hrefEtapeJackpot(campaign.id, "verification")}
-            className="font-bold text-k-ink underline underline-offset-2"
-          >
-            Voir ce qu&apos;il manque
-          </Link>
-        </p>
-      )}
-      <div className="mt-4 flex flex-wrap gap-2">
-        <RaccourciAtelier href={hrefEtapeJackpot(campaign.id, "reglages")} />
-        <VoirLeJeu href={hrefJeu} />
-      </div>
-      <FieldError
-        message={statusState && !statusState.ok ? statusState.error : undefined}
-      />
+        )
+      }
+      raccourcis={
+        <>
+          <RaccourciAtelier href={hrefEtapeJackpot(campaign.id, "reglages")} />
+          <VoirLeJeu href={hrefJeu} />
+        </>
+      }
+      notes={
+        /* Ce paragraphe ÉNUMÉRAIT les préconditions sans en calculer aucune :
+           le composant ne reçoit que la campagne, et le commerçant découvrait
+           ce qui manquait après avoir cliqué, un refus à la fois. L'étape « La
+           vérification » de l'atelier les calcule toutes, sur le même module
+           que celui qu'oppose le serveur — on y renvoie plutôt que de
+           réciter. */
+        campaign.status !== "active" ? (
+          <p className="mt-2 text-xs font-bold text-k-body">
+            Pour activer : un lot, un stock d&apos;au moins 1 gagnant, un
+            objectif ≥ 1, et (en mode « Tirage à date ») une date future.{" "}
+            <Link
+              href={hrefEtapeJackpot(campaign.id, "verification")}
+              className="font-bold text-k-ink underline underline-offset-2"
+            >
+              Voir ce qu&apos;il manque
+            </Link>
+          </p>
+        ) : null
+      }
+      erreur={statusState && !statusState.ok ? statusState.error : undefined}
+    >
 
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
@@ -626,6 +636,6 @@ export function JackpotStatusControls({
           message={deleteState && !deleteState.ok ? deleteState.error : undefined}
         />
       </div>
-    </Card>
+    </CarteStatutAnimation>
   );
 }
