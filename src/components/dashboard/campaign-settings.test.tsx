@@ -89,10 +89,13 @@ describe("CampaignStatusControls — reprise après budget", () => {
       expect(bouton("Ouvrir aux joueurs")).toBeNull();
     });
     expect(bouton("Mettre en pause")).not.toBeNull();
+    // DEUX ÉLÉMENTS DEPUIS QUE L'ÉTAT SE LIT AVANT DE SE CHANGER : la pastille
+    // porte le mot, la phrase porte la conséquence. On exige les deux — c'est
+    // plus fort que l'ancienne assertion sur une phrase unique, qui laissait
+    // passer une pastille restée sur « Brouillon » à côté d'un texte juste.
+    expect(screen.getByText("Ouverte aux joueurs")).toBeTruthy();
     expect(
-      screen.getByText(
-        "Ouverte aux joueurs — un client qui scanne le QR code peut jouer.",
-      ),
+      screen.getByText("Un client qui scanne le QR code peut jouer."),
     ).toBeTruthy();
   });
 
