@@ -450,8 +450,9 @@ export type ConclusionAventure = {
  *
  * `relanceHref` est fourni par la page parce que la destination n'est pas la
  * même partout : six modules portent une carte de relance (`#relance`), la
- * campagne passe par « Dupliquer » (`#reglages`), et le jackpot n'est pas
- * relançable du tout — il ne reçoit alors aucun CTA plutôt qu'un lien mort.
+ * campagne passe par « Dupliquer » — désormais `#statut`, la tuile
+ * « Réglages » qui l'hébergeait ayant été absorbée — et le jackpot n'est pas
+ * relançable du tout : il ne reçoit alors aucun CTA plutôt qu'un lien mort.
  */
 export function conclusionAventure(
   etapes: EtapeAventure[],
