@@ -108,14 +108,30 @@ describe("numeroEtape / definitionEtape", () => {
  * (`e2e/wheel-wizard.spec.ts` les visite, et six `revalidatePath` en dépendent).
  */
 describe("déclinaison roue", () => {
-  it("garde ses cinq étapes dans l'ordre", () => {
+  it("garde ses étapes dans l'ordre, la vérification en dernier", () => {
+    // L'ORDRE EST LE PARCOURS, et « verification » ferme la marche : elle juge
+    // ce que les précédentes ont posé. Deux étapes se sont intercalées avant
+    // elle — « Le parcours joueur » et « Le partage » — parce qu'elles se
+    // règlent AVANT d'ouvrir aux joueurs, pas après avoir vérifié.
     expect(ETAPES_ROUE.map((e) => e.cle)).toEqual([
       "jeu",
       "lots",
       "habillage",
       "creneau",
+      "parcours",
+      "partage",
       "verification",
     ]);
+  });
+
+  it("donne une URL à chaque étape, sans en oublier une", () => {
+    // Une étape déclarée mais sans URL serait injoignable depuis le fil ;
+    // `wheel-wizard.spec.ts` compte les pastilles, ce test compte les portes.
+    for (const etape of ETAPES_ROUE) {
+      expect(hrefEtapeRoue("c1", etape.cle)).toBe(
+        `/dashboard/campaigns/c1/wheel?etape=${etape.cle}`,
+      );
+    }
   });
 
   it("construit les mêmes URLs qu'avant, avec et sans `?wheel=`", () => {

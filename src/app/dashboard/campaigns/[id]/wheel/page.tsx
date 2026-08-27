@@ -20,12 +20,21 @@ import {
   AtelierStepper,
 } from "@/components/dashboard/atelier-stepper";
 import { AtelierVerification } from "@/components/dashboard/atelier-verification";
+import { CampaignPrejeuInvitation } from "@/components/dashboard/campaign-prejeu-invitation";
+import { CampaignClaimSettings } from "@/components/dashboard/campaign-play-settings";
+import { CampaignShareSettings } from "@/components/dashboard/campaign-share-settings";
+import {
+  ReferralProgramSettings,
+  type ReferralProgramRow,
+} from "@/components/dashboard/referral-program-settings";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PrizeEditor } from "@/components/dashboard/prize-editor";
 import { WheelScheduleEditor } from "@/components/dashboard/wheel-schedule-editor";
 import { WheelSettings } from "@/components/dashboard/wheel-settings";
 import { WheelStyleEditor } from "@/components/dashboard/wheel-style-editor";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
+import { hasReferralAccess } from "@/lib/referral-context";
+import { Card } from "@/components/ui/card";
 import type { Campaign, Prize, Wheel } from "@/types/database";
 
 export const metadata: Metadata = { title: "L'atelier du jeu" };
@@ -77,8 +86,14 @@ export default async function WheelConfigPage({
   // La campagne et le compte de QR ne servent qu'à l'étape de vérification,
   // mais ils partent dans la MÊME salve : trois allers-retours en parallèle
   // coûtent le plus lent, trois en série coûtent leur somme.
-  const [{ data: wheelsData }, { data: campaignData }, { count: qrCount }, capacites] =
-    await Promise.all([
+  const [
+    { data: wheelsData },
+    { data: campaignData },
+    { count: qrCount },
+    { data: referralProgram },
+    { data: liensOrg },
+    capacites,
+  ] = await Promise.all([
       supabase
         .from("wheels")
         .select("*, prizes!prizes_wheel_id_fkey(*)")
@@ -86,9 +101,14 @@ export default async function WheelConfigPage({
         .eq("organization_id", organization!.id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      // LA CAMPAGNE ENTIÈRE, et non cinq colonnes. Les étapes « Le parcours
+      // joueur » et « Le partage » rendent `CampaignClaimSettings`, qui prend
+      // la campagne complète — la même que la page de suivi lui passe. Une
+      // sélection partielle obligerait à énumérer ici les colonnes de claim,
+      // et à les tenir à jour à deux endroits.
       supabase
         .from("campaigns")
-        .select("id, name, status, starts_at, ends_at")
+        .select("*")
         .eq("id", id)
         .eq("organization_id", organization!.id)
         .maybeSingle(),
@@ -99,6 +119,21 @@ export default async function WheelConfigPage({
         .select("id", { count: "exact", head: true })
         .eq("campaign_id", id)
         .eq("organization_id", organization!.id),
+      // MÊMES REQUÊTES QUE LA PAGE DE SUIVI, au champ près : les deux écrans
+      // règlent la même chose et doivent lire la même chose.
+      supabase
+        .from("referral_programs")
+        .select(
+          "enabled, chest_threshold, sponsor_max_filleuls, window_days, sponsor_reward_kind, sponsor_reward_label, sponsor_reward_details, sponsor_reward_stock, filleul_reward_kind, filleul_reward_label, filleul_reward_details, filleul_reward_stock, chest_reward_kind, chest_reward_label, chest_reward_details, chest_reward_stock, code_ttl_days",
+        )
+        .eq("campaign_id", id)
+        .eq("organization_id", organization!.id)
+        .maybeSingle(),
+      supabase
+        .from("organizations")
+        .select("google_review_url, instagram_url, tiktok_url")
+        .eq("id", organization!.id)
+        .maybeSingle(),
       // Lue DÈS L'ENTRÉE : on ne guide pas quelqu'un pendant cinq étapes pour
       // lui refuser la sixième. Le bandeau ne ferme rien — la préparation
       // reste ouverte, seule la publication est verrouillée, et elle l'est en
@@ -109,10 +144,18 @@ export default async function WheelConfigPage({
   const wheels = (wheelsData ?? []) as (Wheel & { prizes: Prize[] })[];
   if (wheels.length === 0 || !campaignData) notFound();
 
-  const campagne = campaignData as Pick<
-    Campaign,
-    "id" | "name" | "status" | "starts_at" | "ends_at"
-  >;
+  const campagne = campaignData as Campaign;
+  // Sans un seul lien renseigné, cocher « Avant de jouer » n'afficherait rien
+  // au joueur : le bloc renvoie alors vers les Réglages. Même prédicat que la
+  // page de suivi.
+  const liens = liensOrg as {
+    google_review_url: string | null;
+    instagram_url: string | null;
+    tiktok_url: string | null;
+  } | null;
+  const aDesLiens = Boolean(
+    liens?.google_review_url || liens?.instagram_url || liens?.tiktok_url,
+  );
   const selected = wheels.find((wh) => wh.id === wheelParam) ?? wheels[0];
   const { prizes: embeddedPrizes, ...w } = selected;
   const allPrizes = (embeddedPrizes ?? []).sort(
@@ -233,6 +276,39 @@ export default async function WheelConfigPage({
         )}
 
         {etape === "creneau" && <WheelScheduleEditor wheel={w} />}
+
+        {etape === "parcours" && (
+          <div className="space-y-6">
+            <CampaignPrejeuInvitation
+              campaignId={id}
+              enabled={campagne.prejeu_invitation}
+              aDesLiens={aDesLiens}
+            />
+            <CampaignClaimSettings campaign={campagne} />
+          </div>
+        )}
+
+        {/* UNE SEULE `Card`, deux sections séparées par un filet — la forme
+            qu'a prise la tuile « Partage et parrainage » de la page de suivi
+            après qu'un second `Card` y ait flotté hors du cadre. */}
+        {etape === "partage" && (
+          <Card>
+            <h2 className="mb-1 font-black text-k-ink">Partage et parrainage</h2>
+            <div className="mt-4">
+              <CampaignShareSettings
+                campaignId={id}
+                enabled={campagne.share_enabled}
+              />
+            </div>
+            <div className="mt-5 border-t border-zinc-100 pt-4">
+              <ReferralProgramSettings
+                campaignId={id}
+                program={(referralProgram as ReferralProgramRow | null) ?? null}
+                hasAccess={hasReferralAccess(organization!)}
+              />
+            </div>
+          </Card>
+        )}
 
         {etape === "verification" && (
           <AtelierVerification
