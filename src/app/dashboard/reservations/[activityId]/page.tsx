@@ -5,11 +5,13 @@ import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { urlActiviteReserver } from "@/lib/reserver";
 import { loadReserverDashboardContext } from "@/lib/reserver-context";
+import { loadHorairesActivite } from "@/lib/reserver-horaires-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { ActiviteReglagesForm } from "@/components/reserver/activite-reglages-form";
 import { CreneauxAgenda } from "@/components/reserver/creneaux-agenda";
+import { HorairesPanneau } from "@/components/reserver/horaires-panneau";
 import { InvitationsPanneau } from "@/components/reserver/invitations-panneau";
 
 export const metadata: Metadata = { title: "Activité réservable" };
@@ -68,6 +70,10 @@ export default async function ActiviteReservablePage({
   const { role } = await getUserAndOrg();
   const peutRetirer = role === "owner" || role === "editor";
 
+  // LES HORAIRES, chargés à part (voir reserver-horaires-context.ts) : la LISTE
+  // des activités ne les affiche pas, elle n'a pas à les payer.
+  const horaires = await loadHorairesActivite(activite.id);
+
   return (
     <div>
       <PageHeader
@@ -104,6 +110,20 @@ export default async function ActiviteReservablePage({
           qrLabel={activite.name}
         />
       </div>
+
+      {/* LES HORAIRES AVANT L'AGENDA : ils DÉCIDENT de ce que l'agenda contient.
+          Les poser après aurait fait lire au commerçant le résultat avant sa
+          cause. */}
+      <HorairesPanneau
+        activityId={activite.id}
+        bookingMode={horaires.reglages.bookingMode}
+        dureeMinutes={horaires.reglages.dureeMinutes}
+        capacite={horaires.reglages.capacite}
+        horizonJours={horaires.reglages.horizonJours}
+        delaiMinutes={horaires.reglages.delaiMinutes}
+        plages={horaires.plages}
+        fermetures={horaires.fermetures}
+      />
 
       <CreneauxAgenda
         activityId={activite.id}

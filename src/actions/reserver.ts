@@ -81,6 +81,12 @@ import {
   type WaitUsePauseResult,
 } from "@/lib/reserver";
 import {
+  mapGenerationSlots,
+  phraseGeneration,
+  refusPlage,
+  type JourSemaine,
+} from "@/lib/reserver-horaires";
+import {
   assurerIdentiteReserver,
   droitReserverOuvertPourFile,
   generateInvitationToken,
@@ -93,6 +99,7 @@ import {
 import { signClaimToken } from "@/lib/spin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { TablesUpdate } from "@/types/database.generated";
 import { droitEffectifModule } from "@/lib/subscription";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import { type ActionResult } from "@/lib/utils";
@@ -132,10 +139,18 @@ import {
   waitlistLeaveSchema,
   waitSessionOpenSchema,
   waitUsePauseSchema,
+  fermetureSchema,
+  genererCreneauxSchema,
+  plageHoraireSchema,
+  reglagesRendezVousSchema,
+  supprimerFermetureSchema,
+  supprimerPlageHoraireSchema,
 } from "@/lib/validations/reserver";
 
 const NOT_EDITOR = "Action non autorisée";
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
+/** Même phrase pour une activité inexistante et pour celle d'un autre commerce : aucun oracle. */
+const ACTIVITE_INTROUVABLE = "Activité introuvable";
 const TOO_MANY = "Trop de tentatives. Patientez un instant.";
 const INDISPONIBLE = "Cette réservation n'est pas disponible.";
 // « fait partie de l'offre Vitrine » était exact tant qu'une clé unique ouvrait
@@ -3747,4 +3762,341 @@ export async function updateStockOffer(
   // peut faire apparaître ou disparaître la porte, au même titre que le statut.
   await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: undefined };
+}
+
+// ════════════════════════════════════════════════════════════
+// LES HORAIRES RÉCURRENTS (RDV-1)
+//
+// Cinq écritures, toutes réservées à l'éditeur, toutes scopées par
+// `gardeEditeurReserver` — l'organisation vient de la SESSION, jamais du
+// formulaire, et l'activité est REVÉRIFIÉE comme appartenant à cette
+// organisation avant chaque écriture. Une action est un endpoint : l'écran qui
+// cache le formulaire ne protège rien.
+//
+// AUCUNE de ces actions n'écrit dans `reservation_slots`. La matérialisation
+// passe exclusivement par `generate_reservation_slots`, qui porte les garanties
+// prouvées en pgTAP — ne jamais toucher au passé, ne jamais emporter un créneau
+// réservé, ne jamais toucher un créneau posé à la main.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * L'activité appartient-elle bien à l'organisation de la session ?
+ *
+ * Toutes les écritures d'horaires prennent un `activity_id` venu du
+ * formulaire : sans cette relecture, un identifiant deviné viserait une ligne
+ * d'un autre locataire. La RLS le refuserait de toute façon — c'est une
+ * seconde barrière, pas la seule.
+ */
+async function activiteDeLOrganisation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  activityId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("reservation_activities")
+    .select("id")
+    .eq("id", activityId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  return Boolean(data);
+}
+
+/** Revalide la page de l'activité — le seul écran que ces gestes changent. */
+function revaliderActivite(activityId: string): void {
+  revalidatePath(`/dashboard/reservations/${activityId}`);
+}
+
+export async function ajouterPlageHoraire(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = plageHoraireSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+    weekday: formData.get("weekday"),
+    starts_at_minute: formData.get("starts_at_minute"),
+    ends_at_minute: formData.get("ends_at_minute"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  if (
+    !(await activiteDeLOrganisation(
+      supabase,
+      parsed.data.activity_id,
+      garde.organizationId,
+    ))
+  ) {
+    return { ok: false, error: ACTIVITE_INTROUVABLE };
+  }
+
+  // LE CHEVAUCHEMENT SE VÉRIFIE ICI, pas dans le schéma : il dépend des autres
+  // plages du même jour, que le schéma ne voit pas. La base ne l'interdit pas
+  // non plus — elle n'interdit que deux plages au même DÉBUT — parce qu'un
+  // chevauchement n'est pas une corruption : c'est une erreur de saisie, qui se
+  // dit en français.
+  const { data: existantes, error: lectureError } = await supabase
+    .from("reservation_openings")
+    .select("weekday, starts_at_minute, ends_at_minute")
+    .eq("activity_id", parsed.data.activity_id)
+    .eq("organization_id", garde.organizationId)
+    .eq("weekday", parsed.data.weekday);
+  if (lectureError) {
+    reportError("reserver.horaires.lecture", lectureError.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  const refus = refusPlage(
+    {
+      weekday: parsed.data.weekday as JourSemaine,
+      debut: parsed.data.starts_at_minute,
+      fin: parsed.data.ends_at_minute,
+    },
+    (existantes ?? []).map((p) => ({
+      weekday: p.weekday as JourSemaine,
+      debut: p.starts_at_minute,
+      fin: p.ends_at_minute,
+    })),
+  );
+  if (refus) return { ok: false, error: refus };
+
+  const { error } = await supabase.from("reservation_openings").insert({
+    activity_id: parsed.data.activity_id,
+    organization_id: garde.organizationId,
+    weekday: parsed.data.weekday,
+    starts_at_minute: parsed.data.starts_at_minute,
+    ends_at_minute: parsed.data.ends_at_minute,
+  });
+  if (error) {
+    reportError("reserver.horaires.ajout", error.message);
+    return { ok: false, error: "Impossible d'ajouter cette plage" };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  return { ok: true, data: undefined };
+}
+
+export async function supprimerPlageHoraire(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = supprimerPlageHoraireSchema.safeParse({
+    id: formData.get("id"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  // On relit l'activité AVANT de supprimer : c'est elle qu'il faut revalider,
+  // et c'est aussi ce qui garantit que la ligne visée est bien la nôtre.
+  const { data: ligne } = await supabase
+    .from("reservation_openings")
+    .select("activity_id")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+  if (!ligne) return { ok: false, error: "Plage introuvable" };
+
+  const { error } = await supabase
+    .from("reservation_openings")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    reportError("reserver.horaires.suppression", error.message);
+    return { ok: false, error: "Suppression impossible, réessayez." };
+  }
+
+  // SUPPRIMER UNE PLAGE NE RETIRE AUCUN CRÉNEAU par lui-même : c'est la
+  // génération qui rattrape la grille, et le commerçant la déclenche. Séparer
+  // les deux gestes lui laisse composer ses horaires en plusieurs fois sans que
+  // son agenda change sous ses pieds à chaque clic.
+  revaliderActivite(ligne.activity_id as string);
+  return { ok: true, data: undefined };
+}
+
+export async function ajouterFermeture(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = fermetureSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+    starts_on: formData.get("starts_on"),
+    ends_on: formData.get("ends_on"),
+    reason: formData.get("reason") ?? "",
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  if (
+    !(await activiteDeLOrganisation(
+      supabase,
+      parsed.data.activity_id,
+      garde.organizationId,
+    ))
+  ) {
+    return { ok: false, error: ACTIVITE_INTROUVABLE };
+  }
+
+  const { error } = await supabase.from("reservation_closures").insert({
+    activity_id: parsed.data.activity_id,
+    organization_id: garde.organizationId,
+    starts_on: parsed.data.starts_on,
+    ends_on: parsed.data.ends_on,
+    reason: parsed.data.reason || null,
+  });
+  if (error) {
+    reportError("reserver.fermeture.ajout", error.message);
+    return { ok: false, error: "Impossible d'ajouter cette fermeture" };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  return { ok: true, data: undefined };
+}
+
+export async function supprimerFermeture(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = supprimerFermetureSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: ligne } = await supabase
+    .from("reservation_closures")
+    .select("activity_id")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+  if (!ligne) return { ok: false, error: "Fermeture introuvable" };
+
+  const { error } = await supabase
+    .from("reservation_closures")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    reportError("reserver.fermeture.suppression", error.message);
+    return { ok: false, error: "Suppression impossible, réessayez." };
+  }
+
+  revaliderActivite(ligne.activity_id as string);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Les réglages de prise de rendez-vous : mode, durée, capacité, horizon, délai.
+ *
+ * `duration_minutes` est PARTAGÉE avec le format « signature » (RES-5), qui
+ * l'utilisait déjà. On ne l'écrit donc que si une valeur est saisie : la
+ * remettre à `null` en passant un instant par un formulaire qui ne la rend pas
+ * ferait perdre au commerçant la durée de son expérience signature, un réglage
+ * qu'il n'a pas ouvert.
+ */
+export async function enregistrerReglagesRendezVous(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = reglagesRendezVousSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+    booking_mode: formData.get("booking_mode"),
+    duration_minutes: formData.get("duration_minutes") ?? "",
+    slot_capacity: formData.get("slot_capacity") ?? "",
+    booking_horizon_days: formData.get("booking_horizon_days") ?? 30,
+    lead_time_minutes: formData.get("lead_time_minutes") ?? 0,
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  if (
+    !(await activiteDeLOrganisation(
+      supabase,
+      parsed.data.activity_id,
+      garde.organizationId,
+    ))
+  ) {
+    return { ok: false, error: ACTIVITE_INTROUVABLE };
+  }
+
+  // Typé sur la table plutôt qu'en `Record<string, unknown>` : une colonne mal
+  // orthographiée doit faire rougir la compilation, pas passer en silence et
+  // n'écrire nulle part.
+  const champs: TablesUpdate<"reservation_activities"> = {
+    booking_mode: parsed.data.booking_mode,
+    booking_horizon_days: parsed.data.booking_horizon_days,
+    lead_time_minutes: parsed.data.lead_time_minutes,
+    slot_capacity: parsed.data.slot_capacity,
+    updated_at: new Date().toISOString(),
+  };
+  if (parsed.data.duration_minutes !== null) {
+    champs.duration_minutes = parsed.data.duration_minutes;
+  }
+
+  const { error } = await supabase
+    .from("reservation_activities")
+    .update(champs)
+    .eq("id", parsed.data.activity_id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    reportError("reserver.reglages_rdv", error.message);
+    return { ok: false, error: "Enregistrement impossible, réessayez." };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * LA GÉNÉRATION — le seul chemin qui matérialise des créneaux.
+ *
+ * Elle passe par la RPC avec le client de SESSION, et non `service_role` :
+ * `generate_reservation_slots` est `security definer` et vérifie
+ * `is_org_member(auth.uid())`. L'appeler en `service_role` lui retirerait
+ * l'identité sur laquelle repose sa garde — c'est exactement la panne qu'a
+ * connue le Ticket d'Or (`emettre_ticket_or`, 2026-08-25), où la RPC rendait
+ * `not_authorized` derrière un message générique.
+ */
+export async function genererCreneaux(
+  _prev: ActionResult<{ message: string }> | null,
+  formData: FormData,
+): Promise<ActionResult<{ message: string }>> {
+  const parsed = genererCreneauxSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("generate_reservation_slots", {
+    p_activity_id: parsed.data.activity_id,
+  });
+  if (error) {
+    reportError("reserver.generation", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  const etat = mapGenerationSlots(data);
+  if (etat.state !== "ok") {
+    return { ok: false, error: phraseGeneration(etat) };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  // La page publique liste les créneaux ouverts : elle doit suivre.
+  await revaliderVitrinePublique(supabase, garde.organizationId);
+  return { ok: true, data: { message: phraseGeneration(etat) } };
 }
