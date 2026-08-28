@@ -22,6 +22,7 @@ import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
 } from "@/components/dashboard/code-ttl-days-field";
+import { GenerateurQuestions } from "@/components/dashboard/generateur-questions";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { hrefEtapeEvenement } from "@/components/dashboard/atelier-event-etapes";
 import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
@@ -383,6 +384,12 @@ export function EventQuestionsSection({
         direct) et <strong>pronostic</strong> (bonne réponse désignée en direct au
         moment de révéler).
       </p>
+
+      <GenerateurQuestions
+        cible="evenement"
+        cibleId={gameId}
+        promptsExistants={questions.map((q) => q.prompt)}
+      />
 
       <div className="mb-4">
         <InfoBulle

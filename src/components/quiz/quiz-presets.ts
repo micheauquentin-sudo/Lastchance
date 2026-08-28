@@ -1,5 +1,5 @@
 /**
- * Les 7 MODÈLES de question du Créateur de quiz (`preset`) et ce qu'ils changent
+ * Les 9 MODÈLES de question du Créateur de quiz (`preset`) et ce qu'ils changent
  * dans le formulaire du commerçant comme dans le rendu joueur.
  *
  * ARCHITECTURE — deux étages, à ne pas confondre :
@@ -42,6 +42,21 @@ export interface QuizPresetInfo {
   /** Secondes proposées à l'activation du chronomètre. */
   suggestedTimeLimit: number;
   promptPlaceholder: string;
+  /**
+   * Ce modèle N'A PAS de bonne réponse (sondage d'opinion, pronostic de
+   * soirée). Conséquences, toutes portées par ce seul drapeau :
+   *  · le commerçant ne saisit aucun résultat officiel — le formulaire retient
+   *    la première proposition, exigence de FORME de `correct_answer` (colonne
+   *    `not null`), jamais une vérité ;
+   *  · la question vaut 0 point : sans quoi le classement récompenserait
+   *    d'avoir cliqué, pas d'avoir su ;
+   *  · le joueur ne voit ni ✓ ni ✕ ni « la bonne réponse était » — seulement
+   *    l'accusé de réception de son avis.
+   *
+   * Rien de tout cela n'a demandé de migration : `preset` est contraint en
+   * FORME seulement côté SQL, et `points` accepte déjà 0.
+   */
+  sansVerite: boolean;
 }
 
 const PRESETS: readonly QuizPresetInfo[] = [
@@ -54,6 +69,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: false,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 30,
     promptPlaceholder: "Ex : Quel fromage entre dans notre tartiflette ?",
   },
@@ -66,6 +82,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: ["Vrai", "Faux"],
     requiresImage: false,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 15,
     promptPlaceholder: "Ex : Notre pain est pétri sur place chaque matin.",
   },
@@ -78,6 +95,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: true,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 30,
     promptPlaceholder: "Ex : Quel ingrédient est photographié ?",
   },
@@ -90,6 +108,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: false,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 45,
     promptPlaceholder: "Ex : Combien de cépages dans cet assemblage ?",
   },
@@ -102,6 +121,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: false,
     requiresTimer: true,
+    sansVerite: false,
     suggestedTimeLimit: 20,
     promptPlaceholder: "Ex : Citez notre plat signature — vite !",
   },
@@ -114,6 +134,7 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: false,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 60,
     promptPlaceholder: "Ex : Classez ces trois vins du plus sec au plus doux.",
   },
@@ -126,15 +147,42 @@ const PRESETS: readonly QuizPresetInfo[] = [
     fixedOptions: null,
     requiresImage: false,
     requiresTimer: false,
+    sansVerite: false,
     suggestedTimeLimit: 45,
     promptPlaceholder: "Ex : Comment s'appelle notre chef ?",
+  },
+  {
+    key: "sondage",
+    label: "Sondage",
+    icon: "📊",
+    hint: "Un avis, pas une colle : aucune bonne réponse, aucun point, aucune correction.",
+    types: ["choice"],
+    fixedOptions: null,
+    requiresImage: false,
+    requiresTimer: false,
+    sansVerite: true,
+    suggestedTimeLimit: 20,
+    promptPlaceholder: "Ex : Sucré ou salé au petit-déjeuner ?",
+  },
+  {
+    key: "pronostic",
+    label: "Pronostic",
+    icon: "🔮",
+    hint: "Un pari sur ce que personne ne sait encore. Pour un résultat arbitré plus tard, passez par le module Pronostics.",
+    types: ["choice"],
+    fixedOptions: null,
+    requiresImage: false,
+    requiresTimer: false,
+    sansVerite: true,
+    suggestedTimeLimit: 25,
+    promptPlaceholder: "Ex : Qui finira premier du classement ce soir ?",
   },
 ];
 
 /** Modèle de repli : le plus courant, et le seul type qui marche partout. */
 const FALLBACK = PRESETS[0];
 
-/** Les 7 modèles, dans l'ordre d'affichage du sélecteur. */
+/** Les 9 modèles, dans l'ordre d'affichage du sélecteur. */
 export const QUIZ_PRESET_INFOS: readonly QuizPresetInfo[] = PRESETS;
 
 /**
@@ -183,6 +231,12 @@ export interface QuizFormShape {
   timerLocked: boolean;
   /** La forme de réponse se choisit (modèle compatible avec plusieurs). */
   typeSelectable: boolean;
+  /**
+   * Le bloc « Bonne réponse » a-t-il un sens ? Faux pour un sondage et un
+   * pronostic : le formulaire retient alors la première proposition, qui ne
+   * satisfait que la contrainte `not null` de la colonne.
+   */
+  showVerite: boolean;
 }
 
 export function quizFormShape(
@@ -200,6 +254,7 @@ export function quizFormShape(
     imageFeatured: info.requiresImage,
     timerLocked: info.requiresTimer,
     typeSelectable: info.types.length > 1,
+    showVerite: !info.sansVerite,
   };
 }
 
@@ -236,4 +291,12 @@ export function quizQuestionTypeLabel(questionType: QuizQuestionType): string {
     case "text":
       return "Réponse libre";
   }
+}
+
+/**
+ * Ce modèle se joue-t-il SANS bonne réponse ? Une seule question à poser, à
+ * l'éditeur comme au parcours joueur, plutôt que deux clés à tenir en phase.
+ */
+export function quizPresetSansVerite(preset: string): boolean {
+  return quizPresetInfo(preset).sansVerite;
 }

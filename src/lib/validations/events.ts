@@ -371,3 +371,51 @@ export const eventRedeemCodeSchema = z
   .trim()
   .toUpperCase()
   .regex(/^EVENT-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+
+// ────────────────────────────────────────────────────────────
+// Générateur de questions (banque thématique partagée avec le quiz)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * GÉNÉRATION EN LOT depuis la banque thématique, côté Mode événement live.
+ *
+ * Jumeau de `genererQuestionsQuizSchema` : il ne valide QUE la commande. Les
+ * questions produites repassent une à une par `createEventQuestionSchema` côté
+ * action — y compris son `superRefine`, qui exige exactement une bonne réponse
+ * pour un `quiz` et aucune pour un `poll` / `prono`.
+ *
+ * `graine` voyage depuis l'écran : c'est ce qui fait que la liste ÉCRITE est
+ * celle qui a été prévisualisée. Aucune portée de sécurité.
+ */
+export const genererQuestionsEvenementSchema = z.object({
+  game_id: uuid,
+  themes: z
+    .array(z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/, "Thème invalide"))
+    .max(40, "Trop de thèmes")
+    .default([]),
+  genres: z
+    .array(z.enum(["question", "sondage", "pronostic"]))
+    .min(1, "Choisissez au moins une nature de question")
+    .max(3)
+    .default(["question"]),
+  mode: z.enum(["nombre", "duree"]).default("nombre"),
+  nombre: z.coerce
+    .number()
+    .int("Nombre entier requis")
+    .min(1, "Au moins une question")
+    .max(60, "60 questions maximum en une fois")
+    .default(10),
+  minutes: z.coerce
+    .number()
+    .int("Nombre entier de minutes requis")
+    .min(1, "Au moins une minute")
+    .max(240, "4 heures maximum")
+    .default(30),
+  graine: z.coerce.number().int().min(0).max(2_147_483_647).default(1),
+  difficulte_max: z.coerce
+    .number()
+    .int()
+    .min(1, "Difficulté invalide")
+    .max(3, "Difficulté invalide")
+    .default(3),
+});

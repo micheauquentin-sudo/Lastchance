@@ -1,5 +1,44 @@
 # Roadmap — Lastchance
 
+## V1.68 — Générateur de questions, et le partage remis à sa place (2026-08-28, non poussé)
+
+**Objectif** : rendre le Créateur de quiz et le Mode événement live utilisables
+sans saisir cent questions à la main, et permettre de jouer entre amis un soir
+sans QR code.
+
+- **Banque thématique** (aucune migration) — 240 questions sur 12 thèmes
+  (culture générale, cinéma, musique, sport, cuisine, histoire, géographie,
+  sciences, animaux, France, années 80-90, fêtes), réponses comprises. Le
+  commerçant coche des thèmes — ou aucun, et c'est le mélange —, choisit un
+  nombre de questions **ou une durée** (10 à 60 min, le nombre en est déduit),
+  une difficulté, et voit l'aperçu **exact** de ce qui sera écrit.
+- **Trois natures** — question notée, **sondage** (aucune bonne réponse, 0 pt)
+  et **pronostic**. Deux `preset` de plus, aucune migration : le CHECK SQL ne
+  contraint que la forme de la clé, et `points` acceptait déjà 0. Les avis
+  restent minoritaires (un cinquième au plus), n'ouvrent jamais le quiz et ne
+  s'enchaînent jamais.
+- **Un générateur, deux modules** — le même écran remplit un quiz et une soirée
+  live. Le live n'accepte que les questions à options (on y répond en tapant sur
+  un bouton) : le vivier y est filtré, et l'écran le dit. Un pronostic y
+  rapporte, l'animateur désignant l'option gagnante au reveal.
+- **Le partage remis à sa place** — « Défier un ami » était rendu **sous la
+  question en cours**, où il concurrençait « Valider ma réponse ». Il ne
+  s'affiche plus qu'avant la partie (invitation) et après (défi), et le nouveau
+  bloc **affiche l'adresse** — `navigator.share` n'existe pas sur un ordinateur
+  de bureau. Même bloc côté événement live : écran de saisie et salon d'attente.
+
+**Décisions** : [ADR-120](./decisions.md) — pourquoi aucune migration, pourquoi
+l'aperçu est le tirage, et pourquoi un pronostic ne vaut pas le même barème
+dans les deux modules.
+
+**Reste ouvert** : le quiz n'affiche pas encore la **répartition** des avis
+(« 62 % ont répondu Vrai ») — elle demande une agrégation en base, lot à part.
+Le live, lui, l'a nativement.
+
+**Preuves** : 6 220 tests unitaires, typecheck, lint et build Next.js verts. 62
+tests neufs, dont la banque entière repassée par les schémas réels de création
+de question du quiz et de l'événement.
+
 ## V1.67 — Sept lots Vitrine et le Ticket d'Or, enchaînés (✅ 2026-08-23, PR #180 → #188)
 
 **Objectif** : dérouler d'un trait les huit lots définis dans le handoff Codex —

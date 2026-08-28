@@ -41,6 +41,11 @@ import {
   type QuizSolutionInput,
   type QuizStartResult,
 } from "@/lib/quiz";
+import {
+  BANQUE_QUESTIONS,
+  genererQuestions,
+  questionAEcrire,
+} from "@/lib/quiz-banque";
 import { hasQuizAccess, loadQuizActionContext, quizTokenCookieName } from "@/lib/quiz-context";
 import {
   bridgeOfferedSpinToCampaign,
@@ -68,6 +73,7 @@ import {
   drawQuizWinnersSchema,
   QUIZ_DELETE_LOSS_HINT,
   finishQuizSchema,
+  genererQuestionsQuizSchema,
   getQuizLeaderboardSchema,
   getQuizStateSchema,
   joinQuizSchema,
@@ -1445,6 +1451,173 @@ export async function createQuizQuestion(input: {
 
   revalidatePath(`/dashboard/quiz/${parsed.data.quiz_id}`);
   return { ok: true, data: { id: question.id } };
+}
+
+/**
+ * Plafond de questions par quiz pour la GÉNÉRATION. Rien ne l'impose en base
+ * (`reorderQuizQuestions` accepte 500) : c'est une garde de bon sens, pour qu'un
+ * « une heure de jeu » lancé deux fois de suite ne fabrique pas un quiz que
+ * personne ne finira jamais — et que la page de l'éditeur reste tenable.
+ */
+const QUIZ_QUESTIONS_MAX_GENEREES = 200;
+
+/** Plafond d'UNE génération — miroir exact de `genererQuestionsQuizSchema`. */
+const QUIZ_QUESTIONS_MAX_PAR_GENERATION = 120;
+
+/**
+ * GÉNÉRATION EN LOT depuis la banque thématique.
+ *
+ * Le tirage est REJOUÉ ICI, à partir de la graine reçue : le client n'envoie
+ * jamais de questions, seulement les critères. C'est ce qui garantit à la fois
+ * que l'écrit correspond à l'aperçu (même graine, même liste) et qu'aucune
+ * question arbitraire ne peut être injectée par un appel direct.
+ *
+ * Chaque question repasse par `createQuizQuestionSchema` — la banque n'a aucun
+ * privilège — puis par `is_valid_quiz_question` en base à l'insertion.
+ *
+ * L'insertion est un SEUL `insert` de N lignes : cent allers-retours pour un
+ * geste unique rendraient un quiz à moitié rempli au premier réseau qui hoquette.
+ */
+export async function genererQuestionsQuiz(input: {
+  quizId: string;
+  themes?: string[];
+  genres?: Array<"question" | "sondage" | "pronostic">;
+  mode?: "nombre" | "duree";
+  nombre?: string | number;
+  minutes?: string | number;
+  graine?: string | number;
+  difficulteMax?: string | number;
+}): Promise<ActionResult<{ ajoutees: number; manquantes: number }>> {
+  const parsed = genererQuestionsQuizSchema.safeParse({
+    quiz_id: input.quizId,
+    themes: input.themes ?? [],
+    genres: input.genres ?? ["question"],
+    mode: input.mode ?? "nombre",
+    nombre: input.nombre ?? 10,
+    minutes: input.minutes ?? 30,
+    graine: input.graine ?? 1,
+    difficulte_max: input.difficulteMax ?? 3,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  const supabase = await createClient();
+  const { data: quiz } = await supabase
+    .from("quizzes")
+    .select("id")
+    .eq("id", parsed.data.quiz_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!quiz) return { ok: false, error: "Quiz introuvable" };
+
+  // Les questions déjà posées servent DEUX fois : la position de départ, et
+  // l'exclusion — la banque ne doit pas reproposer ce que le quiz porte déjà.
+  const { data: existantes, error: lectureError } = await supabase
+    .from("quiz_questions")
+    .select("position, prompt")
+    .eq("quiz_id", parsed.data.quiz_id)
+    .eq("organization_id", organization.id);
+  if (lectureError) {
+    console.error("[quiz] générateur, lecture:", lectureError.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  const deja = existantes ?? [];
+  if (deja.length >= QUIZ_QUESTIONS_MAX_GENEREES) {
+    return {
+      ok: false,
+      error: `Ce quiz compte déjà ${deja.length} questions : supprimez-en avant d'en générer d'autres.`,
+    };
+  }
+
+  // L'exclusion se fait sur l'INTITULÉ et non sur l'identifiant de banque : la
+  // base ne stocke pas d'où vient une question, et c'est très bien — le jour où
+  // le commerçant réécrit un intitulé, la question redevient tirable, ce qui est
+  // le comportement attendu (ce n'est plus la même question).
+  const intitulesPris = new Set(deja.map((q) => (q.prompt ?? "").trim().toLowerCase()));
+  const dejaTirees = BANQUE_QUESTIONS.filter((q) =>
+    intitulesPris.has(q.prompt.trim().toLowerCase()),
+  ).map((q) => q.id);
+
+  const restePlace = QUIZ_QUESTIONS_MAX_GENEREES - deja.length;
+  const tirage = genererQuestions({
+    themes: parsed.data.themes,
+    genres: parsed.data.genres,
+    mode:
+      parsed.data.mode === "duree"
+        ? { type: "duree", minutes: parsed.data.minutes }
+        : { type: "nombre", nombre: parsed.data.nombre },
+    graine: parsed.data.graine,
+    difficulteMax: parsed.data.difficulte_max as 1 | 2 | 3,
+    exclure: dejaTirees,
+    plafond: QUIZ_QUESTIONS_MAX_PAR_GENERATION,
+  });
+  const retenues = tirage.questions.slice(0, restePlace);
+  if (retenues.length === 0) {
+    return {
+      ok: false,
+      error:
+        "Aucune question disponible avec ces critères : ajoutez des thèmes, ou raccourcissez la partie.",
+    };
+  }
+
+  const depart =
+    deja.length === 0 ? 0 : Math.max(...deja.map((q) => (q.position as number) ?? 0)) + 1;
+
+  const lignes: TablesInsert<"quiz_questions">[] = [];
+  for (const [index, banque] of retenues.entries()) {
+    const charge = questionAEcrire(banque);
+    // REVALIDATION intégrale, exactement comme une saisie du commerçant : une
+    // banque mal relue doit échouer ici, pas devant le joueur.
+    const valide = createQuizQuestionSchema.safeParse({
+      quiz_id: parsed.data.quiz_id,
+      question_type: charge.questionType,
+      preset: charge.preset,
+      prompt: charge.prompt,
+      options: charge.options,
+      correct_answer: charge.correctAnswer,
+      image_url: "",
+      time_limit_seconds: charge.timeLimitSeconds,
+      points: charge.points,
+      tolerance: charge.tolerance ?? "",
+      ranking_size: "",
+    });
+    if (!valide.success) {
+      console.error(
+        `[quiz] générateur, question ${banque.id} refusée:`,
+        valide.error.issues[0].message,
+      );
+      return { ok: false, error: GENERIC_ERROR };
+    }
+    lignes.push({
+      quiz_id: parsed.data.quiz_id,
+      organization_id: organization.id,
+      position: depart + index,
+      ...questionFieldsForType({
+        ...valide.data,
+        correct_answer: valide.data.correct_answer as QuizSolutionInput,
+      }),
+    });
+  }
+
+  const { error } = await supabase.from("quiz_questions").insert(lignes);
+  if (error) {
+    console.error("[quiz] générateur, insertion:", error.message);
+    return { ok: false, error: "Impossible d'ajouter ces questions" };
+  }
+
+  revalidatePath(`/dashboard/quiz/${parsed.data.quiz_id}`);
+  return {
+    ok: true,
+    data: {
+      ajoutees: retenues.length,
+      manquantes: tirage.manquantes + (tirage.questions.length - retenues.length),
+    },
+  };
 }
 
 export async function updateQuizQuestion(input: {
