@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attendResultat,
+  dansLaSemaine,
   DEFAULT_SCORING,
   effectiveLocksAt,
   generatePlayerToken,
@@ -583,5 +584,47 @@ describe("grouperParJournee", () => {
 
   it("une grille vide rend zéro groupe, pas un groupe vide", () => {
     expect(grouperParJournee([])).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// dansLaSemaine — le partage qui évite d'afficher 201 matchs
+//
+// Relevé sur une capture : un commerçant importe sa saison, la grille annonce
+// « 201 matchs ouverts » et les liste à la file. Le geste réel du joueur — le
+// week-end qui vient — était noyé sous huit mois de calendrier.
+// ────────────────────────────────────────────────────────────
+
+describe("dansLaSemaine", () => {
+  const MAINTENANT = new Date("2026-08-28T12:00:00.000Z");
+  const dans = (heures: number) =>
+    new Date(MAINTENANT.getTime() + heures * 3_600_000).toISOString();
+
+  it("retient le week-end qui vient", () => {
+    expect(dansLaSemaine(dans(8), MAINTENANT)).toBe(true); // ce soir
+    expect(dansLaSemaine(dans(48), MAINTENANT)).toBe(true); // dimanche
+  });
+
+  it("écarte la journée d'après", () => {
+    expect(dansLaSemaine(dans(24 * 8), MAINTENANT)).toBe(false);
+    expect(dansLaSemaine(dans(24 * 60), MAINTENANT)).toBe(false);
+  });
+
+  /**
+   * La borne est la MÊME que celle du rappel hebdomadaire : on ne relance
+   * jamais un joueur sur des matchs que son écran ne met pas en avant.
+   */
+  it("la frontière est exactement sept jours", () => {
+    expect(dansLaSemaine(dans(24 * 7 - 1), MAINTENANT)).toBe(true);
+    expect(dansLaSemaine(dans(24 * 7 + 1), MAINTENANT)).toBe(false);
+  });
+
+  /**
+   * Un match déjà commencé reste « de la semaine ». Il n'a pas à basculer dans
+   * le bloc « reste de la saison » : la grille ne reçoit de toute façon que des
+   * matchs OUVERTS, et le filtre d'ouverture est ailleurs (`isPredictionOpen`).
+   */
+  it("un coup d'envoi passé n'est pas renvoyé vers la saison", () => {
+    expect(dansLaSemaine(dans(-2), MAINTENANT)).toBe(true);
   });
 });

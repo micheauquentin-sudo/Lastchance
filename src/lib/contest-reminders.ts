@@ -3,6 +3,7 @@ import "server-only";
 import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { sendContestReminderEmail } from "@/lib/resend";
+import { FENETRE_SEMAINE_MS } from "@/lib/pronostics-bornes";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -37,8 +38,12 @@ type Admin = ReturnType<typeof createAdminClient>;
  * semaine — la semaine est l'unité qui correspond au rythme du rappel.
  */
 
-/** Fenêtre du rappel : les matchs dont le coup d'envoi tombe d'ici là. */
-export const FENETRE_RAPPEL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Fenêtre du rappel — LA MÊME que celle des « matchs de la semaine » de
+ * l'écran joueur, importée et non recopiée. Deux valeurs qui divergent
+ * relanceraient le joueur sur des matchs que son écran ne met pas en avant.
+ */
+export const FENETRE_RAPPEL_MS = FENETRE_SEMAINE_MS;
 
 /**
  * Clé anti-doublon : un joueur ne reçoit qu'UN rappel par championnat et par
