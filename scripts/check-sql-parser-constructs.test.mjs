@@ -151,3 +151,81 @@ test("stripSqlComments préserve le nombre de lignes", () => {
     3
   );
 });
+
+// ════════════════════════════════════════════════════════════
+// La FORME GRAMMATICALE qualifiée (ajoutée le 2026-08-29)
+//
+// `pg_catalog.extract(dow from x)` a traversé cette garde et s'est fait
+// refuser par Postgres à l'application de la migration. `extract` A une entrée
+// pg_proc — la signaler par son nom aurait interdit `pg_catalog.extract('dow',
+// x)`, qui est légal. C'est le MOT-CLÉ INTERNE qui est fautif, pas le nom.
+// ════════════════════════════════════════════════════════════
+
+test("signale la forme à mot-clé interne, qui casse l'ANALYSE", () => {
+  const findings = findQualifiedConstructs(
+    [
+      "select pg_catalog.extract(dow from j.jour);",
+      "select pg_catalog.substring(t from 2 for 3);",
+      "select pg_catalog.position(a in b);",
+      "select pg_catalog.overlay(t placing 'x' from 2);",
+    ].join("\n")
+  );
+
+  assert.deepEqual(
+    findings.map((finding) => finding.construct),
+    ["extract … from", "substring … from", "position … in", "overlay … placing"]
+  );
+});
+
+test("laisse passer la forme FONCTION des mêmes noms, qui est légale", () => {
+  // Ces quatre-là existent bien dans pg_proc : sous `search_path = ''`, elles
+  // DOIVENT rester qualifiées. Les signaler aurait cassé du SQL correct.
+  const findings = findQualifiedConstructs(
+    [
+      "select pg_catalog.extract('dow', j.jour);",
+      "select pg_catalog.substring(t, 2, 3);",
+      "select pg_catalog.position('a', b);",
+      "select pg_catalog.overlay(t, 'x', 2);",
+      "select pg_catalog.date_part('dow', j.jour);",
+    ].join("\n")
+  );
+
+  assert.deepEqual(findings, []);
+});
+
+test("ne confond pas le `from` d'une sous-requête avec celui de la grammaire", () => {
+  // Le mot-clé n'est fautif qu'au PREMIER niveau de parenthèses : un `from`
+  // appartenant à un argument imbriqué ne concerne pas cet appel.
+  const findings = findQualifiedConstructs(
+    "select pg_catalog.substring(t, (select n from tailles limit 1));"
+  );
+
+  assert.deepEqual(findings, []);
+});
+
+test("signale `trim` quelle que soit sa forme — la fonction s'appelle btrim", () => {
+  const findings = findQualifiedConstructs(
+    [
+      "select pg_catalog.trim(both ' ' from t);",
+      "select pg_catalog.trim(t);",
+    ].join("\n")
+  );
+
+  // Les deux sont signalées. Le mot-clé NOMMÉ dans le message dépend de
+  // l'ordre de la table — `both ' ' from t` en porte deux — et n'a pas à être
+  // figé par un test : ce qui compte est que l'appel soit vu.
+  assert.equal(findings.length, 2);
+  assert.ok(findings.every((finding) => finding.construct.startsWith("trim")));
+});
+
+test("voit la forme grammaticale même écrite sur plusieurs lignes", () => {
+  // Le motif d'origine cherchait ligne à ligne : un appel réparti sur trois
+  // lignes — le cas réel qui a échoué — lui aurait échappé.
+  const findings = findQualifiedConstructs(
+    ["select pg_catalog.extract(", "  dow", "  from j.jour", ");"].join("\n")
+  );
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].construct, "extract … from");
+  assert.equal(findings[0].line, 1);
+});

@@ -28,6 +28,35 @@ const defaultDirectory = path.join(root, "supabase", "migrations");
 // `overlay` et `btrim` en ont une (la grammaire les mappe dessus) : elles sont
 // légitimement qualifiables et ne doivent pas être signalées.
 const CONSTRUCTS = ["coalesce", "greatest", "least", "nullif"];
+
+/**
+ * LA SECONDE FAMILLE, trouvée le 2026-08-29 — et que la liste ci-dessus ne
+ * pouvait pas attraper.
+ *
+ * `extract`, `substring`, `position` et `overlay` ONT une entrée pg_proc : les
+ * qualifier est légitime, et l'en-tête de ce fichier le dit déjà. Mais chacune
+ * a DEUX écritures — la forme fonction, à virgules, et la FORME GRAMMATICALE, à
+ * mot-clé interne :
+ *
+ *     pg_catalog.date_part('dow', j.jour)      ✅  fonction, qualifiable
+ *     pg_catalog.extract(dow from j.jour)      ❌  syntax error at or near "from"
+ *
+ * La seconde n'est pas un appel de fonction : c'est une règle de grammaire, et
+ * un nom qualifié devant elle fait échouer l'ANALYSE. L'erreur arrive donc plus
+ * tôt que celle des quatre constructions ci-dessus — à l'application de la
+ * migration, pas au premier appel — mais elle coûte le même aller-retour de CI.
+ *
+ * On ne signale donc pas le NOM, on signale le nom SUIVI de son mot-clé interne.
+ * `trim` est là aussi : `pg_catalog.trim(…)` échoue quelle que soit la forme,
+ * la fonction s'appelant `btrim`.
+ */
+const KEYWORD_FORMS = new Map([
+  ["extract", ["from"]],
+  ["substring", ["from", "for"]],
+  ["position", ["in"]],
+  ["overlay", ["placing", "from", "for"]],
+  ["trim", ["from", "both", "leading", "trailing"]],
+]);
 const pattern = new RegExp(
   String.raw`\bpg_catalog\s*\.\s*(${CONSTRUCTS.join("|")})\b`,
   "gi"
@@ -114,7 +143,8 @@ export function stripSqlComments(source) {
 }
 
 export function findQualifiedConstructs(source) {
-  const lines = stripSqlComments(source).split(/\r?\n/);
+  const sansCommentaires = stripSqlComments(source);
+  const lines = sansCommentaires.split(/\r?\n/);
   const findings = [];
 
   lines.forEach((line, offset) => {
@@ -127,7 +157,74 @@ export function findQualifiedConstructs(source) {
     }
   });
 
+  // La seconde famille se cherche sur le SOURCE ENTIER et non ligne à ligne :
+  // `pg_catalog.extract(\n  dow from x\n)` est parfaitement courant, et une
+  // recherche par ligne ne verrait jamais le mot-clé.
+  for (const finding of findQualifiedKeywordForms(sansCommentaires)) {
+    findings.push(finding);
+  }
+
   return findings;
+}
+
+/**
+ * La FORME GRAMMATICALE qualifiée : `pg_catalog.extract(dow from …)`.
+ *
+ * On ne peut pas se contenter d'un motif plat — le mot-clé peut être à
+ * n'importe quelle profondeur d'un argument, et un `from` appartenant à une
+ * sous-requête imbriquée ne concerne pas cet appel. On lit donc jusqu'à la
+ * parenthèse fermante correspondante, et on ne retient le mot-clé que s'il est
+ * au PREMIER niveau : `pg_catalog.substring(x, (select 1 from t))` est un
+ * appel de fonction parfaitement légal.
+ */
+export function findQualifiedKeywordForms(source) {
+  const noms = [...KEYWORD_FORMS.keys()].join("|");
+  const ouverture = new RegExp(
+    String.raw`\bpg_catalog\s*\.\s*(${noms})\s*\(`,
+    "gi",
+  );
+  const trouves = [];
+
+  for (const match of source.matchAll(ouverture)) {
+    const nom = match[1].toLowerCase();
+    const debut = match.index + match[0].length;
+    let profondeur = 1;
+    let index = debut;
+    while (index < source.length && profondeur > 0) {
+      const c = source[index];
+      if (c === "(") profondeur += 1;
+      else if (c === ")") profondeur -= 1;
+      index += 1;
+    }
+    // Les arguments, sous-parenthèses APLATIES : ce qui reste est le niveau 1.
+    const bruts = source.slice(debut, Math.max(debut, index - 1));
+    let niveau = 0;
+    let surface = "";
+    for (const c of bruts) {
+      if (c === "(") niveau += 1;
+      else if (c === ")") niveau -= 1;
+      else if (niveau === 0) surface += c;
+      if (niveau > 0 && (c === "(" || c === ")")) surface += " ";
+    }
+
+    const motsCles = KEYWORD_FORMS.get(nom) ?? [];
+    const fautif = motsCles.find((mot) =>
+      new RegExp(String.raw`\b${mot}\b`, "i").test(surface),
+    );
+    // `trim` n'a AUCUNE forme fonction : elle est fautive même sans mot-clé.
+    if (!fautif && nom !== "trim") continue;
+
+    trouves.push({
+      line: source.slice(0, match.index).split("\n").length,
+      construct: fautif ? `${nom} … ${fautif}` : nom,
+      text: source
+        .slice(match.index, Math.min(source.length, index))
+        .replace(/\s+/g, " ")
+        .slice(0, 120),
+    });
+  }
+
+  return trouves;
 }
 
 export async function findParserConstructViolations({
