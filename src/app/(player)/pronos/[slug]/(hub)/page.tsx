@@ -20,6 +20,7 @@ import {
   isQuestionLocked,
   parseQuestionOptions,
   parseRewards,
+  partagerGrille,
   progressionPronostics,
 } from "@/lib/pronostics";
 import {
@@ -158,11 +159,18 @@ export default async function PronosPage({
   const toPredict = player
     ? upcoming.filter((m) => isOpen(m) && !predictions[m.id]).length
     : 0;
-  // Progression de la grille. La RÈGLE (et le défaut qu'elle ferme) vit dans
-  // `progressionPronostics` — une fonction pure, donc éprouvée : elle valait
-  // `matches.length`, ce qui rendait la barre impossible à remplir pour un
-  // joueur arrivé en cours de saison.
-  const progression = progressionPronostics(
+  // ── LA PROGRESSION SUIT LA JOURNÉE, PAS L'INVENTAIRE ──
+  //
+  // La barre a d'abord suivi `matches.length` (irremplissable), puis la
+  // grille entière — ce qui donnait « 0/201 · 0 % » dès qu'un commerçant
+  // importait sa saison. Exact, et sans rapport avec ce que le joueur vient
+  // faire : remplir son week-end le faisait passer à 4 %.
+  //
+  // Elle suit désormais la PROCHAINE JOURNÉE — la même que le bloc de tête
+  // de la grille, calculée par la même fonction, donc jamais en désaccord
+  // avec ce qui est affiché juste en dessous. La saison reste lisible en
+  // seconde ligne : une information, plus un objectif.
+  const saison = progressionPronostics(
     matches.map((m) => ({
       ouvert: isOpen(m),
       pronostique: Boolean(predictions[m.id]),
@@ -179,6 +187,14 @@ export default async function PronosPage({
   const aPronostiquer = upcoming.filter(isOpen);
   const grille = aPronostiquer.filter(estScore);
   const questionsOuvertes = aPronostiquer.filter((m) => !estScore(m));
+  // La journée du bloc de tête : MÊME fonction que la grille, donc la barre
+  // et la liste ne peuvent pas raconter deux choses différentes.
+  const journeeEnCours = partagerGrille(grille).prochaine;
+  const progressionJournee = {
+    done: (journeeEnCours?.matchs ?? []).filter((m) => predictions[m.id])
+      .length,
+    total: journeeEnCours?.matchs.length ?? 0,
+  };
   const enAttente = upcoming.filter((m) => !isOpen(m));
 
   // Ligues privées du joueur : classements re-numérotés 1..n chargés en
@@ -344,8 +360,14 @@ export default async function PronosPage({
             matchesSlot={
               <section className="space-y-6">
                 <PredictionProgress
-                  done={progression.done}
-                  total={progression.total}
+                  done={progressionJournee.total > 0
+                    ? progressionJournee.done
+                    : saison.done}
+                  total={progressionJournee.total > 0
+                    ? progressionJournee.total
+                    : saison.total}
+                  libelle={journeeEnCours?.libelle}
+                  saison={saison}
                 />
 
                 {/* ── 1. CE QUE LE JOUEUR PEUT FAIRE MAINTENANT ──
