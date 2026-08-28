@@ -46,6 +46,10 @@ import { QuizSpinExperience } from "./quiz-spin-experience";
 import { quizPresetInfo } from "./quiz-presets";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
+import {
+  vuePartageQuiz,
+  type VuePartageQuiz,
+} from "./quiz-partage-etat";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
 import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
@@ -253,6 +257,13 @@ export function QuizExperience({
 
   const finished = player?.finishedAt !== null && player?.finishedAt !== undefined;
   const reward: QuizRewardView | null = finishData?.reward ?? snapshot.reward;
+
+  /** Où et comment le partage s'affiche — décision PURE et testée. */
+  const vuePartage = vuePartageQuiz({
+    shareEnabled,
+    aRejoint: player !== null && player !== undefined,
+    termine: finished,
+  });
 
   // ── Resynchronisation de l'état public (le serveur fait foi) ──
   const refresh = useCallback(async (): Promise<QuizPublicState | null> => {
@@ -666,16 +677,19 @@ export function QuizExperience({
         />
       )}
 
-      {/* ── Le partage du LIEN : aux deux moments où il a un sens ──
+      {/* ── Le partage du LIEN, TOUJOURS accessible, jamais concurrent ──
           Avant de commencer, c'est « viens jouer avec moi ce soir » — le seul
           chemin qui ne passe pas par le QR du comptoir. Après la partie, c'est
-          le défi. PENDANT une question, il ne faisait que concurrencer le
-          bouton « Valider ma réponse » : il n'y est plus. */}
-      {shareEnabled && (!player || finished) && (
+          le défi. Dans ces deux cas, le partage est le sujet : bloc plein.
+          PENDANT une question, il descend en PIED DE PAGE — un filet, une
+          marge, un bouton secondaire : présent pour qui le cherche, sans
+          disputer l'attention à « Valider ma réponse » comme le faisait la
+          version collée sous la carte de question. */}
+      {vuePartage && (
         <SharePanel
           publicSlug={publicSlug}
           quizName={quiz.name}
-          termine={Boolean(player && finished)}
+          vue={vuePartage}
         />
       )}
     </div>
@@ -1700,25 +1714,27 @@ function LeaderboardPanel({
  * vit dans le résultat). Le libellé suit le moment : avant la partie c'est une
  * invitation, après c'est un défi.
  */
+/**
+ * Partage du LIEN du quiz (à ne pas confondre avec « Partager mon score », qui
+ * vit dans le résultat). Le composant ne DÉCIDE de rien : `vuePartageQuiz`
+ * porte la variante et les libellés, et c'est elle qui est testée.
+ */
 function SharePanel({
   publicSlug,
   quizName,
-  termine,
+  vue,
 }: {
   publicSlug: string;
   quizName: string;
-  termine: boolean;
+  vue: VuePartageQuiz;
 }) {
   return (
     <PartageLienJeu
       chemin={`/quiz/${publicSlug}`}
       titre={quizName}
-      intro={
-        termine
-          ? "Défiez un ami : envoyez-lui le lien, il jouera au même quiz."
-          : "Jouez à plusieurs : envoyez ce lien à vos amis, ils rejoignent depuis leur téléphone."
-      }
-      libelle={termine ? "Défier un ami" : "Inviter des amis"}
+      variante={vue.variante}
+      intro={vue.intro}
+      libelle={vue.libelle}
     />
   );
 }
