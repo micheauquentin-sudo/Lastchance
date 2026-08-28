@@ -6200,15 +6200,19 @@ export type Database = {
       reservation_activities: {
         Row: {
           active: boolean
+          booking_horizon_days: number
+          booking_mode: string
           created_at: string
           description: string | null
           duration_minutes: number | null
           id: string
           kind: string
+          lead_time_minutes: number
           name: string
           organization_id: string
           preparation: string | null
           promise: string | null
+          slot_capacity: number | null
           steps: Json | null
           updated_at: string
           wait_pause_campaign_id: string | null
@@ -6216,15 +6220,19 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          booking_horizon_days?: number
+          booking_mode?: string
           created_at?: string
           description?: string | null
           duration_minutes?: number | null
           id?: string
           kind?: string
+          lead_time_minutes?: number
           name: string
           organization_id: string
           preparation?: string | null
           promise?: string | null
+          slot_capacity?: number | null
           steps?: Json | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
@@ -6232,15 +6240,19 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          booking_horizon_days?: number
+          booking_mode?: string
           created_at?: string
           description?: string | null
           duration_minutes?: number | null
           id?: string
           kind?: string
+          lead_time_minutes?: number
           name?: string
           organization_id?: string
           preparation?: string | null
           promise?: string | null
+          slot_capacity?: number | null
           steps?: Json | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
@@ -6267,6 +6279,51 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "quizzes"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      reservation_closures: {
+        Row: {
+          activity_id: string
+          created_at: string
+          ends_on: string
+          id: string
+          organization_id: string
+          reason: string | null
+          starts_on: string
+        }
+        Insert: {
+          activity_id: string
+          created_at?: string
+          ends_on: string
+          id?: string
+          organization_id: string
+          reason?: string | null
+          starts_on: string
+        }
+        Update: {
+          activity_id?: string
+          created_at?: string
+          ends_on?: string
+          id?: string
+          organization_id?: string
+          reason?: string | null
+          starts_on?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_closures_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_closures_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -6337,6 +6394,54 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "reservation_slots"
             referencedColumns: ["id", "organization_id"]
+          },
+        ]
+      }
+      reservation_openings: {
+        Row: {
+          activity_id: string
+          created_at: string
+          ends_at_minute: number
+          id: string
+          organization_id: string
+          starts_at_minute: number
+          updated_at: string
+          weekday: number
+        }
+        Insert: {
+          activity_id: string
+          created_at?: string
+          ends_at_minute: number
+          id?: string
+          organization_id: string
+          starts_at_minute: number
+          updated_at?: string
+          weekday: number
+        }
+        Update: {
+          activity_id?: string
+          created_at?: string
+          ends_at_minute?: number
+          id?: string
+          organization_id?: string
+          starts_at_minute?: number
+          updated_at?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_openings_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_openings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -6468,6 +6573,7 @@ export type Database = {
           capacity: number
           created_at: string
           ends_at: string
+          generated: boolean
           id: string
           organization_id: string
           starts_at: string
@@ -6480,6 +6586,7 @@ export type Database = {
           capacity: number
           created_at?: string
           ends_at: string
+          generated?: boolean
           id?: string
           organization_id: string
           starts_at: string
@@ -6492,6 +6599,7 @@ export type Database = {
           capacity?: number
           created_at?: string
           ends_at?: string
+          generated?: boolean
           id?: string
           organization_id?: string
           starts_at?: string
@@ -8820,6 +8928,10 @@ export type Database = {
         Returns: boolean
       }
       format_player_alias: { Args: { p_alias: string }; Returns: string }
+      generate_reservation_slots: {
+        Args: { p_activity_id: string }
+        Returns: Json
+      }
       grant_first_super_admin: { Args: { p_email: string }; Returns: string }
       grant_module_from_payment: {
         Args: {
