@@ -155,7 +155,7 @@ export function isContestQuestionType(
 // d'imports partie d'une simple borne y embarquait ~121 Ko de polyfill dans
 // deux écrans client. Ré-exportées ici pour que les importateurs serveur
 // existants n'aient rien à changer.
-import { DUREE_MATCH_MS, FENETRE_SEMAINE_MS } from "@/lib/pronostics-bornes";
+import { DUREE_MATCH_MS } from "@/lib/pronostics-bornes";
 
 export {
   NUMBER_ANSWER_MAX,
@@ -531,28 +531,45 @@ export function progressionPronostics(
 }
 
 /**
- * Le match tombe-t-il dans LA SEMAINE qui vient ?
+ * LE PARTAGE DE LA GRILLE — la prochaine journée, puis les suivantes.
  *
- * C'est le partage de l'écran joueur : les matchs de la semaine en tête,
- * dépliés, le reste de la saison derrière un choix de journée. Sans lui,
- * un championnat dont le commerçant a importé l'année entière affichait
- * deux cents matchs à la file.
+ * ── LE DÉFAUT QUE ÇA FERME (relevé le 2026-08-29) ──
  *
- * Même fenêtre que le rappel hebdomadaire (`FENETRE_SEMAINE_MS`) : on ne
- * relance jamais un joueur sur des matchs que son écran ne met pas en
- * avant.
+ * Le bloc de tête retenait les matchs des SEPT PROCHAINS JOURS. Mesuré sur
+ * la Ligue 1 : 10 matchs le 28 août (la 2e journée entière PLUS le premier
+ * match de la 3e), 8 le 4 septembre (la 3e journée amputée de son premier
+ * match, déjà joué). Le joueur voyait un nombre différent chaque semaine
+ * sans qu'aucun le lui explique.
  *
- * Fonction et non expression en ligne, comme `attendResultat` : lire
- * l'horloge PENDANT un rendu est impur (`react-hooks/purity`).
+ * Une journée de championnat s'étale sur trois à quatre jours et les
+ * intervalles entre journées ne font pas sept jours : une fenêtre de durée
+ * coupe donc toujours au mauvais endroit. L'unité du football est la
+ * JOURNÉE — c'est elle qu'on sert.
+ *
+ * ── AUCUNE HORLOGE ICI, ET C'EST UN GAIN ──
+ *
+ * La grille ne reçoit QUE des matchs ouverts : la journée la plus basse est
+ * donc forcément la prochaine à se jouer. Le partage se lit sur les seules
+ * données, sans lire l'heure — donc sans le calcul serveur qu'exigeait la
+ * fenêtre glissante, et sans impureté de rendu.
+ *
+ * ── LE CAS SANS JOURNÉE EST COUVERT SANS EXCEPTION ──
+ *
+ * Un championnat en saisie manuelle (boxe, match isolé) n'a aucun `round` :
+ * `grouperParJournee` rend alors un unique groupe « Autres matchs », qui
+ * devient le bloc de tête. Rien à traiter à part.
  */
-export function dansLaSemaine(
-  kickoffAt: string | Date,
-  now: Date = new Date(),
-): boolean {
-  const t = new Date(kickoffAt).getTime();
-  return t <= now.getTime() + FENETRE_SEMAINE_MS;
+export function partagerGrille<
+  T extends { round: number | null; kickoff_at: string },
+>(
+  matchs: ReadonlyArray<T>,
+): { prochaine: JourneeMatchs<T> | null; suivantes: Array<JourneeMatchs<T>> } {
+  const journees = grouperParJournee(matchs);
+  return {
+    prochaine: journees[0] ?? null,
+    suivantes: journees.slice(1),
+  };
 }
-
 export function attendResultat(
   kickoffAt: string | Date,
   now: Date = new Date(),

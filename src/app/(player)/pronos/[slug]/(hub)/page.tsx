@@ -15,7 +15,6 @@ import {
 } from "@/lib/pronostics-context";
 import {
   attendResultat,
-  dansLaSemaine,
   effectiveLocksAt,
   isPredictionOpen,
   isQuestionLocked,
@@ -363,10 +362,6 @@ export default async function PronosPage({
                           away_score: predictions[m.id].away_score,
                         }
                       : null,
-                    // Le partage semaine / saison est calculé ICI : lire
-                    // l'horloge pendant un rendu client est impur, et cette
-                    // page est de toute façon rendue à chaque visite.
-                    dansLaSemaine: dansLaSemaine(m.kickoff_at),
                   }))}
                   scoreLabel={competition?.scoreLabel ?? "points"}
                   timeZone={organization.timezone}

@@ -65,15 +65,17 @@ export const NUMBER_ANSWER_MAX = 1_000_000_000;
 export const DUREE_MATCH_MS = 100 * 60 * 1000;
 
 /**
- * LA SEMAINE — l'horizon commun de l'écran joueur et du rappel.
+ * À QUELLE DISTANCE ON PRÉVIENT — l'horizon du rappel hebdomadaire.
  *
- * L'écran groupe en tête les « matchs de la semaine », et le rappel
- * hebdomadaire prévient quand il en manque. Deux valeurs différentes
- * feraient relancer un joueur sur des matchs que son écran ne lui montre
- * pas en priorité — ou l'inverse. C'est la même semaine, donc la même
- * constante.
+ * Cette constante a d'abord servi à découper l'écran joueur (« les matchs
+ * des sept prochains jours »). C'était une ERREUR, corrigée : une journée
+ * de championnat s'étale sur trois à quatre jours et les intervalles entre
+ * journées ne font pas sept jours, si bien que la fenêtre rendait 10 matchs
+ * une semaine et 8 la suivante. L'écran se partage désormais par JOURNÉE
+ * (`partagerGrille`), sans lire l'heure.
  *
- * Elle vit ici parce que ce module n'importe RIEN : `contest-reminders.ts`
- * est `server-only`, la grille est un composant client.
+ * Il reste un endroit où une durée est la bonne unité : décider s'il est
+ * temps de PRÉVENIR. Un rappel envoyé trois semaines avant la journée est
+ * du bruit ; passé cet horizon, on se tait.
  */
-export const FENETRE_SEMAINE_MS = 7 * 24 * 60 * 60 * 1000;
+export const HORIZON_RAPPEL_MS = 7 * 24 * 60 * 60 * 1000;
