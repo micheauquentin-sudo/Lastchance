@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attendResultat,
-  dansLaSemaine,
+  partagerGrille,
   DEFAULT_SCORING,
   effectiveLocksAt,
   generatePlayerToken,
@@ -586,45 +586,89 @@ describe("grouperParJournee", () => {
     expect(grouperParJournee([])).toEqual([]);
   });
 });
-
-// ────────────────────────────────────────────────────────────
-// dansLaSemaine — le partage qui évite d'afficher 201 matchs
+// ════════════════════════════════════════════════════════════
+// partagerGrille — pourquoi le compte changeait chaque semaine
 //
-// Relevé sur une capture : un commerçant importe sa saison, la grille annonce
-// « 201 matchs ouverts » et les liste à la file. Le geste réel du joueur — le
-// week-end qui vient — était noyé sous huit mois de calendrier.
-// ────────────────────────────────────────────────────────────
+// Le bloc de tête retenait les matchs des SEPT PROCHAINS JOURS. Mesuré sur
+// les vraies dates de Ligue 1 : 10 matchs le 28 août (la 2e journée entière
+// PLUS le premier match de la 3e), 8 le 4 septembre (la 3e journée amputée
+// de son premier match, déjà joué). Le joueur voyait un nombre différent
+// chaque semaine sans qu'aucun le lui explique.
+//
+// Une journée s'étale sur trois à quatre jours et les intervalles entre
+// journées ne font pas sept jours : une fenêtre de DURÉE coupe toujours au
+// mauvais endroit. L'unité du football est la JOURNÉE.
+// ════════════════════════════════════════════════════════════
 
-describe("dansLaSemaine", () => {
-  const MAINTENANT = new Date("2026-08-28T12:00:00.000Z");
-  const dans = (heures: number) =>
-    new Date(MAINTENANT.getTime() + heures * 3_600_000).toISOString();
-
-  it("retient le week-end qui vient", () => {
-    expect(dansLaSemaine(dans(8), MAINTENANT)).toBe(true); // ce soir
-    expect(dansLaSemaine(dans(48), MAINTENANT)).toBe(true); // dimanche
+describe("partagerGrille", () => {
+  const m = (id: string, round: number | null, kickoff: string) => ({
+    id,
+    round,
+    kickoff_at: kickoff,
   });
 
-  it("écarte la journée d'après", () => {
-    expect(dansLaSemaine(dans(24 * 8), MAINTENANT)).toBe(false);
-    expect(dansLaSemaine(dans(24 * 60), MAINTENANT)).toBe(false);
+  /** Deux journées de Ligue 1, aux vraies dates de la saison 2026-2027. */
+  const J2 = [
+    m("j2a", 2, "2026-08-28T18:45:00.000Z"),
+    m("j2b", 2, "2026-08-29T15:15:00.000Z"),
+    m("j2c", 2, "2026-08-30T13:00:00.000Z"),
+  ];
+  const J3 = [
+    m("j3a", 3, "2026-09-03T18:45:00.000Z"),
+    m("j3b", 3, "2026-09-05T18:45:00.000Z"),
+    m("j3c", 3, "2026-09-06T13:00:00.000Z"),
+  ];
+
+  it("LA RÉGRESSION : le bloc de tête est une journée ENTIÈRE, jamais un mélange", () => {
+    const { prochaine, suivantes } = partagerGrille([...J3, ...J2]);
+
+    // Avant, une fenêtre de 7 jours prenait J2 + le premier match de J3.
+    expect(prochaine?.round).toBe(2);
+    expect(prochaine?.matchs.map((x) => x.id)).toEqual(["j2a", "j2b", "j2c"]);
+    expect(suivantes.map((j) => j.round)).toEqual([3]);
+  });
+
+  it("le compte du bloc de tête ne dépend pas du jour où l'on regarde", () => {
+    // Aucune horloge n'entre dans le partage : le même jeu de matchs rend le
+    // même bloc, quel que soit le moment. C'est ce qui rend le nombre stable.
+    const a = partagerGrille([...J2, ...J3]);
+    const b = partagerGrille([...J3, ...J2]);
+    expect(a.prochaine?.matchs.length).toBe(b.prochaine?.matchs.length);
+    expect(a.prochaine?.round).toBe(b.prochaine?.round);
   });
 
   /**
-   * La borne est la MÊME que celle du rappel hebdomadaire : on ne relance
-   * jamais un joueur sur des matchs que son écran ne met pas en avant.
+   * Un championnat en saisie manuelle (boxe, match isolé) n'a aucune journée.
+   * Le groupe « Autres matchs » devient alors le bloc de tête — sans cas
+   * particulier dans le code.
    */
-  it("la frontière est exactement sept jours", () => {
-    expect(dansLaSemaine(dans(24 * 7 - 1), MAINTENANT)).toBe(true);
-    expect(dansLaSemaine(dans(24 * 7 + 1), MAINTENANT)).toBe(false);
+  it("sans aucune journée, tout tient dans le bloc de tête", () => {
+    const libres = [
+      m("a", null, "2026-09-01T18:45:00.000Z"),
+      m("b", null, "2026-09-08T18:45:00.000Z"),
+    ];
+    const { prochaine, suivantes } = partagerGrille(libres);
+
+    expect(prochaine?.round).toBeNull();
+    expect(prochaine?.libelle).toBe("Autres matchs");
+    expect(prochaine?.matchs).toHaveLength(2);
+    expect(suivantes).toEqual([]);
   });
 
-  /**
-   * Un match déjà commencé reste « de la semaine ». Il n'a pas à basculer dans
-   * le bloc « reste de la saison » : la grille ne reçoit de toute façon que des
-   * matchs OUVERTS, et le filtre d'ouverture est ailleurs (`isPredictionOpen`).
-   */
-  it("un coup d'envoi passé n'est pas renvoyé vers la saison", () => {
-    expect(dansLaSemaine(dans(-2), MAINTENANT)).toBe(true);
+  it("une grille vide ne rend aucune journée de tête", () => {
+    expect(partagerGrille([])).toEqual({ prochaine: null, suivantes: [] });
+  });
+
+  it("aucun match n'est perdu entre le bloc de tête et les suivantes", () => {
+    const tous = [...J2, ...J3, m("libre", null, "2026-10-01T18:45:00.000Z")];
+    const { prochaine, suivantes } = partagerGrille(tous);
+    const ids = [
+      ...(prochaine?.matchs ?? []),
+      ...suivantes.flatMap((j) => j.matchs),
+    ]
+      .map((x) => x.id)
+      .sort();
+
+    expect(ids).toEqual(tous.map((x) => x.id).sort());
   });
 });

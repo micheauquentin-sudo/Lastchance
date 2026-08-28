@@ -3,7 +3,8 @@ import "server-only";
 import { APP_URL } from "@/lib/env";
 import { reportError } from "@/lib/monitoring";
 import { sendContestReminderEmail } from "@/lib/resend";
-import { FENETRE_SEMAINE_MS } from "@/lib/pronostics-bornes";
+import { HORIZON_RAPPEL_MS } from "@/lib/pronostics-bornes";
+import { grouperParJournee } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -39,11 +40,14 @@ type Admin = ReturnType<typeof createAdminClient>;
  */
 
 /**
- * Fenêtre du rappel — LA MÊME que celle des « matchs de la semaine » de
- * l'écran joueur, importée et non recopiée. Deux valeurs qui divergent
- * relanceraient le joueur sur des matchs que son écran ne met pas en avant.
+ * Au-delà de cet horizon, on ne prévient pas : la journée est trop loin,
+ * et un rappel trois semaines à l'avance est du bruit.
+ *
+ * C'est une BORNE DE DÉCLENCHEMENT, pas un découpage : le CONTENU du rappel
+ * est la prochaine journée ENTIÈRE. Les deux ont été confondus, et l'écran
+ * joueur en a payé le prix (10 matchs une semaine, 8 la suivante).
  */
-export const FENETRE_RAPPEL_MS = FENETRE_SEMAINE_MS;
+export const HORIZON_RAPPEL = HORIZON_RAPPEL_MS;
 
 /**
  * Clé anti-doublon : un joueur ne reçoit qu'UN rappel par championnat et par
@@ -124,6 +128,14 @@ export function joueursARelancer(etat: EtatRappel): Relance[] {
   return relances;
 }
 
+/** `grouperParJournee` appliqué aux lignes du rappel — même règle, même tri. */
+function partagerGrilleRappel<
+  T extends { round: number | null; kickoff_at: string },
+>(matchs: ReadonlyArray<T>) {
+  const journees = grouperParJournee(matchs);
+  return { prochaine: journees[0] ?? null };
+}
+
 interface ContestRow {
   id: string;
   organization_id: string;
@@ -158,7 +170,9 @@ export async function runContestReminders(
     return { sent, skipped };
   }
 
-  const limite = new Date(now.getTime() + FENETRE_RAPPEL_MS).toISOString();
+  // Borne de CHARGEMENT, volontairement large : elle doit contenir la
+  // prochaine journée en entier, horizon compris.
+  const limite = new Date(now.getTime() + 4 * HORIZON_RAPPEL).toISOString();
 
   for (const contest of (contests ?? []) as ContestRow[]) {
     try {
@@ -169,16 +183,22 @@ export async function runContestReminders(
           .eq("contest_id", contest.id)
           .eq("reminder_opt_in", true)
           .not("email", "is", null),
-        // Matchs ENCORE OUVERTS : coup d'envoi dans le futur et dans la
-        // fenêtre. Un match déjà commencé ne se pronostique plus, le compter
-        // comme « manquant » culpabiliserait le joueur pour un train passé.
+        // Matchs ENCORE OUVERTS : coup d'envoi dans le futur. Un match déjà
+        // commencé ne se pronostique plus, le compter comme « manquant »
+        // culpabiliserait le joueur pour un train passé.
+        //
+        // La borne haute est LARGE (pas l'horizon) : on charge de quoi
+        // reconnaître la prochaine journée, puis on décide. Filtrer à sept
+        // jours ici couperait la journée en deux, exactement le défaut que
+        // l'écran joueur vient de payer.
         admin
           .from("contest_matches")
-          .select("id")
+          .select("id, round, kickoff_at")
           .eq("contest_id", contest.id)
           .eq("status", "scheduled")
           .gt("kickoff_at", now.toISOString())
-          .lte("kickoff_at", limite),
+          .lte("kickoff_at", limite)
+          .order("kickoff_at", { ascending: true }),
       ]);
 
       const listeJoueurs = ((joueurs ?? []) as Array<{
@@ -190,11 +210,26 @@ export async function runContestReminders(
           Boolean(j.email),
         )
         .map((j) => ({ id: j.id, email: j.email, firstName: j.first_name }));
-      const listeMatchs = ((matchs ?? []) as Array<{ id: string }>).map((m) => ({
-        id: m.id,
-      }));
+      // LA PROCHAINE JOURNÉE, et elle seule — la même unité que l'écran.
+      // Les matchs sont déjà filtrés sur « ouverts », donc la journée la
+      // plus basse est bien celle qui vient.
+      const { prochaine } = partagerGrilleRappel(
+        (matchs ?? []) as Array<{
+          id: string;
+          round: number | null;
+          kickoff_at: string;
+        }>,
+      );
+      if (!prochaine || prochaine.matchs.length === 0) continue;
 
-      if (listeJoueurs.length === 0 || listeMatchs.length === 0) continue;
+      // Trop loin pour prévenir : on se tait plutôt que d'annoncer une
+      // journée que le joueur ne peut pas encore situer.
+      const premier = new Date(prochaine.matchs[0].kickoff_at).getTime();
+      if (premier > now.getTime() + HORIZON_RAPPEL) continue;
+
+      const listeMatchs = prochaine.matchs.map((m) => ({ id: m.id }));
+
+      if (listeJoueurs.length === 0) continue;
 
       const { data: pronos } = await admin
         .from("contest_predictions")

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitPredictions } from "@/actions/pronostics";
-import { grouperParJournee } from "@/lib/pronostics";
+import { partagerGrille } from "@/lib/pronostics";
 import { Badge, formatKickoff, scoreInputValue } from "./contest-experience";
 import type { ContestMatch } from "@/types/database";
 
@@ -20,10 +20,18 @@ import type { ContestMatch } from "@/types/database";
  *
  * ── DEUX BLOCS, ET UN SEUL EST OUVERT ──
  *
- * 1. LES MATCHS DE LA SEMAINE, dépliés. C'est ce que le joueur vient faire, et
- *    c'est la même fenêtre de sept jours que le rappel hebdomadaire
- *    (`FENETRE_SEMAINE_MS`) : on ne le relance jamais sur des matchs que son
- *    écran ne lui montre pas en premier.
+ * 1. LA PROCHAINE JOURNÉE, dépliée. C'est ce que le joueur vient faire.
+ *
+ *    Ce bloc a d'abord retenu « les matchs des sept prochains jours ». C'était
+ *    faux, et ça se voyait : 10 matchs une semaine, 8 la suivante, 7 encore
+ *    après. Une journée s'étale sur trois à quatre jours et les intervalles
+ *    entre journées ne font pas sept jours — une fenêtre de DURÉE coupe donc
+ *    toujours au mauvais endroit, tantôt en mordant sur la journée suivante,
+ *    tantôt en ratant le début de la sienne. L'unité du football est la
+ *    JOURNÉE ; c'est elle qu'on sert, et le compte redevient stable.
+ *
+ *    Le rappel hebdomadaire porte sur la MÊME journée : on ne relance jamais
+ *    quelqu'un sur des matchs que son écran ne lui montre pas en premier.
  *
  * 2. TOUTE LA SAISON, repliée, derrière un CHOIX DE JOURNÉE — le même geste
  *    que dans l'atelier du commerçant. Une journée à la fois, jamais 201
@@ -61,8 +69,6 @@ export interface GrillePrediction {
 export interface GrilleMatch {
   match: ContestMatch;
   prediction: GrillePrediction | null;
-  /** Coup d'envoi dans les sept prochains jours — calculé au SERVEUR. */
-  dansLaSemaine: boolean;
 }
 
 export function GrillePronostics({
@@ -99,19 +105,13 @@ export function GrillePronostics({
     [entrees],
   );
 
-  // ── Le partage semaine / reste de la saison ──
-  const semaine = useMemo(
-    () =>
-      entrees
-        .filter((e) => e.dansLaSemaine)
-        .sort((a, b) => a.match.kickoff_at.localeCompare(b.match.kickoff_at)),
-    [entrees],
-  );
-  const journeesSaison = useMemo(
-    () =>
-      grouperParJournee(
-        entrees.filter((e) => !e.dansLaSemaine).map((e) => e.match),
-      ),
+  // ── Le partage : la PROCHAINE JOURNÉE, puis les suivantes ──
+  //
+  // Et non « les sept prochains jours » : une journée s'étale sur trois à
+  // quatre jours et les intervalles n'en font pas sept, si bien qu'une
+  // fenêtre de durée rendait 10 matchs une semaine et 8 la suivante.
+  const { prochaine, suivantes: journeesSaison } = useMemo(
+    () => partagerGrille(entrees.map((e) => e.match)),
     [entrees],
   );
 
@@ -286,18 +286,23 @@ export function GrillePronostics({
       </h2>
 
       {/* ── 1. LA SEMAINE — ouverte, c'est le geste du jour ── */}
-      {semaine.length > 0 && (
-        <section aria-label="Matchs de la semaine" className="mb-4">
+      {prochaine && (
+        <section aria-label="Prochaine journée" className="mb-4">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 rounded-xl border-2 border-k-ink bg-k-yellow/30 px-3 py-2">
             <span className="text-sm font-black text-k-ink">
-              ⚡ Matchs de la semaine
+              ⚡ {prochaine.libelle}
             </span>
             <span className="text-xs font-bold text-k-body">
-              {poses(semaine.map((e) => e.match))}/{semaine.length} posé
-              {poses(semaine.map((e) => e.match)) > 1 ? "s" : ""}
+              {poses(prochaine.matchs)}/{prochaine.matchs.length} posé
+              {poses(prochaine.matchs) > 1 ? "s" : ""}
             </span>
           </div>
-          <ul className="space-y-2.5">{semaine.map(ligne)}</ul>
+          <ul className="space-y-2.5">
+            {prochaine.matchs.map((m) => {
+              const entree = parId.get(m.id);
+              return entree ? ligne(entree) : null;
+            })}
+          </ul>
         </section>
       )}
 
