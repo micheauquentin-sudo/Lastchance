@@ -27,6 +27,7 @@ import {
   viewForPhase,
 } from "./event-view-state";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { useEventPoll } from "./use-event-poll";
 import { useServerClockOffset } from "./use-server-clock";
@@ -115,6 +116,7 @@ export function EventPlayer({
       {joined ? (
         <PlayingArea
           sessionId={sessionId}
+          joinCode={joinCode}
           state={state}
           organizationId={organizationId}
           onAfterAction={refresh}
@@ -127,6 +129,21 @@ export function EventPlayer({
             setJoined(true);
             refresh();
           }}
+        />
+      )}
+
+      {/* ── Inviter, sans QR code ──
+          Le QR géant de l'écran de salle suppose qu'on soit DANS la salle. Une
+          soirée entre amis se joue à distance : le lien est alors le seul moyen
+          d'entrer. Il est posé sous la zone de jeu, jamais au milieu d'une
+          question — voir le même choix côté quiz. */}
+      {!joined && (
+        <PartageLienJeu
+          className="mt-4"
+          chemin={`/event/${joinCode}`}
+          titre={title}
+          intro="Invitez vos amis : ce lien leur suffit pour rejoindre la partie."
+          libelle="Inviter des amis"
         />
       )}
     </div>
@@ -315,11 +332,14 @@ function AvatarPicker({
 
 function PlayingArea({
   sessionId,
+  joinCode,
   state,
   organizationId = null,
   onAfterAction,
 }: {
   sessionId: string;
+  /** Code de la session : sert au lien d'invitation affiché dans le salon. */
+  joinCode: string;
   state: EventPublicState;
   organizationId?: string | null;
   onAfterAction: () => void;
@@ -343,7 +363,7 @@ function PlayingArea({
     <div>
       <MyBadge me={me} />
 
-      {view === "lobby" && <LobbyWait />}
+      {view === "lobby" && <LobbyWait joinCode={joinCode} />}
       {(view === "question" || view === "locked") && (
         <QuestionPlay
           sessionId={sessionId}
@@ -384,22 +404,35 @@ function MyBadge({ me }: { me: EventPublicState["you"] }) {
   );
 }
 
-function LobbyWait() {
+function LobbyWait({ joinCode }: { joinCode: string }) {
   return (
-    <div
-      role="status"
-      className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
-    >
-      <p className="text-4xl motion-safe:animate-pulse" aria-hidden>
-        ⏳
-      </p>
-      <h2 className="mt-3 text-lg font-black text-k-ink">
-        Vous êtes dans la place !
-      </h2>
-      <p className="mt-1 text-sm font-bold text-k-body">
-        En attente du lancement par l&apos;animateur… Gardez cet écran ouvert.
-      </p>
-    </div>
+    <>
+      <div
+        role="status"
+        className="k-border rounded-2xl bg-white p-6 text-center shadow-[6px_6px_0_var(--color-k-ink)]"
+      >
+        <p className="text-4xl motion-safe:animate-pulse" aria-hidden>
+          ⏳
+        </p>
+        <h2 className="mt-3 text-lg font-black text-k-ink">
+          Vous êtes dans la place !
+        </h2>
+        <p className="mt-1 text-sm font-bold text-k-body">
+          En attente du lancement par l&apos;animateur… Gardez cet écran ouvert.
+        </p>
+      </div>
+
+      {/* L'attente est EXACTEMENT le moment où inviter : la partie n'a pas
+          commencé, personne n'est pénalisé s'il arrive maintenant. Le bloc
+          disparaît dès la première question. */}
+      <PartageLienJeu
+        className="mt-4"
+        chemin={`/event/${joinCode}`}
+        titre="Rejoignez la partie"
+        intro="Il manque quelqu'un ? Envoyez-lui ce lien tant que la partie n'a pas commencé."
+        libelle="Inviter des amis"
+      />
+    </>
   );
 }
 

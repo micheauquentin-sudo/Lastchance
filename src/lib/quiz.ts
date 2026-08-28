@@ -116,7 +116,14 @@ export const QUIZ_IMAGE_URL_MAX = 2048;
 /** Modèle d'UI (`preset`) — miroir du CHECK `^[a-z][a-z0-9_]{1,39}$`. */
 export const QUIZ_PRESET_PATTERN = /^[a-z][a-z0-9_]{1,39}$/;
 
-/** Les 7 modèles d'interface du besoin produit (le moteur les IGNORE). */
+/**
+ * Les 9 modèles d'interface du besoin produit (le moteur les IGNORE).
+ *
+ * `sondage` et `pronostic` sont arrivés avec le générateur de questions : ils
+ * n'ont PAS de bonne réponse, valent 0 point et ne sont jamais corrigés à
+ * l'écran (`quizPresetSansVerite`). Ils n'ont demandé aucune migration — le
+ * CHECK SQL ne contraint que la forme de la clé.
+ */
 export const QUIZ_PRESETS = [
   "multiple_choice",
   "true_false",
@@ -125,6 +132,8 @@ export const QUIZ_PRESETS = [
   "timed",
   "ranking",
   "free_prediction",
+  "sondage",
+  "pronostic",
 ] as const;
 
 export const QUIZ_THEMES: readonly QuizTheme[] = [

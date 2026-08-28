@@ -7921,3 +7921,98 @@ jeu, qui vient d'un abonnement actif.
 `src/lib/plans.ts`, `src/lib/lobby-context.ts`,
 `src/app/dashboard/salons/[jeu]/page.tsx`, `src/components/dashboard/nav.tsx`,
 `src/app/dashboard/layout.tsx`. Branche `chantier/salons-jeux-de-base`.
+
+---
+
+## ADR-120 — Un générateur de questions sans migration : le sondage et le pronostic passent par le `preset`
+
+**Date** : 2026-08-28
+**Statut** : Accepté
+**Contexte** : le commerçant devait écrire chaque question à la main. Une soirée
+d'une heure, c'est une centaine de questions saisies une par une — le module
+Quiz était livré, et inutilisable pour son cas d'usage le plus évident. La
+demande ajoutait trois natures de contenu : question notée, **sondage** (un
+avis) et **pronostic** (un pari).
+
+### Décision 1 — La banque est de la DONNÉE, le tirage est du CODE
+
+`src/lib/quiz-banque-questions.ts` porte 240 questions sur 12 thèmes ;
+`src/lib/quiz-banque.ts` porte les types, le tirage et la conversion durée ↔
+nombre. Relire une réponse fausse n'oblige jamais à rouvrir la logique, et le
+moteur reste testable sans dépendre du volume du catalogue.
+
+**Ce qui garde la banque** : toutes ses questions repassent, en test, par le
+schéma RÉEL de création (`createQuizQuestionSchema` et
+`createEventQuestionSchema`). Une bonne réponse hors options, une tolérance sur
+un type qui n'en accepte pas, deux variantes libres équivalentes après
+normalisation SQL : tout tombe dans la suite, pas devant le joueur.
+
+### Décision 2 — Sondage et pronostic sont des `preset`, pas des types moteur
+
+**Aucune migration.** `quiz_questions.preset` n'est contraint qu'en FORME
+(`^[a-z][a-z0-9_]{1,39}$`) et `points` accepte déjà 0 : deux modèles d'interface
+de plus (`sondage`, `pronostic`) suffisent, et `quizPresetSansVerite` porte
+seule les trois conséquences — pas de saisie de résultat officiel, 0 point,
+aucune correction affichée.
+
+**Écarté** : ajouter un type moteur `poll` au quiz. Il aurait demandé une
+migration, un nouveau chemin dans `submit_quiz_answer` et un affichage de
+répartition (donc une RPC d'agrégation) — pour un besoin que le `preset`
+couvre déjà. La colonne `correct_answer` étant `not null`, un sondage porte la
+première proposition comme vérité **de forme** : jamais affichée, jamais
+comparée à l'écran, et sans effet sur le score puisque `points` vaut 0.
+
+**Limite assumée** : le quiz n'affiche donc PAS encore la répartition des avis
+(« 62 % ont répondu Vrai »). Elle demande une agrégation en base, et c'est un
+lot à part entière. Le Mode événement live, lui, l'a déjà nativement.
+
+### Décision 3 — Le barème d'un pronostic diffère entre les deux modules
+
+Dans le **quiz**, un pronostic vaut 0 point : le quiz corrige à l'instant, rien
+ne peut arbitrer plus tard un pari sur la soirée. Dans le **live**, il rapporte
+— l'animateur désigne l'option gagnante au reveal
+(`session.prono_correct_option_id`), le schéma `event_questions` connaissant
+nativement les trois natures (`quiz` / `poll` / `prono`). Pour un pronostic
+arbitré après coup **hors soirée**, le module Pronostics reste l'outil.
+
+### Décision 4 — L'aperçu EST le tirage
+
+Le composant appelle `genererQuestions` (pur, déterministe pour une graine), et
+la server action **rejoue le même calcul** avec la graine reçue. Le client
+n'envoie jamais de questions : seulement des critères. Deux propriétés d'un même
+choix — ce que le commerçant valide est exactement ce qui s'écrit, et un appel
+direct à l'action ne peut pas injecter de contenu arbitraire.
+
+Un aperçu « représentatif » mais différent aurait été pire que pas d'aperçu du
+tout : on aurait fait valider autre chose que ce qui était lu.
+
+### Décision 5 — La durée est une estimation, et le manque est dit
+
+Le chronomètre d'une question est un **plafond**, pas une durée :
+`PART_CHRONO_CONSOMMEE` (0,75) porte l'hypothèse à un seul endroit, avec le
+temps de lecture et celui de la correction. L'écran annonce « environ ».
+
+Un seul thème coché ne porte qu'une vingtaine de questions. Demander une heure
+là-dessus est légitime, et la seule réponse honnête est de dire combien il en
+manque et quoi faire (cocher d'autres thèmes, accepter plus difficile,
+raccourcir) — jamais de rendre une partie plus courte en silence.
+
+### Décision 6 — Le partage sort du milieu de la partie
+
+Le bouton « Défier un ami » était rendu en bas de la page publique du quiz **à
+tous les états**, y compris sous la question en cours, où il ne faisait que
+concurrencer « Valider ma réponse ». Il n'apparaît plus qu'aux deux moments où
+partager a un sens : **avant** de commencer (l'invitation) et **après** la
+partie (le défi).
+
+`PartageLienJeu` remplace le bouton nu et **affiche l'adresse** : `navigator.
+share` n'existe pas sur un ordinateur de bureau et le presse-papiers échoue en
+silence sous certaines permissions — un champ en lecture seule reste utilisable
+dans tous les cas. Le même bloc est posé côté Mode événement live, à l'écran de
+saisie et dans le salon d'attente : le QR géant de l'écran de salle suppose
+qu'on soit DANS la salle, alors qu'une soirée entre amis se joue à distance.
+
+**Références** : `src/lib/quiz-banque.ts`, `src/lib/quiz-banque-questions.ts`,
+`src/components/dashboard/generateur-questions.tsx`,
+`src/components/partage/partage-lien-jeu.tsx`,
+`src/components/quiz/quiz-presets.ts`.

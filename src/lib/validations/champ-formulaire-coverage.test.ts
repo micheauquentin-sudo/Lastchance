@@ -259,6 +259,16 @@ const HORS_FORMULAIRE: Exclusion[] = [
     raison: "Dotation d'un quiz : entrée typée de l'action, postée par l'éditeur client et non par un formulaire.",
   },
   {
+    chemin: "quiz:genererQuestionsQuizSchema",
+    raison:
+      "Commande du générateur de questions : critères et graine construits par le composant (thèmes cochés, durée choisie), jamais un FormData. Aucun champ n'y est « non rendu » — ils sont tous posés en code, et un null y serait un appel malformé, pas un formulaire incomplet.",
+  },
+  {
+    chemin: "events:genererQuestionsEvenementSchema",
+    raison:
+      "Jumeau live du générateur de questions : même commande typée, construite par le même composant. Voir quiz:genererQuestionsQuizSchema.",
+  },
+  {
     chemin: "quiz:createQuizQuestionSchema.preset",
     raison: "Édition d'une question de quiz : entrée typée depuis l'éditeur client, jamais un FormData.",
   },

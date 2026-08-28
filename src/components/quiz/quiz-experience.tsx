@@ -45,6 +45,7 @@ import { QuizQuestionCard } from "./quiz-question-card";
 import { QuizSpinExperience } from "./quiz-spin-experience";
 import { quizPresetInfo } from "./quiz-presets";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
+import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
 import type { SortieApresJeu as SortieApresJeuView } from "@/lib/sortie-apres-jeu";
@@ -665,8 +666,17 @@ export function QuizExperience({
         />
       )}
 
-      {shareEnabled && (
-        <SharePanel publicSlug={publicSlug} quizName={quiz.name} />
+      {/* ── Le partage du LIEN : aux deux moments où il a un sens ──
+          Avant de commencer, c'est « viens jouer avec moi ce soir » — le seul
+          chemin qui ne passe pas par le QR du comptoir. Après la partie, c'est
+          le défi. PENDANT une question, il ne faisait que concurrencer le
+          bouton « Valider ma réponse » : il n'y est plus. */}
+      {shareEnabled && (!player || finished) && (
+        <SharePanel
+          publicSlug={publicSlug}
+          quizName={quiz.name}
+          termine={Boolean(player && finished)}
+        />
       )}
     </div>
   );
@@ -1685,40 +1695,30 @@ function LeaderboardPanel({
 // Partage du quiz
 // ────────────────────────────────────────────────────────────
 
+/**
+ * Partage du LIEN du quiz (à ne pas confondre avec « Partager mon score », qui
+ * vit dans le résultat). Le libellé suit le moment : avant la partie c'est une
+ * invitation, après c'est un défi.
+ */
 function SharePanel({
   publicSlug,
   quizName,
+  termine,
 }: {
   publicSlug: string;
   quizName: string;
+  termine: boolean;
 }) {
-  const canShare = useCanShare();
-  const [copied, setCopied] = useState(false);
-
-  const share = async () => {
-    const url = `${window.location.origin}/quiz/${publicSlug}`;
-    try {
-      if (canShare) {
-        await navigator.share({ title: quizName, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Partage annulé ou presse-papiers indisponible : rien à faire.
-    }
-  };
-
   return (
-    <div className="text-center">
-      <button
-        type="button"
-        onClick={share}
-        className="rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
-      >
-        {copied ? "Lien copié !" : "📣 Défier un ami"}
-      </button>
-    </div>
+    <PartageLienJeu
+      chemin={`/quiz/${publicSlug}`}
+      titre={quizName}
+      intro={
+        termine
+          ? "Défiez un ami : envoyez-lui le lien, il jouera au même quiz."
+          : "Jouez à plusieurs : envoyez ce lien à vos amis, ils rejoignent depuis leur téléphone."
+      }
+      libelle={termine ? "Défier un ami" : "Inviter des amis"}
+    />
   );
 }

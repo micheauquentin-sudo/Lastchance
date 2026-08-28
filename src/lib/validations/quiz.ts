@@ -903,3 +903,53 @@ export const quizRedeemCodeSchema = z
   .trim()
   .toUpperCase()
   .regex(/^QUIZ-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+
+// ────────────────────────────────────────────────────────────
+// Générateur de questions (banque thématique)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * GÉNÉRATION EN LOT depuis la banque thématique.
+ *
+ * Ce schéma ne valide QUE la commande — pas les questions produites. Celles-ci
+ * repassent une à une par `createQuizQuestionSchema` côté action : la banque
+ * n'est pas une entrée de confiance parce qu'elle est interne, elle l'est parce
+ * qu'elle est REVALIDÉE comme n'importe quelle saisie, puis revalidée encore par
+ * `is_valid_quiz_question` en base.
+ *
+ * `graine` voyage depuis l'écran : c'est ce qui fait que la liste ÉCRITE est
+ * exactement celle qui a été prévisualisée. Elle n'a aucune portée de sécurité —
+ * au pire elle change le tirage.
+ */
+export const genererQuestionsQuizSchema = z.object({
+  quiz_id: uuid,
+  themes: z
+    .array(z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/, "Thème invalide"))
+    .max(40, "Trop de thèmes")
+    .default([]),
+  genres: z
+    .array(z.enum(["question", "sondage", "pronostic"]))
+    .min(1, "Choisissez au moins une nature de question")
+    .max(3)
+    .default(["question"]),
+  mode: z.enum(["nombre", "duree"]).default("nombre"),
+  nombre: z.coerce
+    .number()
+    .int("Nombre entier requis")
+    .min(1, "Au moins une question")
+    .max(120, "120 questions maximum en une fois")
+    .default(10),
+  minutes: z.coerce
+    .number()
+    .int("Nombre entier de minutes requis")
+    .min(1, "Au moins une minute")
+    .max(240, "4 heures maximum")
+    .default(30),
+  graine: z.coerce.number().int().min(0).max(2_147_483_647).default(1),
+  difficulte_max: z.coerce
+    .number()
+    .int()
+    .min(1, "Difficulté invalide")
+    .max(3, "Difficulté invalide")
+    .default(3),
+});

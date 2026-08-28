@@ -24,6 +24,7 @@ import {
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
 import { QuizStatusBadge } from "@/components/dashboard/quiz-status";
+import { GenerateurQuestions } from "@/components/dashboard/generateur-questions";
 import type { QuizStatus } from "@/lib/quiz";
 import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeQuiz } from "@/components/dashboard/atelier-quiz-etapes";
@@ -63,6 +64,7 @@ import {
   quizPresetAllowsType,
   quizPresetDefaultType,
   quizPresetInfo,
+  quizPresetSansVerite,
   quizQuestionTypeLabel,
 } from "@/components/quiz/quiz-presets";
 import { QUIZ_THEME_ORDER, quizThemeTokens } from "@/components/quiz/quiz-theme";
@@ -1188,6 +1190,11 @@ function QuestionForm({
       setTimerOn(true);
       setTimeLimit((current) => current || String(next.suggestedTimeLimit));
     }
+    // Sondage et pronostic ne se notent pas : 0 point, sans quoi le classement
+    // récompenserait d'avoir cliqué. Le retour à un modèle noté rend le point
+    // par défaut — mais seulement si le commerçant n'avait rien saisi d'autre.
+    if (next.sansVerite) setPoints("0");
+    else if (info.sansVerite) setPoints((current) => (current === "0" ? "1" : current));
   };
 
   const labelledRows = rows.filter((r) => r.label.trim() !== "");
@@ -1195,6 +1202,14 @@ function QuestionForm({
   const size = Number(rankingSize) || 0;
 
   const solution = (): QuizSolutionInput | null => {
+    // Modèle SANS vérité (sondage, pronostic) : la colonne `correct_answer` est
+    // `not null`, on y pose la première proposition. Elle n'est jamais affichée
+    // au joueur ni comparée à l'écran, et la question vaut 0 point — c'est une
+    // exigence de FORME, pas une bonne réponse. Voir quiz-presets.ts.
+    if (!shape.showVerite) {
+      const premiere = rankingOptions[0];
+      return premiere ? { type: "choice", optionId: premiere.id } : null;
+    }
     switch (questionType) {
       case "choice":
         return choiceId ? { type: "choice", optionId: choiceId } : null;
@@ -1580,7 +1595,18 @@ function QuestionForm({
           </div>
         )}
 
+        {/* ── Modèle sans vérité : il n'y a rien à corriger, et on le dit ── */}
+        {!shape.showVerite && (
+          <p className="rounded-xl border-2 border-k-ink/20 bg-white p-3 text-sm text-zinc-600">
+            <span aria-hidden>{info.icon} </span>
+            Ce modèle n&apos;a <strong>pas de bonne réponse</strong> : le joueur
+            voit un simple « c&apos;est noté », la question ne rapporte aucun
+            point et n&apos;influence pas le classement.
+          </p>
+        )}
+
         {/* ── Le résultat officiel : SECRET côté serveur ── */}
+        {shape.showVerite && (
         <fieldset className="rounded-xl border-2 border-k-ink/20 bg-white p-3">
           <legend className="px-1.5 text-sm font-bold text-k-ink">
             Bonne réponse
@@ -1727,6 +1753,7 @@ function QuestionForm({
             </div>
           )}
         </fieldset>
+        )}
 
         {/* ── Chronomètre : option TRANSVERSALE, imposée par le modèle « chronométrée » ── */}
         <fieldset className="space-y-2">
@@ -1773,18 +1800,20 @@ function QuestionForm({
           )}
         </fieldset>
 
-        <div>
-          <Label htmlFor={`${prefix}-points`}>Points de la question</Label>
-          <Input
-            id={`${prefix}-points`}
-            type="number"
-            min={0}
-            max={QUIZ_POINTS_MAX}
-            value={points}
-            onChange={(e) => setPoints(e.target.value)}
-            className="w-28"
-          />
-        </div>
+        {shape.showVerite && (
+          <div>
+            <Label htmlFor={`${prefix}-points`}>Points de la question</Label>
+            <Input
+              id={`${prefix}-points`}
+              type="number"
+              min={0}
+              max={QUIZ_POINTS_MAX}
+              value={points}
+              onChange={(e) => setPoints(e.target.value)}
+              className="w-28"
+            />
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" onClick={save} disabled={pending || !ready}>
@@ -1820,6 +1849,10 @@ function QuestionForm({
 
 /** Résultat officiel en clair (côté commerçant : aucun enjeu de fuite). */
 function officialAnswerLabel(question: DashboardQuizQuestion): string | null {
+  // Un sondage et un pronostic PORTENT une `correct_answer` — la colonne est
+  // `not null` — mais ce n'est pas une réponse. L'afficher ferait croire au
+  // commerçant qu'il a désigné une vérité qu'il n'a jamais saisie.
+  if (quizPresetSansVerite(question.preset)) return null;
   const labelOf = (id: unknown) =>
     question.options.find((o) => o.id === id)?.label ?? String(id);
   const answer = question.correctAnswer;
@@ -2064,10 +2097,17 @@ export function QuizQuestionsEditor({
     <Card>
       <h2 className="font-semibold mb-1">Questions</h2>
       <p className="text-sm text-zinc-500 mb-4">
-        Sept modèles au choix — le formulaire s&apos;adapte au modèle retenu. Les
+        Neuf modèles au choix — le formulaire s&apos;adapte au modèle retenu. Les
         questions sont posées au joueur dans l&apos;ordre de cette liste, une par
-        une, et corrigées aussitôt.
+        une, et corrigées aussitôt. Pressé ? Le générateur remplit le quiz pour
+        vous à partir de thèmes.
       </p>
+
+      <GenerateurQuestions
+        cible="quiz"
+        cibleId={quizId}
+        promptsExistants={questions.map((q) => q.prompt)}
+      />
 
       {ordered.length > 0 ? (
         <ul className="mb-4 space-y-2.5">

@@ -54,6 +54,7 @@ import {
   EVENT_QUESTION_LOSS_HINT,
   EVENT_SESSION_LOSS_HINT,
   eventStateSchema,
+  genererQuestionsEvenementSchema,
   eventSessionIdSchema,
   joinEventSchema,
   launchEventQuestionSchema,
@@ -65,6 +66,11 @@ import {
   updateEventQuestionSchema,
   updateEventSessionSchema,
 } from "@/lib/validations/events";
+import {
+  BANQUE_QUESTIONS,
+  genererQuestions,
+  questionEvenementAEcrire,
+} from "@/lib/quiz-banque";
 
 /** Durée de vie du cookie joueur d'une session (30 j : la soirée + rappels). */
 const EVENT_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
@@ -994,6 +1000,208 @@ export async function createEventQuestion(input: {
 
   revalidatePath(`/dashboard/events/${parsed.data.game_id}`);
   return { ok: true, data: { id: question.id } };
+}
+
+/**
+ * Plafond de questions par jeu pour la GÉNÉRATION. Une soirée animée tourne
+ * autour de 20 à 40 questions ; au-delà, l'animateur ne les jouera pas — et la
+ * télécommande deviendrait une liste interminable à faire défiler en direct.
+ */
+const EVENT_QUESTIONS_MAX_GENEREES = 80;
+
+/** Plafond d'UNE génération — miroir exact de `genererQuestionsEvenementSchema`. */
+const EVENT_QUESTIONS_MAX_PAR_GENERATION = 60;
+
+/**
+ * GÉNÉRATION EN LOT depuis la banque thématique — Mode événement live.
+ *
+ * Même contrat que `genererQuestionsQuiz` : le client n'envoie que des critères
+ * et une graine, le tirage est REJOUÉ ici, et chaque question repasse par
+ * `createEventQuestionSchema` (dont le `superRefine` exige une bonne réponse
+ * unique pour un `quiz`, aucune pour un `poll` / `prono`).
+ *
+ * Le vivier est restreint aux questions à OPTIONS (`pourEvenement`) : le live
+ * n'a pas de saisie libre ni de champ numérique — on répond en tapant sur un
+ * bouton, depuis la salle.
+ *
+ * Deux écritures, et pas 2N : un `insert` de N questions, puis un `insert` de
+ * toutes leurs options. Les options sont rattachées par POSITION relue en base,
+ * jamais par l'ordre supposé du retour de PostgREST.
+ */
+export async function genererQuestionsEvenement(input: {
+  gameId: string;
+  themes?: string[];
+  genres?: Array<"question" | "sondage" | "pronostic">;
+  mode?: "nombre" | "duree";
+  nombre?: string | number;
+  minutes?: string | number;
+  graine?: string | number;
+  difficulteMax?: string | number;
+}): Promise<ActionResult<{ ajoutees: number; manquantes: number }>> {
+  const parsed = genererQuestionsEvenementSchema.safeParse({
+    game_id: input.gameId,
+    themes: input.themes ?? [],
+    genres: input.genres ?? ["question"],
+    mode: input.mode ?? "nombre",
+    nombre: input.nombre ?? 10,
+    minutes: input.minutes ?? 30,
+    graine: input.graine ?? 1,
+    difficulte_max: input.difficulteMax ?? 3,
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  const supabase = await createClient();
+  const { data: game } = await supabase
+    .from("event_games")
+    .select("id")
+    .eq("id", parsed.data.game_id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!game) return { ok: false, error: "Jeu introuvable" };
+
+  const { data: existantesData, error: lectureError } = await supabase
+    .from("event_questions")
+    .select("position, prompt")
+    .eq("game_id", parsed.data.game_id)
+    .eq("organization_id", organization.id);
+  if (lectureError) {
+    console.error("[events] générateur, lecture:", lectureError.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  const deja = existantesData ?? [];
+  if (deja.length >= EVENT_QUESTIONS_MAX_GENEREES) {
+    return {
+      ok: false,
+      error: `Ce jeu compte déjà ${deja.length} questions : supprimez-en avant d'en générer d'autres.`,
+    };
+  }
+
+  // Exclusion par INTITULÉ, comme côté quiz : la base ne retient pas d'où vient
+  // une question, et c'est très bien — un intitulé réécrit redevient tirable.
+  const intitulesPris = new Set(deja.map((q) => (q.prompt ?? "").trim().toLowerCase()));
+  const dejaTirees = BANQUE_QUESTIONS.filter((q) =>
+    intitulesPris.has(q.prompt.trim().toLowerCase()),
+  ).map((q) => q.id);
+
+  const tirage = genererQuestions({
+    themes: parsed.data.themes,
+    genres: parsed.data.genres,
+    mode:
+      parsed.data.mode === "duree"
+        ? { type: "duree", minutes: parsed.data.minutes }
+        : { type: "nombre", nombre: parsed.data.nombre },
+    graine: parsed.data.graine,
+    difficulteMax: parsed.data.difficulte_max as 1 | 2 | 3,
+    exclure: dejaTirees,
+    pourEvenement: true,
+    plafond: EVENT_QUESTIONS_MAX_PAR_GENERATION,
+  });
+  const retenues = tirage.questions.slice(
+    0,
+    EVENT_QUESTIONS_MAX_GENEREES - deja.length,
+  );
+  if (retenues.length === 0) {
+    return {
+      ok: false,
+      error:
+        "Aucune question disponible avec ces critères : ajoutez des thèmes, ou raccourcissez la partie.",
+    };
+  }
+
+  const depart =
+    deja.length === 0
+      ? 0
+      : Math.max(...deja.map((q) => (q.position as number) ?? 0)) + 1;
+
+  // Validation AVANT toute écriture : une banque mal relue échoue ici, jamais à
+  // moitié insérée.
+  const charges = retenues.map((banque, index) => ({
+    banque,
+    position: depart + index,
+    charge: questionEvenementAEcrire(banque),
+  }));
+  for (const { banque, charge } of charges) {
+    const valide = createEventQuestionSchema.safeParse({
+      game_id: parsed.data.game_id,
+      question_type: charge.questionType,
+      prompt: charge.prompt,
+      time_limit_seconds: charge.timeLimitSeconds,
+      points_base: charge.pointsBase,
+      options: charge.options,
+    });
+    if (!valide.success) {
+      console.error(
+        `[events] générateur, question ${banque.id} refusée:`,
+        valide.error.issues[0].message,
+      );
+      return { ok: false, error: GENERIC_ERROR };
+    }
+  }
+
+  const { data: inserees, error } = await supabase
+    .from("event_questions")
+    .insert(
+      charges.map(({ position, charge }) => ({
+        game_id: parsed.data.game_id,
+        organization_id: organization.id,
+        position,
+        question_type: charge.questionType,
+        prompt: charge.prompt,
+        time_limit_seconds: charge.timeLimitSeconds,
+        points_base: charge.pointsBase,
+      })),
+    )
+    .select("id, position");
+  if (error || !inserees) {
+    console.error("[events] générateur, insertion:", error?.message);
+    return { ok: false, error: "Impossible d'ajouter ces questions" };
+  }
+
+  // Rattachement par POSITION : l'ordre du retour de PostgREST n'est pas
+  // contractuel, et une option collée à la mauvaise question serait invisible
+  // jusqu'à la soirée.
+  const parPosition = new Map(charges.map((c) => [c.position, c.charge]));
+  const options = inserees.flatMap((ligne) => {
+    const charge = parPosition.get(ligne.position as number);
+    return (charge?.options ?? []).map((option, index) => ({
+      question_id: ligne.id as string,
+      organization_id: organization.id,
+      position: index,
+      label: option.label,
+      is_correct: option.is_correct,
+    }));
+  });
+
+  const { error: optError } = await supabase
+    .from("event_question_options")
+    .insert(options);
+  if (optError) {
+    // Rollback best-effort, comme la création unitaire : une question sans
+    // option est injouable et resterait dans la liste sans le dire.
+    await supabase
+      .from("event_questions")
+      .delete()
+      .in(
+        "id",
+        inserees.map((l) => l.id as string),
+      )
+      .eq("organization_id", organization.id);
+    console.error("[events] générateur, options:", optError.message);
+    return { ok: false, error: "Impossible d'enregistrer les options" };
+  }
+
+  revalidatePath(`/dashboard/events/${parsed.data.game_id}`);
+  return {
+    ok: true,
+    data: {
+      ajoutees: retenues.length,
+      manquantes: tirage.manquantes + (tirage.questions.length - retenues.length),
+    },
+  };
 }
 
 export async function updateEventQuestion(input: {

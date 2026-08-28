@@ -254,6 +254,14 @@ export function QuizQuestionCard({
   })();
 
   const info = quizPresetInfo(question.preset);
+  /**
+   * Sondage et pronostic : il n'y a RIEN à corriger. Le serveur a bien rendu un
+   * `isCorrect` (la colonne `correct_answer` est `not null`, elle porte la
+   * première proposition par exigence de forme), mais l'afficher inventerait
+   * une bonne réponse à une question d'opinion. On ne montre donc que l'accusé
+   * de réception — et jamais `officialLabel`.
+   */
+  const sansVerite = info.sansVerite;
 
   return (
     <section
@@ -268,7 +276,9 @@ export function QuizQuestionCard({
         </span>
         <span className="text-xs font-bold text-k-body">
           <span aria-hidden>{info.icon} </span>
-          {question.points} pt{question.points > 1 ? "s" : ""}
+          {sansVerite
+            ? info.label
+            : `${question.points} pt${question.points > 1 ? "s" : ""}`}
         </span>
       </div>
 
@@ -460,8 +470,9 @@ export function QuizQuestionCard({
           {expired && (
             <>
               <p className="mt-2 text-center text-sm font-bold text-red-600">
-                ⏱️ Temps écoulé — cette question ne rapportera plus aucun point,
-                que vous répondiez ou non.
+                {sansVerite
+                  ? "⏱️ Temps écoulé — vous pouvez encore donner votre avis."
+                  : "⏱️ Temps écoulé — cette question ne rapportera plus aucun point, que vous répondiez ou non."}
               </p>
               <button
                 type="button"
@@ -489,25 +500,39 @@ export function QuizQuestionCard({
           role="status"
           aria-live="polite"
           className={`mt-5 rounded-xl border-2 p-4 ${
-            result.isCorrect
-              ? "border-k-green bg-k-green/10"
-              : "border-k-ink/30 bg-k-stripe"
+            sansVerite
+              ? "border-k-ink/30 bg-white"
+              : result.isCorrect
+                ? "border-k-green bg-k-green/10"
+                : "border-k-ink/30 bg-k-stripe"
           }`}
         >
           <p className="text-base font-black text-k-ink">
-            {result.isCorrect ? "✓ Bonne réponse !" : "✕ Ce n'était pas ça."}
-            {result.pointsAwarded !== null && result.pointsAwarded > 0 && (
-              <span className="ml-2 rounded-full border-2 border-k-ink bg-k-yellow px-2 py-0.5 text-xs font-black">
-                +{result.pointsAwarded} pt{result.pointsAwarded > 1 ? "s" : ""}
-              </span>
-            )}
+            {sansVerite
+              ? "📊 C'est noté, merci !"
+              : result.isCorrect
+                ? "✓ Bonne réponse !"
+                : "✕ Ce n'était pas ça."}
+            {!sansVerite &&
+              result.pointsAwarded !== null &&
+              result.pointsAwarded > 0 && (
+                <span className="ml-2 rounded-full border-2 border-k-ink bg-k-yellow px-2 py-0.5 text-xs font-black">
+                  +{result.pointsAwarded} pt{result.pointsAwarded > 1 ? "s" : ""}
+                </span>
+              )}
           </p>
-          {result.timedOut && (
+          {sansVerite && (
+            <p className="mt-1 text-sm font-bold text-k-body">
+              Il n&apos;y a pas de bonne réponse ici : cette question ne compte
+              pas dans votre score.
+            </p>
+          )}
+          {!sansVerite && result.timedOut && (
             <p className="mt-1 text-sm font-bold text-red-700">
               Réponse hors délai : elle ne rapporte pas de point.
             </p>
           )}
-          {officialLabel && !result.isCorrect && (
+          {!sansVerite && officialLabel && !result.isCorrect && (
             <p className="mt-2 text-sm font-bold text-k-ink">
               La bonne réponse était : {officialLabel}
             </p>
