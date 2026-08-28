@@ -8000,10 +8000,26 @@ raccourcir) — jamais de rendre une partie plus courte en silence.
 ### Décision 6 — Le partage sort du milieu de la partie
 
 Le bouton « Défier un ami » était rendu en bas de la page publique du quiz **à
-tous les états**, y compris sous la question en cours, où il ne faisait que
-concurrencer « Valider ma réponse ». Il n'apparaît plus qu'aux deux moments où
-partager a un sens : **avant** de commencer (l'invitation) et **après** la
-partie (le défi).
+tous les états**, y compris sous la question en cours, où il ressemblait à un
+bouton de cette question et concurrençait « Valider ma réponse ».
+
+**Corrigé une première fois, et mal** (2026-08-28, même jour) : le bloc a été
+MASQUÉ pendant la partie. Le propriétaire l'a signalé aussitôt — le joueur qui
+veut faire tourner le quiz le veut justement *au moment où il s'amuse*, pas
+seulement avant d'avoir commencé.
+
+**La bonne réponse n'est ni « toujours » ni « jamais », mais « toujours, à un
+autre endroit »** : le partage reste accessible dans tous les états, avec deux
+variantes — `carte` quand il est le sujet de l'écran (avant de commencer,
+l'invitation ; après la partie, le défi) et `discret` pendant la partie, en
+**pied de page** : un filet, une marge franche, un bouton secondaire, et
+l'adresse repliée tant que le presse-papiers fonctionne. Le seul interrupteur
+qui le fait disparaître reste celui du commerçant (`quizzes.share_enabled`).
+
+**Ce que cette double erreur a changé au code** : la décision ne vit plus dans
+un `&&` du rendu mais dans `vuePartageQuiz` (`quiz-partage-etat.ts`), fonction
+pure et testée — miroir d'`event-view-state.ts`. Un `&&` n'avait aucun test, et
+c'est exactement ce qui a laissé passer les deux erreurs successives.
 
 `PartageLienJeu` remplace le bouton nu et **affiche l'adresse** : `navigator.
 share` n'existe pas sur un ordinateur de bureau et le presse-papiers échoue en

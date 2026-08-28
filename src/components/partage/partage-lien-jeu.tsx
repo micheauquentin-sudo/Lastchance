@@ -31,9 +31,14 @@ const useOrigine = () =>
  *    de bureau, et le presse-papiers échoue en silence sous certaines
  *    permissions. Une adresse affichée et sélectionnable reste utilisable dans
  *    tous les cas — c'est le seul chemin qui ne dépend d'aucune API.
- * 2. **Il se situe.** Il est posé aux deux moments où partager a un sens (avant
- *    de commencer, et une fois la partie finie), jamais au milieu d'une
- *    question où il ne fait que concurrencer le bouton « Valider ».
+ * 2. **Il se situe.** Deux variantes, pour deux moments :
+ *    · `carte` — avant de commencer et une fois la partie finie. Le partage EST
+ *      le sujet de l'écran : bloc plein, adresse affichée d'emblée ;
+ *    · `discret` — pendant la partie. Il reste accessible, mais en PIED DE
+ *      PAGE : séparé par un filet, détaché de la carte de question, et sans
+ *      champ d'adresse déployé. Le premier essai le collait sous la question,
+ *      où il ressemblait à un bouton de cette question et concurrençait
+ *      « Valider ma réponse ».
  * 3. **Il ne ment pas sur son état.** « Lien copié ! » n'apparaît qu'après une
  *    écriture réussie dans le presse-papiers.
  *
@@ -50,12 +55,18 @@ export function PartageLienJeu({
   intro,
   /** Libellé du bouton principal. */
   libelle = "Partager le lien",
+  /**
+   * `carte` : le partage est le sujet de l'écran (avant / après la partie).
+   * `discret` : pied de page pendant la partie — présent, jamais concurrent.
+   */
+  variante = "carte",
   className,
 }: {
   chemin: string;
   titre: string;
   intro: string;
   libelle?: string;
+  variante?: "carte" | "discret";
   className?: string;
 }) {
   const origine = useOrigine();
@@ -97,6 +108,59 @@ export function PartageLienJeu({
     }
   };
 
+  /** Champ d'adresse : toujours visible en carte, seulement en secours ailleurs. */
+  const champAdresse = (
+    <span className="min-w-0 flex-1">
+      {/* Champ en lecture seule et non un simple texte : un appui long le
+          sélectionne entièrement sur mobile, et « tout sélectionner »
+          fonctionne au clavier. */}
+      <input
+        type="text"
+        readOnly
+        value={affichage}
+        onFocus={(e) => e.currentTarget.select()}
+        aria-label="Adresse du jeu, à copier"
+        className="w-full min-w-0 rounded-xl border-2 border-k-ink/20 bg-k-stripe px-3 py-2 font-mono text-xs text-k-ink"
+      />
+    </span>
+  );
+
+  // ── PIED DE PAGE pendant la partie ──
+  //
+  // Un filet et une marge franche : c'est ce qui le détache de la carte de
+  // question, au-dessus. Aucune ombre portée, aucun fond plein, un bouton
+  // secondaire — il doit rester lisible sans jamais attirer l'œil avant
+  // « Valider ma réponse ». L'adresse n'apparaît qu'en secours (presse-papiers
+  // refusé), pour ne jamais laisser d'impasse sans alourdir le pied de page.
+  if (variante === "discret") {
+    return (
+      <section
+        className={`mt-8 border-t-2 border-k-ink/10 pt-5 text-center ${className ?? ""}`}
+        aria-label="Partager ce jeu"
+      >
+        <p className="text-xs font-bold text-k-body/80">{intro}</p>
+        <button
+          type="button"
+          onClick={() => void partager()}
+          className="mt-2 rounded-xl border-2 border-k-ink/40 bg-white/70 px-4 py-2 text-sm font-bold text-k-ink hover:border-k-ink hover:bg-white"
+        >
+          <span aria-hidden>📣 </span>
+          {copie ? "Lien copié !" : libelle}
+        </button>
+        {echec && (
+          <div className="mx-auto mt-3 flex max-w-sm">{champAdresse}</div>
+        )}
+        <p role="status" aria-live="polite" className="mt-2 text-xs text-k-body/70">
+          {echec
+            ? "Copie impossible depuis ce navigateur : sélectionnez l'adresse ci-dessus."
+            : copie
+              ? "Adresse copiée : collez-la dans un message."
+              : ""}
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section
       className={`k-border rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)] ${className ?? ""}`}
@@ -115,19 +179,7 @@ export function PartageLienJeu({
         >
           {copie ? "Lien copié !" : libelle}
         </button>
-        <span className="min-w-0 flex-1">
-          {/* Champ en lecture seule et non un simple texte : un appui long le
-              sélectionne entièrement sur mobile, et « tout sélectionner »
-              fonctionne au clavier. */}
-          <input
-            type="text"
-            readOnly
-            value={affichage}
-            onFocus={(e) => e.currentTarget.select()}
-            aria-label="Adresse du jeu, à copier"
-            className="w-full min-w-0 rounded-xl border-2 border-k-ink/20 bg-k-stripe px-3 py-2 font-mono text-xs text-k-ink"
-          />
-        </span>
+        {champAdresse}
       </div>
 
       <p role="status" aria-live="polite" className="mt-2 text-xs text-k-body">
