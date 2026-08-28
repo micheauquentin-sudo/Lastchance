@@ -433,6 +433,19 @@ export const RATE_LIMITS = {
   /** Lecture du code tournant au comptoir par membre et campagne — un écran
    *  légitime interroge toutes les quelques secondes ; marge confortable. */
   jackpotCounter: { limit: 60, windowSeconds: 60 },
+  /** INVITATIONS À REJOINDRE le jackpot affichées par un AUTRE module
+   *  (bas du calendrier, panneau de fin de partie) — organisation + IP.
+   *  Compteur d'OBSERVABILITÉ, jamais un refus : clé partagée, ADR-032.
+   *
+   *  SEAU DISTINCT de `jackpotParticipateIp`, pour la raison qui sépare
+   *  `loyaltyInvite` de `loyaltyStampIp` : celui-ci compte des invitations
+   *  AFFICHÉES (une lecture bornée, aucune écriture, aucune participation),
+   *  l'autre des participations. Mêlés, le rapport « proposé / rejoint » —
+   *  la seule mesure utile de ce panneau — deviendrait illisible.
+   *
+   *  CALIBRAGE REPRIS de `loyaltyInvite` (1200/10 min), chemin jumeau à la
+   *  requête près. Ne PAS resserrer : ce panneau ne fait rien gagner. */
+  jackpotInvite: { limit: 1200, windowSeconds: 600 },
   /** SONDAGE de la jauge publique par campagne et IP — compteur
    *  d'OBSERVABILITÉ, jamais un refus (ADR-032, comme tous les seaux à clé
    *  partagée de ce module).

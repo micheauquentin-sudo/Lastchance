@@ -86,12 +86,42 @@ export function calendarConsolation(progress: CalendarProgress): string {
     return "Vous avez ouvert toutes les cases — bravo pour votre assiduité !";
   }
   if (progress.remaining === 1) {
-    return "Il reste 1 case à ouvrir : revenez demain, la dernière est peut-être la bonne !";
+    return "Il reste 1 case à ouvrir : la dernière est peut-être la bonne !";
   }
   if (progress.remaining > 1) {
-    return `Il reste ${progress.remaining} cases à ouvrir : revenez demain, la prochaine sera peut-être la bonne !`;
+    return `Il reste ${progress.remaining} cases à ouvrir : la prochaine sera peut-être la bonne !`;
   }
-  return "Revenez demain !";
+  return "Revenez ouvrir la prochaine case !";
+}
+
+/**
+ * LA PROCHAINE CASE À OUVRIR — ce qui transforme « revenez » en rendez-vous.
+ *
+ * Une consolation qui dit « revenez demain » demande au joueur de retenir
+ * quelque chose ; une qui NOMME le jour ne demande rien. C'est la seule
+ * différence entre les deux, et c'est toute la différence.
+ *
+ * On rend l'ISO BRUT et non un libellé : le formatage dépend du fuseau du
+ * NAVIGATEUR (`formatCalendarUnlock` le dit), il ne peut donc pas se décider
+ * dans une fonction pure partagée avec le serveur.
+ *
+ * La case retenue est la première NON OUVERTE dont l'heure n'est pas encore
+ * passée. Une case déjà ouvrable n'en est pas une : le joueur peut l'ouvrir
+ * MAINTENANT, l'annoncer pour plus tard serait faux. `null` quand il n'en
+ * reste aucune — la grille est finie, ou tout est déjà déverrouillé.
+ */
+export function prochaineOuverture(
+  days: ReadonlyArray<{ status: CalendarBoxState; unlockAt: string | null }>,
+  now: Date = new Date(),
+): string | null {
+  let meilleure: { iso: string; at: number } | null = null;
+  for (const day of days) {
+    if (day.status === "opened" || !day.unlockAt) continue;
+    const at = Date.parse(day.unlockAt);
+    if (Number.isNaN(at) || at <= now.getTime()) continue;
+    if (!meilleure || at < meilleure.at) meilleure = { iso: day.unlockAt, at };
+  }
+  return meilleure ? meilleure.iso : null;
 }
 
 /**

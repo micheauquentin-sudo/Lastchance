@@ -830,6 +830,10 @@ export async function updateCalendar(
     day_count: formData.get("day_count"),
     public_slug: formData.get("public_slug"),
     merchant_content: formData.get("merchant_content"),
+    // Même garde `has` que `code_ttl_days` juste dessous : '' vaut « suivre
+    // le thème », valeur LÉGITIME, donc indiscernable d'un champ absent si
+    // on lisait `get() ?? ""`.
+    fond_key: formData.has("fond_key") ? formData.get("fond_key") : undefined,
     completion_reward_label: formData.get("completion_reward_label"),
     completion_reward_details: formData.get("completion_reward_details"),
     completion_reward_stock: formData.get("completion_reward_stock"),
@@ -942,6 +946,12 @@ export async function updateCalendar(
       // Champ absent du formulaire → colonne non touchée (pas remise à null).
       ...(parsed.data.code_ttl_days !== undefined
         ? { code_ttl_days: parsed.data.code_ttl_days }
+        : {}),
+      // Idem : absent → colonne intacte. Présent et vide → `null`, qui vaut
+      // « suivre le thème » et non « aucun fond » (les deux se distinguent,
+      // cf. `fondChoisi`).
+      ...(parsed.data.fond_key !== undefined
+        ? { fond_key: parsed.data.fond_key }
         : {}),
     })
     .eq("id", id)

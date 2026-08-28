@@ -748,6 +748,7 @@ export type Database = {
           completion_reward_stock: number
           created_at: string
           day_count: number
+          fond_key: string | null
           id: string
           merchant_content: string | null
           name: string
@@ -767,6 +768,7 @@ export type Database = {
           completion_reward_stock: number
           created_at?: string
           day_count: number
+          fond_key?: string | null
           id?: string
           merchant_content?: string | null
           name: string
@@ -786,6 +788,7 @@ export type Database = {
           completion_reward_stock?: number
           created_at?: string
           day_count?: number
+          fond_key?: string | null
           id?: string
           merchant_content?: string | null
           name?: string
@@ -1475,6 +1478,7 @@ export type Database = {
           default_locks_at: string | null
           event_kind: string
           finalized_at: string | null
+          fond_key: string | null
           id: string
           last_sync_error: string | null
           last_synced_at: string | null
@@ -1497,6 +1501,7 @@ export type Database = {
           default_locks_at?: string | null
           event_kind?: string
           finalized_at?: string | null
+          fond_key?: string | null
           id?: string
           last_sync_error?: string | null
           last_synced_at?: string | null
@@ -1519,6 +1524,7 @@ export type Database = {
           default_locks_at?: string | null
           event_kind?: string
           finalized_at?: string | null
+          fond_key?: string | null
           id?: string
           last_sync_error?: string | null
           last_synced_at?: string | null

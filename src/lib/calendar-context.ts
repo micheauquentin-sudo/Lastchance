@@ -37,13 +37,14 @@ const ORG_COLUMNS =
   "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_calendar, comp_access, comp_access_until, timezone";
 
 const CALENDAR_COLUMNS =
-  "id, organization_id, status, public_slug";
+  "id, organization_id, status, public_slug, fond_key";
 
 interface CalendarRow {
   id: string;
   organization_id: string;
   status: string;
   public_slug: string;
+  fond_key: string | null;
   organizations: PublicCalendarOrganization | null;
 }
 
@@ -56,6 +57,12 @@ export type CalendarPublicContext =
       organization: PublicCalendarOrganization;
       /** État public complet (déjà filtré : aucun contenu de case non ouverte). */
       publicState: CalendarPublicState;
+      /**
+       * Réglage BRUT du fond d'écran, tel qu'il est en base : `null` (suivre
+       * le thème), `"aucun"`, ou une clé. Il n'est pas résolu ici — la page
+       * seule connaît le fond du thème qui sert de repli (`fondChoisi`).
+       */
+      fondKey: string | null;
       /** Le visiteur a-t-il déjà une identité de joueur sur ce calendrier ? */
       hasIdentity: boolean;
     };
@@ -117,6 +124,7 @@ export async function loadCalendarPublicContext(
     publicSlug: row.public_slug,
     organization: org,
     publicState,
+    fondKey: row.fond_key ?? null,
     hasIdentity: Boolean(token),
   };
 }

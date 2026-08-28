@@ -5,6 +5,7 @@ import {
   calendarDaySansGain,
   calendarProgress,
   formatCalendarUnlock,
+  prochaineOuverture,
 } from "./calendar-state";
 import {
   CALENDAR_THEME_ORDER,
@@ -135,7 +136,82 @@ describe("calendarConsolation", () => {
   });
 
   it("reste dicible sur une grille vide (jamais « 0 cases »)", () => {
-    expect(calendarConsolation(calendarProgress(0, 0))).toBe("Revenez demain !");
+    expect(calendarConsolation(calendarProgress(0, 0))).toBe(
+      "Revenez ouvrir la prochaine case !",
+    );
+  });
+
+  /**
+   * « DEMAIN » EST UNE PROMESSE QUE LA GRILLE NE TIENT PAS TOUJOURS.
+   *
+   * La consolation disait « revenez demain ». C'est vrai d'un calendrier de
+   * l'Avent et faux de tout le reste : la grille se règle en date de départ
+   * ET en nombre de cases, rien n'impose un pas d'un jour. Le rendez-vous
+   * exact est désormais rendu à part (`prochaineOuverture`), qui le NOMME au
+   * lieu de le supposer — cette phrase-ci ne doit donc plus le supposer non
+   * plus.
+   */
+  it("ne promet plus « demain », que la grille ne garantit pas", () => {
+    for (const progres of [
+      calendarProgress(0, 0),
+      calendarProgress(23, 24),
+      calendarProgress(20, 24),
+    ]) {
+      expect(calendarConsolation(progres)).not.toContain("demain");
+    }
+  });
+});
+
+describe("prochaineOuverture", () => {
+  const T = (h: number) => new Date(Date.UTC(2026, 0, 1, h)).toISOString();
+  const maintenant = new Date(Date.UTC(2026, 0, 1, 12));
+
+  it("retient la PLUS PROCHE des cases encore à venir, pas la première", () => {
+    expect(
+      prochaineOuverture(
+        [
+          { status: "locked", unlockAt: T(20) },
+          { status: "locked", unlockAt: T(14) },
+          { status: "locked", unlockAt: T(18) },
+        ],
+        maintenant,
+      ),
+    ).toBe(T(14));
+  });
+
+  /**
+   * Une case DÉJÀ ouvrable n'est pas un rendez-vous : le joueur peut
+   * l'ouvrir maintenant. L'annoncer pour plus tard serait faux, et l'annoncer
+   * au passé serait absurde.
+   */
+  it("ignore ce qui est déjà ouvert ou déjà ouvrable", () => {
+    expect(
+      prochaineOuverture(
+        [
+          { status: "opened", unlockAt: T(2) },
+          { status: "available", unlockAt: T(9) },
+          { status: "locked", unlockAt: T(9) },
+          { status: "locked", unlockAt: T(16) },
+        ],
+        maintenant,
+      ),
+    ).toBe(T(16));
+  });
+
+  it("rend null quand il ne reste rien à venir, et ne lève jamais", () => {
+    expect(prochaineOuverture([], maintenant)).toBeNull();
+    expect(
+      prochaineOuverture(
+        [{ status: "opened", unlockAt: T(2) }, { status: "locked", unlockAt: null }],
+        maintenant,
+      ),
+    ).toBeNull();
+    expect(
+      prochaineOuverture(
+        [{ status: "locked", unlockAt: "pas-une-date" }],
+        maintenant,
+      ),
+    ).toBeNull();
   });
 });
 

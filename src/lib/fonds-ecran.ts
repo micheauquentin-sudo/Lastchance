@@ -158,3 +158,52 @@ export function fondPourQuizTheme(theme: QuizTheme): FondKey | null {
     ? FOND_PAR_THEME_QUIZ[theme]
     : null;
 }
+
+/**
+ * ── LE CHOIX EXPLICITE D'UN FOND, ET SES TROIS ÉTATS ──
+ *
+ * `fondPourTheme` répond à « quel fond va avec cette palette ? ». La question
+ * posée par un commerçant qui règle son calendrier est autre : « quel fond je
+ * VEUX ? » — et sa réponse a trois formes, pas deux.
+ *
+ *   `null`     → « suivre le thème ». C'est l'absence de choix, donc le
+ *                comportement d'avant le réglage : aucun calendrier existant
+ *                ne change d'apparence le jour où la colonne apparaît.
+ *   `"aucun"`  → « aucune image ». C'est un CHOIX, et `null` ne peut pas le
+ *                dire : les deux se seraient confondus sur une colonne à deux
+ *                états, et le commerçant qui retire le fond de son thème
+ *                l'aurait vu revenir.
+ *   une clé    → l'une des dix illustrations, quel que soit le thème.
+ *
+ * Le CHECK de `calendars.fond_key` (20261102120000) tient le même vocabulaire
+ * en base. Ici, la tolérance est celle de la LECTURE — une valeur inconnue
+ * (colonne écrite avant que la clé n'existe, ou par un chemin qui ignorerait
+ * la liste) retombe sur le repli plutôt que d'atteindre le `src` d'une image.
+ * Même dissymétrie que `asSeasonalTheme` : souple en lecture, stricte à
+ * l'écriture (`fondChoixSchema`, src/lib/validations/calendar.ts).
+ */
+export const AUCUN_FOND = "aucun";
+
+/** Le vocabulaire d'un choix explicite : les dix clés, plus « aucun ». */
+export const FOND_CHOIX = [...FOND_KEYS, AUCUN_FOND] as const;
+
+export type FondChoix = (typeof FOND_CHOIX)[number];
+
+export function estFondChoix(valeur: unknown): valeur is FondChoix {
+  return (
+    typeof valeur === "string" && (FOND_CHOIX as readonly string[]).includes(valeur)
+  );
+}
+
+/**
+ * Résout un réglage en fond effectivement peint, `repli` tenant lieu de
+ * « suivre le thème ». Jamais d'exception : cette fonction décore une page
+ * publique lue au QR code.
+ */
+export function fondChoisi(
+  reglage: string | null | undefined,
+  repli: FondKey | null,
+): FondKey | null {
+  if (!estFondChoix(reglage)) return repli;
+  return reglage === AUCUN_FOND ? null : reglage;
+}

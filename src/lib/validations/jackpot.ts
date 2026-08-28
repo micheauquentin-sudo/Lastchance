@@ -274,6 +274,18 @@ export const deleteJackpotCampaignSchema = z.object({
 /** Identifiant de campagne porté par les actions publiques (toujours l'UUID). */
 export const jackpotCampaignIdSchema = z.string().uuid("Jackpot introuvable");
 
+/**
+ * INVITATION À REJOINDRE LE JACKPOT depuis un AUTRE module (panneau de fin de
+ * partie, bas du calendrier…).
+ *
+ * `organizationId` arrive d'une prop CLIENT : il se lit comme une valeur
+ * FORGÉE. Même contrat que `invitationPasseportSchema` — un seul champ, un
+ * UUID, et tout refus rend le même `null` côté action (aucun oracle).
+ */
+export const invitationJackpotSchema = z.object({
+  organizationId: z.string().uuid("Identifiant invalide"),
+});
+
 /** Code tournant saisi/scanné par le client (6 chiffres). */
 export const jackpotRotatingCodeSchema = z
   .string()

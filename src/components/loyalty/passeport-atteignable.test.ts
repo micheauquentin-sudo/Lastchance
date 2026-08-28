@@ -69,10 +69,29 @@ const ECRANS_DE_FIN = [
 const ISSUES_SANS_GAIN: Array<[fichier: string, phrase: string]> = [
   ["wheel/play-experience.tsx", "La chance tourne,"],
   ["hunts/hunt-journey.tsx", "Les lots sont malheureusement épuisés"],
-  ["calendar/calendar-tracker.tsx", "Vous avez ouvert toutes les cases"],
   ["quiz/quiz-experience.tsx", "à très vite pour le prochain quiz"],
   ["jackpot/jackpot-tracker.tsx", "Ce n&apos;était pas vous cette fois"],
   ["event/event-player.tsx", "Merci d&apos;avoir joué !"],
+];
+
+/**
+ * LE CALENDRIER EST SORTI DE LA LISTE CI-DESSUS, ET C'EST UN RENFORCEMENT.
+ *
+ * Le proxy « la proposition apparaît APRÈS la phrase de défaite » prouve
+ * qu'elle n'est pas enfermée dans la branche gagnante. Il suppose donc
+ * qu'elle est rendue DANS un écran d'issue — ce qui n'est plus vrai ici : le
+ * calendrier la monte dans son bas de page (`GarderLeLien`), hors de toute
+ * issue, donc dès la PREMIÈRE case et quelle qu'elle soit.
+ *
+ * Elle vivait auparavant dans `CompletionCard`, c'est-à-dire chez le seul
+ * joueur ayant ouvert TOUTES les cases : proposer de commencer une habitude
+ * au moment où le jeu se termine. Le proxy textuel passait, et la capacité
+ * n'atteignait presque personne — d'où la garde ci-dessous, qui demande
+ * l'inverse : que le montage NE SOIT PAS conditionné par la fin de partie.
+ */
+const MONTAGE_INCONDITIONNEL: Array<[fichier: string, montage: string]> = [
+  ["calendar/calendar-tracker.tsx", "<GarderLeLien"],
+  ["pronos/player-hub.tsx", "<GarderLeLien"],
 ];
 
 /** Les surfaces DU passeport : elles ne doivent jamais se proposer elles-mêmes. */
@@ -93,7 +112,7 @@ describe("le passeport est proposé depuis les écrans de fin de jeu", () => {
     expect(sansProposition).toEqual([]);
   });
 
-  it("les six surfaces à double issue la proposent AUSSI sans gain", () => {
+  it("les cinq surfaces à double issue la proposent AUSSI sans gain", () => {
     const manquants = ISSUES_SANS_GAIN.filter(([fichier, phrase]) => {
       const src = lire(fichier);
       const iPhrase = src.indexOf(phrase);
@@ -104,20 +123,47 @@ describe("le passeport est proposé depuis les écrans de fin de jeu", () => {
     expect(manquants).toEqual([]);
   });
 
-  it("les deux surfaces SANS écran perdant sont dites, pas oubliées", () => {
-    // `pronos/player-hub.tsx` n'a pas d'écran de fin distinct : le hub reste
-    // ouvert, seule la récompense apparaît ou non. `wheel/referral-panel.tsx`
-    // n'existe QUE sur /play, dont les deux phases de fin
-    // (`play-experience.tsx`) portent déjà la proposition — l'y doubler
-    // n'ajouterait rien, et la garde un-exemplaire-par-page l'effacerait.
-    const aDoubleIssue = new Set(ISSUES_SANS_GAIN.map(([f]) => f));
+  it("le calendrier la monte hors de toute issue, donc dès la première case", () => {
+    for (const [fichier, montage] of MONTAGE_INCONDITIONNEL) {
+      const src = lire(fichier);
+
+      // Le bloc qui porte la proposition existe, et il la porte vraiment.
+      const iMontage = src.indexOf(montage);
+      expect(iMontage, `${fichier} : ${montage} introuvable`).toBeGreaterThan(-1);
+      expect(src).toContain("<ProposerPasseport");
+
+      // Et son montage n'est gardé par AUCUNE condition de fin de partie :
+      // c'est exactement ce que l'ancien emplacement (`CompletionCard`,
+      // rendu sous `{progress.complete && …}`) faisait, et qui le rendait
+      // invisible à qui n'avait pas fini.
+      const avant = src.slice(Math.max(0, iMontage - 240), iMontage);
+      expect(avant, `${fichier} : montage conditionné`).not.toContain(
+        "complete &&",
+      );
+    }
+  });
+
+  it("la surface SANS écran perdant est dite, pas oubliée", () => {
+    // `pronos/player-hub.tsx` FIGURAIT ici : faute d'écran de fin distinct,
+    // sa proposition vivait dans la carte de RÉCOMPENSE — donc chez le seul
+    // joueur ayant gagné un lot à la clôture, un par championnat. Ce n'était
+    // pas « pas d'écran perdant », c'était « proposition invisible ». Elle
+    // est descendue en bas de page et le hub a rejoint la liste ci-dessus.
+    //
+    // `wheel/referral-panel.tsx` reste : il n'existe QUE sur /play, dont les
+    // deux phases de fin (`play-experience.tsx`) portent déjà la
+    // proposition — l'y doubler n'ajouterait rien, et la garde
+    // un-exemplaire-par-page l'effacerait.
+    // Les deux familles couvrent l'issue perdante : par POSITION dans
+    // l'écran (ISSUES_SANS_GAIN) ou par montage inconditionnel.
+    const aDoubleIssue = new Set([
+      ...ISSUES_SANS_GAIN.map(([f]) => f),
+      ...MONTAGE_INCONDITIONNEL.map(([f]) => f),
+    ]);
     const sansEcranPerdant = ECRANS_DE_FIN.filter(
       (e) => !aDoubleIssue.has(e) && e !== "wheel/claim-form.tsx",
     );
-    expect(sansEcranPerdant.sort()).toEqual([
-      "pronos/player-hub.tsx",
-      "wheel/referral-panel.tsx",
-    ]);
+    expect(sansEcranPerdant.sort()).toEqual(["wheel/referral-panel.tsx"]);
   });
 
   it("le tour offert DU passeport exclut explicitement la proposition", () => {

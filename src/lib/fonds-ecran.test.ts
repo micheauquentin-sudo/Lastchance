@@ -3,8 +3,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  AUCUN_FOND,
+  estFondChoix,
+  FOND_CHOIX,
   FOND_KEYS,
   FOND_LABELS,
+  fondChoisi,
   fondPourQuizTheme,
   fondPourTheme,
   fondSrc,
@@ -150,5 +154,64 @@ describe("fondPourQuizTheme — correspondance d'USAGE, pas d'extension", () => 
     for (const heritee of ["constructor", "toString", "__proto__", "valueOf"]) {
       expect(fondPourQuizTheme(heritee as QuizTheme)).toBeNull();
     }
+  });
+});
+
+/**
+ * LES TROIS ÉTATS D'UN CHOIX DE FOND, ET POURQUOI DEUX N'AURAIENT PAS SUFFI.
+ *
+ * Le réglage d'un calendrier (`calendars.fond_key`) n'a pas deux valeurs mais
+ * trois, et c'est la distinction que ces tests gardent : `null` (« suivre le
+ * thème », l'absence de choix) n'est PAS `"aucun"` (« pas d'image », un choix).
+ * Confondues, un commerçant qui retire le fond d'un thème qui en a un le voit
+ * revenir au rechargement — le réglage devient impossible à exprimer.
+ */
+describe("fondChoisi — les trois états d'un réglage de fond", () => {
+  it("null vaut « suivre le thème » : le repli passe", () => {
+    expect(fondChoisi(null, "noel")).toBe("noel");
+    expect(fondChoisi(undefined, "prairie")).toBe("prairie");
+    expect(fondChoisi(null, null)).toBeNull();
+  });
+
+  it("« aucun » est un CHOIX : il écrase le repli du thème", () => {
+    expect(fondChoisi(AUCUN_FOND, "noel")).toBeNull();
+  });
+
+  it("une clé connue gagne, quel que soit le thème", () => {
+    for (const cle of FOND_KEYS) {
+      expect(fondChoisi(cle, "noel")).toBe(cle);
+      expect(fondChoisi(cle, null)).toBe(cle);
+    }
+  });
+
+  /**
+   * Tolérance en LECTURE (miroir d'`asSeasonalTheme`) : une valeur inconnue
+   * — écrite avant que la clé n'existe, ou par un chemin qui ignorerait la
+   * liste — retombe sur le repli plutôt que d'atteindre le `src` d'une image
+   * servie à un joueur anonyme. La rigueur est à l'ÉCRITURE (schéma Zod +
+   * CHECK SQL), pas ici.
+   */
+  it("une valeur inconnue ou héritée retombe sur le repli, jamais dans un src", () => {
+    for (const inconnue of [
+      "licorne",
+      "",
+      "constructor",
+      "__proto__",
+      "toString",
+      42,
+      {},
+    ]) {
+      expect(fondChoisi(inconnue as never, "noel")).toBe("noel");
+      expect(fondChoisi(inconnue as never, null)).toBeNull();
+    }
+  });
+
+  it("FOND_CHOIX = les dix clés livrées, plus « aucun », et rien d'autre", () => {
+    expect([...FOND_CHOIX].sort()).toEqual(
+      [...FOND_KEYS, AUCUN_FOND].sort(),
+    );
+    for (const cle of FOND_CHOIX) expect(estFondChoix(cle)).toBe(true);
+    expect(estFondChoix("licorne")).toBe(false);
+    expect(estFondChoix(null)).toBe(false);
   });
 });

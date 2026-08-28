@@ -8,7 +8,8 @@ import { CalendarTracker } from "@/components/calendar/calendar-tracker";
 import { loadCalendarSpinBundles } from "@/lib/calendar-spin-bundle";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
-import { fondPourTheme } from "@/lib/fonds-ecran";
+import { fondChoisi, fondPourTheme } from "@/lib/fonds-ecran";
+import { sortieDeLOrganisation } from "@/lib/sortie-apres-jeu";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
@@ -88,20 +89,27 @@ export default async function CalendarPage({
     .filter((d) => d.status === "opened" && d.contentType === "spin" && d.targetWheelId)
     .map((d) => d.targetWheelId as string);
 
-  // Les deux lectures ne dépendent pas l'une de l'autre : toutes deux ne
-  // partent que de `ctx`. Les enchaîner ajoutait un aller-retour Postgres
-  // entier avant le premier octet d'une page ouverte au QR code, en boutique,
-  // sur réseau mobile — le seul contexte où cette page est jamais lue.
+  // Les trois lectures ne dépendent pas les unes des autres : toutes partent
+  // de `ctx` seul. Les enchaîner ajoutait autant d'allers-retours Postgres
+  // avant le premier octet d'une page ouverte au QR code, en boutique, sur
+  // réseau mobile — le seul contexte où cette page est jamais lue.
   //
   // dayIndex → id : l'état public masque l'id des cases (sécurité), mais
   // open_calendar_box l'exige. On le résout côté serveur (service role, scopé).
-  const [{ data: dayRows }, spinBundles] = await Promise.all([
+  const [{ data: dayRows }, spinBundles, sortie] = await Promise.all([
     admin
       .from("calendar_days")
       .select("id, day_index")
       .eq("calendar_id", ctx.calendarId)
       .eq("organization_id", ctx.organization.id),
     loadCalendarSpinBundles(admin, openedSpinWheelIds, ctx.organization.id),
+    // Vitrine publiée + liens de l'organisation, pour le bas de page. Elle
+    // rejoint le `Promise.all` plutôt que de l'attendre : elle ne dépend que
+    // de `ctx`, et l'enchaîner aurait ajouté deux allers-retours Postgres
+    // avant le premier octet d'une page ouverte au QR, en boutique, sur
+    // réseau mobile. Toute panne y vaut `null` — un bas de page muet ne
+    // casse pas un calendrier.
+    sortieDeLOrganisation(ctx.organization.id),
   ]);
   const dayIds: Record<number, string> = {};
   for (const d of (dayRows ?? []) as { id: string; day_index: number }[]) {
@@ -109,7 +117,7 @@ export default async function CalendarPage({
   }
 
   return (
-    <Shell theme={ctx.publicState.calendar.theme}>
+    <Shell theme={ctx.publicState.calendar.theme} fondKey={ctx.fondKey}>
       <PageOpenBeacon module="calendar" publicId={ctx.publicSlug} />
       <CalendarTracker
         calendarId={ctx.calendarId}
@@ -122,6 +130,7 @@ export default async function CalendarPage({
         initialState={ctx.publicState}
         dayIds={dayIds}
         spinBundles={spinBundles}
+        sortie={sortie}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">
@@ -144,16 +153,23 @@ export default async function CalendarPage({
  */
 function Shell({
   theme,
+  fondKey,
   children,
 }: {
   theme: Parameters<typeof calendarThemeTokens>[0];
+  /** Réglage BRUT du commerçant : `null` = suivre le thème, `"aucun"`, ou une clé. */
+  fondKey: string | null;
   children: React.ReactNode;
 }) {
   const tokens = calendarThemeTokens(theme);
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
-      fond={fondPourTheme(tokens.key)}
+      // Le fond du THÈME n'est plus qu'un repli : il ne s'applique que si le
+      // commerçant n'a rien choisi. `fondChoisi` distingue « suivre le
+      // thème » (null) de « aucun fond » (choix explicite) — sans quoi
+      // retirer l'image d'un thème qui en a une aurait été impossible.
+      fond={fondChoisi(fondKey, fondPourTheme(tokens.key))}
     >
       {children}
     </PlayerPageShell>

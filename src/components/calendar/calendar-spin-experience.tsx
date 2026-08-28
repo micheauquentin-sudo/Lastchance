@@ -220,13 +220,19 @@ export function CalendarSpinExperience({
 
       {phase === "lost" && (
         <div role="status" aria-live="polite" className="mt-6">
+          {/* LE TRÈFLE, comme sur la case perdante du calendrier (voir
+              `contentEmoji`, calendar-tracker.tsx). Le dé disait le hasard —
+              vrai, mais froid, et surtout sans suite. Les deux issues
+              perdantes de ce module portent désormais le même signe : celui
+              de la chance qui n'est pas venue AUJOURD'HUI. */}
           <div aria-hidden className="mb-6 text-5xl">
-            🎲
+            🍀
           </div>
-          <h2 className="mb-3 text-3xl font-black text-k-ink">Pas de gain cette fois…</h2>
+          <h2 className="mb-3 text-3xl font-black text-k-ink">Pas de chance cette fois…</h2>
           <p className="text-k-body">
-            La roue ne vous a rien donné aujourd&apos;hui. Merci d&apos;avoir joué —
-            revenez ouvrir vos prochaines cases !
+            La roue ne vous a rien donné aujourd&apos;hui — c&apos;est le jeu,
+            et le trèfle tourne vite. Votre case compte quand même dans votre
+            assiduité : revenez ouvrir la prochaine !
           </p>
           <BackButton onExit={onExit} />
         </div>

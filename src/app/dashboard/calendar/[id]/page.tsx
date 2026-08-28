@@ -53,7 +53,7 @@ import type { Calendar, CalendarDay } from "@/types/database";
 export const metadata: Metadata = { title: "Calendrier" };
 
 const CALENDAR_COLUMNS =
-  "id, organization_id, name, theme, status, start_date, timezone, day_count, public_slug, merchant_content, completion_reward_label, completion_reward_details, completion_reward_stock, completion_reward_claimed_count, created_at, updated_at, code_ttl_days";
+  "id, organization_id, name, theme, status, start_date, timezone, day_count, public_slug, merchant_content, fond_key, completion_reward_label, completion_reward_details, completion_reward_stock, completion_reward_claimed_count, created_at, updated_at, code_ttl_days";
 
 interface WheelRow {
   id: string;
@@ -295,7 +295,9 @@ export default async function CalendarDetailPage({
               </p>
             )}
 
-            {etape === "reglages" && <CalendarSettings calendar={c} />}
+            {etape === "reglages" && (
+              <CalendarSettings calendar={c} logoUrl={organization.logo_url} />
+            )}
 
             {etape === "cases" && (
               <CalendarDaysEditor days={days} wheels={wheels} />
