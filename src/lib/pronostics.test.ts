@@ -8,6 +8,8 @@ import {
   isPredictionOpen,
   parseRewards,
   parseScoring,
+  grouperParJournee,
+  libelleJournee,
   progressionPronostics,
   rewardForRank,
 } from "./pronostics";
@@ -493,5 +495,93 @@ describe("attendResultat", () => {
 
   it("avant le coup d'envoi, rien n'est attendu", () => {
     expect(attendResultat(KICKOFF, apres(-30))).toBe(false);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Journées de championnat — la séparation qui manquait
+//
+// La grille listait les matchs à la file : on passait du dimanche 30 août au
+// jeudi 3 septembre sans séparation, alors que ce sont deux journées.
+// ────────────────────────────────────────────────────────────
+
+describe("libelleJournee", () => {
+  it("accorde l'ordinal français, « 1re » et non « 1e »", () => {
+    expect(libelleJournee(1)).toBe("1re journée");
+    expect(libelleJournee(2)).toBe("2e journée");
+    expect(libelleJournee(34)).toBe("34e journée");
+  });
+
+  /**
+   * Un match saisi à la main ou un tour de coupe non numéroté n'a pas de
+   * journée. Lui en inventer une rangerait un combat de boxe dans une « 1re
+   * journée » qui n'existe pas.
+   */
+  it("nomme le groupe des matchs SANS journée, sans en inventer une", () => {
+    expect(libelleJournee(null)).toBe("Autres matchs");
+  });
+});
+
+describe("grouperParJournee", () => {
+  const m = (id: string, round: number | null, kickoff: string) => ({
+    id,
+    round,
+    kickoff_at: kickoff,
+  });
+
+  it("sépare deux journées que la date seule collait l'une à l'autre", () => {
+    // Le cas exact de la capture : dimanche 30 août (J2) puis jeudi 3
+    // septembre (J3), consécutifs dans le temps, distincts en journées.
+    const groupes = grouperParJournee([
+      m("dim30", 2, "2026-08-30T18:45:00.000Z"),
+      m("jeu03", 3, "2026-09-03T18:45:00.000Z"),
+    ]);
+
+    expect(groupes.map((g) => g.round)).toEqual([2, 3]);
+    expect(groupes.map((g) => g.libelle)).toEqual(["2e journée", "3e journée"]);
+  });
+
+  it("ordonne les journées par NUMÉRO, et les matchs par coup d'envoi", () => {
+    const groupes = grouperParJournee([
+      m("c", 3, "2026-09-03T18:45:00.000Z"),
+      m("b", 2, "2026-08-30T18:45:00.000Z"),
+      m("a", 2, "2026-08-28T18:45:00.000Z"),
+    ]);
+
+    expect(groupes.map((g) => g.round)).toEqual([2, 3]);
+    // Dans la journée : le vendredi avant le dimanche, comme elle se joue.
+    expect(groupes[0].matchs.map((x) => x.id)).toEqual(["a", "b"]);
+  });
+
+  /**
+   * Les matchs sans journée FERMENT la marche. Les intercaler par date
+   * couperait une journée en deux — exactement le défaut qu'on répare.
+   */
+  it("range les matchs sans journée à la fin, jamais au milieu", () => {
+    const groupes = grouperParJournee([
+      m("libre", null, "2026-08-01T18:45:00.000Z"),
+      m("j2", 2, "2026-08-30T18:45:00.000Z"),
+    ]);
+
+    expect(groupes.map((g) => g.round)).toEqual([2, null]);
+    expect(groupes[1].libelle).toBe("Autres matchs");
+  });
+
+  it("ne perd ni ne duplique aucun match", () => {
+    const matchs = [
+      m("a", 1, "2026-08-21T18:45:00.000Z"),
+      m("b", 1, "2026-08-22T18:45:00.000Z"),
+      m("c", 2, "2026-08-28T18:45:00.000Z"),
+      m("d", null, "2026-08-15T18:45:00.000Z"),
+    ];
+    const ids = grouperParJournee(matchs)
+      .flatMap((g) => g.matchs.map((x) => x.id))
+      .sort();
+
+    expect(ids).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("une grille vide rend zéro groupe, pas un groupe vide", () => {
+    expect(grouperParJournee([])).toEqual([]);
   });
 });

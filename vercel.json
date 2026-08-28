@@ -31,6 +31,10 @@
       "schedule": "15 9 * * *"
     },
     {
+      "path": "/api/cron/contest-reminders",
+      "schedule": "45 9 * * 4"
+    },
+    {
       "path": "/api/cron/jackpot-draws",
       "schedule": "45 4 * * *"
     },

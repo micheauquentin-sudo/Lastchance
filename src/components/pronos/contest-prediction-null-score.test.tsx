@@ -145,6 +145,7 @@ const MATCH: ContestMatch = {
   home_penalties: null,
   away_penalties: null,
   position: 1,
+  round: null,
   external_ref: "",
   question_type: "score",
   prompt: null,

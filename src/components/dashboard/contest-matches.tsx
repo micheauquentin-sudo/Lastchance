@@ -6,6 +6,7 @@ import {
   addMatch,
   deleteMatch,
   importContestRound,
+  importContestSeason,
   previewContestRound,
   setMatchResult,
   syncContest,
@@ -432,6 +433,82 @@ function SyncContestButton({ contestId }: { contestId: string }) {
  * coupes — leurs tours ne se numérotent pas en continu. Sans borne, le champ
  * reste libre plutôt que d'afficher une liste de journées inventées.
  */
+/**
+ * IMPORTER TOUTE LA SAISON RESTANTE — un geste de début de saison.
+ *
+ * Le calendrier d'un championnat est publié d'un bloc en août. Le commerçant
+ * qui veut que ses clients pronostiquent l'année entière n'a aucune raison
+ * de revenir trente-quatre fois.
+ *
+ * CONFIRMATION EXIGÉE : le geste peut ajouter trois cents matchs à la grille,
+ * et rien ne les retire en masse. Un `confirm` n'est pas une politesse ici,
+ * c'est la seule barrière avant un écran de saisie très long.
+ *
+ * Il n'apparaît QUE pour une compétition dont le catalogue connaît le nombre
+ * de journées — voir `competition.journees`.
+ */
+function ImporterSaison({ contestId }: { contestId: string }) {
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+
+  // `pending` manuel, comme partout dans ce fichier : il doit retomber même
+  // quand le rendu ne rejoue pas la revalidation (docs/bugs.md).
+  const lancer = () => {
+    if (
+      !confirm(
+        "Importer toutes les journées restantes de la saison ? Cela peut ajouter plusieurs centaines de matchs à votre grille.",
+      )
+    ) {
+      return;
+    }
+    setPending(true);
+    setErreur(null);
+    setMessage(null);
+    void (async () => {
+      try {
+        const res = await importContestSeason({ id: contestId });
+        if (!res.ok) {
+          setErreur(res.error);
+          return;
+        }
+        setMessage(
+          `${res.data.imported} match${res.data.imported > 1 ? "s" : ""} importé${res.data.imported > 1 ? "s" : ""} sur ${res.data.journees} journée${res.data.journees > 1 ? "s" : ""}.`,
+        );
+        // La grille est rendue par le serveur : sans rechargement, le
+        // commerçant lit « 280 matchs importés » au-dessus d'une liste
+        // inchangée, et relance.
+        window.location.reload();
+      } catch {
+        setErreur("Import impossible, réessayez.");
+      } finally {
+        setPending(false);
+      }
+    })();
+  };
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={lancer}
+        disabled={pending}
+        className="text-sm font-bold text-k-ink underline underline-offset-2 disabled:opacity-50"
+      >
+        {pending ? "Import de la saison…" : "⏬ Importer toute la saison"}
+      </button>
+      <p className="mt-1 text-xs text-zinc-500">
+        Vos clients pourront pronostiquer l&apos;année entière d&apos;un seul
+        coup. Les journées déjà jouées ne sont jamais importées.
+      </p>
+      {message && (
+        <p className="mt-1 text-sm font-semibold text-k-green">{message}</p>
+      )}
+      <FieldError message={erreur ?? undefined} />
+    </div>
+  );
+}
+
 function CalendrierComplet({
   contestId,
   competition,
@@ -520,6 +597,7 @@ function CalendrierComplet({
         >
           📅 Voir le calendrier complet
         </button>
+        {competition.journees && <ImporterSaison contestId={contestId} />}
         <p className="mt-1 text-xs text-zinc-500">
           La synchronisation apporte les journées proches. Ici, vous choisissez
           n&apos;importe quelle journée de la saison.

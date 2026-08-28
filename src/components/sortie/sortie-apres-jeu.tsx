@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { SortieApresJeu as Sortie } from "@/lib/sortie-apres-jeu";
 
 /**
@@ -38,6 +38,50 @@ import type { SortieApresJeu as Sortie } from "@/lib/sortie-apres-jeu";
  * le commerçant, la page ne leur prête aucune autorité.
  */
 
+/**
+ * LE VISITEUR ARRIVE-T-IL DE LA VITRINE ?
+ *
+ * La carte disait « Revenir à la carte » à tout le monde. Or la majorité des
+ * joueurs arrivent par un QR code ou un lien partagé : on leur proposait de
+ * REVENIR d'un endroit où ils n'étaient jamais allés. « Revenir » promet un
+ * chemin parcouru ; sans ce chemin, la phrase est fausse et le lien perd son
+ * sens — le visiteur croit retourner en arrière.
+ *
+ * Le `referrer` est la seule information disponible : la Vitrine ne pose pas
+ * de paramètre en sortant (ses portes sont des ANCRES vers ses propres blocs,
+ * cf. `vitrine-action.ts`), et lui en ajouter un pour ce seul libellé serait
+ * un paramètre de plus dans toutes les URL partagées.
+ *
+ * ── LE DÉFAUT VAUT « JE NE VIENS PAS DE LA CARTE » ──
+ *
+ * `useSyncExternalStore` rend `false` au SERVEUR : sans referrer lisible, on
+ * dit « Découvrir », jamais « Revenir ». Se tromper dans ce sens propose une
+ * découverte à quelqu'un qui connaît déjà — inoffensif. Se tromper dans
+ * l'autre lui promet un retour qui n'existe pas.
+ */
+const emptySubscribe = () => () => {};
+
+function useVientDeLaVitrine(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      if (typeof document === "undefined" || !document.referrer) return false;
+      try {
+        const ref = new URL(document.referrer);
+        // MÊME ORIGINE exigée : un site tiers dont le chemin commence par
+        // `/v/` n'est pas notre Vitrine.
+        return (
+          ref.origin === window.location.origin &&
+          ref.pathname.startsWith("/v/")
+        );
+      } catch {
+        return false;
+      }
+    },
+    () => false,
+  );
+}
+
 /** Les trois liens externes, dans l'ordre où ils sont peints. */
 const TUILES: ReadonlyArray<{
   cle: "google" | "instagram" | "tiktok";
@@ -57,6 +101,7 @@ const TUILES: ReadonlyArray<{
 
 export function SortieApresJeu({ sortie }: { sortie: Sortie | null }) {
   const [ouvert, setOuvert] = useState(true);
+  const deLaVitrine = useVientDeLaVitrine();
 
   // `null` dit « rien à proposer » : le serveur a déjà écarté les liens
   // invalides et la Vitrine non publiée. L'écran n'a pas à compter des clés.
@@ -92,10 +137,12 @@ export function SortieApresJeu({ sortie }: { sortie: Sortie | null }) {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold text-k-ink">
-                Revenir à la carte
+                {deLaVitrine ? "Revenir à la carte" : "Découvrir notre carte"}
               </span>
               <span className="block text-xs text-k-body">
-                Retrouvez ce que propose la maison
+                {deLaVitrine
+                  ? "Retrouvez ce que propose la maison"
+                  : "La carte, les horaires, ce que propose la maison"}
               </span>
             </span>
             <span aria-hidden className="text-k-body">

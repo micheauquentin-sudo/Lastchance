@@ -237,6 +237,13 @@ export interface ContestMatch {
   home_penalties: number | null;
   away_penalties: number | null;
   position: number;
+  /**
+   * Journée de championnat (`intRound` du fournisseur). `null` pour un match
+   * saisi à la main, un tour de coupe non numéroté, ou un match importé avant
+   * la migration 20261104120000 — la synchronisation suivante la pose.
+   * L'écran joueur groupe par journée et réunit les `null` à part.
+   */
+  round: number | null;
   /** Identifiant du match chez le fournisseur de calendriers (vide = saisie manuelle). */
   external_ref: string;
   /** Famille de question : score (football) | choice | ranking | number. */
@@ -272,6 +279,12 @@ export interface ContestPlayer {
   phone: string | null;
   /** Consentement aux règles et à l'affichage du prénom au classement. */
   accepted_terms: boolean;
+  /**
+   * Le joueur accepte un rappel hebdomadaire quand des pronostics manquent.
+   * OPT-IN strict : `false` par défaut, jamais pré-coché, et aucun envoi si la
+   * grille est déjà complète (`joueursARelancer`, src/lib/contest-reminders.ts).
+   */
+  reminder_opt_in: boolean;
   created_at: string;
 }
 

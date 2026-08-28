@@ -68,6 +68,13 @@ export interface ProviderFixture {
   /** Séance de tirs au but — null hors penalties. */
   homePenalties: number | null;
   awayPenalties: number | null;
+  /**
+   * Journée de championnat. `null` quand le fournisseur ne numérote pas
+   * ce tour — une coupe, typiquement. C'est une réponse, pas un trou : la
+   * grille regroupe ces matchs à part plutôt que de leur inventer un
+   * numéro.
+   */
+  round: number | null;
 }
 
 /** Forme brute d'un événement TheSportsDB (champs utilisés uniquement). */
@@ -185,6 +192,7 @@ export function parseProviderEvent(
     homeName,
     awayName,
     kickoffAt: kickoff.toISOString(),
+    round: parseRound(event.intRound),
     homeScore,
     awayScore,
     finished,
@@ -396,6 +404,9 @@ export function parseCachedFixtures(payload: unknown): ProviderFixture[] | null 
       homeName: f.homeName,
       awayName: f.awayName,
       kickoffAt: f.kickoffAt,
+      // Champ apparu après coup : une copie écrite avant son ajout reste
+      // servable (`null`), pas de purge du cache au déploiement.
+      round: typeof f.round === "number" ? f.round : null,
       homeScore: f.homeScore as number | null,
       awayScore: f.awayScore as number | null,
       finished: f.finished,
@@ -571,10 +582,72 @@ export interface ResolvedSide {
 }
 
 /**
+ * Initiales lisibles tirées d'un nom d'équipe — LE REPLI DES ÉQUIPES HORS
+ * CATALOGUE.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Une équipe absente du catalogue rendait `badge: ""`, et l'écran peignait
+ * alors un DRAPEAU BLANC (`{badge || "🏳️"}`). Vu en production sur Troyes
+ * et Le Mans : deux clubs promus, donc absents d'un catalogue figé la
+ * saison précédente. Le joueur lisait « Le Mans 🏳️ » — un signe de
+ * reddition en face d'une équipe de football.
+ *
+ * Et ce n'est pas un oubli de catalogue à rattraper : une promotion, une
+ * relégation ou une petite nation qualifiée en produiront un chaque année.
+ * Le catalogue restera toujours en retard sur le fournisseur ; c'est le
+ * REPLI qui doit être bon.
+ *
+ * ── LA RÈGLE ──
+ *
+ * Les initiales des mots significatifs, en majuscules, trois au plus :
+ * « Le Mans » → « LM », « Troyes » → « TRO », « Paris Saint-Germain » →
+ * « PSG ». Un mot unique donne ses trois premières lettres, ce qui reste
+ * plus reconnaissable qu'une initiale seule.
+ *
+ * Les mots vides (`de`, `du`, `la`, `le`, `les`, `d'`) sont écartés — sauf
+ * si le nom n'est QUE cela, cas où l'on préfère une initiale à rien.
+ */
+const MOTS_VIDES = new Set(["de", "du", "des", "la", "le", "les", "d", "l", "of", "the"]);
+
+export function initialesEquipe(nom: string): string {
+  const mots = normalizeTeamName(nom)
+    .split(" ")
+    .filter((m) => m.length > 0);
+  const significatifs = mots.filter((m) => !MOTS_VIDES.has(m));
+  const retenus = significatifs.length > 0 ? significatifs : mots;
+  if (retenus.length === 0) return "";
+  if (retenus.length === 1) return retenus[0].slice(0, 3).toUpperCase();
+  return retenus
+    .slice(0, 3)
+    .map((m) => m[0])
+    .join("")
+    .toUpperCase();
+}
+
+/**
+ * Couleur STABLE d'une équipe hors catalogue, dérivée de son nom.
+ *
+ * Une couleur tirée au hasard changerait à chaque rendu ; une couleur fixe
+ * rendrait toutes les équipes inconnues identiques. Le hash du nom donne
+ * une teinte stable et distincte, prise dans une palette dont le contraste
+ * avec du texte blanc est tenu (S/L fixés, seule la teinte varie).
+ */
+export function couleurEquipe(nom: string): string {
+  const normalise = normalizeTeamName(nom);
+  let hash = 0;
+  for (let i = 0; i < normalise.length; i += 1) {
+    hash = (hash * 31 + normalise.charCodeAt(i)) % 360;
+  }
+  return `hsl(${hash} 45% 34%)`;
+}
+
+/**
  * Associe un nom d'équipe fournisseur à une entrée du catalogue pour
  * hériter de sa vignette (drapeau / initiales + couleur). Une équipe
- * inconnue garde son nom fournisseur sans vignette — le match reste
- * jouable (rencontre hors catalogue, ex. petite nation en LDC).
+ * INCONNUE ne reste plus sans vignette : elle reçoit ses initiales et une
+ * couleur stable, ce qui la rend reconnaissable dans une grille sans
+ * dépendre d'un catalogue toujours en retard d'une promotion.
  */
 export function resolveProviderSide(
   competition: Competition,
@@ -589,7 +662,12 @@ export function resolveProviderSide(
     competition.entries.find((e) => normalizeTeamName(e.name) === normalized);
 
   if (!entry) {
-    return { key: "", name: providerName, badge: "", color: "" };
+    return {
+      key: "",
+      name: providerName,
+      badge: initialesEquipe(providerName),
+      color: couleurEquipe(providerName),
+    };
   }
   return {
     key: entry.key,

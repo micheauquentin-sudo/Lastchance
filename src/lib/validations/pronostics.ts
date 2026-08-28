@@ -809,6 +809,12 @@ export const registerPlayerSchema = z.object({
   accepted_terms: z.literal(true, {
     error: "Vous devez accepter le règlement et la politique de confidentialité",
   }),
+  /**
+   * Rappel hebdomadaire — OPT-IN, donc un simple booléen et surtout PAS un
+   * `z.literal(true)` : contrairement aux conditions, refuser est une
+   * réponse valide qui ne doit pas bloquer l'inscription.
+   */
+  reminder_opt_in: z.boolean().default(false),
   /** Réponse à la question subsidiaire (départage) — '' si absente. */
   tiebreaker_guess: tiebreakerNumberSchema,
 });

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, vi } from "vitest";
 import {
   fetchLeagueFixtures,
   JOURNEES_APRES,
+  couleurEquipe,
+  initialesEquipe,
   normalizeTeamName,
   parseCachedFixtures,
   parseProviderEvent,
@@ -39,6 +41,7 @@ describe("parseProviderEvent", () => {
       finishType: "regular",
       homePenalties: null,
       awayPenalties: null,
+      round: null,
     });
   });
 
@@ -216,11 +219,39 @@ describe("resolveProviderSide", () => {
     expect(side.key).toBe("eng");
   });
 
-  it("équipe hors catalogue : nom conservé, sans vignette", () => {
+  /**
+   * UNE ÉQUIPE HORS CATALOGUE N'EST PLUS UN DRAPEAU BLANC.
+   *
+   * Ce test exigeait `badge === ""`, et l'écran peignait alors 🏳️ — vu en
+   * production sur Troyes et Le Mans, deux clubs promus donc absents d'un
+   * catalogue figé la saison précédente. Le joueur lisait « Le Mans 🏳️ »,
+   * un signe de reddition en face d'une équipe de football.
+   *
+   * Ce n'est pas un catalogue à rattraper : chaque promotion, relégation ou
+   * qualification en produira un. C'est le REPLI qui doit être bon.
+   */
+  it("équipe hors catalogue : nom conservé, initiales lisibles", () => {
     const side = resolveProviderSide(cdm, "Cape Verde");
     expect(side.key).toBe("");
     expect(side.name).toBe("Cape Verde");
-    expect(side.badge).toBe("");
+    expect(side.badge).toBe("CV");
+    // Une couleur STABLE, donc la même à chaque rendu.
+    expect(side.color).toBe(resolveProviderSide(cdm, "Cape Verde").color);
+    expect(side.color).not.toBe("");
+  });
+
+  it("les cas relevés en production ont des initiales justes", () => {
+    for (const [nom, attendu] of [
+      ["Le Mans", "MAN"],
+      ["Troyes", "TRO"],
+      ["Paris Saint-Germain", "PSG"],
+    ] as const) {
+      expect(initialesEquipe(nom), nom).toBe(attendu);
+    }
+  });
+
+  it("deux équipes différentes ne partagent pas la même couleur", () => {
+    expect(couleurEquipe("Le Mans")).not.toBe(couleurEquipe("Troyes"));
   });
 });
 
@@ -236,6 +267,7 @@ describe("parseCachedFixtures", () => {
     finishType: "regular",
     homePenalties: null,
     awayPenalties: null,
+    round: null,
   };
 
   it("relit un payload sain", () => {
@@ -243,7 +275,14 @@ describe("parseCachedFixtures", () => {
     expect(parseCachedFixtures([])).toEqual([]);
   });
 
-  it("copie d'avant l'ajout des prolongations : valeurs par défaut", () => {
+  /**
+   * DEUX champs sont arrivés après coup dans le payload du cache : les
+   * prolongations, puis la JOURNÉE (`round`, 20261104120000). Une copie
+   * écrite avant eux doit rester servable — sans quoi tout déploiement qui
+   * enrichit la forme viderait le cache de toutes les compétitions d'un coup,
+   * et rendrait une salve d'appels au fournisseur.
+   */
+  it("copie d'avant l'ajout des prolongations et de la journée", () => {
     const legacy = {
       ref: valid.ref,
       homeName: valid.homeName,
@@ -254,7 +293,13 @@ describe("parseCachedFixtures", () => {
       finished: true,
     };
     expect(parseCachedFixtures([legacy])).toEqual([
-      { ...legacy, finishType: "regular", homePenalties: null, awayPenalties: null },
+      {
+        ...legacy,
+        finishType: "regular",
+        homePenalties: null,
+        awayPenalties: null,
+        round: null,
+      },
     ]);
   });
 
