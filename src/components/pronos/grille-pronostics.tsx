@@ -8,45 +8,42 @@ import { Badge, formatKickoff, scoreInputValue } from "./contest-experience";
 import type { ContestMatch } from "@/types/database";
 
 /**
- * LA GRILLE — plusieurs matchs, groupés par JOURNÉE, un seul bouton.
+ * LA GRILLE — la semaine d'abord, la saison à la demande.
  *
- * ── CE QUE ÇA REMPLACE ──
+ * ── LE DÉFAUT QUE ÇA FERME (capture du 2026-08-28) ──
  *
- * Chaque match ouvert portait sa propre carte et son propre bouton
- * « Valider ». Pronostiquer une journée de Ligue 1, c'était neuf boutons, neuf
- * allers-retours, et neuf occasions d'en oublier un — sur un téléphone, debout
- * dans un commerce.
+ * Un commerçant qui importe sa saison pose 201 matchs d'un coup. La grille les
+ * affichait tous, à la file : « 201 matchs ouverts », une liste interminable,
+ * et le joueur n'avait aucun moyen de savoir par où commencer. Le geste réel
+ * — « je pronostique le week-end qui vient » — était noyé sous huit mois de
+ * calendrier.
  *
- * Puis la grille, une fois d'un seul tenant, listait les matchs à la file :
- * on passait du dimanche 30 août au jeudi 3 septembre sans la moindre
- * séparation, alors que ce sont DEUX journées — l'unité dans laquelle un
- * calendrier de football se lit, se commente et se pronostique.
+ * ── DEUX BLOCS, ET UN SEUL EST OUVERT ──
  *
- * ── UNE JOURNÉE DÉPLIÉE, LES AUTRES À PORTÉE ──
+ * 1. LES MATCHS DE LA SEMAINE, dépliés. C'est ce que le joueur vient faire, et
+ *    c'est la même fenêtre de sept jours que le rappel hebdomadaire
+ *    (`FENETRE_SEMAINE_MS`) : on ne le relance jamais sur des matchs que son
+ *    écran ne lui montre pas en premier.
  *
- * Le calendrier d'un championnat est publié en début de saison : tout déplier
- * d'emblée noierait la journée du week-end sous trente-trois autres. La
- * PREMIÈRE journée à venir est donc ouverte, les suivantes repliées avec leur
- * compte de pronostics posés — et « Tout déplier » ouvre la saison entière,
- * pour qui veut remplir sa grille d'un coup en début de saison.
+ * 2. TOUTE LA SAISON, repliée, derrière un CHOIX DE JOURNÉE — le même geste
+ *    que dans l'atelier du commerçant. Une journée à la fois, jamais 201
+ *    matchs. Qui veut pronostiquer l'année entière le peut, journée par
+ *    journée, sans que ce soit imposé aux autres.
  *
  * ── CE QUI RESTE VRAI, ET QU'IL NE FAUT PAS PERDRE ──
  *
- * · Le serveur reste l'AUTORITÉ sur chaque ligne. Un match qui démarre pendant
- *   que le joueur remplit sa grille est refusé — et lui seul : les autres sont
- *   enregistrés, et la ligne nomme celui qui ne l'a pas été.
- * · Un match SANS les deux scores n'est pas envoyé. Une grille à moitié remplie
- *   est un état légitime : le joueur revient demain finir. Envoyer un 0-0
- *   implicite à sa place serait pronostiquer pour lui.
- * · Le bouton valide TOUT ce qui est rempli, journées repliées comprises — ce
- *   qui est saisi n'est jamais perdu parce qu'on a refermé un groupe.
+ * · Le bouton valide TOUT ce qui est saisi, y compris dans une journée qu'on a
+ *   quittée depuis. Changer de journée cache des lignes, ça n'annule rien.
+ * · Le serveur reste l'AUTORITÉ sur chaque ligne : un match qui démarre pendant
+ *   la saisie est refusé, et lui seul.
+ * · Un match sans les deux scores n'est pas envoyé — une grille à moitié
+ *   remplie est un état légitime.
  *
- * ── POURQUOI CE N'EST PAS UN `<form>` ──
+ * ── POURQUOI LE PARTAGE SEMAINE/SAISON VIENT DU SERVEUR ──
  *
- * `useActionForm` lit un FormData ; ici l'état vit dans un dictionnaire indexé
- * par match, parce que le bouton doit savoir COMBIEN de lignes sont prêtes
- * avant qu'on clique dessus. Le `pending` manuel suit la règle du dépôt : il
- * retombe dans un `finally`, jamais par le rendu (docs/bugs.md).
+ * Il dépend de l'heure, et lire l'horloge pendant un rendu est impur
+ * (`react-hooks/purity`). La page le calcule et le passe ligne par ligne, comme
+ * elle le fait déjà pour `attenteResultat`.
  */
 
 /** Score saisi pour un match, tel qu'il vit dans l'état du composant. */
@@ -64,6 +61,8 @@ export interface GrillePrediction {
 export interface GrilleMatch {
   match: ContestMatch;
   prediction: GrillePrediction | null;
+  /** Coup d'envoi dans les sept prochains jours — calculé au SERVEUR. */
+  dansLaSemaine: boolean;
 }
 
 export function GrillePronostics({
@@ -95,42 +94,43 @@ export function GrillePronostics({
   const [refus, setRefus] = useState<Record<string, string>>({});
   const [enregistres, setEnregistres] = useState(0);
 
-  const journees = useMemo(
-    () => grouperParJournee(entrees.map((e) => e.match)),
-    [entrees],
-  );
   const parId = useMemo(
     () => new Map(entrees.map((e) => [e.match.id, e])),
     [entrees],
   );
 
-  // La première journée à venir est dépliée ; les autres attendent un clic.
-  const premiere = journees[0]?.round ?? null;
-  const [depliees, setDepliees] = useState<Set<number | null>>(
-    () => new Set<number | null>([premiere]),
+  // ── Le partage semaine / reste de la saison ──
+  const semaine = useMemo(
+    () =>
+      entrees
+        .filter((e) => e.dansLaSemaine)
+        .sort((a, b) => a.match.kickoff_at.localeCompare(b.match.kickoff_at)),
+    [entrees],
   );
-  const toutDeplie = journees.length > 0 && depliees.size >= journees.length;
+  const journeesSaison = useMemo(
+    () =>
+      grouperParJournee(
+        entrees.filter((e) => !e.dansLaSemaine).map((e) => e.match),
+      ),
+    [entrees],
+  );
 
-  const basculer = (round: number | null) =>
-    setDepliees((prec) => {
-      const suite = new Set(prec);
-      if (suite.has(round)) suite.delete(round);
-      else suite.add(round);
-      return suite;
-    });
-
-  const toutBasculer = () =>
-    setDepliees(
-      toutDeplie
-        ? new Set<number | null>([premiere])
-        : new Set<number | null>(journees.map((j) => j.round)),
-    );
+  // Le sélecteur s'ouvre sur la première journée à venir hors semaine.
+  const [journeeChoisie, setJourneeChoisie] = useState<string>(() =>
+    String(journeesSaison[0]?.round ?? ""),
+  );
+  const [saisonOuverte, setSaisonOuverte] = useState(false);
+  const journeeActive =
+    journeesSaison.find((j) => String(j.round ?? "") === journeeChoisie) ??
+    journeesSaison[0] ??
+    null;
 
   const lire = (id: string): Saisie => saisies[id] ?? { home: "", away: "" };
 
   /**
-   * Les lignes COMPLÈTES, TOUTES journées confondues — repliées comprises.
-   * Refermer un groupe cache des lignes, ça n'annule pas ce qui y est saisi.
+   * Les lignes COMPLÈTES, dans TOUTE la grille — semaine et saison, journée
+   * affichée ou non. Quitter une journée cache des lignes, ça n'efface pas ce
+   * qui y est saisi.
    */
   const pretes = useMemo(
     () =>
@@ -182,18 +182,15 @@ export function GrillePronostics({
           res.data.refused.map((r) => [r.matchId, r.error]),
         );
         setRefus(refuses);
-        // Une journée qui contient un refus se rouvre : le message est sur la
-        // ligne, et un message dans un groupe replié ne se lit pas.
-        if (Object.keys(refuses).length > 0) {
-          setDepliees((prec) => {
-            const suite = new Set(prec);
-            for (const j of journees) {
-              if (j.matchs.some((m) => m.id in refuses)) suite.add(j.round);
-            }
-            return suite;
-          });
+        // Un refus dans une journée qu'on ne regarde pas serait invisible : on
+        // l'ouvre. La semaine, elle, est toujours à l'écran.
+        const journeeEnFaute = journeesSaison.find((j) =>
+          j.matchs.some((m) => m.id in refuses),
+        );
+        if (journeeEnFaute) {
+          setJourneeChoisie(String(journeeEnFaute.round ?? ""));
+          setSaisonOuverte(true);
         }
-        // Le classement, la progression et la liste sont rendus par le serveur.
         router.refresh();
       } catch {
         setErreur("Enregistrement impossible, réessayez.");
@@ -204,6 +201,9 @@ export function GrillePronostics({
   };
 
   if (entrees.length === 0) return null;
+
+  const poses = (liste: ReadonlyArray<{ id: string }>) =>
+    liste.filter((m) => parId.get(m.id)?.prediction != null).length;
 
   const ligne = ({ match, prediction }: GrilleMatch) => {
     const saisie = lire(match.id);
@@ -281,70 +281,87 @@ export function GrillePronostics({
       aria-labelledby="grille-titre"
       className="k-border rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)]"
     >
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="grille-titre" className="text-lg font-black text-k-ink">
-          À pronostiquer
-        </h2>
-        <span className="text-xs font-bold text-k-body">
-          {entrees.length} match{entrees.length > 1 ? "s" : ""} ouvert
-          {entrees.length > 1 ? "s" : ""}
-        </span>
-      </div>
+      <h2 id="grille-titre" className="mb-3 text-lg font-black text-k-ink">
+        À pronostiquer
+      </h2>
 
-      {journees.length > 1 && (
-        <div className="mb-3">
-          <button
-            type="button"
-            onClick={toutBasculer}
-            className="text-sm font-bold text-k-ink underline underline-offset-2"
-          >
-            {toutDeplie
-              ? "Ne montrer que la prochaine journée"
-              : `Tout déplier — les ${journees.length} journées`}
-          </button>
-          <p className="mt-1 text-xs text-k-body">
-            Le calendrier est publié en début de saison : remplissez tout
-            d&apos;un coup, ou revenez chaque semaine.
-          </p>
-        </div>
+      {/* ── 1. LA SEMAINE — ouverte, c'est le geste du jour ── */}
+      {semaine.length > 0 && (
+        <section aria-label="Matchs de la semaine" className="mb-4">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 rounded-xl border-2 border-k-ink bg-k-yellow/30 px-3 py-2">
+            <span className="text-sm font-black text-k-ink">
+              ⚡ Matchs de la semaine
+            </span>
+            <span className="text-xs font-bold text-k-body">
+              {poses(semaine.map((e) => e.match))}/{semaine.length} posé
+              {poses(semaine.map((e) => e.match)) > 1 ? "s" : ""}
+            </span>
+          </div>
+          <ul className="space-y-2.5">{semaine.map(ligne)}</ul>
+        </section>
       )}
 
-      {journees.map((journee) => {
-        const ouverte = depliees.has(journee.round);
-        const poses = journee.matchs.filter(
-          (m) => parId.get(m.id)?.prediction != null,
-        ).length;
-        return (
-          <section key={String(journee.round)} className="mb-3">
-            {/* L'en-tête est un BOUTON : replier une journée est le geste
-                principal de cet écran dès qu'il y en a plus d'une. */}
+      {/* ── 2. LE RESTE DE LA SAISON — replié, une journée à la fois ── */}
+      {journeesSaison.length > 0 && (
+        <section
+          aria-label="Le reste de la saison"
+          className="border-t-2 border-k-ink/10 pt-3"
+        >
+          {!saisonOuverte ? (
             <button
               type="button"
-              onClick={() => basculer(journee.round)}
-              aria-expanded={ouverte}
-              className="mb-2 flex w-full items-center justify-between gap-2 rounded-xl border-2 border-k-ink/15 bg-k-bg px-3 py-2 text-left"
+              onClick={() => setSaisonOuverte(true)}
+              className="text-sm font-bold text-k-ink underline underline-offset-2"
             >
-              <span className="text-sm font-black text-k-ink">
-                {journee.libelle}
-              </span>
-              <span className="flex items-center gap-2 text-xs font-bold text-k-body">
-                <span>
-                  {poses}/{journee.matchs.length} posé{poses > 1 ? "s" : ""}
-                </span>
-                <span aria-hidden>{ouverte ? "▾" : "▸"}</span>
-              </span>
+              📅 Pronostiquer d&apos;autres journées ({journeesSaison.length} à
+              venir)
             </button>
-            {ouverte && (
-              <ul className="space-y-2.5">
-                {journee.matchs.map((m) => {
-                  const entree = parId.get(m.id);
-                  return entree ? ligne(entree) : null;
-                })}
-              </ul>
-            )}
-          </section>
-        );
-      })}
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <label
+                    htmlFor="grille-journee"
+                    className="mb-1 block text-xs font-bold text-k-body"
+                  >
+                    Journée
+                  </label>
+                  {/* MÊME GESTE QUE L'ATELIER : un choix de journée, pas une
+                      liste de toutes. C'est ce qui empêche 201 matchs de
+                      s'afficher d'un coup. */}
+                  <select
+                    id="grille-journee"
+                    value={journeeChoisie}
+                    onChange={(e) => setJourneeChoisie(e.target.value)}
+                    className="rounded-xl border-2 border-k-ink bg-white px-3 py-2 text-sm font-bold text-k-ink"
+                  >
+                    {journeesSaison.map((j) => (
+                      <option key={String(j.round)} value={String(j.round ?? "")}>
+                        {j.libelle} ({poses(j.matchs)}/{j.matchs.length})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSaisonOuverte(false)}
+                  className="text-xs font-bold text-k-body underline underline-offset-2"
+                >
+                  Masquer
+                </button>
+              </div>
+              {journeeActive && (
+                <ul className="space-y-2.5">
+                  {journeeActive.matchs.map((m) => {
+                    const entree = parId.get(m.id);
+                    return entree ? ligne(entree) : null;
+                  })}
+                </ul>
+              )}
+            </>
+          )}
+        </section>
+      )}
 
       {/* ── LE BOUTON UNIQUE, sous la grille ── */}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t-2 border-k-ink/10 pt-3">

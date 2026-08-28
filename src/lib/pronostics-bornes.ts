@@ -63,3 +63,17 @@ export const NUMBER_ANSWER_MAX = 1_000_000_000;
  * module n'importe RIEN et peut donc être lu par un composant client.
  */
 export const DUREE_MATCH_MS = 100 * 60 * 1000;
+
+/**
+ * LA SEMAINE — l'horizon commun de l'écran joueur et du rappel.
+ *
+ * L'écran groupe en tête les « matchs de la semaine », et le rappel
+ * hebdomadaire prévient quand il en manque. Deux valeurs différentes
+ * feraient relancer un joueur sur des matchs que son écran ne lui montre
+ * pas en priorité — ou l'inverse. C'est la même semaine, donc la même
+ * constante.
+ *
+ * Elle vit ici parce que ce module n'importe RIEN : `contest-reminders.ts`
+ * est `server-only`, la grille est un composant client.
+ */
+export const FENETRE_SEMAINE_MS = 7 * 24 * 60 * 60 * 1000;

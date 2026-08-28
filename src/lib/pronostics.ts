@@ -155,7 +155,7 @@ export function isContestQuestionType(
 // d'imports partie d'une simple borne y embarquait ~121 Ko de polyfill dans
 // deux écrans client. Ré-exportées ici pour que les importateurs serveur
 // existants n'aient rien à changer.
-import { DUREE_MATCH_MS } from "@/lib/pronostics-bornes";
+import { DUREE_MATCH_MS, FENETRE_SEMAINE_MS } from "@/lib/pronostics-bornes";
 
 export {
   NUMBER_ANSWER_MAX,
@@ -528,6 +528,29 @@ export function progressionPronostics(
     }
   }
   return { done, total };
+}
+
+/**
+ * Le match tombe-t-il dans LA SEMAINE qui vient ?
+ *
+ * C'est le partage de l'écran joueur : les matchs de la semaine en tête,
+ * dépliés, le reste de la saison derrière un choix de journée. Sans lui,
+ * un championnat dont le commerçant a importé l'année entière affichait
+ * deux cents matchs à la file.
+ *
+ * Même fenêtre que le rappel hebdomadaire (`FENETRE_SEMAINE_MS`) : on ne
+ * relance jamais un joueur sur des matchs que son écran ne met pas en
+ * avant.
+ *
+ * Fonction et non expression en ligne, comme `attendResultat` : lire
+ * l'horloge PENDANT un rendu est impur (`react-hooks/purity`).
+ */
+export function dansLaSemaine(
+  kickoffAt: string | Date,
+  now: Date = new Date(),
+): boolean {
+  const t = new Date(kickoffAt).getTime();
+  return t <= now.getTime() + FENETRE_SEMAINE_MS;
 }
 
 export function attendResultat(
