@@ -2,9 +2,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  cleMemoireTicket,
   estCodeTicket,
   mapTicketOrState,
   mapTirage,
+  parserTirageMemorise,
   PHRASES_TIRAGE,
   ticketOrVide,
 } from "@/lib/ticket-or";
@@ -128,5 +130,96 @@ describe("PHRASES_TIRAGE", () => {
     // Le ticket n'est PAS consommé quand il n'y a rien à tirer : le lui cacher
     // ferait repartir un client qui pouvait revenir.
     expect(PHRASES_TIRAGE.sans_lot).toMatch(/valable/i);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// La mémoire du tirage, sur l'appareil du client (TKT-2)
+//
+// `tirer_ticket_or` ne rend le lot et le code de retrait QU'UNE FOIS. Sur un
+// parcours au QR, l'écran se perd bien plus facilement qu'au comptoir. Ce qui
+// est relu ici décide si le client revoit son gain — donc rien de mal formé ne
+// doit passer, et rien de bien formé ne doit être perdu.
+// ════════════════════════════════════════════════════════════
+
+describe("cleMemoireTicket", () => {
+  it("range chaque ticket sous sa propre clé", () => {
+    expect(cleMemoireTicket("ABCDEFGHJK")).toBe("ticket-or:ABCDEFGHJK");
+    expect(cleMemoireTicket("ABCDEFGHJK")).not.toBe(
+      cleMemoireTicket("KJHGFEDCBA"),
+    );
+  });
+});
+
+describe("parserTirageMemorise — un gain complet, ou rien", () => {
+  const gain = {
+    state: "ok",
+    lot: "Un café offert",
+    codeRetrait: "TKT-4H2K9",
+    expireLe: "2026-09-30T12:00:00.000Z",
+  };
+
+  it("relit un gain écrit par l'écran lui-même (aller-retour JSON)", () => {
+    expect(parserTirageMemorise(JSON.parse(JSON.stringify(gain)))).toEqual(gain);
+  });
+
+  it("accepte un gain sans date d'expiration", () => {
+    const sansDate: Record<string, unknown> = { ...gain };
+    delete sansDate.expireLe;
+    expect(parserTirageMemorise(sansDate)).toEqual({ ...gain, expireLe: null });
+  });
+
+  it("ramène une date illisible à `null` plutôt que de tout jeter", () => {
+    // Le lot et le code sont l'essentiel : une date corrompue ne doit pas
+    // priver le client de son code de retrait.
+    expect(parserTirageMemorise({ ...gain, expireLe: 42 })?.codeRetrait).toBe(
+      gain.codeRetrait,
+    );
+    expect(parserTirageMemorise({ ...gain, expireLe: 42 })?.expireLe).toBeNull();
+  });
+
+  it("refuse tout ce qui n'est pas un gain", () => {
+    for (const brut of [
+      null,
+      undefined,
+      "ok",
+      42,
+      [],
+      {},
+      { state: "deja_tire" },
+      { state: "expire" },
+      { state: "ok" },
+      { state: "ok", lot: "Un café" },
+      { state: "ok", codeRetrait: "TKT-4H2K9" },
+    ]) {
+      expect(parserTirageMemorise(brut), JSON.stringify(brut) ?? "undefined").toBeNull();
+    }
+  });
+
+  it("refuse un lot ou un code VIDE — un faux gain est pire que pas de gain", () => {
+    expect(parserTirageMemorise({ ...gain, lot: "" })).toBeNull();
+    expect(parserTirageMemorise({ ...gain, codeRetrait: "" })).toBeNull();
+  });
+
+  it("refuse un lot ou un code qui n'est pas du texte", () => {
+    expect(parserTirageMemorise({ ...gain, lot: { fr: "Un café" } })).toBeNull();
+    expect(parserTirageMemorise({ ...gain, codeRetrait: 12345 })).toBeNull();
+  });
+
+  it("ne recopie AUCUN champ inattendu venu du stockage", () => {
+    // Le stockage local est modifiable à la main : ce qui en sort ne doit
+    // porter que les quatre champs connus, jamais un passager clandestin.
+    const parse = parserTirageMemorise({
+      ...gain,
+      admin: true,
+      state: "ok",
+    }) as Record<string, unknown> | null;
+    expect(parse).not.toBeNull();
+    expect(Object.keys(parse ?? {}).sort()).toEqual([
+      "codeRetrait",
+      "expireLe",
+      "lot",
+      "state",
+    ]);
   });
 });
