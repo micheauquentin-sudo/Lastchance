@@ -180,9 +180,15 @@ select '7a7a0000-0000-4000-8000-00000000000a', s.id, repeat('a', 64), 'confirmed
  order by s.starts_at
  limit 1;
 
+-- SCOPÉE À L'ACTIVITÉ, et ce n'est pas une précaution de style : la base de la
+-- CI porte un SEED, donc des réservations d'autres activités. Sans ce filtre,
+-- la table ramassait leurs créneaux et H-12 comptait la moitié du seed. Le
+-- fichier passait en local (`db reset --no-seed`) et tombait en CI — piège n°3
+-- d'AGENTS.md, payé comptant.
 create temporary table creneau_reserve on commit drop as
   select s.id from public.reservation_slots s
-   join public.reservations r on r.slot_id = s.id;
+   join public.reservations r on r.slot_id = s.id
+  where s.activity_id = '7a7a0000-0000-4000-8000-000000000201';
 
 delete from public.reservation_openings
  where activity_id = '7a7a0000-0000-4000-8000-000000000201';
