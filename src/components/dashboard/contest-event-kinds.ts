@@ -3,9 +3,10 @@
  *
  * La base ne contraint que la FORME de la clé (voir EVENT_KIND_PATTERN :
  * minuscules, chiffres et UNDERSCORES — jamais de tiret) : ajouter un
- * modèle ici ne demande aucune migration. Le football n'est qu'un modèle
- * parmi d'autres — le seul à porter un catalogue de compétitions et une
- * synchro de calendrier ; tous les autres composent leurs questions.
+ * modèle ici ne demande aucune migration. Le modèle « Sport » (clé
+ * historique `football`) n'est qu'un modèle parmi d'autres — le seul à
+ * porter un catalogue de compétitions et une synchro de calendrier ; tous
+ * les autres composent leurs questions.
  *
  * Un modèle ne PRÉ-REMPLIT jamais la base : `suggestedQuestions` sont des
  * BROUILLONS qui remplissent le formulaire d'ajout (le commerçant complète
@@ -44,7 +45,7 @@ export interface EventKindOption {
   icon: string;
   /** Description courte : ce que le commerçant comprend en une ligne. */
   hint: string;
-  /** Le catalogue de compétitions n'existe que pour le football. */
+  /** Le catalogue de compétitions n'existe que pour le modèle « Sport ». */
   usesCompetition: boolean;
   /** Brouillons de questions cohérents avec le modèle (1 à 3). */
   suggestedQuestions?: SuggestedQuestion[];
@@ -54,10 +55,23 @@ export interface EventKindOption {
 
 export const EVENT_KINDS: EventKindOption[] = [
   {
+    // ── LA CLÉ RESTE `football`, LE LIBELLÉ DEVIENT « Sport » ──
+    //
+    // La clé est ÉCRITE en base (`contests.event_kind`) sur tous les
+    // championnats déjà créés : la renommer demanderait une migration de
+    // données pour ne rien gagner, et ferait mentir `DEFAULT_EVENT_KIND`,
+    // qui nomme la valeur qu'il porte.
+    //
+    // Le libellé, lui, était FAUX. Ce modèle est le seul à porter le
+    // catalogue de compétitions, et ce catalogue n'a jamais été que du
+    // football : il sert le Tournoi des 6 Nations et la Coupe du monde de
+    // rugby, Roland-Garros, et « Autre / Match isolé » qui couvre la boxe
+    // comme le match amical. Un commerçant qui organisait un pronostic sur
+    // le tournoi de rugby du village devait choisir « Football ».
     key: "football",
-    label: "Football",
-    icon: "⚽",
-    hint: "Matchs à pronostiquer sur le score, calendrier officiel importé automatiquement.",
+    label: "Sport",
+    icon: "🏅",
+    hint: "Football, rugby, tennis… Matchs à pronostiquer sur le score, calendrier officiel importé automatiquement.",
     usesCompetition: true,
   },
   {
@@ -329,7 +343,11 @@ export const EVENT_KINDS: EventKindOption[] = [
   },
 ];
 
-/** Modèle par défaut : le football, seul parcours d'origine. */
+/**
+ * Modèle par défaut — clé historique `football`, présentée « Sport » depuis
+ * qu'elle sert aussi le rugby et le tennis. Le nom de la constante suit la
+ * VALEUR, pas le libellé : c'est ce qui est écrit en base.
+ */
 export const FOOTBALL_EVENT_KIND = "football";
 
 export function getEventKind(key: string): EventKindOption | undefined {

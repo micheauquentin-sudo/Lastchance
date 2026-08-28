@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getCompetition } from "@/lib/competitions";
+import { DUREE_MATCH_MS } from "@/lib/pronostics-bornes";
 import {
   fetchLeagueFixturesCached,
   resolveProviderSide,
@@ -218,8 +219,13 @@ export function groupContestsByLeague<T extends { competition_key: string }>(
 /**
  * Durée minimale d'un match (mi-temps comprise) avant d'espérer un
  * résultat : évite de solliciter la synchro pendant la rencontre.
+ *
+ * Importée et non recopiée depuis que l'écran joueur pose la MÊME question
+ * pour choisir son badge (« En cours » ou « Résultat en attente ») : deux
+ * valeurs auraient fini par diverger, et l'écran aurait alors dit l'inverse
+ * de ce que fait cette synchro.
  */
-const MIN_MATCH_DURATION_MS = 100 * 60 * 1000;
+const MIN_MATCH_DURATION_MS = DUREE_MATCH_MS;
 
 /**
  * Un résultat est-il vraisemblablement tombé depuis la dernière synchro ?

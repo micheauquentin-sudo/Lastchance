@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fondKeySchema } from "@/lib/validations/calendar";
 import { isValidLocalDateTime } from "@/lib/date-time";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
@@ -196,6 +197,16 @@ export const updateContestSchema = z.object({
    * voir `asSeasonalTheme`).
    */
   theme: absentSiNonRendu(z.enum(SEASONAL_THEMES)),
+  /**
+   * Fond d'écran — TROIS états, et `absentSiNonRendu` ne convient pas.
+   *
+   * Pour `theme`, « champ non rendu » et « absent » disent la même chose.
+   * Ici non : `''` est une valeur LÉGITIME (« suivre le thème »), et c'est
+   * même le défaut du formulaire. La confondre avec l'absence rendrait ce
+   * choix inexprimable — exactement la dissymétrie de `code_ttl_seconds`
+   * juste en dessous, et l'action la lit donc par `formData.has(...)`.
+   */
+  fond_key: fondKeySchema.optional(),
   code_ttl_seconds: codeTtlSecondsSchema.optional(),
 });
 
@@ -499,6 +510,23 @@ export const setMatchResultSchema = z.object({
 
 export const syncContestSchema = z.object({
   id: z.string().uuid(),
+});
+
+/**
+ * Une JOURNÉE du calendrier complet, telle que le commerçant la demande.
+ *
+ * Borne haute à 99 : aucune compétition du catalogue n'en compte autant
+ * (34 en Ligue 1, 5 au Tournoi), et elle borne surtout ce qu'un appelant
+ * forgé peut faire demander au fournisseur — un numéro de journée voyage
+ * dans l'URL d'un appel sortant.
+ */
+export const contestRoundSchema = z.object({
+  id: z.string().uuid(),
+  round: z.coerce
+    .number()
+    .int("Journée invalide")
+    .min(1, "Journée invalide")
+    .max(99, "Journée invalide"),
 });
 
 // ── Questions génériques (choice / ranking / number) ──
@@ -809,6 +837,36 @@ export const submitPredictionSchema = z.object({
   match_id: z.string().uuid(),
   home_score: scoreSchema,
   away_score: scoreSchema,
+});
+
+/**
+ * UN LOT de pronostics — la grille remplie d'un coup.
+ *
+ * Le joueur pose ses scores sur toute une journée puis valide UNE fois ;
+ * il n'a aucune raison d'appuyer neuf fois sur neuf boutons.
+ *
+ * ── LA BORNE À 60, ET POURQUOI ELLE N'EST PAS « LE NOMBRE DE MATCHS » ──
+ *
+ * Une journée de championnat en compte 9, une grille entière rarement plus
+ * de 20. 60 laisse la marge d'un commerçant qui aurait importé plusieurs
+ * journées, tout en bornant ce qu'un appelant forgé peut faire exécuter de
+ * RPC en une requête — le lot est traité match par match côté serveur.
+ *
+ * `min(1)` : un lot vide n'est pas une erreur du joueur, c'est un appel qui
+ * n'a rien à faire là.
+ */
+export const submitPredictionsSchema = z.object({
+  slug: z.string().trim().min(1).max(60),
+  predictions: z
+    .array(
+      z.object({
+        match_id: z.string().uuid(),
+        home_score: scoreSchema,
+        away_score: scoreSchema,
+      }),
+    )
+    .min(1, "Aucun pronostic à enregistrer")
+    .max(60, "Trop de pronostics en une seule fois"),
 });
 
 // ── Ligues privées (parcours joueur) ──
