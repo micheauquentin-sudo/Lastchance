@@ -36,7 +36,9 @@ import type { ContestMatch } from "@/types/database";
 const inputClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 
-function formatKickoff(value: string, timeZone: string): string {
+/** Partagé avec `grille-pronostics.tsx` : un même match doit se dater de la
+ *  même façon qu'il soit dans la grille à remplir ou dans les résultats. */
+export function formatKickoff(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat("fr-FR", {
     weekday: "short",
     day: "numeric",
@@ -423,7 +425,8 @@ export function scoreInputValue(score: number | null | undefined): string {
   return typeof score === "number" ? String(score) : "";
 }
 
-function Badge({ badge, color }: { badge: string; color: string }) {
+/** Partagé avec `grille-pronostics.tsx`, même raison que `formatKickoff`. */
+export function Badge({ badge, color }: { badge: string; color: string }) {
   if (color) {
     return (
       <span
@@ -449,6 +452,7 @@ export function PredictionCard({
   scoreLabel,
   timeZone,
   locked,
+  attenteResultat = false,
 }: {
   slug: string;
   match: ContestMatch;
@@ -458,6 +462,9 @@ export function PredictionCard({
   /** Coup d'envoi passé ou match joué — calculé au rendu serveur ; le
    *  serveur re-vérifie de toute façon à la soumission. */
   locked: boolean;
+  /** Coup d'envoi passé depuis PLUS qu'une durée de match, sans résultat :
+   *  la rencontre ne « dure » plus, c'est le résultat qui tarde. */
+  attenteResultat?: boolean;
 }) {
   const router = useRouter();
   const [home, setHome] = useState(scoreInputValue(prediction?.home_score));
@@ -522,8 +529,18 @@ export function PredictionCard({
             )}
           </span>
         ) : locked ? (
+          /* DEUX ÉTATS, ET NON UN SEUL.
+
+             « En cours 🔒 » s'affichait pour TOUT match dont le coup d'envoi
+             était passé sans résultat. Un match de la semaine dernière
+             s'annonçait donc « en cours » — le joueur croyait la rencontre
+             encore en train de se jouer, et son pronostic encore vivant.
+
+             La distinction est calculée au SERVEUR (`attenteResultat`) et
+             non ici : lire l'heure pendant le rendu est impur, et cette
+             page est de toute façon rendue dynamiquement à chaque visite. */
           <span className="rounded-full bg-zinc-200 px-2.5 py-0.5 font-bold text-k-body">
-            En cours 🔒
+            {attenteResultat ? "Résultat en attente" : "En cours 🔒"}
           </span>
         ) : (
           <span className="rounded-full bg-k-green/15 px-2.5 py-0.5 font-bold text-k-green">

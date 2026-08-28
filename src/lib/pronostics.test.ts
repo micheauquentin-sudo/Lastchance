@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attendResultat,
   DEFAULT_SCORING,
   effectiveLocksAt,
   generatePlayerToken,
@@ -7,6 +8,7 @@ import {
   isPredictionOpen,
   parseRewards,
   parseScoring,
+  progressionPronostics,
   rewardForRank,
 } from "./pronostics";
 import { normalizeContestCode } from "./utils";
@@ -402,5 +404,94 @@ describe("updateContestSchema — code_ttl_seconds", () => {
     const res = updateContestSchema.safeParse({ id: ID, name: "Pronos" });
     expect(res.success).toBe(true);
     if (res.success) expect(res.data.code_ttl_seconds).toBeUndefined();
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LA PROGRESSION DE LA GRILLE — le « 0/7 » impossible (2026-08-28)
+//
+// Relevé sur une capture joueur : la barre annonçait « 0/7 pronostic
+// complété » alors qu'UN SEUL match était ouvert aux pronostics. Le
+// dénominateur valait `matches.length` — tous les matchs jamais importés,
+// dont ceux fermés avant l'inscription du joueur. Une barre impossible à
+// remplir, et sept pronostics promis qu'on ne pouvait pas poser.
+// ════════════════════════════════════════════════════════════
+
+describe("progressionPronostics", () => {
+  /** Raccourci lisible : `o` ouvert, `p` pronostiqué. */
+  const m = (ouvert: boolean, pronostique: boolean) => ({ ouvert, pronostique });
+
+  it("LA RÉGRESSION : un match fermé et non pronostiqué ne compte nulle part", () => {
+    // La situation exacte de la capture : 6 matchs fermés sans pronostic,
+    // 1 ouvert. Le joueur doit lire 0/1, jamais 0/7.
+    const grille = [
+      ...Array.from({ length: 6 }, () => m(false, false)),
+      m(true, false),
+    ];
+    expect(progressionPronostics(grille)).toEqual({ done: 0, total: 1 });
+  });
+
+  it("un match pronostiqué compte des DEUX côtés, même une fois fermé", () => {
+    // Sinon le travail déjà fait disparaîtrait du compte au coup d'envoi :
+    // le joueur verrait sa progression RECULER en ne faisant rien.
+    expect(progressionPronostics([m(false, true)])).toEqual({
+      done: 1,
+      total: 1,
+    });
+  });
+
+  it("une grille à jour vaut 100 %, et c'est atteignable", () => {
+    const grille = [m(false, true), m(true, true), m(true, true)];
+    const { done, total } = progressionPronostics(grille);
+    expect(done).toBe(total);
+    expect(total).toBe(3);
+  });
+
+  it("le total ne dépasse jamais ce que le joueur peut atteindre", () => {
+    // Propriété générale : pour toute grille, `done <= total <= longueur`.
+    const grilles = [
+      [],
+      [m(true, false)],
+      [m(false, false), m(false, false)],
+      [m(true, true), m(false, false), m(false, true), m(true, false)],
+    ];
+    for (const grille of grilles) {
+      const { done, total } = progressionPronostics(grille);
+      expect(done).toBeLessThanOrEqual(total);
+      expect(total).toBeLessThanOrEqual(grille.length);
+      // Et le reste à faire est toujours posable : ce sont des matchs ouverts.
+      expect(total - done).toBe(
+        grille.filter((x) => x.ouvert && !x.pronostique).length,
+      );
+    }
+  });
+
+  it("une grille vide ne divise pas par zéro chez l'appelant", () => {
+    expect(progressionPronostics([])).toEqual({ done: 0, total: 0 });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// attendResultat — « En cours 🔒 » sur un match de la semaine dernière
+// ────────────────────────────────────────────────────────────
+
+describe("attendResultat", () => {
+  const KICKOFF = "2026-08-22T18:45:00.000Z";
+  const apres = (minutes: number) =>
+    new Date(new Date(KICKOFF).getTime() + minutes * 60_000);
+
+  it("pendant la rencontre : le match est EN COURS, pas en attente", () => {
+    expect(attendResultat(KICKOFF, apres(1))).toBe(false);
+    expect(attendResultat(KICKOFF, apres(99))).toBe(false);
+  });
+
+  it("passé une durée de match : ce n'est plus la rencontre qui dure", () => {
+    expect(attendResultat(KICKOFF, apres(101))).toBe(true);
+    // Le cas de la capture : un match de six jours annoncé « En cours ».
+    expect(attendResultat(KICKOFF, apres(6 * 24 * 60))).toBe(true);
+  });
+
+  it("avant le coup d'envoi, rien n'est attendu", () => {
+    expect(attendResultat(KICKOFF, apres(-30))).toBe(false);
   });
 });
