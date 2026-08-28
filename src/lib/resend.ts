@@ -274,6 +274,93 @@ export async function sendCalendarReminderEmail(params: {
   }
 }
 
+function contestReminderEmailHtml(p: {
+  firstName: string;
+  contestName: string;
+  manquants: number;
+  total: number;
+  url: string;
+}): string {
+  const prenom = escapeHtml(p.firstName);
+  const contest = escapeHtml(p.contestName);
+  const url = escapeHtml(p.url);
+  const pluriel = p.manquants > 1 ? "s" : "";
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#f97316;text-transform:uppercase;margin:0 0 16px;">${contest}</p>
+      <h1 style="font-size:22px;color:#18181b;margin:0 0 12px;">Il vous manque ${p.manquants} pronostic${pluriel} ⚽</h1>
+      <p style="color:#3f3f46;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Bonjour ${prenom}, les prochains matchs approchent et votre grille
+        n'est pas complète : ${p.manquants} sur ${p.total} restent à remplir.
+      </p>
+      <a href="${url}" style="display:inline-block;background:#f97316;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:12px;">
+        Compléter ma grille
+      </a>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez ce rappel car vous l'avez demandé sur « ${contest} ».
+      Il ne part que s'il vous manque des pronostics.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Rappel hebdomadaire « il vous manque des pronostics ».
+ *
+ * L'appelant (`runContestReminders`) a DÉJÀ vérifié qu'il manque au moins un
+ * pronostic : cette fonction n'a pas à le refaire, mais elle ne doit jamais
+ * être appelée sans cette garantie — un « il vous manque 0 pronostic » serait
+ * exactement la newsletter que l'opt-in promet d'éviter.
+ */
+export async function sendContestReminderEmail(params: {
+  to: string;
+  firstName: string;
+  contestName: string;
+  manquants: number;
+  total: number;
+  url: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+  if (!apiKey || !from) {
+    console.warn("[resend] non configuré — rappel pronostics non envoyé");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `⚽ Il vous manque ${params.manquants} pronostic${params.manquants > 1 ? "s" : ""} — ${params.contestName}`,
+      html: contestReminderEmailHtml({
+        firstName: params.firstName,
+        contestName: params.contestName,
+        manquants: params.manquants,
+        total: params.total,
+        url: params.url,
+      }),
+      headers: {
+        "List-Unsubscribe": `<mailto:${from}?subject=unsubscribe-pronostics>`,
+      },
+    });
+    if (error) {
+      reportError("resend", `rappel pronostics échoué: ${JSON.stringify(error)}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    reportError("resend", `rappel pronostics, exception: ${err}`);
+    return false;
+  }
+}
+
 function newsletterEmailHtml(p: {
   subject: string;
   bodyText: string;

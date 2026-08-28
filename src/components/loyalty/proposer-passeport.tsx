@@ -124,9 +124,21 @@ export function ProposerPasseport({
       >
         <span aria-hidden>🎟️</span> Passeport de fidélité
       </h3>
-      <p className={`mt-1 text-sm font-bold ${corps}`}>
-        {invitation.programName} récompense les visites régulières. Chaque
-        passage vous rapproche d&apos;un cadeau.
+      {/* LE NOM DU PROGRAMME N'EST PLUS LE SUJET D'UN VERBE.
+
+          La phrase était « {nom} récompense les visites régulières ». Elle
+          ne tient que si le nom est un nom propre : un programme appelé
+          « café » donnait « café récompense les visites régulières », sans
+          article ni majuscule. Le commerçant nomme son programme comme il
+          veut, et l'écran ne peut rien supposer de sa forme grammaticale.
+
+          Il devient donc une ÉTIQUETTE, sur sa propre ligne, et la phrase
+          se tient toute seule. */}
+      <p className={`mt-1 text-sm font-black ${titre}`}>
+        {invitation.programName}
+      </p>
+      <p className={`mt-0.5 text-sm font-bold ${corps}`}>
+        Chaque passage vous rapproche d&apos;un cadeau.
       </p>
       <p className="mt-3">
         <Link

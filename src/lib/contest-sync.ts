@@ -87,7 +87,7 @@ async function syncWithProvider(
   const { data: existingRows, error: existingError } = await admin
     .from("contest_matches")
     .select(
-      "id, external_ref, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position",
+      "id, external_ref, kickoff_at, status, home_score, away_score, finish_type, home_penalties, away_penalties, position, round",
     )
     .eq("contest_id", contest.id);
   if (existingError) {
@@ -129,6 +129,7 @@ async function syncWithProvider(
         away_color: away.color,
         kickoff_at: fixture.kickoffAt,
         external_ref: fixture.ref,
+        round: fixture.round,
         position: nextPosition,
       });
       if (error) {
@@ -140,20 +141,40 @@ async function syncWithProvider(
       continue;
     }
 
-    // Report / changement d'horaire d'un match pas encore joué.
+    // Report / changement d'horaire d'un match pas encore joué, et
+    // RATTRAPAGE de la journée.
+    //
+    // `round` est arrivé après coup (20261104120000) : tous les matchs
+    // importés avant valent `null`. On les répare ici plutôt que par une
+    // reprise de données — la synchronisation passe de toute façon sur
+    // chacun d'eux, et une migration n'aurait pas su quelle journée poser
+    // (l'information est chez le fournisseur, pas en base).
+    //
+    // La journée se corrige même sur un match TERMINÉ, contrairement à
+    // l'horaire : elle ne change rien au jeu, et un résultat rangé hors
+    // de sa journée resterait faux pour toujours.
+    const changements: { kickoff_at?: string; round?: number } = {};
     if (
       !fixture.finished &&
       existing.status === "scheduled" &&
       new Date(existing.kickoff_at).toISOString() !== fixture.kickoffAt
     ) {
+      changements.kickoff_at = fixture.kickoffAt;
+    }
+    if (fixture.round !== null && existing.round !== fixture.round) {
+      changements.round = fixture.round;
+    }
+    if (Object.keys(changements).length > 0) {
       const { error } = await admin
         .from("contest_matches")
-        .update({ kickoff_at: fixture.kickoffAt })
+        .update(changements)
         .eq("id", existing.id)
         .eq("contest_id", contest.id);
       if (error) {
         reportError("pronostics.sync.reschedule", error.message);
-      } else {
+      } else if (changements.kickoff_at !== undefined) {
+        // Seul un vrai report se compte : rattraper une journée n'est pas
+        // un changement d'horaire, et le dire au commerçant serait faux.
         summary.rescheduled += 1;
       }
     }

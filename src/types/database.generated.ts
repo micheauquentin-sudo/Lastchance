@@ -1173,6 +1173,7 @@ export type Database = {
           prompt: string | null
           question_type: string
           ranking_size: number | null
+          round: number | null
           status: string
         }
         Insert: {
@@ -1202,6 +1203,7 @@ export type Database = {
           prompt?: string | null
           question_type?: string
           ranking_size?: number | null
+          round?: number | null
           status?: string
         }
         Update: {
@@ -1231,6 +1233,7 @@ export type Database = {
           prompt?: string | null
           question_type?: string
           ranking_size?: number | null
+          round?: number | null
           status?: string
         }
         Relationships: [
@@ -1268,6 +1271,7 @@ export type Database = {
           id: string
           organization_id: string
           phone: string | null
+          reminder_opt_in: boolean
           tiebreaker_guess: number | null
           token_hash: string
         }
@@ -1281,6 +1285,7 @@ export type Database = {
           id?: string
           organization_id: string
           phone?: string | null
+          reminder_opt_in?: boolean
           tiebreaker_guess?: number | null
           token_hash: string
         }
@@ -1294,6 +1299,7 @@ export type Database = {
           id?: string
           organization_id?: string
           phone?: string | null
+          reminder_opt_in?: boolean
           tiebreaker_guess?: number | null
           token_hash?: string
         }

@@ -200,8 +200,16 @@ describe("CalendarTracker — bas de page « garder le lien »", () => {
       },
     });
 
-    const carte = screen.getByRole("link", { name: /Revenir à la carte/ });
+    // « DÉCOUVRIR » ET NON « REVENIR », faute de referrer.
+    //
+    // Le libellé disait « Revenir à la carte » à tout le monde. Or la
+    // majorité des joueurs arrivent par un QR ou un lien partagé : on leur
+    // proposait de REVENIR d'un endroit où ils n'étaient jamais allés. Sans
+    // referrer — le cas de ce test, et le cas par défaut — c'est
+    // « Découvrir » qui doit s'afficher.
+    const carte = screen.getByRole("link", { name: /Découvrir notre carte/ });
     expect(carte.getAttribute("href")).toBe("/v/cafe-des-sports");
+    expect(screen.queryByText(/Revenir à la carte/)).toBeNull();
 
     const insta = screen.getByRole("link", { name: /Suivez-nous/ });
     expect(insta.getAttribute("href")).toBe(

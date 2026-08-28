@@ -424,6 +424,73 @@ export function isPredictionOpen(
  * impur (`react-hooks/purity`), comme pour `isPredictionOpen` juste au-dessus,
  * dont c'est le jumeau. Le `now` injectable est ce qui la rend testable.
  */
+// ────────────────────────────────────────────────────────────
+// Journées de championnat
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Libellé d'une journée en français — « 1re journée », « 3e journée ».
+ *
+ * `null` n'est pas un trou à combler : un match saisi à la main ou un tour
+ * de coupe non numéroté n'a pas de journée, et lui en inventer une rangerait
+ * un combat de boxe dans une « 1re journée » qui n'existe pas.
+ */
+export function libelleJournee(round: number | null): string {
+  if (round === null) return "Autres matchs";
+  return round === 1 ? "1re journée" : `${round}e journée`;
+}
+
+/** Une journée telle que l'écran la rend : son numéro et ses matchs. */
+export interface JourneeMatchs<T> {
+  round: number | null;
+  libelle: string;
+  matchs: T[];
+}
+
+/**
+ * GROUPE LES MATCHS PAR JOURNÉE.
+ *
+ * ── LE DÉFAUT QUE ÇA FERME (capture du 2026-08-28) ──
+ *
+ * La grille listait les matchs à la file, triés par coup d'envoi. On passait
+ * du dimanche 30 août au jeudi 3 septembre sans la moindre séparation, alors
+ * que ce sont deux journées de championnat — l'unité dans laquelle un
+ * calendrier de football se lit et se pronostique.
+ *
+ * ── L'ORDRE ──
+ *
+ * Par numéro de journée croissant. Les matchs SANS journée ferment la
+ * marche : ils n'ont pas de place dans la numérotation, et les intercaler
+ * (par date, par exemple) couperait une journée en deux.
+ *
+ * À l'intérieur d'une journée, l'ordre est celui du coup d'envoi — le
+ * vendredi soir avant le dimanche après-midi, comme la journée se joue.
+ */
+export function grouperParJournee<
+  T extends { round: number | null; kickoff_at: string },
+>(matchs: ReadonlyArray<T>): Array<JourneeMatchs<T>> {
+  const parRound = new Map<number | null, T[]>();
+  for (const m of matchs) {
+    const cle = typeof m.round === "number" ? m.round : null;
+    const groupe = parRound.get(cle);
+    if (groupe) groupe.push(m);
+    else parRound.set(cle, [m]);
+  }
+  return [...parRound.entries()]
+    .sort(([a], [b]) => {
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a - b;
+    })
+    .map(([round, groupe]) => ({
+      round,
+      libelle: libelleJournee(round),
+      matchs: [...groupe].sort((x, y) =>
+        x.kickoff_at.localeCompare(y.kickoff_at),
+      ),
+    }));
+}
+
 /**
  * PROGRESSION DE LA GRILLE — « X/Y pronostics ».
  *

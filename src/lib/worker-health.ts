@@ -19,6 +19,7 @@ export const WORKER_NAMES = [
   "webhooks",
   "automations",
   "calendar-reminders",
+  "contest-reminders",
   "jackpot-draws",
   "expire-trials",
   "weekly-digest",

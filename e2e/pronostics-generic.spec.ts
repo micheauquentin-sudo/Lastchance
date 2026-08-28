@@ -63,8 +63,10 @@ test.describe("pronostics génériques — parcours joueur d'un événement", ()
     // #id direct : getByLabel("Pseudo") matcherait AUSSI la checkbox de
     // consentement (son libellé contient « Mon pseudo et mon avatar… »).
     await page.locator("#prono-first-name").fill(pseudo);
-    // Seule checkbox du formulaire (ni email ni téléphone collectés).
-    await page.getByRole("checkbox").check();
+    // La case des CONDITIONS, nommée : le formulaire en porte une seconde
+    // depuis le rappel hebdomadaire (opt-in), et `getByRole("checkbox")` est
+    // devenu ambigu en mode strict.
+    await page.locator('input[name="accepted_terms"]').check();
     await page.getByRole("button", { name: "C'est parti 🎉" }).click();
 
     // ── Mini espace joueur : en-tête profil + onglets.

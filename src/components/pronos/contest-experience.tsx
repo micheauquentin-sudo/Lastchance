@@ -154,6 +154,7 @@ export function ContestRegisterForm({
         email: String(formData.get("email") ?? ""),
         phone: String(formData.get("phone") ?? ""),
         acceptedTerms: formData.get("accepted_terms") === "on",
+        reminderOptIn: formData.get("reminder_opt_in") === "on",
         tiebreakerGuess: rawGuess === "" ? "" : Number(rawGuess),
         turnstileToken: captchaToken ?? undefined,
       });
@@ -265,6 +266,28 @@ export function ContestRegisterForm({
             </Link>
             . Mon pseudo et mon avatar apparaîtront dans le classement public
             de ce championnat.
+          </span>
+        </label>
+        {/* LE RAPPEL — OPT-IN, JAMAIS PRÉ-COCHÉ.
+
+            Un championnat se joue sur des mois : sans rappel, le joueur
+            oublie une journée et perd des points sans l'avoir décidé.
+            Mais un rappel est une SOLLICITATION : la case est vide au
+            départ, `required` est absent, et refuser n'empêche pas de
+            s'inscrire.
+
+            La promesse du silence est écrite ICI, parce que c'est ici
+            qu'elle est lue : rien ne part si la grille est complète. */}
+        <label className="flex items-start gap-2 text-xs leading-relaxed text-k-body">
+          <input
+            type="checkbox"
+            name="reminder_opt_in"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-k-ink"
+          />
+          <span>
+            Prévenez-moi par email dans la semaine s&apos;il me manque des
+            pronostics. Rien ne vous est envoyé si votre grille est
+            complète.
           </span>
         </label>
         <TurnstileWidget
@@ -438,9 +461,24 @@ export function Badge({ badge, color }: { badge: string; color: string }) {
       </span>
     );
   }
+  // Plus de drapeau blanc en repli : une équipe sans vignette reçoit
+  // désormais ses initiales à la source (`resolveProviderSide`). Le cas
+  // restant est un match SAISI À LA MAIN dont le commerçant n'a rempli
+  // aucun badge — un rond neutre y est moins parlant qu'un drapeau de
+  // reddition en face d'une équipe de football.
+  if (!badge) {
+    return (
+      <span
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-k-ink/20 bg-k-bg text-[10px] font-black text-k-body"
+        aria-hidden
+      >
+        ⚽
+      </span>
+    );
+  }
   return (
     <span className="text-2xl leading-none" aria-hidden>
-      {badge || "🏳️"}
+      {badge}
     </span>
   );
 }

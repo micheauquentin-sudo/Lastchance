@@ -1489,6 +1489,11 @@ export async function registerContestPlayer(input: {
   email?: string;
   phone?: string;
   acceptedTerms: boolean;
+  /**
+   * Rappel hebdomadaire « il vous manque des pronostics ». OPT-IN strict :
+   * absent vaut « non », exactement comme la case décochée.
+   */
+  reminderOptIn?: boolean;
   /** Réponse à la question subsidiaire (départage des ex æquo). */
   tiebreakerGuess?: number | "";
   turnstileToken?: string;
@@ -1507,6 +1512,7 @@ async function registerInner(
       email: input.email ?? "",
       phone: input.phone ?? "",
       accepted_terms: input.acceptedTerms,
+      reminder_opt_in: input.reminderOptIn ?? false,
       tiebreaker_guess: input.tiebreakerGuess ?? "",
     });
     if (!parsed.success) {
@@ -1570,6 +1576,9 @@ async function registerInner(
       email: ctx.contest.collect_email ? parsed.data.email || null : null,
       phone: ctx.contest.collect_phone ? parsed.data.phone || null : null,
       accepted_terms: true,
+      // Opt-in STRICT : jamais pré-coché, jamais déduit d'autre chose. Un
+      // appel forgé qui l'omet vaut « non », comme la case décochée.
+      reminder_opt_in: parsed.data.reminder_opt_in === true,
       // La réponse subsidiaire n'existe que si le championnat pose la
       // question — même minimisation que pour email/téléphone.
       tiebreaker_guess:
@@ -2867,6 +2876,146 @@ export async function importContestRound(input: {
     return { ok: true, data: summary };
   } catch (err) {
     reportError("pronostics.calendrier.import", err);
+    return {
+      ok: false,
+      error: "Fournisseur de calendriers indisponible, réessayez plus tard.",
+    };
+  }
+}
+
+/**
+ * IMPORTER TOUTES LES JOURNÉES RESTANTES, d'un seul geste.
+ *
+ * ── POURQUOI CE GESTE EXISTE ──
+ *
+ * Un calendrier de championnat est publié en début de saison : le
+ * commerçant qui ouvre son jeu en août veut souvent poser les 34 journées
+ * d'un coup, pour que ses clients puissent pronostiquer toute la saison
+ * sans qu'il ait à revenir chaque semaine. Journée par journée, c'était
+ * trente-quatre allers-retours.
+ *
+ * ── CE QU'IL N'IMPORTE PAS ──
+ *
+ * Les journées DÉJÀ JOUÉES. `syncContestFixtures` écarte tout match dont
+ * le coup d'envoi est passé — personne n'a pu le pronostiquer — donc
+ * balayer depuis la journée 1 ne fait qu'appeler le fournisseur pour rien.
+ * On part de la journée en cours, celle que l'ancre désigne.
+ *
+ * ── LA BORNE EST CELLE DU CATALOGUE, PAS UNE DEVINETTE ──
+ *
+ * `competition.journees` vaut 34 en Ligue 1, 5 au Tournoi, et RIEN pour
+ * les coupes — dont les tours ne se numérotent pas en continu. Sans borne,
+ * ce geste n'est pas proposé : balayer 99 tours au hasard, ce sont 99
+ * appels pour trouver du vide.
+ *
+ * ── UN TOUR EN ÉCHEC N'ARRÊTE PAS LES AUTRES ──
+ *
+ * Les journées sont importées EN SÉRIE et non en parallèle : le
+ * fournisseur est en tier gratuit, et trente requêtes simultanées le
+ * feraient répondre 429 pour tout le monde, y compris les pages joueur qui
+ * partagent le même quota.
+ */
+export async function importContestSeason(input: {
+  id: string;
+}): Promise<ActionResult<SyncOutcome & { journees: number }>> {
+  const parsed = syncContestSchema.safeParse({ id: input.id });
+  if (!parsed.success) return { ok: false, error: "Données invalides" };
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+  if (!hasPronosticsAccess(organization)) {
+    return { ok: false, error: "Le module Pronostics n'est pas activé." };
+  }
+
+  const allowed = await rateLimit(
+    rateLimitBucket("prono:sync", organization.id, user.id),
+    RATE_LIMITS.contestSync,
+    { failClosed: true },
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      error: "Trop d'imports rapprochés. Réessayez dans quelques minutes.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, organization_id, competition_key, slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const competition = getCompetition(contest.competition_key as string);
+  if (!competition?.providerLeagueId) {
+    return { ok: false, error: "Cette compétition est en saisie manuelle." };
+  }
+  if (!competition.journees) {
+    return {
+      ok: false,
+      error:
+        "Cette compétition n'a pas de calendrier en journées numérotées : importez tour par tour.",
+    };
+  }
+
+  try {
+    const admin = createAdminClient();
+    const ancre = await fetchLeagueAnchor(competition.providerLeagueId);
+    if (!ancre) {
+      return {
+        ok: false,
+        error: "Le fournisseur n'annonce aucune saison en cours pour cette compétition.",
+      };
+    }
+
+    const total: SyncOutcome & { journees: number } = {
+      imported: 0,
+      resultsApplied: 0,
+      rescheduled: 0,
+      journees: 0,
+    };
+
+    for (let round = ancre.nextRound; round <= competition.journees; round += 1) {
+      let fixtures;
+      try {
+        fixtures = await fetchLeagueRound(
+          competition.providerLeagueId,
+          ancre.season,
+          round,
+        );
+      } catch (err) {
+        // Une journée indisponible ne fait pas tomber les autres : il en
+        // manquerait une là où, sans cette garde, il manquerait la saison.
+        reportError("pronostics.saison.journee", err);
+        continue;
+      }
+      if (fixtures.length === 0) continue;
+
+      const resume = await syncContestFixtures(
+        admin,
+        {
+          id: contest.id as string,
+          organization_id: organization.id,
+          competition_key: contest.competition_key as string,
+        },
+        fixtures,
+      );
+      total.imported += resume.imported;
+      total.resultsApplied += resume.resultsApplied;
+      total.rescheduled += resume.rescheduled;
+      total.journees += 1;
+    }
+
+    revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    if (contest.slug) revalidatePath(`/pronos/${contest.slug}`);
+    return { ok: true, data: total };
+  } catch (err) {
+    reportError("pronostics.saison.import", err);
     return {
       ok: false,
       error: "Fournisseur de calendriers indisponible, réessayez plus tard.",
