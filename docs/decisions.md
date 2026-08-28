@@ -8032,3 +8032,67 @@ qu'on soit DANS la salle, alors qu'une soirée entre amis se joue à distance.
 `src/components/dashboard/generateur-questions.tsx`,
 `src/components/partage/partage-lien-jeu.tsx`,
 `src/components/quiz/quiz-presets.ts`.
+
+---
+
+## ADR-121 — Le Ticket d'Or se scanne, et le gain survit à un rechargement
+
+**Date** : 2026-08-28
+**Statut** : Accepté
+**Contexte** : le staff lisait dix caractères à voix haute et le client les
+tapait. Dix caractères dictés dans le bruit d'un comptoir, c'est une faute de
+frappe par client — et chaque faute rendait « ce ticket ne mène nulle part ».
+
+### Décision 1 — Le QR porte l'URL, le code reste dessous
+
+L'écran d'émission montre un QR de `${APP_URL}/ticket/CODE`, grand, scanné
+depuis l'autre côté du comptoir. Le code écrit **reste affiché sous le QR** :
+un QR suppose un appareil photo qui marche, assez de lumière et une main libre.
+Le retirer aurait rendu le jeu impraticable les jours où le scan ne prend pas.
+
+**Aucun droit nouveau** : le QR ne transporte que l'URL publique du ticket,
+c'est-à-dire le code déjà affiché. L'usage unique reste tenu en base (`tire_le`
+posé sous verrou), l'émission exige toujours `is_org_member`, et rien n'est
+réaffiché après coup.
+
+### Décision 2 — Le tirage reste un GESTE, pas un chargement
+
+**Écarté** : tirer automatiquement à l'ouverture de la page, pour que le client
+« voie de suite ». Un `GET` qui consomme le ticket est consommé par un
+préchargement de navigateur, un antivirus qui suit les liens, un aperçu de lien
+dans une messagerie ou un retour arrière — le client aurait « joué » sans rien
+toucher, sans aucun moyen de le prouver. Le passage au QR n'affaiblit pas cet
+argument, il l'aiguise : une URL scannée circule.
+
+Le doigt sur le bouton n'est pas une friction, c'est le **geste de grattage** :
+scanner, voir un ticket doré, appuyer, savoir. Une manipulation au lieu de dix
+caractères à taper — c'est bien « de suite ».
+
+### Décision 3 — Le gain est mémorisé sur l'appareil du client
+
+`tirer_ticket_or` ne rend le lot et le code de retrait **qu'une fois** : le
+second appel rend `deja_tire`, sans rien d'autre. Tenable quand on lisait un
+code au comptoir ; plus du tout au QR, où l'écran se perd tout le temps — on
+bascule vers ses SMS, l'écran se verrouille, le navigateur de l'appareil photo
+recharge l'onglet. Le client relisait « ce ticket a déjà été ouvert » alors
+qu'il venait de gagner, sans plus aucun moyen de lire son code.
+
+Le résultat est donc mémorisé en `localStorage`, sur **son** appareil :
+ · il ne contient que ce que le serveur lui a déjà rendu — aucun droit neuf ;
+ · il ne rejoue rien : le tirage reste à usage unique côté base ;
+ · il est local, et l'écran le dit — un `deja_tire` sans mémoire locale annonce
+   désormais que le lot reste dû au comptoir, au lieu de laisser croire à une
+   perte.
+
+Ce qui sort du stockage est **revalidé** (`parserTirageMemorise`) : le stockage
+local se modifie à la main, et un faux gain peint à l'écran serait pire que pas
+de gain du tout. Rien d'autre que les quatre champs connus n'en ressort.
+
+**Écarté pour l'instant** : faire rendre le lot par `deja_tire`. C'est le vrai
+correctif, et il demande une migration **plus un arbitrage** — le code du
+ticket deviendrait un moyen permanent de relire le code de retrait. Proposé à
+part.
+
+**Références** : `src/components/ticket/ticket-qr.tsx`,
+`src/components/ticket/emettre-ticket.tsx`,
+`src/components/ticket/ticket-experience.tsx`, `src/lib/ticket-or.ts`.

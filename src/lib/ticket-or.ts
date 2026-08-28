@@ -144,3 +144,60 @@ export const CODE_TICKET = /^[A-HJ-NP-Z2-9]{10}$/;
 export function estCodeTicket(valeur: unknown): valeur is string {
   return typeof valeur === "string" && CODE_TICKET.test(valeur);
 }
+
+/* ────────────────────────────────────────────────────────────
+   La mémoire du tirage, sur l'appareil du client
+   ──────────────────────────────────────────────────────────── */
+
+export type TirageGagnant = Extract<EtatTirage, { state: "ok" }>;
+
+/**
+ * POURQUOI LE RÉSULTAT SE MÉMORISE SUR LE TÉLÉPHONE DU CLIENT.
+ *
+ * `tirer_ticket_or` ne rend le lot et le code de retrait QU'UNE FOIS : le
+ * second appel rend `deja_tire`, sans rien d'autre. C'était tenable tant qu'on
+ * lisait un code à voix haute au comptoir. Ça ne l'est plus dès lors qu'on
+ * SCANNE un QR : le client ouvre la page dans le navigateur de l'appareil
+ * photo, tire, puis bascule vers ses SMS ou verrouille son écran — et un
+ * onglet rechargé lui rendait « ce ticket a déjà été ouvert » alors qu'il
+ * venait de gagner. Le lot est bien émis au registre, mais il n'avait plus
+ * aucun moyen de LIRE son code.
+ *
+ * La mémoire vit donc sur SON appareil, et nulle part ailleurs :
+ *  · elle ne contient que ce que le serveur lui a déjà rendu à lui — aucun
+ *    droit nouveau, aucun secret qui ne soit pas déjà sur cet écran ;
+ *  · elle ne rejoue RIEN : le tirage reste à usage unique côté base, la
+ *    mémoire ne fait que réafficher un résultat acquis ;
+ *  · elle est locale : un autre téléphone, un autre navigateur ou une
+ *    navigation privée ne la voient pas, et l'écran le dit alors plutôt que
+ *    de laisser croire à une perte.
+ *
+ * Le vrai correctif — que `deja_tire` rende à nouveau le lot — demande une
+ * migration et un arbitrage : le code du ticket deviendrait un moyen permanent
+ * de relire le code de retrait. Il est proposé à part.
+ */
+export function cleMemoireTicket(code: string): string {
+  return `ticket-or:${code}`;
+}
+
+/**
+ * Relit un tirage mémorisé. Tout ce qui n'est pas un gain COMPLET et bien
+ * formé rend `null` : une mémoire corrompue, tronquée ou bricolée à la main
+ * ne doit jamais peindre un faux gain, ni faire échouer le rendu.
+ */
+export function parserTirageMemorise(brut: unknown): TirageGagnant | null {
+  if (typeof brut !== "object" || brut === null) return null;
+  const r = brut as Record<string, unknown>;
+  if (r.state !== "ok") return null;
+  if (typeof r.lot !== "string" || r.lot === "") return null;
+  // Le code de RETRAIT n'a pas la forme d'un code de ticket (familles
+  // distinctes, cf. l'en-tête de la migration) : on ne valide donc que sa
+  // présence, la caisse restant seule juge de sa validité.
+  if (typeof r.codeRetrait !== "string" || r.codeRetrait === "") return null;
+  return {
+    state: "ok",
+    lot: r.lot,
+    codeRetrait: r.codeRetrait,
+    expireLe: typeof r.expireLe === "string" ? r.expireLe : null,
+  };
+}

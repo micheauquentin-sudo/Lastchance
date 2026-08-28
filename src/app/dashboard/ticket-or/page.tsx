@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmettreTicket } from "@/components/ticket/emettre-ticket";
@@ -60,12 +61,14 @@ export default async function TicketOrPage() {
       <Card>
         <h2>Remettre un ticket</h2>
         <p className="mb-4 mt-2 text-sm text-zinc-500">
-          Après une visite ou un achat que vous avez constaté, remettez ce code
-          au client. Il l&apos;ouvrira à son <strong>prochain passage</strong> et
-          retirera son lot au comptoir. Un code ne sert qu&apos;une fois : une
-          capture d&apos;écran ne rejoue rien.
+          Après une visite ou un achat que vous avez constaté, faites{" "}
+          <strong>scanner le QR</strong> au client — ou dictez-lui le code si le
+          scan ne prend pas. Il l&apos;ouvrira à son{" "}
+          <strong>prochain passage</strong>, verra aussitôt ce qu&apos;il gagne,
+          et retirera son lot au comptoir. Un ticket ne sert qu&apos;une fois :
+          une capture d&apos;écran ne rejoue rien.
         </p>
-        <EmettreTicket sansLot={sansLot} />
+        <EmettreTicket sansLot={sansLot} baseUrl={APP_URL} />
       </Card>
 
       <Card>
