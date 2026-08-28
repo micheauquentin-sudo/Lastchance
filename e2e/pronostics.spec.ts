@@ -27,7 +27,13 @@ test.describe("pronostics — parcours joueur complet", () => {
     // Avatar : on prend un drapeau pour couvrir l'onglet Nations.
     await page.getByRole("tab", { name: "Nations" }).click();
     await page.getByRole("button", { name: "France" }).click();
-    await page.getByRole("checkbox").check();
+    // LA CASE DES CONDITIONS, NOMMÉE.
+    //
+    // `getByRole("checkbox")` visait la seule case du formulaire. Depuis que
+    // le rappel hebdomadaire en pose une seconde (opt-in, jamais pré-cochée),
+    // ce locator est ambigu en mode strict — et il l'aurait été de la même
+    // façon pour n'importe quelle case ajoutée un jour à ce formulaire.
+    await page.locator('input[name="accepted_terms"]').check();
     await page.getByRole("button", { name: "C'est parti 🎉" }).click();
 
     // ── Mini espace joueur : en-tête profil + onglets.

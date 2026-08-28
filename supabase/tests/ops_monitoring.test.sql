@@ -114,11 +114,11 @@ select ok(
 -- qu'aucune lecture de fichier ne peut prouver.
 select results_eq(
   $$select worker from public.ops_worker_definitions order by worker$$,
-  $$values ('automations'), ('calendar-reminders'), ('expire-trials'),
-           ('jackpot-draws'), ('jobs'), ('purge-data'), ('reengage'),
-           ('reservation-waitlist'), ('sync-contests'), ('webhooks'),
-           ('weekly-digest')$$,
-  'le registre porte exactement les onze workers du projet, nommés'
+  $$values ('automations'), ('calendar-reminders'), ('contest-reminders'),
+           ('expire-trials'), ('jackpot-draws'), ('jobs'), ('purge-data'),
+           ('reengage'), ('reservation-waitlist'), ('sync-contests'),
+           ('webhooks'), ('weekly-digest')$$,
+  'le registre porte exactement les douze workers du projet, nommés'
 );
 -- CONTRÔLE NÉGATIF DE LA RÈGLE DE 20260820120000. Cette migration supervise
 -- tout worker ayant DÉJÀ déposé un succès dans `ops_worker_runs`. Sur une
