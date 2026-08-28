@@ -14,11 +14,13 @@ import {
   loadPlayerAward,
 } from "@/lib/pronostics-context";
 import {
+  attendResultat,
   effectiveLocksAt,
   isPredictionOpen,
   isQuestionLocked,
   parseQuestionOptions,
   parseRewards,
+  progressionPronostics,
 } from "@/lib/pronostics";
 import {
   ContestProfileEditor,
@@ -32,8 +34,10 @@ import { ContestLeaderboardCard } from "@/components/pronos/leaderboard";
 import { PlayerHub } from "@/components/pronos/player-hub";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
+import { GrillePronostics } from "@/components/pronos/grille-pronostics";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
-import { fondPourTheme } from "@/lib/fonds-ecran";
+import { fondChoisi, fondPourTheme } from "@/lib/fonds-ecran";
+import { sortieDeLOrganisation } from "@/lib/sortie-apres-jeu";
 import { contestThemeTokens } from "@/components/pronos/contest-theme";
 import type { ContestMatch, SeasonalTheme } from "@/types/database";
 
@@ -113,9 +117,14 @@ export default async function PronosPage({
       }
     });
   }
-  const [{ player, predictions }, board] = await Promise.all([
+  const [{ player, predictions }, board, sortie] = await Promise.all([
     loadContestPlayerState(admin, contest.id),
     loadContestLeaderboard(admin, contest.id, PUBLIC_LEADERBOARD_SIZE),
+    // Vitrine publiée + liens de l'organisation, pour le bas de page. Elle
+    // rejoint la salve plutôt que de l'attendre : elle ne dépend que du
+    // championnat déjà résolu. Toute panne y vaut `null` — un bas de page
+    // muet ne casse pas un championnat.
+    sortieDeLOrganisation(organization.id),
   ]);
 
   const rewards = parseRewards(contest.rewards);
@@ -149,8 +158,28 @@ export default async function PronosPage({
   const toPredict = player
     ? upcoming.filter((m) => isOpen(m) && !predictions[m.id]).length
     : 0;
-  // Progression de la grille : matchs du championnat déjà pronostiqués.
-  const predicted = matches.filter((m) => predictions[m.id]).length;
+  // Progression de la grille. La RÈGLE (et le défaut qu'elle ferme) vit dans
+  // `progressionPronostics` — une fonction pure, donc éprouvée : elle valait
+  // `matches.length`, ce qui rendait la barre impossible à remplir pour un
+  // joueur arrivé en cours de saison.
+  const progression = progressionPronostics(
+    matches.map((m) => ({
+      ouvert: isOpen(m),
+      pronostique: Boolean(predictions[m.id]),
+    })),
+  );
+
+  // ── TROIS FAMILLES, ET NON DEUX ──
+  //
+  // « À venir » mélangeait un match ouvert et un match dont le coup d'envoi
+  // était passé : deux lignes voisines, l'une jouable, l'autre pas, sous le
+  // même titre. On sépare ce sur quoi le joueur peut AGIR (la grille), ce
+  // qu'il attend (le résultat), et ce qui est joué.
+  const estScore = (m: ContestMatch) => (m.question_type ?? "score") === "score";
+  const aPronostiquer = upcoming.filter(isOpen);
+  const grille = aPronostiquer.filter(estScore);
+  const questionsOuvertes = aPronostiquer.filter((m) => !estScore(m));
+  const enAttente = upcoming.filter((m) => !isOpen(m));
 
   // Ligues privées du joueur : classements re-numérotés 1..n chargés en
   // SQL (une RPC bornée par ligue — l'effectif d'une ligue est limité).
@@ -213,6 +242,9 @@ export default async function PronosPage({
         scoreLabel={competition?.scoreLabel ?? "points"}
         timeZone={organization.timezone}
         locked={m.status === "finished" || !isPredictionOpen(m.kickoff_at)}
+        attenteResultat={
+          m.status !== "finished" && attendResultat(m.kickoff_at)
+        }
       />
     );
   };
@@ -248,7 +280,7 @@ export default async function PronosPage({
   const leaderboardSection = leaderboard.length > 0 && generalBoard;
 
   return (
-    <Shell theme={contest.theme}>
+    <Shell theme={contest.theme} fondKey={contest.fond_key}>
       <PageOpenBeacon module="pronostics" publicId={contest.slug} />
       <div className="mx-auto max-w-lg px-4 py-8 sm:py-12">
         {/* ── En-tête commerce + championnat ── */}
@@ -297,6 +329,7 @@ export default async function PronosPage({
             totalPlayers={board.totalPlayers}
             toPredict={toPredict}
             organizationId={organization.id}
+            sortie={sortie}
             award={
               myAward && myAward.status !== "cancelled"
                 ? {
@@ -310,15 +343,56 @@ export default async function PronosPage({
             }
             matchesSlot={
               <section className="space-y-6">
-                <PredictionProgress done={predicted} total={matches.length} />
-                {upcoming.length > 0 && (
+                <PredictionProgress
+                  done={progression.done}
+                  total={progression.total}
+                />
+
+                {/* ── 1. CE QUE LE JOUEUR PEUT FAIRE MAINTENANT ──
+                    Une seule carte, un seul bouton, tous les matchs ouverts
+                    dedans. C'est le geste du joueur : il remplit sa journée
+                    puis valide. */}
+                <GrillePronostics
+                  slug={slug}
+                  entrees={grille.map((m) => ({
+                    match: m,
+                    prediction: predictions[m.id]
+                      ? {
+                          home_score: predictions[m.id].home_score,
+                          away_score: predictions[m.id].away_score,
+                        }
+                      : null,
+                  }))}
+                  scoreLabel={competition?.scoreLabel ?? "points"}
+                  timeZone={organization.timezone}
+                />
+
+                {/* Les questions génériques gardent leur carte : un
+                    classement et une estimation ne se saisissent pas dans une
+                    grille de scores, et les regrouper aurait demandé un
+                    formulaire commun à quatre formes de réponse. */}
+                {questionsOuvertes.length > 0 && (
                   <div>
                     <h2 className="text-lg font-black text-k-ink mb-3">
-                      À venir
+                      Questions ouvertes
                     </h2>
-                    <ul className="space-y-3">{upcoming.map(renderCard)}</ul>
+                    <ul className="space-y-3">
+                      {questionsOuvertes.map(renderCard)}
+                    </ul>
                   </div>
                 )}
+
+                {/* ── 2. CE QU'IL ATTEND ── */}
+                {enAttente.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-black text-k-ink mb-3">
+                      En attente de résultat
+                    </h2>
+                    <ul className="space-y-3">{enAttente.map(renderCard)}</ul>
+                  </div>
+                )}
+
+                {/* ── 3. CE QUI EST JOUÉ ── */}
                 {played.length > 0 && (
                   <div>
                     <h2 className="text-lg font-black text-k-ink mb-3">
@@ -327,11 +401,19 @@ export default async function PronosPage({
                     <ul className="space-y-3">{played.map(renderCard)}</ul>
                   </div>
                 )}
+
                 {matches.length === 0 && (
                   <p className="text-center text-sm text-k-body">
                     Les matchs arrivent bientôt — revenez vite !
                   </p>
                 )}
+                {matches.length > 0 && grille.length === 0 &&
+                  questionsOuvertes.length === 0 && (
+                    <p className="text-center text-sm text-k-body">
+                      Aucun match ouvert aux pronostics pour le moment — la
+                      prochaine journée arrive.
+                    </p>
+                  )}
               </section>
             }
             leaderboardSlot={
@@ -433,16 +515,23 @@ export default async function PronosPage({
  */
 function Shell({
   theme,
+  fondKey = null,
   children,
 }: {
   theme?: SeasonalTheme | null;
+  /** Réglage BRUT : `null` = suivre le thème, `"aucun"`, ou une clé. */
+  fondKey?: string | null;
   children: React.ReactNode;
 }) {
   const tokens = contestThemeTokens(theme);
   return (
     <PlayerPageShell
       pageStyle={tokens.pageStyle}
-      fond={fondPourTheme(tokens.key)}
+      // Le fond du THÈME n'est plus qu'un repli : il ne s'applique que si le
+      // commerçant n'a rien choisi. `fondChoisi` distingue « suivre le
+      // thème » (null) de « aucun fond » (choix explicite) — sans quoi
+      // retirer l'image d'un thème qui en a une aurait été impossible.
+      fond={fondChoisi(fondKey, fondPourTheme(tokens.key))}
     >
       {children}
     </PlayerPageShell>

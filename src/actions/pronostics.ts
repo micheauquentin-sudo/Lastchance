@@ -9,6 +9,7 @@ import { blocageActivationContest } from "@/lib/activation/pronostics";
 import { getUserAndOrg } from "@/lib/auth";
 import { getCompetition, getEntry, isAutoCompetition } from "@/lib/competitions";
 import { syncContestFixtures } from "@/lib/contest-sync";
+import { fetchLeagueAnchor, fetchLeagueRound } from "@/lib/fixtures";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { monitored, reportError } from "@/lib/monitoring";
 import {
@@ -62,6 +63,8 @@ import {
   setQuestionResultSchema,
   submitAnswerSchema,
   submitPredictionSchema,
+  submitPredictionsSchema,
+  contestRoundSchema,
   syncContestSchema,
   updateContestGenericScoringSchema,
   updateContestRewardsSchema,
@@ -301,6 +304,47 @@ export async function syncContest(
   }
 }
 
+/**
+ * LES CHAMPS RÉELLEMENT ÉCRITS — et pourquoi `Object.keys` ne suffisait pas.
+ *
+ * ── LE DÉFAUT MESURÉ (2026-08-27) ──
+ *
+ * Le formulaire « Ouvrir aux joueurs » ne poste que `id` et `status`. Mais
+ * l'action lit TOUS les champs du schéma depuis le FormData (`name: null`,
+ * `theme: null`…), et Zod, lui, CONSERVE une clé dès lors qu'elle était
+ * présente à l'entrée — même repliée sur `undefined` par `absentSiNonRendu`.
+ * `Object.keys(fields).length` valait donc 5, jamais 0, et l'action entrait
+ * dans sa branche d'écriture avec cinq valeurs indéfinies.
+ *
+ * `JSON.stringify` les élague : PostgREST recevait `PATCH {}`. Vérifié sur
+ * l'instance locale — un corps vide sur une ligne EXISTANTE rend
+ * `PGRST116 / 0 rows`, là où le même PATCH non vide rend la ligne. Donc
+ * `!updated`, donc « Mise à jour impossible ».
+ *
+ * ── POURQUOI C'ÉTAIT SI DÉROUTANT ──
+ *
+ * Le refus tombait APRÈS `set_contest_status`, déjà commité. Le championnat
+ * ÉTAIT ouvert aux joueurs, la page publique servait, et le commerçant lisait
+ * une erreur — jusqu'à ce qu'un rafraîchissement lui montre le contraire. Un
+ * message d'échec sur un geste réussi est pire qu'un échec franc : il fait
+ * recommencer, et ici le re-clic ne détrompait pas (la RPC est idempotente,
+ * elle rend `true` sur un statut déjà atteint, et l'écriture vide échouait à
+ * nouveau).
+ *
+ * ── LA GARDE EST ICI ET NON DANS LE SCHÉMA ──
+ *
+ * `absentSiNonRendu` fait déjà son travail : il replie `null` sur `undefined`,
+ * ce qui est la bonne SÉMANTIQUE (« champ non rendu »). Ce que Zod ne peut pas
+ * faire, c'est retirer la clé — et c'est la présence de la clé, pas sa valeur,
+ * que testait l'appelant. On corrige donc au point de décision : ce qui part
+ * en base, ce sont les champs qui ont une VALEUR.
+ */
+function champsEcrits<T extends Record<string, unknown>>(fields: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, valeur]) => valeur !== undefined),
+  ) as Partial<T>;
+}
+
 export async function updateContest(
   _prev: ActionResult | null,
   formData: FormData,
@@ -321,6 +365,12 @@ export async function updateContest(
     // l'absence. Seul le panneau Réglages porte ce `<select>` — les autres
     // formulaires de la page laissent donc la colonne intacte.
     theme: formData.get("theme"),
+    // Gate `has` et non lecture nue, contrairement au thème juste au-dessus :
+    // pour le fond, `''` (« suivre le thème ») est une valeur légitime, donc
+    // indiscernable d'un champ absent si on lisait `get() ?? ""`.
+    fond_key: formData.has("fond_key")
+      ? formData.get("fond_key")
+      : undefined,
     // Gate PROPRE (pas `collection_settings`) : le réglage n'est écrit que
     // si le formulaire porte réellement le champ. Sinon toute sauvegarde
     // d'un autre formulaire remettrait l'expiration à « sans limite ».
@@ -419,11 +469,15 @@ export async function updateContest(
     }
   }
 
+  // `champsEcrits` et non `fields` : une clé présente mais indéfinie n'est pas
+  // un champ à écrire (voir l'en-tête de la fonction — c'est le défaut du
+  // 2026-08-27, « Ouvrir aux joueurs » qui réussit en annonçant un échec).
+  const aEcrire = champsEcrits(fields);
   let slug: string | null = null;
-  if (Object.keys(fields).length > 0) {
+  if (Object.keys(aEcrire).length > 0) {
     const { data: updated, error } = await supabase
       .from("contests")
-      .update(fields)
+      .update(aEcrire)
       .eq("id", id)
       .eq("organization_id", organization.id)
       .select("slug")
@@ -1785,6 +1839,191 @@ async function predictInner(
   }
 }
 
+/** Ce qu'un lot de pronostics a réellement produit. */
+export interface PredictionsOutcome {
+  /** Pronostics effectivement enregistrés. */
+  saved: number;
+  /**
+   * Matchs refusés, avec leur motif. NON VIDE n'est PAS un échec du lot :
+   * un match qui a démarré pendant que le joueur remplissait sa grille est
+   * un refus normal, et les autres doivent quand même être enregistrés.
+   */
+  refused: Array<{ matchId: string; error: string }>;
+}
+
+/**
+ * UN LOT de pronostics — la grille remplie d'un coup, validée une fois.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Chaque carte portait son propre bouton « Valider ». Pronostiquer une
+ * journée de Ligue 1, c'était neuf boutons, neuf allers-retours, et neuf
+ * occasions d'en oublier un — sur un téléphone, en boutique. Le joueur pose
+ * désormais toute sa grille et valide UNE fois.
+ *
+ * ── UN SEUL SEAU POUR TOUT LE LOT, ET C'EST LE POINT DÉLICAT ──
+ *
+ * `rateLimit` est consommé UNE fois, pas une par match. Le seau joueur
+ * (40/min) était dimensionné pour « une grille complète ≈ 10 requêtes » : le
+ * faire consommer par match transformerait une grille de 20 matchs en demi-
+ * quota, et deux corrections d'affilée en refus. Ce que le seau borne, c'est
+ * le nombre de REQUÊTES qu'un joueur envoie, et le lot n'en est qu'une.
+ *
+ * Le travail, lui, reste borné par le schéma (60 lignes au plus) — c'est LUI
+ * qui empêche un appelant forgé de faire exécuter mille RPC en un appel.
+ *
+ * ── UN REFUS PARTIEL N'ANNULE RIEN ──
+ *
+ * Chaque match est jugé pour lui-même : un match qui a démarré pendant la
+ * saisie est refusé, les autres sont enregistrés, et l'écran nomme ceux qui
+ * n'ont pas pu l'être. Tout rejeter parce qu'une ligne est tombée aurait fait
+ * perdre au joueur le reste de sa grille — exactement au moment où il
+ * n'aurait plus le temps de la refaire.
+ */
+export async function submitPredictions(input: {
+  slug: string;
+  predictions: Array<{ matchId: string; homeScore: number; awayScore: number }>;
+}): Promise<ActionResult<PredictionsOutcome>> {
+  return monitored("pronostics.predict.lot", () => predictionsInner(input));
+}
+
+async function predictionsInner(
+  input: Parameters<typeof submitPredictions>[0],
+): Promise<ActionResult<PredictionsOutcome>> {
+  try {
+    const parsed = submitPredictionsSchema.safeParse({
+      slug: input.slug,
+      predictions: input.predictions.map((p) => ({
+        match_id: p.matchId,
+        home_score: p.homeScore,
+        away_score: p.awayScore,
+      })),
+    });
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0].message };
+    }
+
+    const ctx = await loadContestContext(parsed.data.slug);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+    if (ctx.contest.status !== "active") {
+      return { ok: false, error: "Ce championnat est terminé." };
+    }
+
+    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
+    // sur l'IP partagée (ADR-032). Strictement le même ordre que
+    // `predictInner` — une seconde porte d'entrée aux pronostics ne doit pas
+    // avoir une seconde politique d'identité.
+    const store = await cookies();
+    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
+    if (!token) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    const { data: player } = await ctx.admin
+      .from("contest_players")
+      .select("id")
+      .eq("contest_id", ctx.contest.id)
+      .eq("token_hash", hashPlayerToken(token))
+      .maybeSingle();
+    if (!player) {
+      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
+    }
+
+    if (
+      !(await rateLimit(
+        rateLimitBucket("prono:predict:player", ctx.contest.id, player.id),
+        RATE_LIMITS.pronoPredictPlayer,
+        { failClosed: true },
+      ))
+    ) {
+      return {
+        ok: false,
+        error: "Trop de tentatives. Patientez un instant avant de réessayer.",
+      };
+    }
+
+    // Clé PARTAGÉE (IP) : compteur LARGE et fail-OPEN, observabilité pure.
+    const ip = clientIpFromHeaders(await headers());
+    await observerPressionIp(
+      ["prono:predict:ip", ctx.contest.id],
+      ip,
+      RATE_LIMITS.pronoPredictIp,
+      "prono_predict_ip_pressure",
+      { contest_id: ctx.contest.id },
+    );
+
+    const outcome: PredictionsOutcome = { saved: 0, refused: [] };
+    // Doublons écartés AVANT la boucle : deux lignes sur le même match
+    // feraient deux RPC dont la seconde écrase la première — du travail payé
+    // pour un résultat que la dernière valeur détermine déjà.
+    const vus = new Set<string>();
+
+    for (const ligne of parsed.data.predictions) {
+      if (vus.has(ligne.match_id)) continue;
+      vus.add(ligne.match_id);
+
+      const match = ctx.matches.find((m) => m.id === ligne.match_id);
+      if (!match) {
+        outcome.refused.push({
+          matchId: ligne.match_id,
+          error: "Match introuvable.",
+        });
+        continue;
+      }
+      if ((match.question_type ?? "score") !== "score") {
+        outcome.refused.push({
+          matchId: ligne.match_id,
+          error: "Cette question n'attend pas un score.",
+        });
+        continue;
+      }
+      if (match.status === "finished" || !isPredictionOpen(match.kickoff_at)) {
+        outcome.refused.push({
+          matchId: ligne.match_id,
+          error: "Ce match a commencé : pronostics fermés.",
+        });
+        continue;
+      }
+
+      const { data: saved, error } = await ctx.admin.rpc(
+        "submit_contest_prediction",
+        {
+          p_contest_id: ctx.contest.id,
+          p_match_id: match.id,
+          p_player_id: player.id,
+          p_home_score: ligne.home_score,
+          p_away_score: ligne.away_score,
+        },
+      );
+
+      if (error) {
+        reportError("pronostics.predict.lot", error.message);
+        outcome.refused.push({
+          matchId: ligne.match_id,
+          error: "Pronostic non enregistré, réessayez.",
+        });
+        continue;
+      }
+      if (saved !== true) {
+        // La RPC reste l'AUTORITÉ : elle refuse un match démarré à la
+        // milliseconde près, là où le test ci-dessus lisait une photo.
+        outcome.refused.push({
+          matchId: ligne.match_id,
+          error: "Ce match a commencé : pronostics fermés.",
+        });
+        continue;
+      }
+      outcome.saved += 1;
+    }
+
+    return { ok: true, data: outcome };
+  } catch (err) {
+    reportError("pronostics.predict.lot", err);
+    return { ok: false, error: "Une erreur est survenue, réessayez." };
+  }
+}
+
 /**
  * Enregistre (ou remplace) la réponse du joueur à une question générique
  * — choix unique, classement, estimation. Mêmes gardes que
@@ -2403,4 +2642,246 @@ async function leaveLeagueInner(
     reportError("pronostics.league.leave", err);
     return { ok: false, error: "Une erreur est survenue, réessayez." };
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// LE CALENDRIER COMPLET — parcourir la saison, journée par journée
+//
+// La synchronisation automatique sert les journées PROCHES (la dernière
+// jouée, la suivante, et celle d'après) : c'est ce qu'un commerçant veut
+// voir arriver tout seul. Elle ne peut pas servir la saison entière — 34
+// journées de Ligue 1 font 306 matchs, et personne ne pronostique 306
+// matchs.
+//
+// Le reste de la saison n'était donc atteignable par AUCUN chemin : le
+// commerçant qui voulait ouvrir son jeu sur la journée du mois prochain
+// n'avait qu'à attendre. Ces deux actions ouvrent ce chemin — il consulte,
+// puis il importe la journée qu'il a choisie, et lui seul.
+// ────────────────────────────────────────────────────────────
+
+/** Un match d'une journée consultée, tel que l'écran commerçant le lit. */
+export interface CalendarPreviewMatch {
+  ref: string;
+  homeName: string;
+  awayName: string;
+  kickoffAt: string;
+  /** Déjà présent dans la grille de ce championnat. */
+  imported: boolean;
+  /** Coup d'envoi passé : il ne sera jamais importé (personne n'a pu jouer). */
+  past: boolean;
+}
+
+export interface CalendarPreview {
+  round: number;
+  /** Saison telle que la nomme le fournisseur (« 2026-2027 »). */
+  season: string;
+  matches: CalendarPreviewMatch[];
+  /** Combien de matchs cette journée ajouterait à la grille. */
+  importable: number;
+}
+
+/**
+ * CONSULTER une journée. N'ÉCRIT RIEN — c'est tout l'intérêt : le commerçant
+ * regarde avant de décider, et regarder ne doit pas remplir sa grille.
+ *
+ * La saison n'est pas devinée d'une date (un championnat européen chevauche
+ * deux années civiles, un championnat d'été non) : elle vient de l'ANCRE du
+ * fournisseur, seul à savoir comment il nomme sa saison en cours.
+ */
+export async function previewContestRound(input: {
+  id: string;
+  round: number;
+}): Promise<ActionResult<CalendarPreview>> {
+  const parsed = contestRoundSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Données invalides" };
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+
+  // MÊME SEAU que la synchronisation, et volontairement : les deux gestes
+  // sortent vers le même fournisseur, sur le même quota. Deux seaux séparés
+  // auraient laissé un écran de consultation vider le budget de l'autre.
+  const allowed = await rateLimit(
+    rateLimitBucket("prono:sync", organization.id, user.id),
+    RATE_LIMITS.contestSync,
+    { failClosed: true },
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      error: "Trop de consultations rapprochées. Réessayez dans quelques minutes.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, competition_key")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const competition = getCompetition(contest.competition_key as string);
+  if (!competition?.providerLeagueId) {
+    return { ok: false, error: "Cette compétition est en saisie manuelle." };
+  }
+
+  try {
+    const admin = createAdminClient();
+    // Les deux appels d'ancre passent par le cache HTTP de `fetchEvents`
+    // (revalidate 300) : consulter trois journées d'affilée ne les repaie
+    // pas trois fois.
+    const saison = await saisonCourante(competition.providerLeagueId);
+    if (!saison) {
+      return {
+        ok: false,
+        error: "Le fournisseur n'annonce aucune saison en cours pour cette compétition.",
+      };
+    }
+
+    const [fixtures, { data: existants }] = await Promise.all([
+      fetchLeagueRound(competition.providerLeagueId, saison, parsed.data.round),
+      admin
+        .from("contest_matches")
+        .select("external_ref")
+        .eq("contest_id", contest.id)
+        .eq("organization_id", organization.id),
+    ]);
+
+    const dejaLa = new Set(
+      ((existants ?? []) as Array<{ external_ref: string | null }>)
+        .map((m) => m.external_ref)
+        .filter((ref): ref is string => Boolean(ref)),
+    );
+    const maintenant = Date.now();
+    const matches: CalendarPreviewMatch[] = fixtures
+      .map((f) => ({
+        ref: f.ref,
+        homeName: f.homeName,
+        awayName: f.awayName,
+        kickoffAt: f.kickoffAt,
+        imported: dejaLa.has(f.ref),
+        past: f.finished || new Date(f.kickoffAt).getTime() <= maintenant,
+      }))
+      .sort((a, b) => a.kickoffAt.localeCompare(b.kickoffAt));
+
+    return {
+      ok: true,
+      data: {
+        round: parsed.data.round,
+        season: saison,
+        matches,
+        importable: matches.filter((m) => !m.imported && !m.past).length,
+      },
+    };
+  } catch (err) {
+    reportError("pronostics.calendrier.preview", err);
+    return {
+      ok: false,
+      error: "Fournisseur de calendriers indisponible, réessayez plus tard.",
+    };
+  }
+}
+
+/**
+ * IMPORTER une journée choisie.
+ *
+ * Elle ne réimplémente RIEN : elle passe la journée à `syncContestFixtures`
+ * en `prefetched`, donc le même code que la synchronisation nocturne décide
+ * ce qui entre (déduplication par `external_ref`, matchs déjà joués écartés,
+ * résultats appliqués, reports suivis). Une seconde voie d'import aurait été
+ * une seconde vérité sur ce qu'est un match importable.
+ */
+export async function importContestRound(input: {
+  id: string;
+  round: number;
+}): Promise<ActionResult<SyncOutcome>> {
+  const parsed = contestRoundSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Données invalides" };
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") {
+    return { ok: false, error: "Action non autorisée" };
+  }
+  if (!hasPronosticsAccess(organization)) {
+    return { ok: false, error: "Le module Pronostics n'est pas activé." };
+  }
+
+  const allowed = await rateLimit(
+    rateLimitBucket("prono:sync", organization.id, user.id),
+    RATE_LIMITS.contestSync,
+    { failClosed: true },
+  );
+  if (!allowed) {
+    return {
+      ok: false,
+      error: "Trop d'imports rapprochés. Réessayez dans quelques minutes.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data: contest } = await supabase
+    .from("contests")
+    .select("id, organization_id, competition_key, slug")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+  if (!contest) return { ok: false, error: "Championnat introuvable" };
+
+  const competition = getCompetition(contest.competition_key as string);
+  if (!competition?.providerLeagueId) {
+    return { ok: false, error: "Cette compétition est en saisie manuelle." };
+  }
+
+  try {
+    const admin = createAdminClient();
+    const saison = await saisonCourante(competition.providerLeagueId);
+    if (!saison) {
+      return {
+        ok: false,
+        error: "Le fournisseur n'annonce aucune saison en cours pour cette compétition.",
+      };
+    }
+    const fixtures = await fetchLeagueRound(
+      competition.providerLeagueId,
+      saison,
+      parsed.data.round,
+    );
+    const summary = await syncContestFixtures(
+      admin,
+      {
+        id: contest.id as string,
+        organization_id: organization.id,
+        competition_key: contest.competition_key as string,
+      },
+      fixtures,
+    );
+
+    revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    if (contest.slug) revalidatePath(`/pronos/${contest.slug}`);
+    return { ok: true, data: summary };
+  } catch (err) {
+    reportError("pronostics.calendrier.import", err);
+    return {
+      ok: false,
+      error: "Fournisseur de calendriers indisponible, réessayez plus tard.",
+    };
+  }
+}
+
+/**
+ * Saison EN COURS telle que le fournisseur la nomme, lue sur ses deux ancres.
+ *
+ * Ni devinée d'une date, ni saisie par le commerçant : « 2026-2027 » pour un
+ * championnat européen, « 2026 » pour une compétition d'été — seul le
+ * fournisseur sait laquelle il sert, et se tromper de saison rend une journée
+ * vide sans le moindre message.
+ */
+async function saisonCourante(leagueId: string): Promise<string | null> {
+  return (await fetchLeagueAnchor(leagueId))?.season ?? null;
 }

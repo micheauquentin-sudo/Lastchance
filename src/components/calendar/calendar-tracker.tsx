@@ -25,11 +25,15 @@ import {
   calendarDaySansGain,
   calendarProgress,
   formatCalendarUnlock,
+  prochaineOuverture,
   type CalendarBoxState,
   type CalendarProgress,
 } from "./calendar-state";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { ProposerJackpot } from "@/components/jackpot/proposer-jackpot";
+import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
+import type { SortieApresJeu as Sortie } from "@/lib/sortie-apres-jeu";
 import { calendarThemeTokens } from "./calendar-theme";
 
 /* Calendrier / campagnes quotidiennes côté joueur — DA « Kermesse » (crème,
@@ -72,6 +76,11 @@ export interface CalendarTrackerProps {
   dayIds: Record<number, string>;
   /** wheelId → segments + config de collecte (cases `spin`). */
   spinBundles: Record<string, CalendarSpinBundle>;
+  /**
+   * Vitrine publiée + réseaux du commerce, résolus au serveur. `null` = rien
+   * à proposer : le bas de page se tait plutôt que d'afficher un cadre vide.
+   */
+  sortie?: Sortie | null;
 }
 
 /** Convertit une case ouverte (résultat d'openCalendarBox) en case publique. */
@@ -118,6 +127,7 @@ export function CalendarTracker({
   initialState,
   dayIds,
   spinBundles,
+  sortie = null,
 }: CalendarTrackerProps) {
   const router = useRouter();
   const tokens = calendarThemeTokens(theme);
@@ -156,6 +166,10 @@ export function CalendarTracker({
     snapshot.progression.openedCount,
     snapshot.progression.dayCount || calendar?.dayCount || days.length,
   );
+  // Prochaine case à venir, formatée pour le fuseau du NAVIGATEUR. Elle n'est
+  // lue que par la modale de révélation, qui n'existe qu'après un clic : aucun
+  // écart d'hydratation possible, contrairement aux libellés de la grille.
+  const prochaine = formatCalendarUnlock(prochaineOuverture(days));
 
   // ── Rafraîchissement doux (getCalendarState) : les cases passent de
   // verrouillées à ouvrables au fil des jours. On garde la dernière photo saine
@@ -326,7 +340,6 @@ export function CalendarTracker({
           label={calendar.completionRewardLabel}
           details={calendar.completionRewardDetails}
           reward={snapshot.completionReward}
-          organizationId={organizationId}
         />
       )}
 
@@ -348,11 +361,15 @@ export function CalendarTracker({
       {/* ── Rappel quotidien (opt-in RGPD) ── */}
       <ReminderPanel slug={publicSlug} />
 
+      {/* ── Garder le lien avec le commerce ── */}
+      <GarderLeLien sortie={sortie} organizationId={organizationId} />
+
       {/* ── Révélation d'une case ouverte ── */}
       {revealed && (
         <RevealDialog
           day={revealed}
           progress={progress}
+          prochaine={prochaine}
           publicSlug={publicSlug}
           organizationName={organizationName}
           calendarName={calendar.name}
@@ -425,6 +442,74 @@ function ProgressPanel({
 }
 
 // ────────────────────────────────────────────────────────────
+// Garder le lien avec le commerce (bas de page)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LE BAS DU CALENDRIER — QUATRE PORTES, ET AUCUNE N'EST UNE CONDITION.
+ *
+ * ── Ce que ça répare ──
+ *
+ * Un client qui ouvrait sa case du jour arrivait au bout de la page et n'avait
+ * plus rien : le commerce cessait d'exister à l'écran une fois la case ouverte.
+ * Or c'est exactement l'instant où il est le mieux disposé — il vient de jouer,
+ * il reviendra demain. Les quatre chemins qui existaient déjà dans le produit
+ * (la Vitrine, les réseaux, le Passeport, le Jackpot collectif) n'étaient
+ * atteignables que par leur propre QR : le calendrier ne menait à aucun.
+ *
+ * ── AUCUNE COLONNE NOUVELLE, ET C'EST LE POINT ──
+ *
+ * `sortie` vient de `sortieDeLOrganisation` — la Vitrine publiée et les trois
+ * liens déjà saisis dans les réglages, servis à l'identique après un quiz, un
+ * duo ou un portrait de bande. Le Passeport et le Jackpot se déclarent
+ * eux-mêmes auprès de leur action respective, et restent MUETS si le module
+ * n'est pas ouvert. Demander au commerçant de ressaisir quoi que ce soit ici
+ * aurait créé deux vérités pour la même adresse Instagram.
+ *
+ * ── LE SILENCE EST L'ÉTAT PAR DÉFAUT ──
+ *
+ * Chacune des trois briques rend `null` quand elle n'a rien à proposer, et la
+ * majorité des commerçants n'en aura qu'une, voire aucune. Le titre lui-même
+ * ne s'affiche donc que si `sortie` existe : un « Avant de partir… » suivi de
+ * rien serait pire que pas de titre du tout. Le cas « aucune sortie mais un
+ * passeport » reste couvert — la carte du passeport porte son propre titre.
+ */
+function GarderLeLien({
+  sortie,
+  organizationId,
+}: {
+  sortie: Sortie | null;
+  organizationId: string | null;
+}) {
+  // Pas de `space-y` sur le conteneur : les deux cartes portent DÉJÀ leur
+  // `mt-6`, comme sur les sept autres surfaces qui les montent. Un
+  // espacement de conteneur s'y serait AJOUTÉ au lieu de le remplacer — deux
+  // règles de marge qui se cumulent, et un rythme qui saute d'une carte à
+  // l'autre selon celles qui sont rendues.
+  return (
+    <div className="mt-6">
+      <SortieApresJeu sortie={sortie} />
+      {/* Le Passeport vivait dans la carte de fin (`CompletionCard`), donc
+          visible d'un joueur sur cent — celui qui avait ouvert TOUTES les
+          cases. Il descend ici, où il est lu dès la première case : un
+          programme de fidélité se propose au début d'une habitude, pas à sa
+          fin. Un seul exemplaire par page (le composant se garde lui-même du
+          doublon), c'est pourquoi il a été RETIRÉ de la carte de fin plutôt
+          que dupliqué — deux exemplaires, et le second se serait tu. */}
+      {organizationId && (
+        <>
+          <ProposerPasseport
+            organizationId={organizationId}
+            note="Sans inscription : votre passeport prend effet au premier scan de commande, et pas avant."
+          />
+          <ProposerJackpot organizationId={organizationId} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Contenu commerçant
 // ────────────────────────────────────────────────────────────
 
@@ -453,12 +538,10 @@ function CompletionCard({
   label,
   details,
   reward,
-  organizationId = null,
 }: {
   label: string;
   details: string | null;
   reward: CalendarPublicState["completionReward"];
-  organizationId?: string | null;
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
@@ -557,11 +640,13 @@ function CompletionCard({
             Vous avez ouvert toutes les cases — merci de votre fidélité !
           </p>
         )}
-        {/* Hors des trois issues : cadeau remis, épuisé ou jamais configuré,
-            le calendrier est terminé dans les trois cas. */}
-        {organizationId && (
-          <ProposerPasseport organizationId={organizationId} />
-        )}
+        {/* La proposition de Passeport vivait ICI, sous les trois issues de
+            fin. Elle n'était donc lue que par les joueurs ayant ouvert
+            TOUTES les cases — c'est-à-dire au moment où le calendrier est
+            fini, et où proposer de commencer une habitude arrive trop tard.
+            Elle est descendue en bas de page (`GarderLeLien`), où elle est
+            visible dès la première case. Pas dupliquée : le composant ne
+            tolère qu'un exemplaire par page, le second serait resté muet. */}
       </div>
     </section>
   );
@@ -718,7 +803,14 @@ function contentEmoji(day: CalendarPublicDay): string {
   if (day.contentType === "spin") return "🎡";
   // Une case `content` SANS texte ne donne rien : c'est un « pas de chance »
   // assumé, et il porte son propre signe — pas la bulle du mot du jour.
-  return calendarDaySansGain(day) ? "🍂" : "💬";
+  //
+  // LE TRÈFLE ET NON LA FEUILLE MORTE. 🍂 disait la fin de quelque chose ;
+  // sur une grille qu'on rouvre demain, c'était le mauvais mot. Le trèfle à
+  // quatre feuilles dit la chance — celle qui n'est pas venue aujourd'hui,
+  // donc celle qui reste à venir. Même signe dans la grille et dans la
+  // modale : le joueur qui reparcourt ses cases doit reconnaître d'un coup
+  // d'œil celles qui ne donnaient rien.
+  return calendarDaySansGain(day) ? "🍀" : "💬";
 }
 
 // ────────────────────────────────────────────────────────────
@@ -728,6 +820,7 @@ function contentEmoji(day: CalendarPublicDay): string {
 function RevealDialog({
   day,
   progress,
+  prochaine,
   publicSlug,
   organizationName,
   calendarName,
@@ -738,6 +831,8 @@ function RevealDialog({
   day: CalendarPublicDay;
   /** Progression d'assiduité — la seule consolation d'une case perdante. */
   progress: CalendarProgress;
+  /** Prochaine ouverture, déjà formatée pour le fuseau du navigateur. */
+  prochaine: string | null;
   publicSlug: string;
   organizationName: string;
   calendarName: string;
@@ -848,11 +943,29 @@ function RevealDialog({
               Pas de chance aujourd&apos;hui !
             </h2>
             <p className="mt-2 text-sm font-bold text-k-body">
-              Cette case ne cachait rien à gagner.
+              Cette case ne cachait rien à gagner — c&apos;est le jeu, et le
+              trèfle tourne vite.
             </p>
             <p className="mt-3 rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-sm font-bold text-k-ink">
               {calendarConsolation(progress)}
             </p>
+            {/* LE RENDEZ-VOUS, ET NON « revenez demain ».
+
+                Une case perdante est le seul écran de ce module où le joueur
+                n'a rien à emporter : c'est donc le seul où le motif de
+                revenir doit être ÉCRIT. « Demain » supposait que les cases
+                s'ouvrent à un jour d'intervalle — c'est le cas courant, pas
+                la règle : la grille se règle en date de départ et en nombre
+                de cases, et rien n'interdit un calendrier hebdomadaire.
+                Nommer le jour ne suppose rien et ne demande rien.
+
+                Absent quand il n'y a plus de case à venir : promettre un
+                rendez-vous qui n'existe pas serait pire que se taire. */}
+            {prochaine && (
+              <p className="mt-2 text-sm font-bold text-k-body">
+                <span aria-hidden>🍀</span> Prochaine case&nbsp;: {prochaine}
+              </p>
+            )}
           </div>
         )}
 

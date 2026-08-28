@@ -44,3 +44,22 @@ export const OPTION_ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 
 /** Borne d'une réponse `number` (miroir du ±1e9 SQL). */
 export const NUMBER_ANSWER_MAX = 1_000_000_000;
+
+/**
+ * Durée au-delà de laquelle un match commencé n'est plus « en cours ».
+ *
+ * Le badge du joueur affichait « En cours 🔒 » pour TOUT match dont le coup
+ * d'envoi était passé et dont le résultat n'était pas encore tombé. Sur un
+ * calendrier synchronisé, un résultat qui n'arrive pas n'est pas un match qui
+ * dure : c'est une synchro en retard. Un match de la semaine dernière
+ * s'annonçait donc « en cours », ce qui est faux et inquiétant — le joueur
+ * croit que son pronostic va encore compter.
+ *
+ * 100 minutes = 90 + la mi-temps. MÊME valeur que `MIN_MATCH_DURATION_MS`
+ * (`src/lib/contest-sync.ts`), qui s'en sert pour décider s'il vaut la peine
+ * d'interroger le fournisseur : les deux répondent à la question « ce match
+ * devrait-il être fini ? », et deux valeurs différentes feraient dire à
+ * l'écran l'inverse de ce que fait la synchro. Elle vit ici parce que ce
+ * module n'importe RIEN et peut donc être lu par un composant client.
+ */
+export const DUREE_MATCH_MS = 100 * 60 * 1000;

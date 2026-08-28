@@ -292,6 +292,16 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "'' = « sans limite », absence = « ne touche pas au réglage ». L'action lit ce champ par formData.has(...) : les confondre remettrait l'échéance à zéro à chaque sauvegarde d'un autre formulaire de la page.",
   },
   {
+    chemin: "calendar:updateCalendarSchema.fond_key",
+    raison:
+      "'' = « suivre le thème saisonnier », absence = « ne touche pas au réglage ». Même dissymétrie et même formData.has(...) que code_ttl_days juste au-dessus — et un troisième état existe, 'aucun' (« pas d'image »), que confondre avec '' rendrait inexprimable.",
+  },
+  {
+    chemin: "pronostics:updateContestSchema.fond_key",
+    raison:
+      "Même champ, même dissymétrie et même schéma partagé que calendar:updateCalendarSchema.fond_key — les deux modules se règlent le fond de la même façon, et `updateContest` le lit lui aussi par formData.has(...).",
+  },
+  {
     chemin: "events:updateEventSessionSchema.code_ttl_days",
     raison: "Même dissymétrie que calendar:updateCalendarSchema.code_ttl_days.",
   },

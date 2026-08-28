@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { blocageActivationJackpot } from "@/lib/activation/jackpot";
+import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 import { getUserAndOrg } from "@/lib/auth";
 import { hrefEtapeJackpot } from "@/components/dashboard/atelier-jackpot-etapes";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
@@ -34,6 +35,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasJackpotAccess } from "@/lib/subscription";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
+import type { Organization } from "@/types/database";
 import { randomCode, slugify, type ActionResult } from "@/lib/utils";
 import {
   createJackpotCampaignSchema,
@@ -44,6 +46,7 @@ import {
   participateJackpotSchema,
   participateJackpotStaffSchema,
   setJackpotCampaignStatusSchema,
+  invitationJackpotSchema,
   updateJackpotCampaignSchema,
 } from "@/lib/validations/jackpot";
 
@@ -970,5 +973,143 @@ export async function getJackpotState(input: {
   } catch (err) {
     reportError("jackpot.state", err);
     return JACKPOT_INDISPONIBLE;
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// invitationJackpot (panneau d'un AUTRE module, aucune identité requise)
+// ────────────────────────────────────────────────────────────
+
+/** Colonnes de campagne exigées par l'invitation, et RIEN de plus. */
+const INVITE_CAMPAIGN_COLUMNS = "id, name, public_slug, organization_id";
+
+/** Colonnes d'organisation exigées par `moduleOuvertAuJoueur`, et rien de plus. */
+const INVITE_ORG_COLUMNS =
+  "id, subscription_status, trial_ends_at, past_due_since, addon_jackpot, comp_access, comp_access_until";
+
+/**
+ * Les champs d'organisation que la garde du module exige, et EUX SEULS.
+ * `ChampsModule<"jackpot">` les réclame à la compilation : oublier
+ * `addon_jackpot` dans le `select` ne se lirait pas `false`, ça ne
+ * compilerait pas (miroir de `InvitationOrganization`, src/actions/loyalty.ts).
+ */
+type InvitationJackpotOrganization = Pick<
+  Organization,
+  | "id"
+  | "subscription_status"
+  | "trial_ends_at"
+  | "past_due_since"
+  | "addon_jackpot"
+  | "comp_access"
+  | "comp_access_until"
+>;
+
+/** Ce que le panneau reçoit — et la liste EST le contrat de sécurité. */
+export interface InvitationJackpot {
+  /** Adresse publique de la page suivie : `/jackpot/<publicSlug>`. */
+  publicSlug: string;
+  campaignName: string;
+}
+
+/**
+ * INVITATION À REJOINDRE LE JACKPOT COLLECTIF depuis un autre module.
+ *
+ * ── LE DÉFAUT QU'ELLE FERME ──
+ *
+ * Exactement celui de `invitationPasseport` (src/actions/loyalty.ts), un cran
+ * plus loin : un commerçant peut exploiter un jackpot collectif ET un
+ * calendrier sans que le client qui ouvre sa case apprenne jamais que la
+ * jauge existe. Or un jackpot COLLECTIF est le seul module du socle dont la
+ * valeur croît avec le nombre de participants — le laisser sans chemin
+ * applicatif, c'est le priver de ce qui le fait fonctionner.
+ *
+ * ── CE QU'ELLE NE FAIT PAS ──
+ *
+ * Elle NE PARTICIPE PAS. Aucun cookie posé, aucune écriture, aucune
+ * incrémentation de la jauge : elle rend de quoi construire un lien. La
+ * participation reste un geste explicite, sur la page du jackpot, et elle y
+ * exige toujours le code tournant ou la validation en caisse — rejoindre par
+ * ce lien ne contourne RIEN de l'anti-triche.
+ *
+ * ── AUCUN ORACLE : LES QUATRE REFUS SONT LE MÊME `null` ──
+ *
+ * UUID malformé, organisation inconnue, aucune campagne active, module fermé
+ * (abonnement échu / add-on éteint / octroi expiré) — quatre causes, une
+ * seule réponse. `organizationId` arrive d'une prop CLIENT : balayer des UUID
+ * n'apprend donc rien de plus que visiter la vitrine, où le QR du jackpot est
+ * déjà affiché.
+ *
+ * ── UNE SEULE LECTURE ──
+ *
+ * `loadJackpotContext` engage la jauge ET l'état du joueur ; il n'est pas
+ * appelé ici. La campagne et son organisation viennent d'UN aller-retour
+ * (jointure incorporée), avec la garde inter-tenant à la main — la
+ * service_role contourne la RLS.
+ */
+export async function invitationJackpot(input: {
+  organizationId: string;
+}): Promise<InvitationJackpot | null> {
+  const parsed = invitationJackpotSchema.safeParse(input);
+  if (!parsed.success) return null;
+  const { organizationId } = parsed.data;
+
+  try {
+    // Clé PARTAGÉE (organisation + IP) : fail-OPEN, observabilité seule, et
+    // consommée AVANT la première requête SQL — ADR-032.
+    await observerPressionIp(
+      ["jackpot:invite:ip", organizationId],
+      clientIpFromHeaders(await headers()),
+      RATE_LIMITS.jackpotInvite,
+      "jackpot_invite_pressure",
+      { organization_id: organizationId },
+    );
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("jackpot_campaigns")
+      .select(`${INVITE_CAMPAIGN_COLUMNS}, organizations(${INVITE_ORG_COLUMNS})`)
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      // Plusieurs campagnes actives sont possibles : la plus récente gagne,
+      // choix ARBITRAIRE assumé — le panneau n'a de place que pour une
+      // invitation, et la dernière activée est celle dont le commerce parle.
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      reportError("jackpot.invitation", error.message);
+      return null;
+    }
+    if (!data) return null;
+
+    // select() construit la liste de colonnes par gabarit — supabase-js ne
+    // peut pas inférer la forme de l'embed depuis une chaîne dynamique.
+    // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+    const row = data as unknown as {
+      id: string;
+      name: string;
+      public_slug: string | null;
+      organization_id: string;
+      organizations: InvitationJackpotOrganization | null;
+    };
+    const org = row.organizations;
+    if (!org || org.id !== row.organization_id) {
+      reportError("jackpot.invitation", "organisation incohérente");
+      return null;
+    }
+
+    if (!(await moduleOuvertAuJoueur("jackpot", org))) return null;
+
+    // Sans `public_slug`, aucune adresse à proposer. On NE retombe PAS sur
+    // l'UUID : le slug est posé par trigger à la création, son absence
+    // signale une ligne anormale — et un lien en UUID serait une adresse
+    // qu'aucun QR ni aucune affiche ne porte.
+    if (!row.public_slug) return null;
+
+    return { publicSlug: row.public_slug, campaignName: row.name };
+  } catch (err) {
+    reportError("jackpot.invitation", err);
+    return null;
   }
 }

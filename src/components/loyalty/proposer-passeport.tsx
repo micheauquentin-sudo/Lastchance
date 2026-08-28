@@ -15,6 +15,10 @@ import { invitationPasseport } from "@/actions/loyalty";
  */
 let proprietaire: symbol | null = null;
 
+/** Ce que lisent les sept surfaces d'après-jeu, faute d'une note explicite. */
+const NOTE_PAR_DEFAUT =
+  "Sans inscription : rien n'est créé tant que vous n'y allez pas.";
+
 /**
  * La proposition de Passeport après un jeu — STRICTEMENT NAVIGATIONNELLE.
  *
@@ -54,11 +58,21 @@ export function ProposerPasseport({
   organizationId,
   kermesse = true,
   className = "",
+  note = NOTE_PAR_DEFAUT,
 }: {
   organizationId: string;
   /** Thème « kermesse » (crème + encre). Faux = surfaces sombres de /play. */
   kermesse?: boolean;
   className?: string;
+  /**
+   * Bas de carte. Le défaut couvre les surfaces d'APRÈS-JEU, où le joueur
+   * vient de gagner et où la seule chose à rassurer est « rien n'est créé
+   * sans vous ». Une surface qui n'est pas un écran de gain — le bas d'un
+   * calendrier, par exemple — peut avoir besoin de dire QUAND le passeport
+   * commence à compter ; c'est ce que cette prop permet, sans réécrire la
+   * phrase pour les sept autres appelants.
+   */
+  note?: string;
 }) {
   const [invitation, setInvitation] = useState<{
     programId: string;
@@ -122,10 +136,7 @@ export function ProposerPasseport({
           Mon Passeport de fidélité
         </Link>
       </p>
-      <p className={`mt-2 text-xs ${corps}`}>
-        Sans inscription : rien n&apos;est créé tant que vous n&apos;y allez
-        pas.
-      </p>
+      <p className={`mt-2 text-xs ${corps}`}>{note}</p>
     </section>
   );
 }

@@ -39,6 +39,18 @@ export interface Competition {
    * Roland-Garros — pas de flux tennis exploitable en gratuit).
    */
   providerLeagueId?: string;
+  /**
+   * Nombre de JOURNÉES de la compétition — borne du calendrier complet
+   * que le commerçant peut parcourir.
+   *
+   * Renseigné pour les championnats à calendrier régulier, où il se
+   * déduit du format : 18 clubs en Ligue 1 → 2 × 17 = 34 journées.
+   * ABSENT pour les coupes, et c'est une réponse, pas un oubli : une
+   * phase de groupes suivie de tours à élimination directe n'a pas de
+   * numérotation continue, et inventer une borne ferait promettre à
+   * l'écran des journées qui n'existent pas.
+   */
+  journees?: number;
   entries: CompetitionEntry[];
 }
 
@@ -61,6 +73,8 @@ export const COMPETITIONS: Competition[] = [
     drawAllowed: true,
     scoreLabel: "points",
     providerLeagueId: "4714",
+    // Six nations, cinq journées — le format ne bouge pas.
+    journees: 5,
     entries: [
       nation("fra", "France", "🇫🇷"),
       nation("eng", "Angleterre", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"),
@@ -193,6 +207,8 @@ export const COMPETITIONS: Competition[] = [
     drawAllowed: true,
     scoreLabel: "buts",
     providerLeagueId: "4334",
+    // 18 clubs, matchs aller-retour : 2 × 17.
+    journees: 34,
     entries: [
       club("psg", "Paris Saint-Germain", "PSG", "#004170"),
       club("om", "Olympique de Marseille", "OM", "#00a1e0"),

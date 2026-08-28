@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { texteOptionnel } from "@/lib/validations/champ-formulaire";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
+import { FOND_CHOIX } from "@/lib/fonds-ecran";
 
 // ────────────────────────────────────────────────────────────
 // Calendrier / campagnes quotidiennes — schémas d'entrée
@@ -34,6 +35,28 @@ export const calendarThemeSchema = z.enum([
 
 /** Usage d'une case (miroir de l'enum SQL). */
 export const calendarContentTypeSchema = z.enum(["content", "lot", "spin"]);
+
+/**
+ * Fond d'écran de la page suivie — STRICT À L'ÉCRITURE (miroir du CHECK SQL
+ * `calendars_fond_key_check`, 20261102120000).
+ *
+ * `''` est replié sur `null` et non refusé : c'est ce qu'un `<select>` envoie
+ * pour son option « Suivre le thème », et cette option EST le défaut. Refuser
+ * la valeur par défaut d'un formulaire aurait bloqué l'enregistrement
+ * automatique de tout le reste des réglages.
+ *
+ * Le vocabulaire vient de `FOND_CHOIX` plutôt que d'une liste recopiée : les
+ * dix clés désignent des FICHIERS livrés dans `public/fonds/`, et une
+ * onzième valeur inventée ici pointerait sur une image inexistante.
+ */
+export const fondKeySchema = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .refine(
+    (v) => v === null || (FOND_CHOIX as readonly string[]).includes(v),
+    "Fond d'écran inconnu",
+  );
 
 /** Nom d'un calendrier — 1..120 (miroir CHECK SQL). */
 const calendarNameSchema = z
@@ -203,6 +226,11 @@ export const updateCalendarSchema = z.object({
   day_count: dayCountSchema,
   public_slug: publicSlugSchema,
   merchant_content: merchantContentSchema,
+  // `.optional()`, comme `code_ttl_days` et pour la même raison : le champ
+  // n'est écrit que si le formulaire le porte réellement. Un autre
+  // formulaire de la page qui posterait sans lui remettrait sinon le fond
+  // « suivre le thème » sans que le commerçant y ait touché.
+  fond_key: fondKeySchema.optional(),
   completion_reward_label: rewardLabelSchema,
   completion_reward_details: rewardDetailsSchema,
   completion_reward_stock: completionRewardStockSchema,

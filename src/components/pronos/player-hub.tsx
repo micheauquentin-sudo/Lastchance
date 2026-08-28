@@ -5,6 +5,9 @@ import { Avatar } from "@/lib/avatars";
 import { formatDate } from "@/lib/utils";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
+import { ProposerJackpot } from "@/components/jackpot/proposer-jackpot";
+import { SortieApresJeu } from "@/components/sortie/sortie-apres-jeu";
+import type { SortieApresJeu as Sortie } from "@/lib/sortie-apres-jeu";
 import { nextTabIndex } from "./tab-nav";
 
 /**
@@ -52,6 +55,7 @@ export function PlayerHub({
   leaderboardSlot,
   leaguesSlot = null,
   profileSlot,
+  sortie = null,
 }: {
   firstName: string;
   avatar: string;
@@ -70,6 +74,11 @@ export function PlayerHub({
   /** Ligues privées — l'onglet n'apparaît que si le slot est fourni. */
   leaguesSlot?: ReactNode;
   profileSlot: ReactNode;
+  /**
+   * Vitrine publiée + réseaux du commerce, résolus au serveur. `null` = rien
+   * à proposer : le bas de page se tait plutôt que d'afficher un cadre vide.
+   */
+  sortie?: Sortie | null;
 }) {
   const [tab, setTab] = useState<TabKey>("matchs");
   const tabs = TABS.filter((t) => t.key !== "ligues" || leaguesSlot !== null);
@@ -164,9 +173,14 @@ export function PlayerHub({
             <p className="mt-1.5">
               <LienPortefeuille />
             </p>
-            {organizationId && (
-              <ProposerPasseport organizationId={organizationId} />
-            )}
+            {/* La proposition de Passeport vivait ICI, dans la carte de
+                RÉCOMPENSE — donc visible du seul joueur ayant gagné un lot
+                à la clôture, c'est-à-dire d'un par championnat. Elle descend
+                en bas de page (`GarderLeLien`), où elle est lue par tout le
+                monde et dès la première visite : un programme de fidélité se
+                propose au début d'une habitude, pas à la remise du prix.
+                Pas dupliquée — le composant ne tolère qu'un exemplaire par
+                page, le second serait resté muet. */}
           </div>
         )}
       </div>
@@ -222,6 +236,59 @@ export function PlayerHub({
       <div id="prono-panel-profil" role="tabpanel" hidden={tab !== "profil"}>
         {profileSlot}
       </div>
+
+      {/* ── Garder le lien avec le commerce ──
+          HORS des onglets, donc lu quel que soit celui qui est ouvert : ces
+          propositions ne sont pas une cinquième rubrique du jeu, elles sont
+          ce qu'on dit en partant. */}
+      <GarderLeLien sortie={sortie} organizationId={organizationId} />
+    </div>
+  );
+}
+
+/**
+ * LE BAS DU CHAMPIONNAT — QUATRE PORTES, ET AUCUNE N'EST UNE CONDITION.
+ *
+ * ── Ce que ça répare ──
+ *
+ * Un joueur qui suivait un championnat pendant des semaines n'avait, en bas
+ * de sa page, aucun chemin vers le commerce qui l'organisait : ni sa carte,
+ * ni ses réseaux, ni ses autres jeux. La Vitrine, le Passeport et le Jackpot
+ * existaient, et n'étaient atteignables que par leur propre QR.
+ *
+ * ── AUCUNE COLONNE NOUVELLE, ET C'EST LE POINT ──
+ *
+ * `sortie` vient de `sortieDeLOrganisation` — la Vitrine publiée et les trois
+ * liens déjà saisis dans les réglages, servis à l'identique après un quiz ou
+ * au bas d'un calendrier. Le Passeport et le Jackpot se déclarent eux-mêmes
+ * auprès de leur action, et restent MUETS si le module n'est pas ouvert.
+ *
+ * Strictement le même bloc que celui du Calendrier (`calendar-tracker.tsx`),
+ * et volontairement : deux pages joueur du même commerce ne doivent pas
+ * proposer deux choses différentes au même moment.
+ */
+function GarderLeLien({
+  sortie,
+  organizationId,
+}: {
+  sortie: Sortie | null;
+  organizationId: string | null;
+}) {
+  // Pas de `space-y` : les deux cartes portent DÉJÀ leur `mt-6`, comme sur
+  // les autres surfaces qui les montent. Un espacement de conteneur s'y
+  // serait AJOUTÉ au lieu de le remplacer.
+  return (
+    <div className="mt-6">
+      <SortieApresJeu sortie={sortie} />
+      {organizationId && (
+        <>
+          <ProposerPasseport
+            organizationId={organizationId}
+            note="Sans inscription : votre passeport prend effet au premier scan de commande, et pas avant."
+          />
+          <ProposerJackpot organizationId={organizationId} />
+        </>
+      )}
     </div>
   );
 }

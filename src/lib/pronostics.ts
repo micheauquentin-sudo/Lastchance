@@ -155,6 +155,8 @@ export function isContestQuestionType(
 // d'imports partie d'une simple borne y embarquait ~121 Ko de polyfill dans
 // deux écrans client. Ré-exportées ici pour que les importateurs serveur
 // existants n'aient rien à changer.
+import { DUREE_MATCH_MS } from "@/lib/pronostics-bornes";
+
 export {
   NUMBER_ANSWER_MAX,
   OPTION_ID_PATTERN,
@@ -407,4 +409,65 @@ export function isPredictionOpen(
   now: Date = new Date(),
 ): boolean {
   return new Date(kickoffAt).getTime() > now.getTime();
+}
+
+/**
+ * Le coup d'envoi est passé depuis PLUS qu'une durée de match : la rencontre
+ * ne « dure » plus, c'est son résultat qui tarde.
+ *
+ * L'écran joueur affichait « En cours 🔒 » pour tout match commencé sans
+ * résultat — y compris celui de la semaine dernière, quand une synchro avait
+ * pris du retard. Le joueur croyait la rencontre en train de se jouer et son
+ * pronostic encore vivant.
+ *
+ * Fonction et non expression en ligne : lire l'horloge PENDANT un rendu est
+ * impur (`react-hooks/purity`), comme pour `isPredictionOpen` juste au-dessus,
+ * dont c'est le jumeau. Le `now` injectable est ce qui la rend testable.
+ */
+/**
+ * PROGRESSION DE LA GRILLE — « X/Y pronostics ».
+ *
+ * ── LE DÉFAUT MESURÉ (2026-08-28, capture joueur) ──
+ *
+ * Le dénominateur valait `matches.length` : TOUS les matchs jamais importés
+ * dans le championnat, y compris ceux fermés avant que ce joueur ne
+ * s'inscrive. Un joueur arrivé en cours de saison lisait « 0/7 » alors qu'UN
+ * SEUL match lui était ouvert. La barre était donc impossible à remplir, et
+ * le chiffre promettait sept pronostics qu'il ne pouvait pas poser.
+ *
+ * ── LA RÈGLE ──
+ *
+ * Le dénominateur est ce que le joueur PEUT ENCORE faire, plus ce qu'il a
+ * DÉJÀ fait. Il monte quand une journée s'ouvre, jamais au-delà de
+ * l'atteignable, et 100 % veut dire « ma grille est à jour ».
+ *
+ * Un match fermé SANS pronostic ne compte nulle part : il est hors de portée,
+ * l'inscrire au dénominateur reviendrait à reprocher au joueur une absence
+ * qu'il ne peut plus corriger. Un match fermé AVEC pronostic compte des deux
+ * côtés — c'est du travail fait, il ne doit pas disparaître du compte le jour
+ * où le match démarre.
+ */
+export function progressionPronostics(
+  matchs: ReadonlyArray<{ ouvert: boolean; pronostique: boolean }>,
+): { done: number; total: number } {
+  let done = 0;
+  let total = 0;
+  for (const m of matchs) {
+    if (m.pronostique) {
+      done += 1;
+      total += 1;
+    } else if (m.ouvert) {
+      total += 1;
+    }
+  }
+  return { done, total };
+}
+
+export function attendResultat(
+  kickoffAt: string | Date,
+  now: Date = new Date(),
+): boolean {
+  return (
+    now.getTime() - new Date(kickoffAt).getTime() > DUREE_MATCH_MS
+  );
 }

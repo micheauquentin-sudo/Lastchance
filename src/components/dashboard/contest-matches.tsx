@@ -5,9 +5,12 @@ import {
   addContestMatches,
   addMatch,
   deleteMatch,
+  importContestRound,
+  previewContestRound,
   setMatchResult,
   syncContest,
   type AddMatchesResult,
+  type CalendarPreview,
 } from "@/actions/pronostics";
 import type { Competition } from "@/lib/competitions";
 import { useActionForm } from "@/lib/use-action-form";
@@ -403,6 +406,251 @@ function SyncContestButton({ contestId }: { contestId: string }) {
   );
 }
 
+/**
+ * LE CALENDRIER COMPLET — parcourir la saison, journée par journée.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * La synchronisation ne sert que les journées PROCHES. Tout le reste de la
+ * saison n'était atteignable par aucun chemin : un commerçant qui voulait
+ * ouvrir son jeu sur la journée du mois prochain n'avait qu'à attendre. Et
+ * comme le fournisseur ne rendait plus qu'UN match (voir l'en-tête de
+ * `src/lib/fixtures.ts`), sa grille restait à une ligne sans qu'il sache
+ * pourquoi.
+ *
+ * ── CONSULTER N'EST PAS IMPORTER ──
+ *
+ * Deux gestes, deux actions, et l'ordre compte : on regarde une journée
+ * (aucune écriture), puis on décide de l'importer. Un écran qui importerait
+ * en affichant remplirait la grille de quelqu'un qui ne faisait que
+ * chercher — et la grille de pronostics est ce que ses clients devront
+ * remplir un à un.
+ *
+ * ── LA BORNE VIENT DU CATALOGUE, ET PARFOIS ELLE N'EXISTE PAS ──
+ *
+ * `competition.journees` vaut 34 en Ligue 1, 5 au Tournoi, et RIEN pour les
+ * coupes — leurs tours ne se numérotent pas en continu. Sans borne, le champ
+ * reste libre plutôt que d'afficher une liste de journées inventées.
+ */
+function CalendrierComplet({
+  contestId,
+  competition,
+  timeZone,
+}: {
+  contestId: string;
+  competition: Competition;
+  timeZone: string;
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const [journee, setJournee] = useState(1);
+  const [apercu, setApercu] = useState<CalendarPreview | null>(null);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [chargement, setChargement] = useState(false);
+  const [importEnCours, setImportEnCours] = useState(false);
+  const [importe, setImporte] = useState<string | null>(null);
+
+  // `pending` manuel et non `useTransition` : l'état doit retomber même quand
+  // le rendu ne rejoue pas la revalidation — docs/bugs.md, comme partout
+  // ailleurs dans ce fichier.
+  const consulter = (round: number) => {
+    setChargement(true);
+    setErreur(null);
+    setImporte(null);
+    void (async () => {
+      try {
+        const res = await previewContestRound({ id: contestId, round });
+        if (res.ok) setApercu(res.data);
+        else {
+          setApercu(null);
+          setErreur(res.error);
+        }
+      } catch {
+        setErreur("Consultation impossible, réessayez.");
+      } finally {
+        setChargement(false);
+      }
+    })();
+  };
+
+  const importer = () => {
+    if (!apercu) return;
+    setImportEnCours(true);
+    setErreur(null);
+    void (async () => {
+      try {
+        const res = await importContestRound({
+          id: contestId,
+          round: apercu.round,
+        });
+        if (!res.ok) {
+          setErreur(res.error);
+          return;
+        }
+        setImporte(
+          res.data.imported > 0
+            ? `${res.data.imported} match${res.data.imported > 1 ? "s" : ""} ajouté${res.data.imported > 1 ? "s" : ""} à votre grille.`
+            : "Rien à ajouter : cette journée est déjà dans votre grille.",
+        );
+        // La grille est rendue par le SERVEUR : sans rechargement, le
+        // commerçant lit « 9 matchs ajoutés » au-dessus d'une liste qui n'en
+        // montre aucun — et réimporte. Même raison que `reloadOnSuccess`
+        // ailleurs dans le tableau de bord (voir `use-action-form.ts`).
+        //
+        // Rien après cette ligne : reconsulter la journée serait du travail
+        // jeté, la page part.
+        window.location.reload();
+      } catch {
+        setErreur("Import impossible, réessayez.");
+      } finally {
+        setImportEnCours(false);
+      }
+    })();
+  };
+
+  if (!ouvert) {
+    return (
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => {
+            setOuvert(true);
+            consulter(journee);
+          }}
+          className="text-sm font-bold text-k-ink underline underline-offset-2"
+        >
+          📅 Voir le calendrier complet
+        </button>
+        <p className="mt-1 text-xs text-zinc-500">
+          La synchronisation apporte les journées proches. Ici, vous choisissez
+          n&apos;importe quelle journée de la saison.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <section aria-label="Calendrier complet" className="mt-4 rounded-2xl border-2 border-k-ink/20 bg-white p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <Label htmlFor="calendrier-journee">Journée</Label>
+          <div className="flex items-center gap-2">
+            {competition.journees ? (
+              <select
+                id="calendrier-journee"
+                value={journee}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setJournee(n);
+                  consulter(n);
+                }}
+                className="rounded-xl border-2 border-k-ink bg-white px-3 py-2 text-sm font-bold text-k-ink"
+              >
+                {Array.from({ length: competition.journees }, (_, i) => i + 1).map(
+                  (n) => (
+                    <option key={n} value={n}>
+                      Journée {n}
+                    </option>
+                  ),
+                )}
+              </select>
+            ) : (
+              <>
+                <Input
+                  id="calendrier-journee"
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={journee}
+                  onChange={(e) => setJournee(Number(e.target.value))}
+                  className="w-24"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => consulter(journee)}
+                  disabled={chargement}
+                >
+                  {chargement ? "…" : "Voir"}
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOuvert(false)}
+          className="text-xs font-bold text-zinc-600 underline underline-offset-2"
+        >
+          Masquer
+        </button>
+      </div>
+
+      {chargement && (
+        <p className="mt-3 text-sm text-zinc-500">Lecture du calendrier…</p>
+      )}
+
+      {!chargement && apercu && (
+        <>
+          {apercu.matches.length === 0 ? (
+            <p className="mt-3 text-sm text-zinc-500">
+              Le fournisseur n&apos;annonce aucun match pour cette journée. Les
+              coupes ne numérotent pas toujours leurs tours de 1 à N.
+            </p>
+          ) : (
+            <>
+              <ul className="mt-3 space-y-1.5">
+                {apercu.matches.map((m) => (
+                  <li
+                    key={m.ref}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border-2 border-k-ink/10 px-3 py-2 text-sm"
+                  >
+                    <span className="font-bold text-k-ink">
+                      {m.homeName} – {m.awayName}
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-zinc-500">
+                      {formatKickoff(m.kickoffAt, timeZone)}
+                      {m.imported && (
+                        <span className="font-bold text-k-green">✓ dans votre grille</span>
+                      )}
+                      {!m.imported && m.past && (
+                        <span className="font-bold text-k-muted">déjà joué</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  onClick={importer}
+                  disabled={importEnCours || apercu.importable === 0}
+                >
+                  {importEnCours
+                    ? "Import…"
+                    : apercu.importable === 0
+                      ? "Rien à importer"
+                      : `Importer ${apercu.importable} match${apercu.importable > 1 ? "s" : ""}`}
+                </Button>
+                {importe && (
+                  <span className="text-sm font-semibold text-k-green">{importe}</span>
+                )}
+              </div>
+              {apercu.importable === 0 && apercu.matches.some((m) => m.past) && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Un match déjà joué n&apos;est jamais importé : personne
+                  n&apos;aurait pu le pronostiquer.
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      <FieldError message={erreur ?? undefined} />
+    </section>
+  );
+}
+
 function MatchRow({
   match,
   scoreLabel,
@@ -565,6 +813,11 @@ export function ContestMatchList({
             la demande :
           </p>
           <SyncContestButton contestId={contestId} />
+          <CalendrierComplet
+            contestId={contestId}
+            competition={competition}
+            timeZone={timeZone}
+          />
         </>
       ) : (
         <>

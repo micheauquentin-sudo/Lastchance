@@ -40,7 +40,13 @@ import {
   contestThemeTokens,
 } from "@/components/pronos/contest-theme";
 import { FondEcran } from "@/components/ui/fond-ecran";
-import { fondPourTheme } from "@/lib/fonds-ecran";
+import {
+  AUCUN_FOND,
+  FOND_KEYS,
+  FOND_LABELS,
+  fondPourTheme,
+  type FondKey,
+} from "@/lib/fonds-ecran";
 import type {
   Contest,
   ContestAward,
@@ -243,6 +249,54 @@ export function ContestStatusControls({
  * encore être servie par la requête du dashboard, auquel cas on démarre sur
  * `neutre` plutôt que sur `undefined`, qui ne cocherait aucune vignette.
  */
+/**
+ * Une vignette du sélecteur de fond — MÊME composant, même parti pris que
+ * `calendar-editor.tsx` : on montre les VRAIES images et non des pastilles,
+ * parce qu'un fond d'écran ne se décrit pas, il se voit. Radio en `sr-only`
+ * sous un `label` : l'ensemble reste un groupe de boutons radio pour un
+ * lecteur d'écran, navigable aux flèches.
+ */
+function TuileFond({
+  label,
+  fond,
+  active,
+  onSelect,
+}: {
+  label: string;
+  fond?: FondKey;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <label
+      className={`cursor-pointer rounded-2xl border-2 p-2 transition-colors ${
+        active
+          ? "border-k-ink bg-k-yellow/20 shadow-[3px_3px_0_var(--color-k-ink)]"
+          : "border-k-ink/20 bg-white hover:border-k-ink/50"
+      }`}
+    >
+      <input
+        type="radio"
+        name="fond-choice"
+        value={fond ?? label}
+        checked={active}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <div
+        aria-hidden
+        className="relative mb-1.5 h-12 overflow-hidden rounded-lg border-2 border-k-ink bg-k-bg"
+      >
+        {fond && <FondEcran fond={fond} variant="vignette" />}
+      </div>
+      <p className="flex items-center justify-between gap-1 text-xs font-black text-k-ink">
+        <span className="min-w-0 truncate">{label}</span>
+        {active && <span className="shrink-0 text-k-green">✓</span>}
+      </p>
+    </label>
+  );
+}
+
 function ThemeSelector({ contest }: { contest: Contest }) {
   const { state, pending, onSubmit } = useActionForm(updateContest, {
     toastOnSuccess: "Enregistré.",
@@ -252,6 +306,9 @@ function ThemeSelector({ contest }: { contest: Contest }) {
   const [theme, setTheme] = useState<SeasonalTheme>(
     () => contestThemeTokens(contest.theme).key,
   );
+  // Chaîne VIDE = « suivre le thème », et c'est le défaut. Le schéma la
+  // replie sur `null` ; `"aucun"` reste un choix distinct.
+  const [fond, setFond] = useState<string>(contest.fond_key ?? "");
 
   return (
     <form
@@ -261,13 +318,22 @@ function ThemeSelector({ contest }: { contest: Contest }) {
     >
       <input type="hidden" name="id" value={contest.id} />
       <input type="hidden" name="theme" value={theme} />
+      {/* Le fond voyage dans le MÊME formulaire que le thème : les deux
+          répondent à la même question (« à quoi ressemble ma page ? ») et
+          `updateContest` est une mise à jour partielle — un second
+          formulaire aurait posté sans `theme`, donc laissé la colonne
+          intacte, ce qui est correct mais fait deux enregistrements
+          automatiques là où un seul suffit. */}
+      <input type="hidden" name="fond_key" value={fond} />
       <fieldset>
         <legend className="mb-1 text-sm font-bold text-k-ink">
           Thème saisonnier
         </legend>
         <p className="mb-3 text-xs text-zinc-500">
-          Change les couleurs et les dessins de fond de la page suivie par vos
-          joueurs — la DA « carton kermesse » reste la même.
+          Change les couleurs et le fond d&apos;écran de la page suivie par
+          vos joueurs — la DA « carton kermesse » reste la même. Le fond du
+          thème n&apos;est qu&apos;un défaut : vous pouvez en imposer un autre
+          juste en dessous.
         </p>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {CONTEST_THEME_ORDER.map((key) => {
@@ -319,13 +385,46 @@ function ThemeSelector({ contest }: { contest: Contest }) {
           })}
         </div>
       </fieldset>
+
+      {/* ── Fond d'écran : un CHOIX, pas une conséquence du thème ── */}
+      <fieldset className="mt-5">
+        <legend className="mb-1 text-sm font-bold text-k-ink">
+          Fond d&apos;écran
+        </legend>
+        <p className="mb-2.5 text-xs text-zinc-500">
+          La grande image derrière le championnat. Par défaut elle suit le
+          thème ci-dessus ; vous pouvez en imposer une autre, ou n&apos;en
+          mettre aucune.
+        </p>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          <TuileFond
+            label="Suivre le thème"
+            active={fond === ""}
+            onSelect={() => setFond("")}
+          />
+          <TuileFond
+            label="Aucun"
+            active={fond === AUCUN_FOND}
+            onSelect={() => setFond(AUCUN_FOND)}
+          />
+          {FOND_KEYS.map((cle) => (
+            <TuileFond
+              key={cle}
+              label={FOND_LABELS[cle]}
+              fond={cle}
+              active={fond === cle}
+              onSelect={() => setFond(cle)}
+            />
+          ))}
+        </div>
+      </fieldset>
       <Button
         type="submit"
         variant="secondary"
         className="mt-3"
         disabled={pending}
       >
-        {pending ? "…" : "Enregistrer le thème"}
+        {pending ? "…" : "Enregistrer l&apos;apparence"}
       </Button>
       <AutoSaveEtat {...autoSave} />
       <FieldError message={state && !state.ok ? state.error : undefined} />

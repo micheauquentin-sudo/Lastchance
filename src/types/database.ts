@@ -183,6 +183,11 @@ export interface Contest {
   default_locks_at: string | null;
   /** Thème saisonnier d'affichage (défaut « neutre ») — palette partagée avec le calendrier. */
   theme: SeasonalTheme;
+  /** Fond d'écran plein cadre de la page joueur. `null` = suivre le thème
+   *  (défaut historique), `"aucun"` = aucune image, sinon une clé de
+   *  `FOND_KEYS`. Trois états distincts : voir `fondChoisi`
+   *  (src/lib/fonds-ecran.ts). Miroir de `Calendar.fond_key`. */
+  fond_key: string | null;
   created_at: string;
 }
 
@@ -876,6 +881,10 @@ export interface Calendar {
   /** URL/QR publique suivable — posée par trigger si absente. */
   public_slug: string;
   merchant_content: string | null;
+  /** Fond d'écran plein cadre de la page suivie. `null` = suivre le thème
+   *  (défaut historique), `"aucun"` = aucune image, sinon une clé de
+   *  `FOND_KEYS`. Trois états distincts : voir `fondChoisi` (src/lib/fonds-ecran.ts). */
+  fond_key: string | null;
   completion_reward_label: string;
   completion_reward_details: string | null;
   /** Stock FINI et OBLIGATOIRE (ADR-031) : joueurs récompensés au terme. */

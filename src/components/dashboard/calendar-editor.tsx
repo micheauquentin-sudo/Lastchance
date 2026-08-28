@@ -46,7 +46,14 @@ import {
   calendarThemeTokens,
 } from "@/components/calendar/calendar-theme";
 import { FondEcran } from "@/components/ui/fond-ecran";
-import { fondPourTheme } from "@/lib/fonds-ecran";
+import {
+  AUCUN_FOND,
+  FOND_KEYS,
+  FOND_LABELS,
+  fondPourTheme,
+  type FondKey,
+} from "@/lib/fonds-ecran";
+import Link from "next/link";
 import { formatCalendarUnlock } from "@/components/calendar/calendar-state";
 
 /** Roue de l'organisation ciblable par une case `spin`, avec l'état de ses lots. */
@@ -70,8 +77,10 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
     <fieldset>
       <legend className="mb-1 text-sm font-bold text-k-ink">Thème saisonnier</legend>
       <p className="mb-3 text-xs text-zinc-500">
-        Change les couleurs, les emoji et les dessins de fond de la page suivie
-        par vos clients — la DA « carton kermesse » reste la même.
+        Change les couleurs, les emoji et le fond d&apos;écran de la page suivie
+        par vos clients — la DA « carton kermesse » reste la même. Le fond du
+        thème n&apos;est qu&apos;un défaut : vous pouvez en imposer un autre
+        juste en dessous.
       </p>
       {/* La valeur retenue voyage dans un champ caché contrôlé. */}
       <input type="hidden" name="theme" value={theme} />
@@ -134,10 +143,221 @@ function ThemeSelector({ value }: { value: CalendarTheme }) {
 }
 
 // ────────────────────────────────────────────────────────────
+// En-tête de la page suivie : logo du commerce + fond d'écran
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LE HAUT DE LA PAGE QUE VOIT LE CLIENT — deux réglages, deux natures.
+ *
+ * Le LOGO n'est pas réglé ici et ne le sera pas : il appartient à
+ * l'établissement, pas au calendrier, et il est déjà servi par sept autres
+ * surfaces. Une seconde image, propre au calendrier, aurait créé deux vérités
+ * pour la même enseigne — et le commerçant qui change de logo aurait dû y
+ * penser deux fois. Ce bloc se contente donc de MONTRER ce qui est en place
+ * et d'ouvrir la porte : la capacité existait, mais rien sur cet écran ne
+ * disait qu'elle s'appliquait ici.
+ *
+ * Le FOND, lui, est un choix par calendrier — la même enseigne peut vouloir
+ * la prairie en mai et le sapin en décembre sans changer de palette.
+ */
+function EnTeteSelector({
+  logoUrl,
+  value,
+}: {
+  logoUrl: string | null;
+  /** Réglage courant : `null` (suivre le thème), `"aucun"`, ou une clé. */
+  value: string | null;
+}) {
+  const [fond, setFond] = useState<string>(value ?? "");
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm font-bold text-k-ink">
+        Haut de la page de vos clients
+      </legend>
+
+      {/* ── Le logo ── */}
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl border-2 border-k-ink/20 bg-white p-3">
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt="Logo de votre établissement"
+            width={48}
+            height={48}
+            className="h-12 w-12 rounded-full border-2 border-k-ink bg-white object-cover"
+          />
+        ) : (
+          <div
+            aria-hidden
+            className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-dashed border-k-ink/40 text-lg text-k-body"
+          >
+            🏷️
+          </div>
+        )}
+        <p className="min-w-0 flex-1 text-xs text-zinc-500">
+          {logoUrl
+            ? "Votre logo s'affiche en haut du calendrier, au-dessus du nom de votre établissement."
+            : "Sans logo, vos clients voient l'emoji du thème. Un logo rend la page immédiatement reconnaissable."}{" "}
+          <Link
+            href="/dashboard/settings"
+            className="font-bold text-k-ink underline underline-offset-2"
+          >
+            {logoUrl ? "Changer de logo" : "Ajouter un logo"}
+          </Link>
+        </p>
+      </div>
+
+      {/* ── Le fond d'écran ── */}
+      <div>
+        <p className="mb-1 text-sm font-bold text-k-ink">Fond d&apos;écran</p>
+        <p className="mb-2.5 text-xs text-zinc-500">
+          La grande image derrière le calendrier. Par défaut elle suit le thème
+          choisi ci-dessus ; vous pouvez en imposer une autre, ou n&apos;en
+          mettre aucune.
+        </p>
+        {/* La valeur retenue voyage dans un champ caché contrôlé, comme le
+            thème. Chaîne VIDE pour « suivre le thème » : l'action la replie
+            sur `null`. Le champ est TOUJOURS présent dans ce formulaire —
+            c'est ce qui distingue « le commerçant a choisi de suivre le
+            thème » de « un autre formulaire de la page a posté sans ce
+            champ », où la colonne doit rester intacte. */}
+        <input type="hidden" name="fond_key" value={fond} />
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          <TuileFond
+            label="Suivre le thème"
+            active={fond === ""}
+            onSelect={() => setFond("")}
+          />
+          <TuileFond
+            label="Aucun"
+            active={fond === AUCUN_FOND}
+            onSelect={() => setFond(AUCUN_FOND)}
+          />
+          {FOND_KEYS.map((cle) => (
+            <TuileFond
+              key={cle}
+              label={FOND_LABELS[cle]}
+              fond={cle}
+              active={fond === cle}
+              onSelect={() => setFond(cle)}
+            />
+          ))}
+        </div>
+      </div>
+    </fieldset>
+  );
+}
+
+/**
+ * LE BAS DE LA PAGE — un rappel, pas un formulaire.
+ *
+ * Ce que le client voit sous la grille se déclare tout seul à partir de
+ * réglages qui vivent AILLEURS : la Vitrine si elle est publiée, les liens des
+ * réglages de l'établissement, le Passeport et le Jackpot si le commerçant en
+ * exploite un. Rien à saisir ici — mais rien à deviner non plus.
+ */
+function BasDePageInfo() {
+  const portes: Array<[emoji: string, titre: string, ou: string]> = [
+    ["📖", "Votre Vitrine", "dès qu'elle est publiée — sinon rien ne s'affiche"],
+    ["⭐", "Avis Google, Instagram, TikTok", "les liens de vos réglages"],
+    ["🎟️", "Votre Passeport de fidélité", "si un programme est actif"],
+    ["🎰", "Votre Jackpot collectif", "si une campagne est active"],
+  ];
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-bold text-k-ink">
+        Bas de la page de vos clients
+      </legend>
+      <p className="text-xs text-zinc-500">
+        Sous la grille, vos clients se voient proposer de garder le lien avec
+        votre commerce. Rien à saisir : ces portes apparaissent seules, à partir
+        de ce que vous avez déjà renseigné.
+      </p>
+      <ul className="space-y-1.5 rounded-2xl border-2 border-k-ink/20 bg-white p-3">
+        {portes.map(([emoji, titre, ou]) => (
+          <li key={titre} className="flex gap-2 text-xs text-zinc-600">
+            <span aria-hidden>{emoji}</span>
+            <span>
+              <span className="font-bold text-k-ink">{titre}</span> — {ou}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-zinc-500">
+        Vos liens Google, Instagram et TikTok se règlent dans{" "}
+        <Link
+          href="/dashboard/settings"
+          className="font-bold text-k-ink underline underline-offset-2"
+        >
+          les réglages de l&apos;établissement
+        </Link>
+        . Aucune de ces propositions ne conditionne un gain : elles s&apos;offrent,
+        elles ne se réclament pas.
+      </p>
+    </fieldset>
+  );
+}
+
+/**
+ * Une vignette du sélecteur de fond. Le sélecteur montre les VRAIES images et
+ * non des pastilles : un fond d'écran ne se décrit pas, il se voit (même parti
+ * pris que `wheel-style-editor.tsx`). Radio en `sr-only` sous un `label` :
+ * l'ensemble reste un groupe de boutons radio pour un lecteur d'écran,
+ * navigable aux flèches, alors qu'il se lit comme une planche d'images.
+ */
+function TuileFond({
+  label,
+  fond,
+  active,
+  onSelect,
+}: {
+  label: string;
+  fond?: FondKey;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <label
+      className={`cursor-pointer rounded-2xl border-2 p-2 transition-colors ${
+        active
+          ? "border-k-ink bg-k-yellow/20 shadow-[3px_3px_0_var(--color-k-ink)]"
+          : "border-k-ink/20 bg-white hover:border-k-ink/50"
+      }`}
+    >
+      <input
+        type="radio"
+        name="fond-choice"
+        value={fond ?? label}
+        checked={active}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <div
+        aria-hidden
+        className="relative mb-1.5 h-12 overflow-hidden rounded-lg border-2 border-k-ink bg-k-bg"
+      >
+        {fond && <FondEcran fond={fond} variant="vignette" />}
+      </div>
+      <p className="flex items-center justify-between gap-1 text-xs font-black text-k-ink">
+        <span className="min-w-0 truncate">{label}</span>
+        {active && <span className="shrink-0 text-k-green">✓</span>}
+      </p>
+    </label>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Réglages du calendrier
 // ────────────────────────────────────────────────────────────
 
-export function CalendarSettings({ calendar }: { calendar: Calendar }) {
+export function CalendarSettings({
+  calendar,
+  logoUrl = null,
+}: {
+  calendar: Calendar;
+  /** Logo de l'ÉTABLISSEMENT (réglé dans les paramètres), montré en aperçu. */
+  logoUrl?: string | null;
+}) {
   // useActionForm et non useActionState : l'état de chargement doit retomber
   // même quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
   //
@@ -208,6 +428,8 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
         </div>
 
         <ThemeSelector value={calendar.theme} />
+
+        <EnTeteSelector logoUrl={logoUrl} value={calendar.fond_key} />
 
         {/* ── Période et grille ── */}
         <fieldset className="space-y-3">
@@ -379,6 +601,21 @@ export function CalendarSettings({ calendar }: { calendar: Calendar }) {
             className={textareaClass}
           />
         </div>
+
+        {/* ── Bas de la page : ce qui s'y affiche déjà, et d'où ça vient ──
+
+            AUCUN CHAMP ICI, ET C'EST VOLONTAIRE. Les quatre portes du bas de
+            page (Vitrine, réseaux, Passeport, Jackpot) se déclarent seules à
+            partir de ce que le commerçant a DÉJÀ renseigné ailleurs. Les
+            redemander sur cet écran aurait créé deux vérités pour la même
+            adresse Instagram — c'est la règle posée par la sortie d'après-jeu
+            (VIT-11), qui sert exactement ces liens après un quiz ou un duo.
+
+            Mais une capacité qui s'active toute seule est une capacité que
+            personne ne sait avoir : ce bloc existe pour la NOMMER, et pour
+            donner le chemin vers l'endroit où elle se règle. C'est le même
+            défaut, et le même remède, que l'aperçu du logo plus haut. */}
+        <BasDePageInfo />
 
         {/* ── URL publique (PRÉ-REMPLIE : un save sans ce champ la viderait) ── */}
         <div>

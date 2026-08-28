@@ -289,14 +289,23 @@ vi.mock("@/lib/pronostics-context", () => ({
 }));
 
 // Le module réel est PUR (barème, validation de forme des réponses, bornes) :
-// on le garde tel quel et on ne simule QUE le non-déterministe (jeton joueur)
-// et l'horloge de verrouillage. Énumérer les exports à la main cassait le test
-// à chaque nouvel export (ex. QUESTION_PROMPT_MAX du moteur générique).
+// on le garde tel quel et on ne simule QUE le non-déterministe (jeton joueur).
+// Énumérer les exports à la main cassait le test à chaque nouvel export
+// (ex. QUESTION_PROMPT_MAX du moteur générique).
+//
+// ── `isPredictionOpen` N'EST PLUS FORCÉ À `true` (2026-08-28) ──
+//
+// Il l'était, et le harnais devenait alors PLUS PERMISSIF que la production :
+// un match dont le coup d'envoi est passé s'y pronostiquait sans broncher.
+// Aucun test ne pouvait donc prouver qu'on refuse un match démarré — et c'est
+// exactement la ligne que le lot de pronostics doit écarter.
+//
+// La vraie fonction est pure et prend son `now` en paramètre : rien à
+// simuler, les fixtures posent des dates relatives à `Date.now()`.
 vi.mock("@/lib/pronostics", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/pronostics")>()),
   hashPlayerToken: (token: string) => `hash:${token}`,
   generatePlayerToken: () => "fresh-token",
-  isPredictionOpen: () => true,
 }));
 
 vi.mock("@/lib/monitoring", () => ({
@@ -374,6 +383,7 @@ import {
   registerContestPlayer,
   requestContestRecovery,
   submitPrediction,
+  submitPredictions,
   updateContest,
   updateContestEventSettings,
   updateContestPlayer,
@@ -1002,5 +1012,233 @@ describe("updateContest — un championnat vide ne s'ouvre plus aux joueurs", ()
     );
 
     expect(res.ok).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// updateContest — « Ouvrir aux joueurs » n'écrit AUCUNE colonne
+//
+// LE DÉFAUT (2026-08-27) : le formulaire de statut ne poste que `id` et
+// `status`, mais l'action lit tout le schéma depuis le FormData, et Zod garde
+// une clé dès qu'elle était présente à l'entrée — repliée sur `undefined` par
+// `absentSiNonRendu`, mais PRÉSENTE. `Object.keys(fields).length` valait donc
+// 5, l'action entrait dans sa branche d'écriture, et `JSON.stringify` élaguait
+// les cinq indéfinis : PostgREST recevait `PATCH {}`.
+//
+// Vérifié sur l'instance locale : un corps vide sur une ligne EXISTANTE rend
+// `PGRST116 / 0 rows` — donc `!updated`, donc « Mise à jour impossible »,
+// APRÈS que `set_contest_status` a commité. Le championnat était ouvert et le
+// commerçant lisait un échec.
+//
+// POURQUOI LA SUITE NE L'AVAIT PAS VU : le harnais ci-dessus est plus
+// permissif que PostgREST — son `update()` accepte un payload vide et rend une
+// ligne. Un test sur `res.ok` restait donc vert (il l'est encore ligne ~975).
+// Ces assertions portent sur ce qui PART, seule chose que le mock ne peut pas
+// rendre trop clémente.
+// ────────────────────────────────────────────────────────────
+
+describe("updateContest — le statut seul n'écrit aucune colonne", () => {
+  const ID = "00000000-0000-4000-8000-0000000000cf";
+
+  it("« Ouvrir aux joueurs » : la RPC passe, aucun PATCH n'est envoyé", async () => {
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, status: "active" }),
+    );
+
+    expect(res.ok).toBe(true);
+    expect(state.rpcCalls.map((c) => c.name)).toContain("set_contest_status");
+    // LE CŒUR DE LA RÉGRESSION : zéro écriture sur `contests`. Avant le
+    // correctif, un PATCH partait avec cinq clés indéfinies — donc un corps
+    // JSON vide, donc zéro ligne rendue, donc une erreur à l'écran.
+    expect(state.updates.filter((u) => u.table === "contests")).toEqual([]);
+  });
+
+  it("les trois transitions sont logées à la même enseigne", async () => {
+    for (const status of ["active", "draft", "finished"] as const) {
+      state.updates.length = 0;
+      const res = await updateContest(null, contestForm({ id: ID, status }));
+      expect(res.ok, status).toBe(true);
+      expect(state.updates.filter((u) => u.table === "contests"), status).toEqual(
+        [],
+      );
+    }
+  });
+
+  /**
+   * CONTRÔLE INVERSE — sans lui, un correctif qui n'écrirait PLUS JAMAIS rien
+   * laisserait les deux tests ci-dessus verts en cassant tous les autres
+   * formulaires de la page.
+   */
+  it("un champ réellement saisi part toujours en base", async () => {
+    state.updates.length = 0;
+    const res = await updateContest(
+      null,
+      contestForm({ id: ID, status: "active", name: "Pronos du comptoir" }),
+    );
+
+    expect(res.ok).toBe(true);
+    const patch = state.updates.find((u) => u.table === "contests");
+    expect(patch?.payload).toEqual({ name: "Pronos du comptoir" });
+  });
+
+  /**
+   * La garantie « champ non rendu ⇒ colonne intacte » se lisait jusqu'ici sur
+   * le CORPS envoyé (`JSON.stringify` élague). Elle se lit désormais sur les
+   * CLÉS elles-mêmes : aucune clé indéfinie ne survit au point de décision.
+   */
+  it("aucune clé indéfinie ne survit dans le payload", async () => {
+    state.updates.length = 0;
+    await updateContest(null, contestForm({ id: ID, name: "Pronos" }));
+
+    const payload = state.updates.find((u) => u.table === "contests")?.payload ?? {};
+    for (const [cle, valeur] of Object.entries(payload)) {
+      expect(valeur, cle).not.toBeUndefined();
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// submitPredictions — LA GRILLE VALIDÉE D'UN COUP
+//
+// Chaque match portait son bouton : pronostiquer une journée de Ligue 1,
+// c'était neuf boutons et neuf allers-retours, sur un téléphone, debout dans
+// un commerce. Le lot en fait une requête.
+//
+// Ce que ces tests tiennent, et qui n'est visible dans aucun diff :
+//   · UN seul seau consommé pour tout le lot — le compter par match ferait
+//     d'une grille de 20 matchs un demi-quota, et de deux corrections un
+//     refus ;
+//   · l'identité passe AVANT le seau, comme dans `submitPrediction` : une
+//     seconde porte d'entrée ne doit pas avoir une seconde politique ;
+//   · un refus partiel n'annule RIEN — le match démarré pendant la saisie
+//     est écarté, les autres sont enregistrés.
+// ════════════════════════════════════════════════════════════
+
+describe("submitPredictions — le lot, un seul seau, refus partiel", () => {
+  const AUTRE_MATCH = "00000000-0000-4000-8000-0000000000ab";
+  const MATCH_PASSE = "00000000-0000-4000-8000-0000000000ac";
+
+  beforeEach(() => {
+    // Deux matchs ouverts et un dont le coup d'envoi est passé.
+    state.matches = [
+      {
+        id: MATCH_ID,
+        status: "scheduled",
+        kickoff_at: new Date(Date.now() + 86_400_000).toISOString(),
+      },
+      {
+        id: AUTRE_MATCH,
+        status: "scheduled",
+        kickoff_at: new Date(Date.now() + 172_800_000).toISOString(),
+      },
+      {
+        id: MATCH_PASSE,
+        status: "scheduled",
+        kickoff_at: new Date(Date.now() - 3_600_000).toISOString(),
+      },
+    ];
+  });
+
+  it("enregistre toute la grille et ne consomme le seau joueur QU'UNE fois", async () => {
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [
+        { matchId: MATCH_ID, homeScore: 2, awayScore: 1 },
+        { matchId: AUTRE_MATCH, homeScore: 0, awayScore: 0 },
+      ],
+    });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.saved).toBe(2);
+    expect(res.data.refused).toEqual([]);
+    // DEUX pronostics, DEUX RPC — mais UN passage par chaque seau.
+    expect(
+      state.rpcCalls.filter((c) => c.name === "submit_contest_prediction"),
+    ).toHaveLength(2);
+    expect(state.rateLimitCalls).toEqual([PREDICT_PLAYER, PREDICT_IP]);
+  });
+
+  it("un match démarré est refusé, les autres sont quand même enregistrés", async () => {
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [
+        { matchId: MATCH_ID, homeScore: 1, awayScore: 0 },
+        { matchId: MATCH_PASSE, homeScore: 3, awayScore: 3 },
+        { matchId: AUTRE_MATCH, homeScore: 2, awayScore: 2 },
+      ],
+    });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // LE CŒUR : le lot n'est pas rejeté en bloc.
+    expect(res.data.saved).toBe(2);
+    expect(res.data.refused).toEqual([
+      { matchId: MATCH_PASSE, error: "Ce match a commencé : pronostics fermés." },
+    ]);
+    expect(
+      state.rpcCalls.filter((c) => c.name === "submit_contest_prediction"),
+    ).toHaveLength(2);
+  });
+
+  it("un match inconnu du championnat est refusé, jamais exécuté", async () => {
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [
+        { matchId: "00000000-0000-4000-8000-00000000ffff", homeScore: 1, awayScore: 1 },
+      ],
+    });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.saved).toBe(0);
+    expect(res.data.refused[0].error).toBe("Match introuvable.");
+    expect(
+      state.rpcCalls.filter((c) => c.name === "submit_contest_prediction"),
+    ).toEqual([]);
+  });
+
+  /**
+   * Deux lignes sur le même match feraient deux RPC dont la seconde écrase la
+   * première : du travail payé pour un résultat que la dernière valeur
+   * détermine déjà.
+   */
+  it("un doublon dans le lot n'exécute qu'une RPC", async () => {
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [
+        { matchId: MATCH_ID, homeScore: 1, awayScore: 0 },
+        { matchId: MATCH_ID, homeScore: 2, awayScore: 0 },
+      ],
+    });
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.saved).toBe(1);
+    expect(
+      state.rpcCalls.filter((c) => c.name === "submit_contest_prediction"),
+    ).toHaveLength(1);
+  });
+
+  it("sans identité joueur, aucun seau n'est consommé et rien n'est écrit", async () => {
+    state.cookieToken = undefined;
+
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [{ matchId: MATCH_ID, homeScore: 1, awayScore: 0 }],
+    });
+
+    expect(res.ok).toBe(false);
+    expect(state.rateLimitCalls).toEqual([]);
+    expect(
+      state.rpcCalls.filter((c) => c.name === "submit_contest_prediction"),
+    ).toEqual([]);
+  });
+
+  it("un lot vide est refusé par le schéma, avant toute lecture", async () => {
+    const res = await submitPredictions({ slug: SLUG, predictions: [] });
+    expect(res.ok).toBe(false);
+    expect(state.rateLimitCalls).toEqual([]);
   });
 });

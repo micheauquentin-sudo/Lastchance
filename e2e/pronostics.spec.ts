@@ -33,29 +33,53 @@ test.describe("pronostics — parcours joueur complet", () => {
     // ── Mini espace joueur : en-tête profil + onglets.
     await expect(page.getByText(pseudo).first()).toBeVisible({ timeout: 10_000 });
 
-    // ── Match futur : saisie d'un pronostic.
-    // Carte du match (`<li>`) : le hub joueur porte AUSSI un bouton
-    // « Modifier » permanent (onglet Profil), donc chercher
-    // /Enregistré|Modifier/ sur toute la page est ambigu en mode strict
-    // (docs/bugs.md, entrée « locator page-wide ambigu »). On scope au
-    // conteneur du match, identifié par ses inputs de score.
-    const homeInput = page.getByRole("spinbutton").first();
-    const awayInput = page.getByRole("spinbutton").nth(1);
-    const carteMatch = page.locator("li").filter({ has: homeInput });
+    // ── Match futur : saisie d'un pronostic DANS LA GRILLE.
+    //
+    // Le bouton « Valider » par carte a disparu : les matchs ouverts vivent
+    // désormais dans une seule grille validée d'UN bouton. On scope à la
+    // région « À pronostiquer » plutôt qu'à la page — le hub porte aussi un
+    // bouton « Modifier » permanent (onglet Profil), et un locator
+    // page-wide y est ambigu en mode strict (docs/bugs.md).
+    const grille = page.getByRole("region", { name: "À pronostiquer" });
+    await expect(grille).toBeVisible({ timeout: 10_000 });
+    const homeInput = grille.getByRole("spinbutton").first();
+    const awayInput = grille.getByRole("spinbutton").nth(1);
     await homeInput.fill("2");
     await awayInput.fill("1");
-    await carteMatch.getByRole("button", { name: "Valider" }).click();
-    await expect(
-      carteMatch.getByRole("button", { name: /Enregistré|Modifier/ }),
-    ).toBeVisible({
+
+    // LE LIBELLÉ DU BOUTON EST LA GARDE D'HYDRATATION.
+    //
+    // Il compte les lignes COMPLÈTES, donc il ne dit « Valider 1 pronostic »
+    // qu'une fois les deux scores passés dans l'état React. Tant que la page
+    // n'est pas hydratée, il lit « Saisissez un score » et reste désactivé :
+    // attendre ce libellé, c'est attendre que le clic puisse porter — le
+    // défaut n°1 des flakes de ce dépôt (clic perdu avant hydratation).
+    const valider = grille.getByRole("button", {
+      name: /Valider \d+ pronostic/,
+    });
+    await expect(valider).toBeEnabled({ timeout: 10_000 });
+    await valider.click();
+
+    // L'ÉTAT PRODUIT, jamais le clic : « ✓ déjà pronostiqué » est rendu par
+    // le SERVEUR au rafraîchissement, il ne peut donc apparaître que si
+    // l'écriture a réellement atterri en base.
+    await expect(grille.getByText(/enregistré/)).toBeVisible({
       timeout: 10_000,
     });
+    await expect(grille.getByText("✓ déjà pronostiqué").first()).toBeVisible({
+      timeout: 15_000,
+    });
 
-    // ── Match passé : verrouillé, résultat affiché.
+    // ── Match passé : sa PROPRE section, plus mêlé aux matchs jouables.
+    // « À venir » réunissait un match ouvert et un match fermé sous le même
+    // titre ; il y a maintenant trois familles.
+    await expect(page.getByRole("heading", { name: "Résultats" })).toBeVisible();
     await expect(page.getByText(/Terminé \d+ – \d+/)).toBeVisible();
-    // Ses inputs sont désactivés (pronostics fermés au coup d'envoi).
+    // Ses inputs sont désactivés (pronostics fermés au coup d'envoi) — et ils
+    // sont HORS de la grille, qui ne contient que de l'ouvert.
     const disabledInputs = page.locator("input[type=number][disabled]");
     await expect(disabledInputs.first()).toBeVisible();
+    await expect(grille.locator("input[type=number][disabled]")).toHaveCount(0);
 
     // ── Classement général : l'onglet liste le joueur et ses points.
     // (.first() : au retry CI, un homonyme d'un run précédent peut exister.)

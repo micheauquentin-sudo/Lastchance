@@ -88,6 +88,12 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     expect(RATE_LIMITS).not.toHaveProperty("jackpotParticipateCampaign");
     expect(RATE_LIMITS.jackpotParticipateIp).toEqual({ limit: 1200, windowSeconds: 600 });
     expect(RATE_LIMITS.jackpotNewPlayerBurst).toEqual({ limit: 60, windowSeconds: 600 });
+    // L'invitation à REJOINDRE, affichée par un autre module, partage le
+    // calibrage du parcours public : elle coûte moins (une lecture bornée,
+    // aucune écriture) et ne fait rien gagner. Seau DISTINCT de la
+    // participation, sans quoi le rapport « proposé / rejoint » — la seule
+    // mesure utile de ce panneau — se noierait dans le bruit.
+    expect(RATE_LIMITS.jackpotInvite).toEqual({ limit: 1200, windowSeconds: 600 });
 
     // Le seau d'ÉVALUATION de code par JOUEUR (seule clé où `failClosed` est
     // admis dans le parcours public) reste le plus serré, et bien plus strict
