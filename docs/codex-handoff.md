@@ -37,12 +37,71 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Lot en cours — Passeport de fidélité ↔ Jackpot collectif (2026-08-28)
+
+**Terrain.** Branche isolée `feat/jackpot-loyalty-link`, fondée sur `origin/main`
+à `e299e382`. Fichiers principaux :
+`supabase/migrations/20261112130000_loyalty_jackpot_link.sql`,
+`src/actions/loyalty.ts`, `src/lib/loyalty-context.ts`,
+`src/components/loyalty/loyalty-passport.tsx`.
+
+**Décision implémentée.** Un programme de fidélité peut associer un seul Jackpot
+actif en validation caisse, de la même organisation. Seul un scan QR de
+passeport effectivement validé par la caisse ajoute une participation : le
+tampon et l'entrée Jackpot sont dans la même transaction SQL. Les codes tournants
+et cartes de commande ne sont pas concernés. Une carte en bas du passeport
+affiche la jauge, le lot, l'état personnel et une actualisation, sans redirection
+vers le Jackpot ni écriture au chargement.
+
+**Garde-fous prouvés dans le code.** FK composite tenant, unicité partielle de
+provenance `loyalty_stamp_id`, cooldown Jackpot jamais supérieur à celui du
+passeport, aucun secret/hash/code de gain exposé, et Jackpot inactif masqué sans
+bloquer le tampon fidélité.
+
+**Validation.** `sql:check`, `migrations:check`, typecheck, ESLint ciblé et
+171 tests Vitest ciblés sont verts. `supabase db reset --local` reste bloqué avant
+ce lot par la migration historique `20260904120000_reward_expiry_days` (ancre
+`sync_reward_issuance` absente) ; le pgTAP ajouté
+`supabase/tests/loyalty_jackpot_link.test.sql` est donc présent mais non exécuté
+localement. Ne pas considérer ce lot publiable avant un reset réussi et ce pgTAP
+vert, puis CI du SHA.
+
+**Correctif CI du 2026-08-29.** Le nouveau champ de lien était absent des
+grants colonne par colonne de `loyalty_programs` : une lecture authentifiée
+échouait et la page Passeport rendait à tort une 404. La migration
+`20261112150000_loyalty_jackpot_link_grants.sql` accorde exclusivement sa
+lecture et sa mise à jour, et `security_acl.test.sql` garde ces deux ACL.
+
 ## Dernière demande utilisateur
 
 Codex pilote le développement de LastChance. Les audits doivent être précis et
 transverses ; les propositions doivent améliorer concrètement l'expérience des
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
+
+## Édition d'affiche — impression, export et fond (2026-08-29, validation locale verte)
+
+- **Constat prouvé P0** : `poster-editor.tsx` rendait l'aperçu interactif et
+  une seconde feuille A4 en même temps dans `@media print` ; ils se
+  superposaient dans la boîte d'impression.
+- **Correctif local isolé** : l'aperçu est masqué en impression et seule la
+  feuille A4 dédiée reste imprimable. L'éditeur ajoute un téléchargement PNG
+  A4 explicite et un fond personnel ajoutable, remplaçable ou supprimable.
+- **Correctif CI du 2026-08-29** : la feuille A4 était encore enfant de
+  l’aperçu masqué en impression, donc elle disparaissait avec lui. Elle est
+  maintenant sa sœur ; le test de composant interdit de la réimbriquer.
+- **Persistance et sécurité** : le fond reprend exactement le pipeline des
+  images d'éléments (validation de type/taille, normalisation Storage,
+  vérification organisation + QR, purge des anciens fichiers). Une URL externe
+  non validée est refusée par le schéma.
+- **Bénéfice** : une affiche imprimable sans conflit, sauvegardable sur
+  l'ordinateur, et personnalisable sans perdre l'image après enregistrement.
+- **Preuves locales** : 13 tests Vitest ciblés verts, lint ciblé vert,
+  typecheck vert et build Next vert (plafond Node 2,3 Go, exécution seule sur
+  machine 8 Go). La spec Playwright vérifie le média impression : aperçu caché,
+  feuille A4 seule visible ; elle est reconnue par `--list` mais son exécution
+  attend une pile Supabase locale seedée **isolée**, car le runner la réinitialise.
+- Priorité P0 ; coût faible à moyen ; aucun commit, push ni déploiement demandé.
 
 ## Événement live — accès joueur et télécommande (2026-08-27)
 

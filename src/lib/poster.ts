@@ -117,6 +117,18 @@ export function posterImageUrl(src: string): string {
   return `${base}/storage/v1/object/public/poster-images/${encoded}`;
 }
 
+/** Source d'une image de l'affiche : données locales avant enregistrement,
+ * puis référence Storage courte après validation côté serveur. */
+const posterImageSourceSchema = z
+  .string()
+  .max(500_000, "Image trop lourde")
+  .refine(
+    (value) =>
+      /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ||
+      posterImageStoragePath(value) !== null,
+    "Image invalide",
+  );
+
 /* ────────────────────────────────────────────────────────────
  * Formes
  * ──────────────────────────────────────────────────────────── */
@@ -197,16 +209,7 @@ export const posterElementSchema = z.object({
   ratio: z.number().min(0.05).max(8).optional(),
 
   // ── image ──
-  src: z
-    .string()
-    .max(500_000, "Image trop lourde")
-    .refine(
-      (value) =>
-        /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value) ||
-        posterImageStoragePath(value) !== null,
-      "Image invalide",
-    )
-    .optional(),
+  src: posterImageSourceSchema.optional(),
   /** Rapport largeur/hauteur naturel de l'image (mesuré à l'import). */
   natRatio: z.number().min(0.05).max(20).optional(),
   /** Rognage, en % de l'image d'origine depuis chaque bord. */
@@ -239,6 +242,8 @@ export const posterConfigSchema = z.object({
   template: z.string().max(24).optional(),
   bg: hexColor.default("#fdf6e3"),
   bgPattern: z.enum(["none", "dots", "stripes"]).default("none"),
+  /** Image de fond, indépendante des éléments et rendue sous toute l'affiche. */
+  bgImage: posterImageSourceSchema.optional(),
   elements: z
     .array(posterElementSchema)
     .max(60)
