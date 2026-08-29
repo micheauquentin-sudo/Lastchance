@@ -34,7 +34,9 @@ describe("PosterEditor — sortie d'affiche", () => {
     );
 
     expect(screen.getByTestId("poster-preview").className).toContain("poster-preview");
-    expect(screen.getByTestId("poster-print-sheet").getAttribute("aria-hidden")).toBe("true");
+    const printSheet = screen.getByTestId("poster-print-sheet");
+    expect(printSheet.getAttribute("aria-hidden")).toBe("true");
+    expect(printSheet.closest('[data-testid="poster-preview"]')).toBeNull();
     expect(screen.getAllByTestId("poster-canvas")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Télécharger l'affiche" })).toBeTruthy();
     expect(screen.getByText("Ajouter une image de fond")).toBeTruthy();

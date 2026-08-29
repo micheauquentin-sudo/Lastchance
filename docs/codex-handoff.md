@@ -66,6 +66,12 @@ ce lot par la migration historique `20260904120000_reward_expiry_days` (ancre
 localement. Ne pas considérer ce lot publiable avant un reset réussi et ce pgTAP
 vert, puis CI du SHA.
 
+**Correctif CI du 2026-08-29.** Le nouveau champ de lien était absent des
+grants colonne par colonne de `loyalty_programs` : une lecture authentifiée
+échouait et la page Passeport rendait à tort une 404. La migration
+`20261111140000_loyalty_jackpot_link_grants.sql` accorde exclusivement sa
+lecture et sa mise à jour, et `security_acl.test.sql` garde ces deux ACL.
+
 ## Dernière demande utilisateur
 
 Codex pilote le développement de LastChance. Les audits doivent être précis et
@@ -81,6 +87,9 @@ constat, proposition et décision Codex doit être consigné ici.
 - **Correctif local isolé** : l'aperçu est masqué en impression et seule la
   feuille A4 dédiée reste imprimable. L'éditeur ajoute un téléchargement PNG
   A4 explicite et un fond personnel ajoutable, remplaçable ou supprimable.
+- **Correctif CI du 2026-08-29** : la feuille A4 était encore enfant de
+  l’aperçu masqué en impression, donc elle disparaissait avec lui. Elle est
+  maintenant sa sœur ; le test de composant interdit de la réimbriquer.
 - **Persistance et sécurité** : le fond reprend exactement le pipeline des
   images d'éléments (validation de type/taille, normalisation Storage,
   vérification organisation + QR, purge des anciens fichiers). Une URL externe

@@ -523,14 +523,22 @@ export function PosterEditor({
               className="rounded-lg border-2 border-k-ink shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
             />
           </div>
-          <div id="poster-sheet" data-testid="poster-print-sheet" className="absolute left-[-100000px] top-0 w-[794px]" aria-hidden="true">
-            <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
-          </div>
           <p className="np text-center text-xs font-bold text-k-body">
             Glissez les éléments directement sur l&apos;affiche · poignée
             jaune pour la taille · flèches du clavier pour ajuster ·
             Suppr pour retirer
           </p>
+        </div>
+        {/* Feuille dédiée, sœur de l’aperçu : si elle restait dans
+            `.poster-preview`, la règle d’impression qui masque l’éditeur
+            masquait aussi l’unique affiche à imprimer. */}
+        <div
+          id="poster-sheet"
+          data-testid="poster-print-sheet"
+          className="absolute left-[-100000px] top-0 w-[794px]"
+          aria-hidden="true"
+        >
+          <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
         </div>
 
         {/* Panneau latéral (seule zone qui défile) */}
