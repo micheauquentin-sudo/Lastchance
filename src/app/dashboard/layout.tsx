@@ -197,6 +197,12 @@ export default async function DashboardLayout({
             reserverActif={
               compActive || droitEffectifModule("reserver", organization)
             }
+            /* La prise de rendez-vous a SA clé depuis RDV-5 : la déduire de
+               `reserver` aurait rendu le détachement décoratif — deux
+               produits, un seul interrupteur. */
+            rendezVousActif={
+              compActive || droitEffectifModule("rendez_vous", organization)
+            }
             /* Les deux jeux de salon, lus comme leurs voisins et pour la même
                raison : ils ont leur propre clé depuis 20261020120000. Ils sont
                du socle depuis le 2026-08-22 — toutes les offres les portent —

@@ -161,6 +161,7 @@ export function isExperienceActive(
 type ModuleAddonField =
   | "addon_vitrine"
   | "addon_reserver"
+  | "addon_rendez_vous"
   | "addon_duo"
   | "addon_bande";
 
@@ -174,7 +175,8 @@ export interface ModuleCatalogEntry {
 }
 
 /**
- * Les quatre clés détachées par la migration 20261020120000. L'ordre est celui
+ * Les CINQ clés détachées — quatre par 20261020120000, la prise de rendez-vous
+ * par 20261107120000. L'ordre est celui
  * de la vente : la Vitrine porte les trois autres dans le discours commercial,
  * elle ouvre donc la liste.
  */
@@ -189,13 +191,26 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
     addonField: "addon_vitrine",
   },
   {
+    // LA CLÉ NE BOUGE PAS, LE LIBELLÉ SI (2026-08-29). `reserver` garde ce
+    // qu'elle gardait : ateliers, dégustations, files d'accueil,
+    // invitations, offres. Le mot « Réserver » désignait mal cet ensemble
+    // dès lors que la prise de rendez-vous est devenue un produit à part.
     entitlement: "reserver",
-    label: "Réserver",
+    label: "Moments",
     shortDescription:
-      "Ouvrez vos créneaux, gérez la file et accueillez sans attente.",
+      "Ateliers, dégustations, files d'accueil : faites vivre un moment à vos clients.",
+    objective: "Créer du trafic",
+    dashboardHref: "/dashboard/moments",
+    addonField: "addon_reserver",
+  },
+  {
+    entitlement: "rendez_vous",
+    label: "Réservation",
+    shortDescription:
+      "Vos horaires une fois, les créneaux se génèrent : vos clients prennent rendez-vous depuis votre Vitrine.",
     objective: "Créer du trafic",
     dashboardHref: "/dashboard/reservations",
-    addonField: "addon_reserver",
+    addonField: "addon_rendez_vous",
   },
   {
     entitlement: "duo",

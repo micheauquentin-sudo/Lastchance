@@ -198,9 +198,9 @@ test.describe("réserver — mode attente active (RES-4)", () => {
       ).toBeVisible({ timeout: 30_000 });
 
       // ── Le comptoir appelle jusqu'à ce que CE joueur bascule « appelé ».
-      await page.goto("/dashboard/reservations");
+      await page.goto("/dashboard/moments");
       await expect(
-        page.getByRole("heading", { name: "Réservations" }),
+        page.getByRole("heading", { name: "Moments" }),
       ).toBeVisible({ timeout: 30_000 });
       await page.getByRole("button", { name: /Comptoir Attente E2E/ }).click();
       const boutonAppeler = page.getByRole("button", {

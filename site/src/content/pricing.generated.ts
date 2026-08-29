@@ -116,7 +116,8 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Jeux instantanés",
       "Quiz",
       "Vitrine",
-      "Réserver",
+      "Moments",
+      "Réservation",
       "Duo Miroir",
       "Portrait de la Bande"
     ],
@@ -168,7 +169,8 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Quiz",
       "Chasse au QR",
       "Vitrine",
-      "Réserver",
+      "Moments",
+      "Réservation",
       "Duo Miroir",
       "Portrait de la Bande"
     ],
@@ -198,8 +200,21 @@ export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
   },
   {
     "entitlement": "reserver",
-    "name": "Réserver",
-    "priceLabel": "30 €/mois",
+    "name": "Moments",
+    "priceLabel": "20 €/mois",
+    "model": "recurring-monthly",
+    "cadence": "Abonnement mensuel",
+    "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",
+    "steps": [],
+    "rules": [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée."
+    ]
+  },
+  {
+    "entitlement": "rendez_vous",
+    "name": "Réservation",
+    "priceLabel": "20 €/mois",
     "model": "recurring-monthly",
     "cadence": "Abonnement mensuel",
     "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",

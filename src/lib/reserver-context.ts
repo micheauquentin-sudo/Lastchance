@@ -1217,6 +1217,13 @@ export interface ReserverInvitationDashboardView {
 
 export interface ReserverActivityDashboardView extends ReserverActivityView {
   createdAt: string;
+  /**
+   * D'OÙ VIENNENT SES CRÉNEAUX — `moment` (posés à la main) ou
+   * `rendez_vous` (engendrés par des horaires). C'est ce champ, et rien
+   * d'autre, qui range l'activité dans l'une des deux sections du
+   * dashboard : les deux produits partagent la même table.
+   */
+  bookingMode: string;
   slots: ReserverSlotDashboardView[];
   /**
    * Les invitations de cette activité, celles de ses créneaux comprises.
@@ -1534,6 +1541,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       steps: mapExperienceSteps(activity.steps),
       preparation: activity.preparation,
       createdAt: activity.created_at,
+      bookingMode: activity.booking_mode ?? "moment",
       slots: creneauxParActivite.get(activity.id) ?? [],
       invitations: invitationsParActivite.get(activity.id) ?? [],
     })),

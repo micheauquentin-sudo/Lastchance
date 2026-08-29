@@ -173,7 +173,18 @@ export const PLAN_TIERS: readonly PlanTier[] = [
      * Sans conséquence sur l'échelle : `cheapestTierFor("quiz")` reste
      * Le Club, à 59 €.
      */
-    entitlements: ["core", "duo", "bande", "vitrine", "reserver", "quiz"],
+    entitlements: [
+      "core",
+      "duo",
+      "bande",
+      "vitrine",
+      // LES DEUX MOITIÉS de l'ancien « Réserver ». L'offre les incluait
+      // toutes deux quand elles ne formaient qu'un produit : n'en garder
+      // qu'une lui ferait promettre moins qu'hier.
+      "reserver",
+      "rendez_vous",
+      "quiz",
+    ],
     // Aucun temps réel dans cette offre : la jauge reste celle du socle.
     limits: { eventParticipants: 100 },
     highlights: [
@@ -218,13 +229,17 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       "calendar",
       "quiz",
       "referral",
-      // Les quatre droits du lieu (2026-08-22). Ils entrent SANS que le prix
+      // Les CINQ droits du lieu (2026-08-22, plus la Réservation le 2026-08-29). Ils entrent SANS que le prix
       // bouge : décision propriétaire, assumée comme une baisse relative. Ce
       // qu'ils rendent surtout, c'est la vérité du sous-titre — « toute la
       // plateforme » serait devenu faux le jour où Sur Place a existé, et une
       // offre qui promet tout doit contenir tout.
       "vitrine",
       "reserver",
+      // La prise de rendez-vous (2026-08-29). Même raison que les quatre
+      // au-dessus : une offre qui promet tout doit contenir tout, et
+      // l'ancien « Réserver » qu'elle incluait couvrait déjà ce produit.
+      "rendez_vous",
     ],
     // VEN-1 : 500 et non 1000. La Totale ne perd rien d'ÉPROUVÉ — elle cesse
     // de promettre une capacité que personne n'a mesurée. Voir `PlanLimits`.
@@ -573,13 +588,48 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     ],
   },
   {
+    /**
+     * LES MOMENTS — ateliers, dégustations, files d'accueil, invitations,
+     * offres de dernière minute.
+     *
+     * La CLÉ ne bouge pas (`reserver`), le NOM et le PRIX si : décision
+     * propriétaire du 2026-08-29, qui scinde l'ancien « Réserver » à 30 € en
+     * deux produits à 20 € — celui-ci et « Réservation » juste en dessous.
+     * Faire suivre la clé au nom aurait obligé à recopier les octrois déjà
+     * posés, sous peine de retirer l'accès à qui l'utilise déjà.
+     */
     entitlement: "reserver",
-    name: "Réserver",
+    name: "Moments",
     currency: "EUR",
     soldStandalone: false,
     billing: {
       model: "recurring-monthly",
-      priceMonthly: 30,
+      priceMonthly: 20,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "S'ajoute à une offre en cours, comme ligne du même abonnement.",
+      "Récurrent, sans engagement, actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  {
+    /**
+     * LA RÉSERVATION — prise de rendez-vous : horaires récurrents, créneaux
+     * engendrés, agenda du commerçant, ajout à l'agenda du client.
+     *
+     * AUCUN PRODUIT STRIPE NE LUI CORRESPOND ENCORE. C'est délibéré : une
+     * mutation financière exige une demande explicite du propriétaire
+     * (AGENTS.md). Le droit, la colonne et l'octroi back-office fonctionnent
+     * dès maintenant ; seule la vente EN LIGNE attend ce geste-là.
+     */
+    entitlement: "rendez_vous",
+    name: "Réservation",
+    currency: "EUR",
+    soldStandalone: false,
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 20,
       commitment: "none",
       endsAt: "end-of-paid-period",
     },

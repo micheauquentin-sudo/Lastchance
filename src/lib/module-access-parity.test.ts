@@ -59,6 +59,11 @@ import {
  * concordaient encore. Un écart de trois clés, invisible, dans le fichier dont
  * c'est l'unique métier de le voir.
  *
+ * Déplacée une QUATRIÈME fois le 2026-08-29 :
+ * `20261107120000_rendez_vous_cle_produit.sql` redéfinit la fonction pour y
+ * faire entrer `rendez_vous`, la prise de rendez-vous détachée de
+ * `reserver` — laquelle garde les Moments. Quatorze clés.
+ *
  * LA LEÇON N'EST PAS « penser à déplacer l'ancre » — on l'a pensé deux fois et
  * oublié la troisième. C'est que ce chemin est la SEULE ligne de ce fichier qui
  * ne se dérive de rien, et qu'il faut donc la relire à chaque migration qui
@@ -68,7 +73,7 @@ const MIGRATION = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20261020120000_cle_par_produit.sql",
+  "20261107120000_rendez_vous_cle_produit.sql",
 );
 
 /**
@@ -107,7 +112,13 @@ function extraireCaseSql(source: string): string {
 /** `when 'hunts' then o.addon_hunts` → hunts ⇒ addon_hunts ; `then true` ⇒ null. */
 function tableDepuisSql(bloc: string): Map<string, string | null> {
   const table = new Map<string, string | null>();
-  const motif = /when\s+'([a-z]+)'\s*then\s+(o\.(addon_[a-z_]+)|true)/g;
+  // `[a-z_]+` ET NON `[a-z]+` : le premier nom de module à porter un underscore
+  // — `rendez_vous`, 2026-08-29 — était INVISIBLE pour cette regex. Elle ne
+  // levait pas : elle sautait la ligne, et la table SQL comptait treize modules
+  // là où le fichier en déclarait quatorze. C'est exactement le défaut « le
+  // détecteur ment » que l'assertion de non-vacuité ci-dessous existe pour
+  // attraper — et elle l'a attrapé.
+  const motif = /when\s+'([a-z_]+)'\s*then\s+(o\.(addon_[a-z_]+)|true)/g;
   let trouve: RegExpExecArray | null;
   while ((trouve = motif.exec(bloc)) !== null) {
     table.set(trouve[1], trouve[3] ?? null);

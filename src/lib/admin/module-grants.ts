@@ -254,7 +254,11 @@ export const LIBELLE_MODULE: Record<string, string> = {
   // nommer ce qu'ELLE ouvre — sinon l'opérateur qui veut vendre l'agenda seul
   // ne saurait pas laquelle cocher.
   vitrine: "Vitrine publique",
-  reserver: "Réserver (agenda & files)",
+  // RENOMMÉ le 2026-08-29 : la clé garde son sens — ateliers, dégustations,
+  // files d'accueil, invitations, offres — mais « Réserver » désignait mal
+  // cet ensemble une fois la prise de rendez-vous détachée.
+  reserver: "Moments (ateliers, files, invitations)",
+  rendez_vous: "Réservation (prise de rendez-vous)",
   duo: "Duo Miroir (salon)",
   bande: "Portrait de la Bande (salon)",
 };

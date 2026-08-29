@@ -86,8 +86,11 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
       "loyalty",
       "referral",
     ]);
-    // Et les deux récurrents qui ne sont PAS de ce tunnel.
+    // Et les TROIS récurrents qui ne sont PAS de ce tunnel — « Réserver »
+    // à 30 € est devenu deux produits à 20 € le 2026-08-29 : `reserver`
+    // garde les Moments, `rendez_vous` prend la prise de rendez-vous.
     expect(MENSUELS_DE_LIGNE.map((o) => o.entitlement).sort()).toEqual([
+      "rendez_vous",
       "reserver",
       "vitrine",
     ]);
@@ -307,13 +310,14 @@ describe("modeCheckout — un récurrent est un abonnement, tout le reste un pai
     const abonnements = ADDON_OFFERS.filter(
       (o) => modeCheckout(o) === "subscription",
     ).map((o) => o.entitlement);
-    // QUATRE récurrents au catalogue depuis le 2026-08-22, et `modeCheckout`
-    // dit vrai sur les quatre : ce sont bien des abonnements. Ce qui les
+    // CINQ récurrents au catalogue depuis le 2026-08-29, et `modeCheckout`
+    // dit vrai sur les cinq : ce sont bien des abonnements. Ce qui les
     // sépare n'est pas le mode mais le CHEMIN — deux passent par ce tunnel,
-    // deux par `toggleSubscriptionOption`.
+    // trois par `toggleSubscriptionOption`.
     expect(abonnements.sort()).toEqual([
       "loyalty",
       "referral",
+      "rendez_vous",
       "reserver",
       "vitrine",
     ]);

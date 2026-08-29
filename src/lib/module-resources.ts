@@ -121,12 +121,22 @@ type RessourceModuleTypee = {
 export type ModulePubliable = Exclude<GrantableModule, ModuleSansRessource>;
 
 /**
- * Les quatre clés SANS ressource publiable, énumérées une seule fois : le type
+ * Les CINQ clés SANS ressource publiable, énumérées une seule fois : le type
  * ci-dessus et le prédicat ci-dessous en dérivent tous deux, si bien qu'ils ne
  * peuvent pas diverger — le défaut exact qu'un `!== "vitrine"` recopié à côté
  * d'un `Exclude<…, "vitrine">` aurait fini par produire.
  */
-const MODULES_SANS_RESSOURCE = ["vitrine", "reserver", "duo", "bande"] as const;
+const MODULES_SANS_RESSOURCE = [
+  "vitrine",
+  "reserver",
+  // `rendez_vous` n'a pas de ressource À LUI : ses créneaux vivent dans
+  // les MÊMES tables que ceux des Moments, et c'est `booking_mode` qui les
+  // sépare. Lui donner une entrée ici aurait fait compter deux fois les
+  // mêmes activités dans les quotas et les publications.
+  "rendez_vous",
+  "duo",
+  "bande",
+] as const;
 type ModuleSansRessource = (typeof MODULES_SANS_RESSOURCE)[number];
 
 /** Ce module a-t-il une ressource publiable, donc une entrée ci-dessous ? */

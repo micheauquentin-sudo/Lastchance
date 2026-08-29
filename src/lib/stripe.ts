@@ -631,6 +631,23 @@ const ADDON_PRICE_ENV: ReadonlyArray<{
   // parce qu'elles ne se vendent pas en achat autonome.
   { entitlement: "vitrine", env: "STRIPE_PRICE_ID_ADDON_VITRINE" },
   { entitlement: "reserver", env: "STRIPE_PRICE_ID_ADDON_RESERVER" },
+  /**
+   * LA RÉSERVATION (RDV-5). La variable est DÉCLARÉE ici, mais le produit et
+   * le prix Stripe correspondants N'EXISTENT PAS ENCORE : les créer est une
+   * mutation financière, qui exige une demande explicite du propriétaire
+   * (AGENTS.md).
+   *
+   * L'absence de la variable est SANS DANGER et c'est pourquoi on la déclare
+   * quand même : `addonPriceId` passe par `optionalEnv` et rend `undefined`,
+   * si bien que l'option n'apparaît simplement pas à l'achat. Le droit, lui,
+   * fonctionne dès maintenant par octroi back-office — exactement comme les
+   * quatre clés Vitrine pendant la bêta.
+   *
+   * GESTE PROPRIÉTAIRE RESTANT : créer le produit « Réservation » (20 €/mois)
+   * dans Stripe, puis poser `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` dans les
+   * variables Production de Vercel.
+   */
+  { entitlement: "rendez_vous", env: "STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS" },
 ];
 
 /**

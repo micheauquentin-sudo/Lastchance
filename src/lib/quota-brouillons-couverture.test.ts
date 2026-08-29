@@ -78,6 +78,10 @@ const FICHIER_ACTION: Record<GrantableModule, string | null> = {
   // CE QUI LA FERAIT TOMBER : une action de création d'agenda ou d'activité
   // dont la gratuité devrait être bornée.
   reserver: null,
+  // Pas de quota propre : les activités de rendez-vous sont les MÊMES
+  // lignes que celles des Moments, comptées une seule fois sous
+  // `reserver`. Un second quota les aurait comptées deux fois.
+  rendez_vous: null,
   // EXEMPTÉS — les deux salons de jeu (clés détachées en 20261020120000).
   //
   // Rien ne s'y crée côté commerçant : une salle est ouverte par un JOUEUR
@@ -105,12 +109,22 @@ describe("couverture du quota de brouillons", () => {
     );
   });
 
-  it("cinq modules sont exemptés, et on sait lesquels", () => {
+  it("six modules sont exemptés, et on sait lesquels", () => {
     // ÉPINGLÉ NOMMÉMENT plutôt que compté : un module retiré du quota par
     // erreur se « réparerait » sinon en le passant à `null`, et ce test
     // resterait vert en ayant cessé de garder quoi que ce soit.
     const exemptes = GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] === null);
-    expect(exemptes).toEqual(["referral", "vitrine", "reserver", "duo", "bande"]);
+    // `rendez_vous` rejoint l'exemption le 2026-08-29 : ses activités sont
+    // les MÊMES lignes que celles des Moments — c'est `booking_mode` qui les
+    // sépare — et un second quota les aurait comptées deux fois.
+    expect(exemptes).toEqual([
+      "referral",
+      "vitrine",
+      "reserver",
+      "rendez_vous",
+      "duo",
+      "bande",
+    ]);
   });
 
   it.each(GRANTABLE_MODULES.filter((m) => FICHIER_ACTION[m] !== null))(

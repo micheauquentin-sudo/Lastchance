@@ -234,13 +234,18 @@ describe("transitions et upsell", () => {
       "events",
       "vitrine",
       "reserver",
+      "rendez_vous",
     ]);
     // Ce que Sur Place apporte à qui vient du socle : le lieu, plus le quiz
     // que sa porte Vitrine exige — et rien d'autre du jeu.
     // Les deux salons ne sont plus gagnés en montant : ils sont déjà du socle.
     expect(entitlementsGainedBy("core", "place")).toEqual([
       "vitrine",
+      // Les DEUX moitiés de l'ancien « Réserver » (2026-08-29). Sur Place les
+      // incluait toutes deux quand elles ne formaient qu'un produit : n'en
+      // garder qu'une lui ferait promettre moins qu'hier, à prix inchangé.
       "reserver",
+      "rendez_vous",
       "quiz",
     ]);
     expect(entitlementsGainedBy("full", "core")).toEqual([]);
@@ -419,7 +424,10 @@ describe("catalogue d'add-ons — couverture dérivée de Stripe", () => {
     const start = stripeSource.indexOf("const ADDON_PRICE_ENV");
     expect(start).toBeGreaterThan(-1);
     const block = stripeSource.slice(start, stripeSource.indexOf("];", start));
-    return [...block.matchAll(/entitlement:\s*"([a-z]+)"/g)].map(
+    // `[a-z_]+` : même angle mort que la garde de parité — `rendez_vous` est le
+    // premier droit à porter un underscore, et `[a-z]+` le sautait en silence,
+    // faisant croire que Stripe ne le connaissait pas alors qu'il est déclaré.
+    return [...block.matchAll(/entitlement:\s*"([a-z_]+)"/g)].map(
       (match) => match[1],
     );
   }
@@ -467,12 +475,18 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     return found;
   }
 
-  it("nomme les dix options, les deux de lieu en tête", () => {
+  it("nomme les onze options, les trois de lieu en tête", () => {
     expect(ADDON_OFFERS.map((item) => [item.entitlement, item.name])).toEqual([
-      // Les deux options de ligne d'abonnement (2026-08-22). En tête parce
-      // qu'elles ouvrent le catalogue commercial, pas par ancienneté.
+      // Les TROIS options de ligne d'abonnement (2026-08-22, plus la
+      // Réservation le 2026-08-29). En tête parce qu'elles ouvrent le
+      // catalogue commercial, pas par ancienneté.
       ["vitrine", "Vitrine"],
-      ["reserver", "Réserver"],
+      // « Réserver » à 30 € est devenu DEUX produits à 20 € : la clé
+      // `reserver` garde les Moments, `rendez_vous` prend la prise de
+      // rendez-vous. La clé ne suit pas le nom — les octrois déjà posés
+      // continuent d'ouvrir ce qu'ils ouvraient.
+      ["reserver", "Moments"],
+      ["rendez_vous", "Réservation"],
       ["loyalty", "Passeport des habitués"],
       ["referral", "Bouche-à-oreille / Parrainage"],
       ["hunts", "Chasse au QR"],
@@ -589,6 +603,7 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     expect(ADDONS_LIGNE_ABONNEMENT.map((o) => o.entitlement)).toEqual([
       "vitrine",
       "reserver",
+      "rendez_vous",
     ]);
     for (const offre of ADDONS_STANDALONE) {
       expect(offre.soldStandalone).toBe(true);

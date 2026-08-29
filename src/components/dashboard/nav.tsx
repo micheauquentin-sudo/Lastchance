@@ -93,7 +93,26 @@ const PROGRESSION_LINK: DashboardLink = {
  */
 const RESERVATIONS_LINK: DashboardLink = {
   href: "/dashboard/reservations",
-  label: "Réservations",
+  label: "Réservation",
+  icon: "reservations",
+};
+
+/**
+ * LES MOMENTS — ateliers, dégustations, files d'accueil, invitations, offres
+ * de dernière minute.
+ *
+ * Même forme et même raison que « Réservation » ci-dessus, mais SON PROPRE
+ * DROIT : `reserver` garde ce qu'elle gardait, `rendez_vous` est neuve
+ * (RDV-5). On peut acheter l'une sans l'autre, donc chaque entrée porte son
+ * drapeau — sans quoi une porte payée resterait cachée derrière un droit que
+ * le commerçant n'a pas pris.
+ *
+ * Placée APRÈS « Réservation » : la prise de rendez-vous est le geste
+ * quotidien, les Moments l'événement occasionnel.
+ */
+const MOMENTS_LINK: DashboardLink = {
+  href: "/dashboard/moments",
+  label: "Moments",
   icon: "reservations",
 };
 
@@ -295,6 +314,7 @@ export function DashboardNav({
   duoActif = false,
   bandeActif = false,
   reserverActif = false,
+  rendezVousActif = false,
 }: {
   role?: MemberRole | null;
   activeExperiences?: ExperienceKind[];
@@ -310,6 +330,8 @@ export function DashboardNav({
    */
   vitrineActif?: boolean;
   reserverActif?: boolean;
+  /** Droit `rendez_vous` (RDV-5) — distinct de `reserverActif`. */
+  rendezVousActif?: boolean;
   /**
    * Les deux jeux de salon. Défaut `false` pour la même raison que leurs
    * voisins : un menu ne montre pas une porte qu'il n'a pas vérifiée.
@@ -367,7 +389,8 @@ export function DashboardNav({
             cle: "applications",
             links: [
               ...(vitrineActif ? [VITRINE_LINK] : []),
-              ...(reserverActif ? [RESERVATIONS_LINK] : []),
+              ...(rendezVousActif ? [RESERVATIONS_LINK] : []),
+              ...(reserverActif ? [MOMENTS_LINK] : []),
             ],
           },
           { titre: "Outils", cle: "outils", links: EDITOR_TOOL_LINKS },
