@@ -868,10 +868,29 @@ describe("reserveSlotSchema — la taille de la réservation (RES-5)", () => {
     expect(parsed.success && parsed.data.partySize).toBe(2);
   });
 
-  it("refuse hors de 1..2 et refuse les décimales — garde de FORME", () => {
+  it("accepte 6 — une tablée de restaurant (RDV-6)", () => {
+    // LA BORNE A BOUGÉ, ET C'EST VOULU. Elle valait 1..2 tant que le duo était
+    // la seule taille plurielle ; la migration 20261108120000 l'a portée à
+    // 1..30 pour la réservation de table. Ce schéma est le MIROIR du CHECK :
+    // le garder à 2 aurait fait refuser par le formulaire une tablée de six
+    // que la base accepte, et l'écran serait devenu un second juge, plus
+    // sévère que le premier.
+    const parsed = reserveSlotSchema.safeParse({
+      organizationId: UUID,
+      slotId: AUTRE_UUID,
+      partySize: 6,
+    });
+    expect(parsed.success && parsed.data.partySize).toBe(6);
+  });
+
+  it("refuse hors de 1..30 et refuse les décimales — garde de FORME", () => {
     // Au-delà, c'est un bogue d'appelant : la contrainte de table refuserait
     // de toute façon la ligne, mais avec une erreur illisible.
-    for (const partySize of [0, 3, 40, 1.5]) {
+    //
+    // 31 est la borne juste au-dessus : c'est elle qui prouve que la garde
+    // existe encore. Sans elle, un schéma sans plafond du tout passerait ce
+    // test — 40 et 1.5 ne diraient rien de la limite exacte.
+    for (const partySize of [0, 31, 40, 1.5]) {
       expect(
         reserveSlotSchema.safeParse({
           organizationId: UUID,

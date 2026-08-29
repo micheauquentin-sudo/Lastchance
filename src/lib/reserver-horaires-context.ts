@@ -2,6 +2,8 @@ import "server-only";
 
 import { getUserAndOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import type { TableSalle } from "@/lib/plan-de-salle";
+import { RESERVER_TABLE_TURN_DEFAUT } from "@/lib/reserver";
 import type {
   Fermeture,
   JourSemaine,
@@ -42,12 +44,16 @@ export interface ReglagesRendezVousView {
   capacite: number | null;
   horizonJours: number;
   delaiMinutes: number;
+  /** Combien de temps une table reste prise — 90 minutes par défaut. */
+  dureeServiceMinutes: number;
 }
 
 export interface HorairesActiviteView {
   reglages: ReglagesRendezVousView;
   plages: PlageHoraireIdentifiee[];
   fermetures: Fermeture[];
+  /** La salle : toutes les tables, actives ou non. RDV-7. */
+  tables: TableSalle[];
 }
 
 /** Les valeurs par défaut de la migration : un Moment, sans horaires. */
@@ -59,9 +65,11 @@ export function horairesVides(): HorairesActiviteView {
       capacite: null,
       horizonJours: 30,
       delaiMinutes: 0,
+      dureeServiceMinutes: RESERVER_TABLE_TURN_DEFAUT,
     },
     plages: [],
     fermetures: [],
+    tables: [],
   };
 }
 
@@ -80,11 +88,11 @@ export async function loadHorairesActivite(
 
   const supabase = await createClient();
 
-  const [reglagesRes, plagesRes, fermeturesRes] = await Promise.all([
+  const [reglagesRes, plagesRes, fermeturesRes, tablesRes] = await Promise.all([
     supabase
       .from("reservation_activities")
       .select(
-        "booking_mode, duration_minutes, slot_capacity, booking_horizon_days, lead_time_minutes",
+        "booking_mode, duration_minutes, slot_capacity, booking_horizon_days, lead_time_minutes, table_turn_minutes",
       )
       .eq("id", activityId)
       .eq("organization_id", organization.id)
@@ -104,6 +112,15 @@ export async function loadHorairesActivite(
       .eq("activity_id", activityId)
       .eq("organization_id", organization.id)
       .order("starts_on", { ascending: true }),
+    // LA SALLE. Toutes les tables, actives ou non : le commerçant doit voir
+    // celles qu'il a désactivées pour pouvoir les rallumer. Le tri est celui
+    // de l'écran — le nom, jamais la position, qui n'est qu'un ordre d'ajout.
+    supabase
+      .from("reservation_tables")
+      .select("id, name, seats, active")
+      .eq("activity_id", activityId)
+      .eq("organization_id", organization.id)
+      .order("name", { ascending: true }),
   ]);
 
   const defauts = horairesVides().reglages;
@@ -129,6 +146,10 @@ export async function loadHorairesActivite(
             typeof reglage.lead_time_minutes === "number"
               ? reglage.lead_time_minutes
               : defauts.delaiMinutes,
+          dureeServiceMinutes:
+            typeof reglage.table_turn_minutes === "number"
+              ? reglage.table_turn_minutes
+              : defauts.dureeServiceMinutes,
         }
       : defauts,
     plages: (plagesRes.data ?? []).map((row) => ({
@@ -142,6 +163,12 @@ export async function loadHorairesActivite(
       debut: row.starts_on as string,
       fin: row.ends_on as string,
       motif: (row.reason as string | null) ?? null,
+    })),
+    tables: (tablesRes.data ?? []).map((row) => ({
+      id: row.id as string,
+      nom: row.name as string,
+      couverts: row.seats as number,
+      active: row.active as boolean,
     })),
   };
 }

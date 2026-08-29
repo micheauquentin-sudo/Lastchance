@@ -215,12 +215,56 @@ export const RESERVER_STEP_TITLE_FIELD = "stepTitle";
 export const RESERVER_STEP_BODY_FIELD = "stepBody";
 
 /**
- * Taille d'une réservation, en PERSONNES — `between 1 and 2`, exactement le
- * CHECK `reservations_party_size_bound`. Au MVP le duo est la seule taille
- * plurielle ; élargir sera une migration, avec sa décision.
+ * Taille d'une réservation, en PERSONNES — `between 1 and 30`, exactement le
+ * CHECK `reservations_party_size_bound`.
+ *
+ * ── POURQUOI 30, ET PLUS 2 ──
+ *
+ * La borne valait 2 tant que le duo était la seule taille plurielle. RDV-6
+ * (20261108120000) l'a portée à 30 pour la RÉSERVATION DE TABLE : une tablée
+ * de six n'est pas un cas limite dans un restaurant, c'est le cas courant.
+ * Cette constante est le miroir du CHECK et doit le suivre — la garder à 2
+ * aurait fait refuser par le formulaire ce que la base accepte, et l'écran
+ * serait devenu un second juge, plus sévère que le premier.
+ *
+ * Elle ne dit RIEN de ce qui est PLAÇABLE : c'est `reserve_table` qui cherche
+ * une table assez grande, sous verrou, et qui rend `full` quand il n'y en a
+ * pas. Une demande de trente couverts est une demande VALIDE ; elle sera
+ * simplement sans réponse dans une salle de tables de quatre.
  */
 export const RESERVER_PARTY_SIZE_MIN = 1;
-export const RESERVER_PARTY_SIZE_MAX = 2;
+export const RESERVER_PARTY_SIZE_MAX = 30;
+
+/**
+ * LA SALLE — couverts d'une table, et durée d'occupation (RDV-6).
+ *
+ * Miroirs des CHECK de 20261108120000 : `reservation_tables_seats_bound`
+ * (1..30) et `reservation_activities_table_turn_bound` (15..600).
+ *
+ * Les couverts d'une table partagent leurs bornes avec l'effectif d'une
+ * réservation, et ce n'est pas un hasard : une table plus grande que le plus
+ * grand effectif acceptable ne servirait jamais entièrement. Elles restent
+ * deux constantes parce qu'elles répondent à deux CHECK distincts — si l'un
+ * bouge un jour sans l'autre, un alias les aurait fait mentir ensemble.
+ */
+export const RESERVER_TABLE_SEATS_MIN = 1;
+export const RESERVER_TABLE_SEATS_MAX = 30;
+
+/**
+ * Combien de temps une table reste prise — 15 minutes à 10 heures.
+ *
+ * À NE PAS CONFONDRE avec `duration_minutes`, qui dit tous les combien on
+ * propose une heure. Un service d'1 h 30 proposé toutes les 30 minutes donne
+ * trois créneaux qui se chevauchent sur la même table : c'est le réglage
+ * normal d'un restaurant, et `reserve_table` le gère par sa fenêtre
+ * d'occupation. Fusionner les deux l'aurait interdit.
+ */
+export const RESERVER_TABLE_TURN_MIN = 15;
+export const RESERVER_TABLE_TURN_MAX = 600;
+export const RESERVER_TABLE_TURN_DEFAUT = 90;
+
+/** Longueur du nom d'une table — miroir du CHECK `char_length between 1 and 40`. */
+export const RESERVER_TABLE_NAME_MAX = 40;
 
 /** Code court de check-in — miroir du CHECK `^[A-HJ-NP-Z2-9]{8}$`. */
 export const RESERVER_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{8}$/;

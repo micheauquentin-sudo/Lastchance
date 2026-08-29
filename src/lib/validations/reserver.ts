@@ -24,6 +24,11 @@ import {
   RESERVER_CODE_PATTERN,
   RESERVER_EMAIL_MAX,
   RESERVER_PARTY_SIZE_MAX,
+  RESERVER_TABLE_NAME_MAX,
+  RESERVER_TABLE_SEATS_MAX,
+  RESERVER_TABLE_SEATS_MIN,
+  RESERVER_TABLE_TURN_MAX,
+  RESERVER_TABLE_TURN_MIN,
   RESERVER_PARTY_SIZE_MIN,
   RESERVER_STEP_BODY_FIELD,
   RESERVER_STEP_BODY_MAX,
@@ -1315,3 +1320,76 @@ export const reglagesRendezVousSchema = z
   });
 
 export const genererCreneauxSchema = z.object({ activity_id: uuid });
+
+/**
+ * UNE TABLE DE LA SALLE (RDV-7).
+ *
+ * Miroir exact des contraintes de `reservation_tables` (20261108120000) : un
+ * nom de 1 à 40 caractères, unique par activité, et de 1 à 30 couverts. Le
+ * plafond de 30 est le même que celui de `reservations_party_size_bound` —
+ * une table plus grande que le plus grand effectif acceptable ne servirait
+ * jamais entièrement.
+ *
+ * L'UNICITÉ DU NOM n'est pas vérifiée ici : elle dépend des autres tables de
+ * l'activité, que ce schéma ne voit pas. La base la garde (index unique), et
+ * l'action traduit sa violation en français.
+ */
+export const tableSalleSchema = z.object({
+  activity_id: uuid,
+  name: z
+    .string()
+    .trim()
+    .min(1, "Donnez un nom à cette table.")
+    .max(RESERVER_TABLE_NAME_MAX, `Nom trop long (${RESERVER_TABLE_NAME_MAX} caractères max)`),
+  seats: entierRequis({
+    absent: "Indiquez combien de personnes tiennent à cette table.",
+    nombre: "Nombre de couverts invalide",
+    entier: "Nombre entier de couverts requis",
+    min: [RESERVER_TABLE_SEATS_MIN, "Au moins un couvert"],
+    max: [RESERVER_TABLE_SEATS_MAX, `${RESERVER_TABLE_SEATS_MAX} couverts maximum par table`],
+  }),
+});
+
+export const modifierTableSalleSchema = z.object({
+  id: uuid,
+  name: z
+    .string()
+    .trim()
+    .min(1, "Donnez un nom à cette table.")
+    .max(RESERVER_TABLE_NAME_MAX, `Nom trop long (${RESERVER_TABLE_NAME_MAX} caractères max)`),
+  seats: entierRequis({
+    absent: "Indiquez combien de personnes tiennent à cette table.",
+    nombre: "Nombre de couverts invalide",
+    entier: "Nombre entier de couverts requis",
+    min: [RESERVER_TABLE_SEATS_MIN, "Au moins un couvert"],
+    max: [RESERVER_TABLE_SEATS_MAX, `${RESERVER_TABLE_SEATS_MAX} couverts maximum par table`],
+  }),
+  // Une table se DÉSACTIVE, elle ne se supprime pas quand elle a servi : la
+  // clé étrangère de `reservations.table_id` est `on delete restrict`, et
+  // c'est voulu — on ne perd pas la trace de qui était assis où.
+  active: caseACochee,
+});
+
+export const supprimerTableSalleSchema = z.object({ id: uuid });
+
+/**
+ * LA DURÉE D'OCCUPATION D'UNE TABLE — distincte du pas de la grille.
+ *
+ * `duration_minutes` dit tous les combien on propose une heure ; celle-ci dit
+ * combien de temps la table reste prise. Un service d'1 h 30 proposé toutes
+ * les 30 minutes, c'est trois créneaux qui se marchent dessus sur la même
+ * table — et c'est exactement ce que `reserve_table` sait gérer. Les
+ * confondre aurait interdit ce réglage, qui est celui de tous les restaurants.
+ *
+ * Bornes 15..600 : celles de `reservation_activities_table_turn_bound`.
+ */
+export const dureeServiceSchema = z.object({
+  activity_id: uuid,
+  table_turn_minutes: entierRequis({
+    absent: "Indiquez combien de temps une table reste occupée.",
+    nombre: "Durée invalide",
+    entier: "Nombre entier de minutes requis",
+    min: [RESERVER_TABLE_TURN_MIN, `${RESERVER_TABLE_TURN_MIN} minutes minimum`],
+    max: [RESERVER_TABLE_TURN_MAX, "10 heures maximum"],
+  }),
+});

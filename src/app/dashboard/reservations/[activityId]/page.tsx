@@ -13,6 +13,8 @@ import { ActiviteReglagesForm } from "@/components/reserver/activite-reglages-fo
 import { CreneauxAgenda } from "@/components/reserver/creneaux-agenda";
 import { AgendaVues } from "@/components/reserver/agenda-vues";
 import { HorairesPanneau } from "@/components/reserver/horaires-panneau";
+import { PlanSalleVue } from "@/components/reserver/plan-salle-vue";
+import { SallePanneau } from "@/components/reserver/salle-panneau";
 import { InvitationsPanneau } from "@/components/reserver/invitations-panneau";
 
 export const metadata: Metadata = { title: "Activité réservable" };
@@ -96,6 +98,36 @@ export default async function ActiviteReservablePage({
    * capacité ferait croire à un atelier à moitié vide. C'est `personnes` que
    * `reserve_slot` compare à la capacité, c'est donc elle qu'on affiche.
    */
+  /**
+   * LES RÉSERVATIONS, APLATIES POUR LE PLAN DE SALLE.
+   *
+   * L'heure d'une réservation est celle de SON CRÉNEAU : `reservations` ne
+   * porte pas d'instant propre, et en inventer un ici ferait diverger le plan
+   * de l'agenda dès qu'un créneau serait déplacé.
+   *
+   * `prenom` est délibérément `null` : `email` n'est pas dans le grant de
+   * colonnes du commerçant (voir `RESERVATION_COLUMNS`), et aucune autre
+   * colonne ne porte de nom. Le service reconnaît ses clients au CODE.
+   */
+  const reservationsSalle = activite.slots.flatMap((slot) =>
+    slot.reservations.map((reservation) => ({
+      id: reservation.reservationId,
+      tableId: reservation.tableId,
+      startsAt: slot.startsAt,
+      effectif: reservation.partySize,
+      code: reservation.code,
+      statut: reservation.status,
+      prenom: null,
+    })),
+  );
+
+  // Les créneaux OUVERTS : la quatrième étape du fil de la salle ne demande pas
+  // « avez-vous des créneaux » mais « en avez-vous d'ouverts » — un brouillon
+  // ne prend aucune réservation.
+  const creneauxOuverts = activite.slots.filter(
+    (slot) => slot.status === "open",
+  ).length;
+
   const creneauxAgenda = activite.slots.map((slot) => ({
     id: slot.id,
     startsAt: slot.startsAt,
@@ -155,6 +187,32 @@ export default async function ActiviteReservablePage({
         plages={horaires.plages}
         fermetures={horaires.fermetures}
       />
+
+      {/* LA SALLE JUSTE APRÈS LES HORAIRES : les horaires décident de QUAND on
+          ouvre, la salle de AVEC QUOI. L'ordre de lecture est celui dans lequel
+          le commerçant prend ses décisions — horaires, salle, puis agenda. */}
+      <SallePanneau
+        activityId={activite.id}
+        bookingMode={horaires.reglages.bookingMode}
+        tables={horaires.tables}
+        dureeServiceMinutes={horaires.reglages.dureeServiceMinutes}
+        pasMinutes={horaires.reglages.dureeMinutes}
+        nombreDePlages={horaires.plages.length}
+        creneauxOuverts={creneauxOuverts}
+      />
+
+      {/* LE PLAN DE SALLE AVANT L'AGENDA, et seulement en prise de rendez-vous :
+          un Moment n'a pas de tables, et `AgendaVues` reste pour tout le monde —
+          il répond à « où reste-t-il de la place », que le plan ne répond pas. */}
+      {horaires.reglages.bookingMode === "rendez_vous" && (
+        <PlanSalleVue
+          tables={horaires.tables}
+          reservations={reservationsSalle}
+          timeZone={agenda.timezone}
+          aujourdHui={aujourdHui}
+          dureeServiceMinutes={horaires.reglages.dureeServiceMinutes}
+        />
+      )}
 
       {/* L'AGENDA VISUEL AVANT LA LISTE : on cherche d'abord « où reste-t-il de
           la place », et seulement ensuite « qui vient à 14 h ». La liste
