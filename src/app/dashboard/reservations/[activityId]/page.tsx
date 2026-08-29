@@ -5,11 +5,14 @@ import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { urlActiviteReserver } from "@/lib/reserver";
 import { loadReserverDashboardContext } from "@/lib/reserver-context";
+import { loadHorairesActivite } from "@/lib/reserver-horaires-context";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { ActiviteReglagesForm } from "@/components/reserver/activite-reglages-form";
 import { CreneauxAgenda } from "@/components/reserver/creneaux-agenda";
+import { AgendaVues } from "@/components/reserver/agenda-vues";
+import { HorairesPanneau } from "@/components/reserver/horaires-panneau";
 import { InvitationsPanneau } from "@/components/reserver/invitations-panneau";
 
 export const metadata: Metadata = { title: "Activité réservable" };
@@ -68,6 +71,40 @@ export default async function ActiviteReservablePage({
   const { role } = await getUserAndOrg();
   const peutRetirer = role === "owner" || role === "editor";
 
+  // LES HORAIRES, chargés à part (voir reserver-horaires-context.ts) : la LISTE
+  // des activités ne les affiche pas, elle n'a pas à les payer.
+  const horaires = await loadHorairesActivite(activite.id);
+
+  /**
+   * LA JOURNÉE D'ANCRAGE, calculée AU SERVEUR dans le fuseau du commerce.
+   *
+   * La laisser au navigateur aurait donné deux résultats : le commerçant en
+   * déplacement se serait ancré sur SA date locale, pas celle de son commerce,
+   * et le premier rendu client aurait différé du rendu serveur — un écart
+   * d'hydratation, pour une valeur qui n'a rien d'incertain.
+   */
+  const aujourdHui = new Intl.DateTimeFormat("en-CA", {
+    timeZone: agenda.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  /**
+   * L'OCCUPATION EST EN PERSONNES, pas en lignes (RES-5). Sur un Atelier Duo,
+   * trois réservations valent six personnes — `vivantes` en face de la
+   * capacité ferait croire à un atelier à moitié vide. C'est `personnes` que
+   * `reserve_slot` compare à la capacité, c'est donc elle qu'on affiche.
+   */
+  const creneauxAgenda = activite.slots.map((slot) => ({
+    id: slot.id,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    capacity: slot.capacity,
+    occupees: slot.personnes,
+    status: slot.status,
+  }));
+
   return (
     <div>
       <PageHeader
@@ -104,6 +141,30 @@ export default async function ActiviteReservablePage({
           qrLabel={activite.name}
         />
       </div>
+
+      {/* LES HORAIRES AVANT L'AGENDA : ils DÉCIDENT de ce que l'agenda contient.
+          Les poser après aurait fait lire au commerçant le résultat avant sa
+          cause. */}
+      <HorairesPanneau
+        activityId={activite.id}
+        bookingMode={horaires.reglages.bookingMode}
+        dureeMinutes={horaires.reglages.dureeMinutes}
+        capacite={horaires.reglages.capacite}
+        horizonJours={horaires.reglages.horizonJours}
+        delaiMinutes={horaires.reglages.delaiMinutes}
+        plages={horaires.plages}
+        fermetures={horaires.fermetures}
+      />
+
+      {/* L'AGENDA VISUEL AVANT LA LISTE : on cherche d'abord « où reste-t-il de
+          la place », et seulement ensuite « qui vient à 14 h ». La liste
+          détaillée garde les réservations, le retrait de file et l'annulation —
+          l'agenda ne les remplace pas, il les précède. */}
+      <AgendaVues
+        creneaux={creneauxAgenda}
+        timeZone={agenda.timezone}
+        aujourdHui={aujourdHui}
+      />
 
       <CreneauxAgenda
         activityId={activite.id}

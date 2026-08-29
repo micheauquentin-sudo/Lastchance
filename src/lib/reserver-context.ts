@@ -119,7 +119,7 @@ const ORG_COLUMNS =
  * plus, contrairement à `reservations` qui est en liste blanche de colonnes.
  */
 const ACTIVITY_COLUMNS =
-  "id, organization_id, name, description, active, created_at, kind, promise, duration_minutes, steps, preparation";
+  "id, organization_id, name, description, active, created_at, kind, promise, duration_minutes, steps, preparation, booking_mode";
 
 /**
  * LES DEUX COLONNES D'ANIMATION D'ATTENTE (RES-4), ajoutées aux précédentes
@@ -225,6 +225,8 @@ interface ActivityRow {
   duration_minutes: number | null;
   steps: unknown;
   preparation: string | null;
+  /** D'où viennent les créneaux (20261106120000) : `moment` ou `rendez_vous`. */
+  booking_mode?: string | null;
   /** Présentes seulement sur la lecture `ACTIVITY_DASHBOARD_COLUMNS`. */
   wait_quiz_id?: string | null;
   wait_pause_campaign_id?: string | null;
@@ -569,6 +571,11 @@ export type ReserverPublicContext =
       attente: ReserverAttenteView | null;
       /** Ce navigateur porte-t-il déjà une identité joueur ? */
       aUneIdentite: boolean;
+      /**
+       * L'adresse est-elle EXIGÉE pour réserver ? Vrai pour un rendez-vous,
+       * faux pour un Moment — la règle suit l'usage, pas le module.
+       */
+      emailObligatoire: boolean;
     };
 
 /**
@@ -857,6 +864,18 @@ export async function loadReserverPublicContext(
     maFile,
     attente,
     aUneIdentite: Boolean(empreinte),
+    /**
+     * L'ADRESSE EST-ELLE EXIGÉE ? (RDV-4, décision produit du 2026-08-29)
+     *
+     * Un RENDEZ-VOUS nommé sans moyen de joindre le client est ingérable : ni
+     * confirmation, ni prévenance si le commerçant doit annuler. Un MOMENT —
+     * atelier, dégustation, file d'accueil — se prend au contraire très bien
+     * sans rien laisser, et l'exiger n'y ferait que de la friction.
+     *
+     * La règle suit donc l'USAGE, pas le module : c'est `booking_mode` qui la
+     * porte, et rien d'autre.
+     */
+    emailObligatoire: row.booking_mode === "rendez_vous",
   };
 }
 

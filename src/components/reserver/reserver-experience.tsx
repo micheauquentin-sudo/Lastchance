@@ -18,6 +18,7 @@ import {
   RejoindreFileAttente,
 } from "@/components/reserver/file-attente";
 import { uniteJauge } from "@/components/reserver/formats-experience";
+import { AjouterAgenda } from "@/components/reserver/ajouter-agenda";
 import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 import {
   etatUiCreneau,
@@ -80,6 +81,7 @@ export function ReserverExperience({
   durationMinutes = null,
   steps = [],
   preparation = null,
+  emailObligatoire = false,
 }: {
   /**
    * Chez QUI le joueur croit réserver. `reserve_slot` l'exige : c'est la borne
@@ -90,6 +92,13 @@ export function ReserverExperience({
   organizationId: string;
   activityName: string;
   description: string | null;
+  /**
+   * L'adresse est-elle EXIGÉE pour réserver ? Vrai pour un rendez-vous, faux
+   * pour un Moment. Le DÉFAUT est `false` : un appelant qui ne la connaît pas
+   * (page d'invitation, parcours hérité) garde le comportement d'avant, et
+   * l'ajout de cette règle ne durcit personne à son insu.
+   */
+  emailObligatoire?: boolean;
   organizationName: string;
   logoUrl: string | null;
   /** Créneaux OUVERTS et À VENIR, déjà filtrés et ordonnés côté serveur. */
@@ -216,6 +225,7 @@ export function ReserverExperience({
                   creneau={creneau}
                   reservation={mesReservations[creneau.id]}
                   activityName={activityName}
+                  organizationName={organizationName}
                   timeZone={timeZone}
                 />
               </li>
@@ -304,6 +314,7 @@ export function ReserverExperience({
                   creneau={creneau}
                   timeZone={timeZone}
                   kind={kind}
+                  emailObligatoire={emailObligatoire}
                 />
               </li>
             ))}
@@ -323,11 +334,15 @@ function CreneauReservable({
   creneau,
   timeZone,
   kind,
+  emailObligatoire,
 }: {
   organizationId: string;
   creneau: ReserverSlotPublicView;
   timeZone: string;
   kind: ReserverActivityKind;
+  /** Vrai pour un rendez-vous : sans adresse, le commerçant ne peut ni
+   *  confirmer, ni prévenir s'il doit annuler. */
+  emailObligatoire: boolean;
 }) {
   const duo = kind === "duo";
   /**
@@ -365,6 +380,19 @@ function CreneauReservable({
       // cochée ne doit JAMAIS traverser le réseau (voir plus bas), donc le
       // refus ne peut pas venir de la réponse de `reserveSlot` — à ce
       // moment-là l'adresse aurait déjà voyagé pour rien.
+      // UN RENDEZ-VOUS SANS ADRESSE EST INGÉRABLE (RDV-4) : le commerçant ne
+      // pourrait ni confirmer, ni prévenir s'il doit annuler. Le refus est
+      // tranché ICI, avant le réseau, avec la phrase que le client doit lire.
+      // Un MOMENT — atelier, dégustation — se prend très bien sans rien
+      // laisser : la règle suit l'usage, pas le module.
+      if (emailObligatoire && !emailSaisi) {
+        return {
+          ok: false,
+          error:
+            "Indiquez votre email : il sert à vous confirmer le rendez-vous et à vous prévenir en cas d'empêchement.",
+        } satisfies ReserveSlotActionResult;
+      }
+
       if (emailSaisi && !consenti) {
         return {
           ok: false,
@@ -379,8 +407,19 @@ function CreneauReservable({
         // L'ADRESSE NE PART QUE CONSENTIE. La RPC la jetterait de toute façon
         // sans le consentement — mais l'envoyer quand même la ferait traverser
         // le réseau et les journaux pour rien.
-        email: consenti && emailSaisi ? emailSaisi : undefined,
-        consent: consenti,
+        // En RENDEZ-VOUS, l'adresse et l'accord transactionnel vont ensemble
+        // par construction : le client vient de demander un service dont la
+        // confirmation EST le message. Ce n'est pas du consentement
+        // pré-coché — c'est l'exécution de ce qu'il demande, et l'écran le dit
+        // en toutes lettres au lieu de présenter une case. La contrainte
+        // `reservations_consent_state` (ÉQUIVALENCE email/consentement) exige
+        // de toute façon que les deux aillent de pair.
+        email: emailObligatoire
+          ? emailSaisi || undefined
+          : consenti && emailSaisi
+            ? emailSaisi
+            : undefined,
+        consent: emailObligatoire ? Boolean(emailSaisi) : consenti,
         // L'UNITÉ DU FORMAT, jamais un chiffre saisi : `reserve_slot` EXIGE
         // qu'elle égale la sienne et répond `invalid_party_size` sinon. La page
         // ne propose donc aucun sélecteur de nombre de personnes — il n'y a rien
@@ -393,7 +432,7 @@ function CreneauReservable({
       }
       return resultat;
     },
-    [organizationId, creneau.id, captchaToken, kind],
+    [organizationId, creneau.id, captchaToken, kind, emailObligatoire],
   );
 
   // `reloadOnSuccess` : le rafraîchissement est le SEUL moyen pour cette page de
@@ -441,7 +480,9 @@ function CreneauReservable({
             className="mb-1.5 block text-sm font-bold text-k-ink"
           >
             Votre email{" "}
-            <span className="font-medium text-k-body">(facultatif)</span>
+            <span className="font-medium text-k-body">
+              {emailObligatoire ? "(obligatoire)" : "(facultatif)"}
+            </span>
           </label>
           <input
             id={champEmailId}
@@ -450,6 +491,7 @@ function CreneauReservable({
             autoComplete="email"
             inputMode="email"
             maxLength={RESERVER_EMAIL_MAX}
+            required={emailObligatoire}
             placeholder="vous@exemple.fr"
             aria-describedby={`${champEmailId}-aide`}
             className="w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-base text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
@@ -462,6 +504,14 @@ function CreneauReservable({
               email et consentement vont ensemble ou pas du tout), et
               `reserve_slot` JETTE l'adresse quand la case n'est pas cochée. La
               phrase sous le champ dit exactement cela, avant le clic. */}
+          {/* EN RENDEZ-VOUS, PAS DE CASE — et ce n'est pas un contournement.
+              Le message de confirmation et l'avis d'annulation sont
+              l'EXÉCUTION du service demandé, pas une sollicitation : leur base
+              légale est le contrat, pas le consentement. Présenter une case
+              pré-cochée aurait été le vrai contournement ; ici on affirme
+              simplement ce qui va se passer. Aucun message publicitaire ne
+              passe par ce canal, et rien d'autre n'est envoyé. */}
+          {emailObligatoire ? null : (
           <label
             htmlFor={champConsentId}
             className="mt-3 flex cursor-pointer items-start gap-3"
@@ -480,14 +530,14 @@ function CreneauReservable({
               l&apos;éventuelle annulation de cette réservation.
             </span>
           </label>
+          )}
           <p
             id={`${champEmailId}-aide`}
             className="mt-2 text-xs font-medium leading-relaxed text-k-body"
           >
-            Votre adresse n&apos;est conservée et utilisée que si vous cochez
-            cette case, et uniquement pour ces messages-là — jamais pour de la
-            publicité. Sans email la réservation fonctionne : votre code
-            s&apos;affiche sur cette page.
+            {emailObligatoire
+              ? "Votre adresse sert à confirmer ce rendez-vous et à vous prévenir en cas d'empêchement — jamais pour de la publicité. Votre code s'affiche aussi sur cette page."
+              : "Votre adresse n'est conservée et utilisée que si vous cochez cette case, et uniquement pour ces messages-là — jamais pour de la publicité. Sans email la réservation fonctionne : votre code s'affiche sur cette page."}
           </p>
 
           {/* Région vivante montée EN PERMANENCE : un `aria-live` créé en même
@@ -563,11 +613,14 @@ export function MaReservation({
   creneau,
   reservation,
   activityName,
+  organizationName,
   timeZone,
 }: {
   creneau: ReserverSlotPublicView;
   reservation: ReserverMaReservationView;
   activityName: string;
+  /** Nom du commerce — il nomme l'événement dans l'agenda du client. */
+  organizationName: string;
   timeZone: string;
 }) {
   // `cancelReservation` prend un OBJET : même adaptateur que la réservation.
@@ -644,6 +697,22 @@ export function MaReservation({
           <p className="mt-3 text-sm font-medium text-k-body">
             Donnez-le au comptoir en arrivant. {LIBELLE_FENETRE_CHECKIN}
           </p>
+
+          {/* L'AGENDA APRÈS LE CODE, et seulement pour une réservation VIVANTE :
+              proposer d'inscrire un rendez-vous annulé serait absurde.
+              L'événement ne porte NI le code NI l'email — un fichier d'agenda
+              se synchronise chez des tiers, s'y écrire un code de retrait
+              reviendrait à le diffuser. */}
+          <AjouterAgenda
+            className="mt-4 border-t-2 border-k-ink/10 pt-4"
+            uid={`reservation-${reservation.reservationId}`}
+            rdv={{
+              titre: activityName,
+              commerce: organizationName,
+              debut: creneau.startsAt,
+              fin: creneau.endsAt,
+            }}
+          />
         </>
       )}
 

@@ -1558,10 +1558,41 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     expect(ecriture?.filters).toEqual({ id: SLOT_ID, organization_id: ORG_ID });
   });
 
-  it("ne propose AUCUNE suppression : la surface d'action n'en exporte pas", async () => {
+  /**
+   * L'invariant porte sur CE QUI A DES ENFANTS, pas sur le mot « supprimer ».
+   *
+   * Le socle n'a pas donné de `grant delete` sur les activités, les créneaux ni
+   * les files, parce que la cascade de la FK composite emporterait les
+   * réservations — donc l'historique des arrivées, sans audit et sans qu'aucun
+   * écran n'ait compté ce qui allait disparaître. `active = false` et
+   * `status = 'closed'` sont les interrupteurs, et ils n'effacent rien.
+   *
+   * Les HORAIRES et les FERMETURES (20261106120000) n'ont AUCUN enfant : une
+   * règle hebdomadaire ne référence rien, rien ne la référence, et la
+   * supprimer n'efface qu'elle-même. Les créneaux qu'elle a engendrés
+   * survivent jusqu'à la prochaine génération, qui ne retire elle-même que du
+   * futur libre — c'est prouvé en pgTAP (H-12). Un éditeur d'horaires sans
+   * suppression serait d'ailleurs inutilisable : on ne pourrait jamais cesser
+   * d'ouvrir le samedi.
+   *
+   * L'exemption est donc NOMMÉE plutôt que le mot contourné : renommer
+   * `supprimerPlageHoraire` en « retirer » aurait fait passer la garde sans
+   * rien changer au risque, ce qui est la pire des deux issues.
+   */
+  const SUPPRESSIONS_SANS_ENFANT = new Set([
+    "supprimerPlageHoraire",
+    "supprimerFermeture",
+  ]);
+
+  it("ne supprime que ce qui n'a aucun enfant à emporter", async () => {
     const actions = await import("@/actions/reserver");
-    const noms = Object.keys(actions);
-    expect(noms.some((nom) => /delete|supprim/i.test(nom))).toBe(false);
+    const suppressions = Object.keys(actions).filter((nom) =>
+      /delete|supprim/i.test(nom),
+    );
+    const interdites = suppressions.filter(
+      (nom) => !SUPPRESSIONS_SANS_ENFANT.has(nom),
+    );
+    expect(interdites, interdites.join(", ")).toEqual([]);
   });
 
   it("transmet la fenêtre d'attente à la création comme à l'édition", async () => {

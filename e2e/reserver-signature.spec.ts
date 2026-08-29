@@ -461,7 +461,7 @@ test.describe("réserver — formulaire d'activité, préservation des étapes a
     ).toBeVisible({ timeout: 30_000 });
     const formulaireReglages = page
       .locator("form")
-      .filter({ has: page.getByRole("button", { name: "Enregistrer" }) });
+      .filter({ has: page.getByLabel("Format de l'activité") });
 
     await formulaireReglages
       .getByLabel("Format de l'activité")
@@ -483,7 +483,7 @@ test.describe("réserver — formulaire d'activité, préservation des étapes a
     ).toBeVisible({ timeout: 30_000 });
     const formulaireApresReload = page
       .locator("form")
-      .filter({ has: page.getByRole("button", { name: "Enregistrer" }) });
+      .filter({ has: page.getByLabel("Format de l'activité") });
     await expect(
       await formulaireApresReload.getByLabel("Format de l'activité").inputValue(),
     ).toBe("standard");

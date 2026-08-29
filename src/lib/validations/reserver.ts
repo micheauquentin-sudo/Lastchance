@@ -1174,3 +1174,144 @@ export const stockHoldRedeemCodeSchema = z
   .trim()
   .toUpperCase()
   .regex(RESERVER_STOCK_CODE_PATTERN, "Code de retrait invalide");
+
+// ────────────────────────────────────────────────────────────
+// Les horaires récurrents (RDV-1)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Une plage hebdomadaire. Miroir des `check` de 20261106120000 :
+ * `weekday` 0..6 (0 = LUNDI), minutes 0..1439 pour le début, 1..1440 pour la
+ * fin — 1440 étant minuit du lendemain, la seule façon d'écrire « jusqu'à la
+ * fermeture ».
+ *
+ * Le CHEVAUCHEMENT n'est PAS vérifié ici : il dépend des autres plages du même
+ * jour, que ce schéma ne voit pas. Il l'est par `refusPlage` côté écran et par
+ * l'action, qui relit les plages existantes.
+ */
+export const plageHoraireSchema = z
+  .object({
+    activity_id: uuid,
+    // `entierRequis` ET NON `z.coerce.number()` : ce dernier lit `null` comme
+    // ZÉRO. Un jour absent serait devenu LUNDI et une heure de début absente
+    // MINUIT — deux valeurs parfaitement plausibles, écrites sans que personne
+    // les ait saisies. La garde champ-formulaire-coverage l'a trouvé.
+    weekday: entierRequis({
+      absent: "Choisissez un jour de la semaine.",
+      nombre: "Jour invalide",
+      entier: "Jour invalide",
+      min: [0, "Jour invalide"],
+      max: [6, "Jour invalide"],
+    }),
+    starts_at_minute: entierRequis({
+      absent: "Indiquez une heure de début.",
+      nombre: "Heure invalide",
+      entier: "Heure invalide",
+      min: [0, "Heure invalide"],
+      max: [1439, "Heure invalide"],
+    }),
+    ends_at_minute: entierRequis({
+      absent: "Indiquez une heure de fin.",
+      nombre: "Heure invalide",
+      entier: "Heure invalide",
+      min: [1, "Heure invalide"],
+      max: [1440, "Heure invalide"],
+    }),
+  })
+  .refine((p) => p.ends_at_minute > p.starts_at_minute, {
+    path: ["ends_at_minute"],
+    message: "La fin doit être après le début.",
+  });
+
+export const supprimerPlageHoraireSchema = z.object({ id: uuid });
+
+/**
+ * Une fermeture exceptionnelle, en JOURS locaux, bornes INCLUSES.
+ *
+ * Les dates voyagent en `YYYY-MM-DD` et NON en `Date` : un `Date` construit
+ * côté client porte l'heure et le fuseau du navigateur, et « le 10 août » y
+ * devient parfois le 9 à 22 h. La base attend une `date`, on lui donne une
+ * date.
+ */
+const jourSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide");
+
+export const fermetureSchema = z
+  .object({
+    activity_id: uuid,
+    starts_on: jourSchema,
+    ends_on: jourSchema,
+    reason: texteOptionnel(
+      z.string().trim().max(200, "Motif trop long (200 caractères max)"),
+    ),
+  })
+  .refine((f) => f.ends_on >= f.starts_on, {
+    path: ["ends_on"],
+    // Comparaison LEXICOGRAPHIQUE, valide parce que le format est
+    // `YYYY-MM-DD` à largeur fixe : pas de `Date` à construire, donc pas de
+    // fuseau à se tromper.
+    message: "La fin ne peut pas précéder le début.",
+  });
+
+export const supprimerFermetureSchema = z.object({ id: uuid });
+
+/**
+ * Les réglages de prise de rendez-vous d'une activité — le bloc que
+ * `generate_reservation_slots` lit avant d'engendrer quoi que ce soit.
+ */
+export const reglagesRendezVousSchema = z
+  .object({
+    activity_id: uuid,
+    booking_mode: z.enum(["moment", "rendez_vous"]),
+    duration_minutes: z
+      .union([z.literal("").transform(() => null), z.coerce.number().int()])
+      .nullable()
+      .default(null),
+    slot_capacity: z
+      .union([z.literal("").transform(() => null), z.coerce.number().int()])
+      .nullable()
+      .default(null),
+    // Défaut posé par l'ACTION (`?? 30`), pas ici : un champ à défaut doit
+    // rendre la même chose pour `null` que pour l'absence, or `entierRequis`
+    // refuse `null` — et c'est précisément ce qu'on veut d'un entier de
+    // réglage. Ces deux-là suivent donc la règle des champs REQUIS, comme
+    // `capacitySchema`.
+    booking_horizon_days: entierRequis({
+      absent: "Indiquez jusqu'à quand les créneaux sont réservables.",
+      nombre: "Nombre de jours invalide",
+      entier: "Nombre entier de jours requis",
+      min: [1, "Au moins un jour"],
+      max: [180, "180 jours maximum"],
+    }),
+    lead_time_minutes: entierRequis({
+      absent: "Indiquez le délai de prévenance.",
+      nombre: "Délai invalide",
+      entier: "Nombre entier de minutes requis",
+      min: [0, "Valeur négative interdite"],
+      max: [20160, "14 jours maximum"],
+    }),
+  })
+  // MIROIR de `reservation_activities_rendez_vous_complete_check` : une prise
+  // de rendez-vous sans durée ni capacité serait refusée par la base. On le dit
+  // ici en français plutôt que de laisser remonter une violation de contrainte.
+  .superRefine((r, ctx) => {
+    if (r.booking_mode !== "rendez_vous") return;
+    if (r.duration_minutes === null || r.duration_minutes <= 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["duration_minutes"],
+        message: "Indiquez la durée d'un rendez-vous.",
+      });
+    }
+    if (r.slot_capacity === null || r.slot_capacity < 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["slot_capacity"],
+        message: "Indiquez combien de personnes tiennent sur un créneau.",
+      });
+    }
+  });
+
+export const genererCreneauxSchema = z.object({ activity_id: uuid });

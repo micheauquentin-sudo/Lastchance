@@ -158,6 +158,7 @@ export function InvitationExperience({
                   creneau={creneau}
                   reservation={mesReservations[creneau.id]}
                   activityName={activityName}
+                  organizationName={organizationName}
                   timeZone={timeZone}
                 />
               </li>
