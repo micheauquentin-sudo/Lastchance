@@ -4883,34 +4883,67 @@ Moments, hors périmètre de la Réservation de table, et demande un choix : soi
 accepter `vitrine` OU `rendez_vous` sur ces trois RPC, soit conditionner selon
 `booking_mode` de l'activité visée. Signalé, pas tranché.
 
-## OUVERT (2026-08-29, signalé partiellement corrigé, ADR-122) — une colonne ajoutée n'hérite d'AUCUN droit de lecture, et rien ne le détecte avant un pgTAP écrit après coup
+## OUVERT (2026-08-29, signalé, corrigé pour les trois cas connus, ADR-122) — une colonne ajoutée n'hérite d'AUCUN droit d'accès, et rien ne le détecte avant un test écrit après coup
 
-`reservations` et `reservation_waitlist_entries` ont des grants **colonne par
-colonne** (`20261002120000:436`, `20261004120000:516`), précisément pour tenir
-`email` hors de portée du commerçant qui n'a droit qu'aux colonnes
-opérationnelles. RDV-6 (`20261108120000_reservation_tables.sql`) a ajouté
-**deux** colonnes sans leur grant : `reservations.table_id` et
-`reservation_waitlist_entries.party_size`.
+`reservations`, `reservation_activities` et `reservation_waitlist_entries` ont
+des grants **colonne par colonne** (`20261002120000:417,436`,
+`20261004120000:516`), précisément pour tenir `email` hors de portée du
+commerçant qui n'a droit qu'aux colonnes opérationnelles. **Une colonne
+neuve n'hérite donc de rien**, et ce chantier l'a démontré trois fois, sur
+trois lots différents :
 
-Conséquence, et c'est le point qui mérite d'être retenu : **PostgREST refuse
-EN ENTIER un `select` qui touche ne serait-ce qu'une colonne non accordée.**
-Un écran qui aurait ajouté `table_id` ou `party_size` à sa requête n'aurait pas
-affiché une valeur vide — il aurait fait disparaître **toute la ligne**. La
-panne se serait lue « les réservations ont disparu », jamais « il manque un
-grant ».
+1. `reservations.table_id` (RDV-6) — lecture manquante. Réparée par
+   `20261109120000_plan_salle_lecture.sql`.
+2. `reservation_waitlist_entries.party_size` (RDV-6) — lecture manquante.
+   Réparée par `20261110120000_liste_attente_effectif.sql`.
+3. `reservation_activities.booking_mode`, `slot_capacity`,
+   `booking_horizon_days`, `lead_time_minutes` (RDV-1) et
+   `table_turn_minutes` (RDV-6) — **écriture** manquante. Réparée par
+   `20261112120000_reglages_rendez_vous_ecrivables.sql`.
 
-**Les deux omissions ont été trouvées par des tests pgTAP écrits après
-coup**, pas par une garde automatique — aucune des gardes existantes
-(`module-access-parity`, `fk_composites_couverture`, …) ne compare le schéma
-d'une table à ses grants de colonnes. Corrigées par deux migrations de
-réparation (`20261109120000_plan_salle_lecture.sql`,
-`20261110120000_liste_attente_effectif.sql`), chacune posant en plus une
-**garde jumelle** qui fait échouer son application si `email` redevenait
-lisible — mais cette garde ne couvre que les deux colonnes qu'elle nomme.
+**Deux formes de panne, et la seconde est la pire.** Une lecture manquante ne
+dégrade pas l'écran : PostgREST refuse **en entier** un `select` qui touche
+une colonne non accordée, donc l'écran **disparaît** et la panne se lit « les
+réservations ont disparu ». Une écriture manquante, elle, rend un message
+générique — « Enregistrement impossible » — qui ne désigne rien. Le cas n°3
+était total : `enregistrerReglagesRendezVous` écrit ces cinq colonnes avec le
+client de **session**, et l'`update` était refusé en bloc. Aucune activité
+n'a donc jamais pu passer en `booking_mode = 'rendez_vous'` depuis le tableau
+de bord — six lots (RDV-1 et RDV-6 à RDV-9 : horaires récurrents, génération
+de créneaux, plan de salle, tables, effectif, liste d'attente) reposaient sur
+un mode que personne ne pouvait poser, chaque morceau étant juste isolément,
+testé et vert ; ce qui manquait n'était dans aucun d'eux.
+
+**Un contrôle négatif a aussi corrigé une affirmation fausse** faite en
+rédigeant la migration n°3 : elle prétendait d'abord qu'`organization_id`
+n'est pas insérable sur `reservation_activities`. C'est faux — le socle
+l'accorde, et il le doit, la server action l'écrit depuis la session. Ce qui
+empêche un formulaire de déclarer l'organisation du voisin est la **policy**
+(`with check (is_org_editor(...))`), pas le grant : le grant dit QUELLES
+COLONNES, la policy QUELLES LIGNES. La garde de la migration n°3 porte donc
+sur ce qui est vraiment fermé — `organization_id` ne se **modifie** pas, on ne
+déplace pas une activité d'une organisation à l'autre avec ses créneaux et ses
+arrivées.
+
+**Les trois omissions ont été trouvées après coup** — deux par des tests
+pgTAP écrits pour autre chose, la troisième par la CI E2E — jamais par une
+garde automatique : aucune des gardes existantes (`module-access-parity`,
+`fk_composites_couverture`, `champ-formulaire-coverage`, …) ne compare les
+colonnes d'une table à ce qu'une server action y écrit, ni aux colonnes
+accordées. Chacune des trois migrations de réparation pose en plus une garde
+jumelle qui échoue si `email` redevenait lisible ou si `organization_id`
+redevenait modifiable — mais ces gardes ne couvrent que les colonnes qu'elles
+nomment.
 
 **Ce qui reste ouvert, et c'est la dette réelle** : rien n'attrape la
-**prochaine** colonne oubliée sur une table à grants colonne par colonne.
-Proposer une garde générique (un test qui énumère les colonnes d'une table et
-échoue sur toute colonne ni accordée ni explicitement exclue) est une piste,
-**pas une décision prise** — elle n'a pas été évaluée pour son coût ni pour son
-risque de faux positifs sur les tables à grant de table entier.
+**prochaine** colonne oubliée sur une table à grants colonne par colonne, en
+lecture comme en écriture. Proposer une garde générique (croiser
+`information_schema.column_privileges` avec les colonnes citées dans
+`src/actions/`, ou énumérer les colonnes d'une table et échouer sur toute
+colonne ni accordée ni explicitement exclue) est une piste, **pas une
+décision prise** — elle n'a pas été évaluée pour son coût ni pour son risque
+de faux positifs sur les tables à grant de table entier.
+
+**Établi, pas supposé** : contrôle négatif joué sur base réelle (grant retiré
+→ écriture refusée), et 1 215 assertions pgTAP vertes sur base remise à plat
+et semée.

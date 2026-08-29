@@ -1,6 +1,6 @@
 # Roadmap — Lastchance
 
-## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #232)
+## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #232, #237)
 
 **Objectif** : donner à Réservation (`rendez_vous`, produit séparé de Moments
 depuis RDV-5, #228) ce qu'un restaurant attend d'une réservation — des tables
@@ -29,21 +29,53 @@ des couverts sur un créneau.
   29/08, aucune migration) — le compteur de tête somme les couverts et
   n'affiche le second chiffre que s'il diffère du nombre d'inscriptions ;
   chaque entrée porte son effectif avant sa date d'attente.
+- **RDV-11 Le formulaire porte enfin le mode de la page** (PR #237, premier
+  commit) — `createReserverActivity` n'écrivait pas `booking_mode` : tout ce
+  qu'on créait depuis la page « Réservation » naissait `moment`, sortait de
+  son propre filtre (posé en RDV-5) et réapparaissait sous « Moments ».
+  L'écran affichait « Aucune activité pour l'instant » quoi qu'on fasse. Un
+  champ caché du formulaire porte désormais le mode de la page qui l'a
+  ouvert ; une prise de rendez-vous naît complète (30 min, 1 place) pour
+  satisfaire la contrainte `reservation_activities_rendez_vous_complete_check`.
+  Libellé produit : « Créer ma salle ».
+- **RDV-12 Les réglages de Réservation deviennent écrivables** (PR #237,
+  second commit, migration `20261112120000`) — voir « Reste ouvert »
+  ci-dessous : c'est le correctif du défaut de fond du lot. `EXPECTED_MIGRATION`
+  vaut désormais `20261112120000`.
 
 **Décisions** : [ADR-122](./decisions.md) — pourquoi un seul schéma pour deux
 produits, pourquoi des tables nommées plutôt qu'une jauge, pourquoi
-`table_turn_minutes` reste distinct de `duration_minutes`, et pourquoi la
-liste d'attente notifie sans jamais tenir de table.
+`table_turn_minutes` reste distinct de `duration_minutes`, pourquoi la
+liste d'attente notifie sans jamais tenir de table, et pourquoi les droits de
+colonne de Réserver sont nominatifs.
+
+**Le module ne fonctionnait pas en production avant RDV-12.**
+`enregistrerReglagesRendezVous` écrit `booking_mode`, `slot_capacity`,
+`booking_horizon_days`, `lead_time_minutes` (posés en RDV-1) et
+`table_turn_minutes` (RDV-6) avec le client de **session** ; aucune de ces
+cinq colonnes n'avait de grant d'écriture pour le rôle commerçant sur
+`reservation_activities`. L'`update` était donc refusé en silence côté
+PostgREST, et **aucune activité n'a jamais pu passer en
+`booking_mode = 'rendez_vous'` depuis le tableau de bord** — RDV-6 à RDV-9
+(le plan de salle, l'effectif joueur, la file d'attente) reposaient sur un
+mode que personne ne pouvait poser. Réparé par
+`20261112120000_reglages_rendez_vous_ecrivables.sql` (10 assertions pgTAP
+`RRV-1..10`).
 
 **Reste ouvert** (`docs/bugs.md`) : le socle Moments (`reserve_slot`,
 `waitlist_join`, `reservation_offer_next`) vérifie encore le droit `vitrine`,
 pas `rendez_vous` — un commerçant qui n'aurait acheté que Réservation verrait
-ses Moments muets, non corrigé, hors périmètre de ce lot. Deux colonnes ajoutées
-par RDV-6 (`reservations.table_id`, `reservation_waitlist_entries.party_size`)
-avaient été oubliées du grant de lecture colonne par colonne — trouvées par
-pgTAP après coup, corrigées avec une garde jumelle chacune, mais aucune garde
-générique ne couvre la prochaine omission. **Geste propriétaire** : créer le
-produit Stripe « Réservation » (20 €/mois) et poser
+ses Moments muets, non corrigé, hors périmètre de ce lot. Trois lots distincts
+de ce même chantier ont livré une colonne sans son droit d'accès sur les
+tables Réserver, à grants colonne par colonne : deux lectures manquantes
+(`reservations.table_id`, `reservation_waitlist_entries.party_size`, RDV-6) et
+une écriture manquante, totale, sur cinq colonnes (RDV-1/RDV-6, ci-dessus).
+Les trois ont été trouvées après coup — deux par pgTAP écrits pour autre
+chose, la troisième par la CI E2E — jamais par une garde qui compare le
+schéma d'une table à ce qu'une server action y écrit. Une garde générique
+(croiser `information_schema.column_privileges` avec les colonnes citées dans
+`src/actions/`) est une piste, pas une décision prise. **Geste propriétaire** :
+créer le produit Stripe « Réservation » (20 €/mois) et poser
 `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` en Production — le droit fonctionne déjà
 par octroi back-office, seule la vente en ligne manque.
 

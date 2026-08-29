@@ -187,6 +187,6 @@ describe("ce que ce module ne prétend pas vérifier", () => {
   it("un agenda prêt est prêt", () => {
     const etat = verif({ files: [{ status: "open", activityId: "a1" }] });
     expect(etat.toutPret).toBe(true);
-    expect(etat.ctaHref).toBe("/dashboard/reservations");
+    expect(etat.ctaHref).toBe("/dashboard/moments");
   });
 });

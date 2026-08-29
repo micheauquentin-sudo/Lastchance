@@ -599,9 +599,31 @@ function exigerLesChampsDuFormat(
   }
 }
 
+/**
+ * LE MODE DE RÉSERVATION, À LA CRÉATION (RDV-11).
+ *
+ * ── LE DÉFAUT QUE CE CHAMP FERME ──
+ *
+ * `booking_mode` a une valeur par défaut en base, `'moment'`, et la
+ * création ne l'écrivait pas. Or la page « Réservation » FILTRE sur ce
+ * même champ depuis RDV-5 : tout ce qu'on y créait naissait Moment et
+ * disparaissait de l'écran à la seconde suivante, pour réapparaître dans
+ * un autre menu. Le module entier était injoignable depuis son propre
+ * tableau de bord.
+ *
+ * Le défaut reste `moment` — c'est le cas de loin le plus courant, et
+ * c'est ce que rend un formulaire qui ne porte pas le champ (les tests, la
+ * page Moments). La page Réservation, elle, le pose explicitement.
+ */
+const bookingModeSchema = nonRenduVaut(
+  z.enum(["moment", "rendez_vous"]),
+  "moment" as const,
+);
+
 export const createReserverActivitySchema = z
   .object({
     name: activityNameSchema,
+    bookingMode: bookingModeSchema,
     description: activityDescriptionSchema,
     kind: activityKindSchema,
     promise: activityPromiseSchema,

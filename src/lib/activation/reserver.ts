@@ -202,6 +202,12 @@ export function construireVerificationReserver(
   return {
     controles,
     toutPret: controles.every((c) => c.ok),
-    ctaHref: "/dashboard/reservations",
+    // LE CTA MÈNE AUX MOMENTS, PAS À LA SALLE (RDV-13). Les contrôles
+    // ci-dessus portent sur des activités `moment` — files d'accueil comprises
+    // — et leur écran est `/dashboard/moments` depuis que
+    // `/dashboard/reservations` est devenue la salle de prise de rendez-vous.
+    // Y renvoyer ferait atterrir le commerçant sur un écran où aucun des
+    // gestes réclamés n'existe.
+    ctaHref: "/dashboard/moments",
   };
 }

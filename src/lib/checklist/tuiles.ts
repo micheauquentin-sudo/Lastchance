@@ -323,9 +323,11 @@ export const TUILES_VITRINE: readonly TuileChecklist[] = [
 ];
 
 /**
- * RÉSERVER — `src/app/dashboard/reservations/page.tsx`.
+ * RÉSERVER — `src/app/dashboard/moments/page.tsx` (RDV-13 : ces quatre tuiles
+ * décrivent les MOMENTS, et elles ont suivi leur écran le jour où
+ * `/dashboard/reservations` est devenue la salle de prise de rendez-vous).
  *
- * Les trois contrôles d'agenda vivent sur la liste des activités : c'est de là
+ * Les trois contrôles d'agenda vivent sur la liste des Moments : c'est de là
  * qu'on ouvre une activité, et c'est de là qu'on entre dans son agenda pour
  * ouvrir un créneau. « Arrivées » et « Offres de stock » n'en portent aucun —
  * la première est une console de comptoir, la seconde n'a aucun état qu'un
