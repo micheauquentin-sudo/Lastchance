@@ -141,6 +141,10 @@ import {
   waitUsePauseSchema,
   fermetureSchema,
   genererCreneauxSchema,
+  dureeServiceSchema,
+  modifierTableSalleSchema,
+  supprimerTableSalleSchema,
+  tableSalleSchema,
   plageHoraireSchema,
   reglagesRendezVousSchema,
   supprimerFermetureSchema,
@@ -4099,4 +4103,209 @@ export async function genererCreneaux(
   // La page publique liste les créneaux ouverts : elle doit suivre.
   await revaliderVitrinePublique(supabase, garde.organizationId);
   return { ok: true, data: { message: phraseGeneration(etat) } };
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * LA SALLE — tables, couverts, durée d'occupation (RDV-7)
+ *
+ * Quatre gestes, et un seul principe : le commerçant DÉCRIT sa salle, il ne
+ * place personne. L'affectation est faite par `reserve_table` en base, sous
+ * verrou d'avis, au moment où un client réserve. Rien ici ne choisit une table.
+ * ═══════════════════════════════════════════════════════════════
+ */
+
+/** Nom déjà pris sur cette activité — l'index unique de 20261108120000. */
+const TABLE_NOM_PRIS = "Vous avez déjà une table portant ce nom.";
+
+export async function ajouterTableSalle(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = tableSalleSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+    name: formData.get("name"),
+    seats: formData.get("seats"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  if (
+    !(await activiteDeLOrganisation(
+      supabase,
+      parsed.data.activity_id,
+      garde.organizationId,
+    ))
+  ) {
+    return { ok: false, error: ACTIVITE_INTROUVABLE };
+  }
+
+  // LA POSITION EST DÉRIVÉE, jamais saisie : le commerçant nomme ses tables, il
+  // ne les numérote pas une seconde fois. On prend le rang suivant, et le tri
+  // d'écran reste le nom — la position ne sert qu'à conserver l'ordre d'ajout
+  // si un jour on l'expose.
+  const { count } = await supabase
+    .from("reservation_tables")
+    .select("id", { count: "exact", head: true })
+    .eq("activity_id", parsed.data.activity_id)
+    .eq("organization_id", garde.organizationId);
+
+  const { error } = await supabase.from("reservation_tables").insert({
+    activity_id: parsed.data.activity_id,
+    organization_id: garde.organizationId,
+    name: parsed.data.name,
+    seats: parsed.data.seats,
+    position: count ?? 0,
+  });
+  if (error) {
+    // 23505 : violation d'unicité. On la traduit plutôt que de rendre le
+    // message générique — le commerçant peut corriger tout seul, et « une
+    // erreur est survenue » ne le lui dirait pas.
+    if (error.code === "23505") return { ok: false, error: TABLE_NOM_PRIS };
+    reportError("reserver.table.ajout", error.message);
+    return { ok: false, error: "Impossible d'ajouter cette table" };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  return { ok: true, data: undefined };
+}
+
+export async function modifierTableSalle(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = modifierTableSalleSchema.safeParse({
+    id: formData.get("id"),
+    name: formData.get("name"),
+    seats: formData.get("seats"),
+    active: formData.get("active"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: ligne } = await supabase
+    .from("reservation_tables")
+    .select("activity_id")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+  if (!ligne) return { ok: false, error: "Table introuvable" };
+
+  const { error } = await supabase
+    .from("reservation_tables")
+    .update({
+      name: parsed.data.name,
+      seats: parsed.data.seats,
+      active: parsed.data.active,
+    })
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: TABLE_NOM_PRIS };
+    reportError("reserver.table.modification", error.message);
+    return { ok: false, error: "Enregistrement impossible, réessayez." };
+  }
+
+  // RÉTRÉCIR UNE TABLE NE DÉPLACE PERSONNE. Une tablée de six déjà assise à une
+  // table ramenée à quatre reste où elle est : la capacité est vérifiée à la
+  // RÉSERVATION, pas en continu. Déplacer d'office aurait changé la table d'un
+  // client qui a déjà reçu sa confirmation par email.
+  revaliderActivite(ligne.activity_id as string);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Supprimer une table — possible seulement si personne ne s'y est jamais assis.
+ *
+ * `reservations.table_id` est `on delete restrict` : la base REFUSE d'effacer
+ * une table qui porte une réservation, et c'est voulu — on ne perd pas la trace
+ * de qui était où. Le geste qui convient dans ce cas est la DÉSACTIVATION, que
+ * `modifierTableSalle` porte ; on le dit en français plutôt que de laisser
+ * remonter une violation de clé étrangère.
+ */
+export async function supprimerTableSalle(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = supprimerTableSalleSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: ligne } = await supabase
+    .from("reservation_tables")
+    .select("activity_id")
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+  if (!ligne) return { ok: false, error: "Table introuvable" };
+
+  const { error } = await supabase
+    .from("reservation_tables")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    // 23503 : violation de clé étrangère — la table a servi.
+    if (error.code === "23503") {
+      return {
+        ok: false,
+        error:
+          "Cette table porte des réservations : désactivez-la plutôt que de la supprimer.",
+      };
+    }
+    reportError("reserver.table.suppression", error.message);
+    return { ok: false, error: "Suppression impossible, réessayez." };
+  }
+
+  revaliderActivite(ligne.activity_id as string);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * La durée d'occupation d'une table.
+ *
+ * Réglage SÉPARÉ de `enregistrerReglagesRendezVous` parce qu'il vit dans une
+ * autre étape de l'assistant — « combien de temps je garde la table » se pose
+ * après « quelles tables j'ai », et non en même temps que l'horizon de
+ * réservation. Les mêler aurait obligé à renvoyer les cinq autres champs à
+ * chaque changement de durée.
+ */
+export async function enregistrerDureeService(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = dureeServiceSchema.safeParse({
+    activity_id: formData.get("activity_id"),
+    table_turn_minutes: formData.get("table_turn_minutes"),
+  });
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  const garde = await gardeEditeurReserver();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("reservation_activities")
+    .update({
+      table_turn_minutes: parsed.data.table_turn_minutes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.activity_id)
+    .eq("organization_id", garde.organizationId);
+  if (error) {
+    reportError("reserver.duree_service", error.message);
+    return { ok: false, error: "Enregistrement impossible, réessayez." };
+  }
+
+  revaliderActivite(parsed.data.activity_id);
+  return { ok: true, data: undefined };
 }

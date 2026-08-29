@@ -144,7 +144,7 @@ const SLOT_COLUMNS =
  * pas sommer ce qu'elle ne peut pas lire.
  */
 const RESERVATION_COLUMNS =
-  "id, slot_id, organization_id, code, status, created_at, cancelled_at, checked_in_at, checked_in_by, party_size";
+  "id, slot_id, organization_id, code, status, created_at, cancelled_at, checked_in_at, checked_in_by, party_size, table_id";
 
 /**
  * Entrées de liste prioritaire du panneau commerçant.
@@ -290,6 +290,7 @@ interface ReservationRow {
   checked_in_at: string | null;
   checked_in_by: string | null;
   party_size: number;
+  table_id: string | null;
 }
 
 interface QueueRow {
@@ -1171,6 +1172,13 @@ export interface ReserverDashboardReservationView {
   checkedInAt: string | null;
   /** Personnes attendues sous ce code — 2 sur un Atelier Duo (RES-5). */
   partySize: number;
+  /**
+   * La table attribuée par `reserve_table`, ou `null` — un Moment n’a pas de
+   * salle. C’est elle qui range la réservation sur une ligne du plan ; sans
+   * elle, l’écran la montre dans « Sans table attribuée » plutôt que de la
+   * laisser disparaître.
+   */
+  tableId: string | null;
 }
 
 /**
@@ -1419,6 +1427,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       cancelledAt: brute.cancelled_at,
       checkedInAt: brute.checked_in_at,
       partySize: brute.party_size ?? 1,
+      tableId: brute.table_id ?? null,
     }));
     const lignesVivantes = reservations.filter(
       (reservation) =>
