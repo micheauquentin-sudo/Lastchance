@@ -1,6 +1,6 @@
 # Roadmap — Lastchance
 
-## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #231, RDV-9 #232 en CI)
+## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #232)
 
 **Objectif** : donner à Réservation (`rendez_vous`, produit séparé de Moments
 depuis RDV-5, #228) ce qu'un restaurant attend d'une réservation — des tables
@@ -25,7 +25,7 @@ des couverts sur un créneau.
   `20261110120000`) — « vous serez combien ? » à l'inscription en liste
   d'attente, et l'annulation prévient désormais ceux qui tiennent une place
   (`reservation_table_freed_targets`).
-- **RDV-9 La file d'attente affiche les couverts** (PR #232, en CI au
+- **RDV-9 La file d'attente affiche les couverts** (PR #232, fusionnée le
   29/08, aucune migration) — le compteur de tête somme les couverts et
   n'affiche le second chiffre que s'il diffère du nombre d'inscriptions ;
   chaque entrée porte son effectif avant sa date d'attente.
