@@ -8170,6 +8170,47 @@ appelée sur une activité en `booking_mode = 'rendez_vous'` — elle compte des
 places, pas des tables, et son offre serait de toute façon rejetée par le
 trigger `reservations_require_table`.
 
+### Décision 6 — Les droits de colonne de Réserver sont NOMINATIFS, et rien ne le rappelle
+
+`reservations`, `reservation_activities` et `reservation_waitlist_entries`
+n'accordent pas leurs droits table par table : ils les accordent **colonne
+par colonne**, pour tenir `email` hors de portée du commerçant qui n'a droit
+qu'aux colonnes opérationnelles. C'est un choix de sécurité délibéré et
+correct — mais sa conséquence directe, jamais écrite nulle part avant ce
+chantier, est qu'**une colonne neuve n'hérite d'aucun droit**. Ni en lecture,
+ni en écriture. Rien dans PostgreSQL ni PostgREST ne l'accorde par défaut.
+
+Ce chantier l'a démontré trois fois sur trois lots distincts : deux lectures
+oubliées (`reservations.table_id`, `reservation_waitlist_entries.party_size`,
+RDV-6) et une écriture oubliée, totale, sur les cinq colonnes de réglage de
+`reservation_activities` posées en RDV-1 et RDV-6 — voir
+`docs/bugs.md`. Cette dernière rendait le produit **inutilisable en
+production depuis le tableau de bord** : `enregistrerReglagesRendezVous`
+écrit avec le client de session, et l'`update` était refusé en bloc, donc
+aucune activité ne pouvait jamais passer en `booking_mode = 'rendez_vous'`.
+
+Les deux formes de panne diffèrent, et la seconde est la pire à diagnostiquer.
+Une lecture manquante fait **disparaître l'écran entier** — PostgREST refuse
+en bloc un `select` qui touche une colonne non accordée, donc la panne se lit
+« les réservations ont disparu ». Une écriture manquante rend un message
+générique qui ne désigne rien.
+
+**Corollaire vérifié par contrôle négatif** : le grant et la policy ne
+protègent pas la même chose. Le grant dit QUELLES COLONNES un rôle peut
+toucher ; la policy (`with check (...)`) dit QUELLES LIGNES. Rédiger la
+migration de réparation a d'abord affirmé à tort qu'`organization_id` n'est
+pas insérable sur `reservation_activities` — il l'est, et doit l'être, la
+server action l'écrit depuis la session. Ce qui empêche de déclarer
+l'organisation du voisin est `is_org_editor(...)` en policy, pas le grant. La
+garde retenue porte donc sur ce qui est vraiment fermé : `organization_id` ne
+se **modifie** pas après création.
+
+**Écarté** : une garde générique qui croiserait les grants de colonnes de
+`information_schema.column_privileges` avec les colonnes citées dans
+`src/actions/`. Une piste réelle, mais pas évaluée pour son coût ni pour son
+risque de faux positifs sur les tables à grant de table entier — reste en
+dette ouverte dans `docs/bugs.md`, pas une décision prise ici.
+
 **Dette signalée** (`docs/bugs.md`) : les RPC du socle Réserver
 (`reserve_slot`, `waitlist_join`, `reservation_offer_next`) vérifient encore le
 droit `vitrine`, pas `rendez_vous` — héritage d'avant la séparation des clés
@@ -8180,4 +8221,5 @@ par produit (RDV-5). Un commerçant qui ne détiendrait que `rendez_vous` sans
 `20261107120000_rendez_vous_cle_produit.sql`,
 `20261108120000_reservation_tables.sql`,
 `20261109120000_plan_salle_lecture.sql`,
-`20261110120000_liste_attente_effectif.sql`.
+`20261110120000_liste_attente_effectif.sql`,
+`20261112120000_reglages_rendez_vous_ecrivables.sql`.
