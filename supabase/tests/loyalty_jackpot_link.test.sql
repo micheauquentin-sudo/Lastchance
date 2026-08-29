@@ -75,6 +75,28 @@ select is(
   'la jauge commune augmente exactement une fois'
 );
 
+-- La provenance est elle aussi tenant-scopee : une entree d'un pot voisin ne
+-- peut jamais etre rattachee au tampon de ce passeport, meme avec un appel
+-- SQL de service compromis.
+insert into public.jackpot_participants (
+  campaign_id, organization_id, player_token_hash, cycle
+) values (
+  'f1000000-0000-4000-8000-000000000012',
+  'f1000000-0000-4000-8000-000000000002', repeat('b', 64), 0
+);
+select throws_ok($$
+  update public.jackpot_participants
+     set loyalty_stamp_id = (
+       select id from public.loyalty_stamps
+        where program_id = 'f1000000-0000-4000-8000-000000000021'
+        order by stamped_at asc
+        limit 1
+     )
+   where campaign_id = 'f1000000-0000-4000-8000-000000000012'
+$$, '23503', null,
+  'la FK composite refuse un tampon de passeport voisin'
+);
+
 select is(
   (public.record_loyalty_stamp(
     'f1000000-0000-4000-8000-000000000021', repeat('a', 64), null,

@@ -190,7 +190,7 @@ export default async function LoyaltyDetailPage({
     // le même scan staff est la preuve de visite des deux expériences.
     supabase
       .from("jackpot_campaigns")
-      .select("id, name, min_participation_interval_seconds")
+      .select("id, name, min_participation_interval_seconds, code_ttl_days")
       .eq("organization_id", organization.id)
       .eq("status", "active")
       .eq("validation_mode", "staff")

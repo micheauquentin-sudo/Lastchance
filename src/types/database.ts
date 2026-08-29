@@ -649,6 +649,8 @@ export interface JackpotParticipant {
   id: string;
   campaign_id: string;
   organization_id: string;
+  /** Tampon Passeport ayant créé cette entrée (null hors parcours fidélité). */
+  loyalty_stamp_id: string | null;
   /** Hash du joueur (dénormalisé pour le tirage). */
   player_token_hash: string;
   /** Cycle auquel appartient l'entrée. */
