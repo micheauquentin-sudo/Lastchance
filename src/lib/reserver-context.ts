@@ -577,6 +577,18 @@ export type ReserverPublicContext =
        * faux pour un Moment — la règle suit l'usage, pas le module.
        */
       emailObligatoire: boolean;
+      /**
+       * Le MODE de réservation, rendu tel quel.
+       *
+       * Il a d abord été DÉRIVÉ d emailObligatoire côté page — les deux
+       * valaient la même chose. C était un raccourci qui tenait par accident :
+       * l adresse est exigée PARCE QUE le rendez-vous la demande, mais rien
+       * n interdit qu un jour un Moment l exige aussi, et ce jour-là toute la
+       * salle se serait affichée sur des ateliers.
+       *
+       * Une conséquence ne remplace pas sa cause : on rend la cause.
+       */
+      bookingMode: "moment" | "rendez_vous";
     };
 
 /**
@@ -877,6 +889,7 @@ export async function loadReserverPublicContext(
      * porte, et rien d'autre.
      */
     emailObligatoire: row.booking_mode === "rendez_vous",
+    bookingMode: row.booking_mode === "rendez_vous" ? "rendez_vous" : "moment",
   };
 }
 

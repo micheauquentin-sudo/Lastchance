@@ -1021,31 +1021,6 @@ export async function waitlistLeave(input: {
 // aurait fait sauter tous les rappels dès qu'une seule adresse est chaude.
 // ════════════════════════════════════════════════════════════
 
-/**
- * LES DEUX RPC DE LA MIGRATION 20261110120000, avant régénération des types.
- *
- * `waitlist_join_table` et `reservation_table_freed_targets` n'existent pas
- * encore dans `database.generated.ts` — le générateur lit une base, et celle-ci
- * ne portera ces fonctions qu'une fois la migration appliquée. Cette porte est
- * volontairement ÉTROITE : elle ne relâche que le nom et les arguments de ces
- * deux appels, et disparaît au prochain `generate-db-types`. Les valeurs
- * passées sont, elles, déjà validées par Zod — le typage manquant ne relâche
- * aucune garde.
- */
-function rpcHorsTypes(
-  admin: ReturnType<typeof createAdminClient>,
-  nom: string,
-  args: Record<string, unknown>,
-): Promise<{ data: unknown; error: { message: string } | null }> {
-  const client = admin as unknown as {
-    rpc: (
-      nom: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  };
-  return client.rpc(nom, args);
-}
-
 export type ReserverTableActionResult =
   | { ok: true; data: EtatReservationTable }
   | { ok: false; error: string; challengeRequired?: boolean };
@@ -1230,7 +1205,7 @@ export async function rejoindreListeAttenteTable(input: {
     }
 
     const admin = createAdminClient();
-    const { data, error } = await rpcHorsTypes(admin, "waitlist_join_table", {
+    const { data, error } = await admin.rpc("waitlist_join_table", {
       p_organization_id: parsed.data.organizationId,
       p_slot_id: parsed.data.slotId,
       p_player_key_hash: empreinte,
@@ -1351,8 +1326,7 @@ async function diffuserTableLiberee(params: {
     .maybeSingle();
   if (!activity || activity.booking_mode !== "rendez_vous") return;
 
-  const { data, error } = await rpcHorsTypes(
-    admin,
+  const { data, error } = await admin.rpc(
     "reservation_table_freed_targets",
     { p_organization_id: params.organizationId, p_slot_id: params.slotId },
   );
