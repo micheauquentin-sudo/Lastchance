@@ -229,6 +229,7 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     /** Traces d'appels, dans l'ordre : pont, RPC, lecture d'état. */
     chronologie: [] as string[],
     selects: [] as Array<{ table: string; colonnes: string }>,
+    lectureReservationSuspendue: false,
     filtres: [] as Array<Record<string, unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     rateLimitCalls: [] as Array<{ bucket: string; failClosed: boolean }>,
@@ -425,6 +426,7 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.pontsIdentite = [];
       state.chronologie = [];
       state.selects = [];
+      state.lectureReservationSuspendue = false;
       state.filtres = [];
       state.rpcCalls = [];
       state.rateLimitCalls = [];
@@ -575,6 +577,13 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
               return Promise.resolve({ data: state.queueRow, error: null });
             }
             if (table === "reservations") {
+              // SUSPENDUE À LA DEMANDE. Sert à prouver qu'une lecture vit
+              // bien dans l'`after()` : si elle était devant le `return` de
+              // l'action, celle-ci ne résoudrait jamais et le test
+              // expirerait au lieu de passer.
+              if (state.lectureReservationSuspendue) {
+                return new Promise(() => {});
+              }
               return Promise.resolve({
                 data: {
                   id: "44444444-4444-4444-8444-444444444444",
@@ -1175,6 +1184,31 @@ describe("cancelReservation / loadMyReservations", () => {
     });
   });
 
+  it("répond SANS attendre la recherche de la table libérée", async () => {
+    // ── LE DÉFAUT QUE CE TEST FERME (RDV-8, corrigé RDV-10) ──
+    //
+    // Le signalement partait bien hors du chemin de réponse, mais la LECTURE
+    // qui le prépare — retrouver le créneau de la réservation annulée —
+    // restait devant le `return`. Toute annulation payait donc un aller-retour
+    // de plus, y compris sur un MOMENT, qui n'a pas de tables et dont personne
+    // ne sera jamais prévenu.
+    //
+    // ── POURQUOI ON SUSPEND LA LECTURE PLUTÔT QUE DE COMPTER LES REQUÊTES ──
+    //
+    // Le faux d'`after()` diffère par MICROTÂCHE : le simple `await` sur
+    // l'action en draine la file, si bien qu'un compteur de requêtes voit le
+    // travail différé comme s'il avait eu lieu avant la réponse. Il ne
+    // distingue donc rien.
+    //
+    // Une lecture qui NE SE RÉSOUT JAMAIS, elle, tranche : si elle était
+    // devant le `return`, cette action n'aboutirait pas et le test expirerait.
+    // Qu'il passe est la preuve.
+    state.cancelResponse = { state: "cancelled", reservation_id: RESERVATION_ID };
+    state.lectureReservationSuspendue = true;
+
+    const resultat = await cancelReservation({ reservationId: RESERVATION_ID });
+    expect(resultat.ok).toBe(true);
+  });
   it("n'oppose AUCUN challenge à l'annulation — rendre une place n'a pas à frotter", async () => {
     state.turnstileConfigure = true;
     state.turnstileVerdict = false;
