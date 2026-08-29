@@ -83,6 +83,17 @@ select throws_ok(
   null,
   'H-1 un rendez-vous sans durée ni capacité est refusé à l''écriture');
 
+-- UNE TABLE POUR L'ACTIVITÉ (RDV-6). Depuis le plan de salle, une
+-- réservation de rendez-vous EXIGE une table — le trigger
+-- `reservations_require_table` le refuse sinon, quel que soit le chemin.
+-- H-12 en insère une directement : elle a donc besoin d'une table à viser.
+insert into public.reservation_tables
+  (id, activity_id, organization_id, name, seats)
+values
+  ('7a7a0000-0000-4000-8000-000000000301',
+   '7a7a0000-0000-4000-8000-000000000201',
+   '7a7a0000-0000-4000-8000-00000000000a', 'T1', 4);
+
 -- ── Les horaires : lundi 9 h 00 → 11 h 00, heure locale ──────
 --
 -- `weekday = 0` est LUNDI (0 = lundi dans cette table, contrairement à
@@ -173,8 +184,9 @@ select is(
 -- On réserve le premier créneau, puis on RETIRE l'horaire du lundi : la grille
 -- devient vide, mais ce créneau-là porte quelqu'un.
 insert into public.reservations
-  (organization_id, slot_id, player_key_hash, status)
-select '7a7a0000-0000-4000-8000-00000000000a', s.id, repeat('a', 64), 'confirmed'
+  (organization_id, slot_id, player_key_hash, status, table_id)
+select '7a7a0000-0000-4000-8000-00000000000a', s.id, repeat('a', 64), 'confirmed',
+       '7a7a0000-0000-4000-8000-000000000301'
   from public.reservation_slots s
  where s.activity_id = '7a7a0000-0000-4000-8000-000000000201'
  order by s.starts_at
