@@ -302,9 +302,9 @@ test.describe("réserver — agenda commerçant, format et taille du groupe (RES
   test("la liste des activités porte une pastille de format", async ({
     page,
   }) => {
-    await page.goto("/dashboard/reservations");
+    await page.goto("/dashboard/moments");
     await expect(
-      page.getByRole("heading", { name: "Réservations" }),
+      page.getByRole("heading", { name: "Moments" }),
     ).toBeVisible({ timeout: 30_000 });
 
     // `exact` sur la pastille : sans lui, « Moment Signature » matche AUSSI
@@ -385,9 +385,9 @@ test.describe("réserver — formulaire d'activité, préservation des étapes a
     const nomActivite = `Activité E2E Signature ${Date.now()}`;
 
     // ── 1. Création : format Signature, durée, et TROIS étapes. ──
-    await page.goto("/dashboard/reservations");
+    await page.goto("/dashboard/moments");
     await expect(
-      page.getByRole("heading", { name: "Réservations" }),
+      page.getByRole("heading", { name: "Moments" }),
     ).toBeVisible({ timeout: 30_000 });
 
     const formulaireCreation = page

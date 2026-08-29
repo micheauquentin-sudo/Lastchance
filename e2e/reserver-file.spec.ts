@@ -107,9 +107,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // ── 2. Le comptoir appelle le suivant, en boucle jusqu'à ce que ce
       // soit NOTRE entrée qui passe « appelée » — les deux entrées pré-semées
       // de notre file passent devant nous.
-      await page.goto("/dashboard/reservations");
+      await page.goto("/dashboard/moments");
       await expect(
-        page.getByRole("heading", { name: "Réservations" }),
+        page.getByRole("heading", { name: "Moments" }),
       ).toBeVisible({ timeout: 30_000 });
 
       await ouvrirOngletFile(page, NOM_FILE);
@@ -163,9 +163,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       // `networkidle` ne suffit pas toujours : WebKit peut replanifier le
       // rafraîchissement du dernier « Appeler le suivant » APRÈS que le réseau
       // se soit calmé, et le `goto` se fait alors avorter (« interrupted by
-      // another navigation to …/dashboard/reservations » — vers la MÊME URL).
+      // another navigation to …/dashboard/moments » — vers la MÊME URL).
       // On le rejoue une fois plutôt que d'espérer.
-      await gotoApresNavigation(page, "/dashboard/reservations");
+      await gotoApresNavigation(page, "/dashboard/moments");
       await ouvrirOngletFile(page, NOM_FILE);
       await expect(
         page.getByText("Au comptoir", { exact: true }),
@@ -262,9 +262,9 @@ test.describe("réserver — file d'accueil (RES-3)", () => {
       motifEstimation,
     );
 
-    await page.goto("/dashboard/reservations");
+    await page.goto("/dashboard/moments");
     await expect(
-      page.getByRole("heading", { name: "Réservations" }),
+      page.getByRole("heading", { name: "Moments" }),
     ).toBeVisible({ timeout: 30_000 });
     await ouvrirOngletFile(page, NOM_FILE);
     // LE GESTE PRINCIPAL DE LA CONSOLE, sous ses TROIS libellés — c'est le même
