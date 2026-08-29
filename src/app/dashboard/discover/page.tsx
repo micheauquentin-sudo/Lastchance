@@ -65,7 +65,7 @@ export default async function DiscoverExperiencesPage({
       <PageHeader
         surtitre="Outils"
         titre="Découvrir"
-        sousTitre="Choisissez un objectif, pas seulement un jeu."
+        sousTitre="Tout ce que la plateforme sait faire, rangé par ce que ça vous apporte : des nouveaux clients, des clients qui reviennent, une salle animée. Ouvrez ce qui est déjà actif, découvrez le reste."
       />
 
       <p className="mb-8 max-w-3xl text-sm font-semibold text-k-body">

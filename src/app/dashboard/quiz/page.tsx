@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { NewQuizForm } from "@/components/dashboard/new-quiz-form";
@@ -99,7 +100,7 @@ export default async function QuizListPage({
       <PageHeader
         surtitre="Vos animations"
         titre="Quiz"
-        sousTitre="Vos clients jouent depuis leur téléphone, la correction est immédiate, le lot se retire en caisse."
+        sousTitre={sousTitreTableauDeBord("quiz")}
         actions={capacites.canEditDraft ? <NewQuizForm /> : null}
       />
 
