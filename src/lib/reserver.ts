@@ -259,6 +259,17 @@ export const RESERVER_TABLE_SEATS_MAX = 30;
  * normal d'un restaurant, et `reserve_table` le gère par sa fenêtre
  * d'occupation. Fusionner les deux l'aurait interdit.
  */
+/**
+ * LE PAS DE GRILLE POSÉ À LA CRÉATION d'une prise de rendez-vous.
+ *
+ * Trente minutes : la valeur qui convient à un coiffeur comme à un
+ * restaurant, et celle dont on s'écarte le moins souvent. Ce n'est PAS un
+ * réglage — c'est ce qu'on écrit pour que la contrainte de complétude
+ * accepte la ligne, en attendant que le commerçant tranche à l'étape
+ * « durée de service ».
+ */
+export const RESERVER_PAS_GRILLE_DEFAUT = 30;
+
 export const RESERVER_TABLE_TURN_MIN = 15;
 export const RESERVER_TABLE_TURN_MAX = 600;
 export const RESERVER_TABLE_TURN_DEFAUT = 90;

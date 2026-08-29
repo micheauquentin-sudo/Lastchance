@@ -1387,6 +1387,68 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     expect(ecriture?.values.active).toBe(true);
   });
 
+  it("une activité créée depuis RÉSERVATION naît en `rendez_vous`", async () => {
+    // ── LE DÉFAUT QUE CE TEST FERME (RDV-11) ──
+    //
+    // `booking_mode` a un défaut en base, `'moment'`, et la création ne
+    // l'écrivait pas. Or la page « Réservation » FILTRE sur ce champ depuis
+    // RDV-5 : tout ce qu'on y créait naissait Moment et disparaissait de
+    // l'écran à la seconde suivante, pour réapparaître dans un autre menu.
+    //
+    // Le module entier — plan de salle, tables, liste d'attente par effectif —
+    // était donc INJOIGNABLE depuis son propre tableau de bord, et aucune
+    // suite ne le disait : chaque morceau était juste, la porte d'entrée
+    // manquait.
+    await createReserverActivity(
+      null,
+      formData({ name: "Le Comptoir", booking_mode: "rendez_vous" }),
+    );
+
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.table).toBe("reservation_activities");
+    expect(ecriture?.values.booking_mode).toBe("rendez_vous");
+
+    // ET CE QUE LA CONTRAINTE EXIGE AVEC LUI.
+    // `reservation_activities_rendez_vous_complete_check` refuse un
+    // `rendez_vous` sans durée ni capacité : sans ces deux valeurs de départ,
+    // la création échouerait sur une violation de contrainte incompréhensible
+    // pour qui vient de taper le nom de son restaurant.
+    expect(ecriture?.values.duration_minutes).toBe(30);
+    expect(ecriture?.values.slot_capacity).toBe(1);
+  });
+
+  it("une activité créée depuis MOMENTS reste un `moment`, et ne gagne rien", async () => {
+    // LE TÉMOIN, et il compte autant que le test au-dessus : le champ absent
+    // doit rendre exactement ce que rendait le formulaire d'avant. C'est lui
+    // qui prouve que la correction n'a pas déplacé le défaut dans l'autre sens.
+    await createReserverActivity(null, formData({ name: "Dégustation" }));
+
+    const ecriture = state.rlsWrites.at(-1);
+    expect(ecriture?.values.booking_mode).toBe("moment");
+    // Ni durée ni capacité imposées : un Moment se compose créneau par
+    // créneau, et `duration_minutes` appartient au format « signature ».
+    expect(ecriture?.values.duration_minutes).toBeNull();
+    expect(ecriture?.values.slot_capacity).toBeNull();
+  });
+
+  it("une durée saisie l'emporte sur la valeur de départ", async () => {
+    // La valeur de 30 minutes n'est pas un plafond ni un réglage : c'est ce
+    // qu'on écrit QUAND RIEN N'EST DIT. Un formulaire qui porte la durée doit
+    // la voir arriver telle quelle.
+    await createReserverActivity(
+      null,
+      // Format STANDARD : c est celui d une salle de restaurant. Le format
+      // « signature » exigerait des etapes de presentation, qui n ont rien a
+      // voir avec la duree d un creneau.
+      formData({
+        name: "Le Comptoir",
+        booking_mode: "rendez_vous",
+        durationMinutes: "45",
+      }),
+    );
+    expect(state.rlsWrites.at(-1)?.values.duration_minutes).toBe(45);
+  });
+
   it("PURGE LA VITRINE quand le drapeau `active` change — et jamais sur un refus", async () => {
     // FAMILLE 1 des quatre drapeaux publiés par `/v/{slug}` (VIT-3). Une
     // activité naît `active` : c'est une porte publiée à l'insertion, et sans

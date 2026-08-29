@@ -59,6 +59,7 @@ import {
   mapWaitUsePause,
   offreAccepteePrise,
   RESERVER_FUSEAU_DEFAUT,
+  RESERVER_PAS_GRILLE_DEFAUT,
   urlActiviteReserver,
   urlInvitationReserver,
   urlOffreStock,
@@ -2131,6 +2132,7 @@ export async function createReserverActivity(
     // LES CINQ CHAMPS D'EXPÉRIENCE (RES-5). Un panneau qui ne les rend pas
     // laisse une activité `standard`, exactement comme avant ce lot.
     kind: formData.get("kind"),
+    bookingMode: formData.get("booking_mode"),
     promise: formData.get("promise"),
     durationMinutes: formData.get("durationMinutes"),
     steps: etapesDepuisFormData(formData),
@@ -2145,19 +2147,37 @@ export async function createReserverActivity(
   const garde = await gardeEditeurReserver();
   if (!garde.ok) return { ok: false, error: garde.error };
 
+  // UNE PRISE DE RENDEZ-VOUS NAÎT COMPLÈTE, ou elle ne naît pas.
+  //
+  // `reservation_activities_rendez_vous_complete_check` refuse un
+  // `rendez_vous` sans durée ni capacité — et elle a raison : le
+  // générateur de créneaux n'aurait rien à faire avec. On pose donc des
+  // valeurs de départ plutôt que de renvoyer une violation de contrainte à
+  // quelqu'un qui vient juste de taper le nom de son restaurant.
+  //
+  // Ce sont des VALEURS DE DÉPART, pas des réglages : l'assistant de la
+  // page d'activité les fait revoir à l'étape « durée de service », et le
+  // fil des étapes ne se coche pas tant qu'elles n'ont pas été confirmées.
+  const rendezVous = parsed.data.bookingMode === "rendez_vous";
+  const dureeCreneau = rendezVous
+    ? (parsed.data.durationMinutes ?? RESERVER_PAS_GRILLE_DEFAUT)
+    : parsed.data.durationMinutes;
+
   const supabase = await createClient();
   const { error } = await supabase.from("reservation_activities").insert({
     organization_id: garde.organizationId,
     name: parsed.data.name,
     description: parsed.data.description || null,
     active: true,
+    booking_mode: parsed.data.bookingMode,
+    slot_capacity: rendezVous ? 1 : null,
     // LE FORMAT ET SA PRÉSENTATION (RES-5). `steps` part à `null` quand il n'y
     // a aucune carte : un tableau vide serait une liste d'étapes vide, la base
     // dit « pas d'étapes » avec `null` — et c'est ce que la contrainte
     // conditionnelle de la `signature` teste.
     kind: parsed.data.kind,
     promise: parsed.data.promise || null,
-    duration_minutes: parsed.data.durationMinutes,
+    duration_minutes: dureeCreneau,
     steps: parsed.data.steps.length > 0 ? parsed.data.steps : null,
     preparation: parsed.data.preparation || null,
     // ANIMATIONS D'ATTENTE (RES-4) : `""` = « aucune », et c'est le défaut. La
