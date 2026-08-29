@@ -6217,6 +6217,7 @@ export type Database = {
           promise: string | null
           slot_capacity: number | null
           steps: Json | null
+          table_turn_minutes: number | null
           updated_at: string
           wait_pause_campaign_id: string | null
           wait_quiz_id: string | null
@@ -6237,6 +6238,7 @@ export type Database = {
           promise?: string | null
           slot_capacity?: number | null
           steps?: Json | null
+          table_turn_minutes?: number | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
           wait_quiz_id?: string | null
@@ -6257,6 +6259,7 @@ export type Database = {
           promise?: string | null
           slot_capacity?: number | null
           steps?: Json | null
+          table_turn_minutes?: number | null
           updated_at?: string
           wait_pause_campaign_id?: string | null
           wait_quiz_id?: string | null
@@ -6746,6 +6749,57 @@ export type Database = {
           },
         ]
       }
+      reservation_tables: {
+        Row: {
+          active: boolean
+          activity_id: string
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          position: number
+          seats: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          activity_id: string
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          position?: number
+          seats: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          activity_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          position?: number
+          seats?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_tables_activity_id_organization_id_fkey"
+            columns: ["activity_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_activities"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservation_tables_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reservation_wait_sessions: {
         Row: {
           created_at: string
@@ -6827,6 +6881,7 @@ export type Database = {
           offer_expires_at: string | null
           offered_at: string | null
           organization_id: string
+          party_size: number
           player_key_hash: string
           slot_id: string
           status: string
@@ -6843,6 +6898,7 @@ export type Database = {
           offer_expires_at?: string | null
           offered_at?: string | null
           organization_id: string
+          party_size?: number
           player_key_hash: string
           slot_id: string
           status?: string
@@ -6859,6 +6915,7 @@ export type Database = {
           offer_expires_at?: string | null
           offered_at?: string | null
           organization_id?: string
+          party_size?: number
           player_key_hash?: string
           slot_id?: string
           status?: string
@@ -6902,6 +6959,7 @@ export type Database = {
           player_key_hash: string
           slot_id: string
           status: string
+          table_id: string | null
         }
         Insert: {
           cancelled_at?: string | null
@@ -6917,6 +6975,7 @@ export type Database = {
           player_key_hash: string
           slot_id: string
           status?: string
+          table_id?: string | null
         }
         Update: {
           cancelled_at?: string | null
@@ -6932,6 +6991,7 @@ export type Database = {
           player_key_hash?: string
           slot_id?: string
           status?: string
+          table_id?: string | null
         }
         Relationships: [
           {
@@ -6946,6 +7006,13 @@ export type Database = {
             columns: ["slot_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "reservation_slots"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "reservations_table_fk"
+            columns: ["table_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "reservation_tables"
             referencedColumns: ["id", "organization_id"]
           },
         ]
@@ -9913,7 +9980,22 @@ export type Database = {
         Args: { p_organization_id: string; p_player_key_hash: string }
         Returns: Json
       }
+      reservation_tables_state: {
+        Args: { p_activity_id: string; p_from?: string; p_limit?: number }
+        Returns: Json
+      }
       reserve_slot: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_organization_id: string
+          p_party_size?: number
+          p_player_key_hash: string
+          p_slot_id: string
+        }
+        Returns: Json
+      }
+      reserve_table: {
         Args: {
           p_consent?: boolean
           p_email?: string
