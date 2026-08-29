@@ -3269,6 +3269,7 @@ describe("reserverTable — l'effectif est énoncé, pas deviné", () => {
     const resultat = await reserverTable({
       organizationId: ORG_ID,
       slotId: SLOT_ID,
+      // unsafe-cast-justification: on APPELLE VOLONTAIREMENT sans effectif pour prouver que le schéma le refuse — le type de l argument l interdit, c est tout l objet du test.
     } as unknown as {
       organizationId: string;
       slotId: string;
@@ -3344,6 +3345,7 @@ describe("rejoindreListeAttenteTable — attendre AVEC un effectif", () => {
       slotId: SLOT_ID,
       partySize: 4,
       consent: true,
+      // unsafe-cast-justification: appel VOLONTAIREMENT sans adresse pour prouver le refus nommé — le type l interdit, et c est ce que le test vérifie.
     } as unknown as {
       organizationId: string;
       slotId: string;
