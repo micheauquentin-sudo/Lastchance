@@ -1579,9 +1579,24 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
    * `supprimerPlageHoraire` en « retirer » aurait fait passer la garde sans
    * rien changer au risque, ce qui est la pire des deux issues.
    */
+  /**
+   * LA TABLE DE SALLE (RDV-7) EST EXEMPTÉE POUR UNE AUTRE RAISON, et il faut
+   * la dire : elle PEUT avoir des enfants — une réservation y est assise.
+   *
+   * Ce n'est donc pas « rien à emporter », c'est « la base refuse d'emporter ».
+   * `reservations.table_id` porte `on delete restrict` (20261108120000:154) :
+   * supprimer une table qui a servi lève un 23503, et `supprimerTableSalle`
+   * traduit ce code en une phrase qui renvoie vers la DÉSACTIVATION. Le seul
+   * cas où la suppression aboutit est celui d'une table qui n'a jamais reçu
+   * personne — une faute de frappe corrigée dans la minute.
+   *
+   * Une table qui a servi ne s'efface pas : on perdrait la trace de qui était
+   * assis où, et c'est précisément ce que le plan de salle sert à lire.
+   */
   const SUPPRESSIONS_SANS_ENFANT = new Set([
     "supprimerPlageHoraire",
     "supprimerFermeture",
+    "supprimerTableSalle",
   ]);
 
   it("ne supprime que ce qui n'a aucun enfant à emporter", async () => {
