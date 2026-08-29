@@ -41,7 +41,7 @@
 
 **Terrain.** Branche isolée `feat/jackpot-loyalty-link`, fondée sur `origin/main`
 à `e299e382`. Fichiers principaux :
-`supabase/migrations/20261111120000_loyalty_jackpot_link.sql`,
+`supabase/migrations/20261112130000_loyalty_jackpot_link.sql`,
 `src/actions/loyalty.ts`, `src/lib/loyalty-context.ts`,
 `src/components/loyalty/loyalty-passport.tsx`.
 
@@ -69,7 +69,7 @@ vert, puis CI du SHA.
 **Correctif CI du 2026-08-29.** Le nouveau champ de lien était absent des
 grants colonne par colonne de `loyalty_programs` : une lecture authentifiée
 échouait et la page Passeport rendait à tort une 404. La migration
-`20261111140000_loyalty_jackpot_link_grants.sql` accorde exclusivement sa
+`20261112150000_loyalty_jackpot_link_grants.sql` accorde exclusivement sa
 lecture et sa mise à jour, et `security_acl.test.sql` garde ces deux ACL.
 
 ## Dernière demande utilisateur
