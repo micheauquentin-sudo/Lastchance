@@ -8096,3 +8096,88 @@ part.
 **Références** : `src/components/ticket/ticket-qr.tsx`,
 `src/components/ticket/emettre-ticket.tsx`,
 `src/components/ticket/ticket-experience.tsx`, `src/lib/ticket-or.ts`.
+
+---
+
+## ADR-122 — Réservation de table : un plan de salle NOMMÉ, sur le même schéma que Moments
+
+**Date** : 2026-08-29
+**Statut** : Accepté
+**Contexte** : Réserver ne savait compter que des couverts sur un créneau —
+suffisant pour un Moment (dégustation, atelier), pas pour un service de
+restaurant, où deux groupes de deux ne remplacent pas un groupe de quatre.
+RDV-6 à RDV-9 (PR #229, #230, #231, #232) ajoutent le plan de salle : tables
+nommées, effectif exact, liste d'attente qui compte des personnes plutôt que
+des lignes.
+
+### Décision 1 — `booking_mode` sépare les produits, pas le schéma
+
+Réservation de table est un second produit (clé d'entitlement `rendez_vous`,
+posée en RDV-5, #228 — distincte de `reserver`), mais elle vit dans les
+**mêmes tables** que Moments. `booking_mode` sur `reservation_activities`
+choisit le comportement, la RLS et les RPC restent partagées.
+
+**Écarté** : un second jeu de tables dédié au plan de salle. Il aurait dupliqué
+la RLS, les RPC de file d'attente et les gardes multi-locataires déjà écrites
+et testées pour Réserver — pour un produit qui ne change que la manière de
+compter les places, pas leur isolation par organisation.
+
+### Décision 2 — Des tables NOMMÉES et affectées, pas une jauge de couverts
+
+`reserve_table` fait un **meilleur ajustement** (`best fit`) : elle retient la
+plus petite table dont le nombre de places couvre l'effectif demandé, avec un
+ordre déterministe (`order by seats asc, name asc`).
+
+**Écarté** : une jauge globale de couverts pour tout l'établissement, sur le
+modèle « nombre maximal de personnes ». Elle aurait laissé asseoir un groupe de
+six sur trois tables de deux prises séparément — correct en somme de couverts,
+faux en usage réel d'une salle.
+
+### Décision 3 — `max_party` plutôt que « places restantes »
+
+`reservation_tables_state` rend le plus grand effectif **plaçable sur une
+seule table**, jamais la somme des couverts libres de l'établissement : douze
+couverts libres répartis sur six tables de deux ne prennent pas un groupe de
+quatre, et un total aurait affirmé le contraire à l'écran.
+
+### Décision 4 — `table_turn_minutes` reste distinct de `duration_minutes`
+
+Le premier dit combien de temps une table reste occupée une fois prise, le
+second tous les combien de temps on propose un nouveau créneau. Un service
+d'1 h 30 sur une grille au quart d'heure fait naturellement se chevaucher
+plusieurs créneaux sur la **même** table pendant qu'elle est occupée — c'est
+le réglage normal d'un restaurant. Fusionner les deux réglages l'aurait rendu
+impossible. Conséquence directe : le verrou d'avis (`for update`) de
+`reserve_table` porte sur l'**activité**, pas sur le créneau qu'une occupation
+traverse — un créneau n'est qu'une lecture dérivée des occupations en cours.
+
+### Décision 5 — La liste d'attente NOTIFIE, elle ne TIENT pas de table
+
+`reservation_table_freed_targets` (RDV-8, #231) rend la liste de qui prévenir
+quand une table se libère ; plusieurs personnes reçoivent le même email, et la
+première qui revient et confirme prend la table sous le verrou d'avis de
+`reserve_table`. L'email et l'écran commerçant le disent en toutes lettres —
+ce n'est pas une réservation garantie, c'est une notification.
+
+**Écarté** : tenir la table pour une seule personne de la liste. Cela aurait
+demandé une colonne `table_id` sur `reservation_waitlist_entries` **et** un
+`create or replace` de `claim_waitlist_offer` — une fonction de 150 lignes déjà
+recopiée une fois dans l'historique de ce dépôt, à l'origine d'une régression
+en production. Et surtout : tenir la table **gèle** la salle si l'email n'est
+pas lu à temps, un risque qu'une notification à plusieurs destinataires évite.
+Corollaire : `reservation_offer_next` (le socle Moments) n'est **jamais**
+appelée sur une activité en `booking_mode = 'rendez_vous'` — elle compte des
+places, pas des tables, et son offre serait de toute façon rejetée par le
+trigger `reservations_require_table`.
+
+**Dette signalée** (`docs/bugs.md`) : les RPC du socle Réserver
+(`reserve_slot`, `waitlist_join`, `reservation_offer_next`) vérifient encore le
+droit `vitrine`, pas `rendez_vous` — héritage d'avant la séparation des clés
+par produit (RDV-5). Un commerçant qui ne détiendrait que `rendez_vous` sans
+`vitrine` verrait ses Moments muets.
+
+**Références** : `supabase/migrations/20261106120000_reservation_horaires.sql`,
+`20261107120000_rendez_vous_cle_produit.sql`,
+`20261108120000_reservation_tables.sql`,
+`20261109120000_plan_salle_lecture.sql`,
+`20261110120000_liste_attente_effectif.sql`.
