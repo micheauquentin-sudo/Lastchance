@@ -46,6 +46,15 @@ interface ConfigAgenda {
   sousTitre: string;
   /** Files d'accueil et offres de stock : Moments seulement. */
   avecAccueil: boolean;
+  /**
+   * LES MOTS DU PRODUIT. « Activité » est juste pour un atelier et creux
+   * pour un restaurant : celui qui ouvre « Réservation » cherche à décrire
+   * SA SALLE, et un écran qui lui propose de créer une « activité » le
+   * laisse chercher s'il est au bon endroit.
+   */
+  motCreer: string;
+  videTitre: string;
+  videAide: string;
 }
 
 const CONFIG: Record<ModeAgenda, ConfigAgenda> = {
@@ -55,6 +64,10 @@ const CONFIG: Record<ModeAgenda, ConfigAgenda> = {
     sousTitre:
       "Posez vos horaires une fois : les créneaux se génèrent, vos clients prennent rendez-vous depuis votre Vitrine.",
     avecAccueil: false,
+    motCreer: "+ Créer ma salle",
+    videTitre: "Vous n'avez pas encore de salle.",
+    videAide:
+      "Créez-la, puis réglez-la par étapes : vos horaires, vos tables, la durée d'un service. Vos clients réserveront ensuite depuis votre Vitrine.",
   },
   moment: {
     entitlement: "reserver",
@@ -62,6 +75,9 @@ const CONFIG: Record<ModeAgenda, ConfigAgenda> = {
     sousTitre:
       "Ateliers, dégustations, files d'accueil : faites vivre un moment à vos clients.",
     avecAccueil: true,
+    motCreer: "+ Nouvelle activité",
+    videTitre: "Aucune activité pour l'instant. Créez la première !",
+    videAide: "",
   },
 };
 
@@ -147,7 +163,14 @@ export async function PageAgenda({ mode }: { mode: ModeAgenda }) {
         surtitre="Vos animations"
         titre={config.titre}
         sousTitre={config.sousTitre}
-        actions={capacites.canEditDraft ? <NouvelleActiviteForm /> : null}
+        actions={
+          capacites.canEditDraft ? (
+            <NouvelleActiviteForm
+              bookingMode={mode}
+              libelle={config.motCreer}
+            />
+          ) : null
+        }
       />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
@@ -176,14 +199,23 @@ export async function PageAgenda({ mode }: { mode: ModeAgenda }) {
       {activites.length === 0 ? (
         <div className="mt-5 rounded-xl border-2 border-dashed border-k-ink/25 px-4 py-8 text-center">
           <p className="text-sm font-semibold text-k-body">
-            Aucune activité pour l&apos;instant. Créez la première !
+            {config.videTitre}
           </p>
+          {config.videAide ? (
+            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500">
+              {config.videAide}
+            </p>
+          ) : null}
           {/* LE BOUTON EST ICI AUSSI : « créez la première » sans rien à
               cliquer laisse le seul bouton en haut d'écran, hors du regard de
               celui qui vient de lire la phrase. */}
           {capacites.canEditDraft ? (
             <div className="mt-4 flex justify-center">
-              <NouvelleActiviteForm instanceId="-vide" />
+              <NouvelleActiviteForm
+                instanceId="-vide"
+                bookingMode={mode}
+                libelle={config.motCreer}
+              />
             </div>
           ) : null}
         </div>

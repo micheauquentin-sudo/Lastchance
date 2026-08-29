@@ -34,10 +34,29 @@ import { ChampsExperience } from "@/components/reserver/champs-experience";
  * DEUX fois (en tête d'écran et dans l'état vide), et deux `id` identiques
  * casseraient `htmlFor`, donc l'annonce au lecteur d'écran.
  */
+/**
+ * `bookingMode` VIENT DE LA PAGE, et il n'a pas de valeur devinable ici
+ * (RDV-11).
+ *
+ * Ce formulaire est monté par DEUX écrans qui filtrent chacun sur ce
+ * champ : « Moments » et « Réservation ». Tant qu'il ne le portait pas, la
+ * base appliquait son défaut — `moment` — et une activité créée depuis
+ * Réservation disparaissait de la page à l'instant même où elle naissait,
+ * pour réapparaître dans un autre menu. Le module était injoignable depuis
+ * son propre tableau de bord.
+ *
+ * Le défaut reste `moment` : c'est ce que veut la page Moments, et ce que
+ * rendait le formulaire avant ce champ.
+ */
 export function NouvelleActiviteForm({
   instanceId = "",
+  bookingMode = "moment",
+  libelle,
 }: {
   instanceId?: string;
+  bookingMode?: "moment" | "rendez_vous";
+  /** Le mot du bouton — « activité » ne dit rien à un restaurateur. */
+  libelle?: string;
 }) {
   const [ouvert, setOuvert] = useState(false);
   const { state, pending, onSubmit } = useActionForm(
@@ -50,7 +69,11 @@ export function NouvelleActiviteForm({
   );
 
   if (!ouvert) {
-    return <Button onClick={() => setOuvert(true)}>+ Nouvelle activité</Button>;
+    return (
+      <Button onClick={() => setOuvert(true)}>
+        {libelle ?? "+ Nouvelle activité"}
+      </Button>
+    );
   }
 
   return (
@@ -58,6 +81,11 @@ export function NouvelleActiviteForm({
       onSubmit={onSubmit}
       className="w-full max-w-xl rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
+      {/* LE MODE, EN CHAMP CACHÉ ET NON EN ARGUMENT D'ACTION : ce
+          formulaire passe par `useActionForm`, qui envoie un FormData —
+          une valeur portée en fermeture ne serait jamais transmise. */}
+      <input type="hidden" name="booking_mode" value={bookingMode} />
+
       <div>
         <Label htmlFor={`activite-nom${instanceId}`}>Nom de l&apos;activité</Label>
         <Input
