@@ -44,6 +44,27 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
+## Édition d'affiche — impression, export et fond (2026-08-29, validation locale verte)
+
+- **Constat prouvé P0** : `poster-editor.tsx` rendait l'aperçu interactif et
+  une seconde feuille A4 en même temps dans `@media print` ; ils se
+  superposaient dans la boîte d'impression.
+- **Correctif local isolé** : l'aperçu est masqué en impression et seule la
+  feuille A4 dédiée reste imprimable. L'éditeur ajoute un téléchargement PNG
+  A4 explicite et un fond personnel ajoutable, remplaçable ou supprimable.
+- **Persistance et sécurité** : le fond reprend exactement le pipeline des
+  images d'éléments (validation de type/taille, normalisation Storage,
+  vérification organisation + QR, purge des anciens fichiers). Une URL externe
+  non validée est refusée par le schéma.
+- **Bénéfice** : une affiche imprimable sans conflit, sauvegardable sur
+  l'ordinateur, et personnalisable sans perdre l'image après enregistrement.
+- **Preuves locales** : 13 tests Vitest ciblés verts, lint ciblé vert,
+  typecheck vert et build Next vert (plafond Node 2,3 Go, exécution seule sur
+  machine 8 Go). La spec Playwright vérifie le média impression : aperçu caché,
+  feuille A4 seule visible ; elle est reconnue par `--list` mais son exécution
+  attend une pile Supabase locale seedée **isolée**, car le runner la réinitialise.
+- Priorité P0 ; coût faible à moyen ; aucun commit, push ni déploiement demandé.
+
 ## Événement live — accès joueur et télécommande (2026-08-27)
 
 - **Constat corrigé** : l'ancien contrat masquait le bouton Joueurs, le lien et

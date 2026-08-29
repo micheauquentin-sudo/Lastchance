@@ -159,9 +159,19 @@ describe("images d'affiche Storage", () => {
     expect(
       posterConfigSchema.safeParse({
         version: 2,
+        bgImage: src,
         elements: [{ id: "image", type: "image", x: 50, y: 50, w: 20, src }],
       }).success,
     ).toBe(true);
+  });
+
+  it("refuse une image de fond qui ne peut pas être persistée", () => {
+    expect(
+      posterConfigSchema.safeParse({
+        bgImage: "https://untrusted.example/image.png",
+        elements: [],
+      }).success,
+    ).toBe(false);
   });
 });
 
