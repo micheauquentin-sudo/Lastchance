@@ -4,361 +4,315 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
-import { etatUiCreneau, RESERVER_FUSEAU_DEFAUT } from "@/lib/reserver";
-import {
-  loadReserverDashboardContext,
-  loadReserverQueuesDashboardContext,
-  loadStockOffersDashboardContext,
-} from "@/lib/reserver-context";
-import { construireVerificationReserver } from "@/lib/activation/reserver";
-import { carteTuile } from "@/lib/checklist/carte-tuile";
-import { tuilesDuModule } from "@/lib/checklist/tuiles";
+import { urlActiviteReserver } from "@/lib/reserver";
+import { loadReserverDashboardContext } from "@/lib/reserver-context";
+import { loadHorairesActivite } from "@/lib/reserver-horaires-context";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
+import { PublicShare } from "@/components/dashboard/public-share";
 import { ArriveesCheckin } from "@/components/reserver/arrivees-checkin";
-import { FilesAccueilPanneau } from "@/components/reserver/files-accueil-panneau";
+import { CreneauxAgenda } from "@/components/reserver/creneaux-agenda";
+import { HorairesPanneau } from "@/components/reserver/horaires-panneau";
 import { NouvelleActiviteForm } from "@/components/reserver/nouvelle-activite-form";
-import { OffresStockPanneau } from "@/components/reserver/offres-stock-panneau";
-import { PastilleFormat } from "@/components/reserver/pastilles";
+import { PlanSalleVue } from "@/components/reserver/plan-salle-vue";
+import { SallePanneau } from "@/components/reserver/salle-panneau";
 
 export const metadata: Metadata = { title: "Réservation" };
 
 /**
- * LES DEUX PRODUITS, UN SEUL CORPS DE PAGE (RDV-5).
+ * RÉSERVATION — CET ÉCRAN *EST* LA SALLE (RDV-13).
  *
- * « Réservation » (prise de rendez-vous) et « Moments » (ateliers, files,
- * invitations, offres) partagent les MÊMES tables : ce qui les sépare est
- * `reservation_activities.booking_mode`. Dupliquer 270 lignes d'écran pour
- * un filtre aurait créé deux pages à tenir d'accord — et elles auraient
- * divergé au premier ajustement.
+ * ── CE QU'IL A REMPLACÉ, ET POURQUOI ──
  *
- * Les files d'accueil et les offres de stock n'appartiennent qu'aux Moments :
- * une prise de rendez-vous n'a ni file ni invendu de dernière minute.
+ * Cette route rendait le meuble des Moments : une carte « Vos activités » qui
+ * listait des lignes cliquables, et l'écran d'arrivées dessous. Les horaires, le
+ * plan de salle, les tables et le calendrier vivaient une page plus loin, sur
+ * `/dashboard/reservations/[activityId]`, qu'il fallait DEVINER en cliquant une
+ * ligne. Le retour du propriétaire était sans appel : « je n'ai toujours pas
+ * accès à la salle, au calendrier ».
+ *
+ * Le défaut n'était pas la profondeur, c'était la question posée. Une liste
+ * demande « laquelle ? » ; un restaurateur n'a pas de catalogue de salles, il en
+ * a UNE. Poser une question dont la réponse est toujours la même coûte un clic à
+ * chaque visite et cache derrière lui tout ce qui compte. Le mot « activité » a
+ * donc disparu de cet écran : ce qu'il montre n'est pas un objet parmi d'autres,
+ * c'est le commerce lui-même, un jour donné.
+ *
+ * ── UNE SALLE SE CRÉE UNE FOIS, PAS À CHAQUE VISITE ──
+ *
+ * Aucun « + Nouvelle activité » ici. Tant qu'aucune salle n'existe, l'écran ne
+ * porte qu'un seul appel à l'action ; dès qu'elle existe, le bouton disparaît —
+ * un bouton de création permanent sur un objet unique n'invite qu'à créer des
+ * doublons, et un doublon de salle coupe l'agenda en deux.
+ *
+ * ── L'ÉCRAN DE DÉTAIL RESTE, ET IL N'EST PAS DE TROP ──
+ *
+ * `/dashboard/reservations/[activityId]` continue de servir : c'est là que la
+ * liste des MOMENTS renvoie, et il porte des blocs qui n'ont pas de sens ici
+ * (réglages d'activité, invitations). Les deux écrans montent les mêmes
+ * composants — ils ne dupliquent aucune logique, seulement un assemblage.
+ *
+ * ── PAS DE TUILES DE CHECKLIST SUR CET ÉCRAN ──
+ *
+ * `TUILES_RESERVER` décrit les Moments (activités, arrivées, files, offres) et
+ * reste rendue sur `/dashboard/moments`. Ici, le fil des quatre étapes de
+ * `SallePanneau` joue ce rôle, et mieux : il ne dit pas seulement ce qui manque,
+ * il porte le geste qui le comble.
  */
-export type ModeAgenda = "rendez_vous" | "moment";
+export default async function ReservationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ salle?: string }>;
+}) {
+  const { salle: salleDemandee } = await searchParams;
 
-interface ConfigAgenda {
-  /** Le droit qui ouvre l'écran — deux add-ons distincts depuis RDV-5. */
-  entitlement: "reserver" | "rendez_vous";
-  titre: string;
-  sousTitre: string;
-  /** Files d'accueil et offres de stock : Moments seulement. */
-  avecAccueil: boolean;
-  /**
-   * LES MOTS DU PRODUIT. « Activité » est juste pour un atelier et creux
-   * pour un restaurant : celui qui ouvre « Réservation » cherche à décrire
-   * SA SALLE, et un écran qui lui propose de créer une « activité » le
-   * laisse chercher s'il est au bon endroit.
-   */
-  motCreer: string;
-  videTitre: string;
-  videAide: string;
-}
-
-const CONFIG: Record<ModeAgenda, ConfigAgenda> = {
-  rendez_vous: {
-    entitlement: "rendez_vous",
-    titre: "Réservation",
-    sousTitre:
-      "Posez vos horaires une fois : les créneaux se génèrent, vos clients prennent rendez-vous depuis votre Vitrine.",
-    avecAccueil: false,
-    motCreer: "+ Créer ma salle",
-    videTitre: "Vous n'avez pas encore de salle.",
-    videAide:
-      "Créez-la, puis réglez-la par étapes : vos horaires, vos tables, la durée d'un service. Vos clients réserveront ensuite depuis votre Vitrine.",
-  },
-  moment: {
-    entitlement: "reserver",
-    titre: "Moments",
-    sousTitre:
-      "Ateliers, dégustations, files d'accueil : faites vivre un moment à vos clients.",
-    avecAccueil: true,
-    motCreer: "+ Nouvelle activité",
-    videTitre: "Aucune activité pour l'instant. Créez la première !",
-    videAide: "",
-  },
-};
-
-/**
- * L'AGENDA DU COMMERÇANT — ses activités réservables, et son écran d'arrivées.
- *
- * ── LE MODULE S'APPELLE `reserver`, PAS `reservations` ──
- *
- * L'agenda a longtemps été une des trois capacités du droit `vitrine`, avec la
- * publication de la carte et le CRM léger. La migration 20261020120000 lui a
- * donné SA PROPRE CLÉ, `reserver` : l'agenda se vend seul, et la Vitrine aussi.
- * `capacitesDuModule` prend donc `"reserver"`, et l'encart d'offre porte le même
- * entitlement — sans quoi il proposerait à l'achat un produit qui n'ouvre plus
- * cet écran. Nommer ici un module qui n'existe pas ferait échouer `tsc` sur
- * `GrantableModule`, ce qui est le comportement souhaité.
- *
- * ── DEUX VERDICTS, ET ILS NE DISENT PAS LA MÊME CHOSE ──
- *
- * `capacitesDuModule` décide de ce que la page MONTRE : découvrir reste ouvert
- * à tous (cahier §3), c'est pourquoi un commerçant sans le droit voit quand même
- * l'écran et son encart d'offre. `loadReserverDashboardContext` décide de ce
- * qu'elle LIT : sans droit effectif il rend `no_access`, et la liste est vide —
- * la découverte ne donne pas accès aux données. Confondre les deux aurait soit
- * fermé la porte à qui veut comprendre ce qu'il achèterait, soit ouvert des
- * lignes à qui n'y a pas droit.
- *
- * ── PAS DE FILTRES NI DE PAGINATION, ET C'EST DÉLIBÉRÉ ──
- *
- * Les huit pages liste des animations portent `ModuleListFilters` et
- * `Pagination` parce qu'un commerçant y accumule des dizaines de campagnes
- * archivées. Une activité réservable est un objet de catalogue —
- * « Dégustation », « Atelier floral » — dont on tient trois ou quatre, et qui ne
- * s'archive pas : elle se coupe. Un filtre par statut sur deux valeurs et une
- * pagination sur quatre lignes ajouteraient deux contrôles à lire pour rien. Le
- * jour où un commerçant en tient trente, ces deux composants existent et
- * s'ajoutent sans rien changer d'autre.
- */
-export async function PageAgenda({ mode }: { mode: ModeAgenda }) {
-  const config = CONFIG[mode];
-  const { organization } = await getUserAndOrg();
-
-  // Découvrir / préparer / publier (cahier §3).
-  const capacites = await capacitesDuModule(config.entitlement);
+  // Découvrir / préparer / publier (cahier §3). Le droit de CET écran est
+  // `rendez_vous`, son propre add-on depuis RDV-5 — `reserver` ne couvre plus
+  // que les Moments.
+  const capacites = await capacitesDuModule("rendez_vous");
   if (!capacites.canExplore) notFound();
 
-  // Les deux lectures sont INDÉPENDANTES — l'agenda des créneaux d'un côté, les
-  // files d'accueil de l'autre — et n'ont aucune donnée en commun : les
-  // enchaîner aurait ajouté un aller-retour à une page que le commerçant ouvre
-  // en début de service.
-  // Les trois lectures sont INDÉPENDANTES — l'agenda des créneaux, les files
-  // d'accueil, les offres de stock — et n'ont aucune donnée en commun.
-  const [agenda, filesAccueil, offresStock] = await Promise.all([
-    loadReserverDashboardContext(),
-    loadReserverQueuesDashboardContext(),
-    loadStockOffersDashboardContext(),
-  ]);
-  // LE FILTRE QUI SÉPARE LES DEUX PRODUITS. Une activité appartient à l'un ou
-  // à l'autre, jamais aux deux : `booking_mode` est exclusif.
-  const activites = agenda.ok
-    ? agenda.activities.filter((a) => a.bookingMode === mode)
-    : [];
-  const files = config.avecAccueil && filesAccueil.ok ? filesAccueil.queues : [];
-  const timeZone = agenda.ok
-    ? agenda.timezone
-    : (organization?.timezone ?? RESERVER_FUSEAU_DEFAUT);
+  const agenda = await loadReserverDashboardContext();
 
-  // LES QUATRE TUILES DE CETTE PAGE, dans l'ordre du rendu — `TUILES_RESERVER`
-  // le tient, pas ce fichier : le rang se lit de la position dans la table, et
-  // le recopier ici en ferait une seconde table à tenir d'accord.
-  //
-  // Les deux entrées se passent telles quelles : `agenda.activities` porte déjà
-  // `id`, `active`, `kind` et ses créneaux, et les files leur `status` et leur
-  // `activityId` — c'est de ce croisement que naît le contrôle `files-activite`,
-  // le même défaut que la pastille corrigée dans `FilesAccueilPanneau`.
-  const tuiles = tuilesDuModule(
-    "reserver",
-    construireVerificationReserver({ activites, files }).controles,
+  // `booking_mode` est exclusif : une salle n'apparaît jamais dans les Moments,
+  // et réciproquement.
+  const salles = agenda.ok
+    ? agenda.activities.filter((a) => a.bookingMode === "rendez_vous")
+    : [];
+
+  const notice = (
+    <ModuleCapabilityNotice capacites={capacites} entitlement="rendez_vous">
+      Vos horaires posés une fois, les créneaux qui se génèrent, votre plan de
+      salle et le calendrier de vos services — vos clients réservent depuis votre
+      Vitrine, sans compte.
+    </ModuleCapabilityNotice>
   );
+
+  /**
+   * L'ÉTAT SANS SALLE : UNE SEULE CARTE, ET RIEN D'AUTRE.
+   *
+   * Ni arrivées, ni agenda vide, ni plan sans table. Chacun de ces blocs
+   * fonctionne parfaitement une fois la salle née et ne montre rigoureusement
+   * rien avant — les empiler ferait traverser au commerçant cinq cadres vides
+   * pour trouver le seul bouton qui le fait avancer. La phrase annonce les
+   * quatre étapes qu'il va rencontrer : ce qui l'attend est court, et le dire
+   * évite qu'il renonce au premier écran de réglages.
+   */
+  if (salles.length === 0) {
+    return (
+      <div>
+        <PageHeader
+          surtitre="Vos animations"
+          titre="Réservation"
+          sousTitre="Votre salle, vos horaires, votre calendrier : ce que vos clients voient quand ils réservent une table."
+        />
+
+        {notice}
+
+        <div className="mt-8 flex justify-center">
+          <Card className="w-full max-w-xl text-center">
+            <h2>Vous n&apos;avez pas encore de salle.</h2>
+            <p className="mt-3 text-sm font-semibold text-k-body">
+              Quatre étapes, dans cet ordre : vos horaires d&apos;ouverture, vos
+              tables, la durée d&apos;un service — puis vous ouvrez vos créneaux.
+              Vos clients réservent ensuite depuis votre Vitrine.
+            </p>
+            {capacites.canEditDraft ? (
+              <div className="mt-6 flex justify-center">
+                <NouvelleActiviteForm
+                  instanceId="-salle"
+                  bookingMode="rendez_vous"
+                  libelle="+ Créer ma salle"
+                />
+              </div>
+            ) : null}
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * PLUSIEURS SALLES : CAS HISTORIQUE, PAS UN CAS SOUTENU.
+   *
+   * Rien n'empêchait, avant ce lot, de créer deux activités en `rendez_vous`
+   * depuis l'ancienne liste. Ces données existent et ne doivent PAS disparaître
+   * de l'écran — d'où le sélecteur. Mais il reste discret et sans bouton
+   * d'ajout : on donne accès à ce qui a été créé, on n'encourage pas à en créer
+   * davantage.
+   */
+  const salle = salles.find((a) => a.id === salleDemandee) ?? salles[0];
+
+  const { role } = await getUserAndOrg();
+
+  /**
+   * LE RÔLE DÉCIDE DE CE QUI S'AFFICHE, PAS SEULEMENT DE CE QUI PASSE.
+   *
+   * `evict_waitlist_entry` refuse un caissier et un lecteur — le bouton
+   * « Retirer » leur échouait donc SYSTÉMATIQUEMENT, et un geste qui ne peut
+   * qu'échouer se lit comme une panne. Ce n'est PAS la garde : la server action
+   * revérifie, comme toujours — c'est l'écran qui cesse de mentir.
+   */
+  const peutRetirer = role === "owner" || role === "editor";
+
+  // Les horaires, les tables et la durée de service sont chargés à part : la
+  // lecture d'agenda ne les porte pas (voir `reserver-horaires-context.ts`).
+  const horaires = await loadHorairesActivite(salle.id);
+
+  const timeZone = agenda.ok ? agenda.timezone : "UTC";
+
+  /**
+   * LA JOURNÉE D'ANCRAGE, CALCULÉE AU SERVEUR DANS LE FUSEAU DU COMMERCE.
+   *
+   * La laisser au navigateur donnerait deux résultats : le commerçant en
+   * déplacement s'ancrerait sur SA date locale, pas celle de son commerce, et le
+   * premier rendu client différerait du rendu serveur — un écart d'hydratation,
+   * pour une valeur qui n'a rien d'incertain.
+   */
+  const aujourdHui = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  /**
+   * LES RÉSERVATIONS, APLATIES POUR LE PLAN DE SALLE.
+   *
+   * L'heure d'une réservation est celle de SON CRÉNEAU : `reservations` ne porte
+   * pas d'instant propre, et en inventer un ici ferait diverger le plan de
+   * l'agenda dès qu'un créneau serait déplacé.
+   *
+   * `prenom` est délibérément `null` : `email` n'est pas dans le grant de
+   * colonnes du commerçant (voir `RESERVATION_COLUMNS`), et aucune autre colonne
+   * ne porte de nom. Le service reconnaît ses clients au CODE.
+   */
+  const reservationsSalle = salle.slots.flatMap((slot) =>
+    slot.reservations.map((reservation) => ({
+      id: reservation.reservationId,
+      tableId: reservation.tableId,
+      startsAt: slot.startsAt,
+      effectif: reservation.partySize,
+      code: reservation.code,
+      statut: reservation.status,
+      prenom: null,
+    })),
+  );
+
+  // Les créneaux OUVERTS : la quatrième étape du fil de la salle ne demande pas
+  // « avez-vous des créneaux » mais « en avez-vous d'ouverts » — un brouillon ne
+  // prend aucune réservation.
+  const creneauxOuverts = salle.slots.filter(
+    (slot) => slot.status === "open",
+  ).length;
 
   return (
     <div>
+      {/* PAS DE FIL D'ARIANE « RETOUR AUX RÉSERVATIONS » : on Y EST. Le titre
+          est le nom de la salle parce que c'est le seul repère qui distingue
+          deux salles chez ceux qui en ont hérité plusieurs. */}
       <PageHeader
         surtitre="Vos animations"
-        titre={config.titre}
-        sousTitre={config.sousTitre}
-        actions={
-          capacites.canEditDraft ? (
-            <NouvelleActiviteForm
-              bookingMode={mode}
-              libelle={config.motCreer}
-            />
-          ) : null
-        }
+        titre={salle.name}
+        sousTitre="Vos horaires, vos tables, votre calendrier — et le QR que vos clients scannent pour réserver."
       />
 
-      <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
-        Activités et créneaux à places limitées, réservation sans compte,
-        confirmation par email au choix du client, et enregistrement des arrivées
-        en caisse par code court.
-      </ModuleCapabilityNotice>
+      {notice}
 
-      {/* LES QUATRE BLOCS NUMÉROTÉS. L'espacement est porté ICI, par
-          `space-y-8`, et non plus par un `mt-8` à l'intérieur de chaque carte :
-          une marge interne aurait laissé la pastille de rang — posée sur le
-          coin haut-gauche de l'enveloppe — flotter 32 px au-dessus du titre
-          qu'elle numérote. */}
-      <div className="mt-8 space-y-8">
-      {/* LE PREMIER BLOC DEVIENT UNE CARTE TITRÉE, DEPUIS QU'IL PORTE UN RANG.
-          La liste des activités flottait sous l'en-tête de page, sans titre ni
-          cadre : une pastille « 1 » et un badge de verdict s'y seraient posés
-          sur la première ligne de la liste, sans rien qui dise de quoi ils sont
-          le rang. Elle prend donc la même forme que les trois blocs suivants —
-          `<Card>` et `<h2>` — et son état vide le motif de `FilesAccueilPanneau`
-          plutôt qu'une carte dans une carte. Le titre est celui de la tuile,
-          écrit une seule fois dans `TUILES_RESERVER`. */}
-      <CarteRepliable {...carteTuile(tuiles, "activites")}>
-        <Card>
-        <h2>Vos activités</h2>
-      {activites.length === 0 ? (
-        <div className="mt-5 rounded-xl border-2 border-dashed border-k-ink/25 px-4 py-8 text-center">
-          <p className="text-sm font-semibold text-k-body">
-            {config.videTitre}
-          </p>
-          {config.videAide ? (
-            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-500">
-              {config.videAide}
-            </p>
-          ) : null}
-          {/* LE BOUTON EST ICI AUSSI : « créez la première » sans rien à
-              cliquer laisse le seul bouton en haut d'écran, hors du regard de
-              celui qui vient de lire la phrase. */}
-          {capacites.canEditDraft ? (
-            <div className="mt-4 flex justify-center">
-              <NouvelleActiviteForm
-                instanceId="-vide"
-                bookingMode={mode}
-                libelle={config.motCreer}
-              />
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <ul className="mt-5 space-y-3">
-          {activites.map((activite) => {
-            // « Ouverts à venir » au sens du joueur : c'est `etatUiCreneau` qui
-            // en décide, comme sur la page publique. Un compte calculé
-            // autrement ici ferait dire au tableau de bord « 3 créneaux » là où
-            // le client n'en voit qu'un.
-            //
-            // LE FORMAT ENTRE DANS LE VERDICT (RES-5), et sans lui la phrase
-            // ci-dessus cessait d'être vraie : sur un Atelier Duo à qui il reste
-            // UNE place, `etatUiCreneau` rend « complet » — une place isolée
-            // n'est prenable par personne — mais seulement si on lui DIT que
-            // c'est un duo. Sans `kind`, cet écran comptait le créneau comme
-            // ouvert quand la page publique affichait « complet » dessus : le
-            // commerçant lisait « 1 créneau ouvert à venir » et son client ne
-            // pouvait pas réserver.
-            //
-            // Le format vit sur l'ACTIVITÉ, pas sur le créneau
-            // (`ReserverSlotDashboardView` ne le porte pas, et c'est voulu — un
-            // même Atelier Duo ne peut pas changer d'unité selon l'heure). On le
-            // joint donc ici, à la lecture.
-            const ouverts = activite.slots.filter(
-              (creneau) =>
-                etatUiCreneau({ ...creneau, kind: activite.kind }) === "ouvert",
-            ).length;
-            return (
-              <li key={activite.id}>
-                <Link
-                  href={`/dashboard/reservations/${activite.id}`}
-                  className="block rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-colors hover:border-orange-300"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="text-2xl" aria-hidden>
-                        🕑
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold">{activite.name}</p>
-                        <p className="mt-0.5 text-sm text-zinc-500">
-                          {ouverts > 0
-                            ? `${ouverts} créneau${ouverts > 1 ? "x" : ""} ouvert${ouverts > 1 ? "s" : ""} à venir`
-                            : "Aucun créneau ouvert à venir"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                    {/* Le format (RES-5) AVANT l'interrupteur : « Atelier Duo »
-                        dit ce que c'est, « Ouverte » dit seulement si ça tourne.
-                        Rien ne s'affiche sur une activité standard — c'est le
-                        défaut, et une colonne où chaque ligne porte le même mot
-                        ne montre plus les deux qui en portent un autre. */}
-                    <PastilleFormat kind={activite.kind} />
-                    <span
-                      className={`shrink-0 rounded-full border-2 border-k-ink px-3 py-1 text-xs font-black ${
-                        activite.active
-                          ? "bg-k-green/40 text-k-ink"
-                          : "bg-zinc-200 text-k-ink"
-                      }`}
-                    >
-                      {activite.active ? "Ouverte" : "Coupée"}
-                    </span>
-                    </div>
-                  </div>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-        </Card>
-      </CarteRepliable>
-
-      {/* L'écran d'arrivées est SOUS la liste et HORS d'une activité : le code
-          d'un client ne dit pas laquelle il a réservée, et demander au caissier
-          de choisir d'abord l'activité lui ferait chercher l'information qu'il
-          vient précisément d'obtenir. La RPC, elle, résout le code dans toute
-          l'organisation. */}
-      <CarteRepliable {...carteTuile(tuiles, "arrivees")}>
-        <ArriveesCheckin timeZone={timeZone} />
-      </CarteRepliable>
-
-      {/* LES FILES D'ACCUEIL SONT SOUS L'AGENDA, ET C'EST L'ORDRE DE LA JOURNÉE :
-          on prépare ses créneaux le matin, on tient sa file toute la journée. La
-          console est ouverte au CAISSIER — elle ne dépend pas de `canEditDraft`,
-          qui ne gouverne que la création et les réglages, passés en `peutEditer`. */}
-      {/* FILES D'ACCUEIL ET OFFRES DE STOCK : MOMENTS SEULEMENT. Une prise de
-          rendez-vous n'a ni file d'attente — on a une heure — ni invendu de
-          dernière minute. Les afficher aurait proposé deux outils sans
-          emploi sur cet écran-là. */}
-      {config.avecAccueil ? (
-        <>
-      <CarteRepliable {...carteTuile(tuiles, "files")}>
-      <FilesAccueilPanneau
-        files={files}
-        // `active` EN PLUS DU NOM : couper une activité referme ses files côté
-        // `queue_join`, et la vue d'une file ne porte que son propre `status`.
-        // Sans ce drapeau, la pastille lisait « Ouverte » sur une file qui
-        // refusait tout le monde.
-        activites={activites.map((a) => ({
-          id: a.id,
-          name: a.name,
-          active: a.active,
-        }))}
-        peutEditer={capacites.canEditDraft}
-        appUrl={APP_URL}
-        // Le Mode Attente active (RES-4) : ce qu'on peut proposer pendant
-        // l'attente. Les deux listes sont celles de l'organisation, résolues
-        // côté serveur — un identifiant de quiz ou de campagne ne se saisit pas.
-        quiz={agenda.ok ? agenda.waitQuiz : []}
-        campagnes={agenda.ok ? agenda.waitCampaigns : []}
-      />
-      </CarteRepliable>
-
-      {/* LES OFFRES DE STOCK EN DERNIER, ET C'EST LA MÊME LOGIQUE DE JOURNÉE :
-          on prépare ses créneaux le matin, on tient sa file toute la journée, et
-          on solde son invendu en fin de service. Le geste du caissier n'est pas
-          ici — le retrait se fait en CAISSE, par le code — d'où l'absence de
-          console et le seul droit d'édition. */}
-      <CarteRepliable {...carteTuile(tuiles, "offres")}>
-        <OffresStockPanneau
-          offres={offresStock.ok ? offresStock.offers : []}
-          peutEditer={capacites.canEditDraft}
-          appUrl={APP_URL}
-          timeZone={timeZone}
-        />
-      </CarteRepliable>
-        </>
+      {/* LE SÉLECTEUR N'APPARAÎT QUE S'IL Y A UN CHOIX À FAIRE. Sur une salle
+          unique — le cas de tout le monde — il n'ajoute rien à lire. */}
+      {salles.length > 1 ? (
+        <nav
+          aria-label="Vos salles"
+          className="mt-6 flex flex-wrap items-center gap-2"
+        >
+          {salles.map((autre) => (
+            <Link
+              key={autre.id}
+              href={
+                autre.id === salles[0].id
+                  ? "/dashboard/reservations"
+                  : `/dashboard/reservations?salle=${autre.id}`
+              }
+              aria-current={autre.id === salle.id ? "page" : undefined}
+              className={`rounded-full border-2 border-k-ink px-3 py-1 text-xs font-black ${
+                autre.id === salle.id ? "bg-k-yellow/40" : "bg-white"
+              }`}
+            >
+              {autre.name}
+            </Link>
+          ))}
+        </nav>
       ) : null}
+
+      {/* LE FIL DES QUATRE ÉTAPES EN TÊTE D'ÉCRAN, ET C'EST LE CŒUR DE CE LOT.
+          C'est le paramétrage par étape que le propriétaire cherchait : il doit
+          être la première chose lue, avant les panneaux qu'il commande. Posé en
+          bas, il serait devenu le récapitulatif de ce qu'on venait de faire au
+          hasard — l'inverse de son emploi. */}
+      <SallePanneau
+        activityId={salle.id}
+        bookingMode={horaires.reglages.bookingMode}
+        tables={horaires.tables}
+        dureeServiceMinutes={horaires.reglages.dureeServiceMinutes}
+        pasMinutes={horaires.reglages.dureeMinutes}
+        nombreDePlages={horaires.plages.length}
+        creneauxOuverts={creneauxOuverts}
+      />
+
+      {/* LES HORAIRES AVANT LE CALENDRIER : ils DÉCIDENT de ce qu'il contient.
+          Les poser après ferait lire le résultat avant sa cause. */}
+      <HorairesPanneau
+        activityId={salle.id}
+        bookingMode={horaires.reglages.bookingMode}
+        dureeMinutes={horaires.reglages.dureeMinutes}
+        capacite={horaires.reglages.capacite}
+        horizonJours={horaires.reglages.horizonJours}
+        delaiMinutes={horaires.reglages.delaiMinutes}
+        plages={horaires.plages}
+        fermetures={horaires.fermetures}
+      />
+
+      {/* LE CALENDRIER JOUR / SEMAINE / MOIS — ce que le propriétaire disait ne
+          pas trouver. Il répond à « où reste-t-il de la place », question à
+          laquelle la liste des créneaux ci-dessous ne répond pas. */}
+      <PlanSalleVue
+        tables={horaires.tables}
+        reservations={reservationsSalle}
+        timeZone={timeZone}
+        aujourdHui={aujourdHui}
+        dureeServiceMinutes={horaires.reglages.dureeServiceMinutes}
+      />
+
+      {/* LA LISTE APRÈS LE CALENDRIER : on cherche d'abord une place, et
+          seulement ensuite « qui vient à 14 h ». Elle garde les réservations, le
+          retrait de file et l'annulation — le calendrier ne les remplace pas. */}
+      <CreneauxAgenda
+        activityId={salle.id}
+        creneaux={salle.slots}
+        timeZone={timeZone}
+        peutRetirer={peutRetirer}
+      />
+
+      {/* UN RESTAURANT POINTE SES ARRIVÉES : le bloc reste, et il est hors de
+          tout créneau — le code d'un client ne dit pas quelle heure il a prise,
+          et la RPC le résout dans toute l'organisation. */}
+      <div className="mt-8">
+        <ArriveesCheckin timeZone={timeZone} />
+      </div>
+
+      {/* LE QR ET LE LIEN QUE LES CLIENTS SCANNENT. L'adresse est STABLE — elle
+          ne porte que l'identifiant de la salle, jamais un jeton (ADR-109) —
+          donc une affiche imprimée et collée en vitrine survit à la page qui l'a
+          produite. */}
+      <div className="mt-8">
+        <PublicShare
+          url={urlActiviteReserver(salle.id, APP_URL)}
+          fileName={`reservation-${salle.id}`}
+          qrLabel={salle.name}
+        />
       </div>
     </div>
   );
-}
-
-/**
- * LA ROUTE « RÉSERVATION » — la prise de rendez-vous.
- *
- * Elle ne montre que les activités dont les créneaux sont ENGENDRÉS par des
- * horaires. Les Moments ont leur propre route, `/dashboard/moments`, et leur
- * propre droit : deux add-ons distincts depuis RDV-5.
- */
-export default async function ReservationsPage() {
-  return <PageAgenda mode="rendez_vous" />;
 }

@@ -66,7 +66,11 @@ test.describe("réserver — parcours public puis comptoir", () => {
     expect(contenu).not.toContain("@e2e.local");
 
     // ── 3. Comptoir : saisie du code → « arrivée enregistrée ».
-    await page.goto("/dashboard/reservations");
+    // RDV-13 : la console d'arrivées des MOMENTS vit sur `/dashboard/moments`.
+    // `/dashboard/reservations` est devenue LA SALLE de prise de rendez-vous et
+    // ne montre plus rien tant qu'aucune salle n'existe — or l'activité semée
+    // ici est un Moment (`booking_mode` par défaut).
+    await page.goto("/dashboard/moments");
     await expect(page.getByRole("heading", { name: "Arrivées" })).toBeVisible(
       { timeout: 30_000 },
     );
@@ -112,7 +116,7 @@ test.describe("réserver — parcours public puis comptoir", () => {
     // l'état serveur est là, mais la navigation sous-jacente peut encore être
     // en vol. Un `page.goto` immédiat vers une autre URL se fait alors
     // interrompre par elle (WebKit : « Navigation … is interrupted by
-    // another navigation to …/dashboard/reservations »).
+    // another navigation to …/dashboard/moments »).
     await page.waitForLoadState("networkidle");
 
     // ── 5. Tentative d'annulation de la réservation arrivée : le bouton
