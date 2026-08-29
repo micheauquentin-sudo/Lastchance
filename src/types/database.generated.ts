@@ -2944,17 +2944,17 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "jackpot_participants_loyalty_stamp_organization_fkey"
-            columns: ["loyalty_stamp_id", "organization_id"]
-            isOneToOne: false
-            referencedRelation: "loyalty_stamps"
-            referencedColumns: ["id", "organization_id"]
-          },
-          {
             foreignKeyName: "jackpot_participants_campaign_id_organization_id_fkey"
             columns: ["campaign_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "jackpot_participants_loyalty_stamp_organization_fkey"
+            columns: ["loyalty_stamp_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_stamps"
             referencedColumns: ["id", "organization_id"]
           },
           {
