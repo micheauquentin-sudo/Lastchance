@@ -210,6 +210,16 @@ const HORS_FORMULAIRE: Exclusion[] = [
       "Relecture de ses réservations : corps d'action typé, l'organisation vient du contexte de la page publique.",
   },
   {
+    chemin: "reserver:reserverTableSchema",
+    raison:
+      "Réservation d une TABLE (RDV-8) : corps d action typé, jumeau de reserveSlotSchema — même équivalence email ⇔ consentement, qui ne doit jamais se déduire d un champ absent.",
+  },
+  {
+    chemin: "reserver:rejoindreListeAttenteTableSchema",
+    raison:
+      "Attente d une table pour un effectif (RDV-8) : corps d action typé, jumeau de waitlistJoinSchema — l adresse y est REQUISE, mais consentement et jeton anti-robot gardent la même règle.",
+  },
+  {
     chemin: "reserver:waitlistJoinSchema",
     raison:
       "Entrée en liste prioritaire : corps d'action typé — même équivalence email ⇔ consentement que la réservation, elle ne doit pas se déduire d'un champ absent.",
