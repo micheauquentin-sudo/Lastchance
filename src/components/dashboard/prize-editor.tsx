@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { addPrize, deletePrize, updatePrize } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { partSur10 } from "@/components/dashboard/part-sur-10";
@@ -81,7 +81,7 @@ export function PrizeEditor({
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+            <h2 className={TITRE_SURLIGNE}>
               Lots ({prizes.length}/{MAX_LOTS})
             </h2>
             <p className="text-sm text-zinc-500 mt-0.5">
