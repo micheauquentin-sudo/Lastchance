@@ -34,6 +34,58 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     publicStateResponse: { state: "ok", timezone: "Europe/Paris", reservations: [], waitlist: [] } as unknown,
     cancelStaffResponse: { state: "cancelled" } as unknown,
     waitlistJoinResponse: { state: "waiting", entry_id: "e1", status: "waiting", position: 2 } as unknown,
+    /** Ce que `reserve_table` rend (RDV-8, migration 20261108120000). */
+    reserveTableResponse: {
+      state: "reserved",
+      reservation_id: "44444444-4444-4444-8444-444444444444",
+      code: "ABCD2345",
+      party_size: 4,
+      table_name: "Table 3",
+    } as unknown,
+    /**
+     * Ce que `waitlist_join_table` rend (RDV-8, migration 20261110120000).
+     * `joined`, et non `waiting` : les deux RPC nomment différemment la même
+     * ligne, et c'est l'action qui les réconcilie.
+     */
+    waitlistJoinTableResponse: {
+      state: "joined",
+      entry_id: "e1",
+      status: "waiting",
+      position: 2,
+      party_size: 4,
+      offer_expires_at: null,
+    } as unknown,
+    /** Qui prévenir quand une table se libère — `reservation_table_freed_targets`. */
+    tableFreedTargets: {
+      state: "ok",
+      max_party: 4,
+      starts_at: "2026-09-01T12:00:00Z",
+      activity_name: "Chez Marco",
+      targets: [
+        {
+          entry_id: "e1",
+          email: "duo@exemple.fr",
+          party_size: 2,
+          created_at: "2026-08-20T09:00:00Z",
+        },
+        {
+          entry_id: "e2",
+          email: "quatuor@exemple.fr",
+          party_size: 4,
+          created_at: "2026-08-20T09:05:00Z",
+        },
+      ],
+    } as unknown,
+    /**
+     * L'ACTIVITÉ que les lectures org-scopées rapportent. `moment` par défaut —
+     * exactement le défaut de la colonne SQL (20261106120000) : une salle se
+     * déclare, elle ne s'obtient pas par omission.
+     */
+    activiteRow: {
+      id: "33333333-3333-4333-8333-333333333333",
+      name: "Dégustation",
+      booking_mode: "moment",
+    } as Record<string, unknown> | null,
     claimResponse: {
       state: "claimed",
       entry_id: "e1",
@@ -189,6 +241,8 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     turnstileVerdict: true,
     turnstileJetons: [] as Array<string | undefined>,
     emails: [] as Array<Record<string, unknown>>,
+    /** Les signalements de table libérée, à part : ils ne se comptent pas avec les confirmations. */
+    emailsTable: [] as Array<Record<string, unknown>>,
     emailLeve: false,
     taches: [] as Array<Promise<unknown>>,
     role: "owner" as string | null,
@@ -208,6 +262,46 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.publicStateResponse = { state: "ok", timezone: "Europe/Paris", reservations: [], waitlist: [] };
       state.cancelStaffResponse = { state: "cancelled" };
       state.waitlistJoinResponse = { state: "waiting", entry_id: "e1", status: "waiting", position: 2 };
+      state.reserveTableResponse = {
+        state: "reserved",
+        reservation_id: "44444444-4444-4444-8444-444444444444",
+        code: "ABCD2345",
+        party_size: 4,
+        table_name: "Table 3",
+      };
+      state.waitlistJoinTableResponse = {
+        state: "joined",
+        entry_id: "e1",
+        status: "waiting",
+        position: 2,
+        party_size: 4,
+        offer_expires_at: null,
+      };
+      state.tableFreedTargets = {
+        state: "ok",
+        max_party: 4,
+        starts_at: "2026-09-01T12:00:00Z",
+        activity_name: "Chez Marco",
+        targets: [
+          {
+            entry_id: "e1",
+            email: "duo@exemple.fr",
+            party_size: 2,
+            created_at: "2026-08-20T09:00:00Z",
+          },
+          {
+            entry_id: "e2",
+            email: "quatuor@exemple.fr",
+            party_size: 4,
+            created_at: "2026-08-20T09:05:00Z",
+          },
+        ],
+      };
+      state.activiteRow = {
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "Dégustation",
+        booking_mode: "moment",
+      };
       state.claimResponse = {
         state: "claimed",
         entry_id: "e1",
@@ -342,6 +436,7 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.turnstileVerdict = true;
       state.turnstileJetons = [];
       state.emails = [];
+      state.emailsTable = [];
       state.emailLeve = false;
       state.taches = [];
       state.role = "owner";
@@ -394,6 +489,18 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         }
         if (name === "waitlist_join") {
           return Promise.resolve({ data: state.waitlistJoinResponse, error: null });
+        }
+        if (name === "reserve_table") {
+          return Promise.resolve({ data: state.reserveTableResponse, error: null });
+        }
+        if (name === "waitlist_join_table") {
+          return Promise.resolve({
+            data: state.waitlistJoinTableResponse,
+            error: null,
+          });
+        }
+        if (name === "reservation_table_freed_targets") {
+          return Promise.resolve({ data: state.tableFreedTargets, error: null });
         }
         if (name === "claim_waitlist_offer") {
           return Promise.resolve({ data: state.claimResponse, error: null });
@@ -469,7 +576,11 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
             }
             if (table === "reservations") {
               return Promise.resolve({
-                data: { id: "44444444-4444-4444-8444-444444444444", slot_id: "22222222-2222-4222-8222-222222222222" },
+                data: {
+                  id: "44444444-4444-4444-8444-444444444444",
+                  organization_id: "11111111-1111-4111-8111-111111111111",
+                  slot_id: "22222222-2222-4222-8222-222222222222",
+                },
                 error: null,
               });
             }
@@ -494,10 +605,7 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
               });
             }
             if (table === "reservation_activities") {
-              return Promise.resolve({
-                data: { id: "33333333-3333-4333-8333-333333333333", name: "Dégustation" },
-                error: null,
-              });
+              return Promise.resolve({ data: state.activiteRow, error: null });
             }
             return Promise.resolve({
               data: { name: "Chez Marco", timezone: "Europe/Paris" },
@@ -736,6 +844,14 @@ vi.mock("@/lib/resend", () => ({
     if (state.emailLeve) return Promise.reject(new Error("resend indisponible"));
     return Promise.resolve(true);
   },
+  // Le SIGNALEMENT DE TABLE LIBÉRÉE (RDV-8), dans sa propre liste : il ne se
+  // compte pas avec les confirmations, et c'est le point du lot — un message
+  // par destinataire, chacun avec SON effectif.
+  sendTableFreedEmail: (params: Record<string, unknown>) => {
+    state.emailsTable.push(params);
+    if (state.emailLeve) return Promise.reject(new Error("resend indisponible"));
+    return Promise.resolve(true);
+  },
 }));
 
 import {
@@ -761,6 +877,8 @@ import {
   queueReopen,
   queueResolve,
   redeemInvitation,
+  rejoindreListeAttenteTable,
+  reserverTable,
   reserveSlot,
   revokeInvitation,
   updateReserverActivity,
@@ -3080,5 +3198,363 @@ describe("updateReserverActivity — le trigger qui gèle le format PARLE (L8)",
     expect(res.ok === false && res.error).toBe(
       "Le format n'a pas pu changer : des réservations ou attentes vivantes existent. Rechargez la page.",
     );
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LA SALLE (RDV-8) — l'effectif, l'attente, et le signalement d'annulation
+//
+// Ce que ces tests attestent :
+//   · l'effectif transmis à la RPC est celui que Zod a validé, et 0 / 31 / 1.5
+//     sont refusés AVANT le moindre aller-retour ;
+//   · `full` remonte TEL QUEL — l'écran doit pouvoir proposer l'attente ;
+//   · on n'attend pas sans adresse, et le refus dit POURQUOI ;
+//   · une annulation sur une salle envoie UN message PAR destinataire, chacun
+//     avec SON effectif — on notifie, on ne tient pas ;
+//   · le TÉMOIN : une annulation sur un Moment ne signale RIEN.
+// ════════════════════════════════════════════════════════════
+
+describe("reserverTable — l'effectif est énoncé, pas deviné", () => {
+  it("transmet à la RPC l'effectif VALIDÉ, avec l'empreinte du cookie", async () => {
+    const resultat = await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+    });
+
+    const appel = state.rpcCalls.find((c) => c.name === "reserve_table");
+    expect(appel?.args.p_party_size).toBe(4);
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+    expect(appel?.args.p_organization_id).toBe(ORG_ID);
+    expect(appel?.args.p_slot_id).toBe(SLOT_ID);
+    expect(resultat.ok).toBe(true);
+    expect(resultat.ok === true && resultat.data.state).toBe("reserved");
+  });
+
+  it("porte les mêmes seaux que reserveSlot — appareil AVANT organisation", async () => {
+    await reserverTable({ organizationId: ORG_ID, slotId: SLOT_ID, partySize: 2 });
+
+    expect(state.rateLimitCalls[0].bucket).toBe(`reserver:device:${EMPREINTE}`);
+    expect(state.rateLimitCalls[1].bucket).toBe(
+      `reserver:player:${ORG_ID}:${EMPREINTE}`,
+    );
+    expect(state.pressions.map((p) => p.evenement)).toEqual([
+      "reserver_ip_ceiling",
+      "reserver_public_pressure",
+    ]);
+  });
+
+  for (const [libelle, effectif] of [
+    ["une tablée de zéro", 0],
+    ["trente et une personnes", 31],
+    ["un effectif fractionnaire", 1.5],
+  ] as const) {
+    it(`refuse ${libelle} AVANT tout appel`, async () => {
+      const resultat = await reserverTable({
+        organizationId: ORG_ID,
+        slotId: SLOT_ID,
+        partySize: effectif,
+      });
+
+      expect(resultat.ok).toBe(false);
+      // Ni RPC, ni seau : le refus tombe sur le schéma, avant toute requête.
+      expect(state.rpcCalls).toHaveLength(0);
+      expect(state.rateLimitCalls).toHaveLength(0);
+    });
+  }
+
+  it("refuse un effectif ABSENT — dans une salle, la question est posée", async () => {
+    // Contrairement à `reserveSlot`, qui vaut 1 par défaut parce que la valeur
+    // y est la taille du FORMAT, recopiée par l'écran depuis l'activité.
+    const resultat = await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+    } as unknown as {
+      organizationId: string;
+      slotId: string;
+      partySize: number;
+    });
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("remonte `full` TEL QUEL — c'est l'écran qui propose la liste d'attente", async () => {
+    state.reserveTableResponse = { state: "full" };
+    const resultat = await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 6,
+    });
+
+    // `ok: true` : ce n'est pas une panne, c'est une réponse. La traiter en
+    // erreur aurait fait lire « Une erreur est survenue » à quelqu'un dont le
+    // seul problème est qu'ils sont six.
+    expect(resultat.ok).toBe(true);
+    expect(resultat.ok === true && resultat.data.state).toBe("full");
+  });
+
+  it("n'envoie la confirmation que consentie, et hors du chemin de réponse", async () => {
+    await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "Table@Exemple.FR",
+      consent: true,
+    });
+    expect(state.emails).toHaveLength(0);
+    await Promise.all(state.taches);
+
+    // L'adresse est celle que Zod a normalisée (trim + minuscules) : deux
+    // orthographes de la même boîte partagent le même seau.
+    expect(state.emails[0]?.to).toBe("table@exemple.fr");
+    expect(
+      state.rateLimitCalls.some(
+        (a) =>
+          a.bucket === `reserver:email:${ORG_ID}:table@exemple.fr` &&
+          a.failClosed,
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("rejoindreListeAttenteTable — attendre AVEC un effectif", () => {
+  it("transmet l'effectif validé et l'adresse à `waitlist_join_table`", async () => {
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "Attente@Exemple.FR",
+      consent: true,
+    });
+
+    const appel = state.rpcCalls.find((c) => c.name === "waitlist_join_table");
+    expect(appel?.args.p_party_size).toBe(4);
+    expect(appel?.args.p_email).toBe("attente@exemple.fr");
+    expect(appel?.args.p_player_key_hash).toBe(EMPREINTE);
+    expect(resultat.ok).toBe(true);
+    // `joined` côté SQL, `waiting` côté écran : la même ligne, un seul type.
+    expect(resultat.ok === true && resultat.data.state).toBe("waiting");
+    expect(resultat.ok === true && resultat.data.position).toBe(2);
+  });
+
+  it("refuse SANS ADRESSE, et le message dit pourquoi", async () => {
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      consent: true,
+    } as unknown as {
+      organizationId: string;
+      slotId: string;
+      partySize: number;
+      email: string;
+    });
+
+    expect(resultat.ok).toBe(false);
+    // Pas « Email invalide » : une liste d'attente sans moyen de prévenir ne
+    // sert à rien, et le client doit le LIRE plutôt que de le deviner.
+    expect(resultat.ok === false && resultat.error).toBe(
+      "Indiquez votre email : c'est le seul moyen de vous prévenir si une table se libère.",
+    );
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("refuse une adresse VIDE avec le même motif, jamais « Email invalide »", async () => {
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "   ",
+      consent: true,
+    });
+
+    expect(resultat.ok === false && resultat.error).toBe(
+      "Indiquez votre email : c'est le seul moyen de vous prévenir si une table se libère.",
+    );
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("refuse sans consentement — c'est par email qu'on préviendra", async () => {
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "attente@exemple.fr",
+      consent: false,
+    });
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("refuse 31 personnes AVANT l'aller-retour", async () => {
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 31,
+      email: "attente@exemple.fr",
+      consent: true,
+    });
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it("nomme le refus d'effectif plutôt que de le laisser retomber en `unavailable`", async () => {
+    state.waitlistJoinTableResponse = { state: "invalid_party_size" };
+    const resultat = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "attente@exemple.fr",
+      consent: true,
+    });
+
+    expect(resultat.ok).toBe(false);
+    expect(resultat.ok === false && resultat.error).toBe(
+      "Indiquez combien vous serez, entre 1 et 30 personnes.",
+    );
+  });
+
+  it("n'envoie AUCUN email à l'inscription : rien n'est promis", async () => {
+    await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "attente@exemple.fr",
+      consent: true,
+    });
+    await Promise.all(state.taches);
+
+    expect(state.emails).toHaveLength(0);
+    expect(state.emailsTable).toHaveLength(0);
+  });
+});
+
+describe("annulation — on NOTIFIE la file, on ne TIENT rien (RDV-8)", () => {
+  beforeEach(() => {
+    // Une SALLE, et une annulation qui rend bien l'identifiant de sa ligne.
+    state.activiteRow = {
+      id: ACTIVITY_ID,
+      name: "Dégustation",
+      booking_mode: "rendez_vous",
+    };
+    state.cancelResponse = { state: "cancelled", reservation_id: RESERVATION_ID };
+    state.cancelStaffResponse = {
+      state: "cancelled",
+      reservation_id: RESERVATION_ID,
+    };
+  });
+
+  it("envoie UN message PAR destinataire, chacun avec SON effectif", async () => {
+    await cancelReservation({ reservationId: RESERVATION_ID });
+    // Hors du chemin de réponse : rien n'est parti avant que les tâches
+    // différées ne tournent.
+    expect(state.emailsTable).toHaveLength(0);
+    await Promise.all(state.taches);
+
+    expect(state.emailsTable.map((e) => [e.to, e.partySize])).toEqual([
+      ["duo@exemple.fr", 2],
+      ["quatuor@exemple.fr", 4],
+    ]);
+    // AUCUNE offre exclusive : la première personne qui revient prend la table
+    // par `reserve_table`, sous le verrou d'avis.
+    expect(state.rpcCalls.some((c) => c.name === "reservation_offer_next")).toBe(
+      false,
+    );
+  });
+
+  it("consomme le seau email PAR DESTINATAIRE, jamais une fois pour la volée", async () => {
+    await cancelReservation({ reservationId: RESERVATION_ID });
+    await Promise.all(state.taches);
+
+    const seaux = state.rateLimitCalls
+      .filter((a) => a.bucket.startsWith("reserver:email:"))
+      .map((a) => a.bucket);
+    expect(seaux).toEqual([
+      `reserver:email:${ORG_ID}:duo@exemple.fr`,
+      `reserver:email:${ORG_ID}:quatuor@exemple.fr`,
+    ]);
+  });
+
+  it("une adresse à sec ne prive pas les suivantes de leur message", async () => {
+    state.seauxASec = [`reserver:email:${ORG_ID}:duo@exemple.fr`];
+    await cancelReservation({ reservationId: RESERVATION_ID });
+    await Promise.all(state.taches);
+
+    expect(state.emailsTable.map((e) => e.to)).toEqual(["quatuor@exemple.fr"]);
+    expect(state.compteurs).toContain("reserver.email.throttled");
+  });
+
+  it("n'envoie rien quand la liste de cibles est VIDE — le cas est NORMAL", async () => {
+    // Toutes les tables du créneau restent prises par des services qui le
+    // chevauchent : il n'y a pas d'erreur, il n'y a personne à prévenir.
+    state.tableFreedTargets = {
+      state: "ok",
+      max_party: 0,
+      starts_at: "2026-09-01T12:00:00Z",
+      activity_name: "Dégustation",
+      targets: [],
+    };
+    const resultat = await cancelReservation({ reservationId: RESERVATION_ID });
+    await Promise.all(state.taches);
+
+    expect(resultat.ok).toBe(true);
+    expect(state.emailsTable).toHaveLength(0);
+  });
+
+  it("n'envoie rien quand la RPC répond `unavailable`", async () => {
+    state.tableFreedTargets = { state: "unavailable" };
+    await cancelReservation({ reservationId: RESERVATION_ID });
+    await Promise.all(state.taches);
+
+    expect(state.emailsTable).toHaveLength(0);
+  });
+
+  it("LE TÉMOIN — une annulation sur un MOMENT ne signale aucune table", async () => {
+    state.activiteRow = {
+      id: ACTIVITY_ID,
+      name: "Dégustation",
+      booking_mode: "moment",
+    };
+    const resultat = await cancelReservation({ reservationId: RESERVATION_ID });
+    await Promise.all(state.taches);
+
+    expect(resultat.ok).toBe(true);
+    expect(state.emailsTable).toHaveLength(0);
+    // La garde tombe AVANT l'aller-retour : un Moment n'a pas de tables, et lui
+    // demander qui prévenir n'aurait produit qu'un `unavailable` payant.
+    expect(
+      state.rpcCalls.some((c) => c.name === "reservation_table_freed_targets"),
+    ).toBe(false);
+  });
+
+  it("l'annulation AU COMPTOIR signale aussi — le désistement téléphonique", async () => {
+    await cancelReservationStaff(
+      null,
+      formData({ reservationId: RESERVATION_ID }),
+    );
+    await Promise.all(state.taches);
+
+    expect(state.emailsTable.map((e) => e.to)).toEqual([
+      "duo@exemple.fr",
+      "quatuor@exemple.fr",
+    ]);
+    // La lecture du créneau est ORG-SCOPÉE au comptoir : l'organisation y est
+    // déjà prouvée par la session.
+    const lecture = state.filtres.find((f) => f.table === "reservations");
+    expect(lecture?.organization_id).toBe(ORG_ID);
+  });
+
+  it("une panne d'envoi est AVALÉE et COMPTÉE — l'annulation reste faite", async () => {
+    state.emailLeve = true;
+    const resultat = await cancelReservation({ reservationId: RESERVATION_ID });
+    await expect(Promise.all(state.taches)).resolves.toBeDefined();
+
+    expect(resultat.ok).toBe(true);
+    expect(
+      state.compteurs.filter((c) => c === "reserver.table_liberee.error"),
+    ).toHaveLength(2);
   });
 });

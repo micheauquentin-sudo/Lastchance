@@ -21,8 +21,14 @@ import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
+  mapReserveTable,
+  PHRASES_RESERVATION,
+  type EtatReservationTable,
+} from "@/lib/plan-de-salle";
+import {
   sendReservationConfirmationEmail,
   sendStockHoldConfirmationEmail,
+  sendTableFreedEmail,
 } from "@/lib/resend";
 import {
   formatCreneau,
@@ -126,6 +132,8 @@ import {
   queueResolveSchema,
   queueStateSchema,
   redeemInvitationSchema,
+  rejoindreListeAttenteTableSchema,
+  reserverTableSchema,
   reserveSlotSchema,
   revokeReserverInvitationSchema,
   stockOfferStateSchema,
@@ -699,7 +707,19 @@ export async function cancelReservation(input: {
       reportError("reserver.cancel", error.message);
       return { ok: false as const, error: GENERIC_ERROR };
     }
-    return { ok: true as const, data: mapCancelReservation(data) };
+    const resultat = mapCancelReservation(data);
+    // UNE TABLE VIENT PEUT-ÊTRE DE SE LIBÉRER (RDV-8). Le créneau se lit sur la
+    // ligne — la RPC ne le rend pas — et le signalement part hors du chemin de
+    // réponse : celui qui annule n'a pas à attendre qu'on prévienne la file.
+    if (resultat.state === "cancelled" && resultat.reservationId) {
+      const salle = await creneauDeLaReservation(
+        admin,
+        resultat.reservationId,
+        null,
+      );
+      if (salle) signalerTableLiberee(salle);
+    }
+    return { ok: true as const, data: resultat };
   });
 }
 
@@ -972,6 +992,447 @@ export async function waitlistLeave(input: {
     }
     return { ok: true as const, data: mapWaitlistLeave(data) };
   });
+}
+
+// ════════════════════════════════════════════════════════════
+// LA SALLE (RDV-8) — dire combien on sera, attendre avec cet effectif
+//
+// ── CE QUE CE LOT AJOUTE, ET CE QU'IL NE FAIT PAS ──
+//
+// Dans un restaurant, le client dit COMBIEN ILS SERONT ; s'il ne reste aucune
+// table assez grande, il s'inscrit AVEC cet effectif ; et quand une annulation
+// libère une table, ceux dont l'effectif tient reçoivent un message.
+//
+// ON NOTIFIE, ON NE TIENT PAS. Plusieurs personnes reçoivent le même message et
+// la PREMIÈRE qui revient prend la table par `reserve_table`, sous le verrou
+// d'avis — l'email le dit en toutes lettres. Tenir la table pour une seule
+// gèlerait la salle un vendredi soir tant qu'elle n'a pas ouvert sa boîte.
+// Aucune réservation exclusive n'est donc posée ici, et `reservation_offer_next`
+// n'est JAMAIS appelée sur une activité `rendez_vous` : elle compte des PLACES,
+// pas des tables, et son offre serait refusée par `reservations_require_table`.
+//
+// ── LES SEAUX ──
+//
+// `reserverTable` et `rejoindreListeAttenteTable` reprennent MOT POUR MOT
+// l'inventaire de `reserveSlot` (en tête de fichier) : même écran, même main,
+// même geste — c'est la jauge de la salle qui décide lequel des deux part.
+// Le signalement de table libérée, lui, consomme `reserver:email:<org>:<adresse>`
+// UNE FOIS PAR DESTINATAIRE, jamais une fois pour la volée : un seul seau global
+// aurait fait sauter tous les rappels dès qu'une seule adresse est chaude.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * LES DEUX RPC DE LA MIGRATION 20261110120000, avant régénération des types.
+ *
+ * `waitlist_join_table` et `reservation_table_freed_targets` n'existent pas
+ * encore dans `database.generated.ts` — le générateur lit une base, et celle-ci
+ * ne portera ces fonctions qu'une fois la migration appliquée. Cette porte est
+ * volontairement ÉTROITE : elle ne relâche que le nom et les arguments de ces
+ * deux appels, et disparaît au prochain `generate-db-types`. Les valeurs
+ * passées sont, elles, déjà validées par Zod — le typage manquant ne relâche
+ * aucune garde.
+ */
+function rpcHorsTypes(
+  admin: ReturnType<typeof createAdminClient>,
+  nom: string,
+  args: Record<string, unknown>,
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  const client = admin as unknown as {
+    rpc: (
+      nom: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  };
+  return client.rpc(nom, args);
+}
+
+export type ReserverTableActionResult =
+  | { ok: true; data: EtatReservationTable }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/**
+ * Prendre une TABLE, pour un effectif ÉNONCÉ.
+ *
+ * MÊME discipline que `reserveSlot`, à une différence près : `partySize` est
+ * REQUIS (voir `reserverTableSchema`). `reserve_table` est idempotente, prend
+ * un verrou d'avis sur l'ACTIVITÉ et fait un MEILLEUR AJUSTEMENT — la plus
+ * petite table qui convient. `full` n'est pas une erreur : c'est le moment où
+ * l'écran propose la liste d'attente, et il remonte donc TEL QUEL.
+ */
+export async function reserverTable(input: {
+  organizationId: string;
+  slotId: string;
+  partySize: number;
+  email?: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<ReserverTableActionResult> {
+  const parsed = reserverTableSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Identité AVANT tout : le premier seau est tranché avant la moindre requête.
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  if (!(await autoriserJoueurReserver(parsed.data.organizationId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.reserve-table", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    await observerPressionReserver(parsed.data.organizationId, ip);
+
+    if (
+      reserverChallengeDisponible() &&
+      !(await verifyTurnstile(
+        // LA VALEUR VALIDÉE, jamais celle du corps : ce jeton part en requête
+        // sortante vers Cloudflare.
+        parsed.data.turnstileToken,
+        ip,
+        "reserver-reserve-table",
+      ))
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réservez.",
+        challengeRequired: true,
+      };
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("reserve_table", {
+      p_organization_id: parsed.data.organizationId,
+      p_slot_id: parsed.data.slotId,
+      p_player_key_hash: empreinte,
+      // L'EFFECTIF VALIDÉ, jamais celui du corps. La base le revérifie sous
+      // verrou contre les tables réellement libres.
+      p_party_size: parsed.data.partySize,
+      p_email: parsed.data.email ?? null,
+      p_consent: parsed.data.consent,
+    });
+
+    if (error) {
+      reportError("reserver.reserve-table", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    const resultat = mapReserveTable(data);
+
+    // MÊME CONFIRMATION que les Moments, et volontairement la même fonction :
+    // ce que le client reçoit est un créneau, un nom de commerce et un code —
+    // rien de propre à une table. Deux compositions auraient divergé au premier
+    // mot changé.
+    if (resultat.state === "reserved" && parsed.data.consent && parsed.data.email) {
+      const destinataire = parsed.data.email;
+      const autorise = await rateLimit(
+        rateLimitBucket("reserver:email", parsed.data.organizationId, destinataire),
+        RATE_LIMITS.reserverEmail,
+        { failClosed: true },
+      );
+      if (autorise) {
+        after(() =>
+          envoyerConfirmation({
+            to: destinataire,
+            organizationId: parsed.data.organizationId,
+            slotId: parsed.data.slotId,
+            code: resultat.code,
+          }).catch((err) => reportError("reserver.confirmation", err)),
+        );
+      } else {
+        // LA TABLE RESTE PRISE : seul le rappel est sauté, et il est COMPTÉ.
+        recordCounter("reserver.email.throttled");
+      }
+    }
+
+    return { ok: true as const, data: resultat };
+  });
+}
+
+export type AttenteTableActionResult =
+  | { ok: true; data: WaitlistJoinResult }
+  | { ok: false; error: string; challengeRequired?: boolean };
+
+/** L'état brut rendu par une RPC, ou `null` si la charge utile n'en porte pas. */
+function etatBrutRpc(brut: unknown): string | null {
+  if (typeof brut !== "object" || brut === null) return null;
+  const etat = (brut as Record<string, unknown>).state;
+  return typeof etat === "string" ? etat : null;
+}
+
+/**
+ * `waitlist_join_table` nomme `joined` ce que `waitlist_join` nomme `waiting` :
+ * même ligne, même rang, même charge utile.
+ *
+ * On REBAPTISE ici plutôt que d'élargir `WaitlistJoinState` — l'écran des
+ * Moments et celui de la salle lisent le même type, et un huitième état aurait
+ * obligé les deux à répondre à une question qui ne se pose que dans un
+ * restaurant.
+ */
+function normaliserAttenteTable(brut: unknown): unknown {
+  if (typeof brut !== "object" || brut === null) return brut;
+  const charge = brut as Record<string, unknown>;
+  return charge.state === "joined" ? { ...charge, state: "waiting" } : charge;
+}
+
+/**
+ * Attendre une table, AVEC son effectif.
+ *
+ * ── L'ADRESSE EST REQUISE, ET LE SCHÉMA DIT POURQUOI ──
+ *
+ * Contrairement à la file des Moments, cette liste ne montre aucun rang qui
+ * avance : elle n'existe que pour qu'un email parte quand une annulation libère
+ * une table. Sans adresse, s'y inscrire serait un geste sans effet.
+ *
+ * ── LE CHALLENGE Y EST, POUR LA RAISON DE `waitlistJoin` ──
+ *
+ * Appel ÉMETTEUR : les invariants SQL bornent le nombre de LIGNES, jamais la
+ * diversité des mains.
+ */
+export async function rejoindreListeAttenteTable(input: {
+  organizationId: string;
+  slotId: string;
+  partySize: number;
+  email: string;
+  consent?: boolean;
+  turnstileToken?: string;
+}): Promise<AttenteTableActionResult> {
+  const parsed = rejoindreListeAttenteTableSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const empreinte = await assurerIdentiteReserver();
+  if (!empreinte) return { ok: false, error: GENERIC_ERROR };
+  if (!(await autoriserJoueurReserver(parsed.data.organizationId, empreinte))) {
+    return { ok: false, error: TOO_MANY };
+  }
+
+  return monitored("reserver.waitlist-join-table", async () => {
+    const ip = clientIpFromHeaders(await headers());
+    await observerPressionReserver(parsed.data.organizationId, ip);
+
+    if (
+      reserverChallengeDisponible() &&
+      !(await verifyTurnstile(
+        parsed.data.turnstileToken,
+        ip,
+        "reserver-waitlist-join-table",
+      ))
+    ) {
+      return {
+        ok: false as const,
+        error:
+          "Vérification anti-robot requise. Validez le contrôle ci-dessous puis réessayez.",
+        challengeRequired: true,
+      };
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await rpcHorsTypes(admin, "waitlist_join_table", {
+      p_organization_id: parsed.data.organizationId,
+      p_slot_id: parsed.data.slotId,
+      p_player_key_hash: empreinte,
+      p_party_size: parsed.data.partySize,
+      p_email: parsed.data.email,
+      p_consent: parsed.data.consent,
+    });
+    if (error) {
+      reportError("reserver.waitlist-join-table", error.message);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+
+    // `invalid_party_size` est le SEUL état que `mapWaitlistJoin` ne sait pas
+    // lire — il n'existe pas côté Moments. Le rendre en refus NOMMÉ, avec la
+    // phrase que la salle emploie partout ailleurs, vaut mieux que de le laisser
+    // retomber en `unavailable` : « indisponible » n'apprend rien à qui a tapé
+    // « 40 » dans un champ borné à 30.
+    if (etatBrutRpc(data) === "invalid_party_size") {
+      return {
+        ok: false as const,
+        error: PHRASES_RESERVATION.invalid_party_size,
+      };
+    }
+
+    // AUCUN EMAIL À L'INSCRIPTION, comme pour `waitlistJoin` : rien n'est promis
+    // ici — ni une table, ni une heure. Le seul message qui parte est celui du
+    // signalement, quand une annulation a réellement libéré quelque chose.
+    return {
+      ok: true as const,
+      data: mapWaitlistJoin(normaliserAttenteTable(data)),
+    };
+  });
+}
+
+/** Une personne à prévenir : son adresse, et l'effectif qu'elle a annoncé. */
+interface CibleTableLiberee {
+  email: string;
+  effectif: number;
+}
+
+/**
+ * Lit les cibles de `reservation_table_freed_targets`.
+ *
+ * `state !== 'ok'` rend une liste VIDE, et c'est le cas NORMAL : toutes les
+ * tables du créneau restent prises par des services qui le chevauchent. Ni
+ * `entry_id` ni `created_at` ne sont retenus — on NOTIFIE, on ne tient rien,
+ * donc rien ici n'a besoin de désigner une ligne de file.
+ */
+function lireCiblesTableLiberee(brut: unknown): CibleTableLiberee[] {
+  if (typeof brut !== "object" || brut === null) return [];
+  const charge = brut as Record<string, unknown>;
+  if (charge.state !== "ok" || !Array.isArray(charge.targets)) return [];
+
+  const cibles: CibleTableLiberee[] = [];
+  for (const entree of charge.targets) {
+    if (typeof entree !== "object" || entree === null) continue;
+    const cible = entree as Record<string, unknown>;
+    if (typeof cible.email !== "string" || cible.email.length === 0) continue;
+    cibles.push({
+      email: cible.email,
+      effectif: typeof cible.party_size === "number" ? cible.party_size : 1,
+    });
+  }
+  return cibles;
+}
+
+/**
+ * Une table vient peut-être de se libérer — programme le signalement.
+ *
+ * HORS DU CHEMIN DE RÉPONSE : celui qui annule a déjà sa confirmation à
+ * l'écran, et prévenir la file est un travail qui ne lui appartient pas. Les
+ * échecs sont AVALÉS puis COMPTÉS — une panne Resend ne doit pas faire échouer
+ * une annulation qui a déjà eu lieu en base.
+ */
+function signalerTableLiberee(params: {
+  organizationId: string;
+  slotId: string;
+}): void {
+  after(() =>
+    diffuserTableLiberee(params).catch((err) =>
+      reportError("reserver.table-liberee", err),
+    ),
+  );
+}
+
+/**
+ * Compose et envoie le signalement, un message PAR DESTINATAIRE.
+ *
+ * La garde `rendez_vous` est opposée AVANT l'appel : un Moment n'a pas de
+ * tables, et lui demander qui prévenir n'aurait produit qu'un `unavailable`
+ * après un aller-retour inutile. La RPC porte la même garde — les deux doivent
+ * rester d'accord, et c'est elle qui fait foi.
+ */
+async function diffuserTableLiberee(params: {
+  organizationId: string;
+  slotId: string;
+}): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: slot } = await admin
+    .from("reservation_slots")
+    .select("id, activity_id, starts_at, ends_at")
+    .eq("id", params.slotId)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!slot) return;
+
+  // L'ACTIVITÉ, pour deux choses : la garde de mode, et le nom affiché. La RPC
+  // rend bien `activity_name`, mais elle ne rend PAS `activity_id` — dont
+  // l'adresse publique a besoin — et lire deux fois la même ligne pour en
+  // extraire deux moitiés serait un aller-retour de plus sans garantie de
+  // cohérence.
+  const { data: activity } = await admin
+    .from("reservation_activities")
+    .select("id, name, booking_mode")
+    .eq("id", slot.activity_id)
+    .eq("organization_id", params.organizationId)
+    .maybeSingle();
+  if (!activity || activity.booking_mode !== "rendez_vous") return;
+
+  const { data, error } = await rpcHorsTypes(
+    admin,
+    "reservation_table_freed_targets",
+    { p_organization_id: params.organizationId, p_slot_id: params.slotId },
+  );
+  if (error) {
+    reportError("reserver.table-liberee", error.message);
+    return;
+  }
+
+  const cibles = lireCiblesTableLiberee(data);
+  if (cibles.length === 0) return;
+
+  const { data: organization } = await admin
+    .from("organizations")
+    .select("name, timezone")
+    .eq("id", params.organizationId)
+    .maybeSingle();
+  if (!organization) return;
+
+  const timezone = organization.timezone || RESERVER_FUSEAU_DEFAUT;
+  const slotLabel = formatCreneau(slot.starts_at, slot.ends_at, timezone);
+  const bookingUrl = urlActiviteReserver(activity.id, APP_URL);
+
+  for (const cible of cibles) {
+    // UN SEAU PAR ORGANISATION ET PAR ADRESSE, CONSOMMÉ PAR DESTINATAIRE. Un
+    // seul seau pour la volée aurait fait sauter tous les rappels dès qu'une
+    // seule adresse est chaude ; celui-ci ne coupe que son porteur (ADR-032).
+    const autorise = await rateLimit(
+      rateLimitBucket("reserver:email", params.organizationId, cible.email),
+      RATE_LIMITS.reserverEmail,
+      { failClosed: true },
+    );
+    if (!autorise) {
+      recordCounter("reserver.email.throttled");
+      continue;
+    }
+    try {
+      await sendTableFreedEmail({
+        to: cible.email,
+        activityName: activity.name,
+        slotLabel,
+        // SON effectif, jamais celui de la table libérée : le message dit « une
+        // table pour 4 », et c'est ce que cette personne a demandé.
+        partySize: cible.effectif,
+        organizationName: organization.name,
+        bookingUrl,
+      });
+    } catch (err) {
+      // AVALÉ ET COMPTÉ : un destinataire injoignable ne doit pas priver les
+      // suivants de leur message.
+      reportError("reserver.table-liberee", err);
+      recordCounter("reserver.table_liberee.error");
+    }
+  }
+}
+
+/**
+ * Le créneau d'une réservation, sur preuve d'identifiant.
+ *
+ * Ni `cancel_reservation` ni `cancel_reservation_staff` ne rendent le
+ * `slot_id` : ils rendent l'identifiant de la ligne annulée, et c'est tout ce
+ * dont on dispose pour savoir QUELLE table vient de se libérer. Le chemin
+ * joueur ne connaît pas non plus l'organisation — la RPC la lit sur la ligne —
+ * d'où le filtre optionnel : posé quand l'appelant l'a déjà prouvée (comptoir),
+ * omis quand la possession a déjà été vérifiée par la RPC elle-même.
+ */
+async function creneauDeLaReservation(
+  admin: ReturnType<typeof createAdminClient>,
+  reservationId: string,
+  organizationId: string | null,
+): Promise<{ organizationId: string; slotId: string } | null> {
+  const base = admin
+    .from("reservations")
+    .select("id, organization_id, slot_id")
+    .eq("id", reservationId);
+  const { data } = await (organizationId
+    ? base.eq("organization_id", organizationId)
+    : base
+  ).maybeSingle();
+  if (!data) return null;
+  return { organizationId: data.organization_id, slotId: data.slot_id };
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1380,8 +1841,21 @@ export async function cancelReservationStaff(
     // les quatre états (`unknown`, `already_checked_in`, `too_late`,
     // `cancelled`) et l'écran les traduit. Une seconde fonction de lecture pour
     // le même jsonb aurait dérivé de celle-ci au premier état ajouté.
+    const resultat = mapCancelReservation(data);
+    // LE MÊME SIGNALEMENT QUE LE CHEMIN JOUEUR (RDV-8), et il doit y être : le
+    // désistement téléphonique — annulé ici, au comptoir — est le cas le plus
+    // banal d'un restaurant. Ne le câbler que côté client aurait laissé la file
+    // dans l'ignorance de la moitié des tables rendues.
+    if (resultat.state === "cancelled" && resultat.reservationId) {
+      const salle = await creneauDeLaReservation(
+        admin,
+        resultat.reservationId,
+        garde.organizationId,
+      );
+      if (salle) signalerTableLiberee(salle);
+    }
     revalidatePath("/dashboard/reservations");
-    return { ok: true as const, data: mapCancelReservation(data) };
+    return { ok: true as const, data: resultat };
   });
 }
 

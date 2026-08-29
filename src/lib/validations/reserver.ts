@@ -204,15 +204,21 @@ function exigerEmailEtConsentementEnsemble(
  * refuse `invalid_party_size` si les deux divergent. Refuser ici ce que la base
  * accepterait ferait de l'écran un second juge.
  */
-const partySizeSchema = z
+const effectifSchema = z
   .number()
   .int("Nombre entier de personnes requis")
   .min(RESERVER_PARTY_SIZE_MIN, "Une réservation vaut au moins une personne")
   .max(
     RESERVER_PARTY_SIZE_MAX,
     `Maximum ${RESERVER_PARTY_SIZE_MAX} personnes par réservation`,
-  )
-  .default(RESERVER_PARTY_SIZE_MIN);
+  );
+
+/**
+ * La MÊME borne, mais avec un défaut — pour les écrans des Moments, où
+ * l'effectif est recopié du format et non demandé au joueur. La salle, elle,
+ * l'exige (`reserverTableSchema` ci-dessous).
+ */
+const partySizeSchema = effectifSchema.default(RESERVER_PARTY_SIZE_MIN);
 
 export const reserveSlotSchema = z
   .object({
@@ -245,6 +251,76 @@ export const waitlistJoinSchema = z
     turnstileToken: z.string().max(2048).optional(),
   })
   .superRefine(exigerEmailEtConsentementEnsemble);
+
+// ────────────────────────────────────────────────────────────
+// LA SALLE (RDV-8) — on dit COMBIEN ON SERA
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Prendre une TABLE.
+ *
+ * ── L'EFFECTIF EST REQUIS, SANS DÉFAUT ──
+ *
+ * `reserveSlotSchema` en pose un (1) parce que là-bas la valeur est la taille du
+ * FORMAT, recopiée par l'écran depuis l'activité qu'il affiche. Dans une salle,
+ * « combien serez-vous » est une question POSÉE au client : la deviner à 1
+ * l'assiérait seul à une table de deux, et `reserve_table` choisirait la plus
+ * petite table qui convient à un effectif que personne n'a énoncé. Un champ
+ * absent doit donc être refusé, pas complété.
+ */
+export const reserverTableSchema = z
+  .object({
+    organizationId: uuid,
+    slotId: uuid,
+    partySize: effectifSchema,
+    email: emailSchema.optional(),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine(exigerEmailEtConsentementEnsemble);
+
+/**
+ * L'ADRESSE EST REQUISE ICI, et le message doit dire POURQUOI.
+ *
+ * Une liste d'attente de salle ne promet rien d'affichable : on n'y lit pas un
+ * rang qui avance sous les yeux, on attend qu'une annulation libère une table.
+ * Sans adresse, il n'existe littéralement aucun chemin pour prévenir — s'y
+ * inscrire serait un geste sans effet, et laisser passer un champ vide
+ * fabriquerait une ligne que personne ne lira jamais. Le refus le dit en
+ * toutes lettres plutôt que de laisser le client le deviner.
+ */
+const MOTIF_ADRESSE_ATTENTE =
+  "Indiquez votre email : c'est le seul moyen de vous prévenir si une table se libère.";
+
+export const rejoindreListeAttenteTableSchema = z
+  .object({
+    organizationId: uuid,
+    slotId: uuid,
+    partySize: effectifSchema,
+    email: z
+      .string({ error: MOTIF_ADRESSE_ATTENTE })
+      .trim()
+      .toLowerCase()
+      .min(1, MOTIF_ADRESSE_ATTENTE)
+      .email("Email invalide")
+      .max(RESERVER_EMAIL_MAX, "Email trop long (254 caractères max)"),
+    consent: z.boolean().default(false),
+    turnstileToken: z.string().max(2048).optional(),
+  })
+  .superRefine((valeur, ctx) => {
+    // MÊME ÉQUIVALENCE SQL que partout ailleurs (adresse ⇔ consentement), mais
+    // un seul sens reste possible ici puisque l'adresse est obligatoire — et le
+    // message de `reserveSlotSchema` (« ou laissez l'adresse vide ») proposerait
+    // une issue qui n'existe pas sur cet écran.
+    if (!valeur.consent) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["consent"],
+        message:
+          "Cochez la case : c'est par email que nous vous préviendrons si une table se libère.",
+      });
+    }
+  });
 
 /**
  * Prendre la place qui m'est proposée.
