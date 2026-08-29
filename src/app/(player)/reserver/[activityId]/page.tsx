@@ -106,6 +106,17 @@ export default async function ReserverPage({
         // donc de `booking_mode` : un Moment se prend sans rien laisser, un
         // rendez-vous nommé sans moyen de joindre le client est ingérable.
         emailObligatoire={ctx.emailObligatoire}
+        // COMMENT ON RÉSERVE (RDV-8) — une place dans une jauge, ou une TABLE.
+        //
+        // Le contexte public ne rend pas encore `booking_mode` tel quel : il
+        // n'en expose que la conséquence déjà utile, `emailObligatoire`, qui
+        // vaut EXACTEMENT `booking_mode === "rendez_vous"` (voir
+        // `reserver-context.ts`). On le relit donc ici plutôt que d'ajouter un
+        // second champ dérivé du même booléen. La fragilité est connue et
+        // nommée : le jour où l'adresse cesserait d'être exigée sur un
+        // rendez-vous, cette ligne mentirait — c'est alors `bookingMode` qu'il
+        // faudra faire descendre du contexte, pas une exception à écrire ici.
+        bookingMode={ctx.emailObligatoire ? "rendez_vous" : "moment"}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

@@ -3,7 +3,9 @@
 import { useCallback, useState } from "react";
 import {
   cancelReservation,
+  rejoindreListeAttenteTable,
   reserveSlot,
+  reserverTable,
   type ReserveSlotActionResult,
 } from "@/actions/reserver";
 import { DefiAntiRobot } from "@/components/reserver/defi-antirobot";
@@ -21,21 +23,29 @@ import { uniteJauge } from "@/components/reserver/formats-experience";
 import { AjouterAgenda } from "@/components/reserver/ajouter-agenda";
 import { PendantVotreAttente } from "@/components/reserver/pendant-votre-attente";
 import {
+  PHRASES_RESERVATION,
+  type EtatReservationTable,
+} from "@/lib/plan-de-salle";
+import {
   etatUiCreneau,
   formatCreneau,
   libelleTaillePersonnes,
   LIBELLE_FENETRE_CHECKIN,
   placesParReservation,
   RESERVER_EMAIL_MAX,
+  RESERVER_PARTY_SIZE_MAX,
+  RESERVER_PARTY_SIZE_MIN,
   type PublicWaitlistItem,
   type ReserverActivityKind,
   type ReserverAttenteView,
+  type WaitlistJoinResult,
 } from "@/lib/reserver";
 import type {
   ReserverMaReservationView,
   ReserverSlotPublicView,
 } from "@/lib/reserver-context";
 import { useActionForm } from "@/lib/use-action-form";
+import type { ActionResult } from "@/lib/utils";
 
 /**
  * LE PARCOURS JOUEUR DE « RÉSERVER » — mobile d'abord, sans compte.
@@ -82,6 +92,7 @@ export function ReserverExperience({
   steps = [],
   preparation = null,
   emailObligatoire = false,
+  bookingMode = "moment",
 }: {
   /**
    * Chez QUI le joueur croit réserver. `reserve_slot` l'exige : c'est la borne
@@ -141,6 +152,20 @@ export function ReserverExperience({
   durationMinutes?: number | null;
   steps?: readonly { title: string; body: string }[];
   preparation?: string | null;
+  /**
+   * D'OÙ VIENNENT LES CRÉNEAUX — et donc COMMENT ON RÉSERVE (RDV-8).
+   *
+   * `moment` (atelier, dégustation, file d'accueil) : une place se prend dans
+   * une jauge, l'effectif est celui du format, et rien ne change de ce que ce
+   * fichier faisait avant ce lot. `rendez_vous` (restaurant) : le client
+   * annonce COMBIEN ILS SERONT, et c'est `reserve_table` qui cherche une table
+   * assez grande sous verrou.
+   *
+   * Le défaut est `moment` pour la même raison que celui d'`emailObligatoire` :
+   * un appelant qui ne connaît pas ce champ garde le comportement d'avant, et
+   * l'ajout de cette règle ne bascule personne à son insu.
+   */
+  bookingMode?: string;
 }) {
   // Les créneaux réservés d'abord, en tête de page : c'est ce que le client
   // rouvre sa page pour retrouver — son code — et non pour réserver une
@@ -157,6 +182,23 @@ export function ReserverExperience({
   const libres = creneaux.filter(
     (c) => !mesReservations[c.id] && !maFile[c.id],
   );
+
+  const surTable = bookingMode === "rendez_vous";
+  /**
+   * L'EFFECTIF EST PORTÉ PAR L'ÉCRAN, PAS PAR LE CRÉNEAU — et c'est le seul
+   * arbitrage structurant de ce lot.
+   *
+   * « Vous serez combien ? » est une question qu'on pose UNE FOIS, en tête de
+   * la liste. Un sélecteur par créneau aurait posé dix fois la même question,
+   * et surtout laissé le client changer d'avis entre deux lignes sans s'en
+   * apercevoir : il aurait réservé pour quatre sur un créneau après avoir
+   * regardé les disponibilités pour deux. Une seule valeur, visible en
+   * permanence au-dessus des créneaux, supprime cet écart par construction.
+   *
+   * Deux par défaut : c'est la table la plus demandée d'un restaurant, et un
+   * défaut à une personne aurait fait cliquer tout le monde.
+   */
+  const [effectif, setEffectif] = useState(2);
 
   return (
     <div className="mx-auto max-w-md px-4 py-8">
@@ -306,19 +348,43 @@ export function ReserverExperience({
             </p>
           </div>
         ) : (
-          <ul className="space-y-4">
-            {libres.map((creneau) => (
-              <li key={creneau.id}>
-                <CreneauReservable
-                  organizationId={organizationId}
-                  creneau={creneau}
-                  timeZone={timeZone}
-                  kind={kind}
-                  emailObligatoire={emailObligatoire}
-                />
-              </li>
-            ))}
-          </ul>
+          <>
+            {/* Le sélecteur d'effectif est AU-DESSUS des créneaux, jamais
+                dedans : on choisit combien on est, PUIS on regarde à quelle
+                heure. L'inverse ferait lire des heures avant de savoir pour
+                quel groupe elles valent. */}
+            {surTable ? (
+              <SelecteurEffectif effectif={effectif} onChange={setEffectif} />
+            ) : null}
+            <ul className="space-y-4">
+              {libres.map((creneau) => (
+                <li key={creneau.id}>
+                  {/* DEUX COMPOSANTS, PAS UN SEUL À BRANCHES. Le parcours
+                      Moment est en production et sa non-régression prime :
+                      tresser `reserve_slot` et `reserve_table` dans une même
+                      fonction aurait mêlé leurs états, leurs refus et leurs
+                      hooks, et la première correction de l'un aurait bougé
+                      l'autre. Ils ne partagent que la carte et la palette. */}
+                  {surTable ? (
+                    <CreneauTable
+                      organizationId={organizationId}
+                      creneau={creneau}
+                      timeZone={timeZone}
+                      effectif={effectif}
+                    />
+                  ) : (
+                    <CreneauReservable
+                      organizationId={organizationId}
+                      creneau={creneau}
+                      timeZone={timeZone}
+                      kind={kind}
+                      emailObligatoire={emailObligatoire}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
     </div>
@@ -602,6 +668,546 @@ function CreneauReservable({
         />
       ) : null}
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// RÉSERVER UNE TABLE (RDV-8) — l'effectif d'abord, la salle tranche
+// ────────────────────────────────────────────────────────────
+
+/** Borne l'effectif saisi sur les CHECK de la base, jamais plus large. */
+function bornerEffectif(valeur: number): number {
+  if (!Number.isFinite(valeur)) return RESERVER_PARTY_SIZE_MIN;
+  return Math.min(
+    RESERVER_PARTY_SIZE_MAX,
+    Math.max(RESERVER_PARTY_SIZE_MIN, Math.trunc(valeur)),
+  );
+}
+
+/** Les valeurs qu'on propose d'un doigt ; au-delà, on saisit. */
+const EFFECTIFS_RAPIDES = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
+/**
+ * « VOUS SEREZ COMBIEN ? » — la question posée une seule fois.
+ *
+ * Huit boutons couvrent l'écrasante majorité des couverts d'un restaurant, et
+ * un champ prend le reste : proposer trente boutons aurait noyé les cinq qui
+ * servent. Le champ n'apparaît pas en second choix caché — un groupe de douze
+ * ne doit pas avoir à deviner qu'il existe.
+ */
+function SelecteurEffectif({
+  effectif,
+  onChange,
+}: {
+  effectif: number;
+  onChange: (valeur: number) => void;
+}) {
+  const horsBoutons = effectif > EFFECTIFS_RAPIDES.length;
+
+  return (
+    <fieldset className="mb-4 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[3px_3px_0_var(--color-k-ink)]">
+      <legend className="px-2 text-sm font-black uppercase tracking-wide text-k-ink">
+        Vous serez combien ?
+      </legend>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {EFFECTIFS_RAPIDES.map((valeur) => {
+          const actif = effectif === valeur;
+          return (
+            <button
+              key={valeur}
+              type="button"
+              // `aria-pressed` plutôt qu'un groupe de radios : ce sont des
+              // boutons, ils en gardent le comportement au clavier, et l'état
+              // sélectionné reste annoncé.
+              aria-pressed={actif}
+              onClick={() => onChange(valeur)}
+              className={`h-12 w-12 rounded-xl border-2 border-k-ink text-base font-black tabular-nums text-k-ink transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
+                actif
+                  ? "bg-k-yellow shadow-[3px_3px_0_var(--color-k-ink)]"
+                  : "bg-white hover:bg-k-yellow/40"
+              }`}
+            >
+              {valeur}
+            </button>
+          );
+        })}
+      </div>
+
+      <label
+        htmlFor="effectif-au-dela"
+        className="mt-4 block text-sm font-bold text-k-ink"
+      >
+        Plus de {EFFECTIFS_RAPIDES.length} personnes ?
+      </label>
+      <input
+        id="effectif-au-dela"
+        type="number"
+        inputMode="numeric"
+        min={RESERVER_PARTY_SIZE_MIN}
+        max={RESERVER_PARTY_SIZE_MAX}
+        step={1}
+        // Le champ ne montre un nombre que lorsqu'il PORTE le choix : le
+        // laisser refléter « 2 » quand le bouton 2 est actif aurait donné deux
+        // contrôles allumés pour une seule valeur.
+        value={horsBoutons ? effectif : ""}
+        placeholder={`jusqu'à ${RESERVER_PARTY_SIZE_MAX}`}
+        onChange={(e) => {
+          const brut = e.target.value.trim();
+          // Champ vidé : on retombe sur le choix par défaut plutôt que sur
+          // `NaN`, qui aurait fait partir une demande sans effectif.
+          onChange(brut === "" ? 2 : bornerEffectif(Number(brut)));
+        }}
+        aria-describedby="effectif-au-dela-aide"
+        className="mt-1.5 w-28 rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-base tabular-nums text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+      />
+      <p
+        id="effectif-au-dela-aide"
+        className="mt-2 text-xs font-medium leading-relaxed text-k-body"
+      >
+        Ce nombre vaut pour tous les créneaux ci-dessous : nous cherchons une
+        table pour {effectif} personne{effectif > 1 ? "s" : ""} à l&apos;heure
+        que vous choisirez.
+      </p>
+    </fieldset>
+  );
+}
+
+/**
+ * UN CRÉNEAU DE RESTAURANT — et pourquoi l'écran n'annonce aucun chiffre.
+ *
+ * Pas de « il reste 2 tables », pas de « table jusqu'à 6 » : ce serait une
+ * lecture de plus par chargement de page, et surtout un chiffre déjà périmé au
+ * moment où le client le lit. Le client dit son effectif, clique, et
+ * `reserve_table` tranche sous verrou — `reserved` ou `full`. L'écran n'est
+ * jamais un second juge, c'est la discipline de tout le module.
+ *
+ * `full` n'est donc PAS un cul-de-sac : c'est exactement le moment où la liste
+ * d'attente a un sens, pour CET effectif-là.
+ */
+function CreneauTable({
+  organizationId,
+  creneau,
+  timeZone,
+  effectif,
+}: {
+  organizationId: string;
+  creneau: ReserverSlotPublicView;
+  timeZone: string;
+  /** Choisi UNE FOIS en tête de liste, jamais ici. */
+  effectif: number;
+}) {
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [challengeDemande, setChallengeDemande] = useState(false);
+  /**
+   * Le refus, AVEC l'effectif qui l'a produit.
+   *
+   * Mémoriser l'effectif refusé et non relire celui de la tête de liste évite
+   * une dérive silencieuse : le client passe de 4 à 6 après avoir vu
+   * « complet », et le formulaire d'attente aurait alors parlé d'un effectif
+   * que la base n'a jamais refusé. Ici, la liste d'attente porte exactement la
+   * demande qui a échoué.
+   */
+  const [refus, setRefus] = useState<{
+    etat: Exclude<EtatReservationTable["state"], "reserved">;
+    effectif: number;
+  } | null>(null);
+
+  const action = useCallback(
+    async (
+      _prev: unknown,
+      formData: FormData,
+    ): Promise<ActionResult<EtatReservationTable>> => {
+      const emailSaisi = String(formData.get("email") ?? "").trim();
+
+      // UN RENDEZ-VOUS SANS ADRESSE EST INGÉRABLE (RDV-4), et une table en est
+      // un : sans elle le restaurant ne peut ni confirmer, ni prévenir s'il
+      // doit annuler. Le refus est tranché ICI, avant le réseau, pour que
+      // l'adresse ne voyage jamais pour rien.
+      if (!emailSaisi) {
+        return {
+          ok: false,
+          error:
+            "Indiquez votre email : il sert à vous confirmer la table et à vous prévenir en cas d'empêchement.",
+        };
+      }
+
+      const resultat = await reserverTable({
+        organizationId,
+        slotId: creneau.id,
+        partySize: effectif,
+        email: emailSaisi,
+        // L'accord transactionnel accompagne l'adresse par construction : la
+        // contrainte `reservations_consent_state` est une ÉQUIVALENCE, et le
+        // message de confirmation EST l'exécution du service demandé — pas une
+        // sollicitation. Aucun message publicitaire ne passe par ce canal.
+        consent: true,
+        turnstileToken: captchaToken ?? undefined,
+      });
+
+      if (!resultat.ok) {
+        if (resultat.challengeRequired) setChallengeDemande(true);
+        return resultat;
+      }
+
+      if (resultat.data.state === "reserved") {
+        setRefus(null);
+        return resultat;
+      }
+
+      // Les phrases de refus viennent TOUTES de `PHRASES_RESERVATION` : elles
+      // sont écrites et testées dans le module pur, et une variante recopiée
+      // ici aurait divergé au premier ajustement.
+      setRefus({ etat: resultat.data.state, effectif });
+      return { ok: false, error: PHRASES_RESERVATION[resultat.data.state] };
+    },
+    [organizationId, creneau.id, effectif, captchaToken],
+  );
+
+  // `reloadOnSuccess` : identique au parcours Moment, et pour la même raison —
+  // le code qui vient d'être émis n'existe nulle part dans cette liste, seule
+  // la relecture serveur le fait apparaître en haut de page.
+  const { state, pending, onSubmit } = useActionForm(action, {
+    reloadOnSuccess: true,
+    networkError:
+      "Connexion perdue. Vérifiez votre réseau puis réessayez — votre table n'a pas été prise.",
+  });
+
+  /**
+   * L'écran ne juge QUE l'heure et l'ouverture.
+   *
+   * `remaining` est neutralisé volontairement : la question « y a-t-il une
+   * table pour vous » n'a pas de réponse dans une jauge de places — douze
+   * couverts libres sur six tables de deux ne prennent pas un groupe de
+   * quatre. C'est `reserve_table` qui répond, et lui seul.
+   */
+  const etat = etatUiCreneau({
+    status: creneau.status,
+    startsAt: creneau.startsAt,
+    remaining: 1,
+  });
+  const champEmailId = `table-email-${creneau.id}`;
+
+  return (
+    <div className={carteClass}>
+      <p className="text-base font-black leading-snug text-k-ink">
+        {formatCreneau(creneau.startsAt, creneau.endsAt, timeZone)}
+      </p>
+
+      {etat !== "ouvert" ? (
+        <p className="mt-3 rounded-xl border-2 border-k-ink bg-zinc-100 px-3 py-2 text-center text-sm font-black text-k-ink">
+          Fermé
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="mt-4">
+          <label
+            htmlFor={champEmailId}
+            className="mb-1.5 block text-sm font-bold text-k-ink"
+          >
+            Votre email{" "}
+            <span className="font-medium text-k-body">(obligatoire)</span>
+          </label>
+          <input
+            id={champEmailId}
+            name="email"
+            type="email"
+            autoComplete="email"
+            inputMode="email"
+            maxLength={RESERVER_EMAIL_MAX}
+            required
+            placeholder="vous@exemple.fr"
+            aria-describedby={`${champEmailId}-aide`}
+            className="w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-base text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+          />
+          <p
+            id={`${champEmailId}-aide`}
+            className="mt-2 text-xs font-medium leading-relaxed text-k-body"
+          >
+            Votre adresse sert à confirmer cette table et à vous prévenir en cas
+            d&apos;empêchement — jamais pour de la publicité. Votre code
+            s&apos;affiche aussi sur cette page.
+          </p>
+
+          {/* Région vivante montée EN PERMANENCE : un `aria-live` créé en même
+              temps que son contenu n'annonce rien. */}
+          <div aria-live="polite">
+            <DefiAntiRobot
+              id={`table-${creneau.id}`}
+              action="reserver-reserve"
+              visible={challengeDemande}
+              onToken={setCaptchaToken}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={pending}
+            className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
+          >
+            {pending
+              ? "Réservation…"
+              : `Réserver pour ${effectif} personne${effectif > 1 ? "s" : ""}`}
+          </button>
+
+          <div aria-live="polite">
+            {state?.ok ? (
+              <p
+                role="status"
+                className="mt-3 rounded-xl border-2 border-k-ink bg-k-green/20 px-3 py-2 text-center text-sm font-black text-k-ink"
+              >
+                C&apos;est réservé ! Votre code apparaît en haut de cette page.
+              </p>
+            ) : null}
+          </div>
+          <div aria-live="assertive">
+            {state && !state.ok ? (
+              <p
+                role="alert"
+                className="mt-3 text-center text-sm font-bold text-k-ink"
+              >
+                {state.error}
+              </p>
+            ) : null}
+          </div>
+        </form>
+      )}
+
+      {/* COMPLET N'EST PAS UN CUL-DE-SAC : c'est la seule issue utile quand
+          aucune table n'est assez grande à cette heure-là. Les autres refus
+          n'ouvrent rien — se mettre en attente ne corrige ni une adresse
+          invalide, ni un créneau qui vient de fermer. */}
+      {refus?.etat === "full" ? (
+        <AttenteTable
+          organizationId={organizationId}
+          creneau={creneau}
+          effectif={refus.effectif}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * ÊTRE PRÉVENU SI UNE TABLE SE LIBÈRE — et ce que cela n'est PAS.
+ *
+ * On NOTIFIE, on ne TIENT pas. Plusieurs personnes peuvent attendre le même
+ * effectif à la même heure, toutes sont prévenues, et la première qui revient
+ * prend la table. L'écran le dit avant l'inscription ET après : quelqu'un qui
+ * croit sa table acquise ne revient que pour un refus, et c'est le commerçant
+ * qui encaisse la déception.
+ *
+ * L'adresse est REQUISE ici, contrairement à la liste des Moments : sans elle
+ * il n'y a rien à prévenir, donc rien à inscrire.
+ */
+function AttenteTable({
+  organizationId,
+  creneau,
+  effectif,
+}: {
+  organizationId: string;
+  creneau: ReserverSlotPublicView;
+  /** L'effectif que la base VIENT de refuser, pas celui de la tête de liste. */
+  effectif: number;
+}) {
+  const [consent, setConsent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [challengeDemande, setChallengeDemande] = useState(false);
+
+  const action = useCallback(
+    async (
+      _prev: unknown,
+      formData: FormData,
+    ): Promise<ActionResult<WaitlistJoinResult>> => {
+      const emailSaisi = String(formData.get("email") ?? "").trim();
+      const consenti = formData.get("consent") === "on";
+
+      // Les deux refus sont tranchés AVANT le réseau : une inscription sans
+      // adresse n'a pas d'objet, et une adresse sans la case cochée serait
+      // jetée par la base (`reservations_consent_state` est une équivalence) —
+      // l'envoyer l'aurait fait traverser réseau et journaux pour rien.
+      if (!emailSaisi) {
+        return {
+          ok: false,
+          error:
+            "Indiquez votre email : sans lui, personne ne peut vous prévenir qu'une table s'est libérée.",
+        };
+      }
+      if (!consenti) {
+        return {
+          ok: false,
+          error:
+            "Cochez la case pour être prévenu par email quand une table se libère.",
+        };
+      }
+
+      const resultat = await rejoindreListeAttenteTable({
+        organizationId,
+        slotId: creneau.id,
+        partySize: effectif,
+        email: emailSaisi,
+        consent: true,
+        turnstileToken: captchaToken ?? undefined,
+      });
+      if (!resultat.ok) {
+        if (resultat.challengeRequired) setChallengeDemande(true);
+        return resultat;
+      }
+
+      // `not_full` n'est pas un échec de la base, mais c'en est un pour le
+      // client : il a demandé à être prévenu d'une place qui est déjà là. On le
+      // renvoie vers le bouton de réservation, juste au-dessus.
+      if (resultat.data.state === "not_full") {
+        return {
+          ok: false,
+          error:
+            "Une table vient de se libérer à cette heure-là : réservez-la directement avec le bouton ci-dessus.",
+        };
+      }
+      if (resultat.data.state === "waitlist_full") {
+        const plafond = resultat.data.waitlistCapacity;
+        return {
+          ok: false,
+          error: plafond
+            ? `La liste d'attente de ce créneau est complète (${plafond} personnes). Essayez une autre heure.`
+            : "La liste d'attente de ce créneau est complète. Essayez une autre heure.",
+        };
+      }
+      if (resultat.data.state === "already_reserved") {
+        return {
+          ok: false,
+          error:
+            "Vous avez déjà une réservation sur ce créneau : elle est en haut de cette page.",
+        };
+      }
+      if (resultat.data.state === "invalid_email") {
+        return { ok: false, error: PHRASES_RESERVATION.invalid_email };
+      }
+      if (resultat.data.state === "unavailable") {
+        return { ok: false, error: PHRASES_RESERVATION.unavailable };
+      }
+      return resultat;
+    },
+    [organizationId, creneau.id, effectif, captchaToken],
+  );
+
+  // PAS de `reloadOnSuccess` ici, contrairement à la réservation : ce qu'il y a
+  // à montrer — « c'est noté, pour tant de personnes, et rien ne vous est
+  // réservé » — tient entièrement dans la réponse. Recharger la page l'aurait
+  // effacé et renvoyé le client sur un formulaire vide, qu'il aurait resoumis.
+  const { state, pending, onSubmit } = useActionForm(action, {
+    networkError:
+      "Connexion perdue. Vérifiez votre réseau puis réessayez — vous n'êtes pas encore inscrit.",
+  });
+
+  const inscrit =
+    state?.ok &&
+    (state.data.state === "waiting" || state.data.state === "already_waiting");
+
+  const champEmailId = `table-attente-email-${creneau.id}`;
+  const champConsentId = `table-attente-consent-${creneau.id}`;
+
+  if (inscrit) {
+    return (
+      <div className="mt-4 rounded-xl border-2 border-k-ink bg-k-yellow/40 px-4 py-3 shadow-[3px_3px_0_var(--color-k-ink)]">
+        <p role="status" className="text-base font-black leading-snug text-k-ink">
+          C&apos;est noté : vous serez prévenu si une table pour {effectif}{" "}
+          personne{effectif > 1 ? "s" : ""} se libère à cette heure-là.
+        </p>
+        <p className="mt-2 text-sm font-medium leading-relaxed text-k-ink">
+          <strong className="font-black">
+            Aucune table ne vous est réservée pour autant.
+          </strong>{" "}
+          Plusieurs personnes peuvent être prévenues en même temps, et la
+          première qui réserve prend la place — revenez vite quand vous recevrez
+          le message.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="mt-4">
+      <p className="rounded-xl border-2 border-k-ink/20 bg-k-bg px-3 py-2 text-sm font-bold leading-relaxed text-k-ink">
+        {PHRASES_RESERVATION.full}
+      </p>
+
+      <label
+        htmlFor={champEmailId}
+        className="mt-4 mb-1.5 block text-sm font-bold text-k-ink"
+      >
+        Votre email{" "}
+        <span className="font-medium text-k-body">(obligatoire)</span>
+      </label>
+      <input
+        id={champEmailId}
+        name="email"
+        type="email"
+        autoComplete="email"
+        inputMode="email"
+        maxLength={RESERVER_EMAIL_MAX}
+        required
+        placeholder="vous@exemple.fr"
+        aria-describedby={`${champEmailId}-aide`}
+        className="w-full rounded-xl border-2 border-k-ink bg-white px-4 py-3 text-base text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1"
+      />
+
+      <label
+        htmlFor={champConsentId}
+        className="mt-3 flex cursor-pointer items-start gap-3"
+      >
+        <input
+          id={champConsentId}
+          name="consent"
+          type="checkbox"
+          value="on"
+          checked={consent}
+          onChange={(e) => setConsent(e.target.checked)}
+          className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-k-ink accent-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+        />
+        <span className="text-sm font-bold text-k-ink">
+          J&apos;accepte d&apos;être prévenu par email si une table pour{" "}
+          {effectif} personne{effectif > 1 ? "s" : ""} se libère à cette heure.
+        </span>
+      </label>
+      <p
+        id={`${champEmailId}-aide`}
+        className="mt-2 text-xs font-medium leading-relaxed text-k-body"
+      >
+        Votre adresse n&apos;est utilisée que pour ce message-là — jamais pour de
+        la publicité.{" "}
+        <strong className="font-bold text-k-ink">
+          Être prévenu ne réserve rien : plusieurs personnes reçoivent l&apos;avis
+          et la première qui revient prend la table.
+        </strong>
+      </p>
+
+      <div aria-live="polite">
+        <DefiAntiRobot
+          id={`table-attente-${creneau.id}`}
+          action="reserver-waitlist-join"
+          visible={challengeDemande}
+          onToken={setCaptchaToken}
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={pending}
+        className="k-btn mt-4 w-full rounded-2xl border-2 border-k-ink bg-white px-6 py-4 text-base font-black uppercase tracking-wider text-k-ink hover:bg-k-yellow/40 disabled:pointer-events-none disabled:opacity-60"
+      >
+        {pending ? "Inscription…" : "Me prévenir si une table se libère"}
+      </button>
+
+      <div aria-live="assertive">
+        {state && !state.ok ? (
+          <p
+            role="alert"
+            className="mt-3 text-center text-sm font-bold text-red-700"
+          >
+            {state.error}
+          </p>
+        ) : null}
+      </div>
+    </form>
   );
 }
 
