@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type RefObject,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   getLoyaltyCheckinToken,
   stampLoyaltyVisit,
@@ -22,6 +23,7 @@ import {
 } from "@/components/wheel/turnstile-widget";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type {
+  LoyaltyLinkedJackpotState,
   LoyaltyMilestoneView,
   LoyaltyPassportReward,
   LoyaltyPassportState,
@@ -111,6 +113,8 @@ export interface LoyaltyPassportProps {
   goldThreshold: number;
   milestones: LoyaltyMilestoneView[];
   passport: LoyaltyPassportState;
+  /** Pot commun relié au passeport : affichage seulement, aucune écriture client. */
+  jackpot: LoyaltyLinkedJackpotState | null;
   /** Roues offertes indexées par milestoneId (paliers « spin »). */
   spinWheels: Record<string, LoyaltySpinBundle>;
 }
@@ -125,6 +129,7 @@ export function LoyaltyPassport({
   goldThreshold,
   milestones,
   passport,
+  jackpot,
   spinWheels,
 }: LoyaltyPassportProps) {
 
@@ -396,7 +401,63 @@ export function LoyaltyPassport({
 
       {/* ── Aperçu des paliers ── */}
       <MilestonesOverview milestones={milestones} visitCount={visitCount} />
+
+      {jackpot && <LinkedJackpotCard jackpot={jackpot} />}
     </div>
+  );
+}
+
+function LinkedJackpotCard({ jackpot }: { jackpot: LoyaltyLinkedJackpotState }) {
+  const router = useRouter();
+  const ratio = jackpot.threshold > 0
+    ? Math.min(1, jackpot.currentCount / jackpot.threshold)
+    : 0;
+  const amount = new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+  }).format(jackpot.displayAmountCents / 100);
+
+  return (
+    <section
+      aria-label="Mon jackpot collectif"
+      className="k-border mt-6 rounded-2xl bg-k-yellow/30 p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
+    >
+      <p className="text-xs font-black uppercase tracking-wide text-k-body">Mon jackpot collectif</p>
+      <h2 className="mt-1 text-lg font-black text-k-ink">{jackpot.name}</h2>
+      <p className="mt-1 text-sm font-bold text-k-body">À gagner : {jackpot.rewardLabel}</p>
+
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <p className="text-2xl font-black tabular-nums text-k-ink">{amount}</p>
+        <p className="text-sm font-black tabular-nums text-k-ink">
+          {jackpot.currentCount}/{jackpot.threshold}
+        </p>
+      </div>
+      <div
+        className="mt-2 h-4 overflow-hidden rounded-full border-2 border-k-ink bg-white"
+        role="progressbar"
+        aria-label="Progression du jackpot collectif"
+        aria-valuemin={0}
+        aria-valuemax={jackpot.threshold}
+        aria-valuenow={Math.min(jackpot.currentCount, jackpot.threshold)}
+      >
+        <div
+          className="h-full bg-k-orange transition-[width] duration-500"
+          style={{ width: `${Math.max(4, ratio * 100)}%` }}
+        />
+      </div>
+      <p className="mt-3 text-sm font-bold text-k-ink">
+        {jackpot.hasJoined
+          ? "Votre dernière visite a rejoint la cagnotte."
+          : "Présentez votre QR au comptoir : votre visite rejoindra la cagnotte."}
+      </p>
+      <button
+        type="button"
+        onClick={() => router.refresh()}
+        className="mt-3 text-sm font-black text-k-ink underline underline-offset-2 hover:text-k-orange"
+      >
+        Actualiser la jauge
+      </button>
+    </section>
   );
 }
 

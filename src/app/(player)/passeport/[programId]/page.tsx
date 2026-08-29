@@ -238,6 +238,7 @@ export default async function LoyaltyPassportPage({
         goldThreshold={ctx.program.gold_threshold}
         milestones={ctx.milestones}
         passport={ctx.passport}
+        jackpot={ctx.jackpot}
         spinWheels={spinWheels}
       />
 

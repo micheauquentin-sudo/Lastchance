@@ -37,6 +37,35 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Lot en cours — Passeport de fidélité ↔ Jackpot collectif (2026-08-28)
+
+**Terrain.** Branche isolée `feat/jackpot-loyalty-link`, fondée sur `origin/main`
+à `e299e382`. Fichiers principaux :
+`supabase/migrations/20261111120000_loyalty_jackpot_link.sql`,
+`src/actions/loyalty.ts`, `src/lib/loyalty-context.ts`,
+`src/components/loyalty/loyalty-passport.tsx`.
+
+**Décision implémentée.** Un programme de fidélité peut associer un seul Jackpot
+actif en validation caisse, de la même organisation. Seul un scan QR de
+passeport effectivement validé par la caisse ajoute une participation : le
+tampon et l'entrée Jackpot sont dans la même transaction SQL. Les codes tournants
+et cartes de commande ne sont pas concernés. Une carte en bas du passeport
+affiche la jauge, le lot, l'état personnel et une actualisation, sans redirection
+vers le Jackpot ni écriture au chargement.
+
+**Garde-fous prouvés dans le code.** FK composite tenant, unicité partielle de
+provenance `loyalty_stamp_id`, cooldown Jackpot jamais supérieur à celui du
+passeport, aucun secret/hash/code de gain exposé, et Jackpot inactif masqué sans
+bloquer le tampon fidélité.
+
+**Validation.** `sql:check`, `migrations:check`, typecheck, ESLint ciblé et
+171 tests Vitest ciblés sont verts. `supabase db reset --local` reste bloqué avant
+ce lot par la migration historique `20260904120000_reward_expiry_days` (ancre
+`sync_reward_issuance` absente) ; le pgTAP ajouté
+`supabase/tests/loyalty_jackpot_link.test.sql` est donc présent mais non exécuté
+localement. Ne pas considérer ce lot publiable avant un reset réussi et ce pgTAP
+vert, puis CI du SHA.
+
 ## Dernière demande utilisateur
 
 Codex pilote le développement de LastChance. Les audits doivent être précis et

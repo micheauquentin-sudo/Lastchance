@@ -445,6 +445,8 @@ export type LoyaltyTier = "bronze" | "silver" | "gold";
 export interface LoyaltyProgram {
   id: string;
   organization_id: string;
+  /** Jackpot staff de la même organisation, alimenté par les scans QR caisse. */
+  jackpot_campaign_id: string | null;
   name: string;
   status: LoyaltyProgramStatus;
   validation_mode: LoyaltyValidationMode;

@@ -209,6 +209,7 @@ export async function updateLoyaltyProgram(
     min_stamp_interval_seconds: formData.get("min_stamp_interval_seconds"),
     silver_threshold: formData.get("silver_threshold"),
     gold_threshold: formData.get("gold_threshold"),
+    jackpot_campaign_id: formData.get("jackpot_campaign_id"),
     // Le réglage n'est lu que si le formulaire porte RÉELLEMENT le champ.
     // '' = « sans limite », valeur LÉGITIME → `has`, jamais `get() ?? ""` :
     // sinon la sauvegarde de tout autre formulaire de la page remettrait
@@ -226,6 +227,24 @@ export async function updateLoyaltyProgram(
   if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
 
   const { id, code_ttl_days: codeTtlDays, ...rest } = parsed.data;
+  if (rest.jackpot_campaign_id) {
+    const supabase = await createClient();
+    const { data: campaign } = await supabase
+      .from("jackpot_campaigns")
+      .select("id, validation_mode, status, min_participation_interval_seconds")
+      .eq("id", rest.jackpot_campaign_id)
+      .eq("organization_id", organization.id)
+      .maybeSingle();
+    if (!campaign || campaign.status !== "active" || campaign.validation_mode !== "staff") {
+      return { ok: false, error: "Choisissez un jackpot actif en validation caisse." };
+    }
+    if (campaign.min_participation_interval_seconds > rest.min_stamp_interval_seconds) {
+      return {
+        ok: false,
+        error: "La fréquence du jackpot ne peut pas être plus longue que celle du passeport associé.",
+      };
+    }
+  }
   // Champ absent du formulaire → colonne non touchée (et non remise à null).
   // Sorti du rest explicitement : laissé dedans il y voyagerait à `undefined`,
   // ce que la sérialisation JSON de PostgREST laisse tomber par accident — on

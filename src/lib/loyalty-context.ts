@@ -26,6 +26,7 @@ type PublicLoyaltyOrganization = Pick<
   | "trial_ends_at"
   | "past_due_since"
   | "addon_loyalty"
+  | "addon_jackpot"
   | "comp_access"
   | "comp_access_until"
   | "timezone"
@@ -35,11 +36,11 @@ type PublicLoyaltyOrganization = Pick<
 export type PublicLoyaltyProgram = Omit<LoyaltyProgram, "rotating_secret">;
 
 const ORG_COLUMNS =
-  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, comp_access, comp_access_until, timezone";
+  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, addon_jackpot, comp_access, comp_access_until, timezone";
 
 /** Colonnes publiques du programme — rotating_secret volontairement exclu. */
 const PROGRAM_COLUMNS =
-  "id, organization_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at";
+  "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Ce passeport de fidélité n'est pas disponible.";
@@ -92,6 +93,16 @@ export interface LoyaltyPassportState {
   visitCount: number;
   tier: LoyaltyTier;
   rewards: LoyaltyPassportReward[];
+}
+
+/** Etat minimal du pot commun, affichable sans ouvrir le parcours Jackpot. */
+export interface LoyaltyLinkedJackpotState {
+  name: string;
+  rewardLabel: string;
+  currentCount: number;
+  threshold: number;
+  displayAmountCents: number;
+  hasJoined: boolean;
 }
 
 interface ProgramWithOrg {
@@ -227,6 +238,57 @@ async function loadPassportState(
       program.gold_threshold,
     ),
     rewards,
+  };
+}
+
+/**
+ * Lit le pot explicitement relié au programme. Cette lecture n'écrit rien et
+ * ne retourne ni le cookie, ni son hash, ni le code d'un éventuel gain.
+ */
+async function loadLinkedJackpotState(
+  admin: ReturnType<typeof createAdminClient>,
+  program: PublicLoyaltyProgram,
+  organization: PublicLoyaltyOrganization,
+): Promise<LoyaltyLinkedJackpotState | null> {
+  if (!program.jackpot_campaign_id || !organization.addon_jackpot) return null;
+
+  const { data: campaign } = await admin
+    .from("jackpot_campaigns")
+    .select(
+      "id, organization_id, name, status, validation_mode, threshold, current_count, display_base_cents, display_increment_cents, reward_label",
+    )
+    .eq("id", program.jackpot_campaign_id)
+    .eq("organization_id", program.organization_id)
+    .eq("status", "active")
+    .eq("validation_mode", "staff")
+    .maybeSingle();
+
+  if (!campaign) return null;
+
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(program.id))?.value;
+  let hasJoined = false;
+  if (token) {
+    const { data: participant } = await admin
+      .from("jackpot_participants")
+      .select("id")
+      .eq("campaign_id", campaign.id)
+      .eq("organization_id", program.organization_id)
+      .eq("player_token_hash", hashPlayerToken(token))
+      .limit(1)
+      .maybeSingle();
+    hasJoined = Boolean(participant);
+  }
+
+  return {
+    name: campaign.name,
+    rewardLabel: campaign.reward_label || "Le lot du moment",
+    currentCount: campaign.current_count,
+    threshold: campaign.threshold,
+    displayAmountCents:
+      campaign.display_base_cents +
+      campaign.current_count * campaign.display_increment_cents,
+    hasJoined,
   };
 }
 
@@ -519,6 +581,7 @@ export type LoyaltyContext =
       organization: PublicLoyaltyOrganization;
       milestones: LoyaltyMilestoneView[];
       passport: LoyaltyPassportState;
+      jackpot: LoyaltyLinkedJackpotState | null;
     };
 
 /**
@@ -551,7 +614,10 @@ export async function loadLoyaltyContext(
   const milestones = ((milestoneRows as LoyaltyMilestone[] | null) ?? []).map(
     toMilestoneView,
   );
-  const passport = await loadPassportState(admin, program);
+  const [passport, jackpot] = await Promise.all([
+    loadPassportState(admin, program),
+    loadLinkedJackpotState(admin, program, organization),
+  ]);
 
-  return { ok: true, admin, program, organization, milestones, passport };
+  return { ok: true, admin, program, organization, milestones, passport, jackpot };
 }

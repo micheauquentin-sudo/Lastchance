@@ -40,6 +40,7 @@ import {
   LoyaltyMilestonesEditor,
   LoyaltySettings,
   LoyaltyStatusControls,
+  type LoyaltyJackpotOption,
   type WheelOption,
 } from "@/components/dashboard/loyalty-editor";
 import { LoyaltyStatusBadge } from "@/components/dashboard/loyalty-status";
@@ -145,11 +146,12 @@ export default async function LoyaltyDetailPage({
     { data: wheelRows },
     { data: prizeRows },
     { data: orderCodeRows },
+    { data: jackpotRows },
   ] = await Promise.all([
     supabase
       .from("loyalty_programs")
       .select(
-        "id, organization_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days",
+        "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days",
       )
       .eq("id", id)
       .eq("organization_id", organization.id)
@@ -184,12 +186,26 @@ export default async function LoyaltyDetailPage({
       .eq("organization_id", organization.id)
       .order("created_at", { ascending: false })
       .limit(ORDER_CODES_LIMIT),
+    // Seuls les jackpots déjà actifs et validés en caisse sont compatibles :
+    // le même scan staff est la preuve de visite des deux expériences.
+    supabase
+      .from("jackpot_campaigns")
+      .select("id, name, min_participation_interval_seconds")
+      .eq("organization_id", organization.id)
+      .eq("status", "active")
+      .eq("validation_mode", "staff")
+      .order("created_at", { ascending: true }),
   ]);
 
   if (!program) notFound();
   const p = program as LoyaltyProgram;
   const milestones = (milestoneRows ?? []) as LoyaltyMilestone[];
   const wheels = toWheelOptions(wheelRows ?? [], prizeRows ?? []);
+  const jackpots: LoyaltyJackpotOption[] = (jackpotRows ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    minParticipationIntervalSeconds: row.min_participation_interval_seconds,
+  }));
 
   // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Le passeport n'a
   // PAS de colonne de slug public (contrairement au quiz ou au calendrier) : sa
@@ -441,7 +457,9 @@ export default async function LoyaltyDetailPage({
             aria-label={`Étape ${numero} sur ${ETAPES_FIDELITE.length} — ${definition.titre}`}
             className="space-y-4"
           >
-            {etape === "programme" && <LoyaltySettings program={p} />}
+            {etape === "programme" && (
+              <LoyaltySettings program={p} jackpots={jackpots} />
+            )}
 
             {etape === "recompenses" && (
               <>

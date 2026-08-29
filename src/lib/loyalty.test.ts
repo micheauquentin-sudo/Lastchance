@@ -415,6 +415,33 @@ describe("validations/loyalty", () => {
     ).toBe(false);
   });
 
+  it("updateLoyaltyProgramSchema : un jackpot associé exige la caisse", () => {
+    const base = {
+      id: UUID,
+      name: "Fidélité + pot",
+      validation_mode: "staff" as const,
+      rotating_period_seconds: 60,
+      min_stamp_interval_seconds: 300,
+      silver_threshold: 5,
+      gold_threshold: 10,
+      jackpot_campaign_id: "11111111-1111-4111-8111-111111111111",
+    };
+    expect(updateLoyaltyProgramSchema.safeParse(base).success).toBe(true);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...base,
+        validation_mode: "rotating_code",
+      }).success,
+    ).toBe(false);
+    expect(
+      updateLoyaltyProgramSchema.safeParse({
+        ...base,
+        jackpot_campaign_id: "",
+        validation_mode: "rotating_code",
+      }).success,
+    ).toBe(true);
+  });
+
   it("updateLoyaltyProgramSchema : bornes du code tournant et du cooldown", () => {
     // Mode staff : plancher de 300 s (TTL du jeton de check-in 180 s + 2 min
     // de marge), cf. migrations 20260725160000 puis 20260725170000.
