@@ -6,6 +6,7 @@ import {
   asQueueStatus,
   asReserverActivityKind,
   cheminOffreStock,
+  couvertsEnAttente,
   etatUiOffreStock,
   etatUiPriseStock,
   formatFenetreStock,
@@ -2142,5 +2143,41 @@ describe("cheminOffreStock — une adresse, jamais une preuve", () => {
     expect(urlOffreStock("o1", "https://app.test/")).toBe(
       "https://app.test/reserver/stock/o1",
     );
+  });
+});
+
+describe("couvertsEnAttente — la file compte des COUVERTS, pas des lignes", () => {
+  const entree = (position: number, partySize: number) => ({ position, partySize });
+
+  it("somme les effectifs des entrées vivantes", () => {
+    expect(couvertsEnAttente([entree(1, 4), entree(2, 6), entree(3, 2)])).toBe(12);
+  });
+
+  // LE BOGUE QUE CE TEST FERME : « 3 personnes en attente » était exact tant
+  // qu'une inscription valait une personne. Dans une salle, trois inscriptions
+  // valent douze couverts, et le commerçant qui lit « 3 » croit pouvoir les
+  // servir en libérant une table de quatre.
+  it("ne compte PAS les lignes", () => {
+    expect(couvertsEnAttente([entree(1, 6)])).not.toBe(1);
+  });
+
+  it("ignore les entrées terminées — position 0 n'attend plus", () => {
+    expect(couvertsEnAttente([entree(1, 4), entree(0, 8)])).toBe(4);
+  });
+
+  it("rend 0 sur une file vide", () => {
+    expect(couvertsEnAttente([])).toBe(0);
+  });
+
+  it("compte au moins une personne par entrée, même sur une donnée abîmée", () => {
+    // La base déclare `not null default 1` ; un 0 ne devrait pas exister. S'il
+    // arrive quand même, il vaut mieux compter une personne de trop qu'afficher
+    // une file de zéro couvert sur laquelle des gens attendent vraiment.
+    expect(couvertsEnAttente([entree(1, 0)])).toBe(1);
+  });
+
+  it("sur un Moment, couverts et lignes coïncident — c'est ce qui rend le second chiffre inutile là-bas", () => {
+    const file = [entree(1, 1), entree(2, 1), entree(3, 1)];
+    expect(couvertsEnAttente(file)).toBe(file.length);
   });
 });

@@ -160,7 +160,7 @@ const RESERVATION_COLUMNS =
  * n'en a aucun usage.
  */
 const WAITLIST_COLUMNS =
-  "id, slot_id, organization_id, status, offered_at, offer_expires_at, converted_at, converted_reservation_id, expired_at, cancelled_at, created_at";
+  "id, slot_id, organization_id, status, offered_at, offer_expires_at, converted_at, converted_reservation_id, expired_at, cancelled_at, created_at, party_size";
 
 /** `token_hash` EST ABSENT : il n'est pas dans le grant, et n'a aucun lecteur. */
 const INVITATION_COLUMNS =
@@ -262,6 +262,7 @@ interface WaitlistRow {
   expired_at: string | null;
   cancelled_at: string | null;
   created_at: string;
+  party_size: number | null;
 }
 
 interface InvitationRow {
@@ -1219,6 +1220,20 @@ export interface ReserverWaitlistDashboardView {
   /** Tranché SERVEUR, comme dans la RPC : une échéance passée ne tient rien. */
   offerLive: boolean;
   createdAt: string;
+  /**
+   * COMBIEN ILS SONT (RDV-9).
+   *
+   * La colonne existe depuis RDV-6 et n'était lisible que depuis RDV-8 : son
+   * droit de lecture manquait, exactement comme celui de
+   * `reservations.table_id`. Deux fois le même défaut, sur le même lot.
+   *
+   * Elle vaut 1 partout sur les MOMENTS, où l'inscription est nominative et où
+   * la file compte des personnes. Elle ne dit quelque chose que dans une
+   * SALLE — et là, elle décide : une tablée de six qui attend ne se sert pas
+   * en libérant une table de deux, et le commerçant qui ne la voit pas ne peut
+   * pas décider de rapprocher deux tables.
+   */
+  partySize: number;
 }
 
 export interface ReserverInvitationDashboardView {
@@ -1478,6 +1493,13 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
           Number.isFinite(echeance) &&
           echeance > maintenant,
         createdAt: entree.created_at,
+        // Défaut à 1 et non 0 : une entrée de liste vaut au moins une
+        // personne, et la colonne est nullable dans le type généré alors que
+        // la base la déclare .
+        partySize:
+          typeof entree.party_size === "number" && entree.party_size > 0
+            ? entree.party_size
+            : 1,
       } satisfies ReserverWaitlistDashboardView;
     });
 
