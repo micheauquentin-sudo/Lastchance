@@ -78,6 +78,9 @@ select is(
 -- La provenance est elle aussi tenant-scopee : une entree d'un pot voisin ne
 -- peut jamais etre rattachee au tampon de ce passeport, meme avec un appel
 -- SQL de service compromis.
+update public.jackpot_participants
+   set loyalty_stamp_id = null
+ where campaign_id = 'f1000000-0000-4000-8000-000000000011';
 insert into public.jackpot_participants (
   campaign_id, organization_id, player_token_hash, cycle
 ) values (
