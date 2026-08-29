@@ -26,21 +26,21 @@
     "bundle:mesure": "node scripts/mesurer-bundle.mjs"
   },
   "dependencies": {
-    "@sentry/nextjs": "^10.69.0",
-    "@supabase/ssr": "^0.12.4",
+    "@sentry/nextjs": "^10.71.0",
+    "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.110.8",
     "html-to-image": "1.11.13",
     "jsqr": "^1.4.0",
-    "next": "16.2.12",
+    "next": "16.3.3",
     "passkit-generator": "^3.5.7",
-    "posthog-js": "^1.409.5",
+    "posthog-js": "^1.421.0",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "resend": "^6.18.1",
+    "resend": "^6.24.0",
     "server-only": "^0.0.1",
-    "sharp": "^0.35.3",
-    "stripe": "^22.4.0",
+    "sharp": "^0.35.4",
+    "stripe": "^22.5.0",
     "zod": "^4.4.3"
   },
   "overrides": {
@@ -56,7 +56,7 @@
     "js-yaml": "^4.3.1"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.12.1",
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
@@ -67,14 +67,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
-    "happy-dom": "^20.11.1",
+    "eslint-config-next": "16.3.3",
+    "happy-dom": "^20.11.8",
     "local-ssl-proxy": "^2.0.5",
     "pngjs": "^7.0.0",
-    "supabase": "^2.111.0",
+    "supabase": "^2.116.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "wait-on": "^9.1.0"
   }
 }
