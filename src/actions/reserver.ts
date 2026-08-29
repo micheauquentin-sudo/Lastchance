@@ -712,12 +712,10 @@ export async function cancelReservation(input: {
     // ligne — la RPC ne le rend pas — et le signalement part hors du chemin de
     // réponse : celui qui annule n'a pas à attendre qu'on prévienne la file.
     if (resultat.state === "cancelled" && resultat.reservationId) {
-      const salle = await creneauDeLaReservation(
-        admin,
-        resultat.reservationId,
-        null,
-      );
-      if (salle) signalerTableLiberee(salle);
+      signalerTableLiberee({
+        reservationId: resultat.reservationId,
+        organizationId: null,
+      });
     }
     return { ok: true as const, data: resultat };
   });
@@ -1281,8 +1279,9 @@ function lireCiblesTableLiberee(brut: unknown): CibleTableLiberee[] {
  * une annulation qui a déjà eu lieu en base.
  */
 function signalerTableLiberee(params: {
-  organizationId: string;
-  slotId: string;
+  reservationId: string;
+  /** Déjà prouvée au comptoir ; `null` côté joueur, où la RPC l'a lue. */
+  organizationId: string | null;
 }): void {
   after(() =>
     diffuserTableLiberee(params).catch((err) =>
@@ -1300,16 +1299,34 @@ function signalerTableLiberee(params: {
  * rester d'accord, et c'est elle qui fait foi.
  */
 async function diffuserTableLiberee(params: {
-  organizationId: string;
-  slotId: string;
+  reservationId: string;
+  organizationId: string | null;
 }): Promise<void> {
   const admin = createAdminClient();
+
+  // LA RÉSOLUTION DU CRÉNEAU EST ICI, ET PAS CHEZ L'APPELANT.
+  //
+  // Elle y était, et c'était une lecture de plus sur le CHEMIN DE RÉPONSE de
+  // toute annulation — y compris sur un Moment, qui n'a pas de tables et
+  // dont personne ne sera jamais prévenu. Celui qui annule attendait donc un
+  // aller-retour pour un travail qui, neuf fois sur dix, ne produit rien.
+  //
+  // La ligne annulée ne disparaît pas : `cancel_reservation` écrit
+  // `status = 'cancelled'`, elle reste lisible. Rien n'obligeait à la lire
+  // avant de répondre.
+  const salle = await creneauDeLaReservation(
+    admin,
+    params.reservationId,
+    params.organizationId,
+  );
+  if (!salle) return;
+  const organizationId = salle.organizationId;
 
   const { data: slot } = await admin
     .from("reservation_slots")
     .select("id, activity_id, starts_at, ends_at")
-    .eq("id", params.slotId)
-    .eq("organization_id", params.organizationId)
+    .eq("id", salle.slotId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (!slot) return;
 
@@ -1322,13 +1339,13 @@ async function diffuserTableLiberee(params: {
     .from("reservation_activities")
     .select("id, name, booking_mode")
     .eq("id", slot.activity_id)
-    .eq("organization_id", params.organizationId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (!activity || activity.booking_mode !== "rendez_vous") return;
 
   const { data, error } = await admin.rpc(
     "reservation_table_freed_targets",
-    { p_organization_id: params.organizationId, p_slot_id: params.slotId },
+    { p_organization_id: organizationId, p_slot_id: salle.slotId },
   );
   if (error) {
     reportError("reserver.table-liberee", error.message);
@@ -1341,7 +1358,7 @@ async function diffuserTableLiberee(params: {
   const { data: organization } = await admin
     .from("organizations")
     .select("name, timezone")
-    .eq("id", params.organizationId)
+    .eq("id", organizationId)
     .maybeSingle();
   if (!organization) return;
 
@@ -1354,7 +1371,7 @@ async function diffuserTableLiberee(params: {
     // seul seau pour la volée aurait fait sauter tous les rappels dès qu'une
     // seule adresse est chaude ; celui-ci ne coupe que son porteur (ADR-032).
     const autorise = await rateLimit(
-      rateLimitBucket("reserver:email", params.organizationId, cible.email),
+      rateLimitBucket("reserver:email", organizationId, cible.email),
       RATE_LIMITS.reserverEmail,
       { failClosed: true },
     );
@@ -1821,12 +1838,10 @@ export async function cancelReservationStaff(
     // banal d'un restaurant. Ne le câbler que côté client aurait laissé la file
     // dans l'ignorance de la moitié des tables rendues.
     if (resultat.state === "cancelled" && resultat.reservationId) {
-      const salle = await creneauDeLaReservation(
-        admin,
-        resultat.reservationId,
-        garde.organizationId,
-      );
-      if (salle) signalerTableLiberee(salle);
+      signalerTableLiberee({
+        reservationId: resultat.reservationId,
+        organizationId: garde.organizationId,
+      });
     }
     revalidatePath("/dashboard/reservations");
     return { ok: true as const, data: resultat };
