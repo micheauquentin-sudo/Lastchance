@@ -4866,3 +4866,51 @@ deux assertions rougissent si l'on retire le filtre de la migration — sans
 pouvoir exécuter le fichier, la base ne se montant pas sur cette machine (voir
 l'entrée voisine sur `supabase db reset`). Une insertion fautive aurait fait
 avorter les 36 assertions du fichier au lieu d'en réparer deux.
+
+## OUVERT (2026-08-29, signalé, non corrigé, ADR-122) — le socle Réserver vérifie encore le droit `vitrine`, pas `rendez_vous`
+
+Réservation de table (RDV-6 à RDV-9, PR #229-#232) a sa propre clé
+d'entitlement, `rendez_vous`, posée en RDV-5 (#228) pour séparer Réservation de
+Moments. Mais les RPC du socle **Moments** — `reserve_slot`, `waitlist_join`
+(`20261007120000_reserver_experiences_signature.sql`) et
+`reservation_offer_next` — testent toujours `org_has_module_access(…,
+'vitrine')`, héritage d'avant la séparation des clés par produit.
+
+Un commerçant qui n'aurait acheté que Réservation, sans Vitrine, verrait donc
+ses Moments **muets** : le droit `rendez_vous` qu'il détient ne lui ouvre pas
+`reserve_slot`. Non corrigé dans ce chantier — la correction touche le socle
+Moments, hors périmètre de la Réservation de table, et demande un choix : soit
+accepter `vitrine` OU `rendez_vous` sur ces trois RPC, soit conditionner selon
+`booking_mode` de l'activité visée. Signalé, pas tranché.
+
+## OUVERT (2026-08-29, signalé partiellement corrigé, ADR-122) — une colonne ajoutée n'hérite d'AUCUN droit de lecture, et rien ne le détecte avant un pgTAP écrit après coup
+
+`reservations` et `reservation_waitlist_entries` ont des grants **colonne par
+colonne** (`20261002120000:436`, `20261004120000:516`), précisément pour tenir
+`email` hors de portée du commerçant qui n'a droit qu'aux colonnes
+opérationnelles. RDV-6 (`20261108120000_reservation_tables.sql`) a ajouté
+**deux** colonnes sans leur grant : `reservations.table_id` et
+`reservation_waitlist_entries.party_size`.
+
+Conséquence, et c'est le point qui mérite d'être retenu : **PostgREST refuse
+EN ENTIER un `select` qui touche ne serait-ce qu'une colonne non accordée.**
+Un écran qui aurait ajouté `table_id` ou `party_size` à sa requête n'aurait pas
+affiché une valeur vide — il aurait fait disparaître **toute la ligne**. La
+panne se serait lue « les réservations ont disparu », jamais « il manque un
+grant ».
+
+**Les deux omissions ont été trouvées par des tests pgTAP écrits après
+coup**, pas par une garde automatique — aucune des gardes existantes
+(`module-access-parity`, `fk_composites_couverture`, …) ne compare le schéma
+d'une table à ses grants de colonnes. Corrigées par deux migrations de
+réparation (`20261109120000_plan_salle_lecture.sql`,
+`20261110120000_liste_attente_effectif.sql`), chacune posant en plus une
+**garde jumelle** qui fait échouer son application si `email` redevenait
+lisible — mais cette garde ne couvre que les deux colonnes qu'elle nomme.
+
+**Ce qui reste ouvert, et c'est la dette réelle** : rien n'attrape la
+**prochaine** colonne oubliée sur une table à grants colonne par colonne.
+Proposer une garde générique (un test qui énumère les colonnes d'une table et
+échoue sur toute colonne ni accordée ni explicitement exclue) est une piste,
+**pas une décision prise** — elle n'a pas été évaluée pour son coût ni pour son
+risque de faux positifs sur les tables à grant de table entier.

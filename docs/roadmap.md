@@ -1,5 +1,52 @@
 # Roadmap — Lastchance
 
+## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #231, RDV-9 #232 en CI)
+
+**Objectif** : donner à Réservation (`rendez_vous`, produit séparé de Moments
+depuis RDV-5, #228) ce qu'un restaurant attend d'une réservation — des tables
+nommées et un effectif exact — là où le socle Réserver ne savait compter que
+des couverts sur un créneau.
+
+- **RDV-6 Le socle SQL** (#229, `959df6c1`, migration `20261108120000`) —
+  `reservation_tables` (nom, places, position), `reservations.table_id`,
+  `reservation_activities.table_turn_minutes` (15..600 min, distinct de
+  `duration_minutes`), `reserve_table` (meilleur ajustement — la plus petite
+  table qui convient), `reservation_tables_state` (le plus grand effectif
+  **plaçable**, jamais une somme de couverts libres), trigger
+  `reservations_require_table`, `reservations_party_size_bound` élargi de
+  1..2 à **1..30**, `reservation_waitlist_entries.party_size`. 29 tests
+  pgTAP. Répare au passage une omission de RDV-5 : `rendez_vous` manquait
+  dans `organization_module_grants_module_check` — le droit n'était pas
+  octroyable du tout.
+- **RDV-7 Les écrans commerçant** (#230, `02d38d4e`, migration
+  `20261109120000`) — réglage du plan de salle par étapes, lecture d'un coup
+  d'œil des disponibilités.
+- **RDV-8 L'effectif côté joueur** (#231, `2d680394`, migration
+  `20261110120000`) — « vous serez combien ? » à l'inscription en liste
+  d'attente, et l'annulation prévient désormais ceux qui tiennent une place
+  (`reservation_table_freed_targets`).
+- **RDV-9 La file d'attente affiche les couverts** (PR #232, en CI au
+  29/08, aucune migration) — le compteur de tête somme les couverts et
+  n'affiche le second chiffre que s'il diffère du nombre d'inscriptions ;
+  chaque entrée porte son effectif avant sa date d'attente.
+
+**Décisions** : [ADR-122](./decisions.md) — pourquoi un seul schéma pour deux
+produits, pourquoi des tables nommées plutôt qu'une jauge, pourquoi
+`table_turn_minutes` reste distinct de `duration_minutes`, et pourquoi la
+liste d'attente notifie sans jamais tenir de table.
+
+**Reste ouvert** (`docs/bugs.md`) : le socle Moments (`reserve_slot`,
+`waitlist_join`, `reservation_offer_next`) vérifie encore le droit `vitrine`,
+pas `rendez_vous` — un commerçant qui n'aurait acheté que Réservation verrait
+ses Moments muets, non corrigé, hors périmètre de ce lot. Deux colonnes ajoutées
+par RDV-6 (`reservations.table_id`, `reservation_waitlist_entries.party_size`)
+avaient été oubliées du grant de lecture colonne par colonne — trouvées par
+pgTAP après coup, corrigées avec une garde jumelle chacune, mais aucune garde
+générique ne couvre la prochaine omission. **Geste propriétaire** : créer le
+produit Stripe « Réservation » (20 €/mois) et poser
+`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` en Production — le droit fonctionne déjà
+par octroi back-office, seule la vente en ligne manque.
+
 ## V1.68 — Générateur de questions, et le partage remis à sa place (2026-08-28, non poussé)
 
 **Objectif** : rendre le Créateur de quiz et le Mode événement live utilisables
