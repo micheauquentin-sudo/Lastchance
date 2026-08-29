@@ -106,6 +106,15 @@ export default async function ReserverPage({
         // donc de `booking_mode` : un Moment se prend sans rien laisser, un
         // rendez-vous nommé sans moyen de joindre le client est ingérable.
         emailObligatoire={ctx.emailObligatoire}
+        // COMMENT ON RÉSERVE (RDV-8) — une place dans une jauge, ou une TABLE.
+        //
+        // Le mode vient du CONTEXTE, et non d'`emailObligatoire`. Les deux
+        // valent aujourd'hui la même chose, et c'est précisément le piège :
+        // l'adresse est exigée PARCE QUE le rendez-vous la demande, jamais
+        // l'inverse. Le jour où un Moment l'exigerait à son tour, toute la
+        // salle — sélecteur d'effectif, liste d'attente par tablée — se serait
+        // affichée sur un atelier de poterie.
+        bookingMode={ctx.bookingMode}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

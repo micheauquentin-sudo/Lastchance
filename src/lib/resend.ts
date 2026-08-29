@@ -1597,6 +1597,129 @@ function reservationConfirmationEmailHtml(p: {
 }
 
 /**
+ * « UNE TABLE S'EST LIBÉRÉE » (RDV-8).
+ *
+ * ── CE QUE CET EMAIL PROMET, ET CE QU'IL NE PROMET PAS ──
+ *
+ * Il ne promet PAS la table. Aucune n'est tenue : plusieurs personnes dont
+ * l'effectif convient reçoivent le même message, et la première qui revient
+ * prend la place par `reserve_table`, sous verrou. Le texte le dit en toutes
+ * lettres — « premier arrivé, premier servi » — parce qu'un message qui
+ * laisserait croire à une réservation acquise transformerait chaque envoi en
+ * promesse rompue pour tous sauf un.
+ *
+ * L'alternative — tenir la table deux heures pour une seule personne — a été
+ * écartée à la conception (migration 20261110120000) : elle laisse la salle
+ * vide un vendredi soir si l'email n'est pas lu.
+ *
+ * ── L'EFFECTIF EST RAPPELÉ, ET C'EST LE POINT ──
+ *
+ * Le destinataire a demandé une table POUR UN NOMBRE DE PERSONNES, parfois il
+ * y a plusieurs jours. Lui écrire « une place s'est libérée » sans dire pour
+ * combien l'oblige à rouvrir la page pour savoir si ça le concerne. On le lui
+ * dit dans le sujet.
+ *
+ * ── MÊMES INTERDITS QUE LES AUTRES TRANSACTIONNELS DE CE MODULE ──
+ *
+ * Le destinataire est un VISITEUR, pas un commerçant inscrit : on ne remonte
+ * NI `error.message`, NI `JSON.stringify(error)` — Resend y recopie l'adresse,
+ * qui partirait dans Sentry et dans les journaux de la plateforme, collectée
+ * pour un seul envoi et conservée par un système qui n'a jamais eu de base
+ * pour la porter. `name` et `statusCode` disent tout ce qu'une astreinte a
+ * besoin de savoir.
+ */
+export async function sendTableFreedEmail(params: {
+  to: string;
+  activityName: string;
+  /** Créneau DÉJÀ formaté dans le fuseau de l'organisation. */
+  slotLabel: string;
+  /** L'effectif que cette personne avait demandé. */
+  partySize: number;
+  organizationName: string;
+  /** Page publique de l'activité — une adresse, jamais un jeton. */
+  bookingUrl: string;
+}): Promise<boolean> {
+  const apiKey = optionalEnv("RESEND_API_KEY");
+  const from = optionalEnv("RESEND_FROM_EMAIL");
+
+  if (!apiKey || !from) {
+    console.warn(
+      `[resend] non configuré (RESEND_API_KEY: ${apiKey ? "ok" : "MANQUANTE"}, ` +
+        `RESEND_FROM_EMAIL: ${from ? "ok" : "MANQUANTE"}) — table libérée non signalée`,
+    );
+    recordCounter("reserver.table_liberee.not_configured");
+    return false;
+  }
+
+  try {
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({
+      from,
+      to: params.to,
+      subject: `Une table pour ${params.partySize} vient de se libérer chez ${params.organizationName}`,
+      html: tableFreedEmailHtml(params),
+    });
+
+    if (error) {
+      reportError(
+        "resend",
+        `signalement de table libérée échoué: ${error.name} (${error.statusCode ?? "sans statut"})`,
+      );
+      recordCounter("reserver.table_liberee.failed");
+      return false;
+    }
+    console.log(`[resend] table libérée signalée (id: ${data?.id})`);
+    recordCounter("reserver.table_liberee.sent");
+    return true;
+  } catch (err) {
+    reportError("resend", `exception à l'envoi du signalement de table: ${err}`);
+    recordCounter("reserver.table_liberee.failed");
+    return false;
+  }
+}
+
+function tableFreedEmailHtml(p: {
+  activityName: string;
+  slotLabel: string;
+  partySize: number;
+  organizationName: string;
+  bookingUrl: string;
+}): string {
+  const activity = escapeHtml(p.activityName);
+  const slot = escapeHtml(p.slotLabel);
+  const org = escapeHtml(p.organizationName);
+  const url = escapeHtml(p.bookingUrl);
+  const couverts = `${p.partySize} personne${p.partySize > 1 ? "s" : ""}`;
+
+  return `<!doctype html>
+<html lang="fr">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:480px;margin:0 auto;padding:32px 20px;">
+    <div style="background:#ffffff;border-radius:16px;padding:32px;text-align:center;">
+      <p style="font-size:13px;letter-spacing:2px;color:#7c3aed;text-transform:uppercase;margin:0 0 12px;">${org}</p>
+      <h1 style="font-size:24px;color:#18181b;margin:0 0 8px;">Une table s'est libérée 🍽️</h1>
+      <p style="font-size:20px;font-weight:bold;color:#18181b;margin:0 0 4px;">${activity}</p>
+      <p style="color:#52525b;font-size:15px;margin:0 0 24px;">${slot}</p>
+      <div style="background:#f4f4f5;border-radius:12px;padding:20px;margin:24px 0;">
+        <p style="font-size:11px;letter-spacing:2px;color:#71717a;margin:0 0 6px;">VOTRE DEMANDE</p>
+        <p style="font-size:22px;font-weight:bold;color:#18181b;margin:0;">Une table pour ${couverts}</p>
+      </div>
+      <a href="${url}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;border-radius:10px;padding:12px 20px;font-size:14px;">Réserver maintenant</a>
+      <p style="color:#71717a;font-size:13px;margin:16px 0 0;">
+        <strong>Premier arrivé, premier servi.</strong> Cette table n'est réservée
+        à personne : d'autres personnes qui attendaient reçoivent le même message.
+      </p>
+      <p style="color:#a1a1aa;font-size:12px;margin:12px 0 0;">Ouvrez ce lien depuis le téléphone avec lequel vous vous êtes inscrit.</p>
+    </div>
+    <p style="text-align:center;color:#a1a1aa;font-size:11px;margin:16px 0 0;">
+      Vous recevez cet email parce que vous vous êtes inscrit sur la liste d'attente de ${org}.
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+/**
  * Confirmation d'une UNITÉ DE STOCK BLOQUÉE (RES-5, lot L9).
  *
  * ── MÊME MOTIF QUE LA CONFIRMATION DE RÉSERVATION, ET MÊMES INTERDITS ──

@@ -9980,6 +9980,10 @@ export type Database = {
         Args: { p_organization_id: string; p_player_key_hash: string }
         Returns: Json
       }
+      reservation_table_freed_targets: {
+        Args: { p_organization_id: string; p_slot_id: string }
+        Returns: Json
+      }
       reservation_tables_state: {
         Args: { p_activity_id: string; p_from?: string; p_limit?: number }
         Returns: Json
@@ -10588,6 +10592,17 @@ export type Database = {
           p_consent?: boolean
           p_email?: string
           p_organization_id: string
+          p_player_key_hash: string
+          p_slot_id: string
+        }
+        Returns: Json
+      }
+      waitlist_join_table: {
+        Args: {
+          p_consent?: boolean
+          p_email?: string
+          p_organization_id: string
+          p_party_size: number
           p_player_key_hash: string
           p_slot_id: string
         }
