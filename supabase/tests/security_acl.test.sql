@@ -206,6 +206,8 @@ select ok(not has_table_privilege('anon', 'public.loyalty_members', 'SELECT'), '
 select ok(not has_table_privilege('anon', 'public.loyalty_rewards', 'SELECT'), 'anon cannot read loyalty redeem codes');
 select ok(not has_column_privilege('authenticated', 'public.loyalty_programs', 'rotating_secret', 'SELECT'), 'merchant cannot read the rotating-code secret');
 select ok(has_column_privilege('service_role', 'public.loyalty_programs', 'rotating_secret', 'SELECT'), 'server can read the rotating-code secret');
+select ok(has_column_privilege('authenticated', 'public.loyalty_programs', 'jackpot_campaign_id', 'SELECT'), 'merchant can read the linked collective jackpot');
+select ok(has_column_privilege('authenticated', 'public.loyalty_programs', 'jackpot_campaign_id', 'UPDATE'), 'editor can link the passport to a collective jackpot');
 select ok(not has_table_privilege('authenticated', 'public.loyalty_members', 'INSERT'), 'merchant cannot forge loyalty passports');
 select ok(not has_table_privilege('authenticated', 'public.loyalty_stamps', 'INSERT'), 'merchant cannot forge loyalty stamps');
 select ok(not has_table_privilege('authenticated', 'public.loyalty_rewards', 'INSERT'), 'merchant cannot mint loyalty rewards');

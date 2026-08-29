@@ -58,6 +58,13 @@ export interface WheelOption extends SpinWheelPrizes {
   name: string;
 }
 
+/** Jackpot caisse actif proposé au rattachement d'un passeport. */
+export interface LoyaltyJackpotOption {
+  id: string;
+  name: string;
+  minParticipationIntervalSeconds: number;
+}
+
 const selectClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
 const textareaClass =
@@ -73,7 +80,13 @@ const textareaClass =
 // Réglages du programme
 // ────────────────────────────────────────────────────────────
 
-export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
+export function LoyaltySettings({
+  program,
+  jackpots,
+}: {
+  program: LoyaltyProgram;
+  jackpots: LoyaltyJackpotOption[];
+}) {
   // Pas de `resetOnSuccess` : name, silver_threshold et gold_threshold sont des
   // champs non contrôlés dont le `defaultValue` reste celui d'avant
   // l'enregistrement jusqu'à l'atterrissage de `router.refresh()` — les vider
@@ -285,6 +298,41 @@ export function LoyaltySettings({ program }: { program: LoyaltyProgram }) {
               </p>
             )}
           </div>
+        </div>
+
+        <div>
+          <Label htmlFor="loyalty-jackpot">Jackpot collectif associé</Label>
+          <select
+            id="loyalty-jackpot"
+            name="jackpot_campaign_id"
+            defaultValue={program.jackpot_campaign_id ?? ""}
+            className={`${selectClass} max-w-sm`}
+            aria-describedby="loyalty-jackpot-help"
+          >
+            <option value="">Aucun jackpot associé</option>
+            {program.jackpot_campaign_id &&
+              !jackpots.some((jackpot) => jackpot.id === program.jackpot_campaign_id) && (
+                <option value={program.jackpot_campaign_id}>
+                  Jackpot associé indisponible — dissociez-le
+                </option>
+              )}
+            {jackpots.map((jackpot) => (
+              <option key={jackpot.id} value={jackpot.id}>
+                {jackpot.name} — validation en caisse
+              </option>
+            ))}
+          </select>
+          <p id="loyalty-jackpot-help" className="mt-1.5 max-w-xl text-xs text-zinc-500">
+            En validation en caisse, chaque scan du QR du passeport rejoint ce
+            pot commun. Le client suit sa jauge directement depuis son
+            passeport ; aucun second QR ni passage par la page Jackpot.
+          </p>
+          {jackpots.length === 0 && (
+            <p className="mt-1.5 text-xs font-semibold text-amber-700">
+              Créez puis activez d&apos;abord un jackpot en validation caisse pour
+              pouvoir l&apos;associer.
+            </p>
+          )}
         </div>
 
         <CodeTtlDaysField

@@ -2920,6 +2920,7 @@ export type Database = {
           created_at: string
           cycle: number
           id: string
+          loyalty_stamp_id: string | null
           organization_id: string
           player_token_hash: string
         }
@@ -2928,6 +2929,7 @@ export type Database = {
           created_at?: string
           cycle: number
           id?: string
+          loyalty_stamp_id?: string | null
           organization_id: string
           player_token_hash: string
         }
@@ -2936,6 +2938,7 @@ export type Database = {
           created_at?: string
           cycle?: number
           id?: string
+          loyalty_stamp_id?: string | null
           organization_id?: string
           player_token_hash?: string
         }
@@ -2945,6 +2948,13 @@ export type Database = {
             columns: ["campaign_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "jackpot_participants_loyalty_stamp_organization_fkey"
+            columns: ["loyalty_stamp_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_stamps"
             referencedColumns: ["id", "organization_id"]
           },
           {
@@ -3290,6 +3300,7 @@ export type Database = {
           created_at: string
           gold_threshold: number
           id: string
+          jackpot_campaign_id: string | null
           min_stamp_interval_seconds: number
           name: string
           organization_id: string
@@ -3304,6 +3315,7 @@ export type Database = {
           created_at?: string
           gold_threshold?: number
           id?: string
+          jackpot_campaign_id?: string | null
           min_stamp_interval_seconds?: number
           name: string
           organization_id: string
@@ -3318,6 +3330,7 @@ export type Database = {
           created_at?: string
           gold_threshold?: number
           id?: string
+          jackpot_campaign_id?: string | null
           min_stamp_interval_seconds?: number
           name?: string
           organization_id?: string
@@ -3328,6 +3341,13 @@ export type Database = {
           validation_mode?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "loyalty_programs_jackpot_campaign_tenant_fkey"
+            columns: ["jackpot_campaign_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "jackpot_campaigns"
+            referencedColumns: ["id", "organization_id"]
+          },
           {
             foreignKeyName: "loyalty_programs_organization_id_fkey"
             columns: ["organization_id"]

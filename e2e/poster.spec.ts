@@ -33,7 +33,7 @@ test.describe("Studio d'affiches — rendu de l'éditeur", () => {
     ]);
     await posterPage.waitForLoadState("domcontentloaded");
 
-    // Barre d'actions : retour, annuler/rétablir, enregistrer, imprimer — le
+    // Barre d'actions : retour, annuler/rétablir, enregistrer, imprimer/exporter — le
     // repère le plus stable de l'éditeur chargé (pas de heading sémantique
     // sur cette page canvas-first).
     await expect(
@@ -43,12 +43,23 @@ test.describe("Studio d'affiches — rendu de l'éditeur", () => {
       posterPage.getByRole("button", { name: "Imprimer" }),
     ).toBeVisible();
     await expect(
+      posterPage.getByRole("button", { name: "Télécharger l'affiche" }),
+    ).toBeVisible();
+    await expect(
       posterPage.getByRole("button", { name: "Enregistrer" }),
     ).toBeVisible();
 
     // Panneau de réglages : les modèles proposés confirment que l'affiche a
     // bien chargé sa configuration initiale (pas un écran vide/erreur).
     await expect(posterPage.getByText("Modèles")).toBeVisible();
+    await expect(posterPage.getByText("Ajouter une image de fond")).toBeVisible();
+
+    // Une seule affiche sort : l'aperçu d'édition est explicitement masqué,
+    // seule la feuille A4 dédiée demeure visible dans le média d'impression.
+    await posterPage.emulateMedia({ media: "print" });
+    await expect(posterPage.getByTestId("poster-preview")).toBeHidden();
+    await expect(posterPage.getByTestId("poster-print-sheet")).toBeVisible();
+    await posterPage.emulateMedia({ media: "screen" });
 
     await expectNoA11yViolations(posterPage, testInfo);
     await posterPage.close();

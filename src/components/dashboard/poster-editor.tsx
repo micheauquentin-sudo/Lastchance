@@ -129,6 +129,7 @@ export function PosterEditor({
   const [history, setHistory] = useState<PosterConfig[]>([]);
   const [future, setFuture] = useState<PosterConfig[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const { state, pending, onSubmit } = useActionForm(saveQrPoster, {
     // Re-synchronise l'état local sur la version normalisée par le serveur.
     onSuccess: (data) => setConfig(data),
@@ -338,6 +339,17 @@ export function PosterEditor({
     }
   }
 
+  async function setBackgroundImage(file: File | undefined) {
+    if (!file) return;
+    setImageError(null);
+    try {
+      const { src } = await fileToDataUrl(file);
+      commit({ ...config, template: undefined, bgImage: src });
+    } catch {
+      setImageError("Image illisible ou trop lourde (essayez plus petit).");
+    }
+  }
+
   function removeSelected() {
     if (!selectedId) return;
     commit({
@@ -388,6 +400,34 @@ export function PosterEditor({
     window.print();
   }
 
+  async function downloadPoster() {
+    const sheet = document.getElementById("poster-sheet");
+    if (!sheet) return;
+    setImageError(null);
+    setIsDownloading(true);
+    try {
+      await document.fonts?.ready;
+      // Chargé uniquement après le clic : ni l'éditeur initial ni son rendu
+      // serveur ne paient la bibliothèque d'export d'image.
+      const { toPng } = await import("html-to-image");
+      const dataUrl = await toPng(sheet, {
+        backgroundColor: config.bg,
+        cacheBust: true,
+        canvasWidth: 1588,
+        canvasHeight: 2246,
+        pixelRatio: 1,
+      });
+      const link = document.createElement("a");
+      link.download = `affiche-${qrId.slice(0, 8)}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch {
+      setImageError("Téléchargement impossible, réessayez.");
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-k-bg text-k-ink">
       {/* Uniquement les polices réellement utilisées (éditeur + impression). */}
@@ -397,6 +437,7 @@ export function PosterEditor({
           @page { size: A4 portrait; margin: 0; }
           body { background: #fff !important; }
           .np { display: none !important; }
+          .poster-preview { display: none !important; }
           #poster-sheet {
             position: fixed; inset: 0;
             width: 210mm; height: 297mm;
@@ -446,6 +487,9 @@ export function PosterEditor({
           <Button type="button" onClick={printPoster}>
             Imprimer
           </Button>
+          <Button type="button" variant="secondary" onClick={downloadPoster} disabled={isDownloading}>
+            {isDownloading ? "Préparation…" : "Télécharger l'affiche"}
+          </Button>
         </div>
       </div>
 
@@ -460,7 +504,8 @@ export function PosterEditor({
       <div className="flex flex-col gap-6 p-4 sm:p-6 lg:h-[calc(100dvh-64px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
         {/* Page A4 */}
         <div
-          className="np-keep flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+          data-testid="poster-preview"
+          className="poster-preview flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
           onPointerDown={() => setSelectedId(null)}
         >
           <div
@@ -478,14 +523,22 @@ export function PosterEditor({
               className="rounded-lg border-2 border-k-ink shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
             />
           </div>
-          <div id="poster-sheet" className="hidden print:block">
-            <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
-          </div>
           <p className="np text-center text-xs font-bold text-k-body">
             Glissez les éléments directement sur l&apos;affiche · poignée
             jaune pour la taille · flèches du clavier pour ajuster ·
             Suppr pour retirer
           </p>
+        </div>
+        {/* Feuille dédiée, sœur de l’aperçu : si elle restait dans
+            `.poster-preview`, la règle d’impression qui masque l’éditeur
+            masquait aussi l’unique affiche à imprimer. */}
+        <div
+          id="poster-sheet"
+          data-testid="poster-print-sheet"
+          className="absolute left-[-100000px] top-0 w-[794px]"
+          aria-hidden="true"
+        >
+          <PosterCanvas config={config} playUrl={playUrl} qrStyle={qrStyle} />
         </div>
 
         {/* Panneau latéral (seule zone qui défile) */}
@@ -544,6 +597,29 @@ export function PosterEditor({
                   {p === "none" ? "Uni" : p === "dots" ? "Pois" : "Rayures"}
                 </button>
               ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="cursor-pointer rounded-xl border-2 border-k-ink bg-white px-3 py-2 text-sm font-bold text-k-ink hover:bg-k-yellow/40">
+                {config.bgImage ? "Remplacer l'image de fond" : "Ajouter une image de fond"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    setBackgroundImage(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {config.bgImage && (
+                <button
+                  type="button"
+                  onClick={() => commit({ ...config, template: undefined, bgImage: undefined })}
+                  className="rounded-xl border-2 border-k-ink bg-white px-3 py-2 text-sm font-bold text-k-ink hover:bg-red-50"
+                >
+                  Retirer l&apos;image de fond
+                </button>
+              )}
             </div>
           </section>
 

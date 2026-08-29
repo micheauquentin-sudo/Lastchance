@@ -22,8 +22,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 export class PosterImageError extends Error {}
 
 export function posterImagePaths(config: PosterConfig): string[] {
-  return config.elements.flatMap((element) => {
-    const path = posterImageStoragePath(element.src);
+  return [config.bgImage, ...config.elements.map((element) => element.src)].flatMap((src) => {
+    const path = posterImageStoragePath(src);
     return path ? [path] : [];
   });
 }
@@ -87,36 +87,40 @@ export async function materializePosterImages(
   const uploadedPaths: string[] = [];
   const elements = [];
 
+  async function materializeImage(src: string | undefined): Promise<string | undefined> {
+    if (!src) return undefined;
+    const existingPath = posterImageStoragePath(src);
+    if (existingPath) {
+      assertOwnedPath(existingPath, context.organizationId, context.qrId);
+      return src;
+    }
+
+    const normalized = await normalizeDataImage(src);
+    const path = `${context.organizationId}/${context.qrId}-${randomUUID()}.webp`;
+    const { error } = await admin.storage
+      .from(POSTER_IMAGES_BUCKET)
+      .upload(path, normalized, {
+        contentType: "image/webp",
+        cacheControl: "31536000",
+        upsert: false,
+      });
+    if (error) throw new PosterImageError("Envoi de l'image impossible");
+    uploadedPaths.push(path);
+    return posterImageRef(path);
+  }
+
   try {
+    const bgImage = await materializeImage(config.bgImage);
     for (const element of config.elements) {
       if (element.type !== "image" || !element.src) {
         elements.push(element);
         continue;
       }
-
-      const existingPath = posterImageStoragePath(element.src);
-      if (existingPath) {
-        assertOwnedPath(existingPath, context.organizationId, context.qrId);
-        elements.push(element);
-        continue;
-      }
-
-      const normalized = await normalizeDataImage(element.src);
-      const path = `${context.organizationId}/${context.qrId}-${randomUUID()}.webp`;
-      const { error } = await admin.storage
-        .from(POSTER_IMAGES_BUCKET)
-        .upload(path, normalized, {
-          contentType: "image/webp",
-          cacheControl: "31536000",
-          upsert: false,
-        });
-      if (error) throw new PosterImageError("Envoi de l'image impossible");
-      uploadedPaths.push(path);
-      elements.push({ ...element, src: posterImageRef(path) });
+      elements.push({ ...element, src: await materializeImage(element.src) });
     }
 
     return {
-      config: posterConfigSchema.parse({ ...config, elements }),
+      config: posterConfigSchema.parse({ ...config, bgImage, elements }),
       uploadedPaths,
     };
   } catch (error) {
@@ -133,9 +137,11 @@ export async function migrateLegacyPosterImages(input: {
 }): Promise<unknown> {
   const parsed = posterConfigSchema.safeParse(input.poster);
   if (!parsed.success) return input.poster;
-  const hasDataImages = parsed.data.elements.some(
-    (element) => element.type === "image" && element.src?.startsWith("data:image/"),
-  );
+  const hasDataImages =
+    parsed.data.bgImage?.startsWith("data:image/") ||
+    parsed.data.elements.some(
+      (element) => element.type === "image" && element.src?.startsWith("data:image/"),
+    );
   if (!hasDataImages) return parsed.data;
 
   const admin = createAdminClient();

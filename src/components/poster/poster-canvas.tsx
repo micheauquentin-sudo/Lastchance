@@ -210,6 +210,7 @@ export function PosterCanvas({
 
   const sorted = [...config.elements].sort((a, b) => a.z - b.z);
   const interactive = Boolean(onElementPointerDown);
+  const backgroundImageUrl = config.bgImage ? posterImageUrl(config.bgImage) : "";
 
   return (
     <div
@@ -222,6 +223,17 @@ export function PosterCanvas({
         containerType: "inline-size",
       }}
     >
+      {backgroundImageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={backgroundImageUrl}
+          alt=""
+          aria-hidden
+          data-poster-background
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          draggable={false}
+        />
+      )}
       {sorted.map((el) => {
         const selected = el.id === selectedId;
         return (

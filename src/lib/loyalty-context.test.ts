@@ -335,7 +335,7 @@ describe("loadLoyaltyContext — ce qui n'est même pas demandé à la base", ()
     expect(db.queries[0].columns).not.toContain("rotating_secret");
     expect(db.queries[0].columns).not.toContain("*");
     expect(db.queries[0].columns).toContain(
-      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, comp_access, comp_access_until, timezone)",
+      "organizations(id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, addon_jackpot, comp_access, comp_access_until, timezone)",
     );
     const dump = JSON.stringify(ctx);
     expect(dump).not.toContain(SECRET_ROTATIF);

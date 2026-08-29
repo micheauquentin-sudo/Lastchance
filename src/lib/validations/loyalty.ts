@@ -144,6 +144,12 @@ export const updateLoyaltyProgramSchema = z
     min_stamp_interval_seconds: minStampIntervalSchema,
     silver_threshold: tierThresholdSchema,
     gold_threshold: tierThresholdSchema,
+    // '' = aucun pot associé. Le contrôle d'organisation, de statut et de
+    // mode reste côté action + contrainte SQL composite.
+    jackpot_campaign_id: z
+      .union([z.literal("").transform(() => null), z.string().uuid()])
+      .nullable()
+      .default(null),
     // Échéance du code FIDELITE- (null = sans limite). `.optional()` : le champ
     // n'est écrit que si le formulaire le porte — voir la garde `has` côté
     // action.
@@ -155,6 +161,13 @@ export const updateLoyaltyProgramSchema = z
         code: "custom",
         path: ["gold_threshold"],
         message: "Le seuil or doit être supérieur au seuil argent",
+      });
+    }
+    if (d.jackpot_campaign_id && d.validation_mode !== "staff") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["validation_mode"],
+        message: "Un jackpot associé exige la validation en caisse.",
       });
     }
     // Miroir de loyalty_programs_cooldown_floor_check : les DEUX modes portent
