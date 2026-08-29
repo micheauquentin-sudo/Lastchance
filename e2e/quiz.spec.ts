@@ -175,10 +175,28 @@ test.describe("créateur de quiz — parcours joueur", () => {
     });
 
     // ── 5. Clôture de la participation ───────────────────────────
-    await page.getByRole("button", { name: "Voir mon résultat →" }).click();
-    await expect(
-      page.getByRole("heading", { name: "C'est terminé pour les questions !" }),
-    ).toBeVisible({ timeout: 30_000 });
+    //
+    // ON NE FAIT PAS CONFIANCE AU CLIC — il tombait sur mobile-safari, sur
+    // une PR qui ne touchait QUE des fichiers de documentation. Signature
+    // connue de ce dépôt : le clic part avant que React ait hydraté le
+    // bouton, ne déclenche rien, et l'assertion suivante attend trente
+    // secondes un titre qui ne viendra jamais.
+    //
+    // On assure donc l'ÉTAT que le clic devait produire. Le `if` est
+    // indispensable : une fois le sas ouvert, le bouton a disparu, et le
+    // recliquer échouerait au lieu de constater que c'est déjà fait.
+    const sasDeCloture = page.getByRole("heading", {
+      name: "C'est terminé pour les questions !",
+    });
+    await expect(async () => {
+      if (!(await sasDeCloture.isVisible().catch(() => false))) {
+        await page
+          .getByRole("button", { name: "Voir mon résultat →" })
+          .click({ timeout: 5_000 })
+          .catch(() => {});
+      }
+      await expect(sasDeCloture).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
 
     // Le bouton du sas de clôture porte le MÊME libellé sans la flèche.
     await page

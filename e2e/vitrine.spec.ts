@@ -522,17 +522,37 @@ test.describe("vitrine — dashboard commerçant", () => {
     // ensuite pour chaque carte existante (formulaire de renommage) — seul le
     // premier, dans le bloc de création, est ciblé ici.
     const nomCarte = `Brunch E2E ${Date.now()}`;
-    let navigations = 0;
-    const compterNavigation = (frame: ReturnType<typeof page.mainFrame>) => {
-      if (frame === page.mainFrame()) navigations++;
-    };
-    page.on("framenavigated", compterNavigation);
+
+    // CE QU'ON VEUT PROUVER : créer une carte, une rubrique et une fiche
+    // passe par des server actions — la page ne doit JAMAIS être rechargée.
+    //
+    // `framenavigated` ne le prouvait pas. Il se déclenche AUSSI pour les
+    // navigations de MÊME DOCUMENT — `history.replaceState`, que le routeur
+    // Next appelle de son propre chef — et WebKit en émet là où Chromium
+    // n'en émet pas. Le compteur rougissait donc sur une PR qui ne touchait
+    // QUE des fichiers de documentation, en désignant un défaut inexistant.
+    //
+    // On interroge donc le DOCUMENT lui-même. Un marqueur posé sur `window`
+    // ne survit pas à un rechargement, et survit à tout le reste : c'est
+    // exactement la propriété affirmée, et elle ne dépend d'aucun événement
+    // du navigateur.
+    await page.evaluate(() => {
+      (window as unknown as { __sansRechargement?: number }).__sansRechargement =
+        Date.now();
+    });
+    const documentIntact = () =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __sansRechargement?: number })
+            .__sansRechargement ?? null,
+      );
     await page.getByLabel("Nom de la carte").first().fill(nomCarte);
     await page.getByRole("button", { name: "Créer la carte" }).click();
     await expect(page.getByRole("heading", { name: nomCarte })).toBeVisible({
       timeout: 20_000,
     });
-    expect(navigations).toBe(0);
+    // Le marqueur est toujours là : aucun rechargement depuis sa pose (carte).
+    expect(await documentIntact()).not.toBeNull();
 
     // Deux conditions plutôt qu'une : un div ne contenant QUE le titre serait
     // le petit conteneur flex des flèches d'ordre (motif de
@@ -552,7 +572,8 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(carteCard.getByText(nomRubrique)).toBeVisible({
       timeout: 20_000,
     });
-    expect(navigations).toBe(0);
+    // Le marqueur est toujours là : aucun rechargement depuis sa pose (rubrique).
+    expect(await documentIntact()).not.toBeNull();
 
     // ── Fiche ──
     // `.last()` : les `li` sont imbriqués (carte > rubrique) et le filtre
@@ -591,8 +612,8 @@ test.describe("vitrine — dashboard commerçant", () => {
       .filter({ has: page.locator("summary") })
       .last();
     await expect(ficheLi).toBeVisible({ timeout: 20_000 });
-    expect(navigations).toBe(0);
-    page.off("framenavigated", compterNavigation);
+    // Le marqueur est toujours là : aucun rechargement depuis sa pose (fiche).
+    expect(await documentIntact()).not.toBeNull();
 
     // Ouvrir le détail pour cocher badge + allergène. Le contrôle est un
     // <summary> natif (fiche-editeur.tsx) : Playwright l'expose en `generic`,
