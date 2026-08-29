@@ -23,7 +23,47 @@ import { NouvelleActiviteForm } from "@/components/reserver/nouvelle-activite-fo
 import { OffresStockPanneau } from "@/components/reserver/offres-stock-panneau";
 import { PastilleFormat } from "@/components/reserver/pastilles";
 
-export const metadata: Metadata = { title: "Réservations" };
+export const metadata: Metadata = { title: "Réservation" };
+
+/**
+ * LES DEUX PRODUITS, UN SEUL CORPS DE PAGE (RDV-5).
+ *
+ * « Réservation » (prise de rendez-vous) et « Moments » (ateliers, files,
+ * invitations, offres) partagent les MÊMES tables : ce qui les sépare est
+ * `reservation_activities.booking_mode`. Dupliquer 270 lignes d'écran pour
+ * un filtre aurait créé deux pages à tenir d'accord — et elles auraient
+ * divergé au premier ajustement.
+ *
+ * Les files d'accueil et les offres de stock n'appartiennent qu'aux Moments :
+ * une prise de rendez-vous n'a ni file ni invendu de dernière minute.
+ */
+export type ModeAgenda = "rendez_vous" | "moment";
+
+interface ConfigAgenda {
+  /** Le droit qui ouvre l'écran — deux add-ons distincts depuis RDV-5. */
+  entitlement: "reserver" | "rendez_vous";
+  titre: string;
+  sousTitre: string;
+  /** Files d'accueil et offres de stock : Moments seulement. */
+  avecAccueil: boolean;
+}
+
+const CONFIG: Record<ModeAgenda, ConfigAgenda> = {
+  rendez_vous: {
+    entitlement: "rendez_vous",
+    titre: "Réservation",
+    sousTitre:
+      "Posez vos horaires une fois : les créneaux se génèrent, vos clients prennent rendez-vous depuis votre Vitrine.",
+    avecAccueil: false,
+  },
+  moment: {
+    entitlement: "reserver",
+    titre: "Moments",
+    sousTitre:
+      "Ateliers, dégustations, files d'accueil : faites vivre un moment à vos clients.",
+    avecAccueil: true,
+  },
+};
 
 /**
  * L'AGENDA DU COMMERÇANT — ses activités réservables, et son écran d'arrivées.
@@ -59,11 +99,12 @@ export const metadata: Metadata = { title: "Réservations" };
  * jour où un commerçant en tient trente, ces deux composants existent et
  * s'ajoutent sans rien changer d'autre.
  */
-export default async function ReservationsPage() {
+export async function PageAgenda({ mode }: { mode: ModeAgenda }) {
+  const config = CONFIG[mode];
   const { organization } = await getUserAndOrg();
 
   // Découvrir / préparer / publier (cahier §3).
-  const capacites = await capacitesDuModule("reserver");
+  const capacites = await capacitesDuModule(config.entitlement);
   if (!capacites.canExplore) notFound();
 
   // Les deux lectures sont INDÉPENDANTES — l'agenda des créneaux d'un côté, les
@@ -77,8 +118,12 @@ export default async function ReservationsPage() {
     loadReserverQueuesDashboardContext(),
     loadStockOffersDashboardContext(),
   ]);
-  const activites = agenda.ok ? agenda.activities : [];
-  const files = filesAccueil.ok ? filesAccueil.queues : [];
+  // LE FILTRE QUI SÉPARE LES DEUX PRODUITS. Une activité appartient à l'un ou
+  // à l'autre, jamais aux deux : `booking_mode` est exclusif.
+  const activites = agenda.ok
+    ? agenda.activities.filter((a) => a.bookingMode === mode)
+    : [];
+  const files = config.avecAccueil && filesAccueil.ok ? filesAccueil.queues : [];
   const timeZone = agenda.ok
     ? agenda.timezone
     : (organization?.timezone ?? RESERVER_FUSEAU_DEFAUT);
@@ -100,8 +145,8 @@ export default async function ReservationsPage() {
     <div>
       <PageHeader
         surtitre="Vos animations"
-        titre="Réservations"
-        sousTitre="Vos clients réservent leur créneau depuis leur téléphone, et vous enregistrez leur arrivée au comptoir avec un code court."
+        titre={config.titre}
+        sousTitre={config.sousTitre}
         actions={capacites.canEditDraft ? <NouvelleActiviteForm /> : null}
       />
 
@@ -227,6 +272,12 @@ export default async function ReservationsPage() {
           on prépare ses créneaux le matin, on tient sa file toute la journée. La
           console est ouverte au CAISSIER — elle ne dépend pas de `canEditDraft`,
           qui ne gouverne que la création et les réglages, passés en `peutEditer`. */}
+      {/* FILES D'ACCUEIL ET OFFRES DE STOCK : MOMENTS SEULEMENT. Une prise de
+          rendez-vous n'a ni file d'attente — on a une heure — ni invendu de
+          dernière minute. Les afficher aurait proposé deux outils sans
+          emploi sur cet écran-là. */}
+      {config.avecAccueil ? (
+        <>
       <CarteRepliable {...carteTuile(tuiles, "files")}>
       <FilesAccueilPanneau
         files={files}
@@ -262,7 +313,20 @@ export default async function ReservationsPage() {
           timeZone={timeZone}
         />
       </CarteRepliable>
+        </>
+      ) : null}
       </div>
     </div>
   );
+}
+
+/**
+ * LA ROUTE « RÉSERVATION » — la prise de rendez-vous.
+ *
+ * Elle ne montre que les activités dont les créneaux sont ENGENDRÉS par des
+ * horaires. Les Moments ont leur propre route, `/dashboard/moments`, et leur
+ * propre droit : deux add-ons distincts depuis RDV-5.
+ */
+export default async function ReservationsPage() {
+  return <PageAgenda mode="rendez_vous" />;
 }

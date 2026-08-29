@@ -3901,6 +3901,7 @@ export type Database = {
           addon_pronostics: boolean
           addon_quiz: boolean
           addon_referral: boolean
+          addon_rendez_vous: boolean
           addon_reserver: boolean
           addon_vitrine: boolean
           auto_reengage: boolean
@@ -3940,6 +3941,7 @@ export type Database = {
           addon_pronostics?: boolean
           addon_quiz?: boolean
           addon_referral?: boolean
+          addon_rendez_vous?: boolean
           addon_reserver?: boolean
           addon_vitrine?: boolean
           auto_reengage?: boolean
@@ -3979,6 +3981,7 @@ export type Database = {
           addon_pronostics?: boolean
           addon_quiz?: boolean
           addon_referral?: boolean
+          addon_rendez_vous?: boolean
           addon_reserver?: boolean
           addon_vitrine?: boolean
           auto_reengage?: boolean

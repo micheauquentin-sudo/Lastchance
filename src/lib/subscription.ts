@@ -49,6 +49,20 @@ export const GRANTABLE_MODULES = [
    * clés (`mirror_vitrine_entitlements`).
    */
   "reserver",
+  /**
+   * LA PRISE DE RENDEZ-VOUS, détachée de `reserver` par RDV-5 (migration
+   * 20261107120000, `addon_rendez_vous`).
+   *
+   * `reserver` GARDE SON SENS — les Moments : ateliers, dégustations,
+   * files d'accueil, invitations, offres. Seul son libellé a changé. Faire
+   * suivre la clé au nom aurait exigé de recopier les octrois déjà posés
+   * sur une clé neuve, sous peine de retirer l'accès à qui l'utilise déjà.
+   *
+   * Elle se lit comme les quatre au-dessus : octroyable, porteuse de sa
+   * colonne, sans ressource publiable — mais elle a, elle, une OFFRE au
+   * catalogue (20 €), ce qui la distingue de `vitrine` et consorts.
+   */
+  "rendez_vous",
   "duo",
   "bande",
 ] as const;
@@ -262,6 +276,7 @@ export const MODULE_ADDON_COLUMN = {
   // colonne : les faire retomber sur `addon_vitrine` aurait rendu le
   // détachement décoratif — quatre clés, un seul interrupteur.
   reserver: "addon_reserver",
+  rendez_vous: "addon_rendez_vous",
   duo: "addon_duo",
   bande: "addon_bande",
   hunts: "addon_hunts",

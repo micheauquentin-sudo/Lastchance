@@ -120,7 +120,7 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     expect(DECLARATIONS).toHaveLength(MODULES_PUBLIABLES.length);
   });
 
-  it("les quatre modules hors RESSOURCE_MODULE sont nommés", () => {
+  it("les cinq modules hors RESSOURCE_MODULE sont nommés", () => {
     // L'EXEMPTION EST ÉPINGLÉE, pas déduite du vide. Sans cette assertion, un
     // module dont quelqu'un retirerait le trigger par erreur pourrait être
     // « réparé » en l'ajoutant à l'exemption, et les deux tests ci-dessus
@@ -130,7 +130,17 @@ describe("parité RESSOURCE_MODULE ↔ triggers de publication", () => {
     // de sa propre migration (20261011120000). Elle dit qu'aucun quota de
     // brouillons ne s'y applique — voir le commentaire de MODULES_PUBLIABLES.
     const exemptes = GRANTABLE_MODULES.filter((m) => !estPubliable(m));
-    expect(exemptes).toEqual(["vitrine", "reserver", "duo", "bande"]);
+    // `rendez_vous` a rejoint l'exemption le 2026-08-29 : ses créneaux
+    // vivent dans les MÊMES tables que ceux des Moments — c'est
+    // `booking_mode` qui les sépare — et lui donner une ressource propre
+    // aurait fait compter deux fois les mêmes activités.
+    expect(exemptes).toEqual([
+      "vitrine",
+      "reserver",
+      "rendez_vous",
+      "duo",
+      "bande",
+    ]);
   });
 
   it("les modules gardés en base sont exactement ceux que l'application connaît", () => {

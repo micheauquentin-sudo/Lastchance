@@ -161,7 +161,12 @@ const NOM_MODULE: Record<GrantableModule, string> = {
   // publier la vitrine, Réserver et les salons de jeu, demandez… », trois
   // produits que ce module-ci n'ouvre plus.
   vitrine: "la vitrine du commerce",
-  reserver: "l'agenda Réserver",
+  // RENOMMÉ le 2026-08-29 : la clé garde son sens — ateliers, dégustations,
+  // files, invitations, offres — mais « l'agenda Réserver » désignait mal
+  // cet ensemble dès lors que la prise de rendez-vous est devenue un
+  // produit à part.
+  reserver: "les Moments",
+  rendez_vous: "la prise de rendez-vous",
   duo: "le Duo Miroir",
   bande: "le Portrait de la Bande",
 };

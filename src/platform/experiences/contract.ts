@@ -39,6 +39,22 @@ export type Entitlement =
    */
   | "vitrine"
   /**
+   * LA PRISE DE RENDEZ-VOUS — sa propre clé depuis RDV-5 (migration
+   * 20261107120000, `addon_rendez_vous`).
+   *
+   * À NE PAS CONFONDRE avec `reserver` juste en dessous, qui garde ce
+   * qu'elle a toujours gardé : les MOMENTS — ateliers, dégustations, files
+   * d'accueil, invitations, offres de dernière minute. Seul le LIBELLÉ de
+   * `reserver` a changé le 2026-08-29 ; sa valeur, écrite dans les octrois
+   * déjà posés, n'a pas bougé. Même arbitrage que `event_kind = 'football'`
+   * devenu « Sport ».
+   *
+   * Les deux produits partagent les MÊMES tables : c'est
+   * `reservation_activities.booking_mode` qui les sépare, jamais un second
+   * schéma.
+   */
+  | "rendez_vous"
+  /**
    * L'agenda Réserver — sa propre clé d'octroi depuis la migration
    * 20261020120000 (`addon_reserver`), au même titre que `duo` et `bande`.
    *

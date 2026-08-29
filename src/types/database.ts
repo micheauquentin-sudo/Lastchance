@@ -123,6 +123,15 @@ export interface Organization {
    * octroi daté.
    */
   addon_reserver: boolean;
+  /**
+   * La PRISE DE RENDEZ-VOUS, détachée de `addon_reserver` par RDV-5
+   * (migration 20261107120000).
+   *
+   * `addon_reserver` garde les MOMENTS — ateliers, dégustations, files
+   * d'accueil, invitations, offres. Les deux produits partagent les mêmes
+   * tables ; c'est `reservation_activities.booking_mode` qui les sépare.
+   */
+  addon_rendez_vous: boolean;
   /** Duo Miroir activé au titre d'une offre. Voir `addon_reserver`. */
   addon_duo: boolean;
   /** Portrait de la Bande activé au titre d'une offre. Voir `addon_reserver`. */
