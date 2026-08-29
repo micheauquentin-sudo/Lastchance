@@ -82,7 +82,7 @@ insert into public.jackpot_participants (
   campaign_id, organization_id, player_token_hash, cycle
 ) values (
   'f1000000-0000-4000-8000-000000000012',
-  'f1000000-0000-4000-8000-000000000002', repeat('b', 64), 0
+  'f1000000-0000-4000-8000-000000000002', repeat('b', 64), 1
 );
 select throws_ok($$
   update public.jackpot_participants
