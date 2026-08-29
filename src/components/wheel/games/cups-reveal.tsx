@@ -78,7 +78,7 @@ export function CupsReveal({
     [reducedMotion],
   );
 
-  const { label, description, isLosing } = outcome;
+  const { label, description, isLosing, emoji } = outcome;
   const duration = reducedMotion ? 0 : LIFT_MS;
 
   return (
@@ -126,7 +126,7 @@ export function CupsReveal({
           }}
           className="play-in mx-auto mt-6 flex aspect-[8/5] w-full max-w-[320px] flex-col items-center justify-center gap-1 rounded-3xl px-6 text-center shadow-2xl"
         >
-          <p aria-hidden className="text-3xl">{isLosing ? "🎲" : "🎁"}</p>
+          <p aria-hidden className="text-3xl">{isLosing ? "🙁" : (emoji ?? "🎁")}</p>
           <p className="text-lg font-extrabold text-white">{label}</p>
           {description && <p className="text-sm text-white/80">{description}</p>}
         </div>

@@ -221,6 +221,7 @@ export function ScratchExperience({
             label={outcome.label}
             description={outcome.description}
             isLosing={outcome.isLosing}
+            emoji={outcome.emoji}
             buttonFrom={style.buttonFrom}
             buttonTo={style.buttonTo}
             cover={cover}
@@ -251,7 +252,7 @@ export function ScratchExperience({
 
       {phase === "lost" && (
         <div role="status" aria-live="polite" className="play-in w-full text-center">
-          <div aria-hidden className="text-5xl mb-6">🎲</div>
+          <div aria-hidden className="text-5xl mb-6">🙁</div>
           <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>Pas cette fois…</h2>
           <p className={playText.body(kermesse)}>
             La carte ne vous a rien donné aujourd&apos;hui. La chance tourne,

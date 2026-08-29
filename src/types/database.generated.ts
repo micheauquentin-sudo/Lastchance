@@ -4616,6 +4616,7 @@ export type Database = {
           cost_cents: number | null
           created_at: string
           description: string
+          emoji: string | null
           id: string
           is_active: boolean
           is_losing: boolean
@@ -4634,6 +4635,7 @@ export type Database = {
           cost_cents?: number | null
           created_at?: string
           description?: string
+          emoji?: string | null
           id?: string
           is_active?: boolean
           is_losing?: boolean
@@ -4652,6 +4654,7 @@ export type Database = {
           cost_cents?: number | null
           created_at?: string
           description?: string
+          emoji?: string | null
           id?: string
           is_active?: boolean
           is_losing?: boolean

@@ -415,7 +415,7 @@ export function PlayExperience({
 
       {phase === "lost" && (
         <div role="status" aria-live="polite" className={`${isCartoon ? "cartoon-pop-in" : "play-in"} w-full text-center`}>
-          <div aria-hidden className="text-5xl mb-6">🎲</div>
+          <div aria-hidden className="text-5xl mb-6">🙁</div>
           <h2 className={`text-3xl font-extrabold mb-3 ${playText.title(kermesse)}`}>
             Pas cette fois…
           </h2>

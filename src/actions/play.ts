@@ -41,6 +41,12 @@ export interface SpinOutcome {
   prizeIndex: number;
   label: string;
   description: string;
+  /**
+   * Icône du lot, choisie par le commerçant (null : aucune — le rendu
+   * retombe alors sur le 🎁 générique). Toujours rendue dans un élément
+   * `aria-hidden` à part, jamais concaténée au libellé.
+   */
+  emoji: string | null;
   isLosing: boolean;
   /** Présent uniquement pour un lot gagnant : à renvoyer au claim. */
   claimToken: string | null;
@@ -118,6 +124,7 @@ export async function recoverPendingWin(slug: string): Promise<SpinOutcome | nul
     prizeIndex,
     label: prize.label,
     description: prize.description,
+    emoji: prize.emoji,
     isLosing: false,
     claimToken: signClaimToken(spin.spin_id),
     spinId: spin.spin_id,
@@ -307,6 +314,7 @@ async function spinWheelInner(
         prizeIndex: winnerIdx,
         label: prize.label,
         description: prize.description,
+        emoji: prize.emoji,
         isLosing: spin.is_losing,
         claimToken: spin.is_losing ? null : signClaimToken(spin.spin_id),
         spinId: spin.spin_id,

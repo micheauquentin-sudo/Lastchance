@@ -61,6 +61,8 @@ export async function addPrize(
     // REFUSE explicitement au lieu de le lire 0 en silence.
     description: formData.get("description"),
     color: formData.get("color"),
+    // L'icône choisie dans la rangée de suggestions ('' = « aucune »).
+    emoji: formData.get("emoji"),
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock"),
@@ -129,6 +131,8 @@ export async function updatePrize(
     label: formData.get("label"),
     description: formData.get("description"),
     color: formData.get("color"),
+    // L'icône choisie dans la rangée de suggestions ('' = « aucune »).
+    emoji: formData.get("emoji"),
     weight: formData.get("weight"),
     is_losing: formData.get("is_losing") === "on",
     stock: formData.get("stock"),

@@ -83,7 +83,7 @@ export function FlipCardReveal({
     window.setTimeout(() => onRevealedRef.current(), reducedMotion ? 0 : FLIP_MS);
   }, [reducedMotion]);
 
-  const { label, description, isLosing } = outcome;
+  const { label, description, isLosing, emoji } = outcome;
   const duration = reducedMotion ? 0 : FLIP_MS;
 
   return (
@@ -140,7 +140,7 @@ export function FlipCardReveal({
             }}
             className="absolute inset-0 flex flex-col items-center justify-center gap-1 overflow-hidden rounded-3xl px-6 text-center shadow-2xl"
           >
-            <p aria-hidden className="text-3xl">{isLosing ? "🎲" : "🎁"}</p>
+            <p aria-hidden className="text-3xl">{isLosing ? "🙁" : (emoji ?? "🎁")}</p>
             <p className="text-lg font-extrabold text-white">{label}</p>
             {description && <p className="text-sm text-white/80">{description}</p>}
           </div>
