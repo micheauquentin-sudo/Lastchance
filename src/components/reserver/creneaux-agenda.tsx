@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import { etatUiCreneau, formatCreneau } from "@/lib/reserver";
+import { couvertsEnAttente, etatUiCreneau, formatCreneau } from "@/lib/reserver";
 import type { ReserverSlotDashboardView } from "@/lib/reserver-context";
 import { formatDate } from "@/lib/utils";
 import { AnnulerReservationStaff } from "@/components/reserver/annuler-reservation";
@@ -285,12 +285,24 @@ function FileAttenteCreneau({
   const vivantes = creneau.enAttente;
   const proposees = creneau.offresTenues;
 
+  // LES COUVERTS EN ATTENTE, et non les lignes (RDV-9).
+  //
+  // « 3 personnes en attente » était exact tant qu'une inscription valait
+  // une personne. Dans une SALLE, trois inscriptions peuvent valoir douze
+  // couverts — et le commerçant qui lit « 3 » croit pouvoir les servir avec
+  // une table qui se libère. On somme donc, et on n'affiche le second
+  // chiffre QUE s'il diffère : sur un Moment les deux sont égaux, et
+  // écrire « 3 inscriptions · 3 couverts » n'apprendrait rien.
+  const couverts = couvertsEnAttente(creneau.waitlist);
+
   return (
     <details className="mt-4 border-t border-zinc-100 pt-3">
       <summary className="cursor-pointer text-sm font-bold text-k-body hover:text-k-ink">
         File d&apos;attente ·{" "}
         <span className="font-black tabular-nums text-k-ink">{vivantes}</span>{" "}
-        personne{vivantes > 1 ? "s" : ""} en attente
+        {couverts === vivantes
+          ? `personne${vivantes > 1 ? "s" : ""} en attente`
+          : `groupe${vivantes > 1 ? "s" : ""} · ${couverts} couvert${couverts > 1 ? "s" : ""} en attente`}
         {proposees > 0
           ? ` · ${proposees} place${proposees > 1 ? "s" : ""} proposée${proposees > 1 ? "s" : ""}`
           : ""}
@@ -306,6 +318,15 @@ function FileAttenteCreneau({
             <span className="w-10 shrink-0 font-mono text-sm font-black tabular-nums text-k-ink">
               {entree.position > 0 ? `#${entree.position}` : "—"}
             </span>
+            {/* L'EFFECTIF AVANT LA DATE. C'est la première question du
+                commerçant devant une table qui se libère — « ça rentre ? » —
+                et non « depuis quand attendent-ils ». Masqué à 1, qui est le
+                cas de tous les Moments et n'apprendrait rien. */}
+            {entree.partySize > 1 ? (
+              <span className="shrink-0 rounded-lg border-2 border-k-ink/20 bg-white px-2 py-0.5 text-xs font-black tabular-nums text-k-ink">
+                {entree.partySize} pers.
+              </span>
+            ) : null}
             <span className="min-w-0 flex-1 text-xs font-semibold text-k-body">
               Inscrite le {formatDate(entree.createdAt, timeZone)}
               {entree.offeredAt

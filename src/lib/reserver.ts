@@ -263,6 +263,33 @@ export const RESERVER_TABLE_TURN_MIN = 15;
 export const RESERVER_TABLE_TURN_MAX = 600;
 export const RESERVER_TABLE_TURN_DEFAUT = 90;
 
+/**
+ * LES COUVERTS QUI ATTENDENT, et non les lignes (RDV-9).
+ *
+ * « 3 personnes en attente » était exact tant qu'une inscription valait une
+ * personne. Dans une SALLE, trois inscriptions peuvent valoir douze couverts
+ * — et le commerçant qui lit « 3 » croit pouvoir les servir en libérant une
+ * table de quatre.
+ *
+ * Une entrée TERMINÉE ne compte pas : `position` vaut 0 sur une entrée
+ * convertie, expirée ou partie, exactement comme pour le rang affiché. Elle
+ * n'attend plus, et la faire peser sur le compteur ferait voir une file qui
+ * ne se vide jamais.
+ *
+ * Extraite du rendu plutôt que calculée sur place : une somme conditionnelle
+ * écrite dans du JSX n'a aucun test, et ce dépôt a déjà payé ce raccourci une
+ * fois (le bouton de partage, PR #223).
+ */
+export function couvertsEnAttente(
+  entrees: ReadonlyArray<{ position: number; partySize: number }>,
+): number {
+  return entrees.reduce(
+    (total, entree) =>
+      entree.position > 0 ? total + Math.max(1, entree.partySize) : total,
+    0,
+  );
+}
+
 /** Longueur du nom d'une table — miroir du CHECK `char_length between 1 and 40`. */
 export const RESERVER_TABLE_NAME_MAX = 40;
 
