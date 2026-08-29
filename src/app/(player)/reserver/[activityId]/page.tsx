@@ -102,6 +102,10 @@ export default async function ReserverPage({
         durationMinutes={ctx.activity.durationMinutes}
         steps={ctx.activity.steps}
         preparation={ctx.activity.preparation}
+        // L'ADRESSE EXIGÉE EN RENDEZ-VOUS (RDV-4). La règle vient du contexte,
+        // donc de `booking_mode` : un Moment se prend sans rien laisser, un
+        // rendez-vous nommé sans moyen de joindre le client est ingérable.
+        emailObligatoire={ctx.emailObligatoire}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

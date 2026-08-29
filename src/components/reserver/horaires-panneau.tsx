@@ -282,7 +282,9 @@ function ReglagesRendezVous({
 
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={pending}>
-            {pending ? "Enregistrement…" : "Enregistrer"}
+            {pending
+              ? "Enregistrement…"
+              : "Enregistrer la prise de rendez-vous"}
           </Button>
           {state && !state.ok ? <FieldError message={state.error} /> : null}
           {state?.ok ? (
@@ -599,7 +601,7 @@ function Fermetures({
           />
         </div>
         <Button type="submit" disabled={pending}>
-          {pending ? "Ajout…" : "Ajouter"}
+          {pending ? "Ajout…" : "Ajouter la fermeture"}
         </Button>
         {state && !state.ok ? (
           <div className="w-full">
