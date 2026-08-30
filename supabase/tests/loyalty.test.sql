@@ -86,6 +86,9 @@ values ('ca000000-0000-4000-8000-000000000031', 'Autre Org', 'tap-loyalty-2', tr
 
 -- Programme A : code tournant, secret connu, cooldown 24 h,
 -- argent à 2 visites, or à 3 visites.
+-- FID-2a : les seuils s'expriment en POINTS (100 par visite), d'où 200 / 300.
+-- Les trois assertions de niveau plus bas sont INCHANGÉES et gardent le même
+-- sens — seule l'unité du réglage a changé, pas le comportement testé.
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode,
   rotating_secret, rotating_period_seconds, min_stamp_interval_seconds,
@@ -95,7 +98,7 @@ insert into public.loyalty_programs (
   'ca000000-0000-4000-8000-000000000001',
   'Passeport café', 'active', 'rotating_code',
   decode('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff', 'hex'),
-  60, 86400, 2, 3
+  60, 86400, 200, 300
 );
 
 -- Programme B : validation staff, cooldown au plancher du mode (300 s).

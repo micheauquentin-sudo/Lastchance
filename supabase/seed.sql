@@ -380,12 +380,18 @@ on conflict (id) do nothing;
 -- loyalty_programs_cooldown_floor_check) : la valeur la plus permissive
 -- que la base accepte, pour un aller-retour manuel rapide en dev. Les
 -- specs E2E n'apposent aucun tampon (affichage seul), rien n'en dépend.
+-- FID-2a — SEUILS EN POINTS, PAS EN VISITES : 200 / 300, soit les mêmes
+-- 2 et 3 passages qu'avant (100 points par visite). La conversion ×100 de
+-- 20261114120000 ne touche QUE les lignes déjà en base : le seed est rejoué
+-- APRÈS les migrations, ses valeurs doivent donc être écrites dans la nouvelle
+-- unité. Les deux paliers ci-dessous, eux, n'ont pas besoin de `cost_points` :
+-- le trigger loyalty_milestones_derive_cost le dérive de visit_count × 100.
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode,
   min_stamp_interval_seconds, silver_threshold, gold_threshold
 )
 values ('e2eb0000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-        'Passeport E2E', 'active', 'staff', 300, 2, 3)
+        'Passeport E2E', 'active', 'staff', 300, 200, 300)
 on conflict (id) do nothing;
 
 insert into public.loyalty_milestones (
