@@ -1502,12 +1502,17 @@ function CartePalierBoutique({
       }`}
     >
       <div className="flex items-start gap-3">
+        {/* LE PRIX. Sa couleur "éteinte" reste LISIBLE : `text-k-ink/50` sur
+            blanc plafonnait à ~2,6:1, la moitié du minimum, et le scan a11y
+            l a refusé. Un cadeau hors de portée doit se lire — c est même là
+            qu il faut lire le prix, puisque c est ce qui manque. `text-k-body`
+            est la teinte atténuée de la charte, et elle, elle passe. */}
         <span
           aria-hidden
           className={`flex h-11 shrink-0 items-center justify-center rounded-full border-2 px-3 text-sm font-black tabular-nums ${
             abordable && !milestone.soldOut
               ? "border-k-ink bg-k-yellow text-k-ink"
-              : "border-k-ink/30 text-k-ink/50"
+              : "border-k-ink/30 text-k-body"
           }`}
         >
           {milestone.costPoints}
