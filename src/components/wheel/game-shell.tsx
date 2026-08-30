@@ -220,6 +220,7 @@ export function GameShell({
           logoUrl={logoUrl}
           emoji={idle.emoji}
           title={style.title || idle.accroche}
+          regle={idle.regle}
           buttonLabel={idle.buttonLabel}
           kermesse={kermesse}
           returningName={returningName}

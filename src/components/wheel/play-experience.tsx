@@ -28,6 +28,7 @@ import { SPIN_BUTTON_KERMESSE, playText } from "./play-theme";
 import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
+import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
@@ -312,6 +313,16 @@ export function PlayExperience({
               style={style}
             />
           </div>
+
+          {/* La règle AU-DESSUS du bouton, dans son propre élément : le
+              joueur lit le geste avant de chercher où appuyer, et
+              « Lancer la roue » reste un verbe seul — donc un sélecteur E2E
+              intact. Masquée pendant le tour : elle n'a plus rien à dire. */}
+          {phase === "idle" && (
+            <p className={`mx-auto mt-5 max-w-[320px] text-sm leading-snug ${playText.body(kermesse)}`}>
+              {gameIdle("wheel").regle}
+            </p>
+          )}
 
           <button
             onClick={handleSpin}

@@ -49,6 +49,8 @@ export interface HabillagePortee {
   emoji: string;
   /** L'accroche par défaut, écrasée dès que le commerçant en écrit une. */
   accroche: string;
+  /** La règle du jeu, telle que le joueur la lira au-dessus du bouton. */
+  regle: string;
   /**
    * La mécanique a-t-elle un réglage qui lui est propre (section « Ce jeu ») ?
    * `null` quand elle n'en a pas — les six jeux de défi et la roue.
@@ -84,6 +86,7 @@ export function porteeHabillage(gameType?: GameType | null): HabillagePortee {
     libelleBouton: idle.buttonLabel,
     emoji: idle.emoji,
     accroche: idle.accroche,
+    regle: idle.regle,
     reglagesDuJeu: reglagesDuJeu(jeu),
     note: roue
       ? null
