@@ -26,13 +26,33 @@ export async function login(page: Page, email: string) {
  * l'aria-label « Développer « N. Titre — … » » ; certaines tuiles
  * (#statut, portes d'atelier, GuidedJourney) restent ouvertes et n'ont
  * pas ce bouton — dans ce cas on ne fait rien, la tuile est déjà là.
+ *
+ * ── ON N'ATTEND PLUS UN CLIC, ON ATTEND L'ÉTAT QU'IL PRODUIT ──
+ *
+ * La version d'avant lançait UN clic avec cinq secondes de budget et avalait
+ * l'échec. C'était tolérant de la bonne façon — une tuile déjà ouverte n'a pas
+ * de bouton « Développer » — et fragile de la mauvaise : quand le clic partait
+ * avant l'hydratation, ou quand la page avait grandi et que le bouton
+ * demandait un défilement, le dépli était sauté EN SILENCE. Le test ne tombait
+ * pas là, il tombait dix lignes plus loin sur « element(s) not found », en
+ * désignant un champ innocent.
+ *
+ * C'est exactement ce qui vient d'arriver : les titres de cartes ont grandi,
+ * chaque tuile repliée a gagné quelques pixels, et `campaign-templates` a
+ * échoué sur une case à cocher qui n'avait pas bougé.
+ *
+ * On reclique donc tant que le bouton « Développer » est encore là, jusqu'à ce
+ * qu'il disparaisse — c'est LUI le témoin du dépli, et il est exact dans les
+ * deux sens : une tuile sans bouton (déjà ouverte, ou absente de la page) sort
+ * immédiatement, sans rien faire, comme avant.
  */
 export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
   const bouton = page.getByRole("button", { name: motifTitre });
-  // `click()` avec un timeout COURT plutôt que `isVisible()` (instantané,
-  // sans attente) : sur une page qui hydrate encore, `isVisible()` répond
-  // `false` avant que le bouton soit attaché et le dépli est sauté en
-  // silence. `click()` patiente son actionabilité ; l'échec (tuile déjà
-  // ouverte — bouton « Réduire … » à la place — ou absente) est toléré.
-  await bouton.click({ timeout: 5_000 }).catch(() => {});
+  await expect(async () => {
+    // `count()` et non `isVisible()` : instantané, et c'est ce qu'on veut ici
+    // — l'attente est portée par `toPass`, qui rejoue tout le bloc.
+    if ((await bouton.count()) === 0) return;
+    await bouton.first().click({ timeout: 2_000 }).catch(() => {});
+    await expect(bouton).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
 }
