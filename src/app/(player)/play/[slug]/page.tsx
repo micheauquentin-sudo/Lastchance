@@ -383,7 +383,12 @@ function PlayShell({
       <main
         id="contenu"
         tabIndex={-1}
-        className="flex min-h-dvh items-start justify-center outline-none sm:items-center"
+        // Le fond est `absolute` : le contenu doit donc être positionné lui
+        // aussi, après lui dans le DOM, sinon la photo est peinte par-dessus
+        // l'écran de jeu. Même contrat que la branche kermesse et
+        // `PlayerPageShell` : aucun z-index, qui casserait la lecture de fond
+        // par axe-core ; l'ordre DOM départage les deux couches `z-auto`.
+        className="relative flex min-h-dvh items-start justify-center outline-none sm:items-center"
       >
         {children}
       </main>

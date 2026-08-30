@@ -185,8 +185,13 @@ test.describe("parcours joueur — gagner, réclamer, retirer", () => {
   // l'écran idle (bouton à l'aria-label exact du jeu), le passage en phase
   // de jeu, puis l'atteinte de l'état gagné.
 
-  test("la carte retournée : idle → jeu → gain @smoke", async ({ page }) => {
+  test("la carte retournée avec fond : idle → jeu → gain @smoke", async ({ page }) => {
     await page.goto("/play/E2EFLIP");
+    // Cette démo porte volontairement un fond dans le seed. La couche photo
+    // doit rester derrière le jeu : le shell /play est commun à tous les jeux
+    // instantanés, donc ce parcours protège aussi dé, memory, machine, coffre
+    // et bonneteau contre le retour du fond qui les recouvrait.
+    await expect(page.locator("[data-fond='noel']")).toBeVisible({ timeout: 30_000 });
     // Idle : le bouton porte l'aria-label du jeu carte.
     const startFlip = page.getByRole("button", { name: "Retourner la carte" });
     await expect(startFlip).toBeVisible({ timeout: 30_000 });
