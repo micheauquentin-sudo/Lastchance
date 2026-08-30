@@ -36,6 +36,7 @@ import { PlayerHub } from "@/components/pronos/player-hub";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { PredictionProgress } from "@/components/pronos/prediction-progress";
 import { GrillePronostics } from "@/components/pronos/grille-pronostics";
+import { ConsigneJoueur } from "@/components/ui/consigne-joueur";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { fondChoisi, fondPourTheme } from "@/lib/fonds-ecran";
 import { sortieDeLOrganisation } from "@/lib/sortie-apres-jeu";
@@ -479,6 +480,20 @@ export default async function PronosPage({
           /* ── Visiteur : récompenses + inscription + classement ── */
           <>
             {rewardsSection}
+            {/* LA RÈGLE AVANT LE FORMULAIRE. « Inscrivez-vous une fois,
+                pronostiquez tous les matchs » dit la manœuvre, jamais le
+                format : combien de matchs restent à pronostiquer, et que le
+                classement se joue aux points. Le compte vient de `upcoming`,
+                le même que la grille affichera ensuite — jamais un chiffre
+                recopié. */}
+            {upcoming.length > 0 && (
+              <ConsigneJoueur className="mb-4" emoji="⚽">
+                Il vous reste {upcoming.length} match
+                {upcoming.length > 1 ? "s" : ""} à pronostiquer : donnez votre
+                score avant le coup d&apos;envoi de chacun, et les bonnes
+                réponses vous font monter au classement.
+              </ConsigneJoueur>
+            )}
             <div className="mb-6">
               <ContestRegisterForm
                 slug={slug}
