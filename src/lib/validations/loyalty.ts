@@ -91,23 +91,28 @@ const ROTATING_COOLDOWN_FLOOR_SECONDS = 300;
 const STAFF_COOLDOWN_FLOOR_SECONDS = 300;
 
 /**
- * Nombre de visites déclenchant un palier, 2..1000.
+ * PRIX d'un palier, en points — 200..100 000.
  *
- * Le plancher de 2 est un VERROU ÉCONOMIQUE, pas une préférence d'ergonomie
- * (miroir de loyalty_milestones_visit_count_check, migration 20260725190000) :
- * un passeport fraîchement créé ne vaut RIEN. Encaisser une récompense exige
- * une SECONDE visite, séparée de la première par le cooldown du programme
- * (plancher 300 s dans les deux modes) — ce qui retire son objet à la frappe
- * de masse de passeports, et donc leur raison d'être aux seaux de création.
+ * Ce champ était `visit_count` (2..1000 visites). Depuis la bascule en monnaie
+ * (20261114120000), `loyalty_milestones.cost_points` est l'AUTORITÉ sur le
+ * prix, et c'est lui que l'éditeur saisit. Les deux bornes sont l'ancien
+ * intervalle converti au tarif de la visite (100 points), la même conversion
+ * ×100 que la migration a appliquée aux seuils de niveau.
+ *
+ * Le plancher reste un VERROU ÉCONOMIQUE et son motif est intact : un
+ * passeport fraîchement créé ne vaut RIEN. À 200 points, encaisser une
+ * récompense exige une SECONDE visite, séparée de la première par le cooldown
+ * du programme (plancher 300 s dans les deux modes) — ce qui retire son objet
+ * à la frappe de masse de passeports.
  */
-const visitCountSchema = z.coerce
+const costPointsSchema = z.coerce
   .number()
-  .int("Nombre entier de visites requis")
+  .int("Nombre entier de points requis")
   .min(
-    2,
-    "Un palier ne peut pas se déclencher dès la première visite : 2 visites minimum",
+    200,
+    "Un palier ne peut pas s'offrir dès la première visite : 200 points minimum (2 visites)",
   )
-  .max(1000, "Palier trop élevé (1000 visites max)");
+  .max(100_000, "Palier trop cher (100 000 points max)");
 
 export const loyaltyRewardTypeSchema = z.enum(["spin", "lot"]);
 
@@ -228,7 +233,7 @@ export const LOYALTY_PROGRAM_LOSS_HINT = "Cochez la case de confirmation";
 // ── Dashboard commerçant : paliers ──
 
 const milestoneFields = {
-  visit_count: visitCountSchema,
+  cost_points: costPointsSchema,
   reward_type: loyaltyRewardTypeSchema,
   reward_label: rewardLabelSchema,
   reward_details: rewardDetailsSchema,
@@ -381,6 +386,22 @@ export const stampLoyaltyVisitSchema = z.object({
 /** Demande d'un jeton de check-in court (mode staff : QR à faire scanner). */
 export const loyaltyCheckinRequestSchema = z.object({
   programId: loyaltyProgramIdSchema,
+});
+
+/**
+ * ÉCHANGE de points contre un palier (parcours joueur).
+ *
+ * `requestId` est fabriqué PAR LE CLIENT et n'est pas une donnée de confort :
+ * c'est la clé d'idempotence de `spend_loyalty_points`. Un double-clic, un
+ * onglet réveillé, un réseau qui repart renvoient le même identifiant, et la
+ * base rend alors la MÊME récompense sans second débit. Le forger n'ouvre
+ * rien : il ne désigne qu'un achat du passeport appelant, résolu sous le
+ * verrou de son propre membre.
+ */
+export const spendLoyaltyPointsSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  milestoneId: z.string().uuid("Palier introuvable"),
+  requestId: z.string().uuid("Demande invalide"),
 });
 
 /** Consommation d'un tour de roue offert. */

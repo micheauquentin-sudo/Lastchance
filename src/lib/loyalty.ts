@@ -43,6 +43,14 @@ export interface LoyaltyStampResult {
     validationMode: LoyaltyValidationMode;
   } | null;
   visitCount: number;
+  /**
+   * LE SOLDE DÉPENSABLE après ce tampon (`points_balance`). C'est la valeur
+   * que l'écran affiche en tête du passeport : sans elle, le solde n'aurait
+   * bougé qu'au rechargement suivant, alors que la base vient de le créditer.
+   */
+  pointsBalance: number;
+  /** Le CUMUL gagné après ce tampon — l'assiette du niveau, jamais le solde. */
+  pointsEarnedTotal: number;
   tier: LoyaltyTier;
   tierThresholds: { silver: number; gold: number };
   /**
@@ -185,6 +193,8 @@ export function mapLoyaltyStampResult(raw: unknown): LoyaltyStampResult {
     state,
     program,
     visitCount: (root ? asInt(root.visit_count) : null) ?? 0,
+    pointsBalance: (root ? asInt(root.points_balance) : null) ?? 0,
+    pointsEarnedTotal: (root ? asInt(root.points_earned_total) : null) ?? 0,
     tier: asTier(root?.tier),
     tierThresholds,
     isNewMember: root?.is_new_member === true,
@@ -230,10 +240,94 @@ export function mapLoyaltySpinGrant(raw: unknown): LoyaltySpinGrantResult {
 }
 
 // ────────────────────────────────────────────────────────────
-// Niveau dérivé du compteur de visites (pur, testable)
+// Résultat d'un ÉCHANGE de points (mapping du jsonb spend_loyalty_points)
 // ────────────────────────────────────────────────────────────
 
-/** Niveau d'un passeport pour un compteur de visites et des seuils donnés. */
+/**
+ * États nommés de `spend_loyalty_points`. LISTE BLANCHE, au même titre que
+ * `LOYALTY_STAMP_STATES` : un état absent d'ici est ramené à `inactive`, le
+ * refus le plus neutre — jamais à `spent`, qui ferait croire à un achat.
+ */
+export const LOYALTY_SPEND_STATES = [
+  "spent",
+  "insufficient_points",
+  "out_of_stock",
+  "unknown_milestone",
+  "inactive",
+  "not_a_member",
+] as const;
+
+export type LoyaltySpendState = (typeof LOYALTY_SPEND_STATES)[number];
+
+export interface LoyaltySpendResult {
+  state: LoyaltySpendState;
+  /** `spent` : la récompense existait déjà (même request_id rejoué). */
+  idempotent: boolean;
+  rewardId: string | null;
+  milestoneId: string | null;
+  rewardType: LoyaltyRewardType;
+  /** Absent du rejeu idempotent : la RPC n'y relit pas le palier. */
+  rewardLabel: string | null;
+  rewardDetails: string | null;
+  targetWheelId: string | null;
+  /** `lot` acheté : code de retrait FIDELITE-… */
+  code: string | null;
+  /** `spin` acheté : jeton du tour offert. */
+  grantToken: string | null;
+  /** Points réellement débités (gravés sur la récompense). */
+  spentPoints: number | null;
+  /** Solde APRÈS l'opération — ce que l'écran doit afficher tout de suite. */
+  pointsBalance: number | null;
+  pointsEarnedTotal: number | null;
+  /** `insufficient_points` : ce qui manque, exactement. */
+  pointsMissing: number | null;
+  /** Prix du palier visé, tel que la base l'a lu (refus chiffrés). */
+  costPoints: number | null;
+}
+
+/**
+ * Convertit le jsonb de `spend_loyalty_points`, sans jamais faire confiance à
+ * sa forme. Ce module ne TRADUIT pas : les phrases françaises des refus vivent
+ * chez l'appelant, avec les autres messages joueur du module.
+ */
+export function mapLoyaltySpendResult(raw: unknown): LoyaltySpendResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: LoyaltySpendState =
+    stateRaw && (LOYALTY_SPEND_STATES as readonly string[]).includes(stateRaw)
+      ? (stateRaw as LoyaltySpendState)
+      : "inactive";
+
+  return {
+    state,
+    idempotent: root?.idempotent === true,
+    rewardId: root ? asString(root.reward_id) : null,
+    milestoneId: root ? asString(root.milestone_id) : null,
+    rewardType: asRewardType(root?.reward_type),
+    rewardLabel: root ? asString(root.reward_label) : null,
+    rewardDetails: root ? asString(root.reward_details) : null,
+    targetWheelId: root ? asString(root.target_wheel_id) : null,
+    code: root ? asString(root.code) : null,
+    grantToken: root ? asString(root.grant_token) : null,
+    spentPoints: root ? asInt(root.spent_points) : null,
+    pointsBalance: root ? asInt(root.points_balance) : null,
+    pointsEarnedTotal: root ? asInt(root.points_earned_total) : null,
+    pointsMissing: root ? asInt(root.points_missing) : null,
+    costPoints: root ? asInt(root.cost_points) : null,
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// Niveau dérivé du compteur porteur du rang (pur, testable)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Niveau d'un passeport pour un compteur et des seuils donnés.
+ *
+ * Depuis 20261114120000 le compteur passé est `points_earned_total` — le CUMUL
+ * gagné — et les seuils sont en points. Le SOLDE ne doit jamais être passé
+ * ici : dépenser ses points ferait redescendre de niveau.
+ */
 export function loyaltyTierForVisits(
   visitCount: number,
   silverThreshold: number,

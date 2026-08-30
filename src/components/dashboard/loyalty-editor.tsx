@@ -44,8 +44,9 @@ import {
   type SpinWheelPrizes,
   LOYALTY_DEFAULT_LOT_STOCK,
   LOYALTY_MAX_LOT_STOCK,
-  LOYALTY_MILESTONE_MAX_VISITS,
-  LOYALTY_MILESTONE_MIN_VISITS,
+  LOYALTY_MILESTONE_MAX_COST_POINTS,
+  LOYALTY_MILESTONE_MIN_COST_POINTS,
+  LOYALTY_POINTS_PAR_VISITE,
 } from "./loyalty-settings-presets";
 
 /**
@@ -397,9 +398,12 @@ function LoyaltyTiersForm({ program }: { program: LoyaltyProgram }) {
     <Card>
       <h2 className="font-semibold mb-1">Niveaux</h2>
       <p className="text-sm text-zinc-500 mb-5">
-        Le passeport passe bronze → argent → or selon le nombre de visites. Ces
-        deux seuils ne distribuent rien par eux-mêmes : ils donnent au client
-        une progression visible entre deux paliers.
+        Le passeport passe bronze → argent → or selon les points{" "}
+        <strong className="font-semibold text-zinc-700">cumulés depuis le début</strong>,
+        et non selon le solde restant : un client qui dépense ses points garde
+        son niveau, il ne redescend jamais. Une visite validée rapporte{" "}
+        {LOYALTY_POINTS_PAR_VISITE} points. Ces deux seuils ne distribuent rien
+        par eux-mêmes : ils donnent au client une progression visible.
       </p>
 
       <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
@@ -433,30 +437,40 @@ function LoyaltyTiersForm({ program }: { program: LoyaltyProgram }) {
 
         <div className="flex flex-wrap gap-4">
           <div>
-            <Label htmlFor="loyalty-silver">Seuil argent 🥈 (visites)</Label>
+            <Label htmlFor="loyalty-silver">Seuil argent 🥈 (points)</Label>
             <Input
               id="loyalty-silver"
               name="silver_threshold"
               type="number"
               min={1}
-              max={1000}
+              max={100000}
+              step={LOYALTY_POINTS_PAR_VISITE}
               defaultValue={program.silver_threshold}
               className="w-40"
+              aria-describedby="loyalty-silver-help"
               required
             />
+            <p id="loyalty-silver-help" className="mt-1.5 text-xs text-zinc-500">
+              {equivalentVisites(program.silver_threshold)}
+            </p>
           </div>
           <div>
-            <Label htmlFor="loyalty-gold">Seuil or 🥇 (visites)</Label>
+            <Label htmlFor="loyalty-gold">Seuil or 🥇 (points)</Label>
             <Input
               id="loyalty-gold"
               name="gold_threshold"
               type="number"
               min={2}
-              max={1000}
+              max={100000}
+              step={LOYALTY_POINTS_PAR_VISITE}
               defaultValue={program.gold_threshold}
               className="w-40"
+              aria-describedby="loyalty-gold-help"
               required
             />
+            <p id="loyalty-gold-help" className="mt-1.5 text-xs text-zinc-500">
+              {equivalentVisites(program.gold_threshold)}
+            </p>
           </div>
         </div>
         <p className="text-xs text-zinc-500">
@@ -491,7 +505,7 @@ export function LoyaltyMilestonesEditor({
   milestones: LoyaltyMilestone[];
   wheels: WheelOption[];
 }) {
-  const ordered = [...milestones].sort((a, b) => a.visit_count - b.visit_count);
+  const ordered = [...milestones].sort((a, b) => coutPalier(a) - coutPalier(b));
 
   return (
     <div className="space-y-4">
@@ -505,14 +519,15 @@ export function LoyaltyMilestonesEditor({
           20260725200000 le stock est exigé sur les DEUX types de palier : le
           texte peut enfin le dire, et il le dit type par type. */}
       <p className="text-sm text-zinc-500 mb-4">
-        À un nombre de visites donné, le client débloque un lot (retiré en
-        caisse avec un code) ou un tour de roue offert. Un palier se déclenche
-        au plus tôt à la {LOYALTY_MILESTONE_MIN_VISITS}e visite et porte
-        toujours un stock : nombre de lots pour un palier « lot », nombre de
-        tours distribués pour un palier « tour de roue offert ». Ces deux
-        règles bornent ce que le programme peut vous coûter, quel que soit le
-        nombre de passeports ouverts. Il faut au moins un palier pour activer
-        le programme.
+        Chaque palier est un cadeau à un PRIX : le client dépense ses points
+        quand il le décide, et choisit lequel prendre. Un lot se retire en
+        caisse avec un code ; un tour de roue offert se joue tout de suite. Le
+        prix vaut au moins {LOYALTY_MILESTONE_MIN_COST_POINTS} points (deux
+        visites) et chaque palier porte toujours un stock : nombre de lots pour
+        un palier « lot », nombre de tours distribués pour un palier « tour de
+        roue offert ». Ces deux règles bornent ce que le programme peut vous
+        coûter, quel que soit le nombre de passeports ouverts. Il faut au moins
+        un palier pour activer le programme.
       </p>
 
       {ordered.length === 0 ? (
@@ -534,11 +549,38 @@ export function LoyaltyMilestonesEditor({
 }
 
 /**
- * Champ « se déclenche à N visites », partagé entre édition et ajout. Borné à
- * LOYALTY_MILESTONE_MIN_VISITS : la base refuse un palier à la 1re visite, et
- * l'explication tient sur la ligne d'aide plutôt que dans une erreur après coup.
+ * Prix d'un palier, en points. `cost_points` est l'autorité ; le repli refait
+ * la dérivation du trigger de transition (visites × tarif de la visite) pour
+ * une ligne écrite avant la bascule et pas encore relue.
  */
-function VisitCountField({
+function coutPalier(milestone: LoyaltyMilestone): number {
+  return milestone.cost_points ?? milestone.visit_count * LOYALTY_POINTS_PAR_VISITE;
+}
+
+/**
+ * Traduit un montant de points dans l'unité que le commerçant connaît. Repère
+ * seulement : c'est le point qui est saisi, jamais la visite.
+ */
+function equivalentVisites(points: number): string {
+  const visites = Math.round(points / LOYALTY_POINTS_PAR_VISITE);
+  if (!Number.isFinite(visites) || visites < 1) return "Moins d'une visite.";
+  return `Soit environ ${visites} visite${visites > 1 ? "s" : ""} (${LOYALTY_POINTS_PAR_VISITE} points par visite).`;
+}
+
+/**
+ * Champ « COÛT EN POINTS » du palier, partagé entre édition et ajout.
+ *
+ * Ce champ demandait « se déclenche à N visites » : le palier était un SEUIL
+ * qu'on franchissait, et la récompense tombait toute seule. Depuis la bascule
+ * en monnaie (20261114120000), c'est un PRIX que le client paie quand il le
+ * décide. Le mot devait suivre, sinon le commerçant tarife un cadeau en
+ * croyant régler une échéance.
+ *
+ * Le plancher reste le même verrou économique, exprimé dans la nouvelle unité :
+ * une visite vaut {LOYALTY_POINTS_PAR_VISITE} points, donc 200 points exigent
+ * une seconde visite.
+ */
+function CostPointsField({
   id,
   defaultValue,
 }: {
@@ -548,23 +590,26 @@ function VisitCountField({
 }) {
   return (
     <div>
-      <Label htmlFor={id}>Se déclenche à (visites)</Label>
+      <Label htmlFor={id}>Coût en points</Label>
       <Input
         id={id}
-        name="visit_count"
+        name="cost_points"
         type="number"
-        min={LOYALTY_MILESTONE_MIN_VISITS}
-        max={LOYALTY_MILESTONE_MAX_VISITS}
+        min={LOYALTY_MILESTONE_MIN_COST_POINTS}
+        max={LOYALTY_MILESTONE_MAX_COST_POINTS}
+        step={LOYALTY_POINTS_PAR_VISITE}
         defaultValue={defaultValue}
-        placeholder={defaultValue === undefined ? "Ex : 10" : undefined}
+        placeholder={defaultValue === undefined ? "Ex : 1000" : undefined}
         required
         aria-describedby={`${id}-help`}
         className="w-40"
       />
       <p id={`${id}-help`} className="mt-1.5 text-xs text-zinc-500">
-        À partir de {LOYALTY_MILESTONE_MIN_VISITS} visites : un palier dès la
-        première visite serait exploitable — une carte toute neuve suffirait à
-        décrocher la récompense.
+        Ce que le client dépense pour l&apos;obtenir.{" "}
+        {defaultValue !== undefined ? `${equivalentVisites(defaultValue)} ` : ""}
+        Minimum {LOYALTY_MILESTONE_MIN_COST_POINTS} points : un cadeau
+        accessible dès la première visite serait exploitable — une carte toute
+        neuve suffirait à le décrocher.
       </p>
     </div>
   );
@@ -925,7 +970,7 @@ function MilestoneRow({
             ▶
           </span>
           <span className="min-w-0 flex-1">
-            {milestone.visit_count} visites — <span aria-hidden>{resume.emoji}</span>{" "}
+            {coutPalier(milestone)} points — <span aria-hidden>{resume.emoji}</span>{" "}
             {resume.texte}
             {milestone.reward_stock !== null && (
               <span className="font-normal text-zinc-500">
@@ -942,9 +987,9 @@ function MilestoneRow({
           className="min-w-0 flex-1 space-y-3"
         >
           <input type="hidden" name="id" value={milestone.id} />
-          <VisitCountField
-            id={`ms-visits-${milestone.id}`}
-            defaultValue={milestone.visit_count}
+          <CostPointsField
+            id={`ms-cout-${milestone.id}`}
+            defaultValue={coutPalier(milestone)}
           />
 
           <RewardFields
@@ -1013,7 +1058,7 @@ function MilestoneRow({
             type="submit"
             variant="ghost"
             disabled={deletePending}
-            aria-label={`Supprimer le palier à ${milestone.visit_count} visites`}
+            aria-label={`Supprimer le palier à ${coutPalier(milestone)} points`}
           >
             ✕
           </Button>
@@ -1039,7 +1084,7 @@ function MilestoneRow({
  * clic — ce qu'on protège ici, c'est ce qui a été TAPÉ.
  */
 const CHAMPS_BROUILLON_PALIER = [
-  "visit_count",
+  "cost_points",
   "reward_label",
   "reward_details",
   "reward_stock",
@@ -1173,7 +1218,7 @@ function AddMilestoneForm({
     >
       <input type="hidden" name="program_id" value={programId} />
       <p className="text-sm font-bold text-k-ink">Ajouter un palier</p>
-      <VisitCountField id="new-ms-visits" />
+      <CostPointsField id="new-ms-cout" />
       <RewardFields idPrefix="new-ms" defaultType="lot" wheels={wheels} />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending}>

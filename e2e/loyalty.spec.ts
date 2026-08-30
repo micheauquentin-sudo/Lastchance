@@ -28,7 +28,7 @@ import { expectNoA11yViolations } from "./axe";
  * jeton public déterministe permettant à un joueur anonyme de valider sa
  * propre visite depuis l'URL — le tampon exige une session staff + le scan du
  * QR du passeport. La couverture publique porte donc sur l'AFFICHAGE du
- * passeport (niveau, carte de tampons, paliers, carte à présenter) et sur
+ * passeport (niveau, solde de points, boutique de paliers, carte à présenter)
  * l'accessibilité, pas sur l'incrément du compteur. Un parcours de tampon
  * complet relèverait d'une spec caisse authentifiée (hors de ce lot).
  *
@@ -45,7 +45,7 @@ import { expectNoA11yViolations } from "./axe";
 const PROGRAM_ID = "e2eb0000-0000-4000-8000-000000000001";
 
 test.describe("passeport de fidélité — affichage joueur", () => {
-  test("le passeport affiche niveau, tampons et paliers sans violation axe", async ({
+  test("le passeport affiche niveau, solde et boutique sans violation axe", async ({
     page,
   }, testInfo) => {
     // Jauges de progression animées (transition de largeur) : mouvement réduit
@@ -59,9 +59,32 @@ test.describe("passeport de fidélité — affichage joueur", () => {
       page.getByRole("heading", { name: "Passeport E2E", level: 1 }),
     ).toBeVisible({ timeout: 30_000 });
 
-    // Niveau + carte de tampons : l'état d'un joueur neuf (bronze, 0 visite).
-    await expect(page.getByText("Votre niveau")).toBeVisible();
-    await expect(page.getByText("Ma carte de fidélité")).toBeVisible();
+    // Niveau + solde : l'état d'un joueur neuf (bronze, 0 point).
+    //
+    // LA CARTE À TAMPONS A DISPARU, et c'est une décision de produit, pas une
+    // régression : une case cochée affirme qu'on ne recule jamais, or un solde
+    // de points DESCEND à chaque échange. La carte se serait vidée à l'instant
+    // où le client retire son cadeau, reprenant à l'écran des tampons qu'il
+    // avait bel et bien gagnés. Une jauge continue la remplace : elle recule
+    // sans mentir.
+    //
+    // L'ancrage passe du TEXTE à la RÉGION NOMMÉE : « Mes points » est un
+    // repère d'accessibilité que le composant garantit, là où une chaîne se
+    // reformule au premier ajustement de ton.
+    // Le niveau se vise AUSSI par sa région, et pour la même raison qu'au-dessus
+    // — mais ici c'est la CI qui a tranché : « Votre niveau » apparaît désormais
+    // deux fois, l'étiquette du bloc et la phrase qui explique que le rang se
+    // compte sur le cumul et ne redescend pas. Deux occurrences légitimes, un
+    // sélecteur devenu ambigu.
+    //
+    // La région porte le rang dans son nom (« Niveau Bronze ») : le joueur neuf
+    // est bronze, et l'assertion dit donc quelque chose de plus fort qu'avant.
+    await expect(
+      page.getByRole("region", { name: "Niveau Bronze" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Mes points" }),
+    ).toBeVisible();
 
     // Mode `staff` : la carte à présenter au comptoir (et non le formulaire de
     // code tournant) — preuve que le mode de validation seedé est bien rendu.
@@ -76,10 +99,14 @@ test.describe("passeport de fidélité — affichage joueur", () => {
       page.getByRole("img", { name: /QR de votre passeport de fidélité/i }),
     ).toBeVisible({ timeout: 30_000 });
 
-    // Aperçu des paliers : le lot de la 2ᵉ visite est listé (aucun palier ne
-    // peut exister avant la visite 2 depuis les verrous économiques).
+    // LA BOUTIQUE, qui remplace l'aperçu « Les paliers à débloquer ».
+    //
+    // Ce bloc n'était qu'une vitrine : le client y lisait ce qui allait lui
+    // tomber dessus tout seul, sans rien à décider. Depuis la bascule en
+    // monnaie, c'est le cœur de l'écran — un rayon, des prix, un bouton par
+    // cadeau. Le titre a suivi le changement de nature.
     await expect(
-      page.getByRole("heading", { name: "Les paliers à débloquer" }),
+      page.getByRole("heading", { name: "Échanger mes points" }),
     ).toBeVisible();
     await expect(page.getByText("Café fidélité E2E")).toBeVisible();
 

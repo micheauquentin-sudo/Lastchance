@@ -7,8 +7,8 @@ import {
   LOYALTY_COOLDOWN_PRESETS,
   LOYALTY_DEFAULT_LOT_STOCK,
   LOYALTY_MAX_LOT_STOCK,
-  LOYALTY_MILESTONE_MAX_VISITS,
-  LOYALTY_MILESTONE_MIN_VISITS,
+  LOYALTY_MILESTONE_MAX_COST_POINTS,
+  LOYALTY_MILESTONE_MIN_COST_POINTS,
   LOYALTY_PERIOD_PRESETS,
   loyaltyCooldownFloor,
   loyaltyPeriodOptions,
@@ -133,7 +133,7 @@ describe("bornes des paliers (verrous économiques)", () => {
   /** Palier « lot » tel que le formulaire le poste (FormData → chaînes). */
   const lot = (over: Record<string, unknown> = {}) => ({
     program_id: PROGRAM_ID,
-    visit_count: String(LOYALTY_MILESTONE_MIN_VISITS),
+    cost_points: String(LOYALTY_MILESTONE_MIN_COST_POINTS),
     reward_type: "lot",
     reward_label: "Un café offert",
     reward_details: "",
@@ -148,20 +148,20 @@ describe("bornes des paliers (verrous économiques)", () => {
     expect(createLoyaltyMilestoneSchema.safeParse(lot()).success).toBe(true);
   });
 
-  it("le plancher du champ « visites » est celui que la base impose", () => {
+  it("le plancher du champ « coût en points » est le verrou économique", () => {
     expect(
       createLoyaltyMilestoneSchema.safeParse(
-        lot({ visit_count: String(LOYALTY_MILESTONE_MIN_VISITS - 1) }),
+        lot({ cost_points: String(LOYALTY_MILESTONE_MIN_COST_POINTS - 1) }),
       ).success,
     ).toBe(false);
     expect(
       createLoyaltyMilestoneSchema.safeParse(
-        lot({ visit_count: String(LOYALTY_MILESTONE_MAX_VISITS) }),
+        lot({ cost_points: String(LOYALTY_MILESTONE_MAX_COST_POINTS) }),
       ).success,
     ).toBe(true);
     expect(
       createLoyaltyMilestoneSchema.safeParse(
-        lot({ visit_count: String(LOYALTY_MILESTONE_MAX_VISITS + 1) }),
+        lot({ cost_points: String(LOYALTY_MILESTONE_MAX_COST_POINTS + 1) }),
       ).success,
     ).toBe(false);
   });
