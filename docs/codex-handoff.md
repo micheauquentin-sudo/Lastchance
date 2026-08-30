@@ -79,7 +79,7 @@ transverses ; les propositions doivent améliorer concrètement l'expérience de
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
 constat, proposition et décision Codex doit être consigné ici.
 
-## Jeux instantanés — fond d'écran et relevé des parties (2026-08-30, correction locale en cours de validation)
+## Jeux instantanés — fond d'écran et relevé des parties (2026-08-30, livré sur `main`)
 
 - **Constat P0 prouvé** : dans la branche « nuit » de
   `src/app/(player)/play/[slug]/page.tsx`, `FondEcran` est une couche
@@ -98,13 +98,12 @@ constat, proposition et décision Codex doit être consigné ici.
   Le dashboard expose déjà le total exhaustif sous « Tours joués » ; sa tuile
   ambiguë « Participations » devient « Gains réclamés » avec cette précision.
   Aucun nouveau stockage personnel n'est créé.
-- **Preuve actuelle** : `git diff --check`, 75 tests Vitest ciblés,
-  `npm run typecheck` et ESLint ciblé sont verts ; Playwright reconnaît le
-  parcours « carte retournée avec fond ». Le lint global a dépassé 120 s et
-  l'E2E exécuté nécessite la pile seedée du clone WSL de référence, actuellement
-  porteuse de fichiers non suivis d'un autre chantier : ne pas réinitialiser ni
-  exécuter cette pile partagée. Aucun commit, push, migration distante ou
-  déploiement n'est effectué.
+- **Preuves de livraison** : `git diff --check`, 75 tests Vitest ciblés,
+  typecheck et ESLint ciblé sont verts. La CI du SHA `28f4a79f` est entièrement
+  verte : typecheck/lint/tests/build, PostgreSQL ACL/RLS/intégrité, CodeQL,
+  audit npm, site vitrine et E2E Chromium/WebKit. PR #246 fusionnée dans
+  `main` sous `bd4d8166`; preview Vercel verte. Aucune migration distante ni
+  mutation Stripe n'a été effectuée.
 
 ## Édition d'affiche — impression, export et fond (2026-08-29, validation locale verte)
 
