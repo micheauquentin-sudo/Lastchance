@@ -48,9 +48,22 @@ export async function login(page: Page, email: string) {
  */
 export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
   const bouton = page.getByRole("button", { name: motifTitre });
+
+  // ON LAISSE LA PAGE ARRIVER AVANT DE CONCLURE, et c'est une régression que
+  // j'ai introduite puis mesurée : le raccourci `count() === 0` ci-dessous ne
+  // distingue pas « tuile déjà ouverte » de « pas encore rendue ». Sur une page
+  // qui hydrate encore, il sortait immédiatement sans rien ouvrir, et le test
+  // tombait plus loin sur un élément innocent — exactement le défaut que cette
+  // aide devait fermer. `pronostics` est passé de deux à cinq échecs entre les
+  // deux versions : c'est la mesure de la faute, pas un aléa.
+  //
+  // L'ancienne version tenait ce rôle par accident, avec les cinq secondes de
+  // son `click()`. On le rend explicite.
+  await bouton.waitFor({ state: "attached", timeout: 10_000 }).catch(() => {});
+
   await expect(async () => {
-    // `count()` et non `isVisible()` : instantané, et c'est ce qu'on veut ici
-    // — l'attente est portée par `toPass`, qui rejoue tout le bloc.
+    // Absence APRÈS cette attente : la tuile est déjà ouverte (son bouton dit
+    // « Réduire »), ou elle n'est pas sur cette page. Les deux sont tolérés.
     if ((await bouton.count()) === 0) return;
     // `force` — ET C EST ARGUMENTÉ, PAS UN CONTOURNEMENT.
     //
