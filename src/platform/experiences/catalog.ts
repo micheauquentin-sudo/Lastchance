@@ -40,6 +40,16 @@ export interface ExperienceCatalogEntry {
   /** En-tête de la page du module : ce que ça fait, puis le premier geste. */
   dashboardSubtitle: string;
   objective: ExperienceObjective;
+  /**
+   * L'écran du module, dans le tableau de bord.
+   *
+   * Duo et Bande ont pointé « /dashboard/vitrine » jusqu'ici, alors que
+   * leurs écrans sont sous `/dashboard/salons/`. Personne ne l'a vu parce
+   * que personne ne lisait ce champ : `plans.ts` n'en prend que le
+   * `label`. Une donnée fausse qui dort est une donnée fausse le jour où
+   * quelqu'un s'en sert — d'où le test qui vérifie maintenant que chaque
+   * adresse correspond à une route réelle.
+   */
   dashboardHref: string;
   addonField: AddonField | null;
 }
@@ -263,7 +273,7 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
     dashboardSubtitle:
       "Deux joueurs répondent chacun de leur côté, les choix se révèlent ensemble. Partagez le QR ci-dessous : ils jouent depuis leur téléphone, sans rien installer.",
     objective: "Fidéliser",
-    dashboardHref: "/dashboard/vitrine",
+    dashboardHref: "/dashboard/salons/duo",
     addonField: "addon_duo",
   },
   {
@@ -273,7 +283,7 @@ export const MODULE_CATALOG: readonly ModuleCatalogEntry[] = [
     dashboardSubtitle:
       "Chacun vote en secret ; la réponse ne se révèle qu'à partir de trois voix. Partagez le QR ci-dessous : la bande ouvre une salle de 2 à 12 joueurs.",
     objective: "Fidéliser",
-    dashboardHref: "/dashboard/vitrine",
+    dashboardHref: "/dashboard/salons/bande",
     addonField: "addon_bande",
   },
 ] as const;

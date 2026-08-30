@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   activeExperienceKinds,
@@ -45,6 +47,73 @@ describe("descriptions du catalogue", () => {
         expect(texte.toLowerCase()).not.toContain(mot);
       }
     }
+  });
+
+  /**
+   * CHAQUE ADRESSE MÈNE QUELQUE PART.
+   *
+   * Duo et Bande ont pointé `/dashboard/vitrine` pendant des mois alors que
+   * leurs écrans sont sous `/dashboard/salons/`. Rien ne l'a signalé : ce
+   * champ n'est lu par personne aujourd'hui — `plans.ts` n'en prend que le
+   * `label` — donc l'erreur dormait, prête à se réveiller au premier lien.
+   *
+   * On vérifie sur le SYSTÈME DE FICHIERS et non contre une liste écrite à
+   * la main : une seconde liste aurait le même défaut que la première, celui
+   * de pouvoir mentir. Les segments dynamiques (`[id]`) sont acceptés parce
+   * qu'aucune adresse du catalogue n'en porte — si l'une en portait un jour,
+   * ce test le dirait au lieu de le deviner.
+   */
+  it("mène à une page qui existe vraiment", () => {
+    // La résolution imite le routeur : à chaque segment, un dossier LITTÉRAL
+    // ou un segment DYNAMIQUE `[x]`. Les groupes `(nom)` sont transparents
+    // dans l'URL, on les traverse donc sans les consommer — c'est ainsi que
+    // `/dashboard/salons/duo` trouve `salons/[jeu]/page.tsx`.
+    const racine = path.join(process.cwd(), "src", "app");
+
+    const resout = (dossier: string, segments: string[]): boolean => {
+      if (segments.length === 0) {
+        return fs.existsSync(path.join(dossier, "page.tsx"));
+      }
+      const [tete, ...reste] = segments;
+      let entrees: string[];
+      try {
+        entrees = fs.readdirSync(dossier);
+      } catch {
+        return false;
+      }
+
+      // 1. Le dossier qui porte exactement ce nom.
+      if (entrees.includes(tete) && resout(path.join(dossier, tete), reste)) {
+        return true;
+      }
+      // 2. Un segment dynamique, quel que soit le nom du paramètre.
+      for (const entree of entrees) {
+        if (entree.startsWith("[") && resout(path.join(dossier, entree), reste)) {
+          return true;
+        }
+      }
+      // 3. Un groupe de routes, invisible dans l'URL : on redescend avec les
+      //    MÊMES segments.
+      for (const entree of entrees) {
+        if (entree.startsWith("(") && resout(path.join(dossier, entree), segments)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const manquantes: string[] = [];
+    for (const entree of entrees) {
+      const segments = entree.dashboardHref.replace(/^\//, "").split("/").filter(Boolean);
+      if (!resout(racine, segments)) {
+        manquantes.push(`${entree.label} → ${entree.dashboardHref}`);
+      }
+    }
+    expect(manquantes, manquantes.join(" · ")).toEqual([]);
+
+    // CONTRÔLE NÉGATIF : sans lui, un résolveur qui rend `true` partout
+    // passerait ce test et ne prouverait rien.
+    expect(resout(racine, ["dashboard", "cette-page-nexiste-pas"])).toBe(false);
   });
 
   it("sert la phrase d'en-tête des deux catalogues par leur droit", () => {
