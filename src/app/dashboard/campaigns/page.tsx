@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { campaignWindowState } from "@/lib/campaign-window";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CampaignStateBanner } from "@/components/dashboard/campaign-automation";
@@ -71,7 +72,7 @@ export default async function CampaignsPage({ searchParams }: { searchParams: Pr
       <PageHeader
         surtitre="Vos animations"
         titre="Jeux instantanés"
-        sousTitre="Chaque campagne est une roue ou un mini-jeu, avec ses QR codes et ses dates."
+        sousTitre={sousTitreTableauDeBord("core")}
         actions={capacites.canEditDraft ? <NewCampaignForm /> : null}
       />
 

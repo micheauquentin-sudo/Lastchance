@@ -7,6 +7,7 @@ import { badgeDeRemise, descriptionDeCaisse } from "@/lib/caisse-remise";
 import { formatFenetreStock, libelleRetraitTropTot } from "@/lib/reserver";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { HuntRedeemButton } from "@/components/dashboard/hunt-redeem-button";
 import { LoyaltyRedeemButton } from "@/components/dashboard/loyalty-redeem-button";
@@ -225,10 +226,11 @@ export default async function RedeemPage({
 
   return (
     <div className="max-w-md">
-      <h1 className="text-2xl font-bold mb-1">Caisse</h1>
-      <p className="text-zinc-600 mb-8 text-sm">
-        Scannez ou tapez le code du client pour valider la remise du gain.
-      </p>
+      <PageHeader
+        surtitre="Au quotidien"
+        titre="Caisse"
+        sousTitre="Le client vous présente un code après avoir gagné : scannez-le ou tapez-le ici, l'écran affiche le lot à remettre et vous le validez."
+      />
 
       <RedeemScanner />
 

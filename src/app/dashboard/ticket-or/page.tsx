@@ -27,6 +27,15 @@ export const metadata: Metadata = {
   title: "Ticket d'Or",
 };
 
+/**
+ * Le jeu du socle n'a pas d'entrée de catalogue — il n'est ni vendu ni
+ * refusable — donc pas de `sousTitreTableauDeBord` à citer. La constante
+ * tient au moins les DEUX en-têtes de ce fichier d'accord : celui du refus et
+ * celui de l'écran servi disaient déjà la même phrase, recopiée.
+ */
+const SOUS_TITRE =
+  "Un ticket remis après un achat, que le client ouvre à sa prochaine visite et découvre sur place. Réglez d'abord les lots, puis faites scanner le QR au comptoir.";
+
 export default async function TicketOrPage() {
   const ctx = await loadTicketOr();
 
@@ -34,8 +43,9 @@ export default async function TicketOrPage() {
     return (
       <div className="space-y-6">
         <PageHeader
+          surtitre="Vos animations"
           titre="Ticket d'Or"
-          sousTitre="Une visite d’aujourd’hui donne une raison de revenir."
+          sousTitre={SOUS_TITRE}
         />
         <Card className="py-10 text-center">
           <p className="text-sm font-semibold text-k-body">{ctx.error}</p>
@@ -54,8 +64,9 @@ export default async function TicketOrPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        surtitre="Vos animations"
         titre="Ticket d'Or"
-        sousTitre="Une visite d’aujourd’hui donne une raison de revenir."
+        sousTitre={SOUS_TITRE}
       />
 
       <Card>

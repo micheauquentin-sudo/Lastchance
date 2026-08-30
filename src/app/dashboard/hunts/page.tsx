@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -99,7 +100,7 @@ export default async function HuntsPage({
       <PageHeader
         surtitre="Vos animations"
         titre="Chasse au QR"
-        sousTitre="Un parcours de QR codes à tamponner, avec un lot final remis en caisse."
+        sousTitre={sousTitreTableauDeBord("hunts")}
         actions={capacites.canEditDraft ? <NewHuntForm /> : null}
       />
 
