@@ -111,6 +111,17 @@ encore confirmer les parcours navigateur et l'ensemble des contrôles. L'arbre
 WSL de référence porte des migrations non suivies d'un autre lot : ne pas le
 perturber.
 
+**Suivi CI (2026-08-30).** Les contrôles GitHub TypeScript, lint, tests
+unitaires, build, CodeQL, audit npm, replay des migrations, snapshot de types
+et pgTAP sont verts sur la PR #252. Le premier passage a révélé un cast pgTAP
+incompatible CI, corrigé. Le second a révélé une assertion QR ambiguë, corrigée
+en la bornant à sa carte. Les 25 échecs Playwright restants commencent avant ce
+parcours QR et couvrent plusieurs formulaires indépendants ; `main` était vert
+sur le même socle. Hypothèse en cours : les nouvelles lectures effectuées comme
+Server Actions au montage entraient en concurrence avec les transitions des
+formulaires. Elles sont remplacées par une route GET authentifiée, validée et
+tenant-scopée ; relancer la CI complète du nouveau SHA avant fusion.
+
 Codex pilote le développement de LastChance. Les audits doivent être précis et
 transverses ; les propositions doivent améliorer concrètement l'expérience des
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,

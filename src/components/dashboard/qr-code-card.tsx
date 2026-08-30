@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DeleteQrButton } from "@/components/dashboard/qr-forms";
 import { QrDesigner } from "@/components/dashboard/qr-designer";
-import { getCampaignQrRewardCount } from "@/actions/qr-distribution";
 import { Card } from "@/components/ui/card";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
@@ -53,9 +52,11 @@ export function QrCodeCard({
 
   useEffect(() => {
     let active = true;
-    void getCampaignQrRewardCount(id).then((result) => {
-      if (active && result.ok) setRewardCount(result.data);
-    });
+    const params = new URLSearchParams({ kind: "campaign", id });
+    void fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ rewardCount: number }> : null)
+      .then((data) => { if (active && data) setRewardCount(data.rewardCount); })
+      .catch(() => {});
     return () => { active = false; };
   }, [id]);
 

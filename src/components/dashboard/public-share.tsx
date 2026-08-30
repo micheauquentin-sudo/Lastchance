@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ensureQrDistributionAsset,
-  getQrDistributionAsset,
-  getQrDistributionRewardCount,
   type QrDistributionKind,
 } from "@/actions/qr-distribution";
 import { QrDesigner } from "@/components/dashboard/qr-designer";
@@ -78,19 +76,18 @@ export function PublicShare({
   useEffect(() => {
     if (!resourceKind || !resourceId) return;
     let active = true;
-    void getQrDistributionAsset({ resourceKind, resourceId }).then((result) => {
-      if (!active) return;
-      if (result.ok) setAsset(result.data);
-    });
-    return () => { active = false; };
-  }, [resourceId, resourceKind]);
-
-  useEffect(() => {
-    if (!resourceKind || !resourceId) return;
-    let active = true;
-    void getQrDistributionRewardCount({ resourceKind, resourceId }).then((result) => {
-      if (active && result.ok) setRewardCount(result.data);
-    });
+    const params = new URLSearchParams({ kind: resourceKind, id: resourceId });
+    void fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{
+        asset: { id: string; style: QrStyle; poster: Record<string, unknown> } | null;
+        rewardCount: number | null;
+      }> : null)
+      .then((data) => {
+        if (!active || !data) return;
+        setAsset(data.asset);
+        setRewardCount(data.rewardCount);
+      })
+      .catch(() => {});
     return () => { active = false; };
   }, [resourceId, resourceKind]);
 
