@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { expectNoA11yViolations } from "./axe";
 
 /**
@@ -72,6 +72,51 @@ test.describe("Atelier du jeu — navigation par étape", () => {
 });
 
 test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
+  /**
+   * REPART D'UNE ROUE SANS FOND — la précondition est ÉTABLIE, plus supposée.
+   *
+   * ── LE DÉFAUT QUE CETTE AIDE FERME ──
+   *
+   * Les deux tests d'habillage travaillent sur LA MÊME roue seedée, et tous
+   * deux commençaient par affirmer « roue seedée sans fond ». Or l'atelier
+   * ENREGISTRE TOUT SEUL (`useAutoSave`, 800 ms de débounce) : le clic « sans
+   * avoir rien enregistré » du premier test peint la roue POUR DE BON. Celui
+   * qui passait en second trouvait un fond là où il en exigeait zéro.
+   *
+   * D'où des rougeurs qui semblaient aléatoires : elles ne dépendaient que de
+   * l'ordre d'exécution, et une base fraîchement semée les faisait
+   * disparaître — ce qui explique qu'une simple relance « réparait » tout.
+   * La reprise (`retry`) ne réparait rien, elle : le second essai retombait
+   * sur la roue que le premier venait de salir.
+   *
+   * ── POURQUOI UN RECHARGEMENT, ET PAS UN INDICATEUR ──
+   *
+   * `dirty` ne retombe QUE sur le bouton d'enregistrement explicite : après
+   * une sauvegarde automatique, le message « Style enregistré » n'apparaît
+   * jamais. Attendre un indicateur, c'est attendre un signal qui ne viendra
+   * pas. Le rechargement, lui, prouve ce qui compte vraiment : ce que la BASE
+   * a retenu. Et la boucle recommence si l'écriture n'a pas encore atterri.
+   */
+  async function repartirSansFond(page: Page) {
+    const groupe = page.getByRole("group", { name: "Fond d'écran" });
+    const aucun = groupe.getByRole("radio", { name: "Aucun" });
+    const fondApercu = page.locator("[data-apercu='accueil-jeu'] [data-fond]");
+    await expect(aucun).toBeVisible({ timeout: 30_000 });
+
+    await expect(async () => {
+      if (!(await aucun.isChecked())) {
+        await aucun.check();
+        // Le débounce vaut 800 ms. On attend que l'indicateur d'attente
+        // s'efface plutôt que de compter les millisecondes.
+        await expect(page.getByText("Modification en attente")).toHaveCount(0, {
+          timeout: 10_000,
+        });
+      }
+      await page.reload();
+      await expect(fondApercu).toHaveCount(0, { timeout: 10_000 });
+    }).toPass({ timeout: 60_000 });
+  }
+
   test.use({ storageState: "e2e/.auth/owner.json" });
 
   test("le fil des 5 étapes affiche 5 pastilles, aria-current sur la courante", async ({
@@ -257,8 +302,9 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     // vert sans que l'aperçu ait bougé.
     const fondApercu = page.locator("[data-apercu='accueil-jeu'] [data-fond]");
 
-    // Roue seedée sans fond : l'aperçu n'a aucune couche d'image.
-    await expect(fondApercu).toHaveCount(0);
+    // La roue est peut-être encore peinte par un autre test : on l'efface
+    // au lieu de parier qu'elle est vierge.
+    await repartirSansFond(page);
 
     await groupe.getByRole("radio", { name: "Noël" }).check();
 
@@ -294,7 +340,7 @@ test.describe("Atelier du jeu — stepper, étapes et a11y", () => {
     const ambiances = page.getByRole("group", { name: "Ambiances" });
     const fondApercu = page.locator("[data-apercu='accueil-jeu'] [data-fond]");
 
-    await expect(fondApercu).toHaveCount(0);
+    await repartirSansFond(page);
 
     await univers.getByRole("button", { name: "Football" }).click();
     await expect(fondApercu).toHaveAttribute("data-fond", "football");
