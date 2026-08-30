@@ -44,6 +44,23 @@ export interface GameIdle {
   buttonLabel: string;
   /** Accroche par défaut, écrasée par `style.title` dès qu'il existe. */
   accroche: string;
+  /**
+   * LA RÈGLE DU JEU — une phrase, le geste et l'enjeu, à la deuxième personne.
+   *
+   * Elle existe parce que le joueur arrive par un QR code, debout, sur son
+   * téléphone : il n'a lu aucune notice, et l'accroche du commerçant peut
+   * dire tout autre chose (« Deux euros le lancer ! »). Seule cette phrase-ci
+   * lui apprend ce qu'on attend de son doigt.
+   *
+   * Elle n'est PAS le `buttonLabel` : celui-ci est un verbe et un sélecteur
+   * E2E, pas une explication. Les deux se rendent dans des éléments distincts.
+   * Aucun emoji n'entre ici — un U+FE0F glissé dans un nom accessible a déjà
+   * cassé un test de ce dépôt.
+   *
+   * Complétude gardée par `game-idle.test.ts` : la seizième mécanique ne
+   * pourra pas arriver muette.
+   */
+  regle: string;
 }
 
 /**
@@ -56,77 +73,92 @@ export const GAME_IDLE: Record<GameType, GameIdle> = {
     emoji: "🎡",
     buttonLabel: "Lancer la roue",
     accroche: "Tournez la roue, tentez votre chance !",
+    regle: "Touchez le bouton pour lancer la roue : elle s'arrête toute seule sur le lot qui vous revient.",
   },
   scratch: {
     emoji: "🎟️",
     buttonLabel: "Gratter la carte",
     accroche: "Grattez la carte, tentez votre chance !",
+    regle: "Grattez la carte avec le doigt jusqu'à faire apparaître ce que vous avez gagné en dessous.",
   },
   flip_card: {
     emoji: "🃏",
     buttonLabel: "Retourner la carte",
     accroche: "Retournez la carte, tentez votre chance !",
+    regle: "Touchez la carte pour la retourner : votre résultat est écrit au dos.",
   },
   cups: {
     emoji: "🥤",
     buttonLabel: "Choisir un gobelet",
     accroche: "Trouvez le bon gobelet !",
+    regle: "Touchez le gobelet de votre choix : il se soulève et vous annonce votre résultat.",
   },
   slot: {
     emoji: "🎰",
     buttonLabel: "Lancer la machine",
     accroche: "Alignez les rouleaux, tentez votre chance !",
+    regle: "Touchez pour lancer les rouleaux, puis regardez-les s'arrêter sur votre résultat.",
   },
   memory: {
     emoji: "🧠",
     buttonLabel: "Jouer au memory",
     accroche: "Retrouvez la paire, tentez votre chance !",
+    regle: "Retournez les cartes deux par deux jusqu'à trouver la paire : c'est elle qui révèle votre résultat.",
   },
   chest: {
     emoji: "🎁",
     buttonLabel: "Ouvrir un coffre",
     accroche: "Choisissez votre coffre !",
+    regle: "Touchez le coffre de votre choix : il s'ouvre et vous annonce votre résultat.",
   },
   dice: {
     emoji: "🎲",
     buttonLabel: "Lancer le dé",
     accroche: "Lancez le dé, tentez votre chance !",
+    regle: "Touchez pour lancer le dé, puis laissez-le rouler jusqu'à votre résultat.",
   },
   draw_card: {
     emoji: "🃏",
     buttonLabel: "Piocher une carte",
     accroche: "Piochez une carte, tentez votre chance !",
+    regle: "Touchez le paquet pour piocher une carte : c'est elle qui porte votre résultat.",
   },
   // Jeux de DÉFI : réussir l'épreuve conditionne le tirage — l'accroche le dit.
   rps: {
     emoji: "✊",
     buttonLabel: "Jouer à pierre-feuille-ciseaux",
     accroche: "Battez la machine !",
+    regle: "Choisissez pierre, feuille ou ciseaux, en un seul coup : battez la machine et vous tentez un lot.",
   },
   reflex: {
     emoji: "⚡",
     buttonLabel: "Tester tes réflexes",
     accroche: "Testez vos réflexes !",
+    regle: "Touchez l'écran dès qu'il s'allume, sans partir avant le signal — réussissez et vous tentez un lot.",
   },
   gauge: {
     emoji: "🎯",
     buttonLabel: "Arrêter la jauge",
     accroche: "Arrêtez la jauge sur la zone verte !",
+    regle: "Le curseur balaie la barre : touchez « Stop » pile sur la zone verte et vous tentez un lot.",
   },
   puzzle: {
     emoji: "🧩",
     buttonLabel: "Reconstituer le puzzle",
     accroche: "Reconstituez le puzzle !",
+    regle: "Remettez l'image dans l'ordre en échangeant les fragments deux par deux, puis validez pour tenter votre lot.",
   },
   mystery_word: {
     emoji: "🔤",
     buttonLabel: "Deviner le mot",
     accroche: "Devinez le mot mystère !",
+    regle: "Devinez le mot caché grâce à l'indice : une seule proposition, et vous tentez un lot.",
   },
   estimate: {
     emoji: "🔢",
     buttonLabel: "Faire une estimation",
     accroche: "Approchez le bon nombre !",
+    regle: "Donnez votre estimation en un seul nombre : approchez la bonne valeur et vous tentez un lot.",
   },
 };
 

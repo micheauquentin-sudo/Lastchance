@@ -40,6 +40,7 @@ export function GameIdleScreen({
   logoUrl = null,
   emoji,
   title,
+  regle,
   buttonLabel,
   kermesse,
   variant = "play",
@@ -55,6 +56,12 @@ export function GameIdleScreen({
   emoji: string;
   /** Accroche déjà résolue par l'appelant (`style.title` ou défaut du jeu). */
   title: ReactNode;
+  /**
+   * La règle du jeu (`GAME_IDLE[…].regle`) — le geste et l'enjeu, en une
+   * phrase. Distincte de `title` : l'accroche appartient au commerçant et
+   * peut ne rien expliquer, la règle appartient à la mécanique.
+   */
+  regle?: string;
   buttonLabel: string;
   /** Palette de texte sombre ? Calculé par l'appelant — jamais ici. */
   kermesse: boolean;
@@ -175,6 +182,17 @@ export function GameIdleScreen({
             {emoji}
           </span>
         </div>
+      )}
+
+      {/* AU-DESSUS DU BOUTON, ET DANS SON PROPRE ÉLÉMENT. Le joueur lit le
+          geste avant de chercher où appuyer ; et le `buttonLabel` reste un
+          verbe seul, donc un sélecteur E2E intact. */}
+      {regle && (
+        <p
+          className={`mx-auto mt-5 max-w-[320px] ${apercu ? "text-[11px]" : "text-sm"} leading-snug ${playText.body(kermesse)}`}
+        >
+          {regle}
+        </p>
       )}
 
       {onStart ? (

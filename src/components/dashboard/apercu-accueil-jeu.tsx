@@ -96,6 +96,7 @@ export function ApercuAccueilJeu({
         organizationName={organizationName}
         emoji={portee.emoji}
         title={style.title || portee.accroche}
+        regle={portee.regle}
         buttonLabel={portee.libelleBouton}
         /* `playOnLightSurface` et NON `surface.kermesse` : c'est la clarté du
            fond RÉELLEMENT peint qui décide de la palette de texte, et c'est ce

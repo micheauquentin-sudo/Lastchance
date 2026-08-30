@@ -35,7 +35,45 @@ describe("GAME_IDLE — table complète", () => {
       expect(idle.emoji.trim().length, g).toBeGreaterThan(0);
       expect(idle.buttonLabel.trim().length, g).toBeGreaterThan(0);
       expect(idle.accroche.trim().length, g).toBeGreaterThan(0);
+      expect(idle.regle.trim().length, g).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * LA GARDE QUI EMPÊCHE LA SEIZIÈME MÉCANIQUE D'ARRIVER MUETTE.
+   *
+   * Le joueur arrive par un QR code et ne lit aucune notice : sans règle, il
+   * regarde un emoji et un verbe et doit deviner le geste. Un test par
+   * mécanique n'apprendrait rien — c'est la COMPLÉTUDE qui compte, et elle
+   * seule tient quand quelqu'un ajoute une entrée à la table.
+   *
+   * Quatre exigences, chacune pour une façon concrète de rater la phrase :
+   * trop courte (« Jouez ! » n’explique rien) ; pas une phrase (pas de
+   * ponctuation finale) ; à la troisième personne (une notice, pas une
+   * consigne) ; porteuse d’un emoji — la règle est lue par les lecteurs
+   * d’écran, et un U+FE0F dans un nom accessible a déjà cassé un test ici.
+   */
+  it("chaque mécanique porte une règle : une phrase, assez longue, sans emoji", () => {
+    // `\p{Extended_Pictographic}` couvre la CLASSE entière — et non la liste
+    // des emoji auxquels on a pensé — plus U+FE0F, qui n’en fait pas partie
+    // et qui est précisément celui qui avait cassé un nom accessible.
+    const EMOJI = /\p{Extended_Pictographic}|\uFE0F/u;
+    for (const g of TOUTES) {
+      const regle = GAME_IDLE[g].regle;
+      expect(regle.length, g).toBeGreaterThanOrEqual(30);
+      expect(EMOJI.test(regle), `${g} : la règle porte un emoji`).toBe(false);
+      expect(
+        regle.trimEnd().endsWith("."),
+        `${g} : la règle n’est pas une phrase`,
+      ).toBe(true);
+      // Deuxième personne : c’est au joueur qu’on parle, jamais de lui.
+      expect(/\b(?:vous|votre|vos)\b/i.test(regle), g).toBe(true);
+    }
+  });
+
+  it("aucune règle n'est partagée par deux mécaniques", () => {
+    const regles = TOUTES.map((g) => GAME_IDLE[g].regle);
+    expect(new Set(regles).size).toBe(regles.length);
   });
 
   /**

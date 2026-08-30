@@ -16,6 +16,7 @@ import {
   type JackpotParticipationActionResult,
 } from "@/actions/jackpot";
 import type { JackpotParticipationResult } from "@/lib/jackpot";
+import { ConsigneJoueur } from "@/components/ui/consigne-joueur";
 import type { JackpotGaugeView } from "@/lib/jackpot-context";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { CheckinTokenReveal } from "./checkin-token-reveal";
@@ -350,6 +351,23 @@ export function JackpotTracker({
           {campaignName}
         </h1>
       </header>
+
+      {/* LA RÈGLE AVANT LA JAUGE. Le grand montant et « 12 / 50 » ne disent
+          ni que la cagnotte est COLLECTIVE, ni par quel geste on y ajoute sa
+          part — et ce geste dépend du mode de validation choisi par le
+          commerçant. Le `DrawModeHint`, plus bas, explique ce qui se passe
+          UNE FOIS l'objectif atteint : c'est la suite de cette phrase, pas
+          son remplacement. Masquée sur un cycle figé (tirage fait, lots
+          épuisés), où participer n'a plus de sens. */}
+      {!dateDrawDone && !gauge.soldOut && (
+        <ConsigneJoueur className="mb-4" emoji="🤝">
+          Cette cagnotte est collective : chaque participation la fait monter.
+          {validationMode === "rotating_code"
+            ? " Entrez le code affiché en boutique pour ajouter la vôtre"
+            : " Faites valider votre passage au comptoir pour ajouter la vôtre"}
+          {gauge.threshold > 0 ? ` — objectif ${gauge.threshold}.` : "."}
+        </ConsigneJoueur>
+      )}
 
       {/* ── Jauge partagée + montant croissant ── */}
       <GaugePanel

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useModalFocus } from "@/components/ui/use-modal-focus";
+import { ConsigneJoueur } from "@/components/ui/consigne-joueur";
 import {
   getCalendarState,
   joinCalendar,
@@ -327,6 +328,24 @@ export function CalendarTracker({
           {calendar.name}
         </h1>
       </header>
+
+      {/* LA RÈGLE AVANT LA GRILLE. « 3 / 24 cases ouvertes » est un
+          compteur, pas une explication : il ne dit pas qu'on revient CHAQUE
+          JOUR, ni ce que la grille complète débloque. */}
+      {!progress.complete && (
+        <ConsigneJoueur className="mb-4" emoji="📅">
+          Revenez chaque jour ouvrir votre case : il y en a {progress.dayCount}{" "}
+          en tout
+          {calendar.completionRewardLabel ? (
+            <>
+              , et les ouvrir toutes vous donne{" "}
+              <strong>{calendar.completionRewardLabel}</strong>.
+            </>
+          ) : (
+            ", et chacune cache une surprise."
+          )}
+        </ConsigneJoueur>
+      )}
 
       {/* ── Progression d'assiduité ── */}
       <ProgressPanel progress={progress} fillClass={tokens.progressFill} />

@@ -12,6 +12,7 @@ import type { HuntScanResult } from "@/lib/hunts";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import { ProposerPasseport } from "@/components/loyalty/proposer-passeport";
 import { RedeemQr } from "@/components/wheel/redeem-qr";
+import { ConsigneJoueur } from "@/components/ui/consigne-joueur";
 import type { ActionResult } from "@/lib/utils";
 import type { HuntOrderMode } from "@/types/database";
 import {
@@ -150,6 +151,26 @@ export function HuntJourney({
           {huntName}
         </h1>
       </header>
+
+      {/* LA RÈGLE AVANT LE PREMIER TAMPON. La carte de fidélité compte les
+          étapes franchies ; elle ne dit pas qu'on les valide en SCANNANT, ni
+          ce qu'ouvre la dernière — l'indice, lui, n'arrive qu'APRÈS le tampon.
+          La consigne s'efface dès que la chasse est finie : elle n'a alors
+          plus rien à apprendre à personne. */}
+      {total > 0 && !unavailable && !complete && !huntFull && (
+        <ConsigneJoueur className="mb-4" emoji="📍">
+          Scannez le QR code de chacune des {total} étapes pour remplir votre
+          carte
+          {reward.label ? (
+            <>
+              {" "}
+              : la dernière vous ouvre <strong>{reward.label}</strong>.
+            </>
+          ) : (
+            " : la dernière vous ouvre votre récompense."
+          )}
+        </ConsigneJoueur>
+      )}
 
       {/* ── Carte de fidélité (tampons) ── */}
       {total > 0 && !unavailable && (
