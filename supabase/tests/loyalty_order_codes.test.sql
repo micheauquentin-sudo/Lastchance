@@ -441,14 +441,20 @@ select is((select r->>'state' from tap_r), 'stamped',
 select is((select r->>'visit_count' from tap_r), '2',
   'les deux commandes comptent pour deux visites');
 
--- Un tampon de commande est un tampon À PART ENTIÈRE : il déclenche les
--- paliers. Sans cette assertion, on pourrait livrer un contournement qui
--- incrémente le compteur sans jamais rien faire gagner.
-select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 1,
-  'le palier de la visite 2 est atteint par un tampon de commande');
-select ok(
-  (select r->'milestones_reached'->0->>'code' from tap_r) ~ '^FIDELITE-[A-HJ-NP-Z2-9]{8}$',
-  'le code de retrait est bien émis sur le chemin « commande »');
+-- Un tampon de commande est un tampon À PART ENTIÈRE : il fait GAGNER. Sans
+-- cette assertion, on pourrait livrer un contournement qui incrémente le
+-- compteur sans jamais rien rapporter au client.
+--
+-- Ce qu'il rapporte a changé le 2026-08-30 : jusqu'à FID-2b
+-- (20261115120000), franchir le palier de la visite 2 émettait un code de
+-- retrait, et c'est ce que ces deux lignes vérifiaient. Plus AUCUN tampon ne
+-- distribue de récompense — le gain, ce sont les POINTS, avec lesquels le
+-- client achète ensuite ce qu'il veut. La propriété gardée ici est la même :
+-- le chemin « commande » ne doit pas être un tampon au rabais.
+select is((select r->>'points_earned' from tap_r), '100',
+  'le tampon de commande crédite ses 100 points comme tout autre tampon');
+select is((select r->>'points_balance' from tap_r), '200',
+  'et le solde suit : deux commandes = deux visites = 200 points');
 
 -- ── LA BORNE : le contournement ne fuit pas vers l'autre mode ──
 -- C'est la moitié qu'on oublie. Si le cooldown avait été neutralisé pour
