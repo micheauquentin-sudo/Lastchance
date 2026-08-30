@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
-import {
-  ensureQrDistributionAsset,
-  type QrDistributionKind,
-} from "@/actions/qr-distribution";
-import { QrDesigner } from "@/components/dashboard/qr-designer";
+import type { QrDistributionKind } from "@/actions/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
+
+const QrDesigner = dynamic(
+  () => import("@/components/dashboard/qr-designer").then(({ QrDesigner }) => QrDesigner),
+  { ssr: false },
+);
 
 /**
  * Partage d'une expérience joueur publiable : QR code imprimable + lien
@@ -118,6 +120,7 @@ export function PublicShare({
   async function openDesigner() {
     if (!resource) return;
     setAssetError(null);
+    const { ensureQrDistributionAsset } = await import("@/actions/qr-distribution");
     const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
     if (!result.ok) {
       setAssetError(result.error);
@@ -130,6 +133,7 @@ export function PublicShare({
   async function openPoster() {
     if (!resource) return;
     setAssetError(null);
+    const { ensureQrDistributionAsset } = await import("@/actions/qr-distribution");
     const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
     if (!result.ok) {
       setAssetError(result.error);
