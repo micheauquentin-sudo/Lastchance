@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "@/components/ui/use-modal-focus";
 import { updateQrStyle } from "@/actions/qr-codes";
+import {
+  updateQrDistributionStyle,
+  type QrDistributionKind,
+} from "@/actions/qr-distribution";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import {
@@ -252,6 +256,7 @@ export function QrDesigner({
   slug,
   url,
   initialStyle,
+  distribution,
   onClose,
   onSaved,
 }: {
@@ -259,6 +264,8 @@ export function QrDesigner({
   slug: string;
   url: string;
   initialStyle: QrStyle;
+  /** QR de diffusion générique (quiz, calendrier, etc.), pas un qr_codes roue. */
+  distribution?: { resourceKind: QrDistributionKind; resourceId: string };
   onClose: () => void;
   onSaved: (style: QrStyle) => void;
 }) {
@@ -312,7 +319,9 @@ export function QrDesigner({
   async function handleSave() {
     setSaving(true);
     setMessage(null);
-    const result = await updateQrStyle({ id, ...style });
+    const result = distribution
+      ? await updateQrDistributionStyle({ id, ...distribution, ...style })
+      : await updateQrStyle({ id, ...style });
     setSaving(false);
     if (result.ok) {
       setMessage({ ok: true, text: "Personnalisation enregistrée." });

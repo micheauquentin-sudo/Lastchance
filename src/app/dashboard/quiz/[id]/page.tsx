@@ -443,6 +443,7 @@ export default async function QuizDetailPage({
                 fileName={`quiz-${quiz.publicSlug ?? quiz.id}`}
                 qrLabel={quiz.name}
                 openCount={openCount}
+                resource={{ kind: "quiz", id: quiz.id }}
               />
             </>
           ) : (

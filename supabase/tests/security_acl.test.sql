@@ -1124,6 +1124,21 @@ select ok(not exists (
     )
 ), 'member policies are never evaluated for anon');
 
+-- Actifs QR de diffusion : l'éditeur peut gérer le style et l'affiche de son
+-- propre établissement, mais aucun QR n'est une table publique ou anonyme.
+select ok(not has_table_privilege('anon', 'public.qr_distribution_assets', 'SELECT'), 'anon cannot read QR distribution assets');
+select ok(not has_table_privilege('anon', 'public.qr_distribution_assets', 'INSERT'), 'anon cannot create QR distribution assets');
+select ok(has_table_privilege('authenticated', 'public.qr_distribution_assets', 'SELECT'), 'authenticated can read tenant-scoped QR distribution assets');
+select is(
+  (select count(*) from pg_policies
+    where schemaname = 'public'
+      and tablename = 'qr_distribution_assets'
+      and policyname = 'qr_distribution_assets: editor all'
+      and roles = array['authenticated']),
+  1::bigint,
+  'QR distribution asset policy is scoped to authenticated editors'
+);
+
 select ok(exists (select 1 from pg_constraint where conrelid='public.wheels'::regclass and conname='wheels_campaign_org_fk' and contype='f'), 'wheel campaign tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.prizes'::regclass and conname='prizes_wheel_org_fk' and contype='f'), 'prize wheel tenant FK exists');
 select ok(exists (select 1 from pg_constraint where conrelid='public.qr_codes'::regclass and conname='qr_campaign_org_fk' and contype='f'), 'QR campaign tenant FK exists');

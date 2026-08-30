@@ -171,6 +171,7 @@ export default async function ActiviteReservablePage({
           url={urlActiviteReserver(activite.id, APP_URL)}
           fileName={`reservation-${activite.id}`}
           qrLabel={activite.name}
+          resource={{ kind: "reservation", id: activite.id }}
         />
       </div>
 

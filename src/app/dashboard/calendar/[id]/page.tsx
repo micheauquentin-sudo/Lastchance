@@ -378,6 +378,7 @@ export default async function CalendarDetailPage({
                 fileName={`calendrier-${c.public_slug}`}
                 qrLabel={c.name}
                 openCount={openCount}
+                resource={{ kind: "calendar", id: c.id }}
               />
             </>
           ) : (

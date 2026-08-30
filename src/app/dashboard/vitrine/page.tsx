@@ -371,6 +371,8 @@ export default async function VitrineDashboardPage() {
                 publiee={settings.published}
                 cartes={cartes}
                 appUrl={APP_URL}
+                resourceId={settings.id}
+                openCount={ouvertures}
               />
             </CarteRepliable>
             {/* HORS DU SYSTÈME DE TUILES, et c'est délibéré : les neuf tuiles

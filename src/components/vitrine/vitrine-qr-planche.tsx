@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { renderQr } from "@/lib/qr-render";
 import { urlVitrine, type VitrineCarteView } from "@/lib/vitrine";
-import { SHARE_QR_STYLE } from "@/components/dashboard/public-share";
+import { PublicShare, SHARE_QR_STYLE } from "@/components/dashboard/public-share";
+import { getQrDistributionAsset } from "@/actions/qr-distribution";
+import type { QrStyle } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
@@ -51,12 +53,17 @@ export function VitrineQrPlanche({
   publiee,
   cartes,
   appUrl,
+  resourceId,
+  openCount,
 }: {
   slug: string;
   publiee: boolean;
   /** Les cartes du DASHBOARD — masquées comprises : on n'imprime pas à l'aveugle. */
   cartes: VitrineCarteView[];
   appUrl: string;
+  /** La Vitrine est une page unique : son QR principal porte ses réglages. */
+  resourceId: string;
+  openCount: number;
 }) {
   const cibles = useMemo<Cible[]>(() => {
     const liste: Cible[] = [{ kind: "accueil" }];
@@ -88,6 +95,15 @@ export function VitrineQrPlanche({
    * réponse produit ET la réponse machine : rien ne se dessine avant l'intention.
    */
   const [ouverte, setOuverte] = useState(false);
+  const [styleQr, setStyleQr] = useState<QrStyle>(SHARE_QR_STYLE);
+
+  useEffect(() => {
+    let active = true;
+    void getQrDistributionAsset({ resourceKind: "vitrine", resourceId }).then((result) => {
+      if (active && result.ok && result.data) setStyleQr(result.data.style);
+    });
+    return () => { active = false; };
+  }, [resourceId]);
 
   const cible = cibles.find((c) => valeurCible(c) === valeur) ?? cibles[0];
 
@@ -124,6 +140,22 @@ export function VitrineQrPlanche({
           part. Publiez-la ci-dessus avant d&apos;imprimer.
         </p>
       ) : null}
+
+      <div className="mb-5 rounded-xl border-2 border-k-ink/15 bg-k-bg p-4">
+        <h3 className="font-black text-k-ink">QR principal de votre vitrine</h3>
+        <p className="mb-3 mt-1 text-sm text-k-body">
+          Personnalisez ce QR et son affiche ici. Les QR contextuels ci-dessous
+          gardent leur destination précise (carte ou fiche).
+        </p>
+        <PublicShare
+          url={base}
+          fileName={`vitrine-${slug}`}
+          qrLabel="Votre vitrine"
+          openCount={openCount}
+          resource={{ kind: "vitrine", id: resourceId }}
+          onStyleSaved={setStyleQr}
+        />
+      </div>
 
       <style>{`
         @media print {
@@ -245,6 +277,7 @@ export function VitrineQrPlanche({
                     : null
                 }
                 fichier={`vitrine-${slug}-${valeur.replace(":", "-")}-${index + 1}`}
+                style={styleQr}
               />
             ))}
           </ul>
@@ -263,11 +296,13 @@ function QrExemplaire({
   contexte,
   libelle,
   fichier,
+  style,
 }: {
   url: string;
   contexte: string;
   libelle: string | null;
   fichier: string;
+  style: QrStyle;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -276,16 +311,16 @@ function QrExemplaire({
     if (!canvas) return;
     try {
       // Aperçu seulement : un échec de rendu ne doit pas casser la page.
-      void renderQr(canvas, url, SHARE_QR_STYLE, 512).catch(() => {});
+      void renderQr(canvas, url, style, 512).catch(() => {});
     } catch {
       /* canvas indisponible (environnement de test) */
     }
-  }, [url]);
+  }, [url, style]);
 
   async function telecharger() {
     const canvas = document.createElement("canvas");
     try {
-      await renderQr(canvas, url, SHARE_QR_STYLE, 1024);
+      await renderQr(canvas, url, style, 1024);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `${fichier}.png`;

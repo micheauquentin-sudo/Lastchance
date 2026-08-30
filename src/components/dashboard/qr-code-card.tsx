@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DeleteQrButton } from "@/components/dashboard/qr-forms";
 import { QrDesigner } from "@/components/dashboard/qr-designer";
+import { getCampaignQrRewardCount } from "@/actions/qr-distribution";
 import { Card } from "@/components/ui/card";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
@@ -28,6 +29,7 @@ export function QrCodeCard({
   scanCount,
   initialStyle,
   posterHref,
+  posterConfigured = false,
   testHref,
 }: {
   id: string;
@@ -39,12 +41,23 @@ export function QrCodeCard({
   initialStyle: QrStyle;
   /** Lien vers l'éditeur d'affiche imprimable de ce QR. */
   posterHref?: string;
+  /** Une affiche déjà enregistrée doit se rouvrir, pas être présentée comme neuve. */
+  posterConfigured?: boolean;
   /** Planche imprimable couvrant tous les styles à scanner physiquement. */
   testHref?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [style, setStyle] = useState<QrStyle>(initialStyle);
   const [designing, setDesigning] = useState(false);
+  const [rewardCount, setRewardCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getCampaignQrRewardCount(id).then((result) => {
+      if (active && result.ok) setRewardCount(result.data);
+    });
+    return () => { active = false; };
+  }, [id]);
 
   // Vignette redessinée quand le style change (enregistré via le studio).
   useEffect(() => {
@@ -94,6 +107,11 @@ export function QrCodeCard({
           >
             {scanCount} ouverture{scanCount > 1 ? "s" : ""}
           </p>
+          {rewardCount !== null ? (
+            <p className="text-xs font-bold text-zinc-500">
+              {rewardCount} gain{rewardCount > 1 ? "s" : ""} attribué{rewardCount > 1 ? "s" : ""}
+            </p>
+          ) : null}
           <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
             <button
               type="button"
@@ -109,7 +127,7 @@ export function QrCodeCard({
                 rel="noopener noreferrer"
                 className="text-sm font-bold text-k-orange-text hover:underline"
               >
-                Créer l&apos;affiche
+                {posterConfigured ? "Éditer l'affiche" : "Créer l'affiche"}
               </a>
             )}
             {testHref && (

@@ -2,6 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  ensureQrDistributionAsset,
+  getQrDistributionAsset,
+  getQrDistributionRewardCount,
+  type QrDistributionKind,
+} from "@/actions/qr-distribution";
+import { QrDesigner } from "@/components/dashboard/qr-designer";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
 
@@ -38,6 +45,8 @@ export function PublicShare({
   fileName,
   qrLabel,
   openCount,
+  resource,
+  onStyleSaved,
 }: {
   /** URL publique ABSOLUE (`${APP_URL}/…`). */
   url: string;
@@ -52,25 +61,54 @@ export function PublicShare({
    * de visiteurs.
    */
   openCount?: number;
+  /** Ressource dont l'URL publique est dérivée côté serveur. */
+  resource?: { kind: QrDistributionKind; id: string };
+  /** Permet à une planche locale de redessiner ses exemplaires après édition. */
+  onStyleSaved?: (style: QrStyle) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
+  const [asset, setAsset] = useState<{ id: string; style: QrStyle; poster: Record<string, unknown> } | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
+  const [designing, setDesigning] = useState(false);
+  const [rewardCount, setRewardCount] = useState<number | null>(null);
+  const resourceKind = resource?.kind;
+  const resourceId = resource?.id;
+
+  useEffect(() => {
+    if (!resourceKind || !resourceId) return;
+    let active = true;
+    void getQrDistributionAsset({ resourceKind, resourceId }).then((result) => {
+      if (!active) return;
+      if (result.ok) setAsset(result.data);
+    });
+    return () => { active = false; };
+  }, [resourceId, resourceKind]);
+
+  useEffect(() => {
+    if (!resourceKind || !resourceId) return;
+    let active = true;
+    void getQrDistributionRewardCount({ resourceKind, resourceId }).then((result) => {
+      if (active && result.ok) setRewardCount(result.data);
+    });
+    return () => { active = false; };
+  }, [resourceId, resourceKind]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     try {
       // Aperçu seulement : un échec de rendu ne doit pas casser la page.
-      void renderQr(canvas, url, SHARE_QR_STYLE, 512).catch(() => {});
+      void renderQr(canvas, url, asset?.style ?? SHARE_QR_STYLE, 512).catch(() => {});
     } catch {
       /* canvas indisponible (environnement de test) */
     }
-  }, [url]);
+  }, [url, asset?.style]);
 
   async function downloadPng() {
     const canvas = document.createElement("canvas");
     try {
-      await renderQr(canvas, url, SHARE_QR_STYLE, 1024);
+      await renderQr(canvas, url, asset?.style ?? SHARE_QR_STYLE, 1024);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `${fileName}.png`;
@@ -78,6 +116,30 @@ export function PublicShare({
     } catch {
       /* rendu impossible : le lien reste utilisable */
     }
+  }
+
+  async function openDesigner() {
+    if (!resource) return;
+    setAssetError(null);
+    const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
+    if (!result.ok) {
+      setAssetError(result.error);
+      return;
+    }
+    setAsset(result.data);
+    setDesigning(true);
+  }
+
+  async function openPoster() {
+    if (!resource) return;
+    setAssetError(null);
+    const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
+    if (!result.ok) {
+      setAssetError(result.error);
+      return;
+    }
+    setAsset(result.data);
+    window.open(`/poster/distribution/${result.data.id}`, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -92,6 +154,16 @@ export function PublicShare({
         <Button type="button" variant="secondary" onClick={downloadPng}>
           Télécharger le QR (PNG)
         </Button>
+        {resource ? (
+          <Button type="button" variant="secondary" onClick={openDesigner}>
+            Personnaliser le QR
+          </Button>
+        ) : null}
+        {resource ? (
+          <Button type="button" variant="secondary" onClick={openPoster}>
+            {asset && Object.keys(asset.poster).length > 0 ? "Éditer l'affiche" : "Créer l'affiche"}
+          </Button>
+        ) : null}
       </div>
 
       <div className="min-w-0 flex-1 space-y-2">
@@ -134,7 +206,30 @@ export function PublicShare({
             distincts.
           </p>
         ) : null}
+        {rewardCount !== null ? (
+          <p className="text-xs text-zinc-500">
+            <span className="font-bold text-k-ink">
+              {rewardCount} gain{rewardCount > 1 ? "s" : ""}
+            </span>{" "}
+            attribué{rewardCount > 1 ? "s" : ""}
+          </p>
+        ) : null}
+        {assetError ? <p role="alert" className="text-xs font-bold text-red-600">{assetError}</p> : null}
       </div>
+      {designing && asset && resource ? (
+        <QrDesigner
+          id={asset.id}
+          slug={fileName}
+          url={url}
+          initialStyle={asset.style}
+          distribution={{ resourceKind: resource.kind, resourceId: resource.id }}
+          onClose={() => setDesigning(false)}
+          onSaved={(style) => {
+            setAsset((current) => current ? { ...current, style } : current);
+            onStyleSaved?.(style);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
