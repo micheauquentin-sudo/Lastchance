@@ -52,7 +52,13 @@ export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
     // `count()` et non `isVisible()` : instantané, et c'est ce qu'on veut ici
     // — l'attente est portée par `toPass`, qui rejoue tout le bloc.
     if ((await bouton.count()) === 0) return;
-    await bouton.first().click({ timeout: 2_000 }).catch(() => {});
+    // LE CLIC NE S AVALE PLUS. Il était enrobé d un `catch` muet, hérité du
+    // temps où l absence de bouton était le cas d échec attendu — ce cas est
+    // désormais tranché par le `count()` juste au-dessus. Ce qui reste est un
+    // vrai refus d actionabilité (élément recouvert, hors écran, instable), et
+    // Playwright le décrit précisément. Le taire coûtait vingt secondes
+    // d attente pour un message qui ne disait plus que « il est encore là ».
+    await bouton.first().click({ timeout: 4_000 });
     await expect(bouton).toHaveCount(0, { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
 }
