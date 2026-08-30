@@ -22,7 +22,7 @@ import {
 } from "@/lib/plans";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
-import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
+import { Card, TITRE_CARTE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   AchatAddon,
@@ -269,7 +269,7 @@ function CarteAddon({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className={TITRE_SURLIGNE}>
+        <h2 className={TITRE_CARTE}>
           {offre.name}
         </h2>
         {ouvert && (

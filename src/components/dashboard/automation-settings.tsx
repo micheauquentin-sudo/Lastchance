@@ -5,7 +5,7 @@ import {
   type AutomationSettingView,
 } from "@/actions/automations";
 import { Button } from "@/components/ui/button";
-import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
+import { Card, TITRE_CARTE } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import type { AutomationScenario } from "@/types/database";
@@ -72,7 +72,7 @@ export function AutomationScenarioCard({
   return (
     <Card>
       <div className="mb-1 flex items-center gap-2">
-        <h2 className={TITRE_SURLIGNE}>
+        <h2 className={TITRE_CARTE}>
           {texts.title}
         </h2>
         <span

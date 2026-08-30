@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
+import { Card, TITRE_CARTE } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
 import {
   etapeVoisine,
@@ -412,7 +412,7 @@ export default async function LoyaltyDetailPage({
             >
               <Card className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className={cn(TITRE_SURLIGNE, "mb-1")}>
+                  <h2 className={cn(TITRE_CARTE, "mb-1")}>
                     Écran comptoir
                   </h2>
                   <p className="text-sm text-zinc-500">
