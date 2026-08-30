@@ -18,7 +18,6 @@ import type { ActionResult } from "@/lib/utils";
 import type { QrStyle } from "@/types/database";
 import { qrDistributionKinds, type QrDistributionKind } from "@/lib/qr-distribution";
 
-export { qrDistributionKinds, type QrDistributionKind } from "@/lib/qr-distribution";
 
 const assetSchema = z.object({
   resourceKind: z.enum(qrDistributionKinds),
