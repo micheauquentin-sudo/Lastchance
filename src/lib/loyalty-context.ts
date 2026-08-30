@@ -53,7 +53,14 @@ export function loyaltyTokenCookieName(programId: string): string {
 /** Palier tel que présenté au joueur (config, sans compteurs internes). */
 export interface LoyaltyMilestoneView {
   id: string;
+  /**
+   * HISTORIQUE : le nombre de visites d'avant la bascule en monnaie. Conservé
+   * le temps de la transition (un trigger le tient synchrone), plus affiché
+   * nulle part côté joueur — c'est `costPoints` qui fait foi.
+   */
   visitCount: number;
+  /** LE PRIX, en points. Autorité depuis 20261114120000. */
+  costPoints: number;
   rewardType: LoyaltyRewardType;
   rewardLabel: string;
   rewardDetails: string | null;
@@ -91,6 +98,10 @@ export interface LoyaltyPassportReward {
 export interface LoyaltyPassportState {
   hasPassport: boolean;
   visitCount: number;
+  /** LE SOLDE DÉPENSABLE — ce que le client vient chercher sur cet écran. */
+  pointsBalance: number;
+  /** LE CUMUL GAGNÉ — l'assiette du niveau, il ne descend jamais. */
+  pointsEarnedTotal: number;
   tier: LoyaltyTier;
   rewards: LoyaltyPassportReward[];
 }
@@ -143,6 +154,11 @@ function toMilestoneView(row: LoyaltyMilestone): LoyaltyMilestoneView {
   return {
     id: row.id,
     visitCount: row.visit_count,
+    // `cost_points` est nullable dans le type engendré (voir la note de
+    // 20261114120000 sur le `not null` auquel la migration a renoncé) mais
+    // jamais nul en base : un trigger le dérive de `visit_count`. Le repli
+    // refait la même dérivation plutôt que d'afficher un cadeau à 0 point.
+    costPoints: row.cost_points ?? row.visit_count * 100,
     rewardType: row.reward_type,
     rewardLabel: row.reward_label,
     rewardDetails: row.reward_details,
@@ -164,6 +180,8 @@ async function loadPassportState(
   const empty: LoyaltyPassportState = {
     hasPassport: false,
     visitCount: 0,
+    pointsBalance: 0,
+    pointsEarnedTotal: 0,
     tier: "bronze",
     rewards: [],
   };
@@ -174,7 +192,7 @@ async function loadPassportState(
 
   const { data: member } = await admin
     .from("loyalty_members")
-    .select("id, visit_count")
+    .select("id, visit_count, points_balance, points_earned_total")
     .eq("program_id", program.id)
     .eq("token_hash", hashPlayerToken(token))
     .maybeSingle();
@@ -232,8 +250,13 @@ async function loadPassportState(
   return {
     hasPassport: true,
     visitCount: member.visit_count as number,
+    pointsBalance: member.points_balance as number,
+    pointsEarnedTotal: member.points_earned_total as number,
+    // LE NIVEAU SE LIT SUR LE CUMUL, jamais sur le solde : sans cela, un client
+    // « or » qui échange un café repartirait argent du comptoir. Miroir exact
+    // de record_loyalty_stamp depuis 20261114120000.
     tier: loyaltyTierForVisits(
-      member.visit_count as number,
+      member.points_earned_total as number,
       program.silver_threshold,
       program.gold_threshold,
     ),
@@ -606,10 +629,12 @@ export async function loadLoyaltyContext(
   const { data: milestoneRows } = await admin
     .from("loyalty_milestones")
     .select(
-      "id, program_id, organization_id, visit_count, reward_type, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id, position, created_at",
+      "id, program_id, organization_id, visit_count, cost_points, reward_type, reward_label, reward_details, reward_stock, reward_claimed_count, target_wheel_id, position, created_at",
     )
     .eq("program_id", program.id)
-    .order("visit_count", { ascending: true });
+    // La boutique se lit du moins cher au plus cher : c'est le PRIX qui ordonne
+    // le rayon, plus le nombre de visites d'avant la bascule.
+    .order("cost_points", { ascending: true });
 
   const milestones = ((milestoneRows as LoyaltyMilestone[] | null) ?? []).map(
     toMilestoneView,

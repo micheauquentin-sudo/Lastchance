@@ -51,21 +51,35 @@ export const LOYALTY_PERIOD_MIN_SECONDS = 15;
 export const LOYALTY_PERIOD_MAX_SECONDS = 300;
 
 /**
- * Nombre de visites MINIMUM d'un palier — miroir du CHECK SQL
- * `loyalty_milestones_visit_count_check` (20260725190000) et de
- * `visitCountSchema`.
+ * Ce qu'une visite validée rapporte au passeport, en points.
  *
- * VERROU ÉCONOMIQUE, pas une préférence d'ergonomie : un palier déclenché dès
- * la première visite serait exploitable — une carte toute neuve suffirait à
- * décrocher la récompense. À partir de 2, encaisser exige une SECONDE visite,
- * séparée de la première par le cooldown du programme (plancher 300 s dans les
- * deux modes). L'UI borne donc le champ, plutôt que de laisser la base renvoyer
- * une 23514 après coup.
+ * Constante de la BASE (`v_points_per_visit` de `record_loyalty_stamp`,
+ * migration 20261114120000) reprise ici pour DEUX usages seulement : dériver
+ * la colonne historique `visit_count` d'un prix en points, et parler au
+ * commerçant dans l'unité qu'il connaît (« 500 points, soit environ
+ * 5 visites »). Jamais pour décider d'un prix : le prix est saisi en points.
  */
-export const LOYALTY_MILESTONE_MIN_VISITS = 2;
+export const LOYALTY_POINTS_PAR_VISITE = 100;
 
-/** Borne haute du nombre de visites d'un palier (miroir Zod/SQL). */
-export const LOYALTY_MILESTONE_MAX_VISITS = 1000;
+/**
+ * PRIX MINIMUM d'un palier, en points — miroir de `costPointsSchema`.
+ *
+ * VERROU ÉCONOMIQUE, pas une préférence d'ergonomie, et le motif est resté
+ * exactement le même après la bascule en monnaie : une visite vaut 100 points,
+ * un cadeau à 200 points exige donc une SECONDE visite, séparée de la première
+ * par le cooldown du programme (plancher 300 s dans les deux modes). En
+ * dessous, une carte toute neuve suffirait à décrocher la récompense. L'UI
+ * borne le champ plutôt que de laisser la base renvoyer une erreur après coup.
+ */
+export const LOYALTY_MILESTONE_MIN_COST_POINTS = 2 * LOYALTY_POINTS_PAR_VISITE;
+
+/**
+ * Borne haute du prix d'un palier, en points (miroir Zod). C'est l'ancien
+ * plafond de 1000 visites converti au tarif de la visite — la même conversion
+ * ×100 que la migration a appliquée aux seuils de niveau.
+ */
+export const LOYALTY_MILESTONE_MAX_COST_POINTS =
+  1000 * LOYALTY_POINTS_PAR_VISITE;
 
 /**
  * Stock proposé par défaut sur un palier, lot comme tour offert. Le stock est

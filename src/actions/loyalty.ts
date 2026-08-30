@@ -18,10 +18,12 @@ import {
   type LoyaltyOrderActionContext,
 } from "@/lib/loyalty-context";
 import {
+  mapLoyaltySpendResult,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
+import { LOYALTY_POINTS_PAR_VISITE } from "@/components/dashboard/loyalty-settings-presets";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 import {
   signLoyaltyCheckin,
@@ -50,7 +52,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hasLoyaltyAccess } from "@/lib/subscription";
 import { turnstileEnabled, verifyTurnstile } from "@/lib/turnstile";
 import { randomCode, type ActionResult } from "@/lib/utils";
-import type { Organization } from "@/types/database";
+import type { LoyaltyRewardType, Organization } from "@/types/database";
 import {
   consumeLoyaltySpinSchema,
   createLoyaltyMilestoneSchema,
@@ -64,6 +66,7 @@ import {
   loyaltyCheckinRequestSchema,
   loyaltyCounterCodeSchema,
   setLoyaltyProgramStatusSchema,
+  spendLoyaltyPointsSchema,
   stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
@@ -134,6 +137,12 @@ const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 //  consumeLoyaltySpin / consumeSpinInner
 //    · loyalty:spin:member:<programme>:<hash cookie>     identité   CLOSED
 //    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité)
+//  spendLoyaltyPoints / spendPointsInner (échange de points contre un palier)
+//    · loyalty:spend:member:<programme>:<hash cookie>    identité   CLOSED
+//    · loyalty:public:ip:<programme>:<ip>                partagée   OPEN (observabilité, scope 'spend')
+//      Le VERROU ÉCONOMIQUE de cette entrée n'est pas un seau : c'est le solde
+//      lui-même. On ne peut dépenser que des points gagnés par des visites
+//      réelles, et le stock fini du palier borne le reste.
 //  invitationPasseport (panneau post-jeu, aucune identité requise)
 //    · loyalty:invite:ip:<organisation>:<ip>             partagée   OPEN (observabilité)
 //      Seule entrée de cet inventaire dont la clé ne porte PAS de programme :
@@ -437,7 +446,7 @@ export async function deleteLoyaltyProgram(
  * illimité et lèverait aujourd'hui une erreur 23514 côté base.
  */
 function milestoneFieldsForType(input: {
-  visit_count: number;
+  cost_points: number;
   reward_type: "spin" | "lot";
   reward_label: string;
   reward_details: string;
@@ -446,7 +455,19 @@ function milestoneFieldsForType(input: {
 }) {
   const isSpin = input.reward_type === "spin";
   return {
-    visit_count: input.visit_count,
+    cost_points: input.cost_points,
+    // BRETELLE DE TRANSITION, pas un doublon. `cost_points` est l'autorité
+    // depuis 20261114120000 ; `visit_count` reste une colonne NOT NULL, encore
+    // portée par une contrainte d'unicité et par un trigger qui redérive le
+    // prix quand elle change seule. Tant que la colonne existe, l'écrire ici
+    // avec la valeur COHÉRENTE (le prix ramené en visites, au tarif de 100
+    // points, plancher 2) évite deux ennuis : une insertion refusée faute de
+    // valeur, et un trigger qui reprendrait la main pour réécrire le prix que
+    // le commerçant vient de saisir. Elle disparaîtra avec la colonne.
+    visit_count: Math.max(
+      2,
+      Math.round(input.cost_points / LOYALTY_POINTS_PAR_VISITE),
+    ),
     reward_type: input.reward_type,
     reward_label: isSpin ? "" : input.reward_label,
     reward_details: isSpin ? null : input.reward_details || null,
@@ -476,7 +497,7 @@ export async function createLoyaltyMilestone(
 ): Promise<ActionResult> {
   const parsed = createLoyaltyMilestoneSchema.safeParse({
     program_id: formData.get("program_id"),
-    visit_count: formData.get("visit_count"),
+    cost_points: formData.get("cost_points"),
     reward_type: formData.get("reward_type"),
     reward_label: formData.get("reward_label"),
     reward_details: formData.get("reward_details"),
@@ -526,7 +547,7 @@ export async function createLoyaltyMilestone(
 
   if (error) {
     if (error.code === "23505") {
-      return { ok: false, error: "Un palier existe déjà pour ce nombre de visites" };
+      return { ok: false, error: "Un palier existe déjà à ce prix en points" };
     }
     console.error("[loyalty] create milestone:", error.message);
     return { ok: false, error: "Impossible d'ajouter le palier" };
@@ -542,7 +563,7 @@ export async function updateLoyaltyMilestone(
 ): Promise<ActionResult> {
   const parsed = updateLoyaltyMilestoneSchema.safeParse({
     id: formData.get("id"),
-    visit_count: formData.get("visit_count"),
+    cost_points: formData.get("cost_points"),
     reward_type: formData.get("reward_type"),
     reward_label: formData.get("reward_label"),
     reward_details: formData.get("reward_details"),
@@ -582,7 +603,7 @@ export async function updateLoyaltyMilestone(
 
   if (error) {
     if (error.code === "23505") {
-      return { ok: false, error: "Un palier existe déjà pour ce nombre de visites" };
+      return { ok: false, error: "Un palier existe déjà à ce prix en points" };
     }
     console.error("[loyalty] update milestone:", error.message);
     return { ok: false, error: "Mise à jour impossible" };
@@ -1096,7 +1117,7 @@ async function resolvePassportIdentityDeferred(
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observePublicPressure(
   programId: string,
-  scope: "stamp" | "checkin" | "spin" | "order",
+  scope: "stamp" | "checkin" | "spin" | "order" | "spend",
   ip: string,
 ): Promise<void> {
   await observerPressionIp(
@@ -1696,6 +1717,201 @@ async function stampOrderInner(
   } catch (err) {
     reportError("loyalty.stampOrder", err);
     return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Parcours public — ÉCHANGE de points contre un palier
+// ────────────────────────────────────────────────────────────
+
+/** Récompense obtenue par un échange, telle que l'écran doit l'afficher. */
+export interface LoyaltySpendOutcome {
+  rewardId: string;
+  milestoneId: string;
+  rewardType: LoyaltyRewardType;
+  rewardLabel: string;
+  rewardDetails: string | null;
+  /** `lot` : code de retrait FIDELITE-… à présenter en caisse. */
+  code: string | null;
+  /** `spin` : jeton du tour offert, à jouer sur la roue cible. */
+  grantToken: string | null;
+  /** Points débités (0 sur un rejeu dont la base n'a pas gravé le montant). */
+  spentPoints: number;
+  /** SOLDE APRÈS DÉBIT — ce que l'écran affiche sans attendre le serveur. */
+  pointsBalance: number;
+  /** Le même échange avait déjà abouti (double-clic, réseau qui repart). */
+  idempotent: boolean;
+}
+
+/**
+ * Échange des points contre le palier choisi.
+ *
+ * Le geste que le module attendait : jusqu'ici le franchissement d'un seuil
+ * DONNAIT la récompense, sans que le client ait rien à décider. Ici il CHOISIT,
+ * et paie. Tout ce qui compte — verrou du membre, solde, stock, débit, émission
+ * du code ou du jeton — est fait en UNE transaction par `spend_loyalty_points` ;
+ * cette action n'est que le guichet : identité par cookie, seau d'identité,
+ * puis traduction des états nommés en phrases.
+ *
+ * `requestId` vient du CLIENT et c'est délibéré : lui seul sait qu'un second
+ * envoi est le même geste. La base rend alors la même récompense sans second
+ * débit, ce qui rend le double-clic — et l'onglet qui rejoue son POST —
+ * inoffensifs par construction plutôt que par chance.
+ */
+export async function spendLoyaltyPoints(input: {
+  programId: string;
+  milestoneId: string;
+  requestId: string;
+}): Promise<ActionResult<LoyaltySpendOutcome>> {
+  const parsed = spendLoyaltyPointsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Sans cookie il n'y a aucun passeport à débiter : on sort avant toute
+  // requête, tout compteur et toute instrumentation (miroir de consumeLoyaltySpin).
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(parsed.data.programId))?.value;
+  if (!token) {
+    return {
+      ok: false,
+      error: "Votre carte n'est pas encore ouverte : validez une visite d'abord.",
+    };
+  }
+  const tokenHash = hashPlayerToken(token);
+
+  // PREMIER REMPART — clé d'IDENTITÉ (`failClosed` légitime), avant SQL et
+  // avant l'écriture d'instrumentation. Saturer cette clé ne coupe que son
+  // porteur : c'est la seule forme de refus admise sur le parcours public.
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:spend:member", parsed.data.programId, tokenHash),
+      RATE_LIMITS.loyaltyStampMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("loyalty.spendPoints", () =>
+    spendPointsInner(parsed.data, tokenHash),
+  );
+}
+
+async function spendPointsInner(
+  parsed: { programId: string; milestoneId: string; requestId: string },
+  tokenHash: string,
+): Promise<ActionResult<LoyaltySpendOutcome>> {
+  try {
+    const ctx = await loadLoyaltyActionContext(parsed.programId);
+    if (!ctx.ok) return { ok: false, error: ctx.error };
+
+    // Clé PARTAGÉE (programme + IP) : fail-OPEN, observabilité seule. Un
+    // passeport ÉTABLI n'y touche pas — comme sur le tour offert, l'ancienneté
+    // n'est pas exigée : le solde vient d'un tampon, donc d'une visite réelle.
+    const standing = await passportStanding(
+      ctx.admin,
+      ctx.program.id,
+      tokenHash,
+      ctx.program.min_stamp_interval_seconds,
+      { requireRecency: false },
+    );
+    if (standing !== "established") {
+      await observePublicPressure(
+        ctx.program.id,
+        "spend",
+        clientIpFromHeaders(await headers()),
+      );
+    }
+
+    const { data, error } = await ctx.admin.rpc("spend_loyalty_points", {
+      p_program_id: parsed.programId,
+      p_member_token_hash: tokenHash,
+      p_milestone_id: parsed.milestoneId,
+      p_request_id: parsed.requestId,
+    });
+    if (error) {
+      reportError("loyalty.spendPoints", error.message);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+
+    const spend = mapLoyaltySpendResult(data);
+    if (spend.state !== "spent") {
+      return { ok: false, error: phraseRefusEchange(spend) };
+    }
+
+    // Un `spent` sans identifiant de récompense n'est pas une réussite qu'on
+    // puisse afficher : mieux vaut le message générique que la promesse d'un
+    // cadeau sans code ni jeton.
+    if (!spend.rewardId) {
+      reportError("loyalty.spendPoints", "spent sans reward_id");
+      return { ok: false, error: GENERIC_ERROR };
+    }
+
+    // Le rejeu idempotent ne relit PAS le palier côté base : le libellé vient
+    // alors d'ici, par une lecture bornée à ce programme.
+    let label = spend.rewardLabel;
+    let details = spend.rewardDetails;
+    if (label === null && spend.milestoneId) {
+      const { data: ms } = await ctx.admin
+        .from("loyalty_milestones")
+        .select("reward_label, reward_details")
+        .eq("id", spend.milestoneId)
+        .eq("program_id", ctx.program.id)
+        .maybeSingle();
+      label = (ms?.reward_label as string | null) ?? null;
+      details = (ms?.reward_details as string | null) ?? null;
+    }
+
+    return {
+      ok: true,
+      data: {
+        rewardId: spend.rewardId,
+        milestoneId: spend.milestoneId ?? parsed.milestoneId,
+        rewardType: spend.rewardType,
+        rewardLabel:
+          label || (spend.rewardType === "spin" ? "Tour de roue offert" : "Lot fidélité"),
+        rewardDetails: details,
+        code: spend.code,
+        grantToken: spend.grantToken,
+        spentPoints: spend.spentPoints ?? 0,
+        pointsBalance: spend.pointsBalance ?? 0,
+        idempotent: spend.idempotent,
+      },
+    };
+  } catch (err) {
+    reportError("loyalty.spendPoints", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Les refus de `spend_loyalty_points`, dits au client.
+ *
+ * `insufficient_points` NOMME le manque : « il vous manque 150 points » est une
+ * information actionnable — encore deux visites — là où « solde insuffisant »
+ * laisse le client compter tout seul. Les trois refus structurels
+ * (`unknown_milestone`, `inactive`, `not_a_member`) partagent une formulation
+ * neutre : aucun d'eux ne doit apprendre à un curieux ce qui existe ou non.
+ */
+function phraseRefusEchange(
+  spend: ReturnType<typeof mapLoyaltySpendResult>,
+): string {
+  switch (spend.state) {
+    case "insufficient_points": {
+      const manque = spend.pointsMissing;
+      return manque && manque > 0
+        ? `Il vous manque ${manque} point${manque > 1 ? "s" : ""} pour ce cadeau. Vos points sont conservés.`
+        : "Vous n'avez pas encore assez de points pour ce cadeau.";
+    }
+    case "out_of_stock":
+      return "Ce cadeau est épuisé pour le moment. Rien n'a été débité : vos points restent sur votre carte.";
+    case "not_a_member":
+      return "Votre carte n'est pas encore ouverte : validez une visite d'abord.";
+    case "unknown_milestone":
+    case "inactive":
+    default:
+      return "Ce cadeau n'est pas disponible pour le moment.";
   }
 }
 

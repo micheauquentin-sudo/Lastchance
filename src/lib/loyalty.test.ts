@@ -554,7 +554,7 @@ describe("validations/loyalty", () => {
   it("createLoyaltyMilestoneSchema : un lot exige un libellé, pas de roue", () => {
     const lotOk = createLoyaltyMilestoneSchema.safeParse({
       program_id: UUID,
-      visit_count: 5,
+      cost_points: 500,
       reward_type: "lot",
       reward_label: "Un café",
       reward_details: "",
@@ -565,7 +565,7 @@ describe("validations/loyalty", () => {
 
     const lotNoLabel = createLoyaltyMilestoneSchema.safeParse({
       program_id: UUID,
-      visit_count: 5,
+      cost_points: 500,
       reward_type: "lot",
       reward_label: "",
       reward_details: "",
@@ -576,7 +576,7 @@ describe("validations/loyalty", () => {
 
     const lotWithWheel = createLoyaltyMilestoneSchema.safeParse({
       program_id: UUID,
-      visit_count: 5,
+      cost_points: 500,
       reward_type: "lot",
       reward_label: "Un café",
       reward_details: "",
@@ -593,7 +593,7 @@ describe("validations/loyalty", () => {
     const make = (reward_stock: string) =>
       createLoyaltyMilestoneSchema.safeParse({
         program_id: UUID,
-        visit_count: 5,
+        cost_points: 500,
         reward_type: "lot",
         reward_label: "Un café",
         reward_details: "",
@@ -622,7 +622,7 @@ describe("validations/loyalty", () => {
     const make = (reward_stock: string) =>
       createLoyaltyMilestoneSchema.safeParse({
         program_id: UUID,
-        visit_count: 8,
+        cost_points: 800,
         reward_type: "spin",
         reward_label: "",
         reward_details: "",
@@ -652,7 +652,7 @@ describe("validations/loyalty", () => {
   it("createLoyaltyMilestoneSchema : un spin exige une roue cible", () => {
     const spinOk = createLoyaltyMilestoneSchema.safeParse({
       program_id: UUID,
-      visit_count: 8,
+      cost_points: 800,
       reward_type: "spin",
       reward_label: "",
       reward_details: "",
@@ -663,7 +663,7 @@ describe("validations/loyalty", () => {
 
     const spinNoWheel = createLoyaltyMilestoneSchema.safeParse({
       program_id: UUID,
-      visit_count: 8,
+      cost_points: 800,
       reward_type: "spin",
       reward_label: "",
       reward_details: "",
@@ -673,14 +673,15 @@ describe("validations/loyalty", () => {
     expect(spinNoWheel.success).toBe(false);
   });
 
-  it("VERROU ÉCONOMIQUE : visit_count borné 2..1000 (rien à la 1re visite)", () => {
-    // Miroir de loyalty_milestones_visit_count_check : un passeport fraîchement
-    // créé ne vaut RIEN, il faut une seconde visite séparée de la première par
-    // le cooldown du programme (>= 300 s dans les deux modes).
-    const make = (visit_count: number) =>
+  it("VERROU ÉCONOMIQUE : cost_points borné 200..100000 (rien dès la 1re visite)", () => {
+    // Le verrou n'a pas changé de nature en changeant d'unité : une visite vaut
+    // 100 points, donc 200 points EXIGENT une seconde visite, séparée de la
+    // première par le cooldown du programme (>= 300 s dans les deux modes). Un
+    // passeport fraîchement créé ne vaut toujours RIEN.
+    const make = (cost_points: number) =>
       createLoyaltyMilestoneSchema.safeParse({
         program_id: UUID,
-        visit_count,
+        cost_points,
         reward_type: "lot",
         reward_label: "Un café",
         reward_details: "",
@@ -689,16 +690,16 @@ describe("validations/loyalty", () => {
       });
     expect(make(0).success).toBe(false);
 
-    const firstVisit = make(1);
+    const firstVisit = make(100);
     expect(firstVisit.success).toBe(false);
     if (!firstVisit.success) {
-      expect(firstVisit.error.issues[0].path).toEqual(["visit_count"]);
+      expect(firstVisit.error.issues[0].path).toEqual(["cost_points"]);
       expect(firstVisit.error.issues[0].message).toContain("première visite");
     }
 
-    expect(make(2).success).toBe(true);
-    expect(make(1000).success).toBe(true);
-    expect(make(1001).success).toBe(false);
+    expect(make(200).success).toBe(true);
+    expect(make(100_000).success).toBe(true);
+    expect(make(100_001).success).toBe(false);
   });
 
   it("code tournant : exactement 6 chiffres", () => {
