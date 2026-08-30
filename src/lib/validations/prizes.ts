@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { estEmojiConnu } from "@/lib/emoji-lexique";
 import {
   entierRequis,
   nonRenduVaut,
@@ -34,6 +35,30 @@ export const prizeFieldsSchema = z.object({
     z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide"),
     "#7c3aed",
   ),
+  /**
+   * ICÔNE DU LOT — suggérée, jamais imposée.
+   *
+   * `''` → `null` : « aucune icône » est un choix du commerçant (le bouton
+   * « Aucune » de l'éditeur), et il doit rester atteignable après en avoir
+   * posé une. Un seul « rien » côté base, et c'est `null` — la contrainte SQL
+   * refuse la chaîne vide pour la même raison.
+   *
+   * La valeur est confrontée au LEXIQUE et non à une simple longueur : le seul
+   * chemin d'écriture prévu est un bouton dont les valeurs sortent du lexique,
+   * et cette colonne est rendue à tous les joueurs de la roue. Un `formData`
+   * forgé ne doit pas pouvoir y déposer un texte arbitraire — le champ est une
+   * icône, pas un second libellé libre.
+   */
+  emoji: z
+    .union([
+      z.literal("").transform(() => null),
+      z
+        .string()
+        .trim()
+        .refine(estEmojiConnu, "Icône inconnue"),
+    ])
+    .nullable()
+    .default(null),
   /**
    * LE POIDS DU LOT — et le cas le plus coûteux du mode SILENCIEUX.
    *

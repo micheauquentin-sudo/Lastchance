@@ -5,6 +5,7 @@ import { addPrize, deletePrize, updatePrize } from "@/actions/prizes";
 import { Button } from "@/components/ui/button";
 import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
+import { emojisPour, motPourEmoji } from "@/lib/emoji-lexique";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { partSur10 } from "@/components/dashboard/part-sur-10";
 import { useActionForm } from "@/lib/use-action-form";
@@ -48,6 +49,96 @@ function PaletteKermesse() {
         <option key={c} value={c} />
       ))}
     </datalist>
+  );
+}
+
+/**
+ * RANGÉE D'ICÔNES SUGGÉRÉES — suggérées, jamais imposées.
+ *
+ * Le commerçant tape « Bouteille de vin », trois ou quatre icônes apparaissent
+ * sous le champ, il clique celle qu'il veut ou n'en prend aucune. Rien n'est
+ * écrit sans son geste : le champ caché part vide tant qu'il n'a pas choisi,
+ * et « Aucune » revient toujours en arrière.
+ *
+ * ── ACCESSIBILITÉ : L'EMOJI NE VA PAS DANS LE NOM ──────────────────────
+ *
+ * Chaque bouton porte un nom TEXTUEL (« Choisir l'icône vin ») et l'emoji lui
+ * est `aria-hidden`. Ce n'est pas de la coquetterie : un `U+FE0F` invisible
+ * dans un nom accessible a déjà fait expirer un test Playwright de ce dépôt
+ * sans même nommer le locator (voir `e2e/event-remote-cycle.spec.ts`). Le
+ * lexique bannit ces sélecteurs, et le nom reste du texte de toute façon —
+ * deux ceintures, parce que celle du milieu a déjà lâché une fois.
+ */
+function SuggestionsEmoji({
+  idChamp,
+  nom,
+  choisi,
+  onChoisir,
+}: {
+  idChamp: string;
+  nom: string;
+  choisi: string | null;
+  onChoisir: (emoji: string | null) => void;
+}) {
+  const suggeres = emojisPour(nom);
+  // L'icône déjà retenue reste en tête même si le libellé a changé depuis :
+  // sinon, corriger une coquille dans le nom ferait disparaître de l'écran le
+  // choix qu'on s'apprête à réenregistrer, sans que rien ne l'annonce.
+  const proposes = choisi && !suggeres.includes(choisi)
+    ? [choisi, ...suggeres]
+    : suggeres;
+
+  // Rien à proposer et rien de choisi : pas de rangée vide, pas de place
+  // perdue. C'est le cas d'un libellé qu'aucun mot du lexique ne touche, et il
+  // ne mérite ni message ni bouton.
+  if (proposes.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <span id={`${idChamp}-legende`} className="text-[11px] font-semibold text-zinc-500">
+        Icône
+      </span>
+      <div
+        role="group"
+        aria-labelledby={`${idChamp}-legende`}
+        className="flex flex-wrap items-center gap-1.5"
+      >
+        {proposes.map((emoji) => {
+          const actif = choisi === emoji;
+          const mot = motPourEmoji(emoji);
+          return (
+            <button
+              key={emoji}
+              type="button"
+              aria-pressed={actif}
+              aria-label={mot ? `Choisir l'icône ${mot}` : "Choisir cette icône"}
+              // Un second clic sur l'icône active la retire : le geste qui pose
+              // est celui qui enlève, sans chercher le bouton « Aucune ».
+              onClick={() => onChoisir(actif ? null : emoji)}
+              className={`flex h-9 w-9 items-center justify-center rounded-lg border text-lg transition ${
+                actif
+                  ? "border-violet-500 bg-violet-50 ring-2 ring-violet-200"
+                  : "border-zinc-300 bg-white hover:border-violet-400"
+              }`}
+            >
+              <span aria-hidden>{emoji}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          aria-pressed={choisi === null}
+          onClick={() => onChoisir(null)}
+          className={`rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition ${
+            choisi === null
+              ? "border-zinc-400 bg-zinc-100 text-zinc-700"
+              : "border-zinc-300 bg-white text-zinc-500 hover:border-zinc-400"
+          }`}
+        >
+          Aucune
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -183,6 +274,12 @@ function PrizeRow({
   // Le seuil d'alerte n'a de sens qu'avec un stock fini : le champ suit
   // la saisie du stock (masqué et non envoyé quand le stock est illimité).
   const [hasStock, setHasStock] = useState(prize.stock !== null);
+  // Le champ « Nom du lot » reste NON CONTRÔLÉ (`defaultValue`) — c'est ce qui
+  // fait tenir le reste de l'écran, réinitialisations comprises. On se contente
+  // d'en refléter la valeur dans un état pour alimenter les suggestions, qui
+  // doivent suivre la frappe.
+  const [nom, setNom] = useState(prize.label);
+  const [emoji, setEmoji] = useState<string | null>(prize.emoji);
   const lowStock =
     prize.stock !== null &&
     prize.low_stock_threshold !== null &&
@@ -225,6 +322,7 @@ function PrizeRow({
               id={`label-${prize.id}`}
               name="label"
               defaultValue={prize.label}
+              onChange={(e) => setNom(e.target.value)}
               required
               maxLength={80}
               className="font-semibold"
@@ -239,6 +337,17 @@ function PrizeRow({
             {prize.is_active && !tirable ? "épuisé" : `~${pct}%`}
           </span>
         </div>
+
+        {/* Le champ caché est la SEULE écriture : tant qu'aucun bouton n'a été
+            cliqué, il porte la valeur déjà enregistrée — modifier le poids d'un
+            lot ne doit pas lui retirer son icône au passage. */}
+        <input type="hidden" name="emoji" value={emoji ?? ""} />
+        <SuggestionsEmoji
+          idChamp={`label-${prize.id}`}
+          nom={nom}
+          choisi={emoji}
+          onChoisir={setEmoji}
+        />
 
         <div>
           <Label htmlFor={`description-${prize.id}`}>
@@ -444,6 +553,11 @@ function AddPrizeForm({
     reloadOnSuccess: true,
     networkError: "Ajout impossible, réessayez.",
   });
+  // Miroir du libellé en cours de frappe, pour les suggestions d'icône. La
+  // remise à zéro n'a pas besoin d'être traitée ici : `reloadOnSuccess`
+  // recharge la page — c'est le seul moyen de VOIR le lot ajouté.
+  const [nom, setNom] = useState("");
+  const [emoji, setEmoji] = useState<string | null>(null);
 
   return (
     <Card className="border-dashed">
@@ -459,6 +573,14 @@ function AddPrizeForm({
             maxLength={80}
             placeholder="Ex : Boisson offerte"
             className="w-48"
+            onChange={(e) => setNom(e.target.value)}
+          />
+          <input type="hidden" name="emoji" value={emoji ?? ""} />
+          <SuggestionsEmoji
+            idChamp="new-label"
+            nom={nom}
+            choisi={emoji}
+            onChoisir={setEmoji}
           />
         </div>
         <div>

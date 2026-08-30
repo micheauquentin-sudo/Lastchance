@@ -18,6 +18,7 @@ export function ScratchCard({
   label,
   description,
   isLosing,
+  emoji,
   buttonFrom = "#f97316",
   buttonTo = "#ec4899",
   cover = SCRATCH_COVER_DEFAULT,
@@ -27,6 +28,8 @@ export function ScratchCard({
   label: string;
   description: string;
   isLosing: boolean;
+  /** Icône choisie par le commerçant pour ce lot (null : le 🎁 générique). */
+  emoji?: string | null;
   buttonFrom?: string;
   buttonTo?: string;
   /**
@@ -180,7 +183,7 @@ export function ScratchCard({
               : `linear-gradient(135deg,${buttonFrom},${buttonTo})`,
           }}
         >
-          <p className="text-3xl">{isLosing ? "🎲" : "🎁"}</p>
+          <p aria-hidden className="text-3xl">{isLosing ? "🙁" : (emoji ?? "🎁")}</p>
           <p className="text-lg font-extrabold text-white">{label}</p>
           {description && <p className="text-sm text-white/80">{description}</p>}
         </div>

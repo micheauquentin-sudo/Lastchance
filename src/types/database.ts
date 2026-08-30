@@ -1249,6 +1249,15 @@ export interface Prize {
   wheel_id: string;
   label: string;
   description: string;
+  /**
+   * Icône CHOISIE par le commerçant (null : aucune, et c'est un choix, pas un
+   * oubli). Les suggestions sont calculées à partir du libellé par
+   * `src/lib/emoji-lexique.ts` ; rien n'est écrit ici sans un clic.
+   *
+   * Rendue TOUJOURS dans un élément à part, `aria-hidden`, jamais concaténée
+   * au libellé : un emoji dans un nom accessible casse les locators Playwright.
+   */
+  emoji: string | null;
   color: string;
   weight: number;
   is_losing: boolean;
