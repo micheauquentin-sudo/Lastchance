@@ -21,12 +21,28 @@ const programNameSchema = z
 
 export const loyaltyValidationModeSchema = z.enum(["rotating_code", "staff"]);
 
-/** Seuil de niveau (nombre de visites), 1..1000. */
+/**
+ * Seuil de niveau, EN POINTS depuis la bascule (20261114120000).
+ *
+ * ── POURQUOI LE PLAFOND EST MULTIPLIÉ, ET LUI SEUL ──
+ *
+ * Il valait 1000, en VISITES. La migration convertit les DEUX COLONNES DE
+ * SEUIL ×100, en place : un commerçant dont le niveau or était à 11 visites
+ * se retrouve à 1100 points — au-dessus de l ancien plafond. Son formulaire de
+ * programme aurait été REFUSÉ EN BLOC, sur un champ qu il n avait pas touché,
+ * et il n aurait plus rien pu enregistrer : ni le mode de validation, ni le
+ * nom. Le plafond suit donc la même conversion.
+ *
+ * Le seuil des PALIERS, lui, ne bouge pas : la migration ajoute cost_points
+ * sans toucher à visit_count, et l éditeur continue d écrire des visites
+ * jusqu au lot qui le bascule. Convertir sa borne ici aurait refusé la saisie
+ * que le formulaire produit encore.
+ */
 const tierThresholdSchema = z.coerce
   .number()
-  .int("Nombre entier de visites requis")
-  .min(1, "Le seuil doit valoir au moins 1")
-  .max(1000, "Seuil trop élevé (1000 max)");
+  .int("Nombre entier de points requis")
+  .min(1, "Le seuil doit valoir au moins 1 point")
+  .max(100_000, "Seuil trop élevé (100 000 points max)");
 
 /**
  * Cooldown entre deux tampons d'un même passeport (secondes, 0 = désactivé).
