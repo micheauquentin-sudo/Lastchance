@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { renderQr } from "@/lib/qr-render";
 import { urlVitrine, type VitrineCarteView } from "@/lib/vitrine";
 import { PublicShare, SHARE_QR_STYLE } from "@/components/dashboard/public-share";
-import { getQrDistributionAsset } from "@/actions/qr-distribution";
 import type { QrStyle } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -97,14 +96,6 @@ export function VitrineQrPlanche({
   const [ouverte, setOuverte] = useState(false);
   const [styleQr, setStyleQr] = useState<QrStyle>(SHARE_QR_STYLE);
 
-  useEffect(() => {
-    let active = true;
-    void getQrDistributionAsset({ resourceKind: "vitrine", resourceId }).then((result) => {
-      if (active && result.ok && result.data) setStyleQr(result.data.style);
-    });
-    return () => { active = false; };
-  }, [resourceId]);
-
   const cible = cibles.find((c) => valeurCible(c) === valeur) ?? cibles[0];
 
   const base = urlVitrine(slug, appUrl);
@@ -142,7 +133,7 @@ export function VitrineQrPlanche({
       ) : null}
 
       <div className="mb-5 rounded-xl border-2 border-k-ink/15 bg-k-bg p-4">
-        <h3 className="font-black text-k-ink">QR principal de votre vitrine</h3>
+        <h3 className="font-black text-k-ink">QR principal</h3>
         <p className="mb-3 mt-1 text-sm text-k-body">
           Personnalisez ce QR et son affiche ici. Les QR contextuels ci-dessous
           gardent leur destination précise (carte ou fiche).

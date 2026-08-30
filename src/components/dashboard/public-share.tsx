@@ -72,26 +72,24 @@ export function PublicShare({
   const [assetError, setAssetError] = useState<string | null>(null);
   const [designing, setDesigning] = useState(false);
   const [rewardCount, setRewardCount] = useState<number | null>(null);
-  const resourceKind = resource?.kind;
-  const resourceId = resource?.id;
-
-  useEffect(() => {
-    if (!resourceKind || !resourceId) return;
-    let active = true;
-    const params = new URLSearchParams({ kind: resourceKind, id: resourceId });
-    void fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<{
+  async function loadQrDetails() {
+    if (!resource || rewardCount !== null) return;
+    const params = new URLSearchParams({ kind: resource.kind, id: resource.id });
+    try {
+      const response = await fetch(`/api/dashboard/qr-distribution?${params}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json() as {
         asset: { id: string; style: QrStyle; poster: Record<string, unknown> } | null;
         rewardCount: number | null;
-      }> : null)
-      .then((data) => {
-        if (!active || !data) return;
-        setAsset(data.asset);
-        setRewardCount(data.rewardCount);
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [resourceId, resourceKind]);
+      };
+      setAsset(data.asset);
+      setRewardCount(data.rewardCount);
+    } catch {
+      // Les compteurs ne doivent jamais empêcher de copier ou télécharger le QR.
+    }
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -214,6 +212,14 @@ export function PublicShare({
             </span>{" "}
             attribué{rewardCount > 1 ? "s" : ""}
           </p>
+        ) : resource ? (
+          <button
+            type="button"
+            onClick={loadQrDetails}
+            className="text-xs font-bold text-k-orange-text hover:underline"
+          >
+            Afficher les gains attribués
+          </button>
         ) : null}
         {assetError ? <p role="alert" className="text-xs font-bold text-red-600">{assetError}</p> : null}
       </div>

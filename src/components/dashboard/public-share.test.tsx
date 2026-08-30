@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PublicShare } from "@/components/dashboard/public-share";
 
@@ -46,6 +46,25 @@ describe("PublicShare", () => {
   it("étiquette le QR avec le nom de l'expérience", () => {
     render(<PublicShare url={ABSOLUTE} fileName="quiz-noel" qrLabel="Quiz de Noël" />);
     expect(screen.getByLabelText("QR code de Quiz de Noël")).toBeTruthy();
+  });
+
+  it("ne charge pas les réglages QR au montage", () => {
+    const originalFetch = globalThis.fetch;
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+    render(
+      <PublicShare
+        url={ABSOLUTE}
+        fileName="quiz-noel"
+        qrLabel="Quiz de Noël"
+        resource={{
+          kind: "quiz",
+          id: "00000000-0000-4000-8000-000000000001",
+        }}
+      />,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    globalThis.fetch = originalFetch;
   });
 });
 

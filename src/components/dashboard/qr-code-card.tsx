@@ -50,15 +50,20 @@ export function QrCodeCard({
   const [designing, setDesigning] = useState(false);
   const [rewardCount, setRewardCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  async function loadRewardCount() {
+    if (rewardCount !== null) return;
     const params = new URLSearchParams({ kind: "campaign", id });
-    void fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<{ rewardCount: number }> : null)
-      .then((data) => { if (active && data) setRewardCount(data.rewardCount); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [id]);
+    try {
+      const response = await fetch(`/api/dashboard/qr-distribution?${params}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+      const data = await response.json() as { rewardCount: number };
+      setRewardCount(data.rewardCount);
+    } catch {
+      // Indicateur secondaire : l'outil QR reste utilisable si sa lecture tombe.
+    }
+  }
 
   // Vignette redessinée quand le style change (enregistré via le studio).
   useEffect(() => {
@@ -112,7 +117,15 @@ export function QrCodeCard({
             <p className="text-xs font-bold text-zinc-500">
               {rewardCount} gain{rewardCount > 1 ? "s" : ""} attribué{rewardCount > 1 ? "s" : ""}
             </p>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              onClick={loadRewardCount}
+              className="w-fit text-xs font-bold text-k-orange-text hover:underline"
+            >
+              Afficher les gains attribués
+            </button>
+          )}
           <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
             <button
               type="button"
