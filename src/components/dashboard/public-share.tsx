@@ -1,16 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { QrDistributionKind } from "@/actions/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
-
-const QrDesigner = dynamic(
-  () => import("@/components/dashboard/qr-designer").then(({ QrDesigner }) => QrDesigner),
-  { ssr: false },
-);
 
 /**
  * Partage d'une expérience joueur publiable : QR code imprimable + lien
@@ -68,27 +62,23 @@ export function PublicShare({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
-  const [asset, setAsset] = useState<{ id: string; style: QrStyle; poster: Record<string, unknown> } | null>(null);
-  const [assetError, setAssetError] = useState<string | null>(null);
-  const [designing, setDesigning] = useState(false);
-  const [rewardCount, setRewardCount] = useState<number | null>(null);
-  async function loadQrDetails() {
-    if (!resource || rewardCount !== null) return;
-    const params = new URLSearchParams({ kind: resource.kind, id: resource.id });
-    try {
-      const response = await fetch(`/api/dashboard/qr-distribution?${params}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-      const data = await response.json() as {
-        asset: { id: string; style: QrStyle; poster: Record<string, unknown> } | null;
-        rewardCount: number | null;
-      };
-      setAsset(data.asset);
-      setRewardCount(data.rewardCount);
-    } catch {
-      // Les compteurs ne doivent jamais empêcher de copier ou télécharger le QR.
-    }
+  const [tools, setTools] = useState<ReactNode>(null);
+
+  async function openQrTools(initialAction: "designer" | "poster" | "metrics") {
+    if (!resource) return;
+    const { QrDistributionControls } = await import(
+      "@/components/dashboard/qr-distribution-controls"
+    );
+    setTools(
+      <QrDistributionControls
+        resource={resource}
+        url={url}
+        fileName={fileName}
+        initialAction={initialAction}
+        onClose={() => setTools(null)}
+        onStyleSaved={onStyleSaved}
+      />,
+    );
   }
 
   useEffect(() => {
@@ -96,16 +86,16 @@ export function PublicShare({
     if (!canvas) return;
     try {
       // Aperçu seulement : un échec de rendu ne doit pas casser la page.
-      void renderQr(canvas, url, asset?.style ?? SHARE_QR_STYLE, 512).catch(() => {});
+      void renderQr(canvas, url, SHARE_QR_STYLE, 512).catch(() => {});
     } catch {
       /* canvas indisponible (environnement de test) */
     }
-  }, [url, asset?.style]);
+  }, [url]);
 
   async function downloadPng() {
     const canvas = document.createElement("canvas");
     try {
-      await renderQr(canvas, url, asset?.style ?? SHARE_QR_STYLE, 1024);
+      await renderQr(canvas, url, SHARE_QR_STYLE, 1024);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `${fileName}.png`;
@@ -113,32 +103,6 @@ export function PublicShare({
     } catch {
       /* rendu impossible : le lien reste utilisable */
     }
-  }
-
-  async function openDesigner() {
-    if (!resource) return;
-    setAssetError(null);
-    const { ensureQrDistributionAsset } = await import("@/actions/qr-distribution");
-    const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
-    if (!result.ok) {
-      setAssetError(result.error);
-      return;
-    }
-    setAsset(result.data);
-    setDesigning(true);
-  }
-
-  async function openPoster() {
-    if (!resource) return;
-    setAssetError(null);
-    const { ensureQrDistributionAsset } = await import("@/actions/qr-distribution");
-    const result = await ensureQrDistributionAsset({ resourceKind: resource.kind, resourceId: resource.id });
-    if (!result.ok) {
-      setAssetError(result.error);
-      return;
-    }
-    setAsset(result.data);
-    window.open(`/poster/distribution/${result.data.id}`, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -154,13 +118,13 @@ export function PublicShare({
           Télécharger le QR (PNG)
         </Button>
         {resource ? (
-          <Button type="button" variant="secondary" onClick={openDesigner}>
+          <Button type="button" variant="secondary" onClick={() => openQrTools("designer")}>
             Personnaliser le QR
           </Button>
         ) : null}
         {resource ? (
-          <Button type="button" variant="secondary" onClick={openPoster}>
-            {asset && Object.keys(asset.poster).length > 0 ? "Éditer l'affiche" : "Créer l'affiche"}
+          <Button type="button" variant="secondary" onClick={() => openQrTools("poster")}>
+            Créer ou éditer l'affiche
           </Button>
         ) : null}
       </div>
@@ -205,38 +169,17 @@ export function PublicShare({
             distincts.
           </p>
         ) : null}
-        {rewardCount !== null ? (
-          <p className="text-xs text-zinc-500">
-            <span className="font-bold text-k-ink">
-              {rewardCount} gain{rewardCount > 1 ? "s" : ""}
-            </span>{" "}
-            attribué{rewardCount > 1 ? "s" : ""}
-          </p>
-        ) : resource ? (
+        {resource ? (
           <button
             type="button"
-            onClick={loadQrDetails}
+            onClick={() => openQrTools("metrics")}
             className="text-xs font-bold text-k-orange-text hover:underline"
           >
             Afficher les gains attribués
           </button>
         ) : null}
-        {assetError ? <p role="alert" className="text-xs font-bold text-red-600">{assetError}</p> : null}
       </div>
-      {designing && asset && resource ? (
-        <QrDesigner
-          id={asset.id}
-          slug={fileName}
-          url={url}
-          initialStyle={asset.style}
-          distribution={{ resourceKind: resource.kind, resourceId: resource.id }}
-          onClose={() => setDesigning(false)}
-          onSaved={(style) => {
-            setAsset((current) => current ? { ...current, style } : current);
-            onStyleSaved?.(style);
-          }}
-        />
-      ) : null}
+      {tools}
     </div>
   );
 }

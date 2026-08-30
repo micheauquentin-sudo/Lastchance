@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "@/components/ui/use-modal-focus";
 import { updateQrStyle } from "@/actions/qr-codes";
-import {
-  updateQrDistributionStyle,
-  type QrDistributionKind,
-} from "@/actions/qr-distribution";
+import type { QrDistributionKind } from "@/actions/qr-distribution";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import {
@@ -320,7 +317,11 @@ export function QrDesigner({
     setSaving(true);
     setMessage(null);
     const result = distribution
-      ? await updateQrDistributionStyle({ id, ...distribution, ...style })
+      ? await (await import("@/actions/qr-distribution")).updateQrDistributionStyle({
+          id,
+          ...distribution,
+          ...style,
+        })
       : await updateQrStyle({ id, ...style });
     setSaving(false);
     if (result.ok) {
