@@ -19,7 +19,7 @@ import {
   trialLine,
 } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { BillingButtons } from "@/components/dashboard/billing-buttons";
 import { PlanCatalog } from "@/components/dashboard/plan-catalog";
@@ -333,7 +333,7 @@ export default async function SettingsPage({
 
         <Card id="subscription" className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+            <h2 className={TITRE_SURLIGNE}>
               Abonnement
             </h2>
             <span
