@@ -52,13 +52,24 @@ export async function ouvrirTuile(page: Page, motifTitre: RegExp) {
     // `count()` et non `isVisible()` : instantané, et c'est ce qu'on veut ici
     // — l'attente est portée par `toPass`, qui rejoue tout le bloc.
     if ((await bouton.count()) === 0) return;
-    // LE CLIC NE S AVALE PLUS. Il était enrobé d un `catch` muet, hérité du
-    // temps où l absence de bouton était le cas d échec attendu — ce cas est
-    // désormais tranché par le `count()` juste au-dessus. Ce qui reste est un
-    // vrai refus d actionabilité (élément recouvert, hors écran, instable), et
-    // Playwright le décrit précisément. Le taire coûtait vingt secondes
-    // d attente pour un message qui ne disait plus que « il est encore là ».
-    await bouton.first().click({ timeout: 4_000 });
+    // `force` — ET C EST ARGUMENTÉ, PAS UN CONTOURNEMENT.
+    //
+    // Sans lui, Playwright refusait le clic en signalant qu un `<td>` du bloc
+    // « statut » recouvrait le bouton. La trace CI dit le contraire : ce bloc
+    // est du contenu ORDINAIRE, situé AU-DESSUS dans le flux, sans position
+    // absolue ni collante à cette largeur, et la seule couche flottante de la
+    // page est en `pointer-events-none`. Rien ne recouvre rien.
+    //
+    // Ce que la trace montre vraiment : « scrolling into view / done scrolling »
+    // puis un test de collision qui désigne un élément différent à chaque essai.
+    // C est une mesure PÉRIMÉE — la page se replace encore quand le point est
+    // calculé, et six cartes devenues un peu plus hautes ont suffi à décaler
+    // le reste sous le curseur.
+    //
+    // Le garde-fou n est pas perdu pour autant : l assertion qui suit exige que
+    // le bouton DISPARAISSE. Un clic forcé qui n ouvrirait rien laisserait la
+    // boucle rejouer puis échouer. C est l état qui juge, jamais le clic.
+    await bouton.first().click({ timeout: 4_000, force: true });
     await expect(bouton).toHaveCount(0, { timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
 }
