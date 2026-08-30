@@ -4,7 +4,7 @@ import { getUserAndOrg } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { RedeemButton } from "@/components/dashboard/redeem-button";
 import { CancelParticipationButton } from "@/components/dashboard/cancel-participation";
@@ -208,7 +208,7 @@ export default async function ParticipationsPage({
       {funnel && funnel.spins_total > 0 && (
         <Card className="mb-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+            <h2 className={TITRE_SURLIGNE}>
               Cycle du gain (30 jours)
             </h2>
             {roi !== null ? (

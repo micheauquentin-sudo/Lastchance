@@ -13,7 +13,7 @@ import {
 } from "@/actions/hunts";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
@@ -373,7 +373,7 @@ export function HuntStepsEditor({
           la DISPARITION du formulaire d'ajout, ce qui se lit comme une panne,
           pas comme une borne. */}
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+        <h2 className={TITRE_SURLIGNE}>
           Étapes
         </h2>
         <p className="text-sm font-bold tabular-nums text-k-body">

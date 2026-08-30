@@ -1,10 +1,11 @@
+import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -252,7 +253,7 @@ export default async function JackpotDetailPage({
             >
               <Card className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black mb-1">
+                  <h2 className={cn(TITRE_SURLIGNE, "mb-1")}>
                     Écran comptoir
                   </h2>
                   <p className="text-sm text-zinc-500">
