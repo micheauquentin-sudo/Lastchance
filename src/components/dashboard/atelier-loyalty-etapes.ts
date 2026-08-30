@@ -29,12 +29,12 @@ export const ETAPES_FIDELITE = [
   {
     cle: "programme",
     titre: "Le programme",
-    resume: "Le nom, la façon de valider une visite, les niveaux et la fréquence.",
+    resume: "Le nom, la façon de valider une visite et la fréquence.",
   },
   {
     cle: "recompenses",
     titre: "Les récompenses",
-    resume: "Les paliers à débloquer, leur lot ou leur tour de roue offert.",
+    resume: "Les niveaux, les paliers à débloquer, leur lot ou leur tour offert.",
   },
   {
     cle: "cartes",

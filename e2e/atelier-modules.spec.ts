@@ -27,6 +27,16 @@ type Module = {
   nom: string;
   base: string;
   titreAtelier: string;
+  /**
+   * Le libellé du lien vers la vue JOUEUR, quand il n'est pas « Voir le jeu ».
+   *
+   * Le passeport n'est pas un jeu : on n'y joue pas, on y accumule. Écrire
+   * « Voir le jeu » y envoyait le commerçant chercher une partie qui n'existe
+   * pas. Le libellé est donc réglable par module, et ce champ dit lesquels
+   * s'écartent du défaut — plutôt qu'un test qui chercherait vaguement l'un
+   * OU l'autre et ne prouverait plus lequel est rendu où.
+   */
+  libelleVoir?: string;
   premiereEtape: string;
   etapes: string[];
 };
@@ -57,6 +67,7 @@ const MODULES: Module[] = [
     nom: "passeport",
     base: "/dashboard/loyalty/e2eb0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier du passeport",
+    libelleVoir: "Voir le passeport",
     premiereEtape: "programme",
     etapes: ["programme", "recompenses", "cartes", "verification"],
   },
@@ -129,7 +140,7 @@ test.describe("Ateliers des 7 modules — navigation par étape @smoke", () => {
       // externalisé et distinct de « Modifier dans l'atelier ».
       const voirLeJeu = page
         .locator("#statut")
-        .getByRole("link", { name: "Voir le jeu" });
+        .getByRole("link", { name: mod.libelleVoir ?? "Voir le jeu" });
       await expect(voirLeJeu).toBeVisible();
       await expect(voirLeJeu).toHaveAttribute("target", "_blank");
 
