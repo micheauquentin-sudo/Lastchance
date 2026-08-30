@@ -124,7 +124,7 @@ export function PublicShare({
         ) : null}
         {resource ? (
           <Button type="button" variant="secondary" onClick={() => openQrTools("poster")}>
-            Créer ou éditer l'affiche
+            Créer ou éditer l&apos;affiche
           </Button>
         ) : null}
       </div>
