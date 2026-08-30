@@ -12,7 +12,9 @@ import {
 import { useRouter } from "next/navigation";
 import {
   getLoyaltyCheckinToken,
+  spendLoyaltyPoints,
   stampLoyaltyVisit,
+  type LoyaltySpendOutcome,
   type LoyaltyStampActionResult,
 } from "@/actions/loyalty";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
@@ -37,7 +39,7 @@ import type {
 import { LoyaltySpinExperience } from "./loyalty-spin-experience";
 import {
   LOYALTY_TIERS,
-  loyaltyStampWindow,
+  loyaltyPointsGoal,
   loyaltyTierMeta,
   loyaltyTierProgress,
   messageForSpinBlock,
@@ -275,13 +277,47 @@ export function LoyaltyPassport({
     label: string;
   } | null>(null);
 
+  // ── Échanges faits SUR CETTE PAGE ────────────────────────────────────────
+  //
+  // REGISTRE LOCAL, comme la grille de pronostics (`grille-pronostics.tsx`).
+  // Le serveur vient de confirmer le débit et l'émission du code : attendre un
+  // rechargement pour le montrer laisserait le client devant un solde inchangé
+  // et un cadeau invisible, c'est-à-dire devant l'écran d'un échec. On affiche
+  // donc ce que le serveur A DIT, tout de suite, et la page rechargée dira la
+  // même chose.
+  const [echanges, setEchanges] = useState<LoyaltySpendOutcome[]>([]);
+  // Solde tenu localement dès qu'un échange a abouti : `spend_loyalty_points`
+  // rend le solde APRÈS débit, il n'y a rien à recalculer ici.
+  const [soldeApresEchange, setSoldeApresEchange] = useState<number | null>(null);
+
+  const enregistrerEchange = useCallback((outcome: LoyaltySpendOutcome) => {
+    setSoldeApresEchange(outcome.pointsBalance);
+    setEchanges((prev) =>
+      // Un rejeu idempotent rend la MÊME récompense : dédupliqué par son id,
+      // sinon un double-clic afficherait deux fois le même cadeau.
+      prev.some((e) => e.rewardId === outcome.rewardId) ? prev : [outcome, ...prev],
+    );
+  }, []);
+
   // Fusion « page (cookie) + dernier tampon » : le tampon, plus récent, prime.
   const visitCount = scan?.visitCount ?? passport.visitCount;
   const tier: LoyaltyTier = scan?.tier ?? passport.tier;
-  const progress = loyaltyTierProgress(visitCount, silverThreshold, goldThreshold, tier);
-  const stampWindow = loyaltyStampWindow(
-    visitCount,
-    milestones.map((m) => m.visitCount),
+  // Le SOLDE est ce que le client vient chercher. Ordre de fraîcheur : échange
+  // (le plus récent), puis tampon, puis la valeur de la page.
+  const pointsBalance =
+    soldeApresEchange ?? scan?.pointsBalance ?? passport.pointsBalance;
+  // Le CUMUL porte le niveau — il ne bouge pas quand on dépense, seul un
+  // tampon le fait monter.
+  const pointsEarnedTotal = scan?.pointsEarnedTotal ?? passport.pointsEarnedTotal;
+  const progress = loyaltyTierProgress(
+    pointsEarnedTotal,
+    silverThreshold,
+    goldThreshold,
+    tier,
+  );
+  const goal = loyaltyPointsGoal(
+    pointsBalance,
+    milestones.map((m) => m.costPoints),
   );
 
   if (activeSpin) {
@@ -349,15 +385,19 @@ export function LoyaltyPassport({
         </h1>
       </header>
 
+      {/* ── Le solde, en tête : c'est ce que le client vient voir ── */}
+      <SoldePanel
+        pointsBalance={pointsBalance}
+        visitCount={visitCount}
+        goal={goal}
+      />
+
       {/* ── Niveau + progression ── */}
       <TierPanel
         tier={tier}
-        visitCount={visitCount}
+        pointsEarnedTotal={pointsEarnedTotal}
         progress={progress}
       />
-
-      {/* ── Carte de tampons ── */}
-      <StampCard stampWindow={stampWindow} visitCount={visitCount} />
 
       {/* ── Zone d'action selon le mode de validation ── */}
       {validationMode === "rotating_code" ? (
@@ -393,14 +433,21 @@ export function LoyaltyPassport({
       {/* ── Récompenses gagnées ── */}
       <RewardsSection
         reached={reached}
+        echanges={echanges}
         rewards={passport.rewards}
         milestones={milestones}
         spinWheels={spinWheels}
         onPlaySpin={openSpin}
       />
 
-      {/* ── Aperçu des paliers ── */}
-      <MilestonesOverview milestones={milestones} visitCount={visitCount} />
+      {/* ── La boutique : chaque palier à son prix ── */}
+      <BoutiquePaliers
+        programId={programId}
+        milestones={milestones}
+        pointsBalance={pointsBalance}
+        hasPassport={passport.hasPassport}
+        onEchange={enregistrerEchange}
+      />
 
       {jackpot && <LinkedJackpotCard jackpot={jackpot} />}
     </div>
@@ -465,13 +512,103 @@ function LinkedJackpotCard({ jackpot }: { jackpot: LoyaltyLinkedJackpotState }) 
 // Niveau bronze / argent / or + jauge vers le niveau suivant
 // ────────────────────────────────────────────────────────────
 
+/**
+ * LE SOLDE, EN TÊTE. C'est la seule chose que le client vient chercher : « il
+ * me reste combien ? ». Le nombre de visites reste affiché, en second — il ne
+ * décide plus de rien mais il continue de raconter la relation.
+ *
+ * La phrase de bascule (« vos points sont là, c'est vous qui choisissez ») ne
+ * s'affiche que pour un porteur de points : jusqu'à ce lot, franchir un seuil
+ * DONNAIT la récompense sans rien demander. Celui qui avait des points en
+ * attente au moment de la bascule ne doit pas croire qu'on les lui a pris.
+ */
+function SoldePanel({
+  pointsBalance,
+  visitCount,
+  goal,
+}: {
+  pointsBalance: number;
+  visitCount: number;
+  goal: ReturnType<typeof loyaltyPointsGoal>;
+}) {
+  return (
+    <section
+      aria-label="Mes points"
+      className="k-border mb-4 rounded-2xl bg-k-yellow/30 p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
+    >
+      <p className="text-xs font-black uppercase tracking-wide text-k-body">
+        Mes points
+      </p>
+      <p className="mt-1 flex items-baseline gap-2">
+        <span className="text-4xl font-black tabular-nums text-k-ink">
+          {pointsBalance}
+        </span>
+        <span className="text-lg font-black text-k-ink">
+          point{pointsBalance > 1 ? "s" : ""}
+        </span>
+      </p>
+      <p className="mt-0.5 text-sm font-bold text-k-body tabular-nums">
+        {visitCount} visite{visitCount > 1 ? "s" : ""} validée
+        {visitCount > 1 ? "s" : ""}
+      </p>
+
+      {goal.nextCost !== null && (
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-bold text-k-body">
+            <span>
+              {goal.affordable > 0
+                ? "Vers le cadeau suivant"
+                : "Vers votre premier cadeau"}
+            </span>
+            <span className="tabular-nums">
+              Encore {goal.missing} point{goal.missing > 1 ? "s" : ""}
+            </span>
+          </div>
+          {/* JAUGE, et non carte à cases : voir l'arbitrage détaillé sur
+              `loyaltyPointsGoal`. Un solde peut baisser, une case cochée ne
+              peut pas se décocher sans mentir. */}
+          <div
+            className="h-3 overflow-hidden rounded-full border-2 border-k-ink bg-white"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(goal.ratio * 100)}
+            aria-label="Progression vers le prochain cadeau"
+          >
+            <div
+              className="h-full rounded-full bg-k-orange transition-[width] duration-500"
+              style={{ width: `${Math.max(4, goal.ratio * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {goal.affordable > 0 && (
+        <p className="mt-3 rounded-xl border-2 border-k-ink bg-white px-3 py-2 text-sm font-black text-k-ink">
+          {goal.affordable === 1
+            ? "Un cadeau est à votre portée dès maintenant."
+            : `${goal.affordable} cadeaux sont à votre portée dès maintenant.`}
+        </p>
+      )}
+
+      {pointsBalance > 0 && (
+        <p className="mt-3 text-sm font-bold text-k-body">
+          Vos points sont bien là et ne s&apos;effacent pas : c&apos;est vous
+          qui choisissez, plus bas, ce que vous en faites.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function TierPanel({
   tier,
-  visitCount,
+  pointsEarnedTotal,
   progress,
 }: {
   tier: LoyaltyTier;
-  visitCount: number;
+  /** LE CUMUL GAGNÉ — l'assiette du niveau, jamais le solde. */
+  pointsEarnedTotal: number;
   progress: ReturnType<typeof loyaltyTierProgress>;
 }) {
   const meta = loyaltyTierMeta(tier);
@@ -498,10 +635,10 @@ function TierPanel({
         </div>
         <p className="text-right">
           <span className="block text-3xl font-black tabular-nums text-k-ink">
-            {visitCount}
+            {pointsEarnedTotal}
           </span>
           <span className="text-xs font-bold text-k-body">
-            visite{visitCount > 1 ? "s" : ""}
+            point{pointsEarnedTotal > 1 ? "s" : ""} cumulés
           </span>
         </p>
       </div>
@@ -531,7 +668,7 @@ function TierPanel({
           <div className="mb-1.5 flex items-center justify-between text-xs font-bold text-k-body">
             <span>Vers {nextMeta.label}</span>
             <span className="tabular-nums">
-              Encore {progress.remaining} visite{progress.remaining > 1 ? "s" : ""}
+              Encore {progress.remaining} point{progress.remaining > 1 ? "s" : ""}
             </span>
           </div>
           <div
@@ -556,88 +693,13 @@ function TierPanel({
           🏅 Niveau maximum atteint — merci de votre fidélité !
         </p>
       )}
-    </section>
-  );
-}
 
-// ────────────────────────────────────────────────────────────
-// Carte de tampons (cases ou jauge si la fenêtre est trop large)
-// ────────────────────────────────────────────────────────────
-
-function StampCard({
-  stampWindow,
-  visitCount,
-}: {
-  stampWindow: ReturnType<typeof loyaltyStampWindow>;
-  visitCount: number;
-}) {
-  if (stampWindow.windowEnd === null) {
-    return (
-      <section className="k-border mb-6 rounded-2xl bg-white p-4 text-center shadow-[4px_4px_0_var(--color-k-ink)]">
-        <p className="text-sm font-black text-k-ink">
-          🎉 Tous les paliers sont débloqués — vous êtes un pilier de la maison !
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section
-      aria-label={`Carte de tampons : ${Math.min(visitCount, stampWindow.windowEnd)} sur ${stampWindow.windowEnd}`}
-      className="k-border mb-6 rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)]"
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-black text-k-ink">Ma carte de fidélité</p>
-        <p className="text-sm font-black tabular-nums text-k-ink">
-          {Math.min(visitCount, stampWindow.windowEnd)}
-          <span className="text-k-body">/{stampWindow.windowEnd}</span>
-        </p>
-      </div>
-
-      {stampWindow.compact ? (
-        <div
-          className="h-4 overflow-hidden rounded-full border-2 border-k-ink bg-white"
-          role="progressbar"
-          aria-valuemin={stampWindow.windowStart}
-          aria-valuemax={stampWindow.windowEnd}
-          aria-valuenow={visitCount}
-        >
-          <div
-            className="h-full bg-k-yellow transition-[width] duration-500"
-            style={{
-              width: `${Math.max(
-                4,
-                ((visitCount - stampWindow.windowStart) /
-                  (stampWindow.windowEnd - stampWindow.windowStart)) *
-                  100,
-              )}%`,
-            }}
-          />
-        </div>
-      ) : (
-        <ul className="flex flex-wrap gap-2" role="list">
-          {stampWindow.cells.map((cell) => (
-            <li
-              key={cell.position}
-              aria-label={`Visite ${cell.position} ${cell.filled ? "validée" : "à venir"}`}
-              className={
-                cell.filled
-                  ? "flex h-11 w-11 items-center justify-center rounded-full border-2 border-k-ink bg-k-yellow text-lg font-black text-k-ink"
-                  : "flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-k-ink/40 text-sm font-black text-k-body"
-              }
-            >
-              {cell.filled ? "✓" : cell.position}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <p className="mt-3 text-center text-sm font-bold text-k-body">
-        Encore{" "}
-        <span className="text-k-ink">
-          {stampWindow.remaining} visite{stampWindow.remaining > 1 ? "s" : ""}
-        </span>{" "}
-        jusqu&apos;au prochain palier.
+      {/* LA QUESTION QUE TOUT LE MONDE SE POSE en découvrant qu'on dépense.
+          Le niveau suit le CUMUL gagné, pas le solde : le dire ici évite que
+          le client garde ses points sans oser les utiliser. */}
+      <p className="mt-3 text-xs font-bold text-k-body">
+        Votre niveau se compte sur tous les points gagnés depuis le début :
+        dépenser vos points ne le fait jamais redescendre.
       </p>
     </section>
   );
@@ -1063,12 +1125,15 @@ interface EarnedReward {
 
 function RewardsSection({
   reached,
+  echanges,
   rewards,
   milestones,
   spinWheels,
   onPlaySpin,
 }: {
   reached: LoyaltyMilestoneReached[];
+  /** Échanges conclus SUR CETTE PAGE : affichés sans attendre le serveur. */
+  echanges: LoyaltySpendOutcome[];
   rewards: LoyaltyPassportReward[];
   milestones: LoyaltyMilestoneView[];
   spinWheels: Record<string, LoyaltySpinBundle>;
@@ -1077,9 +1142,23 @@ function RewardsSection({
   const labelFor = (milestoneId: string, fallback: string) =>
     milestones.find((m) => m.id === milestoneId)?.rewardLabel || fallback;
 
-  // Paliers atteints ce jour (résultats de tampon) en tête, puis l'historique.
+  // Ce qui vient d'arriver en tête — les échanges d'abord (le client vient de
+  // les payer), puis les paliers atteints par un tampon, puis l'historique.
   const freshIds = new Set(reached.map((r) => r.milestoneId));
+  const echangeIds = new Set(echanges.map((e) => e.rewardId));
   const items: EarnedReward[] = [
+    ...echanges.map((e) => ({
+      key: `echange-${e.rewardId}`,
+      milestoneId: e.milestoneId,
+      rewardType: e.rewardType,
+      rewardLabel: e.rewardLabel,
+      rewardDetails: e.rewardDetails,
+      code: e.code,
+      grantToken: e.grantToken,
+      redeemedAt: null,
+      fresh: true,
+      outOfStock: false,
+    })),
     ...reached.map((r) => ({
       key: `fresh-${r.milestoneId}`,
       milestoneId: r.milestoneId,
@@ -1093,8 +1172,10 @@ function RewardsSection({
       outOfStock: r.outOfStock,
     })),
     ...rewards
-      // Évite le doublon avec un palier fraîchement atteint (même milestone).
-      .filter((r) => !freshIds.has(r.milestoneId))
+      // Évite le doublon avec un palier fraîchement atteint (même milestone)
+      // ou avec un échange déjà affiché depuis sa réponse serveur (même id de
+      // récompense — un rachat du même palier reste, lui, une ligne distincte).
+      .filter((r) => !freshIds.has(r.milestoneId) && !echangeIds.has(r.id))
       .map((r) => ({
         key: `reward-${r.id}`,
         milestoneId: r.milestoneId,
@@ -1303,69 +1384,185 @@ function LotReward({ reward }: { reward: EarnedReward }) {
   );
 }
 
+
 // ────────────────────────────────────────────────────────────
-// Aperçu des paliers du programme
+// LA BOUTIQUE — chaque palier à son prix, échangeable ici
+//
+// Ce bloc s'appelait « Les paliers à débloquer » et n'était qu'un APERÇU :
+// le client y lisait ce qui allait lui tomber dessus tout seul. Il n'y avait
+// rien à faire, donc rien à décider. Depuis la bascule en monnaie, c'est le
+// cœur de l'écran : un rayon, des prix, et un bouton par cadeau.
+//
+// RÈGLE D'AFFICHAGE : jamais un bouton mort sans explication. Un cadeau hors
+// de portée dit ce qui manque, un cadeau épuisé dit qu'il est épuisé. Un
+// bouton grisé sans phrase laisse le client croire que l'écran est cassé.
 // ────────────────────────────────────────────────────────────
 
-function MilestonesOverview({
+function BoutiquePaliers({
+  programId,
   milestones,
-  visitCount,
+  pointsBalance,
+  hasPassport,
+  onEchange,
 }: {
+  programId: string;
   milestones: LoyaltyMilestoneView[];
-  visitCount: number;
+  pointsBalance: number;
+  /** Sans passeport ouvert, il n'y a rien à dépenser : on invite à tamponner. */
+  hasPassport: boolean;
+  onEchange: (outcome: LoyaltySpendOutcome) => void;
 }) {
   if (milestones.length === 0) return null;
-  const ordered = [...milestones].sort((a, b) => a.visitCount - b.visitCount);
+  const ordered = [...milestones].sort((a, b) => a.costPoints - b.costPoints);
 
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-black uppercase tracking-wide text-k-body">
-        Les paliers à débloquer
+    <section className="mb-6">
+      <h2 className="mb-1 text-sm font-black uppercase tracking-wide text-k-body">
+        Échanger mes points
       </h2>
-      <ol className="space-y-2">
-        {ordered.map((m) => {
-          const reached = visitCount >= m.visitCount;
-          const remaining = Math.max(0, m.visitCount - visitCount);
-          return (
-            <li
-              key={m.id}
-              className={`flex items-center gap-3 rounded-xl border-2 px-3 py-2.5 ${
-                reached
-                  ? "border-k-ink bg-k-green/10"
-                  : "border-k-ink/15 bg-white"
-              }`}
-            >
-              <span
-                aria-hidden
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 text-sm font-black tabular-nums ${
-                  reached
-                    ? "border-k-ink bg-k-yellow text-k-ink"
-                    : "border-k-ink/30 text-k-ink/50"
-                }`}
-              >
-                {reached ? "✓" : m.visitCount}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-black text-k-ink">
-                  {m.rewardType === "spin"
-                    ? m.rewardLabel || "Tour de roue offert"
-                    : m.rewardLabel || "Lot fidélité"}
-                </p>
-                <p className="text-xs font-bold text-k-body">
-                  {m.rewardType === "spin" ? "🎡 Tour de roue" : "🎁 Lot"} · à{" "}
-                  {m.visitCount} visite{m.visitCount > 1 ? "s" : ""}
-                  {m.soldOut ? " · épuisé" : ""}
-                </p>
-              </div>
-              {!reached && (
-                <span className="shrink-0 text-xs font-bold text-k-body tabular-nums">
-                  dans {remaining}
-                </span>
-              )}
-            </li>
-          );
-        })}
+      <p className="mb-3 text-sm font-bold text-k-body">
+        Choisissez ce qui vous fait plaisir : le cadeau est à vous dès que vous
+        avez assez de points.
+      </p>
+      <ol className="space-y-2.5">
+        {ordered.map((m) => (
+          <li key={m.id}>
+            <CartePalierBoutique
+              programId={programId}
+              milestone={m}
+              pointsBalance={pointsBalance}
+              hasPassport={hasPassport}
+              onEchange={onEchange}
+            />
+          </li>
+        ))}
       </ol>
     </section>
+  );
+}
+
+function CartePalierBoutique({
+  programId,
+  milestone,
+  pointsBalance,
+  hasPassport,
+  onEchange,
+}: {
+  programId: string;
+  milestone: LoyaltyMilestoneView;
+  pointsBalance: number;
+  hasPassport: boolean;
+  onEchange: (outcome: LoyaltySpendOutcome) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [echange, setEchange] = useState(false);
+  // CLÉ DE REJEU, fabriquée ICI et conservée tant que l'échange n'a pas abouti :
+  // c'est elle qui rend le double-clic inoffensif — la base rend alors la même
+  // récompense au lieu de débiter deux fois. Renouvelée après un succès, pour
+  // qu'un second achat du même cadeau soit bien un second achat.
+  const requestIdRef = useRef<string | null>(null);
+
+  const manque = Math.max(0, milestone.costPoints - pointsBalance);
+  const abordable = manque === 0;
+  const bloque = milestone.soldOut || !abordable || !hasPassport;
+
+  const echanger = async () => {
+    if (pending) return;
+    setErreur(null);
+    setPending(true);
+    requestIdRef.current ??= crypto.randomUUID();
+    try {
+      const result = await spendLoyaltyPoints({
+        programId,
+        milestoneId: milestone.id,
+        requestId: requestIdRef.current,
+      });
+      if (!result.ok) {
+        setErreur(result.error);
+        return;
+      }
+      // Le serveur a confirmé : on l'affiche SANS attendre un rechargement.
+      requestIdRef.current = null;
+      setEchange(true);
+      onEchange(result.data);
+    } catch {
+      setErreur("Connexion perdue. Vos points n'ont pas été débités, réessayez.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div
+      className={`rounded-xl border-2 px-3 py-3 ${
+        abordable && !milestone.soldOut
+          ? "border-k-ink bg-white shadow-[3px_3px_0_var(--color-k-ink)]"
+          : "border-k-ink/15 bg-white"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className={`flex h-11 shrink-0 items-center justify-center rounded-full border-2 px-3 text-sm font-black tabular-nums ${
+            abordable && !milestone.soldOut
+              ? "border-k-ink bg-k-yellow text-k-ink"
+              : "border-k-ink/30 text-k-ink/50"
+          }`}
+        >
+          {milestone.costPoints}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-black text-k-ink">
+            {milestone.rewardType === "spin"
+              ? milestone.rewardLabel || "Tour de roue offert"
+              : milestone.rewardLabel || "Lot fidélité"}
+          </p>
+          <p className="text-xs font-bold text-k-body">
+            {milestone.rewardType === "spin" ? "🎡 Tour de roue" : "🎁 Lot"} ·{" "}
+            {milestone.costPoints} point{milestone.costPoints > 1 ? "s" : ""}
+          </p>
+        </div>
+      </div>
+
+      {echange ? (
+        <p className="mt-3 rounded-xl border-2 border-k-ink bg-k-green/15 px-3 py-2 text-sm font-black text-k-ink">
+          Échangé ! Votre cadeau est plus haut, dans « Mes récompenses ».
+        </p>
+      ) : milestone.soldOut ? (
+        <p className="mt-3 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800">
+          Épuisé pour le moment. Vos points restent sur votre carte.
+        </p>
+      ) : !hasPassport ? (
+        <p className="mt-3 text-sm font-bold text-k-body">
+          Validez une première visite pour commencer à gagner des points.
+        </p>
+      ) : !abordable ? (
+        <p className="mt-3 text-sm font-bold text-k-body">
+          Encore{" "}
+          <span className="text-k-ink tabular-nums">
+            {manque} point{manque > 1 ? "s" : ""}
+          </span>{" "}
+          pour ce cadeau.
+        </p>
+      ) : (
+        <button
+          type="button"
+          onClick={echanger}
+          disabled={pending || bloque}
+          className="k-btn mt-3 w-full rounded-2xl border-2 border-k-ink bg-k-yellow px-6 py-3 text-base font-black uppercase tracking-wider text-k-ink disabled:pointer-events-none disabled:opacity-60"
+        >
+          {pending
+            ? "Échange…"
+            : `Échanger (${milestone.costPoints} points)`}
+        </button>
+      )}
+
+      {erreur && (
+        <p role="alert" className="mt-2 text-sm font-bold text-red-700">
+          {erreur}
+        </p>
+      )}
+    </div>
   );
 }

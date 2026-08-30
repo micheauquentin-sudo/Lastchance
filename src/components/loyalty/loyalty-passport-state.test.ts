@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDelay,
-  loyaltyStampWindow,
+  loyaltyPointsGoal,
   loyaltyTierMeta,
   loyaltyTierProgress,
   messageForSpinBlock,
@@ -56,47 +56,47 @@ describe("loyaltyTierProgress", () => {
   });
 });
 
-describe("loyaltyStampWindow", () => {
-  it("remplit les cases jusqu'au compteur, vers le prochain palier", () => {
-    const w = loyaltyStampWindow(3, [5, 10]);
-    expect(w.windowStart).toBe(0);
-    expect(w.windowEnd).toBe(5);
-    expect(w.remaining).toBe(2);
-    expect(w.cells).toHaveLength(5);
-    expect(w.cells.filter((c) => c.filled)).toHaveLength(3);
-    expect(w.cells[0]).toEqual({ position: 1, filled: true });
-    expect(w.cells[4]).toEqual({ position: 5, filled: false });
+describe("loyaltyPointsGoal", () => {
+  it("vise le premier cadeau que le solde ne couvre pas encore", () => {
+    const g = loyaltyPointsGoal(300, [500, 1000]);
+    expect(g.nextCost).toBe(500);
+    expect(g.missing).toBe(200);
+    expect(g.affordable).toBe(0);
+    expect(g.ratio).toBeCloseTo(300 / 500);
   });
 
-  it("après un palier, la fenêtre repart de ce palier vers le suivant", () => {
-    const w = loyaltyStampWindow(7, [5, 10]);
-    expect(w.windowStart).toBe(5);
-    expect(w.windowEnd).toBe(10);
-    expect(w.cells).toHaveLength(5);
-    // Visites 6 et 7 acquises sur les positions 6..10.
-    expect(w.cells.filter((c) => c.filled).map((c) => c.position)).toEqual([6, 7]);
+  it("la jauge repart du dernier cadeau déjà abordable", () => {
+    const g = loyaltyPointsGoal(700, [500, 1000]);
+    expect(g.nextCost).toBe(1000);
+    expect(g.affordable).toBe(1);
+    expect(g.missing).toBe(300);
+    expect(g.ratio).toBeCloseTo((700 - 500) / (1000 - 500));
   });
 
-  it("tous les paliers dépassés : fenêtre fermée, sans case", () => {
-    const w = loyaltyStampWindow(12, [5, 10]);
-    expect(w.windowEnd).toBeNull();
-    expect(w.remaining).toBe(0);
-    expect(w.cells).toHaveLength(0);
-    expect(w.compact).toBe(false);
+  it("tout est abordable : plus rien à viser, jauge pleine", () => {
+    const g = loyaltyPointsGoal(1200, [500, 1000]);
+    expect(g.nextCost).toBeNull();
+    expect(g.missing).toBe(0);
+    expect(g.ratio).toBe(1);
+    expect(g.affordable).toBe(2);
   });
 
-  it("fenêtre trop large : repli jauge (compact) sans dessiner mille cases", () => {
-    const w = loyaltyStampWindow(0, [1000]);
-    expect(w.compact).toBe(true);
-    expect(w.cells).toHaveLength(0);
-    expect(w.windowEnd).toBe(1000);
-    expect(w.remaining).toBe(1000);
+  it("un solde dépensé redescend sans jamais produire de NaN", () => {
+    // Le point de la bascule : le solde BAISSE après un échange. La jauge
+    // doit simplement reculer — c est pour cela qu elle a remplacé la carte
+    // à cases, qu un recul aurait vidée de tampons pourtant gagnés.
+    const avant = loyaltyPointsGoal(1000, [500, 1000]);
+    const apres = loyaltyPointsGoal(0, [500, 1000]);
+    expect(avant.affordable).toBe(2);
+    expect(apres.affordable).toBe(0);
+    expect(apres.missing).toBe(500);
+    expect(Number.isNaN(apres.ratio)).toBe(false);
   });
 
-  it("ignore les doublons et les paliers non positifs", () => {
-    const w = loyaltyStampWindow(2, [5, 5, 0, -3]);
-    expect(w.windowEnd).toBe(5);
-    expect(w.cells).toHaveLength(5);
+  it("ignore les doublons et les prix non positifs", () => {
+    const g = loyaltyPointsGoal(200, [500, 500, 0, -300]);
+    expect(g.nextCost).toBe(500);
+    expect(g.missing).toBe(300);
   });
 });
 

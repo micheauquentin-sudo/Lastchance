@@ -62,27 +62,31 @@ export interface LoyaltyTierProgress {
   tier: LoyaltyTier;
   /** Niveau visé (null si déjà au niveau or). */
   nextTier: LoyaltyTier | null;
-  /** Seuil (en visites) du niveau visé (null si or). */
+  /** Seuil (en POINTS) du niveau visé (null si or). */
   nextThreshold: number | null;
-  /** Visites restantes pour l'atteindre (0 si or). */
+  /** Points restants pour l'atteindre (0 si or). */
   remaining: number;
   /** Avancement dans le palier courant, borné [0, 1]. */
   ratio: number;
 }
 
 /**
- * Progression vers le niveau suivant. Bornes des seuils supposées cohérentes
- * (0 < silver < gold, garanti par la validation serveur) mais tolérantes : un
- * dénominateur nul retombe sur un ratio plein plutôt que sur NaN.
+ * Progression vers le niveau suivant, EN POINTS.
+ *
+ * Le premier paramètre est le CUMUL GAGNÉ (`points_earned_total`), jamais le
+ * solde : le rang se mérite une fois pour toutes, il ne se reprend pas quand
+ * le client dépense. Bornes des seuils supposées cohérentes (0 < silver <
+ * gold, garanti par la validation serveur) mais tolérantes : un dénominateur
+ * nul retombe sur un ratio plein plutôt que sur NaN.
  */
 export function loyaltyTierProgress(
-  visitCount: number,
+  pointsEarnedTotal: number,
   silverThreshold: number,
   goldThreshold: number,
   tier: LoyaltyTier,
 ): LoyaltyTierProgress {
   const clamp = (n: number) => Math.max(0, Math.min(1, n));
-  const safe = Math.max(0, visitCount);
+  const safe = Math.max(0, pointsEarnedTotal);
 
   if (tier === "gold") {
     return { tier, nextTier: null, nextThreshold: null, remaining: 0, ratio: 1 };
@@ -106,61 +110,66 @@ export function loyaltyTierProgress(
   };
 }
 
-export interface LoyaltyStampWindow {
-  /** Cases de la carte pour le palier en cours (position réelle de visite). */
-  cells: Array<{ position: number; filled: boolean }>;
-  /** Borne basse de la fenêtre (palier précédent, ou 0). */
-  windowStart: number;
-  /** Palier visé (null si tous les paliers sont dépassés). */
-  windowEnd: number | null;
-  /** Visites restantes avant le prochain palier (0 si aucun). */
-  remaining: number;
-  /** Fenêtre trop large pour un rendu en cases : l'UI bascule sur une jauge. */
-  compact: boolean;
+export interface LoyaltyPointsGoal {
+  /** Prix du premier palier que le solde ne couvre PAS encore (null : tous couverts). */
+  nextCost: number | null;
+  /** Points manquants pour l'atteindre (0 si aucun). */
+  missing: number;
+  /** Avancement depuis le palier abordable précédent, borné [0, 1]. */
+  ratio: number;
+  /** Nombre de paliers que le solde couvre déjà — ce qui est achetable MAINTENANT. */
+  affordable: number;
 }
 
 /**
- * Fenêtre de la « carte de tampons » : cases entre le palier précédent et le
- * prochain palier, remplies jusqu'au compteur courant. Au-delà du dernier
- * palier, la fenêtre se ferme (windowEnd null). Une fenêtre trop grande pour
- * être dessinée (> maxCells) est signalée `compact` pour un repli en jauge.
+ * ── POURQUOI CE N'EST PLUS UNE CARTE DE TAMPONS ──
  *
- * @param milestoneVisitCounts nombres de visites des paliers (ordre libre).
+ * L'écran affichait une carte à cases : « ✓ ✓ ○ ○ ○ », une case par visite
+ * jusqu'au prochain palier. Elle disait une vérité simple tant que le compteur
+ * ne faisait que monter.
+ *
+ * Le solde, lui, DESCEND à chaque échange. Une carte à cases se serait donc
+ * VIDÉE après un achat : le client aurait vu des tampons qu'il avait bel et
+ * bien gagnés lui être repris à l'écran, à l'instant même où il retirait son
+ * cadeau. Une case cochée est une promesse d'irréversibilité — c'est tout son
+ * intérêt — et la monnaie ne peut pas la tenir. Aucun réglage de la carte n'y
+ * change quoi que ce soit : le défaut n'est pas dans le dessin, il est dans ce
+ * que le dessin AFFIRME.
+ *
+ * Elle est donc remplacée par une jauge continue vers le prochain cadeau
+ * ABORDABLE. Une jauge qui redescend ne trahit personne : elle montre un solde,
+ * et un solde se dépense. Ce que la carte apportait — « il me manque combien ? »
+ * — est conservé, en points, et c'est la seule chose que le client demandait.
+ *
+ * @param pointsBalance le SOLDE dépensable (jamais le cumul).
+ * @param milestoneCosts prix des paliers, en points, ordre libre.
  */
-export function loyaltyStampWindow(
-  visitCount: number,
-  milestoneVisitCounts: number[],
-  maxCells = 12,
-): LoyaltyStampWindow {
-  const safe = Math.max(0, visitCount);
-  const sorted = [...new Set(milestoneVisitCounts.filter((n) => n > 0))].sort(
+export function loyaltyPointsGoal(
+  pointsBalance: number,
+  milestoneCosts: number[],
+): LoyaltyPointsGoal {
+  const safe = Math.max(0, pointsBalance);
+  const sorted = [...new Set(milestoneCosts.filter((n) => n > 0))].sort(
     (a, b) => a - b,
   );
 
-  const nextEnd = sorted.find((n) => n > safe) ?? null;
-  const windowStart = sorted.filter((n) => n <= safe).pop() ?? 0;
-
-  if (nextEnd === null) {
-    return {
-      cells: [],
-      windowStart,
-      windowEnd: null,
-      remaining: 0,
-      compact: false,
-    };
+  const affordable = sorted.filter((n) => n <= safe).length;
+  const nextCost = sorted.find((n) => n > safe) ?? null;
+  if (nextCost === null) {
+    return { nextCost: null, missing: 0, ratio: 1, affordable };
   }
 
-  const size = nextEnd - windowStart;
-  const remaining = Math.max(0, nextEnd - safe);
-  if (size > maxCells) {
-    return { cells: [], windowStart, windowEnd: nextEnd, remaining, compact: true };
-  }
-
-  const cells = Array.from({ length: size }, (_, i) => {
-    const position = windowStart + i + 1;
-    return { position, filled: position <= safe };
-  });
-  return { cells, windowStart, windowEnd: nextEnd, remaining, compact: false };
+  // Base de la jauge : le dernier palier déjà abordable (0 si aucun). Repartir
+  // de zéro à chaque fois donnerait une jauge presque pleine en permanence dès
+  // que les prix s'écartent.
+  const from = sorted.filter((n) => n <= safe).pop() ?? 0;
+  const span = nextCost - from;
+  return {
+    nextCost,
+    missing: Math.max(0, nextCost - safe),
+    ratio: span > 0 ? Math.max(0, Math.min(1, (safe - from) / span)) : 1,
+    affordable,
+  };
 }
 
 /**

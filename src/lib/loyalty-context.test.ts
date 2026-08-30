@@ -279,8 +279,10 @@ function program(over: Over = {}) {
     rotating_secret: SECRET_ROTATIF,
     rotating_period_seconds: 30,
     min_stamp_interval_seconds: 3600,
-    silver_threshold: 5,
-    gold_threshold: 10,
+    // Seuils EN POINTS depuis la bascule (20261114120000) : la migration a
+    // converti les deux colonnes ×100, une visite valant 100 points.
+    silver_threshold: 500,
+    gold_threshold: 1000,
     created_at: "2026-01-01T00:00:00.000Z",
     organizations: org(),
     ...over,
@@ -292,7 +294,10 @@ function milestone(over: Over = {}) {
     id: "milestone-1",
     program_id: PROGRAM_ID,
     organization_id: ORG_ID,
+    // `visit_count` est la colonne HISTORIQUE, `cost_points` le PRIX qui fait
+    // foi : la vue joueur doit lire le second.
     visit_count: 5,
+    cost_points: 500,
     reward_type: "lot",
     reward_label: "Un dessert offert",
     reward_details: "Au choix à la carte",
@@ -474,6 +479,7 @@ describe("loadLoyaltyContext — paliers", () => {
       {
         id: "milestone-1",
         visitCount: 5,
+        costPoints: 500,
         rewardType: "lot",
         rewardLabel: "Un dessert offert",
         rewardDetails: "Au choix à la carte",
@@ -524,16 +530,16 @@ describe("loadLoyaltyContext — paliers", () => {
     expect(ctx.milestones[0].soldOut).toBe(false);
   });
 
-  it("les paliers sont demandés triés par nombre de visites croissant", async () => {
+  it("les paliers sont demandés triés par PRIX croissant", async () => {
     // L'ordre fait foi côté base (le composant ne retrie pas). Rouge si le
-    // `order` sautait : la carte de tampons afficherait le palier « 10 visites »
-    // avant le palier « 3 visites », et le joueur ne saurait plus ce qui vient.
+    // `order` sautait ou repassait sur `visit_count` : la boutique afficherait
+    // le cadeau à 1000 points avant celui à 300, et le rayon deviendrait illisible.
     db.tables.loyalty_milestones = [milestone()];
 
     await loadLoyaltyContext(PROGRAM_ID);
 
     expect(db.queriesOn("loyalty_milestones")[0].order).toEqual({
-      column: "visit_count",
+      column: "cost_points",
       ascending: true,
     });
   });
@@ -566,6 +572,8 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
         program_id: PROGRAM_ID,
         token_hash: sha256(TOKEN),
         visit_count: 7,
+        points_balance: 700,
+        points_earned_total: 700,
         ...over,
       },
     ];
@@ -581,6 +589,8 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     expect(ctx.passport).toEqual({
       hasPassport: false,
       visitCount: 0,
+      pointsBalance: 0,
+      pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
     });
@@ -656,6 +666,8 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     expect(ctx.passport).toEqual({
       hasPassport: true,
       visitCount: 0,
+      pointsBalance: 0,
+      pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
     });
@@ -676,6 +688,8 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     expect(ctx.passport).toEqual({
       hasPassport: true,
       visitCount: 0,
+      pointsBalance: 0,
+      pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
     });
@@ -683,19 +697,28 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     expect(db.tablesQueried()).not.toContain("loyalty_rewards");
   });
 
-  it("le niveau est RECALCULÉ depuis les seuils courants du programme", async () => {
+  it("le niveau est RECALCULÉ depuis le CUMUL et les seuils courants", async () => {
     // Le niveau n'est pas stocké : il se déduit des seuils du jour. Conséquence
     // produit : un commerçant qui abaisse son seuil « or » doit voir ses fidèles
     // y passer immédiatement. Rouge si un niveau figé était lu en base.
+    //
+    // Et il se lit sur `points_earned_total`, JAMAIS sur `points_balance` :
+    // rouge si le solde reprenait l'assiette du rang — un client « or » qui
+    // échange un café redescendrait argent en repartant du comptoir.
     cookieJar.jar[loyaltyTokenCookieName(PROGRAM_ID)] = TOKEN;
     seedMember();
 
     const argent = await loadLoyaltyContext(PROGRAM_ID);
     if (!argent.ok) throw new Error(argent.error);
-    expect(argent.passport).toMatchObject({ visitCount: 7, tier: "silver" });
+    expect(argent.passport).toMatchObject({
+      visitCount: 7,
+      pointsBalance: 700,
+      pointsEarnedTotal: 700,
+      tier: "silver",
+    });
 
     db.reset();
-    db.tables.loyalty_programs = [program({ gold_threshold: 7 })];
+    db.tables.loyalty_programs = [program({ gold_threshold: 700 })];
     seedMember();
 
     const or = await loadLoyaltyContext(PROGRAM_ID);
@@ -712,7 +735,7 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     seedMember();
     db.tables.loyalty_milestones = [
       milestone(),
-      milestone({ id: "milestone-2", visit_count: 10, reward_type: "spin", reward_label: "Un tour offert" }),
+      milestone({ id: "milestone-2", visit_count: 10, cost_points: 1000, reward_type: "spin", reward_label: "Un tour offert" }),
     ];
     db.tables.loyalty_rewards = [
       {
