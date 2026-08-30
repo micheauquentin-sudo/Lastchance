@@ -14,6 +14,7 @@ import { construireVerificationReserver } from "@/lib/activation/reserver";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -112,7 +113,7 @@ export default async function MomentsPage() {
       <PageHeader
         surtitre="Vos animations"
         titre="Moments"
-        sousTitre="Ateliers, dégustations, files d'accueil : faites vivre un moment à vos clients."
+        sousTitre={sousTitreTableauDeBord("reserver")}
         actions={capacites.canEditDraft ? <NouvelleActiviteForm /> : null}
       />
 

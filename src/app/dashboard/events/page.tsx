@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { EventStatusBadge } from "@/components/dashboard/event-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -98,7 +99,7 @@ export default async function EventsPage({
       <PageHeader
         surtitre="Vos animations"
         titre="Événements live"
-        sousTitre="Des quiz en direct pour animer votre salle : vos clients jouent depuis leur téléphone, tout s'affiche sur grand écran."
+        sousTitre={sousTitreTableauDeBord("events")}
         actions={capacites.canEditDraft ? <NewEventForm /> : null}
       />
 

@@ -6,6 +6,7 @@ import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { ContestStatusBadge } from "@/components/dashboard/contest-status";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -96,7 +97,7 @@ export default async function PronosticsPage({
       <PageHeader
         surtitre="Vos animations"
         titre="Pronostics"
-        sousTitre="Un championnat = une compétition, vos clients, votre classement."
+        sousTitre={sousTitreTableauDeBord("pronostics")}
         actions={
           capacites.canEditDraft ? (
             <NewContestForm timeZone={organization!.timezone} />

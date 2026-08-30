@@ -5,7 +5,9 @@ import { LOBBY_KINDS, type LobbyKind, type OrgLobbyView } from "@/lib/lobby";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
+import { entreeModule } from "@/platform/experiences/catalog";
 import { Card } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
@@ -34,19 +36,6 @@ export const dynamic = "force-dynamic";
 function estJeuDeSalon(valeur: string): valeur is LobbyKind {
   return (LOBBY_KINDS as readonly string[]).includes(valeur);
 }
-
-const TITRES: Record<LobbyKind, { nom: string; promesse: string }> = {
-  duo: {
-    nom: "Duo Miroir",
-    promesse:
-      "Deux joueurs répondent chacun de leur côté, les choix se révèlent ensemble.",
-  },
-  bande: {
-    nom: "Portrait de la Bande",
-    promesse:
-      "Chacun vote en secret ; la réponse ne se révèle qu'à partir de trois voix.",
-  },
-};
 
 export default async function SalonPage({
   params,
@@ -82,16 +71,21 @@ export default async function SalonPage({
   const tous: OrgLobbyView[] = ctx.ok ? ctx.salons : [];
   const salons = tous.filter((salon) => salon.kind === jeu);
 
-  const titre = TITRES[jeu];
+  // LE NOM ET LA PHRASE VIENNENT DU CATALOGUE, plus d'une table locale : les
+  // deux jeux de salon sont des modules vendables comme les autres, et leur
+  // libellé était jusqu'ici écrit une fois ici, une fois dans `MODULE_CATALOG`,
+  // une fois dans la navigation. Un segment valide a forcément son entrée —
+  // `LobbyKind` et `Entitlement` portent les mêmes deux clés.
+  const fiche = entreeModule(jeu);
+  if (!fiche) notFound();
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="w-fit border-b-4 border-k-yellow pb-1 text-2xl font-black">
-          {titre.nom}
-        </h1>
-        <p className="mt-2 text-sm text-zinc-600">{titre.promesse}</p>
-      </div>
+      <PageHeader
+        surtitre="Vos animations"
+        titre={fiche.label}
+        sousTitre={fiche.dashboardSubtitle}
+      />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement={jeu}>
         <Card>
@@ -103,7 +97,7 @@ export default async function SalonPage({
           <PublicShare
             url={url}
             fileName={`salon-${jeu}`}
-            qrLabel={titre.nom}
+            qrLabel={fiche.label}
           />
           {!vitrine?.published && (
             // Le commerçant doit savoir POURQUOI son adresse ressemble à son

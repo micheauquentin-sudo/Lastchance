@@ -27,6 +27,7 @@ import { construireVerificationVitrine } from "@/lib/activation/vitrine";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { Card } from "@/components/ui/card";
+import { sousTitreTableauDeBord } from "@/platform/experiences/catalog";
 import { PageHeader } from "@/components/ui/page-header";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
@@ -194,7 +195,7 @@ export default async function VitrineDashboardPage() {
       <PageHeader
         surtitre="Vos animations"
         titre="Vitrine"
-        sousTitre="Faites découvrir votre lieu et ce que vous proposez : vos clients scannent un QR code et lisent votre carte sur leur téléphone."
+        sousTitre={sousTitreTableauDeBord("vitrine")}
       />
 
       <ModuleCapabilityNotice capacites={capacites} entitlement="vitrine">
