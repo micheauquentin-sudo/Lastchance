@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { renderQr } from "@/lib/qr-render";
 import { urlVitrine, type VitrineCarteView } from "@/lib/vitrine";
 import { PublicShare, SHARE_QR_STYLE } from "@/components/dashboard/public-share";
