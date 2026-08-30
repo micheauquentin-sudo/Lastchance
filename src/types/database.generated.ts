@@ -3130,6 +3130,8 @@ export type Database = {
           id: string
           last_stamp_at: string | null
           organization_id: string
+          points_balance: number
+          points_earned_total: number
           program_id: string
           tier: string
           token_hash: string
@@ -3140,6 +3142,8 @@ export type Database = {
           id?: string
           last_stamp_at?: string | null
           organization_id: string
+          points_balance?: number
+          points_earned_total?: number
           program_id: string
           tier?: string
           token_hash: string
@@ -3150,6 +3154,8 @@ export type Database = {
           id?: string
           last_stamp_at?: string | null
           organization_id?: string
+          points_balance?: number
+          points_earned_total?: number
           program_id?: string
           tier?: string
           token_hash?: string
@@ -3174,6 +3180,7 @@ export type Database = {
       }
       loyalty_milestones: {
         Row: {
+          cost_points: number | null
           created_at: string
           id: string
           organization_id: string
@@ -3188,6 +3195,7 @@ export type Database = {
           visit_count: number
         }
         Insert: {
+          cost_points?: number | null
           created_at?: string
           id?: string
           organization_id: string
@@ -3202,6 +3210,7 @@ export type Database = {
           visit_count: number
         }
         Update: {
+          cost_points?: number | null
           created_at?: string
           id?: string
           organization_id?: string
@@ -3371,8 +3380,10 @@ export type Database = {
           redeem_expires_at: string | null
           redeemed_at: string | null
           redeemed_by: string | null
+          request_id: string | null
           resulting_spin_id: string | null
           reward_type: string
+          spent_points: number | null
         }
         Insert: {
           code?: string | null
@@ -3387,8 +3398,10 @@ export type Database = {
           redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
+          request_id?: string | null
           resulting_spin_id?: string | null
           reward_type: string
+          spent_points?: number | null
         }
         Update: {
           code?: string | null
@@ -3403,8 +3416,10 @@ export type Database = {
           redeem_expires_at?: string | null
           redeemed_at?: string | null
           redeemed_by?: string | null
+          request_id?: string | null
           resulting_spin_id?: string | null
           reward_type?: string
+          spent_points?: number | null
         }
         Relationships: [
           {
@@ -10324,6 +10339,15 @@ export type Database = {
       sms_sender_for_send: {
         Args: { p_organization_id: string }
         Returns: string
+      }
+      spend_loyalty_points: {
+        Args: {
+          p_member_token_hash: string
+          p_milestone_id: string
+          p_program_id: string
+          p_request_id: string
+        }
+        Returns: Json
       }
       start_event_session: {
         Args: { p_organization_id: string; p_session_id: string }

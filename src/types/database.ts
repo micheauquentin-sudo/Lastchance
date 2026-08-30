@@ -475,8 +475,25 @@ export interface LoyaltyMilestone {
   id: string;
   program_id: string;
   organization_id: string;
-  /** Nombre de visites déclenchant le palier (unique par programme). */
+  /**
+   * HISTORIQUE depuis la bascule en points (20261114120000).
+   *
+   * L'autorité est `cost_points`. Cette colonne reste parce que l'éditeur
+   * l'écrit encore et qu'un trigger en dérive le prix ; elle disparaîtra
+   * quand le formulaire saisira des points.
+   */
   visit_count: number;
+  /**
+   * LE PRIX DU CADEAU, EN POINTS — l'autorité depuis 20261114120000.
+   *
+   * Nullable côté type, jamais en fait : un trigger le dérive de
+   * `visit_count` tant que l'éditeur n'écrit pas de points, et un test pgTAP
+   * épingle l'invariant « aucun palier sans prix ». Le rendre `not null` en
+   * base le rendrait OBLIGATOIRE à l'insertion dans le type engendré, ce que
+   * `src/actions/loyalty.ts` ne fournit pas encore — même arbitrage que
+   * `loyalty_programs.rotating_secret`.
+   */
+  cost_points: number | null;
   reward_type: LoyaltyRewardType;
   /** reward_type='lot' : lot remis en caisse (code FIDELITE-…). */
   reward_label: string;
@@ -504,7 +521,21 @@ export interface LoyaltyMember {
   /** Hash SHA-256 du jeton remis au navigateur. */
   token_hash: string;
   visit_count: number;
-  /** Niveau dérivé, rafraîchi par record_loyalty_stamp à chaque tampon. */
+  /**
+   * LE SOLDE DÉPENSABLE. Monte de 100 par visite, DESCEND à chaque échange.
+   * C'est la monnaie du passeport.
+   */
+  points_balance: number;
+  /**
+   * LE CUMUL GAGNÉ DEPUIS TOUJOURS — il ne descend JAMAIS, et c'est lui qui
+   * porte le niveau.
+   *
+   * Deux compteurs et non un, parce qu'un solde qui baisse ne peut pas porter
+   * un rang : le client perdrait son statut « or » en utilisant le café qu'il
+   * a mérité. Le solde dit ce qu'il peut dépenser, le cumul ce qu'il a fait.
+   */
+  points_earned_total: number;
+  /** Niveau dérivé de `points_earned_total`, rafraîchi à chaque tampon. */
   tier: LoyaltyTier;
   last_stamp_at: string | null;
   created_at: string;
@@ -531,6 +562,22 @@ export interface LoyaltyReward {
   organization_id: string;
   milestone_id: string;
   reward_type: LoyaltyRewardType;
+  /**
+   * CE QUE L'ÉCHANGE A COÛTÉ, gravé à l'émission.
+   *
+   * Sans lui, on ne peut plus dire ce qui a été payé : le prix du palier peut
+   * changer après coup, et l'historique mentirait. `null` sur les
+   * récompenses émises automatiquement avant la bascule en points.
+   */
+  spent_points: number | null;
+  /**
+   * LA CLÉ DE REJEU de l'échange, fournie par l'appelant.
+   *
+   * Un double-clic ou un réseau qui repart ne doit ni débiter deux fois ni
+   * servir deux cadeaux : `spend_loyalty_points` rend la MÊME récompense pour
+   * une clé déjà vue. `null` sur les récompenses d'avant.
+   */
+  request_id: string | null;
   earned_at: string;
   /** reward_type='lot' : code de retrait présenté en caisse (FIDELITE-XXXXXXXX). */
   code: string | null;
