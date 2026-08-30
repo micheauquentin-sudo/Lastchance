@@ -27,8 +27,12 @@
 --  10. La conversion ×100 : sur la ligne SEMÉE (le seed est rejoué APRÈS les
 --      migrations, ses valeurs sont donc écrites dans la nouvelle unité), et
 --      sur le trigger transitoire qui dérive `cost_points` de `visit_count`.
---  11. Le lot est ADDITIF : l'émission d'une récompense au franchissement d'un
---      palier fonctionne toujours, et crédite désormais des points au passage.
+--  11. FID-2b (20261115120000) A FERMÉ L'AUTRE VOIE. Un tampon qui franchit
+--      le seuil d'un palier ne distribue plus rien : il crédite ses points, et
+--      c'est tout. Le même palier reste ACHETABLE, et l'achat est désormais la
+--      seule origine d'un code. (Ce paragraphe disait l'inverse jusqu'au
+--      2026-08-30 : le lot FID-2a était additif à dessein, le temps que
+--      l'écran d'échange se livre.)
 --
 -- CE FICHIER EXIGE LA BASE SEMÉE (§10) : `supabase db reset` ne sème rien,
 -- appliquer `supabase/seed.sql` explicitement. La CI le fait avant pgTAP.
@@ -58,7 +62,7 @@ insert into public.loyalty_programs (
   'Boutique de points', 'active', 'staff', 300, 200, 300
 );
 
--- Programme B — sert au §11 (l'émission au franchissement survit).
+-- Programme B — sert au §11 (le franchissement n'émet plus rien).
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode,
   min_stamp_interval_seconds, silver_threshold, gold_threshold
@@ -79,11 +83,13 @@ values ('fd000000-0000-4000-8000-000000000022',
 
 -- ── Les paliers du programme A sont une BOUTIQUE, pas des seuils ──
 --
--- `visit_count` est volontairement placé hors d'atteinte (900+) : le
--- franchissement automatique ne doit JAMAIS se déclencher pendant les tests
--- d'échange, sinon il émettrait des récompenses et consommerait du stock dans
--- le dos des assertions. Seul `cost_points` — fourni explicitement, donc le
--- trigger de dérivation ne s'en mêle pas — gouverne le prix.
+-- `visit_count` est volontairement placé hors d'atteinte (900+). C'était une
+-- NÉCESSITÉ avant FID-2b : le franchissement automatique aurait émis des
+-- récompenses et consommé du stock dans le dos des assertions. Depuis
+-- 20261115120000 plus rien ne se déclenche à un seuil — le placement reste
+-- pour que ces paliers se lisent pour ce qu'ils sont, des PRIX et non des
+-- seuils. Seul `cost_points` — fourni explicitement, donc le trigger de
+-- dérivation ne s'en mêle pas — gouverne le prix.
 insert into public.loyalty_milestones (
   id, program_id, organization_id, visit_count, cost_points, reward_type,
   reward_label, reward_stock, position
@@ -444,7 +450,13 @@ select is((select count(*) from public.loyalty_rewards r
   'les refus n''ont créé aucune récompense supplémentaire');
 
 
--- ══ 11. LE LOT EST ADDITIF : LE FRANCHISSEMENT ÉMET TOUJOURS ═
+-- ══ 11. LE FRANCHISSEMENT N'ÉMET PLUS RIEN (FID-2b) ══════════
+--
+-- Le palier du programme B est un VRAI seuil (visit_count = 2, prix laissé au
+-- trigger de dérivation, donc 200 points). Le second tampon le franchit.
+-- Jusqu'à FID-2b il émettait un code au passage ; il ne le fait plus, et le
+-- même palier s'achète.
+delete from tap_r;
 insert into tap_r select pg_temp.tap_stamp(
   'fd000000-0000-4000-8000-000000000003', repeat('d', 64));
 select pg_temp.tap_rewind(repeat('d', 64));
@@ -452,21 +464,37 @@ delete from tap_r;
 insert into tap_r select pg_temp.tap_stamp(
   'fd000000-0000-4000-8000-000000000003', repeat('d', 64));
 
-select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 1,
-  'le palier à 2 visites se déclenche TOUJOURS tout seul (émission conservée)');
-select ok((select r->'milestones_reached'->0->>'code' from tap_r)
-    ~ '^FIDELITE-[A-HJ-NP-Z2-9]{8}$',
-  'le franchissement émet toujours un code de retrait');
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'le palier à 2 visites ne se déclenche PLUS tout seul (émission retirée)');
+select is((select count(*) from public.loyalty_rewards r
+    join public.loyalty_members m on m.id = r.member_id
+   where m.token_hash = repeat('d', 64)), 0::bigint,
+  'le franchissement n''émet plus aucun code de retrait');
+select is((select reward_claimed_count from public.loyalty_milestones
+    where id = 'fd000000-0000-4000-8000-000000000015'), 0,
+  'et ne décompte plus le stock du palier');
 select is((select r->>'points_balance' from tap_r), '200',
-  'et le même tampon a crédité les points : les deux mécanismes coexistent');
--- Une récompense OFFERTE ne porte ni intention ni prix.
+  'mais le même tampon a bien crédité les points : le tampon n''a perdu que l''émission');
+
+-- Le palier reste ACHETABLE — c'est la seule voie qui subsiste.
+delete from tap_r;
+insert into tap_r select public.spend_loyalty_points(
+  'fd000000-0000-4000-8000-000000000003', repeat('d', 64),
+  'fd000000-0000-4000-8000-000000000015',
+  'fd000000-0000-4000-8000-0000000000d1');
+select is((select r->>'state' from tap_r), 'spent',
+  'le même palier s''achète avec les points que le tampon a crédités');
+select ok((select r->>'code' from tap_r) ~ '^FIDELITE-[A-HJ-NP-Z2-9]{8}$',
+  'et c''est L''ACHAT qui émet désormais le code de retrait');
+-- Une récompense ACHETÉE porte son intention et son prix — c'est ce qui la
+-- distingue d'une récompense offerte, dont plus rien n'émet.
 select results_eq(
-  $q$select request_id is null, spent_points is null
+  $q$select request_id is not null, spent_points
        from public.loyalty_rewards r
        join public.loyalty_members m on m.id = r.member_id
       where m.token_hash = repeat('d', 64)$q$,
-  $q$values (true, true)$q$,
-  'une récompense offerte n''a ni request_id ni spent_points');
+  $q$values (true, 200)$q$,
+  'la seule récompense du passeport porte un request_id et son prix payé');
 
 
 -- ══ 12. LA CONVERSION ×100 SUR UNE LIGNE SEMÉE ══════════════

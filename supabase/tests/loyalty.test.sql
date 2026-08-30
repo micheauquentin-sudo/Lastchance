@@ -10,11 +10,14 @@
 --   3. Cooldown : second tampon immédiat → 'too_soon' ; après expiration
 --      du délai → 'stamped'.
 --   4. Niveaux bronze/argent/or calqués sur visit_count.
---   5. Palier LOT : code FIDELITE-XXXXXXXX + compteur de stock ; stock
---      épuisé = 'out_of_stock' (aucune récompense), réarmé si relevé.
---   6. Palier SPIN : grant_token émis ; consume_loyalty_spin_grant →
---      'spun' + spin source='loyalty' + resulting_spin_id ; rejeu →
---      'already_consumed' ; mauvais jeton → 'unavailable'.
+--   5. Palier LOT : depuis FID-2b (20261115120000) un tampon NE DISTRIBUE
+--      RIEN, même quand il franchit le seuil — c'est l'ACHAT qui émet le
+--      code FIDELITE-XXXXXXXX et décompte le stock ; stock épuisé =
+--      'out_of_stock' (aucune récompense), réarmé si relevé.
+--   6. Palier SPIN : grant_token émis PAR L'ACHAT ;
+--      consume_loyalty_spin_grant → 'spun' + spin source='loyalty' +
+--      resulting_spin_id ; rejeu → 'already_consumed' ; mauvais jeton →
+--      'unavailable'.
 --   7. Mode staff : p_validated_by obligatoire (chemin public fermé) ;
 --      tampon staff journalisé avec le validateur.
 --   8. Caisse : remise atomique auditée, code insensible à la casse, déjà
@@ -48,6 +51,21 @@
 --      la roue cible est vérifiée (statut + dates) — une campagne fermée
 --      renvoie `unavailable` SANS consommer le grant, qui redevient
 --      jouable à la réactivation.
+--
+-- ── CE QUE FID-2b A CHANGÉ DANS CE FICHIER (20261115120000) ──
+--
+-- Un tampon ne distribue PLUS de récompense au franchissement d'un seuil :
+-- il crédite 100 points, et le client ACHÈTE ce qu'il veut avec
+-- `spend_loyalty_points`. Les propriétés éprouvées ici n'ont pas changé —
+-- plafond de stock, usage unique du grant, portes de campagne, remise en
+-- caisse — mais leur DÉCLENCHEUR, oui : là où un tampon suffisait, il faut
+-- désormais accumuler des points puis acheter. D'où les deux raccourcis
+-- `pg_temp.tap_gagner` / `pg_temp.tap_acheter` définis plus bas.
+--
+-- Les assertions du franchissement, elles, ont été RETOURNÉES : elles
+-- affirment maintenant qu'un tampon qui franchit un seuil ne crée aucune
+-- récompense et ne touche pas au stock. C'est la garde qui rougirait si
+-- l'émission automatique revenait par une réécriture de la fonction.
 -- ============================================================
 begin;
 create extension if not exists pgtap with schema extensions;
@@ -159,6 +177,45 @@ select is(
 
 create temporary table tap_r (r jsonb) on commit drop;
 
+-- ── FID-2b : gagner des points, puis acheter ─────────────────
+--
+-- Un tampon ne distribue plus rien : il rapporte 100 points. Tout ce qui
+-- s'obtenait ici par un franchissement de seuil s'obtient désormais par une
+-- accumulation suivie d'un achat. Ces deux raccourcis évitent d'écrire vingt
+-- fois la même boucle de cooldown, et gardent les sections lisibles.
+--
+-- `tap_gagner` recule le cooldown AVANT chaque tampon (no-op sur un passeport
+-- qui n'existe pas encore) : sans ça, le second tampon rendrait `too_soon` et
+-- le passeport resterait pauvre sans qu'aucune assertion ne le dise.
+create function pg_temp.tap_gagner(
+  p_program uuid, p_hash text, p_fois integer, p_staff uuid default null)
+returns void language plpgsql as $$
+declare k integer;
+begin
+  for k in 1..p_fois loop
+    update public.loyalty_members
+       set last_stamp_at = last_stamp_at - interval '2 days'
+     where token_hash = p_hash;
+    if p_staff is null then
+      perform public.record_loyalty_stamp(
+        p_program, p_hash, public.current_loyalty_code(p_program));
+    else
+      perform public.record_loyalty_stamp(p_program, p_hash, null, p_staff);
+    end if;
+  end loop;
+end $$;
+
+-- `gen_random_uuid()` à chaque appel : chaque achat est une INTENTION
+-- distincte. Réutiliser un identifiant en ferait un rejeu idempotent, qui
+-- rendrait la récompense précédente sans rien débiter — l'inverse de ce que
+-- ces sections veulent éprouver. (L'idempotence, elle, est couverte par
+-- fidelite_points.test.sql §6.)
+create function pg_temp.tap_acheter(p_program uuid, p_hash text, p_milestone uuid)
+returns jsonb language sql as $$
+  select public.spend_loyalty_points(
+    p_program, p_hash, p_milestone, gen_random_uuid());
+$$;
+
 -- ══ 1. Indisponibilité (aucun passeport créé) ════════════════
 update public.organizations set addon_loyalty = false
  where id = 'ca000000-0000-4000-8000-000000000001';
@@ -241,20 +298,44 @@ select is((select r->>'tier' from tap_r), 'silver', 'niveau argent à 2 visites'
 select is((select r->>'is_new_member' from tap_r), 'false',
   'is_new_member = false sur un tampon qui n''a créé aucun passeport');
 
--- ══ 4. Palier LOT : code FIDELITE-… + stock ══════════════════
-select is((select r->'milestones_reached'->0->>'reward_type' from tap_r), 'lot',
-  'palier lot atteint ce tour');
-select matches((select r->'milestones_reached'->0->>'code' from tap_r),
+-- ══ 4. Palier LOT : l'ACHAT émet le code, le tampon non ══════
+--
+-- LE RETOURNEMENT DE FID-2b. `tap_r` porte le tampon qui vient de franchir le
+-- seuil du palier lot (visite 2) : sous l'ancien comportement il émettait un
+-- code et décomptait le stock. Les trois assertions suivantes sont celles qui
+-- rougiraient si l'émission automatique revenait.
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'franchir le seuil n''annonce plus aucun palier atteint (FID-2b)');
+select is((select count(*) from public.loyalty_rewards
+    where program_id = 'ca000000-0000-4000-8000-000000000002'), 0::bigint,
+  'FRANCHIR UN SEUIL NE CRÉE PLUS AUCUNE RÉCOMPENSE');
+select is((select reward_claimed_count from public.loyalty_milestones
+    where id = 'ca000000-0000-4000-8000-000000000011'), 0,
+  'et ne décompte plus le stock du palier');
+
+-- Le café s'ACHÈTE : 2 visites = 200 points, et le palier en coûte 200
+-- (visit_count × 100, dérivé par le trigger transitoire de FID-2a).
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000002', repeat('a', 64),
+  'ca000000-0000-4000-8000-000000000011');
+select is((select r->>'state' from tap_r), 'spent', 'le passeport A achète le café');
+select is((select r->>'reward_type' from tap_r), 'lot', 'palier lot acheté');
+select matches((select r->>'code' from tap_r),
   '^FIDELITE-[A-HJ-NP-Z2-9]{8}$',
   'code de retrait FIDELITE-XXXXXXXX (alphabet sans I/O/0/1)');
+select is((select r->>'points_balance' from tap_r), '0',
+  'le solde est débité des 200 points');
 select is((select reward_claimed_count from public.loyalty_milestones
     where id = 'ca000000-0000-4000-8000-000000000011'), 1,
-  'le compteur de lots émis avance');
+  'le compteur de lots émis avance — désormais à l''achat, et là seulement');
 select is((select count(*) from public.loyalty_rewards
     where reward_type = 'lot' and code is not null), 1::bigint,
   'une récompense lot est créée avec son code');
 
 -- Second passeport, stock (1) épuisé → out_of_stock, aucune récompense.
+-- Le refus porte maintenant sur l'ACHAT : c'est là que le plafond de perte du
+-- commerçant se défend.
 select is((public.record_loyalty_stamp(
     'ca000000-0000-4000-8000-000000000002', repeat('b', 64),
     public.current_loyalty_code('ca000000-0000-4000-8000-000000000002')))->>'state',
@@ -265,14 +346,23 @@ delete from tap_r;
 insert into tap_r select public.record_loyalty_stamp(
   'ca000000-0000-4000-8000-000000000002', repeat('b', 64),
   public.current_loyalty_code('ca000000-0000-4000-8000-000000000002'));
-select is((select r->'milestones_reached'->0->>'out_of_stock' from tap_r), 'true',
-  'stock épuisé : palier signalé sans récompense');
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'passeport B : son tampon ne distribue rien non plus');
+
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000002', repeat('b', 64),
+  'ca000000-0000-4000-8000-000000000011');
+select is((select r->>'state' from tap_r), 'out_of_stock',
+  'stock épuisé : l''achat est refusé, nommément');
+select is((select r->>'points_balance' from tap_r), '200',
+  'un achat refusé ne débite RIEN (le solde de B est intact)');
 select is((select count(*) from public.loyalty_rewards
     where reward_type = 'lot'), 1::bigint,
   'aucune récompense lot supplémentaire sans stock');
 
--- Le commerçant relève le stock : le palier lot ET le palier spin
--- s'attribuent au tampon suivant du passeport B (3 visites).
+-- Le commerçant relève le stock : le palier redevient achetable. Le passeport
+-- B fait une troisième visite (300 points, niveau or) et prend son café.
 update public.loyalty_milestones set reward_stock = 3
  where id = 'ca000000-0000-4000-8000-000000000011';
 update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
@@ -283,23 +373,35 @@ insert into tap_r select public.record_loyalty_stamp(
   public.current_loyalty_code('ca000000-0000-4000-8000-000000000002'));
 select is((select r->>'visit_count' from tap_r), '3', 'passeport B : troisième visite');
 select is((select r->>'tier' from tap_r), 'gold', 'niveau or à 3 visites');
-select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 2,
-  'stock relevé : le lot en attente ET le spin s''attribuent ensemble');
+
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000002', repeat('b', 64),
+  'ca000000-0000-4000-8000-000000000011');
+select is((select r->>'state' from tap_r), 'spent',
+  'stock relevé : le palier redevient achetable');
 select is((select reward_claimed_count from public.loyalty_milestones
     where id = 'ca000000-0000-4000-8000-000000000011'), 2,
   'le lot différé est finalement décompté');
 
--- ══ 5. Palier SPIN : grant → consommation → gain ═════════════
--- Passeport A atteint le palier spin (3 visites).
-update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
- where token_hash = repeat('a', 64);
+-- ══ 5. Palier SPIN : achat → grant → consommation → gain ═════
+-- Le passeport A a tout dépensé (solde 0). Trois visites de plus lui donnent
+-- les 300 points du palier spin (visit_count 3 × 100).
+select pg_temp.tap_gagner('ca000000-0000-4000-8000-000000000002', repeat('a', 64), 3);
+select is((select points_balance from public.loyalty_members
+    where token_hash = repeat('a', 64)), 300,
+  'passeport A : trois visites de plus, 300 points au solde');
+select is((select count(*) from public.loyalty_rewards
+    where reward_type = 'spin'), 0::bigint,
+  'et toujours aucun tour offert distribué par un tampon');
+
 delete from tap_r;
-insert into tap_r select public.record_loyalty_stamp(
+insert into tap_r select pg_temp.tap_acheter(
   'ca000000-0000-4000-8000-000000000002', repeat('a', 64),
-  public.current_loyalty_code('ca000000-0000-4000-8000-000000000002'));
-select is((select r->'milestones_reached'->0->>'reward_type' from tap_r), 'spin',
-  'palier spin atteint ce tour');
-select matches((select r->'milestones_reached'->0->>'grant_token' from tap_r),
+  'ca000000-0000-4000-8000-000000000012');
+select is((select r->>'reward_type' from tap_r), 'spin',
+  'palier spin acheté');
+select matches((select r->>'grant_token' from tap_r),
   '^[0-9a-f]{48}$', 'un grant_token à usage unique est émis');
 
 create temporary table tap_grant on commit drop as
@@ -725,8 +827,9 @@ $$, 'palier spin avec stock fini accepté');
 -- Programme C dédié : palier lot à la visite 2, stock 0 (donc en pause).
 -- Il prouve d'un seul parcours les deux propriétés qui ferment la boucle :
 --   · la 1ʳᵉ visite ne débloque RIEN (aucun palier n'existe avant la 2ᵉ) ;
---   · à la 2ᵉ visite, un stock épuisé signale out_of_stock et n'émet AUCUN
---     code — le stock est bien le plafond de perte du programme.
+--   · à la 2ᵉ visite non plus, depuis FID-2b — et l'ACHAT du palier, avec
+--     des points suffisants, se heurte au stock épuisé : out_of_stock,
+--     AUCUN code. Le stock est bien le plafond de perte du programme.
 insert into public.loyalty_programs (
   id, organization_id, name, status, validation_mode,
   min_stamp_interval_seconds, silver_threshold, gold_threshold
@@ -756,7 +859,8 @@ select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
 select is((select r->'next_milestone'->>'visit_count' from tap_r), '2',
   'programme C : le premier palier annoncé est bien à la visite 2');
 
--- Deuxième visite (cooldown consommé) : le palier tombe, mais à stock 0.
+-- Deuxième visite (cooldown consommé) : le seuil est franchi, et — depuis
+-- FID-2b — il ne se passe rien. C'est l'achat qui butera sur le stock 0.
 update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
  where token_hash = repeat('f', 64);
 delete from tap_r;
@@ -765,8 +869,17 @@ insert into tap_r select public.record_loyalty_stamp(
   'ca000000-0000-4000-8000-000000000099');
 select is((select r->>'is_new_member' from tap_r), 'false',
   'programme C : le second tampon ne crée aucun passeport');
-select is((select r->'milestones_reached'->0->>'out_of_stock' from tap_r), 'true',
-  'programme C : stock 0 = palier en pause, signalé out_of_stock');
+select is((select jsonb_array_length(r->'milestones_reached') from tap_r), 0,
+  'programme C : la seconde visite ne débloque rien non plus (FID-2b)');
+
+-- Le passeport a ses 200 points, le palier en coûte 200 : seul le STOCK à
+-- zéro l'arrête. C'est là que le plafond de perte se défend désormais.
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000051', repeat('f', 64),
+  'ca000000-0000-4000-8000-000000000052');
+select is((select r->>'state' from tap_r), 'out_of_stock',
+  'programme C : stock 0 = palier en pause, l''achat est refusé nommément');
 select is((select count(*) from public.loyalty_rewards r
     join public.loyalty_members m on m.id = r.member_id
    where m.token_hash = repeat('f', 64)), 0::bigint,
@@ -846,42 +959,44 @@ insert into public.loyalty_milestones (
 );
 
 -- ── 13.a Le stock d'un palier spin s'épuise ──────────────────
--- Passeport X : deux visites → le seul tour offert du palier.
-select is((public.record_loyalty_stamp(
-    'ca000000-0000-4000-8000-000000000081', repeat('ab', 32), null,
-    'ca000000-0000-4000-8000-000000000099'))->>'state',
-  'stamped', 'passeport X : première visite');
-update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
- where token_hash = repeat('ab', 32);
-delete from tap_r;
-insert into tap_r select public.record_loyalty_stamp(
-  'ca000000-0000-4000-8000-000000000081', repeat('ab', 32), null,
+-- Passeport X : deux visites (200 points) puis l'ACHAT du seul tour offert du
+-- palier. Depuis FID-2b le stock ne se consomme qu'ici — mais il se consomme
+-- exactement pareil, et c'est ce que cette section garde.
+select pg_temp.tap_gagner('ca000000-0000-4000-8000-000000000081', repeat('ab', 32), 2,
   'ca000000-0000-4000-8000-000000000099');
-select matches((select r->'milestones_reached'->0->>'grant_token' from tap_r),
-  '^[0-9a-f]{48}$', 'passeport X : le tour offert est émis');
+select is((select points_balance from public.loyalty_members
+    where token_hash = repeat('ab', 32)), 200,
+  'passeport X : deux visites, 200 points');
+select is((select count(*) from public.loyalty_rewards
+    where program_id = 'ca000000-0000-4000-8000-000000000081'), 0::bigint,
+  'passeport X : ses deux tampons n''ont distribué aucun tour offert');
+
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000081', repeat('ab', 32),
+  'ca000000-0000-4000-8000-000000000082');
+select matches((select r->>'grant_token' from tap_r),
+  '^[0-9a-f]{48}$', 'passeport X : le tour offert est émis à l''achat');
 select is((select reward_claimed_count from public.loyalty_milestones
     where id = 'ca000000-0000-4000-8000-000000000082'), 1,
   'le stock d''un palier spin est décompté à l''émission du grant');
 
 -- Passeport Y : le stock (1) est épuisé → out_of_stock, AUCUN grant. C'est ce
 -- qui retire tout rendement à la frappe de masse de passeports sur un palier
--- spin : au-delà du stock, un passeport de plus ne rapporte plus rien.
-select is((public.record_loyalty_stamp(
-    'ca000000-0000-4000-8000-000000000081', repeat('cd', 32), null,
-    'ca000000-0000-4000-8000-000000000099'))->>'state',
-  'stamped', 'passeport Y : première visite');
-update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
- where token_hash = repeat('cd', 32);
-delete from tap_r;
-insert into tap_r select public.record_loyalty_stamp(
-  'ca000000-0000-4000-8000-000000000081', repeat('cd', 32), null,
+-- spin : au-delà du stock, un passeport de plus ne rapporte plus rien — et
+-- ses points ne lui achètent rien non plus.
+select pg_temp.tap_gagner('ca000000-0000-4000-8000-000000000081', repeat('cd', 32), 2,
   'ca000000-0000-4000-8000-000000000099');
-select is((select r->'milestones_reached'->0->>'out_of_stock' from tap_r), 'true',
+delete from tap_r;
+insert into tap_r select pg_temp.tap_acheter(
+  'ca000000-0000-4000-8000-000000000081', repeat('cd', 32),
+  'ca000000-0000-4000-8000-000000000082');
+select is((select r->>'state' from tap_r), 'out_of_stock',
   'palier spin épuisé : out_of_stock');
-select is((select r->'milestones_reached'->0->>'reward_type' from tap_r), 'spin',
-  'le palier épuisé se présente bien comme un palier spin');
-select is((select r->'milestones_reached'->0->>'grant_token' from tap_r), null::text,
+select is((select r->>'grant_token' from tap_r), null::text,
   'aucun grant_token émis au-delà du stock du palier');
+select is((select r->>'points_balance' from tap_r), '200',
+  'et le passeport Y garde ses points : un refus ne débite pas');
 select is((select count(*) from public.loyalty_rewards
     where program_id = 'ca000000-0000-4000-8000-000000000081'), 1::bigint,
   'une seule récompense au total sur un palier spin à stock 1');
@@ -894,16 +1009,12 @@ select is((select reward_claimed_count from public.loyalty_milestones
 -- NULL. La roue publique le tirerait (elle est bornée ailleurs) ; le tour
 -- offert, lui, l'exclut — sinon chaque identité fabriquée produirait un code
 -- de gain réel sans qu'aucun compteur ne bouge.
-select is((public.record_loyalty_stamp(
-    'ca000000-0000-4000-8000-000000000091', repeat('12', 32), null,
-    'ca000000-0000-4000-8000-000000000099'))->>'state',
-  'stamped', 'passeport Z : première visite');
-update public.loyalty_members set last_stamp_at = last_stamp_at - interval '2 days'
- where token_hash = repeat('12', 32);
-select is((public.record_loyalty_stamp(
-    'ca000000-0000-4000-8000-000000000091', repeat('12', 32), null,
-    'ca000000-0000-4000-8000-000000000099'))->>'state',
-  'stamped', 'passeport Z : deuxième visite (grant émis)');
+select pg_temp.tap_gagner('ca000000-0000-4000-8000-000000000091', repeat('12', 32), 2,
+  'ca000000-0000-4000-8000-000000000099');
+select is((select pg_temp.tap_acheter(
+    'ca000000-0000-4000-8000-000000000091', repeat('12', 32),
+    'ca000000-0000-4000-8000-000000000092'))->>'state',
+  'spent', 'passeport Z : deux visites puis achat du tour offert (grant émis)');
 
 select is((public.consume_loyalty_spin_grant(
     'ca000000-0000-4000-8000-000000000091', repeat('12', 32),
