@@ -17,7 +17,7 @@ import {
   updateEventSession,
 } from "@/actions/events";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, TITRE_SURLIGNE } from "@/components/ui/card";
 import {
   CodeTtlDaysField,
   codeTtlDaysInitial,
@@ -369,7 +369,7 @@ export function EventQuestionsSection({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+        <h2 className={TITRE_SURLIGNE}>
           Questions
         </h2>
         {!adding && (
@@ -905,7 +905,7 @@ export function EventSessionsPrepareSection({
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="w-fit border-b-4 border-k-yellow pb-0.5 text-lg font-black">
+        <h2 className={TITRE_SURLIGNE}>
           La soirée
         </h2>
         {!creating && (
