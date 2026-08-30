@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { TITRE_SURLIGNE } from "@/components/ui/card";
 import type { StatutTuile } from "@/lib/checklist/tuiles";
 
 /**
@@ -180,22 +179,13 @@ export function CarteRepliable({
         >
           <span className="flex min-w-0 items-center gap-3">
             {pastilleNumero}
-            {/* LE MÊME SURLIGNAGE QUE DÉPLIÉ, et c'est tout l'enjeu.
-
-                Le titre est passé en bloc jaune quand la carte est ouverte,
-                et il était resté en encre nue quand elle est repliée. Or une
-                page en empile dix, presque toutes repliées : le propriétaire
-                a vu neuf titres inchangés et un seul traité. Deux états du
-                même bloc ne peuvent pas nommer la même chose de deux façons.
-
-                `truncate` reste posé PAR-DESSUS : le parent est en
-                `min-w-0 flex-col`, donc un titre long se coupe toujours
-                proprement — le surlignage suit la coupe au lieu de pousser
-                la rangée. */}
-            <span className="flex min-w-0 flex-col items-start gap-1">
-              <span className={`${TITRE_SURLIGNE} max-w-full truncate`}>
-                {titre}
-              </span>
+            {/* LE MÊME STYLE QUE DÉPLIÉ — encre nue, sans le trait de
+                marqueur, qui n'aurait aucun sens sur une ligne compacte.
+                Les deux états ont été surlignés en plein un temps ; sept
+                blocs jaunes sur une page faisaient un mur, et c'est le
+                propriétaire qui l'a vu à l'écran. */}
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate font-black text-k-ink">{titre}</span>
               {resume ? (
                 <span className="truncate text-sm font-bold text-k-body">
                   {resume}
