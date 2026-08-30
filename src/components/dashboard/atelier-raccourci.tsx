@@ -59,10 +59,20 @@ export function RaccourciAtelier({
 export function VoirLeJeu({
   href,
   className,
+  libelle = "Voir le jeu",
 }: {
   /** URL publique côté joueur, ou `null` si le jeu n'est pas accessible. */
   href: string | null;
   className?: string;
+  /**
+   * Nom du lien, quand « jeu » ne dit pas ce que le client va ouvrir. Le
+   * passeport de fidélité n'est pas « un jeu » pour son commerçant : c'est un
+   * passeport, et c'est ce mot-là qu'il cherche. La valeur PAR DÉFAUT reste
+   * « Voir le jeu » — huit modules la portent, et deux liens de même nom sur
+   * une page rendraient tout locator par rôle+nom ambigu ; on ne la change pas
+   * pour tout le monde au motif qu'un module la trouve étroite.
+   */
+  libelle?: string;
 }) {
   if (!href) return null;
   return (
@@ -73,7 +83,7 @@ export function VoirLeJeu({
       className={CLASSES_LIEN + (className ? ` ${className}` : "")}
     >
       <span aria-hidden>👀</span>
-      Voir le jeu
+      {libelle}
     </a>
   );
 }

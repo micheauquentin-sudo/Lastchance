@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import {
   createLoyaltyMilestone,
   deleteLoyaltyMilestone,
@@ -126,7 +126,9 @@ export function LoyaltySettings({
     <Card>
       <h2 className="font-semibold mb-1">Réglages</h2>
       <p className="text-sm text-zinc-500 mb-5">
-        Nom, façon de valider une visite, niveaux et fréquence des visites.
+        Nom, façon de valider une visite et fréquence des visites. Les niveaux
+        se règlent à l&apos;étape « Les récompenses », avec les paliers
+        qu&apos;ils accompagnent.
       </p>
 
       <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
@@ -183,44 +185,49 @@ export function LoyaltySettings({
           </label>
         </fieldset>
 
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-bold text-k-ink">Niveaux</legend>
-          <p className="text-xs text-zinc-500">
-            Le passeport passe bronze → argent → or selon le nombre de visites.
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <div>
-              <Label htmlFor="loyalty-silver">Seuil argent 🥈 (visites)</Label>
-              <Input
-                id="loyalty-silver"
-                name="silver_threshold"
-                type="number"
-                min={1}
-                max={1000}
-                defaultValue={program.silver_threshold}
-                className="w-40"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="loyalty-gold">Seuil or 🥇 (visites)</Label>
-              <Input
-                id="loyalty-gold"
-                name="gold_threshold"
-                type="number"
-                min={2}
-                max={1000}
-                defaultValue={program.gold_threshold}
-                className="w-40"
-                required
-              />
-            </div>
-          </div>
-          <p className="text-xs text-zinc-500">
-            Le seuil or doit être supérieur au seuil argent.
-          </p>
-        </fieldset>
+        {/* LES SEUILS SE RÈGLENT À L'ÉTAPE « Les récompenses » — MAIS ILS
+            RESTENT POSTÉS ICI, et ce n'est pas une commodité.
+            `updateLoyaltyProgram` fait un `.update(fields)` de TOUTES les
+            colonnes de son schéma : un champ retiré du formulaire arriverait à
+            `null`, ce que `tierThresholdSchema` refuse (« Données invalides »)
+            — et qu'une borne plus permissive aurait écrasé à 0 en silence.
+            Les deux formulaires postent donc le programme ENTIER, chacun ne
+            rendant VISIBLE que sa part ; le refine « seuil or > seuil argent »
+            continue de s'appliquer des deux côtés. Aucune divergence possible :
+            ils vivent sur des étapes différentes, jamais à l'écran ensemble, et
+            chacun repart de la valeur serveur. */}
+        <input
+          type="hidden"
+          name="silver_threshold"
+          value={program.silver_threshold}
+        />
+        <input
+          type="hidden"
+          name="gold_threshold"
+          value={program.gold_threshold}
+        />
 
+        {/* EXCLUSIF AU CODE AU COMPTOIR. En « Validation en caisse » la
+            rotation ne gouverne rien : elle restait pourtant réglable, et
+            laissait croire qu'un code tournait là où le mode n'en émet aucun.
+            Elle quitte l'écran — mais la valeur ENREGISTRÉE continue d'être
+            postée en champ caché : `rotatingPeriodSchema` est un
+            `entierRequis`, où un champ non rendu vaut un REFUS explicite, et
+            revenir au mode comptoir doit retrouver le réglage d'avant plutôt
+            qu'un zéro. Le plancher de cooldown (validations/loyalty.ts) lit
+            donc toujours une rotation réelle.
+            PAS DE SYMÉTRIQUE À MASQUER DANS L'AUTRE SENS : le seul réglage
+            propre à la caisse est le jackpot associé (le refine l'exige en
+            mode `staff`), et le cacher en mode comptoir rendrait INSOLUBLE le
+            refus « Un jackpot associé exige la validation en caisse » — il ne
+            resterait aucun champ où le dissocier. Il reste visible. */}
+        {mode === "staff" ? (
+          <input
+            type="hidden"
+            name="rotating_period_seconds"
+            value={periodSeconds}
+          />
+        ) : (
         <div>
           <Label htmlFor="loyalty-period">Rotation du code au comptoir</Label>
           <select
@@ -249,6 +256,7 @@ export function LoyaltySettings({
             entre deux visites, qui vaut le double de la rotation.
           </InfoBulle>
         </div>
+        )}
 
         <div>
           <Label htmlFor="loyalty-cooldown">Fréquence des visites</Label>
@@ -367,19 +375,128 @@ export function LoyaltySettings({
 // Paliers
 // ────────────────────────────────────────────────────────────
 
+/**
+ * LES NIVEAUX, DÉPLACÉS DEPUIS L'ÉTAPE « Le programme ».
+ *
+ * Bronze → argent → or est une RÉCOMPENSE : sa place est auprès des paliers,
+ * pas au milieu des règles de tamponnage. Le formulaire est distinct de celui
+ * des paliers (il vise `updateLoyaltyProgram`, eux visent les milestones) et
+ * poste le programme entier — voir le commentaire des champs cachés dans
+ * `LoyaltySettings` : l'action écrase toutes les colonnes de son schéma, une
+ * mise à jour partielle n'existe pas ici.
+ */
+function LoyaltyTiersForm({ program }: { program: LoyaltyProgram }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const { state, pending, onSubmit } = useActionForm(updateLoyaltyProgram, {
+    networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
+  });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-1">Niveaux</h2>
+      <p className="text-sm text-zinc-500 mb-5">
+        Le passeport passe bronze → argent → or selon le nombre de visites. Ces
+        deux seuils ne distribuent rien par eux-mêmes : ils donnent au client
+        une progression visible entre deux paliers.
+      </p>
+
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
+        {/* Le reste du programme voyage caché : ce formulaire ne règle que les
+            seuils, mais l'action met à jour toutes ses colonnes d'un bloc.
+            `code_ttl_days` en est ABSENT volontairement — l'action le lit avec
+            `formData.has`, donc son absence laisse la colonne intacte, ce qui
+            est exactement ce qu'on veut ici. */}
+        <input type="hidden" name="id" value={program.id} />
+        <input type="hidden" name="name" value={program.name} />
+        <input
+          type="hidden"
+          name="validation_mode"
+          value={program.validation_mode}
+        />
+        <input
+          type="hidden"
+          name="rotating_period_seconds"
+          value={program.rotating_period_seconds}
+        />
+        <input
+          type="hidden"
+          name="min_stamp_interval_seconds"
+          value={program.min_stamp_interval_seconds}
+        />
+        <input
+          type="hidden"
+          name="jackpot_campaign_id"
+          value={program.jackpot_campaign_id ?? ""}
+        />
+
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <Label htmlFor="loyalty-silver">Seuil argent 🥈 (visites)</Label>
+            <Input
+              id="loyalty-silver"
+              name="silver_threshold"
+              type="number"
+              min={1}
+              max={1000}
+              defaultValue={program.silver_threshold}
+              className="w-40"
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="loyalty-gold">Seuil or 🥇 (visites)</Label>
+            <Input
+              id="loyalty-gold"
+              name="gold_threshold"
+              type="number"
+              min={2}
+              max={1000}
+              defaultValue={program.gold_threshold}
+              className="w-40"
+              required
+            />
+          </div>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Le seuil or doit être supérieur au seuil argent.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="secondary" disabled={pending}>
+            {pending ? "…" : "Enregistrer"}
+          </Button>
+          {state?.ok && (
+            <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+          )}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : un seuil de niveau est vide."
+          />
+        </div>
+        <FieldError message={state && !state.ok ? state.error : undefined} />
+      </form>
+    </Card>
+  );
+}
+
 export function LoyaltyMilestonesEditor({
-  programId,
+  program,
   milestones,
   wheels,
 }: {
-  programId: string;
+  program: LoyaltyProgram;
   milestones: LoyaltyMilestone[];
   wheels: WheelOption[];
 }) {
   const ordered = [...milestones].sort((a, b) => a.visit_count - b.visit_count);
 
   return (
-    <Card>
+    <div className="space-y-4">
+      <LoyaltyTiersForm program={program} />
+      <Card>
       <h2 className="font-semibold mb-1">Paliers</h2>
       {/* Ce paragraphe ANNONÇAIT une borne qui n'existait pas : « chaque lot
           porte un stock » laissait croire que le programme était plafonné,
@@ -410,8 +527,9 @@ export function LoyaltyMilestonesEditor({
         </ul>
       )}
 
-      <AddMilestoneForm programId={programId} wheels={wheels} />
-    </Card>
+      <AddMilestoneForm programId={program.id} wheels={wheels} />
+      </Card>
+    </div>
   );
 }
 
@@ -566,6 +684,22 @@ function RewardFields({
               ))}
             </select>
           )}
+          {/* LE CHEMIN LE PLUS COURT QUI ABOUTIT VRAIMENT À UNE ROUE. Il n'y a
+              pas de route de création directe : une roue naît d'une campagne
+              (`+ Nouvelle campagne` sur /dashboard/campaigns, qui ouvre
+              l'atelier et ses lots). Le lien y mène donc, dans un NOUVEL
+              ONGLET — la saisie de ce palier n'est pas encore enregistrée,
+              quitter la page la perdrait. L'emoji reste hors du nom
+              accessible. */}
+          <a
+            href="/dashboard/campaigns"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-xl border-2 border-k-ink bg-white px-3 py-1.5 text-xs font-bold text-k-ink transition-colors duration-200 hover:bg-k-yellow/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+          >
+            <span aria-hidden>🎡</span>
+            Créer une roue (nouvel onglet)
+          </a>
           {missingWheel && (
             <p className="mt-1.5 text-xs font-semibold text-amber-700">
               La roue ciblée a été supprimée — choisissez-en une autre.
@@ -719,6 +853,28 @@ function UnlimitedPrizeWarning({
   );
 }
 
+/**
+ * Le résumé d'un palier replié, en une ligne. L'emoji en est SÉPARÉ : il part
+ * dans un `<span aria-hidden>` du `<summary>`, dont le nom accessible doit
+ * rester du texte (un U+FE0F glissé dans un nom accessible a déjà cassé un
+ * locator de ce dépôt).
+ */
+function resumePalier(
+  milestone: LoyaltyMilestone,
+  wheels: WheelOption[],
+): { emoji: string; texte: string } {
+  if (milestone.reward_type === "spin") {
+    const roue = wheels.find((w) => w.id === milestone.target_wheel_id);
+    return {
+      emoji: "🎡",
+      texte: roue
+        ? `Tour offert sur « ${roue.name} »`
+        : "Tour de roue offert — roue à choisir",
+    };
+  }
+  return { emoji: "🎁", texte: milestone.reward_label || "Lot sans nom" };
+}
+
 function MilestoneRow({
   milestone,
   wheels,
@@ -751,9 +907,35 @@ function MilestoneRow({
     networkError: "Suppression impossible, réessayez.",
   });
 
+  const resume = resumePalier(milestone, wheels);
+
   return (
-    <li className="rounded-xl border-2 border-k-ink/15 bg-white p-3">
-      <div className="flex items-start gap-3">
+    <li className="rounded-xl border-2 border-k-ink/15 bg-white">
+      {/* REPLIÉ PAR DÉFAUT — un `<details>` natif, et non `CarteRepliable`, qui
+          est bâtie pour un BLOC DE PAGE (titre, numéro d'étape, badge de
+          statut) et non pour une ligne de liste. Le natif donne gratuitement
+          ce qui compte ici : le `<summary>` EST le bouton, il porte son
+          `aria-expanded` sans code, et la recherche du navigateur (Ctrl+F)
+          ouvre le repli. Le but est de dégager la page : une fois le palier
+          enregistré, ce qu'on veut lire tient en une ligne, et l'espace sert à
+          créer le suivant. */}
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink">
+          <span aria-hidden className="text-xs transition-transform group-open:rotate-90">
+            ▶
+          </span>
+          <span className="min-w-0 flex-1">
+            {milestone.visit_count} visites — <span aria-hidden>{resume.emoji}</span>{" "}
+            {resume.texte}
+            {milestone.reward_stock !== null && (
+              <span className="font-normal text-zinc-500">
+                {" "}
+                · stock {milestone.reward_stock}
+              </span>
+            )}
+          </span>
+        </summary>
+      <div className="flex items-start gap-3 p-3 pt-0">
         <form
           ref={formRef}
           onSubmit={updateSubmit}
@@ -837,13 +1019,62 @@ function MilestoneRow({
           </Button>
         </form>
       </div>
-      <FieldError
-        message={deleteState && !deleteState.ok ? deleteState.error : undefined}
-      />
+      <div className="px-3 pb-3">
+        <FieldError
+          message={deleteState && !deleteState.ok ? deleteState.error : undefined}
+        />
+      </div>
+      </details>
     </li>
   );
 }
 
+/**
+ * Champs du brouillon d'ajout conservés entre deux visites de la page.
+ *
+ * SEULEMENT LES CHAMPS LIBRES, et c'est un arbitrage : `reward_type` et
+ * `target_wheel_id` sont des états REACT de `RewardFields` (radios et select
+ * contrôlés). Les restaurer par le DOM engagerait un bras de fer avec React,
+ * qui les réécrirait au rendu suivant. Ce sont par ailleurs des choix à un
+ * clic — ce qu'on protège ici, c'est ce qui a été TAPÉ.
+ */
+const CHAMPS_BROUILLON_PALIER = [
+  "visit_count",
+  "reward_label",
+  "reward_details",
+  "reward_stock",
+] as const;
+
+function clePalierBrouillon(programId: string): string {
+  return `lastchance:palier-brouillon:${programId}`;
+}
+
+/**
+ * PROTÉGER LA SAISIE DE L'AJOUT — sans jamais créer de ligne fantôme.
+ *
+ * Le motif des paliers EXISTANTS (`useAutoSave`) ne se transpose PAS à une
+ * création, et le fait de l'écrire évite qu'on le retente : un formulaire de
+ * création qui s'auto-envoie insère une ligne par salve de frappe. « Café »
+ * donnerait un palier « Ca », puis les frappes suivantes se heurteraient au
+ * refus « Un palier existe déjà pour ce nombre de visites » — l'utilisateur
+ * repartirait avec une ligne fausse ET un message incompréhensible. Envoyer
+ * « au premier champ complet » ne sauve rien non plus : `checkValidity()` ne
+ * connaît que `required`, or le libellé du lot n'est exigé que par le refine
+ * serveur — le premier « complet » serait un palier sans nom.
+ *
+ * La protection retenue tient donc en deux gestes, aucun des deux n'écrivant
+ * en base :
+ *
+ *  1. LE BROUILLON SURVIT. Chaque frappe est recopiée dans `sessionStorage`
+ *     et restaurée au montage. Un rafraîchissement, un aller-retour vers la
+ *     roue qu'on vient de créer, un onglet remis au premier plan : la saisie
+ *     est là. Elle est effacée dès que le palier existe vraiment.
+ *  2. LE SILENCE SE VOIT. Une ligne permanente dit que ce formulaire-ci ne
+ *     s'enregistre pas tout seul. C'est le pendant exact d'`AutoSaveEtat` sur
+ *     les paliers voisins : ce qui perdait la saisie n'était pas un bug de
+ *     code, c'était la promesse implicite créée par le « Enregistré. » qui
+ *     s'affiche partout ailleurs sur cette page.
+ */
 function AddMilestoneForm({
   programId,
   wheels,
@@ -866,19 +1097,96 @@ function AddMilestoneForm({
     networkError: "Ajout impossible, réessayez.",
   });
 
+  const formRef = useRef<HTMLFormElement>(null);
+  const cle = clePalierBrouillon(programId);
+  const ok = state?.ok ?? false;
+
+  // Restauration au montage — DOM seulement, aucun `setState` : la règle
+  // `react-hooks/set-state-in-effect` du dépôt l'interdirait, et il n'y a de
+  // toute façon rien à porter en état React ici.
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) return;
+    let brouillon: Record<string, unknown>;
+    try {
+      brouillon = JSON.parse(sessionStorage.getItem(cle) ?? "{}");
+    } catch {
+      // Stockage refusé (navigation privée) ou entrée corrompue : le
+      // formulaire vide reste parfaitement utilisable.
+      return;
+    }
+    for (const nom of CHAMPS_BROUILLON_PALIER) {
+      const valeur = brouillon[nom];
+      const champ = form.elements.namedItem(nom);
+      if (typeof valeur !== "string" || !valeur) continue;
+      if (
+        champ instanceof HTMLInputElement ||
+        champ instanceof HTMLTextAreaElement
+      ) {
+        // On n'écrase JAMAIS une saisie en cours : la restauration ne comble
+        // que ce qui est vide, et `reward_stock` porte déjà sa valeur par
+        // défaut — un brouillon plus récent doit pouvoir la remplacer, d'où
+        // la comparaison au défaut plutôt qu'au vide seul.
+        const parDefaut = String(LOYALTY_DEFAULT_LOT_STOCK);
+        if (champ.value === "" || (nom === "reward_stock" && champ.value === parDefaut)) {
+          champ.value = valeur;
+        }
+      }
+    }
+  }, [cle]);
+
+  // Le palier existe pour de bon : le brouillon n'a plus lieu d'être (les
+  // champs, eux, sont déjà vidés par `resetOnSuccess`).
+  useEffect(() => {
+    if (!ok) return;
+    try {
+      sessionStorage.removeItem(cle);
+    } catch {
+      // Sans stockage, il n'y avait rien à effacer.
+    }
+  }, [ok, cle]);
+
+  const memoriser = () => {
+    const form = formRef.current;
+    if (!form) return;
+    const donnees = new FormData(form);
+    const brouillon: Record<string, string> = {};
+    for (const nom of CHAMPS_BROUILLON_PALIER) {
+      const valeur = donnees.get(nom);
+      if (typeof valeur === "string" && valeur !== "") brouillon[nom] = valeur;
+    }
+    try {
+      sessionStorage.setItem(cle, JSON.stringify(brouillon));
+    } catch {
+      // Quota ou stockage refusé : la saisie reste à l'écran, on n'en fait pas
+      // une erreur visible pour un filet de sécurité.
+    }
+  };
+
   return (
     <form
+      ref={formRef}
       onSubmit={onSubmit}
+      onInput={memoriser}
+      onChange={memoriser}
       className="rounded-xl border-2 border-dashed border-k-ink/20 p-3 space-y-3"
     >
       <input type="hidden" name="program_id" value={programId} />
       <p className="text-sm font-bold text-k-ink">Ajouter un palier</p>
       <VisitCountField id="new-ms-visits" />
       <RewardFields idPrefix="new-ms" defaultType="lot" wheels={wheels} />
-      <div>
+      <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending}>
           {pending ? "Ajout…" : "+ Ajouter le palier"}
         </Button>
+        {/* Le pendant d'`AutoSaveEtat` sur les paliers voisins : ici rien ne
+            part tout seul, et cela doit se LIRE — sinon la page promet un
+            enregistrement automatique qu'un formulaire de création ne peut pas
+            tenir sans créer de lignes fantômes. */}
+        <p className="text-xs font-semibold text-amber-700">
+          Ce palier n&apos;existe qu&apos;une fois ce bouton cliqué — votre
+          saisie est conservée si vous quittez la page entre-temps.
+        </p>
       </div>
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </form>
@@ -963,7 +1271,10 @@ export function LoyaltyStatusControls({
       raccourcis={
         <>
           <RaccourciAtelier href={hrefEtapeFidelite(program.id, "programme")} />
-          <VoirLeJeu href={hrefJeu} />
+          {/* Le lien menait DÉJÀ au passeport (`/passeport/{id}`) : seul le mot
+              était faux. Ici, ce que le client ouvre est un passeport, pas
+              « un jeu ». */}
+          <VoirLeJeu href={hrefJeu} libelle="Voir le passeport" />
         </>
       }
       notes={

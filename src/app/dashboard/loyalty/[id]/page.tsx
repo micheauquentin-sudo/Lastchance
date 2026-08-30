@@ -465,7 +465,7 @@ export default async function LoyaltyDetailPage({
             {etape === "recompenses" && (
               <>
                 <LoyaltyMilestonesEditor
-                  programId={p.id}
+                  program={p}
                   milestones={milestones}
                   wheels={wheels}
                 />
