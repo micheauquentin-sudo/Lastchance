@@ -100,6 +100,35 @@ export function GrillePronostics({
   const [refus, setRefus] = useState<Record<string, string>>({});
   const [enregistres, setEnregistres] = useState(0);
 
+  /**
+   * LES PRONOSTICS POSÉS DANS CETTE SESSION, tenus EN PLUS de ceux du
+   * serveur.
+   *
+   * ── LE DÉFAUT QUE CE REGISTRE FERME ──
+   *
+   * Le badge « ✓ déjà pronostiqué » et le compteur « N/M posé » se lisaient
+   * uniquement sur `entrees`, c'est-à-dire sur la dernière réponse du
+   * serveur. Après un enregistrement, ils n'apparaissaient donc qu'au
+   * retour de `router.refresh()` — un rafraîchissement au mieux différé, et
+   * qui n'aboutit pas toujours.
+   *
+   * Le joueur lisait alors, sur le même écran et au même instant :
+   * « ✓ 1 pronostic enregistré. » et « 0/1 pronostic posé ». Deux phrases
+   * qui se contredisent, dont une fausse. Trace CI à l'appui — c'est ce qui
+   * faisait rougir `pronostics.spec.ts` par intermittence, et c'est un vrai
+   * défaut d'écran, pas un aléa de test.
+   *
+   * ── POURQUOI UN REGISTRE, ET NON UNE ATTENTE PLUS LONGUE ──
+   *
+   * Le serveur a répondu `saved` : l'écriture est ACQUISE, il n'y a rien à
+   * attendre pour l'afficher. `router.refresh()` reste là pour réconcilier
+   * le reste (points, classement), mais l'écran ne dépend plus de lui pour
+   * dire une chose qu'il sait déjà.
+   */
+  const [posesLocalement, setPosesLocalement] = useState<Set<string>>(
+    () => new Set(),
+  );
+
   const parId = useMemo(
     () => new Map(entrees.map((e) => [e.match.id, e])),
     [entrees],
@@ -178,6 +207,14 @@ export function GrillePronostics({
           return;
         }
         setEnregistres(res.data.saved);
+        // Les lignes envoyées QUI N'ONT PAS ÉTÉ REFUSÉES sont posées : on
+        // les inscrit tout de suite, sans attendre le rafraîchissement.
+        const refusesIds = new Set(res.data.refused.map((r) => r.matchId));
+        setPosesLocalement((deja) => {
+          const suite = new Set(deja);
+          for (const l of pretes) if (!refusesIds.has(l.id)) suite.add(l.id);
+          return suite;
+        });
         const refuses = Object.fromEntries(
           res.data.refused.map((r) => [r.matchId, r.error]),
         );
@@ -202,10 +239,14 @@ export function GrillePronostics({
 
   if (entrees.length === 0) return null;
 
-  const poses = (liste: ReadonlyArray<{ id: string }>) =>
-    liste.filter((m) => parId.get(m.id)?.prediction != null).length;
+  /** Posé = connu du serveur OU enregistré à l'instant. */
+  const estPose = (id: string) =>
+    parId.get(id)?.prediction != null || posesLocalement.has(id);
 
-  const ligne = ({ match, prediction }: GrilleMatch) => {
+  const poses = (liste: ReadonlyArray<{ id: string }>) =>
+    liste.filter((m) => estPose(m.id)).length;
+
+  const ligne = ({ match }: GrilleMatch) => {
     const saisie = lire(match.id);
     const refuse = refus[match.id];
     const complete = saisie.home !== "" && saisie.away !== "";
@@ -222,7 +263,7 @@ export function GrillePronostics({
       >
         <p className="mb-2 text-xs text-k-body">
           {formatKickoff(match.kickoff_at, timeZone)}
-          {prediction && !refuse && (
+          {estPose(match.id) && !refuse && (
             <span className="ml-2 font-bold text-k-green">
               ✓ déjà pronostiqué
             </span>
