@@ -71,7 +71,17 @@ test.describe("passeport de fidélité — affichage joueur", () => {
     // L'ancrage passe du TEXTE à la RÉGION NOMMÉE : « Mes points » est un
     // repère d'accessibilité que le composant garantit, là où une chaîne se
     // reformule au premier ajustement de ton.
-    await expect(page.getByText("Votre niveau")).toBeVisible();
+    // Le niveau se vise AUSSI par sa région, et pour la même raison qu'au-dessus
+    // — mais ici c'est la CI qui a tranché : « Votre niveau » apparaît désormais
+    // deux fois, l'étiquette du bloc et la phrase qui explique que le rang se
+    // compte sur le cumul et ne redescend pas. Deux occurrences légitimes, un
+    // sélecteur devenu ambigu.
+    //
+    // La région porte le rang dans son nom (« Niveau Bronze ») : le joueur neuf
+    // est bronze, et l'assertion dit donc quelque chose de plus fort qu'avant.
+    await expect(
+      page.getByRole("region", { name: "Niveau Bronze" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("region", { name: "Mes points" }),
     ).toBeVisible();
