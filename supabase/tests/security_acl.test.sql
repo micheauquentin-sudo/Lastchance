@@ -1134,7 +1134,7 @@ select is(
     where schemaname = 'public'
       and tablename = 'qr_distribution_assets'
       and policyname = 'qr_distribution_assets: editor all'
-      and roles = array['authenticated']),
+      and roles = array['authenticated']::name[]),
   1::bigint,
   'QR distribution asset policy is scoped to authenticated editors'
 );
