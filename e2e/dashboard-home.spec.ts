@@ -84,7 +84,7 @@ test.describe("dashboard — vue d'ensemble", () => {
         "Ouvertures de page",
         "Tours joués",
         "Lots gagnés",
-        "Participations",
+        "Gains réclamés",
       ]) {
         await expect(resultats.getByText(label, { exact: true })).toBeVisible();
       }

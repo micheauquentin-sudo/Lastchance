@@ -178,9 +178,10 @@ values ('e2e20000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-0000000
         'E2E Carte', 'active', false, false)
 on conflict (id) do nothing;
 
-insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type)
+insert into public.wheels (id, organization_id, campaign_id, name, play_limit, game_type, style)
 values ('e2e30000-0000-4000-8000-000000000005', 'e2e10000-0000-4000-8000-000000000001',
-        'e2e20000-0000-4000-8000-000000000005', 'Carte à retourner', 'unlimited', 'flip_card')
+        'e2e20000-0000-4000-8000-000000000005', 'Carte à retourner', 'unlimited', 'flip_card',
+        '{"fond":"noel"}'::jsonb)
 on conflict (id) do nothing;
 
 insert into public.prizes (id, organization_id, wheel_id, label, description, color, weight, is_losing, position) values

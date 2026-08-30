@@ -222,8 +222,13 @@ export default async function DashboardPage() {
       icon: <path d="M8 3h8v3a4 4 0 0 1-8 0V3ZM6 5H4v1a3 3 0 0 0 3 3M18 5h2v1a3 3 0 0 1-3 3M9 14h6l-1 4H10l-1-4ZM8 21h8" />,
     },
     {
-      label: "Participations",
+      // Une participation est créée à la réclamation d'un lot, pas au tirage.
+      // Le total exhaustif des parties est la tuile « Tours joués » juste
+      // avant : nommer celle-ci « Participations » faisait lire un zéro comme
+      // une absence de jeux joués.
+      label: "Gains réclamés",
       value: participations,
+      hint: "Joueurs ayant finalisé leur gain",
       icon: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
     },
   ];
