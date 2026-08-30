@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  ensureQrDistributionAsset,
-  getQrDistributionRewardCount,
-  type QrDistributionKind,
-} from "@/actions/qr-distribution";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { QrDesigner } from "@/components/dashboard/qr-designer";
 import type { QrStyle } from "@/types/database";
 
@@ -38,20 +34,25 @@ export function QrDistributionControls({
     let active = true;
     async function load() {
       if (initialAction === "metrics") {
-        const result = await getQrDistributionRewardCount({
-          resourceKind: resource.kind,
-          resourceId: resource.id,
-        });
+        const params = new URLSearchParams({ kind: resource.kind, id: resource.id });
+        const response = await fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" });
+        const result = response.ok
+          ? { ok: true as const, data: (await response.json() as { rewardCount: number | null }).rewardCount }
+          : { ok: false as const, error: "Lecture des gains impossible" };
         if (active) {
           if (result.ok) setRewardCount(result.data ?? 0);
           else setError(result.error);
         }
         return;
       }
-      const result = await ensureQrDistributionAsset({
-        resourceKind: resource.kind,
-        resourceId: resource.id,
+      const response = await fetch("/api/dashboard/qr-distribution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: resource.kind, id: resource.id }),
       });
+      const result = response.ok
+        ? { ok: true as const, data: (await response.json() as { asset: Asset }).asset }
+        : { ok: false as const, error: "Création du QR impossible" };
       if (!active) return;
       if (!result.ok) {
         setError(result.error);

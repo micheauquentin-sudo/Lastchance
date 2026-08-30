@@ -7,7 +7,7 @@ import { StatusBadge, type EtatAnimation } from "@/components/ui/status-badge";
 import { emojiExperience } from "@/components/dashboard/nav";
 import { SHARE_QR_STYLE } from "@/components/dashboard/public-share";
 import { PublicShare } from "@/components/dashboard/public-share";
-import type { QrDistributionKind } from "@/actions/qr-distribution";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { ExperienceKind } from "@/platform/experiences/contract";
 

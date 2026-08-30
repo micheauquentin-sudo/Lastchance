@@ -16,13 +16,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ActionResult } from "@/lib/utils";
 import type { QrStyle } from "@/types/database";
+import { qrDistributionKinds, type QrDistributionKind } from "@/lib/qr-distribution";
 
-export const qrDistributionKinds = [
-  "quiz", "calendar", "pronostics", "jackpot", "loyalty", "event",
-  "reservation", "duo", "portrait", "hunt_step", "vitrine",
-] as const;
-
-export type QrDistributionKind = (typeof qrDistributionKinds)[number];
+export { qrDistributionKinds, type QrDistributionKind } from "@/lib/qr-distribution";
 
 const assetSchema = z.object({
   resourceKind: z.enum(qrDistributionKinds),

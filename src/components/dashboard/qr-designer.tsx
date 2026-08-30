@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useModalFocus } from "@/components/ui/use-modal-focus";
 import { updateQrStyle } from "@/actions/qr-codes";
-import type { QrDistributionKind } from "@/actions/qr-distribution";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import {
@@ -317,10 +317,13 @@ export function QrDesigner({
     setSaving(true);
     setMessage(null);
     const result = distribution
-      ? await (await import("@/actions/qr-distribution")).updateQrDistributionStyle({
-          id,
-          ...distribution,
-          ...style,
+      ? await fetch("/api/dashboard/qr-distribution", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, ...distribution, ...style }),
+        }).then(async (response) => {
+          const body = await response.json() as { error?: string };
+          return response.ok ? { ok: true as const } : { ok: false as const, error: body.error ?? "Enregistrement impossible" };
         })
       : await updateQrStyle({ id, ...style });
     setSaving(false);

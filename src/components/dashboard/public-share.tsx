@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { QrDistributionKind } from "@/actions/qr-distribution";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
 
