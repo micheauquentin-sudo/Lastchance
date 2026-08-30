@@ -53,7 +53,10 @@ test.describe("hub QR par type de jeu", () => {
       page.locator("li", { hasText: "Championnat E2E" }).first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Personnaliser le QR" }),
+      page
+        .locator("li", { hasText: "Championnat E2E" })
+        .first()
+        .getByRole("button", { name: "Personnaliser le QR" }),
     ).toBeVisible();
   });
 
