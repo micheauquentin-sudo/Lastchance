@@ -128,6 +128,15 @@ Server Actions au montage entraient en concurrence avec les transitions des
 formulaires. Elles sont remplacées par une route GET authentifiée, validée et
 tenant-scopée ; relancer la CI complète du nouveau SHA avant fusion.
 
+**Correctif compteur de gains QR (2026-08-31, à publier).** Le bouton
+« Afficher les gains attribués » lisait directement `experience_events` avec
+la session commerçant, alors que l'ACL interdit volontairement cette table à
+`authenticated`. La route vérifie désormais le rôle owner/editor et la
+ressource du tenant avant de ne lire, via le client serveur d'administration,
+qu'un `count` filtré par organisation, animation et type `reward_issued`.
+Un test de route garde à la fois le compteur autorisé et l'absence d'appel
+admin pour un rôle non autorisé. Aucune policy ni migration n'est modifiée.
+
 Codex pilote le développement de LastChance. Les audits doivent être précis et
 transverses ; les propositions doivent améliorer concrètement l'expérience des
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,
