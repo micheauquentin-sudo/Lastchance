@@ -5,15 +5,43 @@ import { stampLoyaltyVisitStaff } from "@/actions/loyalty";
 import type { LoyaltyStampResult } from "@/lib/loyalty";
 import { Card } from "@/components/ui/card";
 import {
+  loyaltyPointsGoal,
   loyaltyTierMeta,
   messageForStampState,
 } from "@/components/loyalty/loyalty-passport-state";
 import { QrScanner } from "./qr-scanner";
 
+/**
+ * Un cadeau du rayon, tel que la caisse a besoin de le lire. Sous-ensemble
+ * strict de `LoyaltyMilestoneView` : le comptoir n'a que faire de la roue
+ * cible ni du compteur de visites d'avant la bascule en monnaie.
+ */
+export interface StaffLoyaltyMilestone {
+  id: string;
+  /** LE PRIX, en points — même autorité que côté joueur (`cost_points`). */
+  costPoints: number;
+  rewardLabel: string;
+  rewardType: "spin" | "lot";
+  /** Stock épuisé : le cadeau ne peut plus être servi, il n'est pas proposé. */
+  soldOut: boolean;
+}
+
 /** Programme de fidélité en mode staff, validable en caisse. */
 export interface StaffLoyaltyProgram {
   id: string;
   name: string;
+  /**
+   * LE RAYON, CHARGÉ AVEC LA PAGE ET NON APRÈS LE SCAN.
+   *
+   * La fiche client a besoin du catalogue des cadeaux pour dire lesquels sont
+   * à portée du solde. Ce catalogue ne dépend PAS du client scanné : il ne
+   * change qu'avec le programme. Le lire au rendu de la caisse, une fois pour
+   * toute la session, plutôt qu'à chaque tampon, garde le geste principal à
+   * exactement un aller-retour — celui qui enregistre la visite. La fiche
+   * s'affiche donc dans la même peinture que la confirmation, sans jamais la
+   * retenir, parce qu'il n'y a rien à attendre.
+   */
+  milestones: StaffLoyaltyMilestone[];
 }
 
 /** Décompte de la session de caisse : visites validées et passeports créés. */
@@ -179,6 +207,14 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
         </div>
       )}
       {result && <StaffStampResult result={result} />}
+      {result && (
+        <FicheClient
+          result={result}
+          milestones={
+            programs.find((p) => p.id === programId)?.milestones ?? []
+          }
+        />
+      )}
       <SessionTally tally={tally} />
     </Card>
   );
@@ -305,5 +341,122 @@ function StaffStampResult({ result }: { result: LoyaltyStampResult }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * ── LA FICHE DU CLIENT, LUE PAR LE COMMERÇANT APRÈS LE SCAN ──
+ *
+ * Le tampon seul disait « visite validée » et rien d'autre : le commerçant
+ * savait qu'il avait compté un passage, pas ce que ce client pouvait EMPORTER.
+ * C'est pourtant la seule information qui déclenche quelque chose en caisse —
+ * « il vous reste deux cafés offerts, vous les prenez maintenant ? » ne peut
+ * se dire que si l'écran le montre.
+ *
+ * TROIS CHOSES, DANS CET ORDRE : le solde et le niveau, les cadeaux à portée
+ * MAINTENANT, puis ce qu'il manque pour le suivant.
+ *
+ * ── CE QUE CETTE FICHE NE MONTRE PAS, ET POURQUOI ──
+ *
+ * Aucun nom, aucun courriel, aucun téléphone : ce n'est pas un filtrage, c'est
+ * qu'il n'y a rien à filtrer. `loyalty_members` ne porte AUCUNE colonne
+ * identifiante — le client y est un `token_hash` dérivé de son cookie, et le
+ * jeton de check-in scanné ne transporte que cette empreinte. La caisse
+ * identifie donc une CARTE, jamais une personne, et la fiche s'arrête là où
+ * s'arrête le schéma. Élargir cette vue demanderait une migration, pas un
+ * composant.
+ *
+ * ── POURQUOI ELLE NE RALENTIT PAS LE TAMPON ──
+ *
+ * Zéro appel réseau ici. Le solde, le niveau et le compteur viennent du
+ * résultat que `stampLoyaltyVisitStaff` renvoyait DÉJÀ (ils étaient
+ * simplement jetés à l'affichage) ; le catalogue des cadeaux est arrivé avec
+ * la page. La fiche se calcule donc en mémoire, dans la peinture qui suit la
+ * confirmation, sans ajouter un seul aller-retour au geste de caisse.
+ */
+function FicheClient({
+  result,
+  milestones,
+}: {
+  result: LoyaltyStampResult;
+  milestones: StaffLoyaltyMilestone[];
+}) {
+  // Une fiche n'a de sens que sur une visite réellement enregistrée : sur
+  // `too_soon` ou `unavailable`, les compteurs renvoyés ne décrivent aucun
+  // état servable et afficher un solde y serait un mensonge.
+  if (result.state !== "stamped") return null;
+
+  const solde = result.pointsBalance;
+  // Un cadeau épuisé n'est PAS un cadeau : il ne peut être ni servi maintenant
+  // ni visé ensuite. Il sort donc du calcul avant tout le reste, sinon la
+  // caisse promettrait un lot que la base refusera d'émettre.
+  const servables = milestones.filter((m) => !m.soldOut);
+  const aPortee = servables.filter((m) => m.costPoints <= solde);
+  // Même helper que le passeport du client (loyaltyPointsGoal) : les deux
+  // écrans doivent annoncer le MÊME « il manque N points », sinon le comptoir
+  // et le téléphone se contredisent devant le client.
+  const objectif = loyaltyPointsGoal(solde, servables.map((m) => m.costPoints));
+
+  const libelle = (m: StaffLoyaltyMilestone) =>
+    m.rewardLabel || (m.rewardType === "spin" ? "Tour de roue offert" : "Lot fidélité");
+
+  return (
+    <section
+      aria-label="Ce que ce client peut prendre"
+      className="mt-3 rounded-xl border-2 border-k-ink/15 bg-white px-4 py-3"
+    >
+      <p className="text-xs font-black uppercase tracking-wide text-zinc-500">
+        Ce client
+      </p>
+      <p className="mt-1 text-sm font-bold text-k-ink">
+        <span className="text-lg font-black">{solde}</span> point
+        {solde > 1 ? "s" : ""} à dépenser · niveau{" "}
+        {loyaltyTierMeta(result.tier).label}
+      </p>
+
+      {aPortee.length > 0 ? (
+        <div className="mt-3">
+          <p className="text-xs font-black uppercase tracking-wide text-emerald-800">
+            À prendre maintenant
+          </p>
+          <ul className="mt-1.5 space-y-1.5">
+            {aPortee.map((m) => (
+              <li
+                key={m.id}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5"
+              >
+                <span className="text-sm font-black text-k-ink">{libelle(m)}</span>
+                <span className="text-xs font-bold text-emerald-800">
+                  {m.costPoints} points
+                </span>
+              </li>
+            ))}
+          </ul>
+          {/* L'ÉCHANGE RESTE AU CLIENT. `spendLoyaltyPoints` s'authentifie par
+              le cookie du passeport : la caisse n'a aucun moyen — ni aucun
+              droit — de dépenser les points à sa place. La fiche informe, elle
+              ne débite pas, et le dire évite au commerçant de chercher un
+              bouton qui ne peut pas exister. */}
+          <p className="mt-2 text-xs font-medium text-zinc-500">
+            Le client valide l&apos;échange depuis son passeport ; le code de
+            retrait s&apos;affiche alors sur son téléphone.
+          </p>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs font-medium text-zinc-500">
+          Aucun cadeau à sa portée pour l&apos;instant.
+        </p>
+      )}
+
+      {objectif.nextCost !== null && (
+        <p className="mt-3 border-t border-zinc-100 pt-2 text-xs font-bold text-zinc-600">
+          Prochain cadeau à {objectif.nextCost} points — il lui manque{" "}
+          <span className="font-black text-k-ink">
+            {objectif.missing} point{objectif.missing > 1 ? "s" : ""}
+          </span>
+          .
+        </p>
+      )}
+    </section>
   );
 }
