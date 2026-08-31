@@ -140,6 +140,11 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
 
 vi.mock("@/lib/loyalty-context", () => ({
   loyaltyTokenCookieName: (id: string) => `lc-loyalty-${id}`,
+  // Cookie du parrainage en attente (FID-5). Il DOIT figurer ici : le module
+  // mocké remplace l'original en entier, et une fonction manquante n'est pas
+  // « undefined » à l'usage — c'est un TypeError avalé par le `try` du tampon,
+  // qui rend alors le refus générique sur treize scénarios sans rapport.
+  loyaltyReferralCookieName: (id: string) => `lc-parrain-${id}`,
   loadLoyaltyActionContext: () =>
     Promise.resolve({
       ok: true,
@@ -282,6 +287,16 @@ vi.mock("next/headers", () => ({
       set: cookieSetMock,
     }),
   headers: () => Promise.resolve({}),
+}));
+
+// `after()` du parrainage : exécuté TOUT DE SUITE ici. Le runtime le retient
+// jusqu'après la réponse, ce que Vitest ne simule pas — l'exécuter permet aux
+// tests d'observer la RPC de parrainage, sans changer l'ordre des appels (elle
+// part de toute façon après le tampon).
+vi.mock("next/server", () => ({
+  after: (tache: () => unknown) => {
+    void tache();
+  },
 }));
 
 // Effets de bord non pertinents pour la consommation du spin.

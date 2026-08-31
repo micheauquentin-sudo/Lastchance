@@ -318,6 +318,128 @@ export function mapLoyaltySpendResult(raw: unknown): LoyaltySpendResult {
 }
 
 // ────────────────────────────────────────────────────────────
+// Parrainage du passeport (FID-5) — les deux RPC service_role
+// ────────────────────────────────────────────────────────────
+
+/**
+ * États nommés de `ensure_loyalty_referral_code`. LISTE BLANCHE : un état
+ * inconnu retombe sur `unavailable`, jamais sur `ready` — l'écran n'a alors
+ * aucun code à montrer, et il vaut mieux ne rien proposer que proposer une
+ * invitation vide.
+ */
+export const LOYALTY_REFERRAL_CODE_STATES = [
+  "unavailable",
+  "not_a_member",
+  "ready",
+] as const;
+
+export type LoyaltyReferralCodeState =
+  (typeof LOYALTY_REFERRAL_CODE_STATES)[number];
+
+/** Le code du parrain et l'état de son invitation, tels que la base les rend. */
+export interface LoyaltyReferralCodeResult {
+  state: LoyaltyReferralCodeState;
+  /** `ready` : le jeton PASS-… à partager. */
+  referralCode: string | null;
+  /** Filleuls DÉJÀ VALIDÉS (passeport tamponné), pas ceux qui ont cliqué. */
+  validatedCount: number;
+  maxFilleuls: number;
+  windowDays: number;
+  /** Échéance de l'invitation (ISO), fenêtre comptée depuis la création. */
+  expiresAt: string | null;
+  sponsorPoints: number;
+  filleulPoints: number;
+}
+
+export function mapLoyaltyReferralCode(
+  raw: unknown,
+): LoyaltyReferralCodeResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: LoyaltyReferralCodeState =
+    stateRaw && (LOYALTY_REFERRAL_CODE_STATES as readonly string[]).includes(stateRaw)
+      ? (stateRaw as LoyaltyReferralCodeState)
+      : "unavailable";
+
+  return {
+    state,
+    referralCode: root ? asString(root.referral_code) : null,
+    validatedCount: (root ? asInt(root.validated_count) : null) ?? 0,
+    maxFilleuls: (root ? asInt(root.max_filleuls) : null) ?? 0,
+    windowDays: (root ? asInt(root.window_days) : null) ?? 0,
+    expiresAt: root ? asString(root.expires_at) : null,
+    sponsorPoints: (root ? asInt(root.sponsor_points) : null) ?? 0,
+    filleulPoints: (root ? asInt(root.filleul_points) : null) ?? 0,
+  };
+}
+
+/**
+ * LES ONZE ÉTATS de `validate_loyalty_referral`. LISTE BLANCHE, même contrat
+ * que `LOYALTY_STAMP_STATES` — et le repli est `unavailable`, jamais
+ * `validated` : un état inconnu ne doit pas annoncer au filleul un versement
+ * qui n'a pas eu lieu.
+ *
+ * Deux d'entre eux ne sont PAS des erreurs, et l'écran ne doit pas les dire
+ * comme telles :
+ *  · `no_stamp` — la carte est ouverte, la visite reste à faire. C'est l'état
+ *    NORMAL entre le clic sur l'invitation et le passage en boutique ;
+ *  · `already_customer` — le premier tampon est antérieur au code : la
+ *    personne était déjà cliente, le parrainage n'a rien créé.
+ */
+export const LOYALTY_REFERRAL_STATES = [
+  "unavailable",
+  "invalid",
+  "expired",
+  "capped",
+  "self_referral",
+  "duplicate",
+  "loop",
+  "no_stamp",
+  "not_a_member",
+  "already_customer",
+  "validated",
+] as const;
+
+export type LoyaltyReferralState = (typeof LOYALTY_REFERRAL_STATES)[number];
+
+export interface LoyaltyReferralResult {
+  state: LoyaltyReferralState;
+  /** `validated` : le parrainage était déjà conclu, il a été RELU. */
+  idempotent: boolean;
+  signupId: string | null;
+  validatedCount: number | null;
+  maxFilleuls: number | null;
+  /** Points versés AU PARRAIN, gravés à l'instant du versement. */
+  sponsorPoints: number | null;
+  /** Bonus de bienvenue versé AU FILLEUL. */
+  filleulPoints: number | null;
+}
+
+/**
+ * Convertit le jsonb de `validate_loyalty_referral`, sans faire confiance à sa
+ * forme. Ce module ne TRADUIT pas : les phrases françaises des onze états
+ * vivent avec les autres messages joueur du module.
+ */
+export function mapLoyaltyReferralResult(raw: unknown): LoyaltyReferralResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: LoyaltyReferralState =
+    stateRaw && (LOYALTY_REFERRAL_STATES as readonly string[]).includes(stateRaw)
+      ? (stateRaw as LoyaltyReferralState)
+      : "unavailable";
+
+  return {
+    state,
+    idempotent: root?.idempotent === true,
+    signupId: root ? asString(root.signup_id) : null,
+    validatedCount: root ? asInt(root.validated_count) : null,
+    maxFilleuls: root ? asInt(root.max_filleuls) : null,
+    sponsorPoints: root ? asInt(root.sponsor_points) : null,
+    filleulPoints: root ? asInt(root.filleul_points) : null,
+  };
+}
+
+// ────────────────────────────────────────────────────────────
 // Niveau dérivé du compteur porteur du rang (pur, testable)
 // ────────────────────────────────────────────────────────────
 

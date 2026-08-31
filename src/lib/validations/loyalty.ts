@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  caseACochee,
   entierRequis,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
@@ -210,6 +211,76 @@ export const updateLoyaltyProgramSchema = z
     }
   });
 
+// ── Dashboard commerçant : parrainage du passeport (FID-5b) ──
+
+/**
+ * LES CINQ RÉGLAGES DU PARRAINAGE, et pourquoi ils voyagent SEULS.
+ *
+ * `updateLoyaltyProgram` fait un `.update(fields)` de TOUTES les colonnes de
+ * son schéma : un formulaire qui n'en rend pas un champ l'écrase. Les deux
+ * formulaires voisins s'en protègent en postant le programme entier en champs
+ * cachés — un troisième jeu à tenir synchrone pour cinq colonnes qui ne
+ * dépendent d'aucune autre. Ce schéma sert donc une action dédiée
+ * (`updateLoyaltyProgramReferral`), même geste que
+ * `updateLoyaltyProgramStyle` : elle n'écrit que ses colonnes, elle ne peut
+ * rien écraser, et la réciproque est vraie — le formulaire des seuils ne
+ * remettra jamais le parrainage à zéro.
+ *
+ * Les quatre bornes sont EXACTEMENT celles des `check` SQL de la migration
+ * 20261119120000 : un écart ici rendrait au commerçant une 23514 brute là où
+ * il attend une phrase.
+ */
+export const updateLoyaltyProgramReferralSchema = z.object({
+  id: z.string().uuid(),
+  /**
+   * `caseACochee` et non une case native : l'écran poste l'état VOULU dans un
+   * champ caché. Une case décochée n'est pas envoyée par le navigateur —
+   * « je coupe le parrainage » n'aurait alors jamais atteint le serveur.
+   */
+  referral_enabled: caseACochee,
+  /**
+   * Points au parrain. 0 est une DÉCISION légitime (« le parrainage compte,
+   * mais je ne verse rien au parrain ») : c'est bien `entierRequis`, dont le
+   * plancher admet le zéro SAISI tout en refusant le champ non rendu.
+   */
+  referral_sponsor_points: entierRequis({
+    absent: "Indiquez les points versés au parrain (0 pour n'en verser aucun).",
+    nombre: "Nombre de points invalide",
+    entier: "Nombre entier de points requis",
+    min: [0, "Valeur négative interdite"],
+    max: [100_000, "Maximum 100 000 points"],
+  }),
+  /** Bonus de bienvenue du filleul, mêmes bornes et même lecture du zéro. */
+  referral_filleul_points: entierRequis({
+    absent:
+      "Indiquez le bonus de bienvenue du filleul (0 pour n'en verser aucun).",
+    nombre: "Nombre de points invalide",
+    entier: "Nombre entier de points requis",
+    min: [0, "Valeur négative interdite"],
+    max: [100_000, "Maximum 100 000 points"],
+  }),
+  /**
+   * Plafond de filleuls PAR PARRAIN — le verrou économique du module : la
+   * dépense maximale d'un parrain vaut `points × plafond`, et c'est ce produit
+   * que l'écran affiche au commerçant.
+   */
+  referral_max_filleuls: entierRequis({
+    absent: "Indiquez le nombre maximum de filleuls par parrain.",
+    nombre: "Nombre de filleuls invalide",
+    entier: "Nombre entier de filleuls requis",
+    min: [1, "Au moins un filleul par parrain"],
+    max: [1000, "Maximum 1000 filleuls par parrain"],
+  }),
+  /** Fenêtre de validité d'un code, en jours depuis sa création. */
+  referral_window_days: entierRequis({
+    absent: "Indiquez la durée de validité d'une invitation.",
+    nombre: "Durée invalide",
+    entier: "Nombre entier de jours requis",
+    min: [1, "Au moins un jour"],
+    max: [365, "Maximum 365 jours"],
+  }),
+});
+
 export const setLoyaltyProgramStatusSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(["draft", "active", "archived"]),
@@ -351,6 +422,39 @@ export const loyaltyProgramIdSchema = z.string().uuid("Passeport introuvable");
  */
 export const invitationPasseportSchema = z.object({
   organizationId: z.string().uuid("Identifiant invalide"),
+});
+
+/**
+ * Code de parrain du passeport — `PASS-` puis 8 caractères d'un alphabet SANS
+ * ambiguïté (ni I, ni O, ni 0, ni 1), miroir exact du `check` SQL.
+ *
+ * Le préfixe est DISTINCT de `PR-` (parrainage de la roue) : deux modules
+ * cohabitent dans une organisation, et un préfixe partagé rendrait indécidable,
+ * à la lecture d'un code, lequel des deux parcours le traite.
+ *
+ * Casse et espaces tolérés : le code voyage dans une URL partagée par message,
+ * et il est recopié à la main aussi souvent que collé.
+ */
+export const loyaltyReferralCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^PASS-[A-HJ-NP-Z2-9]{8}$/, "Code de parrainage invalide");
+
+/** Le parrain demande (ou crée) son code depuis son passeport. */
+export const loyaltyReferralCodeRequestSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+});
+
+/**
+ * Le FILLEUL arrive avec le code dans son lien : on le retient, puis on tente
+ * la validation. Elle échouera le plus souvent (`no_stamp`) — c'est le cas
+ * NORMAL, et c'est tout le sujet du module : la récompense se gagne à la
+ * première visite validée, pas à l'ouverture de la carte.
+ */
+export const loyaltyReferralClaimSchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  code: loyaltyReferralCodeSchema,
 });
 
 /** Code tournant saisi/scanné par le client (6 chiffres). */

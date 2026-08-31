@@ -8,6 +8,7 @@ import {
   setLoyaltyProgramStatus,
   updateLoyaltyMilestone,
   updateLoyaltyProgram,
+  updateLoyaltyProgramReferral,
   updateLoyaltyProgramStyle,
 } from "@/actions/loyalty";
 import { ApercuPasseport } from "@/components/dashboard/apercu-passeport";
@@ -486,6 +487,259 @@ export function LoyaltyHabillage({
             enAttente={enAttente}
             bloqueParValidation={bloqueParValidation}
             messageBloque="Non enregistré : l'habillage n'a pas pu être validé."
+          />
+        </div>
+        <FieldError message={state && !state.ok ? state.error : undefined} />
+      </form>
+    </Card>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Parrainage
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LE PARRAINAGE — une carte, cinq réglages, et le BUDGET affiché.
+ *
+ * ── Pourquoi son propre formulaire (troisième fois sur cet écran) ──
+ *
+ * `updateLoyaltyProgram` écrase TOUTES les colonnes de son schéma. Les deux
+ * formulaires voisins s'en protègent en postant le programme entier en champs
+ * cachés ; ajouter le parrainage à ce jeu aurait demandé de recopier les cinq
+ * colonnes dans les DEUX autres formulaires — faute de quoi enregistrer un
+ * seuil de niveau aurait silencieusement remis le barème du parrainage à ses
+ * valeurs par défaut. Ce formulaire vise donc `updateLoyaltyProgramReferral`,
+ * qui n'écrit que ses colonnes : même choix que `LoyaltyHabillage`, et rien ne
+ * peut plus s'écraser dans un sens comme dans l'autre.
+ *
+ * ── CE QUE ÇA COÛTE, ET POURQUOI C'EST ÉCRIT EN TOUTES LETTRES ──
+ *
+ * Deux montants et un plafond, c'est un budget — et c'est le chiffre que le
+ * commerçant n'a pas sous les yeux au moment de décider. « 500 points au
+ * parrain × 50 filleuls » vaut 25 000 points POUR UN SEUL PARRAIN, soit 250
+ * visites offertes. La ligne de dépense maximale se recalcule à la saisie,
+ * avant tout enregistrement : c'est la seule façon d'attraper un zéro de trop
+ * avant que les clients ne le trouvent.
+ *
+ * ── L'ACTIVATION EST UN CHAMP CACHÉ ──
+ *
+ * `caseACochee` et non une case native : un navigateur n'envoie pas une case
+ * décochée, et « je coupe le parrainage » n'aurait jamais atteint le serveur.
+ * La case pilote l'état, le champ caché poste l'état voulu.
+ */
+export function LoyaltyParrainage({ program }: { program: LoyaltyProgram }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const { state, pending, onSubmit } = useActionForm(
+    updateLoyaltyProgramReferral,
+    {
+      networkError: "Enregistrement impossible, réessayez.",
+      toastOnSuccess: "Enregistré.",
+    },
+  );
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
+
+  const [actif, setActif] = useState(program.referral_enabled);
+  const [pointsParrain, setPointsParrain] = useState(
+    String(program.referral_sponsor_points),
+  );
+  const [pointsFilleul, setPointsFilleul] = useState(
+    String(program.referral_filleul_points),
+  );
+  const [plafond, setPlafond] = useState(String(program.referral_max_filleuls));
+
+  const nParrain = Number(pointsParrain);
+  const nFilleul = Number(pointsFilleul);
+  const nPlafond = Number(plafond);
+  const budgetLisible =
+    Number.isFinite(nParrain) &&
+    Number.isFinite(nFilleul) &&
+    Number.isFinite(nPlafond) &&
+    nPlafond > 0;
+  const depenseMax = budgetLisible ? (nParrain + nFilleul) * nPlafond : 0;
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-1">Parrainage</h2>
+      <p className="text-sm text-zinc-500 mb-5">
+        Chaque client peut inviter ses amis avec un lien personnel. Le filleul
+        ouvre sa carte, puis{" "}
+        <strong className="font-semibold text-zinc-700">
+          fait valider une première visite
+        </strong>{" "}
+        — en boutique ou avec un QR de commande. C&apos;est à ce moment-là, et
+        pas avant, que les points sont versés : une carte créée et jamais
+        tamponnée ne vous coûte rien.
+      </p>
+
+      <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
+        <input type="hidden" name="id" value={program.id} />
+        <input
+          type="hidden"
+          name="referral_enabled"
+          value={actif ? "true" : "false"}
+        />
+
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={actif}
+            onChange={(e) => setActif(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-2 border-k-ink accent-k-ink"
+          />
+          <span>
+            <span className="font-medium text-zinc-800">
+              Proposer le parrainage sur le passeport
+            </span>
+            <span className="block text-xs text-zinc-500">
+              Le bloc « Parrainer un ami » n&apos;apparaît sur la carte de vos
+              clients que si cette case est cochée.
+            </span>
+          </span>
+        </label>
+
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <Label htmlFor="loyalty-referral-sponsor">
+              Points au parrain
+            </Label>
+            <Input
+              id="loyalty-referral-sponsor"
+              name="referral_sponsor_points"
+              type="number"
+              min={0}
+              max={100000}
+              step={LOYALTY_POINTS_PAR_VISITE}
+              value={pointsParrain}
+              onChange={(e) => setPointsParrain(e.target.value)}
+              className="w-40"
+              aria-describedby="loyalty-referral-sponsor-help"
+              required
+            />
+            <p
+              id="loyalty-referral-sponsor-help"
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              {equivalentVisites(nParrain)}
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="loyalty-referral-filleul">
+              Bonus de bienvenue du filleul
+            </Label>
+            <Input
+              id="loyalty-referral-filleul"
+              name="referral_filleul_points"
+              type="number"
+              min={0}
+              max={100000}
+              step={LOYALTY_POINTS_PAR_VISITE}
+              value={pointsFilleul}
+              onChange={(e) => setPointsFilleul(e.target.value)}
+              className="w-40"
+              aria-describedby="loyalty-referral-filleul-help"
+              required
+            />
+            <p
+              id="loyalty-referral-filleul-help"
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              0 pour ne rien offrir au filleul.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <Label htmlFor="loyalty-referral-max">
+              Filleuls maximum par parrain
+            </Label>
+            <Input
+              id="loyalty-referral-max"
+              name="referral_max_filleuls"
+              type="number"
+              min={1}
+              max={1000}
+              value={plafond}
+              onChange={(e) => setPlafond(e.target.value)}
+              className="w-40"
+              aria-describedby="loyalty-referral-max-help"
+              required
+            />
+            <p
+              id="loyalty-referral-max-help"
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              Au-delà, l&apos;invitation cesse d&apos;accueillir de nouveaux
+              filleuls.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="loyalty-referral-window">
+              Validité d&apos;une invitation (jours)
+            </Label>
+            <Input
+              id="loyalty-referral-window"
+              name="referral_window_days"
+              type="number"
+              min={1}
+              max={365}
+              defaultValue={program.referral_window_days}
+              className="w-40"
+              aria-describedby="loyalty-referral-window-help"
+              required
+            />
+            <p
+              id="loyalty-referral-window-help"
+              className="mt-1.5 text-xs text-zinc-500"
+            >
+              Comptés depuis le jour où le client obtient son lien.
+            </p>
+          </div>
+        </div>
+
+        {/* CE QUE ÇA COÛTE — la ligne qui manque pour décider. Elle se
+            recalcule à la saisie, avant tout enregistrement. */}
+        <p
+          className="rounded-xl border-2 border-k-ink/15 bg-amber-50 px-3.5 py-2.5 text-sm text-zinc-700"
+          role="status"
+          aria-live="polite"
+        >
+          {budgetLisible ? (
+            <>
+              <strong className="font-semibold">Dépense maximale :</strong>{" "}
+              {nParrain} points au parrain + {nFilleul} au filleul, ×{" "}
+              {nPlafond} filleul{nPlafond > 1 ? "s" : ""} au maximum ={" "}
+              <strong className="font-semibold">
+                {depenseMax.toLocaleString("fr-FR")} points
+              </strong>{" "}
+              pour un seul parrain, soit environ{" "}
+              {Math.round(depenseMax / LOYALTY_POINTS_PAR_VISITE)} visite
+              {Math.round(depenseMax / LOYALTY_POINTS_PAR_VISITE) > 1
+                ? "s"
+                : ""}{" "}
+              offerte
+              {Math.round(depenseMax / LOYALTY_POINTS_PAR_VISITE) > 1
+                ? "s"
+                : ""}
+              . Chaque point versé suppose une visite réellement validée.
+            </>
+          ) : (
+            "Renseignez les deux montants et le plafond pour voir la dépense maximale par parrain."
+          )}
+        </p>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" variant="secondary" disabled={pending}>
+            {pending ? "…" : "Enregistrer"}
+          </Button>
+          {state?.ok && (
+            <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+          )}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : un réglage du parrainage est vide."
           />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />

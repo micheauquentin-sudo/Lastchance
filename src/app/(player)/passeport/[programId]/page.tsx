@@ -1,8 +1,12 @@
 import { cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
-import { loadLoyaltyContext } from "@/lib/loyalty-context";
+import {
+  loadLoyaltyContext,
+  loyaltyReferralCookieName,
+} from "@/lib/loyalty-context";
 import {
   LoyaltyPassport,
   type LoyaltySpinAvailability,
@@ -213,8 +217,10 @@ async function loadSpinWheels(
 
 export default async function LoyaltyPassportPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ programId: string }>;
+  searchParams: Promise<{ parrain?: string | string[] }>;
 }) {
   const { programId } = await params;
   const ctx = await loadContext(programId);
@@ -222,6 +228,25 @@ export default async function LoyaltyPassportPage({
   // Réponse générique unique (404) : aucun oracle sur le motif d'invalidité
   // (programme inconnu, archivé, module coupé, abonnement inactif…).
   if (!ctx.ok) notFound();
+
+  // ── LE LIEN DE PARRAINAGE (FID-5) ──
+  //
+  // Le code voyage dans l'URL du lien partagé. Il est passé TEL QUEL au
+  // composant, sans normalisation ici : la seule autorité sur sa forme est
+  // `loyaltyReferralCodeSchema`, côté server action. Valider deux fois, à deux
+  // endroits, c'est se donner deux occasions de diverger.
+  //
+  // Un tableau (`?parrain=a&parrain=b`) est ramené à la première valeur — la
+  // lecture la plus sûre d'une URL bricolée.
+  const { parrain } = await searchParams;
+  const codeParrainInvite =
+    (Array.isArray(parrain) ? parrain[0] : parrain) ?? null;
+  // Le cookie est `httpOnly` : seul le serveur peut dire s'il y a une
+  // invitation en attente, et c'est ce booléen qui évite au client d'appeler
+  // la server action de parrainage à chaque ouverture du passeport.
+  const parrainageEnAttente = Boolean(
+    (await cookies()).get(loyaltyReferralCookieName(programId))?.value,
+  );
 
   const spinWheels = await loadSpinWheels(ctx);
   // HABILLAGE — schéma de LECTURE : un fond retiré du catalogue rend un
@@ -251,6 +276,9 @@ export default async function LoyaltyPassportPage({
         spinWheels={spinWheels}
         commerce={ctx.commerce}
         timeZone={ctx.organization.timezone}
+        referralEnabled={ctx.program.referral_enabled}
+        codeParrainInvite={codeParrainInvite}
+        parrainageEnAttente={parrainageEnAttente}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

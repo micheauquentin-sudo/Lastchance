@@ -3,8 +3,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  LOYALTY_REFERRAL_STATES,
   LOYALTY_STAMP_STATES,
   loyaltyTierForVisits,
+  mapLoyaltyReferralResult,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
 } from "./loyalty";
@@ -16,11 +18,13 @@ import {
   createLoyaltyProgramSchema,
   loyaltyOrderTokenSchema,
   loyaltyRedeemCodeSchema,
+  loyaltyReferralCodeSchema,
   loyaltyRotatingCodeSchema,
   setLoyaltyProgramStatusSchema,
   stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
+  updateLoyaltyProgramReferralSchema,
   updateLoyaltyProgramSchema,
 } from "./validations/loyalty";
 
@@ -300,6 +304,97 @@ describe("parité LOYALTY_STAMP_STATES ↔ record_loyalty_stamp", () => {
 // mapLoyaltySpinGrant — mapping du jsonb consume_loyalty_spin_grant
 // ────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────
+// Parrainage du passeport — MÊME GARDE, sur validate_loyalty_referral.
+//
+// La RPC nomme ONZE états, dont deux (`no_stamp`, `already_customer`) sont des
+// situations NORMALES qu'il faut expliquer et non des erreurs. Un état oublié
+// dans la liste blanche TypeScript retomberait sur `unavailable` — le filleul
+// lirait « parrainage indisponible » là où la base disait « il vous reste une
+// visite à faire », et rien ne rougirait.
+// ────────────────────────────────────────────────────────────
+
+describe("parité LOYALTY_REFERRAL_STATES ↔ validate_loyalty_referral", () => {
+  const MIGRATIONS = join(process.cwd(), "supabase", "migrations");
+
+  function corpsDeLaDerniereDefinition(): string {
+    const fichiers = readdirSync(MIGRATIONS)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    let dernier: string | null = null;
+    for (const fichier of fichiers) {
+      const sql = readFileSync(join(MIGRATIONS, fichier), "utf8");
+      const debut = sql.search(
+        /create (?:or replace )?function public\.validate_loyalty_referral/,
+      );
+      if (debut < 0) continue;
+      const reste = sql.slice(debut);
+      const fin = reste.indexOf("$$;");
+      dernier = fin < 0 ? reste : reste.slice(0, fin);
+    }
+    if (dernier === null) throw new Error("validate_loyalty_referral introuvable");
+    return dernier;
+  }
+
+  const CORPS = corpsDeLaDerniereDefinition();
+  const ETATS_SQL = [
+    ...new Set(
+      [
+        // La RPC qualifie ses appels (`pg_catalog.jsonb_build_object`) : le
+        // préfixe optionnel est donc dans la regex, sans quoi elle ne mordrait
+        // sur rien et le test passerait au vert en ne mesurant rien.
+        ...CORPS.matchAll(
+          /(?:pg_catalog\.)?jsonb_build_object\(\s*'state',\s*'([a-z_]+)'/g,
+        ),
+      ].map((m) => m[1]),
+    ),
+  ];
+
+  it("des états ont bien été extraits du SQL", () => {
+    expect(ETATS_SQL.length).toBe(11);
+    // Les deux qui ne sont PAS des erreurs : ceux dont l'oubli coûterait le
+    // plus cher côté joueur.
+    expect(ETATS_SQL).toContain("no_stamp");
+    expect(ETATS_SQL).toContain("already_customer");
+  });
+
+  it("la liste blanche TypeScript est exactement celle du SQL", () => {
+    expect([...ETATS_SQL].sort()).toEqual([...LOYALTY_REFERRAL_STATES].sort());
+  });
+
+  it("chaque état du SQL survit au mapping (aucun n'est avalé)", () => {
+    for (const etat of ETATS_SQL) {
+      expect(mapLoyaltyReferralResult({ state: etat }).state).toBe(etat);
+    }
+  });
+
+  it("un jsonb non reconnu retombe sur unavailable, jamais sur validated", () => {
+    expect(mapLoyaltyReferralResult(null).state).toBe("unavailable");
+    expect(mapLoyaltyReferralResult({ state: "yolo" }).state).toBe("unavailable");
+  });
+
+  it("remonte le versement gravé et le rejeu idempotent", () => {
+    const r = mapLoyaltyReferralResult({
+      state: "validated",
+      idempotent: true,
+      signup_id: UUID,
+      validated_count: 3,
+      max_filleuls: 20,
+      sponsor_points: 500,
+      filleul_points: 100,
+    });
+    expect(r).toMatchObject({
+      state: "validated",
+      idempotent: true,
+      signupId: UUID,
+      validatedCount: 3,
+      maxFilleuls: 20,
+      sponsorPoints: 500,
+      filleulPoints: 100,
+    });
+  });
+});
+
 describe("mapLoyaltySpinGrant", () => {
   it("mappe un tirage gagnant (spun)", () => {
     const r = mapLoyaltySpinGrant({
@@ -468,6 +563,73 @@ describe("validations/loyalty", () => {
     expect(
       updateLoyaltyProgramSchema.safeParse({ ...base, min_stamp_interval_seconds: 999999 }).success,
     ).toBe(false); // > 7 j
+  });
+
+  it("updateLoyaltyProgramReferralSchema : bornes miroir des CHECK SQL", () => {
+    const base = {
+      id: UUID,
+      referral_enabled: "true",
+      referral_sponsor_points: "500",
+      referral_filleul_points: "0",
+      referral_max_filleuls: "20",
+      referral_window_days: "30",
+    };
+    const ok = updateLoyaltyProgramReferralSchema.safeParse(base);
+    expect(ok.success).toBe(true);
+    if (ok.success) {
+      expect(ok.data.referral_enabled).toBe(true);
+      // Un zéro SAISI est une décision (« je n'offre rien au filleul ») et
+      // reste accepté : c'est le champ NON RENDU que `entierRequis` refuse.
+      expect(ok.data.referral_filleul_points).toBe(0);
+    }
+
+    // Les quatre bornes, chacune juste au-delà.
+    for (const hors of [
+      { referral_sponsor_points: "100001" },
+      { referral_sponsor_points: "-1" },
+      { referral_max_filleuls: "0" },
+      { referral_max_filleuls: "1001" },
+      { referral_window_days: "0" },
+      { referral_window_days: "366" },
+    ]) {
+      expect(
+        updateLoyaltyProgramReferralSchema.safeParse({ ...base, ...hors }).success,
+      ).toBe(false);
+    }
+
+    // LE MODE SILENCIEUX, fermé : un champ non rendu (`null`) doit être REFUSÉ
+    // et non lu comme 0. Sans `entierRequis`, `z.coerce.number().min(0)` aurait
+    // enregistré « 0 point au parrain » sans que rien ne rougisse.
+    const absent = updateLoyaltyProgramReferralSchema.safeParse({
+      ...base,
+      referral_sponsor_points: null,
+    });
+    expect(absent.success).toBe(false);
+
+    // La case décochée poste « false » : elle DOIT couper le parrainage.
+    const coupe = updateLoyaltyProgramReferralSchema.safeParse({
+      ...base,
+      referral_enabled: "false",
+    });
+    expect(coupe.success && coupe.data.referral_enabled).toBe(false);
+  });
+
+  it("loyaltyReferralCodeSchema : alphabet sans ambiguïté, préfixe PASS-", () => {
+    // Casse et espaces tolérés : le code se recopie à la main aussi souvent
+    // qu'il se colle.
+    expect(loyaltyReferralCodeSchema.parse("  pass-abcdefgh  ")).toBe(
+      "PASS-ABCDEFGH",
+    );
+    // I, O, 0 et 1 sont hors alphabet ; PR- est le préfixe de l'AUTRE module.
+    for (const mauvais of [
+      "PASS-ABCDEFGI",
+      "PASS-ABCDEFG0",
+      "PASS-ABCDEFG",
+      "PR-ABCDEFGH",
+      "ABCDEFGH",
+    ]) {
+      expect(loyaltyReferralCodeSchema.safeParse(mauvais).success).toBe(false);
+    }
   });
 
   it("updateLoyaltyProgramSchema : cooldown plancher en mode code tournant", () => {
