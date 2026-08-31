@@ -205,7 +205,7 @@ export function PublicShare({
           <section aria-label="Résultats du QR" className="rounded-lg bg-k-yellow/20 px-3 py-2">
             <p className="text-xs font-black text-k-ink">Résultats</p>
             {openCount !== undefined ? (
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-k-ink">
                 <span className="font-bold text-k-ink">
                   {openCount} ouverture{openCount > 1 ? "s" : ""}
                 </span>{" "}
