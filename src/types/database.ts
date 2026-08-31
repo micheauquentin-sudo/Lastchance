@@ -467,6 +467,20 @@ export interface LoyaltyProgram {
   /** Validité du code de retrait en jours (null = sans limite), gravée sur le
    *  lot À SON ÉMISSION : la modifier ne rattrape aucun code déjà émis. */
   code_ttl_days: number | null;
+  /**
+   * HABILLAGE du passeport — jsonb LIBRE, même contrat que `wheels.style` :
+   * le fond d'écran (clé de `FOND_KEYS`, src/lib/fonds-ecran.ts), et plus
+   * tard couleurs, police et accroche, s'y ajoutent SANS MIGRATION.
+   *
+   * `null` = aucun choix, donc l'habillage par défaut — l'état de tous les
+   * programmes antérieurs à FID-3a, dont le rendu n'a pas bougé.
+   *
+   * La base ne contrôle que la FORME (un objet, borné en taille) : le
+   * CONTENU est validé côté application, à l'écriture comme à la lecture.
+   * C'est ce partage qui permet de retirer une image du catalogue sans
+   * rendre invalides — donc non modifiables — les styles déjà enregistrés.
+   */
+  style: Record<string, unknown> | null;
   created_at: string;
 }
 
