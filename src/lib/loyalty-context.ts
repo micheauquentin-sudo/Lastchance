@@ -38,9 +38,15 @@ export type PublicLoyaltyProgram = Omit<LoyaltyProgram, "rotating_secret">;
 const ORG_COLUMNS =
   "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_loyalty, addon_jackpot, comp_access, comp_access_until, timezone";
 
-/** Colonnes publiques du programme — rotating_secret volontairement exclu. */
+/**
+ * Colonnes publiques du programme — rotating_secret volontairement exclu.
+ *
+ * `style` en fait partie : c'est l'HABILLAGE de la page du joueur (le fond
+ * d'écran), donc une donnée publique par destination. Il est relu par
+ * `resolveLoyaltyStyle` côté page, jamais servi brut à un `src` d'image.
+ */
 const PROGRAM_COLUMNS =
-  "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at";
+  "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, style, created_at";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Ce passeport de fidélité n'est pas disponible.";

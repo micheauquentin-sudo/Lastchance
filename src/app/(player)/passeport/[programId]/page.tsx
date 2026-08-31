@@ -10,7 +10,8 @@ import {
 } from "@/components/loyalty/loyalty-passport";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import { wheelMatchesNow } from "@/lib/wheel-schedule";
-import { SkipLink } from "@/components/ui/skip-link";
+import { PlayerPageShell } from "@/components/ui/player-page-shell";
+import { resolveLoyaltyStyle } from "@/lib/loyalty-style";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 
 /**
@@ -223,9 +224,17 @@ export default async function LoyaltyPassportPage({
   if (!ctx.ok) notFound();
 
   const spinWheels = await loadSpinWheels(ctx);
+  // HABILLAGE — schéma de LECTURE : un fond retiré du catalogue rend un
+  // passeport SANS image, jamais une page en erreur (src/lib/loyalty-style.ts).
+  const habillage = resolveLoyaltyStyle(ctx.program.style);
 
   return (
-    <Shell>
+    // Le passeport est peint sur le crème du site, et le voile du fond suit
+    // cette surface (`voile="creme"`, posé par le shell).
+    <PlayerPageShell
+      pageStyle={{ backgroundColor: "var(--color-k-bg)" }}
+      fond={habillage.fond ?? null}
+    >
       {/* Le passeport n'a pas de slug : son URL porte l'identifiant. */}
       <PageOpenBeacon module="loyalty" publicId={ctx.program.id} />
       <LoyaltyPassport
@@ -251,26 +260,7 @@ export default async function LoyaltyPassportPage({
           Lastchance
         </Link>
       </footer>
-    </Shell>
+    </PlayerPageShell>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-dvh bg-k-bg">
-      <SkipLink />
-      {/* Bandeau rayé kermesse en tête de page (identité du parcours joueur). */}
-      <div
-        aria-hidden
-        className="h-3 w-full border-b-2 border-k-ink"
-        style={{
-          background:
-            "repeating-linear-gradient(45deg, var(--color-k-yellow) 0 12px, var(--color-k-ink) 12px 24px)",
-        }}
-      />
-      <main id="contenu" tabIndex={-1} className="outline-none">
-        {children}
-      </main>
-    </div>
-  );
-}

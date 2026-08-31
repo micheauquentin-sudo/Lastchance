@@ -8,8 +8,13 @@ import {
   setLoyaltyProgramStatus,
   updateLoyaltyMilestone,
   updateLoyaltyProgram,
+  updateLoyaltyProgramStyle,
 } from "@/actions/loyalty";
+import { ApercuPasseport } from "@/components/dashboard/apercu-passeport";
 import { AutoSaveEtat } from "@/components/dashboard/auto-save-etat";
+import { SelecteurFond } from "@/components/dashboard/selecteur-fond";
+import { resolveLoyaltyStyle } from "@/lib/loyalty-style";
+import type { FondKey } from "@/lib/fonds-ecran";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -364,6 +369,123 @@ export function LoyaltySettings({
             enAttente={enAttente}
             bloqueParValidation={bloqueParValidation}
             messageBloque="Non enregistré : le nom ou un seuil de niveau est vide."
+          />
+        </div>
+        <FieldError message={state && !state.ok ? state.error : undefined} />
+      </form>
+    </Card>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Habillage (fond d'écran du passeport)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * L'HABILLAGE DU PASSEPORT — une carte, un fond d'écran, un aperçu.
+ *
+ * ── Pourquoi son propre formulaire, et pas un champ de plus dans « Réglages » ──
+ *
+ * `updateLoyaltyProgram` écrase TOUTES les colonnes de son schéma : les deux
+ * formulaires voisins postent déjà le programme entier en champs cachés pour
+ * s'en protéger (voir le commentaire des seuils dans `LoyaltySettings`). Y
+ * ajouter l'habillage aurait fait un troisième jeu de champs cachés à tenir
+ * synchrone, pour une colonne qui ne dépend d'aucune autre. Le formulaire vise
+ * donc `updateLoyaltyProgramStyle`, qui n'écrit QUE `style` — même geste que
+ * `WheelStyleEditor` avec `updateWheelStyle`, et rien ne peut plus s'écraser.
+ *
+ * ── L'aperçu, et non la seule vignette ──
+ *
+ * Le sélecteur montre l'image ; l'aperçu montre l'ÉCRAN — voile compris, carte
+ * du solde par-dessus. Le passeport porte des chiffres, et c'est leur
+ * lisibilité que le commerçant doit pouvoir juger avant d'ouvrir aux clients.
+ * Il se repeint AU CLIC, avant tout enregistrement.
+ *
+ * ── L'enregistrement automatique ──
+ *
+ * Même montage que `WheelStyleEditor` : le sélecteur vit hors du `<form>`, qui
+ * ne porte que deux champs cachés — aucun événement de saisie ne l'atteindrait.
+ * On lui en émet un à chaque changement de fond, et `dirty` garantit que rien
+ * ne part au montage (contrat de `useAutoSave`).
+ */
+export function LoyaltyHabillage({
+  program,
+  organizationName,
+  logoUrl,
+}: {
+  program: LoyaltyProgram;
+  organizationName: string;
+  logoUrl: string | null;
+}) {
+  // Schéma de LECTURE : un fond retiré du catalogue rend un habillage vide,
+  // jamais un écran en erreur (src/lib/loyalty-style.ts).
+  const [fond, setFond] = useState<FondKey | undefined>(
+    () => resolveLoyaltyStyle(program.style).fond,
+  );
+  const [dirty, setDirty] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
+  const { state, pending, onSubmit } = useActionForm(updateLoyaltyProgramStyle, {
+    networkError: "Enregistrement impossible, réessayez.",
+    toastOnSuccess: "Enregistré.",
+  });
+  const { enAttente, bloqueParValidation } = useAutoSave(formRef);
+
+  const styleSerialise = JSON.stringify({ fond });
+  useEffect(() => {
+    if (!dirty) return;
+    formRef.current?.dispatchEvent(new Event("input", { bubbles: true }));
+  }, [styleSerialise, dirty]);
+
+  return (
+    <Card>
+      <h2 className="font-semibold mb-1">Habillage</h2>
+      <p className="text-sm text-zinc-500 mb-5">
+        Une grande image derrière le passeport de vos clients. Elle est adoucie
+        par un voile pour que le solde et les prix restent lisibles.
+      </p>
+
+      <div className="mb-5 max-w-sm">
+        <ApercuPasseport
+          fond={fond}
+          organizationName={organizationName}
+          programName={program.name}
+          logoUrl={logoUrl}
+        />
+        <p className="mt-1.5 text-xs text-zinc-500">
+          Aperçu — le solde affiché est un exemple.
+        </p>
+      </div>
+
+      <SelecteurFond
+        nomGroupe="loyalty-fond"
+        valeur={fond}
+        onChange={(v) => {
+          setFond(v);
+          setDirty(true);
+        }}
+        legende="Fond d'écran du passeport"
+      />
+
+      <form ref={formRef} onSubmit={onSubmit}>
+        <input type="hidden" name="id" value={program.id} />
+        <input type="hidden" name="style" value={styleSerialise} />
+        <div className="flex items-center gap-3">
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={pending}
+            onClick={() => setDirty(false)}
+          >
+            {pending ? "…" : "Enregistrer"}
+          </Button>
+          {state?.ok && !dirty && (
+            <p className="text-sm font-medium text-emerald-600">Enregistré.</p>
+          )}
+          <AutoSaveEtat
+            enAttente={enAttente}
+            bloqueParValidation={bloqueParValidation}
+            messageBloque="Non enregistré : l'habillage n'a pas pu être validé."
           />
         </div>
         <FieldError message={state && !state.ok ? state.error : undefined} />

@@ -40,6 +40,7 @@ import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import {
   LoyaltyMilestonesEditor,
   LoyaltySettings,
+  LoyaltyHabillage,
   LoyaltyStatusControls,
   type LoyaltyJackpotOption,
   type WheelOption,
@@ -152,7 +153,7 @@ export default async function LoyaltyDetailPage({
     supabase
       .from("loyalty_programs")
       .select(
-        "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days",
+        "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days, style",
       )
       .eq("id", id)
       .eq("organization_id", organization.id)
@@ -460,7 +461,18 @@ export default async function LoyaltyDetailPage({
             className="space-y-4"
           >
             {etape === "programme" && (
-              <LoyaltySettings program={p} jackpots={jackpots} />
+              <>
+                <LoyaltySettings program={p} jackpots={jackpots} />
+                {/* L'habillage vit sur cette étape et non sur une cinquième :
+                    c'est un réglage du PROGRAMME, il n'ouvre ni ne bloque
+                    aucune publication, et l'étape de vérification n'a donc
+                    rien à en dire. */}
+                <LoyaltyHabillage
+                  program={p}
+                  organizationName={organization.name}
+                  logoUrl={organization.logo_url}
+                />
+              </>
             )}
 
             {etape === "recompenses" && (

@@ -373,7 +373,17 @@ export function LoyaltyPassport({
             className="mx-auto mb-3 h-14 w-14 rounded-full border-2 border-k-ink bg-white object-cover"
           />
         ) : (
-          <div className="mx-auto mb-3 text-4xl" aria-hidden>
+          /* MÊME DISQUE QUE LE LOGO, et ce n'est pas une coquetterie.
+             Depuis que le passeport peut porter un fond d'écran, un emoji
+             posé à nu sur une photo n'a plus aucune surface garantie sous
+             lui : le voile crème du haut le sauve la plupart du temps, une
+             illustration claire ou chargée à cet endroit ne le sauve pas.
+             Le disque blanc bordé d'encre est la surface que le logo importé
+             a déjà — les deux états de l'en-tête se ressemblent enfin. */
+          <div
+            aria-hidden
+            className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-k-ink bg-white text-3xl"
+          >
             🎟️
           </div>
         )}
@@ -467,7 +477,9 @@ function LinkedJackpotCard({ jackpot }: { jackpot: LoyaltyLinkedJackpotState }) 
   return (
     <section
       aria-label="Mon jackpot collectif"
-      className="k-border mt-6 rounded-2xl bg-k-yellow/30 p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
+      /* Même teinte opaque, même raison que `SoldePanel` : cette carte porte
+         une jauge, un compteur et un montant en euros. */
+      className="k-border mt-6 rounded-2xl bg-[#fde9ba] p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
     >
       <p className="text-xs font-black uppercase tracking-wide text-k-body">Mon jackpot collectif</p>
       <h2 className="mt-1 text-lg font-black text-k-ink">{jackpot.name}</h2>
@@ -534,7 +546,17 @@ function SoldePanel({
   return (
     <section
       aria-label="Mes points"
-      className="k-border mb-4 rounded-2xl bg-k-yellow/30 p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
+      /* `#fde9ba` ET NON `bg-k-yellow/30` — c'est EXACTEMENT le même pixel.
+         Cette teinte est le composite de `k-yellow` à 30 % sur le crème
+         `k-bg` : sur un passeport sans fond d'écran, rien ne change, à la
+         valeur près. Ce qui change, c'est sur un passeport QUI EN A UN. Un
+         aplat à 30 % laisse passer la photo, et le voile de `FondEcran`
+         s'éclaircit justement au milieu, là où cette carte vit : le calcul
+         donne 3,8:1 pour la ligne « n visites validées » sur une
+         illustration sombre — sous les 4,5:1 de WCAG 1.4.3. Or cette carte
+         porte LE CHIFFRE que le client vient chercher. La décoration cède,
+         le solde reste lisible quel que soit le décor choisi. */
+      className="k-border mb-4 rounded-2xl bg-[#fde9ba] p-5 shadow-[6px_6px_0_var(--color-k-ink)]"
     >
       <p className="text-xs font-black uppercase tracking-wide text-k-body">
         Mes points

@@ -23,6 +23,7 @@ import {
   mapLoyaltyStampResult,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
+import { loyaltyStyleWriteSchema } from "@/lib/loyalty-style";
 import { LOYALTY_POINTS_PAR_VISITE } from "@/components/dashboard/loyalty-settings-presets";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 import {
@@ -276,6 +277,71 @@ export async function updateLoyaltyProgram(
 
   revalidatePath("/dashboard/loyalty");
   revalidatePath(`/dashboard/loyalty/${id}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * HABILLAGE du passeport — le jsonb `loyalty_programs.style`, et RIEN d'autre.
+ *
+ * ── Pourquoi une action à part, et pas un champ de plus sur `updateLoyaltyProgram` ──
+ *
+ * `updateLoyaltyProgram` fait un `.update(fields)` de TOUTES les colonnes de
+ * son schéma : un formulaire qui n'en rend pas un champ l'écrase (voir les
+ * champs cachés de `LoyaltySettings` et de `LoyaltyTiersForm`). Faire voyager
+ * l'habillage par là aurait obligé le troisième formulaire à recopier le
+ * programme entier en caché — donc trois endroits à tenir synchrones, pour
+ * une colonne qui ne dépend d'aucune autre. L'action dédiée n'écrit qu'une
+ * colonne et ne peut rien écraser. C'est le jumeau exact de
+ * `updateWheelStyle` (src/actions/prizes.ts), même geste, même contrat.
+ *
+ * Schéma d'ÉCRITURE : un `fond` hors catalogue est REFUSÉ, jamais replié. Le
+ * schéma de lecture le tolère (`loyaltyStyleSchema`, src/lib/loyalty-style.ts)
+ * pour qu'une image retirée du catalogue ne casse pas les programmes qui
+ * l'avaient choisie ; le tolérer ICI acquitterait « Enregistré » une valeur
+ * jetée en silence.
+ */
+export async function updateLoyaltyProgramStyle(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const id = formData.get("id");
+  const rawJson = formData.get("style");
+  if (typeof id !== "string" || typeof rawJson !== "string") {
+    return { ok: false, error: "Données invalides" };
+  }
+
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(rawJson);
+  } catch {
+    return { ok: false, error: "Habillage illisible" };
+  }
+
+  const parsed = loyaltyStyleWriteSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  const { error } = await (await createClient())
+    .from("loyalty_programs")
+    .update({ style: parsed.data })
+    .eq("id", id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    reportError("loyalty.update-program-style", error.message);
+    return { ok: false, error: "Mise à jour impossible" };
+  }
+
+  revalidatePath(`/dashboard/loyalty/${id}`);
+  // « Vos clients le voient dès maintenant » : la page publique du passeport
+  // est en `force-dynamic`, mais la purge reste posée par symétrie avec les
+  // autres écritures du module.
+  revalidatePath(`/passeport/${id}`);
   return { ok: true, data: undefined };
 }
 
