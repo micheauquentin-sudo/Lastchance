@@ -131,6 +131,36 @@ function isExpiredDeviceError(error: unknown): boolean {
   );
 }
 
+/**
+ * LE SIGNAL DE LA FUSION (ID-5) — deux identités, un seul appareil.
+ *
+ * `resolve_player_identity` (20260805140000:519-522) lève ce couple exact quand
+ * l'empreinte historique présentée appartient DÉJÀ à un autre joueur que celui
+ * du cookie `lc-player`. Ce n'est pas une panne : c'est une PREUVE. L'empreinte
+ * de module est dérivée du cookie de ce module sur CE navigateur, et le cookie
+ * `lc-player` vit sur le même — les deux `players` sont donc la même personne
+ * sur le même appareil, scindée par un cookie effacé ou une rotation mal
+ * rattrapée.
+ *
+ * C'est le SEUL rapprochement que ce module fait de lui-même. Deux navigateurs
+ * différents ne partagent aucune empreinte : rien ne permet de les relier, et
+ * un rapprochement inventé serait pire que l'oubli — il verserait l'historique
+ * d'un client dans celui d'un autre.
+ *
+ * Le message est comparé À L'IDENTIQUE, comme dans `isExpiredDeviceError` :
+ * `23505` seul est le code générique d'unicité de Postgres, et une fusion
+ * déclenchée sur n'importe quelle violation d'unicité serait un déplacement
+ * d'historique décidé au hasard.
+ */
+function isLegacyOwnedByAnotherPlayerError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === "23505" &&
+    candidate.message === "legacy identity is linked to another player"
+  );
+}
+
 /** Jeton opaque à forte entropie. Seul son hash salé quitte ce module. */
 export function generatePlayerDeviceToken(): string {
   return randomBytes(32).toString("base64url");
@@ -207,7 +237,7 @@ const FENETRE_TRACE_MS = 60_000;
 /**
  * Dernière trace émise par cause, `${famille}.${reason}.${experienceKind}`.
  *
- * Cardinalité BORNÉE par construction : deux familles × deux motifs × onze
+ * Cardinalité BORNÉE par construction : trois familles × deux motifs × onze
  * étiquettes de famille (les dix du vocabulaire fermé, plus `unvalidated`).
  * Aucune saisie n'entre dans cette clé — c'est la même propriété que celle du
  * nom de compteur, et elle est ce qui autorise à garder l'état en mémoire sans
@@ -282,13 +312,15 @@ function traceIdentityFailure(params: {
   experienceKind: string;
   /**
    * Quel GESTE a échoué. `bridge` = poser le pont (défaut, les quatre sorties
-   * historiques) ; `lookup` = retrouver l'ancienne empreinte après rotation.
-   * Deux compteurs distincts parce que ce sont deux santés distinctes : un pont
-   * qui ne se pose plus perd des lots à venir, une reprise qui ne répond plus
-   * cache des lignes DÉJÀ écrites. Les confondre sous un seul nom ferait
-   * ressembler l'un à l'autre sur le tableau de bord.
+   * historiques) ; `lookup` = retrouver l'ancienne empreinte après rotation ;
+   * `merge` = réunir deux identités que la base refusait de relier.
+   * Trois compteurs distincts parce que ce sont trois santés distinctes : un
+   * pont qui ne se pose plus perd des lots à venir, une reprise qui ne répond
+   * plus cache des lignes DÉJÀ écrites, une fusion qui échoue laisse un client
+   * scindé en deux. Les confondre sous un seul nom ferait ressembler l'un à
+   * l'autre sur le tableau de bord.
    */
-  famille?: "bridge" | "lookup";
+  famille?: "bridge" | "lookup" | "merge";
 }): void {
   try {
     // L'étouffement est PAR CAUSE et non global : une panne de la famille
@@ -308,6 +340,123 @@ function traceIdentityFailure(params: {
     recordCounter(`player-identity.${famille}-failed.${cause}`);
   } catch {
     // Observabilité indisponible : on perd la mesure, jamais le parcours.
+  }
+}
+
+/**
+ * LA FUSION AUTOMATIQUE (ID-5) — au seul endroit où le doute est nul.
+ *
+ * ── QUI SURVIT : LE PORTEUR DU COOKIE COURANT ──
+ *
+ * Le survivant est le joueur du cookie `lc-player` de CETTE requête ; l'absorbé
+ * est celui qui détenait l'empreinte historique. Trois raisons, dans l'ordre où
+ * elles pèsent :
+ *
+ *  1. C'est la seule des deux identités dont on SAIT qu'elle tient une session
+ *     vivante — le navigateur la présentera à la requête suivante, et à toutes
+ *     les suivantes. La migration de la fusion nomme précisément ce cas
+ *     (20261118120000:22-31) : la direction n'est pas déduite, elle est décidée
+ *     par l'appelant, « celui qui sait laquelle des deux est la bonne (celle
+ *     qui tient la session active, par exemple) ».
+ *  2. Rien n'est perdu de l'autre côté. `merge_player_identities` verse TOUT
+ *     l'absorbé dans le survivant — appareils, adhésions, ponts legacy, alias,
+ *     événements, récompenses, progression. Choisir le survivant ne choisit
+ *     donc pas quelle histoire on garde, seulement quelle LIGNE la porte.
+ *  3. La direction est stable pour un appareil donné, ce qui rend la fusion
+ *     rejouable : le même navigateur repassant par le même conflit redemande
+ *     exactement la même fusion, et la RPC est idempotente.
+ *
+ * L'argument « l'autre identité porte peut-être plus d'historique » est ÉCARTÉ,
+ * et il faut dire pourquoi : il est vrai parfois, invérifiable toujours
+ * (comparer deux volumes demanderait de compter, sur un chemin best-effort),
+ * et surtout SANS OBJET — le point 2 conserve les deux histoires, quelle que
+ * soit la ligne qui survit.
+ *
+ * ── L'ÉCHEC N'EST JAMAIS UN GESTE REFUSÉ ──
+ *
+ * Toute sortie rend `false` : appareil introuvable, pont introuvable, RPC en
+ * panne, joueur déjà fusionné ailleurs. L'appelant ne rejoue alors PAS la
+ * résolution et sort par sa trace ordinaire — le tampon, le spin ou le join en
+ * cours n'est pas refusé pour autant. Une fusion ratée coûte un pont non posé,
+ * jamais un geste de joueur.
+ *
+ * ── ELLE SE COMPTE ──
+ *
+ * Une fusion déplace l'historique d'une personne : elle laisse une ligne
+ * `ops_metrics`, JAMAIS étouffée (elle est rare par construction — une fois par
+ * paire) et sans aucun identifiant, seulement la famille qui l'a révélée. Zéro
+ * est ici la valeur ATTENDUE tant que personne ne s'est scindé ; une population
+ * qui grimpe dit qu'un chemin fabrique des identités en double.
+ */
+async function fusionnerIdentitesEnConflit(
+  admin: ReturnType<typeof createAdminClient>,
+  params: {
+    deviceTokenHash: string;
+    organizationId: string;
+    experienceKind: PlayerExperienceKind;
+    experienceId: string;
+    legacyIdentityHash: string;
+  },
+): Promise<boolean> {
+  try {
+    // Deux lectures indépendantes : le joueur de l'appareil courant, et celui
+    // qui détient l'empreinte. La portée du pont est posée EN ENTIER
+    // (organisation, famille, expérience, empreinte) — c'est la clé unique de
+    // `player_legacy_identities`, et la lire partiellement désignerait le
+    // joueur d'une AUTRE expérience.
+    const [appareil, pont] = await Promise.all([
+      admin
+        .from("player_devices")
+        .select("player_id")
+        .eq("token_hash", params.deviceTokenHash)
+        .maybeSingle(),
+      admin
+        .from("player_legacy_identities")
+        .select("player_id")
+        .eq("organization_id", params.organizationId)
+        .eq("experience_kind", params.experienceKind)
+        .eq("experience_id", params.experienceId)
+        .eq("legacy_identity_hash", params.legacyIdentityHash)
+        .maybeSingle(),
+    ]);
+
+    const survivant = appareil.data?.player_id;
+    const absorbe = pont.data?.player_id;
+    // RIEN À FUSIONNER, et aucun de ces cas n'est une panne : l'appareil est
+    // neuf (la RPC l'aurait rattaché toute seule au joueur du pont), le pont a
+    // disparu entre-temps, ou les deux désignent déjà la même identité.
+    if (!survivant || !absorbe || survivant === absorbe) return false;
+
+    const { error } = await admin.rpc("merge_player_identities", {
+      p_surviving_player_id: survivant,
+      p_absorbed_player_id: absorbe,
+    });
+    if (error) {
+      traceIdentityFailure({
+        scope: "player-identity.merge",
+        error: error.message,
+        reason: "unavailable",
+        experienceKind: params.experienceKind,
+        famille: "merge",
+      });
+      return false;
+    }
+
+    try {
+      recordCounter(`player-identity.merged.${params.experienceKind}`);
+    } catch {
+      // Mesurer ne doit jamais casser ce qu'on mesure.
+    }
+    return true;
+  } catch (err) {
+    traceIdentityFailure({
+      scope: "player-identity.merge-exception",
+      error: err,
+      reason: "unavailable",
+      experienceKind: params.experienceKind,
+      famille: "merge",
+    });
+    return false;
   }
 }
 
@@ -382,6 +531,39 @@ export async function ensureProgressivePlayerIdentity(
         p_device_token_hash: deviceTokenHash,
         ...identityArgs,
       }));
+    }
+
+    // ── LA FUSION AUTOMATIQUE (ID-5) ──
+    //
+    // La RPC vient de REFUSER en disant que l'empreinte historique appartient à
+    // un autre joueur. C'est le signal, pas la panne (voir
+    // `isLegacyOwnedByAnotherPlayerError`) : on réunit les deux identités, puis
+    // on rejoue la résolution.
+    //
+    // UN SEUL REJEU, JAMAIS DEUX — c'est la garde qui compte le plus. Cette
+    // fonction est appelée à chaque spin, chaque tampon et chaque join des dix
+    // modules ; une boucle « fusionner puis réessayer » qui insisterait sur un
+    // conflit persistant transformerait un défaut de données en rafale de RPC
+    // d'ÉCRITURE, sur le chemin public le plus fréquenté du dépôt. Si la
+    // seconde résolution échoue — pour ce motif ou pour un autre — on abandonne
+    // et on sort par la trace ordinaire, quelques lignes plus bas.
+    if (
+      parsed.data.legacyIdentityHash &&
+      isLegacyOwnedByAnotherPlayerError(error)
+    ) {
+      const fusionnee = await fusionnerIdentitesEnConflit(admin, {
+        deviceTokenHash,
+        organizationId: parsed.data.organizationId,
+        experienceKind: parsed.data.experienceKind,
+        experienceId: parsed.data.experienceId,
+        legacyIdentityHash: parsed.data.legacyIdentityHash,
+      });
+      if (fusionnee) {
+        ({ data, error } = await admin.rpc("resolve_player_identity", {
+          p_device_token_hash: deviceTokenHash,
+          ...identityArgs,
+        }));
+      }
     }
 
     const resolved = firstRow<ResolveIdentityRow>(data);

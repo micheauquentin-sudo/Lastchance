@@ -84,6 +84,7 @@ const { db, cookieJar, rpcState, createAdminClientMock } = vi.hoisted(() => {
   type Builder = {
     eq: (column: string, value: unknown) => Builder;
     in: (column: string, values: unknown[]) => Builder;
+    limit: (count: number) => Builder;
     order: (column: string, opts: { ascending: boolean }) => Builder;
     maybeSingle: () => Promise<{ data: Row | null; error: null }>;
     then: (
@@ -168,6 +169,12 @@ const { db, cookieJar, rpcState, createAdminClientMock } = vi.hoisted(() => {
                 entry.inFilter = { column, values };
                 return builder;
               },
+              // Le pot commun relié borne sa sonde à une ligne. Sans cette
+              // méthode, ce chemin JETAIT une exception dans le double — donc
+              // aucun test ne pouvait l'atteindre, et il n'en avait aucun.
+              limit() {
+                return builder;
+              },
               order(column, opts) {
                 entry.order = { column, ascending: opts.ascending };
                 return builder;
@@ -210,6 +217,51 @@ const { observerPressionIpMock } = vi.hoisted(() => ({
         extra?: Record<string, unknown>,
       ) => Promise<void>
     >(() => Promise.resolve()),
+}));
+
+/**
+ * L'IDENTITÉ GLOBALE (ID-5) — le second chemin de résolution du passeport.
+ *
+ * Doublée, et jamais exécutée pour de vrai : `peekPlayerDeviceTokenHash` lit un
+ * cookie salé par `PLAYER_KEY_SALT` et `lookupLegacyIdentityHashes` appelle une
+ * RPC. Ce fichier éprouve l'ORDRE de résolution et la portée des requêtes qui
+ * en découlent, pas le pont lui-même (couvert par player-identity.test.ts).
+ *
+ * Le défaut par DÉFAUT est « aucune identité globale » : c'est exactement l'état
+ * d'avant ce lot, ce qui fait de tous les tests déjà écrits ci-dessous des
+ * témoins de non-régression.
+ */
+const { identiteGlobale } = vi.hoisted(() => ({
+  identiteGlobale: {
+    /** Empreinte SALÉE du cookie `lc-player`, ou `null` (visiteur neuf). */
+    empreinte: null as string | null,
+    /** Empreintes de MODULE rendues par le pont, de la plus récente d'abord. */
+    anciennes: [] as string[],
+    /** Portées passées au pont, dans l'ordre — l'isolement s'y assert. */
+    portees: [] as Array<Record<string, unknown>>,
+  },
+}));
+
+vi.mock("@/lib/player-identity", () => ({
+  peekPlayerDeviceTokenHash: () => Promise.resolve(identiteGlobale.empreinte),
+  lookupLegacyIdentityHashes: (portee: Record<string, unknown>) => {
+    identiteGlobale.portees.push(portee);
+    return Promise.resolve(identiteGlobale.anciennes);
+  },
+}));
+
+/**
+ * `recordCounter` seul est espionné ; le reste du module d'observabilité reste
+ * RÉEL, parce que les chargeurs voisins (vitrine, sortie après jeu) en tirent
+ * `reportError` et `monitored`. Un double complet les casserait sans rapport
+ * avec le sujet.
+ */
+const { compteurs } = vi.hoisted(() => ({ compteurs: [] as string[] }));
+vi.mock("@/lib/monitoring", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  recordCounter: (op: string) => {
+    compteurs.push(op);
+  },
 }));
 
 vi.mock("@/lib/module-grants-loader", () => ({
@@ -333,6 +385,10 @@ beforeEach(() => {
   db.reset();
   db.tables.loyalty_programs = [program()];
   cookieJar.jar = {};
+  identiteGlobale.empreinte = null;
+  identiteGlobale.anciennes = [];
+  identiteGlobale.portees = [];
+  compteurs.length = 0;
   observerPressionIpMock.mockClear();
   vi.restoreAllMocks();
 });
@@ -1373,5 +1429,286 @@ describe("loadOrderCodeActionContext — contexte minimal du tampon de commande"
     ];
 
     expect((await loadOrderCodeActionContext(ORDER_TOKEN)).ok).toBe(true);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LA BASCULE DU PASSEPORT (ID-5) — le cookie du module d'abord,
+// l'identité globale ensuite
+//
+// LA PROMESSE DU LOT : un client dont le cookie de fidélité a disparu, mais
+// dont l'appareil est connu, RETROUVE SES POINTS. C'est le premier module dont
+// l'identité de joueur devient l'identité globale.
+//
+// LA NON-RÉGRESSION QUI COMPTE LE PLUS : un client avec son ancien cookie
+// intact garde exactement le même membre qu'avant. Personne ne doit changer
+// d'identité en silence — ADR-041, le double chemin est un ORDRE, pas un
+// remplacement.
+//
+// LE PIÈGE QUE CE BLOC SURVEILLE : `loyalty_members.token_hash` est un SHA-256
+// NU du cookie du module ; l'empreinte de l'identité globale est SALÉE et
+// versionnée. Les substituer ne lèverait AUCUNE erreur — la requête ne
+// trouverait simplement plus personne, partout, sans une ligne de journal.
+// C'est pourquoi l'empreinte globale est ici une valeur qui ne doit apparaître
+// dans AUCUN filtre.
+// ────────────────────────────────────────────────────────────
+describe("passeport — l'identité globale rattrape le cookie perdu", () => {
+  /** Empreinte SALÉE de l'appareil : elle n'entre dans aucune requête. */
+  const EMPREINTE_APPAREIL = "f".repeat(64);
+  /** Le cookie de fidélité d'AVANT, dont seul le hash survit en base. */
+  const VIEUX_COOKIE = "jeton-passeport-d-avant-le-nettoyage";
+
+  function seedMembre(over: Over = {}) {
+    db.tables.loyalty_members = [
+      {
+        id: "member-moi",
+        program_id: PROGRAM_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        visit_count: 4,
+        points_balance: 400,
+        points_earned_total: 400,
+        ...over,
+      },
+    ];
+  }
+
+  it("LA PROMESSE : cookie de fidélité disparu, appareil connu → les points reviennent", async () => {
+    // Le client a nettoyé son navigateur. Son `lc-loyalty-…` n'existe plus,
+    // mais son `lc-player` oui, et le pont `loyalty` a été posé à chaque
+    // tampon. Rouge si le passeport restait à zéro : quatre cents points
+    // affichés « 0 » devant un comptoir où le client sait les avoir gagnés.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport).toMatchObject({
+      hasPassport: true,
+      visitCount: 4,
+      pointsBalance: 400,
+      pointsEarnedTotal: 400,
+    });
+    // Le repli SE COMPTE : zéro est la valeur attendue tant que personne n'a
+    // perdu son cookie, et une population non nulle dit combien de clients
+    // auraient été renvoyés à zéro point.
+    expect(compteurs).toContain("loyalty.passeport.repli_identite_globale");
+  });
+
+  it("interroge le pont sur la portée du PROGRAMME, jamais plus large", async () => {
+    // La famille et l'expérience sont ce qui empêche l'empreinte d'un autre
+    // module — ou d'un autre programme — d'entrer dans la requête.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre();
+
+    await loadLoyaltyContext(PROGRAM_ID);
+
+    expect(identiteGlobale.portees).toEqual([
+      {
+        deviceTokenHash: EMPREINTE_APPAREIL,
+        organizationId: ORG_ID,
+        experienceKind: "loyalty",
+        experienceId: PROGRAM_ID,
+      },
+    ]);
+  });
+
+  it("L'EMPREINTE SALÉE N'ENTRE DANS AUCUN FILTRE — le piège du hachage", async () => {
+    // `hashPlayerDeviceToken` (salé, versionné) et `hashPlayerToken` (SHA-256
+    // nu) ne sont PAS interchangeables, et les substituer ne lève rien : la
+    // requête ne trouve plus personne, partout, en silence. Rouge si
+    // l'empreinte de l'appareil se retrouvait un jour dans un `token_hash`.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre();
+
+    await loadLoyaltyContext(PROGRAM_ID);
+
+    expect(JSON.stringify(db.queries)).not.toContain(EMPREINTE_APPAREIL);
+    const repli = db.queriesOn("loyalty_members")[0];
+    expect(repli.filters.program_id).toBe(PROGRAM_ID);
+    expect(repli.inFilter).toEqual({
+      column: "token_hash",
+      values: [sha256(VIEUX_COOKIE)],
+    });
+  });
+
+  it("NON-RÉGRESSION : cookie intact → le MÊME membre, et le repli n'est jamais consulté", async () => {
+    // La garde qui compte le plus. Rouge si l'identité globale passait devant :
+    // le client au cookie valable changerait d'identité en silence le jour du
+    // déploiement, et ADR-041 interdit précisément de réinterpréter une
+    // progression existante.
+    cookieJar.jar[loyaltyTokenCookieName(PROGRAM_ID)] = TOKEN;
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    // Le pont désignerait un AUTRE membre : il ne doit même pas être interrogé.
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    db.tables.loyalty_members = [
+      {
+        id: "member-du-cookie",
+        program_id: PROGRAM_ID,
+        token_hash: sha256(TOKEN),
+        visit_count: 7,
+        points_balance: 700,
+        points_earned_total: 700,
+      },
+      {
+        id: "member-d-avant",
+        program_id: PROGRAM_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        visit_count: 4,
+        points_balance: 400,
+        points_earned_total: 400,
+      },
+    ];
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.pointsBalance).toBe(700);
+    expect(identiteGlobale.portees).toEqual([]);
+    expect(db.queriesOn("loyalty_members")).toHaveLength(1);
+    expect(compteurs).not.toContain("loyalty.passeport.repli_identite_globale");
+  });
+
+  it("le cloisonnement par programme tient sur le chemin de repli aussi", async () => {
+    // Même empreinte de module, autre programme : invisible. Rouge si le filtre
+    // `program_id` sautait du `in (…)` — le solde d'un commerce s'afficherait
+    // sur la page d'un autre.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre({ program_id: OTHER_PROGRAM_ID });
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.hasPassport).toBe(false);
+    expect(ctx.passport.pointsBalance).toBe(0);
+  });
+
+  it("plusieurs anciennes empreintes : c'est la PLUS RÉCENTE qui gagne", async () => {
+    // La RPC rend ses empreintes triées de la plus récemment vue à la plus
+    // ancienne. Rouge si l'ordre de la base l'emportait : un client qui a
+    // changé deux fois de cookie retomberait sur son passeport le plus vieux.
+    const ENCORE_PLUS_VIEUX = "jeton-de-l-annee-derniere";
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE), sha256(ENCORE_PLUS_VIEUX)];
+    db.tables.loyalty_members = [
+      {
+        id: "member-ancien",
+        program_id: PROGRAM_ID,
+        token_hash: sha256(ENCORE_PLUS_VIEUX),
+        visit_count: 1,
+        points_balance: 100,
+        points_earned_total: 100,
+      },
+      {
+        id: "member-recent",
+        program_id: PROGRAM_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        visit_count: 4,
+        points_balance: 400,
+        points_earned_total: 400,
+      },
+    ];
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.pointsBalance).toBe(400);
+  });
+
+  it("cookie posé mais sans passeport : le repli le rattrape", async () => {
+    // Le cas du mode staff — un cookie neuf est posé avant la première
+    // validation. Avant ce lot, ce client repartait à zéro alors que son
+    // ancien passeport existait toujours en base.
+    cookieJar.jar[loyaltyTokenCookieName(PROGRAM_ID)] = TOKEN;
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.pointsBalance).toBe(400);
+    // Le cookie a bien été essayé EN PREMIER : deux lectures, dans cet ordre.
+    expect(db.queriesOn("loyalty_members")).toHaveLength(2);
+    expect(db.queriesOn("loyalty_members")[0].filters.token_hash).toBe(
+      sha256(TOKEN),
+    );
+  });
+
+  it("visiteur neuf : aucune identité, aucune lecture d'identité", async () => {
+    // Ni cookie de module, ni cookie global. Rouge si le chargeur interrogeait
+    // quand même `loyalty_members` : une requête offerte à tout passant sur un
+    // chemin public, pour un résultat connu d'avance.
+    seedMembre();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.hasPassport).toBe(false);
+    expect(db.tablesQueried()).not.toContain("loyalty_members");
+    expect(identiteGlobale.portees).toEqual([]);
+  });
+
+  it("aucune ancienne empreinte : l'état d'avant, à l'identique", async () => {
+    // Le pont ne rend rien (appareil jamais vu sur ce programme, ou RPC en
+    // panne — il replie déjà toute panne sur une liste vide). Le repli ne peut
+    // qu'AJOUTER un passeport, jamais en retirer un ni faire échouer la page.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [];
+    seedMembre();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.passport.hasPassport).toBe(false);
+    expect(db.tablesQueried()).not.toContain("loyalty_members");
+  });
+
+  it("le pot commun RELIÉ suit l'empreinte rattrapée, pas le cookie absent", async () => {
+    // Ce n'est PAS la bascule du jackpot : le module Jackpot garde son cookie
+    // et son identité. Mais `jackpot_participants.player_token_hash` porte ici
+    // l'empreinte du cookie de FIDÉLITÉ — c'est le passeport qui inscrit au pot
+    // relié. Rouge si ce bloc relisait le cookie : on afficherait « pas encore
+    // inscrit » à un client dont on affiche par ailleurs les points rattrapés.
+    db.tables.loyalty_programs = [
+      program({
+        jackpot_campaign_id: "pot-relie",
+        organizations: org({ addon_jackpot: true }),
+      }),
+    ];
+    db.tables.jackpot_campaigns = [
+      {
+        id: "pot-relie",
+        organization_id: ORG_ID,
+        name: "Le pot de Marcel",
+        status: "active",
+        validation_mode: "staff",
+        threshold: 50,
+        current_count: 12,
+        display_base_cents: 1000,
+        display_increment_cents: 100,
+        reward_label: "Un magnum",
+      },
+    ];
+    db.tables.jackpot_participants = [
+      {
+        id: "participant-moi",
+        campaign_id: "pot-relie",
+        organization_id: ORG_ID,
+        player_token_hash: sha256(VIEUX_COOKIE),
+      },
+    ];
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedMembre();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.jackpot).toMatchObject({ hasJoined: true, currentCount: 12 });
   });
 });
