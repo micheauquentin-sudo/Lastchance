@@ -3313,6 +3313,11 @@ export type Database = {
           min_stamp_interval_seconds: number
           name: string
           organization_id: string
+          referral_enabled: boolean
+          referral_filleul_points: number
+          referral_max_filleuls: number
+          referral_sponsor_points: number
+          referral_window_days: number
           rotating_period_seconds: number
           rotating_secret: string | null
           silver_threshold: number
@@ -3329,6 +3334,11 @@ export type Database = {
           min_stamp_interval_seconds?: number
           name: string
           organization_id: string
+          referral_enabled?: boolean
+          referral_filleul_points?: number
+          referral_max_filleuls?: number
+          referral_sponsor_points?: number
+          referral_window_days?: number
           rotating_period_seconds?: number
           rotating_secret?: string | null
           silver_threshold?: number
@@ -3345,6 +3355,11 @@ export type Database = {
           min_stamp_interval_seconds?: number
           name?: string
           organization_id?: string
+          referral_enabled?: boolean
+          referral_filleul_points?: number
+          referral_max_filleuls?: number
+          referral_sponsor_points?: number
+          referral_window_days?: number
           rotating_period_seconds?: number
           rotating_secret?: string | null
           silver_threshold?: number
@@ -3366,6 +3381,130 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      loyalty_referral_signups: {
+        Row: {
+          created_at: string
+          filleul_member_id: string
+          filleul_points_awarded: number
+          id: string
+          organization_id: string
+          program_id: string
+          proof_stamp_id: string
+          sponsor_id: string
+          sponsor_points_awarded: number
+        }
+        Insert: {
+          created_at?: string
+          filleul_member_id: string
+          filleul_points_awarded?: number
+          id?: string
+          organization_id: string
+          program_id: string
+          proof_stamp_id: string
+          sponsor_id: string
+          sponsor_points_awarded?: number
+        }
+        Update: {
+          created_at?: string
+          filleul_member_id?: string
+          filleul_points_awarded?: number
+          id?: string
+          organization_id?: string
+          program_id?: string
+          proof_stamp_id?: string
+          sponsor_id?: string
+          sponsor_points_awarded?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_referral_signups_filleul_member_id_program_id_orga_fkey"
+            columns: ["filleul_member_id", "program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_members"
+            referencedColumns: ["id", "program_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_signups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_signups_program_id_organization_id_fkey"
+            columns: ["program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_signups_proof_stamp_id_organization_id_fkey"
+            columns: ["proof_stamp_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_stamps"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_signups_sponsor_id_program_id_organizatio_fkey"
+            columns: ["sponsor_id", "program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_referral_sponsors"
+            referencedColumns: ["id", "program_id", "organization_id"]
+          },
+        ]
+      }
+      loyalty_referral_sponsors: {
+        Row: {
+          created_at: string
+          id: string
+          member_id: string
+          organization_id: string
+          program_id: string
+          referral_code: string
+          validated_count: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          member_id: string
+          organization_id: string
+          program_id: string
+          referral_code: string
+          validated_count?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          member_id?: string
+          organization_id?: string
+          program_id?: string
+          referral_code?: string
+          validated_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loyalty_referral_sponsors_member_id_program_id_organizatio_fkey"
+            columns: ["member_id", "program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_members"
+            referencedColumns: ["id", "program_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_sponsors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "loyalty_referral_sponsors_program_id_organization_id_fkey"
+            columns: ["program_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "loyalty_programs"
+            referencedColumns: ["id", "organization_id"]
           },
         ]
       }
@@ -9034,6 +9173,10 @@ export type Database = {
         Args: { p_organization_id: string; p_season_id: string }
         Returns: boolean
       }
+      ensure_loyalty_referral_code: {
+        Args: { p_member_token_hash: string; p_program_id: string }
+        Returns: Json
+      }
       ensure_referral_sponsor: {
         Args: { p_campaign_id: string; p_email?: string; p_sponsor_key: string }
         Returns: Json
@@ -9331,6 +9474,10 @@ export type Database = {
           redeem_code: string
           redeemed_at: string
         }[]
+      }
+      loyalty_referral_credit: {
+        Args: { p_member_id: string; p_points: number; p_program_id: string }
+        Returns: Json
       }
       merge_player_identities: {
         Args: { p_absorbed_player_id: string; p_surviving_player_id: string }
@@ -10639,6 +10786,14 @@ export type Database = {
           p_organization_id: string
           p_texte: string
           p_version_source: string
+        }
+        Returns: Json
+      }
+      validate_loyalty_referral: {
+        Args: {
+          p_filleul_token_hash: string
+          p_program_id: string
+          p_referral_code: string
         }
         Returns: Json
       }

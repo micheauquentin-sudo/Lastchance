@@ -481,6 +481,24 @@ export interface LoyaltyProgram {
    * rendre invalides — donc non modifiables — les styles déjà enregistrés.
    */
   style: Record<string, unknown> | null;
+  /**
+   * PARRAINAGE DU PASSEPORT (FID-5a, 20261119120000) — opt-in du commerçant.
+   *
+   * Les cinq réglages vivent ici plutôt que dans une table jumelle : le lien
+   * est un-pour-un avec le programme, et la configuration est plate (la
+   * récompense étant un crédit de points, il n'y a ni kind, ni label, ni
+   * stock à prévoir). Voir l'en-tête de la migration pour l'arbitrage complet.
+   */
+  referral_enabled: boolean;
+  /** Points crédités au parrain quand un filleul fait valider son passeport.
+   *  Unité FID-2a : 100 points = 1 visite. 0 = aucun versement au parrain. */
+  referral_sponsor_points: number;
+  /** Bonus de bienvenue crédité au filleul au même instant. 0 = pas de bonus. */
+  referral_filleul_points: number;
+  /** Plafond de filleuls comptés par parrain (au-delà → `capped`). */
+  referral_max_filleuls: number;
+  /** Fenêtre de validité d'un code de parrain, en jours depuis sa création. */
+  referral_window_days: number;
   created_at: string;
 }
 
