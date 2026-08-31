@@ -9291,6 +9291,20 @@ export type Database = {
           player_id: string
         }[]
       }
+      lookup_player_legacy_identities: {
+        Args: {
+          p_device_token_hash: string
+          p_experience_id: string
+          p_experience_kind: string
+          p_organization_id: string
+        }
+        Returns: {
+          experience_membership_id: string
+          last_seen_at: string
+          legacy_identity_hash: string
+          player_id: string
+        }[]
+      }
       lookup_redeem_code: {
         Args: { p_organization_id: string; p_redeem_code: string }
         Returns: {
