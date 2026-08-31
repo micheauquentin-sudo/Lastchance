@@ -464,19 +464,24 @@ export const loyaltyReferralCodeSchema = z
  * Le `transform` précède la borne, comme dans validations/events.ts : la
  * longueur se mesure sur la forme NORMALISÉE, celle qui sera gravée, jamais sur
  * la saisie brute.
+ *
+ * `texteOptionnel` et non `.default("")` : un champ non rendu arrive en `null`,
+ * pas en `undefined` (`FormData.get`), et `.default()` n'absorbe que le second.
+ * L'écran replie ce bloc — le champ n'est alors PAS dans le formulaire soumis.
  */
-const passportDisplayNameSchema = z
-  .string()
-  .transform(formatPlayerAlias)
-  .pipe(
-    z
-      .string()
-      .max(24, "Surnom trop long (24 caractères max)")
-      .refine((value) => value === "" || isAllowedPlayerAlias(value), {
-        message: "Choisissez un autre surnom",
-      }),
-  )
-  .default("");
+const passportDisplayNameSchema = texteOptionnel(
+  z
+    .string()
+    .transform(formatPlayerAlias)
+    .pipe(
+      z
+        .string()
+        .max(24, "Surnom trop long (24 caractères max)")
+        .refine((value) => value === "" || isAllowedPlayerAlias(value), {
+          message: "Choisissez un autre surnom",
+        }),
+    ),
+);
 
 /**
  * Figure du catalogue applicatif (`src/lib/avatars.tsx`), vide accepté.
@@ -487,14 +492,15 @@ const passportDisplayNameSchema = z
  * figure. Sans ce `refine`, `avatar = 'licorne'` s'écrirait sans broncher et
  * s'afficherait en renard.
  */
-const passportAvatarSchema = z
-  .string()
-  .trim()
-  .max(20)
-  .refine((value) => value === "" || isAvatarId(value), {
-    message: "Figure inconnue",
-  })
-  .default("");
+const passportAvatarSchema = texteOptionnel(
+  z
+    .string()
+    .trim()
+    .max(20)
+    .refine((value) => value === "" || isAvatarId(value), {
+      message: "Figure inconnue",
+    }),
+);
 
 /** Le client enregistre le surnom et la figure de SA carte. */
 export const setLoyaltyIdentitySchema = z.object({
