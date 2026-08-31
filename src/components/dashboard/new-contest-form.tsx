@@ -45,7 +45,7 @@ export function NewContestForm({
   return (
     <form
       action={formAction}
-      className="w-full max-w-xl flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
+      className="flex w-full flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
       {/* Modèles préconfigurés : le football n'est qu'une carte parmi les
           autres. La valeur envoyée EST la case cochée (`event_kind`), il
