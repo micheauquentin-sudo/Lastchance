@@ -8,6 +8,7 @@ import {
 } from "@/components/vitrine/catalogue-vitrine";
 import { FicheVitrine } from "@/components/vitrine/fiche-vitrine";
 import type { VitrineCarteView } from "@/lib/vitrine";
+import { resoudreThemeVitrine } from "@/components/vitrine/theme";
 
 /**
  * LA COUVERTURE DU RENDU PUBLIC — au niveau du composant.
@@ -159,9 +160,32 @@ const CARTES: VitrineCarteView[] = [
   },
 ];
 
+/**
+ * LES PROPS QUI NE VARIENT PAS D'UN TEST À L'AUTRE (VIT-13).
+ *
+ * L'allure vient de `resoudreThemeVitrine` et NON d'un littéral recopié : ces
+ * tests doivent voir exactement les défauts que voit la page publique, et un
+ * objet écrit à la main ici aurait cessé de les refléter au premier défaut qui
+ * change — sans qu'aucun test ne rougisse.
+ */
+const ALLURE = resoudreThemeVitrine(null).allure;
+const SOCLE = {
+  secteur: "restaurant",
+  allure: ALLURE,
+  slug: "e2e-comptoir",
+  histoire: null,
+  horaires: null,
+} as const;
+const SOCLE_FICHE = {
+  secteur: "restaurant",
+  allure: ALLURE,
+  favori: false,
+  onBasculerFavori: null,
+} as const;
+
 describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   it("rend les deux cartes en onglets et la première carte par défaut", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     expect(
       screen
@@ -181,7 +205,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("la fiche épuisée est grisée ET dite, jamais retirée", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Curry de légumes grillés")
@@ -194,7 +218,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("badges et allergènes vides ne rendent aucun « [] »", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     // Onglet "Vins & boissons" pour atteindre la fiche sans badges.
     fireEvent.click(screen.getByRole("button", { name: "Vins & boissons" }));
@@ -205,7 +229,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("le filet nom/prix et le prix s'affichent sur une même ligne", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -214,7 +238,7 @@ describe("CatalogueVitrine — rendu public (seed e2e-comptoir)", () => {
   });
 
   it("les allergènes sont repliés dans un <details>", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
 
     const article = screen
       .getByText("Velouté de potiron")
@@ -231,7 +255,7 @@ describe("FicheVitrine — rendu isolé", () => {
   const ficheIndisponible = CARTES[0].categories[1].fiches[1];
 
   it("nom, description, prix et badges d'une fiche disponible", () => {
-    render(<FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />);
+    render(<FicheVitrine {...SOCLE_FICHE} fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />);
     expect(screen.getByText("Velouté de potiron")).toBeTruthy();
     expect(
       screen.getByText("Crème légère, graines torréfiées maison."),
@@ -242,7 +266,7 @@ describe("FicheVitrine — rendu isolé", () => {
 
   it("le monogramme n'apparaît qu'en dehors du style liste", () => {
     const { container: liste } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />,
+      <FicheVitrine {...SOCLE_FICHE} fiche={ficheDisponible} styleCartes="liste" lang="fr" portesOuvertes={[]} />,
     );
     // Le monogramme porte `h-16`/`h-28` ; le filet nom/prix porte aussi
     // `aria-hidden`, donc on cible la classe propre au monogramme.
@@ -250,13 +274,13 @@ describe("FicheVitrine — rendu isolé", () => {
     cleanup();
 
     const { container: grille } = render(
-      <FicheVitrine fiche={ficheDisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />,
+      <FicheVitrine {...SOCLE_FICHE} fiche={ficheDisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />,
     );
     expect(grille.textContent).toContain("V");
   });
 
   it("une fiche indisponible est grisée avec la mention textuelle", () => {
-    render(<FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
+    render(<FicheVitrine {...SOCLE_FICHE} fiche={ficheIndisponible} styleCartes="grille" lang="fr" portesOuvertes={[]} />);
     expect(screen.getByText("Indisponible aujourd'hui")).toBeTruthy();
   });
 });
@@ -275,7 +299,7 @@ describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
 
   it("la mention d'indisponibilité et le pli des allergènes sont en anglais", () => {
     render(
-      <FicheVitrine fiche={ficheIndisponible} styleCartes="grille" lang="en" portesOuvertes={[]} />,
+      <FicheVitrine {...SOCLE_FICHE} fiche={ficheIndisponible} styleCartes="grille" lang="en" portesOuvertes={[]} />,
     );
     expect(screen.getByText("Unavailable today")).toBeTruthy();
     expect(screen.queryByText("Indisponible aujourd'hui")).toBeNull();
@@ -283,7 +307,7 @@ describe("rendu anglais — chrome et vocabulaire de plateforme", () => {
   });
 
   it("le libellé de recherche et l'état vide basculent aussi", () => {
-    render(<CatalogueVitrine cartes={CARTES} styleCartes="grille" lang="en" portesOuvertes={[]} />);
+    render(<CatalogueVitrine {...SOCLE} cartes={CARTES} styleCartes="grille" lang="en" portesOuvertes={[]} />);
     expect(screen.getByLabelText("Search in Carte du midi")).toBeTruthy();
 
     // Le nom de la carte, lui, reste tel que la base l'a rendu : le chrome se
@@ -312,5 +336,170 @@ describe("decoderFragment", () => {
       expect(() => decoderFragment(brut)).not.toThrow();
       expect(decoderFragment(brut)).toBe(brut.slice(1));
     }
+  });
+});
+
+/**
+ * LA NOUVELLE STRUCTURE D'ÉCRAN (VIT-13) — onglets, chips filtrantes, favoris.
+ *
+ * Ce bloc garde ce que la maquette de référence a changé au catalogue, et
+ * surtout les DEUX endroits où la fidélité à la maquette aurait pu faire perdre
+ * quelque chose : l'histoire remontée en onglet, et les rubriques passées d'un
+ * sommaire qui défile à un filtre qui masque.
+ */
+describe("CatalogueVitrine — onglets, filtres et favoris (VIT-13)", () => {
+  it("« Notre histoire » devient un onglet, devant les cartes", () => {
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+        histoire="Trois générations."
+        horaires={"Mardi au dimanche\n12h-14h"}
+      />,
+    );
+
+    const onglet = screen.getByRole("button", { name: "Notre histoire" });
+    expect(onglet.getAttribute("aria-pressed")).toBe("false");
+
+    // À L'ARRIVÉE, C'EST LA CARTE QUI EST OUVERTE, pas la biographie du lieu :
+    // le client qui scanne à table veut la carte.
+    expect(
+      screen.getByRole("button", { name: "Carte du midi" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    fireEvent.click(onglet);
+    expect(onglet.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Trois générations.")).toBeTruthy();
+    // Les horaires voyagent AVEC l'histoire, dans le même onglet.
+    expect(screen.getByText(/Mardi au dimanche/)).toBeTruthy();
+  });
+
+  it("sans histoire ni horaires, aucun onglet supplémentaire n'apparaît", () => {
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Notre histoire" })).toBeNull();
+  });
+
+  it("toutes les rubriques sont visibles à l'arrivée, et « tout » est actif", () => {
+    // ÉCART ASSUMÉ À LA MAQUETTE, qui ouvre sur la première rubrique : une carte
+    // de restaurant se lit d'abord en entier, et n'en montrer qu'un septième
+    // ferait croire à une carte vide chez qui n'a que trois plats par rubrique.
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    const rubriques = CARTES[0].categories;
+    expect(rubriques.length).toBeGreaterThan(1);
+    for (const r of rubriques) {
+      expect(screen.getByRole("heading", { name: r.nom })).toBeTruthy();
+    }
+  });
+
+  it("une chip filtre sur sa seule rubrique, et « tout » les rouvre", () => {
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    const [premiere, seconde] = CARTES[0].categories;
+
+    fireEvent.click(screen.getByRole("button", { name: premiere.nom }));
+    expect(screen.getByRole("heading", { name: premiere.nom })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: seconde.nom })).toBeNull();
+
+    // Le bouton « tout » porte le nom accessible du groupe de rubriques : c'est
+    // un glyphe (⌂) à l'œil, et il ne doit pas être muet à l'oreille.
+    fireEvent.click(screen.getAllByRole("button", { name: "Rubriques" })[0]);
+    expect(screen.getByRole("heading", { name: seconde.nom })).toBeTruthy();
+  });
+
+  it("une recherche ROUVRE toutes les rubriques", () => {
+    // Filtrer deux fois — par rubrique ET par mot — ferait répondre « aucun
+    // résultat » sur un plat qui existe deux rubriques plus bas.
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    const [premiere, seconde] = CARTES[0].categories;
+    fireEvent.click(screen.getByRole("button", { name: premiere.nom }));
+    expect(screen.queryByRole("heading", { name: seconde.nom })).toBeNull();
+
+    const cherche = seconde.fiches[0].nom;
+    fireEvent.change(screen.getByLabelText(/Rechercher dans/), {
+      target: { value: cherche },
+    });
+    expect(screen.getByRole("heading", { name: seconde.nom })).toBeTruthy();
+  });
+
+  it("le cœur porte le NOM du plat, jamais un libellé répété trente fois", () => {
+    // Une carte porte trente boutons identiques : « Ajouter aux favoris »
+    // trente fois ne dit rien à qui parcourt les contrôles au lecteur d'écran.
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    const plat = CARTES[0].categories[0].fiches[0];
+    const coeur = screen.getByRole("button", { name: `Favori : ${plat.nom}` });
+    expect(coeur.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("les favoris éteints par l'allure ne rendent AUCUN cœur", () => {
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        allure={{ ...ALLURE, favoris: false }}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Favori/ })).toBeNull();
+  });
+
+  it("la recherche éteinte par l'allure retire le champ, pas les plats", () => {
+    render(
+      <CatalogueVitrine
+        {...SOCLE}
+        allure={{ ...ALLURE, recherche: false }}
+        cartes={CARTES}
+        styleCartes="liste"
+        lang="fr"
+        portesOuvertes={[]}
+      />,
+    );
+    expect(screen.queryByLabelText(/Rechercher dans/)).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: CARTES[0].categories[0].nom }),
+    ).toBeTruthy();
   });
 });

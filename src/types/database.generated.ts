@@ -8183,6 +8183,7 @@ export type Database = {
       vitrine_settings: {
         Row: {
           accroche: string | null
+          badge_ouverture: string | null
           cover_alt: string | null
           cover_path: string | null
           created_at: string
@@ -8192,12 +8193,14 @@ export type Database = {
           indexable: boolean
           organization_id: string
           published: boolean
+          secteur: string
           slug: string
           theme: Json
           updated_at: string
         }
         Insert: {
           accroche?: string | null
+          badge_ouverture?: string | null
           cover_alt?: string | null
           cover_path?: string | null
           created_at?: string
@@ -8207,12 +8210,14 @@ export type Database = {
           indexable?: boolean
           organization_id: string
           published?: boolean
+          secteur?: string
           slug: string
           theme?: Json
           updated_at?: string
         }
         Update: {
           accroche?: string | null
+          badge_ouverture?: string | null
           cover_alt?: string | null
           cover_path?: string | null
           created_at?: string
@@ -8222,6 +8227,7 @@ export type Database = {
           indexable?: boolean
           organization_id?: string
           published?: boolean
+          secteur?: string
           slug?: string
           theme?: Json
           updated_at?: string
