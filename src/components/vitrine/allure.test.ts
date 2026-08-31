@@ -240,8 +240,27 @@ describe("le vocabulaire public suit le métier", () => {
 });
 
 describe("les variables CSS traduisent l'allure en pixels", () => {
-  const vars = (theme = resoudreThemeVitrine(null)) =>
-    variablesThemeVitrine(theme) as unknown as Record<string, string>;
+  /**
+   * Les variables, en chaînes — SANS aucun cast.
+   *
+   * `variablesThemeVitrine` rend un `CSSProperties`, dont les propriétés
+   * personnalisées `--vitrine-*` ne sont pas indexables au type. Le double cast
+   * qu'on écrit d'instinct ici aurait ouvert la porte que garde
+   * `scripts/check-unsafe-casts.mjs`, et pour rien : `Object.entries` donne
+   * exactement la même chose, et `String()` normalise au passage un éventuel
+   * nombre — ce qu'un cast aurait laissé passer en mentant sur le type.
+   *
+   * (Cette garde est TEXTUELLE : elle compte les occurrences dans le fichier,
+   * commentaires compris. Citer la construction pour l'expliquer suffisait à
+   * faire rougir la CI — d'où la périphrase.)
+   */
+  const vars = (theme = resoudreThemeVitrine(null)): Record<string, string> =>
+    Object.fromEntries(
+      Object.entries(variablesThemeVitrine(theme)).map(([cle, valeur]) => [
+        cle,
+        String(valeur),
+      ]),
+    );
 
   it("le composant n'a aucune multiplication à refaire", () => {
     const v = vars();
@@ -264,7 +283,7 @@ describe("les variables CSS traduisent l'allure en pixels", () => {
     // La taille retombe sur `standard` mais le composant ne rend rien : ces
     // variables ne sont lues par personne. Ce qui compte est qu'elles restent
     // des longueurs valides plutôt que `NaNpx`, qui casserait la règle voisine.
-    const v = vars(resoudreThemeVitrine({ allure: { photo_taille: "sans" } }));
+    const v = vars(resoudreThemeVitrine({ allure: { photo_taille: "aucune" } }));
     expect(v["--vitrine-photo-l"]).toBe("130px");
     expect(v["--vitrine-photo-h"]).toBe("92px");
   });

@@ -791,12 +791,26 @@ export type DensiteVitrine = (typeof VITRINE_DENSITES)[number];
 export const VITRINE_STYLES_FICHE = ["ombre", "contour", "plein"] as const;
 export type StyleFicheVitrine = (typeof VITRINE_STYLES_FICHE)[number];
 
-/** `sans` retire la photo ET son emplacement — ce n'est pas une taille nulle. */
+/**
+ * `aucune` retire la photo ET son emplacement — ce n'est pas une taille nulle.
+ *
+ * ── POURQUOI `aucune` ET NON `sans`, QUI SE LIT MIEUX ──
+ *
+ * `'sans'` est DÉJÀ une clé de police (`FONT_KEYS`), et les deux vocabulaires
+ * vivent dans le corps de la MÊME fonction SQL. `vitrine.test.sql` y compte les
+ * occurrences quotées des sept polices pour prouver qu'elles sont bien recopiées
+ * — un `'sans'` de plus, venu d'une autre liste, en faisait huit et cassait une
+ * garde qui n'avait rien à voir.
+ *
+ * On renomme la valeur plutôt que d'élargir la garde : elle n'est pas fausse,
+ * elle est grossière, et l'affaiblir pour un confort de nommage aurait coûté
+ * plus que ce mot. `aucune` répond d'ailleurs à `aucun` du motif.
+ */
 export const VITRINE_PHOTO_TAILLES = [
   "grande",
   "standard",
   "vignette",
-  "sans",
+  "aucune",
 ] as const;
 export type PhotoTailleVitrine = (typeof VITRINE_PHOTO_TAILLES)[number];
 

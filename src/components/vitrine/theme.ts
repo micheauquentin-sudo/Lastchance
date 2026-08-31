@@ -296,7 +296,7 @@ const PAD_DENSITE: Record<DensiteVitrine, number> = {
  * dimensions aurait réservé un cadre vide.
  */
 const PHOTO_LATERALE: Record<
-  Exclude<PhotoTailleVitrine, "sans">,
+  Exclude<PhotoTailleVitrine, "aucune">,
   [number, number]
 > = {
   grande: [152, 116],
@@ -305,7 +305,7 @@ const PHOTO_LATERALE: Record<
 };
 
 /** En pleine largeur, seule la HAUTEUR se règle : la largeur est celle de la carte. */
-const PHOTO_PLEINE: Record<Exclude<PhotoTailleVitrine, "sans">, number> = {
+const PHOTO_PLEINE: Record<Exclude<PhotoTailleVitrine, "aucune">, number> = {
   grande: 220,
   standard: 170,
   vignette: 120,
@@ -352,12 +352,12 @@ function motifCss(motif: MotifVitrine, couleur: string): string {
 export function variablesThemeVitrine(t: VitrineThemeResolu): CSSProperties {
   const a = t.allure;
   const pleine = a.photoPosition === "pleine";
-  // `sans` retire la photo, il ne la dimensionne pas : le composant ne rendra
+  // `aucune` retire la photo, il ne la dimensionne pas : le composant ne rendra
   // rien, et ces variables ne seront lues par personne. On retombe donc sur
   // `standard` plutôt que d'ouvrir la table à une quatrième entrée qui
   // signifierait « pas de taille ».
-  const taille: Exclude<PhotoTailleVitrine, "sans"> =
-    a.photoTaille === "sans" ? "standard" : a.photoTaille;
+  const taille: Exclude<PhotoTailleVitrine, "aucune"> =
+    a.photoTaille === "aucune" ? "standard" : a.photoTaille;
   const laterale = PHOTO_LATERALE[taille];
   const hauteurPleine = PHOTO_PLEINE[taille];
 

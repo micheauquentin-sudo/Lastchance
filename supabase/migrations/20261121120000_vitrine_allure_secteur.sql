@@ -314,7 +314,15 @@ begin
           ('motif',          array['aucun', 'diagonales', 'points', 'damier']),
           ('densite',        array['confortable', 'standard', 'compact']),
           ('style_fiche',    array['ombre', 'contour', 'plein']),
-          ('photo_taille',   array['grande', 'standard', 'vignette', 'sans']),
+          -- « aucune » ET NON le mot qui designe une police sans empattement :
+          -- ce mot-la est deja une cle de POLICE, et vitrine.test.sql compte
+          -- ses occurrences quotees dans le corps de CETTE fonction pour
+          -- prouver que les sept polices y sont recopiees. Une huitieme
+          -- occurrence, venue d'une autre liste, cassait une garde sans
+          -- rapport. Le mot n'est donc ecrit nulle part ici, PAS MEME DANS CE
+          -- COMMENTAIRE : `prosrc` porte les commentaires, et la garde compte
+          -- le texte installe.
+          ('photo_taille',   array['grande', 'standard', 'vignette', 'aucune']),
           ('photo_position', array['droite', 'gauche', 'pleine']),
           ('style_prix',     array['simple', 'accent', 'pastille']),
           ('style_onglets',  array['soulignes', 'pastilles', 'segmentes']),

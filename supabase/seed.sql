@@ -1486,11 +1486,23 @@ on conflict (id) do nothing;
 --     fait disparaître.
 -- Badges et allergènes sont VARIÉS et couvrent le cas du tableau VIDE, celui
 -- qu'un rendu naïf transforme en « [] ».
+-- LE SECTEUR EST ÉCRIT ICI, ET IL LE FAUT (VIT-13).
+--
+-- La migration remplit RÉTROACTIVEMENT les vitrines existantes avec
+-- « restaurant » — ce qu'elles affichaient déjà — mais `db reset` applique les
+-- migrations sur une base VIDE : il n'y a alors rien à remplir, et le seed qui
+-- suit hérite du DÉFAUT DE COLONNE, qui est le neutre « commerce ».
+--
+-- Sans cette colonne, « E2E Café » annoncerait « Réserver » et « Notre
+-- catalogue » au lieu de « Réserver une table » et « Nos cartes » — et l'E2E
+-- échouerait sur une différence de vocabulaire qui n'aurait rien à voir avec ce
+-- qu'il teste. Un seed doit décrire un commerçant vraisemblable : celui-ci est
+-- un café qui sert à manger.
 insert into public.vitrine_settings
-  (id, organization_id, slug, published, accroche, histoire, horaires_texte, theme)
+  (id, organization_id, slug, published, secteur, accroche, histoire, horaires_texte, theme)
 values (
   'e2f10000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000001',
-  'e2e-comptoir', true,
+  'e2e-comptoir', true, 'restaurant',
   'Le comptoir de quartier, torréfaction maison depuis 2019.',
   'Une salle de vingt couverts, une torréfaction au fond, et une carte qui '
   'change avec le marché. On y vient pour le café le matin et pour la cuisine '
@@ -1788,11 +1800,14 @@ on conflict (id) do nothing;
 --
 -- `theme` est OMIS : la colonne vaut `'{}'::jsonb` par défaut, et « thème par
 -- défaut » est justement ce que cette vitrine doit rendre à l'écran.
+-- « bar » plutôt que « restaurant » : c'est un bar à vins, et les deux
+-- partagent « Réserver une table ». Le seed dit ce que le commerce EST, il
+-- n'est pas réglé pour faire passer une assertion.
 insert into public.vitrine_settings
-  (id, organization_id, slug, published, accroche)
+  (id, organization_id, slug, published, secteur, accroche)
 values (
   'e2f20000-0000-4000-8000-000000000001', 'e2e10000-0000-4000-8000-000000000003',
-  'e2e-traduit', true,
+  'e2e-traduit', true, 'bar',
   'Le bar à vins du quai.'
 )
 on conflict (id) do nothing;

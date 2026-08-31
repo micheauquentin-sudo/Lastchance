@@ -86,7 +86,7 @@ const VALEURS: Record<string, string> = {
   // Photos
   grande: "Grande",
   vignette: "Vignette",
-  sans: "Sans photo",
+  aucune: "Sans photo",
   droite: "À droite",
   gauche: "À gauche",
   pleine: "Pleine largeur",

@@ -100,14 +100,14 @@ export function FicheVitrine({
   const titreId = `fiche-titre-${fiche.id}`;
 
   const photo =
-    allure.photoTaille === "sans" ? null : sourcesPhotoVitrine(fiche.photo_path);
+    allure.photoTaille === "aucune" ? null : sourcesPhotoVitrine(fiche.photo_path);
   // Le monogramme ne comble QUE le vide laissé par une photo attendue. En style
   // `liste` sans photo, il n'y a aucune place à combler : un carré par ligne
   // serait exactement le bruit que « discret » exclut.
   const monogramme =
     !photo &&
     allure.monogramme &&
-    allure.photoTaille !== "sans" &&
+    allure.photoTaille !== "aucune" &&
     (styleCartes !== "liste" || allure.photoPosition === "pleine");
 
   const prixEnLigne = allure.stylePrix === "simple" && Boolean(fiche.prix_affiche);
