@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getUserAndOrg } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { qrDistributionKinds, type QrDistributionKind } from "@/lib/qr-distribution";
@@ -74,7 +75,8 @@ export async function GET(request: NextRequest) {
   if (kind === "campaign") {
     const { data: qr } = await supabase.from("qr_codes").select("id").eq("id", id).eq("organization_id", organization.id).maybeSingle();
     if (!qr) return NextResponse.json({ error: "QR introuvable" }, { status: 404 });
-    const { count, error } = await supabase.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("qr_code_id", id).eq("event_name", "reward_issued");
+    const admin = createAdminClient();
+    const { count, error } = await admin.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("qr_code_id", id).eq("event_name", "reward_issued");
     if (error) return NextResponse.json({ error: "Lecture impossible" }, { status: 500 });
     return NextResponse.json({ asset: null, rewardCount: count ?? 0 });
   }
@@ -87,7 +89,12 @@ export async function GET(request: NextRequest) {
 
   const experienceKind = { quiz: "quiz", calendar: "calendar", pronostics: "contest", jackpot: "jackpot", loyalty: "loyalty", event: "event", reservation: null, duo: null, portrait: null, hunt_step: null, vitrine: null }[kind];
   if (!experienceKind) return NextResponse.json({ asset, rewardCount: null });
-  const { count, error: countError } = await supabase.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("experience_kind", experienceKind).eq("experience_id", id).eq("event_name", "reward_issued");
+  // Le journal analytics est volontairement invisible au client authentifié.
+  // Cette route a déjà refusé tout rôle autre qu'owner/editor et prouvé que
+  // l'animation active appartient au tenant : l'admin ne peut donc retourner
+  // qu'un nombre agrégé de cette seule animation, jamais les événements bruts.
+  const admin = createAdminClient();
+  const { count, error: countError } = await admin.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("experience_kind", experienceKind).eq("experience_id", id).eq("event_name", "reward_issued");
   if (countError) return NextResponse.json({ error: "Lecture impossible" }, { status: 500 });
   return NextResponse.json({ asset, rewardCount: count ?? 0 });
 }

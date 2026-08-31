@@ -169,8 +169,11 @@ export async function getQrDistributionRewardCount(input: {
     hunt_step: null, vitrine: null,
   }[parsed.data.resourceKind];
   if (!experienceKind) return { ok: true, data: null };
-  const supabase = await createClient();
-  const { count, error } = await supabase
+  // `experience_events` est un journal brut sans droit SELECT pour la session
+  // commerçant. L'appartenance de la ressource vient d'être vérifiée avec RLS ;
+  // le client d'administration ne lit donc qu'un agrégat borné à ce tenant.
+  const admin = createAdminClient();
+  const { count, error } = await admin
     .from("experience_events")
     .select("id", { count: "exact", head: true })
     .eq("organization_id", organization.id)
@@ -192,7 +195,8 @@ export async function getCampaignQrRewardCount(id: string): Promise<ActionResult
   const supabase = await createClient();
   const { data: qr } = await supabase.from("qr_codes").select("id").eq("id", id).eq("organization_id", organization.id).maybeSingle();
   if (!qr) return { ok: false, error: "QR code introuvable" };
-  const { count, error } = await supabase.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("qr_code_id", id).eq("event_name", "reward_issued");
+  const admin = createAdminClient();
+  const { count, error } = await admin.from("experience_events").select("id", { count: "exact", head: true }).eq("organization_id", organization.id).eq("qr_code_id", id).eq("event_name", "reward_issued");
   if (error) return { ok: false, error: "Lecture des gains impossible" };
   return { ok: true, data: count ?? 0 };
 }
