@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PublicShare } from "@/components/dashboard/public-share";
@@ -28,8 +28,22 @@ import { PublicShare } from "@/components/dashboard/public-share";
  */
 
 const ABSOLUTE = "https://app.lastchance.test/quiz/quiz-de-noel";
+const RESOURCE = {
+  kind: "quiz" as const,
+  id: "00000000-0000-4000-8000-000000000001",
+};
+const qrToolsModuleLoaded = vi.hoisted(() => vi.fn());
 
-afterEach(cleanup);
+vi.mock("@/components/dashboard/qr-distribution-controls", () => {
+  qrToolsModuleLoaded();
+  return { QrDistributionControls: () => null };
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  qrToolsModuleLoaded.mockClear();
+});
 
 describe("PublicShare", () => {
   it("affiche l'URL absolue telle quelle", () => {
@@ -48,23 +62,77 @@ describe("PublicShare", () => {
     expect(screen.getByLabelText("QR code de Quiz de Noël")).toBeTruthy();
   });
 
-  it("ne charge pas les réglages QR au montage", () => {
-    const originalFetch = globalThis.fetch;
-    const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy;
+  it("charge automatiquement les résultats avec une requête GET, sans ouvrir le studio QR", async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(JSON.stringify({ rewardCount: 3 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
     render(
       <PublicShare
         url={ABSOLUTE}
         fileName="quiz-noel"
         qrLabel="Quiz de Noël"
-        resource={{
-          kind: "quiz",
-          id: "00000000-0000-4000-8000-000000000001",
-        }}
+        openCount={1}
+        resource={RESOURCE}
       />,
     );
-    expect(fetchSpy).not.toHaveBeenCalled();
-    globalThis.fetch = originalFetch;
+
+    await waitFor(() => {
+      expect(screen.getByText("3 gains attribués")).toBeTruthy();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `/api/dashboard/qr-distribution?kind=${RESOURCE.kind}&id=${RESOURCE.id}`,
+      { cache: "no-store" },
+    );
+    expect(screen.getByLabelText("Résultats du QR").textContent).toContain("1 ouverture");
+    expect(screen.queryByText("Afficher les gains attribués")).toBeNull();
+    expect(qrToolsModuleLoaded).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("indique que les gains sont indisponibles après une réponse en erreur", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
+
+    render(
+      <PublicShare
+        url={ABSOLUTE}
+        fileName="quiz-noel"
+        qrLabel="Quiz de Noël"
+        openCount={1}
+        resource={RESOURCE}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Gains indisponibles")).toBeTruthy();
+    });
+    expect(screen.getByLabelText("Résultats du QR").textContent).toContain("1 ouverture");
+    expect(screen.queryByText("Chargement des gains…")).toBeNull();
+  });
+
+  it("distingue une ressource sans journal de gains d'une erreur de lecture", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ rewardCount: null }), { status: 200 })),
+    );
+
+    render(
+      <PublicShare
+        url={ABSOLUTE}
+        fileName="quiz-noel"
+        qrLabel="Quiz de Noël"
+        resource={RESOURCE}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Gains non concernés")).toBeTruthy();
+    });
   });
 });
 
