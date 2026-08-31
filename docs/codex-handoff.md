@@ -74,6 +74,60 @@ lecture et sa mise à jour, et `security_acl.test.sql` garde ces deux ACL.
 
 ## Dernière demande utilisateur
 
+### QR de diffusion natif par animation (2026-08-30, prêt à publier)
+
+**Constat.** Le hub QR listait les neuf familles de diffusion, mais seul le QR
+de campagne possédait un style et une affiche persistés. Quiz, calendrier,
+pronostics, jackpot, passeport, session live, réservation et salons rendaient
+un QR dérivé avec un style fixe ; le commerçant devait revenir dans le hub sans
+pouvoir réellement personnaliser l'actif.
+
+**Lot isolé.** Branche `codex/qr-native-experience`, rebasée sur
+`origin/main` `fb5842b1`. Ajout de
+`qr_distribution_assets`, une ressource éditoriale tenant-scopée
+(`organization_id`, type, ressource) qui ne stocke jamais une URL ni un jeton.
+Les pages qui utilisent `PublicShare` proposent maintenant la personnalisation
+et l'affiche depuis l'animation ; le hub réemploie ce panneau pour les modules
+publiables. Les compteurs sont formulés en **ouvertures** et **gains attribués**
+(jamais « scans uniques » ou « gagnants » inventés).
+
+**Exclusions de sécurité.** QR éphémères de caisse, passeport/check-in,
+Jackpot tournant, retrait, Ticket d'Or et invitation de réservation restent hors
+du registre : les transformer en affiche permanente modifierait un jeton de
+valeur ou d'identité. Le QR de chasse garde son flux d'étape séparé ; sa
+personnalisation doit être traitée sans changer son token ni son parcours.
+
+**Preuves locales (après rebase).** `git diff --check`, typecheck, lint ciblé,
+`sql:check`, `migrations:check`, `casts:check` et 24 tests Vitest ciblés du
+partage QR sont verts. Une base Supabase locale isolée a rejoué les 182
+migrations ; les types ont été générés par sa CLI et pgTAP est vert
+(`83` fichiers, `5680` assertions). Revue sécurité lecture seule : aucun
+finding critique, élevé ou moyen ; seul point informatif, un éditeur peut créer
+un actif orphelin de sa propre organisation via PostgREST, sans fuite ni
+élévation de droit.
+
+**Publication.** Le push du lot est autorisé ; la CI GitHub du SHA exact doit
+encore confirmer les parcours navigateur et l'ensemble des contrôles. L'arbre
+WSL de référence porte des migrations non suivies d'un autre lot : ne pas le
+perturber.
+
+**Réconciliation de migration (2026-08-31).** Le rebase a introduit la
+migration Fidélité `20261115120000` après l'actif QR initialement numéroté
+`20261114130000`. L'actif QR est donc renuméroté `20261115130000`, après le
+head de `main`, et `EXPECTED_MIGRATION` est synchronisée. La CI du nouveau SHA
+reste le critère de publication.
+
+**Suivi CI (2026-08-30).** Les contrôles GitHub TypeScript, lint, tests
+unitaires, build, CodeQL, audit npm, replay des migrations, snapshot de types
+et pgTAP sont verts sur la PR #252. Le premier passage a révélé un cast pgTAP
+incompatible CI, corrigé. Le second a révélé une assertion QR ambiguë, corrigée
+en la bornant à sa carte. Les 25 échecs Playwright restants commencent avant ce
+parcours QR et couvrent plusieurs formulaires indépendants ; `main` était vert
+sur le même socle. Hypothèse en cours : les nouvelles lectures effectuées comme
+Server Actions au montage entraient en concurrence avec les transitions des
+formulaires. Elles sont remplacées par une route GET authentifiée, validée et
+tenant-scopée ; relancer la CI complète du nouveau SHA avant fusion.
+
 Codex pilote le développement de LastChance. Les audits doivent être précis et
 transverses ; les propositions doivent améliorer concrètement l'expérience des
 commerçants et des joueurs, la performance ou la sécurité. Chaque demande,

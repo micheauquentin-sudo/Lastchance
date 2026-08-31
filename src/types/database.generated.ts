@@ -5539,6 +5539,47 @@ export type Database = {
           },
         ]
       }
+      qr_distribution_assets: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          poster: Json
+          resource_id: string
+          resource_kind: string
+          style: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          poster?: Json
+          resource_id: string
+          resource_kind: string
+          style?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          poster?: Json
+          resource_id?: string
+          resource_kind?: string
+          style?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qr_distribution_assets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       quiz_answers: {
         Row: {
           answer: Json | null

@@ -337,6 +337,24 @@ export default async function QrCodesPage({
   }
 
   const { lignes, hasNext } = lignesEtSuite;
+  // `org_qr_hub` ne transporte volontairement pas la configuration lourde de
+  // l'affiche. On ne lit donc que les QR de campagne effectivement rendus,
+  // pour employer le bon verbe dans le CTA sans alourdir la RPC du hub.
+  const campaignQrIds = lignes
+    .filter((ligne) => ligne.kind === "campaign" && ligne.qr_id)
+    .map((ligne) => ligne.qr_id!);
+  const { data: campaignPosters } = campaignQrIds.length
+    ? await supabase
+        .from("qr_codes")
+        .select("id, poster")
+        .in("id", campaignQrIds)
+        .eq("organization_id", organization!.id)
+    : { data: [] as { id: string; poster: Json | null }[] };
+  const campaignPosterIds = new Set(
+    (campaignPosters ?? [])
+      .filter((qr) => qr.poster && Object.keys(qr.poster as object).length > 0)
+      .map((qr) => qr.id),
+  );
   const toutesCampagnes = (campaigns ?? []) as CampagneFiltrable[];
   /** Menu de CRÉATION : on ne fabrique pas un QR pour un jeu clôturé. */
   const campaignList = toutesCampagnes.filter((c) => c.status !== "archived");
@@ -537,6 +555,7 @@ export default async function QrCodesPage({
                   scanCount={ligne.scan_count ?? 0}
                   initialStyle={(ligne.qr_style ?? {}) as QrStyle}
                   posterHref={`/poster/${ligne.qr_id}`}
+                  posterConfigured={campaignPosterIds.has(ligne.qr_id)}
                   testHref={`/poster/${ligne.qr_id}/qr-test`}
                 />
               </li>
@@ -544,6 +563,7 @@ export default async function QrCodesPage({
               <li key={`${ligne.kind}-${ligne.item_id}`}>
                 <JeuLienCard
                   kind={ligne.kind as ExperienceKind}
+                  itemId={ligne.item_id}
                   kindLabel={
                     LIBELLE_KIND.get(ligne.kind as ExperienceKind) ?? "Jeu"
                   }

@@ -392,6 +392,7 @@ export default async function LoyaltyDetailPage({
                     fileName={`passeport-${p.id}`}
                     qrLabel={p.name}
                     openCount={openCount}
+                    resource={{ kind: "loyalty", id: p.id }}
                   />
                 </>
               ) : (

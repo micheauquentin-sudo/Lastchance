@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge, type EtatAnimation } from "@/components/ui/status-badge";
 import { emojiExperience } from "@/components/dashboard/nav";
 import { SHARE_QR_STYLE } from "@/components/dashboard/public-share";
+import { PublicShare } from "@/components/dashboard/public-share";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { ExperienceKind } from "@/platform/experiences/contract";
 
@@ -29,6 +31,7 @@ import type { ExperienceKind } from "@/platform/experiences/contract";
  */
 export function JeuLienCard({
   kind,
+  itemId,
   kindLabel,
   name,
   etat,
@@ -38,6 +41,8 @@ export function JeuLienCard({
   extraCount,
 }: {
   kind: ExperienceKind;
+  /** Identifiant de la ressource publique : jamais déduit de l'URL cliente. */
+  itemId: string;
   /** Libellé commerçant du type, lu sur `EXPERIENCE_CATALOG`. */
   kindLabel: string;
   name: string;
@@ -67,6 +72,9 @@ export function JeuLienCard({
 
   const etapes = kind === "hunt" ? (extraCount ?? 0) : 0;
   const salles = kind === "event" ? (extraCount ?? 0) : 0;
+  const distributionKind: QrDistributionKind | null = (
+    ["quiz", "calendar", "pronostics", "jackpot", "loyalty", "event"] as readonly string[]
+  ).includes(kind) ? kind as QrDistributionKind : null;
 
   return (
     <Card className="h-full">
@@ -81,6 +89,15 @@ export function JeuLienCard({
       <p className="mb-3 font-black text-k-ink break-words">{name}</p>
 
       {url ? (
+        distributionKind ? (
+          <PublicShare
+            url={url}
+            fileName={`${kind}-${itemId}`}
+            qrLabel={name}
+            openCount={openCount ?? undefined}
+            resource={{ kind: distributionKind, id: itemId }}
+          />
+        ) : (
         <div className="flex gap-4">
           <canvas
             ref={canvasRef}
@@ -117,6 +134,7 @@ export function JeuLienCard({
             </div>
           </div>
         </div>
+        )
       ) : kind === "hunt" ? (
         <div>
           <p className="mb-2 text-sm font-bold text-k-body">
@@ -145,7 +163,7 @@ export function JeuLienCard({
         </div>
       )}
 
-      <p className="mt-3 text-xs text-zinc-500">
+      {(!url || !distributionKind || salles > 1) && <p className="mt-3 text-xs text-zinc-500">
         {openCount !== null ? (
           <span className="font-bold text-k-ink">
             {openCount} ouverture{openCount > 1 ? "s" : ""}
@@ -153,7 +171,7 @@ export function JeuLienCard({
         ) : null}
         {openCount !== null && salles > 1 ? " · " : null}
         {salles > 1 ? `${salles} salles` : null}
-      </p>
+      </p>}
     </Card>
   );
 }

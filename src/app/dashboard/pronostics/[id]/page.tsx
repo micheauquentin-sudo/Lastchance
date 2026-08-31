@@ -556,6 +556,7 @@ export default async function ContestDetailPage({
               fileName={`pronostics-${c.slug}`}
               qrLabel={c.name}
               openCount={openCount}
+              resource={{ kind: "pronostics", id: c.id }}
             />
           </Card>
         </CarteRepliable>

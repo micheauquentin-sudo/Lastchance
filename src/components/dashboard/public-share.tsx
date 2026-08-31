@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import type { QrDistributionKind } from "@/lib/qr-distribution";
 import { renderQr } from "@/lib/qr-render";
 import type { QrStyle } from "@/types/database";
 
@@ -38,6 +39,8 @@ export function PublicShare({
   fileName,
   qrLabel,
   openCount,
+  resource,
+  onStyleSaved,
 }: {
   /** URL publique ABSOLUE (`${APP_URL}/…`). */
   url: string;
@@ -52,9 +55,31 @@ export function PublicShare({
    * de visiteurs.
    */
   openCount?: number;
+  /** Ressource dont l'URL publique est dérivée côté serveur. */
+  resource?: { kind: QrDistributionKind; id: string };
+  /** Permet à une planche locale de redessiner ses exemplaires après édition. */
+  onStyleSaved?: (style: QrStyle) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
+  const [tools, setTools] = useState<ReactNode>(null);
+
+  async function openQrTools(initialAction: "designer" | "poster" | "metrics") {
+    if (!resource) return;
+    const { QrDistributionControls } = await import(
+      "@/components/dashboard/qr-distribution-controls"
+    );
+    setTools(
+      <QrDistributionControls
+        resource={resource}
+        url={url}
+        fileName={fileName}
+        initialAction={initialAction}
+        onClose={() => setTools(null)}
+        onStyleSaved={onStyleSaved}
+      />,
+    );
+  }
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -92,6 +117,16 @@ export function PublicShare({
         <Button type="button" variant="secondary" onClick={downloadPng}>
           Télécharger le QR (PNG)
         </Button>
+        {resource ? (
+          <Button type="button" variant="secondary" onClick={() => openQrTools("designer")}>
+            Personnaliser le QR
+          </Button>
+        ) : null}
+        {resource ? (
+          <Button type="button" variant="secondary" onClick={() => openQrTools("poster")}>
+            Créer ou éditer l&apos;affiche
+          </Button>
+        ) : null}
       </div>
 
       <div className="min-w-0 flex-1 space-y-2">
@@ -134,7 +169,17 @@ export function PublicShare({
             distincts.
           </p>
         ) : null}
+        {resource ? (
+          <button
+            type="button"
+            onClick={() => openQrTools("metrics")}
+            className="text-xs font-bold text-k-orange-text hover:underline"
+          >
+            Afficher les gains attribués
+          </button>
+        ) : null}
       </div>
+      {tools}
     </div>
   );
 }

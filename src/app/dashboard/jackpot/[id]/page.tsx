@@ -230,6 +230,7 @@ export default async function JackpotDetailPage({
                     fileName={`jackpot-${c.public_slug ?? c.id}`}
                     qrLabel={c.name}
                     openCount={openCount}
+                    resource={{ kind: "jackpot", id: c.id }}
                   />
                 </>
               ) : (

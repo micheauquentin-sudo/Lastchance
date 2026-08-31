@@ -1095,6 +1095,7 @@ function SessionRow({ session }: { session: EditorSession }) {
               fileName={`evenement-${session.joinCode}`}
               qrLabel={session.label || `Session ${session.joinCode}`}
               openCount={session.openCount}
+              resource={{ kind: "event", id: session.id }}
             />
             {session.status === "draft" && (
               <p className="mt-3 text-sm text-zinc-500">
