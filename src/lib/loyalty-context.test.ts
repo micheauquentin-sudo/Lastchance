@@ -28,7 +28,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // lecture faite avant les gardes est une lecture offerte à n'importe qui.
 // ────────────────────────────────────────────────────────────
 
-const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
+const { db, cookieJar, rpcState, createAdminClientMock } = vi.hoisted(() => {
   type Row = Record<string, unknown>;
   type ListResult = { data: Row[]; error: null };
 
@@ -126,8 +126,21 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
 
   const cookieJar = { jar: {} as Record<string, string> };
 
+  /**
+   * Réponse de `vitrine_public_state` — la SEULE RPC de ce chemin (le pied de
+   * carte du passeport, FID-4a). Le faux client n'en avait aucune : sans elle,
+   * l'annuaire des animations retombait silencieusement sur sa liste vide et
+   * aucun test n'aurait pu rougir.
+   */
+  const rpcState = { data: null as unknown, error: null as unknown };
+
   function createAdminClientMock() {
     return {
+      rpc(_name: string, _args: Record<string, unknown>) {
+        void _name;
+        void _args;
+        return Promise.resolve({ data: rpcState.data, error: rpcState.error });
+      },
       from(table: string) {
         return {
           select(columns: string) {
@@ -173,7 +186,7 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
     };
   }
 
-  return { db, cookieJar, createAdminClientMock };
+  return { db, cookieJar, rpcState, createAdminClientMock };
 });
 
 // La factory `vi.mock` est hissée au-dessus des imports : elle ne peut lire
@@ -563,6 +576,142 @@ describe("loadLoyaltyContext — paliers", () => {
 // ────────────────────────────────────────────────────────────
 // 4. Le passeport — celui du porteur du cookie, et de personne d'autre
 // ────────────────────────────────────────────────────────────
+// Le PIED DE CARTE (FID-4a) — le commerce, sous la fidélité
+// ────────────────────────────────────────────────────────────
+describe("loadLoyaltyContext — le pied de carte du commerce", () => {
+  /** Adresses qui passent la liste blanche de `estLienInvitationSur`. */
+  const AVIS_GOOGLE = "https://g.page/chez-marcel/review";
+  const INSTAGRAM = "https://instagram.com/chezmarcel";
+
+  function seedLiens(over: Over = {}) {
+    db.tables.organizations = [
+      {
+        id: ORG_ID,
+        google_review_url: AVIS_GOOGLE,
+        instagram_url: INSTAGRAM,
+        // '' = NON RENSEIGNÉ : la colonne n'a pas de `null` concurrent. C'est
+        // ce cas-là qui doit ressortir en `null`, sans quoi l'écran peindrait
+        // une icône morte pointant nulle part.
+        tiktok_url: "",
+        ...over,
+      },
+    ];
+  }
+
+  function seedVitrine(published: boolean) {
+    db.tables.vitrine_settings = [
+      { organization_id: ORG_ID, slug: "chez-marcel", published },
+    ];
+  }
+
+  /** Un annuaire minimal, tel que `vitrine_public_state` le rend. */
+  function etatVitrineAvecUneActivite() {
+    rpcState.data = {
+      state: "ok",
+      slug: "chez-marcel",
+      lang: "fr",
+      identite: { nom: "Chez Marcel" },
+      liens: {},
+      portes: {
+        reserver: {
+          activites: [{ id: "act-1", nom: "Table du soir" }],
+          files: [],
+          offres: [],
+        },
+        experiences: {
+          quiz: [{ slug: "quiz-du-jeudi", titre: "Quiz du jeudi" }],
+          calendars: [],
+          pronostics: [],
+          duo: false,
+        },
+      },
+    };
+  }
+
+  it("les liens renseignés sortent, le lien vide devient null", async () => {
+    seedLiens();
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce.googleReviewUrl).toBe(AVIS_GOOGLE);
+    expect(ctx.commerce.instagramUrl).toBe(INSTAGRAM);
+    expect(ctx.commerce.tiktokUrl).toBeNull();
+  });
+
+  it("une adresse hors liste blanche ne franchit pas le serveur", async () => {
+    // DÉFENSE EN PROFONDEUR : le schéma d'écriture refuse déjà ces valeurs,
+    // mais une ligne posée avant la liste blanche — ou par un chemin qui
+    // l'ignorerait — ne doit pas atteindre le `href` d'un joueur anonyme.
+    seedLiens({
+      google_review_url: "javascript:alert(1)",
+      instagram_url: "http://instagram.com/chezmarcel",
+    });
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce.googleReviewUrl).toBeNull();
+    expect(ctx.commerce.instagramUrl).toBeNull();
+  });
+
+  it("Vitrine publiée : son chemin est peint et ses portes deviennent des liens", async () => {
+    seedLiens();
+    seedVitrine(true);
+    etatVitrineAvecUneActivite();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce.vitrinePath).toBe("/v/chez-marcel");
+    expect(ctx.commerce.portes.map((p) => p.href)).toEqual([
+      "/reserver/act-1",
+      "/quiz/quiz-du-jeudi",
+    ]);
+  });
+
+  it("Vitrine NON publiée : aucun chemin, aucune porte — mais les réseaux restent", async () => {
+    // Une porte fermée est pire que pas de porte : `/v/…` rendrait un 404, et
+    // `vitrine_public_state` est justement ce qui tranche l'ouverture.
+    seedLiens();
+    seedVitrine(false);
+    etatVitrineAvecUneActivite();
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce.vitrinePath).toBeNull();
+    expect(ctx.commerce.portes).toEqual([]);
+    expect(ctx.commerce.instagramUrl).toBe(INSTAGRAM);
+  });
+
+  it("annuaire indisponible : les liens survivent quand même", async () => {
+    // Les deux replis sont SÉPARÉS. Une panne de la Vitrine ne doit pas
+    // emporter des liens venus d'une tout autre lecture.
+    seedLiens();
+    seedVitrine(true);
+    rpcState.data = { state: "unavailable" };
+
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce.portes).toEqual([]);
+    expect(ctx.commerce.googleReviewUrl).toBe(AVIS_GOOGLE);
+  });
+
+  it("rien de renseigné : un pied de carte entièrement vide, jamais une erreur", async () => {
+    const ctx = await loadLoyaltyContext(PROGRAM_ID);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.commerce).toEqual({
+      vitrinePath: null,
+      googleReviewUrl: null,
+      instagramUrl: null,
+      tiktokUrl: null,
+      portes: [],
+    });
+  });
+});
+
+// ────────────────────────────────────────────────────────────
 describe("loadLoyaltyContext — passeport du joueur courant", () => {
   /** Membre du programme + ses récompenses, retrouvable par le hash du cookie. */
   function seedMember(over: Over = {}) {
@@ -579,10 +728,17 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
     ];
   }
 
-  it("sans cookie : passeport vide, et la base n'est même pas interrogée", async () => {
+  it("sans cookie : passeport vide, et l'identité n'est pas cherchée en base", async () => {
     // Le visiteur qui découvre la page n'a pas d'identité. Rouge si le chargeur
     // interrogeait quand même `loyalty_members` : deux requêtes offertes à tout
     // passant, sur un chemin public, pour un résultat connu d'avance.
+    //
+    // LA GARDE PORTE SUR LES DEUX TABLES DU PASSEPORT, PLUS SUR LA LISTE
+    // COMPLÈTE (FID-4a). Le pied de carte lit `organizations` et
+    // `vitrine_settings` — des données PUBLIQUES du commerce, identiques pour
+    // tout visiteur — et les ajouter à une égalité stricte aurait fait rougir
+    // un test dont ce n'est pas le sujet à chaque bloc ajouté au bas de page.
+    // Ce qui doit rester vrai est nommé : aucune lecture d'identité.
     const ctx = await loadLoyaltyContext(PROGRAM_ID);
 
     if (!ctx.ok) throw new Error(ctx.error);
@@ -594,7 +750,10 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
       tier: "bronze",
       rewards: [],
     });
-    expect(db.tablesQueried()).toEqual(["loyalty_programs", "loyalty_milestones"]);
+    expect(db.tablesQueried()).toContain("loyalty_programs");
+    expect(db.tablesQueried()).toContain("loyalty_milestones");
+    expect(db.tablesQueried()).not.toContain("loyalty_members");
+    expect(db.tablesQueried()).not.toContain("loyalty_rewards");
   });
 
   it("le cookie est nommé par PROGRAMME : celui d'un autre commerce est ignoré", async () => {
