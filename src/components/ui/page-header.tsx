@@ -29,6 +29,7 @@ export function PageHeader({
   sousTitre,
   retour,
   actions,
+  actionsClassName,
 }: {
   /** Zone du produit : le titre du groupe de menu qui contient cet écran. */
   surtitre?: string;
@@ -44,6 +45,7 @@ export function PageHeader({
   retour?: { href: string; label: string };
   /** Bouton principal de l'écran (création, export…). */
   actions?: ReactNode;
+  actionsClassName?: string;
 }) {
   return (
     <header className="mb-8">
@@ -75,7 +77,11 @@ export function PageHeader({
             horizontale sur toute la page (aucun `overflow-x` ne la retenait).
             Avec le rétrécissement par défaut (1) l'item peut redescendre vers
             son min-content et le parent `flex-wrap` le renvoie à la ligne. */}
-        {actions ? <div className="min-w-0 max-w-full">{actions}</div> : null}
+        {actions ? (
+          <div className={`min-w-0 max-w-full ${actionsClassName ?? ""}`}>
+            {actions}
+          </div>
+        ) : null}
       </div>
     </header>
   );
