@@ -5,6 +5,7 @@
  * server-only — testable en isolation (Vitest), miroir de hunts/hunt-state.ts.
  */
 
+import type { LoyaltyReferralState } from "@/lib/loyalty";
 import type { LoyaltyStampState, LoyaltyTier } from "@/types/database";
 
 export type LoyaltyMessageTone = "success" | "info" | "warning" | "error";
@@ -283,6 +284,114 @@ export function messageForSpinBlock(block: LoyaltySpinBlock): LoyaltyStateMessag
         tone: "warning",
         title: "Le tour n'a pas pu être lancé",
         body: "Rien n'est perdu : votre tour offert reste sur votre passeport, vous pourrez le lancer plus tard.",
+      };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// PARRAINAGE — les onze états de validate_loyalty_referral, dits au filleul
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Traduit un état de `validate_loyalty_referral` en message pour LE FILLEUL,
+ * qui est le seul des deux à avoir cet écran sous les yeux au moment de la
+ * validation.
+ *
+ * ── DEUX ÉTATS NE SONT PAS DES ERREURS, ET C'EST LE POINT DE CETTE FONCTION ──
+ *
+ * `no_stamp` est l'état NORMAL de tout filleul entre le clic sur l'invitation
+ * et son passage en boutique : sa carte est ouverte, la visite reste à faire.
+ * L'annoncer en rouge dirait « vous avez échoué » à quelqu'un qui n'a encore
+ * rien raté — d'où le ton `info` et une phrase qui explique la marche à suivre
+ * plutôt qu'un refus.
+ *
+ * `already_customer` non plus : c'est la règle du module (le premier tampon
+ * doit être POSTÉRIEUR au code, sinon la clientèle déjà fidèle serait
+ * revendable). La personne n'a rien fait de mal, elle était simplement déjà
+ * cliente — on le dit sans reproche, et on rappelle que ses points continuent
+ * de courir normalement.
+ *
+ * Les quatre refus de fraude (`self_referral`, `duplicate`, `loop`, `capped`)
+ * ne détaillent RIEN de la situation du parrain : « ce parrain a déjà
+ * 20 filleuls » apprendrait à un curieux l'état d'un passeport qui n'est pas
+ * le sien.
+ */
+export function messageForReferralState(
+  state: LoyaltyReferralState,
+  opts: { filleulPoints?: number | null } = {},
+): LoyaltyStateMessage {
+  switch (state) {
+    case "validated": {
+      const bonus = opts.filleulPoints ?? 0;
+      return {
+        tone: "success",
+        title: "Parrainage validé !",
+        body:
+          bonus > 0
+            ? `Votre visite compte : ${bonus} points de bienvenue sont sur votre carte, et votre parrain reçoit les siens.`
+            : "Votre visite compte : votre parrain reçoit ses points.",
+      };
+    }
+    case "no_stamp":
+      return {
+        tone: "info",
+        title: "Il reste une visite à faire",
+        body: "Votre carte est ouverte. C'est à votre première visite validée — en boutique ou avec un QR de commande — que votre parrain recevra ses points.",
+      };
+    case "already_customer":
+      return {
+        tone: "info",
+        title: "Vous étiez déjà client",
+        body: "Votre carte avait déjà été validée avant cette invitation : le parrainage ne s'applique pas. Vos points, eux, continuent de s'accumuler normalement.",
+      };
+    case "expired":
+      return {
+        tone: "warning",
+        title: "Invitation expirée",
+        body: "Ce lien de parrainage n'est plus valable. Demandez-en un nouveau à la personne qui vous a invité.",
+      };
+    case "capped":
+      return {
+        tone: "warning",
+        title: "Invitation close",
+        body: "Cette invitation ne peut plus accueillir de nouveau filleul. Votre carte, elle, reste bien active.",
+      };
+    case "duplicate":
+      return {
+        tone: "info",
+        title: "Vous avez déjà un parrain",
+        body: "Votre carte a déjà été rattachée à une invitation : une seule compte, et c'est la première.",
+      };
+    case "self_referral":
+      return {
+        tone: "info",
+        title: "C'est votre propre invitation",
+        body: "Ce lien est celui de votre carte : partagez-le autour de vous, il ne peut pas s'appliquer à vous-même.",
+      };
+    case "loop":
+      return {
+        tone: "info",
+        title: "Invitation croisée",
+        body: "Vous avez déjà parrainé cette personne : le parrainage ne peut pas fonctionner dans les deux sens.",
+      };
+    case "invalid":
+      return {
+        tone: "warning",
+        title: "Invitation inconnue",
+        body: "Ce code de parrainage n'existe pas pour ce commerce. Vérifiez le lien qui vous a été envoyé.",
+      };
+    case "not_a_member":
+      return {
+        tone: "info",
+        title: "Ouvrez d'abord votre carte",
+        body: "Validez une première visite pour ouvrir votre carte : l'invitation sera prise en compte à ce moment-là.",
+      };
+    case "unavailable":
+    default:
+      return {
+        tone: "warning",
+        title: "Parrainage indisponible",
+        body: "Le parrainage n'est pas ouvert sur ce passeport pour le moment.",
       };
   }
 }

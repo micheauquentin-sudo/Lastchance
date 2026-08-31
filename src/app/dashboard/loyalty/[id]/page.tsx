@@ -41,6 +41,7 @@ import {
   LoyaltyMilestonesEditor,
   LoyaltySettings,
   LoyaltyHabillage,
+  LoyaltyParrainage,
   LoyaltyStatusControls,
   type LoyaltyJackpotOption,
   type WheelOption,
@@ -153,7 +154,7 @@ export default async function LoyaltyDetailPage({
     supabase
       .from("loyalty_programs")
       .select(
-        "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days, style",
+        "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, created_at, code_ttl_days, style, referral_enabled, referral_sponsor_points, referral_filleul_points, referral_max_filleuls, referral_window_days",
       )
       .eq("id", id)
       .eq("organization_id", organization.id)
@@ -493,6 +494,12 @@ export default async function LoyaltyDetailPage({
                   stocks depuis la page de la campagne concernée, puis revenez
                   ici — votre palier vous attend.
                 </InfoBulle>
+                {/* Le parrainage vit avec les récompenses et non avec les
+                    règles de tamponnage : ce qu'il règle, ce sont des POINTS
+                    versés — un barème, au même titre qu'un palier. Il n'ouvre
+                    ni ne bloque aucune publication, l'étape de vérification
+                    n'a donc rien à en dire. */}
+                <LoyaltyParrainage program={p} />
               </>
             )}
 

@@ -53,9 +53,15 @@ const ORG_COLUMNS =
  * `style` en fait partie : c'est l'HABILLAGE de la page du joueur (le fond
  * d'écran), donc une donnée publique par destination. Il est relu par
  * `resolveLoyaltyStyle` côté page, jamais servi brut à un `src` d'image.
+ *
+ * Les cinq colonnes `referral_*` (FID-5) aussi, et pour la même raison : le
+ * passeport doit dire au parrain CE QU'IL GAGNE et au filleul CE QU'IL TOUCHE.
+ * Un barème caché ferait de l'invitation une promesse sans chiffre — le point
+ * qu'un parrainage rate le plus souvent. Aucune de ces colonnes ne désigne un
+ * porteur : elles décrivent la règle, jamais un passeport.
  */
 const PROGRAM_COLUMNS =
-  "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, style, created_at";
+  "id, organization_id, jackpot_campaign_id, name, status, validation_mode, rotating_period_seconds, min_stamp_interval_seconds, silver_threshold, gold_threshold, style, created_at, referral_enabled, referral_sponsor_points, referral_filleul_points, referral_max_filleuls, referral_window_days";
 
 /** Erreur générique unique : aucun oracle sur l'existence/l'état interne. */
 const UNAVAILABLE = "Ce passeport de fidélité n'est pas disponible.";
@@ -63,6 +69,26 @@ const UNAVAILABLE = "Ce passeport de fidélité n'est pas disponible.";
 /** Nom du cookie httpOnly portant le jeton joueur d'un programme. */
 export function loyaltyTokenCookieName(programId: string): string {
   return `lc-loyalty-${programId}`;
+}
+
+/**
+ * Nom du cookie qui RETIENT le code de parrain d'un filleul, entre le moment
+ * où il ouvre le lien partagé et celui où il fait valider sa carte.
+ *
+ * Il faut bien le garder quelque part : la preuve exigée par le module est le
+ * PREMIER TAMPON du filleul, et ce tampon arrive plus tard — parfois plusieurs
+ * jours plus tard, parfois depuis la caisse du commerçant. La base n'a pas de
+ * colonne « parrainage en attente » (et n'en veut pas : un parrainage non
+ * conclu n'est pas un fait), le navigateur du filleul est donc le seul endroit
+ * où cette intention peut vivre.
+ *
+ * Cookie DISTINCT de `lc-loyalty-<programId>` et jamais fusionné avec lui : le
+ * jeton d'identité vaut 180 jours et ne doit pas être réécrit à chaque clic sur
+ * une invitation — le réécrire ferait perdre son passeport à un client qui
+ * ouvre le lien d'un ami sur son propre téléphone.
+ */
+export function loyaltyReferralCookieName(programId: string): string {
+  return `lc-parrain-${programId}`;
 }
 
 /** Palier tel que présenté au joueur (config, sans compteurs internes). */

@@ -12,11 +12,16 @@ import {
 import { useRouter } from "next/navigation";
 import {
   getLoyaltyCheckinToken,
+  obtenirCodeParrainage,
+  reclamerParrainagePasseport,
   spendLoyaltyPoints,
   stampLoyaltyVisit,
   type LoyaltySpendOutcome,
   type LoyaltyStampActionResult,
+  type ParrainageFilleulVue,
+  type ParrainageParrainVue,
 } from "@/actions/loyalty";
+import { PartageLienJeu } from "@/components/partage/partage-lien-jeu";
 import { LienPortefeuille } from "@/components/wallet/lien-portefeuille";
 import type { ClaimConfig } from "@/components/wheel/claim-form";
 import {
@@ -44,6 +49,7 @@ import {
   loyaltyPointsGoal,
   loyaltyTierMeta,
   loyaltyTierProgress,
+  messageForReferralState,
   messageForSpinBlock,
   messageForStampState,
   type LoyaltyMessageTone,
@@ -125,6 +131,26 @@ export interface LoyaltyPassportProps {
   commerce: LoyaltyCommerceView;
   /** `organizations.timezone` — le fuseau qui donne l'heure du pied de carte. */
   timeZone: string;
+  /** Le commerçant a-t-il ouvert le parrainage (FID-5) sur ce programme ? */
+  referralEnabled: boolean;
+  /**
+   * Code de parrain porté par l'URL du lien partagé (`?parrain=PASS-…`), lu
+   * CÔTÉ SERVEUR et passé en prop plutôt que relu ici : la page est
+   * `force-dynamic`, elle connaît déjà ses `searchParams`, et un
+   * `useSearchParams` de plus n'ajouterait qu'une frontière de suspense.
+   */
+  codeParrainInvite: string | null;
+  /**
+   * Un code de parrain est-il DÉJÀ retenu dans le cookie de ce navigateur ?
+   *
+   * Lu côté serveur (le cookie est `httpOnly`) et passé en prop pour une
+   * raison de coût : sans lui, le bloc filleul devrait appeler la server
+   * action à CHAQUE ouverture du passeport, pour tous les clients, dont
+   * l'immense majorité n'a aucun parrainage en cours. Avec lui, l'appel n'est
+   * fait que par les deux populations qui en ont un — celui qui arrive par un
+   * lien, et celui dont l'intention attend encore sa première visite.
+   */
+  parrainageEnAttente: boolean;
 }
 
 export function LoyaltyPassport({
@@ -141,6 +167,9 @@ export function LoyaltyPassport({
   spinWheels,
   commerce,
   timeZone,
+  referralEnabled,
+  codeParrainInvite,
+  parrainageEnAttente,
 }: LoyaltyPassportProps) {
 
   // ── Challenge anti-robot (mode rotating_code) ───────────────────────────
@@ -403,6 +432,15 @@ export function LoyaltyPassport({
         </h1>
       </header>
 
+      {/* ── D'OÙ VIENT CE CLIENT — juste sous l'en-tête, parce que c'est la
+             réponse à la question qu'il se pose en arrivant par un lien reçu.
+             Monté uniquement s'il y a réellement une invitation à traiter :
+             sans code dans l'URL ni intention retenue, il n'y a rien à dire et
+             on n'appelle pas le serveur pour rien. ── */}
+      {referralEnabled && (codeParrainInvite || parrainageEnAttente) && (
+        <BlocFilleul programId={programId} codeInvite={codeParrainInvite} />
+      )}
+
       {/* ── Le solde, en tête : c'est ce que le client vient voir ── */}
       <SoldePanel
         pointsBalance={pointsBalance}
@@ -466,6 +504,17 @@ export function LoyaltyPassport({
         hasPassport={passport.hasPassport}
         onEchange={enregistrerEchange}
       />
+
+      {/* ── PARRAINER — après la boutique : c'est une action secondaire, elle
+             ne doit pas passer devant les points ni devant les cadeaux. Le
+             bloc exige une carte OUVERTE (on ne parraine pas un programme
+             auquel on ne participe pas) ; l'action le revérifie côté serveur. ── */}
+      {referralEnabled && passport.hasPassport && (
+        <BlocParrainage
+          programId={programId}
+          organizationName={organizationName}
+        />
+      )}
 
       {jackpot && <LinkedJackpotCard jackpot={jackpot} />}
 
@@ -1608,5 +1657,198 @@ function CartePalierBoutique({
         </p>
       )}
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// PARRAINAGE — les deux côtés du même geste
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LE PARRAIN — son code, son lien, et LE MOMENT DU VERSEMENT.
+ *
+ * Le point le plus mal compris d'un parrainage est le moment où il paie. La
+ * phrase de tête ne dit donc pas « invitez vos amis » mais QUAND les points
+ * tombent : à la première visite validée du filleul, jamais à la création de
+ * sa carte. C'est aussi la règle du module en base — `validate_loyalty_referral`
+ * va chercher le premier tampon et refuse tant qu'il n'existe pas ; l'écran ne
+ * fait que la dire.
+ *
+ * Le code est demandé au serveur AU MONTAGE et non au rendu de la page :
+ * `ensure_loyalty_referral_code` CRÉE la ligne du parrain si elle manque, et
+ * afficher une page ne doit rien écrire (même règle que `/portefeuille`). Un
+ * porteur sans carte, un programme dont le parrainage est fermé, une identité
+ * inconnue : l'action rend `null` et le bloc ne s'affiche pas du tout.
+ */
+function BlocParrainage({
+  programId,
+  organizationName,
+}: {
+  programId: string;
+  organizationName: string;
+}) {
+  const [vue, setVue] = useState<ParrainageParrainVue | null>(null);
+  const demande = useRef(false);
+
+  useEffect(() => {
+    if (demande.current) return;
+    demande.current = true;
+    let vivant = true;
+    void obtenirCodeParrainage({ programId })
+      .then((r) => {
+        if (vivant && r.ok && r.data) setVue(r.data);
+      })
+      // Aucun message d'erreur : le parrainage est un BONUS de cet écran. Le
+      // rater ne doit pas peindre une alerte sur une carte de fidélité qui,
+      // elle, fonctionne parfaitement.
+      .catch(() => {});
+    return () => {
+      vivant = false;
+    };
+  }, [programId]);
+
+  if (!vue) return null;
+
+  const restants = Math.max(0, vue.maxFilleuls - vue.validatedCount);
+  const echeance = vue.expiresAt ? new Date(vue.expiresAt) : null;
+
+  return (
+    <section
+      className="k-border mt-6 rounded-2xl bg-white p-4 shadow-[4px_4px_0_var(--color-k-ink)]"
+      aria-labelledby="parrainage-titre"
+    >
+      <h2 id="parrainage-titre" className="text-lg font-black text-k-ink">
+        Parrainer un ami
+      </h2>
+
+      <p className="mt-1 text-sm text-k-body">
+        Votre ami ouvre sa carte avec votre lien, puis fait valider une première
+        visite chez {organizationName}.{" "}
+        <strong className="font-black text-k-ink">
+          C&apos;est à cette visite, et pas avant, que vos {vue.sponsorPoints}{" "}
+          points arrivent.
+        </strong>{" "}
+        {vue.filleulPoints > 0
+          ? `Votre ami, lui, démarre avec ${vue.filleulPoints} points de bienvenue.`
+          : "Une carte ouverte et jamais utilisée ne rapporte rien : c'est la visite qui compte."}
+      </p>
+
+      {restants > 0 ? (
+        <PartageLienJeu
+          chemin={`/passeport/${programId}?parrain=${vue.referralCode}`}
+          titre={`Ma carte de fidélité ${organizationName}`}
+          intro="Envoyez ce lien : il ouvre une carte de fidélité, et vous inscrit comme parrain."
+          libelle="Partager mon invitation"
+          className="mt-3"
+        />
+      ) : (
+        <p className="mt-3 rounded-xl border-2 border-k-ink bg-k-yellow/50 px-3 py-2 text-sm font-bold text-k-ink">
+          Vous avez atteint le nombre maximum de filleuls. Merci pour vos{" "}
+          {vue.validatedCount} invitations validées !
+        </p>
+      )}
+
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+        <div className="rounded-xl border-2 border-k-ink/15 bg-k-stripe px-3 py-2">
+          <dt className="text-xs font-bold uppercase tracking-wide text-k-body">
+            Mon code
+          </dt>
+          <dd className="font-mono text-sm font-black text-k-ink">
+            {vue.referralCode}
+          </dd>
+        </div>
+        <div className="rounded-xl border-2 border-k-ink/15 bg-k-stripe px-3 py-2">
+          <dt className="text-xs font-bold uppercase tracking-wide text-k-body">
+            Filleuls validés
+          </dt>
+          <dd className="text-sm font-black text-k-ink">
+            {vue.validatedCount} sur {vue.maxFilleuls}
+            <span className="block text-xs font-bold text-k-body">
+              {restants > 0
+                ? `Encore ${restants} possible${restants > 1 ? "s" : ""}.`
+                : "Plus de place."}
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      {echeance && (
+        <p className="mt-2 text-xs text-k-body">
+          Invitation valable jusqu&apos;au{" "}
+          {echeance.toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })}
+          .
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * LE FILLEUL — « vous venez de la part de… », puis ce qui reste à faire.
+ *
+ * Le lien partagé porte le code dans son URL ; l'action le RETIENT dans un
+ * cookie AVANT même de tenter la validation, parce que celle-ci répondra
+ * presque toujours `no_stamp` : la carte vient d'être ouverte, la visite n'a
+ * pas encore eu lieu. C'est l'état NORMAL d'un filleul, et il est annoncé comme
+ * une étape (ton `info`) et non comme un refus.
+ *
+ * Le bloc est monté MÊME SANS code dans l'URL : la reprise sert alors à
+ * rattraper le tampon posé EN CAISSE — le cookie du filleul est dans son
+ * navigateur à lui, pas dans celui du commerçant, et c'est le seul chemin qui
+ * couvre ce cas.
+ */
+function BlocFilleul({
+  programId,
+  codeInvite,
+}: {
+  programId: string;
+  codeInvite: string | null;
+}) {
+  const [vue, setVue] = useState<ParrainageFilleulVue | null>(null);
+  const demande = useRef(false);
+
+  useEffect(() => {
+    if (demande.current) return;
+    demande.current = true;
+    let vivant = true;
+    void reclamerParrainagePasseport({
+      programId,
+      ...(codeInvite ? { code: codeInvite } : {}),
+    })
+      .then((r) => {
+        if (vivant && r.ok && r.data) setVue(r.data);
+      })
+      .catch(() => {});
+    return () => {
+      vivant = false;
+    };
+  }, [programId, codeInvite]);
+
+  if (!vue) return null;
+
+  const message = messageForReferralState(vue.state, {
+    filleulPoints: vue.filleulPoints,
+  });
+
+  return (
+    <section
+      className={`mt-6 rounded-2xl border-2 p-4 ${TONE_BOX[message.tone]}`}
+      aria-labelledby="filleul-titre"
+    >
+      <p className="text-xs font-bold uppercase tracking-wide">
+        Vous venez de la part d&apos;un client
+      </p>
+      <h2 id="filleul-titre" className="mt-1 text-base font-black">
+        {message.title}
+      </h2>
+      {message.body && <p className="mt-1 text-sm">{message.body}</p>}
+      <p className="mt-2 font-mono text-xs opacity-80">
+        Invitation {vue.code}
+      </p>
+    </section>
   );
 }

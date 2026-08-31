@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { refusActivationFidelite } from "@/lib/activation/loyalty";
 import { getUserAndOrg } from "@/lib/auth";
@@ -14,13 +15,17 @@ import {
 import {
   loadLoyaltyActionContext,
   loadOrderCodeActionContext,
+  loyaltyReferralCookieName,
   loyaltyTokenCookieName,
   type LoyaltyOrderActionContext,
 } from "@/lib/loyalty-context";
 import {
+  mapLoyaltyReferralCode,
+  mapLoyaltyReferralResult,
   mapLoyaltySpendResult,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
+  type LoyaltyReferralState,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
 import { loyaltyStyleWriteSchema } from "@/lib/loyalty-style";
@@ -66,12 +71,16 @@ import {
   LOYALTY_PROGRAM_LOSS_HINT,
   loyaltyCheckinRequestSchema,
   loyaltyCounterCodeSchema,
+  loyaltyReferralClaimSchema,
+  loyaltyReferralCodeRequestSchema,
+  loyaltyReferralCodeSchema,
   setLoyaltyProgramStatusSchema,
   spendLoyaltyPointsSchema,
   stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
   stampLoyaltyVisitStaffSchema,
   updateLoyaltyMilestoneSchema,
+  updateLoyaltyProgramReferralSchema,
   updateLoyaltyProgramSchema,
 } from "@/lib/validations/loyalty";
 
@@ -341,6 +350,62 @@ export async function updateLoyaltyProgramStyle(
   // « Vos clients le voient dès maintenant » : la page publique du passeport
   // est en `force-dynamic`, mais la purge reste posée par symétrie avec les
   // autres écritures du module.
+  revalidatePath(`/passeport/${id}`);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * LE PARRAINAGE — les cinq colonnes `referral_*`, et RIEN d'autre.
+ *
+ * ── Pourquoi une action à part, et pas cinq champs de plus sur `updateLoyaltyProgram` ──
+ *
+ * Le même arbitrage que `updateLoyaltyProgramStyle`, et il a déjà été payé
+ * deux fois sur cet éditeur : `updateLoyaltyProgram` fait un `.update(fields)`
+ * de TOUTES les colonnes de son schéma, donc un formulaire qui n'en rend pas
+ * un champ l'écrase. Les deux formulaires voisins s'en protègent en postant le
+ * programme entier en champs cachés ; ajouter le parrainage là-bas aurait fait
+ * un TROISIÈME jeu de champs cachés à tenir synchrone — et surtout, il aurait
+ * fallu ajouter les cinq colonnes de parrainage aux champs cachés des DEUX
+ * autres formulaires, faute de quoi enregistrer les seuils de niveau aurait
+ * remis le barème du parrainage à ses valeurs par défaut. Une action dédiée
+ * n'écrit que ses colonnes et ne peut rien écraser ; la réciproque est vraie.
+ *
+ * Les bornes sont dans le schéma (miroir des `check` SQL) : le commerçant lit
+ * une phrase, jamais une 23514.
+ */
+export async function updateLoyaltyProgramReferral(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = updateLoyaltyProgramReferralSchema.safeParse({
+    id: formData.get("id"),
+    referral_enabled: formData.get("referral_enabled"),
+    referral_sponsor_points: formData.get("referral_sponsor_points"),
+    referral_filleul_points: formData.get("referral_filleul_points"),
+    referral_max_filleuls: formData.get("referral_max_filleuls"),
+    referral_window_days: formData.get("referral_window_days"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const { user, organization, role } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  if (role !== "owner" && role !== "editor") return { ok: false, error: NOT_EDITOR };
+
+  const { id, ...reglages } = parsed.data;
+  const { error } = await (await createClient())
+    .from("loyalty_programs")
+    .update(reglages)
+    .eq("id", id)
+    .eq("organization_id", organization.id);
+
+  if (error) {
+    reportError("loyalty.update-program-referral", error.message);
+    return { ok: false, error: "Mise à jour impossible" };
+  }
+
+  revalidatePath(`/dashboard/loyalty/${id}`);
   revalidatePath(`/passeport/${id}`);
   return { ok: true, data: undefined };
 }
@@ -1183,7 +1248,7 @@ async function resolvePassportIdentityDeferred(
 /** Seau d'observabilité de la pression publique (clé partagée, jamais un refus). */
 async function observePublicPressure(
   programId: string,
-  scope: "stamp" | "checkin" | "spin" | "order" | "spend",
+  scope: "stamp" | "checkin" | "spin" | "order" | "spend" | "referral",
   ip: string,
 ): Promise<void> {
   await observerPressionIp(
@@ -1535,6 +1600,18 @@ async function stampInner(
       });
     }
 
+    // PARRAINAGE — la validation part APRÈS le tampon, et derrière la réponse.
+    // Le tampon est la PREUVE que `validate_loyalty_referral` va chercher : la
+    // lancer avant n'aurait rien trouvé. Elle est confiée à `after()` pour que
+    // le client n'attende jamais une seconde RPC pour voir sa visite validée.
+    if (result.state === "stamped") {
+      await enchainerParrainageApresTampon(
+        ctx.admin,
+        ctx.program.id,
+        identity.tokenHash,
+      );
+    }
+
     return { ok: true, data: result };
   } catch (err) {
     reportError("loyalty.stamp", err);
@@ -1777,6 +1854,18 @@ async function stampOrderInner(
         legacyIdentityHash: identity.tokenHash,
         acquisitionSource: "direct",
       });
+    }
+
+    // PARRAINAGE — même enchaînement que le tampon public : la validation part
+    // APRÈS le tampon (qui en est la preuve) et derrière la réponse. Le QR de
+    // commande est une porte d'entrée à part entière du parrainage : « le
+    // filleul doit valider son passeport via une commande OU à la boutique ».
+    if (result.state === "stamped") {
+      await enchainerParrainageApresTampon(
+        ctx.admin,
+        ctx.program.id,
+        identity.tokenHash,
+      );
     }
 
     return { ok: true, data: result };
@@ -2196,6 +2285,336 @@ async function consumeSpinInner(
     reportError("loyalty.consumeSpin", err);
     return { ok: false, error: GENERIC_ERROR };
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// PARRAINAGE DU PASSEPORT (FID-5) — parcours joueur
+//
+// ── LE MOMENT DU VERSEMENT, qui est tout le sujet ────────────
+//
+// « le filleul doit valider son passeport via une commande ou à la boutique et
+// ensuite le parrain reçoit son avantage en point ». La preuve est donc le
+// PREMIER TAMPON du filleul, jamais la création de sa carte : `validate_
+// loyalty_referral` va le chercher elle-même en base et refuse (`no_stamp`)
+// tant qu'il n'existe pas. Rien, ici, ne peut contourner cela.
+//
+// ── D'OÙ DEUX DÉCLENCHEURS, ET PAS UN ────────────────────────
+//
+//  1. APRÈS LE TAMPON, dans `after()` — `validerParrainageEnAttente`. C'est le
+//     chemin nominal : le filleul tamponne, sa validation part derrière la
+//     réponse, son parrain est crédité dans la seconde. Confiée à `after()`
+//     parce qu'un parrainage ne doit RIEN coûter au tampon : le commerçant
+//     rend la main au client avant que la RPC de parrainage ne démarre.
+//  2. À L'OUVERTURE DU PASSEPORT — `reclamerParrainagePasseport`, appelée par
+//     l'écran. Elle rattrape les deux cas que (1) ne peut pas couvrir : le
+//     tampon posé DEPUIS LA CAISSE (le cookie du filleul est dans SON
+//     navigateur, pas dans celui du commerçant), et le filleul qui ouvre
+//     l'invitation APRÈS être déjà venu.
+//
+// Les deux appellent la même RPC, et il n'y a aucune clé de rejeu à gérer :
+// l'idempotence est STRUCTURELLE (`unique (program_id, filleul_member_id)`).
+// Un parrainage déjà conclu se relit, il ne se reverse pas.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Options du cookie qui retient le code de parrain d'un filleul. Mêmes
+ * réglages que le cookie d'identité — `httpOnly` compris : ce code désigne le
+ * passeport d'un tiers, aucun script de page n'a à le lire.
+ */
+const LOYALTY_REFERRAL_COOKIE_OPTIONS = LOYALTY_COOKIE_OPTIONS;
+
+/**
+ * États sur lesquels l'intention de parrainage est CLASSÉE : la reprendre à
+ * chaque ouverture de page ne rendrait jamais autre chose.
+ *
+ * `no_stamp` et `not_a_member` en sont volontairement ABSENTS : ce sont les
+ * états d'un filleul qui n'est pas encore venu, c'est-à-dire exactement ceux
+ * qu'il faut réessayer plus tard. `unavailable` aussi — le commerçant peut
+ * rouvrir son parrainage demain.
+ */
+const PARRAINAGE_ETATS_DEFINITIFS = new Set([
+  "validated",
+  "invalid",
+  "expired",
+  "capped",
+  "self_referral",
+  "duplicate",
+  "loop",
+  "already_customer",
+]);
+
+/**
+ * LE VERSEMENT, APRÈS LE TAMPON — appelée depuis `after()`, jamais dans le
+ * chemin de réponse.
+ *
+ * Aucune écriture de cookie ici, et c'est structurel : `after()` s'exécute une
+ * fois la réponse rendue, il n'y a plus d'en-têtes à écrire. Le nettoyage du
+ * cookie appartient donc à `reclamerParrainagePasseport`, qui tourne, elle,
+ * dans le chemin de réponse — et le rejeu que cela peut provoquer ne coûte
+ * rien : la base relit un parrainage conclu au lieu de le reverser.
+ */
+async function validerParrainageEnAttente(
+  admin: ReturnType<typeof createAdminClient>,
+  programId: string,
+  filleulTokenHash: string,
+  code: string,
+): Promise<void> {
+  try {
+    const { error } = await admin.rpc("validate_loyalty_referral", {
+      p_program_id: programId,
+      p_referral_code: code,
+      p_filleul_token_hash: filleulTokenHash,
+    });
+    if (error) reportError("loyalty.referral-after-stamp", error.message);
+  } catch (err) {
+    // Un parrainage raté ne doit jamais remonter jusqu'au tampon, qui est
+    // acquis et déjà annoncé au client.
+    reportError("loyalty.referral-after-stamp", err);
+  }
+}
+
+/** Le code de parrain retenu pour ce programme, s'il y en a un en attente. */
+async function codeParrainEnAttente(programId: string): Promise<string | null> {
+  const store = await cookies();
+  const brut = store.get(loyaltyReferralCookieName(programId))?.value;
+  if (!brut) return null;
+  const parsed = loyaltyReferralCodeSchema.safeParse(brut);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Enchaîne la validation d'un parrainage DERRIÈRE un tampon qui vient d'être
+ * posé, sans rien ajouter au temps de réponse.
+ *
+ * Appelée par les deux chemins de tampon où le cookie du filleul est
+ * disponible (code tournant, QR de commande). Le chemin caisse, lui, s'exécute
+ * dans le navigateur du COMMERÇANT : il n'y a aucun cookie de filleul à y lire,
+ * et c'est `reclamerParrainagePasseport` qui rattrape à l'ouverture du
+ * passeport.
+ */
+async function enchainerParrainageApresTampon(
+  admin: ReturnType<typeof createAdminClient>,
+  programId: string,
+  filleulTokenHash: string,
+): Promise<void> {
+  const code = await codeParrainEnAttente(programId);
+  if (!code) return;
+  after(() =>
+    validerParrainageEnAttente(admin, programId, filleulTokenHash, code),
+  );
+}
+
+/** Ce que le passeport affiche au PARRAIN : son code et où il en est. */
+export interface ParrainageParrainVue {
+  referralCode: string;
+  validatedCount: number;
+  maxFilleuls: number;
+  sponsorPoints: number;
+  filleulPoints: number;
+  expiresAt: string | null;
+  windowDays: number;
+}
+
+/**
+ * LE CODE DU PARRAIN — get-or-create, appelé depuis son passeport.
+ *
+ * Idempotent par construction (`ensure_loyalty_referral_code`) : rappeler rend
+ * le même code. Le porteur doit déjà avoir une carte — on ne parraine pas un
+ * programme auquel on ne participe pas — mais une carte OUVERTE suffit : c'est
+ * au filleul de prouver, pas au parrain.
+ */
+export async function obtenirCodeParrainage(input: {
+  programId: string;
+}): Promise<ActionResult<ParrainageParrainVue | null>> {
+  const parsed = loyaltyReferralCodeRequestSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+
+  // Sans cookie, aucun passeport à parrainer : on sort avant toute requête,
+  // tout compteur et toute instrumentation (miroir de `spendLoyaltyPoints`).
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(parsed.data.programId))?.value;
+  if (!token) return { ok: true, data: null };
+  const tokenHash = hashPlayerToken(token);
+
+  // PREMIER REMPART — clé d'IDENTITÉ, `failClosed` légitime : la saturer ne
+  // coupe que son porteur. Calibrage repris de `loyaltyCheckinMember` (120/h)
+  // et non de `loyaltyStampMember` : comme le jeton de check-in, ce code est
+  // relu à chaque ouverture de l'écran, sans rien créer après le premier appel.
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:referral:code", parsed.data.programId, tokenHash),
+      RATE_LIMITS.loyaltyCheckinMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("loyalty.referralCode", async () => {
+    try {
+      const ctx = await loadLoyaltyActionContext(parsed.data.programId);
+      // Programme fermé, module coupé, parrainage désactivé : `null`, jamais un
+      // motif. L'écran n'affiche simplement pas le bloc.
+      if (!ctx.ok || !ctx.program.referral_enabled) return { ok: true, data: null };
+
+      const { data, error } = await ctx.admin.rpc("ensure_loyalty_referral_code", {
+        p_program_id: parsed.data.programId,
+        p_member_token_hash: tokenHash,
+      });
+      if (error) {
+        reportError("loyalty.referralCode", error.message);
+        return { ok: false, error: GENERIC_ERROR };
+      }
+
+      const resultat = mapLoyaltyReferralCode(data);
+      if (resultat.state !== "ready" || !resultat.referralCode) {
+        return { ok: true, data: null };
+      }
+      return {
+        ok: true,
+        data: {
+          referralCode: resultat.referralCode,
+          validatedCount: resultat.validatedCount,
+          maxFilleuls: resultat.maxFilleuls,
+          sponsorPoints: resultat.sponsorPoints,
+          filleulPoints: resultat.filleulPoints,
+          expiresAt: resultat.expiresAt,
+          windowDays: resultat.windowDays,
+        },
+      };
+    } catch (err) {
+      reportError("loyalty.referralCode", err);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+  });
+}
+
+/** Ce que le passeport affiche au FILLEUL : d'où il vient, et où ça en est. */
+export interface ParrainageFilleulVue {
+  /** Le code retenu — affiché tel quel : « Vous venez de la part de… ». */
+  code: string;
+  state: LoyaltyReferralState;
+  /** `validated` : le bonus de bienvenue réellement crédité. */
+  filleulPoints: number | null;
+}
+
+/**
+ * LE CÔTÉ FILLEUL, en une seule action : retenir le code, puis tenter la
+ * validation.
+ *
+ * `code` n'est fourni que la première fois — quand le lien partagé le porte
+ * dans son URL. Aux ouvertures suivantes l'action le relit dans le cookie, ce
+ * qui lui permet de rattraper le tampon posé en caisse, dont l'écran du
+ * filleul n'a jamais eu connaissance.
+ *
+ * `no_stamp` est le résultat ATTENDU, et le plus fréquent : la carte est
+ * ouverte, la visite reste à faire. L'écran le dit comme une étape, pas comme
+ * un refus (`messageForReferralState`).
+ */
+export async function reclamerParrainagePasseport(input: {
+  programId: string;
+  code?: string;
+}): Promise<ActionResult<ParrainageFilleulVue | null>> {
+  const parsedProgramme = loyaltyReferralCodeRequestSchema.safeParse({
+    programId: input.programId,
+  });
+  if (!parsedProgramme.success) {
+    return { ok: false, error: parsedProgramme.error.issues[0].message };
+  }
+  const programId = parsedProgramme.data.programId;
+
+  const store = await cookies();
+  let code: string | null = null;
+  if (input.code !== undefined) {
+    const parsedCode = loyaltyReferralClaimSchema.safeParse({ programId, code: input.code });
+    // Un code illisible n'est pas une erreur d'écran : le lien a pu être coupé
+    // par une messagerie. On ne retient rien et on ne dit rien de plus.
+    if (!parsedCode.success) return { ok: true, data: null };
+    code = parsedCode.data.code;
+    // RETENU AVANT TOUTE VALIDATION, et c'est le point : la validation va
+    // presque toujours répondre `no_stamp`, et c'est justement pour ce
+    // cas-là qu'il faut se souvenir du code jusqu'à la visite.
+    store.set(loyaltyReferralCookieName(programId), code, LOYALTY_REFERRAL_COOKIE_OPTIONS);
+  } else {
+    code = await codeParrainEnAttente(programId);
+  }
+  if (!code) return { ok: true, data: null };
+
+  // Sans carte ouverte il n'y a rien à valider — mais le code reste retenu :
+  // le premier tampon ouvrira la carte, et la reprise fera le reste.
+  const token = store.get(loyaltyTokenCookieName(programId))?.value;
+  if (!token) {
+    return { ok: true, data: { code, state: "not_a_member", filleulPoints: null } };
+  }
+  const tokenHash = hashPlayerToken(token);
+
+  // PREMIER REMPART — clé d'IDENTITÉ, avant SQL et avant l'instrumentation.
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:referral:claim", programId, tokenHash),
+      RATE_LIMITS.loyaltyCheckinMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  const resultat = await monitored("loyalty.referralClaim", async () => {
+    try {
+      const ctx = await loadLoyaltyActionContext(programId);
+      if (!ctx.ok) return { ok: true as const, data: null };
+
+      // Clé PARTAGÉE = observabilité seule, jamais un refus (inventaire en
+      // tête de fichier). Un passeport ÉTABLI n'y touche pas.
+      const standing = await passportStanding(
+        ctx.admin,
+        ctx.program.id,
+        tokenHash,
+        ctx.program.min_stamp_interval_seconds,
+        { requireRecency: false },
+      );
+      if (standing !== "established") {
+        await observePublicPressure(
+          ctx.program.id,
+          "referral",
+          clientIpFromHeaders(await headers()),
+        );
+      }
+
+      const { data, error } = await ctx.admin.rpc("validate_loyalty_referral", {
+        p_program_id: programId,
+        p_referral_code: code,
+        p_filleul_token_hash: tokenHash,
+      });
+      if (error) {
+        reportError("loyalty.referralClaim", error.message);
+        return { ok: false as const, error: GENERIC_ERROR };
+      }
+      return { ok: true as const, data: mapLoyaltyReferralResult(data) };
+    } catch (err) {
+      reportError("loyalty.referralClaim", err);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+  });
+
+  if (!resultat.ok) return resultat;
+  if (!resultat.data) return { ok: true, data: null };
+
+  // L'intention est CLASSÉE : conclue, ou refusée pour un motif que le temps ne
+  // changera pas. On efface le cookie plutôt que de rejouer la RPC à chaque
+  // ouverture du passeport pendant six mois.
+  if (PARRAINAGE_ETATS_DEFINITIFS.has(resultat.data.state)) {
+    store.delete(loyaltyReferralCookieName(programId));
+  }
+
+  return {
+    ok: true,
+    data: {
+      code,
+      state: resultat.data.state,
+      filleulPoints: resultat.data.filleulPoints,
+    },
+  };
 }
 
 // ────────────────────────────────────────────────────────────
