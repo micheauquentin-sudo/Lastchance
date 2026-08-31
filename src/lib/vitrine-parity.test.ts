@@ -35,6 +35,14 @@ import {
   VITRINE_SLUGS_RESERVES,
   VITRINE_STYLES_CARTES,
   VITRINE_THEME_POLICES,
+  VITRINE_ALLURE_BOOLEENS,
+  VITRINE_ALLURE_BORNES,
+  VITRINE_ALLURE_CHIFFRES,
+  VITRINE_ALLURE_CLES,
+  VITRINE_ALLURE_ENUMS,
+  VITRINE_ALLURE_ENUMS_CLES,
+  VITRINE_BADGE_OUVERTURE_MAX,
+  VITRINE_SECTEURS,
 } from "./vitrine";
 
 /**
@@ -156,6 +164,17 @@ const SOURCE_THEME = definitionVivante("is_valid_vitrine_theme");
 
 /** La RPC publique, vivante elle aussi — c'est elle qui borne les portes. */
 const SOURCE_ETAT_PUBLIC = definitionVivante("vitrine_public_state");
+
+/**
+ * LA MIGRATION DU SECTEUR ET DU BADGE (VIT-13).
+ *
+ * Lue EN DUR, contrairement au validateur de thème : ce sont deux `check` de
+ * COLONNE, et une colonne ne se redéfinit pas — un `alter table … add column`
+ * ne se rejoue pas ailleurs. Le jour où l'un de ces deux `check` serait
+ * remplacé, ce serait par un `drop constraint` explicite, que cette garde doit
+ * faire rougir plutôt que suivre en silence.
+ */
+const SOURCE_ALLURE = lire("20261121120000_vitrine_allure_secteur.sql");
 
 /** Les chaînes SQL simples quotées d'un fragment, dans l'ordre du fichier. */
 function motsQuotes(fragment: string): string[] {
@@ -562,5 +581,145 @@ describe("parité Vitrine — les bornes des `check`", () => {
     if (!trouve) throw new Error("Forme du slug introuvable");
     expect(Number(trouve[1])).toBe(VITRINE_SLUG_MIN);
     expect(Number(trouve[2])).toBe(VITRINE_SLUG_MAX);
+  });
+  // ── L'ALLURE ET LE SECTEUR (VIT-13) ───────────────────────────
+  //
+  // Vingt-cinq réglages et sept métiers, recopiés dans un `check` qui ne peut
+  // pas lire un fichier TypeScript. C'est la MÊME dette que les polices, et
+  // elle se ferme de la même façon : on lit le SQL vivant et on compare.
+  //
+  // CE QUE CETTE GARDE ATTRAPE VRAIMENT : une clé d'allure ajoutée côté TS et
+  // oubliée côté SQL ne rougit NULLE PART ailleurs. L'éditeur rendrait le
+  // contrôle, le commerçant le réglerait, et la base refuserait le thème
+  // ENTIER sur une 23514 illisible — en emportant au passage les vingt-quatre
+  // autres réglages qui, eux, étaient valides.
+
+  it("les clés d'allure acceptées sont les mêmes des deux côtés", () => {
+    const sql = motsQuotes(
+      fragment(
+        "select 1 from jsonb_object_keys(v_allure) k",
+        ") then",
+        SOURCE_THEME,
+      ),
+    );
+    // Le fragment contient l'ancre `where k not in (…)` : les seuls mots
+    // quotés y sont les clés. On compte avant de comparer — une ancre devenue
+    // muette rendrait une liste vide, donc deux ensembles vides et un test vert
+    // qui ne mesure rien.
+    expect(sql.length).toBe(25);
+    expect([...sql].sort()).toEqual([...VITRINE_ALLURE_CLES].sort());
+  });
+
+  it("chaque liste fermée d'allure a les mêmes valeurs des deux côtés", () => {
+    for (const cle of VITRINE_ALLURE_ENUMS_CLES) {
+      // Chaque ligne du `values` porte la clé puis son `array[...]` : on isole
+      // la ligne, puis les mots quotés du tableau.
+      const ligne = fragment(`('${cle}',`, "])", SOURCE_THEME);
+      const valeurs = motsQuotes(ligne);
+      expect(valeurs.length, `liste ${cle} vide côté SQL`).toBeGreaterThan(1);
+      expect([...valeurs].sort(), `liste ${cle}`).toEqual(
+        [...VITRINE_ALLURE_ENUMS[cle].valeurs].sort(),
+      );
+    }
+  });
+
+  it("les bornes des curseurs sont les mêmes des deux côtés", () => {
+    /**
+     * LE BLOC `values` DES CURSEURS, ISOLÉ AVANT TOUTE RECHERCHE PAR CLÉ.
+     *
+     * C'est nécessaire, et le contraire a été écrit d'abord puis corrigé sur un
+     * rouge : `('motif_opacite',` apparaît DEUX fois dans la fonction — une
+     * première dans la liste `e.key in (…)` qui vérifie le TYPE des sept
+     * curseurs, une seconde dans le `values` qui porte leurs BORNES. Une
+     * recherche à plat trouvait la première, en tirait « 'rayon' » comme borne
+     * minimale, et la garde échouait pour une raison qui n'était pas la sienne.
+     *
+     * On borne donc la recherche au seul bloc dont le nom de colonnes dit qu'il
+     * porte des bornes : `as v(cle, mini, maxi)`.
+     */
+    const fin = SOURCE_THEME.indexOf("as v(cle, mini, maxi)");
+    if (fin < 0) {
+      throw new Error(
+        "Bloc des bornes introuvable (`as v(cle, mini, maxi)`) : la garde ne " +
+          "mesure plus aucun curseur.",
+      );
+    }
+    const debut = SOURCE_THEME.lastIndexOf("join (values", fin);
+    if (debut < 0) throw new Error("Début du bloc des bornes introuvable");
+    const bloc = SOURCE_THEME.slice(debut, fin);
+
+    for (const cle of VITRINE_ALLURE_CHIFFRES) {
+      const bornes = VITRINE_ALLURE_BORNES[cle];
+      // La ligne du `values` : ('cle', mini, maxi). Les casts `::numeric` de la
+      // première ligne — qui donnent son type à toute la colonne — sont
+      // tolérés, sur le minimum comme sur le maximum.
+      const motif = new RegExp(
+        "\\('" +
+          cle +
+          "',\\s*(-?[0-9.]+)(?:::numeric)?,\\s*(-?[0-9.]+)(?:::numeric)?\\)",
+      );
+      const trouve = motif.exec(bloc);
+      if (!trouve) {
+        throw new Error(
+          `Bornes de « ${cle} » introuvables dans is_valid_vitrine_theme : la ` +
+            "garde ne mesure plus ce curseur.",
+        );
+      }
+      expect(Number(trouve[1]), `${cle}.min`).toBe(bornes.min);
+      expect(Number(trouve[2]), `${cle}.max`).toBe(bornes.max);
+      // Le DÉFAUT doit être DANS les bornes, sinon la maquette elle-même
+      // produirait un thème que la base refuse.
+      expect(bornes.defaut).toBeGreaterThanOrEqual(bornes.min);
+      expect(bornes.defaut).toBeLessThanOrEqual(bornes.max);
+    }
+  });
+
+  it("les sept interrupteurs sont les mêmes des deux côtés", () => {
+    const sql = motsQuotes(
+      fragment(
+        "where e.key in ('entete_collant'",
+        ")",
+        SOURCE_THEME,
+      ),
+    );
+    // Le fragment s'arrête à la parenthèse fermante du `in (...)`, donc juste
+    // après `'recherche'`. Le premier mot est consommé par l'ancre : on le
+    // remet pour comparer l'ensemble complet.
+    const complet = ["entete_collant", ...sql];
+    expect(complet.length).toBe(7);
+    expect([...complet].sort()).toEqual([...VITRINE_ALLURE_BOOLEENS].sort());
+  });
+
+  it("chaque défaut de liste appartient à sa propre liste", () => {
+    // Une garde de la garde : un défaut absent de sa liste rendrait une page
+    // dont le réglage ne peut pas être re-choisi dans l'éditeur, et un thème
+    // que la base refuserait si jamais il était écrit.
+    for (const cle of VITRINE_ALLURE_ENUMS_CLES) {
+      const { valeurs, defaut } = VITRINE_ALLURE_ENUMS[cle];
+      expect(valeurs as readonly string[], `défaut de ${cle}`).toContain(defaut);
+    }
+  });
+
+  it("les sept secteurs sont les mêmes des deux côtés", () => {
+    const sql = motsQuotes(
+      fragment("check (secteur in (", "))", SOURCE_ALLURE),
+    );
+    expect(sql.length).toBe(7);
+    expect([...sql].sort()).toEqual([...VITRINE_SECTEURS].sort());
+  });
+
+  it("la borne du badge d'ouverture est la même des deux côtés", () => {
+    // Extraction PAR ANCRES et non par regex : le `check` s'étend sur deux
+    // lignes (`char_length(btrim(badge_ouverture))` puis `between 1 and 48`),
+    // et une regex multiligne y aurait ajouté le piège CRLF que ce fichier
+    // ferme une fois pour toutes à la lecture.
+    const entre = fragment("between 1 and ", ")", SOURCE_ALLURE).trim();
+    const borne = Number(entre);
+    if (!Number.isFinite(borne)) {
+      throw new Error(
+        "Borne de badge_ouverture introuvable : la garde ne mesure plus rien.",
+      );
+    }
+    expect(borne).toBe(VITRINE_BADGE_OUVERTURE_MAX);
   });
 });

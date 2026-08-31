@@ -13,26 +13,33 @@ import {
   type StyleCartesVitrine,
   type VitrineFicheView,
 } from "@/lib/vitrine";
-import { TEXTES_VITRINE } from "@/components/vitrine/langue";
+import type { AllureResolue } from "@/components/vitrine/theme";
+import { textesVitrine } from "@/components/vitrine/langue";
+import type { SecteurVitrine } from "@/lib/vitrine";
 
 /**
- * UNE FICHE DE CARTE — un plat, une boisson, une prestation.
+ * UNE FICHE DE CARTE — un plat, une coupe, un bouquet, une chambre, un soin.
  *
- * ── CE LOT NE MONTE AUCUNE PHOTO, ET LA FICHE DOIT ÊTRE BELLE QUAND MÊME ──
+ * ── LA FICHE DOIT ÊTRE BELLE SANS PHOTO ──
  *
  * C'est la contrainte de départ, pas un repli : la référence du marché publie
  * une « carte sans photos » à côté de ses cartes illustrées, et c'est souvent
- * celle qu'un restaurateur garde. Ce qui tient une carte sans images, c'est la
- * TYPOGRAPHIE : un nom en police de titre, un prix aligné à droite, et un filet
- * pointillé entre les deux qui fait lire la ligne d'un bout à l'autre — la
- * mise en page d'un menu imprimé, pas celle d'une liste de produits.
+ * celle qu'un commerçant garde. Ce qui tient une carte sans images, c'est la
+ * TYPOGRAPHIE : un nom en couleur d'accent, une description sobre, un prix qui
+ * se détache. Le monogramme ne comble un vide que là où la mise en page en
+ * réserve un.
  *
- * Le seul « placeholder » est un MONOGRAMME, et seulement dans les styles
- * `grille` et `magazine`, où la mise en page réserve une place visuelle qui
- * serait autrement un trou. Il est en couleur d'accent très diluée : il occupe
- * l'espace sans jamais prétendre être une image. En style `liste`, il n'y a
- * aucune place à combler, donc aucun monogramme — un carré gris par ligne
- * serait exactement le bruit que le mot « discret » exclut.
+ * ── TROIS STYLES DE PRIX, ET LE PREMIER EST L'ANCIENNE CARTE (VIT-13) ──
+ *
+ * `simple` garde la ligne « NOM ── filet pointillé ── PRIX » : la mise en page
+ * d'un menu imprimé, celle que cette fiche rendait avant l'allure. Elle n'a pas
+ * été retirée, elle est devenue un CHOIX — c'est le seul des trois qui fasse
+ * lire la ligne d'un bout à l'autre, et une carte de vins sans photo ne
+ * ressemble à rien d'autre.
+ *
+ * `accent` (le défaut) et `pastille` posent le prix SOUS la description, comme
+ * la maquette de référence : dès qu'il y a une photo latérale, le filet n'a
+ * plus la largeur qu'il lui faut pour relier quoi que ce soit.
  *
  * ── L'INDISPONIBLE EST GRISÉ, JAMAIS RETIRÉ ──
  *
@@ -55,19 +62,23 @@ import { TEXTES_VITRINE } from "@/components/vitrine/langue";
  * `fiche.nom` et `fiche.description` arrivent DÉJÀ dans la langue servie : le
  * SQL a superposé le calque de traduction champ par champ, avec repli français
  * pour ce qui manque ou a vieilli. Les BADGES et les ALLERGÈNES, eux, sont du
- * vocabulaire de plateforme et se traduisent ici (`@/components/vitrine/langue`)
- * — les faire passer par le calque aurait fait traduire « Gluten » une fois par
- * commerçant.
+ * vocabulaire de plateforme et se traduisent ici.
  */
 export function FicheVitrine({
   fiche,
   styleCartes,
   lang,
+  secteur,
+  allure,
   portesOuvertes,
+  favori,
+  onBasculerFavori,
 }: {
   fiche: VitrineFicheView;
   styleCartes: StyleCartesVitrine;
   lang: LangueVitrine;
+  secteur: SecteurVitrine;
+  allure: AllureResolue;
   /**
    * VIT-10 : les modules qui ont vraiment quelque chose d'ouvert.
    *
@@ -75,13 +86,33 @@ export function FicheVitrine({
    * fonction ne traverse pas la frontière serveur → client.
    */
   portesOuvertes: readonly ActionVitrine[];
+  favori: boolean;
+  /**
+   * `null` quand les favoris sont éteints par l'allure. Un booléen séparé
+   * aurait laissé passer l'état « allumé mais sans gestionnaire », c'est-à-dire
+   * un cœur qui ne fait rien.
+   */
+  onBasculerFavori: ((id: string) => void) | null;
 }) {
-  const t = TEXTES_VITRINE[lang];
+  const t = textesVitrine(lang, secteur);
   const indisponible = !fiche.disponible;
-  const monogramme = styleCartes !== "liste";
-  const photo = sourcesPhotoVitrine(fiche.photo_path);
   const magazine = styleCartes === "magazine";
   const titreId = `fiche-titre-${fiche.id}`;
+
+  const photo =
+    allure.photoTaille === "aucune" ? null : sourcesPhotoVitrine(fiche.photo_path);
+  // Le monogramme ne comble QUE le vide laissé par une photo attendue. En style
+  // `liste` sans photo, il n'y a aucune place à combler : un carré par ligne
+  // serait exactement le bruit que « discret » exclut.
+  const monogramme =
+    !photo &&
+    allure.monogramme &&
+    allure.photoTaille !== "aucune" &&
+    (styleCartes !== "liste" || allure.photoPosition === "pleine");
+
+  const prixEnLigne = allure.stylePrix === "simple" && Boolean(fiche.prix_affiche);
+  const prixDessous = allure.stylePrix !== "simple" && Boolean(fiche.prix_affiche);
+  const coeur = onBasculerFavori !== null && !indisponible;
 
   return (
     <article
@@ -94,50 +125,44 @@ export function FicheVitrine({
        * cache ISR supplémentaire, aucun basculement en rendu dynamique, ce
        * qu'un `?fiche=…` aurait provoqué. C'est `catalogue-vitrine.tsx` qui lit
        * le fragment à l'ouverture, sélectionne la bonne carte et défile.
-       *
-       * L'identifiant du TITRE porte donc désormais `fiche-titre-…` : deux
-       * éléments ne peuvent pas partager un `id`, et c'est l'article — la fiche
-       * entière — qui est la cible d'un défilement.
        */
       id={`fiche-${fiche.id}`}
       aria-labelledby={titreId}
+      style={{
+        background: "var(--vitrine-carte-fond)",
+        borderWidth: "var(--vitrine-carte-bord)",
+        boxShadow: "var(--vitrine-carte-ombre)",
+        borderRadius: "var(--vitrine-rad)",
+        padding: "var(--vitrine-pad)",
+        flexDirection: "var(--vitrine-carte-flex)" as never,
+      }}
       className={cn(
-        "scroll-mt-4 rounded-2xl border border-black/10 bg-white/70 p-4",
-        magazine && "p-5",
+        "scroll-mt-4 flex gap-3 overflow-hidden border-solid border-[var(--vitrine-accent-25)]",
+        // `items-start` : la photo se cale en haut de la fiche, pas au milieu.
+        // Centrée, elle flotterait au milieu d'une description longue.
+        "items-start",
         // `opacity` sur le conteneur ET une mention en clair : le gris seul
         // n'est pas une information.
         indisponible && "opacity-70",
       )}
     >
-      <div className={cn(magazine ? "space-y-3" : "space-y-2")}>
-        {/* LA PHOTO PREND LA PLACE DU MONOGRAMME, elle ne s'y ajoute pas :
-            l'initiale existe précisément pour tenir la mise en page quand il
-            n'y a pas d'image. Les deux ensemble auraient donné deux objets
-            décoratifs empilés au-dessus du nom. */}
-        {photo ? (
-          <PhotoFiche
-            chemin={fiche.photo_path}
-            photo={photo}
-            alt={altPhotoVitrine(fiche.photo_alt)}
-            grand={magazine}
-          />
-        ) : monogramme ? (
-          <Monogramme nom={fiche.nom} grand={magazine} />
-        ) : null}
-
-        {/* NOM ── FILET ── PRIX. Le filet est `aria-hidden` : il fait lire la
-            ligne à l'œil, il n'a rien à dire à l'oreille. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex items-baseline gap-2">
           <h3
             id={titreId}
-            className={cn(
-              "font-[family-name:var(--vitrine-titre)] font-bold leading-tight text-[var(--vitrine-sur-secondary)]",
-              magazine ? "text-xl" : "text-base",
-            )}
+            style={{
+              textTransform: "var(--vitrine-caps)" as never,
+              fontSize: `calc(${magazine ? 19 : 15}px * var(--vitrine-fsx))`,
+            }}
+            className="min-w-0 flex-1 font-[family-name:var(--vitrine-titre)] font-bold leading-tight tracking-[0.02em] text-[var(--vitrine-primary)]"
           >
             {fiche.nom}
           </h3>
-          {fiche.prix_affiche ? (
+
+          {/* LE PRIX « SIMPLE » — l'ancienne mise en page, conservée. Le filet
+              est `aria-hidden` : il fait lire la ligne à l'œil, il n'a rien à
+              dire à l'oreille. */}
+          {prixEnLigne ? (
             <>
               <span
                 aria-hidden
@@ -148,14 +173,42 @@ export function FicheVitrine({
               </p>
             </>
           ) : null}
+
+          {/* LE CŒUR EN LIGNE — seulement là où aucune photo ne peut le
+              porter. Sur une photo, il est posé DANS l'image, comme la
+              maquette : deux cœurs à deux endroits selon la fiche feraient
+              chercher le geste. */}
+          {coeur && !photo ? (
+            <BoutonFavori
+              actif={favori}
+              nom={fiche.nom}
+              lang={lang}
+              onBasculer={() => onBasculerFavori(fiche.id)}
+              className="size-[30px] shrink-0 rounded-full border border-[var(--vitrine-accent-25)]"
+            />
+          ) : null}
         </div>
+
+        {fiche.badges.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {fiche.badges.map((badge) => (
+              <li
+                key={badge}
+                className="rounded-full bg-[var(--vitrine-accent-10)] px-2 py-0.5 text-[8.5px] font-semibold uppercase leading-[1.3] tracking-[0.08em] text-[var(--vitrine-primary)]"
+              >
+                {libelleBadge(badge, lang)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         {fiche.description ? (
           <p
-            className={cn(
-              "font-[family-name:var(--vitrine-texte)] leading-relaxed text-[var(--vitrine-sur-secondary)]/80",
-              magazine ? "text-base" : "text-sm",
-            )}
+            style={{
+              textTransform: "var(--vitrine-caps-desc)" as never,
+              fontSize: `calc(${magazine ? 13 : 11.5}px * var(--vitrine-fsx))`,
+            }}
+            className="font-[family-name:var(--vitrine-texte)] leading-[1.55] text-[var(--vitrine-sur-secondary)]/85 text-pretty"
           >
             {fiche.description}
           </p>
@@ -167,23 +220,12 @@ export function FicheVitrine({
           </p>
         ) : null}
 
-        {fiche.badges.length > 0 ? (
-          <ul className="flex flex-wrap gap-1.5">
-            {fiche.badges.map((badge) => (
-              <li
-                key={badge}
-                className="rounded-full border border-[var(--vitrine-primary)]/25 px-2 py-0.5 text-xs font-semibold text-[var(--vitrine-primary)]"
-              >
-                {libelleBadge(badge, lang)}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {prixDessous ? <Prix valeur={fiche.prix_affiche!} allure={allure} /> : null}
 
-        {/* LA PORTE, SOUS LA FICHE ET APRÈS LES BADGES : elle vient après ce
-            qui décrit le plat, jamais avant. Une fiche indisponible n'en porte
-            pas — proposer de réserver ce que la cuisine n'a plus serait la
-            seule chose pire que de ne rien proposer. */}
+        {/* LA PORTE, SOUS LA FICHE ET APRÈS LE PRIX : elle vient après ce qui
+            décrit et chiffre la prestation, jamais avant. Une fiche
+            indisponible n'en porte pas — proposer de réserver ce que la cuisine
+            n'a plus serait la seule chose pire que de ne rien proposer. */}
         {!indisponible && fiche.action ? (
           <PorteVitrine
             action={fiche.action}
@@ -207,7 +249,110 @@ export function FicheVitrine({
           </details>
         ) : null}
       </div>
+
+      {photo ? (
+        <div
+          style={{
+            width: "var(--vitrine-photo-l)",
+            height: "var(--vitrine-photo-h)",
+            borderRadius: "var(--vitrine-rad-photo)",
+            background: "var(--vitrine-accent-08)",
+          }}
+          className="relative shrink-0 overflow-hidden"
+        >
+          <PhotoFiche
+            chemin={fiche.photo_path}
+            photo={photo}
+            alt={altPhotoVitrine(fiche.photo_alt)}
+          />
+          {coeur ? (
+            <BoutonFavori
+              actif={favori}
+              nom={fiche.nom}
+              lang={lang}
+              onBasculer={() => onBasculerFavori(fiche.id)}
+              className="absolute right-[7px] top-[7px] size-[30px] rounded-full bg-white/95 shadow-[0_2px_8px_rgba(0,0,0,0.18)]"
+            />
+          ) : null}
+        </div>
+      ) : monogramme ? (
+        <Monogramme nom={fiche.nom} />
+      ) : null}
     </article>
+  );
+}
+
+/**
+ * LE PRIX, SOUS LA DESCRIPTION — deux styles.
+ *
+ * `tabular-nums` dans les deux : une colonne de prix dont les chiffres n'ont
+ * pas la même largeur se lit de travers, et c'est la seule information de la
+ * fiche qu'on compare d'une ligne à l'autre.
+ */
+function Prix({ valeur, allure }: { valeur: string; allure: AllureResolue }) {
+  if (allure.stylePrix === "pastille") {
+    return (
+      <p
+        style={{ fontSize: "calc(12.5px * var(--vitrine-fsx))" }}
+        className="mt-0.5 self-start rounded-full bg-[var(--vitrine-primary)] px-3 py-1.5 font-semibold tabular-nums leading-none text-[var(--vitrine-sur-primary)]"
+      >
+        {valeur}
+      </p>
+    );
+  }
+  return (
+    <p
+      style={{ fontSize: "calc(16px * var(--vitrine-fsx))" }}
+      className="mt-0.5 font-bold tabular-nums leading-none text-[var(--vitrine-primary)]"
+    >
+      {valeur}
+    </p>
+  );
+}
+
+/**
+ * LE CŒUR.
+ *
+ * ── LE NOM DE LA FICHE EST DANS L'ÉTIQUETTE, ET C'EST OBLIGATOIRE ──
+ *
+ * Une carte porte trente boutons identiques. « Ajouter aux favoris », répété
+ * trente fois, ne dit rien à un lecteur d'écran qui parcourt les contrôles :
+ * l'étiquette doit nommer CE plat. `aria-pressed` porte l'état, ce qui évite
+ * d'avoir à changer le libellé selon qu'il est mis ou retiré — le lecteur
+ * annonce « activé » tout seul.
+ *
+ * Le glyphe est `aria-hidden` : un cœur plein et un cœur vide se prononcent de
+ * la même façon, et l'état est déjà dit.
+ */
+function BoutonFavori({
+  actif,
+  nom,
+  lang,
+  onBasculer,
+  className,
+}: {
+  actif: boolean;
+  nom: string;
+  lang: LangueVitrine;
+  onBasculer: () => void;
+  className?: string;
+}) {
+  const etiquette = lang === "en" ? `Favourite: ${nom}` : `Favori : ${nom}`;
+  return (
+    <button
+      type="button"
+      onClick={onBasculer}
+      aria-pressed={actif}
+      aria-label={etiquette}
+      className={cn(
+        "inline-flex cursor-pointer items-center justify-center p-0 text-[14px] leading-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vitrine-primary)]",
+        className,
+      )}
+    >
+      <span aria-hidden className={actif ? "text-[var(--vitrine-primary)]" : "text-[#b9b3ab]"}>
+        {actif ? "♥" : "♡"}
+      </span>
+    </button>
   );
 }
 
@@ -215,17 +360,20 @@ export function FicheVitrine({
  * Le monogramme : première lettre du nom, en accent très dilué.
  *
  * `aria-hidden` — il ne répète que la première lettre d'un titre déjà lu juste
- * en dessous, et l'annoncer ferait entendre « T, Tarte aux pommes ».
+ * à côté, et l'annoncer ferait entendre « T, Tarte aux pommes ».
  */
-function Monogramme({ nom, grand }: { nom: string; grand: boolean }) {
+function Monogramme({ nom }: { nom: string }) {
   const lettre = nom.trim().charAt(0).toUpperCase() || "·";
   return (
     <div
       aria-hidden
-      className={cn(
-        "flex items-center justify-center rounded-xl bg-[var(--vitrine-primary)]/10 font-[family-name:var(--vitrine-titre)] font-bold text-[var(--vitrine-primary)]/25",
-        grand ? "h-28 text-5xl" : "h-16 text-3xl",
-      )}
+      style={{
+        width: "var(--vitrine-photo-l)",
+        height: "var(--vitrine-photo-h)",
+        borderRadius: "var(--vitrine-rad-photo)",
+        background: "var(--vitrine-accent-10)",
+      }}
+      className="flex shrink-0 items-center justify-center font-[family-name:var(--vitrine-titre)] text-3xl font-bold text-[var(--vitrine-accent-25)]"
     >
       {lettre}
     </div>
@@ -239,21 +387,24 @@ function Monogramme({ nom, grand }: { nom: string; grand: boolean }) {
  * soixante images, dont deux sont visibles au chargement. Les charger toutes
  * d'un coup ferait payer au visiteur la carte entière pour lire l'entrée.
  *
- * `aspect-[4/3]` avec `object-cover` : le cadre est STABLE avant même que
- * l'image n'arrive, donc la page ne saute pas sous le pouce au moment où elle
- * se pose. Le recadrage est celui du navigateur, centré — le serveur, lui, ne
- * recadre jamais : il réduit, et n'ampute aucun plat d'autorité.
+ * Le CADRE est posé par le parent (`--vitrine-photo-l/h`) et l'image le remplit
+ * en `object-cover` : la page ne saute donc pas sous le pouce au moment où
+ * l'image se pose. Le recadrage est celui du navigateur, centré — le serveur,
+ * lui, ne recadre jamais : il réduit, et n'ampute aucun plat d'autorité.
+ *
+ * `sizes` annonce la largeur RÉELLE la plus grande qu'occupe cette image : en
+ * pleine largeur elle fait toute la carte, sinon 152 px au maximum
+ * (`PHOTO_LATERALE.grande`). Annoncer `100vw` dans les deux cas aurait fait
+ * télécharger la grande source pour une vignette de 88 px.
  */
 function PhotoFiche({
   chemin,
   photo,
   alt,
-  grand,
 }: {
   chemin: string | null;
   photo: { grande: string; mobile: string };
   alt: string;
-  grand: boolean;
 }) {
   return (
     /* eslint-disable-next-line @next/next/no-img-element -- Storage public, hors
@@ -266,10 +417,7 @@ function PhotoFiche({
       alt={alt}
       loading="lazy"
       decoding="async"
-      className={cn(
-        "w-full rounded-xl border border-black/10 object-cover",
-        grand ? "aspect-[4/3]" : "aspect-[16/9]",
-      )}
+      className="size-full object-cover"
     />
   );
 }

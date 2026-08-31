@@ -583,6 +583,110 @@ describe("saveVitrineSettings — le thème part sous ses noms SQL", () => {
     expect(payload.theme).toEqual({});
   });
 
+  // ── LE TÉMOIN D'ALLURE (VIT-13) ─────────────────────────────
+  //
+  // CES DEUX TESTS GARDENT UN DÉFAUT RÉEL, trouvé en écrivant le lot et non
+  // imaginé après coup. Les sept interrupteurs d'allure valent `true` par
+  // défaut, et une case NON RENDUE se poste exactement comme une case
+  // DÉCOCHÉE : rien. Sans témoin, tout formulaire ne portant pas la section
+  // écrivait sept `false` — en-tête figé, capitales éteintes, compteurs,
+  // monogramme, favoris et recherche retirés — sans message et sans trace.
+  //
+  // C'est la classe de panne que ce dépôt paie le plus cher : un
+  // enregistrement qui réussit en ayant fait autre chose que ce qu'on croit.
+
+  it("sans témoin, l'allure n'est PAS touchée — sept réglages ne s'éteignent pas tout seuls", async () => {
+    gardeOk();
+    await saveVitrineSettings(
+      null,
+      fd({ accroche: "Bistrot", couleur_primary: "#112233" }),
+    );
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    expect(payload.theme).toEqual({ couleurs: { primary: "#112233" } });
+    expect(payload.theme).not.toHaveProperty("allure");
+  });
+
+  it("avec le témoin, une case décochée est un CHOIX et s'enregistre", async () => {
+    gardeOk();
+    await saveVitrineSettings(
+      null,
+      // `allure_rendue` seul : la section est à l'écran, et les sept cases y
+      // sont décochées. C'est donc bien sept refus explicites.
+      fd({ accroche: "Bistrot", allure_rendue: "1" }),
+    );
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    expect(payload.theme).toEqual({
+      allure: {
+        entete_collant: false,
+        capitales: false,
+        capitales_desc: false,
+        compte_rubrique: false,
+        monogramme: false,
+        favoris: false,
+        recherche: false,
+      },
+    });
+  });
+
+  it("avec le témoin, ce qui vaut le DÉFAUT n'est pas écrit", async () => {
+    gardeOk();
+    await saveVitrineSettings(
+      null,
+      fd({
+        allure_rendue: "1",
+        // Les sept interrupteurs cochés + une liste et un curseur laissés sur
+        // leur valeur de maquette : rien de tout cela ne diffère du défaut.
+        entete_collant: "on",
+        capitales: "on",
+        capitales_desc: "on",
+        compte_rubrique: "on",
+        monogramme: "on",
+        favoris: "on",
+        recherche: "on",
+        motif: "diagonales",
+        rayon: "13",
+        // Un seul écart réel.
+        style_prix: "pastille",
+      }),
+    );
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    // SEUL L'ÉCART EST STOCKÉ. Recopier les vingt-cinq défauts aurait figé
+    // chaque vitrine sur l'allure du jour de son enregistrement : le jour où un
+    // défaut de la maquette change, aucune n'en profiterait.
+    expect(payload.theme).toEqual({ allure: { style_prix: "pastille" } });
+  });
+
+  it("le secteur et le badge partent dans leurs colonnes, pas dans le thème", async () => {
+    gardeOk();
+    await saveVitrineSettings(
+      null,
+      fd({ secteur: "coiffeur", badge_ouverture: "Ouvert · 9h–19h" }),
+    );
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    expect(payload.secteur).toBe("coiffeur");
+    expect(payload.badge_ouverture).toBe("Ouvert · 9h–19h");
+    expect(payload.theme).toEqual({});
+  });
+
+  it("un secteur absent vaut le neutre, JAMAIS null — la colonne est not null", async () => {
+    gardeOk();
+    await saveVitrineSettings(null, fd({ accroche: "Bistrot" }));
+
+    const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
+      .payload as Record<string, unknown>;
+    expect(payload.secteur).toBe("commerce");
+    // Le badge, lui, est nullable : `""` y devient bien `null`.
+    expect(payload.badge_ouverture).toBeNull();
+  });
+
   it("sans ligne de réglages, on le DIT plutôt que de réussir dans le vide", async () => {
     gardeOk();
     state.row = null;

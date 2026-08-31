@@ -13,11 +13,14 @@ import {
   VITRINE_SLUG_MAX,
   VITRINE_SLUG_MIN,
   VITRINE_STYLES_CARTES,
+  VITRINE_SECTEURS,
+  VITRINE_BADGE_OUVERTURE_MAX,
 
   cheminVitrine,
   estSlugVitrineReserve,
   formeSlugVitrineValide,
   libelleBloc,
+  libelleSecteur,
   libelleStyleCartes,
   normaliserSlugVitrine,
   urlVitrine,
@@ -35,6 +38,7 @@ import { PhotoChamp } from "@/components/vitrine/photo-champ";
 import { Card } from "@/components/ui/card";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { resoudreThemeVitrine } from "@/components/vitrine/theme";
+import { AllureEditeur } from "@/components/vitrine/allure-editeur";
 
 /**
  * `publishVitrine` et `unpublishVitrine` NE PRENNENT AUCUNE ENTRÉE — l'objet
@@ -223,7 +227,7 @@ function IdentiteEtThemeForm({
   settings: VitrineSettingsView;
   peutEditer: boolean;
 }) {
-  const theme = resoudreThemeVitrine(settings.theme);
+  const theme = resoudreThemeVitrine(settings.theme, settings.secteur);
   const { state, pending, onSubmit } = useActionForm(saveVitrineSettings, {
     networkError: "Enregistrement impossible, réessayez.",
     toastOnSuccess: "Enregistré.",
@@ -276,6 +280,46 @@ function IdentiteEtThemeForm({
       </div>
 
       <form onSubmit={onSubmit} className="space-y-6">
+        <div>
+          <Label htmlFor="vitrine-secteur">Votre métier</Label>
+          <select
+            id="vitrine-secteur"
+            name="secteur"
+            defaultValue={settings.secteur}
+            disabled={!peutEditer}
+            className="w-full max-w-xs rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm font-semibold text-k-ink disabled:bg-zinc-100"
+          >
+            {VITRINE_SECTEURS.map((secteur) => (
+              <option key={secteur} value={secteur}>
+                {libelleSecteur(secteur)}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Il choisit les mots que lisent vos clients — « Nos cartes » chez un
+            restaurant, « Nos prestations » chez un coiffeur — et une palette de
+            départ. Il ne change pas la mise en page, et vos couleurs restent
+            les vôtres si vous en avez choisi.
+          </p>
+        </div>
+
+        <div>
+          <Label htmlFor="vitrine-badge">Pastille d&apos;ouverture</Label>
+          <Input
+            id="vitrine-badge"
+            name="badge_ouverture"
+            defaultValue={settings.badge_ouverture ?? ""}
+            maxLength={VITRINE_BADGE_OUVERTURE_MAX}
+            disabled={!peutEditer}
+            placeholder="Ouvert · 12h–23h"
+          />
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Affichée sur la photo d&apos;en-tête. Elle est écrite à la main et
+            n&apos;est jamais calculée : laissez-la vide plutôt que d&apos;annoncer
+            une ouverture dont vous n&apos;êtes pas sûr.
+          </p>
+        </div>
+
         <div>
           <Label htmlFor="vitrine-accroche">Accroche</Label>
           <Input
@@ -391,6 +435,8 @@ function IdentiteEtThemeForm({
             ))}
           </select>
         </div>
+
+        <AllureEditeur allure={theme.allure} disabled={!peutEditer} />
 
         <fieldset className="border-t-2 border-dashed border-zinc-200 pt-5">
           <legend className="px-2 text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">

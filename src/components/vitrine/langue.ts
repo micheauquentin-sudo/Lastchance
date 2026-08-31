@@ -1,4 +1,8 @@
-import type { LangueVitrine } from "@/lib/vitrine";
+import {
+  VITRINE_SECTEUR_DEFAUT,
+  type LangueVitrine,
+  type SecteurVitrine,
+} from "@/lib/vitrine";
 
 /**
  * LE CHROME DE LA VITRINE PUBLIQUE — les mots qui ne viennent d'aucune table.
@@ -187,3 +191,178 @@ export const TEXTES_VITRINE: Record<LangueVitrine, TextesVitrine> = {
     proposeePar: (nom) => `Menu by ${nom} · powered by`,
   },
 };
+
+/**
+ * LES MOTS QUI DÉPENDENT DU MÉTIER (VIT-13).
+ *
+ * ── CINQ ENTRÉES, ET PAS UNE DE PLUS ──
+ *
+ * La très grande majorité du chrome est NEUTRE et le reste : « Notre
+ * histoire », « Horaires », « Nous suivre », « Allergènes », « Indisponible
+ * aujourd'hui » se disent pareil chez un coiffeur et chez un restaurateur.
+ * Seules les cinq entrées ci-dessous nomment la MARCHANDISE — et une carte de
+ * coiffeur qui annonce « Aucun plat ne correspond à votre recherche » est
+ * exactement ce qui fait qu'un commerçant ne publie pas sa page.
+ *
+ * ── LES ALLERGÈNES NE BOUGENT PAS, MÊME CHEZ UN FLEURISTE ──
+ *
+ * Ils sont facultatifs par fiche : un fleuriste n'en coche aucun, le bloc ne
+ * s'affiche pas, et le mot n'a pas à changer pour un bloc qui n'existe pas.
+ *
+ * ── `Partial` ET FUSION, PLUTÔT QUE SEPT DICTIONNAIRES COMPLETS ──
+ *
+ * Sept copies des quarante entrées auraient fait diverger « Nous suivre » entre
+ * un bar et un spa au premier oubli, sans que rien ne le signale. Ce qui n'est
+ * pas écrit ici retombe donc sur `TEXTES_VITRINE`, qui reste la seule source du
+ * vocabulaire neutre.
+ */
+type MotsSecteur = Pick<
+  TextesVitrine,
+  | "nosCartes"
+  | "recherchePlaceholder"
+  | "aucunPlat"
+  | "carteEnPreparation"
+  | "reserverActivites"
+>;
+
+const MOTS_SECTEUR: Record<
+  SecteurVitrine,
+  Record<LangueVitrine, MotsSecteur>
+> = {
+  restaurant: {
+    fr: {
+      nosCartes: "Nos cartes",
+      recherchePlaceholder: "Un plat, un ingrédient…",
+      aucunPlat: "Aucun plat ne correspond à votre recherche.",
+      carteEnPreparation: "Cette carte est en cours de préparation.",
+      reserverActivites: "Réserver une table",
+    },
+    en: {
+      nosCartes: "Our menus",
+      recherchePlaceholder: "A dish, an ingredient…",
+      aucunPlat: "No dish matches your search.",
+      carteEnPreparation: "This menu is being prepared.",
+      reserverActivites: "Book a table",
+    },
+  },
+  bar: {
+    fr: {
+      nosCartes: "Nos cartes",
+      recherchePlaceholder: "Une boisson, un ingrédient…",
+      aucunPlat: "Aucune boisson ne correspond à votre recherche.",
+      carteEnPreparation: "Cette carte est en cours de préparation.",
+      reserverActivites: "Réserver une table",
+    },
+    en: {
+      nosCartes: "Our menus",
+      recherchePlaceholder: "A drink, an ingredient…",
+      aucunPlat: "No drink matches your search.",
+      carteEnPreparation: "This menu is being prepared.",
+      reserverActivites: "Book a table",
+    },
+  },
+  coiffeur: {
+    fr: {
+      nosCartes: "Nos prestations",
+      recherchePlaceholder: "Une coupe, un soin…",
+      aucunPlat: "Aucune prestation ne correspond à votre recherche.",
+      carteEnPreparation: "Ces prestations sont en cours de préparation.",
+      // « Prendre rendez-vous » et non « Réserver » : c'est le mot que le
+      // client emploie lui-même au téléphone chez un coiffeur.
+      reserverActivites: "Prendre rendez-vous",
+    },
+    en: {
+      nosCartes: "Our services",
+      recherchePlaceholder: "A cut, a treatment…",
+      aucunPlat: "No service matches your search.",
+      carteEnPreparation: "These services are being prepared.",
+      reserverActivites: "Book an appointment",
+    },
+  },
+  fleuriste: {
+    fr: {
+      nosCartes: "Nos créations",
+      recherchePlaceholder: "Une fleur, une occasion…",
+      aucunPlat: "Aucune création ne correspond à votre recherche.",
+      carteEnPreparation: "Ces créations sont en cours de préparation.",
+      reserverActivites: "Réserver un retrait",
+    },
+    en: {
+      nosCartes: "Our arrangements",
+      recherchePlaceholder: "A flower, an occasion…",
+      aucunPlat: "No arrangement matches your search.",
+      carteEnPreparation: "These arrangements are being prepared.",
+      reserverActivites: "Book a pickup",
+    },
+  },
+  hotel: {
+    fr: {
+      nosCartes: "Nos chambres",
+      recherchePlaceholder: "Une chambre, un service…",
+      aucunPlat: "Aucune chambre ne correspond à votre recherche.",
+      carteEnPreparation: "Ces chambres sont en cours de préparation.",
+      reserverActivites: "Réserver une chambre",
+    },
+    en: {
+      nosCartes: "Our rooms",
+      recherchePlaceholder: "A room, a service…",
+      aucunPlat: "No room matches your search.",
+      carteEnPreparation: "These rooms are being prepared.",
+      reserverActivites: "Book a room",
+    },
+  },
+  spa: {
+    fr: {
+      nosCartes: "Nos soins",
+      recherchePlaceholder: "Un soin, un moment…",
+      aucunPlat: "Aucun soin ne correspond à votre recherche.",
+      carteEnPreparation: "Ces soins sont en cours de préparation.",
+      reserverActivites: "Prendre rendez-vous",
+    },
+    en: {
+      nosCartes: "Our treatments",
+      recherchePlaceholder: "A treatment, a moment…",
+      aucunPlat: "No treatment matches your search.",
+      carteEnPreparation: "These treatments are being prepared.",
+      reserverActivites: "Book an appointment",
+    },
+  },
+  // LE NEUTRE. Il ne parle ni de plats, ni de rendez-vous, ni de chambres :
+  // c'est ce que lit le visiteur d'une vitrine dont le commerçant n'a pas dit
+  // son métier, et il ne doit jamais avoir l'air d'un restaurant par défaut.
+  commerce: {
+    fr: {
+      nosCartes: "Notre catalogue",
+      recherchePlaceholder: "Un produit, une envie…",
+      aucunPlat: "Aucun article ne correspond à votre recherche.",
+      carteEnPreparation: "Ce catalogue est en cours de préparation.",
+      reserverActivites: "Réserver",
+    },
+    en: {
+      nosCartes: "Our catalogue",
+      recherchePlaceholder: "A product, an idea…",
+      aucunPlat: "No item matches your search.",
+      carteEnPreparation: "This catalogue is being prepared.",
+      reserverActivites: "Book",
+    },
+  },
+};
+
+/**
+ * LE CHROME DE LA PAGE, DANS SA LANGUE ET DANS SON MÉTIER.
+ *
+ * C'est le seul point d'entrée que les composants doivent appeler.
+ * `TEXTES_VITRINE` reste exporté — il porte le vocabulaire neutre, et le
+ * sélecteur de langue n'a besoin que de `nomLangue`, qui ne dépend d'aucun
+ * métier — mais tout ce qui nomme la marchandise passe par ici.
+ *
+ * L'objet est reconstruit à chaque appel plutôt que mémoïsé : c'est une fusion
+ * de deux objets figés sur une page rendue par le serveur, et un cache aurait
+ * coûté plus de lignes à relire qu'il n'économise de microsecondes.
+ */
+export function textesVitrine(
+  lang: LangueVitrine,
+  secteur: SecteurVitrine = VITRINE_SECTEUR_DEFAUT,
+): TextesVitrine {
+  return { ...TEXTES_VITRINE[lang], ...MOTS_SECTEUR[secteur][lang] };
+}

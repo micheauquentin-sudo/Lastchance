@@ -14,9 +14,19 @@ import {
 import {
   VITRINE_ACCROCHE_MAX,
   VITRINE_ALLERGENES,
+  VITRINE_ALLURE_BOOLEENS,
+  VITRINE_ALLURE_BORNES,
+  VITRINE_ALLURE_CHIFFRES,
+  VITRINE_ALLURE_ENUMS,
+  VITRINE_ALLURE_ENUMS_CLES,
+  VITRINE_BADGE_OUVERTURE_MAX,
   VITRINE_BADGES,
   VITRINE_ACTIONS,
   VITRINE_BLOCS,
+  VITRINE_SECTEURS,
+  type ChampBooleenAllure,
+  type ChampChiffreAllure,
+  type ChampEnumAllure,
   VITRINE_CARTE_NOM_MAX,
   VITRINE_CONTENU_RANG_MAX,
   VITRINE_CONTENU_RANG_MIN,
@@ -326,7 +336,104 @@ const ordreBlocsSchema = nonRenduVaut(z.string(), "").transform((saisie) => {
   return sortie;
 });
 
+// ── LE SECTEUR ET L'ALLURE (VIT-13) ──────────────────────────
+
+const secteurSchema = videSiNonRendu(
+  z.union([z.literal(""), z.enum(VITRINE_SECTEURS)]),
+);
+
+/**
+ * UN CURSEUR — un nombre dans ses bornes, ou rien.
+ *
+ * ── HORS BORNES = ÉCARTÉ, PAS REFUSÉ ──
+ *
+ * Même arbitrage que `ordre_blocs`, et pour la même raison : un `<input
+ * type="range" min max>` ne PEUT PAS produire une valeur hors bornes depuis
+ * l'écran. Une valeur qui arrive quand même vient d'un formulaire trafiqué ou
+ * d'un champ qu'on aura oublié de mettre à jour après un resserrement — et dans
+ * les deux cas, renvoyer le commerçant corriger un curseur qu'il n'a pas bougé
+ * est plus désorientant que de retomber sur le défaut de la maquette.
+ *
+ * `Number` et non `parseFloat` : `parseFloat("13abc")` rend 13 sans broncher,
+ * là où `Number("13abc")` rend `NaN`, que `Number.isFinite` écarte. Un curseur
+ * n'envoie jamais « 13abc » — mais c'est exactement le genre de valeur qu'un
+ * formulaire reconstruit à la main enverrait.
+ */
+function curseurSchema(cle: ChampChiffreAllure) {
+  const { min, max } = VITRINE_ALLURE_BORNES[cle];
+  return nonRenduVaut(z.string(), "").transform((saisie) => {
+    const t = saisie.trim();
+    if (!t) return null;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < min || n > max) return null;
+    return n;
+  });
+}
+
+/** Une liste fermée d'allure — vide quand le champ n'est pas rendu. */
+function listeAllureSchema(cle: ChampEnumAllure) {
+  return videSiNonRendu(
+    z.union([z.literal(""), z.enum(VITRINE_ALLURE_ENUMS[cle].valeurs)]),
+  );
+}
+
+/**
+ * LES VINGT-CINQ CHAMPS D'ALLURE, construits depuis le vocabulaire.
+ *
+ * Écrits à la main, ils auraient été vingt-cinq lignes à tenir d'accord avec
+ * `@/lib/vitrine` — et la première à diverger n'aurait rien fait rougir : un
+ * champ absent du schéma est simplement ignoré, donc un réglage qui ne
+ * s'enregistre pas, sans erreur nulle part. Les dériver de la même table que
+ * le validateur SQL rend l'oubli impossible.
+ */
+const champsAllure = {
+  ...Object.fromEntries(
+    VITRINE_ALLURE_ENUMS_CLES.map((cle) => [cle, listeAllureSchema(cle)]),
+  ),
+  ...Object.fromEntries(
+    VITRINE_ALLURE_CHIFFRES.map((cle) => [cle, curseurSchema(cle)]),
+  ),
+  ...Object.fromEntries(
+    VITRINE_ALLURE_BOOLEENS.map((cle) => [cle, caseNative]),
+  ),
+} as {
+  [K in ChampEnumAllure]: ReturnType<typeof listeAllureSchema>;
+} & {
+  [K in ChampChiffreAllure]: ReturnType<typeof curseurSchema>;
+} & {
+  [K in ChampBooleenAllure]: typeof caseNative;
+};
+
 export const saveVitrineSettingsSchema = z.object({
+  ...champsAllure,
+  /**
+   * LE TÉMOIN DE PRÉSENCE DE LA SECTION « ALLURE ».
+   *
+   * ── SANS LUI, SEPT RÉGLAGES S'ÉTEIGNENT TOUT SEULS ──
+   *
+   * Les sept interrupteurs valent `true` par défaut, et une case NON COCHÉE ne
+   * s'envoie pas — exactement comme une case NON RENDUE. Un formulaire qui ne
+   * porterait pas la section les lirait donc tous à `false` et écrirait sept
+   * refus que personne n'a formulés : en-tête figé, capitales éteintes,
+   * compteurs, monogramme, favoris et recherche retirés d'un seul
+   * enregistrement, sans message et sans trace.
+   *
+   * Ce champ caché est posé PAR la section elle-même. Absent, `composerAllure`
+   * n'écrit rien du tout et la vitrine garde son allure. C'est la seule façon
+   * de distinguer « le commerçant a décoché » de « l'écran n'a pas la
+   * section », que `formData.get` rend autrement identiques.
+   */
+  allure_rendue: caseNative,
+  secteur: secteurSchema,
+  badge_ouverture: texteOptionnel(
+    z
+      .string()
+      .trim()
+      .max(
+        VITRINE_BADGE_OUVERTURE_MAX,
+        `Badge trop long (${VITRINE_BADGE_OUVERTURE_MAX} caractères max)`,
+      ),
+  ),
   accroche: texteOptionnel(
     z
       .string()
