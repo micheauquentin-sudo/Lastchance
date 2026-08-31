@@ -3126,7 +3126,9 @@ export type Database = {
       }
       loyalty_members: {
         Row: {
+          avatar: string
           created_at: string
+          display_name: string | null
           id: string
           last_stamp_at: string | null
           organization_id: string
@@ -3138,7 +3140,9 @@ export type Database = {
           visit_count: number
         }
         Insert: {
+          avatar?: string
           created_at?: string
+          display_name?: string | null
           id?: string
           last_stamp_at?: string | null
           organization_id: string
@@ -3150,7 +3154,9 @@ export type Database = {
           visit_count?: number
         }
         Update: {
+          avatar?: string
           created_at?: string
+          display_name?: string | null
           id?: string
           last_stamp_at?: string | null
           organization_id?: string
@@ -10468,6 +10474,15 @@ export type Database = {
           p_status: string
         }
         Returns: boolean
+      }
+      set_loyalty_member_identity: {
+        Args: {
+          p_avatar: string
+          p_display_name: string
+          p_member_token_hash: string
+          p_program_id: string
+        }
+        Returns: Json
       }
       set_loyalty_program_status: {
         Args: {
