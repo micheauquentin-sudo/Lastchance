@@ -3317,6 +3317,7 @@ export type Database = {
           rotating_secret: string | null
           silver_threshold: number
           status: string
+          style: Json | null
           validation_mode: string
         }
         Insert: {
@@ -3332,6 +3333,7 @@ export type Database = {
           rotating_secret?: string | null
           silver_threshold?: number
           status?: string
+          style?: Json | null
           validation_mode?: string
         }
         Update: {
@@ -3347,6 +3349,7 @@ export type Database = {
           rotating_secret?: string | null
           silver_threshold?: number
           status?: string
+          style?: Json | null
           validation_mode?: string
         }
         Relationships: [
