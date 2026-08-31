@@ -1,5 +1,47 @@
 # Roadmap — Lastchance
 
+## V1.70 — La Vitrine prend l'allure d'une maquette, et parle le métier (✅ 2026-08-31, PR #276)
+
+**Objectif** : demande du propriétaire — que la vitrine publique ressemble
+« exactement » à une carte digitale de référence fournie en maquette, tout en
+ouvrant ses réglages visuels et en servant sept métiers. Les trois demandes
+tirent en sens contraire ; l'arbitrage qui les réconcilie est ADR-123 : **les
+défauts SONT la maquette**, et les vingt-cinq réglages ne sont que des écarts
+volontaires.
+
+- **L'écran public** (migration `20261121120000`) — hero pleine largeur au
+  voile dégradé en trois temps, carte d'infos qui le chevauche, en-tête collant
+  à onglets segmentés dont « Notre histoire » fait partie, chips qui FILTRENT
+  les rubriques, fiches à photo latérale, favoris en `localStorage` (rien ne
+  remonte au serveur), barre basse qui navigue vraiment, motif de fond en
+  dégradé répété (zéro requête), colonne de 480 px.
+- **Sept métiers** — restaurant, bar, coiffeur, fleuriste, hôtel, spa, autre
+  commerce. Ils changent le VOCABULAIRE public et posent une palette de départ
+  que la couleur du commerçant écrase toujours. La mise en page ne dépend
+  jamais du métier, et un test le garde.
+- **Rien n'est retiré** — le filet pointillé « nom ── prix » de l'ancienne carte
+  devient le style de prix `simple` au lieu de disparaître.
+- **Le défaut trouvé en écrivant** — les sept interrupteurs valent `true`, et
+  une case NON RENDUE se poste comme une case DÉCOCHÉE : tout formulaire sans
+  la section écrivait sept `false` en silence. Témoin `allure_rendue`.
+- **ACL : quatorze privilèges dérivés** (migration `20261122120000`) —
+  `supabase db diff --linked`, lancé en marge, a révélé quatorze privilèges que
+  la PRODUCTION détenait et qu'aucune migration ne décrivait (`audit_logs`,
+  `spins`, `participations`, `organizations`, `newsletter_*`,
+  `organization_members`). Non exploitables — la RLS est active partout et
+  `audit_logs` ne porte qu'une politique, en SELECT — mais le `grant` est la
+  seconde serrure. Révoqués après audit du code (toutes ces écritures passent
+  par service_role), et gardés par seize assertions dans `security_acl.test.sql`.
+- **Trois gardes rendues précises** — les comptes de vocabulaire de
+  `vitrine.test.sql` portaient sur TOUT le corps du validateur ; ils sont
+  désormais bornés à leur propre clause. La valeur `sans` de `photo_taille` y
+  avait percuté la police `sans`, et le commentaire qui l'expliquait une
+  seconde fois — `prosrc` porte les commentaires.
+
+**Reste ouvert** : toutes les vitrines existantes sont en `restaurant` (choix
+délibéré : ne changer les mots de personne), donc le métier est **inerte** tant
+que le commerçant ne le désigne pas dans ses réglages.
+
 ## V1.69 — Réservation de table : un plan de salle, pas une jauge de couverts (✅ 2026-08-29, PR #229 → #232, #237)
 
 **Objectif** : donner à Réservation (`rendez_vous`, produit séparé de Moments

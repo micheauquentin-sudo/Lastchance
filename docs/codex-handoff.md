@@ -37,6 +37,35 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Vitrine — allure de maquette et métier (2026-08-31, livré sur `main`, PR #276)
+
+**Terrain.** `src/app/(player)/v/[slug]/[[...langue]]/page.tsx`,
+`src/components/vitrine/{hero-vitrine,barre-basse,favoris,allure-editeur,catalogue-vitrine,fiche-vitrine,theme,langue}.ts(x)`,
+`src/lib/vitrine.ts`, `src/lib/validations/vitrine.ts`, `src/actions/vitrine.ts`,
+migrations `20261121120000` (allure + secteur) et `20261122120000` (révocation ACL).
+
+**Décision implémentée.** Les vingt-cinq réglages d'allure ont pour défaut les
+valeurs de la maquette de référence : une vitrine jamais réglée en est la copie,
+et `composerAllure` n'écrit QUE les écarts. Sept métiers changent le vocabulaire
+public et la palette de départ, jamais la mise en page. Le remplissage
+rétroactif est `restaurant` là où le défaut de colonne est `commerce`.
+
+**Écarté.** Des défauts neutres avec la maquette à reconstituer réglage par
+réglage — c'était la lecture littérale de « on ouvre tout », et elle aurait fait
+de la maquette une destination qu'aucun commerçant n'atteint. Écarté aussi :
+écrire les vingt-cinq valeurs, ce que le formulaire poste pourtant — le jour où
+un défaut change, aucune vitrine enregistrée n'en profiterait. Écarté enfin :
+une mise en page par métier, qui aurait donné sept écrans à tenir d'accord.
+
+**Fini quand.** ✅ `npm run typecheck && npm run lint && npm test` (6629),
+`casts:check`, `sql:check`, `migrations:check`, build avec `/v/[slug]` en SSG,
+CI verte (E2E Playwright + pgTAP ACL), migration appliquée en production AVANT
+la fusion, et `/v/astra` vérifiée en ligne — « Nos cartes » présent, « Notre
+catalogue » absent, donc le remplissage rétroactif a tenu.
+
+**Reste ouvert.** Toutes les vitrines existantes sont en `restaurant` : le métier
+est inerte tant que le commerçant ne le désigne pas.
+
 ## Lot en cours — Passeport de fidélité ↔ Jackpot collectif (2026-08-28)
 
 **Terrain.** Branche isolée `feat/jackpot-loyalty-link`, fondée sur `origin/main`
