@@ -63,6 +63,10 @@ export function PublicShare({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
   const [tools, setTools] = useState<ReactNode>(null);
+  const [rewardCount, setRewardCount] = useState<number | null>(null);
+  const [rewardStatus, setRewardStatus] = useState<
+    "loading" | "available" | "not-applicable" | "unavailable"
+  >("loading");
 
   async function openQrTools(initialAction: "designer" | "poster" | "metrics") {
     if (!resource) return;
@@ -91,6 +95,44 @@ export function PublicShare({
       /* canvas indisponible (environnement de test) */
     }
   }, [url]);
+
+  // Le compteur est un repère de suivi visible sans ouvrir le studio QR. La
+  // route filtre déjà organisation et ressource : la carte ne reçoit qu'un
+  // total, jamais les événements de gains.
+  useEffect(() => {
+    if (!resource) return;
+
+    let cancelled = false;
+    const params = new URLSearchParams({ kind: resource.kind, id: resource.id });
+    void fetch(`/api/dashboard/qr-distribution?${params}`, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          if (!cancelled) setRewardStatus("unavailable");
+          return;
+        }
+
+        const data: unknown = await response.json();
+        if (
+          !cancelled &&
+          typeof data === "object" &&
+          data !== null &&
+          "rewardCount" in data &&
+          (typeof data.rewardCount === "number" || data.rewardCount === null)
+        ) {
+          setRewardCount(data.rewardCount);
+          setRewardStatus(data.rewardCount === null ? "not-applicable" : "available");
+        } else if (!cancelled) {
+          setRewardStatus("unavailable");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRewardStatus("unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resource]);
 
   async function downloadPng() {
     const canvas = document.createElement("canvas");
@@ -159,24 +201,31 @@ export function PublicShare({
           </a>
         </div>
 
-        {openCount !== undefined ? (
-          <p className="text-xs text-zinc-500">
-            <span className="font-bold text-k-ink">
-              {openCount} ouverture{openCount > 1 ? "s" : ""}
-            </span>{" "}
-            de la page — chaque chargement compte, y compris un rechargement ou
-            un lien partagé. Ce n&apos;est donc pas un nombre de visiteurs
-            distincts.
-          </p>
-        ) : null}
-        {resource ? (
-          <button
-            type="button"
-            onClick={() => openQrTools("metrics")}
-            className="text-xs font-bold text-k-orange-text hover:underline"
-          >
-            Afficher les gains attribués
-          </button>
+        {openCount !== undefined || resource ? (
+          <section aria-label="Résultats du QR" className="rounded-lg bg-k-yellow/20 px-3 py-2">
+            <p className="text-xs font-black text-k-ink">Résultats</p>
+            {openCount !== undefined ? (
+              <p className="text-xs text-zinc-500">
+                <span className="font-bold text-k-ink">
+                  {openCount} ouverture{openCount > 1 ? "s" : ""}
+                </span>{" "}
+                de la page — chaque chargement compte, y compris un rechargement ou
+                un lien partagé. Ce n&apos;est donc pas un nombre de visiteurs
+                distincts.
+              </p>
+            ) : null}
+            {resource ? (
+              <p className="text-sm font-bold text-k-ink">
+                {rewardStatus === "loading"
+                  ? "Chargement des gains…"
+                  : rewardStatus === "unavailable"
+                    ? "Gains indisponibles"
+                    : rewardStatus === "not-applicable"
+                      ? "Gains non concernés"
+                      : `${rewardCount ?? 0} gain${rewardCount === 1 ? "" : "s"} attribué${rewardCount === 1 ? "" : "s"}`}
+              </p>
+            ) : null}
+          </section>
         ) : null}
       </div>
       {tools}

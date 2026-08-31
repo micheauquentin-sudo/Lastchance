@@ -2304,28 +2304,26 @@ contrôle cooldown/stock, ajout éventuel du tampon et consommation définitive 
 code. Les tests de concurrence doivent prouver qu'un QR/code ne donne jamais
 deux passeports/tampons, même ouvert simultanément sur deux téléphones.
 
-## QR jeux instantanés — carte de partage homogène (2026-08-31, local prêt)
+## Partage QR — résultats automatiques communs (2026-08-31, local prêt)
 
 ### Terrain
 
-- `src/components/dashboard/qr-code-card.tsx`
-- `src/components/dashboard/qr-code-card.test.tsx`
-- la route existante `GET /api/dashboard/qr-distribution?kind=campaign&id=<qr>`
+- `src/components/dashboard/public-share.tsx`
+- `src/components/dashboard/public-share.test.tsx`
+- la route existante `GET /api/dashboard/qr-distribution?kind=<kind>&id=<id>`
   retourne déjà le nombre de gains après contrôles owner/editor et tenant.
 
 ### Décision propriétaire appliquée
 
-Une carte QR de jeu instantané reprend la disposition de partage du calendrier :
-QR et actions télécharger/personnaliser/affiche à gauche, URL copiable et
-ouvrable à droite. Le bloc « Résultats » charge automatiquement les gains et
-affiche les ouvertures avec leur sémantique exacte (chargements, pas visiteurs
-distincts). L'ancien lien qui imposait de demander les gains est retiré.
+La carte de partage commune (calendrier, quiz, pronostics, jackpot, passeport,
+événement et autres usages de `PublicShare`) affiche directement le suivi :
+ouvertures quand elles existent, puis gains attribués. `rewardCount: null` est
+un état métier explicite (« Gains non concernés »), une erreur de lecture reste
+visible (« Gains indisponibles »). Le studio QR et toute écriture restent
+strictement déclenchés par une action du commerçant.
 
 ### Fini quand
 
-- test de rendu ciblé : 2/2 vert ; lint : vert ; `git diff --check` : vert ;
-- typecheck local bloqué hors lot par `poster-editor.tsx` qui importe
-  `html-to-image`, absent du lockfile ;
-- build local non concluant dans le worktree isolé : Turbopack refuse le lien
-  temporaire vers les `node_modules` WSL hors racine. Aucune publication tant
-  qu'une validation de build propre n'est pas obtenue.
+- Vitest ciblé : 8/8 vert ; `git diff --check` : vert ;
+- lint/typecheck/CI à refaire sur le SHA de livraison lorsqu'une publication
+  sera autorisée ; aucun commit, push ou déploiement de ce lot à ce stade.
