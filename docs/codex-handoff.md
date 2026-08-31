@@ -83,7 +83,7 @@ un QR dérivé avec un style fixe ; le commerçant devait revenir dans le hub sa
 pouvoir réellement personnaliser l'actif.
 
 **Lot isolé.** Branche `codex/qr-native-experience`, rebasée sur
-`origin/main` `3eca597a`. Ajout de
+`origin/main` `fb5842b1`. Ajout de
 `qr_distribution_assets`, une ressource éditoriale tenant-scopée
 (`organization_id`, type, ressource) qui ne stocke jamais une URL ni un jeton.
 Les pages qui utilisent `PublicShare` proposent maintenant la personnalisation
@@ -110,6 +110,12 @@ un actif orphelin de sa propre organisation via PostgREST, sans fuite ni
 encore confirmer les parcours navigateur et l'ensemble des contrôles. L'arbre
 WSL de référence porte des migrations non suivies d'un autre lot : ne pas le
 perturber.
+
+**Réconciliation de migration (2026-08-31).** Le rebase a introduit la
+migration Fidélité `20261115120000` après l'actif QR initialement numéroté
+`20261114130000`. L'actif QR est donc renuméroté `20261115130000`, après le
+head de `main`, et `EXPECTED_MIGRATION` est synchronisée. La CI du nouveau SHA
+reste le critère de publication.
 
 **Suivi CI (2026-08-30).** Les contrôles GitHub TypeScript, lint, tests
 unitaires, build, CodeQL, audit npm, replay des migrations, snapshot de types
