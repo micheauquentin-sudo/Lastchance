@@ -37,6 +37,34 @@ export const PLAYER_EXPERIENCE_KINDS = [
    * n'apparaîtrait JAMAIS sur `/portefeuille`.
    */
   "reserver_stock",
+  /**
+   * RÉSERVER — le SERVICE réservé (ID-3, migration 20261117120000).
+   *
+   * L'expérience est `reservation_activities` : l'objet sur lequel le client
+   * revient — le service du restaurant, la dégustation, le créneau du samedi —
+   * et celui que le commerçant crée et règle dans un écran à lui. Elle couvre
+   * `reservations` et `reservation_waitlist_entries`, toutes deux atteintes
+   * par `reservation_slots.activity_id`.
+   */
+  "reserver_activity",
+  /**
+   * RÉSERVER — la FILE d'accueil (ID-3, migration 20261117120000).
+   *
+   * DEUX familles et non une, et l'argument est STRUCTUREL :
+   * `reservation_queues.activity_id` est NULLABLE (20261005120000:107). Une
+   * file « chacun son tour » au comptoir existe sans qu'aucune activité soit
+   * déclarée ; la replier sur `reserver_activity` aurait laissé ces files-là
+   * sans AUCUN `experience_id` valide, c'est-à-dire sans identité — la moitié
+   * la plus discrète du trou, celle du commerçant qui ne prend pas de
+   * réservations.
+   *
+   * Deux raisons confirment sans suffire : les durées de vie n'ont rien de
+   * commun (une entrée de file se résout dans l'heure, une réservation vit des
+   * semaines, et un `last_seen_at` partagé n'aurait plus rien mesuré), et le
+   * grain suit la doctrine de `reserver_stock` — l'objet sur lequel le joueur
+   * revient.
+   */
+  "reserver_queue",
 ] as const;
 
 export type PlayerExperienceKind = (typeof PLAYER_EXPERIENCE_KINDS)[number];
@@ -428,22 +456,27 @@ const legacyLookupSchema = z.object({
   experienceId: z.uuid(),
 });
 
-interface LookupIdentityRow {
+interface LookupLegacyIdentityRow {
   player_id: string;
   experience_membership_id: string;
   /**
-   * NULLABLE malgré le type généré, qui l'annonce `string` : la RPC l'obtient
-   * d'un `left join lateral` sur `player_legacy_identities`, et le générateur
-   * n'exprime pas la nullabilité des colonnes d'un `returns table` — même cas
-   * que `cancelled_cause` dans `player-wallet.ts`. Une adhésion sans aucune
-   * empreinte historique est le cas NORMAL d'un joueur qui n'a jamais tourné.
+   * Le type généré l'annonce `string`, et ici c'est VRAI : la nouvelle RPC
+   * atteint `player_legacy_identities` par une jointure INTERNE — une adhésion
+   * sans empreinte historique ne rend simplement aucune ligne, là où l'ancienne
+   * `lookup_player_identity` rendait une ligne à `legacy_identity_hash` nul
+   * (son `left join lateral`).
+   *
+   * La garde de forme reste opposée en aval quand même : cette valeur repart en
+   * argument d'une RPC qui lève `22023` sur une empreinte mal formée, et une
+   * garde qui repose sur « le générateur l'a dit » ne garde rien.
    */
-  legacy_identity_hash: string | null;
+  legacy_identity_hash: string;
 }
 
 /**
- * L'ANCIENNE empreinte de ce joueur sur cette expérience, à partir de la
- * COURANTE. Le chemin de reprise après rotation du cookie `lc-player`.
+ * TOUTES les anciennes empreintes de ce joueur sur cette expérience, à partir
+ * de la COURANTE, de la plus récente à la plus ancienne. Le chemin de reprise
+ * après rotation du cookie `lc-player`.
  *
  * ── CE QUE ÇA RÉPARE ──
  *
@@ -454,7 +487,7 @@ interface LookupIdentityRow {
  * appareil reste pourtant rattaché au MÊME `players.id` (c'est
  * `rotate_player_device` qui l'y attache), et l'ancienne empreinte est
  * conservée dans `player_legacy_identities`. Tout est là ; il ne manquait que
- * l'appel — `lookup_player_identity` n'avait aucun appelant dans le dépôt.
+ * l'appel.
  *
  * ── SECOND ESSAI, JAMAIS PREMIER ──
  *
@@ -467,35 +500,47 @@ interface LookupIdentityRow {
  *
  * Elle n'écrit rien (la RPC est `stable`), ne fait de `lc-player` l'autorité de
  * rien, et n'élargit aucune portée : la RPC part de `player_devices.token_hash`
- * et ne rend que l'empreinte d'une adhésion du MÊME joueur, sur la MÊME
- * organisation et la MÊME expérience. L'empreinte d'un autre joueur n'est donc
- * pas atteignable — c'est cette borne-là qu'il ne faut jamais desserrer.
+ * et ne rend que les empreintes d'une adhésion du MÊME joueur, sur la MÊME
+ * organisation et la MÊME expérience — elles ne sont atteintes que par
+ * `experience_membership_id`. L'empreinte d'un autre joueur n'est donc pas
+ * atteignable, et rendre N lignes au lieu d'une n'y change rien : c'est cette
+ * borne-là qu'il ne faut jamais desserrer.
  *
- * ── UNE SEULE ANCIENNE EMPREINTE ──
+ * ── TOUTES, ET NON PLUS UNE SEULE ──
  *
- * La RPC rend la PLUS RÉCENTE (`order by last_seen_at desc … limit 1`). Un
- * joueur ayant tourné deux fois en a plusieurs, et seule l'avant-dernière est
- * rendue. C'est assez pour Réserver, dont les prises vivent quelques heures et
- * ne survivent pas aux 90 jours qui séparent deux rotations ; ce ne le serait
- * pas pour une progression longue. Élargir demanderait une migration.
+ * Cette fonction appelait `lookup_player_identity`, qui rend la PLUS RÉCENTE
+ * (`order by last_seen_at desc … limit 1`). Un joueur qui a tourné DEUX fois
+ * d'appareil en porte plusieurs — l'unicité de `player_legacy_identities` est
+ * sur `(organization_id, experience_kind, experience_id, legacy_identity_hash)`,
+ * pas sur l'adhésion — et toutes sauf l'avant-dernière étaient inatteignables.
+ * Elle appelle désormais `lookup_player_legacy_identities` (migration
+ * 20261117120000), qui les rend toutes, ordonnées.
  *
- * ── `null` NE CASSE RIEN ──
+ * L'ancienne RPC reste EN PLACE et n'a pas été élargie : `player_identity.test.sql`
+ * l'invoque en sous-requête scalaire, où N lignes lèveraient « more than one row
+ * returned by a subquery » — une erreur d'exécution qui ne frapperait que la
+ * population que ce chemin vient servir.
  *
- * Aucune ligne, empreinte illisible, RPC en panne : on rend `null`, et
+ * L'ensemble n'est pas ouvert pour autant : il vaut le nombre de rotations
+ * subies par ce joueur sur cette expérience, et une rotation demande 90 jours.
+ * Aucun levier d'appelant ne le fait grossir.
+ *
+ * ── LA LISTE VIDE NE CASSE RIEN ──
+ *
+ * Aucune ligne, empreintes illisibles, RPC en panne : on rend `[]`, et
  * l'appelant affiche ce qu'il aurait affiché sans ce chemin. Best-effort comme
  * tout ce module — une panne de la reprise ne doit pas vider une page qui
  * s'affichait déjà, ni la faire échouer.
  *
- * L'empreinte rendue est ÉCARTÉE si elle égale celle qu'on a fournie : une
- * reprise vers soi-même ne rapporte rien et paierait une seconde lecture pour
- * le même résultat. Le cas est réel côté Réserver, où l'empreinte du cookie EST
- * l'empreinte historique — le joueur qui reprend une part après sa rotation
- * réinscrit la nouvelle dans `player_legacy_identities`, qui devient alors la
- * plus récente.
+ * L'empreinte COURANTE est ÉCARTÉE de la liste : une reprise vers soi-même ne
+ * rapporte rien et paierait une seconde lecture pour le même résultat. Le cas
+ * est réel côté Réserver, où l'empreinte du cookie EST l'empreinte historique —
+ * le joueur qui reprend une part après sa rotation réinscrit la nouvelle dans
+ * `player_legacy_identities`, qui devient alors la plus récente.
  */
-export async function lookupLegacyIdentityHash(
+export async function lookupLegacyIdentityHashes(
   input: LegacyIdentityLookupInput,
-): Promise<string | null> {
+): Promise<string[]> {
   const parsed = legacyLookupSchema.safeParse(input);
   if (!parsed.success) {
     // Le CHAMP fautif, jamais sa valeur : l'empreinte est l'un des champs
@@ -507,17 +552,20 @@ export async function lookupLegacyIdentityHash(
       experienceKind: "unvalidated",
       famille: "lookup",
     });
-    return null;
+    return [];
   }
 
   try {
     const admin = createAdminClient();
-    const { data, error } = await admin.rpc("lookup_player_identity", {
-      p_device_token_hash: parsed.data.deviceTokenHash,
-      p_organization_id: parsed.data.organizationId,
-      p_experience_kind: parsed.data.experienceKind,
-      p_experience_id: parsed.data.experienceId,
-    });
+    const { data, error } = await admin.rpc(
+      "lookup_player_legacy_identities",
+      {
+        p_device_token_hash: parsed.data.deviceTokenHash,
+        p_organization_id: parsed.data.organizationId,
+        p_experience_kind: parsed.data.experienceKind,
+        p_experience_id: parsed.data.experienceId,
+      },
+    );
     if (error) {
       traceIdentityFailure({
         scope: "player-identity.lookup",
@@ -526,16 +574,32 @@ export async function lookupLegacyIdentityHash(
         experienceKind: parsed.data.experienceKind,
         famille: "lookup",
       });
-      return null;
+      return [];
     }
 
     // AUCUNE LIGNE N'EST PAS UNE PANNE : c'est la réponse d'un appareil qui n'a
     // jamais rien fait sur cette expérience, c'est-à-dire le cas majoritaire
     // d'un visiteur. La tracer ferait du silence sain un incident permanent.
-    const ancienne = firstRow<LookupIdentityRow>(data)?.legacy_identity_hash;
-    if (!ancienne || !PLAYER_IDENTITY_HASH_PATTERN.test(ancienne)) return null;
-    if (ancienne === parsed.data.deviceTokenHash) return null;
-    return ancienne;
+    const lignes = Array.isArray(data)
+      ? (data as LookupLegacyIdentityRow[])
+      : [];
+    const anciennes: string[] = [];
+    // Dédoublonnage DÉFENSIF : l'unicité en base rend le doublon impossible
+    // aujourd'hui, mais l'appelant transforme cette liste en `in (…)` et un
+    // doublon y coûterait une comparaison pour rien.
+    const vues = new Set<string>();
+    for (const ligne of lignes) {
+      const ancienne = ligne?.legacy_identity_hash;
+      if (!ancienne || !PLAYER_IDENTITY_HASH_PATTERN.test(ancienne)) continue;
+      if (ancienne === parsed.data.deviceTokenHash) continue;
+      if (vues.has(ancienne)) continue;
+      vues.add(ancienne);
+      anciennes.push(ancienne);
+    }
+    // L'ORDRE DE LA RPC EST CONSERVÉ : `last_seen_at desc, first_seen_at desc,
+    // id desc`. La première est donc exactement celle que rendait
+    // `lookup_player_identity` — l'élargissement n'a rien réordonné.
+    return anciennes;
   } catch (err) {
     traceIdentityFailure({
       scope: "player-identity.lookup-exception",
@@ -544,7 +608,7 @@ export async function lookupLegacyIdentityHash(
       experienceKind: parsed.data.experienceKind,
       famille: "lookup",
     });
-    return null;
+    return [];
   }
 }
 

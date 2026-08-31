@@ -224,10 +224,36 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       hold_id: "77777777-7777-4777-8777-777777777777",
       cancelled_at: "2030-04-12T15:00:00Z",
     } as unknown,
+    /**
+     * Ce que `cancel_stock_hold` rend quand elle est appelée avec une empreinte
+     * AUTRE que celle du cookie — c'est-à-dire au second essai du repli.
+     */
+    stockCancelRepliResponse: {
+      state: "cancelled",
+      hold_id: "77777777-7777-4777-8777-777777777777",
+      cancelled_at: "2030-04-12T15:00:00Z",
+    } as unknown,
     /** Les ponts d'identité posés, dans l'ORDRE — c'est l'ordre qui compte. */
     pontsIdentite: [] as Array<{ kind: string; experienceId: string }>,
+    /**
+     * Le pont LÈVE. Simule la panne d'infrastructure que le vrai pont n'émet
+     * jamais lui-même (il avale tout) mais que la lecture de créneau, elle, peut
+     * produire : une coupure réseau du client Supabase. C'est le contrôle qui
+     * compte — une réservation écrite en base ne doit pas être rendue en erreur.
+     */
+    pontLeve: false,
+    /**
+     * Les anciennes empreintes que `lookupLegacyIdentityHashes` rend pour
+     * l'appareil courant. VIDE par défaut : personne n'a tourné, et le repli ne
+     * doit rien trouver.
+     */
+    anciennesJoueur: [] as string[],
+    /** La ligne de `reservation_stock_holds` que la reprise lit, ou `null`. */
+    priseStock: null as Record<string, unknown> | null,
     /** Traces d'appels, dans l'ordre : pont, RPC, lecture d'état. */
     chronologie: [] as string[],
+    /** Portées passées à `lookupLegacyIdentityHashes`, dans l'ordre. */
+    lookups: [] as Array<Record<string, unknown>>,
     selects: [] as Array<{ table: string; colonnes: string }>,
     lectureReservationSuspendue: false,
     filtres: [] as Array<Record<string, unknown>>,
@@ -423,8 +449,17 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
         hold_id: "77777777-7777-4777-8777-777777777777",
         cancelled_at: "2030-04-12T15:00:00Z",
       };
+      state.stockCancelRepliResponse = {
+        state: "cancelled",
+        hold_id: "77777777-7777-4777-8777-777777777777",
+        cancelled_at: "2030-04-12T15:00:00Z",
+      };
       state.pontsIdentite = [];
+      state.pontLeve = false;
+      state.anciennesJoueur = [];
+      state.priseStock = null;
       state.chronologie = [];
+      state.lookups = [];
       state.selects = [];
       state.lectureReservationSuspendue = false;
       state.filtres = [];
@@ -472,8 +507,16 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
           return Promise.resolve({ data: state.stockHoldResponse, error: null });
         }
         if (name === "cancel_stock_hold") {
+          // LA RPC NE CONNAÎT QUE L'EMPREINTE QU'ON LUI DONNE — miroir du
+          // `where h.player_key_hash = p_player_key_hash` de la migration. Le
+          // second appel du repli en porte une AUTRE, et c'est tout l'objet du
+          // chemin : sans cette distinction, le faux rendrait la même chose aux
+          // deux et le test ne prouverait rien.
           return Promise.resolve({
-            data: state.stockCancelResponse,
+            data:
+              args.p_player_key_hash === state.empreinte
+                ? state.stockCancelResponse
+                : state.stockCancelRepliResponse,
             error: null,
           });
         }
@@ -612,6 +655,9 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
                 },
                 error: null,
               });
+            }
+            if (table === "reservation_stock_holds") {
+              return Promise.resolve({ data: state.priseStock, error: null });
             }
             if (table === "reservation_activities") {
               return Promise.resolve({ data: state.activiteRow, error: null });
@@ -759,6 +805,7 @@ vi.mock("@/lib/player-identity", () => ({
     experienceKind: string;
     experienceId: string;
   }) => {
+    if (state.pontLeve) throw new Error("identité indisponible");
     state.pontsIdentite.push({
       kind: input.experienceKind,
       experienceId: input.experienceId,
@@ -767,6 +814,16 @@ vi.mock("@/lib/player-identity", () => ({
     return Promise.resolve({ ok: true });
   },
   bridgeOfferedSpinToCampaign: () => Promise.resolve(),
+  /**
+   * Fidèle au contrat de `lookup_player_legacy_identities` : la liste ne
+   * contient que les empreintes d'une adhésion du MÊME joueur. Ce faux ne
+   * regarde donc PAS la prise visée — c'est ce qui rend le contrôle négatif
+   * réel : une prise dont l'empreinte n'est pas dans la liste n'est pas rendue.
+   */
+  lookupLegacyIdentityHashes: (portee: Record<string, unknown>) => {
+    state.lookups.push(portee);
+    return Promise.resolve(state.anciennesJoueur);
+  },
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
@@ -3654,5 +3711,320 @@ describe("annulation — on NOTIFIE la file, on ne TIENT rien (RDV-8)", () => {
     expect(
       state.compteurs.filter((c) => c === "reserver.table_liberee.error"),
     ).toHaveLength(2);
+  });
+});
+
+
+// ════════════════════════════════════════════════════════════
+// LE FILET D'IDENTITÉ DE RÉSERVER (ID-3)
+//
+// `reservations`, `reservation_waitlist_entries` et
+// `reservation_queue_entries` ne portaient qu'un `player_key_hash` NU, sans
+// aucun lien vers `players`. Passé 90 jours, `resolve_player_identity` fait
+// tourner le cookie `lc-player` : l'empreinte change, les lignes déjà écrites
+// gardent l'ancienne, et le client PERD SA RÉSERVATION — définitivement, aucune
+// fonction de fusion n'existant pour réparer après coup.
+//
+// Ces ponts ne réparent RIEN de rétroactif : ils commencent l'historique. Ce
+// qu'ils garantissent, c'est qu'une réservation prise aujourd'hui sera encore
+// retrouvable après la prochaine rotation.
+// ════════════════════════════════════════════════════════════
+
+describe("ponts d'identité de Réserver — les gestes qui engagent", () => {
+  it("réserver un créneau ponte l'ACTIVITÉ, pas le créneau", async () => {
+    // L'`experience_id` est l'activité (`reservation_slots.activity_id`) : c'est
+    // l'objet sur lequel le client revient et celui que le validateur de portée
+    // SQL exige pour `reserver_activity`. Ponter le créneau ferait refuser la
+    // ligne par le trigger, avec un message qui accuse l'organisation.
+    const res = await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    expect(res.ok).toBe(true);
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_activity", experienceId: ACTIVITY_ID },
+    ]);
+    // La lecture du créneau est ORG-SCOPÉE — les deux prédicats, toujours.
+    const lecture = state.filtres.find((f) => f.table === "reservation_slots");
+    expect(lecture?.organization_id).toBe(ORG_ID);
+    expect(lecture?.id).toBe(SLOT_ID);
+  });
+
+  it("LE CONTRÔLE QUI COMPTE — une panne du pont ne défait pas la réservation", async () => {
+    // ROUGE SI quelqu'un retire le `try` de `ponterActiviteReserver`. La place
+    // est DÉJÀ écrite en base quand le pont est posé : rendre une erreur au
+    // client d'une place qu'il détient serait la pire des deux issues — il
+    // réessaierait, et `already_reserved` lui redonnerait la même.
+    state.pontLeve = true;
+
+    const res = await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data.state).toBe("reserved");
+    expect(res.ok && res.data.code).toBe("ABCD2345");
+  });
+
+  it("un créneau COMPLET n'écrit aucune identité", async () => {
+    // Le succès de la RPC est le garde-fou : sans lui, chaque tentative sur un
+    // créneau plein écrirait une ligne `players` et une adhésion, bornées par
+    // rien — le défaut que le stock a payé et corrigé (revue L9, M1).
+    state.reserveResponse = { state: "full", capacity: 12 };
+
+    await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    expect(state.pontsIdentite).toHaveLength(0);
+    // Et pas même la lecture du créneau : le garde-fou tombe avant elle.
+    expect(state.filtres.some((f) => f.table === "reservation_slots")).toBe(
+      false,
+    );
+  });
+
+  it("`already_reserved` ponte aussi : la place est tenue dans les deux cas", async () => {
+    state.reserveResponse = {
+      state: "already_reserved",
+      reservation_id: "r",
+      code: "ABCD2345",
+      status: "confirmed",
+    };
+
+    await reserveSlot({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_activity", experienceId: ACTIVITY_ID },
+    ]);
+  });
+
+  it("réserver une TABLE ponte la même activité que les Moments", async () => {
+    // `reserve_table` écrit dans la MÊME table `reservations`, sous le même
+    // créneau : deux familles pour deux formats du même objet auraient coupé en
+    // deux l'historique d'un restaurant qui bascule de la salle aux Moments.
+    const res = await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_activity", experienceId: ACTIVITY_ID },
+    ]);
+  });
+
+  it("la liste prioritaire ponte l'activité — elle mène à une réservation", async () => {
+    // On y laisse une adresse et on y attend un rang. Surtout,
+    // `claimWaitlistOffer` la convertit en RÉSERVATION sur ce même service : si
+    // l'adhésion n'était posée qu'à la conversion, tout ce qui la précède —
+    // l'offre qu'on attend, justement — resterait invisible après rotation.
+    const res = await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+
+    expect(res.ok).toBe(true);
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_activity", experienceId: ACTIVITY_ID },
+    ]);
+  });
+
+  it("la liste d'attente de SALLE aussi — l'adresse y est obligatoire", async () => {
+    const res = await rejoindreListeAttenteTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+      email: "duo@exemple.fr",
+      consent: true,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_activity", experienceId: ACTIVITY_ID },
+    ]);
+  });
+
+  it("une liste prioritaire REFUSÉE n'écrit aucune identité", async () => {
+    state.waitlistJoinResponse = { state: "waitlist_full", capacity: 10 };
+    await waitlistJoin({ organizationId: ORG_ID, slotId: SLOT_ID });
+    expect(state.pontsIdentite).toHaveLength(0);
+  });
+
+  it("rejoindre une FILE ponte la file, jamais son activité", async () => {
+    // `reservation_queues.activity_id` est NULLABLE : une file « chacun son
+    // tour » existe sans qu'aucun service soit déclaré. Ponter par l'activité
+    // aurait laissé ces files-là sans `experience_id` valide — donc sans
+    // identité — chez le commerçant qui ne prend pas de réservations.
+    const res = await queueJoin({ queueId: QUEUE_ID });
+
+    expect(res.ok).toBe(true);
+    expect(state.pontsIdentite).toEqual([
+      { kind: "reserver_queue", experienceId: QUEUE_ID },
+    ]);
+    // AUCUNE lecture de créneau : la file n'en a pas.
+    expect(state.filtres.some((f) => f.table === "reservation_slots")).toBe(
+      false,
+    );
+  });
+
+  it("l'organisation du pont de file vient de LA LIGNE, jamais du corps", async () => {
+    // `queueJoin` n'accepte aucune organisation en entrée : il n'existe donc pas
+    // de valeur postée à confondre avec celle qui autorise. Le pont doit porter
+    // celle que la ligne a rendue.
+    state.queueRow = { id: QUEUE_ID, organization_id: ORG_ID };
+    await queueJoin({ queueId: QUEUE_ID });
+    expect(state.pontsIdentite).toHaveLength(1);
+  });
+
+  it("une file PLEINE ou introuvable n'écrit aucune identité", async () => {
+    state.queueJoinResponse = { state: "queue_full", capacity: 50 };
+    await queueJoin({ queueId: QUEUE_ID });
+    expect(state.pontsIdentite).toHaveLength(0);
+
+    state.queueRow = null;
+    await queueJoin({ queueId: QUEUE_ID });
+    expect(state.pontsIdentite).toHaveLength(0);
+  });
+
+  it("une panne du pont ne défait ni la file ni la table", async () => {
+    state.pontLeve = true;
+
+    const file = await queueJoin({ queueId: QUEUE_ID });
+    const table = await reserverTable({
+      organizationId: ORG_ID,
+      slotId: SLOT_ID,
+      partySize: 4,
+    });
+
+    expect(file.ok).toBe(true);
+    expect(table.ok).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// `cancelStockHold` — RENDRE SA PART APRÈS UNE ROTATION
+//
+// L'angle mort laissé par le lot précédent : `lireEtatOffreStock` retrouvait
+// déjà la prise après rotation — le client REVOYAIT son code — mais
+// `cancel_stock_hold` exige que `player_key_hash` corresponde. Il ne
+// correspondait plus. Le client voyait sa part sans pouvoir la rendre, et
+// l'unité restait bloquée jusqu'à l'expiration de sa fenêtre : exactement le
+// gaspillage que le module promet d'éviter.
+// ════════════════════════════════════════════════════════════
+
+describe("cancelStockHold — la reprise après rotation", () => {
+  const ANCIENNE = "b".repeat(64);
+
+  it("rend la part écrite sous une ANCIENNE empreinte", async () => {
+    // La RPC répond d'abord `unknown` : l'empreinte du cookie ne correspond plus.
+    state.stockCancelResponse = { state: "unknown" };
+    state.priseStock = {
+      organization_id: ORG_ID,
+      offer_id: OFFER_ID,
+      player_key_hash: ANCIENNE,
+    };
+    state.anciennesJoueur = [ANCIENNE];
+
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    // La seconde tentative porte l'empreinte de LA LIGNE, dont l'appartenance
+    // vient d'être prouvée — jamais une valeur du corps ni du cookie.
+    const appels = state.rpcCalls.filter((c) => c.name === "cancel_stock_hold");
+    expect(appels.map((a) => a.args.p_player_key_hash)).toEqual([
+      EMPREINTE,
+      ANCIENNE,
+    ]);
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.data.state).toBe("cancelled");
+    expect(state.compteurs).toContain("reserver.stock_cancel.repli_rotation");
+    // La portée de la reprise est celle de la prise : son organisation, son
+    // offre, l'appareil courant.
+    expect(state.lookups).toEqual([
+      {
+        deviceTokenHash: EMPREINTE,
+        organizationId: ORG_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFER_ID,
+      },
+    ]);
+  });
+
+  it("LE CONTRÔLE NÉGATIF — la part d'un AUTRE joueur reste hors d'atteinte", async () => {
+    // Un identifiant de prise deviné ne suffit pas : il faut aussi porter le
+    // cookie du joueur qui l'a prise. `anciennesJoueur` vide = cet appareil
+    // n'est rattaché à aucune adhésion, donc l'empreinte de la ligne ne lui
+    // appartient pas.
+    state.stockCancelResponse = { state: "unknown" };
+    state.priseStock = {
+      organization_id: ORG_ID,
+      offer_id: OFFER_ID,
+      player_key_hash: "f".repeat(64),
+    };
+    state.anciennesJoueur = [ANCIENNE];
+
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    expect(res.ok && res.data.state).toBe("unknown");
+    // UNE SEULE tentative d'annulation : la reprise n'a jamais été lancée.
+    expect(
+      state.rpcCalls.filter((c) => c.name === "cancel_stock_hold"),
+    ).toHaveLength(1);
+    expect(state.compteurs).not.toContain(
+      "reserver.stock_cancel.repli_rotation",
+    );
+  });
+
+  it("la reprise qui échoue rend l'`unknown` d'origine, jamais une erreur", async () => {
+    // La ligne appartient bien au joueur, mais la seconde tentative ne trouve
+    // rien (prise purgée entre-temps, ligne déjà annulée sous une autre forme).
+    // On sert alors la réponse d'origine — dégrader, jamais casser.
+    state.stockCancelResponse = { state: "unknown" };
+    state.stockCancelRepliResponse = { state: "unknown" };
+    state.priseStock = {
+      organization_id: ORG_ID,
+      offer_id: OFFER_ID,
+      player_key_hash: ANCIENNE,
+    };
+    state.anciennesJoueur = [ANCIENNE];
+
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    expect(res.ok && res.data.state).toBe("unknown");
+    expect(state.compteurs).not.toContain(
+      "reserver.stock_cancel.repli_rotation",
+    );
+  });
+
+  it("un identifiant INVENTÉ coûte une lecture, et rien de plus", async () => {
+    // `unknown` est aussi la réponse à un balayage d'UUID. Le chemin de reprise
+    // ne doit pas lui offrir un aller-retour de plus : pas de ligne, pas de
+    // recherche d'adhésion.
+    state.stockCancelResponse = { state: "unknown" };
+    state.priseStock = null;
+
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    expect(res.ok && res.data.state).toBe("unknown");
+    expect(state.lookups).toHaveLength(0);
+    expect(
+      state.rpcCalls.filter((c) => c.name === "cancel_stock_hold"),
+    ).toHaveLength(1);
+  });
+
+  it("une annulation ORDINAIRE ne paie aucune reprise", async () => {
+    // Le repli est un SECOND essai, jamais le premier : `cancelled` prouve que
+    // la RPC a trouvé la ligne sous l'empreinte courante.
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    expect(res.ok && res.data.state).toBe("cancelled");
+    expect(state.lookups).toHaveLength(0);
+    expect(state.filtres.some((f) => f.table === "reservation_stock_holds")).toBe(
+      false,
+    );
+  });
+
+  it("`too_late` et `already_redeemed` non plus — ce sont des réponses, pas des vides", async () => {
+    state.stockCancelResponse = {
+      state: "too_late",
+      hold_id: HOLD_ID,
+      redeem_expires_at: "2030-04-12T18:00:00Z",
+    };
+
+    const res = await cancelStockHold({ holdId: HOLD_ID });
+
+    expect(res.ok && res.data.state).toBe("too_late");
+    expect(state.lookups).toHaveLength(0);
   });
 });

@@ -10,6 +10,7 @@ import { APP_URL } from "@/lib/env";
 import {
   bridgeOfferedSpinToCampaign,
   ensureProgressivePlayerIdentity,
+  lookupLegacyIdentityHashes,
 } from "@/lib/player-identity";
 import {
   monitored,
@@ -479,6 +480,137 @@ async function observerPressionReserver(
   );
 }
 
+/**
+ * L'ACTIVITÉ d'un créneau — l'`experience_id` de la famille `reserver_activity`.
+ *
+ * Lecture ORG-SCOPÉE, les deux prédicats toujours : `id` désigne, mais c'est
+ * `organization_id` qui isole. Un créneau d'un autre commerçant rend `null`, et
+ * le pont n'est pas posé — plutôt que d'être posé de travers, ce qui rattacherait
+ * l'adhésion d'un joueur à l'expérience d'autrui (le trigger de portée le
+ * refuserait, mais une garde de plus ne se refuse pas).
+ *
+ * `null` sur l'erreur comme sur l'absence : l'appelant n'a rien à en distinguer,
+ * il ne pose pas le pont dans les deux cas.
+ */
+async function activiteDuCreneau(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  slotId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("reservation_slots")
+    .select("activity_id")
+    .eq("id", slotId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (error) return null;
+  return (data as { activity_id?: string } | null)?.activity_id ?? null;
+}
+
+/**
+ * Pose le pont d'identité `reserver_activity` d'un créneau (ID-3).
+ *
+ * ── POURQUOI APRÈS LA RPC, ET NON AVANT COMME POUR LE STOCK ──
+ *
+ * `holdStockOffer` pose son pont AVANT `hold_stock_offer` parce qu'un trigger
+ * `after insert` miroite la prise dans `reward_issuances` et y résout le joueur
+ * DANS la même transaction : sans pont à cet instant, `player_id` reste nul pour
+ * toujours. Aucune table de réservation ne porte un tel miroir — ni
+ * `reservations`, ni `reservation_waitlist_entries`, ni
+ * `reservation_queue_entries` n'alimentent le registre universel. L'ordre du
+ * stock n'a donc rien à transférer ici, et l'imiter aurait eu un coût réel :
+ * écrire une ligne `players` et une adhésion à CHAQUE tentative, y compris sur
+ * un créneau complet ou déjà passé — c'est-à-dire précisément les appels dont on
+ * sait qu'ils n'aboutiront pas.
+ *
+ * Le succès de la RPC est donc le garde-fou, et c'est le meilleur qui existe :
+ * il n'y a pas de photo non verrouillée à rattraper ensuite, contrairement au
+ * restant du stock.
+ *
+ * ── BEST-EFFORT, SANS EXCEPTION ──
+ *
+ * Une réservation ne doit JAMAIS échouer parce que l'identité n'a pas pu être
+ * posée. `ensureProgressivePlayerIdentity` avale déjà ses propres pannes et les
+ * compte (`player-identity.bridge-failed.*`) — mais « déjà » n'est pas une
+ * garantie qu'on puisse OPPOSER ici : la lecture du créneau, elle, passe par le
+ * client Supabase, qui lève sur une coupure réseau. Sans ce `try`, une panne
+ * d'infrastructure survenue APRÈS que la base a écrit la réservation ferait
+ * rendre une erreur au client d'une place qu'il détient pourtant. Le `catch` est
+ * donc la promesse elle-même, et non une précaution en plus.
+ *
+ * RIEN N'EST TRACÉ ICI, et c'est délibéré : le pont compte ses échecs sous
+ * `player-identity.bridge-failed.*`, et doubler la trace ferait apparaître deux
+ * incidents pour un.
+ *
+ * ── AUCUN REPLI DE LECTURE N'ACCOMPAGNE CE PONT, ET C'EST MESURÉ ──
+ *
+ * `lireEtatOffreStock` et `cancelStockHold` savent retrouver une prise écrite
+ * sous une ancienne empreinte, parce que `holdStockOffer` pose son pont depuis
+ * RES-5 : il existe donc, en base, des `player_legacy_identities` de famille
+ * `reserver_stock` à interroger.
+ *
+ * Rien de tel pour `reserver_activity` ni `reserver_queue` : un pont posé
+ * aujourd'hui ne crée AUCUN historique rétroactif, et une empreinte n'entre dans
+ * `player_legacy_identities` qu'à la rotation suivante — 90 jours au plus tôt,
+ * et seulement pour qui aura réservé d'ici là. Écrire aujourd'hui un repli sur
+ * `loadMyReservations` ou sur l'état public d'une file donnerait du code qui ne
+ * peut RIEN trouver, avec le coût et la surface d'attaque d'un chemin réel : la
+ * prétendre utile serait mentir. La maille suivante le posera quand des adhésions
+ * existeront — ce fichier-ci les fait naître, il n'a rien à relire.
+ */
+async function ponterActiviteReserver(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+  slotId: string,
+  empreinte: string,
+): Promise<void> {
+  try {
+    const activityId = await activiteDuCreneau(admin, organizationId, slotId);
+    if (!activityId) return;
+    await ensureProgressivePlayerIdentity({
+      organizationId,
+      experienceKind: "reserver_activity",
+      experienceId: activityId,
+      legacyIdentityHash: empreinte,
+      acquisitionSource: "direct",
+    });
+  } catch {
+    // Le geste du client est DÉJÀ écrit en base : il ne se défait pas parce que
+    // l'identité n'a pas pu être posée à côté.
+  }
+}
+
+/**
+ * Pose le pont d'identité `reserver_queue` d'une file (ID-3).
+ *
+ * L'expérience est LA FILE, jamais son activité : `reservation_queues.activity_id`
+ * est NULLABLE (20261005120000:107) — une file « chacun son tour » au comptoir
+ * existe sans qu'aucun service soit déclaré, et la replier sur
+ * `reserver_activity` aurait laissé ces files-là sans `experience_id` valide,
+ * c'est-à-dire sans identité, chez le commerçant qui ne prend pas de
+ * réservations.
+ *
+ * MÊME DISCIPLINE que `ponterActiviteReserver` : rejoindre une file ne doit
+ * jamais échouer parce que l'identité n'a pas pu être posée.
+ */
+async function ponterFileReserver(
+  organizationId: string,
+  queueId: string,
+  empreinte: string,
+): Promise<void> {
+  try {
+    await ensureProgressivePlayerIdentity({
+      organizationId,
+      experienceKind: "reserver_queue",
+      experienceId: queueId,
+      legacyIdentityHash: empreinte,
+      acquisitionSource: "direct",
+    });
+  } catch {
+    // Voir ci-dessus : la place dans la file est déjà tenue.
+  }
+}
+
 export type ReserveSlotActionResult =
   | { ok: true; data: ReserveSlotResult }
   | { ok: false; error: string; challengeRequired?: boolean };
@@ -579,6 +711,21 @@ async function reserveInner(
   }
 
   const resultat = mapReserveSlot(data);
+
+  // LE PONT D'IDENTITÉ, SUR LA PLACE RÉELLEMENT TENUE (ID-3). `already_reserved`
+  // compte autant que `reserved` : dans les deux cas cette personne détient une
+  // place sur ce service, et c'est ce que l'adhésion doit dire. Sans ce pont, la
+  // rotation du cookie à 90 jours rendait la réservation introuvable par son
+  // propre client, définitivement — aucune fonction de fusion n'existe pour
+  // réparer après coup.
+  if (resultat.state === "reserved" || resultat.state === "already_reserved") {
+    await ponterActiviteReserver(
+      admin,
+      parsed.organizationId,
+      parsed.slotId,
+      empreinte,
+    );
+  }
 
   // CONFIRMATION HORS DU CHEMIN DE RÉPONSE. Le joueur a déjà son code à
   // l'écran : l'email est un rappel, jamais la preuve. `after()` le sort du
@@ -854,10 +1001,34 @@ export async function waitlistJoin(input: {
       reportError("reserver.waitlist-join", error.message);
       return { ok: false as const, error: GENERIC_ERROR };
     }
+    const resultat = mapWaitlistJoin(data);
+
+    // LE PONT, ET IL RELÈVE BIEN DE L'ACTIVITÉ (ID-3).
+    //
+    // La liste prioritaire n'est pas un geste tiède : on y laisse une adresse et
+    // on y attend un rang qui avance. Surtout, elle mène à `claimWaitlistOffer`,
+    // qui la convertit en RÉSERVATION sur ce même service — si l'adhésion n'était
+    // posée qu'à la conversion, tout ce qui la précède resterait invisible après
+    // rotation, y compris l'offre qu'on est en train d'attendre. La famille est
+    // celle du créneau (`reservation_slots.activity_id`), exactement comme la
+    // migration le prévoit : `reservation_waitlist_entries` y est atteinte par la
+    // même chaîne que `reservations`.
+    if (
+      resultat.state === "waiting" ||
+      resultat.state === "already_waiting"
+    ) {
+      await ponterActiviteReserver(
+        admin,
+        parsed.data.organizationId,
+        parsed.data.slotId,
+        empreinte,
+      );
+    }
+
     // AUCUN EMAIL ICI, ET C'EST ASSUMÉ (MVP RES-2) : rien n'est promis à
     // l'inscription — ni une place, ni une date. Le seul message qui parte est
     // celui de la CONFIRMATION, quand l'offre est devenue une réservation.
-    return { ok: true as const, data: mapWaitlistJoin(data) };
+    return { ok: true as const, data: resultat };
   });
 }
 
@@ -1094,6 +1265,20 @@ export async function reserverTable(input: {
 
     const resultat = mapReserveTable(data);
 
+    // LE MÊME PONT QUE LES MOMENTS, sur la même famille : une table réservée est
+    // une place sur un service, et `reserve_table` écrit dans la MÊME table
+    // `reservations`, sous le même créneau. Deux familles pour deux formats du
+    // même objet auraient coupé en deux l'historique d'un restaurant qui bascule
+    // de la salle aux Moments. `reserve_table` ne connaît pas d'`already_reserved`.
+    if (resultat.state === "reserved") {
+      await ponterActiviteReserver(
+        admin,
+        parsed.data.organizationId,
+        parsed.data.slotId,
+        empreinte,
+      );
+    }
+
     // MÊME CONFIRMATION que les Moments, et volontairement la même fonction :
     // ce que le client reçoit est un créneau, un nom de commerce et un code —
     // rien de propre à une table. Deux compositions auraient divergé au premier
@@ -1229,13 +1414,28 @@ export async function rejoindreListeAttenteTable(input: {
       };
     }
 
+    const resultat = mapWaitlistJoin(normaliserAttenteTable(data));
+
+    // MÊME PONT, MÊME ARGUMENT que `waitlistJoin` — et il est ici plus fort
+    // encore : cette liste EXIGE une adresse, parce qu'elle n'existe que pour
+    // qu'un message parte quand une table se libère. S'y inscrire est un
+    // engagement pris, pas une consultation.
+    if (
+      resultat.state === "waiting" ||
+      resultat.state === "already_waiting"
+    ) {
+      await ponterActiviteReserver(
+        admin,
+        parsed.data.organizationId,
+        parsed.data.slotId,
+        empreinte,
+      );
+    }
+
     // AUCUN EMAIL À L'INSCRIPTION, comme pour `waitlistJoin` : rien n'est promis
     // ici — ni une table, ni une heure. Le seul message qui parte est celui du
     // signalement, quand une annulation a réellement libéré quelque chose.
-    return {
-      ok: true as const,
-      data: mapWaitlistJoin(normaliserAttenteTable(data)),
-    };
+    return { ok: true as const, data: resultat };
   });
 }
 
@@ -2730,9 +2930,29 @@ export async function queueJoin(input: {
       reportError("reserver.queue-join", error.message);
       return { ok: false as const, error: GENERIC_ERROR };
     }
+    const resultat = mapQueueJoin(data);
+
+    // LE PONT DE LA FILE (ID-3), sur `reserver_queue` et non `reserver_activity`.
+    //
+    // `reservation_queues.activity_id` est NULLABLE : une file « chacun son tour »
+    // au comptoir existe sans qu'aucun service soit déclaré. Ponter par
+    // l'activité aurait laissé ces files-là sans `experience_id` valide — soit
+    // sans identité du tout, chez le commerçant qui ne prend pas de réservations.
+    // L'expérience est donc LA FILE, objet que le commerçant crée et règle dans
+    // son propre écran, et sur lequel le client revient.
+    //
+    // L'ORGANISATION EST CELLE DE LA LIGNE LUE, jamais une valeur du corps : il
+    // n'en est posté aucune sur ce chemin, et c'est ce qui le rend sûr.
+    if (
+      resultat.state === "waiting" ||
+      resultat.state === "already_waiting"
+    ) {
+      await ponterFileReserver(organizationId, parsed.data.queueId, empreinte);
+    }
+
     // AUCUN EMAIL : voir l'en-tête de section. L'adresse est stockée, rien ne
     // la lit encore.
-    return { ok: true as const, data: mapQueueJoin(data) };
+    return { ok: true as const, data: resultat };
   });
 }
 
@@ -4055,8 +4275,122 @@ export async function cancelStockHold(input: {
       reportError("reserver.stock-cancel", error.message);
       return { ok: false as const, error: GENERIC_ERROR };
     }
-    return { ok: true as const, data: mapCancelStockHold(data) };
+    const resultat = mapCancelStockHold(data);
+
+    // LE SECOND ESSAI, ET SEULEMENT SUR `unknown` — jamais autrement. Les autres
+    // issues (`cancelled`, `already_redeemed`, `too_late`) prouvent que la RPC a
+    // trouvé la ligne sous l'empreinte courante : il n'y a rien à reprendre.
+    if (resultat.state !== "unknown") {
+      return { ok: true as const, data: resultat };
+    }
+    const repli = await annulerPriseApresRotation(
+      admin,
+      parsed.data.holdId,
+      empreinte,
+    );
+    return { ok: true as const, data: repli ?? resultat };
   });
+}
+
+/**
+ * Rendre une unité prise sous une ANCIENNE empreinte, après rotation du cookie
+ * `lc-player` (ID-3).
+ *
+ * ── L'ANGLE MORT QUE CECI FERME ──
+ *
+ * `lireEtatOffreStock` sait déjà retrouver la prise après rotation : le client
+ * REVOIT son code. Mais `cancel_stock_hold` exige que `player_key_hash`
+ * corresponde, et il ne correspondait plus — le client voyait sa part sans
+ * pouvoir la rendre. Une unité qu'on ne peut plus libérer reste bloquée jusqu'à
+ * l'expiration de sa fenêtre, ce qui coûte au commerçant exactement ce que le
+ * module promet d'éviter.
+ *
+ * ── CE QUI AUTORISE, ET C'EST LA SEULE CHOSE QUI AUTORISE ──
+ *
+ * `lookup_player_legacy_identities` part de l'empreinte COURANTE du cookie et
+ * ne rend que les empreintes d'une adhésion du MÊME joueur, du MÊME locataire et
+ * de la MÊME expérience. L'empreinte de la prise doit s'y trouver : c'est un
+ * test d'APPARTENANCE, pas une comparaison de valeurs postées. Un identifiant de
+ * prise deviné n'ouvre donc rien — il faut aussi porter le cookie du joueur qui
+ * l'a prise.
+ *
+ * Une ligne PURGÉE porte `purge:<id>`, jamais une empreinte 64-hex : elle ne
+ * peut appartenir à aucune liste rendue par la RPC, et reste inatteignable.
+ *
+ * ── LE COÛT D'UN BALAYAGE D'UUID ──
+ *
+ * `unknown` est aussi la réponse à un identifiant inventé. Ce chemin lui coûte
+ * UNE lecture par clé primaire, qui ne trouve rien et s'arrête là : aucune
+ * reprise, aucune RPC de plus. C'est le même ordre de grandeur que l'appel qui
+ * l'a précédé, et il est borné par les mêmes seaux.
+ *
+ * ── `null` NE CASSE RIEN ──
+ *
+ * Pas de ligne, empreinte étrangère, RPC en panne, client Supabase qui lève :
+ * on rend `null` et l'appelant sert l'`unknown` d'origine — la réponse exacte
+ * qu'il aurait servie sans ce chemin. Un chemin de RÉPARATION qui casserait ce
+ * qu'il vient réparer serait pire que son absence.
+ */
+async function annulerPriseApresRotation(
+  admin: ReturnType<typeof createAdminClient>,
+  holdId: string,
+  empreinte: string,
+): Promise<CancelStockHoldResult | null> {
+  try {
+    return await annulerPriseApresRotationInner(admin, holdId, empreinte);
+  } catch {
+    return null;
+  }
+}
+
+async function annulerPriseApresRotationInner(
+  admin: ReturnType<typeof createAdminClient>,
+  holdId: string,
+  empreinte: string,
+): Promise<CancelStockHoldResult | null> {
+  const { data, error } = await admin
+    .from("reservation_stock_holds")
+    .select("organization_id, offer_id, player_key_hash")
+    .eq("id", holdId)
+    .maybeSingle();
+  if (error) return null;
+  const prise = data as {
+    organization_id: string;
+    offer_id: string;
+    player_key_hash: string;
+  } | null;
+  // Aucune ligne : l'identifiant est inventé, ou la prise a été effacée. Même
+  // empreinte : la RPC l'aurait trouvée, il n'y a pas de rotation à rattraper.
+  if (!prise || prise.player_key_hash === empreinte) return null;
+
+  const anciennes = await lookupLegacyIdentityHashes({
+    deviceTokenHash: empreinte,
+    organizationId: prise.organization_id,
+    experienceKind: "reserver_stock",
+    experienceId: prise.offer_id,
+  });
+  if (!anciennes.includes(prise.player_key_hash)) return null;
+
+  const { data: brut, error: erreurRepli } = await admin.rpc(
+    "cancel_stock_hold",
+    {
+      p_hold_id: holdId,
+      // L'EMPREINTE DE LA LIGNE, dont l'appartenance vient d'être prouvée. Elle
+      // ne vient ni du corps ni du cookie : elle vient de la base.
+      p_player_key_hash: prise.player_key_hash,
+    },
+  );
+  if (erreurRepli) {
+    reportError("reserver.stock-cancel-repli", erreurRepli.message);
+    return null;
+  }
+  const repli = mapCancelStockHold(brut);
+  if (repli.state === "unknown") return null;
+
+  // ZÉRO EST LA VALEUR ATTENDUE tant que personne n'a tourné ; une population
+  // non nulle dit combien de clients n'auraient pas pu rendre leur part.
+  recordCounter("reserver.stock_cancel.repli_rotation");
+  return repli;
 }
 
 /**
