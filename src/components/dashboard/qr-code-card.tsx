@@ -58,8 +58,6 @@ export function QrCodeCard({
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ kind: "campaign", id });
-    setRewardCount(null);
-    setRewardStatus("loading");
     void fetch(`/api/dashboard/qr-distribution?${params}`, {
         cache: "no-store",
       })
