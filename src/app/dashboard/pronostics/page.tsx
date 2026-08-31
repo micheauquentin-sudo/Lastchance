@@ -98,6 +98,7 @@ export default async function PronosticsPage({
         surtitre="Vos animations"
         titre="Pronostics"
         sousTitre={sousTitreTableauDeBord("pronostics")}
+        actionsClassName="w-full basis-full"
         actions={
           capacites.canEditDraft ? (
             <NewContestForm timeZone={organization!.timezone} />

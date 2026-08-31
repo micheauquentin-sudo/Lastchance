@@ -2327,3 +2327,27 @@ strictement déclenchés par une action du commerçant.
 - Vitest ciblé : 8/8 vert ; `git diff --check` : vert ;
 - lint/typecheck/CI à refaire sur le SHA de livraison lorsqu'une publication
   sera autorisée ; aucun commit, push ou déploiement de ce lot à ce stade.
+
+## Pronostics — largeur du choix d’événement (2026-08-31, local prêt)
+
+### Terrain
+
+- `src/components/dashboard/new-contest-form.tsx`
+
+### Décision propriétaire appliquée
+
+Le formulaire de création ne limite plus sa largeur à `max-w-xl` : la carte
+« Type d’événement » emploie toute la largeur disponible du tableau de bord.
+La grille conserve ses paliers responsives existants : une colonne sur mobile,
+deux sur tablette et trois à partir du bureau.
+
+### Fini quand
+
+- `git diff --check` est vert ; aucune logique métier n'est modifiée ;
+- revue QA ciblée terminée : le slot d'actions est explicitement `w-full basis-full`,
+  le formulaire est `w-full`, et la grille reste 1/2/3 colonnes selon les
+  breakpoints existants ;
+- aucun test composant n'existe pour ce formulaire et `node_modules` est absent
+  de l'arbre isolé : typecheck/lint/CI restent à exécuter sur un arbre préparé
+  avant publication ;
+- aucune publication distante de ce lot sans autorisation explicite.
