@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveQrPoster } from "@/actions/qr-codes";
+import { saveQrDistributionPoster } from "@/actions/qr-distribution";
 import { PosterCanvas } from "@/components/poster/poster-canvas";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/input";
@@ -116,11 +117,14 @@ export function PosterEditor({
   playUrl,
   qrStyle,
   initialConfig,
+  distribution = false,
 }: {
   qrId: string;
   playUrl: string;
   qrStyle: QrStyle;
   initialConfig: Record<string, unknown>;
+  /** L'affiche d'un QR de diffusion générique, stockée hors `qr_codes`. */
+  distribution?: boolean;
 }) {
   const [config, setConfig] = useState<PosterConfig>(() =>
     resolvePosterConfig(initialConfig),
@@ -130,11 +134,14 @@ export function PosterEditor({
   const [future, setFuture] = useState<PosterConfig[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const { state, pending, onSubmit } = useActionForm(saveQrPoster, {
+  const { state, pending, onSubmit } = useActionForm(
+    distribution ? saveQrDistributionPoster : saveQrPoster,
+    {
     // Re-synchronise l'état local sur la version normalisée par le serveur.
     onSuccess: (data) => setConfig(data),
     networkError: "Enregistrement impossible, réessayez.",
-  });
+    },
+  );
 
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);

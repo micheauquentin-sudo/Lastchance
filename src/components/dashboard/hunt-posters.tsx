@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { renderQr } from "@/lib/qr-render";
+import {
+  ensureQrDistributionAsset,
+  getQrDistributionAsset,
+} from "@/actions/qr-distribution";
+import { QrDesigner } from "@/components/dashboard/qr-designer";
 import type { QrStyle } from "@/types/database";
 
 /**
@@ -11,6 +16,7 @@ import type { QrStyle } from "@/types/database";
  */
 
 export interface HuntPosterStep {
+  id: string;
   position: number;
   label: string;
   token: string;
@@ -137,14 +143,35 @@ function HuntPosterCard({
   step: HuntPosterStep;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [asset, setAsset] = useState<{ id: string; style: QrStyle; poster: Record<string, unknown> } | null>(null);
+  const [designing, setDesigning] = useState(false);
+  const [assetError, setAssetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getQrDistributionAsset({ resourceKind: "hunt_step", resourceId: step.id }).then((result) => {
+      if (active && result.ok) setAsset(result.data);
+    });
+    return () => { active = false; };
+  }, [step.id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    renderQr(canvas, step.url, POSTER_QR_STYLE, 640).catch(() => {
+    renderQr(canvas, step.url, asset?.style ?? POSTER_QR_STYLE, 640).catch(() => {
       /* aperçu seulement — l'échec ne bloque rien */
     });
-  }, [step.url]);
+  }, [step.url, asset?.style]);
+
+  async function ensureAsset() {
+    const result = await ensureQrDistributionAsset({ resourceKind: "hunt_step", resourceId: step.id });
+    if (!result.ok) {
+      setAssetError(result.error);
+      return null;
+    }
+    setAsset(result.data);
+    return result.data;
+  }
 
   async function downloadOne() {
     const dataUrl = await renderToDataUrl(step.url, 1024);
@@ -185,6 +212,34 @@ function HuntPosterCard({
       >
         Télécharger cette affiche (PNG)
       </button>
+      <div className="hunt-posters-controls mt-3 flex flex-wrap justify-center gap-3">
+        <button
+          type="button"
+          onClick={() => { void ensureAsset().then((next) => next && setDesigning(true)); }}
+          className="text-sm font-bold text-k-orange-text hover:underline"
+        >
+          Personnaliser ce QR
+        </button>
+        <button
+          type="button"
+          onClick={() => { void ensureAsset().then((next) => next && window.open(`/poster/distribution/${next.id}`, "_blank", "noopener,noreferrer")); }}
+          className="text-sm font-bold text-k-orange-text hover:underline"
+        >
+          {asset && Object.keys(asset.poster).length > 0 ? "Éditer l'affiche" : "Créer l'affiche"}
+        </button>
+      </div>
+      {assetError ? <p role="alert" className="hunt-posters-controls mt-2 text-xs font-bold text-red-600">{assetError}</p> : null}
+      {designing && asset ? (
+        <QrDesigner
+          id={asset.id}
+          slug={`chasse-etape-${step.position}`}
+          url={step.url}
+          initialStyle={asset.style}
+          distribution={{ resourceKind: "hunt_step", resourceId: step.id }}
+          onClose={() => setDesigning(false)}
+          onSaved={(style) => setAsset((current) => current ? { ...current, style } : current)}
+        />
+      ) : null}
     </li>
   );
 }

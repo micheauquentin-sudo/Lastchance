@@ -98,6 +98,7 @@ export default async function SalonPage({
             url={url}
             fileName={`salon-${jeu}`}
             qrLabel={fiche.label}
+            resource={{ kind: jeu === "duo" ? "duo" : "portrait", id: organization.id }}
           />
           {!vitrine?.published && (
             // Le commerçant doit savoir POURQUOI son adresse ressemble à son

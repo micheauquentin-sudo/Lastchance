@@ -139,6 +139,7 @@ export default async function HuntDetailPage({
   );
 
   const posterSteps = steps.map((step) => ({
+    id: step.id,
     position: step.position,
     label: step.label,
     token: step.token,
