@@ -25,6 +25,7 @@ import {
 } from "@/components/wheel/turnstile-widget";
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type {
+  LoyaltyCommerceView,
   LoyaltyLinkedJackpotState,
   LoyaltyMilestoneView,
   LoyaltyPassportReward,
@@ -37,6 +38,7 @@ import type {
   LoyaltyValidationMode,
 } from "@/types/database";
 import { LoyaltySpinExperience } from "./loyalty-spin-experience";
+import { PasseportPiedCommerce } from "./passeport-pied-commerce";
 import {
   LOYALTY_TIERS,
   loyaltyPointsGoal,
@@ -119,6 +121,10 @@ export interface LoyaltyPassportProps {
   jackpot: LoyaltyLinkedJackpotState | null;
   /** Roues offertes indexées par milestoneId (paliers « spin »). */
   spinWheels: Record<string, LoyaltySpinBundle>;
+  /** Le pied de carte (FID-4a) : liens du commerce + animations en cours. */
+  commerce: LoyaltyCommerceView;
+  /** `organizations.timezone` — le fuseau qui donne l'heure du pied de carte. */
+  timeZone: string;
 }
 
 export function LoyaltyPassport({
@@ -133,6 +139,8 @@ export function LoyaltyPassport({
   passport,
   jackpot,
   spinWheels,
+  commerce,
+  timeZone,
 }: LoyaltyPassportProps) {
 
   // ── Challenge anti-robot (mode rotating_code) ───────────────────────────
@@ -460,6 +468,15 @@ export function LoyaltyPassport({
       />
 
       {jackpot && <LinkedJackpotCard jackpot={jackpot} />}
+
+      {/* ── Le pied de carte : le commerce, APRÈS les points et la boutique ──
+          Le passeport reste une carte de fidélité ; le commerce est à portée
+          sans voler la vedette. */}
+      <PasseportPiedCommerce
+        commerce={commerce}
+        organizationName={organizationName}
+        timeZone={timeZone}
+      />
     </div>
   );
 }

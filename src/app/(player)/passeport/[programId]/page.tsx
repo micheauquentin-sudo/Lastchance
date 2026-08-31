@@ -249,6 +249,8 @@ export default async function LoyaltyPassportPage({
         passport={ctx.passport}
         jackpot={ctx.jackpot}
         spinWheels={spinWheels}
+        commerce={ctx.commerce}
+        timeZone={ctx.organization.timezone}
       />
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

@@ -7,8 +7,12 @@ import { loyaltyTierForVisits } from "@/lib/loyalty";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import { liensDesPortes, type PorteLien } from "@/lib/portes-liens";
+import { sortieDeLOrganisation } from "@/lib/sortie-apres-jeu";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loyaltyOrderTokenSchema } from "@/lib/validations/loyalty";
+import { cheminVitrine } from "@/lib/vitrine";
+import { getVitrinePublicState } from "@/lib/vitrine-context";
 import type {
   LoyaltyMilestone,
   LoyaltyProgram,
@@ -321,6 +325,96 @@ async function loadLinkedJackpotState(
   };
 }
 
+/**
+ * LE PIED DE CARTE DU PASSEPORT (FID-4a) — le commerce, sous la fidélité.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Le passeport était un cul-de-sac : le client y lisait ses points et ne
+ * pouvait rien faire d'autre du commerce qui les lui donne — ni retrouver sa
+ * carte, ni le suivre, ni voir ce qui tourne d'autre chez lui ce jour-là.
+ *
+ * ── AUCUNE NOUVELLE LECTURE DES LIENS, ET C'EST LE POINT ──
+ *
+ * Les trois adresses (avis Google, Instagram, TikTok) et le slug de la Vitrine
+ * publiée viennent de `sortieDeLOrganisation` (`src/lib/sortie-apres-jeu.ts`),
+ * qui les sert DÉJÀ à l'écran d'après-jeu. Les relire depuis `organizations`
+ * ici aurait recopié sa revalidation de forme (`estLienInvitationSur`) — celle
+ * qui empêche une adresse posée avant la liste blanche d'atteindre le
+ * navigateur d'un joueur anonyme — ou, pire, l'aurait oubliée.
+ *
+ * ── LES ANIMATIONS SONT CELLES DE LA VITRINE, PAS UNE SECONDE LISTE ──
+ *
+ * `vitrine_public_state` construit déjà l'annuaire des pages publiques ouvertes
+ * d'un commerce (`PortesVitrineView`), à partir de quatre tables d'autres
+ * modules. Écrire ici une seconde requête aurait donné deux listes des mêmes
+ * portes, qui divergent au premier module ajouté. On rejoue donc la MÊME
+ * lecture, et `liensDesPortes` en fait des `(href, nom)`.
+ *
+ * CE QUE ÇA IMPLIQUE, ET IL FAUT LE DIRE : sans Vitrine publiée, pas
+ * d'annuaire. `vitrine_public_state` est aussi ce qui vérifie le droit du
+ * module et le drapeau public — une porte qu'elle refuse de nommer est une
+ * porte qu'on ne doit pas peindre. Un commerce sans Vitrine garde son pied de
+ * carte (réseaux + avis), il n'a simplement rien à y annoncer.
+ *
+ * NI FIDÉLITÉ NI JACKPOT dans cette liste : on est déjà sur le passeport, et
+ * le pot commun relié a sa propre carte (`LinkedJackpotCard`). L'annuaire ne
+ * les porte pas — rien à filtrer, donc rien à doubler.
+ */
+export interface LoyaltyCommerceView {
+  /** Chemin interne `/v/{slug}`, ou `null` sans Vitrine publiée. */
+  vitrinePath: string | null;
+  googleReviewUrl: string | null;
+  instagramUrl: string | null;
+  tiktokUrl: string | null;
+  /** Les animations ouvertes ailleurs chez ce commerce. Vide = bloc masqué. */
+  portes: PorteLien[];
+}
+
+const COMMERCE_VIDE: LoyaltyCommerceView = {
+  vitrinePath: null,
+  googleReviewUrl: null,
+  instagramUrl: null,
+  tiktokUrl: null,
+  portes: [],
+};
+
+/**
+ * TOUTE PANNE EST UN PIED DE CARTE INCOMPLET, jamais une page en erreur : ce
+ * bloc décore le passeport, il ne le porte pas. Faire échouer l'écran où un
+ * client vient lire ses points parce qu'une adresse Instagram n'a pas pu être
+ * lue serait un très mauvais échange — même doctrine que
+ * `sortieDeLOrganisation`, qui replie déjà toute panne sur `null`.
+ *
+ * DEUX REPLIS SÉPARÉS, ET C'EST DÉLIBÉRÉ : une panne de l'annuaire ne doit pas
+ * emporter les liens, qui viennent d'une autre lecture. Une seule enveloppe
+ * autour des deux aurait fait disparaître le pied de carte entier le jour où
+ * la Vitrine tousse.
+ */
+async function loadCommerceView(
+  organizationId: string,
+): Promise<LoyaltyCommerceView> {
+  const sortie = await sortieDeLOrganisation(organizationId);
+  if (!sortie) return COMMERCE_VIDE;
+
+  const base: LoyaltyCommerceView = {
+    vitrinePath: sortie.vitrine ? cheminVitrine(sortie.vitrine) : null,
+    googleReviewUrl: sortie.google ?? null,
+    instagramUrl: sortie.instagram ?? null,
+    tiktokUrl: sortie.tiktok ?? null,
+    portes: [],
+  };
+  if (!sortie.vitrine) return base;
+
+  try {
+    const etat = await getVitrinePublicState(sortie.vitrine);
+    if (etat.state !== "ok") return base;
+    return { ...base, portes: liensDesPortes(etat.portes) };
+  } catch {
+    return base;
+  }
+}
+
 export type LoyaltyActionContext =
   | { ok: false; error: string }
   | {
@@ -611,6 +705,8 @@ export type LoyaltyContext =
       milestones: LoyaltyMilestoneView[];
       passport: LoyaltyPassportState;
       jackpot: LoyaltyLinkedJackpotState | null;
+      /** Le pied de carte : liens du commerce + ses animations en cours. */
+      commerce: LoyaltyCommerceView;
     };
 
 /**
@@ -645,10 +741,24 @@ export async function loadLoyaltyContext(
   const milestones = ((milestoneRows as LoyaltyMilestone[] | null) ?? []).map(
     toMilestoneView,
   );
-  const [passport, jackpot] = await Promise.all([
+  const [passport, jackpot, commerce] = await Promise.all([
     loadPassportState(admin, program),
     loadLinkedJackpotState(admin, program, organization),
+    // EN PARALLÈLE des deux autres : le pied de carte n'a besoin de rien de ce
+    // qu'elles rendent, et le mettre en série aurait ajouté ses deux à trois
+    // allers-retours au temps d'affichage du solde — la seule chose que le
+    // client attend vraiment sur cet écran.
+    loadCommerceView(program.organization_id),
   ]);
 
-  return { ok: true, admin, program, organization, milestones, passport, jackpot };
+  return {
+    ok: true,
+    admin,
+    program,
+    organization,
+    milestones,
+    passport,
+    jackpot,
+    commerce,
+  };
 }
