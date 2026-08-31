@@ -40,6 +40,16 @@ const state = vi.hoisted(() => ({
   spinError: null as unknown,
   /** Filtres appliqués à la lecture du spin — org-scoping et cible. */
   spinFilters: [] as Array<Record<string, unknown>>,
+  /**
+   * LA FUSION (ID-5) — les deux lectures qui désignent les joueurs à réunir.
+   * `player_devices` donne le SURVIVANT (le porteur du cookie courant),
+   * `player_legacy_identities` l'ABSORBÉ (le détenteur de l'empreinte).
+   */
+  deviceRow: null as Record<string, unknown> | null,
+  legacyRow: null as Record<string, unknown> | null,
+  mergeError: null as unknown,
+  /** Table + filtres de chaque lecture, dans l'ordre — la portée s'y assert. */
+  tableQueries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
 }));
 
 vi.mock("@/lib/monitoring", () => ({
@@ -71,13 +81,20 @@ function adminMock() {
       if (name === "lookup_player_legacy_identities") {
         return { data: state.lookupData, error: state.lookupError };
       }
+      if (name === "merge_player_identities") {
+        return {
+          data: state.mergeError ? null : "10000000-0000-4000-8000-000000000001",
+          error: state.mergeError,
+        };
+      }
       return name === "rotate_player_device"
         ? { data: state.rotationData, error: state.rotationError }
         : { data: state.resolveData, error: state.resolveError };
     },
-    // La table et les colonnes ne sont pas discriminées : ce module ne lit
-    // qu'une seule table (`spins`), et c'est le filtre `id` qui est asserté.
-    from: () => ({
+    // La table EST discriminée depuis la fusion (ID-5) : ce module lit
+    // désormais `spins`, `player_devices` et `player_legacy_identities`, et
+    // confondre les trois ferait passer la portée du pont pour celle du spin.
+    from: (table: string) => ({
       select: () => {
         const filters: Record<string, unknown> = {};
         const builder = {
@@ -86,6 +103,13 @@ function adminMock() {
             return builder;
           },
           maybeSingle: async () => {
+            state.tableQueries.push({ table, filters: { ...filters } });
+            if (table === "player_devices") {
+              return { data: state.deviceRow, error: null };
+            }
+            if (table === "player_legacy_identities") {
+              return { data: state.legacyRow, error: null };
+            }
             state.spinFilters.push({ ...filters });
             return { data: state.spinRow, error: state.spinError };
           },
@@ -160,6 +184,10 @@ beforeEach(() => {
   state.spinRow = null;
   state.spinError = null;
   state.spinFilters = [];
+  state.deviceRow = null;
+  state.legacyRow = null;
+  state.mergeError = null;
+  state.tableQueries = [];
 });
 
 afterEach(() => {
@@ -827,5 +855,243 @@ describe("lookupLegacyIdentityHashes", () => {
     expect(state.compteurs).toEqual([
       "player-identity.lookup-failed.invalid_input.unvalidated",
     ]);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LA FUSION AUTOMATIQUE (ID-5) — au seul endroit où le doute est nul
+ *
+ * `resolve_player_identity` REFUSE (`23505`, « legacy identity is linked to
+ * another player ») quand l'empreinte historique présentée appartient déjà à un
+ * autre joueur. Ce refus est le signal cherché : l'empreinte de module vient du
+ * cookie de ce module sur CE navigateur, et le cookie `lc-player` vit sur le
+ * même — les deux identités sont la même personne, sur le même appareil.
+ *
+ * Ce que ce bloc prouve, et dans cet ordre :
+ *   · le conflit déclenche la fusion, dans le BON SENS, et la résolution
+ *     aboutit ;
+ *   · le CONTRÔLE NÉGATIF — sans ce signal exact, aucune fusion n'est jamais
+ *     demandée. C'est la moitié qui compte : une fusion déclenchée trop
+ *     largement verserait l'historique d'un client dans celui d'un autre, et
+ *     rien en base ne permettrait de revenir en arrière ;
+ *   · l'absence de boucle : un conflit qui persiste n'est réessayé qu'UNE fois ;
+ *   · le caractère best-effort : une fusion en panne ne lève rien.
+ * ════════════════════════════════════════════════════════════ */
+
+const SURVIVANT = "30000000-0000-4000-8000-000000000001";
+const ABSORBE = "30000000-0000-4000-8000-000000000002";
+
+/** Le refus exact que la base oppose à deux identités du même appareil. */
+const CONFLIT = {
+  data: null,
+  error: {
+    code: "23505",
+    message: "legacy identity is linked to another player",
+  },
+};
+
+/** Les deux lectures qui désignent les joueurs à réunir. */
+function seedConflit() {
+  state.cookieValue = "D".repeat(43);
+  state.deviceRow = { player_id: SURVIVANT };
+  state.legacyRow = { player_id: ABSORBE };
+}
+
+describe("fusion automatique des identités", () => {
+  it("réunit deux identités que la base refusait de relier, puis rejoue", async () => {
+    seedConflit();
+    state.resolveResponses = [CONFLIT, { data: state.resolveData, error: null }];
+
+    const result = await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(state.rpcCalls.map((call) => call.name)).toEqual([
+      "resolve_player_identity",
+      "merge_player_identities",
+      "resolve_player_identity",
+    ]);
+    // LE SENS DE LA FUSION, et c'est la décision du lot : le porteur du cookie
+    // courant survit — c'est la seule des deux identités dont on sait qu'elle
+    // tient une session vivante. Rouge si les deux arguments s'inversaient : le
+    // navigateur continuerait de présenter un joueur passé en `merged`, que
+    // `resolve_player_identity` refuse (`42501`).
+    expect(state.rpcCalls[1].args).toEqual({
+      p_surviving_player_id: SURVIVANT,
+      p_absorbed_player_id: ABSORBE,
+    });
+    // La fusion déplace l'historique d'une personne : elle DOIT laisser une
+    // trace. Rouge si elle redevenait silencieuse — donc indiagnosticable.
+    expect(state.compteurs).toContain("player-identity.merged.loyalty");
+  });
+
+  it("cherche l'absorbé sur la portée ENTIÈRE du pont, jamais sur la seule empreinte", async () => {
+    // `player_legacy_identities` est unique sur (organisation, famille,
+    // expérience, empreinte). Rouge si un prédicat sautait : la même empreinte
+    // de module peut exister sur une AUTRE expérience, et on fusionnerait alors
+    // deux personnes que rien ne relie.
+    seedConflit();
+    state.resolveResponses = [CONFLIT, { data: state.resolveData, error: null }];
+
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    const pont = state.tableQueries.find(
+      (q) => q.table === "player_legacy_identities",
+    );
+    expect(pont?.filters).toEqual({
+      organization_id: ORGANIZATION_ID,
+      experience_kind: "loyalty",
+      experience_id: CAMPAIGN_ID,
+      legacy_identity_hash: LEGACY_HASH,
+    });
+    const appareil = state.tableQueries.find(
+      (q) => q.table === "player_devices",
+    );
+    expect(appareil?.filters).toEqual({
+      token_hash: hashPlayerDeviceToken("D".repeat(43)),
+    });
+  });
+
+  it("CONTRÔLE NÉGATIF : sans empreinte commune, aucune fusion n'est demandée", async () => {
+    // Deux joueurs que rien ne relie : la base ne lève pas de conflit, elle
+    // résout normalement. Les deux lignes sont pourtant en place — rouge si la
+    // fusion se déclenchait sur leur simple existence plutôt que sur le signal.
+    seedConflit();
+
+    const result = await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(state.rpcCalls.map((call) => call.name)).toEqual([
+      "resolve_player_identity",
+    ]);
+    expect(state.compteurs).toEqual([]);
+  });
+
+  it("CONTRÔLE NÉGATIF : une AUTRE violation d'unicité ne fusionne rien", async () => {
+    // `23505` seul est le code générique d'unicité de Postgres. Rouge si le
+    // message cessait d'être comparé : n'importe quel doublon déclencherait un
+    // déplacement d'historique choisi au hasard.
+    seedConflit();
+    state.resolveResponses = [
+      {
+        data: null,
+        error: { code: "23505", message: "duplicate key value violates …" },
+      },
+    ];
+
+    const result = await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "unavailable" });
+    expect(
+      state.rpcCalls.filter((c) => c.name === "merge_player_identities"),
+    ).toEqual([]);
+  });
+
+  it("CONTRÔLE NÉGATIF : sans empreinte historique, il n'y a rien à réunir", async () => {
+    // Le conflit ne peut pas naître sans empreinte présentée ; on double quand
+    // même le refus pour figer la garde d'appelant.
+    state.cookieValue = "E".repeat(43);
+    state.deviceRow = { player_id: SURVIVANT };
+    state.legacyRow = { player_id: ABSORBE };
+    state.resolveResponses = [CONFLIT];
+
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+    });
+
+    expect(
+      state.rpcCalls.filter((c) => c.name === "merge_player_identities"),
+    ).toEqual([]);
+  });
+
+  it("ne fusionne pas quand l'appareil courant n'est rattaché à personne", async () => {
+    // Sans ligne `player_devices`, l'appareil est neuf : la RPC l'aurait
+    // rattaché toute seule au joueur du pont. Il n'y a pas deux identités.
+    seedConflit();
+    state.deviceRow = null;
+    state.resolveResponses = [CONFLIT];
+
+    await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(
+      state.rpcCalls.filter((c) => c.name === "merge_player_identities"),
+    ).toEqual([]);
+  });
+
+  it("PAS DE BOUCLE : un conflit qui persiste n'est rejoué qu'une seule fois", async () => {
+    // La garde qui compte le plus. Cette fonction est appelée à chaque spin,
+    // chaque tampon et chaque join : une boucle « fusionner puis réessayer »
+    // transformerait un défaut de données en rafale de RPC d'ÉCRITURE sur le
+    // chemin public le plus fréquenté du dépôt.
+    seedConflit();
+    state.resolveResponses = [CONFLIT, CONFLIT];
+
+    const result = await ensureProgressivePlayerIdentity({
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "loyalty",
+      experienceId: CAMPAIGN_ID,
+      legacyIdentityHash: LEGACY_HASH,
+    });
+
+    expect(result).toEqual({ ok: false, reason: "unavailable" });
+    expect(state.rpcCalls.map((call) => call.name)).toEqual([
+      "resolve_player_identity",
+      "merge_player_identities",
+      "resolve_player_identity",
+    ]);
+  });
+
+  it("une fusion en panne ne fait échouer aucun geste de joueur", async () => {
+    // Best-effort, comme tout ce module : l'appelant (un tampon, un spin, un
+    // join) ne lit pas ce retour et ne doit RIEN voir passer. Rouge si la panne
+    // remontait en exception — le tampon du client serait refusé pour une
+    // maintenance d'identité qui ne le concerne pas.
+    seedConflit();
+    state.resolveResponses = [CONFLIT];
+    state.mergeError = { code: "42501", message: "player identity is not active" };
+
+    await expect(
+      ensureProgressivePlayerIdentity({
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "loyalty",
+        experienceId: CAMPAIGN_ID,
+        legacyIdentityHash: LEGACY_HASH,
+      }),
+    ).resolves.toEqual({ ok: false, reason: "unavailable" });
+
+    // La panne est TRACÉE, pas avalée : un client resté scindé en deux doit se
+    // voir sur le tableau de bord.
+    expect(state.erreurs).toContain("player-identity.merge");
+    expect(state.compteurs).toContain("player-identity.merge-failed.unavailable.loyalty");
+    // Et aucun rejeu : la fusion n'a pas eu lieu.
+    expect(
+      state.rpcCalls.filter((c) => c.name === "resolve_player_identity"),
+    ).toHaveLength(1);
   });
 });

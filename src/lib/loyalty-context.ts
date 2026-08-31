@@ -4,6 +4,11 @@ import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies, headers } from "next/headers";
 import { loyaltyTierForVisits } from "@/lib/loyalty";
+import { recordCounter } from "@/lib/monitoring";
+import {
+  lookupLegacyIdentityHashes,
+  peekPlayerDeviceTokenHash,
+} from "@/lib/player-identity";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
@@ -178,14 +183,175 @@ function toMilestoneView(row: LoyaltyMilestone): LoyaltyMilestoneView {
   };
 }
 
+/** Les compteurs du membre — jamais son porteur haché, jamais un `*`. */
+interface MembrePasseport {
+  id: string;
+  visit_count: number;
+  points_balance: number;
+  points_earned_total: number;
+}
+
 /**
- * Passeport du joueur courant (cookie httpOnly) en lecture seule : compteur,
- * niveau (recalculé depuis les seuils courants), et récompenses gagnées (lots
- * + tours offerts). Aucun cookie/passeport → état vide.
+ * L'identité du passeport pour CE visiteur : l'empreinte de module retenue, et
+ * le membre qu'elle désigne s'il en existe un.
+ */
+interface IdentitePasseport {
+  /**
+   * L'empreinte `loyalty_members.token_hash` retenue — celle du cookie du
+   * module, ou celle rattrapée par l'identité globale. `null` quand ce
+   * navigateur n'a ni cookie de module ni empreinte historique connue.
+   */
+  tokenHash: string | null;
+  membre: MembrePasseport | null;
+  /** Un cookie de module est posé (mode staff avant la première validation). */
+  cookiePose: boolean;
+}
+
+/**
+ * L'ORDRE DE RÉSOLUTION DU PASSEPORT (ID-5) — le cookie du module d'abord,
+ * l'identité globale ensuite.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Le passeport ne connaissait qu'un seul chemin : `lc-loyalty-<programId>`. Ce
+ * cookie effacé — nettoyage du navigateur, mode privé refermé, téléphone
+ * changé de main — le client redevenait un inconnu à zéro point devant un
+ * comptoir où il en avait quatre cents. Rien n'était pourtant perdu en base :
+ * son appareil est connu de `players`, et l'empreinte de son ancien cookie est
+ * conservée dans `player_legacy_identities` parce que les trois actions du
+ * module posent le pont `loyalty` à chaque tampon. Il ne manquait que l'appel.
+ *
+ * ── L'ORDRE, ET POURQUOI IL EST DANS CE SENS ──
+ *
+ *  1. Le cookie du module, TOUJOURS EN PREMIER dès qu'il désigne un membre.
+ *     C'est le chemin qui porte l'historique et celui que toute la production
+ *     emprunte aujourd'hui : personne ne doit changer d'identité en silence le
+ *     jour du déploiement.
+ *  2. Absent, ou présent mais ne désignant AUCUN membre : on retombe sur
+ *     l'identité globale. `lookupLegacyIdentityHashes` rend les empreintes
+ *     historiques de cet appareil sur CE programme, de la plus récemment vue à
+ *     la plus ancienne, et on retient la première qui tient réellement un
+ *     membre. C'est ce qui rattrape à la fois le cookie effacé et la rotation
+ *     du cookie global.
+ *  3. Un visiteur neuf ne trouve rien nulle part et repart sans passeport,
+ *     exactement comme avant : c'est son premier tampon qui lui en ouvrira un,
+ *     directement sur l'identité globale.
+ *
+ * ── C'EST UN ORDRE, PAS UN REMPLACEMENT ──
+ *
+ * ADR-041 : le double chemin existe pour pouvoir déployer, observer et revenir
+ * en arrière « sans supprimer ni réinterpréter une progression existante ». Le
+ * cookie de module n'est donc ni supprimé, ni cessé d'être écrit, ni relégué —
+ * il reste lu en premier, et `record_loyalty_stamp` continue d'écrire sous son
+ * empreinte. Ce lot AJOUTE un second essai ; il n'en retire aucun.
+ *
+ * ── LE PIÈGE DU HACHAGE, QUI NE LÈVERAIT AUCUNE ERREUR ──
+ *
+ * `loyalty_members.token_hash` est une empreinte DE MODULE : un SHA-256 NU du
+ * cookie du programme (`hashPlayerToken`). L'empreinte de l'identité globale
+ * est SALÉE ET VERSIONNÉE (`hashPlayerDeviceToken`, `player-device:v1`). Les
+ * substituer ne lèverait rien du tout — la requête ne trouverait simplement
+ * plus personne, partout, sans une ligne de journal. C'est pourquoi l'empreinte
+ * globale n'entre JAMAIS dans un filtre `loyalty_members` : elle sert à
+ * demander au pont legacy QUELLES empreintes de module appartiennent à cet
+ * appareil, et ce sont ces empreintes-là, et elles seules, qui sont filtrées.
+ *
+ * ── LA PORTÉE N'EST PAS ÉLARGIE D'UN POUCE ──
+ *
+ * La RPC de reprise part de `player_devices.token_hash` et ne rend que les
+ * empreintes d'une adhésion du MÊME joueur, sur la MÊME organisation et la MÊME
+ * expérience — ici le programme lui-même. Le `in (…)` conserve en plus le
+ * filtre `program_id`, exactement comme le chemin du cookie. Une empreinte
+ * d'un autre programme, ou d'un autre client, ne peut donc pas entrer.
+ *
+ * ── TOUTE PANNE REND L'ÉTAT D'AVANT ──
+ *
+ * Pas de cookie global, aucune empreinte historique, lecture en panne : on rend
+ * ce que le chemin du cookie avait trouvé, c'est-à-dire rien. Ce repli ne peut
+ * qu'AJOUTER un passeport, jamais en retirer un.
+ */
+async function resoudreIdentitePasseport(
+  admin: ReturnType<typeof createAdminClient>,
+  program: PublicLoyaltyProgram,
+): Promise<IdentitePasseport> {
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(program.id))?.value;
+  const empreinteCookie = token ? hashPlayerToken(token) : null;
+
+  if (empreinteCookie) {
+    const { data } = await admin
+      .from("loyalty_members")
+      .select("id, visit_count, points_balance, points_earned_total")
+      .eq("program_id", program.id)
+      .eq("token_hash", empreinteCookie)
+      .maybeSingle();
+    if (data) {
+      return { tokenHash: empreinteCookie, membre: data, cookiePose: true };
+    }
+  }
+
+  const vide: IdentitePasseport = {
+    tokenHash: empreinteCookie,
+    membre: null,
+    cookiePose: empreinteCookie !== null,
+  };
+
+  // L'empreinte globale se LIT sans jamais poser de cookie : afficher une page
+  // ne doit pas fabriquer d'identité (même règle que `/portefeuille`).
+  const empreinteAppareil = await peekPlayerDeviceTokenHash();
+  if (!empreinteAppareil) return vide;
+
+  const anciennes = await lookupLegacyIdentityHashes({
+    deviceTokenHash: empreinteAppareil,
+    organizationId: program.organization_id,
+    experienceKind: "loyalty",
+    experienceId: program.id,
+  });
+  if (anciennes.length === 0) return vide;
+
+  // UNE requête pour toutes les empreintes, jamais une par empreinte : ce repli
+  // est rare, il ne doit pas coûter N allers-retours le jour où il sert.
+  const { data, error } = await admin
+    .from("loyalty_members")
+    .select("id, token_hash, visit_count, points_balance, points_earned_total")
+    .eq("program_id", program.id)
+    .in("token_hash", anciennes);
+  if (error) return vide;
+
+  const parEmpreinte = new Map<string, MembrePasseport>();
+  for (const ligne of data ?? []) {
+    if (!ligne?.token_hash) continue;
+    const { token_hash: _empreinte, ...membre } = ligne;
+    void _empreinte;
+    parEmpreinte.set(ligne.token_hash, membre);
+  }
+
+  // L'ORDRE DE LA RPC DÉCIDE, pas celui que la base a rendu : `anciennes` est
+  // trié de la plus récemment vue à la plus ancienne. Un client qui a changé
+  // deux fois de cookie retrouve donc son passeport le plus RÉCENT, et non
+  // celui que le planificateur a sorti en premier.
+  for (const ancienne of anciennes) {
+    const membre = parEmpreinte.get(ancienne);
+    if (!membre) continue;
+    // ZÉRO EST LA VALEUR ATTENDUE tant que personne n'a perdu son cookie ; une
+    // population non nulle dit combien de clients auraient été renvoyés à zéro
+    // point sans ce chemin.
+    recordCounter("loyalty.passeport.repli_identite_globale");
+    return { tokenHash: ancienne, membre, cookiePose: vide.cookiePose };
+  }
+  return vide;
+}
+
+/**
+ * Passeport du joueur courant en lecture seule : compteur, niveau (recalculé
+ * depuis les seuils courants), et récompenses gagnées (lots + tours offerts).
+ * L'identité est déjà résolue par `resoudreIdentitePasseport` — aucune identité
+ * → état vide.
  */
 async function loadPassportState(
   admin: ReturnType<typeof createAdminClient>,
   program: PublicLoyaltyProgram,
+  identite: IdentitePasseport,
 ): Promise<LoyaltyPassportState> {
   const empty: LoyaltyPassportState = {
     hasPassport: false,
@@ -196,21 +362,12 @@ async function loadPassportState(
     rewards: [],
   };
 
-  const store = await cookies();
-  const token = store.get(loyaltyTokenCookieName(program.id))?.value;
-  if (!token) return empty;
-
-  const { data: member } = await admin
-    .from("loyalty_members")
-    .select("id, visit_count, points_balance, points_earned_total")
-    .eq("program_id", program.id)
-    .eq("token_hash", hashPlayerToken(token))
-    .maybeSingle();
-  // Cookie présent mais aucun passeport en base (mode staff avant la première
-  // validation) : l'identité existe déjà (le QR de check-in peut être affiché)
-  // mais le compteur reste à zéro.
+  const member = identite.membre;
+  // Cookie présent mais aucun passeport en base, et aucun rattrapage possible
+  // (mode staff avant la première validation) : l'identité existe déjà — le QR
+  // de check-in peut être affiché — mais le compteur reste à zéro.
   if (!member) {
-    return { ...empty, hasPassport: true };
+    return identite.cookiePose ? { ...empty, hasPassport: true } : empty;
   }
 
   const { data: rewardRows } = await admin
@@ -282,6 +439,20 @@ async function loadLinkedJackpotState(
   admin: ReturnType<typeof createAdminClient>,
   program: PublicLoyaltyProgram,
   organization: PublicLoyaltyOrganization,
+  /**
+   * L'empreinte DE FIDÉLITÉ retenue par `resoudreIdentitePasseport`, et non le
+   * cookie relu une seconde fois.
+   *
+   * CE N'EST PAS LA BASCULE DU JACKPOT, et la distinction est nette : le module
+   * Jackpot garde son cookie, ses actions et son identité — rien ici ne le
+   * touche. Ce bloc-ci lit le pot RELIÉ AU PASSEPORT, dont
+   * `jackpot_participants.player_token_hash` porte l'empreinte du cookie de
+   * FIDÉLITÉ (c'est le passeport qui inscrit au pot relié). Il doit donc suivre
+   * l'identité que le passeport vient de retenir : lui laisser relire le cookie
+   * afficherait « pas encore inscrit » à un client dont on affiche par ailleurs
+   * les quatre cents points rattrapés.
+   */
+  tokenHash: string | null,
 ): Promise<LoyaltyLinkedJackpotState | null> {
   if (!program.jackpot_campaign_id || !organization.addon_jackpot) return null;
 
@@ -298,16 +469,14 @@ async function loadLinkedJackpotState(
 
   if (!campaign) return null;
 
-  const store = await cookies();
-  const token = store.get(loyaltyTokenCookieName(program.id))?.value;
   let hasJoined = false;
-  if (token) {
+  if (tokenHash) {
     const { data: participant } = await admin
       .from("jackpot_participants")
       .select("id")
       .eq("campaign_id", campaign.id)
       .eq("organization_id", program.organization_id)
-      .eq("player_token_hash", hashPlayerToken(token))
+      .eq("player_token_hash", tokenHash)
       .limit(1)
       .maybeSingle();
     hasJoined = Boolean(participant);
@@ -741,9 +910,16 @@ export async function loadLoyaltyContext(
   const milestones = ((milestoneRows as LoyaltyMilestone[] | null) ?? []).map(
     toMilestoneView,
   );
+  // L'IDENTITÉ SE RÉSOUT AVANT LE RESTE, et c'est ce qui la sort du bloc
+  // parallèle : le passeport ET le pot commun relié en dépendent tous les deux,
+  // et deux résolutions concurrentes pourraient retenir deux empreintes
+  // différentes pour le même visiteur. Le coût est d'un aller-retour ajouté au
+  // pire cas — la chaîne du passeport (membre → récompenses → libellés) en
+  // comptait déjà trois en série, ce n'est pas elle qui s'allonge.
+  const identite = await resoudreIdentitePasseport(admin, program);
   const [passport, jackpot, commerce] = await Promise.all([
-    loadPassportState(admin, program),
-    loadLinkedJackpotState(admin, program, organization),
+    loadPassportState(admin, program, identite),
+    loadLinkedJackpotState(admin, program, organization, identite.tokenHash),
     // EN PARALLÈLE des deux autres : le pied de carte n'a besoin de rien de ce
     // qu'elles rendent, et le mettre en série aurait ajouté ses deux à trois
     // allers-retours au temps d'affichage du solde — la seule chose que le
