@@ -48,22 +48,49 @@ export function QrCodeCard({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [style, setStyle] = useState<QrStyle>(initialStyle);
   const [designing, setDesigning] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [rewardCount, setRewardCount] = useState<number | null>(null);
+  const [rewardStatus, setRewardStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
-  async function loadRewardCount() {
-    if (rewardCount !== null) return;
+  // Les résultats sont un repère de suivi, pas une action cachée : chaque
+  // carte les charge à son montage. La route compte un journal serveur après
+  // ses gardes organisation/ressource ; aucun événement brut ne descend ici.
+  useEffect(() => {
+    let cancelled = false;
     const params = new URLSearchParams({ kind: "campaign", id });
-    try {
-      const response = await fetch(`/api/dashboard/qr-distribution?${params}`, {
+    setRewardCount(null);
+    setRewardStatus("loading");
+    void fetch(`/api/dashboard/qr-distribution?${params}`, {
         cache: "no-store",
+      })
+      .then(async (response) => {
+        if (!response.ok) {
+          if (!cancelled) setRewardStatus("unavailable");
+          return;
+        }
+        const data: unknown = await response.json();
+        if (
+          !cancelled &&
+          typeof data === "object" &&
+          data !== null &&
+          "rewardCount" in data &&
+          typeof data.rewardCount === "number"
+        ) {
+          setRewardCount(data.rewardCount);
+          setRewardStatus("ready");
+        } else if (!cancelled) {
+          setRewardStatus("unavailable");
+        }
+      })
+      .catch(() => {
+        // Indicateur secondaire : l'outil QR reste utilisable si sa lecture tombe.
+        if (!cancelled) setRewardStatus("unavailable");
       });
-      if (!response.ok) return;
-      const data = await response.json() as { rewardCount: number };
-      setRewardCount(data.rewardCount);
-    } catch {
-      // Indicateur secondaire : l'outil QR reste utilisable si sa lecture tombe.
-    }
-  }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   // Vignette redessinée quand le style change (enregistré via le studio).
   useEffect(() => {
@@ -83,67 +110,93 @@ export function QrCodeCard({
     a.click();
   }
 
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Presse-papiers indisponible : l'URL reste sélectionnable manuellement.
+    }
+  }
+
   return (
     <Card>
-      <div className="flex gap-4">
-        <canvas
-          ref={canvasRef}
-          className="h-auto w-28 shrink-0 self-start rounded-lg border-2 border-k-ink/15"
-          aria-label={`QR code ${label || slug}`}
-        />
-        <div className="flex min-w-0 flex-col">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex shrink-0 flex-col items-center gap-2">
+          <canvas
+            ref={canvasRef}
+            className="h-auto w-40 max-w-full rounded-lg border-2 border-k-ink/15"
+            aria-label={`QR code ${label || slug}`}
+          />
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="k-btn-sm w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
+          >
+            Télécharger le QR (PNG)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDesigning(true)}
+            className="k-btn-sm w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-sm font-bold text-k-ink hover:bg-k-yellow/30"
+          >
+            Personnaliser le QR
+          </button>
+          {posterHref && (
+            <a
+              href={posterHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="k-btn-sm w-full rounded-xl border-2 border-k-ink bg-white px-4 py-2.5 text-center text-sm font-bold text-k-ink hover:bg-k-yellow/30"
+            >
+              {posterConfigured ? "Éditer l'affiche" : "Créer l'affiche"}
+            </a>
+          )}
+        </div>
+        <div className="min-w-0 flex-1 space-y-2">
           <p className="truncate font-black text-k-ink">{label || "Sans libellé"}</p>
           <p className="truncate text-xs font-bold text-k-body">{campaignName}</p>
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 truncate text-xs font-bold text-k-orange-text hover:underline"
-          >
+          <code className="block rounded-lg bg-zinc-100 px-3 py-2 text-sm text-k-ink break-all">
             {url}
-          </a>
+          </code>
           {/* « scans » était un mensonge poli : le beacon compte chaque
               CHARGEMENT de la page, donc aussi un rechargement, un retour
               arrière ou un lien partagé. La colonne reste `scan_count` (elle
               est livrée), le mot affiché non — un commerçant qui lit « 40
               scans » croit à 40 personnes devant sa vitrine. */}
-          <p
-            className="mt-1 text-xs font-bold text-zinc-500"
-            title="Chaque chargement de la page compte, y compris un rechargement ou un lien partagé : ce n'est pas un nombre de visiteurs distincts."
-          >
-            {scanCount} ouverture{scanCount > 1 ? "s" : ""}
-          </p>
-          {rewardCount !== null ? (
-            <p className="text-xs font-bold text-zinc-500">
-              {rewardCount} gain{rewardCount > 1 ? "s" : ""} attribué{rewardCount > 1 ? "s" : ""}
+          <section aria-label="Résultats du QR" className="rounded-lg bg-k-yellow/20 px-3 py-2">
+            <p className="text-xs font-black text-k-ink">Résultats</p>
+            <p
+              className="text-sm font-bold text-k-ink"
+              title="Chaque chargement de la page compte, y compris un rechargement ou un lien partagé : ce n'est pas un nombre de visiteurs distincts."
+            >
+              {scanCount} ouverture{scanCount > 1 ? "s" : ""}
             </p>
-          ) : (
+            <p className="text-sm font-bold text-k-ink">
+              {rewardStatus === "loading"
+                ? "Chargement des gains…"
+                : rewardStatus === "unavailable"
+                  ? "Gains indisponibles"
+                  : `${rewardCount ?? 0} gain${rewardCount === 1 ? "" : "s"} attribué${rewardCount === 1 ? "" : "s"}`}
+            </p>
+          </section>
+          <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
               type="button"
-              onClick={loadRewardCount}
-              className="w-fit text-xs font-bold text-k-orange-text hover:underline"
+              onClick={copyLink}
+              className="text-sm font-bold text-k-orange-text hover:underline"
             >
-              Afficher les gains attribués
+              {copied ? "Copié !" : "Copier le lien"}
             </button>
-          )}
-          <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
-            <button
-              type="button"
-              onClick={() => setDesigning(true)}
-              className="k-btn-sm rounded-full border-2 border-k-ink bg-k-yellow px-3.5 py-1.5 text-sm font-black text-k-ink"
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-bold text-k-orange-text hover:underline"
             >
-              Personnaliser
-            </button>
-            {posterHref && (
-              <a
-                href={posterHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm font-bold text-k-orange-text hover:underline"
-              >
-                {posterConfigured ? "Éditer l'affiche" : "Créer l'affiche"}
-              </a>
-            )}
+              Ouvrir la page →
+            </a>
             {testHref && (
               <a
                 href={testHref}
@@ -154,13 +207,6 @@ export function QrCodeCard({
                 Tester les styles
               </a>
             )}
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="text-sm font-bold text-k-orange-text hover:underline"
-            >
-              Télécharger PNG
-            </button>
             <DeleteQrButton id={id} />
           </div>
         </div>
