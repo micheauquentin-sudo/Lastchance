@@ -22,11 +22,14 @@ import {
   type LoyaltyOrderActionContext,
 } from "@/lib/loyalty-context";
 import {
+  mapLoyaltyIdentityResult,
   mapLoyaltyReferralCode,
   mapLoyaltyReferralResult,
   mapLoyaltySpendResult,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
+  type LoyaltyIdentityResult,
+  type LoyaltyIdentityState,
   type LoyaltyReferralState,
   type LoyaltyStampResult,
 } from "@/lib/loyalty";
@@ -80,6 +83,7 @@ import {
   spendLoyaltyPointsSchema,
   stampLoyaltyOrderSchema,
   stampLoyaltyVisitSchema,
+  setLoyaltyIdentitySchema,
   stampLoyaltyVisitStaffSchema,
   updateLoyaltyMilestoneSchema,
   updateLoyaltyProgramReferralSchema,
@@ -1028,32 +1032,64 @@ export async function getLoyaltyCounterCode(
 export async function stampLoyaltyVisitStaff(input: {
   programId: string;
   checkinToken: string;
-}): Promise<ActionResult<LoyaltyStampResult>> {
+}): Promise<ActionResult<LoyaltyStaffStampResult>> {
   return monitored("loyalty.stampStaff", () => stampStaffInner(input));
 }
 
-/** Le passeport visé existe-t-il DÉJÀ ? (lecture indexée sur (programme, hash)) */
-async function passportExists(
+/**
+ * Ce que la caisse voit d'un client, en plus des compteurs de la RPC : le
+ * surnom et la figure que ce client a donnés à SA carte (FID-8b).
+ *
+ * Ces deux champs ne viennent pas de `record_loyalty_stamp` — elle ne les rend
+ * pas — mais de la lecture d'identité déjà faite juste avant le tampon. Ils ne
+ * coûtent donc aucun aller-retour de plus au geste de comptoir.
+ */
+export interface LoyaltyStaffStampResult extends LoyaltyStampResult {
+  /** `null` tant que le client n'a rien saisi — le cas le PLUS fréquent. */
+  displayName: string | null;
+  /** Chaîne vide quand aucune figure n'a été choisie. */
+  avatar: string;
+}
+
+/**
+ * Le passeport visé, tel qu'il est AVANT ce tampon (lecture indexée sur
+ * (programme, hash)).
+ *
+ * Deux usages en une seule lecture : le classement d'identité
+ * (`connu` : ce tampon crée-t-il un passeport ?) et l'identité choisie par le
+ * client, que la fiche de caisse affiche. Les lire séparément aurait ajouté un
+ * aller-retour à un geste que tout ce module s'applique à garder à un seul.
+ *
+ * Une erreur de lecture rend l'état NEUTRE (inconnu, sans surnom) : la caisse
+ * affiche alors sa fiche habituelle plutôt que rien du tout.
+ */
+async function passportBeforeStamp(
   admin: ReturnType<typeof createAdminClient>,
   programId: string,
   tokenHash: string,
-): Promise<boolean> {
+): Promise<{ known: boolean; displayName: string | null; avatar: string }> {
+  const neutre = { known: false, displayName: null, avatar: "" };
   const { data, error } = await admin
     .from("loyalty_members")
-    .select("id")
+    .select("id, display_name, avatar")
     .eq("program_id", programId)
     .eq("token_hash", tokenHash)
     .maybeSingle();
   if (error) {
     reportError("loyalty.staff-identity", error.message);
-    return false;
+    return neutre;
   }
-  return Boolean(data);
+  if (!data) return neutre;
+  return {
+    known: true,
+    displayName: data.display_name ?? null,
+    avatar: data.avatar ?? "",
+  };
 }
 
 async function stampStaffInner(
   input: Parameters<typeof stampLoyaltyVisitStaff>[0],
-): Promise<ActionResult<LoyaltyStampResult>> {
+): Promise<ActionResult<LoyaltyStaffStampResult>> {
   try {
     const parsed = stampLoyaltyVisitStaffSchema.safeParse(input);
     if (!parsed.success) {
@@ -1106,11 +1142,12 @@ async function stampStaffInner(
     // DÉFAUT en base, et c'est le seul chemin où un compte authentifié peut
     // faire naître un passeport. Sans ce classement, une frappe menée depuis un
     // poste de caisse était indiscernable d'une journée d'ouverture.
-    const knownBefore = await passportExists(
+    const avantTampon = await passportBeforeStamp(
       admin,
       parsed.data.programId,
       checkin.memberTokenHash,
     );
+    const knownBefore = avantTampon.known;
 
     const { data, error } = await admin.rpc("record_loyalty_stamp", {
       p_program_id: parsed.data.programId,
@@ -1184,7 +1221,14 @@ async function stampStaffInner(
       );
     }
 
-    return { ok: true, data: result };
+    return {
+      ok: true,
+      data: {
+        ...result,
+        displayName: avantTampon.displayName,
+        avatar: avantTampon.avatar,
+      },
+    };
   } catch (err) {
     reportError("loyalty.stampStaff", err);
     return { ok: false, error: GENERIC_ERROR };
@@ -2789,5 +2833,137 @@ export async function invitationPasseport(input: {
   } catch (err) {
     reportError("loyalty.invitation", err);
     return null;
+  }
+}
+
+
+// ────────────────────────────────────────────────────────────
+// Le client nomme sa carte (FID-8b)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Enregistre le SURNOM et la FIGURE que le client donne à sa propre carte.
+ *
+ * ── PAR QUEL CHEMIN, ET POURQUOI CELUI-LÀ ──
+ *
+ * `set_loyalty_member_identity` est `security definer` et n'est accordée qu'à
+ * `service_role` (migration 20261120120000, garde 5e). Elle passe donc par
+ * `createAdminClient`, comme `spend_loyalty_points`, et pour la même raison :
+ * le porteur est ANONYME — il n'a pas de session Supabase, seulement un cookie
+ * `httpOnly` dont le hash désigne sa ligne. Un droit `update` direct aurait dû
+ * être donné à `anon`, ce qui aurait ouvert la colonne à tout le monde en même
+ * temps qu'à son propriétaire.
+ *
+ * L'identité vient donc du COOKIE, jamais d'un identifiant fourni par
+ * l'appelant : le client ne prouve rien d'autre que la possession de son propre
+ * jeton, exactement comme à l'échange de points.
+ *
+ * ── LES DEUX CHAMPS PARTENT ENSEMBLE ──
+ *
+ * La RPC AFFECTE, elle ne fusionne pas : `p_display_name => null` EFFACE. C'est
+ * l'écran qui envoie son état complet, et une chaîne vide est un effacement
+ * volontaire — pas une saisie manquante. L'écriture est de ce fait idempotente
+ * par nature, et n'a besoin d'aucun `request_id`.
+ *
+ * ── LE REFUS QUI NE DIT RIEN ──
+ *
+ * `not_a_member` couvre indistinctement trois causes (programme inconnu, module
+ * coupé, jeton inconnu) pour ne pas servir d'oracle d'existence. On ne cherche
+ * donc PAS à les distinguer à l'affichage : une seule phrase, qui ne parle que
+ * de la carte du porteur.
+ */
+export async function enregistrerIdentitePasseport(input: {
+  programId: string;
+  displayName: string;
+  avatar: string;
+}): Promise<ActionResult<LoyaltyIdentityResult>> {
+  const parsed = setLoyaltyIdentitySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  // Sans cookie il n'y a aucune carte à nommer : on sort avant toute requête,
+  // tout compteur et toute instrumentation (miroir de `spendLoyaltyPoints`).
+  const store = await cookies();
+  const token = store.get(loyaltyTokenCookieName(parsed.data.programId))?.value;
+  if (!token) {
+    return {
+      ok: false,
+      error: "Votre carte n'est pas encore ouverte : validez une visite d'abord.",
+    };
+  }
+  const tokenHash = hashPlayerToken(token);
+
+  // PREMIER REMPART — clé d'IDENTITÉ (`failClosed` légitime) : la saturer ne
+  // coupe que son porteur. Même calibrage que l'échange de points, parce que
+  // c'est le même genre de geste : une écriture, rare, décidée par le client.
+  if (
+    !(await rateLimit(
+      rateLimitBucket("loyalty:identity:member", parsed.data.programId, tokenHash),
+      RATE_LIMITS.loyaltyStampMember,
+      { failClosed: true },
+    ))
+  ) {
+    return { ok: false, error: "Trop de tentatives. Patientez un instant." };
+  }
+
+  return monitored("loyalty.setIdentity", () =>
+    identiteInner(parsed.data, tokenHash),
+  );
+}
+
+async function identiteInner(
+  parsed: { programId: string; displayName: string; avatar: string },
+  tokenHash: string,
+): Promise<ActionResult<LoyaltyIdentityResult>> {
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("set_loyalty_member_identity", {
+      p_program_id: parsed.programId,
+      p_member_token_hash: tokenHash,
+      // Vide = EFFACEMENT explicite. `format_player_alias` côté base ramène de
+      // toute façon le blanc à la chaîne vide, puis à `null`.
+      p_display_name: parsed.displayName,
+      p_avatar: parsed.avatar,
+    });
+    if (error) {
+      reportError("loyalty.setIdentity", error.message);
+      return { ok: false, error: GENERIC_ERROR };
+    }
+
+    const identity = mapLoyaltyIdentityResult(data);
+    if (identity.state !== "saved") {
+      return { ok: false, error: phraseRefusIdentite(identity.state) };
+    }
+    // On rend ce que la BASE a relu, pas ce qui a été envoyé : l'écran affiche
+    // alors la forme réellement gravée (espaces repliés, blanc devenu `null`).
+    return { ok: true, data: identity };
+  } catch (err) {
+    reportError("loyalty.setIdentity", err);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Les refus de `set_loyalty_member_identity`, dits au client.
+ *
+ * Les deux refus de CONTENU nomment le champ fautif — c'est actionnable, le
+ * client corrige et renvoie. `not_a_member` reste volontairement muet sur la
+ * cause : la distinction que la base refuse de faire ne doit pas réapparaître
+ * ici, sous forme de trois phrases différentes.
+ *
+ * Les deux premiers ne devraient pas arriver : `setLoyaltyIdentitySchema`
+ * applique déjà les mêmes bornes. Ils restent traités parce qu'un écart entre
+ * le zod et le SQL est exactement ce qui finit par arriver, et qu'un refus
+ * silencieux serait alors indistinguable d'un enregistrement réussi.
+ */
+function phraseRefusIdentite(state: LoyaltyIdentityState): string {
+  switch (state) {
+    case "rejected_name":
+      return "Ce surnom n'est pas accepté. Essayez-en un autre.";
+    case "rejected_avatar":
+      return "Cette figure n'existe pas. Choisissez-en une autre.";
+    default:
+      return "Votre carte n'est pas encore ouverte : validez une visite d'abord.";
   }
 }

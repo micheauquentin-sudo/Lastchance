@@ -805,6 +805,9 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
       pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
+      // FID-8b : une carte sans surnom est l'état NORMAL, pas un manque.
+      displayName: null,
+      avatar: "",
     });
     expect(db.tablesQueried()).toContain("loyalty_programs");
     expect(db.tablesQueried()).toContain("loyalty_milestones");
@@ -885,6 +888,9 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
       pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
+      // FID-8b : une carte sans surnom est l'état NORMAL, pas un manque.
+      displayName: null,
+      avatar: "",
     });
     expect(JSON.stringify(ctx)).not.toContain(CODE_DU_VOISIN);
   });
@@ -907,6 +913,9 @@ describe("loadLoyaltyContext — passeport du joueur courant", () => {
       pointsEarnedTotal: 0,
       tier: "bronze",
       rewards: [],
+      // FID-8b : une carte sans surnom est l'état NORMAL, pas un manque.
+      displayName: null,
+      avatar: "",
     });
     // Aucune récompense à chercher pour un membre qui n'existe pas.
     expect(db.tablesQueried()).not.toContain("loyalty_rewards");

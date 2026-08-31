@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { isAvatarId } from "@/lib/avatars";
+import {
+  formatPlayerAlias,
+  isAllowedPlayerAlias,
+} from "@/lib/player-alias";
 import {
   caseACochee,
   entierRequis,
@@ -440,6 +445,63 @@ export const loyaltyReferralCodeSchema = z
   .trim()
   .toUpperCase()
   .regex(/^PASS-[A-HJ-NP-Z2-9]{8}$/, "Code de parrainage invalide");
+
+/**
+ * LE CLIENT NOMME SA CARTE (FID-8b) — surnom, 1..24, ou VIDE.
+ *
+ * Le vide n'est pas un refus : c'est l'EFFACEMENT, et c'est aussi l'état de
+ * départ de toute carte. Le passeport reste utilisable sans surnom, l'écran ne
+ * réclame rien — refuser une chaîne vide ici transformerait une personnalisation
+ * facultative en formulaire obligatoire.
+ *
+ * La borne est 24 et le filtre est `isAllowedPlayerAlias` : exactement ceux des
+ * pseudos de concours et d'événements, et exactement ceux que la base rejoue en
+ * SQL (`format_player_alias` + `player_alias_is_allowed`, migration
+ * 20261120120000). `nicknameSchema` de validations/pronostics.ts borne à 30 —
+ * c'est l'intrus du dépôt, pas la référence : s'aligner dessus ferait accepter
+ * ici des surnoms que le CHECK SQL rejetterait en 23514.
+ *
+ * Le `transform` précède la borne, comme dans validations/events.ts : la
+ * longueur se mesure sur la forme NORMALISÉE, celle qui sera gravée, jamais sur
+ * la saisie brute.
+ */
+const passportDisplayNameSchema = z
+  .string()
+  .transform(formatPlayerAlias)
+  .pipe(
+    z
+      .string()
+      .max(24, "Surnom trop long (24 caractères max)")
+      .refine((value) => value === "" || isAllowedPlayerAlias(value), {
+        message: "Choisissez un autre surnom",
+      }),
+  )
+  .default("");
+
+/**
+ * Figure du catalogue applicatif (`src/lib/avatars.tsx`), vide accepté.
+ *
+ * C'EST LA SEULE GARDE D'APPARTENANCE. La base ne valide que la FORME de la clé
+ * (`^[a-z]{1,20}$`) et son commentaire de colonne dit pourquoi : graver le
+ * catalogue en SQL invaliderait des lignes déjà écrites au premier retrait de
+ * figure. Sans ce `refine`, `avatar = 'licorne'` s'écrirait sans broncher et
+ * s'afficherait en renard.
+ */
+const passportAvatarSchema = z
+  .string()
+  .trim()
+  .max(20)
+  .refine((value) => value === "" || isAvatarId(value), {
+    message: "Figure inconnue",
+  })
+  .default("");
+
+/** Le client enregistre le surnom et la figure de SA carte. */
+export const setLoyaltyIdentitySchema = z.object({
+  programId: loyaltyProgramIdSchema,
+  displayName: passportDisplayNameSchema,
+  avatar: passportAvatarSchema,
+});
 
 /** Le parrain demande (ou crée) son code depuis son passeport. */
 export const loyaltyReferralCodeRequestSchema = z.object({

@@ -43,6 +43,7 @@ import type {
   LoyaltyValidationMode,
 } from "@/types/database";
 import { LoyaltySpinExperience } from "./loyalty-spin-experience";
+import { IdentitePasseport } from "@/components/loyalty/identite-passeport";
 import { PasseportPiedCommerce } from "./passeport-pied-commerce";
 import {
   LOYALTY_TIERS,
@@ -439,6 +440,33 @@ export function LoyaltyPassport({
              on n'appelle pas le serveur pour rien. ── */}
       {referralEnabled && (codeParrainInvite || parrainageEnAttente) && (
         <BlocFilleul programId={programId} codeInvite={codeParrainInvite} />
+      )}
+
+      {/* ── MA CARTE — surnom et figure choisis par le client (FID-8b).
+             POURQUOI ICI, entre l'en-tête et le solde. L'en-tête au-dessus
+             porte le COMMERCE (logo, enseigne, programme) ; ce bloc porte le
+             CLIENT. Les deux identités se lisent alors dans l'ordre où on les
+             lit sur une vraie carte de fidélité — la maison, puis le porteur —
+             et le surnom se retrouve juste au-dessus du solde, c'est-à-dire
+             exactement là où la caisse le voit sur sa propre fiche.
+
+             Replié il coûte une ligne, ce qui était la condition pour ne pas
+             repousser « Mes points » : le client vient chercher son solde, pas
+             un profil. Les autres emplacements envisagés le montraient moins
+             bien ou pas toujours — « Ma carte à présenter » n'existe qu'en mode
+             staff, et le pied de carte est déjà le territoire du commerce.
+
+             MONTÉ SUR UNE CARTE RÉELLE SEULEMENT. `hasPassport` passe à vrai
+             dès qu'un cookie est posé, avant même la première visite validée ;
+             il n'y a alors AUCUNE ligne membre, et `set_loyalty_member_identity`
+             rendrait `not_a_member`. `visitCount > 0` est la marque d'un membre
+             réel : une ligne naît d'un tampon, jamais d'une page ouverte. ── */}
+      {passport.hasPassport && visitCount > 0 && (
+        <IdentitePasseport
+          programId={programId}
+          displayName={passport.displayName}
+          avatar={passport.avatar}
+        />
       )}
 
       {/* ── Le solde, en tête : c'est ce que le client vient voir ── */}
