@@ -177,12 +177,13 @@ function firstRow<T>(data: unknown): T | null {
 const FENETRE_TRACE_MS = 60_000;
 
 /**
- * Dernière trace émise par cause, `${reason}.${experienceKind}`.
+ * Dernière trace émise par cause, `${famille}.${reason}.${experienceKind}`.
  *
- * Cardinalité BORNÉE par construction : deux motifs × onze étiquettes de famille
- * (les dix du vocabulaire fermé, plus `unvalidated`). Aucune saisie n'entre
- * dans cette clé — c'est la même propriété que celle du nom de compteur, et
- * elle est ce qui autorise à garder l'état en mémoire sans le borner à la main.
+ * Cardinalité BORNÉE par construction : deux familles × deux motifs × onze
+ * étiquettes de famille (les dix du vocabulaire fermé, plus `unvalidated`).
+ * Aucune saisie n'entre dans cette clé — c'est la même propriété que celle du
+ * nom de compteur, et elle est ce qui autorise à garder l'état en mémoire sans
+ * le borner à la main.
  */
 const dernieresTraces = new Map<string, number>();
 
@@ -251,21 +252,32 @@ function traceIdentityFailure(params: {
   error: unknown;
   reason: "invalid_input" | "unavailable";
   experienceKind: string;
+  /**
+   * Quel GESTE a échoué. `bridge` = poser le pont (défaut, les quatre sorties
+   * historiques) ; `lookup` = retrouver l'ancienne empreinte après rotation.
+   * Deux compteurs distincts parce que ce sont deux santés distinctes : un pont
+   * qui ne se pose plus perd des lots à venir, une reprise qui ne répond plus
+   * cache des lignes DÉJÀ écrites. Les confondre sous un seul nom ferait
+   * ressembler l'un à l'autre sur le tableau de bord.
+   */
+  famille?: "bridge" | "lookup";
 }): void {
   try {
     // L'étouffement est PAR CAUSE et non global : une panne de la famille
     // `campaign` ne doit pas masquer une seconde panne, d'une autre famille ou
     // d'un autre motif, qui commencerait pendant la même minute.
+    const famille = params.famille ?? "bridge";
     const cause = `${params.reason}.${params.experienceKind}`;
     const maintenant = Date.now();
-    const precedente = dernieresTraces.get(cause);
+    const cle = `${famille}.${cause}`;
+    const precedente = dernieresTraces.get(cle);
     if (precedente !== undefined && maintenant - precedente < FENETRE_TRACE_MS) {
       return;
     }
-    dernieresTraces.set(cause, maintenant);
+    dernieresTraces.set(cle, maintenant);
 
     reportError(params.scope, params.error);
-    recordCounter(`player-identity.bridge-failed.${cause}`);
+    recordCounter(`player-identity.${famille}-failed.${cause}`);
   } catch {
     // Observabilité indisponible : on perd la mesure, jamais le parcours.
   }
@@ -398,6 +410,141 @@ export async function ensureProgressivePlayerIdentity(
       experienceKind: parsed.data.experienceKind,
     });
     return { ok: false, reason: "unavailable" };
+  }
+}
+
+export interface LegacyIdentityLookupInput {
+  /** Empreinte COURANTE du cookie `lc-player` (`hashPlayerDeviceToken`). */
+  deviceTokenHash: string;
+  organizationId: string;
+  experienceKind: PlayerExperienceKind;
+  experienceId: string;
+}
+
+const legacyLookupSchema = z.object({
+  deviceTokenHash: z.string().regex(PLAYER_IDENTITY_HASH_PATTERN),
+  organizationId: z.uuid(),
+  experienceKind: z.enum(PLAYER_EXPERIENCE_KINDS),
+  experienceId: z.uuid(),
+});
+
+interface LookupIdentityRow {
+  player_id: string;
+  experience_membership_id: string;
+  /**
+   * NULLABLE malgré le type généré, qui l'annonce `string` : la RPC l'obtient
+   * d'un `left join lateral` sur `player_legacy_identities`, et le générateur
+   * n'exprime pas la nullabilité des colonnes d'un `returns table` — même cas
+   * que `cancelled_cause` dans `player-wallet.ts`. Une adhésion sans aucune
+   * empreinte historique est le cas NORMAL d'un joueur qui n'a jamais tourné.
+   */
+  legacy_identity_hash: string | null;
+}
+
+/**
+ * L'ANCIENNE empreinte de ce joueur sur cette expérience, à partir de la
+ * COURANTE. Le chemin de reprise après rotation du cookie `lc-player`.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Au-delà de 90 jours, `resolve_player_identity` rend `should_rotate` et le
+ * cookie change : `hashPlayerDeviceToken` produit alors une empreinte NEUVE,
+ * tandis que les lignes déjà écrites portent l'ANCIENNE. Une lecture par
+ * empreinte ne les trouve plus — le client ne retrouve pas sa prise. Le nouvel
+ * appareil reste pourtant rattaché au MÊME `players.id` (c'est
+ * `rotate_player_device` qui l'y attache), et l'ancienne empreinte est
+ * conservée dans `player_legacy_identities`. Tout est là ; il ne manquait que
+ * l'appel — `lookup_player_identity` n'avait aucun appelant dans le dépôt.
+ *
+ * ── SECOND ESSAI, JAMAIS PREMIER ──
+ *
+ * L'appelant lit d'abord par l'empreinte courante et n'arrive ici que s'il n'a
+ * RIEN trouvé. Interroger systématiquement paierait un aller-retour de plus à
+ * chaque page pour un cas rare, et n'apprendrait rien de neuf le reste du
+ * temps.
+ *
+ * ── CE QU'ELLE NE FAIT PAS ──
+ *
+ * Elle n'écrit rien (la RPC est `stable`), ne fait de `lc-player` l'autorité de
+ * rien, et n'élargit aucune portée : la RPC part de `player_devices.token_hash`
+ * et ne rend que l'empreinte d'une adhésion du MÊME joueur, sur la MÊME
+ * organisation et la MÊME expérience. L'empreinte d'un autre joueur n'est donc
+ * pas atteignable — c'est cette borne-là qu'il ne faut jamais desserrer.
+ *
+ * ── UNE SEULE ANCIENNE EMPREINTE ──
+ *
+ * La RPC rend la PLUS RÉCENTE (`order by last_seen_at desc … limit 1`). Un
+ * joueur ayant tourné deux fois en a plusieurs, et seule l'avant-dernière est
+ * rendue. C'est assez pour Réserver, dont les prises vivent quelques heures et
+ * ne survivent pas aux 90 jours qui séparent deux rotations ; ce ne le serait
+ * pas pour une progression longue. Élargir demanderait une migration.
+ *
+ * ── `null` NE CASSE RIEN ──
+ *
+ * Aucune ligne, empreinte illisible, RPC en panne : on rend `null`, et
+ * l'appelant affiche ce qu'il aurait affiché sans ce chemin. Best-effort comme
+ * tout ce module — une panne de la reprise ne doit pas vider une page qui
+ * s'affichait déjà, ni la faire échouer.
+ *
+ * L'empreinte rendue est ÉCARTÉE si elle égale celle qu'on a fournie : une
+ * reprise vers soi-même ne rapporte rien et paierait une seconde lecture pour
+ * le même résultat. Le cas est réel côté Réserver, où l'empreinte du cookie EST
+ * l'empreinte historique — le joueur qui reprend une part après sa rotation
+ * réinscrit la nouvelle dans `player_legacy_identities`, qui devient alors la
+ * plus récente.
+ */
+export async function lookupLegacyIdentityHash(
+  input: LegacyIdentityLookupInput,
+): Promise<string | null> {
+  const parsed = legacyLookupSchema.safeParse(input);
+  if (!parsed.success) {
+    // Le CHAMP fautif, jamais sa valeur : l'empreinte est l'un des champs
+    // validés ici, et un message qui la citerait la déposerait dans Sentry.
+    traceIdentityFailure({
+      scope: "player-identity.lookup-input",
+      error: `champ invalide : ${parsed.error.issues[0]?.path.join(".") ?? "inconnu"}`,
+      reason: "invalid_input",
+      experienceKind: "unvalidated",
+      famille: "lookup",
+    });
+    return null;
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("lookup_player_identity", {
+      p_device_token_hash: parsed.data.deviceTokenHash,
+      p_organization_id: parsed.data.organizationId,
+      p_experience_kind: parsed.data.experienceKind,
+      p_experience_id: parsed.data.experienceId,
+    });
+    if (error) {
+      traceIdentityFailure({
+        scope: "player-identity.lookup",
+        error: error.message,
+        reason: "unavailable",
+        experienceKind: parsed.data.experienceKind,
+        famille: "lookup",
+      });
+      return null;
+    }
+
+    // AUCUNE LIGNE N'EST PAS UNE PANNE : c'est la réponse d'un appareil qui n'a
+    // jamais rien fait sur cette expérience, c'est-à-dire le cas majoritaire
+    // d'un visiteur. La tracer ferait du silence sain un incident permanent.
+    const ancienne = firstRow<LookupIdentityRow>(data)?.legacy_identity_hash;
+    if (!ancienne || !PLAYER_IDENTITY_HASH_PATTERN.test(ancienne)) return null;
+    if (ancienne === parsed.data.deviceTokenHash) return null;
+    return ancienne;
+  } catch (err) {
+    traceIdentityFailure({
+      scope: "player-identity.lookup-exception",
+      error: err,
+      reason: "unavailable",
+      experienceKind: parsed.data.experienceKind,
+      famille: "lookup",
+    });
+    return null;
   }
 }
 

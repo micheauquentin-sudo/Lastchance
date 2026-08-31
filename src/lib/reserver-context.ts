@@ -6,9 +6,11 @@ import { getUserAndOrg } from "@/lib/auth";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import { recordCounter } from "@/lib/monitoring";
 import {
   generatePlayerDeviceToken,
   hashPlayerDeviceToken,
+  lookupLegacyIdentityHash,
   peekPlayerDeviceTokenHash,
   PLAYER_COOKIE_MAX_AGE,
   PLAYER_COOKIE_NAME,
@@ -2158,7 +2160,92 @@ export async function lireEtatOffreStock(
   // table, qui ne trouverait rien de plus et paierait un aller-retour à chaque
   // identifiant inventé.
   if (error) return mapStockOfferPublicState({ state: "unavailable" });
-  return mapStockOfferPublicState(data);
+  const etat = mapStockOfferPublicState(data);
+
+  // LE SECOND ESSAI, ET SEULEMENT S'IL Y A UN VIDE À COMBLER.
+  //
+  // Trois conditions, toutes nécessaires : ce navigateur a une identité (sans
+  // cookie il n'y a jamais eu de prise), l'offre est servie (sur `unavailable`
+  // il n'y a pas d'offre à laquelle rattacher une adhésion), et la lecture
+  // normale n'a rien rendu. Un joueur qui voit déjà sa prise ne paie donc rien
+  // de ce qui suit — c'est la seule façon de tenir un chemin de reprise sans
+  // doubler le coût du chemin ordinaire.
+  if (!empreinte || etat.state !== "ok" || !etat.offerId || etat.myHold) {
+    return etat;
+  }
+  return repliPriseApresRotation(admin, etat, etat.offerId, empreinte);
+}
+
+/**
+ * Retrouve la prise écrite sous l'ANCIENNE empreinte, après rotation du cookie
+ * `lc-player` (90 jours, `resolve_player_identity`).
+ *
+ * ── POURQUOI CE CHEMIN EXISTE ──
+ *
+ * `reservation_stock_holds.player_key_hash` porte l'empreinte du jour de la
+ * prise. Quand le cookie tourne, l'empreinte change et la prise devient
+ * INVISIBLE pour son propre client — il ne retrouve plus le code qu'il doit
+ * présenter au comptoir. Rien n'est perdu en base : le nouvel appareil est
+ * rattaché au même `players.id` et l'ancienne empreinte est conservée dans
+ * `player_legacy_identities`, parce que `holdStockOffer` pose le pont
+ * d'identité `reserver_stock` à chaque prise. `lookup_player_identity` sait
+ * refaire le lien ; il n'avait aucun appelant.
+ *
+ * ── L'ORGANISATION EST LUE ICI, ET C'EST ASSUMÉ ──
+ *
+ * La RPC de reprise la réclame, et `stock_offer_public_state` ne la rend pas.
+ * Cette lecture par CLÉ PRIMAIRE est le même geste que celui de
+ * `loadStockOfferPublicContext` juste en dessous, faite au même moment logique :
+ * APRÈS que la RPC a accepté de servir l'offre. Elle ne décide de rien —
+ * l'interdit du module porte sur le RESTANT, qui ne se compte que sous verrou
+ * et dont il n'est pas question ici — et elle n'est payée que sur le vide.
+ *
+ * ── L'ÉCHEC NE CASSE RIEN ──
+ *
+ * Pas d'organisation, pas d'ancienne empreinte, seconde lecture en panne ou
+ * toujours vide : on rend l'état de la PREMIÈRE lecture, à l'identique. Une
+ * page sans prise, jamais une erreur.
+ *
+ * Seul `myHold` est repris de la seconde lecture. Le restant, le titre et la
+ * fenêtre restent ceux de la première : c'est la même offre, mais un seul des
+ * deux documents a le droit de décrire l'écran, sans quoi deux photos prises à
+ * deux instants se retrouveraient sur la même carte.
+ */
+async function repliPriseApresRotation(
+  admin: ReturnType<typeof createAdminClient>,
+  etat: StockOfferPublicStateResult,
+  offerId: string,
+  empreinte: string,
+): Promise<StockOfferPublicStateResult> {
+  const { data: offre } = await admin
+    .from("reservation_stock_offers")
+    .select("organization_id")
+    .eq("id", offerId)
+    .maybeSingle();
+  const organizationId = (offre as { organization_id?: string } | null)
+    ?.organization_id;
+  if (!organizationId) return etat;
+
+  const ancienne = await lookupLegacyIdentityHash({
+    deviceTokenHash: empreinte,
+    organizationId,
+    experienceKind: "reserver_stock",
+    experienceId: offerId,
+  });
+  if (!ancienne) return etat;
+
+  const { data, error } = await admin.rpc("stock_offer_public_state", {
+    p_offer_id: offerId,
+    p_player_key_hash: ancienne,
+  });
+  if (error) return etat;
+  const repli = mapStockOfferPublicState(data);
+  if (repli.state !== "ok" || !repli.myHold) return etat;
+
+  // ZÉRO EST LA VALEUR ATTENDUE tant que personne n'a tourné ; une population
+  // non nulle dit combien de clients auraient perdu leur code sans ce chemin.
+  recordCounter("reserver.stock.repli_rotation");
+  return { ...etat, myHold: repli.myHold };
 }
 
 export type ReserverStockOfferPublicContext =

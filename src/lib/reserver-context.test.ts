@@ -58,6 +58,20 @@ const { state, makeAdmin } = vi.hoisted(() => {
     } | null,
     /** Ce que `stock_offers_staff_state` rend au panneau du commerçant. */
     stockOffersStaffState: { state: "ok", offers: [] } as unknown,
+    /** L'offre de stock servie, ou `null` pour un `unavailable`. */
+    offreStock: null as Record<string, unknown> | null,
+    /** Les prises, par empreinte — exactement comme la colonne en base. */
+    prisesParEmpreinte: new Map<string, Record<string, unknown>>(),
+    /**
+     * L'ancienne empreinte que `lookup_player_identity` rend, PAR APPAREIL.
+     * C'est la borne du repli : un appareil absent de cette table n'obtient
+     * l'empreinte de personne.
+     */
+    ancienneParAppareil: new Map<string, string>(),
+    /** Portées passées à `lookupLegacyIdentityHash`, dans l'ordre. */
+    lookups: [] as Array<Record<string, unknown>>,
+    /** Compteurs `ops_metrics` posés. */
+    compteurs: [] as string[],
     selects: [] as Array<{ table: string; colonnes: string }>,
     filtres: [] as Array<Record<string, unknown>>,
     /** Les arguments de chaque RPC, dans l'ordre — parallèle à `rpcs`. */
@@ -145,6 +159,11 @@ const { state, makeAdmin } = vi.hoisted(() => {
         pause_chance_used: false,
       };
       state.empreinte = null;
+      state.offreStock = null;
+      state.prisesParEmpreinte = new Map();
+      state.ancienneParAppareil = new Map();
+      state.lookups = [];
+      state.compteurs = [];
       state.selects = [];
       state.filtres = [];
       state.rpcArgs = [];
@@ -166,6 +185,26 @@ const { state, makeAdmin } = vi.hoisted(() => {
         if (nom === "stock_offers_staff_state") {
           return Promise.resolve({
             data: state.stockOffersStaffState,
+            error: null,
+          });
+        }
+        if (nom === "stock_offer_public_state") {
+          if (!state.offreStock) {
+            return Promise.resolve({
+              data: { state: "unavailable" },
+              error: null,
+            });
+          }
+          // LA RPC NE CONNAÎT QUE L'EMPREINTE QU'ON LUI DONNE — miroir exact du
+          // `where h.player_key_hash = p_player_key_hash` de la migration.
+          const empreinte = args?.p_player_key_hash as string | undefined;
+          return Promise.resolve({
+            data: {
+              ...state.offreStock,
+              my_hold: empreinte
+                ? (state.prisesParEmpreinte.get(empreinte) ?? null)
+                : null,
+            },
             error: null,
           });
         }
@@ -213,6 +252,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
           },
           maybeSingle: () => {
             state.filtres.push(filtres);
+            if (table === "reservation_stock_offers") {
+              return Promise.resolve({ data: state.offreStock, error: null });
+            }
             if (table === "reservation_invitations") {
               return Promise.resolve({ data: state.invitationRow, error: null });
             }
@@ -266,6 +308,10 @@ vi.mock("@/lib/module-acces-public", () => ({
     return Promise.resolve(state.droitReserver);
   },
 }));
+vi.mock("@/lib/monitoring", () => ({
+  recordCounter: (op: string) => state.compteurs.push(op),
+  reportError: vi.fn(),
+}));
 vi.mock("@/lib/player-identity", () => ({
   PLAYER_COOKIE_NAME: "lc-player",
   PLAYER_COOKIE_MAX_AGE: 3600,
@@ -273,6 +319,17 @@ vi.mock("@/lib/player-identity", () => ({
   generatePlayerDeviceToken: () => "t".repeat(43),
   hashPlayerDeviceToken: () => "b".repeat(64),
   peekPlayerDeviceTokenHash: () => Promise.resolve(state.empreinte),
+  /**
+   * Fidèle au contrat de `lookup_player_identity` : l'ancienne empreinte n'est
+   * atteignable QUE par l'appareil qui y est rattaché. Un appareil absent de la
+   * table n'obtient rien — c'est ce qui fait du contrôle négatif un vrai test.
+   */
+  lookupLegacyIdentityHash: (portee: Record<string, unknown>) => {
+    state.lookups.push(portee);
+    return Promise.resolve(
+      state.ancienneParAppareil.get(portee.deviceTokenHash as string) ?? null,
+    );
+  },
 }));
 
 import {
@@ -280,6 +337,7 @@ import {
   generateInvitationToken,
   hashInvitationToken,
   lireEtatFilePublic,
+  lireEtatOffreStock,
   loadReserverInvitationContext,
   loadReserverPublicContext,
   loadReserverQueuePublicContext,
@@ -1362,5 +1420,152 @@ describe("loadStockOffersDashboardContext — la garde d'éditeur", () => {
     // Jamais d'ailleurs que de la session : c'est l'invariant que la garde de
     // rôle vient doubler.
     expect(state.rpcArgs[0]).toEqual({ p_organization_id: ORG.id });
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// `lireEtatOffreStock` — LA ROTATION D'APPAREIL NE PERD PLUS LA PRISE
+//
+// Au-delà de 90 jours, le cookie `lc-player` tourne : l'empreinte change et la
+// prise, écrite sous l'ANCIENNE, devient invisible pour son propre client — il
+// ne retrouve plus le code à présenter au comptoir. Le repli la retrouve par
+// `lookup_player_identity`, qui part de l'appareil COURANT et ne rend que
+// l'empreinte d'une adhésion du MÊME joueur.
+//
+// Trois propriétés, et il faut les trois : on retrouve la prise après rotation,
+// on ne retrouve JAMAIS celle d'un autre, et sans rotation on ne paie rien.
+// ════════════════════════════════════════════════════════════
+
+const OFFRE_STOCK_ID = "55555555-5555-4555-8555-555555555555";
+const EMPREINTE_APRES = "d".repeat(64);
+const EMPREINTE_AVANT = "e".repeat(64);
+const EMPREINTE_AUTRE = "f".repeat(64);
+
+/** La prise telle que `stock_offer_public_state` la grave dans `my_hold`. */
+function prise(code: string): Record<string, unknown> {
+  return {
+    hold_id: "66666666-6666-4666-8666-666666666666",
+    code,
+    status: "held",
+    redeem_not_before: "2026-08-24T08:00:00Z",
+    redeem_expires_at: "2026-08-24T18:00:00Z",
+  };
+}
+
+function armerOffre() {
+  state.offreStock = {
+    state: "ok",
+    offer_id: OFFRE_STOCK_ID,
+    organization_id: ORG_ID,
+    title: "Invendus du soir",
+    description: null,
+    status: "open",
+    window_starts_at: "2026-08-24T08:00:00Z",
+    window_ends_at: "2026-08-24T18:00:00Z",
+    per_player_limit: 1,
+    remaining: 3,
+  };
+}
+
+describe("lireEtatOffreStock — le repli après rotation du cookie", () => {
+  it("retrouve la prise écrite sous l'ANCIENNE empreinte", async () => {
+    armerOffre();
+    // La prise date d'avant la rotation : elle porte l'ancienne empreinte.
+    state.prisesParEmpreinte.set(EMPREINTE_AVANT, prise("RESA-ABCD"));
+    // Le nouvel appareil est rattaché au même joueur — c'est `rotate_player_device`
+    // qui l'y attache, et `player_legacy_identities` qui garde l'ancienne.
+    state.ancienneParAppareil.set(EMPREINTE_APRES, EMPREINTE_AVANT);
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, EMPREINTE_APRES);
+
+    expect(etat.state).toBe("ok");
+    expect(etat.myHold?.code).toBe("RESA-ABCD");
+    // Le repli n'apporte QUE la prise : le restant reste celui de la première
+    // lecture, une seule photo décrivant l'écran.
+    expect(etat.remaining).toBe(3);
+    expect(state.compteurs).toEqual(["reserver.stock.repli_rotation"]);
+    // Portée EXACTE : l'appareil courant, l'offre, son organisation.
+    expect(state.lookups).toEqual([
+      {
+        deviceTokenHash: EMPREINTE_APRES,
+        organizationId: ORG_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_STOCK_ID,
+      },
+    ]);
+  });
+
+  it("ne rend JAMAIS la prise d'un autre joueur", async () => {
+    // LE CONTRÔLE NÉGATIF, sans lequel un repli trop large — qui rendrait la
+    // dernière prise venue — passerait le test précédent sans sourciller.
+    armerOffre();
+    state.prisesParEmpreinte.set(EMPREINTE_AUTRE, prise("RESA-VOLEE"));
+    // Cet appareil-ci n'est rattaché à aucune adhésion : la RPC ne lui rend rien.
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, EMPREINTE_APRES);
+
+    expect(etat.state).toBe("ok");
+    expect(etat.myHold, "la prise d'autrui a fuité").toBeNull();
+    expect(state.compteurs).toEqual([]);
+  });
+
+  it("sans rotation : la prise est servie du PREMIER essai, sans repli", async () => {
+    armerOffre();
+    state.prisesParEmpreinte.set(EMPREINTE_APRES, prise("RESA-WXYZ"));
+    // Une ancienne empreinte EXISTE, et elle ne doit pourtant pas être demandée :
+    // le chemin ordinaire a déjà répondu.
+    state.ancienneParAppareil.set(EMPREINTE_APRES, EMPREINTE_AVANT);
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, EMPREINTE_APRES);
+
+    expect(etat.myHold?.code).toBe("RESA-WXYZ");
+    // AUCUN aller-retour supplémentaire : une seule RPC, aucune lecture de
+    // l'offre, aucune reprise. C'est ce qui fait du repli un SECOND essai et
+    // non un doublement du coût de chaque page.
+    expect(state.rpcs).toEqual(["stock_offer_public_state"]);
+    expect(state.lookups).toEqual([]);
+    expect(
+      state.filtres.some((f) => f.table === "reservation_stock_offers"),
+    ).toBe(false);
+  });
+
+  it("visiteur sans cookie : aucune reprise, la page reste servie", async () => {
+    armerOffre();
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, null);
+
+    expect(etat.state).toBe("ok");
+    expect(etat.myHold).toBeNull();
+    expect(state.rpcs).toEqual(["stock_offer_public_state"]);
+    expect(state.lookups).toEqual([]);
+  });
+
+  it("offre indisponible : rien à reprendre, aucune lecture de plus", async () => {
+    // `unavailable` ne distingue pas l'offre inconnue du brouillon ni du droit
+    // manquant. Aller chercher une adhésion derrière ce mutisme paierait un
+    // aller-retour à chaque UUID inventé — exactement le balayage que la RPC
+    // referme.
+    state.offreStock = null;
+    state.ancienneParAppareil.set(EMPREINTE_APRES, EMPREINTE_AVANT);
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, EMPREINTE_APRES);
+
+    expect(etat.state).toBe("unavailable");
+    expect(state.lookups).toEqual([]);
+  });
+
+  it("repli sans prise à l'arrivée : l'état de la première lecture, intact", async () => {
+    // L'ancienne empreinte existe mais n'a rien réservé ici (adhésion posée par
+    // une prise ailleurs, ou prise déjà annulée). On rend une page VIDE, pas une
+    // erreur : l'échec du repli ne casse rien.
+    armerOffre();
+    state.ancienneParAppareil.set(EMPREINTE_APRES, EMPREINTE_AVANT);
+
+    const etat = await lireEtatOffreStock(OFFRE_STOCK_ID, EMPREINTE_APRES);
+
+    expect(etat.state).toBe("ok");
+    expect(etat.myHold).toBeNull();
+    expect(etat.remaining).toBe(3);
+    expect(state.compteurs).toEqual([]);
   });
 });
