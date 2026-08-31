@@ -28,7 +28,11 @@ const state = vi.hoisted(() => ({
   compteurs: [] as string[],
   /** Alertes Sentry posées, par scope. */
   erreurs: [] as string[],
-  /** Ce que `lookup_player_identity` rend — la reprise après rotation. */
+  /**
+   * Ce que `lookup_player_legacy_identities` rend — la reprise après rotation.
+   * N LIGNES, de la plus récente à la plus ancienne : c'est tout l'objet de la
+   * RPC neuve (ID-3, migration 20261117120000).
+   */
   lookupData: null as unknown,
   lookupError: null as unknown,
   /** Ligne rendue par `from("spins")…maybeSingle()`. */
@@ -64,7 +68,7 @@ function adminMock() {
         const response = state.resolveResponses.shift();
         if (response) return response;
       }
-      if (name === "lookup_player_identity") {
+      if (name === "lookup_player_legacy_identities") {
         return { data: state.lookupData, error: state.lookupError };
       }
       return name === "rotate_player_device"
@@ -102,7 +106,7 @@ import {
   ensureProgressivePlayerIdentity,
   generatePlayerDeviceToken,
   hashPlayerDeviceToken,
-  lookupLegacyIdentityHash,
+  lookupLegacyIdentityHashes,
   PLAYER_COOKIE_NAME,
   PLAYER_DEVICE_TOKEN_PATTERN,
   PLAYER_IDENTITY_HASH_PATTERN,
@@ -608,7 +612,7 @@ describe("bridgeOfferedSpinToCampaign", () => {
 });
 
 // ────────────────────────────────────────────────────────────
-// `lookupLegacyIdentityHash` — la reprise après rotation du cookie
+// `lookupLegacyIdentityHashes` — la reprise après rotation du cookie
 //
 // Au-delà de 90 jours, `resolve_player_identity` fait tourner le cookie
 // `lc-player` : l'empreinte change, et les lignes déjà écrites portent
@@ -617,10 +621,13 @@ describe("bridgeOfferedSpinToCampaign", () => {
 // ────────────────────────────────────────────────────────────
 
 const ANCIENNE_EMPREINTE = "b".repeat(64);
+/** Deux rotations plus tôt, et trois — le cas qu'ID-3 rend atteignable. */
+const PLUS_ANCIENNE = "d".repeat(64);
+const LA_PREMIERE = "e".repeat(64);
 const EMPREINTE_COURANTE = "c".repeat(64);
 const OFFRE_ID = "20000000-0000-4000-8000-000000000004";
 
-describe("lookupLegacyIdentityHash", () => {
+describe("lookupLegacyIdentityHashes", () => {
   it("rend l'ancienne empreinte, sur la portée EXACTE demandée", async () => {
     state.lookupData = [
       {
@@ -630,14 +637,14 @@ describe("lookupLegacyIdentityHash", () => {
       },
     ];
 
-    const ancienne = await lookupLegacyIdentityHash({
+    const anciennes = await lookupLegacyIdentityHashes({
       deviceTokenHash: EMPREINTE_COURANTE,
       organizationId: ORGANIZATION_ID,
       experienceKind: "reserver_stock",
       experienceId: OFFRE_ID,
     });
 
-    expect(ancienne).toBe(ANCIENNE_EMPREINTE);
+    expect(anciennes).toEqual([ANCIENNE_EMPREINTE]);
     // LA PORTÉE EST LA GARDE. La RPC part de `player_devices.token_hash` et ne
     // rend que l'empreinte d'une adhésion du MÊME joueur, sur la MÊME
     // organisation et la MÊME expérience — c'est ce qui empêche de retrouver la
@@ -645,7 +652,7 @@ describe("lookupLegacyIdentityHash", () => {
     // rouvrirait exactement ce trou : on les assert donc un par un.
     expect(state.rpcCalls).toEqual([
       {
-        name: "lookup_player_identity",
+        name: "lookup_player_legacy_identities",
         args: {
           p_device_token_hash: EMPREINTE_COURANTE,
           p_organization_id: ORGANIZATION_ID,
@@ -656,29 +663,96 @@ describe("lookupLegacyIdentityHash", () => {
     ]);
   });
 
-  it("appareil inconnu : aucune ligne, `null`, et AUCUNE trace", async () => {
+  it("rend TOUTES les empreintes, dans l'ordre rendu par la RPC", async () => {
+    // LE CŒUR D'ID-3. L'ancienne `lookup_player_identity` rendait `limit 1` : un
+    // joueur ayant tourné DEUX fois d'appareil voyait toutes ses empreintes sauf
+    // l'avant-dernière devenir inatteignables, et la prise écrite sous la plus
+    // ancienne était perdue pour de bon. Un seul élément ici, et le repli
+    // multi-empreintes de `reserver-context` retomberait au comportement d'hier
+    // sans qu'aucun test ne rougisse.
+    state.lookupData = [
+      { legacy_identity_hash: ANCIENNE_EMPREINTE },
+      { legacy_identity_hash: PLUS_ANCIENNE },
+      { legacy_identity_hash: LA_PREMIERE },
+    ];
+
+    expect(
+      await lookupLegacyIdentityHashes({
+        deviceTokenHash: EMPREINTE_COURANTE,
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+      // L'ORDRE EST UN CONTRAT : `last_seen_at desc` en base, donc la première
+      // rendue ici est exactement celle que rendait l'ancienne RPC.
+    ).toEqual([ANCIENNE_EMPREINTE, PLUS_ANCIENNE, LA_PREMIERE]);
+  });
+
+  it("écarte les valeurs illisibles et les doublons, garde le reste", async () => {
+    // Une seule ligne fautive ne doit pas emporter les autres : le repli qui
+    // consomme cette liste n'a besoin que d'UNE empreinte juste pour retrouver
+    // la prise, et refuser en bloc lui retirerait celles qui vont bien.
+    state.lookupData = [
+      { legacy_identity_hash: "pas-une-empreinte" },
+      { legacy_identity_hash: null },
+      { legacy_identity_hash: PLUS_ANCIENNE },
+      { legacy_identity_hash: PLUS_ANCIENNE },
+    ];
+
+    expect(
+      await lookupLegacyIdentityHashes({
+        deviceTokenHash: EMPREINTE_COURANTE,
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+    ).toEqual([PLUS_ANCIENNE]);
+  });
+
+  it("les deux familles neuves de Réserver sont acceptées par le schéma", async () => {
+    // ROUGE SI le miroir applicatif du `check` SQL perd une famille : le schéma
+    // Zod la refuserait AVANT la requête, et la reprise d'un service ou d'une
+    // file serait morte sans une ligne de journal — `invalid_input`, compté
+    // sous `unvalidated`, donc sans même nommer la famille perdue.
+    state.lookupData = [{ legacy_identity_hash: ANCIENNE_EMPREINTE }];
+    for (const famille of ["reserver_activity", "reserver_queue"] as const) {
+      state.rpcCalls = [];
+      expect(
+        await lookupLegacyIdentityHashes({
+          deviceTokenHash: EMPREINTE_COURANTE,
+          organizationId: ORGANIZATION_ID,
+          experienceKind: famille,
+          experienceId: OFFRE_ID,
+        }),
+      ).toEqual([ANCIENNE_EMPREINTE]);
+      expect(state.rpcCalls[0]?.args.p_experience_kind).toBe(famille);
+    }
+  });
+
+  it("appareil inconnu : aucune ligne, liste VIDE, et AUCUNE trace", async () => {
     // Le contrôle négatif du repli : un appareil qui n'a jamais rien fait sur
     // cette expérience — celui d'un autre joueur, ou d'un visiteur neuf — ne
     // reçoit l'empreinte de personne. Et ce silence est SAIN : le tracer ferait
     // du cas majoritaire un incident permanent.
     state.lookupData = [];
 
-    const ancienne = await lookupLegacyIdentityHash({
+    const anciennes = await lookupLegacyIdentityHashes({
       deviceTokenHash: EMPREINTE_COURANTE,
       organizationId: ORGANIZATION_ID,
       experienceKind: "reserver_stock",
       experienceId: OFFRE_ID,
     });
 
-    expect(ancienne).toBeNull();
+    expect(anciennes).toEqual([]);
     expect(state.compteurs).toEqual([]);
     expect(state.erreurs).toEqual([]);
   });
 
-  it("adhésion sans empreinte historique : `null` malgré la ligne", async () => {
-    // `legacy_identity_hash` vient d'un `left join lateral` : il est NUL pour
-    // une adhésion qui n'a jamais eu d'empreinte, quoi qu'en dise le type
-    // généré. Le passer tel quel à la seconde lecture ferait lever `22023`.
+  it("empreinte nulle sur une ligne : écartée, pas propagée", async () => {
+    // La jointure de la RPC neuve est INTERNE, donc ce cas ne devrait plus
+    // arriver — et c'est justement pourquoi la garde reste : cette valeur repart
+    // en argument d'une RPC qui lève `22023` sur une empreinte mal formée, et
+    // une garde qui repose sur « le générateur l'a dit » ne garde rien.
     state.lookupData = [
       {
         player_id: "10000000-0000-4000-8000-000000000001",
@@ -688,16 +762,16 @@ describe("lookupLegacyIdentityHash", () => {
     ];
 
     expect(
-      await lookupLegacyIdentityHash({
+      await lookupLegacyIdentityHashes({
         deviceTokenHash: EMPREINTE_COURANTE,
         organizationId: ORGANIZATION_ID,
         experienceKind: "reserver_stock",
         experienceId: OFFRE_ID,
       }),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
-  it("empreinte rendue ÉGALE à la courante : `null`, rien à reprendre", async () => {
+  it("empreinte rendue ÉGALE à la courante : écartée, rien à reprendre", async () => {
     // Cas réel côté Réserver, où l'empreinte du cookie EST l'empreinte
     // historique : le joueur qui reprend une part après sa rotation réinscrit la
     // NOUVELLE dans `player_legacy_identities`, qui devient la plus récente. La
@@ -711,26 +785,26 @@ describe("lookupLegacyIdentityHash", () => {
     ];
 
     expect(
-      await lookupLegacyIdentityHash({
+      await lookupLegacyIdentityHashes({
         deviceTokenHash: EMPREINTE_COURANTE,
         organizationId: ORGANIZATION_ID,
         experienceKind: "reserver_stock",
         experienceId: OFFRE_ID,
       }),
-    ).toBeNull();
+    ).toEqual([]);
   });
 
-  it("RPC en panne : `null`, et un compteur DISTINCT de celui des ponts", async () => {
+  it("RPC en panne : liste VIDE, et un compteur DISTINCT de celui des ponts", async () => {
     state.lookupError = { message: "boom" };
 
     expect(
-      await lookupLegacyIdentityHash({
+      await lookupLegacyIdentityHashes({
         deviceTokenHash: EMPREINTE_COURANTE,
         organizationId: ORGANIZATION_ID,
         experienceKind: "reserver_stock",
         experienceId: OFFRE_ID,
       }),
-    ).toBeNull();
+    ).toEqual([]);
     // Deux santés distinctes : un pont qui ne se pose plus perd des lots à
     // VENIR, une reprise qui ne répond plus cache des lignes DÉJÀ écrites.
     expect(state.compteurs).toEqual([
@@ -741,13 +815,13 @@ describe("lookupLegacyIdentityHash", () => {
 
   it("entrée malformée : refus AVANT la moindre requête", async () => {
     expect(
-      await lookupLegacyIdentityHash({
+      await lookupLegacyIdentityHashes({
         deviceTokenHash: "pas-une-empreinte",
         organizationId: ORGANIZATION_ID,
         experienceKind: "reserver_stock",
         experienceId: OFFRE_ID,
       }),
-    ).toBeNull();
+    ).toEqual([]);
 
     expect(state.rpcCalls).toEqual([]);
     expect(state.compteurs).toEqual([

@@ -10,7 +10,7 @@ import { recordCounter } from "@/lib/monitoring";
 import {
   generatePlayerDeviceToken,
   hashPlayerDeviceToken,
-  lookupLegacyIdentityHash,
+  lookupLegacyIdentityHashes,
   peekPlayerDeviceTokenHash,
   PLAYER_COOKIE_MAX_AGE,
   PLAYER_COOKIE_NAME,
@@ -2186,10 +2186,34 @@ export async function lireEtatOffreStock(
  * prise. Quand le cookie tourne, l'empreinte change et la prise devient
  * INVISIBLE pour son propre client — il ne retrouve plus le code qu'il doit
  * présenter au comptoir. Rien n'est perdu en base : le nouvel appareil est
- * rattaché au même `players.id` et l'ancienne empreinte est conservée dans
- * `player_legacy_identities`, parce que `holdStockOffer` pose le pont
- * d'identité `reserver_stock` à chaque prise. `lookup_player_identity` sait
- * refaire le lien ; il n'avait aucun appelant.
+ * rattaché au même `players.id` et les anciennes empreintes sont conservées
+ * dans `player_legacy_identities`, parce que `holdStockOffer` pose le pont
+ * d'identité `reserver_stock` à chaque prise.
+ *
+ * ── PLUSIEURS ROTATIONS, ET UNE SEULE REQUÊTE POUR TOUTES (ID-3) ──
+ *
+ * `lookupLegacyIdentityHashes` rend désormais TOUTES les anciennes empreintes,
+ * de la plus récente à la plus ancienne : un client de trois ans en porte une
+ * douzaine, et la version d'hier n'en interrogeait qu'une — celle de
+ * l'avant-dernier appareil. La prise écrite sous la PLUS ANCIENNE restait
+ * introuvable.
+ *
+ * Les interroger une par une aurait transformé un repli rare en N allers-
+ * retours. On demande donc à la base, EN UNE FOIS, laquelle de ces empreintes
+ * tient réellement quelque chose sur cette offre — un `in (…)` sur une liste
+ * bornée par le nombre de rotations subies — puis on rejoue la RPC avec la
+ * gagnante. Trois allers-retours au total, quel que soit le nombre
+ * d'empreintes, et zéro pour qui n'a jamais tourné.
+ *
+ * ── POURQUOI REJOUER LA RPC PLUTÔT QUE LIRE LA PRISE ──
+ *
+ * La sonde ne rend qu'une EMPREINTE, jamais un `my_hold`. C'est
+ * `stock_offer_public_state` qui décide de la forme de la prise — quelles
+ * bornes sont gravées, quels statuts comptent — et deux compositions auraient
+ * divergé au premier changement de l'une. La sonde choisit QUI, la RPC dit QUOI.
+ * Son critère est d'ailleurs le même que celui de la RPC (`created_at desc,
+ * id desc` sur `held`/`redeemed`) : la prise la plus récente toutes empreintes
+ * confondues est aussi la plus récente de l'empreinte retenue.
  *
  * ── L'ORGANISATION EST LUE ICI, ET C'EST ASSUMÉ ──
  *
@@ -2226,12 +2250,37 @@ async function repliPriseApresRotation(
     ?.organization_id;
   if (!organizationId) return etat;
 
-  const ancienne = await lookupLegacyIdentityHash({
+  const anciennes = await lookupLegacyIdentityHashes({
     deviceTokenHash: empreinte,
     organizationId,
     experienceKind: "reserver_stock",
     experienceId: offerId,
   });
+  if (anciennes.length === 0) return etat;
+
+  // LA SONDE — UNE requête pour toutes les empreintes, jamais une par
+  // empreinte. Les deux prédicats de portée sont posés (l'offre ET son
+  // organisation) : la liste vient d'une adhésion déjà bornée au même
+  // locataire, et on ne se repose pas dessus pour autant.
+  //
+  // Les statuts et l'ordre sont ceux de `stock_offer_public_state` — une sonde
+  // qui choisirait autrement désignerait une empreinte dont la RPC ne rendrait
+  // rien, et le repli échouerait en silence. Une ligne PURGÉE porte
+  // `purge:<id>`, qui n'est pas une empreinte 64-hex : elle ne peut pas entrer
+  // dans le `in (…)` et reste inatteignable, exactement comme dans la RPC.
+  const { data: sonde, error: erreurSonde } = await admin
+    .from("reservation_stock_holds")
+    .select("player_key_hash")
+    .eq("offer_id", offerId)
+    .eq("organization_id", organizationId)
+    .in("player_key_hash", anciennes)
+    .in("status", ["held", "redeemed"])
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1);
+  if (erreurSonde) return etat;
+  const ancienne = (sonde as Array<{ player_key_hash: string }> | null)?.[0]
+    ?.player_key_hash;
   if (!ancienne) return etat;
 
   const { data, error } = await admin.rpc("stock_offer_public_state", {
