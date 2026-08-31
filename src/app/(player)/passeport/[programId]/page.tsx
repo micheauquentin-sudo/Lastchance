@@ -18,6 +18,7 @@ import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { resolveLoyaltyStyle } from "@/lib/loyalty-style";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { InstallerPasseport } from "@/components/loyalty/installer-passeport";
+import { lienGoogleWalletPasseport } from "@/lib/loyalty-wallet";
 
 /**
  * Page publique du passeport de fidélité — DA « Kermesse », même famille
@@ -270,6 +271,16 @@ export default async function LoyaltyPassportPage({
   );
 
   const spinWheels = await loadSpinWheels(ctx);
+  // LA CARTE GOOGLE WALLET — `null` tant que le compte émetteur n'est pas
+  // configuré, et le bouton n'existe alors tout simplement pas. Aucune requête
+  // réseau ici : le lien est un JWT signé localement (lib/google-wallet.ts).
+  const lienWallet = await lienGoogleWalletPasseport({
+    programId: ctx.program.id,
+    programName: ctx.program.name,
+    organizationName: ctx.organization.name,
+    logoUrl: ctx.organization.logo_url,
+    passport: ctx.passport,
+  });
   // HABILLAGE — schéma de LECTURE : un fond retiré du catalogue rend un
   // passeport SANS image, jamais une page en erreur (src/lib/loyalty-style.ts).
   const habillage = resolveLoyaltyStyle(ctx.program.style);
@@ -306,7 +317,10 @@ export default async function LoyaltyPassportPage({
           Le composant s'efface tout seul si le passeport tourne déjà en mode
           installé, ou si le navigateur ne sait pas décrire le geste. */}
       <div className="mx-auto max-w-md px-4">
-        <InstallerPasseport commerce={ctx.organization.name} />
+        <InstallerPasseport
+          commerce={ctx.organization.name}
+          lienWallet={lienWallet}
+        />
       </div>
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">

@@ -87,7 +87,29 @@ const abonnementInstallation = (revalider: () => void) => {
 /** La plateforme ne change jamais en cours de session : rien à réabonner. */
 const abonnementInerte = () => () => {};
 
-export function InstallerPasseport({ commerce }: { commerce: string }) {
+/**
+ * ── ET UN TROISIÈME CHEMIN : GOOGLE WALLET ──
+ *
+ * `lienWallet` est calculé SUR LE SERVEUR (`lib/loyalty-wallet.ts`) : la clé de
+ * compte de service qui signe la carte ne descend jamais ici. Le composant n'en
+ * reçoit qu'une URL déjà signée, ou `null`.
+ *
+ * `null` est le cas par DÉFAUT — tant que le compte émetteur Google n'est pas
+ * configuré, aucun bouton n'apparaît. Pas de bouton grisé, pas de message : une
+ * configuration manquante côté commerçant ne se donne pas à lire au client.
+ *
+ * Ce chemin est INDÉPENDANT des deux autres. Il s'affiche même quand le
+ * passeport tourne déjà depuis l'écran d'accueil : garder la carte sur son
+ * écran d'accueil et l'avoir dans son Wallet ne sont pas deux réponses à la
+ * même question, et un client qui a fait l'un peut vouloir l'autre.
+ */
+export function InstallerPasseport({
+  commerce,
+  lienWallet = null,
+}: {
+  commerce: string;
+  lienWallet?: string | null;
+}) {
   const [invite, setInvite] = useState<BeforeInstallPromptEvent | null>(null);
   const [installeeIci, setInstalleeIci] = useState(false);
 
@@ -128,9 +150,13 @@ export function InstallerPasseport({ commerce }: { commerce: string }) {
 
   const masque = installe || installeeIci;
 
-  // Rien à dire : soit déjà installé, soit un navigateur dont on ne sait pas
-  // décrire le geste. Le silence est la bonne réponse dans les deux cas.
-  if (masque || (!invite && !ios)) return null;
+  // Déjà installé, ou navigateur dont on ne sait pas décrire le geste : le
+  // silence est la bonne réponse dans les deux cas.
+  const montrerInstallation = !masque && (Boolean(invite) || ios);
+  const montrerWallet = Boolean(lienWallet);
+
+  // Plus rien à proposer sur AUCUN des deux chemins : aucun cadre vide.
+  if (!montrerInstallation && !montrerWallet) return null;
 
   return (
     <section
@@ -140,27 +166,50 @@ export function InstallerPasseport({ commerce }: { commerce: string }) {
       <p className="text-sm font-black text-k-ink">
         Gardez votre carte à portée de main
       </p>
-      <p className="mt-1 text-xs font-medium text-k-body">
-        Ajoutez-la à votre écran d&apos;accueil : elle s&apos;ouvrira comme une
-        application, au nom de {commerce}, sans avoir à retrouver le lien.
-      </p>
 
-      {invite ? (
-        <button
-          type="button"
-          onClick={() => void installer()}
-          className="mt-2.5 inline-flex items-center rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-orange/40"
+      {montrerInstallation ? (
+        <>
+          <p className="mt-1 text-xs font-medium text-k-body">
+            Ajoutez-la à votre écran d&apos;accueil : elle s&apos;ouvrira comme
+            une application, au nom de {commerce}, sans avoir à retrouver le
+            lien.
+          </p>
+
+          {invite ? (
+            <button
+              type="button"
+              onClick={() => void installer()}
+              className="mt-2.5 inline-flex items-center rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-orange/40"
+            >
+              Ajouter à l&apos;écran d&apos;accueil
+            </button>
+          ) : (
+            // AUCUN BOUTON ICI, ET C'EST VOLONTAIRE : sur iOS le geste
+            // appartient au système, la page ne peut que le décrire.
+            <p className="mt-2.5 rounded-xl bg-k-bg px-3 py-2 text-xs font-bold text-k-ink">
+              Sur iPhone : touchez « Partager » en bas de l&apos;écran, puis
+              « Sur l&apos;écran d&apos;accueil ».
+            </p>
+          )}
+        </>
+      ) : null}
+
+      {montrerWallet ? (
+        // UN LIEN, PAS UN BOUTON : il quitte le site vers pay.google.com.
+        //
+        // ET UN HABILLAGE QUI N'EST PAS CELUI DU PRODUIT — noir sur blanc, sans
+        // la bordure ni le jaune « Kermesse » du reste de la page. « Ajouter à
+        // Google Wallet » est une marque : son libellé est imposé au mot près
+        // et son bouton ne se repeint pas aux couleurs de l'hôte.
+        <a
+          href={lienWallet ?? undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2.5 inline-flex items-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-black/85"
         >
-          Ajouter à l&apos;écran d&apos;accueil
-        </button>
-      ) : (
-        // AUCUN BOUTON ICI, ET C'EST VOLONTAIRE : sur iOS le geste appartient
-        // au système, la page ne peut que le décrire.
-        <p className="mt-2.5 rounded-xl bg-k-bg px-3 py-2 text-xs font-bold text-k-ink">
-          Sur iPhone : touchez « Partager » en bas de l&apos;écran, puis « Sur
-          l&apos;écran d&apos;accueil ».
-        </p>
-      )}
+          Ajouter à Google Wallet
+        </a>
+      ) : null}
     </section>
   );
 }

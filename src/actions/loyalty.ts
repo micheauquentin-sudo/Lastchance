@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { refusActivationFidelite } from "@/lib/activation/loyalty";
 import { getUserAndOrg } from "@/lib/auth";
 import { hrefEtapeFidelite } from "@/components/dashboard/atelier-loyalty-etapes";
+import { loyaltyTierMeta } from "@/components/loyalty/loyalty-passport-state";
+import { pushGoogleWalletLoyaltyBalance } from "@/lib/google-wallet";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import {
   COMPTAGE_INDISPONIBLE,
@@ -1154,6 +1156,32 @@ async function stampStaffInner(
       );
     } else if (knownBefore) {
       await rateLimit(knownBucket, RATE_LIMITS.loyaltyStaffKnownVisit);
+    }
+
+    // ── LA CARTE GOOGLE WALLET SUIT LE SOLDE, MAIS APRÈS LA RÉPONSE ──
+    //
+    // Tamponner est un GESTE DE COMPTOIR : le client est devant la caisse. La
+    // mise à jour de la carte coûte deux allers-retours vers Google (jeton
+    // OAuth du compte de service, puis PATCH de l'objet) — les faire attendre
+    // ici, c'est ralentir la file pour un affichage que personne ne regarde à
+    // cet instant. `after()` laisse donc partir la réponse d'abord.
+    //
+    // Trois raisons pour qu'un défaut de mise à jour ne coûte jamais un
+    // tampon : la fonction sort AVANT tout appel réseau si Google Wallet n'est
+    // pas configuré (le cas de tous les déploiements aujourd'hui), elle avale
+    // ses propres erreurs, et elle s'exécute hors de ce `try`.
+    //
+    // Seul `stamped` déclenche : sur `too_soon` le solde n'a pas bougé, et
+    // appeler Google pour réécrire la même valeur ne servirait à rien.
+    if (result.state === "stamped") {
+      after(() =>
+        pushGoogleWalletLoyaltyBalance({
+          programId: parsed.data.programId,
+          memberTokenHash: checkin.memberTokenHash,
+          pointsBalance: result.pointsBalance,
+          tierLabel: loyaltyTierMeta(result.tier).label,
+        }),
+      );
     }
 
     return { ok: true, data: result };
