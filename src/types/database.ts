@@ -569,6 +569,23 @@ export interface LoyaltyMember {
   points_earned_total: number;
   /** Niveau dérivé de `points_earned_total`, rafraîchi à chaque tampon. */
   tier: LoyaltyTier;
+  /**
+   * SURNOM que le CLIENT donne à sa propre carte (FID-8a).
+   *
+   * `null` est l'état normal, pas un manque : rien n'est demandé au porteur, et
+   * tous les passeports antérieurs à ce lot valent null. Écrit UNIQUEMENT par
+   * la RPC `set_loyalty_member_identity` (security definer, service role) — la
+   * session marchande n'a que `select` sur cette table, un commerçant ne
+   * renomme donc pas ses clients. Borné 1..24 et déjà rogné en base.
+   */
+  display_name: string | null;
+  /**
+   * FIGURE choisie par le client — clé du catalogue `src/lib/avatars.tsx`
+   * (`AVATAR_IDS`), jamais une image ni un emoji. Chaîne vide = aucune figure ;
+   * la base ne valide que la forme `^[a-z]{1,20}$`, c'est le zod applicatif qui
+   * refuse une clé hors catalogue.
+   */
+  avatar: string;
   last_stamp_at: string | null;
   created_at: string;
 }
