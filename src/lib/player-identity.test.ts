@@ -28,6 +28,9 @@ const state = vi.hoisted(() => ({
   compteurs: [] as string[],
   /** Alertes Sentry posées, par scope. */
   erreurs: [] as string[],
+  /** Ce que `lookup_player_identity` rend — la reprise après rotation. */
+  lookupData: null as unknown,
+  lookupError: null as unknown,
   /** Ligne rendue par `from("spins")…maybeSingle()`. */
   spinRow: null as Record<string, unknown> | null,
   spinError: null as unknown,
@@ -60,6 +63,9 @@ function adminMock() {
       if (name === "resolve_player_identity" && state.resolveResponses) {
         const response = state.resolveResponses.shift();
         if (response) return response;
+      }
+      if (name === "lookup_player_identity") {
+        return { data: state.lookupData, error: state.lookupError };
       }
       return name === "rotate_player_device"
         ? { data: state.rotationData, error: state.rotationError }
@@ -96,6 +102,7 @@ import {
   ensureProgressivePlayerIdentity,
   generatePlayerDeviceToken,
   hashPlayerDeviceToken,
+  lookupLegacyIdentityHash,
   PLAYER_COOKIE_NAME,
   PLAYER_DEVICE_TOKEN_PATTERN,
   PLAYER_IDENTITY_HASH_PATTERN,
@@ -144,6 +151,8 @@ beforeEach(() => {
   state.rotationError = null;
   state.compteurs = [];
   state.erreurs = [];
+  state.lookupData = null;
+  state.lookupError = null;
   state.spinRow = null;
   state.spinError = null;
   state.spinFilters = [];
@@ -595,5 +604,154 @@ describe("bridgeOfferedSpinToCampaign", () => {
     await bridgeOfferedSpinToCampaign(adminMock() as never, SPIN_ID);
 
     expect(state.rpcCalls).toEqual([]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// `lookupLegacyIdentityHash` — la reprise après rotation du cookie
+//
+// Au-delà de 90 jours, `resolve_player_identity` fait tourner le cookie
+// `lc-player` : l'empreinte change, et les lignes déjà écrites portent
+// l'ancienne. Cette fonction est le SECOND essai — jamais le premier — que ses
+// appelants ne paient que lorsqu'une lecture normale n'a rien rendu.
+// ────────────────────────────────────────────────────────────
+
+const ANCIENNE_EMPREINTE = "b".repeat(64);
+const EMPREINTE_COURANTE = "c".repeat(64);
+const OFFRE_ID = "20000000-0000-4000-8000-000000000004";
+
+describe("lookupLegacyIdentityHash", () => {
+  it("rend l'ancienne empreinte, sur la portée EXACTE demandée", async () => {
+    state.lookupData = [
+      {
+        player_id: "10000000-0000-4000-8000-000000000001",
+        experience_membership_id: "10000000-0000-4000-8000-000000000003",
+        legacy_identity_hash: ANCIENNE_EMPREINTE,
+      },
+    ];
+
+    const ancienne = await lookupLegacyIdentityHash({
+      deviceTokenHash: EMPREINTE_COURANTE,
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "reserver_stock",
+      experienceId: OFFRE_ID,
+    });
+
+    expect(ancienne).toBe(ANCIENNE_EMPREINTE);
+    // LA PORTÉE EST LA GARDE. La RPC part de `player_devices.token_hash` et ne
+    // rend que l'empreinte d'une adhésion du MÊME joueur, sur la MÊME
+    // organisation et la MÊME expérience — c'est ce qui empêche de retrouver la
+    // ligne de quelqu'un d'autre. Élargir ces arguments, ou en omettre un,
+    // rouvrirait exactement ce trou : on les assert donc un par un.
+    expect(state.rpcCalls).toEqual([
+      {
+        name: "lookup_player_identity",
+        args: {
+          p_device_token_hash: EMPREINTE_COURANTE,
+          p_organization_id: ORGANIZATION_ID,
+          p_experience_kind: "reserver_stock",
+          p_experience_id: OFFRE_ID,
+        },
+      },
+    ]);
+  });
+
+  it("appareil inconnu : aucune ligne, `null`, et AUCUNE trace", async () => {
+    // Le contrôle négatif du repli : un appareil qui n'a jamais rien fait sur
+    // cette expérience — celui d'un autre joueur, ou d'un visiteur neuf — ne
+    // reçoit l'empreinte de personne. Et ce silence est SAIN : le tracer ferait
+    // du cas majoritaire un incident permanent.
+    state.lookupData = [];
+
+    const ancienne = await lookupLegacyIdentityHash({
+      deviceTokenHash: EMPREINTE_COURANTE,
+      organizationId: ORGANIZATION_ID,
+      experienceKind: "reserver_stock",
+      experienceId: OFFRE_ID,
+    });
+
+    expect(ancienne).toBeNull();
+    expect(state.compteurs).toEqual([]);
+    expect(state.erreurs).toEqual([]);
+  });
+
+  it("adhésion sans empreinte historique : `null` malgré la ligne", async () => {
+    // `legacy_identity_hash` vient d'un `left join lateral` : il est NUL pour
+    // une adhésion qui n'a jamais eu d'empreinte, quoi qu'en dise le type
+    // généré. Le passer tel quel à la seconde lecture ferait lever `22023`.
+    state.lookupData = [
+      {
+        player_id: "10000000-0000-4000-8000-000000000001",
+        experience_membership_id: "10000000-0000-4000-8000-000000000003",
+        legacy_identity_hash: null,
+      },
+    ];
+
+    expect(
+      await lookupLegacyIdentityHash({
+        deviceTokenHash: EMPREINTE_COURANTE,
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+    ).toBeNull();
+  });
+
+  it("empreinte rendue ÉGALE à la courante : `null`, rien à reprendre", async () => {
+    // Cas réel côté Réserver, où l'empreinte du cookie EST l'empreinte
+    // historique : le joueur qui reprend une part après sa rotation réinscrit la
+    // NOUVELLE dans `player_legacy_identities`, qui devient la plus récente. La
+    // rendre ferait relire deux fois la même chose.
+    state.lookupData = [
+      {
+        player_id: "10000000-0000-4000-8000-000000000001",
+        experience_membership_id: "10000000-0000-4000-8000-000000000003",
+        legacy_identity_hash: EMPREINTE_COURANTE,
+      },
+    ];
+
+    expect(
+      await lookupLegacyIdentityHash({
+        deviceTokenHash: EMPREINTE_COURANTE,
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+    ).toBeNull();
+  });
+
+  it("RPC en panne : `null`, et un compteur DISTINCT de celui des ponts", async () => {
+    state.lookupError = { message: "boom" };
+
+    expect(
+      await lookupLegacyIdentityHash({
+        deviceTokenHash: EMPREINTE_COURANTE,
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+    ).toBeNull();
+    // Deux santés distinctes : un pont qui ne se pose plus perd des lots à
+    // VENIR, une reprise qui ne répond plus cache des lignes DÉJÀ écrites.
+    expect(state.compteurs).toEqual([
+      "player-identity.lookup-failed.unavailable.reserver_stock",
+    ]);
+    expect(state.erreurs).toEqual(["player-identity.lookup"]);
+  });
+
+  it("entrée malformée : refus AVANT la moindre requête", async () => {
+    expect(
+      await lookupLegacyIdentityHash({
+        deviceTokenHash: "pas-une-empreinte",
+        organizationId: ORGANIZATION_ID,
+        experienceKind: "reserver_stock",
+        experienceId: OFFRE_ID,
+      }),
+    ).toBeNull();
+
+    expect(state.rpcCalls).toEqual([]);
+    expect(state.compteurs).toEqual([
+      "player-identity.lookup-failed.invalid_input.unvalidated",
+    ]);
   });
 });
