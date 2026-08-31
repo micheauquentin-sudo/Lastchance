@@ -4601,6 +4601,8 @@ export type Database = {
           identity_consent_version: string | null
           identity_linked_at: string | null
           last_seen_at: string
+          merged_at: string | null
+          merged_into_player_id: string | null
           status: string
           updated_at: string
         }
@@ -4612,6 +4614,8 @@ export type Database = {
           identity_consent_version?: string | null
           identity_linked_at?: string | null
           last_seen_at?: string
+          merged_at?: string | null
+          merged_into_player_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -4623,10 +4627,20 @@ export type Database = {
           identity_consent_version?: string | null
           identity_linked_at?: string | null
           last_seen_at?: string
+          merged_at?: string | null
+          merged_into_player_id?: string | null
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "players_merged_into_player_id_fkey"
+            columns: ["merged_into_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       prizes: {
         Row: {
@@ -9317,6 +9331,10 @@ export type Database = {
           redeem_code: string
           redeemed_at: string
         }[]
+      }
+      merge_player_identities: {
+        Args: { p_absorbed_player_id: string; p_surviving_player_id: string }
+        Returns: string
       }
       mirror_vitrine_entitlements: { Args: never; Returns: Json }
       moderate_event_player: {
