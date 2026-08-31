@@ -21,6 +21,7 @@ import { StockRedeemButton } from "@/components/dashboard/stock-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
+  type StaffLoyaltyMilestone,
   type StaffLoyaltyProgram,
 } from "@/components/dashboard/loyalty-staff-stamp";
 import {
@@ -204,7 +205,62 @@ export default async function RedeemPage({
       .eq("status", "active")
       .eq("validation_mode", "staff")
       .order("created_at", { ascending: true });
-    staffPrograms = (data ?? []) as StaffLoyaltyProgram[];
+    const programmes = (data ?? []) as { id: string; name: string }[];
+
+    // LE RAYON DES CADEAUX, CHARGÉ ICI ET PAS APRÈS LE SCAN.
+    //
+    // La fiche client affichée au tampon doit dire ce que ce client peut
+    // emporter tout de suite. Cela demande le catalogue des paliers — qui ne
+    // dépend pas du client scanné, seulement du programme. Le lire une fois au
+    // rendu de la caisse, pour tous les programmes staff à la fois, laisse le
+    // geste de caisse à exactement un aller-retour : celui qui enregistre la
+    // visite. Un second appel déclenché par le scan aurait fait attendre le
+    // client devant le comptoir pour une information d'appoint.
+    const parProgramme = new Map<string, StaffLoyaltyMilestone[]>();
+    if (programmes.length > 0) {
+      const { data: paliers } = await supabase
+        .from("loyalty_milestones")
+        .select(
+          "id, program_id, visit_count, cost_points, reward_label, reward_type, reward_stock, reward_claimed_count",
+        )
+        .in(
+          "program_id",
+          programmes.map((p) => p.id),
+        )
+        // Ceinture ET bretelles : la RLS borne déjà au tenant, le filtre
+        // explicite empêche qu'un `program_id` d'une autre org, glissé dans la
+        // liste, ne ramène son rayon.
+        .eq("organization_id", organization.id)
+        // Du moins cher au plus cher, comme la boutique du passeport : les deux
+        // écrans doivent présenter le rayon dans le même ordre.
+        .order("cost_points", { ascending: true });
+
+      for (const row of paliers ?? []) {
+        const liste = parProgramme.get(row.program_id) ?? [];
+        liste.push({
+          id: row.id,
+          // Même repli que `toMilestoneView` : `cost_points` est nullable dans
+          // le type engendré mais jamais nul en base (un trigger le dérive de
+          // `visit_count`). Refaire la dérivation vaut mieux qu'annoncer un
+          // cadeau à 0 point.
+          costPoints: row.cost_points ?? row.visit_count * 100,
+          rewardLabel: row.reward_label,
+          // `reward_type` est une colonne texte à contrainte CHECK : le type
+          // engendré la rend en `string`, l'union vit dans les types écrits à
+          // la main. Même resserrement que `toMilestoneView` côté joueur.
+          rewardType: row.reward_type as StaffLoyaltyMilestone["rewardType"],
+          soldOut:
+            row.reward_stock !== null &&
+            row.reward_claimed_count >= row.reward_stock,
+        });
+        parProgramme.set(row.program_id, liste);
+      }
+    }
+
+    staffPrograms = programmes.map((p) => ({
+      ...p,
+      milestones: parProgramme.get(p.id) ?? [],
+    }));
   }
 
   // Jackpots en mode staff : validation d'une participation en caisse. Miroir

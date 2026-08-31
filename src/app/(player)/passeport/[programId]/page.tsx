@@ -1,5 +1,5 @@
 import { cache } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
@@ -17,6 +17,7 @@ import { wheelMatchesNow } from "@/lib/wheel-schedule";
 import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { resolveLoyaltyStyle } from "@/lib/loyalty-style";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
+import { InstallerPasseport } from "@/components/loyalty/installer-passeport";
 
 /**
  * Page publique du passeport de fidélité — DA « Kermesse », même famille
@@ -52,7 +53,27 @@ export async function generateMetadata({
   const { programId } = await params;
   const ctx = await loadContext(programId);
   if (!ctx.ok) notFound();
-  return { title: "Passeport de fidélité", robots: { index: false } };
+  return {
+    title: "Passeport de fidélité",
+    robots: { index: false },
+    // INSTALLABLE SUR L'ÉCRAN D'ACCUEIL. Next ne reconnaît `manifest.ts` qu'à
+    // la racine de `app/` : le manifeste par programme est servi par un route
+    // handler voisin, comme pour le jackpot et le calendrier.
+    manifest: `/passeport/${encodeURIComponent(programId)}/manifest.webmanifest`,
+    // iOS ignore le manifeste pour le NOM de l'icône et lit celui-ci. Il porte
+    // donc le nom du COMMERCE, comme `short_name` : c'est ce mot que le client
+    // verra sous l'icône, des mois plus tard, entre celles des autres commerces.
+    appleWebApp: {
+      capable: true,
+      title: ctx.organization.name.trim() || "Fidélité",
+      statusBarStyle: "default",
+    },
+  };
+}
+
+/** Même crème que le fond du passeport, pour que la barre système s'y fonde. */
+export function generateViewport(): Viewport {
+  return { themeColor: "#fdf6e3" };
 }
 
 /**
@@ -280,6 +301,13 @@ export default async function LoyaltyPassportPage({
         codeParrainInvite={codeParrainInvite}
         parrainageEnAttente={parrainageEnAttente}
       />
+
+      {/* Discrète et sous la carte : le client vient d'abord chercher son solde.
+          Le composant s'efface tout seul si le passeport tourne déjà en mode
+          installé, ou si le navigateur ne sait pas décrire le geste. */}
+      <div className="mx-auto max-w-md px-4">
+        <InstallerPasseport commerce={ctx.organization.name} />
+      </div>
 
       <footer className="mx-auto max-w-md px-4 pb-10 text-center text-xs text-k-body">
         Programme de fidélité proposé par {ctx.organization.name} · propulsé par{" "}
