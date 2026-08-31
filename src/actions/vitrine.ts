@@ -14,10 +14,19 @@ import {
   mapUpsertVitrineTraduction,
   mapVitrineTraductionState,
   mapThemeVitrine,
+  VITRINE_ALLURE_BOOLEENS,
+  VITRINE_ALLURE_BOOLEENS_DEFAUTS,
+  VITRINE_ALLURE_BORNES,
+  VITRINE_ALLURE_CHIFFRES,
+  VITRINE_ALLURE_CLES,
+  VITRINE_ALLURE_ENUMS,
+  VITRINE_ALLURE_ENUMS_CLES,
   VITRINE_BLOCS_DEFAUT,
   VITRINE_LANGUE_TRADUITE,
   VITRINE_ORDRE_MAX,
+  VITRINE_SECTEUR_DEFAUT,
   VITRINE_TRADUCTION_TEXTE_MAX,
+  type AllureVitrine,
   type RefusTraductionVitrine,
   type SetVitrineSlugResult,
   type ThemeVitrine,
@@ -392,7 +401,72 @@ function composerTheme(
   // stocké un réglage que personne n'a fait.
   if (saisie.ordre_blocs.length > 0) theme.ordre_blocs = saisie.ordre_blocs;
 
+  // LE TÉMOIN D'ABORD : sans la section à l'écran, on ne touche pas à l'allure.
+  // Voir `allure_rendue` dans le schéma — c'est ce qui empêche un formulaire
+  // partiel d'éteindre sept réglages en silence.
+  const allure = saisie.allure_rendue ? composerAllure(saisie) : undefined;
+  if (allure) theme.allure = allure;
+
   return theme;
+}
+
+/**
+ * L'allure — SEULS LES ÉCARTS AU DÉFAUT SONT ÉCRITS (VIT-13).
+ *
+ * ── POURQUOI PAS LES VINGT-CINQ, PUISQUE LE FORMULAIRE LES POSTE TOUS ──
+ *
+ * Deux raisons, et la seconde est la vraie.
+ *
+ *  1. Un document qui recopie vingt-cinq défauts fait croire à vingt-cinq
+ *     décisions. La lecture « ce commerçant a-t-il personnalisé son allure ? »
+ *     devient alors impossible à poser.
+ *  2. Surtout : le jour où un défaut de la maquette change, AUCUNE vitrine déjà
+ *     enregistrée n'en profiterait. Elles porteraient toutes l'ancienne valeur,
+ *     figée, sans que personne l'ait voulue — et il faudrait une migration de
+ *     données pour rattraper un changement de style.
+ *
+ * Le prix est qu'un commerçant qui remet volontairement un réglage sur le
+ * défaut voit sa clé disparaître. C'est sans conséquence : le rendu est le
+ * même, et il le redeviendrait si le défaut bougeait — ce qui est précisément
+ * ce qu'on veut.
+ *
+ * `undefined` et non `{}` quand rien ne diffère : même contrat que `couleurs`
+ * et `polices` au-dessus.
+ */
+function composerAllure(
+  saisie: ReturnType<typeof saveVitrineSettingsSchema.parse>,
+): AllureVitrine | undefined {
+  const allure: AllureVitrine = {};
+  let posee = false;
+
+  for (const cle of VITRINE_ALLURE_ENUMS_CLES) {
+    const valeur = saisie[cle];
+    if (valeur && valeur !== VITRINE_ALLURE_ENUMS[cle].defaut) {
+      // `never` : chaque clé porte sa propre union, et TypeScript ne peut pas
+      // relier l'indice à la valeur dans une boucle. Le mot vient d'être
+      // comparé à la MÊME table que celle qui type le champ.
+      allure[cle] = valeur as never;
+      posee = true;
+    }
+  }
+
+  for (const cle of VITRINE_ALLURE_CHIFFRES) {
+    const valeur = saisie[cle];
+    if (valeur !== null && valeur !== VITRINE_ALLURE_BORNES[cle].defaut) {
+      allure[cle] = valeur;
+      posee = true;
+    }
+  }
+
+  for (const cle of VITRINE_ALLURE_BOOLEENS) {
+    const valeur = saisie[cle];
+    if (valeur !== VITRINE_ALLURE_BOOLEENS_DEFAUTS[cle]) {
+      allure[cle] = valeur;
+      posee = true;
+    }
+  }
+
+  return posee ? allure : undefined;
 }
 
 /**
@@ -418,6 +492,16 @@ export async function saveVitrineSettings(
     police_body: formData.get("police_body"),
     style_cartes: formData.get("style_cartes"),
     ordre_blocs: formData.get("ordre_blocs"),
+    secteur: formData.get("secteur"),
+    badge_ouverture: formData.get("badge_ouverture"),
+    allure_rendue: formData.get("allure_rendue"),
+    // LES VINGT-CINQ CHAMPS D'ALLURE, LUS DEPUIS LA MÊME TABLE QUE LE SCHÉMA.
+    // Les énumérer à la main ici aurait été le second endroit où la liste
+    // existe — et un `formData.get` oublié ne fait RIEN rougir : le champ vaut
+    // « non rendu », donc le défaut, donc un réglage qui ne s'enregistre pas.
+    ...Object.fromEntries(
+      VITRINE_ALLURE_CLES.map((cle) => [cle, formData.get(cle)]),
+    ),
   });
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
@@ -436,6 +520,10 @@ export async function saveVitrineSettings(
       accroche: parsed.data.accroche || null,
       histoire: parsed.data.histoire || null,
       horaires_texte: parsed.data.horaires_texte || null,
+      badge_ouverture: parsed.data.badge_ouverture || null,
+      // `secteur` est `not null default 'commerce'` : `""` (champ non rendu)
+      // vaut donc le défaut NEUTRE, jamais `null`, que la colonne refuserait.
+      secteur: parsed.data.secteur || VITRINE_SECTEUR_DEFAUT,
       theme: toJson(composerTheme(parsed.data)),
     })
     .eq("organization_id", garde.organizationId)

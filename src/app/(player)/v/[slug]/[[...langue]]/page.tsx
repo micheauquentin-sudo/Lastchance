@@ -13,12 +13,10 @@ import {
 } from "@/lib/vitrine-action";
 import { boussoleUtilisable } from "@/lib/vitrine-boussole";
 import { VITRINE_ACTIONS, type ActionVitrine } from "@/lib/vitrine";
-import {
-  altPhotoVitrine,
-  sourcesPhotoVitrine,
-  srcSetPhotoVitrine,
-  urlPhotoVitrine,
-} from "@/lib/vitrine-photo";
+// LES TROIS AIDES DE PHOTO SONT PARTIES AVEC L'EN-TÊTE : la couverture est
+// rendue par `HeroVitrine` (VIT-13). Seule `urlPhotoVitrine` reste ici, pour
+// l'image des données structurées.
+import { urlPhotoVitrine } from "@/lib/vitrine-photo";
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -33,7 +31,9 @@ import {
   BlocExperiences,
   BlocReserver,
 } from "@/components/vitrine/portes";
-import { TEXTES_VITRINE } from "@/components/vitrine/langue";
+import { TEXTES_VITRINE, textesVitrine } from "@/components/vitrine/langue";
+import { HeroVitrine } from "@/components/vitrine/hero-vitrine";
+import { BarreBasseVitrine } from "@/components/vitrine/barre-basse";
 import {
   policesVitrine,
   resoudreThemeVitrine,
@@ -213,9 +213,13 @@ export default async function VitrinePage({
   // mais c'est la base qui tranche — elle seule sait ce qu'elle a pu superposer
   // — et `<div lang>` doit dire ce que la page contient réellement.
   const lang = etat.lang;
-  const t = TEXTES_VITRINE[lang];
   const nom = etat.identite.nom;
-  const theme = resoudreThemeVitrine(etat.identite.theme);
+  // LE SECTEUR CHOISIT LES MOTS ET LE PRÉRÉGLAGE DE PALETTE (VIT-13), jamais la
+  // mise en page : les sept métiers rendent le même écran.
+  const secteur = etat.identite.secteur;
+  const t = textesVitrine(lang, secteur);
+  const theme = resoudreThemeVitrine(etat.identite.theme, secteur);
+  const allure = theme.allure;
   const polices = policesVitrine(theme);
 
   // VIT-10 — TOUTES LES FICHES, À PLAT. La Boussole ne connaît ni carte ni
@@ -244,6 +248,45 @@ export default async function VitrinePage({
     actionOuverte(action, etat.portes, boussoleOuverte),
   );
 
+  /**
+   * CE QUE LE HERO ET L'ONGLET « NOTRE HISTOIRE » REPRENNENT AUX BLOCS (VIT-13).
+   *
+   * ── L'ORDRE DES BLOCS RESTE JUGE DE L'EXISTENCE ──
+   *
+   * Un commerçant qui avait retiré `histoire` de `ordre_blocs` l'avait MASQUÉE.
+   * Elle ne doit pas réapparaître en onglet parce qu'on a changé de mise en
+   * page : `theme.blocs.includes(…)` est donc consulté avant de remonter quoi
+   * que ce soit. Le réglage garde exactement le sens qu'il avait.
+   *
+   * ── ET IL FAUT UN ENDROIT OÙ LES METTRE ──
+   *
+   * L'onglet n'existe que s'il y a un catalogue pour le porter. Sans le bloc
+   * `cartes`, `CatalogueVitrine` ne rend rien, et remonter l'histoire dedans
+   * l'aurait fait DISPARAÎTRE de la page — la seule façon de perdre un contenu
+   * dans ce lot. Les deux blocs retombent alors à leur place d'origine, en
+   * paragraphes qui défilent.
+   */
+  const catalogueVisible = theme.blocs.includes("cartes");
+  const accrocheHero = theme.blocs.includes("accroche")
+    ? etat.identite.accroche
+    : null;
+  const histoireOnglet =
+    catalogueVisible && theme.blocs.includes("histoire")
+      ? etat.identite.histoire
+      : null;
+  const horairesOnglet =
+    catalogueVisible && theme.blocs.includes("horaires")
+      ? etat.identite.horaires_texte
+      : null;
+
+  /**
+   * Les liens vivent dans la CARTE D'INFOS du hero, sauf si elle est masquée —
+   * auquel cas ils redescendent dans « Nous suivre », comme avant. Masquer un
+   * réglage de mise en page ne doit jamais faire disparaître une adresse.
+   */
+  const liensDansLeBloc = allure.carteInfos === "masquee";
+  const ANCRE_PIED = "vitrine-pied";
+
   return (
     <div
       // `lang` sur le CONTENEUR et non sur `<html>` : la balise racine est
@@ -254,6 +297,10 @@ export default async function VitrinePage({
       style={variablesThemeVitrine(theme)}
       className="min-h-dvh bg-[var(--vitrine-secondary)] font-[family-name:var(--vitrine-texte)] text-[var(--vitrine-sur-secondary)]"
     >
+      {/* LE MOTIF DE FOND — un dégradé répété, zéro requête et zéro octet
+          transféré. Il est posé sur la COLONNE plus bas, pas ici : sur un
+          écran large, une trame courant jusqu'aux bords ferait ressembler la
+          page à un fond d'écran plutôt qu'à une carte posée sur une table. */}
       {polices.map((href) => (
         <link key={href} rel="stylesheet" href={href} />
       ))}
@@ -297,33 +344,55 @@ export default async function VitrinePage({
       <PageOpenBeacon module="vitrine" publicId={etat.slug} />
 
       <main id="contenu" tabIndex={-1} className="outline-none">
-        <div className="mx-auto max-w-2xl px-4 pb-16 pt-8">
-          <SelecteurLangue
-            slug={etat.slug}
-            lang={lang}
-            propose={etat.selecteurLangues}
-          />
+        {/*
+          UNE COLONNE DE 480 px, ET NON 672.
+          C'est la largeur d'un téléphone tenu d'une main, qui est l'ÉCRAN DE
+          RÉFÉRENCE de cette page : elle est ouverte à table, jamais sur un
+          bureau. Plus large, les fiches à photo latérale s'étirent et le filet
+          des prix traverse un vide ; l'ombre portée de la colonne dit que c'est
+          une carte posée, pas un site qui n'a pas su remplir l'écran.
 
-          <EnTeteVitrine
+          `overflow-x-hidden` : le hero et l'en-tête collant débordent
+          volontairement de la gouttière (`-mx-3`) pour aller au bord de la
+          colonne. Sans cette coupe, ce débord ferait défiler la page
+          horizontalement d'une poignée de pixels — le défaut le plus signalé
+          et le plus difficile à voir en revue.
+        */}
+        <div
+          style={{ backgroundImage: "var(--vitrine-motif)" }}
+          className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col overflow-x-hidden bg-[var(--vitrine-secondary)] shadow-[0_0_40px_rgba(0,0,0,0.06)]"
+        >
+          <HeroVitrine
             nom={nom}
             logoUrl={etat.identite.logo_url}
             couverture={etat.identite.cover_path}
             couvertureAlt={etat.identite.cover_alt}
+            accroche={accrocheHero}
+            badgeOuverture={etat.identite.badge_ouverture}
+            allure={allure}
+            liens={etat.liens}
+            avisGoogle={t.avisGoogle}
+            selecteurLangue={
+              <SelecteurLangue
+                slug={etat.slug}
+                lang={lang}
+                propose={etat.selecteurLangues}
+              />
+            }
           />
 
+          <div className="flex-1 px-3">
           {theme.blocs.map((bloc) => {
             switch (bloc) {
+              // L'ACCROCHE EST DANS LE HERO (VIT-13) — en sous-titre sous le
+              // nom, comme la maquette. La rendre ici EN PLUS l'aurait fait
+              // lire deux fois à trois centimètres d'intervalle.
               case "accroche":
-                return etat.identite.accroche ? (
-                  <p
-                    key={bloc}
-                    className="mb-8 text-center text-lg leading-relaxed text-[var(--vitrine-sur-secondary)]/80"
-                  >
-                    {etat.identite.accroche}
-                  </p>
-                ) : null;
+                return null;
+              // HISTOIRE ET HORAIRES SONT DANS L'ONGLET, sauf s'il n'y a pas
+              // de catalogue pour le porter — voir `histoireOnglet` plus haut.
               case "histoire":
-                return etat.identite.histoire ? (
+                return histoireOnglet === null && etat.identite.histoire ? (
                   <BlocTexte
                     key={bloc}
                     titre={t.histoire}
@@ -331,7 +400,7 @@ export default async function VitrinePage({
                   />
                 ) : null;
               case "horaires":
-                return etat.identite.horaires_texte ? (
+                return horairesOnglet === null && etat.identite.horaires_texte ? (
                   <BlocTexte
                     key={bloc}
                     titre={t.horaires}
@@ -354,7 +423,12 @@ export default async function VitrinePage({
                       cartes={etat.cartes}
                       styleCartes={theme.styleCartes}
                       lang={lang}
+                      secteur={secteur}
+                      allure={allure}
+                      slug={etat.slug}
                       portesOuvertes={portesOuvertes}
+                      histoire={histoireOnglet}
+                      horaires={horairesOnglet}
                     />
                   </div>
                 );
@@ -404,12 +478,18 @@ export default async function VitrinePage({
                       theme={theme}
                       titre={t.contenus}
                     />
-                    <BlocLiens
-                      liens={etat.liens}
-                      theme={theme}
-                      titre={t.liens}
-                      avisGoogle={t.avisGoogle}
-                    />
+                    {/* LES LIENS SONT REMONTÉS DANS LA CARTE D'INFOS DU HERO
+                        (VIT-13) — ils ne redescendent ici que si le commerçant
+                        a masqué cette carte. Un réglage de mise en page ne doit
+                        jamais faire disparaître une adresse. */}
+                    {liensDansLeBloc ? (
+                      <BlocLiens
+                        liens={etat.liens}
+                        theme={theme}
+                        titre={t.liens}
+                        avisGoogle={t.avisGoogle}
+                      />
+                    ) : null}
                   </div>
                 );
               default:
@@ -417,7 +497,10 @@ export default async function VitrinePage({
             }
           })}
 
-          <footer className="mt-10 text-center text-xs text-[var(--vitrine-sur-secondary)]/60">
+          <footer
+            id={ANCRE_PIED}
+            className="scroll-mt-4 pb-6 pt-10 text-center text-xs text-[var(--vitrine-sur-secondary)]/60"
+          >
             {t.proposeePar(nom)}{" "}
             <Link
               href="/?utm_source=vitrine&utm_medium=footer"
@@ -426,6 +509,20 @@ export default async function VitrinePage({
               {t.propulsePar}
             </Link>
           </footer>
+          </div>
+
+          {/* LA BARRE BASSE — `sticky`, donc DANS le flux : une barre `fixed`
+              se superposerait au dernier plat de la carte, que plus rien ne
+              pourrait alors faire défiler au-dessus d'elle. */}
+          {allure.barreBasse !== "masquee" ? (
+            <BarreBasseVitrine
+              slug={etat.slug}
+              lang={lang}
+              secteur={secteur}
+              allure={allure}
+              ancrePied={ANCRE_PIED}
+            />
+          ) : null}
         </div>
       </main>
     </div>
@@ -489,63 +586,6 @@ function SelecteurLangue({
         {TEXTES_VITRINE[autre].nomLangue}
       </a>
     </div>
-  );
-}
-
-function EnTeteVitrine({
-  nom,
-  logoUrl,
-  couverture,
-  couvertureAlt,
-}: {
-  nom: string;
-  logoUrl: string | null;
-  /** Chemin Storage de la couverture (VIT-7), ou `null`. */
-  couverture: string | null;
-  couvertureAlt: string | null;
-}) {
-  const cover = sourcesPhotoVitrine(couverture);
-
-  return (
-    <header className="mb-6 text-center">
-      {cover ? (
-        // LA COUVERTURE PASSE AVANT LE LOGO, et sans le remplacer : elle donne
-        // l'ambiance du lieu, il donne son identité. `eager` ici, contrairement
-        // aux photos de fiches : c'est la première image de la page, celle que
-        // le visiteur voit en arrivant, et la retarder ferait clignoter le haut
-        // de l'écran. `aspect-[16/9]` réserve sa place avant qu'elle n'arrive.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={cover.grande}
-          srcSet={srcSetPhotoVitrine(couverture)}
-          sizes="(max-width: 768px) 100vw, 768px"
-          alt={altPhotoVitrine(couvertureAlt)}
-          fetchPriority="high"
-          decoding="async"
-          className="mb-4 aspect-[16/9] w-full rounded-2xl border border-black/10 object-cover"
-        />
-      ) : null}
-      {logoUrl ? (
-        // Le logo DÉJÀ RÉGLÉ par le commerçant (`organizations.logo_url`) :
-        // aucune seconde identité à tenir d'accord avec celle de la roue.
-        // `<img>` nu et non `next/image`, comme les dix autres parcours
-        // joueur : l'URL vient d'un bucket dont l'hôte n'est pas déclaré dans
-        // `remotePatterns`, et l'optimiseur refuserait de la servir.
-        // `alt=""` — le nom est juste en dessous, en toutes lettres ; le
-        // décrire une seconde fois ferait entendre l'enseigne deux fois.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={logoUrl}
-          alt=""
-          width={80}
-          height={80}
-          className="mx-auto mb-3 h-20 w-20 rounded-full border border-black/10 bg-white object-cover"
-        />
-      ) : null}
-      <h1 className="font-[family-name:var(--vitrine-titre)] text-3xl font-bold leading-tight text-[var(--vitrine-primary)]">
-        {nom}
-      </h1>
-    </header>
   );
 }
 

@@ -220,6 +220,16 @@ export const VITRINE_ACCROCHE_MAX = 200;
 export const VITRINE_HISTOIRE_MAX = 1200;
 /** Horaires en texte libre : 600 caractères. */
 export const VITRINE_HORAIRES_MAX = 600;
+
+/**
+ * Le badge du hero — court par construction.
+ *
+ * 48 caractères : « Ouvert · 12h–23h » en fait 16, « Ouvert du mardi au
+ * dimanche, 12h–23h » en fait 38. Au-delà, la pastille passe à la ligne
+ * par-dessus le nom du commerce dans une largeur de téléphone, et le hero
+ * n'a plus de titre lisible.
+ */
+export const VITRINE_BADGE_OUVERTURE_MAX = 48;
 /** Chemin d'image (couverture ou photo de fiche) : 300 caractères. */
 export const VITRINE_CHEMIN_IMAGE_MAX = 300;
 
@@ -672,7 +682,374 @@ export interface ThemeVitrine {
   polices?: { heading?: FontKey; body?: FontKey };
   style_cartes?: StyleCartesVitrine;
   ordre_blocs?: BlocVitrine[];
+  allure?: AllureVitrine;
 }
+
+// ────────────────────────────────────────────────────────────
+// LE SECTEUR — ce que le commerce EST, et rien de plus
+//
+// ── POURQUOI UNE LISTE FERMÉE ET PAS UN TEXTE LIBRE ──
+//
+// Le secteur ne décore pas : il CHOISIT DES MOTS que le visiteur lit
+// (« Nos cartes » chez un restaurant, « Nos prestations » chez un coiffeur,
+// « Nos chambres » à l'hôtel) et il pose un préréglage de couleurs et de
+// polices. Les deux sont des tables indexées par cette liste — un texte libre
+// aurait fait retomber « Coiffeur », « coiffeuse » et « Salon de coiffure » sur
+// trois cases vides, donc sur du vocabulaire de restaurant chez un coiffeur.
+//
+// ── `commerce` EST LE DÉFAUT, ET IL EST NEUTRE ──
+//
+// Il n'est pas un septième métier : c'est ce que rend une vitrine dont personne
+// n'a rien dit. Son vocabulaire ne parle ni de plats ni de rendez-vous. Une
+// vitrine existante, qui n'a évidemment pas de secteur en base, retombe donc
+// ici — et sur le préréglage de la maquette de référence.
+//
+// ── LA MISE EN PAGE NE DÉPEND JAMAIS DU SECTEUR ──
+//
+// Un coiffeur et un restaurant ont la MÊME structure d'écran : hero, onglets,
+// chips, fiches, barre basse. Le secteur ne touche qu'aux MOTS et aux valeurs
+// PAR DÉFAUT du thème — que le commerçant reste libre de changer ensuite. Faire
+// dépendre la mise en page du secteur aurait créé sept écrans à tenir d'accord
+// au lieu d'un.
+// ────────────────────────────────────────────────────────────
+
+export const VITRINE_SECTEURS = [
+  "restaurant",
+  "bar",
+  "coiffeur",
+  "fleuriste",
+  "hotel",
+  "spa",
+  "commerce",
+] as const;
+export type SecteurVitrine = (typeof VITRINE_SECTEURS)[number];
+
+/** Le secteur d'une vitrine dont personne n'a rien dit. Voir ci-dessus. */
+export const VITRINE_SECTEUR_DEFAUT: SecteurVitrine = "commerce";
+
+const SECTEURS_LIBELLES: Record<SecteurVitrine, string> = {
+  restaurant: "Restaurant",
+  bar: "Bar, café",
+  coiffeur: "Coiffeur, barbier",
+  fleuriste: "Fleuriste",
+  hotel: "Hôtel, chambres d'hôtes",
+  spa: "Spa, institut",
+  commerce: "Autre commerce",
+};
+
+/** Le nom du secteur pour l'ÉCRAN COMMERÇANT. Le public ne le lit jamais. */
+export function libelleSecteur(secteur: string): string {
+  return (
+    SECTEURS_LIBELLES[secteur as SecteurVitrine] ??
+    SECTEURS_LIBELLES[VITRINE_SECTEUR_DEFAUT]
+  );
+}
+
+/** Le mot du vocabulaire, ou le défaut — jamais une valeur inventée. */
+export function asSecteurVitrine(valeur: unknown): SecteurVitrine {
+  return typeof valeur === "string" &&
+    (VITRINE_SECTEURS as readonly string[]).includes(valeur)
+    ? (valeur as SecteurVitrine)
+    : VITRINE_SECTEUR_DEFAUT;
+}
+
+// ────────────────────────────────────────────────────────────
+// L'ALLURE — les réglages visuels, sous UNE SEULE clé de premier rang
+//
+// ── POURQUOI `allure` ET NON VINGT-CINQ CLÉS À LA RACINE ──
+//
+// `is_valid_vitrine_theme` ferme les clés AUX DEUX RANGS. Vingt-cinq clés à la
+// racine auraient allongé la liste blanche du premier rang à vingt-neuf
+// entrées, mélangées aux quatre qui existent depuis VIT-1a — et la prochaine
+// relecture n'aurait plus pu distinguer « ce qui structure la page » de « ce
+// qui la décore ». Un seul objet imbriqué garde le premier rang à cinq mots.
+//
+// COROLLAIRE : toute clé d'allure INCONNUE fait refuser le thème entier par la
+// base. C'est voulu, et c'est le même contrat qu'aux quatre autres — une clé
+// tolérée en silence est une clé qu'on croit lue alors que rien ne la lit.
+//
+// ── LES DÉFAUTS SONT LA MAQUETTE, AU PIXEL ──
+//
+// Chaque valeur ci-dessous est celle de la carte de référence. Une vitrine à
+// laquelle personne n'a touché sort donc EXACTEMENT comme elle, et les réglages
+// ne sont que des écarts volontaires. L'inverse — des défauts neutres et une
+// allure à reconstituer réglage par réglage — aurait fait de la maquette une
+// destination qu'aucun commerçant n'atteint.
+// ────────────────────────────────────────────────────────────
+
+export const VITRINE_MOTIFS = [
+  "aucun",
+  "diagonales",
+  "points",
+  "damier",
+] as const;
+export type MotifVitrine = (typeof VITRINE_MOTIFS)[number];
+
+export const VITRINE_DENSITES = ["confortable", "standard", "compact"] as const;
+export type DensiteVitrine = (typeof VITRINE_DENSITES)[number];
+
+export const VITRINE_STYLES_FICHE = ["ombre", "contour", "plein"] as const;
+export type StyleFicheVitrine = (typeof VITRINE_STYLES_FICHE)[number];
+
+/**
+ * `aucune` retire la photo ET son emplacement — ce n'est pas une taille nulle.
+ *
+ * ── POURQUOI `aucune` ET NON `sans`, QUI SE LIT MIEUX ──
+ *
+ * `'sans'` est DÉJÀ une clé de police (`FONT_KEYS`), et les deux vocabulaires
+ * vivent dans le corps de la MÊME fonction SQL. `vitrine.test.sql` y compte les
+ * occurrences quotées des sept polices pour prouver qu'elles sont bien recopiées
+ * — un `'sans'` de plus, venu d'une autre liste, en faisait huit et cassait une
+ * garde qui n'avait rien à voir.
+ *
+ * On renomme la valeur plutôt que d'élargir la garde : elle n'est pas fausse,
+ * elle est grossière, et l'affaiblir pour un confort de nommage aurait coûté
+ * plus que ce mot. `aucune` répond d'ailleurs à `aucun` du motif.
+ */
+export const VITRINE_PHOTO_TAILLES = [
+  "grande",
+  "standard",
+  "vignette",
+  "aucune",
+] as const;
+export type PhotoTailleVitrine = (typeof VITRINE_PHOTO_TAILLES)[number];
+
+export const VITRINE_PHOTO_POSITIONS = ["droite", "gauche", "pleine"] as const;
+export type PhotoPositionVitrine = (typeof VITRINE_PHOTO_POSITIONS)[number];
+
+export const VITRINE_STYLES_PRIX = ["simple", "accent", "pastille"] as const;
+export type StylePrixVitrine = (typeof VITRINE_STYLES_PRIX)[number];
+
+export const VITRINE_STYLES_ONGLETS = [
+  "soulignes",
+  "pastilles",
+  "segmentes",
+] as const;
+export type StyleOngletsVitrine = (typeof VITRINE_STYLES_ONGLETS)[number];
+
+export const VITRINE_STYLES_CHIPS = [
+  "contour",
+  "pleines",
+  "soulignees",
+] as const;
+export type StyleChipsVitrine = (typeof VITRINE_STYLES_CHIPS)[number];
+
+export const VITRINE_STYLES_RUBRIQUE = ["carte", "filet", "simple"] as const;
+export type StyleRubriqueVitrine = (typeof VITRINE_STYLES_RUBRIQUE)[number];
+
+export const VITRINE_BARRES_BASSES = [
+  "flottante",
+  "pleine",
+  "masquee",
+] as const;
+export type BarreBasseVitrine = (typeof VITRINE_BARRES_BASSES)[number];
+
+export const VITRINE_CARTES_INFOS = [
+  "chevauche",
+  "dessous",
+  "masquee",
+] as const;
+export type CarteInfosVitrine = (typeof VITRINE_CARTES_INFOS)[number];
+
+/**
+ * LES BORNES DES RÉGLAGES CHIFFRÉS — miroir exact des `between` du SQL.
+ *
+ * Elles sont ici et pas dans le composant parce que TROIS écrans les lisent :
+ * la page publique (qui borne une valeur venue de la base), l'éditeur (qui
+ * borne un curseur) et le validateur (qui refuse une saisie). Trois copies
+ * auraient divergé le jour où l'une bouge.
+ *
+ * `pas` sert au curseur de l'éditeur, JAMAIS à la validation : la base accepte
+ * n'importe quelle valeur DANS l'intervalle, et refuser 0.45 parce qu'il n'est
+ * pas sur le pas aurait fait échouer un enregistrement pour une raison que
+ * personne ne peut lire dans un 23514.
+ */
+export const VITRINE_ALLURE_BORNES = {
+  motif_opacite: { min: 0, max: 1, pas: 0.05, defaut: 0.4 },
+  rayon: { min: 0, max: 24, pas: 1, defaut: 13 },
+  ombre: { min: 0, max: 1, pas: 0.05, defaut: 0.6 },
+  echelle_texte: { min: 0.85, max: 1.3, pas: 0.05, defaut: 1 },
+  hero_hauteur: { min: 180, max: 420, pas: 2, defaut: 240 },
+  hero_taille_nom: { min: 28, max: 60, pas: 1, defaut: 46 },
+  hero_voile: { min: 0, max: 0.9, pas: 0.05, defaut: 0.4 },
+} as const satisfies Record<
+  string,
+  { min: number; max: number; pas: number; defaut: number }
+>;
+
+export type ChampChiffreAllure = keyof typeof VITRINE_ALLURE_BORNES;
+
+/** Les sept curseurs, dans l'ordre où l'éditeur les présente. */
+export const VITRINE_ALLURE_CHIFFRES = Object.keys(
+  VITRINE_ALLURE_BORNES,
+) as ChampChiffreAllure[];
+
+/**
+ * LES INTERRUPTEURS, avec leur valeur par défaut — celle de la maquette.
+ *
+ * `favoris` et `recherche` ÉTEIGNENT une fonction, ils ne la cachent pas : un
+ * favori posé puis rendu invisible ferait croire à une perte.
+ */
+export const VITRINE_ALLURE_BOOLEENS_DEFAUTS = {
+  entete_collant: true,
+  capitales: true,
+  capitales_desc: true,
+  compte_rubrique: true,
+  monogramme: true,
+  favoris: true,
+  recherche: true,
+} as const satisfies Record<string, boolean>;
+
+export type ChampBooleenAllure = keyof typeof VITRINE_ALLURE_BOOLEENS_DEFAUTS;
+
+export const VITRINE_ALLURE_BOOLEENS = Object.keys(
+  VITRINE_ALLURE_BOOLEENS_DEFAUTS,
+) as ChampBooleenAllure[];
+
+/**
+ * L'allure STOCKÉE — toutes les clés facultatives, comme le reste du thème.
+ *
+ * Facultatives et non remplies par défaut : « la clé n'est posée que si elle
+ * EXISTAIT ». Un document qui recopierait les vingt-cinq défauts ferait croire
+ * à vingt-cinq décisions du commerçant, et le jour où un défaut change, aucune
+ * vitrine déjà enregistrée n'en profiterait.
+ */
+export interface AllureVitrine {
+  motif?: MotifVitrine;
+  densite?: DensiteVitrine;
+  style_fiche?: StyleFicheVitrine;
+  photo_taille?: PhotoTailleVitrine;
+  photo_position?: PhotoPositionVitrine;
+  style_prix?: StylePrixVitrine;
+  style_onglets?: StyleOngletsVitrine;
+  style_chips?: StyleChipsVitrine;
+  style_rubrique?: StyleRubriqueVitrine;
+  barre_basse?: BarreBasseVitrine;
+  carte_infos?: CarteInfosVitrine;
+  motif_opacite?: number;
+  rayon?: number;
+  ombre?: number;
+  echelle_texte?: number;
+  hero_hauteur?: number;
+  hero_taille_nom?: number;
+  hero_voile?: number;
+  entete_collant?: boolean;
+  capitales?: boolean;
+  capitales_desc?: boolean;
+  compte_rubrique?: boolean;
+  monogramme?: boolean;
+  favoris?: boolean;
+  recherche?: boolean;
+}
+
+/**
+ * LES ÉNUMÉRATIONS D'ALLURE, indexées par leur clé — une seule table lue par le
+ * mappeur, par le validateur applicatif et par l'éditeur.
+ *
+ * Écrite à la main plutôt que dérivée : c'est le miroir du `check` SQL, et une
+ * table dérivée aurait rendu la parité vraie par construction, donc muette. La
+ * garde qui la compare à la migration vit dans `vitrine-allure-parite.test.ts`.
+ *
+ * `defaut` est la valeur de la MAQUETTE. Elle n'est jamais écrite en base : elle
+ * est ce que rend `resoudreThemeVitrine` quand la clé est absente.
+ */
+export const VITRINE_ALLURE_ENUMS = {
+  motif: { valeurs: VITRINE_MOTIFS, defaut: "diagonales" },
+  densite: { valeurs: VITRINE_DENSITES, defaut: "standard" },
+  style_fiche: { valeurs: VITRINE_STYLES_FICHE, defaut: "ombre" },
+  photo_taille: { valeurs: VITRINE_PHOTO_TAILLES, defaut: "standard" },
+  photo_position: { valeurs: VITRINE_PHOTO_POSITIONS, defaut: "gauche" },
+  style_prix: { valeurs: VITRINE_STYLES_PRIX, defaut: "accent" },
+  style_onglets: { valeurs: VITRINE_STYLES_ONGLETS, defaut: "segmentes" },
+  style_chips: { valeurs: VITRINE_STYLES_CHIPS, defaut: "pleines" },
+  style_rubrique: { valeurs: VITRINE_STYLES_RUBRIQUE, defaut: "carte" },
+  barre_basse: { valeurs: VITRINE_BARRES_BASSES, defaut: "flottante" },
+  carte_infos: { valeurs: VITRINE_CARTES_INFOS, defaut: "chevauche" },
+} as const;
+
+export type ChampEnumAllure = keyof typeof VITRINE_ALLURE_ENUMS;
+
+/** Les onze listes déroulantes, dans l'ordre où l'éditeur les présente. */
+export const VITRINE_ALLURE_ENUMS_CLES = Object.keys(
+  VITRINE_ALLURE_ENUMS,
+) as ChampEnumAllure[];
+
+/**
+ * TOUTES LES CLÉS D'ALLURE ACCEPTÉES — le miroir de la liste blanche du second
+ * rang, côté SQL. Une clé absente d'ici fait refuser le thème par la base.
+ */
+export const VITRINE_ALLURE_CLES: readonly string[] = [
+  ...VITRINE_ALLURE_ENUMS_CLES,
+  ...VITRINE_ALLURE_CHIFFRES,
+  ...VITRINE_ALLURE_BOOLEENS,
+];
+
+/**
+ * LES PRÉRÉGLAGES PAR SECTEUR — couleurs et polices, et rien d'autre.
+ *
+ * ── CE N'EST PAS UN THÈME STOCKÉ ──
+ *
+ * Ces valeurs ne sont jamais écrites en base : elles remplacent les défauts de
+ * `resoudreThemeVitrine` quand le commerçant n'a rien choisi. Un commerçant qui
+ * change de secteur voit donc son allure suivre — tant qu'il n'a pas posé sa
+ * propre couleur, auquel cas la sienne gagne, toujours.
+ *
+ * ── L'ALLURE N'Y EST PAS, ET C'EST DÉLIBÉRÉ ──
+ *
+ * Les vingt-cinq réglages de mise en page sont les MÊMES pour les sept secteurs
+ * (voir l'en-tête du secteur). Un spa et un restaurant se distinguent par leur
+ * palette et leur vocabulaire, pas par la position de leurs photos.
+ */
+export const VITRINE_PRESETS_SECTEUR: Record<
+  SecteurVitrine,
+  { primary: string; secondary: string; heading: FontKey; body: FontKey }
+> = {
+  // L'accent et le crème de la carte de référence.
+  restaurant: {
+    primary: "#7D3C11",
+    secondary: "#FAF6EC",
+    heading: "elegant",
+    body: "sans",
+  },
+  bar: {
+    primary: "#B4762A",
+    secondary: "#F2F1EE",
+    heading: "impact",
+    body: "sans",
+  },
+  coiffeur: {
+    primary: "#7A1F2B",
+    secondary: "#FDFBF6",
+    heading: "modern",
+    body: "sans",
+  },
+  fleuriste: {
+    primary: "#1F4B3F",
+    secondary: "#EFF2EA",
+    heading: "elegant",
+    body: "sans",
+  },
+  hotel: {
+    primary: "#1B3A5C",
+    secondary: "#FDFBF6",
+    heading: "elegant",
+    body: "sans",
+  },
+  spa: {
+    primary: "#1F4B3F",
+    secondary: "#F8EFEA",
+    heading: "elegant",
+    body: "rounded",
+  },
+  // Le neutre EST la maquette : une vitrine sans secteur ne doit pas avoir
+  // l'air moins finie qu'une autre.
+  commerce: {
+    primary: "#7D3C11",
+    secondary: "#FAF6EC",
+    heading: "elegant",
+    body: "sans",
+  },
+};
 
 // ────────────────────────────────────────────────────────────
 // LES SLUGS RÉSERVÉS — miroir de `is_reserved_vitrine_slug`
@@ -870,6 +1247,28 @@ export interface VitrineIdentiteView {
   cover_alt: string | null;
   /** VIT-12 : le commerçant autorise-t-il l'indexation ? Ne suffit pas à indexer. */
   indexable: boolean;
+  /**
+   * Le métier du commerce — il choisit les MOTS du chrome et le préréglage de
+   * palette. Jamais vide côté public : `asSecteurVitrine` retombe sur
+   * `commerce` pour une ligne écrite avant que la colonne n'existe.
+   */
+  secteur: SecteurVitrine;
+  /**
+   * LE BADGE DU HERO — « Ouvert · 12h–23h », écrit à la main.
+   *
+   * ── POURQUOI UN TEXTE ET NON UN CALCUL ──
+   *
+   * `horaires_texte` est un champ MULTILIGNE LIBRE : « Mardi au dimanche »,
+   * « Fermé le lundi midi », « Service continu l'été ». Rien n'en déduit une
+   * ouverture à l'instant T sans se tromper un jour férié, et un badge « Ouvert »
+   * faux sur une page publique fait déplacer un client pour rien — c'est
+   * strictement pire que pas de badge.
+   *
+   * Le commerçant écrit donc la phrase qu'il assume, et `null` la retire.
+   * Un horaire STRUCTURÉ (jour, plage, exceptions) est un autre lot : il
+   * demande un éditeur de créneaux, un fuseau et des jours fériés.
+   */
+  badge_ouverture: string | null;
   theme: ThemeVitrine;
 }
 
@@ -1034,6 +1433,10 @@ export interface VitrineSettingsView {
   cover_alt: string | null;
   /** VIT-12 : le commerçant autorise-t-il l'indexation ? Ne suffit pas à indexer. */
   indexable: boolean;
+  /** VIT-13 : le métier, qui choisit le vocabulaire public et le préréglage. */
+  secteur: SecteurVitrine;
+  /** VIT-13 : la pastille du hero, écrite à la main. */
+  badge_ouverture: string | null;
   updated_at: string | null;
 }
 
@@ -1163,7 +1566,73 @@ export function mapThemeVitrine(raw: unknown): ThemeVitrine {
     theme.ordre_blocs = motsDuVocabulaireVitrine(root.ordre_blocs, VITRINE_BLOCS);
   }
 
+  const allure = mapAllureVitrine(root.allure);
+  if (allure) theme.allure = allure;
+
   return theme;
+}
+
+/**
+ * L'allure, lue clé par clé — et `undefined` quand rien n'est reconnu.
+ *
+ * ── `undefined` ET NON `{}` ──
+ *
+ * Un objet vide serait posé sur `theme.allure` et ferait croire à un réglage.
+ * C'est le même arbitrage que `ordre_blocs` : la clé n'existe que si elle
+ * portait quelque chose.
+ *
+ * ── CE QUI EST HORS BORNES EST OMIS, PAS RABOTÉ ──
+ *
+ * Ramener 900 à 420 pour `hero_hauteur` rendrait une page qui a l'air réglée
+ * alors qu'elle ne l'est pas, et le commerçant chercherait longtemps pourquoi
+ * son curseur ne fait rien. Omettre la clé fait retomber sur le défaut de la
+ * maquette, qui est une valeur que quelqu'un a choisie.
+ *
+ * Aucune de ces valeurs ne peut normalement arriver : la base les refuse. Ce
+ * filtre couvre la ligne écrite AVANT un resserrement de bornes — même motif
+ * que `motsDuVocabulaireVitrine`.
+ */
+function mapAllureVitrine(raw: unknown): AllureVitrine | undefined {
+  const root = asRecord(raw);
+  if (!root) return undefined;
+
+  const allure: AllureVitrine = {};
+  let posee = false;
+
+  for (const cle of VITRINE_ALLURE_ENUMS_CLES) {
+    const mot = asString(root[cle]);
+    const valeurs = VITRINE_ALLURE_ENUMS[cle].valeurs as readonly string[];
+    if (mot && valeurs.includes(mot)) {
+      // `never` : chaque clé a son propre type d'union, et TypeScript ne peut
+      // pas relier l'indice à la valeur dans une boucle. L'appartenance vient
+      // d'être vérifiée contre la MÊME table que celle qui type le champ.
+      allure[cle] = mot as never;
+      posee = true;
+    }
+  }
+
+  for (const cle of VITRINE_ALLURE_CHIFFRES) {
+    const brut = root[cle];
+    const bornes = VITRINE_ALLURE_BORNES[cle];
+    if (
+      typeof brut === "number" &&
+      Number.isFinite(brut) &&
+      brut >= bornes.min &&
+      brut <= bornes.max
+    ) {
+      allure[cle] = brut;
+      posee = true;
+    }
+  }
+
+  for (const cle of VITRINE_ALLURE_BOOLEENS) {
+    if (typeof root[cle] === "boolean") {
+      allure[cle] = root[cle];
+      posee = true;
+    }
+  }
+
+  return posee ? allure : undefined;
 }
 
 function mapFiche(raw: unknown): VitrineFicheView | null {
@@ -1505,6 +1974,8 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       cover_path: asString(identite.cover_path),
       cover_alt: asString(identite.cover_alt),
       indexable: identite.indexable === true,
+      secteur: asSecteurVitrine(identite.secteur),
+      badge_ouverture: asString(identite.badge_ouverture),
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
@@ -1543,6 +2014,8 @@ export function mapVitrineDashboardState(raw: unknown): VitrineDashboardState {
         cover_path: asString(brut.cover_path),
         cover_alt: asString(brut.cover_alt),
         indexable: brut.indexable === true,
+        secteur: asSecteurVitrine(brut.secteur),
+        badge_ouverture: asString(brut.badge_ouverture),
         updated_at: asString(brut.updated_at),
       };
     }
