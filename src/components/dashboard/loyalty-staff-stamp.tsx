@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { stampLoyaltyVisitStaff } from "@/actions/loyalty";
-import type { LoyaltyStampResult } from "@/lib/loyalty";
+import {
+  stampLoyaltyVisitStaff,
+  type LoyaltyStaffStampResult,
+} from "@/actions/loyalty";
+import { Avatar } from "@/lib/avatars";
 import { Card } from "@/components/ui/card";
 import {
   loyaltyPointsGoal,
@@ -77,7 +80,7 @@ export function LoyaltyStaffStamp({ programs }: { programs: StaffLoyaltyProgram[
   const [programId, setProgramId] = useState(programs[0]?.id ?? "");
   const [manualToken, setManualToken] = useState("");
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<LoyaltyStampResult | null>(null);
+  const [result, setResult] = useState<LoyaltyStaffStampResult | null>(null);
   const [error, setError] = useState("");
   const [tally, setTally] = useState<StampTally>(EMPTY_TALLY);
 
@@ -256,7 +259,7 @@ function SessionTally({ tally }: { tally: StampTally }) {
   );
 }
 
-function StaffStampResult({ result }: { result: LoyaltyStampResult }) {
+function StaffStampResult({ result }: { result: LoyaltyStaffStampResult }) {
   if (result.state !== "stamped") {
     const message = messageForStampState(result.state, {
       retryInSeconds: result.retryInSeconds,
@@ -356,15 +359,22 @@ function StaffStampResult({ result }: { result: LoyaltyStampResult }) {
  * TROIS CHOSES, DANS CET ORDRE : le solde et le niveau, les cadeaux à portée
  * MAINTENANT, puis ce qu'il manque pour le suivant.
  *
- * ── CE QUE CETTE FICHE NE MONTRE PAS, ET POURQUOI ──
+ * ── LE SEUL NOM AFFICHÉ EST CELUI QUE LE CLIENT S'EST DONNÉ ──
  *
- * Aucun nom, aucun courriel, aucun téléphone : ce n'est pas un filtrage, c'est
- * qu'il n'y a rien à filtrer. `loyalty_members` ne porte AUCUNE colonne
- * identifiante — le client y est un `token_hash` dérivé de son cookie, et le
- * jeton de check-in scanné ne transporte que cette empreinte. La caisse
- * identifie donc une CARTE, jamais une personne, et la fiche s'arrête là où
- * s'arrête le schéma. Élargir cette vue demanderait une migration, pas un
- * composant.
+ * Depuis FID-8b, `loyalty_members` porte un `display_name` — mais c'est le
+ * CLIENT qui l'écrit, depuis son passeport, et `set_loyalty_member_identity`
+ * n'est accordée qu'à `service_role` : la session marchande n'a qu'un `select`
+ * sur cette colonne, et une garde SQL (20261120120000, 5c) le vérifie à chaque
+ * migration. Un commerçant lit donc le surnom, il ne renomme pas ses clients —
+ * un libellé choisi ne doit pas devenir une fiche client subie.
+ *
+ * Toujours aucun courriel, aucun téléphone, aucune adresse : là il n'y a
+ * réellement rien à filtrer, le schéma ne les porte pas. La caisse identifie
+ * une CARTE, et son porteur seulement s'il a bien voulu se nommer.
+ *
+ * LE SURNOM EST ABSENT LA PLUPART DU TEMPS. C'est l'état par défaut d'une
+ * carte, pas une donnée manquante : la fiche retombe alors sur son titre
+ * d'origine (« Ce client »), sans emplacement vide ni « Sans nom ».
  *
  * ── POURQUOI ELLE NE RALENTIT PAS LE TAMPON ──
  *
@@ -378,7 +388,7 @@ function FicheClient({
   result,
   milestones,
 }: {
-  result: LoyaltyStampResult;
+  result: LoyaltyStaffStampResult;
   milestones: StaffLoyaltyMilestone[];
 }) {
   // Une fiche n'a de sens que sur une visite réellement enregistrée : sur
@@ -405,9 +415,20 @@ function FicheClient({
       aria-label="Ce que ce client peut prendre"
       className="mt-3 rounded-xl border-2 border-k-ink/15 bg-white px-4 py-3"
     >
-      <p className="text-xs font-black uppercase tracking-wide text-zinc-500">
-        Ce client
-      </p>
+      {result.displayName ? (
+        <p className="flex items-center gap-2">
+          {result.avatar && (
+            <Avatar id={result.avatar} className="h-7 w-7 shrink-0" />
+          )}
+          <span className="truncate text-base font-black text-k-ink">
+            {result.displayName}
+          </span>
+        </p>
+      ) : (
+        <p className="text-xs font-black uppercase tracking-wide text-zinc-500">
+          Ce client
+        </p>
+      )}
       <p className="mt-1 text-sm font-bold text-k-ink">
         <span className="text-lg font-black">{solde}</span> point
         {solde > 1 ? "s" : ""} à dépenser · niveau{" "}

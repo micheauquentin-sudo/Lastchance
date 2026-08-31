@@ -145,6 +145,14 @@ export interface LoyaltyPassportState {
   pointsEarnedTotal: number;
   tier: LoyaltyTier;
   rewards: LoyaltyPassportReward[];
+  /**
+   * SURNOM que le client a donné à sa carte (FID-8b) — `null` tant qu'il n'a
+   * rien choisi, ce qui est l'état normal d'une carte neuve et NON un profil
+   * incomplet : l'écran n'en tire aucune relance.
+   */
+  displayName: string | null;
+  /** Figure choisie ; chaîne vide = aucune, et surtout pas le renard par défaut. */
+  avatar: string;
 }
 
 /** Etat minimal du pot commun, affichable sans ouvrir le parcours Jackpot. */
@@ -215,6 +223,10 @@ interface MembrePasseport {
   visit_count: number;
   points_balance: number;
   points_earned_total: number;
+  /** Surnom choisi par le client (FID-8b) — toujours nullable. */
+  display_name: string | null;
+  /** Figure choisie ; `''` quand il n'y en a pas (colonne `not null`). */
+  avatar: string;
 }
 
 /**
@@ -307,7 +319,9 @@ async function resoudreIdentitePasseport(
   if (empreinteCookie) {
     const { data } = await admin
       .from("loyalty_members")
-      .select("id, visit_count, points_balance, points_earned_total")
+      .select(
+        "id, visit_count, points_balance, points_earned_total, display_name, avatar",
+      )
       .eq("program_id", program.id)
       .eq("token_hash", empreinteCookie)
       .maybeSingle();
@@ -339,7 +353,9 @@ async function resoudreIdentitePasseport(
   // est rare, il ne doit pas coûter N allers-retours le jour où il sert.
   const { data, error } = await admin
     .from("loyalty_members")
-    .select("id, token_hash, visit_count, points_balance, points_earned_total")
+    .select(
+      "id, token_hash, visit_count, points_balance, points_earned_total, display_name, avatar",
+    )
     .eq("program_id", program.id)
     .in("token_hash", anciennes);
   if (error) return vide;
@@ -386,6 +402,8 @@ async function loadPassportState(
     pointsEarnedTotal: 0,
     tier: "bronze",
     rewards: [],
+    displayName: null,
+    avatar: "",
   };
 
   const member = identite.membre;
@@ -454,6 +472,8 @@ async function loadPassportState(
       program.gold_threshold,
     ),
     rewards,
+    displayName: member.display_name ?? null,
+    avatar: member.avatar ?? "",
   };
 }
 

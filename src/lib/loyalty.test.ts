@@ -3,9 +3,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  LOYALTY_IDENTITY_STATES,
   LOYALTY_REFERRAL_STATES,
   LOYALTY_STAMP_STATES,
   loyaltyTierForVisits,
+  mapLoyaltyIdentityResult,
   mapLoyaltyReferralResult,
   mapLoyaltySpinGrant,
   mapLoyaltyStampResult,
@@ -976,6 +978,45 @@ describe("validations/loyalty", () => {
     // Blancs seuls : refusé plutôt que silencieusement mué en null — le
     // commerçant a tapé quelque chose, on lui dit que ça ne compte pas.
     expect(createLoyaltyOrderCodesSchema.safeParse({ ...base, label: "   " }).success).toBe(false);
+  });
+});
+
+
+describe("mapLoyaltyIdentityResult (FID-8b)", () => {
+  it("relit les trois champs que la RPC rend sur un succès", () => {
+    expect(
+      mapLoyaltyIdentityResult({
+        state: "saved",
+        display_name: "Marie",
+        avatar: "renard",
+      }),
+    ).toEqual({ state: "saved", displayName: "Marie", avatar: "renard" });
+  });
+
+  it("un surnom effacé revient en null, une figure absente en chaîne vide", () => {
+    expect(
+      mapLoyaltyIdentityResult({ state: "saved", display_name: null, avatar: "" }),
+    ).toEqual({ state: "saved", displayName: null, avatar: "" });
+  });
+
+  it("REPLI SUR not_a_member, jamais sur saved", () => {
+    // Un état inconnu — RPC redéployée, réponse tronquée — ne doit pas faire
+    // croire au client que son surnom est gravé alors que rien n'a été écrit.
+    for (const raw of [null, undefined, 42, "saved", {}, { state: "inconnu" }]) {
+      expect(mapLoyaltyIdentityResult(raw).state).toBe("not_a_member");
+    }
+  });
+
+  it("porte les quatre états nommés par la migration, et eux seuls", () => {
+    expect([...LOYALTY_IDENTITY_STATES]).toEqual([
+      "saved",
+      "rejected_name",
+      "rejected_avatar",
+      "not_a_member",
+    ]);
+    for (const state of LOYALTY_IDENTITY_STATES) {
+      expect(mapLoyaltyIdentityResult({ state }).state).toBe(state);
+    }
   });
 });
 

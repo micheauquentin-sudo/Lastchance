@@ -440,6 +440,59 @@ export function mapLoyaltyReferralResult(raw: unknown): LoyaltyReferralResult {
 }
 
 // ────────────────────────────────────────────────────────────
+// Le client nomme sa carte (FID-8b) — `set_loyalty_member_identity`
+// ────────────────────────────────────────────────────────────
+
+/**
+ * États nommés de `set_loyalty_member_identity` (20261120120000). LISTE
+ * BLANCHE, même contrat que partout ailleurs dans ce module — et le repli est
+ * `not_a_member`, jamais `saved` : un état inconnu ne doit pas faire croire au
+ * client que son surnom est gravé alors que rien n'a été écrit.
+ *
+ * `not_a_member` couvre INDISTINCTEMENT trois causes côté base — programme
+ * inconnu, module coupé, jeton inconnu. C'est délibéré (la RPC refuse de servir
+ * d'oracle d'existence) et l'écran ne doit surtout pas chercher à les
+ * distinguer : une seule phrase pour les trois.
+ */
+export const LOYALTY_IDENTITY_STATES = [
+  "saved",
+  "rejected_name",
+  "rejected_avatar",
+  "not_a_member",
+] as const;
+
+export type LoyaltyIdentityState = (typeof LOYALTY_IDENTITY_STATES)[number];
+
+/** L'identité telle que la BASE l'a relue après écriture, jamais celle envoyée. */
+export interface LoyaltyIdentityResult {
+  state: LoyaltyIdentityState;
+  /**
+   * Surnom effectivement gravé, déjà passé par `format_player_alias` côté
+   * base : `null` quand le client a effacé le sien. L'écran affiche CETTE
+   * valeur et non sa saisie — sinon un surnom replié par la base resterait
+   * affiché dans sa forme d'origine jusqu'au prochain rechargement.
+   */
+  displayName: string | null;
+  /** Figure gravée ; chaîne vide = aucune figure choisie. */
+  avatar: string;
+}
+
+export function mapLoyaltyIdentityResult(raw: unknown): LoyaltyIdentityResult {
+  const root = asRecord(raw);
+  const stateRaw = root ? asString(root.state) : null;
+  const state: LoyaltyIdentityState =
+    stateRaw && (LOYALTY_IDENTITY_STATES as readonly string[]).includes(stateRaw)
+      ? (stateRaw as LoyaltyIdentityState)
+      : "not_a_member";
+
+  return {
+    state,
+    displayName: root ? asString(root.display_name) : null,
+    avatar: (root ? asString(root.avatar) : null) ?? "",
+  };
+}
+
+// ────────────────────────────────────────────────────────────
 // Niveau dérivé du compteur porteur du rang (pur, testable)
 // ────────────────────────────────────────────────────────────
 
