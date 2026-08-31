@@ -130,24 +130,50 @@ select is(
 
 -- Les trois vocabulaires du thème vivent dans le CORPS du validateur : c'est là
 -- qu'on les compte. `prosrc` est le texte installé, pas celui du fichier.
+--
+-- ── CHAQUE COMPTE EST BORNÉ À SA PROPRE CLAUSE, ET IL LE FAUT (VIT-13) ──
+--
+-- Ces trois gardes comptaient leurs mots dans TOUT le corps de la fonction.
+-- Tant que le validateur ne portait que ces trois listes, c'était équivalent.
+-- Il en porte onze de plus depuis l'allure, et `photo_taille` y a introduit la
+-- valeur `sans` — qui est aussi une clé de POLICE. Le compte est passé à huit,
+-- et la garde des polices a rougi pour une valeur qui n'a rien à voir avec
+-- elles. Le commentaire SQL qui l'expliquait a rougi une seconde fois :
+-- `prosrc` porte les commentaires.
+--
+-- On isole donc la LISTE de chaque clause avant de compter. C'est plus STRICT,
+-- pas plus permissif : la garde vérifie désormais que les mots sont au bon
+-- endroit, là où elle se contentait de les trouver quelque part. Et le prochain
+-- vocabulaire qui contiendra `mono`, `script`, `liste` ou `social` ne fera
+-- plus tomber une garde qui ne le concerne pas.
+--
+-- `substring(… from '…')` rend NULL si l'ancre a disparu ; `coalesce` en fait
+-- alors une chaîne vide, donc un compte de zéro, donc un échec — jamais un
+-- vert silencieux sur une garde devenue aveugle.
+
 select is(
   (select pg_catalog.count(*)::bigint
      from pg_proc p
      cross join lateral
-       pg_catalog.regexp_matches(p.prosrc,
-         '''(sans|elegant|impact|rounded|script|modern|mono)''', 'g') m
+       pg_catalog.regexp_matches(
+         coalesce(
+           pg_catalog.substring(p.prosrc,
+             '\(v_polices ->> e\.key\) not in[[:space:]]*\(([^)]*)\)'), ''),
+         '''([a-z_]+)''', 'g') m
     where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure),
   7::bigint,
-  'les sept polices de src/lib/fonts.ts sont recopiées dans le validateur de thème'
+  'les sept polices de src/lib/fonts.ts sont recopiées DANS LA CLAUSE polices du validateur'
 );
 
 select is(
   (select pg_catalog.count(*)::bigint
      from pg_proc p
      cross join lateral
-       pg_catalog.regexp_matches(p.prosrc,
-         '''(accroche|histoire|cartes|horaires|social|reserver|experiences)''',
-         'g') m
+       pg_catalog.regexp_matches(
+         coalesce(
+           pg_catalog.substring(p.prosrc,
+             '\(e\.value #>> ''\{\}''\) not in[[:space:]]*\(([^)]*)\)'), ''),
+         '''([a-z_]+)''', 'g') m
     where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure),
   7::bigint,
   'les SEPT blocs de la page d''accueil sont le vocabulaire fermé d''ordre_blocs — les cinq de VIT-1a, plus les deux portes de VIT-3'
@@ -157,8 +183,11 @@ select is(
   (select pg_catalog.count(*)::bigint
      from pg_proc p
      cross join lateral
-       pg_catalog.regexp_matches(p.prosrc,
-         '''(liste|grille|magazine)''', 'g') m
+       pg_catalog.regexp_matches(
+         coalesce(
+           pg_catalog.substring(p.prosrc,
+             '->> ''style_cartes''\) not in[[:space:]]*\(([^)]*)\)'), ''),
+         '''([a-z_]+)''', 'g') m
     where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure),
   3::bigint,
   'les trois styles de cartes sont un vocabulaire fermé, pas une chaîne libre'

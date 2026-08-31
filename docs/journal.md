@@ -4,6 +4,12 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-08-29 — Réservation de table : un plan de salle, puis le défaut qui l'empêchait de tourner
+
+**Réservation de table : un plan de salle, puis le défaut qui l'empêchait de tourner** (RDV-1, RDV-6 à RDV-9, RDV-11, RDV-12 — PR #229→#232, #237). Réservation (`rendez_vous`) a des tables nommées, un effectif exact, une liste d'attente qui **notifie** sans tenir de table. RDV-11 a corrigé `createReserverActivity` : n'écrivait pas `booking_mode`, tout naissait `moment` et sortait du filtre de la page.
+  **Le défaut de fond** : `reservations`/`reservation_activities`/`reservation_waitlist_entries` accordent leurs droits **colonne par colonne** (pour tenir `email` hors de portée du commerçant) — une colonne neuve n'hérite donc de rien. Trois lots l'ont chacun oublié : deux lectures (RDV-6) et une **écriture totale** sur cinq colonnes de réglage, qui empêchait `enregistrerReglagesRendezVous` d'écrire depuis la session — **aucune activité n'a jamais pu passer en `booking_mode = 'rendez_vous'` depuis le tableau de bord**. RDV-12 (migration `20261112120000`, `EXPECTED_MIGRATION` à jour) répare la troisième. Les trois trouvées après coup, jamais par une garde : une garde générique (grants × server actions) est une piste, pas une décision (`docs/bugs.md`, ADR-122).
+  **Reste ouvert** : le socle Moments vérifie encore `vitrine`, pas `rendez_vous`. **Geste propriétaire** : créer le produit Stripe « Réservation » (20 €/mois), poser `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` en Production.
+
 ## 2026-08-24 — Sept lots Vitrine, le Ticket d'Or, puis la panne qu'ils avaient posée
 
 **Dernier chantier** : **Sept lots Vitrine, le Ticket d'Or, puis la panne qu'ils avaient posée** (PR #180 à #191). Les huit lots : carte et photos importées **dans le navigateur**, traduction déclenchée par le commerçant, mesures **sans identifiant**, Boussole à facettes fermées, sortie après jeu, indexation Google **sur consentement**, Ticket d'Or (jeu du socle). Puis #191, trouvée dans les journaux Vercel : `sharp` ne se chargeait pas en production (`libvips` non embarqué), et un module natif qui échoue emporte **tout le fichier qui l'importe** — enregistrer l'ADRESSE d'une vitrine, sans la moindre image, échouait donc aussi. Chargement différé plus `outputFileTracingIncludes`, vérifiés sur une construction Linux.

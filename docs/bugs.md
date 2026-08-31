@@ -825,6 +825,49 @@ corrigés et vérifiés (commits `45f704c`, `624224f`).
 
 ## High Priority
 
+### ✅ CLOS le 2026-08-31 (PR #276) — quatorze privilèges que la PRODUCTION avait et qu'aucune migration ne décrivait
+
+Trouvé par `supabase db diff --linked`, lancé en marge de VIT-13 — donc par
+hasard, ce qui est le vrai enseignement : **rien ne surveillait l'écart entre
+les `grant` de la production et ceux que le dépôt décrit**.
+
+Quatorze privilèges de table pour `authenticated` existaient en production et
+sont absents de toute base construite depuis les migrations : `audit_logs`
+(insert/update/delete), `newsletter_campaigns` (update/delete),
+`newsletter_subscribers` (insert/update), `organization_members` (insert),
+`organizations` (insert/delete), `participations` (insert), `spins`
+(insert/update/delete).
+
+**Ce n'était pas exploitable, et il faut le dire précisément.** La RLS est
+active sur les sept tables. `audit_logs` ne porte qu'UNE politique — « audit:
+owner select », en SELECT — et sous RLS, une commande sans politique qui
+l'autorise est refusée. Personne n'a jamais pu effacer une ligne d'audit.
+
+**Ce que c'était vraiment** : de la défense en profondeur érodée. Le `grant` est
+la seconde serrure. Le jour où quelqu'un ajoute une politique `for all` un peu
+large sur l'une de ces tables — le geste le plus banal du monde — le privilège
+l'attendait déjà, et personne n'aurait pensé à le chercher.
+
+**Corrigé** par `20261122120000`, après audit du code : toutes les écritures
+applicatives sur ces tables passent par le client `admin` (service_role). La
+seule écriture faite en session utilisateur, `organization_members` en DELETE
+(`src/actions/team.ts`), n'est PAS révoquée — la liste a été établie par
+différence avec l'usage réel, pas par principe.
+
+**Une erreur au passage, attrapée par la garde neuve** : la première version
+affirmait que les réglages d'organisation s'écrivaient en session. Ils passent
+tous par service_role, et `authenticated` n'a aucun `update` sur
+`organizations`, ni au niveau table ni au niveau colonne.
+
+**Garde** : seize assertions dans `supabase/tests/security_acl.test.sql` —
+quatorze « le privilège est absent », deux « ces deux-là doivent rester ». Elles
+valent pour la production réparée comme pour toute base neuve, et rougissent le
+jour où quelqu'un ré-accorde.
+
+**Ce qui reste ouvert** : cette dérive n'a été vue que parce qu'on a lancé un
+`db diff` à la main. Une garde périodique production ⇄ migrations n'existe
+toujours pas.
+
 ### ✅ CLOS le 2026-08-05 (PR #115) — corrigé AU SCHÉMA pour un premier cas ; « l'audit a fermé la classe » était FAUX
 
 `entierOptionnel` et `reference` tolèrent désormais `null`, alignés sur leurs

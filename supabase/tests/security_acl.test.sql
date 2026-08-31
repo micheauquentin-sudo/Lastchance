@@ -654,6 +654,55 @@ select ok(not has_column_privilege('authenticated', 'public.vitrine_settings', '
 select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'published', 'UPDATE'), 'merchant can publish and unpublish (the trigger guards the entitlement)');
 select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'theme', 'UPDATE'), 'merchant can style their own storefront');
 select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'DELETE'), 'merchant cannot delete their storefront settings — unpublishing is enough');
+
+-- ── LA DÉRIVE DE PRIVILÈGES QUE LA PRODUCTION AVAIT PRISE ──────────────────
+--
+-- Quatorze privilèges de table existaient en PRODUCTION et dans aucune
+-- migration : trouvés par `supabase db diff --linked`, révoqués par
+-- 20261122120000. Personne ne les avait décidés, et RIEN ne les voyait — c'est
+-- la seule raison pour laquelle ils ont pu vivre là si longtemps.
+--
+-- Ils n'étaient pas exploitables : la RLS est active sur les sept tables, et
+-- `audit_logs` ne porte qu'une politique, en SELECT. Mais le `grant` est la
+-- seconde serrure, et le jour où une politique `for all` un peu large arrive
+-- sur l'une de ces tables, elle la trouverait déjà ouverte.
+--
+-- CES ASSERTIONS SONT DES « NOT ». Elles ne prouvent pas que la révocation a
+-- eu lieu — elles prouvent que le privilège est absent, ce qui est vrai aussi
+-- d'une base qui ne l'a jamais eu. C'est exactement ce qu'on veut : la garde
+-- vaut pour la production réparée COMME pour toute base neuve, et elle rougit
+-- le jour où quelqu'un le ré-accorde, par migration ou à la main.
+--
+-- Les deux écritures que l'application fait VRAIMENT en session sur ces tables
+-- sont vérifiées juste après, en positif : elles ne doivent pas partir avec.
+
+select ok(not has_table_privilege('authenticated', 'public.audit_logs', 'INSERT'), 'the audit trail is written by service_role only');
+select ok(not has_table_privilege('authenticated', 'public.audit_logs', 'UPDATE'), 'an audit line cannot be rewritten by the audited party');
+select ok(not has_table_privilege('authenticated', 'public.audit_logs', 'DELETE'), 'an audit line cannot be erased by the audited party');
+select ok(not has_table_privilege('authenticated', 'public.newsletter_campaigns', 'UPDATE'), 'a campaign is piloted by service_role once created');
+select ok(not has_table_privilege('authenticated', 'public.newsletter_campaigns', 'DELETE'), 'a campaign is not deleted from the session');
+select ok(not has_table_privilege('authenticated', 'public.newsletter_subscribers', 'INSERT'), 'subscribers arrive through the player journey, server-side');
+select ok(not has_table_privilege('authenticated', 'public.newsletter_subscribers', 'UPDATE'), 'unsubscribing is server-side, and never a merchant edit');
+select ok(not has_table_privilege('authenticated', 'public.organization_members', 'INSERT'), 'a member is added through the invitation token, never by direct insert');
+select ok(not has_table_privilege('authenticated', 'public.organizations', 'INSERT'), 'an organization is born at signup, server-side');
+select ok(not has_table_privilege('authenticated', 'public.organizations', 'DELETE'), 'closing an account is a guarded flow, not a row deletion');
+select ok(not has_table_privilege('authenticated', 'public.participations', 'INSERT'), 'a participation is written by the anonymous player journey, through service_role');
+select ok(not has_table_privilege('authenticated', 'public.spins', 'INSERT'), 'a spin is written by the player journey, through service_role');
+select ok(not has_table_privilege('authenticated', 'public.spins', 'UPDATE'), 'a spin result cannot be rewritten from a merchant session');
+select ok(not has_table_privilege('authenticated', 'public.spins', 'DELETE'), 'a spin cannot be erased from a merchant session');
+
+-- LES DEUX QUI RESTENT, ET QUI DOIVENT RESTER. La liste révoquée a été établie
+-- par différence avec l'usage réel du code, pas par principe : ces deux-là sont
+-- de vraies écritures de session (`src/actions/team.ts`, et les réglages
+-- d'organisation), et les emporter aurait cassé le tableau de bord.
+select ok(has_table_privilege('authenticated', 'public.organization_members', 'DELETE'), 'a member is still removed from the session — the revocation of VIT-13 did not overreach');
+-- CELLE-CI A ÉTÉ ÉCRITE À L'ENVERS D'ABORD, ET LE TEST L'A DIT. On croyait que
+-- les réglages d'organisation (fuseau, notifications, rétention, webhook) se
+-- faisaient en session : ils passent tous par service_role. `authenticated` n'a
+-- donc AUCUN update sur `organizations`, ni au niveau table ni au niveau
+-- colonne — ce qui rend la révocation de l'`insert` et du `delete` d'autant
+-- plus cohérente : cette table ne s'écrit jamais depuis une session.
+select ok(not has_table_privilege('authenticated', 'public.organizations', 'UPDATE'), 'organization settings are written by service_role only — the session holds no update at all');
 -- La suppression d'une CARTE est ouverte mais GARDÉE (trigger « compter
 -- d'abord ») ; celle des rubriques et des fiches est libre — contenu éditorial,
 -- aucun fait client.

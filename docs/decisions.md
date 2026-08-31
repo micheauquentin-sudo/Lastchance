@@ -8223,3 +8223,102 @@ par produit (RDV-5). Un commerçant qui ne détiendrait que `rendez_vous` sans
 `20261109120000_plan_salle_lecture.sql`,
 `20261110120000_liste_attente_effectif.sql`,
 `20261112120000_reglages_rendez_vous_ecrivables.sql`.
+
+## ADR-123 — La Vitrine prend l'allure d'une maquette : les défauts SONT la référence, et seuls les écarts sont stockés
+
+**Date** : 2026-08-31
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — que la vitrine publique ressemble
+« exactement » à une carte digitale de référence fournie en maquette, tout en
+ouvrant ses réglages visuels et en servant sept métiers (restaurant, bar,
+coiffeur, fleuriste, hôtel, spa, autre commerce). Les trois demandes tirent en
+sens contraire : la fidélité veut UNE allure, l'ouverture des réglages en
+autorise des milliers, et le multi-métier en suggère sept. VIT-13 (PR #276,
+migration `20261121120000`).
+
+### Décision 1 — Les défauts sont la maquette, au pixel
+
+Les vingt-cinq réglages d'allure ont pour valeur par défaut celle de la carte
+de référence. Une vitrine à laquelle personne n'a touché sort donc exactement
+comme elle, et les réglages ne sont que des écarts VOLONTAIRES.
+`src/components/vitrine/allure.test.ts` recopie les valeurs de `data-props` de
+la maquette à la main et les compare au code : une dérive rougit.
+
+**Écarté** : des défauts neutres, avec la maquette à reconstituer réglage par
+réglage. C'était la lecture littérale de « on ouvre tout », et elle aurait fait
+de la maquette une destination qu'aucun commerçant n'atteint — donc la seule
+lecture qui trahit la demande tout en la satisfaisant sur le papier.
+
+### Décision 2 — Seuls les ÉCARTS sont écrits en base
+
+`composerAllure` compare chaque champ à son défaut et n'écrit que ce qui en
+diffère. Un formulaire entièrement laissé tel quel n'écrit rien du tout.
+
+**Écarté** : écrire les vingt-cinq valeurs, ce que le formulaire poste
+pourtant. Deux raisons, et la seconde est la vraie. D'abord un document qui
+recopie vingt-cinq défauts fait croire à vingt-cinq décisions, et rend
+impossible la lecture « ce commerçant a-t-il personnalisé son allure ? ».
+Surtout : le jour où un défaut de la maquette change, AUCUNE vitrine déjà
+enregistrée n'en profiterait — elles porteraient toutes l'ancienne valeur,
+figée le jour de leur enregistrement, et il faudrait une migration de données
+pour rattraper un changement de style.
+
+### Décision 3 — Le secteur choisit les MOTS, jamais la mise en page
+
+Sept métiers changent le vocabulaire public (« Nos cartes » → « Nos
+prestations » → « Nos chambres ») et posent un préréglage de palette que la
+couleur du commerçant écrase toujours. La structure d'écran — hero, onglets,
+chips, fiches, barre basse — est rigoureusement la même pour les sept, et un
+test garde qu'aucun préréglage ne porte de clé d'allure.
+
+**Écarté** : une mise en page par métier. Elle aurait donné sept écrans à tenir
+d'accord au lieu d'un, pour une différence que le vocabulaire et la palette
+suffisent à porter.
+
+### Décision 4 — Remplissage rétroactif `restaurant`, défaut de colonne `commerce`
+
+`add column ... default 'restaurant'` remplit les lignes existantes, puis
+`alter column ... set default 'commerce'` bascule la colonne pour les vitrines
+à naître.
+
+**Écarté** : créer la colonne directement avec le neutre. Les vitrines DÉJÀ EN
+LIGNE affichent le vocabulaire de la restauration parce que c'était le seul qui
+existait ; le neutre aurait changé les mots de chaque page publiée, en
+production, sans que le commerçant l'ait demandé ni même su. Le prix de ce
+choix est que la fonctionnalité est INERTE jusqu'à ce que chacun désigne son
+métier — c'est le bon prix : un réglage qu'on n'a pas fait ne doit pas
+s'appliquer tout seul.
+
+**Corollaire dans le seed** : `db reset` applique les migrations sur une base
+vide, donc le remplissage rétroactif ne remplit rien et les lignes semées
+héritent du défaut neutre. `supabase/seed.sql` déclare donc explicitement le
+métier de ses deux vitrines.
+
+### Décision 5 — Un témoin de présence pour la section d'allure
+
+Les sept interrupteurs valent `true` par défaut, et une case NON RENDUE se
+poste exactement comme une case DÉCOCHÉE. Sans distinction, tout formulaire ne
+portant pas la section écrivait sept `false` — en-tête collant, capitales,
+compteurs, monogramme, favoris et recherche éteints d'un coup, sans message et
+sans trace. Le champ caché `allure_rendue` sépare les deux ; sans lui, l'allure
+n'est pas touchée.
+
+**Écarté** : compter sur le fait que l'écran rend toujours les cases. C'est ce
+que fait déjà `caseNative` pour `active` et `disponible`, avec la limite écrite
+en toutes lettres dans son commentaire — et c'est exactement la classe de panne
+(RDV-12, ADR-122) que ce dépôt paie le plus cher : un enregistrement qui
+réussit en ayant fait autre chose que ce qu'on croit.
+
+### Ce que le lot a appris sur les gardes existantes
+
+Deux gardes ont rougi pour des raisons qui ne les concernaient pas, et les deux
+sont TEXTUELLES. `check-unsafe-casts.mjs` compte les doubles casts dans le
+fichier, COMMENTAIRES COMPRIS : citer la construction pour l'expliquer suffit à
+la faire rougir. `vitrine.test.sql` compte les occurrences quotées des sept
+polices dans TOUT le corps de `is_valid_vitrine_theme` : la valeur `sans` de
+`photo_taille` en faisait une huitième, et le commentaire SQL qui l'expliquait
+une neuvième — `prosrc` porte les commentaires.
+
+La valeur a été renommée `aucune` plutôt que d'élargir la garde : elle n'est
+pas fausse, elle est grossière. Mais la fragilité reste entière pour le
+prochain vocabulaire contenant `mono`, `script`, `liste` ou `social`.
