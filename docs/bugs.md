@@ -4990,3 +4990,72 @@ de faux positifs sur les tables à grant de table entier.
 **Établi, pas supposé** : contrôle négatif joué sur base réelle (grant retiré
 → écriture refusée), et 1 215 assertions pgTAP vertes sur base remise à plat
 et semée.
+
+## ✅ CLOS le 2026-08-31 (PR #279, ADR-124) — `FormData.get` rend `null` pour un champ replié, pas `undefined`, et `.default()` n'absorbe que le second
+
+Le bloc « Ma carte » du passeport (visite guidée FID-7) est replié par
+défaut. Ses deux champs neufs avaient été validés avec un schéma Zod portant
+`.default("")` — un traitement qui ne s'applique qu'à `undefined`. Mais
+`FormData.get("champ")` rend `null`, pas `undefined`, pour un champ absent du
+formulaire soumis (bloc jamais déplié, donc jamais monté dans le DOM). Le
+résultat : un client qui personnalise sa carte sans jamais ouvrir le bloc
+replié aurait vu son enregistrement refusé sur « expected string, received
+null » — traduit à l'écran par « Données invalides », sur une carte qu'il
+venait pourtant de nommer.
+
+Attrapé **par la CI** (`champ-formulaire-coverage.test.ts`), pas par la
+relecture. Corrigé en remplaçant le schéma ad hoc par `texteOptionnel`
+(`src/lib/validations/champ-formulaire.ts:87`), le helper écrit précisément
+pour ce cas : il absorbe `null` **et** `undefined`.
+
+**Règle à retenir** : dans ce dépôt, tout champ de formulaire facultatif
+passe par les primitives de `src/lib/validations/champ-formulaire.ts`
+(`texteOptionnel` et voisines) — le filet contre `null` ne se pose jamais à
+la main chez l'appelant, précisément parce que `.default()` seul ne le tend
+pas.
+
+## ✅ CLOS le 2026-08-31 (PR #279) — le focus de la visite guidée retombait en haut de page quand son propre déclencheur disparaissait
+
+Ouvrir la visite guidée du passeport depuis la bande d'invitation fait
+disparaître cette bande (elle ne sert plus une fois la visite lancée). Le
+hook de gestion du focus (`src/components/loyalty/visite-guidee-passeport.tsx`)
+tentait, à la fermeture de la visite, de rendre le focus au nœud DOM qui
+l'avait ouverte — sauf que ce nœud, la bande, n'existait plus. Le focus
+repartait alors en haut du document, un comportement qui casse la navigation
+clavier et la restitution par lecteur d'écran.
+
+Corrigé dans le même composant : le retour de focus vérifie désormais que le
+déclencheur d'origine est toujours attaché au document avant de le viser, et
+retombe sur une cible stable sinon.
+
+**Règle générale à retenir** : tout piège à focus (modale, visite guidée,
+tiroir) qui mémorise son déclencheur pour lui rendre le focus à la fermeture
+doit prévoir que ce déclencheur puisse avoir disparu du DOM entre l'ouverture
+et la fermeture — ne jamais supposer qu'il est encore là.
+
+## OUVERT (2026-08-31, signalé, environnement local) — pgTAP installé dans `public` par 4 suites sur 90 fait rougir `security_acl` et `search_path_invariant`
+
+En vérifiant ce chantier localement, `security_acl.test.sql` et
+`search_path_invariant.test.sql` rougissaient sur environ 1 074 fonctions
+soudain exécutables par PUBLIC au `search_path` libre — un chiffre qui n'a
+aucun rapport avec le programme de fidélité. Cause : 4 suites sur 90
+(`lot_emoji.test.sql`, `passeport_habillage.test.sql`,
+`plan_salle_lecture.test.sql`, `reglages_rendez_vous_ecrivables.test.sql`) ne
+posent pas elles-mêmes `create extension if not exists pgtap with schema
+extensions` avant de s'exécuter — contrairement aux 86 autres — et laissent
+donc l'extension s'installer dans le schéma par défaut de la session
+(`public`) si aucune suite portant la déclaration explicite n'est passée
+avant elles dans l'ordre d'exécution. pgTAP installé dans `public` y dépose
+ses propres fonctions, exécutables par PUBLIC au `search_path` par défaut —
+ce que les deux gardes existent précisément pour détecter.
+
+**Ce n'est pas une régression du code testé** : le programme de fidélité n'a
+touché aucune des deux gardes ni la déclaration d'extension. C'est un défaut
+latent de 4 suites sur 90, révélé par l'ordre dans lequel les fichiers de
+test ont été rejoués localement.
+
+Non corrigé dans ce chantier — hors périmètre documentaire. Correctif
+signalé pour `db-supabase` : ajouter `create extension if not exists pgtap
+with schema extensions;` en tête de ces 4 fichiers, à l'identique des 86
+autres, pour que le résultat des deux gardes ne dépende plus de l'ordre
+d'exécution des suites.

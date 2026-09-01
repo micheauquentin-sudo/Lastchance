@@ -1,5 +1,68 @@
 # Roadmap — Lastchance
 
+## V1.71 — Programme de fidélité : la refonte en seize points (✅ 2026-09-01, PR #269→#272, #274, #275, #279)
+
+**Objectif** : passer le programme de fidélité de la visite tamponnée au
+point cumulé, avec parrainage, identité de carte, Google Wallet et une visite
+guidée — sans que le niveau d'un client puisse jamais reculer.
+
+- **La bascule visites → points** (migration `20261114120000`) et **la fin de
+  l'émission automatique des récompenses** (`20261115120000`) — voir
+  ADR-124 : `points_balance` se dépense, `points_earned_total` ne recule
+  jamais et porte seul le niveau. La carte à tampons disparaît de l'écran :
+  une case cochée affirme qu'on ne recule jamais, ce qu'un solde qui se
+  dépense ne peut plus garantir.
+- **L'habillage du passeport** (`20261116120000`) puis **le socle d'identité
+  joueur partagée** (`20261117120000`) et **la fusion d'identités**
+  (`20261118120000`) — un client garde le même profil d'un module à l'autre ;
+  seule la fidélité l'adopte pour l'instant (voir « Reste ouvert »).
+- **FID-5a/PR #269, #270 — Parrainage du passeport** (migration
+  `20261119120000`) : un jumeau du module roue, payé en points, écrans et
+  versement après le tampon.
+- **PR #271 — Diffusion** : écran d'accueil (manifeste), impression, fiche
+  client au scan.
+- **FID-8a/PR #272 — Identité de carte** (migration `20261120120000`) : le
+  client donne un nom et une figure à sa carte.
+- **FID-6/PR #274 — Google Wallet** (ADR-125, ADR-126) : la carte de fidélité
+  entre dans Google Wallet. Le QR de la carte porte l'URL du passeport, pas
+  un laissez-passer — le jeton de check-in réel reste celui, court, de
+  `src/lib/loyalty-checkin.ts`. La mise à jour du solde Wallet part en tâche
+  différée (`after()`), jamais dans le geste de comptoir.
+- **FID-8b/PR #275** : la caisse appelle la carte par son nom.
+- **FID-7/PR #279 — Visite guidée du passeport** : corrige au passage deux
+  défauts trouvés en écrivant (`docs/bugs.md`, clos 2026-08-31) — un champ
+  replié posté en `null` plutôt qu'`undefined` (`texteOptionnel`), et un
+  retour de focus visant un déclencheur disparu du DOM.
+- **ADR-127** — correction d'une croyance erronée formulée en briefant ce
+  chantier : `loyalty_members` n'est **pas** sous régime de droits par
+  colonne comme Réservation ; elle porte un `grant select` de table entière
+  (`20260725120000:305`), qui couvre déjà toute colonne future.
+
+**Décisions** : [ADR-124 à ADR-127](./decisions.md).
+
+**Reste ouvert** :
+- **Geste propriétaire, Stripe** : créer le produit « Réservation »
+  (20 €/mois) et poser `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` en Production —
+  sans lui, le module Réservation est livré mais invendable.
+- **Geste propriétaire, Google Wallet** : créer le compte émetteur et la clé
+  de compte de service, poser `GOOGLE_WALLET_ISSUER_ID`,
+  `GOOGLE_WALLET_CLIENT_EMAIL`, `GOOGLE_WALLET_PRIVATE_KEY`. Le compte de
+  service doit *en plus* être autorisé comme éditeur dans la Wallet Console —
+  sans quoi la signature est valide et Google refuse quand même l'objet. Le
+  chemin n'a jamais tourné contre le vrai Google : sa forme suit la
+  spécification, elle n'est pas vérifiée en conditions réelles.
+- Le socle Moments vérifie encore `vitrine`, pas `rendez_vous` (reliquat du
+  chantier Réservation, ADR-122).
+- Jackpot, calendrier et pronostics n'ont pas adopté l'identité joueur
+  partagée — seule la fidélité l'a fait. Le filet (fusion d'identités,
+  `20261118120000`) est en place pour quand ce sera fait.
+- Le sélecteur de figures des pronostics n'a pas adopté
+  `src/components/ui/avatar-picker.tsx` — événements et fidélité l'ont fait,
+  pronostics reste une copie.
+- Le clone WSL `~/workspaces/lastchance` est périmé et son historique
+  incohérent (180 fichiers de migration pour une tête qui en portait 188). À
+  réparer.
+
 ## V1.70 — La Vitrine prend l'allure d'une maquette, et parle le métier (✅ 2026-08-31, PR #276)
 
 **Objectif** : demande du propriétaire — que la vitrine publique ressemble
