@@ -960,7 +960,11 @@ test.describe("vitrine — dashboard commerçant", () => {
   }) => {
     await page.goto("/dashboard/vitrine");
     await expect(
-      page.getByRole("heading", { name: "QR code et lien de votre vitrine" }),
+      // LE TITRE VIENT DU COMPOSANT, PAS DE LA TUILE. `VitrineQrPlanche`
+      // rend son propre <h2> ; la tuile qui l enveloppe a été renommée par
+      // VIT-15, lui non. Les renommer ensemble aurait été un troisième nom
+      // pour la même chose à l écran.
+      page.getByRole("heading", { name: "QR et impression" }),
     ).toBeVisible({ timeout: 30_000 });
 
     // La section est PLIÉE par défaut : rien ne se dessine avant l'intention
