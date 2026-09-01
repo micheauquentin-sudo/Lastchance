@@ -16,7 +16,6 @@ import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
 import { gardeEditeurJeuSalon } from "@/lib/salon-garde";
-import { createClient } from "@/lib/supabase/server";
 import {
   duoChooseSchema,
   duoLobbySchema,
@@ -168,31 +167,54 @@ export type ChooseDuoOutcome =
  *
  * ── RIEN N'EST VÉRIFIÉ ICI DE CE QUE LA BASE VÉRIFIE ──
  *
- * Ni l'appartenance, ni le statut de la salle, ni le fait que la fiche soit sur
+ * Ni l'appartenance, ni le statut de la salle, ni le fait que la place soit sur
  * le plateau, ni qu'un choix ait déjà été scellé. Les cinq gardes sont dans
- * `duo_choose`, sous le verrou consultatif, et les rejouer côté application
- * dupliquerait des arbitrages déjà rendus — des copies qui finiraient par
- * diverger, et qui trancheraient hors du verrou, c'est-à-dire sur un état
- * périmé.
+ * `duo_choose_option`, sous le verrou consultatif, et les rejouer côté
+ * application dupliquerait des arbitrages déjà rendus — des copies qui
+ * finiraient par diverger, et qui trancheraient hors du verrou, c'est-à-dire sur
+ * un état périmé.
  *
  * ── LE DOUBLE-CLIC EST IDEMPOTENT, LE CHANGEMENT D'AVIS NE L'EST PAS ──
  *
- * Rejouer le MÊME item rend `ok` ; en désigner un AUTRE rend `deja-scelle` et
+ * Rejouer la MÊME place rend `ok` ; en désigner une AUTRE rend `deja-scelle` et
  * n'écrit rien. C'est ce qui empêche d'attendre que `autreAChoisi` passe à vrai
  * pour changer d'avis — l'écran ne doit donc PAS proposer de « modifier », il
  * doit montrer un choix figé.
+ *
+ * ── LA PLACE, ET LA FICHE LE TEMPS D'UN DÉPLOIEMENT (DUO-5) ──
+ *
+ * `option_id` désigne une place quelle que soit son origine : c'est ce qui rend
+ * enfin scellable une proposition SAISIE À LA MAIN, laquelle n'a pas de fiche à
+ * présenter et retombait donc sur le refus muet.
+ *
+ * `item_id` reste accepté, et l'appel part alors sur `duo_choose` — la porte
+ * d'hier, que la migration 20261128120000 a délibérément gardée vivante pour
+ * cette fenêtre et qui délègue à `duo_choose_option` après résolution. Un onglet
+ * ouvert avant la mise en ligne poste encore cette forme, au milieu d'une partie
+ * à deux ; la refuser rendrait un bouton inerte à quelqu'un qui n'a aucune
+ * raison de penser à recharger. La branche s'enlève avec le membre d'union
+ * correspondant de `duoChooseSchema`, où le geste est écrit.
+ *
+ * LES DEUX CHEMINS SONT LE MÊME QUANT AUX DROITS : même RPC en bout de course,
+ * même empreinte tirée du cookie de CETTE salle, aucune garde en moins.
  */
 export async function chooseDuo(
   _prev: ActionResult<ChooseDuoOutcome> | null,
   formData: FormData,
 ): Promise<ActionResult<ChooseDuoOutcome>> {
-  const parsed = duoChooseSchema.safeParse({
-    lobbyId: formData.get("lobby_id"),
-    itemId: formData.get("item_id"),
-  });
+  const lobbyId = formData.get("lobby_id");
+  const brutOption = formData.get("option_id");
+  // L'OBJET SOUMIS NE PORTE QU'UNE FORME. Le construire avec les deux clés,
+  // l'une à `null`, aurait fait échouer les deux membres `.strict()` de l'union
+  // — un refus muet sur un formulaire pourtant valide.
+  const parsed = duoChooseSchema.safeParse(
+    brutOption === null
+      ? { lobbyId, itemId: formData.get("item_id") }
+      : { lobbyId, optionId: brutOption },
+  );
   // Ces deux valeurs sont RELUES sur un plateau que le serveur a rendu, jamais
   // saisies au clavier : un identifiant malformé vient d'un appelant qui s'est
-  // trompé de forme, et il rend le même refus muet qu'une fiche hors plateau.
+  // trompé de forme, et il rend le même refus muet qu'une place hors plateau.
   if (!parsed.success) return REFUS_INDISPONIBLE;
 
   const token = await lireJetonLobby(parsed.data.lobbyId);
@@ -201,11 +223,19 @@ export async function chooseDuo(
   return monitored("duo.choose", async () => {
     try {
       const admin = createAdminClient();
-      const { data, error } = await admin.rpc("duo_choose", {
-        p_lobby_id: parsed.data.lobbyId,
-        p_token_hash: hashLobbyToken(token),
-        p_item_id: parsed.data.itemId,
-      });
+      const tokenHash = hashLobbyToken(token);
+      const { data, error } =
+        "optionId" in parsed.data
+          ? await admin.rpc("duo_choose_option", {
+              p_lobby_id: parsed.data.lobbyId,
+              p_token_hash: tokenHash,
+              p_option_id: parsed.data.optionId,
+            })
+          : await admin.rpc("duo_choose", {
+              p_lobby_id: parsed.data.lobbyId,
+              p_token_hash: tokenHash,
+              p_item_id: parsed.data.itemId,
+            });
       if (error) {
         reportError("duo.choose", error.message);
         return { ok: false as const, error: GENERIC_ERROR };
@@ -281,11 +311,20 @@ export async function getDuoState(lobbyId: string): Promise<DuoStateView> {
 // lui parlait d'un produit qu'il n'avait pas cherché à acheter.
 //
 // L'ACTEUR VIENT DE LA SESSION, ET LES RPC LE REVÉRIFIENT. `p_actor` reçoit
-// `garde.userId` ; `set_duo_options` et `set_duo_suggestion` le revérifient
-// membre `owner|editor` EN SQL, parce que les deux gestes sont journalisés
-// (`duo.options_set`, `duo.suggestion_set`). Les deux vérifications ne font pas
-// double emploi — celle-ci rend un message utile, celle-là tient la ligne
-// d'audit.
+// `garde.userId` ; `set_duo_options`, `set_duo_plateau` et `set_duo_suggestion`
+// le revérifient membre `owner|editor` EN SQL, parce que les trois gestes sont
+// journalisés (`duo.options_set` pour les deux premiers, `duo.suggestion_set`).
+// Les deux vérifications ne font pas double emploi — celle-ci rend un message
+// utile, celle-là tient la ligne d'audit.
+//
+// LES TROIS ÉCRITURES PASSENT PAR LA CLÉ DE SERVICE, ET C'EST CE QUI REND LA
+// GARDE OBLIGATOIRE (DUO-5). Ces RPC sont `security definer`, accordées au seul
+// `service_role` : le client de session recevrait un 42501, et rien ne
+// fonctionnerait. La contrepartie est que la RLS ne tranche plus rien sur ce
+// chemin — l'appartenance est tenue par la garde ci-dessus et par le `p_actor`
+// revérifié en SQL, jamais par une policy. Une écriture ajoutée ici sans passer
+// par `gardeEditeurJeuSalon` écrirait donc chez le voisin sans que rien ne
+// l'arrête.
 //
 // LA LECTURE, ELLE, N'EST PAS ICI : `loadDuoOptions` vit dans
 // `src/lib/duo-context.ts`, parce que c'est une lecture de page et non une
@@ -352,35 +391,36 @@ function lirePlaces(formData: FormData): unknown[] {
  * ── DEUX CHEMINS D'ÉCRITURE, ET LE PARTAGE N'EST PAS UN CONFORT ──
  *
  * Un plateau fait UNIQUEMENT de fiches passe par `set_duo_options`, comme
- * avant. Un plateau qui porte au moins un libellé saisi passe par la TABLE.
- * Ce n'est pas un choix d'architecture pris ici : c'est celui que la migration
- * 20261126120000 a écrit dans son propre commentaire de table — « set_duo_options
- * ne connaît que des tableaux de fiches et remplace le plateau EN ENTIER —
- * l'appeler efface les options saisies. Celles-ci s'écrivent par la table (RLS +
- * grants de colonnes), pas par cette RPC. »
+ * avant. Un plateau qui porte au moins un libellé saisi passe par
+ * `set_duo_plateau`. Ce n'est pas un choix d'architecture pris ici : c'est celui
+ * que la migration 20261126120000 a écrit dans son propre commentaire de table —
+ * « set_duo_options ne connaît que des tableaux de fiches et remplace le plateau
+ * EN ENTIER — l'appeler efface les options saisies. »
  *
- * POURQUOI NE PAS TOUT PASSER PAR LA TABLE, alors : la RPC vérifie
- * l'appartenance des fiches EN SQL et JOURNALISE le geste (`duo.options_set`).
- * « Qui a changé le plateau » est exactement la question qu'on se pose après
- * coup, et la perdre pour tout le monde afin d'avoir un seul chemin aurait
- * coûté la ligne d'audit sans rien acheter.
+ * ── LES DEUX SONT DÉSORMAIS DES RPC, ET LE CHEMIN PAR TABLE A DISPARU (DUO-5) ──
  *
- * CE QUE LE CHEMIN PAR TABLE N'A PAS, ET IL FAUT LE SAVOIR : le `delete` et
- * l'`insert` sont DEUX ALLERS. Une panne entre les deux laisse le plateau VIDE
- * — pas corrompu, pas mélangé : vide, donc `duo_jouable` faux et porte publique
- * fermée. Le commerçant en est averti par un message qui lui dit quoi faire
- * (recomposer et réenregistrer), et rien ne se joue sur un plateau à moitié
- * écrit. La réparation propre est une RPC qui accepte les deux origines dans la
- * même transaction ; c'est un lot base, pas un contournement à écrire ici.
+ * Jusqu'ici la seconde branche écrivait par la TABLE, en `delete` puis `insert`
+ * depuis le client de session : DEUX allers, dont une panne entre les deux
+ * laissait le plateau VIDE alors que le commerçant croyait avoir enregistré. La
+ * migration 20261128120000 a livré `set_duo_plateau`, qui prend les deux
+ * origines en UNE transaction, vérifie l'appartenance des fiches en SQL et
+ * journalise sous le MÊME nom d'action (`duo.options_set`).
+ *
+ * POURQUOI LES DEUX BRANCHES SURVIVENT QUAND MÊME : `set_duo_options` est la
+ * porte que les plateaux de fiches empruntent depuis L17, couverte par ses
+ * assertions pgTAP, et elle est déjà atomique. Faire passer par une RPC neuve
+ * des plateaux qui n'en ont pas besoin aurait déplacé un risque sans réparer
+ * quoi que ce soit. Ce qui devait disparaître est l'écriture NON ATOMIQUE, et
+ * elle a disparu.
  *
  * ── LES BORNES SONT REFUSÉES ICI, L'APPARTENANCE EST REFUSÉE LÀ-BAS ──
  *
  * Cardinal, doublons et forme du libellé sont tranchés par le schéma, qui rend
  * une phrase ; la base les lèverait en 22023 ou en 23514, c'est-à-dire en
- * exception. L'existence des fiches, elle, n'est vérifiée QU'EN SQL — par la RPC
- * sur un chemin, par la FK COMPOSITE `(item_id, organization_id)` sur l'autre.
- * La relire ici aurait donné une seconde définition de « cette fiche est à
- * moi », et deux définitions finissent par diverger.
+ * exception. L'existence des fiches, elle, n'est vérifiée QU'EN SQL — par l'une
+ * ou l'autre RPC, qui rendent la même 22023. La relire ici aurait donné une
+ * seconde définition de « cette fiche est à moi », et deux définitions finissent
+ * par diverger.
  */
 export async function setDuoOptions(
   _prev: ActionResult<SetDuoOptionsOutcome> | null,
@@ -405,7 +445,13 @@ export async function setDuoOptions(
     place.origine === "fiche" ? [place.itemId] : [],
   );
   if (fiches.length !== places.length) {
-    return ecrirePlateauParTable(parsed.data.organizationId, places);
+    return ecrirePlateauEnUneTransaction(
+      parsed.data.organizationId,
+      // DE LA SESSION, comme pour `set_duo_options` juste en dessous. Voir
+      // l'en-tête de section : l'acteur ne traverse jamais le formulaire.
+      garde.userId,
+      places,
+    );
   }
 
   return monitored("duo.options_set", async () => {
@@ -476,79 +522,102 @@ function revalideEcransDuo(): void {
 }
 
 /**
- * LE PLATEAU QUI PORTE AU MOINS UN LIBELLÉ SAISI — écrit par la TABLE.
+ * LE PLATEAU QUI PORTE AU MOINS UN LIBELLÉ SAISI — écrit EN UNE TRANSACTION.
  *
- * ── LE CLIENT EST CELUI DE LA SESSION, PAS LA CLÉ DE SERVICE ──
+ * ── LE NOM A CHANGÉ PARCE QUE L'IMPLÉMENTATION A CHANGÉ (DUO-5) ──
  *
- * C'est la seule différence qui compte, et elle est volontaire. La clé de
- * service contourne la RLS : le seul rempart serait alors le filtre
- * `organization_id` de cette fonction. Avec le client de session, la policy
- * `duo_options: editor write` (`is_org_editor`) tranche EN BASE, et les grants
- * de colonnes bornent ce qui peut être écrit. Le filtre explicite est posé
- * quand même sur le `delete` — motif du dépôt : un utilisateur multi-comptes
- * est membre de plusieurs organisations, et la RLS seule ne dit pas laquelle
- * est active.
+ * Elle s'appelait `ecrirePlateauParTable`, et c'était exact : elle faisait un
+ * `delete` puis un `insert` depuis le client de session. Une panne entre les
+ * deux laissait le plateau VIDE — pas corrompu, mais vide, sur un réglage que le
+ * commerçant croyait enregistré. `set_duo_plateau` (migration 20261128120000)
+ * fait les deux instructions dans SA transaction : ou le plateau neuf est là, ou
+ * l'ancien est intact. Garder l'ancien nom aurait laissé une fonction qui ment
+ * sur ce qu'elle fait.
  *
- * ── L'ORDRE DES DEUX ÉCRITURES EST CELUI DE LA RPC ──
+ * ── LE CLIENT DEVIENT CELUI DE LA CLÉ DE SERVICE, ET C'EST LE POINT SENSIBLE ──
  *
- * `delete` puis `insert`, parce que `duo_options_org_ordre_unique` est vérifiée
- * PAR INSTRUCTION : insérer d'abord ferait entrer en collision la place 1
- * ancienne et la place 1 neuve.
+ * `set_duo_plateau` est `security definer` et n'est accordée qu'à
+ * `service_role` : le client de session recevrait un 42501, et le chemin ne
+ * marcherait tout simplement pas. Ce changement RETIRE le filet de la RLS
+ * (`duo_options: editor write`) qui tranchait jusqu'ici en base.
+ *
+ * TROIS CHOSES LE REMPLACENT, ET AUCUNE N'EST FACULTATIVE :
+ *
+ *   1. `gardeEditeurJeuSalon("duo")` a déjà tranché la session, le rôle et le
+ *      droit du jeu AVANT que le formulaire ne soit lu — c'est elle qui fournit
+ *      l'organisation, et c'est pour cela que le client ne peut pas l'apporter.
+ *      C'est exactement le chemin que `setDuoOptions` emprunte déjà pour
+ *      `set_duo_options`, RPC `service_role` elle aussi : ce lot n'ouvre pas une
+ *      porte neuve, il fait passer une seconde branche par la porte existante.
+ *   2. `set_duo_plateau` REVÉRIFIE l'acteur en SQL (`organization_members`,
+ *      rôle `owner|editor`) avant de regarder la moindre place, et rend 42501
+ *      sinon. Les deux vérifications ne font pas double emploi : celle-ci rend
+ *      un message utile, celle-là tient la ligne d'audit `duo.options_set`.
+ *   3. L'organisation et l'acteur viennent tous deux de la GARDE. Un acteur reçu
+ *      du formulaire ferait de la ligne d'audit une déclaration sur l'honneur.
+ *
+ * ── LA FORME DE L'ENVOI ──
+ *
+ * Un tableau d'OBJETS À UNE SEULE CLÉ, `item_id` ou `libelle`, jamais les deux :
+ * la RPC compte `num_nonnulls(item_id, libelle) <> 1` et refuserait une place
+ * qui porte les deux, fût-ce à `null`. L'ORDRE DU TABLEAU EST L'ORDRE DU
+ * PLATEAU (`with ordinality` en face), comme la position postée l'était.
  */
-async function ecrirePlateauParTable(
+async function ecrirePlateauEnUneTransaction(
   organizationId: string,
+  acteur: string,
   places: DuoPlaceEntree[],
 ): Promise<ActionResult<SetDuoOptionsOutcome>> {
   return monitored("duo.options_set", async () => {
     try {
-      const supabase = await createClient();
-
-      const { error: erreurDelete } = await supabase
-        .from("duo_options")
-        .delete()
-        .eq("organization_id", organizationId);
-      if (erreurDelete) {
-        // RIEN N'EST ENCORE PERDU ICI : le plateau d'hier est intact.
-        reportError("duo.options_set", erreurDelete.message);
-        return { ok: false as const, error: GENERIC_ERROR };
-      }
-
-      const { error: erreurInsert } = await supabase.from("duo_options").insert(
-        places.map((place, index) => ({
-          organization_id: organizationId,
-          item_id: place.origine === "fiche" ? place.itemId : null,
-          libelle: place.origine === "libelle" ? place.texte : null,
-          // La PLACE est la position dans le tableau reçu, comme dans la RPC.
-          ordre: index + 1,
-        })),
-      );
-      if (erreurInsert) {
-        reportError("duo.options_set", erreurInsert.message);
-        // 23503 — la FK composite : une fiche a quitté la carte entre
-        // l'affichage et le clic. C'est un RÉSULTAT, pas une panne, et c'est
-        // le même cas que la 22023 de la RPC.
-        if (erreurInsert.code === "23503") {
+      const admin = createAdminClient();
+      const { data, error } = await admin.rpc("set_duo_plateau", {
+        p_organization_id: organizationId,
+        p_places: places.map((place) =>
+          place.origine === "fiche"
+            ? { item_id: place.itemId }
+            : { libelle: place.texte },
+        ),
+        p_actor: acteur,
+      });
+      if (error) {
+        // 22023 — LA SÉLECTION, PAS LE TRANSPORT, et le classement se fait sur
+        // le SQLSTATE comme en face. Cardinal, origines, forme des
+        // identifiants et doublons sont déjà impossibles ici (le schéma les a
+        // tranchés) : il ne reste qu'`unknown duo option item`, c'est-à-dire
+        // une fiche disparue de la carte entre l'affichage et le clic. Rien à
+        // réparer, un écran à rafraîchir.
+        if (error.code === "22023") {
+          reportError("duo.options_set.refus", error.message);
           return {
             ok: true as const,
             data: { etat: "selection-refusee" } as const,
           };
         }
-        // TOUT LE RESTE LAISSE LE PLATEAU VIDE, et le message le dit. Un
-        // « une erreur est survenue » enverrait chercher une panne alors que le
-        // geste à faire est immédiat : recomposer et réenregistrer. Le plateau
-        // vide ferme la porte publique (duo_jouable est alors faux), il ne
-        // fait pas jouer sur une liste à moitié écrite.
-        return {
-          ok: false as const,
-          error:
-            "Votre plateau n’a pas pu être enregistré et il est vide : recomposez-le, puis enregistrez à nouveau.",
-        };
+        // 42501 — la garde vient pourtant de passer. Mêmes deux causes que sur
+        // `set_duo_options` : commerçant rétrogradé entre-temps, ou clé de
+        // service mal configurée. La seconde rendrait « non autorisé » à tout
+        // le monde et pour toujours sans qu'aucune alerte ne parte.
+        if (error.code === "42501") {
+          reportError("duo.options_set.refus", error.message);
+          return { ok: false as const, error: NON_AUTORISE };
+        }
+        // PLUS DE MESSAGE « votre plateau est vide » : il n'y a plus d'état
+        // intermédiaire à décrire. Une panne ici laisse le plateau d'HIER
+        // intact, et le geste à refaire est le geste ordinaire — réessayer.
+        reportError("duo.options_set", error.message);
+        return { ok: false as const, error: GENERIC_ERROR };
       }
+
+      // Le COMPTE est le contenu de la réponse, comme sur `set_duo_options` :
+      // le deviner ferait afficher un nombre qui n'a été écrit nulle part.
+      const options = mapDuoOptionsSaved(data);
+      if (options === null) return { ok: false as const, error: GENERIC_ERROR };
 
       revalideEcransDuo();
       return {
         ok: true as const,
-        data: { etat: "enregistre", options: places.length } as const,
+        data: { etat: "enregistre", options } as const,
       };
     } catch (err) {
       reportError("duo.options_set", err);

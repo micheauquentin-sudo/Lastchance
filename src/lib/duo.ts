@@ -85,18 +85,33 @@ export interface DuoOptionView {
 }
 
 /**
- * UN CHOIX — deux clés, et pas une de plus.
+ * UN CHOIX — trois clés, et pas une de plus.
  *
  * Ce que cette vue N'A PAS est le sujet du lot : ni prix, ni photo, ni
- * description. `duo_state` ne rend que l'identifiant et le nom d'un choix, et ce
- * type refuse de donner une place où atterrir à quoi que ce soit d'autre.
+ * description. `duo_state` ne rend que les identifiants et le nom d'un choix, et
+ * ce type refuse de donner une place où atterrir à quoi que ce soit d'autre.
  */
 export interface DuoChoixView {
+  /**
+   * LA PLACE SCELLÉE (DUO-5) — la seule clé qui désigne le choix quel que soit
+   * son origine, et donc la seule qui permette à l'écran de SURLIGNER une
+   * option saisie à la main.
+   *
+   * NULLABLE POUR DEUX RAISONS, toutes deux normales : un sceau posé avant
+   * DUO-4 ne la porte pas, et le `on delete set null` de la migration
+   * 20261128120000 la vide quand le commerçant remplace son plateau pendant la
+   * manche. Dans ces deux cas c'est `item_id` qui reprend la main, exactement
+   * comme le fait `duo_state` pour calculer l'accord.
+   */
+  option_id: string | null;
   /**
    * NULLABLE, et c'est le remède M-1 : la fiche choisie peut avoir été
    * supprimée de la carte pendant la partie. Le choix, lui, survit — son `nom`
    * a été gravé au moment du geste. L'écran ne doit donc rien attendre de cet
    * identifiant qu'il ne puisse rendre sans lui.
+   *
+   * ELLE EST NULLE POUR TOUTE OPTION SAISIE : une proposition écrite à la main
+   * n'a pas de fiche, et c'est `option_id` qui la nomme.
    */
   item_id: string | null;
   nom: string;
@@ -298,13 +313,23 @@ export function mapDuoOptions(raw: unknown): DuoOptionView[] {
  *
  * Un choix sans NOM, en revanche, ne s'affiche pas : il n'y aurait rien à
  * montrer.
+ *
+ * ── `option_id` VOYAGE AVEC, ET NE CONDITIONNE RIEN (DUO-5) ──
+ *
+ * Même exigence que pour `item_id`, et pour une raison de plus : elle est nulle
+ * sur tout sceau posé avant DUO-4. En faire une condition d'affichage aurait
+ * rendu muettes les révélations des parties en cours au moment du déploiement.
  */
 export function mapDuoChoix(raw: unknown): DuoChoixView | null {
   const root = asRecord(raw);
   if (!root) return null;
   const nom = asString(root.nom);
   if (!nom) return null;
-  return { item_id: asString(root.item_id), nom };
+  return {
+    option_id: asString(root.option_id),
+    item_id: asString(root.item_id),
+    nom,
+  };
 }
 
 /** La proposition de la maison. Mêmes exigences : identifiant et nom. */
