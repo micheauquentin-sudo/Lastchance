@@ -201,7 +201,28 @@ export function VitrineStudio({
           droit fait défiler l'aperçu hors de l'écran : on règle alors ce qu'on
           ne voit plus. Motif de `poster-editor`. */}
       <div className="flex flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
-        <aside className="w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full lg:w-[340px]">
+        {/* LA COLONNE DE GAUCHE S'ÉLARGIT POUR LA CARTE, ET SEULEMENT POUR
+            ELLE (VIT-26).
+
+            Les trois autres pages tiennent dans 340 px : ce sont des champs et
+            des cases, à un seul niveau. L'éditeur de carte, lui, est imbriqué
+            sur trois rangs — carte, rubrique, fiche — et chaque rang mange sa
+            marge : le formulaire d'une fiche dépliée finissait à ~195 px, ce
+            qui reste utilisable mais se saisit mal.
+
+            ÉCARTÉ : élargir partout. La largeur perdue est prise à l'APERÇU,
+            qui est la raison d'être de cet écran ; la payer sur les trois
+            pages qui n'en ont pas besoin aurait été un mauvais échange.
+
+            ÉCARTÉ AUSSI : passer cette page à deux colonnes en masquant
+            l'allure. Régler une densité ou une taille de photo se fait EN
+            REGARDANT une vraie carte — c'est précisément sur cette page que la
+            colonne de droite sert le plus. */}
+        <aside
+          className={`w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full ${
+            page === "carte" ? "lg:w-[440px]" : "lg:w-[340px]"
+          }`}
+        >
           {page === "identite" ? (
             <PageIdentiteStudio
               etat={etat}

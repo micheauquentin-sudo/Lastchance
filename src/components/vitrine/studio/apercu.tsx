@@ -70,6 +70,36 @@ export function ApercuStudio({
   // ne sert à rien.
   const visible = (bloc: string) => theme.blocs.includes(bloc as never);
 
+  /**
+   * SEULES LES CARTES ACTIVES, ET C'EST UN DÉFAUT CORRIGÉ (VIT-26).
+   *
+   * `VitrineCarteView.active` porte son propre avertissement : « toujours
+   * `true` dans l'état PUBLIC — la RPC n'en rend pas d'autres ». L'état du
+   * TABLEAU DE BORD, lui, rend tout, y compris ce que le commerçant a
+   * décoché : c'est ce qu'il faut pour l'éditer.
+   *
+   * L'aperçu recevait donc les deux, et `CatalogueVitrine` — écrit pour la
+   * page publique — faisait confiance à ce qu'on lui donnait. Une carte
+   * désactivée mais pleine s'affichait donc PLEINE au commerçant et VIDE chez
+   * son client.
+   *
+   * C'est la pire forme de mensonge pour un aperçu : il ne se trompe pas au
+   * hasard, il se trompe exactement là où le commerçant vient vérifier. Et
+   * rien ne le signalait — le composant public n'a aucune raison de filtrer ce
+   * que sa source lui garantit déjà.
+   *
+   * Le filtre vit ICI, et non dans `CatalogueVitrine` : ce dernier doit rester
+   * le composant que sert la page publique, sans branche « et si on
+   * m'appelait depuis un éditeur ». C'est l'appelant qui doit fournir ce que
+   * la page publique recevrait.
+   *
+   * `disponible` sur une FICHE ne se filtre pas, lui : la RPC publique la rend
+   * quand même et l'écran la grise. Le traiter comme `active` la ferait
+   * disparaître de l'aperçu alors qu'elle paraît en ligne — le même défaut,
+   * dans l'autre sens.
+   */
+  const cartesPubliees = cartes.filter((c) => c.active);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
       <p className="text-xs font-semibold text-zinc-500">
@@ -94,7 +124,7 @@ export function ApercuStudio({
         />
         <div className="px-3">
           <CatalogueVitrine
-            cartes={visible("cartes") ? cartes : []}
+            cartes={visible("cartes") ? cartesPubliees : []}
             styleCartes={theme.styleCartes}
             lang="fr"
             secteur={etat.secteur}
