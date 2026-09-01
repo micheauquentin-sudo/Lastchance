@@ -24,6 +24,9 @@
  * non reconnu devient `unavailable`, exactement comme un refus explicite.
  */
 
+import { asSeasonalTheme } from "@/lib/seasonal-theme";
+import type { SeasonalTheme } from "@/types/database";
+
 // ────────────────────────────────────────────────────────────
 // Vocabulaire — miroir des `check` de la migration
 // ────────────────────────────────────────────────────────────
@@ -56,6 +59,42 @@ export interface LobbyMembreView {
   estMoi: boolean;
 }
 
+/**
+ * L'HABILLAGE DU SALON (SALON-1) — ce que le commerce a mis sur SON écran.
+ *
+ * ── `null` EST LE COMPORTEMENT HISTORIQUE, PAS UNE PANNE ──
+ *
+ * `lobby_state` ne rend ce document que si `lobby_settings` porte une ligne
+ * pour l'organisation. Un commerce qui n'a jamais ouvert l'écran de réglages
+ * n'en a pas, et la coquille repeint alors exactement le lavis `neutre` rayé
+ * d'avant ce lot. Aucune reprise de données, aucun écran qui change tout seul.
+ *
+ * ── LE THÈME EST RELU AVEC REPLI, LE FOND EST RENDU BRUT ──
+ *
+ * `asSeasonalTheme` referme le vocabulaire sur les onze clés dont le lavis est
+ * MESURÉ (`theme-lavis.test.ts`) : une douzième, arrivée par un `check` élargi
+ * que ce fichier ne connaîtrait pas encore, retombe sur `neutre` plutôt que
+ * d'atteindre l'écran d'un joueur sans couleur relevée. C'est la dissymétrie
+ * habituelle du dépôt — souple en lecture, stricte à l'écriture.
+ *
+ * `fondKey` reste la CHAÎNE BRUTE, avec ses trois états (`null` « suivre le
+ * thème », `"aucun"`, une clé) : c'est `fondChoisi` qui la résout, et lui seul
+ * connaît le repli. La replier ici confondrait « suivre » et « aucun ».
+ *
+ * ── `nom` ET `logoUrl` SONT DÉJÀ FILTRÉS QUAND ILS ARRIVENT ──
+ *
+ * La base les tait elle-même quand `affiche_identite` est faux. Ce type n'a
+ * donc aucun drapeau à porter : `null` veut dire « rien à afficher », qu'il
+ * s'agisse d'un commerce sans logo ou d'un commerce qui a choisi de se taire.
+ */
+export interface LobbyHabillageView {
+  theme: SeasonalTheme;
+  /** Réglage BRUT : `null` (suivre le thème), `"aucun"`, ou une clé de fond. */
+  fondKey: string | null;
+  nom: string | null;
+  logoUrl: string | null;
+}
+
 export type LobbyStateView =
   | { state: "unavailable" }
   | {
@@ -70,6 +109,13 @@ export type LobbyStateView =
        * apparaît et disparaît se teste à chaque lecture.
        */
       joinCode: string | null;
+      /**
+       * SALON-1 — `null` quand le commerce n'a rien réglé. La clé est TOUJOURS
+       * présente, même raison que `joinCode` : une forme stable se type une
+       * fois, là où une clé qui apparaît et disparaît se teste à chaque
+       * lecture.
+       */
+      habillage: LobbyHabillageView | null;
       /** Ordonnés par rang, l'hôte en tête. Jamais `undefined`. */
       membres: LobbyMembreView[];
     };
@@ -293,7 +339,28 @@ export function mapLobbyState(raw: unknown): LobbyStateView {
     capacite,
     expiresAt,
     joinCode: asString(root.join_code),
+    habillage: mapLobbyHabillage(root.habillage),
     membres: mapLobbyMembres(root.membres),
+  };
+}
+
+/**
+ * Lecture de la clé `habillage` de `lobby_state` (SALON-1).
+ *
+ * UN DOCUMENT ABSENT OU ILLISIBLE VAUT « PAS D'HABILLAGE », et c'est le seul
+ * repli acceptable ici — l'inverse des quatre mappeurs de refus. L'habillage
+ * DÉCORE : il ne porte rien dont l'écran ait besoin pour fonctionner. Rendre la
+ * salle `unavailable` sur un décor qu'on ne comprend pas mettrait un salon en
+ * panne pour une couleur, devant des gens assis à une table.
+ */
+export function mapLobbyHabillage(raw: unknown): LobbyHabillageView | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+  return {
+    theme: asSeasonalTheme(root.theme),
+    fondKey: asString(root.fond_key),
+    nom: asString(root.nom),
+    logoUrl: asString(root.logo_url),
   };
 }
 

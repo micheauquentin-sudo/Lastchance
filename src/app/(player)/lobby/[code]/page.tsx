@@ -4,6 +4,7 @@ import {
   observerPressionLobby,
   resoudreLobbyParCode,
 } from "@/lib/lobby-context";
+import { getLobbyState } from "@/actions/lobby";
 import { LobbyCarton, LobbyShell } from "@/components/lobby/lobby-shell";
 import { SalonLobby } from "@/components/lobby/salon-lobby";
 import { sortieDuLobby } from "@/lib/sortie-apres-jeu";
@@ -104,11 +105,29 @@ export default async function LobbyPage({
   // et le booléen est tout ce dont l'écran a besoin pour choisir sa moitié.
   const dejaMembre = (await lireJetonLobby(salle.lobbyId)) !== null;
 
-  // VIT-11, ET SEULEMENT POUR UN MEMBRE. La sortie décore les écrans terminaux
-  // du Duo Miroir et du Portrait de la Bande, que seul un membre atteint : la
-  // lire pour quelqu'un qui n'a pas le cookie aurait payé deux requêtes pour
-  // peindre un formulaire d'entrée.
-  const sortie = dejaMembre ? await sortieDuLobby(salle.lobbyId) : null;
+  // VIT-11 ET SALON-1, ET SEULEMENT POUR UN MEMBRE.
+  //
+  // La sortie décore les écrans terminaux du Duo Miroir et du Portrait de la
+  // Bande, que seul un membre atteint : la lire pour quelqu'un qui n'a pas le
+  // cookie aurait payé une requête pour peindre un formulaire d'entrée.
+  //
+  // L'HABILLAGE EST SOUMIS À LA MÊME CONDITION, mais pour une raison d'un autre
+  // ordre : `lobby_state` exige l'appartenance, et c'est précisément ce qui
+  // empêche l'habillage de devenir un oracle sur ce que le commerce d'en face a
+  // acheté (voir l'en-tête de `lobby-shell.tsx`). Le peindre sur l'écran
+  // « rejoindre », atteignable par quiconque tient un code, rétablirait cet
+  // oracle — et sans jeton la lecture ne rendrait de toute façon rien.
+  //
+  // Une lecture DE PLUS au chargement, et c'est le prix d'un écran peint AVANT
+  // le premier octet : laisser le scrutin client apporter les couleurs aurait
+  // fait clignoter le salon du crème vers le thème à chaque ouverture.
+  const [sortie, etat] = dejaMembre
+    ? await Promise.all([
+        sortieDuLobby(salle.lobbyId),
+        getLobbyState(salle.lobbyId),
+      ])
+    : [null, null];
+  const habillage = etat?.state === "ok" ? etat.habillage : null;
 
   // UNE SALLE FINIE NE SE REJOINT PAS, MAIS ELLE SE RELIT. Le résolveur laisse
   // passer les salles closes de quelques heures pour que le résultat d'une
@@ -133,6 +152,7 @@ export default async function LobbyPage({
     <LobbyShell
       titre="Le salon"
       chapeau="Retrouvez-vous ici avant de jouer, à la même table ou non."
+      habillage={habillage}
     >
       <SalonLobby
         code={codeAffiche}
