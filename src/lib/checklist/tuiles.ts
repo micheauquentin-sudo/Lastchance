@@ -301,25 +301,38 @@ export const TUILES_PRONOSTICS: readonly TuileChecklist[] = [
  * vérifier.
  */
 export const TUILES_VITRINE: readonly TuileChecklist[] = [
-  { cle: "reglages", titre: "Réglages de la vitrine", controles: ["adresse"] },
+  // ── LA VUE SUIVI, ET ELLE SEULE (VIT-15) ──
+  //
+  // Ces quatre tuiles ne décrivent plus les NEUF cartes de l'ancien écran :
+  // celles-là sont devenues les sept étapes de l'atelier
+  // (`atelier-vitrine-etapes.ts`), et une étape n'est pas une tuile — elle
+  // n'a ni pastille de complétude ni ancre, elle a un numéro et un voisin.
+  //
+  // L'ORDRE EST CELUI DU RENDU, et il place le PARTAGE EN PREMIER. C'est le
+  // seul module où le QR passe devant le statut, et c'est délibéré : une
+  // vitrine se prépare longtemps puis se scanne tous les jours. Une fois
+  // publiée, ce que le commerçant vient chercher ici n'est pas de savoir si
+  // elle est ouverte — il le sait — mais de retrouver son QR et son lien.
+  {
+    cle: "partage",
+    titre: "QR code et lien de votre vitrine",
+    ancre: "partage",
+    controles: ["publiee"],
+  },
+  { cle: "statut", titre: "Publication", ancre: "statut", controles: [] },
+  {
+    cle: "atelier",
+    titre: "L'atelier de la vitrine",
+    // `adresse` et `catalogue` sont les deux points que l'atelier répare :
+    // la tuile se colore donc tant qu'il reste à préparer, ce qui est
+    // exactement ce qu'un fil d'étapes replié doit signaler.
+    // `duo-plateau` y est aussi : il n est émis QUE si le commerçant a
+    // commencé un plateau, et il se répare dans l étape « Les jeux ». Le
+    // rattacher ici est ce qui garde vraie la règle « tout contrôle émis est
+    // rattaché » — la tuile `duo` qui le portait a disparu avec l ancien écran.
+    controles: ["adresse", "catalogue", "duo-plateau"],
+  },
   { cle: "audience", titre: "Audience", controles: [] },
-  { cle: "traductions", titre: "Traductions (anglais)", controles: [] },
-  { cle: "alaune", titre: "À la une (3 max)", controles: [] },
-  { cle: "import", titre: "Importer une carte existante", controles: [] },
-  { cle: "catalogue", titre: "Vos cartes", controles: ["catalogue"] },
-  {
-    cle: "duo",
-    titre: "Duo Miroir",
-    ancre: "duo-miroir",
-    controles: ["duo-plateau"],
-  },
-  {
-    cle: "bande",
-    titre: "Portrait de la Bande",
-    ancre: "portrait-bande",
-    controles: [],
-  },
-  { cle: "qr", titre: "QR et impression", controles: ["publiee"] },
 ];
 
 /**

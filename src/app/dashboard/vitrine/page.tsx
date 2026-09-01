@@ -7,6 +7,16 @@ import { loadBandePack } from "@/lib/bande-context";
 import { loadDuoOptions } from "@/lib/duo-context";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
+import { ANCRE_BANDE, ANCRE_DUO } from "@/components/vitrine/ancres";
+import { parseEtape } from "@/components/dashboard/atelier-etapes";
+import { AtelierStepper } from "@/components/dashboard/atelier-stepper";
+import { AtelierEntree } from "@/components/dashboard/atelier-entree";
+import {
+  ETAPES_VITRINE,
+  hrefEtapeVitrine,
+  type EtapeVitrine,
+} from "@/components/dashboard/atelier-vitrine-etapes";
+import { AtelierVerificationVitrine } from "@/components/dashboard/atelier-vitrine-verification";
 import { getUserAndOrg } from "@/lib/auth";
 import { SupprimerVitrine } from "@/components/vitrine/supprimer-vitrine";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -19,8 +29,6 @@ import { MesuresTableau } from "@/components/vitrine/mesures-tableau";
 import { IndexationVitrine } from "@/components/vitrine/indexation-vitrine";
 import { etatIndexation } from "@/lib/vitrine-indexation";
 import {
-  VITRINE_BLOCS_DEFAUT,
-  type BlocVitrine,
   type ContenuVitrineView,
 } from "@/lib/vitrine";
 import type { DuoOptionsAdminView } from "@/lib/duo";
@@ -39,9 +47,12 @@ import { BandeEditeur } from "@/components/vitrine/bande-editeur";
 import { DuoEditeur } from "@/components/vitrine/duo-editeur";
 import { ExperiencesVisibilite } from "@/components/vitrine/experiences-visibilite";
 import { ImportCarte } from "@/components/vitrine/import-carte";
-import { ReglagesVitrine } from "@/components/vitrine/reglages-vitrine";
+import {
+  AdresseForm,
+  IdentiteEtThemeForm,
+  PublicationCard,
+} from "@/components/vitrine/reglages-vitrine";
 import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
-import { SommaireVitrine } from "@/components/vitrine/sommaire-vitrine";
 import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
 
 export const metadata: Metadata = { title: "Vitrine" };
@@ -68,7 +79,25 @@ export const metadata: Metadata = { title: "Vitrine" };
  * paramètre qui la portait est retiré plutôt que laissé à `true` : une prop
  * dont une seule valeur est possible finit par être lue comme une option.
  */
-export default async function VitrineDashboardPage() {
+export default async function VitrineDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ etape?: string }>;
+}) {
+  /**
+   * L'ÉTAPE, OU LA VUE SUIVI (VIT-15).
+   *
+   * `"nulle"` : l'ABSENCE de `?etape=` n'est pas « la première étape », c'est
+   * le SUIVI — la page a deux visages. Une valeur INCONNUE, elle, retombe sur
+   * la première étape plutôt que sur un 404 : une URL vieillie ou tronquée
+   * doit rendre un écran utile.
+   */
+  const { etape: etapeParam } = await searchParams;
+  const etape = parseEtape(
+    ETAPES_VITRINE,
+    etapeParam,
+    "nulle",
+  ) as EtapeVitrine | null;
   const capacites = await capacitesDuModule("vitrine");
   /**
    * LE RÔLE, POUR LA SEULE SUPPRESSION (VIT-14).
@@ -90,10 +119,6 @@ export default async function VitrineDashboardPage() {
   const settings = ctx.ok ? ctx.settings : null;
   const cartes = ctx.ok ? ctx.cartes : [];
   const organizationId = ctx.ok ? ctx.organizationId : null;
-  const blocsVitrine: readonly BlocVitrine[] =
-    settings?.theme.ordre_blocs && settings.theme.ordre_blocs.length > 0
-      ? settings.theme.ordre_blocs
-      : VITRINE_BLOCS_DEFAUT;
 
   /**
    * LES CONTENUS MIS EN AVANT ET LES OUVERTURES — deux lectures, un seul aller.
@@ -214,215 +239,245 @@ export default async function VitrineDashboardPage() {
         fiches — badges, allergènes et disponibilité du jour comprises.
       </ModuleCapabilityNotice>
 
-      <div className="space-y-6">
-        <CarteRepliable {...carteTuile(tuiles, "reglages")}>
-          <ReglagesVitrine
-            settings={settings}
-            appUrl={APP_URL}
-            peutEditer={capacites.canEditDraft}
-            peutPublier={capacites.canPublish}
-          />
-        </CarteRepliable>
-
-        {/* LE CATALOGUE N'APPARAÎT QU'APRÈS L'ADRESSE, et c'est le premier pas
-            que la base elle-même a dessiné : `vitrine_dashboard_state` rend
-            `settings = null` — et non un objet vide — tant qu'aucune adresse
-            n'a été choisie. Composer trente fiches avant de savoir où elles
-            seront servies revient à préparer une vitrine sans magasin. */}
-        {settings ? (
-          <>
-            {/* LE SOMMAIRE EST EN TÊTE DE LA PARTIE BASSE, et il ne liste que
-                les trois surfaces qu'on ne trouvait pas : superviser les
-                salons, le Duo, le Portrait de la Bande. Les autres sections de
-                cet écran (audience, traductions, « À la une », import,
-                catalogue, QR) se voient en défilant depuis les réglages —
-                celles-ci étaient sous huit cartes, sans rien qui y mène.
-
-                Il n'est PAS un plan de la page : un sommaire exhaustif de dix
-                entrées aurait ajouté une deuxième page à parcourir avant la
-                première. */}
-            <SommaireVitrine
-              salonsOuverts={supervision.liste.length}
-              duoComposable={cartes.some((carte) =>
-                carte.categories.some((rubrique) => rubrique.fiches.length > 0),
+      {etape === null ? (
+        /* ═══ LA VUE SUIVI ═══════════════════════════════════════════════
+           Tout est REPLIÉ sauf le partage : une vitrine se prépare une fois
+           et se scanne tous les jours. Ce que le commerçant vient chercher
+           ici, une fois publiée, c'est son QR et son lien — pas neuf cartes
+           de réglages qu'il a déjà remplies. */
+        <div className="space-y-6">
+          <div id="partage" className="scroll-mt-4">
+            <CarteRepliable
+              {...carteTuile(tuiles, "partage")}
+              /* OUVERT SEULEMENT UNE FOIS PUBLIÉE. Avant, il n'y a rien à
+                 imprimer — un QR fabriqué sur une vitrine fermée mène à une
+                 page qui refuse, et l'ouvrir d'emblée inviterait à le coller
+                 en salle. Après, c'est le seul bloc qu'on vient rouvrir. */
+              defaultOuvert={settings?.published === true}
+              resume={
+                settings?.published
+                  ? `${ouvertures} ouverture${ouvertures > 1 ? "s" : ""} de la page publique`
+                  : "Vitrine non publiée — rien à imprimer pour l'instant"
+              }
+            >
+              {settings ? (
+                <VitrineQrPlanche
+                  slug={settings.slug}
+                  publiee={settings.published}
+                  cartes={cartes}
+                  appUrl={APP_URL}
+                  resourceId={settings.id}
+                  openCount={ouvertures}
+                />
+              ) : (
+                <Card className="py-8 text-center">
+                  <p className="text-sm font-semibold text-k-body">
+                    Choisissez d&apos;abord l&apos;adresse de votre vitrine dans
+                    l&apos;atelier : c&apos;est elle que porteront vos QR codes.
+                  </p>
+                </Card>
               )}
+            </CarteRepliable>
+          </div>
+
+          <div id="statut" className="scroll-mt-4">
+            <CarteRepliable
+              {...carteTuile(tuiles, "statut")}
+              defaultOuvert={settings?.published !== true}
+              resume={
+                settings?.published ? "Vitrine en ligne" : "Vitrine non publiée"
+              }
+            >
+              {settings ? (
+                <PublicationCard
+                  settings={settings}
+                  appUrl={APP_URL}
+                  peutPublier={capacites.canPublish}
+                />
+              ) : (
+                <Card className="py-8 text-center">
+                  <p className="text-sm font-semibold text-k-body">
+                    Rien à publier tant que votre vitrine n&apos;a pas
+                    d&apos;adresse.
+                  </p>
+                </Card>
+              )}
+            </CarteRepliable>
+          </div>
+
+          <CarteRepliable
+            {...carteTuile(tuiles, "atelier")}
+            defaultOuvert={false}
+            resume={`${ETAPES_VITRINE.length} étapes de préparation.`}
+          >
+            <AtelierEntree
+              etapes={ETAPES_VITRINE}
+              hrefPour={(cle) => hrefEtapeVitrine(cle as EtapeVitrine)}
+              titre="L'atelier de la vitrine"
+              sousTitre="Votre adresse, votre carte, votre style et vos jeux — une étape à la fois."
             />
+          </CarteRepliable>
 
-            {/* CE QUE LA VITRINE A RAPPORTÉ, EN UN NOMBRE. Le seul retour
-                mesurable d'un QR posé sur une table, et il vaut d'être dit tôt :
-                un commerçant qui a imprimé ses planches veut savoir si on les
-                scanne avant de relire ses cartes. Le mot est « ouvertures » et
-                non « scans » — un rechargement, un retour arrière et un lien
-                partagé comptent tous, et prétendre compter des scans distincts
-                serait faux (voir `page-open-beacon`). */}
-            <CarteRepliable {...carteTuile(tuiles, "audience")}>
-              <Card>
-                <h2>Audience</h2>
-                <p className="mt-2 text-sm text-k-body">
-                  <span className="font-black tabular-nums text-k-ink">
-                    {ouvertures}
-                  </span>{" "}
-                  ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
-                </p>
-              </Card>
-            </CarteRepliable>
+          {/* CE QUE LA VITRINE A RAPPORTÉ, EN UN NOMBRE. Le mot est
+              « ouvertures » et non « scans » : un rechargement, un retour
+              arrière et un lien partagé comptent tous, et prétendre compter
+              des scans distincts serait faux (voir `page-open-beacon`). */}
+          <CarteRepliable
+            {...carteTuile(tuiles, "audience")}
+            defaultOuvert={false}
+            /* LA PHRASE COMPLÈTE, ET PAS SEULEMENT LE NOMBRE : c est la
+               seule chose que le commerçant lit quand tout est replié, et
+               « 12 » seul ne dit pas de quoi. */
+            resume={`${ouvertures} ouverture${ouvertures > 1 ? "s" : ""} de la page publique`}
+          >
+            <Card>
+              <h2>Audience</h2>
+              <p className="mt-2 text-sm text-k-body">
+                <span className="font-black tabular-nums text-k-ink">
+                  {ouvertures}
+                </span>{" "}
+                ouverture{ouvertures > 1 ? "s" : ""} de la page publique.
+              </p>
+              {rapport.ok ? (
+                <div className="mt-4">
+                  <MesuresTableau mesures={rapport.mesures} cartes={cartes} />
+                </div>
+              ) : null}
+            </Card>
+          </CarteRepliable>
 
-            {/* LA SUPERVISION DES SALONS — contrepartie du finding E-1. Elle
-                vient JUSTE APRÈS « Audience » parce qu'elle répond à la même
-                question, dans l'autre sens : « Audience » dit ce que la vitrine
-                a rapporté, celle-ci dit ce qui s'y passe MAINTENANT et ce que
-                le commerçant peut y faire. Et elle ne se peint qu'avec au moins
-                un salon — la carte porte le pourquoi en entier. */}
-            <SalonsOuverts
-              salons={supervision.liste}
-              luA={supervision.luA}
-            />
+          {/* LA SUPERVISION DES SALONS reste sur le suivi et non dans une
+              étape : ce n'est pas de la préparation, c'est une console — on
+              l'ouvre pendant le service, pas pendant qu'on compose sa carte. */}
+          {settings ? (
+            <SalonsOuverts salons={supervision.liste} luA={supervision.luA} />
+          ) : null}
 
-            {/* LA PORTE DE L'ÉCRAN DE TRADUCTION (VIT-5), ET ELLE NE COMPTE
-                RIEN. Le résumé chiffré existe — `vitrine_translation_state` le
-                rend — mais l'afficher ici coûterait une RPC de plus sur CHAQUE
-                ouverture de la page Vitrine, payée par tous pour un chiffre que
-                seul celui qui va traduire regarde. La page de traduction le
-                charge elle-même, une fois, au moment où il sert.
+          <SupprimerVitrine peutSupprimer={role === "owner"} />
+        </div>
+      ) : (
+        /* ═══ L'ATELIER ══════════════════════════════════════════════════ */
+        <div className="space-y-6">
+          <AtelierStepper
+            etapes={ETAPES_VITRINE}
+            courante={etape}
+            hrefPour={(cle) => hrefEtapeVitrine(cle as EtapeVitrine)}
+          />
 
-                L'arbitrage inverse aurait été défendable si le chiffre appelait
-                un geste urgent : ce n'est pas le cas — une couverture qui baisse
-                ne casse rien, elle referme le sélecteur de langue, et l'écran de
-                traduction le dit dès qu'on l'ouvre. */}
-            <CarteRepliable {...carteTuile(tuiles, "traductions")}>
-              <Card>
-                <h2>Traductions (anglais)</h2>
-                <p className="mt-2 text-sm text-k-body">
-                  Vos visiteurs étrangers peuvent lire votre carte en anglais.
-                  Traduisez vos champs un par un, le français sous les yeux.
-                </p>
-                <Link
-                  href="/dashboard/vitrine/traductions"
-                  className="mt-3 inline-block text-sm font-bold text-k-orange-text underline underline-offset-2 hover:text-k-ink"
-                >
-                  Traduire ma vitrine en anglais →
-                </Link>
-              </Card>
-            </CarteRepliable>
-
-            <CarteRepliable {...carteTuile(tuiles, "alaune")}>
-              <ContenusEditeur
-                contenus={contenus}
-                peutEditer={capacites.canEditDraft}
-              />
-            </CarteRepliable>
-
-            {/* L'IMPORT EST AVANT L'ÉDITEUR, et c'est l'ordre du geste réel :
-                un commerçant qui arrive avec sa carte dans un document ne veut
-                pas saisir trente fiches à la main pour découvrir ensuite
-                qu'un import existait. Il ne remplace PAS l'éditeur — les
-                badges, les allergènes et la disponibilité ne s'importent pas —
-                il le remplit. */}
-            <CarteRepliable {...carteTuile(tuiles, "import")}>
-              <ImportCarte peutEditer={capacites.canEditDraft} />
-            </CarteRepliable>
-
-            <CarteRepliable {...carteTuile(tuiles, "catalogue")}>
-              <CatalogueEditeur
-                cartes={cartes}
-                peutEditer={capacites.canEditDraft}
-              />
-            </CarteRepliable>
-
-            {/* Les jeux sont configurés ici mais annoncés par un bloc facultatif
-                de la vitrine publique. Sans cette indication, un plateau Duo
-                valide ou un pack Bande enregistré restait invisible, alors que
-                le choix de masquer les autres portes doit continuer d'être
-                respecté. */}
-            {!blocsVitrine.includes("experiences") ? (
-              <ExperiencesVisibilite peutEditer={capacites.canEditDraft} />
-            ) : null}
-
-            {/* LE DUO MIROIR VIENT APRÈS LE CATALOGUE, et pas ailleurs : son
-                plateau se choisit PARMI les fiches de la carte. Le placer plus
-                haut aurait demandé de cocher des fiches avant d'en avoir —
-                l'écran n'y aurait affiché qu'une liste vide et une consigne
-                d'aller composer sa carte, c'est-à-dire l'ordre du geste réel à
-                l'envers. */}
-            {/* L'ANCRE `duo-miroir` EST PORTÉE PAR L'ENVELOPPE, plus par la
-                carte : deux `id` identiques dans le même document rendraient le
-                saut du sommaire indéfini, et `CarteRepliable` rouvre le bloc que
-                l'ancre vise — ce que la carte seule ne savait pas faire. */}
-            <CarteRepliable {...carteTuile(tuiles, "duo")}>
-              <DuoEditeur
-                cartes={cartes}
-                plateau={plateauDuo}
-                peutEditer={capacites.canEditDraft}
-              />
-            </CarteRepliable>
-
-            {/* LE PORTRAIT DE LA BANDE VIENT APRÈS LE DUO, et n'a PAS la même
-                dépendance : il ne se choisit pas parmi les fiches, il marche
-                sans carte. Il est ici parce que les deux jeux s'ouvrent depuis
-                la même vitrine et se règlent d'un même mouvement — pas parce
-                qu'un ordre de geste l'impose. */}
-            {/* Même remarque d'ancre que pour le Duo. Cette tuile ne porte
-                AUCUN contrôle — le pack a toujours une valeur, il n'existe pas
-                d'état « pas configuré » — et son verdict est donc « complet »
-                pour toujours : elle situe le bloc dans la page, elle ne prétend
-                rien vérifier. */}
-            <CarteRepliable {...carteTuile(tuiles, "bande")}>
-              <BandeEditeur
-                pack={packBande}
-                peutEditer={capacites.canEditDraft}
-              />
-            </CarteRepliable>
-
-            {/* LES QR VIENNENT APRÈS LES CARTES : ils les visent. La section
-                n'apparaît qu'avec une adresse posée (`settings` non nul), et
-                elle rappelle elle-même de publier avant d'imprimer. */}
-            <CarteRepliable {...carteTuile(tuiles, "qr")}>
-              <VitrineQrPlanche
-                slug={settings.slug}
-                publiee={settings.published}
-                cartes={cartes}
-                appUrl={APP_URL}
-                resourceId={settings.id}
-                openCount={ouvertures}
-              />
-            </CarteRepliable>
-            {/* HORS DU SYSTÈME DE TUILES, et c'est délibéré : les neuf tuiles
-                sont une checklist de mise en route, numérotée et gardée. Un
-                rapport en lecture seule n'est pas une étape à cocher. */}
-            {/* VIT-12 — hors tuiles, comme le rapport : autoriser Google est
-                une décision de commerce, pas une étape de mise en route. */}
-            <IndexationVitrine
-              indexable={settings.indexable}
-              etat={etatIndexation({
-                published: settings.published,
-                indexable: settings.indexable,
-                accroche: settings.accroche,
-                cartes,
-              })}
+          {etape === "adresse" ? (
+            <AdresseForm
+              slug={settings?.slug ?? null}
+              appUrl={APP_URL}
               peutEditer={capacites.canEditDraft}
             />
+          ) : null}
 
-            {rapport.ok ? (
-              <MesuresTableau mesures={rapport.mesures} cartes={cartes} />
-            ) : null}
-          </>
-        ) : (
-          <Card className="py-10 text-center">
-            <p className="text-sm font-semibold text-k-body">
-              Choisissez d&apos;abord l&apos;adresse de votre vitrine ci-dessus.
-              Vos cartes viendront ensuite.
-            </p>
-          </Card>
-        )}
+          {/* LES SIX AUTRES ÉTAPES ATTENDENT L'ADRESSE, et c'est la base qui
+              l'a dessiné : `vitrine_dashboard_state` rend `settings = null`
+              tant qu'aucune adresse n'est choisie. Composer trente fiches
+              avant de savoir où elles seront servies revient à préparer une
+              vitrine sans magasin. */}
+          {etape !== "adresse" && settings === null ? (
+            <Card className="py-10 text-center">
+              <p className="text-sm font-semibold text-k-body">
+                Choisissez d&apos;abord l&apos;adresse de votre vitrine.
+              </p>
+              <Link
+                href={hrefEtapeVitrine("adresse")}
+                className="mt-2 inline-block text-sm font-black text-k-orange-text underline underline-offset-2"
+              >
+                Aller à l&apos;étape « L&apos;adresse »
+              </Link>
+            </Card>
+          ) : null}
 
-        {/* LA SUPPRESSION EST TOUT EN BAS, ET HORS DU BLOC CONDITIONNEL.
-            Elle doit rester atteignable même quand l'écran affiche « choisissez
-            d'abord une adresse » : c'est justement l'état d'une vitrine à
-            moitié créée qu'un commerçant veut pouvoir effacer. La RPC répond
-            `absente` sans lever quand il n'y a rien — l'écran n'a donc aucune
-            condition à porter. */}
-        <SupprimerVitrine peutSupprimer={role === "owner"} />
-      </div>
+          {settings ? (
+            <>
+              {etape === "identite" ? (
+                <IdentiteEtThemeForm
+                  settings={settings}
+                  peutEditer={capacites.canEditDraft}
+                />
+              ) : null}
+
+              {etape === "carte" ? (
+                <div className="space-y-6">
+                  <ImportCarte peutEditer={capacites.canEditDraft} />
+                  <CatalogueEditeur
+                    cartes={cartes}
+                    peutEditer={capacites.canEditDraft}
+                  />
+                </div>
+              ) : null}
+
+              {etape === "alaune" ? (
+                <ContenusEditeur
+                  contenus={contenus}
+                  peutEditer={capacites.canEditDraft}
+                />
+              ) : null}
+
+              {etape === "traductions" ? (
+                <Card>
+                  <h2>Traductions (anglais)</h2>
+                  <p className="mt-2 text-sm text-k-body">
+                    Traduisez le nom et la description de vos fiches. Les
+                    clients étrangers liront la version anglaise ; ce qui
+                    n&apos;est pas traduit reste en français.
+                  </p>
+                  <Link
+                    href="/dashboard/vitrine/traductions"
+                    className="mt-3 inline-block text-sm font-black text-k-orange-text underline underline-offset-2"
+                  >
+                    Ouvrir le tableau de traduction
+                  </Link>
+                </Card>
+              ) : null}
+
+              {etape === "jeux" ? (
+                <div className="space-y-6">
+                  <ExperiencesVisibilite peutEditer={capacites.canEditDraft} />
+                  <div id={ANCRE_DUO} className="scroll-mt-4">
+                    <DuoEditeur
+                      plateau={plateauDuo}
+                      cartes={cartes}
+                      peutEditer={capacites.canEditDraft}
+                    />
+                  </div>
+                  <div id={ANCRE_BANDE} className="scroll-mt-4">
+                    <BandeEditeur
+                      pack={packBande}
+                      peutEditer={capacites.canEditDraft}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {etape === "verification" ? (
+                <div className="space-y-6">
+                  <AtelierVerificationVitrine
+                    entree={{
+                      settings,
+                      cartes,
+                      nbFichesDuo: plateauDuo.options.length,
+                    }}
+                  />
+                  <IndexationVitrine
+                    indexable={settings.indexable}
+                    etat={etatIndexation({
+                      published: settings.published,
+                      indexable: settings.indexable,
+                      accroche: settings.accroche,
+                      cartes,
+                    })}
+                    peutEditer={capacites.canEditDraft}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
