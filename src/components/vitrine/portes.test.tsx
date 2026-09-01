@@ -10,6 +10,9 @@ describe("BlocExperiences", () => {
       <BlocExperiences
         slug="le-comptoir"
         lang="fr"
+        // VIT-16 : l'ABSENCE de choix vaut « les deux » à la résolution ;
+        // ce test décrit donc le cas par défaut.
+        jeux={{ duo: true, bande: true }}
         portes={{
           duo: false,
           quiz: [],

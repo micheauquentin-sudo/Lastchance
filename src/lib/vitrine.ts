@@ -683,6 +683,49 @@ export interface ThemeVitrine {
   style_cartes?: StyleCartesVitrine;
   ordre_blocs?: BlocVitrine[];
   allure?: AllureVitrine;
+  jeux?: JeuxVitrine;
+}
+
+/**
+ * QUELS JEUX PARAISSENT SUR LA CARTE (VIT-16).
+ *
+ * ── POURQUOI CE N'EST PAS `ordre_blocs` ──
+ *
+ * `ordre_blocs` porte UN mot, `experiences` : il dit si le bloc des jeux
+ * existe, pas lequel des deux y figure. Le commerçant qui veut le Duo Miroir
+ * sans le Portrait de la Bande n'avait aucun moyen de le dire — le bloc les
+ * montrait tous les deux, ou aucun.
+ *
+ * ── L'ABSENCE VAUT « LES DEUX », ET C'EST LA COMPATIBILITÉ ──
+ *
+ * Une vitrine qui a déjà `experiences` dans son ordre affiche AUJOURD'HUI les
+ * deux jeux. Faire valoir `false` à une clé absente les aurait retirés de
+ * toutes les pages publiées, en silence — le même piège que le vocabulaire de
+ * secteur, et la même réponse : ce qui n'a pas été décidé garde le
+ * comportement d'hier. Seul un `false` ÉCRIT masque un jeu.
+ *
+ * ── DEUX BOOLÉENS, PAS UNE LISTE ──
+ *
+ * Une liste `["duo"]` aurait rendu l'absence ambiguë : liste vide ou clé
+ * manquante ? Deux booléens facultatifs disent exactement trois états par jeu
+ * — voulu, refusé, pas encore décidé — et le troisième est celui qui compte.
+ */
+export interface JeuxVitrine {
+  duo?: boolean;
+  bande?: boolean;
+}
+
+/** Les deux jeux qu'une vitrine peut porter. Miroir du `check` SQL. */
+export const VITRINE_JEUX = ["duo", "bande"] as const;
+export type JeuVitrine = (typeof VITRINE_JEUX)[number];
+
+const JEUX_LIBELLES: Record<JeuVitrine, string> = {
+  duo: "Duo Miroir",
+  bande: "Portrait de la Bande",
+};
+
+export function libelleJeuVitrine(jeu: JeuVitrine): string {
+  return JEUX_LIBELLES[jeu];
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1569,6 +1612,9 @@ export function mapThemeVitrine(raw: unknown): ThemeVitrine {
   const allure = mapAllureVitrine(root.allure);
   if (allure) theme.allure = allure;
 
+  const jeux = mapJeuxVitrine(root.jeux);
+  if (jeux) theme.jeux = jeux;
+
   return theme;
 }
 
@@ -1633,6 +1679,29 @@ function mapAllureVitrine(raw: unknown): AllureVitrine | undefined {
   }
 
   return posee ? allure : undefined;
+}
+
+/**
+ * Les jeux voulus sur la carte — `undefined` quand rien n'est décidé.
+ *
+ * Même contrat que `mapAllureVitrine` : `undefined` et non `{}`, parce qu'un
+ * objet vide serait posé sur `theme.jeux` et ferait croire à un choix. Ici la
+ * distinction porte plus loin qu'ailleurs — l'absence signifie « les deux »,
+ * et un `{}` écrit par erreur aurait signifié la même chose tout en donnant à
+ * lire un réglage qui n'existe pas.
+ */
+function mapJeuxVitrine(raw: unknown): JeuxVitrine | undefined {
+  const root = asRecord(raw);
+  if (!root) return undefined;
+  const jeux: JeuxVitrine = {};
+  let posee = false;
+  for (const cle of VITRINE_JEUX) {
+    if (typeof root[cle] === "boolean") {
+      jeux[cle] = root[cle];
+      posee = true;
+    }
+  }
+  return posee ? jeux : undefined;
 }
 
 function mapFiche(raw: unknown): VitrineFicheView | null {

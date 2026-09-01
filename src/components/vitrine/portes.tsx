@@ -125,8 +125,17 @@ export function BlocExperiences({
   portes,
   slug,
   lang,
+  jeux,
 }: {
   portes: PortesVitrineView["experiences"];
+  /**
+   * CE QUE LE COMMERÇANT A COCHÉ (VIT-16), déjà résolu — jamais facultatif.
+   *
+   * Il se croise avec ce que la base ouvre : un jeu coché mais dont le plateau
+   * est tombé sous le plancher ne paraît pas davantage. Le choix RETIRE, il
+   * n'ajoute jamais — c'est `portes` qui dit ce qui est jouable.
+   */
+  jeux: { duo: boolean; bande: boolean };
   /**
    * Le slug du commerce — la porte du Duo Miroir mène à `/lobby/nouveau/{slug}`,
    * qui ouvre un salon (socle L16). Il vient de l'état PUBLIC (`etat.slug`), pas
@@ -178,12 +187,17 @@ export function BlocExperiences({
             porte ouvre toujours, et un drapeau n'aurait gardé que lui-même.
             Elle est PREMIÈRE parce que c'est le format par défaut d'un salon
             (`creation-lobby-form`), et le seul qui accueille une tablée. */}
-        <CarteLien href={`/lobby/nouveau/${slug}`} nom="Portrait de la Bande">
-          <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
-            {t.bandeInvite}
-          </span>
-        </CarteLien>
-        {duo && (
+        {/* LE CHOIX DU COMMERÇANT RETIRE, IL N'AJOUTE JAMAIS (VIT-16). Il se
+            croise avec ce que la base OUVRE : décocher masque, mais cocher ne
+            force rien — un plateau tombé sous le plancher reste fermé. */}
+        {jeux.bande && (
+          <CarteLien href={`/lobby/nouveau/${slug}`} nom="Portrait de la Bande">
+            <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
+              {t.bandeInvite}
+            </span>
+          </CarteLien>
+        )}
+        {duo && jeux.duo && (
           <CarteLien href={`/lobby/nouveau/${slug}`} nom="Duo Miroir">
             <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
               {t.duoInvite}
