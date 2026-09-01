@@ -2244,16 +2244,23 @@ select results_eq(
 -- dont le jeu de clés n'était verrouillé nulle part, si bien qu'une clé ajoutée
 -- là ne faisait rougir personne. Elle l'est maintenant.
 --
--- `duo` EST UN BOOLÉEN, PAS UNE LISTE, et c'est la seule dissymétrie du
--- document : un commerce publie N quiz, chacun à son adresse — donc l'écran a
--- besoin de leurs slugs — mais UN seul Duo Miroir, à une adresse déductible du
--- slug de la vitrine. « Oui » ou « non » est tout ce qu'il y a à dire.
+-- `duo` ET `bande` SONT DES BOOLÉENS, PAS DES LISTES, et c'est la seule
+-- dissymétrie du document : un commerce publie N quiz, chacun à son adresse —
+-- donc l'écran a besoin de leurs slugs — mais UN seul Duo Miroir et UN seul
+-- Portrait de la Bande, à des adresses déductibles du slug de la vitrine.
+-- « Oui » ou « non » est tout ce qu'il y a à dire.
+--
+-- `bande` N'EST ARRIVÉE QU'EN DUO-3a, et c'est le défaut que ce lot répare :
+-- la clé n'existait pas, donc aucune garde ne s'appliquait, donc la page
+-- annonçait le jeu à qui n'avait pas l'option. Le COMPORTEMENT des deux
+-- drapeaux face à leur droit se prouve dans `droits_par_produit.test.sql`
+-- (§5 bis) ; ici, c'est la FORME du document qui est close.
 select results_eq(
   $$select key from pg_catalog.jsonb_each(
       public.vitrine_public_state('tap-portes') #> '{portes,experiences}')
      order by key$$,
-  array['calendars', 'duo', 'pronostics', 'quiz'],
-  'le bloc Expériences porte ses listes quiz, calendrier, pronostics et son drapeau duo, et cette liste de clés est close');
+  array['bande', 'calendars', 'duo', 'pronostics', 'quiz'],
+  'le bloc Expériences porte ses listes quiz, calendrier, pronostics et ses DEUX drapeaux de jeu (duo, bande), et cette liste de clés est close');
 
 -- G n'a aucune fiche Duo épinglée : la porte est FAUSSE, et surtout elle est
 -- PRÉSENTE. Une clé absente aurait obligé l'écran à distinguer « pas de jeu » de
