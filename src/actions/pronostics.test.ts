@@ -28,6 +28,10 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
     /** Tâches confiées à `after()` — le runtime les retient après la réponse. */
     taches: [] as Array<Promise<unknown>>,
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    /** Appels à `ensureProgressivePlayerIdentity`, dans l'ordre (ID-7). */
+    ponts: [] as Array<Record<string, unknown>>,
+    /** Écritures du client ADMIN (parcours joueur) — la rotation s'y lit. */
+    adminUpdates: [] as Array<{ table: string; payload: Record<string, unknown> }>,
     // Écritures directes du client session (dashboard commerçant).
     inserts: [] as Array<{ table: string; payload: Record<string, unknown> }>,
     updates: [] as Array<{ table: string; payload: Record<string, unknown> }>,
@@ -55,6 +59,8 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
       state.rateLimitDenied = [];
       state.taches = [];
       state.rpcCalls = [];
+      state.ponts = [];
+      state.adminUpdates = [];
       state.inserts = [];
       state.updates = [];
       state.session = {
@@ -122,8 +128,9 @@ const { state, makeAdmin, makeServer } = vi.hoisted(() => {
             op = "insert";
             return builder;
           },
-          update: () => {
+          update: (payload: Record<string, unknown>) => {
             op = "update";
+            state.adminUpdates.push({ table, payload });
             return builder;
           },
           upsert: () => builder,
@@ -286,6 +293,42 @@ vi.mock("@/lib/pronostics-context", () => ({
       organization: { name: "Ma boutique" },
       matches: state.matches,
     }),
+  /**
+   * LA RÉSOLUTION D'IDENTITÉ (ID-7), DOUBLÉE — et volontairement.
+   *
+   * Ce fichier éprouve les SEAUX, l'ordre des gardes et le pont d'ancienneté ;
+   * l'ORDRE de résolution (cookie de module d'abord, identité globale ensuite)
+   * a son propre fichier, `src/lib/pronostics-identite.test.ts`, où le repli
+   * est réellement exercé. Ici, le double reproduit exactement le chemin du
+   * cookie : pas de cookie → pas de joueur, comme avant ce lot.
+   */
+  resoudreIdentiteContest: () => {
+    const tokenHash =
+      state.cookieToken !== undefined ? `hash:${state.cookieToken}` : null;
+    return Promise.resolve(
+      tokenHash && state.player
+        ? {
+            tokenHash,
+            joueur: { id: state.player.id, first_name: "Alice", avatar: "" },
+            cookiePose: true,
+          }
+        : { tokenHash, joueur: null, cookiePose: tokenHash !== null },
+    );
+  },
+}));
+
+/**
+ * LE PONT D'ANCIENNETÉ, ESPIONNÉ — c'est lui que ce fichier surveille depuis
+ * ID-7. `ensureProgressivePlayerIdentity` est best-effort en production : il
+ * avale ses propres pannes, donc un pont non posé ne se voit nulle part. Le
+ * doubler par un espion est le seul moyen d'attester qu'il l'a été, et avec
+ * QUELLE empreinte.
+ */
+vi.mock("@/lib/player-identity", () => ({
+  ensureProgressivePlayerIdentity: (input: Record<string, unknown>) => {
+    state.ponts.push(input);
+    return Promise.resolve({ ok: true });
+  },
 }));
 
 // Le module réel est PUR (barème, validation de forme des réponses, bornes) :
@@ -391,7 +434,11 @@ import {
 
 // Seaux (contest.id = "contest-1", ip = "203.0.113.7", cookie hashé → hash:X).
 const REGISTER_IP = `prono:register:ip:${CONTEST_ID}:203.0.113.7`;
-const PROFILE_PLAYER = `prono:profile:player:${CONTEST_ID}:hash:device-token`;
+// Le seau de profil porte désormais l'identifiant du joueur RÉSOLU, et non
+// plus le hash du cookie : l'identité peut avoir été rattrapée sous une
+// empreinte historique, et deux empreintes du même joueur ne doivent pas lui
+// ouvrir deux seaux (même clé que `prono:predict:player`).
+const PROFILE_PLAYER = `prono:profile:player:${CONTEST_ID}:player-1`;
 const PROFILE_IP = `prono:profile:ip:${CONTEST_ID}:203.0.113.7`;
 const PREDICT_PLAYER = `prono:predict:player:${CONTEST_ID}:player-1`;
 const PREDICT_IP = `prono:predict:ip:${CONTEST_ID}:203.0.113.7`;
@@ -1099,6 +1146,106 @@ describe("updateContest — le statut seul n'écrit aucune colonne", () => {
 });
 
 // ════════════════════════════════════════════════════════════
+// LE PONT D'ANCIENNETÉ (ID-7) — posé partout où le joueur avance
+//
+// `ensureProgressivePlayerIdentity` est le SEUL écrivain de
+// `player_legacy_identities`, et c'est ce pont que
+// `reward_player_from_legacy(org, 'contest', contest_id, cp.token_hash)`
+// interroge pour rattacher un lot `PRONO-` à `/portefeuille`. Il était posé
+// à l'inscription, et nulle part ailleurs.
+//
+// LA FUITE QUE CE BLOC FIGE : le lien magique de récupération TOURNE
+// `contest_players.token_hash` — c'est sa raison d'être, déconnecter les
+// anciens appareils — sans jamais mettre le pont à jour. Le pont désignait
+// alors une empreinte que plus aucun cookie ne produit : le module retrouvait
+// bien le joueur, son identité globale le perdait, et son lot disparaissait de
+// `/portefeuille`. Rien ne levait. Le lien magique étant LE chemin officiel
+// quand un client change de navigateur, la fuite se déclenchait exactement
+// quand elle faisait le plus mal.
+// ════════════════════════════════════════════════════════════
+
+describe("le pont d'ancienneté suit le joueur (ID-7)", () => {
+  /** Ce que `hashPlayerToken` (doublé) rend du jeton d'appareil courant. */
+  const EMPREINTE_COURANTE = "hash:device-token";
+  /** Ce qu'il rend du jeton NEUF que la rotation fabrique. */
+  const EMPREINTE_APRES_ROTATION = "hash:fresh-token";
+
+  it("LA FUITE COLMATÉE : après le lien magique, le pont porte la NOUVELLE empreinte", async () => {
+    // Rouge avant ce lot : le pont n'était pas reposé du tout après la
+    // rotation. Rouge aussi s'il l'était avec l'empreinte d'AVANT — ce serait
+    // le même défaut sous une autre forme, le pont désignant une empreinte que
+    // plus aucun cookie ne produit.
+    const res = await confirmContestRecovery({ slug: SLUG, token: RECOVERY_TOKEN });
+
+    expect(res.ok).toBe(true);
+    // L'empreinte écrite dans `contest_players` et celle confiée au pont sont
+    // la MÊME valeur : c'est toute la promesse de ce correctif.
+    expect(
+      state.adminUpdates.find((u) => u.table === "contest_players")?.payload,
+    ).toEqual({ token_hash: EMPREINTE_APRES_ROTATION });
+    expect(state.ponts).toEqual([
+      {
+        organizationId: "org-1",
+        experienceKind: "contest",
+        experienceId: CONTEST_ID,
+        legacyIdentityHash: EMPREINTE_APRES_ROTATION,
+        acquisitionSource: "direct",
+      },
+    ]);
+  });
+
+  it("une récupération refusée ne pose aucun pont", async () => {
+    // Jeton inconnu, expiré ou déjà consommé : rien n'a tourné, rien ne doit
+    // être écrit dans le registre d'identité.
+    state.consumed = null;
+
+    const res = await confirmContestRecovery({ slug: SLUG, token: RECOVERY_TOKEN });
+
+    expect(res.ok).toBe(false);
+    expect(state.ponts).toEqual([]);
+  });
+
+  it("un pronostic repose le pont sur l'empreinte du module", async () => {
+    // L'empreinte confiée au pont est celle de `contest_players.token_hash` —
+    // JAMAIS une empreinte d'appareil (`hashPlayerDeviceToken`, salée). Les
+    // deux rendent 64 hexadécimaux : les substituer ne lèverait rien, et le
+    // registre ne trouverait plus personne.
+    await submitPrediction({ slug: SLUG, matchId: MATCH_ID, homeScore: 1, awayScore: 0 });
+
+    expect(state.ponts).toEqual([
+      {
+        organizationId: "org-1",
+        experienceKind: "contest",
+        experienceId: CONTEST_ID,
+        legacyIdentityHash: EMPREINTE_COURANTE,
+        acquisitionSource: "direct",
+      },
+    ]);
+  });
+
+  it("un pronostic REFUSÉ ne pose aucun pont", async () => {
+    // La RPC reste l'autorité : elle refuse un match démarré à la milliseconde
+    // près. Un pont posé sur un refus mentirait sur une progression.
+    state.predictSaved = false;
+
+    await submitPrediction({ slug: SLUG, matchId: MATCH_ID, homeScore: 1, awayScore: 0 });
+
+    expect(state.ponts).toEqual([]);
+  });
+
+  it("la modification du profil repose le pont", async () => {
+    await updateContestPlayer({ slug: SLUG, firstName: "Bob", avatar: "" });
+
+    expect(state.ponts).toHaveLength(1);
+    expect(state.ponts[0]).toMatchObject({
+      experienceKind: "contest",
+      experienceId: CONTEST_ID,
+      legacyIdentityHash: EMPREINTE_COURANTE,
+    });
+  });
+});
+
+// ════════════════════════════════════════════════════════════
 // submitPredictions — LA GRILLE VALIDÉE D'UN COUP
 //
 // Chaque match portait son bouton : pronostiquer une journée de Ligue 1,
@@ -1204,6 +1351,39 @@ describe("submitPredictions — le lot, un seul seau, refus partiel", () => {
    * première : du travail payé pour un résultat que la dernière valeur
    * détermine déjà.
    */
+  it("UN pont pour tout le lot, jamais un par match", async () => {
+    // Le poser par match paierait N RPC pour une identité qui ne change pas
+    // d'une ligne à l'autre.
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [
+        { matchId: MATCH_ID, homeScore: 1, awayScore: 0 },
+        { matchId: AUTRE_MATCH, homeScore: 2, awayScore: 2 },
+      ],
+    });
+
+    expect(res.ok).toBe(true);
+    expect(state.ponts).toHaveLength(1);
+    expect(state.ponts[0]).toMatchObject({
+      experienceKind: "contest",
+      experienceId: CONTEST_ID,
+      legacyIdentityHash: "hash:device-token",
+    });
+  });
+
+  it("un lot entièrement refusé ne pose AUCUN pont", async () => {
+    // Toute la grille écartée (matchs démarrés) : aucune progression n'a eu
+    // lieu, le registre d'identité ne doit rien apprendre.
+    const res = await submitPredictions({
+      slug: SLUG,
+      predictions: [{ matchId: MATCH_PASSE, homeScore: 1, awayScore: 0 }],
+    });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.saved).toBe(0);
+    expect(state.ponts).toEqual([]);
+  });
+
   it("un doublon dans le lot n'exécute qu'une RPC", async () => {
     const res = await submitPredictions({
       slug: SLUG,

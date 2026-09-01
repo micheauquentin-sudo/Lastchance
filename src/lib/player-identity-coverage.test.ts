@@ -195,15 +195,39 @@ describe("pont d'identité — l'expérience désignée est la bonne table", () 
     // — l'expérience est le championnat et l'empreinte est le `token_hash` de
     // `contest_players`, pas une empreinte device. Une des deux fausse suffit
     // à laisser `player_id` null.
+    //
+    // ── TOUS LES SITES, PLUS LE PREMIER SEUL (ID-7) ──
+    //
+    // Cette garde ne lisait que la PREMIÈRE occurrence, du temps où
+    // l'inscription était le seul site. Le module en compte six depuis que le
+    // pont suit aussi les progressions et la ROTATION du lien magique — et
+    // c'est précisément sur ce dernier que la fuite s'était logée : la
+    // rotation changeait `contest_players.token_hash` sans toucher au pont,
+    // qui désignait alors une empreinte que plus aucun cookie ne produit. Un
+    // site neuf mal formé passerait inaperçu tant que le premier reste juste.
     const src = readFileSync(`${ACTIONS_DIR}/pronostics.ts`, "utf8").replace(
       /\r\n/g,
       "\n",
     );
-    const m = /experienceKind: "contest",\s*\n\s*experienceId: ([\w.]+),\s*\n\s*legacyIdentityHash: ([\w.]+),/.exec(
-      src,
-    );
-    expect(m, "le pont contest a disparu ou changé de forme").not.toBeNull();
-    expect(m![1]).toBe("ctx.contest.id");
-    expect(m![2]).toBe("tokenHash");
+    const sites = [
+      ...src.matchAll(
+        /experienceKind: "contest",\s*\n\s*experienceId: ([\w.]+),\s*\n\s*legacyIdentityHash: ([\w.]+),/g,
+      ),
+    ];
+
+    // Six : inscription, profil, pronostic, lot de pronostics, réponse
+    // générique, récupération par lien magique.
+    expect(
+      sites.length,
+      "le pont contest a disparu ou changé de forme",
+    ).toBeGreaterThanOrEqual(6);
+    for (const site of sites) {
+      expect(site[1], site[0]).toBe("ctx.contest.id");
+      // Le NOM compte ici, et pas seulement la valeur : `tokenHash` désigne
+      // partout dans ce fichier l'empreinte de `contest_players`. Le lot ID-7
+      // a dû renommer `recoveryTokenHash` — qui portait, lui, l'empreinte du
+      // LIEN MAGIQUE — pour que les deux cessent de se confondre.
+      expect(site[2], site[0]).toBe("tokenHash");
+    }
   });
 });
