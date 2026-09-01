@@ -380,6 +380,12 @@ export function IdentiteEtThemeForm({
           <legend className="px-2 text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
             Couleurs
           </legend>
+          {/* LE TÉMOIN EST POSÉ PAR LA SECTION (VIT-19), comme
+              `allure_rendue`. Il dit « cet écran règle les couleurs » — sans
+              quoi le serveur ne peut pas distinguer deux champs VIDÉS d'un
+              formulaire qui ne les porte pas, et le studio effaçait ce que
+              celui-ci venait d'écrire. */}
+          <input type="hidden" name="couleurs_rendues" value="1" />
           <div className="grid gap-4 sm:grid-cols-2">
             <ChampCouleur
               id="vitrine-couleur-primary"
@@ -404,6 +410,7 @@ export function IdentiteEtThemeForm({
           <legend className="px-2 text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
             Polices
           </legend>
+          <input type="hidden" name="polices_rendues" value="1" />
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="vitrine-police-heading">Police des titres</Label>
@@ -432,6 +439,7 @@ export function IdentiteEtThemeForm({
 
         <div>
           <Label htmlFor="vitrine-style-cartes">Présentation des fiches</Label>
+          <input type="hidden" name="style_cartes_rendu" value="1" />
           <select
             id="vitrine-style-cartes"
             name="style_cartes"
@@ -458,6 +466,7 @@ export function IdentiteEtThemeForm({
             n&apos;apparaît pas.
           </p>
           <input type="hidden" name="ordre_blocs" value={JSON.stringify(blocs)} />
+          <input type="hidden" name="blocs_rendus" value="1" />
           <ol className="space-y-2">
             {blocs.map((bloc, index) => (
               <li

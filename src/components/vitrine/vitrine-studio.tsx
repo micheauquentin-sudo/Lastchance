@@ -307,6 +307,15 @@ export function VitrineStudio({
             L&apos;allure
           </h2>
 
+          {/* LES DEUX TÉMOINS DE CE PANNEAU (VIT-19).
+              Ce studio règle les couleurs et les polices, il le déclare. Ce
+              qu'il ne déclare PAS — `ordre_blocs`, `style_cartes`, `jeux` —
+              est désormais conservé par le serveur au lieu d'être effacé :
+              c'est le défaut que ce lot répare, et il était invisible parce
+              qu'un enregistrement réussi ne dit rien de ce qu'il a emporté. */}
+          <input type="hidden" name="couleurs_rendues" value="1" />
+          <input type="hidden" name="polices_rendues" value="1" />
+
           <div className="grid grid-cols-2 gap-3">
             <ChampTexte label="Couleur principale">
               <input

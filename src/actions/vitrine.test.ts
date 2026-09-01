@@ -547,11 +547,19 @@ describe("saveVitrineSettings — le thème part sous ses noms SQL", () => {
         accroche: "Bistrot",
         histoire: "",
         horaires_texte: "12h-14h",
+        // LES QUATRE TÉMOINS SONT DEVENUS OBLIGATOIRES (VIT-19) : une valeur
+        // postée sans le témoin de sa section n'est plus écrite. Ce test les
+        // pose donc tous — c'est ce que fait l'écran de réglages, qui rend
+        // bien ces quatre sections.
+        couleurs_rendues: "1",
         couleur_primary: "#112233",
         couleur_secondary: "",
+        polices_rendues: "1",
         police_heading: "elegant",
         police_body: "",
+        style_cartes_rendu: "1",
         style_cartes: "magazine",
+        blocs_rendus: "1",
         ordre_blocs: JSON.stringify(["cartes", "accroche", "inconnu"]),
       }),
     );
@@ -599,7 +607,11 @@ describe("saveVitrineSettings — le thème part sous ses noms SQL", () => {
     gardeOk();
     await saveVitrineSettings(
       null,
-      fd({ accroche: "Bistrot", couleur_primary: "#112233" }),
+      fd({
+        accroche: "Bistrot",
+        couleurs_rendues: "1",
+        couleur_primary: "#112233",
+      }),
     );
 
     const payload = callsTo("vitrine_settings").find((c) => c.op === "update")!
@@ -1683,5 +1695,178 @@ describe("deleteVitrineTraduction — le retrait, et son idempotence", () => {
     // l'effacer — ni apprendre qu'il existe.
     expect(res.error).toBe("Élément introuvable.");
     expect(res.error).not.toContain("vitrine_menus");
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LE THÈME NE SE PERD PLUS (VIT-19)
+//
+// `composerTheme` RECONSTRUISAIT le document `theme` à partir du seul
+// formulaire. Tant qu'un unique écran l'écrivait, c'était sans conséquence ;
+// à trois écrans, chacun effaçait ce que les autres réglaient — et un
+// enregistrement réussi ne dit rien de ce qu'il vient d'emporter.
+//
+// Deux pertes ont été mesurées en production, et ces tests sont écrits pour
+// ÉCHOUER sur le code d'avant :
+//
+//   1. le studio (VIT-17) ne rend ni `ordre_blocs` ni `style_cartes`.
+//      Enregistrer depuis lui remettait la page aux cinq blocs par défaut,
+//      donc RETIRAIT le bloc « Jeux » — dont la présence dans l'ordre EST le
+//      consentement de publication (VIT-3) ;
+//
+//   2. `theme.jeux` (VIT-16) n'est rendu par AUCUN de ces formulaires.
+//      Enregistrer l'identité depuis l'atelier effaçait le choix, et comme
+//      l'absence vaut « les deux » (ADR-129), un jeu explicitement DÉCOCHÉ
+//      revenait sur la carte du commerçant.
+//
+// Le sens de la garde est donc : ce qu'un écran ne montre pas, il ne
+// l'emporte pas. Et le témoin — `couleurs_rendues`, `polices_rendues`,
+// `style_cartes_rendu`, `blocs_rendus` — est ce qui permet de distinguer
+// « le commerçant a vidé le champ » de « l'écran n'a pas ce champ », que
+// `formData.get` rend autrement identiques.
+// ────────────────────────────────────────────────────────────
+
+describe("saveVitrineSettings — le thème se fusionne, il ne se reconstruit pas", () => {
+  /** Le thème d'un commerçant qui a déjà tout réglé. */
+  const THEME_EN_BASE = {
+    couleurs: { primary: "#8a5a2b", secondary: "#fdf6ec" },
+    polices: { heading: "elegant", body: "sans" },
+    style_cartes: "magazine",
+    ordre_blocs: ["accroche", "cartes", "experiences", "horaires"],
+    jeux: { duo: true, bande: false },
+    allure: { densite: "compact", favoris: false },
+  };
+
+  function themeEcrit(): Record<string, unknown> {
+    const ecriture = callsTo("vitrine_settings").find((c) => c.op === "update");
+    expect(ecriture).toBeDefined();
+    return (ecriture!.payload as Record<string, unknown>).theme as Record<
+      string,
+      unknown
+    >;
+  }
+
+  beforeEach(() => {
+    gardeOk();
+    state.row = {
+      id: "row-1",
+      slug: "le-comptoir",
+      published: true,
+      theme: THEME_EN_BASE,
+    };
+  });
+
+  it("le studio n'efface pas l'ordre des blocs qu'il ne montre pas", async () => {
+    // Ce que POSTE le studio : identité, couleurs, polices, allure. Ni
+    // `ordre_blocs`, ni `style_cartes_rendu`.
+    await saveVitrineSettings(
+      null,
+      fd({
+        accroche: "Bistrot de quartier",
+        couleurs_rendues: "1",
+        couleur_primary: "#112233",
+        polices_rendues: "1",
+        police_heading: "impact",
+        allure_rendue: "1",
+        densite: "standard",
+      }),
+    );
+
+    const theme = themeEcrit();
+    expect(theme.ordre_blocs).toEqual([
+      "accroche",
+      "cartes",
+      "experiences",
+      "horaires",
+    ]);
+    // Et donc le bloc « Jeux » reste publié. C'est la conséquence qui compte :
+    // la vitrine du commerçant continue d'annoncer ses jeux.
+    expect(theme.ordre_blocs).toContain("experiences");
+  });
+
+  it("le studio n'efface pas le style des fiches qu'il ne montre pas", async () => {
+    await saveVitrineSettings(
+      null,
+      fd({ accroche: "Bistrot", couleurs_rendues: "1", couleur_primary: "#112233" }),
+    );
+
+    expect(themeEcrit().style_cartes).toBe("magazine");
+  });
+
+  it("AUCUN des deux écrans n'efface le choix des jeux, qu'aucun ne rend", async () => {
+    // Le cas qui fait le plus de dégât : `bande: false` est un refus EXPLICITE.
+    // L'effacer le fait revenir, parce que l'absence vaut « affiché ».
+    await saveVitrineSettings(
+      null,
+      fd({
+        accroche: "Bistrot",
+        style_cartes_rendu: "1",
+        style_cartes: "grille",
+        blocs_rendus: "1",
+        ordre_blocs: JSON.stringify(["accroche", "cartes"]),
+        couleurs_rendues: "1",
+        couleur_primary: "#112233",
+        polices_rendues: "1",
+        police_heading: "impact",
+        allure_rendue: "1",
+      }),
+    );
+
+    expect(themeEcrit().jeux).toEqual({ duo: true, bande: false });
+  });
+
+  it("un écran QUI rend la section l'écrase bien, témoin à l'appui", async () => {
+    // La contrepartie : sans elle, la garde ci-dessus serait satisfaite par une
+    // action qui n'écrit plus rien du tout.
+    await saveVitrineSettings(
+      null,
+      fd({
+        blocs_rendus: "1",
+        ordre_blocs: JSON.stringify(["cartes", "accroche"]),
+        style_cartes_rendu: "1",
+        style_cartes: "liste",
+      }),
+    );
+
+    const theme = themeEcrit();
+    expect(theme.ordre_blocs).toEqual(["cartes", "accroche"]);
+    expect(theme.style_cartes).toBe("liste");
+  });
+
+  it("une section RENDUE et vidée retire sa clé, au lieu de la conserver", async () => {
+    // C'est la seule façon de revenir au défaut du métier, et c'est ce que
+    // fait `resetVitrineCouleurs` (ADR-132) : une clé ABSENTE suit le
+    // vocabulaire du secteur, une valeur recopiée le fige au jour où on l'a
+    // écrite. Un « on conserve toujours » aurait rendu le retrait impossible.
+    await saveVitrineSettings(
+      null,
+      fd({
+        couleurs_rendues: "1",
+        couleur_primary: "",
+        couleur_secondary: "",
+        blocs_rendus: "1",
+        ordre_blocs: "",
+      }),
+    );
+
+    const theme = themeEcrit();
+    expect(theme).not.toHaveProperty("couleurs");
+    expect(theme).not.toHaveProperty("ordre_blocs");
+    // Ce qui n'était pas rendu est toujours là, lui.
+    expect(theme.jeux).toEqual({ duo: true, bande: false });
+    expect(theme.style_cartes).toBe("magazine");
+  });
+
+  it("la lecture précède l'écriture, et une vitrine sans adresse refuse avant d'écrire", async () => {
+    // La fusion impose un aller de lecture. Il ne doit pas devenir une porte
+    // dérobée : pas de ligne, pas d'écriture.
+    state.row = null;
+
+    const res = await saveVitrineSettings(null, fd({ accroche: "Bistrot" }));
+
+    expect(res.ok).toBe(false);
+    expect(
+      callsTo("vitrine_settings").some((c) => c.op === "update"),
+    ).toBe(false);
   });
 });

@@ -377,7 +377,15 @@ export async function setVitrineSlug(
 // ════════════════════════════════════════════════════════════
 
 /**
- * Compose le thème à partir des champs du formulaire.
+ * Compose le thème à enregistrer : le thème EN BASE, sur lequel on repose les
+ * seules sections que le formulaire a effectivement rendues.
+ *
+ * ── CE N'EST PLUS UNE CONSTRUCTION, C'EST UNE FUSION (VIT-19) ──
+ *
+ * Cette fonction reconstruisait le document entier depuis le formulaire. Tant
+ * qu'un seul écran écrivait le thème, c'était équivalent ; à trois écrans,
+ * chacun effaçait ce que les autres réglaient — voir les quatre témoins dans
+ * `saveVitrineSettingsSchema`, qui portent le détail des deux pertes mesurées.
  *
  * ── UNE CLÉ ABSENTE PLUTÔT QU'UNE CLÉ VIDE ──
  *
@@ -390,34 +398,69 @@ export async function setVitrineSlug(
  */
 function composerTheme(
   saisie: ReturnType<typeof saveVitrineSettingsSchema.parse>,
+  actuel: ThemeVitrine,
 ): ThemeVitrine {
-  const theme: ThemeVitrine = {};
+  // ── ON PART DE CE QUI EST EN BASE, ET NON D'UN DOCUMENT VIDE (VIT-19) ──
+  //
+  // C'est LE geste de ce lot. Reconstruire le thème à partir du seul
+  // formulaire faisait disparaître toute clé qu'un écran ne rendait pas : le
+  // studio effaçait `ordre_blocs` et `style_cartes`, et les deux formulaires
+  // effaçaient `theme.jeux`, qu'aucun d'eux ne rend. La copie est de surface,
+  // ce qui suffit : chaque section est remplacée EN ENTIER ci-dessous, jamais
+  // modifiée en place.
+  const theme: ThemeVitrine = { ...actuel };
 
-  if (saisie.couleur_primary || saisie.couleur_secondary) {
-    theme.couleurs = {};
-    if (saisie.couleur_primary) theme.couleurs.primary = saisie.couleur_primary;
-    if (saisie.couleur_secondary) {
-      theme.couleurs.secondary = saisie.couleur_secondary;
+  // ── CHAQUE SECTION N'EST TOUCHÉE QUE SI SON ÉCRAN L'A RENDUE ──
+  //
+  // Le témoin distingue « le commerçant a vidé le champ » de « l'écran ne
+  // porte pas ce champ », que `formData.get` rend autrement identiques. Sans
+  // lui, un formulaire partiel efface ce qu'il ne montre pas.
+  if (saisie.couleurs_rendues) {
+    if (saisie.couleur_primary || saisie.couleur_secondary) {
+      const couleurs: NonNullable<ThemeVitrine["couleurs"]> = {};
+      if (saisie.couleur_primary) couleurs.primary = saisie.couleur_primary;
+      if (saisie.couleur_secondary) {
+        couleurs.secondary = saisie.couleur_secondary;
+      }
+      theme.couleurs = couleurs;
+    } else {
+      // Deux champs rendus ET vides : c'est un retrait demandé — le même geste
+      // que `resetVitrineCouleurs`, qui RETIRE la clé au lieu d'y écrire le
+      // préréglage du métier (ADR-132). Une clé absente continue de suivre le
+      // vocabulaire du secteur ; une valeur recopiée le fige.
+      delete theme.couleurs;
     }
   }
 
-  if (saisie.police_heading || saisie.police_body) {
-    theme.polices = {};
-    if (saisie.police_heading) theme.polices.heading = saisie.police_heading;
-    if (saisie.police_body) theme.polices.body = saisie.police_body;
+  if (saisie.polices_rendues) {
+    if (saisie.police_heading || saisie.police_body) {
+      const polices: NonNullable<ThemeVitrine["polices"]> = {};
+      if (saisie.police_heading) polices.heading = saisie.police_heading;
+      if (saisie.police_body) polices.body = saisie.police_body;
+      theme.polices = polices;
+    } else {
+      delete theme.polices;
+    }
   }
 
-  if (saisie.style_cartes) theme.style_cartes = saisie.style_cartes;
-  // Une liste VIDE = ordre par défaut, donc clé OMISE : `resoudreThemeVitrine`
-  // retombe déjà sur l'ordre naturel dans ce cas, et écrire `[]` en base aurait
-  // stocké un réglage que personne n'a fait.
-  if (saisie.ordre_blocs.length > 0) theme.ordre_blocs = saisie.ordre_blocs;
+  if (saisie.style_cartes_rendu) {
+    if (saisie.style_cartes) theme.style_cartes = saisie.style_cartes;
+    else delete theme.style_cartes;
+  }
 
-  // LE TÉMOIN D'ABORD : sans la section à l'écran, on ne touche pas à l'allure.
-  // Voir `allure_rendue` dans le schéma — c'est ce qui empêche un formulaire
-  // partiel d'éteindre sept réglages en silence.
-  const allure = saisie.allure_rendue ? composerAllure(saisie) : undefined;
-  if (allure) theme.allure = allure;
+  if (saisie.blocs_rendus) {
+    // Une liste VIDE = ordre par défaut, donc clé RETIRÉE :
+    // `resoudreThemeVitrine` retombe déjà sur l'ordre naturel dans ce cas, et
+    // écrire `[]` en base aurait stocké un réglage que personne n'a fait.
+    if (saisie.ordre_blocs.length > 0) theme.ordre_blocs = saisie.ordre_blocs;
+    else delete theme.ordre_blocs;
+  }
+
+  if (saisie.allure_rendue) {
+    const allure = composerAllure(saisie);
+    if (allure) theme.allure = allure;
+    else delete theme.allure;
+  }
 
   return theme;
 }
@@ -507,6 +550,15 @@ export async function saveVitrineSettings(
     secteur: formData.get("secteur"),
     badge_ouverture: formData.get("badge_ouverture"),
     allure_rendue: formData.get("allure_rendue"),
+    // LES QUATRE AUTRES TÉMOINS (VIT-19). Les oublier ici ne fait rien rougir
+    // — le champ vaut « non rendu », donc la section est conservée, donc un
+    // écran qui la règle ne l'enregistre plus. C'est le piège que ce fichier
+    // décrit déjà pour les vingt-cinq champs d'allure, et il s'est refermé
+    // pendant l'écriture de ce lot : ce sont les tests de fusion qui l'ont vu.
+    couleurs_rendues: formData.get("couleurs_rendues"),
+    polices_rendues: formData.get("polices_rendues"),
+    style_cartes_rendu: formData.get("style_cartes_rendu"),
+    blocs_rendus: formData.get("blocs_rendus"),
     // LES VINGT-CINQ CHAMPS D'ALLURE, LUS DEPUIS LA MÊME TABLE QUE LE SCHÉMA.
     // Les énumérer à la main ici aurait été le second endroit où la liste
     // existe — et un `formData.get` oublié ne fait RIEN rougir : le champ vaut
@@ -523,6 +575,25 @@ export async function saveVitrineSettings(
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const supabase = await createClient();
+
+  // ── LE THÈME ACTUEL, LU AVANT D'ÉCRIRE (VIT-19) ──
+  //
+  // `composerTheme` fusionne désormais au lieu de reconstruire : il lui faut
+  // donc ce qui est en base. C'est un aller de plus, et il est nécessaire —
+  // sans lui, aucune clé qu'un écran ne rend ne peut survivre. `setVitrineJeux`
+  // lisait déjà de cette façon, pour exactement la même raison.
+  const { data: ligne, error: lecture } = await supabase
+    .from("vitrine_settings")
+    .select("theme")
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+
+  if (lecture) {
+    reportError("vitrine.save-settings.read", lecture.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  if (!ligne) return { ok: false, error: SANS_ADRESSE };
+
   const { data, error } = await supabase
     .from("vitrine_settings")
     .update({
@@ -536,7 +607,7 @@ export async function saveVitrineSettings(
       // `secteur` est `not null default 'commerce'` : `""` (champ non rendu)
       // vaut donc le défaut NEUTRE, jamais `null`, que la colonne refuserait.
       secteur: parsed.data.secteur || VITRINE_SECTEUR_DEFAUT,
-      theme: toJson(composerTheme(parsed.data)),
+      theme: toJson(composerTheme(parsed.data, mapThemeVitrine(ligne.theme))),
     })
     .eq("organization_id", garde.organizationId)
     .select("slug")
