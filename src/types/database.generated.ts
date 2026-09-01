@@ -1561,6 +1561,7 @@ export type Database = {
           item_id: string | null
           member_token_hash: string
           nom_fige: string
+          option_id: string | null
           organization_id: string
           round_id: string
         }
@@ -1570,6 +1571,7 @@ export type Database = {
           item_id?: string | null
           member_token_hash: string
           nom_fige: string
+          option_id?: string | null
           organization_id: string
           round_id: string
         }
@@ -1579,6 +1581,7 @@ export type Database = {
           item_id?: string | null
           member_token_hash?: string
           nom_fige?: string
+          option_id?: string | null
           organization_id?: string
           round_id?: string
         }
@@ -1588,6 +1591,13 @@ export type Database = {
             columns: ["item_id", "organization_id"]
             isOneToOne: false
             referencedRelation: "vitrine_items"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "duo_choices_option_id_organization_id_fkey"
+            columns: ["option_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "duo_options"
             referencedColumns: ["id", "organization_id"]
           },
           {
@@ -9169,6 +9179,10 @@ export type Database = {
         Args: { p_item_id: string; p_lobby_id: string; p_token_hash: string }
         Returns: Json
       }
+      duo_choose_option: {
+        Args: { p_lobby_id: string; p_option_id: string; p_token_hash: string }
+        Returns: Json
+      }
       duo_jouable: { Args: { p_organization_id: string }; Returns: boolean }
       duo_options_json: { Args: { p_organization_id: string }; Returns: Json }
       duo_options_state: { Args: { p_organization_id: string }; Returns: Json }
@@ -10455,6 +10469,10 @@ export type Database = {
           p_item_ids: string[]
           p_organization_id: string
         }
+        Returns: Json
+      }
+      set_duo_plateau: {
+        Args: { p_actor: string; p_organization_id: string; p_places: Json }
         Returns: Json
       }
       set_duo_suggestion: {
