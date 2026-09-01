@@ -9,6 +9,7 @@ import { saveVitrineSettings } from "@/actions/vitrine";
 import { ApercuStudio } from "@/components/vitrine/studio/apercu";
 import { ChampsCachesStudio } from "@/components/vitrine/studio/champs-caches";
 import {
+  basculerBloc,
   etatInitialStudio,
   type EtatStudio,
 } from "@/components/vitrine/studio/etat";
@@ -27,6 +28,7 @@ import type {
   SecteurVitrine,
   ThemeVitrine,
   VitrineCarteView,
+  ContenuVitrineView,
   VitrineLiensView,
 } from "@/lib/vitrine";
 
@@ -83,6 +85,10 @@ export function VitrineStudio({
   themeInitial,
   cartes,
   liens,
+  contenus,
+  duoPossede,
+  bandePossede,
+  nbFichesDuo,
   peutEditer,
 }: {
   slug: string;
@@ -100,6 +106,12 @@ export function VitrineStudio({
   themeInitial: ThemeVitrine;
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
+  contenus: ContenuVitrineView[];
+  /** Le droit du JEU, pas celui de la vitrine — clé par produit (20261020120000). */
+  duoPossede: boolean;
+  bandePossede: boolean;
+  /** Le COMPTE, pas le plateau : il décide du « prêt / pas prêt » du bilan. */
+  nbFichesDuo: number;
   peutEditer: boolean;
 }) {
   const [page, setPage] = useState<PageStudio>(() => parsePageStudio(null));
@@ -200,12 +212,34 @@ export function VitrineStudio({
               peutEditer={peutEditer}
             />
           ) : null}
-          {page === "carte" ? <PageCarteStudio nbCartes={cartes.length} /> : null}
+          {page === "carte" ? (
+            <PageCarteStudio
+              nbCartes={cartes.length}
+              cartes={cartes}
+              peutEditer={peutEditer}
+            />
+          ) : null}
           {page === "alaune" ? (
-            <PageALaUneStudio />
+            <PageALaUneStudio
+              contenus={contenus}
+              liens={liens}
+              socialVisible={etat.blocs.includes("social")}
+              onSocialVisible={(v) =>
+                majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
+              }
+              peutEditer={peutEditer}
+            />
           ) : null}
           {page === "jeux" ? (
-            <PageJeuxStudio jeuxVisibles={etat.blocs.includes("experiences")} />
+            <PageJeuxStudio
+              jeuxVisibles={etat.blocs.includes("experiences")}
+              duoPossede={duoPossede}
+              bandePossede={bandePossede}
+              nbFichesDuo={nbFichesDuo}
+              themeInitial={themeInitial}
+              secteur={etat.secteur}
+              peutEditer={peutEditer}
+            />
           ) : null}
         </aside>
 
