@@ -398,7 +398,6 @@ function IdentiteEtThemeForm({
               disabled={!peutEditer}
             />
           </div>
-          <ReglagesCouleursMetier peutEditer={peutEditer} />
         </fieldset>
 
         <fieldset className="border-t-2 border-dashed border-zinc-200 pt-5">
@@ -526,6 +525,19 @@ function IdentiteEtThemeForm({
           </Button>
         ) : null}
       </form>
+
+      {/* HORS DU FORMULAIRE, ET CE N'EST PAS UNE QUESTION DE MISE EN PAGE.
+          Ce bloc a SA propre action, donc sa propre balise de formulaire — et
+          un formulaire imbriqué n'est pas du HTML valide : le navigateur le
+          déplie en silence, l'hydratation ne retrouve plus l'arbre qu'elle
+          attend, et TOUTE l'interactivité de l'écran tombe avec.
+
+          Ce n'est pas une précaution théorique : la première version de
+          VIT-14 l'avait posé dans le `<fieldset>` des couleurs, et l'E2E a vu
+          « Créer la carte » et « Mettre en avant » cesser de répondre — deux
+          tests qui n'ont rien à voir avec les couleurs. Le même avertissement
+          était déjà écrit plus haut, pour `PhotoChamp`. */}
+      <ReglagesCouleursMetier peutEditer={peutEditer} />
     </Card>
   );
 }
