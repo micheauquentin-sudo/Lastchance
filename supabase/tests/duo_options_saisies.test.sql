@@ -25,13 +25,20 @@
 --      lecture héritée du grant de TABLE, écriture accordée COLONNE PAR
 --      COLONNE. C'est le défaut qui a coûté cinq lots cette semaine.
 --
--- ── CE QUE CE FICHIER NE PROUVE PAS, ET IL FAUT LE DIRE ──
+--   8. LE PLATEAU SAISI SE JOUE (DUO-4). Une option saisie se SCELLE, la
+--      manche se révèle, et l'accord se tranche entre deux libellés — verdict
+--      qui n'existait pas, faute d'une clé pour distinguer deux `item_id` nuls.
+--      La fiche, elle, passe toujours par la PORTE D'HIER sans rien changer.
+--      Et le plateau entier s'écrit EN UNE TRANSACTION (`set_duo_plateau`).
 --
--- Il ne prouve PAS qu'une option saisie est CHOISISSABLE. `duo_choose` valide
--- encore le choix par `o.item_id = p_item_id`, qu'un `item_id` nul n'égale
--- jamais : une option saisie s'affiche mais ne se scelle pas encore. C'est un
--- manque connu et documenté (migration 20261126120000, §4), pas un oubli — et
--- écrire ici une assertion qui le contournerait donnerait un vert qui ment.
+-- ── CE QUE CE FICHIER A CESSÉ DE NE PAS PROUVER ──
+--
+-- Il portait jusqu'à DUO-4 un aveu : « il ne prouve PAS qu'une option saisie
+-- est CHOISISSABLE ». C'était exact — `duo_choose` validait le choix par
+-- `o.item_id = p_item_id`, qu'un `item_id` nul n'égale jamais, si bien qu'une
+-- option saisie s'affichait sans pouvoir se sceller. §8 lève cet aveu en jouant
+-- de vraies parties, et non en assertant la forme des fonctions : un plateau de
+-- trois libellés, chez un commerce qui n'a AUCUNE fiche, mène jusqu'au verdict.
 --
 -- Le fichier doit passer sur une base VIDE comme sur une base SEMÉE : toutes
 -- les assertions sont bornées aux organisations créées ici, aucune ne compte
@@ -602,6 +609,621 @@ select ok(
   not pg_catalog.has_column_privilege(
     'anon', 'public.duo_options', 'libelle', 'INSERT'),
   'DUO-S52 anon n''ÉCRIT pas libelle');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 8. DUO-4 — LE PLATEAU SAISI DEVIENT JOUABLE
+--
+-- CE QUE CETTE SECTION FERME. L'en-tête de ce fichier portait, depuis DUO-1,
+-- un aveu : « il ne prouve PAS qu'une option saisie est CHOISISSABLE ».
+-- `duo_choose` validait le geste par `o.item_id = p_item_id`, qu'un `item_id`
+-- nul n'égale jamais — un plateau entièrement saisi s'affichait, ouvrait la
+-- porte publique, et refusait chaque clic. C'est cet aveu que la section
+-- ci-dessous retire, et elle ne peut le retirer qu'en jouant VRAIMENT une
+-- partie : `create` / `join` / `lock` / `duo_start` / choix / `duo_state`.
+--
+-- ── POURQUOI AUCUNE ORGANISATION NEUVE ──
+--
+-- S (plateau entièrement saisi) et M (plateau mixte, deux fiches et deux
+-- libellés aux places 1-3 et 2-4) portent déjà exactement les deux formes dont
+-- ces preuves ont besoin, et Z reste le voisin. V ne peut PAS servir : §3 lui
+-- supprime deux fiches pour éprouver la cascade et le laisse à UNE option,
+-- au-dessous du seuil de jouabilité — ce qui est le propos de DUO-S19 et qu'on
+-- ne défait pas pour se donner un terrain de jeu. V retrouve un plateau en §8.5,
+-- APRÈS les parties, et c'est aussi pourquoi les salles ne sont pas chez lui.
+--
+-- ── L'ORDRE DES SOUS-SECTIONS N'EST PAS LIBRE ──
+--
+-- §8.5 REMPLACE des plateaux. Le `on delete set null` de `duo_choices.option_id`
+-- vide alors les places scellées des manches en cours — c'est voulu, et §6 de la
+-- migration en dépend. Écrire §8.5 avant les parties rendrait donc les
+-- assertions d'accord vertes ou rouges pour une raison qui n'est pas la leur.
+-- ════════════════════════════════════════════════════════════
+
+-- LE DROIT DU JEU, et lui seul. `create_player_lobby` n'exige plus que
+-- `org_has_module_access(org, 'duo')` : ni le droit `vitrine`, ni une vitrine
+-- publiée. Ne PAS semer `vitrine` ici est délibéré — c'est ce qui fait de S un
+-- commerce qui joue au Duo SANS la carte, du premier octroi au dernier sceau.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+select o.id, 'duo', 'pass', 'backoffice',
+       now() - interval '1 day', now() + interval '365 days'
+  from (values
+    ('da000000-0000-4000-8000-00000000000a'::uuid),
+    ('da000000-0000-4000-8000-00000000000b'::uuid)) as o(id);
+
+create temporary table d4 (nom text primary key, j jsonb) on commit drop;
+
+-- ── LES SALLES ───────────────────────────────────────────────
+-- On passe par les VRAIES RPC du socle L16 plutôt que d'écrire les lobbies en
+-- direct : c'est plus long et cela prouve davantage — le plateau saisi doit
+-- traverser le socle, pas seulement la fonction qu'on vient d'écrire.
+--
+-- SA : chez S, DEUX SAISIES DIFFÉRENTES.        SB : chez S, LA MÊME SAISIE.
+-- MA : chez M, LA MÊME FICHE, par la PORTE D'HIER (`duo_choose`).
+-- MB : chez M, UNE FICHE CONTRE UN LIBELLÉ.
+-- MC : chez M, manche laissée OUVERTE — le sceau et les refus s'y éprouvent.
+insert into d4 values ('sa', public.create_player_lobby(
+  'da000000-0000-4000-8000-00000000000a', 'duo', 2, repeat('aa', 32), 'Hote SA'));
+insert into d4 values ('saj', public.join_player_lobby(
+  (select j->>'join_code' from d4 where nom = 'sa'), repeat('ab', 32), 'Invite SA'));
+insert into d4 values ('sal', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sa'), repeat('aa', 32)));
+
+insert into d4 values ('sb', public.create_player_lobby(
+  'da000000-0000-4000-8000-00000000000a', 'duo', 2, repeat('ba', 32), 'Hote SB'));
+insert into d4 values ('sbj', public.join_player_lobby(
+  (select j->>'join_code' from d4 where nom = 'sb'), repeat('bb', 32), 'Invite SB'));
+insert into d4 values ('sbl', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sb'), repeat('ba', 32)));
+
+insert into d4 values ('ma', public.create_player_lobby(
+  'da000000-0000-4000-8000-00000000000b', 'duo', 2, repeat('ca', 32), 'Hote MA'));
+insert into d4 values ('maj', public.join_player_lobby(
+  (select j->>'join_code' from d4 where nom = 'ma'), repeat('cb', 32), 'Invite MA'));
+insert into d4 values ('mal', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'), repeat('ca', 32)));
+
+insert into d4 values ('mb', public.create_player_lobby(
+  'da000000-0000-4000-8000-00000000000b', 'duo', 2, repeat('da', 32), 'Hote MB'));
+insert into d4 values ('mbj', public.join_player_lobby(
+  (select j->>'join_code' from d4 where nom = 'mb'), repeat('db', 32), 'Invite MB'));
+insert into d4 values ('mbl', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'), repeat('da', 32)));
+
+insert into d4 values ('mc', public.create_player_lobby(
+  'da000000-0000-4000-8000-00000000000b', 'duo', 2, repeat('ea', 32), 'Hote MC'));
+insert into d4 values ('mcj', public.join_player_lobby(
+  (select j->>'join_code' from d4 where nom = 'mc'), repeat('eb', 32), 'Invite MC'));
+insert into d4 values ('mcl', public.lock_player_lobby(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'), repeat('ea', 32)));
+
+select is((select j->>'state' from d4 where nom = 'sal'), 'locked',
+  'DUO-S53 une salle Duo s''ouvre et se verrouille chez S, qui n''a AUCUNE fiche');
+
+insert into d4 values ('sastart', public.duo_start(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sa'), repeat('aa', 32)));
+insert into d4 values ('sbstart', public.duo_start(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sb'), repeat('ba', 32)));
+insert into d4 values ('mastart', public.duo_start(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'), repeat('ca', 32)));
+insert into d4 values ('mbstart', public.duo_start(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'), repeat('da', 32)));
+insert into d4 values ('mcstart', public.duo_start(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'), repeat('ea', 32)));
+
+select is((select j->>'state' from d4 where nom = 'sastart'), 'ok',
+  'DUO-S54 … et la manche démarre sur un plateau de trois LIBELLÉS');
+
+
+-- ── 8.1 LA PROMESSE : UNE OPTION SAISIE SE SCELLE ────────────
+
+insert into d4 values ('sac1', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sa'),
+  repeat('aa', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000a'
+      and o.libelle = 'Tarte aux pommes')));
+
+select is((select j->>'state' from d4 where nom = 'sac1'), 'ok',
+  'DUO-S55 UNE OPTION SAISIE SE SCELLE — le refus « unavailable » de DUO-1 est levé');
+
+-- LE SCEAU EST ÉCRIT, ET IL PORTE LA PLACE. `item_id` reste nul : c'est
+-- précisément ce qui rendait deux saisies indiscernables avant DUO-4.
+select is(
+  (select pg_catalog.jsonb_build_object(
+            'place_connue', c.option_id is not null,
+            'fiche', c.item_id,
+            'nom', c.nom_fige)
+     from public.duo_choices c
+     join public.duo_rounds r on r.id = c.round_id
+    where r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'sa')
+      and c.member_token_hash = repeat('aa', 32)),
+  '{"place_connue": true, "fiche": null, "nom": "Tarte aux pommes"}'::jsonb,
+  'DUO-S56 … le sceau porte la PLACE, aucune fiche, et le libellé GRAVÉ');
+
+insert into d4 values ('sac2', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sa'),
+  repeat('ab', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000a'
+      and o.libelle = 'Crème brûlée')));
+
+select is((select j->'revelee' from d4 where nom = 'sac2'), 'true'::jsonb,
+  'DUO-S57 … et le second sceau RÉVÈLE la manche, comme sur un plateau de fiches');
+
+insert into d4 values ('savue', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sa'), repeat('aa', 32)));
+
+-- LE VERDICT QUI N'EXISTAIT PAS. Avant DUO-4, les deux sceaux portaient
+-- `item_id` nul : la garde `or` de `duo_state` coupait et `accord` restait
+-- `null` — « on ne peut pas trancher » sur un plateau où rien n'est pourtant
+-- ambigu. Deux places distinctes sont deux réponses distinctes.
+select is((select j->'accord' from d4 where nom = 'savue'), 'false'::jsonb,
+  'DUO-S58 DEUX SAISIES DIFFÉRENTES : le désaccord est NOMMÉ (il était « indécidable »)');
+
+select is(
+  (select (j->'mon_choix'->>'nom') || ' / ' || (j->'autre_choix'->>'nom')
+     from d4 where nom = 'savue'),
+  'Tarte aux pommes / Crème brûlée',
+  'DUO-S59 … et les deux libellés gravés sont rendus CÔTE À CÔTE');
+
+-- LA PLACE VOYAGE DANS LE DOCUMENT. Sans elle, l'écran ne peut pas surligner
+-- l'option scellée quand celle-ci n'a pas de fiche : `item_id` y est nul.
+select is(
+  (select (j->'mon_choix'->>'option_id')::uuid from d4 where nom = 'savue'),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000a'
+      and o.libelle = 'Tarte aux pommes'),
+  'DUO-S60 … et `mon_choix` porte `option_id`, la seule clé qui désigne une saisie');
+
+-- LA MÊME SAISIE DES DEUX CÔTÉS : l'accord, sur un plateau sans une seule fiche.
+insert into d4 values ('sbc1', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sb'),
+  repeat('ba', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000a'
+      and o.libelle = 'Spaghetti con vongole')));
+insert into d4 values ('sbc2', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sb'),
+  repeat('bb', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000a'
+      and o.libelle = 'Spaghetti con vongole')));
+insert into d4 values ('sbvue', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'sb'), repeat('bb', 32)));
+
+select is((select j->'accord' from d4 where nom = 'sbvue'), 'true'::jsonb,
+  'DUO-S61 LA MÊME SAISIE DES DEUX CÔTÉS : l''accord est NOMMÉ, sans une seule fiche');
+
+
+-- ── 8.2 NON-RÉGRESSION : LA FICHE, PAR LA PORTE D'HIER ───────
+--
+-- `duo_choose(p_lobby_id, p_token_hash, p_item_id)` existe toujours, avec la
+-- MÊME signature, et l'application déployée l'appelle encore pendant la fenêtre
+-- de déploiement. Tout ce qui suit doit se comporter comme avant DUO-4 : c'est
+-- la sous-section qui a le droit d'être ennuyeuse.
+
+insert into d4 values ('mac1', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'),
+  repeat('ca', 32), 'da000004-0000-4000-8000-0000000000b1'));
+
+select is((select j->>'state' from d4 where nom = 'mac1'), 'ok',
+  'DUO-S62 la PORTE D''HIER scelle toujours une fiche (p_item_id, trois arguments)');
+
+-- ELLE RÉSOUT LA FICHE VERS SA PLACE. Le sceau porte les DEUX : la fiche, comme
+-- avant, et la place, que le délégué a écrite.
+select is(
+  (select pg_catalog.jsonb_build_object(
+            'fiche', c.item_id,
+            'place_est_celle_du_plateau',
+              c.option_id = (select o.id from public.duo_options o
+                              where o.organization_id = 'da000000-0000-4000-8000-00000000000b'
+                                and o.item_id = 'da000004-0000-4000-8000-0000000000b1'),
+            'nom', c.nom_fige)
+     from public.duo_choices c
+     join public.duo_rounds r on r.id = c.round_id
+    where r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'ma')
+      and c.member_token_hash = repeat('ca', 32)),
+  '{"fiche": "da000004-0000-4000-8000-0000000000b1", "place_est_celle_du_plateau": true, "nom": "Fiche M1"}'::jsonb,
+  'DUO-S63 … en résolvant la fiche vers SA place, et en gravant le nom de la CARTE');
+
+insert into d4 values ('mac2', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'),
+  repeat('cb', 32), 'da000004-0000-4000-8000-0000000000b1'));
+insert into d4 values ('mavue', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'), repeat('ca', 32)));
+
+select is((select j->'accord' from d4 where nom = 'mavue'), 'true'::jsonb,
+  'DUO-S64 LA MÊME FICHE des deux côtés : l''accord vaut ce qu''il valait hier');
+
+select is((select j->'mon_choix'->>'item_id' from d4 where nom = 'mavue'),
+  (select j->'autre_choix'->>'item_id' from d4 where nom = 'mavue'),
+  'DUO-S65 … et les deux choix sont bien le même, rendus CÔTE À CÔTE');
+
+-- LE PLATEAU MIXTE SE JOUE DES DEUX CÔTÉS À LA FOIS : une fiche contre un
+-- libellé, dans la MÊME manche, par les DEUX portes.
+insert into d4 values ('mbc1', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'),
+  repeat('da', 32), 'da000004-0000-4000-8000-0000000000b2'));
+insert into d4 values ('mbc2', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'),
+  repeat('db', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000b'
+      and o.libelle = 'Suggestion du chef')));
+insert into d4 values ('mbvue', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'), repeat('da', 32)));
+
+select is((select j->>'state' from d4 where nom = 'mbc2'), 'ok',
+  'DUO-S66 PLATEAU MIXTE : l''un scelle une fiche, l''autre un libellé, dans la même manche');
+
+select is((select j->'accord' from d4 where nom = 'mbvue'), 'false'::jsonb,
+  'DUO-S67 … et le désaccord est NOMMÉ (une fiche n''est pas un libellé)');
+
+-- LE SCEAU EST IMMUABLE, ET LE DOUBLE-CLIC NE PUNIT PAS. Salle MC, manche
+-- laissée OUVERTE : une salle révélée sortirait en `unavailable` bien avant
+-- d'atteindre la garde qu'on veut marcher ici.
+insert into d4 values ('mcc1', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('ea', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000b'
+      and o.libelle = 'Dessert surprise')));
+insert into d4 values ('mcc1bis', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('ea', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000b'
+      and o.libelle = 'Dessert surprise')));
+
+select is((select j->>'state' from d4 where nom = 'mcc1bis'), 'ok',
+  'DUO-S68 REJOUER LA MÊME PLACE est idempotent — le double-clic ne punit pas');
+
+insert into d4 values ('mcc1autre', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('ea', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000b'
+      and o.item_id = 'da000004-0000-4000-8000-0000000000b1')));
+
+select is((select j->>'state' from d4 where nom = 'mcc1autre'), 'scelle',
+  'DUO-S69 EN DÉSIGNER UNE AUTRE après avoir scellé : refus');
+
+select is(
+  (select c.nom_fige from public.duo_choices c
+     join public.duo_rounds r on r.id = c.round_id
+    where r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'mc')
+      and c.member_token_hash = repeat('ea', 32)),
+  'Dessert surprise',
+  'DUO-S70 … et RIEN n''a été réécrit : le premier sceau tient');
+
+
+-- ── 8.3 L'ISOLATION, ET LE REFUS QUI NE DIVULGUE RIEN ────────
+--
+-- Le voisin Z porte un plateau, et l'un de ses libellés — « Tarte aux pommes »
+-- — est le MÊME que chez S. Un joueur de M qui présenterait la place de Z doit
+-- être refusé, et refusé SANS que le refus se distingue de celui d'une place
+-- qui n'existe nulle part. C'est l'indistinction par STRUCTURE : les deux cas
+-- empruntent le même `return` parce que le `where` scope l'organisation, pas
+-- parce qu'on a pensé à harmoniser deux messages.
+
+insert into d4 values ('mcvoisin', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('eb', 32),
+  (select o.id from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000d'
+      and o.libelle = 'Secret du voisin')));
+
+insert into d4 values ('mcnulle', public.duo_choose_option(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('eb', 32), 'da00ffff-0000-4000-8000-00000000ffff'));
+
+select is((select j from d4 where nom = 'mcvoisin'),
+  '{"state": "unavailable"}'::jsonb,
+  'DUO-S71 une PLACE DU VOISIN est refusée');
+
+select is((select j from d4 where nom = 'mcvoisin'),
+  (select j from d4 where nom = 'mcnulle'),
+  'DUO-S72 … par le MÊME document qu''une place inexistante : rien ne dit qu''elle existe ailleurs');
+
+select is(
+  (select pg_catalog.count(*)::int from public.duo_choices c
+     join public.duo_rounds r on r.id = c.round_id
+    where r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'mc')
+      and c.member_token_hash = repeat('eb', 32)),
+  0,
+  'DUO-S73 … et RIEN n''a été écrit pour ce joueur');
+
+-- LA PORTE D'HIER GARDE LA MÊME FRONTIÈRE : une fiche d'un autre commerce ne
+-- résout aucune place, et emprunte le refus commun.
+insert into d4 values ('mcfvoisin', public.duo_choose(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mc'),
+  repeat('eb', 32), 'da000004-0000-4000-8000-0000000000c1'));
+
+select is((select j from d4 where nom = 'mcfvoisin'),
+  '{"state": "unavailable"}'::jsonb,
+  'DUO-S74 la porte d''hier refuse aussi la FICHE d''un autre commerce');
+
+
+-- ── 8.4 `set_duo_plateau` — LE PLATEAU ENTIER, EN UNE FOIS ───
+--
+-- V est le terrain : §3 l'a laissé à UNE option (les deux autres fiches ayant
+-- été supprimées pour éprouver la cascade), et aucune salle n'y joue — le
+-- remplacement de plateau qu'on va y faire ne peut donc pas fausser une manche
+-- en cours. Son propriétaire est déjà celui qui appelait `set_duo_options`.
+
+select lives_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"item_id": "da000004-0000-4000-8000-0000000000c1"},
+           {"libelle": "Café gourmand"},
+           {"libelle": "Assiette du jour"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  'DUO-S75 set_duo_plateau pose un plateau MIXTE en UN SEUL appel');
+
+select is(
+  (select pg_catalog.string_agg(
+            coalesce(o.item_id::text, o.libelle), ' | ' order by o.ordre)
+     from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000c'),
+  'da000004-0000-4000-8000-0000000000c1 | Café gourmand | Assiette du jour',
+  'DUO-S76 … dans l''ORDRE DU TABLEAU, chaque place avec son origine');
+
+select ok(
+  public.duo_jouable('da000000-0000-4000-8000-00000000000c'),
+  'DUO-S77 … et le plateau ainsi posé est JOUABLE');
+
+-- LE JOURNAL PORTE LE GESTE, sous le même nom d'action que `set_duo_options` :
+-- c'est le même geste commerçant, et deux noms selon la RPC empruntée
+-- couperaient en deux un historique qui se lit par organisation.
+select ok(
+  exists (select 1 from public.audit_logs a
+           where a.organization_id = 'da000000-0000-4000-8000-00000000000c'
+             and a.action = 'duo.options_set'
+             and a.metadata->>'options' = '3'),
+  'DUO-S78 … et le journal porte le geste, sous « duo.options_set »');
+
+-- ── L'ATOMICITÉ, QUI EST TOUT L'OBJET DE CETTE FONCTION ──
+--
+-- L'écriture par table faisait `delete` puis `insert` en DEUX allers-retours :
+-- une panne entre les deux laissait le plateau VIDE. Ici, un refus quel qu'il
+-- soit doit laisser le plateau PRÉCÉDENT intact — c'est la propriété qu'on
+-- achète, et la seule manière de la prouver est de faire échouer un appel après
+-- le point où l'ancienne écriture avait déjà supprimé.
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"libelle": "Un début honnête"},
+           {"item_id": "da000004-0000-4000-8000-0000000000b1"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'unknown duo option item',
+  'DUO-S79 une FICHE DU VOISIN est refusée — du même refus qu''une fiche inconnue');
+
+select is(
+  (select pg_catalog.string_agg(
+            coalesce(o.item_id::text, o.libelle), ' | ' order by o.ordre)
+     from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000c'),
+  'da000004-0000-4000-8000-0000000000c1 | Café gourmand | Assiette du jour',
+  'DUO-S80 … ET LE PLATEAU PRÉCÉDENT EST INTACT : l''écriture est ATOMIQUE');
+
+-- LE MÊME CONSTAT SUR UN REFUS QUI VIENT DE LA TABLE ET NON DE LA FONCTION.
+-- `duo_options_libelle_valide` n'est PAS recopiée dans la RPC (une seule
+-- autorité, pas de dérive) : c'est le `check` qui tranche, et il abandonne la
+-- transaction ENTIÈRE. L'atomicité ne dépend donc pas de l'exhaustivité des
+-- validations écrites en amont, et c'est ce que cette paire prouve.
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"libelle": "Correct"}, {"libelle": " blanc en tête"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '23514', null,
+  'DUO-S81 un libellé mal formé est refusé par la CONTRAINTE, seule autorité');
+
+select is(
+  (select pg_catalog.count(*)::int from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000c'),
+  3,
+  'DUO-S82 … et le plateau précédent est encore là, entier');
+
+-- ── LES REFUS NOMMÉS ──
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c', '[{"libelle": "Seule"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo options count',
+  'DUO-S83 moins de DEUX places : refus nommé');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"libelle":"a"},{"libelle":"b"},{"libelle":"c"},
+           {"libelle":"d"},{"libelle":"e"},{"libelle":"f"},{"libelle":"g"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo options count',
+  'DUO-S84 plus de SIX places : refus nommé');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"item_id": "da000004-0000-4000-8000-0000000000c1", "libelle": "Les deux"},
+           {"libelle": "Correct"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo option origin',
+  'DUO-S85 LES DEUX ORIGINES sur une place : refus nommé (règle de la contrainte, dite)');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{}, {"libelle": "Correct"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo option origin',
+  'DUO-S86 AUCUNE ORIGINE sur une place : même refus');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"item_id": "da000004-0000-4000-8000-0000000000c1"},
+           {"item_id": "da000004-0000-4000-8000-0000000000c1"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'duplicate duo option item',
+  'DUO-S87 DEUX FOIS LA MÊME FICHE : refus nommé, avant la violation d''unicité');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"libelle": "Jumeau"}, {"libelle": "Jumeau"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'duplicate duo option libelle',
+  'DUO-S88 DEUX FOIS LE MÊME LIBELLÉ : refus nommé (deux places du même nom rendent l''accord indécidable)');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c', '{"pas": "un tableau"}',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo options payload',
+  'DUO-S89 un document qui n''est pas un TABLEAU : refus nommé');
+
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"item_id": "pas-un-uuid"}, {"libelle": "Correct"}]',
+         'da000001-0000-4000-8000-000000000001'),
+  '22023', 'invalid duo option item',
+  'DUO-S90 un identifiant MALFORMÉ : refus nommé, jamais la 22P02 du moteur');
+
+-- L'ACTEUR EST VÉRIFIÉ EN SQL, ET AVANT LA SÉLECTION : un non-habilité ne doit
+-- rien apprendre du catalogue qu'il désigne, pas même par la forme du refus.
+select throws_ok(
+  format($$select public.set_duo_plateau(%L, %L::jsonb, %L)$$,
+         'da000000-0000-4000-8000-00000000000c',
+         '[{"libelle": "Intrus un"}, {"libelle": "Intrus deux"}]',
+         'da000001-0000-4000-8000-000000000002'),
+  '42501', 'not authorized',
+  'DUO-S91 le propriétaire du VOISIN ne compose pas ce plateau');
+
+select is(
+  (select pg_catalog.count(*)::int from public.duo_options o
+    where o.organization_id = 'da000000-0000-4000-8000-00000000000c'),
+  3,
+  'DUO-S92 … et son refus n''a rien effacé non plus');
+
+
+-- ── 8.5 LES DROITS DES OBJETS NEUFS ──────────────────────────
+--
+-- Le défaut qui a coûté cinq lots cette semaine, dans sa forme « fonction » :
+-- le défaut de Postgres est `execute` à PUBLIC, et une `security definer`
+-- laissée à PUBLIC offre une surface qui n'a pas à exister.
+
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.duo_choose_option(uuid, text, uuid)', 'EXECUTE'),
+  'DUO-S93 duo_choose_option : service_role OUI');
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.duo_choose_option(uuid, text, uuid)', 'EXECUTE'),
+  'DUO-S94 duo_choose_option : authenticated NON');
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.duo_choose_option(uuid, text, uuid)', 'EXECUTE'),
+  'DUO-S95 duo_choose_option : anon NON');
+
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.set_duo_plateau(uuid, jsonb, uuid)', 'EXECUTE'),
+  'DUO-S96 set_duo_plateau : service_role OUI');
+select ok(
+  not pg_catalog.has_function_privilege(
+    'authenticated', 'public.set_duo_plateau(uuid, jsonb, uuid)', 'EXECUTE'),
+  'DUO-S97 set_duo_plateau : authenticated NON');
+select ok(
+  not pg_catalog.has_function_privilege(
+    'anon', 'public.set_duo_plateau(uuid, jsonb, uuid)', 'EXECUTE'),
+  'DUO-S98 set_duo_plateau : anon NON');
+
+-- LA PORTE D'HIER GARDE SON DROIT. `create or replace` préserve l'ACL, mais un
+-- `drop` accidentel la ramènerait au défaut PUBLIC : on le constate.
+select ok(
+  pg_catalog.has_function_privilege(
+    'service_role', 'public.duo_choose(uuid, text, uuid)', 'EXECUTE'),
+  'DUO-S99 la porte d''hier garde son droit : l''application déployée l''appelle encore');
+
+-- ── LA COLONNE NEUVE, DANS LE RÉGIME DE SA TABLE ──
+--
+-- `duo_choices` est en régime TABLE PUR — contrairement à `duo_options`, dont
+-- le régime MIXTE occupe §7. `option_id` hérite donc de tout, et RIEN n'a été
+-- accordé : c'est ce que ces deux assertions constatent, l'une sur l'héritage,
+-- l'autre sur le régime dont il découle. Poser un grant de colonne ici aurait
+-- été le contresens exactement inverse de celui de DUO-1.
+select ok(
+  pg_catalog.has_column_privilege(
+    'service_role', 'public.duo_choices', 'option_id', 'INSERT'),
+  'DUO-S100 service_role ÉCRIT option_id (hérité du grant de TABLE, rien n''a été accordé)');
+
+select ok(
+  not exists (
+    select 1 from pg_catalog.pg_attribute a
+     where a.attrelid = 'public.duo_choices'::regclass
+       and a.attnum > 0 and not a.attisdropped and a.attacl is not null),
+  'DUO-S101 … et duo_choices n''a AUCUN grant de colonne : le régime est bien celui de la TABLE');
+
+select ok(
+  not pg_catalog.has_column_privilege(
+    'anon', 'public.duo_choices', 'option_id', 'SELECT'),
+  'DUO-S102 anon ne lit pas option_id');
+select ok(
+  not pg_catalog.has_column_privilege(
+    'authenticated', 'public.duo_choices', 'option_id', 'SELECT'),
+  'DUO-S103 authenticated non plus : le sceau est du ressort des RPC');
+
+
+
+-- ── 8.6 LE REPLI SUR LA FICHE, ÉPROUVÉ POUR DE VRAI ─────────
+--
+-- `duo_state` tranche l'accord SUR LA PLACE quand les deux sceaux la portent,
+-- et SUR LA FICHE sinon — l'expression d'avant DUO-4, conservée mot pour mot.
+-- Ce repli n'est pas décoratif : il porte DEUX cas réels.
+--
+--   · le sceau posé AVANT ce lot, qui n'a pas de `option_id` ;
+--   · la manche traversée par un REMPLACEMENT DE PLATEAU — le `on delete set
+--     null` de la FK vide alors les places scellées, tandis qu'`item_id`, qui
+--     pointe vers `vitrine_items`, survit.
+--
+-- Les deux se constatent de la même manière : une place à nul sur un sceau
+-- existant. On la produit ici À LA MAIN plutôt que par un remplacement, pour
+-- que l'assertion porte sur le REPLI et non sur la cascade — celle-ci a ses
+-- propres preuves en §3.
+--
+-- Cette sous-section est en FIN de fichier parce qu'elle MUTE les sceaux de la
+-- salle MA : la placer plus haut ferait porter les assertions de §8.2 sur des
+-- lignes déjà retouchées.
+
+update public.duo_choices c
+   set option_id = null
+  from public.duo_rounds r
+ where r.id = c.round_id
+   and r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'ma');
+
+insert into d4 values ('mavue2', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'ma'), repeat('ca', 32)));
+
+select is((select j->'accord' from d4 where nom = 'mavue2'), 'true'::jsonb,
+  'DUO-S104 UN SCEAU SANS PLACE garde le verdict d''hier : le repli sur item_id tient');
+
+-- ET IL TIENT AUSSI DANS L'AUTRE SENS. Sans cette seconde assertion, DUO-S104
+-- serait vert le jour où le repli rendrait « vrai » pour tout le monde.
+update public.duo_choices c
+   set option_id = null
+  from public.duo_rounds r
+ where r.id = c.round_id
+   and r.lobby_id = (select (j->>'lobby_id')::uuid from d4 where nom = 'mb');
+
+insert into d4 values ('mbvue2', public.duo_state(
+  (select (j->>'lobby_id')::uuid from d4 where nom = 'mb'), repeat('da', 32)));
+
+select is((select j->'accord' from d4 where nom = 'mbvue2'), 'false'::jsonb,
+  'DUO-S105 … et sait toujours dire NON : une fiche contre un libellé sans place reste un désaccord');
 
 select * from finish();
 rollback;

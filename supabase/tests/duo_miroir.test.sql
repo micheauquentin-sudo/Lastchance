@@ -920,13 +920,22 @@ select is(
      from pg_catalog.pg_attribute a
     where a.attrelid = 'public.duo_choices'::regclass
       and a.attnum > 0 and not a.attisdropped),
-  'created_at,id,item_id,member_token_hash,nom_fige,organization_id,round_id',
+  'created_at,id,item_id,member_token_hash,nom_fige,option_id,organization_id,round_id',
   'ACC-4 duo_choices ne porte NI score, NI rang, NI gagnant, NI accord : la liste est close');
 -- `nom_fige` EST DANS LA LISTE, ET IL N'EST PAS UN ACCROC À ACC-4. Il ne note
 -- rien et ne classe personne : il grave le NOM de la fiche au moment du geste,
 -- c'est-à-dire la seule chose qui, sans lui, disparaîtrait avec elle (§7 ter).
 -- La liste reste close — c'est le fait qu'elle soit ÉNUMÉRÉE qui l'empêche de
 -- s'allonger en silence, pas sa longueur.
+--
+-- `option_id` L'A REJOINTE AVEC DUO-4, ET CETTE ASSERTION EST CE QUI L'A
+-- IMPOSÉ : la colonne a été ajoutée, ACC-4 a rougi, et l'ajout a dû être
+-- JUSTIFIÉ ici plutôt que glissé. Elle ne note ni ne classe davantage : elle
+-- dit QUELLE PLACE du plateau a été scellée, là où `item_id` ne savait le dire
+-- que des places tirées de la carte — deux options SAISIES portaient le même
+-- `item_id` nul et étaient donc indiscernables. C'est l'identité du choix, pas
+-- son verdict : l'accord se calcule toujours à la lecture et ne se stocke
+-- nulle part.
 
 
 -- ════════════════════════════════════════════════════════════
