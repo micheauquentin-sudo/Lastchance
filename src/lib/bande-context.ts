@@ -4,8 +4,8 @@ import { packConnu } from "@/lib/bande";
 import { BANDE_PACK_DEFAUT } from "@/lib/bande-packs";
 import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { gardeEditeurJeuSalon } from "@/lib/salon-garde";
 import { bandePackStateSchema } from "@/lib/validations/bande";
-import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 
 /**
  * PORTRAIT DE LA BANDE (L18) — LA LECTURE DE L'ÉCRAN DE CONFIGURATION.
@@ -57,13 +57,14 @@ export type BandePackContext =
  * d'écriture, elle, est en SQL (`set_bande_pack` revérifie l'acteur
  * `owner|editor`).
  *
- * ── LA GARDE RESTE CELLE DE LA VITRINE, ET NON `bande` (20261020120000) ──
+ * ── LA GARDE EST CELLE DU JEU, PLUS CELLE DE LA VITRINE (DUO-3b) ──
  *
- * Même arbitrage que `loadDuoOptions`, et pour les mêmes trois raisons :
- * choisir un pack de questions est une PRÉPARATION, le verrou payant du salon
- * est en SQL sur son ouverture (`create_player_lobby` exige `vitrine` ET
- * `bande`), et cet écran est servi sous `/dashboard/vitrine`. Le raisonnement
- * complet est sur `gardeEditeurVitrine`.
+ * Elle était `gardeEditeurVitrine`, sur un arbitrage qui nommait lui-même sa
+ * condition de péremption : « un salon jouable hors vitrine, ou un plateau
+ * vendu séparément ». Les deux sont arrivés — `create_player_lobby` n'exige
+ * plus `vitrine` (20261022120000) et DUO-2 vend Portrait de la Bande seul à 12 €/mois. Un
+ * commerçant qui achète le jeu sans la carte était verrouillé hors de ses
+ * propres réglages. Le raisonnement complet est sur `gardeEditeurJeuSalon`.
  *
  * ── UNE PANNE DE LECTURE REND LE DÉFAUT, PAS UN REFUS ──
  *
@@ -75,7 +76,7 @@ export type BandePackContext =
  * deux disent la même chose.
  */
 export async function loadBandePack(): Promise<BandePackContext> {
-  const garde = await gardeEditeurVitrine();
+  const garde = await gardeEditeurJeuSalon("bande");
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const defaut = {

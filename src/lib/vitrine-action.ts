@@ -46,10 +46,11 @@ export function hrefAction(action: ActionVitrine): string {
 /**
  * Ce module a-t-il vraiment quelque chose d'ouvert ?
  *
- * `bande` est TOUJOURS vrai, et ce n'est pas un oubli : le Portrait de la
- * Bande n'a rien à configurer — le bloc des expériences le propose sans
- * condition depuis que les salons sont entrés dans le socle. `duo`, lui, exige
- * au moins deux fiches épinglées, et la base le calcule.
+ * `bande` ÉTAIT TOUJOURS VRAI, et ne l'est plus (DUO-3b). Le jeu n'a rien à
+ * configurer — pack par défaut, questions dans le code — donc rien n'y était à
+ * refléter tant que le droit était inclus partout. DUO-2 l'a rendu vendable
+ * seul : il se lit désormais sur le drapeau public, comme `duo`, qui exige lui
+ * au moins deux options sur le plateau.
  */
 export function actionOuverte(
   action: ActionVitrine,
@@ -70,6 +71,6 @@ export function actionOuverte(
     case "duo":
       return portes.experiences.duo;
     case "bande":
-      return true;
+      return portes.experiences.bande;
   }
 }

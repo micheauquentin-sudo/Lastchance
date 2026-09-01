@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP_URL } from "@/lib/env";
-import { BANDE_PACK_DEFAUT } from "@/lib/bande-packs";
-import { loadBandePack } from "@/lib/bande-context";
 import { loadDuoOptions } from "@/lib/duo-context";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
@@ -47,8 +45,6 @@ import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
-import { BandeEditeur } from "@/components/vitrine/bande-editeur";
-import { DuoEditeur } from "@/components/vitrine/duo-editeur";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import {
   AdresseForm,
@@ -59,6 +55,36 @@ import { SalonsOuverts } from "@/components/vitrine/salons-ouverts";
 import { VitrineQrPlanche } from "@/components/vitrine/vitrine-qr-planche";
 
 export const metadata: Metadata = { title: "Vitrine" };
+
+/**
+ * LE RENVOI VERS LA PAGE DU JEU (DUO-3b).
+ *
+ * Il ne rend AUCUN champ, volontairement : un formulaire est ce qu'on ne
+ * duplique jamais. Il dit ce qui se règle là-bas et y mène — motif exact de
+ * l'étape « Traductions », qui renvoie de la même façon vers son tableau.
+ */
+function RenvoiVersLeJeu({
+  jeu,
+  titre,
+  phrase,
+}: {
+  jeu: "duo" | "bande";
+  titre: string;
+  phrase: string;
+}) {
+  return (
+    <Card>
+      <h2>{titre}</h2>
+      <p className="mt-2 text-sm text-k-body">{phrase}</p>
+      <Link
+        href={`/dashboard/salons/${jeu}`}
+        className="mt-3 inline-block text-sm font-black text-k-orange-text underline underline-offset-2"
+      >
+        Ouvrir la page {titre}
+      </Link>
+    </Card>
+  );
+}
 
 /**
  * LA VITRINE DU COMMERÇANT — son catalogue QR, et l'adresse qui le sert.
@@ -165,19 +191,12 @@ export default async function VitrineDashboardPage({
     const ctx = await loadDuoOptions();
     return ctx.ok ? ctx.plateau : { options: [], suggestion: null };
   };
-  /**
-   * LE PACK DU PORTRAIT DE LA BANDE (L18), lu avec les autres.
-   *
-   * Même arbitrage que `lireDuo`, avec une nuance : ce jeu n'a PAS d'état
-   * « non configuré ». Le pack a toujours une valeur, et le repli est le pack
-   * POSITIF — jamais `taquin` : un défaut de lecture ne doit pas pouvoir cocher
-   * pour le commerçant une case qu'il n'a pas cochée.
-   */
-  const lireBande = async (): Promise<string> => {
-    const ctx = await loadBandePack();
-    return ctx.ok ? ctx.pack : BANDE_PACK_DEFAUT;
-  };
-  const [contenus, ouvertures, supervision, plateauDuo, packBande] =
+  /* LE PACK DU PORTRAIT DE LA BANDE N'EST PLUS LU ICI (DUO-3b) : il se règle
+     sur `/dashboard/salons/bande`, et cette page n'en affiche plus rien. Le
+     plateau du Duo, lui, RESTE lu — pas pour être édité, mais parce que son
+     COMPTE décide du « prêt / pas prêt » de l'étape « Les jeux » et du contrôle
+     d'activation de la vérification finale. */
+  const [contenus, ouvertures, supervision, plateauDuo] =
     settings && organizationId
       ? await Promise.all([
           supabase
@@ -189,14 +208,12 @@ export default async function VitrineDashboardPage({
           readModulePageOpenCount(supabase, "vitrine", settings.id),
           lireSalons(),
           lireDuo(),
-          lireBande(),
         ])
       : [
           [] as ContenuVitrineView[],
           0,
           { liste: [] as OrgLobbyView[], luA: "" },
           { options: [], suggestion: null } as DuoOptionsAdminView,
-          BANDE_PACK_DEFAUT,
         ];
 
   /**
@@ -498,21 +515,41 @@ export default async function VitrineDashboardPage({
                 />
               ) : null}
 
+              {/* LES DEUX ÉTAPES DE JEU MÈNENT AILLEURS DEPUIS DUO-3b, ET
+                  C'EST UN ARBITRAGE, PAS UN DÉMÉNAGEMENT SUBI.
+
+                  Le formulaire vivait ici, derrière la garde du droit
+                  `vitrine` : un commerçant qui achète le Duo seul (DUO-2) en
+                  était verrouillé dehors. Il vit maintenant sur la page du
+                  module, sous le droit du JEU.
+
+                  POURQUOI UN LIEN ET PAS UN SECOND FORMULAIRE : le même
+                  réglage rendu à deux endroits, ce sont deux sources de vérité
+                  pour une seule ligne en base — l'une revalidée, l'autre
+                  servie depuis un cache, et un commerçant qui lit deux états
+                  différents du même plateau selon la page ouverte.
+
+                  POURQUOI L'ÉTAPE RESTE : elle a été livrée il y a quelques
+                  heures (VIT-16), des liens la visent déjà, et surtout le
+                  choix « ce jeu paraît-il sur MA vitrine » est bien une
+                  question de vitrine. Ce qui n'en est pas une, c'est le
+                  contenu du plateau — et c'est exactement ce qui part. */}
               {etape === "duo" ? (
                 <div id={ANCRE_DUO} className="scroll-mt-4">
-                  <DuoEditeur
-                    plateau={plateauDuo}
-                    cartes={cartes}
-                    peutEditer={capacites.canEditDraft}
+                  <RenvoiVersLeJeu
+                    jeu="duo"
+                    titre="Duo Miroir"
+                    phrase="Le plateau du Duo — ce que vos clients auront à choisir — se compose sur la page du jeu."
                   />
                 </div>
               ) : null}
 
               {etape === "bande" ? (
                 <div id={ANCRE_BANDE} className="scroll-mt-4">
-                  <BandeEditeur
-                    pack={packBande}
-                    peutEditer={capacites.canEditDraft}
+                  <RenvoiVersLeJeu
+                    jeu="bande"
+                    titre="Portrait de la Bande"
+                    phrase="Le pack de questions se choisit sur la page du jeu."
                   />
                 </div>
               ) : null}

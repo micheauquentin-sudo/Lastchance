@@ -25,7 +25,7 @@ import {
   bandePackSchema,
   bandeVoteSchema,
 } from "@/lib/validations/bande";
-import { gardeEditeurVitrine } from "@/lib/vitrine-context";
+import { gardeEditeurJeuSalon } from "@/lib/salon-garde";
 
 // ════════════════════════════════════════════════════════════
 // PORTRAIT DE LA BANDE (L18) — nommer sans être vu
@@ -423,10 +423,16 @@ export async function getBandeRecap(lobbyId: string): Promise<BandeRecapView> {
 // ════════════════════════════════════════════════════════════
 // LE CHEMIN COMMERÇANT
 //
-// LA GARDE D'ABORD, ET AVANT DE LIRE LE FORMULAIRE. `gardeEditeurVitrine`
-// tranche la session, le rôle et le droit `vitrine` avant qu'une clé de pack ne
-// soit seulement regardée. C'est aussi elle qui fournit les DEUX valeurs que le
-// client n'apporte jamais — l'organisation et l'acteur.
+// LA GARDE D'ABORD, ET AVANT DE LIRE LE FORMULAIRE.
+// `gardeEditeurJeuSalon("bande")` tranche la session, le rôle et le droit
+// `bande` avant qu'une clé de pack ne soit seulement regardée. C'est aussi elle
+// qui fournit les DEUX valeurs que le client n'apporte jamais — l'organisation
+// et l'acteur.
+//
+// C'ÉTAIT `gardeEditeurVitrine` JUSQU'À DUO-3b, et le droit exigé était celui de
+// la Vitrine. DUO-2 vend le Portrait de la Bande seul : un commerçant qui
+// l'achetait sans la carte se voyait refuser le choix de son propre pack, avec
+// un message qui lui parlait d'un produit qu'il n'avait pas cherché à acheter.
 //
 // L'ACTEUR VIENT DE LA SESSION, ET LA RPC LE REVÉRIFIE. `p_actor` reçoit
 // `garde.userId` ; `set_bande_pack` le revérifie membre `owner|editor` EN SQL,
@@ -476,7 +482,7 @@ export async function setBandePack(
   _prev: ActionResult<SetBandePackOutcome> | null,
   formData: FormData,
 ): Promise<ActionResult<SetBandePackOutcome>> {
-  const garde = await gardeEditeurVitrine();
+  const garde = await gardeEditeurJeuSalon("bande");
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const parsed = bandePackSchema.safeParse({
@@ -530,6 +536,11 @@ export async function setBandePack(
       const pack = mapBandePackSaved(data);
       if (pack === null) return { ok: false as const, error: GENERIC_ERROR };
 
+      // LES DEUX ÉCRANS QUI MONTRENT LE PACK : celui du module, où il se règle
+      // depuis DUO-3b, et celui de la Vitrine, dont l'étape « Les jeux » en
+      // dépend. Ne revalider que l'un laisserait l'autre annoncer un état
+      // d'hier.
+      revalidatePath("/dashboard/salons/bande");
       revalidatePath("/dashboard/vitrine");
       return {
         ok: true as const,

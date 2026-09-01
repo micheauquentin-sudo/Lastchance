@@ -153,15 +153,33 @@ describe("boussoleUtilisable", () => {
 describe("actionOuverte — la porte se ferme d'elle-même", () => {
   const vide: PortesVitrineView = {
     reserver: { activites: [], files: [], offres: [] },
-    experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
+    experiences: {
+      quiz: [],
+      calendars: [],
+      pronostics: [],
+      duo: false,
+      bande: false,
+    },
   };
 
   it("refuse chaque module qui n'a rien d'ouvert", () => {
+    // `bande` FAISAIT EXCEPTION, ET N'EN FAIT PLUS (DUO-3b). Le Portrait de la
+    // Bande n'a rien à configurer, ce qui restera vrai ; mais DUO-2 l'a rendu
+    // vendable seul, et son droit peut donc manquer. La porte se lit désormais
+    // sur le drapeau public, comme celle du Duo — sans quoi la boussole
+    // enverrait un client vers un salon que la base refuse d'ouvrir.
     for (const action of VITRINE_ACTIONS) {
-      // `bande` est la seule exception, et elle est documentée : le Portrait de
-      // la Bande n'a rien à configurer depuis que les salons sont au socle.
-      expect(actionOuverte(action, vide, false)).toBe(action === "bande");
+      expect(actionOuverte(action, vide, false)).toBe(false);
     }
+  });
+
+  it("ouvre le Portrait de la Bande sur son drapeau, et sur lui seul", () => {
+    const avecBande = {
+      ...vide,
+      experiences: { ...vide.experiences, bande: true },
+    } as PortesVitrineView;
+    expect(actionOuverte("bande", avecBande, false)).toBe(true);
+    expect(actionOuverte("bande", vide, false)).toBe(false);
   });
 
   it("ouvre Réserver dès une activité OU une file", () => {

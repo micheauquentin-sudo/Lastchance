@@ -61,7 +61,22 @@ export const DUO_OPTIONS_MAX = 6;
  * l'écran parce que c'est elle, et non l'ordre d'arrivée du JSON, qui fait foi.
  */
 export interface DuoOptionView {
-  item_id: string;
+  /**
+   * LA PLACE DU PLATEAU — la clé primaire de `duo_options`, et le SEUL
+   * identifiant qui existe pour les deux origines (DUO-1).
+   *
+   * `item_id` ne pouvait désigner qu'une option épinglée sur la carte. Depuis
+   * que le Duo se vend sans la Vitrine, une option peut être un libellé saisi,
+   * qui n'a pas de fiche : c'est `option_id` qui la nomme.
+   */
+  option_id: string;
+  /**
+   * LA FICHE ÉPINGLÉE, ou `null` si l'option est un libellé saisi (DUO-1).
+   *
+   * `description`, `prix_affiche` et `photo_path` sont nuls avec elle : une
+   * option saisie n'a qu'un nom, et c'est tout ce qu'elle promet.
+   */
+  item_id: string | null;
   nom: string;
   description: string | null;
   prix_affiche: string | null;
@@ -244,11 +259,19 @@ export function mapDuoOptions(raw: unknown): DuoOptionView[] {
   for (const brut of asArray(raw)) {
     const root = asRecord(brut);
     if (!root) continue;
-    const item_id = asString(root.item_id);
+    // LA PLACE ET LE NOM, ET PLUS LA FICHE (DUO-1). Exiger `item_id` jetait EN
+    // SILENCE toute option saisie à la main : la base les servait, ce mappeur
+    // les écartait, et le plateau d'un commerçant sans Vitrine ressortait vide
+    // avec `duo_jouable` à vrai — porte publique ouverte sur un jeu qui refuse
+    // de démarrer, exactement ce que la jointure externe venait de réparer.
+    // `option_id` désigne la place quelle que soit son origine ; une ligne qui
+    // n'en a pas ne peut produire ni bouton ni choix, et reste sautée.
+    const option_id = asString(root.option_id);
     const nom = asString(root.nom);
-    if (!item_id || !nom) continue;
+    if (!option_id || !nom) continue;
     sortie.push({
-      item_id,
+      option_id,
+      item_id: asString(root.item_id),
       nom,
       description: asString(root.description),
       prix_affiche: asString(root.prix_affiche),

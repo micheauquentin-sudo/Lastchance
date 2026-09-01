@@ -121,6 +121,21 @@ function duoOuvert(portes: PortesVitrineView["experiences"]): boolean {
   return portes.duo;
 }
 
+/**
+ * LA PORTE DU PORTRAIT DE LA BANDE EN EST UNE AUSSI, DEPUIS DUO-3b.
+ *
+ * Elle était peinte SANS DRAPEAU, et l'argument tenait : le jeu ouvre toujours
+ * (pack par défaut) et son droit était compris dans les cinq offres. DUO-2 l'a
+ * rendu vendable seul, si bien qu'un commerce peut désormais ne pas l'avoir —
+ * et la porte enverrait alors un client vers un salon que la base refuse
+ * d'ouvrir. Le repli est FERMÉ, pour la même raison que le Duo : ne pas offrir
+ * un jeu qui existe est un manque, offrir un jeu qui n'ouvrira pas est une
+ * promesse rompue devant le client.
+ */
+function bandeOuverte(portes: PortesVitrineView["experiences"]): boolean {
+  return portes.bande;
+}
+
 export function BlocExperiences({
   portes,
   slug,
@@ -147,19 +162,29 @@ export function BlocExperiences({
 }) {
   const t = TEXTES_VITRINE[lang];
   const duo = duoOuvert(portes);
-  // LA CONDITION DE RENDU A SAUTÉ EN L18, ET VOICI CE QUI LE PERMET.
+  const bande = bandeOuverte(portes);
+  // LA CONDITION DE RENDU AVAIT SAUTÉ EN L18, ET ELLE REVIENT (DUO-3b).
   //
-  // Elle existait pour ne pas peindre un bloc « Jeux » vide. Le Portrait de la
-  // Bande, lui, ouvre TOUJOURS — pack par défaut, aucune configuration — donc
-  // le bloc n'est plus jamais vide, et la garder revenait à cacher le seul jeu
-  // disponible à ceux qui n'avaient ni quiz ni plateau duo.
+  // Elle existait pour ne pas peindre un bloc « Jeux » vide. L18 l'avait
+  // retirée sur un argument qui tenait alors : le Portrait de la Bande ouvrait
+  // TOUJOURS — pack par défaut, droit compris dans les cinq offres — donc le
+  // bloc n'était jamais vide. DUO-2 a rendu le jeu vendable seul et DUO-3b lui
+  // donne son drapeau : les deux portes de salon peuvent de nouveau être
+  // fermées ensemble, et un commerce sans quiz ni calendrier ni pronostic
+  // retrouverait le titre « Jeux » au-dessus d'une liste vide. Le bloc ne se
+  // peint donc qu'avec au moins une porte.
   //
-  // CE QUI REND LA SUPPRESSION SÛRE, ET IL FAUT LE DIRE : ce bloc est en OPT-IN
-  // depuis VIT-3. Il n'apparaît que sur les vitrines dont le commerçant l'a
-  // remonté lui-même depuis la colonne « Masqués » de ses réglages — le geste
-  // EST le consentement (`VITRINE_BLOCS_DEFAUT`, `src/lib/vitrine.ts`). Ce lot
-  // n'ouvre donc l'annuaire chez personne : il finit de servir ceux qui l'ont
-  // déjà ouvert.
+  // CE BLOC EST EN OPT-IN depuis VIT-3 : il n'apparaît que sur les vitrines
+  // dont le commerçant l'a remonté lui-même depuis la colonne « Masqués » de
+  // ses réglages (`VITRINE_BLOCS_DEFAUT`, `src/lib/vitrine.ts`). Ce garde-fou
+  // ne retire donc rien à personne : il évite un titre sans contenu.
+  const rien =
+    !(bande && jeux.bande) &&
+    !(duo && jeux.duo) &&
+    portes.quiz.length === 0 &&
+    portes.calendars.length === 0 &&
+    portes.pronostics.length === 0;
+  if (rien) return null;
 
   return (
     <section
@@ -178,19 +203,18 @@ export function BlocExperiences({
         {/* « Duo Miroir » NE SE TRADUIT PAS — nom propre de produit, motif
             « Instagram » / « TikTok ». La ligne qui l'explique, elle, suit la
             langue de la page. */}
-        {/* PORTRAIT DE LA BANDE (L18) — SANS DRAPEAU, ET C'EST DÉLIBÉRÉ.
-            `portes.experiences` n'a PAS reçu de clé `bande` : le jeu marche sans
-            configuration (le pack a un défaut, les questions vivent dans le
-            code), il n'existe donc aucun état « pas prêt » à refléter. La porte
-            du Duo est un booléen parce que son plateau, lui, peut être vide —
-            offrir un jeu qui n'ouvrira pas est une promesse rompue. Ici, la
-            porte ouvre toujours, et un drapeau n'aurait gardé que lui-même.
-            Elle est PREMIÈRE parce que c'est le format par défaut d'un salon
+        {/* PORTRAIT DE LA BANDE (L18) — AVEC SON DRAPEAU DEPUIS DUO-3b.
+            Il n'en avait pas, et l'argument tenait tant que le droit était
+            compris dans les cinq offres : le jeu ouvre toujours, il n'existait
+            aucun état « pas prêt » à refléter. DUO-2 l'a rendu vendable seul,
+            et une porte sans drapeau enverrait le client d'un commerce qui n'a
+            pas l'option vers un salon que la base refuse d'ouvrir.
+            Elle reste PREMIÈRE parce que c'est le format par défaut d'un salon
             (`creation-lobby-form`), et le seul qui accueille une tablée. */}
         {/* LE CHOIX DU COMMERÇANT RETIRE, IL N'AJOUTE JAMAIS (VIT-16). Il se
             croise avec ce que la base OUVRE : décocher masque, mais cocher ne
             force rien — un plateau tombé sous le plancher reste fermé. */}
-        {jeux.bande && (
+        {bande && jeux.bande && (
           <CarteLien href={`/lobby/nouveau/${slug}`} nom="Portrait de la Bande">
             <span className="mt-0.5 block text-sm text-[var(--vitrine-sur-secondary)]/70">
               {t.bandeInvite}

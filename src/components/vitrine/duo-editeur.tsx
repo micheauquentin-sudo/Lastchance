@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { setDuoOptions, setDuoSuggestion } from "@/actions/duo";
 import { DUO_OPTIONS_MAX, type DuoOptionsAdminView } from "@/lib/duo";
 import { useActionForm } from "@/lib/use-action-form";
-import { DUO_OPTIONS_MIN_ECRAN } from "@/lib/validations/duo";
+import { DUO_LIBELLE_MAX, DUO_OPTIONS_MIN_ECRAN } from "@/lib/validations/duo";
 import type { VitrineCarteView } from "@/lib/vitrine";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,33 +14,36 @@ import { FieldError, Label } from "@/components/ui/input";
 /**
  * DUO MIROIR (L17) — l'écran où le commerçant compose son plateau.
  *
- * ── CE QU'IL RÈGLE, ET CE QU'IL NE VOIT PAS ──
+ * ── IL NE VIT PLUS DANS LA VITRINE (DUO-3b) ──
  *
- * Trois à six fiches, plus une proposition facultative. Et RIEN D'AUTRE : ni
- * manche en cours, ni choix, ni accord. `duo_options_state` ne rend que le
- * plateau, et ce n'est pas une limite technique — le commerçant configure un
- * jeu, il ne regarde pas jouer ses clients par-dessus leur épaule.
+ * Il est monté par `/dashboard/salons/duo`, sous le droit `duo`. Il était servi
+ * par `/dashboard/vitrine` derrière le droit `vitrine`, ce qui verrouillait
+ * hors de ses propres réglages le commerçant qui achète le jeu seul depuis
+ * DUO-2. Le composant lui-même n'a pas d'opinion là-dessus : il ne lit ni
+ * session ni droit, et sa seule dépendance à la carte est la liste de fiches
+ * qu'on lui passe — éventuellement vide.
  *
- * ── L'ORDRE DE LA LISTE EST L'ORDRE DU PLATEAU ──
+ * ── UNE PLACE EST SOIT UNE FICHE, SOIT UN TEXTE (DUO-1) ──
  *
- * Les cases sont posées dans l'ordre du catalogue (carte, rubrique, fiche), et
- * un navigateur poste les champs cochés DANS L'ORDRE DU DOCUMENT :
- * `set_duo_options` écrit `ordre` = position dans le tableau reçu. Il n'y a donc
- * aucun champ caché à tenir d'accord avec l'affichage — c'est-à-dire aucune
- * possibilité qu'ils se contredisent. Réordonner la carte réordonne le plateau.
+ * C'est la contrainte `duo_options_origine_exclusive`, rendue telle quelle à
+ * l'écran : chaque ligne du plateau porte UN choix d'origine, et le champ qui
+ * suit dépend de lui. Un formulaire à deux colonnes (« cochez des fiches » d'un
+ * côté, « écrivez des propositions » de l'autre) aurait laissé croire à deux
+ * listes qui s'ajoutent, alors que la base n'a qu'un plateau de six places.
  *
- * ── DEUX FORMULAIRES, ET NON UN SEUL À DEUX BOUTONS ──
+ * ── SANS CARTE, L'ÉCRAN NE MONTRE PAS UNE LISTE VIDE ──
  *
- * Le plateau et la proposition sont deux écritures distinctes en base
- * (`set_duo_options`, `set_duo_suggestion`), deux lignes de journal distinctes,
- * et deux gestes que le commerçant ne fait pas au même moment. Les réunir aurait
- * fait repartir six identifiants de fiches à chaque changement de proposition.
+ * Un commerçant qui n'a pas la Vitrine n'a aucune fiche : le sélecteur
+ * d'origine disparaît, et chaque place est simplement un champ de texte. Il
+ * lisait avant « Composez d'abord vos cartes », c'est-à-dire une consigne
+ * impossible à suivre pour lui.
  *
  * ── LES BORNES SONT DÉRIVÉES, JAMAIS RECOPIÉES ──
  *
- * `DUO_OPTIONS_MIN_ECRAN` (3) et `DUO_OPTIONS_MAX` (6) viennent des mêmes
- * constantes que le schéma qui refuse. Le bouton grisé EXPLIQUE, il ne garde
- * pas : la garde est le schéma, puis les `raise` de la base.
+ * `DUO_OPTIONS_MIN_ECRAN` (3), `DUO_OPTIONS_MAX` (6) et `DUO_LIBELLE_MAX` (120)
+ * viennent des mêmes constantes que le schéma qui refuse. Le bouton grisé
+ * EXPLIQUE, il ne garde pas : la garde est le schéma, puis les `check` de la
+ * base.
  */
 
 /** Une fiche du catalogue, aplatie avec son chemin de lecture. */
@@ -52,6 +55,19 @@ interface FicheChoisissable {
 }
 
 /**
+ * UNE PLACE EN COURS D'ÉDITION.
+ *
+ * `cle` n'est PAS l'identifiant de la place en base : c'est une clé de rendu,
+ * qui doit survivre au fait qu'une place n'ait encore aucune identité (une
+ * ligne neuve) et au fait que deux places vides se ressemblent. La prendre sur
+ * l'index aurait fait remonter le texte d'une ligne dans celle du dessus à
+ * chaque suppression.
+ */
+type PlaceEdition =
+  | { cle: string; origine: "fiche"; itemId: string }
+  | { cle: string; origine: "libelle"; texte: string };
+
+/**
  * Le catalogue à plat, dans l'ordre où il est rendu.
  *
  * Les cartes DÉSACTIVÉES sont gardées : le contexte du dashboard rend « TOUTES
@@ -59,8 +75,8 @@ interface FicheChoisissable {
  * momentanément coupée reste parfaitement jouable — `duo_options` ne s'intéresse
  * pas plus à l'état de la carte qu'à la disponibilité du jour, la question posée
  * au joueur étant « que t'offrirais-je », pas « qu'est-ce qu'il reste en
- * cuisine ». La masquer ici aurait fait disparaître une case cochée sans dire
- * pourquoi.
+ * cuisine ». La masquer ici aurait fait disparaître une place composée sans
+ * dire pourquoi.
  */
 function aplatirFiches(cartes: VitrineCarteView[]): FicheChoisissable[] {
   const sortie: FicheChoisissable[] = [];
@@ -78,6 +94,40 @@ function aplatirFiches(cartes: VitrineCarteView[]): FicheChoisissable[] {
   return sortie;
 }
 
+let compteurCle = 0;
+function nouvelleCle(): string {
+  compteurCle += 1;
+  return `place-${compteurCle}`;
+}
+
+/**
+ * LE PLATEAU ENREGISTRÉ, RENDU ÉDITABLE.
+ *
+ * Une option venue de la base porte `item_id` (une fiche) OU seulement son
+ * `nom` (un libellé saisi) — c'est ce que `duo_options_json` sert depuis DUO-1.
+ * Un plateau vide part sur le PLANCHER de l'écran en places de texte : trois
+ * champs vides disent quoi faire, là où un écran sans aucune ligne oblige à
+ * deviner qu'il existe un bouton « ajouter ».
+ */
+function placesInitiales(plateau: DuoOptionsAdminView): PlaceEdition[] {
+  if (plateau.options.length === 0) {
+    return Array.from({ length: DUO_OPTIONS_MIN_ECRAN }, () => ({
+      cle: nouvelleCle(),
+      origine: "libelle" as const,
+      texte: "",
+    }));
+  }
+  return plateau.options.map((option) =>
+    option.item_id
+      ? {
+          cle: nouvelleCle(),
+          origine: "fiche" as const,
+          itemId: option.item_id,
+        }
+      : { cle: nouvelleCle(), origine: "libelle" as const, texte: option.nom },
+  );
+}
+
 export function DuoEditeur({
   cartes,
   plateau,
@@ -91,76 +141,90 @@ export function DuoEditeur({
   const fiches = aplatirFiches(cartes);
 
   return (
-    // L'ANCRE DU SOMMAIRE N'EST PLUS ICI : elle est portée par la
-    // `CarteRepliable` qui enveloppe ce bloc sur `/dashboard/vitrine`, avec son
-    // rang et son verdict — un seul `id` par cible, et l'ancre ROUVRE le bloc
-    // qu'elle vise, ce que cette carte ne savait pas faire. Le nom de l'ancre
-    // reste celui d'`ancres.ts`, que le sommaire lit pour composer son lien.
     <Card>
-      <h2>Duo Miroir</h2>
+      <h2>Le plateau du Duo</h2>
       <p className="mb-5 mt-2 text-sm text-zinc-500">
-        Deux clients choisissent chacun, sans se voir, ce qu&apos;ils offriraient
-        à l&apos;autre — puis les deux choix se révèlent en même temps. Choisissez
-        les {DUO_OPTIONS_MIN_ECRAN} à {DUO_OPTIONS_MAX} fiches du plateau, et
-        éventuellement ce que la maison proposera après la révélation.
+        Deux clients choisissent chacun, sans se voir, ce qu&apos;ils
+        offriraient à l&apos;autre — puis les deux choix se révèlent en même
+        temps. Composez les {DUO_OPTIONS_MIN_ECRAN} à {DUO_OPTIONS_MAX}{" "}
+        propositions du plateau
+        {fiches.length > 0
+          ? " — en les écrivant, ou en les prenant dans votre carte."
+          : "."}
       </p>
 
-      {fiches.length === 0 ? (
-        <p className="text-sm font-semibold text-k-body">
-          Composez d&apos;abord vos cartes&nbsp;: le plateau se choisit parmi vos
-          fiches.
-        </p>
-      ) : (
-        <div className="space-y-6">
-          <FormulairePlateau
-            fiches={fiches}
-            epinglees={plateau.options.map((option) => option.item_id)}
-            peutEditer={peutEditer}
-          />
+      <div className="space-y-6">
+        <FormulairePlateau
+          fiches={fiches}
+          initiales={placesInitiales(plateau)}
+          peutEditer={peutEditer}
+        />
+        {/* LA PROPOSITION DE LA MAISON EST UNE FICHE, et rien d'autre :
+            `set_duo_suggestion` prend un `item_id`. Sans carte, il n'y a donc
+            rien à proposer — et un sélecteur vide inviterait à un geste
+            impossible. */}
+        {fiches.length > 0 ? (
           <FormulaireSuggestion
             fiches={fiches}
             suggestion={plateau.suggestion?.item_id ?? ""}
             peutEditer={peutEditer}
           />
-        </div>
-      )}
+        ) : null}
+      </div>
     </Card>
   );
 }
 
 /**
- * LE PLATEAU — des cases à cocher sur les fiches existantes.
+ * LE PLATEAU — une ligne par place, dans l'ordre du jeu.
  *
- * Cases CONTRÔLÉES, et c'est ce qui permet de dire le compte à voix haute
- * pendant la sélection. Une liste non contrôlée aurait laissé le commerçant
- * cocher huit fiches et apprendre le refus après l'aller-retour — sur un écran
- * où la borne est la seule règle qu'il ait à connaître.
+ * Lignes CONTRÔLÉES, et c'est ce qui permet de dire le compte à voix haute
+ * pendant la composition. Une liste non contrôlée aurait laissé le commerçant
+ * écrire huit propositions et apprendre le refus après l'aller-retour.
+ *
+ * ── LE CHAMP POSTÉ EST CACHÉ, ET IL NE PEUT PAS DIVERGER DE L'AFFICHAGE ──
+ *
+ * Chaque ligne rend son `<input type="hidden" name="places">` DANS LE MÊME
+ * `map` que ses contrôles visibles, à partir de la même valeur d'état. Il n'y a
+ * pas deux sources à tenir d'accord : il y en a une, lue deux fois. Et un
+ * navigateur poste les champs dans l'ordre du document, donc l'ordre des lignes
+ * à l'écran EST l'ordre des places en base.
  */
 function FormulairePlateau({
   fiches,
-  epinglees,
+  initiales,
   peutEditer,
 }: {
   fiches: FicheChoisissable[];
-  epinglees: string[];
+  initiales: PlaceEdition[];
   peutEditer: boolean;
 }) {
-  const [coches, setCoches] = useState<string[]>(epinglees);
+  const [places, setPlaces] = useState<PlaceEdition[]>(initiales);
+  // `reloadOnSuccess` parce que ce formulaire REMPLACE une liste rendue par
+  // le serveur : sans rechargement, l'écran garde l'ancien plateau sous les
+  // yeux du commerçant qui vient de l'enregistrer. Il refait alors le geste.
+  // C'est la garde `use-action-form-coverage` qui l'a exigé, et elle a raison
+  // même si ce composant affiche déjà une confirmation : le message dit que
+  // c'est enregistré, la liste montre le contraire.
   const enregistrer = useActionForm(setDuoOptions, {
     networkError: "Enregistrement impossible, réessayez.",
+    reloadOnSuccess: true,
   });
+  const idBase = useId();
 
-  const basculer = (id: string, actif: boolean) => {
-    setCoches((precedents) =>
-      actif
-        ? precedents.includes(id)
-          ? precedents
-          : [...precedents, id]
-        : precedents.filter((autre) => autre !== id),
+  const modifier = (cle: string, suite: PlaceEdition) =>
+    setPlaces((precedentes) =>
+      precedentes.map((place) => (place.cle === cle ? suite : place)),
     );
-  };
+  const retirer = (cle: string) =>
+    setPlaces((precedentes) => precedentes.filter((place) => place.cle !== cle));
+  const ajouter = () =>
+    setPlaces((precedentes) => [
+      ...precedentes,
+      { cle: nouvelleCle(), origine: "libelle", texte: "" },
+    ]);
 
-  const compte = coches.length;
+  const compte = places.length;
   const dansLesBornes =
     compte >= DUO_OPTIONS_MIN_ECRAN && compte <= DUO_OPTIONS_MAX;
   const etat = enregistrer.state;
@@ -168,58 +232,63 @@ function FormulairePlateau({
   return (
     <form onSubmit={enregistrer.onSubmit}>
       <fieldset disabled={!peutEditer} className="border-0 p-0">
-        {/* Une LÉGENDE et non un titre libre : les cases forment un groupe, et
-            un lecteur d'écran annonce la question avant chaque fiche. */}
+        {/* Une LÉGENDE et non un titre libre : les lignes forment un groupe, et
+            un lecteur d'écran annonce la question avant chaque place. */}
         <legend className="mb-2 text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
-          Les fiches du plateau
+          Les propositions du plateau
         </legend>
 
-        <ul className="max-h-80 space-y-1 overflow-y-auto rounded-xl border-2 border-k-ink/15 p-2">
-          {fiches.map((fiche) => (
-            <li key={fiche.id}>
-              <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-k-yellow/20">
-                <input
-                  type="checkbox"
-                  name="item_ids"
-                  value={fiche.id}
-                  checked={coches.includes(fiche.id)}
-                  onChange={(e) => basculer(fiche.id, e.target.checked)}
-                  className="size-4 shrink-0 accent-[var(--color-k-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold text-k-ink">
-                    {fiche.nom}
-                  </span>
-                  <span className="block text-xs text-zinc-500">
-                    {fiche.chemin}
-                  </span>
-                </span>
-              </label>
-            </li>
+        <ul className="space-y-3">
+          {places.map((place, index) => (
+            <LignePlace
+              key={place.cle}
+              place={place}
+              rang={index + 1}
+              idBase={idBase}
+              fiches={fiches}
+              // On ne descend jamais sous le plancher par le bouton : le refus
+              // se lirait alors dans le compte, après coup, sur une ligne que
+              // le commerçant a déjà vu disparaître.
+              retirable={compte > DUO_OPTIONS_MIN_ECRAN}
+              onModifier={modifier}
+              onRetirer={retirer}
+            />
           ))}
         </ul>
 
+        {compte < DUO_OPTIONS_MAX ? (
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-3"
+            onClick={ajouter}
+          >
+            Ajouter une proposition
+          </Button>
+        ) : null}
+
         <p className="mt-2 text-sm text-k-body" aria-live="polite">
-          {compte} fiche{compte > 1 ? "s" : ""} choisie{compte > 1 ? "s" : ""}
+          {compte} proposition{compte > 1 ? "s" : ""}
           {dansLesBornes
             ? "."
             : ` — il en faut entre ${DUO_OPTIONS_MIN_ECRAN} et ${DUO_OPTIONS_MAX}.`}
         </p>
 
         {/* DEUX CANAUX, ET ILS NE DISENT PAS LA MÊME CHOSE. `{ ok: false }` est
-            une saisie à corriger (le compte, un doublon) et son message vient du
-            schéma ; `selection-refusee` est un `{ ok: true }` — la base a
-            répondu, et ce qu'elle refuse est une fiche qui n'existe plus depuis
-            que cet écran a été peint. Le second appelle un rafraîchissement, pas
-            une correction, et le lui dire en « une erreur est survenue »
-            l'enverrait chercher une panne qui n'existe pas. */}
+            une saisie à corriger (le compte, un doublon, un libellé refusé) et
+            son message vient du schéma ; `selection-refusee` est un
+            `{ ok: true }` — la base a répondu, et ce qu'elle refuse est une
+            fiche qui n'existe plus depuis que cet écran a été peint. Le second
+            appelle un rafraîchissement, pas une correction, et le lui dire en
+            « une erreur est survenue » l'enverrait chercher une panne qui
+            n'existe pas. */}
         {etat && !etat.ok ? <FieldError message={etat.error} /> : null}
         {etat && etat.ok && etat.data.etat === "selection-refusee" ? (
           <FieldError message="Une des fiches choisies n’est plus sur votre carte. Rafraîchissez la page, puis recomposez le plateau." />
         ) : null}
         {etat && etat.ok && etat.data.etat === "enregistre" ? (
           <p className="mt-2 text-sm font-semibold text-k-body" role="status">
-            Plateau enregistré&nbsp;: {etat.data.options} fiche
+            Plateau enregistré&nbsp;: {etat.data.options} proposition
             {etat.data.options > 1 ? "s" : ""}.
           </p>
         ) : null}
@@ -235,6 +304,101 @@ function FormulairePlateau({
         ) : null}
       </fieldset>
     </form>
+  );
+}
+
+/**
+ * UNE PLACE — son origine, sa valeur, et le champ qui part réellement.
+ *
+ * Le sélecteur d'origine n'existe QUE s'il y a des fiches : sans carte, il
+ * n'aurait qu'une option, et un choix à une possibilité est un obstacle qui
+ * ressemble à un réglage.
+ */
+function LignePlace({
+  place,
+  rang,
+  idBase,
+  fiches,
+  retirable,
+  onModifier,
+  onRetirer,
+}: {
+  place: PlaceEdition;
+  rang: number;
+  idBase: string;
+  fiches: FicheChoisissable[];
+  retirable: boolean;
+  onModifier: (cle: string, suite: PlaceEdition) => void;
+  onRetirer: (cle: string) => void;
+}) {
+  const idChamp = `${idBase}-${place.cle}`;
+  // LA VALEUR POSTÉE, dérivée de l'état affiché juste à côté. Le préfixe dit
+  // l'origine, que `lirePlaces` (src/actions/duo.ts) relit sur le PREMIER
+  // deux-points — un libellé qui en contient traverse donc intact.
+  const valeurPostee =
+    place.origine === "fiche"
+      ? `fiche:${place.itemId}`
+      : `libelle:${place.texte}`;
+
+  return (
+    <li className="rounded-xl border-2 border-k-ink/15 p-3">
+      <input type="hidden" name="places" value={valeurPostee} />
+
+      <Label htmlFor={idChamp}>Proposition {rang}</Label>
+
+      {fiches.length > 0 ? (
+        <select
+          id={place.origine === "fiche" ? idChamp : undefined}
+          value={place.origine === "fiche" ? place.itemId : ""}
+          onChange={(e) =>
+            onModifier(
+              place.cle,
+              e.target.value === ""
+                ? { cle: place.cle, origine: "libelle", texte: "" }
+                : { cle: place.cle, origine: "fiche", itemId: e.target.value }
+            )
+          }
+          aria-label={`Origine de la proposition ${rang}`}
+          className="mb-2 w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm font-semibold text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1 disabled:text-zinc-400"
+        >
+          <option value="">Une proposition que j&apos;écris</option>
+          {fiches.map((fiche) => (
+            <option key={fiche.id} value={fiche.id}>
+              {fiche.nom} — {fiche.chemin}
+            </option>
+          ))}
+        </select>
+      ) : null}
+
+      {place.origine === "libelle" ? (
+        <input
+          id={idChamp}
+          type="text"
+          value={place.texte}
+          maxLength={DUO_LIBELLE_MAX}
+          placeholder="Un café gourmand"
+          onChange={(e) =>
+            onModifier(place.cle, {
+              cle: place.cle,
+              origine: "libelle",
+              texte: e.target.value,
+            })
+          }
+          className="w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm font-semibold text-k-ink focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1 disabled:text-zinc-400"
+        />
+      ) : null}
+
+      {retirable ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-2"
+          onClick={() => onRetirer(place.cle)}
+        >
+          Retirer la proposition {rang}
+        </Button>
+      ) : null}
+    </li>
   );
 }
 
@@ -287,9 +451,9 @@ function FormulaireSuggestion({
         ))}
       </select>
       <p id={`${idSelect}-aide`} className="mt-1.5 text-xs text-zinc-500">
-        Elle s&apos;affiche APRÈS la révélation, jamais pendant le choix. Elle n&apos;a
-        pas besoin d&apos;être sur le plateau&nbsp;: c&apos;est même le cas le plus
-        intéressant — ce à quoi aucun des deux n&apos;avait pensé.
+        Elle s&apos;affiche APRÈS la révélation, jamais pendant le choix. Elle
+        n&apos;a pas besoin d&apos;être sur le plateau&nbsp;: c&apos;est même le
+        cas le plus intéressant — ce à quoi aucun des deux n&apos;avait pensé.
       </p>
 
       {etat && !etat.ok ? <FieldError message={etat.error} /> : null}
