@@ -28,7 +28,7 @@ import type { Entitlement } from "@/platform/experiences/contract";
  * périmètre ou de limite — les tests figent la proposition associée, et un
  * changement non intentionnel casse la suite au lieu de passer inaperçu.
  */
-export const PACKAGING_VERSION = "2026-08-c";
+export const PACKAGING_VERSION = "2026-08-d";
 
 export type PlanTierId = "core" | "engagement" | "place" | "live" | "full";
 
@@ -668,6 +668,60 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
     rules: [
       "Récurrent, sans engagement.",
       "Actif jusqu'à la fin de la période payée.",
+    ],
+  },
+  /**
+   * LES DEUX SALONS, VENDUS SÉPARÉMENT — ET LE PARADOXE ASSUMÉ.
+   *
+   * Ils RESTENT dans les cinq offres (`PLAN_TIERS`) : ce sont des jeux du
+   * socle, et la garde « met Duo Miroir et Portrait de la Bande dans toutes
+   * les offres » de plans.test.ts l'épingle. Leur entrée ici ne les en retire
+   * pas — elle ouvre le SEUL public qui ne les a pas encore : celui qui n'a
+   * aucun abonnement.
+   *
+   * D'où `soldStandalone: true`, qui n'est pas un détail de présentation :
+   * il fait entrer les deux clés dans `MODULES_PORTANT_LE_SOCLE`
+   * (src/lib/subscription.ts), donc un octroi vivant vaut socle payé. C'est
+   * exactement ce qu'on vend — un commerçant sans offre qui paie 12 € doit
+   * pouvoir publier son salon — et c'est déjà le régime des huit autres
+   * options autonomes.
+   *
+   * Conséquence à l'écran : tout abonné les possède déjà par son offre, et la
+   * carte doit le dire au lieu de lui revendre ce qu'il a. Voir
+   * `src/app/dashboard/settings/modules/page.tsx`.
+   */
+  {
+    entitlement: "duo",
+    name: "Duo Miroir",
+    currency: "EUR",
+    soldStandalone: true,
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 12,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+      "Déjà compris dans les cinq offres : ne s'achète que sans abonnement.",
+    ],
+  },
+  {
+    entitlement: "bande",
+    name: "Portrait de la Bande",
+    currency: "EUR",
+    soldStandalone: true,
+    billing: {
+      model: "recurring-monthly",
+      priceMonthly: 12,
+      commitment: "none",
+      endsAt: "end-of-paid-period",
+    },
+    rules: [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+      "Déjà compris dans les cinq offres : ne s'achète que sans abonnement.",
     ],
   },
   {

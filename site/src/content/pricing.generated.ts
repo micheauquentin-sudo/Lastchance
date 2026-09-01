@@ -58,7 +58,7 @@ export interface GeneratedAddon {
 }
 
 /** Version du packaging côté application au moment de la génération. */
-export const PACKAGING_VERSION = "2026-08-c";
+export const PACKAGING_VERSION = "2026-08-d";
 
 export const GENERATED_PLANS: readonly GeneratedPlan[] = [
   {
@@ -248,6 +248,34 @@ export const GENERATED_ADDONS: readonly GeneratedAddon[] = [
     "rules": [
       "Récurrent, sans engagement.",
       "Actif jusqu'à la fin de la période payée."
+    ]
+  },
+  {
+    "entitlement": "duo",
+    "name": "Duo Miroir",
+    "priceLabel": "12 €/mois",
+    "model": "recurring-monthly",
+    "cadence": "Abonnement mensuel",
+    "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",
+    "steps": [],
+    "rules": [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+      "Déjà compris dans les cinq offres : ne s'achète que sans abonnement."
+    ]
+  },
+  {
+    "entitlement": "bande",
+    "name": "Portrait de la Bande",
+    "priceLabel": "12 €/mois",
+    "model": "recurring-monthly",
+    "cadence": "Abonnement mensuel",
+    "duration": "Sans engagement, actif jusqu'à la fin de la période déjà payée.",
+    "steps": [],
+    "rules": [
+      "Récurrent, sans engagement.",
+      "Actif jusqu'à la fin de la période payée.",
+      "Déjà compris dans les cinq offres : ne s'achète que sans abonnement."
     ]
   },
   {

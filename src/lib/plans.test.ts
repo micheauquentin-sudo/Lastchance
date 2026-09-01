@@ -49,7 +49,7 @@ describe("proposition tarifaire — valeurs figées", () => {
     expect(PACKAGING_VERSION).toMatch(/^\d{4}-\d{2}-[a-z]$/);
     // Renommage des offres + catalogue d'add-ons du 2026-08-04 : changer le
     // packaging sans changer sa version doit être impossible par inadvertance.
-    expect(PACKAGING_VERSION).toBe("2026-08-c");
+    expect(PACKAGING_VERSION).toBe("2026-08-d");
   });
 
   /**
@@ -475,7 +475,7 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
     return found;
   }
 
-  it("nomme les onze options, les trois de lieu en tête", () => {
+  it("nomme les treize options, les trois de lieu en tête", () => {
     expect(ADDON_OFFERS.map((item) => [item.entitlement, item.name])).toEqual([
       // Les TROIS options de ligne d'abonnement (2026-08-22, plus la
       // Réservation le 2026-08-29). En tête parce qu'elles ouvrent le
@@ -489,6 +489,12 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
       ["rendez_vous", "Réservation"],
       ["loyalty", "Passeport des habitués"],
       ["referral", "Bouche-à-oreille / Parrainage"],
+      // LES DEUX SALONS (DUO-2). Ils restent dans les CINQ offres — la garde
+      // « met Duo Miroir et Portrait de la Bande dans toutes les offres »
+      // plus bas l'épingle — et entrent AUSSI au catalogue, à 12 € chacun.
+      // Le seul acheteur possible est donc celui qui n'a pas d'abonnement.
+      ["duo", "Duo Miroir"],
+      ["bande", "Portrait de la Bande"],
       ["hunts", "Chasse au QR"],
       ["calendar", "Calendrier à surprises"],
       ["quiz", "Quiz express"],
@@ -599,7 +605,7 @@ describe("catalogue d'add-ons — prix et modèles validés", () => {
    */
   it("distingue les options achetables seules de celles qui sont des lignes", () => {
     expect(ADDONS_PURCHASABLE_STANDALONE).toBe(false);
-    expect(ADDONS_STANDALONE).toHaveLength(8);
+    expect(ADDONS_STANDALONE).toHaveLength(10);
     expect(ADDONS_LIGNE_ABONNEMENT.map((o) => o.entitlement)).toEqual([
       "vitrine",
       "reserver",
