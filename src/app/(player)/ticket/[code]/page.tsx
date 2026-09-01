@@ -19,6 +19,26 @@ import { estCodeTicket } from "@/lib/ticket-or";
  * répondre 404 sur un code inventé, et c'est très bien — ce serait un oracle.
  * Le refus indistinct vient de la RPC, au moment du geste.
  *
+ * ── ELLE MONTE `LobbyShell`, ET ELLE RESTE NEUTRE (SALON-1) ──
+ *
+ * La coquille sait désormais porter l'habillage d'un commerce. Cette page ne
+ * lui en passe pas, et c'est une décision, pas un oubli. Deux raisons, dont la
+ * première suffirait :
+ *
+ *   1. Il n'y a RIEN À LIRE. L'habillage ne sort que de `lobby_state`, qui
+ *      exige l'appartenance à une salle ; un ticket n'est rattaché à aucune
+ *      salle et son porteur n'est membre de rien. Aller le chercher autrement —
+ *      par le commerce du ticket — voudrait dire ouvrir un second chemin vers
+ *      `lobby_settings`, exactement celui que la migration ferme.
+ *   2. Ce serait le MÊME ORACLE. Le paragraphe ci-dessus tient à ce que la page
+ *      ne sait pas si le code existe : peindre un nom, un logo ou une couleur
+ *      lui ferait dire « ce code est celui de la boulangerie X » avant tout
+ *      geste, à quiconque en essaie un — et un balayage de codes deviendrait
+ *      lisible au premier coup d'œil.
+ *
+ * L'habillage du ticket, s'il devait exister un jour, se paie donc au moment du
+ * GESTE (le tirage, où la RPC connaît déjà le commerce), jamais au chargement.
+ *
  * ── `force-dynamic` ET `noindex` ──
  *
  * Un code de ticket n'a rien à faire dans un cache partagé ni dans un moteur

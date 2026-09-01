@@ -77,6 +77,10 @@ function salle(
     // `joinCode` non nul = c'est l'HÔTE : la seule vue qui porte le bouton
     // « Verrouiller et commencer ».
     joinCode: joinCode ?? null,
+    // SALON-1 : la salle d'attente ne peint aucun décor — c'est la coquille qui
+    // le fait, un cran plus haut, à partir de la même clé. `null` est donc ici
+    // la valeur juste ET celle qui n'a aucune influence sur ces tests.
+    habillage: null,
     membres: MEMBRES,
   };
 }
