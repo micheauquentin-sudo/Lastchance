@@ -5,6 +5,7 @@ import { loadBandePack } from "@/lib/bande-context";
 import { loadDuoOptions } from "@/lib/duo-context";
 import { APP_URL } from "@/lib/env";
 import { LOBBY_KINDS, type LobbyKind, type OrgLobbyView } from "@/lib/lobby";
+import { asSeasonalTheme } from "@/lib/seasonal-theme";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { createClient } from "@/lib/supabase/server";
@@ -12,6 +13,7 @@ import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
 import { entreeModule } from "@/platform/experiences/catalog";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
+import { HabillageSalons } from "@/components/dashboard/habillage-salons";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
 import { PublicShare } from "@/components/dashboard/public-share";
 import { BandeEditeur } from "@/components/vitrine/bande-editeur";
@@ -77,6 +79,25 @@ export default async function SalonPage({
   const { data: vitrine } = await supabase
     .from("vitrine_settings")
     .select("slug, published")
+    .eq("organization_id", organization.id)
+    .maybeSingle();
+
+  /**
+   * L'HABILLAGE DES SALONS (SALON-1) — lu EN DIRECT, sans RPC.
+   *
+   * `lobby_settings` accorde un `select` à `authenticated` sous une policy
+   * « membre de l'organisation » : le client de session suffit, et c'est ce que
+   * fait déjà la ligne au-dessus pour `vitrine_settings`. L'écriture, elle,
+   * passe obligatoirement par `set_lobby_habillage` — voir
+   * `src/actions/salon-habillage.ts`.
+   *
+   * L'ABSENCE DE LIGNE EST L'ÉTAT NORMAL d'un commerce qui n'a jamais ouvert cet
+   * écran : `maybeSingle` rend `null`, et les défauts ci-dessous sont ceux des
+   * colonnes — `neutre`, « suivre le thème », enseigne affichée.
+   */
+  const { data: habillage } = await supabase
+    .from("lobby_settings")
+    .select("theme, fond_key, affiche_identite")
     .eq("organization_id", organization.id)
     .maybeSingle();
 
@@ -174,6 +195,22 @@ export default async function SalonPage({
               peutEditer={capacites.canEditDraft}
             />
           )}
+        </div>
+
+        {/* L'HABILLAGE VIENT APRÈS LE PLATEAU, ET C'EST L'ORDRE DU MÉTIER : on
+            règle d'abord ce que le jeu PROPOSE, ensuite de quoi il a l'air. Il
+            est aussi le seul bloc de cette page qui ne concerne pas ce jeu-là
+            seulement — le composant le dit trois fois plutôt qu'une. */}
+        <div className="mt-6">
+          <HabillageSalons
+            jeu={jeu}
+            theme={asSeasonalTheme(habillage?.theme)}
+            fondKey={habillage?.fond_key ?? null}
+            afficheIdentite={habillage?.affiche_identite ?? true}
+            nomOrganisation={organization.name}
+            logoUrl={organization.logo_url}
+            peutEditer={capacites.canEditDraft}
+          />
         </div>
 
         {salons.length > 0 && (

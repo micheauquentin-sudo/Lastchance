@@ -135,6 +135,17 @@ function TuileFond({
  * La légende est « Fond d'écran » par défaut, et deux tests de bout en bout
  * s'y accrochent (`getByRole("group", { name: "Fond d'écran" })`) : la changer
  * pour un appelant se fait par la prop, jamais en éditant le défaut.
+ *
+ * ── LE TROISIÈME ÉTAT EST OPTIONNEL (SALON-1) ──
+ *
+ * Deux appelants sur trois n'ont que deux réponses à la question « quel fond ? »
+ * — aucun, ou l'un des dix. Un réglage adossé à un THÈME en a une de plus,
+ * « suivre le thème », que `null` seul sait dire (`fondChoisi`, trois états) :
+ * la confondre avec « aucun » ferait revenir le fond du thème chez le
+ * commerçant qui vient de le retirer. `calendar-editor` s'était payé pour ça un
+ * sélecteur entier en copie locale ; la tuile entre donc ici, en tête du groupe
+ * et seulement quand l'appelant la demande, plutôt qu'en quatrième exemplaire
+ * ailleurs.
  */
 export function SelecteurFond({
   nomGroupe,
@@ -143,6 +154,7 @@ export function SelecteurFond({
   legende = "Fond d'écran",
   aide,
   className = "mb-5",
+  suivreTheme,
 }: {
   nomGroupe: string;
   valeur: FondKey | undefined;
@@ -150,6 +162,13 @@ export function SelecteurFond({
   legende?: string;
   aide?: string;
   className?: string;
+  /**
+   * Quand elle est fournie, une tuile « Suivre le thème » ouvre le groupe et
+   * `actif` la coche — l'appelant garde son propre état à trois valeurs, et
+   * `onChange(undefined)` (la tuile « Aucun ») vaut alors le choix EXPLICITE de
+   * n'avoir aucune image, pas l'absence de choix.
+   */
+  suivreTheme?: { actif: boolean; onSelect: () => void; label?: string };
 }) {
   return (
     <fieldset className={className}>
@@ -158,10 +177,21 @@ export function SelecteurFond({
       </legend>
       {aide && <p className="mb-2.5 text-xs text-zinc-500">{aide}</p>}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+        {suivreTheme && (
+          <TuileFond
+            nomGroupe={nomGroupe}
+            label={suivreTheme.label ?? "Suivre le thème"}
+            active={suivreTheme.actif}
+            onSelect={suivreTheme.onSelect}
+          />
+        )}
         <TuileFond
           nomGroupe={nomGroupe}
           label="Aucun"
-          active={!valeur}
+          // `!valeur` ne suffit plus dès qu'un troisième état existe : sans le
+          // second terme, « Suivre le thème » et « Aucun » seraient cochées
+          // toutes les deux en même temps.
+          active={!valeur && !suivreTheme?.actif}
           onSelect={() => onChange(undefined)}
         />
         {FOND_KEYS.map((cle) => (
