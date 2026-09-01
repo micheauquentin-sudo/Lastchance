@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ContenuVitrineView, VitrineLiensView } from "@/lib/vitrine";
 
 /**
  * LA PAGE « À LA UNE » DU STUDIO — coquille (VIT-20), remplie par VIT-21.
@@ -10,7 +11,25 @@ import Link from "next/link";
  * liens se saisissaient dans les réglages généraux du commerce, et rien ne
  * disait s'ils devaient figurer sur la carte.
  */
-export function PageALaUneStudio() {
+export function PageALaUneStudio({
+  contenus,
+  liens,
+  socialVisible,
+  onSocialVisible,
+  peutEditer,
+}: {
+  contenus: ContenuVitrineView[];
+  liens: VitrineLiensView;
+  /** Le bloc « Réseaux et avis » paraît-il ? Masquer, c'est omettre (VIT-3). */
+  socialVisible: boolean;
+  onSocialVisible: (visible: boolean) => void;
+  peutEditer: boolean;
+}) {
+  void contenus;
+  void liens;
+  void socialVisible;
+  void onSocialVisible;
+  void peutEditer;
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">

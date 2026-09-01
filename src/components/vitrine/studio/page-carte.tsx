@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { VitrineCarteView } from "@/lib/vitrine";
 
 /**
  * LA PAGE « LA CARTE » DU STUDIO — coquille (VIT-20), remplie par VIT-23.
@@ -11,7 +12,18 @@ import Link from "next/link";
  * s'ouvre sur un écran vide se lit comme une panne, là où un renvoi explicite
  * se lit comme un chemin.
  */
-export function PageCarteStudio({ nbCartes }: { nbCartes: number }) {
+export function PageCarteStudio({
+  nbCartes,
+  cartes,
+  peutEditer,
+}: {
+  nbCartes: number;
+  /** Les cartes RÉELLES — l'éditeur complet viendra ici (VIT-23). */
+  cartes: VitrineCarteView[];
+  peutEditer: boolean;
+}) {
+  void cartes;
+  void peutEditer;
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
