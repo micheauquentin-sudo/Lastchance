@@ -436,18 +436,19 @@ test.describe("vitrine — dashboard commerçant", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
   /**
-   *  N EST PAS UN DETAIL, ET IL A ETE AJOUTE APRES UN ROUGE.
+   * `level: 1` N'EST PAS UN DÉTAIL, ET IL A ÉTÉ AJOUTÉ APRÈS UN ROUGE.
    *
-   * Ces quatre assertions veulent dire « la page Vitrine est chargee », et
-   * visaient son titre par son seul nom. Or  fait une
-   * correspondance par SOUS-CHAINE : le jour ou VIT-14 a ajoute un bloc
-   * « Supprimer la vitrine » en pied d ecran, le locator a resolu DEUX
-   * elements et Playwright a refuse en mode strict — sur quatre tests qui
-   * n avaient rien a voir avec la suppression.
+   * Ces quatre assertions veulent dire « la page Vitrine est chargée », et
+   * visaient son titre par son seul nom. Or `getByRole` fait une
+   * correspondance par SOUS-CHAÎNE : le jour où VIT-14 a ajouté un bloc
+   * « Supprimer la vitrine » en pied d'écran, le locator a résolu DEUX
+   * éléments, et Playwright a refusé en mode strict — faisant tomber quatre
+   * tests qui n'ont rien à voir avec la suppression.
    *
-   * Le niveau 1 dit ce que ces assertions veulent vraiment dire : le titre de
-   * la PAGE, dont il n existe qu un. Tout futur titre contenant « Vitrine »
-   * passera desormais a cote sans rien casser.
+   * Le niveau 1 dit ce que ces assertions veulent dire depuis le début : le
+   * titre de la PAGE, dont il n'existe qu'un seul (`PageHeader`). C'est plus
+   * PRÉCIS que l'ancienne forme, pas plus permissif, et tout futur titre
+   * contenant « Vitrine » passera désormais à côté sans rien casser.
    */
   test("réglages : adresse et thème affichés", async ({ page }) => {
     await page.goto("/dashboard/vitrine");
