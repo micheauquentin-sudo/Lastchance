@@ -435,10 +435,24 @@ test.describe("vitrine — les portes des modules", () => {
 test.describe("vitrine — dashboard commerçant", () => {
   test.use({ storageState: "e2e/.auth/owner.json" });
 
+  /**
+   *  N EST PAS UN DETAIL, ET IL A ETE AJOUTE APRES UN ROUGE.
+   *
+   * Ces quatre assertions veulent dire « la page Vitrine est chargee », et
+   * visaient son titre par son seul nom. Or  fait une
+   * correspondance par SOUS-CHAINE : le jour ou VIT-14 a ajoute un bloc
+   * « Supprimer la vitrine » en pied d ecran, le locator a resolu DEUX
+   * elements et Playwright a refuse en mode strict — sur quatre tests qui
+   * n avaient rien a voir avec la suppression.
+   *
+   * Le niveau 1 dit ce que ces assertions veulent vraiment dire : le titre de
+   * la PAGE, dont il n existe qu un. Tout futur titre contenant « Vitrine »
+   * passera desormais a cote sans rien casser.
+   */
   test("réglages : adresse et thème affichés", async ({ page }) => {
     await page.goto("/dashboard/vitrine");
     await expect(
-      page.getByRole("heading", { name: "Vitrine" }),
+      page.getByRole("heading", { level: 1, name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
 
     await expect(
@@ -515,7 +529,7 @@ test.describe("vitrine — dashboard commerçant", () => {
   }) => {
     await page.goto("/dashboard/vitrine");
     await expect(
-      page.getByRole("heading", { name: "Vitrine" }),
+      page.getByRole("heading", { level: 1, name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
 
     // ── Carte ── `.first()` : le libellé « Nom de la carte » se répète
@@ -698,7 +712,7 @@ test.describe("vitrine — dashboard commerçant", () => {
     page,
   }) => {
     await page.goto("/dashboard/vitrine");
-    await expect(page.getByRole("heading", { name: "Vitrine" })).toBeVisible({
+    await expect(page.getByRole("heading", { level: 1, name: "Vitrine" })).toBeVisible({
       timeout: 30_000,
     });
 
@@ -807,7 +821,7 @@ test.describe("vitrine — dashboard commerçant", () => {
 
     // ── La matière : une carte, une rubrique, une fiche, par l'éditeur réel ──
     await page.goto("/dashboard/vitrine");
-    await expect(page.getByRole("heading", { name: "Vitrine" })).toBeVisible({
+    await expect(page.getByRole("heading", { level: 1, name: "Vitrine" })).toBeVisible({
       timeout: 30_000,
     });
 
