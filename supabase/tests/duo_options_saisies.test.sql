@@ -109,6 +109,12 @@ values
   ('da000004-0000-4000-8000-0000000000b2', 'da000003-0000-4000-8000-00000000000b',
    'da000000-0000-4000-8000-00000000000b', 'Fiche M2', 'Desc M2', '14 EUR',
    'p/m2.jpg', 2),
+  -- NON ÉPINGLÉE, délibérément : c'est la seule fiche libre de M, et §4 en a
+  -- besoin pour éprouver « une fiche seule est acceptée » sans se heurter à
+  -- `duo_options_org_item_unique`, qui tient toujours (DUO-S24).
+  ('da000004-0000-4000-8000-0000000000b3', 'da000003-0000-4000-8000-00000000000b',
+   'da000000-0000-4000-8000-00000000000b', 'Fiche M3', 'Desc M3', '16 EUR',
+   'p/m3.jpg', 3),
   ('da000004-0000-4000-8000-0000000000c1', 'da000003-0000-4000-8000-00000000000c',
    'da000000-0000-4000-8000-00000000000c', 'Fiche V1', 'Desc V1', '10 EUR',
    'p/v1.jpg', 1),
@@ -326,13 +332,26 @@ select lives_ok(
 select lives_ok(
   $$insert into public.duo_options (organization_id, item_id, ordre)
     values ('da000000-0000-4000-8000-00000000000b',
-            'da000004-0000-4000-8000-0000000000b1', 6)$$,
+            'da000004-0000-4000-8000-0000000000b3', 5)$$,
   'DUO-S23 une fiche seule : acceptée');
+
+-- « UNE FICHE, UNE FOIS » TIENT TOUJOURS. `duo_options_org_item_unique` n'est
+-- pas touchée par DUO-1, et rendre `item_id` nullable ne l'a pas relâchée pour
+-- les lignes qui en portent un. Cette assertion existe parce que la première
+-- version de ce fichier l'a violée sans le vouloir : elle réépinglait une fiche
+-- déjà sur le plateau, et la base a eu raison de refuser.
+select throws_ok(
+  $$insert into public.duo_options (organization_id, item_id, ordre)
+    values ('da000000-0000-4000-8000-00000000000b',
+            'da000004-0000-4000-8000-0000000000b1', 6)$$,
+  '23505',
+  null,
+  'DUO-S24 … mais la MÊME fiche deux fois sur un plateau reste refusée');
 
 delete from public.duo_options
  where organization_id = 'da000000-0000-4000-8000-00000000000e';
 delete from public.duo_options
- where organization_id = 'da000000-0000-4000-8000-00000000000b' and ordre = 6;
+ where organization_id = 'da000000-0000-4000-8000-00000000000b' and ordre = 5;
 
 
 -- ════════════════════════════════════════════════════════════
@@ -346,7 +365,7 @@ select lives_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
            values (%L, %L, 1)$$,
          'da000000-0000-4000-8000-00000000000e', pg_catalog.repeat('a', 120)),
-  'DUO-S24 120 caractères : accepté (borne de vitrine_items.nom)');
+  'DUO-S25 120 caractères : accepté (borne de vitrine_items.nom)');
 
 delete from public.duo_options
  where organization_id = 'da000000-0000-4000-8000-00000000000e';
@@ -357,7 +376,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', pg_catalog.repeat('a', 121)),
   '23514',
   null,
-  'DUO-S25 121 caractères : refusé');
+  'DUO-S26 121 caractères : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -365,7 +384,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', ''),
   '23514',
   null,
-  'DUO-S26 libellé VIDE : refusé');
+  'DUO-S27 libellé VIDE : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -373,7 +392,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', ' Poulet'),
   '23514',
   null,
-  'DUO-S27 blanc en TÊTE : refusé');
+  'DUO-S28 blanc en TÊTE : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -381,7 +400,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', 'Poulet '),
   '23514',
   null,
-  'DUO-S28 blanc en QUEUE : refusé');
+  'DUO-S29 blanc en QUEUE : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -389,7 +408,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', 'Poulet  rôti'),
   '23514',
   null,
-  'DUO-S29 deux blancs de SUITE : refusé');
+  'DUO-S30 deux blancs de SUITE : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -398,7 +417,7 @@ select throws_ok(
          'Poulet' || pg_catalog.chr(10) || 'rôti'),
   '23514',
   null,
-  'DUO-S30 caractère de CONTRÔLE (saut de ligne) : refusé');
+  'DUO-S31 caractère de CONTRÔLE (saut de ligne) : refusé');
 
 -- LES CODETS INVISIBLES, un par famille de la liste de 20260805190000. Ce sont
 -- eux qui servent à faire lire à un joueur autre chose que ce qui est écrit.
@@ -409,7 +428,7 @@ select throws_ok(
          'Poulet' || pg_catalog.chr(8203) || 'rôti'),
   '23514',
   null,
-  'DUO-S31 espace de largeur nulle (U+200B) : refusé');
+  'DUO-S32 espace de largeur nulle (U+200B) : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -418,7 +437,7 @@ select throws_ok(
          'Poulet' || pg_catalog.chr(8238) || 'rôti'),
   '23514',
   null,
-  'DUO-S32 renversement bidirectionnel (U+202E) : refusé');
+  'DUO-S33 renversement bidirectionnel (U+202E) : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -427,7 +446,7 @@ select throws_ok(
          'Poulet' || pg_catalog.chr(8296) || 'rôti'),
   '23514',
   null,
-  'DUO-S33 isolat directionnel (U+2068) : refusé');
+  'DUO-S34 isolat directionnel (U+2068) : refusé');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -436,7 +455,7 @@ select throws_ok(
          pg_catalog.chr(65279) || 'Poulet'),
   '23514',
   null,
-  'DUO-S34 marque d''ordre des octets (U+FEFF) : refusée');
+  'DUO-S35 marque d''ordre des octets (U+FEFF) : refusée');
 
 -- L'INSÉCABLE SEUL. Il n'est NI un caractère de contrôle NI rogné par `btrim` :
 -- c'est la règle « au moins un alphanumérique » qui l'attrape, et c'est pour ce
@@ -447,7 +466,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', pg_catalog.chr(160)),
   '23514',
   null,
-  'DUO-S35 un seul espace INSÉCABLE : refusé (aucun alphanumérique)');
+  'DUO-S36 un seul espace INSÉCABLE : refusé (aucun alphanumérique)');
 
 select throws_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
@@ -455,7 +474,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', '...'),
   '23514',
   null,
-  'DUO-S36 ponctuation SEULE : refusée (aucun alphanumérique)');
+  'DUO-S37 ponctuation SEULE : refusée (aucun alphanumérique)');
 
 -- ET CE QUI DOIT PASSER. Sans ces deux-là, les treize refus ci-dessus
 -- seraient compatibles avec un filtre qui refuse TOUT.
@@ -463,13 +482,13 @@ select lives_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
            values (%L, %L, 1)$$,
          'da000000-0000-4000-8000-00000000000e', 'Crème brûlée à l''ancienne'),
-  'DUO-S37 accents et apostrophe : acceptés');
+  'DUO-S38 accents et apostrophe : acceptés');
 
 select lives_ok(
   format($$insert into public.duo_options (organization_id, libelle, ordre)
            values (%L, %L, 2)$$,
          'da000000-0000-4000-8000-00000000000e', '寿司'),
-  'DUO-S38 idéogrammes : acceptés (la règle alphanumérique n''est pas ASCII)');
+  'DUO-S39 idéogrammes : acceptés (la règle alphanumérique n''est pas ASCII)');
 
 
 -- ════════════════════════════════════════════════════════════
@@ -482,7 +501,7 @@ select throws_ok(
          'da000000-0000-4000-8000-00000000000e', '寿司'),
   '23505',
   null,
-  'DUO-S39 deux fois le MÊME libellé chez le même commerce : refusé');
+  'DUO-S40 deux fois le MÊME libellé chez le même commerce : refusé');
 
 -- ET LA MÊME CHAÎNE CHEZ LE VOISIN EST ACCEPTÉE — c'est déjà semé (Z porte
 -- « Tarte aux pommes » comme S). L'unicité est PAR ORGANISATION.
@@ -490,7 +509,7 @@ select is(
   (select pg_catalog.count(*)::int from public.duo_options o
     where o.libelle = 'Tarte aux pommes'),
   2,
-  'DUO-S40 … mais le MÊME libellé chez deux commerces coexiste');
+  'DUO-S41 … mais le MÊME libellé chez deux commerces coexiste');
 
 select is(
   (select pg_catalog.count(*)::int
@@ -498,7 +517,7 @@ select is(
             public.duo_options_json('da000000-0000-4000-8000-00000000000a')) e
     where e->>'nom' = 'Secret du voisin'),
   0,
-  'DUO-S41 le plateau du VOISIN n''entre pas dans le document de S');
+  'DUO-S42 le plateau du VOISIN n''entre pas dans le document de S');
 
 -- LA RLS, ÉPROUVÉE EN DESCENDANT DE SUPERUTILISATEUR. Sous `postgres`, toute
 -- policy est contournée : une assertion posée ici sans changer de rôle serait
@@ -513,13 +532,13 @@ select is(
   (select pg_catalog.count(*)::int from public.duo_options o
     where o.organization_id = 'da000000-0000-4000-8000-00000000000a'),
   0,
-  'DUO-S42 le propriétaire du VOISIN ne lit AUCUNE option de S (RLS)');
+  'DUO-S43 le propriétaire du VOISIN ne lit AUCUNE option de S (RLS)');
 
 select is(
   (select pg_catalog.count(*)::int from public.duo_options o
     where o.organization_id = 'da000000-0000-4000-8000-00000000000d'),
   2,
-  'DUO-S43 … et lit bien les DEUX siennes (contrôle de portée)');
+  'DUO-S44 … et lit bien les DEUX siennes (contrôle de portée)');
 
 -- IL ÉCRIT AUSSI SON LIBELLÉ, ce qui est le geste que le lot ouvre : sans les
 -- grants de colonnes de §3, cette insertion échouerait sur un refus de
@@ -527,13 +546,13 @@ select is(
 select lives_ok(
   $$insert into public.duo_options (organization_id, libelle, ordre)
     values ('da000000-0000-4000-8000-00000000000d', 'Écrit par le commerçant', 3)$$,
-  'DUO-S44 un ÉDITEUR écrit son libellé depuis sa session (grant INSERT)');
+  'DUO-S45 un ÉDITEUR écrit son libellé depuis sa session (grant INSERT)');
 
 select lives_ok(
   $$update public.duo_options set libelle = 'Corrigé par le commerçant'
      where organization_id = 'da000000-0000-4000-8000-00000000000d'
        and ordre = 3$$,
-  'DUO-S45 … et le corrige (grant UPDATE), sans supprimer la ligne');
+  'DUO-S46 … et le corrige (grant UPDATE), sans supprimer la ligne');
 
 reset role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -552,12 +571,12 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select ok(
   pg_catalog.has_column_privilege(
     'authenticated', 'public.duo_options', 'libelle', 'INSERT'),
-  'DUO-S46 authenticated INSÈRE libelle (grant de colonne, accordé par DUO-1)');
+  'DUO-S47 authenticated INSÈRE libelle (grant de colonne, accordé par DUO-1)');
 
 select ok(
   pg_catalog.has_column_privilege(
     'authenticated', 'public.duo_options', 'libelle', 'UPDATE'),
-  'DUO-S47 authenticated MODIFIE libelle (grant de colonne, accordé par DUO-1)');
+  'DUO-S48 authenticated MODIFIE libelle (grant de colonne, accordé par DUO-1)');
 
 -- LA LECTURE VIENT DU GRANT DE TABLE, pas d'un grant de colonne. Si quelqu'un
 -- remplace un jour ce grant de table par des grants de colonnes en oubliant
@@ -566,23 +585,23 @@ select ok(
 select ok(
   pg_catalog.has_column_privilege(
     'authenticated', 'public.duo_options', 'libelle', 'SELECT'),
-  'DUO-S48 authenticated LIT libelle (hérité du grant de TABLE)');
+  'DUO-S49 authenticated LIT libelle (hérité du grant de TABLE)');
 
 select ok(
   pg_catalog.has_table_privilege('authenticated', 'public.duo_options', 'SELECT'),
-  'DUO-S49 … et ce grant est bien porté par la TABLE, pas par des colonnes');
+  'DUO-S50 … et ce grant est bien porté par la TABLE, pas par des colonnes');
 
 -- `anon` RESTE NU. Le plateau est du paramétrage de commerçant : il ne se lit
 -- pas sans session, et il ne s'écrit certainement pas.
 select ok(
   not pg_catalog.has_column_privilege(
     'anon', 'public.duo_options', 'libelle', 'SELECT'),
-  'DUO-S50 anon ne LIT pas libelle');
+  'DUO-S51 anon ne LIT pas libelle');
 
 select ok(
   not pg_catalog.has_column_privilege(
     'anon', 'public.duo_options', 'libelle', 'INSERT'),
-  'DUO-S51 anon n''ÉCRIT pas libelle');
+  'DUO-S52 anon n''ÉCRIT pas libelle');
 
 select * from finish();
 rollback;
