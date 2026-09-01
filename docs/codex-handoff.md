@@ -37,6 +37,72 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#305)
+
+**Terrain.** `src/components/vitrine/vitrine-studio.tsx` (coquille),
+`src/components/vitrine/studio/` (neuf : `etat.ts`, `champs-caches.tsx`,
+`pages.ts`, `apercu.tsx`, `panneau-allure.tsx`, `champ.tsx`, `logo-champ.tsx`,
+`page-{identite,carte,alaune,jeux}.tsx`, `carte-resume.tsx`, `exemples.ts`),
+`src/app/vitrine-studio/page.tsx`, `src/app/dashboard/vitrine/page.tsx`,
+`src/actions/vitrine.ts` (`composerTheme`), `src/lib/validations/vitrine.ts`
+(quatre témoins), `src/components/vitrine/{reglages-vitrine,jeux-vitrine}.tsx`,
+`src/lib/security-headers.ts`. Aucune migration.
+
+**Décision implémentée.** Le studio porte toute la configuration : identité
+visuelle (logo, bannière, mots), carte, mises en avant, jeux — quatre pages,
+aperçu au centre, allure à droite sur toutes. Ce qui paraît sur la page se
+coche, horaires compris ; masquer reste omettre d'`ordre_blocs`. L'atelier
+devient le chemin du petit écran, sa route reste atteignable partout.
+
+**Le socle, posé en premier.** `composerTheme` FUSIONNE au lieu de
+reconstruire, et quatre témoins de section s'ajoutent à `allure_rendue` :
+sans cela, chaque écran effaçait ce que les autres réglaient. Deux pertes
+étaient en production.
+
+**Écarté.** Faire remonter logo, bannière et carte au bouton « Enregistrer »
+commun (une photo serait repartie à chaque virgule, et « retirer » aurait
+envoyé l'image à effacer) ; les pages du studio dans l'URL (une navigation
+perdrait les essais en cours) ; masquer l'atelier au-delà de `lg` (sa tuile
+porte des points de vérification) ; élargir la colonne de gauche partout (la
+largeur est prise à l'aperçu) ; deux colonnes sur la page « La carte » (l'allure
+se règle justement en regardant une vraie carte) ; ajouter `theme.jeux` à la
+charge de `saveVitrineSettings` (deux actions écriraient la même clé).
+
+**Fini quand.** ✅ typecheck, lint, `npx vitest run vitrine` (499 → 511 selon le
+lot), `studio-charge.test.tsx` verte sur les quatre pages. Chaque lot porte au
+moins une garde ÉPROUVÉE PAR MUTATION.
+
+**Reste ouvert — À EXÉCUTER.**
+
+1. **L'interrupteur « voir avec des exemples » n'est pas câblé.** Les données
+   des sept métiers sont livrées et gardées (`studio/exemples.ts`, VIT-24) ;
+   le brancher demande de toucher `studio/apercu.tsx`, que trois lots
+   modifiaient encore. Un lot d'une demi-heure.
+2. **🔴 `'wasm-unsafe-eval'` bloque toujours la lecture de carte
+   photographiée.** VIT-25 n'y touche pas volontairement : rouvrir cette
+   permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
+   servi à lui retirer. La piste reste de la porter sur la seule route qui en
+   a besoin, via `next.config`. Voir `docs/bugs.md`.
+3. **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
+   20 €/mois, « Duo Miroir » et « Portrait de la Bande » 12 €/mois.
+4. **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
+   l'autorisation « éditeur » en Wallet Console.
+5. `duo_choose` ne valide pas encore une place saisie (ADR-134).
+6. Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+
+**Deux leçons de méthode, consignées parce qu'elles se reproduiront.**
+
+- **Un `String.replace` node sur un fichier CRLF échoue en silence** si le motif
+  porte `\n`. C'est arrivé deux fois dans la même session : une mutation de test
+  non appliquée (la garde restait verte, on la croyait inutile) et une prop
+  jamais écrite alors que le message de commit la décrivait. Toujours comparer
+  avant/après et LEVER si rien n'a changé.
+- **Plusieurs agents sur un seul arbre git se détruisent**, même avec des
+  fichiers disjoints : chacun fait son `checkout -b` et bascule `HEAD` sous les
+  autres. Il faut des worktrees isolés (`isolation: "worktree"`), ou un seul
+  agent à la fois.
+
+
 ## Vitrine en atelier, et les deux salons vendables seuls (2026-09-01, livré sur `main`, PR #281→#290)
 
 **Terrain.** `src/app/dashboard/vitrine/page.tsx`,

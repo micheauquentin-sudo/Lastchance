@@ -8885,3 +8885,258 @@ posées depuis. Trois ancres sont comptées avant remplacement, **toutes des
 marqueurs à préserver et jamais l'absence de ce qu'on ajoute** : un `db reset`
 rejoue les migrations dans l'ordre, et la garde d'un fichier ancien doit rester
 vraie dans un monde où les suivants existent.
+
+## ADR-136 — Le thème se FUSIONNE, il ne se reconstruit pas — et chaque section a son témoin
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : VIT-19. Deux pertes silencieuses mesurées en production, trouvées
+en lisant le code avant d'y toucher.
+
+`composerTheme` reconstruisait le document `theme` à partir du SEUL formulaire.
+Tant qu'un unique écran l'écrivait, c'était équivalent à une fusion. À trois
+écrans, chacun effaçait ce que les autres réglaient — et un enregistrement
+réussi ne dit rien de ce qu'il vient d'emporter.
+
+### Les deux pertes, et pourquoi elles étaient invisibles
+
+1. **Le studio** (VIT-17) ne rendait ni `ordre_blocs` ni `style_cartes`.
+   Enregistrer depuis lui remettait la page aux cinq blocs par défaut, donc
+   RETIRAIT le bloc « Jeux » — alors que sa présence dans l'ordre EST le
+   consentement de publication (VIT-3).
+2. **`theme.jeux`** (VIT-16) n'était rendu par AUCUN de ces formulaires.
+   Enregistrer l'identité depuis l'atelier effaçait donc le choix ; et comme
+   l'absence vaut « les deux » (ADR-129), un jeu explicitement DÉCOCHÉ revenait
+   sur la carte du commerçant.
+
+Aucun test ne pouvait les voir : l'action réussissait, écrivait un thème
+VALIDE, et rendait « Vitrine enregistrée ». Seul un lecteur comparant la charge
+d'un écran au document complet pouvait s'en apercevoir.
+
+### Décision 1 — La fusion est le défaut, l'écrasement est l'exception
+
+`composerTheme(saisie, actuel)` part du thème EN BASE. Une clé qu'aucun écran ne
+rend — `jeux` — survit **sans avoir besoin de témoin**. C'est le bon défaut pour
+toute clé future : elle vit jusqu'à ce qu'un écran revendique de la régler.
+
+**Écarté** : ajouter `jeux` à la charge de `saveVitrineSettings`. Deux actions
+auraient alors écrit la même clé, et il aurait fallu les tenir d'accord — c'est
+précisément ce que ce lot défait.
+
+### Décision 2 — Quatre témoins de plus, et le raisonnement était déjà écrit
+
+`allure_rendue` existait depuis VIT-13, avec l'argument exact : distinguer « le
+commerçant a décoché » de « l'écran n'a pas la section », que `formData.get`
+rend identiques. Ce raisonnement valait pour TOUT le document ; il n'avait été
+appliqué qu'à l'allure, parce que l'allure seule était concernée ce jour-là.
+
+D'où `couleurs_rendues`, `polices_rendues`, `style_cartes_rendu`, `blocs_rendus`.
+
+### Décision 3 — Une section RENDUE et vidée retire sa clé
+
+Sans cela, le retrait deviendrait impossible et `resetVitrineCouleurs`
+(ADR-132) n'aurait plus de sens : une clé ABSENTE suit le vocabulaire du
+secteur, une valeur recopiée le fige au jour où on l'a écrite.
+
+### La panne symétrique, et la garde qui la tient
+
+Ce défaut a une seconde moitié, plus vicieuse : un écran qui rend la section et
+OUBLIE son témoin ne l'enregistre plus. Le commerçant règle, clique, lit
+« Vitrine enregistrée » — et rien n'a changé.
+
+Les gardes d'action ne peuvent pas la voir : elles fabriquent leur `FormData`,
+donc elles posent les témoins qu'elles décrivent. `reglages-formulaires.test.tsx`
+lit donc le RENDU des écrans et vérifie que chaque témoin part avec le MÊME
+`<form>` que son champ.
+
+**Elle s'est refermée pendant l'écriture du lot** : les quatre `formData.get`
+manquaient dans l'action, et ce sont les tests de fusion qui l'ont vu — pas la
+relecture, alors que le fichier décrit ce piège depuis VIT-13.
+
+## ADR-137 — Le studio devient l'écran central : un formulaire VIDE, et aucun `name` visible
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — « studio est super et c'est ce que je
+cherche depuis le début, il doit devenir l'élément central afin de tout pouvoir
+faire dessus ». VIT-20.
+
+L'atelier réglait, le studio montrait : deux écrans pour un seul travail, dont
+un seul laisse voir ce qu'on règle.
+
+### Décision 1 — Le formulaire de réglages est VIDE, et c'est ce qui rend tout possible
+
+Le studio héberge des blocs qui ont LEUR PROPRE action : le logo, la bannière,
+la carte, les liens sociaux. Chacun porte donc son `<form>`. Or un `<form>` dans
+un `<form>` n'est pas du HTML valide : le navigateur déplie en silence,
+l'hydratation échoue, et TOUTE l'interactivité de l'écran tombe — le défaut
+livré en VIT-16, que garde `reglages-formulaires.test.tsx`.
+
+La sortie est dans le HTML lui-même : **un champ peut appartenir à un formulaire
+qui ne le contient pas**, par l'attribut `form`. Le formulaire de réglages est
+donc réduit à ses champs cachés et posé en VOISIN de la mise en page ; le bouton
+« Enregistrer » le vise par son identifiant. Les autres formulaires sont ses
+frères, jamais ses descendants.
+
+**Écarté** : faire remonter chaque action au bouton « Enregistrer » commun. Une
+photo de plusieurs centaines de kilo-octets serait repartie à chaque
+enregistrement d'une virgule, et le geste « retirer » aurait envoyé l'image
+qu'on veut effacer.
+
+### Décision 2 — AUCUN contrôle visible ne porte de `name`
+
+Une page qu'on quitte est DÉMONTÉE. Si ses champs portaient leur `name`, aller
+composer sa carte ferait disparaître l'accroche du formulaire, et
+l'enregistrement suivant l'effacerait — le défaut que VIT-19 venait de fermer
+côté serveur, réintroduit par la navigation, et sous une forme PIRE :
+l'action aurait répondu « Vitrine enregistrée ».
+
+`ChampsCachesStudio` rend donc la charge EN ENTIER depuis un état unique, à
+chaque rendu. Il n'existe aucun chemin par lequel un champ puisse manquer, parce
+qu'aucun champ ne dépend d'une page pour exister. La garde le vérifie sur le
+rendu réel de CHACUNE des quatre pages.
+
+### Décision 3 — La page vit dans un état, pas dans l'URL
+
+Contrairement à `?etape=` de l'atelier, changer de page du studio ne navigue
+pas : l'état des réglages vit en mémoire, et une navigation le perdrait avec
+tout ce que le commerçant est en train d'essayer. C'est la promesse d'un studio.
+D'où des BOUTONS et non des `<Link>`.
+
+### Décision 4 — Une page par fichier, et ce n'est pas du rangement
+
+`vitrine-studio.tsx` ne tient que l'état, la charge et la page affichée. Sans
+cette découpe, les cinq lots suivants — carte, à la une, jeux, exemples,
+aperçu — modifiaient tous le même fichier, donc s'attendaient l'un l'autre. La
+découpe est ce qui a permis de les écrire en parallèle.
+
+## ADR-138 — L'aperçu montre ce que le client verra, et le filtre vit chez l'appelant
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : VIT-26, sur un défaut signalé par le lot voisin (VIT-23) et livré
+depuis VIT-17.
+
+`VitrineCarteView.active` porte son propre avertissement : « toujours `true`
+dans l'état PUBLIC — la RPC n'en rend pas d'autres ». L'état du TABLEAU DE BORD,
+lui, rend tout, y compris ce que le commerçant a décoché : c'est ce qu'il faut
+pour l'éditer.
+
+L'aperçu recevait donc les deux et les passait tels quels à `CatalogueVitrine`,
+écrit pour la page publique — qui fait confiance à sa source, et qui a raison.
+**Une carte désactivée mais pleine s'affichait pleine au commerçant, et vide
+chez son client.**
+
+### Décision 1 — Le filtre est chez l'appelant, jamais dans le composant public
+
+`CatalogueVitrine` doit rester le composant que sert la page publique, sans
+branche « et si on m'appelait depuis un éditeur ». C'est à l'appelant de lui
+fournir ce que la page publique recevrait.
+
+Aucun des deux composants ne faisait d'erreur : c'est le RACCORD qui en faisait
+une, et c'est pourquoi rien ne le signalait.
+
+### Décision 2 — `disponible` ne se filtre PAS, et l'assertion le dit
+
+Une fiche indisponible est rendue par la RPC publique ; l'écran la GRISE, il ne
+la fait pas disparaître. La retirer de l'aperçu serait le même défaut dans
+l'autre sens. Les deux assertions vont donc ensemble — sans la seconde,
+« filtrer davantage » resterait une correction plausible.
+
+### Ce que la mutation a appris, et que la relecture n'avait pas vu
+
+La première version de la garde assertait l'absence d'une FICHE de la carte
+désactivée. Or le catalogue est à ONGLETS : les fiches d'une carte non
+sélectionnée ne sont pas rendues de toute façon. **Le test passait au vert AVEC
+et SANS le correctif** — il ne mesurait rien.
+
+C'est la mutation qui l'a dit. L'assertion porte désormais sur le NOM de la
+carte. Une garde qu'on n'a pas fait rougir volontairement n'est pas une garde,
+c'est une intention.
+
+## ADR-139 — Le studio est la porte, l'atelier est le chemin du petit écran
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : arbitrage du propriétaire, formulé ainsi — l'atelier « reste en
+secours pour les petits écrans seulement ». VIT-27.
+
+### Décision 1 — Une carte « Mon studio », OUVERTE, en tête
+
+Ce n'est pas une entrée de plus dans la pile : c'est LA porte. Un commerçant qui
+vient régler quelque chose doit tomber dessus, pas la déplier — une carte
+repliée se lit comme une option, jamais comme le chemin.
+
+Elle n'apparaît qu'à partir de `lg`, et c'est une contrainte de fond : le studio
+est à trois colonnes. En dessous, elles s'empilent et l'aperçu passe SOUS les
+réglages — c'est-à-dire qu'on ne voit plus ce qu'on règle, ce qui lui retire sa
+raison d'être.
+
+### Décision 2 — La ROUTE reste atteignable partout, seule l'ENTRÉE change de rang
+
+`?etape=` fonctionne sur n'importe quelle taille d'écran. Une adresse d'étape
+gardée en favori doit continuer de mener quelque part.
+
+**Écarté** : masquer l'atelier au-delà de `lg`. Sa tuile porte des points de la
+vérification (`carteTuile`), et une tuile invisible sur grand écran aurait retiré
+au commerçant un état qu'il est censé lire — pour ne gagner qu'une carte repliée
+de moins.
+
+### Décision 3 — La colonne de gauche s'élargit pour la carte, et pour elle seule
+
+L'éditeur de carte est imbriqué sur trois rangs — carte, rubrique, fiche — et
+chaque rang mange sa marge : le formulaire d'une fiche dépliée finissait à
+~195 px. 440 px sur cette page, 340 ailleurs.
+
+**Écarté** : élargir partout. La largeur perdue est prise à l'APERÇU, qui est la
+raison d'être de cet écran.
+
+**Écarté aussi** : passer cette page à deux colonnes en masquant l'allure. Régler
+une densité ou une taille de photo se fait EN REGARDANT une vraie carte — c'est
+justement là que la colonne de droite sert le plus.
+
+## ADR-140 — `SENSITIVE_PREFIXES` est une liste tenue à la main : la garde part des ROUTES
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : VIT-25. `/vitrine-studio` (VIT-17) n'y était pas et retombait au
+régime CSP `static` — `'unsafe-inline'`, sans nonce — alors qu'il rend
+l'identité du commerce, sa carte et ses réglages.
+
+Rien n'était exploitable : la page est derrière la session, et ce n'est pas la
+CSP qui l'y tient. Mais c'est une défense en profondeur perdue, en silence, sur
+l'écran devenu central du module.
+
+### Le défaut de la garde précédente, et il est instructif
+
+Elle parcourait `SENSITIVE_PREFIXES` et vérifiait que chacun est classé
+`sensitive` : **elle comparait la liste à elle-même**. Un préfixe ABSENT lui
+était invisible par construction.
+
+C'est une classe de test entière qui mérite d'être nommée : une garde dérivée de
+la donnée qu'elle contrôle est vraie par construction, donc muette. Le dépôt en
+porte d'autres exemples utiles — les gardes de parité SQL comparent deux sources
+INDÉPENDANTES, et c'est ce qui les rend vivantes.
+
+### Décision — La garde part des PAGES et revient à la liste
+
+Elle énumère les `page.tsx` qui appellent `redirect("/login")`, en dérive le
+chemin servi — groupes `(x)` retirés, arrêt au premier segment dynamique — et
+exige que chacun soit classé `sensitive`. Neuf pages, quatre préfixes.
+
+Le critère est observable sans rien exécuter. Une page qui exprimerait son
+exigence autrement y échapperait : le jour où cela arrive, c'est LE CRITÈRE
+qu'il faut élargir, pas la liste qu'il faut desserrer — et le test le dit.
+
+### La cause structurelle, qui reste
+
+`SENSITIVE_PREFIXES` ne dérive de rien : ni des routes qui exigent une session,
+ni d'un segment de l'App Router. Et il y a une raison RÉCURRENTE d'en poser hors
+de `/dashboard` : un éditeur plein écran doit en sortir pour échapper à la
+colonne de navigation. `/poster` y est entré à sa création, `/vitrine-studio`
+non. Ce ne sera pas le dernier.
+
+**Ce lot ne touche PAS à `'wasm-unsafe-eval'`**, l'autre défaut CSP ouvert
+(`docs/bugs.md`) qui rend inerte la lecture de carte photographiée. Rouvrir
+cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
+servi à lui retirer : c'est un arbitrage à part, pas un effet de bord.
