@@ -39,7 +39,7 @@
 import { VITRINE_PRIX_AFFICHE_MAX } from "@/lib/vitrine";
 
 /** D'où vient le texte — l'écran le dit au commerçant après l'extraction. */
-export type SourceImport = "texte" | "csv" | "tableur" | "pdf";
+export type SourceImport = "texte" | "csv" | "tableur" | "pdf" | "image";
 
 export type ResultatExtraction =
   | { ok: true; source: SourceImport; texte: string; lignes: number }
@@ -54,10 +54,9 @@ export const TAILLE_FICHIER_MAX = 8 * 1024 * 1024;
 
 /** Ce que le sélecteur de fichiers propose. */
 export const EXTENSIONS_ACCEPTEES =
-  ".txt,.md,.csv,.tsv,.xlsx,.pdf,text/plain,text/csv,application/pdf";
+  ".txt,.md,.csv,.tsv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp,.heic," +
+  "text/plain,text/csv,application/pdf,image/*";
 
-const REFUS_IMAGE =
-  "Une photo n’a pas de texte à lire. Envoyez le PDF d’origine, un fichier .csv ou .xlsx, ou collez le texte de la carte ci-dessus.";
 const REFUS_PDF_SANS_TEXTE =
   "Ce PDF ne contient que des images — il a probablement été scanné. Envoyez la version d’origine, un fichier .csv ou .xlsx, ou collez le texte de la carte ci-dessus.";
 const REFUS_VIDE =
@@ -78,6 +77,15 @@ function extension(nom: string): string {
 
 export async function extraireTexteDeFichier(
   fichier: File,
+  /**
+   * L'AVANCEMENT DE LA LECTURE D'IMAGE (VIT-18), entre 0 et 1.
+   *
+   * Facultatif, et ignoré par tous les autres formats : eux se lisent en
+   * quelques millisecondes. La reconnaissance, elle, prend dix à trente
+   * secondes sur un téléphone — un écran qui ne bouge pas pendant ce temps se
+   * lit comme une panne.
+   */
+  onProgress?: (fraction: number) => void,
 ): Promise<ResultatExtraction> {
   if (fichier.size > TAILLE_FICHIER_MAX) {
     return { ok: false, raison: REFUS_TAILLE };
@@ -86,10 +94,25 @@ export async function extraireTexteDeFichier(
   const ext = extension(fichier.name);
   const type = (fichier.type || "").toLowerCase();
 
-  // L'image est refusée AVANT toute lecture : inutile de charger huit méga-
-  // octets pour conclure qu'on ne sait pas les lire.
-  if (type.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "heic", "gif", "avif"].includes(ext)) {
-    return { ok: false, raison: REFUS_IMAGE };
+  // ── L'IMAGE EST DÉSORMAIS LUE (VIT-18) ──
+  //
+  // Elle l'était refusée par principe : « une photo n'a pas de texte à lire ».
+  // C'était vrai tant qu'aucun moteur ne tournait ici. Il en tourne un
+  // maintenant, dans le navigateur et servi depuis notre domaine — la carte ne
+  // sort toujours pas du commerce.
+  //
+  // L'IMPORT DU MOTEUR EST DYNAMIQUE, et il l'est ICI plutôt qu'en tête de
+  // fichier : 4,1 Mo ne doivent pas peser sur l'import d'un `.csv`.
+  if (
+    type.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "heic", "gif", "avif"].includes(ext)
+  ) {
+    const { texteDepuisImage } = await import(
+      "@/components/vitrine/import-ocr"
+    );
+    const lu = await texteDepuisImage(fichier, onProgress);
+    if (!lu.ok) return { ok: false, raison: lu.raison };
+    return conclure("image", lu.texte);
   }
 
   try {
