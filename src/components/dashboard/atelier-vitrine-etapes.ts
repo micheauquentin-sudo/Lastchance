@@ -47,6 +47,8 @@ export type EtapeVitrine =
   | "alaune"
   | "traductions"
   | "jeux"
+  | "duo"
+  | "bande"
   | "verification";
 
 export const ETAPES_VITRINE = [
@@ -93,6 +95,59 @@ export const ETAPES_VITRINE = [
 ] as const satisfies readonly EtapeAtelier[];
 
 /**
+ * LES DEUX ÉTAPES QUI N'EXISTENT QUE SI ON LES A DEMANDÉES (VIT-16).
+ *
+ * Elles se glissent APRÈS « Les jeux » et AVANT « La vérification » : on coche,
+ * on règle ce qu'on vient de cocher, puis on vérifie. Les poser à la fin aurait
+ * séparé le choix de son réglage par l'écran qui juge les deux.
+ */
+const ETAPE_DUO = {
+  cle: "duo",
+  titre: "Duo Miroir",
+  resume: "Les fiches épinglées au plateau — il en faut assez pour que le jeu ouvre.",
+} as const satisfies EtapeAtelier;
+
+const ETAPE_BANDE = {
+  cle: "bande",
+  titre: "Portrait de la Bande",
+  resume: "Le pack de questions posées à la tablée.",
+} as const satisfies EtapeAtelier;
+
+/**
+ * LE FIL D'ÉTAPES RÉELLEMENT AFFICHÉ.
+ *
+ * ── POURQUOI UNE FONCTION, ET NON UNE LISTE ──
+ *
+ * Duo Miroir et Portrait de la Bande sont facultatifs, et la plupart des
+ * commerçants n'en activent aucun. Deux étapes permanentes auraient fait porter
+ * à tous le poids de ce que peu utilisent — un fil de neuf cases dont deux
+ * vides. Elles n'apparaissent donc que si la case est cochée.
+ *
+ * ── L'ÉTAPE D'UN JEU DÉCOCHÉ RESTE ATTEIGNABLE PAR SON URL ──
+ *
+ * `parseEtape` juge sur la liste qu'on lui passe : une étape absente y est
+ * INCONNUE, donc elle retombe sur la première. C'est le bon comportement — un
+ * lien vers « Duo Miroir » gardé en favori après avoir décoché le jeu doit
+ * mener quelque part d'utile, pas à un écran vide ni à un 404.
+ */
+export function etapesVitrine(jeux: {
+  duo: boolean;
+  bande: boolean;
+}): readonly EtapeAtelier[] {
+  const conditionnelles: EtapeAtelier[] = [];
+  if (jeux.bande) conditionnelles.push(ETAPE_BANDE);
+  if (jeux.duo) conditionnelles.push(ETAPE_DUO);
+  if (conditionnelles.length === 0) return ETAPES_VITRINE;
+
+  const iVerif = ETAPES_VITRINE.findIndex((e) => e.cle === "verification");
+  return [
+    ...ETAPES_VITRINE.slice(0, iVerif),
+    ...conditionnelles,
+    ...ETAPES_VITRINE.slice(iVerif),
+  ];
+}
+
+/**
  * LA BASE EST LA PAGE ELLE-MÊME. La Vitrine n'a pas d'identifiant dans son
  * URL — il y en a UNE par commerce, contrairement aux chasses ou aux quiz qui
  * se comptent. C'est la seule différence avec les six autres ateliers, et elle
@@ -126,7 +181,7 @@ const ETAPE_DU_CONTROLE: Record<string, EtapeVitrine> = {
   adresse: "adresse",
   catalogue: "carte",
   publiee: "verification",
-  "duo-plateau": "jeux",
+  "duo-plateau": "duo",
 };
 
 export function etapeDuControleVitrine(cle: string): EtapeVitrine {

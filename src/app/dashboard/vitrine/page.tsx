@@ -12,11 +12,15 @@ import { parseEtape } from "@/components/dashboard/atelier-etapes";
 import { AtelierStepper } from "@/components/dashboard/atelier-stepper";
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import {
-  ETAPES_VITRINE,
   hrefEtapeVitrine,
   type EtapeVitrine,
 } from "@/components/dashboard/atelier-vitrine-etapes";
 import { AtelierVerificationVitrine } from "@/components/dashboard/atelier-vitrine-verification";
+import { etapesVitrine } from "@/components/dashboard/atelier-vitrine-etapes";
+import { JeuxVitrineEditeur } from "@/components/vitrine/jeux-vitrine";
+import { resoudreThemeVitrine } from "@/components/vitrine/theme";
+import { DUO_OPTIONS_MIN_BASE } from "@/lib/duo";
+import { droitEffectifModule } from "@/lib/subscription";
 import { getUserAndOrg } from "@/lib/auth";
 import { SupprimerVitrine } from "@/components/vitrine/supprimer-vitrine";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
@@ -45,7 +49,6 @@ import { CatalogueEditeur } from "@/components/vitrine/catalogue-editeur";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
 import { BandeEditeur } from "@/components/vitrine/bande-editeur";
 import { DuoEditeur } from "@/components/vitrine/duo-editeur";
-import { ExperiencesVisibilite } from "@/components/vitrine/experiences-visibilite";
 import { ImportCarte } from "@/components/vitrine/import-carte";
 import {
   AdresseForm,
@@ -93,11 +96,6 @@ export default async function VitrineDashboardPage({
    * doit rendre un écran utile.
    */
   const { etape: etapeParam } = await searchParams;
-  const etape = parseEtape(
-    ETAPES_VITRINE,
-    etapeParam,
-    "nulle",
-  ) as EtapeVitrine | null;
   const capacites = await capacitesDuModule("vitrine");
   /**
    * LE RÔLE, POUR LA SEULE SUPPRESSION (VIT-14).
@@ -107,7 +105,7 @@ export default async function VitrineDashboardPage({
    * qui ne se répare pas. `getUserAndOrg` est mémoïsé par `cache()` sur le
    * rendu — cet appel ne coûte pas une seconde lecture.
    */
-  const { role } = await getUserAndOrg();
+  const { role, organization } = await getUserAndOrg();
   if (!capacites.canExplore) notFound();
 
   const ctx = await loadVitrineDashboardContext();
@@ -123,9 +121,9 @@ export default async function VitrineDashboardPage({
   /**
    * LES CONTENUS MIS EN AVANT ET LES OUVERTURES — deux lectures, un seul aller.
    *
-   * Client de SESSION, RLS de membre — ET le filtre d'organisation EXPLICITE
+   * Client de SESSION, RLS de membre — ET le filtre d'organization EXPLICITE
    * quand même (revue L14, E1) : `is_org_member` est vrai pour TOUTES les
-   * organisations d'un utilisateur multi-comptes, pas pour la seule active.
+   * organizations d'un utilisateur multi-comptes, pas pour la seule active.
    * Sans `.eq`, un franchisé voyait les « À la une » de ses deux enseignes
    * mélangés — et pouvait en recopier un chez l'autre d'un clic. Le motif réel
    * du dépôt est celui-là : `dashboard/calendar/[id]` et `jackpot/[id]` posent
@@ -217,6 +215,33 @@ export default async function VitrineDashboardPage({
    * `TUILES_VITRINE`, et c'est ce qui laisse la suite numérotée aller de 1 à 9
    * dans l'ordre exact du rendu.
    */
+  /**
+   * LE FIL D'ÉTAPES DÉPEND DE CE QUI EST COCHÉ (VIT-16).
+   *
+   * Il se calcule donc APRÈS la lecture des réglages, et non au tout début :
+   * les deux étapes de jeu n'existent que si le commerçant a demandé le jeu.
+   * `resoudreThemeVitrine` fait le travail délicat — l'ABSENCE de choix y vaut
+   * « les deux », ce qui garde intactes les vitrines d'avant ce lot.
+   */
+  const themeResolu = resoudreThemeVitrine(
+    settings?.theme ?? null,
+    settings?.secteur,
+  );
+  const etapes = etapesVitrine(themeResolu.jeux);
+  const etape = parseEtape(etapes, etapeParam, "nulle") as EtapeVitrine | null;
+
+  /**
+   * CE QUE LE COMMERÇANT POSSÈDE, pour le bilan de l'étape « Les jeux ».
+   * Deux droits distincts depuis la clé par produit (20261020120000) : un
+   * commerce peut avoir la Vitrine sans avoir aucun des deux jeux.
+   */
+  const duoPossede = organization
+    ? droitEffectifModule("duo", organization)
+    : false;
+  const bandePossede = organization
+    ? droitEffectifModule("bande", organization)
+    : false;
+
   const tuiles = tuilesDuModule(
     "vitrine",
     construireVerificationVitrine({
@@ -308,10 +333,10 @@ export default async function VitrineDashboardPage({
           <CarteRepliable
             {...carteTuile(tuiles, "atelier")}
             defaultOuvert={false}
-            resume={`${ETAPES_VITRINE.length} étapes de préparation.`}
+            resume={`${etapes.length} étapes de préparation.`}
           >
             <AtelierEntree
-              etapes={ETAPES_VITRINE}
+              etapes={etapes}
               hrefPour={(cle) => hrefEtapeVitrine(cle as EtapeVitrine)}
               titre="L'atelier de la vitrine"
               sousTitre="Votre adresse, votre carte, votre style et vos jeux — une étape à la fois."
@@ -359,7 +384,7 @@ export default async function VitrineDashboardPage({
         /* ═══ L'ATELIER ══════════════════════════════════════════════════ */
         <div className="space-y-6">
           <AtelierStepper
-            etapes={ETAPES_VITRINE}
+            etapes={etapes}
             courante={etape}
             hrefPour={(cle) => hrefEtapeVitrine(cle as EtapeVitrine)}
           />
@@ -434,22 +459,37 @@ export default async function VitrineDashboardPage({
                 </Card>
               ) : null}
 
+              {/* LE BILAN ET LES CASES (VIT-16). Les réglages de chaque jeu
+                  ont quitté cette étape : ils vivent dans la leur, qui
+                  n'existe que si la case est cochée. */}
               {etape === "jeux" ? (
-                <div className="space-y-6">
-                  <ExperiencesVisibilite peutEditer={capacites.canEditDraft} />
-                  <div id={ANCRE_DUO} className="scroll-mt-4">
-                    <DuoEditeur
-                      plateau={plateauDuo}
-                      cartes={cartes}
-                      peutEditer={capacites.canEditDraft}
-                    />
-                  </div>
-                  <div id={ANCRE_BANDE} className="scroll-mt-4">
-                    <BandeEditeur
-                      pack={packBande}
-                      peutEditer={capacites.canEditDraft}
-                    />
-                  </div>
+                <JeuxVitrineEditeur
+                  duoPossede={duoPossede}
+                  bandePossede={bandePossede}
+                  duoPret={plateauDuo.options.length >= DUO_OPTIONS_MIN_BASE}
+                  duoCoche={themeResolu.jeux.duo}
+                  bandeCoche={themeResolu.jeux.bande}
+                  nbFichesDuo={plateauDuo.options.length}
+                  peutEditer={capacites.canEditDraft}
+                />
+              ) : null}
+
+              {etape === "duo" ? (
+                <div id={ANCRE_DUO} className="scroll-mt-4">
+                  <DuoEditeur
+                    plateau={plateauDuo}
+                    cartes={cartes}
+                    peutEditer={capacites.canEditDraft}
+                  />
+                </div>
+              ) : null}
+
+              {etape === "bande" ? (
+                <div id={ANCRE_BANDE} className="scroll-mt-4">
+                  <BandeEditeur
+                    pack={packBande}
+                    peutEditer={capacites.canEditDraft}
+                  />
                 </div>
               ) : null}
 

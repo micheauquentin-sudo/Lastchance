@@ -113,6 +113,13 @@ export interface VitrineThemeResolu {
   /** Le métier — il pilote le VOCABULAIRE public et le préréglage de palette. */
   secteur: SecteurVitrine;
   allure: AllureResolue;
+  /**
+   * QUELS JEUX PARAISSENT (VIT-16) — résolus, donc jamais facultatifs.
+   *
+   * L'absence en base vaut `true` : une vitrine publiée avant ce lot affiche
+   * ses deux jeux, et rien ne doit les lui retirer sans qu'elle l'ait demandé.
+   */
+  jeux: { duo: boolean; bande: boolean };
 }
 
 /** `#RRGGBB` — la forme courte est refusée en base, on ne l'accepte pas ici. */
@@ -278,6 +285,13 @@ export function resoudreThemeVitrine(
     blocs,
     secteur,
     allure: resoudreAllure(theme?.allure),
+    // `?? true` ET NON `=== true` : c'est toute la compatibilité de VIT-16.
+    // Une clé absente signifie « pas encore décidé », et ce qui n'a pas été
+    // décidé garde le comportement d'hier — les deux jeux affichés.
+    jeux: {
+      duo: theme?.jeux?.duo ?? true,
+      bande: theme?.jeux?.bande ?? true,
+    },
   };
 }
 
