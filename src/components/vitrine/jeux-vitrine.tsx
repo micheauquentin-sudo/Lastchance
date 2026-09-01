@@ -44,6 +44,7 @@ export function JeuxVitrineEditeur({
   bandeCoche,
   nbFichesDuo,
   peutEditer,
+  rechargerApresSucces = false,
 }: {
   duoPossede: boolean;
   bandePossede: boolean;
@@ -53,12 +54,35 @@ export function JeuxVitrineEditeur({
   bandeCoche: boolean;
   nbFichesDuo: number;
   peutEditer: boolean;
+  /**
+   * Recharge franchement la page après un succès. `false` par défaut.
+   *
+   * ── LA COURSE QUE CETTE OPTION FERME, ET POURQUOI CE N'EST PAS LE DÉFAUT ──
+   *
+   * `setVitrineJeux` écrit DEUX choses : `theme.jeux` ET `theme.ordre_blocs` —
+   * cocher un jeu AJOUTE `experiences` à l'ordre, ne rien cocher le RETIRE
+   * (ADR-129). Un appelant qui tient cet ordre dans son état CLIENT — le studio
+   * — le repostera au prochain « Enregistrer » : le commerçant coche son jeu,
+   * la base écrit `experiences`, l'état du studio l'ignore, le clic suivant
+   * l'écrase, et le bloc « Jeux » disparaît de la vitrine publique juste après
+   * qu'il l'a demandé. C'est la course de VIT-19, rejouée entre deux ACTIONS au
+   * lieu de deux écrans.
+   *
+   * Le tableau de bord, lui, n'a pas cet état client, donc pas cette course :
+   * lui imposer un rechargement (~1 s, défilement perdu) l'aurait ralenti pour
+   * rien. D'où le défaut à `false` et l'option posée par le seul appelant qui
+   * la paie. Ce qu'elle coûte est assumé et écrit : les essais non enregistrés
+   * du studio sont perdus — geste rare et délibéré, contre une porte publique
+   * écrasée en silence.
+   */
+  rechargerApresSucces?: boolean;
 }) {
   const [duo, setDuo] = useState(duoCoche);
   const [bande, setBande] = useState(bandeCoche);
   const { state, pending, onSubmit } = useActionForm(setVitrineJeux, {
     networkError: "Enregistrement impossible, réessayez.",
     toastOnSuccess: "Choix enregistré.",
+    reloadOnSuccess: rechargerApresSucces,
   });
 
   const aucun = !duo && !bande;
