@@ -52,6 +52,14 @@
 --      vides. Une porte annoncée vers un module fermé est une promesse rompue
 --      sur la page qu'un client lit pendant son repas.
 --
+--   7 bis. LES DEUX JEUX SUIVENT LA MEME REGLE, ET L'UN DES DEUX NE LA
+--      SUIVAIT PAS. `portes.experiences` ne portait AUCUNE cle `bande` :
+--      la page annoncait le Portrait de la Bande a tout le monde, y compris
+--      a qui ne l'avait pas, alors que `create_player_lobby` refusait. Les
+--      deux droits sont poses SEPAREMENT, dans cet ordre, pour qu'une porte
+--      qui lirait la cle de l'autre soit vue. La porte du Duo est prouvee
+--      INCHANGEE de part et d'autre : c'est la non-regression du lot.
+--
 --   8. LE VOCABULAIRE. Les trois clés neuves sont admises par la contrainte de
 --      table ET par la garde, et un module inconnu LÈVE toujours.
 --
@@ -441,6 +449,140 @@ select results_eq(
       public.vitrine_public_state('tap-produit-porte') #> '{portes,reserver,activites}')$$,
   array[1],
   'PORTÉE-2 … et la MÊME page annonce désormais sa porte : elle ne promettait rien qu''elle ne pouvait ouvrir');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 5 bis. LES DEUX JEUX — CHAQUE PORTE SUIT SA PROPRE CLÉ (DUO-3a)
+--
+-- Le §5 ci-dessus a prouvé la règle sur Réserver. Elle avait UN trou, et il est
+-- resté invisible tant que `duo` et `bande` étaient inclus dans les cinq
+-- offres : `portes.experiences` ne portait AUCUNE clé `bande`, si bien que la
+-- page annonçait le Portrait de la Bande à tout le monde, y compris à qui ne
+-- l'avait pas — alors que `create_player_lobby`, lui, refusait. Depuis DUO-2 ce
+-- sont deux options vendables séparément, et le trou devient visible chez le
+-- client.
+--
+-- ── POURQUOI LE PLATEAU EST RENDU JOUABLE AVANT DE MESURER ──
+--
+-- La porte du Duo est une CONJONCTION : le droit `duo` ET `duo_jouable` (deux
+-- options épinglées, 20261020120000). Sans plateau, un `duo` à faux serait faux
+-- pour la mauvaise raison, et JEU-2 comme JEU-6 seraient verts sur une
+-- organisation qui n'a simplement rien configuré. On pose donc le plateau
+-- D'ABORD, et JEU-0 le mesure : tout ce qui suit ne fait plus varier QUE le
+-- droit. Les deux options sont des LIBELLÉS saisis (20261126120000) — la carte
+-- Vitrine n'a rien à voir avec le sujet, et deux fiches de plus l'auraient
+-- mêlée à la preuve.
+--
+-- ── L'ORDRE DES OCTROIS EST LA PREUVE, PAS UN DÉTAIL DE MISE EN PLACE ──
+--
+-- `bande` est posé SEUL, puis `duo` SEUL. Deux droits posés ensemble auraient
+-- rendu les deux portes vraies d'un coup, et un `v_bande` qui aurait lu le
+-- droit `duo` — la faute exacte que ce lot répare dans l'autre sens — serait
+-- passé inaperçu. JEU-5 est l'assertion qui coûte le moins et qui prouve le
+-- plus : la porte de la Bande s'est ouverte, celle du Duo NON.
+-- ════════════════════════════════════════════════════════════
+
+-- LES DEUX JEUX SONT RETIRÉS D'ABORD, ET C'EST LE MÊME GESTE QUE §5 POUR
+-- RÉSERVER. `mirror_vitrine_entitlements()` (§3) recopie `vitrine` en
+-- `reserver`, `duo` ET `bande` — sur PORTE comme sur les autres. Sans cette
+-- révocation, « sans le droit » serait FAUX et JEU-1 comme JEU-2 seraient verts
+-- pour la mauvaise raison : la porte serait ouverte, et on lirait `false` nulle
+-- part. C'est exactement ce qu'une première version de cette section a fait, et
+-- c'est le test qui l'a dit — on ne l'a pas supposé.
+update public.organization_module_grants
+   set revoked_at = now() - interval '1 hour',
+       revoked_reason = 'témoin du test'
+ where organization_id = 'd40a0000-0000-4000-8000-000000000005'
+   and module in ('duo', 'bande');
+
+insert into public.duo_options (organization_id, libelle, ordre)
+values
+  ('d40a0000-0000-4000-8000-000000000005', 'Le plat du chef', 1),
+  ('d40a0000-0000-4000-8000-000000000005', 'Le dessert maison', 2);
+
+select ok(
+  public.duo_jouable('d40a0000-0000-4000-8000-000000000005'),
+  'JEU-0 le plateau Duo est JOUABLE : ce qui suit ne fait donc varier que le DROIT, jamais le seuil');
+select ok(
+  not public.org_has_module_access(
+    'd40a0000-0000-4000-8000-000000000005', 'duo')
+  and not public.org_has_module_access(
+    'd40a0000-0000-4000-8000-000000000005', 'bande'),
+  'JEU-0b … et PORTE n''a AUCUN des deux jeux, À L''INSTANT QUE LA RPC LIT');
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,bande}',
+  'false'::jsonb,
+  'JEU-1 sans le droit `bande`, la page N''ANNONCE PAS le Portrait de la Bande — c''est le défaut que DUO-3a répare : elle l''annonçait à tous, et le clic se prenait le refus de create_player_lobby');
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'JEU-2 … et le Duo reste fermé lui aussi, PLATEAU JOUABLE COMPRIS : c''est bien le droit qui manque');
+
+-- LA FORME NE BOUGE PAS. `bande` est PRÉSENTE à faux, jamais absente — motif
+-- des six listes de VIT-3 et du drapeau `duo` de L17 : une clé qui apparaît et
+-- disparaît oblige l'écran à porter deux chemins pour un seul état. La liste
+-- est CLOSE : une sixième clé ajoutée un jour fera rougir ici.
+select results_eq(
+  $$select key from jsonb_object_keys(
+      public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences}') as key
+     order by key$$,
+  $$values ('bande'), ('calendars'), ('duo'), ('pronostics'), ('quiz')$$,
+  'JEU-3 le bloc Expériences porte ses CINQ clés, `bande` comprise et à faux, et cette liste est close');
+
+-- LE CONTRÔLE DE PORTÉE, MOITIÉ « BANDE ». Sans lui, JEU-1 serait vert le jour
+-- où cette organisation échouerait pour une tout autre raison.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('d40a0000-0000-4000-8000-000000000005', 'bande', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,bande}',
+  'true'::jsonb,
+  'JEU-4 le SEUL droit `bande` posé, la MÊME page annonce le jeu : c''était bien lui qui fermait la porte');
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'JEU-5 … et le Duo N''A PAS SUIVI : les deux portes ont chacune leur clé, aucune ne lit celle de l''autre');
+
+-- LE CONTRÔLE DE PORTÉE, MOITIÉ « DUO » — et c'est la NON-RÉGRESSION du lot :
+-- la conjonction droit + seuil de 20261020120000 doit se comporter exactement
+-- comme avant DUO-3a, de part et d'autre de la même transition.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('d40a0000-0000-4000-8000-000000000005', 'duo', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,duo}',
+  'true'::jsonb,
+  'JEU-6 le droit `duo` posé à son tour et le plateau étant jouable, la porte du Duo s''ouvre : la conjonction de 20261020120000 est INTACTE');
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,bande}',
+  'true'::jsonb,
+  'JEU-7 … et celle de la Bande n''a pas bougé');
+
+-- LE DERNIER MAILLON : la porte et le refus disent LA MÊME CHOSE. `duo` est
+-- retiré seul ; la porte se referme, et le seuil n'y est pour rien puisque le
+-- plateau n'a pas bougé. C'est la propriété que L17 tenait et que ce lot devait
+-- rendre à `bande` — les deux gardes ne peuvent plus diverger que si l'une est
+-- modifiée seule.
+update public.organization_module_grants
+   set revoked_at = now() - interval '1 hour',
+       revoked_reason = 'témoin du test'
+ where organization_id = 'd40a0000-0000-4000-8000-000000000005'
+   and module = 'duo';
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,duo}',
+  'false'::jsonb,
+  'JEU-8 le droit `duo` retiré, la porte se referme — le plateau, lui, n''a pas bougé');
+select ok(
+  public.duo_jouable('d40a0000-0000-4000-8000-000000000005'),
+  'JEU-9 … et on le vérifie plutôt que de le supposer : le plateau est TOUJOURS jouable, seul le droit a changé');
 
 
 -- ════════════════════════════════════════════════════════════
