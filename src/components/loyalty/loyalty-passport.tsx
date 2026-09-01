@@ -44,6 +44,7 @@ import type {
 } from "@/types/database";
 import { LoyaltySpinExperience } from "./loyalty-spin-experience";
 import { IdentitePasseport } from "@/components/loyalty/identite-passeport";
+import { VisiteGuideePasseport } from "@/components/loyalty/visite-guidee-passeport";
 import { PasseportPiedCommerce } from "./passeport-pied-commerce";
 import {
   LOYALTY_TIERS,
@@ -432,6 +433,25 @@ export function LoyaltyPassport({
           {programName}
         </h1>
       </header>
+
+      {/* ── « COMMENT ÇA MARCHE ? » — juste sous l'en-tête, avant tout chiffre.
+             La question que se pose un client qui découvre l'écran vient AVANT
+             son solde : sous le nom du programme, c'est-à-dire là où il vient
+             de lire où il se trouve, et pas après six blocs qu'il n'a pas
+             compris.
+
+             RIEN NE S'OUVRE TOUT SEUL : ce composant ne rend qu'un bouton (et,
+             au tout premier passage seulement, une bande de trois lignes qui
+             pousse le contenu vers le bas sans jamais le recouvrir). Le
+             raisonnement complet — et pourquoi une modale au chargement
+             cacherait « Mes points » à l'audit axe comme à
+             e2e/loyalty.spec.ts — est en tête de visite-guidee-passeport.tsx. ── */}
+      <VisiteGuideePasseport
+        programId={programId}
+        organizationName={organizationName}
+        validationMode={validationMode}
+        referralEnabled={referralEnabled}
+      />
 
       {/* ── D'OÙ VIENT CE CLIENT — juste sous l'en-tête, parce que c'est la
              réponse à la question qu'il se pose en arrivant par un lien reçu.
