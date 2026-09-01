@@ -80,10 +80,10 @@ function mancheRevelee(): DuoStateView {
   return {
     state: "ok",
     status: "revelee",
-    monChoix: { item_id: "it-1", nom: "Le cookie" },
+    monChoix: { option_id: "op-1", item_id: "it-1", nom: "Le cookie" },
     options: OPTIONS,
     autreAChoisi: true,
-    autreChoix: { item_id: "it-1", nom: "Le cookie" },
+    autreChoix: { option_id: "op-1", item_id: "it-1", nom: "Le cookie" },
     suggestion: null,
     accord: true,
     // VRAI, et c'est l'état NORMAL d'une partie réussie : la révélation ferme
@@ -96,8 +96,41 @@ function mancheRevelee(): DuoStateView {
 function mancheScellee(): VueDuo {
   return {
     ...mancheOuverte(),
-    monChoix: { item_id: "it-1", nom: "Le cookie" },
+    monChoix: { option_id: "op-1", item_id: "it-1", nom: "Le cookie" },
   };
+}
+
+/**
+ * UN PLATEAU ENTIÈREMENT SAISI À LA MAIN — DUO-5, et le cas qui n'existait pas.
+ *
+ * Un commerçant qui vend le Duo sans la Vitrine (DUO-2) n'a aucune fiche à
+ * épingler : ses six places portent un `item_id` NUL. Jusqu'ici l'écran les
+ * désactivait toutes — un plateau sans un seul bouton actif — parce que
+ * `duo_choose` ne savait sceller qu'une fiche.
+ */
+const OPTIONS_SAISIES = [
+  {
+    option_id: "op-s1",
+    item_id: null,
+    nom: "Un café gourmand",
+    description: null,
+    prix_affiche: null,
+    photo_path: null,
+    ordre: 1,
+  },
+  {
+    option_id: "op-s2",
+    item_id: null,
+    nom: "Une part de tarte",
+    description: null,
+    prix_affiche: null,
+    photo_path: null,
+    ordre: 2,
+  },
+];
+
+function mancheSaisie(): VueDuo {
+  return { ...mancheOuverte(), options: OPTIONS_SAISIES };
 }
 
 /** Une promesse dont le test décide l'instant de retour. */
@@ -163,6 +196,126 @@ describe("DuoExperience — la manche et la salle se croisent", () => {
       true,
     );
     expect(fermeture()).toBeNull();
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // DUO-5 — LE PLATEAU QUI NE VIENT PAS DE LA CARTE SE JOUE
+  // ══════════════════════════════════════════════════════════
+
+  it("UN PLATEAU ENTIÈREMENT SAISI SE TOUCHE, et le sceau part sur la PLACE", async () => {
+    // LE CAS QUI ÉTAIT IMPOSSIBLE AVANT CE LOT. Un plateau composé de libellés
+    // écrits à la main n'a aucun `item_id` : l'écran désactivait ses six cartes
+    // parce que `duo_choose` ne savait sceller qu'une fiche, et le commerçant
+    // qui vend le Duo sans la Vitrine servait donc un jeu à zéro bouton.
+    getDuoState.mockResolvedValue(mancheSaisie());
+    chooseDuo.mockResolvedValue({
+      ok: true,
+      data: { etat: "scelle", revelee: false },
+    });
+    startDuo.mockResolvedValue({
+      state: "ok",
+      roundId: "rnd-1",
+      options: OPTIONS_SAISIES,
+    });
+    peindre("locked");
+
+    const saisies = () =>
+      screen.queryAllByRole("button", {
+        name: /un café gourmand|une part de tarte/i,
+      });
+    await waitFor(() => expect(saisies()).toHaveLength(2));
+    expect(
+      saisies().every((carte) => !(carte as HTMLButtonElement).disabled),
+    ).toBe(true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /une part de tarte/i }),
+    );
+
+    await waitFor(() => expect(chooseDuo).toHaveBeenCalledTimes(1));
+    const envoi = chooseDuo.mock.calls[0][1] as FormData;
+    // LA PLACE, ET ELLE SEULE. `item_id` n'aurait rien à porter ici — c'est
+    // exactement pour cela que ces cartes étaient inertes.
+    expect(envoi.get("option_id")).toBe("op-s2");
+    expect(envoi.get("item_id")).toBeNull();
+    expect(envoi.get("lobby_id")).toBe("lob-1");
+  });
+
+  it("NON-RÉGRESSION — une fiche de carte se scelle comme avant, par sa place", async () => {
+    // Le plateau de fiches reste le cas ordinaire : ce qui change est la CLÉ
+    // postée, pas le geste. La poster par `item_id` marcherait encore (l'action
+    // tolère l'ancienne forme le temps d'un déploiement), mais l'écran n'a plus
+    // aucune raison de l'employer — et deux formes vivantes finiraient par
+    // diverger.
+    getDuoState.mockResolvedValue(mancheOuverte());
+    chooseDuo.mockResolvedValue({
+      ok: true,
+      data: { etat: "scelle", revelee: false },
+    });
+    peindre("locked");
+
+    await waitFor(() => expect(cartes()).toHaveLength(2));
+    fireEvent.click(screen.getByRole("button", { name: /le flan/i }));
+
+    await waitFor(() => expect(chooseDuo).toHaveBeenCalledTimes(1));
+    const envoi = chooseDuo.mock.calls[0][1] as FormData;
+    expect(envoi.get("option_id")).toBe("op-2");
+    expect(envoi.get("item_id")).toBeNull();
+  });
+
+  it("SURLIGNE LA PLACE SCELLÉE, même sans fiche", async () => {
+    // La comparaison portait sur `item_id` : deux propositions saisies l'ont
+    // toutes deux à `null`, et se seraient donc surlignées ENSEMBLE — le joueur
+    // aurait vu deux « votre choix » sur un plateau où il n'en a fait qu'un.
+    getDuoState.mockResolvedValue({
+      ...mancheSaisie(),
+      monChoix: { option_id: "op-s2", item_id: null, nom: "Une part de tarte" },
+    });
+    startDuo.mockResolvedValue({
+      state: "ok",
+      roundId: "rnd-1",
+      options: OPTIONS_SAISIES,
+    });
+    peindre("locked");
+
+    await waitFor(() =>
+      expect(screen.getByText(/votre choix est scellé/i)).toBeTruthy(),
+    );
+    expect(screen.getAllByText("votre choix")).toHaveLength(1);
+    expect(
+      screen
+        .getByRole("button", { name: /une part de tarte/i })
+        .getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: /un café gourmand/i })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+  });
+
+  it("un sceau d'AVANT DUO-4 se surligne encore, par sa fiche", async () => {
+    // `option_id` est nulle sur un sceau posé avant la migration, et sur un
+    // plateau remplacé pendant la manche (`on delete set null`). Le repli sur la
+    // fiche est le même que celui de `duo_state` pour l'accord : sans lui, les
+    // parties en cours au moment du déploiement auraient perdu leur surlignage.
+    getDuoState.mockResolvedValue({
+      ...mancheOuverte(),
+      monChoix: { option_id: null, item_id: "it-2", nom: "Le flan" },
+    });
+    peindre("locked");
+
+    await waitFor(() =>
+      expect(screen.getByText(/votre choix est scellé/i)).toBeTruthy(),
+    );
+    expect(
+      screen.getByRole("button", { name: /le flan/i }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: /le cookie/i })
+        .getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   it("manche ouverte + salle close : l'écran de fermeture, et AUCUN plateau", async () => {

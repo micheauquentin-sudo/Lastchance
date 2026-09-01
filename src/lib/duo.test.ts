@@ -28,6 +28,8 @@ import {
 const ITEM_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ITEM_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const ROUND_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+/** La PLACE — clé primaire de `duo_options`, rendue par `duo_state` (DUO-4). */
+const OPTION_A = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
 function option(item_id: string, nom: string, ordre: number) {
   return {
@@ -149,11 +151,19 @@ describe("mapDuoOptions — le plateau", () => {
 });
 
 describe("mapDuoChoix / mapDuoSuggestion", () => {
-  it("un choix se lit sur son identifiant ET son nom", () => {
-    expect(mapDuoChoix({ item_id: ITEM_A, nom: "Tarte" })).toEqual({
-      item_id: ITEM_A,
-      nom: "Tarte",
-    });
+  it("un choix se lit sur ses identifiants ET son nom", () => {
+    expect(
+      mapDuoChoix({ option_id: OPTION_A, item_id: ITEM_A, nom: "Tarte" }),
+    ).toEqual({ option_id: OPTION_A, item_id: ITEM_A, nom: "Tarte" });
+  });
+
+  it("UN CHOIX SAISI N'A PAS DE FICHE, et c'est la PLACE qui le nomme", () => {
+    // DUO-5, le cas neuf. Une proposition écrite à la main n'a pas d'`item_id` :
+    // avant que `option_id` ne voyage, l'écran n'avait aucun moyen de savoir
+    // LAQUELLE des places saisies avait été scellée, et les surlignait toutes.
+    expect(
+      mapDuoChoix({ option_id: OPTION_A, item_id: null, nom: "Un café" }),
+    ).toEqual({ option_id: OPTION_A, item_id: null, nom: "Un café" });
   });
 
   it("UN CHOIX SURVIT À LA DISPARITION DE SA FICHE — le nom suffit", () => {
@@ -164,11 +174,25 @@ describe("mapDuoChoix / mapDuoSuggestion", () => {
     // muette pour ce joueur — c'est-à-dire exactement ce que le SQL vient
     // d'empêcher.
     expect(mapDuoChoix({ item_id: null, nom: "Tarte" })).toEqual({
+      option_id: null,
       item_id: null,
       nom: "Tarte",
     });
     expect(mapDuoChoix({ nom: "Tarte" })).toEqual({
+      option_id: null,
       item_id: null,
+      nom: "Tarte",
+    });
+  });
+
+  it("UN SCEAU D'AVANT DUO-4 N'A PAS DE PLACE, et se lit quand même", () => {
+    // `option_id` est nulle sur tout sceau posé avant la migration
+    // 20261128120000, et sur un plateau remplacé pendant la manche (`on delete
+    // set null`). En faire une condition d'affichage aurait rendu muettes les
+    // révélations des parties en cours au moment du déploiement.
+    expect(mapDuoChoix({ item_id: ITEM_A, nom: "Tarte" })).toEqual({
+      option_id: null,
+      item_id: ITEM_A,
       nom: "Tarte",
     });
   });
@@ -281,7 +305,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
   const ouverte = {
     state: "ok",
     status: "ouverte",
-    mon_choix: { item_id: ITEM_A, nom: "Tarte" },
+    mon_choix: { option_id: OPTION_A, item_id: ITEM_A, nom: "Tarte" },
     options: [option(ITEM_A, "Tarte", 1), option(ITEM_B, "Café", 2)],
     autre_a_choisi: true,
     autre_choix: null,
@@ -293,7 +317,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
     expect(mapDuoState(ouverte)).toEqual({
       state: "ok",
       status: "ouverte",
-      monChoix: { item_id: ITEM_A, nom: "Tarte" },
+      monChoix: { option_id: OPTION_A, item_id: ITEM_A, nom: "Tarte" },
       options: [
         {
           option_id: `op-${ITEM_A}`,
@@ -385,6 +409,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
     // peut plus être changé.
     const vue = mapDuoState(ouverte);
     expect(vue.state === "ok" && vue.monChoix).toEqual({
+      option_id: OPTION_A,
       item_id: ITEM_A,
       nom: "Tarte",
     });
