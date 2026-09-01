@@ -17,10 +17,19 @@ import { CreationLobbyForm } from "@/components/lobby/creation-lobby-form";
  * Le slug traverse donc l'écran sans être interprété : c'est l'action qui
  * décide, une fois, au moment où quelqu'un demande vraiment un salon.
  *
- * ── En-tête neutre ──
+ * ── En-tête neutre — ET C'EST UNE GARDE, PAS UN GOÛT (SALON-1) ──
  *
  * Cette page sera ouverte DEPUIS LA VITRINE (L17/L18) : rien du chrome
  * commerçant n'y entre, pas même le nom du commerce, qu'on n'a pas lu.
+ *
+ * Depuis SALON-1, `LobbyShell` SAIT porter l'habillage d'un commerce. Cette
+ * page ne lui en passe pas, et ne doit jamais lui en passer : elle est
+ * atteignable PAR LE SLUG, donc en déroulant un annuaire. Y peindre un nom, un
+ * logo ou même une couleur dirait « ce commerce a le module » de tous ceux qui
+ * s'habillent, et « il ne l'a pas » de tous les autres — c'est-à-dire exactement
+ * l'oracle que le refus indistinct ci-dessus efface. Une garde de
+ * `lobby-shell.test.tsx` relit ce fichier, pour que la levée de bonne foi ne
+ * puisse pas passer en silence.
  */
 export const dynamic = "force-dynamic";
 
