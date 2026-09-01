@@ -43,6 +43,7 @@ import {
   VITRINE_ALLURE_ENUMS_CLES,
   VITRINE_BADGE_OUVERTURE_MAX,
   VITRINE_SECTEURS,
+  VITRINE_JEUX,
 } from "./vitrine";
 
 /**
@@ -698,6 +699,22 @@ describe("parité Vitrine — les bornes des `check`", () => {
       const { valeurs, defaut } = VITRINE_ALLURE_ENUMS[cle];
       expect(valeurs as readonly string[], `défaut de ${cle}`).toContain(defaut);
     }
+  });
+
+  it("les deux jeux de la carte sont les mêmes des deux côtés", () => {
+    // VIT-16. La liste est courte, et c'est précisément pourquoi elle mérite
+    // une garde : deux mots se recopient sans y penser, et un troisième jeu
+    // ajouté côté TypeScript ferait refuser le thème ENTIER par la base — sur
+    // une 23514 que personne ne relierait à une case à cocher.
+    const sql = motsQuotes(
+      fragment(
+        "select 1 from jsonb_object_keys(v_jeux) k",
+        ") then",
+        SOURCE_THEME,
+      ),
+    );
+    expect(sql.length).toBe(2);
+    expect([...sql].sort()).toEqual([...VITRINE_JEUX].sort());
   });
 
   it("les sept secteurs sont les mêmes des deux côtés", () => {

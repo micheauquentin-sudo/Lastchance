@@ -239,6 +239,36 @@ describe("le vocabulaire public suit le métier", () => {
   });
 });
 
+describe("les jeux sur la carte : l'absence vaut « les deux » (VIT-16)", () => {
+  it("un thème sans choix affiche les deux jeux", () => {
+    // C'EST TOUTE LA COMPATIBILITÉ DU LOT. Une vitrine publiée avant VIT-16
+    // n'a pas de clé `jeux` : faire valoir `false` à l'absence aurait retiré
+    // Duo Miroir et Portrait de la Bande de toutes les pages en ligne, en
+    // silence — le piège exact du vocabulaire de secteur.
+    expect(resoudreThemeVitrine(null).jeux).toEqual({ duo: true, bande: true });
+    expect(resoudreThemeVitrine({}).jeux).toEqual({ duo: true, bande: true });
+  });
+
+  it("un seul jeu décoché ne masque que celui-là", () => {
+    expect(resoudreThemeVitrine({ jeux: { duo: false } }).jeux).toEqual({
+      duo: false,
+      bande: true,
+    });
+  });
+
+  it("les deux décochés se lisent bien comme deux refus", () => {
+    expect(
+      resoudreThemeVitrine({ jeux: { duo: false, bande: false } }).jeux,
+    ).toEqual({ duo: false, bande: false });
+  });
+
+  it("une clé inconnue ou non booléenne est écartée, et le défaut reprend", () => {
+    expect(mapThemeVitrine({ jeux: { duo: "oui" } }).jeux).toBeUndefined();
+    expect(mapThemeVitrine({ jeux: {} }).jeux).toBeUndefined();
+    expect(mapThemeVitrine({ jeux: [] }).jeux).toBeUndefined();
+  });
+});
+
 describe("les variables CSS traduisent l'allure en pixels", () => {
   /**
    * Les variables, en chaînes — SANS aucun cast.

@@ -453,6 +453,10 @@ export default async function VitrinePage({
                   <div key={bloc} id={ANCRE_EXPERIENCES} className="scroll-mt-4">
                   <BlocExperiences
                     portes={etat.portes.experiences}
+                    // VIT-16 : ce que le commerçant a coché. Le choix
+                    // RETIRE, il n'ajoute jamais — `portes` reste seul
+                    // juge de ce qui est jouable.
+                    jeux={theme.jeux}
                     // LE SLUG SERVI, pas celui de l'adresse : la porte du Duo
                     // Miroir mène à `/lobby/nouveau/{slug}`, et c'est la base
                     // qui dit sous quel slug cette vitrine existe.

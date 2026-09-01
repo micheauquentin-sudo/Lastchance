@@ -404,6 +404,19 @@ const champsAllure = {
   [K in ChampBooleenAllure]: typeof caseNative;
 };
 
+/**
+ * LES DEUX CASES DES JEUX (VIT-16).
+ *
+ * `caseNative` : une case décochée ne s envoie pas, et l écran les rend
+ * TOUJOURS les deux — c est la condition de cette lecture, la même que celle
+ * écrite au-dessus de `caseNative`. Ici le formulaire ne porte que ces deux
+ * champs : il ne peut donc pas être rendu à moitié.
+ */
+export const setVitrineJeuxSchema = z.object({
+  duo: caseNative,
+  bande: caseNative,
+});
+
 export const saveVitrineSettingsSchema = z.object({
   ...champsAllure,
   /**
