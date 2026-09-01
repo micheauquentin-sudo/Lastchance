@@ -88,6 +88,10 @@ function rendre() {
       identiteInitiale={IDENTITE}
       themeInitial={{ ordre_blocs: ["accroche", "cartes", "experiences"] }}
       cartes={[]}
+      contenus={[]}
+      duoPossede
+      bandePossede
+      nbFichesDuo={0}
       liens={{
         google_review_url: null,
         instagram_url: null,
