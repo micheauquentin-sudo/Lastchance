@@ -451,7 +451,10 @@ test.describe("vitrine — dashboard commerçant", () => {
    * contenant « Vitrine » passera désormais à côté sans rien casser.
    */
   test("réglages : adresse et thème affichés", async ({ page }) => {
-    await page.goto("/dashboard/vitrine");
+    // L'ADRESSE VIT DANS L'ATELIER (VIT-15), la publication dans le suivi.
+    // Ce test traverse donc les deux vues, dans l'ordre où un commerçant les
+    // rencontre : il règle son adresse, puis il revient publier.
+    await page.goto("/dashboard/vitrine?etape=adresse");
     await expect(
       page.getByRole("heading", { level: 1, name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -459,6 +462,17 @@ test.describe("vitrine — dashboard commerçant", () => {
     await expect(
       page.getByLabel("Adresse", { exact: true }),
     ).toHaveValue("e2e-comptoir");
+
+    // LA VUE SUIVI. Le bloc « Publication » naît REPLIÉ sur une vitrine déjà
+    // en ligne — il n'y a rien à y faire — et son résumé le dit. On le
+    // déplie pour lire l'encart complet.
+    await page.goto("/dashboard/vitrine");
+    await expect(page.getByText("Vitrine en ligne").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await page
+      .getByRole("button", { name: /Développer .*Publication/ })
+      .click();
     await expect(page.getByText("Publiée")).toBeVisible();
 
     // LA PHRASE D'ATTENTE EST MORTE AVEC L11. L'encart ne dit plus « n'imprimez
@@ -491,16 +505,19 @@ test.describe("vitrine — dashboard commerçant", () => {
   test("à la une : poser un contenu à la place 3, puis le retirer", async ({
     page,
   }) => {
+    // LE COMPTEUR D'AUDIENCE EST RESTÉ AU SUIVI (VIT-15) : ce n'est pas de
+    // la préparation. Il se lit dans le résumé du bloc, donc SANS le déplier —
+    // c'est précisément ce que « tout replié » doit encore laisser voir.
     await page.goto("/dashboard/vitrine");
+    await expect(
+      page.getByText(/\d+ ouvertures? de la page publique/).first(),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // « À la une » est devenue une étape de l'atelier.
+    await page.goto("/dashboard/vitrine?etape=alaune");
     await expect(page.getByRole("heading", { name: "À la une (3 max)" })).toBeVisible(
       { timeout: 30_000 },
     );
-
-    // Le compteur d'audience, sur le même écran : « N ouvertures de la page
-    // publique », quel que soit N.
-    await expect(
-      page.getByText(/\d+ ouvertures? de la page publique/),
-    ).toBeVisible();
 
     // Les étiquettes portent le numéro de place : aucun `nth()` à tenir
     // d'accord avec l'ordre du rendu, et « Adresse » seul aurait aussi
@@ -528,7 +545,7 @@ test.describe("vitrine — dashboard commerçant", () => {
   test("créer une carte, une rubrique et une fiche avec badges et allergènes", async ({
     page,
   }) => {
-    await page.goto("/dashboard/vitrine");
+    await page.goto("/dashboard/vitrine?etape=carte");
     await expect(
       page.getByRole("heading", { level: 1, name: "Vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
@@ -712,7 +729,7 @@ test.describe("vitrine — dashboard commerçant", () => {
   test("import assisté : l'aperçu se relit, se corrige, puis crée la carte", async ({
     page,
   }) => {
-    await page.goto("/dashboard/vitrine");
+    await page.goto("/dashboard/vitrine?etape=carte");
     await expect(page.getByRole("heading", { level: 1, name: "Vitrine" })).toBeVisible({
       timeout: 30_000,
     });
@@ -821,7 +838,7 @@ test.describe("vitrine — dashboard commerçant", () => {
     const nomFiche = `Plat à traduire ${marque}`;
 
     // ── La matière : une carte, une rubrique, une fiche, par l'éditeur réel ──
-    await page.goto("/dashboard/vitrine");
+    await page.goto("/dashboard/vitrine?etape=carte");
     await expect(page.getByRole("heading", { level: 1, name: "Vitrine" })).toBeVisible({
       timeout: 30_000,
     });
@@ -943,7 +960,7 @@ test.describe("vitrine — dashboard commerçant", () => {
   }) => {
     await page.goto("/dashboard/vitrine");
     await expect(
-      page.getByRole("heading", { name: "QR et impression" }),
+      page.getByRole("heading", { name: "QR code et lien de votre vitrine" }),
     ).toBeVisible({ timeout: 30_000 });
 
     // La section est PLIÉE par défaut : rien ne se dessine avant l'intention
