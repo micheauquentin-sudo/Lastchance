@@ -45,6 +45,24 @@ export type CspSurface = "static" | "public" | "sensitive";
 
 /**
  * Préfixes du back-office et de l'authentification (nonce + strict-dynamic).
+ *
+ * ── CETTE LISTE EST TENUE À LA MAIN, ET C'EST SA FAIBLESSE ──
+ *
+ * Elle ne dérive de rien : ni des routes qui exigent une session, ni d'un
+ * segment de l'App Router. Un écran authentifié posé HORS de `/dashboard`
+ * retombe donc en régime `static` — c'est-à-dire sous `'unsafe-inline'` et
+ * sans nonce — sans que rien ne casse et sans qu'aucun test ne rougisse.
+ *
+ * C'est arrivé deux fois, pour la même raison : un éditeur plein écran doit
+ * sortir de `/dashboard` pour échapper à sa colonne de navigation.
+ * `/poster` y est entré à sa création ; `/vitrine-studio` (VIT-17) ne l'a
+ * PAS été, et a passé plusieurs lots au régime le plus faible alors qu'il
+ * rend l'identité du commerce, sa carte et ses réglages.
+ *
+ * Rien n'était exploitable — la page est derrière la session, et la CSP n'est
+ * pas ce qui l'y tient — mais c'est une défense en profondeur perdue sur
+ * l'écran devenu central du module. Toute route plein écran ajoutée plus tard
+ * doit venir ici en même temps qu'elle naît.
  */
 export const SENSITIVE_PREFIXES = [
   "/dashboard",
@@ -55,6 +73,7 @@ export const SENSITIVE_PREFIXES = [
   "/update-password",
   "/onboarding",
   "/poster",
+  "/vitrine-studio",
 ] as const;
 
 /**
