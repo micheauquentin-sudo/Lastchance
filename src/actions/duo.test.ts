@@ -42,13 +42,6 @@ const { etat } = vi.hoisted(() => ({
     gardeJeux: [] as string[],
     /** Chemins revalidés par l'action. */
     revalidations: [] as string[],
-    /** Écritures de TABLE observées (le chemin des options saisies). */
-    table: [] as Array<{ geste: string; valeur: unknown }>,
-    /** Erreurs à rendre sur le chemin de table, par geste. */
-    tableErreurs: {} as Record<
-      string,
-      { message: string; code?: string } | null
-    >,
   },
 }));
 
@@ -86,25 +79,11 @@ vi.mock("@/lib/salon-garde", () => ({
     return etat.garde;
   }),
 }));
-// LE CLIENT DE SESSION — le chemin d'écriture des options SAISIES. Il n'est pas
-// la clé de service, et c'est le point : la RLS `duo_options: editor write`
-// tranche en base, là où la clé de service l'aurait contournée.
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: vi.fn(async () => ({
-    from: (table: string) => ({
-      delete: () => ({
-        eq: (colonne: string, valeur: unknown) => {
-          etat.table.push({ geste: `delete ${table} ${colonne}`, valeur });
-          return Promise.resolve({ error: etat.tableErreurs.delete ?? null });
-        },
-      }),
-      insert: (lignes: unknown) => {
-        etat.table.push({ geste: `insert ${table}`, valeur: lignes });
-        return Promise.resolve({ error: etat.tableErreurs.insert ?? null });
-      },
-    }),
-  })),
-}));
+// LE CLIENT DE SESSION N'EST PLUS DOUBLÉ, PARCE QU'IL N'EST PLUS APPELÉ
+// (DUO-5). Les options saisies s'écrivaient par la TABLE depuis la session,
+// `delete` puis `insert` : deux allers, dont une panne entre les deux laissait
+// le plateau vide. `set_duo_plateau` les fait en UNE transaction — et comme
+// toutes les RPC de ce module, elle n'est accordée qu'à `service_role`.
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
     rpc: (nom: string, args: Record<string, unknown>) => {
@@ -136,6 +115,14 @@ const ROUND_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ITEM_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ITEM_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const ITEM_C = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+/**
+ * LES PLACES DU PLATEAU (DUO-5) — clés primaires de `duo_options`.
+ *
+ * Elles ne sont PAS des identifiants de fiche, et c'est tout le lot : une place
+ * existe aussi pour une proposition saisie à la main, qui n'a pas de fiche.
+ */
+const OPTION_A = "55555555-5555-4555-8555-555555555555";
+const OPTION_B = "66666666-6666-4666-8666-666666666666";
 const ORG_ID = "33333333-3333-4333-8333-333333333333";
 const ACTEUR_ID = "44444444-4444-4444-8444-444444444444";
 /** Le refus indistinct du chemin joueur, sous sa forme TYPÉE. */
@@ -170,8 +157,6 @@ beforeEach(() => {
   etat.garde = { ok: true, organizationId: ORG_ID, userId: ACTEUR_ID };
   etat.gardeJeux = [];
   etat.revalidations = [];
-  etat.table = [];
-  etat.tableErreurs = {};
 });
 
 // ════════════════════════════════════════════════════════════
@@ -299,9 +284,58 @@ describe("chooseDuo — sceller son choix", () => {
       data: { state: "ok", scelle: true, revelee: false },
       error: null,
     };
+    etat.reponses.duo_choose_option = {
+      data: { state: "ok", scelle: true, revelee: false },
+      error: null,
+    };
   });
 
-  it("envoie la salle, le hash du lobby et la fiche choisie", async () => {
+  // ══════════════════════════════════════════════════════════
+  // DUO-5 — LA PLACE, PUIS LA FICHE LE TEMPS D'UN DÉPLOIEMENT
+  // ══════════════════════════════════════════════════════════
+
+  it("LE CAS NEUF : une option SAISIE se scelle, par sa PLACE", async () => {
+    // CE QUI ÉTAIT IMPOSSIBLE AVANT CE LOT. `duo_choose` validait le choix par
+    // `o.item_id = p_item_id` : une proposition écrite à la main n'a pas de
+    // fiche, donc rien que cette égalité puisse joindre, et le geste retombait
+    // sur le refus muet `unavailable`. L'écran désactivait donc ses boutons —
+    // un commerçant qui vend le Duo sans la Vitrine servait un jeu injouable.
+    //
+    // `duo_choose_option` scelle PAR PLACE, et une place existe pour les deux
+    // origines : c'est la clé qui rend le module vendable seul.
+    const verdict = await chooseDuo(
+      null,
+      form({ lobby_id: LOBBY_ID, option_id: OPTION_A }),
+    );
+
+    expect(verdict).toEqual({
+      ok: true,
+      data: { etat: "scelle", revelee: false },
+    });
+    expect(etat.rpc).toEqual([
+      {
+        nom: "duo_choose_option",
+        args: {
+          p_lobby_id: LOBBY_ID,
+          // L'EMPREINTE SORT DU COOKIE DE CETTE SALLE, comme sur l'ancien
+          // chemin : changer de RPC ne change rien à l'identité présentée.
+          p_token_hash: hashLobbyToken("jeton-membre"),
+          p_option_id: OPTION_A,
+        },
+      },
+    ]);
+  });
+
+  it("NON-RÉGRESSION : l'ancienne forme `item_id` scelle encore, par `duo_choose`", async () => {
+    // LA FENÊTRE DE DÉPLOIEMENT, et rien d'autre. Un onglet ouvert avant la mise
+    // en ligne poste encore `item_id`, au milieu d'une partie à deux ; le
+    // refuser rendrait un bouton inerte à quelqu'un qui n'a aucune raison de
+    // penser à recharger. Le SQL a fait le même arbitrage — la migration
+    // 20261128120000 garde `duo_choose(p_item_id)` vivante, qui délègue à
+    // `duo_choose_option` après avoir résolu la fiche.
+    //
+    // ELLE S'ENLÈVE AVEC CE TEST : retirer le membre `itemId` de
+    // `duoChooseSchema`, la branche `duo_choose` de l'action, et ce cas.
     const verdict = await chooseDuo(
       null,
       form({ lobby_id: LOBBY_ID, item_id: ITEM_A }),
@@ -321,6 +355,53 @@ describe("chooseDuo — sceller son choix", () => {
         },
       },
     ]);
+  });
+
+  it("LA PLACE GAGNE quand les deux formes sont postées", async () => {
+    // Aucun écran du dépôt ne poste les deux — mais l'ordre doit être décidé
+    // ICI plutôt que par le hasard d'un `.strict()`, sans quoi un envoi qui
+    // porte les deux clés serait refusé muettement alors qu'il désigne une
+    // place parfaitement valide. `option_id` est la forme vivante ; `item_id`
+    // ne sert qu'à ceux qui ne peuvent pas encore la produire.
+    await chooseDuo(
+      null,
+      form({ lobby_id: LOBBY_ID, option_id: OPTION_A, item_id: ITEM_A }),
+    );
+
+    expect(etat.rpc).toHaveLength(1);
+    expect(etat.rpc[0].nom).toBe("duo_choose_option");
+  });
+
+  it("une PLACE malformée ne touche pas la base", async () => {
+    expect(
+      await chooseDuo(null, form({ lobby_id: LOBBY_ID, option_id: "pas-un-uuid" })),
+    ).toEqual(REFUS_INDISPONIBLE);
+    expect(etat.rpc).toHaveLength(0);
+  });
+
+  it("une PLACE hors plateau rend le refus indistinct", async () => {
+    // Place inexistante, place d'un autre commerce, place retirée du plateau :
+    // `duo_choose_option` les fond en un seul `unavailable`, exactement comme
+    // `duo_choose` le faisait pour les fiches.
+    etat.reponses.duo_choose_option = {
+      data: { state: "unavailable" },
+      error: null,
+    };
+
+    expect(
+      await chooseDuo(null, form({ lobby_id: LOBBY_ID, option_id: OPTION_B })),
+    ).toEqual(REFUS_INDISPONIBLE);
+  });
+
+  it("le refus `scelle` de la PLACE devient `deja-scelle` lui aussi", async () => {
+    etat.reponses.duo_choose_option = {
+      data: { state: "scelle" },
+      error: null,
+    };
+
+    expect(
+      await chooseDuo(null, form({ lobby_id: LOBBY_ID, option_id: OPTION_B })),
+    ).toEqual({ ok: true, data: { etat: "deja-scelle" } });
   });
 
   it("rend `revelee` au joueur qui a posé le SECOND sceau", async () => {
@@ -582,6 +663,10 @@ describe("setDuoOptions — composer le plateau", () => {
       data: { state: "ok", options: 3 },
       error: null,
     };
+    etat.reponses.set_duo_plateau = {
+      data: { state: "ok", options: 3 },
+      error: null,
+    };
   });
 
   /**
@@ -781,13 +866,19 @@ describe("setDuoOptions — composer le plateau", () => {
   // prête depuis 20261126120000 ; l'application, elle, exigeait encore une
   // fiche des deux côtés — le mappeur jetait les options saisies, et cette
   // action n'avait aucun moyen de les écrire.
+  //
+  // DUO-5 — ET CE PLATEAU S'ÉCRIT DÉSORMAIS D'UN BLOC
+  //
+  // Il s'écrivait par la TABLE, `delete` puis `insert` : une panne entre les
+  // deux laissait le plateau VIDE sur un réglage que le commerçant croyait
+  // enregistré. `set_duo_plateau` fait les deux dans SA transaction.
   // ══════════════════════════════════════════════════════════
 
-  it("un plateau ENTIÈREMENT SAISI s'écrit par la table, pas par la RPC", async () => {
+  it("un plateau ENTIÈREMENT SAISI part par `set_duo_plateau`, EN UNE FOIS", async () => {
     // `set_duo_options` ne connaît que des tableaux de fiches et remplace le
     // plateau EN ENTIER : l'appeler ici aurait effacé les libellés au premier
-    // enregistrement. La migration renvoie explicitement leur écriture à la
-    // table (RLS + grants de colonnes).
+    // enregistrement. Ce qui change avec DUO-5 n'est pas la branche, c'est
+    // l'atomicité — UN appel, plus deux écritures séparables par une panne.
     const verdict = await setDuoOptions(
       null,
       formPlaces([
@@ -801,34 +892,25 @@ describe("setDuoOptions — composer le plateau", () => {
       ok: true,
       data: { etat: "enregistre", options: 3 },
     });
-    expect(etat.rpc).toHaveLength(0);
-    expect(etat.table).toEqual([
-      { geste: "delete duo_options organization_id", valeur: ORG_ID },
+    expect(etat.rpc).toEqual([
       {
-        geste: "insert duo_options",
-        // L'ORDRE POSTÉ EST L'ORDRE DU PLATEAU, comme dans la RPC : `ordre` est
-        // la position dans le tableau reçu, et le navigateur poste les champs
-        // dans l'ordre du document.
-        valeur: [
-          {
-            organization_id: ORG_ID,
-            item_id: null,
-            libelle: "Un café gourmand",
-            ordre: 1,
-          },
-          {
-            organization_id: ORG_ID,
-            item_id: null,
-            libelle: "Une part de tarte",
-            ordre: 2,
-          },
-          {
-            organization_id: ORG_ID,
-            item_id: null,
-            libelle: "Un chocolat chaud",
-            ordre: 3,
-          },
-        ],
+        nom: "set_duo_plateau",
+        args: {
+          p_organization_id: ORG_ID,
+          // L'ORDRE POSTÉ EST L'ORDRE DU PLATEAU : la RPC lit ce tableau avec
+          // `with ordinality`, comme `set_duo_options` lit le sien. Aucun champ
+          // caché à tenir d'accord avec l'affichage.
+          //
+          // UNE SEULE CLÉ PAR PLACE : la RPC compte
+          // `num_nonnulls(item_id, libelle) <> 1` et refuserait une place qui
+          // porte les deux, fût-ce à `null`.
+          p_places: [
+            { libelle: "Un café gourmand" },
+            { libelle: "Une part de tarte" },
+            { libelle: "Un chocolat chaud" },
+          ],
+          p_actor: ACTEUR_ID,
+        },
       },
     ]);
     expect(etat.revalidations).toEqual([
@@ -837,25 +919,62 @@ describe("setDuoOptions — composer le plateau", () => {
     ]);
   });
 
-  it("un plateau MIXTE passe aussi par la table, et garde chaque origine", async () => {
-    // Une seule place saisie suffit à sortir du chemin de la RPC : la faire
-    // passer par `set_duo_options` aurait silencieusement effacé cette place.
+  it("un plateau MIXTE passe aussi par `set_duo_plateau`, et garde chaque origine", async () => {
+    // Une seule place saisie suffit à sortir du chemin de `set_duo_options` :
+    // l'y faire passer aurait silencieusement effacé cette place.
     await setDuoOptions(
       null,
       formPlaces([`fiche:${ITEM_A}`, "libelle:Un café gourmand", `fiche:${ITEM_B}`]),
     );
 
-    expect(etat.rpc).toHaveLength(0);
-    expect(etat.table[1].valeur).toEqual([
-      { organization_id: ORG_ID, item_id: ITEM_A, libelle: null, ordre: 1 },
-      {
-        organization_id: ORG_ID,
-        item_id: null,
-        libelle: "Un café gourmand",
-        ordre: 2,
-      },
-      { organization_id: ORG_ID, item_id: ITEM_B, libelle: null, ordre: 3 },
+    expect(etat.rpc).toHaveLength(1);
+    expect(etat.rpc[0].nom).toBe("set_duo_plateau");
+    expect(etat.rpc[0].args.p_places).toEqual([
+      { item_id: ITEM_A },
+      { libelle: "Un café gourmand" },
+      { item_id: ITEM_B },
     ]);
+  });
+
+  it("L'ACTEUR DU PLATEAU SAISI VIENT DE LA GARDE, jamais du formulaire", async () => {
+    // LE POINT SENSIBLE DE DUO-5. Ce chemin écrivait depuis le client de
+    // SESSION, où la policy `duo_options: editor write` tranchait en base.
+    // `set_duo_plateau` est `security definer`, accordée au seul
+    // `service_role` : la RLS ne tranche plus rien ici. Ce qui la remplace est
+    // `gardeEditeurJeuSalon("duo")` — qui fournit l'organisation ET l'acteur —
+    // plus le `p_actor` que la RPC revérifie membre `owner|editor` en SQL. Un
+    // acteur reçu du formulaire ferait de la ligne d'audit `duo.options_set`
+    // une déclaration sur l'honneur.
+    const fd = formPlaces([
+      "libelle:Un café",
+      "libelle:Une tarte",
+      "libelle:Un thé",
+    ]);
+    fd.set("actor", "99999999-9999-4999-8999-999999999999");
+    fd.set("organization_id", "org-du-voisin");
+
+    await setDuoOptions(null, fd);
+
+    expect(etat.rpc[0].args.p_actor).toBe(ACTEUR_ID);
+    expect(etat.rpc[0].args.p_organization_id).toBe(ORG_ID);
+    expect(etat.gardeJeux).toEqual(["duo"]);
+  });
+
+  it("LA GARDE D'ABORD sur le plateau SAISI aussi : refusée, rien ne part", async () => {
+    // Le client admin contourne la RLS : si la garde était sautée, plus rien ne
+    // s'opposerait à une écriture chez le voisin côté application. La RPC
+    // refuserait encore (elle revérifie l'acteur), mais un refus qui ne tient
+    // qu'à la base est un refus qu'un `p_actor` mal câblé suffirait à lever.
+    etat.garde = { ok: false, error: "Action non autorisée" };
+
+    expect(
+      await setDuoOptions(
+        null,
+        formPlaces(["libelle:Un café", "libelle:Une tarte", "libelle:Un thé"]),
+      ),
+    ).toEqual({ ok: false, error: "Action non autorisée" });
+    expect(etat.rpc).toHaveLength(0);
+    expect(etat.revalidations).toHaveLength(0);
   });
 
   it("un libellé qui contient un deux-points traverse INTACT", async () => {
@@ -872,7 +991,7 @@ describe("setDuoOptions — composer le plateau", () => {
     );
 
     expect(
-      (etat.table[1].valeur as Array<{ libelle: string | null }>)[0].libelle,
+      (etat.rpc[0].args.p_places as Array<{ libelle?: string }>)[0].libelle,
     ).toBe("Menu du jour : entrée, plat");
   });
 
@@ -891,7 +1010,6 @@ describe("setDuoOptions — composer le plateau", () => {
       );
 
       expect(verdict).toMatchObject({ ok: false });
-      expect(etat.table).toHaveLength(0);
       expect(etat.rpc).toHaveLength(0);
     },
   );
@@ -909,7 +1027,7 @@ describe("setDuoOptions — composer le plateau", () => {
       ok: false,
       error: "Deux propositions ne peuvent pas porter le même nom",
     });
-    expect(etat.table).toHaveLength(0);
+    expect(etat.rpc).toHaveLength(0);
   });
 
   it("une place SANS ORIGINE LISIBLE est refusée, jamais repliée sur un libellé", async () => {
@@ -921,15 +1039,19 @@ describe("setDuoOptions — composer le plateau", () => {
     );
 
     expect(verdict).toMatchObject({ ok: false });
-    expect(etat.table).toHaveLength(0);
+    expect(etat.rpc).toHaveLength(0);
   });
 
-  it("la 23503 du chemin de table est un RÉSULTAT : la fiche a quitté la carte", async () => {
-    // La FK COMPOSITE `(item_id, organization_id)` tient le locataire même sans
-    // la RPC : une fiche disparue, ou d'un autre commerce, ne s'insère pas. Le
-    // cas est le même que la 22023 d'en face — rien à réparer, un écran à
-    // rafraîchir.
-    etat.tableErreurs.insert = { message: "violates foreign key", code: "23503" };
+  it("la 22023 du plateau saisi est un RÉSULTAT : la fiche a quitté la carte", async () => {
+    // Cardinal, origines, forme des identifiants et doublons sont déjà
+    // impossibles ici (le schéma les a tranchés) : ce SQLSTATE ne peut plus
+    // signifier qu'`unknown duo option item`. Même cas que la 22023 de
+    // `set_duo_options` — rien à réparer, un écran à rafraîchir. Le classement
+    // se fait sur le CODE, jamais sur le texte du message.
+    etat.reponses.set_duo_plateau = {
+      data: null,
+      error: { message: "unknown duo option item", code: "22023" },
+    };
 
     expect(
       await setDuoOptions(
@@ -938,26 +1060,62 @@ describe("setDuoOptions — composer le plateau", () => {
       ),
     ).toEqual({ ok: true, data: { etat: "selection-refusee" } });
     expect(etat.revalidations).toHaveLength(0);
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "duo.options_set.refus",
+      "unknown duo option item",
+    );
   });
 
-  it("un insert en panne le DIT : le plateau est vide, et le geste à faire est nommé", async () => {
-    // Le `delete` et l'`insert` sont deux allers : une panne entre les deux
-    // laisse le plateau VIDE — pas corrompu, pas mélangé. Un « une erreur est
-    // survenue » enverrait chercher une panne alors que le geste est immédiat.
-    etat.tableErreurs.insert = { message: "deadlock detected", code: "40P01" };
+  it("la 42501 du plateau saisi laisse une trace, et refuse sans phrase de panne", async () => {
+    // La garde vient pourtant de passer : commerçant rétrogradé entre-temps, ou
+    // clé de service mal configurée. La seconde rendrait « non autorisé » à tout
+    // le monde et pour toujours sans qu'aucune alerte ne parte — et ce chemin
+    // est justement celui qui vient de passer à la clé de service.
+    etat.reponses.set_duo_plateau = {
+      data: null,
+      error: { message: "not authorized", code: "42501" },
+    };
+
+    expect(
+      await setDuoOptions(
+        null,
+        formPlaces(["libelle:Un café", "libelle:Une tarte", "libelle:Un thé"]),
+      ),
+    ).toEqual({ ok: false, error: "Action non autorisée" });
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "duo.options_set.refus",
+      "not authorized",
+    );
+  });
+
+  it("UNE PANNE NE VIDE PLUS LE PLATEAU — le message ne parle plus de vide", async () => {
+    // C'EST LA PROPRIÉTÉ QUE DUO-5 ACHÈTE. Avec `delete` puis `insert`, une
+    // panne entre les deux laissait le plateau VIDE, et le message devait dire
+    // au commerçant de tout recomposer. En une transaction, il n'y a plus
+    // d'état intermédiaire à décrire : le plateau d'HIER est intact, et le
+    // geste à refaire est le geste ordinaire — réessayer.
+    etat.reponses.set_duo_plateau = {
+      data: null,
+      error: { message: "deadlock detected", code: "40P01" },
+    };
 
     const verdict = await setDuoOptions(
       null,
       formPlaces(["libelle:Un café", "libelle:Une tarte", "libelle:Un thé"]),
     );
 
-    expect(verdict).toMatchObject({ ok: false });
-    expect((verdict as { error: string }).error).toContain("vide");
+    expect(verdict).toEqual({
+      ok: false,
+      error: "Une erreur est survenue, réessayez.",
+    });
+    expect((verdict as { error: string }).error).not.toContain("vide");
     expect(etat.revalidations).toHaveLength(0);
   });
 
-  it("un delete en panne ne perd RIEN : le plateau d'hier est intact", async () => {
-    etat.tableErreurs.delete = { message: "permission denied", code: "42501" };
+  it("un document illisible du plateau saisi reste une panne, et ne revalide pas", async () => {
+    // Le COMPTE est le contenu de la réponse, comme sur `set_duo_options` : le
+    // deviner ferait afficher un nombre qui n'a été écrit nulle part.
+    etat.reponses.set_duo_plateau = { data: { state: "ok" }, error: null };
 
     expect(
       await setDuoOptions(
@@ -965,9 +1123,7 @@ describe("setDuoOptions — composer le plateau", () => {
         formPlaces(["libelle:Un café", "libelle:Une tarte", "libelle:Un thé"]),
       ),
     ).toEqual({ ok: false, error: "Une erreur est survenue, réessayez." });
-    // L'`insert` n'est jamais parti : on ne remplace pas ce qu'on n'a pas su
-    // retirer.
-    expect(etat.table).toHaveLength(1);
+    expect(etat.revalidations).toHaveLength(0);
   });
 });
 

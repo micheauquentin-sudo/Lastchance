@@ -206,14 +206,22 @@ export function DuoExperience({
    * changement d'avis, et la relecture qui suit peint le choix figé, ce qui est
    * la seule réponse honnête. On relit dans TOUS les cas, refus compris — la
    * manche a pu être révélée entre l'affichage et le doigt.
+   *
+   * ── C'EST LA PLACE QU'ON POSTE, ET PLUS LA FICHE (DUO-5) ──
+   *
+   * `option_id` désigne une place quelle que soit son origine ; `item_id` ne
+   * pouvait désigner qu'une option épinglée sur la carte, si bien qu'une
+   * proposition SAISIE n'avait rien à envoyer et se voyait interdire le clic.
+   * L'action accepte encore l'ancienne forme le temps d'un déploiement, mais
+   * l'écran, lui, n'a plus aucune raison de l'employer.
    */
-  const choisir = (itemId: string) => {
+  const choisir = (optionId: string) => {
     demarrerChoix(async () => {
       setRefus(null);
       try {
         const formData = new FormData();
         formData.set("lobby_id", lobbyId);
-        formData.set("item_id", itemId);
+        formData.set("option_id", optionId);
         const resultat = await chooseDuo(null, formData);
         if (!resultat.ok) setRefus(resultat.error);
         else if (resultat.data.etat === "indisponible") setRefus(REFUS_CHOIX);
@@ -321,8 +329,8 @@ function EcranSalleRefermee() {
  * Faire disparaître les cartes aurait laissé le joueur devant une phrase seule,
  * sans plus rien de ce qu'il vient de décider — or ce qu'il attend, pendant ces
  * quelques secondes, c'est précisément de revoir son choix. Les autres cartes
- * deviennent inertes parce qu'elles le SONT : `duo_choose` refuse un second
- * item, et un bouton qui ne fera rien ne doit pas être offert.
+ * deviennent inertes parce qu'elles le SONT : `duo_choose_option` refuse une
+ * seconde place, et un bouton qui ne fera rien ne doit pas être offert.
  */
 function EcranPlateau({
   vue,
@@ -335,7 +343,7 @@ function EcranPlateau({
   options: DuoOptionView[];
   refus: string | null;
   enChoix: boolean;
-  onChoisir: (itemId: string) => void;
+  onChoisir: (optionId: string) => void;
 }) {
   const scelle = vue.monChoix !== null;
 
@@ -359,9 +367,9 @@ function EcranPlateau({
               Que lui offririez-vous&nbsp;?
             </h2>
             <p className="mt-2 text-sm text-k-body">
-              Choisissez une fiche pour la personne en face. Elle choisit de son
-              côté&nbsp;: aucun de vous ne verra le choix de l’autre avant que
-              les deux soient faits.
+              Choisissez une proposition pour la personne en face. Elle choisit
+              de son côté&nbsp;: aucun de vous ne verra le choix de l’autre avant
+              que les deux soient faits.
             </p>
           </>
         )}
@@ -383,10 +391,7 @@ function EcranPlateau({
             // partagé la clé `null`.
             key={option.option_id}
             option={option}
-            choisie={
-              option.item_id !== null &&
-              vue.monChoix?.item_id === option.item_id
-            }
+            choisie={estMonChoix(vue.monChoix, option)}
             // INERTE dès qu'un choix est scellé — le sien comme les autres :
             // la manche ne se rejoue pas, et l'immuabilité est tout l'objet du
             // jeu. Pendant l'envoi, tout est désactivé pour qu'un second doigt
@@ -401,12 +406,40 @@ function EcranPlateau({
 }
 
 /**
- * UNE FICHE DU PLATEAU — une cible large, sous un pouce, sur un téléphone.
+ * LA PLACE SCELLÉE EST-ELLE CELLE-CI ? La PLACE d'abord, la FICHE en repli.
+ *
+ * C'est la transposition exacte de l'expression que `duo_state` emploie pour
+ * trancher l'accord (migration 20261128120000, §6), et la même raison la
+ * justifie des deux côtés :
+ *
+ *   · `option_id` désigne la place quelle que soit son origine, donc il
+ *     surligne aussi bien une fiche qu'un libellé saisi. Avant DUO-5 la
+ *     comparaison portait sur `item_id`, et deux propositions saisies —
+ *     `item_id` nul toutes les deux — se seraient surlignées ENSEMBLE ;
+ *   · le repli sur la fiche reprend la main dans les deux cas où la place
+ *     manque au sceau : un sceau posé avant DUO-4, et un plateau remplacé
+ *     pendant la manche (le `on delete set null` vide alors les `option_id`).
+ *
+ * DEUX NULS NE SURLIGNENT RIEN, comme en SQL : ce qui a été scellé n'est plus
+ * identifiable, et surligner au hasard vaudrait moins que ne rien surligner.
+ */
+function estMonChoix(
+  monChoix: DuoChoixView | null,
+  option: DuoOptionView,
+): boolean {
+  if (!monChoix) return false;
+  if (monChoix.option_id !== null) return monChoix.option_id === option.option_id;
+  if (monChoix.item_id !== null) return monChoix.item_id === option.item_id;
+  return false;
+}
+
+/**
+ * UNE PLACE DU PLATEAU — une cible large, sous un pouce, sur un téléphone.
  *
  * `min-h-16` et une carte pleine largeur : ces boutons se touchent d'une main,
  * en salle, parfois à deux sur la même table. Le nom accessible du bouton porte
- * le nom de la fiche — six cartes identiquement intitulées ne se distinguent pas
- * au lecteur d'écran.
+ * le nom de la proposition — six cartes identiquement intitulées ne se
+ * distinguent pas au lecteur d'écran.
  *
  * LA PHOTO N'EST RENDUE QUE SI ELLE EST UNE ADRESSE COMPLÈTE. Aucun pipeline
  * d'images n'est livré (`photo_path` est `null` partout aujourd'hui, et aucun
@@ -423,38 +456,37 @@ function CarteOption({
   option: DuoOptionView;
   choisie: boolean;
   inerte: boolean;
-  onChoisir: (itemId: string) => void;
+  onChoisir: (optionId: string) => void;
 }) {
   const photo = adressePhoto(option.photo_path);
-  /**
-   * UNE OPTION SAISIE À LA MAIN N'EST PAS ENCORE CHOISISSABLE (DUO-1).
+
+  /*
+   * L'OPTION SAISIE À LA MAIN EST REDEVENUE CHOISISSABLE (DUO-5).
    *
-   * `duo_choose` valide le choix par `o.item_id = p_item_id` : une option sans
-   * fiche n'a rien que cette égalité puisse joindre, et le geste retomberait sur
-   * le refus muet `unavailable` — c'est-à-dire, pour le joueur, un bouton qui
-   * ne fait rien. La migration 20261126120000 l'écrit noir sur blanc et renvoie
-   * la réparation à un lot base (`duo_choose` doit accepter `option_id`).
+   * `choisissable` vivait ici, et valait `option.item_id !== null` : `duo_choose`
+   * validait le choix par `o.item_id = p_item_id`, si bien qu'une proposition
+   * sans fiche n'avait rien que cette égalité puisse joindre et retombait sur le
+   * refus muet `unavailable` — pour le joueur, un bouton qui ne fait rien. Le
+   * bouton était donc désactivé, faute de mieux.
    *
-   * Elle reste AFFICHÉE et non masquée : le plateau est ce que les deux joueurs
-   * ont sous les yeux au même instant, et en retirer des cartes chez l'un
-   * casserait l'accord bien plus sûrement qu'un bouton inerte.
+   * `duo_choose_option` (migration 20261128120000) scelle PAR PLACE, et une
+   * place existe pour les deux origines. La seule raison de désactiver était
+   * l'échec silencieux ; elle a disparu, et rien ne la remplace : sur un plateau
+   * entièrement saisi, les six cartes se touchent comme des fiches.
    */
-  const choisissable = option.item_id !== null;
 
   return (
     <li>
       <button
         type="button"
-        disabled={inerte || !choisissable}
-        onClick={() => {
-          if (option.item_id !== null) onChoisir(option.item_id);
-        }}
+        disabled={inerte}
+        onClick={() => onChoisir(option.option_id)}
         aria-current={choisie ? "true" : undefined}
         className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
           choisie
             ? "border-k-ink bg-k-yellow shadow-[4px_4px_0_var(--color-k-ink)]"
             : "border-k-ink/25 bg-white"
-        } ${(inerte || !choisissable) && !choisie ? "opacity-45" : ""}`}
+        } ${inerte && !choisie ? "opacity-45" : ""}`}
       >
         {photo && (
           // `<img>` nu et non `next/image` : l'hôte n'est pas déclaré dans
@@ -573,7 +605,8 @@ function EcranRevelation({
 /**
  * Un choix révélé — le NOM, et rien d'autre.
  *
- * `DuoChoixView` ne porte que deux clés, et c'est le sujet du lot : ni prix, ni
+ * `DuoChoixView` ne porte que des identifiants et un nom, et c'est le sujet du
+ * lot : ni prix, ni
  * photo, ni description ne voyagent avec un choix. Le repli sur un tiret couvre
  * le seul cas où l'autre choix manque à la révélation (document tronqué) — dire
  * « rien » serait affirmer qu'il n'a pas choisi, ce qui est faux.
