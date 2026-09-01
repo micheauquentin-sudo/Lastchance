@@ -46,7 +46,7 @@ const { etat } = vi.hoisted(() => ({
     cookies: {} as Record<string, string>,
     /** Cookies POSÉS par l'action — il ne doit jamais y en avoir ici. */
     poses: [] as Array<{ nom: string; valeur: string }>,
-    /** Ce que rend `gardeEditeurVitrine`. */
+    /** Ce que rend `gardeEditeurJeuSalon`. */
     garde: {} as
       | { ok: true; organizationId: string; userId: string }
       | { ok: false; error: string },
@@ -81,8 +81,9 @@ vi.mock("@/lib/monitoring", () => ({
 // La garde est DOUBLÉE, pas contournée : elle interroge une session et un
 // abonnement que ce harnais n'a pas. Ce qu'on vérifie ici est qu'elle passe la
 // PREMIÈRE, et que l'organisation comme l'acteur ne sortent que d'elle.
-vi.mock("@/lib/vitrine-context", () => ({
-  gardeEditeurVitrine: vi.fn(async () => etat.garde),
+vi.mock("@/lib/salon-garde", () => ({
+  // DUO-3b : la garde est celle du droit `bande`, plus celle de la Vitrine.
+  gardeEditeurJeuSalon: vi.fn(async () => etat.garde),
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
@@ -786,7 +787,10 @@ describe("setBandePack — choisir le ton du jeu", () => {
         },
       },
     ]);
-    expect(etat.revalidations).toEqual(["/dashboard/vitrine"]);
+    expect(etat.revalidations).toEqual([
+      "/dashboard/salons/bande",
+      "/dashboard/vitrine",
+    ]);
   });
 
   it("LA GARDE D'ABORD : refusée, ni lecture du formulaire ni appel", async () => {

@@ -528,10 +528,17 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
     if (etat.state !== "ok") throw new Error("état inattendu");
     expect(etat.portes).toEqual({
       reserver: { activites: [], files: [], offres: [] },
-      // `duo` est absent du document d'avant L17 : le repli le rend FALSE, et
-      // c'est le seul sens acceptable — une porte qui s'ouvrirait sur une clé
-      // manquante promettrait un jeu que le commerçant n'a pas configuré.
-      experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
+      // `duo` est absent du document d'avant L17, `bande` de celui d'avant
+      // DUO-3b : le repli les rend FALSE tous les deux, et c'est le seul sens
+      // acceptable — une porte qui s'ouvrirait sur une clé manquante
+      // promettrait un jeu que le commerce n'a pas, ou n'a pas configuré.
+      experiences: {
+        quiz: [],
+        calendars: [],
+        pronostics: [],
+        duo: false,
+        bande: false,
+      },
     });
   });
 
@@ -717,7 +724,13 @@ describe("mapPortesVitrine — l'annuaire, et ce qu'il refuse d'inventer", () =>
   it("les six listes existent TOUJOURS, même sur un document vide", () => {
     const vide = {
       reserver: { activites: [], files: [], offres: [] },
-      experiences: { quiz: [], calendars: [], pronostics: [], duo: false },
+      experiences: {
+        quiz: [],
+        calendars: [],
+        pronostics: [],
+        duo: false,
+        bande: false,
+      },
     };
     expect(mapPortesVitrine({})).toEqual(vide);
     expect(mapPortesVitrine(null)).toEqual(vide);

@@ -378,9 +378,15 @@ function EcranPlateau({
       <ul className="space-y-3">
         {options.map((option) => (
           <CarteOption
-            key={option.item_id}
+            // LA PLACE, ET PLUS LA FICHE (DUO-1) : une option saisie à la main
+            // n'a pas d'identifiant de fiche, et deux d'entre elles auraient
+            // partagé la clé `null`.
+            key={option.option_id}
             option={option}
-            choisie={vue.monChoix?.item_id === option.item_id}
+            choisie={
+              option.item_id !== null &&
+              vue.monChoix?.item_id === option.item_id
+            }
             // INERTE dès qu'un choix est scellé — le sien comme les autres :
             // la manche ne se rejoue pas, et l'immuabilité est tout l'objet du
             // jeu. Pendant l'envoi, tout est désactivé pour qu'un second doigt
@@ -420,19 +426,35 @@ function CarteOption({
   onChoisir: (itemId: string) => void;
 }) {
   const photo = adressePhoto(option.photo_path);
+  /**
+   * UNE OPTION SAISIE À LA MAIN N'EST PAS ENCORE CHOISISSABLE (DUO-1).
+   *
+   * `duo_choose` valide le choix par `o.item_id = p_item_id` : une option sans
+   * fiche n'a rien que cette égalité puisse joindre, et le geste retomberait sur
+   * le refus muet `unavailable` — c'est-à-dire, pour le joueur, un bouton qui
+   * ne fait rien. La migration 20261126120000 l'écrit noir sur blanc et renvoie
+   * la réparation à un lot base (`duo_choose` doit accepter `option_id`).
+   *
+   * Elle reste AFFICHÉE et non masquée : le plateau est ce que les deux joueurs
+   * ont sous les yeux au même instant, et en retirer des cartes chez l'un
+   * casserait l'accord bien plus sûrement qu'un bouton inerte.
+   */
+  const choisissable = option.item_id !== null;
 
   return (
     <li>
       <button
         type="button"
-        disabled={inerte}
-        onClick={() => onChoisir(option.item_id)}
+        disabled={inerte || !choisissable}
+        onClick={() => {
+          if (option.item_id !== null) onChoisir(option.item_id);
+        }}
         aria-current={choisie ? "true" : undefined}
         className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
           choisie
             ? "border-k-ink bg-k-yellow shadow-[4px_4px_0_var(--color-k-ink)]"
             : "border-k-ink/25 bg-white"
-        } ${inerte && !choisie ? "opacity-45" : ""}`}
+        } ${(inerte || !choisissable) && !choisie ? "opacity-45" : ""}`}
       >
         {photo && (
           // `<img>` nu et non `next/image` : l'hôte n'est pas déclaré dans

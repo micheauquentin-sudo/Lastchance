@@ -15,13 +15,15 @@ import { hashLobbyToken, lireJetonLobby } from "@/lib/lobby-context";
 import { monitored, reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ActionResult } from "@/lib/utils";
+import { gardeEditeurJeuSalon } from "@/lib/salon-garde";
+import { createClient } from "@/lib/supabase/server";
 import {
   duoChooseSchema,
   duoLobbySchema,
-  duoOptionsSchema,
+  duoPlateauSchema,
   duoSuggestionSchema,
+  type DuoPlaceEntree,
 } from "@/lib/validations/duo";
-import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 
 // ════════════════════════════════════════════════════════════
 // DUO MIROIR (L17) — deux choix scellés, une révélation simultanée
@@ -266,12 +268,17 @@ export async function getDuoState(lobbyId: string): Promise<DuoStateView> {
 // ════════════════════════════════════════════════════════════
 // LE CHEMIN COMMERÇANT
 //
-// LA GARDE D'ABORD, ET AVANT DE LIRE LE FORMULAIRE. `gardeEditeurVitrine`
-// tranche la session, le rôle et le droit `vitrine` avant qu'un identifiant de
+// LA GARDE D'ABORD, ET AVANT DE LIRE LE FORMULAIRE. `gardeEditeurJeuSalon("duo")`
+// tranche la session, le rôle et le droit `duo` avant qu'un identifiant de
 // fiche ne soit seulement regardé : un appelant sans droit ne doit pas
 // apprendre, par la différence entre « non autorisé » et « fiche inconnue »,
 // que quelque chose existe. C'est aussi elle qui fournit les DEUX valeurs que le
 // client n'apporte jamais — l'organisation et l'acteur.
+//
+// C'ÉTAIT `gardeEditeurVitrine` JUSQU'À DUO-3b, et le droit exigé était celui
+// de la Vitrine. DUO-2 vend le Duo seul : un commerçant qui l'achetait sans la
+// carte se voyait refuser l'écriture de son propre plateau, avec un message qui
+// lui parlait d'un produit qu'il n'avait pas cherché à acheter.
 //
 // L'ACTEUR VIENT DE LA SESSION, ET LES RPC LE REVÉRIFIENT. `p_actor` reçoit
 // `garde.userId` ; `set_duo_options` et `set_duo_suggestion` le revérifient
@@ -300,53 +307,105 @@ export type SetDuoOptionsOutcome =
   | { etat: "selection-refusee" };
 
 /**
+ * LES PLACES POSTÉES — un champ RÉPÉTÉ, préfixé par son origine.
+ *
+ * L'écran poste `places` autant de fois qu'il a de places composées, chacune
+ * sous la forme `fiche:<uuid>` ou `libelle:<texte>`. Le préfixe est nécessaire
+ * depuis DUO-1 : une place est SOIT une fiche de la carte, SOIT un libellé
+ * saisi, et un champ nu ne saurait plus dire laquelle des deux.
+ *
+ * ── TOUJOURS PAS DE JSON, ET POUR LA RAISON D'AVANT ──
+ *
+ * `JSON.parse` peut lever avant que Zod n'ait vu quoi que ce soit, et il
+ * faudrait alors inventer une issue pour « le formulaire n'était pas du JSON » —
+ * une phrase que le commerçant ne peut ni comprendre ni corriger. Un `indexOf`
+ * suivi de deux `slice` ne lève jamais. La coupe se fait sur le PREMIER
+ * deux-points, si bien qu'un libellé qui en contient (« Menu du jour : entrée,
+ * plat ») traverse intact.
+ *
+ * ── L'ORDRE EST CELUI DU DOM, ET C'EST L'ORDRE DU PLATEAU ──
+ *
+ * Un navigateur poste les champs dans l'ordre du document, et `ordre` est la
+ * position dans le tableau reçu. Aucun champ caché à tenir d'accord avec
+ * l'affichage — c'est-à-dire aucune possibilité qu'ils se contredisent.
+ *
+ * Une valeur mal formée n'est PAS repliée sur un libellé : elle ressort avec une
+ * origine que l'union discriminée ne connaît pas et se fait refuser. La replier
+ * aurait transformé un envoi cassé en proposition affichée aux joueurs.
+ */
+function lirePlaces(formData: FormData): unknown[] {
+  return formData.getAll("places").map((brut) => {
+    const valeur = String(brut);
+    const separateur = valeur.indexOf(":");
+    if (separateur === -1) return { origine: "inconnue" };
+    const origine = valeur.slice(0, separateur);
+    const reste = valeur.slice(separateur + 1);
+    if (origine === "fiche") return { origine, itemId: reste };
+    if (origine === "libelle") return { origine, texte: reste };
+    return { origine: "inconnue" };
+  });
+}
+
+/**
  * LE COMMERÇANT COMPOSE SON PLATEAU — remplacement intégral.
  *
- * ── LE CHAMP EST RÉPÉTÉ, PAS SÉRIALISÉ EN JSON ──
+ * ── DEUX CHEMINS D'ÉCRITURE, ET LE PARTAGE N'EST PAS UN CONFORT ──
  *
- * L'écran poste `item_ids` autant de fois qu'il a de fiches épinglées, et
- * l'action les relit par `formData.getAll("item_ids")`. Deux raisons, dans cet
- * ordre :
+ * Un plateau fait UNIQUEMENT de fiches passe par `set_duo_options`, comme
+ * avant. Un plateau qui porte au moins un libellé saisi passe par la TABLE.
+ * Ce n'est pas un choix d'architecture pris ici : c'est celui que la migration
+ * 20261126120000 a écrit dans son propre commentaire de table — « set_duo_options
+ * ne connaît que des tableaux de fiches et remplace le plateau EN ENTIER —
+ * l'appeler efface les options saisies. Celles-ci s'écrivent par la table (RLS +
+ * grants de colonnes), pas par cette RPC. »
  *
- *   1. UN CHAMP JSON A UN MODE D'ÉCHEC DE PLUS. `JSON.parse` peut lever avant
- *      que Zod n'ait vu quoi que ce soit, et il faut alors inventer une issue
- *      pour « le formulaire n'était pas du JSON » — une phrase que le commerçant
- *      ne peut ni comprendre ni corriger. `getAll` ne lève jamais : il rend un
- *      tableau, éventuellement vide, que le schéma refuse en nommant le vrai
- *      problème (« choisissez au moins 3 fiches »).
- *   2. L'ORDRE EST CELUI DU DOM, ET C'EST EXACTEMENT CE QU'IL FAUT.
- *      `set_duo_options` écrit `ordre` = position dans le tableau reçu, et un
- *      navigateur poste les champs dans l'ordre du document. Réordonner les
- *      cartes à l'écran réordonne donc le plateau, sans champ caché à tenir
- *      d'accord avec l'affichage — c'est-à-dire sans la possibilité qu'ils se
- *      contredisent.
+ * POURQUOI NE PAS TOUT PASSER PAR LA TABLE, alors : la RPC vérifie
+ * l'appartenance des fiches EN SQL et JOURNALISE le geste (`duo.options_set`).
+ * « Qui a changé le plateau » est exactement la question qu'on se pose après
+ * coup, et la perdre pour tout le monde afin d'avoir un seul chemin aurait
+ * coûté la ligne d'audit sans rien acheter.
  *
- * ── LES BORNES SONT REFUSÉES ICI, LE RESTE EST REFUSÉ LÀ-BAS ──
+ * CE QUE LE CHEMIN PAR TABLE N'A PAS, ET IL FAUT LE SAVOIR : le `delete` et
+ * l'`insert` sont DEUX ALLERS. Une panne entre les deux laisse le plateau VIDE
+ * — pas corrompu, pas mélangé : vide, donc `duo_jouable` faux et porte publique
+ * fermée. Le commerçant en est averti par un message qui lui dit quoi faire
+ * (recomposer et réenregistrer), et rien ne se joue sur un plateau à moitié
+ * écrit. La réparation propre est une RPC qui accepte les deux origines dans la
+ * même transaction ; c'est un lot base, pas un contournement à écrire ici.
  *
- * Cardinal et doublon sont tranchés par le schéma, qui rend une phrase ; la base
- * les lèverait en 22023, c'est-à-dire en exception. L'existence des fiches, en
- * revanche, n'est vérifiée QU'EN SQL : la relire ici aurait donné une seconde
- * définition de « cette fiche est à moi », et deux définitions finissent par
- * diverger — celle qui compte étant de toute façon celle qui est dans la même
- * transaction que l'écriture.
+ * ── LES BORNES SONT REFUSÉES ICI, L'APPARTENANCE EST REFUSÉE LÀ-BAS ──
+ *
+ * Cardinal, doublons et forme du libellé sont tranchés par le schéma, qui rend
+ * une phrase ; la base les lèverait en 22023 ou en 23514, c'est-à-dire en
+ * exception. L'existence des fiches, elle, n'est vérifiée QU'EN SQL — par la RPC
+ * sur un chemin, par la FK COMPOSITE `(item_id, organization_id)` sur l'autre.
+ * La relire ici aurait donné une seconde définition de « cette fiche est à
+ * moi », et deux définitions finissent par diverger.
  */
 export async function setDuoOptions(
   _prev: ActionResult<SetDuoOptionsOutcome> | null,
   formData: FormData,
 ): Promise<ActionResult<SetDuoOptionsOutcome>> {
-  const garde = await gardeEditeurVitrine();
+  const garde = await gardeEditeurJeuSalon("duo");
   if (!garde.ok) return { ok: false, error: garde.error };
 
-  const parsed = duoOptionsSchema.safeParse({
-    // DE LA SESSION. Seules les fiches viennent du formulaire, et elles ont été
-    // relues sur un catalogue que le serveur a rendu.
+  const parsed = duoPlateauSchema.safeParse({
+    // DE LA SESSION. Seules les places viennent du formulaire.
     organizationId: garde.organizationId,
-    itemIds: formData.getAll("item_ids").map((valeur) => String(valeur)),
+    places: lirePlaces(formData),
   });
-  // Ces refus-là se corrigent à l'écran, en cochant ou décochant une case : ils
-  // gardent leur message.
+  // Ces refus-là se corrigent à l'écran, dans le champ d'à côté : ils gardent
+  // leur message.
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const places = parsed.data.places;
+  const fiches = places.flatMap((place) =>
+    place.origine === "fiche" ? [place.itemId] : [],
+  );
+  if (fiches.length !== places.length) {
+    return ecrirePlateauParTable(parsed.data.organizationId, places);
   }
 
   return monitored("duo.options_set", async () => {
@@ -354,7 +413,7 @@ export async function setDuoOptions(
       const admin = createAdminClient();
       const { data, error } = await admin.rpc("set_duo_options", {
         p_organization_id: parsed.data.organizationId,
-        p_item_ids: parsed.data.itemIds,
+        p_item_ids: fiches,
         p_actor: garde.userId,
       });
       if (error) {
@@ -390,10 +449,106 @@ export async function setDuoOptions(
       const options = mapDuoOptionsSaved(data);
       if (options === null) return { ok: false as const, error: GENERIC_ERROR };
 
-      revalidatePath("/dashboard/vitrine");
+      revalideEcransDuo();
       return {
         ok: true as const,
         data: { etat: "enregistre", options } as const,
+      };
+    } catch (err) {
+      reportError("duo.options_set", err);
+      return { ok: false as const, error: GENERIC_ERROR };
+    }
+  });
+}
+
+/**
+ * LES DEUX ÉCRANS QUI MONTRENT LE PLATEAU.
+ *
+ * `/dashboard/salons/duo` est celui où le plateau se règle depuis DUO-3b ;
+ * `/dashboard/vitrine` continue d'en dépendre — son étape « Les jeux » affiche
+ * « prêt / pas prêt » à partir du nombre d'options, et sa vérification finale
+ * compte les mêmes. Ne revalider que l'un des deux laisserait l'autre annoncer
+ * un état d'hier.
+ */
+function revalideEcransDuo(): void {
+  revalidatePath("/dashboard/salons/duo");
+  revalidatePath("/dashboard/vitrine");
+}
+
+/**
+ * LE PLATEAU QUI PORTE AU MOINS UN LIBELLÉ SAISI — écrit par la TABLE.
+ *
+ * ── LE CLIENT EST CELUI DE LA SESSION, PAS LA CLÉ DE SERVICE ──
+ *
+ * C'est la seule différence qui compte, et elle est volontaire. La clé de
+ * service contourne la RLS : le seul rempart serait alors le filtre
+ * `organization_id` de cette fonction. Avec le client de session, la policy
+ * `duo_options: editor write` (`is_org_editor`) tranche EN BASE, et les grants
+ * de colonnes bornent ce qui peut être écrit. Le filtre explicite est posé
+ * quand même sur le `delete` — motif du dépôt : un utilisateur multi-comptes
+ * est membre de plusieurs organisations, et la RLS seule ne dit pas laquelle
+ * est active.
+ *
+ * ── L'ORDRE DES DEUX ÉCRITURES EST CELUI DE LA RPC ──
+ *
+ * `delete` puis `insert`, parce que `duo_options_org_ordre_unique` est vérifiée
+ * PAR INSTRUCTION : insérer d'abord ferait entrer en collision la place 1
+ * ancienne et la place 1 neuve.
+ */
+async function ecrirePlateauParTable(
+  organizationId: string,
+  places: DuoPlaceEntree[],
+): Promise<ActionResult<SetDuoOptionsOutcome>> {
+  return monitored("duo.options_set", async () => {
+    try {
+      const supabase = await createClient();
+
+      const { error: erreurDelete } = await supabase
+        .from("duo_options")
+        .delete()
+        .eq("organization_id", organizationId);
+      if (erreurDelete) {
+        // RIEN N'EST ENCORE PERDU ICI : le plateau d'hier est intact.
+        reportError("duo.options_set", erreurDelete.message);
+        return { ok: false as const, error: GENERIC_ERROR };
+      }
+
+      const { error: erreurInsert } = await supabase.from("duo_options").insert(
+        places.map((place, index) => ({
+          organization_id: organizationId,
+          item_id: place.origine === "fiche" ? place.itemId : null,
+          libelle: place.origine === "libelle" ? place.texte : null,
+          // La PLACE est la position dans le tableau reçu, comme dans la RPC.
+          ordre: index + 1,
+        })),
+      );
+      if (erreurInsert) {
+        reportError("duo.options_set", erreurInsert.message);
+        // 23503 — la FK composite : une fiche a quitté la carte entre
+        // l'affichage et le clic. C'est un RÉSULTAT, pas une panne, et c'est
+        // le même cas que la 22023 de la RPC.
+        if (erreurInsert.code === "23503") {
+          return {
+            ok: true as const,
+            data: { etat: "selection-refusee" } as const,
+          };
+        }
+        // TOUT LE RESTE LAISSE LE PLATEAU VIDE, et le message le dit. Un
+        // « une erreur est survenue » enverrait chercher une panne alors que le
+        // geste à faire est immédiat : recomposer et réenregistrer. Le plateau
+        // vide ferme la porte publique (duo_jouable est alors faux), il ne
+        // fait pas jouer sur une liste à moitié écrite.
+        return {
+          ok: false as const,
+          error:
+            "Votre plateau n’a pas pu être enregistré et il est vide : recomposez-le, puis enregistrez à nouveau.",
+        };
+      }
+
+      revalideEcransDuo();
+      return {
+        ok: true as const,
+        data: { etat: "enregistre", options: places.length } as const,
       };
     } catch (err) {
       reportError("duo.options_set", err);
@@ -432,7 +587,7 @@ export async function setDuoSuggestion(
   _prev: ActionResult<SetDuoSuggestionOutcome> | null,
   formData: FormData,
 ): Promise<ActionResult<SetDuoSuggestionOutcome>> {
-  const garde = await gardeEditeurVitrine();
+  const garde = await gardeEditeurJeuSalon("duo");
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const brut = formData.get("item_id");
@@ -481,7 +636,7 @@ export async function setDuoSuggestion(
       const pose = mapDuoSuggestionSaved(data);
       if (!pose) return { ok: false as const, error: GENERIC_ERROR };
 
-      revalidatePath("/dashboard/vitrine");
+      revalideEcransDuo();
       return {
         ok: true as const,
         data: { etat: "enregistre", suggestion: pose.suggestion } as const,

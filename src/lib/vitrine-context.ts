@@ -107,31 +107,20 @@ export type GardeVitrine =
  * réelles. Celle-ci existe pour que le commerçant lise « votre offre ne comprend
  * pas la Vitrine » plutôt qu'une erreur générique.
  *
- * ── ELLE RESTE LA GARDE DES ÉDITEURS DE SALON (20261020120000) ──
+ * ── ELLE N'EST PLUS LA GARDE DES ÉDITEURS DE SALON (DUO-3b) ──
  *
- * `duo` et `bande` sont devenus des clés à part entière, et la question s'est
- * posée de fendre cette garde en trois — une par jeu — pour les deux chargeurs
- * qui règlent un plateau (`loadDuoOptions`, `loadBandeOptions`) et pour la
- * supervision des salles (`loadOrgLobbies`). La réponse est NON, et le motif
- * n'est pas l'économie :
+ * Elle l'a été, sur un arbitrage qui nommait lui-même sa condition de
+ * péremption : « ce qui la ferait changer : un salon jouable hors vitrine, ou
+ * un plateau vendu séparément ». LES DEUX SONT ARRIVÉS —
+ * `20261022120000_salons_sans_vitrine` a retiré `vitrine` de
+ * `create_player_lobby`, et DUO-2 a rendu `duo` et `bande` vendables seuls.
+ * Ses trois raisons tombaient avec : la préparation n'était plus gratuite pour
+ * qui achetait le jeu seul, les réglages ne sont plus servis sous
+ * `/dashboard/vitrine`, et un salon s'ouvre sans vitrine publiée.
  *
- *  1. RÉGLER UN PLATEAU EST UNE PRÉPARATION, PAS UNE PUBLICATION. La doctrine
- *     du dépôt (`module-capabilities.ts`) met le verrou payant sur la
- *     publication et laisse la préparation ouverte, précisément pour qu'un
- *     commerçant sache ce qu'il achèterait. L'équivalent d'une publication,
- *     pour un salon, est son OUVERTURE — et `create_player_lobby` exige
- *     désormais `vitrine` ET le jeu, en SQL, là où personne ne contourne.
- *     Exiger `duo` ici mettrait un péage sur l'essai, pas sur l'usage.
- *  2. CES ÉCRANS SONT SERVIS SOUS `/dashboard/vitrine`, qui exige déjà ce
- *     droit-ci. Deux gardes différentes sur une même page rendraient deux
- *     réponses au même commerçant, selon le fragment qu'il regarde.
- *  3. UN SALON NE S'OUVRE QUE SUR UNE VITRINE PUBLIÉE. Sans `vitrine`, aucun
- *     plateau ne peut servir à quoi que ce soit : la garde la plus large des
- *     deux est aussi celle qui décrit la réalité.
- *
- * Elle ne devient donc jamais PLUS PERMISSIVE qu'avant — c'est le même droit
- * exigé au même endroit. Ce qui la ferait changer : un salon jouable hors
- * vitrine, ou un plateau vendu séparément.
+ * `loadDuoOptions`, `loadBandePack` et les trois actions d'écriture des deux
+ * jeux passent désormais par `gardeEditeurJeuSalon` (`src/lib/salon-garde.ts`),
+ * qui exige le droit DU JEU. Cette garde-ci ne couvre plus que la Vitrine.
  */
 export async function gardeEditeurVitrine(): Promise<GardeVitrine> {
   const { user, organization, role } = await getUserAndOrg();

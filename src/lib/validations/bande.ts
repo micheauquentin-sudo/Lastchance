@@ -65,7 +65,7 @@ export const bandeVoteSchema = z
  *
  * ── `organizationId` NE VIENT PAS DU FORMULAIRE, ET L'ACTEUR N'EST PAS UN CHAMP
  *
- * Motif exact de `duoOptionsSchema` (L17). `set_bande_pack` prend un `p_actor`
+ * Motif exact de `duoPlateauSchema` (L17, DUO-3b). `set_bande_pack` prend un `p_actor`
  * et le vérifie EN SQL membre `owner|editor`, parce que le geste est journalisé
  * (`bande.pack_set`) et surtout parce qu'il peut ALLUMER LE PACK TAQUIN : cet
  * acteur sort de `gardeEditeurVitrine().userId` et de nulle part ailleurs. Aucun

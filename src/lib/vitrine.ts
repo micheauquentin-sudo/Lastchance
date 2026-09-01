@@ -1430,6 +1430,21 @@ export interface PortesVitrineView {
      * deux fiches épinglées, la même condition qui laisse la manche démarrer.
      */
     duo: boolean;
+    /**
+     * Portrait de la Bande est-il JOUABLE ici (DUO-3b) — même forme que `duo`.
+     *
+     * IL N'EN AVAIT PAS, ET C'ÉTAIT JUSTE : le jeu marchait sans configuration
+     * (pack par défaut, questions dans le code) et son droit était inclus dans
+     * les cinq offres, donc il n'existait aucun état « pas prêt » à refléter.
+     * DUO-2 l'a rendu VENDABLE SEUL (12 €/mois) : le droit peut désormais
+     * manquer, et une porte peinte sans drapeau enverrait le client d'un
+     * commerce qui n'a pas l'option vers un salon que la base refuse d'ouvrir.
+     *
+     * REPLI FERMÉ, comme `duo` : clé absente ou non booléenne ⇒ pas de porte.
+     * Un document servi depuis un cache d'avant la migration qui pose cette clé
+     * ne doit rien promettre qu'il ne sait pas.
+     */
+    bande: boolean;
   };
 }
 
@@ -1866,6 +1881,9 @@ export function mapPortesVitrine(raw: unknown): PortesVitrineView {
       // jeu ici ». Un document ancien (d'avant L17) n'a pas la clé, et la
       // porte ne doit pas s'ouvrir sur une absence.
       duo: experiences?.duo === true,
+      // MÊME REPLI FERMÉ, ET LE MÊME MOTIF : un document d'avant DUO-3b n'a pas
+      // la clé, et la porte ne doit pas s'ouvrir sur une absence.
+      bande: experiences?.bande === true,
     },
   };
 }

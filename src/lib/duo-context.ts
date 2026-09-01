@@ -3,8 +3,8 @@ import "server-only";
 import { mapDuoOptionsAdmin, type DuoOptionsAdminView } from "@/lib/duo";
 import { reportError } from "@/lib/monitoring";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { gardeEditeurJeuSalon } from "@/lib/salon-garde";
 import { duoOptionsStateSchema } from "@/lib/validations/duo";
-import { gardeEditeurVitrine } from "@/lib/vitrine-context";
 
 /**
  * DUO MIROIR (L17) — LA LECTURE DE L'ÉCRAN DE CONFIGURATION.
@@ -52,13 +52,14 @@ export type DuoOptionsContext =
  * gardes d'écriture, elles, sont en SQL (`set_duo_options`,
  * `set_duo_suggestion`, qui revérifient l'acteur `owner|editor`).
  *
- * ── LA GARDE RESTE CELLE DE LA VITRINE, ET NON `duo` (20261020120000) ──
+ * ── LA GARDE EST CELLE DU JEU, PLUS CELLE DE LA VITRINE (DUO-3b) ──
  *
- * `duo` est une clé à part entière depuis le détachement, et cette garde-ci
- * pouvait donc devenir `gardeEditeurDuo`. Elle ne l'est pas : composer un
- * plateau est une PRÉPARATION, que le dépôt laisse ouverte, et le verrou payant
- * du Duo est en SQL, sur l'ouverture de la salle (`create_player_lobby` exige
- * `vitrine` ET `duo`). Le raisonnement complet est sur `gardeEditeurVitrine`.
+ * Elle était `gardeEditeurVitrine`, sur un arbitrage qui nommait lui-même sa
+ * condition de péremption : « un salon jouable hors vitrine, ou un plateau
+ * vendu séparément ». Les deux sont arrivés — `create_player_lobby` n'exige
+ * plus `vitrine` (20261022120000) et DUO-2 vend Duo Miroir seul à 12 €/mois. Un
+ * commerçant qui achète le jeu sans la carte était verrouillé hors de ses
+ * propres réglages. Le raisonnement complet est sur `gardeEditeurJeuSalon`.
  *
  * ── UNE PANNE DE LECTURE REND LE PLATEAU VIDE, PAS UN REFUS ──
  *
@@ -68,7 +69,7 @@ export type DuoOptionsContext =
  * invitation à le composer.
  */
 export async function loadDuoOptions(): Promise<DuoOptionsContext> {
-  const garde = await gardeEditeurVitrine();
+  const garde = await gardeEditeurJeuSalon("duo");
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const vide = {

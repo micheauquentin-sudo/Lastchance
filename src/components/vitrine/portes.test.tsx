@@ -15,6 +15,7 @@ describe("BlocExperiences", () => {
         jeux={{ duo: true, bande: true }}
         portes={{
           duo: false,
+          bande: false,
           quiz: [],
           calendars: [{ slug: "calendrier-noel", titre: "Calendrier de Noël" }],
           pronostics: [{ slug: "euro-2028", titre: "Euro 2028" }],

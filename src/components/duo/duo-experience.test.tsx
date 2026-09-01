@@ -38,6 +38,7 @@ const { DuoExperience } = await import("@/components/duo/duo-experience");
 
 const OPTIONS = [
   {
+    option_id: "op-1",
     item_id: "it-1",
     nom: "Le cookie",
     description: null,
@@ -46,6 +47,7 @@ const OPTIONS = [
     ordre: 1,
   },
   {
+    option_id: "op-2",
     item_id: "it-2",
     nom: "Le flan",
     description: null,

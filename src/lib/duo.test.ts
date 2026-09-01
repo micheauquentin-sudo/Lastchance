@@ -31,10 +31,29 @@ const ROUND_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 function option(item_id: string, nom: string, ordre: number) {
   return {
+    option_id: `op-${item_id}`,
     item_id,
     nom,
     description: "Servi tiède",
     prix_affiche: "8 €",
+    photo_path: null,
+    ordre,
+  };
+}
+
+/**
+ * UNE OPTION SAISIE À LA MAIN (DUO-1) — pas de fiche, pas de prix, pas de photo.
+ *
+ * C'est le document que `duo_options_json` sert depuis que sa jointure est
+ * EXTERNE : `nom` vient du `libelle`, et les trois champs de fiche sont nuls.
+ */
+function optionSaisie(option_id: string, nom: string, ordre: number) {
+  return {
+    option_id,
+    item_id: null,
+    nom,
+    description: null,
+    prix_affiche: null,
     photo_path: null,
     ordre,
   };
@@ -46,6 +65,7 @@ describe("mapDuoOptions — le plateau", () => {
     // `VitrineFicheView` : le composant de fiche les consomme déjà tels quels.
     expect(mapDuoOptions([option(ITEM_A, "Tarte", 1)])).toEqual([
       {
+        option_id: `op-${ITEM_A}`,
         item_id: ITEM_A,
         nom: "Tarte",
         description: "Servi tiède",
@@ -54,6 +74,41 @@ describe("mapDuoOptions — le plateau", () => {
         ordre: 1,
       },
     ]);
+  });
+
+  it("GARDE UN PLATEAU ENTIÈREMENT SAISI, qui était jeté en silence (DUO-1)", () => {
+    // C'ÉTAIT LE DÉFAUT BLOQUANT DU LOT. Ce mappeur exigeait `item_id` ET
+    // `nom` : une option écrite à la main — la seule forme possible pour un
+    // commerçant sans Vitrine — ressortait ÉCARTÉE, sans erreur et sans trace.
+    // La base la servait (jointure externe, `option_id`), l'application la
+    // perdait : le plateau paraissait vide avec `duo_jouable` à vrai, c'est-à-
+    // dire une porte publique ouverte sur un jeu qui refuse de démarrer.
+    const vue = mapDuoOptions([
+      optionSaisie("op-1", "Un café gourmand", 1),
+      optionSaisie("op-2", "Une part de tarte", 2),
+      optionSaisie("op-3", "Un chocolat chaud", 3),
+    ]);
+
+    expect(vue).toHaveLength(3);
+    expect(vue.map((o) => o.nom)).toEqual([
+      "Un café gourmand",
+      "Une part de tarte",
+      "Un chocolat chaud",
+    ]);
+    // L'ORIGINE RESTE LISIBLE : `item_id` nul dit « ceci n'est pas une fiche »,
+    // ce dont l'écran joueur a besoin — `duo_choose` ne sait valider qu'une
+    // fiche, et un bouton qui ne peut rien sceller ne doit pas être cliquable.
+    expect(vue.every((o) => o.item_id === null)).toBe(true);
+  });
+
+  it("lit un plateau MIXTE sans confondre les deux origines", () => {
+    const vue = mapDuoOptions([
+      option(ITEM_A, "Tarte", 1),
+      optionSaisie("op-2", "Un café gourmand", 2),
+    ]);
+
+    expect(vue.map((o) => o.item_id)).toEqual([ITEM_A, null]);
+    expect(vue.map((o) => o.option_id)).toEqual([`op-${ITEM_A}`, "op-2"]);
   });
 
   it("RE-TRIE par ordre, même si le SQL rend les fiches mélangées", () => {
@@ -75,13 +130,17 @@ describe("mapDuoOptions — le plateau", () => {
     expect(mapDuoOptions(brut)).toEqual([]);
   });
 
-  it("saute la fiche sans identifiant ou sans nom, et garde les autres", () => {
-    // Une fiche amputée ne produit ni bouton à cliquer ni choix à envoyer : la
+  it("saute la place sans identifiant ou sans nom, et garde les autres", () => {
+    // Une place amputée ne produit ni bouton à cliquer ni choix à envoyer : la
     // sauter est plus honnête que peindre une carte dont la moitié dit
     // `undefined` — et l'écran ne doit pas tomber pour autant.
+    //
+    // CE QUI EST EXIGÉ A CHANGÉ AVEC DUO-1 : c'est `option_id`, la PLACE, et
+    // non plus `item_id`, la fiche. Une ligne sans `item_id` est désormais
+    // parfaitement valable — c'est une proposition saisie.
     const vue = mapDuoOptions([
-      { nom: "Sans identifiant", ordre: 1 },
-      { item_id: ITEM_A, ordre: 2 },
+      { nom: "Sans identifiant de place", ordre: 1 },
+      { option_id: "op-sans-nom", ordre: 2 },
       option(ITEM_B, "Café", 3),
     ]);
     expect(vue).toHaveLength(1);
@@ -237,6 +296,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
       monChoix: { item_id: ITEM_A, nom: "Tarte" },
       options: [
         {
+          option_id: `op-${ITEM_A}`,
           item_id: ITEM_A,
           nom: "Tarte",
           description: "Servi tiède",
@@ -245,6 +305,7 @@ describe("mapDuoState — le cœur anti-triche", () => {
           ordre: 1,
         },
         {
+          option_id: `op-${ITEM_B}`,
           item_id: ITEM_B,
           nom: "Café",
           description: "Servi tiède",
