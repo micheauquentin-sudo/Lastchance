@@ -37,6 +37,70 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Vitrine en atelier, et les deux salons vendables seuls (2026-09-01, livré sur `main`, PR #281→#290)
+
+**Terrain.** `src/app/dashboard/vitrine/page.tsx`,
+`src/app/vitrine-studio/{page,error}.tsx`,
+`src/components/dashboard/atelier-vitrine-{etapes.ts,verification.tsx}`,
+`src/components/vitrine/{vitrine-studio,jeux-vitrine,supprimer-vitrine,import-carte,import-fichier,import-ocr,theme}.ts(x)`,
+`src/actions/vitrine.ts`, `src/lib/vitrine.ts`, `src/lib/checklist/tuiles.ts`,
+`src/lib/plans.ts`, `public/ocr/`. Migrations `20261123120000` (suppression),
+`20261124120000` (`rendez_vous` dans le vocabulaire Stripe), `20261125120000`
+(`theme.jeux`), `20261126120000` (places du plateau saisies),
+`20261127120000` (porte publique du Portrait de la Bande).
+
+**Décision implémentée.** La Vitrine passe au cadre `atelier-*` commun, étape
+dans `?etape=`, QR devant le statut une fois publiée. Les jeux se cochent
+(`theme.jeux`, deux booléens dont l'ABSENCE vaut « affiché »), et leurs étapes
+de réglage n'existent que si la case l'est. `/vitrine-studio` sort de
+`/dashboard` — c'est ce qui efface la colonne de navigation — et son aperçu
+monte les VRAIS composants publics. La reconnaissance de caractères tourne dans
+le navigateur, ses quatre binaires servis depuis notre domaine. Côté salons,
+Duo Miroir et Portrait de la Bande deviennent vendables seuls à 12 €/mois tout
+en restant dans les cinq offres ; leur plateau se compose de fiches OU de
+libellés saisis, et leurs réglages quittent la Vitrine pour la page du module.
+
+**Écarté.** Un fil d'étapes propre à la Vitrine (le cadre commun suffit) ; une
+sous-route `/dashboard/vitrine/identite` (les vingt et un `revalidatePath`
+visent la page nue et auraient tous menti) ; une liste `["duo"]` plutôt que deux
+booléens (l'absence y serait ambiguë) ; un remplissage rétroactif de
+`theme.jeux` (l'absence EST le comportement voulu) ; une surcouche modale pour
+le studio (elle aurait hérité de la largeur du tableau de bord) ; une maquette
+approximative en guise d'aperçu (une seconde vitrine à tenir d'accord) ; un
+service de reconnaissance en ligne, ET le CDN par défaut de `tesseract.js` ; la
+variante SIMD du moteur, à taille égale mais plus exigeante ; le retrait de la
+cascade `MODULES_MIROIRS_VITRINE`, que la vente autonome rend plus nécessaire.
+
+**Fini quand.** ✅ typecheck, lint, Vitest complet, `casts:check`,
+`sql:check`, `migrations:check`, CI verte sur chacune des dix PR, fusionnées
+dans l'ordre.
+
+**Reste ouvert — À EXÉCUTER.**
+
+1. **🔴 La lecture de carte photographiée ne fonctionne pas en production.**
+   `'wasm-unsafe-eval'` a été retiré de la CSP par MORT-2 et
+   `security-headers.test.ts` en assure l'absence ; le moteur appelle
+   `WebAssembly.instantiate`. Trouvé en rédigeant cette documentation, pas par
+   une garde. Détail et piste de réparation dans `docs/bugs.md`. La
+   fonctionnalité est livrée et inerte : ne pas l'annoncer au commerçant avant
+   correction.
+2. **🟠 `/vitrine-studio` n'est pas dans `SENSITIVE_PREFIXES`** et retombe au
+   régime CSP `static`, alors que `/poster` — même classe de page — y est.
+   Rien d'exploitable, défense en profondeur perdue. Même fichier que le point
+   précédent.
+3. **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
+   20 €/mois (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`), « Duo Miroir » et
+   « Portrait de la Bande » 12 €/mois. Aucun produit ni prix n'a été créé :
+   les modules sont livrés mais invendables.
+4. **`duo_choose` valide encore par `o.item_id = p_item_id`** : une place
+   saisie est affichée mais pas choisissable, et `CarteOption` la rend inerte.
+   Réparation = une RPC qui valide par `option_id` ; lot base.
+5. **L'écriture d'un plateau saisi n'est pas atomique** (`delete` puis
+   `insert`). Une panne entre les deux laisse le plateau vide, donc porte
+   publique fermée — pas de corruption. Même lot base que le point 4.
+6. Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+
+
 ## Vitrine — allure de maquette et métier (2026-08-31, livré sur `main`, PR #276)
 
 **Terrain.** `src/app/(player)/v/[slug]/[[...langue]]/page.tsx`,

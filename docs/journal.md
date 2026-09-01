@@ -4,6 +4,13 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-01 — Programme de fidélité : la refonte en seize points
+
+**Programme de fidélité : la refonte en seize points** (PR #269→#272, #274, #275, #279). Bascule visites → points : `points_balance` se dépense, `points_earned_total` ne recule jamais et porte seul le niveau (ADR-124) — la carte à tampons a disparu de l'écran pour cette raison. S'y ajoutent, sur la même identité de carte : parrainage du passeport, Google Wallet (QR = URL du passeport, pas un laissez-passer, ADR-125 ; solde mis à jour en tâche différée, ADR-126), nom et figure de carte, visite guidée.
+  **Deux défauts corrigés** : un champ replié posté en `null` que `.default()` n'absorbe pas (remplacé par `texteOptionnel`) ; un focus visant le déclencheur de la visite guidée après sa disparition du DOM.
+  **Une croyance corrigée** (ADR-127) : `loyalty_members` n'est PAS à droits par colonne comme Réservation — `grant select` de table entière, qui couvre déjà toute colonne future.
+  **Reste ouvert** : gestes propriétaire — Stripe « Réservation » (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`) ; compte émetteur Google Wallet (trois clés, **plus** autorisation éditeur en Wallet Console, jamais testé contre le vrai Google). Jackpot, calendrier, pronostics n'ont pas l'identité joueur partagée.
+
 ## 2026-08-31 — La vitrine prend l'allure de la carte de référence, et parle le métier
 
 **La vitrine prend l'allure de la carte de référence, et parle le métier** (VIT-13 — PR #276, migrations `20261121120000` et `20261122120000`, ADR-123). `/v/{slug}` est refaite à l'image d'une maquette fournie : hero pleine largeur au voile dégradé, carte d'infos qui le chevauche, en-tête collant à onglets segmentés (« Notre histoire » en est un), chips filtrantes, fiches à photo latérale, favoris `localStorage`, barre basse, colonne de 480 px. **Vingt-cinq réglages** sous la seule clé `theme.allure`, **sept métiers** qui choisissent les MOTS et une palette — jamais la mise en page.
