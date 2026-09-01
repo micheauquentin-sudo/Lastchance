@@ -21,6 +21,47 @@
 
 ## Critical
 
+- **🔴 OUVERT — La lecture de carte photographiée (VIT-18) est BLOQUÉE PAR LA
+  CSP en production (trouvé le 2026-09-01 en rattrapant la documentation du
+  lot).** `/dashboard/vitrine` est en régime `sensitive`
+  (`SENSITIVE_PREFIXES`, `src/lib/security-headers.ts:49`), donc sous un
+  `script-src 'self' 'nonce-…' 'strict-dynamic' …` — et **`'wasm-unsafe-eval'`
+  n'y est pas**. Il a été retiré par MORT-2 avec la mascotte Lumoz, et
+  `security-headers.test.ts:47` assure désormais son ABSENCE. Or
+  `public/ocr/tesseract-core-lstm.js` appelle `WebAssembly.instantiate` et
+  `WebAssembly.instantiateStreaming` : dès qu'une CSP porte un `script-src`,
+  les deux exigent `'wasm-unsafe-eval'`. La reconnaissance échoue donc à
+  l'amorçage du moteur, chez tout commerçant, sur la seule page qui l'appelle
+  (`src/app/dashboard/vitrine/page.tsx:471` → `ImportCarte` →
+  `import-fichier.ts:111`).
+  **Pourquoi rien ne l'a vu** : ni `typecheck`, ni `lint`, ni Vitest ne lisent
+  une CSP, et les huit gardes de `import-ocr.test.ts` vérifient l'ORIGINE des
+  fichiers, pas le droit de les exécuter. Le seul témoin possible était un
+  navigateur réel sur cette page — et en développement la permission manque
+  aussi (`'unsafe-eval'` n'est ajouté qu'au régime `static`), donc un essai
+  local aurait échoué de la même façon.
+  **C'est le symétrique exact de MORT-2** : ce lot-là avait montré qu'une
+  permission dont le motif est parti ne se voit nulle part. Celui-ci montre
+  l'inverse — un nouveau consommateur de WebAssembly arrive, et rien ne
+  rappelle que la permission a été retirée. **La réparation n'est pas
+  évidente** : rouvrir `'wasm-unsafe-eval'` sur `sensitive` rend au back-office
+  une permission qu'on a payé un lot pour lui retirer. La piste à trancher est
+  de la porter sur la SEULE route qui en a besoin, via `next.config` plutôt que
+  sur la surface entière, et d'inverser l'assertion du test en conséquence.
+
+- **🟠 OUVERT — `/vitrine-studio` (VIT-17) n'est pas dans `SENSITIVE_PREFIXES`
+  et retombe donc au régime CSP le plus faible (2026-09-01).** C'est une page
+  authentifiée du commerçant, de la même classe que `/poster` — qui, lui, est
+  bien dans la liste (`src/lib/security-headers.ts:57`), et pour exactement la
+  même raison : un éditeur plein écran hors `/dashboard`. `cspSurfaceForPath`
+  la classe donc `static`, c'est-à-dire sous `'unsafe-inline'` et sans nonce.
+  Rien n'est cassé et rien n'est exploitable en l'état ; c'est une défense en
+  profondeur perdue sur une page qui rend des données commerçant, et le défaut
+  est celui d'une liste tenue à la main qu'aucune garde ne relie aux routes
+  réellement authentifiées. À corriger avec le point ci-dessus, dont il partage
+  le fichier.
+
+
 - **✅ Le canal SMS livré (V1.24, PR #80) était INERTE — aucun SMS ne
   pouvait partir (2026-08-01, branche `feat/canal-sms-utilisable`)** —
   `sms_sender_for_send` n'accorde un envoi qu'à un expéditeur au statut

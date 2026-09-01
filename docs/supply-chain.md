@@ -33,6 +33,40 @@ Ce qui a été vérifié avant de retirer la directive : aucune occurrence de
 `WebAssembly`, `.wasm`, `meshopt` ou `draco` dans `src/` ni `e2e/`, et la roue
 est du canvas 2D — `three` n'était importé que par `lumoz-model.ts`.
 
+**Ajout 2026-09-01 (VIT-18)** : `tesseract.js` 7.0.0, une dépendance runtime,
+**chargée en import dynamique uniquement** (`src/components/vitrine/import-ocr.ts`,
+lui-même importé dynamiquement par `import-fichier.ts`) — elle ne pèse donc rien
+sur le paquet initial et n'est téléchargée que par le commerçant qui dépose une
+carte photographiée.
+
+Elle vient avec **4,1 Mo de binaires vendorisés dans `public/ocr/`**, et c'est
+la partie qui mérite d'être écrite ici :
+
+| Fichier | Poids | Rôle |
+|---|---|---|
+| `fra.traineddata` | 1,08 Mo | dictionnaire français, variante `tessdata_fast` |
+| `tesseract-core-lstm.wasm` | 2,72 Mo | moteur de reconnaissance |
+| `tesseract-core-lstm.js` | ~0,2 Mo | amorçage emscripten du moteur |
+| `worker.min.js` | ~0,1 Mo | fil d'exécution de `tesseract.js` |
+
+**Pourquoi vendorisés et non chargés depuis un CDN** : `tesseract.js` va
+chercher ces quatre fichiers sur un hôte public **par défaut**, et cet
+oubli-là ne casse rien — l'image fait simplement un aller-retour chez un tiers,
+sans que personne le voie. La contrainte du lot était « sans service externe » ;
+un hôte tiers interrogé depuis le navigateur du commerçant reste un service
+externe. Trois chemins (`workerPath`, `corePath`, `langPath`) les ramènent chez
+nous, et `import-ocr.test.ts` LIT LA SOURCE pour vérifier qu'aucun `https://`
+n'y subsiste — éprouvée par mutation. `public/**` est entré dans
+`globalIgnores` d'ESLint à cette occasion : du code minifié vendorisé n'a pas à
+être relu par notre linter.
+
+**Ce qui n'a PAS été fait, et qui bloque la fonctionnalité** : ces binaires
+compilent du WebAssembly, et la CSP de ce dépôt ne l'autorise plus depuis
+MORT-2. Voir `docs/bugs.md`, entrée « la lecture de carte photographiée est
+bloquée par la CSP » — la dépendance est bien installée et servie depuis notre
+domaine, mais le navigateur refuse de l'exécuter.
+
+
 ## 2. Vulnérabilités corrigées
 
 État initial : `npm audit` remontait 3 entrées « moderate », toutes causées

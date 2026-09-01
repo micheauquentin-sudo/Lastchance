@@ -8447,3 +8447,441 @@ colonne par colonne, et seulement parce qu'elles portent une colonne
 `loyalty_members` — comme la majorité des tables du dépôt — est sous régime
 de table entière : une colonne neuve y est lisible par défaut, sans geste
 supplémentaire.
+
+## ADR-128 — La Vitrine devient un atelier par étape, et son QR passe devant son statut
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — « une configuration par étape comme
+pour les animations », et le QR mis en avant une fois la publication faite.
+VIT-15 (PR #283).
+
+Huit modules réglaient déjà leur préparation par étapes ; la Vitrine était le
+seul gros module à empiler neuf cartes repliables sur un seul écran. Ça tenait
+tant qu'elle n'avait que l'adresse et la carte. Elle porte désormais l'identité,
+le secteur, vingt-cinq réglages d'allure, l'import, les traductions, les liens
+mis en avant et deux jeux : la pile était devenue un mur où l'ordre de
+préparation ne se lisait plus.
+
+### Décision 1 — On réutilise le cadre existant, on n'en écrit pas un second
+
+`atelier-etapes.ts`, `atelier-stepper.tsx`, `atelier-entree.tsx` et
+`atelier-verification` existent depuis les autres modules. Ce lot n'écrit que
+`ETAPES_VITRINE` et redécoupe l'écran.
+
+**Écarté** : un fil d'étapes propre à la Vitrine, au prétexte qu'elle est un
+singleton là où les autres modules comptent des objets. La différence tient en
+une ligne — la base de l'URL n'a pas d'identifiant — et les primitives ne
+connaissent que la base.
+
+### Décision 2 — L'étape vit dans `?etape=`, jamais dans une sous-route
+
+**Écarté** : `/dashboard/vitrine/identite`. Les vingt et un
+`revalidatePath("/dashboard/vitrine")` de `src/actions/vitrine.ts` visent la
+page NUE, et la revalidation ignore la query : une sous-route les aurait tous
+fait mentir d'un coup, sans qu'aucun test ne rougisse.
+
+### Décision 3 — Le QR passe DEVANT le statut, seul module où il le fait
+
+Une vitrine se prépare longtemps puis se scanne tous les jours. Une fois
+publiée, ce que le commerçant vient chercher n'est pas de savoir si elle est
+ouverte — il le sait — mais de retrouver son QR et son lien. Le bloc de partage
+est donc premier, et OUVERT dès la publication ; tout le reste naît replié.
+
+Avant publication il reste fermé : un QR fabriqué sur une vitrine close mène à
+une page qui refuse, et l'ouvrir d'emblée inviterait à le coller en salle.
+
+**Écarté** : le mettre premier TOUJOURS. Sur une vitrine en préparation, la
+première chose lue aurait été un objet inutilisable.
+
+### Ce qu'une garde a appris au passage
+
+`tuiles.test.ts` exige que tout contrôle émis soit rattaché à une tuile.
+Supprimer la tuile `duo` laissait `duo-plateau` orphelin — un point de
+vérification qui se calcule et que plus aucun écran ne peut montrer.
+
+## ADR-129 — Quels jeux paraissent sur la carte : l'absence vaut « les deux »
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — faire le bilan de ce que le commerçant
+possède, lui laisser cocher un des deux jeux ou aucun, et ajouter des étapes de
+réglage pour ceux qu'il retient. VIT-16 (PR #286, migration `20261125120000`).
+
+### Décision 1 — Deux booléens dans le thème, et non `ordre_blocs`
+
+`ordre_blocs` porte UN mot, `experiences` : il dit si le bloc des jeux existe,
+pas lequel des deux y figure. Le commerçant qui voulait le Duo Miroir sans le
+Portrait de la Bande n'avait aucun moyen de le dire.
+
+**Écarté** : une liste `["duo"]`. Elle aurait rendu l'absence ambiguë — liste
+vide ou clé manquante ? Deux booléens facultatifs disent exactement trois états
+par jeu : voulu, refusé, pas encore décidé.
+
+### Décision 2 — L'ABSENCE vaut « affiché », et c'est toute la compatibilité
+
+Une vitrine qui a déjà `experiences` dans son ordre affiche AUJOURD'HUI les
+deux jeux. Faire valoir `false` à une clé absente les aurait retirés de toutes
+les pages publiées, en silence.
+
+C'est le piège exact du vocabulaire de secteur (ADR-123), et la même réponse :
+ce qui n'a pas été décidé garde le comportement d'hier. Aucun remplissage
+rétroactif n'est donc nécessaire — l'absence EST le comportement voulu, ce qui
+est plus sûr qu'un `update` de masse.
+
+### Décision 3 — Le choix RETIRE, il n'ajoute jamais
+
+Cocher n'ouvre pas un jeu : la base reste seul juge du jouable (le plateau du
+Duo doit tenir au-dessus de son plancher). Décocher, en revanche, masque à coup
+sûr. L'écran le dit en toutes lettres, parce que l'inverse est ce qu'on suppose
+naturellement d'une case à cocher.
+
+**Écarté** : faire du choix un consentement suffisant. Une porte cochée mais
+fermée aurait promis au CLIENT un jeu qui ne se lance pas — la promesse se
+serait rompue chez lui, pas dans le tableau de bord.
+
+### Décision 4 — Les étapes de réglage sont conditionnelles
+
+`ETAPES_VITRINE` devient `etapesVitrine({duo, bande})`. Ces deux jeux sont
+facultatifs et la plupart des commerçants n'en activent aucun : deux étapes
+permanentes auraient fait porter à tous un fil de neuf cases dont deux vides.
+
+L'étape d'un jeu décoché reste ATTEIGNABLE par son URL : `parseEtape` la juge
+inconnue et retombe sur la première. Un lien gardé en favori doit mener quelque
+part d'utile, pas à un écran vide ni à un 404.
+
+## ADR-130 — Le studio de la Vitrine : une page hors du tableau de bord, et l'aperçu EST la vraie page
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — « avoir un visu de ce qu'il se passe »,
+avec une colonne à droite et à gauche, en masquant la colonne de navigation,
+« comme quand on personnalise le QR ». VIT-17 (PR #287).
+
+Dans l'écran de réglages, la vitrine n'était visible nulle part : on cochait
+« Pastille », on enregistrait, on ouvrait un onglet, on revenait. Trois gestes
+pour voir une couleur.
+
+### Décision 1 — La route vit HORS de `/dashboard`
+
+Ce n'est pas un choix d'URL : c'est ce qui fait disparaître la colonne de
+navigation, que `dashboard/layout.tsx` pose sur tout ce qu'il contient. Un
+studio qui garde le menu n'a plus la largeur de son aperçu. Motif exact de
+`/poster/[id]`, gardes comprises.
+
+**Écarté** : une surcouche modale sur l'écran de réglages. Elle aurait hérité de
+la largeur du tableau de bord, ne serait pas partageable par son adresse, et
+aurait piégé le retour arrière du navigateur.
+
+### Décision 2 — L'aperçu monte les VRAIS composants publics
+
+`HeroVitrine`, `CatalogueVitrine` et `BarreBasseVitrine`, avec les cartes
+réelles du commerçant et `resoudreThemeVitrine` — la même fonction que la page
+publique. Ce qui se voit ici est ce qui sera servi.
+
+**Écarté** : une maquette approximative. Elle aurait été une seconde vitrine à
+tenir d'accord avec la première, et les deux auraient divergé au premier réglage
+ajouté — ce lot en a ajouté vingt-cinq en trois semaines.
+
+### Décision 3 — Il est vivant parce que l'allure est du CSS
+
+Les vingt-cinq réglages sortent en variables CSS posées sur le conteneur.
+Bouger un curseur ne recalcule donc rien : le navigateur repeint. C'est
+`variablesThemeVitrine` qui rend cela possible, et c'est la récompense d'un
+choix fait en VIT-13 pour une tout autre raison.
+
+### Décision 4 — Rien n'est enregistré tant qu'on n'a pas enregistré
+
+L'état vit en mémoire — c'est la promesse d'un studio : essayer sans
+conséquence. Le bouton envoie le MÊME formulaire que l'écran de réglages,
+`saveVitrineSettings`, avec les mêmes noms de champs.
+
+**Écarté** : un enregistrement au fil de l'eau. Il aurait publié chaque essai
+sur une page que des clients lisent peut-être au même moment.
+
+## ADR-131 — La reconnaissance de caractères tourne dans le navigateur, et ses fichiers sont chez nous
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — accepter les cartes scannées et
+photographiées, **sans utiliser de service externe**. VIT-18 (PR #289).
+
+`import-fichier.ts` porte depuis sa création une promesse : « le PDF d'un
+restaurant reste chez le restaurant ; seul le texte qu'il contient remonte ». Le
+PDF TEXTE fonctionnait déjà ; l'image était refusée par principe, faute de
+moteur.
+
+### Décision 1 — Le moteur tourne dans le navigateur, et pas même un CDN
+
+WebAssembly côté client, fichiers servis depuis notre propre domaine
+(`public/ocr/`).
+
+**Écarté** : un service de reconnaissance en ligne. L'image serait partie chez
+un tiers, avec les prix, les fournisseurs et parfois le nom du chef.
+
+**Écarté aussi, et c'est moins évident** : laisser `tesseract.js` charger son
+moteur depuis un CDN public, ce qu'il fait PAR DÉFAUT. Un hôte tiers interrogé
+depuis le navigateur du commerçant reste un hôte tiers : il voit son adresse IP
+et l'existence de la démarche. « Sans service externe » se tient jusqu'au bout
+ou ne se tient pas.
+
+### Décision 2 — Le cœur LSTM SANS SIMD, à taille égale
+
+La variante SIMD fait exactement la même taille (2,72 Mo) et va plus vite, mais
+exige un navigateur récent.
+
+**Écarté** : la variante SIMD. Pour un import qu'on fait une fois, la JUSTESSE
+prime sur la vitesse — un moteur qui refuse de démarrer sur un téléphone un peu
+ancien serait une fonctionnalité réservée à ceux qui n'en ont pas besoin.
+
+### Décision 3 — Le dictionnaire RAPIDE, parce que l'écran relit
+
+`tessdata_fast` (1,1 Mo) contre 15 Mo pour le complet. Il lit correctement une
+carte nette et se trompe sur une photo de travers.
+
+Ce qui rend cette imprécision acceptable n'est pas le poids : c'est que l'écran
+d'import montre le résultat AVANT de créer quoi que ce soit. On relit, on
+corrige, puis on crée. Sur un import qui créerait directement, ce choix aurait
+été le mauvais.
+
+### Décision 4 — L'image est bornée à 2000 pixels AVANT lecture
+
+Contre l'intuition, réduire AMÉLIORE le résultat : au-delà, une carte n'a plus
+de détail utile à offrir — le texte y fait déjà des dizaines de pixels de haut —
+et ce qui reste est du grain de capteur, que le moteur interprète comme des
+caractères. On enlève du bruit et du temps de calcul, pas de l'information.
+
+### La garde, et pourquoi elle lit la source
+
+`tesseract.js` retombe sur un CDN par défaut. Oublier un seul des trois chemins
+(`workerPath`, `corePath`, `langPath`) ne casse RIEN : ça marche, simplement
+l'image a fait un aller-retour chez un tiers, et personne ne le voit. Le
+comportement est identique, seule la destination change — un test d'exécution ne
+trouve pas ça.
+
+`import-ocr.test.ts` lit donc le fichier source, comme les gardes de parité SQL
+de ce dépôt, et a été éprouvée par mutation : renvoyer un seul chemin vers un
+CDN fait rougir deux assertions.
+
+## ADR-132 — Supprimer sa vitrine passe par une RPC, et seul le propriétaire l'appelle
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : demande du propriétaire — le bouton qu'ont tous les éditeurs de
+jeu, et que la Vitrine n'avait pas. VIT-14 (PR #281, migration
+`20261123120000`).
+
+### Décision 1 — Une RPC, et non sept suppressions depuis l'action
+
+Une vitrine vit dans SEPT tables, dont **aucune ne référence
+`vitrine_settings`** : elles pendent toutes à l'organisation. Supprimer la
+ligne de réglages depuis le code aurait donc laissé le catalogue orphelin — des
+cartes et des fiches rattachées à une vitrine qui n'existe plus, invisibles
+depuis l'écran et impossibles à détruire.
+
+**Écarté** : sept `delete` successifs depuis la server action. Ils ne sont pas
+atomiques : une panne au quatrième laisse une vitrine à moitié détruite, dans
+un état qu'aucun écran ne sait montrer ni réparer.
+
+### Décision 2 — Ce lot n'ouvre AUCUN droit de suppression
+
+`security_acl.test.sql` porte depuis VIT-1a l'assertion « merchant cannot
+delete their storefront settings », et **elle reste vraie** : `authenticated`
+n'a toujours pas de `delete` sur `vitrine_settings`. Ce qui change, c'est
+qu'il existe UNE porte — `delete_vitrine`, `security definer`,
+`search_path = ''` — qui revérifie le rôle en SQL et journalise
+(`vitrine.deleted` dans `audit_logs`).
+
+Même arbitrage que `set_vitrine_slug`, et pour la même raison : l'adresse
+engage des QR déjà imprimés.
+
+### Décision 3 — Le PROPRIÉTAIRE seul, pas l'éditeur
+
+`set_vitrine_slug` accepte les deux parce qu'une adresse se remet. Ceci ne se
+répare pas. Un éditeur peut écrire toute la carte ; il ne peut pas la faire
+disparaître.
+
+L'écran le dit en toutes lettres avant de demander confirmation : les QR
+imprimés cessent de fonctionner, et l'adresse redevient disponible pour un
+autre commerce.
+
+### Décision 4 — Revenir aux couleurs du métier RETIRE les clés, il ne les écrit pas
+
+`<input type="color">` n'a pas d'état vide : il rend TOUJOURS une couleur.
+Tout enregistrement passé a donc gravé en base la valeur par défaut d'alors,
+même quand le commerçant n'y avait pas touché — c'est ainsi qu'une vitrine
+s'est retrouvée avec un `#211d16` presque noir posé sur un fond bleu sombre,
+illisible, et qu'elle semblait « ne pas avoir changé » après VIT-13.
+
+`resetVitrineCouleurs` **supprime** les clés `couleurs` du thème plutôt que
+d'y écrire le préréglage du secteur. La différence n'est pas cosmétique : une
+clé absente suit le vocabulaire du métier **et continue de le suivre** si ce
+vocabulaire évolue, là où une valeur recopiée fige à jamais l'état d'un jour.
+
+## ADR-133 — Duo Miroir et Portrait de la Bande deviennent vendables seuls, et la cascade de révocation reste
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : DUO-2 (PR #284). Les deux salons entrent au catalogue
+`ADDON_OFFERS` comme mensuels autonomes à 12 €/mois, sans engagement.
+
+### Décision 1 — Ils RESTENT dans les cinq offres
+
+La garde « met Duo Miroir et Portrait de la Bande dans toutes les offres » est
+intacte. Le seul acheteur possible d'une option autonome est donc le commerçant
+**sans abonnement** — c'est exactement le modèle du Quiz, et c'est ce qui impose
+`soldStandalone: true`.
+
+Catalogue : treize options, `ADDONS_STANDALONE` passe de 8 à 10,
+`ADDONS_LIGNE_ABONNEMENT` inchangé, `PACKAGING_VERSION` en `2026-08-d`.
+
+**Aucun produit ni prix Stripe n'a été créé** : c'est un geste propriétaire.
+
+### Décision 2 — La cascade `MODULES_MIROIRS_VITRINE` est CONSERVÉE
+
+La question posée en briefant ce lot était : révoquer un octroi `vitrine`
+coupe-t-il un module payé à part ? La réponse est non, et la retirer serait
+devenu le mauvais geste — pour deux raisons dont la seconde est l'inverse de
+l'intuition.
+
+1. **Ce qui est acheté n'est pas atteignable.** Un octroi né d'un paiement
+   porte `source = 'stripe'`, que `miroirsDeVitrine` exclut explicitement ; le
+   panneau ne rend même pas de bouton de révocation dessus.
+2. **Les retirer serait devenu DANGEREUX, précisément à cause de la vente.**
+   `soldStandalone: true` fait entrer les deux clés dans
+   `MODULES_PORTANT_LE_SOCLE` : un octroi vivant suffit désormais à rendre
+   `hasActiveAccess` vrai. Laisser survivre les miroirs d'un `vitrine` révoqué
+   rendrait la roue publique et les campagnes au commerçant qu'on vient de
+   couper — le défaut MOYEN-2 que le lot L2 avait fermé. La cascade l'en
+   empêche.
+
+Une décision prise pour une raison peut cesser d'être défendue par elle et le
+rester pour une autre. Vérifier laquelle vaut encore est le geste ; retirer une
+garde parce que son motif d'origine a changé est le piège.
+
+## ADR-134 — Une place du plateau est une fiche OU un texte, et son écriture emprunte deux chemins
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : DUO-1 (PR #285, migration `20261126120000`), complété par DUO-3b
+(PR #290).
+
+`duo_options.item_id` était `not null` avec une clé étrangère composite vers
+`vitrine_items` : le plateau du Duo Miroir n'était composable qu'à partir des
+fiches de la carte. Un commerçant qui achète le Duo seul payait un jeu qu'il ne
+pouvait pas configurer.
+
+### Décision 1 — L'exclusivité est dans la base, pas dans le formulaire
+
+`duo_options_origine_exclusive` : une option est SOIT une fiche SOIT un libellé
+saisi, jamais les deux et jamais aucun. Le libellé est borné en base — 1..120
+(la borne de `vitrine_items.nom`), sans blanc de bord ni doublé, au moins un
+alphanumérique, ni caractère de contrôle ni codet invisible ou bidirectionnel —
+et unique par organisation.
+
+Le formulaire porte le **miroir zod** de ces six clauses. Sans lui, la base
+refuserait en `23514`, c'est-à-dire une erreur de base rendue dans un champ de
+saisie.
+
+### Décision 2 — `duo_jouable` n'est PAS modifiée, et c'est le catalogue vivant qui le dit
+
+Elle compte des LIGNES de `duo_options` sans jointure vers `vitrine_items` :
+elle était déjà indifférente à l'origine des options. Le vrai verrou était
+`duo_options_json`, dont la jointure **interne** faisait disparaître du plateau
+toute option sans fiche — passée ici en jointure externe, avec le nom tiré de la
+fiche ou du libellé et un `option_id` qui désigne une PLACE quelle que soit son
+origine.
+
+### Décision 3 — Le mappeur exige la PLACE, pas la fiche
+
+Corollaire trouvé après coup et corrigé en DUO-3b : `mapDuoOptions` exigeait
+toujours `item_id` ET `nom`. Toute option saisie était donc **écartée en
+silence**, sans erreur et sans trace — un commerçant sans Vitrine voyait son
+plateau ressortir vide avec `duo_jouable` à vrai, c'est-à-dire une porte
+publique ouverte sur un jeu qui refuse de démarrer, exactement ce que la
+jointure externe venait de réparer côté base.
+
+Le mappeur exige désormais `option_id`, qui existe pour les deux origines.
+`item_id` devient nullable et reste lisible : c'est ce qui dit à l'écran joueur
+qu'une place n'est pas une fiche.
+
+**Reste ouvert, et écrit noir sur blanc dans la migration** : `duo_choose`
+valide encore par `o.item_id = p_item_id`. Une option saisie est donc
+**affichée mais pas choisissable**. `CarteOption` la rend inerte plutôt que
+cliquable — un bouton qui retombe sur le refus muet `unavailable` envoie
+chercher une panne de réseau. Elle reste affichée et non masquée : le plateau
+est ce que les DEUX joueurs ont sous les yeux au même instant.
+
+### Décision 4 — Deux chemins d'écriture, et le partage n'est pas un confort
+
+Un plateau de fiches seules garde `set_duo_options` : la RPC vérifie
+l'appartenance EN SQL et journalise (`duo.options_set`). Dès qu'une place est
+saisie, l'écriture passe par la TABLE, avec le client de **session** — c'est ce
+que la migration a écrit dans son propre commentaire de table, et la RLS
+`duo_options: editor write` y tranche là où la clé de service l'aurait
+contournée.
+
+**Écarté** : tout passer par la table — on perdait la ligne d'audit pour tout le
+monde. **Écarté aussi** : tout passer par la RPC — elle aurait effacé les
+libellés au premier enregistrement.
+
+**Ce que ce chemin n'a pas** : `delete` et `insert` sont deux allers. Une panne
+entre les deux laisse le plateau VIDE — pas corrompu : vide, donc porte publique
+fermée. Le message le dit et nomme le geste. La réparation propre est une RPC
+qui accepte les deux origines dans la même transaction ; c'est un lot base.
+
+## ADR-135 — Les réglages du jeu quittent la Vitrine, l'étape y reste
+
+**Date** : 2026-09-01
+**Statut** : Accepté
+**Contexte** : DUO-3b (PR #290), conséquence directe de la vente autonome
+(ADR-133).
+
+`DuoEditeur` et `BandeEditeur` étaient montés par `/dashboard/vitrine`, et leurs
+chargeurs passaient par `gardeEditeurVitrine`. Un commerçant qui achète le Duo
+seul avait donc un jeu à son nom, une adresse publique, une liste de salons — et
+**aucun accès à son propre plateau**, avec pour explication « Votre offre ne
+comprend pas la Vitrine ».
+
+### Décision 1 — La garde suit le droit DU JEU
+
+`gardeEditeurVitrine` nommait elle-même sa condition de péremption : « un salon
+jouable hors vitrine, ou un plateau vendu séparément ». **Les deux sont
+arrivés** — `20261022120000_salons_sans_vitrine` et DUO-2. `gardeEditeurJeuSalon`
+exige le droit du jeu ; comme `duo` et `bande` sont dans les cinq offres, cela
+n'ouvre que le cas neuf.
+
+### Décision 2 — L'étape reste dans la Vitrine, le FORMULAIRE part
+
+VIT-16 venait de livrer ces étapes (ADR-129), des liens les visent, et « ce jeu
+paraît-il sur MA vitrine » est bien une question de vitrine. Ce qui n'en est pas
+une, c'est le CONTENU du plateau.
+
+L'étape rend donc un **lien** vers la page du module, jamais un second
+formulaire.
+
+**Écarté** : dupliquer le formulaire aux deux endroits. Le même réglage à deux
+endroits, ce sont deux sources de vérité pour une ligne en base — l'une
+revalidée, l'autre servie d'un cache.
+
+### Décision 3 — La porte publique du Portrait de la Bande prend un drapeau
+
+`vitrine_public_state` garde chaque porte par le droit du produit qu'elle ouvre
+depuis `20261020120000` — sauf une. `portes.experiences` ne portait AUCUNE clé
+`bande` : la page publique annonçait le Portrait de la Bande à tout le monde,
+alors que `create_player_lobby` refusait le clic. Invisible tant que `bande`
+était compris dans les cinq offres ; **visible chez le client dès DUO-2**.
+
+DUO-3a (PR #288, migration `20261127120000`) pose la clé, en **repli fermé** :
+absente ou non, le comportement d'hier est conservé. `v_bande` est tiré du seul
+droit `bande`, sans seuil — le pack a un défaut, les questions vivent dans le
+code, aucune `bande_jouable` n'existe : c'est exactement le couple que
+`create_player_lobby` refuse.
+
+**Sur la méthode** : la migration patche la fonction VIVANTE. Elle porte des
+patchs successifs depuis `20261023120000` ; la recopier depuis un fichier
+écraserait les gardes produit, l'indexation et les portes Calendrier/Pronostics
+posées depuis. Trois ancres sont comptées avant remplacement, **toutes des
+marqueurs à préserver et jamais l'absence de ce qu'on ajoute** : un `db reset`
+rejoue les migrations dans l'ordre, et la garde d'un fichier ancien doit rester
+vraie dans un monde où les suivants existent.

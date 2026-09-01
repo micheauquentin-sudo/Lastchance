@@ -1,5 +1,94 @@
 # Roadmap — Lastchance
 
+## V1.72 — La Vitrine devient un atelier, et les deux salons deviennent vendables seuls (✅ 2026-09-01, PR #281→#290)
+
+**Objectif** : deux demandes du propriétaire enchaînées. Côté Vitrine — la
+supprimer, la régler par étape comme les huit autres modules, cocher les jeux
+qui paraissent sur la carte, la personnaliser dans un studio plein écran avec
+aperçu, et lire une carte photographiée sans que l'image quitte le commerce.
+Côté salons — vendre le Duo Miroir et le Portrait de la Bande séparément, ce
+qui a rendu visibles trois défauts que l'inclusion dans les offres masquait.
+
+### Vitrine
+
+- **VIT-14/PR #281 — Supprimer sa vitrine, et revenir aux couleurs de son
+  métier** (migration `20261123120000`, ADR-132). `delete_vitrine`,
+  `security definer`, **propriétaire seul**, détruit les sept tables en une
+  transaction et journalise. Aucun droit de `delete` n'est ouvert :
+  l'assertion « merchant cannot delete their storefront settings » de
+  `security_acl.test.sql` reste vraie. `resetVitrineCouleurs` **retire** les
+  clés au lieu d'écrire le préréglage — c'est ce qui répare les vitrines où un
+  `<input type="color">` avait gravé un ancien défaut illisible.
+- **VIT-15/PR #283 — L'atelier par étape, et le QR en tête une fois publiée**
+  (ADR-128). L'écran empilait neuf cartes repliables ; il passe au cadre
+  `atelier-*` commun, étape dans `?etape=`. Le **QR passe devant le statut** —
+  seul module où il le fait — et il est ouvert dès la publication, tout le
+  reste replié.
+- **VIT-16/PR #286 — Cocher ses jeux** (migration `20261125120000`, ADR-129) :
+  bilan de ce que l'offre comprend, état réel de chacun, et deux étapes de
+  réglage qui n'existent que si la case l'est. `theme.jeux` — et **l'absence
+  vaut « les deux »**, sinon les vitrines déjà publiées auraient perdu leurs
+  jeux en silence, exactement le piège du vocabulaire de secteur (ADR-123).
+- **VIT-17/PR #287 — Un studio plein écran** (ADR-130) : `/vitrine-studio`,
+  **hors** de `/dashboard` — c'est ce qui efface la colonne de navigation.
+  Réglages à gauche, aperçu au centre, contenu à droite. L'aperçu monte les
+  VRAIS composants publics et il est vivant parce que l'allure sort en
+  variables CSS. Rien n'est enregistré tant qu'on n'a pas enregistré.
+- **VIT-18/PR #289 — Lire une carte photographiée** (ADR-131) : reconnaissance
+  de caractères en WebAssembly **dans le navigateur**, 4,1 Mo servis depuis
+  notre propre domaine — **pas même un CDN**. `tesseract.js` retombe sur un
+  hôte tiers par défaut sans rien casser : une garde lit la source et a été
+  éprouvée par mutation.
+
+### Salons vendus seuls
+
+- **PR #282 — `rendez_vous` entre dans le vocabulaire piloté par Stripe**
+  (migration `20261124120000`). Le droit était accordable par le back-office
+  mais absent des treize droits d'`apply_stripe_subscription_event_v2` et de
+  `organization_entitlements_entitlement_check`, alors que `src/lib/plans.ts`
+  le vend dans « Sur Place » et « La Totale ». Au premier achat la RPC aurait
+  levé « invalid entitlement » et le webhook rendu 500.
+- **DUO-2/PR #284 — Deux options vendables, 12 €/mois** (ADR-133). Treize
+  options au catalogue, `ADDONS_STANDALONE` de 8 à 10, `PACKAGING_VERSION` en
+  `2026-08-d`. La cascade `MODULES_MIROIRS_VITRINE` est **conservée** : la
+  vente autonome la rend plus nécessaire, pas moins.
+- **DUO-1/PR #285 — Le plateau cesse d'exiger la carte Vitrine** (migration
+  `20261126120000`, ADR-134) : une place est SOIT une fiche SOIT un libellé
+  saisi. `duo_options_json` passe en jointure externe ; `duo_jouable` était
+  déjà indifférente à l'origine et n'est pas touchée.
+- **DUO-3a/PR #288 — La porte du Portrait de la Bande suit son droit**
+  (migration `20261127120000`, ADR-135). `portes.experiences` ne portait
+  aucune clé `bande` : la page publique l'annonçait à tout le monde quand
+  `create_player_lobby` refusait le clic. Invisible tant qu'il était compris
+  dans les cinq offres.
+- **DUO-3b/PR #290 — Les réglages du jeu quittent la Vitrine** (ADR-135) :
+  `gardeEditeurJeuSalon` exige le droit DU JEU. L'étape reste dans l'atelier
+  mais rend un **lien**, jamais un second formulaire. Corrige au passage le
+  défaut bloquant de DUO-1 — `mapDuoOptions` exigeait encore `item_id`, et
+  écartait donc **en silence** toute option saisie.
+
+**Décisions** : [ADR-128 à ADR-135](./decisions.md).
+
+**Reste ouvert** :
+- **Geste propriétaire, Stripe — trois produits à créer.** « Réservation »
+  20 €/mois (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`), « Duo Miroir » et
+  « Portrait de la Bande » 12 €/mois chacun. Aucun produit ni prix n'a été
+  créé côté Stripe : les modules sont livrés mais invendables.
+- **Geste propriétaire, Google Wallet** : compte émetteur, clé de compte de
+  service, et l'autorisation « éditeur » dans la Wallet Console (voir V1.71).
+- **`duo_choose` n'accepte pas encore `option_id`** : une place saisie est
+  affichée mais pas choisissable, et `CarteOption` la rend inerte. La
+  réparation est une RPC qui valide par la place ; c'est un lot base.
+- **L'écriture du plateau saisi n'est pas atomique** : `delete` puis `insert`,
+  deux allers. Une panne entre les deux laisse le plateau vide — porte
+  publique fermée, pas de corruption — et l'écran nomme le geste de reprise.
+- Le socle Moments vérifie encore `vitrine`, pas `rendez_vous` (ADR-122).
+- Jackpot, calendrier et pronostics n'ont pas adopté l'identité joueur
+  partagée ; le sélecteur de figures des pronostics reste une copie.
+- Le clone WSL `~/workspaces/lastchance` est périmé et son historique
+  incohérent. À réparer.
+
+
 ## V1.71 — Programme de fidélité : la refonte en seize points (✅ 2026-09-01, PR #269→#272, #274, #275, #279)
 
 **Objectif** : passer le programme de fidélité de la visite tamponnée au
