@@ -93,6 +93,12 @@ const eslintConfig = defineConfig([
     // Artefacts locaux de `supabase start`/`db reset` (gitignorés mais pas
     // ignorés d'ESLint) : un bundle Deno minifié y atterrit et a pollué trois
     // campagnes de lint avant cette ligne.
+    // Fichiers SERVIS TELS QUELS, jamais compiles : le moteur de
+    // reconnaissance de caracteres (VIT-18) y depose 2,8 Mo de WebAssembly et
+    // son chargeur minifie. Meme motif que la ligne ci-dessus, et meme cause :
+    // un bundle minifie sous l oeil du linter produit des centaines de
+    // diagnostics sur du code que personne n ecrira jamais.
+    "public/**",
     "supabase/.temp/**",
     "supabase/.branches/**",
   ]),

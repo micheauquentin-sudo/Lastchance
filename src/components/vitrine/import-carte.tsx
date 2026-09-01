@@ -141,6 +141,10 @@ export function ImportCarte({ peutEditer }: { peutEditer: boolean }) {
     csv: "fichier CSV",
     tableur: "feuille de calcul",
     pdf: "PDF",
+    // VIT-18 : le mot dit d’où vient le texte, et il compte ici plus
+    // qu’ailleurs — une lecture d’image se relit ligne à ligne, une
+    // colonne de tableur non.
+    image: "photo lue à l’écran",
   };
 
   /**
