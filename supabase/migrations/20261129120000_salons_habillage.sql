@@ -214,7 +214,14 @@ $migration$;
 -- ne tient qu'au raisonnement se perd au premier patch.
 -- ────────────────────────────────────────────────────────────
 
-create table if not exists public.lobby_settings (
+-- `create table` NU, et non `if not exists` : c'est le geste de
+-- `duo_settings` et de `bande_settings`, et il est le plus honnête ici. Les
+-- `create policy` et `create trigger` qui suivent n'ont PAS d'équivalent
+-- idempotent dans ce dépôt ; un `if not exists` sur la seule table aurait donc
+-- promis une reprise que le reste du fichier ne tient pas — un rejeu
+-- échouerait trois instructions plus loin, après avoir déjà passé le `revoke`.
+-- Mieux vaut échouer à la première ligne, bruyamment.
+create table public.lobby_settings (
   organization_id uuid primary key
     references public.organizations(id) on delete cascade,
 
