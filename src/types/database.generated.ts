@@ -1610,21 +1610,24 @@ export type Database = {
         Row: {
           created_at: string
           id: string
-          item_id: string
+          item_id: string | null
+          libelle: string | null
           ordre: number
           organization_id: string
         }
         Insert: {
           created_at?: string
           id?: string
-          item_id: string
+          item_id?: string | null
+          libelle?: string | null
           ordre: number
           organization_id: string
         }
         Update: {
           created_at?: string
           id?: string
-          item_id?: string
+          item_id?: string | null
+          libelle?: string | null
           ordre?: number
           organization_id?: string
         }
