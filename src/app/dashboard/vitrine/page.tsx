@@ -347,16 +347,57 @@ export default async function VitrineDashboardPage({
             </CarteRepliable>
           </div>
 
+          {/* ── LE STUDIO EST LE CHEMIN PRINCIPAL (VIT-27) ──
+
+              Tout se règle là-bas, en voyant la page. Cette carte n'est donc
+              pas une entrée de plus dans la pile : c'est LA porte, et elle est
+              OUVERTE — un commerçant qui vient régler quelque chose doit
+              tomber dessus, pas la déplier.
+
+              Elle ne s'affiche qu'à partir de `lg`, parce que le studio est à
+              trois colonnes : en dessous, elles s'empilent et l'aperçu passe
+              sous les réglages, ce qui lui retire sa raison d'être. */}
+          {settings ? (
+            <Card className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
+              <div className="min-w-0">
+                <h2>Mon studio</h2>
+                <p className="mt-1 text-sm text-k-body">
+                  Votre vitrine au centre, les réglages autour. Votre logo,
+                  votre bannière, vos mots, votre carte, vos réseaux et vos
+                  jeux — tout s&apos;y règle en voyant le résultat.
+                </p>
+              </div>
+              <Link
+                href="/vitrine-studio"
+                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+              >
+                Ouvrir le studio
+              </Link>
+            </Card>
+          ) : null}
+
+          {/* ── L'ATELIER RESTE, ET IL EST LE CHEMIN DU PETIT ÉCRAN ──
+
+              Il n'est pas retiré : le studio ne tient pas sur un téléphone, et
+              une adresse d'étape gardée en favori doit continuer de mener
+              quelque part. `?etape=` reste donc atteignable partout, sur
+              n'importe quelle taille d'écran — c'est l'ENTRÉE qui change de
+              rang, pas la route.
+
+              ÉCARTÉ : masquer l'atelier au-delà de `lg`. Sa tuile porte des
+              points de la vérification (`carteTuile`), et une tuile invisible
+              sur grand écran aurait retiré au commerçant un état qu'il est
+              censé lire — pour ne gagner qu'une carte repliée de moins. */}
           <CarteRepliable
             {...carteTuile(tuiles, "atelier")}
             defaultOuvert={false}
-            resume={`${etapes.length} étapes de préparation.`}
+            resume={`${etapes.length} étapes — le chemin des petits écrans.`}
           >
             <AtelierEntree
               etapes={etapes}
               hrefPour={(cle) => hrefEtapeVitrine(cle as EtapeVitrine)}
               titre="L'atelier de la vitrine"
-              sousTitre="Votre adresse, votre carte, votre style et vos jeux — une étape à la fois."
+              sousTitre="Le même contenu que le studio, une étape à la fois et sans aperçu — pratique sur téléphone."
             />
           </CarteRepliable>
 
