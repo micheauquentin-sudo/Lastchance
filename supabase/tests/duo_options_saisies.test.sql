@@ -30,7 +30,7 @@
 -- Il ne prouve PAS qu'une option saisie est CHOISISSABLE. `duo_choose` valide
 -- encore le choix par `o.item_id = p_item_id`, qu'un `item_id` nul n'égale
 -- jamais : une option saisie s'affiche mais ne se scelle pas encore. C'est un
--- manque connu et documenté (migration 20261125120000, §4), pas un oubli — et
+-- manque connu et documenté (migration 20261126120000, §4), pas un oubli — et
 -- écrire ici une assertion qui le contournerait donnerait un vert qui ment.
 --
 -- Le fichier doit passer sur une base VIDE comme sur une base SEMÉE : toutes
