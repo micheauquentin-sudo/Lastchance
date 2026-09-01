@@ -66,6 +66,7 @@ import {
   reorderVitrineFichesSchema,
   reorderVitrineRubriquesSchema,
   saveVitrineSettingsSchema,
+  setVitrineJeuxSchema,
   setVitrineContenuSchema,
   setVitrineSlugSchema,
   setVitrineTraductionSchema,
@@ -2416,6 +2417,88 @@ export async function resetVitrineCouleurs(): Promise<ActionResult> {
 
   if (error) {
     reportError("vitrine.reset-couleurs", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  await revaliderVitrine(supabase, garde.organizationId, ligne.slug);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * QUELS JEUX PARAISSENT SUR LA CARTE (VIT-16).
+ *
+ * ── ELLE ÉCRIT LES DEUX BOOLÉENS, TOUJOURS ──
+ *
+ * Contrairement à l'allure, qui n'enregistre que les écarts au défaut, ce
+ * réglage écrit `duo` ET `bande` à chaque fois. La raison tient à ce que
+ * l'absence SIGNIFIE : « pas encore décidé », donc « affiché ». Omettre un
+ * `true` reviendrait à laisser le jeu dans l'état « pas décidé », ce qui rend
+ * la même page — mais un commerçant qui a coché a DÉCIDÉ, et la base doit
+ * pouvoir le dire. C'est la différence entre une valeur par défaut et un
+ * choix, et elle compte le jour où le défaut change.
+ *
+ * ── COCHER REMONTE LE BLOC, DÉCOCHER LES DEUX LE MASQUE ──
+ *
+ * `ordre_blocs` reste le consentement de publication de l'annuaire, hérité de
+ * VIT-3. Cocher un jeu sans remonter le bloc aurait donné un réglage sans
+ * effet visible, et c'est exactement le genre de silence qui fait douter d'un
+ * écran. Ne rien cocher retire le bloc : une section « Jeux » vide est pire
+ * qu'une section absente.
+ */
+export async function setVitrineJeux(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = setVitrineJeuxSchema.safeParse({
+    duo: formData.get("duo"),
+    bande: formData.get("bande"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0].message };
+  }
+
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: ligne, error: lecture } = await supabase
+    .from("vitrine_settings")
+    .select("slug, theme")
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+
+  if (lecture) {
+    reportError("vitrine.set-jeux", lecture.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  if (!ligne) return { ok: false, error: SANS_ADRESSE };
+
+  const theme = mapThemeVitrine(ligne.theme);
+  theme.jeux = { duo: parsed.data.duo, bande: parsed.data.bande };
+
+  // L'ORDRE DES BLOCS SUIT LE CHOIX. On part de l'ordre EFFECTIF — celui que
+  // rend `resoudreThemeVitrine` pour une liste absente — sans quoi cocher un
+  // jeu sur une vitrine jamais réordonnée aurait écrit une liste d'un seul
+  // bloc, et masqué tout le reste de la page.
+  const ordre =
+    theme.ordre_blocs && theme.ordre_blocs.length > 0
+      ? [...theme.ordre_blocs]
+      : [...VITRINE_BLOCS_DEFAUT];
+  const veutUnJeu = parsed.data.duo || parsed.data.bande;
+  const presente = ordre.includes("experiences");
+  if (veutUnJeu && !presente) ordre.push("experiences");
+  if (!veutUnJeu && presente) {
+    ordre.splice(ordre.indexOf("experiences"), 1);
+  }
+  theme.ordre_blocs = ordre;
+
+  const { error } = await supabase
+    .from("vitrine_settings")
+    .update({ theme: toJson(theme) })
+    .eq("organization_id", garde.organizationId);
+
+  if (error) {
+    reportError("vitrine.set-jeux", error.message);
     return { ok: false, error: GENERIC_ERROR };
   }
 
