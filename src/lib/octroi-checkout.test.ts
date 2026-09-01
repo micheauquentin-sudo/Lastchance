@@ -83,6 +83,11 @@ describe("resolveAddonCheckout — les huit add-ons du catalogue", () => {
     // ce test dit lequel avant que la vente ne le découvre.
     expect(ACHATS_UNIQUES).toHaveLength(6);
     expect(MENSUELS.map((o) => o.entitlement).sort()).toEqual([
+      // DUO-2 : les deux salons sont des mensuels autonomes. Ils sont dans
+      // les CINQ offres, donc ce tunnel ne sert qu'au commerçant SANS
+      // abonnement — le seul qui ne les ait pas déjà.
+      "bande",
+      "duo",
       "loyalty",
       "referral",
     ]);
@@ -302,19 +307,21 @@ describe("modeCheckout — un récurrent est un abonnement, tout le reste un pai
     }
   });
 
-  it("les deux mensuels du cahier sont bien les seuls abonnements", () => {
-    // Verrouille le §2 du cahier : « Passeport des habitués » et
-    // « Bouche-à-oreille » sont mensuels, les six autres sont des achats
-    // uniques. Basculer un achat unique en `subscription` prélèverait tous
-    // les mois un client qui a payé une fois.
+  it("les mensuels du cahier sont bien les seuls abonnements", () => {
+    // Verrouille le §2 du cahier : « Passeport des habitués »,
+    // « Bouche-à-oreille » et, depuis DUO-2, les deux salons sont mensuels ;
+    // les six autres sont des achats uniques. Basculer un achat unique en
+    // `subscription` prélèverait tous les mois un client qui a payé une fois.
     const abonnements = ADDON_OFFERS.filter(
       (o) => modeCheckout(o) === "subscription",
     ).map((o) => o.entitlement);
-    // CINQ récurrents au catalogue depuis le 2026-08-29, et `modeCheckout`
-    // dit vrai sur les cinq : ce sont bien des abonnements. Ce qui les
-    // sépare n'est pas le mode mais le CHEMIN — deux passent par ce tunnel,
-    // trois par `toggleSubscriptionOption`.
+    // SEPT récurrents au catalogue depuis DUO-2, et `modeCheckout` dit vrai
+    // sur les sept : ce sont bien des abonnements. Ce qui les sépare n'est
+    // pas le mode mais le CHEMIN — quatre passent par ce tunnel, trois par
+    // `toggleSubscriptionOption`.
     expect(abonnements.sort()).toEqual([
+      "bande",
+      "duo",
       "loyalty",
       "referral",
       "rendez_vous",

@@ -270,6 +270,30 @@ export const LIBELLE_MODULE: Record<string, string> = {
  * les deux salons. La migration a posé, pour chaque octroi `vitrine`, trois
  * octrois MIROIRS aux mêmes bornes — de sorte que toute question posée aux
  * clés neuves reçoive la même réponse qu'à `vitrine`.
+ *
+ * ── DUO-2 A POSÉ LA QUESTION, ET LA RÉPONSE EST « ON LES GARDE » ──
+ *
+ * Duo Miroir et Portrait de la Bande s'achètent désormais séparément (12 €/mois
+ * chacun). La cascade coupe-t-elle un module payé à part ? NON, et pour trois
+ * raisons qui tiennent ensemble :
+ *
+ *   1. CE QUI EST ACHETÉ N'EST PAS ATTEIGNABLE. Un octroi né d'un paiement
+ *      porte `source = 'stripe'`, et `miroirsDeVitrine` l'exclut explicitement
+ *      (`ligne.source !== "stripe"`). Le panneau ne rend même pas de bouton de
+ *      révocation sur un octroi Stripe. La cascade ne peut donc pas fermer ce
+ *      qu'un commerçant a payé.
+ *   2. LES RETIRER SERAIT DEVENU DANGEREUX, précisément à cause de la vente.
+ *      `soldStandalone: true` fait entrer les deux clés dans
+ *      `MODULES_PORTANT_LE_SOCLE` (src/lib/subscription.ts) : un octroi vivant
+ *      y suffit désormais à rendre `hasActiveAccess` vrai. Laisser survivre les
+ *      miroirs d'un `vitrine` révoqué rendrait donc au commerçant coupé la roue
+ *      publique et les campagnes — mot pour mot le défaut MOYEN-2 que le lot L2
+ *      a fermé. La cascade est ce qui l'en empêche.
+ *   3. ELLE N'EST PAS SILENCIEUSE. Le même relevé alimente l'avertissement de
+ *      `RevokeForm` : l'opérateur lit « Révoquer (3 droits) » et « Ferme aussi
+ *      … : Duo Miroir (salon), Portrait de la Bande (salon) » avant d'agir. Le
+ *      cas résiduel — un octroi back-office posé à part, aux MÊMES bornes qu'un
+ *      `vitrine` — est visible et se ré-octroie en un geste.
  */
 export const MODULES_MIROIRS_VITRINE = ["reserver", "duo", "bande"] as const;
 

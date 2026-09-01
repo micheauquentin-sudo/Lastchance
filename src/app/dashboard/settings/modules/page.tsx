@@ -17,9 +17,12 @@ import { termesActivation } from "@/lib/octroi-termes";
 import {
   ADDON_EXPIRY_RULES,
   ADDON_OFFERS,
+  getPlanTier,
+  tierIncludes,
   type AddonBilling,
   type AddonOffer,
 } from "@/lib/plans";
+import { hasSubscriptionAccess } from "@/lib/subscription";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import { Card, TITRE_CARTE } from "@/components/ui/card";
@@ -63,6 +66,26 @@ export default async function ModulesSettingsPage({
   const retourReglages = lienSelonRole("/dashboard/settings", role);
   const maintenant = new Date();
   const ouverts = await chargerOctroisVivants(organization.id, maintenant);
+
+  /**
+   * CE QUE L'OFFRE EN COURS COUVRE DÉJÀ — ET POURQUOI CE CALCUL MANQUAIT.
+   *
+   * `ouverts` ne lit QUE les octrois. La page ne consultait donc jamais
+   * `PLAN_TIERS`, et proposait d'acheter à un abonné ce que son offre lui
+   * donne déjà : `quiz` est dans quatre offres sur cinq, et sa carte affichait
+   * un bouton d'achat à ces quatre-là. Le défaut était latent tant qu'il
+   * touchait une option ; DUO-2 le rend systématique, puisque Duo Miroir et
+   * Portrait de la Bande sont dans les CINQ offres — tout abonné, sans
+   * exception, se serait vu proposer 12 €/mois pour ce qu'il possède.
+   *
+   * `hasSubscriptionAccess` et non `hasActiveAccess` : c'est l'OFFRE qui
+   * couvre, pas un octroi. `hasActiveAccess` rend vrai sur un octroi de module
+   * vivant, ce qui ferait dire « comprise dans votre offre » à un commerçant
+   * sans abonnement qui vient justement d'acheter l'option seule.
+   */
+  const offreEnCours = hasSubscriptionAccess(organization, maintenant)
+    ? getPlanTier(organization.plan)
+    : null;
   // LES PASS PAYÉS QUI ATTENDENT LEUR DÉPART. Sans cette section, un
   // commerçant qui vient de payer voit son option marquée ni « Ouvert » ni
   // achetable, et rien ne lui dit qu'il lui reste un geste à faire.
@@ -99,7 +122,17 @@ export default async function ModulesSettingsPage({
   if (role !== "cashier") {
     await Promise.all(
       ADDON_OFFERS.filter(
-        (offre) => !(ouverts as readonly string[]).includes(offre.entitlement),
+        (offre) =>
+          !(ouverts as readonly string[]).includes(offre.entitlement) &&
+          // NI POUR CE QUE L'OFFRE COUVRE : « Pass terminé le … » sous une
+          // option que l'abonnement donne toujours est un contresens, et la
+          // carte n'affiche de toute façon plus cette ligne. Sans ce filtre,
+          // DUO-2 ajoutait deux `etatOctroiModule` par affichage de page à
+          // TOUS les abonnés, pour un texte jamais rendu.
+          !(
+            offreEnCours !== null &&
+            tierIncludes(offreEnCours, offre.entitlement)
+          ),
       ).map(async (offre) => {
         const etat = await etatOctroiModule(
           organization.id,
@@ -221,6 +254,9 @@ export default async function ModulesSettingsPage({
             key={offre.entitlement}
             offre={offre}
             ouvert={(ouverts as readonly string[]).includes(offre.entitlement)}
+            compris={
+              offreEnCours !== null && tierIncludes(offreEnCours, offre.entitlement)
+            }
             finDePass={finsDePass.get(offre.entitlement) ?? null}
             proprietaire={proprietaire}
             competitions={competitions}
@@ -243,12 +279,15 @@ export default async function ModulesSettingsPage({
 function CarteAddon({
   offre,
   ouvert,
+  compris,
   finDePass,
   proprietaire,
   competitions,
 }: {
   offre: AddonOffer;
   ouvert: boolean;
+  /** L'offre en cours couvre déjà ce droit : rien à vendre. */
+  compris: boolean;
   /** Date de fin déjà mise en forme du dernier pass expiré, sinon `null`. */
   finDePass: string | null;
   proprietaire: boolean;
@@ -272,11 +311,18 @@ function CarteAddon({
         <h2 className={TITRE_CARTE}>
           {offre.name}
         </h2>
-        {ouvert && (
+        {compris ? (
+          // PRIORITAIRE SUR « Ouvert » : les deux seraient vrais pour un
+          // abonné qui a AUSSI un octroi, et « comprise dans votre offre »
+          // est la seule des deux qui réponde à « dois-je payer ? ».
+          <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800">
+            Comprise dans votre offre
+          </span>
+        ) : ouvert ? (
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
             Ouvert
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Discrète, et au-dessus du tarif : c'est un état, pas une offre. Elle
@@ -286,17 +332,32 @@ function CarteAddon({
         <p className="mb-2 text-sm text-zinc-600">Pass terminé le {finDePass}</p>
       )}
 
-      <p className="mb-3 text-sm font-semibold text-zinc-800">
-        {formulerTarif(offre.billing)}
-      </p>
+      {/* NI TARIF NI RÈGLES DE FACTURATION quand l'offre couvre déjà : « 12 €
+          par mois » et « actif jusqu'à la fin de la période payée » décrivent
+          un achat que ce commerçant n'a pas à faire, et le laisser lire un
+          prix sous une option qu'il possède est exactement ce qui fait écrire
+          au support. */}
+      {!compris && (
+        <>
+          <p className="mb-3 text-sm font-semibold text-zinc-800">
+            {formulerTarif(offre.billing)}
+          </p>
 
-      <ul className="mb-4 space-y-1.5 text-sm text-zinc-600">
-        {offre.rules.map((regle) => (
-          <li key={regle}>{regle}</li>
-        ))}
-      </ul>
+          <ul className="mb-4 space-y-1.5 text-sm text-zinc-600">
+            {offre.rules.map((regle) => (
+              <li key={regle}>{regle}</li>
+            ))}
+          </ul>
+        </>
+      )}
 
-      {!proprietaire ? null : !offre.soldStandalone ? (
+      {compris ? (
+        // Aucun contrôle d'achat, propriétaire compris : il n'y a rien à
+        // vendre. Le message dit l'état, pas un refus.
+        <p className="rounded-xl bg-zinc-100 px-4 py-3 text-sm text-zinc-700">
+          Déjà comprise dans votre offre — rien à acheter.
+        </p>
+      ) : !proprietaire ? null : !offre.soldStandalone ? (
         // ── UNE OPTION DE LIGNE, PAS UN ACHAT ──
         //
         // Vitrine et Réserver s'ajoutent à l'abonnement en cours. Leur

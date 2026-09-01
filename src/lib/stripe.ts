@@ -648,6 +648,21 @@ const ADDON_PRICE_ENV: ReadonlyArray<{
    * variables Production de Vercel.
    */
   { entitlement: "rendez_vous", env: "STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS" },
+  /**
+   * LES DEUX SALONS (DUO-2). Ils sont dans les CINQ offres, donc tout abonné
+   * les a déjà : ces deux prix ne servent qu'à l'abonné qui les ajouterait en
+   * ligne, cas qui n'existe pas aujourd'hui. Ils sont déclarés quand même
+   * parce que la bijection avec `ADDON_OFFERS` l'exige (plans.test.ts) — et la
+   * vente réelle passe par la famille `STRIPE_PRICE_ID_PASS_*`, dérivée du
+   * droit par src/lib/octroi-checkout.ts, jamais déclarée ici.
+   *
+   * Comme pour la Réservation : produit et prix Stripe N'EXISTENT PAS ENCORE,
+   * leur création est une mutation financière qui exige une demande explicite
+   * du propriétaire (AGENTS.md). L'absence est sans danger — `optionalEnv`
+   * rend `undefined` et l'option n'apparaît simplement pas à l'achat.
+   */
+  { entitlement: "duo", env: "STRIPE_PRICE_ID_ADDON_DUO" },
+  { entitlement: "bande", env: "STRIPE_PRICE_ID_ADDON_BANDE" },
 ];
 
 /**
