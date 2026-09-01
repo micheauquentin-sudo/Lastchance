@@ -1777,5 +1777,309 @@ select cmp_ok(
   '>=', 8,
   'ACL-38 la règle porte bien sur les check réellement posés, pas sur un ensemble vide');
 
+
+-- ════════════════════════════════════════════════════════════
+-- 11. SALON-1 — L'HABILLAGE, ET CE QU'IL NE DOIT PAS OUVRIR
+--
+-- Ce bloc prouve quatre choses, et la première est celle qu'on casse le plus
+-- facilement :
+--
+--   a. NON-RÉGRESSION. Un salon dont le commerce n'a rien réglé rend le MÊME
+--      document qu'avant SALON-1, à une clé près — et cette clé vaut `null`.
+--      L'assertion compare le document ENTIER, pas la seule présence de
+--      `habillage` : c'est la forme qui dit qu'aucune valeur n'a bougé.
+--   b. LA LECTURE PUBLIQUE PASSE PAR L'APPARTENANCE, et par elle seule. Le
+--      document est lu SANS session commerçante (aucun `sub` dans le JWT de
+--      ce fichier) ; un non-membre reçoit `unavailable` MÊME UNE FOIS LE
+--      COMMERCE HABILLÉ, ce qui est le point : l'habillage ne devient pas
+--      l'oracle que `create_player_lobby` ferme.
+--   c. UN COMMERÇANT N'HABILLE PAS LA MAISON D'EN FACE, et le caissier
+--      n'habille pas la sienne.
+--   d. LES VALEURS HORS BORNES SONT REFUSÉES DEUX FOIS : par la RPC, en 22023
+--      lisible, et par le `check` si quelqu'un écrivait en direct.
+-- ════════════════════════════════════════════════════════════
+
+-- Le logo n'est pas dans les fixtures de tête : il est posé ici, parce que
+-- c'est ce bloc qui le lit.
+update public.organizations
+   set logo_url = 'https://exemple.test/logo-a.png'
+ where id = '6b0b1e00-0000-4000-8000-00000000000a';
+
+-- UN SALON À PART, ÉCRIT EN DIRECT. Passer par `create_player_lobby` aurait
+-- fait dépendre ce bloc du quota que les sections 2 à 9 ont déjà exercé sur
+-- l'organisation A — idiome de la borne d'`org_player_lobbies` (fixture H).
+insert into public.player_lobbies
+  (id, organization_id, kind, status, join_code, capacite,
+   creator_token_hash, created_at, expires_at)
+values
+  ('6b0b1e00-0000-4000-8000-0000000000d1',
+   '6b0b1e00-0000-4000-8000-00000000000a', 'duo', 'lobby', 'SALGN2', 2,
+   repeat('d1', 32), now(), now() + interval '30 minutes');
+
+insert into public.player_lobby_members
+  (lobby_id, organization_id, token_hash, pseudo, joined_at)
+values
+  ('6b0b1e00-0000-4000-8000-0000000000d1',
+   '6b0b1e00-0000-4000-8000-00000000000a', repeat('d1', 32), 'Hôte Habillage',
+   now() - interval '2 minutes'),
+  ('6b0b1e00-0000-4000-8000-0000000000d1',
+   '6b0b1e00-0000-4000-8000-00000000000a', repeat('d2', 32), 'Invitée',
+   now() - interval '1 minute');
+
+
+-- ── a. NON-RÉGRESSION : rien n'a bougé tant que rien n'est réglé ──
+
+select ok(
+  (public.lobby_state(
+     '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d1', 32)))
+   ->'habillage' = 'null'::jsonb,
+  'HAB-1 sans ligne de réglage, habillage vaut null — et la clé EXISTE : un document de forme stable se type une fois');
+
+-- LE DOCUMENT ENTIER, et non la seule clé neuve. Si SALON-1 avait déplacé une
+-- virgule ailleurs, c'est ici que ça se verrait.
+select is(
+  (public.lobby_state(
+     '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d1', 32))) - 'habillage',
+  jsonb_build_object(
+    'state', 'ok',
+    'status', 'lobby',
+    'kind', 'duo',
+    'capacite', 2,
+    'expires_at', (select expires_at from public.player_lobbies
+                    where id = '6b0b1e00-0000-4000-8000-0000000000d1'),
+    'join_code', 'SALGN2',
+    'membres', '[{"rang": 1, "pseudo": "Hôte Habillage", "est_moi": true},
+                 {"rang": 2, "pseudo": "Invitée", "est_moi": false}]'::jsonb),
+  'HAB-2 un salon non habillé rend EXACTEMENT le document d''avant SALON-1, la clé habillage retirée');
+
+-- LE REFUS N'A PAS GROSSI. Un document d'erreur qui porterait une clé de plus
+-- se distinguerait à la taille, ce qui suffirait à faire un oracle.
+select is(
+  public.lobby_state(
+    '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d3', 32)),
+  '{"state": "unavailable"}'::jsonb,
+  'HAB-3 le refus reste UN SEUL MOT : pas de clé habillage sur le chemin du non-membre');
+
+
+-- ── b. L'HABILLAGE SE LIT SANS SESSION, PAR LE CHEMIN PUBLIC ──
+
+select is(
+  (public.set_lobby_habillage(
+     '6b0b1e00-0000-4000-8000-00000000000a', 'football', 'espace', true,
+     '6b0b1e01-0000-4000-8000-000000000002'))->>'state',
+  'ok',
+  'HAB-4 l''éditeur habille les salons de sa maison');
+
+-- Aucune session commerçante n'est ouverte dans ce fichier (le JWT ne porte
+-- qu'un rôle, jamais de `sub`) : cette lecture est donc bien celle d'un joueur
+-- anonyme servi par le service role, exactement comme en production.
+select is(
+  (public.lobby_state(
+     '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d2', 32)))->'habillage',
+  jsonb_build_object(
+    'theme', 'football',
+    'fond_key', 'espace',
+    'nom', 'Lobby A',
+    'logo_url', 'https://exemple.test/logo-a.png'),
+  'HAB-5 un membre ordinaire, sans session, lit la palette, le fond, le nom et le logo');
+
+-- LE RÉGLAGE D'IDENTITÉ EST TENU EN BASE, pas par l'écran. Un réglage que seule
+-- l'interface respecte n'est respecté que jusqu'au premier appelant qui l'ignore.
+select is(
+  (public.set_lobby_habillage(
+     '6b0b1e00-0000-4000-8000-00000000000a', 'football', 'espace', false,
+     '6b0b1e01-0000-4000-8000-000000000002'))->>'state',
+  'ok',
+  'HAB-6 le commerce peut garder ses couleurs sans se nommer');
+select is(
+  (public.lobby_state(
+     '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d2', 32)))->'habillage',
+  jsonb_build_object(
+    'theme', 'football',
+    'fond_key', 'espace',
+    'nom', null,
+    'logo_url', null),
+  'HAB-7 … et alors nom et logo sortent à null — les clés restent, la forme ne bouge pas');
+
+-- LE POINT DU LOT. Le commerce est habillé, et le non-membre ne l'apprend
+-- toujours pas : sans quoi l'habillage aurait rouvert l'oracle que
+-- `create_player_lobby` ferme (« organisation inconnue » et « organisation sans
+-- le module » rendent le même unavailable).
+select is(
+  public.lobby_state(
+    '6b0b1e00-0000-4000-8000-0000000000d1', repeat('d3', 32)),
+  public.lobby_state(
+    '3f3f3f3f-0000-4000-8000-000000000000', repeat('d3', 32)),
+  'HAB-8 une fois le commerce habillé, le non-membre reçoit TOUJOURS ce que reçoit qui invente un identifiant');
+
+-- Le `null` du fond se distingue de la chaîne vide : « suivre le thème » est un
+-- état, et un formulaire vidé doit y retomber au lieu de lever.
+select ok(
+  (public.set_lobby_habillage(
+     '6b0b1e00-0000-4000-8000-00000000000a', 'noel', '   ', true,
+     '6b0b1e01-0000-4000-8000-000000000002'))->'fond_key' = 'null'::jsonb,
+  'HAB-9 un champ de fond vidé retombe sur « suivre le thème » au lieu de lever');
+
+
+-- ── c. UN COMMERÇANT N'HABILLE PAS LA MAISON D'EN FACE ──
+
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'noel', null, true,
+      '6b0b1e01-0000-4000-8000-000000000004')$tap$,
+  '42501', null,
+  'HAB-10 le propriétaire de la voisine ne peint pas le salon d''à côté, tout habilité qu''il soit chez lui');
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'noel', null, true,
+      '6b0b1e01-0000-4000-8000-000000000003')$tap$,
+  '42501', null,
+  'HAB-11 le caissier de la maison non plus : l''apparence d''un écran qui porte le nom du commerce est éditoriale');
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'noel', null, true, null)$tap$,
+  '42501', null,
+  'HAB-12 sans acteur, rien — l''acteur est vérifié AVANT les valeurs, pour ne rien apprendre par la forme du refus');
+
+-- LA VOISINE N'A RIEN GAGNÉ. Contrôle de portée des trois refus ci-dessus :
+-- sans lui, ils seraient verts le jour où la RPC n'écrirait plus rien du tout.
+select is(
+  (select pg_catalog.count(*)::integer from public.lobby_settings
+    where organization_id = '6b0b1e00-0000-4000-8000-00000000000b'),
+  0,
+  'HAB-13 et la voisine n''a toujours aucune ligne d''habillage');
+select is(
+  (select theme from public.lobby_settings
+    where organization_id = '6b0b1e00-0000-4000-8000-00000000000a'),
+  'noel',
+  'HAB-14 … tandis que la maison garde le dernier réglage écrit par son éditeur');
+
+-- LE GESTE EST JOURNALISÉ, et c'est la moitié qui justifie l'absence de grant
+-- d'écriture sur la table.
+select cmp_ok(
+  (select pg_catalog.count(*)::integer from public.audit_logs
+    where organization_id = '6b0b1e00-0000-4000-8000-00000000000a'
+      and action = 'lobby.habillage_set'),
+  '>=', 3,
+  'HAB-15 chaque habillage laisse une ligne d''audit : « qui a mis le nom du commerce sur cet écran, et quand »');
+
+
+-- ── d. LES VALEURS HORS BORNES, REFUSÉES DEUX FOIS ──
+
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'degustation', null, true,
+      '6b0b1e01-0000-4000-8000-000000000002')$tap$,
+  '22023', null,
+  'HAB-16 la palette du QUIZ n''entre pas : ses clés nomment un usage métier, pas un décor (20260921120000 §2)');
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'arc_en_ciel', null, true,
+      '6b0b1e01-0000-4000-8000-000000000002')$tap$,
+  '22023', null,
+  'HAB-17 ni une teinte inventée : elle exigerait un relevé de contraste qui n''existe pas');
+select throws_ok(
+  $tap$select public.set_lobby_habillage(
+      '6b0b1e00-0000-4000-8000-00000000000a', 'noel', '../../etc/passwd', true,
+      '6b0b1e01-0000-4000-8000-000000000002')$tap$,
+  '22023', null,
+  'HAB-18 un fond qui n''a pas la FORME d''une clé est refusé — cette valeur finit dans le src d''une image servie à un joueur');
+
+-- LE `check` TIENT SANS LA RPC. Les deux gardes sont indépendantes : celle de
+-- la RPC rend un message lisible, celle de la base tient si quelqu'un écrit
+-- autrement.
+select throws_ok(
+  $tap$insert into public.lobby_settings (organization_id, theme)
+    values ('6b0b1e00-0000-4000-8000-00000000000c', 'arc_en_ciel')$tap$,
+  '23514', null,
+  'HAB-19 la base elle-même refuse une teinte hors palette');
+select throws_ok(
+  $tap$insert into public.lobby_settings (organization_id, theme, fond_key)
+    values ('6b0b1e00-0000-4000-8000-00000000000c', 'noel', 'Fond Interdit!')$tap$,
+  '23514', null,
+  'HAB-20 et un fond mal formé');
+
+-- LE CATALOGUE DES FONDS N'EST PAS GRAVÉ, et c'est délibéré (leçon
+-- 20261116120000). Une clé BIEN FORMÉE mais absente de FOND_KEYS passe en base :
+-- c'est ce qui permettra de retirer un fond du catalogue sans qu'une migration
+-- échoue sur des lignes que personne n'a fautées. Le refus, lui, est côté zod.
+select lives_ok(
+  $tap$insert into public.lobby_settings (organization_id, theme, fond_key)
+    values ('6b0b1e00-0000-4000-8000-00000000000c', 'noel', 'fond_pas_encore_livre')$tap$,
+  'HAB-21 une clé bien formée mais inconnue du catalogue PASSE : graver l''inventaire invaliderait des lignes déjà écrites au premier fond retiré');
+
+
+-- ── ACL : le régime de droits de la table neuve ──
+
+select ok(
+  (select relrowsecurity from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'lobby_settings'),
+  'HAB-22 lobby_settings porte la RLS');
+select is(
+  (select pg_catalog.count(*)::integer from pg_policies
+    where schemaname = 'public' and tablename = 'lobby_settings'),
+  2,
+  'HAB-23 … et ses deux policies : la RLS active SANS policy fermerait la table à l''éditeur');
+
+-- LE `select` EST AU NIVEAU TABLE, et c'est ce qui rend une colonne future
+-- lisible sans migration de grant. Une liste de colonnes rejouerait le défaut
+-- où PostgREST refuse le select ENTIER et où l'écran disparaît.
+select ok(
+  has_table_privilege('authenticated', 'public.lobby_settings', 'SELECT'),
+  'HAB-24 un membre lit l''habillage de sa maison');
+-- LE RÉGIME SE LIT DANS `pg_attribute.attacl`, PAS DANS
+-- `information_schema.column_privileges`. Cette vue-là projette AUSSI un grant
+-- de table sur chacune de ses colonnes — elle rend six lignes pour une table
+-- sans le moindre grant de colonne, et une assertion écrite dessus dit donc le
+-- contraire de ce qu'elle croit dire. `attacl` n'est renseigné QUE par un
+-- `grant (colonne)` ; c'est la seule lecture qui distingue les deux régimes.
+select is(
+  (select pg_catalog.count(*)::integer
+     from pg_attribute a
+     join pg_class c on c.oid = a.attrelid
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'lobby_settings'
+      and a.attnum > 0 and not a.attisdropped
+      and a.attacl is not null),
+  0,
+  'HAB-25 … par un grant DE TABLE et non par colonne : la prochaine colonne posée ici n''aura pas besoin d''un grant pour ne pas casser l''écran');
+
+-- CONTRÔLE DE PORTÉE, et il nomme le piège que SALON-1 contourne. Sans lui,
+-- HAB-25 serait vert sur une sonde qui ne détecte rien. `duo_settings` porte un
+-- `grant update (suggestion_item_id)` : c'est une table sous régime PAR COLONNE
+-- en écriture, donc précisément celle où poser `theme` aurait donné une colonne
+-- muette. La même sonde y voit ce qu'elle ne voit pas ailleurs.
+select cmp_ok(
+  (select pg_catalog.count(*)::integer
+     from pg_attribute a
+     join pg_class c on c.oid = a.attrelid
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'duo_settings'
+      and a.attnum > 0 and not a.attisdropped
+      and a.attacl is not null),
+  '>=', 1,
+  'HAB-25 bis la sonde DÉTECTE un régime par colonne là où il existe (duo_settings) : c''est ce régime-là que SALON-1 a évité en ne posant aucune colonne sur une table existante');
+
+select ok(
+  not has_table_privilege('authenticated', 'public.lobby_settings', 'INSERT'),
+  'HAB-26 aucun insert : la ligne naît de set_lobby_habillage, qui audite');
+select ok(
+  not has_table_privilege('authenticated', 'public.lobby_settings', 'UPDATE'),
+  'HAB-27 aucun update non plus — les deux moitiés sont indissociables, un PATCH direct écrirait sans trace (revue L18)');
+select ok(
+  not has_table_privilege('anon', 'public.lobby_settings', 'SELECT'),
+  'HAB-28 anon ne touche pas la table : l''habillage serait interrogeable par organisation sans passer par l''appartenance');
+
+select ok(
+  has_function_privilege('service_role', 'public.set_lobby_habillage(uuid,text,text,boolean,uuid)', 'EXECUTE'),
+  'HAB-29 le serveur habille');
+select ok(
+  not has_function_privilege('authenticated', 'public.set_lobby_habillage(uuid,text,text,boolean,uuid)', 'EXECUTE'),
+  'HAB-30 un commerçant ne l''appelle pas en direct : la vérification owner|editor deviendrait déclarative');
+select ok(
+  not has_function_privilege('anon', 'public.set_lobby_habillage(uuid,text,text,boolean,uuid)', 'EXECUTE'),
+  'HAB-31 anon non plus');
+
 select * from finish();
 rollback;

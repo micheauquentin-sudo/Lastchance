@@ -3137,6 +3137,41 @@ export type Database = {
           },
         ]
       }
+      lobby_settings: {
+        Row: {
+          affiche_identite: boolean
+          created_at: string
+          fond_key: string | null
+          organization_id: string
+          theme: string
+          updated_at: string
+        }
+        Insert: {
+          affiche_identite?: boolean
+          created_at?: string
+          fond_key?: string | null
+          organization_id: string
+          theme?: string
+          updated_at?: string
+        }
+        Update: {
+          affiche_identite?: boolean
+          created_at?: string
+          fond_key?: string | null
+          organization_id?: string
+          theme?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lobby_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       loyalty_members: {
         Row: {
           avatar: string
@@ -10505,6 +10540,16 @@ export type Database = {
           p_status: string
         }
         Returns: boolean
+      }
+      set_lobby_habillage: {
+        Args: {
+          p_actor: string
+          p_affiche_identite: boolean
+          p_fond_key: string
+          p_organization_id: string
+          p_theme: string
+        }
+        Returns: Json
       }
       set_loyalty_member_identity: {
         Args: {
