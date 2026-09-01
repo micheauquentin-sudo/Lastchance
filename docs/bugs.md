@@ -21,6 +21,63 @@
 
 ## Critical
 
+- **✅ Le studio effaçait des réglages en enregistrant, deux fois et en silence
+  (corrigé le 2026-09-01, VIT-19, PR #294).** `composerTheme`
+  (`src/actions/vitrine.ts`) RECONSTRUISAIT le document `theme` à partir du seul
+  formulaire. Tant qu'un unique écran l'écrivait, c'était équivalent à une
+  fusion ; à trois écrans, chacun effaçait ce que les autres réglait.
+  **(a)** Le studio (VIT-17) ne rendait ni `ordre_blocs` ni `style_cartes` :
+  enregistrer depuis lui remettait la page aux cinq blocs par défaut, donc
+  **retirait le bloc « Jeux » de la vitrine publique** — dont la présence dans
+  l'ordre EST le consentement de publication (VIT-3).
+  **(b)** `theme.jeux` (VIT-16) n'était rendu par AUCUN de ces formulaires :
+  enregistrer l'identité depuis l'atelier effaçait le choix, et comme l'absence
+  vaut « les deux » (ADR-129), **un jeu explicitement décoché revenait sur la
+  carte**.
+  **Pourquoi rien ne le voyait** : l'action réussissait, écrivait un thème
+  VALIDE, et rendait « Vitrine enregistrée ». Aucune erreur, aucune trace. Le
+  raisonnement du témoin `allure_rendue` valait pourtant pour tout le document
+  depuis VIT-13 — il n'avait été appliqué qu'à l'allure, parce que l'allure
+  seule était concernée ce jour-là.
+  Corrigé par la fusion (le thème EN BASE est le point de départ) et quatre
+  témoins de section. Voir ADR-136.
+  ↳ **La panne symétrique est gardée aussi** : un écran qui rend la section mais
+  OUBLIE son témoin ne l'enregistre plus — le commerçant règle, clique, lit
+  « enregistré », et rien n'a changé. `reglages-formulaires.test.tsx` lit le
+  RENDU des écrans. Elle s'est refermée pendant l'écriture du lot : les quatre
+  `formData.get` manquaient dans l'action.
+
+- **✅ L'aperçu du studio montrait les cartes DÉSACTIVÉES (corrigé le
+  2026-09-01, VIT-26, PR #304 — livré depuis VIT-17).**
+  `VitrineCarteView.active` porte son propre avertissement : « toujours `true`
+  dans l'état PUBLIC — la RPC n'en rend pas d'autres ». L'état du TABLEAU DE
+  BORD rend tout, y compris ce que le commerçant a décoché : c'est ce qu'il faut
+  pour l'éditer. L'aperçu passait les deux à `CatalogueVitrine`, écrit pour la
+  page publique — qui fait confiance à sa source, et qui a raison. **Une carte
+  désactivée mais pleine s'affichait pleine au commerçant et vide chez son
+  client.**
+  Aucun des deux composants ne faisait d'erreur : c'est le RACCORD qui en
+  faisait une, et c'est pourquoi rien ne le signalait. Trouvé par le lot voisin
+  (VIT-23) en montant l'éditeur de carte, pas par une garde.
+  ↳ **La première version de la garde ne mesurait rien** : elle assertait
+  l'absence d'une FICHE de la carte désactivée, or le catalogue est à ONGLETS et
+  ne rend jamais les fiches d'une carte non sélectionnée. Le test passait au
+  vert AVEC et SANS le correctif. C'est la mutation qui l'a dit, pas la
+  relecture. L'assertion porte désormais sur le NOM de la carte.
+
+- **✅ `/vitrine-studio` retombait au régime CSP le plus faible (corrigé le
+  2026-09-01, VIT-25, PR #297).** Il n'était pas dans `SENSITIVE_PREFIXES` et
+  passait donc en régime `static` — `'unsafe-inline'`, sans nonce — alors qu'il
+  rend l'identité du commerce, sa carte et ses réglages. Rien n'était
+  exploitable (la page est derrière la session), mais c'est une défense en
+  profondeur perdue en silence sur l'écran devenu central du module.
+  **La garde existante ne pouvait pas le voir** : elle parcourait
+  `SENSITIVE_PREFIXES` et vérifiait que chacun est classé `sensitive` — elle
+  comparait la liste à elle-même, donc un préfixe absent lui était invisible par
+  construction. La nouvelle part des `page.tsx` qui appellent
+  `redirect("/login")` et remonte à la liste. Voir ADR-140.
+
+
 - **🔴 OUVERT — La lecture de carte photographiée (VIT-18) est BLOQUÉE PAR LA
   CSP en production (trouvé le 2026-09-01 en rattrapant la documentation du
   lot).** `/dashboard/vitrine` est en régime `sensitive`
@@ -49,8 +106,9 @@
   de la porter sur la SEULE route qui en a besoin, via `next.config` plutôt que
   sur la surface entière, et d'inverser l'assertion du test en conséquence.
 
-- **🟠 OUVERT — `/vitrine-studio` (VIT-17) n'est pas dans `SENSITIVE_PREFIXES`
-  et retombe donc au régime CSP le plus faible (2026-09-01).** C'est une page
+- **✅ CORRIGÉ le 2026-09-01 (VIT-25, PR #297) — `/vitrine-studio` (VIT-17)
+  n'était pas dans `SENSITIVE_PREFIXES`
+  et retombait donc au régime CSP le plus faible (2026-09-01).** C'est une page
   authentifiée du commerçant, de la même classe que `/poster` — qui, lui, est
   bien dans la liste (`src/lib/security-headers.ts:57`), et pour exactement la
   même raison : un éditeur plein écran hors `/dashboard`. `cspSurfaceForPath`

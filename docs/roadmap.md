@@ -1,5 +1,90 @@
 # Roadmap — Lastchance
 
+## V1.73 — Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#305)
+
+**Objectif** : demande du propriétaire — « studio est super et c'est ce que je
+cherche depuis le début, il doit devenir l'élément central afin de tout pouvoir
+faire dessus, le client se trouve sur une page configure tout d'ici ». L'atelier
+réglait, le studio montrait : deux écrans pour un seul travail, dont un seul
+laisse voir ce qu'on règle.
+
+### Le socle : deux pertes silencieuses, fermées avant de construire
+
+- **VIT-19/PR #294 — Le thème cesse de se perdre entre deux écrans** (ADR-136).
+  `composerTheme` RECONSTRUISAIT le document `theme` depuis le seul formulaire.
+  Le studio effaçait donc `ordre_blocs` et `style_cartes` en enregistrant — donc
+  **retirait le bloc « Jeux » de la vitrine publique**, dont la présence dans
+  l'ordre est le consentement de publication (VIT-3). Et les DEUX écrans
+  effaçaient `theme.jeux`, qu'aucun ne rend : comme l'absence vaut « les deux »
+  (ADR-129), **un jeu explicitement décoché revenait sur la carte**.
+  Le thème FUSIONNE désormais, et quatre témoins de section s'ajoutent à
+  `allure_rendue`, dont le raisonnement valait déjà pour tout le document.
+
+### Le studio
+
+- **VIT-20/PR #295 — Le studio devient l'écran central, en pages** (ADR-137) :
+  Identité · La carte · À la une · Les jeux, avec l'aperçu au centre et l'allure
+  à droite sur toutes les pages. Le **logo** et la **bannière du haut** s'y
+  règlent — ils se réglaient jusqu'ici aux deux seuls endroits d'où l'on ne voit
+  pas la page qu'ils habillent. Et **ce qui paraît se coche** : l'accroche,
+  l'histoire, **les horaires** — qui se saisissaient sans qu'on puisse dire
+  s'ils devaient figurer — et les cartes.
+  Le formulaire de réglages est **vide** et voisin de la mise en page
+  (attribut HTML `form`), ce qui laisse logo, bannière et carte porter leurs
+  propres `<form>` sans imbrication. Aucun contrôle visible ne porte de `name` :
+  la charge est rendue en entier depuis un état unique, sinon changer de page
+  aurait effacé ce qu'on avait réglé sur la précédente.
+- **VIT-21/PR #300 — À la une, les réseaux et « Évaluez-nous »** : les trois
+  liens se saisissaient dans les réglages généraux du commerce, et **rien ne
+  disait s'ils devaient figurer**. La case manquait, pas seulement le champ.
+- **VIT-22/PR #298 — Les deux jeux à cocher** : le bilan de l'offre et les deux
+  cases, montés dans le studio. `setVitrineJeux` écrivant AUSSI `ordre_blocs`,
+  une course s'ouvrait avec l'état client du studio — fermée par un
+  rechargement, actif dans le studio seulement.
+- **VIT-23/PR #302 — La carte complète dans le studio** : l'éditeur et l'import,
+  montés tels quels après vérification qu'ils se replient sans largeur plancher.
+- **VIT-24/PR #301 — Des cartes d'exemple par métier** : les sept secteurs, pour
+  juger une densité ou un style sur du contenu plutôt que sur une page blanche.
+  Jamais enregistrées. `photo_path` à `null` partout — inventer un chemin de
+  Storage aurait donné des images cassées.
+- **VIT-26/PR #304 — L'aperçu cesse de mentir** (ADR-138) : il montrait les
+  cartes DÉSACTIVÉES, pleines chez le commerçant et vides chez son client.
+  Signalé par le lot voisin. Ni l'aperçu ni `CatalogueVitrine` n'avaient tort —
+  c'est le raccord qui mentait.
+- **VIT-27/PR #305 — Le studio devient la porte** (ADR-139) : carte « Mon
+  studio » ouverte en tête à partir de `lg`, l'atelier devient le chemin du
+  petit écran. La ROUTE `?etape=` reste atteignable partout : seule l'ENTRÉE
+  change de rang.
+
+### Au passage
+
+- **VIT-25/PR #297 — `/vitrine-studio` entre dans le régime CSP authentifié**
+  (ADR-140). Il retombait en `static`, sous `'unsafe-inline'` et sans nonce. La
+  garde existante ne pouvait pas le voir : elle comparait la liste à elle-même.
+  La nouvelle part des pages qui redirigent vers `/login`.
+- **PR #299 — `browserslist` monte en 4.28.8**. Deux avis publiés le même jour
+  faisaient rougir `npm audit` sur TOUTE PR du dépôt. Corrigé dans les **deux**
+  arbres de dépendances — la racine et `site/` : la première passe n'avait vu
+  que le job de la racine, alors que le second nommait son périmètre.
+
+**Décisions** : [ADR-136 à ADR-140](./decisions.md).
+
+**Reste ouvert** :
+- **L'interrupteur « voir avec des exemples » n'est pas câblé.** Les données des
+  sept métiers sont livrées et gardées (VIT-24) ; le brancher demande de toucher
+  l'aperçu, que trois lots modifiaient encore.
+- **🔴 La lecture de carte photographiée reste bloquée par la CSP**
+  (`'wasm-unsafe-eval'`, retiré par MORT-2). VIT-25 n'y touche pas : rouvrir
+  cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
+  servi à lui retirer. Voir `docs/bugs.md`.
+- **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
+  20 €/mois, « Duo Miroir » et « Portrait de la Bande » 12 €/mois.
+- **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
+  l'autorisation « éditeur » en Wallet Console.
+- `duo_choose` ne valide pas encore une place saisie (ADR-134).
+- Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+
+
 ## V1.72 — La Vitrine devient un atelier, et les deux salons deviennent vendables seuls (✅ 2026-09-01, PR #281→#290)
 
 **Objectif** : deux demandes du propriétaire enchaînées. Côté Vitrine — la

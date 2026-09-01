@@ -4,6 +4,14 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-01 — La Vitrine devient un atelier, et les deux salons deviennent vendables seuls
+
+**La Vitrine devient un atelier, et les deux salons deviennent vendables seuls** (VIT-14 à VIT-18, DUO-1 à DUO-3b — PR #281→#290, migrations `20261123120000` à `20261127120000`, ADR-128 à 135). L'écran Vitrine empilait neuf cartes repliables : il devient un **atelier par étape**, avec le **QR devant le statut** — seul module où il passe premier. Elle se **supprime** aussi (RPC, propriétaire seul).
+  **Les jeux se cochent** (VIT-16) : `theme.jeux`, et **l'absence vaut « les deux »** — sinon les vitrines publiées auraient perdu leurs jeux en silence (piège du secteur). **Un studio plein écran** (VIT-17) : `/vitrine-studio`, HORS de `/dashboard` — c'est ce qui efface la colonne de gauche ; l'aperçu monte les VRAIS composants publics.
+  **Les deux salons se vendent seuls** à 12 €/mois (DUO-2) en restant dans les cinq offres — ce qui a rendu visibles trois défauts que l'inclusion masquait : plateau composable depuis la seule carte Vitrine (DUO-1), porte publique de la Bande **sans drapeau de droit** (DUO-3a), réglages enfermés derrière `gardeEditeurVitrine` (DUO-3b).
+  **🔴 Défaut trouvé en documentant, pas par une garde** : la lecture de carte photographiée (VIT-18, WebAssembly local, 4,1 Mo chez nous, **sans CDN**) est **bloquée par la CSP en production** — `'wasm-unsafe-eval'` retiré par MORT-2. Livrée et inerte (`docs/bugs.md`).
+
+
 ## 2026-09-01 — Programme de fidélité : la refonte en seize points
 
 **Programme de fidélité : la refonte en seize points** (PR #269→#272, #274, #275, #279). Bascule visites → points : `points_balance` se dépense, `points_earned_total` ne recule jamais et porte seul le niveau (ADR-124) — la carte à tampons a disparu de l'écran pour cette raison. S'y ajoutent, sur la même identité de carte : parrainage du passeport, Google Wallet (QR = URL du passeport, pas un laissez-passer, ADR-125 ; solde mis à jour en tâche différée, ADR-126), nom et figure de carte, visite guidée.
