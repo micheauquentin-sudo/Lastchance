@@ -200,8 +200,15 @@ function FormulairePlateau({
   peutEditer: boolean;
 }) {
   const [places, setPlaces] = useState<PlaceEdition[]>(initiales);
+  // `reloadOnSuccess` parce que ce formulaire REMPLACE une liste rendue par
+  // le serveur : sans rechargement, l'écran garde l'ancien plateau sous les
+  // yeux du commerçant qui vient de l'enregistrer. Il refait alors le geste.
+  // C'est la garde `use-action-form-coverage` qui l'a exigé, et elle a raison
+  // même si ce composant affiche déjà une confirmation : le message dit que
+  // c'est enregistré, la liste montre le contraire.
   const enregistrer = useActionForm(setDuoOptions, {
     networkError: "Enregistrement impossible, réessayez.",
+    reloadOnSuccess: true,
   });
   const idBase = useId();
 
