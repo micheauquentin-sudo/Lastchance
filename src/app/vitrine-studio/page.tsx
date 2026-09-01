@@ -3,7 +3,12 @@ import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
+import { loadDuoOptions } from "@/lib/duo-context";
+import { droitEffectifModule } from "@/lib/subscription";
+import { createClient } from "@/lib/supabase/server";
 import { VitrineStudio } from "@/components/vitrine/vitrine-studio";
+import type { DuoOptionsAdminView } from "@/lib/duo";
+import type { ContenuVitrineView } from "@/lib/vitrine";
 
 export const metadata: Metadata = { title: "Personnaliser ma vitrine" };
 
@@ -44,9 +49,50 @@ export default async function VitrineStudioPage() {
 
   const s = ctx.settings;
 
+  /**
+   * CE QUE LE COMMERÇANT POSSÈDE, ET CE QU'IL A DÉJÀ COMPOSÉ.
+   *
+   * Ces quatre valeurs se calculaient jusqu'ici dans `/dashboard/vitrine`
+   * SEULEMENT, ce qui suffisait tant que le bilan des jeux et l'éditeur de
+   * carte vivaient là-bas. Le studio les porte désormais : sans elles, sa page
+   * « Les jeux » afficherait « non compris dans votre offre » aux deux jeux —
+   * c'est-à-dire un MENSONGE, pire qu'une page vide, parce qu'il ressemble à
+   * une réponse.
+   *
+   * Deux droits distincts depuis la clé par produit (`20261020120000`) : un
+   * commerce peut avoir la Vitrine sans avoir aucun des deux jeux.
+   *
+   * Le plateau du Duo n'est pas lu pour être édité — il l'est sur la page du
+   * jeu (ADR-135) — mais parce que son COMPTE décide du « prêt / pas prêt »
+   * qu'affiche le bilan. `loadDuoOptions` ne rend jamais un refus : garde
+   * échouée ou lecture vide donnent le même plateau vide, et les deux méritent
+   * la même phrase.
+   */
+  const duoPossede = droitEffectifModule("duo", organization);
+  const bandePossede = droitEffectifModule("bande", organization);
+  const [contenus, plateauDuo] = await Promise.all([
+    (async (): Promise<ContenuVitrineView[]> => {
+      const supabase = await createClient();
+      const { data } = await supabase
+        .from("vitrine_contenus")
+        .select("rang, titre, url")
+        .eq("organization_id", ctx.organizationId)
+        .order("rang");
+      return (data ?? []) as ContenuVitrineView[];
+    })(),
+    (async (): Promise<DuoOptionsAdminView> => {
+      const duo = await loadDuoOptions();
+      return duo.ok ? duo.plateau : { options: [], suggestion: null };
+    })(),
+  ]);
+
   return (
     <VitrineStudio
       slug={s.slug}
+      duoPossede={duoPossede}
+      bandePossede={bandePossede}
+      nbFichesDuo={plateauDuo.options.length}
+      contenus={contenus}
       identiteInitiale={{
         // Le nom et le logo viennent des réglages GÉNÉRAUX du commerce : ils
         // ne se saisissent pas ici, et les redemander aurait créé une seconde
