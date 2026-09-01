@@ -4,6 +4,14 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-08-31 — La vitrine prend l'allure de la carte de référence, et parle le métier
+
+**La vitrine prend l'allure de la carte de référence, et parle le métier** (VIT-13 — PR #276, migrations `20261121120000` et `20261122120000`, ADR-123). `/v/{slug}` est refaite à l'image d'une maquette fournie : hero pleine largeur au voile dégradé, carte d'infos qui le chevauche, en-tête collant à onglets segmentés (« Notre histoire » en est un), chips filtrantes, fiches à photo latérale, favoris `localStorage`, barre basse, colonne de 480 px. **Vingt-cinq réglages** sous la seule clé `theme.allure`, **sept métiers** qui choisissent les MOTS et une palette — jamais la mise en page.
+  **Les arbitrages** (ADR-123) : les défauts SONT la maquette et seuls les ÉCARTS sont écrits — recopier les défauts aurait figé chaque vitrine sur l'allure du jour de son enregistrement. Remplissage rétroactif `restaurant`, défaut de colonne `commerce` : basculer l'existant sur le neutre aurait changé les mots de chaque page publiée sans que personne l'ait demandé.
+  **Le défaut trouvé en chemin** : les sept interrupteurs valent `true`, et une case NON RENDUE se poste comme une case DÉCOCHÉE — tout formulaire sans la section écrivait sept `false` en silence. Témoin `allure_rendue`.
+  **En marge** : `db diff --linked` a révélé **quatorze privilèges** détenus par la production et décrits par aucune migration. Non exploitables (la RLS tient), mais c'était la seconde serrure : révoqués par `20261122120000`, gardés dans `security_acl.test.sql`.
+  **Reste ouvert** : les vitrines existantes sont toutes en `restaurant` — le métier est **inerte** tant que le commerçant ne le désigne pas.
+
 ## 2026-08-29 — Réservation de table : un plan de salle, puis le défaut qui l'empêchait de tourner
 
 **Réservation de table : un plan de salle, puis le défaut qui l'empêchait de tourner** (RDV-1, RDV-6 à RDV-9, RDV-11, RDV-12 — PR #229→#232, #237). Réservation (`rendez_vous`) a des tables nommées, un effectif exact, une liste d'attente qui **notifie** sans tenir de table. RDV-11 a corrigé `createReserverActivity` : n'écrivait pas `booking_mode`, tout naissait `moment` et sortait du filtre de la page.

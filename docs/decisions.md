@@ -8322,3 +8322,128 @@ une neuvième — `prosrc` porte les commentaires.
 La valeur a été renommée `aucune` plutôt que d'élargir la garde : elle n'est
 pas fausse, elle est grossière. Mais la fragilité reste entière pour le
 prochain vocabulaire contenant `mono`, `script`, `liste` ou `social`.
+
+
+## ADR-124 — Deux compteurs de fidélité : un solde qui se dépense, un total qui ne recule jamais
+
+**Date** : 2026-08-31
+**Statut** : Accepté
+**Contexte** : bascule du programme de fidélité de la visite au point (migration
+`20261114120000`). Le niveau d'un client (les paliers, les avantages qui en
+dépendent) devait reposer sur une mesure qui ne redescend jamais — sans quoi un
+client qui dépense les points qu'il a gagnés perdrait le statut qu'il a
+mérité en les gagnant.
+
+**Décision** : `loyalty_members` porte deux colonnes distinctes.
+`points_balance` se dépense : il descend à chaque récompense échangée, c'est
+le nombre affiché comme « à dépenser ». `points_earned_total` ne descend
+jamais : il ne fait qu'augmenter à chaque gain, et c'est lui seul qui porte le
+niveau et les paliers.
+
+**Écarté** : un compteur unique, qui aurait porté à la fois la dépense et le
+niveau. C'est la lecture la plus simple du schéma, et c'est celle qui casse
+en premier : un client au palier « or » qui échange ses points contre un café
+verrait son solde chuter sous le seuil, et perdrait son statut en utilisant
+la récompense que ce statut lui a values — un système de fidélité qui punit
+la fidélité qu'il vient de récompenser.
+
+**Conséquence visible** : la carte à tampons a disparu de l'écran passeport.
+Elle affichait une progression par cases cochées vers une récompense unique ;
+un modèle à points cumulés et paliers n'a plus cette forme, et une case
+cochée affirmait implicitement « on ne recule jamais » — ce que seul
+`points_earned_total` peut désormais garantir.
+
+## ADR-125 — Le QR de la carte Google Wallet porte l'URL du passeport, jamais un laissez-passer
+
+**Date** : 2026-08-31
+**Statut** : Accepté
+**Contexte** : FID-6 (Google Wallet, PR #274). La carte de fidélité Google
+Wallet doit porter un code scannable en caisse. Deux familles de solutions
+existent pour ce genre de carte : un identifiant stable que la caisse résout
+elle-même, ou un renvoi vers l'écran qui porte la logique de check-in.
+
+**Décision** : le code de la carte Wallet encode l'URL publique du passeport
+du client, pas un identifiant de porteur. Le jeton de check-in réel — celui
+qui autorise un tampon — est émis par `src/lib/loyalty-checkin.ts` et vit
+3 minutes ; une carte Wallet, elle, vit des mois sans être renouvelée.
+
+**Écarté, et pourquoi** :
+- **Un identifiant de porteur stable, résolu par la caisse.** Cela réintroduit
+  exactement le QR photographiable que `loyalty-checkin.ts` a été écrit pour
+  supprimer — un code fixe, revu chez le client, vaut pour toujours et se
+  transmet aussi bien qu'un ticket volé. Renverser une décision de sécurité
+  déjà documentée demande une revue dédiée, pas un effet de bord dans un lot
+  « ajouter un bouton Wallet ».
+- **Un code tournant côté client (TOTP `rotatingBarcode`)** — Google Wallet
+  l'expose nativement. Il exige une famille de secrets côté serveur
+  (dérivation, rotation, stockage) et l'accord explicite de Google sur le
+  compte émetteur pour ce mode : hors de proportion pour ce lot, et sans
+  bénéfice sur un jeton de check-in déjà revu et déjà court.
+
+**Conséquence** : scanner la carte Wallet ouvre le même passeport public que
+scanner le QR imprimé ; le geste de check-in proprement dit reste entièrement
+porté par le jeton existant, inchangé par ce lot.
+
+## ADR-126 — La mise à jour du solde Wallet part en tâche différée, jamais dans le geste de comptoir
+
+**Date** : 2026-08-31
+**Statut** : Accepté
+**Contexte** : chaque tampon ou dépense de points doit répercuter le nouveau
+solde sur la carte Google Wallet du client, si elle existe. Cette
+répercussion demande un aller-retour réseau vers l'API Google Wallet.
+
+**Décision** : la mise à jour du solde Wallet est déclenchée depuis `after()`
+(exécution différée après la réponse), jamais synchrone dans la server action
+qui enregistre le tampon.
+
+**Justification** : le geste de comptoir — appuyer sur le bouton qui tamponne
+la carte d'un client qui attend — ne doit jamais dépendre de la latence ni de
+la disponibilité de Google. Deux allers-retours réseau vers un service tiers
+n'ont pas leur place dans un chemin que le commerçant vit comme instantané,
+et un défaut ou un ralentissement de l'API Wallet ne doit en aucun cas faire
+échouer l'enregistrement du tampon lui-même : la fidélité du client est
+acquise dès l'écriture en base, la carte Wallet n'est qu'un miroir de cet
+état, à jour avec un léger différé.
+
+**Conséquence** : un défaut Google Wallet peut laisser la carte affichée sur
+le téléphone du client temporairement en retard d'un solde, jamais bloquer ou
+faire échouer un encaissement.
+
+## ADR-127 — `loyalty_members` n'est pas sous régime de droits par colonne (contrairement à Réservation)
+
+**Date** : 2026-08-31
+**Statut** : Accepté (correction d'une croyance erronée)
+**Contexte** : en briefant ce chantier, l'hypothèse de départ était que
+`loyalty_members` suivait le même régime que `reservations`,
+`reservation_activities` et `reservation_waitlist_entries` — des grants
+**colonne par colonne**, posés pour tenir une colonne sensible (`email` côté
+Réservation) hors de portée du rôle `authenticated`. Cette hypothèse a été
+donnée telle quelle à un agent d'exécution ; il a vérifié le catalogue de
+droits au lieu de la prendre pour acquise, et elle s'est révélée fausse.
+
+**Décision, telle qu'elle existe dans le code** : `loyalty_members` porte un
+`grant select` **de table entière** à `authenticated`
+(`supabase/migrations/20260725120000_loyalty_passport.sql:305`), qui couvre
+donc automatiquement toute colonne future ajoutée à cette table. C'est
+l'inverse du régime de `reservations` et consorts, où une colonne neuve
+n'hérite d'aucun droit tant qu'un `grant select (colonne)` explicite n'est pas
+posé pour elle (voir ADR-122 et `docs/bugs.md`, entrée RDV du 2026-08-29).
+
+**Ce qu'il ne faut PAS faire, et pourquoi ce serait nuisible** : poser un
+`grant select (colonne)` supplémentaire et redondant sur `loyalty_members`
+« pour être cohérent avec Réservation », ou pour se prémunir par analogie
+contre le défaut qui a mordu RDV-6/RDV-1. Un tel grant ne changerait rien
+fonctionnellement — le droit de table couvre déjà tout — mais il ferait
+croire, à la prochaine lecture, que `loyalty_members` est sous régime
+colonne par colonne. Cette fausse lecture inviterait ensuite à faire évoluer
+un droit qui fonctionne aujourd'hui vers une liste nominative de colonnes,
+c'est-à-dire le régime précis qui, sur Réservation, a laissé passer trois
+colonnes sans aucun droit pendant plusieurs lots.
+
+**Repère à conserver** : dans ce dépôt, seules `reservations`,
+`reservation_activities` et `reservation_waitlist_entries` sont sous régime
+colonne par colonne, et seulement parce qu'elles portent une colonne
+(`email`) qu'il fallait explicitement soustraire du rôle `authenticated`.
+`loyalty_members` — comme la majorité des tables du dépôt — est sous régime
+de table entière : une colonne neuve y est lisible par défaut, sans geste
+supplémentaire.
