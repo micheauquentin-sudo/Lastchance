@@ -29,6 +29,7 @@ import {
 } from "@/lib/vitrine";
 import {
   publishVitrine,
+  resetVitrineCouleurs,
   saveVitrineSettings,
   setVitrineSlug,
   unpublishVitrine,
@@ -60,6 +61,16 @@ const publierAction = (): Promise<ActionResult<{ published: boolean }>> =>
 
 const depublierAction = (): Promise<ActionResult<{ published: boolean }>> =>
   unpublishVitrine();
+
+/**
+ * REVENIR AUX COULEURS DU MÉTIER — même famille, aucun champ à poster.
+ *
+ * Elle recharge : la palette est ce que la surface PUBLIQUE lit aussitôt, et
+ * les sélecteurs de couleur de CET écran sont préremplis avec la valeur
+ * résolue. Sans rechargement, ils continueraient d'afficher l'ancienne couleur
+ * — et le prochain enregistrement la regraverait aussitôt en base.
+ */
+const resetCouleursAction = (): Promise<ActionResult> => resetVitrineCouleurs();
 
 const textareaClass =
   "w-full rounded-xl border-2 border-k-ink bg-white px-3.5 py-2.5 text-sm text-k-ink placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-k-yellow focus:ring-offset-1";
@@ -387,6 +398,7 @@ function IdentiteEtThemeForm({
               disabled={!peutEditer}
             />
           </div>
+          <ReglagesCouleursMetier peutEditer={peutEditer} />
         </fieldset>
 
         <fieldset className="border-t-2 border-dashed border-zinc-200 pt-5">
@@ -697,5 +709,54 @@ function PublicationCard({
         )}
       </div>
     </Card>
+  );
+}
+
+
+/**
+ * LE RETOUR AUX COULEURS DU MÉTIER (VIT-14).
+ *
+ * ── POURQUOI CE BOUTON EXISTE ──
+ *
+ * Un `<input type="color">` a TOUJOURS une valeur : il n'a aucun état « vide ».
+ * Ces deux sélecteurs sont préremplis avec la couleur RÉSOLUE, donc enregistrer
+ * ses réglages une seule fois grave la couleur affichée en base — fût-elle un
+ * simple défaut que personne n'avait choisi. Le préréglage de métier, qui ne
+ * remplit qu'un vide, ne pouvait alors plus jamais s'appliquer.
+ *
+ * Un commerçant l'a signalé depuis la production : sa vitrine gardait un
+ * quasi-noir sur un bleu de nuit, où les titres et les prix sont illisibles, et
+ * rien à l'écran ne permettait d'en sortir. Ce bouton est la seule porte.
+ *
+ * ── IL NE TOUCHE QUE LES COULEURS ET LES POLICES ──
+ *
+ * Le style de cartes, l'ordre des blocs et les vingt-cinq réglages d'allure
+ * sont conservés. Le libellé le dit, parce qu'un bouton de réinitialisation
+ * qui en emporterait plus que son nom serait la pire des surprises.
+ */
+function ReglagesCouleursMetier({ peutEditer }: { peutEditer: boolean }) {
+  const reset = useActionForm(resetCouleursAction, {
+    networkError: "Réinitialisation impossible, réessayez.",
+    reloadOnSuccess: true,
+  });
+
+  return (
+    <form onSubmit={reset.onSubmit} className="mt-3">
+      <Button
+        type="submit"
+        variant="secondary"
+        disabled={!peutEditer || reset.pending}
+      >
+        {reset.pending ? "Réinitialisation…" : "Revenir aux couleurs de mon métier"}
+      </Button>
+      <p className="mt-1.5 text-xs text-zinc-500">
+        Efface les couleurs et les polices que vous avez enregistrées, pour
+        reprendre celles de votre métier. Votre mise en page, l&apos;ordre de vos
+        blocs et le style de vos fiches ne changent pas.
+      </p>
+      <FieldError
+        message={reset.state && !reset.state.ok ? reset.state.error : undefined}
+      />
+    </form>
   );
 }

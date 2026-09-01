@@ -7,6 +7,8 @@ import { loadBandePack } from "@/lib/bande-context";
 import { loadDuoOptions } from "@/lib/duo-context";
 import { loadOrgLobbies } from "@/lib/lobby-context";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
+import { getUserAndOrg } from "@/lib/auth";
+import { SupprimerVitrine } from "@/components/vitrine/supprimer-vitrine";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -68,6 +70,15 @@ export const metadata: Metadata = { title: "Vitrine" };
  */
 export default async function VitrineDashboardPage() {
   const capacites = await capacitesDuModule("vitrine");
+  /**
+   * LE RÔLE, POUR LA SEULE SUPPRESSION (VIT-14).
+   *
+   * `capacitesDuModule` ne l'expose pas, et il n'a pas à l'exposer : la
+   * distinction owner/editor ne vaut que pour ce geste-là, le seul du module
+   * qui ne se répare pas. `getUserAndOrg` est mémoïsé par `cache()` sur le
+   * rendu — cet appel ne coûte pas une seconde lecture.
+   */
+  const { role } = await getUserAndOrg();
   if (!capacites.canExplore) notFound();
 
   const ctx = await loadVitrineDashboardContext();
@@ -403,6 +414,14 @@ export default async function VitrineDashboardPage() {
             </p>
           </Card>
         )}
+
+        {/* LA SUPPRESSION EST TOUT EN BAS, ET HORS DU BLOC CONDITIONNEL.
+            Elle doit rester atteignable même quand l'écran affiche « choisissez
+            d'abord une adresse » : c'est justement l'état d'une vitrine à
+            moitié créée qu'un commerçant veut pouvoir effacer. La RPC répond
+            `absente` sans lever quand il n'y a rien — l'écran n'a donc aucune
+            condition à porter. */}
+        <SupprimerVitrine peutSupprimer={role === "owner"} />
       </div>
     </div>
   );

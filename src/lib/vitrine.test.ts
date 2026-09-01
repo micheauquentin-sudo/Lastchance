@@ -11,6 +11,7 @@ import {
   libelleBloc,
   libelleStyleCartes,
   mapContenusVitrine,
+  mapDeleteVitrine,
   mapDeleteVitrineTraduction,
   mapPortesVitrine,
   mapSetVitrineSlug,
@@ -1222,5 +1223,55 @@ describe("les deux portes d'écriture — leurs refus et leurs drapeaux", () => 
       expect(mapUpsertVitrineTraduction(brut).state, String(brut)).toBe("error");
       expect(mapDeleteVitrineTraduction(brut).state, String(brut)).toBe("error");
     }
+  });
+});
+
+describe("mapDeleteVitrine — trois états, et un seul est un échec (VIT-14)", () => {
+  it("lit un succès et ses comptes", () => {
+    expect(
+      mapDeleteVitrine({
+        state: "ok",
+        slug: "le-comptoir",
+        cartes: 2,
+        rubriques: 3,
+        fiches: 6,
+      }),
+    ).toEqual({
+      state: "ok",
+      slug: "le-comptoir",
+      cartes: 2,
+      rubriques: 3,
+      fiches: 6,
+    });
+  });
+
+  it("« absente » n'est PAS une erreur", () => {
+    // Deux onglets, deux clics — ou une vitrine jamais créée. L'écran doit
+    // répondre « c'est fait », pas « suppression impossible ».
+    expect(mapDeleteVitrine({ state: "absente" })).toEqual({ state: "absente" });
+  });
+
+  it("un `ok` SANS adresse est refusé plutôt que deviné", () => {
+    // La RPC ne rend `ok` qu'après avoir trouvé une vitrine, donc un slug. Un
+    // `ok` sans slug est hors contrat : on ne fabrique pas une adresse vide
+    // pour purger un cache au hasard.
+    expect(mapDeleteVitrine({ state: "ok" })).toEqual({ state: "error" });
+    expect(mapDeleteVitrine({ state: "ok", slug: "" })).toEqual({ state: "error" });
+  });
+
+  it("tout ce qui n'est pas du contrat vaut `error`", () => {
+    for (const brut of [null, undefined, {}, [], "ok", { state: "bizarre" }]) {
+      expect(mapDeleteVitrine(brut), JSON.stringify(brut)).toEqual({
+        state: "error",
+      });
+    }
+  });
+
+  it("des comptes absents ou aberrants valent zéro, jamais NaN", () => {
+    // Ces chiffres ne servent qu'au journal et à l'affichage : un `NaN` y
+    // serait plus faux qu'un zéro, et il se propagerait.
+    expect(
+      mapDeleteVitrine({ state: "ok", slug: "x", cartes: -1, fiches: "six" }),
+    ).toEqual({ state: "ok", slug: "x", cartes: 0, rubriques: 0, fiches: 0 });
   });
 });

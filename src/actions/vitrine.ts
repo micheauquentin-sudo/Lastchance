@@ -9,6 +9,7 @@ import { toJson } from "@/lib/supabase/json";
 import type { ActionResult } from "@/lib/utils";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
 import {
+  mapDeleteVitrine,
   mapDeleteVitrineTraduction,
   mapSetVitrineSlug,
   mapUpsertVitrineTraduction,
@@ -110,6 +111,16 @@ import {
 
 const GENERIC_ERROR = "Une erreur est survenue, réessayez.";
 const SANS_ADRESSE = "Choisissez d'abord l'adresse publique de votre vitrine.";
+/**
+ * LE SEUL REFUS QUE L ECRAN DOIT SAVOIR NOMMER.
+ *
+ * `gardeEditeurVitrine` laisse passer `editor`, la RPC exige `owner` : c est
+ * délibéré — un éditeur peut écrire toute la carte, il ne peut pas la faire
+ * disparaître. Sans ce message, ce refus serait rendu comme « Une erreur est
+ * survenue », et un éditeur cliquerait indéfiniment sans comprendre.
+ */
+const SUPPRESSION_OWNER =
+  "Seul le propriétaire du compte peut supprimer la vitrine.";
 const INTROUVABLE = "Élément introuvable.";
 const RATTACHEMENT_INTROUVABLE =
   "La carte ou la rubrique de destination est introuvable.";
@@ -2270,5 +2281,144 @@ export async function setVitrineIndexation(
   }
 
   await revaliderVitrine(supabase, garde.organizationId);
+  return { ok: true, data: undefined };
+}
+
+// ════════════════════════════════════════════════════════════
+// LA SUPPRESSION (VIT-14)
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Supprime la Vitrine de l'organisation active — les sept tables du module.
+ *
+ * ── ELLE PASSE PAR UNE RPC, ET C'EST LA SEULE FAÇON ──
+ *
+ * `authenticated` n'a AUCUN `delete` sur `vitrine_settings`, et ce lot ne le lui
+ * donne pas : `security_acl.test.sql` garde cette absence depuis VIT-1a. La
+ * suppression passe donc par `delete_vitrine`, `security definer`, qui revérifie
+ * le rôle EN SQL et écrit sa ligne d'audit.
+ *
+ * Deux raisons de plus, et la seconde est décisive. Une vitrine vit dans sept
+ * tables dont AUCUNE ne référence `vitrine_settings` — elles pendent à
+ * l'organisation — donc supprimer la ligne de réglages depuis ici aurait laissé
+ * le catalogue orphelin. Et sept suppressions successives depuis le client ne
+ * sont pas atomiques : une coupure au milieu laisse une vitrine à moitié
+ * effacée. La RPC les tient dans une transaction.
+ *
+ * ── LE SLUG EST RELU AVANT, PAS APRÈS ──
+ *
+ * `revaliderVitrinePublique` a besoin de l'adresse pour purger le cache ISR de
+ * `/v/{slug}`. Après la suppression, cette adresse n'existe plus nulle part :
+ * on la prend donc dans la réponse de la RPC, qui la rend précisément pour ça.
+ * Sans elle, la page resterait servie depuis le cache jusqu'à une minute après
+ * la suppression — un commerçant qui vérifie tout de suite verrait sa vitrine
+ * toujours en ligne, et conclurait que le bouton n'a rien fait.
+ *
+ * ── `absente` N'EST PAS UNE ERREUR ──
+ *
+ * Deux onglets, deux clics : le second doit rendre un succès, pas
+ * « Suppression impossible » sur une vitrine déjà supprimée. C'est aussi ce que
+ * répond la RPC quand le commerçant n'a jamais créé d'adresse.
+ */
+export async function deleteVitrine(): Promise<ActionResult> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("delete_vitrine", {
+    p_organization_id: garde.organizationId,
+    // DE LA SESSION. Jamais du corps de la requête — la RPC le revérifie
+    // `owner` en SQL, et un acteur posté ferait de la ligne d'audit une
+    // déclaration sur l'honneur.
+    p_actor: garde.userId,
+  });
+
+  if (error) {
+    reportError("vitrine.delete", error.message);
+    // 42501 : la RPC a refusé le rôle. `gardeEditeurVitrine` laisse passer
+    // `editor`, la RPC exige `owner` — c'est délibéré (le geste ne se répare
+    // pas), et c'est le seul refus que l'écran doit savoir nommer.
+    if (error.code === "42501") return { ok: false, error: SUPPRESSION_OWNER };
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  const etat = mapDeleteVitrine(data);
+  if (etat.state === "error") {
+    reportError("vitrine.delete", "réponse illisible de delete_vitrine");
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  const supabase = await createClient();
+  // `absente` n a rien supprimé, donc rien à purger : on ne passe l adresse
+  // que dans le cas `ok`, où la RPC vient précisément de la rendre pour ça.
+  await revaliderVitrine(
+    supabase,
+    garde.organizationId,
+    etat.state === "ok" ? etat.slug : null,
+  );
+  return { ok: true, data: undefined };
+}
+
+/**
+ * REVENIR AUX COULEURS ET AUX POLICES DU MÉTIER (VIT-14).
+ *
+ * ── LE DÉFAUT QU'ELLE FERME, ET IL A ÉTÉ SIGNALÉ EN PRODUCTION ──
+ *
+ * Le préréglage de secteur ne remplit qu'un VIDE. Or, pour la plupart des
+ * commerçants, ce vide était déjà rempli : l'écran de réglages prérempli le
+ * sélecteur de couleur avec la valeur RÉSOLUE, donc le simple fait d'avoir
+ * enregistré ses réglages une fois a gravé l'ancien défaut `#211d16` en base.
+ * Le préréglage ne pouvait plus jamais s'appliquer, et un `<input type="color">`
+ * n'a aucun moyen d'être « vidé » : la couleur ne pouvait pas être retirée.
+ *
+ * Un commerçant a signalé exactement cela — sa vitrine gardait un quasi-noir
+ * sur un bleu de nuit, où les titres de rubriques et les prix sont illisibles.
+ *
+ * ── ELLE RETIRE, ELLE N'ÉCRIT PAS ──
+ *
+ * `couleurs` et `polices` sont OMISES du thème, elles ne sont pas remplies avec
+ * les valeurs du préréglage. C'est le même arbitrage que l'allure : ce qui est
+ * absent suit le défaut, et suivra le défaut du jour où il changera. Réécrire
+ * la palette du métier aurait figé le commerçant sur celle d'aujourd'hui.
+ *
+ * Le reste du thème — style de cartes, ordre des blocs, allure — est CONSERVÉ :
+ * ce bouton parle de couleurs, et emporter la mise en page avec elles serait
+ * une surprise.
+ */
+export async function resetVitrineCouleurs(): Promise<ActionResult> {
+  const garde = await gardeEditeurVitrine();
+  if (!garde.ok) return { ok: false, error: garde.error };
+
+  const supabase = await createClient();
+  const { data: ligne, error: lecture } = await supabase
+    .from("vitrine_settings")
+    .select("slug, theme")
+    .eq("organization_id", garde.organizationId)
+    .maybeSingle();
+
+  if (lecture) {
+    reportError("vitrine.reset-couleurs", lecture.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+  if (!ligne) return { ok: false, error: SANS_ADRESSE };
+
+  // On repart du thème LU et on en retire deux clés : tout ce que le commerçant
+  // a réglé par ailleurs doit survivre, y compris ce que cette version du code
+  // ne connaîtrait pas encore.
+  const theme = mapThemeVitrine(ligne.theme);
+  delete theme.couleurs;
+  delete theme.polices;
+
+  const { error } = await supabase
+    .from("vitrine_settings")
+    .update({ theme: toJson(theme) })
+    .eq("organization_id", garde.organizationId);
+
+  if (error) {
+    reportError("vitrine.reset-couleurs", error.message);
+    return { ok: false, error: GENERIC_ERROR };
+  }
+
+  await revaliderVitrine(supabase, garde.organizationId, ligne.slug);
   return { ok: true, data: undefined };
 }

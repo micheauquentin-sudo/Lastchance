@@ -653,7 +653,33 @@ select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'I
 select ok(not has_column_privilege('authenticated', 'public.vitrine_settings', 'slug', 'UPDATE'), 'merchant cannot rewrite the public address and break printed QR codes silently');
 select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'published', 'UPDATE'), 'merchant can publish and unpublish (the trigger guards the entitlement)');
 select ok(has_column_privilege('authenticated', 'public.vitrine_settings', 'theme', 'UPDATE'), 'merchant can style their own storefront');
-select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'DELETE'), 'merchant cannot delete their storefront settings — unpublishing is enough');
+select ok(not has_table_privilege('authenticated', 'public.vitrine_settings', 'DELETE'), 'merchant cannot delete their storefront settings DIRECTLY — VIT-14 opens one audited door, it does not open the table');
+
+-- ── LA SUPPRESSION DE VITRINE (VIT-14) : UNE PORTE, PAS UN DROIT ──────────
+--
+-- Le propriétaire peut désormais supprimer sa vitrine. Cela n'a RIEN changé au
+-- droit de table ci-dessus, et c'est le point : le geste passe par
+-- `delete_vitrine`, `security definer`, qui revérifie le rôle OWNER en SQL et
+-- écrit sa ligne d'audit. Même arbitrage que `set_vitrine_slug` — une porte
+-- qui journalise, jamais un `grant` qui laisse passer sans témoin.
+select ok(not has_function_privilege('authenticated', 'public.delete_vitrine(uuid, text)', 'EXECUTE'), 'a merchant session cannot call the deletion RPC directly — it goes through the server action');
+select ok(not has_function_privilege('anon', 'public.delete_vitrine(uuid, text)', 'EXECUTE'), 'the anonymous key cannot delete anyone''s storefront');
+select ok(has_function_privilege('service_role', 'public.delete_vitrine(uuid, text)', 'EXECUTE'), 'the server action can call it');
+select is(
+  (select p.prosecdef from pg_proc p
+     where p.oid = 'public.delete_vitrine(uuid, text)'::regprocedure),
+  true,
+  'the deletion RPC is SECURITY DEFINER — it is the door, so it carries the check'
+);
+select is(
+  (select p.proconfig from pg_proc p
+     where p.oid = 'public.delete_vitrine(uuid, text)'::regprocedure),
+  -- La valeur EXACTE que Postgres enregistre pour `set search_path = ''` est
+  -- `search_path=""`, guillemets compris — et non `search_path=`. Écrite de
+  -- mémoire, cette assertion a rougi sur une fonction pourtant correcte.
+  array['search_path=""'],
+  'the deletion RPC pins an EMPTY search_path — a SECURITY DEFINER without it is a privilege escalation waiting for a shadowing schema'
+);
 
 -- ── LA DÉRIVE DE PRIVILÈGES QUE LA PRODUCTION AVAIT PRISE ──────────────────
 --
