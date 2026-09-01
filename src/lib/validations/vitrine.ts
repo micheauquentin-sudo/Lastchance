@@ -437,6 +437,36 @@ export const saveVitrineSettingsSchema = z.object({
    * section », que `formData.get` rend autrement identiques.
    */
   allure_rendue: caseNative,
+  /**
+   * LES QUATRE AUTRES TÉMOINS (VIT-19), ET POURQUOI ILS ARRIVENT SI TARD.
+   *
+   * `allure_rendue` a été écrit pour l'allure seule, parce que l'allure seule
+   * était concernée le jour où on l'a écrit. Le raisonnement valait pourtant
+   * pour TOUT le document `theme` : `composerTheme` le RECONSTRUIT à partir du
+   * formulaire, donc chaque clé qu'un écran ne rend pas disparaît de la base à
+   * l'enregistrement suivant.
+   *
+   * Deux écrans l'ont prouvé, en production :
+   *
+   *   - le studio (VIT-17) ne rend ni `ordre_blocs` ni `style_cartes` :
+   *     enregistrer depuis lui remettait la page aux cinq blocs par défaut —
+   *     donc RETIRAIT le bloc « Jeux » de la vitrine publique, alors que sa
+   *     présence dans l'ordre est le consentement de publication (VIT-3) ;
+   *   - `theme.jeux` (VIT-16) n'est rendu par AUCUN de ces formulaires, si
+   *     bien qu'enregistrer l'identité depuis l'atelier effaçait le choix du
+   *     commerçant — et comme l'absence vaut « les deux » (ADR-129), un jeu
+   *     explicitement décoché REVENAIT sur la carte.
+   *
+   * Le défaut est donc inversé : `composerTheme` part désormais du thème EN
+   * BASE et n'écrase qu'une section témoignée. Une clé qu'aucun écran ne rend
+   * — `jeux` — est conservée sans avoir besoin de témoin, ce qui est le bon
+   * comportement pour toute clé future : elle survit jusqu'à ce qu'un écran
+   * revendique de la régler.
+   */
+  couleurs_rendues: caseNative,
+  polices_rendues: caseNative,
+  style_cartes_rendu: caseNative,
+  blocs_rendus: caseNative,
   secteur: secteurSchema,
   badge_ouverture: texteOptionnel(
     z

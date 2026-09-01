@@ -126,3 +126,91 @@ describe("écran de réglages Vitrine — aucun formulaire imbriqué", () => {
     expect(bouton!.closest("form")!.parentElement?.closest("form")).toBeNull();
   });
 });
+
+/**
+ * LES TÉMOINS DE SECTION SONT BIEN POSÉS (VIT-19).
+ *
+ * ── LA PANNE EST SYMÉTRIQUE, ET LES DEUX MOITIÉS SONT SILENCIEUSES ──
+ *
+ * `composerTheme` ne touche plus une section que si son écran l'a témoignée.
+ * Cela ferme une moitié du défaut — un formulaire partiel n'efface plus ce
+ * qu'il ne montre pas — et en ouvre exactement une autre : un écran qui rend
+ * la section mais OUBLIE son témoin ne l'enregistre plus.
+ *
+ * Cette moitié-là est la plus vicieuse des deux. Le commerçant règle sa
+ * couleur, clique, l'action répond « Vitrine enregistrée. », et rien n'a
+ * changé. Aucune erreur, aucune trace, un écran qui recharge sur l'ancienne
+ * valeur — et la conclusion naturelle est que le clic n'a pas pris.
+ *
+ * Les gardes de `src/actions/vitrine.test.ts` ne peuvent pas la voir : elles
+ * fabriquent leur `FormData` à la main, donc elles posent les témoins qu'elles
+ * décrivent. Seul le rendu réel des deux écrans le dit — d'où ce fichier.
+ */
+describe("les témoins de section accompagnent les champs qu'ils gardent", () => {
+  function temoins(container: HTMLElement): string[] {
+    return [...container.querySelectorAll('input[type="hidden"]')]
+      .map((n) => n.getAttribute("name") ?? "")
+      .filter((n) => n.endsWith("_rendue") || n.endsWith("_rendues") || n.endsWith("_rendu") || n.endsWith("_rendus"));
+  }
+
+  it("l'écran de réglages rend les quatre sections, donc les quatre témoins", () => {
+    const { container } = render(
+      <ReglagesVitrine
+        settings={SETTINGS}
+        appUrl="https://exemple.test"
+        peutEditer
+        peutPublier
+      />,
+    );
+
+    // Chaque champ EST rendu — sans quoi la présence du témoin ne prouverait
+    // rien qu'un copier-coller ne prouve.
+    expect(container.querySelector('[name="couleur_primary"]')).toBeTruthy();
+    expect(container.querySelector('[name="police_heading"]')).toBeTruthy();
+    expect(container.querySelector('[name="style_cartes"]')).toBeTruthy();
+    expect(container.querySelector('[name="ordre_blocs"]')).toBeTruthy();
+
+    const poses = temoins(container);
+    for (const attendu of [
+      "couleurs_rendues",
+      "polices_rendues",
+      "style_cartes_rendu",
+      "blocs_rendus",
+      "allure_rendue",
+    ]) {
+      expect(poses, `témoin manquant : ${attendu}`).toContain(attendu);
+    }
+  });
+
+  it("chaque témoin part avec le MÊME formulaire que son champ", () => {
+    // Un témoin posé hors du formulaire qui porte le champ ne serait jamais
+    // envoyé — la section deviendrait inenregistrable, et l'écran continuerait
+    // de la montrer comme réglable.
+    const { container } = render(
+      <ReglagesVitrine
+        settings={SETTINGS}
+        appUrl="https://exemple.test"
+        peutEditer
+        peutPublier
+      />,
+    );
+
+    const couples: Array<[string, string]> = [
+      ["couleur_primary", "couleurs_rendues"],
+      ["police_heading", "polices_rendues"],
+      ["style_cartes", "style_cartes_rendu"],
+      ["ordre_blocs", "blocs_rendus"],
+    ];
+
+    for (const [champ, temoin] of couples) {
+      const formChamp = container
+        .querySelector(`[name="${champ}"]`)!
+        .closest("form");
+      const formTemoin = container
+        .querySelector(`[name="${temoin}"]`)!
+        .closest("form");
+      expect(formChamp, `${champ} hors de tout formulaire`).toBeTruthy();
+      expect(formTemoin, `${temoin} n'accompagne pas ${champ}`).toBe(formChamp);
+    }
+  });
+});
