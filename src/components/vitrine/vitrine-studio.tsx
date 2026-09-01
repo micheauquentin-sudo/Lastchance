@@ -18,6 +18,7 @@ import { PageCarteStudio } from "@/components/vitrine/studio/page-carte";
 import { PageALaUneStudio } from "@/components/vitrine/studio/page-alaune";
 import { PageJeuxStudio } from "@/components/vitrine/studio/page-jeux";
 import { PanneauAllure } from "@/components/vitrine/studio/panneau-allure";
+import { cartesExemple } from "@/components/vitrine/studio/exemples";
 import {
   PAGES_STUDIO,
   parsePageStudio,
@@ -115,6 +116,7 @@ export function VitrineStudio({
   peutEditer: boolean;
 }) {
   const [page, setPage] = useState<PageStudio>(() => parsePageStudio(null));
+  const [exemples, setExemples] = useState(false);
   const [etat, setEtat] = useState<EtatStudio>(() =>
     etatInitialStudio(themeInitial, {
       secteur: identiteInitiale.secteur,
@@ -169,6 +171,35 @@ export function VitrineStudio({
               </Button>
             ) : null}
           </div>
+        </div>
+
+        {/* L'INTERRUPTEUR D'EXEMPLES (VIT-28) — dans le BANDEAU, pas dans une
+            page.
+
+            Il ne dépend d'aucune page : on veut juger une densité en réglant
+            l'allure, un style de fiche en composant sa carte, une couleur en
+            choisissant ses jeux. Le poser dans « La carte » aurait obligé à
+            quitter ce qu'on règle pour aller allumer de quoi le regarder.
+
+            IL N'ENTRE PAS DANS `EtatStudio`, et c'est délibéré : cet état-là
+            est ce qui PART au serveur (`ChampsCachesStudio` le sérialise en
+            entier). Une préférence d'affichage n'a rien à y faire — l'y mettre
+            aurait été le premier pas vers un réglage de confort enregistré
+            sans que personne l'ait demandé. */}
+        <div className="flex flex-wrap items-center gap-3 px-4 pb-2 sm:px-6">
+          <label className="flex items-center gap-2 text-xs font-black text-k-ink">
+            <input
+              type="checkbox"
+              checked={exemples}
+              onChange={(e) => setExemples(e.target.checked)}
+              className="size-4 shrink-0 accent-k-orange-text"
+            />
+            Voir avec des exemples
+          </label>
+          <span className="text-xs text-zinc-500">
+            Remplit l&apos;aperçu de fiches de votre métier, le temps de juger un
+            style. Jamais enregistrées.
+          </span>
         </div>
 
         {/* LE FIL DES PAGES — des BOUTONS, pas des liens. Changer de page ne
@@ -271,9 +302,10 @@ export function VitrineStudio({
           logoUrl={identiteInitiale.logoUrl}
           coverPath={identiteInitiale.coverPath}
           coverAlt={identiteInitiale.coverAlt}
-          cartes={cartes}
+          cartes={exemples ? cartesExemple(etat.secteur) : cartes}
           liens={liens}
           slug={slug}
+          exemples={exemples}
         />
 
         <PanneauAllure

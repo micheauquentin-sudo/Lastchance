@@ -50,6 +50,7 @@ export function ApercuStudio({
   cartes,
   liens,
   slug,
+  exemples = false,
 }: {
   etat: EtatStudio;
   /** Le thème en base, pour les clés qu'aucun contrôle du studio ne règle. */
@@ -61,6 +62,16 @@ export function ApercuStudio({
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
   slug: string;
+  /**
+   * Les cartes reçues sont-elles des EXEMPLES (VIT-28) ?
+   *
+   * Ce drapeau ne CHOISIT rien — c'est la coquille qui décide quelles cartes
+   * passer. Il ne sert qu'à le DIRE à l'écran, et c'est indispensable : un
+   * aperçu rempli de plats qu'on n'a pas écrits se lit comme une vitrine déjà
+   * publiée. Le bandeau est la différence entre une démonstration et un
+   * malentendu.
+   */
+  exemples?: boolean;
 }) {
   const theme = resoudreThemeVitrine(themeDeLEtat(etat, themeBase), etat.secteur);
   const allure = theme.allure;
@@ -106,6 +117,22 @@ export function ApercuStudio({
         Aperçu — la page que vos clients ouvriront. Rien n&apos;est enregistré
         tant que vous n&apos;avez pas cliqué sur Enregistrer.
       </p>
+
+      {/* LE BANDEAU D'EXEMPLE EST DANS L'APERÇU, PAS À CÔTÉ (VIT-28).
+          Posé au-dessus du cadre, il aurait pu être pris pour une note de
+          l'écran ; posé DEDANS, il dit sans ambiguïté que ce qu'on lit
+          en dessous n'est pas la carte du commerçant. C'est ce qui sépare une
+          démonstration d'un malentendu — un aperçu rempli de plats qu'on n'a
+          pas écrits se lit sinon comme une vitrine déjà publiée. */}
+      {exemples ? (
+        <p
+          role="status"
+          className="w-full max-w-[480px] shrink-0 rounded-xl border-2 border-dashed border-k-ink/40 bg-k-yellow/40 px-3 py-2 text-xs font-black text-k-ink"
+        >
+          Exemples — ces fiches ne sont pas les vôtres et ne seront jamais
+          enregistrées. Elles servent à juger un style sur du contenu.
+        </p>
+      ) : null}
       <div
         style={variablesThemeVitrine(theme)}
         className="w-full max-w-[480px] shrink-0 overflow-hidden rounded-2xl border-2 border-k-ink bg-[var(--vitrine-secondary)] font-[family-name:var(--vitrine-texte)] text-[var(--vitrine-sur-secondary)] shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
