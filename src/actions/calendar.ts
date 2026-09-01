@@ -25,6 +25,7 @@ import {
 import {
   calendarTokenCookieName,
   loadCalendarActionContext,
+  resoudreIdentiteCalendrier,
 } from "@/lib/calendar-context";
 import {
   loadCalendarSpinBundles,
@@ -382,6 +383,32 @@ async function openInner(
     // droit à cet instant — la page publique ne précharge, elle, que les roues des
     // cases DÉJÀ ouvertes (pas de spoiler du lot d'une case future dans le RSC).
     const result = mapCalendarOpen(data);
+
+    // PONT D'ANCIENNETÉ `calendar` — POSÉ ICI AUSSI, ET PAS SEULEMENT AU JOIN.
+    //
+    // LA FUITE QUE CECI COLMATE : `open_calendar_box` CRÉE le
+    // `calendar_players` s'il manque (migration 20260728120000), et il le fait
+    // AVANT la garde `too_early`. Or le pont n'était posé que par
+    // `joinCalendar`. Un joueur qui scanne le QR et touche directement une case
+    // — sans jamais passer par « rejoindre » — n'avait donc JAMAIS de pont : son
+    // code `CADEAU-` n'atteignait pas `/portefeuille`, et le jour où son cookie
+    // disparaîtrait, `resoudreIdentiteCalendrier` n'aurait rien à rattraper.
+    //
+    // `unavailable` est le seul état qui sort AVANT l'insertion côté SQL :
+    // `too_early` a déjà créé le joueur, il compte donc lui aussi.
+    //
+    // Best-effort, comme partout ailleurs : une panne du pont ne doit pas faire
+    // échouer une ouverture déjà écrite en base.
+    if (result.state !== "unavailable") {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.organizationId,
+        experienceKind: "calendar",
+        experienceId: ctx.calendarId,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
+
     if (result.day?.contentType === "spin" && result.day.targetWheelId) {
       const bundles = await loadCalendarSpinBundles(
         ctx.admin,
@@ -535,6 +562,19 @@ async function consumeSpinInner(
     if (grant.state === "unavailable") {
       return { ok: false, error: "Tour offert indisponible." };
     }
+
+    // PONT D'ANCIENNETÉ `calendar` : consommer un tour offert FAIT PROGRESSER
+    // le joueur du calendrier. Le pont de la CAMPAGNE, posé plus bas, ne le
+    // remplace pas — il range le lot sous une autre famille et ne dit rien de
+    // l'ancienneté sur CE calendrier. Il rattrape en outre les joueurs entrés
+    // par une ouverture ANTÉRIEURE à ce lot, qui n'ont encore aucun pont.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.organizationId,
+      experienceKind: "calendar",
+      experienceId: ctx.calendarId,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
+    });
     if (grant.state === "no_prize") {
       return {
         ok: true,
@@ -628,13 +668,20 @@ export async function getCalendarState(input: {
     clientIpFromHeaders(await headers()),
   );
 
-  const store = await cookies();
-  const token = store.get(calendarTokenCookieName(parsed.data.calendarId))?.value;
-  const tokenHash = token ? hashPlayerToken(token) : undefined;
+  // MÊME RÉSOLUTION QUE LA PAGE, et par le même code : le poll doit voir
+  // EXACTEMENT l'identité que le rendu initial a servie. S'il relisait le
+  // cookie tout seul, un joueur rattrapé par l'identité globale verrait sa
+  // grille se REFERMER au premier rafraîchissement — le défaut serait pire que
+  // celui qu'on répare.
+  const identite = await resoudreIdentiteCalendrier(
+    ctx.admin,
+    ctx.calendarId,
+    ctx.organizationId,
+  );
 
   const { data, error } = await ctx.admin.rpc("calendar_public_state", {
     p_calendar_id: parsed.data.calendarId,
-    p_player_token_hash: tokenHash,
+    p_player_token_hash: identite.tokenHash ?? undefined,
   });
   if (error) {
     reportError("calendar.state", error.message);
