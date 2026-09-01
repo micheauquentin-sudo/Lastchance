@@ -46,23 +46,52 @@ export const DUO_OPTIONS_MIN_ECRAN = 3;
 export const duoLobbySchema = z.object({ lobbyId: uuid }).strict();
 
 /**
- * SCELLER — la salle et la fiche, rien d'autre.
+ * SCELLER — la salle et la PLACE, rien d'autre. Ou la salle et la fiche, le
+ * temps d'un déploiement.
  *
  * AUCUN JETON N'EST UN CHAMP, et son absence est le point : l'empreinte
- * présentée à `duo_choose` sort du COOKIE DE CETTE SALLE (`lireJetonLobby` +
- * `hashLobbyToken`), et de nulle part ailleurs. Un jeton reçu du formulaire
- * ferait de l'appartenance une déclaration sur l'honneur — c'est-à-dire
- * permettrait de sceller à la place de l'autre joueur.
+ * présentée à `duo_choose_option` sort du COOKIE DE CETTE SALLE
+ * (`lireJetonLobby` + `hashLobbyToken`), et de nulle part ailleurs. Un jeton
+ * reçu du formulaire ferait de l'appartenance une déclaration sur l'honneur —
+ * c'est-à-dire permettrait de sceller à la place de l'autre joueur.
  *
- * AUCUNE VALIDATION QUE LA FICHE EST SUR LE PLATEAU non plus : c'est un `exists`
- * de `duo_choose`, qui porte l'organisation et rend le même `unavailable` pour
- * une fiche inexistante, d'un autre commerce ou non épinglée. Le refaire ici
- * aurait exigé de relire le plateau — donc une seconde définition de « cette
- * fiche est jouable », qui aurait fini par diverger de la première.
+ * AUCUNE VALIDATION QUE LA PLACE EST SUR LE PLATEAU non plus : c'est un `select`
+ * de `duo_choose_option`, borné à l'organisation de la SALLE, qui rend le même
+ * `unavailable` pour une place inexistante, d'un autre commerce ou retirée du
+ * plateau. Le refaire ici aurait exigé de relire le plateau — donc une seconde
+ * définition de « cette place est jouable », qui aurait fini par diverger de la
+ * première.
+ *
+ * ── DEUX FORMES ACCEPTÉES, ET LA SECONDE EST TRANSITOIRE (DUO-5) ──
+ *
+ * `optionId` est la forme vivante : c'est la clé primaire de `duo_options`, la
+ * SEULE qui désigne une place quelle que soit son origine — une proposition
+ * saisie à la main n'a pas de fiche, et c'est précisément ce que ce lot rend
+ * jouable.
+ *
+ * `itemId` est la forme d'HIER, conservée pour LA FENÊTRE DE DÉPLOIEMENT et pour
+ * rien d'autre. Un onglet ouvert avant la mise en ligne poste encore `item_id`,
+ * et son joueur est au milieu d'une partie à deux : le refuser lui rendrait un
+ * bouton qui ne fait rien, sans qu'aucun rechargement ne lui soit suggéré. Le
+ * SQL a fait le même arbitrage — la migration 20261128120000 garde
+ * `duo_choose(p_item_id)` vivante, qui délègue après résolution, en écrivant
+ * qu'elle existe « pour la fenêtre de déploiement ».
+ *
+ * ELLE S'ENLÈVE, et le geste est nommé : retirer ce membre d'union, la branche
+ * `duo_choose` de `chooseDuo`, et le test qui la couvre. Rien d'autre n'en
+ * dépend.
+ *
+ * ── POURQUOI UNE UNION ET NON DEUX CHAMPS FACULTATIFS ──
+ *
+ * Motif `duoPlaceSchema` : deux champs facultatifs auraient laissé écrire les
+ * deux, donc laissé une place à la question « laquelle gagne ? » — question dont
+ * la réponse aurait vécu dans l'action, hors de portée de ce fichier. Chaque
+ * membre reste `.strict()` : la clé de l'autre forme ne traverse pas.
  */
-export const duoChooseSchema = z
-  .object({ lobbyId: uuid, itemId: uuid })
-  .strict();
+export const duoChooseSchema = z.union([
+  z.object({ lobbyId: uuid, optionId: uuid }).strict(),
+  z.object({ lobbyId: uuid, itemId: uuid }).strict(),
+]);
 
 /*
  * `duoOptionsSchema` VIVAIT ICI, ET IL EST PARTI AVEC DUO-3b.
