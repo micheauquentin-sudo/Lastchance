@@ -37,7 +37,7 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
-## Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#305)
+## Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#312)
 
 **Terrain.** `src/components/vitrine/vitrine-studio.tsx` (coquille),
 `src/components/vitrine/studio/` (neuf : `etat.ts`, `champs-caches.tsx`,
@@ -74,10 +74,9 @@ moins une garde ÉPROUVÉE PAR MUTATION.
 
 **Reste ouvert — À EXÉCUTER.**
 
-1. **L'interrupteur « voir avec des exemples » n'est pas câblé.** Les données
-   des sept métiers sont livrées et gardées (`studio/exemples.ts`, VIT-24) ;
-   le brancher demande de toucher `studio/apercu.tsx`, que trois lots
-   modifiaient encore. Un lot d'une demi-heure.
+1. ~~L'interrupteur « voir avec des exemples » n'est pas câblé~~ — **livré**
+   (VIT-28, PR #312), avec les données et non après : livrées seules, elles
+   auraient été un module que rien n'appelle.
 2. **🔴 `'wasm-unsafe-eval'` bloque toujours la lecture de carte
    photographiée.** VIT-25 n'y touche pas volontairement : rouvrir cette
    permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
