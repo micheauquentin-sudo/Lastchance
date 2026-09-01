@@ -9143,6 +9143,10 @@ export type Database = {
         Args: { p_organization_id: string; p_season_id: string }
         Returns: boolean
       }
+      delete_vitrine: {
+        Args: { p_actor: string; p_organization_id: string }
+        Returns: Json
+      }
       delete_vitrine_translation: {
         Args: {
           p_actor: string

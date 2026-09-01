@@ -2332,3 +2332,44 @@ export function mapDeleteVitrineTraduction(
   const root = asRecord(raw);
   return { state: "ok", deleted: root?.deleted === true };
 }
+
+/**
+ * LA RÉPONSE DE `delete_vitrine` (VIT-14) — trois états, et un seul est un échec.
+ *
+ * `ok` porte l'adresse LIBÉRÉE, dont l'appelant a besoin pour purger le cache
+ * ISR de `/v/{slug}` : après la suppression, ce slug n'existe plus nulle part
+ * et personne d'autre ne saurait le retrouver.
+ *
+ * `absente` n'est PAS une erreur — deux onglets, deux clics, ou une vitrine
+ * jamais créée. L'écran doit répondre « c'est fait », pas « impossible ».
+ *
+ * `error` est le seul état hors contrat : la RPC a rendu quelque chose
+ * d'illisible, et cela se journalise, contrairement aux deux autres.
+ */
+export type DeleteVitrineResult =
+  | { state: "ok"; slug: string; cartes: number; rubriques: number; fiches: number }
+  | { state: "absente" }
+  | { state: "error" };
+
+export function mapDeleteVitrine(raw: unknown): DeleteVitrineResult {
+  const root = asRecord(raw);
+  const state = root ? asString(root.state) : null;
+  if (state === "absente") return { state: "absente" };
+  if (state !== "ok") return { state: "error" };
+
+  const slug = asString(root?.slug);
+  // Un `ok` SANS adresse est incohérent : la RPC ne rend `ok` que lorsqu'elle a
+  // trouvé une vitrine, donc un slug. On refuse de deviner.
+  if (!slug) return { state: "error" };
+
+  const entier = (v: unknown): number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+
+  return {
+    state: "ok",
+    slug,
+    cartes: entier(root?.cartes),
+    rubriques: entier(root?.rubriques),
+    fiches: entier(root?.fiches),
+  };
+}
