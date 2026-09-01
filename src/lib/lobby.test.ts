@@ -136,6 +136,11 @@ describe("mapLobbyState", () => {
       capacite: 4,
       expiresAt: "2026-08-21T12:30:00Z",
       joinCode: "ABC234",
+      // SALON-1 — LE DOCUMENT DE RÉFÉRENCE N'A PAS DE CLÉ `habillage`, et c'est
+      // exactement le cas d'un commerce qui n'a jamais ouvert l'écran de
+      // réglages : `lobby_state` rend alors `habillage: null`. Le mappeur doit
+      // le lire comme « pas de décor » et non comme un document tronqué.
+      habillage: null,
       membres: [
         { pseudo: "Hôte", rang: 1, estMoi: true },
         { pseudo: "Ami", rang: 2, estMoi: false },
@@ -176,6 +181,75 @@ describe("mapLobbyState", () => {
     expect(mapLobbyState({ ...nominal, membres: null })).toMatchObject({
       state: "ok",
       membres: [],
+    });
+  });
+
+  it("remonte l'habillage du commerce quand la base en rend un", () => {
+    expect(
+      mapLobbyState({
+        ...nominal,
+        habillage: {
+          theme: "noel",
+          fond_key: "aucun",
+          nom: "Café des Sports",
+          logo_url: "https://exemple.test/logo.png",
+        },
+      }),
+    ).toMatchObject({
+      state: "ok",
+      habillage: {
+        theme: "noel",
+        // BRUT, pas résolu : `"aucun"` (« aucune image ») et `null` (« suivre
+        // le thème ») ne doivent pas se confondre avant `fondChoisi`.
+        fondKey: "aucun",
+        nom: "Café des Sports",
+        logoUrl: "https://exemple.test/logo.png",
+      },
+    });
+  });
+
+  it("un habillage illisible n'est pas un salon en panne", () => {
+    // L'inverse des quatre mappeurs de refus, et c'est délibéré : le décor ne
+    // porte rien dont l'écran ait besoin pour fonctionner. Mettre un salon en
+    // « indisponible » pour une couleur qu'on ne comprend pas laisserait une
+    // table entière devant un refus.
+    for (const brut of [null, "noel", 42, []]) {
+      expect(mapLobbyState({ ...nominal, habillage: brut })).toMatchObject({
+        state: "ok",
+        habillage: null,
+      });
+    }
+  });
+
+  it("un thème hors palette retombe sur « neutre » au lieu d'atteindre l'écran", () => {
+    // Souple en LECTURE, strict à l'écriture. Une douzième clé, arrivée par un
+    // `check` élargi que ce dépôt ne connaîtrait pas encore, n'a aucun lavis
+    // mesuré : la peindre reviendrait à servir une couleur dont personne n'a
+    // relevé le contraste.
+    expect(
+      mapLobbyState({
+        ...nominal,
+        habillage: { theme: "halloween", fond_key: null, nom: null, logo_url: null },
+      }),
+    ).toMatchObject({
+      state: "ok",
+      habillage: { theme: "neutre", fondKey: null, nom: null, logoUrl: null },
+    });
+  });
+
+  it("l'identité tue par la base reste tue ici", () => {
+    // `affiche_identite = false` fait rendre `nom` et `logo_url` à `null` PAR LE
+    // SQL. Aucun drapeau ne traverse : le mappeur n'a donc rien à décider, et
+    // c'est ce qui empêche un écran de « rétablir » ce que le commerçant a
+    // choisi de taire.
+    expect(
+      mapLobbyState({
+        ...nominal,
+        habillage: { theme: "soldes", fond_key: "prairie", nom: null, logo_url: null },
+      }),
+    ).toMatchObject({
+      state: "ok",
+      habillage: { theme: "soldes", fondKey: "prairie", nom: null, logoUrl: null },
     });
   });
 });
