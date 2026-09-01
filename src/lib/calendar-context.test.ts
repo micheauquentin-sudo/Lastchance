@@ -20,29 +20,60 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
   type Row = Record<string, unknown>;
+  type ListResult = { data: Row[]; error: { message: string } | null };
+  /** Table, colonnes, filtres `eq` et filtre `in` d'une requête. */
+  type QueryEntry = {
+    table: string;
+    columns: string;
+    filters: Record<string, unknown>;
+    inFilter?: { column: string; values: unknown[] };
+  };
   type Builder = {
     eq: (column: string, value: unknown) => Builder;
+    in: (column: string, values: unknown[]) => Builder;
     maybeSingle: () => Promise<{ data: Row | null; error: null }>;
+    then: (
+      onfulfilled: (value: ListResult) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ) => Promise<unknown>;
   };
 
+  /** Ne rend que les colonnes demandées : un `select` trop large se voit. */
+  function project(row: Row, columns: string): Row {
+    const wanted = columns.split(",").map((c) => c.trim());
+    const out: Row = {};
+    for (const c of wanted) if (c in row) out[c] = row[c];
+    return out;
+  }
+
+  // Types de retour ANNOTÉS : sans cela l'inférence de `queriesOn` dépendrait
+  // du type de `db`, qui dépend d'elle.
   const db = {
     calendars: [] as Row[],
+    /** `calendar_players` — la table où vit l'identité du joueur (ID-6). */
+    calendar_players: [] as Row[],
+    /** Panne simulée de la LECTURE DE REPLI (le `in (…)`) et d'elle seule. */
+    playersError: null as { message: string } | null,
     /** Table + colonnes + filtres de chaque requête, dans l'ordre. */
-    queries: [] as Array<{
-      table: string;
-      columns: string;
-      filters: Record<string, unknown>;
-    }>,
+    queries: [] as QueryEntry[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     /** Réponse simulée de `calendar_public_state`. */
     rpcData: null as unknown,
     rpcError: null as { message: string } | null,
-    reset() {
+    reset(): void {
       db.calendars = [];
+      db.calendar_players = [];
+      db.playersError = null;
       db.queries = [];
       db.rpcCalls = [];
       db.rpcData = null;
       db.rpcError = null;
+    },
+    tablesQueried(): string[] {
+      return db.queries.map((q) => q.table);
+    },
+    queriesOn(table: string): QueryEntry[] {
+      return db.queries.filter((q) => q.table === table);
     },
   };
 
@@ -51,22 +82,45 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
       from(table: string) {
         return {
           select(columns: string) {
-            // `filters` est enregistré par RÉFÉRENCE puis rempli par les `eq`
-            // successifs : complet au moment des assertions.
-            const filters: Record<string, unknown> = {};
-            db.queries.push({ table, columns, filters });
+            // `entry` est enregistrée par RÉFÉRENCE puis remplie par les `eq` /
+            // `in` successifs : complète au moment des assertions.
+            const entry: QueryEntry = { table, columns, filters: {} };
+            db.queries.push(entry);
+            const source = () =>
+              table === "calendars" ? db.calendars : db.calendar_players;
+            const rows = () =>
+              source()
+                .filter((r) =>
+                  Object.entries(entry.filters).every(([k, v]) => r[k] === v),
+                )
+                .filter((r) =>
+                  entry.inFilter
+                    ? entry.inFilter.values.includes(r[entry.inFilter.column])
+                    : true,
+                )
+                // La ligne `calendars` porte une relation imbriquée
+                // (`organizations(…)`) qu'un découpage sur la virgule
+                // massacrerait : elle est rendue telle quelle, comme avant.
+                .map((r) => (table === "calendars" ? r : project(r, columns)));
             const builder: Builder = {
               eq(column, value) {
-                filters[column] = value;
+                entry.filters[column] = value;
+                return builder;
+              },
+              in(column, values) {
+                entry.inFilter = { column, values };
                 return builder;
               },
               maybeSingle: async () => ({
-                data:
-                  db.calendars.find((r) =>
-                    Object.entries(filters).every(([k, v]) => r[k] === v),
-                  ) ?? null,
+                data: rows()[0] ?? null,
                 error: null,
               }),
+              then: (onfulfilled, onrejected) =>
+                Promise.resolve<ListResult>(
+                  db.playersError
+                    ? { data: [], error: db.playersError }
+                    : { data: rows(), error: null },
+                ).then(onfulfilled, onrejected),
             };
             return builder;
           },
@@ -81,6 +135,49 @@ const { db, cookieJar, createAdminClientMock } = vi.hoisted(() => {
 
   return { db, cookieJar: { jar: {} as Record<string, string> }, createAdminClientMock };
 });
+
+/**
+ * L'IDENTITÉ GLOBALE, doublée et jamais exécutée pour de vrai (ID-6) :
+ * `peekPlayerDeviceTokenHash` lit un cookie salé par `PLAYER_KEY_SALT` et
+ * `lookupLegacyIdentityHashes` appelle une RPC. Ce fichier éprouve l'ORDRE de
+ * résolution et la PORTÉE des requêtes qui en découlent, pas le pont lui-même
+ * (couvert par player-identity.test.ts).
+ *
+ * L'état par DÉFAUT est « aucune identité globale » : c'est exactement l'état
+ * d'avant ce lot, ce qui fait de tous les tests déjà écrits ci-dessous des
+ * témoins de non-régression.
+ */
+const { identiteGlobale } = vi.hoisted(() => ({
+  identiteGlobale: {
+    /** Empreinte SALÉE du cookie `lc-player`, ou `null` (visiteur neuf). */
+    empreinte: null as string | null,
+    /** Empreintes de MODULE rendues par le pont, de la plus récente d'abord. */
+    anciennes: [] as string[],
+    /** Portées passées au pont, dans l'ordre — l'isolement s'y assert. */
+    portees: [] as Array<Record<string, unknown>>,
+  },
+}));
+
+vi.mock("@/lib/player-identity", () => ({
+  peekPlayerDeviceTokenHash: () => Promise.resolve(identiteGlobale.empreinte),
+  lookupLegacyIdentityHashes: (portee: Record<string, unknown>) => {
+    identiteGlobale.portees.push(portee);
+    return Promise.resolve(identiteGlobale.anciennes);
+  },
+}));
+
+/**
+ * `recordCounter` seul est espionné ; le reste du module d'observabilité reste
+ * RÉEL — le chargeur voisin en tire `reportError`, qu'un double complet
+ * casserait sans rapport avec le sujet.
+ */
+const { compteurs } = vi.hoisted(() => ({ compteurs: [] as string[] }));
+vi.mock("@/lib/monitoring", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  recordCounter: (op: string) => {
+    compteurs.push(op);
+  },
+}));
 
 // La factory `vi.mock` est hissée au-dessus des imports : elle ne peut lire
 // que des valeurs issues de `vi.hoisted`.
@@ -204,6 +301,10 @@ beforeEach(() => {
   db.calendars = [calendar()];
   db.rpcData = publicStateRaw();
   cookieJar.jar = {};
+  identiteGlobale.empreinte = null;
+  identiteGlobale.anciennes = [];
+  identiteGlobale.portees = [];
+  compteurs.length = 0;
   vi.restoreAllMocks();
 });
 
@@ -532,3 +633,240 @@ describe("loadCalendarActionContext — contexte minimal des actions publiques",
     expect(ctx.ok).toBe(false);
   });
 });
+
+// ────────────────────────────────────────────────────────────
+// 7. ID-6 — l'identité globale rattrape le cookie de calendrier perdu
+// ────────────────────────────────────────────────────────────
+describe("calendrier — l'identité globale rattrape le cookie perdu", () => {
+  /** Empreinte SALÉE de l'appareil : elle n'entre dans AUCUNE requête. */
+  const EMPREINTE_APPAREIL = "f".repeat(64);
+  /** Le cookie de calendrier d'AVANT, dont seul le hash survit en base. */
+  const VIEUX_COOKIE = "jeton-calendrier-d-avant-le-nettoyage";
+  const TOKEN = "jeton-du-joueur";
+
+  function seedJoueur(over: Over = {}) {
+    db.calendar_players = [
+      {
+        id: "player-moi",
+        calendar_id: CAL_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        opened_count: 12,
+        ...over,
+      },
+    ];
+  }
+
+  it("LA PROMESSE : cookie de calendrier disparu, appareil connu → la grille revient", async () => {
+    // Le joueur a nettoyé son navigateur au milieu de décembre. Son
+    // `lc-calendar-…` n'existe plus, mais son `lc-player` oui, et le pont
+    // `calendar` a été posé à chaque ouverture. Rouge si la RPC était appelée
+    // sans identité : douze cases ouvertes redeviendraient fermées et les codes
+    // `CADEAU-` déjà gagnés s'évaporeraient de sa vue.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur();
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBe(sha256(VIEUX_COOKIE));
+    expect(ctx.hasIdentity).toBe(true);
+    // Le repli SE COMPTE : zéro est la valeur attendue tant que personne n'a
+    // perdu son cookie, et une population non nulle dit combien de joueurs
+    // auraient retrouvé une grille entièrement refermée.
+    expect(compteurs).toContain("calendar.repli_identite_globale");
+  });
+
+  it("interroge le pont sur la portée du CALENDRIER, jamais plus large", async () => {
+    // La famille et l'expérience sont ce qui empêche l'empreinte d'un autre
+    // module — ou d'un autre calendrier — d'entrer dans la requête.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur();
+
+    await loadCalendarPublicContext(SLUG);
+
+    expect(identiteGlobale.portees).toEqual([
+      {
+        deviceTokenHash: EMPREINTE_APPAREIL,
+        organizationId: ORG_ID,
+        experienceKind: "calendar",
+        experienceId: CAL_ID,
+      },
+    ]);
+  });
+
+  it("L'EMPREINTE SALÉE N'ENTRE DANS AUCUN FILTRE — le piège du hachage", async () => {
+    // `hashPlayerDeviceToken` (salé, `player-device:v1`) et `hashPlayerToken`
+    // (SHA-256 nu) rendent tous deux 64 hexadécimaux et passent le même motif :
+    // les substituer ne lève RIEN, la requête ne trouve simplement plus
+    // personne, partout, sans une ligne de journal. C'est le seul filet contre
+    // cette faute. Rouge si l'empreinte de l'appareil se retrouvait un jour
+    // dans un filtre `calendar_players`, ou passée telle quelle à la RPC.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur();
+
+    await loadCalendarPublicContext(SLUG);
+
+    expect(JSON.stringify(db.queries)).not.toContain(EMPREINTE_APPAREIL);
+    expect(JSON.stringify(db.rpcCalls)).not.toContain(EMPREINTE_APPAREIL);
+    const repli = db.queriesOn("calendar_players")[0];
+    expect(repli.filters.calendar_id).toBe(CAL_ID);
+    expect(repli.inFilter).toEqual({
+      column: "token_hash",
+      values: [sha256(VIEUX_COOKIE)],
+    });
+  });
+
+  it("NON-RÉGRESSION : cookie intact → le MÊME joueur, et le repli n'est jamais consulté", async () => {
+    // La garde qui compte le plus. Rouge si l'identité globale passait devant :
+    // tous les joueurs au cookie valable changeraient d'identité en silence le
+    // jour du déploiement, et ADR-041 interdit précisément de réinterpréter une
+    // progression existante.
+    cookieJar.jar[calendarTokenCookieName(CAL_ID)] = TOKEN;
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    // Le pont désignerait un AUTRE joueur : il ne doit même pas être interrogé.
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    db.calendar_players = [
+      {
+        id: "player-du-cookie",
+        calendar_id: CAL_ID,
+        token_hash: sha256(TOKEN),
+        opened_count: 3,
+      },
+      {
+        id: "player-d-avant",
+        calendar_id: CAL_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        opened_count: 12,
+      },
+    ];
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBe(sha256(TOKEN));
+    expect(identiteGlobale.portees).toEqual([]);
+    expect(db.queriesOn("calendar_players")).toHaveLength(1);
+    expect(compteurs).not.toContain("calendar.repli_identite_globale");
+  });
+
+  it("le cloisonnement par calendrier tient sur le chemin de repli aussi", async () => {
+    // Même empreinte de module, autre calendrier : invisible. Rouge si le
+    // filtre `calendar_id` sautait du `in (…)` — les cases ouvertes, donc les
+    // codes de retrait, d'un calendrier s'afficheraient sur un autre.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur({ calendar_id: "un-autre-calendrier" });
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBeUndefined();
+    expect(ctx.hasIdentity).toBe(false);
+    expect(compteurs).not.toContain("calendar.repli_identite_globale");
+  });
+
+  it("plusieurs anciennes empreintes : c'est la PLUS RÉCENTE qui gagne", async () => {
+    // La RPC rend ses empreintes triées de la plus récemment vue à la plus
+    // ancienne. Rouge si l'ordre de la base l'emportait : un joueur qui a
+    // changé deux fois de cookie retomberait sur sa grille la plus vieille.
+    const ENCORE_PLUS_VIEUX = "jeton-de-l-annee-derniere";
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE), sha256(ENCORE_PLUS_VIEUX)];
+    db.calendar_players = [
+      // La base rend l'ancien EN PREMIER : c'est exactement le piège.
+      {
+        id: "player-ancien",
+        calendar_id: CAL_ID,
+        token_hash: sha256(ENCORE_PLUS_VIEUX),
+        opened_count: 1,
+      },
+      {
+        id: "player-recent",
+        calendar_id: CAL_ID,
+        token_hash: sha256(VIEUX_COOKIE),
+        opened_count: 12,
+      },
+    ];
+
+    await loadCalendarPublicContext(SLUG);
+
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBe(sha256(VIEUX_COOKIE));
+  });
+
+  it("cookie posé mais sans joueur : le repli le rattrape", async () => {
+    // LE CAS PROPRE AU CALENDRIER. `resolveCalendarIdentity` pose un cookie
+    // neuf dès la PREMIÈRE tentative d'ouverture, même quand elle échoue
+    // (case verrouillée). Un revenant au cookie effacé qui touche d'abord une
+    // case future repart donc avec un cookie qui ne désigne personne. Rouge si
+    // le repli n'était tenté que faute de cookie : il resterait un inconnu.
+    cookieJar.jar[calendarTokenCookieName(CAL_ID)] = TOKEN;
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur();
+
+    await loadCalendarPublicContext(SLUG);
+
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBe(sha256(VIEUX_COOKIE));
+    // Le cookie a bien été essayé EN PREMIER : deux lectures, dans cet ordre.
+    expect(db.queriesOn("calendar_players")).toHaveLength(2);
+    expect(db.queriesOn("calendar_players")[0].filters.token_hash).toBe(
+      sha256(TOKEN),
+    );
+  });
+
+  it("visiteur neuf : aucune identité, aucune lecture d'identité", async () => {
+    // Ni cookie de module, ni cookie global. Rouge si le chargeur interrogeait
+    // quand même `calendar_players` : une requête offerte à tout passant sur un
+    // chemin ouvert à Internet, pour un résultat connu d'avance.
+    seedJoueur();
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.hasIdentity).toBe(false);
+    expect(db.tablesQueried()).not.toContain("calendar_players");
+    expect(identiteGlobale.portees).toEqual([]);
+    expect(db.queries).toHaveLength(1);
+  });
+
+  it("aucune ancienne empreinte : l'état d'avant, à l'identique", async () => {
+    // Le pont ne rend rien (appareil jamais vu sur ce calendrier, ou RPC en
+    // panne — `lookupLegacyIdentityHashes` replie DÉJÀ toute panne sur une
+    // liste vide et ne lève jamais). Le repli ne peut qu'AJOUTER un joueur,
+    // jamais en retirer un ni faire échouer la page.
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [];
+    seedJoueur();
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    if (!ctx.ok) throw new Error(ctx.error);
+    expect(ctx.hasIdentity).toBe(false);
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBeUndefined();
+    expect(db.tablesQueried()).not.toContain("calendar_players");
+  });
+
+  it("la LECTURE DE REPLI en panne rend exactement ce que le cookie avait trouvé", async () => {
+    // Ici le pont a bien répondu, mais la lecture `in (…)` échoue. Rouge si
+    // l'erreur remontait : la page se fermerait pour un joueur à qui elle
+    // s'affichait très bien la minute d'avant — le repli aurait RETIRÉ quelque
+    // chose au lieu d'ajouter.
+    cookieJar.jar[calendarTokenCookieName(CAL_ID)] = TOKEN;
+    identiteGlobale.empreinte = EMPREINTE_APPAREIL;
+    identiteGlobale.anciennes = [sha256(VIEUX_COOKIE)];
+    seedJoueur();
+    db.playersError = { message: "deadlock detected" };
+
+    const ctx = await loadCalendarPublicContext(SLUG);
+
+    expect(ctx.ok).toBe(true);
+    if (!ctx.ok) throw new Error(ctx.error);
+    // L'empreinte du cookie, celle d'avant ce lot — ni null, ni la rattrapée.
+    expect(db.rpcCalls[0].args.p_player_token_hash).toBe(sha256(TOKEN));
+    expect(compteurs).not.toContain("calendar.repli_identite_globale");
+  });
+});
+
