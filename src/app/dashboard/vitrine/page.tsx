@@ -436,10 +436,34 @@ export default async function VitrineDashboardPage({
           {settings ? (
             <>
               {etape === "identite" ? (
+                <div className="space-y-4">
+                  {/* L'ENTRÉE DU STUDIO (VIT-17). Elle est EN TÊTE de
+                      l'étape et non en bas : personnaliser une page se fait
+                      en la regardant, et le formulaire ci-dessous n'en
+                      montre rien. Celui qui descend le remplir a déjà
+                      renoncé à voir ce qu'il règle. */}
+                  <Card className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2>Voir ce que je règle</h2>
+                      <p className="mt-1 text-sm text-k-body">
+                        Ouvrez le studio : votre vitrine au centre, les
+                        réglages autour, et chaque changement visible tout de
+                        suite. Rien n&apos;est enregistré tant que vous ne
+                        l&apos;avez pas demandé.
+                      </p>
+                    </div>
+                    <Link
+                      href="/vitrine-studio"
+                      className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+                    >
+                      Ouvrir le studio
+                    </Link>
+                  </Card>
                 <IdentiteEtThemeForm
                   settings={settings}
                   peutEditer={capacites.canEditDraft}
                 />
+                </div>
               ) : null}
 
               {etape === "carte" ? (
