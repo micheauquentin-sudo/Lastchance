@@ -323,3 +323,76 @@ describe("Invariants des expériences publiques à nonce", () => {
     expect(cspSurfaceForPath("/play/demo")).toBe("static");
   });
 });
+
+describe("aucune page authentifiée ne retombe au régime statique", () => {
+  /**
+   * LA GARDE QUI AURAIT VU L'OUBLI, ET POURQUOI L'AUTRE NE POUVAIT PAS.
+   *
+   * Le test voisin parcourt `SENSITIVE_PREFIXES` et vérifie que chacun est
+   * classé `sensitive`. C'est vrai par construction : il compare la liste à
+   * elle-même. Un préfixe ABSENT de la liste lui est invisible, et c'est
+   * exactement ce qui est arrivé — `/vitrine-studio` (VIT-17) a passé
+   * plusieurs lots en régime `static`, c'est-à-dire sous `'unsafe-inline'` et
+   * sans nonce, alors qu'il rend l'identité du commerce et sa carte.
+   *
+   * Rien n'était exploitable : la page est derrière la session, et ce n'est
+   * pas la CSP qui l'y tient. Mais c'est une défense en profondeur perdue,
+   * silencieusement, sur l'écran devenu central du module.
+   *
+   * ── D'OÙ UNE GARDE QUI LIT LES ROUTES, PAS LA LISTE ──
+   *
+   * `SENSITIVE_PREFIXES` ne dérive de rien : ni des routes qui exigent une
+   * session, ni d'un segment de l'App Router. Ce test rétablit le lien dans
+   * le seul sens qui compte — il part des PAGES et revient à la liste.
+   *
+   * Le critère est `redirect("/login")` dans le corps de la page. C'est le
+   * geste qu'aucune page authentifiée de ce dépôt n'omet, et il est
+   * observable sans exécuter quoi que ce soit. Une page qui l'exprimerait
+   * autrement échapperait à cette garde : le jour où cela arrive, c'est ce
+   * critère qu'il faut élargir, pas la liste qu'il faut desserrer.
+   */
+  function pagesAuthentifiees(): string[] {
+    const routes: string[] = [];
+    const parcourir = (dossier: string) => {
+      for (const e of readdirSync(dossier, { withFileTypes: true })) {
+        const p = path.join(dossier, e.name);
+        if (e.isDirectory()) parcourir(p);
+        else if (e.name === "page.tsx") {
+          if (readFileSync(p, "utf8").includes('redirect("/login")')) {
+            routes.push(p);
+          }
+        }
+      }
+    };
+    parcourir(path.join(process.cwd(), "src", "app"));
+    return routes;
+  }
+
+  /** Le chemin servi : sans les groupes `(x)`, arrêté au premier segment dynamique. */
+  function cheminServi(fichier: string): string {
+    const apres = fichier.replace(/\\/g, "/").split("/src/app/")[1] ?? "";
+    const segments = apres
+      .replace(/\/page\.tsx$/, "")
+      .split("/")
+      .filter((s) => s && !s.startsWith("("));
+    const arret = segments.findIndex((s) => s.startsWith("["));
+    return "/" + (arret === -1 ? segments : segments.slice(0, arret)).join("/");
+  }
+
+  it("classe en sensible TOUTE page qui renvoie vers /login", () => {
+    const pages = pagesAuthentifiees();
+
+    // La garde de la garde : si le critère cessait de trouver quoi que ce
+    // soit, l'assertion suivante passerait en ne mesurant rien.
+    expect(pages.length).toBeGreaterThan(5);
+
+    const fautives = pages
+      .map(cheminServi)
+      .filter((chemin) => cspSurfaceForPath(chemin) !== "sensitive");
+
+    expect(
+      [...new Set(fautives)],
+      "ces routes exigent une session et retombent pourtant au régime statique",
+    ).toEqual([]);
+  });
+});
