@@ -26,6 +26,7 @@ import {
 import {
   contestTokenCookieName,
   loadContestContext,
+  resoudreIdentiteContest,
 } from "@/lib/pronostics-context";
 import {
   RATE_LIMITS,
@@ -1673,17 +1674,19 @@ async function updatePlayerInner(
     const ctx = await loadContestContext(parsed.data.slug);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const store = await cookies();
-    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
-    if (!token) {
+    // Identité joueur D'ABORD (cookie du module, puis identité globale) :
+    // aucun seau n'est consommé avant elle (ADR-032).
+    const identite = await resoudreIdentiteContest(ctx.admin, ctx.contest);
+    if (!identite.joueur) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
+    const { joueur: player, tokenHash } = identite;
 
-    // `failClosed` sur l'IDENTITÉ joueur (hash du cookie), résolue ci-dessus :
-    // la saturer ne borne que ce joueur, jamais un voisin de NAT (ADR-032).
+    // `failClosed` sur l'IDENTITÉ joueur résolue ci-dessus : la saturer ne
+    // borne que ce joueur, jamais un voisin de NAT (ADR-032).
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:profile:player", ctx.contest.id, hashPlayerToken(token)),
+        rateLimitBucket("prono:profile:player", ctx.contest.id, player.id),
         RATE_LIMITS.pronoPredictPlayer,
         { failClosed: true },
       ))
@@ -1711,7 +1714,10 @@ async function updatePlayerInner(
         avatar: parsed.data.avatar,
       })
       .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", hashPlayerToken(token))
+      // PAR IDENTIFIANT, plus par empreinte : l'identité est déjà résolue, et
+      // le repli peut l'avoir trouvée sous une empreinte HISTORIQUE. Le filtre
+      // de tenant (`contest_id`) reste, lui, exactement le même.
+      .eq("id", player.id)
       .select("id")
       .maybeSingle();
 
@@ -1722,6 +1728,18 @@ async function updatePlayerInner(
     if (!updated) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
+
+    // Le pont est REPOSÉ à chaque progression, pas seulement à l'inscription :
+    // c'est ce qui garde `player_legacy_identities` à jour pour un joueur qui
+    // a changé de cookie global depuis. Best-effort, comme les huit autres
+    // sites — une panne du pont ne défait pas un pseudo déjà enregistré.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.contest.organization_id,
+      experienceKind: "contest",
+      experienceId: ctx.contest.id,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
+    });
 
     revalidatePath(`/pronos/${parsed.data.slug}`);
     return { ok: true, data: { firstName: parsed.data.first_name } };
@@ -1765,24 +1783,14 @@ async function predictInner(
       return { ok: false, error: "Ce championnat est terminé." };
     }
 
-    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // Identité joueur D'ABORD (cookie du module, puis identité globale) : aucun seau
     // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
     // sur l'IP partagée (ADR-032).
-    const store = await cookies();
-    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
-    if (!token) {
+    const identite = await resoudreIdentiteContest(ctx.admin, ctx.contest);
+    if (!identite.joueur) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
-
-    const { data: player } = await ctx.admin
-      .from("contest_players")
-      .select("id")
-      .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", hashPlayerToken(token))
-      .maybeSingle();
-    if (!player) {
-      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
-    }
+    const { joueur: player, tokenHash } = identite;
 
     if (
       !(await rateLimit(
@@ -1840,6 +1848,16 @@ async function predictInner(
     if (saved !== true) {
       return { ok: false, error: "Ce match a commencé : pronostics fermés." };
     }
+
+    // Le pont, APRÈS l'écriture : un pronostic est une progression, et c'est
+    // lui qui rendra le lot `PRONO-` visible dans `/portefeuille`.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.contest.organization_id,
+      experienceKind: "contest",
+      experienceId: ctx.contest.id,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
+    });
 
     return { ok: true, data: undefined };
   } catch (err) {
@@ -1918,26 +1936,16 @@ async function predictionsInner(
       return { ok: false, error: "Ce championnat est terminé." };
     }
 
-    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // Identité joueur D'ABORD (cookie du module, puis identité globale) : aucun seau
     // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
     // sur l'IP partagée (ADR-032). Strictement le même ordre que
     // `predictInner` — une seconde porte d'entrée aux pronostics ne doit pas
     // avoir une seconde politique d'identité.
-    const store = await cookies();
-    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
-    if (!token) {
+    const identite = await resoudreIdentiteContest(ctx.admin, ctx.contest);
+    if (!identite.joueur) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
-
-    const { data: player } = await ctx.admin
-      .from("contest_players")
-      .select("id")
-      .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", hashPlayerToken(token))
-      .maybeSingle();
-    if (!player) {
-      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
-    }
+    const { joueur: player, tokenHash } = identite;
 
     if (
       !(await rateLimit(
@@ -2026,6 +2034,20 @@ async function predictionsInner(
       outcome.saved += 1;
     }
 
+    // UN pont pour tout le lot, et seulement s'il a écrit : le poser par match
+    // paierait N RPC pour une identité qui ne change pas d'une ligne à l'autre,
+    // et le poser sur un lot entièrement refusé mentirait sur une progression
+    // qui n'a pas eu lieu.
+    if (outcome.saved > 0) {
+      await ensureProgressivePlayerIdentity({
+        organizationId: ctx.contest.organization_id,
+        experienceKind: "contest",
+        experienceId: ctx.contest.id,
+        legacyIdentityHash: tokenHash,
+        acquisitionSource: "direct",
+      });
+    }
+
     return { ok: true, data: outcome };
   } catch (err) {
     reportError("pronostics.predict.lot", err);
@@ -2069,24 +2091,14 @@ async function answerInner(
       return { ok: false, error: "Ce championnat est terminé." };
     }
 
-    // Identité joueur D'ABORD (cookie httpOnly → contest_players) : aucun seau
+    // Identité joueur D'ABORD (cookie du module, puis identité globale) : aucun seau
     // n'est consommé avant elle, et le `failClosed` porte sur le joueur, jamais
     // sur l'IP partagée (ADR-032).
-    const store = await cookies();
-    const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
-    if (!token) {
+    const identite = await resoudreIdentiteContest(ctx.admin, ctx.contest);
+    if (!identite.joueur) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
-
-    const { data: player } = await ctx.admin
-      .from("contest_players")
-      .select("id")
-      .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", hashPlayerToken(token))
-      .maybeSingle();
-    if (!player) {
-      return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
-    }
+    const { joueur: player, tokenHash } = identite;
 
     if (
       !(await rateLimit(
@@ -2150,6 +2162,16 @@ async function answerInner(
     if (saved !== true) {
       return { ok: false, error: "Cette question est verrouillée." };
     }
+
+    // Même geste que `predictInner` : une réponse générique est une
+    // progression au même titre qu'un score.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.contest.organization_id,
+      experienceKind: "contest",
+      experienceId: ctx.contest.id,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
+    });
 
     return { ok: true, data: undefined };
   } catch (err) {
@@ -2305,10 +2327,14 @@ export async function confirmContestRecovery(input: {
     // infaisable (entropie) et la consommation reste atomique (used_at) plus
     // bas (ADR-032).
     const ip = clientIpFromHeaders(await headers());
-    const tokenHash = hashPlayerToken(parsed.data.token);
+    const recoveryTokenHash = hashPlayerToken(parsed.data.token);
     if (
       !(await rateLimit(
-        rateLimitBucket("prono:recover:confirm", ctx.contest.id, tokenHash),
+        rateLimitBucket(
+          "prono:recover:confirm",
+          ctx.contest.id,
+          recoveryTokenHash,
+        ),
         RATE_LIMITS.pronoRecover,
         { failClosed: true },
       ))
@@ -2329,7 +2355,7 @@ export async function confirmContestRecovery(input: {
       .from("contest_recovery_tokens")
       .update({ used_at: now.toISOString() })
       .eq("contest_id", ctx.contest.id)
-      .eq("token_hash", tokenHash)
+      .eq("token_hash", recoveryTokenHash)
       .is("used_at", null)
       .gt("expires_at", now.toISOString())
       .select("player_id")
@@ -2339,9 +2365,10 @@ export async function confirmContestRecovery(input: {
     // Rotation du jeton appareil : la grille repart sur CET appareil,
     // tous les autres cookies deviennent orphelins.
     const deviceToken = generatePlayerToken();
+    const tokenHash = hashPlayerToken(deviceToken);
     const { data: player, error: rotateError } = await ctx.admin
       .from("contest_players")
-      .update({ token_hash: hashPlayerToken(deviceToken) })
+      .update({ token_hash: tokenHash })
       .eq("id", consumed.player_id)
       .eq("contest_id", ctx.contest.id)
       .select("first_name")
@@ -2358,6 +2385,35 @@ export async function confirmContestRecovery(input: {
       secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 60 * 60 * 24 * 180,
+    });
+
+    // ── LE PONT SUIT LA ROTATION, ET C'EST LA FUITE QUE ÇA COLMATE ─────────
+    //
+    // La ligne ci-dessus vient de remplacer `contest_players.token_hash` par
+    // une empreinte NEUVE. `player_legacy_identities.legacy_identity_hash`, lui,
+    // portait encore l'ANCIENNE — celle du cookie qu'on vient de rendre
+    // orphelin. Le pont désignait donc une empreinte que plus aucun cookie ne
+    // produit, et rien ne levait :
+    //
+    //   · `reward_player_from_legacy(org, 'contest', ca.contest_id,
+    //     cp.token_hash)` interroge le pont avec la NOUVELLE empreinte, ne
+    //     trouvait rien, laissait `reward_issuances.player_id` à null — et le
+    //     lot `PRONO-` disparaissait de `/portefeuille` ;
+    //   · `apply_meta_progression_event` sort sur `player_id is null` : une
+    //     mission de saison portant sur « contest » cessait de progresser.
+    //
+    // Le lien magique étant LE chemin officiel quand un client change de
+    // navigateur, la fuite se déclenchait précisément quand elle faisait le
+    // plus mal. Reposer le pont sur la nouvelle empreinte le remet d'aplomb.
+    //
+    // Best-effort comme les autres sites : une panne du pont ne doit pas
+    // annuler une récupération déjà écrite et déjà journalisée.
+    await ensureProgressivePlayerIdentity({
+      organizationId: ctx.contest.organization_id,
+      experienceKind: "contest",
+      experienceId: ctx.contest.id,
+      legacyIdentityHash: tokenHash,
+      acquisitionSource: "direct",
     });
 
     await ctx.admin.from("audit_logs").insert({
@@ -2378,11 +2434,6 @@ export async function confirmContestRecovery(input: {
 // Ligues privées (parcours public, identité par cookie)
 // ────────────────────────────────────────────────────────────
 
-type OkContestContext = Extract<
-  Awaited<ReturnType<typeof loadContestContext>>,
-  { ok: true }
->;
-
 /** Ligne renvoyée par les RPC create/join_contest_league. */
 interface LeagueRpcRow {
   league_id: string;
@@ -2396,26 +2447,6 @@ export interface LeagueOutcome {
   /** Code d'invitation — retourné au membre uniquement (créateur ou
    *  joueur venant de rejoindre). */
   code: string;
-}
-
-/**
- * Joueur inscrit derrière le cookie httpOnly du championnat — même
- * résolution que submitPrediction (null : pas inscrit sur cet appareil).
- */
-async function resolveCookiePlayer(
-  ctx: OkContestContext,
-): Promise<{ id: string } | null> {
-  const store = await cookies();
-  const token = store.get(contestTokenCookieName(ctx.contest.id))?.value;
-  if (!token) return null;
-
-  const { data: player } = await ctx.admin
-    .from("contest_players")
-    .select("id")
-    .eq("contest_id", ctx.contest.id)
-    .eq("token_hash", hashPlayerToken(token))
-    .maybeSingle();
-  return player ?? null;
 }
 
 /**
@@ -2442,7 +2473,10 @@ async function createLeagueInner(
     const ctx = await loadContestContext(parsed.data.slug);
     if (!ctx.ok) return { ok: false, error: ctx.error };
 
-    const player = await resolveCookiePlayer(ctx);
+    const { joueur: player } = await resoudreIdentiteContest(
+      ctx.admin,
+      ctx.contest,
+    );
     if (!player) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
@@ -2517,7 +2551,10 @@ async function joinLeagueInner(
 
     // Identité joueur D'ABORD (cookie httpOnly) : aucun seau n'est consommé
     // avant elle (ADR-032).
-    const player = await resolveCookiePlayer(ctx);
+    const { joueur: player } = await resoudreIdentiteContest(
+      ctx.admin,
+      ctx.contest,
+    );
     if (!player) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
@@ -2609,7 +2646,10 @@ async function leaveLeagueInner(
     // Identité joueur D'ABORD (cookie httpOnly) : aucun seau avant elle. Départ
     // idempotent et sans effet de bord — `failClosed` sur player.id, IP en
     // observabilité (ADR-032).
-    const player = await resolveCookiePlayer(ctx);
+    const { joueur: player } = await resoudreIdentiteContest(
+      ctx.admin,
+      ctx.contest,
+    );
     if (!player) {
       return { ok: false, error: "Inscrivez-vous d'abord au championnat." };
     }
