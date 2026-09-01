@@ -126,7 +126,7 @@ export function ReglagesVitrine({
 }
 
 
-function AdresseForm({
+export function AdresseForm({
   slug,
   appUrl,
   peutEditer,
@@ -231,7 +231,7 @@ function AdresseForm({
   );
 }
 
-function IdentiteEtThemeForm({
+export function IdentiteEtThemeForm({
   settings,
   peutEditer,
 }: {
@@ -646,7 +646,7 @@ function ChoixPolice({
  * reste donc affichée — il la choisit, il doit la lire — mais en texte, et la
  * phrase dit ce qui manque : publier.
  */
-function PublicationCard({
+export function PublicationCard({
   settings,
   appUrl,
   peutPublier,
