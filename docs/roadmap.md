@@ -150,7 +150,16 @@ laisse voir ce qu'on règle.
   l'implémentation ; `duo_choose(p_item_id)` reste comme porte de compatibilité
   pour la fenêtre de déploiement. **Non documenté ici jusqu'à ce jour** — les
   deux PR n'avaient laissé aucune trace dans cette roadmap.
-- Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+- **Le socle Moments** : le constat consigné jusqu'ici — « vérifie encore
+  `vitrine`, pas `rendez_vous` » — est FAUX depuis un moment, et l'écrire ainsi
+  faisait chercher un défaut qui n'existe pas. Vérifié le 2026-09-02 dans le
+  code : `/dashboard/moments` vérifie `reserver`, et `/dashboard/reservations`
+  (le plan de salle) vérifie `rendez_vous`. Deux écrans, deux produits, deux
+  droits — ce qui ressemble à l'intention de RDV-5, qui a précisément détaché
+  `rendez_vous` de `reserver`.
+  CE QUI RESTE À TRANCHER n'est donc pas un défaut mais une question de
+  commerce : un commerçant qui achète « Réservation » doit-il obtenir aussi les
+  Moments ? Tant que la réponse n'est pas donnée, il n'y a rien à corriger.
 
 
 ## V1.72 — La Vitrine devient un atelier, et les deux salons deviennent vendables seuls (✅ 2026-09-01, PR #281→#290)

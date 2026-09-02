@@ -77,19 +77,25 @@ moins une garde ÉPROUVÉE PAR MUTATION.
 1. ~~L'interrupteur « voir avec des exemples » n'est pas câblé~~ — **livré**
    (VIT-28, PR #312), avec les données et non après : livrées seules, elles
    auraient été un module que rien n'appelle.
-2. **🔴 `'wasm-unsafe-eval'` bloque toujours la lecture de carte
-   photographiée.** VIT-25 n'y touche pas volontairement : rouvrir cette
-   permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
-   servi à lui retirer. La piste reste de la porter sur la seule route qui en
-   a besoin, via `next.config`. Voir `docs/bugs.md`.
+2. ~~`'wasm-unsafe-eval'` bloque la lecture de carte photographiée~~ —
+   **livré le 2026-09-02** (VIT-29, PR #318). La piste envisagée ici est celle
+   qui a été suivie : la permission tient sur la seule réponse des fichiers
+   `/ocr/`, jamais sur le régime des pages. Vérifié en production — les quatre
+   fichiers portent UNE politique, et `/dashboard/vitrine` ne porte pas la
+   permission.
 3. ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
    2026-09-02**, et vérifié : les trois prix sont posés en Production et
    antérieurs au dernier déploiement ; la migration `20261124120000` qui fait
    entrer `rendez_vous` dans le vocabulaire du webhook est appliquée.
 4. **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
    l'autorisation « éditeur » en Wallet Console.
-5. `duo_choose` ne valide pas encore une place saisie (ADR-134).
-6. Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+5. ~~`duo_choose` ne valide pas encore une place saisie~~ — **livré**
+   (DUO-4, PR #293, migration `20261128120000` ; DUO-5, PR #296).
+6. **Le socle Moments** : le constat « vérifie encore `vitrine` » est FAUX,
+   vérifié le 2026-09-02 — `/dashboard/moments` vérifie `reserver`,
+   `/dashboard/reservations` vérifie `rendez_vous`. Deux écrans, deux
+   produits. Ce qui reste est une question de COMMERCE, pas un défaut :
+   « Réservation » doit-il ouvrir aussi les Moments ?
 
 **Deux leçons de méthode, consignées parce qu'elles se reproduiront.**
 
@@ -165,7 +171,11 @@ dans l'ordre.
 5. **L'écriture d'un plateau saisi n'est pas atomique** (`delete` puis
    `insert`). Une panne entre les deux laisse le plateau vide, donc porte
    publique fermée — pas de corruption. Même lot base que le point 4.
-6. Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
+6. **Le socle Moments** : le constat « vérifie encore `vitrine` » est FAUX,
+   vérifié le 2026-09-02 — `/dashboard/moments` vérifie `reserver`,
+   `/dashboard/reservations` vérifie `rendez_vous`. Deux écrans, deux
+   produits. Ce qui reste est une question de COMMERCE, pas un défaut :
+   « Réservation » doit-il ouvrir aussi les Moments ?
 
 
 ## Vitrine — allure de maquette et métier (2026-08-31, livré sur `main`, PR #276)
