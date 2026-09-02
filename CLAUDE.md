@@ -152,12 +152,15 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-09-02
-- **Dernier chantier**: **L'identité joueur partagée, pour de vrai** (ID-6 à ID-8b — PR #314, #315, #317, #319, ADR-141 à 144). Calendrier, pronostics et jackpot adoptent le socle déjà en place pour fidélité et Réserver : cookie du module, puis empreinte d'appareil, puis pont d'ancienneté — cet ORDRE ne s'inverse jamais (ADR-141), sous peine de fusionner en silence des identités le jour d'un déploiement.
-  **🔴 Le jackpot dédoublait ses joueurs depuis l'origine** (ID-8a) : son pont n'en était pas un, c'était une clé recopiée (`loyalty_members.token_hash` → `jackpot_players.token_hash`), qui ne fonctionnait que par accident de hachage partagé. Résolveur canonique et déduplication sous verrou de campagne, `participation_count` RECALCULÉ, `last_participation_at` au MAXIMUM (ADR-143, ADR-144).
-  **En caisse, le cookie d'appareil est celui du POSTE, pas du client** (ID-8b, ADR-142) : le patron public ne s'y applique pas tel quel, sous peine de faire converger tout un comptoir vers une seule identité — erreur du brief d'origine, corrigée avant le code.
-  **Trois pertes de pont trouvées en écrivant, aucune par une garde** (`docs/bugs.md`) : pronostics désynchronisait après rotation de lien magique (une variable, deux sens) ; calendrier ne pontait qu'au « rejoindre » ; jackpot caisse ne pontait jamais.
-  **Reste ouvert** : sélecteur de figures des pronostics toujours une copie ; `nicknameSchema` à 30 contre 24 au socle ; émetteur Google Wallet (code prêt, jamais testé contre le vrai Google).
+- **Date**: 2026-09-03
+- **Dernier chantier**: **Le studio répond aux retours** (VIT-30 à VIT-32 — PR #322 → #327, ADR-145 à 149). Huit retours d'usage réel sur le studio (V1.73), six lots.
+  **L'enregistrement automatique RENVERSE ADR-137** (VIT-30, ADR-145), sur décision du propriétaire — débours 1,2 s ; la garde vérifie l'ABSENCE d'écriture à l'OUVERTURE, sans quoi l'affichage seul graverait les défauts d'allure hérités.
+  **`fast-uri` en version MAJEURE (4.1.4)** (ADR-146) : récidive du piège `docs/supply-chain.md` §2bis — l'override `^3.1.5` était la borne HAUTE de la plage vulnérable, pas une échappatoire. Validé par build complet.
+  **Horaires structurés** (VIT-31, ADR-147, migration `20261201120000`) : `horaires jsonb`, `grant update` NOMMÉ (piège RDV-12), fuseau du COMMERCE publié.
+  **Piège d'hydratation d'une valeur dépendant de l'heure** (VIT-31c, ADR-148) : `useSyncExternalStore`, `getServerSnapshot` CONSTANT — HTML SSG et premier rendu client identiques par construction.
+  **Le passeport gagne sa première porte publique** (VIT-32, ADR-149) : LISTE `{id, nom}`, pas booléen — le critère est l'ADRESSE, pas le nombre. `theme.jeux` à six clés, l'absence vaut « affiché ».
+  **Deux défauts VIT-30 trouvés par l'usage** (`docs/bugs.md`) : revalidation oubliée sur `/vitrine-studio` ; atelier visible sur grand écran malgré VIT-27.
+  **Reste ouvert** : `docs/supply-chain.md` §2bis à mettre à jour (récidive `fast-uri`) ; reste de V1.74 inchangé.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
