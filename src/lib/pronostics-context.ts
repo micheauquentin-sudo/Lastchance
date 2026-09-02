@@ -3,6 +3,11 @@ import "server-only";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
+import { recordCounter } from "@/lib/monitoring";
+import {
+  lookupLegacyIdentityHashes,
+  peekPlayerDeviceTokenHash,
+} from "@/lib/player-identity";
 import { hashPlayerToken, publicCorrectAnswer } from "@/lib/pronostics";
 import { asSeasonalTheme } from "@/lib/seasonal-theme";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -148,37 +153,209 @@ interface ContestPredictionRow extends ContestPlayerPrediction {
 }
 
 export interface ContestPlayerState {
-  player: Pick<ContestPlayer, "id" | "first_name" | "avatar"> | null;
+  player: JoueurContest | null;
   /** Réponses du joueur indexées par match_id (question_id). */
   predictions: Record<string, ContestPlayerPrediction>;
 }
 
+/** Le joueur du championnat — jamais son porteur haché, jamais ses
+ *  coordonnées : ni email ni téléphone ne sortent de ce chargeur. */
+export type JoueurContest = Pick<ContestPlayer, "id" | "first_name" | "avatar">;
+
+/** Le championnat dont l'identité a besoin : son identifiant et son tenant. */
+type PorteeContest = Pick<Contest, "id" | "organization_id">;
+
 /**
- * Retrouve le joueur inscrit via le cookie httpOnly posé à l'inscription,
- * ainsi que ses pronostics. Aucun joueur → état vide (formulaire
+ * L'identité du joueur pour CE visiteur : l'empreinte de module retenue, et le
+ * joueur qu'elle désigne s'il en existe un.
+ *
+ * UNION, ET NON UN OBJET PLAT — c'est la seule différence de forme avec
+ * `IdentitePasseport`, et elle se paie ailleurs : dès qu'un joueur est tenu,
+ * l'empreinte qui l'a trouvé l'est aussi. Les appelants la repassent au pont
+ * d'identité, et un `tokenHash` que TypeScript croirait nullable les
+ * obligerait tous à une assertion — c'est-à-dire à affirmer sans preuve
+ * exactement ce que ce type peut prouver.
+ */
+export type IdentiteContest =
+  | {
+      /**
+       * L'empreinte `contest_players.token_hash` retenue — celle du cookie du
+       * module, ou celle rattrapée par l'identité globale.
+       */
+      tokenHash: string;
+      joueur: JoueurContest;
+      /** Un cookie de module est posé sur ce navigateur. */
+      cookiePose: boolean;
+    }
+  | {
+      /** `null` : ni cookie de module, ni empreinte historique connue. */
+      tokenHash: string | null;
+      joueur: null;
+      cookiePose: boolean;
+    };
+
+/**
+ * L'ORDRE DE RÉSOLUTION DU JOUEUR (ID-7) — le cookie du module d'abord,
+ * l'identité globale ensuite.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Les pronostics ne connaissaient qu'un seul chemin : `lc-prono-<contestId>`.
+ * Ce cookie effacé — nettoyage du navigateur, mode privé refermé, téléphone
+ * changé de main — le joueur redevenait un inconnu devant sa grille : plus de
+ * pronostics, plus de rang, plus de lot. Rien n'était pourtant perdu en base :
+ * son appareil est connu de `players`, et l'empreinte de son ancien cookie est
+ * conservée dans `player_legacy_identities` parce que le module pose le pont
+ * `contest` à l'inscription et à chaque progression. Il ne manquait que
+ * l'appel.
+ *
+ * ── L'ORDRE, ET POURQUOI IL EST DANS CE SENS ──
+ *
+ *  1. Le cookie du module, TOUJOURS EN PREMIER dès qu'il désigne un joueur.
+ *     C'est le chemin qui porte les pronostics et celui que toute la production
+ *     emprunte aujourd'hui : personne ne doit changer d'identité en silence le
+ *     jour du déploiement.
+ *  2. Absent, ou présent mais ne désignant AUCUN joueur : on retombe sur
+ *     l'identité globale. `lookupLegacyIdentityHashes` rend les empreintes
+ *     historiques de cet appareil sur CE championnat, de la plus récemment vue
+ *     à la plus ancienne, et on retient la première qui tient réellement un
+ *     joueur. C'est ce qui rattrape à la fois le cookie effacé et la rotation
+ *     du cookie global.
+ *  3. Un visiteur neuf ne trouve rien nulle part et repart sans joueur,
+ *     exactement comme avant : c'est le formulaire d'inscription qui lui en
+ *     ouvrira un, directement sur l'identité globale.
+ *
+ * ── C'EST UN ORDRE, PAS UN REMPLACEMENT ──
+ *
+ * ADR-041 : le double chemin existe pour pouvoir déployer, observer et revenir
+ * en arrière « sans supprimer ni réinterpréter une progression existante ». Le
+ * cookie de module n'est donc ni supprimé, ni cessé d'être écrit, ni relégué —
+ * il reste lu en premier, et l'inscription continue de le poser. Ce lot AJOUTE
+ * un second essai ; il n'en retire aucun.
+ *
+ * ── LE CLASSEMENT N'EST PAS TOUCHÉ ──
+ *
+ * `contest_leaderboard` joint par `contest_players.id` et n'entend jamais
+ * parler de l'identité globale. Deux lignes de module restent deux lignes,
+ * aucun score ne double et aucun palmarès n'est réécrit : les fondre buterait
+ * sur le `unique (contest_id, rank)` de `contest_final_standings` et de
+ * `contest_awards`. Ce chemin CHOISIT une ligne existante, il n'en fusionne
+ * aucune.
+ *
+ * ── LE PIÈGE DU HACHAGE, QUI NE LÈVERAIT AUCUNE ERREUR ──
+ *
+ * `contest_players.token_hash` est une empreinte DE MODULE : un SHA-256 NU du
+ * cookie du championnat (`hashPlayerToken`). L'empreinte de l'identité globale
+ * est SALÉE ET VERSIONNÉE (`hashPlayerDeviceToken`, `player-device:v1`). Les
+ * substituer ne lèverait rien du tout — les deux rendent 64 hexadécimaux et
+ * passent la même expression régulière — et la requête ne trouverait
+ * simplement plus personne, partout, sans une ligne de journal. C'est pourquoi
+ * l'empreinte globale n'entre JAMAIS dans un filtre `contest_players` : elle
+ * sert à demander au pont QUELLES empreintes de module appartiennent à cet
+ * appareil, et ce sont ces empreintes-là, et elles seules, qui sont filtrées.
+ *
+ * ── LA PORTÉE N'EST PAS ÉLARGIE D'UN POUCE ──
+ *
+ * La RPC de reprise part de `player_devices.token_hash` et ne rend que les
+ * empreintes d'une adhésion du MÊME joueur, sur la MÊME organisation et la MÊME
+ * expérience — ici le championnat lui-même. Le `in (…)` conserve en plus le
+ * filtre `contest_id`, exactement comme le chemin du cookie. Une empreinte
+ * d'un autre championnat, ou d'un autre client, ne peut donc pas entrer.
+ *
+ * ── TOUTE PANNE REND L'ÉTAT D'AVANT ──
+ *
+ * Pas de cookie global, aucune empreinte historique, lecture en panne : on rend
+ * ce que le chemin du cookie avait trouvé, c'est-à-dire rien. Ce repli ne peut
+ * qu'AJOUTER un joueur, jamais en retirer un.
+ */
+export async function resoudreIdentiteContest(
+  admin: ReturnType<typeof createAdminClient>,
+  contest: PorteeContest,
+): Promise<IdentiteContest> {
+  const store = await cookies();
+  const token = store.get(contestTokenCookieName(contest.id))?.value;
+  const empreinteCookie = token ? hashPlayerToken(token) : null;
+
+  if (empreinteCookie) {
+    const { data } = await admin
+      .from("contest_players")
+      .select("id, first_name, avatar")
+      .eq("contest_id", contest.id)
+      .eq("token_hash", empreinteCookie)
+      .maybeSingle();
+    if (data) {
+      return { tokenHash: empreinteCookie, joueur: data, cookiePose: true };
+    }
+  }
+
+  const vide: IdentiteContest = {
+    tokenHash: empreinteCookie,
+    joueur: null,
+    cookiePose: empreinteCookie !== null,
+  };
+
+  // L'empreinte globale se LIT sans jamais poser de cookie : afficher une page
+  // ne doit pas fabriquer d'identité (même règle que `/portefeuille`).
+  const empreinteAppareil = await peekPlayerDeviceTokenHash();
+  if (!empreinteAppareil) return vide;
+
+  const anciennes = await lookupLegacyIdentityHashes({
+    deviceTokenHash: empreinteAppareil,
+    organizationId: contest.organization_id,
+    experienceKind: "contest",
+    experienceId: contest.id,
+  });
+  if (anciennes.length === 0) return vide;
+
+  // UNE requête pour toutes les empreintes, jamais une par empreinte : ce repli
+  // est rare, il ne doit pas coûter N allers-retours le jour où il sert.
+  const { data, error } = await admin
+    .from("contest_players")
+    .select("id, first_name, avatar, token_hash")
+    .eq("contest_id", contest.id)
+    .in("token_hash", anciennes);
+  if (error) return vide;
+
+  const parEmpreinte = new Map<string, JoueurContest>();
+  for (const ligne of data ?? []) {
+    if (!ligne?.token_hash) continue;
+    const { token_hash: _empreinte, ...joueur } = ligne;
+    void _empreinte;
+    parEmpreinte.set(ligne.token_hash, joueur);
+  }
+
+  // L'ORDRE DE LA RPC DÉCIDE, pas celui que la base a rendu : `anciennes` est
+  // trié de la plus récemment vue à la plus ancienne. Un joueur qui a changé
+  // deux fois de cookie retrouve donc sa grille la plus RÉCENTE, et non celle
+  // que le planificateur a sortie en premier.
+  for (const ancienne of anciennes) {
+    const joueur = parEmpreinte.get(ancienne);
+    if (!joueur) continue;
+    // ZÉRO EST LA VALEUR ATTENDUE tant que personne n'a perdu son cookie ; une
+    // population non nulle dit combien de joueurs auraient retrouvé une grille
+    // vide sans ce chemin.
+    recordCounter("pronostics.repli_identite_globale");
+    return { tokenHash: ancienne, joueur, cookiePose: vide.cookiePose };
+  }
+  return vide;
+}
+
+/**
+ * Pronostics déjà posés par le joueur courant. L'identité est résolue UNE fois
+ * par `resoudreIdentiteContest` — aucune identité → état vide (formulaire
  * d'inscription affiché).
  */
 export async function loadContestPlayerState(
   admin: ReturnType<typeof createAdminClient>,
-  contestId: string,
+  contest: PorteeContest,
 ): Promise<ContestPlayerState> {
-  const store = await cookies();
-  const token = store.get(contestTokenCookieName(contestId))?.value;
-  if (!token) return { player: null, predictions: {} };
-
-  const { data: player } = await admin
-    .from("contest_players")
-    .select("id, first_name, avatar")
-    .eq("contest_id", contestId)
-    .eq("token_hash", hashPlayerToken(token))
-    .maybeSingle();
-
+  const { joueur: player } = await resoudreIdentiteContest(admin, contest);
   if (!player) return { player: null, predictions: {} };
 
   const { data: rows } = await admin
     .from("contest_predictions")
     .select("match_id, home_score, away_score, answer, points")
-    .eq("contest_id", contestId)
+    .eq("contest_id", contest.id)
     .eq("player_id", player.id);
 
   const predictions: ContestPlayerState["predictions"] = {};
