@@ -88,6 +88,7 @@ const IDENTITE = {
   horaires: "",
   badge: "",
   secteur: "restaurant" as const,
+  horairesStructures: null,
 };
 
 function rendre(cartes: VitrineCarteView[]) {
@@ -110,6 +111,7 @@ function rendre(cartes: VitrineCarteView[]) {
         tiktok_url: null,
       }}
       slug="le-comptoir"
+      timezone="Europe/Paris"
     />,
   );
 }
@@ -174,6 +176,7 @@ describe("aperçu du studio — il ne montre que ce qui est servi", () => {
           tiktok_url: null,
         }}
         slug="le-comptoir"
+        timezone="Europe/Paris"
       />,
     );
 

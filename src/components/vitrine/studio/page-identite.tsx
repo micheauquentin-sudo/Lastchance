@@ -7,6 +7,7 @@ import {
   ChampStudio,
   CLASSE_CHAMP,
 } from "@/components/vitrine/studio/champ";
+import { HorairesEditeurStudio } from "@/components/vitrine/studio/horaires-editeur";
 import { basculerBloc, type EtatStudio } from "@/components/vitrine/studio/etat";
 import {
   VITRINE_BADGE_OUVERTURE_MAX,
@@ -134,7 +135,17 @@ export function PageIdentiteStudio({
           />
         </ChampStudio>
 
-        <ChampStudio label="Horaires" aide="Une ligne par jour.">
+        {/* LE TEXTE LIBRE RESTE EN PREMIER, ET IL N'EST PAS DOUBLÉ (VIT-31c).
+            Il porte ce que sept lignes de créneaux ne savent pas dire — jours
+            fériés, fermeture annuelle, « service continu le samedi ». Le
+            remplacer par l'éditeur aurait fait perdre cette légende à toutes
+            les vitrines déjà publiées, et `etatHoraires` ne sait rien d'un 25
+            décembre. Les deux coexistent : le texte explique, les créneaux se
+            calculent. */}
+        <ChampStudio
+          label="Horaires"
+          aide="En toutes lettres — jours fériés, congés, exceptions."
+        >
           <textarea
             value={etat.horaires}
             rows={4}
@@ -144,6 +155,12 @@ export function PageIdentiteStudio({
             className={CLASSE_CHAMP}
           />
         </ChampStudio>
+
+        <HorairesEditeurStudio
+          horaires={etat.horairesStructures}
+          onChange={(horairesStructures) => majEtat({ horairesStructures })}
+          disabled={!peutEditer}
+        />
       </section>
 
       <section className="space-y-2 border-t-2 border-dashed border-zinc-200 pt-4">

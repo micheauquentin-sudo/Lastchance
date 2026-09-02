@@ -362,6 +362,10 @@ export default async function VitrinePage({
           style={{ backgroundImage: "var(--vitrine-motif)" }}
           className="relative mx-auto flex min-h-dvh w-full max-w-[480px] flex-col overflow-x-hidden bg-[var(--vitrine-secondary)] shadow-[0_0_40px_rgba(0,0,0,0.06)]"
         >
+          {/* VIT-31c — `horaires`, `timezone` et `lang` sont ce qui fait
+              « Ouvert · ferme à 23h ». `horaires` vaut `null` sur toute vitrine
+              antérieure à ce lot : le hero rend alors la pastille écrite à la
+              main, au serveur, exactement comme avant. */}
           <HeroVitrine
             nom={nom}
             logoUrl={etat.identite.logo_url}
@@ -369,6 +373,9 @@ export default async function VitrinePage({
             couvertureAlt={etat.identite.cover_alt}
             accroche={accrocheHero}
             badgeOuverture={etat.identite.badge_ouverture}
+            horaires={etat.identite.horaires}
+            timezone={etat.identite.timezone}
+            lang={lang}
             allure={allure}
             liens={etat.liens}
             avisGoogle={t.avisGoogle}

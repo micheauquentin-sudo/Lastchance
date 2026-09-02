@@ -1,6 +1,7 @@
 import {
   VITRINE_BLOCS_DEFAUT,
   type AllureVitrine,
+  type HorairesVitrine,
   type BlocVitrine,
   type SecteurVitrine,
   type StyleCartesVitrine,
@@ -40,6 +41,22 @@ export type EtatStudio = {
   horaires: string;
   badge: string;
 
+  /**
+   * LES HORAIRES STRUCTURÉS (VIT-31) — `null` tant que rien n'est saisi.
+   *
+   * Ils ne remplacent PAS `horaires` (le texte libre) : les deux coexistent,
+   * et l'absence de structure laisse le comportement d'avant intact — bloc de
+   * texte affiché tel quel, pastille écrite à la main. C'est la compatibilité
+   * de toutes les vitrines déjà publiées, et c'est le même arbitrage
+   * qu'ADR-129 : ce qui n'a pas été décidé garde le comportement d'hier.
+   *
+   * `null` et non un objet aux sept jours vides : les deux se ressemblent à
+   * l'écran mais pas en base. Une semaine explicitement vide dirait « ce
+   * commerce est fermé toute la semaine », ce qui n'est pas « je n'ai rien
+   * saisi ».
+   */
+  horairesStructures: HorairesVitrine | null;
+
   // ── Le thème ──
   couleurs: { primary: string; secondary: string };
   polices: { heading: string; body: string };
@@ -73,6 +90,7 @@ export function etatInitialStudio(
     histoire: string;
     horaires: string;
     badge: string;
+    horairesStructures: HorairesVitrine | null;
   },
 ): EtatStudio {
   return {

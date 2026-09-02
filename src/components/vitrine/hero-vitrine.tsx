@@ -5,8 +5,14 @@ import {
   sourcesPhotoVitrine,
   srcSetPhotoVitrine,
 } from "@/lib/vitrine-photo";
-import type { VitrineLiensView } from "@/lib/vitrine";
+import type {
+  HorairesVitrine,
+  LangueVitrine,
+  VitrineLiensView,
+} from "@/lib/vitrine";
 import type { AllureResolue } from "@/components/vitrine/theme";
+import { PastilleOuverture } from "@/components/vitrine/studio/horaires-badge";
+import { PastilleHoraires } from "@/components/vitrine/studio/horaires-pastille";
 
 /**
  * LE HERO — la première chose que voit le client qui vient de scanner.
@@ -45,6 +51,9 @@ export function HeroVitrine({
   couvertureAlt,
   accroche,
   badgeOuverture,
+  horaires = null,
+  timezone = null,
+  lang = "fr",
   allure,
   liens,
   avisGoogle,
@@ -59,6 +68,19 @@ export function HeroVitrine({
   accroche: string | null;
   /** « Ouvert · 12h–23h », écrit à la main. `null` retire la pastille. */
   badgeOuverture: string | null;
+  /**
+   * VIT-31c : la semaine STRUCTURÉE, quand le commerçant l'a saisie.
+   *
+   * Elle est FACULTATIVE, et son absence est le cas normal : toute vitrine
+   * publiée avant ce lot vaut `null` ici, et le hero rend alors exactement ce
+   * qu'il rendait — la pastille écrite à la main, sans une ligne de JavaScript
+   * de plus. C'est le repli, pas une dégradation.
+   */
+  horaires?: HorairesVitrine | null;
+  /** Le fuseau du COMMERCE. Sans lui, rien ne se calcule : on retombe. */
+  timezone?: string | null;
+  /** La langue de la page, pour « ferme à » / « closes at ». */
+  lang?: LangueVitrine;
   allure: AllureResolue;
   liens: VitrineLiensView;
   avisGoogle: string;
@@ -156,13 +178,20 @@ export function HeroVitrine({
             </p>
           ) : null}
 
-          {badgeOuverture ? (
-            <p className="mt-3.5 inline-flex items-center gap-[7px] rounded-full bg-black/35 px-3 py-1.5 text-[9.5px] font-semibold uppercase leading-none tracking-[0.1em] text-white backdrop-blur-sm">
-              {/* La pastille verte est DÉCORATIVE : le texte dit déjà
-                  « Ouvert », et l'annoncer ferait entendre une couleur. */}
-              <span aria-hidden className="size-1.5 rounded-full bg-[#8fd6a0]" />
-              {badgeOuverture}
-            </p>
+          {/* LA PASTILLE CALCULÉE NE PREND LA PLACE DE L'AUTRE QUE SI ELLE A
+              DE QUOI (VIT-31c). Sans horaires structurés ou sans fuseau, on
+              rend le `<p>` d'avant, au serveur, sans frontière client : une
+              vitrine qui n'a rien saisi ne doit pas payer un composant client
+              pour afficher la phrase qu'elle affichait déjà. */}
+          {horaires && timezone ? (
+            <PastilleHoraires
+              horaires={horaires}
+              timezone={timezone}
+              repli={badgeOuverture}
+              lang={lang}
+            />
+          ) : badgeOuverture ? (
+            <PastilleOuverture texte={badgeOuverture} />
           ) : null}
         </div>
       </div>

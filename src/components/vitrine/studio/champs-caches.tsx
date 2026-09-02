@@ -54,6 +54,25 @@ export function ChampsCachesStudio({ etat }: { etat: EtatStudio }) {
       <input type="hidden" name="horaires_texte" value={etat.horaires} />
       <input type="hidden" name="badge_ouverture" value={etat.badge} />
 
+      {/* LES HORAIRES STRUCTURÉS (VIT-31) — LA PRÉSENCE EST LE TÉMOIN.
+
+          Contrat posé par l'action : champ ABSENT ⇒ la colonne n'est pas
+          touchée ; champ rendu VIDE ⇒ elle passe à `null`. Ce studio les règle,
+          il le déclare donc toujours — et une semaine non saisie part en chaîne
+          vide, ce qui vaut « je n'ai rien à en dire », jamais « je suis fermé
+          toute la semaine ».
+
+          C'est la même mécanique que les cinq témoins de section du thème
+          (VIT-19), transposée à une colonne : sans elle, un écran qui ne rend
+          pas ce champ effacerait des horaires qu'il n'a jamais montrés. */}
+      <input
+        type="hidden"
+        name="horaires"
+        value={
+          etat.horairesStructures ? JSON.stringify(etat.horairesStructures) : ""
+        }
+      />
+
       <input type="hidden" name="couleurs_rendues" value="1" />
       <input type="hidden" name="couleur_primary" value={etat.couleurs.primary} />
       <input

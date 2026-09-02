@@ -106,7 +106,9 @@ export default async function VitrineStudioPage() {
         horaires: s.horaires_texte ?? "",
         badge: s.badge_ouverture ?? "",
         secteur: s.secteur,
+        horairesStructures: s.horaires,
       }}
+      timezone={organization.timezone}
       themeInitial={s.theme}
       cartes={ctx.cartes}
       // LES LIENS VIENNENT DE L ORGANISATION, pas des réglages de vitrine :

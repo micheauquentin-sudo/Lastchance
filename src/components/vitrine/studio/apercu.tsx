@@ -50,6 +50,7 @@ export function ApercuStudio({
   cartes,
   liens,
   slug,
+  timezone,
   exemples = false,
 }: {
   etat: EtatStudio;
@@ -62,6 +63,8 @@ export function ApercuStudio({
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
   slug: string;
+  /** Le fuseau du COMMERCE — le lot des ecrans en fera « Ouvert · ferme a 23h ». */
+  timezone: string;
   /**
    * Les cartes reçues sont-elles des EXEMPLES (VIT-28) ?
    *
@@ -111,6 +114,12 @@ export function ApercuStudio({
    */
   const cartesPubliees = cartes.filter((c) => c.active);
 
+  // LE FUSEAU EST ENFIN CONSOMMÉ (VIT-31c) : l'aperçu calcule sa pastille comme
+  // la page publique, avec le fuseau du COMMERCE et non celui du commerçant —
+  // un patron en déplacement doit voir l'heure de sa boutique. Tant que rien
+  // n'est structuré, `horairesStructures` vaut `null` et le hero retombe sur la
+  // pastille écrite à la main : l'aperçu ne bouge pas d'un pixel.
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
       <p className="text-xs font-semibold text-zinc-500">
@@ -144,6 +153,8 @@ export function ApercuStudio({
           couvertureAlt={coverAlt}
           accroche={visible("accroche") ? etat.accroche || null : null}
           badgeOuverture={etat.badge || null}
+          horaires={etat.horairesStructures}
+          timezone={timezone}
           allure={allure}
           liens={visible("social") ? liens : LIENS_MASQUES}
           avisGoogle="Avis Google"

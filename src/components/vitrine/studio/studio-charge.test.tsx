@@ -64,6 +64,7 @@ const IDENTITE = {
   horaires: "Lundi 12h-14h",
   badge: "Ouvert · 12h–23h",
   secteur: "restaurant" as const,
+  horairesStructures: null,
 };
 
 /** Tout ce que `saveVitrineSettings` lit dans le `FormData`, sauf les cases. */
@@ -104,6 +105,7 @@ function rendre() {
         instagram_url: null,
         tiktok_url: null,
       }}
+      timezone="Europe/Paris"
       peutEditer
     />,
   );
