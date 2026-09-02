@@ -3,6 +3,11 @@ import "server-only";
 import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
+import { recordCounter } from "@/lib/monitoring";
+import {
+  lookupLegacyIdentityHashes,
+  peekPlayerDeviceTokenHash,
+} from "@/lib/player-identity";
 import { hashPlayerToken } from "@/lib/pronostics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -193,11 +198,154 @@ export async function loadJackpotGauge(
   return { ...toGaugeView(campaign), ...drawState };
 }
 
+/** Ligne joueur telle que la page la lit — compteur et dernière participation. */
+interface JoueurJackpot {
+  participation_count: number | null;
+  last_participation_at: string | null;
+}
+
+/** L'identité retenue pour ce navigateur, et la ligne joueur qu'elle tient. */
+interface IdentiteJackpot {
+  /** Empreinte finalement retenue, ou `null` si ce navigateur n'en a aucune. */
+  tokenHash: string | null;
+  joueur: JoueurJackpot | null;
+}
+
 /**
- * État du joueur courant (cookie httpOnly) en lecture seule : compteur de
- * participations et gains remportés (codes de retrait). Aucun cookie → état
- * vide. Le jeton d'identité ne quitte pas le serveur : seul son hash touche la
- * base (miroir fidélité).
+ * Résout l'identité jackpot du navigateur courant : le cookie du module
+ * d'abord, l'identité globale ensuite. Calque EXACT de
+ * `resoudreIdentitePasseport` (loyalty-context.ts) — l'ordre, les gardes et les
+ * raisons sont les mêmes, seule la table change.
+ *
+ * ── CE QUE ÇA RÉPARE ──
+ *
+ * Le jackpot ne connaissait qu'un seul chemin : `lc-jackpot-<campagne>`. Ce
+ * cookie effacé — nettoyage du navigateur, mode privé refermé, téléphone changé
+ * de main — le client redevenait un inconnu devant une jauge qu'il avait
+ * pourtant contribué à remplir : compteur à zéro, et surtout CODES DE RETRAIT
+ * DISPARUS. Un lot gagné et non retiré cessait de s'afficher alors que son code
+ * restait valable en caisse. Rien n'était perdu en base : son appareil est
+ * connu de `players`, et les deux chemins d'écriture publics posent le pont
+ * `jackpot` (`ensureProgressivePlayerIdentity`). Il ne manquait que l'appel.
+ *
+ * ── L'ORDRE, ET POURQUOI IL EST DANS CE SENS ──
+ *
+ *  1. Le cookie du module, TOUJOURS EN PREMIER dès qu'il désigne un joueur.
+ *     C'est le chemin que toute la production emprunte aujourd'hui : personne
+ *     ne doit changer d'identité en silence le jour du déploiement.
+ *  2. Absent, ou présent mais ne désignant AUCUN joueur : on retombe sur
+ *     l'identité globale, dont les empreintes historiques sont rendues de la
+ *     plus récemment vue à la plus ancienne. On retient la première qui tient
+ *     réellement un joueur.
+ *  3. Un visiteur neuf ne trouve rien nulle part et repart sans identité,
+ *     exactement comme avant.
+ *
+ * ── C'EST UN ORDRE, PAS UN REMPLACEMENT (ADR-041) ──
+ *
+ * Le cookie de module n'est ni supprimé, ni cessé d'être écrit, ni relégué : il
+ * reste lu en premier, `resolvePlayerIdentity` continue de le poser et
+ * `record_jackpot_participation` continue d'écrire sous son empreinte. Ce lot
+ * AJOUTE un second essai ; il n'en retire aucun.
+ *
+ * ── LE PIÈGE DU HACHAGE, QUI NE LÈVERAIT AUCUNE ERREUR ──
+ *
+ * `jackpot_players.token_hash` est une empreinte DE MODULE : un SHA-256 NU du
+ * cookie de campagne (`hashPlayerToken`). L'empreinte de l'identité globale est
+ * SALÉE ET VERSIONNÉE (`hashPlayerDeviceToken`, `player-device:v1`). Les deux
+ * font 64 hexadécimaux et passent le même contrôle de forme : les substituer ne
+ * lèverait RIEN — la requête ne trouverait simplement plus personne, partout,
+ * sans une ligne de journal. L'empreinte globale n'entre donc JAMAIS dans un
+ * filtre `jackpot_players` ; elle sert à demander au pont QUELLES empreintes de
+ * module appartiennent à cet appareil, et ce sont celles-là, et elles seules,
+ * qui sont filtrées.
+ *
+ * ── LA PORTÉE N'EST PAS ÉLARGIE D'UN POUCE ──
+ *
+ * La RPC de reprise part de `player_devices.token_hash` et ne rend que les
+ * empreintes d'une adhésion du MÊME joueur, sur la MÊME organisation et la MÊME
+ * expérience — ici la campagne elle-même. Le `in (…)` conserve en plus le filtre
+ * `campaign_id`, exactement comme le chemin du cookie.
+ *
+ * ── TOUTE PANNE REND L'ÉTAT D'AVANT ──
+ *
+ * Pas de cookie global, aucune empreinte historique, lecture en panne : on rend
+ * ce que le chemin du cookie avait trouvé. Ce repli ne peut qu'AJOUTER un
+ * joueur, jamais en retirer un. Et il n'ÉCRIT rien : `peekPlayerDeviceTokenHash`
+ * ne pose pas même le cookie global — afficher une page ne fabrique pas une
+ * identité.
+ */
+async function resoudreIdentiteJackpot(
+  admin: ReturnType<typeof createAdminClient>,
+  campaign: PublicJackpotCampaign,
+): Promise<IdentiteJackpot> {
+  const store = await cookies();
+  const token = store.get(jackpotTokenCookieName(campaign.id))?.value;
+  const empreinteCookie = token ? hashPlayerToken(token) : null;
+
+  if (empreinteCookie) {
+    const { data } = await admin
+      .from("jackpot_players")
+      .select("participation_count, last_participation_at")
+      .eq("campaign_id", campaign.id)
+      .eq("token_hash", empreinteCookie)
+      .maybeSingle();
+    if (data) {
+      return { tokenHash: empreinteCookie, joueur: data as JoueurJackpot };
+    }
+  }
+
+  const vide: IdentiteJackpot = { tokenHash: empreinteCookie, joueur: null };
+
+  const empreinteAppareil = await peekPlayerDeviceTokenHash();
+  if (!empreinteAppareil) return vide;
+
+  const anciennes = await lookupLegacyIdentityHashes({
+    deviceTokenHash: empreinteAppareil,
+    organizationId: campaign.organization_id,
+    experienceKind: "jackpot",
+    experienceId: campaign.id,
+  });
+  if (anciennes.length === 0) return vide;
+
+  // UNE requête pour toutes les empreintes, jamais une par empreinte : ce repli
+  // est rare, il ne doit pas coûter N allers-retours le jour où il sert.
+  const { data, error } = await admin
+    .from("jackpot_players")
+    .select("token_hash, participation_count, last_participation_at")
+    .eq("campaign_id", campaign.id)
+    .in("token_hash", anciennes);
+  if (error) return vide;
+
+  const parEmpreinte = new Map<string, JoueurJackpot>();
+  for (const ligne of data ?? []) {
+    const row = ligne as JoueurJackpot & { token_hash: string | null };
+    if (!row?.token_hash) continue;
+    parEmpreinte.set(row.token_hash, {
+      participation_count: row.participation_count,
+      last_participation_at: row.last_participation_at,
+    });
+  }
+
+  // L'ORDRE DE LA RPC DÉCIDE, pas celui que la base a rendu : `anciennes` est
+  // trié de la plus récemment vue à la plus ancienne. Un client qui a changé
+  // deux fois de cookie retrouve donc sa participation la plus RÉCENTE.
+  for (const ancienne of anciennes) {
+    const joueur = parEmpreinte.get(ancienne);
+    if (!joueur) continue;
+    // ZÉRO EST LA VALEUR ATTENDUE tant que personne n'a perdu son cookie ; une
+    // population non nulle dit combien de clients auraient vu leur jauge — et
+    // leurs codes de retrait — disparaître.
+    recordCounter("jackpot.joueur.repli_identite_globale");
+    return { tokenHash: ancienne, joueur };
+  }
+  return vide;
+}
+
+/**
+ * État du joueur courant en lecture seule : compteur de participations et gains
+ * remportés (codes de retrait). Aucune identité → état vide. Le jeton
+ * d'identité ne quitte pas le serveur : seul son hash touche la base (miroir
+ * fidélité).
  */
 async function loadPlayerState(
   admin: ReturnType<typeof createAdminClient>,
@@ -210,25 +358,22 @@ async function loadPlayerState(
     wins: [],
   };
 
-  const store = await cookies();
-  const token = store.get(jackpotTokenCookieName(campaign.id))?.value;
-  if (!token) return empty;
-  const tokenHash = hashPlayerToken(token);
+  const { tokenHash, joueur: player } = await resoudreIdentiteJackpot(
+    admin,
+    campaign,
+  );
+  if (!tokenHash) return empty;
 
-  const [{ data: player }, { data: winRows }] = await Promise.all([
-    admin
-      .from("jackpot_players")
-      .select("participation_count, last_participation_at")
-      .eq("campaign_id", campaign.id)
-      .eq("token_hash", tokenHash)
-      .maybeSingle(),
-    admin
-      .from("jackpot_wins")
-      .select("id, cycle, code, drawn_at, redeemed_at")
-      .eq("campaign_id", campaign.id)
-      .eq("winner_token_hash", tokenHash)
-      .order("cycle", { ascending: false }),
-  ]);
+  // Les gains SUIVENT l'empreinte retenue, jamais le cookie : c'est la moitié
+  // du lot qui compte le plus. Un code de retrait affiché sous une empreinte
+  // perdue est un lot que son gagnant ne voit plus, alors qu'il reste valable
+  // au comptoir.
+  const { data: winRows } = await admin
+    .from("jackpot_wins")
+    .select("id, cycle, code, drawn_at, redeemed_at")
+    .eq("campaign_id", campaign.id)
+    .eq("winner_token_hash", tokenHash)
+    .order("cycle", { ascending: false });
 
   const wins: JackpotPlayerWin[] = ((winRows as Array<{
     id: string;
@@ -244,7 +389,7 @@ async function loadPlayerState(
     redeemedAt: w.redeemed_at,
   }));
 
-  // Cookie présent mais aucune ligne joueur (mode staff avant la première
+  // Empreinte retenue mais aucune ligne joueur (mode staff avant la première
   // validation) : l'identité existe (le QR de check-in peut être affiché), mais
   // les compteurs restent à zéro.
   if (!player) {
