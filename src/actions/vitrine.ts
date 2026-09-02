@@ -549,6 +549,12 @@ export async function saveVitrineSettings(
     ordre_blocs: formData.get("ordre_blocs"),
     secteur: formData.get("secteur"),
     badge_ouverture: formData.get("badge_ouverture"),
+    // VIT-31. C'est une COLONNE, pas une section du thème : elle ne passe donc
+    // pas par `composerTheme` et n'a pas de témoin `*_rendu`. Un champ caché
+    // rendu s'envoie toujours, même vide — sa PRÉSENCE est le témoin, et son
+    // absence (`null` ici) vaut « cet écran ne règle pas les horaires », donc
+    // « ne touche pas la colonne ».
+    horaires: formData.get("horaires"),
     allure_rendue: formData.get("allure_rendue"),
     // LES QUATRE AUTRES TÉMOINS (VIT-19). Les oublier ici ne fait rien rougir
     // — le champ vaut « non rendu », donc la section est conservée, donc un
@@ -607,6 +613,18 @@ export async function saveVitrineSettings(
       // `secteur` est `not null default 'commerce'` : `""` (champ non rendu)
       // vaut donc le défaut NEUTRE, jamais `null`, que la colonne refuserait.
       secteur: parsed.data.secteur || VITRINE_SECTEUR_DEFAUT,
+      // VIT-31 : ÉCRITE DIRECTEMENT, comme `horaires_texte`. Une colonne, pas
+      // une section du thème — la faire passer par `composerTheme` l'aurait
+      // rangée dans un document qui se RECONSTRUIT à chaque enregistrement,
+      // c'est-à-dire l'aurait exposée au défaut que VIT-19 vient de fermer.
+      //
+      // La clé n'est POSÉE QUE si l'écran a rendu le champ : `undefined` sort
+      // du littéral et la colonne n'est pas touchée. Sans ce filtre, enregistrer
+      // l'identité depuis un écran qui n'affiche pas les horaires les EFFACERAIT
+      // — le défaut exact que `theme.jeux` a payé en production.
+      ...(parsed.data.horaires === undefined
+        ? {}
+        : { horaires: toJson(parsed.data.horaires) }),
       theme: toJson(composerTheme(parsed.data, mapThemeVitrine(ligne.theme))),
     })
     .eq("organization_id", garde.organizationId)
