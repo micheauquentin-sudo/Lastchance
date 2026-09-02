@@ -30,6 +30,7 @@ import type {
   ThemeVitrine,
   VitrineCarteView,
   ContenuVitrineView,
+  HorairesVitrine,
   VitrineLiensView,
 } from "@/lib/vitrine";
 
@@ -87,6 +88,7 @@ export function VitrineStudio({
   cartes,
   liens,
   contenus,
+  timezone,
   duoPossede,
   bandePossede,
   nbFichesDuo,
@@ -103,7 +105,10 @@ export function VitrineStudio({
     horaires: string;
     badge: string;
     secteur: SecteurVitrine;
+    horairesStructures: HorairesVitrine | null;
   };
+  /** Le fuseau du COMMERCE, jamais celui du visiteur : il decide de « ouvert ». */
+  timezone: string;
   themeInitial: ThemeVitrine;
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
@@ -124,6 +129,7 @@ export function VitrineStudio({
       histoire: identiteInitiale.histoire,
       horaires: identiteInitiale.horaires,
       badge: identiteInitiale.badge,
+      horairesStructures: identiteInitiale.horairesStructures,
     }),
   );
 
@@ -379,6 +385,7 @@ export function VitrineStudio({
           logoUrl={identiteInitiale.logoUrl}
           coverPath={identiteInitiale.coverPath}
           coverAlt={identiteInitiale.coverAlt}
+          timezone={timezone}
           cartes={exemples ? cartesExemple(etat.secteur) : cartes}
           liens={liens}
           slug={slug}

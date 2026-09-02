@@ -50,6 +50,7 @@ export function ApercuStudio({
   cartes,
   liens,
   slug,
+  timezone,
   exemples = false,
 }: {
   etat: EtatStudio;
@@ -62,6 +63,8 @@ export function ApercuStudio({
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
   slug: string;
+  /** Le fuseau du COMMERCE — le lot des ecrans en fera « Ouvert · ferme a 23h ». */
+  timezone: string;
   /**
    * Les cartes reçues sont-elles des EXEMPLES (VIT-28) ?
    *
@@ -80,6 +83,12 @@ export function ApercuStudio({
   // n'aurait rien changé à l'écran, et le commerçant aurait conclu que la case
   // ne sert à rien.
   const visible = (bloc: string) => theme.blocs.includes(bloc as never);
+
+  // REÇU ET PAS ENCORE CONSOMMÉ : le fuseau descend jusqu'ici pour que le lot
+  // des écrans n'ait qu'à brancher « Ouvert · ferme à 23h » sans retoucher la
+  // coquille. Le poser maintenant évite que deux lots se disputent le même
+  // fichier — c'est ce qui les rend parallélisables.
+  void timezone;
 
   /**
    * SEULES LES CARTES ACTIVES, ET C'EST UN DÉFAUT CORRIGÉ (VIT-26).

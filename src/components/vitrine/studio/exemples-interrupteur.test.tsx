@@ -55,6 +55,7 @@ const IDENTITE = {
   horaires: "",
   badge: "",
   secteur: "fleuriste" as const,
+  horairesStructures: null,
 };
 
 function rendre() {
@@ -73,6 +74,7 @@ function rendre() {
       duoPossede={false}
       bandePossede={false}
       nbFichesDuo={0}
+      timezone="Europe/Paris"
       peutEditer
     />,
   );
