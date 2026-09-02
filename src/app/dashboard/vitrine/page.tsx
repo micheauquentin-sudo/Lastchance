@@ -358,22 +358,41 @@ export default async function VitrineDashboardPage({
               trois colonnes : en dessous, elles s'empilent et l'aperçu passe
               sous les réglages, ce qui lui retire sa raison d'être. */}
           {settings ? (
-            <Card className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
-              <div className="min-w-0">
-                <h2>Mon studio</h2>
-                <p className="mt-1 text-sm text-k-body">
-                  Votre vitrine au centre, les réglages autour. Votre logo,
-                  votre bannière, vos mots, votre carte, vos réseaux et vos
-                  jeux — tout s&apos;y règle en voyant le résultat.
-                </p>
-              </div>
-              <Link
-                href="/vitrine-studio"
-                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+            <div className="hidden lg:block">
+              {/* LA PASTILLE DE L'ATELIER SUIT L'ENTRÉE PRINCIPALE (VIT-30).
+
+                  Elle vivait sur la carte de l'atelier, ce qui m'avait fait
+                  garder celle-ci visible partout : masquer la carte aurait
+                  masqué un état que le commerçant est censé lire.
+
+                  C'était résoudre le mauvais problème. La pastille appartient
+                  à la PRÉPARATION, pas à un écran : elle se pose donc sur ce
+                  qui MÈNE à la préparation, et sur grand écran c'est le
+                  studio. L'atelier peut alors disparaître d'ici sans rien
+                  emporter. */}
+              <CarteRepliable
+                {...carteTuile(tuiles, "atelier")}
+                titre="Mon studio"
+                defaultOuvert
+                resume="Tout se règle ici, en voyant le résultat."
               >
-                Ouvrir le studio
-              </Link>
-            </Card>
+                <Card className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-k-body">
+                      Votre vitrine au centre, les réglages autour. Votre logo,
+                      votre bannière, vos mots, votre carte, vos réseaux et vos
+                      jeux — tout s&apos;y règle en voyant le résultat.
+                    </p>
+                  </div>
+                  <Link
+                    href="/vitrine-studio"
+                    className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+                  >
+                    Ouvrir le studio
+                  </Link>
+                </Card>
+              </CarteRepliable>
+            </div>
           ) : null}
 
           {/* ── L'ATELIER RESTE, ET IL EST LE CHEMIN DU PETIT ÉCRAN ──
@@ -387,7 +406,20 @@ export default async function VitrineDashboardPage({
               ÉCARTÉ : masquer l'atelier au-delà de `lg`. Sa tuile porte des
               points de la vérification (`carteTuile`), et une tuile invisible
               sur grand écran aurait retiré au commerçant un état qu'il est
-              censé lire — pour ne gagner qu'une carte repliée de moins. */}
+              censé lire — pour ne gagner qu'une carte repliée de moins.
+
+              CET ARBITRAGE EST RENVERSÉ (VIT-30), sur retour du propriétaire :
+              « je suis sur ordi et j'ai quand même l'atelier ». Il avait
+              raison, et mon objection ne tenait pas — la pastille n'est pas
+              attachée à l'atelier, elle est attachée à la PRÉPARATION. Elle
+              se pose donc sur la carte du studio ci-dessus, qui est l'entrée
+              du grand écran, et l'atelier disparaît d'ici sans rien emporter.
+
+              LA ROUTE, ELLE, NE BOUGE PAS : `?etape=` reste atteignable sur
+              n'importe quelle taille d'écran. Ce qui est masqué est l'ENTRÉE,
+              jamais le chemin — une adresse d'étape gardée en favori doit
+              continuer de mener quelque part. */}
+          <div className="lg:hidden">
           <CarteRepliable
             {...carteTuile(tuiles, "atelier")}
             defaultOuvert={false}
@@ -400,6 +432,7 @@ export default async function VitrineDashboardPage({
               sousTitre="Le même contenu que le studio, une étape à la fois et sans aperçu — pratique sur téléphone."
             />
           </CarteRepliable>
+          </div>
 
           {/* CE QUE LA VITRINE A RAPPORTÉ, EN UN NOMBRE. Le mot est
               « ouvertures » et non « scans » : un rechargement, un retour

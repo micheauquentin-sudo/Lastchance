@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// L'action REND un succès : l'enregistrement automatique lit son verdict pour
+// afficher « Modifications enregistrées ». Un `vi.fn()` nu rendrait `undefined`,
+// que `useActionForm` traiterait comme une réponse illisible.
 vi.mock("@/actions/vitrine", () => ({
-  saveVitrineSettings: vi.fn(),
+  saveVitrineSettings: vi.fn(async () => ({ ok: true, data: undefined })),
   setVitrinePhoto: vi.fn(),
   deleteVitrinePhoto: vi.fn(),
 }));
@@ -16,6 +19,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { VitrineStudio } = await import("@/components/vitrine/vitrine-studio");
+const { saveVitrineSettings } = await import("@/actions/vitrine");
 
 import {
   VITRINE_ALLURE_CHIFFRES,
@@ -45,7 +49,10 @@ import { PAGES_STUDIO } from "@/components/vitrine/studio/pages";
  * une intention tant qu'aucune garde ne la tient.
  */
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 const IDENTITE = {
   nom: "Le Comptoir",
@@ -167,5 +174,87 @@ describe("studio — la charge utile ne dépend pas de la page ouverte", () => {
     const cible = bouton.getAttribute("form");
     expect(cible).toBeTruthy();
     expect(container.querySelector(`form#${cible}`)).toBeTruthy();
+  });
+});
+
+/**
+ * L'ENREGISTREMENT AUTOMATIQUE (VIT-30) — et surtout ce qu'il NE fait pas.
+ *
+ * ── LE RENVERSEMENT, ET SON DANGER PROPRE ──
+ *
+ * ADR-137 posait « rien n'est enregistré tant qu'on n'a pas enregistré ». Le
+ * propriétaire l'a renversé : « il faut un enregistrement automatique à chaque
+ * changement afin de ne rien perdre ». C'est la bonne décision — on ne règle
+ * pas une vitrine d'un trait — mais elle ouvre un risque que la version
+ * manuelle n'avait pas : écrire SANS QUE PERSONNE N'AIT RIEN DEMANDÉ.
+ *
+ * Le cas précis est l'OUVERTURE. Le studio résout l'état au montage : les
+ * vingt-cinq réglages d'allure y prennent leur valeur par défaut, et
+ * `ChampsCachesStudio` les sérialise tous. Un effet qui partirait au premier
+ * rendu graverait donc en base vingt-cinq décisions que le commerçant n'a pas
+ * prises — sur une vitrine qu'il a seulement REGARDÉE.
+ *
+ * C'est exactement le piège que VIT-19 a passé un lot entier à défaire, et il
+ * reviendrait par une autre porte. D'où la garde du milieu, qui est la plus
+ * importante des trois.
+ */
+describe("studio — l'enregistrement est automatique, et l'ouverture n'écrit rien", () => {
+  it("OUVRIR le studio n'enregistre RIEN, même après le délai", async () => {
+    vi.useFakeTimers();
+    try {
+      rendre();
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(
+        saveVitrineSettings,
+        "le simple affichage a écrit en base — les vingt-cinq défauts d'allure seraient gravés sur une vitrine que personne n'a réglée",
+      ).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("changer un réglage enregistre TOUT SEUL, sans clic sur Enregistrer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = rendre();
+      // LE CONTRÔLE VISIBLE, ET C'EST UNE PRÉCISION NÉCESSAIRE : le champ
+      // CACHÉ de la charge porte la même valeur et vient AVANT dans le DOM.
+      // Une première version l'attrapait, y déclenchait un `change` — qui ne
+      // fait rien, puisqu'aucun `onChange` de React n'y est branché — et
+      // concluait que l'enregistrement automatique ne partait pas.
+      const accroche = [...container.querySelectorAll("input")].find(
+        (i) =>
+          (i as HTMLInputElement).type !== "hidden" &&
+          (i as HTMLInputElement).value === "Bistrot de quartier",
+      ) as HTMLInputElement;
+      expect(accroche, "le champ Accroche est introuvable").toBeTruthy();
+
+      await act(async () => {
+        fireEvent.change(accroche, { target: { value: "Cuisine du marché" } });
+      });
+      // Avant le délai, rien n'est parti : un curseur émet une valeur par
+      // pixel parcouru, et partir à chaque frappe rendrait l'écran inutilisable.
+      expect(saveVitrineSettings).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(saveVitrineSettings).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("le bandeau annonce l'automatisme, et le bouton reste", () => {
+    // Le bouton n'est pas redondant : il sert à qui veut partir tout de suite,
+    // sans attendre le délai. Et la ligne d'état remplace le toast, qui à
+    // chaque frappe aurait rendu l'écran inutilisable.
+    const { container } = rendre();
+    expect(container.textContent ?? "").toContain("Enregistrement automatique");
+    expect(
+      screen.getByRole("button", { name: "Enregistrer" }),
+    ).toBeTruthy();
   });
 });

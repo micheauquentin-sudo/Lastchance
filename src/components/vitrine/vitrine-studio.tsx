@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
@@ -127,10 +127,64 @@ export function VitrineStudio({
     }),
   );
 
+  /**
+   * L'ENREGISTREMENT EST AUTOMATIQUE (VIT-30) — et c'est un RENVERSEMENT.
+   *
+   * VIT-17 puis ADR-137 posaient l'inverse en toutes lettres : « rien n'est
+   * enregistré tant qu'on n'a pas enregistré », au nom de la promesse d'un
+   * studio — essayer sans conséquence. L'argument se tenait ; il a été démenti
+   * par l'usage, et c'est le propriétaire qui l'a tranché : « il faut un
+   * enregistrement automatique à chaque changement afin de ne rien perdre ».
+   *
+   * Ce que l'argument d'origine n'avait pas vu : on ne règle pas une vitrine
+   * d'un trait. On ouvre le studio, on bouge trois curseurs, on part voir un
+   * client, on revient. Un travail perdu parce qu'on n'a pas cliqué coûte
+   * infiniment plus cher qu'un essai enregistré — d'autant que la vitrine
+   * PUBLIÉE est la seule chose qu'un client voit, et qu'un essai malheureux
+   * s'y corrige en trois secondes.
+   *
+   * ── PAS DE TOAST, ET C'EST NÉCESSAIRE ──
+   *
+   * Un message à chaque frappe rendrait l'écran inutilisable. L'état
+   * d'enregistrement se lit désormais dans le bandeau, en une ligne discrète —
+   * la même information, sans l'interruption.
+   */
   const { state, pending, onSubmit } = useActionForm(saveVitrineSettings, {
     networkError: "Enregistrement impossible, réessayez.",
-    toastOnSuccess: "Vitrine enregistrée.",
   });
+
+  const formulaire = useRef<HTMLFormElement | null>(null);
+  const premierRendu = useRef(true);
+
+  // DÉRIVÉ, JAMAIS STOCKÉ. Une première version gardait l'heure du dernier
+  // succès dans un état posé depuis un effet — ce qu'ESLint refuse à juste
+  // titre : un état qui ne fait que recopier une autre valeur finit par en
+  // diverger. `state` porte déjà le dernier verdict du SERVEUR, et c'est lui
+  // qui compte — pas ce que l'écran a tenté d'envoyer.
+  const dejaEnregistre = state?.ok === true;
+
+  useEffect(() => {
+    // OUVRIR LE STUDIO N'ÉCRIT RIEN. Sans cette garde, le simple affichage
+    // poserait en base l'état résolu — donc les vingt-cinq défauts d'allure —
+    // sur une vitrine dont le commerçant n'a rien touché. C'est exactement le
+    // piège que VIT-19 a passé un lot à défaire.
+    if (premierRendu.current) {
+      premierRendu.current = false;
+      return;
+    }
+    if (!peutEditer) return;
+
+    // LE DÉLAI EST CE QUI REND LA CHOSE TENABLE : un curseur d'allure émet une
+    // valeur par pixel parcouru. Sans lui, traverser « Arrondi » enverrait
+    // vingt-quatre écritures. `useActionForm` sait déjà rejouer une soumission
+    // arrivée pendant qu'une autre vole — le débours ne fait que réduire le
+    // nombre de départs.
+    const t = setTimeout(() => {
+      formulaire.current?.requestSubmit();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [etat, peutEditer]);
+
 
   const majEtat = (patch: Partial<EtatStudio>) =>
     setEtat((e) => ({ ...e, ...patch }));
@@ -146,7 +200,12 @@ export function VitrineStudio({
           Il est le VOISIN de la mise en page, jamais son parent : c'est ce qui
           autorise les formulaires du logo, de la bannière et de la carte à
           coexister sans imbrication. */}
-      <form id={ID_FORMULAIRE} onSubmit={onSubmit} className="hidden">
+      <form
+        id={ID_FORMULAIRE}
+        ref={formulaire}
+        onSubmit={onSubmit}
+        className="hidden"
+      >
         <ChampsCachesStudio etat={etat} />
       </form>
 
@@ -166,9 +225,27 @@ export function VitrineStudio({
           <div className="flex items-center gap-2">
             <FieldError message={state && !state.ok ? state.error : undefined} />
             {peutEditer ? (
-              <Button type="submit" form={ID_FORMULAIRE} disabled={pending}>
-                {pending ? "Enregistrement…" : "Enregistrer"}
-              </Button>
+              <>
+                {/* L'ÉTAT SE LIT, IL NE S'INTERROMPT PAS. `aria-live="polite"`
+                    et non `assertive` : un lecteur d'écran doit l'annoncer
+                    entre deux phrases, jamais couper celle en cours. */}
+                <span
+                  aria-live="polite"
+                  className="text-xs font-semibold text-zinc-500"
+                >
+                  {pending
+                    ? "Enregistrement…"
+                    : dejaEnregistre
+                      ? "Modifications enregistrées"
+                      : "Enregistrement automatique"}
+                </span>
+                {/* LE BOUTON RESTE, MÊME AVEC L'AUTOMATISME. Il sert à qui
+                    veut partir tout de suite : cliquer envoie sans attendre le
+                    délai, et donne la certitude que rien n'est en vol. */}
+                <Button type="submit" form={ID_FORMULAIRE} disabled={pending}>
+                  {pending ? "Enregistrement…" : "Enregistrer"}
+                </Button>
+              </>
             ) : null}
           </div>
         </div>
@@ -251,7 +328,7 @@ export function VitrineStudio({
             colonne de droite sert le plus. */}
         <aside
           className={`w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full ${
-            page === "carte" ? "lg:w-[440px]" : "lg:w-[340px]"
+            page === "carte" ? "lg:w-[540px]" : "lg:w-[420px]"
           }`}
         >
           {page === "identite" ? (

@@ -97,6 +97,24 @@ export async function updateOrganizationSocialLinks(
 
   revalidatePath("/dashboard", "layout");
   revalidatePath("/dashboard/settings");
+  /**
+   * LE STUDIO VIT HORS DE `/dashboard`, ET C'EST POURQUOI IL ÉTAIT OUBLIÉ.
+   *
+   * `revalidatePath("/dashboard", "layout")` couvre tout l'arbre du tableau de
+   * bord — et rien d'autre. `/vitrine-studio` est délibérément à côté (c'est ce
+   * qui lui retire la colonne de navigation), donc cette ligne ne l'atteignait
+   * pas : après avoir saisi son Instagram dans le studio, le commerçant voyait
+   * son aperçu inchangé. L'enregistrement avait pourtant réussi.
+   *
+   * Le défaut est de la classe la plus coûteuse ici : rien ne casse, rien ne
+   * remonte, et l'écran donne raison à celui qui croit que son geste n'a pas
+   * pris — il recommence, et doute de l'outil.
+   *
+   * Toute route posée HORS de `/dashboard` qui lit `organizations` doit venir
+   * ici en même temps qu'elle naît. `/poster/[id]` n'en lit pas les liens ;
+   * c'est la seule raison pour laquelle elle n'y figure pas.
+   */
+  revalidatePath("/vitrine-studio");
   // Le lien est ORG-WIDE : il apparaît sur TOUTES les pages /play de la maison,
   // pas sur celles d'une campagne. Même geste que le logo (branding.ts) —
   // `revalidatePlaySlugs` par organisation, une seule lecture des slugs pour
