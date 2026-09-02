@@ -632,20 +632,25 @@ const ADDON_PRICE_ENV: ReadonlyArray<{
   { entitlement: "vitrine", env: "STRIPE_PRICE_ID_ADDON_VITRINE" },
   { entitlement: "reserver", env: "STRIPE_PRICE_ID_ADDON_RESERVER" },
   /**
-   * LA RÉSERVATION (RDV-5). La variable est DÉCLARÉE ici, mais le produit et
-   * le prix Stripe correspondants N'EXISTENT PAS ENCORE : les créer est une
-   * mutation financière, qui exige une demande explicite du propriétaire
-   * (AGENTS.md).
+   * LA RÉSERVATION (RDV-5) — VENDUE DEPUIS LE 2026-09-02.
    *
-   * L'absence de la variable est SANS DANGER et c'est pourquoi on la déclare
-   * quand même : `addonPriceId` passe par `optionalEnv` et rend `undefined`,
-   * si bien que l'option n'apparaît simplement pas à l'achat. Le droit, lui,
-   * fonctionne dès maintenant par octroi back-office — exactement comme les
-   * quatre clés Vitrine pendant la bêta.
+   * Le produit et le prix ont été créés par le propriétaire, et
+   * `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` est posée dans les variables Production
+   * de Vercel — vérifié le 2026-09-02, ainsi que l'antériorité de la variable
+   * sur le dernier déploiement, sans quoi elle ne serait pas encore lue.
    *
-   * GESTE PROPRIÉTAIRE RESTANT : créer le produit « Réservation » (20 €/mois)
-   * dans Stripe, puis poser `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` dans les
-   * variables Production de Vercel.
+   * `soldStandalone: false` : elle se vend comme LIGNE d'abonnement, donc par
+   * CETTE famille de variables. Il n'existe volontairement aucune
+   * `STRIPE_PRICE_ID_PASS_RENDEZ_VOUS`.
+   *
+   * ── CE QUI RESTAIT VRAIMENT À FAIRE, ET QUI EST FAIT ──
+   *
+   * Créer le produit ne suffisait pas : la clé `rendez_vous` devait aussi
+   * entrer dans le vocabulaire d'`apply_stripe_subscription_event_v2` et dans
+   * `organization_entitlements_entitlement_check` (migration
+   * `20261124120000`). Sans elle, le PREMIER achat aurait levé « invalid
+   * entitlement », le webhook aurait rendu 500, et Stripe aurait rejoué. La
+   * migration est appliquée en production — vérifié le 2026-09-02.
    */
   { entitlement: "rendez_vous", env: "STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS" },
   /**
@@ -656,10 +661,17 @@ const ADDON_PRICE_ENV: ReadonlyArray<{
    * vente réelle passe par la famille `STRIPE_PRICE_ID_PASS_*`, dérivée du
    * droit par src/lib/octroi-checkout.ts, jamais déclarée ici.
    *
-   * Comme pour la Réservation : produit et prix Stripe N'EXISTENT PAS ENCORE,
-   * leur création est une mutation financière qui exige une demande explicite
-   * du propriétaire (AGENTS.md). L'absence est sans danger — `optionalEnv`
-   * rend `undefined` et l'option n'apparaît simplement pas à l'achat.
+   * ── CES DEUX VARIABLES-CI SONT DONC ABSENTES, ET C'EST CORRECT ──
+   *
+   * Les produits Stripe existent depuis le 2026-09-02, et ce sont
+   * `STRIPE_PRICE_ID_PASS_DUO` et `STRIPE_PRICE_ID_PASS_BANDE` qui portent
+   * leur prix — `soldStandalone: true`. Les poser AUSSI ici n'ouvrirait qu'un
+   * chemin que personne n'emprunte, et créerait deux prix pour un produit :
+   * la confusion entre les deux familles que l'en-tête d'`octroi-checkout.ts`
+   * a été écrit pour empêcher.
+   *
+   * `optionalEnv` rend donc `undefined` sur ces deux lignes, et c'est l'état
+   * voulu — non un reste à faire.
    */
   { entitlement: "duo", env: "STRIPE_PRICE_ID_ADDON_DUO" },
   { entitlement: "bande", env: "STRIPE_PRICE_ID_ADDON_BANDE" },

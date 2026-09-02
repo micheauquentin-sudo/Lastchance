@@ -79,8 +79,14 @@ laisse voir ce qu'on règle.
   (`'wasm-unsafe-eval'`, retiré par MORT-2). VIT-25 n'y touche pas : rouvrir
   cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
   servi à lui retirer. Voir `docs/bugs.md`.
-- **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
-  20 €/mois, « Duo Miroir » et « Portrait de la Bande » 12 €/mois.
+- ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
+  2026-09-02**. « Réservation » 20 €/mois, « Duo Miroir » et « Portrait de la
+  Bande » 12 €/mois. Vérifié : les trois prix sont posés en Production
+  (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`, `STRIPE_PRICE_ID_PASS_DUO`,
+  `STRIPE_PRICE_ID_PASS_BANDE`), et ANTÉRIEURS au dernier déploiement — sans
+  quoi ils ne seraient pas encore lus. La migration `20261124120000`, qui fait
+  entrer `rendez_vous` dans le vocabulaire du webhook, est appliquée : sans
+  elle, le premier achat aurait levé « invalid entitlement » et rendu 500.
 - **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
   l'autorisation « éditeur » en Wallet Console.
 - `duo_choose` ne valide pas encore une place saisie (ADR-134).
@@ -157,10 +163,14 @@ qui a rendu visibles trois défauts que l'inclusion dans les offres masquait.
 **Décisions** : [ADR-128 à ADR-135](./decisions.md).
 
 **Reste ouvert** :
-- **Geste propriétaire, Stripe — trois produits à créer.** « Réservation »
-  20 €/mois (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`), « Duo Miroir » et
-  « Portrait de la Bande » 12 €/mois chacun. Aucun produit ni prix n'a été
-  créé côté Stripe : les modules sont livrés mais invendables.
+- ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
+  2026-09-02**. « Réservation » 20 €/mois, « Duo Miroir » et « Portrait de la
+  Bande » 12 €/mois. Vérifié : les trois prix sont posés en Production
+  (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`, `STRIPE_PRICE_ID_PASS_DUO`,
+  `STRIPE_PRICE_ID_PASS_BANDE`), et ANTÉRIEURS au dernier déploiement — sans
+  quoi ils ne seraient pas encore lus. La migration `20261124120000`, qui fait
+  entrer `rendez_vous` dans le vocabulaire du webhook, est appliquée : sans
+  elle, le premier achat aurait levé « invalid entitlement » et rendu 500.
 - **Geste propriétaire, Google Wallet** : compte émetteur, clé de compte de
   service, et l'autorisation « éditeur » dans la Wallet Console (voir V1.71).
 - **`duo_choose` n'accepte pas encore `option_id`** : une place saisie est

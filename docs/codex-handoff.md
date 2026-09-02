@@ -82,8 +82,10 @@ moins une garde ÉPROUVÉE PAR MUTATION.
    permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
    servi à lui retirer. La piste reste de la porter sur la seule route qui en
    a besoin, via `next.config`. Voir `docs/bugs.md`.
-3. **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
-   20 €/mois, « Duo Miroir » et « Portrait de la Bande » 12 €/mois.
+3. ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
+   2026-09-02**, et vérifié : les trois prix sont posés en Production et
+   antérieurs au dernier déploiement ; la migration `20261124120000` qui fait
+   entrer `rendez_vous` dans le vocabulaire du webhook est appliquée.
 4. **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
    l'autorisation « éditeur » en Wallet Console.
 5. `duo_choose` ne valide pas encore une place saisie (ADR-134).
@@ -153,9 +155,9 @@ dans l'ordre.
    régime CSP `static`, alors que `/poster` — même classe de page — y est.
    Rien d'exploitable, défense en profondeur perdue. Même fichier que le point
    précédent.
-3. **Geste propriétaire, Stripe — trois produits à créer** : « Réservation »
-   20 €/mois (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`), « Duo Miroir » et
-   « Portrait de la Bande » 12 €/mois. Aucun produit ni prix n'a été créé :
+3. ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
+   2026-09-02**, et vérifié (prix en Production, antérieurs au dernier
+   déploiement ; migration `20261124120000` appliquée). Aucun produit ni prix n'a été créé :
    les modules sont livrés mais invendables.
 4. **`duo_choose` valide encore par `o.item_id = p_item_id`** : une place
    saisie est affichée mais pas choisissable, et `CarteOption` la rend inerte.
