@@ -10,6 +10,7 @@ import {
   VITRINE_ALLURE_BORNES,
   VITRINE_ALLURE_ENUMS,
   VITRINE_BLOCS_DEFAUT,
+  VITRINE_JEUX,
   VITRINE_PRESETS_SECTEUR,
   VITRINE_SECTEUR_DEFAUT,
   VITRINE_STYLES_CARTES,
@@ -17,6 +18,7 @@ import {
   type BarreBasseVitrine,
   type BlocVitrine,
   type CarteInfosVitrine,
+  type ChoixJeuxVitrine,
   type DensiteVitrine,
   type MotifVitrine,
   type PhotoPositionVitrine,
@@ -114,12 +116,14 @@ export interface VitrineThemeResolu {
   secteur: SecteurVitrine;
   allure: AllureResolue;
   /**
-   * QUELS JEUX PARAISSENT (VIT-16) — résolus, donc jamais facultatifs.
+   * CE QUI PARAÎT SUR LA CARTE (VIT-16, élargi VIT-32) — résolu, donc jamais
+   * facultatif.
    *
-   * L'absence en base vaut `true` : une vitrine publiée avant ce lot affiche
-   * ses deux jeux, et rien ne doit les lui retirer sans qu'elle l'ait demandé.
+   * L'absence en base vaut `true` : une vitrine publiée avant l'un ou l'autre
+   * de ces deux lots affiche tout ce que la base lui ouvre, et rien ne doit le
+   * lui retirer sans qu'elle l'ait demandé.
    */
-  jeux: { duo: boolean; bande: boolean };
+  jeux: ChoixJeuxVitrine;
 }
 
 /** `#RRGGBB` — la forme courte est refusée en base, on ne l'accepte pas ici. */
@@ -285,14 +289,23 @@ export function resoudreThemeVitrine(
     blocs,
     secteur,
     allure: resoudreAllure(theme?.allure),
-    // `?? true` ET NON `=== true` : c'est toute la compatibilité de VIT-16.
-    // Une clé absente signifie « pas encore décidé », et ce qui n'a pas été
-    // décidé garde le comportement d'hier — les deux jeux affichés.
-    jeux: {
-      duo: theme?.jeux?.duo ?? true,
-      bande: theme?.jeux?.bande ?? true,
-    },
+    // `?? true` ET NON `=== true` : c'est toute la compatibilité de VIT-16, et
+    // elle vaut d'autant plus depuis VIT-32. Une clé absente signifie « pas
+    // encore décidé », et ce qui n'a pas été décidé garde le comportement
+    // d'hier — tout ce que la base ouvre est affiché.
+    //
+    // BOUCLÉ SUR LE VOCABULAIRE, jamais énuméré à la main : un septième mot
+    // ajouté à `VITRINE_JEUX` est résolu ici sans qu'on y revienne, là où six
+    // lignes recopiées auraient laissé le nouveau venu à `undefined` — donc à
+    // « faux » au premier test de vérité, donc masqué partout, en silence.
+    jeux: resoudreJeux(theme?.jeux),
   };
+}
+
+function resoudreJeux(jeux: ThemeVitrine["jeux"]): ChoixJeuxVitrine {
+  const sortie = {} as ChoixJeuxVitrine;
+  for (const cle of VITRINE_JEUX) sortie[cle] = jeux?.[cle] ?? true;
+  return sortie;
 }
 
 /** Le rembourrage d'une fiche, en pixels — la densité, traduite. */

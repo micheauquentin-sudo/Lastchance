@@ -157,6 +157,7 @@ describe("actionOuverte — la porte se ferme d'elle-même", () => {
       quiz: [],
       calendars: [],
       pronostics: [],
+      loyalty: [],
       duo: false,
       bande: false,
     },

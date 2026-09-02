@@ -26,6 +26,7 @@ import {
   VITRINE_ALLURE_ENUMS_CLES,
 } from "@/lib/vitrine";
 import { PAGES_STUDIO } from "@/components/vitrine/studio/pages";
+import type { BilanJeuxVitrine } from "@/lib/vitrine";
 
 /**
  * LA CHARGE UTILE DU STUDIO EST COMPLÈTE, SUR TOUTES SES PAGES (VIT-20).
@@ -89,6 +90,26 @@ const CHAMPS_ATTENDUS = [
   ...VITRINE_ALLURE_CHIFFRES,
 ];
 
+
+/**
+ * LE BILAN DES JEUX, TOUT À FAUX (VIT-32).
+ *
+ * Ce que ces tests mesurent — la charge utile, l'interrupteur d'exemples — ne
+ * dépend pas de ce que le commerce possède. Un bilan vide est le cas le plus
+ * simple à lire, et le seul qui ne change pas le jour où une offre bouge.
+ */
+const BILAN_JEUX: BilanJeuxVitrine = {
+  possede: {
+    duo: false,
+    bande: false,
+    quiz: false,
+    calendars: false,
+    pronostics: false,
+    loyalty: false,
+  },
+  compte: { duo: 0, quiz: 0, calendars: 0, pronostics: 0, loyalty: 0 },
+};
+
 function rendre() {
   return render(
     <VitrineStudio
@@ -97,9 +118,7 @@ function rendre() {
       themeInitial={{ ordre_blocs: ["accroche", "cartes", "experiences"] }}
       cartes={[]}
       contenus={[]}
-      duoPossede
-      bandePossede
-      nbFichesDuo={0}
+      bilanJeux={BILAN_JEUX}
       liens={{
         google_review_url: null,
         instagram_url: null,

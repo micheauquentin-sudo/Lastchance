@@ -18,6 +18,7 @@ import {
   type VitrineCarteView,
   type VitrineDashboardState,
   type VitrinePublicState,
+  type BilanJeuxVitrine,
   type VitrineSettingsView,
 } from "@/lib/vitrine";
 
@@ -41,6 +42,7 @@ import {
  * `export type` est effacé à la compilation.
  */
 export type {
+  BilanJeuxVitrine,
   LangueVitrine,
   TraductionCibleView,
   TraductionChampView,
@@ -396,3 +398,98 @@ export async function loadVitrineMesures(
 
   return { ok: true, mesures: error ? mesuresVides(jours) : mapMesuresVitrine(data) };
 }
+
+// ────────────────────────────────────────────────────────────
+// LE BILAN DE CE QUI PEUT PARAÎTRE SUR LA CARTE (VIT-32)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Ce que le commerçant possède, et ce qu'il a déjà préparé.
+ *
+ * ── POURQUOI UN CHARGEUR PLUTÔT QUE DEUX PAGES QUI COMPTENT ──
+ *
+ * `/vitrine-studio` et `/dashboard/vitrine` montrent le MÊME bilan. Recopier
+ * les cinq comptes dans les deux, c'est la première divergence qui passe
+ * inaperçue : un statut oublié d'un côté, et le commerçant lit « aucun quiz »
+ * sur un écran et « 3 quiz » sur l'autre, pour la même base.
+ *
+ * ── LES STATUTS SONT CEUX DES PORTES, ET C'EST TOUT L'INTÉRÊT ──
+ *
+ * Chaque compte reprend EXACTEMENT le filtre de `vitrine_public_state` : quiz
+ * `active`, calendriers `active`, pronostics `active` ou `finished` (un
+ * classement se consulte encore), programmes de fidélité `active`. Un compte
+ * plus généreux que la porte ferait dire « prêt » à un écran dont la carte
+ * n'annoncerait rien — l'impasse exacte que ce bilan existe pour éviter.
+ *
+ * ── LE DROIT `pronostics` EST LU AU NIVEAU DE L'ORGANISATION ──
+ *
+ * La porte, elle, le vérifie PAR RESSOURCE (`org_has_module_access_for_resource`,
+ * 20261101120000). C'est volontaire : la question posée ici est « votre offre
+ * comprend-elle les pronostics ? », qui est une question d'ABONNEMENT. Le
+ * compte, lui, reste une borne haute — et un compte à zéro dit déjà, sans
+ * mentir, que cocher n'ajoutera rien.
+ *
+ * ── LE CLIENT ADMIN, AVEC LE FILTRE DE LOCATAIRE EN DUR ──
+ *
+ * Motif de `loadVitrineDashboardContext` plus haut : l'isolation tient au
+ * `.eq("organization_id", …)` posé sur l'organisation de la SESSION. Passer par
+ * le client de session aurait fait dépendre le bilan des politiques RLS de cinq
+ * modules — dont un refus rendrait « 0 » sans le dire, c'est-à-dire un bilan
+ * faux qui a l'air d'une réponse.
+ */
+export async function loadBilanJeuxVitrine(): Promise<BilanJeuxVitrine> {
+  const { organization } = await getUserAndOrg();
+  if (!organization) return BILAN_JEUX_VIDE;
+
+  const possede: BilanJeuxVitrine["possede"] = {
+    duo: droitEffectifModule("duo", organization),
+    bande: droitEffectifModule("bande", organization),
+    quiz: droitEffectifModule("quiz", organization),
+    calendars: droitEffectifModule("calendar", organization),
+    pronostics: droitEffectifModule("pronostics", organization),
+    loyalty: droitEffectifModule("loyalty", organization),
+  };
+
+  const admin = createAdminClient();
+  const compter = async (
+    table: "duo_options" | "quizzes" | "calendars" | "contests" | "loyalty_programs",
+    statuts: readonly string[] | null,
+  ): Promise<number> => {
+    const base = admin
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      // DE LA SESSION, toujours. C'est le seul verrou de ce chargeur.
+      .eq("organization_id", organization.id);
+    const { count, error } = await (statuts
+      ? base.in("status", [...statuts])
+      : base);
+    // UN COMPTE ILLISIBLE VAUT ZÉRO, et zéro est le cas prudent : il fait dire
+    // « cocher n'ajoutera rien », ce qui est au pire trop modeste. Un repli à un
+    // nombre inventé aurait fait dire « prêt » à une base muette.
+    return error ? 0 : (count ?? 0);
+  };
+
+  const [duo, quiz, calendars, pronostics, loyalty] = await Promise.all([
+    // Le plateau du Duo n'a pas de statut : une option épinglée compte.
+    compter("duo_options", null),
+    compter("quizzes", ["active"]),
+    compter("calendars", ["active"]),
+    compter("contests", ["active", "finished"]),
+    compter("loyalty_programs", ["active"]),
+  ]);
+
+  return { possede, compte: { duo, quiz, calendars, pronostics, loyalty } };
+}
+
+/** Aucune session : aucun droit, aucun contenu — jamais un état à demi rempli. */
+const BILAN_JEUX_VIDE: BilanJeuxVitrine = {
+  possede: {
+    duo: false,
+    bande: false,
+    quiz: false,
+    calendars: false,
+    pronostics: false,
+    loyalty: false,
+  },
+  compte: { duo: 0, quiz: 0, calendars: 0, pronostics: 0, loyalty: 0 },
+};

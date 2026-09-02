@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
-import { loadVitrineDashboardContext } from "@/lib/vitrine-context";
-import { loadDuoOptions } from "@/lib/duo-context";
-import { droitEffectifModule } from "@/lib/subscription";
+import {
+  loadBilanJeuxVitrine,
+  loadVitrineDashboardContext,
+} from "@/lib/vitrine-context";
 import { createClient } from "@/lib/supabase/server";
 import { VitrineStudio } from "@/components/vitrine/vitrine-studio";
-import type { DuoOptionsAdminView } from "@/lib/duo";
 import type { ContenuVitrineView } from "@/lib/vitrine";
 
 export const metadata: Metadata = { title: "Personnaliser ma vitrine" };
@@ -52,25 +52,23 @@ export default async function VitrineStudioPage() {
   /**
    * CE QUE LE COMMERÇANT POSSÈDE, ET CE QU'IL A DÉJÀ COMPOSÉ.
    *
-   * Ces quatre valeurs se calculaient jusqu'ici dans `/dashboard/vitrine`
-   * SEULEMENT, ce qui suffisait tant que le bilan des jeux et l'éditeur de
-   * carte vivaient là-bas. Le studio les porte désormais : sans elles, sa page
-   * « Les jeux » afficherait « non compris dans votre offre » aux deux jeux —
-   * c'est-à-dire un MENSONGE, pire qu'une page vide, parce qu'il ressemble à
-   * une réponse.
+   * Ce bilan se calculait jusqu'ici dans `/dashboard/vitrine` SEULEMENT, ce qui
+   * suffisait tant que le bilan des jeux et l'éditeur de carte vivaient là-bas.
+   * Le studio le porte désormais : sans lui, sa page « Ce qui paraît sur ma
+   * carte » afficherait « non compris dans votre offre » partout — c'est-à-dire
+   * un MENSONGE, pire qu'une page vide, parce qu'il ressemble à une réponse.
    *
-   * Deux droits distincts depuis la clé par produit (`20261020120000`) : un
-   * commerce peut avoir la Vitrine sans avoir aucun des deux jeux.
+   * SIX DROITS DISTINCTS depuis la clé par produit (`20261020120000`), et non
+   * deux : un commerce peut avoir la Vitrine sans aucun des salons, ou le
+   * Passeport sans les quiz. VIT-32 en a fait six lignes à l'écran, donc six
+   * droits à lire — et cinq comptes, qui disent lesquelles ont de quoi montrer.
    *
-   * Le plateau du Duo n'est pas lu pour être édité — il l'est sur la page du
-   * jeu (ADR-135) — mais parce que son COMPTE décide du « prêt / pas prêt »
-   * qu'affiche le bilan. `loadDuoOptions` ne rend jamais un refus : garde
-   * échouée ou lecture vide donnent le même plateau vide, et les deux méritent
-   * la même phrase.
+   * `loadBilanJeuxVitrine` ne rend jamais un refus : sans session ou sur une
+   * lecture muette, il rend un bilan VIDE. C'est le même arbitrage que l'ancien
+   * `loadDuoOptions` ici — « rien à montrer » et « rien à lire » méritent la
+   * même phrase, et aucune des deux ne mérite un écran d'erreur.
    */
-  const duoPossede = droitEffectifModule("duo", organization);
-  const bandePossede = droitEffectifModule("bande", organization);
-  const [contenus, plateauDuo] = await Promise.all([
+  const [contenus, bilanJeux] = await Promise.all([
     (async (): Promise<ContenuVitrineView[]> => {
       const supabase = await createClient();
       const { data } = await supabase
@@ -80,18 +78,13 @@ export default async function VitrineStudioPage() {
         .order("rang");
       return (data ?? []) as ContenuVitrineView[];
     })(),
-    (async (): Promise<DuoOptionsAdminView> => {
-      const duo = await loadDuoOptions();
-      return duo.ok ? duo.plateau : { options: [], suggestion: null };
-    })(),
+    loadBilanJeuxVitrine(),
   ]);
 
   return (
     <VitrineStudio
       slug={s.slug}
-      duoPossede={duoPossede}
-      bandePossede={bandePossede}
-      nbFichesDuo={plateauDuo.options.length}
+      bilanJeux={bilanJeux}
       contenus={contenus}
       identiteInitiale={{
         // Le nom et le logo viennent des réglages GÉNÉRAUX du commerce : ils

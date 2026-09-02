@@ -3,115 +3,221 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * LA PAGE « LES JEUX » DU STUDIO (VIT-22).
+ * LA PAGE « CE QUI PARAÎT SUR MA CARTE » DU STUDIO (VIT-22, refondue VIT-32).
  *
- * Trois choses, et une seule est cosmétique.
+ * Cinq choses, et une seule est cosmétique.
  *
  *  1. LE RECHARGEMENT APRÈS SUCCÈS. C'est la garde qui compte. `setVitrineJeux`
  *     écrit `ordre_blocs` en base, et le studio en tient sa propre copie dans
- *     son état client : sans rechargement, le prochain « Enregistrer » reposte
- *     l'ancien ordre et fait disparaître de la vitrine publique le bloc « Jeux »
- *     que le commerçant vient de demander. Rien à l'écran ne le signalerait —
- *     les deux actions répondent « enregistré ». Retirer `rechargerApresSucces`
- *     de `page-jeux.tsx` doit faire rougir ce fichier.
- *  2. L'ABSENCE DE CHOIX VAUT « LES DEUX » (ADR-129). Lire `theme.jeux` en
- *     direct plutôt que par `resoudreThemeVitrine` rendrait `undefined`, donc
- *     deux cases vides, donc un enregistrement qui retire en silence les jeux
- *     d'une vitrine qui les affichait depuis toujours.
- *  3. UN SEUL ÉDITEUR. Deux rendus du même réglage seraient deux sources de
- *     vérité pour une ligne en base.
+ *     son état client : sans rechargement, l'enregistrement suivant — AUTOMATIQUE
+ *     depuis VIT-30, donc 1,2 s après le moindre réglage — reposte l'ancien ordre
+ *     et fait disparaître de la vitrine publique le bloc « Jeux » que le
+ *     commerçant vient de demander. Rien à l'écran ne le signalerait : les deux
+ *     actions répondent « enregistré ». Retirer `rechargerApresSucces` de
+ *     `page-jeux.tsx` doit faire rougir ce fichier.
+ *  2. L'ABSENCE DE CHOIX VAUT « TOUT » (ADR-129). Lire `theme.jeux` en direct
+ *     plutôt que par `resoudreThemeVitrine` rendrait `undefined`, donc des cases
+ *     vides, donc un enregistrement qui retire en silence les jeux d'une vitrine
+ *     qui les affichait depuis toujours.
+ *  3. UN MODULE NON POSSÉDÉ VOTE QUAND MÊME (VIT-32). `caseNative` lit un champ
+ *     absent comme « décoché » : sans champ caché, enregistrer son choix
+ *     écrirait `false` sur les quatre modules qu'on n'a pas encore achetés.
+ *  4. « À LA UNE » EST LÀ, et c'est la demande du propriétaire — sa page a
+ *     disparu au profit de celle-ci.
+ *  5. UN SEUL ÉDITEUR DE JEUX. Deux rendus du même réglage seraient deux sources
+ *     de vérité pour une ligne en base.
  */
 
-/** Ce que `JeuxVitrineEditeur` a demandé à `useActionForm`, du dernier rendu. */
-let optionsVues: Record<string, unknown> | null = null;
+/**
+ * CE QUE CHAQUE FORMULAIRE A DEMANDÉ À `useActionForm`, PAR ACTION.
+ *
+ * Un simple « dernier appel » ne suffit plus depuis que « À la une » vit sur
+ * cette page (VIT-32) : `SocialLinksForm` et `ContenusEditeur` appellent le même
+ * crochet APRÈS l'éditeur des jeux, et la garde du rechargement aurait mesuré
+ * leurs options — elle serait passée au vert le jour où `rechargerApresSucces`
+ * disparaît, ce qui est exactement l'inverse de ce qu'on lui demande.
+ */
+const appels: Array<[unknown, Record<string, unknown>]> = [];
 
 vi.mock("@/lib/use-action-form", () => ({
-  useActionForm: (_action: unknown, options: Record<string, unknown>) => {
-    optionsVues = options;
+  useActionForm: (action: unknown, options: Record<string, unknown>) => {
+    appels.push([action, options]);
     return { state: null, pending: false, onSubmit: vi.fn() };
   },
 }));
-vi.mock("@/actions/vitrine", () => ({ setVitrineJeux: vi.fn() }));
+vi.mock("@/actions/vitrine", () => ({
+  setVitrineJeux: vi.fn(),
+  setVitrineContenu: vi.fn(),
+  deleteVitrineContenu: vi.fn(),
+}));
+vi.mock("@/actions/organizations", () => ({
+  updateOrganizationSocialLinks: vi.fn(),
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+}));
 
 const { PageJeuxStudio } = await import(
   "@/components/vitrine/studio/page-jeux"
 );
 
-import type { ThemeVitrine } from "@/lib/vitrine";
+import { VITRINE_JEUX, type BilanJeuxVitrine, type ThemeVitrine } from "@/lib/vitrine";
+
+const { setVitrineJeux } = await import("@/actions/vitrine");
 
 afterEach(cleanup);
 beforeEach(() => {
-  optionsVues = null;
+  appels.length = 0;
 });
 
-function rendre(patch: {
-  theme?: ThemeVitrine;
-  nbFichesDuo?: number;
-  duoPossede?: boolean;
-  bandePossede?: boolean;
-} = {}) {
+/** Tout possédé, tout prêt : chaque test ne fait varier que ce qu'il mesure. */
+const BILAN_COMPLET: BilanJeuxVitrine = {
+  possede: {
+    duo: true,
+    bande: true,
+    quiz: true,
+    calendars: true,
+    pronostics: true,
+    loyalty: true,
+  },
+  compte: { duo: 4, quiz: 2, calendars: 1, pronostics: 1, loyalty: 1 },
+};
+
+function rendre(
+  patch: { theme?: ThemeVitrine; bilan?: Partial<BilanJeuxVitrine> } = {},
+) {
+  const bilan: BilanJeuxVitrine = {
+    possede: { ...BILAN_COMPLET.possede, ...patch.bilan?.possede },
+    compte: { ...BILAN_COMPLET.compte, ...patch.bilan?.compte },
+  };
   return render(
     <PageJeuxStudio
       jeuxVisibles
-      duoPossede={patch.duoPossede ?? true}
-      bandePossede={patch.bandePossede ?? true}
-      nbFichesDuo={patch.nbFichesDuo ?? 4}
+      bilanJeux={bilan}
       themeInitial={patch.theme ?? {}}
       secteur="restaurant"
+      contenus={[]}
+      liens={{
+        google_review_url: null,
+        instagram_url: null,
+        tiktok_url: null,
+      }}
+      socialVisible={false}
+      onSocialVisible={vi.fn()}
       peutEditer
     />,
   );
 }
 
-describe("studio — la page « Les jeux »", () => {
+describe("studio — la page « Ce qui paraît sur ma carte »", () => {
   it("recharge la page après un choix enregistré (la course d'ordre_blocs)", () => {
     // LA garde du lot. `setVitrineJeux` modifie `ordre_blocs` en base ; l'état
-    // client du studio ne le sait pas et l'écraserait au clic suivant.
+    // client du studio ne le sait pas et l'écraserait à son prochain envoi —
+    // qui part TOUT SEUL depuis VIT-30.
     rendre();
 
-    expect(optionsVues).not.toBeNull();
-    expect(optionsVues!.reloadOnSuccess).toBe(true);
+    const options = appels.find(([action]) => action === setVitrineJeux)?.[1];
+    expect(
+      options,
+      "l éditeur des jeux n a pas appelé useActionForm avec setVitrineJeux",
+    ).toBeTruthy();
+    expect(options!.reloadOnSuccess).toBe(true);
   });
 
-  it("un thème sans clé `jeux` coche les DEUX cases (ADR-129)", () => {
-    // Les vitrines d'avant VIT-16 n'ont pas cette clé. Deux cases vides ici,
-    // et le premier enregistrement leur retire leurs jeux sans le dire.
+  it("un thème sans clé `jeux` coche les SIX cases (ADR-129)", () => {
+    // Les vitrines d'avant VIT-16 n'ont pas cette clé, celles d'avant VIT-32
+    // n'en ont que deux. Des cases vides ici, et le premier enregistrement leur
+    // retire leurs jeux sans le dire.
     rendre({ theme: {} });
 
-    for (const c of cases()) expect(c.checked).toBe(true);
+    const cases = casesJeux();
+    expect(cases).toHaveLength(VITRINE_JEUX.length);
+    for (const c of cases) expect(c.checked, c.name).toBe(true);
   });
 
-  it("un choix explicite gagne sur l'absence", () => {
-    rendre({ theme: { jeux: { duo: false, bande: true } } });
+  it("un choix explicite gagne sur l'absence, clé par clé", () => {
+    rendre({
+      theme: { jeux: { duo: false, bande: true, quiz: false, loyalty: true } },
+    });
 
-    const [bande, duo] = cases();
-    expect(bande.checked).toBe(true);
-    expect(duo.checked).toBe(false);
+    const parNom = Object.fromEntries(casesJeux().map((c) => [c.name, c.checked]));
+    expect(parNom.bande).toBe(true);
+    expect(parNom.duo).toBe(false);
+    expect(parNom.quiz).toBe(false);
+    expect(parNom.loyalty).toBe(true);
+    // `calendars` et `pronostics` ne sont PAS dans le thème : l'absence coche.
+    expect(parNom.calendars).toBe(true);
+    expect(parNom.pronostics).toBe(true);
   });
 
   it("le plancher du plateau vient de DUO_OPTIONS_MIN_BASE, pas d'un chiffre écrit ici", () => {
     // Sous le plancher, l'éditeur avertit ; au plancher, il déclare prêt.
-    rendre({ nbFichesDuo: 1 });
+    rendre({ bilan: { compte: { ...BILAN_COMPLET.compte, duo: 1 } } });
     expect(screen.getByText(/Pas encore prêt/)).toBeTruthy();
 
     cleanup();
-    rendre({ nbFichesDuo: 2 });
+    rendre({ bilan: { compte: { ...BILAN_COMPLET.compte, duo: 2 } } });
     expect(screen.getByText(/2 fiches épinglées au plateau/)).toBeTruthy();
   });
 
-  it("l'éditeur n'est monté qu'une fois, et son formulaire n'en contient pas d'autre", () => {
+  it("un module possédé mais vide se coche encore, en le disant", () => {
+    // Cocher n'ajoute rien tant qu'aucun quiz n'est publié — et c'est la seule
+    // impasse possible de cet écran : cocher, ne rien voir, ne pas savoir
+    // laquelle des deux moitiés manque.
+    rendre({ bilan: { compte: { ...BILAN_COMPLET.compte, quiz: 0 } } });
+
+    expect(screen.getByText(/Aucun quiz publié pour l'instant/)).toBeTruthy();
+    expect(casesJeux().find((c) => c.name === "quiz")).toBeTruthy();
+  });
+
+  it("un module NON possédé n'a pas de case, mais garde une voix", () => {
+    // `caseNative` lit un champ absent comme « décoché ». Sans le champ caché,
+    // enregistrer écrirait `false` sur le Passeport, et le jour où le commerçant
+    // l'achète sa carte ne l'annoncerait pas — sans rien lui dire.
+    const { container } = rendre({
+      bilan: { possede: { ...BILAN_COMPLET.possede, loyalty: false } },
+    });
+
+    expect(casesJeux().find((c) => c.name === "loyalty")).toBeUndefined();
+    const cache = container.querySelector<HTMLInputElement>(
+      'input[type="hidden"][name="loyalty"]',
+    );
+    expect(cache, "le module non possédé ne poste plus rien").toBeTruthy();
+    expect(cache!.value, "il vote son état RÉSOLU, pas « décoché »").not.toBe("");
+  });
+
+  it("« À la une » a rejoint cette page (VIT-32)", () => {
+    // Sa page à elle a disparu : si ses deux moitiés ne sont pas ici, elles ne
+    // sont plus nulle part, et le commerçant a perdu ses mises en avant.
+    rendre();
+
+    expect(screen.getByRole("heading", { name: "Vos mises en avant" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: /Réseaux et avis/ })).toBeTruthy();
+    expect(document.querySelector('input[name="instagram_url"]')).toBeTruthy();
+  });
+
+  it("l'éditeur des jeux n'est monté qu'une fois, et aucun formulaire n'en contient un autre", () => {
     // Deux rendus du même réglage = deux sources de vérité pour une ligne en
-    // base. Et le `<form>` de l'éditeur doit rester plat : imbriqué, il ferait
+    // base. Et les `<form>` doivent rester PLATS : imbriqués, ils feraient
     // échouer l'hydratation de tout le studio.
     const { container } = rendre();
 
-    expect(container.querySelectorAll("form")).toHaveLength(1);
     expect(container.querySelectorAll("form form")).toHaveLength(0);
-    expect(cases()).toHaveLength(2);
+    expect(casesJeux()).toHaveLength(VITRINE_JEUX.length);
   });
 });
 
-/** Les cases dans l'ordre du rendu : la Bande d'abord, puis le Duo. */
-function cases(): HTMLInputElement[] {
-  return screen.getAllByRole("checkbox") as HTMLInputElement[];
+/**
+ * Les cases DES JEUX, et elles seules.
+ *
+ * `getAllByRole("checkbox")` ne suffit plus depuis que « Réseaux et avis » vit
+ * sur cette page : il rendrait sept cases dont une n'a rien à voir avec le
+ * vocabulaire. On filtre donc par `name`, qui est exactement ce que l'action
+ * lit.
+ */
+function casesJeux(): HTMLInputElement[] {
+  const noms = new Set<string>(VITRINE_JEUX);
+  return (screen.getAllByRole("checkbox") as HTMLInputElement[]).filter((c) =>
+    noms.has(c.name),
+  );
 }

@@ -522,13 +522,20 @@ select is(
 -- LA FORME NE BOUGE PAS. `bande` est PRÉSENTE à faux, jamais absente — motif
 -- des six listes de VIT-3 et du drapeau `duo` de L17 : une clé qui apparaît et
 -- disparaît oblige l'écran à porter deux chemins pour un seul état. La liste
--- est CLOSE : une sixième clé ajoutée un jour fera rougir ici.
+-- est CLOSE : une septième clé ajoutée un jour fera rougir ici.
+--
+-- `loyalty` L'A REJOINTE EN VIT-32, ET SOUS SA PROPRE FORME : une LISTE vide, et
+-- non un booléen à faux. L'adresse du passeport (`/passeport/{id}`) porte un
+-- identifiant que rien d'autre ne publie — un drapeau aurait dit qu'il existe un
+-- passeport sans dire où. La forme, elle, ne bouge pas davantage : la clé est
+-- présente et vide, jamais absente.
 select results_eq(
   $$select key from jsonb_object_keys(
       public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences}') as key
      order by key$$,
-  $$values ('bande'), ('calendars'), ('duo'), ('pronostics'), ('quiz')$$,
-  'JEU-3 le bloc Expériences porte ses CINQ clés, `bande` comprise et à faux, et cette liste est close');
+  $$values ('bande'), ('calendars'), ('duo'), ('loyalty'), ('pronostics'),
+           ('quiz')$$,
+  'JEU-3 le bloc Expériences porte ses SIX clés, `bande` à faux et `loyalty` vide comprises, et cette liste est close');
 
 -- LE CONTRÔLE DE PORTÉE, MOITIÉ « BANDE ». Sans lui, JEU-1 serait vert le jour
 -- où cette organisation échouerait pour une tout autre raison.
@@ -583,6 +590,155 @@ select is(
 select ok(
   public.duo_jouable('d40a0000-0000-4000-8000-000000000005'),
   'JEU-9 … et on le vérifie plutôt que de le supposer : le plateau est TOUJOURS jouable, seul le droit a changé');
+
+
+-- ════════════════════════════════════════════════════════════
+-- 5 ter. LA PORTE DU PASSEPORT DE FIDÉLITÉ (VIT-32)
+--
+-- Elle n'existait PAS DU TOUT. `portes.experiences` publiait les quiz, les
+-- calendriers, les pronostics et les deux salons — et rien pour le passeport,
+-- alors que sa page publique existe depuis 20260725120000. Un client attablé
+-- n'y arrivait qu'en connaissant déjà l'adresse : le cul-de-sac que VIT-3 a
+-- défait pour Réserver, resté ouvert pour la fidélité.
+--
+-- ── DEUX GARDES, ET ELLES SONT PROUVÉES SÉPARÉMENT ──
+--
+-- Le droit `loyalty` ET `status = 'active'` — les deux refus exacts de
+-- `loadLoyaltyContext`. Les poser ensemble aurait rendu la porte ouverte d'un
+-- coup, et une garde qui aurait oublié le statut serait passée inaperçue. On
+-- pose donc le PROGRAMME d'abord, sans le droit (PASS-1 : fermée), puis le
+-- droit (PASS-2 : ouverte), puis un SECOND programme en brouillon (PASS-4 : il
+-- n'entre pas), puis on retire le droit (PASS-5 : refermée).
+--
+-- ── LES CINQ AUTRES CLÉS SONT PROUVÉES INCHANGÉES ──
+--
+-- C'est la non-régression du lot, et elle est portée par JEU-3 (la liste close
+-- des clés) et par PASS-3 : à l'instant où la porte du passeport s'ouvre, celles
+-- du Duo et de la Bande n'ont pas bougé d'un iota. Une porte qui lirait la clé
+-- d'une autre — la faute exacte que DUO-3a a réparée — serait vue ici.
+-- ════════════════════════════════════════════════════════════
+
+-- PORTE n'a PAS `addon_loyalty` (défaut `false` à l'insertion) et le miroir de
+-- §3 ne recopie `vitrine` que vers `reserver`, `duo` et `bande` : le droit
+-- `loyalty` est donc absent, à l'instant que la RPC lit. On le vérifie plutôt
+-- que de le supposer — sans quoi PASS-1 serait vert pour la mauvaise raison.
+select ok(
+  not public.org_has_module_access(
+    'd40a0000-0000-4000-8000-000000000005', 'loyalty'),
+  'PASS-0 PORTE n''a AUCUN droit `loyalty`, À L''INSTANT QUE LA RPC LIT');
+
+insert into public.loyalty_programs (id, organization_id, name, status)
+values
+  ('d40a0000-0000-4000-8000-0000000000a1',
+   'd40a0000-0000-4000-8000-000000000005', 'Carte du Comptoir', 'active');
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,loyalty}',
+  '[]'::jsonb,
+  'PASS-1 le programme est ACTIF mais le droit manque : la page n''annonce PAS le passeport — elle enverrait le client sur un `unavailable` signé du commerce');
+
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('d40a0000-0000-4000-8000-000000000005', 'loyalty', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+-- L'IDENTIFIANT ET LE NOM, ET NON UN SIMPLE COMPTE : c'est l'adresse publique
+-- `/passeport/{id}` que l'écran doit pouvoir construire. Un booléen n'aurait
+-- rien eu à peindre — le passeport, contrairement aux deux salons, n'a pas
+-- d'adresse déductible du slug.
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,loyalty}',
+  '[{"id": "d40a0000-0000-4000-8000-0000000000a1", "nom": "Carte du Comptoir"}]'::jsonb,
+  'PASS-2 le SEUL droit `loyalty` posé, la MÊME page annonce le passeport, AVEC SON IDENTIFIANT : c''était bien lui qui fermait la porte');
+
+select ok(
+  (public.vitrine_public_state('tap-produit-porte') #>> '{portes,experiences,duo}')::boolean is false
+  and (public.vitrine_public_state('tap-produit-porte') #>> '{portes,experiences,bande}')::boolean is true,
+  'PASS-3 … et les deux portes de salon n''ont pas bougé : `duo` reste fermé (son droit a été retiré en JEU-8), `bande` reste ouvert');
+
+-- LE STATUT EST L'AUTRE MOITIÉ DE LA GARDE. Un brouillon rend `unavailable`
+-- côté page publique : l'annoncer serait la même promesse rompue que sans le
+-- droit, à ceci près qu'aucun achat ne la réparerait.
+insert into public.loyalty_programs (id, organization_id, name, status)
+values
+  ('d40a0000-0000-4000-8000-0000000000a2',
+   'd40a0000-0000-4000-8000-000000000005', 'Brouillon de la rentree', 'draft'),
+  ('d40a0000-0000-4000-8000-0000000000a3',
+   'd40a0000-0000-4000-8000-000000000005', 'Ancienne carte', 'archived');
+
+select results_eq(
+  $$select jsonb_array_length(
+      public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,loyalty}')$$,
+  array[1],
+  'PASS-4 un BROUILLON et un ARCHIVÉ n''entrent pas dans la porte : seul le programme actif est annoncé, comme le veut loadLoyaltyContext');
+
+update public.organization_module_grants
+   set revoked_at = now() - interval '1 hour',
+       revoked_reason = 'témoin du test'
+ where organization_id = 'd40a0000-0000-4000-8000-000000000005'
+   and module = 'loyalty';
+
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,loyalty}',
+  '[]'::jsonb,
+  'PASS-5 le droit retiré, la porte se referme — le programme, lui, n''a pas bougé et reste actif');
+
+select ok(
+  exists (select 1 from public.loyalty_programs
+           where id = 'd40a0000-0000-4000-8000-0000000000a1'
+             and status = 'active'),
+  'PASS-6 … et on le vérifie plutôt que de le supposer : c''est bien le DROIT qui a fermé la porte, pas le programme qui aurait disparu');
+
+-- On repose le droit : JEU-3 et JEU-3b ci-dessous décrivent la FORME du
+-- document, et une clé mesurée sur une porte fermée dirait moins.
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('d40a0000-0000-4000-8000-000000000005', 'loyalty', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+
+-- ── JEU-3b : LE VOCABULAIRE DES CHOIX EST CELUI DES PORTES, MOT POUR MOT ──
+--
+-- C'est l'invariant sur lequel repose TOUT le croisement de `BlocExperiences` :
+-- l'écran y filtre `portes.experiences[cle]` par `theme.jeux[cle]`, clé par clé,
+-- sans table de traduction. Renommer `calendars` d'un seul côté ne casserait
+-- rien de visible — ça cesserait simplement de masquer ce que le commerçant a
+-- décoché, et sa carte annoncerait de nouveau le calendrier qu'il vient de
+-- retirer.
+--
+-- ELLE NE PEUT PAS VIVRE CÔTÉ TYPESCRIPT, et c'est pourquoi elle est ici :
+-- `vitrine_public_state` est PATCHÉE par `pg_get_functiondef` depuis
+-- 20261023120000, si bien que sa dernière définition en FICHIER ne porte ni
+-- `bande` ni `loyalty`. Une garde textuelle y chercherait des clés que le
+-- fichier n'a jamais eues. Ici, les deux objets VIVANTS sont interrogeables :
+-- le document rendu d'un côté, le vocabulaire installé de l'autre.
+--
+-- LA GARDE DE LA GARDE VIENT D'ABORD. `substring` rend NULL si l'ancre a
+-- disparu, ce qui donnerait deux ensembles… dont l'un vide, et `set_eq` le
+-- verrait — mais il le dirait mal. On lève donc explicitement.
+select ok(
+  (select pg_catalog.substring(
+            p.prosrc,
+            'jsonb_object_keys\(v_jeux\) k\s+where k not in \(([^)]*)\)')
+     from pg_catalog.pg_proc p
+    where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure)
+  is not null,
+  'JEU-3b0 la clause `jeux` du validateur est LISIBLE : sans cette ligne, la garde suivante comparerait un ensemble vide et passerait au vert sans rien mesurer');
+
+select set_eq(
+  $$select k from jsonb_object_keys(
+      public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences}') as k$$,
+  $$select m.mot[1]
+      from pg_catalog.regexp_matches(
+             (select pg_catalog.substring(
+                       p.prosrc,
+                       'jsonb_object_keys\(v_jeux\) k\s+where k not in \(([^)]*)\)')
+                from pg_catalog.pg_proc p
+               where p.oid = 'public.is_valid_vitrine_theme(jsonb)'::regprocedure),
+             '''([a-z_]+)''', 'g') as m(mot)$$,
+  'JEU-3b ce que le commerçant peut MASQUER est exactement ce que la page peut OUVRIR : les six mots de `theme.jeux` sont les six clés de `portes.experiences`, et le croisement de BlocExperiences n''a aucune traduction à faire');
 
 
 -- ════════════════════════════════════════════════════════════

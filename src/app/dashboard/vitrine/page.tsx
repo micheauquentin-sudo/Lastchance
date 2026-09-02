@@ -18,12 +18,12 @@ import { etapesVitrine } from "@/components/dashboard/atelier-vitrine-etapes";
 import { JeuxVitrineEditeur } from "@/components/vitrine/jeux-vitrine";
 import { resoudreThemeVitrine } from "@/components/vitrine/theme";
 import { DUO_OPTIONS_MIN_BASE } from "@/lib/duo";
-import { droitEffectifModule } from "@/lib/subscription";
 import { getUserAndOrg } from "@/lib/auth";
 import { SupprimerVitrine } from "@/components/vitrine/supprimer-vitrine";
 import { readModulePageOpenCount } from "@/lib/module-page-opens";
 import { createClient } from "@/lib/supabase/server";
 import {
+  loadBilanJeuxVitrine,
   loadVitrineDashboardContext,
   loadVitrineMesures,
 } from "@/lib/vitrine-context";
@@ -131,7 +131,7 @@ export default async function VitrineDashboardPage({
    * qui ne se répare pas. `getUserAndOrg` est mémoïsé par `cache()` sur le
    * rendu — cet appel ne coûte pas une seconde lecture.
    */
-  const { role, organization } = await getUserAndOrg();
+  const { role } = await getUserAndOrg();
   if (!capacites.canExplore) notFound();
 
   const ctx = await loadVitrineDashboardContext();
@@ -249,15 +249,16 @@ export default async function VitrineDashboardPage({
 
   /**
    * CE QUE LE COMMERÇANT POSSÈDE, pour le bilan de l'étape « Les jeux ».
-   * Deux droits distincts depuis la clé par produit (20261020120000) : un
-   * commerce peut avoir la Vitrine sans avoir aucun des deux jeux.
+   *
+   * SIX DROITS DEPUIS VIT-32, et non deux : l'étape règle désormais aussi les
+   * quiz, les calendriers, les pronostics et le passeport de fidélité. Les
+   * droits sont distincts depuis la clé par produit (20261020120000) — un
+   * commerce peut avoir la Vitrine sans aucun jeu, ou le Passeport sans quiz.
+   *
+   * LE MÊME CHARGEUR QUE LE STUDIO, et c'est le point : les deux écrans montrent
+   * le même bilan, et deux comptes recopiés auraient fini par se contredire.
    */
-  const duoPossede = organization
-    ? droitEffectifModule("duo", organization)
-    : false;
-  const bandePossede = organization
-    ? droitEffectifModule("bande", organization)
-    : false;
+  const bilanJeux = await loadBilanJeuxVitrine();
 
   const tuiles = tuilesDuModule(
     "vitrine",
@@ -579,12 +580,10 @@ export default async function VitrineDashboardPage({
                   n'existe que si la case est cochée. */}
               {etape === "jeux" ? (
                 <JeuxVitrineEditeur
-                  duoPossede={duoPossede}
-                  bandePossede={bandePossede}
-                  duoPret={plateauDuo.options.length >= DUO_OPTIONS_MIN_BASE}
-                  duoCoche={themeResolu.jeux.duo}
-                  bandeCoche={themeResolu.jeux.bande}
-                  nbFichesDuo={plateauDuo.options.length}
+                  possede={bilanJeux.possede}
+                  coche={themeResolu.jeux}
+                  compte={bilanJeux.compte}
+                  duoPret={bilanJeux.compte.duo >= DUO_OPTIONS_MIN_BASE}
                   peutEditer={capacites.canEditDraft}
                 />
               ) : null}

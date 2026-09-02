@@ -435,7 +435,7 @@ export default async function VitrinePage({
               // ── LES PORTES DES MODULES (VIT-3 / L13) ──────────────
               //
               // Les deux blocs se MASQUENT EUX-MÊMES quand leurs listes sont
-              // vides — la base rend les six listes toujours, « elle ne met pas
+              // vides — la base rend les sept listes toujours, « elle ne met pas
               // en page ». Rien n'est donc testé ici : la décision d'affichage
               // vit dans le composant, à un seul endroit, et l'ordre des blocs
               // reste une simple permutation.

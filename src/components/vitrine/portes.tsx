@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type {
+  ChoixJeuxVitrine,
   LangueVitrine,
   PortesVitrineView,
 } from "@/lib/vitrine";
@@ -34,7 +35,7 @@ import { FenetreOffre } from "@/components/vitrine/fenetre-offre";
  *
  * ── UN BLOC VIDE N'EST PAS RENDU ──
  *
- * La base rend les six listes TOUJOURS, éventuellement vides : « elle rend ce
+ * La base rend les sept listes TOUJOURS, éventuellement vides : « elle rend ce
  * qui est ouvert, elle ne met pas en page ». La décision d'affichage est donc
  * ici, et elle est simple — pas une seule porte, pas de titre, pas d'ancre. Un
  * « Réserver » suivi de rien est un commerce qui a l'air fermé.
@@ -144,13 +145,17 @@ export function BlocExperiences({
 }: {
   portes: PortesVitrineView["experiences"];
   /**
-   * CE QUE LE COMMERÇANT A COCHÉ (VIT-16), déjà résolu — jamais facultatif.
+   * CE QUE LE COMMERÇANT A COCHÉ (VIT-16, élargi VIT-32), déjà résolu — jamais
+   * facultatif.
    *
    * Il se croise avec ce que la base ouvre : un jeu coché mais dont le plateau
    * est tombé sous le plancher ne paraît pas davantage. Le choix RETIRE, il
    * n'ajoute jamais — c'est `portes` qui dit ce qui est jouable.
+   *
+   * LES SIX CLÉS SONT CELLES DE `portes.experiences`, à la lettre : le
+   * croisement se fait donc clé par clé, sans table de correspondance à tenir.
    */
-  jeux: { duo: boolean; bande: boolean };
+  jeux: ChoixJeuxVitrine;
   /**
    * Le slug du commerce — la porte du Duo Miroir mène à `/lobby/nouveau/{slug}`,
    * qui ouvre un salon (socle L16). Il vient de l'état PUBLIC (`etat.slug`), pas
@@ -163,6 +168,16 @@ export function BlocExperiences({
   const t = TEXTES_VITRINE[lang];
   const duo = duoOuvert(portes);
   const bande = bandeOuverte(portes);
+  // LES QUATRE LISTES SE CROISENT COMME LES DEUX DRAPEAUX (VIT-32) : décoché,
+  // on ne rend RIEN plutôt qu'un bloc à moitié. Le filtrage est fait ici, en
+  // une fois, parce que la condition de rendu du bloc ci-dessous doit compter
+  // les MÊMES portes que celles qu'on peint — les compter avant filtrage
+  // aurait peint un titre « Jeux » au-dessus d'une liste vide, exactement le
+  // défaut que DUO-3b a réparé.
+  const quiz = jeux.quiz ? portes.quiz : [];
+  const calendars = jeux.calendars ? portes.calendars : [];
+  const pronostics = jeux.pronostics ? portes.pronostics : [];
+  const loyalty = jeux.loyalty ? portes.loyalty : [];
   // LA CONDITION DE RENDU AVAIT SAUTÉ EN L18, ET ELLE REVIENT (DUO-3b).
   //
   // Elle existait pour ne pas peindre un bloc « Jeux » vide. L18 l'avait
@@ -181,9 +196,10 @@ export function BlocExperiences({
   const rien =
     !(bande && jeux.bande) &&
     !(duo && jeux.duo) &&
-    portes.quiz.length === 0 &&
-    portes.calendars.length === 0 &&
-    portes.pronostics.length === 0;
+    quiz.length === 0 &&
+    calendars.length === 0 &&
+    pronostics.length === 0 &&
+    loyalty.length === 0;
   if (rien) return null;
 
   return (
@@ -228,21 +244,37 @@ export function BlocExperiences({
             </span>
           </CarteLien>
         )}
-        {portes.quiz.map((q) => (
+        {quiz.map((q) => (
           <CarteLien key={q.slug} href={`/quiz/${q.slug}`} nom={q.titre} />
         ))}
-        {portes.calendars.map((calendar) => (
+        {calendars.map((calendar) => (
           <CarteLien
             key={calendar.slug}
             href={`/calendar/${calendar.slug}`}
             nom={calendar.titre}
           />
         ))}
-        {portes.pronostics.map((pronostic) => (
+        {pronostics.map((pronostic) => (
           <CarteLien
             key={pronostic.slug}
             href={`/pronos/${pronostic.slug}`}
             nom={pronostic.titre}
+          />
+        ))}
+        {/* LE PASSEPORT DE FIDÉLITÉ (VIT-32) — sa porte manquait tout court.
+            Le client n'y arrivait qu'en scannant le QR du comptoir, c'est-à-dire
+            en connaissant déjà l'adresse : le cul-de-sac que VIT-3 a défait
+            pour Réserver, resté ouvert pour la fidélité.
+
+            `id` ET NON `slug` : cette adresse porte un identifiant, pas un mot
+            choisi par le commerçant. Le nom affiché est celui du PROGRAMME,
+            comme pour les quiz — en français sur `/en` aussi, décision de
+            20261014120000 sur la couverture de traduction. */}
+        {loyalty.map((programme) => (
+          <CarteLien
+            key={programme.id}
+            href={`/passeport/${programme.id}`}
+            nom={programme.nom}
           />
         ))}
       </ul>

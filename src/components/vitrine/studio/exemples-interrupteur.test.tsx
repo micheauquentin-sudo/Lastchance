@@ -15,6 +15,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
+import type { BilanJeuxVitrine } from "@/lib/vitrine";
+
 const { VitrineStudio } = await import("@/components/vitrine/vitrine-studio");
 
 import { cartesExemple } from "@/components/vitrine/studio/exemples";
@@ -58,6 +60,26 @@ const IDENTITE = {
   horairesStructures: null,
 };
 
+
+/**
+ * LE BILAN DES JEUX, TOUT À FAUX (VIT-32).
+ *
+ * Ce que ces tests mesurent — la charge utile, l'interrupteur d'exemples — ne
+ * dépend pas de ce que le commerce possède. Un bilan vide est le cas le plus
+ * simple à lire, et le seul qui ne change pas le jour où une offre bouge.
+ */
+const BILAN_JEUX: BilanJeuxVitrine = {
+  possede: {
+    duo: false,
+    bande: false,
+    quiz: false,
+    calendars: false,
+    pronostics: false,
+    loyalty: false,
+  },
+  compte: { duo: 0, quiz: 0, calendars: 0, pronostics: 0, loyalty: 0 },
+};
+
 function rendre() {
   return render(
     <VitrineStudio
@@ -71,9 +93,7 @@ function rendre() {
         instagram_url: null,
         tiktok_url: null,
       }}
-      duoPossede={false}
-      bandePossede={false}
-      nbFichesDuo={0}
+      bilanJeux={BILAN_JEUX}
       timezone="Europe/Paris"
       peutEditer
     />,
