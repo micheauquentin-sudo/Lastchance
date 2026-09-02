@@ -20,6 +20,10 @@ import {
   type JackpotParticipationResult,
 } from "@/lib/jackpot";
 import { signJackpotCheckin, verifyJackpotCheckin } from "@/lib/jackpot-checkin";
+import {
+  ponterIdentiteJackpotCaisse,
+  reunirIdentitesJackpot,
+} from "@/lib/jackpot-identite";
 import { monitored, reportError } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
@@ -560,6 +564,32 @@ async function participateStaffInner(
       );
     }
 
+    // ── LA FUITE DU CHEMIN CAISSE, COLMATÉE (ID-8b) ──
+    //
+    // C'était le SEUL chemin d'écriture du module à ne poser aucun pont
+    // d'identité. Sans pont, `reward_player_from_legacy` rend `null` pour les
+    // gains de cette empreinte et le lot n'apparaît JAMAIS sur
+    // `/portefeuille`. On ne peut pas appeler ici
+    // `ensureProgressivePlayerIdentity` : elle lit le cookie `lc-player` de la
+    // requête, qui est celui du POSTE DE CAISSE — tous les clients servis par
+    // ce comptoir convergeraient vers la personne du caissier.
+    //
+    // APRÈS l'écriture, jamais avant : le pont ne doit pas pouvoir retarder ni
+    // faire échouer la validation d'un client au comptoir. `ponter…` avale ses
+    // propres erreurs pour la même raison. L'autorisation qui permet cet appel
+    // `service_role` est celle qui précède : session, rôle de comptoir, et
+    // campagne vérifiée appartenir à l'organisation active.
+    //
+    // Seul `recorded` déclenche : un `too_soon` ou un jeton rejeté n'a rien
+    // écrit, et n'apprend donc rien de neuf au socle.
+    if (result.state === "recorded") {
+      await ponterIdentiteJackpotCaisse({
+        organizationId: organization.id,
+        campaignId: parsed.data.campaignId,
+        tokenHash: checkin.playerTokenHash,
+      });
+    }
+
     return { ok: true, data: result };
   } catch (err) {
     reportError("jackpot.participateStaff", err);
@@ -811,13 +841,25 @@ async function participateInner(
     }
 
     if (result.state !== "unavailable") {
-      await ensureProgressivePlayerIdentity({
+      const pont = await ensureProgressivePlayerIdentity({
         organizationId: ctx.campaign.organization_id,
         experienceKind: "jackpot",
         experienceId: ctx.campaign.id,
         legacyIdentityHash: identity.tokenHash,
         acquisitionSource: "direct",
       });
+      // LE PONT VIENT D'ÊTRE POSÉ : c'est l'instant, et le seul, où la base
+      // peut apprendre que le cookie de ce navigateur et l'empreinte laissée en
+      // caisse désignent le même client (ID-8b). Au geste d'ÉCRITURE, jamais à
+      // l'affichage — et la RPC de réunion n'est appelée que si un doublon est
+      // réellement mesuré (cf. reunirIdentitesJackpot).
+      if (pont.ok) {
+        await reunirIdentitesJackpot({
+          organizationId: ctx.campaign.organization_id,
+          campaignId: ctx.campaign.id,
+          playerId: pont.playerId,
+        });
+      }
     }
 
     return { ok: true, data: result };
@@ -895,13 +937,24 @@ async function checkinTokenInner(
       campaignId: ctx.campaign.id,
       playerTokenHash: identity.tokenHash,
     });
-    await ensureProgressivePlayerIdentity({
+    const pont = await ensureProgressivePlayerIdentity({
       organizationId: ctx.campaign.organization_id,
       experienceKind: "jackpot",
       experienceId: ctx.campaign.id,
       legacyIdentityHash: identity.tokenHash,
       acquisitionSource: "direct",
     });
+    // Le QR va être présenté au comptoir, et c'est `participateJackpotStaff`
+    // qui écrira sous cette empreinte : le pont doit être posé AVANT, sinon le
+    // gain de ce passage resterait sans bénéficiaire sur `/portefeuille`. La
+    // réunion suit le pont, aux mêmes conditions que sur la participation.
+    if (pont.ok) {
+      await reunirIdentitesJackpot({
+        organizationId: ctx.campaign.organization_id,
+        campaignId: ctx.campaign.id,
+        playerId: pont.playerId,
+      });
+    }
     return { ok: true, data: { token, expiresAt } };
   } catch (err) {
     reportError("jackpot.checkinToken", err);

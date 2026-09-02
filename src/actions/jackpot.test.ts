@@ -205,6 +205,26 @@ vi.mock("next/headers", () => ({
   headers: () => Promise.resolve({}),
 }));
 
+// ID-8b — le pont d'identité du chemin caisse et la réunion des empreintes.
+// Doublés : ce fichier éprouve QUAND ils sont appelés, pas ce qu'ils écrivent
+// (couvert par jackpot-identite.test.ts).
+const { ponterIdentiteJackpotCaisseMock, reunirIdentitesJackpotMock } = vi.hoisted(
+  () => ({
+    ponterIdentiteJackpotCaisseMock:
+      vi.fn<(input: Record<string, unknown>) => Promise<void>>(() =>
+        Promise.resolve(),
+      ),
+    reunirIdentitesJackpotMock:
+      vi.fn<(input: Record<string, unknown>) => Promise<void>>(() =>
+        Promise.resolve(),
+      ),
+  }),
+);
+vi.mock("@/lib/jackpot-identite", () => ({
+  ponterIdentiteJackpotCaisse: ponterIdentiteJackpotCaisseMock,
+  reunirIdentitesJackpot: reunirIdentitesJackpotMock,
+}));
+
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => makeAdmin() }));
@@ -608,6 +628,82 @@ describe("participateJackpotStaff", () => {
 
     expect(res.ok).toBe(false);
     expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  // ── ID-8b : LA FUITE DU CHEMIN CAISSE ──
+  //
+  // Cette action était le SEUL chemin d'écriture du module à ne poser aucun
+  // pont d'identité. Sans pont, `reward_player_from_legacy` rend `null` pour
+  // les gains de cette empreinte et le lot n'apparaît JAMAIS sur
+  // `/portefeuille`, page qui promet pourtant « les lots gagnés depuis ce
+  // téléphone ». Rouge si l'appel disparaissait.
+  it("LE PONT DE LA CAISSE : l'empreinte validée est rattachée à sa personne", async () => {
+    state.participationResponse = RECORDED;
+
+    const res = await participateJackpotStaff({
+      campaignId: CAMPAIGN_ID,
+      checkinToken: validToken(),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(ponterIdentiteJackpotCaisseMock).toHaveBeenCalledTimes(1);
+    expect(ponterIdentiteJackpotCaisseMock).toHaveBeenCalledWith({
+      organizationId: "org-1",
+      campaignId: CAMPAIGN_ID,
+      // L'empreinte du JETON SIGNÉ, jamais un jeton brut : c'est la seule
+      // valeur que le QR porte, et elle n'a pas été choisie par la caisse.
+      tokenHash: PLAYER_HASH,
+    });
+  });
+
+  it("l'identité du CAISSIER n'entre jamais dans le pont du client", async () => {
+    // `ensureProgressivePlayerIdentity` lit le cookie `lc-player` de la requête
+    // — ici celui du POSTE DE CAISSE. L'appeler ferait converger vers la
+    // personne du caissier TOUS les clients servis par ce comptoir. C'est
+    // pourquoi ce chemin passe par le pont dédié, et par lui seul.
+    state.participationResponse = RECORDED;
+
+    await participateJackpotStaff({
+      campaignId: CAMPAIGN_ID,
+      checkinToken: validToken(),
+    });
+
+    expect(reunirIdentitesJackpotMock).not.toHaveBeenCalled();
+    expect(state.rpcCalls.map((c) => c.name)).not.toContain(
+      "resolve_player_identity",
+    );
+  });
+
+  it("participation NON enregistrée (too_soon) : aucun pont, rien à apprendre", async () => {
+    // Rien n'a été écrit sous cette empreinte : la poser coûterait une écriture
+    // d'identité pour un geste qui n'a pas eu lieu.
+    state.participationResponse = { ...RECORDED, state: "too_soon" };
+
+    const res = await participateJackpotStaff({
+      campaignId: CAMPAIGN_ID,
+      checkinToken: validToken(),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(ponterIdentiteJackpotCaisseMock).not.toHaveBeenCalled();
+  });
+
+  it("le pont est posé APRÈS l'écriture, jamais avant", async () => {
+    // Un défaut de comptabilité d'identité ne doit pas pouvoir retarder — ni
+    // faire échouer — la validation d'un client au comptoir.
+    state.participationResponse = RECORDED;
+    ponterIdentiteJackpotCaisseMock.mockImplementationOnce(() => {
+      expect(state.rpcCalls[0]?.name).toBe("record_jackpot_participation");
+      return Promise.resolve();
+    });
+
+    const res = await participateJackpotStaff({
+      campaignId: CAMPAIGN_ID,
+      checkinToken: validToken(),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(ponterIdentiteJackpotCaisseMock).toHaveBeenCalledTimes(1);
   });
 });
 
