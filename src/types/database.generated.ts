@@ -9155,6 +9155,10 @@ export type Database = {
         Returns: boolean
       }
       decrement_prize_stock: { Args: { p_prize_id: string }; Returns: boolean }
+      dedupe_jackpot_player_identities: {
+        Args: { p_campaign_id?: string }
+        Returns: Json
+      }
       delete_contest: {
         Args: { p_contest_id: string; p_organization_id: string }
         Returns: string
@@ -9425,6 +9429,14 @@ export type Database = {
         Args: { p_valeurs: string[]; p_vocabulaire: string[] }
         Returns: boolean
       }
+      jackpot_identity_for_player: {
+        Args: {
+          p_campaign_id: string
+          p_organization_id: string
+          p_player_id: string
+        }
+        Returns: string
+      }
       join_calendar: {
         Args: {
           p_email?: string
@@ -9490,6 +9502,15 @@ export type Database = {
       leave_player_lobby: {
         Args: { p_lobby_id: string; p_token_hash: string }
         Returns: Json
+      }
+      link_jackpot_legacy_identity: {
+        Args: {
+          p_campaign_id: string
+          p_legacy_hash: string
+          p_organization_id: string
+          p_player_id: string
+        }
+        Returns: string
       }
       lobby_state: {
         Args: { p_lobby_id: string; p_token_hash: string }
