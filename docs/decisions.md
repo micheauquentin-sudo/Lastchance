@@ -9140,3 +9140,188 @@ non. Ce ne sera pas le dernier.
 (`docs/bugs.md`) qui rend inerte la lecture de carte photographiée. Rouvrir
 cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
 servi à lui retirer : c'est un arbitrage à part, pas un effet de bord.
+
+## ADR-141 — Le patron d'adoption de l'identité partagée : trois étages, et l'ordre ne s'inverse jamais
+
+**Date** : 2026-09-02
+**Statut** : Accepté
+**Contexte** : ID-6 (calendrier, PR #314), ID-7 (pronostics, PR #315), ID-8a/b
+(jackpot, PR #317, #319). Quatre modules adoptent l'identité joueur partagée
+déjà en place pour la fidélité et Réserver ; ce lot fixe le patron commun,
+porté par `ensureProgressivePlayerIdentity` / `resolve_player_identity`
+(`src/lib/player-identity.ts`).
+
+Un joueur peut se présenter à un module de trois façons différentes selon ce
+qu'il a déjà fait ailleurs sur le même appareil : jamais vu, vu sur un autre
+module, ou déjà connu de celui-ci. Le patron résout ces trois cas dans un
+ORDRE fixe, et cet ordre est la décision.
+
+### La décision — cookie du module, puis empreinte d'appareil, puis pont d'ancienneté
+
+1. **Le cookie du module** tranche s'il est présent et valide : c'est la
+   source la plus précise, elle ne se résout qu'une fois par appareil.
+2. **L'empreinte d'appareil** (`peekPlayerDeviceTokenHash`, cookie `lc-player`)
+   sert ensuite à retrouver une identité globale déjà établie par un AUTRE
+   module sur ce même appareil.
+3. **Le pont d'ancienneté** (`player_legacy_identities`) sert en dernier
+   recours à relier une identité historique du module (créée avant l'adoption
+   du socle partagé, ou après une rotation de jeton) à l'identité globale.
+
+`resolve_player_identity` exige toujours une empreinte d'appareil non nulle ;
+le pont d'ancienneté est optionnel. Le repli ne peut qu'AJOUTER un joueur à
+l'identité globale, jamais en retirer un : chaque étage élargit la recherche,
+aucun ne la restreint.
+
+### Pourquoi l'ordre ne s'inverse pas
+
+Inverser les étages 1 et 3 — préférer le pont d'ancienneté au cookie du
+module — changerait l'identité, EN SILENCE, de tout client dont le cookie de
+module est encore valable le jour du déploiement : son pont historique
+prendrait le pas sur une session en cours, et le fusionnerait avec une
+identité qui n'est peut-être plus la sienne (appareil partagé, cookie
+transmis). C'est ce qui rend la bascule réversible : tant que l'ordre tient,
+retirer un pont d'ancienneté errané ne casse aucune session active, parce que
+le cookie du module continue de trancher en premier.
+
+Les quatre lots portent chacun un test qui NOMME ce sabotage précis —
+« l'ordre de résolution » — plutôt que de vérifier seulement le résultat final
+d'une résolution, pour qu'une inversion future rougisse même si elle produit
+par accident le même identifiant sur le jeu de données du test.
+
+**Écarté** : résoudre les trois sources en parallèle et départager par un
+critère de fraîcheur (dernière activité). Un critère de fraîcheur peut changer
+de verdict d'une requête à l'autre pour un même joueur, ce que l'ordre fixe
+interdit par construction.
+
+## ADR-142 — En caisse, le cookie d'appareil est celui du POSTE, pas du client
+
+**Date** : 2026-09-02
+**Statut** : Accepté
+**Contexte** : ID-8b (jackpot, chemin caisse, PR #319), `src/lib/jackpot-identite.ts`
+(`ponterIdentiteJackpotCaisse`).
+
+Le patron de l'ADR-141 lit `ensureProgressivePlayerIdentity`, qui prend
+l'empreinte d'appareil dans le cookie `lc-player` de la requête EN COURS. Sur
+le chemin public, cette requête est celle du navigateur du joueur : le cookie
+lui appartient. Sur le chemin caisse, la requête est celle du navigateur du
+POSTE de caisse — le cookie `lc-player` qu'elle porte, s'il en porte un, est
+celui du poste, pas celui du client servi au comptoir.
+
+### La décision — deux chemins, deux ponts, jamais le même appel
+
+Le chemin caisse ne peut pas appeler `ensureProgressivePlayerIdentity` de la
+même façon que le chemin public. L'appliquer tel quel ferait converger vers
+UNE SEULE identité globale — celle du poste — tous les clients servis à ce
+comptoir, au fil de la journée : chaque tampon de fidélité poserait un pont
+vers le même appareil, et le portefeuille d'un client afficherait les gains
+d'un autre.
+
+Le chemin caisse pose donc son propre pont, `ponterIdentiteJackpotCaisse`, à
+partir de l'identité déjà connue côté fidélité (le membre qui vient d'être
+tamponné), jamais à partir d'un cookie de navigateur.
+
+**C'est un ADR à part entière, pas une note de l'ADR-141** : le brief d'origine
+de ce chantier proposait d'appliquer le patron public tel quel au comptoir,
+erreur que l'agent en charge a corrigée avant d'écrire le code — la distinction
+n'est pas un détail d'implémentation, c'est une condition de correction du
+patron entier. Le programme de fidélité avait déjà tranché la même question
+dans le même sens, pour la même raison : son propre chemin caisse n'a jamais
+appelé le pont côté navigateur.
+
+## ADR-143 — Le jackpot dédoublait ses joueurs : la source était une clé recopiée, pas un pont d'identité
+
+**Date** : 2026-09-02
+**Statut** : Accepté
+**Contexte** : ID-8a, migration `20261130123000_jackpot_identite_joueur.sql`
+(PR #317).
+
+`attach_loyalty_stamp_to_jackpot` recopiait `loyalty_members.token_hash` TEL
+QUEL dans `jackpot_players.token_hash`. Ça fonctionnait — les deux lignes
+retrouvaient bien le même joueur — uniquement parce que fidélité et jackpot
+hachent toutes deux le jeton d'appareil avec `hashPlayerToken` (SHA-256 nu) :
+la même entrée produit la même sortie des deux côtés. Ce n'était pas un pont
+d'identité, c'était une clé recopiée qui se trouvait, par accident
+d'implémentation partagée, égale des deux côtés.
+
+Le défaut : un joueur qui change d'appareil, ou dont le jeton tourne, obtient
+un nouveau `token_hash` côté fidélité que rien ne relie plus à sa ligne
+`jackpot_players` existante — le trigger recrée un second joueur jackpot,
+dédoublant le compteur de participations et l'historique de gains.
+
+### Ce qui a été écarté, et pourquoi
+
+- **Appeler `resolve_player_identity` depuis le trigger.** Sa signature exige
+  une empreinte d'appareil (ADR-141) ; un tampon de caisse n'en a pas — c'est
+  précisément ce que l'ADR-142 vient de trancher. L'appeler aurait créé une
+  ligne `player_devices` FANTÔME par membre tamponné, un appareil qui n'existe
+  pas, pour satisfaire un paramètre obligatoire.
+- **Un hachage salé pour `jackpot_players.token_hash`.** Ça supprime la
+  collision accidentelle avec fidélité, mais ne relie rien : le dédoublement
+  resterait entier, seulement moins visible parce que l'ancien symptôme
+  (collision fortuite) disparaîtrait sans que la cause (aucun pont) soit
+  traitée.
+- **Faire échouer le tampon quand l'identité est inconnue.** Une caisse ne
+  refuse pas un client pour un défaut de comptabilité d'identité interne :
+  le geste commerçant doit réussir même si la réconciliation d'identité, elle,
+  échoue ou se fait plus tard.
+
+### La décision — un résolveur canonique, et une RPC de déduplication séparée
+
+`jackpot_identity_for_player()` devient le résolveur canonique d'identité
+jackpot ; `dedupe_jackpot_player_identities()` fusionne après coup les lignes
+que l'ancien trigger avait dédoublées, sous verrou (voir ADR-144). Le trigger
+copié n'est plus la source de vérité : il est remplacé par un appel qui pose
+un VRAI pont, capable de survivre à une rotation de jeton.
+
+## ADR-144 — La déduplication du jackpot ne tourne ni à la lecture ni à chaque écriture, et deux compteurs opposés sont assumés
+
+**Date** : 2026-09-02
+**Statut** : Accepté
+**Contexte** : ID-8a, migration `20261130123000_jackpot_identite_joueur.sql`
+(PR #317), `src/lib/jackpot-identite.ts`.
+
+`dedupe_jackpot_player_identities()` prend un verrou de ligne
+(`select … for update`) sur `jackpot_campaigns` — le MÊME verrou que
+`record_jackpot_participation` et `run_jackpot_date_draws`. Appeler cette RPC
+à chaque geste de jeu sérialiserait tout le comptoir d'une campagne sur une
+seule ligne, pour une réconciliation qui n'a besoin de tourner que rarement.
+
+### Décision 1 — Deux lectures indexées décident avant que la RPC ne verrouille
+
+L'appelant vérifie d'abord, par deux lectures indexées et sans verrou, si une
+déduplication est nécessaire pour ce joueur ; la RPC sous verrou n'est
+appelée que si ces lectures désignent un doublon réel. Le coût du verrou n'est
+payé que par les participations qui en ont effectivement besoin, pas par
+toutes.
+
+### Décision 2 — `participation_count` se RECALCULE, `last_participation_at` prend le MAXIMUM
+
+Deux compteurs voisins, deux règles opposées, délibérément :
+
+- **`participation_count`** est recompté par `count(*)` sur
+  `jackpot_participants` au moment de la fusion, jamais additionné entre les
+  deux lignes fusionnées. La purge RGPD peut avoir effacé une ligne joueur en
+  laissant ses entrées de participation orphelines ; additionner les deux
+  anciens compteurs sous-compterait dans le sens inverse, ou compterait deux
+  fois des participations déjà comptées une fois chacune.
+- **`last_participation_at`** prend le `greatest(...)` des deux valeurs, et
+  n'est jamais recalculé depuis les participations. Cette date porte le
+  cooldown entre deux jeux, pas une statistique : elle doit rester la plus
+  RÉCENTE des deux identités fusionnées, quelle que soit l'origine de cette
+  date.
+
+### Un défaut de départage trouvé par les tests, pas par la relecture
+
+Une première version départageait les deux lignes fusionnées par
+`jackpot_players.id` — mais deux lignes créées dans la MÊME transaction
+partagent leur `created_at` (`now()` est constant pour toute la transaction) :
+l'ordre retombait donc sur un UUID, aléatoire par construction. Le survivant
+d'une fusion n'était pas déterministe. Corrigé en départageant en dernier
+recours sur la chaîne de hachage stable elle-même, jamais sur un identifiant
+qui n'a pas vocation à ordonner quoi que ce soit.
+
+Un compteur de service, `jackpot.identite.deduplication`, mesure les fusions
+effectives ; il reste non nul en régime permanent quand un client dont le
+cookie ne porte pas l'empreinte survivante voit sa ligne recréée puis
+réabsorbée à chaque participation — résiduel connu, rien n'est perdu, voir
+`docs/roadmap.md`.

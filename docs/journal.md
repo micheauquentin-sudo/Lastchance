@@ -4,6 +4,14 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-01 — Le studio devient l'écran central de la Vitrine
+
+**Le studio devient l'écran central de la Vitrine** (VIT-19 à VIT-27 — PR #294→#312, ADR-136 à 140). Le studio prend tout — **logo**, **bannière**, mots, carte, à la une, jeux — en quatre pages, aperçu au centre, allure à droite. Ce qui **paraît** se coche, **horaires compris** : masquer, c'est omettre d'`ordre_blocs` (VIT-3), pas de second drapeau.
+  **🔴 Deux pertes silencieuses fermées AVANT de construire** (VIT-19) : `composerTheme` reconstruisait le thème depuis le seul formulaire, donc le studio effaçait `ordre_blocs` — **retirant le bloc « Jeux » de la vitrine publique** — et les deux écrans effaçaient `theme.jeux`, faisant **revenir un jeu décoché**. Le thème FUSIONNE désormais ; quatre témoins s'ajoutent à `allure_rendue`.
+  **Le formulaire de réglages est VIDE** et voisin de la mise en page (attribut `form`) — c'est ce qui laisse logo, bannière et carte porter leurs propres `<form>` sans imbrication, le défaut qui tue l'hydratation. Et **aucun contrôle visible ne porte de `name`** : changer de page aurait sinon effacé la précédente.
+  **Deux défauts trouvés par les agents, dans mes fichiers** : l'aperçu montrait les cartes **désactivées** — pleines chez le commerçant, vides chez le client (VIT-26) ; une garde CSP **comparait la liste à elle-même**, donc ne voyait pas `/vitrine-studio` hors de `SENSITIVE_PREFIXES` (VIT-25).
+  **Reste ouvert (au 2026-09-01)** : `'wasm-unsafe-eval'` bloquait la lecture de carte photographiée — **corrigé le lendemain**, VIT-29, PR #318 ; l'émetteur Google Wallet. **Les trois produits Stripe sont créés et leurs prix posés en Production** (vérifié le 2026-09-02, migrations comprises).
+
 ## 2026-09-01 — La Vitrine devient un atelier, et les deux salons deviennent vendables seuls
 
 **La Vitrine devient un atelier, et les deux salons deviennent vendables seuls** (VIT-14 à VIT-18, DUO-1 à DUO-3b — PR #281→#290, migrations `20261123120000` à `20261127120000`, ADR-128 à 135). L'écran Vitrine empilait neuf cartes repliables : il devient un **atelier par étape**, avec le **QR devant le statut** — seul module où il passe premier. Elle se **supprime** aussi (RPC, propriétaire seul).

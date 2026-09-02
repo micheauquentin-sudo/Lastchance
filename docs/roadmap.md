@@ -1,5 +1,59 @@
 # Roadmap — Lastchance
 
+## V1.74 — L'identité joueur partagée, pour de vrai (✅ 2026-09-02, PR #314, #315, #317, #319)
+
+**Objectif** : clore le reliquat déclaré dans cette roadmap — « Jackpot,
+calendrier et pronostics n'ont pas adopté l'identité joueur partagée ». Le
+socle existait déjà pour la fidélité et Réserver ; ce lot l'étend aux quatre
+modules restants, et corrige au passage un jackpot qui dédoublait ses joueurs
+depuis l'origine.
+
+- **ID-6/PR #314 — Le calendrier adopte l'identité partagée.** Pont posé au
+  « rejoindre » **et** à l'ouverture d'une case (`open_calendar_box`) : ce
+  second chemin crée aussi un joueur, et n'avait jamais eu de pont
+  (`docs/bugs.md`).
+- **ID-7/PR #315 — Les pronostics l'adoptent.** Corrige au passage une
+  désynchronisation du pont après rotation d'empreinte par lien magique —
+  causée par une même variable, `tokenHash`, qui désignait deux empreintes
+  différentes selon l'endroit du fichier (`docs/bugs.md`).
+- **ID-8a/PR #317 — Le jackpot cesse de dédoubler ses joueurs**
+  (migration `20261130123000`, ADR-143, ADR-144). La source du dédoublement :
+  `attach_loyalty_stamp_to_jackpot` recopiait `loyalty_members.token_hash`
+  comme `jackpot_players.token_hash` — une clé recopiée, pas un pont
+  d'identité, qui ne fonctionnait que par accident de hachage partagé.
+  Remplacé par un résolveur canonique et une RPC de déduplication sous
+  verrou de campagne.
+- **ID-8b/PR #319 — Le jackpot adopte l'identité partagée côté caisse**
+  (ADR-142). Le chemin caisse ne peut pas réutiliser le patron public
+  (ADR-141) : son cookie d'appareil est celui du POSTE, pas du client, et
+  l'appliquer tel quel aurait fait converger tous les clients d'un même
+  comptoir vers une seule identité.
+
+**Décisions** : [ADR-141 à ADR-144](./decisions.md).
+
+**Reste ouvert** :
+- **Résiduel jackpot** : un client dont le cookie ne porte pas l'empreinte
+  survivante d'une fusion voit sa ligne recréée puis réabsorbée à chaque
+  participation. Rien n'est perdu ; mesuré par le compteur de service
+  `jackpot.identite.deduplication`.
+- **`nicknameSchema` (pronostics) borne à 30**, là où le socle partagé borne à
+  24 et applique `player_alias_is_allowed` en base : les pronostics acceptent
+  des pseudos que le socle refuserait ailleurs, y compris des codets
+  bidirectionnels. Décision produit à prendre avant toute réconciliation de
+  noms entre modules.
+- **Le socle ne tranche pas quel nom gagne entre deux modules** —
+  `player_aliases` est tenu par adhésion d'expérience, pas par pseudo unique :
+  un même client peut s'appeler autrement d'un module à l'autre.
+- **Le sélecteur de figures des pronostics reste une copie**
+  (`AvatarPicker` local à `contest-experience.tsx`), distinct du composant
+  partagé `src/components/ui/avatar-picker.tsx` qu'événements et fidélité
+  utilisent déjà.
+- Trois compteurs de repli (`calendar.repli_identite_globale`,
+  `pronostics.repli_identite_globale`, `jackpot.joueur.repli_identite_globale`)
+  et deux compteurs jackpot (`jackpot.identite.deduplication`,
+  `jackpot.identite.pont_caisse`) existent en code — voir
+  `docs/observability.md`.
+
 ## V1.73 — Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#312)
 
 **Objectif** : demande du propriétaire — « studio est super et c'est ce que je
@@ -75,10 +129,11 @@ laisse voir ce qu'on règle.
   seules, elles auraient été un module que rien n'appelle, c'est-à-dire une
   capacité qu'on croit avoir. Ce dépôt a déjà payé cette erreur trois fois —
   canal SMS, méta-progression, module Parrainage.
-- **🔴 La lecture de carte photographiée reste bloquée par la CSP**
-  (`'wasm-unsafe-eval'`, retiré par MORT-2). VIT-25 n'y touche pas : rouvrir
-  cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a
-  servi à lui retirer. Voir `docs/bugs.md`.
+- ~~La lecture de carte photographiée reste bloquée par la CSP~~ — **livré le
+  2026-09-02** (VIT-29, PR #318). `'wasm-unsafe-eval'` n'a pas été rouvert sur
+  `sensitive` : la permission tient sur la seule réponse des fichiers `/ocr/`
+  (`buildOcrWorkerCsp`, `next.config.ts`), pas sur le régime de la page qui les
+  charge. Voir `docs/bugs.md`.
 - ~~Geste propriétaire, Stripe — trois produits à créer~~ — **fait le
   2026-09-02**. « Réservation » 20 €/mois, « Duo Miroir » et « Portrait de la
   Bande » 12 €/mois. Vérifié : les trois prix sont posés en Production
@@ -89,7 +144,12 @@ laisse voir ce qu'on règle.
   elle, le premier achat aurait levé « invalid entitlement » et rendu 500.
 - **Geste propriétaire, Google Wallet** : compte émetteur, clé de service, et
   l'autorisation « éditeur » en Wallet Console.
-- `duo_choose` ne valide pas encore une place saisie (ADR-134).
+- ~~`duo_choose` ne valide pas encore une place saisie~~ — **livré** (DUO-4,
+  PR #293, migration `20261128120000` ; DUO-5, PR #296, branchement de
+  l'écran). `duo_choose_option(p_lobby_id, p_token_hash, p_option_id)` porte
+  l'implémentation ; `duo_choose(p_item_id)` reste comme porte de compatibilité
+  pour la fenêtre de déploiement. **Non documenté ici jusqu'à ce jour** — les
+  deux PR n'avaient laissé aucune trace dans cette roadmap.
 - Le socle Moments vérifie toujours `vitrine`, pas `rendez_vous` (ADR-122).
 
 
@@ -171,19 +231,23 @@ qui a rendu visibles trois défauts que l'inclusion dans les offres masquait.
   quoi ils ne seraient pas encore lus. La migration `20261124120000`, qui fait
   entrer `rendez_vous` dans le vocabulaire du webhook, est appliquée : sans
   elle, le premier achat aurait levé « invalid entitlement » et rendu 500.
-- **Geste propriétaire, Google Wallet** : compte émetteur, clé de compte de
-  service, et l'autorisation « éditeur » dans la Wallet Console (voir V1.71).
-- **`duo_choose` n'accepte pas encore `option_id`** : une place saisie est
-  affichée mais pas choisissable, et `CarteOption` la rend inerte. La
-  réparation est une RPC qui valide par la place ; c'est un lot base.
-- **L'écriture du plateau saisi n'est pas atomique** : `delete` puis `insert`,
-  deux allers. Une panne entre les deux laisse le plateau vide — porte
-  publique fermée, pas de corruption — et l'écran nomme le geste de reprise.
+- **Geste propriétaire, Google Wallet** : le code est prêt
+  (`src/lib/google-wallet.ts`, JWT RS256, no-op sans variables) — reste le
+  compte émetteur, la clé de compte de service, et l'autorisation « éditeur »
+  dans la Wallet Console (voir V1.71). Jamais tourné contre le vrai Google.
+- ~~`duo_choose` n'accepte pas encore `option_id`~~ — **livré** (DUO-4, PR #293 ;
+  DUO-5, PR #296). Voir plus haut.
+- ~~L'écriture du plateau saisi n'est pas atomique~~ — **livrée** (DUO-4,
+  PR #293) : `set_duo_plateau` écrit les deux origines d'un bloc, en une seule
+  transaction `security definer`.
 - Le socle Moments vérifie encore `vitrine`, pas `rendez_vous` (ADR-122).
-- Jackpot, calendrier et pronostics n'ont pas adopté l'identité joueur
-  partagée ; le sélecteur de figures des pronostics reste une copie.
-- Le clone WSL `~/workspaces/lastchance` est périmé et son historique
-  incohérent. À réparer.
+- ~~Jackpot, calendrier et pronostics n'ont pas adopté l'identité joueur
+  partagée~~ — **livré, voir V1.74**. Le sélecteur de figures des pronostics
+  reste une copie (`AvatarPicker` dans `contest-experience.tsx`, distinct du
+  composant partagé `src/components/ui/avatar-picker.tsx` qu'événements et
+  fidélité utilisent).
+- ~~Le clone WSL `~/workspaces/lastchance` est périmé et son historique
+  incohérent~~ — **réparé**.
 
 
 ## V1.71 — Programme de fidélité : la refonte en seize points (✅ 2026-09-01, PR #269→#272, #274, #275, #279)
