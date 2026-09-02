@@ -1,6 +1,6 @@
 # Roadmap — Lastchance
 
-## V1.73 — Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#305)
+## V1.73 — Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#312)
 
 **Objectif** : demande du propriétaire — « studio est super et c'est ce que je
 cherche depuis le début, il doit devenir l'élément central afin de tout pouvoir
@@ -34,20 +34,20 @@ laisse voir ce qu'on règle.
   propres `<form>` sans imbrication. Aucun contrôle visible ne porte de `name` :
   la charge est rendue en entier depuis un état unique, sinon changer de page
   aurait effacé ce qu'on avait réglé sur la précédente.
-- **VIT-21/PR #300 — À la une, les réseaux et « Évaluez-nous »** : les trois
+- **VIT-21/PR #310 — À la une, les réseaux et « Évaluez-nous »** : les trois
   liens se saisissaient dans les réglages généraux du commerce, et **rien ne
   disait s'ils devaient figurer**. La case manquait, pas seulement le champ.
-- **VIT-22/PR #298 — Les deux jeux à cocher** : le bilan de l'offre et les deux
+- **VIT-22/PR #309 — Les deux jeux à cocher** : le bilan de l'offre et les deux
   cases, montés dans le studio. `setVitrineJeux` écrivant AUSSI `ordre_blocs`,
   une course s'ouvrait avec l'état client du studio — fermée par un
   rechargement, actif dans le studio seulement.
-- **VIT-23/PR #302 — La carte complète dans le studio** : l'éditeur et l'import,
+- **VIT-23/PR #311 — La carte complète dans le studio** : l'éditeur et l'import,
   montés tels quels après vérification qu'ils se replient sans largeur plancher.
-- **VIT-24/PR #301 — Des cartes d'exemple par métier** : les sept secteurs, pour
+- **VIT-24 + VIT-28/PR #312 — Des cartes d'exemple par métier** : les sept secteurs, pour
   juger une densité ou un style sur du contenu plutôt que sur une page blanche.
   Jamais enregistrées. `photo_path` à `null` partout — inventer un chemin de
   Storage aurait donné des images cassées.
-- **VIT-26/PR #304 — L'aperçu cesse de mentir** (ADR-138) : il montrait les
+- **VIT-26/PR #312 — L'aperçu cesse de mentir** (ADR-138) : il montrait les
   cartes DÉSACTIVÉES, pleines chez le commerçant et vides chez son client.
   Signalé par le lot voisin. Ni l'aperçu ni `CatalogueVitrine` n'avaient tort —
   c'est le raccord qui mentait.
@@ -70,9 +70,11 @@ laisse voir ce qu'on règle.
 **Décisions** : [ADR-136 à ADR-140](./decisions.md).
 
 **Reste ouvert** :
-- **L'interrupteur « voir avec des exemples » n'est pas câblé.** Les données des
-  sept métiers sont livrées et gardées (VIT-24) ; le brancher demande de toucher
-  l'aperçu, que trois lots modifiaient encore.
+- ~~L'interrupteur « voir avec des exemples » n'est pas câblé~~ — **livré**
+  (VIT-28, PR #312). Il est parti AVEC les données plutôt qu'après : livrées
+  seules, elles auraient été un module que rien n'appelle, c'est-à-dire une
+  capacité qu'on croit avoir. Ce dépôt a déjà payé cette erreur trois fois —
+  canal SMS, méta-progression, module Parrainage.
 - **🔴 La lecture de carte photographiée reste bloquée par la CSP**
   (`'wasm-unsafe-eval'`, retiré par MORT-2). VIT-25 n'y touche pas : rouvrir
   cette permission sur `sensitive` rendrait au back-office ce qu'un lot entier a

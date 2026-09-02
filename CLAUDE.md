@@ -153,11 +153,11 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-09-01
-- **Dernier chantier**: **Le studio devient l'écran central de la Vitrine** (VIT-19 à VIT-27 — PR #294→#305, ADR-136 à 140). Le studio prend tout — **logo**, **bannière**, mots, carte, à la une, jeux — en quatre pages, aperçu au centre, allure à droite. Ce qui **paraît** se coche, **horaires compris** : masquer, c'est omettre d'`ordre_blocs` (VIT-3), pas de second drapeau.
+- **Dernier chantier**: **Le studio devient l'écran central de la Vitrine** (VIT-19 à VIT-27 — PR #294→#312, ADR-136 à 140). Le studio prend tout — **logo**, **bannière**, mots, carte, à la une, jeux — en quatre pages, aperçu au centre, allure à droite. Ce qui **paraît** se coche, **horaires compris** : masquer, c'est omettre d'`ordre_blocs` (VIT-3), pas de second drapeau.
   **🔴 Deux pertes silencieuses fermées AVANT de construire** (VIT-19) : `composerTheme` reconstruisait le thème depuis le seul formulaire, donc le studio effaçait `ordre_blocs` — **retirant le bloc « Jeux » de la vitrine publique** — et les deux écrans effaçaient `theme.jeux`, faisant **revenir un jeu décoché**. Le thème FUSIONNE désormais ; quatre témoins s'ajoutent à `allure_rendue`.
   **Le formulaire de réglages est VIDE** et voisin de la mise en page (attribut `form`) — c'est ce qui laisse logo, bannière et carte porter leurs propres `<form>` sans imbrication, le défaut qui tue l'hydratation. Et **aucun contrôle visible ne porte de `name`** : changer de page aurait sinon effacé la précédente.
   **Deux défauts trouvés par les agents, dans mes fichiers** : l'aperçu montrait les cartes **désactivées** — pleines chez le commerçant, vides chez le client (VIT-26) ; une garde CSP **comparait la liste à elle-même**, donc ne voyait pas `/vitrine-studio` hors de `SENSITIVE_PREFIXES` (VIT-25).
-  **Reste ouvert** : l'interrupteur « exemples » non câblé (données livrées) ; `'wasm-unsafe-eval'` bloque la lecture de carte photographiée ; **Stripe — trois produits à créer** et l'émetteur Google Wallet.
+  **Reste ouvert** : `'wasm-unsafe-eval'` bloque la lecture de carte photographiée ; **Stripe — trois produits à créer** et l'émetteur Google Wallet.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
