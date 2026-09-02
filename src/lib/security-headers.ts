@@ -244,3 +244,66 @@ export function buildCspReportOnlyPolicy(): string | undefined {
   if (!reportEndpoint()) return undefined;
   return buildContentSecurityPolicy({ surface: "public", reportOnly: true });
 }
+
+/**
+ * LA POLITIQUE DU FIL DE RECONNAISSANCE DE TEXTE — `/ocr/` et rien d'autre.
+ *
+ * ── LE DÉFAUT QU'ELLE FERME, ET IL ÉTAIT LIVRÉ ──
+ *
+ * `'wasm-unsafe-eval'` a été retiré de l'app par MORT-2 : il n'avait qu'une
+ * raison d'être, le décodeur d'une mascotte 3D supprimée, et une permission
+ * dont le motif est parti ne se voit nulle part. Le retrait était juste.
+ *
+ * VIT-18 a ensuite livré la lecture de carte photographiée — du WebAssembly,
+ * dans le navigateur. Rien n'a rougi : ni le typecheck, ni les tests, qui ne
+ * lisent pas une CSP. La fonctionnalité était donc en production et INERTE,
+ * chez tous les commerçants, sans message et sans trace.
+ *
+ * ── POURQUOI CETTE POLITIQUE ET NON UN RETOUR EN ARRIÈRE ──
+ *
+ * Rouvrir `'wasm-unsafe-eval'` dans `buildContentSecurityPolicy` l'aurait rendu
+ * aux TROIS régimes, dont `sensitive` — le back-office, l'administration et les
+ * pages d'authentification. C'est-à-dire défaire un lot entier de durcissement
+ * pour un besoin qui tient dans un seul fichier.
+ *
+ * La permission est donc portée par la RÉPONSE des fichiers `/ocr/`, et par
+ * elle seule. Un fil d'exécution tire sa politique de la réponse de son propre
+ * script : celui de la reconnaissance peut compiler du WebAssembly, la page qui
+ * l'a lancé ne le peut toujours pas. Pour en abuser, il faudrait déjà contrôler
+ * nos propres fichiers statiques — auquel cas la CSP n'est plus la question.
+ *
+ * ── CE QUI DOIT ÊTRE VRAI EN MÊME TEMPS, SOUS PEINE D'INUTILITÉ ──
+ *
+ * 1. `import-ocr.ts` doit poser `workerBlobURL: false`. Par défaut,
+ *    `tesseract.js` fabrique son fil depuis une URL `blob:` — qui HÉRITE de la
+ *    politique de la page, et rendrait cet en-tête sans effet.
+ * 2. `/ocr` doit rester HORS du matcher du proxy, sinon deux en-têtes
+ *    coexisteraient : le navigateur les INTERSECTE, et la plus stricte
+ *    l'emporterait — donc celle-ci ne servirait à rien.
+ *
+ * Les deux sont gardées, chacune dans son fichier : une seule des trois pièces
+ * qui manque et la lecture d'image redevient silencieusement inerte.
+ *
+ * ── LA POLITIQUE EST MINIMALE ──
+ *
+ * Ce fil ne rend rien, ne charge aucune image, n'a ni page ni cadre : il
+ * importe deux scripts de notre domaine, lit deux fichiers du même domaine, et
+ * compile le moteur. Tout le reste est refusé — y compris `connect-src` vers
+ * Supabase, PostHog ou Sentry, qui n'ont rien à y faire.
+ */
+export function buildOcrWorkerCsp(): string {
+  return [
+    `default-src 'none'`,
+    // `'self'` couvre `importScripts` du cœur ; `'wasm-unsafe-eval'` autorise
+    // la COMPILATION du module, jamais l'évaluation de JavaScript arbitraire —
+    // `'unsafe-eval'` serait bien plus large et n'est pas nécessaire.
+    `script-src 'self' 'wasm-unsafe-eval'`,
+    // Le dictionnaire et le binaire du moteur, tous deux sous `/ocr/`.
+    `connect-src 'self'`,
+    `object-src 'none'`,
+    `base-uri 'none'`,
+    // Un fil n'est pas encadrable, mais un fichier `.js` reste une réponse que
+    // l'on peut tenter de servir dans un cadre.
+    `frame-ancestors 'none'`,
+  ].join("; ");
+}

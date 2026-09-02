@@ -118,6 +118,23 @@ export async function texteDepuisImage(
       workerPath: "/ocr/worker.min.js",
       corePath: "/ocr/tesseract-core-lstm.js",
       langPath: "/ocr",
+      // ── SANS CETTE LIGNE, RIEN NE FONCTIONNE (VIT-29) ──
+      //
+      // Par défaut, `tesseract.js` fabrique son fil d'exécution depuis une URL
+      // `blob:` qui se contente d'importer le script ci-dessus. Or un fil né
+      // d'un `blob:` HÉRITE de la politique de sécurité de la page qui l'a
+      // créé — et le tableau de bord n'autorise pas `'wasm-unsafe-eval'`.
+      //
+      // À `false`, le fil naît directement de `/ocr/worker.min.js`, une URL de
+      // notre domaine : il tire alors sa politique de la RÉPONSE de ce
+      // fichier, que `next.config.ts` sert avec la permission nécessaire
+      // (`buildOcrWorkerCsp`). La page, elle, ne la reçoit toujours pas.
+      //
+      // C'est le geste qui permet de n'ouvrir qu'un fichier au lieu de tout le
+      // back-office. Le remettre à `true` ne casserait rien de visible : le
+      // moteur échouerait simplement à démarrer, et l'écran afficherait son
+      // refus poli — d'où la garde dans `import-ocr.test.ts`.
+      workerBlobURL: false,
       // Le dictionnaire est servi NON compressé : `public/` ne compresse pas,
       // et laisser la bibliothèque chercher un `.gz` produirait un 404 muet
       // suivi d'un repli sur le CDN — exactement ce qu'on veut éviter.
