@@ -18,6 +18,7 @@ import { PageCarteStudio } from "@/components/vitrine/studio/page-carte";
 import { PageALaUneStudio } from "@/components/vitrine/studio/page-alaune";
 import { PageJeuxStudio } from "@/components/vitrine/studio/page-jeux";
 import { PanneauAllure } from "@/components/vitrine/studio/panneau-allure";
+import { cartesExemple } from "@/components/vitrine/studio/exemples";
 import {
   PAGES_STUDIO,
   parsePageStudio,
@@ -115,6 +116,7 @@ export function VitrineStudio({
   peutEditer: boolean;
 }) {
   const [page, setPage] = useState<PageStudio>(() => parsePageStudio(null));
+  const [exemples, setExemples] = useState(false);
   const [etat, setEtat] = useState<EtatStudio>(() =>
     etatInitialStudio(themeInitial, {
       secteur: identiteInitiale.secteur,
@@ -171,6 +173,35 @@ export function VitrineStudio({
           </div>
         </div>
 
+        {/* L'INTERRUPTEUR D'EXEMPLES (VIT-28) — dans le BANDEAU, pas dans une
+            page.
+
+            Il ne dépend d'aucune page : on veut juger une densité en réglant
+            l'allure, un style de fiche en composant sa carte, une couleur en
+            choisissant ses jeux. Le poser dans « La carte » aurait obligé à
+            quitter ce qu'on règle pour aller allumer de quoi le regarder.
+
+            IL N'ENTRE PAS DANS `EtatStudio`, et c'est délibéré : cet état-là
+            est ce qui PART au serveur (`ChampsCachesStudio` le sérialise en
+            entier). Une préférence d'affichage n'a rien à y faire — l'y mettre
+            aurait été le premier pas vers un réglage de confort enregistré
+            sans que personne l'ait demandé. */}
+        <div className="flex flex-wrap items-center gap-3 px-4 pb-2 sm:px-6">
+          <label className="flex items-center gap-2 text-xs font-black text-k-ink">
+            <input
+              type="checkbox"
+              checked={exemples}
+              onChange={(e) => setExemples(e.target.checked)}
+              className="size-4 shrink-0 accent-k-orange-text"
+            />
+            Voir avec des exemples
+          </label>
+          <span className="text-xs text-zinc-500">
+            Remplit l&apos;aperçu de fiches de votre métier, le temps de juger un
+            style. Jamais enregistrées.
+          </span>
+        </div>
+
         {/* LE FIL DES PAGES — des BOUTONS, pas des liens. Changer de page ne
             doit pas naviguer : l'état vit en mémoire, et une navigation le
             perdrait avec tout ce que le commerçant est en train d'essayer. */}
@@ -201,7 +232,28 @@ export function VitrineStudio({
           droit fait défiler l'aperçu hors de l'écran : on règle alors ce qu'on
           ne voit plus. Motif de `poster-editor`. */}
       <div className="flex flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
-        <aside className="w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full lg:w-[340px]">
+        {/* LA COLONNE DE GAUCHE S'ÉLARGIT POUR LA CARTE, ET SEULEMENT POUR
+            ELLE (VIT-26).
+
+            Les trois autres pages tiennent dans 340 px : ce sont des champs et
+            des cases, à un seul niveau. L'éditeur de carte, lui, est imbriqué
+            sur trois rangs — carte, rubrique, fiche — et chaque rang mange sa
+            marge : le formulaire d'une fiche dépliée finissait à ~195 px, ce
+            qui reste utilisable mais se saisit mal.
+
+            ÉCARTÉ : élargir partout. La largeur perdue est prise à l'APERÇU,
+            qui est la raison d'être de cet écran ; la payer sur les trois
+            pages qui n'en ont pas besoin aurait été un mauvais échange.
+
+            ÉCARTÉ AUSSI : passer cette page à deux colonnes en masquant
+            l'allure. Régler une densité ou une taille de photo se fait EN
+            REGARDANT une vraie carte — c'est précisément sur cette page que la
+            colonne de droite sert le plus. */}
+        <aside
+          className={`w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full ${
+            page === "carte" ? "lg:w-[440px]" : "lg:w-[340px]"
+          }`}
+        >
           {page === "identite" ? (
             <PageIdentiteStudio
               etat={etat}
@@ -250,9 +302,10 @@ export function VitrineStudio({
           logoUrl={identiteInitiale.logoUrl}
           coverPath={identiteInitiale.coverPath}
           coverAlt={identiteInitiale.coverAlt}
-          cartes={cartes}
+          cartes={exemples ? cartesExemple(etat.secteur) : cartes}
           liens={liens}
           slug={slug}
+          exemples={exemples}
         />
 
         <PanneauAllure

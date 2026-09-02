@@ -120,7 +120,7 @@ export default async function PronosPage({
     });
   }
   const [{ player, predictions }, board, sortie] = await Promise.all([
-    loadContestPlayerState(admin, contest.id),
+    loadContestPlayerState(admin, contest),
     loadContestLeaderboard(admin, contest.id, PUBLIC_LEADERBOARD_SIZE),
     // Vitrine publiée + liens de l'organisation, pour le bas de page. Elle
     // rejoint la salve plutôt que de l'attendre : elle ne dépend que du

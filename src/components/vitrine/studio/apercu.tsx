@@ -50,6 +50,7 @@ export function ApercuStudio({
   cartes,
   liens,
   slug,
+  exemples = false,
 }: {
   etat: EtatStudio;
   /** Le thème en base, pour les clés qu'aucun contrôle du studio ne règle. */
@@ -61,6 +62,16 @@ export function ApercuStudio({
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
   slug: string;
+  /**
+   * Les cartes reçues sont-elles des EXEMPLES (VIT-28) ?
+   *
+   * Ce drapeau ne CHOISIT rien — c'est la coquille qui décide quelles cartes
+   * passer. Il ne sert qu'à le DIRE à l'écran, et c'est indispensable : un
+   * aperçu rempli de plats qu'on n'a pas écrits se lit comme une vitrine déjà
+   * publiée. Le bandeau est la différence entre une démonstration et un
+   * malentendu.
+   */
+  exemples?: boolean;
 }) {
   const theme = resoudreThemeVitrine(themeDeLEtat(etat, themeBase), etat.secteur);
   const allure = theme.allure;
@@ -70,12 +81,58 @@ export function ApercuStudio({
   // ne sert à rien.
   const visible = (bloc: string) => theme.blocs.includes(bloc as never);
 
+  /**
+   * SEULES LES CARTES ACTIVES, ET C'EST UN DÉFAUT CORRIGÉ (VIT-26).
+   *
+   * `VitrineCarteView.active` porte son propre avertissement : « toujours
+   * `true` dans l'état PUBLIC — la RPC n'en rend pas d'autres ». L'état du
+   * TABLEAU DE BORD, lui, rend tout, y compris ce que le commerçant a
+   * décoché : c'est ce qu'il faut pour l'éditer.
+   *
+   * L'aperçu recevait donc les deux, et `CatalogueVitrine` — écrit pour la
+   * page publique — faisait confiance à ce qu'on lui donnait. Une carte
+   * désactivée mais pleine s'affichait donc PLEINE au commerçant et VIDE chez
+   * son client.
+   *
+   * C'est la pire forme de mensonge pour un aperçu : il ne se trompe pas au
+   * hasard, il se trompe exactement là où le commerçant vient vérifier. Et
+   * rien ne le signalait — le composant public n'a aucune raison de filtrer ce
+   * que sa source lui garantit déjà.
+   *
+   * Le filtre vit ICI, et non dans `CatalogueVitrine` : ce dernier doit rester
+   * le composant que sert la page publique, sans branche « et si on
+   * m'appelait depuis un éditeur ». C'est l'appelant qui doit fournir ce que
+   * la page publique recevrait.
+   *
+   * `disponible` sur une FICHE ne se filtre pas, lui : la RPC publique la rend
+   * quand même et l'écran la grise. Le traiter comme `active` la ferait
+   * disparaître de l'aperçu alors qu'elle paraît en ligne — le même défaut,
+   * dans l'autre sens.
+   */
+  const cartesPubliees = cartes.filter((c) => c.active);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
       <p className="text-xs font-semibold text-zinc-500">
         Aperçu — la page que vos clients ouvriront. Rien n&apos;est enregistré
         tant que vous n&apos;avez pas cliqué sur Enregistrer.
       </p>
+
+      {/* LE BANDEAU D'EXEMPLE EST DANS L'APERÇU, PAS À CÔTÉ (VIT-28).
+          Posé au-dessus du cadre, il aurait pu être pris pour une note de
+          l'écran ; posé DEDANS, il dit sans ambiguïté que ce qu'on lit
+          en dessous n'est pas la carte du commerçant. C'est ce qui sépare une
+          démonstration d'un malentendu — un aperçu rempli de plats qu'on n'a
+          pas écrits se lit sinon comme une vitrine déjà publiée. */}
+      {exemples ? (
+        <p
+          role="status"
+          className="w-full max-w-[480px] shrink-0 rounded-xl border-2 border-dashed border-k-ink/40 bg-k-yellow/40 px-3 py-2 text-xs font-black text-k-ink"
+        >
+          Exemples — ces fiches ne sont pas les vôtres et ne seront jamais
+          enregistrées. Elles servent à juger un style sur du contenu.
+        </p>
+      ) : null}
       <div
         style={variablesThemeVitrine(theme)}
         className="w-full max-w-[480px] shrink-0 overflow-hidden rounded-2xl border-2 border-k-ink bg-[var(--vitrine-secondary)] font-[family-name:var(--vitrine-texte)] text-[var(--vitrine-sur-secondary)] shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
@@ -94,7 +151,7 @@ export function ApercuStudio({
         />
         <div className="px-3">
           <CatalogueVitrine
-            cartes={visible("cartes") ? cartes : []}
+            cartes={visible("cartes") ? cartesPubliees : []}
             styleCartes={theme.styleCartes}
             lang="fr"
             secteur={etat.secteur}
