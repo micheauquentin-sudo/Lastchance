@@ -798,45 +798,113 @@ export interface ThemeVitrine {
 }
 
 /**
- * QUELS JEUX PARAISSENT SUR LA CARTE (VIT-16).
+ * CE QUI PARAÎT SUR LA CARTE (VIT-16, élargi VIT-32).
  *
  * ── POURQUOI CE N'EST PAS `ordre_blocs` ──
  *
  * `ordre_blocs` porte UN mot, `experiences` : il dit si le bloc des jeux
- * existe, pas lequel des deux y figure. Le commerçant qui veut le Duo Miroir
- * sans le Portrait de la Bande n'avait aucun moyen de le dire — le bloc les
- * montrait tous les deux, ou aucun.
+ * existe, pas ce qui y figure. Le commerçant qui veut le Duo Miroir sans le
+ * Portrait de la Bande n'avait aucun moyen de le dire — le bloc les montrait
+ * tous les deux, ou aucun.
  *
- * ── L'ABSENCE VAUT « LES DEUX », ET C'EST LA COMPATIBILITÉ ──
+ * ── DE DEUX MOTS À SIX, ET LES QUATRE AJOUTÉS SONT DES MANQUES ──
  *
- * Une vitrine qui a déjà `experiences` dans son ordre affiche AUJOURD'HUI les
- * deux jeux. Faire valoir `false` à une clé absente les aurait retirés de
- * toutes les pages publiées, en silence — le même piège que le vocabulaire de
- * secteur, et la même réponse : ce qui n'a pas été décidé garde le
- * comportement d'hier. Seul un `false` ÉCRIT masque un jeu.
+ * VIT-16 n'a couvert que les deux salons, parce qu'eux seuls partageaient une
+ * ligne du bloc sans pouvoir en sortir. Les quiz, calendriers, pronostics et —
+ * depuis VIT-32 — le passeport de fidélité y figuraient D'OFFICE : dès que la
+ * base ouvrait la porte, la carte l'annonçait. Un commerçant qui réserve son
+ * quiz à sa newsletter n'avait rien à dire.
  *
- * ── DEUX BOOLÉENS, PAS UNE LISTE ──
+ * ── L'ABSENCE VAUT « AFFICHÉ », ET C'EST LA COMPATIBILITÉ ──
+ *
+ * Une vitrine qui a déjà `experiences` dans son ordre affiche AUJOURD'HUI tout
+ * ce que la base lui ouvre. Faire valoir `false` à une clé absente l'aurait
+ * retiré de toutes les pages publiées, en silence — le même piège que le
+ * vocabulaire de secteur, et la même réponse : ce qui n'a pas été décidé garde
+ * le comportement d'hier. Seul un `false` ÉCRIT masque quelque chose. L'enjeu
+ * grandit avec le vocabulaire : à deux clés on perdait deux salons, à six on
+ * perdrait aussi les quiz, les calendriers et les pronostics.
+ *
+ * ── DES BOOLÉENS, PAS UNE LISTE ──
  *
  * Une liste `["duo"]` aurait rendu l'absence ambiguë : liste vide ou clé
- * manquante ? Deux booléens facultatifs disent exactement trois états par jeu
- * — voulu, refusé, pas encore décidé — et le troisième est celui qui compte.
+ * manquante ? Des booléens facultatifs disent exactement trois états par
+ * élément — voulu, refusé, pas encore décidé — et le troisième est celui qui
+ * compte.
  */
 export interface JeuxVitrine {
   duo?: boolean;
   bande?: boolean;
+  quiz?: boolean;
+  calendars?: boolean;
+  pronostics?: boolean;
+  loyalty?: boolean;
 }
 
-/** Les deux jeux qu'une vitrine peut porter. Miroir du `check` SQL. */
-export const VITRINE_JEUX = ["duo", "bande"] as const;
+/**
+ * Ce qu'une vitrine peut choisir d'afficher. Miroir du `check` SQL.
+ *
+ * LES MOTS SONT CEUX DE `portes.experiences`, À LA LETTRE — pluriels compris.
+ * L'écran croise les deux documents clé par clé (`BlocExperiences`) ; une table
+ * de traduction entre le mot du choix et le mot de la porte aurait été un
+ * troisième endroit où se tromper, et le seul qu'aucune garde ne lit.
+ *
+ * `reserver` n'y est PAS, et c'est un arbitrage : ce n'est pas un jeu, et il a
+ * déjà son réglage — sa présence dans `ordre_blocs`. Deux façons de dire la
+ * même chose, c'est la première à partir qui écrase l'autre.
+ */
+export const VITRINE_JEUX = [
+  "duo",
+  "bande",
+  "quiz",
+  "calendars",
+  "pronostics",
+  "loyalty",
+] as const;
 export type JeuVitrine = (typeof VITRINE_JEUX)[number];
 
 const JEUX_LIBELLES: Record<JeuVitrine, string> = {
   duo: "Duo Miroir",
   bande: "Portrait de la Bande",
+  quiz: "Quiz",
+  calendars: "Calendrier",
+  pronostics: "Pronostics",
+  loyalty: "Passeport de fidélité",
 };
 
 export function libelleJeuVitrine(jeu: JeuVitrine): string {
   return JEUX_LIBELLES[jeu];
+}
+
+/**
+ * Un booléen par élément affichable — TOUS présents, jamais facultatifs.
+ *
+ * C'est ce que « résolu » veut dire : `JeuxVitrine` décrit le document STOCKÉ,
+ * où l'absence porte du sens (ADR-129) ; celui-ci décrit ce que l'écran lit,
+ * une fois cette absence tranchée. Deux types plutôt qu'un parce que confondre
+ * les deux est exactement la faute qui retire ses jeux à une vitrine publiée.
+ *
+ * Dérivé de `VITRINE_JEUX` : un septième mot ajouté au vocabulaire fait rougir
+ * tout ce qui construit un de ces objets tant qu'il n'y est pas résolu.
+ */
+export type ChoixJeuxVitrine = Record<JeuVitrine, boolean>;
+
+/**
+ * CE QUE LE COMMERÇANT POSSÈDE ET CE QU'IL A DÉJÀ PRÉPARÉ (VIT-32).
+ *
+ * Les deux moitiés du bilan que l'éditeur affiche avant ses cases, et elles ne
+ * disent pas la même chose : `possede` est le DROIT (pas de droit, pas de case,
+ * une phrase à la place) ; `compte` est ce qui est PRÊT (zéro n'interdit pas de
+ * cocher, il explique pourquoi cocher ne montrera rien).
+ *
+ * `bande` est absente de `compte`, et ce n'est pas un oubli : son pack a un
+ * défaut et ses questions vivent dans le code, il n'existe aucun état « pas
+ * prêt » à refléter (DUO-3a). L'`Exclude` le dit au compilateur plutôt qu'à un
+ * commentaire qu'on ne lit pas.
+ */
+export interface BilanJeuxVitrine {
+  possede: ChoixJeuxVitrine;
+  compte: Record<Exclude<JeuVitrine, "bande">, number>;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -1541,7 +1609,7 @@ export interface PorteQuizVitrineView {
 }
 
 /**
- * L'annuaire complet. LES SIX LISTES EXISTENT TOUJOURS, éventuellement vides —
+ * L'annuaire complet. LES SEPT LISTES EXISTENT TOUJOURS, éventuellement vides —
  * exactement comme en SQL : distinguer « pas de file » de « pas de clé » aurait
  * fait porter deux chemins à l'écran pour un seul état. C'est l'écran qui masque
  * un bloc vide, pas ce mappeur.
@@ -1568,6 +1636,25 @@ export interface PortesVitrineView {
      * deux fiches épinglées, la même condition qui laisse la manche démarrer.
      */
     duo: boolean;
+    /**
+     * Les passeports de fidélité ACTIFS (VIT-32) — une liste, pas un drapeau.
+     *
+     * ── POURQUOI ELLE N'A PAS LA FORME DE `duo` ──
+     *
+     * L'adresse des deux salons SE DÉDUIT : un seul par commerce, à
+     * `/lobby/nouveau/{slug}`, et le slug est déjà dans ce document. Le
+     * passeport vit à `/passeport/{id}` — un identifiant qui n'apparaît nulle
+     * part ailleurs dans l'état public. Un booléen aurait annoncé qu'il existe
+     * un passeport sans dire OÙ, et l'écran n'aurait eu aucun lien à peindre.
+     *
+     * ── ET POURQUOI ELLE N'A PAS NON PLUS LA FORME DES QUIZ ──
+     *
+     * `{id, nom}` et non `{slug, titre}` : les trois autres familles portent une
+     * adresse publique CHOISIE par le commerçant. Le passeport porte un UUID.
+     * L'appeler `slug` aurait été un mensonge de vocabulaire, et `PorteVitrineView`
+     * décrit déjà exactement cette forme pour les trois portes de Réserver.
+     */
+    loyalty: PorteVitrineView[];
     /**
      * Portrait de la Bande est-il JOUABLE ici (DUO-3b) — même forme que `duo`.
      *
@@ -1607,7 +1694,7 @@ export type VitrinePublicState =
       liens: VitrineLiensView;
       /**
        * Les UN À TROIS contenus mis en avant, ordonnés par `rang`. TOUJOURS
-       * présente, éventuellement vide — même règle que les six listes de
+       * présente, éventuellement vide — même règle que les sept listes de
        * `portes` : c'est l'écran qui masque un bloc vide, pas ce mappeur.
        */
       contenus: ContenuVitrineView[];
@@ -2004,7 +2091,7 @@ export function mapVitrineCartes(raw: unknown): VitrineCarteView[] {
  *
  * Une liste absente ou illisible vaut la liste VIDE : `asArray` rend `[]` pour
  * tout ce qui n'est pas un tableau, et une clé manquante prend le même chemin
- * qu'une clé vide. C'est ce qui garantit que les six listes existent toujours,
+ * qu'une clé vide. C'est ce qui garantit que les sept listes existent toujours,
  * même si la base cessait un jour de le promettre.
  */
 function mapListePortes<T>(
@@ -2063,7 +2150,7 @@ function mapPorteQuiz(raw: unknown): PorteQuizVitrineView | null {
 /**
  * Lecture de la clé `portes` de `vitrine_public_state`.
  *
- * Rend TOUJOURS les six listes, y compris sur `undefined` — un document écrit
+ * Rend TOUJOURS les sept listes, y compris sur `undefined` — un document écrit
  * avant VIT-3 n'a pas cette clé, et l'écran ne doit pas avoir à distinguer
  * « vitrine d'avant les portes » de « commerce sans porte ouverte ».
  */
@@ -2081,6 +2168,12 @@ export function mapPortesVitrine(raw: unknown): PortesVitrineView {
       quiz: mapListePortes(experiences?.quiz, mapPorteQuiz),
       calendars: mapListePortes(experiences?.calendars, mapPorteQuiz),
       pronostics: mapListePortes(experiences?.pronostics, mapPorteQuiz),
+      // LE PASSEPORT (VIT-32) — `mapPorteSimple`, comme les portes de Réserver :
+      // sa clé est un identifiant d'URL, pas une adresse choisie. Une liste
+      // absente vaut la liste vide, exactement comme les cinq autres, et un
+      // document servi depuis un cache d'avant cette migration n'annonce donc
+      // rien plutôt que d'annoncer un lien qu'il ne sait pas construire.
+      loyalty: mapListePortes(experiences?.loyalty, mapPorteSimple),
       // REPLI FERMÉ : tout ce qui n'est pas exactement `true` vaut « pas de
       // jeu ici ». Un document ancien (d'avant L17) n'a pas la clé, et la
       // porte ne doit pas s'ouvrir sur une absence.

@@ -514,7 +514,7 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
     expect(etat.portes.reserver.activites).toEqual([{ id: "a1", nom: "Table" }]);
   });
 
-  it("un document d'AVANT les portes en rend six listes vides", () => {
+  it("un document d'AVANT les portes en rend sept listes vides", () => {
     // Une vitrine servie par une version d'avant VIT-3 n'a pas la clé `portes`.
     // L'écran ne doit pas avoir à distinguer ce cas de « aucune porte ouverte »,
     // sans quoi il porterait deux chemins pour un seul affichage.
@@ -532,10 +532,13 @@ describe("mapVitrinePublicState — tout ce qui n'est pas « ok » est muet", ()
       // DUO-3b : le repli les rend FALSE tous les deux, et c'est le seul sens
       // acceptable — une porte qui s'ouvrirait sur une clé manquante
       // promettrait un jeu que le commerce n'a pas, ou n'a pas configuré.
+      // `loyalty` est une LISTE (VIT-32) : son absence vaut la liste vide, comme
+      // les cinq autres, donc aucune porte de passeport à peindre.
       experiences: {
         quiz: [],
         calendars: [],
         pronostics: [],
+        loyalty: [],
         duo: false,
         bande: false,
       },
@@ -721,13 +724,14 @@ describe("mapPortesVitrine — l'annuaire, et ce qu'il refuse d'inventer", () =>
     ]);
   });
 
-  it("les six listes existent TOUJOURS, même sur un document vide", () => {
+  it("les sept listes existent TOUJOURS, même sur un document vide", () => {
     const vide = {
       reserver: { activites: [], files: [], offres: [] },
       experiences: {
         quiz: [],
         calendars: [],
         pronostics: [],
+        loyalty: [],
         duo: false,
         bande: false,
       },

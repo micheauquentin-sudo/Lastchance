@@ -4,10 +4,12 @@ import {
   VITRINE_ALLURE_BOOLEENS_DEFAUTS,
   VITRINE_ALLURE_BORNES,
   VITRINE_ALLURE_ENUMS,
+  VITRINE_JEUX,
   VITRINE_PRESETS_SECTEUR,
   VITRINE_SECTEURS,
   asSecteurVitrine,
   mapThemeVitrine,
+  type JeuVitrine,
 } from "@/lib/vitrine";
 import { resoudreThemeVitrine, variablesThemeVitrine } from "./theme";
 import { textesVitrine, TEXTES_VITRINE } from "./langue";
@@ -239,27 +241,45 @@ describe("le vocabulaire public suit le métier", () => {
   });
 });
 
-describe("les jeux sur la carte : l'absence vaut « les deux » (VIT-16)", () => {
-  it("un thème sans choix affiche les deux jeux", () => {
-    // C'EST TOUTE LA COMPATIBILITÉ DU LOT. Une vitrine publiée avant VIT-16
-    // n'a pas de clé `jeux` : faire valoir `false` à l'absence aurait retiré
-    // Duo Miroir et Portrait de la Bande de toutes les pages en ligne, en
-    // silence — le piège exact du vocabulaire de secteur.
-    expect(resoudreThemeVitrine(null).jeux).toEqual({ duo: true, bande: true });
-    expect(resoudreThemeVitrine({}).jeux).toEqual({ duo: true, bande: true });
+describe("les jeux sur la carte : l'absence vaut « affiché » (VIT-16, VIT-32)", () => {
+  /** Le vocabulaire ENTIER à `true` : ce que l'absence doit rendre. */
+  const tout = (patch: Partial<Record<JeuVitrine, boolean>> = {}) =>
+    Object.fromEntries(
+      VITRINE_JEUX.map((cle) => [cle, patch[cle] ?? true]),
+    ) as Record<JeuVitrine, boolean>;
+
+  it("un thème sans choix affiche TOUT ce que la base ouvre", () => {
+    // C'EST TOUTE LA COMPATIBILITÉ DES DEUX LOTS. Une vitrine publiée avant
+    // VIT-16 n'a pas de clé `jeux`, une publiée avant VIT-32 n'en a que deux :
+    // faire valoir `false` à l'absence aurait retiré les salons de toutes les
+    // pages en ligne au premier lot, et leurs quiz, calendriers, pronostics et
+    // passeports au second — en silence. Le piège exact du vocabulaire de
+    // secteur, et sa gravité a été multipliée par trois.
+    expect(resoudreThemeVitrine(null).jeux).toEqual(tout());
+    expect(resoudreThemeVitrine({}).jeux).toEqual(tout());
+    // LE CAS QUI COMPTE VRAIMENT DEPUIS VIT-32 : un thème écrit par VIT-16, avec
+    // ses deux seules clés. Les quatre nouvelles doivent y valoir « affiché ».
+    expect(
+      resoudreThemeVitrine({ jeux: { duo: true, bande: true } }).jeux,
+    ).toEqual(tout());
   });
 
   it("un seul jeu décoché ne masque que celui-là", () => {
-    expect(resoudreThemeVitrine({ jeux: { duo: false } }).jeux).toEqual({
-      duo: false,
-      bande: true,
-    });
+    expect(resoudreThemeVitrine({ jeux: { duo: false } }).jeux).toEqual(
+      tout({ duo: false }),
+    );
+    // Et cela vaut pour les quatre mots que VIT-32 ajoute, pas seulement pour
+    // les deux salons.
+    expect(resoudreThemeVitrine({ jeux: { loyalty: false } }).jeux).toEqual(
+      tout({ loyalty: false }),
+    );
   });
 
-  it("les deux décochés se lisent bien comme deux refus", () => {
-    expect(
-      resoudreThemeVitrine({ jeux: { duo: false, bande: false } }).jeux,
-    ).toEqual({ duo: false, bande: false });
+  it("tout décoché se lit bien comme autant de refus", () => {
+    const rien = Object.fromEntries(
+      VITRINE_JEUX.map((cle) => [cle, false]),
+    ) as Record<JeuVitrine, boolean>;
+    expect(resoudreThemeVitrine({ jeux: rien }).jeux).toEqual(rien);
   });
 
   it("une clé inconnue ou non booléenne est écartée, et le défaut reprend", () => {

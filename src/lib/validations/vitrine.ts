@@ -30,7 +30,9 @@ import {
   VITRINE_CARTE_NOM_MAX,
   VITRINE_CRENEAUX_PAR_JOUR_MAX,
   VITRINE_HEURE_PATTERN,
+  VITRINE_JEUX,
   VITRINE_JOURS,
+  type JeuVitrine,
   type JourVitrine,
   VITRINE_CONTENU_RANG_MAX,
   VITRINE_CONTENU_RANG_MIN,
@@ -409,17 +411,25 @@ const champsAllure = {
 };
 
 /**
- * LES DEUX CASES DES JEUX (VIT-16).
+ * LES CASES DE CE QUI PARAÎT SUR LA CARTE (VIT-16, élargi VIT-32).
  *
  * `caseNative` : une case décochée ne s envoie pas, et l écran les rend
- * TOUJOURS les deux — c est la condition de cette lecture, la même que celle
- * écrite au-dessus de `caseNative`. Ici le formulaire ne porte que ces deux
- * champs : il ne peut donc pas être rendu à moitié.
+ * TOUJOURS toutes — c est la condition de cette lecture, la même que celle
+ * écrite au-dessus de `caseNative`. Le formulaire ne porte QUE ces champs : il
+ * ne peut donc pas être rendu à moitié.
+ *
+ * ── DÉRIVÉ DE `VITRINE_JEUX`, JAMAIS RECOPIÉ ──
+ *
+ * Six mots énumérés à la main ici, c est un septième oublié le jour où le
+ * vocabulaire grandit : la case serait rendue, cochée, postée — et
+ * silencieusement ignorée par un schéma qui ne la connaît pas. C est le motif
+ * de `champsAllure` juste au-dessus, et il vaut ici pour la même raison.
  */
-export const setVitrineJeuxSchema = z.object({
-  duo: caseNative,
-  bande: caseNative,
-});
+export const setVitrineJeuxSchema = z.object(
+  Object.fromEntries(VITRINE_JEUX.map((cle) => [cle, caseNative])) as {
+    [K in JeuVitrine]: typeof caseNative;
+  },
+);
 
 /**
  * LES HORAIRES STRUCTURÉS (VIT-31), postés en UN champ JSON.

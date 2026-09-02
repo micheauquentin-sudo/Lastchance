@@ -15,7 +15,6 @@ import {
 } from "@/components/vitrine/studio/etat";
 import { PageIdentiteStudio } from "@/components/vitrine/studio/page-identite";
 import { PageCarteStudio } from "@/components/vitrine/studio/page-carte";
-import { PageALaUneStudio } from "@/components/vitrine/studio/page-alaune";
 import { PageJeuxStudio } from "@/components/vitrine/studio/page-jeux";
 import { PanneauAllure } from "@/components/vitrine/studio/panneau-allure";
 import { cartesExemple } from "@/components/vitrine/studio/exemples";
@@ -26,6 +25,7 @@ import {
 } from "@/components/vitrine/studio/pages";
 import type {
   AllureVitrine,
+  BilanJeuxVitrine,
   SecteurVitrine,
   ThemeVitrine,
   VitrineCarteView,
@@ -89,9 +89,7 @@ export function VitrineStudio({
   liens,
   contenus,
   timezone,
-  duoPossede,
-  bandePossede,
-  nbFichesDuo,
+  bilanJeux,
   peutEditer,
 }: {
   slug: string;
@@ -113,11 +111,16 @@ export function VitrineStudio({
   cartes: VitrineCarteView[];
   liens: VitrineLiensView;
   contenus: ContenuVitrineView[];
-  /** Le droit du JEU, pas celui de la vitrine — clé par produit (20261020120000). */
-  duoPossede: boolean;
-  bandePossede: boolean;
-  /** Le COMPTE, pas le plateau : il décide du « prêt / pas prêt » du bilan. */
-  nbFichesDuo: number;
+  /**
+   * LES DROITS PAR MODULE ET LES COMPTES DU BILAN (VIT-32).
+   *
+   * Six droits, pas deux : la page « Ce qui paraît sur ma carte » règle
+   * désormais les quiz, les calendriers, les pronostics et le passeport en plus
+   * des deux salons. Les passer un par un aurait fait six props et six comptes
+   * à tenir d accord avec le vocabulaire — la faute que ce dépôt paie chaque
+   * fois qu une liste se recopie.
+   */
+  bilanJeux: BilanJeuxVitrine;
   peutEditer: boolean;
 }) {
   const [page, setPage] = useState<PageStudio>(() => parsePageStudio(null));
@@ -354,25 +357,20 @@ export function VitrineStudio({
               peutEditer={peutEditer}
             />
           ) : null}
-          {page === "alaune" ? (
-            <PageALaUneStudio
+          {/* « À la une » n'a plus de page à elle (VIT-32) : ses deux moitiés
+              sont montées par celle-ci, qui règle tout ce qui PARAÎT. */}
+          {page === "jeux" ? (
+            <PageJeuxStudio
+              jeuxVisibles={etat.blocs.includes("experiences")}
+              bilanJeux={bilanJeux}
+              themeInitial={themeInitial}
+              secteur={etat.secteur}
               contenus={contenus}
               liens={liens}
               socialVisible={etat.blocs.includes("social")}
               onSocialVisible={(v) =>
                 majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
               }
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {page === "jeux" ? (
-            <PageJeuxStudio
-              jeuxVisibles={etat.blocs.includes("experiences")}
-              duoPossede={duoPossede}
-              bandePossede={bandePossede}
-              nbFichesDuo={nbFichesDuo}
-              themeInitial={themeInitial}
-              secteur={etat.secteur}
               peutEditer={peutEditer}
             />
           ) : null}

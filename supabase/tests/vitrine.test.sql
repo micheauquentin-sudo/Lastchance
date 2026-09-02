@@ -307,6 +307,49 @@ select throws_ok(
   '23514', null,
   'le vocabulaire reste FERMÉ après son élargissement : un huitième bloc inventé est refusé par la contrainte');
 
+-- ── `jeux` : CE QUI PARAÎT SUR LA CARTE (VIT-16, élargi VIT-32) ──
+--
+-- Le vocabulaire est passé de DEUX mots à SIX. Ces assertions tiennent les deux
+-- bouts, et aucune ne suffit seule :
+--
+--  · Les six ensemble PASSENT. Restée à deux, la clause refuserait ce thème-là
+--    en 23514 — une erreur de BASE, rendue au commerçant sur un formulaire
+--    correctement rempli, et qui emporterait au passage les vingt-cinq réglages
+--    d'allure valides du même document.
+--  · Un septième mot est REFUSÉ. Sans cette moitié, ouvrir la clause à tout et
+--    n'importe quoi serait vert à la première : une faute de frappe deviendrait
+--    une clé stockée que personne ne lit et que rien ne signale.
+--  · Une valeur NON BOOLÉENNE est refusée. `mapJeuxVitrine` l'écarterait côté
+--    application, mais la base ne doit pas la stocker : trois états par jeu —
+--    voulu, refusé, pas encore décidé — n'en font pas quatre.
+--
+-- L'ABSENCE N'EST PAS TESTÉE ICI, et ce n'est pas un oubli : elle est
+-- PARFAITEMENT valide en base (« pas encore décidé »), et c'est côté application
+-- qu'elle prend son sens — `resoudreThemeVitrine` la rend « affiché », ce que
+-- garde `allure.test.ts`. Le `check` n'a rien à en dire.
+select ok(public.is_valid_vitrine_theme(
+  '{"jeux":{"duo":true,"bande":false,"quiz":true,
+            "calendars":false,"pronostics":true,"loyalty":false}}'::jsonb),
+  'les SIX choix de VIT-32 sont acceptés ensemble : le vocabulaire a bien grandi de deux à six');
+
+select ok(public.is_valid_vitrine_theme('{"jeux":{}}'::jsonb),
+  'un objet `jeux` VIDE est accepté : « rien de décidé » est un état légitime, et c''est celui de toutes les vitrines publiées avant ce lot');
+
+select throws_ok(
+  $$update public.vitrine_settings
+       set theme = '{"jeux":{"reserver":true}}'::jsonb
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  '23514', null,
+  'le vocabulaire de `jeux` reste FERMÉ après son élargissement : `reserver` n''en fait pas partie — il a déjà son réglage dans `ordre_blocs`, et deux façons de dire la même chose, c''est la première à partir qui écrase l''autre');
+
+select throws_ok(
+  $$update public.vitrine_settings
+       set theme = '{"jeux":{"duo":"oui"}}'::jsonb
+     where organization_id = 'f1000000-0000-4000-8000-00000000000a'$$,
+  '23514', null,
+  'une valeur non booléenne dans `jeux` est refusée : le miroir applicatif lirait autre chose qu''un choix');
+
+
 
 -- ══ 3. LE CATALOGUE, ET SES VOCABULAIRES FERMÉS ═════════════
 --
@@ -2250,6 +2293,13 @@ select results_eq(
 -- Portrait de la Bande, à des adresses déductibles du slug de la vitrine.
 -- « Oui » ou « non » est tout ce qu'il y a à dire.
 --
+-- `loyalty` EST UNE LISTE, ET C'EST CE QUI TRANCHE LA DISSYMÉTRIE (VIT-32) : le
+-- critère n'est PAS le nombre de choses, c'est l'ADRESSE. Le passeport vit à
+-- `/passeport/{id}`, un identifiant que rien d'autre ne publie — un drapeau
+-- aurait dit qu'il en existe un sans dire où, et l'écran n'aurait eu aucun lien
+-- à peindre. Rien ne borne d'ailleurs `loyalty_programs` à une ligne par
+-- commerce : un drapeau aurait obligé la RPC à en ÉLIRE un, sans règle.
+--
 -- `bande` N'EST ARRIVÉE QU'EN DUO-3a, et c'est le défaut que ce lot répare :
 -- la clé n'existait pas, donc aucune garde ne s'appliquait, donc la page
 -- annonçait le jeu à qui n'avait pas l'option. Le COMPORTEMENT des deux
@@ -2259,8 +2309,8 @@ select results_eq(
   $$select key from pg_catalog.jsonb_each(
       public.vitrine_public_state('tap-portes') #> '{portes,experiences}')
      order by key$$,
-  array['bande', 'calendars', 'duo', 'pronostics', 'quiz'],
-  'le bloc Expériences porte ses listes quiz, calendrier, pronostics et ses DEUX drapeaux de jeu (duo, bande), et cette liste de clés est close');
+  array['bande', 'calendars', 'duo', 'loyalty', 'pronostics', 'quiz'],
+  'le bloc Expériences porte ses QUATRE listes (quiz, calendrier, pronostics, passeport) et ses DEUX drapeaux de jeu (duo, bande), et cette liste de clés est close');
 
 -- G n'a aucune fiche Duo épinglée : la porte est FAUSSE, et surtout elle est
 -- PRÉSENTE. Une clé absente aurait obligé l'écran à distinguer « pas de jeu » de

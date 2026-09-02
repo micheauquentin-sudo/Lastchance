@@ -739,11 +739,13 @@ describe("parité Vitrine — les bornes des `check`", () => {
     }
   });
 
-  it("les deux jeux de la carte sont les mêmes des deux côtés", () => {
-    // VIT-16. La liste est courte, et c'est précisément pourquoi elle mérite
-    // une garde : deux mots se recopient sans y penser, et un troisième jeu
-    // ajouté côté TypeScript ferait refuser le thème ENTIER par la base — sur
-    // une 23514 que personne ne relierait à une case à cocher.
+  it("ce qui paraît sur la carte est le même vocabulaire des deux côtés", () => {
+    // VIT-16, élargi VIT-32. La liste était courte, et c'est précisément
+    // pourquoi elle méritait une garde : deux mots se recopient sans y penser,
+    // et un jeu ajouté côté TypeScript ferait refuser le thème ENTIER par la
+    // base — sur une 23514 que personne ne relierait à une case à cocher. Elle
+    // en porte six, et la garde compte pour trois raisons de plus : les quatre
+    // nouveaux mots sont ceux de `portes.experiences`, pluriels compris.
     const sql = motsQuotes(
       fragment(
         "select 1 from jsonb_object_keys(v_jeux) k",
@@ -751,9 +753,25 @@ describe("parité Vitrine — les bornes des `check`", () => {
         SOURCE_THEME,
       ),
     );
-    expect(sql.length).toBe(2);
+    expect(sql.length).toBe(6);
     expect([...sql].sort()).toEqual([...VITRINE_JEUX].sort());
   });
+
+  // LA SECONDE MOITIÉ DE CETTE PARITÉ N'EST PAS ICI, ET C'EST DÉLIBÉRÉ.
+  //
+  // Ces six mots doivent AUSSI être les clés de `portes.experiences` : c'est
+  // l'invariant sur lequel repose tout le croisement de `BlocExperiences`, qui
+  // filtre `portes.experiences[cle]` par `jeux[cle]`, sans table de traduction.
+  // Renommer `calendars` d'un seul côté ne ferait rougir aucune garde de ce
+  // fichier et cesserait simplement de masquer ce que le commerçant décoche.
+  //
+  // Elle ne peut pas se lire ICI : `vitrine_public_state` est PATCHÉE par
+  // `pg_get_functiondef` depuis 20261023120000, si bien que sa dernière
+  // définition en FICHIER ne porte ni `bande` ni `loyalty` — une garde textuelle
+  // y chercherait des clés que le fichier n'a jamais eues. Elle vit donc en
+  // pgTAP (`droits_par_produit.test.sql`, JEU-3b), où les deux objets VIVANTS
+  // sont interrogeables : le document rendu d'un côté, le vocabulaire installé
+  // de l'autre.
 
   it("les sept secteurs sont les mêmes des deux côtés", () => {
     const sql = motsQuotes(
