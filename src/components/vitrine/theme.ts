@@ -11,6 +11,7 @@ import {
   VITRINE_ALLURE_ENUMS,
   VITRINE_BLOCS_DEFAUT,
   VITRINE_JEUX,
+  VITRINE_JEUX_DEFAUTS,
   VITRINE_PRESETS_SECTEUR,
   VITRINE_SECTEUR_DEFAUT,
   VITRINE_STYLES_CARTES,
@@ -289,10 +290,11 @@ export function resoudreThemeVitrine(
     blocs,
     secteur,
     allure: resoudreAllure(theme?.allure),
-    // `?? true` ET NON `=== true` : c'est toute la compatibilité de VIT-16, et
-    // elle vaut d'autant plus depuis VIT-32. Une clé absente signifie « pas
-    // encore décidé », et ce qui n'a pas été décidé garde le comportement
-    // d'hier — tout ce que la base ouvre est affiché.
+    // UNE CLÉ ABSENTE VAUT « LE COMPORTEMENT D'HIER », ET PAS « AFFICHÉ ».
+    // La nuance a coûté une porte ouverte sans consentement (VIT-33) : pour
+    // les cinq jeux qui existaient déjà, hier valait « peint » ; pour le
+    // passeport, arrivé avec VIT-32, hier valait « absent ». Le défaut se lit
+    // donc dans `VITRINE_JEUX_DEFAUTS`, clé par clé.
     //
     // BOUCLÉ SUR LE VOCABULAIRE, jamais énuméré à la main : un septième mot
     // ajouté à `VITRINE_JEUX` est résolu ici sans qu'on y revienne, là où six
@@ -304,7 +306,11 @@ export function resoudreThemeVitrine(
 
 function resoudreJeux(jeux: ThemeVitrine["jeux"]): ChoixJeuxVitrine {
   const sortie = {} as ChoixJeuxVitrine;
-  for (const cle of VITRINE_JEUX) sortie[cle] = jeux?.[cle] ?? true;
+  // LE DÉFAUT VIENT DE LA TABLE, il n'est plus « vrai » pour tout le monde :
+  // une porte NEUVE n'a pas de comportement d'hier à conserver. Voir
+  // `VITRINE_JEUX_DEFAUTS` pour ce que l'asymétrie a coûté.
+  for (const cle of VITRINE_JEUX)
+    sortie[cle] = jeux?.[cle] ?? VITRINE_JEUX_DEFAUTS[cle];
   return sortie;
 }
 
