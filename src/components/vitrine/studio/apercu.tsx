@@ -84,12 +84,6 @@ export function ApercuStudio({
   // ne sert à rien.
   const visible = (bloc: string) => theme.blocs.includes(bloc as never);
 
-  // REÇU ET PAS ENCORE CONSOMMÉ : le fuseau descend jusqu'ici pour que le lot
-  // des écrans n'ait qu'à brancher « Ouvert · ferme à 23h » sans retoucher la
-  // coquille. Le poser maintenant évite que deux lots se disputent le même
-  // fichier — c'est ce qui les rend parallélisables.
-  void timezone;
-
   /**
    * SEULES LES CARTES ACTIVES, ET C'EST UN DÉFAUT CORRIGÉ (VIT-26).
    *
@@ -119,6 +113,12 @@ export function ApercuStudio({
    * dans l'autre sens.
    */
   const cartesPubliees = cartes.filter((c) => c.active);
+
+  // LE FUSEAU EST ENFIN CONSOMMÉ (VIT-31c) : l'aperçu calcule sa pastille comme
+  // la page publique, avec le fuseau du COMMERCE et non celui du commerçant —
+  // un patron en déplacement doit voir l'heure de sa boutique. Tant que rien
+  // n'est structuré, `horairesStructures` vaut `null` et le hero retombe sur la
+  // pastille écrite à la main : l'aperçu ne bouge pas d'un pixel.
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
@@ -153,6 +153,8 @@ export function ApercuStudio({
           couvertureAlt={coverAlt}
           accroche={visible("accroche") ? etat.accroche || null : null}
           badgeOuverture={etat.badge || null}
+          horaires={etat.horairesStructures}
+          timezone={timezone}
           allure={allure}
           liens={visible("social") ? liens : LIENS_MASQUES}
           avisGoogle="Avis Google"
