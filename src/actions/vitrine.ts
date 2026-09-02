@@ -23,6 +23,7 @@ import {
   VITRINE_ALLURE_ENUMS,
   VITRINE_ALLURE_ENUMS_CLES,
   VITRINE_BLOCS_DEFAUT,
+  VITRINE_JEUX,
   VITRINE_LANGUE_TRADUITE,
   VITRINE_ORDRE_MAX,
   VITRINE_SECTEUR_DEFAUT,
@@ -2538,10 +2539,13 @@ export async function setVitrineJeux(
   _prev: ActionResult | null,
   formData: FormData,
 ): Promise<ActionResult> {
-  const parsed = setVitrineJeuxSchema.safeParse({
-    duo: formData.get("duo"),
-    bande: formData.get("bande"),
-  });
+  // LES CHAMPS SONT LUS DEPUIS LE VOCABULAIRE, pas énumérés ici (VIT-32) : un
+  // septième mot ajouté à `VITRINE_JEUX` sans `formData.get` correspondant
+  // aurait rendu sa case toujours décochée — donc un élément masqué en base au
+  // premier enregistrement, sans qu'aucune erreur ne le dise.
+  const parsed = setVitrineJeuxSchema.safeParse(
+    Object.fromEntries(VITRINE_JEUX.map((cle) => [cle, formData.get(cle)])),
+  );
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0].message };
   }
@@ -2563,7 +2567,13 @@ export async function setVitrineJeux(
   if (!ligne) return { ok: false, error: SANS_ADRESSE };
 
   const theme = mapThemeVitrine(ligne.theme);
-  theme.jeux = { duo: parsed.data.duo, bande: parsed.data.bande };
+  // LE DOCUMENT EST ÉCRIT EN ENTIER, jamais fusionné avec l'ancien : le
+  // formulaire rend TOUTES les cases, donc ce qu'il poste est le choix complet.
+  // Un `{...theme.jeux, ...}` aurait laissé survivre une clé d'un vocabulaire
+  // plus ancien que la base refuserait ensuite en 23514.
+  theme.jeux = Object.fromEntries(
+    VITRINE_JEUX.map((cle) => [cle, parsed.data[cle]]),
+  );
 
   // L'ORDRE DES BLOCS SUIT LE CHOIX. On part de l'ordre EFFECTIF — celui que
   // rend `resoudreThemeVitrine` pour une liste absente — sans quoi cocher un
@@ -2573,7 +2583,11 @@ export async function setVitrineJeux(
     theme.ordre_blocs && theme.ordre_blocs.length > 0
       ? [...theme.ordre_blocs]
       : [...VITRINE_BLOCS_DEFAUT];
-  const veutUnJeu = parsed.data.duo || parsed.data.bande;
+  // TOUT LE VOCABULAIRE, et non les deux salons (VIT-32) : un commerçant qui
+  // décoche ses deux salons mais garde ses quiz veut toujours son bloc
+  // « Jeux ». Rester sur `duo || bande` l'aurait retiré de sa page, en
+  // emportant les quiz qu'il venait de cocher.
+  const veutUnJeu = VITRINE_JEUX.some((cle) => parsed.data[cle]);
   const presente = ordre.includes("experiences");
   if (veutUnJeu && !presente) ordre.push("experiences");
   if (!veutUnJeu && presente) {

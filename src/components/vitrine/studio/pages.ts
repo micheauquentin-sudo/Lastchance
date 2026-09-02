@@ -31,15 +31,23 @@ export const PAGES_STUDIO = [
     titre: "La carte",
     resume: "Vos cartes, vos rubriques et vos fiches.",
   },
-  {
-    cle: "alaune",
-    titre: "À la une",
-    resume: "Ce que vous mettez en avant, vos réseaux et vos avis.",
-  },
+  /**
+   * « À LA UNE » A DISPARU EN TANT QUE PAGE (VIT-32), et ce n'est pas un
+   * rangement : c'est une décision du propriétaire — « remplacer À la une par
+   * ça ». Ses deux moitiés — mises en avant, réseaux et avis — répondaient à la
+   * MÊME question que les jeux : qu'est-ce que le client voit en descendant ma
+   * page ? Les tenir dans deux onglets obligeait à en faire deux fois le tour.
+   * Le composant, lui, n'a pas bougé : `studio/section-alaune.tsx`, monté par
+   * la page ci-dessous.
+   *
+   * LA CLÉ `jeux` SURVIT À SON TITRE. `?page=jeux` est ce qu'un favori garde, et
+   * la renommer aurait rendu un lien mort — `parsePageStudio` retomberait sur
+   * « Identité » sans rien dire. Un mot de plus dans l'URL ne valait pas ça.
+   */
   {
     cle: "jeux",
-    titre: "Les jeux",
-    resume: "Ce que vos clients peuvent jouer depuis votre carte.",
+    titre: "Ce qui paraît sur ma carte",
+    resume: "Vos jeux, vos mises en avant, vos réseaux et vos avis.",
   },
 ] as const;
 

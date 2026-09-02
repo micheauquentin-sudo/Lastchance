@@ -6,7 +6,21 @@ import { CaseStudio } from "@/components/vitrine/studio/champ";
 import type { ContenuVitrineView, VitrineLiensView } from "@/lib/vitrine";
 
 /**
- * LA PAGE « À LA UNE » DU STUDIO (VIT-21) — mises en avant, réseaux et avis.
+ * « À LA UNE » (VIT-21) — mises en avant, réseaux et avis.
+ *
+ * ── CE N'EST PLUS UNE PAGE, C'EST UNE SECTION (VIT-32) ──
+ *
+ * Elle avait la sienne dans le fil du studio. Le propriétaire l'a fait
+ * disparaître au profit de « Ce qui paraît sur ma carte » — et c'est le bon
+ * regroupement : « À la une », « Réseaux et avis » et les jeux répondent tous
+ * les trois à la MÊME question, « qu'est-ce que le client voit en descendant ma
+ * page ? ». Les séparer en deux onglets obligeait à faire deux fois le tour de
+ * la même page pour en régler le contenu.
+ *
+ * Le composant ne change pas pour autant : ses deux moitiés, ses arbitrages et
+ * ses gardes valent exactement pareil sous un titre de section. Seul son NOM a
+ * suivi — l'appeler encore « Page » aurait fait chercher un onglet qui n'existe
+ * plus.
  *
  * ── CE QUI MANQUAIT, ET QUE LE PROPRIÉTAIRE A NOMMÉ ──
  *
@@ -33,7 +47,7 @@ import type { ContenuVitrineView, VitrineLiensView } from "@/lib/vitrine";
  * contrairement au défaut de VIT-19. La case, elle, ne s'enregistre pas seule —
  * c'est un bloc d'`ordre_blocs`, il part avec « Enregistrer ».
  */
-export function PageALaUneStudio({
+export function SectionALaUneStudio({
   contenus,
   liens,
   socialVisible,

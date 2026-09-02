@@ -13,8 +13,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
-const { PageALaUneStudio } = await import(
-  "@/components/vitrine/studio/page-alaune"
+const { SectionALaUneStudio } = await import(
+  "@/components/vitrine/studio/section-alaune"
 );
 
 /**
@@ -40,10 +40,10 @@ const LIENS = {
   tiktok_url: null,
 };
 
-function rendre(props: Partial<Parameters<typeof PageALaUneStudio>[0]> = {}) {
+function rendre(props: Partial<Parameters<typeof SectionALaUneStudio>[0]> = {}) {
   const onSocialVisible = vi.fn();
   const rendu = render(
-    <PageALaUneStudio
+    <SectionALaUneStudio
       contenus={[]}
       liens={LIENS}
       socialVisible={false}
