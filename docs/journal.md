@@ -4,6 +4,14 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-02 — L'identité joueur partagée, pour de vrai
+
+**L'identité joueur partagée, pour de vrai** (ID-6 à ID-8b — PR #314, #315, #317, #319, ADR-141 à 144). Calendrier, pronostics et jackpot adoptent le socle déjà en place pour fidélité et Réserver : cookie du module, puis empreinte d'appareil, puis pont d'ancienneté — cet ORDRE ne s'inverse jamais (ADR-141), sous peine de fusionner en silence des identités le jour d'un déploiement.
+  **🔴 Le jackpot dédoublait ses joueurs depuis l'origine** (ID-8a) : son pont n'en était pas un, c'était une clé recopiée (`loyalty_members.token_hash` → `jackpot_players.token_hash`), qui ne fonctionnait que par accident de hachage partagé. Résolveur canonique et déduplication sous verrou de campagne, `participation_count` RECALCULÉ, `last_participation_at` au MAXIMUM (ADR-143, ADR-144).
+  **En caisse, le cookie d'appareil est celui du POSTE, pas du client** (ID-8b, ADR-142) : le patron public ne s'y applique pas tel quel, sous peine de faire converger tout un comptoir vers une seule identité — erreur du brief d'origine, corrigée avant le code.
+  **Trois pertes de pont trouvées en écrivant, aucune par une garde** (`docs/bugs.md`) : pronostics désynchronisait après rotation de lien magique (une variable, deux sens) ; calendrier ne pontait qu'au « rejoindre » ; jackpot caisse ne pontait jamais.
+  **Reste ouvert** : sélecteur de figures des pronostics toujours une copie ; `nicknameSchema` à 30 contre 24 au socle ; émetteur Google Wallet (code prêt, jamais testé contre le vrai Google).
+
 ## 2026-09-01 — Le studio devient l'écran central de la Vitrine
 
 **Le studio devient l'écran central de la Vitrine** (VIT-19 à VIT-27 — PR #294→#312, ADR-136 à 140). Le studio prend tout — **logo**, **bannière**, mots, carte, à la une, jeux — en quatre pages, aperçu au centre, allure à droite. Ce qui **paraît** se coche, **horaires compris** : masquer, c'est omettre d'`ordre_blocs` (VIT-3), pas de second drapeau.

@@ -5221,3 +5221,62 @@ signalé pour `db-supabase` : ajouter `create extension if not exists pgtap
 with schema extensions;` en tête de ces 4 fichiers, à l'identique des 86
 autres, pour que le résultat des deux gardes ne dépende plus de l'ordre
 d'exécution des suites.
+
+## ✅ CLOS le 2026-09-03 (PR #322, ADR-145) — un réseau social enregistré dans le studio ne paraissait pas dans l'aperçu
+
+`updateOrganizationSocialLinks` revalidait `/dashboard` et
+`/dashboard/settings` — les deux chemins où ce réglage vivait avant que le
+studio (VIT-19, V1.73) ne devienne l'écran central de la Vitrine.
+`/vitrine-studio` vit HORS de `/dashboard` (ADR-130, ADR-139), et personne
+n'avait ajouté sa route à la liste des chemins revalidés quand le réglage y a
+été rapatrié.
+
+L'écriture réussissait — la ligne changeait bien en base. Mais l'écran du
+studio continuait de servir la donnée du cache : le propriétaire, ayant tapé
+son lien Instagram et vu l'aperçu ne pas bouger, avait toutes les raisons de
+croire que son geste n'avait pas pris et de le retaper, sans qu'aucun message
+d'erreur ne lui indique quoi que ce soit.
+
+**Pourquoi rien ne l'avait vu.** VIT-19 a déplacé l'ÉCRAN d'édition vers
+`/vitrine-studio` avec le plus grand soin (c'est tout l'objet d'ADR-130,
+ADR-139) mais `updateOrganizationSocialLinks` est une action ANCIENNE,
+antérieure au studio, que ce chantier n'a pas touchée parce qu'elle ne
+figurait pas dans le terrain du lot qui a déplacé les réseaux sociaux vers la
+page « Identité » du studio. Le défaut est resté invisible en test parce que
+les tests de cette action vérifient que la valeur est bien écrite en base —
+ce qui est vrai — jamais que la route qui l'affiche est revalidée. Aucune
+liste de revalidation de ce dépôt n'est dérivée des routes qui LISENT la
+donnée qu'elle touche (même classe de défaut structurel que
+`SENSITIVE_PREFIXES`, ADR-140) : elle se tient à la main, et une route neuve
+qui lit une vieille donnée en est absente par défaut.
+
+Corrigé en ajoutant `/vitrine-studio` à la liste des chemins revalidés par
+`updateOrganizationSocialLinks`.
+
+## ✅ CLOS le 2026-09-03 (PR #322) — l'atelier restait affiché sur grand écran, contrairement à ce que VIT-27 prévoyait
+
+VIT-27 (V1.73) devait masquer la carte de l'atelier Vitrine au-delà du point
+de rupture `lg`, une fois le studio devenu le chemin normal d'édition. Elle
+est restée visible : la carte porte des points de vérification (checklist de
+préparation), et l'objection retenue au moment de VIT-27 avait été de la
+garder visible partout au motif que ces points restent utiles quel que soit
+l'écran (ADR-139 la citait déjà comme un écart assumé).
+
+Le propriétaire a signalé que la voir en double — le studio ET l'atelier,
+tous deux accessibles sur son poste de bureau — n'avait pas de sens : la
+pastille de vérification appartient à la PRÉPARATION du studio, elle doit
+donc se poser sur ce qui MÈNE au studio, c'est-à-dire l'atelier lui-même sur
+petit écran seulement. Sur grand écran, le studio est directement atteignable
+et l'atelier n'apporte plus rien.
+
+**Pourquoi rien ne l'avait vu.** L'objection de VIT-27 tenait un raisonnement
+correct sur une prémisse fausse — que les points de vérification sont utiles
+en eux-mêmes, indépendamment de leur usage. Elle n'était pas fausse en soi,
+elle n'avait simplement jamais été confrontée à l'usage réel : aucun test
+d'accessibilité ni de rendu ne vérifie qu'un composant a une RAISON D'ÊTRE
+visible à une largeur donnée, seulement qu'il s'affiche ou non — ce genre de
+défaut ne peut être vu que par quelqu'un qui utilise l'écran, jamais par une
+suite automatisée qui ne juge que la présence d'un nœud.
+
+Corrigé en alignant le seuil de masquage de l'atelier sur `lg`, conformément
+à l'intention initiale de VIT-27.
