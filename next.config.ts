@@ -3,6 +3,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 import {
   buildContentSecurityPolicy,
   buildCspReportOnlyPolicy,
+  buildOcrWorkerCsp,
   buildPermissionsPolicy,
   buildReportingEndpointsHeader,
 } from "./src/lib/security-headers";
@@ -131,6 +132,27 @@ const nextConfig: NextConfig = {
       {
         source: "/admin/:path*",
         headers: adminSecurityHeaders,
+      },
+      {
+        // LE FIL DE RECONNAISSANCE DE TEXTE (VIT-18, réparé VIT-29).
+        //
+        // Cette règle vient APRÈS `/(.*)` et écrase sa `Content-Security-Policy`
+        // pour ces quatre fichiers — même mécanisme que `/admin/:path*`, qui
+        // écrase déjà `Referrer-Policy`.
+        //
+        // C'est le seul endroit de l'application où `'wasm-unsafe-eval'` est
+        // accordé. La page qui lance ce fil ne l'a toujours pas : un fil tire sa
+        // politique de la réponse de SON script, pas de celle de son lanceur.
+        // Voir `buildOcrWorkerCsp` pour les deux autres conditions —
+        // `workerBlobURL: false` et la sortie du matcher du proxy — sans
+        // lesquelles cet en-tête ne sert à rien.
+        source: "/ocr/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: buildOcrWorkerCsp() },
+          // Ces fichiers ne sont ni une page ni un contenu à indexer, et ils
+          // pèsent 4,1 Mo : rien ne doit les faire remonter dans un moteur.
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
       },
       {
         source: "/portefeuille",

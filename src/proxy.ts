@@ -208,12 +208,32 @@ export const config = {
   // Report-Only est repris par `next.config.ts`, sans quoi elle deviendrait une
   // surface publique muette.
   //
-  // `v(?:/|$)` et `lobby(?:/|$)`, et non `v` ni `lobby` nus : un préfixe sans
-  // borne a un rayon d'action sans commune mesure avec un mot — un futur
-  // `/verify`, `/videos` ou `/lobbyiste` sortirait silencieusement du proxy,
-  // perdant session, redirection de connexion et isolation du domaine admin
-  // (contre-revue L11).
+  // `/ocr` sort à son tour (VIT-29), et pour DEUX raisons qui vont ensemble.
+  //
+  // La première est celle de `/v` et `/lobby` : ce sont quatre fichiers
+  // STATIQUES de 4,1 Mo au total, sans session ni cookie. Les faire traverser
+  // le proxy déclenchait un `auth.getUser()` par fichier — donc, dès qu'un
+  // cookie de session existe (et sur le tableau de bord il existe toujours),
+  // quatre allers-retours RÉSEAU vers l'API Auth Supabase dont aucun n'est lu.
+  //
+  // La seconde est propre à ces fichiers, et sans elle la lecture d'image reste
+  // inerte : leur réponse porte la SEULE `Content-Security-Policy` de
+  // l'application qui autorise `'wasm-unsafe-eval'` (`buildOcrWorkerCsp`, posée
+  // par `next.config.ts`). Si le proxy passait ici, il poserait la sienne
+  // par-dessus — et le navigateur INTERSECTE deux politiques, gardant la plus
+  // stricte. L'en-tête existerait, et ne servirait à rien.
+  //
+  // Rien n'est perdu au passage : `/ocr` n'est pas dans
+  // `PUBLIC_NONCE_PREFIXES`, elle était donc déjà en régime `static`, et ces
+  // fichiers ne rendent aucune page — le canal Report-Only n'aurait rien à y
+  // mesurer.
+  //
+  // `v(?:/|$)`, `lobby(?:/|$)` et `ocr(?:/|$)`, et non `v`, `lobby` ni `ocr`
+  // nus : un préfixe sans borne a un rayon d'action sans commune mesure avec un
+  // mot — un futur `/verify`, `/videos`, `/lobbyiste` ou `/ocrisation`
+  // sortirait silencieusement du proxy, perdant session, redirection de
+  // connexion et isolation du domaine admin (contre-revue L11).
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|lobby(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|play|pronos|v(?:/|$)|lobby(?:/|$)|ocr(?:/|$)|api/stripe|api/health|api/page-opens|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
