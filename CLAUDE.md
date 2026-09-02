@@ -157,7 +157,7 @@ question n'a pas été posée.
   **🔴 Deux pertes silencieuses fermées AVANT de construire** (VIT-19) : `composerTheme` reconstruisait le thème depuis le seul formulaire, donc le studio effaçait `ordre_blocs` — **retirant le bloc « Jeux » de la vitrine publique** — et les deux écrans effaçaient `theme.jeux`, faisant **revenir un jeu décoché**. Le thème FUSIONNE désormais ; quatre témoins s'ajoutent à `allure_rendue`.
   **Le formulaire de réglages est VIDE** et voisin de la mise en page (attribut `form`) — c'est ce qui laisse logo, bannière et carte porter leurs propres `<form>` sans imbrication, le défaut qui tue l'hydratation. Et **aucun contrôle visible ne porte de `name`** : changer de page aurait sinon effacé la précédente.
   **Deux défauts trouvés par les agents, dans mes fichiers** : l'aperçu montrait les cartes **désactivées** — pleines chez le commerçant, vides chez le client (VIT-26) ; une garde CSP **comparait la liste à elle-même**, donc ne voyait pas `/vitrine-studio` hors de `SENSITIVE_PREFIXES` (VIT-25).
-  **Reste ouvert** : `'wasm-unsafe-eval'` bloque la lecture de carte photographiée ; **Stripe — trois produits à créer** et l'émetteur Google Wallet.
+  **Reste ouvert** : `'wasm-unsafe-eval'` bloque la lecture de carte photographiée ; l'émetteur Google Wallet. **Les trois produits Stripe sont créés et leurs prix posés en Production** (vérifié le 2026-09-02, migrations comprises).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
