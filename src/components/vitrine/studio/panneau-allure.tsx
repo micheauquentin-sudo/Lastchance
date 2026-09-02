@@ -67,7 +67,7 @@ export function PanneauAllure({
   const resolue = theme.allure;
 
   return (
-    <aside className="w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full lg:w-[340px]">
+    <aside className="w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full lg:w-[400px]">
       <h2 className="text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
         L&apos;allure
       </h2>
