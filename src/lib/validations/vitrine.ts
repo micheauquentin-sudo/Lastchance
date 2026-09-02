@@ -28,6 +28,10 @@ import {
   type ChampChiffreAllure,
   type ChampEnumAllure,
   VITRINE_CARTE_NOM_MAX,
+  VITRINE_CRENEAUX_PAR_JOUR_MAX,
+  VITRINE_HEURE_PATTERN,
+  VITRINE_JOURS,
+  type JourVitrine,
   VITRINE_CONTENU_RANG_MAX,
   VITRINE_CONTENU_RANG_MIN,
   VITRINE_CONTENU_TITRE_MAX,
@@ -417,8 +421,125 @@ export const setVitrineJeuxSchema = z.object({
   bande: caseNative,
 });
 
+/**
+ * LES HORAIRES STRUCTURÉS (VIT-31), postés en UN champ JSON.
+ *
+ * ── POURQUOI UN SEUL CHAMP ET NON QUARANTE-DEUX ──
+ *
+ * Sept jours × trois créneaux × deux heures font quarante-deux `<input>`
+ * nommés, donc quarante-deux `formData.get` à énumérer dans l'action, dont un
+ * oubli n'aurait RIEN fait rougir — c'est exactement le piège que ce fichier
+ * décrit déjà pour les vingt-cinq champs d'allure. Un champ caché qui porte le
+ * document entier fait de la forme une affaire de schéma, à un seul endroit.
+ *
+ * ── L'ABSENCE EST LE TÉMOIN, ET ELLE SUFFIT ICI ──
+ *
+ * `absentSiNonRendu` : un écran qui ne rend pas ce champ n'écrit PAS la colonne
+ * (`undefined`), et un écran qui le rend vide écrit `null`. Contrairement aux
+ * cases à cocher — qui ne s'envoient pas quand elles sont décochées, d'où les
+ * cinq témoins `*_rendus` de VIT-19 — un champ caché rendu s'envoie TOUJOURS,
+ * même vide. Sa présence EST le témoin, et aucun champ supplémentaire n'est
+ * nécessaire.
+ *
+ * ── MIROIR DE CONFORT, ET LES CLAUSES SONT COPIÉES UNE PAR UNE ──
+ *
+ * Chaque refus ci-dessous a son jumeau dans `is_valid_vitrine_horaires` : sept
+ * jours tous exigés, trois créneaux au plus, `de` et `a` en `HH:MM` avec
+ * `de < a`, et rien d'autre dans un créneau (`strict`). Ce qui manquerait ici
+ * ne serait pas « permis » : ce serait un 23514 — une erreur de BASE — rendue à
+ * un commerçant dans un formulaire.
+ */
+const heureSchema = z
+  .string()
+  .regex(VITRINE_HEURE_PATTERN, "Heure attendue au format HH:MM (24 h)");
+
+const creneauSchema = z
+  .object({ de: heureSchema, a: heureSchema })
+  .strict()
+  .refine((c) => c.de < c.a, {
+    // `de < a` sur des `HH:MM` à zéro en tête : la comparaison de texte EST la
+    // comparaison d'horloge. Un créneau ne franchit pas minuit — le bar de nuit
+    // s'écrit en deux créneaux sur deux jours (voir 20261201120000).
+    message: "L'heure de fermeture doit suivre l'heure d'ouverture",
+  });
+
+const horairesSchema = z
+  .object(
+    Object.fromEntries(
+      VITRINE_JOURS.map((jour) => [
+        jour,
+        z
+          .array(creneauSchema)
+          .max(
+            VITRINE_CRENEAUX_PAR_JOUR_MAX,
+            `${VITRINE_CRENEAUX_PAR_JOUR_MAX} créneaux par jour au maximum`,
+          ),
+      ]),
+    ) as {
+      [K in JourVitrine]: z.ZodArray<typeof creneauSchema>;
+    },
+  )
+  .strict();
+
+/**
+ * Le champ tel qu'il arrive du formulaire — TROIS états, et pas deux.
+ *
+ *   absent du POST  → `undefined` : « cet écran ne règle pas les horaires »,
+ *                     donc l'action ne touche PAS la colonne.
+ *   rendu et vide   → `null` : « le commerçant les a retirés », donc la page
+ *                     publique retombe sur `horaires_texte` comme avant VIT-31.
+ *   du JSON         → la semaine décodée.
+ *
+ * ── POURQUOI PAS `absentSiNonRendu` ──
+ *
+ * Ce passage commun finit par `saisie ?? undefined` : il COLLAPSE `null` et
+ * l'absence, ce qui est la bonne lecture pour un texte — « vide » et « non
+ * rendu » y disent la même chose — et la mauvaise ici. Le `null` de ce champ
+ * est une DEMANDE D'EFFACEMENT, et le confondre avec « non rendu » aurait
+ * rendu les horaires structurés impossibles à retirer une fois posés. Le
+ * défaut a été vu à l'écriture, par un test qui attendait `null` et recevait
+ * `undefined`.
+ *
+ * Un JSON illisible est un REFUS et non un `null` silencieux : effacer la
+ * semaine d'un commerçant parce qu'un écran a mal sérialisé serait la pire
+ * réponse possible — celle qui détruit sans rien dire.
+ */
+const horairesFormulaireSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((saisie, ctx) => {
+    if (saisie === null || saisie === undefined) return undefined;
+    const brut = saisie.trim();
+    if (brut === "") return null;
+    let decode: unknown;
+    try {
+      decode = JSON.parse(brut);
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Horaires illisibles : la semaine n'a pas été enregistrée",
+      });
+      return z.NEVER;
+    }
+    const lu = horairesSchema.safeParse(decode);
+    if (!lu.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: lu.error.issues[0]?.message ?? "Horaires invalides",
+      });
+      return z.NEVER;
+    }
+    return lu.data;
+  });
+
 export const saveVitrineSettingsSchema = z.object({
   ...champsAllure,
+  /**
+   * VIT-31 : les horaires structurés. `undefined` = l'écran ne les rend pas,
+   * donc la colonne n'est PAS touchée ; `null` = le commerçant les a retirés.
+   */
+  horaires: horairesFormulaireSchema,
   /**
    * LE TÉMOIN DE PRÉSENCE DE LA SECTION « ALLURE ».
    *

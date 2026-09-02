@@ -8236,6 +8236,7 @@ export type Database = {
           cover_path: string | null
           created_at: string
           histoire: string | null
+          horaires: Json | null
           horaires_texte: string | null
           id: string
           indexable: boolean
@@ -8253,6 +8254,7 @@ export type Database = {
           cover_path?: string | null
           created_at?: string
           histoire?: string | null
+          horaires?: Json | null
           horaires_texte?: string | null
           id?: string
           indexable?: boolean
@@ -8270,6 +8272,7 @@ export type Database = {
           cover_path?: string | null
           created_at?: string
           histoire?: string | null
+          horaires?: Json | null
           horaires_texte?: string | null
           id?: string
           indexable?: boolean
@@ -9424,6 +9427,10 @@ export type Database = {
         Returns: boolean
       }
       is_valid_timezone: { Args: { p_timezone: string }; Returns: boolean }
+      is_valid_vitrine_horaires: {
+        Args: { p_horaires: Json }
+        Returns: boolean
+      }
       is_valid_vitrine_theme: { Args: { p_theme: Json }; Returns: boolean }
       is_valid_vitrine_vocabulaire: {
         Args: { p_valeurs: string[]; p_vocabulaire: string[] }

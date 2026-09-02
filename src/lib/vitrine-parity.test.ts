@@ -44,6 +44,9 @@ import {
   VITRINE_BADGE_OUVERTURE_MAX,
   VITRINE_SECTEURS,
   VITRINE_JEUX,
+  VITRINE_CRENEAUX_PAR_JOUR_MAX,
+  VITRINE_HEURE_PATTERN,
+  VITRINE_JOURS,
 } from "./vitrine";
 
 /**
@@ -258,6 +261,36 @@ const RESERVES_SQL = motsQuotes(
   ),
 );
 
+/**
+ * LES HORAIRES STRUCTURÉS (VIT-31), DANS LEUR VALIDATEUR VIVANT.
+ *
+ * Sept jours, une borne de créneaux et une expression d'heure — trois choses
+ * qui existent des DEUX côtés et qui n'ont, sans cette garde, rien qui les
+ * relie. La plus traître est la troisième : deux expressions régulières qui
+ * divergent d'un caractère ne se voient nulle part, elles se paient en 23514
+ * dans un formulaire, c'est-à-dire par une erreur de base rendue à un
+ * commerçant qui a saisi une heure parfaitement valide côté écran.
+ */
+const SOURCE_HORAIRES = definitionVivante("is_valid_vitrine_horaires");
+const JOURS_SQL = motsQuotes(
+  fragment("c_jours constant text[] := array[", "];", SOURCE_HORAIRES),
+);
+const HEURE_SQL = fragment(
+  "c_heure constant text := '",
+  "';",
+  SOURCE_HORAIRES,
+);
+
+/**
+ * LE FICHIER DE VIT-31, lu EN DUR — même raison que `SOURCE_ALLURE`.
+ *
+ * Le `grant update` et le `add column` sont des ordres qui ne se REJOUENT pas
+ * ailleurs : les chercher dans une « définition vivante » n'aurait aucun sens,
+ * et le jour où l'un d'eux serait révoqué, ce serait par un ordre explicite que
+ * cette garde doit faire rougir plutôt que suivre en silence.
+ */
+const SOURCE_VIT31 = lire("20261201120000_vitrine_horaires_structures.sql");
+
 describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript", () => {
   it("le parsing a effectivement trouvé quelque chose (garde de la garde)", () => {
     // ROUGE SI un extracteur devient muet : sans ces comptes, les `toEqual`
@@ -269,6 +302,11 @@ describe("parité Vitrine — les vocabulaires du SQL et leur miroir TypeScript"
     expect(BLOCS_SQL.length).toBe(7);
     expect(POLICES_SQL.length).toBe(7);
     expect(RESERVES_SQL.length).toBeGreaterThan(40);
+    // VIT-31 : sept jours, et une expression d'heure NON VIDE — un extracteur
+    // muet aurait ici rendu la chaîne vide, que `toBe` sur une regex source
+    // n'aurait pas laissée passer, mais le compte le dit plus tôt et mieux.
+    expect(JOURS_SQL.length).toBe(7);
+    expect(HEURE_SQL.length).toBeGreaterThan(10);
   });
 
   it("l'ancre de la définition vivante accepte les DEUX écritures", () => {
@@ -738,5 +776,61 @@ describe("parité Vitrine — les bornes des `check`", () => {
       );
     }
     expect(borne).toBe(VITRINE_BADGE_OUVERTURE_MAX);
+  });
+});
+
+describe("parité Vitrine — les horaires structurés (VIT-31)", () => {
+  it("les sept jours sont les mêmes des deux côtés, DANS LE MÊME ORDRE", () => {
+    // L'ORDRE compte ici, contrairement aux autres vocabulaires de ce fichier
+    // qui se comparent triés : `VITRINE_JOURS` décide de l'ordre d'affichage
+    // ET du parcours « quand ouvre-t-il ? » dans `etatHoraires`. Un SQL qui
+    // commencerait par dimanche ne casserait rien en base et décalerait tout
+    // le calcul d'un jour.
+    expect(JOURS_SQL).toEqual([...VITRINE_JOURS]);
+  });
+
+  it("l'expression de l'heure est la même des deux côtés, caractère pour caractère", () => {
+    // LE DÉFAUT QUE CETTE ASSERTION FERME : deux expressions qui divergent
+    // d'un caractère laissent zod accepter ce que le `check` refuse. Le
+    // commerçant reçoit alors un 23514 — une erreur de BASE — pour une heure
+    // que son propre formulaire vient de valider.
+    expect(HEURE_SQL).toBe(VITRINE_HEURE_PATTERN.source);
+  });
+
+  it("la borne de créneaux par jour est la même des deux côtés", () => {
+    expect(
+      nombre(
+        /c_creneaux_max constant integer := (\d+);/,
+        "créneaux par jour",
+        SOURCE_HORAIRES,
+      ),
+    ).toBe(VITRINE_CRENEAUX_PAR_JOUR_MAX);
+  });
+
+  it("la colonne `horaires` reçoit un `grant update` NOMMÉ — le piège RDV-12", () => {
+    // `vitrine_settings` accorde `update` COLONNE PAR COLONNE : une colonne
+    // neuve est lisible par héritage et MUETTE en écriture tant qu'aucun grant
+    // ne la nomme. Ce défaut ne casse rien de visible — l'action réussit et
+    // n'écrit pas — et il a été trouvé après coup trois fois de suite sur
+    // `reservations`, jamais par une garde.
+    //
+    // La migration porte déjà sa propre assertion `has_column_privilege`, qui
+    // est la vraie preuve. Celle-ci la double parce qu'elle tourne SANS base,
+    // donc à chaque `npm test`, là où la première exige Docker.
+    expect(SOURCE_VIT31).toContain(
+      "grant update (horaires) on public.vitrine_settings to authenticated;",
+    );
+    expect(SOURCE_VIT31).toContain(
+      "'authenticated', 'public.vitrine_settings', 'horaires', 'UPDATE'",
+    );
+  });
+
+  it("la contrainte de colonne appelle bien le validateur", () => {
+    // Un validateur juste mais non branché est une décoration : la colonne
+    // accepterait n'importe quel jsonb, et le miroir TypeScript serait seul à
+    // tenir une forme que la base ne garantit plus.
+    expect(SOURCE_VIT31).toContain(
+      "check (public.is_valid_vitrine_horaires(horaires))",
+    );
   });
 });

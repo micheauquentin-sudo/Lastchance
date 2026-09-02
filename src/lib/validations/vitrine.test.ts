@@ -322,6 +322,104 @@ describe("le thème refuse les valeurs que la base refuserait", () => {
   });
 });
 
+describe("les horaires structurés — le schéma MIRE le `check` SQL (VIT-31)", () => {
+  /** Une semaine complète, sur laquelle on ne change que ce qu'on teste. */
+  const semaine = (lundi: unknown[] = []) =>
+    JSON.stringify({
+      lundi,
+      mardi: [],
+      mercredi: [],
+      jeudi: [],
+      vendredi: [],
+      samedi: [],
+      dimanche: [],
+    });
+
+  const parse = (horaires: unknown) =>
+    saveVitrineSettingsSchema.safeParse({ horaires });
+
+  it("une semaine complète est acceptée et rendue DÉCODÉE", () => {
+    const res = parse(semaine([{ de: "09:00", a: "12:30" }]));
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.data.horaires).toEqual({
+      lundi: [{ de: "09:00", a: "12:30" }],
+      mardi: [],
+      mercredi: [],
+      jeudi: [],
+      vendredi: [],
+      samedi: [],
+      dimanche: [],
+    });
+  });
+
+  it("le champ NON RENDU laisse la colonne intacte : `undefined`, pas `null`", () => {
+    // C'est toute la compatibilité de l'action : un écran qui ne règle pas les
+    // horaires ne doit pas les effacer en enregistrant l'identité. Le défaut
+    // exact que `theme.jeux` a payé en production (VIT-19).
+    const res = saveVitrineSettingsSchema.safeParse({ horaires: null });
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.data.horaires).toBeUndefined();
+  });
+
+  it("le champ RENDU VIDE efface la semaine : `null`", () => {
+    const res = parse("");
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.data.horaires).toBeNull();
+  });
+
+  it("un JSON illisible est un REFUS, jamais un effacement silencieux", () => {
+    // Rendre `null` ici aurait supprimé la semaine d'un commerçant parce qu'un
+    // écran a mal sérialisé — un effacement que personne n'a demandé et que
+    // rien n'aurait signalé.
+    expect(parse("{lundi:").success).toBe(false);
+  });
+
+  it("refuse ce que la base refuse — sinon le commerçant reçoit un 23514", () => {
+    // Chaque ligne a son jumeau dans `is_valid_vitrine_horaires`. Ce qui
+    // manquerait ici ne serait pas « permis » : ce serait une erreur de BASE
+    // rendue dans un formulaire.
+    expect(parse(semaine([{ de: "9:00", a: "12:00" }])).success).toBe(false);
+    expect(parse(semaine([{ de: "18:00", a: "24:00" }])).success).toBe(false);
+    expect(parse(semaine([{ de: "12:00", a: "12:00" }])).success).toBe(false);
+    expect(parse(semaine([{ de: "18:00", a: "02:00" }])).success).toBe(false);
+    expect(
+      parse(semaine([{ de: "09:00", a: "12:00", note: "sur réservation" }]))
+        .success,
+    ).toBe(false);
+    expect(
+      parse(
+        semaine([
+          { de: "08:00", a: "09:00" },
+          { de: "10:00", a: "11:00" },
+          { de: "12:00", a: "13:00" },
+          { de: "14:00", a: "15:00" },
+        ]),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("refuse une semaine incomplète et un huitième jour", () => {
+    expect(parse(JSON.stringify({ lundi: [], mardi: [] })).success).toBe(false);
+    expect(
+      parse(
+        JSON.stringify({
+          lundi: [],
+          mardi: [],
+          mercredi: [],
+          jeudi: [],
+          vendredi: [],
+          samedi: [],
+          dimanche: [],
+          lundi_ferie: [],
+        }),
+      ).success,
+    ).toBe(false);
+  });
+});
+
 describe("le réordonnancement", () => {
   const rubrique = "00000000-0000-4000-8000-0000000000c1";
   const fiche = "00000000-0000-4000-8000-0000000000d1";

@@ -68,6 +68,9 @@ const SETTINGS: VitrineSettingsView = {
   indexable: false,
   secteur: "restaurant",
   badge_ouverture: null,
+  // VIT-31 : `null` est l'état de toute vitrine qui n'a rien structuré, donc
+  // celui que cet écran rend le plus souvent. La fixture le dit explicitement.
+  horaires: null,
   updated_at: null,
 };
 

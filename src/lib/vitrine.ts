@@ -233,6 +233,117 @@ export const VITRINE_BADGE_OUVERTURE_MAX = 48;
 /** Chemin d'image (couverture ou photo de fiche) : 300 caractères. */
 export const VITRINE_CHEMIN_IMAGE_MAX = 300;
 
+// ────────────────────────────────────────────────────────────
+// LES HORAIRES STRUCTURÉS (VIT-31)
+//
+// Miroir de `is_valid_vitrine_horaires` (20261201120000), fermé aux DEUX rangs
+// comme le validateur SQL, et gardé mécaniquement par `vitrine-parity.test.ts`
+// — qui LIT la migration plutôt que de recopier ces listes.
+//
+// ── ILS NE REMPLACENT PAS `horaires_texte`, ILS S'AJOUTENT ──
+//
+// Le texte libre reste la LÉGENDE que le tableau ne sait pas porter : « fermé
+// le lundi midi », « service continu l'été », un jour férié. Le tableau, lui,
+// est ce qui se CALCULE — « Ouvert · ferme à 23h ». `horaires` à `null` laisse
+// la page exactement comme avant ce lot, et c'est l'état de toutes les vitrines
+// existantes : aucun remplissage rétroactif (ADR-129, ADR-123).
+//
+// ── LES SEPT JOURS SONT TOUS EXIGÉS ──
+//
+// Un jour ABSENT serait un troisième état, entre « fermé ce jour-là » (tableau
+// vide) et « rien n'a été dit » (`horaires` à `null`). Deux états qui se
+// ressemblent finissent confondus à l'écran : l'absence vit donc au niveau de
+// la COLONNE, jamais au niveau d'une clé.
+// ────────────────────────────────────────────────────────────
+
+/**
+ * LES SEPT JOURS, DANS L'ORDRE DE LA SEMAINE — et cet ordre est porteur.
+ *
+ * Les clés d'un objet JSON n'ont pas d'ordre : c'est cette liste qui décide de
+ * l'ordre d'affichage comme de l'ordre de parcours pour « quand ouvre-t-il ? ».
+ * Elle commence LUNDI, comme la semaine française et comme le formulaire que
+ * le commerçant relit.
+ *
+ * Le vocabulaire est en français parce que tout le schéma Vitrine l'est
+ * (`accroche`, `histoire`, `secteur`, `allure`, `jeux`) et que les
+ * `<input name=…>` portent les noms de la base — un seul jeu de noms, du
+ * `check` SQL jusqu'au formulaire.
+ */
+export const VITRINE_JOURS = [
+  "lundi",
+  "mardi",
+  "mercredi",
+  "jeudi",
+  "vendredi",
+  "samedi",
+  "dimanche",
+] as const;
+export type JourVitrine = (typeof VITRINE_JOURS)[number];
+
+const JOURS_FR: Record<JourVitrine, string> = {
+  lundi: "Lundi",
+  mardi: "Mardi",
+  mercredi: "Mercredi",
+  jeudi: "Jeudi",
+  vendredi: "Vendredi",
+  samedi: "Samedi",
+  dimanche: "Dimanche",
+};
+
+const JOURS_EN: Record<JourVitrine, string> = {
+  lundi: "Monday",
+  mardi: "Tuesday",
+  mercredi: "Wednesday",
+  jeudi: "Thursday",
+  vendredi: "Friday",
+  samedi: "Saturday",
+  dimanche: "Sunday",
+};
+
+/** Le nom du jour tel qu'il s'affiche, dans la langue de la page. */
+export function libelleJour(
+  jour: JourVitrine,
+  lang: LangueVitrine = "fr",
+): string {
+  return lang === "en" ? JOURS_EN[jour] : JOURS_FR[jour];
+}
+
+/**
+ * TROIS CRÉNEAUX PAR JOUR AU PLUS. Miroir de `c_creneaux_max` en SQL.
+ *
+ * Deux suffisent au commerce qui coupe à midi ; le troisième couvre le service
+ * du soir séparé. Au-delà, la ligne du jour ne tient plus sur une largeur de
+ * téléphone, et un horaire qu'on ne peut pas lire ne sert personne.
+ */
+export const VITRINE_CRENEAUX_PAR_JOUR_MAX = 3;
+
+/**
+ * `HH:MM` sur vingt-quatre heures, ZÉRO EN TÊTE OBLIGATOIRE.
+ *
+ * Le zéro n'est pas une coquetterie de format : c'est lui qui fait que l'ordre
+ * alphabétique de deux heures EST leur ordre chronologique. Toute la
+ * comparaison de `src/lib/vitrine-horaires.ts` en dépend, et le `check` SQL
+ * aussi (`de collate "C" < a`). La source de cette expression est comparée
+ * caractère par caractère à celle du SQL par la garde de parité.
+ */
+export const VITRINE_HEURE_PATTERN = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+/**
+ * Un créneau d'ouverture. `de` et `a`, et RIEN d'autre — le second rang est
+ * fermé en base, une clé de plus n'aurait aucun lecteur.
+ *
+ * `de < a` STRICTEMENT : un créneau ne franchit pas minuit. Un bar ouvert
+ * jusqu'à 2 h s'écrit en deux créneaux, sur deux jours. Voir l'en-tête de
+ * `src/lib/vitrine-horaires.ts` pour ce que cette limite coûte à l'affichage.
+ */
+export interface CreneauVitrine {
+  de: string;
+  a: string;
+}
+
+/** La semaine entière : les sept jours, chacun portant 0 à 3 créneaux. */
+export type HorairesVitrine = Record<JourVitrine, CreneauVitrine[]>;
+
 // ── LES CONTENUS MIS EN AVANT (VIT-4) ────────────────────────
 //
 // Miroir des `check` de `vitrine_contenus` (20261015120000). Trois bornes et
@@ -1312,6 +1423,33 @@ export interface VitrineIdentiteView {
    * demande un éditeur de créneaux, un fuseau et des jours fériés.
    */
   badge_ouverture: string | null;
+  /**
+   * LES HORAIRES STRUCTURÉS (VIT-31), ou `null`.
+   *
+   * `null` est l'état de toute vitrine qui n'a rien structuré — c'est-à-dire
+   * toutes celles qui existaient avant ce lot — et il laisse la page
+   * EXACTEMENT comme avant : bloc `horaires_texte` affiché tel quel, pastille
+   * `badge_ouverture` écrite à la main. Il n'y a eu aucun remplissage
+   * rétroactif : l'absence EST le comportement voulu.
+   *
+   * Quand ils sont là, ils ne remplacent pas `horaires_texte` : le texte libre
+   * reste la légende (jour férié, saison) que sept lignes de créneaux ne savent
+   * pas porter. Ils s'y AJOUTENT, et c'est eux seuls qui se calculent.
+   */
+  horaires: HorairesVitrine | null;
+  /**
+   * LE FUSEAU DU COMMERCE, et jamais celui du visiteur.
+   *
+   * Sans lui, « ouvert à l'instant T » se calculerait dans le fuseau du
+   * NAVIGATEUR : faux pour le touriste qui prépare sa soirée depuis chez lui,
+   * faux pour un client à l'étranger, et faux d'une heure deux fois par an
+   * quand les deux zones ne changent pas d'heure le même jour.
+   *
+   * `organizations.timezone` est `not null default 'Europe/Paris'` : cette clé
+   * porte donc toujours une zone IANA réelle. Le repli sur `Europe/Paris` ci-
+   * dessous ne couvre qu'un document jsonb corrompu, jamais un cas normal.
+   */
+  timezone: string;
   theme: ThemeVitrine;
 }
 
@@ -1495,6 +1633,16 @@ export interface VitrineSettingsView {
   secteur: SecteurVitrine;
   /** VIT-13 : la pastille du hero, écrite à la main. */
   badge_ouverture: string | null;
+  /**
+   * VIT-31 : les horaires structurés, ou `null` quand rien n'a été saisi.
+   *
+   * L'atelier rend les DEUX champs — celui-ci et `horaires_texte`. Le fuseau
+   * n'est pas publié ici, contrairement à l'état public : cet écran est
+   * org-scopé et connaît déjà son organisation, `organizations.timezone` lui
+   * est lisible en direct. Une seconde source pour la même valeur n'aurait
+   * servi qu'à les faire diverger.
+   */
+  horaires: HorairesVitrine | null;
   updated_at: string | null;
 }
 
@@ -1569,6 +1717,62 @@ export function motsDuVocabulaireVitrine<T extends string>(
     sortie.push(mot as T);
   }
   return sortie;
+}
+
+/**
+ * Lit les horaires structurés, ou rend `null` — et le SENS de l'échec compte.
+ *
+ * ── DEUX RÈGLES, ET ELLES NE SONT PAS SYMÉTRIQUES ──
+ *
+ * 1. Un document dont la SEMAINE est incomplète — un jour manquant, un jour qui
+ *    n'est pas un tableau — rend `null`, c'est-à-dire « aucun horaire
+ *    structuré ». Compléter les jours absents par `[]` aurait AFFIRMÉ « fermé »
+ *    des jours dont le document ne dit rien : une page publique qui annonce un
+ *    commerce fermé alors qu'il est ouvert, sur la foi d'un document corrompu.
+ * 2. Un CRÉNEAU illisible à l'intérieur d'un jour est DROPPÉ, et le reste du
+ *    jour survit. Un créneau perdu rétrécit la journée ; il ne l'élargit
+ *    jamais.
+ *
+ * Les deux vont dans le MÊME sens, qui est le seul sens acceptable ici :
+ * l'incertitude ne produit jamais un « ouvert ». C'est la doctrine posée avec
+ * `badge_ouverture` (VIT-13) — un « Ouvert » faux fait déplacer un client pour
+ * rien, ce qui est strictement pire que ne rien dire.
+ *
+ * La base refuse déjà tout ce que ce lecteur filtre (`is_valid_vitrine_horaires`
+ * ferme les deux rangs). Ce filtre existe pour un document écrit par une
+ * version FUTURE du schéma, ou par une main dans la base — pas pour couvrir un
+ * défaut de validation.
+ */
+export function mapHorairesVitrine(raw: unknown): HorairesVitrine | null {
+  const root = asRecord(raw);
+  if (!root) return null;
+
+  const semaine = {} as HorairesVitrine;
+  for (const jour of VITRINE_JOURS) {
+    const brut = root[jour];
+    // LA SEMAINE EST ENTIÈRE OU ELLE N'EST PAS : voir la règle 1 ci-dessus.
+    if (!Array.isArray(brut)) return null;
+
+    const creneaux: CreneauVitrine[] = [];
+    for (const candidat of brut) {
+      if (creneaux.length >= VITRINE_CRENEAUX_PAR_JOUR_MAX) break;
+      const objet = asRecord(candidat);
+      if (!objet) continue;
+      const de = asString(objet.de);
+      const a = asString(objet.a);
+      if (!de || !a) continue;
+      if (!VITRINE_HEURE_PATTERN.test(de) || !VITRINE_HEURE_PATTERN.test(a)) {
+        continue;
+      }
+      // `de < a` sur des `HH:MM` à zéro en tête : la comparaison de texte EST
+      // la comparaison d'horloge, et le `check` SQL dit exactement la même
+      // chose (`collate "C"`).
+      if (de >= a) continue;
+      creneaux.push({ de, a });
+    }
+    semaine[jour] = creneaux;
+  }
+  return semaine;
 }
 
 /**
@@ -2063,6 +2267,13 @@ export function mapVitrinePublicState(raw: unknown): VitrinePublicState {
       indexable: identite.indexable === true,
       secteur: asSecteurVitrine(identite.secteur),
       badge_ouverture: asString(identite.badge_ouverture),
+      horaires: mapHorairesVitrine(identite.horaires),
+      // `organizations.timezone` est `not null` : ce repli ne couvre qu'un
+      // document corrompu. Il vaut mieux calculer « ouvert » à Paris que de
+      // laisser une chaîne vide faire lever `Intl.DateTimeFormat` — mais c'est
+      // bien `etatHoraires` qui décide de ne rien affirmer si la zone est
+      // refusée, et non ce mappeur.
+      timezone: asString(identite.timezone) || "Europe/Paris",
       theme: mapThemeVitrine(identite.theme),
     },
     liens: {
@@ -2103,6 +2314,7 @@ export function mapVitrineDashboardState(raw: unknown): VitrineDashboardState {
         indexable: brut.indexable === true,
         secteur: asSecteurVitrine(brut.secteur),
         badge_ouverture: asString(brut.badge_ouverture),
+        horaires: mapHorairesVitrine(brut.horaires),
         updated_at: asString(brut.updated_at),
       };
     }
