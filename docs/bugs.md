@@ -21,6 +21,57 @@
 
 ## Critical
 
+- **✅ Pronostics — la rotation d'empreinte après lien magique désynchronisait
+  le pont d'identité (corrigé le 2026-09-02, ID-7, PR #315).**
+  `src/actions/pronostics.ts` faisait tourner `contest_players.token_hash`
+  après passage par un lien magique, sans que `player_legacy_identities`
+  suive : le module retrouvait bien son joueur, mais l'identité globale le
+  perdait — son lot `PRONO-` disparaissait de `/portefeuille`, en silence.
+  **La cause tenait dans un nom** : dans la même fonction, `tokenHash`
+  désignait tantôt l'empreinte du LIEN MAGIQUE, tantôt — partout ailleurs dans
+  le module — celle du JOUEUR. Le second sens a servi d'argument à la
+  résolution de la rotation. Corrigé en passant explicitement le nouveau
+  `tokenHash` du joueur comme `legacyIdentityHash` à
+  `ensureProgressivePlayerIdentity`.
+
+- **✅ Calendrier — le pont d'identité n'était posé qu'au « rejoindre »
+  (corrigé le 2026-09-02, ID-6, PR #314).** `open_calendar_box`
+  (`src/actions/calendar.ts`) crée aussi un joueur, indépendamment de
+  « rejoindre ». Un joueur qui scanne le QR et touche directement une case,
+  sans jamais passer par l'écran de bienvenue, n'avait donc **jamais** eu de
+  pont vers l'identité globale — pas une perte tardive, une absence depuis
+  l'origine. Corrigé en posant le pont aussi depuis le chemin d'ouverture de
+  case.
+
+- **✅ Jackpot — le chemin caisse ne posait aucun pont d'identité (corrigé le
+  2026-09-02, ID-8b, PR #319).** Le tampon de fidélité en caisse créait ou
+  mettait à jour un joueur jackpot sans jamais le relier à l'identité globale
+  du client (voir ADR-142) : les gains venant du passeport n'apparaissaient
+  jamais dans `/portefeuille`. Corrigé par `ponterIdentiteJackpotCaisse`
+  (`src/lib/jackpot-identite.ts`).
+
+- **✅ Une garde de couverture ne lisait que la PREMIÈRE occurrence
+  (corrigé le 2026-09-02, ID-6/ID-7).** `player-identity-coverage.test.ts`
+  vérifiait la présence d'un site d'appel par un premier match ; un second
+  site mal formé dans le même fichier passait donc inaperçu tant que le
+  premier restait correct. Passée en `matchAll`, la garde exige désormais
+  ≥ 6 sites couverts et voit chacun d'eux.
+
+- **✅ `loyalty_jackpot_link.test.sql` encodait le défaut qu'il aurait dû
+  détecter (corrigé le 2026-09-02, ID-8a, PR #317).** Le test passait le
+  MÊME `repeat('a', 64)` des deux côtés de la comparaison qu'il assertait :
+  il serait resté vert même après une correction ratée, puisque les deux
+  valeurs comparées étaient identiques par construction plutôt que par le
+  comportement testé. Réécrit pour distinguer deux empreintes réelles
+  (`repeat('a',64)` côté passeport, `repeat('c',64)` côté jackpot).
+
+- **✅ Le survivant d'une fusion de doublons jackpot était départagé par un
+  identifiant aléatoire (trouvé par les tests, corrigé le 2026-09-02, ID-8a,
+  PR #317).** Deux lignes `jackpot_players` créées dans la même transaction
+  partagent leur `created_at` (`now()` est constant pour toute la
+  transaction) : un premier tri par `id` retombait donc sur un UUID, sans
+  rapport avec l'ancienneté réelle des deux identités. Voir ADR-144.
+
 - **✅ Le studio effaçait des réglages en enregistrant, deux fois et en silence
   (corrigé le 2026-09-01, VIT-19, PR #294).** `composerTheme`
   (`src/actions/vitrine.ts`) RECONSTRUISAIT le document `theme` à partir du seul
@@ -78,33 +129,45 @@
   `redirect("/login")` et remonte à la liste. Voir ADR-140.
 
 
-- **🔴 OUVERT — La lecture de carte photographiée (VIT-18) est BLOQUÉE PAR LA
-  CSP en production (trouvé le 2026-09-01 en rattrapant la documentation du
-  lot).** `/dashboard/vitrine` est en régime `sensitive`
+- **✅ CORRIGÉ le 2026-09-02 (VIT-29, PR #318) — La lecture de carte
+  photographiée (VIT-18) était BLOQUÉE PAR LA CSP en production (trouvée le
+  2026-09-01 en rattrapant la documentation du lot, restée ouverte un jour).**
+  `/dashboard/vitrine` est en régime `sensitive`
   (`SENSITIVE_PREFIXES`, `src/lib/security-headers.ts:49`), donc sous un
   `script-src 'self' 'nonce-…' 'strict-dynamic' …` — et **`'wasm-unsafe-eval'`
   n'y est pas**. Il a été retiré par MORT-2 avec la mascotte Lumoz, et
   `security-headers.test.ts:47` assure désormais son ABSENCE. Or
   `public/ocr/tesseract-core-lstm.js` appelle `WebAssembly.instantiate` et
   `WebAssembly.instantiateStreaming` : dès qu'une CSP porte un `script-src`,
-  les deux exigent `'wasm-unsafe-eval'`. La reconnaissance échoue donc à
+  les deux exigent `'wasm-unsafe-eval'`. La reconnaissance échouait donc à
   l'amorçage du moteur, chez tout commerçant, sur la seule page qui l'appelle
   (`src/app/dashboard/vitrine/page.tsx:471` → `ImportCarte` →
   `import-fichier.ts:111`).
-  **Pourquoi rien ne l'a vu** : ni `typecheck`, ni `lint`, ni Vitest ne lisent
-  une CSP, et les huit gardes de `import-ocr.test.ts` vérifient l'ORIGINE des
-  fichiers, pas le droit de les exécuter. Le seul témoin possible était un
-  navigateur réel sur cette page — et en développement la permission manque
-  aussi (`'unsafe-eval'` n'est ajouté qu'au régime `static`), donc un essai
-  local aurait échoué de la même façon.
+  **Pourquoi rien ne l'avait vu** : ni `typecheck`, ni `lint`, ni Vitest ne
+  lisent une CSP, et les huit gardes de `import-ocr.test.ts` vérifient
+  l'ORIGINE des fichiers, pas le droit de les exécuter. Le seul témoin
+  possible était un navigateur réel sur cette page — et en développement la
+  permission manquait aussi (`'unsafe-eval'` n'est ajouté qu'au régime
+  `static`), donc un essai local aurait échoué de la même façon.
   **C'est le symétrique exact de MORT-2** : ce lot-là avait montré qu'une
-  permission dont le motif est parti ne se voit nulle part. Celui-ci montre
-  l'inverse — un nouveau consommateur de WebAssembly arrive, et rien ne
-  rappelle que la permission a été retirée. **La réparation n'est pas
-  évidente** : rouvrir `'wasm-unsafe-eval'` sur `sensitive` rend au back-office
-  une permission qu'on a payé un lot pour lui retirer. La piste à trancher est
-  de la porter sur la SEULE route qui en a besoin, via `next.config` plutôt que
-  sur la surface entière, et d'inverser l'assertion du test en conséquence.
+  permission dont le motif est parti ne se voit nulle part. Celui-ci montrait
+  l'inverse — un nouveau consommateur de WebAssembly arrivait, et rien ne
+  rappelait que la permission avait été retirée.
+  **Ce qui n'a PAS été fait : rouvrir `'wasm-unsafe-eval'` sur `sensitive`** —
+  cela aurait rendu au back-office entier une permission qu'on avait payé un
+  lot pour lui retirer. **Ce qui a été fait : une porte de la largeur du
+  besoin.** La permission tient désormais sur la réponse des seuls fichiers
+  `/ocr/` (`buildOcrWorkerCsp`, posée par `next.config.ts`), pas sur le régime
+  `sensitive` de la page qui les charge — un fil d'exécution WebAssembly tire
+  sa politique de la réponse de SON script, pas de celle de la page qui l'a
+  lancé. Trois pièces s'assemblent pour que ça tienne, chacune gardée par
+  mutation : `workerBlobURL: false` (sinon `tesseract.js` fabrique son fil
+  depuis une URL `blob:`, qui hérite de la politique de la PAGE) ; la réponse
+  de `/ocr/` porte la permission ; `/ocr` sort du matcher du proxy (sinon deux
+  politiques coexistent sur la même réponse et le navigateur garde la plus
+  stricte). Au passage, `/ocr` quittant le matcher du proxy évite aussi un
+  `auth.getUser()` par fichier statique (4,1 Mo, aucun cookie à lire — même
+  raisonnement que `/v` et `/lobby`).
 
 - **✅ CORRIGÉ le 2026-09-01 (VIT-25, PR #297) — `/vitrine-studio` (VIT-17)
   n'était pas dans `SENSITIVE_PREFIXES`

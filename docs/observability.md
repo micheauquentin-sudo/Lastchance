@@ -204,7 +204,14 @@ font vivre le produit :
   back-office. C'est le **nombre de lignes** qui porte l'information, et
   zéro ligne est la valeur saine — voir les compteurs
   `rewards.registry_miss.<famille>` et `rewards.registry_error`, qui
-  mesurent si le repli historique de la caisse sert encore.
+  mesurent si le repli historique de la caisse sert encore ; ou
+  `<module>.repli_identite_globale` (calendrier, pronostics, jackpot,
+  fidélité), qui mesure à quel rythme le patron d'identité partagée
+  (ADR-141) doit remonter jusqu'au pont d'ancienneté plutôt que de trancher
+  sur le cookie du module — et `jackpot.identite.deduplication` /
+  `jackpot.identite.pont_caisse` (ADR-142 à ADR-144), qui mesurent
+  respectivement les fusions de joueurs dédoublés et les ponts posés côté
+  caisse.
 
 Pour instrumenter une nouvelle opération critique :
 
