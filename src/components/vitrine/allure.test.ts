@@ -5,6 +5,7 @@ import {
   VITRINE_ALLURE_BORNES,
   VITRINE_ALLURE_ENUMS,
   VITRINE_JEUX,
+  VITRINE_JEUX_DEFAUTS,
   VITRINE_PRESETS_SECTEUR,
   VITRINE_SECTEURS,
   asSecteurVitrine,
@@ -243,18 +244,27 @@ describe("le vocabulaire public suit le métier", () => {
 
 describe("les jeux sur la carte : l'absence vaut « affiché » (VIT-16, VIT-32)", () => {
   /** Le vocabulaire ENTIER à `true` : ce que l'absence doit rendre. */
+  // LE DÉFAUT VIENT DE LA TABLE, il n'est plus « vrai » pour tout le monde.
+  // Ce helper supposait `true` partout, ce qui était juste tant que toutes les
+  // clés existaient déjà — et faux dès qu'une porte NEUVE est arrivée. Voir
+  // `VITRINE_JEUX_DEFAUTS` et `consentement-portes.test.ts`.
   const tout = (patch: Partial<Record<JeuVitrine, boolean>> = {}) =>
     Object.fromEntries(
-      VITRINE_JEUX.map((cle) => [cle, patch[cle] ?? true]),
+      VITRINE_JEUX.map((cle) => [cle, patch[cle] ?? VITRINE_JEUX_DEFAUTS[cle]]),
     ) as Record<JeuVitrine, boolean>;
 
-  it("un thème sans choix affiche TOUT ce que la base ouvre", () => {
-    // C'EST TOUTE LA COMPATIBILITÉ DES DEUX LOTS. Une vitrine publiée avant
-    // VIT-16 n'a pas de clé `jeux`, une publiée avant VIT-32 n'en a que deux :
-    // faire valoir `false` à l'absence aurait retiré les salons de toutes les
-    // pages en ligne au premier lot, et leurs quiz, calendriers, pronostics et
-    // passeports au second — en silence. Le piège exact du vocabulaire de
-    // secteur, et sa gravité a été multipliée par trois.
+  it("un thème sans choix garde le comportement d'HIER, clé par clé", () => {
+    // C'EST TOUTE LA COMPATIBILITÉ DES DEUX LOTS, ET L'INVARIANT N'EST PAS
+    // « AFFICHÉ ». Une vitrine publiée avant VIT-16 n'a pas de clé `jeux`, une
+    // publiée avant VIT-32 n'en a que deux : faire valoir `false` à l'absence
+    // aurait retiré les salons de toutes les pages en ligne au premier lot, et
+    // leurs quiz, calendriers et pronostics au second — en silence.
+    //
+    // MAIS LE PASSEPORT N'EST PAS DANS CE LOT-LÀ. Il n'avait AUCUNE porte
+    // publique la veille de VIT-32 : pour lui, « le comportement d'hier » vaut
+    // ABSENT, pas affiché. Ce test disait le contraire, et une porte s'est
+    // ouverte en production chez un commerçant qui n'avait rien demandé.
+    // Corrigé en VIT-33, sur revue de sécurité.
     expect(resoudreThemeVitrine(null).jeux).toEqual(tout());
     expect(resoudreThemeVitrine({}).jeux).toEqual(tout());
     // LE CAS QUI COMPTE VRAIMENT DEPUIS VIT-32 : un thème écrit par VIT-16, avec
@@ -269,9 +279,10 @@ describe("les jeux sur la carte : l'absence vaut « affiché » (VIT-16, VIT-32)
       tout({ duo: false }),
     );
     // Et cela vaut pour les quatre mots que VIT-32 ajoute, pas seulement pour
-    // les deux salons.
-    expect(resoudreThemeVitrine({ jeux: { loyalty: false } }).jeux).toEqual(
-      tout({ loyalty: false }),
+    // les deux salons. On prend `quiz` — décochable ET affiché par défaut ;
+    // `loyalty` ne prouverait rien ici, son défaut étant déjà `false`.
+    expect(resoudreThemeVitrine({ jeux: { quiz: false } }).jeux).toEqual(
+      tout({ quiz: false }),
     );
   });
 

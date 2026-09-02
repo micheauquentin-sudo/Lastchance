@@ -872,6 +872,50 @@ const JEUX_LIBELLES: Record<JeuVitrine, string> = {
   loyalty: "Passeport de fidélité",
 };
 
+/**
+ * CE QU'UNE CLÉ ABSENTE VAUT — et pourquoi elles ne valent pas toutes la même
+ * chose (VIT-33, sur revue de sécurité).
+ *
+ * ── L'INVARIANT EST « LE COMPORTEMENT D'HIER », PAS « AFFICHÉ » ──
+ *
+ * ADR-129 énonce : ce qui n'a pas été décidé garde le comportement d'HIER. On
+ * l'avait traduit par `?? true` pour toutes les clés, et c'était juste tant que
+ * toutes existaient déjà : `quiz`, `calendars`, `pronostics`, `duo` et `bande`
+ * étaient peints hier, `true` les CONSERVE.
+ *
+ * `loyalty` est arrivée avec VIT-32, et pour elle `?? true` ne conserve rien —
+ * il AJOUTE. Le passeport n'avait aucune porte publique la veille : le repli
+ * l'a donc annoncé, sur toute vitrine dont l'ordre portait déjà `experiences`,
+ * sans que personne l'ait demandé.
+ *
+ * ── CE QUE ÇA A COÛTÉ, ET POURQUOI C'EST GRAVE ──
+ *
+ * VIT-3 a posé l'invariant en toutes lettres, et `activerExperiencesVitrine` le
+ * répète : « les portes publiques restent volontairement masquées tant que le
+ * commerçant n'a rien demandé ». Ici, une porte s'est ouverte PARCE QU'UNE
+ * VERSION A CHANGÉ — exactement ce que cette phrase interdit.
+ *
+ * Rien de secret n'est sorti : le nom d'un programme est déjà rendu au client
+ * sur trois surfaces. Ce qui change est l'ÉNUMÉRABILITÉ — l'identifiant devient
+ * lisible depuis une page indexable, alors qu'il s'obtenait en scannant un QR
+ * au comptoir.
+ *
+ * ── L'ASYMÉTRIE EST LA RÉPONSE, PAS UNE EXCEPTION ──
+ *
+ * Une porte NEUVE n'a pas de comportement d'hier à conserver : son repli est
+ * donc `false`. Toute clé ajoutée après coup doit venir ici à `false`, et le
+ * jour où elle est ajoutée — sans quoi elle s'annoncera d'elle-même chez tous
+ * ceux qui n'ont rien demandé.
+ */
+export const VITRINE_JEUX_DEFAUTS: Record<JeuVitrine, boolean> = {
+  duo: true,
+  bande: true,
+  quiz: true,
+  calendars: true,
+  pronostics: true,
+  loyalty: false,
+};
+
 export function libelleJeuVitrine(jeu: JeuVitrine): string {
   return JEUX_LIBELLES[jeu];
 }

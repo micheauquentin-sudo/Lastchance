@@ -61,7 +61,13 @@ const { PageJeuxStudio } = await import(
   "@/components/vitrine/studio/page-jeux"
 );
 
-import { VITRINE_JEUX, type BilanJeuxVitrine, type ThemeVitrine } from "@/lib/vitrine";
+import {
+  VITRINE_JEUX,
+  VITRINE_JEUX_DEFAUTS,
+  type BilanJeuxVitrine,
+  type JeuVitrine,
+  type ThemeVitrine,
+} from "@/lib/vitrine";
 
 const { setVitrineJeux } = await import("@/actions/vitrine");
 
@@ -124,15 +130,23 @@ describe("studio — la page « Ce qui paraît sur ma carte »", () => {
     expect(options!.reloadOnSuccess).toBe(true);
   });
 
-  it("un thème sans clé `jeux` coche les SIX cases (ADR-129)", () => {
+  it("un thème sans clé `jeux` coche ce qui était DÉJÀ peint, et rien de plus", () => {
     // Les vitrines d'avant VIT-16 n'ont pas cette clé, celles d'avant VIT-32
-    // n'en ont que deux. Des cases vides ici, et le premier enregistrement leur
-    // retire leurs jeux sans le dire.
+    // n'en ont que deux. Des cases vides pour les cinq jeux existants, et le
+    // premier enregistrement leur retirerait leurs jeux sans le dire.
+    //
+    // MAIS LE PASSEPORT DOIT NAÎTRE DÉCOCHÉ, et ce test disait l'inverse. Il
+    // n'avait AUCUNE porte publique avant VIT-32 : le cocher par défaut
+    // annonçait un passeport que personne n'avait demandé, et le premier
+    // enregistrement gravait ce défaut en consentement — indistinguable d'un
+    // choix. Corrigé en VIT-33, sur revue de sécurité.
     rendre({ theme: {} });
 
     const cases = casesJeux();
     expect(cases).toHaveLength(VITRINE_JEUX.length);
-    for (const c of cases) expect(c.checked, c.name).toBe(true);
+    for (const c of cases) {
+      expect(c.checked, c.name).toBe(VITRINE_JEUX_DEFAUTS[c.name as JeuVitrine]);
+    }
   });
 
   it("un choix explicite gagne sur l'absence, clé par clé", () => {
@@ -183,7 +197,15 @@ describe("studio — la page « Ce qui paraît sur ma carte »", () => {
       'input[type="hidden"][name="loyalty"]',
     );
     expect(cache, "le module non possédé ne poste plus rien").toBeTruthy();
-    expect(cache!.value, "il vote son état RÉSOLU, pas « décoché »").not.toBe("");
+    // IL VOTE SON ÉTAT RÉSOLU, et pour le Passeport cet état est désormais
+    // « décoché » — donc la chaîne vide, que `caseNative` lit comme un refus.
+    // C'est exact : un module non possédé, dont la porte n'a jamais été
+    // demandée, ne doit pas s'annoncer le jour où il est acheté sans qu'on
+    // l'ait coché. Le champ reste POSTÉ, ce qui est le point de ce test : sans
+    // lui, l'écran n'aurait aucune voix et l'absence serait ambiguë.
+    expect(cache!.value, "il vote son état résolu").toBe(
+      VITRINE_JEUX_DEFAUTS.loyalty ? "1" : "",
+    );
   });
 
   it("« À la une » a rejoint cette page (VIT-32)", () => {
