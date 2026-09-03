@@ -130,11 +130,7 @@ export default async function CalendarDetailPage({
   // `public_slug` est NON NULL ici (posé par trigger, cf. types/database) —
   // contrairement au jackpot, pas de repli sur l'id.
   const publicUrl = `${APP_URL}/calendar/${c.public_slug}`;
-  const openCount = await readModulePageOpenCount(
-    supabase,
-    "calendar",
-    c.id,
-  );
+  const openCount = await readModulePageOpenCount(supabase, "calendar", c.id);
 
   // Relance : un calendrier n'a pas d'`ends_at` : sa fin
   // se déduit de `start_date` et `day_count`, tous deux dans `CALENDAR_COLUMNS`.
@@ -187,8 +183,8 @@ export default async function CalendarDetailPage({
 
   const bandeauModule = (
     <ModuleCapabilityNotice capacites={capacites} entitlement="calendar">
-      Une case par jour, 5 thèmes saisonniers, lots à retirer en caisse, tours de
-      roue offerts et cadeau d&apos;assiduité.
+      Une case par jour, 5 thèmes saisonniers, lots à retirer en caisse, tours
+      de roue offerts et cadeau d&apos;assiduité.
     </ModuleCapabilityNotice>
   );
 
@@ -224,8 +220,9 @@ export default async function CalendarDetailPage({
                 <span aria-hidden>⚠️ </span>
                 {garnies} case{garnies > 1 ? "s" : ""} déjà garnie
                 {garnies > 1 ? "s" : ""} : réduire le nombre de cases supprimera
-                les dernières, avec leur contenu et les codes CADEAU- qu&apos;elles
-                ont distribués. Une confirmation vous sera demandée avant.
+                les dernières, avec leur contenu et les codes CADEAU-
+                qu&apos;elles ont distribués. Une confirmation vous sera
+                demandée avant.
               </p>
             )}
 
@@ -298,9 +295,7 @@ export default async function CalendarDetailPage({
         }
       >
         <Card>
-          <h2 className="font-semibold mb-1">
-            QR code et lien du calendrier
-          </h2>
+          <h2 className="font-semibold mb-1">QR code et lien du calendrier</h2>
           {c.status === "active" ? (
             <>
               <p className="text-sm text-zinc-500 mb-3">
@@ -345,18 +340,29 @@ export default async function CalendarDetailPage({
           defaultOuvert
           resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length} — tout se règle ici, en voyant le résultat.`}
         >
-          <Card className="flex flex-wrap items-center justify-between gap-3">
-            <p className="min-w-0 flex-1 text-sm text-k-body">
-              Le calendrier de vos clients au centre, les réglages autour. Le
-              nom, l&apos;allure, les dates, les cases, le cadeau de fin et
-              votre message — tout s&apos;y règle en voyant le résultat.
-            </p>
-            <Link
-              href={`/studio/calendrier/${c.id}`}
-              className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
-            >
-              Ouvrir le studio
-            </Link>
+          {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N’EST PAS
+              DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+              `<span>` — jamais un heading — précisément parce que le bloc
+              qu’elle enveloppe en porte déjà un du même nom (voir son en-tête).
+              Sans ce `<h2>`, la carte n’a AUCUN titre dans l’arbre
+              d’accessibilité : un lecteur d’écran ne l’annonce pas, et les E2E
+              qui cherchent `getByRole("heading")` ne la trouvent pas non plus.
+              C’est cette seconde moitié qui a rougi. */}
+          <Card>
+            <h2 className="font-semibold mb-1">Mon studio</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm text-k-body">
+                Le calendrier de vos clients au centre, les réglages autour. Le
+                nom, l&apos;allure, les dates, les cases, le cadeau de fin et
+                votre message — tout s&apos;y règle en voyant le résultat.
+              </p>
+              <Link
+                href={`/studio/calendrier/${c.id}`}
+                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+              >
+                Ouvrir le studio
+              </Link>
+            </div>
           </Card>
         </CarteRepliable>
       </div>
