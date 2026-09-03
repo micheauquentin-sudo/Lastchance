@@ -74,6 +74,12 @@ export const SENSITIVE_PREFIXES = [
   "/onboarding",
   "/poster",
   "/vitrine-studio",
+  // Les studios par module (VIT-39) : `/studio/calendrier/[id]`, et les onze
+  // qui suivront. Un préfixe et non une entrée par module — la liste
+  // n'aurait tenu que jusqu'au deuxième oubli, et l'oubli est silencieux :
+  // la page retomberait en régime `static`, donc sous `'unsafe-inline'`, sur
+  // un écran qui exige pourtant une session.
+  "/studio",
 ] as const;
 
 /**

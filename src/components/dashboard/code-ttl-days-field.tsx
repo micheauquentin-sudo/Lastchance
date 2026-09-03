@@ -53,6 +53,7 @@ export function CodeTtlDaysField({
   onChange,
   emissionHint,
   legend = "Expiration du code de retrait",
+  champCache = true,
 }: {
   /** Préfixe des `id` — un écran peut porter plusieurs formulaires. */
   idPrefix: string;
@@ -68,6 +69,20 @@ export function CodeTtlDaysField({
   emissionHint: string;
   /** Titre du bloc — surchargeable là où « code » désignerait autre chose. */
   legend?: string;
+  /**
+   * LE CHAMP CACHÉ SE RETIRE DANS UN STUDIO, ET NULLE PART AILLEURS (VIT-39).
+   *
+   * Un studio rend sa charge utile EN ENTIER depuis son état, dans un
+   * formulaire VIDE dont les contrôles visibles sont les VOISINS — jamais les
+   * descendants. Le champ caché posé ici vivrait donc dans une étape
+   * démontable, hors du formulaire de réglages : il ne partirait jamais, et
+   * ferait croire à une charge complète.
+   *
+   * Le défaut du champ reste `true` : les sept éditeurs historiques posent
+   * leurs contrôles DANS leur formulaire, et pour eux ce champ est la seule
+   * chose qui distingue « efface le réglage » de « ne touche pas au réglage ».
+   */
+  champCache?: boolean;
 }) {
   const helpId = `${idPrefix}-code-ttl-help`;
   const boundsId = `${idPrefix}-code-ttl-bounds`;
@@ -80,7 +95,9 @@ export function CodeTtlDaysField({
         avaient : modifier ce réglage ne change que les lots émis ensuite.
       </p>
       {/* Présent dès que le champ est saisissable — voir l'en-tête. */}
-      <input type="hidden" name="code_ttl_days" value={value.trim()} />
+      {champCache && (
+        <input type="hidden" name="code_ttl_days" value={value.trim()} />
+      )}
       <div className="w-40">
         <Label htmlFor={`${idPrefix}-code-ttl`}>Validité (jours)</Label>
         <Input

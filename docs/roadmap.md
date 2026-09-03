@@ -100,7 +100,21 @@
   Corrigé au passage : l'aperçu disait encore « rien n'est enregistré » alors
   que le studio enregistre seul depuis VIT-30.
 
-**Décisions** : ADR-145 à ADR-154.
+- **VIT-39 — Le calendrier de l'Avent passe au studio** (ADR-155). Premier
+  module porté sur le socle. Route `/studio/calendrier/[id]`, hors du tableau
+  de bord — le gabarit `/dashboard` ajoute une colonne de navigation que
+  `/vitrine-studio` n'a pas, et deux studios dissemblables sont précisément ce
+  que la demande refuse. Huit étapes là où le code déclarait l'écran de réglages
+  « INDIVISIBLE » : les treize champs de `updateCalendar` partent depuis l'état
+  quelle que soit l'étape, et retirer `fond_key` fait rougir huit assertions.
+  L'aperçu est la VRAIE page joueur avec ses trois chemins serveur coupés
+  (inventaire complet, le composant n'en importe pas d'autres). La réduction du
+  nombre de cases reste manuelle — elle détruit des codes cadeau. Quatre
+  `revalidatePath` jumeaux, gardés par un test textuel : c'est le défaut de
+  VIT-37, où un enregistrement réussi n'apparaissait jamais à l'écran.
+  L'atelier reste, pour le téléphone seulement.
+
+**Décisions** : ADR-145 à ADR-155.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

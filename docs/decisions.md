@@ -9827,3 +9827,82 @@ L'aperçu affichait encore « Rien n'est enregistré tant que vous n'avez pas
 cliqué sur Enregistrer » alors que le studio enregistre seul depuis VIT-30.
 C'est ADR-153 pris par l'autre bout — un écran qui raconte le contraire de ce
 qu'il fait. La légende par défaut du socle décrit l'automatisme.
+
+## ADR-155 — Les studios vivent sous `/studio`, hors du tableau de bord, et chaque mutation y revalide
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-39, premier module porté sur le socle d'ADR-154.
+
+### Décision 1 — La route sort de `/dashboard`
+
+`/studio/calendrier/[id]`, et non `/dashboard/calendar/[id]?studio=1`.
+
+Dans `/dashboard`, le gabarit ajoute une colonne de navigation collante et un
+cadre `p-6 lg:p-10 max-w-[88rem]` que `/vitrine-studio` n'a pas. Deux studios
+qui ne se ressemblent pas, c'est exactement ce que la demande refuse — « le
+client ne doit voir aucune différence quand il paramètre n'importe quelle
+application ». Le préfixe est commun aux douze : les onze suivants s'y rangent
+sans nouvelle décision.
+
+**Écarté** : garder la route du tableau de bord pour préserver les
+`revalidatePath` existants. Le coût réel était de quatre lignes et d'une garde,
+contre une divergence visuelle permanente.
+
+### Décision 2 — Une revalidation par route, prouvée par une garde
+
+C'est un défaut DÉJÀ PAYÉ, deux fois. En VIT-37,
+`revalidatePath("/dashboard", "layout")` n'atteignait pas `/vitrine-studio` :
+le lien Instagram s'enregistrait et n'apparaissait jamais. Rien ne le signalait,
+parce que l'écriture réussissait.
+
+Chaque `revalidatePath(\`/dashboard/calendar/${id}\`)` porte donc son jumeau
+`/studio/calendrier/${id}`, et `revalidation-studio.test.ts` lit le fichier
+d'actions et échoue si l'un manque. La garde nomme le chemin ET son jumeau
+absent — un message qui dit quoi faire, pas seulement que c'est faux.
+
+### Décision 3 — L'aperçu est la vraie page, avec les chemins serveur coupés
+
+`CalendarTracker` reçoit un drapeau `apercu`, par défaut `false` : la page
+publique ne change pas d'un pixel. Il coupe les TROIS chemins qui parlent au
+serveur, et rien d'autre — le rafraîchissement doux (`getCalendarState`),
+l'ouverture d'une case (`openCalendarBox`, qui grave une ouverture et brûle un
+lot au nom du commerçant) et l'inscription au rappel (`joinCalendar`, qui écrit
+une adresse et pose un consentement).
+
+Ces trois-là sont l'inventaire COMPLET : le composant n'importe que ces trois
+actions. C'est ce qui rend la coupe vérifiable plutôt que plausible.
+
+**Écarté** : une maquette. Elle aurait été une seconde page joueur à tenir
+d'accord avec la première, et l'écart ne se serait vu qu'en ouvrant la vraie
+page (ADR-152).
+
+### Ce que le socle a rendu possible, et qui était écrit comme impossible
+
+`atelier-calendar-etapes.ts` disait, avant ce lot : « `updateCalendar` écrit
+onze colonnes en bloc, dont trois destructives à l'absence : Les réglages est
+INDIVISIBLE ». C'était vrai tant que les champs visibles portaient les `name`
+de la charge utile.
+
+Avec le contrat du socle — charge utile rendue en entier depuis l'état, aucun
+`name` sur un contrôle visible — les treize champs partent quelle que soit
+l'étape affichée. Huit étapes, et la mutation qui retire un seul champ
+(`fond_key`) fait rougir HUIT assertions, une par étape.
+
+### Ce qui reste manuel, délibérément
+
+Réduire le nombre de cases SUPPRIME des cases et leurs codes `CADEAU-`.
+L'enregistrement automatique est donc suspendu tant que `day_count` diffère de
+la valeur en base : le geste destructif exige un clic, qui fait apparaître la
+confirmation. La mutation qui rend l'automatisme inconditionnel fait rougir
+cette garde-là et AUCUNE autre.
+
+### Piège d'environnement, à connaître pour les dix lots suivants
+
+Deux suites (`supabase/rpc`, `player-wallet-screen`) résolvent des fichiers par
+`path.join(process.cwd(), "node_modules", …)`. Dans un worktree sans
+`node_modules` complet, elles ne rougissent pas : elles se taisent. C'est
+exactement le mode d'échec qu'elles existent pour empêcher. Un worktree d'agent
+doit donc porter une jonction vers le `node_modules` du dépôt — et vérifier
+qu'un `node_modules` PRÉSENT est bien une jonction, un cache Vitest de une
+entrée ressemblant assez à une installation pour tromper un `Test-Path`.
