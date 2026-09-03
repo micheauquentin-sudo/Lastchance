@@ -68,6 +68,7 @@ const MODULES: Module[] = [
     nom: "quiz",
     base: "/dashboard/quiz/e2e95000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier du quiz",
+    studio: "Mon studio",
     premiereEtape: "quiz",
     etapes: ["quiz", "questions", "dotation", "verification"],
   },

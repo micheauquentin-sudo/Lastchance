@@ -114,6 +114,17 @@
   VIT-37, où un enregistrement réussi n'apparaissait jamais à l'écran.
   L'atelier reste, pour le téléphone seulement.
 
+- **VIT-41 — Le créateur de quiz passe au studio** (ADR-156). Huit étapes,
+  route `/studio/quiz/[id]`, onze `revalidatePath` jumelés et gardés.
+  `updateQuiz` EFFAÇAIT la consigne d'accueil dès qu'elle n'était pas rendue —
+  la mutation qui retire `intro_text` de la charge utile fait rougir huit
+  assertions, une par étape. La dotation, indivisible (sept colonnes et un
+  `superRefine` croisé), est présentée en DEUX étapes sans jamais partir en deux
+  morceaux : un seul état, deux canaux d'écriture, chacun envoyant sa charge
+  entière. L'aperçu monte la vraie carte de question ; l'en-tête, l'accueil et
+  le chronomètre sont omis et DITS — un décompte simulé atteindrait zéro pendant
+  le réglage et afficherait « temps écoulé » sur une partie jamais jouée.
+
 - **VIT-40 — La chasse au trésor passe au studio** (ADR-157). Sept étapes,
   route `/studio/chasse/[id]`, six `revalidatePath` jumelés et gardés.
   `updateHunt` écrase par absence : la mutation qui retire `name` de la charge
