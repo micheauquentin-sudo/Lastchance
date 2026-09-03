@@ -881,11 +881,50 @@ export function LoyaltyMilestonesEditor({
   milestones: LoyaltyMilestone[];
   wheels: WheelOption[];
 }) {
-  const ordered = [...milestones].sort((a, b) => coutPalier(a) - coutPalier(b));
-
   return (
     <div className="space-y-4">
       <LoyaltyTiersForm program={program} />
+      <LoyaltyPaliersEditor
+        programId={program.id}
+        milestones={milestones}
+        wheels={wheels}
+      />
+    </div>
+  );
+}
+
+/**
+ * LES PALIERS SEULS — SANS le formulaire des niveaux (VIT-42).
+ *
+ * ── Pourquoi cette séparation existe, et ce qu'elle protège ──
+ *
+ * `LoyaltyMilestonesEditor` monte deux choses qui n'ont RIEN en commun côté
+ * serveur : `LoyaltyTiersForm`, qui vise `updateLoyaltyProgram` (huit colonnes
+ * réécrites en bloc), et cette liste, dont chaque ligne vise une action
+ * ATOMIQUE par palier (`createLoyaltyMilestone`, `updateLoyaltyMilestone`,
+ * `deleteLoyaltyMilestone`) — immunisée par construction à l'écrasement en bloc.
+ *
+ * Le studio (`/studio/fidelite/[id]`) ne peut pas monter le premier : ses champs
+ * cachés seraient un SECOND écrivain sur les colonnes que le studio poste déjà
+ * depuis son état unique, et le dernier arrivé gagnerait. Il monte donc cette
+ * liste-ci, telle quelle. Une seconde liste propre au studio aurait été une
+ * deuxième vérité sur ce qu'est un palier.
+ *
+ * L'atelier, lui, ne change pas d'un pixel : il monte les deux, dans le même
+ * ordre, par le composant d'origine.
+ */
+export function LoyaltyPaliersEditor({
+  programId,
+  milestones,
+  wheels,
+}: {
+  programId: string;
+  milestones: LoyaltyMilestone[];
+  wheels: WheelOption[];
+}) {
+  const ordered = [...milestones].sort((a, b) => coutPalier(a) - coutPalier(b));
+
+  return (
       <Card>
       <h2 className="font-semibold mb-1">Paliers</h2>
       {/* Ce paragraphe ANNONÇAIT une borne qui n'existait pas : « chaque lot
@@ -918,9 +957,8 @@ export function LoyaltyMilestonesEditor({
         </ul>
       )}
 
-      <AddMilestoneForm programId={program.id} wheels={wheels} />
+      <AddMilestoneForm programId={programId} wheels={wheels} />
       </Card>
-    </div>
   );
 }
 
@@ -937,7 +975,15 @@ function coutPalier(milestone: LoyaltyMilestone): number {
  * Traduit un montant de points dans l'unité que le commerçant connaît. Repère
  * seulement : c'est le point qui est saisi, jamais la visite.
  */
-function equivalentVisites(points: number): string {
+/**
+ * « Soit environ 5 visites » — la phrase qui traduit un montant en points dans
+ * l'unité que le commerçant connaît.
+ *
+ * EXPORTÉE (VIT-42) parce que le studio pose exactement les mêmes questions —
+ * un seuil de niveau, un barème de parrainage — et qu'une seconde formulation
+ * aurait divergé au premier ajustement du tarif de la visite.
+ */
+export function equivalentVisites(points: number): string {
   const visites = Math.round(points / LOYALTY_POINTS_PAR_VISITE);
   if (!Number.isFinite(visites) || visites < 1) return "Moins d'une visite.";
   return `Soit environ ${visites} visite${visites > 1 ? "s" : ""} (${LOYALTY_POINTS_PAR_VISITE} points par visite).`;

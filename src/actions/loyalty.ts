@@ -292,6 +292,7 @@ export async function updateLoyaltyProgram(
 
   revalidatePath("/dashboard/loyalty");
   revalidatePath(`/dashboard/loyalty/${id}`);
+  revalidatePath(`/studio/fidelite/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -353,6 +354,7 @@ export async function updateLoyaltyProgramStyle(
   }
 
   revalidatePath(`/dashboard/loyalty/${id}`);
+  revalidatePath(`/studio/fidelite/${id}`);
   // « Vos clients le voient dès maintenant » : la page publique du passeport
   // est en `force-dynamic`, mais la purge reste posée par symétrie avec les
   // autres écritures du module.
@@ -412,6 +414,7 @@ export async function updateLoyaltyProgramReferral(
   }
 
   revalidatePath(`/dashboard/loyalty/${id}`);
+  revalidatePath(`/studio/fidelite/${id}`);
   revalidatePath(`/passeport/${id}`);
   return { ok: true, data: undefined };
 }
@@ -496,6 +499,7 @@ export async function setLoyaltyProgramStatus(
 
   revalidatePath("/dashboard/loyalty");
   revalidatePath(`/dashboard/loyalty/${id}`);
+  revalidatePath(`/studio/fidelite/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -691,6 +695,7 @@ export async function createLoyaltyMilestone(
   }
 
   revalidatePath(`/dashboard/loyalty/${parsed.data.program_id}`);
+  revalidatePath(`/studio/fidelite/${parsed.data.program_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -747,6 +752,7 @@ export async function updateLoyaltyMilestone(
   }
 
   revalidatePath(`/dashboard/loyalty/${existing.program_id}`);
+  revalidatePath(`/studio/fidelite/${existing.program_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -845,6 +851,7 @@ export async function deleteLoyaltyMilestone(
   }
 
   revalidatePath(`/dashboard/loyalty/${milestone.program_id}`);
+  revalidatePath(`/studio/fidelite/${milestone.program_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -940,6 +947,7 @@ export async function createLoyaltyOrderCodes(input: {
   }
 
   revalidatePath(`/dashboard/loyalty/${parsed.data.programId}`);
+  revalidatePath(`/studio/fidelite/${parsed.data.programId}`);
   return {
     ok: true,
     data: (data ?? []).map((row) => ({

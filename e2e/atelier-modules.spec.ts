@@ -91,6 +91,7 @@ const MODULES: Module[] = [
     nom: "passeport",
     base: "/dashboard/loyalty/e2eb0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier du passeport",
+    studio: "Mon studio",
     libelleVoir: "Voir le passeport",
     premiereEtape: "programme",
     etapes: ["programme", "recompenses", "cartes", "verification"],

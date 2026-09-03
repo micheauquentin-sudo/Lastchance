@@ -199,7 +199,7 @@ async function fetchProgramWithOrg(
   return { program, organization: org };
 }
 
-function toMilestoneView(row: LoyaltyMilestone): LoyaltyMilestoneView {
+export function toMilestoneView(row: LoyaltyMilestone): LoyaltyMilestoneView {
   return {
     id: row.id,
     visitCount: row.visit_count,
