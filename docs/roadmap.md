@@ -60,7 +60,21 @@
   base semée porte un programme d'un autre locataire. Une couverture qui dépend
   du seed disparaît le jour où on allège les données de départ, sans qu'aucun
   test ne change de couleur.
-**Décisions** : ADR-145 à ADR-151.
+- **VIT-35/PR #333 — Deux colonnes, neuf étapes.** Les trois colonnes du
+  studio devenaient illisibles : les étapes remontent en bandeau haut (en jaune,
+  comme les boutons de personnalisation), les réglages tiennent la gauche,
+  l'aperçu glisse à droite. L'allure, qui était un mur de réglages, est répartie
+  sur les étapes qui la concernent (`allure-repartition.ts`).
+- **VIT-36 — La rangée est bornée, le cadre ne bouge pas** (ADR-152). Le
+  `flex-1` de VIT-35 n'avait pas de plafond : 1350 px à gauche pour 512 à
+  l'aperçu sur un écran de 1920. Plafond `lg:max-w-[1360px]` centré sur la
+  RANGÉE — borner l'aside aurait laissé un vide à droite —, partage ~60/40.
+  **Le cadre reste à 480 px** : c'est la borne de la page publique, et un aperçu
+  plus large rendrait une mise en page que personne ne voit. Garde
+  `largeur-apercu.test.ts` : elle compare les DEUX fichiers plutôt que de
+  recopier le chiffre, exige une ancre unique, et rougit à la mutation.
+
+**Décisions** : ADR-145 à ADR-152.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

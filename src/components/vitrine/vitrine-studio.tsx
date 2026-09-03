@@ -377,7 +377,7 @@ export function VitrineStudio({
           colonne de gauche fait défiler l'aperçu hors de l'écran : on règle
           alors ce qu'on ne voit plus. Motif de `poster-editor`, et c'est
           précisément ce qu'il ne faut pas casser en élargissant. */}
-      <div className="flex flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
+      <div className="mx-auto flex w-full flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:max-w-[1360px] lg:flex-row lg:items-stretch lg:overflow-hidden">
         {/* LA COLONNE DE GAUCHE PREND TOUT CE QUI RESTE (VIT-35).
 
             Elle avait 420 px, 540 sur la carte, pendant que l'allure en tenait
@@ -386,6 +386,16 @@ export function VitrineStudio({
             l'éditeur de carte s'imbrique sur trois rangs (carte, rubrique,
             fiche), chaque rang mange sa marge, et le formulaire d'une fiche
             dépliée finissait à ~195 px.
+
+            MAIS « TOUT CE QUI RESTE » N'A PAS DE FIN SUR UN GRAND ÉCRAN, et
+            c'est ce que la première version a raté : à 1920 px, la gauche
+            prenait ~1350 px pour 512 à l'aperçu — trois quarts de l'écran pour
+            des champs qui n'en demandent pas tant, et la vitrine réduite à un
+            timbre. Le plafond est posé sur la RANGÉE (`lg:max-w-[1360px]`,
+            centrée) et non sur cette colonne : borner l'aside laisserait un
+            vide à droite de l'aperçu, borner la rangée recentre les deux. Le
+            partage devient ~60/40, et la gauche garde ~800 px — toujours bien
+            au-delà des 540 dont elle disposait avant VIT-35.
 
             `min-w-0` n'est pas décoratif : sans lui, un enfant large — une
             rangée de champs du catalogue — impose sa largeur minimale au

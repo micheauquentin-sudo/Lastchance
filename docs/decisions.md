@@ -9628,3 +9628,56 @@ porte un programme actif d'un autre locataire, si bien qu'elles mesuraient
 l'isolation sans le savoir ni le dire. Une couverture qui dépend du seed n'est
 pas une couverture : elle disparaît le jour où quelqu'un allège les données de
 départ, sans qu'aucun test ne change de couleur.
+
+## ADR-152 — L'aperçu du studio est borné par la page publique, pas par la place disponible
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-36, suite de VIT-35 (PR #333). Retour d'usage : « la colonne
+de gauche est un peu trop grande et l'aperçu pas assez grand ».
+
+VIT-35 avait inversé les rôles pour libérer l'éditeur de carte : les réglages
+sont passés en `flex-1`, l'aperçu est devenu la colonne fixe. Le constat est
+juste — sur un écran de 1920 px, la gauche prenait environ 1350 px pour 512 à
+l'aperçu. Trois quarts de l'écran pour des champs qui n'en demandent pas tant.
+
+### La cause n'est pas l'aperçu, c'est un `flex-1` sans plafond
+
+« Prendre tout ce qui reste » n'a pas de fin. Le réglage tient donc en un
+plafond posé sur la RANGÉE — `lg:max-w-[1360px]`, centrée — et non sur la
+colonne de gauche : borner l'aside aurait laissé un vide à droite de l'aperçu,
+alors que borner la rangée recentre les deux. Le partage devient ~60/40, et la
+gauche conserve ~800 px, toujours bien au-delà des 540 dont elle disposait avant
+VIT-35.
+
+### Décision — le cadre de l'aperçu NE MONTE PAS
+
+La réponse évidente à « pas assez grand » était d'élargir `max-w-[480px]`. Elle
+est fausse, et pas d'un cheveu : **480 n'est pas un choix du studio**, c'est la
+borne de la page publique elle-même (`v/[slug]`, `max-w-[480px] mx-auto`). Un
+cadre à 560 rendrait des blocs 17 % plus larges que ce que le visiteur voit —
+le texte se couperait ailleurs, une grille passerait de deux à trois colonnes,
+et le commerçant validerait une mise en page qui n'existe pour personne.
+
+C'est le seul défaut qu'un aperçu ne doit jamais avoir, parce qu'il est
+**invisible** : rien ne casse, tout a l'air de fonctionner, et l'écart ne se
+découvre qu'en ouvrant la vraie page. Seule la colonne s'élargit — 512 → 544 —
+pour que le cadre respire au lieu d'être collé au bord.
+
+**Écarté** : un `zoom` ou un `scale` sur le cadre, qui donnerait des pixels sans
+mentir sur la mise en page. Écarté pour le risque, pas pour le principe : un
+`transform` déborde un conteneur défilant par le bas, et `zoom` reste exotique
+au point qu'un aperçu cassé se paierait plus cher que le confort gagné. C'est
+la piste à reprendre si le rééquilibrage ne suffit pas.
+
+### La garde vérifie une RELATION, pas une valeur
+
+`largeur-apercu.test.ts` lit les deux fichiers et compare. Recopier 480 dans le
+test aurait produit une garde qui survit à la modification de la page publique
+et ment alors sur elle-même.
+
+Deux détails l'ont failli rendre aveugle, et tous deux sont des classiques du
+dépôt : elle a d'abord visé le conteneur EXTÉRIEUR de la page publique — celui
+qui n'a pas de borne —, parce qu'un `.find` rend la première ligne venue ;
+l'unicité de l'ancre est désormais exigée, pas supposée. Et la mutation à 560 a
+été jouée : elle fait rougir les deux assertions.
