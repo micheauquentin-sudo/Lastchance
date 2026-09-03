@@ -17,8 +17,13 @@ import {
   CalendarDaysEditor,
   CalendarSettings,
   CalendarStatusControls,
-  type CalendarWheelOption,
 } from "@/components/dashboard/calendar-editor";
+import {
+  bilanCasesCalendrier,
+  toCalendarWheelOptions,
+  type CalendarPrizeRow,
+  type CalendarWheelRow,
+} from "@/components/dashboard/calendar-donnees-editeur";
 import { CalendarStatusBadge } from "@/components/dashboard/calendar-status";
 import {
   etapeVoisine,
@@ -39,12 +44,7 @@ import { AtelierEntreeCalendrier } from "@/components/dashboard/atelier-calendar
 import { AtelierCalendrierVerification } from "@/components/dashboard/atelier-calendar-verification";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
 import { ModuleCapabilityNotice } from "@/components/dashboard/module-capability-notice";
-import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
-import {
-  caseVide,
-  casesIncompletes,
-  verificationCalendrier,
-} from "@/lib/activation/calendar";
+import { verificationCalendrier } from "@/lib/activation/calendar";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { calendarThemeTokens } from "@/components/calendar/calendar-theme";
@@ -54,44 +54,6 @@ export const metadata: Metadata = { title: "Calendrier" };
 
 const CALENDAR_COLUMNS =
   "id, organization_id, name, theme, status, start_date, timezone, day_count, public_slug, merchant_content, fond_key, completion_reward_label, completion_reward_details, completion_reward_stock, completion_reward_claimed_count, created_at, updated_at, code_ttl_days";
-
-interface WheelRow {
-  id: string;
-  name: string;
-}
-interface PrizeRow {
-  wheel_id: string;
-  label: string;
-  is_losing: boolean;
-  stock: number | null;
-  weight: number;
-}
-
-/**
- * Roues + état de leurs lots, tel que l'éditeur de cases en a besoin. Miroir du
- * filtre de tirage d'un tour offert (`is_active and weight > 0 and (is_losing or
- * stock > 0)`) : un lot non perdant « vide = illimité » est hors tirage — c'est
- * ce que l'avertissement annonce au commerçant.
- */
-function toWheelOptions(wheels: WheelRow[], prizes: PrizeRow[]): CalendarWheelOption[] {
-  const byWheel = new Map<string, PrizeRow[]>();
-  for (const prize of prizes) {
-    const list = byWheel.get(prize.wheel_id) ?? [];
-    list.push(prize);
-    byWheel.set(prize.wheel_id, list);
-  }
-  return wheels.map((w) => {
-    const drawn = (byWheel.get(w.id) ?? []).filter((p) => p.weight > 0);
-    return {
-      id: w.id,
-      name: w.name,
-      unlimitedPrizes: drawn
-        .filter((p) => !p.is_losing && p.stock === null)
-        .map((p) => p.label),
-      hasDrawablePrize: drawn.some((p) => p.is_losing || (p.stock ?? 0) > 0),
-    };
-  });
-}
 
 export default async function CalendarDetailPage({
   params,
@@ -158,7 +120,10 @@ export default async function CalendarDetailPage({
   if (!calendar) notFound();
   const c = calendar as unknown as Calendar;
   const days = (dayRows ?? []) as CalendarDay[];
-  const wheels = toWheelOptions((wheelRows ?? []) as WheelRow[], (prizeRows ?? []) as PrizeRow[]);
+  const wheels = toCalendarWheelOptions(
+    (wheelRows ?? []) as CalendarWheelRow[],
+    (prizeRows ?? []) as CalendarPrizeRow[],
+  );
   const tokens = calendarThemeTokens(c.theme);
   // URL ABSOLUE : un QR ne peut pas encoder un chemin relatif. Même source que
   // le quiz et les pronostics (APP_URL), pour que le QR imprimé reste valable.
@@ -189,45 +154,14 @@ export default async function CalendarDetailPage({
     isSupported: true,
   };
 
-  // Les cases telles que la vérification et le compteur d'entrée les lisent :
-  // même module que le refus serveur, plus le `day_index` qui NOMME la case.
-  const casesVerification = days.map((d) => {
-    const roue =
-      d.content_type === "spin" && d.target_wheel_id
-        ? (wheels.find((w) => w.id === d.target_wheel_id) ?? null)
-        : undefined;
-    return {
-      day_index: d.day_index,
-      content_type: d.content_type,
-      reward_stock: d.reward_stock,
-      reward_label: d.reward_label ?? "",
-      target_wheel_id: d.target_wheel_id,
-      content_text: d.content_text,
-      roue:
-        roue === undefined
-          ? undefined
-          : roue === null
-            ? null
-            : { nom: roue.name, probleme: spinWheelIssue(roue) },
-    };
-  });
-  // « Garnies » au sens du commerçant : complètes ET donnant quelque chose. Une
-  // case message vide est légale (elle s'ouvrira sur un « pas de chance »),
-  // donc jamais « à compléter » — mais la compter comme garnie ferait afficher
-  // « 24 cases garnies » sur un calendrier qui vient d'être créé.
-  const vides = casesVerification.filter(caseVide).length;
-  const garnies =
-    days.length - casesIncompletes(casesVerification).length - vides;
-
-  // LES MÊMES CONTRÔLES POUR LES DEUX VUES, calculés UNE fois : l'étape « La
-  // vérification » les raconte, le suivi n'en garde que le verdict, en pastille
-  // sur chaque bloc. Deux calculs feraient deux vérités sur ce qui manque.
-  const entreeVerification = {
-    dayCount: c.day_count,
-    cases: casesVerification,
-    completionRewardLabel: c.completion_reward_label ?? "",
-    completionRewardStock: c.completion_reward_stock,
-  };
+  // Les cases telles que la vérification et le compteur d'entrée les lisent,
+  // dérivées par le module PARTAGÉ avec le studio (VIT-39) : deux copies
+  // feraient deux vérités sur ce qu'est une case garnie.
+  const {
+    entree: entreeVerification,
+    garnies,
+    vides,
+  } = bilanCasesCalendrier(c, days, wheels);
   const tuiles = tuilesDuModule(
     "calendrier",
     verificationCalendrier(entreeVerification).controles,
@@ -391,18 +325,60 @@ export default async function CalendarDetailPage({
         </Card>
       </CarteRepliable>
 
-      <CarteRepliable
-        {...carteTuile(tuiles, "atelier")}
-        defaultOuvert={false}
-        resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length}.`}
-      >
-        <AtelierEntreeCalendrier
-          calendarId={c.id}
-          garnies={garnies}
-          vides={vides}
-          total={days.length}
-        />
-      </CarteRepliable>
+      {/* ── LE STUDIO EST LE CHEMIN PRINCIPAL SUR GRAND ÉCRAN (VIT-39) ──
+
+          Tout s'y règle en voyant la page du client. La carte est donc OUVERTE
+          d'emblée : un commerçant qui vient régler quelque chose doit tomber
+          dessus, pas la déplier.
+
+          Elle ne s'affiche qu'à partir de `lg`, parce que le studio est à deux
+          colonnes : en dessous, elles s'empilent et l'aperçu passe sous les
+          réglages, ce qui lui retire sa raison d'être. Même arbitrage, et même
+          motif, que `/dashboard/vitrine`.
+
+          LA PASTILLE DE PRÉPARATION SUIT L'ENTRÉE PRINCIPALE : elle appartient
+          à la préparation, pas à un écran. Sur grand écran, c'est le studio. */}
+      <div className="hidden lg:block">
+        <CarteRepliable
+          {...carteTuile(tuiles, "atelier")}
+          titre="Mon studio"
+          defaultOuvert
+          resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length} — tout se règle ici, en voyant le résultat.`}
+        >
+          <Card className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-sm text-k-body">
+              Le calendrier de vos clients au centre, les réglages autour. Le
+              nom, l&apos;allure, les dates, les cases, le cadeau de fin et
+              votre message — tout s&apos;y règle en voyant le résultat.
+            </p>
+            <Link
+              href={`/studio/calendrier/${c.id}`}
+              className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+            >
+              Ouvrir le studio
+            </Link>
+          </Card>
+        </CarteRepliable>
+      </div>
+
+      {/* L'ATELIER RESTE, POUR LE TÉLÉPHONE. Ce qui est masqué au-delà de `lg`
+          est l'ENTRÉE, jamais la ROUTE : `?etape=` demeure atteignable sur
+          n'importe quelle taille d'écran — une adresse d'étape gardée en
+          favori doit continuer de mener quelque part. */}
+      <div className="lg:hidden">
+        <CarteRepliable
+          {...carteTuile(tuiles, "atelier")}
+          defaultOuvert={false}
+          resume={`${garnies} case${garnies > 1 ? "s" : ""} garnie${garnies > 1 ? "s" : ""} sur ${days.length}.`}
+        >
+          <AtelierEntreeCalendrier
+            calendarId={c.id}
+            garnies={garnies}
+            vides={vides}
+            total={days.length}
+          />
+        </CarteRepliable>
+      </div>
 
       <RelanceErreur message={relanceError} />
 

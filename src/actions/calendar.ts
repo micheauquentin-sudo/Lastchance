@@ -1029,6 +1029,15 @@ export async function updateCalendar(
 
   revalidatePath("/dashboard/calendar");
   revalidatePath(`/dashboard/calendar/${id}`);
+  /**
+   * LE STUDIO VIT HORS DE `/dashboard`, IL NE SE REVALIDE DONC PAS TOUT SEUL
+   * (VIT-39). C'est un défaut déjà payé : en VIT-37, `revalidatePath`
+   * n'atteignait pas `/vitrine-studio`, et un lien Instagram enregistré
+   * n'apparaissait jamais. Chaque revalidation de `/dashboard/calendar/${id}`
+   * porte donc son jumeau, et `revalidation-studio.test.ts` échoue s'il
+   * manque.
+   */
+  revalidatePath(`/studio/calendrier/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1083,6 +1092,7 @@ export async function setCalendarStatus(
     if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/calendar");
     revalidatePath(`/dashboard/calendar/${id}`);
+    revalidatePath(`/studio/calendrier/${id}`);
     return { ok: true, data: undefined };
   }
 
@@ -1128,6 +1138,7 @@ export async function setCalendarStatus(
 
   revalidatePath("/dashboard/calendar");
   revalidatePath(`/dashboard/calendar/${id}`);
+  revalidatePath(`/studio/calendrier/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1324,5 +1335,6 @@ export async function updateCalendarDay(input: {
   }
 
   revalidatePath(`/dashboard/calendar/${existing.calendar_id}`);
+  revalidatePath(`/studio/calendrier/${existing.calendar_id}`);
   return { ok: true, data: undefined };
 }

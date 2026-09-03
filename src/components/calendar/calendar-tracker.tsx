@@ -82,6 +82,23 @@ export interface CalendarTrackerProps {
    * à proposer : le bas de page se tait plutôt que d'afficher un cadre vide.
    */
   sortie?: Sortie | null;
+  /**
+   * MODE APERÇU — le studio du commerçant monte CETTE page, pas une maquette
+   * (VIT-39, ADR-152).
+   *
+   * Une copie approximative aurait été une seconde page joueur à tenir
+   * d'accord avec la première, et c'est le seul défaut qu'un aperçu ne doit
+   * jamais avoir parce qu'il est INVISIBLE : rien ne casse, tout a l'air de
+   * fonctionner, et l'écart ne se découvre qu'en ouvrant la vraie page.
+   *
+   * Ce drapeau ne change RIEN à ce qui se voit. Il coupe les trois chemins qui
+   * PARLENT AU SERVEUR : le rafraîchissement doux (`getCalendarState`),
+   * l'ouverture d'une case (`openCalendarBox` — qui grave une ouverture au nom
+   * du commerçant et brûle un lot) et l'inscription au rappel
+   * (`joinCalendar`). Les trois écrivent ou identifient ; aucun n'a sa place
+   * dans un écran de réglages.
+   */
+  apercu?: boolean;
 }
 
 /** Convertit une case ouverte (résultat d'openCalendarBox) en case publique. */
@@ -129,6 +146,7 @@ export function CalendarTracker({
   dayIds,
   spinBundles,
   sortie = null,
+  apercu = false,
 }: CalendarTrackerProps) {
   const router = useRouter();
   const tokens = calendarThemeTokens(theme);
@@ -182,6 +200,10 @@ export function CalendarTracker({
     busyRef.current = busy;
   }, [busy]);
   useEffect(() => {
+    // APERÇU : aucun poll. Le studio règle une page qui n'est pas encore
+    // ouverte, et un état frais y écraserait ce que le commerçant est en train
+    // d'essayer par ce qui est déjà en base.
+    if (apercu) return;
     let active = true;
     const refresh = async () => {
       if (!active || document.hidden || busyRef.current) return;
@@ -204,10 +226,14 @@ export function CalendarTracker({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [calendarId]);
+  }, [calendarId, apercu]);
 
   const handleOpen = useCallback(
     async (day: CalendarPublicDay) => {
+      // APERÇU : ouvrir une case GRAVE une ouverture et brûle un lot, au nom
+      // du commerçant qui règle son écran. La grille reste cliquable — c'est
+      // la vraie page — mais le geste ne part pas.
+      if (apercu) return;
       const dayId = dayIds[day.dayIndex];
       if (!dayId || opening !== null) return;
       setOpening(day.dayIndex);
@@ -262,7 +288,7 @@ export function CalendarTracker({
         setOpening(null);
       }
     },
-    [calendarId, dayIds, opening, snapshot.days],
+    [apercu, calendarId, dayIds, opening, snapshot.days],
   );
 
   const startSpin = useCallback(
@@ -378,7 +404,7 @@ export function CalendarTracker({
       )}
 
       {/* ── Rappel quotidien (opt-in RGPD) ── */}
-      <ReminderPanel slug={publicSlug} />
+      <ReminderPanel slug={publicSlug} apercu={apercu} />
 
       {/* ── Garder le lien avec le commerce ── */}
       <GarderLeLien sortie={sortie} organizationId={organizationId} />
@@ -1095,7 +1121,14 @@ function RevealDialog({
 // Rappel quotidien (opt-in RGPD, jamais pré-coché)
 // ────────────────────────────────────────────────────────────
 
-function ReminderPanel({ slug }: { slug: string }) {
+function ReminderPanel({
+  slug,
+  apercu = false,
+}: {
+  slug: string;
+  /** Aperçu commerçant : le formulaire se montre, il ne s'envoie pas. */
+  apercu?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [reminderOptIn, setReminderOptIn] = useState(false);
@@ -1106,7 +1139,9 @@ function ReminderPanel({ slug }: { slug: string }) {
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (pending) return;
+    // APERÇU : `joinCalendar` inscrit une adresse et pose un consentement.
+    // Rien de tout cela n'a sa place dans un écran de réglages.
+    if (pending || apercu) return;
     setPending(true);
     setError(null);
     try {
