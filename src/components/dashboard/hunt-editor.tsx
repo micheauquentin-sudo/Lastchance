@@ -22,7 +22,10 @@ import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
 import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
 import type { HuntStatus } from "@/types/database";
-import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
+import {
+  RaccourciAtelier,
+  VoirLeJeu,
+} from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeChasse } from "@/components/dashboard/atelier-hunt-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
@@ -158,8 +161,8 @@ export function HuntSettings({
           >
             Anti-partage de photos du QR : il empêche de tamponner plusieurs
             étapes trop vite depuis un même téléphone. Sans lui, un joueur qui
-            reçoit les photos des QR de toutes les étapes termine la chasse
-            sans avoir bougé. 0 = désactivé.
+            reçoit les photos des QR de toutes les étapes termine la chasse sans
+            avoir bougé. 0 = désactivé.
           </InfoBulle>
         </div>
 
@@ -412,9 +415,8 @@ export function HuntStepsEditor({
         {champs === "indices" ? (
           <>
             L&apos;indice s&apos;affiche au joueur une fois l&apos;étape
-            tamponnée — pour l&apos;orienter vers la suivante. Il est
-            facultatif : sans lui, le joueur cherche l&apos;affiche suivante par
-            lui-même.
+            tamponnée — pour l&apos;orienter vers la suivante. Il est facultatif
+            : sans lui, le joueur cherche l&apos;affiche suivante par lui-même.
           </>
         ) : (
           <>
@@ -602,48 +604,50 @@ function HuntStepRow({
             />
           </div>
           <FieldError
-            message={updateState && !updateState.ok ? updateState.error : undefined}
+            message={
+              updateState && !updateState.ok ? updateState.error : undefined
+            }
           />
         </form>
 
         {structure && (
-        <form
-          onSubmit={(event) => {
-            // Confirmer d'abord ; le hook n'est saisi que sur oui.
-            if (!confirm(`Supprimer l'étape « ${step.label} » ?`)) {
-              event.preventDefault();
-              return;
-            }
-            deleteSubmit(event);
-          }}
-        >
-          <input type="hidden" name="id" value={step.id} />
-          {/* La case n'apparaît qu'APRÈS le refus de l'action, qui NOMME le
+          <form
+            onSubmit={(event) => {
+              // Confirmer d'abord ; le hook n'est saisi que sur oui.
+              if (!confirm(`Supprimer l'étape « ${step.label} » ?`)) {
+                event.preventDefault();
+                return;
+              }
+              deleteSubmit(event);
+            }}
+          >
+            <input type="hidden" name="id" value={step.id} />
+            {/* La case n'apparaît qu'APRÈS le refus de l'action, qui NOMME le
               nombre de joueurs en cours. Avant ce refus, le commerçant ne
               saurait pas ce qu'il confirme ; l'autre refus de cette action
               (« une chasse active garde 2 étapes ») ne se coche pas. */}
-          {deleteState &&
-            !deleteState.ok &&
-            deleteState.error.includes(HUNT_STEP_LOSS_HINT) && (
-              <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
-                <input
-                  type="checkbox"
-                  name="confirm_players"
-                  value="1"
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                />
-                Je comprends que les chasses en cours seront raccourcies.
-              </label>
-            )}
-          <Button
-            type="submit"
-            variant="ghost"
-            disabled={deletePending}
-            aria-label={`Supprimer l'étape ${step.position}`}
-          >
-            ✕
-          </Button>
-        </form>
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(HUNT_STEP_LOSS_HINT) && (
+                <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_players"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les chasses en cours seront raccourcies.
+                </label>
+              )}
+            <Button
+              type="submit"
+              variant="ghost"
+              disabled={deletePending}
+              aria-label={`Supprimer l'étape ${step.position}`}
+            >
+              ✕
+            </Button>
+          </form>
         )}
       </div>
       <FieldError
@@ -738,7 +742,14 @@ function AddStepForm({
         {/* L'ACCUSÉ REMPLACE LE RECHARGEMENT dans le studio — voir l'en-tête.
             Il ne s'affiche jamais dans l'atelier : la page y est déjà partie
             en `location.replace` quand ce rendu arriverait. */}
-        {ajoutee !== null && (
+        {/* LA CONDITION LIT `state?.ok` ET NON LE SEUL ÉTAT LOCAL.
+            Sémantiquement c’est presque la même chose — `setAjoutee` part
+            d’un `onSuccess` —, mais ce n’est PAS pareil pour deux lecteurs :
+            la garde `use-action-form-coverage` cherche textuellement un succès
+            dérivé de `state`, et un accusé qui ne dépend que d’une mémoire
+            locale finirait par survivre à un échec suivant. Le verdict du
+            SERVEUR reste la source ; le libellé n’est là que pour le nommer. */}
+        {state?.ok && ajoutee !== null && (
           <p role="status" className="text-sm font-medium text-emerald-600">
             Étape « {ajoutee} » ajoutée.
           </p>
@@ -831,16 +842,19 @@ export function HuntStatusControls({
       notes={
         hunt.status !== "active" && !canActivate ? (
           <p className="mt-2 text-xs font-bold text-amber-700">
-            Pour ouvrir aux joueurs, il vous faut encore : {missing.join(" et ")}.
+            Pour ouvrir aux joueurs, il vous faut encore :{" "}
+            {missing.join(" et ")}.
           </p>
         ) : null
       }
       erreur={statusState && !statusState.ok ? statusState.error : undefined}
     >
-
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
-          <form action={deleteAction} className="flex flex-wrap items-center gap-2">
+          <form
+            action={deleteAction}
+            className="flex flex-wrap items-center gap-2"
+          >
             <input type="hidden" name="id" value={hunt.id} />
             <span className="text-sm text-k-body">
               Supprimer cette chasse, ses étapes et toute la progression ?
@@ -886,7 +900,9 @@ export function HuntStatusControls({
           </Button>
         )}
         <FieldError
-          message={deleteState && !deleteState.ok ? deleteState.error : undefined}
+          message={
+            deleteState && !deleteState.ok ? deleteState.error : undefined
+          }
         />
       </div>
     </CarteStatutAnimation>
