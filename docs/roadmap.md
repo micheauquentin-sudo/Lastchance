@@ -137,7 +137,20 @@
   L’aperçu est la vraie page joueur, ses deux actions et la proposition de
   passeport coupées.
 
-**Décisions** : ADR-145 à ADR-157.
+- **VIT-42 — Le passeport de fidélité passe au studio** (ADR-159). Huit
+  étapes, route `/studio/fidelite/[id]`, huit `revalidatePath` jumelés.
+  `updateLoyaltyProgram` écrit TOUTES ses colonnes : deux formulaires se
+  recopiaient mutuellement des champs cachés, et cela n'était sûr que parce
+  qu'ils ne sont jamais à l'écran ensemble — un invariant que **rien ne
+  gardait**. Une source unique les fait disparaître, et la garde compte les
+  porteurs de chaque colonne dans TOUT le document (un miroir vit dans le
+  formulaire voisin). La mutation qui réintroduit le miroir rougit avec « ces
+  colonnes ont deux écrivains ». L'aperçu est le vrai passeport à l'état du
+  PREMIER SCAN — zéro point — et non les « 42 points » de la maquette : régler
+  ses seuils sur un client fictif n'a pas de sens. L'étape de vérification ne
+  publie pas, et n'embarque donc pas la suppression du programme.
+
+**Décisions** : ADR-145 à ADR-159.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
