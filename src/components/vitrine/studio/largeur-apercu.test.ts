@@ -49,6 +49,8 @@ function largeurMax(source: string, ancre: string, quoi: string): number {
 }
 
 const SOURCE_APERCU = "src/components/vitrine/studio/apercu.tsx";
+/** La colonne est montée dans le socle depuis VIT-38 ; le cadre reste ici. */
+const SOURCE_COLONNE = "src/components/studio/cadre-apercu.tsx";
 const ANCRE_CADRE = "font-[family-name:var(--vitrine-texte)]";
 
 describe("studio — la largeur de l'aperçu", () => {
@@ -66,10 +68,9 @@ describe("studio — la largeur de l'aperçu", () => {
 
   it("la colonne est au moins aussi large que le cadre qu'elle porte", () => {
     // Sinon le cadre déborde et se fait rogner par le défilement vertical.
-    const source = lire(SOURCE_APERCU);
-    const cadre = largeurMax(source, ANCRE_CADRE, "cadre");
+    const cadre = largeurMax(lire(SOURCE_APERCU), ANCRE_CADRE, "cadre");
     const colonne = /lg:w-\[(\d+)px\]/.exec(
-      ligneUnique(source, "overflow-y-auto lg:w-[", "colonne"),
+      ligneUnique(lire(SOURCE_COLONNE), "overflow-y-auto lg:w-[", "colonne"),
     );
     if (!colonne) throw new Error("colonne : pas de lg:w-[…px]");
 

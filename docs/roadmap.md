@@ -86,7 +86,21 @@
   et non par `justify-center`, qui rendrait les premières inatteignables au
   débordement.
 
-**Décisions** : ADR-145 à ADR-153.
+- **VIT-38 — Le socle des studios** (ADR-154). Premier lot du programme « le
+  studio partout » : douze animations à régler dans la même forme. Six sondes de
+  lecture ont trouvé que **toutes** les actions de configuration du produit
+  écrasent par absence — `updateJackpotCampaign` réécrit quatorze colonnes en
+  bloc et un `public_slug` non rendu casse tous les QR imprimés, en silence.
+  Découper en étapes sans traiter cela aurait industrialisé la panne.
+  `src/components/studio/` porte désormais la coquille (formulaire vide voisin,
+  fil d'étapes, deux colonnes, statut), le hook d'enregistrement piloté par
+  l'état et le cadre d'aperçu. La vitrine est rebranchée dessus **sans
+  comportement nouveau** : ses 36 fichiers / 627 tests sont la preuve.
+  `coquille.test.tsx` garde le contrat pour les onze modules à venir.
+  Corrigé au passage : l'aperçu disait encore « rien n'est enregistré » alors
+  que le studio enregistre seul depuis VIT-30.
+
+**Décisions** : ADR-145 à ADR-154.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { FieldError } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { saveVitrineSettings } from "@/actions/vitrine";
 import { updateOrganizationSocialLinks } from "@/actions/organizations";
 import { updateOrganizationSocialLinksSchema } from "@/lib/validations/organizations";
 import { ApercuStudio } from "@/components/vitrine/studio/apercu";
+import { CoquilleStudio } from "@/components/studio/coquille";
+import { useEnregistrementDepuisEtat } from "@/components/studio/use-enregistrement-etat";
 import { ChampsCachesStudio } from "@/components/vitrine/studio/champs-caches";
 import {
   basculerBloc,
@@ -26,7 +25,6 @@ import {
 import { cartesExemple } from "@/components/vitrine/studio/exemples";
 import {
   ETAPES_STUDIO,
-  libelleEtapeStudio,
   parseEtapeStudio,
   type EtapeStudio,
 } from "@/components/vitrine/studio/pages";
@@ -189,7 +187,6 @@ export function VitrineStudio({
   });
 
   const formulaire = useRef<HTMLFormElement | null>(null);
-  const premierRendu = useRef(true);
 
   /**
    * LES TROIS LIENS SONT DANS L'ÉCRAN, PAS DANS `EtatStudio` (VIT-37).
@@ -214,27 +211,20 @@ export function VitrineStudio({
   // qui compte — pas ce que l'écran a tenté d'envoyer.
   const dejaEnregistre = state?.ok === true;
 
-  useEffect(() => {
-    // OUVRIR LE STUDIO N'ÉCRIT RIEN. Sans cette garde, le simple affichage
-    // poserait en base l'état résolu — donc les vingt-cinq défauts d'allure —
-    // sur une vitrine dont le commerçant n'a rien touché. C'est exactement le
-    // piège que VIT-19 a passé un lot à défaire.
-    if (premierRendu.current) {
-      premierRendu.current = false;
-      return;
-    }
-    if (!peutEditer) return;
-
-    // LE DÉLAI EST CE QUI REND LA CHOSE TENABLE : un curseur d'allure émet une
-    // valeur par pixel parcouru. Sans lui, traverser « Arrondi » enverrait
-    // vingt-quatre écritures. `useActionForm` sait déjà rejouer une soumission
-    // arrivée pendant qu'une autre vole — le débours ne fait que réduire le
-    // nombre de départs.
-    const t = setTimeout(() => {
-      formulaire.current?.requestSubmit();
-    }, 1200);
-    return () => clearTimeout(t);
-  }, [etat, peutEditer]);
+  /**
+   * L'ENREGISTREMENT AUTOMATIQUE VIENT DU SOCLE (VIT-38).
+   *
+   * Les deux gardes qu'il porte étaient écrites ici : ne rien envoyer au
+   * montage — sans quoi ouvrir le studio graverait en base les vingt-cinq
+   * défauts d'allure d'une vitrine à laquelle personne n'a touché (le piège
+   * que VIT-19 a passé un lot à défaire) — et ne rien envoyer sans le droit
+   * d'éditer. Elles valent pour les douze animations, pas pour celle-ci.
+   */
+  useEnregistrementDepuisEtat({
+    valeur: etat,
+    formulaire,
+    actif: peutEditer,
+  });
 
   /**
    * ET ILS S'ENREGISTRENT SEULS, COMME LE RESTE (VIT-37).
@@ -298,78 +288,57 @@ export function VitrineStudio({
     valeur: AllureVitrine[K],
   ) => setEtat((e) => ({ ...e, allure: { ...e.allure, [cle]: valeur } }));
 
+  /**
+   * L'APERÇU EST CONSTRUIT AVANT LE RENDU, parce qu'il devient une PROP de la
+   * coquille et non un enfant : la coquille décide de la rangée à deux
+   * colonnes, le module ne décide que de ce qu'il y a dedans.
+   */
+  const apercu = (
+    <ApercuStudio
+      etat={etat}
+      themeBase={themeInitial}
+      nom={identiteInitiale.nom}
+      logoUrl={identiteInitiale.logoUrl}
+      coverPath={identiteInitiale.coverPath}
+      coverAlt={identiteInitiale.coverAlt}
+      timezone={timezone}
+      cartes={exemples ? cartesExemple(etat.secteur) : cartes}
+      liens={liensEdites}
+      slug={slug}
+      exemples={exemples}
+    />
+  );
+
   return (
-    <div className="min-h-dvh bg-k-bg">
-      {/* LE FORMULAIRE DE RÉGLAGES — VIDE DE MISE EN PAGE, PLEIN DE CHAMPS.
-          Il est le VOISIN de la mise en page, jamais son parent : c'est ce qui
-          autorise les formulaires du logo, de la bannière et de la carte à
-          coexister sans imbrication. */}
-      <form
-        id={ID_FORMULAIRE}
-        ref={formulaire}
-        onSubmit={onSubmit}
-        className="hidden"
-      >
-        <ChampsCachesStudio etat={etat} />
-      </form>
+    <CoquilleStudio
+      titre="Mon studio"
+      hrefRetour="/dashboard/vitrine"
+      idFormulaire={ID_FORMULAIRE}
+      formulaire={formulaire}
+      onSubmit={onSubmit}
+      champsCaches={<ChampsCachesStudio etat={etat} />}
+      etapes={ETAPES_STUDIO}
+      etape={etape}
+      onEtape={setEtape}
+      peutEditer={peutEditer}
+      enregistrement={{
+        enCours: pending,
+        reussi: dejaEnregistre,
+        erreur: state && !state.ok ? state.error : undefined,
+      }}
+      outils={
+        /* L'INTERRUPTEUR D'EXEMPLES (VIT-28) — dans le BANDEAU, pas dans une
+           étape. Il ne dépend d'aucune d'elles : on veut juger une densité en
+           réglant l'allure, un style de fiche en composant sa carte, une
+           couleur en choisissant ses jeux. Le poser dans « Ma carte » aurait
+           obligé à quitter ce qu'on règle pour aller allumer de quoi le
+           regarder.
 
-      <div className="sticky top-0 z-40 border-b-2 border-k-ink bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link
-              href="/dashboard/vitrine"
-              className="rounded-xl border-2 border-k-ink bg-white px-3 py-1.5 text-sm font-black text-k-ink hover:bg-k-yellow"
-            >
-              ← Retour
-            </Link>
-            <span className="truncate text-sm font-black text-k-ink">
-              Mon studio
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <FieldError
-              message={state && !state.ok ? state.error : undefined}
-            />
-            {peutEditer ? (
-              <>
-                {/* L'ÉTAT SE LIT, IL NE S'INTERROMPT PAS. `aria-live="polite"`
-                    et non `assertive` : un lecteur d'écran doit l'annoncer
-                    entre deux phrases, jamais couper celle en cours. */}
-                <span
-                  aria-live="polite"
-                  className="text-xs font-semibold text-zinc-500"
-                >
-                  {pending
-                    ? "Enregistrement…"
-                    : dejaEnregistre
-                      ? "Modifications enregistrées"
-                      : "Enregistrement automatique"}
-                </span>
-                {/* LE BOUTON RESTE, MÊME AVEC L'AUTOMATISME. Il sert à qui
-                    veut partir tout de suite : cliquer envoie sans attendre le
-                    délai, et donne la certitude que rien n'est en vol. */}
-                <Button type="submit" form={ID_FORMULAIRE} disabled={pending}>
-                  {pending ? "Enregistrement…" : "Enregistrer"}
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </div>
-
-        {/* L'INTERRUPTEUR D'EXEMPLES (VIT-28) — dans le BANDEAU, pas dans une
-            page.
-
-            Il ne dépend d'aucune page : on veut juger une densité en réglant
-            l'allure, un style de fiche en composant sa carte, une couleur en
-            choisissant ses jeux. Le poser dans « La carte » aurait obligé à
-            quitter ce qu'on règle pour aller allumer de quoi le regarder.
-
-            IL N'ENTRE PAS DANS `EtatStudio`, et c'est délibéré : cet état-là
-            est ce qui PART au serveur (`ChampsCachesStudio` le sérialise en
-            entier). Une préférence d'affichage n'a rien à y faire — l'y mettre
-            aurait été le premier pas vers un réglage de confort enregistré
-            sans que personne l'ait demandé. */}
-        <div className="flex flex-wrap items-center gap-3 px-4 pb-2 sm:px-6">
+           IL N'ENTRE PAS DANS `EtatStudio`, et c'est délibéré : cet état-là
+           est ce qui PART au serveur. Une préférence d'affichage n'a rien à y
+           faire — l'y mettre aurait été le premier pas vers un réglage de
+           confort enregistré sans que personne l'ait demandé. */
+        <>
           <label className="flex items-center gap-2 text-xs font-black text-k-ink">
             <input
               type="checkbox"
@@ -383,197 +352,84 @@ export function VitrineStudio({
             Remplit l&apos;aperçu de fiches de votre métier, le temps de juger
             un style. Jamais enregistrées.
           </span>
-        </div>
-
-        {/* LE FIL DES NEUF ÉTAPES — des BOUTONS, pas des liens. Changer
-            d'étape ne doit pas naviguer : l'état vit en mémoire, et une
-            navigation le perdrait avec tout ce que le commerçant est en train
-            d'essayer.
-
-            ── JAUNE, ET NUMÉROTÉ ──
-
-            Le jaune est la couleur des boutons de personnalisation de ce
-            produit ; les étapes en sont, et c'est la demande. L'étape COURANTE
-            se distingue par trois choses à la fois — jaune plein contre jaune
-            pâle, ombre dure, pastille inversée — parce qu'une seule d'entre
-            elles ne suffit pas : la teinte seule échoue en plein soleil sur un
-            téléphone de comptoir, et `aria-current` ne se voit pas.
-
-            ÉCARTÉ : garder l'encre pleine de l'onglet actif d'avant. Elle
-            distinguait parfaitement, mais sortait les étapes de la famille
-            visuelle des réglages — c'est exactement ce que la demande refuse.
-
-            Le numéro dit combien il en reste et où l'on en est ; c'est ce qui
-            fait la différence entre un panneau et un parcours. Il est doublé
-            dans le nom accessible (`libelleEtapeStudio`), sans quoi un lecteur
-            d'écran annoncerait « 3 Ma carte » sans dire de quoi 3 est le
-            numéro. */}
-        {/* CENTRÉ, MAIS PAS AU PRIX DU DÉFILEMENT. `justify-center` posé sur
-            le conteneur qui défile rend le DÉBUT de la liste inatteignable dès
-            qu'elle déborde : les premières étapes se font rogner à gauche sans
-            qu'aucun défilement puisse y revenir. Le centrage passe donc par un
-            enfant `w-max mx-auto` — au large il se centre, à l'étroit ses
-            marges valent zéro et le défilement repart de la première étape. */}
-        <nav
-          aria-label="Étapes du studio"
-          className="overflow-x-auto px-4 pb-2 sm:px-6"
-        >
-          <div className="mx-auto flex w-max gap-1.5">
-            {ETAPES_STUDIO.map((e, i) => {
-              const courante = etape === e.cle;
-              return (
-                <button
-                  key={e.cle}
-                  type="button"
-                  onClick={() => setEtape(e.cle)}
-                  aria-current={courante ? "step" : undefined}
-                  aria-label={libelleEtapeStudio(e.cle)}
-                  title={e.resume}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-xl border-2 px-2.5 py-1.5 text-xs font-black text-k-ink ${
-                    courante
-                      ? "border-k-ink bg-k-yellow shadow-[2px_2px_0_var(--color-k-ink)]"
-                      : "border-k-ink/25 bg-k-yellow/25 hover:border-k-ink hover:bg-k-yellow/60"
-                  }`}
-                >
-                  <span
-                    aria-hidden
-                    className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none ${
-                      courante
-                        ? "bg-k-ink text-k-yellow"
-                        : "border border-k-ink/30 bg-white text-k-ink"
-                    }`}
-                  >
-                    {i + 1}
-                  </span>
-                  {e.titre}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-      </div>
-
-      {/* DEUX COLONNES — chacune défile CHEZ ELLE.
-          Sans `overflow-hidden` au-dessus, régler un curseur en bas de la
-          colonne de gauche fait défiler l'aperçu hors de l'écran : on règle
-          alors ce qu'on ne voit plus. Motif de `poster-editor`, et c'est
-          précisément ce qu'il ne faut pas casser en élargissant. */}
-      <div className="mx-auto flex w-full flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:max-w-[1360px] lg:flex-row lg:items-stretch lg:overflow-hidden">
-        {/* LA COLONNE DE GAUCHE PREND TOUT CE QUI RESTE (VIT-35).
-
-            Elle avait 420 px, 540 sur la carte, pendant que l'allure en tenait
-            400 à sa droite. La demande la libère : `flex-1`, et c'est l'aperçu
-            qui est désormais BORNÉ. Le gain va exactement là où il manquait —
-            l'éditeur de carte s'imbrique sur trois rangs (carte, rubrique,
-            fiche), chaque rang mange sa marge, et le formulaire d'une fiche
-            dépliée finissait à ~195 px.
-
-            MAIS « TOUT CE QUI RESTE » N'A PAS DE FIN SUR UN GRAND ÉCRAN, et
-            c'est ce que la première version a raté : à 1920 px, la gauche
-            prenait ~1350 px pour 512 à l'aperçu — trois quarts de l'écran pour
-            des champs qui n'en demandent pas tant, et la vitrine réduite à un
-            timbre. Le plafond est posé sur la RANGÉE (`lg:max-w-[1360px]`,
-            centrée) et non sur cette colonne : borner l'aside laisserait un
-            vide à droite de l'aperçu, borner la rangée recentre les deux. Le
-            partage devient ~60/40, et la gauche garde ~800 px — toujours bien
-            au-delà des 540 dont elle disposait avant VIT-35.
-
-            `min-w-0` n'est pas décoratif : sans lui, un enfant large — une
-            rangée de champs du catalogue — impose sa largeur minimale au
-            `flex-1` et pousse l'aperçu hors de l'écran au lieu de défiler chez
-            lui. C'est la panne classique d'un `flex-1` qui contient du
-            formulaire. */}
-        <aside className="w-full min-w-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full">
-          {etape === "identite" ? (
-            <PageIdentiteStudio
-              etat={etat}
-              majEtat={majEtat}
-              logoUrl={identiteInitiale.logoUrl}
-              coverPath={identiteInitiale.coverPath}
-              coverAlt={identiteInitiale.coverAlt}
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {etape === "horaires" ? (
-            <PageHorairesStudio
-              etat={etat}
-              majEtat={majEtat}
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {etape === "carte" ? (
-            <PageCarteStudio
-              nbCartes={cartes.length}
-              cartes={cartes}
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {/* « À la une » n'a plus d'étape à elle (VIT-32), et les quatre cases
-              de visibilité l'ont rejointe (VIT-35) : celle-ci règle tout ce qui
-              PARAÎT. */}
-          {etape === "parait" ? (
-            <PageJeuxStudio
-              jeuxVisibles={etat.blocs.includes("experiences")}
-              bilanJeux={bilanJeux}
-              themeInitial={themeInitial}
-              secteur={etat.secteur}
-              contenus={contenus}
-              liens={liensEdites}
-              controleLiens={{
-                valeurs: liensEdites,
-                onChange: setLiensEdites,
-                erreur: refusLiens,
-              }}
-              blocs={etat.blocs}
-              onBloc={(bloc, visible) =>
-                majEtat({ blocs: basculerBloc(etat.blocs, bloc, visible) })
-              }
-              socialVisible={etat.blocs.includes("social")}
-              onSocialVisible={(v) =>
-                majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
-              }
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {etape === "couleurs" ? (
-            <EtapeCouleursStudio
-              etat={etat}
-              majEtat={majEtat}
-              peutEditer={peutEditer}
-            />
-          ) : null}
-          {/* LES QUATRE ÉTAPES D'ALLURE PASSENT PAR LE MÊME COMPOSANT : ce
-              qu'elles rendent est décidé par `REPARTITION_ALLURE`, en un seul
-              endroit. C'est ce qui rend un réglage oublié ou doublé impossible
-              sans faire rougir `allure-repartition.test.tsx`. */}
-          {etape === "banniere" ||
-          etape === "fiches" ||
-          etape === "navigation" ||
-          etape === "ambiance" ? (
-            <EtapeAllureStudio
-              etape={etape}
-              etat={etat}
-              majAllure={majAllure}
-              majEtat={majEtat}
-              peutEditer={peutEditer}
-            />
-          ) : null}
-        </aside>
-
-        <ApercuStudio
+        </>
+      }
+      apercu={apercu}
+    >
+      {etape === "identite" ? (
+        <PageIdentiteStudio
           etat={etat}
-          themeBase={themeInitial}
-          nom={identiteInitiale.nom}
+          majEtat={majEtat}
           logoUrl={identiteInitiale.logoUrl}
           coverPath={identiteInitiale.coverPath}
           coverAlt={identiteInitiale.coverAlt}
-          timezone={timezone}
-          cartes={exemples ? cartesExemple(etat.secteur) : cartes}
-          liens={liensEdites}
-          slug={slug}
-          exemples={exemples}
+          peutEditer={peutEditer}
         />
-      </div>
-    </div>
+      ) : null}
+      {etape === "horaires" ? (
+        <PageHorairesStudio
+          etat={etat}
+          majEtat={majEtat}
+          peutEditer={peutEditer}
+        />
+      ) : null}
+      {etape === "carte" ? (
+        <PageCarteStudio
+          nbCartes={cartes.length}
+          cartes={cartes}
+          peutEditer={peutEditer}
+        />
+      ) : null}
+      {/* « À la une » n'a plus d'étape à elle (VIT-32), et les quatre cases
+              de visibilité l'ont rejointe (VIT-35) : celle-ci règle tout ce qui
+              PARAÎT. */}
+      {etape === "parait" ? (
+        <PageJeuxStudio
+          jeuxVisibles={etat.blocs.includes("experiences")}
+          bilanJeux={bilanJeux}
+          themeInitial={themeInitial}
+          secteur={etat.secteur}
+          contenus={contenus}
+          liens={liensEdites}
+          controleLiens={{
+            valeurs: liensEdites,
+            onChange: setLiensEdites,
+            erreur: refusLiens,
+          }}
+          blocs={etat.blocs}
+          onBloc={(bloc, visible) =>
+            majEtat({ blocs: basculerBloc(etat.blocs, bloc, visible) })
+          }
+          socialVisible={etat.blocs.includes("social")}
+          onSocialVisible={(v) =>
+            majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
+          }
+          peutEditer={peutEditer}
+        />
+      ) : null}
+      {etape === "couleurs" ? (
+        <EtapeCouleursStudio
+          etat={etat}
+          majEtat={majEtat}
+          peutEditer={peutEditer}
+        />
+      ) : null}
+      {/* LES QUATRE ÉTAPES D'ALLURE PASSENT PAR LE MÊME COMPOSANT : ce
+              qu'elles rendent est décidé par `REPARTITION_ALLURE`, en un seul
+              endroit. C'est ce qui rend un réglage oublié ou doublé impossible
+              sans faire rougir `allure-repartition.test.tsx`. */}
+      {etape === "banniere" ||
+      etape === "fiches" ||
+      etape === "navigation" ||
+      etape === "ambiance" ? (
+        <EtapeAllureStudio
+          etape={etape}
+          etat={etat}
+          majAllure={majAllure}
+          majEtat={majEtat}
+          peutEditer={peutEditer}
+        />
+      ) : null}
+    </CoquilleStudio>
   );
 }
