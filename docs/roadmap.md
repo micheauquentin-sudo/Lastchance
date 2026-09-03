@@ -125,7 +125,19 @@
   le chronomètre sont omis et DITS — un décompte simulé atteindrait zéro pendant
   le réglage et afficherait « temps écoulé » sur une partie jamais jouée.
 
-**Décisions** : ADR-145 à ADR-156.
+- **VIT-40 — La chasse au trésor passe au studio** (ADR-157). Sept étapes,
+  route `/studio/chasse/[id]`, six `revalidatePath` jumelés et gardés.
+  `updateHunt` écrase par absence : la mutation qui retire `name` de la charge
+  utile fait rougir huit assertions. « Mes étapes » et « Les indices » sont deux
+  VUES d’un seul éditeur — `updateHuntStep` écrit les deux colonnes en bloc, et
+  deux éditeurs auraient été deux vérités sur une même ligne. L’ajout d’étape ne
+  recharge plus DANS le studio (il emporterait les réglages de la dernière
+  seconde et ramènerait à la première étape) : un accusé NOMME l’étape créée, ce
+  qui traite la cause du doublon — l’absence de signal — au lieu du symptôme.
+  L’aperçu est la vraie page joueur, ses deux actions et la proposition de
+  passeport coupées.
+
+**Décisions** : ADR-145 à ADR-157.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

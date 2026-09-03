@@ -9967,3 +9967,51 @@ une partie que personne n'a jouée. Un aperçu qui se périme tout seul est un
 aperçu qui ment — la même famille qu'ADR-152, par un autre chemin.
 
 Un aperçu incomplet et dit vaut mieux qu'un aperçu complet et faux.
+## ADR-157 — Un accusé NOMMÉ remplace le rechargement, mais seulement là où le rechargement coûte
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-40 (chasse au trésor), troisième module porté sur le socle.
+
+`AddStepForm` portait `reloadOnSuccess: true`, et pour une raison mesurée :
+`router.refresh()` échoue ici 5 à 32 % du temps. Sans rechargement, le
+commerçant n'ajoute rien de visible, refait le geste, et obtient une étape
+fantôme qui rend le parcours interminable. La garde `use-action-form-coverage`
+existe précisément pour empêcher qu'on l'oublie.
+
+### Le rechargement devient nuisible DANS un studio, et seulement là
+
+`rechargerAvec` fait un `location.replace` — une navigation franche. Dans un
+studio, elle emporte les réglages saisis depuis moins de 1,2 s (le délai de
+l'enregistrement automatique) et ramène à la PREMIÈRE étape, puisque l'étape vit
+en mémoire et non dans l'URL. Le remède devient pire que le mal.
+
+### Décision — traiter la CAUSE, pas le symptôme
+
+Le doublon vient de l'ABSENCE DE SIGNAL, pas de l'absence de rechargement. Le
+studio affiche donc un accusé qui NOMME ce qui vient d'être créé — « Étape
+« La caisse » ajoutée. » Même si le rafraîchissement échoue, le commerçant sait
+que c'est parti : il ne retape pas.
+
+`recharger` vaut `true` par défaut : l'atelier téléphone et les six autres
+appels ne bougent pas. Seul le studio le passe à `false`.
+
+### Ce que la garde a exigé, et pourquoi elle avait raison
+
+Elle a rougi. Elle cherche TEXTUELLEMENT un succès dérivé de `state`, et
+l'accusé ne dépendait que d'un état local posé depuis `onSuccess` —
+sémantiquement équivalent, mais pas pour deux lecteurs.
+
+La condition lit désormais `state?.ok && ajoutee !== null` : le verdict du
+SERVEUR redevient la source, le libellé mémorisé ne sert plus qu'à le NOMMER, et
+un accusé ne peut plus survivre à un échec suivant.
+
+**Écarté** : exempter la garde. Cela aurait retiré la seule protection mécanique
+d'une famille de défauts à sept occurrences connues, pour un confort d'écriture.
+
+### Les étapes 2 et 3 partagent un éditeur, pas deux
+
+`updateHuntStep` écrit `label` et `hint_text` EN BLOC. « Mes étapes » et « Les
+indices » sont donc deux vues d'un seul éditeur (`champs` = `libelles` |
+`indices` | `tout`), et le champ non montré part en champ caché avec sa valeur
+serveur. Deux éditeurs auraient été deux vérités sur une même ligne.

@@ -84,6 +84,7 @@ const MODULES: Module[] = [
     nom: "chasse",
     base: "/dashboard/hunts/e2ea0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier de la chasse",
+    studio: "Mon studio",
     premiereEtape: "chasse",
     etapes: ["chasse", "parcours", "affiches", "verification"],
   },
