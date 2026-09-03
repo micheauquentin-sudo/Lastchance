@@ -22,7 +22,10 @@ import { InfoBulle, infoBulleTexteId } from "@/components/dashboard/info-bulle";
 import { CarteStatutAnimation } from "@/components/dashboard/carte-statut-animation";
 import { HuntStatusBadge } from "@/components/dashboard/hunt-status";
 import type { HuntStatus } from "@/types/database";
-import { RaccourciAtelier, VoirLeJeu } from "@/components/dashboard/atelier-raccourci";
+import {
+  RaccourciAtelier,
+  VoirLeJeu,
+} from "@/components/dashboard/atelier-raccourci";
 import { hrefEtapeChasse } from "@/components/dashboard/atelier-hunt-etapes";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { isoToZonedDateTimeInput } from "@/lib/date-time";
@@ -158,8 +161,8 @@ export function HuntSettings({
           >
             Anti-partage de photos du QR : il empêche de tamponner plusieurs
             étapes trop vite depuis un même téléphone. Sans lui, un joueur qui
-            reçoit les photos des QR de toutes les étapes termine la chasse
-            sans avoir bougé. 0 = désactivé.
+            reçoit les photos des QR de toutes les étapes termine la chasse sans
+            avoir bougé. 0 = désactivé.
           </InfoBulle>
         </div>
 
@@ -286,14 +289,42 @@ export function HuntSettings({
 // Étapes (une étape = un QR code)
 // ────────────────────────────────────────────────────────────
 
+/**
+ * QUELS CHAMPS D'UNE ÉTAPE CET ÉDITEUR MONTRE (VIT-40).
+ *
+ * L'atelier montre les deux d'un coup (`"tout"`) ; le studio les sépare en
+ * deux étapes — on nomme d'abord ses emplacements, on écrit ensuite l'indice
+ * qui mène de l'un à l'autre. Ce n'est PAS une seconde liste : c'est le même
+ * composant, la même action et le même ordre optimiste, sous deux visages.
+ *
+ * Le champ NON montré reste rendu, en champ caché, avec la valeur du serveur —
+ * `updateHuntStep` écrit `label` ET `hint` en bloc, et un `hint` absent
+ * effacerait l'indice en renommant l'étape. Même piège que `updateHunt`, un
+ * cran plus bas.
+ */
+export type ChampsEtapeChasse = "tout" | "libelles" | "indices";
+
 export function HuntStepsEditor({
   huntId,
   steps,
+  champs = "tout",
+  rechargerApresAjout = true,
 }: {
   huntId: string;
   /** Étapes triées par position croissante. */
   steps: HuntStep[];
+  champs?: ChampsEtapeChasse;
+  /**
+   * L'ajout recharge franchement la page (défaut de l'atelier), ou se contente
+   * d'un accusé nommant l'étape ajoutée (studio). Voir `AddStepForm`.
+   */
+  rechargerApresAjout?: boolean;
 }) {
+  // L'ordre, l'ajout et la suppression appartiennent à « Mes étapes ». L'écran
+  // des indices ne fait qu'écrire dans des lignes qui existent déjà : y
+  // remettre les flèches et la croix serait deux endroits pour un même geste,
+  // donc deux endroits à corriger.
+  const structure = champs !== "indices";
   const router = useRouter();
   const [reorderError, setReorderError] = useState<string | null>(null);
   // Pas de `useTransition` : son `pending` est piloté par le rendu et peut ne
@@ -374,21 +405,34 @@ export function HuntStepsEditor({
           pas comme une borne. */}
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className={TITRE_CARTE}>
-          Étapes
+          {champs === "indices" ? "Indices" : "Étapes"}
         </h2>
         <p className="text-sm font-bold tabular-nums text-k-body">
           {affichees.length} / {MAX_STEPS} étapes
         </p>
       </div>
       <p className="text-sm text-zinc-500 mb-4">
-        De {MIN_STEPS} à {MAX_STEPS} étapes. Chaque étape a son propre QR code à
-        imprimer et poser sur place. L&apos;indice s&apos;affiche au joueur une
-        fois l&apos;étape tamponnée — pour l&apos;orienter vers la suivante.
+        {champs === "indices" ? (
+          <>
+            L&apos;indice s&apos;affiche au joueur une fois l&apos;étape
+            tamponnée — pour l&apos;orienter vers la suivante. Il est facultatif
+            : sans lui, le joueur cherche l&apos;affiche suivante par lui-même.
+          </>
+        ) : (
+          <>
+            De {MIN_STEPS} à {MAX_STEPS} étapes. Chaque étape a son propre QR
+            code à imprimer et poser sur place. L&apos;indice s&apos;affiche au
+            joueur une fois l&apos;étape tamponnée — pour l&apos;orienter vers
+            la suivante.
+          </>
+        )}
       </p>
 
       {affichees.length === 0 ? (
         <p className="mb-4 text-sm text-zinc-500">
-          Aucune étape pour l&apos;instant — ajoutez la première ci-dessous.
+          {champs === "indices"
+            ? "Aucune étape pour l'instant — créez-les d'abord, les indices viendront ensuite."
+            : "Aucune étape pour l'instant — ajoutez la première ci-dessous."}
         </p>
       ) : (
         <ol className="mb-4 space-y-2.5">
@@ -400,6 +444,8 @@ export function HuntStepsEditor({
               count={affichees.length}
               reorderPending={pending}
               onMove={move}
+              champs={champs}
+              structure={structure}
             />
           ))}
         </ol>
@@ -410,14 +456,16 @@ export function HuntStepsEditor({
           {reorderError}
         </p>
       )}
-      {full && (
+      {structure && full && (
         <p className="mb-4 text-xs text-zinc-500">
           Chasse au QR complète ({MAX_STEPS} étapes). Pour la réorganiser,
           retirez une étape, réordonnez, puis rajoutez-la.
         </p>
       )}
 
-      {!full && <AddStepForm huntId={huntId} />}
+      {structure && !full && (
+        <AddStepForm huntId={huntId} recharger={rechargerApresAjout} />
+      )}
     </Card>
   );
 }
@@ -428,12 +476,17 @@ function HuntStepRow({
   count,
   reorderPending,
   onMove,
+  champs = "tout",
+  structure = true,
 }: {
   step: HuntStep;
   index: number;
   count: number;
   reorderPending: boolean;
   onMove: (index: number, direction: -1 | 1) => void;
+  champs?: ChampsEtapeChasse;
+  /** Flèches d'ordre et suppression — le geste appartient à « Mes étapes ». */
+  structure?: boolean;
 }) {
   // UN ENREGISTREMENT AUTOMATIQUE PAR LIGNE, et pas un pour la liste : chaque
   // étape est SON PROPRE `<form>`, donc son propre `requestSubmit`. Deux lignes
@@ -465,24 +518,28 @@ function HuntStepRow({
           <span className="text-xs font-black tabular-nums text-zinc-600">
             {step.position}
           </span>
-          <button
-            type="button"
-            onClick={() => onMove(index, -1)}
-            disabled={index === 0 || reorderPending}
-            aria-label={`Monter l'étape ${step.position}`}
-            className="rounded-md border border-zinc-200 px-1.5 text-k-ink hover:bg-zinc-50 disabled:opacity-30"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(index, 1)}
-            disabled={index === count - 1 || reorderPending}
-            aria-label={`Descendre l'étape ${step.position}`}
-            className="rounded-md border border-zinc-200 px-1.5 text-k-ink hover:bg-zinc-50 disabled:opacity-30"
-          >
-            ↓
-          </button>
+          {structure && (
+            <>
+              <button
+                type="button"
+                onClick={() => onMove(index, -1)}
+                disabled={index === 0 || reorderPending}
+                aria-label={`Monter l'étape ${step.position}`}
+                className="rounded-md border border-zinc-200 px-1.5 text-k-ink hover:bg-zinc-50 disabled:opacity-30"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => onMove(index, 1)}
+                disabled={index === count - 1 || reorderPending}
+                aria-label={`Descendre l'étape ${step.position}`}
+                className="rounded-md border border-zinc-200 px-1.5 text-k-ink hover:bg-zinc-50 disabled:opacity-30"
+              >
+                ↓
+              </button>
+            </>
+          )}
         </div>
 
         <form
@@ -491,29 +548,48 @@ function HuntStepRow({
           className="min-w-0 flex-1 space-y-2"
         >
           <input type="hidden" name="id" value={step.id} />
-          <div>
-            <Label htmlFor={`step-label-${step.id}`}>Libellé de l&apos;étape</Label>
-            <Input
-              id={`step-label-${step.id}`}
-              name="label"
-              defaultValue={step.label}
-              required
-              maxLength={60}
-              placeholder="Ex : Le comptoir"
-            />
-          </div>
-          <div>
-            <Label htmlFor={`step-hint-${step.id}`}>
-              Indice vers l&apos;étape suivante (optionnel)
-            </Label>
-            <Input
-              id={`step-hint-${step.id}`}
-              name="hint"
-              defaultValue={step.hint_text ?? ""}
-              maxLength={200}
-              placeholder="Ex : Cherche près de la vitrine…"
-            />
-          </div>
+          {/* LE CHAMP QU'ON NE MONTRE PAS PART QUAND MÊME, avec la valeur du
+              serveur. `updateHuntStep` écrit `label` ET `hint` en bloc : un
+              `hint` absent effacerait l'indice en renommant l'étape, et un
+              `label` absent ferait échouer la validation. Sur l'atelier
+              (`champs = "tout"`), les deux sont visibles et rien n'est caché. */}
+          {champs === "indices" && (
+            <input type="hidden" name="label" value={step.label} />
+          )}
+          {champs === "libelles" && (
+            <input type="hidden" name="hint" value={step.hint_text ?? ""} />
+          )}
+          {champs !== "indices" && (
+            <div>
+              <Label htmlFor={`step-label-${step.id}`}>
+                Libellé de l&apos;étape
+              </Label>
+              <Input
+                id={`step-label-${step.id}`}
+                name="label"
+                defaultValue={step.label}
+                required
+                maxLength={60}
+                placeholder="Ex : Le comptoir"
+              />
+            </div>
+          )}
+          {champs !== "libelles" && (
+            <div>
+              <Label htmlFor={`step-hint-${step.id}`}>
+                {champs === "indices"
+                  ? `Indice après « ${step.label} »`
+                  : "Indice vers l'étape suivante (optionnel)"}
+              </Label>
+              <Input
+                id={`step-hint-${step.id}`}
+                name="hint"
+                defaultValue={step.hint_text ?? ""}
+                maxLength={200}
+                placeholder="Ex : Cherche près de la vitrine…"
+              />
+            </div>
+          )}
           <div className="flex items-center gap-2">
             <Button type="submit" variant="secondary" disabled={updatePending}>
               {updatePending ? "…" : "Enregistrer"}
@@ -528,47 +604,51 @@ function HuntStepRow({
             />
           </div>
           <FieldError
-            message={updateState && !updateState.ok ? updateState.error : undefined}
+            message={
+              updateState && !updateState.ok ? updateState.error : undefined
+            }
           />
         </form>
 
-        <form
-          onSubmit={(event) => {
-            // Confirmer d'abord ; le hook n'est saisi que sur oui.
-            if (!confirm(`Supprimer l'étape « ${step.label} » ?`)) {
-              event.preventDefault();
-              return;
-            }
-            deleteSubmit(event);
-          }}
-        >
-          <input type="hidden" name="id" value={step.id} />
-          {/* La case n'apparaît qu'APRÈS le refus de l'action, qui NOMME le
+        {structure && (
+          <form
+            onSubmit={(event) => {
+              // Confirmer d'abord ; le hook n'est saisi que sur oui.
+              if (!confirm(`Supprimer l'étape « ${step.label} » ?`)) {
+                event.preventDefault();
+                return;
+              }
+              deleteSubmit(event);
+            }}
+          >
+            <input type="hidden" name="id" value={step.id} />
+            {/* La case n'apparaît qu'APRÈS le refus de l'action, qui NOMME le
               nombre de joueurs en cours. Avant ce refus, le commerçant ne
               saurait pas ce qu'il confirme ; l'autre refus de cette action
               (« une chasse active garde 2 étapes ») ne se coche pas. */}
-          {deleteState &&
-            !deleteState.ok &&
-            deleteState.error.includes(HUNT_STEP_LOSS_HINT) && (
-              <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
-                <input
-                  type="checkbox"
-                  name="confirm_players"
-                  value="1"
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
-                />
-                Je comprends que les chasses en cours seront raccourcies.
-              </label>
-            )}
-          <Button
-            type="submit"
-            variant="ghost"
-            disabled={deletePending}
-            aria-label={`Supprimer l'étape ${step.position}`}
-          >
-            ✕
-          </Button>
-        </form>
+            {deleteState &&
+              !deleteState.ok &&
+              deleteState.error.includes(HUNT_STEP_LOSS_HINT) && (
+                <label className="mb-1 flex max-w-56 items-start gap-1.5 text-xs font-semibold text-red-700">
+                  <input
+                    type="checkbox"
+                    name="confirm_players"
+                    value="1"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  />
+                  Je comprends que les chasses en cours seront raccourcies.
+                </label>
+              )}
+            <Button
+              type="submit"
+              variant="ghost"
+              disabled={deletePending}
+              aria-label={`Supprimer l'étape ${step.position}`}
+            >
+              ✕
+            </Button>
+          </form>
+        )}
       </div>
       <FieldError
         message={deleteState && !deleteState.ok ? deleteState.error : undefined}
@@ -577,7 +657,13 @@ function HuntStepRow({
   );
 }
 
-function AddStepForm({ huntId }: { huntId: string }) {
+function AddStepForm({
+  huntId,
+  recharger = true,
+}: {
+  huntId: string;
+  recharger?: boolean;
+}) {
   // `resetOnSuccess` : les deux champs sont non contrôlés et SANS defaultValue —
   // c'est ce vidage qui permet d'enchaîner l'étape suivante. Il ne vide plus
   // qu'en cas de succès : une erreur de validation ne perd plus la saisie.
@@ -588,15 +674,42 @@ function AddStepForm({ huntId }: { huntId: string }) {
   // jeton. Sur une chasse en cours, plus personne ne peut la terminer : la RPC
   // de scan compte les étapes en base, donc une étape dont le QR n'a jamais été
   // imprimé relève le seuil de complétion hors d'atteinte.
+  //
+  // ── ET POURQUOI LE STUDIO NE RECHARGE PAS (VIT-40) ──
+  //
+  // `rechargerAvec` fait un `location.replace` : une navigation FRANCHE. Dans
+  // un studio, elle emporte deux choses que l'atelier n'a pas — les réglages
+  // saisis depuis moins d'une seconde et pas encore partis (l'enregistrement
+  // automatique attend 1,2 s), et l'étape affichée, qui vit en mémoire et non
+  // dans l'URL : ajouter une étape ramènerait le commerçant sur « Le nom de ma
+  // chasse ». Le rechargement y coûterait donc ce qu'il est censé protéger.
+  //
+  // Ce qu'il protège, lui, est le DOUBLON — et la cause du doublon est
+  // l'absence de signal, pas l'absence de rechargement. Le studio remplace donc
+  // le rechargement par un accusé qui NOMME l'étape ajoutée : même si le
+  // rafraîchissement RSC échoue (mesuré 5 à 32 %, docs/bugs.md) et que la liste
+  // ne bouge pas, le commerçant lit « Étape « La caisse » ajoutée. » et ne
+  // retape pas.
+  const [ajoutee, setAjoutee] = useState<string | null>(null);
+  // Le libellé est LU AVANT l'envoi : `resetOnSuccess` vide le champ, donc le
+  // relire au succès ne rendrait qu'une chaîne vide.
+  const dernierLibelle = useRef("");
   const { state, pending, onSubmit } = useActionForm(createHuntStep, {
     resetOnSuccess: true,
-    reloadOnSuccess: true,
+    reloadOnSuccess: recharger,
     networkError: "Ajout impossible, réessayez.",
+    onSuccess: () => setAjoutee(dernierLibelle.current),
   });
 
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={(event) => {
+        dernierLibelle.current = String(
+          new FormData(event.currentTarget).get("label") ?? "",
+        ).trim();
+        setAjoutee(null);
+        onSubmit(event);
+      }}
       className="rounded-xl border-2 border-dashed border-k-ink/20 p-3"
     >
       <input type="hidden" name="hunt_id" value={huntId} />
@@ -622,10 +735,25 @@ function AddStepForm({ huntId }: { huntId: string }) {
           />
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={pending}>
           {pending ? "Ajout…" : "+ Ajouter l'étape"}
         </Button>
+        {/* L'ACCUSÉ REMPLACE LE RECHARGEMENT dans le studio — voir l'en-tête.
+            Il ne s'affiche jamais dans l'atelier : la page y est déjà partie
+            en `location.replace` quand ce rendu arriverait. */}
+        {/* LA CONDITION LIT `state?.ok` ET NON LE SEUL ÉTAT LOCAL.
+            Sémantiquement c’est presque la même chose — `setAjoutee` part
+            d’un `onSuccess` —, mais ce n’est PAS pareil pour deux lecteurs :
+            la garde `use-action-form-coverage` cherche textuellement un succès
+            dérivé de `state`, et un accusé qui ne dépend que d’une mémoire
+            locale finirait par survivre à un échec suivant. Le verdict du
+            SERVEUR reste la source ; le libellé n’est là que pour le nommer. */}
+        {state?.ok && ajoutee !== null && (
+          <p role="status" className="text-sm font-medium text-emerald-600">
+            Étape « {ajoutee} » ajoutée.
+          </p>
+        )}
       </div>
       <FieldError message={state && !state.ok ? state.error : undefined} />
     </form>
@@ -714,16 +842,19 @@ export function HuntStatusControls({
       notes={
         hunt.status !== "active" && !canActivate ? (
           <p className="mt-2 text-xs font-bold text-amber-700">
-            Pour ouvrir aux joueurs, il vous faut encore : {missing.join(" et ")}.
+            Pour ouvrir aux joueurs, il vous faut encore :{" "}
+            {missing.join(" et ")}.
           </p>
         ) : null
       }
       erreur={statusState && !statusState.ok ? statusState.error : undefined}
     >
-
       <div className="mt-5 border-t border-zinc-100 pt-4">
         {confirmDelete ? (
-          <form action={deleteAction} className="flex flex-wrap items-center gap-2">
+          <form
+            action={deleteAction}
+            className="flex flex-wrap items-center gap-2"
+          >
             <input type="hidden" name="id" value={hunt.id} />
             <span className="text-sm text-k-body">
               Supprimer cette chasse, ses étapes et toute la progression ?
@@ -769,7 +900,9 @@ export function HuntStatusControls({
           </Button>
         )}
         <FieldError
-          message={deleteState && !deleteState.ok ? deleteState.error : undefined}
+          message={
+            deleteState && !deleteState.ok ? deleteState.error : undefined
+          }
         />
       </div>
     </CarteStatutAnimation>
