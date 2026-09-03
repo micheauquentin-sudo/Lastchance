@@ -81,6 +81,30 @@ export interface HuntJourneyProps {
   };
   /** Indice de CETTE étape, fourni seulement si déjà tamponnée (sinon null). */
   revealedHint: string | null;
+  /**
+   * MODE APERÇU — le studio du commerçant monte CETTE page, pas une maquette
+   * (VIT-40, ADR-152, même motif que `CalendarTracker`).
+   *
+   * Une copie approximative aurait été une seconde page joueur à tenir
+   * d'accord avec la première, et c'est le seul défaut qu'un aperçu ne doit
+   * jamais avoir parce qu'il est INVISIBLE : rien ne casse, tout a l'air de
+   * fonctionner, et l'écart ne se découvre qu'en ouvrant la vraie page.
+   *
+   * Ce drapeau ne change RIEN à ce qui se voit. Il coupe LES DEUX SEULS
+   * chemins de ce fichier qui parlent au serveur — l'ENSEMBLE de ce
+   * qu'importe `@/actions` ici :
+   *
+   *  1. `stampHuntStep` : pose un tampon RÉEL au nom du commerçant, avec son
+   *     cookie de joueur ; le dernier tampon brûle un lot du stock et émet un
+   *     code CHASSE- que la caisse honorera.
+   *  2. `claimHuntReward` : envoie un e-mail et crée un abonné.
+   *
+   * S'y ajoute la proposition de Passeport, qui appelle `invitationPasseport`
+   * chez elle : elle n'est atteignable qu'avec un code gagné — donc jamais
+   * dans un aperçu, où la progression part de zéro — mais elle est coupée
+   * explicitement, pour que la coupe soit VÉRIFIABLE plutôt que probable.
+   */
+  apercu?: boolean;
 }
 
 export function HuntJourney({
@@ -93,13 +117,22 @@ export function HuntJourney({
   reward,
   initial,
   revealedHint,
+  apercu = false,
 }: HuntJourneyProps) {
   // Le tampon est un POST de Server Action : useActionState garde le
   // dernier résultat typé (HuntScanResult) et l'état « en cours ».
+  //
+  // APERÇU : le bouton reste — c'est la vraie page — mais le geste ne part
+  // pas. Le tampon grave un passage au nom du commerçant qui règle son écran,
+  // et le dernier de la série brûle un lot du stock.
   const [state, formAction, pending] = useActionState<
     ActionResult<HuntScanResult> | null,
     FormData
-  >(async () => stampHuntStep({ stepToken: jetonDeLAdresse() }), null);
+  >(
+    async (precedent) =>
+      apercu ? precedent : stampHuntStep({ stepToken: jetonDeLAdresse() }),
+    null,
+  );
 
   const scan = state?.ok ? state.data : null;
   const stampError = state && !state.ok ? state.error : null;
@@ -189,6 +222,7 @@ export function HuntJourney({
           huntFull={(huntFull || initial.rewardSoldOut) && !completedCode}
           reward={reward}
           organizationId={organizationId}
+          apercu={apercu}
         />
       ) : huntFull ? (
         <StateBox state="hunt_full" />
@@ -343,12 +377,14 @@ function CompletionCard({
   huntFull,
   reward,
   organizationId = null,
+  apercu = false,
 }: {
   code: string | null;
   organizationId?: string | null;
   /** Stock épuisé au moment de terminer : pas de code, message dédié. */
   huntFull: boolean;
   reward: { label: string; details: string | null };
+  apercu?: boolean;
 }) {
   const canShare = useCanShare();
   const [copied, setCopied] = useState(false);
@@ -438,12 +474,12 @@ function CompletionCard({
         {/* Hors du bloc du code : la chasse terminée SANS lot (stock épuisé,
             ou aucun lot configuré) est exactement le moment où revenir a le
             plus de valeur pour le joueur. */}
-        {organizationId && code && (
+        {organizationId && code && !apercu && (
           <ProposerPasseport organizationId={organizationId} />
         )}
       </div>
 
-      {code && <HuntClaimForm />}
+      {code && <HuntClaimForm apercu={apercu} />}
     </section>
   );
 }
@@ -453,7 +489,7 @@ function CompletionCard({
  * marketing distinct du simple envoi (double consentement), miroir du
  * formulaire de gain de la roue.
  */
-function HuntClaimForm() {
+function HuntClaimForm({ apercu = false }: { apercu?: boolean }) {
   const [email, setEmail] = useState("");
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -462,6 +498,11 @@ function HuntClaimForm() {
 
   const submit = (formEvent: React.FormEvent<HTMLFormElement>) => {
     formEvent.preventDefault();
+    // APERÇU : l'envoi crée un abonné et part par e-mail au nom du commerçant.
+    // Cette branche est déjà hors d'atteinte (ce formulaire n'existe qu'avec un
+    // code gagné, et un aperçu part de zéro tampon) — la coupe est là pour être
+    // VÉRIFIABLE, pas seulement probable.
+    if (apercu) return;
     setError(null);
     startTransition(async () => {
       // Le rappel par email est OPTIONNEL : le code de gain est DÉJÀ affiché
