@@ -149,6 +149,69 @@ monter la contrainte pour forcer la régénération du lock.
    dépendances, **l'âge du check compte autant que sa couleur** : les advisories
    bougent sans que le code change.
 
+
+### La récidive du 2026-09-02 : `fast-uri`, une seconde fois
+
+**Ce paragraphe n'est pas une anecdote de plus : c'est la vérification du
+motif.** §2bis annonçait, le 2026-08-03, qu'un override posé sur « la version
+corrigée du jour » deviendrait le plancher du problème dès que l'advisory
+serait élargie vers le haut — et que ces élargissements sont le cas NORMAL,
+puisque la plupart des avis sont des correctifs incomplets d'un avis antérieur.
+
+Trente jours plus tard, quatre advisories couvrant `fast-uri 3.0.0 - 3.1.5`
+sont publiées. Notre override valait `^3.1.5` : **exactement la borne haute de
+la nouvelle plage**, et posé pour fermer l'avis précédent. La note ne décrivait
+donc pas un incident passé, elle prédisait celui-ci.
+
+Le même jour, `browserslist` a subi le même sort — deux avis élargissant une
+plage jusqu'à `<= 4.28.6`, alors que rien n'était overridé. Deux paquets, un
+seul mécanisme.
+
+#### Ce que la récidive change au point 2
+
+Le point 2 disait : vérifier qu'un correctif existe dans la ligne majeure
+courante avant d'accepter un bump majeur, et citait `fast-uri` en exemple de
+majeur INUTILE (`3.1.5` suffisait, `4.1.2` était de trop).
+
+**Cet exemple s'est retourné.** La ligne 3.x est désormais vulnérable EN ENTIER,
+dernière version comprise : il n'y a plus de correctif à y prendre, et le
+majeur devient obligatoire. Le point 2 reste juste — c'est sa RÉPONSE qui
+dépend du jour. Un exemple gravé dans une règle vieillit ; la règle, elle,
+tient.
+
+#### Ce qui a rendu le majeur acceptable, et qui n'est pas un raisonnement
+
+`ajv@8.20.0` déclare `fast-uri: ^3.0.1`. Forcer la 4.x SORT de sa plage
+déclarée — c'est précisément la situation où un `audit fix --force` détruit une
+application (point 2, l'épisode `next@9.3.3`).
+
+Le contrôle n'a donc pas été « ça devrait aller » mais **un `npm run build`
+complet**, toutes routes rendues, `/v/[slug]` en SSG compris. C'est le seul
+niveau de preuve proportionné à un override qui contredit une dépendance
+déclarée.
+
+Chaîne concernée, pour mémoire : `@sentry/nextjs` → `@sentry/webpack-plugin` →
+`webpack` → `schema-utils` → `ajv-formats` → `ajv` → `fast-uri`. Dépendance de
+BUILD, jamais servie au navigateur — ce qui abaisse le risque réel, sans changer
+la décision.
+
+#### Pourquoi on corrige quand même un risque faible
+
+Ni `browserslist` ni `fast-uri` ne partent au navigateur. On aurait pu ne rien
+faire et laisser l'audit rouge.
+
+**Une CI qui rougit pour une cause qu'on juge acceptable est une CI qu'on
+apprend à ignorer** — et c'est le mécanisme par lequel un vrai avis passe
+inaperçu. Le coût de la correction est un override et un build ; le coût de
+l'accoutumance est de ne plus voir le prochain.
+
+#### La valeur à choisir
+
+`^4.1.4`, la plus haute de la ligne — et non `4.0.1`, la première version hors
+plage. Même geste que pour `browserslist` (`^4.28.8` et non `4.28.7`) : ne
+jamais s'asseoir sur la borne qu'on vient de fuir, sous peine de rejouer ce
+paragraphe dans trente jours.
+
 ## 3. Surveillance continue
 
 - **Dependabot** ([.github/dependabot.yml](../.github/dependabot.yml)) :
