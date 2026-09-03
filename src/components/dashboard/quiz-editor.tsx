@@ -1108,7 +1108,7 @@ function asStringArray(value: unknown): string[] {
  * (cf. `quizFormShape`). Changer de modèle ramène la forme de réponse sur celle
  * du modèle si l'actuelle n'est pas compatible.
  */
-function QuestionForm({
+export function QuestionForm({
   quizId,
   question,
   onDone,

@@ -994,6 +994,7 @@ export async function updateQuiz(
 
   revalidatePath("/dashboard/quiz");
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.id}`);
   // LA VITRINE PUBLIE `titre` ET `slug` (VIT-3) : un renommage ou un changement
   // d'URL publique laisserait la porte afficher l'ancien libellé une minute
   // d'ISR — même arbitrage que `setQuizStatus` juste en dessous.
@@ -1051,6 +1052,7 @@ export async function updateQuizShareInvite(
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1168,6 +1170,7 @@ export async function updateQuizReward(input: {
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1222,6 +1225,7 @@ export async function setQuizStatus(
     if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/quiz");
     revalidatePath(`/dashboard/quiz/${id}`);
+    revalidatePath(`/studio/quiz/${id}`);
     // LA VITRINE PUBLIE CE DRAPEAU (VIT-3, revue L13) : `status = 'active'` est
     // ce qui fait d'un quiz une porte de `/v/{slug}`, servie en ISR. Le quiz
     // vient d'en sortir — sans cette purge, la vitrine continue une minute à
@@ -1266,6 +1270,7 @@ export async function setQuizStatus(
 
   revalidatePath("/dashboard/quiz");
   revalidatePath(`/dashboard/quiz/${id}`);
+  revalidatePath(`/studio/quiz/${id}`);
   // Le quiz vient d'entrer dans l'annuaire des portes — voir la branche
   // non-`active` ci-dessus.
   await revaliderVitrinePublique(supabase, organization.id);
@@ -1450,6 +1455,7 @@ export async function createQuizQuestion(input: {
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.quiz_id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.quiz_id}`);
   return { ok: true, data: { id: question.id } };
 }
 
@@ -1611,6 +1617,7 @@ export async function genererQuestionsQuiz(input: {
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.quiz_id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.quiz_id}`);
   return {
     ok: true,
     data: {
@@ -1679,6 +1686,7 @@ export async function updateQuizQuestion(input: {
   }
 
   revalidatePath(`/dashboard/quiz/${existing.quiz_id}`);
+  revalidatePath(`/studio/quiz/${existing.quiz_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1713,6 +1721,7 @@ export async function deleteQuizQuestion(
   }
 
   revalidatePath(`/dashboard/quiz/${question.quiz_id}`);
+  revalidatePath(`/studio/quiz/${question.quiz_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1778,6 +1787,7 @@ export async function reorderQuizQuestions(
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.quiz_id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.quiz_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1841,5 +1851,6 @@ export async function drawQuizWinners(
   }
 
   revalidatePath(`/dashboard/quiz/${parsed.data.id}`);
+  revalidatePath(`/studio/quiz/${parsed.data.id}`);
   return { ok: true, data: result };
 }

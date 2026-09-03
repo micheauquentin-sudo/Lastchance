@@ -9906,3 +9906,64 @@ exactement le mode d'échec qu'elles existent pour empêcher. Un worktree d'agen
 doit donc porter une jonction vers le `node_modules` du dépôt — et vérifier
 qu'un `node_modules` PRÉSENT est bien une jonction, un cache Vitest de une
 entrée ressemblant assez à une installation pour tromper un `Test-Path`.
+
+## ADR-156 — Un studio peut avoir DEUX canaux d'écriture, mais jamais deux états
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-41 (quiz), deuxième module porté sur le socle d'ADR-154.
+
+### Le cas qui force la décision
+
+Le socle suppose un formulaire et une action qui lit une `FormData`.
+`updateQuizReward` n'en est pas une : elle prend un **objet typé**, avec un
+`superRefine` qui croise le mode de dotation et les champs. Elle ne peut donc
+pas voyager dans le `<form>` caché de la coquille.
+
+Trois issues étaient possibles, et deux sont mauvaises :
+
+- **Réécrire l'action pour qu'elle lise une `FormData`** — c'est toucher à la
+  validation croisée d'une dotation en production pour une raison de mise en
+  page. Écarté.
+- **Donner à la dotation son propre état** — deux états pour un écran, donc deux
+  vérités sur ce que vaut « le lot », et une divergence garantie le jour où une
+  étape lit l'un pendant que l'autre écrit. Écarté, et c'est le cœur de l'ADR.
+- **Un seul `EtatQuiz`, deux DÉPARTS.** Retenu.
+
+### La règle
+
+Un studio peut avoir plusieurs canaux d'écriture — le `<form>` caché du socle,
+un `useAutoSaveManuel` pour une action à objet typé, une action d'organisation
+appelée directement (VIT-37, les liens sociaux). Ce qu'il ne peut pas avoir,
+c'est **deux sources de vérité**.
+
+Deux conséquences pratiques, apprises en écrivant :
+
+1. **Chaque canal envoie SA charge utile en entier.** La signature de la
+   dotation porte toujours ses sept champs, jamais ceux de l'étape ouverte —
+   même invariant que les champs cachés, appliqué à un canal qui n'est pas un
+   formulaire.
+2. **Le minuteur écoute une SIGNATURE, pas l'objet d'état.**
+   `useEnregistrementDepuisEtat` relance son délai à chaque nouvelle référence :
+   lui passer `etat` entier ferait partir `updateQuiz` à chaque frappe dans un
+   champ de dotation, qui ne le concerne pas.
+
+Et un détail qui n'en est pas un : le bouton « Enregistrer » ne cible que le
+formulaire des réglages, mais vide aussi la file de la dotation — **seulement si
+elle a quelque chose en attente**. Forcer l'envoi sans changement aurait fait
+remonter le refus d'une dotation que personne ne réglait, depuis une étape qui
+n'en parle pas.
+
+### Corollaire sur l'aperçu : partiel et ANNONCÉ
+
+L'aperçu du quiz montre la vraie carte de question, qui se rhabille en direct.
+Il lui manque l'en-tête et l'écran d'accueil : leurs composants sont privés du
+fichier qui importe six actions serveur, donc inatteignables sans le défigurer.
+
+**Le chronomètre est omis DÉLIBÉRÉMENT**, et c'est l'arbitrage intéressant :
+simuler `startedAt` ferait tourner un vrai décompte, qui atteindrait zéro
+pendant que le commerçant règle ses couleurs et afficherait « temps écoulé » sur
+une partie que personne n'a jouée. Un aperçu qui se périme tout seul est un
+aperçu qui ment — la même famille qu'ADR-152, par un autre chemin.
+
+Un aperçu incomplet et dit vaut mieux qu'un aperçu complet et faux.
