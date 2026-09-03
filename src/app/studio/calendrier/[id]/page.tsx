@@ -97,6 +97,12 @@ export default async function StudioCalendrierPage({
   ]);
 
   if (!calendarRow) notFound();
+  // PostgREST ne relie pas une chaîne de `select()` à une interface : les sept
+  // pages de module portent le même cast depuis toujours, et l’écart est
+  // documenté en tête de `src/lib/code-ttl-days-chargement.test.ts`. Ce qui
+  // protège ici est la garde de CHARGEMENT — la colonne est-elle DEMANDÉE ? —,
+  // pas ce cast, qui ne fait que nommer une forme invisible au compilateur.
+  // unsafe-cast-justification: écart PostgREST/interface, garde de chargement ailleurs
   const calendar = calendarRow as unknown as Calendar;
   const jours = (dayRows ?? []) as CalendarDay[];
   const roues = toCalendarWheelOptions(

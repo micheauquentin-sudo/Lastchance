@@ -39,7 +39,29 @@ type Module = {
   libelleVoir?: string;
   premiereEtape: string;
   etapes: string[];
+  /**
+   * LE TITRE DE LA CARTE « STUDIO », pour les modules déjà portés (VIT-39).
+   *
+   * Au-delà du point de rupture `lg`, la carte d'entrée de l'atelier est
+   * REMPLACÉE par celle du studio — c'est la demande : l'atelier reste pour le
+   * téléphone. Ce champ dit lesquels ont franchi le pas ; les autres gardent
+   * le comportement d'avant, et ce fichier n'a pas à être retouché à chaque
+   * conversion.
+   *
+   * Absent = pas encore porté. Ce n'est PAS un défaut par omission : un module
+   * porté sans ce champ ferait rougir la branche « atelier » ci-dessous.
+   */
+  studio?: string;
 };
+
+/**
+ * Le point de rupture `lg` de Tailwind, en pixels.
+ *
+ * Lu du VIEWPORT et non du nom du projet Playwright : c'est la largeur qui
+ * décide côté CSS, et un projet renommé ne doit pas changer ce que ce test
+ * mesure.
+ */
+const RUPTURE_LG = 1024;
 
 const MODULES: Module[] = [
   {
@@ -53,6 +75,7 @@ const MODULES: Module[] = [
     nom: "calendrier",
     base: "/dashboard/calendar/e2ee0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier du calendrier",
+    studio: "Mon studio",
     premiereEtape: "reglages",
     etapes: ["reglages", "cases", "verification"],
   },
@@ -121,16 +144,39 @@ test.describe("Ateliers des 7 modules — navigation par étape @smoke", () => {
         page.getByRole("heading", { name: "Carte de l'Aventure" }),
       ).toHaveCount(0);
 
-      await ouvrirTuile(
-        page,
-        new RegExp(`Développer «.*${mod.titreAtelier}`),
-      );
-      await expect(
-        page.getByRole("heading", { name: mod.titreAtelier }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("link", { name: "Ouvrir l'atelier" }).first(),
-      ).toBeVisible();
+      // ── LA PORTE DÉPEND DE LA TAILLE D'ÉCRAN (VIT-39) ──
+      //
+      // Sur grand écran, un module porté montre son STUDIO et masque l'entrée
+      // de l'atelier ; sous `lg`, l'inverse. Les deux moitiés sont vérifiées,
+      // pas seulement celle qui doit apparaître : n'exiger que la présence
+      // laisserait passer le jour où les DEUX cartes s'affichent, ce qui est
+      // précisément le défaut qu'on répare — le commerçant voyait l'atelier
+      // sur son ordinateur alors qu'on lui avait promis le studio.
+      const surGrandEcran = (page.viewportSize()?.width ?? 0) >= RUPTURE_LG;
+
+      if (mod.studio && surGrandEcran) {
+        // La carte du studio est dépliée d'office : c'est l'entrée principale.
+        await expect(
+          page.getByRole("heading", { name: mod.studio }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("link", { name: "Ouvrir le studio" }).first(),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: mod.titreAtelier }),
+        ).toBeHidden();
+      } else {
+        await ouvrirTuile(
+          page,
+          new RegExp(`Développer «.*${mod.titreAtelier}`),
+        );
+        await expect(
+          page.getByRole("heading", { name: mod.titreAtelier }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("link", { name: "Ouvrir l'atelier" }).first(),
+        ).toBeVisible();
+      }
 
       // ── Le jeu tel que le joueur le voit, depuis la tuile « Statut » ──
       //
