@@ -74,7 +74,19 @@
   `largeur-apercu.test.ts` : elle compare les DEUX fichiers plutôt que de
   recopier le chiffre, exige une ancre unique, et rougit à la mutation.
 
-**Décisions** : ADR-145 à ADR-152.
+- **VIT-37 — Les liens sociaux cessent d'être un écran dans l'écran**
+  (ADR-153). « Je viens de mettre ma page Insta et le logo Instagram ne
+  s'affiche pas sur l'aperçu » : l'aperçu recevait les liens du SERVEUR, jamais
+  la saisie. Et derrière, le défaut grave — le formulaire gardait son propre
+  bouton pendant que l'en-tête affichait « Modifications enregistrées » pour les
+  AUTRES réglages. On tapait, on lisait « enregistrées », on partait, c'était
+  perdu ; rien ne cassait. Les liens sont désormais lus par l'aperçu à la frappe
+  et enregistrés seuls, au même débours que le reste, schéma du serveur joué
+  AVANT l'envoi. Les étapes du haut sont centrées par un enfant `w-max mx-auto`
+  et non par `justify-center`, qui rendrait les premières inatteignables au
+  débordement.
+
+**Décisions** : ADR-145 à ADR-153.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

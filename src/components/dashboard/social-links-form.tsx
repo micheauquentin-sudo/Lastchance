@@ -3,6 +3,27 @@
 import { updateOrganizationSocialLinks } from "@/actions/organizations";
 import { FieldError, Input, Label } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
+import type { VitrineLiensView } from "@/lib/vitrine";
+
+/**
+ * LE MODE PILOTÉ, ET POURQUOI IL EXISTE (VIT-37).
+ *
+ * Dans le studio, ce formulaire vivait à côté d'un aperçu qui ne le lisait pas
+ * et d'un enregistrement automatique qui ne le couvrait pas : on tapait son
+ * Instagram, l'en-tête affichait « Modifications enregistrées » — celles des
+ * AUTRES réglages — et le lien restait dans un formulaire jamais soumis.
+ *
+ * Piloté, le composant ne décide plus ni de sa valeur ni de son enregistrement
+ * (le studio s'en charge) ; il garde ses trois champs, ses libellés et son
+ * avertissement, qui suivent les liens où qu'ils aillent. Absent, tout se
+ * comporte exactement comme avant — c'est le cas de `/dashboard/settings`.
+ */
+export interface ControleLiens {
+  valeurs: VitrineLiensView;
+  onChange: (valeurs: VitrineLiensView) => void;
+  /** Le dernier refus du serveur ou du schéma, à afficher sous les champs. */
+  erreur: string | null;
+}
 
 /**
  * Les trois liens publics de l'établissement — avis Google, Instagram, TikTok.
@@ -23,18 +44,45 @@ export function SocialLinksForm({
   googleReviewUrl,
   instagramUrl,
   tiktokUrl,
+  controle,
 }: {
   googleReviewUrl: string;
   instagramUrl: string;
   tiktokUrl: string;
+  controle?: ControleLiens;
 }) {
   const { state, pending, onSubmit } = useActionForm(
     updateOrganizationSocialLinks,
     { networkError: "Enregistrement impossible, réessayez." },
   );
 
+  /**
+   * PILOTÉ, LE `<form>` RESTE MAIS NE SOUMET PLUS. Le remplacer par un `<div>`
+   * aurait changé le DOM du studio pour rien ; ce qui compte est qu'il n'ait
+   * plus de bouton et qu'une touche Entrée dans un champ ne déclenche pas une
+   * écriture concurrente de l'enregistrement automatique.
+   */
+  const soumettre = controle
+    ? (event: React.FormEvent<HTMLFormElement>) => event.preventDefault()
+    : onSubmit;
+
+  const champ = (cle: keyof VitrineLiensView) =>
+    controle
+      ? {
+          value: controle.valeurs[cle] ?? "",
+          onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+            controle.onChange({ ...controle.valeurs, [cle]: e.target.value }),
+        }
+      : {
+          defaultValue: {
+            google_review_url: googleReviewUrl,
+            instagram_url: instagramUrl,
+            tiktok_url: tiktokUrl,
+          }[cle],
+        };
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form onSubmit={soumettre} className="space-y-4">
       <div>
         <Label htmlFor="google_review_url">Avis Google</Label>
         <Input
@@ -42,7 +90,7 @@ export function SocialLinksForm({
           name="google_review_url"
           type="url"
           inputMode="url"
-          defaultValue={googleReviewUrl}
+          {...champ("google_review_url")}
           placeholder="https://g.page/r/CxAbCdEf/review"
         />
       </div>
@@ -53,7 +101,7 @@ export function SocialLinksForm({
           name="instagram_url"
           type="url"
           inputMode="url"
-          defaultValue={instagramUrl}
+          {...champ("instagram_url")}
           placeholder="https://www.instagram.com/votre-compte"
         />
       </div>
@@ -64,7 +112,7 @@ export function SocialLinksForm({
           name="tiktok_url"
           type="url"
           inputMode="url"
-          defaultValue={tiktokUrl}
+          {...champ("tiktok_url")}
           placeholder="https://www.tiktok.com/@votre-compte"
         />
       </div>
@@ -89,16 +137,27 @@ export function SocialLinksForm({
         </p>
       </div>
 
-      <FieldError message={state && !state.ok ? state.error : undefined} />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-      >
-        {pending ? "…" : "Enregistrer"}
-      </button>
-      {state?.ok && (
-        <p className="text-sm font-medium text-emerald-600">Liens enregistrés.</p>
+      {controle ? (
+        // Le refus vient soit du schéma (adresse encore incomplète pendant la
+        // frappe), soit du serveur. Il est MONTRÉ : sans bouton, un lien
+        // silencieusement rejeté se lirait comme un lien enregistré.
+        <FieldError message={controle.erreur ?? undefined} />
+      ) : (
+        <>
+          <FieldError message={state && !state.ok ? state.error : undefined} />
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {pending ? "…" : "Enregistrer"}
+          </button>
+          {state?.ok && (
+            <p className="text-sm font-medium text-emerald-600">
+              Liens enregistrés.
+            </p>
+          )}
+        </>
       )}
     </form>
   );

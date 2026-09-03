@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/input";
 import { useActionForm } from "@/lib/use-action-form";
 import { saveVitrineSettings } from "@/actions/vitrine";
+import { updateOrganizationSocialLinks } from "@/actions/organizations";
+import { updateOrganizationSocialLinksSchema } from "@/lib/validations/organizations";
 import { ApercuStudio } from "@/components/vitrine/studio/apercu";
 import { ChampsCachesStudio } from "@/components/vitrine/studio/champs-caches";
 import {
@@ -189,6 +191,22 @@ export function VitrineStudio({
   const formulaire = useRef<HTMLFormElement | null>(null);
   const premierRendu = useRef(true);
 
+  /**
+   * LES TROIS LIENS SONT DANS L'ÉCRAN, PAS DANS `EtatStudio` (VIT-37).
+   *
+   * Ils n'appartiennent pas à la vitrine mais à l'ORGANISATION (trois colonnes
+   * d'URL), et ils ont leur propre action, réservée au propriétaire. Les faire
+   * entrer dans `EtatStudio` les aurait fait poster à `saveVitrineSettings`,
+   * qui n'en sait rien — et aurait mêlé deux permissions dans un seul envoi.
+   *
+   * Ce qu'ils gagnent ici, c'est d'être LUS PAR L'APERÇU pendant la frappe,
+   * comme tous les autres réglages. Avant, l'aperçu lisait la valeur venue du
+   * serveur : on saisissait son Instagram et il ne se passait rien.
+   */
+  const [liensEdites, setLiensEdites] = useState<VitrineLiensView>(liens);
+  const liensEnregistres = useRef(liens);
+  const [refusLiens, setRefusLiens] = useState<string | null>(null);
+
   // DÉRIVÉ, JAMAIS STOCKÉ. Une première version gardait l'heure du dernier
   // succès dans un état posé depuis un effet — ce qu'ESLint refuse à juste
   // titre : un état qui ne fait que recopier une autre valeur finit par en
@@ -218,6 +236,59 @@ export function VitrineStudio({
     return () => clearTimeout(t);
   }, [etat, peutEditer]);
 
+  /**
+   * ET ILS S'ENREGISTRENT SEULS, COMME LE RESTE (VIT-37).
+   *
+   * C'était le vrai défaut, et il était silencieux : le formulaire des liens
+   * avait son propre bouton, plus bas que le pli, pendant que l'en-tête
+   * annonçait « Modifications enregistrées » pour les AUTRES réglages. On
+   * tapait son Instagram, on lisait « enregistrées », on partait, c'était
+   * perdu. La demande d'origine était pourtant sans ambiguïté — « un
+   * enregistrement automatique à chaque changement afin de ne rien perdre ».
+   *
+   * DEUX GARDES, ET AUCUNE N'EST DÉCORATIVE :
+   *  - le schéma est joué AVANT l'envoi, avec la règle du serveur importée et
+   *    non recopiée. Sans lui, chaque frappe d'une adresse en cours enverrait
+   *    une écriture vouée au refus (« https://www.inst… »).
+   *  - l'instantané envoyé est comparé au succès : c'est lui qui devient la
+   *    référence, pas la valeur courante. Sinon, une frappe arrivée pendant
+   *    l'aller-retour serait comptée comme déjà enregistrée.
+   */
+  useEffect(() => {
+    if (!peutEditer) return;
+    const reference = liensEnregistres.current;
+    const identique =
+      (liensEdites.google_review_url ?? "") ===
+        (reference.google_review_url ?? "") &&
+      (liensEdites.instagram_url ?? "") === (reference.instagram_url ?? "") &&
+      (liensEdites.tiktok_url ?? "") === (reference.tiktok_url ?? "");
+    if (identique) return;
+
+    const t = setTimeout(() => {
+      const envoi = {
+        google_review_url: liensEdites.google_review_url ?? "",
+        instagram_url: liensEdites.instagram_url ?? "",
+        tiktok_url: liensEdites.tiktok_url ?? "",
+      };
+      const verdict = updateOrganizationSocialLinksSchema.safeParse(envoi);
+      if (!verdict.success) {
+        setRefusLiens(verdict.error.issues[0].message);
+        return;
+      }
+      const donnees = new FormData();
+      for (const [cle, valeur] of Object.entries(envoi))
+        donnees.set(cle, valeur);
+      void updateOrganizationSocialLinks(null, donnees).then((resultat) => {
+        if (resultat.ok) {
+          liensEnregistres.current = liensEdites;
+          setRefusLiens(null);
+        } else {
+          setRefusLiens(resultat.error);
+        }
+      });
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [liensEdites, peutEditer]);
 
   const majEtat = (patch: Partial<EtatStudio>) =>
     setEtat((e) => ({ ...e, ...patch }));
@@ -256,7 +327,9 @@ export function VitrineStudio({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <FieldError message={state && !state.ok ? state.error : undefined} />
+            <FieldError
+              message={state && !state.ok ? state.error : undefined}
+            />
             {peutEditer ? (
               <>
                 {/* L'ÉTAT SE LIT, IL NE S'INTERROMPT PAS. `aria-live="polite"`
@@ -307,8 +380,8 @@ export function VitrineStudio({
             Voir avec des exemples
           </label>
           <span className="text-xs text-zinc-500">
-            Remplit l&apos;aperçu de fiches de votre métier, le temps de juger un
-            style. Jamais enregistrées.
+            Remplit l&apos;aperçu de fiches de votre métier, le temps de juger
+            un style. Jamais enregistrées.
           </span>
         </div>
 
@@ -335,40 +408,48 @@ export function VitrineStudio({
             dans le nom accessible (`libelleEtapeStudio`), sans quoi un lecteur
             d'écran annoncerait « 3 Ma carte » sans dire de quoi 3 est le
             numéro. */}
+        {/* CENTRÉ, MAIS PAS AU PRIX DU DÉFILEMENT. `justify-center` posé sur
+            le conteneur qui défile rend le DÉBUT de la liste inatteignable dès
+            qu'elle déborde : les premières étapes se font rogner à gauche sans
+            qu'aucun défilement puisse y revenir. Le centrage passe donc par un
+            enfant `w-max mx-auto` — au large il se centre, à l'étroit ses
+            marges valent zéro et le défilement repart de la première étape. */}
         <nav
           aria-label="Étapes du studio"
-          className="flex gap-1.5 overflow-x-auto px-4 pb-2 sm:px-6"
+          className="overflow-x-auto px-4 pb-2 sm:px-6"
         >
-          {ETAPES_STUDIO.map((e, i) => {
-            const courante = etape === e.cle;
-            return (
-              <button
-                key={e.cle}
-                type="button"
-                onClick={() => setEtape(e.cle)}
-                aria-current={courante ? "step" : undefined}
-                aria-label={libelleEtapeStudio(e.cle)}
-                title={e.resume}
-                className={`flex shrink-0 items-center gap-1.5 rounded-xl border-2 px-2.5 py-1.5 text-xs font-black text-k-ink ${
-                  courante
-                    ? "border-k-ink bg-k-yellow shadow-[2px_2px_0_var(--color-k-ink)]"
-                    : "border-k-ink/25 bg-k-yellow/25 hover:border-k-ink hover:bg-k-yellow/60"
-                }`}
-              >
-                <span
-                  aria-hidden
-                  className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none ${
+          <div className="mx-auto flex w-max gap-1.5">
+            {ETAPES_STUDIO.map((e, i) => {
+              const courante = etape === e.cle;
+              return (
+                <button
+                  key={e.cle}
+                  type="button"
+                  onClick={() => setEtape(e.cle)}
+                  aria-current={courante ? "step" : undefined}
+                  aria-label={libelleEtapeStudio(e.cle)}
+                  title={e.resume}
+                  className={`flex shrink-0 items-center gap-1.5 rounded-xl border-2 px-2.5 py-1.5 text-xs font-black text-k-ink ${
                     courante
-                      ? "bg-k-ink text-k-yellow"
-                      : "border border-k-ink/30 bg-white text-k-ink"
+                      ? "border-k-ink bg-k-yellow shadow-[2px_2px_0_var(--color-k-ink)]"
+                      : "border-k-ink/25 bg-k-yellow/25 hover:border-k-ink hover:bg-k-yellow/60"
                   }`}
                 >
-                  {i + 1}
-                </span>
-                {e.titre}
-              </button>
-            );
-          })}
+                  <span
+                    aria-hidden
+                    className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none ${
+                      courante
+                        ? "bg-k-ink text-k-yellow"
+                        : "border border-k-ink/30 bg-white text-k-ink"
+                    }`}
+                  >
+                    {i + 1}
+                  </span>
+                  {e.titre}
+                </button>
+              );
+            })}
+          </div>
         </nav>
       </div>
 
@@ -437,7 +518,12 @@ export function VitrineStudio({
               themeInitial={themeInitial}
               secteur={etat.secteur}
               contenus={contenus}
-              liens={liens}
+              liens={liensEdites}
+              controleLiens={{
+                valeurs: liensEdites,
+                onChange: setLiensEdites,
+                erreur: refusLiens,
+              }}
               blocs={etat.blocs}
               onBloc={(bloc, visible) =>
                 majEtat({ blocs: basculerBloc(etat.blocs, bloc, visible) })
@@ -483,7 +569,7 @@ export function VitrineStudio({
           coverAlt={identiteInitiale.coverAlt}
           timezone={timezone}
           cartes={exemples ? cartesExemple(etat.secteur) : cartes}
-          liens={liens}
+          liens={liensEdites}
           slug={slug}
           exemples={exemples}
         />
