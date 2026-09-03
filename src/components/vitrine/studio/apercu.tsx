@@ -126,7 +126,16 @@ export function ApercuStudio({
     // colonne fixe, et les réglages prennent le reste. La borne suit le cadre
     // qu'il contient (`max-w-[480px]`, la largeur d'un téléphone) : au-delà, la
     // largeur gagnée n'agrandissait pas la vitrine, elle centrait du vide.
-    <div className="flex min-h-0 w-full shrink-0 flex-col items-center gap-2 overflow-y-auto lg:w-[512px]">
+    //
+    // ET LE CADRE RESTE À 480, MÊME QUAND ON DEMANDE « PLUS GRAND » (VIT-36).
+    // Ce n'est pas une largeur choisie ici : la page publique est elle-même
+    // capée à `max-w-[480px]`. Un cadre à 560 rendrait des blocs 17 % plus
+    // larges que ce que le visiteur voit — le texte se couperait ailleurs, et
+    // l'aperçu mentirait précisément sur ce qu'on vient y juger. La lisibilité
+    // se gagne donc en REBALANÇANT la rangée du studio, pas en étirant le
+    // cadre ; seule la colonne s'élargit un peu, pour que le cadre respire au
+    // lieu d'être collé au bord.
+    <div className="flex min-h-0 w-full shrink-0 flex-col items-center gap-2 overflow-y-auto lg:w-[544px]">
       <p className="text-xs font-semibold text-zinc-500">
         Aperçu — la page que vos clients ouvriront. Rien n&apos;est enregistré
         tant que vous n&apos;avez pas cliqué sur Enregistrer.
