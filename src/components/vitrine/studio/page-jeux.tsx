@@ -3,6 +3,7 @@
 import { JeuxVitrineEditeur } from "@/components/vitrine/jeux-vitrine";
 import { CaseStudio } from "@/components/vitrine/studio/champ";
 import { SectionALaUneStudio } from "@/components/vitrine/studio/section-alaune";
+import type { ControleLiens } from "@/components/dashboard/social-links-form";
 import { resoudreThemeVitrine } from "@/components/vitrine/theme";
 import { DUO_OPTIONS_MIN_BASE } from "@/lib/duo";
 import type {
@@ -77,6 +78,7 @@ export function PageJeuxStudio({
   secteur,
   contenus,
   liens,
+  controleLiens,
   blocs,
   onBloc,
   socialVisible,
@@ -94,6 +96,7 @@ export function PageJeuxStudio({
   secteur: SecteurVitrine;
   contenus: ContenuVitrineView[];
   liens: VitrineLiensView;
+  controleLiens?: ControleLiens;
   socialVisible: boolean;
   onSocialVisible: (visible: boolean) => void;
   peutEditer: boolean;
@@ -166,6 +169,7 @@ export function PageJeuxStudio({
         <SectionALaUneStudio
           contenus={contenus}
           liens={liens}
+          controleLiens={controleLiens}
           socialVisible={socialVisible}
           onSocialVisible={onSocialVisible}
           peutEditer={peutEditer}

@@ -1,6 +1,9 @@
 "use client";
 
-import { SocialLinksForm } from "@/components/dashboard/social-links-form";
+import {
+  SocialLinksForm,
+  type ControleLiens,
+} from "@/components/dashboard/social-links-form";
 import { ContenusEditeur } from "@/components/vitrine/contenus-editeur";
 import { CaseStudio } from "@/components/vitrine/studio/champ";
 import type { ContenuVitrineView, VitrineLiensView } from "@/lib/vitrine";
@@ -50,12 +53,15 @@ import type { ContenuVitrineView, VitrineLiensView } from "@/lib/vitrine";
 export function SectionALaUneStudio({
   contenus,
   liens,
+  controleLiens,
   socialVisible,
   onSocialVisible,
   peutEditer,
 }: {
   contenus: ContenuVitrineView[];
   liens: VitrineLiensView;
+  /** Présent dans le studio : la saisie remonte, l'aperçu suit (VIT-37). */
+  controleLiens?: ControleLiens;
   /** Le bloc « Réseaux et avis » paraît-il ? Masquer, c'est omettre (VIT-3). */
   socialVisible: boolean;
   onSocialVisible: (visible: boolean) => void;
@@ -92,6 +98,7 @@ export function SectionALaUneStudio({
             googleReviewUrl={liens.google_review_url ?? ""}
             instagramUrl={liens.instagram_url ?? ""}
             tiktokUrl={liens.tiktok_url ?? ""}
+            controle={controleLiens}
           />
         ) : (
           // Le formulaire est réservé au propriétaire — côté action

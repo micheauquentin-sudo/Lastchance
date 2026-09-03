@@ -9681,3 +9681,71 @@ dépôt : elle a d'abord visé le conteneur EXTÉRIEUR de la page publique — c
 qui n'a pas de borne —, parce qu'un `.find` rend la première ligne venue ;
 l'unicité de l'ancre est désormais exigée, pas supposée. Et la mutation à 560 a
 été jouée : elle fait rougir les deux assertions.
+
+## ADR-153 — Un écran qui dit « enregistré » enregistre TOUT ce qu'il montre
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-37. Retour du propriétaire : « je viens de mettre ma page
+Insta et le logo Instagram ne s'affiche pas sur l'aperçu ».
+
+Deux causes se tenaient derrière la même phrase, et la seconde est la grave.
+
+### 1. L'aperçu lisait le serveur, pas la saisie
+
+`ApercuStudio` recevait `liens={liens}` — la valeur chargée par la page. Tous
+les autres réglages du studio se reflètent à la frappe ; ces trois-là seuls
+restaient muets. Ils sont désormais tenus dans un état d'écran
+(`liensEdites`), que l'aperçu et le formulaire partagent.
+
+**Ils n'entrent PAS dans `EtatStudio`**, et c'est délibéré : ils appartiennent
+à l'ORGANISATION (trois colonnes d'URL), pas à la vitrine, et leur action est
+réservée au propriétaire. Les y faire entrer les aurait fait poster à
+`saveVitrineSettings`, qui n'en sait rien, et aurait mêlé deux permissions
+dans un seul envoi.
+
+### 2. Le bouton « Enregistrer » de l'en-tête ne couvrait pas ces trois champs
+
+C'est le vrai défaut, et il est de la famille la plus coûteuse de ce dépôt :
+**celle qui ne casse rien**. Le formulaire des liens gardait son propre bouton,
+plus bas que le pli, pendant que l'en-tête affichait « Modifications
+enregistrées » pour les autres réglages. On tapait son Instagram, on lisait
+« enregistrées », on partait — et rien n'avait été envoyé.
+
+Aucune garde ne pouvait le voir : les deux moitiés fonctionnaient
+parfaitement, séparément. C'est leur VOISINAGE qui mentait.
+
+La règle qui en sort vaut au-delà de ce lot : **un écran qui affiche un état
+d'enregistrement l'affiche pour tout ce qu'il montre**, ou il ne l'affiche pas.
+Un « enregistré » partiel est pire qu'un écran muet, parce qu'il retire au
+commerçant la raison qu'il aurait eue de vérifier.
+
+Les liens s'enregistrent donc seuls, au même débours de 1200 ms que le reste,
+et le bouton local disparaît en mode piloté (`/dashboard/settings` le garde,
+inchangé).
+
+### Deux gardes sur l'envoi, aucune décorative
+
+- **Le schéma est joué avant l'envoi**, importé du serveur et non recopié.
+  Sans lui, chaque frappe d'une adresse en cours (« https://www.inst… »)
+  enverrait une écriture vouée au refus, et le refus s'afficherait pendant la
+  saisie.
+- **L'instantané envoyé devient la référence au succès**, pas la valeur
+  courante — sinon une frappe arrivée pendant l'aller-retour serait comptée
+  comme déjà enregistrée, et perdue.
+
+### Ce que les tests mesurent, et pourquoi ce n'est pas l'affichage
+
+Les quatre gardes de `liens-live.test.tsx` portent d'abord sur l'ENVOI. Une
+garde d'affichage seule serait passée au vert sur le code fautif : l'aperçu
+aurait pu montrer un lien que personne n'enregistrait. Les deux mutations —
+l'aperçu qui relit le serveur, l'envoi qu'on débranche — font rougir chacune
+son assertion et aucune autre.
+
+### Le fil des étapes, centré sans casser le défilement
+
+`justify-center` sur le conteneur qui défile rend le DÉBUT de la liste
+inatteignable dès qu'elle déborde : les premières étapes se font rogner à
+gauche sans qu'aucun défilement puisse y revenir. Le centrage passe par un
+enfant `w-max mx-auto` — au large il se centre, à l'étroit ses marges valent
+zéro et le défilement repart de la première étape.
