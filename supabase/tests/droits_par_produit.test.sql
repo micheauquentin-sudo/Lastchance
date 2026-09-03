@@ -699,6 +699,70 @@ values
    now() - interval '1 day', now() + interval '365 days');
 
 
+-- ════════════════════════════════════════════════════════════
+-- 5 quater. LA PORTE DIT AUSSI À QUI ELLE APPARTIENT (VIT-34)
+--
+-- PASS-0 à PASS-6 font varier le DROIT, puis le STATUT — et toutes sur UNE
+-- SEULE organisation. Aucune n'a posé la question dont la réponse coûte le plus
+-- cher si elle change un jour : le programme du commerce d'À CÔTÉ sort-il sur
+-- cette page ? Le filtre `l.organization_id = v_settings.organization_id` EST
+-- là (20261202120000) et il est correct. Ce n'est donc pas un défaut qu'on
+-- répare, c'est un invariant que rien ne tenait.
+--
+-- ── LA RLS NE RÉPOND PAS À CETTE QUESTION ──
+--
+-- `vitrine_public_state` est `security definer` et sert le PUBLIC : les
+-- policies de `loyalty_programs` ne la jugent pas. §9 de `vitrine.test.sql`
+-- prouve que le voisin ne LIT pas les tables d'un autre locataire, sous son
+-- propre rôle. Ici, c'est la RPC qui CONSTRUIT la liste, sous un rôle qui a
+-- tout le droit de tout lire : son seul garde-fou est ce `where`.
+--
+-- ── ET POURQUOI UNE ASSERTION, ALORS QU'IL Y A UNE GARDE DE MIGRATION ──
+--
+-- La fonction n'est jamais recopiée : elle est PATCHÉE par
+-- `pg_get_functiondef` + `replace` depuis 20261023120000. Une migration qui
+-- ré-ancrerait sur `from public.loyalty_programs l` pour réécrire le sous-select
+-- pourrait en perdre le `where` en laissant VERTES les trois gardes textuelles
+-- de 20261202120000 — elles vérifient le droit, la source et la clé publiée,
+-- aucune le locataire. 20261203120000 en pose une quatrième, mais une garde de
+-- migration juge la fonction À SA PLACE DANS LA CHAÎNE : une migration
+-- postérieure s'applique après elle et ne la fait pas lever. Celle-ci juge
+-- l'état FINAL du schéma, toutes migrations appliquées. C'est la seule des deux
+-- qu'un fichier futur ne peut pas contourner.
+--
+-- LE VOISIN EST `MORT`, ET IL N'A AUCUN DROIT — AVANT-5 le mesure. C'est la
+-- version la plus dure de la question : son programme fuirait sur la page de
+-- PORTE sans qu'il ait jamais rien acheté, parce que le droit interrogé par le
+-- sous-select est celui de la vitrine REGARDÉE, jamais celui du propriétaire de
+-- la ligne.
+-- ════════════════════════════════════════════════════════════
+
+insert into public.loyalty_programs (id, organization_id, name, status)
+values
+  ('d40a0000-0000-4000-8000-0000000000b1',
+   'd40a0000-0000-4000-8000-000000000003', 'Carte du voisin', 'active');
+
+-- LA PRÉMISSE EST MESURÉE, PAS SUPPOSÉE : sans cette ligne, VOISIN-1 serait
+-- vert le jour où l'insert ci-dessus cesserait de produire un programme actif —
+-- c'est-à-dire vert pour n'avoir rien eu à retenir.
+select ok(
+  exists (select 1 from public.loyalty_programs
+           where id = 'd40a0000-0000-4000-8000-0000000000b1'
+             and organization_id = 'd40a0000-0000-4000-8000-000000000003'
+             and status = 'active')
+  and not public.org_has_module_access(
+        'd40a0000-0000-4000-8000-000000000003', 'loyalty'),
+  'VOISIN-0 le programme du commerce d''à côté est ACTIF, et son propriétaire n''a même pas le module `loyalty`');
+
+-- LE NOM DU VOISIN TRIE APRÈS CELUI DE PORTE (`Comptoir` < `voisin`) et la
+-- porte ordonne par `l.name, l.id` : sans le filtre, la liste rendrait DEUX
+-- éléments et cette égalité exacte dirait lequel est en trop.
+select is(
+  public.vitrine_public_state('tap-produit-porte') #> '{portes,experiences,loyalty}',
+  '[{"id": "d40a0000-0000-4000-8000-0000000000a1", "nom": "Carte du Comptoir"}]'::jsonb,
+  'VOISIN-1 la porte du passeport ne rend QUE le programme de la vitrine regardée : celui du voisin, actif lui aussi, n''y entre pas');
+
+
 -- ── JEU-3b : LE VOCABULAIRE DES CHOIX EST CELUI DES PORTES, MOT POUR MOT ──
 --
 -- C'est l'invariant sur lequel repose TOUT le croisement de `BlocExperiences` :

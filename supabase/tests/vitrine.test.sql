@@ -2457,6 +2457,218 @@ select is(
   '… et c''est bien l''identifiant de la file ouverte, celui que `/reserver/file/{id}` attend');
 
 
+-- ── 14f. LE VOISIN N'ENTRE PAR AUCUNE DES SEPT PORTES (VIT-34) ──
+--
+-- §14 exerce chaque drapeau dans les deux sens — une activité coupée, une file
+-- en pause, une offre hors fenêtre, un quiz en brouillon — et 14c prouve qu'un
+-- quiz ACTIF reste dehors sans le droit. Tout cela se joue sur UNE organisation
+-- à la fois. Aucune assertion n'a jamais demandé si la page de G pouvait
+-- annoncer ce qui appartient à H.
+--
+-- ── §9 NE RÉPOND PAS À CETTE QUESTION, ET LA RLS NON PLUS ──
+--
+-- §9 prouve que le voisin ne LIT pas les tables d'un autre locataire, sous son
+-- propre rôle. Ici c'est la RPC qui CONSTRUIT les listes : elle est
+-- `security definer`, elle sert le public, et le rôle sous lequel elle lit a
+-- tout le droit de tout lire. Son seul garde-fou est le
+-- `where … = v_settings.organization_id` de chaque sous-select — et rien ne le
+-- tenait.
+--
+-- ── POURQUOI CE RISQUE-LÀ PLUTÔT QU'UN AUTRE ──
+--
+-- La fonction n'est jamais recopiée : elle est PATCHÉE par
+-- `pg_get_functiondef` + `replace` depuis 20261023120000. Une migration qui
+-- ré-ancre sur `from public.<table> x` pour réécrire un sous-select peut en
+-- perdre le `where`, et les gardes textuelles des migrations — droit, source,
+-- clé publiée — resteraient VERTES. C'est le constat de la revue de VIT-32.
+-- 20261203120000 pose la garde de texte qui manquait au passeport ; celle-ci
+-- tient les SEPT listes par le COMPORTEMENT, et sur l'état final du schéma.
+--
+-- H EST LE VOISIN, ET IL L'ÉTAIT DÉJÀ : c'est l'organisation de 14c, avec son
+-- quiz actif que G ne doit pas voir. On lui donne un exemplaire SERVABLE de
+-- chacune des six autres familles — actif, ouvert, dans sa fenêtre : une ligne
+-- que la porte aurait de toute façon retenue ne prouverait rien du locataire.
+--
+-- G REÇOIT LES TROIS DROITS QUI LUI MANQUAIENT (`calendar`, `pronostics`,
+-- `loyalty`). Sans eux, ses trois listes seraient vides parce qu'il n'a pas le
+-- module — la mauvaise raison, exactement celle que 14c a passé une fixture
+-- entière à écarter.
+--
+-- LES LIGNES DU VOISIN SONT POSÉES ICI, APRÈS 14e, ET C'EST DÉLIBÉRÉ : aucune
+-- assertion précédente ne change de valeur. Le jour où le filtre casserait,
+-- c'est CETTE section qui rougirait, et elle nomme la faute.
+
+insert into public.organization_module_grants
+  (organization_id, module, kind, source, starts_at, ends_at)
+values
+  ('f1000000-0000-4000-8000-000000001300', 'calendar', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('f1000000-0000-4000-8000-000000001300', 'pronostics', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days'),
+  ('f1000000-0000-4000-8000-000000001300', 'loyalty', 'pass', 'backoffice',
+   now() - interval '1 day', now() + interval '365 days');
+
+-- LES NOMS COMMENCENT PAR « AAA » À DESSEIN. Les sept listes ordonnent par nom
+-- avant d'appliquer `limit c_max_portes` (14e) : un voisin qui trierait après
+-- les quinze activités de G tomberait au-delà de la borne, et l'assertion
+-- serait verte parce que la porte est courte, pas parce qu'elle filtre.
+insert into public.reservation_activities (id, organization_id, name, active)
+values
+  ('f1000000-0000-4000-8000-000000001360',
+   'f1000000-0000-4000-8000-000000001301', 'AAA Dégustation du voisin', true);
+
+insert into public.reservation_queues
+  (id, organization_id, activity_id, name, status, max_live_entries)
+values
+  ('f1000000-0000-4000-8000-000000001361',
+   'f1000000-0000-4000-8000-000000001301', null, 'AAA File du voisin', 'open', 50);
+
+insert into public.reservation_stock_offers
+  (id, organization_id, title, description, stock_total,
+   window_starts_at, window_ends_at, per_player_limit, status)
+values
+  ('f1000000-0000-4000-8000-000000001362',
+   'f1000000-0000-4000-8000-000000001301', 'AAA Offre du voisin', null, 4,
+   now() - interval '1 hour', now() + interval '3 hours', 1, 'open');
+
+insert into public.calendars
+  (id, organization_id, name, status, start_date, timezone, day_count,
+   public_slug, completion_reward_stock)
+values
+  ('f1000000-0000-4000-8000-000000001363',
+   'f1000000-0000-4000-8000-000000001301', 'AAA Avent du voisin', 'active',
+   current_date, 'Europe/Paris', 3, 'tap-portes-voisin-calendrier', 0);
+
+insert into public.contests
+  (id, organization_id, slug, name, competition_key, status)
+values
+  ('f1000000-0000-4000-8000-000000001364',
+   'f1000000-0000-4000-8000-000000001301', 'tap-portes-voisin-pronostic',
+   'AAA Championnat du voisin', 'ligue1', 'active');
+
+insert into public.loyalty_programs (id, organization_id, name, status)
+values
+  ('f1000000-0000-4000-8000-000000001365',
+   'f1000000-0000-4000-8000-000000001301', 'AAA Passeport du voisin', 'active');
+
+-- LA PRÉMISSE EST MESURÉE, PAS SUPPOSÉE. Sans elle, les sept assertions qui
+-- suivent seraient vertes sur une base où le voisin n'aurait rien eu à faire
+-- sortir : la forme de détecteur muet que ce dépôt s'est déjà fait prendre
+-- plusieurs fois. Le septième exemplaire est le quiz actif de 14c, qui existait
+-- déjà — il est recompté ici pour que la garde couvre bien SEPT familles.
+-- L'APPARTENANCE EST VÉRIFIÉE LIGNE À LIGNE, pas seulement l'existence : c'est
+-- la moitié qui compte. Sept lignes servables posées par mégarde chez G
+-- rendraient les sept assertions suivantes vertes sans que rien n'ait été
+-- mesuré du locataire.
+select is(
+  (select pg_catalog.count(*)::int from (
+     select 1 from public.reservation_activities
+      where id = 'f1000000-0000-4000-8000-000000001360' and active
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.reservation_queues
+      where id = 'f1000000-0000-4000-8000-000000001361' and status = 'open'
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.reservation_stock_offers
+      where id = 'f1000000-0000-4000-8000-000000001362' and status = 'open'
+        and now() between window_starts_at and window_ends_at
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.quizzes
+      where id = 'f1000000-0000-4000-8000-000000001352' and status = 'active'
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.calendars
+      where id = 'f1000000-0000-4000-8000-000000001363' and status = 'active'
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.contests
+      where id = 'f1000000-0000-4000-8000-000000001364' and status = 'active'
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+     union all
+     select 1 from public.loyalty_programs
+      where id = 'f1000000-0000-4000-8000-000000001365' and status = 'active'
+        and organization_id = 'f1000000-0000-4000-8000-000000001301'
+   ) t),
+  7,
+  'VOISIN-0 le voisin possède SEPT lignes servables, une par porte : chacune sortirait sur sa propre vitrine, et c''est ce qui rend les sept assertions suivantes capables de mordre');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,reserver,activites}') p
+    where p ->> 'id' = 'f1000000-0000-4000-8000-000000001360'),
+  0,
+  'VOISIN-1 l''activité ACTIVE du voisin n''entre pas dans `reserver.activites` de G, alors que son nom la placerait en tête des douze');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,reserver,files}') p
+    where p ->> 'id' = 'f1000000-0000-4000-8000-000000001361'),
+  0,
+  'VOISIN-2 … ni sa file OUVERTE dans `reserver.files`');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,reserver,offres}') p
+    where p ->> 'id' = 'f1000000-0000-4000-8000-000000001362'),
+  0,
+  'VOISIN-3 … ni son offre OUVERTE ET DANS SA FENÊTRE dans `reserver.offres`');
+
+-- LES TROIS LISTES D'EXPÉRIENCES PORTENT DES SLUGS, PAS DES IDENTIFIANTS : ce
+-- sont des adresses publiques (`/quiz/{slug}`, `/calendrier/{slug}`,
+-- `/pronostics/{slug}`), et c'est donc le slug qui fuirait.
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,experiences,quiz}') p
+    where p ->> 'slug' = 'tap-quiz-sans-droit'),
+  0,
+  'VOISIN-4 … ni son quiz ACTIF dans `experiences.quiz` : 14c prouvait que G ne voit pas SON PROPRE quiz sans le droit, jamais qu''il ne voit pas celui d''un autre');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,experiences,calendars}') p
+    where p ->> 'slug' = 'tap-portes-voisin-calendrier'),
+  0,
+  'VOISIN-5 … ni son calendrier ACTIF dans `experiences.calendars`, G ayant pourtant le droit `calendar`');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,experiences,pronostics}') p
+    where p ->> 'slug' = 'tap-portes-voisin-pronostic'),
+  0,
+  'VOISIN-6 … ni son championnat ACTIF dans `experiences.pronostics` : le droit à la ressource est lu sur la vitrine REGARDÉE, il ouvrirait donc le championnat du voisin');
+
+select is(
+  (select pg_catalog.count(*)::int
+     from pg_catalog.jsonb_array_elements(
+       public.vitrine_public_state('tap-portes') #> '{portes,experiences,loyalty}') p
+    where p ->> 'id' = 'f1000000-0000-4000-8000-000000001365'),
+  0,
+  'VOISIN-7 … ni son passeport ACTIF dans `experiences.loyalty` — la porte de VIT-32, celle dont les trois gardes de migration ne regardaient pas le locataire');
+
+-- ET LES TROIS LISTES OÙ G NE POSSÈDE RIEN SONT VIDES, PAS « PRESQUE VIDES ».
+-- Les sept assertions ci-dessus nomment une ligne chacune ; celle-ci ne nomme
+-- personne et attrape donc aussi ce qu'on n'a pas pensé à insérer.
+select results_eq(
+  $$select pg_catalog.jsonb_array_length(
+      public.vitrine_public_state('tap-portes') #> '{portes,experiences,calendars}')
+    union all
+    select pg_catalog.jsonb_array_length(
+      public.vitrine_public_state('tap-portes') #> '{portes,experiences,pronostics}')
+    union all
+    select pg_catalog.jsonb_array_length(
+      public.vitrine_public_state('tap-portes') #> '{portes,experiences,loyalty}')$$,
+  array[0, 0, 0],
+  'VOISIN-8 les trois listes dont G a le droit sans avoir la moindre ligne restent VIDES : rien du tout n''y entre, pas seulement rien de nommé');
+
+
 
 
 -- ══ 15. L'ÉCRAN DE TRADUCTION : LE CONTRAT, ET LE RETRAIT (VIT-5, lot L15) ══
