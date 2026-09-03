@@ -39,6 +39,14 @@ import {
   CONTEST_THEME_ORDER,
   contestThemeTokens,
 } from "@/components/pronos/contest-theme";
+import {
+  CODE_TTL_MAX_DAYS,
+  CODE_TTL_MIN_DAYS,
+  formatTtlSeconds,
+  ttlContestEditable,
+  ttlContestJours,
+  ttlContestSecondes,
+} from "@/components/pronos/contest-code-ttl";
 import { FondEcran } from "@/components/ui/fond-ecran";
 import {
   AUCUN_FOND,
@@ -569,28 +577,16 @@ export function ContestDangerZone({ contest }: { contest: Contest }) {
   );
 }
 
-/** Un jour, en secondes : l'UI parle en JOURS, la base en secondes. */
-const SECONDS_PER_DAY = 86_400;
-/** Bornes du CHECK SQL (3 600 s → 7 776 000 s), ramenées à des jours entiers. */
-const CODE_TTL_MIN_DAYS = 1;
-const CODE_TTL_MAX_DAYS = 90;
-
-/**
- * Secondes → durée lisible (« 1 h », « 1 j 12 h », « 90 min »). Sert
- * uniquement à MONTRER une valeur que le champ en jours ne sait pas saisir.
+/*
+ * LES BORNES ET LA CONVERSION VIVENT DÉSORMAIS DANS
+ * `@/components/pronos/contest-code-ttl` (VIT-43).
+ *
+ * Elles n'avaient qu'un lecteur tant que cet atelier était le seul écran à
+ * régler l'échéance ; le studio en est un second, et c'est exactement le moment
+ * où une constante recopiée commence à diverger. `CODE_TTL_MAX_DAYS` borne un
+ * CHECK SQL : deux écrans qui n'en donnent pas la même valeur, c'est un
+ * formulaire qui accepte ce que l'autre refuse.
  */
-function formatTtlSeconds(total: number): string {
-  const parts: string[] = [];
-  const days = Math.floor(total / SECONDS_PER_DAY);
-  const hours = Math.floor((total % SECONDS_PER_DAY) / 3_600);
-  const minutes = Math.floor((total % 3_600) / 60);
-  const seconds = total % 60;
-  if (days > 0) parts.push(`${days} j`);
-  if (hours > 0) parts.push(`${hours} h`);
-  if (minutes > 0) parts.push(`${minutes} min`);
-  if (seconds > 0) parts.push(`${seconds} s`);
-  return parts.length > 0 ? parts.join(" ") : "0 s";
-}
 
 /**
  * Expiration des codes de retrait (PRONO-…) présentés en caisse.
@@ -620,16 +616,11 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
   const formRef = useRef<HTMLFormElement>(null);
   const stored = contest.code_ttl_seconds;
   // Seul un multiple EXACT de 86 400, dans les bornes du champ, se laisse
-  // écrire en jours entiers sans perte.
-  const storedDays =
-    stored !== null && stored % SECONDS_PER_DAY === 0
-      ? stored / SECONDS_PER_DAY
-      : null;
-  const editable =
-    stored === null ||
-    (storedDays !== null &&
-      storedDays >= CODE_TTL_MIN_DAYS &&
-      storedDays <= CODE_TTL_MAX_DAYS);
+  // écrire en jours entiers sans perte. Les deux verdicts vivent au cœur pur,
+  // parce que le studio les lit aussi — et qu'un studio à enregistrement
+  // continu qui se tromperait ici écraserait la durée sans un clic.
+  const storedDays = ttlContestJours(stored);
+  const editable = ttlContestEditable(stored);
   const [days, setDays] = useState(() =>
     storedDays === null ? "" : String(storedDays),
   );
@@ -644,12 +635,7 @@ function CodeExpirySection({ contest }: { contest: Contest }) {
    */
   const autoSave = useAutoSave(formRef, { actif: editable });
 
-  const trimmed = days.trim();
-  const parsed = Number(trimmed);
-  const seconds =
-    trimmed === "" || !Number.isFinite(parsed)
-      ? ""
-      : String(Math.round(parsed) * SECONDS_PER_DAY);
+  const seconds = ttlContestSecondes(days);
 
   return (
     <div className="mt-5 border-t border-zinc-100 pt-4">

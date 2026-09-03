@@ -525,19 +525,75 @@ export default async function ContestDetailPage({
         />
       </CarteRepliable>
 
-      {/* REPLIÉ comme le reste : la porte de l'atelier est le seul chemin vers
+      {/* ── LE STUDIO EST LE CHEMIN PRINCIPAL SUR GRAND ÉCRAN (VIT-43) ──
+
+          Tout s'y prépare en voyant la page que suivront les joueurs. La carte
+          est donc OUVERTE d'emblée : un commerçant qui vient régler quelque
+          chose doit tomber dessus, pas la déplier.
+
+          Elle ne s'affiche qu'à partir de `lg`, parce que le studio est à deux
+          colonnes : en dessous, elles s'empilent et l'aperçu passe sous les
+          réglages, ce qui lui retire sa raison d'être. Même arbitrage, et même
+          motif, que `/dashboard/vitrine`, `/dashboard/calendar` et
+          `/dashboard/quiz`.
+
+          LA PASTILLE DE PRÉPARATION SUIT L'ENTRÉE PRINCIPALE : elle appartient
+          à la préparation, pas à un écran. Sur grand écran, c'est le studio. */}
+      <div className="hidden lg:block">
+        <CarteRepliable
+          {...bloc("atelier")}
+          titre="Mon studio"
+          defaultOuvert
+          resume={`${matchList.length} match${matchList.length > 1 ? "s" : ""} et ${questions.length} question${questions.length > 1 ? "s" : ""} — tout se prépare ici, en voyant le résultat.`}
+        >
+          {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N'EST PAS
+              DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+              `<span>` — jamais un heading — précisément parce que le bloc
+              qu'elle enveloppe en porte déjà un du même nom (voir son en-tête).
+              Sans ce `<h2>`, la carte n'a AUCUN titre dans l'arbre
+              d'accessibilité : un lecteur d'écran ne l'annonce pas, et les E2E
+              qui cherchent `getByRole("heading")` ne la trouvent pas non plus. */}
+          <Card>
+            <h2 className="font-semibold mb-1">Mon studio</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm text-k-body">
+                La page de vos joueurs au centre, les réglages autour. Le nom,
+                l&apos;inscription, l&apos;allure, les matchs, les questions, le
+                barème et les lots — tout s&apos;y prépare en voyant le
+                résultat. Le classement, les résultats et la clôture restent
+                ici, sur le suivi.
+              </p>
+              <Link
+                href={`/studio/pronostics/${c.id}`}
+                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+              >
+                Ouvrir le studio
+              </Link>
+            </div>
+          </Card>
+        </CarteRepliable>
+      </div>
+
+      {/* L'ATELIER RESTE, POUR LE TÉLÉPHONE. Ce qui est masqué au-delà de `lg`
+          est l'ENTRÉE, jamais la ROUTE : `?etape=` demeure atteignable sur
+          n'importe quelle taille d'écran — une adresse d'étape gardée en favori
+          doit continuer de mener quelque part.
+
+          REPLIÉ comme le reste : la porte de l'atelier est le seul chemin vers
           ce qui se règle, son résumé dit donc ce qui attend derrière. */}
-      <CarteRepliable
-        {...bloc("atelier")}
-        defaultOuvert={false}
-        resume={`${ETAPES_CONTEST.length} étapes de préparation.`}
-      >
-        <AtelierContestEntree
-          contestId={c.id}
-          locked={locked}
-          finalized={finalized}
-        />
-      </CarteRepliable>
+      <div className="lg:hidden">
+        <CarteRepliable
+          {...bloc("atelier")}
+          defaultOuvert={false}
+          resume={`${ETAPES_CONTEST.length} étapes de préparation.`}
+        >
+          <AtelierContestEntree
+            contestId={c.id}
+            locked={locked}
+            finalized={finalized}
+          />
+        </CarteRepliable>
+      </div>
 
       {c.status !== "draft" && (
         <CarteRepliable

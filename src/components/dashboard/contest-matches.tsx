@@ -734,12 +734,15 @@ function MatchRow({
   scoreLabel,
   timeZone,
   auto,
+  saisieResultat,
 }: {
   match: ContestMatch;
   scoreLabel: string;
   timeZone: string;
   /** Championnat synchronisé : matchs et résultats gérés automatiquement. */
   auto: boolean;
+  /** Voir `ContestMatchList` : faux = écran de PRÉPARATION, pas d'exploitation. */
+  saisieResultat: boolean;
 }) {
   const {
     state: resultState,
@@ -796,12 +799,12 @@ function MatchRow({
           )
         ) : (
           <>
-            {finished && !editing ? (
+            {saisieResultat && finished && !editing ? (
               <Button type="button" variant="ghost" onClick={() => setEditing(true)}>
                 Corriger
               </Button>
             ) : null}
-            {!finished || editing ? (
+            {saisieResultat && (!finished || editing) ? (
               <form onSubmit={resultSubmit} className="flex items-center gap-1.5">
                 <input type="hidden" name="id" value={match.id} />
                 <Input
@@ -868,11 +871,28 @@ export function ContestMatchList({
   contestId,
   competition,
   timeZone,
+  saisieResultat = true,
 }: {
   matches: ContestMatch[];
   contestId: string;
   competition: Competition;
   timeZone: string;
+  /**
+   * LA SAISIE DE RÉSULTAT EST DE L'EXPLOITATION, PAS DE LA PRÉPARATION (VIT-43).
+   *
+   * Publier un résultat VERROUILLE les pronostics du match et recalcule le
+   * classement PUBLIC pour tous les joueurs, en direct. C'est un geste qu'on
+   * pose sur un championnat qui tourne — sa place est le suivi, pas un fil de
+   * préparation qu'on parcourt en réglant des couleurs.
+   *
+   * Le studio passe donc `false` : la liste garde l'ajout et la suppression
+   * (préparer, c'est composer sa grille), et perd le champ de score et le
+   * bouton « Corriger ». Le score d'un match terminé reste AFFICHÉ — il est
+   * dans la pastille centrale, pas dans le formulaire.
+   *
+   * Défaut `true` : le tableau de bord ne change pas d'un pixel.
+   */
+  saisieResultat?: boolean;
 }) {
   const auto = Boolean(competition.providerLeagueId);
   // Mode de saisie (compétitions manuelles uniquement) : match par match
@@ -901,8 +921,9 @@ export function ContestMatchList({
         <>
           <p className="text-sm text-zinc-500 mb-4">
             Les pronostics ferment automatiquement au coup d&apos;envoi.
-            Saisissez le résultat après le match : les points sont attribués
-            aussitôt.
+            {saisieResultat
+              ? " Saisissez le résultat après le match : les points sont attribués aussitôt."
+              : " Le résultat se saisit après le match, depuis le suivi du championnat."}
           </p>
           <div
             role="group"
@@ -952,6 +973,7 @@ export function ContestMatchList({
               scoreLabel={competition.scoreLabel}
               timeZone={timeZone}
               auto={auto}
+              saisieResultat={saisieResultat}
             />
           ))}
         </ul>
