@@ -1,5 +1,51 @@
 # Roadmap — Lastchance
 
+## V1.75 — Le studio répond aux retours (✅ 2026-09-03, PR #322 → #327)
+
+**Objectif** : premiers retours d'usage réel du propriétaire sur le studio
+(V1.73). Huit retours, six lots.
+
+- **VIT-30/PR #322 — Quatre retours d'un coup, dont deux défauts.**
+  (a) Un réseau social enregistré ne paraissait pas dans l'aperçu :
+  `updateOrganizationSocialLinks` ne revalidait pas `/vitrine-studio`
+  (`docs/bugs.md`). (b) L'atelier restait affiché sur grand écran malgré
+  VIT-27 (`docs/bugs.md`). Plus : l'**enregistrement automatique**
+  (débours 1,2 s), qui renverse ADR-137 sur décision du propriétaire
+  (ADR-145) ; les panneaux élargis (420 px, 540 sur « La carte », 400 à
+  droite).
+- **PR #323 — `fast-uri` en 4.1.4** (ADR-146). Récidive du piège
+  `docs/supply-chain.md` §2bis sur le même paquet : l'override `^3.1.5`
+  était la borne haute de la plage vulnérable `3.0.0 - 3.1.5`, pas une
+  version qui y échappe.
+- **VIT-31/PR #324 — Horaires structurés** (ADR-147, migration
+  `20261201120000`). Colonne `horaires jsonb`, `grant update (horaires)`
+  nommé, fuseau du commerce publié dans l'état public.
+- **VIT-31b, VIT-31c/PR #325 — Plomberie puis écrans.** Sept jours
+  pré-remplis Lundi→Dimanche, pastille « Ouvert · ferme à 23h » calculée
+  côté client via `useSyncExternalStore` à snapshot serveur constant
+  (ADR-148) — la page sort en SSG, un calcul serveur y figerait l'état à
+  l'heure de génération.
+- **VIT-32/PR #327 — Toutes les portes cochables, et le passeport en
+  gagne une** (ADR-149, migration `20261202120000`). Forme liste
+  `{id, nom}`, pas booléen : son adresse (`/passeport/{id}`) est propre à
+  chaque programme, ce qu'un booléen ne peut pas porter. Gardée par le
+  droit `loyalty` ET `status = 'active'`. `theme.jeux` passe de deux à six
+  clés, l'absence continue de valoir « affiché » (ADR-129 élargi).
+
+**Décisions** : [ADR-145 à ADR-149](./decisions.md).
+
+**Reste ouvert** :
+- `docs/supply-chain.md` §2bis ne consigne pas encore la récidive du
+  piège `fast-uri` — hors périmètre documentaire de ce chantier, signalé
+  pour `docs-scribe` ou `db-supabase` selon qui touche au fichier ensuite.
+- Le sélecteur de figures des pronostics reste une copie locale
+  (`AvatarPicker` dans `contest-experience.tsx`), non unifiée avec
+  `src/components/ui/avatar-picker.tsx` (déjà signalé en V1.74).
+- `nicknameSchema` (pronostics) borne toujours à 30, contre 24 au socle
+  partagé (déjà signalé en V1.74) — décision produit à prendre.
+- Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google
+  (geste propriétaire, déjà signalé en V1.71/V1.73).
+
 ## V1.74 — L'identité joueur partagée, pour de vrai (✅ 2026-09-02, PR #314, #315, #317, #319)
 
 **Objectif** : clore le reliquat déclaré dans cette roadmap — « Jackpot,

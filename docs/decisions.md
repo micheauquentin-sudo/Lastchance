@@ -9325,3 +9325,184 @@ effectives ; il reste non nul en régime permanent quand un client dont le
 cookie ne porte pas l'empreinte survivante voit sa ligne recréée puis
 réabsorbée à chaque participation — résiduel connu, rien n'est perdu, voir
 `docs/roadmap.md`.
+
+## ADR-145 — Le studio s'enregistre tout seul : ADR-137 est renversé, sur décision du propriétaire
+
+**Date** : 2026-09-03
+**Statut** : Accepté (renverse ADR-137)
+**Contexte** : VIT-30, PR #322. Premier retour d'usage réel du propriétaire
+sur le studio livré en V1.73 : il attend que ses réglages tiennent sans geste
+d'enregistrement, comme n'importe quel éditeur qu'il connaît par ailleurs.
+
+ADR-137 posait « un formulaire VIDE, et aucun `name` visible » précisément
+pour qu'aucun état ne s'écrive avant un clic explicite sur « Enregistrer » —
+la garantie que l'ouverture du studio, seule, ne modifie rien. Ce chantier
+renverse cette garantie : le studio écrit désormais tout seul, 1,2 s après la
+dernière frappe.
+
+### La décision — débours de 1,2 s, et la garde qui compte est l'OUVERTURE
+
+L'enregistrement automatique se déclenche après un débours de 1,2 s sans
+nouvelle modification, plutôt qu'à chaque frappe : vingt-cinq caractères tapés
+ne doivent pas produire vingt-cinq écritures.
+
+Ce que la garde vérifie n'est pas l'existence du débours mais son absence
+DE DÉCLENCHEMENT à l'ouverture : monter le studio sur des réglages existants ne
+doit produire AUCUNE écriture tant que rien n'a été modifié. Sans cette garde
+précise, le simple affichage du studio aurait persisté les vingt-cinq défauts
+d'allure hérités de la vitrine de référence (ADR-123) au premier rendu de
+chaque commerçant qui l'ouvre — une régression silencieuse, invisible à
+l'usage, qui aurait réécrit un thème jamais vraiment édité.
+
+**Écarté** : garder ADR-137 et ajouter un bouton « Enregistrer » discret en
+plus de l'auto-save (les deux mécanismes en concurrence auraient pu se
+chevaucher sur la même requête) ; débourser sur un intervalle fixe plutôt que
+sur l'inactivité (aurait écrit en pleine frappe, avec un thème incomplet
+visible côté public le temps d'une écriture partielle).
+
+**Conséquence** : ADR-137 reste vrai pour tout futur formulaire du dépôt qui
+n'est PAS le studio — c'est une exception nommée, pas un changement de
+doctrine générale.
+
+## ADR-146 — `fast-uri` passe en version majeure : la même faille rouverte par une plage mal fermée
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : PR #323. Quatre advisories couvrant `fast-uri@3.0.0 - 3.1.5`.
+Notre override dans `package.json` valait `^3.1.5` — la BORNE HAUTE de la
+plage vulnérable, pas une version qui y échappe.
+
+`docs/supply-chain.md` §2bis décrivait déjà ce piège pour ce même paquet : un
+override figé sur une plage qui redevient vulnérable dès qu'une nouvelle
+faille y est découverte. Ce chantier n'est pas l'illustration a posteriori de
+cette note, c'est sa RÉCIDIVE — le même paquet, la même classe de défaut,
+une seconde fois.
+
+### La décision — 4.1.4, validée par un build complet plutôt qu'un raisonnement
+
+`ajv@8` (notre dépendance directe qui entraîne `fast-uri`) déclare
+`fast-uri: ^3.0.1` dans son propre `package.json` : imposer `^4.x` par
+override sort donc de la plage qu'`ajv` a lui-même annoncée compatible. Un
+bump majeur sur une dépendance transitive imposée par override ne se
+valide pas en lisant un changelog — il se valide en faisant tourner
+`npm run build` en entier et en constatant qu'il finit vert.
+
+**Écarté** : rester sur `3.1.6` ou toute version `3.x` corrigée si elle
+existait — elle n'existe pas, la ligne 3.x est vulnérable dans SON ENTIER,
+pas seulement jusqu'à `3.1.5` ; le bump majeur n'est donc pas une prudence
+excessive, c'est la seule sortie.
+
+**Ce qui reste à faire, hors du périmètre de cet ADR** : consigner cette
+récidive dans `docs/supply-chain.md` §2bis lui-même — non fait ici, ce
+document n'étant pas dans le périmètre de ce chantier.
+
+## ADR-147 — Les horaires deviennent une structure, et le fuseau publié est celui du COMMERCE
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-31, PR #324, migration `20261201120000`.
+
+Avant ce lot, les horaires du studio n'étaient qu'un champ de texte libre :
+aucune page publique ne pouvait donc afficher « Ouvert maintenant » ni calculer
+une heure de fermeture, faute d'une donnée qu'un programme puisse lire.
+
+### La décision — colonne `horaires jsonb`, `grant update` NOMMÉ, fuseau du commerce publié
+
+La nouvelle colonne `horaires jsonb` est validée à l'écriture par un schéma
+fermé aux deux rangs de champs attendus (jours, plages) ; toute autre forme
+est refusée avant d'atteindre la base. Le fuseau horaire du commerce est publié
+dans l'état public au même niveau que les horaires eux-mêmes — un « ouvert
+maintenant » calculé côté client dans le fuseau du NAVIGATEUR serait faux pour
+tout commerce dont le client visiteur n'est pas dans le même fuseau que la
+boutique.
+
+`grant update (horaires)` est posé NOMMÉ sur la colonne, pas en table entière —
+piège RDV-12 déjà consigné ici : `select` s'accorde par table, `update`
+s'accorde COLONNE PAR COLONNE. Une colonne neuve sans son propre `grant update`
+est muette en écriture, silencieusement, sans qu'aucun test existant ne le
+révèle puisque rien ne casse — l'écriture échoue seulement en RLS, en
+production, au premier commerçant qui essaie.
+
+**Compatibilité** : `horaires` absent (`null`) laisse le comportement d'avant
+INTACT — aucune vitrine existante ne change d'affichage tant que son
+commerçant n'a pas renseigné la nouvelle structure.
+
+## ADR-148 — Une valeur qui dépend de l'heure ne peut pas se rendre pareil des deux côtés : `useSyncExternalStore` à snapshot serveur CONSTANT
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-31c, PR #325. La pastille « Ouvert · ferme à 23h » de la
+vitrine publique doit paraître juste au chargement de la page, sans clignoter
+ni disparaître à l'hydratation.
+
+### Le piège, traité avant d'être découvert en production
+
+`/v/{slug}` sort en SSG : la page est générée une fois, puis servie telle
+quelle à toutes les requêtes suivantes. Si la pastille se calcule au rendu —
+serveur ou client — à partir de l'heure courante, le HTML figé à la
+génération et le premier rendu client (exécuté plus tard, à une heure
+différente) produisent deux textes différents. React refuse alors
+d'hydrater le nœud divergent et retombe en rendu client complet — perte de
+l'interactivité de toute la page, pas seulement de la pastille, pour un
+défaut dont rien dans les tests locaux (rendu unique, horloge figée) n'aurait
+laissé deviner la portée.
+
+### La décision — `getServerSnapshot` renvoie une valeur CONSTANTE
+
+`useSyncExternalStore` calcule la pastille côté client seulement, après
+l'hydratation : son `getServerSnapshot` renvoie une valeur fixe (un état
+neutre, ni ouvert ni fermé), IDENTIQUE à ce que produit le premier rendu
+client avant que l'abonnement ne se déclenche. HTML servi et premier rendu
+client sont donc identiques PAR CONSTRUCTION, quelle que soit l'heure à
+laquelle chacun a lieu — l'hydratation ne peut plus diverger, par
+construction et non par coïncidence de timing.
+
+**Écarté** : calculer l'état d'ouverture côté serveur, au moment de la
+génération. La page sort en SSG : un « Ouvert » écrit à la génération resterait
+figé à cette heure jusqu'à la prochaine régénération, mentant à quiconque
+visite la page en dehors de la fenêtre où l'affirmation était vraie —
+exactement le défaut qu'une pastille dynamique doit éviter.
+
+**Portée** : toute future valeur dérivée de l'heure courante sur une page
+publique en SSG doit suivre ce même patron — jamais un calcul direct au
+rendu, serveur ou client.
+
+## ADR-149 — La forme d'une porte publique : liste si l'accès a une ADRESSE, booléen sinon
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-32, PR #327, migration `20261202120000`. Le passeport de
+fidélité n'avait jusqu'ici AUCUNE porte publique — aucun état exposé côté
+vitrine ne disait s'il existait.
+
+### Le critère — l'adresse, pas le nombre
+
+Duo Miroir et Portrait de la Bande publient un simple booléen parce que leur
+adresse se DÉDUIT du slug de la vitrine (`/v/{slug}/duo`,
+`/v/{slug}/bande`) : savoir qu'ils existent suffit, le chemin ne dépend
+d'aucune autre donnée. Le passeport, lui, se sert à l'adresse
+`/passeport/{id}` — un identifiant que RIEN d'autre dans l'état public ne
+porte. Un booléen `passeport: true` aurait dit qu'un passeport existe sans
+dire OÙ le trouver : la porte aurait été ouverte sur un mur.
+
+Une seconde raison, structurelle, pointait dans le même sens : rien ne borne
+`loyalty_programs` à une ligne par commerce. Un booléen aurait donc obligé la
+RPC d'état public à ÉLIRE un programme parmi plusieurs candidats possibles —
+un arbitrage arbitraire que la forme liste évite entièrement, en publiant
+CE QUI EXISTE plutôt qu'un résumé qui suppose l'unicité.
+
+### La décision — une liste `{id, nom}`, gardée par le droit `loyalty` ET `status = 'active'`
+
+La porte publique du passeport prend la forme `passeport: [{id, nom}, ...]`.
+Elle est gardée par la conjonction du droit `loyalty` (le commerce a souscrit
+au module) et de `status = 'active'` (le programme précis n'est pas
+suspendu) — les deux conditions sont nécessaires : le droit sans le statut
+publierait un programme suspendu, le statut sans le droit publierait un
+programme d'un commerce qui a depuis résilié le module.
+
+**Conséquence pour le reste du dépôt** : le critère « adresse propre » devient
+la règle à appliquer pour toute future porte publique de ce type — un module
+qui vend un chemin distinct par instance publie une liste, un module qui vend
+un chemin fixe unique par vitrine publie un booléen. `theme.jeux` passe à cette
+occasion de deux à six clés ; l'ABSENCE d'une clé continue de valoir
+« affiché » (élargissement d'ADR-129, pas un changement de son principe).

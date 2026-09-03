@@ -37,6 +37,61 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Le studio répond aux retours (2026-09-03, PR #322 → #327)
+
+**Terrain.** `src/actions/organization-social-links.ts` (ou équivalent —
+`updateOrganizationSocialLinks`), `src/components/vitrine/studio/` (auto-save,
+panneaux élargis), `src/components/dashboard/atelier-vitrine-*`
+(masquage `lg`), `package.json` (override `fast-uri`), migration
+`20261201120000` (`horaires jsonb`), migration `20261202120000` (porte
+publique passeport, `theme.jeux` à six clés), écrans horaires (sept jours
+pré-remplis, pastille via `useSyncExternalStore`).
+
+**Décision implémentée.** Huit retours d'usage réel du propriétaire sur le
+studio, en six lots. Enregistrement automatique (1,2 s de débours) qui
+renverse ADR-137 sur sa demande directe — la garde qui compte vérifie
+l'ABSENCE d'écriture à l'ouverture, pas la présence du débours. `fast-uri`
+monté en version majeure (4.1.4) après récidive du piège d'override déjà
+consigné en `docs/supply-chain.md` §2bis. Horaires structurés (`horaires
+jsonb`, fuseau du COMMERCE publié). Pastille d'ouverture calculée côté client
+seulement, `getServerSnapshot` constant, pour ne jamais diverger du HTML SSG
+généré à une autre heure. Passeport gagne sa première porte publique, en
+LISTE `{id, nom}` — son adresse (`/passeport/{id}`) est propre à chaque
+programme, contrairement à Duo/Bande dont l'adresse se déduit du slug.
+
+**Deux défauts corrigés, trouvés par l'usage et non par une garde**
+(`docs/bugs.md`) : `updateOrganizationSocialLinks` ne revalidait pas
+`/vitrine-studio`, resté hors de sa liste de chemins depuis que VIT-19 y a
+déplacé l'écran d'édition ; l'atelier restait affiché sur grand écran malgré
+VIT-27, l'objection retenue à l'époque (les points de vérification restent
+utiles) n'ayant jamais été confrontée à l'usage réel du propriétaire.
+
+**Écarté.** Un bouton « Enregistrer » en plus de l'auto-save (risque de
+double écriture concurrente) ; un débours sur intervalle fixe plutôt que sur
+inactivité (écriture en pleine frappe, thème incomplet visible côté public) ;
+un calcul serveur de la pastille d'ouverture (la route sort en SSG, l'état
+serait figé à l'heure de génération) ; un booléen pour la porte du passeport
+(dirait qu'il existe sans dire où le trouver, et forcerait une élection
+arbitraire tant que `loyalty_programs` n'est pas borné à une ligne par
+commerce).
+
+**Fini quand.** ✅ typecheck, lint, suite `vitrine`/`horaires` ciblée,
+`npx vitest run src/lib/claude-md-budget.test.ts` (4/4). ADR-145 à ADR-149
+dans `docs/decisions.md`.
+
+**Reste ouvert — À EXÉCUTER.**
+
+1. `docs/supply-chain.md` §2bis ne consigne pas encore la récidive du piège
+   `fast-uri` (override figé sur la borne haute d'une plage vulnérable, pour
+   la deuxième fois sur ce même paquet) — hors périmètre documentaire de ce
+   chantier.
+2. Le sélecteur de figures des pronostics reste une copie locale
+   (`AvatarPicker` dans `contest-experience.tsx`), non unifiée avec le
+   composant partagé.
+3. `nicknameSchema` (pronostics) borne à 30, contre 24 au socle partagé —
+   décision produit à prendre.
+4. Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google.
+
 ## Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#312)
 
 **Terrain.** `src/components/vitrine/vitrine-studio.tsx` (coquille),
