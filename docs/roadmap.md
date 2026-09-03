@@ -137,7 +137,19 @@
   L’aperçu est la vraie page joueur, ses deux actions et la proposition de
   passeport coupées.
 
-**Décisions** : ADR-145 à ADR-157.
+- **VIT-43 — Les pronostics passent au studio** (ADR-158). Huit étapes,
+  route `/studio/pronostics/[id]`, dix-sept `revalidatePath` jumelés et gardés.
+  `updateContest` sert TROIS formulaires discriminés par champs cachés — une
+  seule charge utile rendue en entier les remplace, et la mutation qui retire
+  `collection_settings` fait rougir dix assertions. **Le GEL d'un championnat
+  verrouillé ou clôturé est tenu par un seul verdict**, qui coupe à la fois
+  l'automatisme et le bouton : un écran gelé ne montre pas un automatisme éteint.
+  `after()` n'est pas reproduit — la page se re-rend à chaque enregistrement,
+  et il appellerait le fournisseur de calendriers à chaque réglage. L'échéance
+  des codes sort dans un cœur pur partagé avec l'atelier, lecture seule conservée
+  pour une valeur non multiple de 86 400 s.
+
+**Décisions** : ADR-145 à ADR-158.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
