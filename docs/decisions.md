@@ -9749,3 +9749,81 @@ inatteignable dès qu'elle déborde : les premières étapes se font rogner à
 gauche sans qu'aucun défilement puisse y revenir. Le centrage passe par un
 enfant `w-max mx-auto` — au large il se centre, à l'étroit ses marges valent
 zéro et le défilement repart de la première étape.
+
+## ADR-154 — Un socle de studio, parce que douze copies divergent et qu'une seule ne le peut pas
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-38, premier lot du programme « le studio partout ». Demande
+du propriétaire : *« le client doit se retrouver simplement et ne voir aucune
+différence quand il paramètre n'importe quelle application »*.
+
+### Ce que la mesure a trouvé, et qui a décidé de l'architecture
+
+Six sondes de lecture, une par famille d'animations, lancées en parallèle. Elles
+ont convergé sans se parler sur un point que je n'allais pas chercher :
+
+**Toutes les actions de configuration de ce produit écrasent par absence.**
+`updateJackpotCampaign` réécrit quatorze colonnes en bloc — un `public_slug`
+non rendu retombe à `null` et casse tous les QR déjà imprimés, en silence.
+`updateQuiz` efface la consigne d'accueil, `updateCalendar`, `updateHunt`,
+`updateLoyaltyProgram`, `updateWheelStyle` : toutes. Le fichier
+`atelier-jackpot-etapes.ts` le dit même explicitement comme la raison pour
+laquelle sa carte n'a JAMAIS été découpée en étapes.
+
+Découper douze écrans en étapes sans traiter cela, c'est industrialiser cette
+panne. Une étape qu'on quitte est démontée ; si ses champs portaient les `name`
+de la charge utile, l'enregistrement suivant les effacerait.
+
+### Décision — la coquille tient la forme, le module tient son état
+
+`src/components/studio/` porte cinq pièces, aucune ne connaissant un module :
+`etapes.ts` (déclaration + libellé accessible + repli), `barre-etapes.tsx`,
+`use-enregistrement-etat.ts`, `cadre-apercu.tsx`, `coquille.tsx`.
+
+Le contrat tient en une phrase : **aucun contrôle visible ne porte de `name`**,
+et le module rend sa charge utile EN ENTIER depuis son état, à chaque rendu,
+dans `champsCaches`. Le formulaire est rendu par la coquille en VOISIN de la
+mise en page — jamais en parent, parce que la moitié des étapes de ce produit
+contiennent leur propre `<form>` et qu'un `<form>` imbriqué tue l'hydratation
+de toute la page (VIT-16).
+
+Une seule étape est montée à la fois. C'est ce qui règle, en passant, le
+deuxième piège trouvé : la fidélité aurait eu DEUX écrivains concurrents sur les
+mêmes colonnes le jour où `LoyaltySettings` et `LoyaltyTiersForm` se seraient
+retrouvés à l'écran ensemble avec l'enregistrement automatique.
+
+### Deux enregistrements automatiques, et ce n'est pas un doublon
+
+`src/lib/use-auto-save.ts` écoute les événements du FORMULAIRE : c'est le bon
+outil quand les champs visibles sont dedans — le cas de tous les ateliers
+historiques. `useEnregistrementDepuisEtat` écoute L'ÉTAT : c'est le seul qui
+fonctionne dans un studio, où le formulaire est vide de mise en page et où les
+contrôles visibles sont ses voisins. Aucun événement de saisie ne l'atteint
+jamais. Les deux coexistent, et le fichier dit pourquoi.
+
+### L'extraction est prouvée par les gardes de la vitrine, pas par les siennes
+
+Aucun comportement nouveau dans ce lot : la vitrine est rebranchée sur la
+coquille, et ses trente-six fichiers de tests — six cent vingt-sept assertions —
+sont le filet. Une extraction qui aurait besoin d'écrire ses propres gardes pour
+prouver qu'elle n'a rien cassé serait déjà une réécriture.
+
+S'y ajoute `coquille.test.tsx`, qui garde le CONTRAT plutôt qu'un écran : le
+formulaire n'est l'ancêtre de rien, le bouton est dehors et vise dedans, le fil
+d'étapes ne se centre pas avec `justify-center`. Les trois mutations
+correspondantes rougissent.
+
+### Ce que l'aperçu ne promet pas
+
+`apercu` est FACULTATIF. Toutes les animations n'ont pas de page joueur
+rendable côté client — une roue 3D, une chasse géolocalisée. Là où un aperçu
+fidèle est impossible, il n'y en aura pas : un faux aperçu est le seul défaut de
+cette famille qui ne se voit pas, et ADR-152 a déjà tranché dans ce sens.
+
+### Corrigé au passage : la légende mentait
+
+L'aperçu affichait encore « Rien n'est enregistré tant que vous n'avez pas
+cliqué sur Enregistrer » alors que le studio enregistre seul depuis VIT-30.
+C'est ADR-153 pris par l'autre bout — un écran qui raconte le contraire de ce
+qu'il fait. La légende par défaut du socle décrit l'automatisme.

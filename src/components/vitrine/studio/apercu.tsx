@@ -1,5 +1,6 @@
 "use client";
 
+import { CadreApercu } from "@/components/studio/cadre-apercu";
 import { HeroVitrine } from "@/components/vitrine/hero-vitrine";
 import { CatalogueVitrine } from "@/components/vitrine/catalogue-vitrine";
 import { BarreBasseVitrine } from "@/components/vitrine/barre-basse";
@@ -76,7 +77,10 @@ export function ApercuStudio({
    */
   exemples?: boolean;
 }) {
-  const theme = resoudreThemeVitrine(themeDeLEtat(etat, themeBase), etat.secteur);
+  const theme = resoudreThemeVitrine(
+    themeDeLEtat(etat, themeBase),
+    etat.secteur,
+  );
   const allure = theme.allure;
   // MASQUER UN BLOC, C'EST L'OMETTRE (VIT-3) : l'aperçu lit donc la liste
   // résolue, exactement comme la page publique. Sans cela, décocher « Horaires »
@@ -121,83 +125,72 @@ export function ApercuStudio({
   // pastille écrite à la main : l'aperçu ne bouge pas d'un pixel.
 
   return (
-    // L'APERÇU EST BORNÉ, ET C'EST LUI QUI A CÉDÉ LA PLACE (VIT-35).
-    // Il était `flex-1` entre deux colonnes fixes ; il est maintenant la
-    // colonne fixe, et les réglages prennent le reste. La borne suit le cadre
-    // qu'il contient (`max-w-[480px]`, la largeur d'un téléphone) : au-delà, la
-    // largeur gagnée n'agrandissait pas la vitrine, elle centrait du vide.
-    //
-    // ET LE CADRE RESTE À 480, MÊME QUAND ON DEMANDE « PLUS GRAND » (VIT-36).
-    // Ce n'est pas une largeur choisie ici : la page publique est elle-même
-    // capée à `max-w-[480px]`. Un cadre à 560 rendrait des blocs 17 % plus
-    // larges que ce que le visiteur voit — le texte se couperait ailleurs, et
-    // l'aperçu mentirait précisément sur ce qu'on vient y juger. La lisibilité
-    // se gagne donc en REBALANÇANT la rangée du studio, pas en étirant le
-    // cadre ; seule la colonne s'élargit un peu, pour que le cadre respire au
-    // lieu d'être collé au bord.
-    <div className="flex min-h-0 w-full shrink-0 flex-col items-center gap-2 overflow-y-auto lg:w-[544px]">
-      <p className="text-xs font-semibold text-zinc-500">
-        Aperçu — la page que vos clients ouvriront. Rien n&apos;est enregistré
-        tant que vous n&apos;avez pas cliqué sur Enregistrer.
-      </p>
+    /* LE CADRE ET LA COLONNE VIENNENT DU SOCLE (VIT-38) — voir
+       `@/components/studio/cadre-apercu` pour la raison qui interdit de les
+       élargir. Ce qui reste ICI est ce qui appartient à la vitrine : ses
+       variables de thème, et le fait que sa page publique est capée à 480 px.
 
-      {/* LE BANDEAU D'EXEMPLE EST DANS L'APERÇU, PAS À CÔTÉ (VIT-28).
-          Posé au-dessus du cadre, il aurait pu être pris pour une note de
-          l'écran ; posé DEDANS, il dit sans ambiguïté que ce qu'on lit
-          en dessous n'est pas la carte du commerçant. C'est ce qui sépare une
-          démonstration d'un malentendu — un aperçu rempli de plats qu'on n'a
-          pas écrits se lit sinon comme une vitrine déjà publiée. */}
-      {exemples ? (
-        <p
-          role="status"
-          className="w-full max-w-[480px] shrink-0 rounded-xl border-2 border-dashed border-k-ink/40 bg-k-yellow/40 px-3 py-2 text-xs font-black text-k-ink"
-        >
-          Exemples — ces fiches ne sont pas les vôtres et ne seront jamais
-          enregistrées. Elles servent à juger un style sur du contenu.
-        </p>
-      ) : null}
-      <div
-        style={variablesThemeVitrine(theme)}
-        className="w-full max-w-[480px] shrink-0 overflow-hidden rounded-2xl border-2 border-k-ink bg-[var(--vitrine-secondary)] font-[family-name:var(--vitrine-texte)] text-[var(--vitrine-sur-secondary)] shadow-[8px_8px_0_rgba(33,29,22,0.9)]"
-      >
-        <HeroVitrine
-          nom={nom}
-          logoUrl={logoUrl}
-          couverture={coverPath}
-          couvertureAlt={coverAlt}
-          accroche={visible("accroche") ? etat.accroche || null : null}
-          badgeOuverture={etat.badge || null}
-          horaires={etat.horairesStructures}
-          timezone={timezone}
+       LA LARGEUR RESTE LITTÉRALE DANS CE FICHIER, et ce n'est pas un oubli :
+       Tailwind ne compile pas une valeur arbitraire construite à l'exécution,
+       et `largeur-apercu.test.ts` compare CE chiffre à celui de la page
+       publique. Passé par une variable, il cesserait d'être vérifiable. */
+    <CadreApercu
+      style={variablesThemeVitrine(theme)}
+      classeCadre="w-full max-w-[480px] bg-[var(--vitrine-secondary)] font-[family-name:var(--vitrine-texte)] text-[var(--vitrine-sur-secondary)]"
+      banniere={
+        /* LE BANDEAU D'EXEMPLE EST DANS L'APERÇU, PAS À CÔTÉ (VIT-28). Posé
+           au-dessus du cadre il aurait pu passer pour une note de l'écran ;
+           posé DEDANS, il dit sans ambiguïté que ce qu'on lit en dessous n'est
+           pas la carte du commerçant. C'est ce qui sépare une démonstration
+           d'un malentendu. */
+        exemples ? (
+          <p
+            role="status"
+            className="w-full max-w-[480px] shrink-0 rounded-xl border-2 border-dashed border-k-ink/40 bg-k-yellow/40 px-3 py-2 text-xs font-black text-k-ink"
+          >
+            Exemples — ces fiches ne sont pas les vôtres et ne seront jamais
+            enregistrées. Elles servent à juger un style sur du contenu.
+          </p>
+        ) : null
+      }
+    >
+      <HeroVitrine
+        nom={nom}
+        logoUrl={logoUrl}
+        couverture={coverPath}
+        couvertureAlt={coverAlt}
+        accroche={visible("accroche") ? etat.accroche || null : null}
+        badgeOuverture={etat.badge || null}
+        horaires={etat.horairesStructures}
+        timezone={timezone}
+        allure={allure}
+        liens={visible("social") ? liens : LIENS_MASQUES}
+        avisGoogle="Avis Google"
+        selecteurLangue={null}
+      />
+      <div className="px-3">
+        <CatalogueVitrine
+          cartes={visible("cartes") ? cartesPubliees : []}
+          styleCartes={theme.styleCartes}
+          lang="fr"
+          secteur={etat.secteur}
           allure={allure}
-          liens={visible("social") ? liens : LIENS_MASQUES}
-          avisGoogle="Avis Google"
-          selecteurLangue={null}
+          slug={slug}
+          portesOuvertes={[]}
+          histoire={visible("histoire") ? etat.histoire || null : null}
+          horaires={visible("horaires") ? etat.horaires || null : null}
         />
-        <div className="px-3">
-          <CatalogueVitrine
-            cartes={visible("cartes") ? cartesPubliees : []}
-            styleCartes={theme.styleCartes}
-            lang="fr"
-            secteur={etat.secteur}
-            allure={allure}
-            slug={slug}
-            portesOuvertes={[]}
-            histoire={visible("histoire") ? etat.histoire || null : null}
-            horaires={visible("horaires") ? etat.horaires || null : null}
-          />
-        </div>
-        {allure.barreBasse !== "masquee" ? (
-          <BarreBasseVitrine
-            slug={slug}
-            lang="fr"
-            secteur={etat.secteur}
-            allure={allure}
-            ancrePied="studio-pied"
-          />
-        ) : null}
       </div>
-    </div>
+      {allure.barreBasse !== "masquee" ? (
+        <BarreBasseVitrine
+          slug={slug}
+          lang="fr"
+          secteur={etat.secteur}
+          allure={allure}
+          ancrePied="studio-pied"
+        />
+      ) : null}
+    </CadreApercu>
   );
 }
 

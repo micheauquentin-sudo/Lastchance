@@ -43,6 +43,12 @@
  * d'essayer. C'est aussi pourquoi le changement d'étape se fait par un bouton
  * et non par un `<Link>` : il ne touche pas à l'historique, il déplace un état.
  */
+import {
+  type DeclarationEtape,
+  libelleEtape,
+  parseEtape,
+} from "@/components/studio/etapes";
+
 export const ETAPES_STUDIO = [
   {
     cle: "identite",
@@ -102,26 +108,25 @@ export type EtapeStudio = (typeof ETAPES_STUDIO)[number]["cle"];
 export const ETAPE_STUDIO_DEFAUT: EtapeStudio = "identite";
 
 /**
- * Une étape INCONNUE retombe sur la première, jamais sur un écran vide.
+ * LES DEUX FONCTIONS CI-DESSOUS NE FONT PLUS QUE NOMMER LEUR LISTE (VIT-38).
  *
- * Même arbitrage que `parseEtape` pour les étapes d'un jeu décoché (ADR-129) :
- * ce qui n'est pas reconnu mène quelque part d'utile.
+ * Leur contenu est monté dans `@/components/studio/etapes`, parce que les
+ * douze animations du produit en ont exactement le même besoin : un libellé
+ * accessible qui porte le numéro (« 3 » seul ne dit pas de quoi il est le
+ * numéro) et un repli qui mène quelque part d'utile plutôt qu'à un écran vide.
+ *
+ * Elles restent exportées d'ici : c'est ce nom-là que les gardes de la vitrine
+ * cherchent, et un test qui recopierait le libellé divergerait au premier
+ * renommage.
  */
 export function parseEtapeStudio(brut: string | null | undefined): EtapeStudio {
-  const trouvee = ETAPES_STUDIO.find((e) => e.cle === brut);
-  return trouvee ? trouvee.cle : ETAPE_STUDIO_DEFAUT;
+  return parseEtape(ETAPES_STUDIO, brut);
 }
 
-/**
- * LE NOM ACCESSIBLE D'UN BOUTON D'ÉTAPE — écrit ICI, pas dans la mise en page.
- *
- * Le numéro est ce qui rend le parcours lisible, mais à l'écran il tient dans
- * une pastille : lu seul par un lecteur d'écran, « 3 Ma carte » ne dit pas de
- * quoi trois est le numéro. Cette fonction est la SOURCE du nom — la barre
- * l'utilise et les gardes aussi, sans quoi elles chercheraient un libellé
- * recopié, qui divergerait au premier renommage.
- */
 export function libelleEtapeStudio(cle: EtapeStudio): string {
-  const index = ETAPES_STUDIO.findIndex((e) => e.cle === cle);
-  return `Étape ${index + 1} sur ${ETAPES_STUDIO.length} : ${ETAPES_STUDIO[index].titre}`;
+  return libelleEtape(ETAPES_STUDIO, cle);
 }
+
+/** La liste satisfait le contrat du socle — vérifié à la compilation. */
+const _contrat: readonly DeclarationEtape<EtapeStudio>[] = ETAPES_STUDIO;
+void _contrat;
