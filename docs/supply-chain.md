@@ -212,6 +212,37 @@ plage. Même geste que pour `browserslist` (`^4.28.8` et non `4.28.7`) : ne
 jamais s'asseoir sur la borne qu'on vient de fuir, sous peine de rejouer ce
 paragraphe dans trente jours.
 
+### Le cas du 2026-09-03 : `fflate`, ou un override qui ne corrige PAS ce qui est livré
+
+`posthog-js` déclare `fflate@^0.4.8`, et l’advisory GHSA-px8p-9vwx-vf98 couvre
+`0.4.5 - 0.4.8` (boucle infinie de `unzipSync` sur une archive ZIP64 malformée).
+**Même la dernière version de `posthog-js` (1.425.1) exige encore `^0.4.8`** :
+monter la dépendance ne règle rien, seul un override le peut. Posé à `^0.8.3`,
+`npm audit` repasse à zéro.
+
+**Mais il faut savoir ce que cet override corrige, et ce qu’il ne corrige pas.**
+Vérifié avant de le poser : ni `dist/main.js` ni `dist/module.js` de
+`posthog-js` n’importent `fflate` — la bibliothèque est **inlinée dans son
+bundle**, seules les source maps la nomment. Le paquet `node_modules/fflate`
+n’est donc jamais chargé par l’application.
+
+Conséquence, à ne pas oublier :
+
+- l’override **retire un paquet vulnérable de l’arbre** et **débloque la CI**,
+  ce qui est son objet et suffit à le justifier ;
+- il ne change **rien** au code qui part dans le navigateur, où la version 0.4.8
+  de `fflate` reste inlinée dans le bundle de `posthog-js`.
+
+L’exposition réelle est nulle pour une autre raison, et c’est celle qu’il faut
+retenir : `posthog-js` **compresse** ses envois (`gzipSync`, `strToU8`) et ne
+décompresse aucune archive fournie par un tiers. `unzipSync` est présent dans le
+bundle, jamais appelé sur une entrée hostile.
+
+**La règle générale** : quand un paquet vulnérable est inliné par son parent, un
+override est une correction de CHAÎNE D’APPROVISIONNEMENT, pas de RUNTIME. Le
+dire au moment où on le pose est le seul moyen d’éviter qu’on relise plus tard
+« audit vert » comme « livré corrigé ».
+
 ## 3. Surveillance continue
 
 - **Dependabot** ([.github/dependabot.yml](../.github/dependabot.yml)) :
