@@ -108,6 +108,8 @@ function rendre(
         instagram_url: null,
         tiktok_url: null,
       }}
+      blocs={["accroche", "cartes"]}
+      onBloc={vi.fn()}
       socialVisible={false}
       onSocialVisible={vi.fn()}
       peutEditer

@@ -14,14 +14,19 @@ import {
   type EtatStudio,
 } from "@/components/vitrine/studio/etat";
 import { PageIdentiteStudio } from "@/components/vitrine/studio/page-identite";
+import { PageHorairesStudio } from "@/components/vitrine/studio/page-horaires";
 import { PageCarteStudio } from "@/components/vitrine/studio/page-carte";
 import { PageJeuxStudio } from "@/components/vitrine/studio/page-jeux";
-import { PanneauAllure } from "@/components/vitrine/studio/panneau-allure";
+import {
+  EtapeAllureStudio,
+  EtapeCouleursStudio,
+} from "@/components/vitrine/studio/pages-allure";
 import { cartesExemple } from "@/components/vitrine/studio/exemples";
 import {
-  PAGES_STUDIO,
-  parsePageStudio,
-  type PageStudio,
+  ETAPES_STUDIO,
+  libelleEtapeStudio,
+  parseEtapeStudio,
+  type EtapeStudio,
 } from "@/components/vitrine/studio/pages";
 import type {
   AllureVitrine,
@@ -44,12 +49,30 @@ import type {
  * mise en page, c'est ce qui fait disparaître la colonne de navigation et rend
  * l'écran entier à l'aperçu.
  *
+ * ── DEUX COLONNES, ET NEUF ÉTAPES EN HAUT (VIT-35) ──
+ *
+ * L'écran avait trois colonnes : les réglages, l'aperçu, l'allure. La demande
+ * du propriétaire les ramène à deux — « une seule colonne sur la gauche […] on
+ * glisse l'aperçu à droite et la colonne de gauche s'agrandit encore pour
+ * mettre plus d'info et plus de lisibilité ».
+ *
+ * Ce qu'elle achète est mesurable : la colonne de réglages passait de 420 px
+ * (540 sur la carte) à tout ce qui reste, parce que la troisième colonne
+ * prenait 400 px à celle qui en manquait — le formulaire d'une fiche dépliée
+ * finissait à ~195 px. Ce qu'elle coûte, l'allure devait le rendre : elle est
+ * répartie sur quatre étapes plutôt qu'empilée en vingt-cinq contrôles.
+ *
+ * LE BANDEAU DU HAUT NE GRANDIT PAS, et c'est demandé en toutes lettres. Les
+ * neuf étapes tiennent sur UNE ligne qui défile horizontalement — pas de
+ * `flex-wrap` : une deuxième ligne ferait grandir le bandeau, donc mentir le
+ * `calc(100dvh-104px)` qui donne sa hauteur aux colonnes, donc défiler la page
+ * entière au lieu de chaque colonne chez elle.
+ *
  * ── CE FICHIER EST UNE COQUILLE, ET IL LE RESTE ──
  *
  * Il tient trois choses et rien d'autre : l'état des réglages, la charge utile
- * du formulaire, et la page affichée. Chaque page vit dans SON fichier
- * (`studio/page-*.tsx`), la colonne de droite dans le sien, l'aperçu dans le
- * sien.
+ * du formulaire, et l'étape affichée. Chaque étape vit dans SON fichier
+ * (`studio/page-*.tsx`, `studio/pages-allure.tsx`), l'aperçu dans le sien.
  *
  * Ce n'est pas du rangement : sans cette découpe, chaque lot du chantier
  * « le studio devient l'écran central » aurait modifié le même fichier, donc
@@ -72,7 +95,8 @@ import type {
  *
  * ── ET AUCUN CONTRÔLE VISIBLE NE PORTE DE `name` ──
  *
- * Une page qu'on quitte est DÉMONTÉE. Si ses champs portaient leur `name`,
+ * Une étape qu'on quitte est DÉMONTÉE — et il y en a neuf depuis VIT-35, donc
+ * neuf fois plus d'occasions de démonter. Si ses champs portaient leur `name`,
  * aller composer sa carte ferait disparaître l'accroche du formulaire, et
  * l'enregistrement suivant l'effacerait — exactement le défaut que VIT-19
  * vient de fermer côté serveur, réintroduit par la navigation. La charge utile
@@ -123,7 +147,7 @@ export function VitrineStudio({
   bilanJeux: BilanJeuxVitrine;
   peutEditer: boolean;
 }) {
-  const [page, setPage] = useState<PageStudio>(() => parsePageStudio(null));
+  const [etape, setEtape] = useState<EtapeStudio>(() => parseEtapeStudio(null));
   const [exemples, setExemples] = useState(false);
   const [etat, setEtat] = useState<EtatStudio>(() =>
     etatInitialStudio(themeInitial, {
@@ -288,59 +312,88 @@ export function VitrineStudio({
           </span>
         </div>
 
-        {/* LE FIL DES PAGES — des BOUTONS, pas des liens. Changer de page ne
-            doit pas naviguer : l'état vit en mémoire, et une navigation le
-            perdrait avec tout ce que le commerçant est en train d'essayer. */}
+        {/* LE FIL DES NEUF ÉTAPES — des BOUTONS, pas des liens. Changer
+            d'étape ne doit pas naviguer : l'état vit en mémoire, et une
+            navigation le perdrait avec tout ce que le commerçant est en train
+            d'essayer.
+
+            ── JAUNE, ET NUMÉROTÉ ──
+
+            Le jaune est la couleur des boutons de personnalisation de ce
+            produit ; les étapes en sont, et c'est la demande. L'étape COURANTE
+            se distingue par trois choses à la fois — jaune plein contre jaune
+            pâle, ombre dure, pastille inversée — parce qu'une seule d'entre
+            elles ne suffit pas : la teinte seule échoue en plein soleil sur un
+            téléphone de comptoir, et `aria-current` ne se voit pas.
+
+            ÉCARTÉ : garder l'encre pleine de l'onglet actif d'avant. Elle
+            distinguait parfaitement, mais sortait les étapes de la famille
+            visuelle des réglages — c'est exactement ce que la demande refuse.
+
+            Le numéro dit combien il en reste et où l'on en est ; c'est ce qui
+            fait la différence entre un panneau et un parcours. Il est doublé
+            dans le nom accessible (`libelleEtapeStudio`), sans quoi un lecteur
+            d'écran annoncerait « 3 Ma carte » sans dire de quoi 3 est le
+            numéro. */}
         <nav
-          aria-label="Pages du studio"
-          className="flex gap-1 overflow-x-auto px-4 pb-2 sm:px-6"
+          aria-label="Étapes du studio"
+          className="flex gap-1.5 overflow-x-auto px-4 pb-2 sm:px-6"
         >
-          {PAGES_STUDIO.map((p) => (
-            <button
-              key={p.cle}
-              type="button"
-              onClick={() => setPage(p.cle)}
-              aria-current={page === p.cle ? "page" : undefined}
-              className={
-                page === p.cle
-                  ? "shrink-0 rounded-xl border-2 border-k-ink bg-k-ink px-3 py-1.5 text-xs font-black text-white"
-                  : "shrink-0 rounded-xl border-2 border-k-ink/20 bg-white px-3 py-1.5 text-xs font-black text-k-ink hover:border-k-ink"
-              }
-            >
-              {p.titre}
-            </button>
-          ))}
+          {ETAPES_STUDIO.map((e, i) => {
+            const courante = etape === e.cle;
+            return (
+              <button
+                key={e.cle}
+                type="button"
+                onClick={() => setEtape(e.cle)}
+                aria-current={courante ? "step" : undefined}
+                aria-label={libelleEtapeStudio(e.cle)}
+                title={e.resume}
+                className={`flex shrink-0 items-center gap-1.5 rounded-xl border-2 px-2.5 py-1.5 text-xs font-black text-k-ink ${
+                  courante
+                    ? "border-k-ink bg-k-yellow shadow-[2px_2px_0_var(--color-k-ink)]"
+                    : "border-k-ink/25 bg-k-yellow/25 hover:border-k-ink hover:bg-k-yellow/60"
+                }`}
+              >
+                <span
+                  aria-hidden
+                  className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[10px] leading-none ${
+                    courante
+                      ? "bg-k-ink text-k-yellow"
+                      : "border border-k-ink/30 bg-white text-k-ink"
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                {e.titre}
+              </button>
+            );
+          })}
         </nav>
       </div>
 
-      {/* LES TROIS COLONNES — chacune défile CHEZ ELLE.
-          Sans `overflow-hidden` au-dessus, régler une couleur en bas du panneau
-          droit fait défiler l'aperçu hors de l'écran : on règle alors ce qu'on
-          ne voit plus. Motif de `poster-editor`. */}
+      {/* DEUX COLONNES — chacune défile CHEZ ELLE.
+          Sans `overflow-hidden` au-dessus, régler un curseur en bas de la
+          colonne de gauche fait défiler l'aperçu hors de l'écran : on règle
+          alors ce qu'on ne voit plus. Motif de `poster-editor`, et c'est
+          précisément ce qu'il ne faut pas casser en élargissant. */}
       <div className="flex flex-col gap-4 p-4 lg:h-[calc(100dvh-104px)] lg:flex-row lg:items-stretch lg:overflow-hidden">
-        {/* LA COLONNE DE GAUCHE S'ÉLARGIT POUR LA CARTE, ET SEULEMENT POUR
-            ELLE (VIT-26).
+        {/* LA COLONNE DE GAUCHE PREND TOUT CE QUI RESTE (VIT-35).
 
-            Les trois autres pages tiennent dans 340 px : ce sont des champs et
-            des cases, à un seul niveau. L'éditeur de carte, lui, est imbriqué
-            sur trois rangs — carte, rubrique, fiche — et chaque rang mange sa
-            marge : le formulaire d'une fiche dépliée finissait à ~195 px, ce
-            qui reste utilisable mais se saisit mal.
+            Elle avait 420 px, 540 sur la carte, pendant que l'allure en tenait
+            400 à sa droite. La demande la libère : `flex-1`, et c'est l'aperçu
+            qui est désormais BORNÉ. Le gain va exactement là où il manquait —
+            l'éditeur de carte s'imbrique sur trois rangs (carte, rubrique,
+            fiche), chaque rang mange sa marge, et le formulaire d'une fiche
+            dépliée finissait à ~195 px.
 
-            ÉCARTÉ : élargir partout. La largeur perdue est prise à l'APERÇU,
-            qui est la raison d'être de cet écran ; la payer sur les trois
-            pages qui n'en ont pas besoin aurait été un mauvais échange.
-
-            ÉCARTÉ AUSSI : passer cette page à deux colonnes en masquant
-            l'allure. Régler une densité ou une taille de photo se fait EN
-            REGARDANT une vraie carte — c'est précisément sur cette page que la
-            colonne de droite sert le plus. */}
-        <aside
-          className={`w-full shrink-0 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full ${
-            page === "carte" ? "lg:w-[540px]" : "lg:w-[420px]"
-          }`}
-        >
-          {page === "identite" ? (
+            `min-w-0` n'est pas décoratif : sans lui, un enfant large — une
+            rangée de champs du catalogue — impose sa largeur minimale au
+            `flex-1` et pousse l'aperçu hors de l'écran au lieu de défiler chez
+            lui. C'est la panne classique d'un `flex-1` qui contient du
+            formulaire. */}
+        <aside className="w-full min-w-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border-2 border-k-ink bg-white p-4 lg:h-full">
+          {etape === "identite" ? (
             <PageIdentiteStudio
               etat={etat}
               majEtat={majEtat}
@@ -350,16 +403,24 @@ export function VitrineStudio({
               peutEditer={peutEditer}
             />
           ) : null}
-          {page === "carte" ? (
+          {etape === "horaires" ? (
+            <PageHorairesStudio
+              etat={etat}
+              majEtat={majEtat}
+              peutEditer={peutEditer}
+            />
+          ) : null}
+          {etape === "carte" ? (
             <PageCarteStudio
               nbCartes={cartes.length}
               cartes={cartes}
               peutEditer={peutEditer}
             />
           ) : null}
-          {/* « À la une » n'a plus de page à elle (VIT-32) : ses deux moitiés
-              sont montées par celle-ci, qui règle tout ce qui PARAÎT. */}
-          {page === "jeux" ? (
+          {/* « À la une » n'a plus d'étape à elle (VIT-32), et les quatre cases
+              de visibilité l'ont rejointe (VIT-35) : celle-ci règle tout ce qui
+              PARAÎT. */}
+          {etape === "parait" ? (
             <PageJeuxStudio
               jeuxVisibles={etat.blocs.includes("experiences")}
               bilanJeux={bilanJeux}
@@ -367,10 +428,37 @@ export function VitrineStudio({
               secteur={etat.secteur}
               contenus={contenus}
               liens={liens}
+              blocs={etat.blocs}
+              onBloc={(bloc, visible) =>
+                majEtat({ blocs: basculerBloc(etat.blocs, bloc, visible) })
+              }
               socialVisible={etat.blocs.includes("social")}
               onSocialVisible={(v) =>
                 majEtat({ blocs: basculerBloc(etat.blocs, "social", v) })
               }
+              peutEditer={peutEditer}
+            />
+          ) : null}
+          {etape === "couleurs" ? (
+            <EtapeCouleursStudio
+              etat={etat}
+              majEtat={majEtat}
+              peutEditer={peutEditer}
+            />
+          ) : null}
+          {/* LES QUATRE ÉTAPES D'ALLURE PASSENT PAR LE MÊME COMPOSANT : ce
+              qu'elles rendent est décidé par `REPARTITION_ALLURE`, en un seul
+              endroit. C'est ce qui rend un réglage oublié ou doublé impossible
+              sans faire rougir `allure-repartition.test.tsx`. */}
+          {etape === "banniere" ||
+          etape === "fiches" ||
+          etape === "navigation" ||
+          etape === "ambiance" ? (
+            <EtapeAllureStudio
+              etape={etape}
+              etat={etat}
+              majAllure={majAllure}
+              majEtat={majEtat}
               peutEditer={peutEditer}
             />
           ) : null}
@@ -388,13 +476,6 @@ export function VitrineStudio({
           liens={liens}
           slug={slug}
           exemples={exemples}
-        />
-
-        <PanneauAllure
-          etat={etat}
-          majAllure={majAllure}
-          majEtat={majEtat}
-          peutEditer={peutEditer}
         />
       </div>
     </div>
