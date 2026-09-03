@@ -174,6 +174,7 @@ export async function updateHunt(
 
   revalidatePath("/dashboard/hunts");
   revalidatePath(`/dashboard/hunts/${id}`);
+  revalidatePath(`/studio/chasse/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -309,6 +310,7 @@ export async function setHuntStatus(
 
   revalidatePath("/dashboard/hunts");
   revalidatePath(`/dashboard/hunts/${id}`);
+  revalidatePath(`/studio/chasse/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -436,6 +438,7 @@ export async function createHuntStep(
   }
 
   revalidatePath(`/dashboard/hunts/${parsed.data.hunt_id}`);
+  revalidatePath(`/studio/chasse/${parsed.data.hunt_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -472,6 +475,7 @@ export async function updateHuntStep(
   if (!updated) return { ok: false, error: "Étape introuvable" };
 
   revalidatePath(`/dashboard/hunts/${updated.hunt_id}`);
+  revalidatePath(`/studio/chasse/${updated.hunt_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -626,6 +630,7 @@ export async function deleteHuntStep(
   }
 
   revalidatePath(`/dashboard/hunts/${step.hunt_id}`);
+  revalidatePath(`/studio/chasse/${step.hunt_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -693,6 +698,7 @@ export async function reorderHuntSteps(
   }
 
   revalidatePath(`/dashboard/hunts/${parsed.data.hunt_id}`);
+  revalidatePath(`/studio/chasse/${parsed.data.hunt_id}`);
   return { ok: true, data: undefined };
 }
 
