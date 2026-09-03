@@ -9506,3 +9506,125 @@ qui vend un chemin distinct par instance publie une liste, un module qui vend
 un chemin fixe unique par vitrine publie un booléen. `theme.jeux` passe à cette
 occasion de deux à six clés ; l'ABSENCE d'une clé continue de valoir
 « affiché » (élargissement d'ADR-129, pas un changement de son principe).
+
+## ADR-150 — Une porte publique NEUVE naît fermée : « le comportement d'hier » n'est pas « affiché »
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-33 (PR #329), sur revue de sécurité de VIT-32. Défaut trouvé
+EN PRODUCTION, sur la vitrine du propriétaire.
+
+ADR-129 énonce l'invariant de compatibilité de ce module : *ce qui n'a pas été
+décidé garde le comportement d'HIER*. VIT-32 l'a traduit par `?? true` sur les
+six clés de `theme.jeux`.
+
+### La traduction était juste pour cinq clés, et fausse pour la sixième
+
+`quiz`, `calendars`, `pronostics`, `duo` et `bande` étaient PEINTS la veille :
+`true` les CONSERVE, et c'est exactement l'invariant.
+
+`loyalty` n'avait AUCUNE porte publique la veille — la clé n'existait pas dans
+le document `portes`. Pour elle, `?? true` ne conserve rien : **il ajoute**.
+
+La nuance tient en une phrase : l'invariant parle du COMPORTEMENT D'HIER, pas
+de la valeur `true`. Les deux coïncidaient tant que toutes les clés
+existaient déjà. Elles cessent de coïncider dès qu'une porte est neuve — c'est
+un cas que la formulation d'ADR-129 ne distinguait pas, parce qu'il ne s'était
+jamais présenté.
+
+### Ce que le défaut a produit
+
+Sur toute vitrine dont `ordre_blocs` portait déjà `experiences` — donc chez
+tout commerçant ayant coché un jeu ou activé l'annuaire — la page publique s'est
+mise à publier `<a href="/passeport/{uuid}">{nom du programme}</a>`.
+
+VIT-3 avait pourtant posé la règle, et `activerExperiencesVitrine` la répète mot
+pour mot : « les portes publiques restent volontairement masquées tant que le
+commerçant n'a rien demandé ». Ici, une porte s'est ouverte PARCE QU'UNE VERSION
+A CHANGÉ.
+
+**Ce qui sort n'est pas un secret, c'est une ÉNUMÉRABILITÉ.** Le nom d'un
+programme est déjà rendu au client sur trois surfaces ; l'identifiant, lui,
+s'obtenait en scannant le QR du comptoir et devient lisible depuis une page
+indexable. C'est la distinction que VIT-3 traitait déjà comme un invariant.
+
+**AGGRAVANT, et c'est ce qui rendait le défaut irréversible** : la case du
+studio était PRÉ-COCHÉE, puisqu'elle lit l'état résolu. Le premier
+enregistrement gravait `loyalty: true` en base — le défaut non voulu devenait un
+choix enregistré, indistinguable d'un consentement.
+
+### Décision — un défaut PAR CLÉ, et l'asymétrie est la réponse
+
+`VITRINE_JEUX_DEFAUTS` remplace le `?? true` uniforme. Les cinq jeux existants
+gardent `true` ; toute clé ajoutée après coup vient à `false`, **et le jour où
+elle est ajoutée**.
+
+**Écarté** : refermer les six. C'aurait retiré en silence des portes que des
+vitrines publiées montrent depuis des semaines — le même défaut dans l'autre
+sens, et de plus grande portée.
+
+**Écarté** : un remplissage rétroactif écrivant `loyalty: false` sur les lignes
+concernées. Il rend l'état lisible en base, mais écrit un refus que personne n'a
+formulé — et le repli suffit, puisqu'il produit le même affichage sans inventer
+de décision.
+
+### Ce que la revue a appris sur la couverture
+
+Les tests de VIT-32 vérifiaient que la porte suit son DROIT — fermée sans,
+ouverte avec — et ils passaient tous. Personne ne testait le CONSENTEMENT.
+
+Ce sont deux questions distinctes, et seule la première était gardée : *le
+commerçant a-t-il le droit ?* n'est pas *l'a-t-il demandé ?*. Quatre tests
+encodaient même le contrat fautif, ce qui est le signe habituel : une règle
+écrite dans un commentaire depuis des semaines, jamais traduite en assertion.
+
+## ADR-151 — Une garde de migration juge un INSTANT, le pgTAP juge l'état final
+
+**Date** : 2026-09-03
+**Statut** : Accepté
+**Contexte** : VIT-34 (PR #330), second point de la revue de sécurité de VIT-32.
+
+`vitrine_public_state` est patchée par `pg_get_functiondef` + `replace` depuis
+`20261023120000` : chaque lot y remplace des ancres plutôt que de recopier la
+fonction. C'est ce qui empêche d'écraser les gardes produit, l'indexation et les
+portes posées depuis — et c'est aussi la SEULE mécanique par laquelle cette
+fonction a jamais changé.
+
+Les trois gardes de sortie de VIT-32 vérifiaient le droit, la source et la clé
+publiée. Aucune ne vérifiait le filtre de locataire — présent et correct, mais
+non prouvé. Une prochaine migration ré-ancrant sur `from public.loyalty_programs
+l` pour réécrire le sous-select aurait pu perdre le `where` **en laissant les
+trois gardes vertes**.
+
+### Décision 1 — L'ancre joint la source à son filtre
+
+Chercher `from public.loyalty_programs l` et `l.organization_id = …`
+séparément aurait laissé passer un `where` resté ailleurs dans la fonction. La
+quatrième garde exige les deux ACCOLÉS.
+
+### Décision 2 — Les deux gardes ne prouvent pas la même chose, et c'est pourquoi il en faut deux
+
+Une garde de migration s'exécute UNE FOIS, à sa place dans la chaîne : elle
+juge la fonction telle qu'elle est à cet instant, et ne dira jamais rien de ce
+qu'une migration ultérieure lui fera. C'est son utilité — elle arrête le lot
+qui casse — et c'est sa limite.
+
+Le pgTAP, lui, s'exécute sur l'ÉTAT FINAL du schéma, à chaque `db reset`. C'est
+le seul qui puisse affirmer que le voisin ne sort pas *aujourd'hui*, quelle que
+soit la suite des patchs.
+
+D'où le refus d'élargir la garde textuelle aux six autres listes : elle aurait
+donné l'illusion d'une couverture que seule l'assertion de comportement peut
+tenir. Les sept listes sont couvertes en pgTAP, avec un locataire voisin
+réellement inséré.
+
+### Ce que la mutation a montré, et qu'aucune relecture ne montre
+
+Retirer le filtre du seul passeport fait lever la garde et rougir trois
+assertions ; le retirer des sept en fait rougir sept, plus cinq autres.
+
+Deux assertions préexistantes ont rougi aussi — **par accident** : la base semée
+porte un programme actif d'un autre locataire, si bien qu'elles mesuraient
+l'isolation sans le savoir ni le dire. Une couverture qui dépend du seed n'est
+pas une couverture : elle disparaît le jour où quelqu'un allège les données de
+départ, sans qu'aucun test ne change de couleur.

@@ -34,10 +34,39 @@
 
 **Décisions** : [ADR-145 à ADR-149](./decisions.md).
 
+
+### Deux lots de plus, nés de la revue de sécurité
+
+- **VIT-33/PR #329 — Une porte publique NEUVE naît fermée** (ADR-150).
+  Défaut trouvé EN PRODUCTION : la vitrine du propriétaire publiait deux liens
+  `/passeport/{id}` que personne n'avait demandé d'annoncer. `theme.jeux`
+  repliait sur « affiché » pour ses six clés — juste pour les cinq jeux qui
+  étaient peints la veille, FAUX pour le passeport, qui n'avait aucune porte.
+  L'invariant d'ADR-129 parle du COMPORTEMENT D'HIER, pas de la valeur `true` :
+  les deux coïncidaient tant qu'aucune porte n'était neuve.
+  Aggravant : la case étant pré-cochée, le premier enregistrement gravait le
+  défaut en consentement, indistinguable d'un choix.
+  Aucune garde ne l'a vu parce que toutes testaient le DROIT — fermée sans,
+  ouverte avec — et aucune le CONSENTEMENT.
+- **VIT-34/PR #330 — Les portes prouvent leur locataire** (ADR-151, migration
+  `20261203120000`). Les gardes de VIT-32 vérifiaient le droit, la source et la
+  clé publiée, jamais le filtre d'organisation. Il était présent et correct —
+  vérifié sur les SEPT sous-selects — mais non prouvé : une migration
+  ultérieure ré-ancrant sur la même ligne aurait pu le perdre en laissant les
+  gardes vertes. Quatrième garde textuelle qui exige la source ET son filtre
+  ACCOLÉS, plus une assertion pgTAP par liste avec un locataire voisin
+  réellement inséré.
+  Deux assertions préexistantes rougissaient à la mutation PAR ACCIDENT — la
+  base semée porte un programme d'un autre locataire. Une couverture qui dépend
+  du seed disparaît le jour où on allège les données de départ, sans qu'aucun
+  test ne change de couleur.
+**Décisions** : ADR-145 à ADR-151.
+
 **Reste ouvert** :
-- `docs/supply-chain.md` §2bis ne consigne pas encore la récidive du
-  piège `fast-uri` — hors périmètre documentaire de ce chantier, signalé
-  pour `docs-scribe` ou `db-supabase` selon qui touche au fichier ensuite.
+- ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
+  `fast-uri`~~ — **écrit** (PR #331) : la note de §2bis avait PRÉDIT cet
+  incident, et son exemple de « majeur inutile » s'est retourné. La règle tient,
+  c'est sa réponse qui dépend du jour.
 - Le sélecteur de figures des pronostics reste une copie locale
   (`AvatarPicker` dans `contest-experience.tsx`), non unifiée avec
   `src/components/ui/avatar-picker.tsx` (déjà signalé en V1.74).
