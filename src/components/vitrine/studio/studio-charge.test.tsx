@@ -5,10 +5,35 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // L'action REND un succès : l'enregistrement automatique lit son verdict pour
 // afficher « Modifications enregistrées ». Un `vi.fn()` nu rendrait `undefined`,
 // que `useActionForm` traiterait comme une réponse illisible.
+// TOUTES LES ACTIONS DE L'ÉCRAN, ET C'EST NÉCESSAIRE DEPUIS VIT-35 : ces
+// gardes visitent réellement les neuf étapes, donc montent l'éditeur de
+// catalogue, celui des jeux et « À la une ». Aucune n'est APPELÉE par un rendu
+// — `useActionForm` ne les touche qu'à la soumission — mais elles doivent
+// exister à l'import du module.
 vi.mock("@/actions/vitrine", () => ({
   saveVitrineSettings: vi.fn(async () => ({ ok: true, data: undefined })),
   setVitrinePhoto: vi.fn(),
   deleteVitrinePhoto: vi.fn(),
+  setVitrineJeux: vi.fn(),
+  setVitrineContenu: vi.fn(),
+  deleteVitrineContenu: vi.fn(),
+  createVitrineCarte: vi.fn(),
+  updateVitrineCarte: vi.fn(),
+  deleteVitrineCarte: vi.fn(),
+  createVitrineRubrique: vi.fn(),
+  updateVitrineRubrique: vi.fn(),
+  deleteVitrineRubrique: vi.fn(),
+  createVitrineFiche: vi.fn(),
+  updateVitrineFiche: vi.fn(),
+  deleteVitrineFiche: vi.fn(),
+  toggleVitrineFicheDisponibilite: vi.fn(),
+  reorderVitrineCartes: vi.fn(),
+  reorderVitrineRubriques: vi.fn(),
+  reorderVitrineFiches: vi.fn(),
+  importVitrineCarte: vi.fn(),
+}));
+vi.mock("@/actions/organizations", () => ({
+  updateOrganizationSocialLinks: vi.fn(),
 }));
 vi.mock("@/actions/branding", () => ({
   uploadLogo: vi.fn(),
@@ -25,7 +50,10 @@ import {
   VITRINE_ALLURE_CHIFFRES,
   VITRINE_ALLURE_ENUMS_CLES,
 } from "@/lib/vitrine";
-import { PAGES_STUDIO } from "@/components/vitrine/studio/pages";
+import {
+  ETAPES_STUDIO,
+  libelleEtapeStudio,
+} from "@/components/vitrine/studio/pages";
 import type { BilanJeuxVitrine } from "@/lib/vitrine";
 
 /**
@@ -110,6 +138,18 @@ const BILAN_JEUX: BilanJeuxVitrine = {
   compte: { duo: 0, quiz: 0, calendars: 0, pronostics: 0, loyalty: 0 },
 };
 
+/**
+ * Changer d'étape comme un commerçant le ferait — par le bouton.
+ *
+ * `fireEvent` et NON `element.click()` : ce dernier n'est pas enveloppé dans
+ * `act`, l'état ne bascule donc pas, et ces gardes mesureraient neuf fois
+ * l'étape d'ouverture. Elles seraient vertes, et aveugles — la panne exacte
+ * qu'elles existent pour attraper.
+ */
+function allerA(cle: (typeof ETAPES_STUDIO)[number]["cle"]) {
+  fireEvent.click(screen.getByRole("button", { name: libelleEtapeStudio(cle) }));
+}
+
 function rendre() {
   return render(
     <VitrineStudio
@@ -130,14 +170,21 @@ function rendre() {
   );
 }
 
-describe("studio — la charge utile ne dépend pas de la page ouverte", () => {
-  it.each(PAGES_STUDIO.map((p) => [p.cle, p.titre] as const))(
-    "page « %s » : le formulaire porte tous les champs de l'action",
-    async (_cle, titre) => {
+describe("studio — la charge utile ne dépend pas de l'étape ouverte", () => {
+  // NEUF, ET LE CHIFFRE EST ÉCRIT (VIT-35). Sans lui, découper une étape en
+  // deux — ou en perdre une — laisserait cette suite verte en couvrant une
+  // étape de moins : elle est paramétrée PAR la liste qu'elle vérifie.
+  it("le studio compte neuf étapes", () => {
+    expect(ETAPES_STUDIO).toHaveLength(9);
+  });
+
+  it.each(ETAPES_STUDIO.map((e) => [e.cle, e.titre] as const))(
+    "étape « %s » : le formulaire porte tous les champs de l'action",
+    async (cle, titre) => {
       const { container } = rendre();
 
-      // On change de page comme un commerçant le ferait — par le bouton.
-      screen.getByRole("button", { name: titre }).click();
+      // On change d'étape comme un commerçant le ferait — par le bouton.
+      allerA(cle);
 
       const noms = new Set(
         [...container.querySelectorAll("[name]")].map((n) =>
@@ -145,43 +192,67 @@ describe("studio — la charge utile ne dépend pas de la page ouverte", () => {
         ),
       );
       for (const champ of CHAMPS_ATTENDUS) {
-        expect(noms, `champ absent sur la page « ${titre} » : ${champ}`).toContain(
-          champ,
-        );
+        expect(
+          noms,
+          `champ absent sur l'étape « ${titre} » : ${champ}`,
+        ).toContain(champ);
       }
     },
   );
 
-  it("le formulaire des réglages ne porte QUE des champs cachés", () => {
-    // C'est ce qui rend la garde ci-dessus structurelle plutôt que chanceuse.
-    // Un contrôle VISIBLE portant un `name` vivrait dans une page, donc
-    // disparaîtrait avec elle.
-    //
-    // L'assertion vise le formulaire des RÉGLAGES et lui seul : les autres —
-    // logo, bannière — ont bien des champs visibles nommés (`logo`, `alt`), et
-    // c'est normal, ils appartiennent à leurs propres actions. Une garde qui
-    // aurait interdit tout `name` visible sur l'écran entier aurait été fausse
-    // dès le premier envoi de photo, et se serait fait desserrer.
+  it.each(ETAPES_STUDIO.map((e) => [e.cle, e.titre] as const))(
+    "étape « %s » : le formulaire des réglages ne porte QUE des champs cachés",
+    (cle) => {
+      // C'est ce qui rend la garde ci-dessus structurelle plutôt que chanceuse.
+      // Un contrôle VISIBLE portant un `name` vivrait dans une étape, donc
+      // disparaîtrait avec elle — et le prochain enregistrement, automatique,
+      // effacerait le réglage sans que rien ne le signale.
+      //
+      // ELLE PARCOURT LES NEUF ÉTAPES DEPUIS VIT-35 : une seule suffisait
+      // quand les contrôles d'allure vivaient dans une colonne toujours
+      // montée. Ils sont maintenant répartis sur quatre écrans démontables,
+      // c'est-à-dire quatre endroits où un `name` posé par distraction ne se
+      // verrait sur aucun autre.
+      //
+      // L'assertion vise le formulaire des RÉGLAGES et lui seul : les autres —
+      // logo, bannière — ont bien des champs visibles nommés (`logo`, `alt`),
+      // et c'est normal, ils appartiennent à leurs propres actions. Une garde
+      // qui aurait interdit tout `name` visible sur l'écran entier aurait été
+      // fausse dès le premier envoi de photo, et se serait fait desserrer.
+      const { container } = rendre();
+      allerA(cle);
+
+      const formulaire = container.querySelector("form#studio-reglages")!;
+      const visibles = [...formulaire.querySelectorAll("[name]")].filter(
+        (n) => n.getAttribute("type") !== "hidden",
+      );
+
+      expect(visibles.map((n) => n.getAttribute("name"))).toEqual([]);
+    },
+  );
+
+  it("l'écran héberge bien plusieurs formulaires — sinon la garde suivante ne prouve rien", () => {
+    // Sur l'étape d'ouverture, le logo et la bannière apportent les leurs. Sans
+    // cette assertion, « aucun formulaire imbriqué » serait trivialement vrai
+    // sur un écran qui n'en aurait qu'un.
     const { container } = rendre();
-
-    const formulaire = container.querySelector("form#studio-reglages")!;
-    const visibles = [...formulaire.querySelectorAll("[name]")].filter(
-      (n) => n.getAttribute("type") !== "hidden",
-    );
-
-    expect(visibles.map((n) => n.getAttribute("name"))).toEqual([]);
-  });
-
-  it("le formulaire de réglages ne CONTIENT aucun autre formulaire", () => {
-    // Un `<form>` dans un `<form>` fait échouer l'hydratation et tue toute
-    // l'interactivité de l'écran — défaut livré en VIT-16. Le studio héberge
-    // les formulaires du logo et de la bannière : la seule façon de les tenir
-    // hors du sien est que le sien soit leur VOISIN.
-    const { container } = rendre();
-
     expect(container.querySelectorAll("form").length).toBeGreaterThan(2);
-    expect(container.querySelectorAll("form form")).toHaveLength(0);
   });
+
+  it.each(ETAPES_STUDIO.map((e) => [e.cle, e.titre] as const))(
+    "étape « %s » : le formulaire de réglages ne CONTIENT aucun autre formulaire",
+    (cle) => {
+      // Un `<form>` dans un `<form>` fait échouer l'hydratation et tue toute
+      // l'interactivité de l'écran — défaut livré en VIT-16. Le studio héberge
+      // les formulaires du logo, de la bannière, de l'import et du catalogue :
+      // la seule façon de les tenir hors du sien est que le sien soit leur
+      // VOISIN, vide de mise en page.
+      const { container } = rendre();
+      allerA(cle);
+
+      expect(container.querySelectorAll("form form")).toHaveLength(0);
+    },
+  );
 
   it("le bouton Enregistrer vise le formulaire des réglages par son identifiant", () => {
     // Sans cet attribut, le bouton serait hors de tout formulaire et ne

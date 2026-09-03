@@ -121,7 +121,12 @@ export function ApercuStudio({
   // pastille écrite à la main : l'aperçu ne bouge pas d'un pixel.
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto">
+    // L'APERÇU EST BORNÉ, ET C'EST LUI QUI A CÉDÉ LA PLACE (VIT-35).
+    // Il était `flex-1` entre deux colonnes fixes ; il est maintenant la
+    // colonne fixe, et les réglages prennent le reste. La borne suit le cadre
+    // qu'il contient (`max-w-[480px]`, la largeur d'un téléphone) : au-delà, la
+    // largeur gagnée n'agrandissait pas la vitrine, elle centrait du vide.
+    <div className="flex min-h-0 w-full shrink-0 flex-col items-center gap-2 overflow-y-auto lg:w-[512px]">
       <p className="text-xs font-semibold text-zinc-500">
         Aperçu — la page que vos clients ouvriront. Rien n&apos;est enregistré
         tant que vous n&apos;avez pas cliqué sur Enregistrer.

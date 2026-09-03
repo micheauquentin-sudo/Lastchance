@@ -2,22 +2,16 @@
 
 import { PhotoChamp } from "@/components/vitrine/photo-champ";
 import { LogoChamp } from "@/components/vitrine/studio/logo-champ";
+import { ChampStudio, CLASSE_CHAMP } from "@/components/vitrine/studio/champ";
+import type { EtatStudio } from "@/components/vitrine/studio/etat";
 import {
-  CaseStudio,
-  ChampStudio,
-  CLASSE_CHAMP,
-} from "@/components/vitrine/studio/champ";
-import { HorairesEditeurStudio } from "@/components/vitrine/studio/horaires-editeur";
-import { basculerBloc, type EtatStudio } from "@/components/vitrine/studio/etat";
-import {
-  VITRINE_BADGE_OUVERTURE_MAX,
   VITRINE_SECTEURS,
   libelleSecteur,
   type SecteurVitrine,
 } from "@/lib/vitrine";
 
 /**
- * LA PAGE « IDENTITÉ » DU STUDIO (VIT-20) — la colonne de gauche.
+ * L'ÉTAPE 1 « IDENTITÉ » DU STUDIO (VIT-20, resserrée VIT-35).
  *
  * ── TOUTE L'IDENTITÉ VISUELLE EST ICI, Y COMPRIS CE QUI N'Y ÉTAIT PAS ──
  *
@@ -27,15 +21,19 @@ import {
  * photo de couverture sans voir le voile, le nom posé dessus et la carte
  * d'infos qui la chevauche revient à choisir un cadre sans le tableau.
  *
- * ── LES CASES DISENT CE QUI PARAÎT, ET « MASQUER, C'EST OMETTRE » ──
+ * ── CE QUI L'A QUITTÉE, ET POURQUOI (VIT-35) ──
  *
- * Il n'y a pas de drapeau de visibilité en base : un bloc masqué est un bloc
- * ABSENT d'`ordre_blocs` (VIT-3). Cocher ajoute, décocher retire, et l'aperçu
- * s'en aperçoit immédiatement — sans quoi une case sans effet visible aurait
- * fait douter de l'écran entier.
+ * Les horaires — texte libre, sept jours, pastille d'ouverture — ont leur
+ * étape à eux : c'est le seul bloc du studio qui demande de la saisie répétée,
+ * et il repoussait sous la ligne de flottaison les trois champs qu'on vient
+ * modifier le plus souvent.
  *
- * L'heure en fait partie, et c'est ce qui manquait : les horaires se
- * saisissaient sans qu'on puisse dire s'ils devaient figurer sur la carte.
+ * Les quatre cases de visibilité sont parties vers « Ce qui paraît », avec les
+ * jeux et les réseaux. Elles répondent à la même question que ces derniers, et
+ * les tenir ici obligeait à revenir sur l'identité pour décider ce qu'une page
+ * montre.
+ *
+ * Ce qui reste est ce qu'on répond une fois pour toutes : qui je suis.
  */
 export function PageIdentiteStudio({
   etat,
@@ -112,105 +110,19 @@ export function PageIdentiteStudio({
         </ChampStudio>
 
         <ChampStudio
-          label="Pastille d'ouverture"
-          aide="« Ouvert · 12h–23h ». Vide = pas de pastille."
+          label="Votre histoire"
+          aide="Le texte de présentation de votre lieu, plus bas sur la page."
         >
-          <input
-            value={etat.badge}
-            maxLength={VITRINE_BADGE_OUVERTURE_MAX}
-            onChange={(e) => majEtat({ badge: e.target.value })}
-            disabled={!peutEditer}
-            className={CLASSE_CHAMP}
-          />
-        </ChampStudio>
-
-        <ChampStudio label="Votre histoire">
           <textarea
             value={etat.histoire}
-            rows={5}
+            rows={6}
             maxLength={1200}
             onChange={(e) => majEtat({ histoire: e.target.value })}
             disabled={!peutEditer}
             className={CLASSE_CHAMP}
           />
         </ChampStudio>
-
-        {/* LE TEXTE LIBRE RESTE EN PREMIER, ET IL N'EST PAS DOUBLÉ (VIT-31c).
-            Il porte ce que sept lignes de créneaux ne savent pas dire — jours
-            fériés, fermeture annuelle, « service continu le samedi ». Le
-            remplacer par l'éditeur aurait fait perdre cette légende à toutes
-            les vitrines déjà publiées, et `etatHoraires` ne sait rien d'un 25
-            décembre. Les deux coexistent : le texte explique, les créneaux se
-            calculent. */}
-        <ChampStudio
-          label="Horaires"
-          aide="En toutes lettres — jours fériés, congés, exceptions."
-        >
-          <textarea
-            value={etat.horaires}
-            rows={4}
-            maxLength={600}
-            onChange={(e) => majEtat({ horaires: e.target.value })}
-            disabled={!peutEditer}
-            className={CLASSE_CHAMP}
-          />
-        </ChampStudio>
-
-        <HorairesEditeurStudio
-          horaires={etat.horairesStructures}
-          onChange={(horairesStructures) => majEtat({ horairesStructures })}
-          disabled={!peutEditer}
-        />
-      </section>
-
-      <section className="space-y-2 border-t-2 border-dashed border-zinc-200 pt-4">
-        <h2 className="text-sm font-black uppercase tracking-[0.14em] text-k-orange-text">
-          Ce qui paraît sur la page
-        </h2>
-        <p className="text-xs text-zinc-500">
-          Décochez ce que vous ne voulez pas montrer. L&apos;aperçu suit
-          aussitôt.
-        </p>
-
-        {BLOCS_IDENTITE.map(({ cle, label, aide }) => (
-          <CaseStudio
-            key={cle}
-            label={label}
-            aide={aide}
-            cochee={etat.blocs.includes(cle)}
-            onChange={(v) => majEtat({ blocs: basculerBloc(etat.blocs, cle, v) })}
-            disabled={!peutEditer}
-          />
-        ))}
       </section>
     </div>
   );
 }
-
-/**
- * Les blocs que règle CETTE page. `social` et `experiences` ont les leurs —
- * on coche un bloc là où on saisit ce qu'il contient, pas dans une liste
- * générale qui obligerait à faire l'aller-retour pour vérifier de quoi on parle.
- */
-const BLOCS_IDENTITE = [
-  {
-    cle: "accroche",
-    label: "L'accroche",
-    aide: "La phrase sous votre nom, sur la bannière.",
-  },
-  {
-    cle: "histoire",
-    label: "Votre histoire",
-    aide: "Le texte de présentation de votre lieu.",
-  },
-  {
-    cle: "horaires",
-    label: "Vos horaires",
-    aide: "Les heures d'ouverture, telles que vous les avez écrites.",
-  },
-  {
-    cle: "cartes",
-    label: "Vos cartes",
-    aide: "Le catalogue lui-même. Décoché, la page ne montre plus vos fiches.",
-  },
-] as const;
