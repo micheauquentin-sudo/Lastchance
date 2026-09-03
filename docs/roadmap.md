@@ -114,7 +114,18 @@
   VIT-37, où un enregistrement réussi n'apparaissait jamais à l'écran.
   L'atelier reste, pour le téléphone seulement.
 
-**Décisions** : ADR-145 à ADR-155.
+- **VIT-41 — Le créateur de quiz passe au studio** (ADR-156). Huit étapes,
+  route `/studio/quiz/[id]`, onze `revalidatePath` jumelés et gardés.
+  `updateQuiz` EFFAÇAIT la consigne d'accueil dès qu'elle n'était pas rendue —
+  la mutation qui retire `intro_text` de la charge utile fait rougir huit
+  assertions, une par étape. La dotation, indivisible (sept colonnes et un
+  `superRefine` croisé), est présentée en DEUX étapes sans jamais partir en deux
+  morceaux : un seul état, deux canaux d'écriture, chacun envoyant sa charge
+  entière. L'aperçu monte la vraie carte de question ; l'en-tête, l'accueil et
+  le chronomètre sont omis et DITS — un décompte simulé atteindrait zéro pendant
+  le réglage et afficherait « temps écoulé » sur une partie jamais jouée.
+
+**Décisions** : ADR-145 à ADR-156.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
