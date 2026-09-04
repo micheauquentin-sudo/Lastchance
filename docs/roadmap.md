@@ -183,7 +183,23 @@
   regarde et rouge là où tout le monde travaille apprend à ignorer une ligne
   rouge.
 
-**Décisions** : ADR-145 à ADR-160.
+- **VIT-48 — Les salons Duo et Bande passent au studio** (ADR-163). Fil
+  DÉRIVÉ du jeu : quatre étapes pour le Duo, trois pour la Bande — « Votre
+  suggestion du jour » n'existe pas pour la Bande. Route `/studio/salon/[jeu]`.
+  L'habillage est **une seule ligne en base pour l'organisation** : le régler
+  depuis un jeu modifie l'autre. Le tableau de bord le disait par le libellé de
+  son bouton (« Enregistrer pour les deux jeux »), que le studio ne peut pas
+  reprendre puisqu'il enregistre seul — la portée passe donc par le titre de
+  l'étape, le chapeau, et une mention sous CHACUN des trois groupes de
+  contrôles, gardée à ≥ 3 occurrences depuis les deux studios.
+  L'aperçu montre la SALLE et non la partie : les expériences exigent une salle
+  existante et scrutent le serveur, alors qu'un studio règle un jeu AVANT
+  qu'une salle existe.
+  **Troisième occurrence du défaut VIT-37 fermée** : `setDuoOptions`,
+  `setBandePack` et `closeLobbyAsOrg` revalidaient la vitrine du tableau de
+  bord sans son studio. Garde par fonction posée.
+
+**Décisions** : ADR-145 à ADR-163.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

@@ -793,6 +793,10 @@ describe("setBandePack — choisir le ton du jeu", () => {
       // l'atteint, Next revalidant un CHEMIN et non une ressource.
       "/studio/salon/bande",
       "/dashboard/vitrine",
+      // ET SON STUDIO, hors de `/dashboard` lui aussi (VIT-48). L'étape
+      // « Ce qui paraît » y montre les jeux : sans ce jumeau, on règle son
+      // plateau et l'écran qui l'affiche reste sur l'état d'hier.
+      "/vitrine-studio",
     ]);
   });
 

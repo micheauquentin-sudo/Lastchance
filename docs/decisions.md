@@ -10198,3 +10198,75 @@ collecté**, sur toutes les machines du projet. En CI (Linux, LF) il passait.
 Une garde verte là où personne ne regarde et rouge là où tout le monde
 travaille est pire qu'une garde absente — elle apprend à ignorer une ligne
 rouge. Le shebang est retiré : le workflow appelle `node` explicitement.
+
+## ADR-163 — Un réglage partagé se dit LÀ OÙ LA MAIN EST POSÉE, pas en bas de page
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-48 (salons Duo Miroir et Portrait de la Bande), neuvième
+module porté sur le socle.
+
+### Une route, deux jeux, un habillage COMMUN
+
+`setHabillageSalons` écrit **une seule ligne `lobby_settings` par
+organisation**. Le thème, le décor, l'enseigne et le logo sont donc partagés :
+les régler depuis le studio du Duo modifie AUSSI Portrait de la Bande.
+
+Le tableau de bord le disait trois fois, dont une par le libellé de son bouton —
+« Enregistrer pour les deux jeux ». **Le studio ne peut pas reprendre cette
+formulation**, puisqu'il enregistre seul : le bouton qui portait l'avertissement
+n'existe plus.
+
+La portée passe donc par trois endroits, tous PERMANENTS :
+le **titre de l'étape** (« L'habillage, commun aux deux jeux »), présent dans le
+fil, dans l'infobulle et dans le nom accessible ; le **chapeau** du bloc, qui
+nomme les deux jeux ; et une **mention sous chacun des trois groupes de
+contrôles**, là où la main est posée. Une garde exige au moins trois occurrences
+de « vos deux jeux » dans le bloc, depuis les DEUX studios.
+
+**Écarté** : une note en bas de page. Un réglage qui en change un autre sans le
+dire À L'ENDROIT OÙ ON LE RÈGLE est la famille de défaut que ce programme ferme.
+
+### Le fil d'étapes est DÉRIVÉ du jeu — quatre contre trois
+
+Duo : questions → suggestion du jour → habillage → QR. Bande : pack de cartes →
+habillage → QR. « Votre suggestion du jour » n'existe pas pour la Bande, et
+l'afficher annoncerait un réglage inexistant (ADR-160, ADR-162).
+
+Deux étapes de l'esquisse ont disparu, et pour des raisons différentes :
+
+- **« Le jeu que vous ouvrez »** : le segment d'URL le décide déjà, et une étape
+  qui en changerait devrait NAVIGUER — or le fil du socle est en boutons
+  précisément pour que changer d'étape ne navigue pas.
+- **« Voir les salles ouvertes »** : une salle ne vit que le temps d'une partie,
+  la liste est vide la plupart du temps. C'est de la SURVEILLANCE, pas un
+  réglage ; elle reste sur le tableau de bord.
+
+### L'aperçu montre la SALLE, et le dit
+
+`DuoExperience` et `BandeExperience` ne sont pas rendables dans un studio :
+elles exigent un `lobbyId` — une salle existant en base —, appellent
+`startDuo`/`startBande` au montage puis scrutent toutes les trois secondes.
+Couper ces portes laisserait un écran d'attente perpétuel, et **un studio règle
+un jeu AVANT qu'une salle existe**.
+
+L'aperçu monte donc `LobbyShell` + `LobbyCarton` — les composants mêmes que
+sert `/lobby/[code]` — avec l'habillage en cours, et une bannière dit où sa
+fidélité s'arrête. C'est la troisième forme d'aperçu du programme : la vraie
+page (calendrier, chasse, cagnotte), la vraie page partielle et annoncée (quiz,
+pronostics), et ici la vraie page D'AVANT — celle que le joueur voit en entrant.
+
+### La famille « revalidation du studio » est fermée, pas rapiécée
+
+L'agent a signalé que `setDuoOptions` et `setBandePack` revalidaient
+`/dashboard/vitrine` sans `/vitrine-studio`. La mesure a trouvé un TROISIÈME
+site (`closeLobbyAsOrg`) qu'il ne pouvait pas voir depuis son périmètre.
+
+C'est la troisième occurrence du défaut VIT-37 : l'écriture réussit, et l'écran
+qui l'affiche reste sur l'état d'hier. `revalidation-vitrine-studio.test.ts`
+exige désormais que TOUTE fonction revalidant la vitrine du tableau de bord
+revalide aussi son studio — en comptant PAR FONCTION (ADR-161).
+
+Trois suites vérifiaient la liste EXACTE des chemins revalidés et ont rougi sur
+l'ajout. C'est leur mérite : elles attrapent aussi bien un oubli qu'une
+revalidation superflue.
