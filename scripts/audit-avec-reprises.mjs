@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * `npm audit` QUI SAIT DISTINGUER UNE PANNE D'UNE VULNÉRABILITÉ.
  *

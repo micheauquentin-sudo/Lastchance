@@ -10132,3 +10132,69 @@ entre l'aperçu et `/pronos/[slug]`. C'est un compromis, pas un modèle : la
 garde dit qu'elles se ressemblent, pas qu'elles se comportent pareil. La sortie
 propre serait d'exporter l'en-tête du composant public — chantier à part, comme
 l'unification des trois `AvatarPicker` divergents.
+
+## ADR-160 — Un studio sans charge utile d'organisation n'annonce pas un enregistrement qu'il ne fait pas
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-45 (ticket d'or), sixième module porté sur le socle.
+
+### Ce module n'a pas de réglages d'organisation, et c'est structurant
+
+Les cinq modules précédents ont tous une action qui écrit des colonnes de
+campagne ou de programme. Le ticket d'or, non : sa configuration ENTIÈRE est une
+liste de lots, chacun avec ses actions atomiques. Il n'y a **rien** à mettre dans
+`champsCaches`.
+
+`peutEditer` de la coquille est donc à `false`. Passer `true` aurait affiché
+« Enregistrement automatique » — qu'aucun code ne tient — et un bouton
+« Enregistrer » postant un `FormData` VIDE à `modifierLotTicketOr`, soit
+« Identifiant invalide » à chaque clic.
+
+Le droit d'écrire n'est pas gelé pour autant : il vit dans `peutRegler`, que
+chaque ligne consulte. Et la légende de l'aperçu le dit — « chaque lot
+s'enregistre avec son bouton ». C'est ADR-153 appliqué à un cas où la réponse
+honnête est de NE RIEN promettre.
+
+### Le piège d'écrasement existe quand même, un cran plus bas
+
+`modifierLotTicketOr` réécrit les quatre colonnes d'un lot en bloc. Une étape
+qui ne montrerait qu'une colonne détruirait les trois autres — le même défaut
+que partout ailleurs, à l'échelle de la LIGNE plutôt que de la campagne.
+
+`LotsTicket` rend donc en miroir caché ce qu'elle ne montre pas. Avec une
+subtilité : `actif` est lu par PRÉSENCE côté action, il n'est donc miroité que
+s'il est vrai. Les gardes lisent la `FormData` réelle et non les attributs
+`name` — une case décochée porte bien son `name` mais n'envoie rien.
+
+### Cinq étapes, pas six — une étape qui n'a rien à régler n'existe pas
+
+Le découpage proposé en portait six, dont « Le détail de chaque lot » (libellé,
+description). `tickets_or_lots` **n'a pas de colonne `description`**. L'étape
+aurait montré deux fois le champ « libellé » sous un titre promettant un second
+réglage inexistant ; l'inventer demandait une migration.
+
+Les quatre étapes de réglage restantes sont **disjointes** — une colonne chacune,
+jamais le sous-ensemble d'une autre. C'est ce qui sépare un découpage d'une
+redite, et c'est le motif déjà retenu pour « Mes étapes » / « Les indices » de la
+chasse (ADR-157). Une garde fige l'absence de l'étape supprimée, à retirer
+sciemment le jour où la colonne existera.
+
+### Le prédicat « tirable » est partagé, pas recopié
+
+`actif && poids > 0 && (stock === null || stock > 0)` vivait en double, côté
+écran et côté SQL. L'étape de vérification réutilise désormais `estLotTirable`.
+La mutation qui le RECOPIE sur place — une reformulation qu'une garde textuelle
+aurait laissée passer — fait rougir « quand le prédicat dit NON, l'écran dit
+non ».
+
+### Corrigé au passage : une garde qui ne s'exécutait que sur Linux
+
+`scripts/audit-avec-reprises.mjs` (ADR de CI, PR #343) commençait par un
+shebang. En fins de ligne Windows, il se termine par un `\r` que le transform de
+Vitest ne retire pas : le test qui l'importe rendait `SyntaxError`, **zéro test
+collecté**, sur toutes les machines du projet. En CI (Linux, LF) il passait.
+
+Une garde verte là où personne ne regarde et rouge là où tout le monde
+travaille est pire qu'une garde absente — elle apprend à ignorer une ligne
+rouge. Le shebang est retiré : le workflow appelle `node` explicitement.
