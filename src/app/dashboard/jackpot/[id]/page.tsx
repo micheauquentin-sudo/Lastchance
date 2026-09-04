@@ -272,23 +272,70 @@ export default async function JackpotDetailPage({
             </CarteRepliable>
           )}
 
-          {/* LA PORTE D'ENTRÉE DE L'ATELIER, repliée comme le reste. Les cartes
-              de réglage ont quitté cette vue : c'est le seul chemin vers elles,
-              d'où un résumé qui dit combien d'étapes attendent derrière la
-              barre. C'est aussi la tuile qui porte les cinq contrôles
-              d'ouverture — son verdict reste lisible repliée. */}
-          <CarteRepliable
-            {...carteTuile(tuiles, "atelier")}
-            defaultOuvert={false}
-            resume={`${etapesAtelier.length} étape${etapesAtelier.length > 1 ? "s" : ""} de préparation.`}
-          >
-            <AtelierEntree
-              etapes={etapesAtelier}
-              hrefPour={hrefPour}
-              titre="L'atelier de la cagnotte"
-              sousTitre="Tout ce qui se règle avant l'ouverture, une étape à la fois. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
-            />
-          </CarteRepliable>
+          {/* LE STUDIO REMPLACE L'ATELIER AU-DELÀ DE `lg`, ET SEULEMENT LÀ
+              (VIT-44).
+
+              En dessous du point de rupture, la rangée à deux colonnes du
+              studio s'empile : l'aperçu passe SOUS les réglages, ce qui lui
+              retire sa raison d'être. Même arbitrage, et même motif, que le
+              calendrier, le quiz, la chasse et le passeport.
+
+              LA PASTILLE DE PRÉPARATION SUIT L'ENTRÉE PRINCIPALE : elle
+              appartient à la préparation, pas à un écran. Sur grand écran,
+              c'est le studio. */}
+          <div className="hidden lg:block">
+            <CarteRepliable
+              {...carteTuile(tuiles, "atelier")}
+              titre="Mon studio"
+              defaultOuvert
+              resume="8 étapes — tout se règle ici, en voyant le résultat."
+            >
+              {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N'EST PAS
+                  DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+                  `<span>` — jamais un heading — précisément parce que le bloc
+                  qu'elle enveloppe en porte déjà un du même nom. Sans ce
+                  `<h2>`, la carte n'a AUCUN titre dans l'arbre
+                  d'accessibilité : un lecteur d'écran ne l'annonce pas, et les
+                  E2E qui cherchent `getByRole("heading")` ne la trouvent pas
+                  non plus. */}
+              <Card>
+                <h2 className="font-semibold mb-1">Mon studio</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm text-k-body">
+                    La page de vos clients au centre, les réglages autour. Le
+                    nom, la façon de participer, l&apos;objectif, le tirage, le
+                    lot, le montant affiché et votre message — tout s&apos;y
+                    règle en voyant le résultat.
+                  </p>
+                  <Link
+                    href={`/studio/cagnotte/${c.id}`}
+                    className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+                  >
+                    Ouvrir le studio
+                  </Link>
+                </div>
+              </Card>
+            </CarteRepliable>
+          </div>
+
+          {/* L'ATELIER RESTE, POUR LE TÉLÉPHONE. Ce qui est masqué au-delà de
+              `lg` est l'ENTRÉE, jamais la ROUTE : `?etape=` demeure atteignable
+              sur n'importe quelle taille d'écran — une adresse d'étape gardée
+              en favori doit continuer de mener quelque part. */}
+          <div className="lg:hidden">
+            <CarteRepliable
+              {...carteTuile(tuiles, "atelier")}
+              defaultOuvert={false}
+              resume={`${etapesAtelier.length} étape${etapesAtelier.length > 1 ? "s" : ""} de préparation.`}
+            >
+              <AtelierEntree
+                etapes={etapesAtelier}
+                hrefPour={hrefPour}
+                titre="L'atelier de la cagnotte"
+                sousTitre="Tout ce qui se règle avant l'ouverture, une étape à la fois. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+              />
+            </CarteRepliable>
+          </div>
         </>
       ) : (
         <>

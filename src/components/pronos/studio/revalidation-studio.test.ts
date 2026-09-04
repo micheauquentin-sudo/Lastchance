@@ -50,22 +50,43 @@ describe("le studio du championnat est revalidé partout où l'atelier l'est", (
   it("l'action revalide bien des chemins d'atelier — sinon la garde est vacante", () => {
     // Sans cette assertion, un renommage du chemin rendrait la boucle ci-dessous
     // vide : elle passerait au vert sans avoir rien regardé.
-    const atelier = chemins.filter((c) => c.startsWith("/dashboard/pronostics/"));
+    const atelier = chemins.filter((c) =>
+      c.startsWith("/dashboard/pronostics/"),
+    );
     expect(atelier.length).toBeGreaterThanOrEqual(15);
   });
 
+  /**
+   * ON COMPTE LES OCCURRENCES, ON NE TESTE PAS L'APPARTENANCE.
+   *
+   * Cette nuance a été trouvée en JOUANT la mutation sur la cagnotte, pas en
+   * relisant le code : une garde écrite en `chemins.includes(jumeau)` reste
+   * VERTE quand on supprime un jumeau, dès lors qu'un autre endroit du fichier
+   * écrit le même chemin littéral. Or ces actions revalident presque toutes
+   * `${id}` — deux appels suffisent donc à couvrir un troisième absent.
+   *
+   * La garde aurait alors gardé N-1 appels sur N en annonçant qu'elle les
+   * gardait tous, et l'appel non gardé est en général celui du changement de
+   * statut : le geste après lequel le commerçant revient regarder son écran.
+   */
   it("chaque `/dashboard/pronostics/${…}` a son `/studio/pronostics/${…}`", () => {
-    const manquants: string[] = [];
+    const compte = new Map<string, number>();
+    for (const c of chemins) compte.set(c, (compte.get(c) ?? 0) + 1);
 
-    for (const chemin of chemins) {
+    const manquants: string[] = [];
+    for (const [chemin, attendus] of compte) {
       const suffixe = chemin.replace(/^\/dashboard\/pronostics\//, "");
       if (suffixe === chemin) continue; // pas un chemin d'atelier détaillé
       const jumeau = `/studio/pronostics/${suffixe}`;
-      if (!chemins.includes(jumeau)) manquants.push(`${chemin} → ${jumeau}`);
+      const presents = compte.get(jumeau) ?? 0;
+      if (presents < attendus) {
+        manquants.push(`${chemin} → ${jumeau} (${presents} sur ${attendus})`);
+      }
     }
 
-    // Le message nomme le chemin ET son jumeau attendu : un compte seul ne dirait
-    // pas lequel manque, et l'action en porte plusieurs identiques.
+    // Le message nomme le chemin, son jumeau attendu ET le compte : un simple
+    // « il en manque un » ne dirait pas lequel, l'action en portant plusieurs
+    // identiques.
     expect(manquants).toEqual([]);
   });
 });
