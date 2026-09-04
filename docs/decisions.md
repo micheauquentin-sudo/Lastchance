@@ -10132,3 +10132,60 @@ entre l'aperçu et `/pronos/[slug]`. C'est un compromis, pas un modèle : la
 garde dit qu'elles se ressemblent, pas qu'elles se comportent pareil. La sortie
 propre serait d'exporter l'en-tête du composant public — chantier à part, comme
 l'unification des trois `AvatarPicker` divergents.
+
+## ADR-161 — Une garde de revalidation COMPTE les occurrences, elle ne teste pas l'appartenance
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-44 (jackpot), septième module porté sur le socle. Le défaut a
+été trouvé en JOUANT la mutation, pas en relisant le code.
+
+### Le défaut, et pourquoi il était invisible
+
+Depuis ADR-155, chaque module porte une garde textuelle qui vérifie que toute
+revalidation d'un chemin d'atelier a son jumeau de studio. Elle était écrite
+`chemins.includes(jumeau)` — une **appartenance**.
+
+Or ces actions revalident presque toutes le même littéral, `${id}`. Supprimer un
+jumeau laissait donc la garde VERTE, dès lors qu'un autre appel du même fichier
+écrivait le même chemin. Sur la cagnotte : trois revalidations détaillées, deux
+suffisaient à couvrir la troisième.
+
+**La garde annonçait surveiller N appels en n'en surveillant que N−1.** Et
+l'appel non gardé était celui de `setJackpotCampaignStatus` — le changement de
+statut, c'est-à-dire le geste après lequel le commerçant revient précisément
+regarder son écran, et le trouverait périmé.
+
+### Décision — compter, et nommer le compte dans le message
+
+Autant de `/studio/<module>/${x}` que de `/dashboard/<atelier>/${x}`, pour
+chaque expression `x`. Le message d'échec porte le compte —
+`(2 sur 3)` — parce qu'un « il en manque un » ne dirait pas lequel quand
+l'action en porte plusieurs identiques.
+
+### Les CINQ copies ont été corrigées, pas seulement celle qui a rougi
+
+Le modèle avait été propagé sur calendrier, quiz, chasse, fidélité et
+pronostics. Une seule cause, une seule correction, cinq copies : n'en réparer
+qu'une aurait laissé quatre gardes qui annoncent surveiller N chemins en n'en
+surveillant que N−1, et le « je corrigerai plus tard » ne vient jamais.
+
+C'est aussi ce qu'un lot suivant apporte à un lot précédent : le défaut n'a pas
+été vu par cinq relectures, il a été vu par une mutation sur le sixième module.
+
+### Ce que le jackpot a apporté d'autre
+
+**Aucun drapeau `apercu` n'était nécessaire.** L'énumération faite avant de
+coder montre que le module n'importe que trois actions, toutes dans le composant
+racine et la carte de comptoir ; les quatre blocs montés dans l'aperçu n'en
+touchent aucune. Une garde le MESURE après 120 s de faux minuteurs, plutôt que
+de l'affirmer — c'est la différence entre « rien ne part » et « je crois que
+rien ne part ».
+
+**L'étape 8 ne publie pas**, pour la raison d'ADR-159 en plus littéral encore :
+`JackpotStatusControls` porte l'ouverture ET la suppression de la cagnotte, de
+ses participations et de ses gains, dans la même carte.
+
+**Le plancher de fréquence est corrigé dans la CHARGE**, pas dans le `<select>` :
+changer de mode peut invalider une fréquence pendant que son étape est fermée.
+Même geste que `resolveLoyaltyCooldown`.
