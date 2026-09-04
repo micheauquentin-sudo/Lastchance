@@ -194,7 +194,21 @@
   L'appel non gardé était celui du changement de statut. Aucun drapeau `apercu`
   nécessaire — l'énumération montre que les blocs montés n'importent aucune
   action, et une garde le mesure après 120 s de faux minuteurs.
-
+- **VIT-48 — Les salons Duo et Bande passent au studio** (ADR-163). Fil
+  DÉRIVÉ du jeu : quatre étapes pour le Duo, trois pour la Bande — « Votre
+  suggestion du jour » n'existe pas pour la Bande. Route `/studio/salon/[jeu]`.
+  L'habillage est **une seule ligne en base pour l'organisation** : le régler
+  depuis un jeu modifie l'autre. Le tableau de bord le disait par le libellé de
+  son bouton (« Enregistrer pour les deux jeux »), que le studio ne peut pas
+  reprendre puisqu'il enregistre seul — la portée passe donc par le titre de
+  l'étape, le chapeau, et une mention sous CHACUN des trois groupes de
+  contrôles, gardée à ≥ 3 occurrences depuis les deux studios.
+  L'aperçu montre la SALLE et non la partie : les expériences exigent une salle
+  existante et scrutent le serveur, alors qu'un studio règle un jeu AVANT
+  qu'une salle existe.
+  **Troisième occurrence du défaut VIT-37 fermée** : `setDuoOptions`,
+  `setBandePack` et `closeLobbyAsOrg` revalidaient la vitrine du tableau de
+  bord sans son studio. Garde par fonction posée.
 - **VIT-47 — Le mode événement live passe au studio** (ADR-164). Sept étapes,
   route `/studio/soiree/[id]`, aucun regroupement — l'étape « rythme » gagne sa
   place parce qu'on y règle le chronomètre EN VOYANT la barre de décompte.

@@ -762,7 +762,13 @@ export async function closeOrgLobby(
       const result = mapCloseLobbyAsOrg(data);
       if (result.state !== "ok") return REFUS_INDISPONIBLE;
 
+      // LE STUDIO DE LA VITRINE EST HORS DE `/dashboard` (VIT-48). Son étape
+      // « Ce qui paraît » montre les jeux — donc le plateau du Duo et le pack
+      // de la Bande. Sans ce jumeau, on règle son plateau et l'écran qui
+      // l'affiche reste sur l'état d'hier. C'est le défaut VIT-37, sur un
+      // troisième écran.
       revalidatePath("/dashboard/vitrine");
+      revalidatePath("/vitrine-studio");
       return {
         ok: true as const,
         data: result.closed
