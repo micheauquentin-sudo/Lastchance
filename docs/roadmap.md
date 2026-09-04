@@ -245,7 +245,18 @@
   aucune étape ne coupe une entité en deux — plutôt que par des miroirs cachés
   qu'on peut oublier de poser. Deux défauts trouvés en ÉCRIVANT les gardes,
   dont un dans la garde elle-même.
-
+- **VIT-49 — La réservation de table passe au studio** (ADR-166).
+  **Douzième et dernier module.** Fil dérivé du mode : quatre étapes en
+  « moment », huit en « rendez-vous » — trois panneaux du tableau de bord
+  disparaissent déjà silencieusement selon le mode, le studio rend la règle
+  visible. **La trouvaille du lot est une garde VACANTE** : la mutation censée
+  la faire rougir est passée VERTE, parce que la fixture ne rendait aucune carte
+  réservable — l'appel surveillé était structurellement inatteignable. Un test
+  est vert parce que le code est bon, ou parce qu'il ne mesure rien ; seule la
+  mutation les sépare. Corrigée par un créneau ouvert et un clic réel.
+  L'aperçu n'appelle PAS le chargeur public : il compte la pression par IP, et
+  un aperçu ne doit pas laisser de traces dans les mesures de la page qu'il
+  imite.
 - **VIT-51 — L'atterrissage après création suit l'écran** (ADR-167). Les sept
   actions de création redirigeaient toutes vers l'ATELIER, faute pour le serveur
   de connaître la taille de l'écran. Le formulaire, lui, la connaît : il l'envoie

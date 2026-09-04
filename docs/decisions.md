@@ -10529,6 +10529,66 @@ active) et renvoie au tableau de bord.
 dont la date de fin est passée, ou une seconde saison quand une tourne, y voit
 « Lancer la saison » puis se fait refuser sans motif lisible. Le studio mesure
 les quatre. Corriger le tableau de bord sortait du périmètre du lot.
+## ADR-166 — Une garde peut être verte parce qu'elle ne mesure RIEN, et seule la mutation le dit
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-49 (réservation de table), douzième et dernier module porté
+sur le socle.
+
+### Le fait
+
+L'agent avait écrit la garde habituelle — « l'aperçu ne parle jamais au
+serveur » — puis joué la mutation qui rétablit un appel. **Elle est restée
+verte.**
+
+La fixture ne contenait aucun créneau réservable : aucune carte n'était rendue,
+donc `reserveSlot` était **structurellement inatteignable**. La garde annonçait
+surveiller quatre portes serveur sans en approcher aucune.
+
+### Ce que cela apprend, et qui vaut pour les onze autres modules
+
+Un test est vert pour deux raisons qu'un rapport ne distingue pas : parce que le
+code est bon, ou parce qu'il ne mesure rien. C'est la « garde vacante »
+d'ADR-161, sous une forme plus insidieuse — là-bas le compte masquait un oubli,
+ici le rendu ne produisait pas le sujet de l'assertion.
+
+**Seule la mutation les sépare.** C'est la raison pour laquelle chaque brief de
+ce programme en a exigé au moins deux, et pourquoi un rapport qui dit « garde
+écrite, suite verte » ne suffit pas : il faut dire ce que la mutation a fait
+rougir, et sur quelle assertion.
+
+Corrigée par un créneau ouvert dans la fixture et un CLIC RÉEL sur « Réserver ma
+place », la garde rougit.
+
+### Le fil dérive du mode, sur QUATRE étapes et non une
+
+L'esquisse ne réservait au mode `rendez_vous` que « Votre salle ». La mesure a
+montré que `SallePanneau` ouvre sur un `return null`, et que `HorairesPanneau`
+ne rend la semaine type, les fermetures et la génération que sous la même
+condition. Le tableau de bord se comporte DÉJÀ ainsi.
+
+Le studio rend donc visible, dans son fil, une règle qui là-bas se manifeste par
+des panneaux qui disparaissent sans prévenir : quatre étapes en mode
+`moment`, huit en `rendez_vous`.
+
+### Le chargeur PUBLIC n'est pas appelé par l'aperçu
+
+`loadReserverPublicContext` compte la pression par IP (`reserver:page:ip`) et lit
+le cookie du joueur. L'appeler depuis un écran de réglages aurait pollué un
+signal de supervision avec l'activité du commerçant — un aperçu ne doit pas
+laisser de traces dans les mesures de la page qu'il imite.
+
+### Deux dettes mesurées, laissées ouvertes et nommées
+
+1. **Aucun des six panneaux réutilisés n'accepte `peutEditer`** : ils rendent
+   leur bouton quel que soit le rôle. C'est le comportement actuel du tableau de
+   bord, reproduit à l'identique plutôt que corrigé d'un côté seulement — le
+   fermer change les deux écrans, c'est un lot à soi.
+2. **Asymétrie de revalidation dans `reserver.ts`** : les dix actions
+   salle/horaires ne revalident que la page d'activité, jamais la liste — alors
+   que `/dashboard/reservations` monte les mêmes panneaux depuis RDV-13. Cet
+   écran reste donc périmé après une modification d'horaires.
 
 ## ADR-167 — Le serveur ne connaît pas la taille de l'écran, mais le formulaire si
 
