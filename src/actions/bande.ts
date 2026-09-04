@@ -541,6 +541,12 @@ export async function setBandePack(
       // dépend. Ne revalider que l'un laisserait l'autre annoncer un état
       // d'hier.
       revalidatePath("/dashboard/salons/bande");
+      // LE STUDIO EST HORS DE `/dashboard`, il n'est atteint par aucune des
+      // lignes ci-dessus : Next revalide un CHEMIN, pas une ressource (VIT-48).
+      // Sans ce jumeau, un pack enregistré depuis `/studio/salon/bande` n'y
+      // apparaîtrait jamais — sur l'écran même où l'on vient vérifier. C'est le
+      // défaut VIT-37, et `revalidation-studio.test.ts` échoue s'il manque.
+      revalidatePath("/studio/salon/bande");
       revalidatePath("/dashboard/vitrine");
       return {
         ok: true as const,

@@ -131,6 +131,21 @@ export async function setHabillageSalons(
       // chaque ouverture.
       for (const cle of LOBBY_KINDS) revalidatePath(`/dashboard/salons/${cle}`);
 
+      // ET LES DEUX STUDIOS, POUR LA MÊME RAISON, DOUBLÉE D'UNE AUTRE (VIT-48).
+      //
+      // La première est celle de tous les modules portés : `/studio/salon/…`
+      // vit HORS de `/dashboard`, et Next revalide un CHEMIN, pas une
+      // ressource — aucune des lignes ci-dessus ne l'atteint. C'est le défaut
+      // VIT-37, déjà payé cinq fois.
+      //
+      // La seconde est propre à cet écran : le réglage est COMMUN aux deux
+      // jeux. Ne rafraîchir que le studio d'où part le geste laisserait l'autre
+      // afficher l'ancien décor — et c'est précisément le malentendu que tout
+      // cet écran travaille à empêcher, celui de deux réglages distincts. La
+      // boucle est donc la même : les DEUX jeux, dans les deux familles
+      // d'écrans.
+      for (const cle of LOBBY_KINDS) revalidatePath(`/studio/salon/${cle}`);
+
       return { ok: true as const, data: { etat: "enregistre" } as const };
     } catch (err) {
       reportError("lobby.habillage_set", err);

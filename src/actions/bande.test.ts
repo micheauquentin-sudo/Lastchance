@@ -789,6 +789,9 @@ describe("setBandePack — choisir le ton du jeu", () => {
     ]);
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/bande",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/bande",
       "/dashboard/vitrine",
     ]);
   });

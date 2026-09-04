@@ -715,6 +715,9 @@ describe("setDuoOptions — composer le plateau", () => {
     // laisserait l'autre annoncer un état d'hier.
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
     ]);
     // LA GARDE EST CELLE DU JEU, plus celle de la Vitrine : un commerçant qui
@@ -915,6 +918,9 @@ describe("setDuoOptions — composer le plateau", () => {
     ]);
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
     ]);
   });
@@ -1154,6 +1160,9 @@ describe("setDuoSuggestion — la proposition de la maison", () => {
     ]);
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
     ]);
   });
