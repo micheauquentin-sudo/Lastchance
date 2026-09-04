@@ -113,12 +113,16 @@ jobs:
 
       # Échoue dès qu'une vulnérabilité de sévérité modérée ou plus est
       # publiée pour une dépendance du lockfile (prod comme dev).
+      # UNE PANNE DU SERVICE N’EST PAS UNE VULNÉRABILITÉ. Le 2026-09-04, le
+      # service d’avis de npm a bloqué toutes les livraisons pendant des heures
+      # avec trois symptômes pour une seule panne, alors que les deux lockfiles
+      # étaient intacts. Le script rejoue UNIQUEMENT sur une signature de panne
+      # et échoue sans reprise dès qu’un rapport de vulnérabilité apparaît.
       - name: Audit des dépendances
-        run: npm audit --audit-level=moderate
+        run: node scripts/audit-avec-reprises.mjs .
 
       - name: Audit des dépendances (site vitrine)
-        working-directory: site
-        run: npm audit --audit-level=moderate
+        run: node scripts/audit-avec-reprises.mjs site
 
   database-security:
     name: PostgreSQL · ACL · RLS · Intégrité
