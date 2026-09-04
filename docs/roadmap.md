@@ -234,7 +234,19 @@
   relues depuis la ligne serveur avant envoi. **TROIS portes d'atelier**
   traitées, dont une qui change de destination au lieu de disparaître — la
   phrase perdrait sa conclusion.
-**Décisions** : ADR-145 à ADR-164.
+- **VIT-50 — La méta-progression passe au studio** (ADR-165). **Cinq** étapes
+  au lieu de dix, et l'ordre est une DÉPENDANCE : une mission octroie un badge
+  ou une pièce, un coffre refuse de se rendre sans pièce. La trouvaille du lot :
+  **il n'existe aucun `updateProgressionSeason`** — le nom et les dates d'une
+  saison sont figés à la création. L'étape « Votre saison et ses dates » aurait
+  rendu des champs qu'aucun code n'écrit : le pire cas d'ADR-160, où l'étape
+  n'est pas seulement vide mais MENSONGÈRE. La saison est donc le SUJET du
+  studio, pas une étape. Le piège d'écrasement se traite ici par le découpage —
+  aucune étape ne coupe une entité en deux — plutôt que par des miroirs cachés
+  qu'on peut oublier de poser. Deux défauts trouvés en ÉCRIVANT les gardes,
+  dont un dans la garde elle-même.
+
+**Décisions** : ADR-145 à ADR-165.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
