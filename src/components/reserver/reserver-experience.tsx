@@ -93,6 +93,7 @@ export function ReserverExperience({
   preparation = null,
   emailObligatoire = false,
   bookingMode = "moment",
+  apercu = false,
 }: {
   /**
    * Chez QUI le joueur croit réserver. `reserve_slot` l'exige : c'est la borne
@@ -166,6 +167,14 @@ export function ReserverExperience({
    * l'ajout de cette règle ne bascule personne à son insu.
    */
   bookingMode?: string;
+  /**
+   * APERÇU DE STUDIO — la page est RENDUE À L'IDENTIQUE, mais aucune des
+   * quatre actions serveur ne part (VIT-49). Un studio règle une activité en
+   * la regardant : réserver pour de vrai depuis cet écran graverait une
+   * réservation au nom du commerçant, prendrait une place à un vrai client, et
+   * poserait une adresse consentie que personne n'a saisie.
+   */
+  apercu?: boolean;
 }) {
   // Les créneaux réservés d'abord, en tête de page : c'est ce que le client
   // rouvre sa page pour retrouver — son code — et non pour réserver une
@@ -264,6 +273,7 @@ export function ReserverExperience({
             {reservees.map((creneau) => (
               <li key={creneau.id}>
                 <MaReservation
+                  apercu={apercu}
                   creneau={creneau}
                   reservation={mesReservations[creneau.id]}
                   activityName={activityName}
@@ -367,6 +377,7 @@ export function ReserverExperience({
                       l'autre. Ils ne partagent que la carte et la palette. */}
                   {surTable ? (
                     <CreneauTable
+                      apercu={apercu}
                       organizationId={organizationId}
                       creneau={creneau}
                       timeZone={timeZone}
@@ -374,6 +385,7 @@ export function ReserverExperience({
                     />
                   ) : (
                     <CreneauReservable
+                      apercu={apercu}
                       organizationId={organizationId}
                       creneau={creneau}
                       timeZone={timeZone}
@@ -401,7 +413,10 @@ function CreneauReservable({
   timeZone,
   kind,
   emailObligatoire,
+  apercu = false,
 }: {
+  /** Aperçu de studio : la carte se rend, la réservation ne part pas. */
+  apercu?: boolean;
   organizationId: string;
   creneau: ReserverSlotPublicView;
   timeZone: string;
@@ -467,6 +482,16 @@ function CreneauReservable({
         } satisfies ReserveSlotActionResult;
       }
 
+      // APERÇU : ce geste écrit en base au nom du commerçant qui règle son
+      // écran — une réservation, une place tenue, une adresse consentie. Le
+      // formulaire reste vivant (c'est la vraie page), mais rien ne part.
+      if (apercu) {
+        return {
+          ok: false as const,
+          error: "Aperçu : la réservation ne part pas depuis votre studio.",
+        };
+      }
+
       const resultat = await reserveSlot({
         organizationId,
         slotId: creneau.id,
@@ -498,7 +523,7 @@ function CreneauReservable({
       }
       return resultat;
     },
-    [organizationId, creneau.id, captchaToken, kind, emailObligatoire],
+    [apercu, organizationId, creneau.id, captchaToken, kind, emailObligatoire],
   );
 
   // `reloadOnSuccess` : le rafraîchissement est le SEUL moyen pour cette page de
@@ -789,7 +814,10 @@ function CreneauTable({
   creneau,
   timeZone,
   effectif,
+  apercu = false,
 }: {
+  /** Aperçu de studio : la carte se rend, la table ne se prend pas. */
+  apercu?: boolean;
   organizationId: string;
   creneau: ReserverSlotPublicView;
   timeZone: string;
@@ -831,6 +859,16 @@ function CreneauTable({
         };
       }
 
+      // APERÇU : ce geste écrit en base au nom du commerçant qui règle son
+      // écran — une réservation, une place tenue, une adresse consentie. Le
+      // formulaire reste vivant (c'est la vraie page), mais rien ne part.
+      if (apercu) {
+        return {
+          ok: false as const,
+          error: "Aperçu : la réservation ne part pas depuis votre studio.",
+        };
+      }
+
       const resultat = await reserverTable({
         organizationId,
         slotId: creneau.id,
@@ -860,7 +898,7 @@ function CreneauTable({
       setRefus({ etat: resultat.data.state, effectif });
       return { ok: false, error: PHRASES_RESERVATION[resultat.data.state] };
     },
-    [organizationId, creneau.id, effectif, captchaToken],
+    [apercu, organizationId, creneau.id, effectif, captchaToken],
   );
 
   // `reloadOnSuccess` : identique au parcours Moment, et pour la même raison —
@@ -977,6 +1015,7 @@ function CreneauTable({
           invalide, ni un créneau qui vient de fermer. */}
       {refus?.etat === "full" ? (
         <AttenteTable
+          apercu={apercu}
           organizationId={organizationId}
           creneau={creneau}
           effectif={refus.effectif}
@@ -1002,7 +1041,10 @@ function AttenteTable({
   organizationId,
   creneau,
   effectif,
+  apercu = false,
 }: {
+  /** Aperçu de studio : le formulaire se rend, l'inscription ne part pas. */
+  apercu?: boolean;
   organizationId: string;
   creneau: ReserverSlotPublicView;
   /** L'effectif que la base VIENT de refuser, pas celui de la tête de liste. */
@@ -1036,6 +1078,16 @@ function AttenteTable({
           ok: false,
           error:
             "Cochez la case pour être prévenu par email quand une table se libère.",
+        };
+      }
+
+      // APERÇU : ce geste écrit en base au nom du commerçant qui règle son
+      // écran — une réservation, une place tenue, une adresse consentie. Le
+      // formulaire reste vivant (c'est la vraie page), mais rien ne part.
+      if (apercu) {
+        return {
+          ok: false as const,
+          error: "Aperçu : la réservation ne part pas depuis votre studio.",
         };
       }
 
@@ -1086,7 +1138,7 @@ function AttenteTable({
       }
       return resultat;
     },
-    [organizationId, creneau.id, effectif, captchaToken],
+    [apercu, organizationId, creneau.id, effectif, captchaToken],
   );
 
   // PAS de `reloadOnSuccess` ici, contrairement à la réservation : ce qu'il y a
@@ -1216,12 +1268,15 @@ function AttenteTable({
 // ────────────────────────────────────────────────────────────
 
 export function MaReservation({
+  apercu = false,
   creneau,
   reservation,
   activityName,
   organizationName,
   timeZone,
 }: {
+  /** Aperçu de studio : la carte se rend, l'annulation ne part pas. */
+  apercu?: boolean;
   creneau: ReserverSlotPublicView;
   reservation: ReserverMaReservationView;
   activityName: string;
@@ -1233,8 +1288,17 @@ export function MaReservation({
   // Aucun identifiant ne transite par l'URL — la preuve de possession est le
   // cookie, que la server action relit elle-même.
   const action = useCallback(
-    () => cancelReservation({ reservationId: reservation.reservationId }),
-    [reservation.reservationId],
+    // APERÇU : annuler ferait disparaître pour de bon la réservation d'un
+    // client, depuis un écran de réglages. Le bouton reste — c'est la vraie
+    // page — mais le geste ne part pas.
+    async () =>
+      apercu
+        ? {
+            ok: false as const,
+            error: "Aperçu : l'annulation ne part pas depuis votre studio.",
+          }
+        : cancelReservation({ reservationId: reservation.reservationId }),
+    [apercu, reservation.reservationId],
   );
   const { state, pending, onSubmit } = useActionForm(action, {
     reloadOnSuccess: true,

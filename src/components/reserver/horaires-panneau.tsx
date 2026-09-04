@@ -66,7 +66,7 @@ const HEURES_SUGGEREES = [
   { label: "Soirée", debut: "18:00", fin: "22:00" },
 ] as const;
 
-const DUREES_SUGGEREES = [15, 20, 30, 45, 60, 90] as const;
+export const DUREES_SUGGEREES = [15, 20, 30, 45, 60, 90] as const;
 
 export function HorairesPanneau({
   activityId,
@@ -302,7 +302,7 @@ function ReglagesRendezVous({
 // La semaine type
 // ────────────────────────────────────────────────────────────
 
-function SemaineType({
+export function SemaineType({
   activityId,
   plages,
   dureeMinutes,
@@ -537,7 +537,7 @@ function AjouterPlage({
 // Les fermetures
 // ────────────────────────────────────────────────────────────
 
-function Fermetures({
+export function Fermetures({
   activityId,
   fermetures,
 }: {
@@ -631,7 +631,7 @@ function SupprimerFermetureBouton({ id }: { id: string }) {
 // La génération
 // ────────────────────────────────────────────────────────────
 
-function Generation({
+export function Generation({
   activityId,
   bookingMode,
   dureeMinutes,
