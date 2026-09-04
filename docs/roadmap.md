@@ -266,8 +266,23 @@
   ordinateur coûte moins qu'un écran à deux colonnes servi à un téléphone.
   La garde apparie les DEUX moitiés : si le formulaire cesse d'envoyer, l'action
   retombe en silence sur le comportement d'avant, et rien ne rougirait.
+- **VIT-52 — Le huitième module rejoint l'atterrissage selon l'écran**
+  (ADR-168). `createCampaign` (jeux instantanés) manquait à VIT-51 : il
+  redirigeait vers l'atelier avec un `redirect()` LITTÉRAL, pas un appel à son
+  helper d'étape — la seule forme que la sonde de VIT-51 surveillait. Une garde
+  qui reconnaît un APPEL laisse passer le LITTÉRAL qui lui est équivalent :
+  treize livraisons de la campagne des studios ont défilé au-dessus sans que
+  rien rougisse. La sonde lit désormais les formes d'atelier DANS les helpers
+  qui les construisent (`baseAtelierX()`), les réduit à leurs morceaux
+  littéraux et les cherche dans le corps des fonctions `create*` — recopier le
+  chemin rougit comme appeler le helper. C'est la BASE de l'atelier qui est
+  nommée, pas sa première étape comme pour les sept autres : la roue est le
+  seul module dont la page n'a pas de vue suivi, donc l'URL nue rend déjà
+  l'étape « Le jeu ». Au passage, l'info-bulle de création corrigée : elle
+  promettait « cinq étapes » et « l'atelier s'ouvre aussitôt », l'atelier en
+  compte sept et le studio s'ouvre désormais sur ordinateur.
 
-**Décisions** : ADR-145 à ADR-167.
+**Décisions** : ADR-145 à ADR-168.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
@@ -281,6 +296,13 @@
   partagé (déjà signalé en V1.74) — décision produit à prendre.
 - Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google
   (geste propriétaire, déjà signalé en V1.71/V1.73).
+- Les sept autres info-bulles de création (calendrier, pronostics,
+  événement live, chasse, fidélité, jackpot, quiz) promettent encore
+  l'atelier inconditionnellement — VIT-51 a rendu la promesse fausse sur
+  ordinateur sans les mettre à jour (VIT-52, `docs/bugs.md`).
+- Aucun E2E de bureau ne prouve l'atterrissage studio à l'exécution : la
+  garde de VIT-51/VIT-52 est textuelle, elle prouve que l'appel est écrit,
+  pas qu'il tourne (`docs/bugs.md`).
 
 ## V1.74 — L'identité joueur partagée, pour de vrai (✅ 2026-09-02, PR #314, #315, #317, #319)
 

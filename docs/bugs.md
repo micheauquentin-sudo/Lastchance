@@ -5280,3 +5280,33 @@ suite automatisée qui ne juge que la présence d'un nœud.
 
 Corrigé en alignant le seuil de masquage de l'atelier sur `lg`, conformément
 à l'intention initiale de VIT-27.
+
+## OUVERT (2026-09-05, signalé, non corrigé, VIT-52) — sept info-bulles de création promettent encore l'atelier inconditionnellement
+
+VIT-51 (ADR-167) a fait atterrir sept créations dans le studio sur ordinateur
+et dans l'atelier sur téléphone, mais n'a pas mis à jour le TEXTE des
+info-bulles qui accompagnent leurs formulaires. Elles annoncent toujours
+« l'atelier s'ouvre aussitôt » ou « vous arrivez ensuite dans l'atelier », ce
+qui n'est plus vrai que sur téléphone depuis VIT-51.
+
+Fichiers concernés, vérifiés un par un : `new-calendar-form.tsx`,
+`new-contest-form.tsx`, `new-event-form.tsx`, `new-hunt-form.tsx`,
+`new-loyalty-form.tsx`, `new-jackpot-form.tsx`, `new-quiz-form.tsx` (tous
+sous `src/components/dashboard/`).
+
+VIT-52 a corrigé la même promesse fausse pour le huitième module (jeux
+instantanés, `new-campaign-form.tsx`) au passage, parce qu'elle nommait aussi
+un nombre d'étapes faux (« cinq » contre sept). Les sept autres restent en
+l'état — non corrigées par VIT-52, dont le terrain se limitait au module
+oublié par VIT-51.
+
+## OUVERT (2026-09-05, signalé, non corrigé, VIT-51/VIT-52) — aucun E2E de bureau ne prouve l'atterrissage studio à l'exécution
+
+La garde d'`atterrissage-studio.test.ts` (ADR-167, étendue par ADR-168 en
+VIT-52) est TEXTUELLE : elle prouve qu'une création APPELLE ou RECOPIE la
+bonne destination, jamais qu'un navigateur de bureau atterrit réellement
+dans le studio après un clic sur « Créer ». `e2e/wheel-wizard.spec.ts` reste
+valide sans modification parce que son test de création est `test.skip` hors
+contexte mobile (Pixel 7, 412 px) : il n'affirme donc que la moitié
+« téléphone » de la règle, jamais la moitié « ordinateur ». Ni VIT-51 ni
+VIT-52 n'ont ajouté d'E2E desktop pour la couvrir.

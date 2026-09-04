@@ -152,15 +152,13 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-09-03
-- **Dernier chantier**: **Le studio répond aux retours** (VIT-30 à VIT-32 — PR #322 → #327, ADR-145 à 149). Huit retours d'usage réel sur le studio (V1.73), six lots.
-  **L'enregistrement automatique RENVERSE ADR-137** (VIT-30, ADR-145), sur décision du propriétaire — débours 1,2 s ; la garde vérifie l'ABSENCE d'écriture à l'OUVERTURE, sans quoi l'affichage seul graverait les défauts d'allure hérités.
-  **`fast-uri` en version MAJEURE (4.1.4)** (ADR-146) : récidive du piège `docs/supply-chain.md` §2bis — l'override `^3.1.5` était la borne HAUTE de la plage vulnérable, pas une échappatoire. Validé par build complet.
-  **Horaires structurés** (VIT-31, ADR-147, migration `20261201120000`) : `horaires jsonb`, `grant update` NOMMÉ (piège RDV-12), fuseau du COMMERCE publié.
-  **Piège d'hydratation d'une valeur dépendant de l'heure** (VIT-31c, ADR-148) : `useSyncExternalStore`, `getServerSnapshot` CONSTANT — HTML SSG et premier rendu client identiques par construction.
-  **Le passeport gagne sa première porte publique** (VIT-32, ADR-149) : LISTE `{id, nom}`, pas booléen — le critère est l'ADRESSE, pas le nombre. `theme.jeux` à six clés, l'absence vaut « affiché ».
-  **Deux défauts VIT-30 trouvés par l'usage** (`docs/bugs.md`) : revalidation oubliée sur `/vitrine-studio` ; atelier visible sur grand écran malgré VIT-27.
-  **Reste ouvert** : `docs/supply-chain.md` §2bis à mettre à jour (récidive `fast-uri`) ; reste de V1.74 inchangé.
+- **Date**: 2026-09-05
+- **Dernier chantier**: **Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone** (VIT-52, ADR-168). Huitième et dernier module de la campagne des studios (VIT-38 à VIT-51) à rejoindre l'atterrissage selon l'écran : `createCampaign` redirigeait toujours vers l'atelier, alors que ce module a son studio depuis VIT-46.
+  **Le module n'y était pour rien : c'est la GARDE qui ne l'avait pas vu.** Les sept créations de VIT-51 rejoignaient leur atelier par un APPEL à leur helper d'étape, seule forme surveillée ; `createCampaign` écrivait le même chemin en toutes lettres — un LITTÉRAL recopié, qu'aucune sonde ne reconnaissait comme équivalent. Treize livraisons ont défilé au-dessus sans que rien rougisse.
+  **La sonde lit désormais les formes DANS les helpers qui les construisent** (`baseAtelierX()`), les réduit à leurs morceaux littéraux et les cherche dans les fonctions `create*` — recopier le chemin rougit comme appeler le helper. Elle refuse aussi de mesurer à vide (le défaut de VIT-49).
+  **C'est la BASE de l'atelier qui est nommée, pas sa première étape** : seul module sans vue suivi, l'URL nue de la roue rend déjà l'étape « Le jeu ».
+  **Deux résidus signalés, non corrigés** (`docs/bugs.md`) : sept info-bulles de création promettent encore l'atelier inconditionnellement ; aucun E2E de bureau ne prouve l'atterrissage studio à l'exécution.
+  **Reste ouvert** : sélecteur de figures des pronostics toujours une copie ; `nicknameSchema` à 30 contre 24 ; émetteur Google Wallet jamais testé contre le vrai Google.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

@@ -4,6 +4,17 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-03 — Le studio répond aux retours
+
+**Le studio répond aux retours** (VIT-30 à VIT-32 — PR #322 → #327, ADR-145 à 149). Huit retours d'usage réel sur le studio (V1.73), six lots.
+  **L'enregistrement automatique RENVERSE ADR-137** (VIT-30, ADR-145), sur décision du propriétaire — débours 1,2 s ; la garde vérifie l'ABSENCE d'écriture à l'OUVERTURE, sans quoi l'affichage seul graverait les défauts d'allure hérités.
+  **`fast-uri` en version MAJEURE (4.1.4)** (ADR-146) : récidive du piège `docs/supply-chain.md` §2bis — l'override `^3.1.5` était la borne HAUTE de la plage vulnérable, pas une échappatoire. Validé par build complet.
+  **Horaires structurés** (VIT-31, ADR-147, migration `20261201120000`) : `horaires jsonb`, `grant update` NOMMÉ (piège RDV-12), fuseau du COMMERCE publié.
+  **Piège d'hydratation d'une valeur dépendant de l'heure** (VIT-31c, ADR-148) : `useSyncExternalStore`, `getServerSnapshot` CONSTANT — HTML SSG et premier rendu client identiques par construction.
+  **Le passeport gagne sa première porte publique** (VIT-32, ADR-149) : LISTE `{id, nom}`, pas booléen — le critère est l'ADRESSE, pas le nombre. `theme.jeux` à six clés, l'absence vaut « affiché ».
+  **Deux défauts VIT-30 trouvés par l'usage** (`docs/bugs.md`) : revalidation oubliée sur `/vitrine-studio` ; atelier visible sur grand écran malgré VIT-27.
+  **Reste ouvert** : `docs/supply-chain.md` §2bis à mettre à jour (récidive `fast-uri`) ; reste de V1.74 inchangé.
+
 ## 2026-09-02 — L'identité joueur partagée, pour de vrai
 
 **L'identité joueur partagée, pour de vrai** (ID-6 à ID-8b — PR #314, #315, #317, #319, ADR-141 à 144). Calendrier, pronostics et jackpot adoptent le socle déjà en place pour fidélité et Réserver : cookie du module, puis empreinte d'appareil, puis pont d'ancienneté — cet ORDRE ne s'inverse jamais (ADR-141), sous peine de fusionner en silence des identités le jour d'un déploiement.
