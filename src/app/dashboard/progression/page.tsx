@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getOrgProgression } from "@/actions/meta-progression";
 import { getUserAndOrg } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -58,6 +59,40 @@ export default async function ProgressionPage() {
           value={snapshot.summary.chestsOpened}
         />
       </dl>
+
+      {/* L'ENTRÉE DU STUDIO (VIT-50).
+
+          Le `<h2>` est écrit à la main, comme sur les neuf autres entrées de
+          studio : sans lui la carte n'a AUCUN titre dans l'arbre
+          d'accessibilité — un lecteur d'écran ne l'annonce pas, et les E2E qui
+          cherchent `getByRole("heading")` ne la trouvent pas non plus.
+
+          RIEN N'EST MASQUÉ EN `lg:hidden` ICI, et ce n'est pas un oubli. Les
+          modules qui masquent leur entrée d'atelier au-delà de `lg` en ont un :
+          un parcours `?etape=` qui NAVIGUE, doublé par le studio. La
+          méta-progression n'en a jamais eu — son éditeur est cette page même,
+          d'un seul tenant, et elle porte en plus les gestes de cycle de vie que
+          le studio ne double pas. La masquer retirerait le lancement, la
+          clôture et la suppression aux grands écrans. Même arbitrage que le
+          Ticket d'Or et les salons, qui ne masquent rien non plus. */}
+      {canEdit && (
+        <Card className="mb-6">
+          <h2 className="font-semibold mb-1">Mon studio</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-sm text-k-body">
+              L&apos;écran de vos joueurs au centre, les réglages autour. Vos
+              badges, vos collections, vos missions et vos coffres — tout
+              s&apos;y règle en voyant ce que le client découvrira.
+            </p>
+            <Link
+              href="/studio/progression"
+              className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+            >
+              Ouvrir le studio
+            </Link>
+          </div>
+        </Card>
+      )}
 
       {canEdit && (
         <div className="mb-6">

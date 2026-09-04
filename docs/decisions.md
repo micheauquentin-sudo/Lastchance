@@ -10458,3 +10458,74 @@ ne s'affiche que sur le refus qui la concerne, jamais sur une coupure réseau.
 Le test a rougi, et il avait raison : la reformulation cosmétique rendait sa
 vérification aveugle. **Sur ce dépôt, ne pas lancer un formateur sur un fichier
 qu'on ne réécrit pas entièrement** — plusieurs gardes lisent le texte source.
+
+## ADR-165 — Une étape ne peut pas régler ce qu'aucune action n'écrit
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-50 (méta-progression), onzième module porté sur le socle.
+
+### La trouvaille : il n'existe pas de `updateProgressionSeason`
+
+L'esquisse ouvrait sur « Votre saison et ses dates ». La mesure a montré que ces
+champs **ne sont écrits nulle part après la création** : le nom et les dates
+d'une saison sont fixés une fois, définitivement.
+
+Une étape les affichant aurait donc rendu des champs qu'aucun code ne peut
+enregistrer — le pire cas d'ADR-160, où l'étape n'est pas seulement vide mais
+MENSONGÈRE.
+
+La saison devient donc le SUJET du studio, pas une de ses étapes : brouillon par
+défaut, sélecteur dans `outils` au-delà d'une.
+
+### Cinq étapes au lieu de dix, et l'ordre est une dépendance
+
+`badges` → `collections` → `missions` → `coffres` → `verification`.
+
+Ce n'est pas un goût : une mission OCTROIE un badge ou une pièce, et le
+formulaire de coffre refuse de se rendre sans pièce. Le fil suit donc ce qu'il
+faut avoir créé avant.
+
+Les six étapes tombées, et pourquoi chacune :
+- **déclencheurs**, **clés** — champs de la mission. `updateProgressionMission`
+  réécrit onze colonnes ET pousse une version de règle au journal immuable ; les
+  séparer aurait exigé trois miroirs sur une ligne pour un gain nul.
+- **pièces** — un objet n'existe que dans sa collection, où il est déjà rendu.
+- **passeport** — aucune colonne. C'est l'aperçu.
+- **saison** — voir ci-dessus.
+- **lancer** — fusionnée dans la vérification.
+
+### Le piège d'écrasement se traite par le DÉCOUPAGE, pas par des miroirs
+
+Toutes les actions prennent un objet typé et réécrivent l'entité entière : le
+piège existe à l'échelle de la LIGNE. La parade retenue n'est pas un champ
+caché mais une règle de découpe — **aucune étape ne coupe une entité en deux**.
+C'est plus sûr qu'un miroir, qu'on peut oublier de poser.
+
+### Le lancement ne se double pas, pour une raison plus dure qu'ailleurs
+
+Comme le passeport (ADR-159), l'étape de vérification ne publie pas. Ici
+`activateProgressionSeason` est au coude à coude avec `endProgressionSeason` et
+`deleteProgressionSeason` : doubler le lancement embarquerait son voisin
+destructif, ou séparerait un groupe qui se lit ensemble.
+
+L'étape mesure en revanche les **quatre conditions littérales** de la RPC
+(brouillon, fin non passée, au moins une mission activée, aucune autre saison
+active) et renvoie au tableau de bord.
+
+### Deux défauts trouvés en ÉCRIVANT la garde, pas en relisant
+
+1. **La garde de revalidation par fonction a rougi sur un commentaire** : un
+   `revalidatePath(...)` cité en JSDoc était compté pour le bloc PRÉCÉDENT, qui
+   se voyait alors accusé d'un oubli. Le commentaire ne cite plus l'appel.
+2. **`react-hooks/set-state-in-effect` a refusé le premier aperçu**, et il avait
+   raison : l'état d'aperçu étant reconstruit à chaque rendu, l'effet aurait
+   bouclé. La photo est désormais DÉRIVÉE, ce qui rend en prime l'état serveur
+   structurellement inaffichable en aperçu.
+
+### Signalé et non corrigé : le tableau de bord ne vérifie qu'une condition sur quatre
+
+`ActivateSeason` ne contrôle que « au moins une mission activée ». Un brouillon
+dont la date de fin est passée, ou une seconde saison quand une tourne, y voit
+« Lancer la saison » puis se fait refuser sans motif lisible. Le studio mesure
+les quatre. Corriger le tableau de bord sortait du périmètre du lot.
