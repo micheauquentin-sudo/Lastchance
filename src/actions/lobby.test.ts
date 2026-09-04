@@ -1222,7 +1222,11 @@ describe("closeOrgLobby — le commerçant reprend sa place", () => {
         },
       },
     ]);
-    expect(etat.revalidations).toEqual(["/dashboard/vitrine"]);
+    // « /vitrine-studio » : le studio vit hors de `/dashboard` (VIT-48).
+    expect(etat.revalidations).toEqual([
+      "/dashboard/vitrine",
+      "/vitrine-studio",
+    ]);
   });
 
   it("L'ACTEUR NE VIENT PAS DU FORMULAIRE, même posté en toutes lettres", async () => {
@@ -1270,7 +1274,11 @@ describe("closeOrgLobby — le commerçant reprend sa place", () => {
     expect(
       await closeOrgLobby(null, formFermer({ lobby_id: LOBBY_ID })),
     ).toEqual({ ok: true, data: { etat: "deja-ferme" } });
-    expect(etat.revalidations).toEqual(["/dashboard/vitrine"]);
+    // « /vitrine-studio » : le studio vit hors de `/dashboard` (VIT-48).
+    expect(etat.revalidations).toEqual([
+      "/dashboard/vitrine",
+      "/vitrine-studio",
+    ]);
   });
 
   it("rejouer la fermeture est un non-événement, pas une erreur", async () => {

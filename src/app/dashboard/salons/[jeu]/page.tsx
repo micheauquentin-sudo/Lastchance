@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { BANDE_PACK_DEFAUT } from "@/lib/bande-packs";
@@ -181,6 +182,35 @@ export default async function SalonPage({
             </p>
           )}
         </Card>
+
+        {/* L'ENTRÉE DU STUDIO, et seulement pour qui règle. Un caissier n'y
+            trouverait qu'un écran en lecture seule.
+
+            Le `<h2>` est écrit à la main, comme sur les six autres entrées de
+            studio : sans lui la carte n'a AUCUN titre dans l'arbre
+            d'accessibilité — un lecteur d'écran ne l'annonce pas, et les E2E
+            qui cherchent `getByRole("heading")` ne la trouvent pas non plus. */}
+        {capacites.canEditDraft ? (
+          <Card className="mt-6">
+            <h2 className="font-semibold mb-1">Mon studio</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm text-k-body">
+                La salle de vos clients au centre, les réglages autour.{" "}
+                {jeu === "duo"
+                  ? "Vos questions, votre suggestion du jour"
+                  : "Votre pack de cartes"}
+                , l&apos;habillage du salon et le QR de vos tables — tout s&apos;y
+                règle en voyant ce que le client découvrira.
+              </p>
+              <Link
+                href={`/studio/salon/${jeu}`}
+                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+              >
+                Ouvrir le studio
+              </Link>
+            </div>
+          </Card>
+        ) : null}
 
         <div className="mt-6">
           {jeu === "duo" ? (
