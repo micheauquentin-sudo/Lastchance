@@ -174,10 +174,17 @@ test.describe("pronostics — clôture des récompenses", () => {
     await expect(page.getByText("Coupe du patron").first()).toBeVisible();
     await expect(page.getByText(/PRONO-[A-HJ-NP-Z2-9]{8}/)).toBeVisible();
 
-    // Le règlement est figé : les éditeurs l'affichent clairement. Le
-    // LockedNotice vit dans la porte de l'atelier, repliée par défaut
-    // depuis V1.51.1 — on la déplie d'abord.
-    await ouvrirTuile(page, /Développer «.*L'atelier/);
+    // Le règlement est figé, et le bandeau le dit SUR LA PORTE (VIT-43).
+    //
+    // Il vivait dans l'entrée de l'atelier, repliée par défaut. Cette entrée
+    // est masquée au-delà de `lg` depuis que le studio la remplace, et ce
+    // test ne tourne QUE sur `desktop-smoke` : la déplier ici échouerait sur
+    // un élément hors de l'arbre. Le bandeau est désormais rendu sur la carte
+    // du studio, dépliée d'office — d'où l'assertion directe.
+    //
+    // Ce n'est pas un contournement : sans ce bandeau, un commerçant sur
+    // grand écran ouvrirait le studio pour y trouver tout grisé, sans un mot
+    // pour dire pourquoi.
     await expect(
       page.getByText(/Championnat clôturé : règlement et classement/).first(),
     ).toBeVisible();

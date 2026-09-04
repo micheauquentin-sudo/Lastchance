@@ -117,6 +117,7 @@ const MODULES: Module[] = [
     nom: "championnat",
     base: "/dashboard/pronostics/e2e60000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier du championnat",
+    studio: "Mon studio",
     premiereEtape: "championnat",
     etapes: [
       "championnat",

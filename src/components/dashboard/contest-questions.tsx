@@ -544,9 +544,12 @@ function officialAnswerLabel(question: DashboardQuestion): string | null {
 function QuestionRow({
   question,
   timeZone,
+  saisieResultat,
 }: {
   question: DashboardQuestion;
   timeZone: string;
+  /** Voir `ContestQuestionsCard` : faux = écran de PRÉPARATION. */
+  saisieResultat: boolean;
 }) {
   const {
     state: deleteState,
@@ -608,7 +611,7 @@ function QuestionRow({
           </Button>
         </form>
       </div>
-      <ResultForm question={question} />
+      {saisieResultat && <ResultForm question={question} />}
       <FieldError
         message={deleteState && !deleteState.ok ? deleteState.error : undefined}
       />
@@ -626,6 +629,7 @@ export function ContestQuestionsCard({
   defaultLocksAt,
   timeZone,
   eventKind,
+  saisieResultat = true,
 }: {
   contestId: string;
   questions: DashboardQuestion[];
@@ -633,6 +637,18 @@ export function ContestQuestionsCard({
   timeZone: string;
   /** Modèle de l'événement : pilote les brouillons proposés. */
   eventKind?: string;
+  /**
+   * LA SAISIE DE RÉSULTAT EST DE L'EXPLOITATION, PAS DE LA PRÉPARATION (VIT-43).
+   *
+   * Même arbitrage que `ContestMatchList` : répondre officiellement à une
+   * question attribue les points et déplace le classement public. Le studio
+   * passe donc `false` — la carte garde la création et la suppression, qui
+   * sont la préparation même, et le résultat déjà saisi reste LISIBLE (la
+   * ligne « Résultat : … » n'est pas un formulaire).
+   *
+   * Défaut `true` : le tableau de bord ne change pas d'un pixel.
+   */
+  saisieResultat?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // Brouillon choisi + compteur de remontage du constructeur (changer de
@@ -656,8 +672,10 @@ export function ContestQuestionsCard({
       <h2 className="font-semibold mb-1">Questions</h2>
       <p className="text-sm text-zinc-500 mb-4">
         Au-delà des matchs : choix unique, classement ou estimation chiffrée.
-        Les réponses ferment à l&apos;échéance de chaque question ; saisissez
-        le résultat ensuite, les points sont attribués aussitôt.
+        Les réponses ferment à l&apos;échéance de chaque question ;
+        {saisieResultat
+          ? " saisissez le résultat ensuite, les points sont attribués aussitôt."
+          : " le résultat se saisit ensuite, depuis le suivi du championnat."}
       </p>
 
       {drafts.length > 0 && (
@@ -723,6 +741,7 @@ export function ContestQuestionsCard({
                 key={question.id}
                 question={question}
                 timeZone={timeZone}
+                saisieResultat={saisieResultat}
               />
             ))}
           </ul>
