@@ -109,7 +109,12 @@ export function CampaignWheels({
                   roue et ses lots est le seul vrai travail d'une campagne. */}
               <Link
                 href={`/dashboard/campaigns/${campaignId}/wheel?wheel=${w.id}`}
-                className="k-btn-sm inline-flex shrink-0 items-center rounded-xl border-2 border-k-ink bg-k-yellow px-3 py-2 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+                /* `lg:hidden` : sur grand écran c’est le STUDIO qui règle (VIT-46).
+                   Cette porte par roue reste la seule sur téléphone ; au-delà de
+                   `lg`, la carte « Mon studio » la remplace et son sélecteur de
+                   roue couvre ce que ce lien offrait. Deux chemins pour le même
+                   travail est précisément ce que la demande refuse. */
+                className="k-btn-sm inline-flex shrink-0 items-center rounded-xl border-2 border-k-ink bg-k-yellow px-3 py-2 text-sm font-black text-k-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-k-ink lg:hidden"
               >
                 Régler le jeu et les lots
               </Link>

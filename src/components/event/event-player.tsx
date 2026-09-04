@@ -47,6 +47,7 @@ export function EventPlayer({
   initial,
   hasIdentity,
   realtimeEnabled,
+  apercu = false,
 }: {
   sessionId: string;
   joinCode: string;
@@ -58,13 +59,36 @@ export function EventPlayer({
   initial: EventPublicState;
   hasIdentity: boolean;
   realtimeEnabled: boolean;
+  /**
+   * APERÇU DE STUDIO — aucun geste ne part au serveur (VIT-47).
+   *
+   * Le studio de la soirée montre cette page-ci, la vraie, plutôt qu’une copie
+   * redessinée : une copie se met à mentir dès que la page joueur bouge, et
+   * c’est le seul défaut d’un aperçu qui ne se voit pas (ADR-152). Le drapeau
+   * coupe les TROIS chemins d’écriture du parcours, un par un :
+   *
+   *  · `getEventState` — le poll et l’abonnement Realtime, par `useEventPoll` ;
+   *  · `joinEvent` — l’écran d’inscription n’est jamais monté (donc ni le
+   *    Turnstile, ni le sélecteur d’avatar) ;
+   *  · `submitEventAnswer` — répondre ne fait rien.
+   *
+   * `invitationPasseport` n’est atteignable que par l’écran de FIN : l’aperçu
+   * n’y va pas, et `organizationId` lui est de toute façon retiré ci-dessous —
+   * une coupe structurelle plutôt qu’une promesse.
+   */
+  apercu?: boolean;
 }) {
   const { state, refresh, desynchronise } = useEventPoll(
     sessionId,
     initial,
     realtimeEnabled,
+    apercu,
   );
   const [joined, setJoined] = useState(hasIdentity);
+  // EN APERÇU, ON EST TOUJOURS « dans la place » : l’écran d’inscription ne se
+  // monte donc jamais, et `joinEvent` avec lui. C’est ce qui rend la coupe
+  // STRUCTURELLE — il n’existe aucun bouton à cliquer pour l’atteindre.
+  const joue = joined || apercu;
 
   return (
     <div className="mx-auto max-w-md px-4 py-8">
@@ -108,12 +132,16 @@ export function EventPlayer({
         )}
       </div>
 
-      {joined ? (
+      {joue ? (
         <PlayingArea
           sessionId={sessionId}
           joinCode={joinCode}
           state={state}
-          organizationId={organizationId}
+          /* `null` EN APERÇU : `ProposerPasseport` — seul reste d'action
+             serveur du parcours, via l'écran de fin — ne se rend qu'avec une
+             organisation. La coupe est donc structurelle, pas conditionnelle. */
+          organizationId={apercu ? null : organizationId}
+          apercu={apercu}
           onAfterAction={refresh}
         />
       ) : (
@@ -132,7 +160,7 @@ export function EventPlayer({
           soirée entre amis se joue à distance : le lien est alors le seul moyen
           d'entrer. Il est posé sous la zone de jeu, jamais au milieu d'une
           question — voir le même choix côté quiz. */}
-      {!joined && (
+      {!joue && (
         <PartageLienJeu
           className="mt-4"
           chemin={`/event/${joinCode}`}
@@ -263,6 +291,7 @@ function PlayingArea({
   joinCode,
   state,
   organizationId = null,
+  apercu = false,
   onAfterAction,
 }: {
   sessionId: string;
@@ -270,6 +299,8 @@ function PlayingArea({
   joinCode: string;
   state: EventPublicState;
   organizationId?: string | null;
+  /** Aperçu de studio : répondre ne part pas au serveur (voir `EventPlayer`). */
+  apercu?: boolean;
   onAfterAction: () => void;
 }) {
   const view = viewForPhase(state.session?.phase ?? "lobby");
@@ -296,6 +327,7 @@ function PlayingArea({
         <QuestionPlay
           sessionId={sessionId}
           state={state}
+          apercu={apercu}
           locked={view === "locked"}
           myAnswer={myAnswerForCurrent}
           onAnswered={(optionId) => {
@@ -390,12 +422,15 @@ function QuestionPlay({
   state,
   locked,
   myAnswer,
+  apercu = false,
   onAnswered,
 }: {
   sessionId: string;
   state: EventPublicState;
   locked: boolean;
   myAnswer: string | null;
+  /** Aperçu de studio : `submitEventAnswer` n'est jamais appelée. */
+  apercu?: boolean;
   onAnswered: (optionId: string) => void;
 }) {
   const question = state.question;
@@ -422,6 +457,10 @@ function QuestionPlay({
 
   const choose = async (optionId: string) => {
     if (disabled || pending) return;
+    // APERÇU : les boutons restent cliquables — c'est ce que verra le client, et
+    // un bouton grisé donnerait une fausse idée de sa page — mais le geste
+    // s'arrête ici. La bannière de l'aperçu le dit en toutes lettres.
+    if (apercu) return;
     setPending(optionId);
     setError(null);
     try {

@@ -118,6 +118,11 @@ export async function addPrize(
   }
 
   revalidatePath(`/dashboard/campaigns/${wheel.campaign_id}/wheel`);
+  // LE JUMEAU DU STUDIO. `/studio/roue/[id]` vit HORS de `/dashboard` : aucune
+  // revalidation d'atelier ne l'atteint, Next revalide un CHEMIN et non une
+  // ressource. Sans lui, ajouter un lot depuis le studio réussit et n'apparaît
+  // pas — sur l'écran même où l'on enregistre en regardant (VIT-46).
+  revalidatePath(`/studio/roue/${wheel.campaign_id}`);
   await revalidatePlaySlugs(supabase, { campaignId: wheel.campaign_id });
   return { ok: true, data: undefined };
 }
@@ -231,6 +236,7 @@ export async function updatePrize(
     ?.campaign_id;
   if (campaignId) {
     revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+    revalidatePath(`/studio/roue/${campaignId}`);
     await revalidatePlaySlugs(supabase, { campaignId });
   }
   return { ok: true, data: undefined };
@@ -331,6 +337,7 @@ export async function deletePrize(
     ?.campaign_id;
   if (campaignId) {
     revalidatePath(`/dashboard/campaigns/${campaignId}/wheel`);
+    revalidatePath(`/studio/roue/${campaignId}`);
     await revalidatePlaySlugs(supabase, { campaignId });
   }
   return { ok: true, data: undefined };
@@ -389,6 +396,7 @@ export async function updateWheel(
   // Le type de jeu change le rendu de /play : purge immédiate du cache ISR.
   await revalidatePlaySlugs(supabase, { campaignId: updated.campaign_id });
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
+  revalidatePath(`/studio/roue/${updated.campaign_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -427,6 +435,7 @@ export async function updateWheelSchedule(
 
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}`);
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
+  revalidatePath(`/studio/roue/${updated.campaign_id}`);
   await revalidatePlaySlugs(supabase, { campaignId: updated.campaign_id });
   return { ok: true, data: undefined };
 }
@@ -493,6 +502,7 @@ export async function createWheel(
   if (prizesError) reportError("prizes.create-wheel-prizes", prizesError.message);
 
   revalidatePath(`/dashboard/campaigns/${campaign.id}`);
+  revalidatePath(`/studio/roue/${campaign.id}`);
   await revalidatePlaySlugs(supabase, { campaignId: campaign.id });
   return { ok: true, data: undefined };
 }
@@ -608,6 +618,7 @@ export async function deleteWheel(
   }
 
   revalidatePath(`/dashboard/campaigns/${wheel.campaign_id}`);
+  revalidatePath(`/studio/roue/${wheel.campaign_id}`);
   await revalidatePlaySlugs(supabase, { campaignId: wheel.campaign_id });
   return { ok: true, data: undefined };
 }
@@ -667,6 +678,7 @@ export async function updateWheelStyle(
   }
 
   revalidatePath(`/dashboard/campaigns/${updated.campaign_id}/wheel`);
+  revalidatePath(`/studio/roue/${updated.campaign_id}`);
   // « Vos clients le voient dès maintenant » : purge le cache ISR /play.
   await revalidatePlaySlugs(supabase, { campaignId: updated.campaign_id });
   return { ok: true, data: undefined };

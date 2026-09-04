@@ -10326,3 +10326,135 @@ revalide aussi son studio — en comptant PAR FONCTION (ADR-161).
 Trois suites vérifiaient la liste EXACTE des chemins revalidés et ont rougi sur
 l'ajout. C'est leur mérite : elles attrapent aussi bien un oubli qu'une
 revalidation superflue.
+## ADR-164 — Un sélecteur d'élément n'est pas une modification
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-47 (mode événement live), dixième module porté sur le socle.
+
+### Le piège, et il aurait été silencieux
+
+L'étape « Le temps de réponse et les points » règle une question à la fois,
+choisie dans un sélecteur. `useAutoSaveManuel` s'arme sur toute signature
+différente de la dernière enregistrée — et un état ré-amorcé à chaque bascule du
+sélecteur aurait donc POSTÉ à chaque changement de question.
+
+Le commerçant parcourt ses questions pour les relire, et chaque coup d'œil
+écrit en base. Rien ne le lui dirait : l'écran afficherait « enregistré », ce
+qui serait même vrai.
+
+### Décision — la signature observée est la CARTE des réglages touchés
+
+Pas celle de l'élément ouvert. `enregistrerRythmes` ne poste que ce qui diffère
+du dernier envoi, et une garde le prouve : *changer de sélection n'enregistre
+RIEN*.
+
+La règle générale : **dans un studio, ce qui est OBSERVÉ par l'enregistrement
+automatique doit être ce qui a été MODIFIÉ, jamais ce qui est affiché.** Les
+deux coïncident tant qu'une étape ne montre qu'un objet à la fois ; elles
+divergent dès qu'un sélecteur apparaît.
+
+### Deux vues, une charge — encore
+
+`updateEventQuestion` écrit type, intitulé, temps, points et options d'un seul
+tenant, et `refineQuestion` croise le type et la bonne réponse. « Vos
+questions » et « Le temps de réponse » sont donc deux VUES d'une charge unique :
+`chargeRythmeEvenement` relit le type, l'intitulé et les options depuis la ligne
+serveur avant d'envoyer. La mutation qui force `is_correct: false` fait rougir
+« le type et la bonne réponse survivent à un réglage du chronomètre ».
+
+`updateEventSession` porte le même piège en pire : `input.X ?? ""` transforme
+un champ omis en 0, c'est-à-dire un « podium sans lot » silencieux. La mutation
+qui omet le stock fait rougir les deux gardes de salle.
+
+### TROIS portes d'atelier, et la troisième CHANGE de destination
+
+La leçon de la roue (ADR-162) a servi : on cherche TOUTES les entrées, pas la
+première. Ce module en avait trois — la carte d'atelier (remplacée par « Mon
+studio » au-delà de `lg`), le raccourci de la carte de statut (masqué), et le
+lien « Voir ce qu'il manque ».
+
+Ce troisième ne pouvait pas être masqué : la phrase perdrait sa conclusion. Il
+change donc de DESTINATION selon la taille d'écran, et un seul des deux liens
+est dans l'arbre d'accessibilité à la fois.
+
+### L'aperçu est le vrai lecteur, partiel et annoncé
+
+Les quatre actions du parcours sont coupées une par une sous `apercu` —
+y compris `invitationPasseport`, atteinte par un composant tiers et neutralisée
+en lui passant `organizationId={null}`. `startedAt: null` garde le chronomètre
+plein : simulé, il atteindrait zéro pendant le réglage et afficherait « Temps
+écoulé » sur une partie que personne n'a jouée (ADR-156).
+
+Absents et DITS dans la bannière : l'écran d'inscription, la révélation, le
+classement et l'écran de salle — ils dépendent d'une partie jouée, et les
+fabriquer aurait donné un classement inventé.
+## ADR-162 — Une étape vide pour la plupart des cas n'est pas une étape
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-46 (roue de la fortune), huitième et plus gros module porté
+sur le socle.
+
+### Deux regroupements, la même raison
+
+L'esquisse portait dix étapes ; il en est livré **neuf**.
+
+**« Les couleurs de la roue » et « Les couleurs de la page » sont fusionnées.**
+Douze des vingt réglages d'habillage n'existent que sur le SVG de la roue, et le
+groupe « Ce jeu » n'existe que pour huit des quinze mécaniques. Une étape « Les
+couleurs de la roue » aurait donc été **vide pour la majorité des jeux** — le fil
+annoncerait un travail qui n'existe pas, ce qui est exactement le défaut que le
+ticket d'or a écarté en livrant cinq étapes au lieu de six (ADR-160).
+
+**« Le jeu » garde la mécanique ET la limite de participation.** La contrainte
+TECHNIQUE qui les liait — `updateWheelSchema` exige les deux ensemble — est
+LEVÉE par le socle, puisque la charge part complète quelle que soit l'étape
+ouverte. Le regroupement vient donc d'une contrainte PRODUIT : « Illimité » est
+interdit sur les jeux à secret, et l'option est grisée d'après la mécanique.
+Séparés, le commerçant lirait un refus portant sur un réglage qu'il ne voit pas.
+
+C'est le même argument qui garde `jackpot_campaign_id` avec le mode de
+validation dans le passeport (VIT-42).
+
+### Rien n'est recopié : sept cents lignes extraites
+
+Les quinze mécaniques, les réglages de défi, les vingt contrôles d'habillage et
+le créneau vivaient dans l'atelier. Les dupliquer aurait créé deux vérités sur
+ce qu'est une mécanique valide. Ils sont **extraits** vers quatre modules que
+les deux écrans montent ; la seule différence est la présence des `name` —
+charge utile dans l'atelier, absents dans le studio.
+
+### L'étape est portée AU-DESSUS du remontage
+
+Changer de roue remonte le studio (`key`). Si l'étape vivait sous ce remontage,
+les trois signatures d'enregistrement automatique bougeraient d'un coup et les
+trois actions partiraient toutes seules sur la roue qu'on vient d'ouvrir.
+
+### La roue n'avait pas de carte d'atelier à masquer, et c'est le piège
+
+Les six modules précédents ont une carte d'entrée unique, qu'on masque au-delà
+de `lg`. La roue, non : on entre dans son atelier par « Modifier dans
+l'atelier » dans la carte de statut, ET par un lien « Régler » sur CHAQUE roue
+de la campagne.
+
+Livrée sans arbitrage, la carte « Mon studio » se serait donc ajoutée à ces deux
+portes au lieu de les remplacer : sur grand écran, **deux chemins pour le même
+travail**, ce que la demande refuse explicitement. Les deux entrées passent donc
+en `lg:hidden`.
+
+`RaccourciAtelier` lui-même n'est PAS touché : quatre modules le montent, et le
+masquer chez lui les masquerait tous. Le masquage est posé sur son emplacement.
+
+### Ce qu'une garde textuelle a appris sur les formateurs
+
+Le masquage a d'abord été posé avec un `prettier --write` sur les deux fichiers.
+Ils n'étaient pas au format : prettier a reformaté des dizaines de lignes sans
+rapport, dont une condition qu'il a coupée sur trois lignes. Or
+`destructive-confirm-coverage` la cherche **sur une seule** — elle vérifie
+qu'une case « je comprends que les codes non retirés deviendront introuvables »
+ne s'affiche que sur le refus qui la concerne, jamais sur une coupure réseau.
+
+Le test a rougi, et il avait raison : la reformulation cosmétique rendait sa
+vérification aveugle. **Sur ce dépôt, ne pas lancer un formateur sur un fichier
+qu'on ne réécrit pas entièrement** — plusieurs gardes lisent le texte source.

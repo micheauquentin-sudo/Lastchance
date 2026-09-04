@@ -29,10 +29,25 @@ import { createClient } from "@/lib/supabase/client";
  */
 const EVENT_DESYNC_FAILURES = 2;
 
+/**
+ * LE MODE INERTE — pour l'aperçu d'un studio, et pour rien d'autre (VIT-47).
+ *
+ * L'aperçu du studio de la soirée monte le VRAI `EventPlayer`, parce qu'un
+ * aperçu redessiné se met à mentir dès que la page joueur bouge (ADR-152). Mais
+ * la page joueur, elle, interroge le serveur : `getEventState` toutes les deux
+ * secondes et demie, sur une session que le commerçant n'anime pas. L'aperçu
+ * écraserait alors l'état fabriqué par une lecture réelle — donc « salle
+ * fermée » sur la moitié des écrans de réglage — tout en tenant un canal
+ * Realtime ouvert pendant qu'on règle un lot.
+ *
+ * `inerte` coupe les deux : aucun poll, aucun abonnement, aucun appel serveur.
+ * L'état rendu reste EXACTEMENT celui qu'on a passé en `initial`.
+ */
 export function useEventPoll(
   sessionId: string,
   initial: EventPublicState,
   realtimeEnabled = false,
+  inerte = false,
 ): { state: EventPublicState; refresh: () => void; desynchronise: boolean } {
   const [state, setState] = useState<EventPublicState>(initial);
   // Miroir en STATE du compteur d'échecs : `failureCountRef` pilote la cadence
@@ -57,6 +72,10 @@ export function useEventPoll(
   }, []);
 
   const fetchOnce = useCallback((): Promise<void> => {
+    // AUCUN APPEL SERVEUR EN MODE INERTE — la garde est ici et pas seulement
+    // dans l'effet, parce que `refresh` est exposé au composant : le bandeau
+    // « Actualiser » d'un aperçu doit rester inoffensif s'il s'affiche.
+    if (inerte) return Promise.resolve();
     if (inFlightRef.current) return inFlightRef.current;
 
     const task = (async () => {
@@ -87,9 +106,11 @@ export function useEventPoll(
 
     inFlightRef.current = task;
     return task;
-  }, [noteFailure, sessionId]);
+  }, [inerte, noteFailure, sessionId]);
 
   useEffect(() => {
+    // Aucun minuteur, aucun écouteur : un aperçu ne poll pas.
+    if (inerte) return;
     mountedRef.current = true;
     let disposed = false;
 
@@ -140,10 +161,10 @@ export function useEventPoll(
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [fetchOnce]);
+  }, [fetchOnce, inerte]);
 
   useEffect(() => {
-    if (!realtimeEnabled) return;
+    if (!realtimeEnabled || inerte) return;
 
     // Realtime raccourcit le délai de rafraîchissement, mais le polling reste
     // la source de vérité. Une configuration navigateur incomplète (URL/clé
@@ -222,7 +243,7 @@ export function useEventPoll(
     } catch {
       return;
     }
-  }, [fetchOnce, realtimeEnabled, sessionId]);
+  }, [fetchOnce, inerte, realtimeEnabled, sessionId]);
 
   const refresh = useCallback(() => {
     void fetchOnce().finally(() => schedulePollRef.current());

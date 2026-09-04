@@ -182,6 +182,19 @@
   projet, alors qu'en CI (Linux) il passait. Une garde verte là où personne ne
   regarde et rouge là où tout le monde travaille apprend à ignorer une ligne
   rouge.
+- **VIT-46 — La roue de la fortune passe au studio** (ADR-162). **Neuf**
+  étapes et non dix : les deux étapes de couleurs sont fusionnées parce que
+  douze réglages n'existent que sur le SVG de la roue et que « Ce jeu » ne
+  concerne que huit mécaniques sur quinze — une étape vide pour la majorité des
+  jeux annoncerait un travail inexistant. « Le jeu » garde mécanique ET limite,
+  non par contrainte technique (le socle la lève) mais PRODUIT : « Illimité »
+  est grisé d'après la mécanique, et séparés le commerçant lirait un refus sur
+  un réglage invisible. Sept cents lignes **extraites** plutôt que recopiées.
+  Quinze `revalidatePath` jumelés, gardés par comptage PAR FONCTION.
+  La roue n'avait pas de carte d'atelier à masquer mais **deux** portes (statut
+  et lien par roue) : livrée telle quelle, la carte « Mon studio » s'y serait
+  ajoutée au lieu de les remplacer — deux chemins pour le même travail. Les deux
+  passent en `lg:hidden`.
 
 - **VIT-44 — Le jackpot collectif passe au studio** (ADR-161). Huit étapes,
   route `/studio/cagnotte/[id]`. Son code NOMMAIT le défaut : `updateJackpotCampaign`
@@ -209,8 +222,19 @@
   **Troisième occurrence du défaut VIT-37 fermée** : `setDuoOptions`,
   `setBandePack` et `closeLobbyAsOrg` revalidaient la vitrine du tableau de
   bord sans son studio. Garde par fonction posée.
-
-**Décisions** : ADR-145 à ADR-163.
+- **VIT-47 — Le mode événement live passe au studio** (ADR-164). Sept étapes,
+  route `/studio/soiree/[id]`, aucun regroupement — l'étape « rythme » gagne sa
+  place parce qu'on y règle le chronomètre EN VOYANT la barre de décompte.
+  **Un sélecteur d'élément n'est pas une modification** : la signature observée
+  par l'enregistrement automatique est la carte des réglages TOUCHÉS, pas celle
+  de la question ouverte — sinon parcourir ses questions pour les relire aurait
+  écrit en base à chaque coup d'œil, en affichant « enregistré ».
+  `updateEventQuestion` écrit cinq colonnes d'un tenant et `updateEventSession`
+  transforme un champ omis en « podium sans lot » : les deux charges sont
+  relues depuis la ligne serveur avant envoi. **TROIS portes d'atelier**
+  traitées, dont une qui change de destination au lieu de disparaître — la
+  phrase perdrait sa conclusion.
+**Décisions** : ADR-145 à ADR-164.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

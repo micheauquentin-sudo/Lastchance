@@ -808,6 +808,10 @@ export async function saveReferralProgram(input: {
   }
 
   revalidatePath(`/dashboard/campaigns/${parsed.data.campaignId}`);
+  // LE JUMEAU DU STUDIO. L'étape « Faire venir d'autres clients » monte ce
+  // même bloc depuis `/studio/roue/[id]`, qui vit HORS de `/dashboard` : Next
+  // revalide un CHEMIN, pas une ressource (VIT-46).
+  revalidatePath(`/studio/roue/${parsed.data.campaignId}`);
   // Le flag/États du parrainage sont rendus dans le HTML ISR de /play/[slug] :
   // purge le cache des QR de la campagne pour que l'activation/désactivation
   // s'y reflète sans attendre l'expiration ISR (30 s).
