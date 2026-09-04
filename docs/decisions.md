@@ -10016,6 +10016,69 @@ indices » sont donc deux vues d'un seul éditeur (`champs` = `libelles` |
 `indices` | `tout`), et le champ non montré part en champ caché avec sa valeur
 serveur. Deux éditeurs auraient été deux vérités sur une même ligne.
 
+## ADR-159 — Une colonne n'a qu'un seul porteur, et la garde compte dans TOUT le document
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-42 (passeport de fidélité), cinquième module porté sur le socle.
+
+### Le piège était visible dans le code, et rien ne le gardait
+
+`updateLoyaltyProgram` met à jour TOUTES ses colonnes. C'est pourquoi
+`LoyaltySettings` repostait `silver_threshold`/`gold_threshold` en champs
+cachés, pendant que `LoyaltyTiersForm` repostait le nom, le mode, la rotation,
+la fréquence et le jackpot. Chacun rejouait les réglages de l'autre.
+
+**Ces miroirs ne sont sûrs que parce que les deux formulaires ne sont JAMAIS à
+l'écran ensemble.** C'est un invariant réel — et rien, mécaniquement, ne le
+tenait. Un studio qui les affiche côte à côte avec enregistrement automatique
+aurait produit deux écrivains concurrents sur les mêmes colonnes.
+
+### Décision — la garde compte les porteurs dans le DOCUMENT, pas dans le formulaire
+
+Une source unique fait disparaître les miroirs. Mais la garde qui l'exige ne
+peut pas se contenter d'inspecter le formulaire : **un miroir vit précisément
+dans le formulaire VOISIN**. Elle compte donc, pour chaque colonne du programme,
+combien d'endroits du rendu la portent — et exige exactement un.
+
+`id` en est exclu, parce que chaque ligne de palier poste le sien.
+**L'exclusion est justifiée en commentaire**, sans quoi la garde serait désarmée
+en bloc à la première rougeur légitime — le sort habituel d'une garde qu'on ne
+comprend plus.
+
+La mutation qui compte : réintroduire le champ caché de l'atelier. Elle rougit
+avec « ces colonnes ont deux écrivains : silver_threshold ». C'est la différence
+entre supprimer un piège et prouver qu'il ne peut pas revenir.
+
+### Trois canaux, un seul état — et pourquoi on ne rapatrie pas
+
+`updateLoyaltyProgramStyle` et `updateLoyaltyProgramReferral` existent PARCE
+QUE la première action écrase. Les rapatrier dans le formulaire de la coquille
+aurait annulé la protection pour laquelle elles ont été écrites. Elles partent
+donc par leur propre canal, depuis le même état (ADR-156).
+
+### L'aperçu montre le PREMIER SCAN, pas un client d'exemple
+
+La maquette existante affichait « 42 points » et une jauge aux deux tiers.
+Reprendre ce solde aurait fait régler les seuils sur un client qui n'existe pas.
+L'aperçu part donc de zéro point, zéro visite, bronze — l'écran du premier scan.
+Les seuils et les prix viennent de la saisie en cours, donc la jauge bouge sous
+les yeux du commerçant.
+
+Quatre blocs du vrai passeport sont exportés plutôt que redessinés ; trois sont
+des fonctions pures de leurs props, le quatrième n'a qu'un chemin serveur, coupé
+par `apercu`. Le composant joueur n'est pas défiguré.
+
+### L'étape de vérification NE PUBLIE PAS
+
+`AtelierVerificationFidelite` porte déjà, en toutes lettres : « l'ouverture se
+fait sur l'écran de suivi, c'est le seul endroit qui publie ». Doubler ce geste
+dans le studio aurait aussi embarqué la **suppression** du programme et de tous
+ses passeports — deux vérités sur le geste le plus lourd du module.
+
+C'est un écart avec le calendrier et le quiz, qui montent leurs contrôles de
+statut dans leur vérification. L'écart suit le module, pas le patron : c'est le
+passeport qui a raison, et les deux autres méritent un second regard.
 ## ADR-158 — Un écran gelé ne montre pas un automatisme éteint
 
 **Date** : 2026-09-04

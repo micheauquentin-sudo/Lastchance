@@ -401,38 +401,11 @@ export function LoyaltyPassport({
   return (
     <div className="mx-auto max-w-md px-4 py-8">
       {/* ── En-tête commerce + programme ── */}
-      <header className="mb-6 text-center">
-        {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={organizationName}
-            width={56}
-            height={56}
-            className="mx-auto mb-3 h-14 w-14 rounded-full border-2 border-k-ink bg-white object-cover"
-          />
-        ) : (
-          /* MÊME DISQUE QUE LE LOGO, et ce n'est pas une coquetterie.
-             Depuis que le passeport peut porter un fond d'écran, un emoji
-             posé à nu sur une photo n'a plus aucune surface garantie sous
-             lui : le voile crème du haut le sauve la plupart du temps, une
-             illustration claire ou chargée à cet endroit ne le sauve pas.
-             Le disque blanc bordé d'encre est la surface que le logo importé
-             a déjà — les deux états de l'en-tête se ressemblent enfin. */
-          <div
-            aria-hidden
-            className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-k-ink bg-white text-3xl"
-          >
-            🎟️
-          </div>
-        )}
-        <p className="text-xs font-bold uppercase tracking-wide text-k-body">
-          {organizationName}
-        </p>
-        <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">
-          {programName}
-        </h1>
-      </header>
+      <EntetePasseport
+        logoUrl={logoUrl}
+        organizationName={organizationName}
+        programName={programName}
+      />
 
       {/* ── « COMMENT ÇA MARCHE ? » — juste sous l'en-tête, avant tout chiffre.
              La question que se pose un client qui découvre l'écran vient AVANT
@@ -578,6 +551,60 @@ export function LoyaltyPassport({
   );
 }
 
+/**
+ * L'EN-TÊTE DE LA CARTE — le commerce, puis le programme.
+ *
+ * EXTRAIT (VIT-42) pour que le studio du passeport monte le VRAI en-tête au
+ * lieu d'en redessiner un approchant. Une copie aurait été un second en-tête à
+ * tenir d'accord avec celui-ci, et un aperçu qui se met à mentir dès que l'un
+ * des deux bouge (ADR-152). Il ne lit rien, n'appelle rien : c'est une fonction
+ * de ses trois props.
+ */
+export function EntetePasseport({
+  logoUrl,
+  organizationName,
+  programName,
+}: {
+  logoUrl: string | null;
+  organizationName: string;
+  programName: string;
+}) {
+  return (
+    <header className="mb-6 text-center">
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={organizationName}
+          width={56}
+          height={56}
+          className="mx-auto mb-3 h-14 w-14 rounded-full border-2 border-k-ink bg-white object-cover"
+        />
+      ) : (
+        /* MÊME DISQUE QUE LE LOGO, et ce n'est pas une coquetterie.
+           Depuis que le passeport peut porter un fond d'écran, un emoji
+           posé à nu sur une photo n'a plus aucune surface garantie sous
+           lui : le voile crème du haut le sauve la plupart du temps, une
+           illustration claire ou chargée à cet endroit ne le sauve pas.
+           Le disque blanc bordé d'encre est la surface que le logo importé
+           a déjà — les deux états de l'en-tête se ressemblent enfin. */
+        <div
+          aria-hidden
+          className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border-2 border-k-ink bg-white text-3xl"
+        >
+          🎟️
+        </div>
+      )}
+      <p className="text-xs font-bold uppercase tracking-wide text-k-body">
+        {organizationName}
+      </p>
+      <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">
+        {programName}
+      </h1>
+    </header>
+  );
+}
+
 function LinkedJackpotCard({ jackpot }: { jackpot: LoyaltyLinkedJackpotState }) {
   const router = useRouter();
   const ratio = jackpot.threshold > 0
@@ -648,7 +675,14 @@ function LinkedJackpotCard({ jackpot }: { jackpot: LoyaltyLinkedJackpotState }) 
  * DONNAIT la récompense sans rien demander. Celui qui avait des points en
  * attente au moment de la bascule ne doit pas croire qu'on les lui a pris.
  */
-function SoldePanel({
+/**
+ * EXPORTÉ POUR LE STUDIO (VIT-42) — et rien d'autre n'a changé.
+ *
+ * Ce bloc ne lit aucune donnée et n'appelle aucune action : il est une fonction
+ * pure de ses trois props. Le studio du passeport le monte TEL QUEL, plutôt que
+ * d'en redessiner une maquette approchante (ADR-152).
+ */
+export function SoldePanel({
   pointsBalance,
   visitCount,
   goal,
@@ -737,7 +771,8 @@ function SoldePanel({
   );
 }
 
-function TierPanel({
+/** EXPORTÉ POUR LE STUDIO (VIT-42) — pur, comme `SoldePanel`. */
+export function TierPanel({
   tier,
   pointsEarnedTotal,
   progress,
@@ -1534,12 +1569,21 @@ function LotReward({ reward }: { reward: EarnedReward }) {
 // bouton grisé sans phrase laisse le client croire que l'écran est cassé.
 // ────────────────────────────────────────────────────────────
 
-function BoutiquePaliers({
+/**
+ * LA BOUTIQUE — EXPORTÉE POUR LE STUDIO (VIT-42), AVEC UN SEUL CHEMIN COUPÉ.
+ *
+ * `apercu` neutralise l'unique chose qui PARLE AU SERVEUR : l'échange, qui
+ * débite les points d'un client et brûle un stock au nom du commerçant. Rien
+ * d'autre n'est touché — pas une classe, pas un bloc, pas un message. C'est
+ * exactement le contrat du drapeau `apercu` de `CalendarTracker` (VIT-39).
+ */
+export function BoutiquePaliers({
   programId,
   milestones,
   pointsBalance,
   hasPassport,
   onEchange,
+  apercu = false,
 }: {
   programId: string;
   milestones: LoyaltyMilestoneView[];
@@ -1547,6 +1591,8 @@ function BoutiquePaliers({
   /** Sans passeport ouvert, il n'y a rien à dépenser : on invite à tamponner. */
   hasPassport: boolean;
   onEchange: (outcome: LoyaltySpendOutcome) => void;
+  /** Studio : l'écran se regarde, il ne dépense pas. Voir l'en-tête. */
+  apercu?: boolean;
 }) {
   if (milestones.length === 0) return null;
   const ordered = [...milestones].sort((a, b) => a.costPoints - b.costPoints);
@@ -1569,6 +1615,7 @@ function BoutiquePaliers({
               pointsBalance={pointsBalance}
               hasPassport={hasPassport}
               onEchange={onEchange}
+              apercu={apercu}
             />
           </li>
         ))}
@@ -1583,12 +1630,14 @@ function CartePalierBoutique({
   pointsBalance,
   hasPassport,
   onEchange,
+  apercu = false,
 }: {
   programId: string;
   milestone: LoyaltyMilestoneView;
   pointsBalance: number;
   hasPassport: boolean;
   onEchange: (outcome: LoyaltySpendOutcome) => void;
+  apercu?: boolean;
 }) {
   const [pending, setPending] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -1604,7 +1653,9 @@ function CartePalierBoutique({
   const bloque = milestone.soldOut || !abordable || !hasPassport;
 
   const echanger = async () => {
-    if (pending) return;
+    // LE SEUL CHEMIN COUPÉ PAR L'APERÇU : `spendLoyaltyPoints` débite un client
+    // et brûle un stock. Le studio montre la carte, il ne la dépense pas.
+    if (pending || apercu) return;
     setErreur(null);
     setPending(true);
     requestIdRef.current ??= crypto.randomUUID();

@@ -340,13 +340,68 @@ export default async function LoyaltyDetailPage({
             />
           </CarteRepliable>
 
-          <CarteRepliable
-            {...carteTuile(tuiles, "atelier")}
-            defaultOuvert={false}
-            resume={`${ETAPES_FIDELITE.length} étapes de préparation.`}
-          >
-            <CarteEntreeAtelier programId={p.id} />
-          </CarteRepliable>
+          {/* ── LE STUDIO EST LE CHEMIN PRINCIPAL SUR GRAND ÉCRAN (VIT-42) ──
+
+              Tout s'y règle en voyant la carte du client. La carte est donc
+              OUVERTE d'emblée : un commerçant qui vient régler quelque chose
+              doit tomber dessus, pas la déplier.
+
+              Elle ne s'affiche qu'à partir de `lg`, parce que le studio est à
+              deux colonnes : en dessous, elles s'empilent et l'aperçu passe
+              sous les réglages, ce qui lui retire sa raison d'être. Même
+              arbitrage, et même motif, que le calendrier et le quiz.
+
+              LA PASTILLE DE PRÉPARATION SUIT L'ENTRÉE PRINCIPALE : elle
+              appartient à la préparation, pas à un écran. Sur grand écran,
+              c'est le studio. */}
+          <div className="hidden lg:block">
+            <CarteRepliable
+              {...carteTuile(tuiles, "atelier")}
+              titre="Mon studio"
+              defaultOuvert
+              resume={`${milestones.length} cadeau${milestones.length > 1 ? "x" : ""} — tout se règle ici, en voyant le résultat.`}
+            >
+              {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N'EST PAS
+                  DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+                  `<span>` — jamais un heading — précisément parce que le bloc
+                  qu'elle enveloppe en porte déjà un du même nom (voir son
+                  en-tête). Sans ce `<h2>`, la carte n'a AUCUN titre dans
+                  l'arbre d'accessibilité : un lecteur d'écran ne l'annonce
+                  pas, et les E2E qui cherchent `getByRole("heading")` ne la
+                  trouvent pas non plus. */}
+              <Card>
+                <h2 className="font-semibold mb-1">Mon studio</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm text-k-body">
+                    La carte de vos clients au centre, les réglages autour. Le
+                    nom, la façon de valider une visite, les niveaux, les
+                    cadeaux, le parrainage et l&apos;allure — tout s&apos;y
+                    règle en voyant le résultat.
+                  </p>
+                  <Link
+                    href={`/studio/fidelite/${p.id}`}
+                    className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+                  >
+                    Ouvrir le studio
+                  </Link>
+                </div>
+              </Card>
+            </CarteRepliable>
+          </div>
+
+          {/* L'ATELIER RESTE, POUR LE TÉLÉPHONE. Ce qui est masqué au-delà de
+              `lg` est l'ENTRÉE, jamais la ROUTE : `?etape=` demeure atteignable
+              sur n'importe quelle taille d'écran — une adresse d'étape gardée
+              en favori doit continuer de mener quelque part. */}
+          <div className="lg:hidden">
+            <CarteRepliable
+              {...carteTuile(tuiles, "atelier")}
+              defaultOuvert={false}
+              resume={`${ETAPES_FIDELITE.length} étapes de préparation.`}
+            >
+              <CarteEntreeAtelier programId={p.id} />
+            </CarteRepliable>
+          </div>
 
           {canViewStats && (
             <CarteRepliable
