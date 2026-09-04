@@ -83,6 +83,24 @@ import { headers } from "next/headers";
 // ────────────────────────────────────────────────────────────
 
 /**
+ * CHAQUE REVALIDATION DE L'ATELIER A SON JUMEAU DE STUDIO (VIT-43).
+ *
+ * Le studio du championnat vit à `/studio/pronostics/[id]`, HORS de
+ * `/dashboard` — c'est ce qui lui retire la colonne de navigation et lui donne
+ * la largeur de son aperçu. Next revalide un CHEMIN, pas une ressource : aucun
+ * `revalidatePath('/dashboard/pronostics/…')` ne l'atteint donc, et une action
+ * qui réussit y laisse l'écran sur la version d'avant.
+ *
+ * Ce n'est pas une précaution : c'est le défaut VIT-37, puis VIT-39, puis
+ * VIT-41, mot pour mot. Il coûte un lot à trouver parce que rien ne casse —
+ * l'action répond « enregistré », et elle dit vrai. Chacun des dix-sept appels
+ * détaillés porte donc son jumeau, et
+ * `src/components/pronos/studio/revalidation-studio.test.ts` échoue s'il en
+ * manque un ; il DÉRIVE sa liste de ce fichier, donc une action ajoutée demain
+ * entre dans la garde toute seule.
+ */
+
+/**
  * Messages lisibles pour les refus des RPC de règlement (gel,
  * clôture, transitions) — le détail technique part en console.
  */
@@ -294,6 +312,7 @@ export async function syncContest(
   try {
     const summary = await syncContestFixtures(createAdminClient(), contest);
     revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    revalidatePath(`/studio/pronostics/${contest.id}`);
     revalidatePath(`/pronos/${contest.slug}`);
     return { ok: true, data: summary };
   } catch (err) {
@@ -502,6 +521,7 @@ export async function updateContest(
 
   revalidatePath("/dashboard/pronostics");
   revalidatePath(`/dashboard/pronostics/${id}`);
+  revalidatePath(`/studio/pronostics/${id}`);
   if (slug) revalidatePath(`/pronos/${slug}`);
   return { ok: true, data: undefined };
 }
@@ -555,6 +575,7 @@ export async function updateContestScoring(
   }
 
   revalidatePath(`/dashboard/pronostics/${id}`);
+  revalidatePath(`/studio/pronostics/${id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -613,6 +634,7 @@ export async function updateContestGenericScoring(
   }
 
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/studio/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -663,6 +685,7 @@ export async function updateContestRewards(
   }
 
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/studio/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -740,6 +763,7 @@ export async function updateContestTiebreaker(
   }
 
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/studio/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -830,6 +854,7 @@ export async function updateContestEventSettings(
   }
 
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/studio/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -885,6 +910,7 @@ export async function finalizeContest(
 
   revalidatePath("/dashboard/pronostics");
   revalidatePath(`/dashboard/pronostics/${parsed.data.id}`);
+  revalidatePath(`/studio/pronostics/${parsed.data.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -923,6 +949,7 @@ export async function setContestAwardStatus(
 
   const contestId = String(formData.get("contest_id") ?? "");
   if (contestId) revalidatePath(`/dashboard/pronostics/${contestId}`);
+  if (contestId) revalidatePath(`/studio/pronostics/${contestId}`);
   return { ok: true, data: undefined };
 }
 
@@ -1019,6 +1046,7 @@ export async function addMatch(
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/studio/pronostics/${contest.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -1153,6 +1181,7 @@ export async function addContestMatches(
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/studio/pronostics/${contest.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: { inserted: rows.length } };
 }
@@ -1245,6 +1274,7 @@ export async function addContestQuestion(
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/studio/pronostics/${contest.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -1289,6 +1319,7 @@ export async function deleteMatch(
   }
 
   revalidatePath(`/dashboard/pronostics/${match.contest_id}`);
+  revalidatePath(`/studio/pronostics/${match.contest_id}`);
   const slug = (match.contests as unknown as { slug: string } | null)?.slug;
   if (slug) revalidatePath(`/pronos/${slug}`);
   return { ok: true, data: undefined };
@@ -1348,6 +1379,7 @@ export async function setMatchResult(
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/studio/pronostics/${contest.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -1467,6 +1499,7 @@ export async function setQuestionResult(
   }
 
   revalidatePath(`/dashboard/pronostics/${contest.id}`);
+  revalidatePath(`/studio/pronostics/${contest.id}`);
   revalidatePath(`/pronos/${contest.slug}`);
   return { ok: true, data: undefined };
 }
@@ -2912,6 +2945,7 @@ export async function importContestRound(input: {
     );
 
     revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    revalidatePath(`/studio/pronostics/${contest.id}`);
     if (contest.slug) revalidatePath(`/pronos/${contest.slug}`);
     return { ok: true, data: summary };
   } catch (err) {
@@ -3052,6 +3086,7 @@ export async function importContestSeason(input: {
     }
 
     revalidatePath(`/dashboard/pronostics/${contest.id}`);
+    revalidatePath(`/studio/pronostics/${contest.id}`);
     if (contest.slug) revalidatePath(`/pronos/${contest.slug}`);
     return { ok: true, data: total };
   } catch (err) {

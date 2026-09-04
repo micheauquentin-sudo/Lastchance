@@ -10079,3 +10079,56 @@ ses passeports — deux vérités sur le geste le plus lourd du module.
 C'est un écart avec le calendrier et le quiz, qui montent leurs contrôles de
 statut dans leur vérification. L'écart suit le module, pas le patron : c'est le
 passeport qui a raison, et les deux autres méritent un second regard.
+## ADR-158 — Un écran gelé ne montre pas un automatisme éteint
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-43 (pronostics), quatrième module porté sur le socle.
+
+Un championnat **verrouillé** (RPC `contest_is_locked`) ou **clôturé** refuse
+toute modification sans motif écrit. Le socle, lui, enregistre en continu. Les
+deux règles se rencontrent ici pour la première fois.
+
+### Décision — un seul verdict alimente les deux consommateurs
+
+`reglagesEditablesContest()` rend UN booléen, passé à la fois à
+`useEnregistrementDepuisEtat` (qui n'arme plus son minuteur) et à `peutEditer`
+de `CoquilleStudio` (qui retire le bouton et l'indicateur).
+
+**Conséquence assumée** : sur un championnat gelé, le studio n'affiche NI
+« Enregistrement automatique » NI « Enregistrer ». Il aurait été plus simple de
+ne couper que l'envoi — mais l'écran aurait alors annoncé un automatisme éteint,
+c'est-à-dire ADR-153 pris par l'autre bout : un écran qui dit le contraire de ce
+qu'il fait. Un bandeau nomme la porte : les corrections motivées restent au
+suivi.
+
+C'est **plus strict que l'atelier**, qui laisse aujourd'hui le renommage
+s'auto-enregistrer sur un championnat verrouillé. L'écart est délibéré et vaut
+d'être noté : l'atelier reste la surface téléphone, et son comportement n'a pas
+été touché dans ce lot.
+
+### Ce que le gel a exigé côté garde
+
+Deux assertions distinctes — verrouillé, clôturé — et la mutation qui rend
+l'automatisme inconditionnel (`actif: peutEditer`) fait rougir exactement ces
+deux-là, aucune autre.
+
+### `after()` n'est PAS reproduit dans la page studio
+
+La page du tableau de bord déclenche une synchronisation de calendrier en
+arrière-plan **au rendu**. Or chaque écriture du studio revalide sa propre
+route : la page se re-rend à chaque enregistrement automatique, donc à chaque
+réglage. Reproduire `after()` aurait appelé le fournisseur de calendriers
+plusieurs fois par minute pendant qu'un commerçant choisit ses couleurs.
+
+### L'en-tête de l'aperçu est une COPIE, et c'est le seul endroit où j'accepte
+
+Le reste de l'aperçu monte le vrai `PlayerHub` avec des slots figés. L'en-tête,
+lui, est recopié : sans lui, le nom du championnat et le thème — les étapes 1
+et 3 — n'auraient AUCUN effet visible, ce qui est le pire des aperçus.
+
+La copie est gardée par un test textuel qui compare quatre chaînes de classes
+entre l'aperçu et `/pronos/[slug]`. C'est un compromis, pas un modèle : la
+garde dit qu'elles se ressemblent, pas qu'elles se comportent pareil. La sortie
+propre serait d'exporter l'en-tête du composant public — chantier à part, comme
+l'unification des trois `AvatarPicker` divergents.
