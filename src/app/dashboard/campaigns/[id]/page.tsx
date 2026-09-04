@@ -285,6 +285,61 @@ export default async function CampaignDetailPage({
         />
       </div>
 
+      {/* MON STUDIO — L'ENTRÉE PRINCIPALE, SUR GRAND ÉCRAN SEULEMENT (VIT-46).
+          Même disposition que les six modules déjà portés : la carte est
+          dépliée d'office, parce qu'une entrée qu'il faut déplier n'est pas une
+          entrée.
+
+          `hidden lg:block` : sous ce point de rupture, le studio n'a pas la
+          largeur de ses deux colonnes, et c'est l'atelier
+          (`/dashboard/campaigns/[id]/wheel`) qui reste le bon écran. Ce qui est
+          masqué est l'ENTRÉE, jamais la ROUTE — `/studio/roue/[id]` demeure
+          atteignable sur n'importe quelle taille d'écran, une adresse gardée en
+          favori doit continuer de mener quelque part.
+
+          CE MODULE N'A PAS DE CARTE D'ATELIER À MASQUER EN FACE, et c'est une
+          différence réelle avec les six autres : son entrée d'atelier n'a
+          jamais vécu sur cette page. Elle est portée par « Modifier dans
+          l'atelier » dans la carte de statut (`campaign-settings.tsx`) et par
+          le lien « Régler » de chaque roue (`campaign-wheels.tsx`) — deux
+          entrées PAR ROUE, que masquer au-delà de `lg` retirerait le seul
+          chemin vers `?wheel=`. Elles restent donc en place. */}
+      <div className="mb-6 hidden lg:block">
+        <CarteRepliable
+          titre="Mon studio"
+          defaultOuvert
+          resume={
+            wheelList.length > 1
+              ? `${wheelList.length} jeux — tout se règle ici, en voyant le résultat.`
+              : "Tout se règle ici, en voyant le résultat."
+          }
+        >
+          {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N'EST PAS
+              DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+              `<span>` — jamais un heading — précisément parce que le bloc
+              qu'elle enveloppe en porte déjà un du même nom. Sans ce `<h2>`,
+              la carte n'a AUCUN titre dans l'arbre d'accessibilité. */}
+          <Card>
+            <h2 className="font-semibold mb-1">Mon studio</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="min-w-0 flex-1 text-sm text-k-body">
+                La page de vos joueurs au centre, les réglages autour. La
+                mécanique, les gains, l&apos;habillage, les couleurs, le
+                créneau, ce qu&apos;on propose avant la partie et ce
+                qu&apos;on demande au gagnant — tout s&apos;y règle en voyant
+                le résultat.
+              </p>
+              <Link
+                href={`/studio/roue/${c.id}`}
+                className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+              >
+                Ouvrir le studio
+              </Link>
+            </div>
+          </Card>
+        </CarteRepliable>
+      </div>
+
       <div className="mb-6">
         <CarteRepliable
           titre="Vos jeux"
