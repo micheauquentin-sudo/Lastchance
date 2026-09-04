@@ -110,6 +110,7 @@ const MODULES: Module[] = [
     nom: "soirée",
     base: "/dashboard/events/e2ed0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier de la soirée",
+    studio: "Mon studio",
     premiereEtape: "jeu",
     etapes: ["jeu", "manches", "soiree", "verification"],
   },
