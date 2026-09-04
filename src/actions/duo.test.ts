@@ -715,7 +715,14 @@ describe("setDuoOptions — composer le plateau", () => {
     // laisserait l'autre annoncer un état d'hier.
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
+      // ET SON STUDIO, hors de `/dashboard` lui aussi (VIT-48). L'étape
+      // « Ce qui paraît » y montre les jeux : sans ce jumeau, on règle son
+      // plateau et l'écran qui l'affiche reste sur l'état d'hier.
+      "/vitrine-studio",
     ]);
     // LA GARDE EST CELLE DU JEU, plus celle de la Vitrine : un commerçant qui
     // achète le Duo seul (DUO-2) était verrouillé hors de son propre plateau.
@@ -915,7 +922,14 @@ describe("setDuoOptions — composer le plateau", () => {
     ]);
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
+      // ET SON STUDIO, hors de `/dashboard` lui aussi (VIT-48). L'étape
+      // « Ce qui paraît » y montre les jeux : sans ce jumeau, on règle son
+      // plateau et l'écran qui l'affiche reste sur l'état d'hier.
+      "/vitrine-studio",
     ]);
   });
 
@@ -1154,7 +1168,14 @@ describe("setDuoSuggestion — la proposition de la maison", () => {
     ]);
     expect(etat.revalidations).toEqual([
       "/dashboard/salons/duo",
+      // LE STUDIO, HORS DE `/dashboard` (VIT-48) : aucun chemin d'atelier ne
+      // l'atteint, Next revalidant un CHEMIN et non une ressource.
+      "/studio/salon/duo",
       "/dashboard/vitrine",
+      // ET SON STUDIO, hors de `/dashboard` lui aussi (VIT-48). L'étape
+      // « Ce qui paraît » y montre les jeux : sans ce jumeau, on règle son
+      // plateau et l'écran qui l'affiche reste sur l'état d'hier.
+      "/vitrine-studio",
     ]);
   });
 

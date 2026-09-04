@@ -10254,6 +10254,141 @@ ses participations et de ses gains, dans la même carte.
 **Le plancher de fréquence est corrigé dans la CHARGE**, pas dans le `<select>` :
 changer de mode peut invalider une fréquence pendant que son étape est fermée.
 Même geste que `resolveLoyaltyCooldown`.
+
+## ADR-163 — Un réglage partagé se dit LÀ OÙ LA MAIN EST POSÉE, pas en bas de page
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-48 (salons Duo Miroir et Portrait de la Bande), neuvième
+module porté sur le socle.
+
+### Une route, deux jeux, un habillage COMMUN
+
+`setHabillageSalons` écrit **une seule ligne `lobby_settings` par
+organisation**. Le thème, le décor, l'enseigne et le logo sont donc partagés :
+les régler depuis le studio du Duo modifie AUSSI Portrait de la Bande.
+
+Le tableau de bord le disait trois fois, dont une par le libellé de son bouton —
+« Enregistrer pour les deux jeux ». **Le studio ne peut pas reprendre cette
+formulation**, puisqu'il enregistre seul : le bouton qui portait l'avertissement
+n'existe plus.
+
+La portée passe donc par trois endroits, tous PERMANENTS :
+le **titre de l'étape** (« L'habillage, commun aux deux jeux »), présent dans le
+fil, dans l'infobulle et dans le nom accessible ; le **chapeau** du bloc, qui
+nomme les deux jeux ; et une **mention sous chacun des trois groupes de
+contrôles**, là où la main est posée. Une garde exige au moins trois occurrences
+de « vos deux jeux » dans le bloc, depuis les DEUX studios.
+
+**Écarté** : une note en bas de page. Un réglage qui en change un autre sans le
+dire À L'ENDROIT OÙ ON LE RÈGLE est la famille de défaut que ce programme ferme.
+
+### Le fil d'étapes est DÉRIVÉ du jeu — quatre contre trois
+
+Duo : questions → suggestion du jour → habillage → QR. Bande : pack de cartes →
+habillage → QR. « Votre suggestion du jour » n'existe pas pour la Bande, et
+l'afficher annoncerait un réglage inexistant (ADR-160, ADR-162).
+
+Deux étapes de l'esquisse ont disparu, et pour des raisons différentes :
+
+- **« Le jeu que vous ouvrez »** : le segment d'URL le décide déjà, et une étape
+  qui en changerait devrait NAVIGUER — or le fil du socle est en boutons
+  précisément pour que changer d'étape ne navigue pas.
+- **« Voir les salles ouvertes »** : une salle ne vit que le temps d'une partie,
+  la liste est vide la plupart du temps. C'est de la SURVEILLANCE, pas un
+  réglage ; elle reste sur le tableau de bord.
+
+### L'aperçu montre la SALLE, et le dit
+
+`DuoExperience` et `BandeExperience` ne sont pas rendables dans un studio :
+elles exigent un `lobbyId` — une salle existant en base —, appellent
+`startDuo`/`startBande` au montage puis scrutent toutes les trois secondes.
+Couper ces portes laisserait un écran d'attente perpétuel, et **un studio règle
+un jeu AVANT qu'une salle existe**.
+
+L'aperçu monte donc `LobbyShell` + `LobbyCarton` — les composants mêmes que
+sert `/lobby/[code]` — avec l'habillage en cours, et une bannière dit où sa
+fidélité s'arrête. C'est la troisième forme d'aperçu du programme : la vraie
+page (calendrier, chasse, cagnotte), la vraie page partielle et annoncée (quiz,
+pronostics), et ici la vraie page D'AVANT — celle que le joueur voit en entrant.
+
+### La famille « revalidation du studio » est fermée, pas rapiécée
+
+L'agent a signalé que `setDuoOptions` et `setBandePack` revalidaient
+`/dashboard/vitrine` sans `/vitrine-studio`. La mesure a trouvé un TROISIÈME
+site (`closeLobbyAsOrg`) qu'il ne pouvait pas voir depuis son périmètre.
+
+C'est la troisième occurrence du défaut VIT-37 : l'écriture réussit, et l'écran
+qui l'affiche reste sur l'état d'hier. `revalidation-vitrine-studio.test.ts`
+exige désormais que TOUTE fonction revalidant la vitrine du tableau de bord
+revalide aussi son studio — en comptant PAR FONCTION (ADR-161).
+
+Trois suites vérifiaient la liste EXACTE des chemins revalidés et ont rougi sur
+l'ajout. C'est leur mérite : elles attrapent aussi bien un oubli qu'une
+revalidation superflue.
+## ADR-164 — Un sélecteur d'élément n'est pas une modification
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-47 (mode événement live), dixième module porté sur le socle.
+
+### Le piège, et il aurait été silencieux
+
+L'étape « Le temps de réponse et les points » règle une question à la fois,
+choisie dans un sélecteur. `useAutoSaveManuel` s'arme sur toute signature
+différente de la dernière enregistrée — et un état ré-amorcé à chaque bascule du
+sélecteur aurait donc POSTÉ à chaque changement de question.
+
+Le commerçant parcourt ses questions pour les relire, et chaque coup d'œil
+écrit en base. Rien ne le lui dirait : l'écran afficherait « enregistré », ce
+qui serait même vrai.
+
+### Décision — la signature observée est la CARTE des réglages touchés
+
+Pas celle de l'élément ouvert. `enregistrerRythmes` ne poste que ce qui diffère
+du dernier envoi, et une garde le prouve : *changer de sélection n'enregistre
+RIEN*.
+
+La règle générale : **dans un studio, ce qui est OBSERVÉ par l'enregistrement
+automatique doit être ce qui a été MODIFIÉ, jamais ce qui est affiché.** Les
+deux coïncident tant qu'une étape ne montre qu'un objet à la fois ; elles
+divergent dès qu'un sélecteur apparaît.
+
+### Deux vues, une charge — encore
+
+`updateEventQuestion` écrit type, intitulé, temps, points et options d'un seul
+tenant, et `refineQuestion` croise le type et la bonne réponse. « Vos
+questions » et « Le temps de réponse » sont donc deux VUES d'une charge unique :
+`chargeRythmeEvenement` relit le type, l'intitulé et les options depuis la ligne
+serveur avant d'envoyer. La mutation qui force `is_correct: false` fait rougir
+« le type et la bonne réponse survivent à un réglage du chronomètre ».
+
+`updateEventSession` porte le même piège en pire : `input.X ?? ""` transforme
+un champ omis en 0, c'est-à-dire un « podium sans lot » silencieux. La mutation
+qui omet le stock fait rougir les deux gardes de salle.
+
+### TROIS portes d'atelier, et la troisième CHANGE de destination
+
+La leçon de la roue (ADR-162) a servi : on cherche TOUTES les entrées, pas la
+première. Ce module en avait trois — la carte d'atelier (remplacée par « Mon
+studio » au-delà de `lg`), le raccourci de la carte de statut (masqué), et le
+lien « Voir ce qu'il manque ».
+
+Ce troisième ne pouvait pas être masqué : la phrase perdrait sa conclusion. Il
+change donc de DESTINATION selon la taille d'écran, et un seul des deux liens
+est dans l'arbre d'accessibilité à la fois.
+
+### L'aperçu est le vrai lecteur, partiel et annoncé
+
+Les quatre actions du parcours sont coupées une par une sous `apercu` —
+y compris `invitationPasseport`, atteinte par un composant tiers et neutralisée
+en lui passant `organizationId={null}`. `startedAt: null` garde le chronomètre
+plein : simulé, il atteindrait zéro pendant le réglage et afficherait « Temps
+écoulé » sur une partie que personne n'a jouée (ADR-156).
+
+Absents et DITS dans la bannière : l'écran d'inscription, la révélation, le
+classement et l'écran de salle — ils dépendent d'une partie jouée, et les
+fabriquer aurait donné un classement inventé.
 ## ADR-162 — Une étape vide pour la plupart des cas n'est pas une étape
 
 **Date** : 2026-09-04

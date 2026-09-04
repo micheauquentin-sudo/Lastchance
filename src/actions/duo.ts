@@ -518,7 +518,19 @@ export async function setDuoOptions(
  */
 function revalideEcransDuo(): void {
   revalidatePath("/dashboard/salons/duo");
+  // LE STUDIO EST HORS DE `/dashboard`, il n'est atteint par aucune des lignes
+  // ci-dessus : Next revalide un CHEMIN, pas une ressource (VIT-48). Sans ce
+  // jumeau, un plateau enregistré depuis `/studio/salon/duo` n'y apparaîtrait
+  // jamais — sur l'écran même où l'on vient vérifier. C'est le défaut VIT-37,
+  // et `revalidation-studio.test.ts` échoue s'il manque.
+  revalidatePath("/studio/salon/duo");
+  // LE STUDIO DE LA VITRINE EST HORS DE `/dashboard` (VIT-48). Son étape
+  // « Ce qui paraît » montre les jeux — donc le plateau du Duo et le pack
+  // de la Bande. Sans ce jumeau, on règle son plateau et l'écran qui
+  // l'affiche reste sur l'état d'hier. C'est le défaut VIT-37, sur un
+  // troisième écran.
   revalidatePath("/dashboard/vitrine");
+  revalidatePath("/vitrine-studio");
 }
 
 /**

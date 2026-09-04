@@ -78,7 +78,7 @@ type PlaceEdition =
  * cuisine ». La masquer ici aurait fait disparaître une place composée sans
  * dire pourquoi.
  */
-function aplatirFiches(cartes: VitrineCarteView[]): FicheChoisissable[] {
+export function aplatirFiches(cartes: VitrineCarteView[]): FicheChoisissable[] {
   const sortie: FicheChoisissable[] = [];
   for (const carte of cartes) {
     for (const rubrique of carte.categories) {
@@ -109,7 +109,7 @@ function nouvelleCle(): string {
  * champs vides disent quoi faire, là où un écran sans aucune ligne oblige à
  * deviner qu'il existe un bouton « ajouter ».
  */
-function placesInitiales(plateau: DuoOptionsAdminView): PlaceEdition[] {
+export function placesInitiales(plateau: DuoOptionsAdminView): PlaceEdition[] {
   if (plateau.options.length === 0) {
     return Array.from({ length: DUO_OPTIONS_MIN_ECRAN }, () => ({
       cle: nouvelleCle(),
@@ -190,7 +190,7 @@ export function DuoEditeur({
  * navigateur poste les champs dans l'ordre du document, donc l'ordre des lignes
  * à l'écran EST l'ordre des places en base.
  */
-function FormulairePlateau({
+export function FormulairePlateau({
   fiches,
   initiales,
   peutEditer,
@@ -416,7 +416,7 @@ function LignePlace({
  * qu'une proposition affichée trop tôt surlignerait une réponse sur le plateau
  * — et qu'il n'a aucun moyen de le vérifier depuis cet écran.
  */
-function FormulaireSuggestion({
+export function FormulaireSuggestion({
   fiches,
   suggestion,
   peutEditer,
