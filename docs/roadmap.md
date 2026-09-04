@@ -234,6 +234,17 @@
   relues depuis la ligne serveur avant envoi. **TROIS portes d'atelier**
   traitées, dont une qui change de destination au lieu de disparaître — la
   phrase perdrait sa conclusion.
+- **VIT-50 — La méta-progression passe au studio** (ADR-165). **Cinq** étapes
+  au lieu de dix, et l'ordre est une DÉPENDANCE : une mission octroie un badge
+  ou une pièce, un coffre refuse de se rendre sans pièce. La trouvaille du lot :
+  **il n'existe aucun `updateProgressionSeason`** — le nom et les dates d'une
+  saison sont figés à la création. L'étape « Votre saison et ses dates » aurait
+  rendu des champs qu'aucun code n'écrit : le pire cas d'ADR-160, où l'étape
+  n'est pas seulement vide mais MENSONGÈRE. La saison est donc le SUJET du
+  studio, pas une étape. Le piège d'écrasement se traite ici par le découpage —
+  aucune étape ne coupe une entité en deux — plutôt que par des miroirs cachés
+  qu'on peut oublier de poser. Deux défauts trouvés en ÉCRIVANT les gardes,
+  dont un dans la garde elle-même.
 - **VIT-49 — La réservation de table passe au studio** (ADR-166).
   **Douzième et dernier module.** Fil dérivé du mode : quatre étapes en
   « moment », huit en « rendez-vous » — trois panneaux du tableau de bord
