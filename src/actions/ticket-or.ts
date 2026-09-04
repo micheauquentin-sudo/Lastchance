@@ -118,6 +118,12 @@ export async function emettreTicketOr(
   }
 
   revalidatePath("/dashboard/ticket-or");
+  // LE STUDIO VIT HORS DE `/dashboard`, il n'est donc atteint par AUCUNE
+  // revalidation d'atelier — Next revalide un CHEMIN, pas une ressource.
+  // Défaut déjà livré quatre fois (VIT-37, VIT-39, VIT-41, VIT-42) : un
+  // enregistrement qui réussit sans jamais apparaître, sur l'écran même où
+  // l'on vient vérifier. `revalidation-studio.test.ts` le garde.
+  revalidatePath("/studio/ticket-or");
   return {
     ok: true,
     data: {
@@ -187,6 +193,12 @@ export async function creerLotTicketOr(
   }
 
   revalidatePath("/dashboard/ticket-or");
+  // LE STUDIO VIT HORS DE `/dashboard`, il n'est donc atteint par AUCUNE
+  // revalidation d'atelier — Next revalide un CHEMIN, pas une ressource.
+  // Défaut déjà livré quatre fois (VIT-37, VIT-39, VIT-41, VIT-42) : un
+  // enregistrement qui réussit sans jamais apparaître, sur l'écran même où
+  // l'on vient vérifier. `revalidation-studio.test.ts` le garde.
+  revalidatePath("/studio/ticket-or");
   return { ok: true, data: undefined };
 }
 
@@ -232,6 +244,12 @@ export async function modifierLotTicketOr(
   }
 
   revalidatePath("/dashboard/ticket-or");
+  // LE STUDIO VIT HORS DE `/dashboard`, il n'est donc atteint par AUCUNE
+  // revalidation d'atelier — Next revalide un CHEMIN, pas une ressource.
+  // Défaut déjà livré quatre fois (VIT-37, VIT-39, VIT-41, VIT-42) : un
+  // enregistrement qui réussit sans jamais apparaître, sur l'écran même où
+  // l'on vient vérifier. `revalidation-studio.test.ts` le garde.
+  revalidatePath("/studio/ticket-or");
   return { ok: true, data: undefined };
 }
 
@@ -258,5 +276,11 @@ export async function supprimerLotTicketOr(
   }
 
   revalidatePath("/dashboard/ticket-or");
+  // LE STUDIO VIT HORS DE `/dashboard`, il n'est donc atteint par AUCUNE
+  // revalidation d'atelier — Next revalide un CHEMIN, pas une ressource.
+  // Défaut déjà livré quatre fois (VIT-37, VIT-39, VIT-41, VIT-42) : un
+  // enregistrement qui réussit sans jamais apparaître, sur l'écran même où
+  // l'on vient vérifier. `revalidation-studio.test.ts` le garde.
+  revalidatePath("/studio/ticket-or");
   return { ok: true, data: undefined };
 }

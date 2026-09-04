@@ -42,6 +42,23 @@ import {
  * ouvert » alors qu'il venait de gagner. Le gain est mémorisé sur SON appareil
  * (voir `cleMemoireTicket`) : aucun droit nouveau, aucun rejeu, juste de quoi
  * relire ce que le serveur lui a déjà rendu.
+ *
+ * ── `apercu` : LE STUDIO MONTE CETTE PAGE, ET ELLE NE TIRE RIEN (VIT-45) ──
+ *
+ * Ce fichier n'importe qu'UNE action, `tirerTicketOr`, et le drapeau la coupe.
+ * Ce n'est pas une précaution de confort : `tirer_ticket_or` CONSOMME un lot
+ * du stock et grave un retrait au nom du commerce. Un aperçu qui tirerait
+ * viderait le stock du commerçant pendant qu'il le règle, et lui rendrait un
+ * code de retrait que personne ne viendra chercher.
+ *
+ * Le drapeau coupe aussi la MÉMOIRE LOCALE, dans les deux sens : le studio ne
+ * lit pas le `localStorage` du commerçant — un ticket qu'il aurait ouvert
+ * lui-même se rejouerait dans son aperçu — et n'y écrit rien.
+ *
+ * Ce qu'il montre à la place vient d'`exemple`, calculé par le studio depuis
+ * les lots réglés avec le prédicat PARTAGÉ `estLotTirable`. Sans aucun lot
+ * tirable, `exemple` vaut `null` et l'aperçu affiche le `sans_lot` que le
+ * client verrait vraiment — c'est-à-dire la vérité, et pas une maquette.
  */
 
 /**
@@ -82,10 +99,20 @@ function memoriser(code: string, tirage: TirageGagnant): void {
 /** Aucune source externe ne change en cours de vie : abonnement inerte. */
 const abonnementVide = () => () => {};
 
-export function TicketExperience({ code }: { code: string }) {
+export function TicketExperience({
+  code,
+  apercu = false,
+  exemple = null,
+}: {
+  code: string;
+  /** Monté dans le studio : aucun appel serveur, aucune mémoire locale. */
+  apercu?: boolean;
+  /** Le gain d'EXEMPLE montré au commerçant. `null` = « rien à gagner ». */
+  exemple?: TirageGagnant | null;
+}) {
   const memorise = useSyncExternalStore(
     abonnementVide,
-    () => lireMemoire(code),
+    () => (apercu ? null : lireMemoire(code)),
     // Rendu serveur : aucune mémoire. Le bouton s'affiche, puis l'hydratation
     // révèle le gain déjà tiré s'il y en a un.
     () => null,
@@ -94,6 +121,13 @@ export function TicketExperience({ code }: { code: string }) {
   const [enCours, demarrer] = useTransition();
 
   function tirer() {
+    if (apercu) {
+      // NI APPEL, NI MÉMOIRE. Le résultat est celui que les lots réglés
+      // produiraient : un gain d'exemple, ou le refus `sans_lot` — le même
+      // que la base rendrait si rien n'était tirable.
+      setResultat(exemple ?? { state: "sans_lot" });
+      return;
+    }
     demarrer(async () => {
       const etat = await tirerTicketOr(code);
       if (etat.state === "ok") memoriser(code, etat);

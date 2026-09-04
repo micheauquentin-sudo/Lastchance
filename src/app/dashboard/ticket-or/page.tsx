@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { APP_URL } from "@/lib/env";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmettreTicket } from "@/components/ticket/emettre-ticket";
 import { LotsTicket } from "@/components/ticket/lots-ticket";
+import { estLotTirable } from "@/lib/ticket-or";
 import { loadTicketOr } from "@/lib/ticket-or-context";
 
 /**
@@ -55,11 +57,12 @@ export default async function TicketOrPage() {
   }
 
   const { etat, peutRegler } = ctx;
-  // TIRABLE = actif, pesé, et non épuisé. Exactement le prédicat du SQL :
-  // l'écran ne doit pas annoncer « prêt » sur un stock que le tirage refuse.
-  const sansLot = !etat.lots.some(
-    (lot) => lot.actif && lot.poids > 0 && (lot.stock === null || lot.stock > 0),
-  );
+  // TIRABLE = actif, pesé, et non épuisé. Le prédicat n'est plus recopié ici :
+  // il vit dans `estLotTirable`, seule traduction du filtre de
+  // `tirer_ticket_or`, et le studio pose la même question avec la même
+  // fonction. Deux formulations divergentes, c'était un écran qui annonce
+  // « prêt » sur un stock que le tirage refuse (VIT-45).
+  const sansLot = !etat.lots.some(estLotTirable);
 
   return (
     <div className="space-y-6">
@@ -91,6 +94,34 @@ export default async function TicketOrPage() {
         </p>
         <LotsTicket lots={etat.lots} peutRegler={peutRegler} />
       </Card>
+
+      {/* L'ENTRÉE DU STUDIO, et seulement pour qui règle. Un caissier n'y
+          trouverait qu'un écran en lecture seule : l'émission, elle, est
+          juste au-dessus et lui reste ouverte.
+
+          Le `<h2>` est écrit à la main, comme sur les autres entrées de
+          studio : sans lui la carte n'a AUCUN titre dans l'arbre
+          d'accessibilité — un lecteur d'écran ne l'annonce pas, et les E2E
+          qui cherchent `getByRole("heading")` ne la trouvent pas non plus. */}
+      {peutRegler ? (
+        <Card>
+          <h2 className="font-semibold mb-1">Mon studio</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 flex-1 text-sm text-k-body">
+              La page de vos clients au centre, les réglages autour. Vos lots,
+              leurs chances de sortie, leur stock et ceux qui tournent
+              aujourd&apos;hui — tout s&apos;y règle en voyant ce que le client
+              découvrira.
+            </p>
+            <Link
+              href="/studio/ticket-or"
+              className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+            >
+              Ouvrir le studio
+            </Link>
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <h2>Sur les trente derniers jours</h2>
