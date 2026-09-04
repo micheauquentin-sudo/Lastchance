@@ -329,44 +329,19 @@ export function JackpotTracker({
   return (
     <div className="mx-auto max-w-md px-4 py-8">
       {/* ── En-tête commerce ── */}
-      <header className="mb-6 text-center">
-        {logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={logoUrl}
-            alt={organizationName}
-            width={56}
-            height={56}
-            className="mx-auto mb-3 h-14 w-14 rounded-full border-2 border-k-ink bg-white object-cover"
-          />
-        ) : (
-          <div className="mx-auto mb-3 text-4xl" aria-hidden>
-            💰
-          </div>
-        )}
-        <p className="text-xs font-bold uppercase tracking-wide text-k-body">
-          {organizationName}
-        </p>
-        <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">
-          {campaignName}
-        </h1>
-      </header>
+      <EnteteCagnotte
+        logoUrl={logoUrl}
+        organizationName={organizationName}
+        campaignName={campaignName}
+      />
 
-      {/* LA RÈGLE AVANT LA JAUGE. Le grand montant et « 12 / 50 » ne disent
-          ni que la cagnotte est COLLECTIVE, ni par quel geste on y ajoute sa
-          part — et ce geste dépend du mode de validation choisi par le
-          commerçant. Le `DrawModeHint`, plus bas, explique ce qui se passe
-          UNE FOIS l'objectif atteint : c'est la suite de cette phrase, pas
-          son remplacement. Masquée sur un cycle figé (tirage fait, lots
+      {/* LA RÈGLE AVANT LA JAUGE. Masquée sur un cycle figé (tirage fait, lots
           épuisés), où participer n'a plus de sens. */}
       {!dateDrawDone && !gauge.soldOut && (
-        <ConsigneJoueur className="mb-4" emoji="🤝">
-          Cette cagnotte est collective : chaque participation la fait monter.
-          {validationMode === "rotating_code"
-            ? " Entrez le code affiché en boutique pour ajouter la vôtre"
-            : " Faites valider votre passage au comptoir pour ajouter la vôtre"}
-          {gauge.threshold > 0 ? ` — objectif ${gauge.threshold}.` : "."}
-        </ConsigneJoueur>
+        <ConsigneCagnotte
+          validationMode={validationMode}
+          threshold={gauge.threshold}
+        />
       )}
 
       {/* ── Jauge partagée + montant croissant ── */}
@@ -492,10 +467,92 @@ function DateDrawResult({
 }
 
 // ────────────────────────────────────────────────────────────
+// Les blocs de la page, sans un seul chemin serveur
+//
+// LES QUATRE BLOCS CI-DESSOUS SONT EXPORTÉS, ET C'EST DÉLIBÉRÉ (VIT-44).
+//
+// Le studio de la cagnotte règle en REGARDANT, et un aperçu qui n'est pas la
+// vraie page est le seul défaut de cette famille qui ne se voie pas : rien ne
+// casse, tout a l'air de fonctionner, et l'écart ne se découvre qu'en ouvrant
+// la page réelle (ADR-152). L'aperçu monte donc CES blocs-ci, et non des copies
+// redessinées qu'il aurait fallu tenir d'accord avec ceux-là.
+//
+// Ce qui les rend montables hors du parcours joueur est vérifiable en une
+// ligne : `JackpotTracker` n'importe que TROIS actions — `getJackpotState`,
+// `participateJackpot`, `getJackpotCheckinToken` — et AUCUNE des quatre n'en
+// touche une. Les trois vivent dans le composant racine (poll de la jauge,
+// participation) et dans `StaffCheckinCard` (jeton de caisse), c'est-à-dire
+// dans la ZONE DE PARTICIPATION, que l'aperçu ne montre pas et ANNONCE qu'il ne
+// montre pas. Aucun drapeau `apercu` n'est donc nécessaire ici : il n'y a rien
+// à couper.
+// ────────────────────────────────────────────────────────────
+
+/** En-tête de la page publique : le logo, le commerce, le nom de la cagnotte. */
+export function EnteteCagnotte({
+  logoUrl,
+  organizationName,
+  campaignName,
+}: {
+  logoUrl: string | null;
+  organizationName: string;
+  campaignName: string;
+}) {
+  return (
+    <header className="mb-6 text-center">
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={organizationName}
+          width={56}
+          height={56}
+          className="mx-auto mb-3 h-14 w-14 rounded-full border-2 border-k-ink bg-white object-cover"
+        />
+      ) : (
+        <div className="mx-auto mb-3 text-4xl" aria-hidden>
+          💰
+        </div>
+      )}
+      <p className="text-xs font-bold uppercase tracking-wide text-k-body">
+        {organizationName}
+      </p>
+      <h1 className="mt-1 text-2xl font-black leading-tight text-k-ink">
+        {campaignName}
+      </h1>
+    </header>
+  );
+}
+
+/**
+ * LA RÈGLE AVANT LA JAUGE. Le grand montant et « 12 / 50 » ne disent ni que la
+ * cagnotte est COLLECTIVE, ni par quel geste on y ajoute sa part — et ce geste
+ * dépend du mode de validation choisi par le commerçant. Le `DrawModeHint`,
+ * rendu par la jauge, explique ce qui se passe UNE FOIS l'objectif atteint :
+ * c'est la suite de cette phrase, pas son remplacement.
+ */
+export function ConsigneCagnotte({
+  validationMode,
+  threshold,
+}: {
+  validationMode: JackpotValidationMode;
+  threshold: number;
+}) {
+  return (
+    <ConsigneJoueur className="mb-4" emoji="🤝">
+      Cette cagnotte est collective : chaque participation la fait monter.
+      {validationMode === "rotating_code"
+        ? " Entrez le code affiché en boutique pour ajouter la vôtre"
+        : " Faites valider votre passage au comptoir pour ajouter la vôtre"}
+      {threshold > 0 ? ` — objectif ${threshold}.` : "."}
+    </ConsigneJoueur>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
 // Jauge partagée : le grand chiffre du produit
 // ────────────────────────────────────────────────────────────
 
-function GaugePanel({
+export function GaugePanel({
   currentCount,
   threshold,
   displayAmountCents,
@@ -648,7 +705,7 @@ function DrawCountdown({ drawAt }: { drawAt: string }) {
 // Contenu commerçant
 // ────────────────────────────────────────────────────────────
 
-function MerchantContent({ content }: { content: string | null }) {
+export function MerchantContent({ content }: { content: string | null }) {
   if (!content || !content.trim()) return null;
   return (
     <section
