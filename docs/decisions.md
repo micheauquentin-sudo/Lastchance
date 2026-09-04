@@ -10254,3 +10254,67 @@ ses participations et de ses gains, dans la même carte.
 **Le plancher de fréquence est corrigé dans la CHARGE**, pas dans le `<select>` :
 changer de mode peut invalider une fréquence pendant que son étape est fermée.
 Même geste que `resolveLoyaltyCooldown`.
+
+## ADR-164 — Un sélecteur d'élément n'est pas une modification
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-47 (mode événement live), dixième module porté sur le socle.
+
+### Le piège, et il aurait été silencieux
+
+L'étape « Le temps de réponse et les points » règle une question à la fois,
+choisie dans un sélecteur. `useAutoSaveManuel` s'arme sur toute signature
+différente de la dernière enregistrée — et un état ré-amorcé à chaque bascule du
+sélecteur aurait donc POSTÉ à chaque changement de question.
+
+Le commerçant parcourt ses questions pour les relire, et chaque coup d'œil
+écrit en base. Rien ne le lui dirait : l'écran afficherait « enregistré », ce
+qui serait même vrai.
+
+### Décision — la signature observée est la CARTE des réglages touchés
+
+Pas celle de l'élément ouvert. `enregistrerRythmes` ne poste que ce qui diffère
+du dernier envoi, et une garde le prouve : *changer de sélection n'enregistre
+RIEN*.
+
+La règle générale : **dans un studio, ce qui est OBSERVÉ par l'enregistrement
+automatique doit être ce qui a été MODIFIÉ, jamais ce qui est affiché.** Les
+deux coïncident tant qu'une étape ne montre qu'un objet à la fois ; elles
+divergent dès qu'un sélecteur apparaît.
+
+### Deux vues, une charge — encore
+
+`updateEventQuestion` écrit type, intitulé, temps, points et options d'un seul
+tenant, et `refineQuestion` croise le type et la bonne réponse. « Vos
+questions » et « Le temps de réponse » sont donc deux VUES d'une charge unique :
+`chargeRythmeEvenement` relit le type, l'intitulé et les options depuis la ligne
+serveur avant d'envoyer. La mutation qui force `is_correct: false` fait rougir
+« le type et la bonne réponse survivent à un réglage du chronomètre ».
+
+`updateEventSession` porte le même piège en pire : `input.X ?? ""` transforme
+un champ omis en 0, c'est-à-dire un « podium sans lot » silencieux. La mutation
+qui omet le stock fait rougir les deux gardes de salle.
+
+### TROIS portes d'atelier, et la troisième CHANGE de destination
+
+La leçon de la roue (ADR-162) a servi : on cherche TOUTES les entrées, pas la
+première. Ce module en avait trois — la carte d'atelier (remplacée par « Mon
+studio » au-delà de `lg`), le raccourci de la carte de statut (masqué), et le
+lien « Voir ce qu'il manque ».
+
+Ce troisième ne pouvait pas être masqué : la phrase perdrait sa conclusion. Il
+change donc de DESTINATION selon la taille d'écran, et un seul des deux liens
+est dans l'arbre d'accessibilité à la fois.
+
+### L'aperçu est le vrai lecteur, partiel et annoncé
+
+Les quatre actions du parcours sont coupées une par une sous `apercu` —
+y compris `invitationPasseport`, atteinte par un composant tiers et neutralisée
+en lui passant `organizationId={null}`. `startedAt: null` garde le chronomètre
+plein : simulé, il atteindrait zéro pendant le réglage et afficherait « Temps
+écoulé » sur une partie que personne n'a jouée (ADR-156).
+
+Absents et DITS dans la bannière : l'écran d'inscription, la révélation, le
+classement et l'écran de salle — ils dépendent d'une partie jouée, et les
+fabriquer aurait donné un classement inventé.
