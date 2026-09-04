@@ -30,6 +30,7 @@ import {
 import { AtelierEntree } from "@/components/dashboard/atelier-entree";
 import { AtelierEventVerification } from "@/components/dashboard/atelier-event-verification";
 import { CarteRepliable } from "@/components/dashboard/carte-repliable";
+import { Card } from "@/components/ui/card";
 import { construireActivationEvent } from "@/lib/activation/events";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
@@ -303,6 +304,10 @@ export default async function EventGamePage({
               gameId={game.id}
               status={status}
               hrefJeu={salleVisitable?.publicUrl ?? null}
+              // Les DEUX portes d'atelier de cette carte suivent l'entrée
+              // principale : masquée pour l'une, redirigée vers le studio pour
+              // l'autre, au-delà de `lg`. Voir l'en-tête de la prop.
+              hrefStudio={`/studio/soiree/${game.id}`}
             />
           </CarteRepliable>
 
@@ -319,21 +324,73 @@ export default async function EventGamePage({
             <EventSessionsSection sessions={sessions} />
           </CarteRepliable>
 
-          {/* LA PORTE D'ENTRÉE DE L'ATELIER, repliée comme le reste. Les cartes
-              de préparation ont quitté cette vue : c'est le seul chemin vers
-              elles, d'où le résumé qui annonce ce qui attend derrière. */}
-          <CarteRepliable
-            {...bloc("atelier")}
-            defaultOuvert={false}
-            resume={`${ETAPES_EVENEMENT.length} étapes de préparation.`}
-          >
-            <AtelierEntree
-              etapes={ETAPES_EVENEMENT}
-              hrefPour={hrefPour}
-              titre="L'atelier de la soirée"
-              sousTitre="Le nom du jeu, ses manches et le lot de chaque session. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
-            />
-          </CarteRepliable>
+          {/* LE STUDIO REMPLACE L'ATELIER AU-DELÀ DE `lg` (VIT-47).
+
+              Tout s'y règle en voyant le téléphone du client. La carte est donc
+              OUVERTE d'emblée : un commerçant qui vient régler quelque chose
+              doit tomber dessus, pas la déplier.
+
+              Elle ne s'affiche qu'à partir de `lg`, parce que le studio est à
+              deux colonnes : en dessous, elles s'empilent et l'aperçu passe sous
+              les réglages, ce qui lui retire sa raison d'être. Même arbitrage,
+              et même motif, que `/dashboard/vitrine`, `/dashboard/calendar` et
+              `/dashboard/quiz`.
+
+              LA PASTILLE DE PRÉPARATION SUIT L'ENTRÉE PRINCIPALE : elle
+              appartient à la préparation, pas à un écran. Sur grand écran, c'est
+              le studio. */}
+          <div className="hidden lg:block">
+            <CarteRepliable
+              {...bloc("atelier")}
+              titre="Mon studio"
+              defaultOuvert
+              resume={`${questions.length} question${questions.length > 1 ? "s" : ""} — tout se règle ici, en voyant le résultat.`}
+            >
+              {/* LE BLOC ENVELOPPÉ PORTE SON PROPRE `<h2>`, ET CE N'EST PAS
+                  DÉCORATIF. `CarteRepliable` rend son titre replié dans un
+                  `<span>` — jamais un heading — précisément parce que le bloc
+                  qu'elle enveloppe en porte déjà un du même nom (voir son
+                  en-tête). Sans ce `<h2>`, la carte n'a AUCUN titre dans l'arbre
+                  d'accessibilité : un lecteur d'écran ne l'annonce pas, et les
+                  E2E qui cherchent `getByRole("heading")` ne la trouvent pas non
+                  plus. */}
+              <Card>
+                <h2 className="font-semibold mb-1">Mon studio</h2>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm text-k-body">
+                    Le téléphone de vos clients au centre, les réglages autour.
+                    Le nom de la soirée, vos questions, leur rythme, les salles,
+                    le lot et le QR — tout s&apos;y règle en voyant le résultat.
+                  </p>
+                  <Link
+                    href={`/studio/soiree/${game.id}`}
+                    className="shrink-0 rounded-xl border-2 border-k-ink bg-k-yellow px-4 py-2 text-sm font-black text-k-ink hover:bg-k-yellow/80"
+                  >
+                    Ouvrir le studio
+                  </Link>
+                </div>
+              </Card>
+            </CarteRepliable>
+          </div>
+
+          {/* L'ATELIER RESTE, POUR LE TÉLÉPHONE. Ce qui est masqué au-delà de
+              `lg` est l'ENTRÉE, jamais la ROUTE : `?etape=` demeure atteignable
+              sur n'importe quelle taille d'écran — une adresse d'étape gardée en
+              favori doit continuer de mener quelque part. */}
+          <div className="lg:hidden">
+            <CarteRepliable
+              {...bloc("atelier")}
+              defaultOuvert={false}
+              resume={`${ETAPES_EVENEMENT.length} étapes de préparation.`}
+            >
+              <AtelierEntree
+                etapes={ETAPES_EVENEMENT}
+                hrefPour={hrefPour}
+                titre="L'atelier de la soirée"
+                sousTitre="Le nom du jeu, ses manches et le lot de chaque session. Chaque étape s'enregistre pour elle-même : vous pouvez vous arrêter et revenir."
+              />
+            </CarteRepliable>
+          </div>
 
           <RelanceErreur message={relanceError} />
 

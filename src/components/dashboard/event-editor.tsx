@@ -169,11 +169,28 @@ export function EventGameStatusControls({
   gameId,
   status,
   hrefJeu = null,
+  hrefStudio = null,
 }: {
   gameId: string;
   status: EventGameStatus;
   /** Salle la plus récente côté joueur, `null` si aucune session. */
   hrefJeu?: string | null;
+  /**
+   * LE STUDIO, QUAND IL Y EN A UN — et pourquoi cette prop existe (VIT-47).
+   *
+   * Cette carte porte DEUX portes vers l'atelier : le raccourci « Modifier dans
+   * l'atelier » et le lien « Voir ce qu'il manque » du paragraphe d'aide. Au-delà
+   * de `lg`, la carte d'entrée de l'atelier est remplacée par celle du studio :
+   * laisser ces deux-là intactes donnerait TROIS chemins vers deux écrans
+   * différents pour un seul travail, et le commerçant apprendrait à régler sa
+   * soirée dans celui qui n'a pas d'aperçu.
+   *
+   * Le raccourci est donc masqué au-delà de `lg`, et le lien d'aide CHANGE de
+   * destination plutôt que de disparaître — il annonce ce qu'il manque, et la
+   * phrase perdrait son sens sans lui. `null` (page de suivi d'un module non
+   * porté, tests) conserve exactement le comportement d'avant.
+   */
+  hrefStudio?: string | null;
 }) {
   const {
     state: statusState,
@@ -212,7 +229,13 @@ export function EventGameStatusControls({
       }
       raccourcis={
         <>
-          <RaccourciAtelier href={hrefEtapeEvenement(gameId, "jeu")} />
+          {/* MASQUÉ AU-DELÀ DE `lg` QUAND LE STUDIO EXISTE : sur grand écran,
+              c'est le studio qui prépare. La classe est passée en prop, sans
+              toucher au composant partagé — sept autres modules l'utilisent. */}
+          <RaccourciAtelier
+            href={hrefEtapeEvenement(gameId, "jeu")}
+            className={hrefStudio ? "lg:hidden" : undefined}
+          />
           <VoirLeJeu href={hrefJeu} />
         </>
       }
@@ -224,12 +247,28 @@ export function EventGameStatusControls({
           <p className="mt-2 text-xs font-bold text-k-body">
             Ajoutez au moins une question, puis ouvrez le jeu aux joueurs pour
             pouvoir lancer une session en direct.{" "}
+            {/* LA SECONDE PORTE VERS L'ATELIER. Elle ne se masque pas — la
+                phrase perdrait sa conclusion — elle CHANGE de destination : le
+                studio au-delà de `lg`, l'atelier en dessous. Un seul des deux
+                liens est dans l'arbre d'accessibilité à la fois (`display:none`
+                l'en retire), donc le nom « Voir ce qu'il manque » reste
+                univoque pour un lecteur d'écran comme pour un locator E2E. */}
             <Link
               href={hrefEtapeEvenement(gameId, "verification")}
-              className="font-bold text-k-ink underline underline-offset-2"
+              className={`font-bold text-k-ink underline underline-offset-2${
+                hrefStudio ? " lg:hidden" : ""
+              }`}
             >
               Voir ce qu&apos;il manque
             </Link>
+            {hrefStudio ? (
+              <Link
+                href={hrefStudio}
+                className="hidden font-bold text-k-ink underline underline-offset-2 lg:inline"
+              >
+                Voir ce qu&apos;il manque
+              </Link>
+            ) : null}
           </p>
         ) : null
       }
@@ -1181,8 +1220,17 @@ function SessionEditForm({ session }: { session: EditorSession }) {
   );
 }
 
-/** Formulaire de création / édition d'une session. */
-function SessionForm({
+/**
+ * Formulaire de création / édition d'une session.
+ *
+ * EXPORTÉ pour le studio (VIT-47), et pour la CRÉATION seulement : là-bas, une
+ * salle EXISTANTE se règle depuis l'état du studio, dont la charge part en
+ * entier quelle que soit l'étape ouverte. Créer, en revanche, est un geste
+ * unique et complet — et le refaire ailleurs aurait fait deux vérités sur ce
+ * qu'est une salle valide, dont l'une aurait oublié que le stock est
+ * obligatoire.
+ */
+export function SessionForm({
   gameId,
   session,
   onDone,

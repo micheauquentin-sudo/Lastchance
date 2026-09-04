@@ -209,8 +209,20 @@
   **Troisième occurrence du défaut VIT-37 fermée** : `setDuoOptions`,
   `setBandePack` et `closeLobbyAsOrg` revalidaient la vitrine du tableau de
   bord sans son studio. Garde par fonction posée.
+- **VIT-47 — Le mode événement live passe au studio** (ADR-164). Sept étapes,
+  route `/studio/soiree/[id]`, aucun regroupement — l'étape « rythme » gagne sa
+  place parce qu'on y règle le chronomètre EN VOYANT la barre de décompte.
+  **Un sélecteur d'élément n'est pas une modification** : la signature observée
+  par l'enregistrement automatique est la carte des réglages TOUCHÉS, pas celle
+  de la question ouverte — sinon parcourir ses questions pour les relire aurait
+  écrit en base à chaque coup d'œil, en affichant « enregistré ».
+  `updateEventQuestion` écrit cinq colonnes d'un tenant et `updateEventSession`
+  transforme un champ omis en « podium sans lot » : les deux charges sont
+  relues depuis la ligne serveur avant envoi. **TROIS portes d'atelier**
+  traitées, dont une qui change de destination au lieu de disparaître — la
+  phrase perdrait sa conclusion.
 
-**Décisions** : ADR-145 à ADR-163.
+**Décisions** : ADR-145 à ADR-164.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
