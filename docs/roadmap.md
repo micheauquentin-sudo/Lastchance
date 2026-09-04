@@ -162,6 +162,26 @@
   des codes sort dans un cœur pur partagé avec l'atelier, lecture seule conservée
   pour une valeur non multiple de 86 400 s.
 
+- **VIT-45 — Le ticket d'or passe au studio** (ADR-160). **Cinq** étapes et
+  non six : « Le détail de chaque lot » a été supprimée parce que
+  `tickets_or_lots` n'a pas de colonne `description` — l'étape aurait montré
+  deux fois le libellé sous un titre promettant un réglage inexistant. Route
+  `/studio/ticket-or` (sans identifiant : les lots appartiennent à
+  l'organisation), quatre `revalidatePath` jumelés. Ce module n'a **aucune**
+  action de réglage d'organisation : la coquille est en `peutEditer={false}`,
+  parce qu'annoncer « Enregistrement automatique » aurait menti et que le bouton
+  aurait posté un `FormData` vide. Le piège d'écrasement existe un cran plus bas
+  — `modifierLotTicketOr` réécrit les quatre colonnes d'un lot — d'où les
+  miroirs cachés par ligne, `actif` n'étant miroité que s'il est vrai
+  (présence). Le prédicat « tirable » est désormais partagé avec le SQL au lieu
+  d'être recopié. Le bloc d'émission de ticket reste dehors : c'est un geste de
+  comptoir, ouvert à tous les rôles.
+- **Corrigé au passage** : `scripts/audit-avec-reprises.mjs` commençait par un
+  shebang, dont le `\r` des fins de ligne Windows faisait rendre `SyntaxError`
+  au test qui l'importe — **zéro test collecté**, sur toutes les machines du
+  projet, alors qu'en CI (Linux) il passait. Une garde verte là où personne ne
+  regarde et rouge là où tout le monde travaille apprend à ignorer une ligne
+  rouge.
 - **VIT-46 — La roue de la fortune passe au studio** (ADR-162). **Neuf**
   étapes et non dix : les deux étapes de couleurs sont fusionnées parce que
   douze réglages n'existent que sur le SVG de la roue et que « Ce jeu » ne
