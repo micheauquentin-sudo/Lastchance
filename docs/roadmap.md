@@ -234,7 +234,20 @@
   relues depuis la ligne serveur avant envoi. **TROIS portes d'atelier**
   traitées, dont une qui change de destination au lieu de disparaître — la
   phrase perdrait sa conclusion.
-**Décisions** : ADR-145 à ADR-164.
+- **VIT-49 — La réservation de table passe au studio** (ADR-166).
+  **Douzième et dernier module.** Fil dérivé du mode : quatre étapes en
+  « moment », huit en « rendez-vous » — trois panneaux du tableau de bord
+  disparaissent déjà silencieusement selon le mode, le studio rend la règle
+  visible. **La trouvaille du lot est une garde VACANTE** : la mutation censée
+  la faire rougir est passée VERTE, parce que la fixture ne rendait aucune carte
+  réservable — l'appel surveillé était structurellement inatteignable. Un test
+  est vert parce que le code est bon, ou parce qu'il ne mesure rien ; seule la
+  mutation les sépare. Corrigée par un créneau ouvert et un clic réel.
+  L'aperçu n'appelle PAS le chargeur public : il compte la pression par IP, et
+  un aperçu ne doit pas laisser de traces dans les mesures de la page qu'il
+  imite.
+
+**Décisions** : ADR-145 à ADR-166.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
