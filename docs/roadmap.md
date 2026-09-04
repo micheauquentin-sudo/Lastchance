@@ -162,7 +162,21 @@
   des codes sort dans un cœur pur partagé avec l'atelier, lecture seule conservée
   pour une valeur non multiple de 86 400 s.
 
-**Décisions** : ADR-145 à ADR-159.
+- **VIT-46 — La roue de la fortune passe au studio** (ADR-162). **Neuf**
+  étapes et non dix : les deux étapes de couleurs sont fusionnées parce que
+  douze réglages n'existent que sur le SVG de la roue et que « Ce jeu » ne
+  concerne que huit mécaniques sur quinze — une étape vide pour la majorité des
+  jeux annoncerait un travail inexistant. « Le jeu » garde mécanique ET limite,
+  non par contrainte technique (le socle la lève) mais PRODUIT : « Illimité »
+  est grisé d'après la mécanique, et séparés le commerçant lirait un refus sur
+  un réglage invisible. Sept cents lignes **extraites** plutôt que recopiées.
+  Quinze `revalidatePath` jumelés, gardés par comptage PAR FONCTION.
+  La roue n'avait pas de carte d'atelier à masquer mais **deux** portes (statut
+  et lien par roue) : livrée telle quelle, la carte « Mon studio » s'y serait
+  ajoutée au lieu de les remplacer — deux chemins pour le même travail. Les deux
+  passent en `lg:hidden`.
+
+**Décisions** : ADR-145 à ADR-162.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
