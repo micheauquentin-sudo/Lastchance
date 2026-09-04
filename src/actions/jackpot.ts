@@ -242,6 +242,13 @@ export async function updateJackpotCampaign(
 
   revalidatePath("/dashboard/jackpot");
   revalidatePath(`/dashboard/jackpot/${id}`);
+  // LE STUDIO VIT HORS DE `/dashboard`, il n'est atteint par aucune ligne
+  // ci-dessus : Next revalide un CHEMIN, pas une ressource. Sans ce jumeau, un
+  // enregistrement réussit et l'écran continue d'afficher la version d'avant —
+  // sur un studio, c'est-à-dire à l'endroit précis où l'on règle en regardant.
+  // Défaut déjà payé en VIT-37, VIT-39, VIT-41 et VIT-42 ;
+  // `src/components/jackpot/studio/revalidation-studio.test.ts` le garde.
+  revalidatePath(`/studio/cagnotte/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -305,6 +312,9 @@ export async function setJackpotCampaignStatus(
     if (refus) return { ok: false, error: refus };
     revalidatePath("/dashboard/jackpot");
     revalidatePath(`/dashboard/jackpot/${id}`);
+    // Le studio lit le statut pour sa dernière étape : sans ce jumeau, il
+    // annoncerait « cagnotte non ouverte » sur une cagnotte qui vient de l'être.
+    revalidatePath(`/studio/cagnotte/${id}`);
     return { ok: true, data: undefined };
   }
 
@@ -376,6 +386,9 @@ export async function setJackpotCampaignStatus(
 
   revalidatePath("/dashboard/jackpot");
   revalidatePath(`/dashboard/jackpot/${id}`);
+  // Même motif qu'au refus ci-dessus : la dernière étape du studio lit l'état
+  // enregistré, elle doit voir l'ouverture qui vient d'avoir lieu.
+  revalidatePath(`/studio/cagnotte/${id}`);
   return { ok: true, data: undefined };
 }
 

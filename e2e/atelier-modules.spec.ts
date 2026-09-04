@@ -101,6 +101,7 @@ const MODULES: Module[] = [
     nom: "cagnotte",
     base: "/dashboard/jackpot/e2ec0000-0000-4000-8000-000000000001",
     titreAtelier: "L'atelier de la cagnotte",
+    studio: "Mon studio",
     premiereEtape: "reglages",
     // Mode 'staff' en seed : pas d'écran comptoir, donc 2 étapes seulement.
     etapes: ["reglages", "verification"],
