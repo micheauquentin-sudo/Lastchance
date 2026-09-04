@@ -138,9 +138,35 @@ async function requireProgressionEditor(): Promise<EditorGuard> {
   };
 }
 
-/** Purge le cache du tableau de bord de progression après une mutation. */
+/**
+ * Purge le cache des DEUX écrans de configuration après une mutation.
+ *
+ * ── POURQUOI LE STUDIO EST JUMELÉ ICI, ET NON AILLEURS (VIT-50) ──
+ *
+ * Le studio vit à `/studio/progression`, HORS de `/dashboard`. Next revalide un
+ * CHEMIN, pas une ressource : purger celui du tableau de bord ne l'atteint pas.
+ * Une mutation qui réussit y laisserait l'écran afficher la version d'avant — et
+ * sur un studio, où l'on règle en regardant, c'est précisément l'endroit où le
+ * commerçant vient vérifier.
+ *
+ * (Les deux chemins ne sont écrits qu'une fois, plus bas, et JAMAIS dans ce
+ * commentaire : la garde découpe le fichier par fonction, si bien qu'un appel
+ * cité ici compterait pour le bloc PRÉCÉDENT et l'accuserait d'un oubli.)
+ *
+ * Ce n'est pas une hypothèse : c'est le défaut VIT-37, puis VIT-39, VIT-41,
+ * VIT-42, VIT-45, VIT-48, mot pour mot. Rien ne casse — l'action répond
+ * « enregistré », et elle dit vrai.
+ *
+ * Le jumelage tient en UN endroit parce que les ~20 mutations de ce fichier
+ * passent toutes par ici (directement ou via `runProgressionEditorRpc`). C'est
+ * aussi ce qui oblige la garde à compter par FONCTION et non par fichier : ce
+ * helper n'est pas exporté, et une future mutation qui revalidrait en propre
+ * sans jumeler passerait inaperçue d'une garde qui se contenterait de trouver
+ * la chaîne quelque part dans le fichier.
+ */
 function revalidateProgression(): void {
   revalidatePath("/dashboard/progression");
+  revalidatePath("/studio/progression");
 }
 
 /**

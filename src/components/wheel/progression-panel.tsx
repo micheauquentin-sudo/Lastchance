@@ -143,9 +143,36 @@ function seasonPeriod(season: ArchivedProgressionSeason): string | null {
 export function ProgressionPanel({
   organizationId,
   kermesse,
+  apercu = false,
+  etatApercu = null,
 }: {
   organizationId: string;
   kermesse: boolean;
+  /**
+   * APERÇU DE STUDIO — le composant est le MÊME que celui du parcours joueur,
+   * et c'est tout l'intérêt : un aperçu qui serait une seconde implémentation
+   * finirait par ne plus être d'accord avec la première, et c'est le seul
+   * défaut qu'un aperçu ne doit jamais avoir parce qu'il est INVISIBLE (ADR-152).
+   *
+   * Ce drapeau ne change RIEN à ce qui se voit. Il coupe les TROIS chemins qui
+   * parlent au serveur — les trois seules actions que ce fichier importe :
+   *  · `getPlayerProgression` et `getPlayerProgressionArchive`, qui LISENT le
+   *    cookie `lc-player` : dans un studio, ce cookie est celui du COMMERÇANT.
+   *    Les laisser tourner ferait afficher, dans l'aperçu, la progression
+   *    personnelle du patron plutôt que l'état de départ de sa saison ;
+   *  · `openProgressionChest`, qui DÉBITE des clés et grave une ouverture sous
+   *    verrou en base — au nom de qui règle son écran.
+   *
+   * Les coffres restent cliquables : c'est la vraie page. Le geste ne part pas.
+   */
+  apercu?: boolean;
+  /**
+   * L'état de DÉPART de la saison, dérivé de sa configuration commerçant. Aucun
+   * chiffre de progression n'y est inventé (ADR-159) : zéro clé, zéro mission
+   * accomplie, aucun badge décroché. Régler des paliers sur un joueur fictif
+   * n'a pas de sens — ce qu'il faut voir, c'est l'écran du PREMIER joueur.
+   */
+  etatApercu?: PlayerProgressionSnapshot | null;
 }) {
   const t = theme(kermesse);
   const reducedMotion = usePrefersReducedMotion();
@@ -168,6 +195,10 @@ export function ProgressionPanel({
   }, [organizationId]);
 
   useEffect(() => {
+    // APERÇU : aucune lecture serveur. La rafraîchir irait chercher la
+    // progression du COMMERÇANT sous son propre cookie. L'archive n'est pas lue
+    // non plus — elle montrerait ses saisons closes à lui.
+    if (apercu) return;
     let active = true;
     void (async () => {
       const [current, archive] = await Promise.all([
@@ -183,9 +214,26 @@ export function ProgressionPanel({
     return () => {
       active = false;
     };
-  }, [organizationId, refresh]);
+  }, [organizationId, refresh, apercu]);
+
+  /**
+   * LA PHOTO AFFICHÉE — DÉRIVÉE, JAMAIS RECOPIÉE DANS L'ÉTAT.
+   *
+   * `etatApercu` est reconstruit à chaque rendu du studio (il dérive de la
+   * saison réglée). Le poser dans `snapshot` depuis un effet aurait bouclé —
+   * nouvelle référence, effet relancé, `setState`, nouveau rendu — et c'est
+   * exactement ce que `react-hooks/set-state-in-effect` a refusé. Le dériver
+   * n'a pas ce défaut, et il a une propriété qui vaut mieux : en aperçu, l'état
+   * serveur ne peut structurellement PAS être affiché, même si un chemin de
+   * lecture réapparaissait un jour.
+   */
+  const photo = apercu ? etatApercu : snapshot;
 
   const open = (chestId: string) => {
+    // APERÇU : ouvrir un coffre DÉBITE des clés et grave une ouverture, au nom
+    // du commerçant qui règle son écran. Le coffre reste cliquable — c'est la
+    // vraie page — mais le geste ne part pas.
+    if (apercu) return;
     if (busyRef.current) return;
     busyRef.current = true;
     setOpeningId(chestId);
@@ -244,8 +292,8 @@ export function ProgressionPanel({
 
   // Saison en cours, re-typée pour que `season` cesse d'être nullable.
   const active =
-    snapshot && snapshot.state === "ok" && snapshot.season
-      ? { ...snapshot, season: snapshot.season }
+    photo && photo.state === "ok" && photo.season
+      ? { ...photo, season: photo.season }
       : null;
 
   // Rien en cours ET rien d'archivé : le panneau n'existe pas. Appareil inconnu,

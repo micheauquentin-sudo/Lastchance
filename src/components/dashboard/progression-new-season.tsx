@@ -23,9 +23,17 @@ import {
  */
 export function ProgressionNewSeasonForm({
   hasActiveSeason,
+  hrefApres = "/dashboard/progression",
 }: {
   /** Une saison tourne déjà : l'unicité de la saison active est rappelée. */
   hasActiveSeason: boolean;
+  /**
+   * Où atterrir après la création. La navigation est DURE (voir plus bas) : la
+   * destination doit donc être l'écran d'où l'on vient, sinon créer une saison
+   * depuis le studio ferait sortir du studio (VIT-50). Défaut inchangé pour le
+   * tableau de bord.
+   */
+  hrefApres?: string;
 }) {
   const fieldId = useId();
   const [open, setOpen] = useState(false);
@@ -78,7 +86,7 @@ export function ProgressionNewSeasonForm({
         // Le coût est un rechargement complet sur une action rare ; le gain est
         // qu'il s'applique TOUJOURS. Un rafraîchissement qui marche 19 fois sur
         // 20 est pire qu'un rechargement franc.
-        window.location.assign("/dashboard/progression");
+        window.location.assign(hrefApres);
       } catch {
         setError("Création impossible, réessayez.");
       } finally {

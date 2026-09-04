@@ -313,7 +313,7 @@ function EnabledPill({
  * pas seulement l'acte, et disent ce que couper NE fait pas — pour qu'on ne le
  * confonde jamais avec une suppression.
  */
-function MissionEnabledAction({
+export function MissionEnabledAction({
   mission,
 }: {
   mission: OrgProgressionMission;
@@ -361,7 +361,7 @@ function MissionEnabledAction({
 }
 
 /** Interrupteur d'arrêt d'un coffre, miroir exact du précédent. */
-function ChestEnabledAction({ chest }: { chest: OrgProgressionChest }) {
+export function ChestEnabledAction({ chest }: { chest: OrgProgressionChest }) {
   if (chest.enabled) {
     return (
       <ConfirmAction
@@ -728,22 +728,37 @@ function SeasonContent({
 // Configuration d'une saison en brouillon (le seul état modifiable)
 // ════════════════════════════════════════════════════════════
 
-interface OptionRef {
+export interface OptionRef {
   id: string;
   label: string;
 }
 
-function DraftConfiguration({ season }: { season: OrgProgressionSeason }) {
-  const items: OptionRef[] = season.collections.flatMap((collection) =>
-    collection.items.map((item) => ({
-      id: item.id,
-      label: `${collection.name} · ${item.name}`,
+/**
+ * Les deux listes de référence qu'une mission peut octroyer, dérivées de la
+ * saison. Exportée pour le studio (VIT-50) : recopier le `${collection.name} ·
+ * ${item.name}` là-bas aurait fait diverger l'étiquette d'un objet entre les
+ * deux écrans au premier renommage, sur un select qui sert à choisir.
+ */
+export function optionsDeSaison(season: OrgProgressionSeason): {
+  badges: OptionRef[];
+  items: OptionRef[];
+} {
+  return {
+    badges: season.badges.map((badge) => ({
+      id: badge.id,
+      label: badge.name,
     })),
-  );
-  const badges: OptionRef[] = season.badges.map((badge) => ({
-    id: badge.id,
-    label: badge.name,
-  }));
+    items: season.collections.flatMap((collection) =>
+      collection.items.map((item) => ({
+        id: item.id,
+        label: `${collection.name} · ${item.name}`,
+      })),
+    ),
+  };
+}
+
+function DraftConfiguration({ season }: { season: OrgProgressionSeason }) {
+  const { badges, items } = optionsDeSaison(season);
 
   return (
     <div className="mt-5 border-t-2 border-k-ink/15 pt-5">
@@ -933,7 +948,7 @@ function noChoiceAvailable(options: OptionRef[], current: string | null) {
 
 // ── 1. Badge ──
 
-function BadgeRow({ badge }: { badge: OrgProgressionBadge }) {
+export function BadgeRow({ badge }: { badge: OrgProgressionBadge }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -981,7 +996,7 @@ type BadgeFormProps =
   | { mode: "create"; seasonId: string }
   | { mode: "edit"; badge: OrgProgressionBadge; onDone: () => void };
 
-function BadgeForm(props: BadgeFormProps) {
+export function BadgeForm(props: BadgeFormProps) {
   const fieldId = useId();
   const { error, pending, run } = useProgressionMutation();
   const initial = props.mode === "edit" ? props.badge : null;
@@ -1053,7 +1068,7 @@ function BadgeForm(props: BadgeFormProps) {
 
 // ── 2. Collection et objets ──
 
-function CollectionBlock({
+export function CollectionBlock({
   collection,
 }: {
   collection: OrgProgressionCollection;
@@ -1120,7 +1135,7 @@ type CollectionFormProps =
   | { mode: "create"; seasonId: string }
   | { mode: "edit"; collection: OrgProgressionCollection; onDone: () => void };
 
-function CollectionForm(props: CollectionFormProps) {
+export function CollectionForm(props: CollectionFormProps) {
   const fieldId = useId();
   const { error, pending, run } = useProgressionMutation();
   const initial = props.mode === "edit" ? props.collection : null;
@@ -1180,7 +1195,7 @@ function CollectionForm(props: CollectionFormProps) {
   );
 }
 
-function ItemRow({ item }: { item: OrgProgressionItem }) {
+export function ItemRow({ item }: { item: OrgProgressionItem }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -1229,7 +1244,7 @@ type CollectionItemFormProps =
   | { mode: "create"; collectionId: string; collectionName: string }
   | { mode: "edit"; item: OrgProgressionItem; onDone: () => void };
 
-function CollectionItemForm(props: CollectionItemFormProps) {
+export function CollectionItemForm(props: CollectionItemFormProps) {
   const fieldId = useId();
   const { error, pending, run } = useProgressionMutation();
   const initial = props.mode === "edit" ? props.item : null;
@@ -1315,7 +1330,7 @@ function CollectionItemForm(props: CollectionItemFormProps) {
 
 // ── 3. Mission ──
 
-function MissionRow({
+export function MissionRow({
   mission,
   badges,
   items,
@@ -1415,7 +1430,7 @@ type MissionFormProps = { badges: OptionRef[]; items: OptionRef[] } & (
     }
 );
 
-function MissionForm(props: MissionFormProps) {
+export function MissionForm(props: MissionFormProps) {
   const fieldId = useId();
   const { error, pending, run } = useProgressionMutation();
   const initial = props.mode === "edit" ? props.mission : null;
@@ -1670,7 +1685,7 @@ function MissionForm(props: MissionFormProps) {
 
 // ── 4. Coffre ──
 
-function ChestRow({
+export function ChestRow({
   chest,
   items,
 }: {
@@ -1741,7 +1756,7 @@ type ChestFormProps = { items: OptionRef[] } & (
   | { mode: "edit"; chest: OrgProgressionChest; onDone: () => void }
 );
 
-function ChestForm(props: ChestFormProps) {
+export function ChestForm(props: ChestFormProps) {
   const fieldId = useId();
   const { error, pending, run } = useProgressionMutation();
   const initial = props.mode === "edit" ? props.chest : null;
