@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { blocageActivationJackpot } from "@/lib/activation/jackpot";
@@ -133,7 +134,18 @@ export async function createJackpotCampaign(
   revalidatePath("/dashboard/jackpot");
   // ATTERRISSAGE SUR L'ATELIER, et non en haut de la page de suivi : une
   // cagnotte qui vient de naître n'a rien à suivre, elle a tout à régler.
-  redirect(hrefEtapeJackpot(campaign.id, "reglages"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/cagnotte/${campaign.id}`,
+      hrefEtapeJackpot(campaign.id, "reglages"),
+    ),
+  );
 }
 
 /**

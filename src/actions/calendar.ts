@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
@@ -855,7 +856,18 @@ export async function createCalendar(
   // Atterrissage sur la PREMIÈRE ÉTAPE de l'atelier : les 24 cases viennent
   // d'être créées VIDES, donc 24 cases qui bloqueraient l'activation. La vue
   // suivi (QR, statut) n'a encore rien à montrer.
-  redirect(hrefEtapeCalendrier(calendar.id, "reglages"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/calendrier/${calendar.id}`,
+      hrefEtapeCalendrier(calendar.id, "reglages"),
+    ),
+  );
 }
 
 /**

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
@@ -218,7 +219,18 @@ export async function createLoyaltyProgram(
   revalidatePath("/dashboard/loyalty");
   // ATTERRISSAGE DANS L'ATELIER, première étape : le programme qui vient de
   // naître n'a ni palier ni règle de visite, il n'y a rien à y suivre.
-  redirect(hrefEtapeFidelite(program.id, "programme"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/fidelite/${program.id}`,
+      hrefEtapeFidelite(program.id, "programme"),
+    ),
+  );
 }
 
 /** Réglages d'un programme (nom, mode de validation, seuils, cooldown). */
