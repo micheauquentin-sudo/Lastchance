@@ -360,6 +360,10 @@ export async function updateCampaign(
   if (status === undefined) {
     revalidatePath("/dashboard/campaigns");
     revalidatePath(`/dashboard/campaigns/${id}`);
+    // LE JUMEAU DU STUDIO. `/studio/roue/[id]` vit HORS de `/dashboard` :
+    // aucune revalidation d'atelier ne l'atteint, Next revalide un CHEMIN et
+    // non une ressource (VIT-46).
+    revalidatePath(`/studio/roue/${id}`);
   }
   // Le statut (active/paused) gate la page publique : purge ISR /play.
   await revalidatePlaySlugs(supabase, { campaignId: id });
@@ -443,6 +447,7 @@ export async function updateCampaignPrejeuInvitation(
   }
 
   revalidatePath(`/dashboard/campaigns/${id}`);
+  revalidatePath(`/studio/roue/${id}`);
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
@@ -503,6 +508,7 @@ export async function updateCampaignShareInvite(
   }
 
   revalidatePath(`/dashboard/campaigns/${id}`);
+  revalidatePath(`/studio/roue/${id}`);
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
@@ -542,6 +548,7 @@ export async function updateCampaignClaim(
   }
 
   revalidatePath(`/dashboard/campaigns/${id}`);
+  revalidatePath(`/studio/roue/${id}`);
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
 }
@@ -643,6 +650,7 @@ export async function updateCampaignAutomation(
 
   revalidatePath("/dashboard/campaigns");
   revalidatePath(`/dashboard/campaigns/${id}`);
+  revalidatePath(`/studio/roue/${id}`);
   // La période gate la page publique : purge ISR /play.
   await revalidatePlaySlugs(supabase, { campaignId: id });
   return { ok: true, data: undefined };
@@ -754,6 +762,7 @@ export async function resumeCampaignAfterBudget(
 
   revalidatePath("/dashboard/campaigns");
   revalidatePath(`/dashboard/campaigns/${campaign.id}`);
+  revalidatePath(`/studio/roue/${campaign.id}`);
   await revalidatePlaySlugs(supabase, { campaignId: campaign.id });
   return { ok: true, data: undefined };
 }
