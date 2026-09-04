@@ -243,6 +243,46 @@ override est une correction de CHAÎNE D’APPROVISIONNEMENT, pas de RUNTIME. Le
 dire au moment où on le pose est le seul moyen d’éviter qu’on relise plus tard
 « audit vert » comme « livré corrigé ».
 
+### Le 2026-09-04 : une PANNE du service, prise pour une vulnérabilité
+
+Le service d'avis de npm est tombé, et la garde d'audit a bloqué toutes les
+livraisons. Trois symptômes pour une seule panne, ce qui est exactement ce qui
+rend le diagnostic difficile :
+
+- `400 Bad Request` — « Invalid package tree, run npm install to rebuild your
+  package-lock.json » ;
+- `{ error: "Service Unavailable" }` ;
+- un `npm notice` annonçant le retrait du point d'entrée hérité.
+
+**Rien n'était cassé côté dépôt.** Vérifié avant de conclure : les deux
+lockfiles sont en version 3, portent les mêmes six entrées sans `resolved`
+(bundles WASM de Tailwind), et leurs dépendances déclarées correspondent au
+verrou. L'audit de la racine passait pendant que celui du site échouait — puis
+l'inverse à la relance.
+
+**Le coût de la confusion va dans les DEUX sens**, et c'est pourquoi elle
+mérite un script plutôt qu'un jugement au cas par cas : croire à une
+vulnérabilité fait poser un override inutile, qui devient à son tour le plancher
+de la prochaine fausse alerte (§2bis) ; croire à une panne fait ignorer une
+vraie alerte.
+
+`scripts/audit-avec-reprises.mjs` tranche sur des signatures de PANNE et rejoue
+trois fois. Une vulnérabilité échoue immédiatement, sans reprise. Une panne
+prolongée échoue aussi — mais en le DISANT, parce qu'attendre ou livrer sans la
+garde est une décision humaine, pas un contournement automatique.
+
+### Un audit LOCAL dans un worktree ne fait pas foi
+
+`npm audit` lu depuis un `node_modules` monté par jonction juge
+l'INSTALLATION, pas le verrou. Pendant cet incident, un essai local a signalé
+`fflate 0.4.8` — la version installée pour un `package.json` d'avant
+l'override — alors que `npm audit --package-lock-only` répondait « found 0
+vulnerabilities » sur le même arbre.
+
+En CI il n'y a pas de `node_modules` à l'étape d'audit : c'est le VERROU qui est
+jugé. **Reproduire un verdict de CI en local demande donc
+`--package-lock-only`.**
+
 ## 3. Surveillance continue
 
 - **Dependabot** ([.github/dependabot.yml](../.github/dependabot.yml)) :
