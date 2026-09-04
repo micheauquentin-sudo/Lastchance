@@ -779,6 +779,17 @@ export async function updateEventGame(
 
   revalidatePath("/dashboard/events");
   revalidatePath(`/dashboard/events/${parsed.data.id}`);
+  /**
+   * LE JUMEAU DE STUDIO — et il n’est pas décoratif.
+   *
+   * Le studio de la soirée vit à `/studio/soiree/[id]`, HORS de `/dashboard` :
+   * la ligne ci-dessus ne l’atteint pas, parce que Next revalide un CHEMIN et
+   * non une ressource. C’est le défaut VIT-37 puis VIT-39, mot pour mot — une
+   * action qui répond « enregistré », qui dit vrai, et un écran qui garde la
+   * version d’avant. Chaque revalidation d’atelier de ce fichier porte donc son
+   * jumeau, et `revalidation-studio.test.ts` échoue par FONCTION s’il manque.
+   */
+  revalidatePath(`/studio/soiree/${parsed.data.id}`);
   return { ok: true, data: undefined };
 }
 
@@ -859,6 +870,7 @@ export async function setEventGameStatus(
 
   revalidatePath("/dashboard/events");
   revalidatePath(`/dashboard/events/${id}`);
+  revalidatePath(`/studio/soiree/${id}`);
   return { ok: true, data: undefined };
 }
 
@@ -999,6 +1011,7 @@ export async function createEventQuestion(input: {
   }
 
   revalidatePath(`/dashboard/events/${parsed.data.game_id}`);
+  revalidatePath(`/studio/soiree/${parsed.data.game_id}`);
   return { ok: true, data: { id: question.id } };
 }
 
@@ -1195,6 +1208,7 @@ export async function genererQuestionsEvenement(input: {
   }
 
   revalidatePath(`/dashboard/events/${parsed.data.game_id}`);
+  revalidatePath(`/studio/soiree/${parsed.data.game_id}`);
   return {
     ok: true,
     data: {
@@ -1446,6 +1460,7 @@ export async function updateEventQuestion(input: {
   }
 
   revalidatePath(`/dashboard/events/${existing.game_id}`);
+  revalidatePath(`/studio/soiree/${existing.game_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1564,6 +1579,7 @@ export async function deleteEventQuestion(
   }
 
   revalidatePath(`/dashboard/events/${question.game_id}`);
+  revalidatePath(`/studio/soiree/${question.game_id}`);
   return { ok: true, data: undefined };
 }
 
@@ -1636,6 +1652,7 @@ export async function createEventSession(
   }
 
   revalidatePath(`/dashboard/events/${parsed.data.game_id}`);
+  revalidatePath(`/studio/soiree/${parsed.data.game_id}`);
   return { ok: true, data: { id: session.id } };
 }
 
@@ -1706,6 +1723,7 @@ export async function updateEventSession(input: {
   // donc revalidée par personne — le commerçant modifiait le lot d'une session
   // et l'écran gardait l'ancien, jusqu'à un rechargement manuel.
   revalidatePath(`/dashboard/events/${session.game_id}`);
+  revalidatePath(`/studio/soiree/${session.game_id}`);
   return { ok: true, data: undefined };
 }
 
