@@ -183,7 +183,19 @@
   regarde et rouge là où tout le monde travaille apprend à ignorer une ligne
   rouge.
 
-**Décisions** : ADR-145 à ADR-160.
+- **VIT-44 — Le jackpot collectif passe au studio** (ADR-161). Huit étapes,
+  route `/studio/cagnotte/[id]`. Son code NOMMAIT le défaut : `updateJackpotCampaign`
+  réécrit quatorze colonnes en bloc, et un `public_slug` non rendu casse tous
+  les QR imprimés, en silence. La mutation qui le retire fait rougir les huit
+  étapes. **Trouvaille du lot** : la garde de revalidation testait une
+  APPARTENANCE — supprimer un jumeau la laissait verte, deux appels au même
+  littéral couvrant le troisième. Elle compte désormais les occurrences, et les
+  CINQ copies (calendrier, quiz, chasse, fidélité, pronostics) sont corrigées.
+  L'appel non gardé était celui du changement de statut. Aucun drapeau `apercu`
+  nécessaire — l'énumération montre que les blocs montés n'importent aucune
+  action, et une garde le mesure après 120 s de faux minuteurs.
+
+**Décisions** : ADR-145 à ADR-161.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
