@@ -241,7 +241,15 @@ export function CampaignStatusControls({
       ))}
       raccourcis={
         <>
-          <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+          {/* L’ATELIER RESTE, POUR LE TÉLÉPHONE (VIT-46). Au-delà de `lg`, le
+              studio le remplace — la règle des six modules déjà portés. Ce qui
+              est masqué est l’ENTRÉE, jamais la ROUTE : `?etape=` demeure
+              atteignable, un favori doit continuer de mener quelque part.
+              `RaccourciAtelier` lui-même n’est pas touché : quatre modules le
+              montent, le masquer chez lui les masquerait tous. */}
+          <span className="contents lg:hidden">
+            <RaccourciAtelier href={hrefEtapeRoue(campaign.id, "jeu", wheelId)} />
+          </span>
           <VoirLeJeu href={hrefJeu} />
         </>
       }
