@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { baseAtelierRoue } from "@/components/dashboard/atelier-roue-etapes";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { getUserAndOrg } from "@/lib/auth";
 import { repriseBudgetRequise } from "@/lib/campaign-window";
 import {
@@ -149,7 +151,34 @@ export async function createCampaign(
   // mécanique, les lots — n'est pas : il fallait un second clic que rien
   // n'annonçait, et l'info-bulle du formulaire promettait pourtant « vous
   // réglez ensuite la roue et les lots sur la page qui s'ouvre ».
-  redirect(`/dashboard/campaigns/${campaignId}/wheel`);
+  //
+  // ATTERRISSAGE : LE STUDIO SUR ORDINATEUR, L'ATELIER SUR TÉLÉPHONE (VIT-52).
+  //
+  // Huitième et dernière création à rejoindre le mécanisme de VIT-51. Elle y
+  // avait échappé pour une raison purement TEXTUELLE : les sept autres
+  // rejoignaient leur atelier par un appel à leur helper d'étape — la seule
+  // forme que la garde surveillait — quand celle-ci écrivait le même chemin en
+  // toutes lettres, ce qu'aucune sonde ne reconnaissait comme équivalent. Le jeu
+  // instantané a pourtant son studio depuis VIT-46 — on créait donc une
+  // campagne sur un ordinateur pour tomber dans l'écran que le studio remplace.
+  //
+  // L'ATELIER RESTE LE REPLI, jamais le studio : champ absent — JavaScript
+  // coupé, requête forgée — on retombe sur l'écran qui fonctionne aux deux
+  // tailles. Un clic de plus sur un ordinateur coûte moins qu'un écran à deux
+  // colonnes servi à un téléphone.
+  //
+  // C'est la BASE de l'atelier qui est nommée, et non sa première étape comme
+  // ailleurs : la roue est le seul module dont la page n'a pas de vue suivi
+  // (`parseEtape(..., "premiere")`), donc l'URL nue REND déjà l'étape « Le jeu ».
+  // Y ajouter `?etape=jeu` changerait l'adresse sans changer l'écran, et
+  // dévierait de celle que citent la Carte de l'Aventure et le hero.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/roue/${campaignId}`,
+      baseAtelierRoue(campaignId),
+    ),
+  );
 }
 
 /** État utile à l'écran après une mise à jour sans rechargement complet. */
