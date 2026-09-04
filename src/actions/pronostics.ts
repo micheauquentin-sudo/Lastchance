@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -249,7 +250,18 @@ export async function createContest(
   // championnat qui vient de naître n'a rien à suivre — ni classement, ni
   // clôture, ni palmarès. L'URL est construite par `hrefEtapeContest` pour
   // qu'il n'existe qu'un seul endroit qui sache la fabriquer.
-  redirect(hrefEtapeContest(contest.id, "championnat"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/pronostics/${contest.id}`,
+      hrefEtapeContest(contest.id, "championnat"),
+    ),
+  );
 }
 
 export interface SyncOutcome {

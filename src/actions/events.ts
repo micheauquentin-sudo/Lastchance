@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -748,7 +749,18 @@ export async function createEventGame(
   revalidatePath("/dashboard/events");
   // ATTERRISSAGE SUR L'ATELIER, et non en haut de la page de suivi : un jeu
   // qui vient de naître n'a rien à suivre, il a tout à préparer.
-  redirect(hrefEtapeEvenement(game.id, "jeu"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/soiree/${game.id}`,
+      hrefEtapeEvenement(game.id, "jeu"),
+    ),
+  );
 }
 
 export async function updateEventGame(

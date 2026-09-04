@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { refusActivationChasse } from "@/lib/activation/hunts";
@@ -95,7 +96,18 @@ export async function createHunt(
   // ATTERRISSAGE DANS L'ATELIER, première étape. La chasse qui vient de naître
   // n'a ni étape ni lot : la déposer sur l'écran de SUIVI, c'est montrer des
   // compteurs à zéro à quelqu'un qui n'a encore rien à suivre.
-  redirect(hrefEtapeChasse(hunt.id, "chasse"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/chasse/${hunt.id}`,
+      hrefEtapeChasse(hunt.id, "chasse"),
+    ),
+  );
 }
 
 /** Réglages d'une chasse (nom, ordre, délai, lot, stock, fenêtre). */

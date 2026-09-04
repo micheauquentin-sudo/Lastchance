@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { destinationApresCreation } from "@/lib/atterrissage-studio";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
@@ -936,7 +937,18 @@ export async function createQuiz(
   // Atterrissage sur la PREMIÈRE ÉTAPE de l'atelier, pas sur la vue suivi : un
   // quiz qui vient de naître n'a rien à suivre — ni QR, ni participation — et
   // tout à préparer. La vue suivi reste à un clic (« ← Retour au suivi »).
-  redirect(hrefEtapeQuiz(quiz.id, "quiz"));
+  // ATTERRISSAGE : LE STUDIO SUR GRAND ÉCRAN, L'ATELIER SINON (VIT-51).
+  // Le serveur ne connaît pas la taille de l'écran ; le formulaire la lui a
+  // dite (`ChampGrandEcran`). Champ absent — JavaScript coupé — on retombe sur
+  // l'atelier, qui fonctionne partout : un clic de plus sur un ordinateur vaut
+  // mieux qu'un écran à deux colonnes servi à un téléphone.
+  redirect(
+    destinationApresCreation(
+      formData,
+      `/studio/quiz/${quiz.id}`,
+      hrefEtapeQuiz(quiz.id, "quiz"),
+    ),
+  );
 }
 
 /** Réglages d'un quiz (nom, thème, URL publique, consigne d'introduction). */

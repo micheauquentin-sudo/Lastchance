@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { ChampGrandEcran } from "@/components/studio/champ-grand-ecran";
 import { createJackpotCampaign } from "@/actions/jackpot";
 import { Button } from "@/components/ui/button";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
@@ -25,6 +26,9 @@ export function NewJackpotForm({ instanceId = "" }: { instanceId?: string }) {
       action={formAction}
       className="w-full max-w-xl flex flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
+      {/* Dit au serveur sur quel écran on est, pour atterrir dans le
+          studio plutôt que dans l'atelier (VIT-51). */}
+      <ChampGrandEcran />
       <div className="w-full sm:w-auto">
         <Label htmlFor={`jackpot-name${instanceId}`}>Nom du jackpot</Label>
         <Input

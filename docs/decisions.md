@@ -10589,3 +10589,59 @@ laisser de traces dans les mesures de la page qu'il imite.
    salle/horaires ne revalident que la page d'activité, jamais la liste — alors
    que `/dashboard/reservations` monte les mêmes panneaux depuis RDV-13. Cet
    écran reste donc périmé après une modification d'horaires.
+
+## ADR-167 — Le serveur ne connaît pas la taille de l'écran, mais le formulaire si
+
+**Date** : 2026-09-04
+**Statut** : Accepté
+**Contexte** : VIT-51, après les douze modules. Demande du propriétaire :
+« directement dans le studio sur ordinateur et directement sur l'atelier sur
+téléphone ».
+
+### Pourquoi les sept créations envoyaient toutes vers l'atelier
+
+Les sept actions de création finissent par un `redirect()`, exécuté sur le
+SERVEUR — qui ne connaît pas la fenêtre. L'atelier était le seul écran qui
+fonctionne aux deux tailles, donc le seul choix honnête.
+
+Depuis que chaque animation a son studio, cet atterrissage est devenu une
+incohérence VISIBLE : sur un ordinateur, on crée une animation et on tombe dans
+l'écran que le studio est censé remplacer.
+
+### Décision — le formulaire dit ce que le serveur ignore
+
+`ChampGrandEcran` pose un champ caché dont la valeur est écrite APRÈS
+l'hydratation, depuis `window.innerWidth`. `destinationApresCreation` tranche.
+
+Trois détails, chacun pour une raison :
+
+- **La valeur n'est pas rendue côté serveur.** Il n'y a pas de fenêtre ; une
+  valeur inventée produirait un écart d'hydratation dès que le client la
+  corrigerait. Le champ part vide et sa valeur est écrite sur le nœud du DOM,
+  que React ne compare pas.
+- **Le repli est l'ATELIER.** Champ absent — JavaScript coupé, requête forgée —
+  on retombe sur l'écran qui fonctionne partout. Un clic de plus sur un
+  ordinateur coûte moins qu'un écran à deux colonnes servi à un téléphone.
+- **Le seuil est celui du CSS** (`RUPTURE_LG`, 1024). C'est la même valeur qui
+  décide d'afficher la carte « Mon studio » plutôt que celle de l'atelier :
+  atterrir dans un studio dont l'entrée est masquée serait pire que
+  l'incohérence qu'on répare.
+
+**Écarté** : une page intermédiaire qui redirige côté client. Elle clignote, et
+elle ajoute un aller-retour à un parcours qui vient déjà d'en faire un.
+
+**Écarté** : deux champs cachés, l'un masqué par media query. Un champ masqué
+est POSTÉ quand même — les deux seraient partis, et le serveur aurait dû
+arbitrer entre deux réponses contradictoires.
+
+### La garde apparie les DEUX moitiés
+
+Le mécanisme n'existe que si l'action consulte ET que le formulaire envoie. Si
+l'une des moitiés disparaît, l'autre continue de fonctionner : on retombe
+simplement sur l'atelier, c'est-à-dire le comportement d'avant. **Rien ne
+rougirait.**
+
+C'est la forme de régression la plus courante de ce dépôt — la moitié qui reste
+marche, donc personne ne voit que l'autre manque. La garde vérifie donc les deux
+côtés module par module, et refuse en plus qu'un huitième module ajouté demain
+redirige en dur vers son atelier.

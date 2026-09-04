@@ -257,8 +257,17 @@
   L'aperçu n'appelle PAS le chargeur public : il compte la pression par IP, et
   un aperçu ne doit pas laisser de traces dans les mesures de la page qu'il
   imite.
+- **VIT-51 — L'atterrissage après création suit l'écran** (ADR-167). Les sept
+  actions de création redirigeaient toutes vers l'ATELIER, faute pour le serveur
+  de connaître la taille de l'écran. Le formulaire, lui, la connaît : il l'envoie
+  (`ChampGrandEcran`), l'action tranche. Studio au-delà de 1024 px — le MÊME
+  seuil que celui qui décide d'afficher la carte « Mon studio » —, atelier en
+  dessous, et atelier aussi quand le champ manque : un clic de plus sur un
+  ordinateur coûte moins qu'un écran à deux colonnes servi à un téléphone.
+  La garde apparie les DEUX moitiés : si le formulaire cesse d'envoyer, l'action
+  retombe en silence sur le comportement d'avant, et rien ne rougirait.
 
-**Décisions** : ADR-145 à ADR-166.
+**Décisions** : ADR-145 à ADR-167.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { ChampGrandEcran } from "@/components/studio/champ-grand-ecran";
 import { createContest } from "@/actions/pronostics";
 import { COMPETITIONS } from "@/lib/competitions";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,9 @@ export function NewContestForm({
       action={formAction}
       className="flex w-full flex-wrap items-end gap-2 rounded-2xl border-2 border-k-ink bg-white p-4 shadow-[4px_4px_0_rgba(33,29,22,0.9)]"
     >
+      {/* Dit au serveur sur quel écran on est, pour atterrir dans le
+          studio plutôt que dans l'atelier (VIT-51). */}
+      <ChampGrandEcran />
       {/* Modèles préconfigurés : le football n'est qu'une carte parmi les
           autres. La valeur envoyée EST la case cochée (`event_kind`), il
           n'y a donc aucun champ caché à tenir synchronisé. */}
