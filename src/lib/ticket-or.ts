@@ -22,6 +22,30 @@ export interface LotTicketOrView {
   ordre: number;
 }
 
+/**
+ * TIRABLE — le prédicat du tirage, écrit UNE fois.
+ *
+ * C'est la TRADUCTION LITTÉRALE du filtre de `tirer_ticket_or`
+ * (20261028120000, où il apparaît deux fois) : `actif and poids > 0 and (stock
+ * is null or stock > 0)`. Il vit ici parce que TROIS écrans posent la même
+ * question — le tableau de bord (« aucun lot n'est tirable »), l'étape de
+ * vérification du studio, et l'aperçu, qui choisit le lot d'exemple.
+ *
+ * Deux formulations divergentes du même prédicat, ce n'est pas un doublon
+ * bénin : c'est un écran qui annonce « prêt » sur une configuration que la base
+ * refusera, et un commerçant qui remet des tickets ne donnant rien. Le
+ * recopier, c'est signer pour cette panne au premier ajustement du SQL.
+ */
+export function estLotTirable(lot: {
+  actif: boolean;
+  poids: number;
+  stock: number | null;
+}): boolean {
+  // `stock === null` et NON `!lot.stock` : `0` est un stock ÉPUISÉ, pas un
+  // stock illimité. Les confondre rendrait tirable un lot qu'il n'y a plus.
+  return lot.actif && lot.poids > 0 && (lot.stock === null || lot.stock > 0);
+}
+
 export interface MesuresTicketOr {
   emis: number;
   tires: number;
