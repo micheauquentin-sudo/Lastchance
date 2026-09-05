@@ -2,16 +2,32 @@ import { Lilita_One, Nunito } from "next/font/google";
 import Link from "next/link";
 import { Avatar } from "@/lib/avatars";
 import { HeroShowcase } from "@/components/marketing/hero-showcase";
+import { HeroStickers } from "@/components/marketing/hero-stickers";
 import { Magnetic } from "@/components/marketing/magnetic";
 import { Reveal } from "@/components/marketing/reveal";
 import { ScrollArrow } from "@/components/marketing/scroll-arrow";
+import { ScrollPanoramaBackground } from "@/components/marketing/scroll-panorama-background";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { SkipLink } from "@/components/ui/skip-link";
 import { Tilt3D } from "@/components/ui/tilt-3d";
 
 /* DA « La Kermesse » : Lilita One pour les titres (voix foraine, ronde),
    Nunito 600-900 pour le corps. `--font-heading` est aussi consommé par
-   HeroShowcase (labels de la roue, écran du téléphone). */
+   HeroShowcase (labels de la roue, écran du téléphone).
+
+   ── Poids visuel : ce que cette page NE fait plus ──
+   La page vit sur un décor scrollytelling : une illustration verticale unique
+   translatée au scroll (`ScrollPanoramaBackground`, `public/panorama/`), des
+   nuages bleus au corridor rose puis violet.
+   Chaque section portait auparavant une carte à bordure d'encre 3 px, ombre
+   dure diagonale et fond blanc à 82 % : empilé, cela formait une grille de
+   boîtes qui enfermait le film au lieu de flotter dessus. Désormais :
+     · les SECTIONS sont transparentes, sans séparateur pleine largeur ;
+     · les CARTES sont du verre fin (`k-card`), l'encre pleine et l'ombre dure
+       n'arrivent qu'au survol ou à l'état ouvert (`k-card-hover`) ;
+     · les OMBRES dures sont verticales (`k-hard`), plus jamais diagonales ;
+     · les BOUTONS et les STICKERS gardent la signature complète — c'est la
+       marque, et elle doit rester reconnaissable quelque part. */
 const lilita = Lilita_One({
   subsets: ["latin"],
   weight: "400",
@@ -25,13 +41,16 @@ const nunito = Nunito({
 
 const DISPLAY = { fontFamily: "var(--font-display), system-ui, sans-serif" } as const;
 
+/** Conteneur commun : transparent, centré, le décor passe derrière. */
+const SECTION = "relative z-10 mx-auto max-w-6xl scroll-mt-28 px-4 py-16 sm:px-6 sm:py-20";
+
 /* ─────────────────────────── Contenu ─────────────────────────── */
 
 const HERO_CHIPS = [
-  { label: "Prêt en 10 min", bg: "bg-k-blue", text: "text-k-ink" },
-  { label: "Conforme RGPD", bg: "bg-k-green", text: "text-k-bg" },
-  { label: "Sans engagement", bg: "bg-k-pink", text: "text-k-ink" },
-  { label: "Vos clients adorent", bg: "bg-k-yellow", text: "text-k-ink" },
+  "Prêt en 10 min",
+  "Sans compte client",
+  "Conforme RGPD",
+  "Sans engagement",
 ];
 
 const STEPS = [
@@ -46,7 +65,7 @@ const STEPS = [
     n: 2,
     dot: "bg-k-yellow",
     tilt: "rotate-[1.3deg]",
-    title: "Vos clients jouent",
+    title: "Ils tentent leur chance",
     description: "Ils scannent, tournent la roue et découvrent leur gain immédiatement.",
   },
   {
@@ -54,7 +73,7 @@ const STEPS = [
     dot: "bg-k-pink",
     tilt: "-rotate-[0.7deg]",
     title: "Vous encaissez les retours",
-    description: "Gains validés en caisse, stats et emails collectés en temps réel.",
+    description: "Ils repassent la porte pour leur gain. Vous le validez en caisse en une seconde.",
   },
 ];
 
@@ -142,20 +161,40 @@ const FAQ = [
 
 /* ─────────────────────── Éléments partagés ─────────────────────── */
 
-/** Pastille-titre de section (« COMMENT ÇA MARCHE », …). */
-function KBadge({
+/**
+ * Sur-titre de section : pastille colorée + majuscules espacées, posé À NU
+ * sur le décor. Remplace l'ancienne étiquette encadrée d'encre, qui ajoutait
+ * une boîte par section.
+ *
+ * La couleur vit dans la PASTILLE, pas dans le texte : mesuré sur les images
+ * réelles du décor, voile compris, l'orange texte tombe à 1,67:1 là où le halo
+ * ne couvre pas, et plafonne à 4,66:1 là où il couvre — trop juste pour du
+ * 12 px. En encre halotée, c'est 15,5:1 au mieux et 5,7:1 au pire, sur le bas
+ * du décor où le corridor de nuages devient violet sombre.
+ */
+function KEyebrow({
   children,
-  className = "bg-k-bg",
+  dot = "accent",
+  tone = "ink",
 }: {
   children: React.ReactNode;
-  className?: string;
+  /* `accent` (défaut) suit la teinte du décor ; sinon une classe de fond de la
+     charte, pour les rares endroits où la couleur doit rester fixe. */
+  dot?: string;
+  /* `cream` sert au seul panneau foncé : le halo crème y serait invisible, et
+     le texte s'y pose sur une surface maîtrisée qui n'en a pas besoin. */
+  tone?: "ink" | "cream";
 }) {
+  const accent = dot === "accent";
   return (
-    <span
-      className={`k-border k-shadow-sm inline-block rounded-full px-5 py-1.5 text-sm font-black tracking-[0.1em] ${className}`}
-    >
-      {children}
-    </span>
+    <div className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.18em] sm:text-sm">
+      <span
+        aria-hidden
+        className={`h-2 w-2 flex-none rounded-full ${accent ? "" : dot}`}
+        style={accent ? { backgroundColor: "var(--backdrop-accent)" } : undefined}
+      />
+      <span className={tone === "cream" ? "text-k-bg" : "k-halo text-k-ink"}>{children}</span>
+    </div>
   );
 }
 
@@ -189,7 +228,7 @@ function KOutline({ href, children }: { href: string; children: React.ReactNode 
   return (
     <Link
       href={href}
-      className="k-border inline-block whitespace-nowrap rounded-full bg-k-bg px-7 py-3.5 text-base font-black transition-colors hover:bg-k-ink/5 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+      className="k-border k-btn inline-block whitespace-nowrap rounded-full bg-white/85 px-7 py-3.5 text-base font-black text-k-ink backdrop-blur-md focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
     >
       {children}
     </Link>
@@ -217,8 +256,14 @@ function KCross() {
   );
 }
 
-/** Trèfle à quatre feuilles souriant — mascotte du hero (pur CSS, fidèle
- *  à la maquette : 4 feuilles vertes, tige, visage, oscillation douce). */
+/** Trèfle à quatre feuilles souriant — ancienne mascotte du hero (pur CSS).
+ *
+ *  RETRAIT TEMPORAIRE (demande du 2026-09-03) : sur le décor scrollytelling,
+ *  la mascotte de 250 px écrasait le film et poussait le titre sous la ligne
+ *  de flottaison. Le composant est CONSERVÉ tel quel pour être remis sans
+ *  avoir à le réécrire — les stickers flottants du hero tiennent sa place
+ *  d'ancre cartoon en attendant. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CloverMascot() {
   const leaf =
     "absolute w-[96px] h-[96px] bg-k-green k-border rounded-[50%_50%_16px_50%]";
@@ -250,110 +295,87 @@ function CloverMascot() {
   );
 }
 
-/** Mini trèfle SVG (remplace l'emoji du sticker, même langage que la mascotte). */
-function CloverGlyph({ className = "" }: { className?: string }) {
-  return (
-    <svg aria-hidden viewBox="0 0 24 24" className={className} fill="currentColor">
-      <path d="M12 12c-2.6-.4-4.6-1-5.6-2.6a3.2 3.2 0 1 1 4.5-4.5C12.5 6 13 8 12.9 10.6 13.4 8 14 6 15.6 5a3.2 3.2 0 1 1 4.5 4.5c-1.6 1-3.6 1.4-6.2 1.4 2.6.4 4.6 1 5.6 2.6a3.2 3.2 0 1 1-4.5 4.5c-1-1.6-1.4-3.6-1.4-6.2-.4 2.6-1 4.6-2.6 5.6a3.2 3.2 0 1 1-4.5-4.5c1.6-1 3.6-1.5 6.1-1.5Z" />
-      <path d="M12.5 13.5 11 21h2.4l-.9-7.5Z" />
-    </svg>
-  );
-}
-
 /* ─────────────────────────── Sections ─────────────────────────── */
 
 function Hero() {
   return (
-    <section className="relative overflow-x-clip bg-k-bg px-5 pb-14 pt-12 text-center sm:px-8 sm:pt-14">
-      {/* Stickers flottants (masqués sur mobile pour la lisibilité) */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 z-[3] hidden lg:block">
-        {/* -20 % : losange jaune double */}
-        <div className="k-float-b absolute left-[10%] top-[110px]">
-          <div className="relative h-[120px] w-[120px]">
-            <div className="k-border absolute inset-0 rotate-45 rounded-[22px] bg-k-yellow" />
-            <div className="k-border absolute inset-0 rounded-[22px] bg-k-yellow" />
-            <div className="absolute inset-0 flex -rotate-[8deg] items-center justify-center text-[28px]" style={DISPLAY}>
-              -20%
-            </div>
-          </div>
-        </div>
-        <div className="k-float-c absolute right-[9%] top-[150px]">
-          <span className="k-border k-shadow-sm inline-block rotate-[5deg] whitespace-nowrap rounded-full bg-k-pink px-6 py-3 text-2xl font-black">
-            Café offert
-          </span>
-        </div>
-        <div className="k-float-c absolute bottom-[130px] left-[6%]">
-          <span className="k-border k-shadow-sm inline-block -rotate-[5deg] whitespace-nowrap rounded-full bg-k-blue px-6 py-3 text-xl font-black tracking-wide">
-            SCAN & JOUE
-          </span>
-        </div>
-        <div className="k-float-b absolute bottom-[120px] right-[7%]">
-          <span className="k-border k-shadow-sm inline-flex rotate-[4deg] items-center gap-2 whitespace-nowrap rounded-full bg-k-green px-6 py-3 text-xl font-black text-k-bg">
-            Toutes les chances
-            <CloverGlyph className="h-5 w-5" />
-          </span>
-        </div>
-      </div>
+    <section className="relative z-10 overflow-x-clip px-4 pb-16 pt-28 text-center sm:px-6 sm:pt-32">
+      <HeroStickers />
 
-      <div className="rise-in">
-        <CloverMascot />
+      {/* Elle disait la même chose que le titre juste en dessous, sur deux
+          lignes en mobile. Réduite au seul fait qu'elle apporte : la durée
+          d'essai. */}
+      <div className="rise-in relative z-[2] inline-flex items-center gap-2 rounded-full border-[3px] border-k-ink bg-k-yellow px-4 py-1.5 text-[12px] font-black tracking-[0.06em] text-k-ink shadow-[0_4px_0_var(--color-k-ink)] sm:text-[13px]">
+        <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-k-orange" />
+        7 jours offerts
       </div>
 
       <h1
-        className="rise-in mx-auto mt-6 max-w-[840px] text-[clamp(2.9rem,8vw,5.4rem)] leading-[1.02]"
+        className="rise-in k-halo relative z-[2] mx-auto mt-6 max-w-[860px] text-[clamp(2.9rem,8vw,5.4rem)] leading-[1.02]"
         style={{ ...DISPLAY, animationDelay: "80ms" }}
       >
         La chance fait{" "}
-        <span className="inline-block -rotate-[1.56deg] rounded-[18px] border-[3px] border-k-ink bg-k-yellow px-4 pb-1.5 shadow-[8px_8px_0_var(--color-k-ink)]">
+        <span className="inline-block -rotate-[1.56deg] rounded-[18px] border-[3px] border-k-ink bg-k-yellow px-4 pb-1.5 shadow-[0_5px_0_var(--color-k-ink)]">
           revenir
         </span>{" "}
         vos clients
       </h1>
 
-      <p
-        className="rise-in mx-auto mt-7 max-w-[520px] text-[19px] font-bold leading-[1.55] text-k-body"
-        style={{ animationDelay: "160ms" }}
-      >
-        Un QR code sur le comptoir, une roue à vos couleurs, des gains que
-        l&apos;on vient chercher. Prêt en 10 minutes, conforme RGPD.
-      </p>
+      {/* Le chapô a été retiré : il redisait le titre en plus long, et les
+          quatre pastilles ci-dessous portent déjà « prêt en 10 min » et
+          « conforme RGPD ». Un titre, deux boutons, quatre preuves — le hero
+          n'a rien à ajouter, et le décor respire d'autant. */}
 
       <div
-        className="rise-in mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row"
-        style={{ animationDelay: "240ms" }}
+        className="rise-in relative z-[2] mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row"
+        style={{ animationDelay: "160ms" }}
       >
-        <KPrimary href="/signup">Créer ma roue →</KPrimary>
-        <KOutline href="#demo-roue">Voir la démo</KOutline>
+        <KPrimary href="/signup" className="bg-k-orange text-k-ink">
+          Créer ma roue →
+        </KPrimary>
+        <KOutline href="#demo-roue">Essayer la roue</KOutline>
       </div>
 
       <div
-        className="rise-in mt-8 flex flex-wrap justify-center gap-2.5"
-        style={{ animationDelay: "320ms" }}
+        className="rise-in relative z-[2] mt-8 flex flex-wrap justify-center gap-2.5"
+        style={{ animationDelay: "240ms" }}
       >
         {HERO_CHIPS.map((chip) => (
           <span
-            key={chip.label}
-            className={`k-border-thin rounded-full px-3.5 py-1.5 text-sm font-black ${chip.bg} ${chip.text}`}
+            key={chip}
+            className="inline-flex items-center gap-1.5 rounded-full border border-k-ink/20 bg-white/80 px-4 py-2 text-sm font-bold text-k-ink shadow-[0_2px_8px_rgba(33,29,22,0.10)] backdrop-blur-md"
           >
-            {chip.label}
+            <span aria-hidden className="font-black text-k-green">
+              ✓
+            </span>
+            {chip}
           </span>
         ))}
       </div>
-
-      {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
-      <div aria-hidden data-avatar-slot="hero" className="pointer-events-none absolute bottom-4 left-8 h-0 w-0" />
     </section>
   );
 }
 
-/** Ruban marquee jaune « SCANNEZ ★ TOURNEZ ★ GAGNEZ ★ REVENEZ ». */
+/** Ruban marquee : pilule centrée, plus une barre pleine largeur bordée. */
 function Marquee() {
-  const line = "SCANNEZ ★ TOURNEZ ★ GAGNEZ ★ REVENEZ ★ ".repeat(3);
+  const line = "ILS SCANNENT ★ ILS TOURNENT ★ ILS GAGNENT ★ ILS REVIENNENT ★ ".repeat(3);
   return (
-    <div aria-hidden className="ticker overflow-hidden border-y-[3px] border-k-ink bg-k-yellow py-3">
-      <div className="ticker-track flex w-max whitespace-nowrap text-xl tracking-[0.06em]" style={DISPLAY}>
-        <span className="pr-10">{line.trim()}</span>
-        <span className="pr-10">{line.trim()}</span>
+    <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
+      <div
+        aria-hidden
+        className="ticker overflow-hidden rounded-full bg-k-ink/80 py-2.5 backdrop-blur-md"
+      >
+        {/* La cible nommée par la demande : le ruban porte la teinte du moment.
+            Sûr à toutes les teintes — la clarté est constante (L 0,58), donc le
+            contraste sur l'encre ne descend jamais sous ~4:1, et ce ruban est
+            décoratif (`aria-hidden`), pas une information. */}
+        <div
+          className="ticker-track flex w-max whitespace-nowrap text-lg font-extrabold tracking-[0.08em]"
+          style={{ ...DISPLAY, color: "var(--backdrop-accent)" }}
+        >
+          <span className="pr-10">{line.trim()}</span>
+          <span className="pr-10">{line.trim()}</span>
+        </div>
       </div>
     </div>
   );
@@ -362,20 +384,28 @@ function Marquee() {
 /** Grand stand de démo : la vraie roue interactive dans son cadre forain. */
 function WheelDemo() {
   return (
-    <section id="demo-roue" className="relative scroll-mt-24 bg-k-blue px-5 py-16 sm:px-8 sm:py-20">
+    <section id="demo-roue" className={SECTION}>
       <ScrollArrow />
       <div className="text-center">
         <Reveal>
-          <KBadge>LA DÉMO, EN VRAI</KBadge>
-          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+          <KEyebrow>La démo, en vrai</KEyebrow>
+          <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
             Essayez la roue, là, tout de suite.
           </h2>
         </Reveal>
       </div>
+      {/* Plus de carte, plus de rayures, plus d'ombre : la roue et le téléphone
+          flottent à même le décor. Il reste un halo crème SANS ARÊTE — assez
+          pour que la roue se détache d'un ciel chargé de nuages, pas assez pour
+          redevenir une boîte. */}
       <Reveal className="reveal-pop mx-auto mt-10 max-w-5xl" delay={120}>
         <Tilt3D intensity={15} scale={1.03}>
-          <div className="k-border k-shadow-lg -rotate-[0.6deg] rounded-[22px] bg-k-bg p-3 sm:p-4">
-            <div className="k-border k-stripes rounded-[14px] px-3 py-8 sm:px-8 sm:py-10">
+          <div className="relative px-3 py-8 sm:px-8 sm:py-10">
+            <span
+              aria-hidden
+              className="k-stage-glow pointer-events-none absolute -inset-x-8 -inset-y-6"
+            />
+            <div className="relative">
               <HeroShowcase />
             </div>
           </div>
@@ -401,7 +431,7 @@ function KArrow({ flip = false }: { flip?: boolean }) {
 function StepVisual({ step }: { step: number }) {
   if (step === 1) {
     return (
-      <div className="k-border mb-4 mt-4 grid h-[86px] w-[86px] grid-cols-3 grid-rows-3 gap-[5px] rounded-[14px] bg-white p-2.5">
+      <div className="k-border-thin mb-4 mt-4 grid h-[86px] w-[86px] grid-cols-3 grid-rows-3 gap-[5px] rounded-[14px] bg-white/90 p-2.5">
         <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
         <span /><span className="rounded-[3px] bg-k-orange" /><span />
         <span className="rounded-[3px] bg-k-ink" /><span /><span className="rounded-[3px] bg-k-ink" />
@@ -411,13 +441,13 @@ function StepVisual({ step }: { step: number }) {
   if (step === 2) {
     return (
       <div
-        className="k-border k-spin mb-4 mt-4 h-[86px] w-[86px] rounded-full"
+        className="k-border-thin k-spin mb-4 mt-4 h-[86px] w-[86px] rounded-full"
         style={{ background: "conic-gradient(var(--color-k-orange) 0 25%, var(--color-k-yellow) 0 50%, var(--color-k-pink) 0 75%, var(--color-k-blue) 0 100%)" }}
       />
     );
   }
   return (
-    <div className="k-border mb-4 mt-4 flex h-[86px] w-[86px] items-end gap-2 rounded-[14px] bg-white p-3">
+    <div className="k-border-thin mb-4 mt-4 flex h-[86px] w-[86px] items-end gap-2 rounded-[14px] bg-white/90 p-3">
       <span className="k-border-thin h-[38%] flex-1 rounded-t-md bg-k-pink" />
       <span className="k-border-thin h-[64%] flex-1 rounded-t-md bg-k-yellow" />
       <span className="k-border-thin h-[88%] flex-1 rounded-t-md bg-k-green" />
@@ -427,10 +457,10 @@ function StepVisual({ step }: { step: number }) {
 
 function Steps() {
   return (
-    <section id="comment-ca-marche" className="scroll-mt-24 border-y-[3px] border-k-ink bg-k-yellow px-5 py-16 sm:px-8 sm:py-20">
+    <section id="comment-ca-marche" className={SECTION}>
       <Reveal className="text-center">
-        <KBadge>COMMENT ÇA MARCHE</KBadge>
-        <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+        <KEyebrow>Comment ça marche</KEyebrow>
+        <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
           Trois étapes. Zéro prise de tête.
         </h2>
       </Reveal>
@@ -444,9 +474,9 @@ function Steps() {
             >
               <div className={step.tilt}>
                 <Tilt3D>
-                  <div className="k-border k-shadow-lg relative w-full max-w-[340px] rounded-[22px] bg-k-bg px-8 pb-8 pt-9">
+                  <div className="k-card k-card-hover relative w-full max-w-[340px] rounded-[22px] px-8 pb-8 pt-9">
                     <span
-                      className={`k-border absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
+                      className={`k-border k-hard-sm absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg text-k-ink ${step.dot}`}
                       style={DISPLAY}
                     >
                       {step.n}
@@ -468,24 +498,22 @@ function Steps() {
 
 function Features() {
   return (
-    <section id="fonctionnalites" className="scroll-mt-24 bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
+    <section id="fonctionnalites" className={SECTION}>
       <Reveal className="text-center">
-        <KBadge className="rotate-[1.3deg] bg-k-yellow">LA BOÎTE À OUTILS</KBadge>
-        <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+        <KEyebrow>La boîte à outils</KEyebrow>
+        <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
           Tout ce qu&apos;il faut, rien de superflu.
         </h2>
       </Reveal>
 
-      <div className="mx-auto mt-11 grid max-w-[1200px] grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-11 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((f, i) => (
           <Reveal key={f.n} delay={(i % 3) * 90} className={["reveal-tilt-l", "reveal-pop", "reveal-tilt-r"][i % 3]}>
             <div className={i % 2 ? "-rotate-[0.65deg]" : "rotate-[0.65deg]"}>
               <Tilt3D>
-                <div
-                  className="k-border k-shadow-md h-full rounded-[22px] bg-white p-6 transition-transform duration-300 hover:-translate-y-1.5"
-                >
+                <div className="k-card k-card-hover h-full rounded-[22px] p-6">
                   <span
-                    className={`k-border inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
+                    className={`k-border k-hard-sm inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg text-k-ink ${f.dot}`}
                     style={DISPLAY}
                   >
                     {f.n}
@@ -504,20 +532,33 @@ function Features() {
   );
 }
 
-/** Grande carte verte « Notre différence » : le jeu honnête. */
+/**
+ * « Notre différence » : le jeu honnête.
+ *
+ * L'ancien panneau vert plein (`bg-k-green/90`, texte crème) ne passait PAS le
+ * contraste : sur le décor clair du haut, le crème tombait à ~3,8:1. Passé un
+ * temps en carte de verre claire comme les autres, il perdait alors ce pour
+ * quoi il existe — être le point d'arrêt du milieu de page.
+ *
+ * Il garde donc sa surface foncée, dans le ton PROFOND de `.k-card-deep`. Ce
+ * ton était vert ; il est passé à la prune avec le changement d'illustration du
+ * décor — le vert n'avait plus aucun rappel dans un fond bleu → rose → magenta
+ * → violet, et il était de surcroît le moins contrasté des candidats (5,2:1 en
+ * crème contre 7,6:1 pour la prune, voile et translucidité compris). C'est la
+ * seule surface sombre avant le pied de page : elle marque le seul argument que
+ * le produit oppose frontalement à ses concurrents.
+ */
 function HonestGame() {
   return (
-    <Reveal className="reveal-pop mx-auto mt-14 max-w-[1200px]" delay={80}>
+    <Reveal className="reveal-pop mt-14" delay={80}>
       <Tilt3D intensity={6}>
-        <div className="k-border k-shadow-lg grid gap-9 rounded-[22px] bg-k-green p-7 text-k-bg sm:p-10 lg:grid-cols-[1.1fr_1fr]">
+        <div className="k-card-deep grid gap-9 rounded-[26px] p-7 sm:p-10 lg:grid-cols-[1.1fr_1fr]">
           <div>
-            <KBadge>NOTRE DIFFÉRENCE</KBadge>
-            <h3 className="mt-4 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight" style={DISPLAY}>
+            <KEyebrow dot="bg-k-yellow" tone="cream">Notre différence</KEyebrow>
+            <h3 className="mt-3 text-[clamp(1.7rem,3vw,2.1rem)] leading-tight text-k-bg" style={DISPLAY}>
               Un jeu honnête,<br />pas un piège à avis.
             </h3>
-            {/* text-k-bg (4.59:1 sur k-green) : #dcefe4 et les alphas /85
-                passaient sous 4.5:1 — axe color-contrast (serious). */}
-            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-k-bg">
+            <p className="mt-3.5 text-[15.5px] font-bold leading-[1.55] text-k-bg/90">
               Le gain n&apos;est jamais conditionné à un avis, un like ou un
               abonnement. Vos clients jouent, gagnent, reviennent — et si un
               avis arrive, il est spontané. Votre fiche Google ne prend aucun
@@ -528,7 +569,7 @@ function HonestGame() {
             {RISKS.map((risk, i) => (
               <div
                 key={risk}
-                className={`k-border flex items-center gap-3 rounded-2xl bg-k-bg px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
+                className={`flex items-center gap-3 rounded-2xl border-2 border-k-ink/15 bg-white/88 px-4 py-3 text-[13.5px] font-extrabold text-k-ink ${
                   i % 2 ? "rotate-[0.65deg]" : "-rotate-[0.65deg]"
                 }`}
               >
@@ -536,7 +577,7 @@ function HonestGame() {
                 {risk}
               </div>
             ))}
-            <div className="k-border rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
+            <div className="k-border k-hard-sm rotate-[0.65deg] rounded-2xl bg-k-yellow px-4 py-3.5 text-[14.5px] font-extrabold text-k-ink">
               <div className="flex items-center gap-3">
                 <span className="k-border-thin flex h-7 w-7 flex-none items-center justify-center rounded-full bg-k-bg">
                   <svg aria-hidden width="13" height="13" viewBox="0 0 12 12" fill="none">
@@ -639,7 +680,10 @@ function DashboardMockup() {
     { label: "Gains distribués", value: "412", delta: "+15%" },
   ];
   return (
-    <div className="k-border k-shadow-lg overflow-hidden rounded-[22px] bg-white">
+    /* Cette carte reste OPAQUE, et c'est délibéré : elle figure un écran de
+       logiciel. Un dashboard translucide laissant passer le décor ne se lit
+       plus comme une capture. Seule l'ombre passe en vertical et douce. */
+    <div className="k-border k-soft overflow-hidden rounded-[22px] bg-white">
       <div className="grid grid-cols-[130px_1fr] sm:grid-cols-[160px_1fr]">
         {/* Sidebar */}
         <aside className="border-r-[2.5px] border-k-ink bg-k-bg p-3">
@@ -700,24 +744,26 @@ function DashboardMockup() {
 
 function MerchantSpace() {
   return (
-    <section id="espace-commercant" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-[0.85fr_1.15fr]">
+    <section id="espace-commercant" className={SECTION}>
+      <div className="grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr]">
         <Reveal className="reveal-tilt-l">
-          <KBadge className="bg-k-blue">VOTRE ESPACE</KBadge>
-          <h2 className="mt-5 text-[clamp(2rem,4vw,2.8rem)] leading-tight" style={DISPLAY}>
-            Tout est centralisé, vous gardez le contrôle.
+          <KEyebrow>Votre espace</KEyebrow>
+          <h2 className="k-halo mt-3 text-[clamp(2rem,4vw,2.8rem)] leading-tight" style={DISPLAY}>
+            Vous voyez qui revient, et ce que ça vous rapporte.
           </h2>
-          <ul className="mt-8 space-y-3.5">
-            {MERCHANT_POINTS.map((point) => (
-              <li key={point} className="flex items-center gap-3 font-bold text-k-body">
-                <KCheck />
-                {point}
-              </li>
-            ))}
-          </ul>
+          <div className="k-card mt-8 rounded-[22px] p-6">
+            <ul className="space-y-3.5">
+              {MERCHANT_POINTS.map((point) => (
+                <li key={point} className="flex items-center gap-3 font-bold text-k-body">
+                  <KCheck />
+                  {point}
+                </li>
+              ))}
+            </ul>
+          </div>
           <div className="mt-9">
             <KPrimary href="/signup" className="bg-k-yellow text-k-ink">
-              Découvrir le dashboard →
+              Voir mon tableau de bord →
             </KPrimary>
           </div>
         </Reveal>
@@ -736,21 +782,20 @@ function MerchantSpace() {
 
 /** Mockup de classement pronostics — vrais avatars du produit. */
 function PronoLeaderboardMockup() {
-  const rows = [
-    { avatar: "bresil", name: "Leïla", pts: "21 pts", rank: "🥇" },
-    { avatar: "renard", name: "Le Sorcier", pts: "19 pts", rank: "🥈" },
-    { avatar: "maroc", name: "Yassine", pts: "16 pts", rank: "🥉" },
-    { avatar: "france", name: "Marco", pts: "14 pts", rank: "4" },
-  ];
   return (
-    <div className="k-border k-shadow-lg rounded-[22px] bg-k-bg p-6">
+    <div className="k-card k-soft rounded-[22px] p-6">
       <p className="text-[15px] font-black text-k-ink">🏆 Classement — Coupe du monde</p>
       <p className="mt-0.5 text-xs font-bold text-k-body">Chez Momo · 27 joueurs</p>
       <ul className="mt-4 space-y-2">
-        {rows.map((r) => (
+        {[
+          { avatar: "bresil", name: "Leïla", pts: "21 pts", rank: "🥇" },
+          { avatar: "renard", name: "Le Sorcier", pts: "19 pts", rank: "🥈" },
+          { avatar: "maroc", name: "Yassine", pts: "16 pts", rank: "🥉" },
+          { avatar: "france", name: "Marco", pts: "14 pts", rank: "4" },
+        ].map((r) => (
           <li
             key={r.name}
-            className="flex items-center gap-3 rounded-xl border-2 border-k-ink bg-white px-3 py-2"
+            className="flex items-center gap-3 rounded-xl border-2 border-k-ink/20 bg-white/85 px-3 py-2"
           >
             <span className="w-6 text-center text-sm font-black text-k-ink">{r.rank}</span>
             <Avatar id={r.avatar} className="h-8 w-8 shrink-0" />
@@ -761,7 +806,7 @@ function PronoLeaderboardMockup() {
           </li>
         ))}
       </ul>
-      <div className="mt-4 rounded-xl border-2 border-dashed border-k-ink/50 px-3 py-2 text-center text-xs font-extrabold text-k-body">
+      <div className="mt-4 rounded-xl border-2 border-dashed border-k-ink/40 bg-white/60 px-3 py-2 text-center text-xs font-extrabold text-k-body">
         France 2 – 1 Brésil · pronostic exact <span className="rounded-full bg-k-yellow px-2 py-0.5 font-black text-k-ink">+3 pts</span>
       </div>
     </div>
@@ -770,21 +815,20 @@ function PronoLeaderboardMockup() {
 
 function Pronostics() {
   return (
-    <section id="pronostics" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-green px-5 py-16 text-k-bg sm:px-8 sm:py-20">
-      <div className="mx-auto grid max-w-5xl items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
+    <section id="pronostics" className={SECTION}>
+      <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
         <Reveal className="reveal-tilt-l">
-          <KBadge className="-rotate-[1.2deg] bg-k-yellow text-k-ink">NOUVEAU · EN OPTION</KBadge>
-          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)] leading-[1.05]" style={DISPLAY}>
+          <KEyebrow>Nouveau · en option</KEyebrow>
+          <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)] leading-[1.05] text-k-ink" style={DISPLAY}>
             Les grandes compétitions se jouent aussi chez vous.
           </h2>
-          {/* text-k-bg plein : /85 sur k-green tombait à 3.78:1 (axe serious). */}
-          <p className="mt-4 max-w-[520px] text-[17px] font-bold leading-[1.55] text-k-bg">
+          <p className="k-card mt-5 max-w-[540px] rounded-[18px] px-6 py-4 text-[17px] font-bold leading-[1.55] text-k-body">
             Avec l&apos;option <strong>Pronostics</strong>, votre commerce a son
             propre championnat : un QR code, vos clients pronostiquent les
             matchs, et le classement anime le comptoir pendant toute la
             compétition.
           </p>
-          <ul className="mt-6 flex flex-col gap-2.5 text-[15px] font-extrabold">
+          <ul className="k-card mt-5 flex max-w-[540px] flex-col gap-2.5 rounded-[18px] px-6 py-5 text-[15px] font-extrabold text-k-ink">
             {PRONO_POINTS.map((p) => (
               <li key={p} className="flex items-center gap-2.5">
                 <KCheck />
@@ -796,7 +840,7 @@ function Pronostics() {
             {PRONO_COMPETITIONS.map((c) => (
               <span
                 key={c}
-                className="k-border-thin rounded-full bg-k-bg px-3 py-1 text-[13px] font-black text-k-ink"
+                className="rounded-full border border-k-ink/20 bg-white/80 px-3.5 py-1.5 text-[13px] font-black text-k-ink backdrop-blur-md"
               >
                 {c}
               </span>
@@ -806,20 +850,17 @@ function Pronostics() {
             <KPrimary href="#tarifs" className="bg-k-yellow text-k-ink">
               Voir l&apos;offre →
             </KPrimary>
-            {/* text-k-bg plein : /80 sur k-green tombait à 3.54:1 (axe serious). */}
-            <span className="text-sm font-black text-k-bg">
+            <span className="rounded-full border border-k-ink/20 bg-white/80 px-4 py-2 text-sm font-black text-k-ink backdrop-blur-md">
               +9 €/mois avec Starter · ou Pass Compétition 49 €
             </span>
           </div>
         </Reveal>
 
         <Reveal delay={120} className="reveal-tilt-r">
-          <div className="k-float-c">
-            <div className="rotate-[1deg]">
-              <Tilt3D intensity={8}>
-                <PronoLeaderboardMockup />
-              </Tilt3D>
-            </div>
+          <div className="rotate-[1deg]">
+            <Tilt3D intensity={8}>
+              <PronoLeaderboardMockup />
+            </Tilt3D>
           </div>
         </Reveal>
       </div>
@@ -836,103 +877,98 @@ const PRONO_OFFER_FEATURES = [
 
 function Pricing() {
   return (
-    <section id="tarifs" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-pink px-5 py-16 sm:px-8 sm:py-20">
-      <div className="mx-auto max-w-5xl">
-        <Reveal className="text-center">
-          <KBadge>TARIFS</KBadge>
-          <h2 className="mt-4 text-[clamp(2rem,4vw,2.9rem)] leading-[1.05]" style={DISPLAY}>
-            Un prix simple. Une option sport.
-          </h2>
-          <p className="mx-auto mt-4 max-w-[520px] text-base font-bold leading-[1.55] text-[#4d3a44]">
-            Pas de paliers compliqués : un abonnement tout inclus, et le
-            module Pronostics en option — avec ou sans abonnement. Sans
-            engagement, résiliable à tout moment.
-          </p>
+    <section id="tarifs" className={SECTION}>
+      <Reveal className="text-center">
+        <KEyebrow>Tarifs</KEyebrow>
+        <h2 className="k-halo mt-3 text-[clamp(2rem,4vw,2.9rem)] leading-[1.05]" style={DISPLAY}>
+          Un prix simple. Une option sport.
+        </h2>
+        <p className="k-card mx-auto mt-5 max-w-[560px] rounded-[18px] px-6 py-4 text-base font-bold leading-[1.55] text-k-body">
+          Pas de paliers compliqués : un abonnement tout inclus, et le
+          module Pronostics en option — avec ou sans abonnement. Sans
+          engagement, résiliable à tout moment.
+        </p>
+      </Reveal>
+
+      <div className="mx-auto mt-12 grid max-w-5xl items-start justify-center gap-10 md:grid-cols-2 md:gap-8">
+        <Reveal delay={80} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-end">
+          <div className="rotate-[0.65deg]">
+            <Tilt3D>
+              <div className="k-card k-card-hover relative rounded-[22px] p-8 sm:p-10">
+                <span className="k-border k-hard-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black text-k-ink">
+                  7 jours offerts
+                </span>
+                <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
+                <div className="text-[22px]" style={DISPLAY}>Starter</div>
+                <div className="mt-2.5 flex items-baseline gap-2">
+                  <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
+                  <span className="text-lg font-black text-k-muted">/ mois</span>
+                </div>
+                <div className="my-5 border-t-2 border-dashed border-k-ink/30" />
+                <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
+                  {PRICING_FEATURES.map((f) => (
+                    <li key={f} className="flex items-center gap-2.5">
+                      <KCheck />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="/signup"
+                  className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                >
+                  Démarrer mes 7 jours offerts
+                </Link>
+              </div>
+            </Tilt3D>
+          </div>
         </Reveal>
 
-        <div className="mt-12 grid items-start justify-center gap-10 md:grid-cols-2 md:gap-8">
-          <Reveal delay={80} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-end">
-            <div className="k-float-c">
-              <div className="rotate-[0.65deg]">
-                <Tilt3D>
-                  <div className="k-border k-shadow-lg relative rounded-[22px] bg-k-bg p-8 sm:p-10">
-                    <span className="k-border k-shadow-sm absolute -top-4 right-6 rotate-[3deg] rounded-full bg-k-yellow px-4 py-1.5 text-[13px] font-black">
-                      7 jours offerts
-                    </span>
-                    {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
-                    <span aria-hidden data-avatar-slot="pricing" className="pointer-events-none absolute -left-6 top-8 h-0 w-0" />
-                    <div className="text-[22px]" style={DISPLAY}>Starter</div>
-                    <div className="mt-2.5 flex items-baseline gap-2">
-                      <span className="text-[56px] leading-none" style={DISPLAY}>29 €</span>
-                      <span className="text-lg font-black text-[#6d675c]">/ mois</span>
-                    </div>
-                    <div className="my-5 border-t-[3px] border-dashed border-k-ink" />
-                    <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
-                      {PRICING_FEATURES.map((f) => (
-                        <li key={f} className="flex items-center gap-2.5">
-                          <KCheck />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                    <Link
-                      href="/signup"
-                      className="k-border k-btn mt-6 block rounded-full bg-k-orange py-3.5 text-center text-[17px] font-black focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
-                    >
-                      Commencer l&apos;essai gratuit
-                    </Link>
-                  </div>
-                </Tilt3D>
-              </div>
-            </div>
-          </Reveal>
-
-          <Reveal delay={160} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-start">
-            <div className="-rotate-[0.65deg]">
-              <Tilt3D>
-                <div className="k-border k-shadow-lg relative rounded-[22px] bg-k-bg p-8 sm:p-10">
-                  <span className="k-border k-shadow-sm absolute -top-4 right-6 -rotate-[3deg] rounded-full bg-k-green px-4 py-1.5 text-[13px] font-black text-k-bg">
-                    OPTION SPORT
-                  </span>
-                  <div className="text-[22px]" style={DISPLAY}>Pronostics</div>
-                  <div className="mt-2.5 flex items-baseline gap-2">
-                    <span className="text-[56px] leading-none" style={DISPLAY}>+9 €</span>
-                    <span className="text-lg font-black text-[#6d675c]">/ mois</span>
-                  </div>
-                  <p className="mt-1 text-sm font-extrabold text-k-body">
-                    en option de l&apos;abonnement Starter
+        <Reveal delay={160} className="reveal-pop w-full max-w-[400px] justify-self-center md:justify-self-start">
+          <div className="-rotate-[0.65deg]">
+            <Tilt3D>
+              <div className="k-card k-card-hover relative rounded-[22px] p-8 sm:p-10">
+                <span className="k-border k-hard-sm absolute -top-4 right-6 -rotate-[3deg] rounded-full bg-k-green px-4 py-1.5 text-[13px] font-black text-k-bg">
+                  OPTION SPORT
+                </span>
+                <div className="text-[22px]" style={DISPLAY}>Pronostics</div>
+                <div className="mt-2.5 flex items-baseline gap-2">
+                  <span className="text-[56px] leading-none" style={DISPLAY}>+9 €</span>
+                  <span className="text-lg font-black text-k-muted">/ mois</span>
+                </div>
+                <p className="mt-1 text-sm font-extrabold text-k-body">
+                  en option de l&apos;abonnement Starter
+                </p>
+                <div className="my-5 rounded-xl border-2 border-dashed border-k-ink/40 bg-white/60 px-4 py-3 text-center">
+                  <p className="text-sm font-black text-k-ink">
+                    Sans abonnement ? <span className="whitespace-nowrap">Pass Compétition — 49 €</span>
                   </p>
-                  <div className="my-5 rounded-xl border-2 border-dashed border-k-ink px-4 py-3 text-center">
-                    <p className="text-sm font-black text-k-ink">
-                      Sans abonnement ? <span className="whitespace-nowrap">Pass Compétition — 49 €</span>
-                    </p>
-                    <p className="mt-1 text-xs font-bold text-k-body">
-                      Paiement unique · toute la compétition (Euro, Coupe du
-                      monde, CAN…) jusqu&apos;à une semaine après la finale.
-                    </p>
-                  </div>
-                  <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
-                    {PRONO_OFFER_FEATURES.map((f) => (
-                      <li key={f} className="flex items-center gap-2.5">
-                        <KCheck />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/signup"
-                    className="k-border k-btn mt-6 block rounded-full bg-k-green py-3.5 text-center text-[17px] font-black text-k-bg focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
-                  >
-                    Lancer mon championnat
-                  </Link>
-                  <p className="mt-3 text-center text-[11.5px] font-bold text-k-body">
-                    Activation depuis votre espace après inscription.
+                  <p className="mt-1 text-xs font-bold text-k-body">
+                    Paiement unique · toute la compétition (Euro, Coupe du
+                    monde, CAN…) jusqu&apos;à une semaine après la finale.
                   </p>
                 </div>
-              </Tilt3D>
-            </div>
-          </Reveal>
-        </div>
+                <ul className="flex flex-col gap-2.5 text-[15px] font-extrabold">
+                  {PRONO_OFFER_FEATURES.map((f) => (
+                    <li key={f} className="flex items-center gap-2.5">
+                      <KCheck />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <Link
+                  href="/signup"
+                  className="k-border k-btn mt-6 block rounded-full bg-k-yellow py-3.5 text-center text-[17px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                >
+                  Lancer mon championnat
+                </Link>
+                <p className="mt-3 text-center text-[11.5px] font-bold text-k-body">
+                  Activation depuis votre espace après inscription.
+                </p>
+              </div>
+            </Tilt3D>
+          </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -940,12 +976,12 @@ function Pricing() {
 
 function Faq() {
   return (
-    <section id="faq" className="scroll-mt-24 border-t-[3px] border-k-ink bg-k-bg px-5 py-16 sm:px-8 sm:py-20">
+    <section id="faq" className={SECTION}>
       <div className="mx-auto max-w-3xl">
         <Reveal className="text-center">
-          <KBadge className="-rotate-[1deg] bg-k-blue">FAQ</KBadge>
-          <h2 className="mt-5 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
-            Questions fréquentes
+          <KEyebrow>Questions fréquentes</KEyebrow>
+          <h2 className="k-halo mt-3 text-[clamp(2rem,4.5vw,3rem)]" style={DISPLAY}>
+            Tout ce que vous voulez savoir.
           </h2>
         </Reveal>
 
@@ -953,9 +989,7 @@ function Faq() {
           {FAQ.map((item, i) => (
             <Reveal key={item.question} delay={i * 60}>
               <details
-                className={`k-border k-shadow-sm group rounded-[18px] bg-white transition-transform open:translate-y-0.5 ${
-                  i % 2 ? "rotate-[0.4deg]" : "-rotate-[0.4deg]"
-                }`}
+                className={`k-card group rounded-[18px] ${i % 2 ? "rotate-[0.4deg]" : "-rotate-[0.4deg]"}`}
               >
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[18px] px-6 py-5 text-[16px] font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink [&::-webkit-details-marker]:hidden">
                   {item.question}
@@ -975,47 +1009,58 @@ function Faq() {
   );
 }
 
+/**
+ * CTA final + pied de page.
+ *
+ * Reste le point d'arrivée le PLUS FORT de la page — c'est le seul endroit où
+ * une grande surface sombre est justifiée — mais elle ne barre plus l'écran :
+ * dalle arrondie, encre à 82 %, le décor continue de vivre derrière.
+ * Les gris du pied de page ont été éclaircis : #8d8778 tombait à 3,2:1 sur
+ * l'encre translucide (et à 4,1:1 sur l'encre pleine, déjà sous le seuil).
+ */
 function FinalCtaFooter() {
   return (
-    <div className="border-t-[3px] border-k-ink bg-k-ink px-5 pt-16 text-center text-k-bg sm:px-8 sm:pt-20">
-      <Reveal className="reveal-pop relative mx-auto max-w-4xl">
-        {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
-        <span aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -top-6 left-0 h-0 w-0" />
-        <h2 className="text-[clamp(2.3rem,6vw,4.4rem)] leading-[1.05]" style={DISPLAY}>
-          Votre roue peut tourner dès ce soir.
-        </h2>
-        <p className="mx-auto mt-4 max-w-[520px] text-[17px] font-bold text-[#b8b2a4]">
-          Créez votre compte, composez vos lots, imprimez votre affiche.
-          7 jours pour l&apos;essayer avec vos vrais clients.
-        </p>
-        <div className="mt-7 flex justify-center">
-          <Magnetic>
-            <Link
-              href="/signup"
-              className="k-btn-light inline-block whitespace-nowrap rounded-full border-[3px] border-k-bg bg-k-yellow px-9 py-4 text-lg font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-bg"
-            >
-              Créer ma roue →
-            </Link>
-          </Magnetic>
-        </div>
-      </Reveal>
+    <div className="relative z-10 mx-auto mt-10 max-w-6xl px-4 sm:px-6">
+      <div className="rounded-t-[36px] border-2 border-b-0 border-k-bg/20 bg-k-ink/82 px-5 pt-16 text-center text-k-bg backdrop-blur-xl sm:px-10 sm:pt-20">
+        <Reveal className="reveal-pop relative mx-auto max-w-4xl">
+          {/* Emplacement réservé au futur avatar-guide (aucun visuel) */}
+          <span aria-hidden data-avatar-slot="final-cta" className="pointer-events-none absolute -top-6 left-0 h-0 w-0" />
+          <h2 className="text-[clamp(2.3rem,6vw,4.4rem)] leading-[1.05]" style={DISPLAY}>
+            Votre roue peut tourner dès ce soir.
+          </h2>
+          <p className="mx-auto mt-4 max-w-[520px] text-[17px] font-bold text-k-bg/85">
+            Créez votre compte, composez vos lots, imprimez votre affiche.
+            7 jours pour l&apos;essayer avec vos vrais clients.
+          </p>
+          <div className="mt-7 flex justify-center">
+            <Magnetic>
+              <Link
+                href="/signup"
+                className="k-btn-light inline-block whitespace-nowrap rounded-full border-[3px] border-k-bg bg-k-yellow px-9 py-4 text-lg font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-bg"
+              >
+                Créer ma roue →
+              </Link>
+            </Magnetic>
+          </div>
+        </Reveal>
 
-      <footer className="mt-14 border-t-2 border-[#b8b2a4]/35 py-6">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-[13.5px] font-bold text-[#8d8778] sm:flex-row">
-          <span className="text-lg text-k-bg" style={DISPLAY}>
-            LastChance<span className="text-k-orange">.</span>
-          </span>
-          <nav aria-label="Pied de page" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
-            <a href="#fonctionnalites" className="transition-colors hover:text-k-bg">Fonctionnalités</a>
-            <a href="#pronostics" className="transition-colors hover:text-k-bg">Pronostics</a>
-            <a href="#tarifs" className="transition-colors hover:text-k-bg">Tarifs</a>
-            <a href="#faq" className="transition-colors hover:text-k-bg">FAQ</a>
-            <Link href="/login" className="transition-colors hover:text-k-bg">Connexion</Link>
-            <Link href="/signup" className="transition-colors hover:text-k-bg">Essai gratuit</Link>
-          </nav>
-          <span>© {new Date().getFullYear()} — Jamais de gain contre un avis.</span>
-        </div>
-      </footer>
+        <footer className="mt-14 border-t border-k-bg/25 py-6">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-[13.5px] font-bold text-k-bg/70 sm:flex-row">
+            <span className="text-lg text-k-bg" style={DISPLAY}>
+              LastChance<span className="text-k-orange">.</span>
+            </span>
+            <nav aria-label="Pied de page" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+              <a href="#fonctionnalites" className="transition-colors hover:text-k-bg">Fonctionnalités</a>
+              <a href="#pronostics" className="transition-colors hover:text-k-bg">Pronostics</a>
+              <a href="#tarifs" className="transition-colors hover:text-k-bg">Tarifs</a>
+              <a href="#faq" className="transition-colors hover:text-k-bg">FAQ</a>
+              <Link href="/login" className="transition-colors hover:text-k-bg">Connexion</Link>
+              <Link href="/signup" className="transition-colors hover:text-k-bg">Essai gratuit</Link>
+            </nav>
+            <span>© {new Date().getFullYear()} — Jamais de gain contre un avis.</span>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -1025,14 +1070,16 @@ function FinalCtaFooter() {
 export default function LandingPage() {
   return (
     <div
-      className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-hidden bg-k-bg text-k-ink`}
+      className={`${lilita.variable} ${nunito.variable} relative flex-1 overflow-x-clip bg-transparent text-k-ink`}
       style={{ fontFamily: "var(--font-heading), system-ui, sans-serif" }}
     >
+      <ScrollPanoramaBackground />
+
       <SkipLink />
 
       <SiteHeader />
 
-      <main id="contenu" tabIndex={-1} className="outline-none">
+      <main id="contenu" tabIndex={-1} className="relative z-10 outline-none">
         <Hero />
         <Marquee />
         <WheelDemo />

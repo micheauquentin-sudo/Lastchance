@@ -3,6 +3,14 @@
 :root {
   --background: #fdf6e3;
   --foreground: #211d16;
+  /* Teinte dominante du décor scrollytelling, republiée image par image par
+     ScrollVideoBackground (sur documentElement, pour que le marquee et les
+     sur-titres la voient). Ces valeurs sont le REPLI : sans JS, sous
+     « mouvement réduit » ou en connexion ménagée, le site garde l'orange de la
+     charte. Jamais de gris — c'est la seule couleur que le film ne produit
+     pas, et un décor qui se décolore se lit comme une panne. */
+  --backdrop-accent: #f5793b;
+  --backdrop-accent-soft: rgba(245, 121, 59, 0.18);
 }
 
 @theme inline {
@@ -212,6 +220,207 @@ body {
   );
 }
 
+/* Verres translucides : le décor scrollytelling doit rester visible au travers. */
+.k-glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.k-glass-warm {
+  background: rgba(253, 246, 227, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.k-glass-dark {
+  background: rgba(33, 29, 22, 0.84);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ── Cartes légères : le décor doit passer À TRAVERS le contenu ──
+   Le langage kermesse complet — bordure d'encre 3 px + ombre dure diagonale —
+   reste la signature des BOUTONS, des stickers et des états survolés. Empilé
+   sur toute une page posée sur le décor scrollytelling, il produisait une
+   grille de boîtes qui enfermait le film au lieu de flotter dessus.
+   Au repos, une carte est donc un verre fin : blanc à 75 %, liseré d'encre à
+   20 %, ombre VERTICALE floue. L'encre pleine et l'ombre dure — verticale
+   elle aussi — n'arrivent qu'au survol ou à l'état ouvert. */
+.k-card {
+  background-color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 2px solid rgba(33, 29, 22, 0.2);
+  box-shadow: 0 4px 14px rgba(33, 29, 22, 0.1);
+  transition:
+    background-color 0.2s ease-out,
+    border-color 0.2s ease-out,
+    box-shadow 0.2s ease-out,
+    translate 0.2s ease-out;
+}
+
+.k-card-hover:hover,
+.k-card-hover:focus-within {
+  background-color: rgba(255, 255, 255, 0.94);
+  border-color: var(--color-k-ink);
+  box-shadow: 0 5px 0 var(--color-k-ink);
+  translate: 0 -4px;
+}
+
+details.k-card[open] {
+  background-color: rgba(255, 255, 255, 0.92);
+  border-color: var(--color-k-ink);
+  box-shadow: 0 5px 0 var(--color-k-ink);
+}
+
+/* La SEULE surface foncée de la page, et c'est délibéré : douze cartes claires
+   d'affilée, si légères soient-elles, finissent par se ressembler, et le milieu
+   de page s'aplatit. Le panneau « jeu honnête » porte l'argument le plus fort
+   du produit — il lui faut donc une surface profonde, pour casser ce rythme
+   sans redevenir un bloc opaque pleine largeur.
+
+   Prune profonde (#3f1d47), et non plus le vert de la marque. Le vert n'avait
+   plus aucun rappel dans le décor panorama (bleu → rose → magenta → violet) ;
+   cette teinte est celle du bas du corridor. Elle gagne du contraste au
+   passage : le crème y tient 7,6:1 contre 5,2:1 sur l'ancien vert, mesuré
+   translucidité et voile compris, sur les bandes les plus CLAIRES de
+   l'illustration (pire cas). */
+.k-card-deep {
+  background-color: rgba(63, 29, 71, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 2px solid rgba(253, 246, 227, 0.28);
+  box-shadow: 0 10px 28px rgba(33, 29, 22, 0.22);
+}
+
+/* Ombres VERTICALES : douce (surfaces) et dure (boutons, stickers, survols). */
+.k-soft {
+  box-shadow: 0 10px 28px rgba(33, 29, 22, 0.18);
+}
+
+.k-hard {
+  box-shadow: 0 5px 0 var(--color-k-ink);
+}
+
+.k-hard-sm {
+  box-shadow: 0 3px 0 var(--color-k-ink);
+}
+
+/* Rayures du stand de démo, version translucide : mêmes rayures, le décor
+   continue de vivre derrière. */
+.k-stripes-soft {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.74) 0 14px,
+    rgba(243, 234, 211, 0.52) 14px 28px
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+
+/* ── Ce que la teinte du décor colore, et RIEN d'autre ────────────────────
+   `--backdrop-accent` suit la dominante du film (rose des nuages, vert de la
+   canopée, magenta de la grotte, orange de la lave). Elle ne touche jamais un
+   texte porteur de sens, un bouton, ni une surface dont le contraste a été
+   mesuré : les jaunes et oranges de la charte SONT la marque. Elle vit sur des
+   pastilles, des liserés et des fonds, où faire le tour du cercle chromatique
+   ne coûte aucune lisibilité. */
+
+/* Signature des stickers : bordure et ombre dure d'encre INCHANGÉES, plus un
+   halo de la teinte du moment. C'est le halo qui suit le décor, pas le trait —
+   remplacer l'encre par une couleur claire ferait perdre au sticker le
+   détourage cartoon qui le décolle d'un fond mouvant. */
+.k-sticker {
+  box-shadow:
+    0 5px 0 var(--color-k-ink),
+    0 0 0 7px var(--backdrop-accent-soft),
+    0 14px 34px var(--backdrop-accent-soft);
+}
+
+/* Halo doux du stand de démo : la roue se détache du décor SANS cadre. Un
+   rectangle bordé refermait une boîte autour du film ; un dégradé radial n'a
+   pas d'arête, donc rien à refermer. */
+.k-stage-glow {
+  background: radial-gradient(
+    62% 58% at 50% 46%,
+    rgba(253, 246, 227, 0.82) 0%,
+    rgba(253, 246, 227, 0.42) 52%,
+    rgba(253, 246, 227, 0) 78%
+  );
+}
+
+/* ── Retournement des stickers jouables ── */
+.k-flip-stage {
+  perspective: 760px;
+}
+
+.k-flip {
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+.k-flip[data-flipped="true"] {
+  transform: rotateY(180deg);
+}
+
+.k-flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.k-flip-back {
+  transform: rotateY(180deg);
+}
+
+/* ── Confettis ──
+   Tout le vol tient dans cette animation : aucune boucle JS ne tourne pendant
+   ni après. Le composant se démonte de lui-même, et rien ne subsiste. La
+   trajectoire est un arc — élan vers le haut puis chute — obtenu avec une
+   image-clé intermédiaire, les deux extrémités étant paramétrées par particule
+   (`--k-cx`, `--k-cy`, `--k-cr`). */
+@keyframes k-confetti {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+  45% {
+    opacity: 1;
+    transform: translate3d(calc(var(--k-cx) * 0.62), var(--k-cy), 0)
+      rotate(calc(var(--k-cr) * 0.45)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--k-cx), calc(var(--k-cy) + 170px), 0)
+      rotate(var(--k-cr)) scale(0.55);
+  }
+}
+
+.k-confetti {
+  animation-name: k-confetti;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+/* Halo de lisibilité des titres posés À MÊME le décor mouvant.
+   Le décor descend d'un ciel très clair à une caverne de lave saturée : un
+   titre encre est confortable en haut et se dissout en bas. Ce n'est pas une
+   ombre portée « material » (pas d'offset, pas de flou gris) mais un liseré
+   crème serré — exactement le détourage que le dessin animé met autour d'une
+   lettre pour la décoller de son fond, quelle que soit sa couleur.
+   À réserver aux titres et aux mentions courtes : sur un paragraphe entier,
+   c'est une carte translucide qu'il faut, pas un halo. */
+.k-halo {
+  text-shadow:
+    0 2px 0 rgba(253, 246, 227, 0.92),
+    0 -2px 0 rgba(253, 246, 227, 0.92),
+    2px 0 0 rgba(253, 246, 227, 0.92),
+    -2px 0 0 rgba(253, 246, 227, 0.92),
+    0 0 16px rgba(253, 246, 227, 0.6);
+}
+
 /* ── Animations Kermesse ── */
 
 @keyframes k-float {
@@ -235,6 +444,55 @@ body {
 .k-float-c {
   animation: k-float 7.2s ease-in-out infinite 1s;
 }
+
+/* Flottement des stickers du hero : deux cadences décalées pour qu'aucune
+   paire ne batte à l'unisson. La rotation reste sur l'élément INTÉRIEUR —
+   l'animation ne touche que `translate`, propriété indépendante. */
+@keyframes k-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -12px;
+  }
+}
+
+@keyframes k-bob-r {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -16px;
+  }
+}
+
+.k-bob {
+  animation: k-bob 6s ease-in-out infinite;
+}
+
+.k-bob-r {
+  animation: k-bob-r 7.5s ease-in-out infinite;
+}
+
+/* Scintillements : ponctuation lumineuse du hero, jamais ailleurs. */
+@keyframes k-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    scale: 0.7;
+  }
+  50% {
+    opacity: 1;
+    scale: 1.2;
+  }
+}
+
+.k-twinkle {
+  animation: k-twinkle 3s ease-in-out infinite;
+}
+
 
 @keyframes k-wobble {
   0%,
@@ -667,12 +925,16 @@ body {
   .dash-flow,
   .wheel-bump,
   .arrow-wag,
+  .k-bob,
+  .k-bob-r,
+  .k-twinkle,
   .k-float,
   .k-float-b,
   .k-float-c,
   .k-wobble,
   .k-spin,
   .k-blink,
+  .k-confetti,
   .animate-pointer-tick,
   .hover\:animate-cartoon-wobble,
   .cartoon-pop-in,
@@ -682,6 +944,11 @@ body {
   .animate-burst-bubble,
   .fond-derive {
     animation: none;
+  }
+  /* Le sticker se retourne quand même : c'est le CODE qui est la récompense,
+     pas l'animation. Seul le mouvement disparaît. */
+  .k-flip {
+    transition: none;
   }
   .reveal.reveal-enabled,
   .reveal.reveal-enabled.reveal-tilt-l,
