@@ -4,6 +4,91 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-05 — Audit sécurité et cohérence : neuf lots
+
+**Audit sécurité et cohérence : neuf lots** (PR #355 → #363, ADR-170 à
+ADR-174). Origine : un audit Codex (`docs/audit-complet-2026-09-05.txt`,
+non suivi) sur le SHA `9e6fe7fb`. Vérification faite : cinq constats
+confirmés, un partiel, zéro invention. Deux faiblesses de cadrage de
+l'audit : sa section 4 auditait un lot landing local jamais livré (le lot
+fusionné était `panorama`, pas `backdrop`), ce qui lui a fait manquer deux
+défauts réellement mis en production par #354 ; deux priorités mal placées.
+  **Décor : cache immuable sur des noms non hachés** (#355). `/panorama/:path*`
+  servi en `max-age=31536000, immutable` sur `p1080.webp` etc. — une
+  régénération réécrivait le même nom avec un contenu différent, gardant
+  tout visiteur déjà venu sur l'ancien décor un an. Noms hachés par sha256
+  tronqué, garde qui recalcule le hash. `allowedDevOrigins` portait aussi
+  une IP privée de poste, retirée.
+  **Apple Wallet, dernière route publique sans plafond** (#356). Non
+  authentifiée, service role, signature PKCS#7 par appel. Double plafond IP
+  + code haché, dans cet ordre pour que le 429 ne devienne pas un oracle
+  d'existence ; garde de forme `^GAIN-[A-Z0-9]{4,32}$`, pas l'alphabet strict
+  du générateur.
+  **Jeton de chasse hors caisse** (#357, ADR-172). `cashier`, `editor` et
+  `owner` sont tous le rôle Postgres `authenticated` : ni RLS ni grant de
+  colonne ne les distinguent. `select (token)` fermé, RPC `hunt_step_tokens`
+  gardée par `is_org_editor`. Trouvaille hors audit : `/studio/chasse/[id]`
+  n'avait aucun contrôle de rôle.
+  **Alias pronostics historiques** (#358, ADR-171). ADR-169 n'avait gardé
+  que les écritures ; le classement est public. Trois couches (nettoyage,
+  projection en lecture, contrainte resserrée de 60 à 24). Une mutation a
+  révélé que le fichier de test lui-même taisait ses échecs (`drop` nu
+  avortant la transaction).
+  **Webhook SMS** (#359, ADR-173). Seul point d'entrée acceptant un secret
+  en query string. Jeton dérivé `HMAC(secret, "brevo-url-token")`,
+  transition instrumentée par `sms_webhook_legacy_url_secret`. La recherche
+  a corrigé une croyance du dépôt : Brevo supporte les en-têtes
+  personnalisés par API, pas par sa console web.
+  **Réservation vendable seule** (#360, RDV-7, ADR-170, décision
+  propriétaire). Le `booking_mode` de l'activité choisit la clé : huit RPC.
+  L'invariant qui les surveillait ne vivait qu'à la migration — déplacé
+  dans le pgTAP, il nomme au lieu de compter. `soldStandalone` volontairement
+  non basculé pour Réservation : il signifie « sans abonnement », pas
+  « sans Moments ».
+  **Site vitrine couvert** (#361). Aucun test navigateur ni axe. Harnais
+  racine réutilisé, job CI dédié. Premier scan : contraste 2,57:1 et aucun
+  `<h1>` sur quatre pages ; corrigés.
+  **Vitrine filtrée par mode** (#362, VIT-53). Suite de RDV-7 :
+  `vitrine_public_state` gardait `reserver` en dur, une organisation
+  `rendez_vous` seul obtenait une vitrine muette. Filtre par objet, avant
+  le `limit`. Files et offres gardent `reserver` : pas de mode fiable à
+  dériver, et les RPC d'en face le refusent encore.
+  **Jauge live** (#363, VEN-2, ADR-174). 500 → 250, dérivé : ~150 req/s
+  disponibles, 0,4 req/s par joueur, marge aux deux tiers. Le test miroir
+  passe de l'égalité à l'inégalité, ce qui révèle que
+  `event_participant_capacity()` accorde toujours 500 en base.
+  **Reste ouvert** : émetteur Google Wallet jamais testé contre le vrai
+  Google ; 250 non rejoué contre la pile réelle ; `event_players.pseudo`
+  sans filtre de format en base ; chemin hérité du webhook SMS à retirer
+  quand le signal cesse de remonter.
+
+## 2026-09-05 — Le pseudo public des pronostics et ses deux dernières copies de sélecteur
+
+**Le pseudo public des pronostics et ses deux dernières copies de
+sélecteur** (SOC-1, commits `f289eb45`/`31dcf6d3`, ADR-169). Fermait deux
+des trois « Reste ouvert » de V1.75 — le troisième, moins important
+qu'annoncé, était présenté comme un arbitrage produit alors qu'il n'y en
+avait aucun.
+  **Le classement des pronostics est PUBLIC, et c'était la seule surface du
+  produit sans filtre d'alias** : `nicknameSchema` faisait
+  `.trim().min(1).max(30)`, sans `isAllowedPlayerAlias` (contrôle, format,
+  injures) qu'appliquent événementiel, salons et passeport. Un joueur
+  pouvait y afficher une insulte, ou un U+202E pour usurper un pseudo. Le
+  dépôt le savait déjà (`validations/loyalty.ts` : 30 est « l'intrus, pas la
+  référence ») mais aucune garde ne le vérifiait — un défaut écrit et
+  jamais gardé reste un défaut. Corrigé : borne 24, filtre commun, garde
+  dérivée du MESSAGE rendu (« Votre pseudo est requis »), pas d'une liste
+  de fichiers.
+  **La garde elle-même portait le défaut d'ADR-168** : sa version texte
+  (`toContain("formatPlayerAlias")`) restait verte sur un import orphelin.
+  Corrigée pour exiger le câblage réel.
+  **Deux copies du sélecteur de figures, pas une** : pronostics ET quiz
+  avaient chacun leur `AvatarPicker` local (157 lignes supprimées) au lieu
+  du socle partagé — celui du quiz ouvrait toujours le premier onglet,
+  jamais celui de la figure courante ; corrigé au passage.
+  **Reste ouvert** : émetteur Google Wallet, jamais testé contre le vrai
+  Google (geste propriétaire).
+
 ## 2026-09-05 — Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone
 
 **Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone** (VIT-52, ADR-168, PR #352). Dernier des huit modules de la campagne des studios (VIT-38 à VIT-51) à rejoindre l'atterrissage selon l'écran : `createCampaign` redirigeait toujours vers l'atelier, alors que ce module a son studio depuis VIT-46.

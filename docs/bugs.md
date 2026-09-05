@@ -1688,19 +1688,23 @@ close pour toute surface qu'un scan axe atteint désormais. **Reste ouvert** :
 `qr-code-card` et `text-k-body/80` de la galerie de blueprints, toujours
 hors de tout scan axe, non touchés par ce lot.
 
-### OUVERT (2026-08-06, `chantier/dashboard-guide`) — les jetons d'étape de la chasse au trésor sont lisibles par le rôle caisse
+### ✅ CLOS le 2026-09-05 (PR #357, ADR-172) — les jetons d'étape de la chasse au trésor sont lisibles par le rôle caisse
 
-Relevé en INFO par la revue sécurité du dashboard guidé, **préexistant au
-lot** — ni introduit ni corrigé par lui, simplement remarqué en chemin et
-consigné pour ne pas se reperdre. Le rôle `caissier` (accès de caisse
-minimal, pensé pour la validation d'un code de gain) peut lire les jetons
-d'étape de la chasse au trésor, qui ne devraient être opposables qu'au
-joueur en progression. Aucun scénario d'abus concret identifié à ce stade —
-la caisse ne fabrique ni ne rejoue ces jetons — mais la portée de lecture
-excède le besoin du rôle. **À arbitrer** : soit resserrer la policy RLS des
-jetons d'étape pour exclure `caissier`, soit documenter explicitement
-pourquoi la lecture est jugée sans conséquence. Non fermé faute de décision
-produit tranchée sur laquelle des deux voies prendre.
+Relevé en INFO par la revue sécurité du dashboard guidé (2026-08-06),
+**préexistant au lot** — ni introduit ni corrigé par lui, simplement
+remarqué en chemin et consigné pour ne pas se reperdre. Le rôle `caissier`
+pouvait lire les jetons d'étape de la chasse au trésor (`hunt_steps.token`,
+le QR lui-même) via un grant `select` table entière gardé par
+`is_org_member`, qui ne teste que l'appartenance, jamais le rôle.
+
+Fermé par l'audit du 2026-09-05 : `select (token)` révoqué à `authenticated`
+(après révocation de la table entière — un `revoke` de colonne seule ne
+mord pas quand un grant table-wide existe), jeton rendu par la RPC
+`security definer` `hunt_step_tokens`, gardée par `is_org_editor` et filtrée
+sur `organization_id`. Trouvaille au passage, hors du signalement d'origine :
+`/studio/chasse/[id]` n'avait AUCUNE garde de rôle, un caissier y obtenant
+l'URL du QR avec un simple identifiant d'affiche — corrigé dans le même lot
+(voir ADR-172).
 
 ### Résidus de la chasse par parcours vécu — révisée une TROISIÈME fois le 2026-08-03 (branches `chantier/residus-chasse`, `chantier/derniers-ouverts`, puis `chantier/solde-bugs`)
 
@@ -5072,21 +5076,24 @@ pouvoir exécuter le fichier, la base ne se montant pas sur cette machine (voir
 l'entrée voisine sur `supabase db reset`). Une insertion fautive aurait fait
 avorter les 36 assertions du fichier au lieu d'en réparer deux.
 
-## OUVERT (2026-08-29, signalé, non corrigé, ADR-122) — le socle Réserver vérifie encore le droit `vitrine`, pas `rendez_vous`
+## ✅ CLOS le 2026-09-05 (RDV-7, PR #360, ADR-170) — le socle Réserver vérifiait encore le droit `vitrine`, pas `rendez_vous`
 
 Réservation de table (RDV-6 à RDV-9, PR #229-#232) a sa propre clé
 d'entitlement, `rendez_vous`, posée en RDV-5 (#228) pour séparer Réservation de
 Moments. Mais les RPC du socle **Moments** — `reserve_slot`, `waitlist_join`
 (`20261007120000_reserver_experiences_signature.sql`) et
-`reservation_offer_next` — testent toujours `org_has_module_access(…,
-'vitrine')`, héritage d'avant la séparation des clés par produit.
+`reservation_offer_next` — testaient toujours `org_has_module_access(…,
+'vitrine')`, héritage d'avant la séparation des clés par produit ; trois
+autres RPC (`reserve_table`, `waitlist_join_table`,
+`reservation_table_freed_targets`) exigeaient `rendez_vous`, chacune sa
+copie de la règle. Un commerçant qui n'aurait acheté que Réservation, sans
+Vitrine, voyait donc ses Moments **muets**.
 
-Un commerçant qui n'aurait acheté que Réservation, sans Vitrine, verrait donc
-ses Moments **muets** : le droit `rendez_vous` qu'il détient ne lui ouvre pas
-`reserve_slot`. Non corrigé dans ce chantier — la correction touche le socle
-Moments, hors périmètre de la Réservation de table, et demande un choix : soit
-accepter `vitrine` OU `rendez_vous` sur ces trois RPC, soit conditionner selon
-`booking_mode` de l'activité visée. Signalé, pas tranché.
+Fermé par le choix tranché ici : conditionner selon le `booking_mode` de
+l'activité visée, via la fonction unique `reservation_activity_module_key`,
+que les huit RPC appellent désormais au lieu de nommer un module en dur.
+L'invariant de `20261020120000` §9 est réénoncé sous sa forme neuve et
+rejoué à chaque CI par `reservation_cle_par_mode.test.sql` (voir ADR-170).
 
 ## OUVERT (2026-08-29, signalé, corrigé pour les trois cas connus, ADR-122) — une colonne ajoutée n'hérite d'AUCUN droit d'accès, et rien ne le détecte avant un test écrit après coup
 
@@ -5387,3 +5394,54 @@ serveur laisse passer. Sens sûr, et `plans.test.ts` garde désormais
 l’inégalité dans ce sens-là plutôt que l’égalité. Faire redescendre le SQL à
 son tour demande une migration — hors du périmètre de ce lot, à traiter quand
 le banc aura tranché la valeur définitive.
+
+## OUVERT (2026-09-05, signalé, non corrigé) — `event_players.pseudo` n'a aucun filtre de format au niveau table
+
+L'audit du 2026-09-05 (`docs/audit-complet-2026-09-05.txt`) a relevé que la
+colonne `pseudo` d'`event_players` (`20260727120000_events_live.sql:219`)
+porte bien une borne de LONGUEUR en base — `check (char_length(btrim(pseudo))
+between 1 and 24)`, déjà à la bonne valeur — mais aucun filtre de FORMAT,
+contrairement à `contest_players.first_name` (resserrée par PR #358, voir
+ADR-171) qui, elle, en gagne un. Rien n'empêche en base un pseudo composé de
+caractères de contrôle ou de U+202E, tant que sa longueur reste dans la
+borne. En pratique, la seule écriture
+applicative — `join_event_session` — applique déjà `formatPlayerAlias` /
+`isAllowedPlayerAlias` (borne 24, filtre de contrôle/format/injures) avant
+insertion : le chemin normal est donc couvert. Ce qui ne l'est pas, c'est
+une écriture directe par un rôle admin ou un script de maintenance, qui
+contournerait l'applicatif sans qu'aucune garde base ne s'y oppose — le même
+défaut que celui fermé pour les pronostics par PR #358, non répliqué ici.
+Non corrigé dans ce chantier : signalé par l'audit, vérifié exact, laissé en
+l'état faute d'un lot dédié.
+
+## OUVERT (2026-09-05, décision assumée, pas une dette, VIT-53) — les files d'attente et les offres de stock de Réservation restent sur le droit `reserver`
+
+RDV-7 (PR #360) a fait dériver la clé de droit des HUIT RPC d'ACTIVITÉ du
+`booking_mode` réel ; VIT-53 (PR #362) a fait le même filtrage pour la liste
+d'activités de `vitrine_public_state`. Les FILES (`reservation_queues`) et
+les OFFRES DE STOCK (`reservation_stock_offers`), elles, continuent de
+dépendre du seul droit `reserver`, sans mode à en dériver :
+`reservation_stock_offers` ne porte aucune activité, et
+`reservation_queues.activity_id` est NULLABLE. Les RPC qui les servent
+(`queue_join`, `hold_stock_offer`) exigent encore `reserver` dans le
+catalogue vivant — annoncer sur la vitrine publique une porte que ces RPC
+refusent d'ouvrir serait la « promesse rompue » que `20261020120000`
+interdit. **Ce n'est donc pas une dette à corriger** mais une limite
+assumée : une organisation `rendez_vous` seul ne voit ni file ni offre sur
+sa page publique, ce qui est cohérent avec ce qu'elle peut réellement
+vendre. Rouvrir ce point suppose de doter Réservation de ses propres files
+et offres, un chantier produit distinct, non engagé.
+
+## OUVERT (2026-09-05, signalé, chemin hérité) — le webhook SMS accepte encore le secret maître en clair dans l'URL
+
+PR #359 (ADR-173) a fermé le trou principal — le secret circulait en clair
+dans la query string, seul point d'entrée du dépôt à le faire — en
+introduisant un jeton d'URL DÉRIVÉ (`HMAC(secret, "brevo-url-token")`) et en
+gardant, temporairement, l'ancien secret maître en URL comme repli. Chaque
+usage de ce repli émet le signal `sms_webhook_legacy_url_secret`, distinct
+de `sms_webhook_invalid_token`. **À faire quand ce signal cesse de
+remonter** : retirer le repli `BREVO_WEBHOOK_SECRET` en query string, ne
+garder que le jeton dérivé et l'en-tête `x-lastchance-sms-token`. Retirer ce
+chemin avant que le signal ne le confirme couperait les STOP des clients
+dont la configuration Brevo n'a pas encore été reprise avec le nouveau
+jeton — non retiré pour cette raison, pas par oubli.
