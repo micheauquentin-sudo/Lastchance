@@ -125,7 +125,7 @@ jobs:
       # Un seul navigateur : ces specs de fumée n'ont pas besoin de la
       # matrice Chromium + WebKit du job E2E applicatif.
       - name: Installer Chromium (Playwright)
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: E2E + axe (site vitrine)
         run: npx playwright test --config playwright.site.config.ts
