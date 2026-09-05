@@ -20,10 +20,10 @@
 -- ── POURQUOI LE CONTRE-EXEMPLE COMPTE AUTANT QUE LE CAS SALE ──
 --
 -- Un nettoyage qui renommerait TOUT LE MONDE en « Joueur xxxxxx » passerait
--- toutes les assertions « le sale est nettoyé ». AP-15 et AP-20 sont là pour
--- ça : « Jean-Luc » reste « Jean-Luc », et un pseudo de 24 caractères propres
--- entre en base. Sans eux, ce fichier verdirait sur une fonctionnalité
--- détruite.
+-- toutes les assertions « le sale est nettoyé ». AP-17 et AP-27 sont là pour
+-- ça : un pseudo de 24 caractères propres entre en base, et « Jean-Luc » sort
+-- du nettoyage tel qu'il y est entré. Sans eux, ce fichier verdirait sur une
+-- fonctionnalité détruite.
 --
 -- ── CE QUE CE FICHIER NE PROUVE PAS ──
 --
@@ -290,10 +290,15 @@ select is(
 -- C'est le seul moyen de semer ce que la production portait AVANT la
 -- migration — la porte, désormais, l'interdit.
 
+-- `if exists` : sous mutation (contrainte retirée d'une main), un `drop`
+-- nu AVORTE la transaction et le fichier s'arrête à mi-course — on perd les
+-- échecs qu'il avait justement à rapporter. Mesuré : 25 assertions rendues
+-- sur 32. L'existence des deux contraintes est déjà prouvée en AP-24/AP-25,
+-- cette tolérance ne relâche donc rien.
 alter table public.contest_players
-  drop constraint contest_players_identity_length_check;
+  drop constraint if exists contest_players_identity_length_check;
 alter table public.contest_players
-  drop constraint contest_players_first_name_alias_check;
+  drop constraint if exists contest_players_first_name_alias_check;
 
 insert into public.contest_players
   (id, contest_id, organization_id, token_hash, first_name, accepted_terms)
