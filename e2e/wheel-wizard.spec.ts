@@ -432,7 +432,18 @@ test.describe("Atelier du jeu — création d'une campagne", () => {
     await expect(page).toHaveURL(/\/studio\/roue\/[0-9a-f-]{36}$/, {
       timeout: 30_000,
     });
-    await expect(page.getByText(/^Mon studio — /)).toBeVisible({
+    // LE NOM EXACT, ET NON UN PRÉFIXE — pour deux raisons.
+    //
+    // La première est une contrainte : `/^Mon studio — /` matchait DEUX nœuds,
+    // le titre de la coquille et l'annonceur de route de Next
+    // (`__next-route-announcer__`, qui porte le titre du document « Mon
+    // studio — jeu instantané »). Mode strict, donc échec.
+    //
+    // La seconde vaut mieux que la première : `create_campaign_with_defaults`
+    // nomme la roue d'après la campagne, donc attendre CE nom prouve qu'on a
+    // atterri sur la campagne qu'on vient de créer — pas seulement sur un
+    // studio quelconque. Un préfixe aurait été vert sur le studio d'une autre.
+    await expect(page.getByText(`Mon studio — ${nom}`)).toBeVisible({
       timeout: 30_000,
     });
   });
