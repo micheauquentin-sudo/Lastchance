@@ -21,7 +21,10 @@
   /* Encre et surfaces */
   --color-ink: #18181b;
   --color-ink-soft: #52525b;
-  --color-ink-faint: #a1a1aa;
+  /* #a1a1aa (zinc-400) mesurait 2,57:1 sur fond blanc — repéré par le scan
+     axe de e2e-site/smoke.spec.ts (`color-contrast`, serious) sur les notes
+     tarifaires et la légende FAQ. #71717a (zinc-500) tient 4,82:1. */
+  --color-ink-faint: #71717a;
   --color-surface: #fafafa;
   --color-surface-raised: #ffffff;
   --color-line: #e4e4e7;
