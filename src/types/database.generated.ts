@@ -9349,6 +9349,13 @@ export type Database = {
         Args: { p_hunt_id: string; p_removed_step_id: string }
         Returns: number
       }
+      hunt_step_tokens: {
+        Args: { p_hunt_id: string; p_organization_id: string }
+        Returns: {
+          step_id: string
+          token: string
+        }[]
+      }
       import_vitrine_carte: {
         Args: { p_actor: string; p_organization_id: string; p_payload: Json }
         Returns: Json

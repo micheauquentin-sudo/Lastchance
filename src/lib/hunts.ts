@@ -127,6 +127,28 @@ export function mapHuntScanResult(raw: unknown): HuntScanResult {
 }
 
 // ────────────────────────────────────────────────────────────
+// Lecture d'une étape depuis une session marchande
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Les colonnes de `hunt_steps` qu'une SESSION peut lire — `token` exclue.
+ *
+ * Depuis la migration 20261204120000, `authenticated` n'a plus `select` sur
+ * `hunt_steps.token` : le jeton EST le QR (`/hunt/<token>` suffit à tamponner),
+ * et la caisse n'a aucune raison de l'avoir. Un `select("*")` échoue donc
+ * désormais EN ENTIER — PostgREST expanse toutes les colonnes, y compris celle
+ * qui est fermée. Les pages qui ont besoin du jeton passent par la RPC
+ * `hunt_step_tokens`, gardée par `is_org_editor`.
+ *
+ * Cette liste vit ici, et pas recopiée dans chaque page, parce qu'elle doit
+ * suivre le schéma d'un seul endroit : deux exemplaires auraient divergé au
+ * premier ajout de colonne, et le symptôme aurait été une page vide sans
+ * message.
+ */
+export const HUNT_STEP_SESSION_COLUMNS =
+  "id, hunt_id, organization_id, position, label, hint_text, created_at";
+
+// ────────────────────────────────────────────────────────────
 // Réordonnancement des étapes
 // ────────────────────────────────────────────────────────────
 
