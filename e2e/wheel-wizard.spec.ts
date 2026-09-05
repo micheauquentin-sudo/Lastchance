@@ -386,4 +386,54 @@ test.describe("Atelier du jeu — création d'une campagne", () => {
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Le jeu" })).toBeVisible();
   });
+
+  /**
+   * L'AUTRE MOITIÉ DE LA RÈGLE, À L'EXÉCUTION (VIT-52).
+   *
+   * Le test ci-dessus prouve l'atelier sur téléphone. Celui-ci prouve le studio
+   * sur ordinateur, et il est le SEUL qui puisse le faire : la garde de
+   * `src/lib/atterrissage-studio.test.ts` est textuelle (ADR-074) — elle prouve
+   * que l'appel est écrit, jamais qu'il s'exécute.
+   *
+   * Entre les deux vit tout ce qui peut casser sans qu'une ligne change.
+   * `ChampGrandEcran` pose sa valeur APRÈS l'hydratation : un formulaire soumis
+   * avant elle part sans le champ et retombe sur l'atelier — silencieusement,
+   * puisque c'est exactement le repli prévu. Ici le clic sur « + Nouvelle
+   * campagne » ouvre le formulaire par un état React : y arriver PROUVE que la
+   * page est hydratée, donc que le champ a eu lieu d'être écrit.
+   *
+   * `@smoke` n'est pas décoratif : c'est ce qui fait tourner ce test dans le
+   * projet `desktop-smoke`, le seul dont la fenêtre dépasse les 1024 px qui
+   * décident. Sans le tag, il ne s'exécuterait NULLE PART.
+   */
+  test("sur un ordinateur, la même création atterrit dans le Studio @smoke", async ({
+    page,
+  }) => {
+    // Lu du VIEWPORT et non du nom du projet : c'est la largeur qui décide,
+    // côté CSS comme côté serveur, et un projet renommé ne doit pas changer ce
+    // que ce test mesure. Même raisonnement que `e2e/atelier-modules.spec.ts`.
+    test.skip(
+      (page.viewportSize()?.width ?? 0) < 1024,
+      "Le studio ne remplace l'atelier qu'au-delà de 1024 px",
+    );
+
+    await page.goto("/dashboard/campaigns");
+    await page
+      .getByRole("button", { name: "+ Nouvelle campagne" })
+      .first()
+      .click();
+
+    const nom = `E2E Studio ${Date.now()}`;
+    await page.getByLabel("Nom de la campagne").fill(nom);
+    await page.getByRole("button", { name: "Créer" }).click();
+
+    // La destination, et non l'écran : c'est l'URL que l'action a choisie, donc
+    // la seule chose que ce test prétend prouver.
+    await expect(page).toHaveURL(/\/studio\/roue\/[0-9a-f-]{36}$/, {
+      timeout: 30_000,
+    });
+    await expect(page.getByText(/^Mon studio — /)).toBeVisible({
+      timeout: 30_000,
+    });
+  });
 });
