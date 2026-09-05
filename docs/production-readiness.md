@@ -121,6 +121,35 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
 1. **Ouvrir un compte Brevo et poser `BREVO_API_KEY` /
    `BREVO_WEBHOOK_SECRET`.** Sans eux, aucun SMS ne part et le webhook de
    STOP n'a nulle part où arriver.
+
+   **Déclarer le webhook par l'API, pas par la console**, pour que le
+   secret voyage en en-tête et non dans l'URL — Brevo accepte des
+   en-têtes personnalisés sur `POST /v3/webhooks` (champ `headers`,
+   `channel: "sms"`), ce que la console web n'expose pas :
+
+   ```bash
+   curl -X POST https://api.brevo.com/v3/webhooks \
+     -H "api-key: $BREVO_API_KEY" -H "content-type: application/json" \
+     -d '{"url":"https://<domaine>/api/sms/webhook","type":"transactional",
+          "channel":"sms","events":["unsubscribed","delivered"],
+          "headers":[{"key":"x-lastchance-sms-token","value":"<BREVO_WEBHOOK_SECRET>"}]}'
+   ```
+
+   **À défaut** (webhook créé depuis la console), l'URL peut porter un
+   **jeton dérivé** du secret — jamais le secret lui-même, qui finirait
+   dans les journaux d'accès de l'hébergeur, dans un `Referer` et dans
+   l'historique de la console du prestataire :
+
+   ```bash
+   node -e "console.log(require('crypto').createHmac('sha256', process.env.BREVO_WEBHOOK_SECRET).update('brevo-url-token').digest('hex').slice(0,32))"
+   # → coller https://<domaine>/api/sms/webhook?token=<jeton>
+   ```
+
+   Le secret maître reste accepté en paramètre d'URL **le temps de la
+   bascule**, mais chaque appel émet l'événement de sécurité
+   `sms_webhook_legacy_url_secret` (Sentry). Quand ce signal ne remonte
+   plus, ce dernier chemin peut être retiré du code — la décision se
+   prend sur cette mesure, pas sur une supposition.
 2. **Déclarer un numéro court STOP auprès de Brevo et poser
    `SMS_STOP_SHORTCODE`.** Sans lui, la mention STOP du message reste
    générique (« STOP pour ne plus en recevoir »), sans le numéro que le

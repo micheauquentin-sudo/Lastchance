@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { NextResponse } from "next/server";
 import { optionalEnv } from "@/lib/env";
 import {
@@ -27,9 +28,28 @@ import { timingSafeEquals } from "@/lib/timing-safe";
  * idempotence, aucun oracle. Avec DEUX DIFFÉRENCES, chacune motivée.
  *
  *   • Pas de signature HMAC. Brevo ne signe pas ses webhooks : il n'expose
- *     qu'une URL qu'on choisit. Le secret voyage donc dans l'appel lui-même
- *     (en-tête, ou paramètre d'URL quand la console du prestataire ne permet
- *     pas d'en-tête), et la comparaison est à temps constant.
+ *     qu'une URL qu'on choisit. Le secret voyage donc dans l'appel lui-même,
+ *     et la comparaison est à temps constant.
+ *
+ *     TROIS CHEMINS, ET UN SEUL SURVIVRA. L'en-tête
+ *     `x-lastchance-sms-token` porte le secret maître : c'est la cible, et
+ *     Brevo le permet — `POST /v3/webhooks` accepte `headers: [{key,
+ *     value}]` et un objet `auth` de type jeton, sur un webhook
+ *     `channel: "sms"` (developers.brevo.com, « Secure webhook calls »).
+ *     La console web, elle, n'expose que l'URL — d'où le repli, et d'où
+ *     le fait qu'il ne disparaîtra que quand le webhook aura été (re)créé
+ *     par l'API.
+ *
+ *     Le repli d'URL n'accepte donc PLUS le secret maître mais un JETON
+ *     DÉRIVÉ (`urlToken` plus bas) : une URL finit dans les journaux
+ *     d'accès de l'hébergeur, dans un `Referer`, dans l'historique de la
+ *     console du prestataire — le secret maître n'a rien à y faire, un
+ *     jeton qui ne sert qu'à cette route peut y survivre.
+ *
+ *     Le secret maître reste toléré en URL LE TEMPS DE LA BASCULE, et
+ *     chaque usage émet `sms_webhook_legacy_url_secret`. C'est ce
+ *     compteur — pas une supposition — qui dira quand la configuration
+ *     Brevo a été reprise et que ce dernier chemin peut être retiré.
  *
  *   • JAMAIS de refus par limite de débit. Ailleurs on ferme la porte ; ici
  *     la conséquence d'un refus est un client qui a demandé l'arrêt et
@@ -75,9 +95,19 @@ async function handleSmsWebhook(request: Request) {
     return NextResponse.json({ error: "Non configuré" }, { status: 500 });
   }
 
-  if (!authorized(request, secret)) {
+  const auth = authorized(request, secret);
+  if (!auth.ok) {
     reportSecurityEvent("sms_webhook_invalid_token");
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+  }
+
+  if (auth.via === "url-legacy-secret") {
+    // Chemin HÉRITÉ, accepté pour ne pas couper les STOP entre le
+    // déploiement et la reprise de la configuration Brevo. Le signal est
+    // distinct de `sms_webhook_invalid_token` : celui-ci dit « quelqu'un
+    // frappe à la porte », celui-là dit « le prestataire est encore sur
+    // l'ancienne URL ». Son passage à zéro est la condition de retrait.
+    reportSecurityEvent("sms_webhook_legacy_url_secret");
   }
 
   // Observation seule : voir l'en-tête. Un pic anormal doit se voir sans
@@ -192,18 +222,60 @@ async function handleSmsWebhook(request: Request) {
 }
 
 /**
- * Le secret, en en-tête ou à défaut en paramètre d'URL.
+ * Le jeton que porte l'URL, à la place du secret maître.
  *
- * Comparaison à temps constant, longueurs comparées d'abord — voir
+ * DÉRIVÉ du secret, pas tiré au sort : aucune variable d'environnement de
+ * plus à provisionner, à faire tourner et à oublier de faire tourner. Le
+ * domaine (`brevo-url-token`) enferme l'usage — le même secret dériverait
+ * un autre jeton pour un autre besoin, et connaître celui-ci n'en donne
+ * aucun autre.
+ *
+ * 128 bits (32 caractères hexadécimaux) : un jeton d'URL se recopie à la
+ * main dans une console, et ce qui ne tient pas sur une ligne finit
+ * tronqué. Deviner 128 bits derrière une route qui ne dit rien de ses
+ * refus n'est pas une menace crédible.
+ */
+function urlToken(secret: string): string {
+  return createHmac("sha256", secret)
+    .update("brevo-url-token")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/** Par où l'appel s'est authentifié — voir l'en-tête du fichier. */
+type SmsWebhookAuth =
+  | { ok: true; via: "header" | "url-token" | "url-legacy-secret" }
+  | { ok: false; via: null };
+
+/**
+ * L'en-tête d'abord (le secret maître), l'URL ensuite (le jeton dérivé,
+ * ou le secret maître le temps de la bascule).
+ *
+ * Un en-tête PRÉSENT MAIS FAUX ne se rattrape pas par l'URL : c'est un
+ * appel qui prétend s'authentifier et échoue, pas un appel resté sur
+ * l'ancienne configuration.
+ *
+ * Comparaisons à temps constant, longueurs comparées d'abord — voir
  * `@/lib/timing-safe`, où ce motif vit désormais en un seul exemplaire.
  */
-function authorized(request: Request, secret: string): boolean {
+function authorized(request: Request, secret: string): SmsWebhookAuth {
   const header = request.headers.get("x-lastchance-sms-token");
-  const token =
-    header ?? new URL(request.url).searchParams.get("token") ?? null;
-  if (!token) return false;
+  if (header !== null) {
+    return timingSafeEquals(header, secret)
+      ? { ok: true, via: "header" }
+      : { ok: false, via: null };
+  }
 
-  return timingSafeEquals(token, secret);
+  const query = new URL(request.url).searchParams.get("token");
+  if (query === null) return { ok: false, via: null };
+
+  if (timingSafeEquals(query, urlToken(secret))) {
+    return { ok: true, via: "url-token" };
+  }
+  if (timingSafeEquals(query, secret)) {
+    return { ok: true, via: "url-legacy-secret" };
+  }
+  return { ok: false, via: null };
 }
 
 function firstString(
