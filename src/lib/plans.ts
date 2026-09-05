@@ -618,10 +618,39 @@ export const ADDON_OFFERS: readonly AddonOffer[] = [
      * LA RÉSERVATION — prise de rendez-vous : horaires récurrents, créneaux
      * engendrés, agenda du commerçant, ajout à l'agenda du client.
      *
-     * AUCUN PRODUIT STRIPE NE LUI CORRESPOND ENCORE. C'est délibéré : une
-     * mutation financière exige une demande explicite du propriétaire
-     * (AGENTS.md). Le droit, la colonne et l'octroi back-office fonctionnent
-     * dès maintenant ; seule la vente EN LIGNE attend ce geste-là.
+     * Le produit et le prix Stripe existent depuis le 2026-09-02
+     * (`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`, voir `ADDON_PRICE_ENV` dans
+     * `@/lib/stripe`) : elle se vend en ligne, comme LIGNE d'abonnement.
+     *
+     * ── « VENDABLE SEULE » A DEUX SENS, ET CE CHAMP N'EN PORTE QU'UN ──
+     *
+     * Le lot F2 rend la Réservation vendable SANS LES MOMENTS : ce sont deux
+     * produits, et jusqu'à lui les quatre gardes applicatives du module
+     * exigeaient `reserver` en dur — un commerçant qui payait la Réservation
+     * seule obtenait une salle que la base servait et que l'écran refusait.
+     * Ce qui le fermait vivait dans `reserver-context.ts` et `actions/
+     * reserver.ts`, pas ici : la clé DÉRIVE désormais du `booking_mode`
+     * (`cleModuleReservation`), miroir de la fonction SQL homonyme.
+     *
+     * `soldStandalone`, LUI, DIT AUTRE CHOSE : « s'achète-t-elle sans
+     * ABONNEMENT ? ». Il reste `false`, et le passer à `true` serait une
+     * régression, non un aboutissement :
+     *
+     *   · il bascule l'écran des modules d'`OptionAbonnement` — qui lit
+     *     `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`, posée en production — vers
+     *     `AchatAddon`, qui lit `STRIPE_PRICE_ID_PASS_RENDEZ_VOUS`, laquelle
+     *     n'existe pas. Un produit qui se vend aujourd'hui afficherait « pas
+     *     encore en vente en ligne » ;
+     *   · il ferait entrer la clé dans `MODULES_PORTANT_LE_SOCLE`
+     *     (`@/lib/subscription`), donc un octroi back-office GRATUIT y
+     *     ouvrirait la roue et les campagnes : mot pour mot le défaut MOYEN-2
+     *     que le lot L2 a fermé ;
+     *   · créer le prix de pass qui le rendrait cohérent est une mutation
+     *     financière Stripe, qui exige une demande explicite du propriétaire
+     *     (AGENTS.md).
+     *
+     * Vendue en ligne d'abonnement, elle n'a de toute façon jamais besoin de
+     * porter le socle : l'abonnement qui l'accueille le porte déjà.
      */
     entitlement: "rendez_vous",
     name: "Réservation",

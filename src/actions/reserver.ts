@@ -32,6 +32,7 @@ import {
   sendTableFreedEmail,
 } from "@/lib/resend";
 import {
+  cleModuleReservation,
   formatCreneau,
   formatFenetreStock,
   mapCancelReservation,
@@ -81,6 +82,7 @@ import {
   type RedeemInvitationResult,
   type ReservationPublicState,
   type ReserverAttenteView,
+  type ReserverBookingMode,
   type ReserveSlotResult,
   type RevokeInvitationResult,
   type StockOfferPublicStateResult,
@@ -1938,8 +1940,32 @@ export async function checkinReservation(
 // `status = 'closed'` (créneau) sont les interrupteurs, et ils n'effacent rien.
 // ════════════════════════════════════════════════════════════
 
-/** Session + rôle éditeur + droit `reserver`, en un seul geste. */
-async function gardeEditeurReserver(): Promise<
+/**
+ * Session + rôle éditeur + droit du PRODUIT VISÉ, en un seul geste.
+ *
+ * ── LE MODE CHOISIT LA CLÉ, ET IL EST OPTIONNEL ICI ──
+ *
+ * Moments (`reserver`) et Réservation (`rendez_vous`) sont deux produits
+ * séparés depuis RDV-5, vendus séparément, et `booking_mode` est ce qui les
+ * distingue sur la ligne. Cette garde exigeait `reserver` EN DUR : un
+ * commerçant à qui l'on vend la Réservation seule ne pouvait pas créer sa
+ * salle — `SANS_DROIT` sur un produit payé, pendant que la base, elle,
+ * l'acceptait (migration `20261206120000`, qui fait dériver du mode les huit
+ * RPC du module).
+ *
+ * Les APPELANTS QUI CONNAISSENT LE MODE VISÉ le passent : ce sont ceux qui
+ * l'ÉCRIVENT — la création d'activité et l'enregistrement des réglages. Ils
+ * sont les seuls à faire NAÎTRE une ligne dans un produit, ou à l'y faire
+ * BASCULER ; c'est donc là, et là seulement, que la clé doit être exacte.
+ *
+ * Les AUTRES ne le passent pas et exigent alors « au moins un des deux ». Ce
+ * n'est pas un relâchement : ils agissent sur une activité qui EXISTE, donc
+ * née sous un droit que ce commerce a tenu. Leur imposer la clé exacte aurait
+ * demandé une lecture d'activité de plus à chacun des vingt appels, pour
+ * n'ajouter qu'un refus sur des données héritées — que le commerçant doit au
+ * contraire pouvoir clore proprement plutôt que de les voir gelées.
+ */
+async function gardeEditeurReserver(mode?: ReserverBookingMode): Promise<
   | { ok: true; organizationId: string; userId: string; timezone: string }
   | { ok: false; error: string }
 > {
@@ -1951,13 +1977,16 @@ async function gardeEditeurReserver(): Promise<
   // Le droit est REVÉRIFIÉ côté serveur : l'écran cache déjà le formulaire, mais
   // une server action reste POSTable en direct.
   //
-  // `reserver` DEPUIS 20261020120000, et non plus `vitrine` : la migration a
-  // détaché l'agenda et réécrit les seize appels SQL du module. Laisser cette
-  // garde-ci sur `vitrine` aurait fendu Réserver en deux — les chargeurs de
-  // `reserver-context.ts` demandant un droit, les écritures un autre — donc un
-  // commerçant à qui l'on vend l'agenda seul verrait ses écrans et n'y pourrait
-  // rien changer.
-  if (!droitEffectifModule("reserver", organization)) {
+  // LA CLÉ DÉRIVE DU MODE quand l'appelant le nomme ; sinon « au moins un des
+  // deux produits ». Fendre les chargeurs de `reserver-context.ts` et les
+  // écritures sur deux règles différentes ferait exactement ce que la version
+  // précédente de ce commentaire s'engageait à éviter : des écrans servis et
+  // des gestes refusés, pour le même commerçant.
+  const autorise = mode
+    ? droitEffectifModule(cleModuleReservation(mode), organization)
+    : droitEffectifModule("reserver", organization) ||
+      droitEffectifModule("rendez_vous", organization);
+  if (!autorise) {
     return { ok: false, error: SANS_DROIT };
   }
   return {
@@ -2344,7 +2373,10 @@ export async function createReserverActivity(
     return { ok: false, error: parsed.error.issues[0].message };
   }
 
-  const garde = await gardeEditeurReserver();
+  // LE MODE DEMANDÉ CHOISIT LA CLÉ : créer une salle exige `rendez_vous`,
+  // créer un Moment exige `reserver`. C'est le geste qui fait NAÎTRE la ligne
+  // dans l'un des deux produits — nulle part ailleurs la clé ne pèse autant.
+  const garde = await gardeEditeurReserver(parsed.data.bookingMode);
   if (!garde.ok) return { ok: false, error: garde.error };
 
   // UNE PRISE DE RENDEZ-VOUS NAÎT COMPLÈTE, ou elle ne naît pas.
@@ -4859,7 +4891,11 @@ export async function enregistrerReglagesRendezVous(
   });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
 
-  const garde = await gardeEditeurReserver();
+  // LE MODE ÉCRIT PAR CE FORMULAIRE, et non celui de la ligne : c'est la seule
+  // action qui fasse BASCULER une activité d'un produit à l'autre. Sans cette
+  // clé-ci, un commerçant n'ayant que la Réservation convertirait sa salle en
+  // Moment — donc s'accorderait un produit qu'il n'a pas acheté.
+  const garde = await gardeEditeurReserver(parsed.data.booking_mode);
   if (!garde.ok) return { ok: false, error: garde.error };
 
   const supabase = await createClient();
