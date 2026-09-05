@@ -266,8 +266,45 @@
   ordinateur coûte moins qu'un écran à deux colonnes servi à un téléphone.
   La garde apparie les DEUX moitiés : si le formulaire cesse d'envoyer, l'action
   retombe en silence sur le comportement d'avant, et rien ne rougirait.
+- **VIT-52 — Le huitième module rejoint l'atterrissage selon l'écran**
+  (ADR-168). `createCampaign` (jeux instantanés) manquait à VIT-51 : il
+  redirigeait vers l'atelier avec un `redirect()` LITTÉRAL, pas un appel à son
+  helper d'étape — la seule forme que la sonde de VIT-51 surveillait. Une garde
+  qui reconnaît un APPEL laisse passer le LITTÉRAL qui lui est équivalent :
+  treize livraisons de la campagne des studios ont défilé au-dessus sans que
+  rien rougisse. La sonde lit désormais les formes d'atelier DANS les helpers
+  qui les construisent (`baseAtelierX()`), les réduit à leurs morceaux
+  littéraux et les cherche dans le corps des fonctions `create*` — recopier le
+  chemin rougit comme appeler le helper. C'est la BASE de l'atelier qui est
+  nommée, pas sa première étape comme pour les sept autres : la roue est le
+  seul module dont la page n'a pas de vue suivi, donc l'URL nue rend déjà
+  l'étape « Le jeu ». Au passage, l'info-bulle de création corrigée : elle
+  promettait « cinq étapes » et « l'atelier s'ouvre aussitôt », l'atelier en
+  compte sept et le studio s'ouvre désormais sur ordinateur.
+- **VIT-52b — Les sept info-bulles de création cessent de promettre un écran
+  qu'on ne verra pas.** VIT-51 a changé l'atterrissage sans toucher aux textes
+  qui l'annonçaient : sur ordinateur, sept formulaires promettaient encore
+  « l'atelier s'ouvre aussitôt », puis ouvraient le studio. C'est l'endroit
+  exact où le commerçant apprend ce qui va lui arriver, et il est ouvert par
+  défaut (`defaultOpen`) — une info-bulle « Ce qui va se passer » qui se trompe
+  sur ce qui va se passer vaut moins que pas d'info-bulle. Le contenu propre à
+  chaque module est conservé mot pour mot ; seule la phrase d'atterrissage
+  change. Aucune garde ne pouvait l'attraper : la sonde apparie l'action et le
+  champ caché, pas la prose qui les décrit — limite assumée d'une garde
+  textuelle, dite plutôt que contournée.
+- **VIT-52c — L'atterrissage studio devient une exécution, pas une intention.**
+  La garde est textuelle (ADR-074) : elle prouve que l'appel est écrit, jamais
+  qu'il tourne, et entre les deux vit ce qui casse sans qu'une ligne change —
+  `ChampGrandEcran` pose sa valeur APRÈS l'hydratation, donc un formulaire
+  soumis trop tôt retombe sur l'atelier, c'est-à-dire sur le repli prévu, donc
+  en silence. Un E2E de bureau couvre désormais la moitié « ordinateur », en
+  jumeau du test mobile existant. Deux détails décident s'il mesure quelque
+  chose : le tag `@smoke`, sans lequel `desktop-smoke` — qui filtre par `grep`
+  — ne le jouerait NULLE PART (une garde vacante, le défaut de VIT-49 refait à
+  l'identique) ; et le saut décidé sur la largeur du VIEWPORT et non sur le nom
+  du projet Playwright, parce que c'est la largeur qui tranche des deux côtés.
 
-**Décisions** : ADR-145 à ADR-167.
+**Décisions** : ADR-145 à ADR-168.
 
 **Reste ouvert** :
 - ~~`docs/supply-chain.md` §2bis ne consigne pas la récidive du piège
@@ -281,6 +318,13 @@
   partagé (déjà signalé en V1.74) — décision produit à prendre.
 - Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google
   (geste propriétaire, déjà signalé en V1.71/V1.73).
+- ~~Les sept autres info-bulles de création promettent encore l'atelier
+  inconditionnellement~~ — **corrigé** (VIT-52b, PR #352) : elles disent
+  désormais la règle dans les mêmes termes que le huitième module.
+- ~~Aucun E2E de bureau ne prouve l'atterrissage studio à l'exécution~~ —
+  **couvert** (VIT-52c, PR #352) : jumeau de bureau du test mobile existant.
+  La garde textuelle reste ce qu'elle est ; c'est l'E2E qui prouve désormais
+  l'exécution.
 
 ## V1.74 — L'identité joueur partagée, pour de vrai (✅ 2026-09-02, PR #314, #315, #317, #319)
 

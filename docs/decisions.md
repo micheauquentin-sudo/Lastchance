@@ -10645,3 +10645,73 @@ C'est la forme de régression la plus courante de ce dépôt — la moitié qui 
 marche, donc personne ne voit que l'autre manque. La garde vérifie donc les deux
 côtés module par module, et refuse en plus qu'un huitième module ajouté demain
 redirige en dur vers son atelier.
+
+## ADR-168 — Une garde qui reconnaît un APPEL doit aussi reconnaître le LITTÉRAL qui lui est équivalent
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : VIT-52. `createCampaign` (jeux instantanés) est la huitième
+création du programme des studios, et la seule que VIT-51 n'a pas branchée à
+l'atterrissage selon l'écran — elle redirigeait toujours vers l'atelier.
+
+### Pourquoi ce module précisément
+
+Rien à voir avec le module lui-même : c'est la sonde de VIT-51
+(`atterrissage-studio.test.ts`) qui ne l'a pas vu. Les sept créations
+qu'elle couvrait rejoignaient leur atelier par un appel à leur helper
+d'étape (`hrefEtapeX()`), et son motif ne reconnaissait que cette écriture
+(`/redirect\(\s*hrefEtape\w+\(/`). `createCampaign` écrivait le même chemin
+en toutes lettres — le littéral que `baseAtelierRoue()` construit, recopié
+à la main. Une garde textuelle qui reconnaît un APPEL laisse passer le
+LITTÉRAL qui lui est équivalent. Treize livraisons de la campagne des
+studios (VIT-39 à VIT-51) ont défilé au-dessus de ce module sans que rien
+rougisse.
+
+### Décision — la sonde lit les formes dans les helpers qui les construisent
+
+La nouvelle sonde part des helpers `baseAtelierX()` de
+`src/components/dashboard/atelier-*etapes.ts`, les réduit à leurs morceaux
+littéraux (interpolations ôtées — `/dashboard/campaigns/` puis `/wheel`
+pour la roue), et les cherche EN ORDRE dans le corps des fonctions `create*`
+de `src/actions/`. Recopier le chemin rougit désormais comme appeler le
+helper.
+
+Deux garde-fous supplémentaires :
+
+- **Elle refuse de mesurer à vide** : si aucune forme littérale n'est
+  trouvée dans un helper, elle rougit au lieu de passer verte — c'est
+  explicitement le défaut de garde vacante trouvé en VIT-49 (`docs/bugs.md`).
+- **Elle ne regarde que les fonctions `create*`.** Ailleurs, rejoindre un
+  atelier reste légitime : c'est la destination normale d'un « Modifier ».
+
+**Écarté** : fabriquer une `RegExp` à partir du chemin littéral extrait.
+L'échapper correctement est une occasion de plus de se tromper, pour une
+finesse inutile ici — une recherche de sous-chaîne suffit.
+
+### La base de l'atelier, pas sa première étape
+
+Contrairement aux sept autres modules, c'est la BASE de l'atelier
+(`baseAtelierRoue(campaignId)`) qui est nommée comme destination de repli,
+pas sa première étape. La roue est le seul module dont la page n'a pas de
+vue suivi (`parseEtape(ETAPES_ROUE, etapeParam, "premiere")`) : l'URL nue
+rend donc déjà l'étape « Le jeu ». Ajouter `?etape=jeu` changerait l'adresse
+sans changer l'écran, et dévierait de celle que citent la Carte de
+l'Aventure et le hero. Le repli reste l'atelier, jamais le studio, comme
+ADR-167.
+
+### Effet de bord découvert en écrivant
+
+Un commentaire de `campaigns.ts` citait la chaîne surveillée par l'ancienne
+sonde textuelle et la faisait rougir : une garde textuelle (ADR-074) attrape
+aussi la prose, pas seulement le code. Reformulé.
+
+**Mutations jouées** : rendre à `createCampaign` son `redirect()` littéral
+fait rougir la sonde en NOMMANT le couple (« campaigns.ts::createCampaign
+recopie atelier-roue-etapes.ts:baseAtelierRoue ») ; retirer
+`<ChampGrandEcran />` du formulaire fait rougir l'autre moitié.
+
+**Résidus non traités par ce lot** (`docs/bugs.md`) : les sept autres
+info-bulles de création promettent encore l'atelier inconditionnellement,
+rendues fausses sur ordinateur par VIT-51 sans être mises à jour ; aucun E2E
+de bureau ne prouve l'atterrissage studio à l'exécution — la garde reste
+textuelle (ADR-074), elle prouve que l'appel est écrit, pas qu'il tourne.

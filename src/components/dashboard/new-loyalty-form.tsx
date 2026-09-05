@@ -60,11 +60,12 @@ export function NewLoyaltyForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare un programme en brouillon : rien n&apos;est publié et
-        aucun client ne peut encore cumuler de tampons. L&apos;atelier
-        s&apos;ouvre ensuite à sa première étape — les règles du programme —,
-        puis vous posez les paliers et leurs récompenses ; rien n&apos;est
-        ouvert aux clients tant que vous ne l&apos;avez pas décidé. Vous le
-        retrouverez à tout moment dans la liste de vos programmes.
+        aucun client ne peut encore cumuler de tampons. Sur ordinateur, votre
+        studio s&apos;ouvre aussitôt ; sur téléphone, c&apos;est l&apos;atelier.
+        Vous commencez par les règles du programme, puis vous posez les paliers
+        et leurs récompenses ; rien n&apos;est ouvert aux clients tant que vous
+        ne l&apos;avez pas décidé. Vous le retrouverez à tout moment dans la
+        liste de vos programmes.
       </InfoBulle>
     </form>
   );

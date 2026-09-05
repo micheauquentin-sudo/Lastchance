@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { ChampGrandEcran } from "@/components/studio/champ-grand-ecran";
 import { createCampaign } from "@/actions/campaigns";
 import { Button } from "@/components/ui/button";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
@@ -22,6 +23,9 @@ export function NewCampaignForm({ instanceId = "" }: { instanceId?: string }) {
 
   return (
     <form action={formAction} className="w-full max-w-xl flex flex-wrap items-end gap-2">
+      {/* Dit au serveur sur quel écran on est, pour atterrir dans le
+          studio plutôt que dans l'atelier (VIT-52). */}
+      <ChampGrandEcran />
       <div className="w-full sm:w-auto">
         <Label htmlFor={`campaign-name${instanceId}`}>Nom de la campagne</Label>
         <Input
@@ -53,10 +57,12 @@ export function NewCampaignForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare une campagne en brouillon : rien n&apos;est publié et
-        aucun joueur ne peut encore jouer. L&apos;atelier s&apos;ouvre aussitôt
-        et vous guide en cinq étapes : le jeu, les lots, l&apos;habillage, le
-        créneau, puis la vérification. Vous la retrouverez à tout moment dans la
-        liste de vos campagnes.
+        aucun joueur ne peut encore jouer. Sur ordinateur, votre studio
+        s&apos;ouvre aussitôt : la page de vos joueurs au centre, les réglages
+        autour. Sur téléphone, c&apos;est l&apos;atelier qui vous guide, étape
+        par étape — le jeu, les lots, l&apos;habillage, le créneau, le parcours
+        joueur, le partage, puis la vérification. Vous la retrouverez à tout
+        moment dans la liste de vos campagnes.
       </InfoBulle>
     </form>
   );
