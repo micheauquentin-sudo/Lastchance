@@ -56,21 +56,21 @@ const HERO_CHIPS = [
 const STEPS = [
   {
     n: 1,
-    dot: "bg-k-orange",
+    dot: "bg-k-orange text-k-ink",
     tilt: "-rotate-[1.6deg]",
     title: "Posez votre QR code",
     description: "Sur le comptoir, le menu ou le ticket de caisse. Affiche A4 fournie.",
   },
   {
     n: 2,
-    dot: "bg-k-yellow",
+    dot: "bg-k-yellow text-k-ink",
     tilt: "rotate-[1.3deg]",
     title: "Ils tentent leur chance",
     description: "Ils scannent, tournent la roue et découvrent leur gain immédiatement.",
   },
   {
     n: 3,
-    dot: "bg-k-pink",
+    dot: "bg-k-pink text-k-ink",
     tilt: "-rotate-[0.7deg]",
     title: "Vous encaissez les retours",
     description: "Ils repassent la porte pour leur gain. Vous le validez en caisse en une seconde.",
@@ -78,12 +78,12 @@ const STEPS = [
 ];
 
 const FEATURES = [
-  { n: "01", dot: "bg-k-yellow", title: "QR codes & affiches prêtes", description: "Affiches A4 imprimables, quatre modèles au choix, QR personnalisés." },
-  { n: "02", dot: "bg-k-blue", title: "Stats en temps réel", description: "Tours joués, taux de gagnants, scans — campagne par campagne." },
-  { n: "03", dot: "bg-k-orange", title: "Roue 100 % personnalisable", description: "Couleurs, anneau, polices, pointeur : la roue ressemble à votre commerce." },
-  { n: "04", dot: "bg-k-pink", title: "Validation en caisse", description: "Le staff saisit le code du gagnant et valide le gain en une seconde." },
+  { n: "01", dot: "bg-k-yellow text-k-ink", title: "QR codes & affiches prêtes", description: "Affiches A4 imprimables, quatre modèles au choix, QR personnalisés." },
+  { n: "02", dot: "bg-k-blue text-k-ink", title: "Stats en temps réel", description: "Tours joués, taux de gagnants, scans — campagne par campagne." },
+  { n: "03", dot: "bg-k-orange text-k-ink", title: "Roue 100 % personnalisable", description: "Couleurs, anneau, polices, pointeur : la roue ressemble à votre commerce." },
+  { n: "04", dot: "bg-k-pink text-k-ink", title: "Validation en caisse", description: "Le staff saisit le code du gagnant et valide le gain en une seconde." },
   { n: "05", dot: "bg-k-green text-k-bg", title: "Conforme RGPD", description: "Consentement explicite, données en Europe, export CSV inclus." },
-  { n: "06", dot: "bg-k-orange", title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code, au nom de votre établissement." },
+  { n: "06", dot: "bg-k-orange text-k-ink", title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code, au nom de votre établissement." },
 ];
 
 const RISKS = [
@@ -476,7 +476,7 @@ function Steps() {
                 <Tilt3D>
                   <div className="k-card k-card-hover relative w-full max-w-[340px] rounded-[22px] px-8 pb-8 pt-9">
                     <span
-                      className={`k-border k-hard-sm absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg text-k-ink ${step.dot}`}
+                      className={`k-border k-hard-sm absolute -top-6 left-6 flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${step.dot}`}
                       style={DISPLAY}
                     >
                       {step.n}
@@ -513,7 +513,7 @@ function Features() {
               <Tilt3D>
                 <div className="k-card k-card-hover h-full rounded-[22px] p-6">
                   <span
-                    className={`k-border k-hard-sm inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg text-k-ink ${f.dot}`}
+                    className={`k-border k-hard-sm inline-flex h-[52px] w-[52px] items-center justify-center rounded-full text-lg ${f.dot}`}
                     style={DISPLAY}
                   >
                     {f.n}
