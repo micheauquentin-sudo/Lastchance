@@ -153,11 +153,11 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-09-05
-- **Dernier chantier**: **Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone** (VIT-52, ADR-168, PR #352). Dernier des huit modules de la campagne des studios (VIT-38 à VIT-51) à rejoindre l'atterrissage selon l'écran : `createCampaign` redirigeait toujours vers l'atelier, alors que ce module a son studio depuis VIT-46.
-  **Le module n'y était pour rien : c'est la GARDE qui ne l'avait pas vu.** Les sept créations de VIT-51 appelaient leur helper d'étape, seule forme surveillée ; `createCampaign` écrivait le même chemin en toutes lettres — un LITTÉRAL recopié, qu'aucune sonde ne reconnaissait comme équivalent. Treize livraisons ont défilé au-dessus sans que rien rougisse. La sonde lit désormais les formes DANS les helpers qui les construisent, et refuse de mesurer à vide (défaut de VIT-49).
-  **C'est la BASE de l'atelier qui est nommée, pas sa première étape** : seul module sans vue suivi, l'URL nue de la roue rend déjà « Le jeu ».
-  **Les deux résidus de VIT-51 fermés dans la même livraison** : sept info-bulles promettaient encore l'atelier puis ouvraient le studio (VIT-52b) ; un E2E de bureau prouve l'atterrissage à l'EXÉCUTION, là où la garde textuelle ne prouve que son écriture (VIT-52c — tagué `@smoke`, sans quoi il ne tournerait nulle part).
-  **Reste ouvert** : sélecteur de figures des pronostics toujours une copie ; `nicknameSchema` à 30 contre 24 ; émetteur Google Wallet jamais testé contre le vrai Google.
+- **Dernier chantier**: **Le pseudo public des pronostics et ses deux dernières copies de sélecteur** (SOC-1, commits `f289eb45`/`31dcf6d3`, ADR-169). Fermait deux des trois « Reste ouvert » de V1.75 — le troisième, moins important qu'annoncé, était présenté comme un arbitrage produit alors qu'il n'y en avait aucun.
+  **Le classement des pronostics est PUBLIC, et c'était la seule surface du produit sans filtre d'alias** : `nicknameSchema` faisait `.trim().min(1).max(30)`, sans `isAllowedPlayerAlias` (contrôle, format, injures) qu'appliquent événementiel, salons et passeport. Un joueur pouvait y afficher une insulte, ou un U+202E pour usurper un pseudo. Le dépôt le savait déjà (`validations/loyalty.ts` : 30 est « l'intrus, pas la référence ») mais aucune garde ne le vérifiait — un défaut écrit et jamais gardé reste un défaut. Corrigé : borne 24, filtre commun, garde dérivée du MESSAGE rendu (« Votre pseudo est requis »), pas d'une liste de fichiers.
+  **La garde elle-même portait le défaut d'ADR-168** : sa version texte (`toContain("formatPlayerAlias")`) restait verte sur un import orphelin. Corrigée pour exiger le câblage réel.
+  **Deux copies du sélecteur de figures, pas une** : pronostics ET quiz avaient chacun leur `AvatarPicker` local (157 lignes supprimées) au lieu du socle partagé — celui du quiz ouvrait toujours le premier onglet, jamais celui de la figure courante ; corrigé au passage.
+  **Reste ouvert** : émetteur Google Wallet, jamais testé contre le vrai Google (geste propriétaire).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

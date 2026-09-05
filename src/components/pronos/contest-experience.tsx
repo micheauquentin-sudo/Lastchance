@@ -11,18 +11,12 @@ import {
   submitPrediction,
   updateContestPlayer,
 } from "@/actions/pronostics";
-import {
-  AVATAR_GROUPS,
-  Avatar,
-  avatarLabel,
-  coerceAvatarId,
-  DEFAULT_AVATAR,
-  type AvatarId,
-} from "@/lib/avatars";
+import { coerceAvatarId, DEFAULT_AVATAR, type AvatarId } from "@/lib/avatars";
 import {
   TurnstileWidget,
   turnstileClientEnabled,
 } from "@/components/wheel/turnstile-widget";
+import { AvatarPicker } from "@/components/ui/avatar-picker";
 import {
   RankingPicker,
   type RankingOption,
@@ -47,80 +41,6 @@ export function formatKickoff(value: string, timeZone: string): string {
     minute: "2-digit",
     timeZone,
   }).format(new Date(value));
-}
-
-// ────────────────────────────────────────────────────────────
-// Sélecteur d'avatar (partagé inscription / édition)
-// ────────────────────────────────────────────────────────────
-
-type AvatarGroupKey = (typeof AVATAR_GROUPS)[number]["key"];
-
-function AvatarPicker({
-  value,
-  onChange,
-}: {
-  value: AvatarId;
-  onChange: (id: AvatarId) => void;
-}) {
-  // Onglet initial : celui qui contient l'avatar courant du joueur.
-  const [groupKey, setGroupKey] = useState<AvatarGroupKey>(
-    () =>
-      AVATAR_GROUPS.find((g) => (g.ids as readonly AvatarId[]).includes(value))
-        ?.key ?? AVATAR_GROUPS[0].key,
-  );
-  const group =
-    AVATAR_GROUPS.find((g) => g.key === groupKey) ?? AVATAR_GROUPS[0];
-
-  return (
-    <div>
-      <span className="mb-1.5 block text-sm font-bold text-k-ink">
-        Votre avatar
-      </span>
-      <div className="mb-2 flex gap-1.5" role="tablist" aria-label="Familles d'avatars">
-        {AVATAR_GROUPS.map((g) => {
-          const active = g.key === groupKey;
-          return (
-            <button
-              key={g.key}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setGroupKey(g.key)}
-              className={
-                active
-                  ? "rounded-full border-2 border-k-ink bg-k-yellow px-3 py-1 text-xs font-black text-k-ink"
-                  : "rounded-full border-2 border-transparent bg-zinc-100 px-3 py-1 text-xs font-bold text-k-body hover:bg-zinc-200"
-              }
-            >
-              {g.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="grid grid-cols-6 gap-2 sm:grid-cols-6">
-        {group.ids.map((id) => {
-          const active = value === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onChange(id)}
-              aria-pressed={active}
-              aria-label={avatarLabel(id)}
-              title={avatarLabel(id)}
-              className={
-                active
-                  ? "rounded-full ring-2 ring-k-ink ring-offset-2 ring-offset-white transition"
-                  : "rounded-full opacity-70 transition hover:opacity-100"
-              }
-            >
-              <Avatar id={id} className="h-full w-full" />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // ────────────────────────────────────────────────────────────
@@ -196,7 +116,12 @@ export function ContestRegisterForm({
             className={inputClass}
           />
         </div>
-        <AvatarPicker value={avatar} onChange={setAvatar} />
+        <AvatarPicker
+          value={avatar}
+          onChange={setAvatar}
+          label="Votre avatar"
+          idPrefix="inscription"
+        />
         {tiebreakerQuestion && (
           <div>
             <label
@@ -381,7 +306,12 @@ export function ContestProfileEditor({
             className={inputClass}
           />
         </div>
-        <AvatarPicker value={avatarId} onChange={setAvatarId} />
+        <AvatarPicker
+          value={avatarId}
+          onChange={setAvatarId}
+          label="Votre avatar"
+          idPrefix="profil"
+        />
         <div className="flex gap-2">
           <button
             type="button"

@@ -3,6 +3,7 @@ import { fondKeySchema } from "@/lib/validations/calendar";
 import { isValidLocalDateTime } from "@/lib/date-time";
 import { isAvatarId } from "@/lib/avatars";
 import { COMPETITIONS } from "@/lib/competitions";
+import { formatPlayerAlias, isAllowedPlayerAlias } from "@/lib/player-alias";
 import {
   absentSiNonRendu,
   entierRequis,
@@ -776,12 +777,59 @@ export const setQuestionResultSchema = z.object({
 
 // ── Parcours public (clients du commerçant) ──
 
-/** Pseudo affiché au classement. */
+/**
+ * Pseudo affiché au classement — LE MÊME QUE PARTOUT AILLEURS.
+ *
+ * ── CE QUI MANQUAIT, ET POURQUOI CE N'ÉTAIT PAS COSMÉTIQUE ──
+ *
+ * Ce schéma bornait à 30 et s'arrêtait là. Les trois autres surfaces où un
+ * joueur se nomme — événement live, salons, passeport — passent toutes par
+ * `formatPlayerAlias` puis `isAllowedPlayerAlias`. La roadmap ne retenait que
+ * l'écart de BORNE (30 contre 24) et le classait « décision produit à
+ * prendre » ; c'était l'écart le moins important des trois.
+ *
+ * `isAllowedPlayerAlias` refuse aussi les caractères de CONTRÔLE et de FORMAT,
+ * et une liste d'injures. Sans lui, le classement des pronostics — qui est
+ * PUBLIC — était la seule surface du produit où l'on pouvait inscrire une
+ * insulte, ou glisser un caractère bidirectionnel pour brouiller l'affichage
+ * et usurper visuellement le pseudo d'un autre joueur. C'est mot pour mot ce
+ * que le commentaire de `validations/events.ts` annonce vouloir empêcher.
+ *
+ * Il n'y avait donc aucun arbitrage produit à rendre : 24 est la référence du
+ * dépôt (et celle du CHECK SQL `player_alias_is_allowed`), 30 était l'intrus —
+ * ce que `validations/loyalty.ts` écrivait déjà noir sur blanc.
+ *
+ * ── LA BASE LAISSE 60, ET ON NE S'ALIGNE PAS DESSUS ──
+ *
+ * `00023_pronostics_hardening.sql` borne `first_name` à 1..60. Aucune erreur
+ * 23514 ne guettait donc, et c'est précisément pourquoi le défaut a pu durer :
+ * rien ne cassait. La borne applicative est plus stricte que le CHECK, comme
+ * partout dans ce dépôt — la base garde sa marge, l'écran reste lisible.
+ *
+ * ── CE QUE ÇA CHANGE POUR UN JOUEUR DÉJÀ INSCRIT ──
+ *
+ * Son pseudo enregistré reste affiché : ce schéma ne garde que les ÉCRITURES.
+ * En revanche, s'il porte plus de 24 caractères, la prochaine modification de
+ * profil le lui fera raccourcir — y compris s'il ne venait que changer sa
+ * figure. C'est le prix assumé de l'alignement, et c'est déjà le comportement
+ * des trois autres modules.
+ *
+ * Le `transform` précède la borne : la longueur se mesure sur la forme
+ * NORMALISÉE (NFKC, espaces réduits), celle qui sera réellement affichée,
+ * jamais sur la saisie brute.
+ */
 const nicknameSchema = z
   .string()
-  .trim()
-  .min(1, "Votre pseudo est requis")
-  .max(30, "Pseudo trop long (30 caractères max)");
+  .transform(formatPlayerAlias)
+  .pipe(
+    z
+      .string()
+      .min(1, "Votre pseudo est requis")
+      .max(24, "Pseudo trop long (24 caractères max)")
+      .refine(isAllowedPlayerAlias, {
+        message: "Choisissez un autre pseudo",
+      }),
+  );
 
 /** Clé d'avatar : validée contre le catalogue applicatif, vide accepté. */
 const avatarSchema = z
