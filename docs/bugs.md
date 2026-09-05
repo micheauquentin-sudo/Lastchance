@@ -5327,3 +5327,32 @@ projet Playwright, puisque c'est la largeur qui tranche côté CSS comme côté
 serveur. Ce que ce test prouve et que la garde textuelle ne pouvait pas :
 `ChampGrandEcran` pose sa valeur APRÈS l'hydratation, et un envoi antérieur
 retombe sur l'atelier sans que rien ne rougisse.
+
+## ✅ CLOS le 2026-09-05 (commit `f289eb45`, SOC-1, ADR-169) — le classement public des pronostics acceptait un pseudo sans aucun filtre
+
+Le classement des pronostics est la seule vue **publique** du produit sur un
+pseudo joueur. Son schéma (`nicknameSchema`, `validations/pronostics.ts`)
+faisait `.trim().min(1).max(30)` et rien d'autre — ni `formatPlayerAlias`, ni
+`isAllowedPlayerAlias`, le filtre appliqué partout ailleurs (événementiel,
+salons, passeport de fidélité) qui refuse les caractères de CONTRÔLE et de
+FORMAT et une liste d'injures. Un joueur pouvait donc afficher une insulte en
+pseudo sur ce classement, ou glisser un U+202E (RIGHT-TO-LEFT OVERRIDE) pour
+inverser l'affichage et imiter le pseudo d'un autre — mot pour mot ce que le
+commentaire de `validations/events.ts` dit vouloir empêcher.
+
+Le dépôt le savait déjà et l'avait écrit sans le garder : `validations/loyalty.ts`
+qualifie la borne à 30 (celle des pronostics) d'« intrus du dépôt, pas la
+référence ». Aucune erreur Postgres ne guettait — `first_name` est borné à
+1..60 en base (`00023_pronostics_hardening.sql`) — donc rien ne cassait
+jamais et le défaut a survécu sans symptôme.
+
+**Clos par SOC-1.** Le schéma applique désormais `formatPlayerAlias` puis
+`isAllowedPlayerAlias`, borne à 24 comme les trois autres modules. Garde
+ajoutée : `pseudo-joueur-coverage.test.ts` balaie tous les fichiers de
+`validations/` qui rendent « Votre pseudo est requis » et exige le câblage
+sur chacun — pas une liste de modules recopiée à la main.
+
+**Ce qu'il faut retenir pour la prochaine fois** : un défaut connu, écrit
+dans le commentaire d'un AUTRE fichier, mais absent de toute garde qui le
+vérifie sur le fichier fautif, reste un défaut indéfiniment. L'écrire ne
+suffit pas ; il faut qu'une garde le mesure là où il vit.

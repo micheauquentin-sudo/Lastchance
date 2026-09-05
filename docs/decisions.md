@@ -10715,3 +10715,76 @@ info-bulles de création promettent encore l'atelier inconditionnellement,
 rendues fausses sur ordinateur par VIT-51 sans être mises à jour ; aucun E2E
 de bureau ne prouve l'atterrissage studio à l'exécution — la garde reste
 textuelle (ADR-074), elle prouve que l'appel est écrit, pas qu'il tourne.
+
+## ADR-169 — Le pseudo public des pronostics : 24 est la référence, 30 était l'intrus, et le filtre compte plus que la borne
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : SOC-1 (commit `f289eb45`). La roadmap portait depuis deux
+versions un écart présenté comme une décision produit à prendre : le
+`nicknameSchema` des pronostics borne le pseudo à 30 caractères, contre 24
+pour `isAllowedPlayerAlias`, le filtre partagé par l'événementiel
+(`validations/events.ts`), les salons (`lobby.ts`) et le passeport de
+fidélité (`loyalty.ts`).
+
+### Ce qui manquait vraiment n'était pas la borne
+
+`isAllowedPlayerAlias` ne se limite pas à une longueur : il refuse les
+caractères de CONTRÔLE et de FORMAT (dont U+202E, RIGHT-TO-LEFT OVERRIDE, qui
+permet d'inverser l'affichage d'un pseudo pour en usurper un autre), et une
+liste d'injures. Le schéma des pronostics faisait `.trim().min(1).max(30)` et
+rien d'autre. Or le classement des pronostics est la seule vue **publique**
+du produit sur un pseudo joueur : c'était donc la seule surface où un joueur
+pouvait afficher une insulte, ou imiter le pseudo d'un autre — exactement ce
+que le commentaire de `validations/events.ts` dit vouloir empêcher.
+
+Le dépôt savait déjà que 30 était l'anomalie : `validations/loyalty.ts`
+qualifie cette valeur d'« intrus du dépôt, pas la référence ». Un défaut
+écrit en commentaire mais absent de toute garde reste un défaut indéfiniment
+— c'est la vraie leçon de ce lot, pas l'arbitrage entre deux bornes.
+
+### Pourquoi il a duré
+
+`00023_pronostics_hardening.sql` borne `first_name` à 1..60 en base : aucune
+erreur Postgres 23514 ne guettait, donc rien ne cassait jamais. L'absence de
+symptôme n'était pas une preuve d'innocuité.
+
+### Décision — appliquer `formatPlayerAlias` + `isAllowedPlayerAlias`, borne à 24
+
+Le schéma des pronostics adopte le même filtre que les trois autres modules,
+avec la même borne (24). Effet pour un joueur déjà inscrit : son pseudo
+enregistré reste affiché tel quel (le schéma ne garde que les écritures) ;
+au-delà de 24 caractères, sa prochaine modification de profil le raccourcira,
+même s'il ne venait que changer sa figure — c'est déjà le comportement des
+trois autres modules.
+
+### La garde est dérivée du message qu'elle protège, pas d'une liste de modules
+
+`pseudo-joueur-coverage.test.ts` ne cherche pas une liste de fichiers
+recopiée à la main : elle balaie tous les fichiers de `src/lib/validations/`
+qui rendent le message « Votre pseudo est requis », le marqueur le plus
+fidèle de « pseudo public obligatoire », et exige sur chacun le câblage de
+`formatPlayerAlias`/`isAllowedPlayerAlias` et la borne 24 — aucune autre.
+Une cinquième surface qui rendrait ce message demain hériterait donc de
+l'exigence sans que personne ait à l'y inscrire.
+
+**Une leçon prise sur le test lui-même.** Sa première version vérifiait
+`toContain("formatPlayerAlias")` — une simple présence textuelle. Rejouée
+contre la mutation qui redonne aux pronostics leur ancien schéma, elle est
+restée VERTE : l'import restait en tête de fichier, orphelin, sans plus rien
+appeler. C'est exactement le défaut nommé par ADR-168 (une garde qui
+reconnaît une déclaration laisse passer le débranchement), reproduit dans le
+test censé en protéger. Corrigé pour exiger le câblage réel
+(`.transform(...)`, `.refine(...)`), pas la déclaration de l'import. Mutation
+rejouée ensuite : 6 tests rouges sur 10, dont celui qui nomme
+`pronostics.ts`.
+
+**Écarté** : changer la borne sans le filtre — c'était l'écart le moins
+important des trois listés par la roadmap, et le corriger seul aurait laissé
+passer les caractères de contrôle et les injures que la borne ne concerne
+pas.
+
+**Vérifications** : typecheck, lint, 167 tests du périmètre (7 fichiers).
+
+**Résidu clos par le même chantier** (`docs/bugs.md`) : le classement public
+des pronostics sans filtre d'alias.

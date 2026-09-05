@@ -311,11 +311,19 @@
   `fast-uri`~~ — **écrit** (PR #331) : la note de §2bis avait PRÉDIT cet
   incident, et son exemple de « majeur inutile » s'est retourné. La règle tient,
   c'est sa réponse qui dépend du jour.
-- Le sélecteur de figures des pronostics reste une copie locale
+- ~~Le sélecteur de figures des pronostics reste une copie locale
   (`AvatarPicker` dans `contest-experience.tsx`), non unifiée avec
-  `src/components/ui/avatar-picker.tsx` (déjà signalé en V1.74).
-- `nicknameSchema` (pronostics) borne toujours à 30, contre 24 au socle
-  partagé (déjà signalé en V1.74) — décision produit à prendre.
+  `src/components/ui/avatar-picker.tsx` (déjà signalé en V1.74)~~ — **rejoint
+  le socle** (commit `31dcf6d3`) : il y avait en fait DEUX copies, pas une —
+  celle du quiz (`quiz-experience.tsx`) aussi. 157 lignes supprimées pour 17
+  ajoutées ; seule différence de comportement voulue, l'onglet ouvert par
+  défaut suit désormais la figure courante au lieu du premier de la liste.
+- ~~`nicknameSchema` (pronostics) borne toujours à 30, contre 24 au socle
+  partagé (déjà signalé en V1.74) — décision produit à prendre~~ — **il n'y
+  avait pas de décision à prendre** (SOC-1, commit `f289eb45`, ADR-169) : le
+  vrai écart n'était pas la borne mais le FILTRE — `isAllowedPlayerAlias`
+  (contrôle, format, injures) manquait, sur la seule surface publique du
+  produit. Voir `docs/bugs.md`.
 - Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google
   (geste propriétaire, déjà signalé en V1.71/V1.73).
 - ~~Les sept autres info-bulles de création promettent encore l'atelier

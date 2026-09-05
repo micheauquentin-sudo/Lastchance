@@ -4,6 +4,14 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-05 — Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone
+
+**Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone** (VIT-52, ADR-168, PR #352). Dernier des huit modules de la campagne des studios (VIT-38 à VIT-51) à rejoindre l'atterrissage selon l'écran : `createCampaign` redirigeait toujours vers l'atelier, alors que ce module a son studio depuis VIT-46.
+  **Le module n'y était pour rien : c'est la GARDE qui ne l'avait pas vu.** Les sept créations de VIT-51 appelaient leur helper d'étape, seule forme surveillée ; `createCampaign` écrivait le même chemin en toutes lettres — un LITTÉRAL recopié, qu'aucune sonde ne reconnaissait comme équivalent. Treize livraisons ont défilé au-dessus sans que rien rougisse. La sonde lit désormais les formes DANS les helpers qui les construisent, et refuse de mesurer à vide (défaut de VIT-49).
+  **C'est la BASE de l'atelier qui est nommée, pas sa première étape** : seul module sans vue suivi, l'URL nue de la roue rend déjà « Le jeu ».
+  **Les deux résidus de VIT-51 fermés dans la même livraison** : sept info-bulles promettaient encore l'atelier puis ouvraient le studio (VIT-52b) ; un E2E de bureau prouve l'atterrissage à l'EXÉCUTION, là où la garde textuelle ne prouve que son écriture (VIT-52c — tagué `@smoke`, sans quoi il ne tournerait nulle part).
+  **Reste ouvert** : sélecteur de figures des pronostics toujours une copie ; `nicknameSchema` à 30 contre 24 ; émetteur Google Wallet jamais testé contre le vrai Google.
+
 ## 2026-09-03 — Le studio répond aux retours
 
 **Le studio répond aux retours** (VIT-30 à VIT-32 — PR #322 → #327, ADR-145 à 149). Huit retours d'usage réel sur le studio (V1.73), six lots.
