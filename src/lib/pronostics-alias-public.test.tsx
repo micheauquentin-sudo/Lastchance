@@ -80,6 +80,7 @@ function ligne(first_name: string, over: Partial<ContestLeaderboardRow> = {}) {
 function adminQuiRend(rows: ContestLeaderboardRow[]) {
   return {
     rpc: async () => ({ data: rows, error: null }),
+    // unsafe-cast-justification: double de test reduit aux seuls appels des deux chargeurs
   } as unknown as Parameters<typeof loadContestLeaderboard>[0];
 }
 
