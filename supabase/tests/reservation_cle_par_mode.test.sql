@@ -482,8 +482,10 @@ select is(
 
 -- ET CE QUI GARDE `reserver`, NOMMÉMENT : les sept portes sans activité (une
 -- file d'accueil, une offre de stock, une session d'attente n'ont pas de
--- `booking_mode`) plus `vitrine_public_state`, dont la garde couvre d'un seul
--- tenant trois listes dont deux sans mode — voir l'en-tête de la migration.
+-- `booking_mode`) plus `vitrine_public_state`, dont la garde ne couvre
+-- plus que ses FILES et ses OFFRES depuis VIT-53 (20261207120000) : ses
+-- activités, elles, se filtrent par mode et objet par objet, si bien
+-- qu'une organisation `rendez_vous` seul ne voit plus une vitrine muette.
 select is(
   (select coalesce(
             pg_catalog.string_agg(p.proname, ', ' order by p.proname), '')
