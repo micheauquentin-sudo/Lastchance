@@ -57,7 +57,7 @@
 -- migration suivante n'est plus un invariant.
 --
 -- Il est remplacé DEUX FOIS, et délibérément :
---   * §4 ci-dessous le réénonce sous sa forme neuve, à l'instant de cette
+--   * §3 ci-dessous le réénonce sous sa forme neuve, à l'instant de cette
 --     migration, sur le catalogue vivant ;
 --   * `supabase/tests/reservation_cle_par_mode.test.sql` le rejoue à CHAQUE
 --     passage de CI — une assertion de migration ne se vérifie qu'une fois,
