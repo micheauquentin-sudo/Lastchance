@@ -106,9 +106,14 @@ $$;
 -- que depuis l'intérieur de fonctions `security definer` appartenant au même
 -- propriétaire. PostgreSQL accorde l'EXECUTE à `public` par défaut, et
 -- `security_acl` le refuse — à raison, celle-ci lisant une table protégée par
--- RLS avec les droits de son propriétaire.
+-- RLS avec les droits de son propriétaire. `service_role` EST DANS LA LISTE, et
+-- ce n'est pas une précaution de style : Supabase pose un `alter default
+-- privileges … grant all on functions to anon, authenticated, service_role`, si
+-- bien qu'une fonction neuve naît ouverte aux trois. L'oublier laisse
+-- l'application appeler directement une règle qui n'a de sens qu'à l'intérieur
+-- des huit portes.
 revoke all on function public.reservation_activity_module_key(uuid)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 
 comment on function public.reservation_activity_module_key(uuid) is
   'La clé de droit qu''exige une activité, dérivée de son `booking_mode` '

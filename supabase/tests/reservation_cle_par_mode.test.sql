@@ -408,7 +408,7 @@ select is(
   (public.reserve_table(
      'c1e50000-0000-4000-8000-00000000000a',
      'c1e50000-0000-4000-8000-0000000004c2',
-     repeat('e1', 32), 2) ->> 'state'),
+     repeat('fa', 32), 2) ->> 'state'),
   'unavailable',
   'CLE-21 SALLE ne réserve pas sur le créneau de LES DEUX, bien qu''elle ait le droit');
 
@@ -416,24 +416,34 @@ select is(
   public.reserve_table(
     'c1e50000-0000-4000-8000-00000000000a',
     'c1e50000-0000-4000-8000-0000000004c2',
-    repeat('e1', 32), 2),
+    repeat('fa', 32), 2),
   public.reserve_table(
     'facade00-0000-4000-8000-000000000000',
     'c1e50000-0000-4000-8000-0000000004c2',
-    repeat('e1', 32), 2),
+    repeat('fa', 32), 2),
   'CLE-22 … et son refus est le MÊME document qu''une organisation inconnue : rien ne fuit de dehors');
 
 select is(
   (public.reserve_slot(
      'c1e50000-0000-4000-8000-00000000000b',
      'c1e50000-0000-4000-8000-0000000004c1',
-     repeat('e2', 32)) ->> 'state'),
+     repeat('fb', 32)) ->> 'state'),
   'unavailable',
   'CLE-23 MOMENTS ne réserve pas sur l''atelier de LES DEUX');
 
+-- LE COMPTE EST BORNÉ AUX QUATRE ORGANISATIONS DE CE FICHIER, et la leçon a été
+-- payée ici même : la CI sème la base AVANT pgTAP, et `supabase/seed.sql` porte
+-- déjà une réservation sous `repeat(''e2'', 32)`. Un `count(*)` global lit donc
+-- les données de quelqu'un d'autre — vert sur une base vide, rouge sur une base
+-- peuplée, ce qui est exactement l'inverse de ce qu'on veut prouver.
 select results_eq(
   $$select count(*)::int from public.reservations
-     where player_key_hash in (repeat('e1', 32), repeat('e2', 32))$$,
+     where player_key_hash in (repeat('fa', 32), repeat('fb', 32))
+       and organization_id in (
+         'c1e50000-0000-4000-8000-00000000000a',
+         'c1e50000-0000-4000-8000-00000000000b',
+         'c1e50000-0000-4000-8000-00000000000c',
+         'c1e50000-0000-4000-8000-00000000000d')$$,
   array[0],
   'CLE-24 … et ces trois tentatives n''ont RIEN écrit');
 
