@@ -58,7 +58,7 @@ export interface GeneratedAddon {
 }
 
 /** Version du packaging côté application au moment de la génération. */
-export const PACKAGING_VERSION = "2026-08-d";
+export const PACKAGING_VERSION = "2026-09-a";
 
 export const GENERATED_PLANS: readonly GeneratedPlan[] = [
   {
@@ -148,7 +148,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Écran de salle et télécommande organisateur"
     ],
     "limits": [
-      "500 participants par session live"
+      "250 participants par session live"
     ]
   },
   {
@@ -179,7 +179,7 @@ export const GENERATED_PLANS: readonly GeneratedPlan[] = [
       "Accès à tout nouveau module inclus"
     ],
     "limits": [
-      "500 participants par session live"
+      "250 participants par session live"
     ]
   }
 ];

@@ -5356,3 +5356,34 @@ sur chacun — pas une liste de modules recopiée à la main.
 dans le commentaire d'un AUTRE fichier, mais absent de toute garde qui le
 vérifie sur le fichier fautif, reste un défaut indéfiniment. L'écrire ne
 suffit pas ; il faut qu'une garde le mesure là où il vit.
+
+## OUVERT (2026-09-05, signalé, jauge abaissée, VEN-2) — la jauge live vendue reste une DÉRIVATION d’une mesure ancienne, pas une capacité rejouée
+
+`src/lib/plans.ts` annonce désormais 250 participants par session live sur
+« Le Grand Jeu » et « La Totale », au lieu de 500. Le chiffre est dérivé, dans
+le commentaire de `PlanLimits`, des seules mesures écrites au dépôt :
+~150 req/s disponibles sur `getEventState` (`docs/perf-report.md` §7, 
+transposition ×2,5 d’un local à 61 req/s daté du 2026-08-08) et 0,4 req/s par
+joueur à 2 500 ms de sondage, Realtime coupé — soit 250 joueurs pour un budget
+aux deux tiers de la capacité.
+
+**Ce que cela ne prouve pas.** Aucun banc n’a été rejoué : `npm run
+capacity:bench` (`scripts/capacity-bench.mjs`) existe et mesure la pile réelle,
+mais la dernière campagne date du 2026-08-08, sur une machine dont le même
+rapport mesure un facteur DEUX d’écart entre deux runs du même code. Le cache
+d’1 s livré au wagon 5 (migration 20260929120000) n’a jamais été re-mesuré dos
+à dos : son gain n’est pas compté, la jauge est donc conservatrice — mais
+conservatrice par rapport à un chiffre qu’on ne sait plus qualifier.
+
+**Reste à faire, dans cet ordre.** (1) Rejouer `npm run capacity:bench` contre
+la pile visée, dos à dos, un seul build et un seul état de base ; (2) mettre à
+jour `docs/perf-report.md` §7 avec la mesure neuve ; (3) refaire les cinq
+points de la dérivation sur `PlanLimits` — c’est seulement là que 250 (ou
+autre chose) deviendra une capacité qualifiée.
+
+**Divergence assumée avec la base.** `event_participant_capacity()` accorde
+toujours 500 à `live`/`full` : le catalogue promet donc MOINS que ce que le
+serveur laisse passer. Sens sûr, et `plans.test.ts` garde désormais
+l’inégalité dans ce sens-là plutôt que l’égalité. Faire redescendre le SQL à
+son tour demande une migration — hors du périmètre de ce lot, à traiter quand
+le banc aura tranché la valeur définitive.

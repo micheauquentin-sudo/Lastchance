@@ -49,7 +49,7 @@ describe("proposition tarifaire — valeurs figées", () => {
     expect(PACKAGING_VERSION).toMatch(/^\d{4}-\d{2}-[a-z]$/);
     // Renommage des offres + catalogue d'add-ons du 2026-08-04 : changer le
     // packaging sans changer sa version doit être impossible par inadvertance.
-    expect(PACKAGING_VERSION).toBe("2026-08-d");
+    expect(PACKAGING_VERSION).toBe("2026-09-a");
   });
 
   /**
@@ -296,12 +296,12 @@ describe("projection d'affichage", () => {
     expect(describeTier(tier("core")).limits).toEqual([]);
     expect(describeTier(tier("engagement")).limits).toEqual([]);
     expect(describeTier(tier("live")).limits).toEqual([
-      "500 participants par session live",
+      "250 participants par session live",
     ]);
-    // VEN-1 : La Totale annonce 500 et non plus 1000 — la jauge vendue ne
-    // dépasse pas le plus haut palier prouvé.
+    // VEN-2 : 250 et non plus 500 — la jauge vendue passe SOUS la capacité
+    // mesurée au lieu de s'asseoir dessus. Dérivation sur `PlanLimits`.
     expect(describeTier(tier("full")).limits).toEqual([
-      "500 participants par session live",
+      "250 participants par session live",
     ]);
   });
 
@@ -313,12 +313,23 @@ describe("projection d'affichage", () => {
 });
 
 /**
- * Garde anti-divergence : la limite de participants affichée au commerçant
- * est appliquée en base par `event_participant_capacity()`. Si l'une bouge
- * sans l'autre, la vitrine promet une capacité que le serveur refuse.
+ * Garde anti-divergence : la limite de participants affichée au commerçant ne
+ * doit JAMAIS dépasser celle qu'`event_participant_capacity()` applique en
+ * base — sinon la vitrine promet une capacité que le serveur refuse.
+ *
+ * ── POURQUOI UNE INÉGALITÉ ET NON PLUS UNE ÉGALITÉ (VEN-2) ──
+ *
+ * Ce test exigeait l'égalité stricte, ce qui interdisait de faire redescendre
+ * la promesse commerciale SEULE. Or les deux sens ne sont pas symétriques :
+ * promettre moins que la base n'accorde est sans danger — un commerçant vend
+ * 250 places, le serveur en aurait laissé passer 500 — tandis que promettre
+ * plus est un mensonge à l'écran. La garde tient donc le sens dangereux, et
+ * seulement lui. Le jour où la base redescendra à son tour, l'inégalité
+ * redeviendra une égalité sans qu'on touche à ce test.
  */
-describe("limites — miroir du SQL", () => {
-  it("aligne le catalogue sur event_participant_capacity()", () => {
+describe("limites — plafond du SQL", () => {
+  /** La jauge que la base accorde par plan, lue dans la migration en vigueur. */
+  function capaciteSql(): { full: number; live: number; autre: number } {
     // La DERNIÈRE migration qui redéfinit la fonction fait foi :
     // `create or replace` remplace le corps entier, donc lire l'ancienne
     // (20260805190000) mesurerait un texte que la base n'exécute plus.
@@ -334,20 +345,120 @@ describe("limites — miroir du SQL", () => {
     const body = sql.slice(sql.indexOf("function public.event_participant_capacity"));
     const capacity = body.slice(0, body.indexOf("$$", body.indexOf("$$") + 2));
 
-    expect(capacity).toContain("when o.plan = 'full' then 500");
-    expect(capacity).toContain("o.plan = 'live' then 500");
-    expect(capacity).toContain("else 100");
     // VEN-1 : 1000 SURVIT en base, mais sur la seule branche `comp_access`.
     // Un accès offert n'est pas une vente — c'est toute la distinction, et
-    // c'est aussi pourquoi `PlanLimits` ne sait plus exprimer 1000.
+    // c'est aussi pourquoi `PlanLimits` ne sait pas exprimer 1000.
     expect(capacity).toContain("then 1000");
     expect(capacity).toContain("o.comp_access");
 
-    expect(tier("full").limits.eventParticipants).toBe(500);
-    expect(tier("live").limits.eventParticipants).toBe(500);
-    // Les offres non citées par le SQL tombent dans le `else`.
+    const lire = (motif: RegExp): number => {
+      const trouve = motif.exec(capacity);
+      if (!trouve) throw new Error(`branche introuvable dans le SQL : ${motif}`);
+      return Number(trouve[1]);
+    };
+    return {
+      full: lire(/when o\.plan = 'full' then (\d+)/),
+      live: lire(/o\.plan = 'live' then (\d+)/),
+      // Les offres non citées par le SQL tombent dans le `else`.
+      autre: lire(/else (\d+)/),
+    };
+  }
+
+  it("ne promet jamais plus que ce que la base accorde", () => {
+    const sql = capaciteSql();
+    expect(tier("full").limits.eventParticipants).toBeLessThanOrEqual(sql.full);
+    expect(tier("live").limits.eventParticipants).toBeLessThanOrEqual(sql.live);
+    expect(tier("core").limits.eventParticipants).toBeLessThanOrEqual(sql.autre);
+    expect(tier("engagement").limits.eventParticipants).toBeLessThanOrEqual(
+      sql.autre,
+    );
+  });
+
+  /**
+   * VEN-2 : la jauge vendue est une DÉRIVATION de la capacité mesurée
+   * (`docs/perf-report.md` §7 : ~150 req/s disponibles, 0,4 req/s par joueur
+   * à 2 500 ms de sondage, deux tiers de marge ⇒ 250). Figer la valeur ici ne
+   * prouve rien sur la dérivation, mais empêche qu'elle remonte par
+   * inadvertance : la remonter demande un banc neuf, donc un acte délibéré
+   * qui passera par ce test.
+   */
+  it("vend 250 sur les offres live, 100 ailleurs", () => {
+    expect(tier("live").limits.eventParticipants).toBe(250);
+    expect(tier("full").limits.eventParticipants).toBe(250);
     expect(tier("core").limits.eventParticipants).toBe(100);
     expect(tier("engagement").limits.eventParticipants).toBe(100);
+    expect(tier("place").limits.eventParticipants).toBe(100);
+  });
+});
+
+/**
+ * Garde « une seule source pour la jauge affichée » — dérivée du MESSAGE
+ * RENDU, jamais d'une liste de fichiers.
+ *
+ * La phrase affichée au commerçant est fabriquée par `describeTier()` à
+ * partir de `limits.eventParticipants`. Le risque n'est pas qu'elle soit
+ * fausse aujourd'hui : c'est qu'une deuxième copie apparaisse quelque part —
+ * une carte d'offre, un email, un argumentaire — et survive au prochain
+ * changement de jauge. C'est exactement ce qui est arrivé au « 1000 ».
+ *
+ * On prend donc la phrase telle qu'elle est RENDUE, on en extrait le nombre
+ * et le libellé, puis on cherche ce libellé précédé d'un nombre écrit en dur
+ * dans tout le code. Si la formulation change un jour, la garde suit toute
+ * seule — elle ne connaît aucun fichier par son nom.
+ */
+describe("jauge affichée — une seule source", () => {
+  function walkTs(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return entry.name === "node_modules" || entry.name.startsWith(".")
+          ? []
+          : walkTs(full);
+      }
+      return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+    });
+  }
+
+  it("dérive la ligne d'offre de limits.eventParticipants", () => {
+    for (const plan of PLAN_TIERS) {
+      const rendu = describeTier(plan).limits;
+      if (!tierIncludes(plan, "events")) {
+        expect(rendu).toEqual([]);
+        continue;
+      }
+      expect(rendu).toHaveLength(1);
+      const decoupe = /^(\d+) (.+)$/.exec(rendu[0]);
+      expect(decoupe, `ligne d'offre illisible : ${rendu[0]}`).not.toBeNull();
+      expect(Number(decoupe![1])).toBe(plan.limits.eventParticipants);
+    }
+  });
+
+  it("n'est recopiée nulle part ailleurs", () => {
+    // Le libellé vient du RENDU, pas d'une chaîne recopiée dans ce test.
+    const rendu = describeTier(tier("live")).limits[0];
+    const libelle = /^\d+ (.+)$/.exec(rendu)![1];
+    const enDur = new RegExp(
+      `\\d+\\s*${libelle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+    );
+
+    const racines = [
+      join(process.cwd(), "src"),
+      join(process.cwd(), "site", "src"),
+    ];
+    const coupables = racines
+      .flatMap((racine) => walkTs(racine))
+      .filter((file) => {
+        // Ce fichier PORTE la phrase attendue : c'est sa raison d'être.
+        if (file.endsWith("plans.test.ts")) return false;
+        // `pricing.generated.ts` est une PROJECTION de `describeTier()`,
+        // écrite par `npm run site:pricing` et gardée par
+        // `site-pricing.test.ts` : le site vitrine étant un projet Next
+        // séparé, il ne peut pas importer le catalogue (ADR-074). Une copie
+        // générée ET gardée n'est pas une seconde source de vérité.
+        if (file.endsWith("pricing.generated.ts")) return false;
+        return enDur.test(readFileSync(file, "utf8"));
+      });
+    expect(coupables).toEqual([]);
   });
 });
 

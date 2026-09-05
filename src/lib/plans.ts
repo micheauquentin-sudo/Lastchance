@@ -28,31 +28,71 @@ import type { Entitlement } from "@/platform/experiences/contract";
  * périmètre ou de limite — les tests figent la proposition associée, et un
  * changement non intentionnel casse la suite au lieu de passer inaperçu.
  */
-export const PACKAGING_VERSION = "2026-08-d";
+export const PACKAGING_VERSION = "2026-09-a";
 
 export type PlanTierId = "core" | "engagement" | "place" | "live" | "full";
 
 export interface PlanLimits {
   /**
-   * Participants simultanés d'une session d'événement live. Limite
-   * RÉELLEMENT appliquée en base par `event_participant_capacity()`
-   * (migration 20260929120000_soiree_live.sql) — le catalogue en est le
-   * miroir d'affichage, et un test garde les deux alignés.
+   * Participants simultanés d'une session d'événement live.
    *
-   * ── POURQUOI 1000 N'EST PLUS UNE VALEUR DE CE TYPE (VEN-1) ──
+   * ── D'OÙ VIENT 250, ET COMMENT LE RECALCULER (VEN-2) ──
    *
-   * La base sait toujours rendre 1000, mais pour la seule branche
-   * `comp_access` : un accès OFFERT par le propriétaire n'est pas une vente,
-   * et c'est précisément la population sur laquelle le banc de capacité se
-   * fera. Rien de VENDABLE ne dépasse 500 tant que ce banc n'a pas eu lieu —
-   * la règle est écrite au catalogue lui-même (voir `ADDON_OFFERS`, add-on
-   * « Soirée en jeu », dernière ligne de ses `rules`).
+   * Ce chiffre est une DÉRIVATION, pas un vœu. Il se recalcule, et il doit
+   * l'être dès qu'un banc neuf existe : c'est faute de l'avoir été que
+   * « 1000 » est resté vendable des mois après la mesure qui le niait, puis
+   * que « 500 » lui a succédé sans jamais passer sous la capacité mesurée.
    *
-   * Le type porte donc l'interdit : réécrire `1000` ici ne compile plus, et
-   * rouvrir la vente redevient un acte délibéré — élargir l'union, puis
-   * expliquer sur quelle mesure on s'appuie.
+   * 1. CAPACITÉ MESURÉE — `docs/perf-report.md` §7 : ~150 req/s disponibles
+   *    en production sur `getEventState`. Obtenu en transposant la meilleure
+   *    mesure locale (61 req/s, A/B du 2026-08-08) au rapport local→prod
+   *    observé sur le chemin d'écriture (160 → 409, soit ×2,5).
+   *
+   * 2. BESOIN PAR JOUEUR — un participant n'est pas une requête, c'est un
+   *    sondage continu. `eventPollDelay` rend 2 500 ms en question active
+   *    lorsque Realtime est coupé (`src/lib/event-realtime-contract.ts`),
+   *    soit 0,4 req/s par joueur. HYPOTHÈSE : le besoin est LINÉAIRE en
+   *    nombre de joueurs. C'est celle du document, qui pose 1 000 ⇒ 400
+   *    req/s, 500 ⇒ 200 req/s, 100 ⇒ 40 req/s.
+   *
+   * 3. REALTIME SUPPOSÉ COUPÉ. `EVENTS_REALTIME_ENABLED` n'est pas posé en
+   *    production et son activation reste non cochée dans `docs/roadmap.md`.
+   *    Actif, il diviserait le besoin par douze — mais dimensionner une
+   *    promesse commerciale dessus, c'est vendre un geste d'exploitation qui
+   *    n'a pas eu lieu.
+   *
+   * 4. LE CACHE D'1 s DU WAGON 5 N'EST PAS COMPTÉ. Il est livré (migration
+   *    20260929120000) et `docs/perf-report.md` dit lui-même qu'il n'a
+   *    jamais été re-mesuré dos à dos. Un gain non mesuré ne se vend pas.
+   *
+   * 5. MARGE — on retient les DEUX TIERS de la capacité mesurée, soit un
+   *    budget de 100 req/s : 100 / 0,4 = 250 joueurs. Le tiers laissé de côté
+   *    n'est pas décoratif — le même rapport mesure un facteur DEUX entre
+   *    deux campagnes du même code sur la même machine (26 puis 61 req/s), et
+   *    les ~150 transposent la plus favorable des deux.
+   *
+   * 100 reste tenable sur la même mesure — 40 req/s, soit 27 % de la
+   * capacité, très en dessous du budget. Inchangé.
+   *
+   * POUR RÉVISER : rejouer `npm run capacity:bench`
+   * (`scripts/capacity-bench.mjs`), mettre à jour `docs/perf-report.md` §7,
+   * puis refaire les cinq points ci-dessus. Sans banc neuf, ne pas remonter
+   * la jauge.
+   *
+   * ── LA BASE, ELLE, EN ACCORDE ENCORE PLUS ──
+   *
+   * `event_participant_capacity()` (migration 20260929120000_soiree_live.sql)
+   * rend toujours 500 pour `live`/`full`, et 1000 pour la seule branche
+   * `comp_access` — un accès OFFERT n'est pas une vente, c'est au contraire
+   * la population sur laquelle le banc se fera. Le catalogue promet donc
+   * MOINS que ce que le serveur laisse passer : c'est le seul sens sûr, et
+   * `plans.test.ts` garde désormais l'INÉGALITÉ dans ce sens-là plutôt que
+   * l'égalité. Promettre plus que la base n'accorde reste une erreur.
+   *
+   * Le type porte l'interdit : écrire 500 ou 1000 ici ne compile plus.
+   * Élargir l'union redevient un acte délibéré, à justifier par une mesure.
    */
-  eventParticipants: 100 | 500;
+  eventParticipants: 100 | 250;
 }
 
 export interface PlanTier {
@@ -202,7 +242,9 @@ export const PLAN_TIERS: readonly PlanTier[] = [
     currency: "EUR",
     trialDays: 7,
     entitlements: ["core", "duo", "bande", "events", "pronostics", "jackpot", "quiz"],
-    limits: { eventParticipants: 500 },
+    // VEN-2 : 250 et non 500 — la jauge vendue redescend sous la capacité
+    // MESURÉE, dérivation complète sur `PlanLimits`.
+    limits: { eventParticipants: 250 },
     // La capacité live n'est PAS répétée ici : `describeTier()` la dérive de
     // `limits.eventParticipants`, et la recopier affichait la même limite deux
     // fois sur la carte, avec deux typographies différentes.
@@ -241,9 +283,11 @@ export const PLAN_TIERS: readonly PlanTier[] = [
       // l'ancien « Réserver » qu'elle incluait couvrait déjà ce produit.
       "rendez_vous",
     ],
-    // VEN-1 : 500 et non 1000. La Totale ne perd rien d'ÉPROUVÉ — elle cesse
-    // de promettre une capacité que personne n'a mesurée. Voir `PlanLimits`.
-    limits: { eventParticipants: 500 },
+    // VEN-2 : 250 et non 500. Même geste que VEN-1, poussé jusqu'au bout :
+    // le wagon 5 avait ramené 1000 à 500 sans passer sous la capacité
+    // mesurée — 500 joueurs demandent 200 req/s pour ~150 disponibles. La
+    // Totale ne perd toujours rien d'ÉPROUVÉ. Voir `PlanLimits`.
+    limits: { eventParticipants: 250 },
     // Même raison qu'au-dessus : la capacité vient de `limits`, pas d'ici.
     highlights: [
       "Le Club + Le Grand Jeu + Sur Place réunis",
