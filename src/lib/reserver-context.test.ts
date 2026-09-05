@@ -21,6 +21,18 @@ const SLOT_ID = "22222222-2222-4222-8222-222222222222";
 const { state, makeAdmin } = vi.hoisted(() => {
   const state = {
     droitReserver: true,
+    /**
+     * LE SECOND PRODUIT (`rendez_vous`, RDV-5). Il est séparé de `reserver`
+     * parce que le lot F2 fait DÉRIVER la clé du `booking_mode` de
+     * l'activité : un seul booléen ne pouvait plus répondre aux deux
+     * questions, et c'est précisément l'écart que ce fichier épinglait à
+     * l'envers en exigeant `reserver` de tout le monde.
+     */
+    droitRendezVous: true,
+    /** Les clés RÉELLEMENT demandées, dans l'ordre — jamais imposées d'avance. */
+    modulesDemandes: [] as string[],
+    /** Les activités que le chargeur de TABLEAU DE BORD rapporte. */
+    activitesDashboard: [] as Array<Record<string, unknown>>,
     activityRow: null as Record<string, unknown> | null,
     slots: [] as Array<Record<string, unknown>>,
     vivantes: [] as Array<Record<string, unknown>>,
@@ -81,6 +93,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
     pressions: [] as Array<{ parts: string; evenement: string }>,
     reset() {
       state.droitReserver = true;
+      state.droitRendezVous = true;
+      state.modulesDemandes = [];
+      state.activitesDashboard = [];
       state.session = null;
       state.stockOffersStaffState = { state: "ok", offers: [] };
       state.activityRow = {
@@ -278,6 +293,19 @@ const { state, makeAdmin } = vi.hoisted(() => {
               error: null,
             });
           },
+          /**
+           * LA LECTURE SANS BORNE — `select().eq().order()`, sans `limit`.
+           * C'est la forme du chargeur de tableau de bord, la seule du
+           * module : elle rend la LISTE d'activités que le tri par mode va
+           * filtrer. Les autres tables retombent sur une liste vide, ce qui
+           * est exactement ce que ce fichier veut d'elles ici.
+           */
+          then: (resolve: (v: unknown) => unknown) => {
+            state.filtres.push(filtres);
+            const data =
+              table === "reservation_activities" ? state.activitesDashboard : [];
+            return Promise.resolve({ data, error: null }).then(resolve);
+          },
           maybeSingle: () => {
             state.filtres.push(filtres);
             if (table === "reservation_stock_offers") {
@@ -330,10 +358,24 @@ vi.mock("@/lib/auth", () => ({
         : { user: null, organization: null, role: null, memberships: [] },
     ),
 }));
+/**
+ * ── CE MOCK ÉPINGLAIT LE DÉFAUT, IL ÉPINGLE MAINTENANT LA RÈGLE ──
+ *
+ * Il portait `expect(module).toBe("reserver")` : la clé était donc gravée
+ * DANS LA SUITE autant que dans le code, et faire dériver la clé du
+ * `booking_mode` — ce que la migration `20261206120000` a fait des huit RPC —
+ * aurait fait rougir un test qui ne mesurait que la copie du défaut.
+ *
+ * Il RÉPOND désormais selon la clé demandée, et se contente de l'enregistrer.
+ * Ce sont les contextes rendus, pas cette ligne, qui disent si la règle tient
+ * — un mock qui affirme n'est pas une garde, il est un second code source.
+ */
 vi.mock("@/lib/module-acces-public", () => ({
   moduleOuvertAuJoueur: (module: string) => {
-    expect(module).toBe("reserver");
-    return Promise.resolve(state.droitReserver);
+    state.modulesDemandes.push(module);
+    return Promise.resolve(
+      module === "rendez_vous" ? state.droitRendezVous : state.droitReserver,
+    );
   },
 }));
 vi.mock("@/lib/monitoring", () => ({
@@ -368,6 +410,7 @@ import {
   lireEtatFilePublic,
   lireEtatOffreStock,
   loadReserverInvitationContext,
+  loadReserverDashboardContext,
   loadReserverPublicContext,
   loadReserverQueuePublicContext,
   loadStockOffersDashboardContext,
@@ -1689,5 +1732,190 @@ describe("lireEtatOffreStock — le repli après rotation du cookie", () => {
 
     expect(etat.myHold, "la prise d'autrui a fuité").toBeNull();
     expect(state.compteurs).toEqual([]);
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// LE MODE CHOISIT LA CLÉ — les trois gardes de LECTURE (lot F2)
+//
+// Moments (`reserver`) et Réservation (`rendez_vous`) sont deux produits
+// vendus séparément. Les trois chargeurs de ce fichier exigeaient `reserver`
+// EN DUR : une organisation à qui l'on vend la Réservation seule obtenait
+// « Cette page de réservation n'est pas disponible » sur une salle que la
+// base, elle, servait — la migration `20261206120000` fait dériver du
+// `booking_mode` les huit RPC du module.
+//
+// LA MATRICE EST COMPLÈTE (quatre états de droits × deux modes d'activité) et
+// ses assertions portent sur LE CONTEXTE RENDU, jamais sur un import ni sur
+// une liste de fichiers : ADR-168 et ADR-169 ont déjà payé deux gardes restées
+// vertes sur un câblage absent.
+// ════════════════════════════════════════════════════════════
+
+/** Quatre états de droits, et ce que chacun doit servir de chaque mode. */
+const MATRICE_DROITS = [
+  { nom: "les DEUX droits", reserver: true, rdv: true, moment: true, salle: true },
+  { nom: "les Moments SEULS", reserver: true, rdv: false, moment: true, salle: false },
+  { nom: "la Réservation SEULE", reserver: false, rdv: true, moment: false, salle: true },
+  { nom: "AUCUN des deux", reserver: false, rdv: false, moment: false, salle: false },
+] as const;
+
+describe("le mode choisit la clé — porte PUBLIQUE", () => {
+  for (const cas of MATRICE_DROITS) {
+    it(`une organisation ayant ${cas.nom} : Moment ${cas.moment ? "servi" : "refusé"}, salle ${cas.salle ? "servie" : "refusée"}`, async () => {
+      state.droitReserver = cas.reserver;
+      state.droitRendezVous = cas.rdv;
+
+      state.activityRow = { ...state.activityRow!, booking_mode: "moment" };
+      const moment = await loadReserverPublicContext(ACTIVITY_ID);
+      expect(moment.ok).toBe(cas.moment);
+      // LA CLÉ DEMANDÉE VIENT DU MODE, et d'aucune autre source : c'est ce qui
+      // distingue « router par le mode » de « router par le droit détenu ».
+      expect(state.modulesDemandes.at(-1)).toBe("reserver");
+
+      state.activityRow = { ...state.activityRow!, booking_mode: "rendez_vous" };
+      const salle = await loadReserverPublicContext(ACTIVITY_ID);
+      expect(salle.ok).toBe(cas.salle);
+      expect(state.modulesDemandes.at(-1)).toBe("rendez_vous");
+
+      // MÊME REFUS QUE POUR UNE ACTIVITÉ INEXISTANTE : aucun oracle sur l'état
+      // commercial d'un commerce qui n'est pas celui du visiteur.
+      if (!moment.ok) expect(moment.error).toContain("pas disponible");
+      if (!salle.ok) expect(salle.error).toContain("pas disponible");
+    });
+  }
+
+  it("un `booking_mode` illisible retombe sur les Moments, jamais sur la salle", async () => {
+    // LE REPLI EST CELUI DE LA COLONNE (`default 'moment'`). Retomber sur
+    // `rendez_vous` ferait servir, au premier document abîmé, le produit que ce
+    // commerce n'a pas acheté.
+    state.droitReserver = false;
+    state.droitRendezVous = true;
+    state.activityRow = { ...state.activityRow!, booking_mode: "n'importe quoi" };
+
+    expect((await loadReserverPublicContext(ACTIVITY_ID)).ok).toBe(false);
+    expect(state.modulesDemandes).toEqual(["reserver"]);
+  });
+});
+
+describe("le mode choisit la clé — porte d'INVITATION", () => {
+  const JETON_MATRICE = "Zq7xK9mB4tR2wL8vN5cP1sD3fG6hJ0yU";
+
+  beforeEach(() => {
+    state.slots = [CRENEAU_OUVERT];
+  });
+
+  for (const cas of MATRICE_DROITS) {
+    it(`une organisation ayant ${cas.nom} : Moment ${cas.moment ? "servi" : "refusé"}, salle ${cas.salle ? "servie" : "refusée"}`, async () => {
+      state.droitReserver = cas.reserver;
+      state.droitRendezVous = cas.rdv;
+
+      state.activityRow = { ...state.activityRow!, booking_mode: "moment" };
+      const moment = await loadReserverInvitationContext(JETON_MATRICE);
+      expect(moment.ok).toBe(cas.moment);
+      expect(state.modulesDemandes.at(-1)).toBe("reserver");
+
+      state.activityRow = { ...state.activityRow!, booking_mode: "rendez_vous" };
+      const salle = await loadReserverInvitationContext(JETON_MATRICE);
+      expect(salle.ok).toBe(cas.salle);
+      expect(state.modulesDemandes.at(-1)).toBe("rendez_vous");
+    });
+  }
+});
+
+describe("le mode choisit la clé — chargeur du TABLEAU DE BORD", () => {
+  const SALLE_ID = "66666666-6666-4666-8666-666666666666";
+
+  /** L'organisation de la session, ses deux colonnes d'add-on réglables. */
+  function org(reserver: boolean, rendezVous: boolean) {
+    return {
+      id: ORG_ID,
+      subscription_status: "active",
+      trial_ends_at: "2030-01-01T00:00:00Z",
+      past_due_since: null,
+      addon_reserver: reserver,
+      addon_rendez_vous: rendezVous,
+      comp_access: false,
+      comp_access_until: null,
+      timezone: "Indian/Reunion",
+      live_module_grants: [],
+    };
+  }
+
+  beforeEach(() => {
+    // UN MOMENT ET UNE SALLE dans le même commerce : c'est la seule forme qui
+    // distingue « le chargeur refuse » de « le chargeur trie ».
+    state.activitesDashboard = [
+      {
+        id: ACTIVITY_ID,
+        organization_id: ORG_ID,
+        name: "Dégustation",
+        description: null,
+        active: true,
+        created_at: "2026-08-01T00:00:00Z",
+        kind: "standard",
+        booking_mode: "moment",
+      },
+      {
+        id: SALLE_ID,
+        organization_id: ORG_ID,
+        name: "Le Comptoir",
+        description: null,
+        active: true,
+        created_at: "2026-08-02T00:00:00Z",
+        kind: "standard",
+        booking_mode: "rendez_vous",
+      },
+    ];
+  });
+
+  for (const cas of MATRICE_DROITS) {
+    it(`une organisation ayant ${cas.nom} voit ${[cas.moment && "le Moment", cas.salle && "la salle"].filter(Boolean).join(" et ") || "rien du tout"}`, async () => {
+      state.session = {
+        user: { id: "u1" },
+        organization: org(cas.reserver, cas.rdv),
+        role: "owner",
+      };
+
+      const res = await loadReserverDashboardContext();
+
+      if (!cas.moment && !cas.salle) {
+        // AUCUN des deux produits : le refus est entier, et il est le MÊME
+        // qu'avant ce lot — c'est lui qui rend « Vous n'avez pas encore de
+        // salle » à qui n'a rien acheté.
+        expect(res).toEqual({ ok: false, reason: "no_access" });
+        return;
+      }
+
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const modes = res.activities.map((a) => a.bookingMode).sort();
+      const attendus = [cas.moment && "moment", cas.salle && "rendez_vous"]
+        .filter((m): m is string => Boolean(m))
+        .sort();
+      expect(modes).toEqual(attendus);
+    });
+  }
+
+  it("n'est PAS un tri d'écran : ce qui est écarté ne descend jamais", async () => {
+    // ROUGE SI : quelqu'un remet le filtre dans la page plutôt qu'ici. Le
+    // chargeur sert les DEUX écrans ; laisser descendre les activités de
+    // l'autre produit mettrait dans le HTML d'un commerçant des lignes d'un
+    // module qu'il n'a pas — et ferait payer leurs créneaux à la lecture.
+    state.session = {
+      user: { id: "u1" },
+      organization: org(false, true),
+      role: "owner",
+    };
+
+    const res = await loadReserverDashboardContext();
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.activities.map((a) => a.id)).toEqual([SALLE_ID]);
+    // Le créneau est lu POUR LA SEULE salle : le Moment écarté n'a rien coûté.
+    const lectureCreneaux = state.filtres.find(
+      (f) => f.table === "reservation_slots",
+    );
+    expect(lectureCreneaux?.activity_id).toEqual([SALLE_ID]);
   });
 });

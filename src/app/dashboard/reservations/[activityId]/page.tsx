@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
-import { urlActiviteReserver } from "@/lib/reserver";
+import { cleModuleReservation, urlActiviteReserver } from "@/lib/reserver";
 import { loadReserverDashboardContext } from "@/lib/reserver-context";
 import { loadHorairesActivite } from "@/lib/reserver-horaires-context";
 import { Card } from "@/components/ui/card";
@@ -48,17 +48,27 @@ export default async function ActiviteReservablePage({
 }) {
   const { activityId } = await params;
 
-  // Le droit de CET écran est `reserver`, sa propre clé depuis la migration
-  // 20261020120000 — plus `vitrine`, qui ne couvre plus que la carte publique.
-  const capacites = await capacitesDuModule("reserver");
-  if (!capacites.canExplore) notFound();
-
   const agenda = await loadReserverDashboardContext();
   if (!agenda.ok) notFound();
 
   const activite = agenda.activities.find((a) => a.id === activityId);
-  // Activité inconnue OU d'une autre organisation : même réponse.
+  // Activité inconnue, d'une autre organisation, OU d'un produit que ce
+  // commerce n'a pas : même réponse. Le chargeur ne rend que les activités
+  // dont le `booking_mode` correspond à un droit tenu.
   if (!activite) notFound();
+
+  // LE DROIT DE CET ÉCRAN EST CELUI DU MODE DE L'ACTIVITÉ. Cette page sert
+  // les DEUX produits — un Moment comme une salle de rendez-vous — et
+  // `reserver` en dur faisait lire à un commerçant qui n'a acheté que la
+  // Réservation un encart lui proposant d'acheter les Moments.
+  //
+  // APRÈS la lecture, et non avant comme jadis : `canExplore` ne dépend que
+  // du rôle, donc le refus anticipé n'économisait un chargement qu'au
+  // caissier. Le mode, lui, n'est connu qu'une fois l'activité résolue.
+  const capacites = await capacitesDuModule(
+    cleModuleReservation(activite.bookingMode),
+  );
+  if (!capacites.canExplore) notFound();
 
   /**
    * LE RÔLE DÉCIDE DE CE QUI S'AFFICHE, PAS SEULEMENT DE CE QUI PASSE.
@@ -158,7 +168,10 @@ export default async function ActiviteReservablePage({
         }}
       />
 
-      <ModuleCapabilityNotice capacites={capacites} entitlement="reserver">
+      <ModuleCapabilityNotice
+        capacites={capacites}
+        entitlement={cleModuleReservation(activite.bookingMode)}
+      >
         Activités et créneaux à places limitées, réservation sans compte, et
         enregistrement des arrivées en caisse par code court.
       </ModuleCapabilityNotice>

@@ -646,6 +646,41 @@ describe("octroi daté de module (lot 2)", () => {
     comp_access_until: null,
   };
 
+  /**
+   * LA RÉSERVATION SE VEND SANS LES MOMENTS (lot F2).
+   *
+   * Ce sont DEUX produits depuis RDV-5 — deux clés, deux colonnes, deux
+   * entrées au catalogue, deux prix Stripe. Le blocage n'a jamais été ici :
+   * il vivait dans les quatre gardes applicatives du module, qui exigeaient
+   * `reserver` en dur. Cette garde-ci fixe l'autre moitié du contrat — celle
+   * dont les gardes dépendent : la colonne de chaque produit ouvre SON
+   * produit, et seulement lui.
+   *
+   * ROUGE SI : quelqu'un fait retomber `rendez_vous` sur `addon_reserver`,
+   * ce qui rendrait le détachement décoratif — deux clés, un interrupteur.
+   */
+  it("la Réservation s'ouvre par SA colonne, sans les Moments — et l'inverse", () => {
+    const abonne = { ...resilie, subscription_status: "active" as SubscriptionStatus };
+
+    const salleSeule = {
+      ...abonne,
+      addon_reserver: false,
+      addon_rendez_vous: true,
+    };
+    expect(droitEffectifModule("rendez_vous", salleSeule, NOW)).toBe(true);
+    expect(droitEffectifModule("reserver", salleSeule, NOW)).toBe(false);
+
+    // LE TÉMOIN, sans quoi une règle devenue toujours vraie passerait : les
+    // Moments seuls n'ouvrent pas davantage la Réservation.
+    const momentsSeuls = {
+      ...abonne,
+      addon_reserver: true,
+      addon_rendez_vous: false,
+    };
+    expect(droitEffectifModule("reserver", momentsSeuls, NOW)).toBe(true);
+    expect(droitEffectifModule("rendez_vous", momentsSeuls, NOW)).toBe(false);
+  });
+
   it("un octroi vivant ouvre SON module, sans abonnement ni addon", () => {
     const o = { ...resilie, addon_hunts: false, live_module_grants: ["hunts"] as const };
     expect(hasHuntsAccess(o, NOW)).toBe(true);
