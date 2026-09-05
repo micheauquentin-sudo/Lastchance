@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   createAdminClient: vi.fn(),
   reportError: vi.fn(),
   reportSecurityEvent: vi.fn(),
+  rateLimit: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
 }));
 
 vi.mock("@/lib/apple-wallet", () => ({
@@ -40,7 +41,21 @@ vi.mock("@/lib/monitoring", () => ({
   reportError: (...args: unknown[]) => mocks.reportError(...args),
   reportSecurityEvent: (...args: unknown[]) => mocks.reportSecurityEvent(...args),
 }));
+// Seul `rateLimit` est simulé : `RATE_LIMITS` et `rateLimitBucket` restent les
+// vrais. Les remplacer ferait vérifier au test la clé de seau et le calibrage
+// qu'il aurait lui-même inventés, et un changement de règle passerait inaperçu.
+vi.mock("@/lib/rate-limit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/rate-limit")>();
+  return {
+    ...actual,
+    rateLimit: (...args: unknown[]) => mocks.rateLimit(...args),
+  };
+});
+// `@/lib/request-ip` n'est VOLONTAIREMENT pas simulé : la composition de la clé
+// d'IP dépend de sa politique d'en-têtes de confiance, et c'est précisément ce
+// couplage qu'on veut voir tomber s'il change.
 
+import { RATE_LIMITS } from "@/lib/rate-limit";
 import { GET } from "./route";
 
 /** Code au format réellement produit en base : `GAIN-` + 8 lettres/chiffres. */
@@ -104,9 +119,10 @@ function liveRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function call(code: string) {
+function call(code: string, headers: Record<string, string> = {}) {
   const request = new Request(
     `https://app.example.com/api/wallet/apple/${encodeURIComponent(code)}`,
+    { headers },
   );
   return GET(request, { params: Promise.resolve({ code }) });
 }
@@ -123,6 +139,11 @@ let consoleSpies: Array<{ mockRestore: () => void }> = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Politique d'IP remise à zéro AVANT chaque cas : sur une machine où `VERCEL`
+  // est défini, la clé de seau changerait de forme sans que le test dise pourquoi.
+  delete process.env.TRUSTED_PROXY_PROVIDER;
+  delete process.env.VERCEL;
+  mocks.rateLimit.mockResolvedValue(true);
   mocks.appleWalletConfigured.mockReturnValue(true);
   mocks.buildAppleWalletPass.mockResolvedValue(Buffer.from([80, 75, 3, 4]));
   mockParticipation(liveRow());
@@ -134,6 +155,8 @@ beforeEach(() => {
 afterEach(() => {
   for (const spy of consoleSpies) spy.mockRestore();
   vi.useRealTimers();
+  delete process.env.TRUSTED_PROXY_PROVIDER;
+  delete process.env.VERCEL;
 });
 
 /** Tout ce que les espions de console ont vu, aplati en une seule chaîne. */
@@ -376,5 +399,204 @@ describe("GET /api/wallet/apple/[code] — pass servi", () => {
     const disposition = response.headers.get("content-disposition") ?? "";
     expect(disposition).toBe(`attachment; filename="gain-${CODE}.pkpass"`);
     expect(disposition).not.toMatch(/[\r\n]/);
+  });
+});
+
+describe("GET /api/wallet/apple/[code] — forme du code", () => {
+  it("une forme hors du registre s'arrête AVANT la base et AVANT tout seau", async () => {
+    // `normalizeRedeemCode` ne borne rien : elle préfixe n'importe quelle
+    // chaîne non vide en `GAIN-…`, à un `slice(0, 80)` près. L'espace des codes
+    // essayables n'était donc borné par rien, et chaque essai coûtait une
+    // lecture `service_role`. La forme retenue est celle du REGISTRE des
+    // récompenses (`reward_issuances_code_shape`) : `^GAIN-[A-Z0-9]{4,32}$`.
+    for (const junk of [
+      "AB", // corps trop court (2 caractères)
+      "A".repeat(33), // corps trop long (33)
+      "AB.CD2345", // le point survit à la normalisation
+      "AB-CD2345", // le tiret interne aussi
+      "AB/CD2345",
+      "AB;CD2345",
+      "ÉTÉ2345", // hors [A-Z0-9]
+    ]) {
+      const label = `saisie «${junk}»`;
+      mocks.createAdminClient.mockClear();
+      mocks.rateLimit.mockClear();
+
+      const response = await call(junk);
+
+      expect(response.status, label).toBe(400);
+      expect(await response.json(), label).toEqual({ error: "Code invalide" });
+      expect(mocks.createAdminClient, label).not.toHaveBeenCalled();
+      // ROUGIT si la garde de forme passait APRÈS les seaux : un balayage de
+      // déchets écrirait alors une ligne de rate-limit par essai.
+      expect(mocks.rateLimit, label).not.toHaveBeenCalled();
+    }
+  });
+
+  it("accepte les formes RÉELLEMENT présentes en base, pas seulement l'alphabet du générateur", async () => {
+    // `GAIN-E2ESCAN2` et `GAIN-E2EEXPIRE` (9 caractères) viennent du seed ;
+    // `participations.redeem_code` est `text unique` SANS check, et la migration
+    // 20260805150000 écrit noir sur blanc que l'alphabet [A-HJ-NP-Z2-9]{8} est
+    // une convention de génération, pas un invariant des données.
+    // ROUGIT si quelqu'un resserre la garde sur cet alphabet : des gains
+    // existants deviendraient impossibles à télécharger.
+    for (const reel of ["GAIN-E2ESCAN2", "GAIN-E2EEXPIRE", "GAIN-TAPVALID", "GAIN-AAAA"]) {
+      mockParticipation(liveRow({ redeem_code: reel }));
+
+      const response = await call(reel);
+
+      expect(response.status, reel).toBe(200);
+    }
+  });
+});
+
+describe("GET /api/wallet/apple/[code] — plafonds", () => {
+  /** Fait refuser UN seul des deux seaux, l'autre restant passant. */
+  function refuse(quiRefuse: "ip" | "code") {
+    const prefixe = quiRefuse === "ip" ? "wallet:apple:ip:" : "wallet:apple:code:";
+    mocks.rateLimit.mockImplementation(async (bucket: unknown) =>
+      !String(bucket).startsWith(prefixe),
+    );
+  }
+
+  it("borne l'IP AVANT toute lecture Supabase, avec la règle du catalogue", async () => {
+    // Cette route était la SEULE route publique du dépôt sans plafond : sans
+    // borne, un balayage de codes bien formés paie une lecture `service_role`
+    // par essai — et une signature PKCS#7 dès qu'il touche.
+    // ROUGIT si le seau glisse après la lecture.
+    process.env.TRUSTED_PROXY_PROVIDER = "cloudflare";
+    refuse("ip");
+
+    const response = await call(CODE, { "cf-connecting-ip": "203.0.113.7" });
+
+    expect(response.status).toBe(429);
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.buildAppleWalletPass).not.toHaveBeenCalled();
+    expect(mocks.rateLimit).toHaveBeenCalledWith(
+      "wallet:apple:ip:203.0.113.7",
+      RATE_LIMITS.walletPassIp,
+    );
+  });
+
+  it("le plafond d'IP est fail-OPEN : la clé est PARTAGÉE (ADR-032)", async () => {
+    // Un `failClosed` sur une clé d'IP fait d'une panne du backend de
+    // rate-limit un interrupteur qui éteint le téléchargement pour tout le
+    // Wi-Fi d'un commerce. ROUGIT si quelqu'un « durcit » ce seau.
+    process.env.TRUSTED_PROXY_PROVIDER = "cloudflare";
+
+    await call(CODE, { "cf-connecting-ip": "203.0.113.7" });
+
+    const appelIp = mocks.rateLimit.mock.calls.find((appel) =>
+      String(appel[0]).startsWith("wallet:apple:ip:"),
+    );
+    expect(appelIp).toBeDefined();
+    expect(appelIp?.[2]).toBeUndefined();
+  });
+
+  it("sans IP mesurée, aucun seau d'IP n'est ouvert", async () => {
+    // `clientIpFromHeaders` rend `unknown` sans proxy déclaré : la clé ne
+    // désignerait plus personne et TOUS les visiteurs tomberaient dans une
+    // seule ligne, à un seuil calibré pour un seul — l'interrupteur global.
+    delete process.env.TRUSTED_PROXY_PROVIDER;
+    delete process.env.VERCEL;
+
+    const response = await call(CODE, { "x-forwarded-for": "203.0.113.9" });
+
+    expect(response.status).toBe(200);
+    for (const appel of mocks.rateLimit.mock.calls) {
+      expect(String(appel[0]).startsWith("wallet:apple:ip:")).toBe(false);
+    }
+  });
+
+  it("borne le code AVANT la lecture, sur une empreinte — jamais le code en clair", async () => {
+    refuse("code");
+
+    const response = await call(CODE);
+
+    expect(response.status).toBe(429);
+    // AVANT la lecture, et c'est le point : consommé après le contrôle de vie
+    // du gain, ce 429 ne serait atteint que par les codes VIVANTS et
+    // deviendrait l'oracle d'existence que ce fichier interdit au 404.
+    expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.buildAppleWalletPass).not.toHaveBeenCalled();
+
+    const appelCode = mocks.rateLimit.mock.calls.find((appel) =>
+      String(appel[0]).startsWith("wallet:apple:code:"),
+    );
+    expect(appelCode).toBeDefined();
+    // ROUGIT si le code sert de clé en clair : le seau finirait dans Upstash ET
+    // dans `public.rate_limits`, deux endroits d'où un porteur de droit se relit.
+    expect(String(appelCode?.[0])).not.toContain("AB2C3D4E");
+    expect(String(appelCode?.[0])).toMatch(/^wallet:apple:code:[0-9a-f]{64}$/);
+    expect(appelCode?.[1]).toEqual(RATE_LIMITS.walletPassCode);
+    // Clé d'IDENTITÉ DE GAIN, résolue avant le seau : `failClosed` légitime,
+    // sa saturation ne coupe que le porteur de CE code.
+    expect(appelCode?.[2]).toEqual({ failClosed: true });
+  });
+
+  it("deux codes différents n'ouvrent pas le même seau", async () => {
+    await call(CODE);
+    await call("GAIN-ZZ9Y8X7W");
+
+    const cles = mocks.rateLimit.mock.calls
+      .map((appel) => String(appel[0]))
+      .filter((cle) => cle.startsWith("wallet:apple:code:"));
+    expect(cles).toHaveLength(2);
+    expect(cles[0]).not.toBe(cles[1]);
+  });
+
+  it("le 429 ne dit RIEN du code : inconnu et vivant rendent la même réponse", async () => {
+    // LE test du plafond. Un 429 servi seulement aux codes existants
+    // transformerait la protection elle-même en vérificateur de codes —
+    // exactement ce que la non-divulgation ci-dessus interdit au 404.
+    refuse("code");
+
+    mockParticipation(null);
+    const inconnu = await snapshot(await call(CODE));
+
+    mockParticipation(liveRow());
+    const vivant = await snapshot(await call(CODE));
+
+    expect(inconnu.status).toBe(429);
+    expect(vivant).toEqual(inconnu);
+    expect(JSON.parse(inconnu.body)).toEqual({
+      error: "Trop de requêtes, réessayez dans un instant",
+    });
+    // Le corps ne recopie ni le code, ni rien qui en dépende.
+    expect(inconnu.body).not.toContain("AB2C3D4E");
+    expect(inconnu.body).not.toContain("GAIN-");
+    // Et il ne se met pas en cache : un 429 recopié dans un cache partagé
+    // refuserait ensuite des joueurs qui n'ont rien demandé.
+    expect(new Map(inconnu.headers).get("cache-control")).toBe("no-store");
+  });
+
+  it("un dépassement ne laisse pas le code dans les journaux", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "cloudflare";
+    refuse("ip");
+    await call(CODE, { "cf-connecting-ip": "203.0.113.7" });
+
+    refuse("code");
+    await call(CODE);
+
+    expect(consoleOutput()).not.toContain("AB2C3D4E");
+    expect(consoleOutput()).toBe("");
+    expect(mocks.reportError).not.toHaveBeenCalled();
+    expect(mocks.reportSecurityEvent).not.toHaveBeenCalled();
+  });
+
+  it("chemin nominal : les deux seaux passent, dans cet ordre, et le pass est servi", async () => {
+    process.env.TRUSTED_PROXY_PROVIDER = "cloudflare";
+
+    const response = await call(CODE, { "cf-connecting-ip": "203.0.113.7" });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/vnd.apple.pkpass",
+    );
+    const cles = mocks.rateLimit.mock.calls.map((appel) => String(appel[0]));
+    // L'IP AVANT le code : c'est cet ordre qui rend le coût d'une rafale
+    // indépendant du nombre de codes inventés.
+    expect(cles[0]).toBe("wallet:apple:ip:203.0.113.7");
+    expect(cles[1]).toMatch(/^wallet:apple:code:/);
   });
 });

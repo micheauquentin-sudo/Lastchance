@@ -62,6 +62,14 @@ export function buildGoogleWalletSaveUrl(params: {
       aud: "google",
       typ: "savetowallet",
       iat: Math.floor(Date.now() / 1000),
+      // `origins` reçoit ici APP_URL ENTIER (« https://exemple.fr »), là où les
+      // exemples Google montrent un HOSTNAME (« exemple.fr »). Ce n’est pas
+      // établi comme un défaut : personne n’a encore émis ce jeton contre un
+      // vrai compte émetteur Google, qui seul dit si la comparaison d’origine
+      // est faite sur l’URL ou sur l’hôte. Ne PAS « corriger » à l’aveugle —
+      // si la forme attendue était l’URL, la changer casserait le bouton
+      // « Ajouter à Google Wallet » sans qu’aucun test local ne rougisse.
+      // À VALIDER contre un émetteur réel, avec les deux formes.
       origins: [APP_URL],
       payload: {
         genericClasses: [{ id: classId }],
@@ -301,6 +309,7 @@ export function buildGoogleWalletLoyaltySaveUrl(
       aud: "google",
       typ: "savetowallet",
       iat: Math.floor(Date.now() / 1000),
+      // Même incertitude sur `origins` que dans `buildGoogleWalletSaveUrl` : à valider contre un émetteur réel.
       origins: [APP_URL],
       payload: {
         loyaltyClasses: [
