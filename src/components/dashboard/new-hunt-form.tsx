@@ -59,12 +59,13 @@ export function NewHuntForm({ instanceId = "" }: { instanceId?: string }) {
         defaultOpen
         className="w-full"
       >
-        Créer prépare une Chasse au QR en brouillon : rien n&apos;est publié et aucun
-        joueur ne peut encore la commencer. L&apos;atelier s&apos;ouvre ensuite
-        à sa première étape — le lot final —, puis vous placez le parcours, les
-        indices et les affiches ; rien n&apos;est ouvert aux joueurs tant que
-        vous ne l&apos;avez pas décidé. Vous la retrouverez à tout moment dans
-        la liste de vos Chasses au QR.
+        Créer prépare une Chasse au QR en brouillon : rien n&apos;est publié et
+        aucun joueur ne peut encore la commencer. Sur ordinateur, votre studio
+        s&apos;ouvre aussitôt ; sur téléphone, c&apos;est l&apos;atelier. Vous
+        commencez par le lot final, puis vous placez le parcours, les indices et
+        les affiches ; rien n&apos;est ouvert aux joueurs tant que vous ne
+        l&apos;avez pas décidé. Vous la retrouverez à tout moment dans la liste
+        de vos Chasses au QR.
       </InfoBulle>
     </form>
   );

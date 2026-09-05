@@ -60,10 +60,11 @@ export function NewJackpotForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare une cagnotte en brouillon : rien n&apos;est publié et
-        personne ne peut encore y contribuer. Vous atterrissez directement dans
-        l&apos;atelier, à l&apos;étape « Les réglages », où se fixent le palier à
-        atteindre et le lot commun. Vous la retrouverez à tout moment dans la
-        liste de vos jackpots.
+        personne ne peut encore y contribuer. Sur ordinateur, votre studio
+        s&apos;ouvre aussitôt ; sur téléphone, c&apos;est l&apos;atelier. Vous
+        commencez par « Les réglages », où se fixent le palier à atteindre et le
+        lot commun. Vous la retrouverez à tout moment dans la liste de vos
+        jackpots.
       </InfoBulle>
     </form>
   );

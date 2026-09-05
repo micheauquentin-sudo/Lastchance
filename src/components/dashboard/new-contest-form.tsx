@@ -174,11 +174,12 @@ export function NewContestForm({
         className="w-full"
       >
         Créer prépare un événement de pronostics en brouillon : rien n&apos;est
-        publié et aucun joueur ne peut encore parier. L&apos;atelier s&apos;ouvre
-        aussitôt et vous guide en six étapes — le championnat, les matchs, les
-        questions, le barème, les récompenses, puis une vérification avant
-        d&apos;ouvrir aux joueurs. Vous le retrouverez à tout moment dans la
-        liste de vos pronostics.
+        publié et aucun joueur ne peut encore parier. Sur ordinateur, votre
+        studio s&apos;ouvre aussitôt ; sur téléphone, c&apos;est l&apos;atelier.
+        Six étapes vous guident — le championnat, les matchs, les questions, le
+        barème, les récompenses, puis une vérification avant d&apos;ouvrir aux
+        joueurs. Vous le retrouverez à tout moment dans la liste de vos
+        pronostics.
       </InfoBulle>
     </form>
   );

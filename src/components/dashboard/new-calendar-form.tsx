@@ -60,8 +60,9 @@ export function NewCalendarForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare un calendrier en brouillon : rien n&apos;est publié et
-        aucune case ne peut encore être ouverte. Vous arrivez ensuite dans
-        l&apos;atelier, sur les réglages — période, nombre de cases — puis vous
+        aucune case ne peut encore être ouverte. Sur ordinateur, votre studio
+        s&apos;ouvre aussitôt ; sur téléphone, c&apos;est l&apos;atelier. Vous
+        commencez par les réglages — période, nombre de cases — puis vous
         garnissez les cases une par une, chacune s&apos;enregistrant seule. Une
         étape de vérification dit ce qui manque avant d&apos;ouvrir. Vous le
         retrouverez à tout moment dans la liste de vos calendriers.

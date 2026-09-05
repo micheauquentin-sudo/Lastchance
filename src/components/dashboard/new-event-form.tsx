@@ -61,9 +61,10 @@ export function NewEventForm({ instanceId = "" }: { instanceId?: string }) {
         className="w-full"
       >
         Créer prépare un jeu en brouillon : rien n&apos;est publié et la salle ne
-        voit encore rien. Vous atterrissez directement dans l&apos;atelier, à
-        l&apos;étape « Le jeu », puis viennent les manches et la soirée. Vous le
-        retrouverez à tout moment dans la liste de vos jeux d&apos;événement.
+        voit encore rien. Sur ordinateur, votre studio s&apos;ouvre aussitôt ;
+        sur téléphone, c&apos;est l&apos;atelier. Vous commencez par « Le jeu »,
+        puis viennent les manches et la soirée. Vous le retrouverez à tout
+        moment dans la liste de vos jeux d&apos;événement.
       </InfoBulle>
     </form>
   );
