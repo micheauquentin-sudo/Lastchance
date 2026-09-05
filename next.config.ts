@@ -96,6 +96,17 @@ const tokenPathSecurityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // ── HÔTES AUTORISÉS À CHARGER LES RESSOURCES DU SERVEUR DE DEV ──
+  //
+  // Sans cette liste, `next dev` ne sert ses fichiers client qu'à `localhost` :
+  // ouvrir la page par `127.0.0.1` ou par l'IP du réseau local la rend en HTML
+  // mais **ne l'hydrate jamais**. Le piège est qu'elle a l'air correcte — seuls
+  // les composants clients manquent à l'appel, sans la moindre erreur visible.
+  // Le décor de l'accueil reste alors figé sur son poster.
+  //
+  // N'a aucun effet en production : `next start` et Vercel ignorent ce champ.
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.87"],
+
   // ── LES BINAIRES DE `sharp` DOIVENT SUIVRE LA FONCTION ──
   //
   // `sharp` charge un `.node` qui charge lui-même `libvips-cpp.so`. Le second
@@ -151,6 +162,20 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: buildOcrWorkerCsp() },
           // Ces fichiers ne sont ni une page ni un contenu à indexer, et ils
           // pèsent 4,1 Mo : rien ne doit les faire remonter dans un moteur.
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
+      {
+        // Décor scrollytelling de l'accueil : une illustration verticale, servie
+        // en trois paliers de largeur dont un seul est téléchargé par visite.
+        // Sans cache immuable, chaque retour sur l'accueil le reprendrait en
+        // entier. Le nom d'un fichier porte sa largeur et ne change jamais sans
+        // que son contenu change (ils sont régénérés en bloc par
+        // `scripts/build-backdrop-panorama.mjs`), donc `immutable` est sûr ici.
+        source: "/panorama/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+          // Des images de décor n'ont rien à faire dans un moteur d'images.
           { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
