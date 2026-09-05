@@ -819,6 +819,45 @@ export const RATE_LIMITS = {
    *  Wi-Fi partagé. Une tablée qui ouvre une salle et s'y retrouve consomme
    *  quelques unités ; le seuil reste un signal, pas une porte. */
   lobbyIp: { limit: 600, windowSeconds: 600 },
+  /** PLAFOND PAR IP SEULE de `/api/wallet/apple/[code]` — consommé AVANT toute
+   *  lecture Supabase, et donc avant la signature du pass.
+   *
+   *  POURQUOI IL EXISTE : cette route était la SEULE route publique du dépôt
+   *  sans aucun plafond. Elle est non authentifiée, son unique paramètre est un
+   *  code choisi par l'appelant, elle lit `participations` en `service_role`
+   *  (RLS contournée) et, sur un code vivant, elle signe un PKCS#7 — l'opération
+   *  la plus chère du chemin. Non bornée, elle offrait à la fois un balayage de
+   *  codes gratuit et un amplificateur de charge (une lecture base par essai).
+   *  Le seau par code (`walletPassCode`) ne borne PAS ce balayage : sa clé est
+   *  une valeur que l'appelant renouvelle à chaque tour — même défaut que
+   *  `huntRecall`. L'IP est la seule clé de ce chemin qu'il ne choisit pas,
+   *  donc la seule qui borne réellement l'énumération.
+   *
+   *  FAIL-OPEN (appel sans `failClosed`), comme `healthIp` et pour la même
+   *  raison qu'ADR-032 : la clé est PARTAGÉE (CGNAT, Wi-Fi d'un commerce).
+   *  Un refus y reste posé — c'est le prix de la borne, et le seul geste
+   *  fermé est le TÉLÉCHARGEMENT d'un pass, jamais le gain lui-même : le
+   *  joueur garde son code (email, SMS, portefeuille web) et la caisse
+   *  l'accepte. Mais une PANNE du backend de rate-limit ne doit pas éteindre
+   *  ce téléchargement pour tout le monde, d'où le fail-open.
+   *
+   *  60/60 s : un joueur télécharge son pass une fois, deux s'il recommence.
+   *  Même une tablée entière derrière le même Wi-Fi n'en approche pas ; un
+   *  balayage, lui, est ramené à 60 essais/minute par adresse. */
+  walletPassIp: { limit: 60, windowSeconds: 60 },
+  /** Téléchargements du pass POUR UN MÊME CODE — clé d'IDENTITÉ DE GAIN (sha256
+   *  du code normalisé), du même genre que `claim`, donc `failClosed` légitime :
+   *  la saturer ne coupe que le porteur de CE code, personne d'autre.
+   *
+   *  Consommé AVANT la lecture base, et non entre la lecture et la signature :
+   *  placé après le contrôle de vie du gain, le 429 ne serait atteint que par
+   *  les codes VIVANTS et deviendrait exactement l'oracle d'existence que
+   *  `route.test.ts` interdit — bien plus utile à un attaquant que le pass.
+   *
+   *  10/600 s : réinstaller un pass effacé, changer de téléphone, relancer un
+   *  téléchargement interrompu tiennent largement ; le rejeu automatisé d'un
+   *  code volé pour faire signer des PKCS#7 en boucle, non. */
+  walletPassCode: { limit: 10, windowSeconds: 600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /** Construit une clé de seau lisible et sans collision entre usages. */
