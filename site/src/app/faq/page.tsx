@@ -17,6 +17,7 @@ export default function FaqPage() {
       <Section
         eyebrow="FAQ"
         title="Questions fréquentes"
+        titleAs="h1"
         subtitle="Tout ce que les commerçants nous demandent avant de se lancer."
       >
         <FaqAccordion items={FAQ_ITEMS} />

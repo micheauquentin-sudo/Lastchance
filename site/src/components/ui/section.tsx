@@ -10,6 +10,7 @@ export function Section({
   id,
   eyebrow,
   title,
+  titleAs = "h2",
   subtitle,
   className,
   children,
@@ -17,10 +18,18 @@ export function Section({
   id?: string;
   eyebrow?: string;
   title?: string;
+  /**
+   * Niveau du titre de section. `h2` par défaut (une page a en général déjà
+   * son `h1` ailleurs — le Hero de l'accueil, par exemple). Les pages sans
+   * autre titre (tarifs, FAQ, contact) passent `h1` à leur première Section
+   * pour que la page porte un titre de plus haut niveau, comme l'accueil.
+   */
+  titleAs?: "h1" | "h2";
   subtitle?: string;
   className?: string;
   children: React.ReactNode;
 }) {
+  const TitleTag = titleAs;
   return (
     <section id={id} className={cn("section-pad", className)}>
       <Container>
@@ -32,9 +41,9 @@ export function Section({
               </p>
             )}
             {title && (
-              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-balance">
+              <TitleTag className="text-3xl font-bold tracking-tight sm:text-4xl text-balance">
                 {title}
-              </h2>
+              </TitleTag>
             )}
             {subtitle && (
               <p className="mt-4 text-lg text-ink-soft text-pretty">{subtitle}</p>

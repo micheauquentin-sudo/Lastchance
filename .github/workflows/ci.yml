@@ -101,6 +101,35 @@ jobs:
       - name: Build statique
         run: npm run build
 
+  site-e2e:
+    name: Site vitrine · E2E · axe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # Deux lockfiles distincts (racine et site/) : la racine fournit
+      # @playwright/test et @axe-core/playwright, absents de site/ — voir
+      # playwright.site.config.ts. site/ fournit le build du site à tester.
+      - name: Installation reproductible (lockfile racine)
+        run: npm ci
+
+      - name: Installation reproductible (lockfile site vitrine)
+        run: npm ci
+        working-directory: site
+
+      # Un seul navigateur : ces specs de fumée n'ont pas besoin de la
+      # matrice Chromium + WebKit du job E2E applicatif.
+      - name: Installer Chromium (Playwright)
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: E2E + axe (site vitrine)
+        run: npx playwright test --config playwright.site.config.ts
+
   audit:
     name: npm audit (vulnérabilités)
     runs-on: ubuntu-latest

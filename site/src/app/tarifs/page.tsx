@@ -37,6 +37,7 @@ export default function PricingPage() {
       <Section
         eyebrow="Tarifs"
         title="Une offre adaptée à votre objectif"
+        titleAs="h1"
         subtitle="Commencez avec les jeux instantanés, puis activez la fidélité, le live ou toute la plateforme."
       >
         <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2">
