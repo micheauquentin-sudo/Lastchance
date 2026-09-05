@@ -9,6 +9,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * choses, dans cet ordre d'importance : le STOP est-il RÉELLEMENT enregistré,
  * l'appel est-il authentifié, la route dit-elle quelque chose d'un numéro
  * qu'on ne lui a pas demandé, et un échec fait-il RETENTER le prestataire.
+ *
+ * L'authentification a TROIS chemins depuis que le secret maître est sorti
+ * de l'URL (en-tête, jeton dérivé en URL, secret maître en URL le temps de
+ * la bascule) : les trois sont couverts, et le dernier est vérifié sur son
+ * SIGNAL — c'est lui qui dira quand le retirer.
  * ════════════════════════════════════════════════════════════ */
 
 const mocks = vi.hoisted(() => ({
@@ -53,7 +58,17 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
+import { createHmac } from "node:crypto";
+
 import { POST } from "./route";
+
+/* Dérivation refaite ici À LA MAIN, et non importée de la route : un test
+ * qui appelle la fonction qu'il vérifie ne prouve que sa propre cohérence.
+ * Si la forme du jeton change, ce test doit rougir. */
+const URL_TOKEN = createHmac("sha256", "hook-secret")
+  .update("brevo-url-token")
+  .digest("hex")
+  .slice(0, 32);
 
 function post(
   body: unknown,
@@ -96,7 +111,47 @@ describe("authentification", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("jeton en paramètre d'URL, quand la console du prestataire n'admet pas d'en-tête", async () => {
+  it("en-tête FAUX : 401, sans repli sur l'URL même correcte", async () => {
+    // Un en-tête présent mais faux est un appel qui prétend s'authentifier.
+    // Le rattraper par l'URL rendrait l'en-tête décoratif.
+    const response = await POST(
+      post({ event: "unsubscribe", msisdn: "33612345678" }, {
+        token: "nope",
+        query: `?token=${URL_TOKEN}`,
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("jeton DÉRIVÉ en paramètre d'URL : accepté, et aucun signal de bascule", async () => {
+    const response = await POST(
+      post({ event: "unsubscribe", msisdn: "33612345678" }, {
+        token: null,
+        query: `?token=${URL_TOKEN}`,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "revoke_sms_consent",
+      expect.objectContaining({ p_organization_id: "org-1" }),
+    );
+    expect(mocks.reportSecurityEvent).not.toHaveBeenCalled();
+  });
+
+  it("LE SECRET MAÎTRE n'est PAS le jeton d'URL", async () => {
+    // La garde du chantier : si cette assertion tombe, c'est que le jeton
+    // dérivé a été recâblé sur le secret lui-même et que l'URL le reporte.
+    expect(URL_TOKEN).not.toBe("hook-secret");
+    expect(URL_TOKEN).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("secret maître en URL : encore accepté, mais SIGNALÉ", async () => {
+    // Chemin hérité : le refuser aujourd'hui couperait les STOP entre le
+    // déploiement et la reprise de la configuration Brevo. Le signal est
+    // ce qui dira quand il n'a plus d'usage.
     const response = await POST(
       post({ event: "unsubscribe", msisdn: "33612345678" }, {
         token: null,
@@ -105,9 +160,21 @@ describe("authentification", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mocks.rpc).toHaveBeenCalledWith(
-      "revoke_sms_consent",
-      expect.objectContaining({ p_organization_id: "org-1" }),
+    expect(mocks.rpc).toHaveBeenCalled();
+    expect(mocks.reportSecurityEvent).toHaveBeenCalledWith(
+      "sms_webhook_legacy_url_secret",
+    );
+  });
+
+  it("jeton d'URL faux : 401", async () => {
+    const response = await POST(
+      post({ event: "unsubscribe" }, { token: null, query: "?token=nope" }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.reportSecurityEvent).toHaveBeenCalledWith(
+      "sms_webhook_invalid_token",
     );
   });
 });
