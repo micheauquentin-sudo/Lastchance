@@ -6,6 +6,7 @@ export default function NotFound() {
     <Section
       eyebrow="Erreur 404"
       title="Cette page n'existe pas"
+      titleAs="h1"
       subtitle="La roue a tourné… mais pas dans le bon sens. Revenez à l'accueil."
     >
       <div className="text-center">

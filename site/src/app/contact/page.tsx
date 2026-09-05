@@ -18,6 +18,7 @@ export default function ContactPage() {
     <Section
       eyebrow="Contact"
       title="Parlons de votre commerce"
+      titleAs="h1"
       subtitle="Une question, une démo, un projet multi-établissements ? Nous répondons sous 24 h ouvrées."
     >
       <div className="mx-auto grid max-w-3xl gap-5 sm:grid-cols-2">
