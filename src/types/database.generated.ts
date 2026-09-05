@@ -10323,6 +10323,10 @@ export type Database = {
         Args: { p_entry_id: string; p_reference?: string }
         Returns: string
       }
+      repair_player_alias: {
+        Args: { p_alias: string; p_seed: string }
+        Returns: string
+      }
       request_sms_sender: {
         Args: { p_organization_id: string; p_sender_id: string }
         Returns: string
@@ -10477,6 +10481,7 @@ export type Database = {
           organization_id: string
         }[]
       }
+      sanitize_player_alias: { Args: { p_alias: string }; Returns: string }
       set_bande_pack: {
         Args: { p_actor: string; p_organization_id: string; p_pack: string }
         Returns: Json
