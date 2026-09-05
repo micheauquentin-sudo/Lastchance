@@ -11,6 +11,10 @@
      pas, et un décor qui se décolore se lit comme une panne. */
   --backdrop-accent: #f5793b;
   --backdrop-accent-soft: rgba(245, 121, 59, 0.18);
+  /* Variante TEXTE : l'accent eclairci vers le blanc, seule forme posable sur
+     une surface sombre translucide (le ruban defilant). Voir ACCENT_TEXT_LIGHTEN
+     dans scroll-panorama-background.tsx pour la mesure qui fixe ce facteur. */
+  --backdrop-accent-text: rgb(251, 202, 177);
 }
 
 @theme inline {

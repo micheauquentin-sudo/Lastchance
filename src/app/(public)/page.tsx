@@ -366,12 +366,18 @@ function Marquee() {
         className="ticker overflow-hidden rounded-full bg-k-ink/80 py-2.5 backdrop-blur-md"
       >
         {/* La cible nommée par la demande : le ruban porte la teinte du moment.
-            Sûr à toutes les teintes — la clarté est constante (L 0,58), donc le
-            contraste sur l'encre ne descend jamais sous ~4:1, et ce ruban est
-            décoratif (`aria-hidden`), pas une information. */}
+            Mais dans sa variante TEXTE (`--backdrop-accent-text`), pas brute.
+
+            L'accent brut est reposé à clarté constante — parfait pour un liseré,
+            trop sombre pour du texte sur cette bande. La bande est de l'encre à
+            80 % POSÉE SUR LE DÉCOR : sa couleur réelle dépend de ce qu'il y a
+            derrière, et au-dessus du ciel clair l'accent brut y tombe entre 2,4
+            et 3,8:1 selon la teinte — sous le seuil AA à TOUTES les teintes du
+            parcours. axe l'a fait tomber la CI ; la variante éclaircie tient
+            5,35:1 au pire cas mesuré. */}
         <div
           className="ticker-track flex w-max whitespace-nowrap text-lg font-extrabold tracking-[0.08em]"
-          style={{ ...DISPLAY, color: "var(--backdrop-accent)" }}
+          style={{ ...DISPLAY, color: "var(--backdrop-accent-text)" }}
         >
           <span className="pr-10">{line.trim()}</span>
           <span className="pr-10">{line.trim()}</span>

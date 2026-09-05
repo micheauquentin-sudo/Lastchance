@@ -55,6 +55,28 @@ const ACCENT_FALLBACK: [number, number, number] = [245, 121, 59];
 /** Opacité de la variante douce (fonds, liserés). */
 const ACCENT_SOFT_ALPHA = 0.18;
 
+/**
+ * Éclaircissement de la variante TEXTE de l'accent, vers le blanc.
+ *
+ * L'accent est reposé à clarté constante (L 0,58) : très bien pour un liseré ou
+ * une pastille, insuffisant pour du TEXTE sur une surface sombre translucide.
+ * Le ruban défilant en est le cas type — encre à 80 % posée sur le décor, donc
+ * une bande dont la couleur réelle dépend de ce qu'il y a derrière. Mesuré en
+ * MÉLANGEANT correctement la bande avec le décor, l'accent brut y tombe entre
+ * 2,4 et 3,8:1 selon la teinte, sur toutes les teintes du parcours.
+ *
+ * 0,60 relève le pire cas — un bleu sur la bande la plus claire — à 5,35:1.
+ * Éclaircir vers le blanc plutôt que recalculer une teinte à clarté plus haute
+ * garde exactement la même famille de couleur, ce qui est tout ce qu'on
+ * demande à un accent.
+ *
+ * Piège à ne pas répéter : `getComputedStyle(...).backgroundColor` d'une
+ * surface translucide rend la couleur DÉCLARÉE (ici en `oklab(… / 0.8)`), pas
+ * la couleur perçue. La lire comme un triplet RVB donne un chiffre qui n'a
+ * aucun rapport — c'est ce qui avait fait conclure à tort que ce ruban passait.
+ */
+const ACCENT_TEXT_LIGHTEN = 0.6;
+
 const clamp = (value: number, min: number, max: number) =>
   value < min ? min : value > max ? max : value;
 
@@ -213,6 +235,11 @@ export function ScrollPanoramaBackground({
       docStyle.setProperty(
         "--backdrop-accent-soft",
         `rgba(${triplet}, ${ACCENT_SOFT_ALPHA})`,
+      );
+      const clair = rgb.map((c) => Math.round(c + (255 - c) * ACCENT_TEXT_LIGHTEN));
+      docStyle.setProperty(
+        "--backdrop-accent-text",
+        `rgb(${clair[0]}, ${clair[1]}, ${clair[2]})`,
       );
     };
 
@@ -418,6 +445,7 @@ export function ScrollPanoramaBackground({
       }
       docStyle.removeProperty("--backdrop-accent");
       docStyle.removeProperty("--backdrop-accent-soft");
+      docStyle.removeProperty("--backdrop-accent-text");
     };
   }, []);
 
