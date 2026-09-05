@@ -21,7 +21,7 @@
  * télécharge une image et la déplace.
  *
  * Sortie :
- *   public/panorama/p1080.webp · p1920.webp · p<largeur native>.webp
+ *   public/panorama/p<largeur>.<sha256:8>.webp, un par palier
  *   src/lib/backdrop-panorama.ts   (dimensions, paliers, profils, aperçu)
  *
  * Ne dépend ni de ffmpeg ni d'aucun outil externe : `sharp` suffit.
@@ -29,8 +29,9 @@
  *   node scripts/build-backdrop-panorama.mjs [chemin/vers/image.jpg]
  */
 
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hueHistogram, perceivedLuminance, smoothAccents } from "./lib/teintes.mjs";
@@ -72,6 +73,27 @@ const CONTENT_FILE = join(ROOT, "src", "lib", "backdrop-panorama.ts");
  */
 const TIERS_INTERMEDIAIRES = [1080, 1920];
 const QUALITY = 86;
+
+/**
+ * Longueur du hachage inscrit dans le nom de fichier.
+ *
+ * Les images sont servies en `Cache-Control: immutable` sur un an
+ * (`next.config.ts`) : cet en-tête promet qu'une URL ne rendra jamais un autre
+ * contenu. La première version écrivait `p1080.webp` — un nom stable pour un
+ * contenu qui change à chaque génération — et un visiteur déjà venu aurait gardé
+ * l'ancien décor un an sans recours. Le nom porte donc le sha256 du webp : une
+ * autre image, une autre URL, plus aucun cache à invalider.
+ *
+ * Huit caractères hexadécimaux, soit 4 milliards de valeurs, pour trois fichiers
+ * régénérés ensemble : la collision n'est pas un risque, et le nom reste lisible.
+ */
+const HASH_LENGTH = 8;
+
+/** Nom servi pour un palier : sa largeur, puis l'empreinte de son contenu. */
+function nomDuPalier(width, buffer) {
+  const hash = createHash("sha256").update(buffer).digest("hex").slice(0, HASH_LENGTH);
+  return `p${width}.${hash}.webp`;
+}
 
 /**
  * Nombre de bandes horizontales analysées.
@@ -226,7 +248,7 @@ function renderContentModule({ width, height, tiers, sky, luma, tint, preview })
     "",
     "/** Paliers de largeur. Le client n'en charge qu'un, le plus étroit qui couvre. */",
     "export const PANORAMA_TIERS = [",
-    ...tiers.map((w) => `  { src: "/panorama/p${w}.webp", width: ${w} },`),
+    ...tiers.map((t) => `  { src: "/panorama/${t.file}", width: ${t.width} },`),
     "] as const;",
     "",
     "/**",
@@ -263,24 +285,41 @@ async function main() {
     throw new Error("Le panorama doit être vertical : la hauteur doit dépasser la largeur.");
   }
 
-  rmSync(PUBLIC_DIR, { recursive: true, force: true });
   mkdirSync(PUBLIC_DIR, { recursive: true });
 
   /* Le plus large palier est la source elle-même : on ne l'agrandit jamais, et
      on ne se prive pas non plus de ses pixels. Les intermédiaires plus larges
      que la source seraient des doublons — on les écarte. */
-  const tiers = [
+  const largeurs = [
     ...TIERS_INTERMEDIAIRES.filter((w) => w < meta.width),
     meta.width,
   ];
 
-  for (const width of tiers) {
+  const tiers = [];
+  for (const width of largeurs) {
     const buffer = await sharp(SOURCE)
       .resize({ width })
       .webp({ quality: QUALITY, effort: 6 })
       .toBuffer();
-    writeFileSync(join(PUBLIC_DIR, `p${width}.webp`), buffer);
-    console.log(`  p${width}.webp  ${(buffer.length / 1024).toFixed(0)} Ko`);
+    const file = nomDuPalier(width, buffer);
+    writeFileSync(join(PUBLIC_DIR, file), buffer);
+    tiers.push({ width, file });
+    console.log(`  ${file}  ${(buffer.length / 1024).toFixed(0)} Ko`);
+  }
+
+  /* Les générations précédentes ont laissé leurs propres noms hachés : sans ce
+     ménage, `public/panorama/` accumulerait un décor mort par régénération, et
+     la garde de `src/lib/backdrop-panorama.test.ts` rougirait sur l'orphelin.
+     On ne supprime que ce que ce script écrit — un `p*.webp` dont le chemin
+     résolu reste sous PUBLIC_DIR — et jamais le reste du dossier. */
+  const gardes = new Set(tiers.map((t) => t.file));
+  for (const entree of readdirSync(PUBLIC_DIR)) {
+    if (gardes.has(entree)) continue;
+    if (!/^p.*\.webp$/.test(entree)) continue;
+    const chemin = resolve(PUBLIC_DIR, entree);
+    if (chemin !== join(PUBLIC_DIR, entree)) continue;
+    unlinkSync(chemin);
+    console.log(`  supprimé ${entree} (génération précédente)`);
   }
 
   /* Analyse sur une version réduite : les mesures sont des moyennes, elles ne

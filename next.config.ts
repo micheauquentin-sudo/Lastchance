@@ -105,7 +105,9 @@ const nextConfig: NextConfig = {
   // Le décor de l'accueil reste alors figé sur son poster.
   //
   // N'a aucun effet en production : `next start` et Vercel ignorent ce champ.
-  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.1.87"],
+  // Uniquement les hôtes de boucle locale : une IP de réseau local est propre à
+  // la machine qui l'a écrite, et n'a donc rien à faire dans le dépôt.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
 
   // ── LES BINAIRES DE `sharp` DOIVENT SUIVRE LA FONCTION ──
   //
@@ -169,9 +171,17 @@ const nextConfig: NextConfig = {
         // Décor scrollytelling de l'accueil : une illustration verticale, servie
         // en trois paliers de largeur dont un seul est téléchargé par visite.
         // Sans cache immuable, chaque retour sur l'accueil le reprendrait en
-        // entier. Le nom d'un fichier porte sa largeur et ne change jamais sans
-        // que son contenu change (ils sont régénérés en bloc par
-        // `scripts/build-backdrop-panorama.mjs`), donc `immutable` est sûr ici.
+        // entier.
+        //
+        // `immutable` promet que l'URL ne servira JAMAIS un autre contenu — une
+        // promesse d'un an, sans recours pour le visiteur qui l'a mise en cache.
+        // Elle n'a d'abord pas été tenue : les fichiers s'appelaient `p1080.webp`
+        // et une régénération réécrivait le même nom avec une autre image.
+        // Le nom porte désormais un hachage de son contenu
+        // (`p<largeur>.<sha256:8>.webp`, écrit par
+        // `scripts/build-backdrop-panorama.mjs`) : régénérer produit d'autres
+        // noms, référencés par `PANORAMA_TIERS`, et l'ancienne URL n'est plus
+        // demandée. `src/lib/backdrop-panorama.test.ts` garde l'invariant.
         source: "/panorama/:path*",
         headers: [
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
