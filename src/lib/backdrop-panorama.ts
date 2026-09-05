@@ -19,9 +19,9 @@ export const PANORAMA_RATIO = 0.38835;
 
 /** Paliers de largeur. Le client n'en charge qu'un, le plus étroit qui couvre. */
 export const PANORAMA_TIERS = [
-  { src: "/panorama/p1080.webp", width: 1080 },
-  { src: "/panorama/p1920.webp", width: 1920 },
-  { src: "/panorama/p2560.webp", width: 2560 },
+  { src: "/panorama/p1080.213d8c97.webp", width: 1080 },
+  { src: "/panorama/p1920.f4ea690d.webp", width: 1920 },
+  { src: "/panorama/p2560.86a1fe68.webp", width: 2560 },
 ] as const;
 
 /**
