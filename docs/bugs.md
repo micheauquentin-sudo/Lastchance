@@ -5281,7 +5281,7 @@ suite automatisée qui ne juge que la présence d'un nœud.
 Corrigé en alignant le seuil de masquage de l'atelier sur `lg`, conformément
 à l'intention initiale de VIT-27.
 
-## OUVERT (2026-09-05, signalé, non corrigé, VIT-52) — sept info-bulles de création promettent encore l'atelier inconditionnellement
+## ✅ CLOS le 2026-09-05 (PR #352, VIT-52b) — sept info-bulles de création promettaient encore l'atelier inconditionnellement
 
 VIT-51 (ADR-167) a fait atterrir sept créations dans le studio sur ordinateur
 et dans l'atelier sur téléphone, mais n'a pas mis à jour le TEXTE des
@@ -5300,7 +5300,14 @@ un nombre d'étapes faux (« cinq » contre sept). Les sept autres restent en
 l'état — non corrigées par VIT-52, dont le terrain se limitait au module
 oublié par VIT-51.
 
-## OUVERT (2026-09-05, signalé, non corrigé, VIT-51/VIT-52) — aucun E2E de bureau ne prouve l'atterrissage studio à l'exécution
+**Clos par VIT-52b (PR #352).** Les sept réécrites dans les mêmes termes que le
+huitième : le studio sur ordinateur, l'atelier sur téléphone. Le contenu propre
+à chaque module — ses étapes, ce qu'on y règle, ce qui reste fermé aux joueurs —
+est conservé mot pour mot ; seule la phrase d'atterrissage change. À noter pour
+la prochaine fois : aucune garde ne pouvait attraper ce défaut, la sonde
+appariant l'action et le champ caché, jamais la prose qui les décrit.
+
+## ✅ CLOS le 2026-09-05 (PR #352, VIT-52c) — aucun E2E de bureau ne prouvait l'atterrissage studio à l'exécution
 
 La garde d'`atterrissage-studio.test.ts` (ADR-167, étendue par ADR-168 en
 VIT-52) est TEXTUELLE : elle prouve qu'une création APPELLE ou RECOPIE la
@@ -5310,3 +5317,13 @@ valide sans modification parce que son test de création est `test.skip` hors
 contexte mobile (Pixel 7, 412 px) : il n'affirme donc que la moitié
 « téléphone » de la règle, jamais la moitié « ordinateur ». Ni VIT-51 ni
 VIT-52 n'ont ajouté d'E2E desktop pour la couvrir.
+
+**Clos par VIT-52c (PR #352).** Un jumeau de bureau du test de création, dans le
+même fichier. Deux détails décidaient s'il mesurerait quelque chose, et méritent
+d'être retenus : le tag `@smoke`, sans lequel `desktop-smoke` — qui filtre par
+`grep: /@smoke/` — ne l'aurait joué NULLE PART, soit une garde vacante au sens
+de VIT-49 ; et le saut décidé sur la largeur du VIEWPORT plutôt que sur le nom du
+projet Playwright, puisque c'est la largeur qui tranche côté CSS comme côté
+serveur. Ce que ce test prouve et que la garde textuelle ne pouvait pas :
+`ChampGrandEcran` pose sa valeur APRÈS l'hydratation, et un envoi antérieur
+retombe sur l'atelier sans que rien ne rougisse.
