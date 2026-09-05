@@ -19,8 +19,10 @@ import {
 import {
   asQueueStatus,
   asReservationStatus,
+  asBookingMode,
   asReserverActivityKind,
   asSlotStatus,
+  cleModuleReservation,
   asWaitlistStatus,
   etatUiInvitation,
   etatUiOffreStock,
@@ -47,6 +49,7 @@ import {
   type StockOfferPublicStateResult,
   type StockOfferStaffView,
   type ReserverActivityKind,
+  type ReserverBookingMode,
   type ReserverAttenteView,
   type ReserverExperienceStep,
   type ReservationQueueEntryStatus,
@@ -103,7 +106,7 @@ const CRENEAUX_PUBLICS_MAX = 20;
 const RESERVATIONS_COMPTAGE_MAX = 10_000;
 
 const ORG_COLUMNS =
-  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_reserver, comp_access, comp_access_until, timezone";
+  "id, name, logo_url, subscription_status, trial_ends_at, past_due_since, addon_reserver, addon_rendez_vous, comp_access, comp_access_until, timezone";
 
 /**
  * Les CINQ COLONNES D'EXPÉRIENCE (RES-5) sont dans la liste COMMUNE, à la
@@ -209,6 +212,7 @@ type ReserverOrganization = Pick<
   | "trial_ends_at"
   | "past_due_since"
   | "addon_reserver"
+  | "addon_rendez_vous"
   | "comp_access"
   | "comp_access_until"
   | "timezone"
@@ -591,7 +595,7 @@ export type ReserverPublicContext =
        *
        * Une conséquence ne remplace pas sa cause : on rend la cause.
        */
-      bookingMode: "moment" | "rendez_vous";
+      bookingMode: ReserverBookingMode;
     };
 
 /**
@@ -697,9 +701,17 @@ export async function loadReserverPublicContext(
   if (!organization || organization.id !== row.organization_id) {
     return { ok: false, error: INDISPONIBLE };
   }
-  // Organisation sans le droit `reserver` : MÊME rendu qu'une activité
+  // Organisation sans le droit QUE CE MODE EXIGE : MÊME rendu qu'une activité
   // inexistante. Aucun oracle sur l'état commercial d'un tiers.
-  if (!(await moduleOuvertAuJoueur("reserver", organization))) {
+  //
+  // LA CLÉ VIENT DU `booking_mode`, ELLE N'EST PLUS ÉCRITE EN DUR. Un Moment
+  // exige `reserver`, une salle de rendez-vous exige `rendez_vous` — les deux
+  // sont des produits séparés depuis RDV-5, et la migration `20261206120000`
+  // fait dériver les huit RPC de ce même mode. Demander `reserver` ici aurait
+  // rendu « indisponible » l'agenda d'un commerçant qui vient de payer la
+  // Réservation seule, pendant que la base, elle, l'acceptait.
+  const cleDuMode = cleModuleReservation(row.booking_mode);
+  if (!(await moduleOuvertAuJoueur(cleDuMode, organization))) {
     return { ok: false, error: INDISPONIBLE };
   }
   if (!row.active) return { ok: false, error: INDISPONIBLE };
@@ -891,8 +903,8 @@ export async function loadReserverPublicContext(
      * La règle suit donc l'USAGE, pas le module : c'est `booking_mode` qui la
      * porte, et rien d'autre.
      */
-    emailObligatoire: row.booking_mode === "rendez_vous",
-    bookingMode: row.booking_mode === "rendez_vous" ? "rendez_vous" : "moment",
+    emailObligatoire: asBookingMode(row.booking_mode) === "rendez_vous",
+    bookingMode: asBookingMode(row.booking_mode),
   };
 }
 
@@ -1022,7 +1034,16 @@ export async function loadReserverInvitationContext(
   if (!organization || organization.id !== activity.organization_id) {
     return { ok: false, error: INDISPONIBLE };
   }
-  if (!(await moduleOuvertAuJoueur("reserver", organization))) {
+  // MÊME RÈGLE QUE LA PORTE PUBLIQUE : le mode de l'activité visée choisit la
+  // clé. Une invitation à une table est une invitation `rendez_vous`, et la
+  // faire dépendre de `reserver` aurait fendu le module en deux — la page
+  // ouverte, l'invitation fermée, pour le même commerçant.
+  if (
+    !(await moduleOuvertAuJoueur(
+      cleModuleReservation(activity.booking_mode),
+      organization,
+    ))
+  ) {
     return { ok: false, error: INDISPONIBLE };
   }
   if (!activity.active) return { ok: false, error: INDISPONIBLE };
@@ -1261,7 +1282,7 @@ export interface ReserverActivityDashboardView extends ReserverActivityView {
    * d'autre, qui range l'activité dans l'une des deux sections du
    * dashboard : les deux produits partagent la même table.
    */
-  bookingMode: string;
+  bookingMode: ReserverBookingMode;
   slots: ReserverSlotDashboardView[];
   /**
    * Les invitations de cette activité, celles de ses créneaux comprises.
@@ -1340,7 +1361,22 @@ const INVITATIONS_DASHBOARD_MAX = 500;
 export async function loadReserverDashboardContext(): Promise<ReserverDashboardContext> {
   const { user, organization } = await getUserAndOrg();
   if (!user || !organization) return { ok: false, reason: "unauthenticated" };
-  if (!droitEffectifModule("reserver", organization)) {
+  // ── DEUX PRODUITS, UN SEUL CHARGEUR ──
+  //
+  // Ce chargeur sert les DEUX écrans — `/dashboard/moments` et
+  // `/dashboard/reservations` — parce que Moments et Réservation partagent
+  // les mêmes tables et que seul `booking_mode` les sépare. Exiger `reserver`
+  // ici refusait donc l'agenda entier au commerçant qui n'a acheté que la
+  // Réservation : `no_access`, `salles = []`, « Vous n'avez pas encore de
+  // salle » sur une salle qui existe.
+  //
+  // Le refus ne tombe plus que si AUCUN des deux droits n'est tenu ; le tri
+  // se fait ensuite ligne à ligne, sur le mode. Un droit ne peut ainsi jamais
+  // faire voir les activités de l'autre produit.
+  if (
+    !droitEffectifModule("reserver", organization) &&
+    !droitEffectifModule("rendez_vous", organization)
+  ) {
     return { ok: false, reason: "no_access" };
   }
 
@@ -1353,7 +1389,14 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
     .order("created_at", { ascending: false });
 
   // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
-  const activityRows = (activityData ?? []) as unknown as ActivityRow[];
+  const toutesLesActivites = (activityData ?? []) as unknown as ActivityRow[];
+  // LE TRI PAR MODE, AVANT TOUTE AUTRE LECTURE : ce qui est écarté ici ne fait
+  // ni descendre de créneaux, ni de réservations, ni d'invitations. Un
+  // commerçant qui n'a que la Réservation ne paie donc pas la lecture des
+  // Moments qu'il ne verra pas — et rien de ce produit-là n'atteint son HTML.
+  const activityRows = toutesLesActivites.filter((activity) =>
+    droitEffectifModule(cleModuleReservation(activity.booking_mode), organization),
+  );
   const activityIds = activityRows.map((activity) => activity.id);
 
   let slotRows: SlotRow[] = [];
@@ -1587,7 +1630,7 @@ export async function loadReserverDashboardContext(): Promise<ReserverDashboardC
       steps: mapExperienceSteps(activity.steps),
       preparation: activity.preparation,
       createdAt: activity.created_at,
-      bookingMode: activity.booking_mode ?? "moment",
+      bookingMode: asBookingMode(activity.booking_mode),
       slots: creneauxParActivite.get(activity.id) ?? [],
       invitations: invitationsParActivite.get(activity.id) ?? [],
     })),

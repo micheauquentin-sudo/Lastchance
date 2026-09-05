@@ -274,6 +274,14 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
     taches: [] as Array<Promise<unknown>>,
     role: "owner" as string | null,
     orgAddonReserver: true,
+    /**
+     * Le SECOND produit, `rendez_vous` (RDV-5) — FAUX par défaut, et c'est
+     * délibéré : l'organisation de référence de ce fichier a les Moments et
+     * rien d'autre. Depuis le lot F2 la garde d'écriture dérive sa clé du
+     * `booking_mode` demandé ; un défaut à `true` aurait laissé passer, sans
+     * que rien ne le dise, les tests qui prouvent le refus.
+     */
+    orgAddonRendezVous: false,
     /** Le droit `vitrine` de l'organisation qui PORTE la file scrutée. */
     droitReserverFile: true,
     /** Combien de fois le scrutin a résolu ce droit — une lecture se compte. */
@@ -478,6 +486,7 @@ const { state, makeAdmin, makeRlsClient } = vi.hoisted(() => {
       state.taches = [];
       state.role = "owner";
       state.orgAddonReserver = true;
+      state.orgAddonRendezVous = false;
       state.droitReserverFile = true;
       state.droitReserverFileAppels = 0;
       state.evenementsSecurite = [];
@@ -845,6 +854,7 @@ vi.mock("@/lib/auth", () => ({
             comp_access: false,
             comp_access_until: null,
             addon_reserver: state.orgAddonReserver,
+            addon_rendez_vous: state.orgAddonRendezVous,
             live_module_grants: [],
           }
         : null,
@@ -932,6 +942,7 @@ import {
   createReserverQueue,
   createReserverSlot,
   createStockOffer,
+  enregistrerReglagesRendezVous,
   getQueuePublicState,
   holdStockOffer,
   loadStockOfferPublic,
@@ -1456,6 +1467,9 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     // était donc INJOIGNABLE depuis son propre tableau de bord, et aucune
     // suite ne le disait : chaque morceau était juste, la porte d'entrée
     // manquait.
+    // La salle exige `rendez_vous`, pas `reserver` : depuis le lot F2 c'est le
+    // MODE qui choisit la clé, et cette organisation-ci n'a que les Moments.
+    state.orgAddonRendezVous = true;
     await createReserverActivity(
       null,
       formData({ name: "Le Comptoir", booking_mode: "rendez_vous" }),
@@ -1492,6 +1506,7 @@ describe("dashboard commerçant — droit vitrine et rôle éditeur", () => {
     // La valeur de 30 minutes n'est pas un plafond ni un réglage : c'est ce
     // qu'on écrit QUAND RIEN N'EST DIT. Un formulaire qui porte la durée doit
     // la voir arriver telle quelle.
+    state.orgAddonRendezVous = true;
     await createReserverActivity(
       null,
       // Format STANDARD : c est celui d une salle de restaurant. Le format
@@ -4026,5 +4041,103 @@ describe("cancelStockHold — la reprise après rotation", () => {
 
     expect(res.ok && res.data.state).toBe("too_late");
     expect(state.lookups).toHaveLength(0);
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// LE MODE CHOISIT LA CLÉ — garde d'ÉCRITURE (lot F2)
+//
+// Moments (`reserver`) et Réservation (`rendez_vous`) sont deux produits,
+// vendus séparément. `gardeEditeurReserver` exigeait `reserver` EN DUR : un
+// commerçant à qui l'on vend la Réservation seule ne pouvait pas créer sa
+// salle, pendant que la base l'acceptait (migration `20261206120000`, qui
+// fait dériver du `booking_mode` les huit RPC du module).
+//
+// LES ASSERTIONS PORTENT SUR CE QUE L'ACTION REND ET ÉCRIT, jamais sur un
+// import ni sur le nom d'une fonction appelée : ADR-168 et ADR-169 ont déjà
+// payé deux gardes restées vertes sur un câblage absent.
+// ────────────────────────────────────────────────────────────
+
+describe("le mode choisit la clé — création d'activité", () => {
+  const MATRICE = [
+    { nom: "les DEUX droits", reserver: true, rdv: true, moment: true, salle: true },
+    { nom: "les Moments SEULS", reserver: true, rdv: false, moment: true, salle: false },
+    { nom: "la Réservation SEULE", reserver: false, rdv: true, moment: false, salle: true },
+    { nom: "AUCUN des deux", reserver: false, rdv: false, moment: false, salle: false },
+  ] as const;
+
+  for (const cas of MATRICE) {
+    it(`une organisation ayant ${cas.nom} : Moment ${cas.moment ? "servi" : "refusé"}, salle ${cas.salle ? "servie" : "refusée"}`, async () => {
+      state.orgAddonReserver = cas.reserver;
+      state.orgAddonRendezVous = cas.rdv;
+
+      const moment = await createReserverActivity(
+        null,
+        formData({ name: "Dégustation" }),
+      );
+      // L'ÉCRITURE, pas seulement le verdict : un refus qui insère quand même
+      // serait vert sur `ok === false` et ouvrirait le produit malgré tout.
+      expect(moment.ok).toBe(cas.moment);
+      expect(state.rlsWrites).toHaveLength(cas.moment ? 1 : 0);
+
+      state.rlsWrites.length = 0;
+      const salle = await createReserverActivity(
+        null,
+        formData({ name: "Le Comptoir", booking_mode: "rendez_vous" }),
+      );
+      expect(salle.ok).toBe(cas.salle);
+      expect(state.rlsWrites).toHaveLength(cas.salle ? 1 : 0);
+      if (cas.salle) {
+        expect(state.rlsWrites[0].values.booking_mode).toBe("rendez_vous");
+      }
+    });
+  }
+
+  /**
+   * LA BASCULE EST LE CAS DANGEREUX, et il ne se déduit pas des quatre
+   * au-dessus. `enregistrerReglagesRendezVous` ÉCRIT `booking_mode` : sans une
+   * clé dérivée du mode DEMANDÉ, un commerçant n'ayant que la Réservation
+   * convertirait sa salle en Moment et s'accorderait ainsi un produit qu'il
+   * n'a pas acheté — la garde tenant, elle, sur « au moins un des deux ».
+   */
+  it("REFUSE de convertir une salle en Moment sans le droit `reserver`", async () => {
+    state.orgAddonReserver = false;
+    state.orgAddonRendezVous = true;
+
+    const resultat = await enregistrerReglagesRendezVous(
+      null,
+      formData({
+        activity_id: ACTIVITY_ID,
+        booking_mode: "moment",
+        booking_horizon_days: "30",
+        lead_time_minutes: "0",
+      }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    // Le refus tombe AVANT toute lecture d'activité et toute écriture.
+    expect(state.rlsWrites).toHaveLength(0);
+  });
+
+  it("REFUSE de convertir un Moment en salle sans le droit `rendez_vous`", async () => {
+    // LE TÉMOIN, dans l'autre sens : la garde n'est pas un privilège des
+    // Moments, elle est symétrique.
+    state.orgAddonReserver = true;
+    state.orgAddonRendezVous = false;
+
+    const resultat = await enregistrerReglagesRendezVous(
+      null,
+      formData({
+        activity_id: ACTIVITY_ID,
+        booking_mode: "rendez_vous",
+        duration_minutes: "30",
+        slot_capacity: "1",
+        booking_horizon_days: "30",
+        lead_time_minutes: "0",
+      }),
+    );
+
+    expect(resultat.ok).toBe(false);
+    expect(state.rlsWrites).toHaveLength(0);
   });
 });

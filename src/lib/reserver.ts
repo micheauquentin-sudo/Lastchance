@@ -21,6 +21,7 @@
  * la base accepte (ou l'inverse) serait un second juge, donc une divergence.
  */
 
+import type { GrantableModule } from "@/lib/subscription";
 import { formatDate } from "@/lib/utils";
 
 // ────────────────────────────────────────────────────────────
@@ -42,6 +43,54 @@ export type ReservationSlotStatus = "draft" | "open" | "closed";
  * Les deux autres se réservent à une personne, et `standard` est le socle.
  */
 export type ReserverActivityKind = "standard" | "signature" | "duo";
+
+/**
+ * D'OÙ VIENNENT LES CRÉNEAUX — miroir du CHECK `reservation_activities.
+ * booking_mode` (20261106120000) : `moment` ou `rendez_vous`, `not null`,
+ * `default 'moment'`.
+ */
+export type ReserverBookingMode = "moment" | "rendez_vous";
+
+/** Le mode d'une activité, ou `moment` — le repli EST le défaut de la colonne. */
+export function asBookingMode(value: unknown): ReserverBookingMode {
+  return asString(value) === "rendez_vous" ? "rendez_vous" : "moment";
+}
+
+/**
+ * LE MODE CHOISIT LA CLÉ DE DROIT — miroir TypeScript de la fonction SQL
+ * `public.reservation_activity_module_key` (migration `20261206120000`).
+ *
+ * ── LE DÉFAUT QUE CETTE FONCTION FERME ──
+ *
+ * Les quatre gardes applicatives du module écrivaient `reserver` EN DUR : la
+ * page publique, la page d'invitation, le chargeur du tableau de bord et la
+ * garde d'écriture. Une organisation à qui l'on vend la Réservation SEULE —
+ * `rendez_vous` est un produit à part depuis RDV-5, et sa vente en ligne est
+ * ouverte — obtenait donc une salle que la base sert et que l'écran refuse :
+ * « Cette page de réservation n'est pas disponible » sur un agenda payé.
+ *
+ * ── POURQUOI LE MODE, ET JAMAIS LE DROIT DÉTENU ──
+ *
+ * Router sur « quelle clé ce commerce possède-t-il ? » ferait passer une salle
+ * par la porte des Moments dès qu'il possède les deux : `reserve_slot` ne
+ * teste pas le mode, et le trigger `reservations_require_table` y lève `23514`
+ * — une EXCEPTION, pas un état que l'écran sache dire. La porte d'un
+ * rendez-vous est `reserve_table` / `waitlist_join_table`, et c'est
+ * l'activité, jamais l'abonnement, qui dit laquelle.
+ *
+ * ── ELLE N'APPELLE PAS LA FONCTION SQL, ET C'EST VOULU ──
+ *
+ * `reservation_activity_module_key` n'est PAS appelable par `service_role`
+ * (révocation délibérée de la migration). Elle figure dans les types générés ;
+ * l'appeler en RPC depuis ici échouerait à l'exécution. Le `booking_mode` est
+ * de toute façon déjà en main partout où la question se pose — une lecture de
+ * plus n'apprendrait rien.
+ */
+export function cleModuleReservation(
+  bookingMode: unknown,
+): Extract<GrantableModule, "reserver" | "rendez_vous"> {
+  return asBookingMode(bookingMode) === "rendez_vous" ? "rendez_vous" : "reserver";
+}
 
 /** Issues de `reserve_slot`. */
 export type ReserveSlotState =

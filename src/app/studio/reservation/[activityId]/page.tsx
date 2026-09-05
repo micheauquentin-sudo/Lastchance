@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
-import { urlActiviteReserver } from "@/lib/reserver";
+import { cleModuleReservation, urlActiviteReserver } from "@/lib/reserver";
 import { loadReserverDashboardContext } from "@/lib/reserver-context";
 import { loadHorairesActivite } from "@/lib/reserver-horaires-context";
 import { ReservationStudio } from "@/components/reserver/reservation-studio";
@@ -58,18 +58,25 @@ export default async function StudioReservationPage({
   if (!user) redirect("/login");
   if (!organization) redirect("/onboarding");
 
-  // REFUS AVANT LECTURE, comme sur la page du tableau de bord : un caissier
-  // déclencherait sinon deux chargements dont le résultat part aussitôt au
-  // `notFound()`. Le droit est `reserver`, celui de l'écran d'activité.
-  const capacites = await capacitesDuModule("reserver");
-  if (!capacites.canExplore) notFound();
-
   const agenda = await loadReserverDashboardContext();
   if (!agenda.ok) notFound();
 
   const activite = agenda.activities.find((a) => a.id === activityId);
-  // Activité inconnue OU d'une autre organisation : même réponse.
+  // Activité inconnue, d'une autre organisation, OU d'un produit que ce
+  // commerce n'a pas : même réponse.
   if (!activite) notFound();
+
+  // LE DROIT EST CELUI DU MODE, comme sur la page d'activité : ce studio
+  // règle aussi bien un Moment qu'une salle de rendez-vous, et les deux
+  // produits se vendent séparément.
+  //
+  // Le refus n'est plus AVANT la lecture : `canExplore` ne dépend que du
+  // rôle, si bien que l'ordre ancien n'épargnait un chargement qu'au
+  // caissier — et le mode ne se connaît qu'une fois l'activité résolue.
+  const capacites = await capacitesDuModule(
+    cleModuleReservation(activite.bookingMode),
+  );
+  if (!capacites.canExplore) notFound();
 
   const horaires = await loadHorairesActivite(activite.id);
 
