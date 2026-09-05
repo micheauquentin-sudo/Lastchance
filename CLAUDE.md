@@ -153,11 +153,14 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-09-05
-- **Dernier chantier**: **Le pseudo public des pronostics et ses deux dernières copies de sélecteur** (SOC-1, commits `f289eb45`/`31dcf6d3`, ADR-169). Fermait deux des trois « Reste ouvert » de V1.75 — le troisième, moins important qu'annoncé, était présenté comme un arbitrage produit alors qu'il n'y en avait aucun.
-  **Le classement des pronostics est PUBLIC, et c'était la seule surface du produit sans filtre d'alias** : `nicknameSchema` faisait `.trim().min(1).max(30)`, sans `isAllowedPlayerAlias` (contrôle, format, injures) qu'appliquent événementiel, salons et passeport. Un joueur pouvait y afficher une insulte, ou un U+202E pour usurper un pseudo. Le dépôt le savait déjà (`validations/loyalty.ts` : 30 est « l'intrus, pas la référence ») mais aucune garde ne le vérifiait — un défaut écrit et jamais gardé reste un défaut. Corrigé : borne 24, filtre commun, garde dérivée du MESSAGE rendu (« Votre pseudo est requis »), pas d'une liste de fichiers.
-  **La garde elle-même portait le défaut d'ADR-168** : sa version texte (`toContain("formatPlayerAlias")`) restait verte sur un import orphelin. Corrigée pour exiger le câblage réel.
-  **Deux copies du sélecteur de figures, pas une** : pronostics ET quiz avaient chacun leur `AvatarPicker` local (157 lignes supprimées) au lieu du socle partagé — celui du quiz ouvrait toujours le premier onglet, jamais celui de la figure courante ; corrigé au passage.
-  **Reste ouvert** : émetteur Google Wallet, jamais testé contre le vrai Google (geste propriétaire).
+- **Dernier chantier**: **Audit sécurité et cohérence : neuf lots** (PR #355→#363, ADR-170 à 174), vérifiant un audit Codex externe (SHA `9e6fe7fb`) : cinq constats confirmés, un partiel, zéro invention.
+  Décor : cache `immutable` un an sur des noms **non hachés** — hachés par sha256 (#355). Apple Wallet : **dernière route publique sans plafond** du dépôt — double plafond IP + code haché (#356). Jeton du QR de chasse lisible par le rôle **caissier** (`cashier`/`editor`/`owner` sont tous `authenticated`) — RPC `security definer` dédiée ; `/studio/chasse/[id]` n'avait aucun contrôle de rôle (#357, ADR-172).
+  Alias publics des pronostics déjà en base, non couverts par ADR-169 (écritures seules) : trois couches ferment l'historique (#358, ADR-171).
+  Réservation vraiment vendable seule (RDV-7, #360, ADR-170) : une fonction unique (`reservation_activity_module_key`, sur `booking_mode`) remplace huit copies de règle. `soldStandalone` **non basculé** (sans abonnement ≠ sans Moments). Suite le jour même : `vitrine_public_state` rendait `rendez_vous` seul **muet** — filtré par objet (#362, VIT-53).
+  Webhook SMS Brevo : secret en clair en URL, seul cas du dépôt — jeton dérivé, transition instrumentée (#359, ADR-173).
+  Site vitrine (`site/`) couvert par un scan axe : contraste et `<h1>` manquants, corrigés (#361).
+  Jauge live : 500 → 250, dérivée dans le code (VEN-2, #363, ADR-174) ; révèle qu'`event_participant_capacity()` accorde toujours 500 en base.
+  **Reste ouvert** (`docs/bugs.md`) : Google Wallet, 250 non rejoué par banc, pseudo d'événement sans filtre de format, chemin SMS hérité.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

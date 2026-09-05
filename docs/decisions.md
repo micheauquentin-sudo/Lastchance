@@ -10788,3 +10788,267 @@ pas.
 
 **Résidu clos par le même chantier** (`docs/bugs.md`) : le classement public
 des pronostics sans filtre d'alias.
+
+## ADR-170 — La clé de droit d'une activité de réservation suit son `booking_mode`, pas le module qui l'a créée ; `soldStandalone` reste `false`
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : audit Codex du 2026-09-05 (`docs/audit-complet-2026-09-05.txt`),
+lot RDV-7 (commit `754de1f7`, PR #360). « Réservation » (`rendez_vous`) et
+« Moments » (`reserver`) sont deux produits séparés depuis RDV-5, mais le SQL
+était resté MIXTE : cinq RPC d'activité (`reserve_slot`, `waitlist_join`,
+`claim_waitlist_offer`, `redeem_invitation`, `reservation_offer_next`)
+exigeaient `reserver` quel que soit le `booking_mode` réel de l'activité
+visée, trois autres (`reserve_table`, `waitlist_join_table`,
+`reservation_table_freed_targets`) exigeaient `rendez_vous` — chacune sa
+copie de la règle, écrites à des dates différentes. Une organisation qui
+n'aurait acheté que Réservation voyait donc certaines de ses propres portes
+refuser le droit qu'elle détenait.
+
+### Décision — une seule fonction dérive la clé, huit portes l'appellent
+
+`reservation_activity_module_key(booking_mode)` devient l'unique source de
+la règle ; les huit RPC l'appellent au lieu de nommer un module en dur.
+L'invariant de `20261020120000` §9 (« treize fonctions gardent `reserver` »)
+est réénoncé sous sa forme neuve — il NOMME les fonctions au lieu de les
+compter — et rejoué à chaque CI par
+`reservation_cle_par_mode.test.sql`, plutôt que vérifié une seule fois à
+l'application de la migration comme l'invariant qu'il remplace. C'est
+précisément ce qui l'avait laissé vieillir : un compte reste vert quand une
+fonction en sort et qu'une autre y entre.
+
+### `soldStandalone` reste `false` — ce n'est pas l'aboutissement de RDV-7, mais un champ qui répond à une autre question
+
+`src/lib/plans.ts` (autour de la ligne 679) porte `entitlement: "rendez_vous"`
+avec `soldStandalone: false`. Le nom invite à croire que RDV-7 — qui rend la
+Réservation vendable sans Moments — devrait le faire passer à `true`. Ce
+champ répond en réalité à « s'achète-t-elle sans ABONNEMENT ? », pas à
+« se vend-elle sans un autre module ? ». Le basculer :
+- ouvrirait l'écran `AchatAddon`, qui lit
+  `STRIPE_PRICE_ID_PASS_RENDEZ_VOUS` — un prix qui n'existe pas — à la place
+  d'`OptionAbonnement`, qui lit `STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`, déjà posé
+  et vendu en production ; un produit qui se vend aujourd'hui afficherait
+  « pas encore en vente en ligne » ;
+- ferait entrer la clé dans `MODULES_PORTANT_LE_SOCLE` (`@/lib/subscription`),
+  rouvrant le défaut MOYEN-2 (un octroi back-office gratuit ouvrirait la roue
+  et les campagnes) que le lot L2 avait fermé ;
+- exigerait de créer un prix Stripe — une mutation financière qui requiert
+  une demande explicite du propriétaire (`AGENTS.md`).
+
+Vendue en ligne d'abonnement, Réservation n'a de toute façon jamais besoin de
+porter le socle : l'abonnement qui l'accueille le porte déjà.
+
+**Reste ouvert, écrit dans le commit plutôt que découvert plus tard** :
+`vitrine_public_state` gardait encore `reserver` en dur pour sa porte
+publique — fermé le jour même par VIT-53 (ADR ci-dessous n'était pas
+nécessaire, voir `docs/roadmap.md` V1.76).
+
+**Vérifications** : pgTAP du fichier neuf + suite existante.
+
+## ADR-171 — L'alias public des pronostics déjà en base : trois couches, parce qu'aucune ne suffit seule
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : lot F/`f42774bb` (PR #358), suite directe d'ADR-169.
+ADR-169 avait branché `isAllowedPlayerAlias` sur `nicknameSchema`, mais en
+ÉCRITURE seulement — son propre commentaire l'admettait : « son pseudo
+enregistré reste affiché, ce schéma ne garde que les écritures ». Le
+classement `/pronos/<slug>` est public et sans authentification : tout
+pseudo inscrit avant ADR-169 y restait rendu tel quel, U+202E compris. La
+base ne rattrapait rien non plus : `00023_pronostics_hardening.sql:144`
+bornait `first_name` à 1..60 sans aucun filtre de format.
+
+### Décision — projection, nettoyage, contrainte, dans cet ordre précis
+
+1. **Projection en lecture** : protège l'écran immédiatement, mais laisse la
+   donnée sale en base — exports, CSV, tout consommateur futur la reprend
+   telle quelle.
+2. **Nettoyage des lignes existantes** (`repair_player_alias`) : répare
+   l'historique, mais ne dit rien de la prochaine écriture par un chemin
+   admin qui contournerait l'applicatif.
+3. **Contrainte base** (1..24, filtre de format) : ferme l'écriture, mais
+   échouerait seule sur les lignes déjà sales — d'où l'ordre non négociable
+   de la migration : nettoyer D'ABORD, resserrer ENSUITE.
+
+Aucune des trois, posée seule, ne couvre les deux autres cas ; c'est leur
+composition qui ferme la porte.
+
+`repair_player_alias` retire les caractères de contrôle et de formatage,
+replie les espaces, tronque à 24, et ne substitue un alias neutre que si le
+résultat devient vide ou reste refusé pour son sens — cet alias neutre est
+DÉRIVÉ DE L'IDENTIFIANT DE LA LIGNE, jamais tiré au sort, pour que deux
+exécutions rendent le même résultat et que la fonction reste `immutable`.
+« Jean-Luc » reste « Jean-Luc ».
+
+**La garde de mutation a trouvé un défaut dans le pgTAP lui-même** : un
+`drop` nu des deux contraintes avortait la transaction avant la fin du
+fichier, qui rendait alors 25 assertions sur 32 — perdant exactement les
+échecs qu'il avait à rapporter. `if exists` ne change rien à ce défaut ; les
+assertions AP-24/AP-25 prouvent l'existence des contraintes avant de les
+retirer, ce qui l'a révélé.
+
+**Vérifications** : 32 assertions pgTAP, garde TypeScript qui part d'une
+ligne sale réelle, la fait passer par le chargeur puis le composant réels, et
+vérifie que le HTML produit ne porte plus de caractère invisible — elle ne
+reconnaît aucune déclaration, elle regarde le rendu (leçon d'ADR-168/169).
+
+## ADR-172 — `cashier`, `editor` et `owner` sont tous le rôle Postgres `authenticated` : le jeton de chasse sort par RPC `security definer`, pas par policy
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : lot `b91bd0ae` (PR #357). `hunt_steps.token` EST le QR d'une
+étape de chasse au trésor : qui le lit peut tamponner toutes les étapes sans
+se déplacer, puis réclamer le lot. La policy `"hunt_steps: member select"`
+ne testait que l'appartenance (`is_org_member`), jamais le rôle — alors que
+`is_org_editor` existe à côté pour ça — et le grant portait la table entière,
+colonne `token` comprise. Un caissier (le rôle qu'on donne à l'extra du
+samedi soir) lisait donc les jetons de toutes les chasses de
+l'établissement, défaut déjà signalé le 2026-08-06 (`docs/bugs.md`) et
+laissé sans arbitrage faute de décision produit.
+
+### Pourquoi une RPC, et pas une policy RLS resserrée
+
+`cashier`, `editor` et `owner` ne sont PAS trois rôles Postgres distincts :
+les trois sont `authenticated`. Le rôle applicatif vit uniquement dans
+`organization_members.role`. Une policy RLS décide de la LIGNE, jamais de la
+colonne ; un grant de colonne porte sur le rôle Postgres, identique pour les
+trois ; une vue `security_invoker` hériterait du même rôle sans rien
+distinguer de plus ; un grant conditionnel sur le rôle applicatif n'existe
+pas dans ce modèle. La seule construction qui sépare réellement : fermer
+`select (token)` à `authenticated`, et rendre le jeton par
+`hunt_step_tokens(p_organization_id, p_hunt_id)`, `security definer`, gardée
+par `is_org_editor` et filtrée sur `organization_id` autant que sur
+`hunt_id` — sans ce second filtre, la fonction laisserait sortir les jetons
+d'une chasse du voisin à qui en connaît l'identifiant. C'est la même forme
+que `org_qr_hub`, pour la même raison.
+
+### Le piège mesuré : `revoke select (token)` ne mord pas si un grant table-wide existe
+
+Postgres tient les deux registres — table et colonne — séparément, sans
+avertissement. `hunt_steps` portait un grant `select` table entière ; la
+migration révoque donc la TABLE d'abord, puis re-grante les sept autres
+colonnes une à une. Un bloc de vérification en fin de migration échoue à
+l'application si l'un des six invariants a bougé (jeton fermé, table
+fermée, sept colonnes ouvertes, jeton toujours écrivable, `service_role`
+intact) — une garde qui ne mord pas se lit exactement comme une garde qui
+mord.
+
+### Trouvaille hors audit : `/studio/chasse/[id]` n'avait aucune garde de rôle
+
+Le tableau de bord et l'éditeur d'affiche faisaient le même `select("*")` et
+étaient connus ; le studio de chasse faisait le même appel, avec un
+commentaire expliquant que c'était délibéré, et **n'avait aucun contrôle de
+rôle du tout** — un caissier y obtenait l'URL du QR avec un simple
+identifiant d'affiche. Les trois passent à une liste explicite
+(`HUNT_STEP_SESSION_COLUMNS`, un seul endroit) et récupèrent le jeton par la
+RPC ; le studio rend désormais `notFound()` à un caissier.
+
+**Reste ouvert, délibérément** : `service_role` garde la table entière
+(`record_hunt_scan`, `redeem_hunt_completion` en dépendent) ; écriture du
+jeton restée en session, gardée par la policy `"hunt_steps: editor write"`,
+déjà en `is_org_editor`.
+
+**Vérifications** : 29 assertions pgTAP (`jeton_chasse_hors_caisse.test.sql`,
+ajouté au job CI) — le catalogue de la révocation, la preuve qu'elle mord, et
+quatre sessions réelles (caissier refusé en 42501 mais suivi intact, éditeur
+servi par la RPC, propriétaire d'en face pour distinguer « A ne voit pas B »
+d'une fonction qui refuse tout le monde).
+
+## ADR-173 — Le webhook SMS Brevo : jeton d'URL dérivé, transition instrumentée plutôt que coupure immédiate du secret en clair
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : lot `d69c2b8e` (PR #359). `/api/sms/webhook` acceptait
+`BREVO_WEBHOOK_SECRET` en clair dans la query string — seul point d'entrée du
+dépôt à le faire, alors que Stripe signe et que les crons exigent l'en-tête
+sans repli. Le secret maître atterrissait dans les journaux d'accès de
+l'hébergeur, dans un `Referer` et dans l'historique de la console Brevo,
+sans qu'aucun log applicatif ne le révèle — le risque était entièrement
+externe, ce qui le rendait invisible. Le commentaire du fichier justifiait
+ce repli par « la console du prestataire ne permet pas d'en-tête » : vrai de
+la console WEB de Brevo, faux de son API (`POST /v3/webhooks` accepte
+`headers` et un objet `auth`) — une croyance du dépôt corrigée par la
+recherche, pas supposée.
+
+### Décision — un jeton dérivé dans l'URL, le secret maître réservé à l'en-tête, et un signal avant toute coupure
+
+Trois chemins coexistent le temps de la bascule :
+- l'en-tête `x-lastchance-sms-token` porte toujours le secret maître, inchangé ;
+- l'URL porte désormais un jeton DÉRIVÉ,
+  `HMAC-SHA256(secret, "brevo-url-token")` tronqué à 128 bits — aucune
+  variable d'environnement de plus, et une URL journalisée ne révèle plus
+  rien de réutilisable ailleurs ;
+- le secret maître en URL reste TOLÉRÉ, mais chaque usage émet un signal
+  distinct, `sms_webhook_legacy_url_secret` (différent de
+  `sms_webhook_invalid_token`).
+
+Retirer le repli immédiatement couperait les STOP entre le déploiement et la
+reprise effective de la configuration Brevo — un client ayant demandé
+l'arrêt continuerait d'être démarché. Le signal `sms_webhook_legacy_url_secret`
+dira quand ce chemin n'a plus d'usage réel ; le retrait se décide sur cette
+mesure, pas sur une supposition de calendrier (`docs/bugs.md` porte le
+rappel).
+
+Un en-tête PRÉSENT MAIS FAUX ne se rattrape plus par l'URL : c'est désormais
+un appel qui prétend s'authentifier et échoue, distinct d'un appel resté sur
+l'ancienne configuration — l'ancien `header ?? query` confondait les deux.
+
+**Vérifications** : le test recalcule la dérivation HMAC à la main plutôt
+que d'importer la fonction qu'il vérifie ; 219 tests du périmètre `sms` +
+`timing-safe`, typecheck, eslint.
+
+## ADR-174 — La jauge de soirée live vendue (250) est une DÉRIVATION écrite d'une mesure ancienne, pas une capacité rejouée
+
+**Date** : 2026-09-05
+**Statut** : Accepté
+**Contexte** : lot VEN-2 (commit `e63fc376`, PR #363). Le catalogue
+annonçait « 500 participants par session live » sur Le Grand Jeu et La
+Totale ; le wagon 5 avait déjà ramené ce chiffre de 1000 à 500, mais
+au-DESSUS de la capacité mesurée, pas en dessous — `docs/perf-report.md` §7
+pose lui-même le verdict « limite, assumée » pour ~200 req/s de besoin
+contre ~150 disponibles.
+
+### La dérivation, écrite au-dessus de la constante dans `src/lib/plans.ts`
+
+Cinq points, tous traçables à une mesure existante plutôt qu'à une intuition :
+capacité ~150 req/s sur `getEventState` (transposition ×2,5 du meilleur local
+du 2026-08-08, 61 req/s) ; besoin de 0,4 req/s par joueur à 2 500 ms de
+sondage, Realtime coupé ; hypothèse de besoin LINÉAIRE, cohérente avec le
+document (1000⇒400, 500⇒200, 100⇒40) ; marge aux DEUX TIERS de la capacité
+(100 req/s de budget) ; d'où 250 joueurs. Le tiers laissé de côté n'est pas
+décoratif : le même rapport mesure un facteur DEUX entre deux campagnes du
+même code sur la même machine. Ni Realtime (pas posé en production) ni le
+cache d'1 s du wagon 5 (jamais re-mesuré dos à dos) ne sont comptés dans la
+marge — la jauge est donc conservatrice, mais conservatrice par rapport à un
+chiffre qu'on ne sait plus qualifier tel quel. 100 reste tenable (40 req/s,
+27 % de la capacité) et ne bouge pas.
+
+### Décision — un chiffre sans sa dérivation redevient faux en silence
+
+C'est exactement ce qui est arrivé au 1000 initial. La dérivation vit donc
+DANS le code, au-dessus de la constante, avec la commande à rejouer pour la
+réviser (`npm run capacity:bench`).
+
+**Le test miroir a changé de sens** : il exigeait l'ÉGALITÉ avec
+`event_participant_capacity()`, ce qui interdisait de faire redescendre la
+promesse seule sans migration SQL simultanée. Les deux sens ne sont pas
+symétriques — promettre MOINS que la base n'accorde est sans danger,
+promettre PLUS est un mensonge à l'écran — la garde tient désormais
+l'inégalité dans ce sens précis, en lisant les nombres du SQL au lieu de les
+recopier. Elle révèle du même coup que `event_participant_capacity()`
+accorde toujours 500 en base (`docs/bugs.md`).
+
+**Garde neuve dérivée du texte rendu**, pas d'une liste de fichiers : le
+libellé produit par `describeTier()` est extrait puis recherché, précédé
+d'un nombre écrit en dur, dans tout `src/` et `site/src` — si la formulation
+change, la garde suit seule. Le site vitrine suit par projection
+(`pricing.generated.ts`, `npm run site:pricing`, gardé par
+`site-pricing.test.ts`) plutôt que par une valeur recopiée.
+
+**Reste ouvert** (`docs/bugs.md`) : 250 n'a pas été rejoué contre la pile
+réelle — seul un banc `capacity:bench` dos à dos le qualifiera ; la base
+accorde toujours 500.
+
+**Vérifications** : typecheck, `casts:check`, eslint, 7533/7534 tests
+(seul `route-boundaries` échoue, hors périmètre de ce lot — routes non
+suivies).

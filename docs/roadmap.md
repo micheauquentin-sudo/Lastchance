@@ -1,5 +1,77 @@
 # Roadmap — Lastchance
 
+## V1.76 — Audit sécurité et cohérence : neuf lots (✅ 2026-09-05, PR #355 → #363)
+
+**Objectif** : vérifier un audit Codex externe (`docs/audit-complet-2026-09-05.txt`,
+sur SHA `9e6fe7fb`) puis fermer ce qu'il confirmait. Cinq constats confirmés,
+un partiel, zéro invention ; deux angles morts de l'audit lui-même trouvés en
+vérifiant (sa section 4 auditait un lot landing jamais livré sous ce nom —
+le lot fusionné était `panorama`, pas `backdrop` — ce qui lui a fait manquer
+deux défauts réellement en production).
+
+- **PR #355 — Décor de l'accueil : cache immuable sur des noms non
+  hachés.** `/panorama/:path*` servi `immutable` un an sur `p1080.webp` etc.,
+  des noms qui ne portent que la largeur ; une régénération réécrivait le
+  même nom avec un contenu différent, gardant tout visiteur déjà venu sur
+  l'ancien décor. Noms hachés (`p<largeur>.<sha256:8>.webp`), garde qui
+  recalcule le hash. `allowedDevOrigins` portait aussi une IP privée de poste
+  de développement, retirée.
+- **PR #356 — Pass Apple Wallet : dernière route publique sans plafond**
+  (`/api/wallet/apple/[code]`, non authentifiée, service role, signature
+  PKCS#7 par appel). Garde de forme `^GAIN-[A-Z0-9]{4,32}$` puis double
+  plafond IP + code haché, dans cet ordre pour que le 429 ne devienne pas un
+  oracle d'existence.
+- **PR #357 — Chasse au QR : le jeton sort du rôle caissier**
+  (`hunt_steps.token`, ADR-172). `cashier`/`editor`/`owner` sont tous le
+  rôle Postgres `authenticated` : `select (token)` fermé, RPC
+  `hunt_step_tokens` gardée par `is_org_editor`. Trouvaille hors audit :
+  `/studio/chasse/[id]` n'avait aucun contrôle de rôle.
+- **PR #358 — Pronostics : les alias déjà en base, nettoyés** (ADR-171,
+  suite d'ADR-169). ADR-169 n'avait couvert que les écritures ; trois couches
+  (projection, nettoyage `repair_player_alias`, contrainte resserrée de 60 à
+  24) ferment aussi l'historique.
+- **PR #359 — Webhook SMS : le secret sort de l'URL** (ADR-173). Seul point
+  d'entrée acceptant un secret en clair en query string ; jeton dérivé
+  `HMAC(secret, "brevo-url-token")`, transition instrumentée par le signal
+  `sms_webhook_legacy_url_secret` plutôt qu'une coupure immédiate.
+- **PR #360 — RDV-7 : Réservation, le mode de l'activité choisit la clé**
+  (ADR-170). Huit RPC dérivaient chacune une copie de la règle
+  `reserver`/`rendez_vous` ; une seule fonction
+  (`reservation_activity_module_key`) la porte désormais, invariant rejoué
+  par pgTAP à chaque CI plutôt que vérifié une fois à la migration. Ferme la
+  ligne « Reste ouvert » de V1.69 ci-dessous. `soldStandalone` délibérément
+  **non** basculé pour Réservation (ADR-170) — ce champ répond à « sans
+  abonnement ? », pas à « sans Moments ? », et le basculer rouvrirait le
+  défaut MOYEN-2.
+- **PR #361 — Site vitrine (`site/`) couvert par un scan axe.** Aucun test
+  navigateur n'existait ; harnais réutilisé (`playwright.site.config.ts`,
+  `e2e-site/`), job CI dédié. Trouvé et corrigé du premier coup : contraste
+  2,57:1 sur `--color-ink-faint`, et aucun `<h1>` sur quatre pages.
+- **PR #362 — VIT-53 : la vitrine se filtre par mode.** Suite directe de
+  RDV-7 : `vitrine_public_state` gardait `reserver` en dur pour ses trois
+  listes ; une organisation `rendez_vous` seul obtenait une page servie mais
+  une liste d'activités **vide**, pas un refus. Filtrage devenu PAR OBJET
+  (chaque activité selon son propre `booking_mode`). Files et offres de
+  réservation gardent `reserver` délibérément : aucun mode à en dériver, et
+  les RPC d'en face (`queue_join`, `hold_stock_offer`) exigent encore
+  `reserver` — annoncer une porte qu'elles refusent serait la « promesse
+  rompue » que `20261020120000` interdit (`docs/bugs.md`).
+- **PR #363 — VEN-2 : la jauge live vendue redescend à 250, dérivée**
+  (ADR-174). 500 → 250, dérivation écrite au-dessus de la constante dans
+  `src/lib/plans.ts` ; le test miroir passe de l'égalité à l'inégalité avec
+  `event_participant_capacity()`, ce qui révèle que la fonction SQL accorde
+  toujours 500 (`docs/bugs.md`).
+
+**Décisions** : [ADR-170 à ADR-174](./decisions.md).
+
+**Reste ouvert** (`docs/bugs.md`) : émetteur Google Wallet jamais testé
+contre le vrai Google (geste propriétaire, déjà signalé) ; 250 n'a pas été
+rejoué contre la pile réelle par `capacity:bench` ; `event_participant_capacity()`
+accorde toujours 500 en base ; `event_players.pseudo` sans filtre de format
+au niveau table ; files/offres de réservation encore sur `reserver` (décision
+assumée, pas une dette) ; chemin hérité du webhook SMS à retirer quand
+`sms_webhook_legacy_url_secret` cesse de remonter.
+
 ## V1.75 — Le studio répond aux retours (✅ 2026-09-03, PR #322 → #327)
 
 **Objectif** : premiers retours d'usage réel du propriétaire sur le studio
@@ -760,22 +832,28 @@ mode que personne ne pouvait poser. Réparé par
 `20261112120000_reglages_rendez_vous_ecrivables.sql` (10 assertions pgTAP
 `RRV-1..10`).
 
-**Reste ouvert** (`docs/bugs.md`) : le socle Moments (`reserve_slot`,
-`waitlist_join`, `reservation_offer_next`) vérifie encore le droit `vitrine`,
-pas `rendez_vous` — un commerçant qui n'aurait acheté que Réservation verrait
-ses Moments muets, non corrigé, hors périmètre de ce lot. Trois lots distincts
-de ce même chantier ont livré une colonne sans son droit d'accès sur les
-tables Réserver, à grants colonne par colonne : deux lectures manquantes
-(`reservations.table_id`, `reservation_waitlist_entries.party_size`, RDV-6) et
-une écriture manquante, totale, sur cinq colonnes (RDV-1/RDV-6, ci-dessus).
-Les trois ont été trouvées après coup — deux par pgTAP écrits pour autre
-chose, la troisième par la CI E2E — jamais par une garde qui compare le
-schéma d'une table à ce qu'une server action y écrit. Une garde générique
-(croiser `information_schema.column_privileges` avec les colonnes citées dans
-`src/actions/`) est une piste, pas une décision prise. **Geste propriétaire** :
-créer le produit Stripe « Réservation » (20 €/mois) et poser
-`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS` en Production — le droit fonctionne déjà
-par octroi back-office, seule la vente en ligne manque.
+**Reste ouvert** : ~~le socle Moments (`reserve_slot`, `waitlist_join`,
+`reservation_offer_next`) vérifie encore le droit `vitrine`, pas
+`rendez_vous` — un commerçant qui n'aurait acheté que Réservation verrait ses
+Moments muets~~ — **corrigé** (RDV-7, commit `754de1f7`, PR #360, ADR-170,
+2026-09-05) : les huit RPC d'activité dérivent désormais leur clé du
+`booking_mode` via `reservation_activity_module_key`, une seule fois, au lieu
+de nommer un module en dur chacune. ~~**Geste propriétaire** : créer le
+produit Stripe « Réservation » et poser
+`STRIPE_PRICE_ID_ADDON_RENDEZ_VOUS`~~ — **fait** (2026-09-02, voir ADR-170) :
+le produit et le prix existent en Production, la Réservation se vend en
+ligne comme ligne d'abonnement.
+
+Trois lots distincts de ce même chantier ont livré une colonne sans son
+droit d'accès sur les tables Réserver, à grants colonne par colonne : deux
+lectures manquantes (`reservations.table_id`,
+`reservation_waitlist_entries.party_size`, RDV-6) et une écriture manquante,
+totale, sur cinq colonnes (RDV-1/RDV-6, ci-dessus). Les trois ont été
+trouvées après coup — deux par pgTAP écrits pour autre chose, la troisième
+par la CI E2E — jamais par une garde qui compare le schéma d'une table à ce
+qu'une server action y écrit. Une garde générique (croiser
+`information_schema.column_privileges` avec les colonnes citées dans
+`src/actions/`) reste une piste, pas une décision prise (`docs/bugs.md`).
 
 ## V1.68 — Générateur de questions, et le partage remis à sa place (2026-08-28, non poussé)
 
