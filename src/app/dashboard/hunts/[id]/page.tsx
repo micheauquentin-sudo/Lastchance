@@ -40,6 +40,7 @@ import { construireVerificationChasse } from "@/lib/activation/hunts";
 import { carteTuile } from "@/lib/checklist/carte-tuile";
 import { tuilesDuModule } from "@/lib/checklist/tuiles";
 import { etatSourceRelance } from "@/lib/experience-relance";
+import { HUNT_STEP_SESSION_COLUMNS } from "@/lib/hunts";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import type { Hunt, HuntStep } from "@/types/database";
@@ -87,24 +88,44 @@ export default async function HuntDetailPage({
     | EtapeChasse
     | null;
 
-  const [{ data: hunt }, { data: stepRows }] = await Promise.all([
-    supabase
-      .from("hunts")
-      .select("*")
-      .eq("id", id)
-      .eq("organization_id", organization.id)
-      .maybeSingle(),
-    supabase
-      .from("hunt_steps")
-      .select("*")
-      .eq("hunt_id", id)
-      .eq("organization_id", organization.id)
-      .order("position", { ascending: true }),
-  ]);
+  // `hunt_steps` NE SE LIT PLUS PAR `*` (migration 20261204120000) : la
+  // colonne `token` est fermée à `authenticated`, et un `select("*")`
+  // PostgREST échouerait en entier — pas seulement sur cette colonne. Les
+  // jetons viennent donc de `hunt_step_tokens`, gardée par `is_org_editor`.
+  const [{ data: hunt }, { data: stepRows }, { data: tokenRows }] =
+    await Promise.all([
+      supabase
+        .from("hunts")
+        .select("*")
+        .eq("id", id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+      supabase
+        .from("hunt_steps")
+        .select(HUNT_STEP_SESSION_COLUMNS)
+        .eq("hunt_id", id)
+        .eq("organization_id", organization.id)
+        .order("position", { ascending: true }),
+      supabase.rpc("hunt_step_tokens", {
+        p_organization_id: organization.id,
+        p_hunt_id: id,
+      }),
+    ]);
 
   if (!hunt) notFound();
   const h = hunt as Hunt;
-  const steps = (stepRows ?? []) as HuntStep[];
+  // Le jeton est RECOLLÉ ici, il ne vient plus de la ligne. Cette page est
+  // refusée à la caisse AVANT toute lecture (`canExplore` est faux pour
+  // `cashier`), donc l'owner/editor qui arrive jusqu'ici obtient toujours ses
+  // jetons ; la chaîne vide n'est atteignable que si la RPC a refusé, et
+  // `posterSteps` écarte alors l'étape plutôt que d'imprimer un `/hunt/` nu.
+  const jetonParEtape = new Map<string, string>(
+    (tokenRows ?? []).map((ligne) => [ligne.step_id, ligne.token]),
+  );
+  const steps = (stepRows ?? []).map((ligne) => ({
+    ...ligne,
+    token: jetonParEtape.get(ligne.id) ?? "",
+  })) as HuntStep[];
 
   // Stats agrégées (owner) — org-scopées, honorées par la RLS « member select ».
   let players = 0;
@@ -138,14 +159,18 @@ export default async function HuntDetailPage({
     steps.map((step) => step.id),
   );
 
-  const posterSteps = steps.map((step) => ({
-    id: step.id,
-    position: step.position,
-    label: step.label,
-    token: step.token,
-    url: `${APP_URL}/hunt/${step.token}`,
-    opens: openCounts[step.id] ?? 0,
-  }));
+  const posterSteps = steps
+    // Une affiche sans jeton n'est pas une affiche : elle imprimerait un QR
+    // vers `/hunt/`. Mieux vaut ne rien proposer.
+    .filter((step) => step.token !== "")
+    .map((step) => ({
+      id: step.id,
+      position: step.position,
+      label: step.label,
+      token: step.token,
+      url: `${APP_URL}/hunt/${step.token}`,
+      opens: openCounts[step.id] ?? 0,
+    }));
   const totalOpens = posterSteps.reduce((somme, s) => somme + s.opens, 0);
 
   const remainingStock =

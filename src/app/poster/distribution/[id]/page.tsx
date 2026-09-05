@@ -41,8 +41,19 @@ async function publicUrl(
   }
   if (kind === "reservation") return urlActiviteReserver(id, APP_URL);
   if (kind === "hunt_step") {
-    const { data } = await supabase.from("hunt_steps").select("token").eq("id", id).eq("organization_id", organizationId).maybeSingle();
-    return data?.token ? `${APP_URL}/hunt/${data.token}` : null;
+    // `hunt_steps.token` n'est plus lisible en session (20261204120000) : le
+    // jeton EST le QR, et cette page n'a AUCUNE garde de rôle — un caissier y
+    // arrivait donc avec l'identifiant d'une affiche. La chasse se lit encore
+    // pour situer l'étape, le jeton passe par `hunt_step_tokens` qui refuse
+    // qui n'est pas éditeur (l'affiche rend alors `notFound()`).
+    const { data: step } = await supabase.from("hunt_steps").select("hunt_id").eq("id", id).eq("organization_id", organizationId).maybeSingle();
+    if (!step) return null;
+    const { data: jetons } = await supabase.rpc("hunt_step_tokens", {
+      p_organization_id: organizationId,
+      p_hunt_id: step.hunt_id,
+    });
+    const token = (jetons ?? []).find((ligne) => ligne.step_id === id)?.token;
+    return token ? `${APP_URL}/hunt/${token}` : null;
   }
   if (kind === "vitrine") {
     const { data } = await supabase.from("vitrine_settings").select("slug").eq("id", id).eq("organization_id", organizationId).maybeSingle();

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
+import { HUNT_STEP_SESSION_COLUMNS } from "@/lib/hunts";
 import { capacitesDuModule } from "@/lib/module-capabilities-server";
 import { readModulePageOpenCounts } from "@/lib/module-page-opens";
 import { ChasseStudio } from "@/components/hunts/chasse-studio";
@@ -37,11 +38,18 @@ export const metadata: Metadata = { title: "Mon studio — Chasse au QR" };
  * `src/components/hunts/studio/revalidation-studio.test.ts` échoue s'il en
  * manque un.
  *
- * ── `select("*")`, ET C'EST DÉLIBÉRÉ ──
+ * ── `select("*")` SUR LA CHASSE, MAIS PLUS SUR SES ÉTAPES ──
  *
- * La page du tableau de bord fait de même. Énumérer les colonnes ici aurait
- * créé une seconde liste à tenir d'accord avec la sienne ; `*` charge tout, ne
- * peut rien oublier, et coûte une ligne.
+ * La chasse se charge encore par `*`, comme sur la page du tableau de bord :
+ * énumérer ses colonnes ici créerait une seconde liste à tenir d'accord avec
+ * la sienne.
+ *
+ * Ses ÉTAPES, non. Depuis la migration 20261204120000, `hunt_steps.token` est
+ * fermée à `authenticated` — le jeton EST le QR, et la caisse n'a aucune raison
+ * de l'avoir — et un `select("*")` PostgREST échoue alors EN ENTIER. La liste
+ * de colonnes qu'on aurait dû dupliquer vit donc à un seul endroit,
+ * `HUNT_STEP_SESSION_COLUMNS`, et le jeton revient par la RPC
+ * `hunt_step_tokens`, gardée par `is_org_editor`.
  */
 export default async function StudioChassePage({
   params,
@@ -61,20 +69,25 @@ export default async function StudioChassePage({
 
   const supabase = await createClient();
 
-  const [{ data: huntRow }, { data: stepRows }] = await Promise.all([
-    supabase
-      .from("hunts")
-      .select("*")
-      .eq("id", id)
-      .eq("organization_id", organization.id)
-      .maybeSingle(),
-    supabase
-      .from("hunt_steps")
-      .select("*")
-      .eq("hunt_id", id)
-      .eq("organization_id", organization.id)
-      .order("position", { ascending: true }),
-  ]);
+  const [{ data: huntRow }, { data: stepRows }, { data: tokenRows }] =
+    await Promise.all([
+      supabase
+        .from("hunts")
+        .select("*")
+        .eq("id", id)
+        .eq("organization_id", organization.id)
+        .maybeSingle(),
+      supabase
+        .from("hunt_steps")
+        .select(HUNT_STEP_SESSION_COLUMNS)
+        .eq("hunt_id", id)
+        .eq("organization_id", organization.id)
+        .order("position", { ascending: true }),
+      supabase.rpc("hunt_step_tokens", {
+        p_organization_id: organization.id,
+        p_hunt_id: id,
+      }),
+    ]);
 
   if (!huntRow) notFound();
   // PostgREST ne relie pas une chaîne de `select()` à une interface : les sept
@@ -82,7 +95,18 @@ export default async function StudioChassePage({
   // nommer une forme invisible au compilateur ; il ne protège rien par lui-même.
   // unsafe-cast-justification: écart PostgREST/interface, colonnes chargées par `*`
   const hunt = huntRow as unknown as Hunt;
-  const steps = (stepRows ?? []) as HuntStep[];
+  // Le jeton est RECOLLÉ ici, il ne vient plus de la ligne. Cette page est
+  // refusée à la caisse AVANT toute lecture (`canExplore` est faux pour
+  // `cashier`), donc l'owner/editor qui arrive jusqu'ici obtient toujours ses
+  // jetons ; la chaîne vide n'est atteignable que si la RPC a refusé, et
+  // `posterSteps` écarte alors l'étape plutôt que d'imprimer un `/hunt/` nu.
+  const jetonParEtape = new Map<string, string>(
+    (tokenRows ?? []).map((ligne) => [ligne.step_id, ligne.token]),
+  );
+  const steps = (stepRows ?? []).map((ligne) => ({
+    ...ligne,
+    token: jetonParEtape.get(ligne.id) ?? "",
+  })) as HuntStep[];
 
   // Compteur d'ouvertures PAR ÉTAPE, comme sur la page du tableau de bord : le
   // grain de `module_page_opens.resource_id` est ce que le QR désigne — ici
@@ -94,14 +118,18 @@ export default async function StudioChassePage({
     steps.map((step) => step.id),
   );
 
-  const posterSteps = steps.map((step) => ({
-    id: step.id,
-    position: step.position,
-    label: step.label,
-    token: step.token,
-    url: `${APP_URL}/hunt/${step.token}`,
-    opens: openCounts[step.id] ?? 0,
-  }));
+  const posterSteps = steps
+    // Une affiche sans jeton n'est pas une affiche : elle imprimerait un QR
+    // vers `/hunt/`. Mieux vaut ne rien proposer.
+    .filter((step) => step.token !== "")
+    .map((step) => ({
+      id: step.id,
+      position: step.position,
+      label: step.label,
+      token: step.token,
+      url: `${APP_URL}/hunt/${step.token}`,
+      opens: openCounts[step.id] ?? 0,
+    }));
 
   const entreeVerification = {
     huntId: hunt.id,
