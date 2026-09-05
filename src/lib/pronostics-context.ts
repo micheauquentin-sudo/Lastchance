@@ -4,6 +4,7 @@ import { moduleOuvertAuJoueur } from "@/lib/module-acces-public";
 
 import { cookies } from "next/headers";
 import { recordCounter } from "@/lib/monitoring";
+import { sanitizePlayerAlias } from "@/lib/player-alias";
 import {
   lookupLegacyIdentityHashes,
   peekPlayerDeviceTokenHash,
@@ -162,6 +163,25 @@ export interface ContestPlayerState {
  *  coordonnées : ni email ni téléphone ne sortent de ce chargeur. */
 export type JoueurContest = Pick<ContestPlayer, "id" | "first_name" | "avatar">;
 
+/**
+ * L'ENTONNOIR DE LECTURE du pseudo joueur — appliqué à TOUTE ligne
+ * `contest_players` qui remonte vers l'écran, et jamais dans les composants.
+ *
+ * ADR-169 a filtré les ÉCRITURES et le disait : « son pseudo enregistré reste
+ * affiché ». Le classement `/pronos/<slug>` étant PUBLIC et sans
+ * authentification, tout pseudo inscrit avant ce lot y restait rendu tel quel.
+ * La migration 20261205120000 nettoie la base et ferme la porte ; cette
+ * projection est la troisième couche — celle qui tient si une écriture future
+ * repasse par un chemin admin sans repasser par Zod.
+ *
+ * Deux sites l'appellent, et ce sont les deux seuls d'où un `first_name` sort
+ * de ce module : `resoudreIdentiteContest` (l'espace du joueur) et
+ * `toLeaderboardEntry` (le classement public).
+ */
+function projeterJoueurContest(joueur: JoueurContest): JoueurContest {
+  return { ...joueur, first_name: sanitizePlayerAlias(joueur.first_name) };
+}
+
 /** Le championnat dont l'identité a besoin : son identifiant et son tenant. */
 type PorteeContest = Pick<Contest, "id" | "organization_id">;
 
@@ -284,7 +304,11 @@ export async function resoudreIdentiteContest(
       .eq("token_hash", empreinteCookie)
       .maybeSingle();
     if (data) {
-      return { tokenHash: empreinteCookie, joueur: data, cookiePose: true };
+      return {
+        tokenHash: empreinteCookie,
+        joueur: projeterJoueurContest(data),
+        cookiePose: true,
+      };
     }
   }
 
@@ -321,7 +345,7 @@ export async function resoudreIdentiteContest(
     if (!ligne?.token_hash) continue;
     const { token_hash: _empreinte, ...joueur } = ligne;
     void _empreinte;
-    parEmpreinte.set(ligne.token_hash, joueur);
+    parEmpreinte.set(ligne.token_hash, projeterJoueurContest(joueur));
   }
 
   // L'ORDRE DE LA RPC DÉCIDE, pas celui que la base a rendu : `anciennes` est
@@ -411,7 +435,7 @@ export interface ContestLeaderboardRow {
 function toLeaderboardEntry(row: ContestLeaderboardRow): LeaderboardEntry {
   return {
     playerId: row.player_id,
-    firstName: row.first_name,
+    firstName: sanitizePlayerAlias(row.first_name),
     avatar: row.avatar ?? "",
     points: Number(row.total_points),
     exactCount: Number(row.exact_count),
