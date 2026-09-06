@@ -5445,3 +5445,249 @@ garder que le jeton dérivé et l'en-tête `x-lastchance-sms-token`. Retirer ce
 chemin avant que le signal ne le confirme couperait les STOP des clients
 dont la configuration Brevo n'a pas encore été reprise avec le nouveau
 jeton — non retiré pour cette raison, pas par oubli.
+
+**Mise à jour (2026-09-06, PR liée au commit `60ef99c5`)** : le compteur de
+ce signal hérité est désormais **lisible via `/api/health`** au lieu de
+dormir uniquement dans Sentry — le retrait du repli devient une décision
+mesurable depuis un point d'observation courant, plutôt qu'une fouille de
+tableau de bord. Retrait toujours conditionné à environ **7 jours
+d'observation à zéro usage**, puis recréation du webhook Brevo avec l'en-tête
+`x-lastchance-sms-token` plutôt qu'une simple bascule de configuration.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365) — outillage local exposé en routes de production
+
+Deux audits fusionnés (`docs/audit-complet-2026-09-05.txt`,
+`docs/audit-claude-2026-09-05.txt`) ont trouvé de l'outillage de
+développement local accessible en PRODUCTION sous forme de routes Next :
+`/api/scan` balayait le réseau local par PowerShell, `/api/save-frame`
+écrivait un fichier à un chemin fourni par le corps de la requête, et
+`/api/test-tools` exécutait `execSync` sur des commandes système. Trois
+routes qui, exposées publiquement, offrent une exécution de commande ou une
+écriture arbitraire de fichier au premier appelant.
+
+**Clos** : sorties des deux arbres Next (`src/app/api/`, `site/src/app/api/`)
+vers `tools/`, un répertoire ignoré par git. Garde CI ajoutée qui balaie le
+**SYSTÈME DE FICHIERS**, pas seulement l'index git — le scénario qu'elle
+nomme est un déploiement lancé depuis un arbre de travail SALE qui
+réintroduirait ces fichiers sans qu'un commit ne les révèle.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, migration `20261212120000`) — `redeem_ticket_or` dérivait son autorisation de `p_actor`, choisi par l'appelant
+
+`redeem_ticket_or` acceptait un paramètre `p_actor` pour déterminer QUI
+réclame le ticket, mais ce paramètre était choisi par l'APPELANT lui-même —
+sur les 43 grants balayés par l'audit, le seul cas du dépôt à faire reposer
+une décision d'autorisation sur une valeur non vérifiée fournie par le
+client, et sans aucun appelant en production pour ce chemin.
+
+**Clos en deux temps** : premier tour, `revoke` du droit d'exécution accordé
+à `authenticated` et garde resserrée sur `service_role` — ferme l'ACCÈS.
+Second tour (migration `20261212120000`), après relecture : la fonction
+vérifie désormais aussi que `auth.uid()`, quand il existe, correspond à
+`p_actor` fourni — ferme la FAIBLESSE DE CONCEPTION elle-même (un appelant
+authentifié ne peut plus se faire passer pour un autre acteur), pas
+seulement la porte d'accès en amont.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, ADR-179) — secrets porteurs en clair vers PostHog
+
+Cause racine : deux listes d'expurgation de télémétrie coexistaient, une
+seule branchée sur l'intégration PostHog — la seconde documentait la bonne
+intention sans rien protéger. Des jetons de session et identifiants de gain
+apparaissaient en clair dans des URLs et en-têtes transmis à PostHog.
+
+**Clos** : liste unique `src/lib/cles-sensibles.ts`, expurgation par NOM de
+paramètre, `/ticket/` désormais couvert, en-têtes expurgés étendus,
+préfixes `TICKET-`/`RESA-` ajoutés au motif de reconnaissance de codes. Voir
+ADR-179 pour les deux choix qui ont changé la conception (`code` non ajouté
+à la liste — collision avec le code PKCE Supabase et la recherche caisse —
+et le motif de codes restreint à la query string pour ne pas manger les
+slugs de QR publics comme `/play/EVENT-BRETAGNE`).
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365) — `claim_winning_spin` écrivait dans `newsletter_subscribers` malgré `collect_email = false`
+
+Un commerçant ayant désactivé la collecte d'e-mail (`collect_email = false`)
+voyait quand même l'adresse d'un gagnant écrite dans
+`newsletter_subscribers`, et le webhook sortant associé ressortait cette
+adresse en clair — un consentement désactivé qui n'empêchait pas l'écriture
+qu'il était censé bloquer.
+
+**Clos** : normalisation ajoutée en tête de la fonction — `collect_email`
+est relu avant toute écriture vers `newsletter_subscribers`, l'insertion est
+sautée si le commerçant l'a désactivée.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, ADR-176, migration `20261210120000`) — `perform_atomic_spin` était aveugle au statut et aux dates de la campagne
+
+Une campagne mise en pause ou arrivée à échéance continuait d'accepter des
+tirages : `perform_atomic_spin` ne relisait ni le statut ni les dates de la
+campagne au moment du tirage, seulement `play_limit` et les seaux de spin.
+
+**Clos** : statut et dates ajoutés au `select` existant sur la campagne ;
+garde placée APRÈS le rejeu idempotent (voir ADR-176 pour le raisonnement —
+la placer avant aurait fait perdre à un rejeu légitime un lot déjà tiré et
+décompté). Alternatives écartées et pourquoi : dans ADR-176.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365) — `addon_rendez_vous` n'était pas chargé par `getUserAndOrg`
+
+Un commerçant ayant payé l'add-on Réservation ne voyait pas le module
+correspondant : `getUserAndOrg` ne sélectionnait pas `addon_rendez_vous`
+parmi les droits chargés, rendant l'add-on payé invisible côté application
+alors qu'il existait bien en base — la même classe de défaut que celle
+fermée le 2026-08-05 pour un autre add-on (voir entrée « `getUserAndOrg`
+sélectionnait » plus haut dans ce fichier).
+
+**Clos** : `addon_rendez_vous` ajouté à la sélection ; garde de parité
+ajoutée pour qu'un futur add-on ne reproduise pas silencieusement le même
+oubli.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, ADR-177, migration `20261213120000`) — le consentement SMS était écrit APRÈS le commit du gain
+
+Voir ADR-177 pour le raisonnement complet. Le consentement SMS d'un gain
+était enregistré par un appel séparé, exécuté après le commit de la
+transaction du gain : une invocation serverless interrompue entre les deux
+perdait le consentement pour toujours (pas un message perdu — le CANAL,
+définitivement, puisque tout envoi ultérieur sans consentement échoue en
+silence).
+
+**Clos** : `p_sms_opt_in` intégré à la transaction du gain, `record_sms_consent`
+appelée sous un sous-bloc `exception when others` (SAVEPOINT) pour qu'un
+échec de cette écriture secondaire ne fasse pas échouer le gain lui-même. Un
+numéro ayant fait STOP n'est pas réactivé par ce chemin.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365) — Turnstile sans délai (`AbortSignal`)
+
+Le challenge Turnstile côté client n'était borné par aucun délai : un appel
+réseau qui ne répond jamais laissait le joueur bloqué sans retour, sans
+qu'aucun mécanisme ne force une sortie propre.
+
+**Clos** : Turnstile borné par `AbortSignal`.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, ADR-180) — site vitrine sans en-têtes de sécurité
+
+Le site vitrine (`site/`) ne portait aucun en-tête de sécurité applicatif
+(HSTS, `upgrade-insecure-requests`, etc.). Voir ADR-180 pour le diagnostic
+par bissection A/B qui a conditionné l'émission de HSTS et
+`upgrade-insecure-requests` à une origine réellement servie en HTTPS
+(WebKit, contrairement à Chromium, promeut sinon toute navigation locale
+vers une origine HTTPS qui n'écoute pas). Zéro violation CSP mesurée après
+ajout.
+
+**Revers assumé** (ADR-180) : hors Vercel, ces en-têtes disparaissent en
+silence si l'origine n'est pas détectée comme HTTPS.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365, migration `20261211120000`) — `vitrine_mesures` sans validation de référence ni rétention
+
+La table `vitrine_mesures` (mesures de performance/accessibilité du site
+vitrine) n'appliquait aucune validation sur sa colonne de référence et
+n'entrait dans aucune politique de rétention — accumulation illimitée et
+données non contrôlées en entrée.
+
+**Clos** : validation de la référence ajoutée, table intégrée à la
+rétention QUOTIDIENNE déjà en place pour les autres tables de mesure.
+
+## ✅ CLOS le 2026-09-06 (commit `60ef99c5`, PR #365) — Ticket d'Or : expiration non contrôlée au RENDU
+
+L'écran de Ticket d'Or continuait d'afficher un lot plein écran avec la
+mention « à retirer avant » une date déjà PASSÉE — l'expiration n'était
+vérifiée qu'à l'écriture ou à la réclamation, jamais au moment où l'écran se
+construit pour l'affichage.
+
+**Clos** : l'expiration est désormais évaluée AU RENDU, pas seulement à la
+réclamation.
+
+## OUVERT (2026-09-06, décision produit assumée, pas une dette) — rotation du cookie anonyme : `play_limit` reste contournable
+
+Les deux audits fusionnés proposaient de semer reflex/gauge depuis le jeton
+signé (voir ADR-175, écarté) et, séparément, ont refait surface sur la dette
+déjà connue d'ADR-032 : `play_limit` s'appuie sur un cookie anonyme que
+n'importe quel joueur peut effacer pour se présenter comme un nouveau
+joueur au tirage suivant. ADR-178 (plafond IP bloquant) rend la ROTATION
+D'IP coûteuse, mais ne rend pas l'IDENTITÉ du joueur fiable — les deux
+protections sont orthogonales.
+
+**Règle produit retenue** : ne pas adosser un lot de valeur unitaire élevée
+à la seule garde `play_limit` pour se protéger d'un joueur déterminé sur son
+propre réseau. Ce n'est pas une dette technique à corriger mais une limite
+structurelle d'une identité par cookie côté public, déjà actée par ADR-032 —
+consignée ici pour qu'elle reste visible au moment de calibrer un futur lot
+à forte valeur.
+
+## OUVERT (2026-09-06, signalé, ADR-181) — `quizzes_reward_bounds_check` porte le défaut que sa généralisation aurait répliqué
+
+Les deux audits citaient `quizzes_reward_bounds_check` comme modèle à
+généraliser (`check (reward_claimed_count <= reward_stock)`) sur cinq
+modules à lots. ADR-181 a refusé cette généralisation : la contrainte
+proposée interdirait au commerçant d'ABAISSER un stock sous ce qui est déjà
+émis, un geste supporté et documenté (`hunt_settlement_preview.test.sql:222`).
+En vérifiant la proposition, il apparaît que `quizzes_reward_bounds_check`
+— le modèle cité — PORTE déjà ce défaut aujourd'hui : un commerçant qui
+baisse le stock d'un quiz sous le nombre déjà réclamé se heurte à cette
+contrainte. Non corrigé dans ce chantier — le bon instrument (un trigger
+conditionné au SENS de la variation du stock, pas une contrainte statique)
+n'a pas été construit.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — aucune garde statistique du moteur de tirage SQL
+
+Aucun test ne vérifie, sur un grand nombre de tirages simulés, que la
+distribution réelle produite par le moteur SQL correspond aux probabilités
+configurées par le commerçant — seule la logique fonctionnelle (un tirage
+respecte le stock, les bornes, l'idempotence) est couverte. Un biais
+d'implémentation dans la sélection pondérée pourrait donc survivre
+indéfiniment sans qu'aucune garde ne le révèle.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — parité `lot-tirable.ts` ↔ `perform_atomic_spin`
+
+`lot-tirable.ts` (chemin de LECTURE, ce qui s'affiche comme tirable côté
+application) et `perform_atomic_spin` (chemin d'ÉCRITURE, ce qui est
+réellement accordé en SQL) portent chacun leur propre lecture des mêmes
+conditions (stock, statut de campagne depuis ADR-176, dates). Rien ne les
+maintient synchronisés autrement qu'à la main ; un ajout de condition dans
+l'un sans l'autre reproduirait un écart lecture/écriture.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — pas de test RLS ligne-à-ligne inter-organisations sur l'ensemble du schéma
+
+La couverture RLS existante vérifie l'isolation multi-tenant module par
+module (au fil des chantiers), mais aucun test systématique ne balaie
+TOUTES les tables porteuses d'`organization_id` pour vérifier, ligne par
+ligne, qu'une organisation A ne peut jamais lire ou écrire une ligne de
+l'organisation B. La couverture actuelle est donc large mais pas exhaustive
+par construction.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — aucun E2E du maillon QR → `/play`
+
+Le parcours qui va du SCAN d'un QR physique à l'atterrissage effectif sur
+`/play` (résolution du slug, redirection, premier rendu) n'a pas d'E2E
+dédié — la couverture E2E existante part généralement de `/play` déjà
+chargé. Un défaut dans la résolution de slug ou la redirection pourrait
+survivre sans qu'aucun test ne le révèle.
+
+## OUVERT (2026-09-06, croyance corrigée) — `scripts/concurrency-probe.mjs` existe et n'est simplement jamais joué à chaque push
+
+Les deux audits fusionnés affirmaient qu'aucun harnais multi-session ne
+permettait de mesurer la concurrence réelle du moteur de tirage. C'est
+FAUX : `scripts/concurrency-probe.mjs` existe déjà dans le dépôt et fait
+exactement cela. Le défaut réel, plus étroit, est que ce script n'est joué
+par AUCUN job CI à chaque push — il ne tourne que lorsqu'un humain pense à
+le lancer manuellement, ce qui revient à ne jamais le jouer en pratique.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — `usePrefersReducedMotion` recopié dans 15 fichiers
+
+Le hook `usePrefersReducedMotion` (utilisé pour désactiver des animations
+sous préférence système) existe en 15 copies indépendantes à travers les
+composants qui en ont besoin, plutôt qu'en un seul module partagé. Un
+correctif sur l'une des copies (comme celui qui a arrêté la roue sous
+`prefers-reduced-motion` dans ce chantier) ne se propage à aucune des
+quatorze autres.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — export mort `recordPrizeSmsConsent`
+
+La bascule du consentement SMS vers la transaction du gain (ADR-177) a
+laissé `recordPrizeSmsConsent` sans plus aucun appelant côté application —
+export mort, identifié mais non retiré dans ce chantier.
+
+## OUVERT (2026-09-06, signalé, non corrigé) — 4 fichiers pgTAP sans `create extension pgtap`
+
+Quatre fichiers de test pgTAP ne déclarent pas `create extension pgtap` en
+tête de fichier — ils ne fonctionnent que parce que l'extension est déjà
+installée par un autre fichier exécuté avant eux dans le même run. Un
+réordonnancement de la suite, ou une exécution isolée de l'un de ces quatre
+fichiers, les ferait échouer sans rapport avec ce qu'ils sont censés
+vérifier.

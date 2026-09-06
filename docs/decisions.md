@@ -11052,3 +11052,306 @@ accorde toujours 500.
 **Vérifications** : typecheck, `casts:check`, eslint, 7533/7534 tests
 (seul `route-boundaries` échoue, hors périmètre de ce lot — routes non
 suivies).
+
+## ADR-175 — Jeux d'adresse à succès client-reporté (reflex, gauge) : rendre RÉELLE la borne déjà affirmée, pas simuler un secret qui n'existe pas
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : les deux audits fusionnés (`docs/audit-complet-2026-09-05.txt`,
+`docs/audit-claude-2026-09-05.txt`) proposaient de semer, depuis le jeton
+signé du tour, le geste que le joueur doit reproduire pour gagner reflex
+(cliquer au bon instant) et gauge (arrêter une jauge au bon niveau) — sur le
+modèle de `rps`/`puzzle`/`mystery_word`/`estimate`, qui reposent chacun sur un
+SECRET détenu côté serveur et vérifié à la clôture. Trois citations d'ADR-031
+dans les audits pour justifier ce rapprochement étaient FAUSSES : ADR-031
+traite du passeport de fidélité, pas des jeux rapides — retirées de l'analyse.
+
+**Décision** : NE PAS semer reflex/gauge depuis le jeton. Le navigateur doit
+connaître la formule (l'instant gagnant, le niveau gagnant) pour la RENDRE à
+l'écran — un script calcule alors la valeur correspondante et la rejoue,
+exactement comme il rejouerait `succeeded: true` aujourd'hui. Le coût de
+triche est identique avant et après ; seul son organe change. La ligne de
+partage réelle entre les 15 mécaniques n'est pas « jeu d'adresse contre jeu de
+mémoire » mais « repose sur un secret serveur ou non » : rps, puzzle,
+mystery_word et estimate en ont un ; reflex et gauge n'en ont aucun, par
+construction (le rendu EST la règle).
+
+Fait à la place : rendre réelle la borne que `src/lib/skill.ts` affirmait déjà
+sans l'appliquer. `play_limit = 'unlimited'` est désormais INTERDIT à
+l'écriture pour reflex et gauge — au même point de validation que les jeux à
+secret, et en miroir dans le `superRefine` de `campaign-templates.ts`, pour
+que le studio et l'application serveur refusent la même combinaison plutôt
+que l'une des deux seulement.
+
+**Justification** : un jeu sans secret exploitable ne peut pas être sécurisé
+en resserrant sa mécanique — il ne peut être borné qu'en écrivain que
+« tenter à l'infini » n'est jamais une option de configuration valide. C'est
+la seule action qui réduit un risque réel (un lot de valeur adossé à un jeu
+sans borne de tentatives) sans construire une vérifiabilité qui n'a pas de
+matière première pour exister.
+
+**Conséquences** : reflex et gauge restent des jeux SUCCESS client-reporté —
+le serveur fait confiance au verdict du navigateur — mais ne peuvent plus être
+configurés en tentatives illimitées, ce qui borne le coût d'un abus à ce que
+`play_limit` autorise. `docs/bugs.md` garde la dette de fond : `play_limit`
+lui-même reste contournable en effaçant le cookie anonyme (voir ADR-032 et le
+bug ouvert « rotation du cookie anonyme ») — ADR-175 réduit la fenêtre, ne
+l'élimine pas.
+
+**Vérifications** : suite `skill`/`campaign-templates`, typecheck, eslint.
+
+## ADR-176 — `perform_atomic_spin` refuse une campagne fermée, APRÈS le rejeu idempotent
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : migration `20261210120000` (motif interne `campaign_closed`).
+`perform_atomic_spin` lisait déjà `play_limit` et les seaux de spin, mais
+restait aveugle au STATUT et aux DATES de la campagne : une campagne mise en
+pause ou arrivée à échéance continuait d'accepter des tirages tant que
+l'appelant possédait un jeton de session valide, parce que rien dans la
+fonction ne relisait l'état de la campagne au moment du tirage.
+
+**Décision** : ajouter statut et dates au `select` EXISTANT sur la campagne
+(aucun aller-retour SQL supplémentaire) et refuser le tirage si la campagne
+n'est plus ouverte. Le point d'insertion de cette garde est le choix qui
+compte : APRÈS le rejeu idempotent, jamais avant. Un rejeu (même requête,
+même clé d'idempotence, réponse déjà connue) doit pouvoir rendre son résultat
+même si la campagne a fermé entre-temps — la fermer avant le rejeu aurait fait
+perdre à un joueur un lot déjà tiré et déjà décompté, sur la seule foi d'un
+retry réseau.
+
+**Alternatives écartées** :
+- Dupliquer l'état d'abonnement en SQL (répliquer `hasActiveAccess` comme
+  colonne ou vue) : `hasActiveAccess` est un PRÉDICAT VIVANT côté application
+  (statut Stripe, grâce, etc.) ; le recopier en SQL créerait une seconde
+  source de vérité qui diverge dès le premier renouvellement en retard.
+- `for update` sur la ligne de campagne : sérialiserait tous les joueurs
+  entre eux sur une même campagne, un coût de contention pour un risque qui
+  ne l'exige pas (le motif est une fermeture, pas une concurrence d'écriture
+  sur un compteur partagé).
+
+**Justification** : la fenêtre de risque réelle n'est pas la durée du
+challenge Turnstile joué par un humain (le jeton Turnstile est obtenu AVANT
+l'appel à `perform_atomic_spin`, donc hors de la fenêtre) mais l'intervalle
+de 3 à 4 allers-retours serveur qui séparent la vérification de statut d'un
+tirage et son exécution — une fenêtre de l'ordre de la dizaine de
+millisecondes, pas de la seconde humaine.
+
+**Conséquences** : une campagne fermée ou hors dates cesse d'accepter de
+nouveaux tirages sans affecter le rejeu des tirages déjà commis. `docs/bugs.md`
+garde la parité restante : `lot-tirable.ts` (chemin de lecture, affichage) et
+`perform_atomic_spin` (chemin d'écriture) portent chacun leur propre lecture
+des mêmes conditions et doivent rester synchronisés à la main.
+
+**Vérifications** : pgTAP du motif `campaign_closed`, contre-épreuve (réinstaller
+la définition précédente de la fonction fait rougir les assertions dédiées).
+
+## ADR-177 — Le consentement SMS s'écrit DANS la transaction du gain, pas après son commit
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : migration `20261213120000` (`p_sms_opt_in`). Le consentement
+SMS d'un joueur gagnant était enregistré par un appel séparé, exécuté APRÈS
+le commit de la transaction qui matérialisait le gain. Une invocation
+serverless interrompue entre les deux (par un déploiement, un timeout, un
+crash) faisait donc perdre le consentement de façon DÉFINITIVE — pas un
+message SMS perdu (rejouable), mais une preuve de consentement qui ne serait
+plus jamais recueillie, puisque le joueur ne revoit pas l'écran qui la
+demande. Sans ce consentement, tout envoi ultérieur sur ce canal échoue en
+silence : ce n'est pas un message perdu, c'est le CANAL qui reste fermé.
+
+**Décision** : `p_sms_opt_in` devient un paramètre de la fonction qui écrit le
+gain ; le consentement est enregistré dans la MÊME transaction, avant le
+commit. L'appel à `record_sms_consent` est placé sous un sous-bloc
+`exception when others` (SAVEPOINT implicite en PL/pgSQL) : un échec de
+l'écriture du consentement (numéro déjà présent avec un statut incompatible,
+contrainte violée) ne doit pas faire échouer le gain lui-même — le gain est
+la transaction principale, le consentement en est une facette, pas une
+condition.
+
+**Justification** : consentement et gain naissent du même geste joueur
+(valider l'écran de fin de tirage) ; les séparer en deux transactions
+introduit une fenêtre où l'un existe sans l'autre, sans qu'aucun rejeu ne
+puisse la refermer — contrairement à ADR-176, où le rejeu de la même requête
+suffit à réparer une interruption.
+
+**Point de vigilance retenu explicitement** : un numéro ayant précédemment
+signalé STOP n'est PAS réactivé par ce chemin — `record_sms_consent` respecte
+l'état d'opt-out existant, et le lot du joueur reste délivré (par un autre
+canal) même si son consentement SMS ne peut pas être (re)posé.
+
+**Conséquences** : le consentement SMS d'un gain ne peut plus être perdu par
+une invocation interrompue ; il est soit posé avec le gain, soit absent avec
+lui (rejeu idempotent identique à ADR-176). `docs/bugs.md` note l'export mort
+`recordPrizeSmsConsent`, laissé par cette bascule côté appelant et jamais
+retiré.
+
+**Vérifications** : pgTAP du motif transactionnel, cas STOP non réactivé,
+contre-épreuve sur la définition précédente.
+
+## ADR-178 — Plafond IP bloquant sur le tirage : réouverture PARTIELLE et assumée d'ADR-032
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : ADR-032 (2026-07-22) pose une règle transverse issue de six
+répétitions du même piège : dans un parcours PUBLIC, aucun seau `failClosed`
+ne doit être posé sur une clé PARTAGÉE entre utilisateurs (IP, programme,
+organisation), parce que n'importe qui derrière le même Wi-Fi de commerce ou
+le même CGNAT mobile peut alors couper le service à tous les autres à coût
+dérisoire — ADR-032 n'admet le `failClosed` que sur une clé propre à UNE
+identité (cookie, jeton, gain) ou à un opérateur authentifié.
+
+Les deux audits ont mesuré qu'aucun plafond de DÉBIT n'existait sur le tirage
+lui-même (`perform_atomic_spin` / la route qui l'appelle), seulement des
+bornes de nombre de tentatives (`play_limit`, seaux de spin déjà existants).
+Une IP capable d'émettre des requêtes en rafale pouvait donc solliciter le
+tirage à un débit arbitraire, contrainte uniquement par les bornes de
+comptage, pas de débit.
+
+**Décision** : `RATE_LIMITS.spinIpPlafond`, 1500 requêtes/minute/roue,
+consommé uniquement sur une IP mesurable (fail-OPEN si l'IP n'est pas
+disponible — un proxy qui ne la transmet pas ne doit pas devenir un
+interrupteur), avec un seau d'alerte à 40/min inchangé
+(`reportSecurityEvent`, valeur d'observabilité, pas de refus). Dérivation du
+chiffre, écrite au-dessus de la constante : 250 joueurs (jauge VEN-2 mesurée,
+ADR-174) × 3 tentatives plausibles × 2 de marge = 1500.
+
+**Ce que cite exactement ADR-032, et pourquoi l'exception est acceptée ici** :
+ADR-032 proscrit un seau `failClosed` sur une clé partagée dans un parcours
+public — au motif qu'il devient un INTERRUPTEUR à coût dérisoire pour couper
+le service à un groupe entier d'utilisateurs légitimes. ADR-178 rouvre
+PARTIELLEMENT cette règle : le plafond est bien posé sur l'IP, une clé
+partagée. L'exception tient à l'écart entre le coût de ROTATION d'une IP et
+celui de rotation d'un cookie ou d'un jeton — une IP se change à un coût réel
+(changer de réseau, de sortie NAT, de VPN), quand un cookie se supprime en un
+clic. Le plafond, fixé large (1500/min, très au-dessus du trafic légitime
+mesuré pour 250 joueurs réels), vise donc à rendre la SATURATION du tirage
+coûteuse à répéter, sans viser à distinguer les joueurs d'un même réseau
+entre eux — ADR-032 reste la règle par défaut, ADR-178 est une exception
+nommée, motivée par un chiffre dérivé et documentée comme telle plutôt que
+glissée sans arbitrage.
+
+**Ce que cela ne ferme PAS** : `play_limit` reste contournable en effaçant le
+cookie anonyme (le tirage suivant se présente comme un nouveau joueur) — le
+plafond IP rend la ROTATION D'IP coûteuse, pas l'identité du joueur fiable.
+Un lot de valeur unitaire élevée ne doit donc pas être adossé à `play_limit`
+seul pour se protéger d'un joueur déterminé sur son propre réseau
+(`docs/bugs.md`).
+
+**Vérifications** : suite `rate-limit`/`spin`, typecheck, eslint.
+
+## ADR-179 — Secrets porteurs vers la télémétrie : une seule liste d'expurgation, pas deux
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : les audits ont trouvé des secrets porteurs (jetons de session,
+identifiants de gain) transmis en clair à PostHog dans certaines URLs et
+en-têtes. Cause racine, pas un oubli isolé : le dépôt maintenait DEUX listes
+d'expurgation distinctes pour la télémétrie, et une seule des deux était
+effectivement branchée sur l'intégration PostHog — la seconde existait,
+documentait la bonne intention, mais ne protégeait rien.
+
+**Décision** : fusion en une liste unique, `src/lib/cles-sensibles.ts`,
+consommée par tous les points d'expurgation télémétrie. Expurgation par NOM
+de paramètre (pas par valeur devinée). `/ticket/` ajouté aux chemins couverts
+(il portait un identifiant de gain dans son URL, non couvert jusqu'ici). Les
+préfixes `TICKET-` et `RESA-` ajoutés au motif de reconnaissance de codes. Les
+en-têtes expurgés étendus au-delà du seul `Authorization`.
+
+**Deux choix qui ont changé la conception, et pourquoi** :
+- `code` n'a délibérément PAS été ajouté à la liste des noms de paramètres
+  sensibles, malgré la tentation évidente (beaucoup de codes joueur
+  s'appellent `code`) : ce nom entre en COLLISION avec le paramètre `code` du
+  flux PKCE de Supabase (échange du code d'autorisation OAuth) et avec la
+  recherche du comptoir caisse — expurger ce nom aurait rendu illisible en
+  télémétrie deux parcours qui n'ont rien à voir avec un gain, sans protéger
+  davantage un vrai secret déjà couvert par des noms plus spécifiques.
+- Le motif de reconnaissance de CODES (la regex qui détecte un code même
+  quand il n'est pas porté par un paramètre nommé) a été restreint à la
+  QUERY STRING, retiré du CHEMIN de l'URL. Appliqué au chemin, il mangeait de
+  vrais slugs de QR publics légitimes — `/play/EVENT-BRETAGNE` — parce que
+  `qr_codes.slug` autorise les majuscules et peut ressembler au format d'un
+  code de gain. Un slug de QR n'est pas un secret : il est fait pour être
+  public et lu par un appareil photo.
+
+**Conséquences** : un seul point de vérité pour ce qui doit être masqué en
+télémétrie ; les deux angles morts mesurés (`/ticket/`, TICKET-/RESA-) sont
+fermés sans effet de bord sur PKCE ni sur la recherche caisse ni sur les
+slugs de QR publics.
+
+**Vérifications** : suite `cles-sensibles`/`posthog`, typecheck, eslint.
+
+## ADR-180 — HSTS et `upgrade-insecure-requests` conditionnés à une origine réellement servie en HTTPS
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : l'ajout de ces deux en-têtes de sécurité au site vitrine
+(PR #361, scan axe) faisait rougir la suite E2E WebKit en local sans toucher
+Chromium. Diagnostic par bissection A/B : origine seule → vert ; origine +
+HSTS → rouge ; origine sans HSTS → vert de nouveau. Cause identifiée : sur
+`http://localhost`, WebKit n'ignore pas un en-tête HSTS reçu sur une réponse
+HTTP simple — il le prend au mot et promeut ensuite TOUTES les navigations
+suivantes vers `https://`, une origine qui n'écoute pas en local. `Chromium`
+tolère ce cas ; WebKit non, ce qui explique l'écart entre les deux moteurs.
+
+**Décision** : HSTS et `upgrade-insecure-requests` ne sont émis que lorsque
+l'origine servie est réellement HTTPS (détection à l'exécution, pas un flag
+d'environnement recopié à la main qui pourrait diverger de la réalité du
+déploiement).
+
+**Revers assumé** : hors de Vercel — un environnement qui sert l'app en HTTP
+simple sans que le code le sache autrement que par l'origine observée — ces
+deux en-têtes disparaissent silencieusement, sans avertissement. C'est un
+compromis accepté plutôt qu'un défaut caché : la condition est écrite dans le
+code, pas dans un commentaire qui pourrait ne plus être lu.
+
+**Conséquences** : les tests E2E WebKit et Chromium passent sur la même
+configuration de en-têtes ; un déploiement non-Vercel servi en HTTP perd ces
+deux protections sans le signaler activement — à surveiller si un tel
+déploiement est un jour envisagé.
+
+**Vérifications** : suite E2E `site` (Chromium + WebKit), contre-épreuve par
+bissection déjà décrite ci-dessus.
+
+## ADR-181 — Refus du `check (reward_claimed_count <= reward_stock)` sur cinq modules
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+**Contexte** : les deux audits recommandaient d'ajouter une contrainte SQL
+`check (reward_claimed_count <= reward_stock)` sur cinq modules à lots
+(pronostics, chasse, jackpot, méta-progression, quiz), en citant
+`quizzes_reward_bounds_check` comme modèle à généraliser.
+
+**Décision** : REFUSÉ tel que proposé. Cette contrainte interdirait au
+commerçant d'ABAISSER le stock d'un lot sous ce qui est déjà émis — un geste
+SUPPORTÉ et DOCUMENTÉ du produit (le commerçant réduit un stock restant après
+avoir déjà distribué plus que la nouvelle valeur, par exemple pour arrêter
+une mécanique en cours de campagne sans en retirer les gains déjà remis).
+`hunt_settlement_preview.test.sql:222` teste explicitement ce scénario et
+l'attend fonctionnel. Une contrainte `check` bidirectionnelle casserait ce
+geste pour les cinq modules visés, en même temps qu'elle prétendrait fermer
+un défaut.
+
+**Le modèle cité par l'audit porte déjà ce défaut** : `quizzes_reward_bounds_check`
+— l'exemple donné comme référence à suivre — a exactement cette forme, et
+donc exactement cette limite : un commerçant qui baisse le stock d'un quiz en
+dessous de ce qui est déjà réclamé se heurte à cette contrainte aujourd'hui.
+Généraliser ce modèle aurait répliqué le défaut cinq fois plutôt que de le
+corriger une fois.
+
+**Le bon instrument, non construit dans ce chantier** : un TRIGGER conditionné
+au SENS de la variation du stock — refuser une hausse du compteur de
+réclamations au-delà du stock (le vrai risque : sur-attribution), mais
+autoriser sans condition une baisse du stock déclaré, y compris sous le
+compteur déjà réclamé. Une contrainte `check` statique ne peut pas exprimer
+cette asymétrie ; un trigger `before update` le peut, en comparant l'ancienne
+et la nouvelle valeur.
+
+**Conséquences** : aucun changement de schéma sur les cinq modules cités.
+`docs/bugs.md` garde `quizzes_reward_bounds_check` comme défaut CONNU plutôt
+que comme modèle à suivre, et le trigger asymétrique comme piste non
+engagée.
+
+**Vérifications** : aucune (décision de ne pas modifier le schéma) ; lecture
+croisée de `hunt_settlement_preview.test.sql:222` et de la définition de
+`quizzes_reward_bounds_check`.

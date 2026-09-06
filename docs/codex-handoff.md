@@ -62,29 +62,39 @@ pour ces clôtures.
 3. **Réservation** : requalifier l'écart documentaire entre les RPC Moments et
    les droits `reserver`/`rendez_vous` avant de conclure à un défaut ou de
    modifier le commerce des offres.
-4. **Sécurité à planifier** : lecture des jetons de chasse par le rôle caisse,
-   génération Apple Wallet sans limite de débit, secret SMS accepté en query
-   string, et assainissement des pseudos historiques maintenant que SOC-1 filtre
-   les nouvelles écritures.
-5. **Lot local landing/vidéo** : non publié et hors de `main`. Ses routes
-   `/api/test-*`, `/api/save-frame` et `/api/video*` ne doivent pas être
-   intégrées sans revue sécurité dédiée.
+4. **Sécurité — fermé depuis (2026-09-06, PR #365)** : lecture des jetons de
+   chasse par le rôle caisse (ADR-172, déjà clos au 2026-09-05), génération
+   Apple Wallet sans limite de débit (déjà clos au 2026-09-05), et secret SMS
+   accepté en query string — un jeton d'URL dérivé le remplace, l'ancien
+   secret reste toléré en repli le temps de la transition et son usage est
+   désormais compté et **lisible via `/api/health`** (retrait sous ~7 jours
+   d'observation à zéro, `docs/bugs.md`). Assainissement des pseudos
+   historiques : fait pour les pronostics (ADR-171) ; `event_players.pseudo`
+   reste sans filtre de FORMAT au niveau table (`docs/bugs.md`).
+5. **Lot local landing/vidéo — fermé (2026-09-06, PR #365)** : les routes
+   `/api/scan`, `/api/save-frame` et `/api/test-tools` ont été sorties des
+   deux arbres Next vers `tools/` (ignoré par git), avec une garde CI qui
+   balaie le système de fichiers — pas seulement l'index — pour couvrir un
+   déploiement lancé depuis un arbre sale. Les assets statiques du décor
+   restent repris séparément (`/panorama/:path*`, noms hachés, PR #355).
 
 ### Audits enchaînés — constats établis (2026-09-05)
 
 - **Capacité live** : la production saine et Realtime actif ne qualifient pas
   une jauge. La tentative locale contrôlée n'a pas fourni de métriques ; une
   mesure isolée à 100/500 joueurs reste nécessaire avant toute promesse.
-- **Mécanismes à valeur** : quatre correctifs séparés sont à planifier : secret
+- **Mécanismes à valeur** : quatre correctifs séparés étaient à planifier : secret
   de chasse lisible par le rôle caisse, limitation Apple Wallet, secret SMS en
   query string, puis assainissement défensif des pseudos Pronostics historiques.
+  **Tous fermés depuis** (ADR-172 et Apple Wallet au 2026-09-05 ; secret SMS et
+  alias pronostics au 2026-09-05/06, section 4 ci-dessus).
 - **Réservation** : les RPC Moments et table ont maintenant les bons droits.
   Le défaut réel est le chargeur public commun : `rendez_vous` seul permet de
   configurer une table mais pas de la réserver. Décider si cette offre est
   autonome, ou imposer explicitement Vitrine + Moments avant correction.
 - **Lot landing local** : ne pas intégrer les routes de génération, vidéo,
-  outils système ou scan LAN. Les assets statiques peuvent être repris après
-  retrait de ces surfaces, garde de chemin des scripts, licence et validation.
+  outils système ou scan LAN. **Fait au 2026-09-06** (section 5 ci-dessus) :
+  ces routes vivent désormais dans `tools/`, hors des deux arbres Next.
 - **Site marketing** : prix projetés depuis le catalogue source, mais pas de
   tests navigateur/accessibilité ni mesure mobile. Après assainissement du lot,
   vérifier parcours CTA, clavier, motion réduite, Axe et LCP/CLS/INP sur mobile.

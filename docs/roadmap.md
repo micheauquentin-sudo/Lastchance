@@ -1,5 +1,58 @@
 # Roadmap — Lastchance
 
+## V1.77 — Stabilisation avant production : les constats croisés de deux audits, vérifiés puis fermés (✅ 2026-09-06, PR #365, commit squash `60ef99c5`)
+
+**Objectif** : fusionner deux audits indépendants (Claude Opus 5 le
+2026-09-05, GPT-5.6 Sol le 2026-09-06, `docs/audit-*.txt`) puis rouvrir
+CHAQUE affirmation dans le code avant modification. Résultat : zéro faux
+positif, trois constats mal calibrés, une recommandation commune écartée
+après démonstration.
+
+**Fermé** : outillage local exposé en routes de production (`/api/scan`,
+`/api/save-frame`, `/api/test-tools`) — sorti vers `tools/`, ignoré par git,
+garde CI sur le système de fichiers ; `redeem_ticket_or` dérivait son
+autorisation de `p_actor` choisi par l'appelant — revoke puis vérification
+de `auth.uid()` (migration `20261212120000`) ; secrets porteurs en clair
+vers PostHog — liste d'expurgation unique (ADR-179) ; `claim_winning_spin`
+écrivait la newsletter malgré `collect_email = false` ; `perform_atomic_spin`
+aveugle au statut/dates de campagne (ADR-176, migration `20261210120000`) ;
+`addon_rendez_vous` absent de `getUserAndOrg` ; consentement SMS écrit après
+le commit du gain (ADR-177, migration `20261213120000`) ; Turnstile sans
+délai (`AbortSignal`) ; site vitrine sans en-têtes de sécurité (ADR-180) ;
+`vitrine_mesures` sans validation ni rétention (migration `20261211120000`) ;
+Ticket d'Or affichait un lot expiré faute de contrôle au rendu.
+
+**Borné plutôt que prétendu fermé** : reflex/gauge restent des jeux
+d'adresse à succès CLIENT-REPORTÉ, non rendus vérifiables — `play_limit =
+unlimited` leur est désormais interdit à l'écriture (ADR-175) ; plafond IP
+bloquant sur le tirage, `spinIpPlafond` 1500/min/roue dérivé de la jauge
+VEN-2 (ADR-178, réouverture partielle assumée d'ADR-032) ; HSTS et
+`upgrade-insecure-requests` conditionnés à une origine HTTPS réelle
+(ADR-180) ; refus du `check (reward_claimed_count <= reward_stock)` sur cinq
+modules — `quizzes_reward_bounds_check`, le modèle cité par l'audit, porte
+déjà ce défaut (ADR-181).
+
+**Migrations** : `20261208120000` → `20261214120000` (7 fichiers),
+`EXPECTED_MIGRATION` = `20261214120000`, 213 migrations au total.
+
+**Décisions** : [ADR-175 à ADR-181](./decisions.md).
+
+**Reste ouvert** (`docs/bugs.md`) : rotation du cookie anonyme (décision
+produit assumée, pas une dette) ; secret SMS Brevo hérité en query string,
+désormais mesurable via `/api/health`, retrait conditionné à ~7 jours
+d'observation ; `quizzes_reward_bounds_check` porte le défaut découvert
+(ADR-181) ; garde statistique du moteur de tirage SQL absente ; parité
+`lot-tirable.ts` ↔ `perform_atomic_spin` ; tests RLS ligne-à-ligne
+inter-organisations ; E2E du maillon QR → `/play` ; `scripts/concurrency-probe.mjs`
+existe mais n'est jamais joué à chaque push ; `usePrefersReducedMotion`
+recopié dans 15 fichiers ; export mort `recordPrizeSmsConsent` ; 4 fichiers
+pgTAP sans `create extension pgtap`.
+
+**Vérifications** : typecheck, lint (0 erreur), `casts:check`, `sql:check`,
+`migrations:check` (213, head `20261214120000`), build app et site : verts.
+Vitest 429 fichiers / 7606 tests. pgTAP 105 fichiers / 6518 assertions.
+Contre-épreuves faites sur chaque migration.
+
 ## V1.76 — Audit sécurité et cohérence : neuf lots (✅ 2026-09-05, PR #355 → #363)
 
 **Objectif** : vérifier un audit Codex externe (`docs/audit-complet-2026-09-05.txt`,
