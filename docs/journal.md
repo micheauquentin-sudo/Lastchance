@@ -4,6 +4,82 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-06 — Stabilisation avant production : deux audits croisés, vérifiés puis fermés
+
+**Stabilisation avant production** (PR #365, squash `60ef99c5`, ADR-175 à
+ADR-181). Deux audits indépendants — Claude Opus 5 (`docs/audit-claude-2026-09-05.txt`)
+et GPT-5.6 Sol (`docs/contre-audit-codex-2026-09-06.txt`, verdict NO-GO) — ont
+été fusionnés, puis **chaque affirmation rouverte dans le code avant la moindre
+modification**. Résultat de cette vérification : **zéro faux positif** — les deux
+audits sont de qualité inhabituelle — mais trois constats mal calibrés, une
+recommandation commune écartée après démonstration, et neuf constats que ni l'un
+ni l'autre n'avait vus.
+
+**Ce que la vérification a corrigé chez les auditeurs.** La course sur la
+campagne n'est pas la durée du challenge Turnstile joué par l'humain (le jeton
+est obtenu côté client AVANT l'appel) mais l'intervalle de 3-4 allers-retours
+serveur. L'add-on Rendez-vous manquant ne produit pas un 404 mais un module
+masqué et une publication refusée. Et surtout : les deux audits affirment
+qu'aucun harnais multi-session n'existe — `scripts/concurrency-probe.mjs`
+existe, avec un scénario dédié à `perform_atomic_spin` ; sa vraie limite est
+d'être en `workflow_dispatch`, donc jamais exercé à chaque push.
+
+**La recommandation écartée.** Les deux audits proposaient de semer le geste de
+`reflex`/`gauge` depuis le jeton signé. Cela ne ferme rien : le navigateur doit
+connaître la formule du balayage pour la RENDRE, donc un script calcule
+l'instant gagnant — on remplace « envoyer `succeeded:true` » par « envoyer le
+bon `t` », à coût identique. La ligne de partage réelle est qu'un jeu sans
+secret serveur est forgeable par construction (ADR-175). Ce qui a été fait à la
+place : rendre RÉELLE la borne que `src/lib/skill.ts` se contentait d'affirmer.
+Trois citations d'ADR-031 étaient fausses — ADR-031 traite du passeport de
+fidélité — et ont été retirées.
+
+**Neuf constats hors audits.** Les deux seaux de rate-limit *bloquants* du spin
+sont indexés sur `player_key` : ils tournent avec le cookie, ce qui ramenait le
+coût d'une rotation à quatre secondes. `reflex`/`gauge` pouvaient légalement
+être configurés en `play_limit = 'unlimited'`. Le préfixe `TICKET-` manquait à
+Sentry, `RESA-` aussi. `/reserver/invitation` était reconnu porteur par
+`masquerJetonUrl` mais absent des en-têtes. La fuite newsletter avait trois
+sites, pas un. `MODULES_DE_LIEU` n'a aucune bascule `rendez_vous`. L'outbox
+`jobs` existait déjà et servait le budget dans la transaction.
+
+**Trois défauts trouvés par la CI, que le local ne voyait pas.** `casts:check`
+ne tourne pas dans `npm test` — faux positif d'un commentaire citant le motif
+qu'il documente. L'E2E `reserver-attente` a attrapé **un bug introduit par ce
+chantier** : la liaison gain/appareil comparait le cookie anonyme au
+`player_key` des TOURS OFFERTS, qui portent l'identité de leur module (la Pause
+Chance y écrit le hachage `lc-player` de la file) — elle refusait des gains
+légitimes ; bornée aux spins du parcours public, avec le test unitaire qui
+manquait. Et l'E2E du site : **HSTS**, diagnostiqué par bissection A/B — sur
+`http://localhost`, WebKit ne l'ignore pas et promeut toutes les navigations
+vers `https://`, qui n'écoute pas (ADR-180).
+
+**Deux incidents conservés plutôt que masqués.** Une première version de la
+liaison du claim comparait à `null` : 25 tests l'ont attrapée, et ils avaient
+raison — un spin sans empreinte rend `undefined`, la garde aurait confisqué les
+gains des lignes anciennes. Le code a été corrigé, pas le test. Et la fixture de
+`security_acl.test.sql` tirait depuis toujours sur une campagne en `draft`
+(statut jamais posé) : la nouvelle garde l'a refusée, à raison.
+
+**Un refus argumenté** (ADR-181) : le `check (reward_claimed_count <=
+reward_stock)` réclamé sur cinq modules interdirait au commerçant d'ABAISSER son
+stock sous ce qui est déjà émis, geste supporté et documenté
+(`hunt_settlement_preview.test.sql:222`). Corollaire :
+`quizzes_reward_bounds_check`, le modèle que l'audit citait en exemple, porte ce
+défaut aujourd'hui.
+
+Sept migrations (`20261208120000` → `20261214120000`, 213 au total). Vert :
+typecheck, lint, `casts:check`, `sql:check`, `migrations:check`, build app et
+site, Vitest 429 fichiers / 7606 tests, pgTAP 105 fichiers / 6518 assertions.
+Chaque nouvelle garde a été **mutation-testée** ; là où l'une a une limite
+(retirer `and stock > 0` ne la fait pas rougir), la limite est écrite dans
+l'en-tête du test plutôt que tue.
+
+**Reste ouvert** (`docs/bugs.md`) : rotation du cookie anonyme — bornée par un
+plafond IP (ADR-178) mais pas fermée, la fermer demande un ancrage serveur
+d'éligibilité et c'est un choix produit ; secret SMS en query string, désormais
+MESURABLE via `/api/health` et retirable après ~7 jours d'observation.
+
 ## 2026-09-05 — Audit sécurité et cohérence : neuf lots
 
 **Audit sécurité et cohérence : neuf lots** (PR #355 → #363, ADR-170 à

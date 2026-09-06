@@ -152,15 +152,12 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-09-05
-- **Dernier chantier**: **Audit sécurité et cohérence : neuf lots** (PR #355→#363, ADR-170 à 174), vérifiant un audit Codex externe (SHA `9e6fe7fb`) : cinq constats confirmés, un partiel, zéro invention.
-  Décor : cache `immutable` un an sur des noms **non hachés** — hachés par sha256 (#355). Apple Wallet : **dernière route publique sans plafond** du dépôt — double plafond IP + code haché (#356). Jeton du QR de chasse lisible par le rôle **caissier** (`cashier`/`editor`/`owner` sont tous `authenticated`) — RPC `security definer` dédiée ; `/studio/chasse/[id]` n'avait aucun contrôle de rôle (#357, ADR-172).
-  Alias publics des pronostics déjà en base, non couverts par ADR-169 (écritures seules) : trois couches ferment l'historique (#358, ADR-171).
-  Réservation vraiment vendable seule (RDV-7, #360, ADR-170) : une fonction unique (`reservation_activity_module_key`, sur `booking_mode`) remplace huit copies de règle. `soldStandalone` **non basculé** (sans abonnement ≠ sans Moments). Suite le jour même : `vitrine_public_state` rendait `rendez_vous` seul **muet** — filtré par objet (#362, VIT-53).
-  Webhook SMS Brevo : secret en clair en URL, seul cas du dépôt — jeton dérivé, transition instrumentée (#359, ADR-173).
-  Site vitrine (`site/`) couvert par un scan axe : contraste et `<h1>` manquants, corrigés (#361).
-  Jauge live : 500 → 250, dérivée dans le code (VEN-2, #363, ADR-174) ; révèle qu'`event_participant_capacity()` accorde toujours 500 en base.
-  **Reste ouvert** (`docs/bugs.md`) : Google Wallet, 250 non rejoué par banc, pseudo d'événement sans filtre de format, chemin SMS hérité.
+- **Date**: 2026-09-06
+- **Dernier chantier**: **Stabilisation avant production : constats croisés de deux audits, vérifiés puis fermés** (PR #365, squash `60ef99c5`, ADR-175 à 181). Deux audits (Claude Opus 5, GPT-5.6 Sol) fusionnés puis rouverts dans le code : zéro faux positif, trois constats mal calibrés, une reco commune écartée.
+  Fermé : outillage local en routes de prod → `tools/` ; `redeem_ticket_or` autorisait via `p_actor` de l'appelant → `auth.uid()` vérifié ; secrets vers PostHog (liste unique, ADR-179) ; newsletter écrite malgré `collect_email=false` ; `perform_atomic_spin` aveugle au statut/dates de campagne (ADR-176) ; `addon_rendez_vous` absent de `getUserAndOrg` ; consentement SMS transactionnel (ADR-177) ; Turnstile borné ; site vitrine sans en-têtes (ADR-180) ; `vitrine_mesures` sans validation/rétention ; Ticket d'Or affichait un lot expiré.
+  Borné : reflex/gauge client-reportés, `play_limit=unlimited` interdit (ADR-175) ; plafond IP tirage 1500/min (ADR-178, réouverture partielle d'ADR-032) ; refus du check stock sur 5 modules, `quizzes_reward_bounds_check` porte déjà ce défaut (ADR-181).
+  Migrations → `20261214120000` (213). Vertes : typecheck, lint, casts/sql/migrations:check, build, Vitest 7606 tests, pgTAP 6518 assertions.
+  **Reste ouvert** : rotation cookie anonyme (produit) ; secret SMS legacy via `/api/health` (~7j) ; `quizzes_reward_bounds_check` ; garde statistique moteur SQL ; parité `lot-tirable.ts`/`perform_atomic_spin` ; RLS ligne-à-ligne ; E2E QR->`/play` ; `concurrency-probe.mjs` hors CI ; `usePrefersReducedMotion` x15 ; export mort ; 4 pgTAP sans `create extension` ; Google Wallet, capacité live (V1.76).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
