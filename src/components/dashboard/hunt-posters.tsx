@@ -149,9 +149,14 @@ function HuntPosterCard({
 
   useEffect(() => {
     let active = true;
-    void getQrDistributionAsset({ resourceKind: "hunt_step", resourceId: step.id }).then((result) => {
-      if (active && result.ok) setAsset(result.data);
-    });
+    void getQrDistributionAsset({ resourceKind: "hunt_step", resourceId: step.id })
+      .then((result) => {
+        if (active && result.ok) setAsset(result.data);
+      })
+      .catch(() => {
+        // Personnalisation indisponible : l'aperçu et le téléchargement PNG
+        // fonctionnent sans elle. Rien à dire au commerçant à cet instant.
+      });
     return () => { active = false; };
   }, [step.id]);
 
@@ -215,14 +220,26 @@ function HuntPosterCard({
       <div className="hunt-posters-controls mt-3 flex flex-wrap justify-center gap-3">
         <button
           type="button"
-          onClick={() => { void ensureAsset().then((next) => next && setDesigning(true)); }}
+          onClick={() => {
+            void ensureAsset()
+              .then((next) => next && setDesigning(true))
+              .catch(() => setAssetError("Personnalisation indisponible, réessayez."));
+          }}
           className="text-sm font-bold text-k-orange-text hover:underline"
         >
           Personnaliser ce QR
         </button>
         <button
           type="button"
-          onClick={() => { void ensureAsset().then((next) => next && window.open(`/poster/distribution/${next.id}`, "_blank", "noopener,noreferrer")); }}
+          onClick={() => {
+            void ensureAsset()
+              .then(
+                (next) =>
+                  next &&
+                  window.open(`/poster/distribution/${next.id}`, "_blank", "noopener,noreferrer"),
+              )
+              .catch(() => setAssetError("Affiche indisponible, réessayez."));
+          }}
           className="text-sm font-bold text-k-orange-text hover:underline"
         >
           {asset && Object.keys(asset.poster).length > 0 ? "Éditer l'affiche" : "Créer l'affiche"}

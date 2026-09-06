@@ -92,6 +92,9 @@ export function CupsReveal({
               key={i}
               type="button"
               onClick={() => pick(i)}
+              // Voir chest-reveal : `aria-disabled` seul laissait le gobelet
+              // focusable et cliquable après le choix.
+              disabled={picked !== null}
               aria-disabled={picked !== null || undefined}
               aria-label={`Gobelet ${i + 1}`}
               style={{

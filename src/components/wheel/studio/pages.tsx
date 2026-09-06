@@ -31,7 +31,10 @@ import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type { EtatRoue } from "@/components/wheel/studio/etat";
 import type { FondKey } from "@/lib/fonds-ecran";
 import type { WheelStyle } from "@/lib/wheel-style";
-import { isSecretSkillGameType } from "@/lib/validations/skill";
+import {
+  isClientReportedSkillGameType,
+  isSecretSkillGameType,
+} from "@/lib/validations/skill";
 import type { Campaign, GameType, PlayLimit, Prize } from "@/types/database";
 
 /**
@@ -102,9 +105,12 @@ export function EtapeJeu({ etat, majEtat, peutEditer }: ProprietesEtapeRoue) {
       // valeur jamais saisie pour ce jeu-là réapparaîtrait sinon.
       defi: defautsDefi(valeur, null),
     };
-    // « Illimité » est refusé côté serveur pour les jeux à secret. Le refus
+    // « Illimité » est refusé côté serveur pour les jeux à secret ET pour ceux
+    // dont la réussite est rapportée par l'appareil du joueur. Le refus
     // arrivait après coup, sur un écran que le commerçant croyait fini.
-    if (isSecretSkillGameType(valeur) && etat.play_limit === "unlimited") {
+    const sansIllimite =
+      isSecretSkillGameType(valeur) || isClientReportedSkillGameType(valeur);
+    if (sansIllimite && etat.play_limit === "unlimited") {
       patch.play_limit = "once";
     }
     majEtat(patch);

@@ -179,12 +179,28 @@ describe("GARDE 1 — la case SMS n'est jamais pré-cochée", () => {
   });
 
   it("le serveur n'écrit RIEN quand le consentement n'est pas donné", () => {
-    // Le bout serveur : l'écriture est sous condition du paramètre, jamais
-    // inconditionnelle. ROUGE SI l'appel sort de son `if`.
-    const m = new RegExp(
-      `if \\(parsed\\.data\\.${PARAM_OPT_IN}\\) \\{[\\s\\S]{0,400}?recordPrizeSmsConsent\\(`,
+    // ── LA GARDE A SUIVI L'ÉCRITURE, ELLE N'A PAS ÉTÉ AFFAIBLIE ──
+    //
+    // Elle épinglait « l'appel `recordPrizeSmsConsent` est sous un `if` ».
+    // Cet appel n'existe plus : le consentement voyage dans les arguments de
+    // `claim_winning_spin` (`p_sms_opt_in`) pour être committé AVEC le gain
+    // (migration 20261213120000) — il ne peut donc plus se perdre entre le
+    // commit et l'envoi, ce qui coûtait le canal SMS entier au client.
+    //
+    // Ce qu'il faut encore prouver est identique : la valeur transmise est
+    // DÉRIVÉE de la case, jamais posée à vrai.
+    expect(
+      SRC_CLAIM,
+      "`p_sms_opt_in` n'est plus transmis à la réclamation",
+    ).toMatch(/p_sms_opt_in:\s*\w/);
+    expect(
+      SRC_CLAIM,
+      "le consentement est transmis sans jamais regarder la case",
+    ).toMatch(new RegExp(`parsed\\.data\\.${PARAM_OPT_IN}`));
+    // ROUGE SI : quelqu'un court-circuite la dérivation.
+    expect(SRC_CLAIM, "consentement posé à vrai en dur").not.toMatch(
+      /p_sms_opt_in:\s*true/,
     );
-    expect(SRC_CLAIM, "le consentement s'écrit sans avoir été coché").toMatch(m);
   });
 });
 
@@ -266,19 +282,32 @@ describe("GARDE 3 — le formulaire parle bien au serveur", () => {
     expect(SRC_ECRITURE).toContain("p_organization_id: params.organizationId");
   });
 
-  it("le consentement est écrit AVANT le dépôt du SMS, jamais après", () => {
-    // LE DÉFAUT LUI-MÊME, épinglé à la source. `enqueuePrizeRedeemSms` sort
-    // sur `if (!consent) return false` : déposé avant l'écriture, il ne trouve
-    // rien et ne compose rien — au premier gain d'un numéro, aucun SMS ne
-    // partait jamais. La preuve de comportement vit dans `play.test.ts` ;
-    // celle-ci nomme l'ordre pour que l'intervertir se voie au diff.
-    const iConsent = SRC_CLAIM.indexOf("recordPrizeSmsConsent(admin,");
+  it("le consentement entre dans la TRANSACTION du gain, jamais après", () => {
+    // LE DÉFAUT LUI-MÊME, épinglé à la source — et il a changé de nature.
+    //
+    // Il fut un ORDRE : `enqueuePrizeRedeemSms` sort sur `if (!consent) return
+    // false`, donc déposé avant l'écriture il ne composait rien, et au premier
+    // gain d'un numéro aucun SMS ne partait. L'ordre a été corrigé, puis s'est
+    // révélé insuffisant : les deux gestes restaient APRÈS le commit du gain,
+    // et une invocation serverless morte entre les deux perdait le
+    // consentement pour toujours. Pas un message — le CANAL, puisqu'un envoi
+    // sans consentement échoue en silence.
+    //
+    // Le consentement est donc passé DANS la transaction (`p_sms_opt_in`,
+    // migration 20261213120000). Cette garde nomme désormais cette
+    // atomicité-là ; la preuve de comportement vit dans `play.test.ts`.
+    const iOptIn = SRC_CLAIM.indexOf("p_sms_opt_in:");
     const iDepot = SRC_CLAIM.indexOf("enqueuePrizeRedeemSms(admin,");
-    expect(iConsent, "le claim n'écrit plus le consentement").toBeGreaterThan(-1);
+    expect(iOptIn, "la réclamation ne porte plus le consentement").toBeGreaterThan(-1);
     expect(iDepot, "le claim ne dépose plus de SMS").toBeGreaterThan(-1);
-    expect(iConsent, "le consentement est écrit APRÈS le dépôt").toBeLessThan(
+    expect(iOptIn, "le consentement est transmis APRÈS le dépôt").toBeLessThan(
       iDepot,
     );
+    // ROUGE SI : l'écriture ressort de la transaction dans un appel séparé.
+    expect(
+      SRC_CLAIM,
+      "le consentement est de nouveau écrit hors de la transaction",
+    ).not.toContain("recordPrizeSmsConsent(admin,");
   });
 });
 

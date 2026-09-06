@@ -13,15 +13,23 @@ export function RedeemQr({ value }: { value: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    import("qrcode").then((QRCode) => {
-      QRCode.toDataURL(value, { width: 176, margin: 1 })
-        .then((url) => {
-          if (!cancelled) setDataUrl(url);
-        })
-        .catch(() => {
-          // QR non généré : le code texte reste lisible/utilisable.
-        });
-    });
+    // Le `.catch` FINAL couvre l'IMPORT lui-même, là où celui du dessous ne
+    // couvre que la génération. Un chunk qui ne se charge pas (déploiement en
+    // cours de session, réseau coupé) rejetait sinon une promesse que personne
+    // n'attrapait : du bruit en supervision, pour une dégradation déjà prévue.
+    import("qrcode")
+      .then((QRCode) => {
+        QRCode.toDataURL(value, { width: 176, margin: 1 })
+          .then((url) => {
+            if (!cancelled) setDataUrl(url);
+          })
+          .catch(() => {
+            // QR non généré : le code texte reste lisible/utilisable.
+          });
+      })
+      .catch(() => {
+        // Lib indisponible : idem, le code texte reste lisible/utilisable.
+      });
     return () => {
       cancelled = true;
     };

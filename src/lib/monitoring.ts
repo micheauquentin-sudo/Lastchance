@@ -91,6 +91,25 @@ export function recordCounter(op: string): void {
   void recordOpMetric(op, 0, true);
 }
 
+/**
+ * Variante ATTENDUE du compteur, pour les rares faits qu'on n'a pas le droit
+ * de perdre.
+ *
+ * `recordCounter` lâche sa promesse (`void`) : sur une invocation serverless,
+ * rendre la réponse coupe les écritures en vol, et le compteur saute. C'est
+ * acceptable pour une mesure de charge — pas pour un fait dont dépend une
+ * DÉCISION D'EXPLOITATION (« ce chemin de compatibilité sert-il encore ? »).
+ * Un compteur qu'on lit pour décider de retirer du code doit être exact dans
+ * le sens « présence », sinon on retire à l'aveugle.
+ *
+ * Reste best-effort côté échec : la base indisponible ne fait pas échouer
+ * l'opération métier, elle fait seulement perdre la mesure — mais l'écriture
+ * a bien été attendue.
+ */
+export async function recordDurableCounter(op: string): Promise<void> {
+  await recordOpMetric(op, 0, true);
+}
+
 export function reportError(scope: string, error: unknown): void {
   console.error(`[${scope}]`, error);
   Sentry.captureException(error, { tags: { scope } });

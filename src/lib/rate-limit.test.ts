@@ -31,6 +31,34 @@ describe("RATE_LIMITS — cohérence des règles", () => {
     );
   });
 
+  it("le plafond bloquant par IP laisse passer une salle pleine", () => {
+    /* CONTRE-ÉPREUVE DE CALIBRAGE — le chiffre, pas le câblage.
+     *
+     * Le pire cas LÉGITIME que le produit sache produire : la jauge d'une
+     * soirée en direct (250 joueurs, VEN-2 — mesurée, pas supposée), tous
+     * derrière un seul uplink, tous dans la même minute, chacun s'y reprenant
+     * à trois fois. Le plafond doit garder un facteur DEUX au-dessus pour
+     * l'agrégation imprévue (deux salles sur le même uplink, un NAT
+     * d'opérateur qui recouvre le lieu).
+     *
+     * Ce test rougit si quelqu'un baisse le plafond sans refaire ce calcul —
+     * c'est-à-dire s'il s'apprête à couper une salle réelle. */
+    const salleRealiste = 250 * 3;
+    expect(RATE_LIMITS.spinIpPlafond.windowSeconds).toBe(60);
+    expect(RATE_LIMITS.spinIpPlafond.limit).toBeGreaterThanOrEqual(
+      salleRealiste * 2,
+    );
+
+    // Et il reste à DEUX ORDRES DE GRANDEUR du seau d'ALERTE, qui n'a pas
+    // bougé : une salle qui approche du plafond a déjà émis des dizaines de
+    // signaux `spin_ip_pressure` avant d'être refusée. Les deux seaux sont
+    // deux objets distincts, et le seau d'alerte n'a PAS été converti en
+    // porte (ADR-032 : une clé partagée ne devient pas un interrupteur).
+    expect(RATE_LIMITS.spinIp.limit * 20).toBeLessThanOrEqual(
+      RATE_LIMITS.spinIpPlafond.limit,
+    );
+  });
+
   it("fidélité : les compteurs de clé PARTAGÉE sont des seuils d'alerte, pas des portes", () => {
     // Aucun seau de CRÉATION fail-closed ne subsiste : les verrous économiques
     // (stock fini, palier >= visite 2) rendent une identité fabriquée sans

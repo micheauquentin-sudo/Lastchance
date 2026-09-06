@@ -47,6 +47,8 @@ export function GameIdleScreen({
   visuel,
   returningName = null,
   onStart,
+  pending = false,
+  pendingLabel = "Un instant…",
   children,
 }: {
   style: WheelStyle;
@@ -82,6 +84,23 @@ export function GameIdleScreen({
    * faire, au milieu d'un formulaire de réglages.
    */
   onStart?: () => void;
+  /**
+   * L'ALLER-RETOUR DE LANCEMENT EST EN COURS.
+   *
+   * Rien à voir avec l'intégrité du tirage : les shells posent déjà leur garde
+   * de rentrée AVANT l'`await`, et le seau de débit la ferme côté serveur. Le
+   * défaut était PERCEPTUEL, et il coûtait des parties : en boutique sur un
+   * réseau lent, deux à quatre secondes s'écoulent entre l'appui et le moindre
+   * changement à l'écran. Le joueur retapait cinq fois — chaque appui avalé en
+   * silence par la garde de rentrée —, concluait que l'application était
+   * cassée, et fermait l'onglet.
+   *
+   * Le bouton se désactive donc et change de verbe : c'est le seul accusé de
+   * réception dont le joueur dispose pendant l'attente.
+   */
+  pending?: boolean;
+  /** Verbe affiché pendant l'attente. Défaut : « Un instant… ». */
+  pendingLabel?: string;
   /** Sous le bouton : captcha, erreur, mention, pied de page. */
   children?: ReactNode;
 }) {
@@ -91,13 +110,17 @@ export function GameIdleScreen({
     ? "border-k-ink/40 bg-white"
     : "border-white/20 bg-white/5";
 
+  // L'aperçu n'attend jamais rien : il ne fait aucun appel serveur.
+  const enAttente = pending && !apercu;
+  const verbe = enAttente ? pendingLabel : buttonLabel;
+
   const bouton = (
     <>
       <span
         aria-hidden
         className="play-shine absolute top-0 left-0 h-full w-2/5 bg-gradient-to-r from-transparent via-white/35 to-transparent"
       />
-      {buttonLabel}
+      {verbe}
     </>
   );
 
@@ -198,9 +221,14 @@ export function GameIdleScreen({
       {onStart ? (
         <button
           onClick={onStart}
-          aria-label={buttonLabel}
+          disabled={enAttente}
+          aria-busy={enAttente || undefined}
+          // Le nom accessible SUIT le verbe visible : annoncer encore
+          // « Ouvrir le coffre » sur un bouton grisé dirait au lecteur d'écran
+          // l'exact contraire de ce que l'écran montre.
+          aria-label={verbe}
           style={boutonStyle}
-          className={boutonClasses}
+          className={`${boutonClasses} disabled:cursor-default disabled:opacity-70`}
         >
           {bouton}
         </button>

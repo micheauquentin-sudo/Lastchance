@@ -19,15 +19,23 @@ export function EventJoinQr({
 
   useEffect(() => {
     let cancelled = false;
-    import("qrcode").then((QRCode) => {
-      QRCode.toDataURL(url, { width: 640, margin: 1 })
-        .then((generated) => {
-          if (!cancelled) setDataUrl(generated);
-        })
-        .catch(() => {
-          // QR non généré : l'URL lisible affichée à côté reste utilisable.
-        });
-    });
+    // Le `.catch` FINAL couvre l'IMPORT lui-même, là où celui du dessous ne
+    // couvre que la génération. Un chunk qui ne se charge pas (déploiement en
+    // cours de session, réseau coupé) rejetait sinon une promesse que personne
+    // n'attrapait : du bruit en supervision, pour une dégradation déjà prévue.
+    import("qrcode")
+      .then((QRCode) => {
+        QRCode.toDataURL(url, { width: 640, margin: 1 })
+          .then((generated) => {
+            if (!cancelled) setDataUrl(generated);
+          })
+          .catch(() => {
+            // QR non généré : l'URL lisible affichée à côté reste utilisable.
+          });
+      })
+      .catch(() => {
+        // Lib indisponible : idem, l'URL lisible affichée à côté suffit.
+      });
     return () => {
       cancelled = true;
     };

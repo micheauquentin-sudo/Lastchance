@@ -11,6 +11,33 @@ import type { NextConfig } from "next";
 const isDev = process.env.NODE_ENV === "development";
 
 /**
+ * SERVI EN HTTPS POUR DE VRAI — la seule condition sous laquelle deux en-têtes
+ * ont un sens, et la seule sous laquelle ils ne cassent rien.
+ *
+ * `Strict-Transport-Security` et `upgrade-insecure-requests` ne disent qu'une
+ * chose : « ne me parle jamais en clair ». Sur une origine HTTP, ils sont au
+ * mieux inutiles — et au pire destructeurs. La spécification demande d'ignorer
+ * HSTS reçu hors TLS ; WebKit ne le fait pas sur `localhost`. Résultat mesuré :
+ * la première `page.goto` passe, puis CHAQUE clic sur un lien est promu vers
+ * `https://localhost:3001`, qui n'écoute pas. Trois tests de fumée tombaient,
+ * uniquement sur `site-mobile`, avec une signature trompeuse — « le clic ne
+ * navigue pas », c'est-à-dire exactement l'allure d'un clic perdu avant
+ * l'hydratation.
+ *
+ * Bissection à l'appui, chaque branche vérifiée : configuration d'origine →
+ * vert ; avec HSTS → rouge ; HSTS retiré → vert.
+ *
+ * `next build && next start` (ce que joue la CI du site) est un régime de
+ * PRODUCTION servi en CLAIR : `NODE_ENV` ne distingue donc pas les deux cas,
+ * et c'est pour ça que le garde-fou porte sur l'hébergeur et non sur `isDev`.
+ *
+ * REVERS ASSUMÉ : hors Vercel, ces deux en-têtes disparaissent en silence. Le
+ * jour où le site est hébergé ailleurs, il faut les rétablir — c'est écrit ici
+ * plutôt que découvert par un scan externe.
+ */
+const surHebergeurHttps = process.env.VERCEL === "1";
+
+/**
  * ── POURQUOI DES EN-TÊTES ICI, SUR UN SITE « SANS SURFACE » ──
  *
  * « 100 % statique » a longtemps été lu comme « donc rien à protéger », et ce
@@ -59,8 +86,11 @@ function contentSecurityPolicy(): string {
     `base-uri 'self'`,
     `form-action 'self'`,
     `frame-ancestors 'none'`,
-    // Inapplicable en local (http://localhost:3001), donc omis en dev.
-    ...(isDev ? [] : [`upgrade-insecure-requests`]),
+    // Réservée aux origines réellement servies en HTTPS — voir le pavé de
+    // `surHebergeurHttps` en tête de fichier. Le régime qui compte ici n'est
+    // pas dev/prod mais http/https, et `next start` sur `localhost` est le
+    // contre-exemple : production ET en clair.
+    ...(surHebergeurHttps ? [`upgrade-insecure-requests`] : []),
   ].join("; ");
 }
 
@@ -91,10 +121,17 @@ const nextConfig: NextConfig = {
           // 2 ans, comme l'application. `preload` volontairement omis : il
           // engage TOUS les sous-domaines de lastchance.app, décision qui
           // appartient à l'app et non au site vitrine.
-          {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains",
-          },
+          // Posé UNIQUEMENT sur une origine réellement servie en HTTPS : hors
+          // TLS il n'apporte rien et casse la navigation WebKit (pavé de
+          // `surHebergeurHttps`, en tête de fichier).
+          ...(surHebergeurHttps
+            ? [
+                {
+                  key: "Strict-Transport-Security",
+                  value: "max-age=63072000; includeSubDomains",
+                },
+              ]
+            : []),
           // Redondant avec `frame-ancestors`, conservé pour les anciens
           // navigateurs qui n'implémentent pas la directive.
           { key: "X-Frame-Options", value: "DENY" },

@@ -8834,6 +8834,7 @@ export type Database = {
           p_first_name: string
           p_marketing_opt_in: boolean
           p_phone: string
+          p_sms_opt_in?: boolean
           p_spin_id: string
         }
         Returns: {

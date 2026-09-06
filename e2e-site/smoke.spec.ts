@@ -150,8 +150,25 @@ test.describe("en-têtes de sécurité", () => {
       expect(headers["x-frame-options"]).toBe("DENY");
       expect(headers["x-content-type-options"]).toBe("nosniff");
       expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
-      expect(headers["strict-transport-security"]).toContain("max-age=");
       expect(headers["permissions-policy"]).toContain("camera=()");
+
+      // ── LES DEUX EN-TÊTES QUI N'ONT PAS LEUR PLACE ICI ──
+      //
+      // `Strict-Transport-Security` et `upgrade-insecure-requests` ne sont
+      // posés que sur une origine réellement servie en HTTPS (`VERCEL`), et
+      // cette suite tourne sur `http://localhost:3001`. On assert donc leur
+      // ABSENCE, ce qui n'est pas un renoncement : c'est la garde qui empêche
+      // de les rétablir sans y penser.
+      //
+      // Ils avaient été posés inconditionnellement, et le prix était réel :
+      // WebKit n'ignore pas HSTS reçu en clair sur `localhost`, il promeut
+      // toutes les navigations suivantes vers `https://localhost:3001` — qui
+      // n'écoute pas. Trois tests de fumée tombaient, avec l'allure d'un clic
+      // perdu avant l'hydratation, à des kilomètres de la vraie cause.
+      expect(headers["strict-transport-security"]).toBeUndefined();
+      expect(headers["content-security-policy"]).not.toContain(
+        "upgrade-insecure-requests",
+      );
       // La directive qui ferme réellement le détournement de clic ; l'en-tête
       // `X-Frame-Options` ci-dessus n'en est que le doublon historique.
       expect(headers["content-security-policy"]).toContain(

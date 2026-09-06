@@ -96,6 +96,33 @@ function memoriser(code: string, tirage: TirageGagnant): void {
   }
 }
 
+/**
+ * LE CODE DE RETRAIT EST-IL PÉRIMÉ ?
+ *
+ * `expireLe` est l'`expires_at` de l'émission au registre (`reward_issuances`,
+ * posé à now() + 30 jours par `tirer_ticket_or`) — la date limite pour venir
+ * chercher le lot, et non celle du ticket. Le registre la juge par rapport au
+ * PRÉSENT (`expires_at <= now()`) et le retrait en caisse refuse au-delà :
+ * rien n'est ouvert ici, la base a toujours eu le dernier mot.
+ *
+ * Ce qui manquait, c'est que l'ÉCRAN pose la même question. Il affichait le
+ * lot en grand, le code en gros, et « À retirer avant le 12/06 » — date
+ * passée — à un client qui rouvrait son QR trois mois plus tard. Il se
+ * déplaçait, tendait son téléphone, et se faisait refuser au comptoir avec un
+ * écran qui lui donnait raison.
+ *
+ * Même comparaison que la base, sans tolérance inventée ici : en accorder une
+ * ferait promettre à l'écran un retrait que la caisse refuserait — c'est-à-dire
+ * exactement le défaut qu'on ferme.
+ */
+function estPerime(expireLe: string | null): boolean {
+  if (!expireLe) return false;
+  const limite = Date.parse(expireLe);
+  // Date illisible : on ne PÉRIME PAS. Un parseur qui échoue ne doit pas
+  // effacer de l'écran un gain valide — la caisse reste seule juge.
+  return Number.isFinite(limite) && limite <= Date.now();
+}
+
 /** Aucune source externe ne change en cours de vie : abonnement inerte. */
 const abonnementVide = () => () => {};
 
@@ -118,6 +145,8 @@ export function TicketExperience({
     () => null,
   );
   const [resultat, setResultat] = useState<EtatTirage | null>(null);
+  /** L'aller-retour a échoué SANS verdict du serveur. Distinct d'un refus. */
+  const [reseauCoupe, setReseauCoupe] = useState(false);
   const [enCours, demarrer] = useTransition();
 
   function tirer() {
@@ -129,18 +158,53 @@ export function TicketExperience({
       return;
     }
     demarrer(async () => {
-      const etat = await tirerTicketOr(code);
+      // LA COUPURE RÉSEAU N'EST PAS UN REFUS. Sans ce `catch`, un rejet de la
+      // promesse laissait l'écran sur son bouton sans un mot ; et surtout, il
+      // faut pouvoir la distinguer d'un verdict du serveur pour décider si la
+      // copie locale a le droit de reprendre la main (voir `memoirePrime`).
+      let etat: EtatTirage;
+      try {
+        etat = await tirerTicketOr(code);
+      } catch {
+        setReseauCoupe(true);
+        return;
+      }
+      setReseauCoupe(false);
       if (etat.state === "ok") memoriser(code, etat);
       setResultat(etat);
     });
   }
 
-  // Le gain mémorisé PRIME sur un `deja_tire` fraîchement reçu : c'est le même
-  // ticket, et l'un des deux porte le lot.
+  /**
+   * QUAND LA COPIE LOCALE A-T-ELLE LE DROIT DE PARLER ?
+   *
+   * Elle l'avait dès que le serveur répondait AUTRE CHOSE que `ok` — donc
+   * aussi sur `expire`, `sans_lot` et `introuvable`, où le serveur a rendu un
+   * verdict et où c'est LUI qui a raison.
+   *
+   * Trois cas, et seulement trois :
+   *  · aucun verdict encore demandé (`resultat === null`) — c'est la relecture
+   *    après rechargement, la raison d'être de la mémoire ;
+   *  · `deja_tire` — le seul refus où la mémoire prime À BON DROIT : c'est le
+   *    MÊME ticket, l'un des deux porte le lot, et le serveur ne le rend
+   *    qu'une fois ;
+   *  · coupure réseau — aucun verdict du tout, on n'efface pas un gain acquis
+   *    parce que le réseau de la boutique a lâché.
+   *
+   * Partout ailleurs, le serveur tranche et la copie locale se tait.
+   */
+  const memoirePrime =
+    resultat === null || resultat.state === "deja_tire" || reseauCoupe;
   const gain: TirageGagnant | null =
-    resultat?.state === "ok" ? resultat : memorise;
+    resultat?.state === "ok" ? resultat : memoirePrime ? memorise : null;
 
-  if (gain) return <Gain tirage={gain} />;
+  if (gain) {
+    return estPerime(gain.expireLe) ? (
+      <GainPerime tirage={gain} />
+    ) : (
+      <Gain tirage={gain} />
+    );
+  }
 
   if (!resultat) {
     return (
@@ -162,6 +226,14 @@ export function TicketExperience({
         >
           {enCours ? "Ouverture…" : "Ouvrir mon ticket"}
         </button>
+        {/* RIEN N'A ÉTÉ CONSOMMÉ : la promesse a échoué avant tout verdict. Le
+            dire, plutôt que de laisser un bouton muet faire craindre le pire. */}
+        {reseauCoupe && (
+          <p role="alert" className="mt-3 text-xs font-semibold text-red-600">
+            Connexion perdue. Votre ticket n&apos;a pas été ouvert : vérifiez
+            votre réseau et réessayez.
+          </p>
+        )}
       </div>
     );
   }
@@ -184,6 +256,43 @@ export function TicketExperience({
           retrouve le retrait.
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * LE LOT A ÉTÉ GAGNÉ, LE DÉLAI DE RETRAIT EST PASSÉ.
+ *
+ * Cet écran remplace le `Gain` plein écran, et pas seulement sa dernière
+ * ligne : un lot en gros titre avec un code en chiffres tabulaires EST une
+ * invitation à se déplacer. Le code reste affiché, en petit et annoncé comme
+ * périmé — le commerçant le retrouve dans son registre, et c'est à lui, pas à
+ * cette page, de décider d'un geste commercial.
+ */
+function GainPerime({ tirage }: { tirage: TirageGagnant }) {
+  return (
+    <div className="text-center">
+      <p className="text-4xl" aria-hidden>
+        ⌛
+      </p>
+      <h1 className="mt-3 text-xl font-black text-k-ink">
+        Le délai de retrait est passé
+      </h1>
+      <p className="mt-2 text-sm text-k-body">
+        Vous aviez gagné <strong>{tirage.lot}</strong>, à retirer avant le{" "}
+        {tirage.expireLe
+          ? new Date(tirage.expireLe).toLocaleDateString("fr-FR")
+          : ""}
+        . Ce code n&apos;est plus accepté en caisse.
+      </p>
+      <p className="mt-4 text-sm font-semibold text-k-ink">
+        Parlez-en au comptoir lors de votre prochain passage : le commerce
+        retrouve ce retrait dans son registre, et reste libre de vous faire un
+        geste.
+      </p>
+      <p className="mt-4 font-mono text-xs tracking-widest tabular-nums text-k-body">
+        {tirage.codeRetrait} · périmé
+      </p>
     </div>
   );
 }

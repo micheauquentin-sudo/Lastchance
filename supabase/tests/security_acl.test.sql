@@ -23,8 +23,8 @@ select ok(not has_function_privilege('authenticated', 'public.perform_atomic_spi
 select ok(has_function_privilege('service_role', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'only server can recover a pending win');
 select ok(not has_function_privilege('authenticated', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'merchant cannot probe player pending wins');
 select ok(not has_function_privilege('anon', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'anon cannot recover a pending win');
-select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'only server can atomically claim');
-select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
+select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean,boolean)', 'EXECUTE'), 'only server can atomically claim');
+select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
 select ok(has_function_privilege('service_role', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem by code');
 select ok(not has_function_privilege('authenticated', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'cashier session cannot bypass server guards');
 -- Registre universel : aucune lecture/écriture directe marchande. Seule la

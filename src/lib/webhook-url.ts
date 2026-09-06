@@ -136,7 +136,23 @@ export async function postSafeWebhook(params: {
         protocol: "https:",
         hostname: target.address,
         family: target.family,
-        port: 443,
+        /* Le port vient de l'URL, il n'est plus écrit en dur.
+         *
+         * AUCUN CHANGEMENT DE COMPORTEMENT AUJOURD'HUI, et c'est vérifié :
+         * `parseWebhookUrl` (appelé trois lignes plus haut) REFUSE toute URL
+         * dont le port n'est ni vide ni 443 — un `https://host:8443/hook` ne
+         * parvient jamais ici, il est rejeté à l'enregistrement comme à
+         * l'envoi. L'expression ci-dessous vaut donc invariablement 443.
+         *
+         * Elle est écrite ainsi parce qu'un `443` en dur est une SECONDE
+         * source de vérité sur le port : le jour où la garde de parsing
+         * s'assouplira, un port explicite serait silencieusement remplacé par
+         * 443 et la livraison partirait au mauvais endroit — une erreur muette,
+         * la pire espèce. Dériver coûte zéro et supprime la divergence
+         * possible. L'épinglage d'IP (`hostname: target.address`) et le
+         * `servername` TLS ci-dessous, qui ferment le DNS rebinding, ne sont
+         * pas touchés. */
+        port: url.port || 443,
         method: "POST",
         path: `${url.pathname}${url.search}`,
         servername: url.hostname,

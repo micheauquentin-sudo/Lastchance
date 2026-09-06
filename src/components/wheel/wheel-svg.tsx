@@ -1,5 +1,9 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+
 /**
- * Roue SVG pure (sans état) — partagée entre l'aperçu admin et la page
+ * Roue SVG pure (sans état de jeu) — partagée entre l'aperçu admin et la page
  * publique. Segments visuels égaux : les probabilités réelles (weights)
  * restent côté serveur, invisibles pour le joueur.
  *
@@ -20,6 +24,41 @@ export interface WheelSegment {
 const SIZE = 330;
 const CENTER = SIZE / 2;
 const RADIUS = 148;
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToReducedMotion(onChange: () => void) {
+  const media = window.matchMedia(REDUCED_MOTION_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+
+/**
+ * `prefers-reduced-motion` LU ICI, ET PAS SEULEMENT CHEZ L'APPELANT.
+ *
+ * La transition de la roue est un STYLE INLINE : le bloc
+ * `@media (prefers-reduced-motion: reduce)` de `globals.css` ne peut pas
+ * l'atteindre, il ne coupe que des animations portées par des CLASSES. Tant
+ * que la neutralisation dépendait des cinq appelants, elle dépendait aussi du
+ * suivant : chacun devait penser à passer `reducedMotion` ET à écourter
+ * `spinDurationMs`, et le mieux qu'ils obtenaient restait un TOUR COMPLET en
+ * 300 ms — plus violent, pas plus calme.
+ *
+ * Le composant pose donc la question lui-même : sous cette préférence, la roue
+ * ne tourne pas, elle se place. Le résultat s'affiche exactement comme avant,
+ * les minuteries des appelants sont inchangées.
+ *
+ * (Même hook que `GaugeChallenge` et les treize révélations — dupliqué comme
+ * eux plutôt que factorisé : la mutualisation touche quatorze fichiers hors
+ * du périmètre de ce lot.)
+ */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION_QUERY).matches,
+    () => false,
+  );
+}
 
 function point(deg: number, r: number): [number, number] {
   const rad = (deg * Math.PI) / 180;
@@ -156,10 +195,12 @@ export function WheelSvg({
   spinning?: boolean;
   spinDurationMs?: number;
   /**
-   * `prefers-reduced-motion` : easing linéaire, sans rebond cartoon.
-   * La transition étant en style inline, le bloc global
-   * `@media (prefers-reduced-motion: reduce)` ne peut pas la neutraliser
-   * — l'appelant doit aussi écourter `spinDurationMs`.
+   * FORCE le mode réduit même si le navigateur ne le demande pas.
+   *
+   * La préférence RÉELLE est lue par le composant (voir
+   * `usePrefersReducedMotion` plus haut) : cette prop ne fait que s'y ajouter.
+   * Les appelants la passent encore parce qu'ils écourtent aussi leurs propres
+   * minuteries de révélation à partir de la même valeur.
    */
   reducedMotion?: boolean;
   /**
@@ -179,6 +220,8 @@ export function WheelSvg({
   const n = Math.max(segments.length, 1);
   const span = 360 / n;
   const labelFont = fontFamily(s.font);
+  // La préférence du navigateur SUFFIT : la prop ne peut que la renforcer.
+  const sansMouvement = usePrefersReducedMotion() || reducedMotion;
 
   return (
     <svg
@@ -196,15 +239,17 @@ export function WheelSvg({
           transform: `rotate(${rotation}deg)`,
           transformOrigin: `${CENTER}px ${CENTER}px`,
           transformBox: "view-box" as never,
-          transition: spinning
-            ? `transform ${spinDurationMs}ms ${
-                reducedMotion
-                  ? "linear"
-                  : s.cartoonAnimations
+          // Sous `prefers-reduced-motion` : AUCUNE transition. La roue se
+          // place sur son angle final, sans le tour complet à 300 ms qui
+          // subsistait — un mouvement écourté reste un mouvement.
+          transition:
+            spinning && !sansMouvement
+              ? `transform ${spinDurationMs}ms ${
+                  s.cartoonAnimations
                     ? "cubic-bezier(0.175, 0.885, 0.32, 1.275)"
                     : "cubic-bezier(.12,.72,.13,1)"
-              }`
-            : "none",
+                }`
+              : "none",
         }}
       >
         {segments.map((seg, i) => {

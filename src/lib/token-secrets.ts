@@ -12,6 +12,47 @@ export function signingSecret(name: string): string {
 }
 
 /**
+ * Les familles de jetons du dépôt, et la seule liste qui les énumère.
+ *
+ * Chacune est le nom d'une variable d'environnement passée à `signingSecret`
+ * quelque part dans `src/lib` (spin/claim, invitation d'équipe, désabonnement,
+ * check-in fidélité, check-in cagnotte, défi d'adresse). `token-secrets.test.ts`
+ * relit les sources et fait rougir la CI si une famille naît sans entrer ici :
+ * une liste recopiée à la main serait fausse au premier module suivant, et une
+ * sonde qui énumère une liste incomplète ment par omission.
+ */
+export const FAMILLES_DE_JETONS = [
+  "CLAIM_TOKEN_SECRET",
+  "TEAM_INVITE_TOKEN_SECRET",
+  "UNSUBSCRIBE_TOKEN_SECRET",
+  "LOYALTY_CHECKIN_TOKEN_SECRET",
+  "JACKPOT_CHECKIN_TOKEN_SECRET",
+  "SKILL_CHALLENGE_TOKEN_SECRET",
+] as const;
+
+/**
+ * Familles SANS clé dédiée, donc adossées au repli `SPIN_TOKEN_SECRET`.
+ *
+ * ── POURQUOI CETTE FONCTION EXISTE ──────────────────────────
+ *
+ * Le repli de `signingSecret` est SILENCIEUX : un déploiement où
+ * `CLAIM_TOKEN_SECRET` n'a jamais été provisionné fonctionne parfaitement, et
+ * rien, nulle part, ne dit que quatre familles signent en réalité avec la même
+ * clé. Les préfixes de domaine empêchent la confusion inter-familles — ce
+ * n'est pas une faille — mais la conséquence reste réelle : la compromission
+ * ou la rotation de `SPIN_TOKEN_SECRET` touche alors TOUTES ces familles d'un
+ * coup, et l'exploitant l'ignore.
+ *
+ * Rendre l'état lisible ne coûte rien et se lit dans `/api/health`. C'est un
+ * CONSTAT d'exploitation, pas un défaut : le repli est documenté et
+ * légitime — voir `checkTokenSecrets` côté sonde pour pourquoi il ne fait pas
+ * rougir la santé.
+ */
+export function famillesSurRepli(): string[] {
+  return FAMILLES_DE_JETONS.filter((name) => !process.env[name]);
+}
+
+/**
  * Secrets acceptés en VÉRIFICATION : la clé courante de la famille, plus les
  * clés listées dans `<NAME>_PREVIOUS` (rotation, séparées par des virgules).
  *

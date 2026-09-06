@@ -22,8 +22,53 @@ export const RATE_LIMITS = {
   spinBurst: { limit: 1, windowSeconds: 4 },
   /** Débit soutenu par empreinte joueur. */
   spin: { limit: 8, windowSeconds: 60 },
-  /** Débit par IP, tous joueurs confondus (drainage de stock, bots). */
+  /** Débit par IP, tous joueurs confondus (drainage de stock, bots) —
+   *  seau d'ALERTE, en observation seule (`observerPressionIp`). */
   spinIp: { limit: 40, windowSeconds: 60 },
+  /* ── PLAFOND BLOQUANT PAR IP : LE COÛT DE LA ROTATION DE COOKIE ──
+   *
+   * CE QU'IL FERME, ET RIEN D'AUTRE. `play_limit` (once/daily/weekly) est
+   * indexée sur `player_key`, dérivée du cookie `lc-anonymous-player` que le
+   * client contrôle : l'effacer rend une partie. Pire, les DEUX seaux qui
+   * REFUSENT (`spinBurst` 1/4 s, `spin` 8/60 s) sont eux aussi indexés sur
+   * `player_key` — ils tournent AVEC le cookie. Avant ce plafond, le coût
+   * d'un tour supplémentaire était donc de quatre secondes, sans limite de
+   * total. Ce seau ne rend PAS `play_limit` fiable et ne résout PAS
+   * l'identité joueur : il rend la rotation COÛTEUSE, en bornant le total
+   * qu'une même IP peut extraire d'une roue en une minute.
+   *
+   * LE CALCUL DU PLAFOND, et pourquoi 1500 n'est pas un chiffre rond.
+   *   · Pire cas LÉGITIME d'agrégation : une salle entière derrière un seul
+   *     uplink (Wi-Fi de commerce, NAT d'opérateur sur un même pâté de
+   *     maisons). Jauge d'une soirée en direct = 250 joueurs (VEN-2, valeur
+   *     mesurée et non supposée) — le plus grand rassemblement que le produit
+   *     sache vendre.
+   *   · Rythme d'un joueur pressé : 3 tentatives dans la même minute (le seau
+   *     `spin` en autorise 8, aucun humain n'en fait 8 en regardant une roue
+   *     tourner à chaque fois).
+   *   · 250 × 3 = 750 tours/min, tous arrivés dans la MÊME minute — le pire
+   *     groupement possible, un « top départ » simultané.
+   *   · Marge × 2 pour l'agrégation qu'on n'a pas prévue (deux salles sur le
+   *     même uplink, un NAT d'opérateur qui recouvre le lieu) : 1500/min.
+   *
+   * CE QU'UNE AUTOMATISATION FAIT, elle : un script séquentiel qui fait
+   * tourner le cookie tient sans effort 10 requêtes/s sur une seule
+   * connexion, soit 600/min par fil ; drainer un stock demande d'en soutenir
+   * bien plus. Le plafond est franchi en quelques minutes de travail
+   * automatisé et jamais par une salle réelle. C'est exactement la propriété
+   * recherchée : invisible aux humains, immédiat pour un robot.
+   *
+   * CE SEAU ROUVRE PARTIELLEMENT LE COMPROMIS D'ADR-032, et il faut le dire :
+   * il REFUSE sur une clé partagée, ce qu'ADR-032 proscrit. Trois garde-fous
+   * bornent le dégât — (1) il n'est consommé que si l'IP est réellement
+   * mesurable (`IP_CLIENT_INCONNUE` exclu, sinon tout le monde partage une
+   * clé), (2) il est fail-OPEN (une panne du compteur laisse jouer, elle ne
+   * ferme pas la salle), (3) le seau d'alerte à 40/min reste en place et
+   * inchangé, si bien qu'une salle qui approche du plafond a déjà émis 37
+   * signaux avant d'être refusée. Le seau d'alerte n'a PAS été transformé en
+   * seau bloquant : ce sont deux objets distincts, à deux ordres de grandeur
+   * d'écart, et c'est délibéré. */
+  spinIpPlafond: { limit: 1500, windowSeconds: 60 },
   /** Réclamation d'un gain, par IDENTITÉ DE GAIN — clé propre à un porteur,
    *  donc `failClosed` légitime : la saturer ne coupe que le rejeu de CE gain.
    *  Deux porteurs partagent cette règle, chacun résolu AVANT le seau :

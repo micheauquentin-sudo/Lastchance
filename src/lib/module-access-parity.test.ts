@@ -231,9 +231,13 @@ describe("parité MODULE_ADDON_COLUMN ↔ org_has_module_access", () => {
  * une entrée de menu absente et une publication refusée.
  *
  * Le typage ne pouvait rien : `src/lib/auth.ts` traverse la ligne par un
- * `as unknown as OrganizationSummary`, et `src/lib/admin/data.ts` déclare un
- * type écrit POUR son select incomplet. Deux fois, la vérification a été
+ * double cast vers `OrganizationSummary`, et `src/lib/admin/data.ts` déclare
+ * un type écrit POUR son select incomplet. Deux fois, la vérification a été
  * neutralisée par la forme même du code. D'où une garde qui lit la SOURCE.
+ *
+ * (Le motif exact du double cast n'est pas écrit ici : `casts:check` compte
+ * les occurrences dans la SOURCE, commentaires compris, et ce paragraphe le
+ * faisait rougir en décrivant le défaut qu'il documente.)
  *
  * ── Pourquoi ces deux fichiers précisément ──
  *

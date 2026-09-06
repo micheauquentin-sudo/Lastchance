@@ -91,6 +91,12 @@ export function ChestReveal({
               key={i}
               type="button"
               onClick={() => pick(i)}
+              // `disabled` EN PLUS de l'attribut ARIA : seul le premier retire
+              // le bouton de l'ordre de tabulation et du clic. `aria-disabled`
+              // seul annonçait « indisponible » à un lecteur d'écran sur un
+              // bouton que le clavier atteignait encore, et que le doigt
+              // pouvait retaper pendant l'animation.
+              disabled={picked !== null}
               aria-disabled={picked !== null || undefined}
               aria-label={`Coffre ${i + 1}`}
               style={{

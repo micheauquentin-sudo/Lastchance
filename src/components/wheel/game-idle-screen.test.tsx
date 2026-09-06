@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GameIdleScreen } from "@/components/wheel/game-idle-screen";
 import { gameIdle } from "@/lib/game-idle";
@@ -137,5 +137,73 @@ describe("GameIdleScreen — l'écran d'accueil du joueur", () => {
       ).toBe(true);
       cleanup();
     }
+  });
+});
+
+/**
+ * L'ATTENTE DE LANCEMENT, DITE À L'ÉCRAN.
+ *
+ * L'intégrité n'a jamais été en cause : les shells posent leur garde de rentrée
+ * avant l'`await`, et le serveur ferme la course de son côté. Ce qui manquait
+ * était PERCEPTUEL — sur un réseau de boutique, deux à quatre secondes
+ * s'écoulaient entre l'appui et le moindre changement à l'écran, le joueur
+ * retapait cinq fois et concluait que l'application était cassée.
+ */
+describe("GameIdleScreen — l'état d'attente du bouton", () => {
+  it("sans `pending`, le bouton reste cliquable et porte le verbe du jeu", () => {
+    render(
+      <GameIdleScreen
+        style={style}
+        organizationName="Chez Marcel"
+        emoji="🎁"
+        title="Ouvrez le bon coffre !"
+        buttonLabel="Ouvrir le coffre"
+        kermesse={false}
+        onStart={() => undefined}
+      />,
+    );
+    const bouton = screen.getByRole("button", { name: "Ouvrir le coffre" });
+    expect((bouton as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("sous `pending`, le bouton se désactive ET change de verbe", () => {
+    const onStart = vi.fn();
+    render(
+      <GameIdleScreen
+        style={style}
+        organizationName="Chez Marcel"
+        emoji="🎁"
+        title="Ouvrez le bon coffre !"
+        buttonLabel="Ouvrir le coffre"
+        kermesse={false}
+        onStart={onStart}
+        pending
+      />,
+    );
+    const bouton = screen.getByRole("button", { name: "Un instant…" });
+    expect((bouton as HTMLButtonElement).disabled).toBe(true);
+    expect(bouton.getAttribute("aria-busy")).toBe("true");
+    // Le nom accessible SUIT le verbe visible : plus d'« Ouvrir le coffre »
+    // annoncé sur un bouton grisé.
+    expect(screen.queryByRole("button", { name: "Ouvrir le coffre" })).toBeNull();
+    fireEvent.click(bouton);
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it("l'APERÇU du studio n'attend jamais : il ne fait aucun appel", () => {
+    render(
+      <GameIdleScreen
+        variant="apercu"
+        style={style}
+        organizationName="Chez Marcel"
+        emoji="🎁"
+        title="Ouvrez le bon coffre !"
+        buttonLabel="Ouvrir le coffre"
+        kermesse={false}
+        pending
+      />,
+    );
+    expect(screen.getByText("Ouvrir le coffre")).toBeTruthy();
+    expect(screen.queryByText("Un instant…")).toBeNull();
   });
 });

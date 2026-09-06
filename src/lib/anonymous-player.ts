@@ -37,8 +37,24 @@ function deviceKeyFromId(id: string): string {
  * seau `failClosed` sur une clé partagée devient un interrupteur qui coupe
  * tout le Wi-Fi d'un commerce. Et les deux seaux qui, eux, refusent
  * (`spin:burst` 1/4 s, `spin` 8/60 s) sont indexés sur `player_key` : ils
- * TOURNENT AVEC LE COOKIE. Le coût réel d'une rotation est donc de l'ordre de
- * quatre secondes, pas d'un plafond par IP.
+ * TOURNENT AVEC LE COOKIE.
+ *
+ * ── CE QUI A CHANGÉ, ET CE QUE ÇA NE CHANGE PAS ─────────────
+ *
+ * Le coût d'une rotation était donc de quatre secondes, sans total. Il y a
+ * désormais un SECOND seau par IP, celui-là BLOQUANT et à un tout autre ordre
+ * de grandeur : `RATE_LIMITS.spinIpPlafond` (1500 tours/min par roue, dérivé
+ * de 250 joueurs × 3 tentatives × 2 de marge). Il n'est consommé que sur une
+ * IP réellement mesurée et reste fail-open. Le seau d'alerte à 40/min n'a pas
+ * bougé : ce sont deux objets distincts.
+ *
+ * CE QUE CELA NE FERME PAS. `play_limit` n'est toujours PAS fiable : rien
+ * n'empêche un joueur d'effacer son cookie et de rejouer, ni deux appareils
+ * de compter pour deux. Le plafond rend la rotation COÛTEUSE — il borne le
+ * total extractible d'une roue depuis une IP — il ne rend pas l'identité
+ * vraie. Et il rouvre partiellement le compromis d'ADR-032, puisqu'il refuse
+ * sur une clé partagée : c'est un arbitrage assumé, argumenté au point de
+ * déclaration du seau, pas un oubli.
  *
  * Ce qui borne réellement le préjudice n'est pas l'identité, c'est
  * l'ÉCONOMIE : le stock des lots et les poids, tenus en base par

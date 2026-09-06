@@ -23,7 +23,10 @@ import {
 } from "@/components/dashboard/atelier-roue-defi";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
-import { isSecretSkillGameType } from "@/lib/validations/skill";
+import {
+  isClientReportedSkillGameType,
+  isSecretSkillGameType,
+} from "@/lib/validations/skill";
 import type { GameType, PlayLimit, Wheel } from "@/types/database";
 
 /**
@@ -98,9 +101,12 @@ export function WheelSettings({
   function choisirMecanique(valeur: GameType) {
     setGameType(valeur);
     setDefi(defautsDefi(valeur, valeur === mecaniqueInitiale ? rawInitial : null));
-    // « Illimité » est refusé côté serveur pour les jeux à secret. Le refus
+    // « Illimité » est refusé côté serveur pour les jeux à secret ET pour ceux
+    // dont la réussite est rapportée par l'appareil du joueur. Le refus
     // arrivait après coup, sur un formulaire que le commerçant croyait fini.
-    if (valeur !== gameType && isSecretSkillGameType(valeur) && playLimit === "unlimited") {
+    const sansIllimite =
+      isSecretSkillGameType(valeur) || isClientReportedSkillGameType(valeur);
+    if (valeur !== gameType && sansIllimite && playLimit === "unlimited") {
       setPlayLimit("once");
     }
   }
