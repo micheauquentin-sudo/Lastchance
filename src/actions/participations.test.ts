@@ -83,6 +83,10 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
     // famille, elle n'a AUCUN repli legacy.
     stockHolds: new Map<string, StockHoldRow>(), // clé : code
     stockOffers: new Map<string, StockOfferRow>(), // clé : id
+    // Ticket d'Or — 11e source (TKT-1). ELLE N'A PAS DE TABLE PARENTE : la
+    // ligne de registre EST la source, donc c'est `rewardIssuances` que la RPC
+    // factice mute. Seul le libellé courant du lot vit à part.
+    ticketOrLots: new Map<string, { id: string; organization_id: string; libelle: string }>(), // clé : id
     queries: [] as Array<{ table: string; filters: Record<string, unknown> }>,
     rewardIssuances: new Map<
       string,
@@ -105,9 +109,21 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
           | "referral"
           | "quiz"
           | "contest"
-          | "reserver_stock";
+          | "reserver_stock"
+          | "ticket_or";
         source_id: string;
         code: string;
+        /**
+         * Les trois dates du REGISTRE. Elles n'existaient pas dans cette
+         * fixture parce que les dix premières familles les portent sur leur
+         * table parente. La onzième n'en a pas : `tirer_ticket_or` écrit ici,
+         * `redeem_ticket_or` y écrit la remise, et c'est donc ici que la caisse
+         * les lit.
+         */
+        issued_at?: string;
+        expires_at?: string | null;
+        redeemed_at?: string | null;
+        redeemed_by?: string | null;
         /**
          * Annulation au registre. Depuis `20260902120000`, la suppression de la
          * source la pose : c'est la SEULE trace qui survit à la disparition de
@@ -157,6 +173,7 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
       db.contestPlayers.clear();
       db.stockHolds.clear();
       db.stockOffers.clear();
+      db.ticketOrLots.clear();
       db.queries = [];
       db.rewardIssuances.clear();
       db.rpcCalls = [];
@@ -258,6 +275,53 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
                     ? "revocation_requested"
                     : "not_requested",
                   redeemed_now: retireMaintenant,
+                },
+              ],
+              error: null,
+            });
+          }
+          // ── LA 11e FAMILLE : LE REGISTRE EST SA PROPRE SOURCE ──
+          //
+          // Reproduit `redeem_ticket_or` : l'`update` porte sur
+          // `reward_issuances` elle-même, conditionné aux trois mêmes gardes
+          // que le routeur a déjà vérifiées. C'est ce qui rend l'idempotence
+          // observable — le second passage relit une ligne déjà datée.
+          if (issuance.source_type === "ticket_or") {
+            const maintenant = Date.now();
+            const echu = issuance.expires_at
+              ? new Date(issuance.expires_at).getTime() <= maintenant
+              : false;
+            const remisMaintenant =
+              !issuance.redeemed_at && !issuance.cancelled_at && !echu;
+            if (remisMaintenant) {
+              issuance.redeemed_at = new Date(maintenant).toISOString();
+              issuance.redeemed_by = String(args.p_actor);
+            }
+            const etat = remisMaintenant
+              ? "redeemed"
+              : issuance.redeemed_at
+                ? "already_redeemed"
+                : issuance.cancelled_at
+                  ? "cancelled"
+                  : echu
+                    ? "expired"
+                    : "source_refused";
+            return Promise.resolve({
+              data: [
+                {
+                  ...issuance,
+                  state: etat,
+                  redeemed_at: issuance.redeemed_at ?? null,
+                  redeemed_by: issuance.redeemed_by ?? null,
+                  expires_at: issuance.expires_at ?? null,
+                  cancelled_at: issuance.cancelled_at ?? null,
+                  // NI PANIER NI REVENU : le module ne les connaît pas, et la
+                  // caisse ne doit donc jamais en transporter pour lui.
+                  basket_cents: null,
+                  wallet_status: remisMaintenant
+                    ? "revocation_requested"
+                    : "not_requested",
+                  redeemed_now: remisMaintenant,
                 },
               ],
               error: null,
@@ -539,6 +603,31 @@ const { db, createAdminClientMock } = vi.hoisted(() => {
                 error: null,
               });
             }
+            // LE REGISTRE, LU COMME UNE TABLE PARENTE. C'est le propre de la
+            // 11e famille : `lookupTicketOrWinByCode` y relit les trois dates
+            // que `RewardRoute` ne transporte pas.
+            if (table === "reward_issuances") {
+              const row = db.rewardIssuances.get(String(filters.code));
+              return Promise.resolve({
+                data:
+                  row &&
+                  row.organization_id === filters.organization_id &&
+                  row.source_type === filters.source_type
+                    ? row
+                    : null,
+                error: null,
+              });
+            }
+            if (table === "tickets_or_lots") {
+              const lot = db.ticketOrLots.get(String(filters.id));
+              return Promise.resolve({
+                data:
+                  lot && lot.organization_id === filters.organization_id
+                    ? lot
+                    : null,
+                error: null,
+              });
+            }
             if (table === "reservation_stock_offers") {
               const offer = db.stockOffers.get(String(filters.id));
               return Promise.resolve({
@@ -643,6 +732,7 @@ import {
   redeemQuizReward,
   redeemReferralReward,
   redeemStockHold,
+  redeemTicketOr,
 } from "./participations";
 
 /** Seed d'une complétion de chasse retrouvable par son code normalisé. */
@@ -798,7 +888,8 @@ function seedUniversalReward(
     | "referral"
     | "quiz"
     | "contest"
-    | "reserver_stock",
+    | "reserver_stock"
+    | "ticket_or",
   organizationId = "org-1",
   label: string | null = null,
   rewardDetails: string | null | undefined = undefined,
@@ -2183,5 +2274,224 @@ describe("redeemStockHold — le retrait au comptoir", () => {
     );
     expect(res.ok).toBe(false);
     expect(db.stockHolds.get("RESA-ABCD2345")?.status).toBe("held");
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+// La 11e famille en caisse : le Ticket d'Or (TICKET-…, TKT-1)
+//
+// LE DÉFAUT QUE CES TESTS FERMENT : le lot était ÉMIS au registre par
+// `tirer_ticket_or`, la base savait le remettre (`redeem_ticket_or`, branché
+// dans `redeem_reward_by_code` par 20261028120000) — et l'application, elle,
+// ne connaissait que dix familles. Un gagnant présentait un code valide et
+// s'entendait répondre « introuvable ».
+//
+// Ce que ces tests attestent :
+//   · un code TICKET- est ROUTÉ vers sa famille, sans corruption de saisie —
+//     `normalizeRedeemCode` le re-préfixait en `GAIN-TICKET-…` ;
+//   · la remise passe par le ROUTEUR UNIVERSEL, et elle est IDEMPOTENTE ;
+//   · le code du TICKET (dix caractères, droit de JOUER) n'est pas un code de
+//     retrait et ne doit jamais en devenir un.
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Seed d'un lot de Ticket d'Or retrouvable par son code de retrait.
+ *
+ * Il n'y a PAS de table parente à semer : la ligne de registre est la source.
+ * Seul le libellé courant du lot vit à côté, et il n'est qu'un repli du gravé.
+ */
+function seedTicketOrWin(
+  code: string,
+  overrides: Partial<{
+    organization_id: string;
+    label: string | null;
+    expires_at: string | null;
+    redeemed_at: string | null;
+    cancelled_at: string | null;
+  }> = {},
+) {
+  const org = overrides.organization_id ?? "org-1";
+  db.rewardIssuances.set(code, {
+    organization_id: org,
+    source_type: "ticket_or",
+    source_id: `ticket-${code}`,
+    code,
+    label: overrides.label === undefined ? "Un café offert" : overrides.label,
+    metadata: { lot_id: "lot-1" },
+    issued_at: "2026-07-20T10:00:00.000Z",
+    expires_at:
+      overrides.expires_at === undefined
+        ? "2099-01-01T10:00:00.000Z"
+        : overrides.expires_at,
+    redeemed_at: overrides.redeemed_at ?? null,
+    redeemed_by: null,
+    cancelled_at: overrides.cancelled_at ?? null,
+    cancelled_source: null,
+    cancelled_reason: null,
+  });
+  db.ticketOrLots.set("lot-1", {
+    id: "lot-1",
+    organization_id: org,
+    libelle: "Un café offert",
+  });
+}
+
+describe("caisse — routage d'un code TICKET-", () => {
+  it("route vers la famille ticket_or, sans corrompre la saisie", async () => {
+    // ROUGE SI : la variante `ticket_or` ou sa branche de route disparaissent.
+    // C'est LE défaut fermé — la base acceptait la famille depuis
+    // 20261028120000, l'application n'en connaissait que dix.
+    seedTicketOrWin("TICKET-ABCD2345");
+
+    const result = await lookupRedeemCode("TICKET-ABCD2345");
+
+    expect(result.status).toBe("found");
+    if (result.status === "found") {
+      expect(result.match.source).toBe("ticket_or");
+      if (result.match.source === "ticket_or") {
+        // LE CODE N'EST PAS RE-PRÉFIXÉ. `normalizeRedeemCode` rendait
+        // `GAIN-TICKET-ABCD2345`, code qui n'existe nulle part : la caisse
+        // interrogeait une chaîne fabriquée par elle-même.
+        expect(result.match.win.code).toBe("TICKET-ABCD2345");
+        expect(result.match.win.reward_label).toBe("Un café offert");
+      }
+      expect(result.frozenLabel).toBe("Un café offert");
+    }
+  });
+
+  it("le code interrogé est bien TICKET-…, jamais GAIN-TICKET-…", async () => {
+    // ROUGE SI : la re-préfixation revient. Le contrôle porte sur la REQUÊTE
+    // partie en base, pas seulement sur le verdict — c'est la seule façon de
+    // voir la corruption quand une autre branche rattrape le résultat.
+    seedTicketOrWin("TICKET-ABCD2345");
+    await lookupRedeemCode("TICKET-ABCD2345");
+
+    const codesInterroges = db.queries
+      .filter((q) => q.table === "reward_issuances")
+      .flatMap((q) => (Array.isArray(q.filters.code) ? q.filters.code : []));
+    expect(codesInterroges).toContain("TICKET-ABCD2345");
+    expect(
+      codesInterroges.some((c) => String(c).startsWith("GAIN-TICKET")),
+    ).toBe(false);
+  });
+
+  it("tolère la saisie manuelle (casse, espaces, préfixe absent)", async () => {
+    seedTicketOrWin("TICKET-ABCD2345");
+
+    for (const saisie of ["ticket abcd2345", " TICKET-abcd2345 ", "abcd2345"]) {
+      const result = await lookupRedeemCode(saisie);
+      expect(result.status, saisie).toBe("found");
+    }
+  });
+
+  it("un lot d'une AUTRE organisation reste introuvable", async () => {
+    seedTicketOrWin("TICKET-ABCD2345", { organization_id: "org-2" });
+
+    expect((await lookupRedeemCode("TICKET-ABCD2345")).status).toBe("not_found");
+  });
+
+  it("le préfixe TICKET fait AUTORITÉ : pas de repli sur la roue", async () => {
+    seedWheel("GAIN-ABCD2345");
+    expect((await lookupRedeemCode("TICKET-ABCD2345")).status).toBe("not_found");
+  });
+
+  it("le code du TICKET (10 caractères) n'est PAS un code de retrait", async () => {
+    // LE PIÈGE DE LA FAMILLE : `CODE_TICKET` ouvre le droit de JOUER, le code
+    // de retrait celui d'EMPORTER. Les confondre ferait remettre un lot à
+    // quelqu'un qui n'a pas encore tiré.
+    seedTicketOrWin("TICKET-ABCD2345");
+    expect((await lookupRedeemCode("ABCDEFGHJK")).status).toBe("not_found");
+  });
+
+  it("une recherche ne coûte qu'UN jeton, préfixe TICKET compris", async () => {
+    seedTicketOrWin("TICKET-ABCD2345");
+    await lookupRedeemCode("TICKET-ABCD2345");
+    expect(lookupTokens()).toHaveLength(1);
+  });
+});
+
+describe("redeemTicketOr — la remise au comptoir", () => {
+  function form(champs: Record<string, string>): FormData {
+    const fd = new FormData();
+    for (const [cle, valeur] of Object.entries(champs)) fd.set(cle, valeur);
+    return fd;
+  }
+
+  it("remet le lot par le ROUTEUR UNIVERSEL, et par lui seul", async () => {
+    seedTicketOrWin("TICKET-ABCD2345");
+
+    const res = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(res.ok).toBe(true);
+    expect(db.rpcCalls.some((c) => c.name === "redeem_reward_by_code")).toBe(true);
+    // AUCUN appel au bras source : il est réservé au service_role depuis
+    // 20261208120000, et la caisse n'a qu'une porte.
+    expect(db.rpcCalls.some((c) => c.name === "redeem_ticket_or")).toBe(false);
+    expect(db.rewardIssuances.get("TICKET-ABCD2345")?.redeemed_at).not.toBeNull();
+  });
+
+  it("IDEMPOTENCE : deux remises du même code n'en remettent qu'une", async () => {
+    seedTicketOrWin("TICKET-ABCD2345");
+
+    const premiere = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+    const dateRemise = db.rewardIssuances.get("TICKET-ABCD2345")?.redeemed_at;
+    const rejeu = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(premiere.ok).toBe(true);
+    expect(rejeu.ok).toBe(false);
+    expect(rejeu.ok === false && rejeu.error).toContain("déjà été remis");
+    // LA DATE NE BOUGE PAS : une seconde remise ne réécrit rien.
+    expect(db.rewardIssuances.get("TICKET-ABCD2345")?.redeemed_at).toBe(dateRemise);
+  });
+
+  it("refuse un lot expiré, en nommant la date dans le fuseau du commerce", async () => {
+    seedTicketOrWin("TICKET-ABCD2345", { expires_at: "2020-01-01T10:00:00.000Z" });
+
+    const res = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain("Code expiré");
+    expect(
+      db.rewardIssuances.get("TICKET-ABCD2345")?.redeemed_at ?? null,
+    ).toBeNull();
+  });
+
+  it("refuse un lot annulé", async () => {
+    seedTicketOrWin("TICKET-ABCD2345", {
+      cancelled_at: "2026-07-21T10:00:00.000Z",
+    });
+
+    const res = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain("annulé");
+  });
+
+  it("un registre EN PANNE dit « réessayez », jamais « introuvable »", async () => {
+    // La famille n'a AUCUN repli legacy : personne ne rattrape derrière. Envoyer
+    // le caissier refaire saisir un lot valide pendant que la base tousse est le
+    // mauvais conseil au mauvais moment.
+    seedTicketOrWin("TICKET-ABCD2345");
+    db.rpcErreurs.push("redeem_reward_by_code");
+
+    const res = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe("Validation impossible — réessayez");
+  });
+
+  it("un code que le registre ne connaît pas dit « introuvable »", async () => {
+    const res = await redeemTicketOr(null, form({ code: "TICKET-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe("Code introuvable");
+  });
+
+  it("refuse un code d'une autre famille sans jamais toucher la base", async () => {
+    const res = await redeemTicketOr(null, form({ code: "GAIN-ABCD2345" }));
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toBe("Code de retrait invalide");
+    expect(db.rpcCalls).toHaveLength(0);
   });
 });

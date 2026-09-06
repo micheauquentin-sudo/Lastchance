@@ -18,6 +18,7 @@ import { ReferralRedeemButton } from "@/components/dashboard/referral-redeem-but
 import { QuizRedeemButton } from "@/components/dashboard/quiz-redeem-button";
 import { ContestRedeemButton } from "@/components/dashboard/contest-redeem-button";
 import { StockRedeemButton } from "@/components/dashboard/stock-redeem-button";
+import { TicketOrRedeemButton } from "@/components/dashboard/ticket-or-redeem-button";
 import { RedeemScanner } from "@/components/dashboard/redeem-scanner";
 import {
   LoyaltyStaffStamp,
@@ -40,6 +41,7 @@ import {
   type CashierQuizReward,
   type CashierReferralReward,
   type CashierStockHold,
+  type CashierTicketOrWin,
 } from "@/actions/participations";
 
 export const metadata: Metadata = { title: "Caisse" };
@@ -142,8 +144,9 @@ function RedeemedBadge({
  * de roue (GAIN-…), une chasse au trésor (CHASSE-…), un lot de fidélité
  * (FIDELITE-…), un jackpot collectif (JACKPOT-…), un calendrier (CADEAU-…),
  * un événement live (EVENT-…), un parrainage (PARRAIN-…), un quiz (QUIZ-…)
- * ou un championnat de pronostics (PRONO-…) : l'affichage s'adapte à la
- * source. En mode fidélité « staff », une section dédiée valide une VISITE en
+ * un championnat de pronostics (PRONO-…), une réservation de stock (RESA-…)
+ * ou le lot d'un Ticket d'Or (TICKET-…) : l'affichage s'adapte à la source.
+ * En mode fidélité « staff », une section dédiée valide une VISITE en
  * scannant le passeport du client ; en mode jackpot « staff », une seconde
  * section valide une PARTICIPATION à la cagnotte commune.
  */
@@ -295,7 +298,7 @@ export default async function RedeemPage({
           name="code"
           aria-label="Code du client"
           defaultValue={rawCode ?? ""}
-          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-… PRONO-… RESA-…"
+          placeholder="GAIN-… CHASSE-… FIDELITE-… JACKPOT-… CADEAU-… EVENT-… PARRAIN-… QUIZ-… PRONO-… RESA-… TICKET-…"
           autoFocus
           autoComplete="off"
           autoCapitalize="characters"
@@ -401,6 +404,7 @@ export default async function RedeemPage({
       {match?.source === "quiz" && <QuizResult reward={match.reward} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
       {match?.source === "contest" && <ContestResult award={match.award} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
       {match?.source === "reserver_stock" && <StockHoldResult hold={match.hold} nomGagne={nomGagne} descriptionGagnee={descriptionGagnee} fuseau={fuseau} remis={issuDuGeste} />}
+      {match?.source === "ticket_or" && <TicketOrResult win={match.win} nomGagne={nomGagne} fuseau={fuseau} remis={issuDuGeste} />}
 
       <LoyaltyStaffStamp programs={staffPrograms} />
       <JackpotStaffCheckin campaigns={staffJackpots} />
@@ -1140,6 +1144,79 @@ function StockHoldResult({
         </p>
       ) : (
         <StockRedeemButton code={hold.code} />
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Lot d'un Ticket d'Or — code TICKET-…, remis en caisse (TKT-1).
+ *
+ * ── DEUX CODES PORTENT CE MOT, ET LE COMPTOIR NE VOIT QUE CELUI-CI ──
+ *
+ * Le code du TICKET (dix caractères, sans préfixe) ouvre le droit de JOUER et
+ * ne se présente jamais ici : il vit sur la page du client. Celui de cette
+ * carte est le code de RETRAIT du lot déjà tiré. Les confondre ferait remettre
+ * un lot à quelqu'un qui n'a pas encore gratté.
+ *
+ * ── LES TROIS DATES SE LISENT SUR LE REGISTRE ──
+ *
+ * Pas de table parente à interroger : `tirer_ticket_or` écrit la ligne de
+ * registre elle-même. Remise, annulation et échéance viennent donc de là, et le
+ * libellé courant du lot n'est qu'un repli du libellé GRAVÉ — lequel survit à
+ * la suppression du lot, contrairement à lui.
+ *
+ * Aucune description : la famille n'écrit pas `reward_details`, et
+ * `tickets_or_lots` n'a pas de colonne de description. Une ligne vide sous le
+ * titre vaut mieux qu'un texte emprunté à autre chose.
+ */
+function TicketOrResult({
+  win,
+  nomGagne,
+  fuseau,
+  remis,
+}: {
+  win: CashierTicketOrWin;
+  /** Libellé gravé au tirage — il fait foi sur le libellé courant du lot. */
+  nomGagne: string | null;
+  /** Fuseau de l'établissement — jamais celui du serveur. */
+  fuseau: string;
+  /** La page vient-elle du rechargement déclenché par une remise ? */
+  remis: boolean;
+}) {
+  const expired = isLookupExpired(win);
+  const actionable = !win.redeemed_at && !win.cancelled_at && !expired;
+  return (
+    <Card
+      className={
+        actionable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+      }
+    >
+      <p className="mb-1 font-mono text-sm text-zinc-600">{win.code}</p>
+      <span className="mb-3 inline-flex rounded-full bg-k-yellow/60 px-2.5 py-0.5 text-xs font-bold text-k-ink">
+        🎫 Ticket d&apos;Or
+      </span>
+      <p className="mb-1 text-2xl font-bold">
+        {nomGagne || win.reward_label || "Lot du Ticket d'Or"}
+      </p>
+      <p className="mb-5 text-sm text-zinc-600">
+        Tiré le {formatDate(win.drawn_at, fuseau)}
+      </p>
+
+      {win.redeemed_at ? (
+        <RedeemedBadge remis={remis} at={win.redeemed_at} fuseau={fuseau} />
+      ) : win.cancelled_at ? (
+        <p className="inline-flex rounded-full bg-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700">
+          ⊘ Lot annulé le {formatDate(win.cancelled_at, fuseau)} — ne le remettez
+          pas
+        </p>
+      ) : expired ? (
+        <p className="inline-flex rounded-full bg-red-100 px-4 py-2 text-sm font-semibold text-red-700">
+          ⏱️ Code expiré le {formatDate(win.redeem_expires_at!, fuseau)} — le
+          délai de retrait est dépassé
+        </p>
+      ) : (
+        <TicketOrRedeemButton code={win.code} />
       )}
     </Card>
   );

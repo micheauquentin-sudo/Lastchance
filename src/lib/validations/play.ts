@@ -76,3 +76,30 @@ export const claimSchema = z.object({
     .nullable()
     .default(null),
 });
+
+/**
+ * Nonce de tentative du TIRAGE DIRECT (roue, grattage, jeux de révélation).
+ *
+ * Le client en émet un à l'ouverture d'une tentative et le RÉUTILISE tant
+ * qu'il n'a pas reçu de réponse ; une nouvelle partie en émet un neuf. C'est
+ * ce qui permet à `perform_atomic_spin` de rendre l'issue DÉJÀ TIRÉE au lieu
+ * d'en tirer une seconde quand la réponse s'est perdue en transit.
+ *
+ * ── CE QUE CE SCHÉMA BORNE, ET CE QU'IL NE PROUVE PAS ───────
+ *
+ * Il borne la FORME, rien de plus : le nonce vient du client, il n'est ni
+ * signé ni émis par le serveur — à la différence de celui des jeux d'adresse
+ * (`skill:<nonce>`, jeton HMAC vérifié). Un nonce recevable ne prouve donc
+ * rien de son porteur, et c'est pour cela que l'action serveur ne le transmet
+ * JAMAIS tel quel : elle en dérive une clé portée par l'identité joueur
+ * (`play:<player_key>:<nonce>`), de sorte qu'un client ne puisse entrer en
+ * collision qu'avec lui-même.
+ *
+ * L'alphabet exclut `:` — le séparateur de la clé dérivée — et les bornes de
+ * longueur écartent les valeurs qui ne servent qu'à faire grossir une ligne.
+ * Un `randomUUID()` client (36 caractères) y entre tel quel.
+ */
+export const spinNonceSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{16,64}$/, "Nonce de tirage invalide");

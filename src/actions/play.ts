@@ -6,7 +6,7 @@ import {
   verifyClaimToken,
 } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
-import { claimSchema } from "@/lib/validations/play";
+import { claimSchema, spinNonceSchema } from "@/lib/validations/play";
 import { isSkillGameType } from "@/lib/validations/skill";
 import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
@@ -70,7 +70,28 @@ export interface SpinOutcome {
  */
 export type SpinResult =
   | { ok: true; data: SpinOutcome }
-  | { ok: false; error: string; nextEligibleAt?: string };
+  | {
+      ok: false;
+      error: string;
+      nextEligibleAt?: string;
+      /**
+       * LE SERVEUR NE SAIT PAS SI UN TIRAGE A ÉTÉ ENREGISTRÉ.
+       *
+       * Posé sur les seuls refus qui ne tranchent rien : l'appel RPC a échoué,
+       * ou il a réussi mais son résultat est inexploitable. Dans les deux cas
+       * la base a PU commettre le tirage avant que sa réponse ne se perde.
+       *
+       * Le client doit alors CONSERVER son nonce d'idempotence : le message
+       * invite au rejeu, et un rejeu sans nonce créerait le second tirage que
+       * tout ce mécanisme existe pour empêcher. C'est le seul chemin où une
+       * réponse EST parvenue sans pour autant clore la tentative.
+       *
+       * Absent sur les refus qui, eux, tranchent — limite atteinte, campagne
+       * fermée, plus aucun lot : là, rien n'a été enregistré et la tentative
+       * est close.
+       */
+      outcomeUnknown?: boolean;
+    };
 
 /**
  * Empreinte joueur pseudonymisée + IP source.
@@ -139,10 +160,16 @@ export async function spinWheel(
   slug: string,
   turnstileToken?: string,
   source?: string,
+  /**
+   * Nonce de LA TENTATIVE en cours, émis par le client à l'ouverture de la
+   * partie et réutilisé tant qu'aucune réponse ne lui est parvenue. Facultatif :
+   * absent ou malformé, le tirage se comporte exactement comme avant.
+   */
+  idempotencyKey?: string,
 ): Promise<SpinResult> {
   // Opération critique : durée mesurée, lenteurs et erreurs remontées.
   return monitored("play.spinWheel", () =>
-    spinWheelInner(slug, turnstileToken, source),
+    spinWheelInner(slug, turnstileToken, source, idempotencyKey),
   );
 }
 
@@ -151,10 +178,56 @@ function normalizeSource(source?: string): "direct" | "share" {
   return source === "share" ? "share" : "direct";
 }
 
+/* ── LA CLÉ D'IDEMPOTENCE DU TIRAGE DIRECT EST DÉRIVÉE, JAMAIS REÇUE ──
+ *
+ * LE DÉFAUT FERMÉ. `spinWheelInner` appelait `perform_atomic_spin` sans
+ * `p_idempotency_key`, alors que le chemin des jeux d'adresse en passe un
+ * depuis JOB-8 (`skill:<nonce>`, src/actions/skill.ts). Quand la réponse
+ * réseau se perd APRÈS le commit, le joueur recharge la page et rejoue : sur
+ * une roue `play_limit = 'unlimited'` un SECOND spin était créé, avec un
+ * second décrément de stock, le premier gain restant orphelin ; sur une roue
+ * limitée, l'index de fenêtre bloquait le second et le joueur lisait « vous
+ * avez déjà joué » au lieu de son lot.
+ *
+ * CE QUE CE CORRECTIF NE PRÉTEND PAS ÊTRE. Il n'existe aucun bouton
+ * « Réessayer » sur le tirage — le rejeu réel est un rechargement de page suivi
+ * d'un nouveau clic — et `recoverPendingWin` rattrape déjà une partie de ces
+ * cas (le gain non réclamé, dans la fenêtre du `play_limit`). Ce qui se ferme
+ * ici est ce que la reprise ne couvre pas : le SECOND TIRAGE lui-même, et le
+ * stock qu'il décrémente.
+ *
+ * POURQUOI LE NONCE DU CLIENT N'EST PAS TRANSMIS TEL QUEL. Contrairement à
+ * celui des jeux d'adresse, il n'est ni émis ni signé par le serveur : sa
+ * valeur est choisie par l'appelant. Or l'unicité de `spins.idempotency_key`
+ * porte sur `(idempotency_key, organization_id)` (migration 20261214120000) —
+ * elle n'est plus globale, mais elle reste PARTAGÉE entre les joueurs d'un même
+ * commerce. Un nonce brut laisserait donc un client choisir la valeur déjà
+ * portée par le tirage d'un AUTRE joueur de la même organisation : l'insertion
+ * lèverait `unique_violation` et c'est le tirage de ce tiers qui échouerait.
+ * Préfixée par `player_key`, la clé ne permet plus d'entrer en collision
+ * qu'avec soi-même — précisément le comportement recherché.
+ *
+ * Le préfixe `play:` sépare par ailleurs cet espace de celui des défis
+ * (`skill:`) : deux domaines de nonce ne partagent aucune valeur.
+ */
+function cleIdempotenceTirage(
+  playerKey: string,
+  nonce: string | undefined,
+): string | null {
+  const borne = spinNonceSchema.safeParse(nonce ?? "");
+  // Nonce absent ou hors borne : `null`, et la RPC retombe sur son comportement
+  // d'origine — aucune recherche de rejeu, colonne laissée nulle, donc aucune
+  // entrée dans l'index partiel d'unicité. C'est le régime de tous les tirages
+  // antérieurs : on ne refuse pas un joueur pour un nonce bancal.
+  if (!borne.success) return null;
+  return `play:${playerKey}:${borne.data}`;
+}
+
 async function spinWheelInner(
   slug: string,
   turnstileToken?: string,
   source?: string,
+  idempotencyKey?: string,
 ): Promise<SpinResult> {
   try {
     const ctx = await loadPlayContext(String(slug));
@@ -305,6 +378,14 @@ async function spinWheelInner(
 
     // Éligibilité, tirage cryptographique, réservation du stock et insertion
     // du spin sont une seule transaction PostgreSQL verrouillée par joueur.
+    //
+    // La clé de rejeu est formée ICI, et non plus haut : elle a besoin de
+    // `playerKey`, et rien ne justifie de la calculer avant que les seaux
+    // aient laissé passer. Sur un rejeu, ces seaux sont d'ailleurs traversés
+    // comme au premier appel — l'anti double-clic (1/4 s) refuse toujours un
+    // second clic immédiat, et c'est voulu : la fenêtre que cette clé ferme est
+    // celle d'APRÈS, quand le joueur a rechargé sa page et rejoue LA MÊME
+    // partie plusieurs secondes plus tard.
     const { data: spinRows, error: spinError } = await admin.rpc(
       "perform_atomic_spin",
       {
@@ -314,11 +395,19 @@ async function spinWheelInner(
         p_player_key: playerKey,
         p_engagement_action: null,
         p_source: normalizeSource(source),
+        p_idempotency_key: cleIdempotenceTirage(playerKey, idempotencyKey),
       },
     );
     if (spinError) {
       reportError("play.atomic-spin", spinError.message);
-      return { ok: false, error: "Une erreur est survenue, réessayez." };
+      // La RPC a échoué — mais rien ne dit à quel moment. Une coupure APRÈS le
+      // commit rend la même erreur qu'un refus avant écriture : on ne peut pas
+      // les distinguer ici, donc on demande au client de garder son nonce.
+      return {
+        ok: false,
+        error: "Une erreur est survenue, réessayez.",
+        outcomeUnknown: true,
+      };
     }
     const spin = (spinRows as Array<{
       spin_id: string | null;
@@ -355,7 +444,14 @@ async function spinWheelInner(
     const prize = prizes[winnerIdx];
     if (winnerIdx < 0 || !prize) {
       reportError("play.atomic-spin-prize", "Lot tiré absent du contexte public");
-      return { ok: false, error: "Une erreur est survenue, réessayez." };
+      // Ici le tirage EST enregistré — c'est sa restitution qui échoue. Sans
+      // nonce conservé, le rejeu auquel ce message invite en créerait un
+      // second, et le premier resterait orphelin avec son stock décompté.
+      return {
+        ok: false,
+        error: "Une erreur est survenue, réessayez.",
+        outcomeUnknown: true,
+      };
     }
 
     // Pont progressif : le player_key historique reste l'autorité du spin.

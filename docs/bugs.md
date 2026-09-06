@@ -21,6 +21,62 @@
 
 ## Critical
 
+- **✅ RÉSOLU (2026-09-06) — Le tirage direct n'était pas idempotent : une
+  réponse perdue après le commit pouvait produire un SECOND tirage.**
+  `spinWheelInner` appelait `perform_atomic_spin` **sans**
+  `p_idempotency_key`, alors que le chemin des jeux d'adresse en passait un
+  depuis JOB-8 (`skill:<nonce>`). Sur une roue `play_limit = 'unlimited'`, un
+  rechargement de page après une réponse perdue créait un second spin, avec un
+  second décrément de stock et un premier gain orphelin ; sur une roue
+  limitée, l'index de fenêtre bloquait le second et le joueur lisait « vous
+  avez déjà joué » au lieu de son lot. Trouvé par un troisième audit (release
+  gate) — les deux audits précédents l'avaient manqué.
+  Correction (ADR-182) : nonce émis par le client, **persisté** en
+  `sessionStorage` (un `useRef` ne survivrait pas au rechargement, qui EST le
+  rejeu réel), et **dérivé** côté serveur en `play:${playerKey}:${nonce}` — un
+  nonce brut aurait laissé un client entrer en collision avec le tirage d'un
+  autre joueur du même commerce, dont l'insertion aurait alors échoué.
+  Sous-défaut rattrapé en relecture : la première version oubliait le nonce
+  sur le refus « Une erreur est survenue, réessayez. », c'est-à-dire sur le
+  seul chemin qui INVITE au rejeu et où la base a pu commettre. D'où le
+  drapeau `outcomeUnknown`, posé sur les seuls refus qui ne tranchent pas.
+
+- **✅ RÉSOLU (2026-09-06) — Ticket d'Or : un lot gagné n'était pas remettable
+  en caisse.** La base acceptait la famille `ticket_or` et les codes
+  `TICKET-…` (`reward_issuances`, migration `20261028120000`), et
+  `redeem_reward_by_code` savait les router. Mais l'application ne connaissait
+  que **dix** familles sur onze : `CashierMatch` n'avait pas de variante
+  `ticket_or` et `lookupCashierMatchByRoute` aucune branche. Un gagnant
+  présentait un code valide et s'entendait répondre « introuvable » — une
+  fonctionnalité livrée, cassée au moment de délivrer le lot. Aggravant
+  secondaire : `normalizeRedeemCode` re-préfixait le code en
+  `GAIN-TICKET-…`.
+  Correction : famille câblée de bout en bout, sur le patron de
+  `reserver_stock`. **Piège évité** — il existe DEUX « ticket » sans rapport :
+  le jeton de JEU (dix caractères, sans préfixe, `CODE_TICKET`) et le code de
+  RETRAIT (`TICKET-XXXXXXXX`). `ticketOrRedeemCodeSchema` refuse
+  explicitement la forme du premier, sans quoi la caisse validerait un ticket
+  jamais tiré.
+
+- **⚖️ DÉCISION ASSUMÉE (2026-09-06), pas un défaut non traité — rotation du
+  cookie anonyme et succès client-reporté de Réflexe/Jauge.** Un release gate
+  les classe bloquants ; le propriétaire a tranché de les conserver en l'état.
+  Les deux sont bornés et documentés (ADR-178, ADR-175), et la seconde est
+  **indépassable par construction** : un jeu sans secret serveur est
+  forgeable, et semer le geste depuis le jeton ne ferme rien puisque le
+  navigateur doit connaître la formule pour la rendre. Règle opérationnelle
+  qui en découle : **ne pas adosser un lot de valeur unitaire élevée à la
+  seule `play_limit`.**
+
+- **📌 ANALYSE — « budget non strict » : signalé HIGH, requalifié.** La moitié
+  dangereuse est déjà fermée par ADR-176 : `perform_atomic_spin` refuse une
+  campagne non active, et le budget atteint la met en pause. Aucun tirage ne
+  naît donc après le plafond. Ce qui reste est borné aux gains **déjà
+  remportés et pas encore réclamés** au moment où le plafond est franchi, et
+  les refuser reviendrait à dire « finalement non » à quelqu'un qui a vu
+  « vous avez gagné » — le mode d'échec que ce dépôt combat ailleurs. Non
+  corrigé, délibérément.
+
 - **✅ Pronostics — la rotation d'empreinte après lien magique désynchronisait
   le pont d'identité (corrigé le 2026-09-02, ID-7, PR #315).**
   `src/actions/pronostics.ts` faisait tourner `contest_players.token_hash`

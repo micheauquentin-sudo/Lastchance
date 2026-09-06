@@ -153,11 +153,11 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-09-06
-- **Dernier chantier**: **Stabilisation avant production : constats croisés de deux audits, vérifiés puis fermés** (PR #365, squash `60ef99c5`, ADR-175 à 181). Deux audits (Claude Opus 5, GPT-5.6 Sol) fusionnés puis rouverts dans le code : zéro faux positif, trois constats mal calibrés, une reco commune écartée.
-  Fermé : outillage local en routes de prod → `tools/` ; `redeem_ticket_or` autorisait via `p_actor` de l'appelant → `auth.uid()` vérifié ; secrets vers PostHog (liste unique, ADR-179) ; newsletter écrite malgré `collect_email=false` ; `perform_atomic_spin` aveugle au statut/dates de campagne (ADR-176) ; `addon_rendez_vous` absent de `getUserAndOrg` ; consentement SMS transactionnel (ADR-177) ; Turnstile borné ; site vitrine sans en-têtes (ADR-180) ; `vitrine_mesures` sans validation/rétention ; Ticket d'Or affichait un lot expiré.
-  Borné : reflex/gauge client-reportés, `play_limit=unlimited` interdit (ADR-175) ; plafond IP tirage 1500/min (ADR-178, réouverture partielle d'ADR-032) ; refus du check stock sur 5 modules, `quizzes_reward_bounds_check` porte déjà ce défaut (ADR-181).
-  Migrations → `20261214120000` (213). Vertes : typecheck, lint, casts/sql/migrations:check, build, Vitest 7606 tests, pgTAP 6518 assertions.
-  **Reste ouvert** : rotation cookie anonyme (produit) ; secret SMS legacy via `/api/health` (~7j) ; `quizzes_reward_bounds_check` ; garde statistique moteur SQL ; parité `lot-tirable.ts`/`perform_atomic_spin` ; RLS ligne-à-ligne ; E2E QR->`/play` ; `concurrency-probe.mjs` hors CI ; `usePrefersReducedMotion` x15 ; export mort ; 4 pgTAP sans `create extension` ; Google Wallet, capacité live (V1.76).
+- **Dernier chantier**: **Stabilisation avant production** (PR #365 `60ef99c5`, #366, ADR-175 à 182). TROIS audits successifs — Claude Opus 5, GPT-5.6 Sol, un release gate — fusionnés, et **chaque affirmation rouverte dans le code**. Zéro faux positif, trois constats mal calibrés, une reco commune écartée, neuf constats hors audits.
+  Fermé : outillage local en routes de prod ; `redeem_ticket_or` autorisait via `p_actor` ; secrets porteurs vers PostHog (ADR-179) ; newsletter malgré `collect_email=false` ; tirage aveugle au statut de campagne (ADR-176) ; `addon_rendez_vous` absent de `getUserAndOrg` ; consentement SMS transactionnel (ADR-177) ; en-têtes du site (ADR-180) ; Ticket d'Or expiré affiché **et non remettable en caisse** ; **tirage direct non idempotent** (ADR-182).
+  Décisions assumées, non des oublis : rotation du cookie anonyme (ADR-178) et succès client-reporté de reflex/gauge (ADR-175). Refus argumenté du check stock (ADR-181), qui révèle le même défaut dans `quizzes_reward_bounds_check`.
+  Migrations → `20261214120000` (213). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7653, pgTAP 6518.
+  **Reste ouvert** : secret SMS legacy (`/api/health`, ~7j) ; garde statistique du moteur SQL ; parité `lot-tirable.ts` ; RLS ligne-à-ligne ; E2E QR->`/play` ; Google Wallet, capacité live.
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

@@ -11355,3 +11355,63 @@ engagée.
 **Vérifications** : aucune (décision de ne pas modifier le schéma) ; lecture
 croisée de `hunt_settlement_preview.test.sql:222` et de la définition de
 `quizzes_reward_bounds_check`.
+
+## ADR-182 — La clé d'idempotence du tirage direct est DÉRIVÉE côté serveur, jamais reçue telle quelle
+
+**Date** : 2026-09-06
+**Statut** : Accepté
+
+**Contexte** : `spinWheelInner` appelait `perform_atomic_spin` sans
+`p_idempotency_key`, alors que le chemin des jeux d'adresse en passait un
+depuis JOB-8 (`skill:<nonce>`, `src/actions/skill.ts`). Le support existait donc
+en base et il était déjà utilisé — il n'était simplement pas branché sur le
+tirage DIRECT (roue, grattage, jeux de révélation). Quand la réponse réseau se
+perd APRÈS le commit, le joueur recharge et rejoue : sur une roue
+`play_limit = 'unlimited'` un SECOND tirage était créé, avec un second
+décrément de stock et un premier gain orphelin. Trouvé par un troisième audit
+(release gate) ; les deux audits précédents l'avaient manqué.
+
+**Décision** : le client émet un nonce, le persiste (`sessionStorage`, clé par
+slug de roue) et le réutilise tant qu'aucune réponse ne lui est parvenue. Le
+serveur ne le transmet JAMAIS tel quel : il en valide la forme
+(`spinNonceSchema`) puis dérive `play:${playerKey}:${nonce}`.
+
+**Pourquoi la dérivation, et non le nonce brut.** Contrairement à celui des
+jeux d'adresse, ce nonce n'est ni émis ni signé par le serveur : sa valeur est
+choisie par l'appelant. Or l'unicité de `spins.idempotency_key` porte sur
+`(idempotency_key, organization_id)` (ADR de la migration `20261214120000`) —
+elle n'est plus globale, mais elle reste PARTAGÉE entre les joueurs d'un même
+commerce. Un nonce brut laisserait donc un client choisir la valeur déjà portée
+par le tirage d'un AUTRE joueur de la même organisation : l'insertion lèverait
+`unique_violation`, et c'est le tirage de ce tiers qui échouerait. Préfixée par
+`player_key`, la clé ne permet plus d'entrer en collision qu'avec soi-même.
+
+**Pourquoi `sessionStorage` et non un `useRef`.** Il n'existe aucun bouton
+« Réessayer » sur le tirage — le rejeu réel est un RECHARGEMENT DE PAGE suivi
+d'un nouveau clic. Un nonce gardé en mémoire ne survivrait pas et ne fermerait
+rien. Chaque accès au stockage est enveloppé : un navigateur qui le refuse
+retombe silencieusement sur le comportement d'avant, et personne ne perd sa
+partie pour cette raison.
+
+**Le drapeau `outcomeUnknown`.** Le client oublie son nonce dès qu'une réponse
+TRANCHE — succès, ou refus qui n'a rien enregistré (limite atteinte, campagne
+fermée). Sans cet oubli, la partie suivante rejouerait la précédente et le
+joueur ne pourrait plus jamais jouer. Mais deux refus ne tranchent pas :
+l'échec de la RPC, et le lot tiré absent du contexte public. Tous deux rendent
+« Une erreur est survenue, réessayez. » — un message qui INVITE au rejeu — alors
+que la base a pu commettre le tirage. Ces deux-là portent donc
+`outcomeUnknown: true` et le nonce y survit. C'était le chemin le moins protégé
+et le plus exposé : la première version de ce correctif l'oubliait.
+
+**Écarté** : déplacer l'appel RPC avant les seaux de rate-limit, pour qu'un
+rejeu dans les 4 secondes rende l'issue idempotente plutôt que « Trop de
+tentatives ». Cela aurait ouvert un tirage non limité. La fenêtre réellement
+visée est celle d'après — rechargement puis nouveau clic, plusieurs secondes.
+
+**Vérifications** : 12 tests sur `src/actions/play.test.ts` (même nonce → une
+seule émission ; contre-épreuves deux nonces, nonce absent, nonce malformé,
+deux joueurs même nonce ; `outcomeUnknown` posé et son absence sur un refus qui
+tranche), 7 sur `src/lib/spin-nonce.ts` dont le stockage qui lève, et une garde
+de population sur les trois shells. Mutation-testés : 9 des 10 premiers
+rougissent au retrait de `p_idempotency_key`, et le test d'`outcomeUnknown`
+rougit au retrait du drapeau.

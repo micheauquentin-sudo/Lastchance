@@ -25,6 +25,7 @@ import * as rewardExpiry from "./reward-expiry";
 import * as skill from "./skill";
 import * as sms from "./sms";
 import * as team from "./team";
+import * as ticketOr from "./ticket-or";
 import * as vitrine from "./vitrine";
 import * as webhooks from "./webhooks";
 
@@ -379,6 +380,7 @@ const MODULES: Record<string, Record<string, unknown>> = {
   skill,
   sms,
   team,
+  "ticket-or": ticketOr,
   vitrine,
   webhooks,
 };
@@ -487,6 +489,7 @@ describe("champ non rendu — la classe est fermée au schéma", () => {
     const SANS_CHAMP = new Set([
       "champ-formulaire", // les primitives elles-mêmes, pas des objets
       "reward-expiry", // un unique schéma scalaire partagé par sept modules
+      "ticket-or", // un unique code de retrait, scalaire lui aussi
     ]);
     const couverts = new Set(CHAMPS.map((c) => c.chemin.split(":")[0]));
     const manquants = Object.keys(MODULES).filter(

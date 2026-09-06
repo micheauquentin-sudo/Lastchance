@@ -27,6 +27,7 @@ import {
   normalizeRedeemCode,
   normalizeReferralCode,
   normalizeStockHoldCode,
+  normalizeTicketOrCode,
   sanitizeSearchTerm,
   type ActionResult,
 } from "@/lib/utils";
@@ -39,6 +40,7 @@ import { contestRedeemCodeSchema } from "@/lib/validations/pronostics";
 import { quizRedeemCodeSchema } from "@/lib/validations/quiz";
 import { referralRedeemCodeSchema } from "@/lib/validations/referral";
 import { stockHoldRedeemCodeSchema } from "@/lib/validations/reserver";
+import { ticketOrRedeemCodeSchema } from "@/lib/validations/ticket-or";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import type { ContestAwardStatus } from "@/types/database";
 
@@ -573,10 +575,45 @@ export interface CashierStockHold {
 }
 
 /**
+ * Lot gagné par un Ticket d'Or, tel que la caisse le lit (TKT-1).
+ *
+ * ── LE REGISTRE EST LA TABLE PARENTE, ET C'EST UNIQUE À CETTE FAMILLE ──
+ *
+ * Les dix autres familles portent leur état de remise sur une table à elles
+ * (`participations.redeemed_at`, `hunt_completions.redeemed_at`, …) que le
+ * registre miroite. Ici il n'y a rien à miroiter : `tirer_ticket_or` écrit
+ * directement dans `reward_issuances`, et `redeem_ticket_or` y écrit la remise.
+ * Les trois dates qui décident — remise, annulation, échéance — se lisent donc
+ * sur le registre lui-même, et nulle part ailleurs.
+ *
+ * `tickets_or` N'EST PAS RELUE : elle ne porterait que `tire_le`, qui vaut
+ * l'`issued_at` du registre à la transaction près — les deux sont écrits par la
+ * même. Une lecture de plus pour la même date serait une lecture de plus au
+ * comptoir, pendant que le client attend.
+ */
+export interface CashierTicketOrWin {
+  /** Identifiant de la ligne de REGISTRE — la famille n'en a pas d'autre. */
+  id: string;
+  code: string;
+  /** Instant du TIRAGE (`reward_issuances.issued_at`). */
+  drawn_at: string;
+  redeemed_at: string | null;
+  cancelled_at: string | null;
+  /** Échéance SERVEUR du code (30 jours après le tirage). */
+  redeem_expires_at: string | null;
+  /**
+   * Libellé COURANT du lot (`tickets_or_lots.libelle`), repli du libellé gravé.
+   * Vide si le commerçant a supprimé le lot depuis le tirage : le gravé, lui,
+   * survit au registre et reste affiché.
+   */
+  reward_label: string;
+}
+
+/**
  * Résultat unifié d'une recherche de code en caisse. L'UI distingue le lot
  * de roue, la chasse au trésor, le passeport de fidélité, le jackpot, le
- * mode événement, le calendrier, le parrainage, le quiz, les pronostics et la
- * réservation de stock par `source`.
+ * mode événement, le calendrier, le parrainage, le quiz, les pronostics, la
+ * réservation de stock et le Ticket d'Or par `source`.
  */
 export type CashierMatch =
   | { source: "wheel"; participation: CashierParticipation }
@@ -595,7 +632,20 @@ export type CashierMatch =
    * la route ne serait jamais trouvée et chaque code RESA- retomberait sur le
    * routeur legacy.
    */
-  | { source: "reserver_stock"; hold: CashierStockHold };
+  | { source: "reserver_stock"; hold: CashierStockHold }
+  /**
+   * `ticket_or` ET NON `ticket` : même règle que `reserver_stock` juste
+   * au-dessus, et même conséquence si on l'oublie. La valeur est comparée telle
+   * quelle à `reward_issuances.source_type` dans `lookupUniversalRewardRoute` ;
+   * un nom d'écran plus court n'aurait jamais rapproché la route, et chaque
+   * code TICKET- serait retombé sur le routeur legacy — puis, faute de table
+   * parente à interroger, sur « Code introuvable ».
+   *
+   * Et surtout PAS `ticket` tout court pour une seconde raison : ce mot désigne
+   * déjà le JETON qui ouvre le droit de jouer (`CODE_TICKET`, dix caractères
+   * sans préfixe). La famille nommée ici est celle du lot GAGNÉ.
+   */
+  | { source: "ticket_or"; win: CashierTicketOrWin };
 
 /**
  * Verdict d'une recherche en caisse. « Introuvable » et « trop de recherches »
@@ -714,6 +764,7 @@ function rewardCodeCandidates(rawCode: string): RewardRoute[] {
     ["quiz", normalizeQuizCode],
     ["contest", normalizeContestCode],
     ["reserver_stock", normalizeStockHoldCode],
+    ["ticket_or", normalizeTicketOrCode],
     ["wheel", normalizeRedeemCode],
   ];
   const seen = new Set<string>();
@@ -843,6 +894,10 @@ function lookupCashierMatchByRoute(
     case "reserver_stock":
       return lookupStockHoldByCode(route.code).then((hold) =>
         hold ? { source: "reserver_stock", hold } : null,
+      );
+    case "ticket_or":
+      return lookupTicketOrWinByCode(route.code).then((win) =>
+        win ? { source: "ticket_or", win } : null,
       );
     case "wheel":
       return lookupParticipationByCode(route.code).then((participation) =>
@@ -1307,6 +1362,71 @@ async function lookupStockHoldByCode(
 }
 
 /**
+ * Recherche le lot d'un Ticket d'Or par son code de retrait (org-scopée).
+ * Privée, comme ses dix sœurs.
+ *
+ * ── POURQUOI LE REGISTRE EST RELU ICI ──
+ *
+ * `lookupUniversalRewardRoute` vient de lire la même table, mais elle n'en
+ * rapporte que ce dont TOUTES les familles ont besoin : la source, le libellé
+ * gravé, l'annulation. Les dix autres vont chercher ailleurs les trois dates
+ * qui décident de la remise ; celle-ci n'a pas d'ailleurs — sa table parente
+ * EST le registre. Élargir `RewardRoute` pour la servir aurait fait payer ces
+ * colonnes aux dix autres, qui les ignorent.
+ *
+ * Le filtre porte `source_type` en plus du code, comme le rapprochement de la
+ * route : un code est unique par organisation, mais interroger sans la famille
+ * laisserait cette lecture rendre la ligne d'une AUTRE famille si le préfixe
+ * et le type divergeaient un jour.
+ */
+async function lookupTicketOrWinByCode(
+  code: string,
+): Promise<CashierTicketOrWin | null> {
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+  const admin = createAdminClient();
+  const { data: issuance } = await admin
+    .from("reward_issuances")
+    .select(
+      "id, code, issued_at, expires_at, redeemed_at, cancelled_at, metadata",
+    )
+    .eq("organization_id", organization.id)
+    .eq("source_type", "ticket_or")
+    .eq("code", code)
+    .limit(1)
+    .maybeSingle();
+  if (!issuance) return null;
+
+  // `metadata->lot_id` est posé par `tirer_ticket_or` : c'est le seul lien vers
+  // le lot, `source_id` désignant le TICKET. Un document sans cette clé (ou
+  // avec autre chose qu'une chaîne) laisse simplement le libellé courant vide —
+  // le libellé GRAVÉ, lui, est déjà dans la route et suffit à l'affichage.
+  const lotId = (issuance.metadata as Record<string, unknown> | null)?.["lot_id"];
+  const { data: lot } =
+    typeof lotId === "string" && lotId
+      ? await admin
+          .from("tickets_or_lots")
+          .select("libelle")
+          .eq("id", lotId)
+          .eq("organization_id", organization.id)
+          .maybeSingle()
+      : { data: null };
+
+  return {
+    id: issuance.id,
+    // La ligne a été trouvée par `.eq("code", code)` : `issuance.code` VAUT
+    // `code`. La colonne est nullable en base (une émission peut n'avoir aucun
+    // code), le repli rend cette garantie lisible sans conversion.
+    code: issuance.code ?? code,
+    drawn_at: issuance.issued_at,
+    redeemed_at: issuance.redeemed_at,
+    cancelled_at: issuance.cancelled_at,
+    redeem_expires_at: issuance.expires_at,
+    reward_label: lot?.libelle ?? "",
+  };
+}
+
+/**
  * Vrai si la saisie porte le préfixe CHASSE explicite (par opposition à un
  * code nu de 8 caractères). Même nettoyage que normalizeHuntCode, pour rester
  * cohérent avec sa lecture de l'entrée.
@@ -1380,6 +1500,14 @@ function hasStockHoldPrefix(rawCode: string): boolean {
     .toUpperCase()
     .replace(/[\s_-]/g, "")
     .startsWith("RESA");
+}
+
+/** Vrai si la saisie porte le préfixe TICKET explicite (miroir hunt). */
+function hasTicketOrPrefix(rawCode: string): boolean {
+  return sanitizeSearchTerm(rawCode)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .startsWith("TICKET");
 }
 
 /**
@@ -1546,6 +1674,19 @@ async function routeRedeemCode(rawCode: string): Promise<RouteOutcome | null> {
     const hold = await lookupStockHoldByCode(stockCode);
     if (hold) return { match: { source: "reserver_stock", hold } };
     if (hasStockHoldPrefix(rawCode)) return null;
+  }
+
+  // Ticket d'Or : forme stricte TICKET-… . Ce chemin ne devrait JAMAIS servir —
+  // `tirer_ticket_or` écrit la ligne de registre elle-même, donc tout lot tiré a
+  // sa route. Il existe pour l'AUTORITÉ DU PRÉFIXE, qui n'est pas facultative :
+  // sans elle, un code TICKET- que le registre ignore (autre organisation) irait
+  // interroger la roue, et le seul mot que le comptoir puisse dire d'un code
+  // d'une autre famille est « introuvable ».
+  const ticketCode = normalizeTicketOrCode(rawCode);
+  if (ticketCode) {
+    const win = await lookupTicketOrWinByCode(ticketCode);
+    if (win) return { match: { source: "ticket_or", win } };
+    if (hasTicketOrPrefix(rawCode)) return null;
   }
 
   const gainCode = normalizeRedeemCode(rawCode);
@@ -2185,6 +2326,81 @@ async function refusRetraitStock(
   return libelleRetraitTropTot(
     formatFenetreStock(hold.redeem_not_before, hold.redeem_expires_at, fuseau),
   );
+}
+
+/**
+ * Remet en caisse le lot d'un Ticket d'Or (code TICKET-…, TKT-1).
+ *
+ * ── LE ROUTEUR UNIVERSEL, ET RIEN D'AUTRE ──
+ *
+ * Comme la réservation de stock, cette famille n'a AUCUN repli legacy, et pour
+ * une raison plus forte encore : elle n'a pas de table parente à interroger.
+ * `tirer_ticket_or` écrit la ligne de registre dans la transaction du tirage, et
+ * `redeem_ticket_or` — son bras source — n'est appelable que par le
+ * `service_role`, depuis `redeem_reward_by_code` (20261208120000, durci par
+ * 20261212120000 : l'acteur nommé est confronté à l'identité de l'appel).
+ * L'appeler directement d'ici ouvrirait une seconde porte de comptoir, non
+ * auditée par le registre, sur la seule famille qui n'en a jamais eu besoin.
+ *
+ * Les deux silences se disent donc en deux phrases, exactement comme pour le
+ * stock : registre EN PANNE = « réessayez », registre qui RÉPOND et ne connaît
+ * pas ce code = « refaites saisir ». Les confondre ferait renvoyer chez lui,
+ * pendant que la base tousse, quelqu'un dont le lot est parfaitement valide.
+ *
+ * ── PAS DE PANIER, ET C'EST UNE DÉCISION DU MODULE ──
+ *
+ * `tickets_or_state` le dit de son côté : le Ticket d'Or « n'attribue NI panier
+ * NI revenu — la table ne les connaît pas ». Un champ de panier ici ferait
+ * saisir au comptoir un montant que rien ne lirait ensuite.
+ */
+export async function redeemTicketOr(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = ticketOrRedeemCodeSchema.safeParse(formData.get("code"));
+  if (!parsed.success) return { ok: false, error: "Code de retrait invalide" };
+
+  const { user, organization } = await getUserAndOrg();
+  if (!user || !organization) redirect("/login");
+
+  const allowed = await rateLimit(
+    rateLimitBucket("cashier:redeem", organization.id, user.id),
+    RATE_LIMITS.cashier,
+    { failClosed: true },
+  );
+  if (!allowed) return { ok: false, error: "Trop de tentatives, patientez." };
+
+  // FUSEAU DE L'ÉTABLISSEMENT, jamais celui de l'hôte : le motif de refus daté
+  // est lu au comptoir, à côté d'une carte qui affiche déjà ses dates ainsi.
+  const fuseau = organization.timezone;
+
+  const issue = await tryUniversalRedeem(
+    createAdminClient(),
+    organization.id,
+    parsed.data,
+    user.id,
+    "ticket_or",
+  );
+
+  if (issue.kind === "registry_error") {
+    return { ok: false, error: "Validation impossible — réessayez" };
+  }
+  // Le registre a RÉPONDU et ne connaît pas ce code : pour cette famille cela ne
+  // peut pas être un code « historique non miroirisé » — elle est née avec le
+  // registre. C'est un code inventé, ou d'une autre organisation.
+  if (issue.kind === "unknown_code") {
+    return { ok: false, error: "Code introuvable" };
+  }
+
+  const row = issue.row;
+  // `source_refused` n'a ici AUCUNE cause métier propre — le bras source
+  // n'applique que les trois gardes que le registre a déjà vérifiées avant lui.
+  // Il ne peut donc désigner qu'une course entre les deux lectures, et le refus
+  // sobre des dix autres familles est le mot juste.
+  if (!row.redeemed_now) return universalRedeemFailure(row, "lot", fuseau);
+
+  revalidatePath("/dashboard/redeem");
+  return { ok: true, data: undefined };
 }
 
 /**

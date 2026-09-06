@@ -107,6 +107,29 @@ const { state, makeAdmin } = vi.hoisted(() => {
      *  refusé » de « le seau a seulement alerté ». */
     rateLimitDenied: [] as string[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
+    /**
+     * Les tirages RÉELLEMENT ÉMIS par `perform_atomic_spin`, dans l'ordre.
+     * C'est le seul compteur qui distingue « la même issue est rendue » de
+     * « un second spin a été créé, avec son second décrément de stock ».
+     */
+    tiragesEmis: [] as Array<{
+      spin_id: string;
+      prize_id: string | null;
+      is_losing: boolean;
+      denial_reason: string | null;
+      next_eligible_at: string | null;
+    }>,
+    /** Index de rejeu de la RPC : (clé d'idempotence, roue, joueur) → tirage. */
+    tiragesParCle: new Map<
+      string,
+      {
+        spin_id: string;
+        prize_id: string | null;
+        is_losing: boolean;
+        denial_reason: string | null;
+        next_eligible_at: string | null;
+      }
+    >(),
     ip: "203.0.113.7",
     /** Empreinte joueur rendue par le cookie — MUTABLE, pour pouvoir simuler
      *  une salle entière derrière une seule IP (contre-épreuve du plafond). */
@@ -123,6 +146,14 @@ const { state, makeAdmin } = vi.hoisted(() => {
     relectureEnPanne: false,
     /** `claim_winning_spin` refuse-t-elle, quel que soit l'état du spin ? */
     rpcEnPanne: false,
+    /**
+     * `perform_atomic_spin` rend-elle une ERREUR de transport ?
+     *
+     * Distinct de `rpcEnPanne`, qui vise la réclamation. Ce levier-ci sert le
+     * seul cas où le serveur ne peut PAS dire si un tirage a été commis : la
+     * coupure d'après-commit rend la même erreur qu'un refus d'avant écriture.
+     */
+    tirageEnPanne: false,
     /**
      * Ce que `recover_pending_spin` rend — la fenêtre de reprise est calculée
      * DANS la base (elle suit le `play_limit`), ce double n'a donc qu'à jouer
@@ -153,7 +184,10 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.smsSender = "MONRESTO";
       state.relectureEnPanne = false;
       state.rpcEnPanne = false;
+      state.tirageEnPanne = false;
       state.recovery = null;
+      state.tiragesEmis = [];
+      state.tiragesParCle = new Map();
     },
   };
 
@@ -162,19 +196,49 @@ const { state, makeAdmin } = vi.hoisted(() => {
       rpc: (name: string, args: Record<string, unknown>) => {
         state.rpcCalls.push({ name, args });
         if (name === "perform_atomic_spin") {
-          // Tirage gagnant déterministe : le spin réussit et désigne PRIZE_ID.
-          return Promise.resolve({
-            data: [
-              {
-                spin_id: SPIN_ID,
-                prize_id: PRIZE_ID,
-                is_losing: false,
-                denial_reason: null,
-                next_eligible_at: null,
-              },
-            ],
-            error: null,
-          });
+          /* Tirage gagnant déterministe (le spin réussit et désigne PRIZE_ID),
+           * PLUS la recherche de rejeu JOB-8 transcrite du SQL.
+           *
+           * Cette moitié-là n'est pas décorative : sans elle, le double rendait
+           * le MÊME `spin_id` à chaque appel, si bien qu'un tirage idempotent
+           * et un double tirage étaient indiscernables — un test « le même
+           * résultat est rendu » serait passé au vert sur une fonction qui
+           * tire deux fois. Ce qu'on compte ici, ce sont les ÉMISSIONS.
+           *
+           * La recherche est bornée à (clé, wheel_id, player_key) exactement
+           * comme la RPC (20261210120000:208-213) : une clé portée par un autre
+           * joueur ne rend RIEN, elle ne rend pas le spin de ce joueur-là.
+           * Et sans clé, aucune recherche n'a lieu — c'est le comportement
+           * d'origine, celui de tous les spins antérieurs. */
+          if (state.tirageEnPanne) {
+            return Promise.resolve({
+              data: null,
+              error: { message: "connexion perdue apres commit" },
+            });
+          }
+          const cle = args.p_idempotency_key;
+          const empreinte =
+            typeof cle === "string" && cle.length > 0
+              ? `${cle}|${String(args.p_wheel_id)}|${String(args.p_player_key)}`
+              : null;
+          if (empreinte) {
+            const deja = state.tiragesParCle.get(empreinte);
+            if (deja) return Promise.resolve({ data: [deja], error: null });
+          }
+          const rang = state.tiragesEmis.length;
+          const ligne = {
+            spin_id:
+              rang === 0
+                ? SPIN_ID
+                : `${SPIN_ID.slice(0, -3)}${String(rang).padStart(3, "0")}`,
+            prize_id: PRIZE_ID,
+            is_losing: false,
+            denial_reason: null as string | null,
+            next_eligible_at: null as string | null,
+          };
+          state.tiragesEmis.push(ligne);
+          if (empreinte) state.tiragesParCle.set(empreinte, ligne);
+          return Promise.resolve({ data: [ligne], error: null });
         }
         // ── Le canal SMS, tel que le socle le présente ──────
         // Transcription minimale, pour ce double SEUL : le produit ne
@@ -512,7 +576,7 @@ vi.mock("next/headers", () => ({
 
 // Le moteur de jeton de claim n'est PAS mocké : vrais HMAC (secret fourni par
 // vitest.config), donc la garde « jeton d'abord » est réellement exercée.
-import { signClaimToken } from "@/lib/spin";
+import { signClaimToken, verifyClaimToken } from "@/lib/spin";
 import { loadPlayContext } from "@/lib/play-context";
 import { claimPrize, recoverPendingWin, spinWheel } from "./play";
 
@@ -1266,6 +1330,199 @@ describe("spinWheel — le rejeu d'une même empreinte reste borné", () => {
     expect(state.rateLimitDenied).toContain(SPIN_BURST);
     // La clé IP partagée n'a jamais refusé au cours des deux tours.
     expect(state.rateLimitDenied).not.toContain(SPIN_IP("203.0.113.7"));
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * spinWheel — LE REJEU D'UNE MÊME PARTIE NE TIRE QU'UNE FOIS
+ *
+ * Régression fermée ici : `spinWheelInner` appelait `perform_atomic_spin`
+ * SANS `p_idempotency_key`, alors que le chemin des jeux d'adresse en passe
+ * un depuis JOB-8 (`skill:<nonce>`). La réponse réseau se perd après le
+ * commit, le joueur recharge et rejoue : sur une roue `unlimited` un SECOND
+ * spin était créé, avec un second décrément de stock et un premier gain
+ * orphelin ; sur une roue limitée l'index de fenêtre bloquait le second et le
+ * joueur lisait « vous avez déjà joué » au lieu de son lot.
+ *
+ * CE QUE CES TESTS NE PRÉTENDENT PAS. Aucun bouton « Réessayer » n'existe sur
+ * le tirage : le rejeu réel est un rechargement de page suivi d'un nouveau
+ * clic, et `recoverPendingWin` rattrape déjà le gain non réclamé. Ce qui se
+ * vérifie ici est ce que la reprise ne couvre pas — le second TIRAGE.
+ *
+ * Le seau anti double-clic (1/4 s, indexé sur l'empreinte) refuse un second
+ * clic immédiat AVANT même la RPC : c'est `rechargementDePage()` qui le laisse
+ * expirer, sans quoi ces tests mesureraient le seau et non la clé de rejeu.
+ * ════════════════════════════════════════════════════════════ */
+describe("spinWheel — le rejeu d'une même partie ne tire qu'une fois", () => {
+  /** Ce qu'un `crypto.randomUUID()` client produit — 36 caractères, recevable. */
+  const NONCE = "b7f4c2a1-9d3e-4f58-8a6c-0e2b1d4c7f93";
+  const AUTRE_NONCE = "0c5e8b17-2a44-4d90-91f3-6ab7de052c81";
+
+  beforeEach(() => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 4 casts historiques du fichier
+      spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+  });
+
+  /**
+   * Le temps qui passe entre la réponse perdue et le nouveau clic : le seau
+   * anti double-clic (1/4 s) a expiré, les autres non. C'est exactement la
+   * fenêtre dans laquelle le second tirage se produisait.
+   */
+  const rechargementDePage = () => {
+    state.counters.delete(SPIN_BURST);
+  };
+
+  /** La clé d'idempotence portée par le Nième appel de la RPC. */
+  const cleDuTirage = (rang = 0) =>
+    state.rpcCalls.filter((c) => c.name === "perform_atomic_spin")[rang]?.args
+      .p_idempotency_key;
+
+  it("MÊME nonce : un seul tirage émis, et la même issue rendue deux fois", async () => {
+    const premier = await spinWheel(SLUG, undefined, undefined, NONCE);
+    rechargementDePage();
+    const second = await spinWheel(SLUG, undefined, undefined, NONCE);
+
+    expect(premier.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    // UN SEUL spin matérialisé : un seul décrément de stock, aucun gain orphelin.
+    expect(state.tiragesEmis).toHaveLength(1);
+    if (premier.ok && second.ok) {
+      // Même spin, même segment : le joueur revoit SON lot, pas un autre.
+      expect(second.data.spinId).toBe(premier.data.spinId);
+      expect(second.data.prizeIndex).toBe(premier.data.prizeIndex);
+      // Le jeton est réémis (son `exp` court depuis l'instant présent, il n'a
+      // donc aucune raison d'être identique octet pour octet) mais il désigne
+      // LE MÊME spin — sans quoi le rejeu rendrait un gain inréclamable.
+      expect(second.data.claimToken).toBeTruthy();
+      expect(verifyClaimToken(String(second.data.claimToken))?.spinId).toBe(
+        premier.data.spinId,
+      );
+    }
+  });
+
+  it("RPC en panne : le refus DIT que l'issue est inconnue, pour que le nonce survive", async () => {
+    // ── LE CHEMIN QUI INVITE AU REJEU EST CELUI QUI DOIT LE PLUS SE PROTÉGER ──
+    //
+    // « Une erreur est survenue, réessayez. » est rendu quand l'appel RPC
+    // échoue — mais rien ne dit à quel moment il a échoué. Une coupure APRÈS le
+    // commit rend exactement la même erreur qu'un refus d'avant écriture : le
+    // serveur ne peut pas les distinguer, donc il ne prétend pas le faire.
+    //
+    // Sans le drapeau, les shells oubliaient le nonce sur CE refus-là — celui
+    // qui demande explicitement de réessayer. Le rejeu repartait alors sans
+    // clé et créait le second tirage que tout ce bloc existe pour empêcher :
+    // la protection manquait précisément là où elle servait.
+    //
+    // ROUGE SI : `outcomeUnknown` disparaît du refus, ou s'il se met à
+    // apparaître sur un refus qui TRANCHE (limite atteinte, campagne fermée) —
+    // le client cesserait alors de pouvoir rejouer.
+    state.tirageEnPanne = true;
+
+    const res = await spinWheel(SLUG, undefined, undefined, NONCE);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toContain("réessayez");
+      expect(
+        res.outcomeUnknown,
+        "le client va oublier son nonce et rejouer sans protection",
+      ).toBe(true);
+    }
+  });
+
+  it("CONTRE-ÉPREUVE : un refus qui TRANCHE ne porte pas `outcomeUnknown`", async () => {
+    // Sans cette épreuve, poser le drapeau partout passerait pour un succès —
+    // et le joueur garderait son nonce à vie, donc rejouerait éternellement la
+    // même partie sans jamais pouvoir en commencer une autre.
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 4 casts historiques du fichier
+      { ok: false, error: "Cette campagne n'est pas active." } as unknown as Awaited<
+        ReturnType<typeof loadPlayContext>
+      >,
+    );
+
+    const res = await spinWheel(SLUG, undefined, undefined, NONCE);
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.outcomeUnknown).toBeUndefined();
+  });
+
+  it("CONTRE-ÉPREUVE : deux nonces différents produisent bien DEUX tirages", async () => {
+    // Sans elle, le test ci-dessus passerait aussi sur une fonction qui refuse
+    // tout second tirage — une roue cassée aurait l'air idempotente.
+    const premier = await spinWheel(SLUG, undefined, undefined, NONCE);
+    rechargementDePage();
+    const second = await spinWheel(SLUG, undefined, undefined, AUTRE_NONCE);
+
+    expect(premier.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(state.tiragesEmis).toHaveLength(2);
+    if (premier.ok && second.ok) {
+      expect(second.data.spinId).not.toBe(premier.data.spinId);
+    }
+  });
+
+  it("nonce ABSENT : clé nulle, et deux appels tirent deux fois (comportement d'aujourd'hui)", async () => {
+    await spinWheel(SLUG);
+    rechargementDePage();
+    await spinWheel(SLUG);
+
+    // `null` et non l'absence du champ : la RPC le lit et saute sa recherche de
+    // rejeu, la colonne reste nulle, donc hors de l'index partiel d'unicité.
+    expect(cleDuTirage(0)).toBeNull();
+    expect(cleDuTirage(1)).toBeNull();
+    expect(state.tiragesEmis).toHaveLength(2);
+  });
+
+  it.each([
+    ["trop court", "abc"],
+    ["trop long", "a".repeat(65)],
+    ["hors alphabet", "nonce avec espaces et accents é"],
+    ["porteur du séparateur", "play:autre-joueur:0123456789abcdef"],
+    ["vide", ""],
+  ])("nonce MALFORMÉ (%s) : on retombe sur le comportement d'aujourd'hui", async (
+    _cas,
+    nonce,
+  ) => {
+    // On n'oppose PAS de refus au joueur pour un nonce bancal : il perdrait sa
+    // partie pour une valeur dont il n'a, la plupart du temps, pas la main.
+    const res = await spinWheel(SLUG, undefined, undefined, nonce);
+
+    expect(res.ok).toBe(true);
+    expect(cleDuTirage(0)).toBeNull();
+  });
+
+  it("la clé transmise est DÉRIVÉE et porte l'identité joueur, jamais le nonce brut", async () => {
+    await spinWheel(SLUG, undefined, undefined, NONCE);
+
+    const cle = cleDuTirage(0);
+    expect(cle).toBe(`play:${state.playerKey}:${NONCE}`);
+    // Le nonce vient du client et n'est ni signé ni émis par le serveur : le
+    // transmettre tel quel l'exposerait à l'unicité `(idempotency_key,
+    // organization_id)` (20261214120000), PARTAGÉE entre les joueurs d'un même
+    // commerce — un nonce choisi ferait échouer le tirage d'un tiers.
+    expect(cle).not.toBe(NONCE);
+    expect(String(cle)).toContain(state.playerKey);
+    // Espace de nonce distinct de celui des défis (`skill:<nonce>`).
+    expect(String(cle).startsWith("play:")).toBe(true);
+  });
+
+  it("deux JOUEURS, le même nonce : deux clés distinctes et deux tirages", async () => {
+    // La propriété qui rend la dérivation nécessaire : un client ne peut entrer
+    // en collision qu'avec lui-même. Le second joueur tire pour de bon, il ne
+    // reçoit pas le gain du premier et ne se voit pas refuser son tour.
+    state.playerKey = "joueur-a";
+    const premier = await spinWheel(SLUG, undefined, undefined, NONCE);
+    state.playerKey = "joueur-b";
+    const second = await spinWheel(SLUG, undefined, undefined, NONCE);
+
+    expect(premier.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(cleDuTirage(0)).toBe(`play:joueur-a:${NONCE}`);
+    expect(cleDuTirage(1)).toBe(`play:joueur-b:${NONCE}`);
+    expect(state.tiragesEmis).toHaveLength(2);
   });
 });
 
