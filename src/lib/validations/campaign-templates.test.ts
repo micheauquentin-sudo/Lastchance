@@ -199,6 +199,26 @@ describe("campaignBlueprintSchema", () => {
     expect(message).toContain("limite de participation");
   });
 
+  // Un modèle publié ne doit pas rouvrir ce qu'updateWheelSchema refuse :
+  // réflexe et jauge sont évalués par l'appareil du joueur, donc `unlimited`
+  // rendrait la porte de compétence décorative.
+  it("refuse play_limit=unlimited sur un défi évalué par le client", () => {
+    const blueprint = baseBlueprint();
+    blueprint.game.game_type = "reflex";
+    blueprint.game.skill_config = { durationMs: 800 } as never;
+    blueprint.rules.play_limit = "unlimited";
+    expect(firstMessage(blueprint)).toContain("appareil du joueur");
+  });
+
+  // Contre-épreuve : bornée, la même configuration passe.
+  it("accepte un défi évalué par le client sous une limite bornée", () => {
+    const blueprint = baseBlueprint();
+    blueprint.game.game_type = "reflex";
+    blueprint.game.skill_config = { durationMs: 800 } as never;
+    blueprint.rules.play_limit = "daily";
+    expect(firstMessage(blueprint)).toBeNull();
+  });
+
   it("refuse un play_limit inconnu", () => {
     const blueprint = baseBlueprint();
     blueprint.rules.play_limit = "hourly";

@@ -40,10 +40,22 @@ export async function verifyTurnstile(
     const body = new URLSearchParams({ secret, response: token });
     if (remoteIp && remoteIp !== "unknown") body.set("remoteip", remoteIp);
 
+    // BUDGET DE TEMPS EXPLICITE, sur le chemin de CHAQUE partie.
+    //
+    // Sans lui, un Cloudflare qui traîne sans fermer la connexion tient
+    // l'invocation ouverte jusqu'au plafond de la plateforme : le joueur
+    // regarde un bouton qui ne répond pas, et l'erreur qui finit par sortir
+    // ressemble à une panne de base. Trois secondes sont très au-dessus du
+    // temps réel de `siteverify` et très en dessous du plafond serverless.
+    //
+    // L'abandon retombe dans le `catch` ci-dessous, qui rend `false` : le
+    // refus reste FERMÉ, conformément au contrat du module. On échange une
+    // attente indéfinie contre un refus rapide, jamais contre un laissez-passer.
     const res = await fetch(SITEVERIFY_URL, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body,
+      signal: AbortSignal.timeout(3000),
     });
     const data = (await res.json()) as {
       success?: boolean;

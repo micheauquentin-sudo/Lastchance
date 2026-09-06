@@ -208,6 +208,42 @@ const nextConfig: NextConfig = {
         headers: tokenPathSecurityHeaders,
       },
       {
+        // Invitation privée Réserver. Elle était reconnue comme porteuse par
+        // `masquerJetonUrl` — donc masquée dans l'analytique — mais ABSENTE
+        // d'ici : deux listes qui décrivent la même classe et ne se
+        // ressemblaient pas. `src/lib/token-path-headers.test.ts` les compare
+        // désormais l'une à l'autre.
+        source: "/reserver/invitation/:path*",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
+        // LE TICKET D'OR — le pire cas de la classe, et le dernier arrivé.
+        //
+        // Le code de retrait est DANS le chemin, et la page ne le consomme pas
+        // au GET (`src/app/(player)/ticket/[code]/page.tsx` : un préchargement
+        // aurait joué à la place du client). Il reste donc ACTIF et REJOUABLE
+        // après la visite — tout ce qui recopie l'URL recopie un droit vivant.
+        source: "/ticket/:path*",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
+        // LES DEUX JETONS EN QUERY. Même classe, autre emplacement : le secret
+        // est dans `?token=`, pas dans le chemin, mais le `Referer` et le cache
+        // emportent la query aussi bien que le chemin.
+        //
+        // `/newsletter/unsubscribe` est le plus durable des deux : son jeton est
+        // PERMANENT (`src/lib/unsubscribe.ts`), il ne périme jamais de lui-même.
+        // Les deux pages posent déjà `robots: { index: false }` dans leur
+        // `metadata` ; l'en-tête le redit pour les agents qui ne rendent pas la
+        // page, et y ajoute le referer et le cache, que `metadata` ne couvre pas.
+        source: "/newsletter/unsubscribe",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
+        source: "/pronos/:slug/recover",
+        headers: tokenPathSecurityHeaders,
+      },
+      {
         // Le code de salle vit dans le CHEMIN et le corps dépend d'un cookie
         // (membre ou pas) : cinquième surface « l'URL est le secret » (revue
         // L16, M-3). `Vary: Cookie` en plus — un cache clé-sur-URL (proxy

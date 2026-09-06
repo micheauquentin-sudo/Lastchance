@@ -18,8 +18,39 @@ function deviceKeyFromId(id: string): string {
 /**
  * Identifiant aléatoire de navigateur, sans email, téléphone, nom, IP ou
  * compte. Le cookie est inaccessible à JavaScript et ne sert qu'aux limites
- * de jeu. Le joueur peut l'effacer : Turnstile et la limite réseau restent la
- * défense contre l'automatisation distribuée.
+ * de jeu.
+ *
+ * ── CE QUE CETTE IDENTITÉ TIENT, ET CE QU'ELLE NE TIENT PAS ──
+ *
+ * Ce pavé disait : « Le joueur peut l'effacer : Turnstile et la limite réseau
+ * restent la défense contre l'automatisation distribuée. » La première moitié
+ * est vraie, la seconde ne l'est pas, et un audit croisé l'a relevée. On écrit
+ * donc ce qui est mesuré, pas ce qui rassure.
+ *
+ * `play_limit` (daily/weekly/once) est indexée sur `player_key`, elle-même
+ * dérivée de CE cookie — que le client contrôle. Il n'est ni signé, ni
+ * enregistré côté serveur : toute valeur de forme UUIDv4 est acceptée, et un
+ * cookie absent en fait émettre un neuf. L'effacer rend donc une partie.
+ *
+ * La « limite réseau » invoquée ne rattrape pas cela : le seau `spin:ip` est
+ * en OBSERVATION SEULE (`observeSharedKey`), et c'est délibéré (ADR-032) — un
+ * seau `failClosed` sur une clé partagée devient un interrupteur qui coupe
+ * tout le Wi-Fi d'un commerce. Et les deux seaux qui, eux, refusent
+ * (`spin:burst` 1/4 s, `spin` 8/60 s) sont indexés sur `player_key` : ils
+ * TOURNENT AVEC LE COOKIE. Le coût réel d'une rotation est donc de l'ordre de
+ * quatre secondes, pas d'un plafond par IP.
+ *
+ * Ce qui borne réellement le préjudice n'est pas l'identité, c'est
+ * l'ÉCONOMIE : le stock des lots et les poids, tenus en base par
+ * `perform_atomic_spin`. Un joueur qui recommence consomme des tours, il ne
+ * crée pas de lots.
+ *
+ * Fermer vraiment cette porte demande un ancrage d'éligibilité que le serveur
+ * possède — jeton délivré en caisse, preuve d'achat, compte vérifié. C'est un
+ * choix produit, pas une correction : signer le cookie n'y changerait rien,
+ * puisqu'on peut toujours le supprimer. Tant que ce choix n'est pas fait, la
+ * règle à retenir est simple : NE PAS adosser un lot de valeur unitaire
+ * élevée à la seule `play_limit`.
  */
 export async function anonymousPlayerKey(): Promise<string> {
   // Migration progressive : le cookie historique reste l'autorité des limites

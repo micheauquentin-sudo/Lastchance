@@ -178,6 +178,14 @@ select is(
 );
 
 -- ══ 6. LA REMISE, PAR LA CAISSE UNIVERSELLE ═════════════════
+--
+-- `service_role` ET NON une session marchande — même raison qu'en 6 bis, et
+-- depuis 20261208120000 la même exigence : `redeem_ticket_or` est appelée par
+-- le SERVEUR après sa propre garde, et vérifie ensuite que l'ACTEUR nommé tient
+-- bien un comptoir de ce commerce. Les trois assertions qui suivent portent sur
+-- cet acteur, pas sur la session : CAISSE-1 refuse toujours le propriétaire
+-- d'en face.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select throws_ok(
   $$select * from public.redeem_ticket_or(

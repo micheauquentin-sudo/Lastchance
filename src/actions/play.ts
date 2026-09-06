@@ -33,7 +33,10 @@ import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
-import { anonymousPlayerKey } from "@/lib/anonymous-player";
+import {
+  anonymousPlayerKey,
+  peekAnonymousPlayerKey,
+} from "@/lib/anonymous-player";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 
 export interface SpinOutcome {
@@ -285,6 +288,14 @@ async function spinWheelInner(
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
           nextEligibleAt: spin.next_eligible_at ?? undefined,
         };
+      }
+      if (spin?.denial_reason === "campaign_closed") {
+        // La campagne a fermé ENTRE la lecture du contexte et le tirage — la
+        // course que la garde de `perform_atomic_spin` existe pour fermer
+        // (migration 20261211120000). Le joueur voyait une roue jouable il y a
+        // une seconde : lui répondre « plus aucun lot disponible » l'enverrait
+        // chercher un problème de stock qui n'existe pas.
+        return { ok: false, error: "Ce jeu vient de se terminer." };
       }
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
     }
@@ -575,6 +586,44 @@ async function claimPrizeInner(
 
     if (!spin || spin.is_losing || !spin.prize_id) {
       return { ok: false, error: "Gain introuvable." };
+    }
+
+    // LE GAIN APPARTIENT À L'APPAREIL QUI L'A TIRÉ — défense en profondeur.
+    //
+    // ── Ce que le jeton prouve, et ce qu'il ne prouve pas ──
+    //
+    // Le jeton de claim signe `{ spinId, exp }` et rien d'autre. L'en-tête de
+    // `replayExistingClaim` argumente que « quiconque peut appeler ce rejeu
+    // pouvait déjà faire le premier claim » : c'est vrai du REJEU, pas du
+    // PREMIER claim. Un jeton capté pendant sa fenêtre de 15 min (extension de
+    // navigateur, capture d'un devtools, journal partagé) laisse un tiers
+    // encaisser le lot sous SON adresse — et le gagnant légitime obtient
+    // ensuite « Ce gain a déjà été enregistré ».
+    //
+    // `spins.player_key` existe et est renseignée. On la confronte au cookie de
+    // l'appelant, ce que rien ne faisait.
+    //
+    // ── POURQUOI L'ABSENCE DE COOKIE NE REFUSE PAS ──
+    //
+    // Refuser sans cookie coûterait son lot à un gagnant qui a nettoyé son
+    // navigateur entre le tirage et la réclamation — un cas rare mais dont le
+    // prix est un client humilié au comptoir, pour une menace qui, elle, reste
+    // hypothétique. On refuse donc le cookie qui CONTREDIT, jamais celui qui
+    // manque : un tiers qui a navigué EN A un, et il ne correspond pas. Le
+    // contournement existe encore (effacer son propre cookie), mais il devient
+    // un geste délibéré, et il est journalisé.
+    // Test de VÉRACITÉ et non `!== null` : un spin dont la colonne est absente
+    // ou vide n'est lié à aucun appareil, et `undefined !== null` aurait fait
+    // refuser ces gains-là — une régression introduite par la garde elle-même.
+    const cleAppelant = await peekAnonymousPlayerKey();
+    if (cleAppelant && spin.player_key && cleAppelant !== spin.player_key) {
+      // Même libellé que « gain introuvable » : distinguer les deux donnerait
+      // un oracle qui confirme qu'un spin_id porte bien un gain.
+      reportSecurityEvent("claim_player_key_mismatch", { spin_id: spin.id });
+      return { ok: false, error: "Gain introuvable." };
+    }
+    if (cleAppelant === null) {
+      reportSecurityEvent("claim_sans_cookie_joueur", { spin_id: spin.id });
     }
 
     // Exigences de collecte définies par la campagne (source de vérité

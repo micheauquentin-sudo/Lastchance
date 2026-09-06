@@ -43,6 +43,12 @@ const { state, makeAdmin } = vi.hoisted(() => {
     prize_id: string | null;
     is_losing: boolean;
     claimed: boolean;
+    /**
+     * Empreinte de l'appareil qui a TIRÉ ce spin. Optionnelle ici comme elle
+     * peut l'être en base sur les lignes anciennes : la liaison ne doit
+     * refuser un gain que sur une CONTRADICTION, jamais sur une absence.
+     */
+    player_key?: string | null;
   }
 
   const makeSpin = (id: string): SpinRow => ({
@@ -434,8 +440,22 @@ vi.mock("@/lib/google-wallet", () => ({ buildGoogleWalletSaveUrl: () => null }))
 vi.mock("@/lib/apple-wallet", () => ({ buildAppleWalletPassUrl: () => null }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: () => Promise.resolve(true) }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: vi.fn() }));
+/**
+ * Le cookie joueur TEL QUE LE VOIT LA RÉCLAMATION, rendu variable.
+ *
+ * `anonymousPlayerKey` EN ÉMET un si le cookie manque — c'est le chemin du
+ * tirage. `peekAnonymousPlayerKey` REGARDE sans rien émettre, et peut donc
+ * rendre `null` : c'est le chemin de la réclamation, et cette différence est
+ * exactement ce que la liaison gain/appareil doit traiter. Un holder mutable
+ * permet aux tests de poser les trois cas (concordant, divergent, absent).
+ */
+const cookieJoueur = vi.hoisted(() => ({
+  cle: "anonymous-player-key" as string | null,
+}));
+
 vi.mock("@/lib/anonymous-player", () => ({
   anonymousPlayerKey: () => Promise.resolve("anonymous-player-key"),
+  peekAnonymousPlayerKey: () => Promise.resolve(cookieJoueur.cle),
 }));
 vi.mock("@/lib/request-ip", async (importOriginal) => ({
   // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter
@@ -472,6 +492,74 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("claimPrize — le gain appartient à l'appareil qui l'a tiré", () => {
+  // Le holder est global au fichier : sans restauration, un cas fuiterait sur
+  // les ~60 autres tests de claim, qui supposent tous un cookie concordant.
+  afterEach(() => {
+    cookieJoueur.cle = "anonymous-player-key";
+  });
+
+  /** Lie le spin de fixture à une empreinte d'appareil donnée. */
+  function lierSpinA(cle: string) {
+    const spin = state.spins.get(SPIN_ID);
+    if (!spin) throw new Error("fixture absente : state.reset() non appelé");
+    spin.player_key = cle;
+  }
+
+  it("cookie CONCORDANT : le gagnant légitime encaisse", async () => {
+    lierSpinA("anonymous-player-key");
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe("GAIN-ABCD2345");
+  });
+
+  it("cookie DIVERGENT : un jeton capté n'encaisse pas le lot d'un autre", async () => {
+    // C'est le scénario que la garde existe pour fermer : le jeton de claim
+    // signe `{ spinId, exp }` et RIEN d'autre, donc sa seule possession valait
+    // autorisation pendant 15 minutes.
+    lierSpinA("empreinte-du-vrai-gagnant");
+    cookieJoueur.cle = "empreinte-d-un-tiers";
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(false);
+    // Même libellé que « gain introuvable » : un message distinct confirmerait
+    // au tiers que ce spin_id porte bien un lot.
+    if (!res.ok) expect(res.error).toBe("Gain introuvable.");
+    // Et surtout : RIEN n'a été enregistré. Sans cette assertion, le test
+    // passerait aussi sur un refus survenu APRÈS la création du gain.
+    expect(state.rpcCalls.some((c) => c.name === "claim_winning_spin")).toBe(
+      false,
+    );
+    expect(state.participations.size).toBe(0);
+  });
+
+  it("cookie ABSENT : le gain n'est pas confisqué (repli délibéré)", async () => {
+    // Refuser ici coûterait son lot à un gagnant qui a nettoyé son navigateur
+    // entre le tirage et la réclamation. On refuse la CONTRADICTION, jamais
+    // l'absence — voir le pavé de `claimPrizeInner`.
+    lierSpinA("empreinte-du-vrai-gagnant");
+    cookieJoueur.cle = null;
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("spin SANS empreinte : rien à contredire, donc rien à refuser", async () => {
+    // Contre-épreuve indispensable : les lignes anciennes peuvent ne porter
+    // aucune empreinte, et une garde écrite avec `!== null` les aurait toutes
+    // refusées (`undefined !== null` est vrai). Ce test épingle ce cas précis.
+    cookieJoueur.cle = "une-empreinte-quelconque";
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+  });
 });
 
 describe("claimPrize — ordre des gardes", () => {

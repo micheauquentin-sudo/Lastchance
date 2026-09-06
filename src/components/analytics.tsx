@@ -29,9 +29,15 @@ import { masquerJetonUrl } from "@/lib/masquer-jeton-url";
 let ph: typeof import("posthog-js").default | null = null;
 
 /**
- * Dernière barrière avant l'envoi à PostHog : aucune propriété ne doit sortir
- * en portant un jeton de chemin (`/commande/<jeton>`, `/hunt/<jeton>`,
- * `/invite/<jeton>`).
+ * Dernière barrière avant l'envoi à PostHog, ET LA SEULE : aucune propriété ne
+ * doit sortir en portant un secret, qu'il voyage dans le CHEMIN
+ * (`/commande/<jeton>`, `/hunt/<jeton>`, `/invite/<jeton>`, `/ticket/<code>`…)
+ * ou dans la QUERY (`?token=`).
+ *
+ * « ET LA SEULE » est le point important, et c'était le défaut : Sentry, lui,
+ * branche `masquerJetonUrl` PUIS l'expurgation par nom de paramètre de
+ * `sentry-scrub`. Ici il n'y a pas de second poste — `masquerJetonUrl` doit
+ * donc couvrir les deux, et c'est désormais le cas.
  *
  * Le balayage porte sur TOUTES les propriétés de type chaîne, pas sur une
  * liste de clés. PostHog en pose une dizaine qui contiennent une URL —
@@ -39,8 +45,8 @@ let ph: typeof import("posthog-js").default | null = null;
  * `$prev_pageview_pathname`, `$session_entry_url`… — et en ajoutera d'autres
  * sans nous prévenir ; une liste explicite serait périmée à la prochaine
  * montée de version, silencieusement. `masquerJetonUrl` est un no-op sur tout
- * ce qui ne contient pas l'un des deux préfixes fermés, le balayage large ne
- * coûte donc rien en fidélité de la donnée.
+ * ce qui ne porte ni préfixe de chemin fermé ni paramètre au nom sensible, le
+ * balayage large ne coûte donc rien en fidélité de la donnée.
  */
 export function masquerJetonsDeLEvenement(evenement: CaptureResult | null) {
   if (!evenement?.properties) return evenement;
@@ -62,8 +68,9 @@ export const OPTIONS_POSTHOG = {
   capture_pageview: true,
   persistence: "localStorage" as const,
   // `capture_pageview` envoie l'URL COMPLÈTE : sur `/commande/<jeton>`,
-  // `/hunt/<jeton>` et `/invite/<jeton>`, le jeton EST le secret, et il est
-  // dans le chemin. Sans ce crochet, PostHog en conserve un journal rejouable.
+  // `/hunt/<jeton>`, `/invite/<jeton>`, `/ticket/<code>` et
+  // `…/recover?token=`, le jeton EST le secret. Sans ce crochet, PostHog en
+  // conserve un journal rejouable.
   before_send: masquerJetonsDeLEvenement,
   // L'ENREGISTREMENT DE SESSION EST COUPÉ ICI, ET PAS SEULEMENT CÔTÉ PROJET.
   //

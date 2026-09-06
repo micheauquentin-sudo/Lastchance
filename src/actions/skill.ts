@@ -353,6 +353,13 @@ async function submitInner(
           },
         };
       }
+      if (spin?.denial_reason === "campaign_closed") {
+        // Même course que sur la roue, et elle coûte plus cher ici : le joueur
+        // vient de RÉUSSIR son défi. Lui dire que le stock est vide lui ferait
+        // croire qu'il a gagné pour rien. Voir `src/actions/play.ts` et la
+        // migration 20261211120000.
+        return { ok: false, error: "Ce jeu vient de se terminer." };
+      }
       // Succès sans lot disponible (stock épuisé, aucune config perdante) :
       // même issue que la roue — indisponibilité neutre.
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
