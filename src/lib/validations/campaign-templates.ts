@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { gameTypeSchema } from "@/lib/validations/prizes";
 import {
+  isClientReportedSkillGameType,
   isSecretSkillGameType,
   isSkillGameType,
   parseSkillConfig,
@@ -166,6 +167,23 @@ export const campaignBlueprintSchema = z
           path: ["rules", "play_limit"],
           message:
             "Ces jeux exigent une limite de participation (une tentative par période) pour rester équitables.",
+        });
+      }
+      // Second miroir d'updateWheelSchema, pour une RAISON distincte : réflexe
+      // et jauge sont évalués par l'appareil du joueur (aucun secret à cacher,
+      // donc aucune vérification serveur possible). Sous `unlimited`, la garde
+      // `limit_reached` est inactive et la porte devient décorative. Sans cette
+      // branche, un modèle publié rouvrirait la configuration que
+      // updateWheelSchema refuse.
+      if (
+        isClientReportedSkillGameType(blueprint.game.game_type) &&
+        blueprint.rules.play_limit === "unlimited"
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["rules", "play_limit"],
+          message:
+            "Ce défi est évalué par l'appareil du joueur : sans limite de participation, il peut être contourné à volonté. Choisissez une limite (une fois, par jour ou par semaine).",
         });
       }
     } else if (blueprint.game.skill_config !== null) {

@@ -112,6 +112,9 @@ export function MemoryReveal({
               key={i}
               type="button"
               onClick={() => flip(i)}
+              // Voir chest-reveal : `aria-disabled` seul laissait la carte focusable
+              // et cliquable une fois retournée.
+              disabled={matched || isUp}
               aria-disabled={matched || isUp || undefined}
               aria-label={isUp ? `Carte ${i + 1}, retournée` : `Carte ${i + 1}`}
               style={

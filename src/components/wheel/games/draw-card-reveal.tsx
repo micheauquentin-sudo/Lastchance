@@ -97,6 +97,9 @@ export function DrawCardReveal({
         <button
           type="button"
           onClick={draw}
+          // Voir chest-reveal : `aria-disabled` seul laissait la carte focusable
+          // et cliquable après la pioche.
+          disabled={drawn}
           aria-disabled={drawn || undefined}
           aria-label={drawn ? "Carte piochée" : "Piocher une carte"}
           style={{ perspective: "1000px" }}

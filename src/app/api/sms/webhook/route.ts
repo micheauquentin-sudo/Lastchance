@@ -4,10 +4,12 @@ import { optionalEnv } from "@/lib/env";
 import {
   monitored,
   recordCounter,
+  recordDurableCounter,
   reportError,
   reportSecurityEvent,
 } from "@/lib/monitoring";
 import { observeSharedKey, rateLimitBucket } from "@/lib/rate-limit";
+import { OP_SMS_URL_HERITEE } from "@/lib/sms-webhook-legacy";
 import { normalizeSmsPhone } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timingSafeEquals } from "@/lib/timing-safe";
@@ -50,6 +52,14 @@ import { timingSafeEquals } from "@/lib/timing-safe";
  *     chaque usage émet `sms_webhook_legacy_url_secret`. C'est ce
  *     compteur — pas une supposition — qui dira quand la configuration
  *     Brevo a été reprise et que ce dernier chemin peut être retiré.
+ *
+ *     ET IL SE LIT SANS SENTRY. L'événement ci-dessus n'existait que dans
+ *     Sentry/PostHog, que personne n'ouvre : la condition de retrait était
+ *     donc invérifiable, ce qui rendait la branche permanente de fait.
+ *     Chaque usage écrit désormais une ligne durable dans `ops_metrics`
+ *     (`OP_SMS_URL_HERITEE`), et `/api/health` répond en une requête
+ *     « servi il y a N jours » ou « pas servi » — cf.
+ *     `src/lib/sms-webhook-legacy.ts`.
  *
  *   • JAMAIS de refus par limite de débit. Ailleurs on ferme la porte ; ici
  *     la conséquence d'un refus est un client qui a demandé l'arrêt et
@@ -108,6 +118,24 @@ async function handleSmsWebhook(request: Request) {
     // frappe à la porte », celui-là dit « le prestataire est encore sur
     // l'ancienne URL ». Son passage à zéro est la condition de retrait.
     reportSecurityEvent("sms_webhook_legacy_url_secret");
+
+    /* ── ET SURTOUT : UNE TRACE QU'ON PEUT LIRE SANS SENTRY ──────────
+     *
+     * L'événement ci-dessus ne vit que dans Sentry/PostHog. Personne ne l'a
+     * ouvert, et la condition de retrait de cette branche n'a donc jamais été
+     * constatée — c'est ainsi qu'un chemin de compatibilité devient permanent
+     * avec le secret MAÎTRE dans des URL journalisées.
+     *
+     * La ligne écrite ici est lue par `/api/health` (`lireUsageUrlHeritee`),
+     * qui répond « servi il y a N jours » ou « pas servi » en une requête.
+     *
+     * ATTENDUE, contrairement aux `recordCounter` plus bas : une invocation
+     * serverless qui rend sa réponse coupe les écritures en vol. Perdre une
+     * mesure de charge est sans conséquence ; perdre CELLE-CI ferait conclure
+     * à tort que la bascule est terminée, et retirer la branche couperait la
+     * réception des STOP — un risque légal, pas un risque technique.
+     */
+    await recordDurableCounter(OP_SMS_URL_HERITEE);
   }
 
   // Observation seule : voir l'en-tête. Un pic anormal doit se voir sans

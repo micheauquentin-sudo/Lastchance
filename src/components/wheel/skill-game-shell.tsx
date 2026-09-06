@@ -104,6 +104,15 @@ export function SkillGameShell({
   const [returningName, setReturningName] = useState<string | null>(null);
   /** La reprise d'un gain a échoué deux fois : on l'avoue sur l'écran bloqué. */
   const [repriseIndisponible, setRepriseIndisponible] = useState(false);
+  /**
+   * LANCEMENT EN COURS — état RENDU, là où la garde de rentrée est un `ref`.
+   *
+   * La garde ci-dessus suffit à l'intégrité, et ne change RIEN à l'écran : un
+   * `ref` ne provoque aucun rendu. Sur un réseau de boutique, le joueur voyait
+   * donc son bouton inchangé pendant deux à quatre secondes. Cet état-ci n'a
+   * qu'un rôle : le dire.
+   */
+  const [lancement, setLancement] = useState(false);
   const startingRef = useRef(false);
   /**
    * Le joueur a engagé son défi. Posé AVANT l'aller-retour, jamais remis à
@@ -172,6 +181,7 @@ export function SkillGameShell({
     }
 
     startingRef.current = true;
+    setLancement(true);
     // Posé AVANT l'aller-retour : la reprise d'un gain ne doit plus escamoter
     // le défi à partir d'ici.
     startedRef.current = true;
@@ -191,6 +201,7 @@ export function SkillGameShell({
       return;
     } finally {
       startingRef.current = false;
+      setLancement(false);
     }
 
     if (!result.ok) {
@@ -295,6 +306,7 @@ export function SkillGameShell({
           kermesse={kermesse}
           returningName={returningName}
           onStart={handleStart}
+          pending={lancement}
         >
           <TurnstileGate
             onToken={handleCaptchaToken}

@@ -118,6 +118,16 @@ export function PlayExperience({
   const [returningName, setReturningName] = useState<string | null>(null);
   /** La reprise d'un gain a échoué deux fois : on l'avoue sur l'écran bloqué. */
   const [repriseIndisponible, setRepriseIndisponible] = useState(false);
+  /**
+   * LANCEMENT EN COURS — état RENDU, là où `spinningRef` est un `ref`.
+   *
+   * `phase === "spinning"` n'arrive qu'APRÈS l'aller-retour : entre l'appui et
+   * la réponse, le bouton restait actif et inchangé pendant deux à quatre
+   * secondes sur un réseau de boutique. Rien n'était en danger — la garde de
+   * rentrée avale les appuis suivants —, mais le joueur n'en savait rien et
+   * concluait que l'écran était figé.
+   */
+  const [lancement, setLancement] = useState(false);
   const spinningRef = useRef(false);
   /**
    * Le joueur a lancé son tour. Posé AVANT l'aller-retour serveur, jamais remis
@@ -201,6 +211,7 @@ export function PlayExperience({
     }
 
     spinningRef.current = true;
+    setLancement(true);
     // Posé AVANT l'aller-retour : la reprise d'un gain en attente ne doit plus
     // pouvoir écraser le tour à partir d'ici.
     startedRef.current = true;
@@ -220,12 +231,14 @@ export function PlayExperience({
       // d'erreur juste au-dessus. Le tour est rejouable — le serveur n'a rien
       // enregistré, sans quoi il aurait répondu.
       spinningRef.current = false;
+      setLancement(false);
       setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
       return;
     }
 
     if (!result.ok) {
       spinningRef.current = false;
+      setLancement(false);
       // Un gain en attente récupéré entre-temps prime sur le refus : le tour est
       // refusé PARCE QUE ce lot existe déjà. L'afficher, plutôt que d'opposer un
       // écran bloqué à un joueur qui a un lot à réclamer.
@@ -242,6 +255,7 @@ export function PlayExperience({
     }
 
     const data = result.data;
+    setLancement(false);
     setOutcome(data);
     setPhase("spinning");
     capturePlayEvent("wheel_spun", { won: !data.isLosing });
@@ -326,8 +340,14 @@ export function PlayExperience({
 
           <button
             onClick={handleSpin}
-            disabled={phase === "spinning"}
-            aria-label={phase === "spinning" ? "La roue tourne" : "Lancer la roue"}
+            // MÊME LIBELLÉ que pendant le tour, à dessein : du point de vue du
+            // joueur, appuyer a lancé la roue — que le serveur ait déjà répondu
+            // ou non ne le regarde pas.
+            disabled={phase === "spinning" || lancement}
+            aria-busy={lancement || undefined}
+            aria-label={
+              phase === "spinning" || lancement ? "La roue tourne" : "Lancer la roue"
+            }
             style={
               isCartoon || kermesse
                 ? { backgroundImage: `linear-gradient(to right, ${style.buttonFrom}, ${style.buttonTo})` }

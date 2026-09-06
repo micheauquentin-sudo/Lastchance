@@ -65,6 +65,15 @@ export function ScratchExperience({
   const [returningName, setReturningName] = useState<string | null>(null);
   /** La reprise d'un gain a échoué deux fois : on l'avoue sur l'écran bloqué. */
   const [repriseIndisponible, setRepriseIndisponible] = useState(false);
+  /**
+   * LANCEMENT EN COURS — état RENDU, là où la garde de rentrée est un `ref`.
+   *
+   * La garde ci-dessus suffit à l'intégrité, et ne change RIEN à l'écran : un
+   * `ref` ne provoque aucun rendu. Sur un réseau de boutique, le joueur voyait
+   * donc son bouton inchangé pendant deux à quatre secondes. Cet état-ci n'a
+   * qu'un rôle : le dire.
+   */
+  const [lancement, setLancement] = useState(false);
   const requestingRef = useRef(false);
   /**
    * Le joueur a lancé sa carte. Posé AVANT l'aller-retour, jamais remis à
@@ -127,6 +136,7 @@ export function ScratchExperience({
     }
 
     requestingRef.current = true;
+    setLancement(true);
     // Posé AVANT l'aller-retour : à partir d'ici, la reprise d'un gain en
     // attente ne doit plus pouvoir escamoter le grattage.
     startedRef.current = true;
@@ -141,10 +151,12 @@ export function ScratchExperience({
       result = await spinWheel(slug, captchaToken ?? undefined, readShareSource());
     } catch {
       requestingRef.current = false;
+      setLancement(false);
       setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
       return;
     }
     requestingRef.current = false;
+    setLancement(false);
 
     if (!result.ok) {
       // Un gain repris entre-temps prime sur le refus : le tirage est refusé
@@ -196,6 +208,7 @@ export function ScratchExperience({
           kermesse={kermesse}
           returningName={returningName}
           onStart={handleStart}
+          pending={lancement}
         >
           <TurnstileGate
             onToken={handleCaptchaToken}

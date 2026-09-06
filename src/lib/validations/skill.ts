@@ -50,7 +50,9 @@ export function isSkillGameType(value: unknown): value is SkillGameType {
  * Une limite de participation (une tentative par période) est donc OBLIGATOIRE
  * pour ces jeux — c'est aussi le bon design produit (réponse secrète = une
  * chance). rps/reflex/gauge n'ont AUCUN secret durable extractible (coup serveur
- * dérivé du seed, succès client-reporté) et ne sont pas concernés.
+ * dérivé du seed, succès client-reporté) et ne sont pas concernés PAR CETTE
+ * RAISON-LÀ — reflex et gauge le sont par une autre, voir
+ * CLIENT_REPORTED_SKILL_GAME_TYPES ci-dessous.
  */
 export const SECRET_SKILL_GAME_TYPES = [
   "mystery_word",
@@ -65,6 +67,46 @@ export function isSecretSkillGameType(value: unknown): value is SecretSkillGameT
   return (
     typeof value === "string" &&
     (SECRET_SKILL_GAME_TYPES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Jeux dont l'ISSUE est RAPPORTÉE PAR LE CLIENT (reflex, gauge) : ni l'un ni
+ * l'autre ne repose sur un secret serveur — le joueur doit voir tout l'état pour
+ * jouer (fenêtre de réaction, zone verte), donc le navigateur peut toujours
+ * calculer la réussite et l'annoncer. Un jeu dont le client rapporte son issue
+ * est forgeable par construction : semer le geste depuis le jeton signé n'y
+ * changerait rien (le script attendrait simplement le bon instant).
+ *
+ * Ce qui le rend acceptable, c'est la BORNE : une limite de participation
+ * (`once` / `daily` / `weekly`) plafonne le nombre de fois où un client peut
+ * annoncer « réussi ». Sous `play_limit = unlimited`, la garde `limit_reached`
+ * de perform_atomic_spin est inactive et la porte de compétence devient
+ * entièrement décorative — le commerçant croit avoir posé une épreuve alors
+ * qu'un script la franchit à volonté. `unlimited` est donc INTERDIT ici aussi.
+ *
+ * Calibrage : sous `unlimited` les tours sont DÉJÀ illimités pour tout le monde
+ * et le stock comme les poids plafonnent toujours les lots. Le tricheur ne
+ * débloque pas des gains illimités, il supprime un ralentissement. C'est un
+ * défaut d'ÉQUITÉ et de promesse produit, pas un effondrement d'économie.
+ *
+ * SÉPARÉ de SECRET_SKILL_GAME_TYPES À DESSEIN : même conséquence (`unlimited`
+ * refusé), RAISONS différentes (extraction d'un secret par force brute là,
+ * porte décorative ici). Fondre les deux est exactement ce qui a produit
+ * l'oubli initial de reflex/gauge.
+ */
+export const CLIENT_REPORTED_SKILL_GAME_TYPES = ["reflex", "gauge"] as const;
+
+export type ClientReportedSkillGameType =
+  (typeof CLIENT_REPORTED_SKILL_GAME_TYPES)[number];
+
+/** Garde de type : la réussite de `game_type` est-elle rapportée par le client ? */
+export function isClientReportedSkillGameType(
+  value: unknown,
+): value is ClientReportedSkillGameType {
+  return (
+    typeof value === "string" &&
+    (CLIENT_REPORTED_SKILL_GAME_TYPES as readonly string[]).includes(value)
   );
 }
 
@@ -242,9 +284,13 @@ const rpsAttemptSchema = z
   .transform((a) => ({ gameType: "rps" as const, move: a.move }));
 
 // reflex / gauge : succès NON vérifiable serveur → RAPPORTÉ par le client
-// (booléen). Ce n'est PAS une faille : le tirage sur succès reste plafonné par
-// les poids/stocks configurés (perform_atomic_spin, ADR-031) — un client qui
-// « réussit » toujours ne dépasse jamais les probabilités de la roue.
+// (booléen), et forgeable par construction — ces jeux n'ont aucun secret, le
+// joueur doit voir tout l'état pour jouer. Deux bornes le contiennent : le
+// tirage sur succès reste plafonné par les poids/stocks configurés
+// (perform_atomic_spin) — un client qui « réussit » toujours ne dépasse jamais
+// les probabilités de la roue — et `play_limit = unlimited` leur est INTERDIT à
+// l'écriture (CLIENT_REPORTED_SKILL_GAME_TYPES), pour que le nombre de « réussi »
+// annonçables reste borné.
 const reflexAttemptSchema = z
   .object({ succeeded: z.coerce.boolean() })
   .transform((a) => ({ gameType: "reflex" as const, succeeded: a.succeeded }));

@@ -91,3 +91,32 @@ skills-lock.json
 .agents/skills/stripe-docs/
 .agents/skills/stripe-projects/
 .agents/skills/upgrade-stripe/
+
+# ── Outillage local de fond anime (« backdrop »), hors arbre route ──
+#
+# Ce lot etait ecrit sous `src/app/api/` et `site/src/app/api/`, donc compile
+# par Next comme des routes de PRODUCTION : un balayage du reseau local par
+# PowerShell (`/api/scan`), une ecriture de fichier dont le chemin venait du
+# corps de la requete (`/api/save-frame`), cinq `execSync` dont la sortie
+# repartait au client (`/api/test-tools`). Aucune n'etait authentifiee, et
+# aucune n'etait dans ce fichier — un `git add .` les emportait.
+#
+# Elles vivent desormais dans `tools/backdrop/`, hors des deux arbres Next.
+# La garde `src/lib/routes-sans-outillage.test.ts` empeche le retour du motif.
+#
+# On ignore aussi les SORTIES du generateur (74 Mo cote `public/`), jamais les
+# assets de site legitimes : `site/public/images/` reste suivi si on l'ajoute.
+tools/backdrop/
+public/backdrop/
+public/frames/
+site/public/backdrop/
+site/scripts/
+scripts/build-backdrop-frames.mjs
+scripts/gel-page-v2.mjs
+scripts/gel-temoin-v2.mjs
+scripts/scan-reseau.ps1
+src/lib/backdrop-frames.ts
+src/components/marketing/scroll-video-background.tsx
+site/src/content/backdrop.ts
+site/src/components/sections/scroll-backdrop.tsx
+site/src/components/sections/game-homepage.tsx

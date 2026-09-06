@@ -5,16 +5,35 @@ import {
   verifyLoyaltyCheckin,
 } from "./loyalty-checkin";
 import {
-  computePlayerKey,
-  nextPlayWindowStart,
   pickWeightedIndex,
-  playWindowStart,
   signClaimToken,
   verifyClaimToken,
 } from "./spin";
 import { signInviteToken, verifyInviteToken } from "./team-invite";
 
-describe("pickWeightedIndex", () => {
+/**
+ * CE BLOC NE GARDE PAS LE TIRAGE DE PRODUCTION. Il garde L'APERÇU COMMERÇANT.
+ *
+ * ── Pourquoi cette précision vaut un pavé ──
+ *
+ * Un audit a relevé, à juste titre, que 100 000 tirages contrôlés ici
+ * ressemblent à la garde statistique du produit. Ils n'en sont pas une.
+ * `pickWeightedIndex` n'a QU'UN SEUL appelant en production —
+ * `src/actions/preview.ts:90`, l'aperçu que le commerçant regarde dans le
+ * studio. Le tirage qui distribue de vrais lots est en SQL :
+ * `perform_atomic_spin` tire sur `sum(p.weight) over (order by p.position,
+ * p.created_at, p.id)` avec `extensions.gen_random_bytes(4)`
+ * (20260927120000_boucle_joueur_gain.sql:250-282).
+ *
+ * Conséquence à ne pas perdre de vue : un biais introduit dans la somme
+ * fenêtrée du SQL ne ferait rougir AUCUN test de ce fichier. C'est une
+ * couverture manquante RÉELLE (elle est consignée comme telle), et le pire
+ * service à lui rendre serait de laisser ce `describe` passer pour elle.
+ *
+ * Ce qui est gardé ici est néanmoins utile et doit le rester : des
+ * probabilités d'aperçu fausses feraient configurer une roue de travers.
+ */
+describe("pickWeightedIndex — moteur de l'APERÇU commerçant (pas du tirage réel)", () => {
   const items = [{ weight: 40 }, { weight: 20 }, { weight: 10 }, { weight: 30 }];
 
   it("respecte les bornes des poids", () => {
@@ -55,77 +74,6 @@ describe("pickWeightedIndex", () => {
     expect(counts[0] / N).toBeLessThan(0.42);
     expect(counts[2] / N).toBeGreaterThan(0.085);
     expect(counts[2] / N).toBeLessThan(0.115);
-  });
-});
-
-describe("playWindowStart", () => {
-  // Mercredi 15 janvier 2025, 14:30
-  const now = new Date(2025, 0, 15, 14, 30);
-
-  it("unlimited → null", () => {
-    expect(playWindowStart("unlimited", now)).toBeNull();
-  });
-
-  it("once → epoch", () => {
-    expect(playWindowStart("once", now)!.getTime()).toBe(0);
-  });
-
-  it("daily → minuit du jour", () => {
-    const start = playWindowStart("daily", now)!;
-    expect(start.getFullYear()).toBe(2025);
-    expect(start.getDate()).toBe(15);
-    expect(start.getHours()).toBe(0);
-    expect(start.getMinutes()).toBe(0);
-  });
-
-  it("weekly → lundi 00:00 de la semaine courante", () => {
-    const start = playWindowStart("weekly", now)!;
-    expect(start.getDay()).toBe(1); // lundi
-    expect(start.getDate()).toBe(13); // lundi 13 janvier 2025
-    expect(start.getHours()).toBe(0);
-  });
-
-  it("weekly depuis un dimanche → lundi précédent", () => {
-    const sunday = new Date(2025, 0, 19, 23, 0);
-    const start = playWindowStart("weekly", sunday)!;
-    expect(start.getDay()).toBe(1);
-    expect(start.getDate()).toBe(13);
-  });
-
-  it("weekly depuis un lundi matin → le même lundi", () => {
-    const monday = new Date(2025, 0, 13, 0, 5);
-    const start = playWindowStart("weekly", monday)!;
-    expect(start.getDate()).toBe(13);
-  });
-});
-
-describe("nextPlayWindowStart", () => {
-  // Mercredi 15 janvier 2025, 14:30
-  const now = new Date(2025, 0, 15, 14, 30);
-
-  it("unlimited/once → null (pas de compte à rebours)", () => {
-    expect(nextPlayWindowStart("unlimited", now)).toBeNull();
-    expect(nextPlayWindowStart("once", now)).toBeNull();
-  });
-
-  it("daily → minuit du lendemain", () => {
-    const next = nextPlayWindowStart("daily", now)!;
-    expect(next.getDate()).toBe(16);
-    expect(next.getHours()).toBe(0);
-    expect(next.getMinutes()).toBe(0);
-  });
-
-  it("weekly → lundi de la semaine suivante", () => {
-    const next = nextPlayWindowStart("weekly", now)!;
-    expect(next.getDay()).toBe(1);
-    expect(next.getDate()).toBe(20); // lundi 20 janvier 2025
-    expect(next.getHours()).toBe(0);
-  });
-
-  it("weekly depuis un dimanche → lundi suivant (lendemain)", () => {
-    const sunday = new Date(2025, 0, 19, 23, 0);
-    const next = nextPlayWindowStart("weekly", sunday)!;
-    expect(next.getDate()).toBe(20);
   });
 });
 
@@ -312,14 +260,3 @@ describe("séparation de domaine des jetons signés", () => {
   });
 });
 
-describe("computePlayerKey", () => {
-  it("déterministe et pseudonymisé", () => {
-    const a = computePlayerKey("1.2.3.4", "Mozilla/5.0");
-    const b = computePlayerKey("1.2.3.4", "Mozilla/5.0");
-    const c = computePlayerKey("5.6.7.8", "Mozilla/5.0");
-    expect(a).toBe(b);
-    expect(a).not.toBe(c);
-    expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(a).not.toContain("1.2.3.4");
-  });
-});

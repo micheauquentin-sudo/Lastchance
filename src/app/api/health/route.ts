@@ -4,7 +4,12 @@ import { optionalEnv } from "@/lib/env";
 import { eventRealtimeEnabled } from "@/lib/event-realtime";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
+import {
+  FENETRE_ALERTE_JOURS,
+  lireUsageUrlHeritee,
+} from "@/lib/sms-webhook-legacy";
 import { authorizeCronRequest } from "@/lib/timing-safe";
+import { famillesSurRepli } from "@/lib/token-secrets";
 import { turnstileRequired } from "@/lib/turnstile";
 
 /**
@@ -185,7 +190,17 @@ export async function GET(request: Request) {
     cronSecret && authorizeCronRequest(request, cronSecret),
   );
 
-  const [database, workers] = await Promise.all([checkDatabase(), checkWorkers()]);
+  /* Trois sondes EN PARALLÈLE : la troisième ne coûte donc pas de latence,
+   * seulement une requête PostgREST de plus par appel (bornée par le plafond
+   * `healthIp` ci-dessus). Elle est menée pour TOUS les appelants, y compris
+   * ceux qui n'auront pas le détail : le verdict public doit être le même pour
+   * tout le monde, sinon la sonde dit une chose au moniteur et une autre à
+   * l'exploitant. */
+  const [database, workers, smsUrlHeritee] = await Promise.all([
+    checkDatabase(),
+    checkWorkers(),
+    lireUsageUrlHeritee(),
+  ]);
   const turnstileConfigured = Boolean(
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   );
@@ -209,12 +224,51 @@ export async function GET(request: Request) {
     process.env.TRUSTED_PROXY_PROVIDER || process.env.VERCEL,
   );
   const enProduction = process.env.NODE_ENV === "production";
+  /**
+   * LE WEBHOOK SMS EST-IL ENCORE SUR L'URL HÉRITÉE ?
+   *
+   * `/api/sms/webhook` accepte toujours `?token=<BREVO_WEBHOOK_SECRET>` — le
+   * secret MAÎTRE, en clair dans une URL, donc dans les journaux d'accès de
+   * l'hébergeur et dans l'historique de la console Brevo. La branche ne peut
+   * pas être coupée à l'aveugle : si Brevo est encore configuré ainsi, les
+   * « STOP » cessent d'arriver et on démarche des gens qui ont demandé
+   * l'arrêt. Elle ne peut pas non plus rester indéfiniment.
+   *
+   * La condition de retrait est donc un FAIT à constater, et c'est ici qu'on
+   * le constate : `lireUsageUrlHeritee` lit `ops_metrics`, dont chaque usage
+   * de la branche écrit une ligne. Même patron qu'`ADMIN_HOSTS` — production
+   * seulement, motif nommé dans le détail, verdict public en 503.
+   *
+   * `recent` (< 7 j, cf. `FENETRE_ALERTE_JOURS`) et non « une ligne existe » :
+   * une fois la configuration Brevo reprise, l'alerte doit s'éteindre seule.
+   * Elle met jusqu'à sept jours à le faire, et pendant ce temps le détail dit
+   * exactement quand remonte le dernier usage — un rouge explicable, pas un
+   * rouge mystérieux. `lisible === false` (base injoignable) ne rougit PAS :
+   * une sonde ne doit jamais affirmer un défaut qu'elle n'a pas mesuré, et
+   * `checks.database` porte déjà la panne.
+   */
+  const smsUrlHeriteeActive = enProduction && smsUrlHeritee.recent;
+  /**
+   * QUELLES FAMILLES DE JETONS SIGNENT AVEC LE REPLI ?
+   *
+   * `signingSecret` retombe SILENCIEUSEMENT sur `SPIN_TOKEN_SECRET` quand la
+   * clé dédiée d'une famille n'est pas provisionnée. Les préfixes de domaine
+   * empêchent qu'un jeton d'une famille soit vérifiable par une autre : ce
+   * n'est pas une faille, et c'est pourquoi cette liste NE FAIT PAS ROUGIR la
+   * santé — un 503 pousserait à provisionner `CLAIM_TOKEN_SECRET` en urgence,
+   * geste qui invalide sur-le-champ tous les jetons de claim en circulation.
+   * Le défaut à corriger n'est pas le repli, c'est qu'il soit INVISIBLE : rien
+   * en production ne disait quelles familles en dépendent, donc personne ne
+   * pouvait mesurer ce qu'une rotation de `SPIN_TOKEN_SECRET` allait casser.
+   */
+  const famillesRepliJetons = famillesSurRepli();
 
   const securityConfiguration = {
     status:
       (!turnstileRequired() || turnstileConfigured)
       && (!enProduction || Boolean(process.env.ADMIN_HOSTS))
       && (!enProduction || clientIpMesurable)
+      && !smsUrlHeriteeActive
         ? "ok"
         : "error",
     error:
@@ -224,6 +278,8 @@ export async function GET(request: Request) {
           ? "ADMIN_HOSTS manquant"
           : enProduction && !clientIpMesurable
             ? "IP client non mesurable — plafonds par IP désarmés"
+            : smsUrlHeriteeActive
+              ? "Webhook SMS encore sur l'URL héritée (secret maître en URL)"
         : undefined,
   };
   const healthy =
@@ -247,6 +303,19 @@ export async function GET(request: Request) {
               database,
               workers,
               security_configuration: securityConfiguration,
+              /* La RÉPONSE à « la branche héritée a-t-elle servi, et quand ? »,
+               * sans ouvrir Sentry. `lisible: false` = la question n'a pas de
+               * réponse (base injoignable), ce qui ne se confond pas avec
+               * `occurrences: 0`. Fenêtre de lecture : la rétention
+               * d'`ops_metrics`, 30 jours. */
+              sms_webhook_legacy_url: {
+                ...smsUrlHeritee,
+                fenetre_alerte_jours: FENETRE_ALERTE_JOURS,
+              },
+              /* Familles de jetons adossées au repli `SPIN_TOKEN_SECRET`.
+               * Liste de NOMS DE VARIABLES, jamais de valeurs : ce détail est
+               * déjà derrière `CRON_SECRET`, il n'a pas à porter de secret. */
+              token_secret_fallback: famillesRepliJetons,
             },
           }
         : {}),

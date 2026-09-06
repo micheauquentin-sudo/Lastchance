@@ -8834,6 +8834,7 @@ export type Database = {
           p_first_name: string
           p_marketing_opt_in: boolean
           p_phone: string
+          p_sms_opt_in?: boolean
           p_spin_id: string
         }
         Returns: {
@@ -9951,6 +9952,7 @@ export type Database = {
       purge_expired_quiz_players: { Args: never; Returns: number }
       purge_expired_referral_data: { Args: never; Returns: number }
       purge_expired_reward_issuances: { Args: never; Returns: number }
+      purge_expired_vitrine_mesures: { Args: never; Returns: number }
       purge_ops_worker_runs: {
         Args: { p_older_than_days?: number; p_stale_after_minutes?: number }
         Returns: {

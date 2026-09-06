@@ -86,6 +86,15 @@ export function GameShell({
   const [returningName, setReturningName] = useState<string | null>(null);
   /** La reprise d'un gain a échoué deux fois : on l'avoue sur l'écran bloqué. */
   const [repriseIndisponible, setRepriseIndisponible] = useState(false);
+  /**
+   * LANCEMENT EN COURS — état RENDU, là où la garde de rentrée est un `ref`.
+   *
+   * La garde ci-dessus suffit à l'intégrité, et ne change RIEN à l'écran : un
+   * `ref` ne provoque aucun rendu. Sur un réseau de boutique, le joueur voyait
+   * donc son bouton inchangé pendant deux à quatre secondes. Cet état-ci n'a
+   * qu'un rôle : le dire.
+   */
+  const [lancement, setLancement] = useState(false);
   const requestingRef = useRef(false);
   /**
    * Le joueur a lancé une partie. Posé AVANT l'aller-retour serveur, jamais
@@ -162,6 +171,7 @@ export function GameShell({
     }
 
     requestingRef.current = true;
+    setLancement(true);
     // Posé AVANT l'aller-retour : la reprise d'un gain en attente ne doit plus
     // pouvoir écraser la partie à partir d'ici.
     startedRef.current = true;
@@ -176,10 +186,12 @@ export function GameShell({
       result = await spinWheel(slug, captchaToken ?? undefined, readShareSource());
     } catch {
       requestingRef.current = false;
+      setLancement(false);
       setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
       return;
     }
     requestingRef.current = false;
+    setLancement(false);
 
     if (!result.ok) {
       // Un gain en attente récupéré entre-temps prime sur le refus : le tirage
@@ -225,6 +237,7 @@ export function GameShell({
           kermesse={kermesse}
           returningName={returningName}
           onStart={handleStart}
+          pending={lancement}
         >
           <TurnstileGate
             onToken={handleCaptchaToken}

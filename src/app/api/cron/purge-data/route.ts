@@ -86,6 +86,7 @@ export async function GET(request: Request) {
     quizzes,
     progression,
     experienceEvents,
+    vitrineMesures,
     rewardIssuances,
     lobbies,
   ] = await Promise.all([
@@ -129,6 +130,26 @@ export async function GET(request: Request) {
     // backlog.md` cochait « ✅ Purge / rétention » sur la seule EXISTENCE de la
     // fonction. L'existence n'est pas l'exécution.
     admin.rpc("purge_expired_experience_events"),
+    // Mesures de vitrine : MÊME DÉFAUT, MÊME CAUSE, trouvé au tour suivant.
+    //
+    // `vitrine_mesures` était la seule table d'écriture PUBLIQUE que rien ne
+    // vidait jamais — les treize purges au-dessus ont toutes été écrites pour
+    // des données MÉTIER, et une table d'analytique n'a pas croisé cette
+    // relecture-là. La seule suppression qui l'atteignait était celle de la
+    // vitrine entière.
+    //
+    // Elle se remplissait par ailleurs plus vite qu'elle n'aurait dû : la RPC
+    // publique ne contrôlait `ref` que par sa LONGUEUR, donc un identifiant
+    // inventé créait une ligne neuve — comptée ensuite comme « fiche
+    // consultée » dans le tableau de bord. La migration 20261211120000 ferme
+    // les deux moitiés : la référence est validée contre le contenu réel de
+    // l'organisation, et cette ligne-ci exécute enfin la rétention.
+    //
+    // Et c'est bien « cette ligne-ci » qui compte : la fonction a été écrite,
+    // vérifiée par pgTAP, puis est restée INERTE jusqu'à ce qu'on l'appelle.
+    // Exactement ce que le pavé ci-dessus dit de `purge_expired_experience_events`
+    // — l'existence n'est pas l'exécution. Deux fois la même leçon.
+    admin.rpc("purge_expired_vitrine_mesures"),
     // Registre universel : `reward_issuances` n'avait ni purge ni propagation
     // de suppression — ses dix triggers de miroir sont `after insert or
     // update`, jamais `after delete`, et `source_id` est polymorphe, sans clé
@@ -268,6 +289,7 @@ export async function GET(request: Request) {
     quizzes.error ||
     progression.error ||
     experienceEvents.error ||
+    vitrineMesures.error ||
     rewardIssuances.error ||
     lobbies.error
   ) {
@@ -284,6 +306,7 @@ export async function GET(request: Request) {
         quizzes.error?.message ??
         progression.error?.message ??
         experienceEvents.error?.message ??
+        vitrineMesures.error?.message ??
         rewardIssuances.error?.message ??
         lobbies.error?.message ??
         "unknown",

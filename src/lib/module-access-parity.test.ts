@@ -211,3 +211,97 @@ describe("parité MODULE_ADDON_COLUMN ↔ org_has_module_access", () => {
     expect(sansAddonTs).toEqual(["wheel"]);
   });
 });
+
+/**
+ * GARDE DE PROJECTION — l'application CHARGE-t-elle les colonnes qu'elle sait lire ?
+ *
+ * ── Le défaut que ce bloc existe pour empêcher ──
+ *
+ * La garde ci-dessus prouve que `MODULE_ADDON_COLUMN` et le `case` SQL disent
+ * la même chose. Son propre en-tête annonce le symptôme qu'elle évite : « un
+ * droit accordé par Postgres et refusé par l'écran ».
+ *
+ * Ce symptôme est arrivé quand même, et par un troisième chemin qu'aucune des
+ * deux tables ne voit : `addon_rendez_vous` était correct en base, correct dans
+ * `MODULE_ADDON_COLUMN`, et simplement ABSENT de la liste de colonnes que
+ * `getUserAndOrg` demande à Supabase. Une colonne non demandée revient
+ * `undefined` ; `droitEffectifModule` fait `org[colonne] === true`, donc
+ * `false` en silence. Résultat : add-on payé chez Stripe, réservation publique
+ * ouverte (son contexte, lui, sélectionne bien le champ), et côté commerçant
+ * une entrée de menu absente et une publication refusée.
+ *
+ * Le typage ne pouvait rien : `src/lib/auth.ts` traverse la ligne par un
+ * double cast vers `OrganizationSummary`, et `src/lib/admin/data.ts` déclare
+ * un type écrit POUR son select incomplet. Deux fois, la vérification a été
+ * neutralisée par la forme même du code. D'où une garde qui lit la SOURCE.
+ *
+ * (Le motif exact du double cast n'est pas écrit ici : `casts:check` compte
+ * les occurrences dans la SOURCE, commentaires compris, et ce paragraphe le
+ * faisait rougir en décrivant le défaut qu'il documente.)
+ *
+ * ── Pourquoi ces deux fichiers précisément ──
+ *
+ * Ce sont les deux projections « complètes » d'une organisation : celle qui
+ * décide de ce que le commerçant peut faire, et celle que le support regarde
+ * pour lui répondre. Un contexte spécialisé (réservation, vitrine…) n'a pas
+ * vocation à porter les treize colonnes et n'est donc pas visé ici.
+ */
+describe("les projections d'organisation chargent tous les add-ons", () => {
+  /**
+   * Les arguments littéraux de tous les `.select(...)` d'un fichier, concaténés.
+   *
+   * On extrait plutôt que de chercher le nom dans le fichier entier : un simple
+   * `source.includes("addon_rendez_vous")` serait satisfait par un COMMENTAIRE
+   * qui mentionne la colonne, et verdirait sur exactement la régression qu'on
+   * veut attraper.
+   */
+  function colonnesDemandees(chemin: string): string {
+    const source = readFileSync(join(process.cwd(), chemin), "utf8");
+    let reste = source;
+    let accumule = "";
+    for (;;) {
+      const debut = reste.indexOf(".select(");
+      if (debut === -1) break;
+      reste = reste.slice(debut + ".select(".length);
+      const ouvrante = reste.indexOf('"');
+      if (ouvrante === -1) break;
+      const fermante = reste.indexOf('"', ouvrante + 1);
+      if (fermante === -1) break;
+      accumule += reste.slice(ouvrante + 1, fermante) + " ";
+      reste = reste.slice(fermante + 1);
+    }
+    return accumule;
+  }
+
+  const PROJECTIONS_COMPLETES = [
+    "src/lib/auth.ts",
+    "src/lib/admin/data.ts",
+  ] as const;
+
+  const COLONNES_ADDON = Object.values(MODULE_ADDON_COLUMN).filter(
+    (colonne): colonne is Exclude<typeof colonne, null> => colonne !== null,
+  );
+
+  for (const chemin of PROJECTIONS_COMPLETES) {
+    it(`${chemin} demande les ${COLONNES_ADDON.length} colonnes add-on`, () => {
+      const demandees = colonnesDemandees(chemin);
+      const absentes = COLONNES_ADDON.filter(
+        (colonne) => !demandees.includes(colonne),
+      ).sort();
+      expect(
+        absentes,
+        absentes.length === 0
+          ? ""
+          : `${chemin} ne demande pas : ${absentes.join(", ")}. Une colonne non demandée revient undefined, et le droit correspondant est refusé en silence à un commerçant qui l'a payé.`,
+      ).toEqual([]);
+    });
+  }
+
+  it("l'extraction lit vraiment quelque chose (la garde n'est pas muette)", () => {
+    // Sans ce contrôle, un `.select(` renommé rendrait une chaîne vide, et les
+    // deux tests ci-dessus passeraient au vert pour la pire des raisons.
+    for (const chemin of PROJECTIONS_COMPLETES) {
+      expect(colonnesDemandees(chemin).length).toBeGreaterThan(100);
+    }
+  });
+});

@@ -9,7 +9,11 @@ import {
 } from "@/components/dashboard/atelier-mecaniques";
 import type { EtatDefi } from "@/components/dashboard/atelier-roue-defi";
 import { cn } from "@/lib/utils";
-import { isSecretSkillGameType, isSkillGameType } from "@/lib/validations/skill";
+import {
+  isClientReportedSkillGameType,
+  isSecretSkillGameType,
+  isSkillGameType,
+} from "@/lib/validations/skill";
 import type { GameType, PlayLimit } from "@/types/database";
 
 /**
@@ -428,6 +432,22 @@ export function ChampLimite({
   disabled?: boolean;
 }) {
   const aSecret = isSecretSkillGameType(gameType);
+  /**
+   * DEUXIÈME FAMILLE À QUI « ILLIMITÉ » EST REFUSÉ, ET POUR UNE AUTRE RAISON.
+   *
+   * Réflexe et jauge n'ont aucun secret à garder : leur réussite est MESURÉE
+   * PAR L'APPAREIL DU JOUEUR, qui envoie son propre verdict. Le serveur ne
+   * peut pas la vérifier ; ce qui la borne, c'est la limite de participation.
+   * Sous « illimité », cette borne disparaît et la porte de compétence devient
+   * décorative — le commerçant croit poser une épreuve qu'un script franchit
+   * à volonté.
+   *
+   * Le refus existait déjà à l'écriture. L'interface, elle, laissait encore
+   * CHOISIR la combinaison et rendait le refus à l'envoi, sur un formulaire
+   * que le commerçant croyait fini.
+   */
+  const jugeParLAppareil = isClientReportedSkillGameType(gameType);
+  const sansIllimite = aSecret || jugeParLAppareil;
   return (
     <div>
       <Label htmlFor="play_limit">Chaque client peut jouer</Label>
@@ -445,7 +465,7 @@ export function ChampLimite({
             value={l.value}
             // Le refus existait déjà côté serveur ; il arrivait APRÈS le clic,
             // sur un message qui ne désignait pas le champ fautif.
-            disabled={l.value === "unlimited" && aSecret}
+            disabled={l.value === "unlimited" && sansIllimite}
           >
             {l.label}
           </option>
@@ -456,6 +476,17 @@ export function ChampLimite({
           « Illimité » est indisponible sur ce jeu : la bonne réponse est
           secrète, et sans limite de participation un même téléphone pourrait la
           trouver en réessayant.
+        </p>
+      )}
+      {/* DEUX NOTES, PAS UNE FORMULATION MOYENNE. Même refus, raisons
+          différentes : recopier la phrase du secret ici dirait au commerçant
+          une chose fausse sur son jeu. */}
+      {jugeParLAppareil && (
+        <p className="mt-1 text-xs font-semibold text-orange-700" role="note">
+          « Illimité » est indisponible sur ce jeu : c&apos;est l&apos;appareil
+          du joueur qui mesure le geste et annonce sa réussite. Le serveur ne
+          peut pas la vérifier — une limite de participation est ce qui borne
+          les tentatives.
         </p>
       )}
       <InfoBulle

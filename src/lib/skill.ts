@@ -126,9 +126,19 @@ function arraysEqual(a: number[], b: number[]): boolean {
  * VALIDÉE du game_type (les casts sont sûrs : la config a été parsée par
  * parseSkillConfig avant d'arriver ici).
  *
- * reflex / gauge : NON vérifiables serveur → succès rapporté par le client,
- * BORNÉ par l'économie (le tirage sur succès reste plafonné par les poids/stock ;
- * un bot qui « réussit » toujours ne dépasse pas les odds configurés, ADR-031).
+ * reflex / gauge : NON vérifiables serveur → succès rapporté par le client.
+ * Deux bornes, et la seconde est désormais IMPOSÉE et non plus supposée :
+ *   1. le tirage sur succès reste plafonné par les poids et le stock — un bot
+ *      qui « réussit » toujours ne dépasse pas les odds configurés ;
+ *   2. `play_limit = unlimited` est REFUSÉ à l'écriture pour ces deux jeux
+ *      (CLIENT_REPORTED_SKILL_GAME_TYPES dans validations/skill.ts, appliqué par
+ *      updateWheelSchema et par le blueprint de la place de marché), donc la
+ *      garde `limit_reached` de perform_atomic_spin est toujours active et le
+ *      nombre de « réussi » annonçables reste borné.
+ * Sans le point 2, la porte de compétence était décorative sous `unlimited` :
+ * les tours y sont déjà illimités pour tous, mais le tricheur supprimait le
+ * ralentissement que le commerçant croyait avoir posé (défaut d'ÉQUITÉ, pas
+ * effondrement d'économie — le stock et les poids plafonnaient toujours).
  */
 export function evaluateSkill(
   gameType: SkillGameType,
@@ -176,10 +186,13 @@ export function evaluateSkill(
  * geste du client : elle refuse seulement une réussite impossible dans l'UI
  * officielle (script qui répond avant que la cible soit atteignable).
  *
- * LIMITE CONNUE ET ASSUMÉE (ADR-031) : le point de mesure reste l'ÉMISSION du
- * jeton (`iat`), pas le début du geste. Un script qui attend le plancher avant
- * de répondre passe — reflex et gauge restent client-reported, bornés par
- * l'économie du tirage (poids et stock), pas par cette horloge.
+ * LIMITE CONNUE ET ASSUMÉE : le point de mesure reste l'ÉMISSION du jeton
+ * (`iat`), pas le début du geste. Un script qui attend le plancher avant de
+ * répondre passe — et rien ne peut l'en empêcher, puisque ces deux jeux n'ont
+ * AUCUN secret : le joueur doit voir tout l'état pour jouer, donc le navigateur
+ * connaît la formule et peut annoncer la réussite. Ce qui les borne n'est pas
+ * cette horloge mais le couple « poids/stock du tirage » + « play_limit ≠
+ * unlimited », imposé à l'écriture (cf. evaluateSkill ci-dessus).
  */
 export function minimumSkillSuccessElapsedMs(
   gameType: SkillGameType,

@@ -122,6 +122,9 @@ export function DiceReveal({
       <button
         type="button"
         onClick={start}
+        // Voir chest-reveal : `aria-disabled` seul laissait le dé focusable et
+        // cliquable PENDANT le roulement.
+        disabled={busy}
         aria-disabled={busy || undefined}
         aria-label="Lancer le dé"
         style={objectColor ? { backgroundColor: objectColor } : undefined}

@@ -12,10 +12,7 @@ import { buildGoogleWalletSaveUrl } from "@/lib/google-wallet";
 import { buildAppleWalletPassUrl } from "@/lib/apple-wallet";
 import { getOrgOwnerEmail } from "@/lib/merchant-contact";
 import { sendPrizeEmail, sendWinNotificationEmail } from "@/lib/resend";
-import {
-  enqueuePrizeRedeemSms,
-  recordPrizeSmsConsent,
-} from "@/lib/sms-prize";
+import { enqueuePrizeRedeemSms } from "@/lib/sms-prize";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   RATE_LIMITS,
@@ -32,8 +29,15 @@ import {
 import { isConsistentClaimResourceChain } from "@/lib/public-resource-guards";
 import { writeAuditLog } from "@/lib/audit";
 import type { ActionResult } from "@/lib/utils";
-import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
-import { anonymousPlayerKey } from "@/lib/anonymous-player";
+import {
+  IP_CLIENT_INCONNUE,
+  clientIpFromHeaders,
+  observerPressionIp,
+} from "@/lib/request-ip";
+import {
+  anonymousPlayerKey,
+  peekAnonymousPlayerKey,
+} from "@/lib/anonymous-player";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 
 export interface SpinOutcome {
@@ -214,6 +218,43 @@ async function spinWheelInner(
       { wheel_id: wheel.id },
       );
 
+    /* ── PLAFOND BLOQUANT PAR IP : LE COÛT DE LA ROTATION DE COOKIE ──
+     *
+     * Les deux seaux d'identité ci-dessous sont indexés sur `player_key`,
+     * dérivée du cookie que le joueur contrôle : ils TOURNENT AVEC LE COOKIE,
+     * et l'effacer rendait un tour toutes les quatre secondes, sans total.
+     * Ce plafond-ci borne ce qu'une même IP peut extraire d'UNE roue en une
+     * minute — calibrage et arbitrage complets dans `RATE_LIMITS.spinIpPlafond`.
+     *
+     * Il ne rend pas `play_limit` fiable : il rend la rotation coûteuse.
+     *
+     * TROIS PROPRIÉTÉS NON NÉGOCIABLES, dans l'ordre où elles se lisent :
+     *   1. UNIQUEMENT sur une IP mesurée. Sans proxy déclaré,
+     *      `clientIpFromHeaders` rend `IP_CLIENT_INCONNUE` : bloquer sur cette
+     *      valeur ferait partager UNE clé à tout Internet, donc couperait tout
+     *      le monde. On ne consomme alors rien du tout.
+     *   2. FAIL-OPEN (pas de `failClosed`) : une panne du compteur laisse
+     *      jouer. Sur une clé partagée, l'inverse ferme une salle entière pour
+     *      une indisponibilité qui n'est pas de son fait.
+     *   3. PAR ROUE (`wheel.id` dans la clé), comme le seau d'alerte : le
+     *      préjudice visé est le drainage du stock d'une roue, et le stock est
+     *      par roue. Un attaquant qui s'étale sur dix roues avance dix fois
+     *      moins vite sur chacune, et chacune reste plafonnée.
+     *   4. DÉMARRÉ SANS ÊTRE ATTENDU, comme le compteur de pression juste
+     *      au-dessus et pour la même raison : c'est un second seau par IP, il
+     *      n'a aucune raison de coûter un aller-retour base de plus EN SÉRIE
+     *      sur le chemin d'un tour de roue. Son verdict, lui, EST attendu — en
+     *      tête du `&&` ci-dessous, donc avant les seaux d'identité, dont il
+     *      conserve le court-circuit.
+     */
+    const plafondIp =
+      ip === IP_CLIENT_INCONNUE
+        ? Promise.resolve(true)
+        : rateLimit(
+            rateLimitBucket("spin:ip:plafond", wheel.id, ip),
+            RATE_LIMITS.spinIpPlafond,
+          );
+
     // Seaux `failClosed` sur l'IDENTITÉ joueur (empreinte cookie) : anti
     // double-clic (burst) et débit soutenu — ce qui ferme aussi la course sur
     // la limite de jeu ci-dessous. La saturer ne borne que ce joueur.
@@ -223,7 +264,9 @@ async function spinWheelInner(
     // — précisément ce que `spinBurst` (1/4 s) existe pour absorber sans
     // pénaliser le joueur. Un joueur nerveux épuiserait son quota de la minute
     // en quatre tours au lieu de huit. Le `&&` n'est pas une maladresse.
+    const sousPlafondIp = await plafondIp;
     const allowed =
+      sousPlafondIp &&
       (await rateLimit(
         rateLimitBucket("spin:burst", wheel.id, playerKey),
         RATE_LIMITS.spinBurst,
@@ -236,12 +279,23 @@ async function spinWheelInner(
       ));
     await pressionIp;
     if (!allowed) {
-      reportSecurityEvent("spin_rate_limited", { wheel_id: wheel.id });
+      // MÊME RÉPONSE au joueur dans les deux cas — un refus ne doit jamais
+      // dire QUELLE limite a mordu, sinon il indique quoi faire tourner. La
+      // distinction n'existe qu'en supervision, où elle décide de la suite :
+      // « ce joueur va trop vite » n'appelle rien, « cette IP a franchi le
+      // plafond d'une roue » est une automatisation.
+      reportSecurityEvent(
+        sousPlafondIp ? "spin_rate_limited" : "spin_ip_ceiling_blocked",
+        { wheel_id: wheel.id },
+      );
       await writeAuditLog({
         organizationId: campaign.organization_id,
         actor: "public",
         action: "security.rate_limited",
-        metadata: { wheel_id: wheel.id, scope: "spin" },
+        metadata: {
+          wheel_id: wheel.id,
+          scope: sousPlafondIp ? "spin" : "spin:ip",
+        },
       });
       return {
         ok: false,
@@ -285,6 +339,14 @@ async function spinWheelInner(
                 : "Vous avez déjà joué cette semaine. Revenez la semaine prochaine !",
           nextEligibleAt: spin.next_eligible_at ?? undefined,
         };
+      }
+      if (spin?.denial_reason === "campaign_closed") {
+        // La campagne a fermé ENTRE la lecture du contexte et le tirage — la
+        // course que la garde de `perform_atomic_spin` existe pour fermer
+        // (migration 20261211120000). Le joueur voyait une roue jouable il y a
+        // une seconde : lui répondre « plus aucun lot disponible » l'enverrait
+        // chercher un problème de stock qui n'existe pas.
+        return { ok: false, error: "Ce jeu vient de se terminer." };
       }
       return { ok: false, error: "Plus aucun lot disponible pour le moment." };
     }
@@ -354,9 +416,10 @@ export async function claimPrize(input: {
   birthDate?: string;
   /**
    * Consentement SMS (case dédiée du formulaire de gain). Il voyage ICI et non
-   * dans un second appel : le dépôt du code de retrait par SMS a lieu dans
-   * cette même fonction et lit `sms_consents` avant tout — voir
-   * `recordPrizeSmsConsent`.
+   * dans un second appel — et il est désormais transmis à `claim_winning_spin`
+   * (`p_sms_opt_in`), donc écrit DANS la transaction du gain plutôt qu'après
+   * son commit. C'est ce qui empêche une invocation interrompue de perdre le
+   * consentement, et avec lui le canal SMS de ce client.
    */
   smsOptIn?: boolean;
 }): Promise<ActionResult<ClaimResult>> {
@@ -439,11 +502,17 @@ function claimResultFrom(params: {
  *    d'origine est allée à son terme, l'e-mail et le SMS SONT partis, et les
  *    rejouer enverrait bien un second message à chaque « Réessayer » ;
  *  • l'INVOCATION est morte APRÈS le commit de la RPC (délai serverless
- *    dépassé, redéploiement en vol, OOM) — `sendPrizeEmail`,
- *    `recordPrizeSmsConsent` et `enqueuePrizeRedeemSms` sont tous appelés
- *    APRÈS `claim_winning_spin`, donc rien n'est parti. Le gagnant a son code à
- *    l'écran, mais aucun e-mail, aucun SMS, et son consentement coché n'a
- *    jamais été écrit.
+ *    dépassé, redéploiement en vol, OOM) — `sendPrizeEmail` et
+ *    `enqueuePrizeRedeemSms` sont appelés APRÈS `claim_winning_spin`, donc
+ *    rien n'est parti. Le gagnant a son code à l'écran, mais aucun e-mail et
+ *    aucun SMS.
+ *
+ *    LA MOITIÉ LA PLUS GRAVE DE CE CAS A ÉTÉ RETIRÉE. Le CONSENTEMENT SMS
+ *    était lui aussi écrit après le commit, et sa perte n'était pas celle
+ *    d'un message : sans lui, tout envoi ultérieur échoue en silence — le
+ *    canal était perdu pour ce client, définitivement. Il est désormais écrit
+ *    dans la transaction (`p_sms_opt_in`, migration 20261213120000). Ce qui
+ *    reste ci-dessous ne concerne plus que des messages, rattrapables.
  *
  * ── CE QUI A ÉTÉ TRANCHÉ, ET POURQUOI ───────────────────────
  *
@@ -577,6 +646,68 @@ async function claimPrizeInner(
       return { ok: false, error: "Gain introuvable." };
     }
 
+    // LE GAIN APPARTIENT À L'APPAREIL QUI L'A TIRÉ — défense en profondeur.
+    //
+    // ── Ce que le jeton prouve, et ce qu'il ne prouve pas ──
+    //
+    // Le jeton de claim signe `{ spinId, exp }` et rien d'autre. L'en-tête de
+    // `replayExistingClaim` argumente que « quiconque peut appeler ce rejeu
+    // pouvait déjà faire le premier claim » : c'est vrai du REJEU, pas du
+    // PREMIER claim. Un jeton capté pendant sa fenêtre de 15 min (extension de
+    // navigateur, capture d'un devtools, journal partagé) laisse un tiers
+    // encaisser le lot sous SON adresse — et le gagnant légitime obtient
+    // ensuite « Ce gain a déjà été enregistré ».
+    //
+    // `spins.player_key` existe et est renseignée. On la confronte au cookie de
+    // l'appelant, ce que rien ne faisait.
+    //
+    // ── POURQUOI L'ABSENCE DE COOKIE NE REFUSE PAS ──
+    //
+    // Refuser sans cookie coûterait son lot à un gagnant qui a nettoyé son
+    // navigateur entre le tirage et la réclamation — un cas rare mais dont le
+    // prix est un client humilié au comptoir, pour une menace qui, elle, reste
+    // hypothétique. On refuse donc le cookie qui CONTREDIT, jamais celui qui
+    // manque : un tiers qui a navigué EN A un, et il ne correspond pas. Le
+    // contournement existe encore (effacer son propre cookie), mais il devient
+    // un geste délibéré, et il est journalisé.
+    // ── LA GARDE NE VAUT QUE POUR LES SPINS DU PARCOURS PUBLIC ──
+    //
+    // `spins.player_key` n'est PAS toujours l'empreinte du cookie anonyme.
+    // `perform_atomic_spin` y écrit celle-ci et marque `source` à `direct` ou
+    // `share` ; mais les TOURS OFFERTS des autres modules écrivent leur propre
+    // identité — la Pause Chance de la réservation y met le hachage
+    // `lc-player` de la file d'attente et marque `source` à `reserver_wait`
+    // (20261006120000_reserver_attente_active.sql:1197), et le passeport, le
+    // calendrier ou le parrainage font de même avec la leur.
+    //
+    // Comparer le cookie anonyme à CES clés-là, c'est comparer deux identités
+    // différentes : la garde y voyait une contradiction là où il n'y en a
+    // aucune, et refusait des gains parfaitement légitimes. La suite E2E l'a
+    // attrapé sur `reserver-attente`, sur les deux navigateurs — un tour
+    // offert gagné, jamais remis, et le joueur devant un écran qui tourne.
+    //
+    // On borne donc la garde à ce qu'elle sait vraiment vérifier.
+    const spinDuParcoursPublic =
+      spin.source === "direct" || spin.source === "share";
+    // Test de VÉRACITÉ et non `!== null` : un spin dont la colonne est absente
+    // ou vide n'est lié à aucun appareil, et `undefined !== null` aurait fait
+    // refuser ces gains-là — une régression introduite par la garde elle-même.
+    const cleAppelant = await peekAnonymousPlayerKey();
+    if (
+      spinDuParcoursPublic &&
+      cleAppelant &&
+      spin.player_key &&
+      cleAppelant !== spin.player_key
+    ) {
+      // Même libellé que « gain introuvable » : distinguer les deux donnerait
+      // un oracle qui confirme qu'un spin_id porte bien un gain.
+      reportSecurityEvent("claim_player_key_mismatch", { spin_id: spin.id });
+      return { ok: false, error: "Gain introuvable." };
+    }
+    if (cleAppelant === null) {
+      reportSecurityEvent("claim_sans_cookie_joueur", { spin_id: spin.id });
+    }
+
     // Exigences de collecte définies par la campagne (source de vérité
     // serveur : le client ne peut pas contourner le formulaire).
     const { data: campaign } = await admin
@@ -655,15 +786,47 @@ async function claimPrizeInner(
       };
     }
 
+    /* ── CE QUE LA CAMPAGNE NE COLLECTE PAS NE SORT PAS D'ICI ────────
+     *
+     * `claimSchema` accepte `email`, `phone` et `marketingOptIn` sans rien
+     * savoir de la campagne — il ne peut pas faire autrement, il est validé
+     * avant qu'elle soit lue. L'appelant, lui, LA CONNAÎT à ce point du code.
+     *
+     * La RPC normalise déjà ces champs à null/false quand la campagne ne les
+     * collecte pas (migration 20261209120000) : il n'y a donc plus de fuite,
+     * et cette garde SQL reste L'AUTORITÉ — on ne la retire pas, c'est elle
+     * qui protège les appelants futurs. Ce qui se corrige ici est le CONTRAT :
+     * l'application envoyait encore une adresse e-mail et un opt-in marketing
+     * que la base allait jeter. Transmettre une donnée personnelle en sachant
+     * qu'elle sera écartée, c'est la faire voyager pour rien — dans les
+     * journaux de requêtes, dans les traces, dans tout ce qui regarde entre
+     * les deux.
+     *
+     * Les conditions sont celles de la RPC, au mot près (`collect_email` pour
+     * l'e-mail, `collect_phone` pour le téléphone, l'OU des deux pour le
+     * prénom, les CGU et l'opt-in) : les deux côtés doivent dire la même
+     * chose, sinon l'un des deux ment. */
+    const emailCollecte = collectEmail ? parsed.data.email : null;
+    const phoneCollecte = collectPhone ? parsed.data.phone : null;
+    const prenomCollecte = collectsData ? parsed.data.firstName || null : null;
+    const cguCollectees = collectsData && parsed.data.acceptedTerms;
+    const optInCollecte = collectsData && parsed.data.marketingOptIn;
+    // Le consentement SMS voyage désormais AVEC la réclamation, pour être
+    // écrit DANS sa transaction (migration 20261213120000). Conditionné au mot
+    // près comme le numéro auquel il se rapporte : un consentement sans
+    // téléphone collecté ne veut rien dire.
+    const smsOptInCollecte = collectPhone && (parsed.data.smsOptIn ?? false);
+
     const { data: claimRows, error: insertError } = await admin.rpc(
       "claim_winning_spin",
       {
         p_spin_id: spin.id,
-        p_first_name: parsed.data.firstName || null,
-        p_email: parsed.data.email,
-        p_phone: parsed.data.phone,
-        p_accepted_terms: parsed.data.acceptedTerms,
-        p_marketing_opt_in: parsed.data.marketingOptIn,
+        p_first_name: prenomCollecte,
+        p_email: emailCollecte,
+        p_phone: phoneCollecte,
+        p_accepted_terms: cguCollectees,
+        p_marketing_opt_in: optInCollecte,
+        p_sms_opt_in: smsOptInCollecte,
       },
     );
     const claimRow = (claimRows as Array<{
@@ -732,17 +895,22 @@ async function claimPrizeInner(
     // (opt-in marketing ET case anniversaire) et un email présent — la
     // ligne newsletter_subscribers vient d'être créée par la RPC de
     // claim. Best-effort : jamais bloquant pour le gain.
+    //
+    // Sur les valeurs NORMALISÉES : une campagne sans collecte d'e-mail n'a
+    // aucune ligne d'abonné (la RPC vient de l'écarter), et cet `update`
+    // n'aurait rien mis à jour — il aurait seulement fait voyager l'adresse
+    // du joueur jusqu'au filtre d'une requête, pour rien.
     if (
-      parsed.data.marketingOptIn &&
+      optInCollecte &&
       parsed.data.birthdayOptIn &&
       parsed.data.birthDate &&
-      parsed.data.email
+      emailCollecte
     ) {
       const { error: birthdayError } = await admin
         .from("newsletter_subscribers")
         .update({ birth_date: parsed.data.birthDate })
         .eq("organization_id", spin.organization_id)
-        .eq("email", parsed.data.email);
+        .eq("email", emailCollecte);
       if (birthdayError) {
         reportError("play.claim-birthday", birthdayError.message);
       }
@@ -785,18 +953,20 @@ async function claimPrizeInner(
     // module ; aucune n'a de raison d'être rejouée ici, et une seconde
     // vérification serait la seconde source de vérité habituelle.
     if (collectPhone && parsed.data.phone) {
-      // ── LE CONSENTEMENT D'ABORD, LE DÉPÔT ENSUITE ──────────────────
-      // L'ordre était inversé, et c'est tout le défaut : le dépôt ci-dessous
-      // commence par lire `sms_consents` et sort sans rien faire s'il ne trouve
-      // rien, alors que le consentement n'était écrit qu'APRÈS, par un second
-      // appel du navigateur. Au premier gain d'un couple (organisation,
-      // numéro), aucun SMS ne partait jamais.
-      if (parsed.data.smsOptIn) {
-        await recordPrizeSmsConsent(admin, {
-          organizationId: spin.organization_id,
-          phone: parsed.data.phone,
-        });
-      }
+      // ── LE CONSENTEMENT N'EST PLUS ÉCRIT ICI, ET C'EST LE CORRECTIF ──
+      //
+      // Il l'était : un `recordPrizeSmsConsent` juste avant ce dépôt, donc
+      // APRÈS le commit de `claim_winning_spin`. Une invocation serverless qui
+      // expirait entre les deux perdait le consentement pour toujours — le
+      // rejeu ne le réémet pas, et sans lui `enqueuePrizeRedeemSms` lit
+      // `sms_consents`, ne trouve rien et sort EN SILENCE. Ce n'était pas un
+      // message perdu, c'était le CANAL perdu pour ce client, définitivement.
+      //
+      // Il est désormais écrit DANS la transaction du claim, par la RPC
+      // elle-même (`p_sms_opt_in`, migration 20261213120000) — au même titre
+      // que la participation, le code de retrait, le budget et les jobs. Le
+      // dépôt ci-dessous relit donc un consentement qui, s'il devait exister,
+      // existe déjà et a été committé avec le gain.
       await enqueuePrizeRedeemSms(admin, {
         organizationId: spin.organization_id,
         organizationName: org?.name ?? "votre commerce",

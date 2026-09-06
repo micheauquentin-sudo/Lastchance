@@ -39,13 +39,20 @@ values
   ('d1000000-0000-4000-8000-000000000f01', 'authenticated', 'authenticated',
    'proprio-ticket-a@test.local', '', now(), now()),
   ('d1000000-0000-4000-8000-000000000f02', 'authenticated', 'authenticated',
-   'proprio-ticket-b@test.local', '', now(), now());
+   'proprio-ticket-b@test.local', '', now(), now()),
+  -- f03 : un CAISSIER du commerce A. Il n'émet ni ne tire rien dans ce
+  -- fichier ; il n'existe que pour la contre-épreuve TKT2-3, où le serveur
+  -- nomme un acteur qui n'est celui d'aucune session.
+  ('d1000000-0000-4000-8000-000000000f03', 'authenticated', 'authenticated',
+   'caissier-ticket-a@test.local', '', now(), now());
 
 insert into public.organization_members (organization_id, user_id, role) values
   ('d1000000-0000-4000-8000-00000000000a',
    'd1000000-0000-4000-8000-000000000f01', 'owner'),
   ('d1000000-0000-4000-8000-00000000000b',
-   'd1000000-0000-4000-8000-000000000f02', 'owner');
+   'd1000000-0000-4000-8000-000000000f02', 'owner'),
+  ('d1000000-0000-4000-8000-00000000000a',
+   'd1000000-0000-4000-8000-000000000f03', 'cashier');
 
 -- UN SEUL LOT, UN SEUL EXEMPLAIRE : c'est ce qui rend l'épuisement observable.
 insert into public.tickets_or_lots
@@ -178,6 +185,14 @@ select is(
 );
 
 -- ══ 6. LA REMISE, PAR LA CAISSE UNIVERSELLE ═════════════════
+--
+-- `service_role` ET NON une session marchande — même raison qu'en 6 bis, et
+-- depuis 20261208120000 la même exigence : `redeem_ticket_or` est appelée par
+-- le SERVEUR après sa propre garde, et vérifie ensuite que l'ACTEUR nommé tient
+-- bien un comptoir de ce commerce. Les trois assertions qui suivent portent sur
+-- cet acteur, pas sur la session : CAISSE-1 refuse toujours le propriétaire
+-- d'en face.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select throws_ok(
   $$select * from public.redeem_ticket_or(
@@ -192,6 +207,37 @@ select throws_ok(
   'not authorized',
   'CAISSE-1 le propriétaire du commerce voisin ne remet rien ici'
 );
+
+-- ── TKT-2 · L'ACTEUR NOMMÉ EST CONFRONTÉ À L'IDENTITÉ DE L'APPEL ──
+--
+-- 20261208120000 avait fermé l'ACCÈS ; la fonction dérivait toujours son
+-- autorisation d'un `p_actor` que rien ne confrontait à `auth.uid()`.
+-- 20261212120000 pose la règle manquante : un appel qui PORTE une identité ne
+-- peut pas en nommer une autre.
+--
+-- LE CONTEXTE EST ARTIFICIEL, ET C'EST LE POINT. Un JWT `service_role` ne
+-- porte pas de `sub` en production, et une session `authenticated` est déjà
+-- refusée par la garde de rôle : cette garde-ci est INERTE aujourd'hui. Elle
+-- vaut pour le jour où quelqu'un relâchera la garde de rôle ou rétablira un
+-- grant — et un test est le seul endroit où l'on peut fabriquer ce jour-là.
+select set_config('request.jwt.claims',
+  '{"role":"service_role","sub":"d1000000-0000-4000-8000-000000000f02"}', true);
+
+select throws_ok(
+  $$select * from public.redeem_ticket_or(
+       'd1000000-0000-4000-8000-00000000000a',
+       (select doc ->> 'code_retrait' from t_tirage),
+       'd1000000-0000-4000-8000-000000000f01')$$,
+  '42501',
+  'not authorized',
+  'TKT2-1 le JWT dit f02, `p_actor` dit f01 : REFUSÉ — et f01 tient pourtant bien ce comptoir, donc c''est bien la CONCORDANCE qui est vérifiée, pas l''appartenance'
+);
+
+-- Retour au contexte du routeur universel : `service_role`, SANS identité. Les
+-- quatre assertions qui suivent sont la contre-épreuve du lot — sous ce
+-- contexte, `p_actor` reste un libellé d'audit et la caisse fonctionne
+-- exactement comme avant.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 select is(
   (select redeemed_now from public.redeem_ticket_or(
@@ -216,6 +262,43 @@ select is(
     where source_type = 'ticket_or' and redeemed_at is not null),
   1,
   'CAISSE-4 … sans réécrire la date de remise'
+);
+
+-- ── TKT-2, les deux contre-épreuves ──────────────────────────
+--
+-- Sans elles, TKT2-1 resterait verte sur une fonction qui refuserait TOUT :
+-- « ne remet jamais rien » satisfait « ne remet pas pour un acteur discordant ».
+-- Ces deux assertions disent ce qui doit continuer de PASSER.
+--
+-- `redeemed_now` vaut `false` : le lot a été remis en CAISSE-2, et c'est sans
+-- importance ici — ce qu'on mesure est l'absence de refus, pas la remise.
+
+select set_config('request.jwt.claims',
+  '{"role":"service_role","sub":"d1000000-0000-4000-8000-000000000f01"}', true);
+
+select is(
+  (select redeemed_now from public.redeem_ticket_or(
+     'd1000000-0000-4000-8000-00000000000a',
+     (select doc ->> 'code_retrait' from t_tirage),
+     'd1000000-0000-4000-8000-000000000f01')),
+  false,
+  'TKT2-2 identité CONCORDANTE — le JWT dit f01, `p_actor` dit f01 : accepté. La garde vérifie une concordance, elle ne refuse pas toute identité'
+);
+
+-- Le contrat de `redeem_reward_by_code`, mot pour mot : sous `service_role`
+-- sans identité, le serveur — qui a déjà vérifié la session — nomme l'acteur
+-- de son choix parmi les membres, et ce nom est un LIBELLÉ D'AUDIT. f03 n'est
+-- l'acteur d'aucune session ouverte dans ce fichier : c'est exactement ce que
+-- « libellé » veut dire.
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+select is(
+  (select redeemed_now from public.redeem_ticket_or(
+     'd1000000-0000-4000-8000-00000000000a',
+     (select doc ->> 'code_retrait' from t_tirage),
+     'd1000000-0000-4000-8000-000000000f03')),
+  false,
+  'TKT2-3 sous `service_role` SANS identité, un `p_actor` arbitraire (le caissier f03) reste accepté : le libellé d''audit survit intact'
 );
 
 -- ══ 6 bis. LA CAISSE UNIVERSELLE LE CONNAÎT ════════════════

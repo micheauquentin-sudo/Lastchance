@@ -1,4 +1,9 @@
 import type { Breadcrumb, Event } from "@sentry/nextjs";
+import {
+  isSensitiveKey,
+  normalizeKey,
+  REDEEM_CODE_PATTERN,
+} from "./cles-sensibles";
 import { masquerJetonUrl } from "./masquer-jeton-url";
 
 /**
@@ -17,9 +22,11 @@ import { masquerJetonUrl } from "./masquer-jeton-url";
  *  - URLS SIGNÉES : le chemin est conservé, seule la valeur des
  *    paramètres sensibles (`token`, `signature`, `X-Amz-Credential`, `sig`…)
  *    est remplacée — une URL de stockage reste identifiable sans être rejouable ;
- *  - JETONS DE CHEMIN : `/commande/<jeton>` et `/hunt/<jeton>` portent leur
- *    secret DANS le chemin, là où l'expurgation par nom de paramètre ci-dessus
- *    ne va pas voir (src/lib/masquer-jeton-url.ts) ;
+ *  - JETONS DE CHEMIN : `/commande/<jeton>`, `/hunt/<jeton>`, `/ticket/<code>`…
+ *    portent leur secret DANS le chemin, là où l'expurgation par nom de
+ *    paramètre ci-dessus ne va pas voir (src/lib/masquer-jeton-url.ts, qui
+ *    couvre désormais les DEUX — chemin et query — parce que PostHog ne
+ *    branche que lui) ;
  *  - email, téléphone et clés porteuses de données personnelles
  *    (`email`, `first_name`, `player_key`, `ip_address`, cookies…).
  *
@@ -47,58 +54,6 @@ const SCRUB_FAILURE_MESSAGE =
 const MAX_DEPTH = 10;
 const MAX_ARRAY_ITEMS = 1000;
 
-/**
- * Fragments cherchés DANS le nom de la clé (normalisé sans séparateurs) :
- * `player_key`, `playerKey` et `PLAYER-KEY` tombent sur la même règle.
- */
-const SENSITIVE_KEY_FRAGMENTS = [
-  "secret",
-  "token",
-  "password",
-  "passwd",
-  "apikey",
-  "authorization",
-  "cookie",
-  "signature",
-  "credential",
-  "privatekey",
-  "servicerole",
-  "sessionid",
-  "email",
-  "phone",
-  "telephone",
-  "firstname",
-  "lastname",
-  "fullname",
-  "displayname",
-  "postalcode",
-  "ipaddress",
-  "playerkey",
-  "unsubscribe",
-  "redeemcode",
-  "dsn",
-];
-
-/**
- * Noms EXACTS. Volontairement séparés des fragments : `key` seul est un
- * secret, `idempotency_key` est un diagnostic ; `code` reste lisible
- * (SQLSTATE, `error.code`) alors que `redeem_code` est déjà couvert plus haut.
- */
-const SENSITIVE_KEY_EXACT = new Set([
-  "mail",
-  "tel",
-  "sig",
-  "ip",
-  "zip",
-  "address",
-  "auth",
-  "pwd",
-  "key",
-  "otp",
-  "pin",
-  "username",
-]);
-
 /** Clés dont la valeur est une URL (absolue ou non) : query expurgée par nom de paramètre. */
 const URL_KEYS = new Set(["url", "href", "absurl", "from", "to", "location"]);
 
@@ -121,39 +76,22 @@ const ASSIGNED_VALUE_PATTERN =
 const URL_IN_TEXT_PATTERN = /\bhttps?:\/\/[^\s"'<>`\\]+/gi;
 
 /**
- * Codes de retrait, dans un texte libre. Ce sont des SECRETS PORTEURS : qui
- * détient le code encaisse le lot. Ils n'ont donc rien à faire dans un
- * rapport d'erreur.
+ * Codes de retrait — LE MOTIF AUSSI A DÉMÉNAGé dans `cles-sensibles.ts`,
+ * et pour la même raison que les listes de noms : PostHog en a besoin.
  *
- * Le chemin qui les y amène n'est pas le nôtre mais celui de PostgreSQL : sur
- * violation d'unicité, son message cite la valeur en cause — « Key (code)=
- * (GAIN-ABCD2345) already exists ». `ASSIGNED_VALUE_PATTERN` ne l'attrape pas,
- * et volontairement : la clé s'appelle `code`, qui doit rester lisible parce
- * que c'est aussi le SQLSTATE et `error.code`. D'où un motif dédié, sur la
- * FORME du code plutôt que sur le nom de la clé.
- *
- * Les neuf préfixes du produit, suivis de 8 caractères de l'alphabet de
- * `generateCode` (`CODE_ALPHABET`, sans I/O/0/1). Volontairement PAS de motif
- * pour les codes NUS de 8 caractères : ils sont indiscernables d'un
- * identifiant technique, et tout expurger coûterait le diagnostic sans
- * protéger davantage — un code nu n'apparaît dans un message Postgres que
- * précédé de son préfixe en base.
+ * `/dashboard/redeem?code=GAIN-ABCD2345` est l'URL du comptoir, envoyée telle
+ * quelle à chaque pageview ; ce motif était la seule chose capable de la
+ * fermer, et il vivait dans un module que PostHog ne branche pas. La nuance
+ * est écrite là-bas : ici il s'applique à tout texte libre, côté analytique il
+ * ne s'applique qu'à la QUERY — un slug de QR en majuscules a la même forme.
  */
-const REDEEM_CODE_PATTERN =
-  /\b(?:GAIN|CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO)-[A-HJ-NP-Z2-9]{6,10}\b/g;
+export { REDEEM_CODE_PATTERN };
 
-function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-export function isSensitiveKey(key: string): boolean {
-  const normalized = normalizeKey(key);
-  if (!normalized) return false;
-  if (SENSITIVE_KEY_EXACT.has(normalized)) return true;
-  return SENSITIVE_KEY_FRAGMENTS.some((fragment) =>
-    normalized.includes(fragment),
-  );
-}
+/**
+ * `isSensitiveKey` est la surface publique de ce module depuis l'origine : ses
+ * appelants et son test n'ont pas à savoir que la liste habite ailleurs.
+ */
+export { isSensitiveKey };
 
 function safeDecode(value: string): string {
   try {

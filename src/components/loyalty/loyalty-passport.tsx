@@ -1240,15 +1240,23 @@ function PassportQr({ value }: { value: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    import("qrcode").then((QRCode) => {
-      QRCode.toDataURL(value, { width: 320, margin: 1 })
-        .then((url) => {
-          if (!cancelled) setDataUrl(url);
-        })
-        .catch(() => {
-          // QR non généré : le staff peut aussi saisir le jeton à la main.
-        });
-    });
+    // Le `.catch` FINAL couvre l'IMPORT lui-même, là où celui du dessous ne
+    // couvre que la génération. Un chunk qui ne se charge pas (déploiement en
+    // cours de session, réseau coupé) rejetait sinon une promesse que personne
+    // n'attrapait : du bruit en supervision, pour une dégradation déjà prévue.
+    import("qrcode")
+      .then((QRCode) => {
+        QRCode.toDataURL(value, { width: 320, margin: 1 })
+          .then((url) => {
+            if (!cancelled) setDataUrl(url);
+          })
+          .catch(() => {
+            // QR non généré : le staff peut aussi saisir le jeton à la main.
+          });
+      })
+      .catch(() => {
+        // Lib indisponible : idem, le jeton se saisit à la main.
+      });
     return () => {
       cancelled = true;
     };

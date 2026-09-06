@@ -144,6 +144,9 @@ export function SlotReveal({
       <button
         type="button"
         onClick={start}
+        // Voir chest-reveal : `aria-disabled` seul laissait les rouleaux focusables
+        // et cliquables PENDANT le défilement.
+        disabled={busy}
         aria-disabled={busy || undefined}
         aria-label="Lancer les rouleaux"
         className={`mx-auto block w-full max-w-[320px] rounded-3xl border-2 p-5 outline-none transition-all focus-visible:ring-4 focus-visible:ring-offset-2 ${

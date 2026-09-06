@@ -1,10 +1,8 @@
 import "server-only";
 
-import { createHmac, createHash } from "node:crypto";
-import { requiredEnv } from "@/lib/env";
+import { createHmac } from "node:crypto";
 import { timingSafeEquals } from "@/lib/timing-safe";
 import { signingSecret, verificationSecrets } from "@/lib/token-secrets";
-import type { PlayLimit } from "@/types/database";
 
 // ────────────────────────────────────────────────────────────
 // Tirage pondéré (pur, testable)
@@ -44,76 +42,32 @@ export function pickWeightedIndex(
 }
 
 // ────────────────────────────────────────────────────────────
-// Limite de jeu (pur, testable)
+// CE QUI VIVAIT ICI, ET POURQUOI CE N'EST PLUS LE CAS
 // ────────────────────────────────────────────────────────────
-
-/**
- * Début de la fenêtre de jeu courante pour une limite donnée.
- * Retourne null si aucune limite (unlimited).
- * - daily : minuit (heure serveur)
- * - weekly : lundi 00:00
- * - once : depuis toujours
- */
-export function playWindowStart(limit: PlayLimit, now: Date): Date | null {
-  switch (limit) {
-    case "unlimited":
-      return null;
-    case "once":
-      return new Date(0);
-    case "daily": {
-      const d = new Date(now);
-      d.setHours(0, 0, 0, 0);
-      return d;
-    }
-    case "weekly": {
-      const d = new Date(now);
-      d.setHours(0, 0, 0, 0);
-      const day = d.getDay(); // 0 = dimanche
-      const sinceMonday = (day + 6) % 7;
-      d.setDate(d.getDate() - sinceMonday);
-      return d;
-    }
-  }
-}
-
-/**
- * Prochaine fenêtre de jeu après la fenêtre courante, pour une limite
- * donnée — sert à afficher un compte à rebours quand la roue refuse un
- * spin. Null si aucune prochaine fenêtre (unlimited/once : jamais/déjà
- * joué une fois pour toutes).
- */
-export function nextPlayWindowStart(limit: PlayLimit, now: Date): Date | null {
-  switch (limit) {
-    case "unlimited":
-    case "once":
-      return null;
-    case "daily": {
-      const d = new Date(now);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() + 1);
-      return d;
-    }
-    case "weekly": {
-      const d = new Date(now);
-      d.setHours(0, 0, 0, 0);
-      const day = d.getDay(); // 0 = dimanche
-      const sinceMonday = (day + 6) % 7;
-      d.setDate(d.getDate() - sinceMonday + 7);
-      return d;
-    }
-  }
-}
-
-// ────────────────────────────────────────────────────────────
-// Identité joueur pseudonymisée (RGPD : pas de PII brute)
-// ────────────────────────────────────────────────────────────
-
-export function computePlayerKey(ip: string, userAgent: string): string {
-  const salt = requiredEnv("PLAYER_KEY_SALT");
-  return createHash("sha256")
-    .update(`${salt}:${ip}:${userAgent}`)
-    .digest("hex");
-}
+//
+// `playWindowStart`, `nextPlayWindowStart` et `computePlayerKey` ont été
+// retirés. Ils n'avaient AUCUN appelant en production — vérifié sur tout le
+// dépôt, `src/`, `e2e/`, `scripts/`, `supabase/`, `site/` : leurs seules
+// références étaient leurs propres tests, six fois. C'est le pire état
+// possible pour du code : couvert, donc rassurant, et jamais exécuté par le
+// produit.
+//
+// Ils n'étaient pas seulement morts, ils étaient FAUX. Le calcul de fenêtre
+// qui fait autorité est en SQL (`perform_atomic_spin`,
+// 20260927120000_boucle_joueur_gain.sql:182-197) et travaille dans le fuseau
+// de l'ORGANISATION (`o.timezone`). Ces fonctions-ci utilisaient `setHours`
+// et `getDay`, donc l'heure locale du SERVEUR. Les rebrancher un jour aurait
+// décalé la fenêtre hebdomadaire de tout commerçant hors du fuseau du
+// serveur, sans que rien ne le signale.
+//
+// `computePlayerKey(ip, userAgent)` dérivait par ailleurs une identité d'une
+// empreinte IP + agent, là où le produit dérive la sienne d'un cookie
+// (`src/lib/anonymous-player.ts`). Le sel `PLAYER_KEY_SALT` reste utilisé —
+// par `anonymous-player.ts` et `player-identity.ts` —, il n'est pas orphelin.
+//
+// Le prédicat de tirabilité, lui, a DEUX exemplaires assumés (SQL et
+// `src/lib/lot-tirable.ts`) et le second est bien appelé : il n'est pas dans
+// ce cas et n'a pas été touché.
 
 // ────────────────────────────────────────────────────────────
 // Claim token : le résultat du spin, signé HMAC, à durée limitée.

@@ -43,6 +43,19 @@ const { state, makeAdmin } = vi.hoisted(() => {
     prize_id: string | null;
     is_losing: boolean;
     claimed: boolean;
+    /**
+     * Empreinte de l'appareil qui a TIRÉ ce spin. Optionnelle ici comme elle
+     * peut l'être en base sur les lignes anciennes : la liaison ne doit
+     * refuser un gain que sur une CONTRADICTION, jamais sur une absence.
+     */
+    player_key?: string | null;
+    /**
+     * Origine du spin. `direct`/`share` : parcours public, où `player_key` EST
+     * l'empreinte du cookie anonyme. Toute autre valeur désigne un TOUR OFFERT
+     * (`reserver_wait`, fidélité, calendrier…), qui y écrit l'identité de SON
+     * module — et que la liaison gain/appareil doit donc laisser passer.
+     */
+    source: string;
   }
 
   const makeSpin = (id: string): SpinRow => ({
@@ -53,6 +66,14 @@ const { state, makeAdmin } = vi.hoisted(() => {
     prize_id: PRIZE_ID,
     is_losing: false,
     claimed: false,
+    // `source` n'est PAS décoratif ici : la liaison gain/appareil ne s'applique
+    // qu'aux spins du parcours public (`direct`/`share`), parce que les tours
+    // OFFERTS des autres modules écrivent une tout autre identité dans
+    // `player_key`. Sans cette valeur, la fixture décrivait un spin d'origine
+    // inconnue, la garde se désarmait, et le cas « cookie divergent » passait
+    // pour vert alors qu'il ne prouvait plus rien. La colonne est `not null`
+    // en base : une fixture sans elle ne représentait aucune ligne réelle.
+    source: "direct",
   });
 
   // NB : `vi.hoisted` s'exécute AVANT les `const` du module — rien ici ne doit
@@ -87,6 +108,9 @@ const { state, makeAdmin } = vi.hoisted(() => {
     rateLimitDenied: [] as string[],
     rpcCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     ip: "203.0.113.7",
+    /** Empreinte joueur rendue par le cookie — MUTABLE, pour pouvoir simuler
+     *  une salle entière derrière une seule IP (contre-épreuve du plafond). */
+    playerKey: "anonymous-player-key",
     /** La campagne collecte-t-elle un téléphone ? (c'est le cas SMS.) */
     collectPhone: false,
     /** Existe-t-il un consentement SMS ACTIF pour ce couple (org, numéro) ? */
@@ -122,6 +146,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.pressionTerminee = false;
       state.rpcCalls = [];
       state.ip = "203.0.113.7";
+      state.playerKey = "anonymous-player-key";
       state.collectPhone = false;
       state.smsConsent = false;
       state.consentWriteError = null;
@@ -221,6 +246,26 @@ const { state, makeAdmin } = vi.hoisted(() => {
         }
         spin.claimed = true;
         state.participations.set(spin.id, "GAIN-ABCD2345");
+        // ── LE CONSENTEMENT SMS EST ÉCRIT ICI, DANS LA MÊME TRANSACTION ──
+        //
+        // Il l'était par un appel SÉPARÉ (`record_sms_consent`), émis APRÈS le
+        // commit de ce claim. Une invocation serverless morte entre les deux
+        // le perdait définitivement — et sans consentement, tout envoi
+        // ultérieur échoue en silence : ce n'était pas un message perdu, mais
+        // le canal SMS de ce client. La migration 20261213120000 l'a fait
+        // entrer dans la transaction, via `p_sms_opt_in`.
+        //
+        // Ce double doit refléter ce commerce-là, sinon les tests d'envoi
+        // continueraient de prouver l'ancienne architecture.
+        // Le SAVEPOINT compte autant que l'écriture : `record_sms_consent`
+        // LÈVE sur deux cas parfaitement ordinaires — numéro ayant fait STOP,
+        // numéro illisible. La migration l'appelle donc sous un sous-bloc
+        // `exception when others` (20261213120000:245-249) : le consentement
+        // est annulé, le GAIN reste délivré. Sans ce `&& !consentWriteError`,
+        // ce double prétendrait qu'un numéro retiré se réactive tout seul.
+        if (args.p_sms_opt_in === true && !state.consentWriteError) {
+          state.smsConsent = true;
+        }
         return Promise.resolve({
           data: [
             { participation_id: `participation-${spin.id}`, redeem_code: "GAIN-ABCD2345" },
@@ -403,6 +448,7 @@ vi.mock("@/lib/rate-limit", () => {
       spinBurst: { limit: 1, windowSeconds: 4 },
       spin: { limit: 8, windowSeconds: 60 },
       spinIp: { limit: 40, windowSeconds: 60 },
+      spinIpPlafond: { limit: 1500, windowSeconds: 60 },
     },
   };
 });
@@ -434,8 +480,22 @@ vi.mock("@/lib/google-wallet", () => ({ buildGoogleWalletSaveUrl: () => null }))
 vi.mock("@/lib/apple-wallet", () => ({ buildAppleWalletPassUrl: () => null }));
 vi.mock("@/lib/turnstile", () => ({ verifyTurnstile: () => Promise.resolve(true) }));
 vi.mock("@/lib/audit", () => ({ writeAuditLog: vi.fn() }));
+/**
+ * Le cookie joueur TEL QUE LE VOIT LA RÉCLAMATION, rendu variable.
+ *
+ * `anonymousPlayerKey` EN ÉMET un si le cookie manque — c'est le chemin du
+ * tirage. `peekAnonymousPlayerKey` REGARDE sans rien émettre, et peut donc
+ * rendre `null` : c'est le chemin de la réclamation, et cette différence est
+ * exactement ce que la liaison gain/appareil doit traiter. Un holder mutable
+ * permet aux tests de poser les trois cas (concordant, divergent, absent).
+ */
+const cookieJoueur = vi.hoisted(() => ({
+  cle: "anonymous-player-key" as string | null,
+}));
+
 vi.mock("@/lib/anonymous-player", () => ({
-  anonymousPlayerKey: () => Promise.resolve("anonymous-player-key"),
+  anonymousPlayerKey: () => Promise.resolve(state.playerKey),
+  peekAnonymousPlayerKey: () => Promise.resolve(cookieJoueur.cle),
 }));
 vi.mock("@/lib/request-ip", async (importOriginal) => ({
   // Le module RÉEL est conservé : `observerPressionIp` doit s'exécuter
@@ -472,6 +532,99 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("claimPrize — le gain appartient à l'appareil qui l'a tiré", () => {
+  // Le holder est global au fichier : sans restauration, un cas fuiterait sur
+  // les ~60 autres tests de claim, qui supposent tous un cookie concordant.
+  afterEach(() => {
+    cookieJoueur.cle = "anonymous-player-key";
+  });
+
+  /** Lie le spin de fixture à une empreinte d'appareil donnée. */
+  function lierSpinA(cle: string) {
+    const spin = state.spins.get(SPIN_ID);
+    if (!spin) throw new Error("fixture absente : state.reset() non appelé");
+    spin.player_key = cle;
+  }
+
+  it("cookie CONCORDANT : le gagnant légitime encaisse", async () => {
+    lierSpinA("anonymous-player-key");
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.data.redeemCode).toBe("GAIN-ABCD2345");
+  });
+
+  it("cookie DIVERGENT : un jeton capté n'encaisse pas le lot d'un autre", async () => {
+    // C'est le scénario que la garde existe pour fermer : le jeton de claim
+    // signe `{ spinId, exp }` et RIEN d'autre, donc sa seule possession valait
+    // autorisation pendant 15 minutes.
+    lierSpinA("empreinte-du-vrai-gagnant");
+    cookieJoueur.cle = "empreinte-d-un-tiers";
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(false);
+    // Même libellé que « gain introuvable » : un message distinct confirmerait
+    // au tiers que ce spin_id porte bien un lot.
+    if (!res.ok) expect(res.error).toBe("Gain introuvable.");
+    // Et surtout : RIEN n'a été enregistré. Sans cette assertion, le test
+    // passerait aussi sur un refus survenu APRÈS la création du gain.
+    expect(state.rpcCalls.some((c) => c.name === "claim_winning_spin")).toBe(
+      false,
+    );
+    expect(state.participations.size).toBe(0);
+  });
+
+  it("cookie ABSENT : le gain n'est pas confisqué (repli délibéré)", async () => {
+    // Refuser ici coûterait son lot à un gagnant qui a nettoyé son navigateur
+    // entre le tirage et la réclamation. On refuse la CONTRADICTION, jamais
+    // l'absence — voir le pavé de `claimPrizeInner`.
+    lierSpinA("empreinte-du-vrai-gagnant");
+    cookieJoueur.cle = null;
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("TOUR OFFERT : une autre identité n'est pas une contradiction", async () => {
+    // LA RÉGRESSION QUE CE TEST EXISTE POUR EMPÊCHER.
+    //
+    // `spins.player_key` n'est l'empreinte du cookie anonyme QUE sur le
+    // parcours public. Les tours offerts y écrivent la leur : la Pause Chance
+    // de la réservation y met le hachage `lc-player` de la file d'attente
+    // (20261006120000_reserver_attente_active.sql:1197). Comparer les deux,
+    // c'est comparer deux identités sans rapport — et la première version de
+    // cette garde refusait donc des gains parfaitement légitimes.
+    //
+    // Elle n'a PAS été attrapée en unitaire : il a fallu la suite E2E
+    // `reserver-attente`, sur les deux navigateurs, treize minutes de CI, et
+    // un échec qui se présentait comme un simple dépassement de délai. D'où ce
+    // test-ci, qui pose la question en une seconde.
+    const spin = state.spins.get(SPIN_ID);
+    if (!spin) throw new Error("fixture absente : state.reset() non appelé");
+    spin.source = "reserver_wait";
+    spin.player_key = "hachage-lc-player-de-la-file";
+    cookieJoueur.cle = "empreinte-anonyme-sans-rapport";
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+  });
+
+  it("spin SANS empreinte : rien à contredire, donc rien à refuser", async () => {
+    // Contre-épreuve indispensable : les lignes anciennes peuvent ne porter
+    // aucune empreinte, et une garde écrite avec `!== null` les aurait toutes
+    // refusées (`undefined !== null` est vrai). Ce test épingle ce cas précis.
+    cookieJoueur.cle = "une-empreinte-quelconque";
+
+    const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
+
+    expect(res.ok).toBe(true);
+  });
 });
 
 describe("claimPrize — ordre des gardes", () => {
@@ -583,6 +736,72 @@ describe("claimPrize — le rejeu d'un même jeton reste borné", () => {
     const refused = await claimPrize({ claimToken: token });
     expect(refused.ok).toBe(false);
     if (!refused.ok) expect(refused.error).toContain("Trop de tentatives");
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * claimPrize — LE CONTRAT DE COLLECTE, HONNÊTE DES DEUX CÔTÉS
+ *
+ * `claimSchema` accepte `email`, `phone` et `marketingOptIn` sans rien savoir
+ * de la campagne : il ne peut pas faire autrement, il est validé avant qu'elle
+ * soit lue. L'appelant, lui, la connaît.
+ *
+ * La RPC normalise déjà ces champs quand la campagne ne les collecte pas
+ * (migration 20261209120000) — il n'y a plus de FUITE, et cette garde SQL
+ * reste l'autorité. Ce qui se mesure ici est autre chose : l'application
+ * n'envoie plus une donnée personnelle en sachant que la base la jettera. Une
+ * adresse transmise pour rien voyage quand même — journaux de requêtes,
+ * traces, tout ce qui regarde entre les deux.
+ *
+ * Le harnais tourne sur `collect_email: false`, `collect_phone` piloté par
+ * `state.collectPhone` : c'est exactement le cas à couvrir.
+ * ════════════════════════════════════════════════════════════ */
+describe("claimPrize — ce que la campagne ne collecte pas ne part pas", () => {
+  it("campagne sans collecte : l'e-mail du joueur n'atteint jamais la RPC", async () => {
+    const res = await claimPrize({
+      claimToken: signClaimToken(SPIN_ID),
+      firstName: "Camille",
+      email: "camille@example.com",
+      marketingOptIn: true,
+      acceptedTerms: true,
+    });
+
+    expect(res.ok).toBe(true);
+    const appel = state.rpcCalls.find((c) => c.name === "claim_winning_spin");
+    expect(appel?.args).toMatchObject({
+      p_email: null,
+      p_phone: null,
+      p_first_name: null,
+      p_accepted_terms: false,
+      p_marketing_opt_in: false,
+    });
+    // La mesure qui compte : l'adresse ne figure NULLE PART dans l'appel.
+    expect(JSON.stringify(appel?.args)).not.toContain("camille@example.com");
+  });
+
+  it("campagne qui collecte le téléphone : il passe, lui", async () => {
+    // La normalisation ne doit pas devenir un filtre qui mange tout : ce que
+    // la campagne déclare collecter arrive intact, sinon le claim ne peut plus
+    // envoyer le code par SMS.
+    state.collectPhone = true;
+
+    const res = await claimPrize({
+      claimToken: signClaimToken(SPIN_ID),
+      firstName: "Marcel",
+      phone: "06 12 34 56 78",
+      email: "marcel@example.com",
+      acceptedTerms: true,
+    });
+
+    expect(res.ok).toBe(true);
+    const appel = state.rpcCalls.find((c) => c.name === "claim_winning_spin");
+    expect(appel?.args).toMatchObject({
+      p_phone: "06 12 34 56 78",
+      p_first_name: "Marcel",
+      p_accepted_terms: true,
+      // …et l'e-mail reste écarté : `collect_email` vaut toujours false.
+      p_email: null,
+    });
   });
 });
 
@@ -837,6 +1056,8 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
 
 const SLUG = "boutique";
 const SPIN_IP = (ip: string) => `spin:ip:${WHEEL_ID}:${ip}`;
+/** Seau par IP BLOQUANT (1500/min par roue) — le coût de la rotation. */
+const SPIN_IP_PLAFOND = (ip: string) => `spin:ip:plafond:${WHEEL_ID}:${ip}`;
 const SPIN_BURST = `spin:burst:${WHEEL_ID}:anonymous-player-key`;
 const SPIN_SUSTAINED = `spin:${WHEEL_ID}:anonymous-player-key`;
 
@@ -879,6 +1100,7 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
     // l'empreinte dans les clés prouve qu'elle est résolue avant tout verdict.
     expect(state.rateLimitCalls).toEqual([
       SPIN_IP("203.0.113.7"),
+      SPIN_IP_PLAFOND("203.0.113.7"),
       SPIN_BURST,
       SPIN_SUSTAINED,
     ]);
@@ -931,6 +1153,97 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
 
     expect(res.ok).toBe(false);
     expect(state.pressionTerminee).toBe(true);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════
+ * spinWheel — LE PLAFOND BLOQUANT PAR IP
+ *
+ * Les deux seaux qui refusent sont indexés sur l'empreinte du cookie : ils
+ * TOURNENT AVEC LUI, et effacer le cookie rendait un tour toutes les quatre
+ * secondes sans total. Ce plafond-ci borne le total qu'une IP peut extraire
+ * d'une roue en une minute. Il ne rend pas `play_limit` fiable — il rend la
+ * rotation coûteuse.
+ *
+ * Trois choses à prouver, et la troisième est la plus importante : qu'il ne
+ * se déclenche PAS sur une salle réelle.
+ * ════════════════════════════════════════════════════════════ */
+describe("spinWheel — le plafond par IP borne la rotation de cookie", () => {
+  beforeEach(() => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux champs lus, même forme que les 4 casts historiques du fichier
+      spinCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+  });
+
+  it("plafond atteint : la roue refuse, et le signal DIT que c'est l'IP", async () => {
+    saturate(SPIN_IP_PLAFOND("203.0.113.7"));
+
+    const res = await spinWheel(SLUG);
+
+    expect(res.ok).toBe(false);
+    // Message IDENTIQUE à un refus d'identité : un refus ne dit jamais QUELLE
+    // limite a mordu, sinon il indique quoi faire tourner.
+    if (!res.ok) expect(res.error).toContain("Trop de tentatives");
+    expect(state.rateLimitDenied).toContain(SPIN_IP_PLAFOND("203.0.113.7"));
+    // La distinction n'existe qu'en supervision — c'est elle qui décide de la
+    // suite : « ce joueur va vite » n'appelle rien, « cette IP a franchi le
+    // plafond » est une automatisation.
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "spin_ip_ceiling_blocked",
+      expect.objectContaining({ wheel_id: WHEEL_ID }),
+    );
+    // Court-circuit : les seaux d'identité ne sont même pas consommés.
+    expect(state.rateLimitCalls).not.toContain(SPIN_BURST);
+    expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(false);
+  });
+
+  it("IP NON MESURABLE : le plafond n'est pas consommé du tout", async () => {
+    // Sans proxy déclaré, `clientIpFromHeaders` rend `unknown` : bloquer sur
+    // cette valeur ferait partager UNE clé à tout Internet — l'interrupteur
+    // global qu'ADR-032 proscrit. On ne compte alors rien.
+    state.ip = "unknown";
+
+    const res = await spinWheel(SLUG);
+
+    expect(res.ok).toBe(true);
+    expect(state.rateLimitCalls.some((b) => b.startsWith("spin:ip:plafond"))).toBe(
+      false,
+    );
+  });
+
+  it("CONTRE-ÉPREUVE : une salle pleine derrière une seule IP passe", async () => {
+    /* Le cas que ce plafond ne doit JAMAIS toucher, joué pour de vrai.
+     *
+     * 250 joueurs — la jauge d'une soirée en direct (VEN-2), le plus grand
+     * rassemblement que le produit sache vendre — TOUS derrière le même
+     * uplink, et tous dans la MÊME minute : un « top départ » simultané, le
+     * pire groupement plausible. Chacun s'y reprend à trois fois (le seau
+     * d'identité en autorise huit ; personne ne regarde huit fois une roue
+     * tourner en une minute).
+     *
+     * 750 tours consommés sur la clé d'IP. Le plafond est à 1500 : il reste
+     * un facteur deux pour l'agrégation qu'on n'a pas prévue — deux salles
+     * sur le même uplink, un NAT d'opérateur qui recouvre le lieu.
+     *
+     * Ce que le test NE dit pas : que ces 750 tours aboutissent tous. Les
+     * deuxième et troisième tentatives d'un même joueur sont refusées par
+     * l'anti double-clic, et c'est très bien — elles ont quand même consommé
+     * le plafond d'IP, qui est compté AVANT. C'est donc le pire cas pour lui.
+     */
+    for (let joueur = 0; joueur < 250; joueur += 1) {
+      state.playerKey = `joueur-${joueur}`;
+      for (let essai = 0; essai < 3; essai += 1) {
+        await spinWheel(SLUG);
+      }
+    }
+
+    expect(state.counters.get(SPIN_IP_PLAFOND("203.0.113.7"))).toBe(750);
+    expect(state.rateLimitDenied).not.toContain(SPIN_IP_PLAFOND("203.0.113.7"));
+    expect(reportSecurityEventMock).not.toHaveBeenCalledWith(
+      "spin_ip_ceiling_blocked",
+      expect.anything(),
+    );
   });
 });
 
@@ -1289,22 +1602,38 @@ describe("claimPrize — le code par SMS", () => {
       expect(enqueueSmsSendMock.mock.calls[0][1].content).toContain(CODE);
     });
 
-    it("l'écriture du consentement PRÉCÈDE la lecture du dépôt", async () => {
-      // La preuve d'ordre, mesurée sur les appels réellement émis et non
-      // déduite du code : `record_sms_consent` doit figurer avant l'appel
-      // d'expéditeur, qui n'est atteint que si le consentement a été trouvé.
+    it("le consentement est écrit DANS la transaction du gain, plus après", async () => {
+      // ── CE TEST A CHANGÉ DE GARANTIE, ET ELLE EST PLUS FORTE ──
+      //
+      // Il prouvait un ORDRE : `record_sms_consent` avant `sms_sender_for_send`.
+      // Un ordre est une propriété fragile — il tient tant que l'invocation va
+      // à son terme, et c'est précisément ce qu'un délai serverless dépassé ne
+      // garantit pas. Le consentement se perdait alors définitivement, et avec
+      // lui le canal SMS du client, puisqu'un envoi sans consentement échoue en
+      // silence.
+      //
+      // Il ne prouve plus un ordre mais une ATOMICITÉ : le consentement voyage
+      // dans les arguments de `claim_winning_spin` (migration 20261213120000),
+      // donc il est committé avec la participation, le code de retrait et le
+      // budget — ou rien ne l'est.
+      //
+      // ROUGE SI : `p_sms_opt_in` cesse d'être transmis, ou si l'écriture du
+      // consentement ressort de la transaction dans un appel séparé.
       await claimAvecTelephone(true);
 
       const noms = state.rpcCalls.map((c) => c.name);
-      const iConsent = noms.indexOf("record_sms_consent");
+      const iClaim = noms.indexOf("claim_winning_spin");
       const iSender = noms.indexOf("sms_sender_for_send");
-      expect(iConsent, "aucun consentement écrit").toBeGreaterThan(-1);
+      expect(iClaim, "aucune réclamation émise").toBeGreaterThan(-1);
       expect(iSender, "le dépôt n'a jamais atteint l'expéditeur").toBeGreaterThan(-1);
-      expect(iConsent).toBeLessThan(iSender);
-      // Et l'organisation vient du SPIN, jamais de l'appelant.
-      expect(state.rpcCalls[iConsent].args).toMatchObject({
-        p_organization_id: ORG_ID,
+      expect(iClaim).toBeLessThan(iSender);
+      // Le consentement est PORTÉ par la réclamation…
+      expect(state.rpcCalls[iClaim].args).toMatchObject({
+        p_spin_id: SPIN_ID,
+        p_sms_opt_in: true,
       });
+      // …et plus par un second appel, qui était tout le défaut.
+      expect(noms).not.toContain("record_sms_consent");
     });
 
     it("SANS la case, rien n'est écrit et rien ne part", async () => {

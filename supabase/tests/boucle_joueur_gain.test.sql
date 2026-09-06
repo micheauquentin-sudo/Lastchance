@@ -111,11 +111,16 @@ values
 select has_column('public', 'spins', 'idempotency_key',
   'spins porte la clé d''idempotence (JOB-8)');
 
+-- `spins_idempotency_key_org_idx` depuis 20261214120000 (JOB-9) : l'index
+-- porte désormais `(idempotency_key, organization_id)`. Ce qu'il garde ici est
+-- inchangé — unique et partiel ; ce qu'il ne garde plus, l'unicité ENTRE
+-- commerces, est la propriété que `nonce_par_tenant_et_bornes_stock.test.sql`
+-- reprend en entier.
 select ok(
   (select i.indisunique
      from pg_catalog.pg_class c
      join pg_catalog.pg_index i on i.indexrelid = c.oid
-    where c.relname = 'spins_idempotency_key_idx'),
+    where c.relname = 'spins_idempotency_key_org_idx'),
   'la clé d''idempotence est gardée par un index UNIQUE'
 );
 
@@ -123,7 +128,7 @@ select ok(
   (select i.indpred is not null
      from pg_catalog.pg_class c
      join pg_catalog.pg_index i on i.indexrelid = c.oid
-    where c.relname = 'spins_idempotency_key_idx'),
+    where c.relname = 'spins_idempotency_key_org_idx'),
   'l''index est PARTIEL : les spins sans nonce n''y pèsent pas'
 );
 
@@ -457,10 +462,12 @@ select is(
 -- ════════════════════════════════════════════════════════════
 -- (j) L'INDEX REFUSE DEUX LIGNES DE MÊME CLÉ
 -- ════════════════════════════════════════════════════════════
--- Joueur DIFFÉRENT à dessein : l'unicité est GLOBALE, pas « par joueur ». C'est
--- elle qui empêche un nonce rejoué par un tiers de produire un second spin —
--- la recherche de rejeu étant, elle, bornée au joueur pour ne pas rendre le
--- spin_id d'autrui.
+-- Joueur DIFFÉRENT à dessein : l'unicité est PAR COMMERCE (JOB-9,
+-- 20261214120000 — elle était globale jusque-là), et surtout pas « par
+-- joueur ». C'est elle qui empêche un nonce rejoué par un tiers DU MÊME
+-- COMMERCE de produire un second spin — la recherche de rejeu étant, elle,
+-- bornée au joueur pour ne pas rendre le spin_id d'autrui. Les deux lignes de
+-- ce bloc sont du même commerce : la propriété testée ici n'a pas bougé.
 select throws_ok(
   $$insert into public.spins (
       organization_id, campaign_id, wheel_id, prize_id, is_losing,

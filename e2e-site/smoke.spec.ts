@@ -129,3 +129,85 @@ test.describe("404", () => {
     ).toHaveAttribute("href", "/");
   });
 });
+
+/**
+ * En-têtes de sécurité (`site/next.config.ts`).
+ *
+ * Le site a longtemps été traité comme « statique, donc sans surface » et ne
+ * posait AUCUN en-tête, là où l'application en pose huit : ses pages étaient
+ * encadrables, alors que leurs CTA mènent vers l'application où le commerçant
+ * est authentifié. Ce parcours vérifie les deux moitiés du correctif — que les
+ * en-têtes sont bien là, et que la CSP ne casse rien.
+ */
+test.describe("en-têtes de sécurité", () => {
+  const PAGES = ["/", "/tarifs", "/faq", "/contact"] as const;
+
+  for (const chemin of PAGES) {
+    test(`${chemin} porte les en-têtes de sécurité`, async ({ page }) => {
+      const response = await page.goto(chemin);
+      const headers = response?.headers() ?? {};
+
+      expect(headers["x-frame-options"]).toBe("DENY");
+      expect(headers["x-content-type-options"]).toBe("nosniff");
+      expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+      expect(headers["permissions-policy"]).toContain("camera=()");
+
+      // ── LES DEUX EN-TÊTES QUI N'ONT PAS LEUR PLACE ICI ──
+      //
+      // `Strict-Transport-Security` et `upgrade-insecure-requests` ne sont
+      // posés que sur une origine réellement servie en HTTPS (`VERCEL`), et
+      // cette suite tourne sur `http://localhost:3001`. On assert donc leur
+      // ABSENCE, ce qui n'est pas un renoncement : c'est la garde qui empêche
+      // de les rétablir sans y penser.
+      //
+      // Ils avaient été posés inconditionnellement, et le prix était réel :
+      // WebKit n'ignore pas HSTS reçu en clair sur `localhost`, il promeut
+      // toutes les navigations suivantes vers `https://localhost:3001` — qui
+      // n'écoute pas. Trois tests de fumée tombaient, avec l'allure d'un clic
+      // perdu avant l'hydratation, à des kilomètres de la vraie cause.
+      expect(headers["strict-transport-security"]).toBeUndefined();
+      expect(headers["content-security-policy"]).not.toContain(
+        "upgrade-insecure-requests",
+      );
+      // La directive qui ferme réellement le détournement de clic ; l'en-tête
+      // `X-Frame-Options` ci-dessus n'en est que le doublon historique.
+      expect(headers["content-security-policy"]).toContain(
+        "frame-ancestors 'none'",
+      );
+      expect(headers["content-security-policy"]).toContain("object-src 'none'");
+      // `poweredByHeader: false` — vérifié ici faute d'être vérifié ailleurs.
+      expect(headers["x-powered-by"]).toBeUndefined();
+    });
+  }
+
+  test("aucune ressource du site n'est bloquée par la CSP", async ({
+    page,
+  }) => {
+    // Une CSP trop stricte ne lève AUCUNE erreur visible : elle bloque en
+    // silence. On collecte donc l'événement que le navigateur émet à chaque
+    // violation — c'est la seule preuve que la politique laisse passer les
+    // scripts d'amorçage de Next, ses styles en ligne et les polices
+    // auto-hébergées de `next/font`.
+    await page.addInitScript(() => {
+      (window as unknown as { __cspViolations: string[] }).__cspViolations = [];
+      document.addEventListener("securitypolicyviolation", (event) => {
+        (
+          window as unknown as { __cspViolations: string[] }
+        ).__cspViolations.push(
+          `${event.violatedDirective} ← ${event.blockedURI}`,
+        );
+      });
+    });
+
+    for (const chemin of PAGES) {
+      await page.goto(chemin);
+      // Laisse le temps aux chargements différés (polices, hydratation).
+      await page.waitForLoadState("networkidle");
+      const violations = await page.evaluate(
+        () =>
+          (window as unknown as { __cspViolations: string[] }).__cspViolations,
+      );
+      expect(violations, `violations CSP sur ${chemin}`).toEqual([]);
+    }
+  });
+});

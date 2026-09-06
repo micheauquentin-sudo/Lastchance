@@ -83,7 +83,7 @@ describe("scrubText", () => {
     expect(out).toContain("(code)=");
   });
 
-  it("expurge les neuf familles de codes, quelle que soit leur longueur", () => {
+  it("expurge les onze familles de codes, quelle que soit leur longueur", () => {
     const codes = [
       "GAIN-ABCD2345",
       "CHASSE-EFGH2345",
@@ -94,6 +94,15 @@ describe("scrubText", () => {
       "PARRAIN-ABCD3456",
       "QUIZ-EFGH3456",
       "PRONO-JKLM3456",
+      // Deux familles manquaient à l'appel alors qu'elles sont en base depuis
+      // leur migration : la contrainte `reward_issuances_source_code_match`
+      // exige `TICKET-` pour le Ticket d'or et `RESA-` pour un droit Réserver.
+      // Ce sont des codes ENCAISSABLES en caisse, exactement comme les neuf
+      // autres. `PR-` et `PASS-` restent délibérément dehors : ce sont des
+      // codes de PARRAINAGE, faits pour être partagés, pas des droits au
+      // porteur — `PARRAIN-`, la récompense, est bien dans la liste.
+      "TICKET-NPQR3456",
+      "RESA-STUV3456",
     ];
 
     for (const code of codes) {

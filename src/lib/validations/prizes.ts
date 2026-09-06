@@ -5,7 +5,10 @@ import {
   nonRenduVaut,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
-import { isSecretSkillGameType } from "@/lib/validations/skill";
+import {
+  isClientReportedSkillGameType,
+  isSecretSkillGameType,
+} from "@/lib/validations/skill";
 
 /** Montant en euros saisi librement (« 12,50 ») → centimes, '' → null. */
 const eurosToCents = z
@@ -218,6 +221,36 @@ export const updateWheelSchema = z
         path: ["play_limit"],
         message:
           "Ces jeux exigent une limite de participation (une tentative par période) pour rester équitables.",
+      });
+    }
+
+    // Jeux dont l'ISSUE est RAPPORTÉE PAR LE CLIENT (réflexe / jauge) :
+    // `unlimited` est INTERDIT pour une RAISON DIFFÉRENTE de celle ci-dessus —
+    // aucun secret à protéger ici, mais aucune vérification serveur possible non
+    // plus. Ces jeux n'ont rien de caché (le joueur doit voir la fenêtre de
+    // réaction et la zone verte pour jouer), donc le navigateur peut toujours
+    // annoncer « réussi ». Ce qui contient l'abus est la LIMITE : elle plafonne
+    // le nombre d'annonces. Sous `unlimited`, la garde `limit_reached` de
+    // perform_atomic_spin est inactive et la porte de compétence devient
+    // décorative alors que le commerçant croit l'avoir posée.
+    //
+    // Calibrage : sous `unlimited` les tours sont déjà illimités pour tous, et
+    // stock comme poids plafonnent toujours les lots — le tricheur supprime un
+    // RALENTISSEMENT, il ne débloque pas des gains illimités. Défaut d'équité et
+    // de promesse produit, pas effondrement d'économie.
+    //
+    // Deux branches distinctes et non fusionnées : conséquence identique,
+    // raisons différentes — les fondre est ce qui avait fait oublier ces deux
+    // jeux-là.
+    if (
+      isClientReportedSkillGameType(data.game_type) &&
+      data.play_limit === "unlimited"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["play_limit"],
+        message:
+          "Ce défi est évalué par l'appareil du joueur : sans limite de participation, il peut être contourné à volonté. Choisissez une limite (une fois, par jour ou par semaine).",
       });
     }
   });

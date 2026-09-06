@@ -23,8 +23,8 @@ select ok(not has_function_privilege('authenticated', 'public.perform_atomic_spi
 select ok(has_function_privilege('service_role', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'only server can recover a pending win');
 select ok(not has_function_privilege('authenticated', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'merchant cannot probe player pending wins');
 select ok(not has_function_privilege('anon', 'public.recover_pending_spin(uuid,text)', 'EXECUTE'), 'anon cannot recover a pending win');
-select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'only server can atomically claim');
-select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
+select ok(has_function_privilege('service_role', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean,boolean)', 'EXECUTE'), 'only server can atomically claim');
+select ok(not has_function_privilege('authenticated', 'public.claim_winning_spin(uuid,text,text,text,boolean,boolean,boolean)', 'EXECUTE'), 'merchant cannot claim arbitrary spin');
 select ok(has_function_privilege('service_role', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can redeem by code');
 select ok(not has_function_privilege('authenticated', 'public.redeem_by_code(uuid,text,text,integer)', 'EXECUTE'), 'cashier session cannot bypass server guards');
 -- Registre universel : aucune lecture/écriture directe marchande. Seule la
@@ -40,6 +40,16 @@ select ok(has_table_privilege('service_role', 'public.reward_issuances', 'UPDATE
 select ok(has_function_privilege('service_role', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'server can use universal redemption');
 select ok(not has_function_privilege('authenticated', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'merchant cannot bypass the universal cashier action');
 select ok(not has_function_privilege('anon', 'public.redeem_reward_by_code(uuid,text,text,integer)', 'EXECUTE'), 'anon cannot redeem universal rewards');
+-- Ticket d'Or (TKT-1). LA DIXIÈME BRANCHE DE LA CAISSE, et la seule qui ait été
+-- exécutable par une session marchande : 20261028120000 lui avait accordé
+-- `authenticated` alors que son autorisation se dérive de `p_actor`, un
+-- paramètre de l'APPELANT — n'importe quelle session pouvait donc nommer un
+-- membre du commerce visé et remettre ses lots. 20261208120000 la ramène au
+-- régime de ses neuf sœurs. Ces trois lignes sont ce qui empêche un `grant`
+-- distrait de rouvrir la porte sans bruit.
+select ok(has_function_privilege('service_role', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'server can redeem a golden ticket');
+select ok(not has_function_privilege('authenticated', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'merchant session cannot redeem a golden ticket by naming another actor');
+select ok(not has_function_privilege('anon', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'anon cannot redeem a golden ticket');
 select ok(not has_function_privilege('authenticated', 'public.sync_reward_issuance(text,uuid)', 'EXECUTE'), 'merchant cannot invoke reward reconciliation');
 select ok(not has_function_privilege('anon', 'public.upsert_reward_issuance(uuid,uuid,text,uuid,uuid,uuid,text,text,jsonb,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,timestamp with time zone,text,integer)', 'EXECUTE'), 'anon cannot invoke reward upsert');
 select ok(has_function_privilege('authenticated', 'public.cancel_participation(uuid,uuid,text,boolean)', 'EXECUTE'), 'editor can cancel a claim through the audited RPC');
@@ -1323,8 +1333,18 @@ insert into public.organization_members (organization_id, user_id, role) values
  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001', 'owner'),
  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002', 'editor'),
  ('20000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000003', 'cashier');
-insert into public.campaigns (id, organization_id, name) values
- ('30000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'Test');
+-- `status = 'active'` EXIGE DEPUIS 20261210120000, et ce mot n'est pas
+-- cosmetique : le moteur de tirage lit desormais l'etat de la campagne, et
+-- celle-ci restait au defaut `draft`. Le `perform_atomic_spin` deux cents
+-- lignes plus bas rendait donc `campaign_closed`, `spins` restait VIDE, et
+-- c'est l'assertion de cloisonnement (« les neuf tables ont bien une ligne a
+-- cacher au voisin ») qui tombait — un echec tres loin de sa cause.
+--
+-- Autrement dit : cette fixture tirait sur une campagne en BROUILLON, ce que
+-- la production autorisait aussi. C'est exactement le defaut que la garde
+-- ferme, et le trouver ici en est la premiere preuve d'utilite.
+insert into public.campaigns (id, organization_id, name, status) values
+ ('30000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', 'Test', 'active');
 insert into public.wheels (id, organization_id, campaign_id, name) values
  ('40000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', 'Test');
 insert into public.prizes (id, organization_id, wheel_id, label) values

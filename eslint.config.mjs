@@ -101,6 +101,14 @@ const eslintConfig = defineConfig([
     "public/**",
     "supabase/.temp/**",
     "supabase/.branches/**",
+    // Outillage de poste de travail, hors des deux arbres Next et ignoré par
+    // git (voir le bloc « backdrop » de `.gitignore`). Il y vit précisément
+    // parce qu'il n'est PAS du code produit : le linter n'a rien à y dire, et
+    // ses diagnostics masquaient les vrais — cinq erreurs de prototype qui
+    // rendaient `npm run lint` rouge en permanence, donc illisible.
+    // La garde qui empêche ce code de revenir dans un arbre servi est
+    // `src/lib/routes-sans-outillage.test.ts`, pas cette ligne.
+    "tools/**",
   ]),
   {
     name: "lastchance/pas-de-node-dans-le-client",

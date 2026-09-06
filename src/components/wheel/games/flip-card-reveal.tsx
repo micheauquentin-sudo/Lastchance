@@ -91,6 +91,9 @@ export function FlipCardReveal({
       <button
         type="button"
         onClick={flip}
+        // Voir chest-reveal : `aria-disabled` seul laissait la carte focusable et
+        // cliquable pendant la bascule.
+        disabled={flipped}
         aria-disabled={flipped || undefined}
         aria-label={flipped ? "Carte retournée" : "Retourner la carte"}
         style={{ perspective: "1000px" }}

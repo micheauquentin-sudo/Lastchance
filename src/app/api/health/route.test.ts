@@ -360,3 +360,184 @@ describe("GET /api/health — le détail n'est pas public (SEC-3)", () => {
     expect(typeof body.uptime_s).toBe("number");
   });
 });
+
+/* ════════════════════════════════════════════════════════════
+ * GET /api/health — LE CHEMIN HÉRITÉ DU WEBHOOK SMS
+ *
+ * `/api/sms/webhook` accepte encore le secret MAÎTRE en clair dans l'URL, le
+ * temps que la configuration Brevo bascule. La branche devait partir « quand
+ * le compteur sera à zéro » — sauf que ce compteur n'existait que dans Sentry,
+ * que personne n'ouvre. Un chemin de compatibilité qu'on ne peut pas mesurer
+ * devient permanent.
+ *
+ * Ces tests-ci sont la mesure : une requête à /api/health doit permettre de
+ * dire « servi il y a N jours » ou « pas servi », sans ouvrir Sentry.
+ * ════════════════════════════════════════════════════════════ */
+describe("GET /api/health — l'usage de l'URL héritée est lisible", () => {
+  /** Réponse PostgREST de `ops_metrics` : n lignes, la plus récente d'abord. */
+  const opsMetrics = (dernier: string | null, total: number) =>
+    new Response(JSON.stringify(dernier ? [{ created_at: dernier }] : []), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "content-range": dernier ? `0-0/${total}` : "*/0",
+      },
+    });
+
+  const productionAvec = (reponseOpsMetrics: Response) => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    process.env.TRUSTED_PROXY_PROVIDER = "vercel";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: true },
+            ]),
+          );
+        }
+        if (url.includes("/rest/v1/ops_metrics")) {
+          return Promise.resolve(reponseOpsMetrics.clone());
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+  };
+
+  const ilYA = (jours: number) =>
+    new Date(Date.now() - jours * 86_400_000).toISOString();
+
+  it("la branche a servi hier : 503, motif nommé, et la date lisible", async () => {
+    productionAvec(opsMetrics(ilYA(1), 42));
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body.checks.security_configuration).toEqual({
+      status: "error",
+      error: "Webhook SMS encore sur l'URL héritée (secret maître en URL)",
+    });
+    // LA RÉPONSE À LA QUESTION, sans Sentry : quand, et combien de fois.
+    expect(body.checks.sms_webhook_legacy_url).toEqual(
+      expect.objectContaining({
+        lisible: true,
+        jours_depuis: 1,
+        occurrences: 42,
+        recent: true,
+      }),
+    );
+  });
+
+  it("aucun usage sur 30 jours : la sonde est verte et le DIT", async () => {
+    productionAvec(opsMetrics(null, 0));
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.sms_webhook_legacy_url).toEqual(
+      expect.objectContaining({
+        lisible: true,
+        dernier_usage: null,
+        occurrences: 0,
+        recent: false,
+      }),
+    );
+  });
+
+  it("un usage ANCIEN se lit encore, mais ne fait plus rougir", async () => {
+    // Une fois la configuration Brevo reprise, l'alerte doit s'éteindre seule.
+    // Elle met jusqu'à sept jours ; au-delà, la trace reste lisible pendant
+    // toute la rétention d'`ops_metrics` — un rouge qui s'explique, puis un
+    // vert qui garde la mémoire de ce qui s'est passé.
+    productionAvec(opsMetrics(ilYA(20), 3));
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.sms_webhook_legacy_url).toEqual(
+      expect.objectContaining({ jours_depuis: 20, recent: false }),
+    );
+  });
+
+  it("base injoignable : la sonde n'AFFIRME rien qu'elle n'a pas mesuré", async () => {
+    // `lisible: false` ne se confond pas avec « pas d'usage » : une sonde qui
+    // les confond annonce une bascule terminée alors qu'elle n'a rien lu.
+    productionAvec(new Response(null, { status: 500 }));
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(body.checks.sms_webhook_legacy_url).toEqual(
+      expect.objectContaining({ lisible: false, recent: false }),
+    );
+    // Et elle ne rougit pas de ce fait-là : `checks.database` porte la panne.
+    expect(body.checks.security_configuration.status).toBe("ok");
+  });
+
+  it("le corps PUBLIC ne dit pas QUELLE porte est encore ouverte", async () => {
+    // Annoncer à un inconnu que le webhook SMS accepte encore un secret en URL
+    // serait exactement l'oracle de posture que SEC-3 a fermé.
+    productionAvec(opsMetrics(ilYA(1), 1));
+
+    const res = await GET(requetePublique());
+    const corps = await res.text();
+
+    expect(res.status).toBe(503);
+    expect(corps).toContain("unhealthy");
+    expect(corps).not.toContain("sms");
+    expect(corps).not.toContain("URL héritée");
+  });
+
+  it("hors production, un usage hérité ne rend pas la sonde rouge", async () => {
+    // En développement la route est jouée par les tests eux-mêmes : rougir ici
+    // rendrait la sonde rouge en permanence sur les postes, donc muette.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) =>
+        Promise.resolve(
+          String(input).includes("/rest/v1/ops_metrics")
+            ? opsMetrics(ilYA(0), 5)
+            : new Response(null, { status: 200 }),
+        ),
+      ),
+    );
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.sms_webhook_legacy_url.recent).toBe(true);
+  });
+
+  it("le détail dit AUSSI quelles familles de jetons sont sur le repli", async () => {
+    // Le repli `SPIN_TOKEN_SECRET` est légitime et documenté — ce qui manquait,
+    // c'est qu'aucun exploitant ne pouvait dire QUELLES familles en dépendent,
+    // donc mesurer ce qu'une rotation de cette clé allait casser. Ce constat ne
+    // fait PAS rougir la sonde : provisionner `CLAIM_TOKEN_SECRET` dans
+    // l'urgence invaliderait tous les jetons de claim en circulation.
+    delete process.env.CLAIM_TOKEN_SECRET;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 200 })),
+    );
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.token_secret_fallback).toContain("CLAIM_TOKEN_SECRET");
+    // Des NOMS de variables, jamais de valeurs.
+    expect(JSON.stringify(body.checks.token_secret_fallback)).not.toContain(
+      process.env.SPIN_TOKEN_SECRET ?? "spin-token-secret",
+    );
+  });
+});
