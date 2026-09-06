@@ -37,6 +37,77 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Audit Codex — bilan réconcilié (2026-09-05)
+
+**Référence vérifiée.** `main` et `origin/main` pointent sur `9e6fe7fb`
+(SOC-1, PR #353). La CI complète de ce SHA est verte (qualité, site, audit npm,
+PostgreSQL/ACL/RLS, E2E Chromium/WebKit et CodeQL) ; les deux contrôles de
+santé post-déploiement sont verts. La production répond `200` et annonce
+Realtime événementiel actif. Cet état ne constitue toutefois pas une
+certification de capacité à 500 participants.
+
+**Clos — ne plus présenter comme restes.** La saisie des horaires VIT-31c,
+les deux copies `AvatarPicker`, l'écart et le filtrage de `nicknameSchema`
+(SOC-1), l'E2E d'atterrissage Studio de bureau, la CSP OCR, et DUO-4/DUO-5.
+Les listes historiques contradictoires ci-dessous sont à archiver lors du
+prochain nettoyage documentaire ; `docs/roadmap.md` autour de VIT-52 fait foi
+pour ces clôtures.
+
+**Restes réels, à distinguer.**
+
+1. **Google Wallet** : émetteur réel jamais validé auprès de Google (geste
+   propriétaire, aucune promesse commerciale avant preuve).
+2. **Capacité live** : Realtime est actif, mais aucune mesure de pile réelle à
+   100/500 joueurs pendant question et révélation ne qualifie la jauge vendue.
+3. **Réservation** : requalifier l'écart documentaire entre les RPC Moments et
+   les droits `reserver`/`rendez_vous` avant de conclure à un défaut ou de
+   modifier le commerce des offres.
+4. **Sécurité à planifier** : lecture des jetons de chasse par le rôle caisse,
+   génération Apple Wallet sans limite de débit, secret SMS accepté en query
+   string, et assainissement des pseudos historiques maintenant que SOC-1 filtre
+   les nouvelles écritures.
+5. **Lot local landing/vidéo** : non publié et hors de `main`. Ses routes
+   `/api/test-*`, `/api/save-frame` et `/api/video*` ne doivent pas être
+   intégrées sans revue sécurité dédiée.
+
+### Audits enchaînés — constats établis (2026-09-05)
+
+- **Capacité live** : la production saine et Realtime actif ne qualifient pas
+  une jauge. La tentative locale contrôlée n'a pas fourni de métriques ; une
+  mesure isolée à 100/500 joueurs reste nécessaire avant toute promesse.
+- **Mécanismes à valeur** : quatre correctifs séparés sont à planifier : secret
+  de chasse lisible par le rôle caisse, limitation Apple Wallet, secret SMS en
+  query string, puis assainissement défensif des pseudos Pronostics historiques.
+- **Réservation** : les RPC Moments et table ont maintenant les bons droits.
+  Le défaut réel est le chargeur public commun : `rendez_vous` seul permet de
+  configurer une table mais pas de la réserver. Décider si cette offre est
+  autonome, ou imposer explicitement Vitrine + Moments avant correction.
+- **Lot landing local** : ne pas intégrer les routes de génération, vidéo,
+  outils système ou scan LAN. Les assets statiques peuvent être repris après
+  retrait de ces surfaces, garde de chemin des scripts, licence et validation.
+- **Site marketing** : prix projetés depuis le catalogue source, mais pas de
+  tests navigateur/accessibilité ni mesure mobile. Après assainissement du lot,
+  vérifier parcours CTA, clavier, motion réduite, Axe et LCP/CLS/INP sur mobile.
+- **Google Wallet** : code et tests de signature présents ; compte émetteur,
+  service account autorisé et essai réel restent à faire par le propriétaire.
+  Vérifier aussi la forme de `origins` avec la configuration réelle avant
+  publication commerciale.
+
+## Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone (2026-09-05, PR #352, lot VIT-52)
+
+- **Lot et objectif** : VIT-52 — brancher `createCampaign` (jeux instantanés) sur l'atterrissage selon l'écran de VIT-51. Le module avait son studio depuis VIT-46, mais créer une campagne sur un ordinateur faisait tomber dans l'atelier, c'est-à-dire l'écran que le studio remplace.
+- **Branche / commits** : `main`, squash `39a4479f` (PR #352).
+- **État** : Livré sur `main`, CI six checks verts, « Santé après déploiement » verte.
+- **Faits et fichiers** :
+  - `src/actions/campaigns.ts` : `destinationApresCreation(formData, /studio/roue/{id}, baseAtelierRoue(id))`. C'est la BASE de l'atelier qui est nommée et non sa première étape, la roue étant le seul module sans vue suivi — l'URL nue rend déjà « Le jeu ».
+  - `src/components/dashboard/new-campaign-form.tsx` : `<ChampGrandEcran />`.
+  - `src/lib/atterrissage-studio.test.ts` : la sonde lit désormais les formes d'URL DANS les helpers `baseAtelierX()` et les cherche dans le corps des `create*` — recopier un chemin rougit comme appeler le helper (ADR-168). Elle rougit aussi si elle ne trouve aucune forme, pour ne pas mesurer à vide.
+  - Les sept autres info-bulles de création (VIT-52b) et un E2E de bureau `@smoke` (VIT-52c).
+- **Pourquoi ce module avait été oublié** : la garde de VIT-51 ne surveillait que l'APPEL au helper d'étape ; `createCampaign` recopiait le même chemin en toutes lettres. Treize livraisons de la campagne des studios ont défilé au-dessus sans que rien ne rougisse. Le défaut était dans la garde, pas dans le module.
+- **Validations réellement exécutées** : typecheck, lint, `casts:check`, suite complète (420 fichiers, 7474 tests), deux mutations jouées, CI complète dont E2E Playwright.
+- **Risque / blocage** : Aucun. Ni migration, ni changement de schéma, ni surface publique nouvelle.
+- **Prochaine action** : Rien de bloquant sur ce lot. Reliquats généraux inchangés (sélecteur de figures des pronostics, `nicknameSchema` 30 vs 24, émetteur Google Wallet).
+
 ## Le studio répond aux retours (2026-09-03, PR #322 → #327)
 
 **Terrain.** `src/actions/organization-social-links.ts` (ou équivalent —
@@ -91,6 +162,20 @@ dans `docs/decisions.md`.
 3. `nicknameSchema` (pronostics) borne à 30, contre 24 au socle partagé —
    décision produit à prendre.
 4. Émetteur Google Wallet : code prêt, jamais testé contre le vrai Google.
+
+## Vitrine : horaires structurés et calcul d'ouverture (2026-09-02, commit fa120b23, lot VIT-31)
+
+- **Lot et objectif** : VIT-31 — Passer d'un texte libre pur à des horaires hebdomadaires structurés (7 jours, jusqu'à 3 créneaux `de < a` en `HH:MM`) sur la vitrine, permettant le calcul d'ouverture en temps réel sur la page publique tout en maintenant la rétrocompatibilité stricte (`null` = affichage texte inchangé).
+- **Branche / commits** : `main`, commit `fa120b23` (« Vitrine : les horaires deviennent structurés, et la page publique peut »).
+- **État** : Livré sur `main`.
+- **Faits et fichiers** :
+  - `supabase/migrations/20261201120000_vitrine_horaires_structures.sql` : colonne `horaires` JSONB sur `vitrine_settings`, contrainte CHECK `is_valid_vitrine_horaires`, 7 jours requis, créneaux ordonnés sans chevauchement de minuit.
+  - `src/lib/validations/vitrine.ts` & `src/lib/validations/vitrine.test.ts` : miroir Zod exact (`horairesSchema`, `horairesFormulaireSchema`) avec gestion stricte du tri-état (`undefined` non rendu, `null` effacement, données validées).
+  - `src/components/vitrine/catalogue-vitrine.tsx` & tests associés : support d'affichage sur la vitrine publique.
+  - `src/lib/release.ts` : alignement `EXPECTED_MIGRATION = "20261201120000"`.
+- **Validations réellement exécutées** : Typecheck, lint, suites de tests ciblées `npx vitest run vitrine`, conformité migration et typages DB.
+- **Risque / blocage** : Aucun blocage. Rétrocompatibilité totale garantie par l'absence rétroactive de données (`horaires is null` conserve le comportement antérieur).
+- **Prochaine action** : Câblage du formulaire de saisie structurée des 7 jours dans le panneau Allure / Studio de la Vitrine.
 
 ## Le studio devient l'écran central de la Vitrine (2026-09-01, PR #294→#312)
 

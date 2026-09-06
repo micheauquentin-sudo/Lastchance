@@ -1,0 +1,1243 @@
+AUDIT TECHNIQUE LASTCHANCE — CLAUDE CODE — 2026-09-05
+Référence : main @ 95384a84 · arbre de travail Windows
+Auteur : Claude Code (Opus 5). Document destiné à Codex.
+Aucun fichier n'a été modifié pendant cet audit. Aucune correction n'a été
+commencée.
+
+Note : ce fichier NE REMPLACE PAS docs/audit-complet-2026-09-05.txt, qui
+appartient à l'utilisateur et n'a pas été touché.
+
+
+=========================================================================
+0. MÉTHODE ET NIVEAU DE PREUVE
+=========================================================================
+
+Phase de lecture en fan-out : six lanes en lecture seule sur des
+sous-systèmes disjoints (sécurité transverse, RLS/SQL, routes publiques et
+crons, état client/frontend, config/dépendances/build/CI, couverture de
+tests), plus une lecture directe du chemin critique QR -> spin ->
+attribution -> enregistrement.
+
+Chaque finding porte l'un de ces deux niveaux :
+
+  [LU]   J'ai ouvert le fichier et lu le code moi-même. Toute affirmation
+         de sévérité CRITIQUE ou ÉLEVÉ est dans ce cas, sans exception.
+  [LANE] Rapport d'une lane dont j'ai lu le raisonnement et les références
+         sans rouvrir le fichier.
+
+Et l'une de ces deux qualifications :
+  CONFIRMÉ    — le défaut existe dans le code tel qu'il est aujourd'hui.
+  À VÉRIFIER  — indice sérieux, preuve incomplète ; ce qui manque est dit.
+
+DEUX AFFIRMATIONS DE LANE ONT ÉTÉ ÉCARTÉES APRÈS VÉRIFICATION, et elles ne
+figurent donc pas dans ce rapport :
+  - un SSRF supposé à l'envoi des webhooks sortants : en réalité fermé.
+    postSafeWebhook (src/lib/webhook-url.ts:120-160) re-résout le DNS,
+    revalide les IP, ÉPINGLE l'adresse, conserve servername pour TLS et ne
+    suit aucune redirection. La fenêtre de DNS rebinding est fermée.
+  - des codes de retrait à 4 caractères, supposés énumérables : aucun
+    générateur n'en produit. Les randomCode(4) du dépôt sont des suffixes
+    de slug (auth.ts:203, jackpot.ts:373), jamais un code de gain. Les
+    codes de gain font 8 symboles sur 32 (~2^40), et le modulo n'est pas
+    biaisé (256 est divisible par 32), côté SQL comme côté TypeScript.
+
+
+=========================================================================
+1. ÉTAT GÉNÉRAL DU PROJET
+=========================================================================
+
+Le cœur du produit — le parcours de jeu et l'attribution des lots — est
+sain, et nettement au-dessus de la moyenne d'un SaaS à ce stade. Ce n'est
+pas une politesse : le chemin a été lu ligne à ligne.
+
+CE QUI A ÉTÉ VÉRIFIÉ ET TIENT :
+
+  - L'AUTORITÉ EST À LA BASE, partout où ça compte. Le tirage n'est pas en
+    TypeScript : perform_atomic_spin (PL/pgSQL, security definer,
+    search_path figé, 20260927120000_boucle_joueur_gain.sql:138). Une
+    seule transaction porte éligibilité + tirage + réservation de stock +
+    insertion, sérialisée par joueur via
+    pg_advisory_xact_lock(wheel_id || ':' || player_key).
+
+  - ALÉA CRYPTOGRAPHIQUE : extensions.gen_random_bytes(4), pas random().
+    Biais de modulo négligeable aux ordres de grandeur réels (v_total /
+    2^32).
+
+  - PAS DE SUR-ÉMISSION DU DERNIER LOT. Le décrément est un CAS :
+    update prizes set stock = stock - 1 where id = ... and stock > 0,
+    avec re-tirage si la ligne a été prise (boucle, :279-281). En READ
+    COMMITTED la seconde transaction bloque sur le verrou de ligne puis
+    ré-évalue la condition sur la version à jour : elle ne trouve rien et
+    reboucle. Vérifié aussi : les 12 autres sites de décrément portent
+    tous « and stock > 0 », et prizes.stock a check (stock is null or
+    stock >= 0) (00001_initial_schema.sql:74).
+
+  - « UNE PARTIE PAR FENÊTRE » EST GARDÉE TROIS FOIS : verrou consultatif,
+    test applicatif dans la RPC, et index unique partiel
+    spins_one_per_window_idx (wheel_id, player_key, play_window_key)
+    where play_window_key is not null (00019:150).
+
+  - LE CLIENT NE CHOISIT RIEN. L'angle d'arrêt de la roue est DÉRIVÉ du
+    prizeIndex renvoyé par le serveur, jamais l'inverse. weight et
+    cost_cents ne quittent jamais le serveur : vérifié,
+    src/lib/play-context.ts ne les sélectionne pas.
+
+  - LE FUSEAU NE PEUT PAS ANNULER LA LIMITE. Piège cherché et fermé :
+    organizations.timezone est « not null default 'Europe/Paris' »
+    (00019:11). Un timezone NULL aurait rendu v_local_now NULL, donc
+    v_window_start NULL, donc la garde de limite inopérante — ce n'est pas
+    atteignable.
+
+  - CHIFFRES DE CONTRÔLE : 147/147 tables avec RLS ; 417/417 fonctions
+    SECURITY DEFINER avec search_path figé (invariant gardé en CI par
+    supabase/tests/search_path_invariant.test.sql) ; 0 policy using(true) ;
+    0 policy to anon/public sans prédicat tenant ; 1 seul grant à anon
+    (tirer_ticket_or, mutante mais correctement gardée) ; 0 vulnérabilité
+    npm sur 1221 dépendances cumulées ; 0 permissivité de build
+    (ignoreBuildErrors et ignoreDuringBuilds absents, strict: true) ;
+    0 secret en NEXT_PUBLIC_* ; pull_request_target absent des workflows ;
+    0 continue-on-error ; EXPECTED_MIGRATION = 20261207120000, concordante
+    et gardée par un test bloquant.
+
+  - AUTRES SURFACES VÉRIFIÉES SAINES : signature Stripe (constructEvent,
+    corps lu en text() avant parsing, api/stripe hors matcher du proxy) ;
+    comparaisons à temps constant centralisées dans src/lib/timing-safe.ts,
+    aucun === sur un secret ; les 11 crons protégés par le même garde
+    fail-closed et tous idempotents ; Turnstile fail-closed en production
+    avec action et hostname vérifiés ; redeem_by_code atomique (UPDATE
+    unique avec redeemed_at is null, donc pas de double retrait) et scopée
+    par organisation ; org_has_module_access DB-autoritaire, lève sur
+    module inconnu au lieu de rendre false.
+
+OÙ EST LE RISQUE, ALORS. À trois endroits, et aucun n'est la roue :
+
+  1. Le lot local non commité (3 CRITIQUE). Il n'est pas en production,
+     mais aucun de ces fichiers n'est dans .gitignore : un « git add . »
+     les emporte.
+  2. Deux jeux d'adresse où le client déclare sa propre victoire.
+  3. Ce qui n'est PAS testé : la concurrence et les statistiques. Les deux
+     invariants les plus critiques du produit ne sont gardés par rien, et
+     l'un d'eux est gardé par un test qui vise le mauvais moteur — ce qui
+     est pire qu'une absence, parce que ça ressemble à une couverture.
+
+
+=========================================================================
+2. PROBLÈMES CRITIQUES
+=========================================================================
+
+Les trois sont dans le LOT LOCAL NON SUIVI. Vérification faite : le code
+applicatif SUIVI ne contient AUCUNE occurrence de child_process, execSync,
+writeFileSync ou eval (git ls-files 'src/**/*.ts' 'src/**/*.tsx' | xargs
+grep -l ... => vide). La production actuelle n'en porte donc aucun.
+
+Fichiers non suivis concernés (git status --porcelain) :
+  src/app/api/save-frame/, src/app/api/test-ffmpeg/, src/app/api/test-tools/,
+  src/app/api/video/, src/app/api/video-info/, src/app/generate-frames/,
+  src/app/inspect-video/, site/src/app/api/ (scan), scripts/scan-reseau.ps1,
+  src/components/marketing/scroll-video-background.tsx,
+  src/lib/backdrop-frames.ts, public/backdrop/, site/public/, site/scripts/
+
+-------------------------------------------------------------------------
+C1 — ÉCRITURE DE FICHIER À EMPLACEMENT ARBITRAIRE, SANS AUTHENTIFICATION
+-------------------------------------------------------------------------
+Fichier   : src/app/api/save-frame/route.ts:26-47   [LU] CONFIRMÉ
+Zone      : export async function POST
+Problème  : `index` arrive du corps JSON sans typage ni borne, est injecté
+            dans `frame-${String(index).padStart(3,"0")}.webp`, puis passé
+            à path.join(FRAMES_DIR, fileName). path.join normalise les
+            segments « .. » : la traversée sort du répertoire.
+Scénario  : POST /api/save-frame
+            {"index":"../../../../tmp/pwn","data":"data:image/webp;base64,AAAA"}
+            écrit des octets choisis hors de public/frames. Le suffixe
+            .webp est forcé (donc pas d'exécution directe) mais
+            l'emplacement et le contenu sont libres, y compris dans
+            public/, servi depuis l'origine de l'application.
+Aggravant : l.49 renvoie err.message brut => divulgation de chemins FS.
+            Aucune borne de taille sur `data` => DoS mémoire/disque.
+            Le GET (l.9-23) liste le répertoire.
+Impact    : écrasement de fichiers, DoS disque, divulgation de chemins.
+Cause     : concaténation d'une entrée client dans un chemin de fichier.
+Correction: ne pas commiter. Si le besoin est réel, valider
+            Number.isInteger(index) && index >= 0 && index < 1000, borner
+            la taille du buffer, ne jamais concaténer dans un chemin, et
+            authentifier. Périmètre : backend-api.
+
+-------------------------------------------------------------------------
+C2 — EXÉCUTION POWERSHELL ET BALAYAGE DU RÉSEAU INTERNE, SANS AUTH
+-------------------------------------------------------------------------
+Fichier   : site/src/app/api/scan/route.ts:39-44    [LANE] CONFIRMÉ
+Zone      : export async function GET
+Problème  : execSync('powershell -Command "1..254 | ForEach-Object
+            -Parallel ..."'), puis execSync("arp -a"), puis sonde chaque
+            hôte 192.168.1.x en HTTP/HTTPS avec rejectUnauthorized:false
+            (fetchDevice, l.8-36). Aucun contrôle d'accès.
+Scénario  : curl https://<domaine>/api/scan
+Impact    : SSRF vers le réseau interne, cartographie complète (IP, MAC,
+            fabricant, nom d'appareil), spawn de processus illimité (DoS).
+Cause     : outil de diagnostic local exposé comme route HTTP.
+Correction: ne pas commiter. Hors application si le besoin est réel.
+Aggravant contextuel : site/ n'a AUCUN en-tête de sécurité (voir M5) et
+            sa CI ne fait que build + typecheck — elle ne vérifierait
+            aucune propriété de sécurité de cette route.
+
+-------------------------------------------------------------------------
+C3 — execSync DE CINQ COMMANDES, SORTIE RENDUE AU CLIENT
+-------------------------------------------------------------------------
+Fichier   : src/app/api/test-tools/route.ts:9-22    [LANE] CONFIRMÉ
+Zone      : export async function GET
+Problème  : pas d'injection (commandes en dur) mais exécution non
+            authentifiée de python, py, wsl ffmpeg, wsl python3, where
+            ffmpeg, avec stdout ET stderr renvoyés ("err: " + e.stderr).
+Scénario  : curl https://<domaine>/api/test-tools
+Impact    : versions d'interpréteurs, chemins absolus, messages système ;
+            en rafale, 5 processus par requête (timeout 5 s chacun).
+Correction: ne pas commiter.
+
+Note sur src/app/api/video/route.ts (non suivi, ÉLEVÉ si commité) :
+sert le PREMIER fichier de public/, Input/ ou input/ dont le nom finit par
+.mp4/.webm OU CONTIENT « vid », sans auth, avec
+Access-Control-Allow-Origin: *. N'importe quel fichier déposé plus tard
+dans public/ avec « vid » dans le nom devient téléchargeable. Un
+Range: bytes=x- malformé donne start = NaN, non rattrapé.
+
+
+=========================================================================
+3. PROBLÈMES ÉLEVÉS
+=========================================================================
+
+-------------------------------------------------------------------------
+H1 — DEUX JEUX D'ADRESSE LAISSENT LE CLIENT DÉCLARER SA PROPRE VICTOIRE
+-------------------------------------------------------------------------
+Fichiers  : src/components/wheel/games/reflex-challenge.tsx:68
+            src/components/wheel/games/gauge-challenge.tsx:86
+            src/lib/skill.ts:147-153 (évaluation serveur)
+            src/lib/skill.ts:204-222 (isSkillAttemptTimingPlausible)
+                                                   [LU] CONFIRMÉ
+Problème  : les quatre autres défis envoient la tentative BRUTE ({move},
+            {guess}, {order}, {value}) que le serveur évalue seul. Ces
+            deux-là envoient succeeded: boolean, et le serveur fait
+            littéralement : return { succeeded: attempt.succeeded === true }.
+            gauge calcule Math.abs(pct-50) <= tolerancePct dans le
+            navigateur ; reflex calcule reactionMs <= durationMs de même.
+Scénario  : rejouer la server action avec {gameType:"gauge",
+            succeeded:true} après le délai plancher. Seule barrière :
+            isSkillAttemptTimingPlausible, qui mesure depuis l'ÉMISSION DU
+            JETON (iat) et non depuis le geste — le code le documente
+            lui-même comme limite assumée (ADR-031, skill.ts:176-182).
+Impact    : à borner honnêtement. Le joueur ne choisit PAS quel lot il
+            gagne : le succès ouvre un perform_atomic_spin normal,
+            pondéré, et play_limit s'applique toujours. Ce qu'il obtient,
+            c'est UN TIRAGE À LA PLACE D'UNE PERTE FORCÉE, à chaque
+            fenêtre. Sur une campagne à lots réels, c'est une fuite
+            d'économie continue, et la porte de compétence vendue au
+            commerçant ne tient pas.
+Cause     : le serveur ne possède aucune graine du geste, donc rien à
+            vérifier. C'est architectural, pas une omission.
+Correction: rendre le geste déterministe côté serveur.
+            - gauge : semer le balayage depuis le jeton (position =
+              f(seed, t)), faire renvoyer l'horodatage d'arrêt, recalculer
+              la position serveur.
+            - reflex : faire émettre l'instant d'armement PAR LE SERVEUR
+              (dans le jeton signé) au lieu du Math.random() local, puis
+              vérifier reactionMs = t_reponse - t_armement_serveur.
+            Le ressenti de jeu ne change pas. Périmètre : backend-api +
+            frontend-ui (dossiers disjoints, parallélisables).
+
+-------------------------------------------------------------------------
+H2 — UNE RPC DE CAISSE TIRE SON AUTORISATION D'UN PARAMÈTRE APPELANT
+-------------------------------------------------------------------------
+Fichier   : supabase/migrations/20261028120000_ticket_or.sql:455-487
+            grant : même fichier, l.538                [LU] CONFIRMÉ
+Zone      : public.redeem_ticket_or(uuid, text, text)
+Problème  : la fonction est security definer et « grant execute ... to
+            authenticated ». Elle vérifie l'appartenance ainsi :
+              select 1 from public.organization_members om
+               where om.organization_id = p_organization_id
+                 and om.user_id = v_actor      -- v_actor := p_actor::uuid
+                 and om.role in ('owner','editor','cashier')
+            v_actor est DÉRIVÉ DU PARAMÈTRE p_actor, choisi par
+            l'appelant. Jamais auth.uid().
+            Vérifié : jamais redéfinie ni re-grantée ailleurs (une seule
+            occurrence dans tout supabase/migrations).
+            Contraste dans le MÊME fichier : emettre_ticket_or (l.243)
+            utilise public.is_org_member(), donc auth.uid(). Le routeur de
+            référence redeem_reward_by_code (20260805150000:709) exige
+            auth.role() = 'service_role' et ne traite p_actor que comme
+            libellé d'audit.
+            Vérifié aussi : redeem_ticket_or est la SEULE fonction de la
+            forme (organisation, code, acteur) grantée à authenticated.
+            Le défaut est isolé, ce n'est pas une famille.
+Scénario  : un commerçant authentifié appelle la RPC PostgREST avec
+            p_organization_id = org B et p_actor = UUID d'un membre de B,
+            et consomme les Ticket d'Or de B. L'org-scoping est respecté ;
+            c'est l'IDENTITÉ qui ne l'est pas.
+Exploitab.: à dire franchement — l'attaquant a besoin de DEUX valeurs
+            qu'il n'a pas : un user_id de membre de la cible ET un code de
+            retrait valide. La probabilité est faible aujourd'hui. Mais
+            c'est une primitive d'autorisation cassée dans un produit
+            multi-tenant : elle devient exploitable le jour où un user_id
+            fuit (export, ticket de support, future page d'équipe).
+Impact    : consommation de lots d'un autre commerçant.
+Cause     : recopie de la FORME des neuf autres redeem_* (organisation,
+            code, acteur) sans recopier leur GARDE (service_role).
+Correction: la fonction n'est appelée depuis AUCUN fichier de src/ — elle
+            n'apparaît que dans src/types/database.generated.ts ; le
+            chemin vivant passe par le routeur universel
+            (20261028120000:560). Le grant à authenticated est donc à la
+            fois INUTILE et exploitable.
+            Correction minimale, une ligne : remplacer le grant par
+            « to service_role » seul.
+            Correction de fond : dériver l'acteur de auth.uid().
+            Périmètre : db-supabase, puis security-review.
+
+-------------------------------------------------------------------------
+H3 — LE SECRET MAÎTRE DU WEBHOOK SMS EST ENCORE ACCEPTÉ EN QUERY STRING
+-------------------------------------------------------------------------
+Fichier   : src/app/api/sms/webhook/route.ts:275-277   [LU] CONFIRMÉ
+Zone      : function authorized(request, secret)
+Problème  : c'est le reliquat annoncé par le commit d69c2b8e. Le chemin
+            dérivé (urlToken, l.272) est bien en place, mais la branche
+            suivante accepte toujours ?token=<BREVO_WEBHOOK_SECRET> et se
+            contente d'émettre le signal sms_webhook_legacy_url_secret :
+              if (timingSafeEquals(query, secret)) {
+                return { ok: true, via: "url-legacy-secret" };
+              }
+Scénario  : tant que Brevo appelle l'ancienne URL, le secret MAÎTRE est
+            écrit en clair à chaque appel dans les journaux d'accès
+            Vercel, l'historique de la console Brevo, et tout
+            intermédiaire de journalisation. Qui lit l'un de ces journaux
+            détient le secret ; il l'utilise ensuite AUSSI sur le chemin
+            d'en-tête (l.264, même valeur), forge des
+            {"event":"unsubscribe","msisdn":"+336..."} et retire le
+            consentement SMS de numéros arbitraires.
+Impact    : perte durable du canal SMS pour des clients du commerçant —
+            revoke_sms_consent ne repousse jamais la première date. Secret
+            maître exposé passivement.
+Cause     : le signal de coupure a été construit ; personne ne l'a lu. Un
+            chemin de compatibilité sans date de péremption devient
+            permanent.
+Correction: lire le compteur sms_webhook_legacy_url_secret.
+            - à zéro : supprimer l.275-277 et le membre "url-legacy-secret"
+              du type l.247.
+            - non nul : recréer d'abord le webhook Brevo par
+              POST /v3/webhooks avec `headers`, attendre le passage à
+              zéro, puis supprimer.
+            Périmètre : backend-api, puis security-review.
+
+-------------------------------------------------------------------------
+H4 — LES DEUX INVARIANTS LES PLUS CRITIQUES NE SONT GARDÉS PAR RIEN
+-------------------------------------------------------------------------
+                                                        [LU] CONFIRMÉ
+
+H4a — CONCURRENCE SUR LE STOCK : AUCUN TEST.
+  La boucle de retry de perform_atomic_spin
+  (20260927120000_boucle_joueur_gain.sql:275-281) — le mécanisme même qui
+  empêche la sur-émission du dernier lot — n'est exécutée par aucun test.
+  pgTAP est mono-session ; aucun harnais dblink/pg_background n'existe
+  dans le dépôt. Filet résiduel non testé lui non plus : le
+  check (stock is null or stock >= 0) de 00001_initial_schema.sql:74.
+
+H4b — DISTRIBUTION : LE SEUL TEST STATISTIQUE GARDE LE MAUVAIS MOTEUR.
+  src/lib/spin.test.ts:48 fait 100 000 tirages contre pickWeightedIndex.
+  Vérifié par grep sur tout le dépôt : pickWeightedIndex n'a QU'UN SEUL
+  appelant, src/actions/preview.ts:90 — l'aperçu commerçant. La
+  production tire en SQL. Un biais introduit dans le
+  sum(p.weight) over (order by p.position, p.created_at, p.id) de
+  perform_atomic_spin ne rougirait NULLE PART.
+  C'est pire qu'une absence de test : ça ressemble à une couverture.
+
+H4c — lot-tirable.ts N'EST TESTÉ PAR RIEN.
+  Vérifié : zéro fichier .test.ts ne référence estTirable,
+  estGagnantTirable ni blocageOuvertureRoue. Or l'en-tête du fichier se
+  déclare « MIROIR de perform_atomic_spin 20260927120000:256-257 », et il
+  garde la publication de roue (src/actions/campaigns.ts:13,
+  src/actions/prizes.ts:13) plus le calcul des probabilités affichées.
+  C'est la seconde source de vérité du prédicat de tirabilité, sans garde
+  de parité — alors que le dépôt SAIT faire (access_parity.test.sql <->
+  subscription-parity.test.ts).
+
+H4d — « LOT À STOCK 0 NON TIRABLE » N'EST GARDÉ QUE PAR DU TEXTE.
+  supabase/tests/spin_grant_bounds.test.sql cherche le littéral
+  '%stock is null or p.stock > 0%' dans pg_proc.prosrc. Une réécriture
+  équivalente (coalesce(p.stock,1) > 0) rougirait à tort ; une régression
+  qui garderait la chaîne dans un commentaire verdirait à tort. Vérifié :
+  la chaîne « no_prize » n'apparaît dans AUCUN fichier de supabase/tests/.
+  Aucune assertion ne pose un lot à stock 0 et ne constate qu'il ne sort
+  pas.
+
+Correction commune, meilleur rapport coût/valeur : un test pgTAP qui pose
+un lot stock=1, weight=100 seul tirable, et appelle perform_atomic_spin
+DEUX FOIS avec deux player_key différents. Mono-session, donc pas de vraie
+concurrence — mais il ferait exécuter le second passage de la boucle de
+retry, aujourd'hui totalement mort, et fermerait H4d du même geste.
+Périmètre : db-supabase + qa-verify.
+
+
+=========================================================================
+4. PROBLÈMES MOYENS
+=========================================================================
+
+-------------------------------------------------------------------------
+M1 — UNE CAMPAGNE QUI NE COLLECTE PAS D'EMAIL EN ENREGISTRE QUAND MÊME UN
+-------------------------------------------------------------------------
+Fichiers  : supabase/migrations/20260723110000_merchant_automations.sql
+              :171-175 (claim_winning_spin, insertion newsletter)
+            src/actions/play.ts (claimPrizeInner, appel de la RPC)
+            src/lib/validations/play.ts (claimSchema)
+                                    [LU] CONFIRMÉ — les trois maillons lus
+Trouvaille originale de cette lecture : non documentée dans le dépôt.
+Problème  : claim_winning_spin applique scrupuleusement la garde
+            collect_email QUATRE fois — first_name, email, phone,
+            accepted_terms, marketing_opt_in sont tous enveloppés dans
+            « case when v_campaign.collect_email ... else null end » — et
+            l'OUBLIE à la cinquième :
+              if p_marketing_opt_in and p_email is not null then
+                insert into public.newsletter_subscribers(
+                  organization_id, email, source)
+                values(v_spin.organization_id, p_email, 'claim')
+                on conflict(organization_id, email) do nothing;
+            Aucun test de collect_email ici.
+            En amont : claimSchema accepte email et marketingOptIn quelle
+            que soit la configuration de la campagne, et claimPrizeInner
+            les transmet tels quels (p_email: parsed.data.email,
+            p_marketing_opt_in: parsed.data.marketingOptIn).
+Scénario  : campagne avec collect_email = false ; un appel qui porte un
+            email et marketingOptIn (le formulaire ne l'affiche pas, mais
+            la server action l'accepte) => l'email est VOLONTAIREMENT
+            effacé de la participation, et CONSERVÉ dans
+            newsletter_subscribers. Le webhook newsletter.subscriber.created
+            le sort en clair vers l'URL du commerçant.
+Impact    : consentement RGPD incohérent — la campagne déclare ne rien
+            collecter, la base garde l'adresse et elle est diffusée.
+Cause     : garde appliquée par recopie site par site, sans point unique.
+Correction: envelopper l'insertion dans la même condition
+            (v_campaign.collect_email), ou mieux, normaliser p_email à
+            null en tête de fonction quand collect_email est faux — ainsi
+            aucun site en aval ne peut l'oublier.
+            Périmètre : db-supabase, puis security-review (RGPD).
+
+-------------------------------------------------------------------------
+M2 — JETONS VIVANTS ENVOYÉS À POSTHOG DANS L'URL
+-------------------------------------------------------------------------
+Fichiers  : src/lib/masquer-jeton-url.ts:44
+            src/components/analytics.tsx:67
+            src/app/(player)/pronos/[slug]/recover/page.tsx:22-30
+            src/app/(public)/newsletter/unsubscribe/page.tsx:13-19
+                                                       [LU] CONFIRMÉ
+Problème  : before_send: masquerJetonsDeLEvenement balaie bien toutes les
+            propriétés chaîne, mais masquerJetonUrl n'agit que sur quatre
+            préfixes de CHEMIN (/commande, /hunt, /invite,
+            /reserver/invitation) plus ?next=. Aucune expurgation par NOM
+            de paramètre. Le commentaire l.5 du fichier désigne pourtant
+            la query comme « tout le problème », et renvoie à
+            sentry-scrub — qui N'EST PAS branché sur PostHog.
+            Vérifié : les deux pages concernées lisent bien leur jeton
+            dans searchParams, pas dans le chemin.
+Scénario  : le joueur ouvre son lien magique de récupération. Le jeton
+            n'est consommé QU'AU CLIC (choix délibéré : les scanners
+            d'emails suivent les liens), donc il est ENCORE VIVANT au
+            moment du pageview. capture_pageview envoie
+            $current_url = https://.../pronos/<slug>/recover?token=<vivant>
+            verbatim à PostHog EU. Qui a un accès lecture au projet (ou en
+            cas de fuite chez le prestataire) rejoue le lien avant le
+            joueur : contest_players.token_hash bascule sur son appareil
+            (src/actions/pronostics.ts:2414) — grille, points et classement
+            passent chez l'attaquant.
+Atténuations réelles : jeton haché en base, expirant, à usage unique
+            (20260721180000_contest_player_recovery.sql:19-22). Le jeton
+            de désinscription, lui, est PERMANENT (src/lib/unsubscribe.ts:9).
+Correction: étendre masquerJetonUrl à une expurgation par nom de
+            paramètre (token, code, sig) — la liste existe déjà dans
+            src/lib/sentry-scrub.ts:54-56 : la partager, pas la réinventer.
+Corollaire à traiter dans le même lot (M2bis, next.config.ts:197-208) :
+            ces deux pages échappent à tokenPathSecurityHeaders, dont la
+            liste est fermée sur /commande, /hunt, /invite, /lobby,
+            /portefeuille. Elles n'ont donc ni Referrer-Policy: no-referrer
+            ni Cache-Control: no-store, alors qu'elles relèvent exactement
+            de la classe que le commentaire nomme (« les pages dont l'URL
+            est le secret »).
+            Périmètre : backend-api.
+
+-------------------------------------------------------------------------
+M3 — TICKET D'OR : LE NAVIGATEUR PRIME SUR LE SERVEUR, ET L'EXPIRATION
+     N'EST JAMAIS ÉVALUÉE
+-------------------------------------------------------------------------
+Fichier   : src/components/ticket/ticket-experience.tsx:140-141 et 210-213
+                                                        [LU] CONFIRMÉ
+Problème  : (a) const gain = resultat?.state === "ok" ? resultat : memorise
+            — la copie localStorage l'emporte dès que le serveur répond
+            AUTRE CHOSE que "ok", y compris un deja_tire frais.
+            (b) le composant Gain affiche tirage.expireLe en texte sans
+            jamais le comparer à la date du jour.
+Scénario  : un client rouvre son QR trois mois plus tard, voit
+            « <lot> » plein écran avec son code en gros et « À retirer
+            avant le 12/06/2026 » — date passée —, se présente au
+            comptoir, se fait refuser.
+Impact    : à borner. Ce n'est PAS une fraude : redeem_by_code vérifie
+            (p.redeem_expires_at is null or p.redeem_expires_at > now())
+            et refuse. C'est l'interface qui ment, et c'est le client qui
+            en paie l'humiliation au comptoir — donc le commerçant.
+Correction: comparer expireLe à Date.now() au rendu et basculer sur un
+            écran « expiré » ; ne pas laisser la copie locale primer sur
+            un refus serveur explicite (seule une ERREUR RÉSEAU devrait
+            autoriser le repli). Périmètre : frontend-ui.
+
+-------------------------------------------------------------------------
+M4 — LA SEULE ROUTE PUBLIQUE D'ÉCRITURE QUI CRÉE DES LIGNES NE VALIDE PAS
+     SA RÉFÉRENCE, ET RIEN NE PURGE LA TABLE
+-------------------------------------------------------------------------
+Fichiers  : supabase/migrations/20261026130000_vitrine_mesures.sql:146-160
+            src/app/api/vitrine-mesures/route.ts
+            src/app/api/cron/purge-data/route.ts:80-186
+                                                        [LU] CONFIRMÉ
+Problème  : compter_vues_vitrine contrôle bien le slug, la publication et
+            org_has_module_access, puis n'applique à v_ref qu'un contrôle
+            de LONGUEUR :
+              continue when pg_catalog.char_length(v_ref) not between 1 and 64;
+              insert into public.vitrine_mesures (...) values (v_org, ...,
+                v_type, v_ref, 1)
+              on conflict (...) do update set compteur = ... + 1;
+            Rien ne vérifie que v_ref désigne un contenu de
+            l'organisation. Un UUID inventé crée donc une LIGNE NEUVE.
+            Et les 13 RPC de purge quotidienne ne couvrent PAS
+            vitrine_mesures : la seule suppression existante est celle de
+            la vitrine entière (20261123120000_vitrine_suppression.sql:119).
+Scénario  : 30 req/min/IP autorisées (RATE_LIMITS.vitrineMesureIp) x 60
+            mesures par appel = 1 800 lignes/min par IP, ~2,6 M/jour, et
+            le plafond ne coûte qu'une rotation d'IP.
+Impact    : croissance non bornée d'une table que rien ne nettoie, ET
+            pollution durable du tableau de bord commerçant, qui compte
+            ces lignes forgées comme « fiches consultées ».
+Cause     : les deux findings se renforcent — le premier remplit, le
+            second ne vide jamais.
+Correction: valider v_ref contre le contenu de l'organisation (exists sur
+            la table du type concerné), et ajouter vitrine_mesures à la
+            rétention quotidienne. Périmètre : db-supabase.
+
+-------------------------------------------------------------------------
+M5 — LE SITE VITRINE N'A AUCUN EN-TÊTE DE SÉCURITÉ
+-------------------------------------------------------------------------
+Fichier   : site/next.config.ts                        [LANE] CONFIRMÉ
+Problème  : aucun headers(), pas de vercel.json, pas de CSP, pas de
+            X-Frame-Options, pas de Referrer-Policy, pas de HSTS. Seul
+            poweredByHeader: false est présent. Face aux HUIT en-têtes
+            différenciés par classe de route de l'app principale.
+Impact    : pages marketing iframables — clickjacking sur les CTA « Essai
+            gratuit » et « Connexion » qui pointent vers l'app. Aucune CSP
+            en cas d'injection de contenu.
+Cause     : le site a été traité comme « 100 % statique, donc sans
+            surface » — promesse que le lot local est justement en train
+            de casser (route /api/scan).
+Correction: porter le bloc headers() de l'app, adapté au périmètre.
+            C'est l'écart le plus net de l'audit et le moins coûteux à
+            combler. Périmètre : frontend-ui.
+
+-------------------------------------------------------------------------
+M6 — RAFRAÎCHIR PENDANT UNE ANIMATION DE DÉFAITE INVITE À REJOUER,
+     PUIS REFUSE
+-------------------------------------------------------------------------
+Fichiers  : src/components/wheel/play-experience.tsx:194-265
+            src/components/wheel/game-shell.tsx:156-205
+            scratch-experience.tsx, skill-game-shell.tsx
+            src/actions/play.ts:117 (le filtre)      [LANE] CONFIRMÉ
+Problème  : recover_pending_spin ne rend que les GAINS — côté serveur,
+            recoverPendingWin fait « if (!spin?.prize_id) return null ».
+            Une défaite n'est jamais reprise.
+Scénario  : le joueur perd ; l'écran se verrouille pendant les 4,4 s
+            d'animation ; il rouvre l'onglet ; la roue l'invite à jouer ;
+            il clique ; il prend « Impossible de jouer, revenez dans 6 j ».
+            Il n'a JAMAIS vu qu'il avait perdu.
+Impact    : le joueur croit à un bug et repart avec le sentiment d'avoir
+            été privé d'une partie qu'il a pourtant jouée.
+Correction: rendre la défaite reprenable (retourner le spin perdant avec
+            son horodatage), ou à défaut afficher l'état bloqué avec sa
+            cause au CHARGEMENT plutôt qu'après un clic.
+            Périmètre : backend-api + frontend-ui.
+
+-------------------------------------------------------------------------
+M7 — LE BOUTON DE LANCEMENT N'A AUCUN ÉTAT D'ATTENTE SUR 15 MÉCANIQUES
+-------------------------------------------------------------------------
+Fichier   : src/components/wheel/game-idle-screen.tsx:196-204
+                                                       [LANE] CONFIRMÉ
+Problème  : le composant ne reçoit AUCUNE prop disabled ni état d'attente
+            — onClick={onStart} en dur, pour GameShell, SkillGameShell et
+            ScratchExperience. play-experience.tsx:329 est le seul à avoir
+            disabled={phase === "spinning"} — et encore, seulement APRÈS
+            l'aller-retour réseau.
+Intégrité : SAUVE. Les quatre shells posent la garde de rentrée
+            (startedRef / spinningRef) AVANT l'await, donc les clics
+            surnuméraires sont avalés. Et côté serveur, le seau
+            spinBurst (1 tour / 4 s, failClosed) plus l'index unique
+            ferment la course. Ce n'est PAS un défaut d'intégrité.
+Scénario  : en boutique sur 3G, le joueur tape « Ouvrir le coffre », rien
+            ne bouge pendant 2 à 4 s, il tape cinq fois (avalé en
+            silence), croit l'app cassée et ferme.
+Correction: propager un état pending vers GameIdleScreen (disabled +
+            libellé). Périmètre : frontend-ui.
+
+-------------------------------------------------------------------------
+M8 — UN GAIN DONT LE LOT A ÉTÉ RETIRÉ DISPARAÎT EN SILENCE
+-------------------------------------------------------------------------
+Fichier   : src/actions/play.ts:117-121                 [LU] CONFIRMÉ
+Problème  : recoverPendingWin retourne null quand le lot tiré n'est plus
+            dans le contexte public (retiré ou désactivé depuis le
+            tirage) — indistinguable de « rien à reprendre ». Le
+            commentaire assume le choix (« le shell public ne saurait pas
+            animer un segment absent ») mais ne prévoit aucun repli.
+Scénario  : le joueur gagne, ferme l'onglet, le commerçant retire ce lot
+            de la roue ; au retour le joueur voit l'écran d'accueil,
+            clique, et reçoit « Impossible de jouer » sans un mot sur le
+            gain qui existe à son nom en base.
+Impact    : un gagnant réel repart sans rien, et sans savoir pourquoi.
+Correction: distinguer les deux cas et afficher le gain sans animation
+            (le libellé peut être relu depuis participations/spins).
+            Périmètre : backend-api + frontend-ui.
+
+-------------------------------------------------------------------------
+M9 — LE JETON DE CLAIM N'EST LIÉ QU'AU SPIN, JAMAIS À L'APPAREIL GAGNANT
+-------------------------------------------------------------------------
+Fichiers  : src/lib/spin.ts:156-201 (signClaimToken / verifyClaimToken)
+            src/actions/play.ts:527 puis 568-577        [LU] CONFIRMÉ
+Problème  : le jeton signe { spinId, exp } et rien d'autre. claimPrizeInner
+            vérifie la signature, l'échéance, la chaîne de ressources et
+            le rate limit — mais ne compare JAMAIS spins.player_key au
+            cookie de l'appelant, alors que la colonne existe et est
+            renseignée.
+            Le code argumente (replayExistingClaim, en-tête) que
+            « quiconque peut appeler ce rejeu pouvait déjà faire le
+            premier claim ». C'est vrai du REJEU, pas du PREMIER claim.
+Scénario  : un jeton capté pendant sa fenêtre de 15 min (extension de
+            navigateur, capture d'écran d'un devtools, journal partagé)
+            permet à un tiers d'encaisser le lot sous SON propre email —
+            et le gagnant légitime obtient alors « Ce gain a déjà été
+            enregistré ».
+Impact    : vol de lot dans une fenêtre étroite. Défense en profondeur
+            manquante, pas une porte ouverte.
+Correction: ajouter .eq("player_key", await peekAnonymousPlayerKey()) sur
+            la lecture du spin, avec repli explicite si le cookie est
+            absent. Une ligne. Périmètre : backend-api.
+
+-------------------------------------------------------------------------
+M10 — TOUTES LES RÉCLAMATIONS D'UNE CAMPAGNE SE SÉRIALISENT SUR UNE LIGNE
+-------------------------------------------------------------------------
+Fichier   : 20260723110000_merchant_automations.sql:139-142  [LU] CONFIRMÉ
+Zone      : claim_winning_spin, imputation du budget
+Problème  : « update public.campaigns c set budget_spent_cents =
+            c.budget_spent_cents + coalesce(...) where c.id =
+            v_spin.campaign_id » prend un verrou de ligne sur LA campagne.
+            Chaque claim de la campagne attend le précédent.
+            C'est CORRECT du point de vue de l'intégrité (c'est même ce
+            qui rend l'imputation atomique) — c'est un point de
+            contention, pas un défaut.
+Impact    : à 100 ou 500 joueurs simultanés — précisément la jauge que le
+            handoff cherche à qualifier — c'est le premier goulot
+            d'étranglement du claim. Le spin, lui, ne partage aucun verrou
+            entre joueurs.
+Correction: à MESURER avant de corriger. Si la mesure le justifie :
+            compteur agrégé périodique plutôt qu'imputation synchrone,
+            au prix d'une pause budget légèrement différée.
+            Périmètre : db-supabase, après mesure.
+
+-------------------------------------------------------------------------
+M11 — AUCUN DÉLAI D'EXPIRATION SUR L'APPEL TURNSTILE
+-------------------------------------------------------------------------
+Fichier   : src/lib/turnstile.ts:43                     [LU] CONFIRMÉ
+Problème  : fetch(SITEVERIFY_URL, { method, headers, body }) sans
+            AbortSignal.timeout. Cloudflare qui traîne bloque
+            l'invocation jusqu'au plafond plateforme, sur le chemin de
+            CHAQUE partie.
+            Le reste du module est exemplaire : fail-closed en production
+            (l.36 « if (!secret) return !turnstileRequired() »), action et
+            hostname vérifiés, jeton borné à 2048, catch fail-closed.
+Correction: signal: AbortSignal.timeout(3000). Le catch existant traite
+            déjà l'abandon en refus. Périmètre : backend-api.
+
+-------------------------------------------------------------------------
+M12 — PAS DE VALIDATION D'ENVIRONNEMENT AU DÉMARRAGE
+-------------------------------------------------------------------------
+Fichier   : src/lib/env.ts (19 lignes)                 [LANE] CONFIRMÉ
+Problème  : pas de schéma zod sur process.env, pas de typage nominal.
+            requiredEnv jette AU PREMIER APPEL ; optionalEnv rend
+            undefined en silence, et ~32 des 71 variables passent par là.
+            src/instrumentation.ts ne charge que Sentry.
+Impact    : une variable requise absente ou mal orthographiée se découvre
+            des heures après le déploiement, sur une route rarement
+            empruntée (ex. STRIPE_WEBHOOK_SECRET sur /api/stripe/webhook).
+Atténuation réelle et sérieuse : /api/health contrôle activement
+            TURNSTILE_SECRET_KEY, ADMIN_HOSTS, TRUSTED_PROXY_PROVIDER|VERCEL
+            et passe unhealthy avec un motif nommé ; production-health.yml
+            l'interroge sur deployment_status et sur planification.
+Correction: un schéma validé dans instrumentation.register() ferait
+            échouer le boot au lieu d'échouer tard. Périmètre : backend-api.
+
+-------------------------------------------------------------------------
+M13 — LA PORTE DE FUSION LAISSE PASSER UN JOB ROUGE ET N'EXIGE AUCUNE
+      RELECTURE
+-------------------------------------------------------------------------
+Source    : protection de branche main + .github/workflows/ci.yml:104
+                                                       [LANE] CONFIRMÉ
+Problème  : (a) le job « Site vitrine · E2E · axe » (site-e2e) n'est PAS
+            dans les six statuts requis. Une régression d'accessibilité ou
+            de fumée du site part en silence.
+            (b) required_approving_review_count: 0,
+            required_conversation_resolution: false,
+            dismiss_stale_reviews: false, required_signatures: false.
+            Fusion possible sans aucune relecture humaine dès que la CI
+            est verte, sur un produit en production qui manipule des
+            paiements. Compensé partiellement par enforce_admins: true et
+            allow_force_pushes: false.
+Correction: ajouter site-e2e aux statuts requis ; décider explicitement
+            de la politique de relecture. Périmètre : hors code.
+
+
+=========================================================================
+5. PROBLÈMES FAIBLES
+=========================================================================
+
+F1  [LU] CODE MORT QUI SIMULE UNE COUVERTURE.
+    src/lib/spin.ts:57-116 — playWindowStart, nextPlayWindowStart et
+    computePlayerKey n'ont AUCUN appelant en production (vérifié par grep
+    sur src/, site/, supabase/, scripts/ : seuls src/lib/spin.test.ts et
+    les scripts de bench les touchent). Ils sont testés six fois. Le
+    calcul de fenêtre qui fait autorité est en SQL. C'est une seconde
+    implémentation, non appelée, sans garde de parité — et une variable
+    d'environnement (PLAYER_KEY_SALT) qui semble s'y rattacher alors
+    qu'elle sert ailleurs (anonymous-player.ts, player-identity.ts).
+    Correction : supprimer les trois fonctions et leurs tests, ou les
+    brancher. Ne pas les laisser dans cet entre-deux.
+
+F2  [LU] src/lib/webhook-url.ts:137 — « port: 443 » en dur ignore un port
+    explicite dans l'URL du commerçant. Un webhook déclaré vers
+    https://host:8443/hook part silencieusement sur 443 : misdelivery
+    muette. parseWebhookUrl accepte pourtant l'URL.
+    Correction : port: url.port ? Number(url.port) : 443.
+
+F3  [LANE] src/lib/security-headers.ts:216 — style-src 'unsafe-inline' sur
+    TOUTES les surfaces, y compris le back-office (« sensitive ») qui
+    porte pourtant un nonce et 'strict-dynamic' sur script-src. Contrainte
+    réelle : Tailwind 4 + styles inline de Next rendent la levée non
+    triviale.
+
+F4  [LANE] src/lib/security-headers.ts:200-209 — script-src 'unsafe-inline'
+    en régime « static », donc sur /play, /pronos, /v, /lobby (hors
+    matcher du proxy). Dette CONNUE, argumentée et instrumentée (canal
+    Report-Only si CSP_REPORT_URI configuré). Reste ouverte en production.
+
+F5  [LANE] Roue sous prefers-reduced-motion : un tour complet en 300 ms
+    subsiste. La transition est en style INLINE (wheel-svg.tsx:180-190),
+    donc hors de portée du bloc @media de globals.css:921 — le fichier le
+    documente lui-même. Le reste est irréprochable (30 classes coupées,
+    reveals sans animation).
+
+F6  [LANE] aria-disabled sans disabled sur les boutons de révélation
+    (dice-reveal.tsx et pairs *-reveal.tsx) : le bouton reste focusable et
+    cliquable pendant le roulement.
+
+F7  [LANE] .then() sans .catch() : imports dynamiques de « qrcode »
+    (redeem-qr.tsx:16, event-qr.tsx:22, jackpot-tracker.tsx:1185,
+    loyalty-passport.tsx:1243) et hunt-posters.tsx:152,218,225.
+    Dégradation gracieuse, pas de spinner infini ; bruit Sentry.
+
+F8  [LANE] forbidOnly: !!process.env.CI absent de playwright.config.ts et
+    playwright.site.config.ts. Aucun .only présent aujourd'hui (vérifié).
+    L'étape « Aucun test exécuté = échec » (ci.yml:424) attrape zéro test,
+    pas « 1 test sur 300 ».
+
+F9  [LANE] package.json:52 — override « joi: ^17.13.4 » MORT : joi
+    n'apparaît nulle part dans package-lock.json. Bruit qui donne une
+    fausse impression de couverture supply-chain.
+
+F10 [LANE] Divergence d'overrides entre les deux projets : js-yaml forcé
+    en ^4.3.1 à la racine et ^5.2.3 dans site/ ; fflate et joi à la racine
+    seulement. Aucune ADR ne motive l'écart. Aucune exposition actuelle
+    (0 vulnérabilité des deux côtés). La JUSTIFICATION est À VÉRIFIER.
+
+F11 [LANE] .env.example — 11 variables lues par le code en sont absentes :
+    les six APPLE_WALLET_*, CSP_REPORT_URI, GOOGLE_TRANSLATE_API_KEY,
+    JACKPOT_CHECKIN_TOKEN_SECRET, SKILL_CHALLENGE_TOKEN_SECRET,
+    STRIPE_API_BASE. Un environnement provisionné depuis ce fichier
+    démarre avec Apple Wallet muet et deux familles de jetons repliées sur
+    SPIN_TOKEN_SECRET, sans que rien ne le signale.
+
+F12 [LANE] Pas de check (reward_claimed_count <= reward_stock) sur cinq
+    modules : loyalty_milestones, hunts, jackpot_campaigns, calendars,
+    calendar_days. quizzes a la contrainte (quizzes_reward_bounds_check,
+    20260803120000:528). Correct aujourd'hui — tous les incréments sont
+    sous un select ... for update de la ligne parente — mais un futur
+    chemin d'écriture qui oublierait le verrou sur-émettrait en silence.
+    Défense en profondeur manquante, pas un défaut actif.
+
+F13 [LANE] spins_idempotency_key_idx (20260927120000:77) est unique
+    GLOBALEMENT, sans wheel_id ni organization_id, alors que la relecture
+    de rejeu filtre bien sur (idempotency_key, wheel_id, player_key). Deux
+    tenants dont les serveurs choisiraient le même nonce : le second
+    insert lève unique_violation et le spin échoue. Indisponibilité
+    croisée, pas de fuite. Portée faible (nonce généré serveur).
+    À VÉRIFIER : intention.
+
+F14 [LANE] reservation_stock_holds n'a pas de contrainte matérialisant
+    per_player_limit (1-3), tenu uniquement par le verrou consultatif de
+    hold_stock_offer. Seul plafond joueur non gravé en base.
+
+F15 [LANE] src/app/api/newsletter/unsubscribe/route.ts — seule route
+    publique sans plafond IP. Pas d'énumération possible (HMAC vérifié
+    avant toute requête base), coût d'une rafale = un HMAC. Exception dans
+    un dépôt où les huit autres surfaces publiques ont toutes un plafond.
+
+F16 [LANE] src/app/api/vitrine/revalidate/route.ts — aucun plafond sur une
+    purge ISR. Session éditeur requise, périmètre borné au tenant : abus
+    auto-infligé, mais c'est du calcul.
+
+F17 [LANE] Trois manifest.webmanifest/route.ts (jackpot/[id],
+    passeport/[programId], calendar/[slug]) : force-dynamic, une lecture
+    Supabase service_role par requête, SANS rate limit — contrairement à
+    wallet/apple et pronos/tv qui en ont un. 404 générique, donc pas
+    d'oracle ; chemin d'amplification bon marché. À VÉRIFIER : volume réel.
+
+F18 [LANE] Le statut 404 est décidé dans generateMetadata et non dans le
+    corps (loading.tsx streame l'en-tête avant le notFound() du corps).
+    Correction appliquée sur commande et reserver/* ; À VÉRIFIER qu'elle
+    l'est sur les 12 pages joueur à identifiant.
+
+F19 [LANE] Neuf résidus de gardes textuelles ADR-168 du motif
+    toContain("nomDeFonction(") : pass-termine.test.ts:29,
+    atterrissage-studio.test.ts:121,176, campaign-window-coverage.test.ts:31,
+    import-sans-crypto.test.ts:197, player-identity-coverage.test.ts:146,
+    module-list-filters.test.ts:102, reprise-gain.test.ts:131. Tous restent
+    verts sur un appel mort. Aucun ne garde un invariant de l'entonnoir.
+
+F20 [LANE] src/lib/token-secrets.ts:11 — repli silencieux vers
+    SPIN_TOKEN_SECRET si une clé dédiée n'est pas provisionnée. Les
+    préfixes de domaine empêchent la confusion inter-familles (correct).
+    Ce qui manque : rien en production ne dit QUELLES familles sont sur le
+    repli. Même angle mort que clientIpMesurable, que /api/health a appris
+    à rendre bruyant.
+
+F21 [LANE] src/lib/request-ip.ts:82-104 — clientIpFromHeaders rend
+    IP_CLIENT_INCONNUE si ni TRUSTED_PROXY_PROVIDER ni VERCEL ne sont
+    posés, et les cinq routes publiques sautent alors ENTIÈREMENT leur
+    plafond par IP. Choix délibéré et argumenté (ADR-032), mais il crée
+    une dépendance de sécurité à une variable d'environnement. Sur un
+    déploiement non-Vercel, M4 devient non borné. À VÉRIFIER : vercel env
+    ls sur TRUSTED_PROXY_PROVIDER.
+
+F22 [LANE] next.config.ts:135-138 — outputFileTracingIncludes embarque
+    ./node_modules/@img/** sur /dashboard/** et /poster/** : ~440 Mo
+    d'artefacts en trop, 44 traces sur 118 embarquent libvips dont
+    /dashboard/redeem qui n'encode aucune image. Arbitrage EXPLICITE et
+    daté (incident ERR_DLOPEN_FAILED du 2026-08-23) : sûreté payée en
+    octets. Pas une erreur — consigné pour mémoire.
+
+
+=========================================================================
+6. DETTE TECHNIQUE
+=========================================================================
+
+Trois motifs, par ordre de coût réel.
+
+D1 — LES DOUBLES IMPLÉMENTATIONS SANS GARDE DE PARITÉ.
+  Le calcul de fenêtre de jeu existe en TypeScript (src/lib/spin.ts:57-108,
+  testé six fois, appelé zéro fois) ET en SQL (20260927120000:180-197,
+  appelé toujours). La tirabilité d'un lot existe dans
+  src/lib/lot-tirable.ts ET dans perform_atomic_spin. Aucun test de
+  parité ni dans un cas ni dans l'autre.
+  Le dépôt SAIT faire : access_parity.test.sql <-> subscription-parity.test.ts
+  est exactement ce mécanisme, appliqué aux droits d'accès. Il n'a pas
+  été appliqué aux deux prédicats du cœur du produit.
+
+D2 — LES GARDES QUI NE PROUVENT RIEN.
+  La dette ADR-168 est LARGEMENT soldée (aucun .only oublié, aucun skip
+  inconditionnel, aucun expect(true).toBe(true) dans tout le dépôt), mais
+  il reste neuf toContain("nomDeFonction(") (F19) et surtout une garde
+  textuelle sur pg_proc.prosrc pour l'invariant de stock (H4d). Une garde
+  qui lit du texte au lieu d'observer un comportement rougit sur une
+  réécriture innocente et verdit sur une régression commentée.
+
+D3 — L'ÉCART D'EXIGENCE ENTRE LES DEUX PROJETS.
+  site/ a son propre lockfile, ses propres overrides divergents (F10),
+  aucun en-tête de sécurité (M5), un job E2E non bloquant (M13a), et sa CI
+  ne fait que build + typecheck. C'est pourtant le même produit pour le
+  client, et c'est la première page qu'il voit. Le lot local est en train
+  d'y ajouter une route serveur (C2) sous une promesse écrite de « 100 %
+  statique, aucune API » qui deviendrait fausse.
+
+
+=========================================================================
+7. AMÉLIORATIONS D'ARCHITECTURE
+=========================================================================
+
+A1 — DONNER AU SERVEUR UNE GRAINE POUR LES JEUX D'ADRESSE.
+  C'est la correction de H1 et elle est STRUCTURELLE : tant que le geste
+  n'a aucune représentation serveur, tout contrôle restera une heuristique
+  temporelle, et le dépôt le sait (ADR-031 l'écrit noir sur blanc). Semer
+  le balayage de la jauge et l'instant d'armement du réflexe depuis le
+  jeton signé rend les deux jeux vérifiables sans changer leur ressenti.
+
+A2 — UNE VALIDATION D'ENVIRONNEMENT APPELÉE DANS instrumentation.register().
+  Transforme M12 d'un échec différé et localisé en un échec de démarrage.
+  Ferait aussi apparaître F20 (quelles familles de jetons sont sur le
+  repli) et F11 (variables absentes de .env.example).
+
+A3 — UNE RÉTENTION POUR TOUTES LES TABLES DE MESURE, PAS SEULEMENT LES
+  TABLES MÉTIER. M4 est né exactement de cet écart : treize purges
+  quotidiennes soigneusement écrites, et une table d'analytics oubliée
+  parce qu'elle n'était pas « métier ».
+
+A4 — UN HARNAIS DE TEST MULTI-SESSION.
+  Il n'en existe AUCUN entre pgTAP mono-transaction et Vitest mocké.
+  C'est la cause commune de tous les trous de H4 : ce qui exige deux
+  sessions concurrentes ou du volume n'est testable par aucun des deux
+  outils en place. dblink ou pg_background dans l'environnement de test
+  ouvrirait la classe entière.
+
+A5 — UN POINT UNIQUE POUR LA GARDE collect_email.
+  M1 vient d'une garde appliquée par recopie à cinq endroits, oubliée au
+  cinquième. Normaliser p_email/p_phone à null en tête de
+  claim_winning_spin rendrait l'oubli impossible en aval.
+
+
+=========================================================================
+8. TESTS MANQUANTS
+=========================================================================
+
+Tableau des invariants critiques du produit :
+
+  a. Deux joueurs / dernier exemplaire (concurrence stock)
+       -> AUCUN TEST
+  b. Interdiction de rejouer dans la fenêtre
+       -> PARTIEL. quick_games_skill.test.sql et boucle_joueur_gain.test.sql
+          couvrent 'once' ; daily et weekly ne sont JAMAIS éprouvés contre
+          le SQL. src/lib/spin.test.ts teste des fenêtres TS qui ne sont
+          appelées par personne (F1).
+  c. Lot renvoyé au client == lot enregistré
+       -> PARTIEL. src/actions/play.test.ts:869 teste le mapping
+          prize_id -> index/label, mais contre un MOCK de la RPC. La
+          couture SQL <-> client n'est traversée par aucun test.
+  d. Distribution conforme aux poids configurés
+       -> AUCUN TEST DU MOTEUR DE PRODUCTION. Le test de 100 000 tirages
+          garde pickWeightedIndex, utilisé seulement par l'aperçu.
+  e. Lot à stock 0 non tirable
+       -> FAÇADE. Garde textuelle sur prosrc. « no_prize » : 0 occurrence
+          dans supabase/tests/.
+  f. Code de retrait non consommable deux fois
+       -> SOLIDE. prize_lifecycle.test.sql:60 (+ expiré, + annulé) et
+          e2e/player-win.spec.ts:103-137.
+  g. Isolation multi-tenant au niveau LIGNE sur campaigns, wheels,
+     prizes, spins, participations
+       -> AUCUN TEST. security_acl.test.sql teste une matrice de
+          PRIVILÈGES et l'isolation de RÔLES intra-org ; les tests
+          cross-org existants passent tous par des RPC de retrait — ils
+          prouvent le scoping des RPC, pas les policies RLS. « Un membre
+          d'org A compte 0 ligne d'org B sur ces cinq tables » n'est
+          asserté nulle part.
+  h. Spin interrompu récupéré ou annulé, jamais perdu
+       -> SOLIDE. boucle_joueur_gain.test.sql (plan chiffré de 28,
+          positifs + négatifs + nonce + ACL + unicité), play.test.ts:1063-1130.
+          De loin le mieux gardé des huit.
+
+Autres absences :
+  - spins_one_per_window_idx : son EXISTENCE est testée
+    (security_acl.test.sql:1300) mais pas son EFFET. Sa suppression
+    accidentelle laisserait toute la suite verte, alors que c'est le seul
+    garde-fou CONCURRENT de l'invariant (b) — le exists() de la RPC est un
+    TOCTOU sans lui.
+  - src/lib/lot-tirable.ts : aucun test (H4c).
+  - Double-claim du MÊME spin en base : automation.test.sql:58-125 appelle
+    claim_winning_spin quatre fois, sur QUATRE spins différents. Le double
+    claim du même spin n'est testé qu'en TS mocké (play.test.ts:637-687).
+  - E2E du maillon QR : player-win.spec.ts:29 entre par
+    page.goto('/play/${SLUG}'). qr-hub.spec.ts ne teste que le dashboard
+    marchand. « scan QR -> arrivée sur /play » n'est couvert par aucun
+    test. C'est le PREMIER maillon du produit.
+  - ~30 test.skip conditionnels en E2E, tous motivés (projet Playwright,
+    CRON_SECRET absent, stub Resend absent). Légitimes, MAIS : en local
+    sans ces prérequis, une part notable du E2E s'auto-désactive en
+    restant verte.
+  - src/lib/security-headers.test.ts:283 : it.skipIf(!buildPresent) — la
+    garde des en-têtes disparaît silencieusement si .next/ n'a pas été bâti.
+
+Note d'outillage : « npx vitest run <fichier> --reporter=basic » ÉCHOUE —
+Vitest 4.1.10 a supprimé le reporter « basic » et le résout comme un
+module custom (« Failed to load url basic »). Utiliser --reporter=dot.
+Ce n'est PAS le piège du cache node_modules/.vite. Vérification faite :
+spin.test.ts passe, 26 tests verts, 1,25 s.
+
+
+=========================================================================
+9. PLAN DE CORRECTION ORDONNÉ
+=========================================================================
+
+Format des lots : Terrain / Écarté / Fini quand — conforme à
+AGENTS.md § « Ce qu'un brief doit porter ».
+
+-------------------------------------------------------------------------
+P0 — AVANT TOUTE MISE EN PRODUCTION
+-------------------------------------------------------------------------
+
+P0.1 — DÉCIDER DU SORT DU LOT LOCAL NON COMMITÉ (C1, C2, C3)
+  Terrain : src/app/api/{save-frame,test-ffmpeg,test-tools,video,
+            video-info}/, src/app/{generate-frames,inspect-video}/,
+            site/src/app/api/scan/, scripts/scan-reseau.ps1.
+  Écarté  : « les corriger » n'est pas la première option. Aucun de ces
+            fichiers n'a de raison d'être une route HTTP de production ;
+            leur besoin est un outillage local de génération d'images de
+            fond. Les assets statiques (public/backdrop/, site/public/)
+            peuvent être repris SÉPARÉMENT après retrait des surfaces
+            serveur, garde de chemin sur les scripts, licence et validation.
+  Fini quand : plus aucune de ces routes n'existe dans l'arbre applicatif,
+            OU chacune est authentifiée, validée et passée en
+            security-review. Décision de l'utilisateur — Claude n'a rien
+            touché.
+  Note    : ces fichiers ne sont PAS dans .gitignore. Un « git add . » les
+            emporte. C'est le seul risque réellement urgent de cet audit.
+
+P0.2 — RETIRER LE GRANT authenticated DE redeem_ticket_or (H2)
+  Terrain : supabase/migrations/20261028120000_ticket_or.sql:538. Nouvelle
+            migration, jamais d'édition en place.
+  Écarté  : réécrire la fonction pour dériver l'acteur d'auth.uid() est la
+            correction de FOND, mais elle change une signature utilisée par
+            le routeur ; le grant est le geste minimal qui ferme le trou
+            sans risque. Faire le grant maintenant, la signature ensuite.
+  Fini quand : « grant execute ... to service_role » seul ; un test pgTAP
+            constate qu'un rôle authenticated ne peut plus l'exécuter ;
+            npm run sql:check && npm run migrations:check verts ; la caisse
+            universelle continue de retirer un Ticket d'Or (E2E ou test SQL
+            du routeur).
+  Ne pas toucher : redeem_reward_by_code, déjà correcte.
+
+P0.3 — COUPER LE CHEMIN DU SECRET SMS EN QUERY STRING (H3)
+  Terrain : src/app/api/sms/webhook/route.ts:247 (type) et 275-277
+            (branche url-legacy-secret). Compteur à lire :
+            sms_webhook_legacy_url_secret.
+  Écarté  : supprimer la branche sans lire le compteur — le fichier
+            documente lui-même la condition de retrait, et couper à
+            l'aveugle casse la réception si Brevo est encore sur
+            l'ancienne URL.
+  Fini quand : le compteur est à zéro ET les trois lignes ont disparu ;
+            OU le webhook Brevo a été recréé par POST /v3/webhooks avec
+            `headers`, le compteur est retombé à zéro, et les lignes ont
+            disparu. Un test constate qu'un ?token=<secret maître> est
+            désormais refusé.
+
+-------------------------------------------------------------------------
+P1 — TRÈS IMPORTANT
+-------------------------------------------------------------------------
+
+P1.1 — GRAINE SERVEUR POUR gauge ET reflex (H1)
+  Terrain : src/lib/skill.ts:147-153 (évaluation), :204-222 (timing),
+            :236-241 (toPublicChallenge) ; src/components/wheel/games/
+            gauge-challenge.tsx:86 et reflex-challenge.tsx:68 ;
+            src/actions/skill.ts.
+  Écarté  : durcir isSkillAttemptTimingPlausible. Le code explique déjà
+            pourquoi c'est un cul-de-sac (le point de mesure est
+            l'émission du jeton, pas le geste) — durcir le plancher ne
+            ferait que gêner les joueurs lents sans arrêter un script.
+  Fini quand : le serveur recalcule succeeded à partir d'une graine qu'il
+            a émise ; le type SkillAttempt de gauge/reflex ne porte plus
+            de booléen succeeded ; un test envoie {succeeded:true} et
+            constate un échec. Périmètres disjoints : backend-api
+            (src/lib, src/actions) et frontend-ui (src/components) —
+            PARALLÉLISABLES en un seul message.
+
+P1.2 — LE TEST pgTAP DU DERNIER LOT (H4a + H4d)
+  Terrain : nouveau fichier supabase/tests/, sur le modèle de
+            boucle_joueur_gain.test.sql (plan chiffré).
+  Écarté  : un vrai test de concurrence multi-session — il exige un
+            harnais (dblink/pg_background) qui n'existe pas encore. Ne pas
+            bloquer la fermeture de H4d en attendant A4.
+  Fini quand : un lot stock=1 weight=100 seul tirable ; deux appels
+            perform_atomic_spin avec deux player_key ; le premier gagne,
+            le second obtient no_prize ; le stock final est 0, jamais -1.
+            Ce test exécute le second passage de la boucle de retry,
+            aujourd'hui totalement mort.
+
+P1.3 — LE TEST STATISTIQUE CONTRE LE MOTEUR SQL (H4b)
+  Terrain : supabase/tests/ ; src/lib/spin.test.ts:48 (le test à requalifier).
+  Écarté  : supprimer le test existant — il garde légitimement l'aperçu
+            commerçant. Ce qu'il faut, c'est qu'il cesse de PASSER POUR la
+            garde du moteur : renommer son describe et documenter son
+            périmètre réel dans l'en-tête.
+  Fini quand : un test appelle perform_atomic_spin N fois sur une roue à
+            poids connus et constate la distribution dans un intervalle de
+            confiance ; ET l'en-tête de spin.test.ts dit explicitement
+            qu'il garde preview.ts, pas la production.
+
+P1.4 — PARITÉ lot-tirable.ts <-> perform_atomic_spin (H4c)
+  Terrain : src/lib/lot-tirable.ts (aucun test aujourd'hui) ; modèle à
+            suivre : supabase/tests/access_parity.test.sql <->
+            src/lib/subscription-parity.test.ts.
+  Fini quand : estTirable/estGagnantTirable/blocageOuvertureRoue ont leurs
+            tests unitaires, ET une garde de parité échoue si le prédicat
+            SQL et le prédicat TS divergent.
+
+P1.5 — EXPURGATION PAR NOM DE PARAMÈTRE, PARTAGÉE (M2 + M2bis)
+  Terrain : src/lib/masquer-jeton-url.ts:44 ; src/lib/sentry-scrub.ts:54-56
+            (la liste existe déjà) ; next.config.ts:197-208
+            (tokenPathSecurityHeaders).
+  Écarté  : réinventer une liste de noms sensibles — elle est écrite.
+  Fini quand : une URL ?token=... est expurgée avant PostHog ; les deux
+            pages /pronos/[slug]/recover et /newsletter/unsubscribe
+            reçoivent Referrer-Policy: no-referrer et Cache-Control:
+            no-store ; un test le constate sur les deux chemins.
+
+P1.6 — LA GARDE collect_email SUR L'INSERTION NEWSLETTER (M1)
+  Terrain : 20260723110000_merchant_automations.sql:171-175. Nouvelle
+            migration.
+  Écarté  : filtrer côté claimPrizeInner — la RPC doit être juste seule,
+            elle est appelable par d'autres chemins.
+  Fini quand : une campagne collect_email=false qui reçoit email +
+            marketingOptIn n'écrit RIEN dans newsletter_subscribers et
+            n'émet AUCUN webhook newsletter.subscriber.created ; test
+            pgTAP à l'appui. Préférer la normalisation en tête de
+            fonction (A5) au test local.
+
+P1.7 — EN-TÊTES DE SÉCURITÉ SUR site/ (M5)
+  Terrain : site/next.config.ts ; modèle : next.config.ts:18-39 et
+            src/lib/security-headers.ts.
+  Fini quand : CSP, X-Frame-Options: DENY, HSTS, Referrer-Policy,
+            nosniff, Permissions-Policy posés ; le job « Site vitrine ·
+            Build » reste vert ; un test constate les en-têtes.
+
+P1.8 — VALIDATION DE ref ET RÉTENTION SUR vitrine_mesures (M4)
+  Terrain : 20261026130000_vitrine_mesures.sql:146-160 ;
+            src/app/api/cron/purge-data/route.ts:80-186.
+  Fini quand : un ref qui ne désigne aucun contenu de l'organisation
+            n'insère RIEN ; vitrine_mesures figure dans la rétention
+            quotidienne ; deux tests pgTAP le constatent.
+
+-------------------------------------------------------------------------
+P2 — AMÉLIORATION RECOMMANDÉE
+-------------------------------------------------------------------------
+
+P2.1  Ticket d'Or : évaluer expireLe au rendu ; ne laisser la copie
+      localStorage primer que sur une ERREUR RÉSEAU, jamais sur un refus
+      serveur explicite (M3). Terrain :
+      src/components/ticket/ticket-experience.tsx:140-141, 210-213.
+P2.2  État d'attente sur game-idle-screen (M7) ; distinguer « rien à
+      reprendre » de « lot retiré » (M8) ; rendre la défaite reprenable
+      (M6). Terrain : src/components/wheel/, src/actions/play.ts:117.
+P2.3  Lier le claim au player_key du spin (M9). Une ligne, backend-api.
+P2.4  AbortSignal.timeout(3000) sur l'appel Turnstile (M11).
+P2.5  Validation d'environnement dans instrumentation.register() (M12, A2).
+P2.6  site-e2e en statut requis ; décider de la politique de relecture
+      (M13). Hors code.
+P2.7  Tests RLS cross-org au niveau LIGNE sur campaigns, wheels, prizes,
+      spins, participations (invariant g).
+P2.8  E2E du maillon QR -> /play (le premier maillon du produit, non
+      couvert).
+P2.9  Double-claim du MÊME spin, testé en base et non en TS mocké.
+P2.10 Rate limit sur les trois manifest.webmanifest/route.ts (F17) ;
+      vérifier le notFound() dans generateMetadata sur les 12 pages
+      joueur (F18).
+
+-------------------------------------------------------------------------
+P3 — OPTIMISATION FACULTATIVE
+-------------------------------------------------------------------------
+
+P3.1  Supprimer playWindowStart, nextPlayWindowStart, computePlayerKey et
+      leurs tests, ou les brancher (F1, D1).
+P3.2  MESURER la contention sur campaigns.budget_spent_cents avant le test
+      de charge à 500 joueurs (M10). Mesurer d'abord, corriger ensuite.
+P3.3  port: url.port || 443 dans postSafeWebhook (F2).
+P3.4  forbidOnly en CI (F8) ; override joi mort supprimé (F9) ; js-yaml
+      aligné entre les deux projets ou l'écart consigné (F10) ;
+      .env.example complété des 11 variables (F11).
+P3.5  check (reward_claimed_count <= reward_stock) sur les cinq modules
+      (F12) ; per_player_limit gravé sur reservation_stock_holds (F14).
+P3.6  Scoper spins_idempotency_key_idx au tenant (F13).
+P3.7  prefers-reduced-motion : neutraliser le tour de 300 ms (F5).
+P3.8  disabled avec aria-disabled sur les reveals (F6) ; .catch sur les
+      imports dynamiques (F7).
+P3.9  Nettoyer les neuf gardes textuelles ADR-168 restantes (F19).
+P3.10 Rendre bruyant le repli des familles de jetons vers
+      SPIN_TOKEN_SECRET, via /api/health (F20).
+P3.11 style-src sans 'unsafe-inline' (F3) ; script-src 'unsafe-inline'
+      sur les quatre surfaces statiques (F4) — dette connue, à traiter
+      quand le canal Report-Only aura assez de données.
+
+
+=========================================================================
+10. CE QUI A ÉTÉ REGARDÉ SANS RIEN TROUVER
+=========================================================================
+
+Consigné parce que l'absence de défaut est une information, et qu'elle
+évite de réauditer la même surface au prochain tour.
+
+  - Signature Stripe : constructEvent avec le vrai secret, corps lu en
+    text() avant parsing, api/stripe hors matcher du proxy (le corps n'est
+    jamais consommé en amont), idempotence à deux étages sur la bonne clé.
+  - Comparaisons à temps constant : src/lib/timing-safe.ts est l'unique
+    point du dépôt, longueurs comparées avant timingSafeEqual. Aucun ===
+    sur un secret.
+  - Secrets : aucun sk_live/whsec_/JWT en dur ; les 11 NEXT_PUBLIC_* sont
+    tous légitimement publics ; SUPABASE_SERVICE_ROLE_KEY n'apparaît que
+    dans src/lib/supabase/admin.ts sous import "server-only".
+  - IDOR sur server actions : balayage des requêtes admin.* filtrées par
+    id sans borne d'organisation — 28 résultats, TOUS avec un
+    organization.id issu de la session ou une vérification d'appartenance.
+  - Les 11 crons : garde unique fail-closed à temps constant sur l'en-tête
+    ENTIER (préfixe « Bearer » compris), et idempotence RÉELLE sur chacun
+    (clé jour+organisation, réservation email_log, for update +
+    revalidation sous verrou pour le tirage jackpot, critère d'âge pour la
+    purge). purge-data et jackpot-draws sont les mieux gardés du lot.
+  - SSRF sortant : fermé (voir § 0).
+  - Turnstile : fail-closed en production ET sur erreur réseau, action et
+    hostname vérifiés, jeton borné.
+  - redeem_by_code : UPDATE unique avec redeemed_at is null — un second
+    retrait concurrent obtient 0 ligne. Scopé par organisation.
+    L'expiration fait foi dans le WHERE.
+  - Atomicité du stock : 6/6 des fonctions demandées protégées
+    (decrement_prize_stock, restore_prize_stock, perform_atomic_spin,
+    redeem_stock_hold, cancel_stock_hold, reserve_slot), plus les 12
+    autres sites de décrément balayés.
+  - Anti-rejeu : couverture systématique par index uniques partiels
+    (spins, participations.spin_id, calendar_openings, hunt_scans,
+    loyalty_rewards, event_answers, event_wins, jackpot cycle,
+    contest_predictions, reservations, queue entries, referral_signups,
+    experience_events, jobs).
+  - org_has_module_access : DB-autoritaire, LÈVE sur module inconnu au
+    lieu de rendre false (une faute de frappe se remarque au lieu de
+    refuser en silence), garde de cardinalité épinglée par un test.
+  - Back-office admin : 24 actions, 24 gardes ; adminLogin plafonné
+    failClosed et journalisé ; barrière admin_users.is_active avec signOut
+    immédiat. isAdminHost repose sur l'en-tête Host, mais sans gain de
+    privilège (requireAdmin en aval).
+  - api/page-opens : écriture publique CORRECTEMENT bornée — increment_*
+    ne CRÉE rien pour un identifiant inconnu, double plafond, 204
+    systématique donc pas d'oracle. C'est le contre-exemple de M4.
+  - api/vitrine/revalidate : gardeEditeurVitrine en premier geste,
+    n'accepte ni slug ni identité — organisation issue de la session seule.
+  - api/wallet/apple/[code] : deux plafonds posés AVANT la lecture
+    service_role, seau par code haché — pas d'oracle d'existence par
+    différence 429/404. Le « reste » annoncé (absence de limite de débit)
+    est INFIRMÉ.
+  - Pages joueur à identifiant (12) : aucun IDOR. L'identifiant désigne
+    une ressource PUBLIQUE de commerçant et le tenant en est DÉRIVÉ,
+    jamais reçu de l'appelant. Les données joueur ne sont jamais indexées
+    par l'URL. /portefeuille ne prend aucun params — structurel.
+  - Jetons porteurs de droit (commande, hunt, reserver/invitation) :
+    randomCode(16) = 32^16 ~ 2^80, 404 générique sur jeton mort,
+    commande/[token] ne brûle pas le jeton au chargement (protection
+    contre le préchargement de lien).
+  - Frontend : zéro useEffect(async), les 4 shells posent leur garde AVANT
+    l'await et la relâchent dans le catch, wheel-svg rend des segments
+    visuels ÉGAUX (les poids ne partent pas au client), bestTextColor
+    calcule le contraste WCAG, les solutions des défis ne sont jamais
+    renvoyées au client (toPublicChallenge).
+  - CI : pull_request et jamais pull_request_target ; permissions:
+    contents: read ; aucun continue-on-error ; les 4 if: always() ajoutent
+    un contrôle au lieu d'en masquer un ; aucun secret dans ci.yml, l'E2E
+    génère les siens ; les secrets réels vivent dans production-health.yml,
+    déclenché par deployment_status et schedule — jamais par un événement
+    contrôlable depuis un fork.
+  - Dépendances : 0 vulnérabilité, prod ET dev, sur les DEUX lockfiles
+    (1221 dépendances cumulées). Aucune dépendance directe inutilisée (les
+    trois candidates apparentes — html-to-image, tesseract.js, server-only
+    — sont toutes utilisées, en import dynamique ou via directive).
+  - EXPECTED_MIGRATION = 20261207120000, concordante avec le dossier, et
+    le test qui la garde (src/lib/release.test.ts) est dans un job requis.
+
+
+=========================================================================
+FIN. Aucune correction n'a été commencée. Aucun fichier modifié.
+=========================================================================

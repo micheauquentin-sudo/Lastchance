@@ -1,0 +1,201 @@
+AUDIT COMPLET LASTCHANCE — 2026-09-05
+
+Périmètre et méthode
+--------------------
+
+Audit en lecture seule de main/origin/main au SHA 9e6fe7fb, complété par une
+inspection du lot landing local non intégré. Aucun code produit, secret,
+configuration distante, migration, commit, push ou déploiement n'a été modifié.
+
+Etat de référence
+-----------------
+
+La CI complète du SHA 9e6fe7fb est verte : qualité, site, audit npm,
+PostgreSQL/ACL/RLS, E2E Chromium/WebKit et CodeQL. La santé post-déploiement est
+verte, la production répond 200 et annonce Realtime événementiel actif.
+Cela ne qualifie pas une capacité commerciale de participants simultanés.
+
+1. Capacité live et Realtime
+----------------------------
+
+Constat prouvé
+  - Realtime est déclaré actif en production.
+  - Aucune mesure actuelle de pile réelle à 100 ou 500 joueurs pendant une
+    question et sa révélation n'existe.
+  - Une tentative locale contrôlée n'a pas produit de métriques exploitables.
+
+Conséquence
+  Ne pas annoncer de jauge de 500 ou 1 000 participants. Les chiffres
+  historiques simulés ou fondés sur le polling ne sont pas une certification de
+  Vercel, Supabase, Realtime, SQL et navigateur réels.
+
+Sortie attendue
+  Rejouer un benchmark isolé et observable avec 100 puis 500 joueurs, et
+  collecter p50/p95/p99, taux d'erreur, connexions Realtime, CPU/RAM et charge
+  base. Toute charge sur la production exige une autorisation distincte.
+
+Valeur / priorité / coût / risque
+  Bénéfice : une promesse commerciale de capacité fondée sur une mesure.
+  Priorité : P1 avant vente d'événements à grande jauge.
+  Coût : moyen. Risque : élevé si une capacité non mesurée est vendue.
+
+2. Sécurité des mécanismes à valeur
+-----------------------------------
+
+Constats prouvés
+  - Le rôle caisse peut lire les jetons secrets de hunt_steps. Un membre caisse
+    peut ainsi contourner le parcours physique et potentiellement consommer un
+    stock de chasse.
+  - La génération Apple Wallet est publique et signe un pass sans limite de
+    débit IP/code.
+  - Le webhook SMS accepte son secret dans la query string : il peut apparaître
+    dans des journaux, historiques ou référents.
+  - Les nouvelles saisies Pronostics sont filtrées, mais des aliases historiques
+    peuvent toujours contenir des caractères de contrôle ou directionnels.
+
+Correctifs proposés
+  1. Restreindre la lecture du jeton de chasse au rôle éditeur, ou fournir une
+     vue/RPC caisse sans jeton ; ajouter pgTAP par rôle et par organisation.
+  2. Ajouter une limite par IP avant la lecture et une limite par code hashé
+     avant la signature Apple Wallet ; tester 429 et absence de fuite de code.
+  3. Remplacer le secret SMS en URL par une signature/en-tête si Brevo le permet,
+     sinon par un secret dédié, rotatif et redacted.
+  4. Projeter un alias historique neutre et stable côté lecture, puis auditer la
+     correction des données existantes.
+
+Valeur / priorité / coût / risque
+  Bénéfice : protège gains, stock et données joueur.
+  Priorité : P0 pour le jeton de chasse ; P1 pour les trois autres.
+  Coût : faible à moyen, en lots séparés. Risque : moyen à élevé sans correction.
+
+3. Réservation, Moments et droits
+---------------------------------
+
+Constats prouvés
+  - Catalogue, droits effectifs Stripe et RPC sont cohérents : Moments requiert
+    reserver ; les tables requièrent rendez_vous.
+  - Les anciennes affirmations disant que les RPC Moments demandaient encore
+    vitrine sont obsolètes.
+  - Le chargeur public unique /reserver/[activityId] exige reserver avant de
+    lire le booking_mode. Une organisation ayant seulement rendez_vous peut donc
+    configurer son agenda mais ses clients voient « indisponible ».
+  - La Vitrine demeure volontairement une entrée publique séparée et protégée.
+
+Décision produit requise
+  A. Réservation vendable seule : le chargeur public doit sélectionner le droit
+     selon booking_mode ; décider en plus si le QR/lien direct suffit sans
+     Vitrine.
+  B. Réservation dépendante de Vitrine + Moments : rendre cette dépendance
+     explicite dans catalogue, Stripe et octrois, et empêcher rendez_vous seul.
+
+Sortie attendue
+  Vitest de matrice des droits, pgTAP des RPC et E2E joueur QR/lien direct pour
+  l'offre retenue.
+
+Valeur / priorité / coût / risque
+  Bénéfice : une offre vendue fonctionne réellement pour le client final.
+  Priorité : P0 de décision, puis P1 d'implémentation.
+  Coût : faible à moyen. Risque : promesse commerciale inopérante.
+
+4. Lot landing local : sécurité avant intégration
+-------------------------------------------------
+
+Blocants à exclure du produit
+  - /api/save-frame : écriture disque publique, traversée de chemin possible,
+    corps base64 non borné et écriture synchrone ; non persistant sur Vercel.
+  - site/src/app/api/scan : balayage LAN public avec fuite d'IP, MAC, modèle et
+    constructeur ; validation TLS désactivée.
+  - /api/video : sélection locale implicite depuis public/Input, CORS ouvert et
+    cache public ; risque de diffusion d'un média non prévu.
+  - /api/test-tools : processus système publics synchrones et fuite d'information
+    sur l'hôte.
+
+Eléments récupérables après assainissement
+  Les assets backdrop/panorama, manifestes, composants de décor, landing et
+  scripts hors ligne peuvent être repris. Les scripts de génération doivent
+  vérifier que leurs suppressions récursives restent sous leur racine attendue.
+  Les images doivent aussi être vérifiées pour licence et données privées.
+
+Protocole de sortie
+  Retirer routes/pages/outils de développement ; interdire ces surfaces par test
+  d'inventaire ; ajouter les gardes de chemin ; exclure Input et vidéo source du
+  commit/bundle ; retirer l'IP privée de allowedDevOrigins ; ne pas appliquer un
+  cache immutable d'un an à des noms de fichiers non hashés ; refaire typecheck,
+  lint, build Linux et revue sécurité du résultat généré.
+
+Valeur / priorité / coût / risque
+  Bénéfice : conserver la direction visuelle sans exposer l'hôte ni des médias.
+  Priorité : P0 avant toute intégration. Coût : faible à moyen. Risque : élevé.
+
+5. Qualité du site marketing
+----------------------------
+
+Constats prouvés
+  - Les tarifs ne sont pas recopiés à la main : ils sont générés depuis le
+    catalogue de plans source.
+  - Le site dispose de typecheck, lint et build dans CI, mais pas de tests
+    navigateur, d'audit Axe ni de comparaison visuelle.
+  - Le décor local comporte environ 5,6 Mo d'images brutes desktop/mobile.
+    Il privilégie une seule variante et respecte save-data/motion réduite, mais
+    aucune mesure réelle de LCP, CLS, INP ou mémoire mobile n'a été faite.
+
+Sortie attendue après nettoyage du lot
+  Smoke tests desktop/mobile sur /, /tarifs, /faq et /contact ; CTAs, menu et
+  ancres ; démonstration de roue au clavier ; Axe, focus, contrastes, reduced
+  motion et save-data ; captures à 390 px et bureau ; mesure LCP/CLS/INP,
+  réseau et mémoire. Vérifier enfin que le bundle n'embarque ni Input ni route
+  de développement.
+
+Valeur / priorité / coût / risque
+  Bénéfice : une vitrine rapide, accessible et conforme à la promesse produit.
+  Priorité : P1 après la sécurité. Coût : moyen. Risque : moyen sur mobile.
+
+6. Préparation Google Wallet
+----------------------------
+
+Constats prouvés
+  - Le code est server-only, échoue sans les trois variables optionnelles et
+    signe les JWT RS256 localement.
+  - Les tests couvrent configuration absente, signature, contenu du pass,
+    absence du token brut de fidélité et échec de mise à jour.
+  - Aucun essai avec un émetteur Google réel n'est attesté.
+  - origins reçoit APP_URL complet. Les exemples Google utilisent un hostname :
+    vérifier cette compatibilité avec la configuration réelle, sans la présenter
+    comme une erreur prouvée avant essai.
+
+Geste propriétaire requis
+  Créer/activer le compte émetteur, activer Google Wallet API, créer un compte
+  de service, l'autoriser comme Editeur dans la Wallet Console, puis stocker
+  uniquement GOOGLE_WALLET_ISSUER_ID, GOOGLE_WALLET_CLIENT_EMAIL et
+  GOOGLE_WALLET_PRIVATE_KEY dans les variables chiffrées de production. Ne
+  jamais transmettre la clé dans un chat ou un commit.
+
+Validation avant annonce commerciale
+  Créer une carte fidélité et un gain synthétiques dans le compte de test,
+  tester l'ajout sur appareil Android, le QR, l'expiration/invalidation et
+  l'absence de bouton quand la configuration manque. Obtenir ensuite l'accord
+  de publication Google et répéter le contrôle en vraie production.
+
+Valeur / priorité / coût / risque
+  Bénéfice : ajout de carte fiable sans secret exposé.
+  Priorité : P1, dépendant du propriétaire. Coût : faible côté code, moyen côté
+  opération. Risque : promesse commerciale prématurée sans validation réelle.
+
+Sources externes consultées
+---------------------------
+
+Google Wallet : flux Save to Google Wallet et JWT signé côté serveur :
+https://developers.google.com/wallet/generic/overview/add-to-google-wallet-flow
+https://developers.google.com/wallet/generic/web
+https://developers.google.com/wallet/generic/getting-started/auth/rest
+
+Conclusion et ordre recommandé
+-------------------------------
+
+1. Exclure/retirer les routes dangereuses du lot landing local.
+2. Corriger l'accès aux jetons de chasse, puis limiter Apple Wallet.
+3. Décider le modèle commercial Réservation seule ou dépendante.
+4. Corriger le webhook SMS et les aliases Pronostics historiques.
+5. Valider le site marketing sur navigateur et mobile.
+6. Réaliser l'onboarding et le test Google Wallet.
+7. Mesurer la capacité live avant toute promesse chiffrée.

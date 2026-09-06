@@ -1,0 +1,614 @@
+CONTRE-AUDIT INDÉPENDANT — LASTCHANCE
+======================================
+
+Audit du code : 5 septembre 2026
+Rapport enregistré : 6 septembre 2026
+Révision inspectée : 95384a8407dce86f2ed8ebf182a1a4e5f5c69304
+Révision origin/main au moment du contrôle : 95384a8407dce86f2ed8ebf182a1a4e5f5c69304
+
+VERDICT : NO-GO
+================
+
+Le contre-audit confirme plusieurs protections solides — tirage serveur,
+décrément atomique du stock, verrouillage des réclamations, RLS largement
+testée — mais révèle cinq failles élevées présentes dans le code suivi par
+Git. Elles permettent notamment de rejouer une participation avec une nouvelle
+identité anonyme, de falsifier une réussite aux jeux d’adresse, de tirer après
+la fermeture d’une campagne ou de contourner l’identité attendue par une RPC
+Ticket d’Or.
+
+L’arbre local contient en plus des routes expérimentales non suivies
+extrêmement dangereuses si elles étaient déployées telles quelles.
+
+L’audit Claude existant n’a été utilisé qu’après l’analyse directe du code afin
+de comparer les conclusions.
+
+
+1. SYSTÈME RECONSTRUIT
+======================
+
+Architecture
+------------
+
+- Application principale : Next.js 16 App Router, React 19, TypeScript et
+  Tailwind 4.
+- Frontend joueur : routes publiques de participation, tickets, expériences et
+  portefeuille.
+- Frontend commerçant : dashboard protégé, gestion des campagnes, lots,
+  réservations, caisse et abonnements.
+- Backend : Server Actions Next.js et Route Handlers.
+- Base de données : Supabase/PostgreSQL, RPC SECURITY DEFINER, RLS, triggers et
+  migrations SQL.
+- Authentification commerçant : session Supabase SSR et cookies.
+- Autorisation : appartenance à une organisation et rôle owner/editor/cashier.
+- Identité joueur : principalement cookie anonyme, jetons signés et codes
+  porteurs selon le parcours.
+- Paiement et droits : Stripe alimente l’état d’abonnement et les add-ons.
+- Messages : Resend/Brevo pour email et SMS.
+- Observabilité : PostHog et Sentry.
+- Déploiement : Vercel, crons et workers asynchrones.
+- Site public : second projet Next.js sous site/.
+
+Parcours complet d’une participation à la roue
+----------------------------------------------
+
+QR ou slug
+  -> chargement serveur du QR, de la campagne, de l’organisation, de la roue
+     et des lots
+  -> contrôle du statut, des dates et de l’abonnement
+  -> lecture ou création du cookie d’identité anonyme
+  -> validation Turnstile et rate limits
+  -> appel de perform_atomic_spin
+       -> verrou logique joueur/roue
+       -> contrôle de la fenêtre du joueur
+       -> tirage pondéré serveur
+       -> décrément conditionnel du stock
+       -> insertion du spin
+  -> production d’un jeton signé de réclamation
+  -> appel de claim_winning_spin
+       -> verrou du spin
+       -> insertion de la participation et du code de retrait
+       -> mise à jour du budget
+       -> création des travaux et webhooks atomiques
+  -> email/SMS exécutés après le commit
+  -> remise du gain dans la caisse universelle
+
+Frontières de confiance
+-----------------------
+
+- Le navigateur, son JavaScript, son heure, son localStorage et ses cookies
+  sont considérés comme entièrement hostiles.
+- Une Server Action ne constitue pas à elle seule une autorisation.
+- Toute RPC accordée au rôle Supabase authenticated peut être appelée
+  directement sans passer par l’interface.
+- Le service role contourne la RLS ; toute validation effectuée avant son emploi
+  est donc une frontière critique.
+- Les codes de ticket, réclamation, invitation et désinscription sont des
+  secrets porteurs.
+- Stripe, PostHog, Sentry, Brevo/Resend et les webhooks sont des systèmes
+  externes à la frontière LastChance.
+
+
+2. INVARIANTS
+=============
+
+- Une participation produit un seul résultat DB : globalement garanti par la
+  RPC atomique.
+- Le stock de la roue ne devient pas négatif : garanti par un décrément
+  conditionnel.
+- Le client ne décide pas du lot pondéré : garanti.
+- Le client ne décide pas de son éligibilité : violé par Réflexe/Jauge et
+  l’identité anonyme renouvelable.
+- Une campagne fermée ne distribue plus : violé par une course entre le contrôle
+  applicatif et la RPC.
+- Une réclamation n’est validée qu’une fois : résultat DB protégé, mais effets
+  email/SMS non atomiques.
+- L’état visible correspond aux droits enregistrés : violé pour l’add-on
+  Rendez-vous.
+- Un acteur transmis à la DB correspond à l’utilisateur authentifié : violé par
+  redeem_ticket_or.
+
+
+3. PROBLÈMES DÉMONTRÉS
+======================
+
+PROBLÈME 1
+----------
+
+[CRITIQUE — SI L’ARBRE LOCAL NON SUIVI EST DÉPLOYÉ]
+
+Fichier :
+- site/src/app/api/scan/route.ts:39
+- src/app/api/save-frame/route.ts:26
+- src/app/api/test-tools/route.ts:6
+- src/app/api/video/route.ts:13
+
+Zone : Routes App Router non suivies par Git.
+
+Problème : Des outils locaux sont devenus des endpoints publics sans
+authentification ni garde d’environnement.
+
+Preuve :
+- /api/scan lance PowerShell, balaie 192.168.1.1–254, interroge des ports locaux
+  et retourne IP, MAC et appareils détectés.
+- /api/save-frame accepte un corps arbitraire sans limite et construit un chemin
+  avec un index contrôlé par le client ; une traversée avec plusieurs ../ est
+  possible.
+- /api/test-tools exécute synchroniquement cinq commandes système à chaque
+  appel.
+- /api/video diffuse un fichier local de 41 377 934 octets.
+- Les deux builds ont effectivement compilé ces routes.
+- Le traçage Next de /api/video a embarqué 3 085 chemins et produit
+  l’avertissement de traçage du projet entier.
+
+Scénario : Un déploiement local ou Vercel CLI depuis cet arbre publie les
+routes. Sur un hôte Windows connecté à un LAN, un appel externe obtient une
+cartographie du réseau interne. Des appels répétés aux routes synchrones ou
+d’écriture saturent CPU, disque et processus.
+
+Impact : Reconnaissance réseau interne, déni de service, écriture de fichiers
+.webp, fuite d’artefacts vers l’hébergeur et forte inflation du bundle.
+
+Cause racine : Outils de prototypage placés sous app/api et app/, donc traités
+comme code produit.
+
+Correction : Sortir ces outils de l’arbre routé et ajouter un garde CI
+interdisant les routes de développement. Priorité P0, coût faible ; risque
+limité à la perte du prototype local.
+
+Note : ces fichiers ne sont pas dans HEAD. Cette criticité concerne le
+déploiement de l’arbre local actuel, pas nécessairement la production déjà
+publiée.
+
+
+PROBLÈME 2
+----------
+
+[ÉLEVÉ]
+
+Fichier : supabase/migrations/20261028120000_ticket_or.sql:455
+
+Zone : RPC SECURITY DEFINER de remise du Ticket d’Or.
+
+Problème : La RPC transforme p_actor en UUID puis vérifie les droits de cet UUID,
+sans jamais le comparer à auth.uid().
+
+Preuve : La fonction est exécutable par authenticated. Dans une transaction de
+test, auth.uid() a été fixé à un utilisateur extérieur, l’UUID d’un membre
+autorisé d’une autre organisation a été fourni comme p_actor, et la RPC a
+retourné redeemed_now = true. La transaction a ensuite été annulée.
+
+Scénario : Un utilisateur authentifié qui connaît un UUID de membre autorisé et
+un code Ticket appelle directement la RPC Supabase avec ces valeurs.
+
+Impact : Remise non autorisée d’un Ticket d’Or et invalidation du gain avant le
+passage du bénéficiaire légitime.
+
+Cause racine : L’acteur applicatif est traité comme une preuve d’identité.
+
+Correction : Révoquer EXECUTE à authenticated si l’appel normal passe par le
+backend service-role ; sinon exiger auth.uid() = p_actor. Ajouter un pgTAP avec
+JWT et p_actor différents. Priorité P0, coût faible ; risque de régression sur
+la caisse à couvrir par test.
+
+
+PROBLÈME 3
+----------
+
+[ÉLEVÉ]
+
+Fichier :
+- src/lib/anonymous-player.ts:8
+- src/actions/play.ts:176
+- supabase/migrations/20260927120000_boucle_joueur_gain.sql:199
+
+Zone : Identité joueur, rate limit et fenêtre de participation.
+
+Problème : Le serveur accepte toute valeur UUID v4 syntaxiquement valide
+provenant du cookie lc-anonymous-player. La clé de verrouillage, la fenêtre de
+participation et les limites principales utilisent ensuite son hash.
+
+Preuve : Deux UUID v4 différents donnent deux player_key indépendantes. La
+pression IP partagée est volontairement observatrice et non bloquante.
+
+Scénario : Après chaque tentative, un joueur efface le cookie ou le remplace par
+un nouvel UUID, résout à nouveau Turnstile et rejoue une campagne limitée à une
+participation quotidienne ou hebdomadaire.
+
+Impact : Multiplication des participations d’une même personne, drainage du
+stock et amélioration artificielle des chances jusqu’au gain.
+
+Cause racine : Une identité contrôlée et renouvelable par le client sert
+d’unique ancrage à un invariant métier de valeur.
+
+Correction : Pour les lots de valeur, utiliser une éligibilité serveur à usage
+unique : preuve d’achat, ticket de caisse, compte vérifié ou jeton délivré en
+caisse. Signer le cookie seul ne suffit pas, car il peut toujours être supprimé.
+Priorité P0, coût élevé ; risque UX et protection des données à arbitrer.
+
+
+PROBLÈME 4
+----------
+
+[ÉLEVÉ]
+
+Fichier :
+- src/lib/validations/skill.ts:231
+- src/lib/skill.ts:129
+- src/actions/skill.ts:279
+
+Zone : Jeux d’adresse débloquant un tirage.
+
+Problème : La requête contient succeeded: boolean. Le serveur impose seulement
+un délai minimal, puis transforme cette valeur en p_force_losing.
+
+Preuve : Un script peut attendre le délai minimal puis envoyer succeeded: true.
+La suite ciblée confirme le comportement attendu par le code ; aucune preuve
+physique de réussite n’est calculée côté serveur.
+
+Scénario : Le joueur désactive l’animation ou appelle directement la Server
+Action en déclarant sa réussite.
+
+Impact : Contournement systématique du jeu d’adresse. Le tirage pondéré reste
+serveur, mais un joueur qui aurait dû perdre accède au tirage normal.
+
+Cause racine : Résultat métier de valeur dérivé d’un état client invérifiable.
+
+Correction : Concevoir un protocole serveur vérifiable ou retirer tout avantage
+de valeur associé à ces jeux. Priorité P0, coût moyen à élevé ; risque de
+latence et de complexité anti-triche.
+
+
+PROBLÈME 5
+----------
+
+[ÉLEVÉ]
+
+Fichier :
+- src/lib/play-context.ts:186
+- src/actions/play.ts:150
+- supabase/migrations/20260927120000_boucle_joueur_gain.sql:138
+
+Zone : Contrôle d’éligibilité et RPC de tirage.
+
+Problème : Le statut, les dates et l’abonnement sont vérifiés avant Turnstile et
+les rate limits. La RPC transactionnelle ne les revérifie pas.
+
+Preuve : La campagne E2E a été mise en paused, puis perform_atomic_spin a été
+appelée sous service_role. La RPC a retourné un spin gagnant non nul. La
+transaction a été annulée et aucun spin n’a persisté.
+
+Scénario : Des requêtes commencent juste avant la fin programmée ou avant une
+pause commerçant. Pendant Turnstile ou une latence réseau, la campagne ferme,
+mais les RPC déjà engagées distribuent encore.
+
+Impact : Lots attribués après fermeture, budget consommé hors période et écart
+entre l’état affiché au commerçant et l’état réellement enregistré.
+
+Cause racine : Séquence « check puis write » séparée entre application et
+transaction DB.
+
+Correction : Verrouiller ou recharger campagne et organisation dans
+perform_atomic_spin, puis vérifier statut, dates et droit effectif à l’instant du
+tirage. Priorité P0, coût moyen ; risque de contention à mesurer.
+
+
+PROBLÈME 6
+----------
+
+[ÉLEVÉ]
+
+Fichier :
+- src/app/(player)/ticket/[code]/page.tsx:10
+- src/components/analytics.tsx:60
+- src/lib/masquer-jeton-url.ts:4
+- src/lib/sentry-scrub.ts:198
+
+Zone : Ticket d’Or, PostHog, Sentry et en-têtes de sécurité.
+
+Problème : /ticket n’est pas dans la liste des routes dont le jeton est masqué.
+Le GET ne consomme volontairement pas le ticket : le code reste donc actif
+pendant la pageview.
+
+Preuve :
+- Analytics est monté globalement et capture les pageviews après consentement.
+- masquerJetonUrl couvre commande, chasse, invitation et réservation, mais pas
+  ticket.
+- Le même helper est utilisé par Sentry.
+- Les préfixes RESA- et TICKET- manquent également à la regex de codes de
+  retrait Sentry.
+- Les en-têtes renforcés appliqués aux autres routes porteuses ne couvrent pas
+  /ticket.
+
+Scénario : Le code apparaît dans une pageview PostHog ou un événement Sentry.
+Une personne ayant accès à cette télémétrie appelle la fonction de tirage avant
+le destinataire.
+
+Impact : Consommation ou détournement du Ticket d’Or et fuite de secrets
+porteurs vers des tiers d’observabilité.
+
+Cause racine : Listes manuelles divergentes de routes et de préfixes sensibles.
+
+Correction : Ajouter /ticket, RESA- et TICKET-, appliquer no-store/no-referrer,
+et centraliser le registre de secrets porteurs. Priorité P0, coût faible ;
+risque limité à une baisse de précision analytique.
+
+
+PROBLÈME 7
+----------
+
+[MOYEN]
+
+Fichier :
+- src/lib/auth.ts:35
+- src/lib/subscription.ts:272
+- src/lib/module-capabilities-server.ts:46
+- src/lib/admin/data.ts:318
+
+Zone : Projection organisation, droits payants et administration.
+
+Problème : addon_rendez_vous existe dans le schéma et dans le calcul des droits,
+mais n’est pas sélectionné par getUserAndOrg. Le résultat est ensuite forcé vers
+OrganizationSummary par cast.
+
+Preuve : Le dashboard Réservations utilise ce contexte et peut renvoyer
+notFound ou refuser les mutations. Le contexte public Rendez-vous sélectionne
+séparément le champ, créant un état où la réservation publique est ouverte mais
+où le commerçant ne peut pas l’administrer. L’écran admin et MODULES_DE_LIEU
+omettent aussi le module.
+
+Scénario : Stripe active l’add-on Rendez-vous. La DB est correcte, mais
+l’application commerçant voit undefined et refuse l’accès.
+
+Impact : Produit payé inutilisable et incohérence public/dashboard/support.
+
+Cause racine : Projections et registres de modules dupliqués et maintenus
+manuellement.
+
+Correction : Ajouter le champ aux projections et contrôles admin, puis tester
+le parcours avec une vraie forme de réponse Supabase, pas seulement un objet
+mocké complet. Priorité P1, coût faible ; risque de régression faible.
+
+
+PROBLÈME 8
+----------
+
+[MOYEN]
+
+Fichier :
+- src/actions/play.ts:438
+- src/actions/play.ts:658
+- supabase/migrations/20260723110000_merchant_automations.sql:97
+
+Zone : Réclamation d’un gain et effets après commit.
+
+Problème : Participation, code, budget et webhooks sont atomiques, mais l’email,
+le consentement SMS et le SMS sont déclenchés après le commit.
+
+Preuve : Les commentaires du code reconnaissent qu’une interruption serveur
+après commit perd ces opérations. Lors d’un retry, le code de retrait est
+récupéré, mais les effets ne sont volontairement pas réémis faute de journal de
+livraison.
+
+Scénario : La DB valide le gain puis la fonction serverless expire avant
+l’envoi. Le navigateur rejoue la requête : il récupère le code, mais l’email ou
+le SMS demandé ne sera jamais produit.
+
+Impact : Communications transactionnelles absentes et consentement SMS non
+enregistré malgré une réclamation réussie.
+
+Cause racine : Pas d’outbox transactionnelle pour les effets secondaires.
+
+Correction : Insérer des événements idempotents dans une outbox au sein de la
+transaction, puis les traiter par worker. Priorité P1, coût moyen ; principal
+risque : doubles envois si la clé d’idempotence est mal définie.
+
+
+PROBLÈME 9
+----------
+
+[MOYEN]
+
+Fichier :
+- supabase/migrations/20260723110000_merchant_automations.sql:104
+- src/actions/play.ts:658
+
+Zone : Collecte email et inscription newsletter.
+
+Problème : La RPC masque les champs de participation quand la collecte est
+désactivée, mais insère quand même un abonné si l’appelant transmet email et
+marketing_opt_in.
+
+Preuve : La condition d’insertion newsletter ne vérifie pas le paramètre
+collect_email de la campagne. Le schéma de la Server Action accepte ces valeurs
+même si l’interface les masque.
+
+Scénario : Un client hostile réclame son gain en ajoutant manuellement un email
+et l’opt-in sur une campagne configurée sans collecte.
+
+Impact : État de consentement contraire à la configuration du commerçant et
+risque de conformité marketing.
+
+Cause racine : La règle n’est appliquée qu’à certains champs de la
+participation, pas à tous les effets associés.
+
+Correction : Conditionner l’insertion et l’événement newsletter au droit de
+collecte effectif dans la transaction. Priorité P1, coût faible ; prévoir
+l’audit des inscriptions historiques concernées.
+
+
+PROBLÈME 10
+-----------
+
+[MOYEN]
+
+Fichier : src/lib/turnstile.ts:43
+
+Zone : Appel externe Cloudflare avant participation.
+
+Problème : Le fetch vers Turnstile n’utilise pas d’AbortSignal.
+
+Preuve : Aucun timeout ou contrôleur d’annulation n’entoure l’appel. Chaque
+participation attend donc la pile réseau ou la limite maximale de la plateforme.
+
+Scénario : Cloudflare ou le réseau devient lent sans fermer immédiatement la
+connexion. Les requêtes LastChance restent ouvertes jusqu’au timeout
+serverless.
+
+Impact : Saturation des exécutions, expérience joueur bloquée et erreurs tardives
+difficiles à distinguer d’une panne DB.
+
+Cause racine : Dépendance externe synchrone sans budget de temps explicite.
+
+Correction : Ajouter un timeout court, échouer fermé avec une erreur rejouable
+et mesurer ce cas. Priorité P1, coût faible ; risque de faux refus si la valeur
+est trop agressive.
+
+
+4. VÉRIFICATIONS EXÉCUTÉES
+==========================
+
+- npm run typecheck : PASS
+- npm run sql:check : PASS
+- npm run migrations:check : PASS — 206 migrations, tête attendue correcte
+- npm run casts:check : PASS
+- Tests ciblés participation/skill/abonnements : PASS — 202/202
+- Suite Vitest complète : 7 533/7 534
+  L’unique échec provient de deux pages locales non suivies sans error.tsx.
+- pgTAP sur Supabase local : PASS — 99 fichiers, 6 437 tests
+- Build principal : PASS, avec compilation des routes locales dangereuses
+- Build site/ : PASS, avec /api/scan
+- Lint principal : ÉCHEC — 3 erreurs et 3 avertissements dans les ajouts locaux
+  non suivis
+- Lint site/ : ÉCHEC — 2 erreurs dans /api/scan
+- npm audit, racine et site : 0 vulnérabilité connue
+- E2E navigateur complet : non exécuté, car il exige reset/seed et des mutations
+  durables de la base, incompatibles avec la passe strictement non
+  modificatrice demandée.
+
+Les deux reproductions SQL ont été enfermées dans des transactions puis
+annulées.
+
+
+5. LES 5 PROBLÈMES LES PLUS DANGEREUX
+=====================================
+
+1. Les routes de scanner réseau et d’outillage, si l’arbre local est déployé.
+2. L’identité non liée à auth.uid() dans redeem_ticket_or.
+3. La rotation du cookie permettant plusieurs participations physiques.
+4. La réussite Réflexe/Jauge entièrement déclarée par le client.
+5. Le tirage accepté par la DB après pause ou fermeture de campagne.
+
+
+6. CE QUE L’AUDIT PRÉCÉDENT AURAIT FACILEMENT PU MANQUER
+========================================================
+
+- addon_rendez_vous absent du contexte d’authentification et de
+  l’administration.
+- La course temporelle entre le contrôle de campagne et perform_atomic_spin.
+- Le contournement de la fenêtre de participation par rotation du cookie.
+- /ticket/[code] absent des protections PostHog/Sentry.
+- La perte définitive des effets email/SMS après un commit réussi.
+- Le traçage de 3 085 fichiers provoqué par la route vidéo locale.
+
+Deux recommandations du premier audit sont à manier avec prudence :
+
+- Remplacer le verrou budgétaire synchrone par un agrégat périodique pourrait
+  permettre un dépassement massif du budget pendant les pics. Il faut conserver
+  une réservation ou une écriture atomique du budget.
+- Deux appels successifs dans une même session SQL ne constituent pas un test de
+  concurrence. Cela peut donner une fausse impression de sûreté.
+
+
+7. RISQUES DE FRAUDE
+====================
+
+- Rejouer en changeant l’UUID anonyme.
+- Envoyer succeeded: true à Réflexe/Jauge.
+- Utiliser un p_actor ne correspondant pas à la session.
+- Exploiter un code Ticket exposé à l’observabilité.
+- Inscrire une adresse marketing malgré une campagne sans collecte.
+
+
+8. RISQUES DE DOUBLE ATTRIBUTION
+===============================
+
+Aucun double décrément de la dernière unité n’a été démontré sur la roue : le
+verrou et l’UPDATE conditionnel sont corrects. La réclamation du même spin est
+également verrouillée et idempotente.
+
+En revanche :
+
+- une même personne physique peut obtenir plusieurs participations DB en
+  changeant d’identité anonyme ;
+- plusieurs tirages en vol peuvent être validés après fermeture ;
+- les suites Réserver, files, invitations, lobby, Duo et Bande n’exercent pas
+  toujours une vraie concurrence multi-session.
+
+Les tests doivent utiliser deux connexions PostgreSQL réellement concurrentes
+ou pgbench, et non deux appels séquentiels.
+
+
+9. RISQUES DE CORRUPTION OU D’INCOHÉRENCE DE DONNÉES
+====================================================
+
+- Droit Rendez-vous payé mais absent du dashboard.
+- Campagne affichée fermée alors qu’un nouveau spin vient d’être enregistré.
+- Gain enregistré sans email/SMS ni consentement SMS demandé.
+- Campagne sans collecte email mais présence dans les abonnés marketing.
+- Code Ticket consommé par une session qui n’est pas l’acteur déclaré.
+
+Aucun stock négatif ni résultat de spin directement modifiable par le client
+n’a été démontré.
+
+
+10. ARCHITECTURE À AMÉLIORER
+============================
+
+P0 — Déplacer statut, fenêtre temporelle et droits dans les RPC atomiques.
+Coût : moyen. Risque : contention si le verrouillage est trop large.
+
+P0 — Ancrer l’éligibilité de valeur dans une preuve serveur.
+Coût : élevé. Risque : friction joueur et contraintes de confidentialité.
+
+P0 — Centraliser les routes et formats de secrets porteurs.
+Coût : faible. Risque : perte limitée de détail analytique.
+
+P1 — Générer une projection unique des droits et modules.
+Coût : moyen. Risque : adaptation des mocks et contrats existants.
+
+P1 — Mettre email et SMS derrière une outbox transactionnelle.
+Coût : moyen. Risque : double livraison sans idempotence stricte.
+
+P1 — Exclure structurellement l’outillage local des builds.
+Coût : faible. Risque : adaptation du workflow créatif local.
+
+
+11. TESTS ABSOLUMENT NÉCESSAIRES
+================================
+
+- Deux sessions concurrentes sur la dernière unité d’un lot.
+- Pause et fin de campagne pendant un Turnstile lent.
+- Deux sessions avec le même player_key, puis deux cookies différents.
+- JWT différent de p_actor sur chaque RPC de remise.
+- Parcours Rendez-vous avec un add-on Stripe réel dans la projection Supabase.
+- Crash après claim_winning_spin, avant email/SMS, puis retry.
+- Campagne collect_email=false avec payload hostile.
+- Test exhaustif de masquage pour chaque route et chaque préfixe porteur.
+- Test CI refusant toute route de diagnostic ou scanner réseau.
+- Charge réelle sur Supabase avec mesures p50/p95/p99 et observation des
+  verrous.
+
+
+12. VERDICT AVANT PRODUCTION
+============================
+
+NO-GO
+
+Avant toute nouvelle promotion, il faut au minimum corriger les cinq problèmes
+élevés du code suivi, neutraliser les routes locales, puis exécuter les tests
+multi-session et E2E sur une base isolée.
+
+Les protections atomiques déjà présentes constituent un bon socle, mais elles
+ne couvrent actuellement ni l’identité physique du joueur, ni toutes les
+transitions de campagne, ni l’intégralité des secrets porteurs.
