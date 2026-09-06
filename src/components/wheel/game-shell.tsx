@@ -19,6 +19,10 @@ import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
 import { readShareSource } from "@/lib/share-source";
+import {
+  lireOuCreerNonceTirage,
+  oublierNonceTirage,
+} from "@/lib/spin-nonce";
 import type { GameType } from "@/types/database";
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
@@ -181,15 +185,38 @@ export function GameShell({
     // sautait tout ce qui suit, `requestingRef` restait à `true` POUR TOUJOURS et
     // le bouton devenait inerte — cliquable, mais renvoyé en silence par la garde
     // de rentrée à chaque appui. Aucun message, aucune sortie.
+    // Nonce de LA TENTATIVE en cours : relu tel quel après un rechargement,
+    // il fait reconnaître au serveur le tirage déjà commis dont la réponse
+    // s'est perdue, au lieu d'en créer un second (voir @/lib/spin-nonce).
+    const nonce = lireOuCreerNonceTirage(slug);
     let result;
     try {
-      result = await spinWheel(slug, captchaToken ?? undefined, readShareSource());
+      result = await spinWheel(
+        slug,
+        captchaToken ?? undefined,
+        readShareSource(),
+        nonce,
+      );
     } catch {
+      // Le nonce est VOLONTAIREMENT conservé : aucune réponse n'est parvenue,
+      // donc rien ne dit que la base n'a pas commis le tirage. La tentative
+      // suivante doit porter le même, sans quoi elle en créerait un second.
       requestingRef.current = false;
       setLancement(false);
       setError("Connexion perdue. Vérifiez votre réseau et réessayez.");
       return;
     }
+    // La réponse est parvenue et elle TRANCHE — un succès, ou un refus qui n'a
+    // rien enregistré (limite atteinte, campagne fermée) : la tentative est
+    // close. Sans cet oubli, la partie SUIVANTE rejouerait celle-ci et le
+    // joueur ne pourrait plus jamais jouer.
+    //
+    // `outcomeUnknown` est l'EXCEPTION, et c'est le cas qui compte : le serveur
+    // dit alors qu'il ignore si un tirage a été commis. Son message invite au
+    // rejeu — c'est précisément là que le nonce doit survivre, faute de quoi ce
+    // rejeu créerait le second tirage que tout ce mécanisme existe pour
+    // empêcher.
+    if (result.ok || !result.outcomeUnknown) oublierNonceTirage(slug);
     requestingRef.current = false;
     setLancement(false);
 

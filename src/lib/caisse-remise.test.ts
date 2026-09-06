@@ -178,8 +178,8 @@ describe("descriptionDeCaisse", () => {
 /**
  * GARDE D'AFFICHAGE — les règles ci-dessus ne valent que si l'écran les appelle.
  *
- * DIX familles de codes partagent les mêmes deux pastilles depuis RES-5 (la
- * réservation de stock, `RESA-`) ; c'est un oubli sur une seule qui a produit le
+ * ONZE familles de codes partagent les mêmes deux pastilles depuis TKT-1 (le
+ * Ticket d'Or, `TICKET-`) ; c'est un oubli sur une seule qui a produit le
  * défaut d'origine.
  *
  * ── POURQUOI DES COMPTES EN DUR, ET POURQUOI ILS SE METTENT À JOUR ──
@@ -203,20 +203,21 @@ describe("la caisse consomme bien les deux règles", () => {
     expect(page).not.toMatch(/90_000/);
   });
 
-  it("les dix cartes reçoivent le drapeau", () => {
+  it("les onze cartes reçoivent le drapeau", () => {
     const passes = page.match(/remis=\{issuDuGeste\}/g) ?? [];
-    expect(passes).toHaveLength(10);
+    expect(passes).toHaveLength(11);
     // `\s+` ET NON UNE ESPACE : la mise en forme décide seule si `remis` reste
     // sur la ligne de la balise ou passe à la suivante, et une carte
     // parfaitement câblée devenait invisible de ce compte au premier retour à
     // la ligne — un rouge qui accuse la carte alors que seul Prettier a bougé.
     const badges = page.match(/<RedeemedBadge\s+remis=\{remis\}/g) ?? [];
-    expect(badges).toHaveLength(10);
+    expect(badges).toHaveLength(11);
   });
 
   it("aucune carte n'affiche une description non filtrée", () => {
     // Les neuf cartes porteuses d'une description passent toutes par la règle.
-    // (Seule `contest` n'en a pas : elle n'écrit jamais `reward_details`.)
+    // (`contest` n'en a pas — elle n'écrit jamais `reward_details` — et
+    // `ticket_or` non plus : ses lots n'ont aucune colonne de description.)
     const appels = page.match(/descriptionDeCaisse\(\{/g) ?? [];
     expect(appels).toHaveLength(9);
     expect(page).not.toMatch(/\{\w+\.reward_details && \(/);
@@ -235,12 +236,12 @@ describe("la caisse consomme bien les deux règles", () => {
     expect(page).toMatch(/lookup\.frozenDetails/);
   });
 
-  it("les dix boutons de remise marquent leur geste dans l'URL", async () => {
+  it("les onze boutons de remise marquent leur geste dans l'URL", async () => {
     const { readdirSync } = await import("node:fs");
     const boutons = readdirSync("src/components/dashboard").filter((n) =>
       n.endsWith("redeem-button.tsx"),
     );
-    expect(boutons).toHaveLength(10);
+    expect(boutons).toHaveLength(11);
     for (const nom of boutons) {
       const src = readFileSync(`src/components/dashboard/${nom}`, "utf8");
       expect(src, nom).toMatch(/reloadWith: \{ remis: "1" \}/);

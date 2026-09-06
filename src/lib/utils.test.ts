@@ -39,6 +39,52 @@ describe("normalizeRedeemCode — saisie caisse", () => {
     expect(normalizeRedeemCode("")).toBe("");
     expect(normalizeRedeemCode("gain-")).toBe("");
   });
+
+  it("CONTRE-ÉPREUVE : le chemin de la roue est intact", async () => {
+    // ROUGE SI : la préservation des préfixes ci-dessous déborde sur la roue.
+    // C'est le comportement historique de la caisse — une saisie abrégée est un
+    // lot de roue — et il ne doit pas bouger d'un caractère.
+    const { normalizeRedeemCode } = await import("./utils");
+    expect(normalizeRedeemCode("abc2")).toBe("GAIN-ABC2");
+    // Préfixe COLLÉ, sans tiret : toujours retiré puis reposé.
+    expect(normalizeRedeemCode("GAINABC2")).toBe("GAIN-ABC2");
+    expect(normalizeRedeemCode("gain_abc2")).toBe("GAIN-ABC2");
+  });
+
+  it("ne re-préfixe plus un code qui porte déjà sa famille", async () => {
+    // LE DÉFAUT FERMÉ : un caissier tapant `TICKET-ABCD2345` interrogeait
+    // `GAIN-TICKET-ABCD2345`, code fabriqué par la caisse elle-même et présent
+    // nulle part. Le gagnant s'entendait répondre « introuvable ».
+    const { normalizeRedeemCode } = await import("./utils");
+    expect(normalizeRedeemCode("TICKET-ABCD2345")).toBe("TICKET-ABCD2345");
+    expect(normalizeRedeemCode("chasse-abcd2345")).toBe("CHASSE-ABCD2345");
+    expect(normalizeRedeemCode("RESA-ABCD2345")).toBe("RESA-ABCD2345");
+    // Le TIRET fait la reconnaissance : sans lui, la saisie reste ambiguë et
+    // suit le chemin historique. Sinon un corps tiré commençant par ces lettres
+    // — `EVENT…` est possible dans l'alphabet — cesserait d'être un code nu.
+    expect(normalizeRedeemCode("EVENTABC2")).toBe("GAIN-EVENTABC2");
+  });
+});
+
+describe("normalizeTicketOrCode — le code de RETRAIT du Ticket d'Or", () => {
+  it("normalise les saisies de caisse", async () => {
+    const { normalizeTicketOrCode } = await import("./utils");
+    expect(normalizeTicketOrCode("ticket abcd2345")).toBe("TICKET-ABCD2345");
+    expect(normalizeTicketOrCode("TICKET-ABCD2345")).toBe("TICKET-ABCD2345");
+    expect(normalizeTicketOrCode("abcd2345")).toBe("TICKET-ABCD2345");
+    expect(normalizeTicketOrCode("  ticket_abcd2345 ")).toBe("TICKET-ABCD2345");
+  });
+
+  it("rejette le code du TICKET, qui n'est PAS un code de retrait", async () => {
+    // Dix caractères sans préfixe : `CODE_TICKET` ouvre le droit de JOUER.
+    // L'accepter ici ferait remettre un lot à quelqu'un qui n'a pas encore tiré.
+    const { normalizeTicketOrCode } = await import("./utils");
+    expect(normalizeTicketOrCode("ABCDEFGHJK")).toBe("");
+    expect(normalizeTicketOrCode("")).toBe("");
+    expect(normalizeTicketOrCode("TICKET-ABC")).toBe("");
+    // Alphabet sans ambiguïté : ni I, ni O, ni 0, ni 1.
+    expect(normalizeTicketOrCode("ABCD2I45")).toBe("");
+  });
 });
 
 describe("slugify", () => {

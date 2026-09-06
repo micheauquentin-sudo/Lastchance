@@ -111,15 +111,46 @@ export function sanitizeSearchTerm(input: string): string {
 }
 
 /**
+ * Les préfixes des AUTRES familles du registre, avec leur tiret.
+ *
+ * Le tiret est OBLIGATOIRE dans ce motif, et c'est ce qui le rend sûr : une
+ * saisie nue (« EVENTABC2 », un corps de huit caractères qui commencerait par
+ * ces lettres) ne le déclenche pas, parce que le nettoyage ci-dessous conserve
+ * les tirets et qu'aucun corps tiré n'en porte. Seule une saisie EXPLICITEMENT
+ * préfixée est reconnue ici.
+ */
+const PREFIXE_AUTRE_FAMILLE =
+  /^(CHASSE|FIDELITE|JACKPOT|EVENT|CADEAU|PARRAIN|QUIZ|PRONO|RESA|TICKET)-/;
+
+/**
  * Normalise un code de gain saisi en caisse :
  * "gain abc2", "ABC2", "gain-abc2" → "GAIN-ABC2". "" si vide.
+ *
+ * ── UN CODE DÉJÀ PRÉFIXÉ N'EST PAS RE-PRÉFIXÉ ──
+ *
+ * Cette fonction est PERMISSIVE par construction — c'est elle qui rattrape la
+ * saisie abrégée d'un lot de roue — mais elle re-préfixait aussi ce qui portait
+ * déjà une famille : un caissier tapant `TICKET-ABCD2345` interrogeait
+ * `GAIN-TICKET-ABCD2345`, code qui n'existe nulle part. Le défaut restait
+ * invisible tant que la famille avait sa branche de routage (le préfixe fait
+ * autorité avant d'arriver ici) ; il devenait « Code introuvable » sur un lot
+ * valide dès qu'elle n'en avait pas.
+ *
+ * Le code préfixé est donc rendu TEL QUEL. Il ne désignera jamais un lot de
+ * roue — aucune participation ne porte ce code — mais il cesse d'être corrompu,
+ * et le candidat qu'il produit se confond alors avec celui de sa vraie famille
+ * au lieu d'ajouter un code inventé à la recherche.
+ *
+ * LE CHEMIN DE LA ROUE NE BOUGE PAS : `abc2` rend toujours `GAIN-ABC2`, et
+ * `GAINABC2` — préfixe collé, sans tiret — reste retiré puis reposé.
  */
 export function normalizeRedeemCode(input: string): string {
   const cleaned = sanitizeSearchTerm(input)
     .toUpperCase()
-    .replace(/[\s_]/g, "")
-    .replace(/^GAIN-?/, "");
-  return cleaned ? `GAIN-${cleaned}` : "";
+    .replace(/[\s_]/g, "");
+  if (PREFIXE_AUTRE_FAMILLE.test(cleaned)) return cleaned;
+  const corps = cleaned.replace(/^GAIN-?/, "");
+  return corps ? `GAIN-${corps}` : "";
 }
 
 /**
@@ -280,6 +311,35 @@ export function normalizeStockHoldCode(input: string): string {
     ? cleaned
     : cleaned.replace(/^RESA/, "");
   return /^[A-HJ-NP-Z2-9]{8}$/.test(corps) ? `RESA-${corps}` : "";
+}
+
+/**
+ * Normalise un code de RETRAIT d'un lot de Ticket d'Or saisi en caisse :
+ * "ticket abcd2345", "ABCD2345", "ticket-abcd2345" → "TICKET-ABCD2345".
+ * "" si la forme ne correspond pas (8 caractères sans I/O/0/1).
+ *
+ * ── DEUX CODES PORTENT LE MOT « TICKET », ET CE N'EST PAS LE MÊME ──
+ *
+ * Celui-ci est le code de RETRAIT du lot gagné, écrit au registre par
+ * `tirer_ticket_or` : huit caractères préfixés `TICKET-`, à présenter au
+ * comptoir. Le code du TICKET lui-même — `CODE_TICKET` dans
+ * `src/lib/ticket-or.ts` — fait dix caractères SANS préfixe et n'ouvre que le
+ * droit de JOUER. Les confondre ferait d'une capture d'écran d'avant-tirage
+ * une preuve de gain ; c'est la raison d'être de deux codes distincts, et la
+ * forme à huit caractères exigée ici rejette d'office un code de ticket.
+ *
+ * Le retrait du préfixe précède le test de forme, comme chez les neuf sœurs à
+ * préfixe long, et c'est sans danger : `TICKET` contient un `I`, lettre que
+ * l'alphabet sans ambiguïté exclut. Aucun corps tiré ne peut donc commencer
+ * par lui — le piège documenté sur `normalizeStockHoldCode`, qui n'a de mordant
+ * que sur `RESA`, ne se rejoue pas ici.
+ */
+export function normalizeTicketOrCode(input: string): string {
+  const cleaned = sanitizeSearchTerm(input)
+    .toUpperCase()
+    .replace(/[\s_-]/g, "")
+    .replace(/^TICKET/, "");
+  return /^[A-HJ-NP-Z2-9]{8}$/.test(cleaned) ? `TICKET-${cleaned}` : "";
 }
 
 /** Résultat standard des Server Actions. */

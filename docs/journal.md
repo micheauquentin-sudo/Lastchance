@@ -80,6 +80,37 @@ plafond IP (ADR-178) mais pas fermée, la fermer demande un ancrage serveur
 d'éligibilité et c'est un choix produit ; secret SMS en query string, désormais
 MESURABLE via `/api/health` et retirable après ~7 jours d'observation.
 
+**SUITE DU MÊME JOUR — un troisième audit, et deux défauts que les deux
+premiers avaient manqués.** Un release gate sur `98af9c71` rend un NO-GO sur
+quatre bloquants. Deux étaient déjà connus et viennent d'être tranchés par le
+propriétaire comme décisions assumées (ADR-175 et ADR-178, conservées en
+l'état). Les DEUX AUTRES étaient réels, neufs, et vérifiés dans le code :
+
+**Le tirage direct n'était pas idempotent** (ADR-182). `spinWheelInner`
+appelait `perform_atomic_spin` sans `p_idempotency_key`, là où le chemin des
+jeux d'adresse en passait un depuis JOB-8. Le client persiste désormais un
+nonce (`sessionStorage`, pas un `useRef` : le rejeu réel est un rechargement de
+page), et le serveur le dérive en `play:${playerKey}:${nonce}` au lieu de le
+transmettre — sans quoi un client pourrait choisir la clé déjà portée par le
+tirage d'un autre joueur du même commerce et faire échouer le sien. La première
+version oubliait le nonce sur le refus « Une erreur est survenue, réessayez. »,
+c'est-à-dire sur le seul chemin qui invite au rejeu ET où la base a pu
+commettre : d'où le drapeau `outcomeUnknown`.
+
+**Le Ticket d'Or n'était pas remettable en caisse.** La base acceptait la
+famille `ticket_or` et les codes `TICKET-` ; l'application n'en connaissait que
+DIX. Un gagnant présentait un code valide et s'entendait répondre
+« introuvable ». Le SQL était complet — seule la couche caisse manquait. Piège
+évité : il existe DEUX « ticket » sans rapport, le jeton de JEU à dix
+caractères sans préfixe et le code de RETRAIT `TICKET-XXXXXXXX` ; le schéma de
+validation refuse explicitement le premier.
+
+Analyse écartée au passage : le « budget non strict » signalé en HIGH. La
+moitié dangereuse est déjà fermée par ADR-176 — aucun tirage ne naît après la
+pause. Ce qui reste est borné aux gains déjà remportés et pas encore réclamés,
+et les refuser reviendrait à dire « finalement non » à quelqu'un qui a vu
+« vous avez gagné ».
+
 ## 2026-09-05 — Audit sécurité et cohérence : neuf lots
 
 **Audit sécurité et cohérence : neuf lots** (PR #355 → #363, ADR-170 à
