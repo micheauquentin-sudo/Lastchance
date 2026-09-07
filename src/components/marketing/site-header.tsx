@@ -1,61 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const NAV_LINKS = [
-  { href: "#fonctionnalites", label: "Fonctionnalités" },
-  { href: "#pronostics", label: "Pronostics" },
-  { href: "#tarifs", label: "Tarifs" },
+const OBJECTIVES = [
+  { href: "/attirer", label: "Acquérir", desc: "15 jeux instantanés & Parrainage", dot: "bg-k-orange" },
+  { href: "/faire-venir", label: "Créer du trafic", desc: "Chasse au QR & Réservation", dot: "bg-k-yellow" },
+  { href: "/fideliser", label: "Fidéliser", desc: "Passeport Wallet & Calendrier", dot: "bg-k-pink" },
+  { href: "/animer", label: "Animer en direct", desc: "Événements live & Pronostics", dot: "bg-k-blue" },
 ] as const;
 
-const RESOURCES = [
-  { href: "#faq", label: "Questions fréquentes" },
-  { href: "#espace-commercant", label: "Espace commerçant" },
-  { href: "#comment-ca-marche", label: "Guide de démarrage" },
-] as const;
-
-/** Sections suivies pour la mise en évidence du lien courant. */
-const TRACKED = [
-  "comment-ca-marche",
-  "fonctionnalites",
-  "pronostics",
-  "espace-commercant",
-  "tarifs",
-  "faq",
-] as const;
-
-/**
- * En-tête de la landing « La Kermesse » : une PILULE FLOTTANTE.
- *
- * Elle remplace le duo bandeau d'annonce encre + barre crème pleine largeur
- * bordée de 3 px : deux blocs empilés qui coupaient le décor scrollytelling en
- * travers dès le premier pixel. Le message du bandeau vit désormais dans la
- * pastille du hero, qui le portait déjà à un mot près.
- *
- * Au repos la pilule est un verre léger ; au-delà de 20 px de scroll elle se
- * densifie pour rester lisible sur les images sombres du bas de page. Le CTA
- * « Essai gratuit » garde en revanche la signature complète (encre 3 px, socle
- * plein) : c'est le seul élément de la barre qui doit rester un objet.
- */
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
-  const [resOpen, setResOpen] = useState(false);
+  const [objOpen, setObjOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [active, setActive] = useState<string | null>(null);
-  const resRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const objRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false);
-        setResOpen(false);
+        setObjOpen(false);
       }
     };
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (resRef.current && !resRef.current.contains(target)) setResOpen(false);
+      if (objRef.current && !objRef.current.contains(target)) setObjOpen(false);
       if (rootRef.current && !rootRef.current.contains(target)) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
@@ -69,32 +42,17 @@ export function SiteHeader() {
   useEffect(() => {
     const onScroll = () => {
       setScrolled(window.scrollY > 20);
-      const current = TRACKED.find((id) => {
-        const el = document.getElementById(id);
-        if (!el) return false;
-        const rect = el.getBoundingClientRect();
-        return rect.top <= 200 && rect.bottom >= 200;
-      });
-      setActive(current ?? null);
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  /**
-   * Section courante : PASTILLE orange pleine, texte encre.
-   *
-   * L'orange TEXTE (`--color-k-orange-text`) était le premier réflexe, mais il
-   * ne tient son 4,66:1 que sur le crème PLEIN : sur la pilule translucide
-   * posée sur le décor, il tombe à 4,03:1 dans les nuages et 3,59:1 sur la
-   * lave — mesuré sur les images réelles (f001, f172), voile compris. Encre
-   * sur orange plein donne 6,2:1 et marque bien plus nettement la section.
-   * Le survol reprend le jaune déjà utilisé par le menu Ressources (11:1).
-   */
+  const isCurrent = (href: string) => pathname === href;
+
   const linkClass = (href: string) =>
     `rounded-full px-3 py-2 text-[15px] font-extrabold text-k-ink transition-colors duration-150 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
-      active && `#${active}` === href ? "bg-k-orange" : "hover:bg-k-yellow"
+      isCurrent(href) ? "bg-k-orange" : "hover:bg-k-yellow"
     }`;
 
   return (
@@ -121,58 +79,62 @@ export function SiteHeader() {
           </Link>
 
           <div className="hidden items-center gap-1 md:flex">
-            {NAV_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                aria-current={active && `#${active}` === link.href ? "true" : undefined}
-                className={linkClass(link.href)}
-              >
-                {link.label}
-              </a>
-            ))}
-
-            <div ref={resRef} className="relative">
+            {/* Menu déroulant Objectifs */}
+            <div ref={objRef} className="relative">
               <button
                 type="button"
-                aria-expanded={resOpen}
+                aria-expanded={objOpen}
                 aria-haspopup="menu"
-                onClick={() => setResOpen((v) => !v)}
-                className={`flex items-center gap-1 ${linkClass(
-                  RESOURCES.some((r) => r.href === `#${active}`) ? `#${active}` : "#ressources",
-                )}`}
+                onClick={() => setObjOpen((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-2 text-[15px] font-extrabold text-k-ink transition-colors ${
+                  OBJECTIVES.some((o) => isCurrent(o.href)) ? "bg-k-orange" : "hover:bg-k-yellow"
+                }`}
               >
-                Ressources
+                <span>Modules & Objectifs</span>
                 <svg
                   aria-hidden
                   width="14"
                   height="14"
                   viewBox="0 0 14 14"
                   fill="none"
-                  className={`transition-transform duration-200 ${resOpen ? "rotate-180" : ""}`}
+                  className={`transition-transform duration-200 ${objOpen ? "rotate-180" : ""}`}
                 >
                   <path d="M3.5 5.5 7 9l3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
-              {resOpen && (
+              {objOpen && (
                 <div
                   role="menu"
-                  className="k-card k-soft absolute left-0 top-full mt-2 w-60 rounded-2xl p-1.5"
+                  className="k-card k-soft absolute left-0 top-full mt-2 w-72 rounded-2xl p-2 shadow-xl"
                 >
-                  {RESOURCES.map((r) => (
-                    <a
-                      key={r.label}
-                      href={r.href}
+                  {OBJECTIVES.map((obj) => (
+                    <Link
+                      key={obj.href}
+                      href={obj.href}
                       role="menuitem"
-                      onClick={() => setResOpen(false)}
-                      className="flex min-h-11 items-center rounded-xl px-3 py-2.5 text-sm font-extrabold text-k-body transition-colors hover:bg-k-yellow hover:text-k-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+                      onClick={() => setObjOpen(false)}
+                      className={`flex flex-col rounded-xl px-3 py-2.5 transition-colors hover:bg-k-yellow focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
+                        isCurrent(obj.href) ? "bg-k-orange/20" : ""
+                      }`}
                     >
-                      {r.label}
-                    </a>
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-full ${obj.dot}`} />
+                        <span className="text-sm font-black text-k-ink">{obj.label}</span>
+                      </div>
+                      <span className="mt-0.5 text-xs font-bold text-k-body pl-4.5">{obj.desc}</span>
+                    </Link>
                   ))}
                 </div>
               )}
             </div>
+
+            <Link href="/tarifs" className={linkClass("/tarifs")}>
+              Tarifs
+            </Link>
+
+            <Link href="/faq" className={linkClass("/faq")}>
+              FAQ
+            </Link>
           </div>
 
           <div className="hidden items-center gap-2 md:flex">
@@ -214,33 +176,65 @@ export function SiteHeader() {
             aria-label="Navigation mobile"
             className="k-card k-soft mt-2 rounded-3xl p-4 md:hidden"
           >
-            <ul className="flex flex-col gap-1">
-              {[...NAV_LINKS, ...RESOURCES].map((link) => (
-                <li key={link.label}>
-                  <a
-                    href={link.href}
-                    aria-current={active && `#${active}` === link.href ? "true" : undefined}
-                    className={`flex min-h-11 items-center rounded-2xl px-4 py-3 text-base font-extrabold text-k-ink transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink ${
-                      active && `#${active}` === link.href ? "bg-k-orange" : "hover:bg-k-yellow"
+            <p className="px-3 text-xs font-black uppercase tracking-wider text-k-muted">
+              Les 4 objectifs
+            </p>
+            <ul className="mt-1 flex flex-col gap-1">
+              {OBJECTIVES.map((obj) => (
+                <li key={obj.href}>
+                  <Link
+                    href={obj.href}
+                    className={`flex items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-extrabold text-k-ink transition-colors ${
+                      isCurrent(obj.href) ? "bg-k-orange" : "hover:bg-k-yellow"
                     }`}
                     onClick={() => setOpen(false)}
                   >
-                    {link.label}
-                  </a>
+                    <span className={`h-2.5 w-2.5 rounded-full ${obj.dot}`} />
+                    <span className="font-black">{obj.label}</span>
+                    <span className="text-xs text-k-muted font-bold truncate">· {obj.desc}</span>
+                  </Link>
                 </li>
               ))}
             </ul>
+
+            <div className="my-2 border-t-2 border-k-ink/15" />
+
+            <ul className="flex flex-col gap-1">
+              <li>
+                <Link
+                  href="/tarifs"
+                  className={`flex min-h-11 items-center rounded-2xl px-4 py-2.5 text-base font-extrabold text-k-ink transition-colors ${
+                    isCurrent("/tarifs") ? "bg-k-orange" : "hover:bg-k-yellow"
+                  }`}
+                  onClick={() => setOpen(false)}
+                >
+                  Tarifs (5 offres & simulateur)
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/faq"
+                  className={`flex min-h-11 items-center rounded-2xl px-4 py-2.5 text-base font-extrabold text-k-ink transition-colors ${
+                    isCurrent("/faq") ? "bg-k-orange" : "hover:bg-k-yellow"
+                  }`}
+                  onClick={() => setOpen(false)}
+                >
+                  Questions fréquentes
+                </Link>
+              </li>
+            </ul>
+
             <div className="mt-3 flex flex-col gap-2.5 border-t-2 border-k-ink/15 pt-3">
               <Link
                 href="/login"
-                className="flex min-h-11 items-center justify-center rounded-full border-2 border-k-ink/25 bg-white/70 px-4 py-3 text-center text-sm font-black text-k-ink transition-colors hover:bg-k-ink/5 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-k-ink"
+                className="flex min-h-11 items-center justify-center rounded-full border-2 border-k-ink/25 bg-white/70 px-4 py-3 text-center text-sm font-black text-k-ink transition-colors hover:bg-k-ink/5"
                 onClick={() => setOpen(false)}
               >
                 Connexion
               </Link>
               <Link
                 href="/signup"
-                className="k-border k-btn flex min-h-11 items-center justify-center rounded-full bg-k-yellow px-4 py-3 text-center text-sm font-black text-k-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-k-ink"
+                className="k-border k-btn flex min-h-11 items-center justify-center rounded-full bg-k-yellow px-4 py-3 text-center text-sm font-black text-k-ink"
                 onClick={() => setOpen(false)}
               >
                 Essai gratuit 7 jours

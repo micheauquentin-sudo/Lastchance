@@ -103,6 +103,49 @@ pour ces clôtures.
   Vérifier aussi la forme de `origins` avec la configuration réelle avant
   publication commerciale.
 
+## Refonte marketing : DA Kermesse, sélecteur d'expériences, 4 objectifs et 5 offres (2026-09-06, lot MKT-01)
+
+- **Lot et objectif** : MKT-01 — Refonte complète du site marketing sous `src/app/(public)/` dans la DA « La Kermesse » : remplacement de la roue unique du hero par le sélecteur interactif des 4 objectifs (`ExperienceSelector`), création des 4 pages d'objectifs (`/attirer`, `/faire-venir`, `/fideliser`, `/animer`), de la page `/tarifs` (5 offres sans prix en dur, 13 options, simulateur ROI interactif) et de la page `/faq` (balisage schema.org JSON-LD FAQPage). Retrait des références étriquées à la seule roue.
+- **Branche / état** : En cours de finalisation locale sur `main`.
+- **Faits et fichiers** :
+  - `src/components/marketing/use-cases-by-trade.tsx` : scénarios réels par typologie de commerce (Restaurants, Bars, Boutiques, Salons) détaillant pour chaque métier le défi quotidien, les modules recommandés, la situation vécue et un **bénéfice attendu** (`expectedBenefit`, non mesuré — voir plus bas). Contraste du texte orange sur fond `k-card` corrigé (`text-k-orange` → `text-k-orange-text`, #b45309, 5,02:1).
+  - `src/components/marketing/vitrine-spotlight.tsx` : mise en avant du module pilier Vitrine au QR code (carte bilingue à jour en 10 secondes, réservation sans intermédiaire ni commission, jeux à table embarqués et mockup smartphone immersif).
+  - `src/components/marketing/experience-selector.tsx` : enrichissement de chaque module avec son contenu exact (« Ce qu'il contient »), sa situation d'usage (« Quand l'utiliser ») et son avantage concurrentiel (« Pourquoi le prendre »), démo interactive des mini-mécaniques. Contraste corrigé ligne 582 (`text-k-green` sur `bg-k-green/10`, ~3,7:1 → `text-k-ink`).
+  - `src/app/(public)/page.tsx` : refonte narrative orientée conversion — suppression définitive de la section résiduelle pronostics isolée, intégration des cas d'usage métiers, spotlight Vitrine, catalogue des 14 modules, Caisse universelle, HonestGame et tarifs clairs.
+  - `src/components/marketing/site-header.tsx` : navigation desktop et mobile avec menu déroulant vers les 4 objectifs, `/tarifs` et `/faq`.
+  - `src/app/(public)/attirer/page.tsx` : page Acquérir — inventaire complet des 15 mécaniques (9 hasard + 6 défi), Parrainage à paliers, Vitrine bilingue, caisse universelle et Ticket d'Or.
+  - `src/app/(public)/faire-venir/page.tsx` : page Créer du trafic — Chasse au QR multi-points physique, Moments (ateliers, dégustations, invendus), Réservation automatique.
+  - `src/app/(public)/fideliser/page.tsx` : page Fidéliser — Passeport PWA / Apple & Google Wallet, Calendrier à surprises, Salons collectifs Duo Miroir & Portrait de la Bande. Les quatre scénarios d'automatisation affichés sont désormais exactement les quatre schémas zod de `src/lib/validations/automations.ts:16-19`, avec leurs délais lus dans les schémas (`wonNotRedeemedConfigSchema.parse({}).minAgeHours`, etc.) — un scénario inventé (« message de bienvenue après premier scan », inexistant) et un délai faux (« après 5 jours » contre 48 h réelles) ont été retirés.
+  - `src/app/(public)/animer/page.tsx` : page Animer en direct — Événements live grand écran, Pronostics sur 11 thèmes, Jackpot collectif et Quiz. La jauge de capacité (250 joueurs) n'est plus qualifiée d'« éprouvée » : `plans.ts:39-95` la présente comme une dérivation (≈150 req/s mesurés, deux tiers de marge), à recalculer dès qu'un banc existe.
+  - `src/components/marketing/roi-simulator.tsx` : composant interactif pur DA Kermesse estimant gains nets et retours selon panier moyen, fréquentation et nombre d'établissements ; promesse « rentabilisé dès les premiers jours du mois » désormais conditionnée aux hypothèses affichées (`ASSUMPTIONS`, identiques à `site/src/lib/roi.ts:24-46`).
+  - `src/app/(public)/tarifs/page.tsx` : présentation des 5 offres par objectif tirées directement de `plans.ts`, 13 options, simulateur ROI, briques incluses partout.
+  - `src/app/(public)/faq/page.tsx` : 9 questions/réponses de référence avec balisage `application/ld+json` (FAQPage). « Conforme RGPD à 100 % » (absolu juridique) retiré ; « tirage impossible à manipuler par le joueur » remplacé par la réalité (poids, tirage pondéré et décrément de stock côté serveur — ADR-175 acte que Réflexe et Jauge acceptent, eux, un succès rapporté par le navigateur) ; « code à 4 lettres » corrigé en « 4 caractères » (`GAIN-` + 4, alphabet avec chiffres, `src/lib/utils.ts:17`). La même phrase « impossible à manipuler » a été trouvée et corrigée une seconde fois dans la FAQ condensée de `page.tsx:121`.
+  - `src/components/marketing/prix.ts` (nouveau) : quinze prix qui étaient retapés à la main dans les pages marketing (onze repérés par l'audit croisé, quatre de plus trouvés en corrigeant) passent désormais par ce module, qui les dérive de `PLAN_TIERS` / `ADDON_OFFERS` et lève une erreur au build si une offre disparaît.
+  - `src/app/layout.tsx` : mise à jour de `metadata.description` (plateforme multi-modules).
+  - `src/components/marketing/{hero-showcase,scroll-arrow,pseudo-qr}.tsx` : **supprimés** (ils avaient d'abord été laissés en coquilles de 7 lignes renvoyant `null`, corrigé).
+  - Conservation stricte de `site/` intact jusqu'au basculement de domaine par le propriétaire (décision de propriétaire, `MISSION-ANTIGRAVITY-refonte-site.txt` §2) ; `site/public/` (198 fichiers, 6,4 Mo, sorties du générateur de décor) n'est référencé par aucun code et n'est pas versionné, conformément au `.gitignore`.
+- **Audit croisé (2026-09-06/07)** : onze défauts trouvés, tous corrigés dans ce lot — affirmations produit inventées ou fausses (automatisations, capacité live, FAQ), chiffres de résultat sans source, composants orphelins, prix recopiés à la main, et une garde d'accessibilité qui n'avait en réalité jamais tourné (voir ci-dessous).
+- **Validations réellement exécutées, et vérifiées après l'audit** : `npm run typecheck` code 0 · `npm run lint` code 0 (1 avertissement préexistant, `scripts/build-backdrop-frames.mjs:49`, hors périmètre) · `npm run casts:check` code 0 · `npm test` 431 fichiers, 7 653 tests, aucun rouge · `npx playwright test e2e/a11y.spec.ts --project=desktop-smoke --no-deps -g "landing"` **vert maintenant**. Ce test était **rouge avant correction** : `color-contrast`, 12 nœuds sur `/` (`text-k-orange` sur `k-card` blanche, 2,73:1) trouvés d'abord, puis 6 nœuds de plus (`text-k-green` sur `bg-k-green/10`, ~3,7:1, `experience-selector.tsx:582`) — l'affirmation « zéro violation axe » de la version précédente de cette entrée était donc fausse au moment où elle a été écrite, pas seulement dépassée depuis.
+  Note méthodologique à conserver : `--no-deps` est nécessaire faute de Supabase local semé dans l'arbre Windows — sans lui, les quatre sessions d'authentification Playwright échouent et emportent le test a11y **sans le lancer**, tout en laissant Playwright rendre un code de sortie 0. C'est ce mécanisme qui a permis d'affirmer « zéro violation » sans que le scan ait tourné.
+  Les sept pages publiques répondent 200 en local, ce qui exerce `prix.ts` sur chacune.
+- **Reste ouvert** :
+  - `npm run build` n'a pas été lancé sur l'arbre corrigé (conflit avec le `.next` du serveur de dev) : la génération statique des 66 pages n'est pas retestée depuis les corrections.
+  - Les deux bloquants du release gate (rotation du cookie anonyme, succès client-reporté de Réflexe/Jauge) restent des décisions assumées — ADR-175 et `docs/bugs.md:5675` — non des dettes de ce lot.
+- **Prochaine action** : lancer `npm run build` sur un arbre propre (hors conflit avec le dev server) avant toute mise en ligne, puis revue des parcours.
+
+## Release gate : les deux bloquants réels, et deux décisions assumées (2026-09-06, PR #367, commit ffc7cf2c)
+
+- **Lot et objectif** : Release gate — Clôturer les deux bloquants réels de mise en production : fiabilisation du moteur de tirage (nonce de spin et intégrité côté serveur) et consolidation du flux Ticket d'Or (émission comptoir et validation caisse), avec deux décisions d'architecture assumées sur les flux sensibles.
+- **Branche / commits** : `main` @ `ffc7cf2c` (PR #367).
+- **État** : Livré et fusionné sur `main`, checks CI validés.
+- **Faits et fichiers** :
+  - Sécurisation du moteur de tirage : intégrité des sessions de jeu, isolation stricte du nonce de spin.
+  - Ticket d'Or : confirmation des flux d'émission directe et association fiable des lots remis en caisse.
+  - Aucune surface marketing touchée par ce lot : les routes publiques et la landing restent prêtes pour la refonte marketing.
+- **Validations réellement exécutées** : Typecheck TypeScript, lint ESLint, contrats de base de données, tests unitaires et intégration du tirage.
+- **Risque / blocage** : Aucun blocage résiduel sur le moteur ou le Ticket d'Or.
+- **Prochaine action** : Refonte de la surface marketing unifiée sous `src/app/(public)/` en DA Kermesse (retrait de la roue hero, déploiement des 4 axes d'objectifs, 14 modules et 5 offres).
+
 ## Jeux instantanés : le studio sur ordinateur, l'atelier sur téléphone (2026-09-05, PR #352, lot VIT-52)
 
 - **Lot et objectif** : VIT-52 — brancher `createCampaign` (jeux instantanés) sur l'atterrissage selon l'écran de VIT-51. Le module avait son studio depuis VIT-46, mais créer une campagne sur un ordinateur faisait tomber dans l'atelier, c'est-à-dire l'écran que le studio remplace.

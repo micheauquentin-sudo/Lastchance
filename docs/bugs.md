@@ -1592,6 +1592,29 @@ payé trois fois sur un seul chantier.
 
 ## Medium Priority
 
+### OUVERT (2026-09-06) — les durées d'add-on affichées au public ne sont appliquées par rien
+
+`src/lib/plans.ts` (commentaire explicite autour des lignes 435-459) documente
+que `activeDays`, `activationWindowDays` et les jauges d'add-on sont
+**descriptifs, non appliqués** : « il n'expire pas, personne ne l'a encore
+écrit ». En base, les colonnes `organizations.addon_*` sont des booléens
+permanents — aucune expiration n'existe côté serveur.
+
+Or `site/src/app/tarifs/page.tsx` rend `addon.duration` pour chaque option et
+promet ces durées au visiteur : « 30 jours d'usage. À activer dans les 90
+jours suivant l'achat. » (Chasse au QR, Cagnotte collective), « 7 jours
+d'usage » (Quiz express), « 7 jours de préparation puis 24 heures de jeu »
+(Soirée en jeu). Le site vend donc une péremption que le produit n'applique
+pas : un client ayant payé pour « 30 jours » garde le module indéfiniment, et
+rien ne garantit non plus la promesse inverse (fenêtre d'activation, jauge).
+Écart de conformité commerciale entre promesse publiée et comportement réel,
+pas une faille technique.
+
+Deux issues possibles, non tranchées : implémenter l'expiration décrite, ou
+cesser d'afficher des durées que le produit ne tient pas. Le site marketing
+est en cours de refonte (`docs/brief-refonte-site.md`) : la nouvelle surface
+ne doit pas reconduire cette promesse sans que l'un des deux choix soit fait.
+
 ### ✅ CLOS (2026-08-07, `chantier/atelier-modules`) — « Enregistrer l'événement » des pronostics effaçait `default_locks_at`
 
 `contest-settings.tsx:446-450` postait un champ caché `default_locks_at` vide
