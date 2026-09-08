@@ -243,6 +243,14 @@ export default async function WheelConfigPage({
               label: p.label,
               color: p.color,
             }))}
+            /* Les lots ACTIFS seulement : un lot désactivé ne sort pas du
+               tirage, sa valeur n'expose donc à rien. `segments` ne pouvait
+               pas servir — il ne porte ni valeur ni segment perdant. */
+            lots={activePrizes.map((p) => ({
+              label: p.label,
+              value_cents: p.value_cents,
+              is_losing: p.is_losing,
+            }))}
           />
         )}
 
@@ -251,6 +259,9 @@ export default async function WheelConfigPage({
             wheelId={w.id}
             prizes={allPrizes}
             totalWeight={totalWeight}
+            /* La limite de participation vient de la roue : sans elle,
+               l'éditeur ne peut pas dire si un lot cher est mal gardé. */
+            playLimit={w.play_limit}
           />
         )}
 
