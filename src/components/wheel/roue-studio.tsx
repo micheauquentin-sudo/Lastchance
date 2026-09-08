@@ -505,10 +505,30 @@ function StudioUneRoue({
     >
       <div ref={colonneReglages}>
         {etape === "jeu" ? (
-          <EtapeJeu etat={etat} majEtat={majEtat} peutEditer={peutEditer} />
+          <EtapeJeu
+            etat={etat}
+            majEtat={majEtat}
+            peutEditer={peutEditer}
+            /* Les lots ACTIFS : c'est ce qui permet à l'étape « Le jeu » de
+               dire qu'un lot cher se retrouve sans garde quand la limite passe
+               à « Illimité ». Le studio est le seul à connaître les deux. */
+            lots={lotsActifs.map((p) => ({
+              label: p.label,
+              value_cents: p.value_cents,
+              is_losing: p.is_losing,
+            }))}
+          />
         ) : null}
         {etape === "lots" ? (
-          <EtapeLots wheelId={roue.id} lots={lots} poidsTotal={poidsTotal} />
+          <EtapeLots
+            wheelId={roue.id}
+            lots={lots}
+            poidsTotal={poidsTotal}
+            /* La limite EN COURS d'édition, pas celle enregistrée : le
+               commerçant qui vient de basculer sur « Illimité » à l'étape
+               précédente doit le voir compter ici. */
+            playLimit={etat.play_limit}
+          />
         ) : null}
         {etape === "allure" ? (
           <EtapeAllure

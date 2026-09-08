@@ -21,6 +21,11 @@ import {
   serialiserDefi,
   type EtatDefi,
 } from "@/components/dashboard/atelier-roue-defi";
+import { AvertissementGardeLot } from "@/components/dashboard/avertissement-garde-lot";
+import {
+  niveauGardeLot,
+  type LotValeurUnitaire,
+} from "@/lib/lot-forte-valeur";
 import { useActionForm } from "@/lib/use-action-form";
 import { useAutoSave } from "@/lib/use-auto-save";
 import {
@@ -56,6 +61,7 @@ export function WheelSettings({
   campaignId,
   organizationName,
   segments = [],
+  lots = [],
 }: {
   wheel: Wheel;
   campaignId: string;
@@ -63,6 +69,16 @@ export function WheelSettings({
   organizationName: string;
   /** Lots actifs, pour que l'aperçu de la roue montre les vrais segments. */
   segments?: WheelSegment[];
+  /**
+   * Les lots de la roue, réduits à ce dont dépend le verdict de garde (valeur
+   * unitaire, perdant ou non) plus leur libellé, pour pouvoir les NOMMER.
+   *
+   * `segments` ne pouvait pas servir : il ne porte ni `value_cents` ni
+   * `is_losing` — il décrit ce qui se dessine, pas ce qui se gagne. La prop
+   * reste FACULTATIVE : un appelant qui ne connaît pas les lots n'affiche
+   * simplement pas l'avertissement, plutôt que d'en supposer l'absence.
+   */
+  lots?: (LotValeurUnitaire & { label: string })[];
 }) {
   const mecaniqueInitiale: GameType = wheel.game_type ?? "wheel";
   const rawInitial = readRaw(wheel);
@@ -97,6 +113,20 @@ export function WheelSettings({
     () => resolveWheelStyle(wheel.style as Record<string, unknown>),
     [wheel.style],
   );
+
+  // LE VERDICT SUIT L'ÉTAT LOCAL `playLimit`, pas la valeur enregistrée : le
+  // commerçant qui bascule le <select> sur « Illimité » alors que sa roue porte
+  // déjà un lot cher doit le lire AU CHANGEMENT, avant l'enregistrement
+  // automatique — sinon l'avertissement n'arrive qu'une fois la roue ouverte.
+  // Tous les lots concernés partagent la même limite : le niveau est donc le
+  // même pour tous, et un seul encadré les nomme.
+  const lotsMalGardes = lots.filter(
+    (lot) => niveauGardeLot(lot, playLimit) !== "aucun",
+  );
+  const niveauGarde =
+    lotsMalGardes.length > 0
+      ? niveauGardeLot(lotsMalGardes[0], playLimit)
+      : "aucun";
 
   function choisirMecanique(valeur: GameType) {
     setGameType(valeur);
@@ -165,6 +195,16 @@ export function WheelSettings({
           playLimit={playLimit}
           onChange={setPlayLimit}
           nomChamp="play_limit"
+        />
+
+        {/* Sous le choix de limite, et jamais au-dessus : la remarque porte sur
+            la combinaison « cette limite × ces lots-là », elle ne se comprend
+            qu'une fois le <select> lu. Elle n'empêche ni l'enregistrement
+            automatique ni le bouton ci-dessous. */}
+        <AvertissementGardeLot
+          niveau={niveauGarde}
+          lots={lotsMalGardes.map((lot) => lot.label)}
+          className="-mt-2"
         />
 
         <FieldError message={state && !state.ok ? state.error : undefined} />

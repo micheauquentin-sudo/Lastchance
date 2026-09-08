@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard/atelier-roue-habillage";
 import { defautsDefi, type EtatDefi } from "@/components/dashboard/atelier-roue-defi";
 import { AtelierVerification } from "@/components/dashboard/atelier-verification";
+import { AvertissementGardeLot } from "@/components/dashboard/avertissement-garde-lot";
 import { CampaignPrejeuInvitation } from "@/components/dashboard/campaign-prejeu-invitation";
 import { CampaignClaimSettings } from "@/components/dashboard/campaign-play-settings";
 import { CampaignShareSettings } from "@/components/dashboard/campaign-share-settings";
@@ -30,6 +31,10 @@ import type { EntreeVerification } from "@/components/dashboard/atelier-verifica
 import type { WheelSegment } from "@/components/wheel/wheel-svg";
 import type { EtatRoue } from "@/components/wheel/studio/etat";
 import type { FondKey } from "@/lib/fonds-ecran";
+import {
+  niveauGardeLot,
+  type LotValeurUnitaire,
+} from "@/lib/lot-forte-valeur";
 import type { WheelStyle } from "@/lib/wheel-style";
 import {
   isClientReportedSkillGameType,
@@ -94,7 +99,19 @@ function TitreEtape({ titre, aide }: { titre: string; aide: React.ReactNode }) {
  * porte sur la mécanique. Séparées, le commerçant lirait un refus concernant un
  * réglage qu'il ne voit pas.
  */
-export function EtapeJeu({ etat, majEtat, peutEditer }: ProprietesEtapeRoue) {
+export function EtapeJeu({
+  etat,
+  majEtat,
+  peutEditer,
+  lots = [],
+}: ProprietesEtapeRoue & {
+  /**
+   * Les lots actifs, réduits à ce dont dépend le verdict de garde. Facultatif :
+   * un appelant qui ne les connaît pas n'affiche pas l'avertissement plutôt que
+   * d'en supposer l'absence.
+   */
+  lots?: (LotValeurUnitaire & { label: string })[];
+}) {
   function choisirMecanique(valeur: GameType) {
     if (valeur === etat.game_type) return;
     const patch: Partial<EtatRoue> = {
@@ -119,6 +136,16 @@ export function EtapeJeu({ etat, majEtat, peutEditer }: ProprietesEtapeRoue) {
   function setDefi<K extends keyof EtatDefi>(cle: K, valeur: EtatDefi[K]) {
     majEtat({ defi: { ...etat.defi, [cle]: valeur } });
   }
+
+  // Le verdict suit la limite EN COURS d'édition (`etat.play_limit`), pas celle
+  // enregistrée : basculer sur « Illimité » doit se lire au clic.
+  const lotsMalGardes = lots.filter(
+    (lot) => niveauGardeLot(lot, etat.play_limit) !== "aucun",
+  );
+  const niveauGarde =
+    lotsMalGardes.length > 0
+      ? niveauGardeLot(lotsMalGardes[0], etat.play_limit)
+      : "aucun";
 
   return (
     <div className="space-y-5">
@@ -151,6 +178,14 @@ export function EtapeJeu({ etat, majEtat, peutEditer }: ProprietesEtapeRoue) {
            de `name` de réglage. Voir l'en-tête de ce fichier. */
         disabled={!peutEditer}
       />
+
+      {/* Même règle et mêmes mots que l'atelier (`wheel-settings.tsx`) : un lot
+          de forte valeur adossé à la seule limite de participation. AVERTIT
+          seulement — rien n'est désactivé. */}
+      <AvertissementGardeLot
+        niveau={niveauGarde}
+        lots={lotsMalGardes.map((lot) => lot.label)}
+      />
     </div>
   );
 }
@@ -161,10 +196,13 @@ export function EtapeLots({
   wheelId,
   lots,
   poidsTotal,
+  playLimit,
 }: {
   wheelId: string;
   lots: Prize[];
   poidsTotal: number;
+  /** Limite de participation de la roue — sans elle, pas d'avertissement. */
+  playLimit?: PlayLimit;
 }) {
   return (
     <div className="space-y-4">
@@ -172,7 +210,12 @@ export function EtapeLots({
         titre="Les gains"
         aide="Ce que vos clients peuvent gagner, à quelle fréquence, et en quelle quantité. Chaque lot s'enregistre pour lui-même."
       />
-      <PrizeEditor wheelId={wheelId} prizes={lots} totalWeight={poidsTotal} />
+      <PrizeEditor
+        wheelId={wheelId}
+        prizes={lots}
+        totalWeight={poidsTotal}
+        playLimit={playLimit}
+      />
     </div>
   );
 }

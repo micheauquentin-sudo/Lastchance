@@ -8,8 +8,10 @@ import { FieldError, Input, Label } from "@/components/ui/input";
 import { emojisPour, motPourEmoji } from "@/lib/emoji-lexique";
 import { InfoBulle } from "@/components/dashboard/info-bulle";
 import { partSur10 } from "@/components/dashboard/part-sur-10";
+import { AvertissementGardeLot } from "@/components/dashboard/avertissement-garde-lot";
+import { niveauGardeLot } from "@/lib/lot-forte-valeur";
 import { useActionForm } from "@/lib/use-action-form";
-import type { Prize } from "@/types/database";
+import type { PlayLimit, Prize } from "@/types/database";
 
 // useActionForm et non useActionState : l'état de chargement doit retomber même
 // quand le rendu ne rejoue pas la revalidation — docs/bugs.md.
@@ -142,14 +144,39 @@ function SuggestionsEmoji({
   );
 }
 
+/**
+ * « 12,50 » → 1250, comme `eurosToCents` de `src/lib/validations/prizes.ts`.
+ *
+ * MIROIR CLIENT, et pas une seconde règle : le serveur reste seul à écrire la
+ * colonne. Ce parseur ne sert qu'à savoir, PENDANT la frappe, si la valeur
+ * saisie franchit le seuil d'avertissement — sans lui, le commerçant ne verrait
+ * la remarque qu'après avoir enregistré, c'est-à-dire une fois la campagne
+ * déjà partie avec un lot cher mal gardé. Toute saisie qui ne fait pas un
+ * nombre rend `null` : on n'avertit jamais sur une valeur qu'on ne comprend pas.
+ */
+function centimesDepuisSaisie(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const valeur = Number(trimmed.replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(valeur) || valeur < 0) return null;
+  return Math.round(valeur * 100);
+}
+
 export function PrizeEditor({
   wheelId,
   prizes,
   totalWeight,
+  playLimit,
 }: {
   wheelId: string;
   prizes: Prize[];
   totalWeight: number;
+  /**
+   * La limite de participation de la roue, quand l'écran appelant la connaît.
+   * ABSENTE = pas d'avertissement de garde : mieux vaut se taire que juger la
+   * valeur d'un lot sur une limite supposée.
+   */
+  playLimit?: PlayLimit;
 }) {
   // Part GAGNANTE réelle : mêmes exclusions que le moteur de tirage
   // (`perform_atomic_spin`) — inactif, poids nul ou stock épuisé ne sortent pas.
@@ -213,7 +240,12 @@ export function PrizeEditor({
       </Card>
 
       {prizes.map((prize) => (
-        <PrizeRow key={prize.id} prize={prize} totalWeight={totalWeight} />
+        <PrizeRow
+          key={prize.id}
+          prize={prize}
+          totalWeight={totalWeight}
+          playLimit={playLimit}
+        />
       ))}
 
       <AddPrizeForm wheelId={wheelId} complet={complet} />
@@ -224,9 +256,11 @@ export function PrizeEditor({
 function PrizeRow({
   prize,
   totalWeight,
+  playLimit,
 }: {
   prize: Prize;
   totalWeight: number;
+  playLimit?: PlayLimit;
 }) {
   // PAS de `resetOnSuccess` ici : form.reset() rétablirait les `defaultValue`
   // du rendu COURANT — donc les valeurs d'AVANT l'édition — bien avant que
@@ -280,6 +314,24 @@ function PrizeRow({
   // doivent suivre la frappe.
   const [nom, setNom] = useState(prize.label);
   const [emoji, setEmoji] = useState<string | null>(prize.emoji);
+  // Miroirs de saisie, même parti pris que `nom` ci-dessus : les champs
+  // restent NON CONTRÔLÉS (`defaultValue`), on n'en reflète la valeur que pour
+  // décider si l'avertissement de garde s'affiche PENDANT la frappe. Un lot
+  // qu'on coche « perdant » ne fait plus rien gagner et l'avertissement doit
+  // tomber au clic, pas à l'enregistrement.
+  const [valeurSaisie, setValeurSaisie] = useState(
+    prize.value_cents !== null
+      ? (prize.value_cents / 100).toString().replace(".", ",")
+      : "",
+  );
+  const [perdant, setPerdant] = useState(prize.is_losing);
+  // `playLimit` inconnu = pas d'avertissement : voir la prop de `PrizeEditor`.
+  const niveauGarde = playLimit
+    ? niveauGardeLot(
+        { value_cents: centimesDepuisSaisie(valeurSaisie), is_losing: perdant },
+        playLimit,
+      )
+    : "aucun";
   const lowStock =
     prize.stock !== null &&
     prize.low_stock_threshold !== null &&
@@ -457,6 +509,10 @@ function PrizeRow({
               defaultValue={
                 prize.value_cents !== null ? (prize.value_cents / 100).toString().replace(".", ",") : ""
               }
+              onChange={(e) => setValeurSaisie(e.target.value)}
+              aria-describedby={
+                niveauGarde !== "aucun" ? `garde-lot-${prize.id}` : undefined
+              }
               className="w-28"
               title="Valeur commerciale du lot"
             />
@@ -479,6 +535,7 @@ function PrizeRow({
               type="checkbox"
               name="is_losing"
               defaultChecked={prize.is_losing}
+              onChange={(e) => setPerdant(e.target.checked)}
               className="h-4 w-4 rounded accent-orange-600"
             />
             Segment perdant
@@ -497,6 +554,13 @@ function PrizeRow({
             </Button>
           </div>
         </div>
+        {/* L'avertissement apparaît AU MOMENT où la valeur franchit le seuil,
+            pas à l'enregistrement, et il n'empêche rien : le bouton
+            « Enregistrer » ci-dessus reste actif. */}
+        <AvertissementGardeLot
+          id={`garde-lot-${prize.id}`}
+          niveau={niveauGarde}
+        />
         <FieldError
           message={updateState && !updateState.ok ? updateState.error : undefined}
         />
