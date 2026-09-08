@@ -1,0 +1,555 @@
+===============================================================================
+MISSION ANTIGRAVITY / GEMINI — REFONTE DU SITE MARKETING LASTCHANCE
+===============================================================================
+Date de rédaction : 2026-09-06
+Dépôt             : C:\Users\MISHOW\Documents\LastChance\Lastchance
+Clone de référence: ~/workspaces/lastchance  (WSL2 — c'est là que tourne l'app)
+Branche           : main @ ffc7cf2c
+Document long     : docs/brief-refonte-site.md  (ce .txt en est la version
+                    autonome ; le .md porte les mêmes faits avec les liens)
+
+Tous les faits de ce document ont été LUS dans le code, pas déduits. Les chemins
+sont exacts. Ce qui est marqué « établi » ne doit pas être rouvert.
+
+
+===============================================================================
+1. LE PROBLÈME EN UNE PAGE
+===============================================================================
+
+Il existe aujourd'hui DEUX surfaces marketing. Elles ne racontent pas le même
+produit, et aucune des deux ne vend ce qui est réellement livré.
+
+  SURFACE A — app.lastchance.app/
+    Code  : src/app/(public)/page.tsx     (1102 lignes, une seule page)
+    DA    : « La Kermesse » — crème/encre, Lilita One, bordures 3 px, ombres
+            dures, décor scrollytelling
+    Vend  : UNE offre (« Starter 29 € ») + une option Pronostics à 9 €
+    Montre: 2 modules sur 14
+
+  SURFACE B — www.lastchance.app
+    Code  : site/                         (projet Next SÉPARÉ, 4 pages)
+    DA    : violet/zinc, police Geist — un autre univers
+    Vend  : les 5 vraies offres (29 / 59 / 79 / 89 / 129 €) + 13 options
+    Montre: ~6 modules, sans hiérarchie
+
+Les deux metadata.description disent encore « Roue de la fortune par QR code »
+(src/app/layout.tsx et site/src/app/layout.tsx).
+
+CONSÉQUENCE COMMERCIALE : le prospect arrive sur une page qui annonce 29 € et
+une roue. Le produit facture jusqu'à 129 €/mois et contient quatorze modules.
+Le visiteur ne peut pas se dire « wouah, tout ça pour ce prix » : on ne lui
+montre pas le « tout ça ».
+
+
+===============================================================================
+2. DÉCISION DU PROPRIÉTAIRE (2026-09-06) — NE PAS LA ROUVRIR
+===============================================================================
+
+  >> UNE SEULE SURFACE MARKETING, EN DA « LA KERMESSE ». <<
+
+La cible est src/app/(public)/, étendue en plusieurs pages.
+site/ est la surface qui disparaît.
+
+ORDRE D'EXÉCUTION IMPOSÉ — site/ NE SE SUPPRIME QU'EN DERNIER
+-------------------------------------------------------------
+site/ sert aujourd'hui www.lastchance.app depuis un projet Vercel distinct.
+Le supprimer avant que le remplacement soit en ligne COUPE LE DOMAINE PUBLIC.
+
+  Étape 1 : construire les pages en DA Kermesse sous src/app/(public)/
+  Étape 2 : les vérifier en ligne (preview)
+  Étape 3 : faire pointer www vers l'application
+  Étape 4 : ALORS SEULEMENT retirer site/, e2e-site/,
+            playwright.site.config.ts et le projet Vercel
+
+L'étape 3 touche un domaine de production : elle exige une action explicite du
+propriétaire. Ce n'est PAS à la main d'un agent. Ne la fais pas, demande-la.
+
+
+===============================================================================
+3. CE QUE LE PRODUIT CONTIENT VRAIMENT
+===============================================================================
+
+3.1 QUATORZE MODULES VENDABLES — DÉJÀ CLASSÉS PAR OBJECTIF
+----------------------------------------------------------
+Source canonique : src/platform/experiences/catalog.ts
+Chaque entrée porte label, shortDescription et objective. CES TEXTES SONT DÉJÀ
+ÉCRITS ET VALIDÉS — réutilise-les tels quels, ne les réécris pas.
+
+C'EST L'ARCHITECTURE D'INFORMATION DE LA REFONTE. Elle existe déjà dans le code.
+
+  ACQUÉRIR
+    Jeux instantanés  — Roue, grattage et mini-jeux pour acquérir et convertir.
+    Parrainage        — Transformez vos clients en ambassadeurs avec des paliers.
+    Vitrine           — Publiez votre carte au QR code, en français et en anglais.
+
+  CRÉER DU TRAFIC
+    Chasse au QR      — Reliez plusieurs lieux et faites progresser le trafic
+                        physique.
+    Moments           — Ateliers, dégustations, files d'accueil : faites vivre
+                        un moment à vos clients.
+    Réservation       — Vos horaires une fois, les créneaux se génèrent : vos
+                        clients prennent rendez-vous depuis votre Vitrine.
+
+  FIDÉLISER
+    Passeport fidélité   — Récompensez les visites répétées et les habitudes
+                           durables.
+    Calendrier           — Créez un rendez-vous quotidien et une récompense
+                           d'assiduité.
+    Duo Miroir           — Deux joueurs, des choix scellés, une révélation
+                           commune.
+    Portrait de la Bande — Un vote secret par question, révélé quand la bande
+                           y est.
+
+  ANIMER EN DIRECT
+    Événements live   — Animez une salle en temps réel avec écran et téléphones.
+    Pronostics        — Faites vivre les matchs de la saison avant, pendant et
+                        après.
+    Jackpot collectif — Fédérez les participants autour d'une jauge et d'un
+                        tirage.
+    Quiz              — Composez un parcours de questions, autonome ou animé.
+
+  !! PIÈGE DE VOCABULAIRE !!
+  « Vitrine » est un MODULE PRODUIT (la carte publique du commerçant au QR
+  code). Ce n'est PAS le site marketing. Le dépôt appelle le site marketing
+  « site vitrine » et le module « Vitrine ». Ne jamais confondre les deux dans
+  les textes.
+
+
+3.2 QUINZE MÉCANIQUES DE JEU DANS LE SEUL MODULE « JEUX INSTANTANÉS »
+---------------------------------------------------------------------
+Source : src/components/dashboard/atelier-mecaniques.ts (constante MECANIQUES,
+dont l'en-tête dit « CATALOGUE DES QUINZE MÉCANIQUES »).
+
+  9 JEUX DE HASARD
+    Roue · Carte à gratter · Carte retournée · Bonneteau (3 gobelets) ·
+    Machine à sous · Memory · Coffre à choisir · Lancer de dé ·
+    Tirage d'une carte
+
+  6 JEUX D'ADRESSE (le joueur doit RÉUSSIR avant que le tirage s'ouvre)
+    Pierre-feuille-ciseaux · Jeu de réflexe · Jauge à arrêter ·
+    Puzzle simple · Mot mystère · Estimation d'un nombre
+
+Formule sûre pour le site : « 15 mécaniques de jeu, dont 6 jeux d'adresse. »
+
+ARGUMENT NON EXPLOITÉ : ces quinze jeux sont TOUS inclus dans l'offre d'entrée
+à 29 €. La landing actuelle n'en montre qu'un — la roue.
+
+(Note : la doc du dépôt disait « 13 » jusqu'au 2026-09-06. C'était un compte de
+FICHIERS, pas de jeux. Corrigé dans CLAUDE.md et docs/architecture.md.)
+
+
+3.3 VINGT-CINQ PARCOURS RÉELS EN PRODUCTION
+--------------------------------------------
+13 parcours joueur (src/app/(player)/) : play, quiz, hunt, calendar, event
+(+ screen de salle), jackpot, lobby, passeport, pronos (+ tv), reserver
+(4 variantes), portefeuille, ticket, v/[slug] (Vitrine bilingue), commande.
+
+12 studios de création (src/app/studio/) : roue, quiz, chasse, fidélité,
+calendrier, cagnotte, pronostics, réservation, salon, soirée, ticket-or,
+progression — plus vitrine-studio.
+
+
+3.4 CE QUI EST INCLUS PARTOUT ET N'EST JAMAIS VENDU À PART
+-----------------------------------------------------------
+Rien de tout ceci n'est sur les deux surfaces actuelles. Ce sont pourtant les
+meilleures réponses à « tout ça pour ce prix ».
+
+  · LA CAISSE UNIVERSELLE — un seul écran, un seul scanner, ONZE familles de
+    codes (roue/jeux, chasse, fidélité, jackpot, calendrier, live, parrainage,
+    quiz, pronostics, invendus, Ticket d'Or). Le personnel apprend UN SEUL
+    geste pour tout le catalogue. C'est l'argument le plus fort et il est muet.
+  · MISSIONS & COFFRES (méta-progression) — saisons, missions, clés, coffres,
+    badges. Aucune colonne addon_ en base : inclus partout.
+  · TICKET D'OR — émission manuelle d'un ticket gagnant, geste de service.
+  · DÉCOUVRIR — bibliothèque de 10 modèles de campagne prêts à appliquer
+    (visuel, jeu, textes, lots, e-mails, durée, règles), triée PAR LES MÊMES
+    QUATRE OBJECTIFS. Le commerçant peut enregistrer ses campagnes comme
+    modèles privés versionnés.
+  · LE RAPPORT DU LUNDI — bilan hebdomadaire par e-mail, semaine contre semaine.
+  · PORTEFEUILLE JOUEUR (« Mes récompenses ») — toutes les récompenses du
+    client, tous jeux confondus, sans compte et sans cookie.
+  · STUDIO CRÉATIF + AFFICHES A4 + HUB QR — QR stylés, feuilles de test.
+  · AUTOMATISATIONS — 4 scénarios d'e-mail (gain non retiré, clients inactifs,
+    après retrait, anniversaire) + notifications propriétaire + webhooks.
+  · NEWSLETTER, EXPORTS CSV, ÉQUIPE ET RÔLES (owner / editor / cashier).
+  · SMS — canal disponible, facturé en packs de crédits (100 / 500 / 2000).
+    ATTENTION : les montants ne sont PAS dans le code. Ne rien afficher sans
+    les demander au propriétaire.
+
+DEUX DÉTAILS PREMIUM À DIRE :
+  · Le Passeport de fidélité est INSTALLABLE SUR LE TÉLÉPHONE
+    (PWA + Apple Wallet / Google Wallet).
+  · Les Pronostics couvrent ONZE TYPES D'ÉVÉNEMENTS AU-DELÀ DU SPORT :
+    cérémonie, Eurovision, élection, remise de prix, concours culinaire, finale
+    d'émission, tournoi local, course, e-sport, compétition d'entreprise,
+    événement personnalisé.
+
+
+3.5 LE PACKAGING RÉEL — CINQ OFFRES
+------------------------------------
+Source : src/lib/plans.ts, projeté vers le site par `npm run site:pricing`
+vers site/src/content/pricing.generated.ts. PACKAGING_VERSION = "2026-09-a".
+Essai 7 jours partout.
+
+  Coup d'envoi   29 €/mois — « Lancer une animation : le jeu qui fait revenir
+                              vos clients, en libre-service. »
+  Le Club        59 €/mois — « Fidéliser : installer l'habitude — fidélité,
+                              rendez-vous, bouche-à-oreille. »
+  Sur Place      79 €/mois — « Se faire lire et réserver : votre carte au QR
+                              code et votre agenda, dans un seul abonnement. »
+  Le Grand Jeu   89 €/mois — « Animer régulièrement : soirées, compétitions,
+                              temps réel dans votre salle. »
+  La Totale     129 €/mois — « Réunir toutes les briques : toute la plateforme,
+                              sans arbitrage entre modules. »
+
+Le packaging est DÉJÀ bâti sur les mêmes quatre objectifs que le catalogue :
+Coup d'envoi = Acquérir · Le Club = Fidéliser · Sur Place = Créer du trafic ·
+Le Grand Jeu = Animer en direct · La Totale = tout.
+
+  !! CE N'EST PAS UNE ÉCHELLE LINÉAIRE !!
+  Le Club (59), Sur Place (79) et Le Grand Jeu (89) sont PARALLÈLES, pas des
+  paliers croissants. Un tableau comparatif « du moins cher au plus cher »
+  mentirait sur l'offre. Il faut une grille PAR OBJECTIF.
+
+Seule limite chiffrée du produit : participants par session live — 100 (core,
+engagement, place) / 250 (live, full). Aucune autre limite n'existe : pas de
+plafond de campagnes, de QR, d'e-mails ni de sièges. « Illimité » est tenu.
+
+
+3.6 TREIZE OPTIONS ACHETABLES
+------------------------------
+  RÉCURRENTES  Vitrine 20 €/mois · Moments 20 € · Réservation 20 € ·
+               Passeport des habitués 19 € · Parrainage 12 € ·
+               Duo Miroir 12 € · Portrait de la Bande 12 €
+               (Vitrine, Moments et Réservation NE SE VENDENT PAS SEULES :
+                ce sont des lignes d'un abonnement en cours.
+                ADDONS_PURCHASABLE_STANDALONE = false.)
+
+  ACHATS UNIQUES  Chasse au QR 29 € · Calendrier à surprises 29 € ·
+                  Quiz express 15 € · Cagnotte collective 29 € ·
+                  Saison de pronostics 39 €/compétition ·
+                  Soirée en jeu 9 € (10 joueurs) / 19 € (30) / 29 € (50)
+
+
+===============================================================================
+4. QUATRE CHOSES À NE JAMAIS ÉCRIRE SUR LE SITE
+===============================================================================
+
+Les deux premières sont des risques réels, pas des nuances de style.
+
+1. NE JAMAIS PROMETTRE QU'UN PASS EXPIRE.
+   Les activeDays, activationWindowDays et jauges des options sont DESCRIPTIFS
+   ET NON APPLIQUÉS. Le commentaire de src/lib/plans.ts est explicite :
+   « il n'expire pas, personne ne l'a encore écrit ». En base, les colonnes
+   organizations.addon_* sont des BOOLÉENS PERMANENTS.
+   La page actuelle site/src/app/tarifs/page.tsx affiche pourtant « 30 jours
+   d'usage. À activer dans les 90 jours suivant l'achat. » — elle vend une
+   mécanique de péremption que le produit n'applique pas.
+   >> Défaut tracé dans docs/bugs.md, entrée OUVERT du 2026-09-06.
+   >> LA NOUVELLE SURFACE NE DOIT PAS RECONDUIRE CETTE PROMESSE.
+
+2. priceMonthly EST UN PRIX DE VITRINE.
+   Le montant réellement facturé vient du `price` Stripe. Si les deux divergent,
+   c'est Stripe qui gagne. Vérifier avant de publier une grille.
+
+3. NE PAS DIRE QUE LES RÉCOMPENSES DE « MISSIONS & COFFRES » SE CUMULENT OU
+   S'ÉCHANGENT. Clés, badges, objets et coffres sont explicitement NON
+   MONÉTAIRES : aucun code de caisse, rien à encaisser.
+
+4. NE PAS PRÉSENTER LES 15 MÉCANIQUES COMME 15 « MODULES ».
+   C'est UN module (Jeux instantanés, socle core) qui en contient quinze.
+
+RÈGLE TRANSVERSE : ne JAMAIS retaper un prix à la main. Les tarifs sont générés.
+Si le packaging change : `npm run site:pricing`. Un test échoue si le fichier
+committé diverge (src/lib/site-pricing.test.ts).
+
+
+===============================================================================
+5. LA ROUE À SUPPRIMER
+===============================================================================
+
+COMPOSANT : src/components/marketing/hero-showcase.tsx
+            502 lignes, roue SVG 8 segments + écran de téléphone, 100 % front.
+
+CONSOMMÉ À UN SEUL ENDROIT : section WheelDemo,
+            src/app/(public)/page.tsx ligne ~415 (ancre #demo-roue).
+
+À RETIRER AVEC ELLE, SINON ÇA CASSE OU ÇA MENT :
+
+  a) Le CTA #demo-roue du hero — bouton « Essayer la roue » (~ligne 330).
+  b) src/components/marketing/scroll-arrow.tsx — se cale sur data-wheel-anchor,
+     porté par la roue. Sans elle, la flèche vise le vide.
+  c) src/components/marketing/pseudo-qr.tsx — consommé uniquement par
+     hero-showcase.
+  d) TOUS les textes qui promettent la roue :
+       · <h1> « La chance fait revenir vos clients »
+       · CTA « Créer ma roue → »  (hero ET CTA final)
+       · ruban défilant « ILS SCANNENT ★ ILS TOURNENT ★ … »
+       · FEATURES[02] « Roue 100 % personnalisable »
+       · PRICING_FEATURES « Campagnes et roues illimitées »
+       · <h2> final « Votre roue peut tourner dès ce soir. »
+  e) Les deux metadata.description (« Roue de la fortune par QR code ») dans
+     src/app/layout.tsx et site/src/app/layout.tsx.
+
+PAR QUOI LA REMPLACER : la roue occupait la place de la PREUVE JOUABLE. La
+remplacer par du vide serait une perte nette. Recommandation : un SÉLECTEUR
+D'EXPÉRIENCE — le visiteur choisit son objectif (Acquérir / Trafic / Fidéliser
+/ Animer) et voit l'aperçu correspondant. Le trou devient une démonstration de
+l'étendue, qui est exactement le message manquant.
+
+
+===============================================================================
+6. CE QU'IL FAUT GARDER — LA DA « LA KERMESSE »
+===============================================================================
+
+Définie dans src/app/globals.css, bloc @theme (lignes ~26-51).
+NE PAS TOUCHER AUX JETONS : ils sont calibrés en contraste, les mesures sont
+écrites dans les commentaires du fichier.
+
+  --color-k-ink          #211d16   encre
+  --color-k-bg           #fdf6e3   crème
+  --color-k-body         #3d382f   texte courant
+  --color-k-muted        #6b6459   atténué
+  --color-k-stripe       #f3ead3   rayure
+  --color-k-yellow       #fcca59
+  --color-k-pink         #f296bd
+  --color-k-blue         #99b7f5
+  --color-k-green        #267f53
+  --color-k-orange       #f5793b
+  --color-k-orange-text  #b45309   <-- petits libellés sur crème/blanc SEULEMENT
+
+POLICES : Lilita One (--font-display, titres)
+          Nunito 600-900 (--font-heading, corps)
+
+VOCABULAIRE DE FORMES — déjà écrit en classes utilitaires, à RÉUTILISER :
+  .k-border (3 px) · .k-border-thin (2,5 px) · .k-card (verre fin) ·
+  .k-card-hover (encre pleine au survol) · .k-card-deep (prune, seule surface
+  sombre) · .k-hard / .k-hard-sm (ombres VERTICALES) · .k-btn (socle qui
+  s'écrase) · .k-halo (halo crème sur le décor) · .k-glass · .k-stripes ·
+  .k-sticker · .k-float · .k-bob
+
+TROIS RÈGLES DE DA ÉTABLIES (écrites dans les commentaires du code) :
+  1. Les sections sont TRANSPARENTES ; le décor scrollytelling passe derrière.
+     Pas de séparateur pleine largeur, pas d'empilement de boîtes blanches.
+  2. Les ombres dures sont VERTICALES, jamais diagonales.
+  3. La couleur vit dans la PASTILLE, pas dans le texte des sur-titres.
+     Mesuré : l'orange en texte tombe à 1,67:1 sur le décor.
+
+DÉCOR VIVANT — NE PAS Y TOUCHER :
+  src/components/marketing/scroll-panorama-background.tsx
+  + public/panorama/ (p1080 / p1920 / p2560.webp, SUIVIS par git)
+  Il publie --backdrop-accent au fil du scroll : le ruban et les sur-titres
+  s'y accordent.
+
+RÉFÉRENCES DE DESIGN (hors dépôt, canvases Claude Design) :
+  Input/La Kermesse.dc.html
+  Input/Directions Artistiques.dc.html
+
+À GARDER TEL QUEL DANS LA PAGE ACTUELLE :
+  · DashboardMockup (aperçu du tableau de bord) — il fonctionne, il est bon.
+  · HonestGame (« Un jeu honnête, pas un piège à avis ») — seul argument
+    frontal contre la concurrence, et seule surface sombre de la page.
+    Ne pas le diluer.
+  · Les 4 pastilles de preuve du hero (HERO_CHIPS) : prêt en 10 min · sans
+    compte client · conforme RGPD · sans engagement.
+
+
+===============================================================================
+7. PLAN DE REFONTE RECOMMANDÉ
+===============================================================================
+
+PRINCIPE : NE PAS ALLONGER LA PAGE UNIQUE — LA FAIRE ÉCLATER PAR OBJECTIF.
+
+La page actuelle fait déjà 1102 lignes pour 2 modules. Y empiler 14 modules
+donnerait exactement le « brouillon » à éviter.
+
+TROIS PREUVES QUE L'AXE DES OBJECTIFS EST LE BON, ET PAS UNE INVENTION :
+  · le catalogue porte un champ `objective` sur chaque module ;
+  · les cinq offres sont bâties sur ces mêmes objectifs (leurs taglines
+    commencent par « Lancer / Fidéliser / Se faire lire / Animer ») ;
+  · la page « Découvrir » du dashboard trie déjà ses modèles de campagne par
+    Acquérir / Fidéliser / Animer en direct / Créer du trafic.
+Le produit se pense ainsi en interne. Le site est le seul endroit où ce tri
+n'apparaît pas.
+
+ARBORESCENCE PROPOSÉE
+---------------------
+  /               Accueil — promesse + les 4 objectifs + preuve + tarifs en
+                  aperçu
+  /attirer        Acquérir        -> Jeux instantanés, Parrainage, Vitrine
+  /faire-venir    Créer du trafic -> Chasse au QR, Moments, Réservation
+  /fideliser      Fidéliser       -> Passeport, Calendrier, Duo Miroir,
+                                     Portrait de la Bande
+  /animer         Animer en direct-> Événements live, Pronostics, Jackpot, Quiz
+  /tarifs         Les 5 offres par objectif + les 13 options
+  /faq            (existe côté site/, à porter en DA Kermesse)
+
+ACCUEIL — CE QUI DOIT CAPTER EN CINQ SECONDES
+----------------------------------------------
+  1. HERO : promesse qui ne parle plus de roue mais de la plateforme.
+     Garder les 4 pastilles de preuve.
+  2. LE COMPTEUR D'ÉTENDUE, TOUT DE SUITE — c'est le « wouah » qui manque.
+     Quatre nombres vérifiés : 14 modules · 15 jeux · 25 parcours ·
+     dès 29 €/mois.
+     Et la phrase qui les relie : « une seule caisse valide les gains des onze
+     familles. »
+  3. LES QUATRE OBJECTIFS EN QUATRE CARTES (.k-card, une couleur par objectif :
+     orange / jaune / rose / bleu). Chaque carte mène à sa page. C'est le tri
+     qui évite le brouillon.
+  4. LA PREUVE JOUABLE (remplace la roue) : sélecteur d'expérience par objectif.
+  5. ESPACE COMMERÇANT : garder DashboardMockup.
+  6. LE JEU HONNÊTE : garder HonestGame tel quel.
+  7. TARIFS EN APERÇU : les 5 offres, pas une seule. Lien vers /tarifs.
+  8. FAQ + CTA final.
+
+LA GRILLE TARIFAIRE — LA CONTRAINTE À NE PAS RATER
+---------------------------------------------------
+Les 5 offres ne sont pas des paliers. Rendu recommandé : UNE COLONNE PAR
+OBJECTIF, chaque colonne portant son offre et ses modules, « La Totale »
+présentée à part comme la réunion des trois.
+
+Le prix par module rapporté à l'offre est l'argument « tout ça pour ce prix » :
+  « Le Grand Jeu, 89 €/mois = 7 modules, soit environ 13 € le module. »
+
+ACTIF PRÊT À BRANCHER
+----------------------
+site/src/lib/roi.ts — simulateur de ROI complet, hypothèses centralisées et
+calibrées, consommé par AUCUN composant. Il importe déjà le prix d'entrée
+depuis le fichier généré (jamais en dur).
+Deux réserves avant de l'afficher :
+  · son champ currentVisitsPerMonth est déclaré mais JAMAIS UTILISÉ dans
+    computeRoi ;
+  · son roiMultiple est un rapport GAIN NET / DÉPENSE — « ×3,2 » ne veut PAS
+    dire ×3,2 de chiffre d'affaires.
+À porter sur la nouvelle surface : c'est un argument commercial fort.
+
+
+===============================================================================
+8. CONTRAINTES TECHNIQUES — CE QUI FERA ROUGIR LA CI
+===============================================================================
+
+  GARDE                        FICHIER                    CE QU'ELLE IMPOSE
+  ---------------------------  -------------------------  ------------------
+  axe serious/critical sur /   e2e/a11y.spec.ts:18        Zéro violation.
+                                                          Contraste, noms
+                                                          accessibles,
+                                                          hiérarchie de titres.
+  Smoke site/                  e2e-site/smoke.spec.ts:20  Attend un <h1>
+                                                          /roue de la fortune/i
+                                                          et les libellés
+                                                          « Essayer
+                                                          gratuitement » /
+                                                          « Voir les tarifs ».
+                                                          CES ASSERTIONS
+                                                          CASSERONT si on
+                                                          retire la roue côté
+                                                          site/ — les mettre à
+                                                          jour dans le même lot.
+  En-têtes sécurité + CSP      e2e-site/smoke.spec.ts     Aucune ressource
+                               lignes 146 et 183          externe non déclarée.
+                                                          Pas de CDN ajouté
+                                                          sans toucher la CSP.
+  Tarifs générés               src/lib/site-pricing.test  pricing.generated.ts
+                               .ts                        doit rester le reflet
+                                                          de src/lib/plans.ts.
+  Budget CLAUDE.md             src/lib/claude-md-budget    Ne rien empiler dans
+                               .test.ts                   CLAUDE.md.
+
+VÉRIFICATIONS À LANCER (depuis ~/workspaces/lastchance en WSL, avec bash -l) :
+
+    npm run typecheck && npm run lint
+    npx vitest run site-pricing
+    npx playwright test e2e/a11y.spec.ts
+    cd site && npm run typecheck && npm run build
+
+DEUX PROJETS NEXT DISTINCTS : site/ a son propre package.json, ses node_modules
+et son alias @/* -> site/src. NE JAMAIS importer l'app depuis site/.
+
+PIÈGES D'ENVIRONNEMENT (les plus coûteux, détail dans AGENTS.md) :
+  · `bash -l` obligatoire — Node vit dans ~/.local/bin ; sans shell de login,
+    npx retombe sur le npx.cmd Windows et échoue sur « chemins UNC ».
+  · « no tests » n'est PAS une suite vide : c'est le cache node_modules/.vite
+    corrompu. Purger et rejouer AVANT de conclure quoi que ce soit.
+  · Jamais deux runs de test concurrents sur le même arbre.
+
+
+===============================================================================
+9. CE QUI A DÉJÀ ÉTÉ FAIT (2026-09-06) — NE PAS REFAIRE
+===============================================================================
+
+  · CINQ FICHIERS SOURCE MORTS SUPPRIMÉS, et .gitignore nettoyé.
+    .gitignore ignorait du CODE SOURCE par son nom, ce qui ne le met pas de
+    côté mais le rend INVISIBLE. Les cinq n'étaient importés par personne :
+       site/src/components/sections/game-homepage.tsx   (283 lignes — une
+           TROISIÈME direction artistique complète, dont aucune des ~40 classes
+           game-* n'existait dans un CSS : elle se serait rendue SANS STYLE)
+       site/src/components/sections/scroll-backdrop.tsx
+       site/src/content/backdrop.ts
+       src/components/marketing/scroll-video-background.tsx  (23 Ko)
+       src/lib/backdrop-frames.ts
+    Typecheck vert sur les deux arbres après suppression.
+    >> NE PAS LES RESSUSCITER. Le décor vivant est
+       scroll-panorama-background.tsx + public/panorama/.
+
+  · COMPTE DES MÉCANIQUES CORRIGÉ (15, pas 13) dans CLAUDE.md et
+    docs/architecture.md.
+
+  · DÉFAUT TRACÉ dans docs/bugs.md : les durées d'add-on affichées au public ne
+    sont appliquées par rien (voir section 4, point 1).
+
+RESTE SUR LE DISQUE, NON SUPPRIMÉ :
+  80 Mo d'images orphelines, gitignorées donc jamais déployées —
+  public/backdrop/ (74 Mo) et site/public/backdrop/ (6,1 Mo). Elles ne sont PAS
+  régénérables (la vidéo source n'est plus dans Input/). Laissées en place ; à
+  supprimer sur ordre du propriétaire seulement.
+  Le générateur site/scripts/build-backdrop-frames.mjs est orphelin de même.
+
+
+===============================================================================
+10. RÈGLES DE TRAVAIL DU DÉPÔT
+===============================================================================
+
+  · Diff minimal, aucune refonte opportuniste.
+  · Traiter les fichiers non suivis et les modifications présentes comme
+    appartenant au propriétaire : ne pas les écraser, ne pas les inclure dans
+    un commit.
+  · NE JAMAIS lancer git checkout / restore / stash / reset sur des fichiers
+    non commités.
+  · Un déploiement de production, une promotion, un rollback ou une mutation
+    Stripe exige une DEMANDE EXPLICITE du propriétaire.
+  · Entrées externes validées, isolation multi-tenant préservée, aucun secret
+    ni renseignement personnel dans les logs et les réponses.
+  · Toute livraison significative se termine par les vérifications adaptées, un
+    résumé des fichiers touchés, des commandes exécutées et des risques
+    résiduels.
+  · Le socle opérationnel complet est dans AGENTS.md (à la racine), qu'Antigravity
+    charge comme règle toujours active.
+
+
+===============================================================================
+11. RÉSUMÉ EN DIX LIGNES
+===============================================================================
+
+GARDER    : la DA Kermesse (jetons k-*, Lilita One + Nunito, ombres verticales,
+            décor panorama), DashboardMockup, HonestGame, les 4 pastilles hero.
+
+SUPPRIMER : hero-showcase.tsx (la roue), scroll-arrow.tsx, pseudo-qr.tsx,
+            l'ancre #demo-roue, et TOUS les textes qui promettent une roue
+            (h1, 2 CTA, ruban, 2 features, h2 final, 2 metadata).
+
+AJOUTER   : l'axe des 4 objectifs (déjà dans catalog.ts), 4 pages produit, les
+            14 modules avec leurs shortDescription existantes, les 5 offres
+            réelles, le compteur d'étendue (14 modules · 15 jeux · 25 parcours ·
+            dès 29 €), la Caisse universelle et les briques incluses partout,
+            une preuve jouable en remplacement de la roue.
+
+NE PAS    : retaper un prix à la main · confondre le module « Vitrine » et le
+            site vitrine · présenter les 5 offres comme des paliers croissants ·
+            empiler les 14 modules sur l'accueil · toucher aux jetons de
+            contraste · promettre qu'un pass expire · dire « 13 jeux » ·
+            présenter les clés et coffres comme monnayables · supprimer site/
+            avant que le remplacement soit en ligne.
+
+===============================================================================
+FIN
+===============================================================================

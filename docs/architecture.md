@@ -245,7 +245,7 @@ players
 organizations
 ├── organization_members ── team_invitations
 ├── campaigns                # + auto_schedule, budget_cents, budget_spent_cents, paused_reason
-│   ├── wheels               # game_type = registre des mécaniques (roue/grattage + 13 jeux rapides) ; skill_config jsonb (défis skill-gated, secrets server-only)
+│   ├── wheels               # game_type = registre des mécaniques (roue/grattage + 15 mécaniques de jeux rapides) ; skill_config jsonb (défis skill-gated, secrets server-only)
 │   │   ├── prizes           # + cost/value_cents, low_stock_threshold
 │   │   └── spins
 │   ├── qr_codes
@@ -347,7 +347,7 @@ motivées et journalisées, plus rien après clôture (ADR-013).
 Une campagne peut avoir plusieurs roues. `selectActiveWheel()` choisit la roue
 applicable selon sa position et son planning (heures et jours). La mécanique de
 présentation d'une roue est portée par `wheels.game_type` — roue classique, carte
-à gratter et 13 jeux rapides (révélation ou défi *skill-gated*) partagent le même
+à gratter et 15 mécaniques de jeux rapides (9 de révélation + 6 défi *skill-gated*) partagent le même
 moteur de tirage et de gain (voir « Module Jeux rapides »).
 
 Le module Pronostics est un addon d'organisation. Les Server Actions publiques

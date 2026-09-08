@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: "%s · Lastchance",
   },
   description:
-    "Roue de la fortune par QR code pour restaurants, bars et boutiques. Fidélisez vos clients avec des jeux configurables.",
+    "Plateforme de gamification pour commerces : 14 modules, 15 mécaniques de jeu, animations et fidélité par QR code pour restaurants, bars et boutiques.",
 };
 
 export default function RootLayout({

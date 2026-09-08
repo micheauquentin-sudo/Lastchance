@@ -106,6 +106,26 @@ skills-lock.json
 #
 # On ignore aussi les SORTIES du generateur (74 Mo cote `public/`), jamais les
 # assets de site legitimes : `site/public/images/` reste suivi si on l'ajoute.
+#
+# ── CINQ FICHIERS SOURCE RETIRES DE CETTE LISTE LE 2026-09-06 ──
+#
+# Elle a longtemps porte, en plus de l'outillage et de ses sorties, cinq
+# fichiers de CODE nommes un par un :
+#   src/lib/backdrop-frames.ts
+#   src/components/marketing/scroll-video-background.tsx
+#   site/src/content/backdrop.ts
+#   site/src/components/sections/scroll-backdrop.tsx
+#   site/src/components/sections/game-homepage.tsx
+#
+# Ignorer du code source par son nom ne le met pas de cote : ca le rend
+# INVISIBLE. Les cinq etaient importes par personne, et `game-homepage.tsx`
+# portait une direction artistique complete (283 lignes) dont aucune des
+# quarante classes `game-*` n'existait dans un CSS — elle se serait rendue
+# sans style le jour ou on l'aurait branchee. Le decor vivant de `/` est
+# `scroll-panorama-background.tsx` + `public/panorama/`, tous deux SUIVIS.
+#
+# Les cinq fichiers ont ete supprimes. Ce qui reste ci-dessous ne vise que de
+# l'outillage et des SORTIES binaires — jamais du code source.
 tools/backdrop/
 public/backdrop/
 public/frames/
@@ -115,8 +135,3 @@ scripts/build-backdrop-frames.mjs
 scripts/gel-page-v2.mjs
 scripts/gel-temoin-v2.mjs
 scripts/scan-reseau.ps1
-src/lib/backdrop-frames.ts
-src/components/marketing/scroll-video-background.tsx
-site/src/content/backdrop.ts
-site/src/components/sections/scroll-backdrop.tsx
-site/src/components/sections/game-homepage.tsx
