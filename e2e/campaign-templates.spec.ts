@@ -7,8 +7,10 @@ import { ouvrirTuile } from "./helpers";
  * seedée, org « E2E Café »).
  *
  * Ce que ce spec atteste, et qui est la promesse centrale du chantier :
- * appliquer un modèle du catalogue Lastchance crée une campagne ENTIÈREMENT
- * CONFIGURÉE mais INERTE. La preuve est prise sur l'éditeur, pas sur un
+ * appliquer un modèle du catalogue Lastchance crée une campagne PRÉCONFIGURÉE
+ * mais INERTE. Le prix réel d'un lot générique n'est jamais inventé : tant que
+ * le commerçant ne l'a pas renseigné, la publication publique reste fermée.
+ * La preuve est prise sur l'éditeur, pas sur un
  * message de confirmation :
  *
  *   · le badge d'état de l'en-tête affiche « Brouillon » — jamais « Ouverte aux joueurs » ;
@@ -16,9 +18,8 @@ import { ouvrirTuile } from "./helpers";
  *     `run_campaign_schedule()` (pg_cron, toutes les 10 min) ferait passer le
  *     brouillon en `active` dès que `starts_at <= now()` — donc tout de suite,
  *     puisque le modèle pose `starts_at = now()` ;
- *   · le seul geste de publication offert est le bouton « Ouvrir aux joueurs »
- *     du commerçant (et « Mettre en pause », réservé aux campagnes ouvertes,
- *     est absent) ;
+ *   · le bouton « Ouvrir aux joueurs » reste explicite, mais refuse lisiblement
+ *     le lot gagnant dont la valeur n'est pas encore renseignée ;
  *   · le jeu du modèle est bien là (la machine à sous de l'happy hour) : le
  *     brouillon est configuré, pas vide.
  *
@@ -107,10 +108,9 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
       page.getByRole("button", { name: "Mettre en pause", exact: true }),
     ).toHaveCount(0);
 
-    // La publication est une mutation locale : le statut canonique renvoyé par
-    // l'action remplace les commandes et la pastille sans recharger la page.
-    // Une erreur de lecture transitoire ne doit donc plus détourner le
-    // commerçant vers la fausse page « introuvable ».
+    // Le catalogue ne peut pas inventer la valeur marchande d'un lot générique.
+    // La tentative d'ouverture doit donc échouer fermée et expliquer le geste
+    // attendu, sans navigation ni changement optimiste du statut.
     let navigations = 0;
     const compterNavigation = (frame: ReturnType<typeof page.mainFrame>) => {
       if (frame === page.mainFrame()) navigations++;
@@ -119,10 +119,18 @@ test.describe("place de marché — appliquer un modèle crée un BROUILLON", ()
     await page
       .getByRole("button", { name: "Ouvrir aux joueurs", exact: true })
       .click();
-    await expect(statusBadge).toHaveText("Ouverte aux joueurs");
+    await expect(
+      page.getByText(
+        /Cette roue contient un lot gagnant de 20 € ou plus, ou dont la valeur n'est pas renseignée/,
+      ),
+    ).toBeVisible();
+    await expect(statusBadge).toHaveText("Brouillon");
+    await expect(
+      page.getByRole("button", { name: "Ouvrir aux joueurs", exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Mettre en pause", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Page introuvable" }),
     ).toHaveCount(0);

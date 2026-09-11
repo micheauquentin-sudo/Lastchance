@@ -7714,13 +7714,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "spins_display_prize_wheel_org_fk"
-            columns: ["display_prize_id", "wheel_id", "organization_id"]
-            isOneToOne: false
-            referencedRelation: "prizes"
-            referencedColumns: ["id", "wheel_id", "organization_id"]
-          },
-          {
             foreignKeyName: "spins_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
@@ -7733,6 +7726,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campaigns"
             referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "spins_display_prize_wheel_org_fk"
+            columns: ["display_prize_id", "wheel_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "prizes"
+            referencedColumns: ["id", "wheel_id", "organization_id"]
           },
           {
             foreignKeyName: "spins_organization_id_fkey"
@@ -7901,8 +7901,8 @@ export type Database = {
           lot_id: string | null
           organization_id: string
           reward_issuance_id: string | null
-          tire_le: string | null
           tirage_nonce_hash: string | null
+          tire_le: string | null
         }
         Insert: {
           code: string
@@ -7913,8 +7913,8 @@ export type Database = {
           lot_id?: string | null
           organization_id: string
           reward_issuance_id?: string | null
-          tire_le?: string | null
           tirage_nonce_hash?: string | null
+          tire_le?: string | null
         }
         Update: {
           code?: string
@@ -7925,8 +7925,8 @@ export type Database = {
           lot_id?: string | null
           organization_id?: string
           reward_issuance_id?: string | null
-          tire_le?: string | null
           tirage_nonce_hash?: string | null
+          tire_le?: string | null
         }
         Relationships: [
           {

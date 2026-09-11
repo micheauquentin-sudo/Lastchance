@@ -250,11 +250,13 @@ describe("submitSkillChallenge — réflexe non autoritaire", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
       vi.mocked(loadPlayContext).mockResolvedValue(
+        // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
         reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
       );
       const token = await issueToken();
       state.reset();
       vi.mocked(loadPlayContext).mockResolvedValue(
+        // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
         reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
       );
       vi.advanceTimersByTime(1_400);
@@ -273,6 +275,7 @@ describe("submitSkillChallenge — réflexe non autoritaire", () => {
 
   it("refuse au démarrage une ancienne configuration Réflexe illimitée", async () => {
     vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
       reflexCtx("unlimited") as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
     );
 
@@ -290,11 +293,13 @@ describe("submitSkillChallenge — réflexe non autoritaire", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
     vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
       reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
     );
     const token = await issueToken();
     state.reset();
     vi.mocked(loadPlayContext).mockResolvedValue(
+      // unsafe-cast-justification: contexte de jeu réduit aux seuls champs lus par l'action testée
       reflexCtx("unlimited") as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
     );
     vi.advanceTimersByTime(1_400);

@@ -1500,6 +1500,7 @@ describe("spinWheel — le rejeu d'une même partie ne tire qu'une fois", () => 
   });
 
   it("nonce ABSENT : refus avant toute lecture ou tout tirage", async () => {
+    // unsafe-cast-justification: appel volontaire hors contrat TypeScript pour vérifier la fermeture de la frontière serveur
     const appelerSansNonce = spinWheel as unknown as (slug: string) => Promise<
       Awaited<ReturnType<typeof spinWheel>>
     >;
