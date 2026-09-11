@@ -18,12 +18,12 @@
  * portée de « la même tentative ». La clé porte le slug : deux jeux ouverts
  * dans deux onglets ne partagent pas leur tentative.
  *
- * ── Jamais bloquant ──
- * `sessionStorage` lève dans plusieurs contextes ordinaires (navigation privée
- * verrouillée, cookies tiers bloqués, rendu hors navigateur). Chaque accès est
- * enveloppé et retombe en silence sur « pas de nonce » : le tirage part alors
- * sans clé et se comporte exactement comme avant ce correctif. Un joueur ne
- * perd jamais sa partie parce que son navigateur refuse le stockage.
+ * ── Défaut fermé ──
+ * `sessionStorage` peut lever (navigation privée verrouillée, politique du
+ * navigateur). Sans persistance, un rechargement après un commit dont la
+ * réponse s'est perdue créerait une nouvelle tentative. L'appelant doit donc
+ * refuser de lancer le tirage et expliquer au joueur que ce navigateur ne peut
+ * pas sécuriser sa tentative.
  */
 
 function cle(slug: string): string {
@@ -37,29 +37,29 @@ const FORME = /^[A-Za-z0-9_-]{16,64}$/;
  * Le nonce de la tentative en cours pour ce jeu : celui déjà mémorisé s'il
  * existe, sinon un nouveau, mémorisé au passage.
  *
- * `undefined` quand ni la mémoire de session ni le générateur ne sont
- * disponibles — l'appelant transmet alors `undefined` à `spinWheel`, qui
- * retombe sur son comportement d'origine.
+ * Lève si la valeur ne peut pas être générée ET relue depuis `sessionStorage`.
+ * Aucun appel serveur ne doit partir dans ce cas.
  */
-export function lireOuCreerNonceTirage(slug: string): string | undefined {
+export function lireOuCreerNonceTirage(slug: string): string {
   try {
     const memorise = sessionStorage.getItem(cle(slug));
     if (memorise && FORME.test(memorise)) return memorise;
   } catch {
-    // Mémoire de session indisponible : on tente quand même d'émettre un
-    // nonce. Il ne survivra pas au rechargement, mais il ne coûte rien.
+    throw new Error("stockage_nonce_indisponible");
   }
 
   if (typeof crypto === "undefined" || typeof crypto.randomUUID !== "function") {
-    return undefined;
+    throw new Error("generation_nonce_indisponible");
   }
   const nonce = crypto.randomUUID();
 
   try {
     sessionStorage.setItem(cle(slug), nonce);
+    if (sessionStorage.getItem(cle(slug)) !== nonce) {
+      throw new Error("nonce_non_persiste");
+    }
   } catch {
-    // Sans mémoire, la tentative suivante émettra un autre nonce : c'est le
-    // régime d'avant ce correctif, pas une régression.
+    throw new Error("stockage_nonce_indisponible");
   }
   return nonce;
 }

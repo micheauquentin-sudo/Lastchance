@@ -71,6 +71,26 @@ export interface LotValeurUnitaire {
   is_losing: boolean;
 }
 
+/**
+ * Un lot que l'identité publique par cookie n'est pas autorisée à distribuer.
+ *
+ * Une valeur absente ou non finie est traitée en défaut fermé : elle ne prouve
+ * jamais que le lot est sous le seuil. Les lots perdants restent hors champ,
+ * puisqu'ils ne créent aucune valeur à retirer.
+ */
+export function lotInterditAvecIdentiteFaible(lot: LotValeurUnitaire): boolean {
+  if (lot.is_losing) return false;
+  if (typeof lot.value_cents !== "number" || !Number.isFinite(lot.value_cents)) {
+    return true;
+  }
+  return lot.value_cents >= SEUIL_LOT_FORTE_VALEUR_CENTS;
+}
+
+/** Message commerçant commun aux gardes de publication applicatives. */
+export const LOT_IDENTITE_FAIBLE_INTERDIT =
+  "Cette roue contient un lot gagnant de 20 € ou plus, ou dont la valeur n'est pas renseignée. " +
+  "La participation publique repose sur une identité navigateur contournable : renseignez une valeur sous 20 € ou utilisez un parcours à identité vérifiée.";
+
 /** Ce lot vaut-il assez cher pour que la question de sa garde se pose ? */
 export function estLotForteValeur(lot: LotValeurUnitaire): boolean {
   // Un lot PERDANT ne fait rien gagner : sa valeur, si elle est renseignée, ne
@@ -100,12 +120,22 @@ export function estLotForteValeur(lot: LotValeurUnitaire): boolean {
  * limite est contournable » alors qu'il n'en a posé AUCUNE cherchera longtemps
  * la limite en question.
  */
-export type NiveauGardeLot = "aucun" | "limite_contournable" | "sans_limite";
+export type NiveauGardeLot =
+  | "aucun"
+  | "valeur_inconnue"
+  | "limite_contournable"
+  | "sans_limite";
 
 export function niveauGardeLot(
   lot: LotValeurUnitaire,
   playLimit: PlayLimit,
 ): NiveauGardeLot {
+  if (
+    !lot.is_losing &&
+    (typeof lot.value_cents !== "number" || !Number.isFinite(lot.value_cents))
+  ) {
+    return "valeur_inconnue";
+  }
   if (!estLotForteValeur(lot)) return "aucun";
   return playLimit === "unlimited" ? "sans_limite" : "limite_contournable";
 }
@@ -133,6 +163,8 @@ export function lotMalGarde(lot: LotValeurUnitaire, playLimit: PlayLimit): boole
  */
 export const PHRASES_GARDE_LOT: Record<NiveauGardeLot, string> = {
   aucun: "",
+  valeur_inconnue:
+    "La valeur de ce lot gagnant n'est pas renseignée. Sans valeur connue, le serveur refuse de l'adosser à une participation publique fondée sur le navigateur. Renseignez une valeur sous 20 € ou utilisez un parcours à identité vérifiée.",
   limite_contournable:
     "Ce lot dépasse 20 € et n'est protégé que par la limite de participation. Cette limite repose sur le navigateur du joueur : en effaçant ses données, il peut rejouer. Pour un lot de cette valeur, préférez un Ticket d'Or remis au comptoir — il ne se joue qu'une fois, quoi que fasse le joueur.",
   sans_limite:

@@ -43,11 +43,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
     prize_id: string | null;
     is_losing: boolean;
     claimed: boolean;
-    /**
-     * Empreinte de l'appareil qui a TIRÉ ce spin. Optionnelle ici comme elle
-     * peut l'être en base sur les lignes anciennes : la liaison ne doit
-     * refuser un gain que sur une CONTRADICTION, jamais sur une absence.
-     */
+    /** Empreinte de l'appareil qui a TIRÉ ce spin. */
     player_key?: string | null;
     /**
      * Origine du spin. `direct`/`share` : parcours public, où `player_key` EST
@@ -66,6 +62,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
     prize_id: PRIZE_ID,
     is_losing: false,
     claimed: false,
+    player_key: "anonymous-player-key",
     // `source` n'est PAS décoratif ici : la liaison gain/appareil ne s'applique
     // qu'aux spins du parcours public (`direct`/`share`), parce que les tours
     // OFFERTS des autres modules écrivent une tout autre identité dans
@@ -164,6 +161,15 @@ const { state, makeAdmin } = vi.hoisted(() => {
       prize_id: string | null;
       created_at: string;
     }> | null,
+    recoveryPrize: null as {
+      id: string;
+      organization_id: string;
+      wheel_id: string;
+      label: string;
+      description: string;
+      emoji: string | null;
+      is_losing: boolean;
+    } | null,
     reset() {
       state.spins = new Map([
         [SPIN_ID, makeSpin(SPIN_ID)],
@@ -186,6 +192,7 @@ const { state, makeAdmin } = vi.hoisted(() => {
       state.rpcEnPanne = false;
       state.tirageEnPanne = false;
       state.recovery = null;
+      state.recoveryPrize = null;
       state.tiragesEmis = [];
       state.tiragesParCle = new Map();
     },
@@ -369,13 +376,24 @@ const { state, makeAdmin } = vi.hoisted(() => {
                     campaign_id: CAMPAIGN_ID,
                   };
                 case "prizes":
-                  return {
-                    id: PRIZE_ID,
-                    organization_id: ORG_ID,
-                    wheel_id: WHEEL_ID,
-                    label: "Un café offert",
-                    description: "",
-                  };
+                  if (filters.id === PRIZE_ID) {
+                    return {
+                      id: PRIZE_ID,
+                      organization_id: ORG_ID,
+                      wheel_id: WHEEL_ID,
+                      label: "Un café offert",
+                      description: "",
+                      emoji: null,
+                      is_losing: false,
+                    };
+                  }
+                  const recoveryPrize = state.recoveryPrize;
+                  if (!recoveryPrize) return null;
+                  return recoveryPrize.id === filters.id &&
+                    recoveryPrize.organization_id === filters.organization_id &&
+                    recoveryPrize.wheel_id === filters.wheel_id
+                    ? recoveryPrize
+                    : null;
                 case "organizations":
                   return { id: ORG_ID, name: "Ma boutique", notify_on_win: false };
                 case "participations": {
@@ -642,16 +660,19 @@ describe("claimPrize — le gain appartient à l'appareil qui l'a tiré", () => 
     expect(state.participations.size).toBe(0);
   });
 
-  it("cookie ABSENT : le gain n'est pas confisqué (repli délibéré)", async () => {
-    // Refuser ici coûterait son lot à un gagnant qui a nettoyé son navigateur
-    // entre le tirage et la réclamation. On refuse la CONTRADICTION, jamais
-    // l'absence — voir le pavé de `claimPrizeInner`.
+  it("cookie ABSENT : le bearer seul ne suffit pas à encaisser", async () => {
     lierSpinA("empreinte-du-vrai-gagnant");
     cookieJoueur.cle = null;
 
     const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
 
-    expect(res.ok).toBe(true);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe("Gain introuvable.");
+    expect(state.rpcCalls.some((c) => c.name === "claim_winning_spin")).toBe(false);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "claim_player_key_missing",
+      { spin_id: SPIN_ID },
+    );
   });
 
   it("TOUR OFFERT : une autre identité n'est pas une contradiction", async () => {
@@ -679,15 +700,16 @@ describe("claimPrize — le gain appartient à l'appareil qui l'a tiré", () => 
     expect(res.ok).toBe(true);
   });
 
-  it("spin SANS empreinte : rien à contredire, donc rien à refuser", async () => {
-    // Contre-épreuve indispensable : les lignes anciennes peuvent ne porter
-    // aucune empreinte, et une garde écrite avec `!== null` les aurait toutes
-    // refusées (`undefined !== null` est vrai). Ce test épingle ce cas précis.
+  it("spin public SANS empreinte : défaut fermé", async () => {
+    const spin = state.spins.get(SPIN_ID);
+    if (!spin) throw new Error("fixture absente : state.reset() non appelé");
+    spin.player_key = null;
     cookieJoueur.cle = "une-empreinte-quelconque";
 
     const res = await claimPrize({ claimToken: signClaimToken(SPIN_ID) });
 
-    expect(res.ok).toBe(true);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe("Gain introuvable.");
   });
 });
 
@@ -1119,6 +1141,7 @@ describe("claimPrize — non-régression des parcours consommateurs", () => {
 // ────────────────────────────────────────────────────────────
 
 const SLUG = "boutique";
+const DIRECT_NONCE = "b7f4c2a1-9d3e-4f58-8a6c-0e2b1d4c7f93";
 const SPIN_IP = (ip: string) => `spin:ip:${WHEEL_ID}:${ip}`;
 /** Seau par IP BLOQUANT (1500/min par roue) — le coût de la rotation. */
 const SPIN_IP_PLAFOND = (ip: string) => `spin:ip:plafond:${WHEEL_ID}:${ip}`;
@@ -1138,8 +1161,20 @@ function spinCtx() {
     campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
     wheel: { id: WHEEL_ID, play_limit: "unlimited" },
     prizes: [
-      { id: PRIZE_ID, label: "Un café offert", description: "" },
-      { id: "prize-2", label: "Perdu", description: "" },
+      {
+        id: PRIZE_ID,
+        label: "Un café offert",
+        description: "",
+        is_losing: false,
+        value_cents: 500,
+      },
+      {
+        id: "prize-2",
+        label: "Perdu",
+        description: "",
+        is_losing: true,
+        value_cents: null,
+      },
     ],
   };
 }
@@ -1152,7 +1187,7 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
   });
 
   it("(d) parcours nominal : la roue tourne et délivre un jeton de claim", async () => {
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     expect(res.ok).toBe(true);
     if (res.ok) {
@@ -1175,7 +1210,7 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
     // Voisin de CGNAT / Wi-Fi de commerce : même IP, budget épuisé.
     saturate(SPIN_IP("203.0.113.7"));
 
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     // La roue tourne : la clé partagée alerte, elle ne refuse pas.
     expect(res.ok).toBe(true);
@@ -1191,7 +1226,7 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
     // seuil et n'intervient pas dans le verdict.
     saturate(SPIN_SUSTAINED);
 
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain("Trop de tentatives");
@@ -1213,7 +1248,7 @@ describe("spinWheel — la clé IP partagée ne refuse jamais", () => {
     state.pressionRetardMs = 5;
     saturate(SPIN_BURST);
 
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     expect(res.ok).toBe(false);
     expect(state.pressionTerminee).toBe(true);
@@ -1243,7 +1278,7 @@ describe("spinWheel — le plafond par IP borne la rotation de cookie", () => {
   it("plafond atteint : la roue refuse, et le signal DIT que c'est l'IP", async () => {
     saturate(SPIN_IP_PLAFOND("203.0.113.7"));
 
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     expect(res.ok).toBe(false);
     // Message IDENTIQUE à un refus d'identité : un refus ne dit jamais QUELLE
@@ -1268,7 +1303,7 @@ describe("spinWheel — le plafond par IP borne la rotation de cookie", () => {
     // global qu'ADR-032 proscrit. On ne compte alors rien.
     state.ip = "unknown";
 
-    const res = await spinWheel(SLUG);
+    const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
     expect(res.ok).toBe(true);
     expect(state.rateLimitCalls.some((b) => b.startsWith("spin:ip:plafond"))).toBe(
@@ -1298,7 +1333,7 @@ describe("spinWheel — le plafond par IP borne la rotation de cookie", () => {
     for (let joueur = 0; joueur < 250; joueur += 1) {
       state.playerKey = `joueur-${joueur}`;
       for (let essai = 0; essai < 3; essai += 1) {
-        await spinWheel(SLUG);
+        await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
       }
     }
 
@@ -1319,12 +1354,12 @@ describe("spinWheel — le rejeu d'une même empreinte reste borné", () => {
   });
 
   it("(b) deux tours consécutifs : le second est refusé par le seau d'empreinte", async () => {
-    const first = await spinWheel(SLUG);
+    const first = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
     expect(first.ok).toBe(true);
 
     // Anti double-clic (burst 1/4 s) : le tour immédiat suivant, même empreinte,
     // est refusé — la borne de rejeu tient sur l'IDENTITÉ.
-    const second = await spinWheel(SLUG);
+    const second = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.error).toContain("Trop de tentatives");
     expect(state.rateLimitDenied).toContain(SPIN_BURST);
@@ -1464,16 +1499,16 @@ describe("spinWheel — le rejeu d'une même partie ne tire qu'une fois", () => 
     }
   });
 
-  it("nonce ABSENT : clé nulle, et deux appels tirent deux fois (comportement d'aujourd'hui)", async () => {
-    await spinWheel(SLUG);
-    rechargementDePage();
-    await spinWheel(SLUG);
+  it("nonce ABSENT : refus avant toute lecture ou tout tirage", async () => {
+    // unsafe-cast-justification: appel volontaire hors contrat TypeScript pour vérifier la fermeture de la frontière serveur
+    const appelerSansNonce = spinWheel as unknown as (slug: string) => Promise<
+      Awaited<ReturnType<typeof spinWheel>>
+    >;
+    const res = await appelerSansNonce(SLUG);
 
-    // `null` et non l'absence du champ : la RPC le lit et saute sa recherche de
-    // rejeu, la colonne reste nulle, donc hors de l'index partiel d'unicité.
-    expect(cleDuTirage(0)).toBeNull();
-    expect(cleDuTirage(1)).toBeNull();
-    expect(state.tiragesEmis).toHaveLength(2);
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+    expect(loadPlayContext).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1482,16 +1517,14 @@ describe("spinWheel — le rejeu d'une même partie ne tire qu'une fois", () => 
     ["hors alphabet", "nonce avec espaces et accents é"],
     ["porteur du séparateur", "play:autre-joueur:0123456789abcdef"],
     ["vide", ""],
-  ])("nonce MALFORMÉ (%s) : on retombe sur le comportement d'aujourd'hui", async (
+  ])("nonce MALFORMÉ (%s) : refus fermé avant tout tirage", async (
     _cas,
     nonce,
   ) => {
-    // On n'oppose PAS de refus au joueur pour un nonce bancal : il perdrait sa
-    // partie pour une valeur dont il n'a, la plupart du temps, pas la main.
     const res = await spinWheel(SLUG, undefined, undefined, nonce);
 
-    expect(res.ok).toBe(true);
-    expect(cleDuTirage(0)).toBeNull();
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
   });
 
   it("la clé transmise est DÉRIVÉE et porte l'identité joueur, jamais le nonce brut", async () => {
@@ -1570,8 +1603,20 @@ function gameTypeCtx(gameType: string) {
     campaign: { id: CAMPAIGN_ID, organization_id: ORG_ID },
     wheel: { id: WHEEL_ID, play_limit: "unlimited", game_type: gameType },
     prizes: [
-      { id: PRIZE_ID, label: "Un café offert", description: "" },
-      { id: "prize-2", label: "Perdu", description: "" },
+      {
+        id: PRIZE_ID,
+        label: "Un café offert",
+        description: "",
+        is_losing: false,
+        value_cents: 500,
+      },
+      {
+        id: "prize-2",
+        label: "Perdu",
+        description: "",
+        is_losing: true,
+        value_cents: null,
+      },
     ],
   };
 }
@@ -1584,7 +1629,7 @@ describe("spinWheel — porte skill-gated", () => {
         gameTypeCtx(gameType) as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
       );
 
-      const res = await spinWheel(SLUG);
+      const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
       expect(res.ok).toBe(false);
       // Réponse neutre : ne révèle pas qu'il s'agit d'un jeu de défi (pas d'oracle).
@@ -1601,7 +1646,7 @@ describe("spinWheel — porte skill-gated", () => {
         gameTypeCtx(gameType) as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
       );
 
-      const res = await spinWheel(SLUG);
+      const res = await spinWheel(SLUG, undefined, undefined, DIRECT_NONCE);
 
       expect(res.ok).toBe(true);
       expect(state.rpcCalls.some((c) => c.name === "perform_atomic_spin")).toBe(true);
@@ -1676,14 +1721,23 @@ describe("recoverPendingWin — la reprise passe par la RPC de fenêtre", () => 
     expect(await recoverPendingWin(SLUG)).toBeNull();
   });
 
-  it("lot retiré ou désactivé depuis le tirage : rien n'est rendu", async () => {
-    // Le shell public ne saurait pas animer un segment absent de sa liste : la
-    // garde `findIndex < 0` est conservée telle quelle.
+  it("lot désactivé depuis le tirage : le gain déjà attribué reste restitué", async () => {
     state.recovery = [
-      { spin_id: SPIN_ID, prize_id: "prize-disparu", created_at: REPRISE_ANCIENNE },
+      { spin_id: SPIN_ID, prize_id: "prize-inactif", created_at: REPRISE_ANCIENNE },
     ];
+    state.recoveryPrize = {
+      id: "prize-inactif",
+      organization_id: ORG_ID,
+      wheel_id: WHEEL_ID,
+      label: "Lot gagné puis désactivé",
+      description: "À remettre au gagnant",
+      emoji: null,
+      is_losing: false,
+    };
 
-    expect(await recoverPendingWin(SLUG)).toBeNull();
+    const res = await recoverPendingWin(SLUG);
+    expect(res?.label).toBe("Lot gagné puis désactivé");
+    expect(res?.claimToken).toBeTruthy();
   });
 
   it("GARDE MÉCANIQUE : plus aucun cutoff de 30 minutes dans la reprise", () => {

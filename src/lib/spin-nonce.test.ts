@@ -1,102 +1,108 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { lireOuCreerNonceTirage, oublierNonceTirage } from "./spin-nonce";
 
-/**
- * Le nonce du tirage — ce qui doit rester vrai.
- *
- * Il n'existe aucun bouton « Réessayer » sur le tirage : le rejeu réel est un
- * RECHARGEMENT DE PAGE. C'est pourquoi le nonce vit dans la mémoire d'onglet et
- * non dans un `useRef`, et c'est ce que ces trois épreuves vérifient — la même
- * tentative garde sa clé, la tentative suivante en prend une autre, et
- * l'absence de mémoire ne coûte jamais sa partie au joueur.
- */
-
-/** Mémoire d'onglet simulée ; `lever` reproduit une navigation privée verrouillée. */
-function poserMemoire({ lever = false }: { lever?: boolean } = {}) {
-  const contenu = new Map<string, string>();
-  const refus = () => {
-    throw new Error("SecurityError: sessionStorage indisponible");
+/** Mémoire d'onglet simulée, avec ses principaux modes d'échec. */
+function stockageSession(
+  options: {
+    refuseLecture?: boolean;
+    refuseEcriture?: boolean;
+    oublieEcriture?: boolean;
+  } = {},
+) {
+  const valeurs = new Map<string, string>();
+  return {
+    getItem(cle: string) {
+      if (options.refuseLecture) throw new Error("lecture refusée");
+      return valeurs.get(cle) ?? null;
+    },
+    setItem(cle: string, valeur: string) {
+      if (options.refuseEcriture) throw new Error("écriture refusée");
+      if (!options.oublieEcriture) valeurs.set(cle, valeur);
+    },
+    removeItem(cle: string) {
+      valeurs.delete(cle);
+    },
   };
-  Object.defineProperty(globalThis, "sessionStorage", {
-    configurable: true,
-    writable: true,
-    value: lever
-      ? { getItem: refus, setItem: refus, removeItem: refus }
-      : {
-          getItem: (k: string) => contenu.get(k) ?? null,
-          setItem: (k: string, v: string) => void contenu.set(k, v),
-          removeItem: (k: string) => void contenu.delete(k),
-        },
-  });
-  return contenu;
 }
 
-afterEach(() => {
-  Reflect.deleteProperty(globalThis, "sessionStorage");
-});
+describe("nonce de tirage persistant", () => {
+  afterEach(() => vi.unstubAllGlobals());
 
-describe("nonce de tirage", () => {
-  it("rend LE MÊME nonce tant qu'aucune réponse n'est parvenue", () => {
-    poserMemoire();
-    // Deux lectures séparées par un rechargement de page : le module est sans
-    // état, tout ce qui relie les deux appels est la mémoire d'onglet.
-    const premier = lireOuCreerNonceTirage("chez-marcel");
-    const second = lireOuCreerNonceTirage("chez-marcel");
+  it("réutilise la tentative déjà mémorisée", () => {
+    const stockage = stockageSession();
+    stockage.setItem("lastchance:spin-nonce:jeu", "1234567890abcdef");
+    vi.stubGlobal("sessionStorage", stockage);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn() });
 
-    expect(premier).toBeTruthy();
-    expect(second).toBe(premier);
+    expect(lireOuCreerNonceTirage("jeu")).toBe("1234567890abcdef");
+    expect(crypto.randomUUID).not.toHaveBeenCalled();
   });
 
-  it("rend un nonce DIFFÉRENT une fois la tentative close", () => {
-    poserMemoire();
-    const premier = lireOuCreerNonceTirage("chez-marcel");
-    oublierNonceTirage("chez-marcel");
-    const suivant = lireOuCreerNonceTirage("chez-marcel");
+  it("ne rend un nouveau nonce qu'après l'avoir écrit et relu", () => {
+    const stockage = stockageSession();
+    vi.stubGlobal("sessionStorage", stockage);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "11111111-2222-4333-8444-555555555555",
+    });
 
-    // Contre-épreuve indispensable : un nonce figé passerait la première
-    // épreuve tout en interdisant au joueur de rejouer pour toujours, chaque
-    // partie suivante étant servie comme le rejeu de la précédente.
-    expect(suivant).toBeTruthy();
-    expect(suivant).not.toBe(premier);
+    const premier = lireOuCreerNonceTirage("jeu");
+    expect(premier).toBe("11111111-2222-4333-8444-555555555555");
+    expect(lireOuCreerNonceTirage("jeu")).toBe(premier);
+
+    oublierNonceTirage("jeu");
+    expect(stockage.getItem("lastchance:spin-nonce:jeu")).toBeNull();
   });
 
   it("ne mélange pas deux jeux ouverts en même temps", () => {
-    poserMemoire();
+    let compteur = 0;
+    vi.stubGlobal("sessionStorage", stockageSession());
+    vi.stubGlobal("crypto", {
+      randomUUID: () => `11111111-2222-4333-8444-${String(++compteur).padStart(12, "0")}`,
+    });
+
     expect(lireOuCreerNonceTirage("chez-marcel")).not.toBe(
       lireOuCreerNonceTirage("le-fournil"),
     );
   });
 
-  it("laisse jouer même quand la mémoire d'onglet LÈVE", () => {
-    poserMemoire({ lever: true });
+  it("remplace une valeur mémorisée hors borne", () => {
+    const stockage = stockageSession();
+    stockage.setItem("lastchance:spin-nonce:jeu", "trop-court");
+    vi.stubGlobal("sessionStorage", stockage);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "11111111-2222-4333-8444-555555555555",
+    });
 
-    // Ni lecture, ni écriture, ni oubli ne doivent remonter : sans mémoire, le
-    // tirage repart simplement dans son régime d'avant ce correctif.
-    expect(() => lireOuCreerNonceTirage("chez-marcel")).not.toThrow();
-    expect(() => oublierNonceTirage("chez-marcel")).not.toThrow();
-    expect(lireOuCreerNonceTirage("chez-marcel")).toBeTruthy();
-  });
-
-  it("laisse jouer quand la mémoire d'onglet n'existe pas du tout", () => {
-    // Rendu hors navigateur : `sessionStorage` n'est même pas défini.
-    expect(() => lireOuCreerNonceTirage("chez-marcel")).not.toThrow();
-  });
-
-  it("émet une valeur que le serveur accepte (spinNonceSchema)", () => {
-    poserMemoire();
-    // Hors borne, la clé serait ignorée côté serveur et le correctif
-    // n'existerait plus qu'en apparence.
-    expect(lireOuCreerNonceTirage("chez-marcel")).toMatch(
-      /^[A-Za-z0-9_-]{16,64}$/,
+    expect(lireOuCreerNonceTirage("jeu")).toBe(
+      "11111111-2222-4333-8444-555555555555",
     );
   });
 
-  it("ignore une valeur mémorisée hors borne au lieu de la transmettre", () => {
-    const memoire = poserMemoire();
-    memoire.set("lastchance:spin-nonce:chez-marcel", "trop-court");
+  it.each([
+    { refuseLecture: true },
+    { refuseEcriture: true },
+    { oublieEcriture: true },
+  ])("refuse le tirage si la tentative ne peut pas être persistée (%o)", (options) => {
+    vi.stubGlobal("sessionStorage", stockageSession(options));
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "11111111-2222-4333-8444-555555555555",
+    });
 
-    const nonce = lireOuCreerNonceTirage("chez-marcel");
-    expect(nonce).not.toBe("trop-court");
-    expect(nonce).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
+    expect(() => lireOuCreerNonceTirage("jeu")).toThrow();
+  });
+
+  it("refuse le tirage sans générateur cryptographique", () => {
+    vi.stubGlobal("sessionStorage", stockageSession());
+    vi.stubGlobal("crypto", {});
+
+    expect(() => lireOuCreerNonceTirage("jeu")).toThrow("generation_nonce_indisponible");
+  });
+
+  it("refuse le tirage si la mémoire d'onglet n'existe pas", () => {
+    vi.stubGlobal("sessionStorage", undefined);
+
+    expect(() => lireOuCreerNonceTirage("jeu")).toThrow(
+      "stockage_nonce_indisponible",
+    );
   });
 });

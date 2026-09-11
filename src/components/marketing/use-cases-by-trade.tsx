@@ -50,7 +50,7 @@ const TRADES: readonly TradeScenario[] = [
       {
         name: "Vitrine & Carte au QR",
         role: "Carte bilingue toujours à jour + réservation directe sans commission.",
-        why: "Économisez les commissions des plateformes et mettez à jour vos plats du jour en 10 secondes.",
+        why: "Économisez les commissions des plateformes et mettez à jour vos plats du jour depuis votre espace.",
         href: "/faire-venir",
       },
       {
@@ -72,7 +72,7 @@ const TRADES: readonly TradeScenario[] = [
         href: "/attirer",
       },
     ],
-    concreteSituation: "Vendredi soir, 22h : l'addition arrive avec un QR code Lastchance. Les convives scannent, découvrent leur dessert offert pour leur prochain déjeuner en semaine. Votre équipe valide le code en une seconde.",
+    concreteSituation: "Vendredi soir, 22h : l'addition arrive avec un QR code Lastchance. Les convives scannent, découvrent leur dessert offert pour leur prochain déjeuner en semaine. Votre équipe valide le code en caisse.",
     expectedBenefit: "Une raison concrète de revenir déjeuner en semaine, et une base d'emails clients qualifiés.",
     offerTag: `Formule recommandée : Sur Place (${prixOffre("place")} €/mois)`,
   },

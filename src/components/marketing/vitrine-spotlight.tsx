@@ -50,7 +50,7 @@ export function VitrineSpotlight() {
                 ✓
               </span>
               <div>
-                <p className="text-sm font-black text-k-ink">Mise à jour en 10 secondes depuis votre téléphone</p>
+                <p className="text-sm font-black text-k-ink">Mise à jour depuis votre téléphone</p>
                 <p className="text-xs font-bold text-k-muted">
                   Un plat en rupture ? Un nouveau cocktail du mois ? Modifiez en direct sans jamais changer vos QR codes sur table.
                 </p>

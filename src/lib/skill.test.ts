@@ -123,8 +123,8 @@ describe("evaluateSkill · puzzle", () => {
   });
 });
 
-describe("evaluateSkill · reflex / gauge (client-reported, borné par l'économie)", () => {
-  it("recopie le booléen rapporté par le client", () => {
+describe("evaluateSkill · reflex / gauge (interaction non autoritaire)", () => {
+  it("ignore le booléen rapporté par le client", () => {
     expect(
       evaluateSkill("reflex", { gameType: "reflex", succeeded: true }, { durationMs: 800 }, "")
         .succeeded,
@@ -132,7 +132,7 @@ describe("evaluateSkill · reflex / gauge (client-reported, borné par l'économ
     expect(
       evaluateSkill("reflex", { gameType: "reflex", succeeded: false }, { durationMs: 800 }, "")
         .succeeded,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       evaluateSkill("gauge", { gameType: "gauge", succeeded: true }, { tolerancePct: 10 }, "")
         .succeeded,
@@ -194,7 +194,7 @@ describe("temps minimal signé · reflex / gauge", () => {
     expect(minimumSkillSuccessElapsedMs("reflex", { durationMs: 800 })).toBe(1_400);
   });
 
-  it("ne pénalise jamais un échec rapporté", () => {
+  it("applique le même délai quand le client rapporte un échec", () => {
     expect(
       isSkillAttemptTimingPlausible(
         "reflex",
@@ -202,6 +202,15 @@ describe("temps minimal signé · reflex / gauge", () => {
         { durationMs: 800 },
         10_000,
         10_001,
+      ),
+    ).toBe(false);
+    expect(
+      isSkillAttemptTimingPlausible(
+        "reflex",
+        { gameType: "reflex", succeeded: false },
+        { durationMs: 800 },
+        10_000,
+        11_400,
       ),
     ).toBe(true);
   });

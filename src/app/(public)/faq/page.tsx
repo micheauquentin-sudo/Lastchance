@@ -41,7 +41,7 @@ const FAQ_ITEMS = [
   {
     category: "Démarrage & Matériel",
     q: "Faut-il du matériel spécifique en caisse ?",
-    a: "Aucun matériel dédié. La Caisse universelle fonctionne depuis n'importe quel smartphone, tablette ou terminal de caisse connecté à Internet. Vous flashez le QR du gagnant ou tapez son code à 4 caractères pour valider en une seconde.",
+    a: "Aucun matériel dédié. La Caisse universelle fonctionne depuis n'importe quel smartphone, tablette ou terminal de caisse connecté à Internet. Vous flashez le QR du gagnant ou saisissez le code associé à son gain pour le valider.",
   },
   {
     category: "Jeux & Lots",

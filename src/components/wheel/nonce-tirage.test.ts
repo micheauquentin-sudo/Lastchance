@@ -68,6 +68,19 @@ describe("nonce de tirage — garde des parcours joueur", () => {
     ).toMatch(/await spinWheel\(\s*slug,[\s\S]{0,200}?nonce,?\s*\)/);
   });
 
+  it.each(SHELLS)("%s n'appelle pas le serveur si le nonce ne peut pas être persisté", (chemin) => {
+    const src = source(chemin);
+    const lecture = src.search(/nonce = lireOuCreerNonceTirage\(slug\)/);
+    const debutCatch = src.indexOf("} catch {", lecture);
+    const sortie = src.indexOf("return;", debutCatch);
+    const appel = src.search(/await spinWheel\(/);
+
+    expect(lecture).toBeGreaterThan(-1);
+    expect(debutCatch).toBeGreaterThan(lecture);
+    expect(sortie).toBeGreaterThan(debutCatch);
+    expect(sortie).toBeLessThan(appel);
+  });
+
   it.each(SHELLS)("%s oublie la tentative une fois répondue", (chemin) => {
     const src = source(chemin);
     const oubli = src.search(/oublierNonceTirage\(slug\)/);

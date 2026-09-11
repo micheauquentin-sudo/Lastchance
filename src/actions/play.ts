@@ -39,6 +39,7 @@ import {
   peekAnonymousPlayerKey,
 } from "@/lib/anonymous-player";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
+import { lotInterditAvecIdentiteFaible } from "@/lib/lot-forte-valeur";
 
 export interface SpinOutcome {
   /** Index du segment gagné dans la liste des lots actifs (ordre d'affichage). */
@@ -139,14 +140,38 @@ export async function recoverPendingWin(slug: string): Promise<SpinOutcome | nul
     created_at: string;
   }> | null)?.[0];
   if (!spin?.prize_id) return null;
-  const prizeIndex = ctx.prizes.findIndex((prize) => prize.id === spin.prize_id);
-  // Lot retiré ou désactivé depuis le tirage : rien à rendre au joueur ici (le
-  // spin reste en base, le commerçant le voit) — le shell public ne saurait pas
-  // animer un segment absent de sa liste.
-  if (prizeIndex < 0) return null;
-  const prize = ctx.prizes[prizeIndex];
+  const activePrizeIndex = ctx.prizes.findIndex((prize) => prize.id === spin.prize_id);
+  let prize: {
+    id: string;
+    label: string;
+    description: string;
+    emoji: string | null;
+    is_losing: boolean;
+  } | null = activePrizeIndex >= 0 ? ctx.prizes[activePrizeIndex] : null;
+
+  // `loadPlayContext` ne rend que les lots actifs. Une désactivation intervenue
+  // après le tirage ne doit pourtant pas faire disparaître un gain déjà écrit.
+  // La relecture service_role reste strictement bornée au triplet
+  // (lot, organisation, roue) du contexte public déjà validé : le prize_id issu
+  // de la RPC de reprise ne peut donc pas devenir un oracle inter-tenant.
+  if (!prize) {
+    const { data: inactivePrize, error } = await ctx.admin
+      .from("prizes")
+      .select("id, organization_id, wheel_id, label, description, emoji, is_losing")
+      .eq("id", spin.prize_id)
+      .eq("organization_id", ctx.campaign.organization_id)
+      .eq("wheel_id", ctx.wheel.id)
+      .maybeSingle();
+    if (error || !inactivePrize || inactivePrize.is_losing) return null;
+    prize = inactivePrize;
+  }
+  if (!prize) return null;
+
   return {
-    prizeIndex,
+    // Une reprise n'est jamais animée : les shells passent directement à
+    // l'état `won`. L'index 0 garde le contrat historique sans prétendre que le
+    // lot désactivé existe encore dans la liste de segments actifs.
+    prizeIndex: Math.max(activePrizeIndex, 0),
     label: prize.label,
     description: prize.description,
     emoji: prize.emoji,
@@ -162,8 +187,8 @@ export async function spinWheel(
   source?: string,
   /**
    * Nonce de LA TENTATIVE en cours, émis par le client à l'ouverture de la
-   * partie et réutilisé tant qu'aucune réponse ne lui est parvenue. Facultatif :
-   * absent ou malformé, le tirage se comporte exactement comme avant.
+   * partie et réutilisé tant qu'aucune réponse ne lui est parvenue. Obligatoire :
+   * aucun tirage ne part si l'appelant ne fournit pas une clé recevable.
    */
   idempotencyKey?: string,
 ): Promise<SpinResult> {
@@ -212,15 +237,9 @@ function normalizeSource(source?: string): "direct" | "share" {
  */
 function cleIdempotenceTirage(
   playerKey: string,
-  nonce: string | undefined,
-): string | null {
-  const borne = spinNonceSchema.safeParse(nonce ?? "");
-  // Nonce absent ou hors borne : `null`, et la RPC retombe sur son comportement
-  // d'origine — aucune recherche de rejeu, colonne laissée nulle, donc aucune
-  // entrée dans l'index partiel d'unicité. C'est le régime de tous les tirages
-  // antérieurs : on ne refuse pas un joueur pour un nonce bancal.
-  if (!borne.success) return null;
-  return `play:${playerKey}:${borne.data}`;
+  nonce: string,
+): string {
+  return `play:${playerKey}:${nonce}`;
 }
 
 async function spinWheelInner(
@@ -230,6 +249,9 @@ async function spinWheelInner(
   idempotencyKey?: string,
 ): Promise<SpinResult> {
   try {
+    const nonce = spinNonceSchema.safeParse(idempotencyKey);
+    if (!nonce.success) return { ok: false, error: "Requête invalide." };
+
     const ctx = await loadPlayContext(String(slug));
     if (!ctx.ok) return { ok: false, error: ctx.error };
     const { admin, campaign, wheel, prizes } = ctx;
@@ -248,6 +270,15 @@ async function spinWheelInner(
 
     if (prizes.length < 2) {
       return { ok: false, error: "Cette roue n'est pas encore configurée." };
+    }
+
+    // L'identité publique est un cookie supprimable. Tant qu'un lot gagnant a
+    // une valeur inconnue ou atteint le seuil élevé, cette identité ne suffit
+    // pas à autoriser sa distribution. Le refus intervient avant CAPTCHA,
+    // rate-limit et RPC, et ne révèle aucun détail de configuration au joueur.
+    if (prizes.some(lotInterditAvecIdentiteFaible)) {
+      reportSecurityEvent("spin_lot_identite_faible_refuse", { wheel_id: wheel.id });
+      return { ok: false, error: "Jeu indisponible." };
     }
 
     const { ip, playerKey } = await getPlayerFingerprint();
@@ -395,7 +426,7 @@ async function spinWheelInner(
         p_player_key: playerKey,
         p_engagement_action: null,
         p_source: normalizeSource(source),
-        p_idempotency_key: cleIdempotenceTirage(playerKey, idempotencyKey),
+        p_idempotency_key: cleIdempotenceTirage(playerKey, nonce.data),
       },
     );
     if (spinError) {
@@ -757,15 +788,8 @@ async function claimPrizeInner(
     // `spins.player_key` existe et est renseignée. On la confronte au cookie de
     // l'appelant, ce que rien ne faisait.
     //
-    // ── POURQUOI L'ABSENCE DE COOKIE NE REFUSE PAS ──
-    //
-    // Refuser sans cookie coûterait son lot à un gagnant qui a nettoyé son
-    // navigateur entre le tirage et la réclamation — un cas rare mais dont le
-    // prix est un client humilié au comptoir, pour une menace qui, elle, reste
-    // hypothétique. On refuse donc le cookie qui CONTREDIT, jamais celui qui
-    // manque : un tiers qui a navigué EN A un, et il ne correspond pas. Le
-    // contournement existe encore (effacer son propre cookie), mais il devient
-    // un geste délibéré, et il est journalisé.
+    // L'absence de cookie refuse elle aussi : accepter un bearer token après
+    // suppression du cookie rendrait la liaison au gagnant contournable.
     // ── LA GARDE NE VAUT QUE POUR LES SPINS DU PARCOURS PUBLIC ──
     //
     // `spins.player_key` n'est PAS toujours l'empreinte du cookie anonyme.
@@ -785,23 +809,17 @@ async function claimPrizeInner(
     // On borne donc la garde à ce qu'elle sait vraiment vérifier.
     const spinDuParcoursPublic =
       spin.source === "direct" || spin.source === "share";
-    // Test de VÉRACITÉ et non `!== null` : un spin dont la colonne est absente
-    // ou vide n'est lié à aucun appareil, et `undefined !== null` aurait fait
-    // refuser ces gains-là — une régression introduite par la garde elle-même.
     const cleAppelant = await peekAnonymousPlayerKey();
-    if (
-      spinDuParcoursPublic &&
-      cleAppelant &&
-      spin.player_key &&
-      cleAppelant !== spin.player_key
-    ) {
+    if (spinDuParcoursPublic && (!cleAppelant || !spin.player_key || cleAppelant !== spin.player_key)) {
       // Même libellé que « gain introuvable » : distinguer les deux donnerait
       // un oracle qui confirme qu'un spin_id porte bien un gain.
-      reportSecurityEvent("claim_player_key_mismatch", { spin_id: spin.id });
+      reportSecurityEvent(
+        !cleAppelant || !spin.player_key
+          ? "claim_player_key_missing"
+          : "claim_player_key_mismatch",
+        { spin_id: spin.id },
+      );
       return { ok: false, error: "Gain introuvable." };
-    }
-    if (cleAppelant === null) {
-      reportSecurityEvent("claim_sans_cookie_joueur", { spin_id: spin.id });
     }
 
     // Exigences de collecte définies par la campagne (source de vérité

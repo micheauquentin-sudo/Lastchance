@@ -355,8 +355,20 @@ describe("updateCampaign — le refus d'activation dit la VRAIE cause", () => {
       {
         id: "roue-1",
         prizes: [
-          { is_active: true, is_losing: false, weight: 40, stock: 3 },
-          { is_active: true, is_losing: true, weight: 30, stock: null },
+          {
+            is_active: true,
+            is_losing: false,
+            weight: 40,
+            stock: 3,
+            value_cents: 250,
+          },
+          {
+            is_active: true,
+            is_losing: true,
+            weight: 30,
+            stock: null,
+            value_cents: null,
+          },
         ],
       },
     ];

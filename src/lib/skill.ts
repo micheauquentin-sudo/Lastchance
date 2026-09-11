@@ -126,19 +126,10 @@ function arraysEqual(a: number[], b: number[]): boolean {
  * VALIDÉE du game_type (les casts sont sûrs : la config a été parsée par
  * parseSkillConfig avant d'arriver ici).
  *
- * reflex / gauge : NON vérifiables serveur → succès rapporté par le client.
- * Deux bornes, et la seconde est désormais IMPOSÉE et non plus supposée :
- *   1. le tirage sur succès reste plafonné par les poids et le stock — un bot
- *      qui « réussit » toujours ne dépasse pas les odds configurés ;
- *   2. `play_limit = unlimited` est REFUSÉ à l'écriture pour ces deux jeux
- *      (CLIENT_REPORTED_SKILL_GAME_TYPES dans validations/skill.ts, appliqué par
- *      updateWheelSchema et par le blueprint de la place de marché), donc la
- *      garde `limit_reached` de perform_atomic_spin est toujours active et le
- *      nombre de « réussi » annonçables reste borné.
- * Sans le point 2, la porte de compétence était décorative sous `unlimited` :
- * les tours y sont déjà illimités pour tous, mais le tricheur supprimait le
- * ralentissement que le commerçant croyait avoir posé (défaut d'ÉQUITÉ, pas
- * effondrement d'économie — le stock et les poids plafonnaient toujours).
+ * reflex / gauge : NON vérifiables serveur. Le booléen envoyé par le navigateur
+ * décrit uniquement son animation ; il ne décide jamais de l'éligibilité ni du
+ * résultat. Une interaction arrivée après le délai signé ouvre donc le même
+ * tirage pondéré, que le client rapporte `true` ou `false`.
  */
 export function evaluateSkill(
   gameType: SkillGameType,
@@ -156,11 +147,12 @@ export function evaluateSkill(
     }
     case "reflex":
     case "gauge": {
-      // Client-reported (voir en-tête) — borné par l'économie du tirage.
+      // Interaction non autoritaire (voir en-tête) : seule la cohérence du type
+      // est vérifiée ici. Le délai signé est contrôlé séparément.
       if (attempt.gameType !== "reflex" && attempt.gameType !== "gauge") {
         return { succeeded: false };
       }
-      return { succeeded: attempt.succeeded === true };
+      return { succeeded: true };
     }
     case "puzzle": {
       if (attempt.gameType !== "puzzle") return { succeeded: false };
@@ -226,11 +218,7 @@ export function isSkillAttemptTimingPlausible(
     return false;
   }
   if (attempt.gameType !== gameType) return false;
-  if (
-    (gameType !== "reflex" && gameType !== "gauge") ||
-    !("succeeded" in attempt) ||
-    attempt.succeeded !== true
-  ) {
+  if (gameType !== "reflex" && gameType !== "gauge") {
     return true;
   }
   return nowMs - issuedAtMs >= minimumSkillSuccessElapsedMs(gameType, config);

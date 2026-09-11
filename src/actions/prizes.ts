@@ -319,6 +319,36 @@ export async function deletePrize(
     }
   }
 
+  // Supprimer un lot passe `spins.prize_id` à NULL. Un gain déjà tiré mais pas
+  // encore réclamé perdrait alors son libellé et son chemin de reprise. La
+  // lecture est strictement bornée au lot et à l'organisation déjà autorisés,
+  // et échoue fermée si le comptage ne peut pas être établi.
+  const { count: gainsEnAttente, error: erreurGainsEnAttente } = await supabase
+    .from("spins")
+    .select("id", { count: "exact", head: true })
+    .eq("prize_id", lot.id)
+    .eq("organization_id", organization.id)
+    .eq("is_losing", false)
+    .eq("claimed", false);
+  if (erreurGainsEnAttente || gainsEnAttente === null) {
+    reportError(
+      "prizes.delete-gains-en-attente",
+      erreurGainsEnAttente?.message ?? "comptage indisponible",
+    );
+    return {
+      ok: false,
+      error:
+        "Impossible de vérifier les gains en attente. La suppression est refusée pour ne pas faire disparaître un lot déjà gagné.",
+    };
+  }
+  if (gainsEnAttente > 0) {
+    return {
+      ok: false,
+      error:
+        "Ce lot a déjà été gagné et attend encore d'être réclamé. Désactivez-le au lieu de le supprimer.",
+    };
+  }
+
   const { data: deleted, error } = await supabase
     .from("prizes")
     .delete()

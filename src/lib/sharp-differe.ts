@@ -29,7 +29,16 @@ import "server-only";
  * lisent le cache de modules. Aucune image n'est traitée sur un chemin où
  * cette latence compte.
  */
+let chargementSharp: Promise<typeof import("sharp").default> | null = null;
+
 export async function chargerSharp() {
-  const charge = await import("sharp");
-  return charge.default;
+  chargementSharp ??= import("sharp").then((charge) => {
+    const sharp = charge.default;
+    // Défense durable contre le décodeur HEIF/AVIF vulnérable : la règle est
+    // posée une seule fois au chargement central, avant qu'un appelant puisse
+    // construire un pipeline à partir d'une image non fiable.
+    sharp.block({ operation: ["VipsForeignLoadHeif"] });
+    return sharp;
+  });
+  return chargementSharp;
 }

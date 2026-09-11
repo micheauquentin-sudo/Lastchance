@@ -10,7 +10,11 @@ import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
-import { blocageOuvertureRoue } from "@/lib/lot-tirable";
+import { blocageOuvertureRoue, estGagnantTirable } from "@/lib/lot-tirable";
+import {
+  LOT_IDENTITE_FAIBLE_INTERDIT,
+  lotInterditAvecIdentiteFaible,
+} from "@/lib/lot-forte-valeur";
 import { refuserSiQuotaBrouillonAtteint } from "@/lib/quota-brouillons";
 import { zonedDateTimeToIso } from "@/lib/date-time";
 import { messageAccesCampagne } from "@/lib/message-acces-campagne";
@@ -43,6 +47,36 @@ import type {
   Prize,
   Wheel,
 } from "@/types/database";
+
+type LotPublication = Pick<
+  Prize,
+  "is_active" | "is_losing" | "weight" | "stock" | "value_cents"
+>;
+
+function contientLotInterditIdentiteFaible(lots: LotPublication[]): boolean {
+  return lots.some(
+    (lot) => estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot),
+  );
+}
+
+async function controleLotsAvantPublication(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  campaignId: string,
+  organizationId: string,
+): Promise<"ok" | "interdit" | "indisponible"> {
+  const { data: roues, error } = await supabase
+    .from("wheels")
+    .select("id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock, value_cents)")
+    .eq("campaign_id", campaignId)
+    .eq("organization_id", organizationId)
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (error || roues === null) return "indisponible";
+  return contientLotInterditIdentiteFaible(roues[0]?.prizes ?? [])
+    ? "interdit"
+    : "ok";
+}
 
 /** Lots par défaut d'une nouvelle roue : jouable immédiatement. */
 const DEFAULT_PRIZES = [
@@ -255,7 +289,7 @@ export async function updateCampaign(
   if (fields.status === "active") {
     const { data: roues, error: erreurRoues } = await supabase
       .from("wheels")
-      .select("id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock)")
+      .select("id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock, value_cents)")
       .eq("campaign_id", id)
       .eq("organization_id", organization.id)
       .order("position", { ascending: true })
@@ -275,6 +309,9 @@ export async function updateCampaign(
     if (roue) {
       const blocage = blocageOuvertureRoue(roue.prizes ?? []);
       if (blocage) return { ok: false, error: blocage };
+      if (contientLotInterditIdentiteFaible(roue.prizes ?? [])) {
+        return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
+      }
     }
 
     // ── LA REPRISE BUDGET NE SE CONTOURNE PLUS (FIA-4) ──
@@ -636,6 +673,23 @@ export async function updateCampaignAutomation(
     budget_cents: parsed.data.budget_cents,
   };
   const supabase = await createClient();
+  if (parsed.data.auto_schedule) {
+    const controle = await controleLotsAvantPublication(
+      supabase,
+      id,
+      organization.id,
+    );
+    if (controle === "indisponible") {
+      reportError(
+        "campaigns.automation-verification",
+        "lecture des lots indisponible",
+      );
+      return { ok: false, error: "Enregistrement impossible" };
+    }
+    if (controle === "interdit") {
+      return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
+    }
+  }
   const { error } = await supabase
     .from("campaigns")
     .update(fields)
@@ -725,6 +779,18 @@ export async function resumeCampaignAfterBudget(
   }
 
   const supabase = await createClient();
+  const controleLots = await controleLotsAvantPublication(
+    supabase,
+    parsed.data.id,
+    organization.id,
+  );
+  if (controleLots === "indisponible") {
+    reportError("campaigns.resume-verification", "lecture des lots indisponible");
+    return { ok: false, error: "Relance impossible" };
+  }
+  if (controleLots === "interdit") {
+    return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
+  }
   const { data: campaign } = await supabase
     .from("campaigns")
     .select("id, status, paused_reason")

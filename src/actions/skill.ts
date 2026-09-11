@@ -5,6 +5,7 @@ import { anonymousPlayerKey } from "@/lib/anonymous-player";
 import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { ensureProgressivePlayerIdentity } from "@/lib/player-identity";
 import { loadPlayContext } from "@/lib/play-context";
+import { lotInterditAvecIdentiteFaible } from "@/lib/lot-forte-valeur";
 import {
   RATE_LIMITS,
   rateLimit,
@@ -26,6 +27,7 @@ import {
 import { signClaimToken } from "@/lib/spin";
 import { verifyTurnstile } from "@/lib/turnstile";
 import {
+  isClientReportedSkillGameType,
   isSkillGameType,
   parseSkillAttempt,
   parseSkillConfig,
@@ -91,10 +93,21 @@ async function startInner(
   try {
     const ctx = await loadPlayContext(slug);
     if (!ctx.ok) return { ok: false, error: UNAVAILABLE };
-    const { campaign, wheel } = ctx;
+    const { campaign, wheel, prizes } = ctx;
 
     const gameType = wheel.game_type;
     if (!isSkillGameType(gameType)) return { ok: false, error: UNAVAILABLE };
+    // La contrainte SQL NOT VALID protège toute nouvelle écriture, mais laisse
+    // volontairement les anciennes lignes en place. Ce garde ferme aussi ces
+    // configurations historiques jusqu'à correction par le commerçant.
+    if (isClientReportedSkillGameType(gameType) && wheel.play_limit === "unlimited") {
+      reportSecurityEvent("skill_unlimited_historique_refuse", { wheel_id: wheel.id });
+      return { ok: false, error: UNAVAILABLE };
+    }
+    if (prizes.some(lotInterditAvecIdentiteFaible)) {
+      reportSecurityEvent("skill_lot_identite_faible_refuse", { wheel_id: wheel.id });
+      return { ok: false, error: UNAVAILABLE };
+    }
 
     const ip = clientIpFromHeaders(await headers());
     const deviceKey = await anonymousPlayerKey();
@@ -229,6 +242,14 @@ async function submitInner(
       payload.campaignId !== campaign.id ||
       payload.wheelId !== wheel.id
     ) {
+      return { ok: false, error: UNAVAILABLE };
+    }
+    if (isClientReportedSkillGameType(gameType) && wheel.play_limit === "unlimited") {
+      reportSecurityEvent("skill_unlimited_historique_refuse", { wheel_id: wheel.id });
+      return { ok: false, error: UNAVAILABLE };
+    }
+    if (prizes.some(lotInterditAvecIdentiteFaible)) {
+      reportSecurityEvent("skill_lot_identite_faible_refuse", { wheel_id: wheel.id });
       return { ok: false, error: UNAVAILABLE };
     }
 

@@ -116,13 +116,19 @@ describe("Étape « Le jeu » — la limite face aux lots de valeur", () => {
     expect(updateWheel).not.toHaveBeenCalled();
   });
 
-  it("n'avertit sur aucun lot sous le seuil, ni sur un segment perdant", () => {
+  it("n'avertit ni sur un lot sous le seuil, ni sur un segment perdant", () => {
     monter(ROUE, [
       { label: "Café offert", value_cents: 250, is_losing: false },
       { label: "Dommage !", value_cents: 5000, is_losing: true },
-      { label: "Valeur non renseignée", value_cents: null, is_losing: false },
     ]);
     expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("refuse de considérer un lot gagnant sans valeur comme sûr", () => {
+    monter(ROUE, [
+      { label: "Valeur non renseignée", value_cents: null, is_losing: false },
+    ]);
+    expect(screen.getByText(PHRASES_GARDE_LOT.valeur_inconnue)).toBeTruthy();
   });
 
   it("n'empêche pas d'enregistrer : le bouton reste actif", () => {

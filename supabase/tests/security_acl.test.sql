@@ -50,6 +50,10 @@ select ok(not has_function_privilege('anon', 'public.redeem_reward_by_code(uuid,
 select ok(has_function_privilege('service_role', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'server can redeem a golden ticket');
 select ok(not has_function_privilege('authenticated', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'merchant session cannot redeem a golden ticket by naming another actor');
 select ok(not has_function_privilege('anon', 'public.redeem_ticket_or(uuid,text,text)', 'EXECUTE'), 'anon cannot redeem a golden ticket');
+select ok(has_function_privilege('service_role', 'public.tirer_ticket_or(text,text)', 'EXECUTE'), 'server can draw or recover a golden ticket with its nonce');
+select ok(not has_function_privilege('authenticated', 'public.tirer_ticket_or(text,text)', 'EXECUTE'), 'merchant session cannot bypass the server action to probe a golden-ticket nonce');
+select ok(not has_function_privilege('anon', 'public.tirer_ticket_or(text,text)', 'EXECUTE'), 'anon cannot call the golden-ticket draw RPC directly');
+select ok(to_regprocedure('public.tirer_ticket_or(text)') is null, 'the unsafe golden-ticket draw signature without nonce no longer exists');
 select ok(not has_function_privilege('authenticated', 'public.sync_reward_issuance(text,uuid)', 'EXECUTE'), 'merchant cannot invoke reward reconciliation');
 select ok(not has_function_privilege('anon', 'public.upsert_reward_issuance(uuid,uuid,text,uuid,uuid,uuid,text,text,jsonb,timestamp with time zone,timestamp with time zone,timestamp with time zone,text,timestamp with time zone,text,integer)', 'EXECUTE'), 'anon cannot invoke reward upsert');
 select ok(has_function_privilege('authenticated', 'public.cancel_participation(uuid,uuid,text,boolean)', 'EXECUTE'), 'editor can cancel a claim through the audited RPC');

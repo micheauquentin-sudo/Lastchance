@@ -4,11 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tirerTicketOr = vi.fn();
 vi.mock("@/actions/ticket-or", () => ({
-  tirerTicketOr: (code: string) => tirerTicketOr(code),
+  tirerTicketOr: (code: string, nonce: string) => tirerTicketOr(code, nonce),
 }));
 
 import { TicketExperience } from "@/components/ticket/ticket-experience";
-import { cleMemoireTicket, type TirageGagnant } from "@/lib/ticket-or";
+import {
+  cleMemoireTicket,
+  cleNonceTicket,
+  type TirageGagnant,
+} from "@/lib/ticket-or";
 
 /**
  * L'ÉCRAN NE DOIT PLUS PROMETTRE UN RETRAIT QUE LA CAISSE REFUSERA.
@@ -45,7 +49,10 @@ beforeEach(() => {
   tirerTicketOr.mockReset();
   window.localStorage.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("TicketExperience — l'expiration du retrait", () => {
   it("CONTRE-ÉPREUVE : un retrait encore valide s'affiche comme avant", () => {
@@ -117,16 +124,48 @@ describe("TicketExperience — qui, du serveur ou de la copie locale, a le derni
     expect(screen.queryByText("Un café offert")).toBeNull();
   });
 
-  it("une coupure réseau le dit, et ne consomme rien", async () => {
+  it("une coupure réseau conserve le nonce et rejoue exactement la même tentative", async () => {
     const code = codeNeuf();
-    tirerTicketOr.mockRejectedValue(new Error("offline"));
+    tirerTicketOr
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(gain(new Date(Date.now() + JOUR_MS).toISOString()));
+
+    render(<TicketExperience code={code} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ouvrir mon ticket" }),
+    );
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByText(/nous ne savons pas si l'ouverture a abouti/i)).toBeTruthy();
+    const premierNonce = tirerTicketOr.mock.calls[0]?.[1];
+    expect(premierNonce).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(window.localStorage.getItem(cleNonceTicket(code))).toBe(premierNonce);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Ouvrir mon ticket" }),
+    );
+    await waitFor(() => expect(screen.getByText("Un café offert")).toBeTruthy());
+
+    expect(tirerTicketOr).toHaveBeenNthCalledWith(2, code, premierNonce);
+    expect(window.localStorage.getItem(cleNonceTicket(code))).toBeNull();
+  });
+
+  it("n'appelle jamais le serveur si le nonce ne peut pas être persisté", async () => {
+    const code = codeNeuf();
+    const setItem = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation(() => {
+        throw new Error("quota");
+      });
 
     render(<TicketExperience code={code} />);
     fireEvent.click(screen.getByRole("button", { name: "Ouvrir mon ticket" }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(screen.getByText(/Connexion perdue/)).toBeTruthy();
-    // Le bouton reste là : rien n'a été tiré, le joueur peut réessayer.
-    expect(screen.getByRole("button", { name: "Ouvrir mon ticket" })).toBeTruthy();
+    expect(screen.getByText(/ne permet pas de sécuriser le tirage/i)).toBeTruthy();
+    expect(tirerTicketOr).not.toHaveBeenCalled();
+    setItem.mockRestore();
   });
 });

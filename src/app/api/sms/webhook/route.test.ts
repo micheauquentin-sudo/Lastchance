@@ -10,15 +10,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * l'appel est-il authentifié, la route dit-elle quelque chose d'un numéro
  * qu'on ne lui a pas demandé, et un échec fait-il RETENTER le prestataire.
  *
- * L'authentification a TROIS chemins depuis que le secret maître est sorti
- * de l'URL (en-tête, jeton dérivé en URL, secret maître en URL le temps de
- * la bascule) : les trois sont couverts, et le dernier est vérifié sur son
- * SIGNAL — c'est lui qui dira quand le retirer.
+ * L'authentification a deux chemins : en-tête maître ou jeton dérivé en URL.
+ * Le secret maître présenté en URL doit être refusé.
  * ════════════════════════════════════════════════════════════ */
 
 const mocks = vi.hoisted(() => ({
   recordCounter: vi.fn(),
-  recordDurableCounter: vi.fn(),
   reportError: vi.fn(),
   reportSecurityEvent: vi.fn(),
   observeSharedKey: vi.fn(),
@@ -34,7 +31,6 @@ vi.mock("@/lib/env", () => ({
 vi.mock("@/lib/monitoring", () => ({
   monitored: (_name: string, fn: () => unknown) => fn(),
   recordCounter: (...a: unknown[]) => mocks.recordCounter(...a),
-  recordDurableCounter: (op: string) => mocks.recordDurableCounter(op),
   reportError: (...a: unknown[]) => mocks.reportError(...a),
   reportSecurityEvent: (...a: unknown[]) => mocks.reportSecurityEvent(...a),
 }));
@@ -62,7 +58,6 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 import { createHmac } from "node:crypto";
 
-import { OP_SMS_URL_HERITEE } from "@/lib/sms-webhook-legacy";
 import { POST } from "./route";
 
 /* Dérivation refaite ici À LA MAIN, et non importée de la route : un test
@@ -151,10 +146,7 @@ describe("authentification", () => {
     expect(URL_TOKEN).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it("secret maître en URL : encore accepté, mais SIGNALÉ", async () => {
-    // Chemin hérité : le refuser aujourd'hui couperait les STOP entre le
-    // déploiement et la reprise de la configuration Brevo. Le signal est
-    // ce qui dira quand il n'a plus d'usage.
+  it("secret maître en URL : refusé sans lecture de base", async () => {
     const response = await POST(
       post({ event: "unsubscribe", msisdn: "33612345678" }, {
         token: null,
@@ -162,33 +154,11 @@ describe("authentification", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(mocks.rpc).toHaveBeenCalled();
+    expect(response.status).toBe(401);
+    expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.reportSecurityEvent).toHaveBeenCalledWith(
-      "sms_webhook_legacy_url_secret",
+      "sms_webhook_invalid_token",
     );
-    // ET UNE TRACE QUI SE LIT SANS SENTRY. L'événement ci-dessus n'existait
-    // que dans Sentry, que personne n'ouvre : la condition de retrait de cette
-    // branche était donc invérifiable, ce qui la rendait permanente de fait.
-    // La ligne écrite ici est celle que `/api/health` relit.
-    expect(mocks.recordDurableCounter).toHaveBeenCalledWith(
-      OP_SMS_URL_HERITEE,
-    );
-  });
-
-  it("chemins NON hérités : aucune trace de bascule n'est écrite", async () => {
-    // Le compteur ne vaut que s'il est SILENCIEUX sur les chemins sains :
-    // une seule écriture parasite ferait croire que Brevo est encore sur
-    // l'ancienne URL, et la branche ne serait jamais retirée.
-    await POST(
-      post({ event: "unsubscribe", msisdn: "33612345678" }, {
-        token: null,
-        query: `?token=${URL_TOKEN}`,
-      }),
-    );
-    await POST(post({ event: "unsubscribe", msisdn: "33612345678" }));
-
-    expect(mocks.recordDurableCounter).not.toHaveBeenCalled();
   });
 
   it("jeton d'URL faux : 401", async () => {

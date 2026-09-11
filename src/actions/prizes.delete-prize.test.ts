@@ -51,6 +51,8 @@ const { state } = vi.hoisted(() => ({
     deletes: [] as string[],
     /** La lecture des autres lots a-t-elle été tentée ? */
     lecturesAutres: 0,
+    gainsEnAttente: 0,
+    lectureGainsEnPanne: false,
   },
 }));
 
@@ -74,7 +76,31 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
-    from() {
+    from(table: string) {
+      if (table === "spins") {
+        const filtres: Record<string, unknown> = {};
+        const spins: Record<string, unknown> = {};
+        spins.select = () => spins;
+        spins.eq = (col: string, val: unknown) => {
+          filtres[col] = val;
+          return spins;
+        };
+        spins.then = (resolve: (value: unknown) => unknown) =>
+          Promise.resolve(
+            state.lectureGainsEnPanne
+              ? { count: null, error: { message: "timeout PostgREST" } }
+              : { count: state.gainsEnAttente, error: null },
+          ).then((resultat) => {
+            expect(filtres).toEqual({
+              prize_id: PRIZE_ID,
+              organization_id: "org-1",
+              is_losing: false,
+              claimed: false,
+            });
+            return resolve(resultat);
+          });
+        return spins;
+      }
       let operation: "lecture" | "autres" | "delete" = "lecture";
       const c: Record<string, unknown> = {};
       c.select = () => c;
@@ -140,6 +166,34 @@ beforeEach(() => {
   state.lectureAutresEnPanne = false;
   state.deletes = [];
   state.lecturesAutres = 0;
+  state.gainsEnAttente = 0;
+  state.lectureGainsEnPanne = false;
+});
+
+describe("deletePrize — préserver un gain non réclamé", () => {
+  beforeEach(() => {
+    state.statutCampagne = "draft";
+  });
+
+  it("refuse la suppression lorsqu'un gain attend encore son claim", async () => {
+    state.gainsEnAttente = 1;
+
+    const res = await deletePrize(null, form());
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain("attend encore d'être réclamé");
+    expect(state.deletes).toEqual([]);
+  });
+
+  it("échoue fermé si le comptage des gains est indisponible", async () => {
+    state.lectureGainsEnPanne = true;
+
+    const res = await deletePrize(null, form());
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.error).toContain("Impossible de vérifier");
+    expect(state.deletes).toEqual([]);
+  });
 });
 
 describe("deletePrize — le dernier lot gagnant d'une campagne ouverte", () => {
