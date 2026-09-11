@@ -80,7 +80,8 @@ update public.prizes set cost_cents = 10
  where id = 'aa000000-0000-4000-8000-000000000004';
 select lives_ok(
   $$select * from public.claim_winning_spin(
-      'aa000000-0000-4000-8000-000000000011', null, null, null, false, false)$$,
+      'aa000000-0000-4000-8000-000000000011',
+      'Alice', 'a1@tap.local', null, true, false)$$,
   'le gain réservé reste réclamable pendant sa fenêtre'
 );
 select results_eq(

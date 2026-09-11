@@ -8731,6 +8731,14 @@ export type Database = {
           unlock_at: string
         }[]
       }
+      campaign_has_affordable_winning_prize: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      campaign_has_winning_prize: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
       campaign_prize_performance: {
         Args: { p_campaign_id: string }
         Returns: {
@@ -9883,6 +9891,10 @@ export type Database = {
           top_rewards: Json
         }[]
       }
+      pause_campaign_if_budget_exhausted: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
       perform_atomic_spin: {
         Args: {
           p_campaign_id: string
@@ -10342,6 +10354,10 @@ export type Database = {
       refund_sms_credit: {
         Args: { p_entry_id: string; p_reference?: string }
         Returns: string
+      }
+      release_expired_spin_budget_reservations: {
+        Args: { p_campaign_id?: string }
+        Returns: number
       }
       repair_player_alias: {
         Args: { p_alias: string; p_seed: string }
