@@ -5,22 +5,21 @@ Date : 11 septembre 2026
 VERDICT
 ======================================================================
 
-GO TECHNIQUE LOCAL.
+GO PRODUCTION — LOT LIVRÉ ET CONTRÔLÉ.
 
-Les quatre bloquants démontrés par l'audit du 9 septembre sont corrigés dans
-l'arbre de travail et les contrôles locaux adaptés sont verts.
+Les quatre bloquants démontrés par l'audit du 9 septembre sont corrigés, validés
+localement puis livrés par la PR #371. Le commit applicatif de référence est
+29e60f327ec50438b8b1d9f5dd01b0d36a3b162a.
 
-ÉTAT CAPTURÉ AVANT PUBLICATION : LA PRODUCTION N'AVAIT PAS ÉTÉ MODIFIÉE.
+La migration 20261215120000_release_gate_atomicite.sql a été appliquée et
+vérifiée sur Supabase de production AVANT la fusion du code applicatif.
 
-Au moment de cette validation, le dépôt était sur main au SHA
-2120af8e7bada3167126f58ca870ea166d5f2219, identique à origin/main, avec les
-correctifs non commités. Il n'existe donc encore ni CI GitHub sur le SHA exact
-des correctifs, ni migration de production, ni nouveau déploiement Vercel, ni
-contrôle post-déploiement. Aucun commit, push, déploiement, changement Stripe,
-secret ou donnée de production n'a été effectué.
-
-La migration 20261215120000_release_gate_atomicite.sql doit être appliquée
-AVANT le code applicatif qui en dépend.
+La CI post-fusion 34607649462 est entièrement verte sur le SHA applicatif,
+y compris l'E2E Chromium/WebKit. Vercel a enregistré le déploiement Production
+6394729392 et la santé après déploiement 34607943244 est verte sur le même SHA.
+Les trois images locales non suivies de site/public/images/game-world/ sont
+restées hors du lot. Aucun secret, changement Stripe ou donnée métier n'a été
+modifié.
 
 ======================================================================
 BLOCKERS CORRIGÉS
@@ -35,9 +34,8 @@ BLOCKERS CORRIGÉS
   ne sont plus décodés par ce chemin.
 - eslint-config-next est aligné sur 16.3.4 et Vitest sur 4.1.11.
 - L'audit de production de site/ ne remonte aucune vulnérabilité.
-- L'audit racine ne garde que deux vulnérabilités faibles dans joi, transitives
-  via passkit-generator. La correction automatique proposée impose une
-  régression majeure de passkit-generator et n'a pas été appliquée à l'aveugle.
+- Les overrides compatibles joi 17.13.7 et js-yaml 4.3.2 ferment les avis
+  détectés par la première CI ; les audits npm racine et site/ sont à zéro.
 
 2. IDENTITÉ NAVIGATEUR RENOUVELABLE ET LOTS DE VALEUR
 
@@ -163,29 +161,21 @@ Aucun banc actuel sur la pile réelle ne certifie 250 ou 500 joueurs simultanés
 Les chiffres publics correspondants ont été retirés ; aucune nouvelle promesse
 ne doit être publiée sans mesure.
 
-4. FAIBLE — DÉPENDANCES TRANSITIVES
-
-Deux avis faibles joi subsistent via passkit-generator. Aucun avis high ou
-critical ne reste dans l'audit de production racine ; site/ est à zéro.
-
 ======================================================================
-ORDRE OBLIGATOIRE POUR UNE LIVRAISON FUTURE
+LIVRAISON EFFECTUÉE ET VÉRIFIÉE
 ======================================================================
 
-1. Isoler ce lot sans les trois images locales non suivies de site/public/.
-2. Commiter sur une branche autorisée et pousser uniquement après accord.
-3. Relier le SHA exact à tous les jobs CI GitHub requis et attendre leur vert.
-4. Appliquer et vérifier la migration 20261215120000 AVANT l'application.
-5. Déployer/promouvoir l'application uniquement avec autorisation explicite.
-6. Vérifier la santé, les logs, les routes publiques et les parcours critiques
-   sur le SHA réellement déployé.
+1. Migration Supabase 20261215120000 appliquée puis vérifiée à distance.
+2. PR #371 verte sur son SHA final a4d4ccf8452388c2b43032e5f4c61ea5646542a6.
+3. Fusion protégée dans main : SHA applicatif 29e60f327ec50438b8b1d9f5dd01b0d36a3b162a.
+4. CI post-fusion 34607649462 : tous les jobs verts, E2E complet inclus.
+5. Déploiement Vercel Production 6394729392 : succès.
+6. Santé après déploiement 34607943244 : succès sur le même SHA.
 
 ======================================================================
 DÉCISION FINALE
 ======================================================================
 
-Les bloqueurs techniques prouvés sont corrigés et validés localement.
-
-Le lot est prêt pour isolation et livraison contrôlée, mais il n'est pas encore
-en production et ne doit pas être présenté comme déployé tant que la CI, la
-migration puis la santé du SHA exact n'ont pas été vérifiées.
+Les bloqueurs techniques prouvés sont corrigés, livrés et vérifiés en
+production. Le GO vaut pour ce lot et ne certifie pas la capacité simultanée,
+qui reste un chantier de mesure distinct.
