@@ -37,17 +37,20 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
-## Release gate — état capturé avant publication (2026-09-11)
+## Release gate — livré en production (2026-09-11)
 
-**État de validation capturé avant livraison.** L'arbre Windows était sur `main` au SHA
-`2120af8e7bada3167126f58ca870ea166d5f2219`, identique à `origin/main`, avec
-les correctifs ci-dessous **non commités et non déployés**. Aucune mutation
-GitHub, Vercel, Supabase de production, Stripe ou secret n'a été effectuée.
-La migration `20261215120000_release_gate_atomicite.sql` doit impérativement
-être appliquée avant le code applicatif qui en dépend.
+**État réel vérifié.** Le lot applicatif a été fusionné par la PR `#371` dans
+`main` au SHA `29e60f327ec50438b8b1d9f5dd01b0d36a3b162a`. La migration
+`20261215120000_release_gate_atomicite.sql` a été appliquée et relue sur
+Supabase de production **avant** la fusion. La CI post-fusion `34607649462`
+est entièrement verte sur ce SHA, y compris l'E2E Chromium/WebKit. Vercel a
+enregistré le déploiement Production `6394729392`, puis le workflow de santé
+`34607943244` a validé base, workers et sécurité sur le même SHA. Aucun secret,
+changement Stripe ou donnée métier n'a été modifié. Les trois images locales
+non suivies sous `site/public/images/game-world/` sont restées hors livraison.
 
 **Faits corrigés.** Les quatre bloquants du rapport du 2026-09-09 sont fermés
-dans l'arbre local :
+sur `main` :
 
 - `next` passe à 16.3.4 dans les deux applications, `sharp` à 0.35.4 et le
   chargeur central interdit aussi le décodeur HEIF/AVIF ; Vitest et
@@ -76,7 +79,7 @@ dans l'arbre local :
   conditionnelles : premier scan, 250 joueurs, délais absolus, code toujours à
   quatre caractères et rentabilité ROI.
 
-**Preuves locales finales.** `typecheck` et `lint` sont verts (deux warnings
+**Preuves locales et distantes finales.** `typecheck` et `lint` sont verts (deux warnings
 préexistants, aucun rouge) ; 242 tests ciblés puis 58 tests de régression sont
 verts ; la suite Vitest complète passe 434 fichiers et 7 686 tests ;
 `sql:check` et `migrations:check` passent avec 214 migrations et la tête
@@ -88,25 +91,24 @@ lots gagnants concernés à 5 €, sous le nouveau seuil serveur. Après la revu
 QA, le chemin d'erreur RPC Ticket d'Or a été corrigé et 25/25 tests ciblés ont
 été rejoués ; un nouveau build isolé de l'état final a compilé et généré les 66
 pages. La contre-revue QA conclut **GO** et la revue sécurité indépendante
-conclut **GO conditionnel à l'application préalable de la migration**, sans
-finding exploitable restant.
+conclut **GO**, sa condition d'application préalable de la migration étant
+satisfaite, sans finding exploitable restant. Le premier run de PR a exposé quatre écarts réels
+(overrides `joi`/`js-yaml`, justifications de casts, snapshot de types et ancien
+attendu E2E du modèle Happy hour) ; ils ont été corrigés sans désactiver de
+garde. Le run PR `34605736163` et le run `main` `34607649462` sont ensuite
+entièrement verts.
 
 **Restes démontrés, non bloquants pour la bêta limitée.** Le budget marchand
 est encore débité au claim et non réservé atomiquement au tirage : le fermer
 correctement exige un coût figé, un compteur réservé et une libération à
-l'expiration/annulation. `npm audit --omit=dev` ne garde que deux vulnérabilités
-faibles dans `joi` via `passkit-generator` ; la correction proposée par npm
-impose une régression majeure de cette dépendance et n'a pas été appliquée.
-La capacité simultanée réelle reste non certifiée. L'arbre exact n'a ni CI sur
-un `headSha`, ni preview, ni contrôle post-déploiement tant qu'il n'est pas
-publié avec autorisation explicite.
+l'expiration/annulation. Les audits npm racine et `site/` sont désormais à zéro
+vulnérabilité grâce aux overrides compatibles `joi 17.13.7` et `js-yaml 4.3.2`.
+La capacité simultanée réelle reste non certifiée.
 
-**Fini quand.** Relire/isoler ce lot sans les trois images locales non suivies,
-commiter sur la branche autorisée, appliquer la migration avant l'application,
-obtenir tous les jobs CI requis verts sur le SHA exact, puis contrôler la santé
-post-déploiement. La demande du propriétaire autorise désormais le commit et le
-push sur `main` ; l'application distante de la migration Supabase reste une
-mutation de production distincte à autoriser explicitement.
+**Livraison terminée.** Migration préalable, PR protégée, CI du SHA de PR, fusion
+dans `main`, CI post-fusion, déploiement Production et santé post-déploiement
+sont tous prouvés. Le présent suivi documentaire ne modifie aucun code runtime ;
+le SHA courant de `main` reste à résoudre par Git après son intégration.
 
 ## Audit Codex — bilan réconcilié (2026-09-05)
 
