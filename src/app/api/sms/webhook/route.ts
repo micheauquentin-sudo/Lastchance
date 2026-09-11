@@ -4,12 +4,10 @@ import { optionalEnv } from "@/lib/env";
 import {
   monitored,
   recordCounter,
-  recordDurableCounter,
   reportError,
   reportSecurityEvent,
 } from "@/lib/monitoring";
 import { observeSharedKey, rateLimitBucket } from "@/lib/rate-limit";
-import { OP_SMS_URL_HERITEE } from "@/lib/sms-webhook-legacy";
 import { normalizeSmsPhone } from "@/lib/sms-dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { timingSafeEquals } from "@/lib/timing-safe";
@@ -33,7 +31,7 @@ import { timingSafeEquals } from "@/lib/timing-safe";
  *     qu'une URL qu'on choisit. Le secret voyage donc dans l'appel lui-même,
  *     et la comparaison est à temps constant.
  *
- *     TROIS CHEMINS, ET UN SEUL SURVIVRA. L'en-tête
+ *     DEUX CHEMINS SÛRS. L'en-tête
  *     `x-lastchance-sms-token` porte le secret maître : c'est la cible, et
  *     Brevo le permet — `POST /v3/webhooks` accepte `headers: [{key,
  *     value}]` et un objet `auth` de type jeton, sur un webhook
@@ -48,18 +46,8 @@ import { timingSafeEquals } from "@/lib/timing-safe";
  *     console du prestataire — le secret maître n'a rien à y faire, un
  *     jeton qui ne sert qu'à cette route peut y survivre.
  *
- *     Le secret maître reste toléré en URL LE TEMPS DE LA BASCULE, et
- *     chaque usage émet `sms_webhook_legacy_url_secret`. C'est ce
- *     compteur — pas une supposition — qui dira quand la configuration
- *     Brevo a été reprise et que ce dernier chemin peut être retiré.
- *
- *     ET IL SE LIT SANS SENTRY. L'événement ci-dessus n'existait que dans
- *     Sentry/PostHog, que personne n'ouvre : la condition de retrait était
- *     donc invérifiable, ce qui rendait la branche permanente de fait.
- *     Chaque usage écrit désormais une ligne durable dans `ops_metrics`
- *     (`OP_SMS_URL_HERITEE`), et `/api/health` répond en une requête
- *     « servi il y a N jours » ou « pas servi » — cf.
- *     `src/lib/sms-webhook-legacy.ts`.
+ *     Le secret maître n'est plus accepté en URL. Une URL ne porte que le
+ *     jeton dérivé, limité à cette route.
  *
  *   • JAMAIS de refus par limite de débit. Ailleurs on ferme la porte ; ici
  *     la conséquence d'un refus est un client qui a demandé l'arrêt et
@@ -109,33 +97,6 @@ async function handleSmsWebhook(request: Request) {
   if (!auth.ok) {
     reportSecurityEvent("sms_webhook_invalid_token");
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
-  }
-
-  if (auth.via === "url-legacy-secret") {
-    // Chemin HÉRITÉ, accepté pour ne pas couper les STOP entre le
-    // déploiement et la reprise de la configuration Brevo. Le signal est
-    // distinct de `sms_webhook_invalid_token` : celui-ci dit « quelqu'un
-    // frappe à la porte », celui-là dit « le prestataire est encore sur
-    // l'ancienne URL ». Son passage à zéro est la condition de retrait.
-    reportSecurityEvent("sms_webhook_legacy_url_secret");
-
-    /* ── ET SURTOUT : UNE TRACE QU'ON PEUT LIRE SANS SENTRY ──────────
-     *
-     * L'événement ci-dessus ne vit que dans Sentry/PostHog. Personne ne l'a
-     * ouvert, et la condition de retrait de cette branche n'a donc jamais été
-     * constatée — c'est ainsi qu'un chemin de compatibilité devient permanent
-     * avec le secret MAÎTRE dans des URL journalisées.
-     *
-     * La ligne écrite ici est lue par `/api/health` (`lireUsageUrlHeritee`),
-     * qui répond « servi il y a N jours » ou « pas servi » en une requête.
-     *
-     * ATTENDUE, contrairement aux `recordCounter` plus bas : une invocation
-     * serverless qui rend sa réponse coupe les écritures en vol. Perdre une
-     * mesure de charge est sans conséquence ; perdre CELLE-CI ferait conclure
-     * à tort que la bascule est terminée, et retirer la branche couperait la
-     * réception des STOP — un risque légal, pas un risque technique.
-     */
-    await recordDurableCounter(OP_SMS_URL_HERITEE);
   }
 
   // Observation seule : voir l'en-tête. Un pic anormal doit se voir sans
@@ -272,12 +233,11 @@ function urlToken(secret: string): string {
 
 /** Par où l'appel s'est authentifié — voir l'en-tête du fichier. */
 type SmsWebhookAuth =
-  | { ok: true; via: "header" | "url-token" | "url-legacy-secret" }
+  | { ok: true; via: "header" | "url-token" }
   | { ok: false; via: null };
 
 /**
- * L'en-tête d'abord (le secret maître), l'URL ensuite (le jeton dérivé,
- * ou le secret maître le temps de la bascule).
+ * L'en-tête d'abord (le secret maître), l'URL ensuite (le jeton dérivé seul).
  *
  * Un en-tête PRÉSENT MAIS FAUX ne se rattrape pas par l'URL : c'est un
  * appel qui prétend s'authentifier et échoue, pas un appel resté sur
@@ -299,9 +259,6 @@ function authorized(request: Request, secret: string): SmsWebhookAuth {
 
   if (timingSafeEquals(query, urlToken(secret))) {
     return { ok: true, via: "url-token" };
-  }
-  if (timingSafeEquals(query, secret)) {
-    return { ok: true, via: "url-legacy-secret" };
   }
   return { ok: false, via: null };
 }

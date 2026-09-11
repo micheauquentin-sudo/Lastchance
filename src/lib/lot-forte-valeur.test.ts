@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { PlayLimit } from "@/types/database";
 import {
   estLotForteValeur,
+  lotInterditAvecIdentiteFaible,
   lotMalGarde,
   niveauGardeLot,
   PHRASES_GARDE_LOT,
@@ -14,9 +15,8 @@ import {
 /**
  * TROIS PROPRIÉTÉS PORTENT CE FICHIER.
  *
- * Une valeur ABSENTE (`value_cents === null`) n'avertit jamais — la confondre
- * avec 0 ou avec « à vérifier » peindrait en rouge toutes les roues où la
- * colonne n'a jamais été remplie. Le seuil est INCLUSIF, le cas le plus probable
+ * Une valeur ABSENTE (`value_cents === null`) échoue désormais fermée : elle ne
+ * prouve jamais que le lot est sous le seuil. Le seuil est INCLUSIF, le cas le plus probable
  * étant un lot calibré pile dessus. Et `unlimited` ne rend PAS la même phrase
  * que `once` / `daily` / `weekly` : les fondre dirait à un commerçant sans
  * limite que sa limite est contournable.
@@ -60,11 +60,24 @@ describe("estLotForteValeur", () => {
   });
 });
 
+describe("lotInterditAvecIdentiteFaible", () => {
+  it("refuse les valeurs absentes et celles au seuil, mais pas un lot perdant", () => {
+    expect(lotInterditAvecIdentiteFaible(lot({ value_cents: null }))).toBe(true);
+    expect(lotInterditAvecIdentiteFaible(lot({ value_cents: 1999 }))).toBe(false);
+    expect(lotInterditAvecIdentiteFaible(lot({ value_cents: 2000 }))).toBe(true);
+    expect(
+      lotInterditAvecIdentiteFaible(lot({ value_cents: null, is_losing: true })),
+    ).toBe(false);
+  });
+});
+
 describe("niveauGardeLot", () => {
-  it("ne dit rien d'un lot sans valeur, quelle que soit la limite", () => {
+  it("signale un lot sans valeur, quelle que soit la limite", () => {
     for (const limite of TOUTES_LIMITES) {
-      expect(niveauGardeLot(lot({ value_cents: null }), limite)).toBe("aucun");
-      expect(lotMalGarde(lot({ value_cents: null }), limite)).toBe(false);
+      expect(niveauGardeLot(lot({ value_cents: null }), limite)).toBe(
+        "valeur_inconnue",
+      );
+      expect(lotMalGarde(lot({ value_cents: null }), limite)).toBe(true);
     }
   });
 
@@ -105,6 +118,7 @@ describe("niveauGardeLot", () => {
 describe("PHRASES_GARDE_LOT", () => {
   it("laisse `aucun` vide et rédige les deux autres différemment", () => {
     expect(PHRASES_GARDE_LOT.aucun).toBe("");
+    expect(PHRASES_GARDE_LOT.valeur_inconnue).toContain("n'est pas renseignée");
     expect(PHRASES_GARDE_LOT.limite_contournable).not.toBe("");
     expect(PHRASES_GARDE_LOT.sans_limite).not.toBe("");
     expect(PHRASES_GARDE_LOT.sans_limite).not.toBe(PHRASES_GARDE_LOT.limite_contournable);

@@ -37,7 +37,7 @@ export const metadata: Metadata = {
 const INCLUDED_EVERYWHERE = [
   {
     title: "Caisse universelle (11 familles)",
-    desc: "Un scanner unique pour valider les gains de tous les jeux en une seconde, sans former votre équipe à dix outils.",
+    desc: "Un scanner unique pour valider les gains de tous les jeux, sans former votre équipe à dix outils.",
     icon: "⚡",
   },
   {
@@ -62,7 +62,7 @@ const INCLUDED_EVERYWHERE = [
   },
   {
     title: "4 Scénarios d'e-mails automatiques",
-    desc: "Gain non retiré, premier scan, anniversaire, réactivation des inactifs — 100% automatisé.",
+    desc: "Gain non retiré, anniversaire, réactivation des inactifs et après retrait d'un gain — automatisés.",
     icon: "✉️",
   },
   {

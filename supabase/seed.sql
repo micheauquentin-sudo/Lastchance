@@ -278,6 +278,24 @@ insert into public.prizes (id, organization_id, wheel_id, label, description, co
    'e2e30000-0000-4000-8000-000000000008', 'Perdu (jamais tiré)', '', '#64748b', 0, true, 1)
 on conflict (id) do nothing;
 
+-- Le garde anti-fraude des parcours publics refuse désormais tout lot gagnant
+-- dont la valeur est inconnue ou atteint 20 €. Les fixtures gagnantes restent
+-- volontairement sous ce seuil ; l'UPDATE rend aussi le seed réentrant pour
+-- les bases locales où ces lignes existaient avant l'ajout de `value_cents`.
+update public.prizes
+set value_cents = 500
+where organization_id = 'e2e10000-0000-4000-8000-000000000001'
+  and wheel_id in (
+    'e2e30000-0000-4000-8000-000000000001',
+    'e2e30000-0000-4000-8000-000000000002',
+    'e2e30000-0000-4000-8000-000000000003',
+    'e2e30000-0000-4000-8000-000000000005',
+    'e2e30000-0000-4000-8000-000000000006',
+    'e2e30000-0000-4000-8000-000000000007',
+    'e2e30000-0000-4000-8000-000000000008'
+  )
+  and is_losing = false;
+
 insert into public.qr_codes (organization_id, campaign_id, slug, label)
 values ('e2e10000-0000-4000-8000-000000000001', 'e2e20000-0000-4000-8000-000000000008', 'E2EWORD', 'Comptoir E2E')
 on conflict (slug) do nothing;

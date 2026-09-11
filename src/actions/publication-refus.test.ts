@@ -402,6 +402,25 @@ describe("le refus de droit de la base arrive à l'écran, module par module", (
         error: { code: "P0001", message: "module access required: wheel" },
       },
     };
+    state.tables.wheels = {
+      awaited: {
+        data: [
+          {
+            id: "wheel-1",
+            prizes: [
+              {
+                is_active: true,
+                is_losing: false,
+                weight: 1,
+                stock: 1,
+                value_cents: 250,
+              },
+            ],
+          },
+        ],
+        error: null,
+      },
+    };
 
     const res = await campagnes.updateCampaignAutomation(
       null,

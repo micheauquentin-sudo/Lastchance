@@ -136,9 +136,33 @@ function estimateCtx() {
       skill_config: { target: 50, tolerance: 5, question: null, unit: null, imageUrl: null },
     },
     prizes: [
-      { id: PRIZE_ID, label: "Un café offert", description: "" },
-      { id: "prize-2", label: "Perdu", description: "" },
+      {
+        id: PRIZE_ID,
+        label: "Un café offert",
+        description: "",
+        is_losing: false,
+        value_cents: 500,
+      },
+      {
+        id: "prize-2",
+        label: "Perdu",
+        description: "",
+        is_losing: true,
+        value_cents: null,
+      },
     ],
+  };
+}
+
+function reflexCtx(playLimit: "once" | "unlimited" = "once") {
+  return {
+    ...estimateCtx(),
+    wheel: {
+      id: WHEEL_ID,
+      game_type: "reflex",
+      play_limit: playLimit,
+      skill_config: { durationMs: 800 },
+    },
   };
 }
 
@@ -160,7 +184,10 @@ beforeEach(() => {
   );
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+});
 
 describe("submitSkillChallenge — le défi pilote le tirage", () => {
   it("RÉUSSITE : tirage normal (p_force_losing=false) → gain + claim", async () => {
@@ -213,6 +240,73 @@ describe("submitSkillChallenge — le défi pilote le tirage", () => {
     }
     const spin = state.rpcCalls.find((c) => c.name === "perform_atomic_spin");
     expect(spin?.args.p_force_losing).toBe(true);
+  });
+});
+
+describe("submitSkillChallenge — réflexe non autoritaire", () => {
+  it.each([true, false])(
+    "déclenche le même tirage pondéré quand succeeded=%s",
+    async (succeeded) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
+      vi.mocked(loadPlayContext).mockResolvedValue(
+        reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+      );
+      const token = await issueToken();
+      state.reset();
+      vi.mocked(loadPlayContext).mockResolvedValue(
+        reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+      );
+      vi.advanceTimersByTime(1_400);
+
+      const res = await submitSkillChallenge({
+        slug: SLUG,
+        challengeToken: token,
+        attempt: { succeeded },
+      });
+
+      expect(res.ok).toBe(true);
+      const spin = state.rpcCalls.find((call) => call.name === "perform_atomic_spin");
+      expect(spin?.args.p_force_losing).toBe(false);
+    },
+  );
+
+  it("refuse au démarrage une ancienne configuration Réflexe illimitée", async () => {
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      reflexCtx("unlimited") as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+
+    const res = await startSkillChallenge({ slug: SLUG });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
+    expect(reportSecurityEventMock).toHaveBeenCalledWith(
+      "skill_unlimited_historique_refuse",
+      { wheel_id: WHEEL_ID },
+    );
+  });
+
+  it("refuse au submit si une configuration Réflexe devient illimitée", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-10T10:00:00.000Z"));
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      reflexCtx() as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+    const token = await issueToken();
+    state.reset();
+    vi.mocked(loadPlayContext).mockResolvedValue(
+      reflexCtx("unlimited") as unknown as Awaited<ReturnType<typeof loadPlayContext>>,
+    );
+    vi.advanceTimersByTime(1_400);
+
+    const res = await submitSkillChallenge({
+      slug: SLUG,
+      challengeToken: token,
+      attempt: { succeeded: true },
+    });
+
+    expect(res.ok).toBe(false);
+    expect(state.rpcCalls).toEqual([]);
   });
 });
 

@@ -238,7 +238,7 @@ export default function AttirerPage() {
                     Une seule caisse universelle pour votre équipe
                   </h3>
                   <p className="mt-3 text-sm font-bold leading-relaxed text-k-bg/85">
-                    Votre staff n&apos;a pas à jongler entre dix applications : un seul scanner rapide valide les gains des 11 familles de jeux en une seconde.
+                    Votre staff n&apos;a pas à jongler entre dix applications : un seul scanner valide les gains des 11 familles de jeux.
                   </p>
                   <p className="mt-3 text-sm font-bold leading-relaxed text-k-bg/85">
                     Besoin de faire plaisir à un client méritant au comptoir ? Le <strong>Ticket d&apos;Or</strong> vous permet d&apos;émettre un gain manuellement, comme geste commercial maîtrisé.

@@ -58,7 +58,7 @@ const OBJECTIVES: readonly ObjectiveData[] = [
         badge: "Carte & Menu",
         contains: "Carte numérique mobile en français et anglais automatique, suggestions du chef, horaires et réseaux.",
         situation: "Sur chaque table ou en terrasse pour remplacer les cartes papier abîmées et les PDF illisibles.",
-        benefit: "Mise à jour en 10 secondes et zéro friction pour les touristes et clients de passage.",
+        benefit: "Mise à jour depuis votre espace et zéro friction pour les touristes et clients de passage.",
       },
     ],
     highlight: "15 mécaniques de jeu personnalisables à vos couleurs, prêtes sans rien installer.",
@@ -140,7 +140,7 @@ const OBJECTIVES: readonly ObjectiveData[] = [
     modules: [
       {
         name: "Événements Live sur grand écran",
-        badge: "Jusqu'à 250 joueurs",
+        badge: "Événements en direct",
         contains: "Quiz et blind tests projetés sur TV/vidéoprojecteur, télécommande animateur et vote smartphone des clients.",
         situation: "Les jeudis soirs de bar, soirées étudiantes ou événements d'entreprise.",
         benefit: "L'ambiance d'un plateau télé qui remplit la salle et prolonge les consommations.",
@@ -483,7 +483,7 @@ function LiveDemo() {
           </div>
         </div>
         <span className="k-border-thin rounded-md bg-k-blue/40 px-2 py-0.5 text-[11px] font-black text-k-ink">
-          250 joueurs max
+          Événements en direct
         </span>
       </div>
     </div>

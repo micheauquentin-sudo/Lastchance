@@ -4,6 +4,8 @@ import { useState, useSyncExternalStore, useTransition } from "react";
 import { tirerTicketOr } from "@/actions/ticket-or";
 import {
   cleMemoireTicket,
+  lireOuCreerNonceTicket,
+  oublierNonceTicket,
   parserTirageMemorise,
   PHRASES_TIRAGE,
   type EtatTirage,
@@ -28,20 +30,15 @@ import {
  *
  * ── ET IL NE PART QU'UNE FOIS ──
  *
- * Le bouton disparaît dès le premier envoi. La base refuse de toute façon le
- * second (`deja_tire`, sous verrou de ligne) — mais un bouton qui reste
- * cliquable après un gain invite à recliquer, et le second clic annoncerait
- * « déjà ouvert » à quelqu'un qui vient de gagner.
+ * Le bouton disparaît dès le premier envoi. Sous verrou de ligne, la base ne
+ * crée jamais un second résultat : le même nonce restitue le premier, tout
+ * autre nonce reçoit `deja_tire`.
  *
  * ── LE RÉSULTAT SURVIT À UN RECHARGEMENT ──
  *
- * `tirer_ticket_or` ne rend le lot et le code de retrait QU'UNE FOIS. Sur un
- * parcours au QR, l'écran se perd bien plus facilement qu'au comptoir : on
- * bascule vers ses SMS, l'écran se verrouille, le navigateur de l'appareil
- * photo recharge l'onglet — et le client relisait « ce ticket a déjà été
- * ouvert » alors qu'il venait de gagner. Le gain est mémorisé sur SON appareil
- * (voir `cleMemoireTicket`) : aucun droit nouveau, aucun rejeu, juste de quoi
- * relire ce que le serveur lui a déjà rendu.
+ * Le gain est mémorisé sur SON appareil (voir `cleMemoireTicket`). Si la
+ * réponse se perd avant cette écriture, le nonce persisté avant l'appel permet
+ * au serveur de restituer le même lot et le même code, sans rejouer le tirage.
  *
  * ── `apercu` : LE STUDIO MONTE CETTE PAGE, ET ELLE NE TIRE RIEN (VIT-45) ──
  *
@@ -86,13 +83,22 @@ function lireMemoire(code: string): TirageGagnant | null {
   return valeur;
 }
 
-function memoriser(code: string, tirage: TirageGagnant): void {
+function memoriser(code: string, tirage: TirageGagnant): boolean {
   cacheMemoire.set(code, tirage);
   try {
     window.localStorage.setItem(cleMemoireTicket(code), JSON.stringify(tirage));
+    const relu = parserTirageMemorise(
+      JSON.parse(window.localStorage.getItem(cleMemoireTicket(code)) ?? "null"),
+    );
+    return (
+      relu?.lot === tirage.lot &&
+      relu.codeRetrait === tirage.codeRetrait &&
+      relu.expireLe === tirage.expireLe
+    );
   } catch {
-    // Écriture refusée : l'écran affiche déjà le résultat, on ne perd que la
-    // relecture après rechargement. Rien à dire au client à cet instant.
+    // Le nonce reste alors mémorisé : un rechargement pourra demander à la
+    // base de restituer exactement le même résultat.
+    return false;
   }
 }
 
@@ -147,6 +153,7 @@ export function TicketExperience({
   const [resultat, setResultat] = useState<EtatTirage | null>(null);
   /** L'aller-retour a échoué SANS verdict du serveur. Distinct d'un refus. */
   const [reseauCoupe, setReseauCoupe] = useState(false);
+  const [securisationImpossible, setSecurisationImpossible] = useState(false);
   const [enCours, demarrer] = useTransition();
 
   function tirer() {
@@ -158,19 +165,37 @@ export function TicketExperience({
       return;
     }
     demarrer(async () => {
+      let nonce: string;
+      try {
+        // Persisté AVANT l'appel : une réponse perdue rejouera cette tentative,
+        // jamais un second tirage.
+        nonce = lireOuCreerNonceTicket(code);
+      } catch {
+        setSecurisationImpossible(true);
+        return;
+      }
+      setSecurisationImpossible(false);
       // LA COUPURE RÉSEAU N'EST PAS UN REFUS. Sans ce `catch`, un rejet de la
       // promesse laissait l'écran sur son bouton sans un mot ; et surtout, il
       // faut pouvoir la distinguer d'un verdict du serveur pour décider si la
       // copie locale a le droit de reprendre la main (voir `memoirePrime`).
       let etat: EtatTirage;
       try {
-        etat = await tirerTicketOr(code);
+        etat = await tirerTicketOr(code, nonce);
       } catch {
         setReseauCoupe(true);
         return;
       }
       setReseauCoupe(false);
-      if (etat.state === "ok") memoriser(code, etat);
+      if (etat.state === "ok") {
+        // Le secret n'est effacé qu'une fois le résultat complet relu depuis le
+        // stockage. S'il ne peut pas l'être, il reste disponible pour la reprise.
+        if (memoriser(code, etat)) oublierNonceTicket(code);
+      } else {
+        // Ces états n'ont rien attribué lors de cet appel, ou indiquent qu'un
+        // autre secret a déjà tiré le ticket : cette tentative est terminée.
+        oublierNonceTicket(code);
+      }
       setResultat(etat);
     });
   }
@@ -185,9 +210,8 @@ export function TicketExperience({
    * Trois cas, et seulement trois :
    *  · aucun verdict encore demandé (`resultat === null`) — c'est la relecture
    *    après rechargement, la raison d'être de la mémoire ;
-   *  · `deja_tire` — le seul refus où la mémoire prime À BON DROIT : c'est le
-   *    MÊME ticket, l'un des deux porte le lot, et le serveur ne le rend
-   *    qu'une fois ;
+   *  · `deja_tire` — le seul refus où une ancienne copie locale prime à bon
+   *    droit : un autre nonce ne peut relire le résultat ;
    *  · coupure réseau — aucun verdict du tout, on n'efface pas un gain acquis
    *    parce que le réseau de la boutique a lâché.
    *
@@ -226,12 +250,16 @@ export function TicketExperience({
         >
           {enCours ? "Ouverture…" : "Ouvrir mon ticket"}
         </button>
-        {/* RIEN N'A ÉTÉ CONSOMMÉ : la promesse a échoué avant tout verdict. Le
-            dire, plutôt que de laisser un bouton muet faire craindre le pire. */}
+        {securisationImpossible && (
+          <p role="alert" className="mt-3 text-xs font-semibold text-red-600">
+            Ce navigateur ne permet pas de sécuriser le tirage. Autorisez le
+            stockage local puis réessayez.
+          </p>
+        )}
         {reseauCoupe && (
           <p role="alert" className="mt-3 text-xs font-semibold text-red-600">
-            Connexion perdue. Votre ticket n&apos;a pas été ouvert : vérifiez
-            votre réseau et réessayez.
+            Connexion perdue : nous ne savons pas si l&apos;ouverture a abouti.
+            Réessayez pour vérifier la même tentative, sans second tirage.
           </p>
         )}
       </div>

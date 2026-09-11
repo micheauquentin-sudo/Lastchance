@@ -76,7 +76,7 @@ const STEPS = [
     dot: "bg-k-pink text-k-ink",
     tilt: "-rotate-[0.7deg]",
     title: "Vous encaissez les retours",
-    description: "Ils reviennent pour retirer leur lot. Votre équipe le valide en caisse en une seconde au scanner.",
+    description: "Ils reviennent pour retirer leur lot. Votre équipe le valide en caisse au scanner.",
   },
 ];
 
@@ -84,7 +84,7 @@ const FEATURES = [
   { n: "01", dot: "bg-k-yellow text-k-ink", title: "QR codes & affiches prêtes", description: "Affiches A4 imprimables, quatre modèles au choix, QR personnalisés." },
   { n: "02", dot: "bg-k-blue text-k-ink", title: "Stats en temps réel", description: "Parties jouées, taux de gagnants, scans et emails — par campagne." },
   { n: "03", dot: "bg-k-orange text-k-ink", title: "15 mécaniques de jeu", description: "Roue, grattage, machine à sous, défis… adaptées à vos couleurs et votre logo." },
-  { n: "04", dot: "bg-k-pink text-k-ink", title: "Caisse universelle", description: "Un seul scanner pour valider les gains des onze familles de jeux en une seconde." },
+  { n: "04", dot: "bg-k-pink text-k-ink", title: "Caisse universelle", description: "Un seul scanner pour valider les gains des onze familles de jeux." },
   { n: "05", dot: "bg-k-green text-k-bg", title: "Conforme RGPD", description: "Consentement explicite, données en Europe, export CSV à tout moment." },
   { n: "06", dot: "bg-k-orange text-k-ink", title: "Emails de gain automatiques", description: "Chaque gagnant reçoit son code au nom de votre établissement." },
 ];

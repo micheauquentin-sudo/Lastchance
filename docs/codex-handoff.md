@@ -37,6 +37,77 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Release gate — état capturé avant publication (2026-09-11)
+
+**État de validation capturé avant livraison.** L'arbre Windows était sur `main` au SHA
+`2120af8e7bada3167126f58ca870ea166d5f2219`, identique à `origin/main`, avec
+les correctifs ci-dessous **non commités et non déployés**. Aucune mutation
+GitHub, Vercel, Supabase de production, Stripe ou secret n'a été effectuée.
+La migration `20261215120000_release_gate_atomicite.sql` doit impérativement
+être appliquée avant le code applicatif qui en dépend.
+
+**Faits corrigés.** Les quatre bloquants du rapport du 2026-09-09 sont fermés
+dans l'arbre local :
+
+- `next` passe à 16.3.4 dans les deux applications, `sharp` à 0.35.4 et le
+  chargeur central interdit aussi le décodeur HEIF/AVIF ; Vitest et
+  `eslint-config-next` sont alignés ;
+- chaque spin public exige un nonce persisté avant l'appel, rejoué à
+  l'identique après une réponse perdue ; une perte conserve désormais son
+  segment d'affichage dans `spins.display_prize_id` ;
+- Réflexe et Jauge ne laissent plus le navigateur décider d'un succès ayant
+  une valeur : après le délai signé, le serveur effectue le tirage pondéré ;
+  la base interdit en plus ces deux jeux avec `play_limit = 'unlimited'` et
+  le runtime refuse les éventuelles lignes historiques encore illimitées ;
+- un lot gagnant public dont la valeur est inconnue ou atteint 20 € est refusé
+  à l'exécution, à la publication, à la reprise et par les automatisations ;
+  les lots sous 20 € gardent la limite navigateur assumée ;
+- Ticket d'Or utilise un nonce UUIDv4 secret, haché en base : même nonce =
+  restitution du lot et du code initiaux, autre nonce = `deja_tire`. La RPC de
+  tirage est `service_role` uniquement et l'émission est plafonnée
+  atomiquement à 200 tickets par organisation et par heure ;
+- un claim public exige désormais le cookie joueur correspondant ; un gain
+  déjà tiré reste récupérable après désactivation de son lot et les références
+  gagnantes empêchent une suppression concurrente destructrice ;
+- le secret maître Brevo n'est plus accepté dans la query string. Seuls
+  l'en-tête sûr et le jeton URL dérivé restent valides ; le compteur et le
+  module de transition hérités ont été retirés ;
+- les affirmations marketing non prouvées ont été supprimées ou rendues
+  conditionnelles : premier scan, 250 joueurs, délais absolus, code toujours à
+  quatre caractères et rentabilité ROI.
+
+**Preuves locales finales.** `typecheck` et `lint` sont verts (deux warnings
+préexistants, aucun rouge) ; 242 tests ciblés puis 58 tests de régression sont
+verts ; la suite Vitest complète passe 434 fichiers et 7 686 tests ;
+`sql:check` et `migrations:check` passent avec 214 migrations et la tête
+`20261215120000` ; pgTAP passe 779 tests sur base vide puis 779 sur base semée ;
+le build racine génère 66 pages et le build `site/` 8 pages ; les E2E ciblés
+mobile Chrome passent 17/17 (quatre sessions, gain/caisse, perte/rejeu, RPS,
+mot mystère, carte retournée et bonneteau). Le seed E2E fixe explicitement les
+lots gagnants concernés à 5 €, sous le nouveau seuil serveur. Après la revue
+QA, le chemin d'erreur RPC Ticket d'Or a été corrigé et 25/25 tests ciblés ont
+été rejoués ; un nouveau build isolé de l'état final a compilé et généré les 66
+pages. La contre-revue QA conclut **GO** et la revue sécurité indépendante
+conclut **GO conditionnel à l'application préalable de la migration**, sans
+finding exploitable restant.
+
+**Restes démontrés, non bloquants pour la bêta limitée.** Le budget marchand
+est encore débité au claim et non réservé atomiquement au tirage : le fermer
+correctement exige un coût figé, un compteur réservé et une libération à
+l'expiration/annulation. `npm audit --omit=dev` ne garde que deux vulnérabilités
+faibles dans `joi` via `passkit-generator` ; la correction proposée par npm
+impose une régression majeure de cette dépendance et n'a pas été appliquée.
+La capacité simultanée réelle reste non certifiée. L'arbre exact n'a ni CI sur
+un `headSha`, ni preview, ni contrôle post-déploiement tant qu'il n'est pas
+publié avec autorisation explicite.
+
+**Fini quand.** Relire/isoler ce lot sans les trois images locales non suivies,
+commiter sur la branche autorisée, appliquer la migration avant l'application,
+obtenir tous les jobs CI requis verts sur le SHA exact, puis contrôler la santé
+post-déploiement. La demande du propriétaire autorise désormais le commit et le
+push sur `main` ; l'application distante de la migration Supabase reste une
+mutation de production distincte à autoriser explicitement.
+
 ## Audit Codex — bilan réconcilié (2026-09-05)
 
 **Référence vérifiée.** `main` et `origin/main` pointent sur `9e6fe7fb`

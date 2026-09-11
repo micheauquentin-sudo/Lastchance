@@ -31,7 +31,7 @@ const SECTION = "relative z-10 mx-auto max-w-6xl scroll-mt-28 px-4 py-16 sm:px-6
 export const metadata: Metadata = {
   title: "Animer en direct & Soirées live · Lastchance",
   description:
-    "Soirées interactives jusqu'à 250 joueurs, grand écran + smartphones, championnats de pronostics sur 11 thèmes et jackpot collectif.",
+    "Soirées interactives sur grand écran et smartphones, championnats de pronostics sur 11 thèmes et jackpot collectif.",
 };
 
 const liveTier = PLAN_TIERS.find((t) => t.id === "live") ?? PLAN_TIERS[3];
@@ -113,9 +113,6 @@ export default function AnimerPage() {
                       <span className="k-border-thin rounded-full bg-k-blue px-3 py-1 text-xs font-black text-k-ink">
                         Module #1
                       </span>
-                      <span className="rounded-full bg-k-yellow px-2.5 py-0.5 text-xs font-black text-k-ink">
-                        Jusqu&apos;à 250 joueurs
-                      </span>
                     </div>
                     <h3 className="mt-4 text-2xl font-black text-k-ink sm:text-3xl" style={DISPLAY}>
                       Événements Live & Écran Géant
@@ -126,9 +123,6 @@ export default function AnimerPage() {
                     <ul className="mt-5 space-y-2 text-xs font-extrabold text-k-ink">
                       <li className="flex items-center gap-2">
                         <span className="text-k-green">✓</span> Mode grand écran TV et télécommande animateur
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-k-green">✓</span> Jusqu&apos;à {liveTier.limits.eventParticipants} joueurs simultanés
                       </li>
                       <li className="flex items-center gap-2">
                         <span className="text-k-green">✓</span> Podium et scores mis à jour en temps réel

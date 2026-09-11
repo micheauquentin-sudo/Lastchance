@@ -188,6 +188,7 @@ export function PlayExperience({
         if (!active || !pending) return;
         pendingWinRef.current = pending;
         if (startedRef.current) return;
+        oublierNonceTirage(slug);
         setOutcome(pending);
         setPhase("won");
       })
@@ -230,7 +231,18 @@ export function PlayExperience({
     // Nonce de LA TENTATIVE en cours : relu tel quel après un rechargement,
     // il fait reconnaître au serveur le tirage déjà commis dont la réponse
     // s'est perdue, au lieu d'en créer un second (voir @/lib/spin-nonce).
-    const nonce = lireOuCreerNonceTirage(slug);
+    let nonce: string;
+    try {
+      nonce = lireOuCreerNonceTirage(slug);
+    } catch {
+      spinningRef.current = false;
+      startedRef.current = false;
+      setLancement(false);
+      setError(
+        "Ce navigateur ne permet pas de sécuriser cette tentative. Autorisez le stockage de session puis réessayez.",
+      );
+      return;
+    }
     let result;
     try {
       result = await spinWheel(

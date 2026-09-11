@@ -178,14 +178,10 @@ export type TirageGagnant = Extract<EtatTirage, { state: "ok" }>;
 /**
  * POURQUOI LE RÉSULTAT SE MÉMORISE SUR LE TÉLÉPHONE DU CLIENT.
  *
- * `tirer_ticket_or` ne rend le lot et le code de retrait QU'UNE FOIS : le
- * second appel rend `deja_tire`, sans rien d'autre. C'était tenable tant qu'on
- * lisait un code à voix haute au comptoir. Ça ne l'est plus dès lors qu'on
- * SCANNE un QR : le client ouvre la page dans le navigateur de l'appareil
- * photo, tire, puis bascule vers ses SMS ou verrouille son écran — et un
- * onglet rechargé lui rendait « ce ticket a déjà été ouvert » alors qu'il
- * venait de gagner. Le lot est bien émis au registre, mais il n'avait plus
- * aucun moyen de LIRE son code.
+ * Le résultat complet est conservé localement après la réponse. En complément,
+ * un nonce secret est persisté AVANT le premier appel : si la réponse réseau se
+ * perd après le commit, le même nonce fait restituer par la base exactement le
+ * lot et le code déjà émis, sans second tirage ni second décrément de stock.
  *
  * La mémoire vit donc sur SON appareil, et nulle part ailleurs :
  *  · elle ne contient que ce que le serveur lui a déjà rendu à lui — aucun
@@ -196,12 +192,58 @@ export type TirageGagnant = Extract<EtatTirage, { state: "ok" }>;
  *    navigation privée ne la voient pas, et l'écran le dit alors plutôt que
  *    de laisser croire à une perte.
  *
- * Le vrai correctif — que `deja_tire` rende à nouveau le lot — demande une
- * migration et un arbitrage : le code du ticket deviendrait un moyen permanent
- * de relire le code de retrait. Il est proposé à part.
+ * Le code public du ticket seul ne permet jamais cette reprise : un autre
+ * appareil, qui ne possède pas le nonce, reçoit toujours `deja_tire`.
  */
 export function cleMemoireTicket(code: string): string {
   return `ticket-or:${code}`;
+}
+
+export function cleNonceTicket(code: string): string {
+  return `ticket-or:nonce:${code}`;
+}
+
+const FORME_NONCE_TICKET =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * Rend le secret de LA tentative, après avoir prouvé qu'il survivra à un
+ * rechargement. Sans stockage durable, aucun tirage ne doit être envoyé.
+ */
+export function lireOuCreerNonceTicket(code: string): string {
+  try {
+    const memorise = window.localStorage.getItem(cleNonceTicket(code));
+    if (memorise && FORME_NONCE_TICKET.test(memorise)) return memorise;
+  } catch {
+    throw new Error("stockage_nonce_ticket_indisponible");
+  }
+
+  if (
+    typeof window === "undefined" ||
+    typeof window.crypto?.randomUUID !== "function"
+  ) {
+    throw new Error("generation_nonce_ticket_indisponible");
+  }
+  const nonce = window.crypto.randomUUID().toLowerCase();
+
+  try {
+    window.localStorage.setItem(cleNonceTicket(code), nonce);
+    if (window.localStorage.getItem(cleNonceTicket(code)) !== nonce) {
+      throw new Error("nonce_ticket_non_persiste");
+    }
+  } catch {
+    throw new Error("stockage_nonce_ticket_indisponible");
+  }
+  return nonce;
+}
+
+/** Ferme une tentative terminée ; les erreurs de nettoyage sont sans effet. */
+export function oublierNonceTicket(code: string): void {
+  try {
+    window.localStorage.removeItem(cleNonceTicket(code));
+  } catch {
+    // Le verdict serveur est déjà connu ; rien ne doit le masquer.
+  }
 }
 
 /**

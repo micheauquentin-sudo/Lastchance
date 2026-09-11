@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   cleMemoireTicket,
+  cleNonceTicket,
   estCodeTicket,
   mapTicketOrState,
   mapTirage,
@@ -145,6 +146,12 @@ describe("PHRASES_TIRAGE", () => {
 describe("cleMemoireTicket", () => {
   it("range chaque ticket sous sa propre clé", () => {
     expect(cleMemoireTicket("ABCDEFGHJK")).toBe("ticket-or:ABCDEFGHJK");
+    expect(cleNonceTicket("ABCDEFGHJK")).toBe(
+      "ticket-or:nonce:ABCDEFGHJK",
+    );
+    expect(cleNonceTicket("ABCDEFGHJK")).not.toBe(
+      cleMemoireTicket("ABCDEFGHJK"),
+    );
     expect(cleMemoireTicket("ABCDEFGHJK")).not.toBe(
       cleMemoireTicket("KJHGFEDCBA"),
     );

@@ -1,137 +1,191 @@
-# RELEASE GATE — LASTCHANCE
+RELEASE GATE LASTCHANCE — RAPPORT DE CORRECTION FINAL
+Date : 11 septembre 2026
 
-## VERDICT
+======================================================================
+VERDICT
+======================================================================
 
-🔴 NO-GO
+GO TECHNIQUE LOCAL.
 
-Le SHA audité est `ffc7cf2cd933ea853595c4ffc35bcd5acee509a1` (`main = origin/main`) ; sa CI, son déploiement et sa santé sont verts.
-L’arbre local contient en plus une refonte marketing non commitée : son build standard passe, mais elle n’est couverte par aucune CI liée à un SHA.
-Deux invariants imposés restent violés : la limite de jeu repose sur un cookie renouvelable et Réflexe/Jauge acceptent une réussite déclarée par le navigateur.
-Ticket d’Or est désormais encaissable et le tirage direct possède une idempotence, mais plusieurs reprises après perte de réponse restent incomplètes.
-Aucun fichier applicatif, test, configuration, secret, service ou donnée n’a été modifié ; seul ce rapport texte demandé a été régénéré.
+Les quatre bloquants démontrés par l'audit du 9 septembre sont corrigés dans
+l'arbre de travail et les contrôles locaux adaptés sont verts.
 
-# BLOCKERS
+ÉTAT CAPTURÉ AVANT PUBLICATION : LA PRODUCTION N'AVAIT PAS ÉTÉ MODIFIÉE.
 
-## 1. La limitation de participation est réinitialisable côté navigateur
+Au moment de cette validation, le dépôt était sur main au SHA
+2120af8e7bada3167126f58ca870ea166d5f2219, identique à origin/main, avec les
+correctifs non commités. Il n'existe donc encore ni CI GitHub sur le SHA exact
+des correctifs, ni migration de production, ni nouveau déploiement Vercel, ni
+contrôle post-déploiement. Aucun commit, push, déploiement, changement Stripe,
+secret ou donnée de production n'a été effectué.
 
-**Problème :** `play_limit` est indexé sur une identité anonyme dérivée d’un cookie UUIDv4 non signé et non enregistré comme identité forte côté serveur.
+La migration 20261215120000_release_gate_atomicite.sql doit être appliquée
+AVANT le code applicatif qui en dépend.
 
-**Preuve :** `src/lib/anonymous-player.ts:30-40` indique explicitement que toute UUIDv4 est acceptée, qu’un cookie absent est recréé et que les limites `spin` tournent avec ce cookie. Les lignes 51-69 reconnaissent qu’effacer le cookie ou changer d’appareil rend une partie. Le plafond IP de 1 500 tours/minute reste fail-open et ne rétablit pas une identité globale.
+======================================================================
+BLOCKERS CORRIGÉS
+======================================================================
 
-**Scénario concret :** jouer une campagne `once`, `daily` ou `weekly`, supprimer/remplacer `lc-anonymous-player`, recharger le QR puis recommencer ; répéter avec un autre navigateur ou appareil.
+1. DÉCODAGE D'IMAGES ET DÉPENDANCES CRITIQUES
 
-**Impact :** contournement réaliste de l’éligibilité, multiplication des tentatives et consommation accélérée des stocks ou avantages financés par le commerçant.
+- next est passé à 16.3.4 dans l'application et dans site/.
+- sharp est verrouillé à 0.35.4.
+- Le chargeur serveur central de sharp bloque en plus l'opération
+  VipsForeignLoadHeif avant tout pipeline, donc les octets HEIF/AVIF non fiables
+  ne sont plus décodés par ce chemin.
+- eslint-config-next est aligné sur 16.3.4 et Vitest sur 4.1.11.
+- L'audit de production de site/ ne remonte aucune vulnérabilité.
+- L'audit racine ne garde que deux vulnérabilités faibles dans joi, transitives
+  via passkit-generator. La correction automatique proposée impose une
+  régression majeure de passkit-generator et n'a pas été appliquée à l'aveugle.
 
-**Fichier / zone :** `src/lib/anonymous-player.ts:30-88`, `src/actions/play.ts:294-302`, limites réseau du spin.
+2. IDENTITÉ NAVIGATEUR RENOUVELABLE ET LOTS DE VALEUR
 
-**Pourquoi cela bloque la production :** l’exigence « une limitation de participation ne doit pas dépendre exclusivement du navigateur » est fausse. L’interface continue en outre d’annoncer « un jeu par personne ».
+- Une valeur absente est maintenant traitée en défaut fermé.
+- Tout lot gagnant public dont la valeur est inconnue ou atteint 20 € est
+  refusé côté serveur au lancement du jeu.
+- La même garde s'applique à la publication, à la reprise et aux
+  automatisations.
+- Le message commerçant explique comment renseigner une valeur sous 20 € ou
+  choisir un parcours à identité vérifiée.
+- Les lots sous 20 € conservent volontairement l'identité navigateur : cette
+  limite est documentée comme contournable, mais ne peut plus protéger un lot
+  élevé ou de valeur inconnue.
+- Un claim issu d'un spin public exige désormais le cookie joueur correspondant
+  et refuse aussi l'absence de cookie ou de player_key.
 
-**Correction minimale :** P0 — adosser les lots de valeur à une preuve d’éligibilité serveur mono-usage (passage caisse, preuve d’achat, compte vérifié) ou désactiver ces lots sur les parcours reposant uniquement sur le cookie. Coût élevé ; risque produit/identité élevé.
+3. RÉFLEXE / JAUGE ET RÉSULTAT DÉCIDÉ PAR LE NAVIGATEUR
 
-## 2. Réflexe et Jauge acceptent un succès choisi par le client
+- Le booléen succeeded du navigateur ne décide plus du gain.
+- Après le délai signé minimal, le serveur lance le même tirage pondéré quelle
+  que soit la valeur envoyée par le client.
+- La base interdit toute nouvelle configuration reflex/gauge avec
+  play_limit = unlimited.
+- Le runtime refuse également les anciennes lignes historiques unlimited
+  laissées en place par la contrainte SQL NOT VALID, au démarrage comme au
+  submit.
 
-**Problème :** pour ces deux jeux, le client transmet `attempt.succeeded` et le serveur reprend directement ce booléen pour autoriser le tirage pondéré au lieu d’une perte forcée.
+4. TICKET D'OR IRRÉCUPÉRABLE APRÈS PERTE DE RÉPONSE
 
-**Preuve :** `src/lib/skill.ts:129-141` qualifie le résultat de « succès rapporté par le client » ; `src/lib/skill.ts:157-163` retourne littéralement `attempt.succeeded === true`. L’interdiction du mode `unlimited` borne seulement la fréquence nominale ; elle ne prouve pas la réussite et la rotation du cookie contourne cette borne.
+- Le navigateur crée et persiste un nonce UUIDv4 avant le premier appel. Sans
+  stockage durable vérifiable, aucun tirage ne part.
+- La base ne stocke que le SHA-256 de ce nonce.
+- Même nonce : la RPC restitue exactement le lot, le code de retrait et
+  l'expiration du premier tirage.
+- Autre nonce : la RPC rend deja_tire sans révéler le résultat.
+- L'ancienne RPC sans nonce est supprimée et la nouvelle RPC de tirage est
+  réservée à service_role.
+- Une erreur RPC n'est plus convertie en introuvable : elle reste une issue
+  indéterminée, le client conserve le nonce et réessaie la même tentative.
+- Le nonce n'est supprimé qu'après mémorisation durable du résultat complet ou
+  après un verdict métier certain.
+- L'émission est plafonnée atomiquement à 200 tickets par organisation et par
+  heure, sous verrou transactionnel.
 
-**Scénario concret :** depuis DevTools ou un appel direct équivalent, envoyer une tentative Réflexe/Jauge avec `succeeded: true` sans réussir l’épreuve, puis renouveler le cookie pour recommencer.
+======================================================================
+AUTRES CORRECTIONS ISSUES DE L'AUDIT
+======================================================================
 
-**Impact :** le joueur contrôle son accès au tirage gagnant. Les poids et le stock restent calculés côté serveur, mais l’éligibilité au tirage réel est falsifiable.
+- Une perte mémorise son segment visuel dans spins.display_prize_id ;
+  spins.prize_id reste nul pour préserver la sémantique métier d'une perte.
+- Un gain déjà tiré reste récupérable si son lot a ensuite été désactivé.
+- Une référence gagnante empêche en base la suppression concurrente du lot ;
+  l'action refuse explicitement les lots portant des gains non réclamés.
+- Le secret maître BREVO_WEBHOOK_SECRET n'est plus accepté dans une URL. Seuls
+  l'en-tête x-lastchance-sms-token et le jeton URL dérivé restent valides.
+- Le module et la télémétrie de compatibilité SMS héritée ont été retirés de la
+  route de santé afin qu'ils ne produisent pas une alerte devenue fausse.
+- Les promesses marketing non prouvées ont été supprimées ou qualifiées :
+  automatisation « premier scan », 250 joueurs, délais absolus, code présenté
+  comme toujours composé de quatre caractères, et rentabilité ROI inconditionnelle.
+- Le simulateur ROI affiche ses hypothèses et ne prétend plus couvrir
+  l'abonnement lorsque le résultat calculé est négatif.
+- Le seed E2E donne explicitement une valeur de 5 € aux lots gagnants publics
+  concernés, ce qui teste le chemin autorisé sous le seuil sans affaiblir la
+  garde de production.
 
-**Fichier / zone :** `src/lib/skill.ts:129-163`, `src/lib/validations/skill.ts`, `src/actions/skill.ts`.
+======================================================================
+PREUVES EXÉCUTÉES
+======================================================================
 
-**Pourquoi cela bloque la production :** l’exigence « une donnée navigateur ne doit pas modifier le résultat ou l’éligibilité » est directement violée et le contournement est réaliste sans accès privilégié.
+- npm run typecheck : VERT.
+- npm run lint : VERT, 0 erreur, 2 warnings préexistants hors lot :
+  scripts/build-backdrop-frames.mjs et
+  src/components/dashboard/campaign-template-actions.tsx.
+- Tests Vitest ciblés initiaux : 13 fichiers, 242 tests réussis.
+- Groupe de régression : 4 fichiers, 58 tests réussis.
+- Suite Vitest complète : 434 fichiers, 7 686 tests réussis.
+- Correctif de contre-revue Ticket d'Or / skill historique : 3 fichiers,
+  25 tests réussis.
+- npm run sql:check : VERT.
+- npm run migrations:check : VERT, 214 migrations, tête
+  20261215120000 et EXPECTED_MIGRATION synchronisée.
+- pgTAP sur base locale vide : 3 fichiers ciblés, 779 tests réussis.
+- pgTAP après seed déterministe : 3 fichiers ciblés, 779 tests réussis.
+- Build Next.js racine final après contre-revue QA : VERT, compilation,
+  TypeScript et 66 pages générées dans une copie isolée.
+- Build Next.js site/ : VERT, 8 pages générées.
+- Playwright mobile-chrome ciblé : 17/17 réussis : quatre sessions
+  d'authentification, gain jusqu'à la validation caisse, perte et délai de
+  rejeu, RPS, mot mystère, carte retournée et bonneteau.
+- Revue QA indépendante : GO après correction d'une issue RPC Ticket d'Or
+  ambiguë trouvée pendant la contre-revue.
+- Revue sécurité indépendante : GO conditionnel à l'application préalable de
+  la migration ; aucun finding exploitable restant dans le diff final.
+- git diff --check : VERT.
 
-**Correction minimale :** P0 — fournir une preuve serveur vérifiable de l’épreuve, ou rendre ces jeux strictement démonstratifs/sans valeur réelle jusqu’à cette preuve. Coût moyen à élevé ; risque de régression UX moyen.
+Le premier vrai run E2E a correctement refusé les anciennes fixtures dont
+value_cents était nul. Le seed a été corrigé à 5 € ; le run final 17/17 prouve
+que le garde-fou reste actif tout en laissant fonctionner les lots autorisés.
 
-# HIGH
+======================================================================
+RISQUES RÉSIDUELS DÉMONTRÉS
+======================================================================
 
-## 1. Ticket d’Or peut être consommé sans restitution récupérable du code
+1. MOYEN — BUDGET DE LOTS
 
-`tirer_ticket_or` décrémente le stock, crée `reward_issuances`, marque le ticket tiré puis ne retourne le lot et `code_retrait` qu’une fois (`supabase/migrations/20261028120000_ticket_or.sql:373-427`). Si la réponse se perd après le commit, le navigateur n’écrit aucune mémoire locale (`src/components/ticket/ticket-experience.tsx:160-175`) et le retry rend seulement `deja_tire` (`SQL:345-347`). Le ticket et le stock restent cohérents, mais le gagnant ne connaît plus son code. Priorité P1 ; coût moyen ; risque de perte client élevé sous réseau instable.
+Le budget marchand est encore débité au claim et non réservé au tirage. Des
+gains déjà attribués peuvent donc dépasser ensuite le plafond au moment de leur
+réclamation. Une correction sûre nécessite un coût figé par émission, un
+compteur réservé et une libération atomique lors de l'expiration ou de
+l'annulation. Une simple somme au tirage créerait des réservations permanentes.
 
-## 2. La reprise d’un gain laisse parfois un nonce périmé dans la session
+2. FAIBLE / PRODUIT — IDENTITÉ POUR LES LOTS SOUS 20 €
 
-`recoverPendingWin` restitue le gain (`src/actions/play.ts:128-156`) et les shells l’affichent, mais ce chemin n’appelle pas `oublierNonceTirage`. Or `src/lib/spin-nonce.ts:68-73` précise qu’un nonce non oublié fait rejouer l’ancien tirage. À la prochaine période éligible dans le même onglet, le joueur peut revoir l’ancien résultat au lieu de créer sa nouvelle participation. Priorité P1 ; coût faible ; risque de régression localisé.
+Le cookie anonyme reste supprimable et un nouvel appareil reste une nouvelle
+identité. Le risque est désormais borné aux lots gagnants renseignés sous 20 €.
+Ce comportement doit rester présenté comme une limitation de prévention, pas
+comme une identité forte.
 
-## 3. La refonte marketing locale publie des affirmations non prouvées ou fausses
+3. INFORMATION — CAPACITÉ
 
-Les nouveaux fichiers non commités présentent comme « résultats constatés » `+22 %`, `+35 %`, `+28 %`, `7 à 5 semaines` et `0 rendez-vous perdu` (`src/components/marketing/use-cases-by-trade.tsx:60,96,132,168,188`) sans preuve dans le dépôt. `/animer` affirme une capacité « éprouvée » de 250 joueurs (`src/app/(public)/animer/page.tsx:126`) alors que `docs/bugs.md:5456-5462` dit qu’aucun banc actuel n’a été rejoué. La FAQ promet un code caisse de 4 lettres, un tirage impossible à manipuler et une conformité RGPD « à 100 % » (`src/app/(public)/faq/page.tsx:44-59`), ce qui contredit respectivement les codes réels `TICKET-` + 8 caractères et le blocker Réflexe/Jauge. Le simulateur applique des hypothèses fixes puis promet une rentabilisation « dès les premiers jours » (`src/components/marketing/roi-simulator.tsx:9-17,127-128,182`). Priorité P1 avant publication ; coût faible à moyen ; risque commercial/juridique élevé.
+Aucun banc actuel sur la pile réelle ne certifie 250 ou 500 joueurs simultanés.
+Les chiffres publics correspondants ont été retirés ; aucune nouvelle promesse
+ne doit être publiée sans mesure.
 
-# MEDIUM / LOW
+4. FAIBLE — DÉPENDANCES TRANSITIVES
 
-- **MEDIUM — rejeu d’une perte indéterminé :** le premier tirage perdant rend le segment choisi mais enregistre `prize_id = null` (`20261210120000_tirage_campagne_fermee.sql:310-324`). Le retry idempotent ne crée aucun second spin, mais restitue ce `null` (`:204-218`) ; `play.ts:443-454` répond alors `outcomeUnknown` à chaque retry.
-- **MEDIUM — idempotence navigateur best-effort :** si `sessionStorage` refuse l’écriture puis que la réponse est perdue, un rechargement génère un nouveau nonce et une roue `unlimited` peut créer un second spin (`src/lib/spin-nonce.ts:21-26,44-64`). Les préconditions sont cumulatives ; le stock reste transactionnel.
-- **MEDIUM — lot devenu introuvable pendant la reprise :** un lot tiré puis retiré/désactivé n’est plus mappable ; `recoverPendingWin` retourne `null` (`src/actions/play.ts:141-146`) et le joueur ne revoit pas son gain.
-- **LOW — bruit de teardown tests :** la suite Vitest termine avec succès mais émet plusieurs `DOMException AbortError` Happy DOM pendant le nettoyage, ce qui masque potentiellement un futur signal utile.
-- **LOW — compatibilité Webpack :** le build non standard `next build --webpack` échoue sur `node:crypto` importé via `src/lib/pronostics.ts`. Le build officiel Turbopack et la CI réussissent ; ce point ne bloque pas le mode de livraison actuel.
+Deux avis faibles joi subsistent via passkit-generator. Aucun avis high ou
+critical ne reste dans l'audit de production racine ; site/ est à zéro.
 
-# CHECK DES INVARIANTS
+======================================================================
+ORDRE OBLIGATOIRE POUR UNE LIVRAISON FUTURE
+======================================================================
 
-Participation unique : ❌ — identité cookie renouvelable et clé d’idempotence facultative pour les appels directs.
+1. Isoler ce lot sans les trois images locales non suivies de site/public/.
+2. Commiter sur une branche autorisée et pousser uniquement après accord.
+3. Relier le SHA exact à tous les jobs CI GitHub requis et attendre leur vert.
+4. Appliquer et vérifier la migration 20261215120000 AVANT l'application.
+5. Déployer/promouvoir l'application uniquement avec autorisation explicite.
+6. Vérifier la santé, les logs, les routes publiques et les parcours critiques
+   sur le SHA réellement déployé.
 
-Limitation de participation : ❌ — suppression du cookie ou nouvel appareil réinitialise `once/daily/weekly`.
+======================================================================
+DÉCISION FINALE
+======================================================================
 
-Résultat autoritaire côté serveur : ❌ — le lot pondéré est serveur, mais Réflexe/Jauge laissent le navigateur décider s’il accède à ce tirage.
+Les bloqueurs techniques prouvés sont corrigés et validés localement.
 
-Probabilités protégées : ❌ — poids, tirage et stock sont protégés, mais une donnée client modifie l’éligibilité au tirage gagnant.
-
-Stock protégé : ✅ — décrément conditionnel dans la transaction, re-tirage si le lot a été pris concurremment.
-
-Dernier lot concurrent : ✅ — `UPDATE ... WHERE stock > 0` puis contrôle `FOUND`, sous fonction atomique ; contre-test pgTAP vert en CI.
-
-Idempotence : ❌ — solide lorsque la même clé arrive en base, mais la clé du tirage direct reste facultative/best-effort et Ticket d’Or ne restitue pas son résultat après une réponse perdue.
-
-Multi-onglets : ✅ — pour un même cookie et une limite finie, verrou consultatif joueur + contrôle DB empêchent deux participations concurrentes ; changer d’identité reste le blocker séparé.
-
-Refresh : ❌ — nonce conservé sur résultat indéterminé, mais reprise perdante, nonce après récupération et Ticket d’Or présentent les lacunes décrites.
-
-Replay API : ❌ — même clé = même spin, mais un appel peut omettre/malformer le nonce ; sur `unlimited`, plusieurs appels deviennent plusieurs tirages autorisés.
-
-Permissions utilisateur : ✅ — aucun IDOR/croisement d’organisation confirmé sur les parcours critiques ; les actions sensibles revalident utilisateur, organisation et rôle.
-
-Permissions admin : ✅ — RPC critiques bornées par ACL/service role ou contrôles d’acteur ; pgTAP et CodeQL du SHA audité sont verts.
-
-Intégrité DB : ✅ — transactions, clés étrangères, unicités de fenêtre/idempotence et décréments conditionnels sont présents ; 213 migrations contrôlées, tête `20261214120000`.
-
-# TESTS EFFECTUÉS
-
-- `npm run typecheck` : code 0, 25,8 s.
-- `npm run lint` : code 0, aucune erreur, un avertissement préexistant, 165,2 s.
-- `npm run casts:check` : code 0, 1,8 s.
-- `npm run sql:check` : code 0, 1,3 s.
-- `npm run migrations:check` : code 0, 0,9 s ; 213 migrations, tête `20261214120000`.
-- `npm test -- --run` : code 0 ; 431 fichiers et 7 653 tests réussis ; 339,56 s. Plusieurs `AbortError` Happy DOM de teardown sont imprimées malgré le succès.
-- `npm run build` sur une copie temporaire physique de l’arbre local exact : code 0 ; build Turbopack, TypeScript et 66 pages statiques générées ; 332,7 s. La copie temporaire a été supprimée.
-- `npm run build -- --webpack` dans cette isolation : code 1 sur `node:crypto`; moteur non utilisé par le build standard. Le run Turbopack suivant est vert.
-- GitHub Actions CI `34034849609`, SHA exact `ffc7cf2c` : succès pour Typecheck/Lint/Tests/Build, site vitrine Typecheck/Lint/Build, npm audit, PostgreSQL/ACL/RLS/intégrité, E2E Playwright Chromium/WebKit, CodeQL et E2E/axe du site.
-- Santé après déploiement `34089772013`, même SHA : succès. Vérification HTTP directe le 2026-09-07 : `/` = 200 et `/api/health` = 200 avec `status: ok`.
-- Tests échoués sur le chemin officiel : aucun. Le seul échec est le build Webpack non standard explicitement décrit ci-dessus.
-- Non vérifié localement sur l’arbre sale : E2E Playwright et pgTAP, car des serveurs de développement et une pile partagée étaient déjà actifs et leur ownership n’était pas certain. Leur équivalent distant est vert uniquement sur le SHA commit `ffc7cf2c`, pas sur la refonte locale non commitée.
-- Capacité simultanée réelle : non certifiée ; aucun `capacity:bench` actuel n’a été exécuté. La promesse « 250 joueurs éprouvés » ne peut pas être validée.
-
-# 3 SCÉNARIOS LES PLUS DANGEREUX
-
-## 1. Bot Réflexe/Jauge avec rotation d’identité
-
-Le client force `succeeded: true`, obtient l’accès au tirage pondéré, supprime son cookie puis recommence. Résultat observé dans le code : le serveur accepte le booléen client et la nouvelle UUID comme un autre joueur ; seuls le stock et le plafond IP très large bornent l’extraction.
-
-## 2. Ticket d’Or gagné, réponse réseau perdue après commit
-
-La base consomme le ticket et le stock, crée le code, mais le client ne reçoit rien et ne mémorise rien. Au retry, le serveur renvoie `deja_tire` sans le code. Résultat observé dans la transaction et le client : pas de double lot, mais un droit réel devient inutilisable par son bénéficiaire.
-
-## 3. Tirage direct `unlimited`, stockage de session refusé et réponse perdue
-
-Le premier appel peut être commis sans nonce durable ; après rechargement, le navigateur émet une autre clé et le serveur crée légitimement un second spin. Résultat observé dans les branches de repli : second décrément/second résultat possible, premier gain éventuellement orphelin. Ce scénario exige à la fois l’indisponibilité de `sessionStorage`, une perte de réponse et une roue illimitée.
-
-# DETTE TECHNIQUE NON BLOQUANTE
-
-1. Ajouter un test de récupération du nonce après `recoverPendingWin`, absent de `nonce-tirage.test.ts`.
-2. Ajouter une récupération serveur du résultat Ticket d’Or déjà tiré, sans exposer l’énumération des codes.
-3. Conserver le `prize_id` logique d’un segment perdant ou restituer son affichage au rejeu idempotent.
-4. Rejouer un banc de capacité réel avant toute promesse chiffrée de simultanéité.
-5. Nettoyer les `AbortError` de teardown Happy DOM pour rendre la sortie de tests exploitable.
-
-# DÉCISION FINALE
-
-### 🔴 LASTCHANCE NE DOIT PAS ÊTRE MIS EN PRODUCTION AVANT CORRECTION DES BLOCKERS.
+Le lot est prêt pour isolation et livraison contrôlée, mais il n'est pas encore
+en production et ne doit pas être présenté comme déployé tant que la CI, la
+migration puis la santé du SHA exact n'ont pas été vérifiées.

@@ -7668,6 +7668,7 @@ export type Database = {
           campaign_id: string
           claimed: boolean
           created_at: string
+          display_prize_id: string | null
           engagement_action: string | null
           id: string
           idempotency_key: string | null
@@ -7683,6 +7684,7 @@ export type Database = {
           campaign_id: string
           claimed?: boolean
           created_at?: string
+          display_prize_id?: string | null
           engagement_action?: string | null
           id?: string
           idempotency_key?: string | null
@@ -7698,6 +7700,7 @@ export type Database = {
           campaign_id?: string
           claimed?: boolean
           created_at?: string
+          display_prize_id?: string | null
           engagement_action?: string | null
           id?: string
           idempotency_key?: string | null
@@ -7710,6 +7713,13 @@ export type Database = {
           wheel_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "spins_display_prize_wheel_org_fk"
+            columns: ["display_prize_id", "wheel_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "prizes"
+            referencedColumns: ["id", "wheel_id", "organization_id"]
+          },
           {
             foreignKeyName: "spins_campaign_id_fkey"
             columns: ["campaign_id"]
@@ -7729,13 +7739,6 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "spins_prize_id_fkey"
-            columns: ["prize_id"]
-            isOneToOne: false
-            referencedRelation: "prizes"
             referencedColumns: ["id"]
           },
           {
@@ -7899,6 +7902,7 @@ export type Database = {
           organization_id: string
           reward_issuance_id: string | null
           tire_le: string | null
+          tirage_nonce_hash: string | null
         }
         Insert: {
           code: string
@@ -7910,6 +7914,7 @@ export type Database = {
           organization_id: string
           reward_issuance_id?: string | null
           tire_le?: string | null
+          tirage_nonce_hash?: string | null
         }
         Update: {
           code?: string
@@ -7921,6 +7926,7 @@ export type Database = {
           organization_id?: string
           reward_issuance_id?: string | null
           tire_le?: string | null
+          tirage_nonce_hash?: string | null
         }
         Relationships: [
           {
@@ -10771,7 +10777,10 @@ export type Database = {
         Returns: undefined
       }
       tickets_or_state: { Args: { p_organization_id: string }; Returns: Json }
-      tirer_ticket_or: { Args: { p_code: string }; Returns: Json }
+      tirer_ticket_or: {
+        Args: { p_code: string; p_nonce: string }
+        Returns: Json
+      }
       update_admin_safely: {
         Args: { p_admin_id: string; p_is_active?: boolean; p_role?: string }
         Returns: boolean

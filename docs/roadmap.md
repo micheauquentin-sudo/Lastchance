@@ -38,9 +38,9 @@ déjà ce défaut (ADR-181).
 **Décisions** : [ADR-175 à ADR-181](./decisions.md).
 
 **Reste ouvert** (`docs/bugs.md`) : rotation du cookie anonyme (décision
-produit assumée, pas une dette) ; secret SMS Brevo hérité en query string,
-désormais mesurable via `/api/health`, retrait conditionné à ~7 jours
-d'observation ; `quizzes_reward_bounds_check` porte le défaut découvert
+produit assumée, désormais bornée aux lots publics sous 20 €) ; le secret SMS
+Brevo hérité en query string a été retiré localement le 2026-09-11 avec son
+ancienne télémétrie ; `quizzes_reward_bounds_check` porte le défaut découvert
 (ADR-181) ; garde statistique du moteur de tirage SQL absente ; parité
 `lot-tirable.ts` ↔ `perform_atomic_spin` ; tests RLS ligne-à-ligne
 inter-organisations ; E2E du maillon QR → `/play` ; `scripts/concurrency-probe.mjs`
@@ -83,10 +83,10 @@ deux défauts réellement en production).
   suite d'ADR-169). ADR-169 n'avait couvert que les écritures ; trois couches
   (projection, nettoyage `repair_player_alias`, contrainte resserrée de 60 à
   24) ferment aussi l'historique.
-- **PR #359 — Webhook SMS : le secret sort de l'URL** (ADR-173). Seul point
-  d'entrée acceptant un secret en clair en query string ; jeton dérivé
-  `HMAC(secret, "brevo-url-token")`, transition instrumentée par le signal
-  `sms_webhook_legacy_url_secret` plutôt qu'une coupure immédiate.
+- **PR #359 — Webhook SMS : le secret sort de l'URL** (ADR-173). Le jeton
+  dérivé `HMAC(secret, "brevo-url-token")` a assuré la transition ; le repli
+  acceptant le secret maître et son signal `sms_webhook_legacy_url_secret` ont
+  été retirés localement le 2026-09-11. L'en-tête sûr reste prioritaire.
 - **PR #360 — RDV-7 : Réservation, le mode de l'activité choisit la clé**
   (ADR-170). Huit RPC dérivaient chacune une copie de la règle
   `reserver`/`rendez_vous` ; une seule fonction
@@ -122,8 +122,8 @@ contre le vrai Google (geste propriétaire, déjà signalé) ; 250 n'a pas été
 rejoué contre la pile réelle par `capacity:bench` ; `event_participant_capacity()`
 accorde toujours 500 en base ; `event_players.pseudo` sans filtre de format
 au niveau table ; files/offres de réservation encore sur `reserver` (décision
-assumée, pas une dette) ; chemin hérité du webhook SMS à retirer quand
-`sms_webhook_legacy_url_secret` cesse de remonter.
+assumée, pas une dette) ; le chemin hérité du webhook SMS et sa télémétrie ont
+été retirés localement le 2026-09-11.
 
 ## V1.75 — Le studio répond aux retours (✅ 2026-09-03, PR #322 → #327)
 

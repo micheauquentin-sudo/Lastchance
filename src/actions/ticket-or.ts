@@ -39,6 +39,12 @@ const TROP_DE_TICKETS =
   "Trop de tickets émis en peu de temps. Réessayez dans un instant.";
 
 const idSchema = z.string().uuid("Identifiant invalide");
+const nonceTirageSchema = z
+  .string()
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    "Nonce invalide",
+  );
 
 const lotSchema = z.object({
   libelle: z
@@ -113,6 +119,9 @@ export async function emettreTicketOr(
   }
 
   const doc = (data ?? {}) as Record<string, unknown>;
+  if (doc.state === "rate_limited") {
+    return { ok: false, error: TROP_DE_TICKETS };
+  }
   if (doc.state !== "ok" || typeof doc.code !== "string") {
     return { ok: false, error: ERREUR };
   }
@@ -141,12 +150,23 @@ export async function emettreTicketOr(
  * le commerce n'a plus d'offre. Ce point d'entrée est ouvert à Internet et ne
  * doit rien révéler.
  */
-export async function tirerTicketOr(code: string): Promise<EtatTirage> {
+export async function tirerTicketOr(code: string, nonce: string): Promise<EtatTirage> {
+  const nonceValide = nonceTirageSchema.safeParse(nonce);
+  if (!nonceValide.success) return { state: "introuvable" };
+
   const admin = createAdminClient();
-  const { data, error } = await admin.rpc("tirer_ticket_or", { p_code: code });
+  const { data, error } = await admin.rpc("tirer_ticket_or", {
+    p_code: code,
+    p_nonce: nonceValide.data,
+  });
   if (error) {
     reportError("ticket-or.tirage", error.message);
-    return { state: "introuvable" };
+    // Une erreur RPC n'est PAS un verdict métier. La transaction peut avoir
+    // committé avant que la réponse se perde : renvoyer `introuvable` ferait
+    // effacer au client le nonce qui permet précisément de relire ce résultat.
+    // Le rejet garde donc l'issue indéterminée et le client réessaie avec le
+    // même nonce, sans second tirage.
+    throw new Error("ticket_or_tirage_indetermine");
   }
   return mapTirage(data);
 }

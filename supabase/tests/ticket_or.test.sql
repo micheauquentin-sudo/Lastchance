@@ -5,8 +5,8 @@
 --
 --   1. LE CLIENT NE PEUT PAS S'ÉMETTRE UN TICKET. `emettre_ticket_or` exige
 --      une session du commerce ; sans elle, aucun code n'existe.
---   2. UN CODE NE SERT QU'UNE FOIS. C'est la promesse « une capture d'écran
---      ne prouve rien » : le second appel rend `deja_tire`, jamais un lot.
+--   2. UN CODE NE SERT QU'UNE FOIS. Le même nonce récupère la réponse perdue ;
+--      un nonce différent rend `deja_tire`, jamais le lot ni son code.
 --   3. LE STOCK NE PASSE PAS SOUS ZÉRO. Le dernier exemplaire part une fois.
 --   4. LE POINT D'ENTRÉE PUBLIC N'EST PAS UN ORACLE. Un code inventé et le
 --      code d'un commerce sans offre rendent le MÊME document.
@@ -111,19 +111,26 @@ select ok(
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
 select is(
-  public.tirer_ticket_or('ZZZZZZZZZZ') ->> 'state', 'introuvable',
+  public.tirer_ticket_or(
+    'ZZZZZZZZZZ', '11111111-1111-4111-8111-111111111111'
+  ) ->> 'state', 'introuvable',
   'PUBLIC-1 un code inventé rend `introuvable`'
 );
 
 select is(
-  public.tirer_ticket_or('pas-un-code') ->> 'state', 'introuvable',
+  public.tirer_ticket_or(
+    'pas-un-code', '11111111-1111-4111-8111-111111111111'
+  ) ->> 'state', 'introuvable',
   'PUBLIC-2 une chaîne mal formée rend LE MÊME document — aucune distinction de forme'
 );
 
 -- ══ 4. LE TIRAGE, UNE FOIS ══════════════════════════════════
 
 create temporary table t_tirage on commit drop as
-select public.tirer_ticket_or((select doc ->> 'code' from t_emission)) as doc;
+select public.tirer_ticket_or(
+  (select doc ->> 'code' from t_emission),
+  '11111111-1111-4111-8111-111111111111'
+) as doc;
 
 select is(
   (select doc ->> 'state' from t_tirage), 'ok',
@@ -140,10 +147,35 @@ select ok(
   'TIRAGE-3 le code de RETRAIT porte le préfixe du registre et reste distinct de celui du ticket : le premier prouve le droit de tirer, le second celui d''emporter'
 );
 
+update public.tickets_or_lots
+   set libelle = 'Libellé renommé après le tirage'
+ where id = 'd1000000-0000-4000-8000-0000000000c1';
+
 select is(
-  public.tirer_ticket_or((select doc ->> 'code' from t_emission)) ->> 'state',
+  public.tirer_ticket_or(
+    (select doc ->> 'code' from t_emission),
+    '11111111-1111-4111-8111-111111111111'
+  ),
+  (select doc from t_tirage),
+  'TIRAGE-3b le MÊME nonce rejoue exactement le document initial, même si le lot a été renommé après le commit'
+);
+
+select ok(
+  (select pg_catalog.octet_length(tirage_nonce_hash) = 32
+          and pg_catalog.encode(tirage_nonce_hash, 'escape')
+              not like '%11111111-1111-4111-8111-111111111111%'
+     from public.tickets_or
+    where code = (select doc ->> 'code' from t_emission)),
+  'TIRAGE-3c la base ne conserve que le SHA-256 du nonce, jamais le secret en clair'
+);
+
+select is(
+  public.tirer_ticket_or(
+    (select doc ->> 'code' from t_emission),
+    '22222222-2222-4222-8222-222222222222'
+  ) ->> 'state',
   'deja_tire',
-  'TIRAGE-4 LE MÊME CODE NE REJOUE PAS — c''est ce qui rend une capture d''écran sans valeur'
+  'TIRAGE-4 LE MÊME CODE avec un AUTRE nonce ne révèle pas le gain — une capture du code initial ne suffit pas'
 );
 
 select is(
@@ -172,7 +204,10 @@ select public.emettre_ticket_or('d1000000-0000-4000-8000-00000000000a') as doc;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
 select is(
-  public.tirer_ticket_or((select doc ->> 'code' from t_emission2)) ->> 'state',
+  public.tirer_ticket_or(
+    (select doc ->> 'code' from t_emission2),
+    '33333333-3333-4333-8333-333333333333'
+  ) ->> 'state',
   'sans_lot',
   'STOCK-1 le dernier exemplaire est parti : le ticket suivant ne tire rien plutôt que d''emporter un lot qui n''existe plus'
 );
@@ -323,7 +358,10 @@ values
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 
 create temporary table t_tirage3 on commit drop as
-select public.tirer_ticket_or((select doc ->> 'code' from t_emission3)) as doc;
+select public.tirer_ticket_or(
+  (select doc ->> 'code' from t_emission3),
+  '44444444-4444-4444-8444-444444444444'
+) as doc;
 
 select is(
   (select doc ->> 'state' from t_tirage3), 'ok',
@@ -375,6 +413,46 @@ select is(
   public.tickets_or_state('d1000000-0000-4000-8000-00000000000a') ->> 'state',
   'not_authorized',
   'MESURE-4 le voisin ne lit pas les mesures d''à côté'
+);
+
+-- ══ 8. LE QUOTA NE SE CONTOURNE PAS PAR RPC DIRECTE ═════════
+
+insert into public.organizations
+  (id, name, slug, subscription_status, plan, timezone, data_retention_months)
+values
+  ('d1000000-0000-4000-8000-00000000000c', 'Ticket Quota',
+   'tap-ticket-quota', 'active', 'starter', 'Europe/Paris', 6);
+
+insert into public.organization_members (organization_id, user_id, role)
+values ('d1000000-0000-4000-8000-00000000000c',
+        'd1000000-0000-4000-8000-000000000f01', 'editor');
+
+insert into public.tickets_or
+  (organization_id, code, emis_par, expire_le)
+select
+  'd1000000-0000-4000-8000-00000000000c'::uuid,
+  'QAAAAAA'
+    || pg_catalog.substr('ABCDEFGH', (i / 64) + 1, 1)
+    || pg_catalog.substr('ABCDEFGH', ((i / 8) % 8) + 1, 1)
+    || pg_catalog.substr('ABCDEFGH', (i % 8) + 1, 1),
+  'd1000000-0000-4000-8000-000000000f01'::uuid,
+  pg_catalog.now() + pg_catalog.make_interval(days => 30)
+from pg_catalog.generate_series(0, 199) as g(i);
+
+select set_config('request.jwt.claims',
+  '{"role":"authenticated","sub":"d1000000-0000-4000-8000-000000000f01"}', true);
+
+select is(
+  public.emettre_ticket_or('d1000000-0000-4000-8000-00000000000c') ->> 'state',
+  'rate_limited',
+  'QUOTA-1 le 201e ticket de l''heure est refusé DANS la RPC, même sans rate-limit applicatif'
+);
+
+select is(
+  (select pg_catalog.count(*)::integer from public.tickets_or
+    where organization_id = 'd1000000-0000-4000-8000-00000000000c'),
+  200,
+  'QUOTA-2 le refus n''émet aucun ticket supplémentaire'
 );
 
 select * from finish();

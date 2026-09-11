@@ -145,11 +145,9 @@ production** tant que les gestes suivants, tous hors du dépôt, n'ont pas
    # → coller https://<domaine>/api/sms/webhook?token=<jeton>
    ```
 
-   Le secret maître reste accepté en paramètre d'URL **le temps de la
-   bascule**, mais chaque appel émet l'événement de sécurité
-   `sms_webhook_legacy_url_secret` (Sentry). Quand ce signal ne remonte
-   plus, ce dernier chemin peut être retiré du code — la décision se
-   prend sur cette mesure, pas sur une supposition.
+   Le secret maître n'est plus accepté en paramètre d'URL depuis le correctif
+   local du 2026-09-11. Une configuration console doit utiliser uniquement le
+   jeton dérivé ci-dessus ; l'en-tête sûr reste la configuration recommandée.
 2. **Déclarer un numéro court STOP auprès de Brevo et poser
    `SMS_STOP_SHORTCODE`.** Sans lui, la mention STOP du message reste
    générique (« STOP pour ne plus en recevoir »), sans le numéro que le

@@ -125,7 +125,7 @@ export function RoiSimulator() {
           </div>
 
           <p className="text-[11px] font-bold leading-normal text-k-muted">
-            Hypothèses appliquées : 25% de participation, 60% d&apos;opt-in email, coût moyen du lot 2,50 €, 26 jours d&apos;ouverture / mois, marge brute 70%.
+            Hypothèses appliquées : 25% de participation, 60% d&apos;opt-in email, 35% de gains, 0,4 visite supplémentaire par joueur et par mois, coût moyen du lot 2,50 €, 26 jours d&apos;ouverture / mois, marge brute 70% et abonnement de {ASSUMPTIONS.subscriptionPerLocation} € par établissement.
           </p>
         </div>
 
@@ -137,7 +137,7 @@ export function RoiSimulator() {
                 <div>
                   <p className="text-xs font-black uppercase text-k-yellow">Gain net mensuel estimé</p>
                   <p className="text-4xl font-black sm:text-5xl text-k-yellow mt-1">
-                    +{netGainPerMonth.toLocaleString("fr-FR")} €
+                    {netGainPerMonth > 0 ? "+" : ""}{netGainPerMonth.toLocaleString("fr-FR")} €
                     <span className="text-sm font-bold text-k-bg/80"> / mois</span>
                   </p>
                 </div>
@@ -173,13 +173,15 @@ export function RoiSimulator() {
                 <div className="rounded-2xl border border-k-bg/20 bg-white/10 p-3.5">
                   <p className="text-[11px] font-bold text-k-bg/75">Gain net annuel projeté</p>
                   <p className="mt-0.5 text-xl font-black text-k-green">
-                    +{netGainPerYear.toLocaleString("fr-FR")} €
+                    {netGainPerYear > 0 ? "+" : ""}{netGainPerYear.toLocaleString("fr-FR")} €
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 rounded-2xl bg-white/15 p-3.5 text-center text-xs font-bold text-k-bg/90">
-                Sous ces hypothèses, le coût de l&apos;abonnement est couvert dès les premiers jours du mois. Vos chiffres réels dépendent de votre fréquentation et de vos lots.
+                {netGainPerMonth > 0
+                  ? "Sous ces hypothèses, le gain net estimé couvre le coût de l’abonnement. Vos chiffres réels dépendent de votre fréquentation et de vos lots."
+                  : "Sous ces hypothèses, le gain net estimé ne couvre pas le coût de l’abonnement. Ajustez vos paramètres et comparez avec vos chiffres réels."}
               </div>
             </div>
           </Tilt3D>
