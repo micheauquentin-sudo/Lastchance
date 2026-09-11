@@ -217,7 +217,7 @@ function MiniMechanicDemo() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs font-black uppercase tracking-wider text-k-muted">Tester un jeu :</span>
+        <span className="text-xs font-black uppercase tracking-wider text-k-body">Tester un jeu :</span>
         {mechanicsList.map((m) => (
           <button
             key={m.id}
@@ -401,7 +401,7 @@ function LoyaltyDemo() {
               <p className="text-[10px] font-bold text-k-muted">Ajouté dans Apple & Google Wallet</p>
             </div>
           </div>
-          <span className="rounded-full bg-k-green/20 px-2.5 py-0.5 text-[11px] font-black text-k-green">
+          <span className="rounded-full bg-k-green/20 px-2.5 py-0.5 text-[11px] font-black text-k-ink">
             Niveau Or
           </span>
         </div>

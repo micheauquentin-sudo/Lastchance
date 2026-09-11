@@ -865,6 +865,7 @@ export type Database = {
         Row: {
           auto_schedule: boolean
           budget_cents: number | null
+          budget_reserved_cents: number
           budget_spent_cents: number
           code_ttl_seconds: number | null
           collect_email: boolean
@@ -884,6 +885,7 @@ export type Database = {
         Insert: {
           auto_schedule?: boolean
           budget_cents?: number | null
+          budget_reserved_cents?: number
           budget_spent_cents?: number
           code_ttl_seconds?: number | null
           collect_email?: boolean
@@ -903,6 +905,7 @@ export type Database = {
         Update: {
           auto_schedule?: boolean
           budget_cents?: number | null
+          budget_reserved_cents?: number
           budget_spent_cents?: number
           code_ttl_seconds?: number | null
           collect_email?: boolean
@@ -7665,6 +7668,9 @@ export type Database = {
       }
       spins: {
         Row: {
+          budget_cost_cents: number
+          budget_reservation_expires_at: string | null
+          budget_reservation_released_at: string | null
           campaign_id: string
           claimed: boolean
           created_at: string
@@ -7681,6 +7687,9 @@ export type Database = {
           wheel_id: string
         }
         Insert: {
+          budget_cost_cents?: number
+          budget_reservation_expires_at?: string | null
+          budget_reservation_released_at?: string | null
           campaign_id: string
           claimed?: boolean
           created_at?: string
@@ -7697,6 +7706,9 @@ export type Database = {
           wheel_id: string
         }
         Update: {
+          budget_cost_cents?: number
+          budget_reservation_expires_at?: string | null
+          budget_reservation_released_at?: string | null
           campaign_id?: string
           claimed?: boolean
           created_at?: string

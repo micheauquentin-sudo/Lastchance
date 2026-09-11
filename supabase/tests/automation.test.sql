@@ -39,96 +39,91 @@ values ('aa000000-0000-4000-8000-000000000004',
         'aa000000-0000-4000-8000-000000000001',
         'aa000000-0000-4000-8000-000000000003', 'Menu offert', 150);
 
-insert into public.spins (id, organization_id, campaign_id, wheel_id, prize_id, is_losing, player_key)
+insert into public.spins
+  (id, organization_id, campaign_id, wheel_id, prize_id, is_losing, player_key)
 values
-  ('aa000000-0000-4000-8000-000000000011', 'aa000000-0000-4000-8000-000000000001',
-   'aa000000-0000-4000-8000-000000000002', 'aa000000-0000-4000-8000-000000000003',
-   'aa000000-0000-4000-8000-000000000004', false, repeat('1', 64)),
-  ('aa000000-0000-4000-8000-000000000012', 'aa000000-0000-4000-8000-000000000001',
-   'aa000000-0000-4000-8000-000000000002', 'aa000000-0000-4000-8000-000000000003',
-   'aa000000-0000-4000-8000-000000000004', false, repeat('2', 64)),
-  ('aa000000-0000-4000-8000-000000000013', 'aa000000-0000-4000-8000-000000000001',
-   'aa000000-0000-4000-8000-000000000002', 'aa000000-0000-4000-8000-000000000003',
-   'aa000000-0000-4000-8000-000000000004', false, repeat('3', 64)),
-  ('aa000000-0000-4000-8000-000000000014', 'aa000000-0000-4000-8000-000000000001',
-   'aa000000-0000-4000-8000-000000000002', 'aa000000-0000-4000-8000-000000000003',
-   'aa000000-0000-4000-8000-000000000004', false, repeat('4', 64));
+  ('aa000000-0000-4000-8000-000000000011',
+   'aa000000-0000-4000-8000-000000000001',
+   'aa000000-0000-4000-8000-000000000002',
+   'aa000000-0000-4000-8000-000000000003',
+   'aa000000-0000-4000-8000-000000000004', false, repeat('1', 64));
 
-select lives_ok(
-  $$select * from public.claim_winning_spin('aa000000-0000-4000-8000-000000000011',
-    'Alice', 'a1@tap.local', null, true, false)$$,
-  'premier gain réclamé (150 imputés sur 200)'
-);
 select results_eq(
-  $$select status, budget_spent_cents, paused_reason
+  $$select status, budget_spent_cents, budget_reserved_cents, paused_reason
       from public.campaigns where id = 'aa000000-0000-4000-8000-000000000002'$$,
-  $$values ('active', 150, null::text)$$,
-  'sous le plafond : la campagne reste active'
-);
-select is(
-  (select count(*) from public.jobs where type = 'automation.budget-paused'),
-  0::bigint, 'aucune notification tant que le plafond n''est pas atteint'
-);
-
-select lives_ok(
-  $$select * from public.claim_winning_spin('aa000000-0000-4000-8000-000000000012',
-    'Boris', 'a2@tap.local', null, true, false)$$,
-  'second gain réclamé (300 imputés : plafond 200 franchi)'
+  $$values ('paused', 0, 150, 'budget_reached')$$,
+  'le gain est réservé au tirage et la campagne ferme avant tout dépassement'
 );
 select results_eq(
-  $$select status, budget_spent_cents, paused_reason
+  $$select budget_cost_cents,
+           budget_reservation_expires_at is not null,
+           budget_reservation_released_at is null
+      from public.spins where id = 'aa000000-0000-4000-8000-000000000011'$$,
+  $$values (150, true, true)$$,
+  'le spin fige le coût et porte une réservation vivante'
+);
+
+select throws_ok(
+  $$insert into public.spins
+      (id, organization_id, campaign_id, wheel_id, prize_id, is_losing, player_key)
+    values ('aa000000-0000-4000-8000-000000000012',
+      'aa000000-0000-4000-8000-000000000001',
+      'aa000000-0000-4000-8000-000000000002',
+      'aa000000-0000-4000-8000-000000000003',
+      'aa000000-0000-4000-8000-000000000004', false, repeat('2', 64))$$,
+  'P0001', 'campaign budget unavailable',
+  'un second gain concurrent ne peut pas dépasser le plafond'
+);
+
+-- Modifier le catalogue après le tirage ne change jamais la dette promise.
+update public.prizes set cost_cents = 10
+ where id = 'aa000000-0000-4000-8000-000000000004';
+select lives_ok(
+  $$select * from public.claim_winning_spin(
+      'aa000000-0000-4000-8000-000000000011', null, null, null, false, false)$$,
+  'le gain réservé reste réclamable pendant sa fenêtre'
+);
+select results_eq(
+  $$select budget_spent_cents, budget_reserved_cents
       from public.campaigns where id = 'aa000000-0000-4000-8000-000000000002'$$,
-  $$values ('paused', 300, 'budget_reached')$$,
-  'plafond atteint : pause automatique motivée dans LA transaction du gain'
-);
-select results_eq(
-  $$select payload->>'campaignId', payload->>'organizationId'
-      from public.jobs
-     where idempotency_key = 'budget-paused:aa000000-0000-4000-8000-000000000002:200'$$,
-  $$values ('aa000000-0000-4000-8000-000000000002', 'aa000000-0000-4000-8000-000000000001')$$,
-  'un job automation.budget-paused est déposé avec la clé du plafond'
-);
-select is(
-  (select count(*) from public.audit_logs where action = 'campaign.budget.pause'),
-  1::bigint, 'la pause budget est auditée'
+  $$values (150, 0)$$,
+  'le claim transfère exactement le coût figé, pas le coût édité'
 );
 
--- Réactivation manuelle : le motif s'efface (trigger), et un nouveau
--- franchissement du MÊME plafond ne redépose pas de notification.
-update public.campaigns set status = 'active'
- where id = 'aa000000-0000-4000-8000-000000000002';
-select is(
-  (select paused_reason from public.campaigns
-    where id = 'aa000000-0000-4000-8000-000000000002'),
-  null::text, 'repasser active efface paused_reason'
-);
-select lives_ok(
-  $$select * from public.claim_winning_spin('aa000000-0000-4000-8000-000000000013',
-    'Carla', 'a3@tap.local', null, true, false)$$,
-  'troisième gain réclamé (450, plafond 200 toujours franchi)'
-);
-select is(
-  (select count(*) from public.jobs where type = 'automation.budget-paused'),
-  1::bigint, 'même plafond : la notification n''est pas dupliquée'
-);
-
--- Plafond relevé : nouvel épisode, nouvelle clé, nouvelle notification.
-update public.campaigns set status = 'active', budget_cents = 500
- where id = 'aa000000-0000-4000-8000-000000000002';
-select lives_ok(
-  $$select * from public.claim_winning_spin('aa000000-0000-4000-8000-000000000014',
-    'Dina', 'a4@tap.local', null, true, false)$$,
-  'quatrième gain réclamé (600 : plafond relevé à 500 franchi)'
-);
-select results_eq(
-  $$select status, paused_reason from public.campaigns
+select throws_ok(
+  $$update public.campaigns set budget_cents = 149
      where id = 'aa000000-0000-4000-8000-000000000002'$$,
-  $$values ('paused', 'budget_reached')$$,
-  'le plafond relevé pause de nouveau la campagne'
+  'P0001', 'campaign budget below committed amount',
+  'le plafond ne descend jamais sous la dépense engagée'
 );
+
+-- Une réservation abandonnée libère le plafond et répare la pause transitoire.
+update public.campaigns
+   set budget_cents = 200, budget_spent_cents = 0,
+       status = 'active', paused_reason = null
+ where id = 'aa000000-0000-4000-8000-000000000002';
+update public.prizes set cost_cents = 150
+ where id = 'aa000000-0000-4000-8000-000000000004';
+insert into public.spins
+  (id, organization_id, campaign_id, wheel_id, prize_id, is_losing, player_key)
+values ('aa000000-0000-4000-8000-000000000013',
+  'aa000000-0000-4000-8000-000000000001',
+  'aa000000-0000-4000-8000-000000000002',
+  'aa000000-0000-4000-8000-000000000003',
+  'aa000000-0000-4000-8000-000000000004', false, repeat('3', 64));
+update public.spins
+   set budget_reservation_expires_at = now() - interval '1 second'
+ where id = 'aa000000-0000-4000-8000-000000000013';
 select is(
-  (select count(*) from public.jobs where type = 'automation.budget-paused'),
-  2::bigint, 'plafond différent : une nouvelle notification part'
+  public.release_expired_spin_budget_reservations(
+    'aa000000-0000-4000-8000-000000000002'
+  ), 1, 'une réservation expirée est libérée une seule fois'
+);
+select results_eq(
+  $$select status, budget_reserved_cents, paused_reason
+      from public.campaigns where id = 'aa000000-0000-4000-8000-000000000002'$$,
+  $$values ('active', 0, null::text)$$,
+  'la campagne redevient active quand le budget est réellement disponible'
 );
 
 -- ══ 2. Programmation automatique ═════════════════════════════

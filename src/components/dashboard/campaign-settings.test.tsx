@@ -53,6 +53,7 @@ function campagne(patch: Partial<Campaign> = {}): Campaign {
     auto_schedule: false,
     budget_cents: null,
     budget_spent_cents: 0,
+    budget_reserved_cents: 0,
     paused_reason: null,
     engagement: {} as Campaign["engagement"],
     collect_email: false,

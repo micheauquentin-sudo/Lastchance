@@ -460,7 +460,10 @@ async function spinWheelInner(
           nextEligibleAt: spin.next_eligible_at ?? undefined,
         };
       }
-      if (spin?.denial_reason === "campaign_closed") {
+      if (
+        spin?.denial_reason === "campaign_closed"
+        || spin?.denial_reason === "budget_reached"
+      ) {
         // La campagne a fermé ENTRE la lecture du contexte et le tirage — la
         // course que la garde de `perform_atomic_spin` existe pour fermer
         // (migration 20261211120000). Le joueur voyait une roue jouable il y a
