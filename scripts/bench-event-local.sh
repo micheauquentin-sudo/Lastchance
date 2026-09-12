@@ -41,6 +41,22 @@ attendre_pg() {
     sleep 1
   done
 }
+attendre_supabase_env() {
+  local fin=$((SECONDS + 300))
+  local statut=""
+  until statut="$(npx --no-install supabase status -o env 2>/dev/null)" \
+    && grep -q '^API_URL=' <<<"$statut" \
+    && grep -q '^ANON_KEY=' <<<"$statut" \
+    && grep -q '^SERVICE_ROLE_KEY=' <<<"$statut"; do
+    if [[ "$SECONDS" -ge "$fin" ]]; then
+      echo "Supabase n'est pas completement pret apres 300 s." >&2
+      npx --no-install supabase status >&2 || true
+      exit 1
+    fi
+    sleep 2
+  done
+  printf '%s\n' "$statut"
+}
 
 echo "Depot : $(pwd) — $(git log --oneline -1)"
 npx --no-install supabase start >/dev/null 2>&1 || true
@@ -51,7 +67,7 @@ if [[ "$RESET" -eq 1 ]]; then
   pg_file supabase/seed.sql >/dev/null
 fi
 
-eval "$(npx --no-install supabase status -o env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
+eval "$(attendre_supabase_env | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=')"
 export NEXT_PUBLIC_SUPABASE_URL="$API_URL"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
