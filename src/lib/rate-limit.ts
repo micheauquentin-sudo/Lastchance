@@ -1023,8 +1023,10 @@ const observationsGroupees = new Map<string, ObservationGroupee>();
  * Tous les passages d'une même clé pendant `delaiMs` sont additionnés, puis
  * appliqués atomiquement par UN `INCRBY` Upstash ou UN upsert Postgres. Le
  * seuil conserve donc sa sémantique en nombre de requêtes ; seul le nombre
- * d'allers-retours change. La promesse commune permet à `after()` de retenir
- * le lot sans faire une écriture par réponse.
+ * d'allers-retours change. Seul le premier appel retient la promesse dans
+ * `after()` ; les suivants incrémentent le même lot mais se résolvent aussitôt.
+ * On évite ainsi de faire attendre toutes les réponses sur la télémétrie tout
+ * en gardant un propriétaire vivant jusqu'au flush.
  */
 export function observeSharedKeyBatched(
   bucket: string,
@@ -1036,7 +1038,7 @@ export function observeSharedKeyBatched(
   const existante = observationsGroupees.get(bucket);
   if (existante) {
     existante.count += 1;
-    return existante.promise;
+    return Promise.resolve();
   }
 
   let observation!: ObservationGroupee;

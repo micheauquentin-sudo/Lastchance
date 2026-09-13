@@ -65,6 +65,12 @@ describe("rateLimit — couche applicative", () => {
       { limit: 3000, windowSeconds: 600 },
       "event_pressure",
     );
+    let secondTermine = false;
+    void second.then(() => {
+      secondTermine = true;
+    });
+    await Promise.resolve();
+    expect(secondTermine).toBe(true);
     await vi.advanceTimersByTimeAsync(100);
     await Promise.all([premier, second]);
 
