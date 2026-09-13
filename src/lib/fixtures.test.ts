@@ -238,6 +238,7 @@ describe("resolveProviderSide", () => {
     // Une couleur STABLE, donc la même à chaque rendu.
     expect(side.color).toBe(resolveProviderSide(cdm, "Cape Verde").color);
     expect(side.color).not.toBe("");
+    expect(side.color).toMatch(/^#[0-9a-f]{6}$/i);
   });
 
   it("les cas relevés en production ont des initiales justes", () => {
