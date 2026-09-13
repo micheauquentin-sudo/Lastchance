@@ -1041,8 +1041,11 @@ export function observeSharedKeyBatched(
     return Promise.resolve();
   }
 
-  let observation!: ObservationGroupee;
-  const promise = (async () => {
+  const observation: ObservationGroupee = {
+    count: 1,
+    promise: Promise.resolve(),
+  };
+  observation.promise = (async () => {
     await new Promise<void>((resolve) => setTimeout(resolve, delaiMs));
     const poids = observation.count;
     if (observationsGroupees.get(bucket) === observation) {
@@ -1058,7 +1061,6 @@ export function observeSharedKeyBatched(
       });
     }
   })();
-  observation = { count: 1, promise };
   observationsGroupees.set(bucket, observation);
-  return promise;
+  return observation.promise;
 }
