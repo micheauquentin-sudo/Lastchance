@@ -4,6 +4,18 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-14 — Préflight sécurité du budget atomique
+
+La revue avant production de la PR #375 a trouvé un droit de colonne historique
+encore accordé à `authenticated` sur `campaigns.budget_spent_cents`. Un éditeur
+pouvait remettre ce compteur serveur à zéro puis faire émettre de nouveaux gains
+au-delà du plafond réel. La migration `20261219120000_campaign_budget_acl.sql`
+révoque ce seul droit et un pgTAP reproduit le PATCH sous un propriétaire réel.
+Validation locale : 196 assertions ciblées sur base vide puis semée, puis suite
+complète 108 fichiers / 6 546 assertions, zéro échec. La production n'a pas été
+modifiée pendant le constat ; la livraison attend le retour de `/api/health` à
+200 et la CI du nouveau SHA.
+
 ## 2026-09-13 — Reliquats post-production préparés et vérifiés
 
 Branche `chantier/reliquats-post-production`, SHA `2b8177e7`. Réservation

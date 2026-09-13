@@ -1,6 +1,6 @@
 # Roadmap — Lastchance
 
-## V1.78 — Budget atomique, soirées sous charge et reliquats de production (🟠 prêt localement, 2026-09-13)
+## V1.78 — Budget atomique, soirées sous charge et reliquats de production (🟠 prêt localement, 2026-09-14)
 
 **Livré dans la branche** `chantier/reliquats-post-production` : réservation
 atomique du budget au tirage et libération à expiration, compteurs de polling
@@ -8,15 +8,18 @@ pondérés et lectures simultanées coalisées, banc événement 100/250/500,
 vérification d'un émetteur Google Wallet réel, correctif de couleur des équipes
 inconnues, mises à jour de dépendances et de `actions/cache`.
 
-**Preuves** : lint propre ; Vitest 434 fichiers / 7 692 tests passés ; builds
-racine (66 pages) et site (8 pages) ; 0 vulnérabilité npm ; 216 migrations ;
-pgTAP 107 fichiers / 6 539 tests. La mesure locale ne certifie pas une capacité
+**Preuves** : lint propre ; Vitest 434 fichiers / 7 693 tests passés ; builds
+racine (66 pages) et site (8 pages) ; 0 vulnérabilité npm ; 217 migrations ;
+pgTAP 108 fichiers / 6 546 tests. Le préflight sécurité a révoqué l'ancien droit
+`authenticated` sur `campaigns.budget_spent_cents`, avec un contre-test sous
+un vrai rôle éditeur. La mesure locale ne certifie pas une capacité
 production : Realtime réduit normalement le polling, alors que le banc exerce
 des clients continus.
 
 **Ordre restant obligatoire** : appliquer en production
 `20261216120000_budget_reservation_atomique.sql`, puis
-`20261218120000_rate_limit_pondere.sql` ; valider la base ; seulement ensuite
+`20261218120000_rate_limit_pondere.sql`, puis
+`20261219120000_campaign_budget_acl.sql` ; valider la base ; seulement ensuite
 fusionner la PR et laisser Vercel déployer. Restent hors code : trois secrets
 Google Wallet et la correction DNS GoDaddy → Vercel. L'API Gateway Supabase est
 actuellement dégradée et doit retrouver un état sain avant le verdict final.

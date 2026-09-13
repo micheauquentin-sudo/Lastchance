@@ -1,10 +1,10 @@
 LASTCHANCE — RELIQUATS AVANT LIVRAISON
-État vérifié le 13 septembre 2026
+État vérifié le 14 septembre 2026
 
 VERDICT
 Le code est prêt localement et poussé sur la branche
-chantier/reliquats-post-production au SHA 2b8177e7.
-Il n'est pas encore sur main : deux migrations de production doivent être
+chantier/reliquats-post-production au SHA runtime 8148c981.
+Il n'est pas encore sur main : trois migrations de production doivent être
 appliquées avant le déploiement de l'application qui les appelle.
 
 CE QUI EST CORRIGÉ
@@ -13,6 +13,8 @@ CE QUI EST CORRIGÉ
    - Deux gains simultanés ne peuvent plus dépasser le budget disponible.
    - Le claim transfère la réservation vers le budget dépensé.
    - Une réservation non réclamée est libérée à expiration.
+   - Le montant dépensé est réservé aux fonctions serveur : un éditeur ne peut
+     plus le remettre à zéro pour rouvrir artificiellement son plafond.
 
 2. Soirées live et charge
    - Les lectures simultanées du même état sont coalisées.
@@ -44,14 +46,14 @@ CE QUI EST CORRIGÉ
 
 PREUVES LOCALES
 - Lint racine : zéro erreur, zéro avertissement.
-- Vitest : 434 fichiers, 7 692 tests passés, 1 ignoré, zéro échec.
+- Vitest : 434 fichiers, 7 693 tests passés, 1 ignoré, zéro échec.
 - Typecheck racine : succès.
 - Build racine : succès, 66 pages générées.
 - Site : npm ci, lint, typecheck et build réussis, 8 pages générées.
 - SQL statique : succès.
-- Migrations : 216 fichiers, head 20261218120000 synchronisé.
+- Migrations : 217 fichiers, head 20261219120000 synchronisé.
 - Types Supabase générés localement : aucun diff.
-- pgTAP : 107 fichiers, 6 539 tests, zéro échec.
+- pgTAP : 108 fichiers, 6 546 tests, zéro échec.
 
 ÉTAT PRODUCTION OBSERVÉ SANS MODIFICATION
 - Supabase : projet actif et base saine, sans saturation SQL constatée.
@@ -67,13 +69,14 @@ ORDRE DE LIVRAISON OBLIGATOIRE
 1. Obtenir l'accord explicite pour modifier Supabase de production.
 2. Appliquer 20261216120000_budget_reservation_atomique.sql.
 3. Appliquer 20261218120000_rate_limit_pondere.sql.
-4. Vérifier le head, les ACL, le budget et le rate-limit en production.
-5. Ouvrir ou actualiser la PR et attendre tous les jobs GitHub sur son headSha.
-6. Fusionner sur main seulement après le vert complet.
-7. Vérifier la CI main, le déploiement Vercel, /api/health et les logs workers.
-8. Corriger chez GoDaddy l'apex vers la cible Vercel recommandée, puis vérifier
+4. Appliquer 20261219120000_campaign_budget_acl.sql.
+5. Vérifier le head, les ACL, le budget et le rate-limit en production.
+6. Actualiser la PR et attendre tous les jobs GitHub sur son headSha.
+7. Fusionner sur main seulement après le vert complet.
+8. Vérifier la CI main, le déploiement Vercel, /api/health et les logs workers.
+9. Corriger chez GoDaddy l'apex vers la cible Vercel recommandée, puis vérifier
    le domaine et le sous-domaine.
-9. Poser les trois paramètres Google Wallet et exécuter la vérification réelle.
+10. Poser les trois paramètres Google Wallet et exécuter la vérification réelle.
 
 RISQUES RÉSIDUELS
 - La capacité simultanée réelle n'est pas certifiée par un banc de production.
