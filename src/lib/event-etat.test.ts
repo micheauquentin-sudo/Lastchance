@@ -32,6 +32,7 @@ const { etat } = vi.hoisted(() => ({
     partage: null as unknown,
     /** Message d'erreur de `event_etat_partage`, ou null. */
     erreurPartage: null as string | null,
+    attentePartage: null as Promise<void> | null,
     /** Réponse de `event_etat_joueur` (jsonb). */
     joueur: { you: null } as unknown,
     erreurJoueur: null as string | null,
@@ -42,20 +43,17 @@ vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
 
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
-    rpc: (nom: string, args: Record<string, unknown>) => {
+    rpc: async (nom: string, args: Record<string, unknown>) => {
       etat.appels.push({ nom, args });
       if (nom === "event_etat_partage") {
-        return Promise.resolve(
-          etat.erreurPartage
-            ? { data: null, error: { message: etat.erreurPartage } }
-            : { data: etat.partage, error: null },
-        );
+        if (etat.attentePartage) await etat.attentePartage;
+        return etat.erreurPartage
+          ? { data: null, error: { message: etat.erreurPartage } }
+          : { data: etat.partage, error: null };
       }
-      return Promise.resolve(
-        etat.erreurJoueur
-          ? { data: null, error: { message: etat.erreurJoueur } }
-          : { data: etat.joueur, error: null },
-      );
+      return etat.erreurJoueur
+        ? { data: null, error: { message: etat.erreurJoueur } }
+        : { data: etat.joueur, error: null };
     },
   })),
 }));
@@ -109,6 +107,7 @@ beforeEach(() => {
   etat.appels = [];
   etat.partage = null;
   etat.erreurPartage = null;
+  etat.attentePartage = null;
   etat.joueur = { you: null };
   etat.erreurJoueur = null;
 });
@@ -118,6 +117,43 @@ afterEach(() => {
 });
 
 describe("chargerEtatLive — cache d'une seconde de la part partagée", () => {
+  it("une vague simultanée partage UNE lecture en cours", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = partagePlein(sessionId);
+    let terminer!: () => void;
+    etat.attentePartage = new Promise<void>((resolve) => {
+      terminer = resolve;
+    });
+
+    const vague = Array.from({ length: 100 }, () => chargerEtatLive(sessionId));
+    expect(partages()).toBe(1);
+    terminer();
+
+    const resultats = await Promise.all(vague);
+    expect(resultats.every((resultat) => resultat.state === "ok")).toBe(true);
+    expect(partages()).toBe(1);
+  });
+
+  it("démarre le TTL à la fin d'une lecture lente", async () => {
+    const sessionId = nouvelleSession();
+    etat.partage = partagePlein(sessionId);
+    let terminer!: () => void;
+    etat.attentePartage = new Promise<void>((resolve) => {
+      terminer = resolve;
+    });
+
+    const lente = chargerEtatLive(sessionId);
+    expect(partages()).toBe(1);
+    vi.advanceTimersByTime(1_500);
+    terminer();
+    await lente;
+
+    etat.attentePartage = null;
+    vi.advanceTimersByTime(900);
+    await chargerEtatLive(sessionId);
+    expect(partages()).toBe(1);
+  });
+
   it("deux lectures dans la seconde ne font qu'UN appel à event_etat_partage", async () => {
     const sessionId = nouvelleSession();
     etat.partage = partagePlein(sessionId);
