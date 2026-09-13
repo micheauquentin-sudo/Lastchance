@@ -1,5 +1,26 @@
 # Roadmap — Lastchance
 
+## V1.78 — Budget atomique, soirées sous charge et reliquats de production (🟠 prêt localement, 2026-09-13)
+
+**Livré dans la branche** `chantier/reliquats-post-production` : réservation
+atomique du budget au tirage et libération à expiration, compteurs de polling
+pondérés et lectures simultanées coalisées, banc événement 100/250/500,
+vérification d'un émetteur Google Wallet réel, correctif de couleur des équipes
+inconnues, mises à jour de dépendances et de `actions/cache`.
+
+**Preuves** : lint propre ; Vitest 434 fichiers / 7 692 tests passés ; builds
+racine (66 pages) et site (8 pages) ; 0 vulnérabilité npm ; 216 migrations ;
+pgTAP 107 fichiers / 6 539 tests. La mesure locale ne certifie pas une capacité
+production : Realtime réduit normalement le polling, alors que le banc exerce
+des clients continus.
+
+**Ordre restant obligatoire** : appliquer en production
+`20261216120000_budget_reservation_atomique.sql`, puis
+`20261218120000_rate_limit_pondere.sql` ; valider la base ; seulement ensuite
+fusionner la PR et laisser Vercel déployer. Restent hors code : trois secrets
+Google Wallet et la correction DNS GoDaddy → Vercel. L'API Gateway Supabase est
+actuellement dégradée et doit retrouver un état sain avant le verdict final.
+
 ## V1.77 — Stabilisation avant production : les constats croisés de deux audits, vérifiés puis fermés (✅ 2026-09-06, PR #365, commit squash `60ef99c5`)
 
 **Objectif** : fusionner deux audits indépendants (Claude Opus 5 le

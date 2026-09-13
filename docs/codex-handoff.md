@@ -37,6 +37,55 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Reliquats post-production — prêts à intégrer, livraison encore bloquée (2026-09-13)
+
+**État Git vérifié.** Le lot vit sur `chantier/reliquats-post-production`, au
+SHA `2b8177e7`, au-dessus de `origin/main` (`aea0908b`). Il est poussé, mais pas
+encore fusionné. L'arbre Windows d'entrée conserve les modifications de
+l'utilisateur dans `AGENTS.md` et trois images non suivies sous
+`site/public/images/game-world/` ; elles ne font pas partie du lot.
+
+**Corrections terminées.** Le budget des gains est désormais réservé dans la
+transaction qui émet le spin, figé sur la ligne gagnante, transféré au montant
+dépensé lors du claim et libéré à expiration. Le polling des soirées coalise
+les lectures concurrentes et groupe exactement les compteurs d'observabilité
+via `INCRBY`/RPC pondérée. Un banc local reproductible mesure 100, 250 et 500
+clients continus. Le vérificateur Google Wallet interroge l'émetteur réel au
+lieu de seulement tester la signature locale. Les dépendances racine/site et
+`actions/cache` sont mises à jour sans vulnérabilité npm. La synchronisation
+sportive produit maintenant une couleur `#RRGGBB` pour les équipes inconnues,
+format exigé par `contest_matches_colors_format_check`.
+
+**Preuves locales finales.** Lint racine sans erreur ni avertissement ; Vitest
+complet : 434 fichiers, 7 692 tests passés, 1 ignoré ; typecheck et build Next
+racine verts, 66 pages générées ; `site/` : installation à 0 vulnérabilité,
+lint, typecheck et build verts, 8 pages générées ; `sql:check` et
+`migrations:check` verts, 216 migrations, head `20261218120000` ; génération
+des types locale sans diff ; pgTAP global seedé : 107 fichiers, 6 539 tests,
+zéro échec. Les tests critiques budget/ACL/rate-limit avaient aussi passé sur
+base vide puis seedée. Le benchmark continu reste un test de surcharge local,
+pas une certification de capacité de production.
+
+**Production observée, non modifiée.** Supabase est `ACTIVE_HEALTHY` côté base,
+sans saturation SQL ni connexions proches de la limite, mais son API Gateway
+est actuellement signalé en performance dégradée et les workers Vercel voient
+des `Gateway Timeout`. La synchronisation sportive révèle en plus le défaut de
+couleur corrigé dans ce lot. Le healthcheck Vercel reste `503` tant que les
+workers n'ont pas retrouvé une exécution saine. Realtime événementiel est bien
+actif. Le domaine `lastchance.app` pointe encore vers le parking GoDaddy et non
+vers Vercel ; `app.lastchance.app` ne résout pas.
+
+**Bloqué avant fusion.** La production Supabase est encore au head
+`20261215120000`. Les migrations `20261216120000` puis `20261218120000` doivent
+être appliquées et vérifiées **avant** le code qui en dépend ; cette mutation
+de production exige l'accord explicite du propriétaire. Google Wallet exige
+encore `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_CLIENT_EMAIL` et
+`GOOGLE_WALLET_PRIVATE_KEY` dans Vercel, puis un passage réel du vérificateur.
+Le DNS doit être corrigé chez GoDaddy (`A` apex vers la cible recommandée par
+Vercel, puis vérification du sous-domaine). Après ces gestes : ouvrir/finaliser
+la PR, attendre tous les jobs requis sur son `headSha`, fusionner, vérifier la
+CI `main`, le déploiement Vercel, `/api/health`, les logs workers et le domaine.
+
 ## Release gate — livré en production (2026-09-11)
 
 **État réel vérifié.** Le lot applicatif a été fusionné par la PR `#371` dans

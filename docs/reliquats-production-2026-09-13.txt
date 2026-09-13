@@ -1,0 +1,82 @@
+LASTCHANCE — RELIQUATS AVANT LIVRAISON
+État vérifié le 13 septembre 2026
+
+VERDICT
+Le code est prêt localement et poussé sur la branche
+chantier/reliquats-post-production au SHA 2b8177e7.
+Il n'est pas encore sur main : deux migrations de production doivent être
+appliquées avant le déploiement de l'application qui les appelle.
+
+CE QUI EST CORRIGÉ
+1. Budget des gains
+   - Le coût du lot est figé et réservé atomiquement dès l'émission du spin.
+   - Deux gains simultanés ne peuvent plus dépasser le budget disponible.
+   - Le claim transfère la réservation vers le budget dépensé.
+   - Une réservation non réclamée est libérée à expiration.
+
+2. Soirées live et charge
+   - Les lectures simultanées du même état sont coalisées.
+   - Les compteurs d'observabilité du polling sont regroupés sans perdre
+     d'unités, via INCRBY ou une RPC Postgres pondérée.
+   - Un banc reproductible exerce 100, 250 et 500 clients continus.
+   - Cette mesure locale de surcharge ne constitue pas une certification de
+     capacité de production. Realtime est actif en production et réduit le
+     polling normal.
+
+3. Google Wallet
+   - Un script vérifie désormais l'émetteur réel auprès de Google.
+   - Il manque encore les trois paramètres Vercel appartenant au propriétaire :
+     GOOGLE_WALLET_ISSUER_ID
+     GOOGLE_WALLET_CLIENT_EMAIL
+     GOOGLE_WALLET_PRIVATE_KEY
+
+4. Synchronisation sportive
+   - Les équipes inconnues reçoivent maintenant une couleur hexadécimale stable.
+   - L'ancien format hsl(...) violait la contrainte
+     contest_matches_colors_format_check en production.
+
+5. Dépendances et CI
+   - Dépendances racine et site mises à jour.
+   - Stripe reste volontairement sur le contrat API 2026-07-29.dahlia.
+   - Sentry reste épinglé à la dernière version compatible avec la suite.
+   - actions/cache passe à la version 6.
+   - Les audits npm racine et site indiquent 0 vulnérabilité.
+
+PREUVES LOCALES
+- Lint racine : zéro erreur, zéro avertissement.
+- Vitest : 434 fichiers, 7 692 tests passés, 1 ignoré, zéro échec.
+- Typecheck racine : succès.
+- Build racine : succès, 66 pages générées.
+- Site : npm ci, lint, typecheck et build réussis, 8 pages générées.
+- SQL statique : succès.
+- Migrations : 216 fichiers, head 20261218120000 synchronisé.
+- Types Supabase générés localement : aucun diff.
+- pgTAP : 107 fichiers, 6 539 tests, zéro échec.
+
+ÉTAT PRODUCTION OBSERVÉ SANS MODIFICATION
+- Supabase : projet actif et base saine, sans saturation SQL constatée.
+- Supabase API Gateway : performance dégradée au moment du contrôle.
+- Vercel /api/health : 503 tant que les workers n'ont pas retrouvé une
+  exécution saine.
+- Workers : Gateway Timeout intermittents depuis Supabase.
+- Realtime événements : actif.
+- lastchance.app : pointe vers un parking GoDaddy, pas vers Vercel.
+- app.lastchance.app : ne résout pas.
+
+ORDRE DE LIVRAISON OBLIGATOIRE
+1. Obtenir l'accord explicite pour modifier Supabase de production.
+2. Appliquer 20261216120000_budget_reservation_atomique.sql.
+3. Appliquer 20261218120000_rate_limit_pondere.sql.
+4. Vérifier le head, les ACL, le budget et le rate-limit en production.
+5. Ouvrir ou actualiser la PR et attendre tous les jobs GitHub sur son headSha.
+6. Fusionner sur main seulement après le vert complet.
+7. Vérifier la CI main, le déploiement Vercel, /api/health et les logs workers.
+8. Corriger chez GoDaddy l'apex vers la cible Vercel recommandée, puis vérifier
+   le domaine et le sous-domaine.
+9. Poser les trois paramètres Google Wallet et exécuter la vérification réelle.
+
+RISQUES RÉSIDUELS
+- La capacité simultanée réelle n'est pas certifiée par un banc de production.
+- Les timeouts actuels dépendent de l'API Gateway Supabase ; un correctif
+  applicatif ne doit pas masquer une panne de plateforme.
+- La livraison ne doit pas inverser l'ordre migration puis application.
