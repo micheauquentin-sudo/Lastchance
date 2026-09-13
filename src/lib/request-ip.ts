@@ -2,6 +2,7 @@ import { isIP } from "node:net";
 
 import {
   observeSharedKey,
+  observeSharedKeyBatched,
   rateLimitBucket,
   type RateLimitRule,
 } from "@/lib/rate-limit";
@@ -130,6 +131,23 @@ export async function observerPressionIp(
 ): Promise<void> {
   const pression = pressionParIp(ip, evenement);
   await observeSharedKey(
+    rateLimitBucket(...parts, pression.cle),
+    rule,
+    pression.evenement,
+    { ...extra, ip_mesuree: pression.mesuree },
+  );
+}
+
+/** Même mesure, regroupée pour les chemins de polling à haute fréquence. */
+export async function observerPressionIpParLots(
+  parts: Array<string | number>,
+  ip: string,
+  rule: RateLimitRule,
+  evenement: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  const pression = pressionParIp(ip, evenement);
+  await observeSharedKeyBatched(
     rateLimitBucket(...parts, pression.cle),
     rule,
     pression.evenement,

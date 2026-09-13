@@ -37,7 +37,11 @@ import {
   rateLimit,
   rateLimitBucket,
 } from "@/lib/rate-limit";
-import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
+import {
+  clientIpFromHeaders,
+  observerPressionIp,
+  observerPressionIpParLots,
+} from "@/lib/request-ip";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { filledByTrigger } from "@/lib/supabase/insert";
@@ -113,6 +117,20 @@ async function observeEventPressure(sessionId: string, ip: string): Promise<void
     "event_public_pressure",
     { session_id: sessionId },
     );
+}
+
+/** Le poll conserve chaque unité observée, mais les écritures partent par lots. */
+async function observeEventPollPressure(
+  sessionId: string,
+  ip: string,
+): Promise<void> {
+  await observerPressionIpParLots(
+    ["event:public:ip", sessionId],
+    ip,
+    RATE_LIMITS.eventPublicIp,
+    "event_public_pressure",
+    { session_id: sessionId },
+  );
 }
 
 /**
@@ -400,7 +418,7 @@ export async function getEventState(input: {
   if (etat.state === "ok") {
     const ip = clientIpFromHeaders(await headers());
     after(() =>
-      observeEventPressure(parsed.data.sessionId, ip).catch((err) =>
+      observeEventPollPressure(parsed.data.sessionId, ip).catch((err) =>
         reportError("event.state-pressure", err),
       ),
     );

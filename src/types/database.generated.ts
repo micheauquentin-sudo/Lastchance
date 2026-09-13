@@ -8779,6 +8779,15 @@ export type Database = {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number }
         Returns: boolean
       }
+      check_rate_limit_weighted: {
+        Args: {
+          p_bucket: string
+          p_increment: number
+          p_limit: number
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
       checkin_reservation: {
         Args: { p_actor: string; p_code: string; p_organization_id: string }
         Returns: {

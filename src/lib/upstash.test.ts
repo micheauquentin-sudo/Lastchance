@@ -43,9 +43,19 @@ describe("upstashRateLimit", () => {
     await upstashRateLimit("spin:abc", RULE, 1_000_000_000_000);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(body[0]).toEqual(["INCR", "rl:spin:abc:999999960"]);
+    expect(body[0]).toEqual(["INCRBY", "rl:spin:abc:999999960", "1"]);
     // TTL posé uniquement à la création (NX), fenêtre + marge
     expect(body[1]).toEqual(["EXPIRE", "rl:spin:abc:999999960", "120", "NX"]);
+  });
+
+  it("incrémente un lot en une seule commande sans perdre son poids", async () => {
+    const fetchMock = mockFetchResponse([{ result: 12 }, { result: 1 }]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await upstashRateLimit("event:s", { limit: 10, windowSeconds: 60 }, 0, 12))
+      .toBe(false);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body[0]).toEqual(["INCRBY", "rl:event:s:0", "12"]);
   });
 
   it("retourne null (fallback) sur erreur HTTP ou réponse inattendue", async () => {

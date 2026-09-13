@@ -13,12 +13,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   }),
 }));
 
-import { rateLimit } from "./rate-limit";
+import { observeSharedKeyBatched, rateLimit } from "./rate-limit";
 import { writeAuditLog } from "./audit";
 import { verifyTurnstile } from "./turnstile";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   rpcMock.mockReset();
   insertMock.mockReset();
   delete process.env.TURNSTILE_SECRET_KEY;
@@ -48,6 +49,32 @@ describe("rateLimit — couche applicative", () => {
   it("fail-open sur exception réseau", async () => {
     rpcMock.mockRejectedValue(new Error("network down"));
     expect(await rateLimit("b", { limit: 5, windowSeconds: 60 })).toBe(true);
+  });
+
+  it("regroupe les observations sans perdre leur nombre", async () => {
+    vi.useFakeTimers();
+    rpcMock.mockResolvedValue({ data: true, error: null });
+
+    const premier = observeSharedKeyBatched(
+      "event:s:ip",
+      { limit: 3000, windowSeconds: 600 },
+      "event_pressure",
+    );
+    const second = observeSharedKeyBatched(
+      "event:s:ip",
+      { limit: 3000, windowSeconds: 600 },
+      "event_pressure",
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    await Promise.all([premier, second]);
+
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("check_rate_limit_weighted", {
+      p_bucket: "event:s:ip",
+      p_increment: 2,
+      p_limit: 3000,
+      p_window_seconds: 600,
+    });
   });
 });
 

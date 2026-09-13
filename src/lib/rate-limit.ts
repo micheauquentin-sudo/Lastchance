@@ -940,18 +940,31 @@ export function rateLimitBucket(...parts: Array<string | number>): string {
 export async function rateLimit(
   bucket: string,
   rule: RateLimitRule,
-  options: { failClosed?: boolean } = {},
+  options: { failClosed?: boolean; increment?: number } = {},
 ): Promise<boolean> {
-  const upstashVerdict = await upstashRateLimit(bucket, rule);
+  const increment = Math.max(1, Math.trunc(options.increment ?? 1));
+  const upstashVerdict = await upstashRateLimit(
+    bucket,
+    rule,
+    Date.now(),
+    increment,
+  );
   if (upstashVerdict !== null) return upstashVerdict;
 
   try {
     const admin = createAdminClient();
-    const { data, error } = await admin.rpc("check_rate_limit", {
-      p_bucket: bucket,
-      p_limit: rule.limit,
-      p_window_seconds: rule.windowSeconds,
-    });
+    const { data, error } = increment === 1
+      ? await admin.rpc("check_rate_limit", {
+          p_bucket: bucket,
+          p_limit: rule.limit,
+          p_window_seconds: rule.windowSeconds,
+        })
+      : await admin.rpc("check_rate_limit_weighted", {
+          p_bucket: bucket,
+          p_limit: rule.limit,
+          p_window_seconds: rule.windowSeconds,
+          p_increment: increment,
+        });
     if (error) {
       reportError("rate-limit.rpc", error.message);
       return !options.failClosed;
@@ -994,4 +1007,56 @@ export async function observeSharedKey(
       window_seconds: rule.windowSeconds,
     });
   }
+}
+
+interface ObservationGroupee {
+  count: number;
+  promise: Promise<void>;
+}
+
+/** Lots d'observation en mémoire, bornés à la courte fenêtre en cours. */
+const observationsGroupees = new Map<string, ObservationGroupee>();
+
+/**
+ * Variante exacte mais groupée du compteur d'observabilité.
+ *
+ * Tous les passages d'une même clé pendant `delaiMs` sont additionnés, puis
+ * appliqués atomiquement par UN `INCRBY` Upstash ou UN upsert Postgres. Le
+ * seuil conserve donc sa sémantique en nombre de requêtes ; seul le nombre
+ * d'allers-retours change. La promesse commune permet à `after()` de retenir
+ * le lot sans faire une écriture par réponse.
+ */
+export function observeSharedKeyBatched(
+  bucket: string,
+  rule: RateLimitRule,
+  event: string,
+  extra: Record<string, unknown> = {},
+  delaiMs: number = 100,
+): Promise<void> {
+  const existante = observationsGroupees.get(bucket);
+  if (existante) {
+    existante.count += 1;
+    return existante.promise;
+  }
+
+  let observation!: ObservationGroupee;
+  const promise = (async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, delaiMs));
+    const poids = observation.count;
+    if (observationsGroupees.get(bucket) === observation) {
+      observationsGroupees.delete(bucket);
+    }
+    if (!(await rateLimit(bucket, rule, { increment: poids }))) {
+      reportSecurityEvent(event, {
+        ...extra,
+        bucket,
+        limit: rule.limit,
+        window_seconds: rule.windowSeconds,
+        observed_count: poids,
+      });
+    }
+  })();
+  observation = { count: 1, promise };
+  observationsGroupees.set(bucket, observation);
+  return promise;
 }
