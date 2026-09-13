@@ -99,7 +99,7 @@ export function VitrineSpotlight() {
                   </h4>
                   <p className="text-[11px] font-bold text-k-body">Bistrot · 11 rue de la Paix</p>
                   <div className="mt-2 flex justify-center gap-1.5">
-                    <span className="rounded-full bg-k-green/20 px-2 py-0.5 text-[9px] font-black text-k-green">
+                    <span className="rounded-full bg-k-green/20 px-2 py-0.5 text-[9px] font-black text-k-ink">
                       Ouvert actuellement
                     </span>
                     <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-k-ink">
