@@ -57,6 +57,7 @@ export function ApplyTemplateButton({
         // saison de progression (`progression-new-season.tsx`) : une
         // navigation complète, jamais périmée, contre un `push` qui marche
         // la plupart du temps.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- rechargement complet volontaire, voir le cas flaky documente ci-dessus
         window.location.assign(`/dashboard/campaigns/${res.data.campaignId}`);
       } catch {
         setError("Création impossible, réessayez.");
