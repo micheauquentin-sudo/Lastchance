@@ -217,7 +217,7 @@ function MiniMechanicDemo() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-xs font-black uppercase tracking-wider text-k-ink">Tester un jeu :</span>
+        <span className="text-xs font-black uppercase tracking-wider text-k-bg">Tester un jeu :</span>
         {mechanicsList.map((m) => (
           <button
             key={m.id}
