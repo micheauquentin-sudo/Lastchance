@@ -28,10 +28,10 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select no_plan();
 
--- Instant de référence unique, jamais now() : sinon le fichier devient
--- intermittent selon la durée de sa propre exécution.
+-- Instant de référence unique : transaction_timestamp() est figé par `begin`,
+-- donc le fichier reste déterministe sans expirer avec le calendrier.
 create temporary table t0 (v timestamptz);
-insert into t0 values (timestamptz '2026-06-15 12:00:00+00');
+insert into t0 values (transaction_timestamp());
 
 create temporary table ids (nom text primary key, id uuid);
 insert into ids values

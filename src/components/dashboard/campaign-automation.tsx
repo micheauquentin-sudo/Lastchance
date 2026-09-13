@@ -57,10 +57,12 @@ export function CampaignAutomationSettings({
   }));
 
   const spent = campaign.budget_spent_cents;
+  const reserved = campaign.budget_reserved_cents;
+  const committed = spent + reserved;
   const budget = campaign.budget_cents;
   const pct =
     budget != null && budget > 0
-      ? Math.min(100, Math.round((spent / budget) * 100))
+      ? Math.min(100, Math.round((committed / budget) * 100))
       : 0;
 
   return (
@@ -147,8 +149,8 @@ export function CampaignAutomationSettings({
               className="w-56"
             />
             <p className="mt-1.5 text-xs text-zinc-500">
-              Chaque gain réclamé consomme le coût réel de son lot. Plafond
-              atteint = campagne mise en pause automatiquement.
+              Chaque gain émis réserve son coût jusqu&apos;à sa réclamation ou son
+              expiration. Plafond atteint = campagne mise en pause automatiquement.
             </p>
           </div>
 
@@ -167,7 +169,7 @@ export function CampaignAutomationSettings({
                 <span className="font-semibold text-zinc-900">
                   {euros(spent)}
                 </span>{" "}
-                dépensés sur {euros(budget)}
+                dépensés + {euros(reserved)} réservés sur {euros(budget)}
               </p>
             </div>
           ) : (
@@ -226,6 +228,7 @@ export function CampaignStateBanner({
     | "paused_reason"
     | "budget_cents"
     | "budget_spent_cents"
+    | "budget_reserved_cents"
     | "starts_at"
     | "ends_at"
   >;
@@ -329,7 +332,7 @@ export function CampaignStateBanner({
   // budget_reached
   const amounts =
     campaign.budget_cents != null
-      ? `${euros(campaign.budget_spent_cents)} / ${euros(campaign.budget_cents)}`
+      ? `${euros(campaign.budget_spent_cents + campaign.budget_reserved_cents)} / ${euros(campaign.budget_cents)}`
       : euros(campaign.budget_spent_cents);
 
   return (

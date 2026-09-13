@@ -1264,6 +1264,8 @@ export interface Campaign {
   budget_cents: number | null;
   /** Dépense imputée à chaque gain réclamé (claim_winning_spin, atomique). */
   budget_spent_cents: number;
+  /** Gains emis et encore reclamables, au cout fige lors du tirage. */
+  budget_reserved_cents: number;
   /** Pourquoi la campagne est en pause automatique — effacé au retour en active (trigger). */
   paused_reason: CampaignPausedReason | null;
   /** Actions proposées au joueur avant de lancer la roue. */

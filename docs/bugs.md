@@ -2,6 +2,26 @@
 
 ## Notes
 
+- **2026-09-13 — livraison V1.78 non fusionnée.** Deux défauts applicatifs sont
+  corrigés sur `chantier/reliquats-post-production` : le budget n'était débité
+  qu'au claim (course possible entre gains simultanés), et les équipes sportives
+  inconnues produisaient `hsl(...)` alors que la contrainte SQL exige
+  `#RRGGBB`. Les tests et builds locaux sont verts. La livraison reste bloquée
+  par l'ordre migration-avant-code : production au head `20261215120000`, lot
+  attendu au head `20261219120000`.
+- **2026-09-14 — préflight budget : ACL trop large corrigée avant production.**
+  Le re-grant historique de `campaigns` laissait un éditeur authentifié écrire
+  `budget_spent_cents`. Un PATCH direct pouvait remettre le compteur à zéro et
+  rendre du budget aux tirages. La migration `20261219120000` retire uniquement
+  ce droit ; le plafond marchand reste éditable et un contre-test joue l'attaque
+  sous un vrai rôle `authenticated`.
+- **2026-09-13 — incidents externes encore ouverts.** Le healthcheck Vercel
+  répond `503` pendant que les workers reçoivent des `Gateway Timeout` depuis
+  l'API Supabase ; la base elle-même est saine et non saturée, et le statut
+  Supabase signale l'API Gateway dégradée. `lastchance.app` sert toujours un
+  parking GoDaddy au lieu du déploiement Vercel. Google Wallet n'est pas
+  activable sans les trois identifiants d'émetteur absents de Vercel.
+
 - **2026-08-19 — `event-remote-cycle.spec.ts` sous mobile-safari : timeout
   global, pas une attente précise.** Run CI 32206711952 (SHA 41c7345,
   PR #158) : seul échec restant du chantier flake E2E. Le test orchestre 3

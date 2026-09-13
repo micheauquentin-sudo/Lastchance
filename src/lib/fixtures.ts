@@ -629,17 +629,25 @@ export function initialesEquipe(nom: string): string {
  * Couleur STABLE d'une équipe hors catalogue, dérivée de son nom.
  *
  * Une couleur tirée au hasard changerait à chaque rendu ; une couleur fixe
- * rendrait toutes les équipes inconnues identiques. Le hash du nom donne
- * une teinte stable et distincte, prise dans une palette dont le contraste
- * avec du texte blanc est tenu (S/L fixés, seule la teinte varie).
+ * rendrait toutes les équipes inconnues identiques. Le hash du nom choisit
+ * une teinte sombre stable dans une palette hexadécimale. Le format n'est pas
+ * un détail : `contest_matches_colors_format_check` n'accepte que #RRGGBB ;
+ * l'ancien repli `hsl(...)` faisait refuser chaque équipe hors catalogue par
+ * la synchronisation de production.
  */
 export function couleurEquipe(nom: string): string {
   const normalise = normalizeTeamName(nom);
   let hash = 0;
   for (let i = 0; i < normalise.length; i += 1) {
-    hash = (hash * 31 + normalise.charCodeAt(i)) % 360;
+    hash = (hash * 31 + normalise.charCodeAt(i)) >>> 0;
   }
-  return `hsl(${hash} 45% 34%)`;
+  const palette = [
+    "#7f1d1d", "#7c2d12", "#713f12", "#365314",
+    "#14532d", "#134e4a", "#164e63", "#0c4a6e",
+    "#1e3a8a", "#312e81", "#4c1d95", "#581c87",
+    "#701a75", "#831843", "#881337", "#3f3f46",
+  ] as const;
+  return palette[hash % palette.length];
 }
 
 /**

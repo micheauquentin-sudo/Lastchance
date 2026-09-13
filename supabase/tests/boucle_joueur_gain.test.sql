@@ -334,6 +334,10 @@ values ('f0b00000-0000-4000-8000-000000000007',
 
 alter table public.wheels drop constraint wheels_campaign_org_fk;
 alter table public.spins drop constraint spins_campaign_org_fk;
+-- La réservation budgétaire vérifie aussi la chaîne campagne/organisation.
+-- On la neutralise uniquement pour fabriquer cette ligne impossible, puis on
+-- la réarme avant les tests de tirage qui suivent.
+alter table public.spins disable trigger spins_reserve_budget;
 
 -- Roue de l'org 1 rattachée à la campagne de l'org 2 : chaîne rompue.
 -- `unlimited` À DESSEIN — c'est ce qui rend l'assertion falsifiable : sans la
@@ -364,6 +368,7 @@ values (
   repeat('i', 64), false, null,
   now() - interval '10 minutes'
 );
+alter table public.spins enable trigger spins_reserve_budget;
 
 select is(
   (select count(*)::int from public.recover_pending_spin(

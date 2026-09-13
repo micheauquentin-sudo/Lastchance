@@ -21,11 +21,13 @@ export async function upstashRateLimit(
   bucket: string,
   rule: RateLimitRule,
   nowMs: number = Date.now(),
+  increment: number = 1,
 ): Promise<boolean | null> {
   const url = optionalEnv("UPSTASH_REDIS_REST_URL");
   const token = optionalEnv("UPSTASH_REDIS_REST_TOKEN");
   if (!url || !token) return null;
   if (rule.limit < 1 || rule.windowSeconds < 1) return true;
+  const poids = Math.max(1, Math.trunc(increment));
 
   // Fenêtre fixe alignée (même découpage que public.check_rate_limit).
   const windowStart =
@@ -42,7 +44,7 @@ export async function upstashRateLimit(
       // EXPIRE NX : le TTL n'est posé qu'à la création de la clé
       // (fenêtre + marge → purge automatique, pas de cron).
       body: JSON.stringify([
-        ["INCR", key],
+        ["INCRBY", key, String(poids)],
         ["EXPIRE", key, String(rule.windowSeconds + 60), "NX"],
       ]),
       signal: AbortSignal.timeout(2000),

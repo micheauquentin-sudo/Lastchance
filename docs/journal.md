@@ -4,6 +4,29 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-14 — Préflight sécurité du budget atomique
+
+La revue avant production de la PR #375 a trouvé un droit de colonne historique
+encore accordé à `authenticated` sur `campaigns.budget_spent_cents`. Un éditeur
+pouvait remettre ce compteur serveur à zéro puis faire émettre de nouveaux gains
+au-delà du plafond réel. La migration `20261219120000_campaign_budget_acl.sql`
+révoque ce seul droit et un pgTAP reproduit le PATCH sous un propriétaire réel.
+Validation locale : 196 assertions ciblées sur base vide puis semée, puis suite
+complète 108 fichiers / 6 546 assertions, zéro échec. La production n'a pas été
+modifiée pendant le constat ; la livraison attend le retour de `/api/health` à
+200 et la CI du nouveau SHA.
+
+## 2026-09-13 — Reliquats post-production préparés et vérifiés
+
+Branche `chantier/reliquats-post-production`, SHA `2b8177e7`. Réservation
+atomique du budget des gains, optimisation exacte du polling live, banc de
+charge événement, vérificateur Google Wallet, mises à jour de dépendances et
+correctif des couleurs importées. La QA locale passe : Vitest 7 692 tests,
+pgTAP 6 539 tests, lint/typecheck/build racine et site verts. La production a
+été observée sans mutation : API Gateway Supabase dégradée, workers Vercel en
+timeout, domaine public encore garé chez GoDaddy, secrets Google Wallet absents.
+La fusion attend l'application préalable des deux migrations en production.
+
 ## 2026-09-06 — Stabilisation avant production : deux audits croisés, vérifiés puis fermés
 
 **Stabilisation avant production** (PR #365, squash `60ef99c5`, ADR-175 à

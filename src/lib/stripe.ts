@@ -14,6 +14,11 @@ import { SMS_CREDIT_MAX_UNITS } from "@/lib/validations/admin";
 import type { Entitlement } from "@/platform/experiences/contract";
 import type { SubscriptionStatus } from "@/types/database";
 
+// Le SDK 22.6.1 embarque 2026-08-26.dahlia par defaut. Cette mise a jour de
+// dependance ne doit pas modifier silencieusement le contrat HTTP de paiement :
+// 2026-07-29.dahlia est la version effectivement utilisee par le SDK precedent.
+const STRIPE_API_VERSION = "2026-07-29.dahlia" as Stripe.LatestApiVersion;
+
 export function getStripe(): Stripe {
   // STRIPE_API_BASE : uniquement pour les tests (stub local / stripe-mock).
   // Jamais défini en production — l'API officielle est utilisée par défaut.
@@ -21,12 +26,15 @@ export function getStripe(): Stripe {
   if (base) {
     const url = new URL(base);
     return new Stripe(requiredEnv("STRIPE_SECRET_KEY"), {
+      apiVersion: STRIPE_API_VERSION,
       host: url.hostname,
       port: Number(url.port) || (url.protocol === "https:" ? 443 : 80),
       protocol: url.protocol === "https:" ? "https" : "http",
     });
   }
-  return new Stripe(requiredEnv("STRIPE_SECRET_KEY"));
+  return new Stripe(requiredEnv("STRIPE_SECRET_KEY"), {
+    apiVersion: STRIPE_API_VERSION,
+  });
 }
 
 const CUSTOMER_LINK_ERROR = "Impossible d'associer le client Stripe";

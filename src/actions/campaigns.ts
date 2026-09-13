@@ -53,6 +53,13 @@ type LotPublication = Pick<
   "is_active" | "is_losing" | "weight" | "stock" | "value_cents"
 >;
 
+function estErreurBudgetEngage(message: string | undefined): boolean {
+  return (
+    message?.includes("campaign budget below committed amount") === true
+    || message?.includes("campaign budget unavailable") === true
+  );
+}
+
 function contientLotInterditIdentiteFaible(lots: LotPublication[]): boolean {
   return lots.some(
     (lot) => estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot),
@@ -698,6 +705,13 @@ export async function updateCampaignAutomation(
 
   if (error) {
     reportError("campaigns.automation", error.message);
+    if (estErreurBudgetEngage(error.message)) {
+      return {
+        ok: false,
+        error:
+          "Le plafond doit couvrir les gains déjà dépensés et ceux encore réservés.",
+      };
+    }
     // ── ARMER LA PROGRAMMATION EST UNE PUBLICATION DIFFÉRÉE ──
     //
     // Depuis `20260906120000`, le trigger `campaigns_guard_auto_schedule`
@@ -824,6 +838,13 @@ export async function resumeCampaignAfterBudget(
       .eq("organization_id", organization.id);
     if (error) {
       reportError("campaigns.resume-budget", error.message);
+      if (estErreurBudgetEngage(error.message)) {
+        return {
+          ok: false,
+          error:
+            "Le nouveau plafond doit couvrir les gains déjà dépensés et réservés.",
+        };
+      }
       return { ok: false, error: "Relance impossible" };
     }
   }
@@ -842,7 +863,9 @@ export async function resumeCampaignAfterBudget(
     return {
       ok: false,
       error:
-        issue === "module"
+        estErreurBudgetEngage(reponse.error?.message)
+          ? "Aucun lot gagnant ne tient dans le budget restant. Relevez le plafond."
+          : issue === "module"
           ? messageAccesCampagne({
               essaiTermine: await essaiExpire(organization),
               geste: "relance",

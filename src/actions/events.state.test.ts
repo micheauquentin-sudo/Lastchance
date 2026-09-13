@@ -89,6 +89,12 @@ vi.mock("@/lib/request-ip", async (importOriginal) => ({
     if (etat.pressionBloquee) return new Promise<void>(() => undefined);
     return Promise.resolve();
   }),
+  observerPressionIpParLots: vi.fn(() => {
+    etat.pressions += 1;
+    if (etat.pressionRejette) return Promise.reject(new Error("compteur HS"));
+    if (etat.pressionBloquee) return new Promise<void>(() => undefined);
+    return Promise.resolve();
+  }),
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({

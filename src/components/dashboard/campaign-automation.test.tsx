@@ -41,6 +41,7 @@ function campagne(
     paused_reason,
     budget_cents: null,
     budget_spent_cents: 0,
+    budget_reserved_cents: 0,
     starts_at: null,
     ends_at: null,
   };

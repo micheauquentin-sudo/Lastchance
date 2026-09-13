@@ -865,6 +865,7 @@ export type Database = {
         Row: {
           auto_schedule: boolean
           budget_cents: number | null
+          budget_reserved_cents: number
           budget_spent_cents: number
           code_ttl_seconds: number | null
           collect_email: boolean
@@ -884,6 +885,7 @@ export type Database = {
         Insert: {
           auto_schedule?: boolean
           budget_cents?: number | null
+          budget_reserved_cents?: number
           budget_spent_cents?: number
           code_ttl_seconds?: number | null
           collect_email?: boolean
@@ -903,6 +905,7 @@ export type Database = {
         Update: {
           auto_schedule?: boolean
           budget_cents?: number | null
+          budget_reserved_cents?: number
           budget_spent_cents?: number
           code_ttl_seconds?: number | null
           collect_email?: boolean
@@ -7665,6 +7668,9 @@ export type Database = {
       }
       spins: {
         Row: {
+          budget_cost_cents: number
+          budget_reservation_expires_at: string | null
+          budget_reservation_released_at: string | null
           campaign_id: string
           claimed: boolean
           created_at: string
@@ -7681,6 +7687,9 @@ export type Database = {
           wheel_id: string
         }
         Insert: {
+          budget_cost_cents?: number
+          budget_reservation_expires_at?: string | null
+          budget_reservation_released_at?: string | null
           campaign_id: string
           claimed?: boolean
           created_at?: string
@@ -7697,6 +7706,9 @@ export type Database = {
           wheel_id: string
         }
         Update: {
+          budget_cost_cents?: number
+          budget_reservation_expires_at?: string | null
+          budget_reservation_released_at?: string | null
           campaign_id?: string
           claimed?: boolean
           created_at?: string
@@ -8719,6 +8731,14 @@ export type Database = {
           unlock_at: string
         }[]
       }
+      campaign_has_affordable_winning_prize: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
+      campaign_has_winning_prize: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
       campaign_prize_performance: {
         Args: { p_campaign_id: string }
         Returns: {
@@ -8757,6 +8777,15 @@ export type Database = {
       }
       check_rate_limit: {
         Args: { p_bucket: string; p_limit: number; p_window_seconds: number }
+        Returns: boolean
+      }
+      check_rate_limit_weighted: {
+        Args: {
+          p_bucket: string
+          p_increment: number
+          p_limit: number
+          p_window_seconds: number
+        }
         Returns: boolean
       }
       checkin_reservation: {
@@ -9871,6 +9900,10 @@ export type Database = {
           top_rewards: Json
         }[]
       }
+      pause_campaign_if_budget_exhausted: {
+        Args: { p_campaign_id: string; p_organization_id: string }
+        Returns: boolean
+      }
       perform_atomic_spin: {
         Args: {
           p_campaign_id: string
@@ -10330,6 +10363,10 @@ export type Database = {
       refund_sms_credit: {
         Args: { p_entry_id: string; p_reference?: string }
         Returns: string
+      }
+      release_expired_spin_budget_reservations: {
+        Args: { p_campaign_id?: string }
+        Returns: number
       }
       repair_player_alias: {
         Args: { p_alias: string; p_seed: string }

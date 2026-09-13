@@ -615,8 +615,8 @@ select ok(has_column_privilege('authenticated', 'public.campaigns', 'code_ttl_se
   'campaigns.code_ttl_seconds survit');
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'budget_cents', 'UPDATE'),
   'campaigns.budget_cents survit');
-select ok(has_column_privilege('authenticated', 'public.campaigns', 'budget_spent_cents', 'UPDATE'),
-  'campaigns.budget_spent_cents survit');
+select ok(not has_column_privilege('authenticated', 'public.campaigns', 'budget_spent_cents', 'UPDATE'),
+  'campaigns.budget_spent_cents reste reserve aux fonctions serveur');
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'paused_reason', 'UPDATE'),
   'campaigns.paused_reason survit');
 select ok(has_column_privilege('authenticated', 'public.campaigns', 'created_at', 'UPDATE'),

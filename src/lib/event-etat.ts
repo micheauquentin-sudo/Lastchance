@@ -62,6 +62,9 @@ const TTL_PARTAGE_MS = 1_000;
 /** Dernière part partagée lue, par session. Purgée au passage. */
 const partagesRecents = new Map<string, { at: number; partage: unknown }>();
 
+/** Lecture déjà partie, par session : une vague ne lance qu'une seule RPC. */
+const lecturesPartageesEnCours = new Map<string, Promise<unknown>>();
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
@@ -108,18 +111,38 @@ async function lirePartPartagee(
   const cachee = partagesRecents.get(sessionId);
   if (cachee) return cachee.partage;
 
-  const { data, error } = await admin.rpc("event_etat_partage", {
-    p_session_id: sessionId,
-  });
-  if (error) {
-    reportError("event.etat-partage", error.message);
-    return null;
-  }
+  const enCours = lecturesPartageesEnCours.get(sessionId);
+  if (enCours) return enCours;
 
-  if (partagePorteUnEtat(data)) {
-    partagesRecents.set(sessionId, { at: maintenant, partage: data });
+  // La promesse entre dans la carte AVANT son premier `await` : tous les
+  // appels du même tour d'event-loop la voient et attendent la même RPC. Le
+  // TTL part de la FIN de cette lecture. Sous charge, l'ancien horodatage pris
+  // avant la RPC rendait l'entrée déjà périmée au moment où elle revenait.
+  const lecture = (async (): Promise<unknown> => {
+    const { data, error } = await admin.rpc("event_etat_partage", {
+      p_session_id: sessionId,
+    });
+    if (error) {
+      reportError("event.etat-partage", error.message);
+      return null;
+    }
+
+    if (partagePorteUnEtat(data)) {
+      partagesRecents.set(sessionId, { at: Date.now(), partage: data });
+    }
+    return data;
+  })();
+  lecturesPartageesEnCours.set(sessionId, lecture);
+
+  try {
+    return await lecture;
+  } finally {
+    // Protection défensive : le `finally` d'une ancienne lecture ne doit pas
+    // pouvoir effacer une future promesse placée sous la même clé.
+    if (lecturesPartageesEnCours.get(sessionId) === lecture) {
+      lecturesPartageesEnCours.delete(sessionId);
+    }
   }
-  return data;
 }
 
 /**

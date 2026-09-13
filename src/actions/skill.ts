@@ -374,7 +374,10 @@ async function submitInner(
           },
         };
       }
-      if (spin?.denial_reason === "campaign_closed") {
+      if (
+        spin?.denial_reason === "campaign_closed"
+        || spin?.denial_reason === "budget_reached"
+      ) {
         // Même course que sur la roue, et elle coûte plus cher ici : le joueur
         // vient de RÉUSSIR son défi. Lui dire que le stock est vide lui ferait
         // croire qu'il a gagné pour rien. Voir `src/actions/play.ts` et la
