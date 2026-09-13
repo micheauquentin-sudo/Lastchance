@@ -39,9 +39,10 @@
 
 ## Reliquats post-production — prêts à intégrer, livraison encore bloquée (2026-09-13)
 
-**État Git vérifié.** Le lot vit sur `chantier/reliquats-post-production`, au
-SHA `2b8177e7`, au-dessus de `origin/main` (`aea0908b`). Il est poussé, mais pas
-encore fusionné. L'arbre Windows d'entrée conserve les modifications de
+**État Git vérifié.** Le code runtime validé de
+`chantier/reliquats-post-production` se termine au SHA `2b8177e7`, au-dessus de
+`origin/main` (`aea0908b`) ; le présent suivi documentaire vient après. Le lot
+est poussé, mais pas encore fusionné. L'arbre Windows d'entrée conserve les modifications de
 l'utilisateur dans `AGENTS.md` et trois images non suivies sous
 `site/public/images/game-world/` ; elles ne font pas partie du lot.
 
