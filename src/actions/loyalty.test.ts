@@ -103,6 +103,12 @@ const { state, makeAdmin, signClaimTokenMock, cookieSetMock } = vi.hoisted(() =>
         const filters: Record<string, unknown> = {};
         const builder = {
           select: () => builder,
+          // `limit` : la garde de valeur du tour offert résout le versement qui
+          // porte le jeton d'octroi (`loyalty_rewards` → palier → roue cible)
+          // avant la RPC, et borne cette lecture à une ligne. Absent du double,
+          // l'appel levait un TypeError avalé par le `try` du module — six
+          // scénarios de `consumeLoyaltySpin` devenaient un refus générique.
+          limit: () => builder,
           eq: (column: string, value: unknown) => {
             filters[column] = value;
             return builder;

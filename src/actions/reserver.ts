@@ -18,6 +18,8 @@ import {
   reportError,
   reportSecurityEvent,
 } from "@/lib/monitoring";
+import { lotInterditAvecIdentiteFaible } from "@/lib/lot-forte-valeur";
+import { estGagnantTirable } from "@/lib/lot-tirable";
 import { RATE_LIMITS, rateLimit, rateLimitBucket } from "@/lib/rate-limit";
 import { clientIpFromHeaders, observerPressionIp } from "@/lib/request-ip";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
@@ -3801,6 +3803,124 @@ async function enrichSpinPrize(
 }
 
 /**
+ * Les cinq colonnes de `prizes` dont depend la garde de valeur du tour offert :
+ * les quatre de la tirabilite (`src/lib/lot-tirable.ts`) plus la valeur
+ * unitaire. Un lot que le tirage ne peut pas sortir n'a aucune valeur a retirer.
+ */
+type LotGardeValeur = {
+  is_active: boolean;
+  is_losing: boolean;
+  weight: number;
+  stock: number | null;
+  value_cents: number | null;
+};
+
+/** Un lot de cette roue est-il interdit sous une identite navigateur ? */
+function contientLotInterdit(lots: readonly LotGardeValeur[]): boolean {
+  return lots.some(
+    (lot) => estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot),
+  );
+}
+
+/* ── LA GARDE DE VALEUR DU TOUR OFFERT (miroir de `spinWheelInner`) ──
+ *
+ * L'identite de ce chemin est un cookie que le joueur peut effacer : c'est
+ * exactement l'identite FAIBLE a laquelle `lotInterditAvecIdentiteFaible`
+ * refuse d'adosser un lot gagnant de 20 € ou plus — ou dont la valeur n'est pas
+ * renseignee, qui ne prouve jamais qu'on est sous le seuil.
+ * `src/actions/play.ts` posait cette garde sur le tirage DIRECT ; les cinq
+ * chemins de tour OFFERT ne la posaient nulle part, ni ici ni dans leur RPC —
+ * dont le filtre de tirage ne regarde que `is_active`, `weight` et `stock`.
+ * Un lot a 200 € adosse a une Pause Chance se redistribuait donc a chaque cookie neuf.
+ *
+ * ── LA ROUE REGARDEE EST LA ROUE CIBLE, PAS LA PREMIERE DE LA CAMPAGNE ──
+ *
+ * La campagne dotee vient du PARENT de la session — `wait_pause_campaign_id` de
+ * la file d'accueil, ou de l'activite du creneau reserve — puis la RPC y
+ * parcourt les roues et retient la premiere dont le creneau est ouvert A CET
+ * INSTANT. Comme pour le parrainage, rejouer ce choix d'horloge ici serait
+ * fragile : on regarde TOUTES les roues de la campagne resolue, ce qui est plus
+ * large que la roue tiree et jamais plus etroit.
+ *
+ * ── ET AVANT LA RPC, JAMAIS APRES ──
+ *
+ * La RPC CONSOMME le grant dans la transaction du tirage : refuser apres elle
+ * brulerait un tour que le joueur a merite, pour une erreur de configuration du
+ * COMMERCANT. Le refus est donc pose avant tout appel, et le grant reste
+ * jouable des que la valeur du lot est corrigee.
+ *
+ * Defaut FERME sur une lecture en erreur — on ne distribue pas ce qu'on ne sait
+ * pas borner. Jeton inconnu : aucune roue resolue, on laisse la RPC repondre
+ * << indisponible >> comme elle l'a toujours fait ; elle ne consommera rien.
+ */
+async function campagneDeLaPause(
+  admin: ReturnType<typeof createAdminClient>,
+  sessionId: string,
+  empreinte: string,
+  grantToken: string,
+): Promise<{ campaignId: string; organizationId: string } | null | "erreur"> {
+  const { data: session, error: erreurSession } = await admin
+    .from("reservation_wait_sessions")
+    .select("organization_id, queue_entry_id, reservation_id")
+    .eq("id", sessionId)
+    .eq("pause_spin_grant_token", grantToken)
+    .eq("player_key_hash", empreinte)
+    .maybeSingle();
+  if (erreurSession) return "erreur";
+  if (!session) return null;
+
+  const organizationId = session.organization_id;
+  if (session.queue_entry_id) {
+    const { data, error } = await admin
+      .from("reservation_queue_entries")
+      .select("reservation_queues(wait_pause_campaign_id)")
+      .eq("id", session.queue_entry_id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) return "erreur";
+    const campaignId = data?.reservation_queues?.wait_pause_campaign_id ?? null;
+    return campaignId ? { campaignId, organizationId } : null;
+  }
+  if (session.reservation_id) {
+    const { data, error } = await admin
+      .from("reservations")
+      .select(
+        "reservation_slots(reservation_activities(wait_pause_campaign_id))",
+      )
+      .eq("id", session.reservation_id)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) return "erreur";
+    const campaignId =
+      data?.reservation_slots?.reservation_activities?.wait_pause_campaign_id
+      ?? null;
+    return campaignId ? { campaignId, organizationId } : null;
+  }
+  return null;
+}
+
+async function pauseContientLotInterdit(
+  admin: ReturnType<typeof createAdminClient>,
+  sessionId: string,
+  empreinte: string,
+  grantToken: string,
+): Promise<boolean> {
+  const cible = await campagneDeLaPause(admin, sessionId, empreinte, grantToken);
+  if (cible === "erreur") return true;
+  if (cible === null) return false;
+
+  const { data, error } = await admin
+    .from("wheels")
+    .select(
+      "id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock, value_cents)",
+    )
+    .eq("campaign_id", cible.campaignId)
+    .eq("organization_id", cible.organizationId);
+  if (error || data === null) return true;
+  return data.some((roue) => contientLotInterdit(roue.prizes ?? []));
+}
+
+/**
  * Échanger le jeton d'octroi d'une Pause Chance contre UN tour de roue.
  *
  * CINQUIÈME exemplaire du tour de roue offert de ce dépôt (fidélité,
@@ -3847,6 +3967,22 @@ async function consommerTourAttente(
 
     // Clé PARTAGÉE (IP seule) : fail-OPEN, observabilité seule (ADR-032).
     await observerPressionReserver(null, clientIpFromHeaders(await headers()));
+
+    // GARDE DE VALEUR — avant la RPC, donc avant toute consommation du jeton.
+    if (
+      await pauseContientLotInterdit(
+        ctx.admin,
+        parsed.sessionId,
+        empreinte,
+        parsed.grantToken,
+      )
+    ) {
+      reportSecurityEvent("spin_lot_identite_faible_refuse", {
+        module: "reserver_wait",
+        session_id: parsed.sessionId,
+      });
+      return { ok: false, error: ATTENTE_INDISPONIBLE };
+    }
 
     const { data, error } = await ctx.admin.rpc(
       "consume_reserver_wait_spin_grant",

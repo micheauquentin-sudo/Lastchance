@@ -16,7 +16,9 @@ import {
   COMPTAGE_INDISPONIBLE,
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
-import { monitored, reportError } from "@/lib/monitoring";
+import { lotInterditAvecIdentiteFaible } from "@/lib/lot-forte-valeur";
+import { estGagnantTirable } from "@/lib/lot-tirable";
+import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import { generatePlayerToken, hashPlayerToken } from "@/lib/pronostics";
 import { refusTransition } from "@/lib/publication-transition";
 import { revaliderVitrinePublique } from "@/lib/revalidate-vitrine";
@@ -694,6 +696,75 @@ async function enrichSpinPrize(
 }
 
 /**
+ * Les cinq colonnes de `prizes` dont depend la garde de valeur du tour offert :
+ * les quatre de la tirabilite (`src/lib/lot-tirable.ts`) plus la valeur
+ * unitaire. Un lot que le tirage ne peut pas sortir n'a aucune valeur a retirer.
+ */
+type LotGardeValeur = {
+  is_active: boolean;
+  is_losing: boolean;
+  weight: number;
+  stock: number | null;
+  value_cents: number | null;
+};
+
+/** Un lot de cette roue est-il interdit sous une identite navigateur ? */
+function contientLotInterdit(lots: readonly LotGardeValeur[]): boolean {
+  return lots.some(
+    (lot) => estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot),
+  );
+}
+
+/* ── LA GARDE DE VALEUR DU TOUR OFFERT (miroir de `spinWheelInner`) ──
+ *
+ * L'identite de ce chemin est un cookie que le joueur peut effacer : c'est
+ * exactement l'identite FAIBLE a laquelle `lotInterditAvecIdentiteFaible`
+ * refuse d'adosser un lot gagnant de 20 € ou plus — ou dont la valeur n'est pas
+ * renseignee, qui ne prouve jamais qu'on est sous le seuil.
+ * `src/actions/play.ts` posait cette garde sur le tirage DIRECT ; les cinq
+ * chemins de tour OFFERT ne la posaient nulle part, ni ici ni dans leur RPC —
+ * dont le filtre de tirage ne regarde que `is_active`, `weight` et `stock`.
+ * Un lot a 200 € adosse a un quiz se redistribuait donc a chaque cookie neuf.
+ *
+ * ── LA ROUE REGARDEE EST LA ROUE CIBLE, PAS LA PREMIERE DE LA CAMPAGNE ──
+ *
+ * Le tour offert d'un quiz se joue sur `quizzes.target_wheel_id`, jamais sur la
+ * premiere roue de la campagne. C'est cette colonne que l'on relit ici, et
+ * c'est elle que la RPC utilisera.
+ *
+ * ── ET AVANT LA RPC, JAMAIS APRES ──
+ *
+ * La RPC CONSOMME le grant dans la transaction du tirage : refuser apres elle
+ * brulerait un tour que le joueur a merite, pour une erreur de configuration du
+ * COMMERCANT. Le refus est donc pose avant tout appel, et le grant reste
+ * jouable des que la valeur du lot est corrigee.
+ *
+ * Defaut FERME sur une lecture en erreur — on ne distribue pas ce qu'on ne sait
+ * pas borner. Jeton inconnu : aucune roue resolue, on laisse la RPC repondre
+ * << indisponible >> comme elle l'a toujours fait ; elle ne consommera rien.
+ */
+async function roueCibleInterdite(
+  admin: ReturnType<typeof createAdminClient>,
+  quizId: string,
+): Promise<boolean> {
+  const { data: quiz, error: erreurQuiz } = await admin
+    .from("quizzes")
+    .select("target_wheel_id")
+    .eq("id", quizId)
+    .maybeSingle();
+  if (erreurQuiz) return true;
+  const wheelId = quiz?.target_wheel_id ?? null;
+  if (!wheelId) return false;
+
+  const { data, error } = await admin
+    .from("prizes")
+    .select("is_active, is_losing, weight, stock, value_cents")
+    .eq("wheel_id", wheelId);
+  if (error || data === null) return true;
+  return contientLotInterdit(data);
+}
+
+/**
  * Consomme le tour de roue offert par un quiz. Échange le grant_token contre un
  * tirage atomique sur la roue cible via consume_quiz_spin_grant, puis, pour un
  * gain non perdant, signe un jeton claim (spin_id) rebranché sur le flux
@@ -734,6 +805,15 @@ async function consumeSpinInner(
 
     // Clé PARTAGÉE (quiz + IP) : fail-OPEN, observabilité seule.
     await observeQuizPressure(parsed.quizId, clientIpFromHeaders(await headers()));
+
+    // GARDE DE VALEUR — avant la RPC, donc avant toute consommation du grant.
+    if (await roueCibleInterdite(ctx.admin, parsed.quizId)) {
+      reportSecurityEvent("spin_lot_identite_faible_refuse", {
+        module: "quiz",
+        quiz_id: parsed.quizId,
+      });
+      return { ok: false, error: "Tour offert indisponible." };
+    }
 
     const { data, error } = await ctx.admin.rpc("consume_quiz_spin_grant", {
       p_quiz_id: parsed.quizId,
