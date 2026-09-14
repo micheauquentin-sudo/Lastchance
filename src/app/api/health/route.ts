@@ -163,9 +163,35 @@ async function checkWorkers(): Promise<WorkersCheckResult> {
     // sur un worker hebdomadaire ferait déclarer la plateforme indisponible
     // pour une dégradation de supervision, et le moniteur apprendrait à
     // ignorer l'alarme.
-    const unhealthyWorkers = rows.flatMap((row) =>
-      row.worker && row.healthy !== true ? [row.worker] : [],
-    );
+    //
+    // ── ET CE QU'IL JETAIT ENCORE (revue sécu M2) ────────────────
+    //
+    // Cette liste se construisait sur les lignes RENDUES par
+    // `ops_workers_health()`, qui n'en rend une que pour les définitions
+    // `where d.enabled`. Un worker exigé mais DÉSACTIVÉ au registre — ou
+    // absent de `ops_worker_definitions` — n'apparaissait donc dans aucune
+    // ligne : la sonde basculait bien en 503 (`healthy.length` n'atteint pas
+    // `required.size`, le sens sûr), mais `unhealthy_workers` ressortait VIDE.
+    // L'exploitant qui prouve connaître `CRON_SECRET` pour diagnostiquer
+    // n'obtenait aucun nom, précisément dans le seul cas où le nom compte :
+    // la supervision n'est pas tombée, elle a été éteinte. On complète donc
+    // avec les exigés ABSENTS des lignes, sans doublon et dans un ordre
+    // déterministe — lignes d'abord, exigés manquants ensuite, dans l'ordre
+    // du registre applicatif.
+    const vus = new Set<string>();
+    const unhealthyWorkers: string[] = [];
+    for (const row of rows) {
+      if (row.worker && row.healthy !== true && !vus.has(row.worker)) {
+        vus.add(row.worker);
+        unhealthyWorkers.push(row.worker);
+      }
+    }
+    for (const worker of required) {
+      if (vus.has(worker)) continue;
+      if (rows.some((row) => row.worker === worker)) continue;
+      vus.add(worker);
+      unhealthyWorkers.push(worker);
+    }
     if (healthy.length !== required.size) {
       return {
         status: "error",
