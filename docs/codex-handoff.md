@@ -37,6 +37,50 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Second release gate — garde de valeur des tours offerts (2026-09-15)
+
+**Terrain.** 7 commits sur `main`, non poussés, base `5a3d77eb` : `a197129a`
+(`updatePrize` refuse d'aggraver un lot vers une valeur interdite sur
+campagne `active` ; `controleLotsAvantPublication` balaie TOUTES les roues,
+pas seulement la première), `d6234811` (garde `estGagnantTirable(lot) &&
+lotInterditAvecIdentiteFaible(lot)` posée AVANT la RPC sur les cinq tours
+offerts — calendrier, quiz, fidélité, parrainage, Pause Chance — et sur la
+roue CIBLE, pas la première de la campagne), `4412826e` (libellé
+`play_limit` : « navigateur », pas « appareil » ; garde lexicale élargie à
+tout `src/`), `6e14637c` (`casts:check` rapproché du cast), `38855365`
+(onze fichiers ramenés en LF), `ee2cbe9b` (`/api/health` expose
+`checks.reconciliation` côté authentifié), `17f0c5a2` (garde des noms de
+workers hors commentaires). ADR-184.
+
+**Écarté.** Aucune garde ajoutée dans les RPC (SQL) : `service_role`
+contourne toujours, comme pour `perform_atomic_spin` — assumé, ADR-184, fondé
+sur le balayage ACL d'ADR-183 (`anon` : 0/380 `SECURITY DEFINER` exécutables).
+
+**Fini quand.** Typecheck, lint, casts/sql/migrations:check, build verts ;
+Vitest 7760/7760 sur 437 fichiers ; `git diff --check` : 0. Aucune migration
+nouvelle (`20261220120000`, 218). Atteint le 2026-09-15.
+
+**Constat d'audit recalibré, pas corrigé en silence.** « 79 espaces finaux
+dans 11 fichiers » (`git diff --check`) sont des CR de fin de ligne
+(`git -c core.whitespace=cr-at-eol diff --check` → 0), déjà en CRLF avant ce
+chantier, exposés en y touchant — les 11 seuls sur 1379 fichiers `.ts`/`.tsx`
+du dépôt, désormais en LF. ADR-183 corrigé sur deux points relevés à raison
+par l'audit : « appareil » → « navigateur » (portée réelle d'un cookie —
+second navigateur, fenêtre privée, second profil = autre identité) ; et le
+Ticket d'Or n'est plus présenté comme une garantie technique « par
+personne » — il garantit une utilisation par TICKET, l'unicité par personne
+tient au geste humain du commerçant au comptoir, pas au logiciel.
+
+**Reste ouvert, inchangé, n'appartient qu'à l'utilisateur.** DNS
+`lastchance.app`/`app.lastchance.app` (parking GoDaddy / NXDOMAIN),
+`NEXT_PUBLIC_APP_URL` toujours l'URL Vercel (figée à la compilation) ; les
+trois `GOOGLE_WALLET_*` absentes de Vercel Production ; `CRON_SECRET` absent
+des secrets GitHub (run `34789893078`) ; capacité mesurée en local
+seulement (`scripts/capacity-bench.mjs:126` refuse une cible de production).
+Aussi hors ce chantier : garde statistique du moteur SQL, parité
+`lot-tirable.ts` ↔ `perform_atomic_spin`, RLS ligne-à-ligne exhaustive, E2E
+du maillon QR → `/play` — voir `docs/bugs.md`.
+
 ## Réponse au release gate — supervision, véracité, ACL (2026-09-14)
 
 **Terrain.** 6 commits sur `main`, non poussés, base `4afc42e1` (PR #375

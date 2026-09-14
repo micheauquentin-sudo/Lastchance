@@ -152,11 +152,10 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-09-14
-- **Dernier chantier**: **Réponse au release gate** (6 commits, base `4afc42e1` : `748f0480`…`869715e7`, ADR-183). Cadence de supervision (`reap_ops_worker_runs` toutes les 5 min) ; libellés `play_limit` véridiques (appareil, pas personne) ; findings moyens M1/M2 fermés (garde ACL balayante : 380 `SECURITY DEFINER` de `public`, zéro exécutable par `anon`) ; avertissement Vite éteint à la cause réelle, pas devinée.
-  Trois constats d'audit mal calibrés, consignés comme tels plutôt que corrigés en silence (détail : `docs/journal.md`). ADR-183 : contournabilité de `play_limit` par cookie anonyme, décision assumée.
-  Migrations → `20261220120000` (218). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7713, pgTAP 58/58 + 741/741.
-  **Reste ouvert (hors code)** : DNS, Google Wallet, `CRON_SECRET` GitHub, capacité live (`docs/bugs.md`).
+- **Date**: 2026-09-15
+- **Dernier chantier**: **Second release gate** (7 commits, base `5a3d77eb` : `a197129a`…`17f0c5a2`, ADR-184). L'audit avait raison sur l'absence de garde de valeur aux cinq tours offerts ; l'enquête a trouvé deux trous de plus, dont un non vu par l'audit — `controleLotsAvantPublication` ne lisait que la première roue d'une campagne, pas la roue cible des tours offerts. Garde `estGagnantTirable && lotInterditAvecIdentiteFaible` posée AVANT la RPC (ADR-184, assumée applicative, pas SQL). ADR-183 corrigé : « navigateur », pas « appareil » ; Ticket d'Or nuancé (unicité par le geste du commerçant, pas la technique).
+  Migrations → `20261220120000` (218, inchangé). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7760/7760 (437 fichiers), `git diff --check` 0.
+  **Reste ouvert** : DNS, Google Wallet, `CRON_SECRET` GitHub, capacité live (`docs/bugs.md`).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

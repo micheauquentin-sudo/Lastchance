@@ -1,5 +1,35 @@
 # Roadmap — Lastchance
 
+## V1.80 — Second release gate : garde de valeur des tours offerts (✅ 2026-09-15)
+
+**Objectif** : fermer le constat exact de l'audit — `lotInterditAvecIdentiteFaible`
+absente des cinq tours offerts (calendrier, quiz, fidélité, parrainage,
+Pause Chance) — et deux trous trouvés en l'enquêtant, non vus par l'audit :
+`updatePrize` sans garde après publication, et `controleLotsAvantPublication`
+qui ne lisait que la première roue d'une campagne. 7 commits sur `main`,
+base `5a3d77eb` : garde posée AVANT la RPC sur la roue cible pour les cinq
+tours offerts (`d6234811`), `updatePrize`/`controleLotsAvantPublication`
+corrigés — toutes les roues, pas seulement la première (`a197129a`), libellé
+`play_limit` corrigé « navigateur » (pas « appareil », `4412826e`),
+`casts:check` rapproché du cast (`6e14637c`), onze fichiers ramenés en LF
+(`38855365`), `/api/health` expose `reconciliation` côté authentifié
+(`ee2cbe9b`), garde des noms de workers hors commentaires (`17f0c5a2`).
+ADR-184 tranche la garde en couche application (pas en SQL, comme pour
+`perform_atomic_spin`) ; ADR-183 corrigé sur « navigateur » et sur la nuance
+Ticket d'Or (garantie par ticket, pas par personne — le geste humain du
+commerçant fait l'unicité).
+
+**Preuves** : typecheck, lint, casts/sql/migrations:check, build verts ;
+Vitest 7760/7760 sur 437 fichiers ; `git diff --check` : 0 (le compte de 79
+« espaces finaux » du chantier précédent était des CR de fin de ligne,
+recalibré dans `docs/bugs.md`). Aucune migration nouvelle (toujours
+`20261220120000`, 218).
+
+**Reste hors code, inchangé** : DNS `lastchance.app`/`app.lastchance.app`,
+secrets Google Wallet, `CRON_SECRET` en secret GitHub, capacité de
+production non certifiée par le banc local — voir `docs/bugs.md` et
+`docs/codex-handoff.md`.
+
 ## V1.79 — Réponse au release gate : supervision, véracité des libellés, ACL (✅ 2026-09-14)
 
 **Objectif** : fermer les deux findings réels d'un audit de release gate (M1,

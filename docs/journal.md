@@ -4,6 +4,63 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-15 — Second release gate : garde de valeur des tours offerts, ADR-184
+
+7 commits sur `main`, base `5a3d77eb` : `a197129a`, `4412826e`, `d6234811`,
+`6e14637c`, `38855365`, `ee2cbe9b`, `17f0c5a2`.
+
+**Le blocker.** L'audit affirmait `lotInterditAvecIdentiteFaible` absente
+des cinq tours offerts (calendrier, quiz, fidélité, parrainage, Pause
+Chance) — exact. L'enquête a trouvé trois trous, pas un : (1) aucune garde
+au tirage sur les cinq, quatre atteignables au cookie seul et la fidélité au
+prix de N codes commerçant ; (2) `updatePrize` sans garde — la
+revalorisation après publication réussissait ; (3) **non vu par l'audit** :
+`controleLotsAvantPublication` ne lisait que la PREMIÈRE roue (`.limit(1)`)
+alors que les tours offerts tirent sur `target_wheel_id` — un lot cher sur
+la deuxième roue passait la publication intacte. Test rejoué contre
+l'ancienne logique : rouge, puis vert.
+
+**Correctifs** (`d6234811`) garde `estGagnantTirable(lot) &&
+lotInterditAvecIdentiteFaible(lot)` posée AVANT la RPC, sur la roue CIBLE,
+sur les cinq chemins ; (`a197129a`) `updatePrize` refuse d'aggraver un lot
+vers une valeur interdite sur campagne `active`,
+`controleLotsAvantPublication` balaie toutes les roues ; (`4412826e`)
+libellé `play_limit` : « navigateur », pas « appareil » — portée réelle
+d'un cookie, garde lexicale élargie à tout `src/` ; (`6e14637c`)
+`casts:check` rapproché du cast qu'il justifie ; (`38855365`) onze fichiers
+ramenés en LF ; (`ee2cbe9b`) `/api/health` expose `checks.reconciliation`
+côté authentifié ; (`17f0c5a2`) garde des noms de workers hors commentaires.
+
+**ADR-184** : la garde de valeur vit en couche APPLICATION (pas en SQL —
+`service_role` contourne toujours, comme `perform_atomic_spin`, assumé,
+fondé sur le balayage ACL d'ADR-183 : 0/380 `SECURITY DEFINER` exécutables
+par `anon`) ; composition identique à celle de la publication (ferme aussi
+l'attaque en deux temps : poser un lot à poids nul, relever le poids après
+coup) ; refus posé AVANT la RPC, jamais après (la RPC consomme le grant
+dans la transaction du tirage).
+
+**ADR-183 corrigé** sur deux points où l'audit avait raison : « appareil »
+→ « navigateur » (second navigateur, fenêtre privée, second profil du même
+téléphone = autre identité) ; le Ticket d'Or n'est plus présenté comme une
+garantie technique « par personne » — il garantit une utilisation par
+TICKET, l'unicité par personne tient au geste humain du commerçant au
+comptoir.
+
+**Constat recalibré** : « 79 espaces finaux dans 11 fichiers »
+(`git diff --check`) sont des CR de fin de ligne
+(`git -c core.whitespace=cr-at-eol diff --check` → 0), déjà en CRLF avant ce
+chantier — les 11 seuls sur 1379 fichiers `.ts`/`.tsx` du dépôt, exposés en
+y touchant, pas créés par lui ; désormais en LF.
+
+**Preuves** : Vitest 7760/7760 sur 437 fichiers ; typecheck, lint,
+casts/sql/migrations:check, build — verts ; `git diff --check` : 0. Aucune
+migration nouvelle (`20261220120000`, 218).
+
+**Reste ouvert, hors code** : DNS `lastchance.app`/`app.lastchance.app`,
+`NEXT_PUBLIC_APP_URL` figée à la compilation ; `GOOGLE_WALLET_*` absentes de
+Production ; `CRON_SECRET` absent des secrets GitHub ; capacité mesurée en
+local seulement.
+
 ## 2026-09-14 — Réponse au release gate : cadence, véracité des libellés, garde ACL balayante
 
 6 commits sur `main`, base `4afc42e1` : `748f0480`, `41aff5b1`, `a530efb7`,

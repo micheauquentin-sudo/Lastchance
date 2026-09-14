@@ -11447,27 +11447,34 @@ Le défaut réel n'était pas le mécanisme mais le DISCOURS, sur deux points :
 « un jeu par personne » s'affichait INCONDITIONNELLEMENT, donc était faux dès
 qu'une campagne était configurée en `play_limit = 'unlimited'` (le cas que
 ADR-175 borne côté reflex/gauge, sans toucher au texte affiché) ; et
-« personne » désignait en réalité un APPAREIL (le cookie), pas un individu —
-deux personnes au même foyer sur le même téléphone partagent une seule
-tentative, deux navigateurs du même joueur en donnent deux. `a530efb7`
-corrige les deux : le libellé distingue désormais illimité/limité et dit
-« appareil », pas « personne ».
+« personne » désignait en réalité un NAVIGATEUR (le cookie), pas un individu
+ni un appareil — un cookie est de portée navigateur : un second navigateur,
+une fenêtre privée ou un second profil du MÊME téléphone portent chacun une
+identité différente, alors qu'« appareil » aurait surpromis une garantie que
+le cookie ne tient pas. `a530efb7` corrige les deux : le libellé distingue
+désormais illimité/limité et dit « navigateur », pas « personne » ni
+« appareil » (`src/lib/limite-participation.ts:16-26`).
 
-**Ce qui reste la voie d'ancrage fort, et continue d'être recommandé** :
-quand un commerçant veut une vraie garantie par personne sur un lot de
-valeur, elle existe déjà et n'est pas remise en cause ici — le Ticket d'Or
-remis au comptoir (`src/lib/ticket-or.ts`, vérification humaine à la
-restitution) et le refus SERVEUR des lots ≥ 20 € sur identité faible
-(`src/lib/lot-forte-valeur.ts`). C'est la ligne que documentait déjà
+**Ce qui reste la voie d'ancrage fort, et continue d'être recommandé — à
+nuancer** : quand un commerçant veut limiter un lot de valeur, deux
+garde-fous existent déjà et ne sont pas remis en cause ici. Le premier,
+technique, est le refus SERVEUR des lots ≥ 20 € sur identité faible
+(`src/lib/lot-forte-valeur.ts`). Le second, le Ticket d'Or remis au comptoir
+(`src/lib/ticket-or.ts`), NE garantit PAS techniquement « un par personne » :
+il garantit une utilisation par TICKET, aucun bénéficiaire n'y est
+enregistré. Ce qui fait l'unicité par personne dans ce second cas n'est pas
+un mécanisme logiciel, c'est le GESTE HUMAIN du commerçant au comptoir, qui
+reconnaît un client déjà servi — à ne pas présenter comme une garantie
+technique équivalente à la première. C'est la ligne que documentait déjà
 ADR-175 (dette de fond « rotation du cookie anonyme ») et ADR-178 (le
 plafond IP rend la rotation coûteuse, pas l'identité fiable) — reprise sans
 changement dans `docs/bugs.md`, entrée « rotation du cookie anonyme :
 `play_limit` reste contournable », qui reste OUVERTE en tant que décision
 produit assumée.
 
-**Conséquences** : `play_limit` continue de décrire une limite par APPAREIL,
-pas par personne, et le reste tant qu'aucune identité forte n'est demandée au
-joueur. Un lot de valeur unitaire élevée ne doit pas être adossé à `play_limit`
+**Conséquences** : `play_limit` continue de décrire une limite par
+NAVIGATEUR, pas par personne ni par appareil, et le reste tant qu'aucune
+identité forte n'est demandée au joueur. Un lot de valeur unitaire élevée ne doit pas être adossé à `play_limit`
 seul — c'est déjà la règle écrite dans `docs/bugs.md` et elle n'a pas bougé.
 Ce chantier ferme l'écart entre ce que l'interface promettait et ce que le
 système garantit, pas l'écart entre ce que le système garantit et une identité
@@ -11475,3 +11482,53 @@ vérifiée — ce second écart reste un choix produit, pas un oubli.
 
 **Vérifications** : suite `limite-participation`/`skill`/`campaign-templates`,
 typecheck, eslint.
+
+
+## ADR-184 — La garde de valeur des tours offerts est applicative, composée comme la publication, posée avant la RPC
+
+**Date** : 2026-09-15
+**Statut** : Accepté
+
+**Contexte** : un second passage du release gate confirme le constat de
+l'audit — `lotInterditAvecIdentiteFaible` manquait sur les cinq chemins de
+tours offerts (calendrier, quiz, fidélité, parrainage, Pause Chance) — et
+l'enquête en trouve deux autres, non vus par l'audit : `updatePrize`
+acceptait de revaloriser un lot APRÈS publication sans repasser par la
+garde, et `controleLotsAvantPublication` ne lisait que la PREMIÈRE roue
+d'une campagne (`.limit(1)`) alors que les tours offerts tirent sur
+`target_wheel_id` — un lot cher posé sur une deuxième roue passait la
+publication intact.
+
+**Décision** : trois choix tranchés ensemble.
+1. La garde vit en couche APPLICATION, pas en SQL. Aucune garde n'est
+   ajoutée dans les RPC de tirage ; un appelant `service_role` direct les
+   contourne toujours, comme `perform_atomic_spin` déjà.
+2. La composition posée sur les tours offerts est
+   `estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot)`, identique
+   à celle qui protège déjà la publication — ce qui ferme aussi l'attaque en
+   deux temps (poser un lot à 50 € à poids nul, publier, relever le poids
+   après coup).
+3. Le refus est posé AVANT l'appel à la RPC de tirage, jamais après.
+
+**Justification** : qui détient `service_role` possède déjà la base — le
+balayage ACL d'ADR-183 (M1) a prouvé qu'`anon` ne détient EXECUTE sur AUCUNE
+des 380 fonctions `SECURITY DEFINER` de `public`. Une garde dupliquée en SQL
+répéterait la même règle à deux endroits sans fermer une menace réelle, et
+changerait la sémantique du tirage — exclure silencieusement un lot au lieu
+de refuser le jeu. Réutiliser la composition exacte de la publication évite
+une troisième définition de « lot interdit » à maintenir à la main — la
+même dette que documente déjà `docs/bugs.md` pour `lot-tirable.ts` ↔
+`perform_atomic_spin`. La RPC consomme le grant du tour offert DANS la
+transaction du tirage ; refuser après l'appel brûlerait un tour mérité pour
+une erreur de configuration du commerçant, que le joueur n'a pas commise.
+
+**Conséquences** : les cinq tours offerts refusent avant de tirer un lot
+que la publication aurait elle-même refusé sur la roue CIBLE ;
+`updatePrize` refuse d'aggraver un lot vers une valeur interdite sur une
+campagne déjà active ; `controleLotsAvantPublication` balaie toutes les
+roues d'une campagne. Le contournement `service_role` reste assumé, pas un
+oubli, au même titre que pour `perform_atomic_spin`.
+
+**Vérifications** : suite ciblée sur les cinq tours offerts et sur
+`updatePrize`/`controleLotsAvantPublication` (test rejoué contre l'ancienne
+logique : rouge, puis vert), typecheck, lint, build.
