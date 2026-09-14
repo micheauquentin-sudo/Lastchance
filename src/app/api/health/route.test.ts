@@ -582,3 +582,159 @@ describe("GET /api/health — un worker exigé mais ABSENT des lignes (M2)", () 
     expect(corps).not.toContain("checks");
   });
 });
+
+describe("GET /api/health — la reconciliation des heartbeats est CONSTATABLE", () => {
+  /**
+   * LE DÉFAUT QUE CES CAS FERMENT.
+   *
+   * `/api/cron/jobs` referme les heartbeats orphelins toutes les 5 minutes et
+   * persiste le compte dans `ops_worker_runs.counters.workerRunsReaped`.
+   * Personne ne relisait cette écriture : ni l'admin, ni `ops_workers_health()`
+   * qui ne rend que l'état de santé. Un exploitant ne pouvait donc pas
+   * distinguer « la réconciliation tourne et n'a rien à faire » de « la
+   * réconciliation ne tourne plus » — deux états qui se ressemblent jusqu'au
+   * jour où le second se voit.
+   */
+  const avecDernierRun = (rows: unknown) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).includes("/rest/v1/ops_worker_runs")) {
+          return Promise.resolve(Response.json(rows));
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+  it("le porteur du secret lit le dernier compte reconcilie et sa date", async () => {
+    avecDernierRun([
+      {
+        counters: { workerRunsReaped: 3, processed: 12 },
+        completed_at: "2026-09-14T08:05:00.000Z",
+        status: "succeeded",
+      },
+    ]);
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.checks.reconciliation).toEqual({
+      worker_runs_reaped: 3,
+      at: "2026-09-14T08:05:00.000Z",
+      run_status: "succeeded",
+    });
+  });
+
+  it("le corps PUBLIC n'en dit rien, et la lecture n'a meme pas lieu", async () => {
+    // Non-régression du jeu de clés EXACT du corps public : ce diagnostic vit
+    // du même côté de `CRON_SECRET` que les latences et l'inventaire. Et sans
+    // secret prouvé, la troisième requête vers Supabase n'est pas émise.
+    const appels = vi.fn().mockImplementation((input: string | URL | Request) => {
+      if (String(input).includes("/rest/v1/ops_worker_runs")) {
+        return Promise.resolve(
+          Response.json([
+            {
+              counters: { workerRunsReaped: 3 },
+              completed_at: "2026-09-14T08:05:00.000Z",
+              status: "succeeded",
+            },
+          ]),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 200 }));
+    });
+    vi.stubGlobal("fetch", appels);
+
+    const res = await GET(requetePublique());
+    const body = await res.json();
+    const corps = JSON.stringify(body);
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(body).sort()).toEqual([
+      "features",
+      "status",
+      "timestamp",
+      "version",
+    ]);
+    expect(corps).not.toContain("reconciliation");
+    expect(corps).not.toContain("worker_runs_reaped");
+    expect(
+      appels.mock.calls.some((call) =>
+        String(call[0]).includes("/rest/v1/ops_worker_runs"),
+      ),
+    ).toBe(false);
+  });
+
+  it("lecture en ERREUR : la sonde repond quand meme, verdict inchange", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).includes("/rest/v1/ops_worker_runs")) {
+          return Promise.reject(new Error("PostgREST injoignable"));
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.checks.reconciliation).toBeUndefined();
+    // Le reste du détail répond normalement : l'échec est cloisonné.
+    expect(body.checks.database.status).toBe("ok");
+  });
+
+  it("HTTP en erreur sur la lecture : meme sens sur, aucune exception", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).includes("/rest/v1/ops_worker_runs")) {
+          return Promise.resolve(new Response(null, { status: 500 }));
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.checks.reconciliation).toBeUndefined();
+  });
+
+  it("AUCUN run enregistre : pas d'exception, verdict inchange", async () => {
+    avecDernierRun([]);
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.checks.reconciliation).toBeUndefined();
+    expect(body.checks.security_configuration.status).toBe("ok");
+  });
+
+  it("un run sans le compteur ne fabrique pas un zero", async () => {
+    // Une exécution close AVANT que le compteur existe — ou une probe, qui
+    // n'appelle pas le reaper — ne doit pas se lire comme « zéro réconcilié » :
+    // c'est la différence entre « rien à faire » et « on ne sait pas ».
+    avecDernierRun([
+      {
+        counters: { processed: 4 },
+        completed_at: "2026-09-14T08:05:00.000Z",
+        status: "succeeded",
+      },
+    ]);
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks.reconciliation).toBeUndefined();
+  });
+});

@@ -57,6 +57,32 @@ interface WorkersCheckResult extends CheckResult {
   unhealthy_workers?: string[];
 }
 
+/**
+ * Dernière réconciliation des heartbeats orphelins — UN CONSTAT, pas un
+ * contrôle de santé.
+ *
+ * `/api/cron/jobs` appelle `reapStaleWorkerRuns` toutes les 5 minutes et
+ * persiste le compte dans `ops_worker_runs.counters.workerRunsReaped`. Cette
+ * écriture n'était relue NULLE PART : ni dans l'admin, ni par
+ * `ops_workers_health()` qui ne rend que l'état de santé. Un exploitant ne
+ * pouvait donc pas constater que la réconciliation tourne — seulement espérer
+ * qu'elle tourne, ce qui est exactement la classe de panne qu'un heartbeat
+ * existe pour écarter.
+ *
+ * Ce bloc ne gouverne PAS le verdict, et c'est délibéré : un compte à zéro
+ * depuis des heures est le cas SAIN (aucun worker n'a été interrompu). Le
+ * faire basculer en 503 — ou même en `degraded` — déclarerait la plateforme
+ * indisponible pour un fonctionnement nominal.
+ */
+interface ReconciliationResult {
+  /** Heartbeats orphelins refermés lors de la dernière exécution de `jobs`. */
+  worker_runs_reaped: number;
+  /** Fin de l'exécution qui a produit ce compte. */
+  at: string;
+  /** Verdict de cette exécution — contexte de lecture, pas critère de santé. */
+  run_status: string;
+}
+
 async function checkDatabase(): Promise<CheckResult> {
   const start = Date.now();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -214,6 +240,55 @@ async function checkWorkers(): Promise<WorkersCheckResult> {
   }
 }
 
+/**
+ * Lecture STRICTEMENT fail-soft de la dernière exécution close du worker
+ * `jobs`. Tout chemin d'échec — Supabase non configuré, HTTP en erreur, corps
+ * illisible, aucune exécution enregistrée, compteur absent — rend `null`, et
+ * la clé disparaît simplement du détail. Aucune exception ne remonte : cette
+ * information est un confort de diagnostic, elle n'a pas à pouvoir faire
+ * échouer la sonde qu'elle documente.
+ */
+async function checkReconciliation(): Promise<ReconciliationResult | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serverKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serverKey) return null;
+
+  try {
+    // Une seule ligne : la plus récente exécution CLOSE de `jobs`. Pas
+    // d'historique — deux relevés successifs de cette sonde en tiennent lieu,
+    // et une série exposerait la cadence exacte des traitements de fond.
+    const res = await fetch(
+      `${url}/rest/v1/ops_worker_runs`
+        + "?select=counters,completed_at,status"
+        + "&worker=eq.jobs&completed_at=not.is.null"
+        + "&order=completed_at.desc&limit=1",
+      {
+        headers: { apikey: serverKey, Authorization: `Bearer ${serverKey}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(DB_TIMEOUT_MS),
+      },
+    );
+    if (!res.ok) return null;
+    const rows = (await res.json()) as Array<{
+      counters?: Record<string, unknown> | null;
+      completed_at?: string | null;
+      status?: string | null;
+    }> | null;
+    const derniere = Array.isArray(rows) ? rows[0] : undefined;
+    if (!derniere?.completed_at) return null;
+    const reaped = derniere.counters?.workerRunsReaped;
+    if (typeof reaped !== "number" || !Number.isFinite(reaped)) return null;
+    return {
+      worker_runs_reaped: reaped,
+      at: derniere.completed_at,
+      run_status:
+        typeof derniere.status === "string" ? derniere.status : "inconnu",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   // ── PLAFOND PAR IP, FAIL-OPEN ────────────────────────────────────
   //
@@ -248,9 +323,13 @@ export async function GET(request: Request) {
     cronSecret && authorizeCronRequest(request, cronSecret),
   );
 
-  const [database, workers] = await Promise.all([
+  const [database, workers, reconciliation] = await Promise.all([
     checkDatabase(),
     checkWorkers(),
+    // La troisième requête n'est émise QUE pour un appelant qui a déjà prouvé
+    // connaître `CRON_SECRET` : un appel public ne paie pas ce coût, et la
+    // lecture n'a même pas lieu quand son résultat ne serait pas rendu.
+    detailAutorise ? checkReconciliation() : Promise.resolve(null),
   ]);
   const turnstileConfigured = Boolean(
     process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
@@ -337,6 +416,12 @@ export async function GET(request: Request) {
                * Liste de NOMS DE VARIABLES, jamais de valeurs : ce détail est
                * déjà derrière `CRON_SECRET`, il n'a pas à porter de secret. */
               token_secret_fallback: famillesRepliJetons,
+              /* Dernière réconciliation des heartbeats orphelins. Absente tant
+               * qu'aucune exécution close de `jobs` ne porte le compteur — et
+               * absente aussi si la lecture échoue : voir `checkReconciliation`.
+               * Elle n'entre PAS dans `healthy` ci-dessous : zéro heartbeat
+               * réconcilié est le cas sain, pas une dégradation. */
+              ...(reconciliation ? { reconciliation } : {}),
             },
           }
         : {}),
