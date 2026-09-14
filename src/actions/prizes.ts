@@ -60,6 +60,9 @@ function decritStock(valeur: number | null): string {
  */
 type LotValorise = LotTirable & { value_cents: number | null };
 
+/** Embed PostgREST `wheels(campaigns(status))`, non typable par le generateur. */
+type RoueAvecCampagne = { campaigns?: { status?: string } | null } | null;
+
 function lotBloquePourIdentiteFaible(lot: LotValorise): boolean {
   return estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot);
 }
@@ -274,9 +277,7 @@ export async function updatePrize(
   // sur TOUTES les roues — au moment d'ouvrir. Même découpage que
   // `deletePrize`.
   // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
-  const campagne = (
-    courant.wheels as unknown as { campaigns?: { status?: string } | null } | null
-  )?.campaigns;
+  const campagne = (courant.wheels as unknown as RoueAvecCampagne)?.campaigns;
   if (campagne?.status === "active") {
     const avant: LotValorise = {
       is_active: courant.is_active,
@@ -366,11 +367,7 @@ export async function deletePrize(
   if (!lot) return { ok: false, error: "Lot introuvable" };
 
   // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
-  const campagne = (
-    lot.wheels as unknown as {
-      campaigns?: { status?: string } | null;
-    } | null
-  )?.campaigns;
+  const campagne = (lot.wheels as unknown as RoueAvecCampagne)?.campaigns;
 
   // Campagne en brouillon, en pause ou clôturée : on remanie librement. Une
   // roue qu'aucun client ne peut jouer n'a personne à décevoir, et interdire
