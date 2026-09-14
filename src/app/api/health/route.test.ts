@@ -128,6 +128,86 @@ describe("GET /api/health", () => {
     expect(body.checks.workers.status).toBe("ok");
   });
 
+  it("un worker NON fréquent en défaut reste 200, mais cesse d'être invisible", async () => {
+    /* LE DÉFAUT QUE CE TEST FERME. La sonde filtrait les lignes sur les deux
+     * workers fréquents et JETAIT tout le reste : une purge RGPD, un tirage
+     * jackpot ou le rapport hebdomadaire pouvaient être rouges au registre
+     * sans qu'aucune surface d'exploitation ne le dise.
+     *
+     * Le verdict, lui, ne bouge pas : un worker hebdomadaire muet dégrade la
+     * supervision, il ne rend pas la plateforme indisponible. Faire basculer
+     * la sonde en 503 apprendrait au moniteur à ignorer l'alarme — c'est ce
+     * qu'explique le docstring de `FREQUENT_WORKERS`, et ce test l'exige. */
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    process.env.TRUSTED_PROXY_PROVIDER = "vercel";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: true },
+              { worker: "weekly-digest", healthy: false },
+              { worker: "purge-data", healthy: false },
+            ]),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET(requeteDetaillee());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("ok");
+    expect(body.checks.workers.status).toBe("ok");
+    expect(body.checks.workers.unhealthy_workers).toEqual([
+      "weekly-digest",
+      "purge-data",
+    ]);
+  });
+
+  it("le corps PUBLIC ne nomme aucun worker, même en défaut", async () => {
+    /* La liste nominative est de la topologie d'exploitation : quels
+     * traitements de fond existent, et lequel est tombé. Même oracle de
+     * posture que `security_configuration.error` (SEC-3), donc même côté de
+     * `CRON_SECRET`. Sans cette garde, rendre le défaut visible reviendrait à
+     * le rendre PUBLIC. */
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.ADMIN_HOSTS = "admin.example.com";
+    process.env.TURNSTILE_SECRET_KEY = "turnstile-secret";
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "turnstile-site-key";
+    process.env.TRUSTED_PROXY_PROVIDER = "vercel";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: string | URL | Request) => {
+        if (String(input).endsWith("/rest/v1/rpc/ops_workers_health")) {
+          return Promise.resolve(
+            Response.json([
+              { worker: "jobs", healthy: true },
+              { worker: "sync-contests", healthy: true },
+              { worker: "weekly-digest", healthy: false },
+            ]),
+          );
+        }
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+    );
+
+    const res = await GET(requetePublique());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.checks).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain("weekly-digest");
+    expect(JSON.stringify(body)).not.toContain("unhealthy_workers");
+  });
+
   it("503 en production sans exposer le détail du worker défaillant", async () => {
     vi.stubEnv("NODE_ENV", "production");
     process.env.ADMIN_HOSTS = "admin.example.com";
@@ -159,9 +239,20 @@ describe("GET /api/health", () => {
       expect.objectContaining({
         status: "error",
         error: "Workers non opérationnels",
+        // NOMMÉ ICI, et seulement ici. Cette assertion disait auparavant
+        // l'inverse — `not.toContain("sync-contests")` sur le corps DÉTAILLÉ —
+        // et c'est ce qui rendait la panne muette pour celui-là même qui
+        // prouve connaître `CRON_SECRET` pour la diagnostiquer. Le secret à
+        // tenir est vis-à-vis du public, pas de l'exploitant : le cas
+        // « corps PUBLIC » ci-dessus garde cette moitié-là.
+        unhealthy_workers: ["sync-contests"],
       }),
     );
-    expect(JSON.stringify(body)).not.toContain("sync-contests");
+
+    const resPublique = await GET(requetePublique());
+    expect(JSON.stringify(await resPublique.json())).not.toContain(
+      "sync-contests",
+    );
   });
 });
 

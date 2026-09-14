@@ -147,6 +147,7 @@ describe("GET /api/cron/jobs", () => {
     let claims = 0;
     mocks.rpc.mockImplementation(async (name: string, args?: unknown) => {
       if (name === "requeue_stale_jobs") return { data: 0, error: null };
+      if (name === "reap_ops_worker_runs") return { data: 0, error: null };
       if (name === "claim_jobs") {
         expect((args as { p_types: string[] }).p_types).toContain(
           "automation.schedule-blocked",
@@ -184,6 +185,82 @@ describe("GET /api/cron/jobs", () => {
       expect.objectContaining({ id: "blocked-1" }),
       { status: "completed" },
     );
+  });
+
+  it("réconcilie les heartbeats orphelins à chaque passage, et publie le compte", async () => {
+    /* LE DÉFAUT QUE CE TEST FERME. La réconciliation existait déjà, mais son
+     * seul appelant était le cron quotidien `purge-data` (`0 3 * * *`) : un
+     * run abandonné à 09:20 restait `running` jusqu'à ~18 h plus tard, et la
+     * supervision le voyait « en cours » pendant tout ce temps. Ce worker-ci
+     * passe toutes les 5 minutes — c'est là que la fenêtre se referme. */
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "requeue_stale_jobs") return { data: 0, error: null };
+      if (name === "reap_ops_worker_runs") return { data: 3, error: null };
+      if (name === "claim_jobs") return { data: [], error: null };
+      throw new Error(`RPC inattendue: ${name}`);
+    });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(mocks.rpc).toHaveBeenCalledWith("reap_ops_worker_runs");
+    expect(body).toEqual(expect.objectContaining({ workerRunsReaped: 3 }));
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "succeeded",
+      expect.objectContaining({ workerRunsReaped: 3 }),
+    );
+  });
+
+  it("un échec de la réconciliation ne casse NI le drain NI le passage", async () => {
+    /* C'est de la SUPERVISION, pas du métier : une panne du journal de santé
+     * ne doit pas suspendre la file — newsletters, relances, SMS. On
+     * journalise et on continue, comme `purge-data` pour la même fonction. */
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "requeue_stale_jobs") return { data: 0, error: null };
+      if (name === "reap_ops_worker_runs") {
+        return { data: null, error: { message: "fonction indisponible" } };
+      }
+      if (name === "claim_jobs") return { data: [], error: null };
+      throw new Error(`RPC inattendue: ${name}`);
+    });
+
+    const response = await GET(request());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual(
+      expect.objectContaining({ ok: true, workerRunsReaped: 0 }),
+    );
+    expect(mocks.rpc).toHaveBeenCalledWith("claim_jobs", expect.anything());
+    expect(mocks.drainWebhookDeliveries).toHaveBeenCalled();
+    expect(mocks.reportError).toHaveBeenCalledWith(
+      "cron.jobs.reap-worker-runs",
+      "fonction indisponible",
+    );
+    expect(mocks.finishWorkerRunSafely).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "succeeded",
+      expect.anything(),
+    );
+  });
+
+  it("une probe ne réconcilie rien", async () => {
+    let claims = 0;
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "claim_jobs") {
+        claims += 1;
+        return { data: [], error: null };
+      }
+      throw new Error(`RPC inattendue: ${name}`);
+    });
+
+    await GET(request("/api/cron/jobs?probe=1"));
+
+    expect(claims).toBe(1);
+    expect(mocks.rpc).not.toHaveBeenCalledWith("reap_ops_worker_runs");
   });
 
   it("passe au drain SON horloge, et publie le reliquat au heartbeat", async () => {

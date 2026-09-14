@@ -73,6 +73,39 @@ describe("registre des workers", () => {
       expect(WORKER_NAMES).toContain(worker);
     }
   });
+
+  it("la sonde /api/health lit FREQUENT_WORKERS et ne recopie aucun nom", () => {
+    /* LA TROISIÈME COPIE, celle qui ne s'avouait pas.
+     *
+     * `/api/health` portait `new Set([...])` avec les deux noms écrits à la
+     * main. Le test ci-dessus gardait la constante, la constante gardait le
+     * registre — et la sonde, elle, ne dépendait d'aucun des deux : y ajouter
+     * un worker à cadence courte laissait la production le déclarer exigé et
+     * la sonde l'ignorer, sans qu'une seule assertion rougisse.
+     *
+     * On interdit donc le nom recopié plutôt que de vérifier qu'il est le bon.
+     * Un nom exact resterait vrai jusqu'au jour où la constante change, ce qui
+     * est précisément le jour où la garde doit servir. Les commentaires sont
+     * inclus dans la lecture, à dessein : une garde contournable par un
+     * déplacement dans un commentaire n'en est pas une.
+     */
+    const source = readFileSync(
+      join(process.cwd(), "src", "app", "api", "health", "route.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(
+      /import\s*\{[^}]*\bFREQUENT_WORKERS\b[^}]*\}\s*from\s*"@\/lib\/worker-health"/,
+    );
+    const recopies = WORKER_NAMES.filter((worker) =>
+      [`"${worker}"`, `'${worker}'`, `\`${worker}\``].some((forme) =>
+        source.includes(forme),
+      ),
+    );
+    expect(
+      recopies,
+      `noms de workers écrits en dur dans src/app/api/health/route.ts (importer FREQUENT_WORKERS depuis @/lib/worker-health) : ${recopies.join(", ")}`,
+    ).toEqual([]);
+  });
 });
 
 describe("worker heartbeats", () => {

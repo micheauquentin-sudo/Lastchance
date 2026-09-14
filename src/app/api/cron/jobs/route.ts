@@ -40,6 +40,8 @@ import {
  *
  * À chaque passage :
  *   1. reprise des jobs zombies (verrou expiré) ;
+ *   1 bis. réconciliation des heartbeats laissés `running` par les autres
+ *      workers (supervision, jamais bloquante) ;
  *   2. réclamation et traitement des jobs dus (newsletter, relances…),
  *      erreurs isolées, backoff par job, échec définitif après
  *      max_attempts ;
@@ -91,6 +93,8 @@ async function runWorker(request: Request): Promise<NextResponse> {
     deferred: 0,
     /** Lignes SMS figées en `sending` : crédit débité, envoi non prouvé. */
     smsStale: 0,
+    /** Heartbeats d'autres workers refermés parce que laissés `running`. */
+    workerRunsReaped: 0,
   };
   let webhooks = {
     claimed: 0,
@@ -110,6 +114,21 @@ async function runWorker(request: Request): Promise<NextResponse> {
         throw new Error(`requeue_stale_jobs: ${reviveError.message}`);
       }
       totals.revived = Number(revived ?? 0);
+
+      // ── RÉCONCILIATION DES HEARTBEATS ORPHELINS, À LA CADENCE DU WORKER ──
+      //
+      // `purge_ops_worker_runs` referme déjà les exécutions laissées
+      // `running` par un worker interrompu, mais son seul appelant est le cron
+      // quotidien `purge-data` (`0 3 * * *`) : une exécution abandonnée à
+      // 09:20 restait donc `running` pendant près de 18 h, et `ops_workers_health`
+      // — donc la sonde publique — la voyait en cours pendant tout ce temps. Un
+      // constat mesuré, pas une hypothèse : un run `webhooks` figé, file vide.
+      //
+      // Ce worker-ci tourne toutes les 5 minutes (voir l'en-tête) : il est le
+      // seul point d'appel à cadence courte déjà en place, et y greffer la
+      // réconciliation évite un cron de plus. La passe quotidienne complète
+      // (réconciliation PUIS rétention) reste en place dans `purge-data`.
+      totals.workerRunsReaped = await reapStaleWorkerRuns(admin);
     }
 
     // Traite par petits lots tant que du travail est dû et que le budget
@@ -230,6 +249,29 @@ async function runWorker(request: Request): Promise<NextResponse> {
       { ok: false, error: "Exécution du worker impossible" },
       { status: 500, headers: { "cache-control": "no-store" } },
     );
+  }
+}
+
+/**
+ * Referme les heartbeats laissés `running` au-delà du seuil (défaut de la
+ * fonction SQL). BEST-EFFORT ABSOLU : c'est de la SUPERVISION, pas du métier.
+ * Un échec ici ne doit jamais empêcher le drain de la file — newsletters,
+ * relances, SMS — ni faire rejouer le passage. On journalise et on continue,
+ * exactement comme `purge-data` le fait pour la même fonction.
+ */
+async function reapStaleWorkerRuns(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<number> {
+  try {
+    const { data, error } = await admin.rpc("reap_ops_worker_runs");
+    if (error) {
+      reportError("cron.jobs.reap-worker-runs", error.message);
+      return 0;
+    }
+    return Number(data ?? 0);
+  } catch (err) {
+    reportError("cron.jobs.reap-worker-runs", err);
+    return 0;
   }
 }
 
