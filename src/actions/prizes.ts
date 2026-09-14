@@ -8,8 +8,13 @@ import {
   verdictCodesEnAttente,
 } from "@/lib/codes-en-attente";
 import {
+  LOT_IDENTITE_FAIBLE_INTERDIT,
+  lotInterditAvecIdentiteFaible,
+} from "@/lib/lot-forte-valeur";
+import {
   AUCUN_LOT_GAGNANT_TIRABLE,
   estGagnantTirable,
+  type LotTirable,
 } from "@/lib/lot-tirable";
 import { reportError } from "@/lib/monitoring";
 import { revalidatePlaySlugs } from "@/lib/revalidate-play";
@@ -41,6 +46,22 @@ function firstError(issues: { message: string }[]): string {
  */
 function decritStock(valeur: number | null): string {
   return valeur === null ? "stock illimité" : `${valeur} lot(s) restant(s)`;
+}
+
+/**
+ * LA MÊME COMPOSITION QUE LE CONTRÔLE DE PUBLICATION, mot pour mot.
+ *
+ * `contientLotInterditIdentiteFaible` (`src/actions/campaigns.ts`) refuse
+ * d'ouvrir une campagne qui porte un lot répondant à ces DEUX prédicats à la
+ * fois. Un lot qui ne peut pas sortir (désactivé, poids nul, rupture) ne
+ * distribue rien : l'inclure ferait refuser une réserve inoffensive, et
+ * l'exclure du contrôle d'édition ferait diverger les deux gardes au premier
+ * réglage.
+ */
+type LotValorise = LotTirable & { value_cents: number | null };
+
+function lotBloquePourIdentiteFaible(lot: LotValorise): boolean {
+  return estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot);
 }
 
 async function requireOrg() {
@@ -179,9 +200,16 @@ export async function updatePrize(
   // passer n'importe quelle réécriture — et c'est légitime, un `editor` a le
   // droit de fixer le stock. Ce qui est empêché ici, c'est le RECRÉDIT NON
   // VOULU, pas une écriture voulue.
+  //
+  // La ligne relue porte aussi de quoi répondre à la SECONDE question, plus
+  // bas : l'état courant du lot et le statut de la campagne au-dessus de sa
+  // roue. Un seul aller-retour pour les deux gardes — `deletePrize` lit le
+  // même embed, par le même gabarit, pour la même raison.
   const { data: courant } = await supabase
     .from("prizes")
-    .select("stock")
+    // Un SEUL littéral, jamais une concaténation : supabase-js dérive le type
+    // de la ligne du type LITTÉRAL de cette chaîne.
+    .select("stock, is_active, is_losing, weight, value_cents, wheels!prizes_wheel_id_fkey(campaigns(status))")
     .eq("id", id)
     .eq("organization_id", organization.id)
     .maybeSingle();
@@ -216,6 +244,62 @@ export async function updatePrize(
     // tranquille et on enregistre le reste. C'est le cas nominal du défaut —
     // le commerçant corrige un libellé, il n'a rien demandé sur le stock.
     delete aEcrire.stock;
+  }
+
+  // ── GARDE : PUBLIER SOUS LE SEUIL PUIS REVALORISER ────────────────────
+  //
+  // `updateCampaign` refuse d'ouvrir aux joueurs une campagne portant un lot
+  // gagnant de 20 € ou plus — ou dont la valeur n'est pas renseignée — parce
+  // que la participation publique repose sur une identité navigateur que le
+  // joueur peut effacer (`src/lib/lot-forte-valeur.ts`). Cette action-ci
+  // n'avait AUCUNE garde de valeur : elle appliquait un compare-and-swap sur
+  // le seul `stock`, puis écrivait `value_cents` en bloc. Publier un lot à
+  // 5 € puis le porter à 50 € rendait `{ ok: true }` et servait le lot cher
+  // sur une campagne déjà ouverte — le contrôle de publication ne repasse
+  // jamais tant que la campagne reste `active`.
+  //
+  // ── CE QUI EST REFUSÉ, ET CE QUI NE L'EST PAS ──
+  //
+  // Le refus compare DEUX états, pas un seul : celui qui sortira de cette
+  // écriture, et celui que la base porte déjà. Seule une AGGRAVATION est
+  // refusée. Baisser une valeur, corriger un libellé, changer un stock,
+  // remettre en réserve — et jusqu'à toute édition d'un lot DÉJÀ au-dessus du
+  // seuil — continuent de passer : un commerçant dont la campagne porte un tel
+  // lot (elles existent, la garde de publication est postérieure) doit pouvoir
+  // le corriger, et l'enfermer ici lui retirerait le seul geste qui répare. Le
+  // tirage, lui, refuse déjà de servir ce lot-là (`src/actions/play.ts`).
+  //
+  // Campagne en brouillon, en pause ou clôturée : on remanie librement. La
+  // roue n'est servie à personne, et la garde de publication repassera —
+  // sur TOUTES les roues — au moment d'ouvrir. Même découpage que
+  // `deletePrize`.
+  // unsafe-cast-justification: embed PostgREST construit par gabarit, non typable
+  const campagne = (
+    courant.wheels as unknown as { campaigns?: { status?: string } | null } | null
+  )?.campaigns;
+  if (campagne?.status === "active") {
+    const avant: LotValorise = {
+      is_active: courant.is_active,
+      is_losing: courant.is_losing,
+      weight: courant.weight,
+      stock: stockBase,
+      value_cents: courant.value_cents,
+    };
+    const apres: LotValorise = {
+      // `is_active` n'appartient PAS à `updatePrizeSchema` : cette action ne
+      // peut pas le changer, et l'état d'après le reprend donc de la base.
+      is_active: courant.is_active,
+      is_losing: fields.is_losing,
+      weight: fields.weight,
+      // `aEcrire.stock` a pu être RETIRÉ par le compare-and-swap ci-dessus :
+      // c'est alors le compteur de la base qui reste en vigueur. `null` est
+      // une valeur (stock illimité), d'où le test de présence de la clé.
+      stock: "stock" in aEcrire ? (aEcrire.stock ?? null) : stockBase,
+      value_cents: fields.value_cents,
+    };
+    if (lotBloquePourIdentiteFaible(apres) && !lotBloquePourIdentiteFaible(avant)) {
+      return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
+    }
   }
 
   const { data: updated, error } = await supabase

@@ -66,6 +66,25 @@ function contientLotInterditIdentiteFaible(lots: LotPublication[]): boolean {
   );
 }
 
+/**
+ * TOUTES LES ROUES, ET PAS SEULEMENT LA PREMIÈRE.
+ *
+ * Ce contrôle portait un `.limit(1)` hérité de la garde voisine
+ * `blocageOuvertureRoue`, qui, elle, vise DÉLIBÉRÉMENT la première roue par
+ * `position` — celle que l'écran « Régler le jeu et les lots » ouvre et sur
+ * laquelle la checklist de la page de détail se calcule (refuser d'après une
+ * autre roue afficherait un point vert en face du refus).
+ *
+ * Cette garde-ci n'a pas la même question à poser. Un lot de forte valeur
+ * distribué à une identité par cookie est un préjudice quelle que soit la roue
+ * qui le sert, et les roues secondaires sont précisément celles qui servent :
+ * les tours offerts tirent sur une roue CIBLE (`calendar_days.target_wheel_id`,
+ * `quizzes.target_wheel_id`, roue de palier fidélité, de parrainage, de Pause
+ * Chance), et le parcours public lui-même sert « la roue active pour l'instant
+ * courant » par créneau horaire (`selectActiveWheel`, `src/lib/play-context.ts`)
+ * — jamais forcément la première. Publier en plaçant le lot cher sur la
+ * deuxième roue passait donc le contrôle sans rien changer au risque.
+ */
 async function controleLotsAvantPublication(
   supabase: Awaited<ReturnType<typeof createClient>>,
   campaignId: string,
@@ -77,10 +96,9 @@ async function controleLotsAvantPublication(
     .eq("campaign_id", campaignId)
     .eq("organization_id", organizationId)
     .order("position", { ascending: true })
-    .order("created_at", { ascending: true })
-    .limit(1);
+    .order("created_at", { ascending: true });
   if (error || roues === null) return "indisponible";
-  return contientLotInterditIdentiteFaible(roues[0]?.prizes ?? [])
+  return roues.some((roue) => contientLotInterditIdentiteFaible(roue.prizes ?? []))
     ? "interdit"
     : "ok";
 }
@@ -293,6 +311,13 @@ export async function updateCampaign(
   // qu'ouvre « Régler le jeu et les lots » et sur laquelle la checklist de la
   // page de détail se calcule. Refuser d'après une autre roue afficherait un
   // point vert en face du refus.
+  //
+  // CELA VAUT POUR `blocageOuvertureRoue`, PAS POUR LA GARDE DE VALEUR qui la
+  // suit : la seconde porte sur TOUTES les roues (voir
+  // `controleLotsAvantPublication`), parce qu'un lot cher servi par la deuxième
+  // roue — tour offert visant `target_wheel_id`, créneau horaire de
+  // `selectActiveWheel` — crée exactement le même préjudice. Le `.limit(1)` est
+  // donc retiré de la requête ; le premier élément reste celui de l'écran.
   if (fields.status === "active") {
     const { data: roues, error: erreurRoues } = await supabase
       .from("wheels")
@@ -300,8 +325,7 @@ export async function updateCampaign(
       .eq("campaign_id", id)
       .eq("organization_id", organization.id)
       .order("position", { ascending: true })
-      .order("created_at", { ascending: true })
-      .limit(1);
+      .order("created_at", { ascending: true });
     if (erreurRoues) {
       // Une garde de publication échoue FERMÉ : « je n'ai pas pu vérifier » ne
       // vaut pas « il y a de quoi jouer ». Même doctrine que `codes-en-attente`.
@@ -316,9 +340,11 @@ export async function updateCampaign(
     if (roue) {
       const blocage = blocageOuvertureRoue(roue.prizes ?? []);
       if (blocage) return { ok: false, error: blocage };
-      if (contientLotInterditIdentiteFaible(roue.prizes ?? [])) {
-        return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
-      }
+    }
+    if (
+      (roues ?? []).some((r) => contientLotInterditIdentiteFaible(r.prizes ?? []))
+    ) {
+      return { ok: false, error: LOT_IDENTITE_FAIBLE_INTERDIT };
     }
 
     // ── LA REPRISE BUDGET NE SE CONTOURNE PLUS (FIA-4) ──

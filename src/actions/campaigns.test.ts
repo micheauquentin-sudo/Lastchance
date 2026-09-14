@@ -167,6 +167,7 @@ vi.mock("@/lib/monitoring", () => ({ reportError: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 
+import { LOT_IDENTITE_FAIBLE_INTERDIT } from "@/lib/lot-forte-valeur";
 import {
   duplicateCampaign,
   updateCampaign,
@@ -374,6 +375,74 @@ describe("updateCampaign — le refus d'activation dit la VRAIE cause", () => {
     ];
 
     // La garde passe et la transition aboutit.
+    await expect(updateCampaign(null, activationForm())).resolves.toEqual({
+      ok: true,
+      data: { status: "active" },
+    });
+  });
+
+  it("LOT CHER SUR LA DEUXIÈME ROUE : la publication est refusée elle aussi", async () => {
+    // LE TROU QUE `.limit(1)` LAISSAIT OUVERT. Le contrôle de valeur ne
+    // chargeait QUE la première roue par `position` — celle de l'écran. Or les
+    // tours offerts tirent sur une roue CIBLE (`calendar_days.target_wheel_id`,
+    // `quizzes.target_wheel_id`, palier fidélité, parrainage, Pause Chance) et
+    // le parcours public sert « la roue active pour l'instant courant » par
+    // créneau (`selectActiveWheel`). Poser le lot à 50 € sur la deuxième roue
+    // publiait donc sans rien changer au risque.
+    getUserAndOrgMock.mockResolvedValue(
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+    state.wheels = [
+      {
+        // La PREMIÈRE roue est irréprochable : `blocageOuvertureRoue` la vise
+        // délibérément et passerait. Si le refus tombe, il ne peut venir que de
+        // la seconde.
+        id: "roue-1",
+        prizes: [
+          { is_active: true, is_losing: false, weight: 40, stock: 3, value_cents: 250 },
+          { is_active: true, is_losing: true, weight: 30, stock: null, value_cents: null },
+        ],
+      },
+      {
+        id: "roue-2",
+        prizes: [
+          { is_active: true, is_losing: false, weight: 10, stock: 1, value_cents: 5000 },
+        ],
+      },
+    ];
+
+    const res = await updateCampaign(null, activationForm());
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe(LOT_IDENTITE_FAIBLE_INTERDIT);
+    expect(callsTo("campaigns").some((c) => c.op === "update")).toBe(false);
+  });
+
+  it("CONTRÔLE : plusieurs roues toutes conformes se publient toujours", async () => {
+    // Sans ce témoin, un contrôle élargi à toutes les roues pourrait refuser
+    // toute campagne multi-roues et le test ci-dessus resterait vert.
+    getUserAndOrgMock.mockResolvedValue(
+      session(org({ trial_ends_at: "2999-01-01T00:00:00.000Z" })),
+    );
+    state.wheels = [
+      {
+        id: "roue-1",
+        prizes: [
+          { is_active: true, is_losing: false, weight: 40, stock: 3, value_cents: 250 },
+        ],
+      },
+      {
+        id: "roue-2",
+        prizes: [
+          { is_active: true, is_losing: false, weight: 10, stock: 1, value_cents: 1900 },
+          // Un lot cher mais NON TIRABLE (épuisé) : la composition est la même
+          // que celle du contrôle d'édition — un lot qui ne sort pas ne
+          // distribue rien.
+          { is_active: true, is_losing: false, weight: 10, stock: 0, value_cents: 9000 },
+        ],
+      },
+    ];
+
     await expect(updateCampaign(null, activationForm())).resolves.toEqual({
       ok: true,
       data: { status: "active" },
