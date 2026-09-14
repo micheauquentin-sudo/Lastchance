@@ -85,9 +85,21 @@ describe("registre des workers", () => {
      *
      * On interdit donc le nom recopié plutôt que de vérifier qu'il est le bon.
      * Un nom exact resterait vrai jusqu'au jour où la constante change, ce qui
-     * est précisément le jour où la garde doit servir. Les commentaires sont
-     * inclus dans la lecture, à dessein : une garde contournable par un
-     * déplacement dans un commentaire n'en est pas une.
+     * est précisément le jour où la garde doit servir.
+     *
+     * LES COMMENTAIRES SONT RETIRÉS AVANT LA LECTURE, et cette règle a été
+     * inversée le 2026-09-14 après qu'elle eut rougi à tort. La version
+     * précédente les incluait « à dessein », au motif qu'une garde
+     * contournable par un déplacement dans un commentaire n'en serait pas une.
+     * Le motif ne tient pas : un nom dans un commentaire n'est pas une valeur,
+     * il ne peut pas diverger de la constante puisqu'il n'est jamais lu. Ce que
+     * la règle produisait, en revanche, était réel — elle a interdit d'écrire
+     * « la réconciliation lit la dernière exécution de `jobs` » dans la
+     * documentation de la fonction qui fait exactement cela. Une garde qui
+     * pousse à moins bien expliquer le code se paie deux fois.
+     *
+     * Ce qui reste verrouillé : l'import de FREQUENT_WORKERS, vérifié sur la
+     * source ENTIÈRE, et tout nom de worker employé comme VALEUR dans le code.
      */
     const source = readFileSync(
       join(process.cwd(), "src", "app", "api", "health", "route.ts"),
@@ -96,9 +108,14 @@ describe("registre des workers", () => {
     expect(source).toMatch(
       /import\s*\{[^}]*\bFREQUENT_WORKERS\b[^}]*\}\s*from\s*"@\/lib\/worker-health"/,
     );
+    // Prose retirée : blocs de commentaire, puis commentaires de fin de ligne.
+    // Le `[^:]` épargne les `//` d'une URL (`https://…`), qui sont du code.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
     const recopies = WORKER_NAMES.filter((worker) =>
       [`"${worker}"`, `'${worker}'`, `\`${worker}\``].some((forme) =>
-        source.includes(forme),
+        code.includes(forme),
       ),
     );
     expect(
