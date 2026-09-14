@@ -18,12 +18,13 @@ import { ShareInvite } from "./share-invite";
 import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
+import { mentionJeu } from "@/lib/limite-participation";
 import { readShareSource } from "@/lib/share-source";
 import {
   lireOuCreerNonceTirage,
   oublierNonceTirage,
 } from "@/lib/spin-nonce";
-import type { GameType } from "@/types/database";
+import type { GameType, PlayLimit } from "@/types/database";
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "playing" | "won" | "lost" | "blocked";
@@ -51,6 +52,7 @@ export function GameShell({
   style,
   shareEnabled,
   gameType,
+  playLimit = null,
   renderReveal,
 }: {
   slug: string;
@@ -73,6 +75,13 @@ export function GameShell({
    * libellés, et l'aperçu de l'éditeur lit la MÊME table.
    */
   gameType: GameType;
+  /**
+   * Limite de participation de la roue (`wheels.play_limit`) : ce que le pied
+   * d’écran annonce au joueur. PUBLIC et non secret — le serveur la réapplique
+   * seul (`perform_atomic_spin`), l’écran ne fait que la DIRE. `null` =
+   * inconnue : la ligne ne promet alors aucune limite.
+   */
+  playLimit?: PlayLimit | null;
   /**
    * Phase de jeu spécifique : révèle `outcome` (jamais ne le décide) puis
    * appelle `onRevealed` une fois l'animation terminée. Le composant reçoit
@@ -290,7 +299,7 @@ export function GameShell({
           )}
 
           <p className={`mt-4 text-[11px] font-mono ${playText.muted(kermesse)}`}>
-            Résultat calculé côté serveur · un jeu par personne
+            {mentionJeu("Résultat calculé côté serveur", playLimit)}
           </p>
           <DiscoverFooter kermesse={kermesse} />
         </GameIdleScreen>

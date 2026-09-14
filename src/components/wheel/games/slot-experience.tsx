@@ -5,6 +5,7 @@ import {
   type WheelStyle,
 } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
+import type { PlayLimit } from "@/types/database";
 import { GameShell } from "../game-shell";
 import { SlotReveal } from "./slot-reveal";
 
@@ -21,6 +22,7 @@ export function SlotExperience({
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style,
   shareEnabled,
+  playLimit = null,
 }: {
   slug: string;
   organizationName: string;
@@ -30,6 +32,8 @@ export function SlotExperience({
   style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
+  /** Limite de participation annoncée au joueur (`wheels.play_limit`). */
+  playLimit?: PlayLimit | null;
 }) {  const kermesse = playOnLightSurface(style);
 
   return (
@@ -41,6 +45,7 @@ export function SlotExperience({
       claimConfig={claimConfig}
       style={style}
       shareEnabled={shareEnabled}
+      playLimit={playLimit}
       gameType="slot"
       renderReveal={(outcome, onRevealed) => (
         <SlotReveal

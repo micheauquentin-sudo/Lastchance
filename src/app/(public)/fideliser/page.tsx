@@ -32,7 +32,7 @@ const SECTION = "relative z-10 mx-auto max-w-6xl scroll-mt-28 px-4 py-16 sm:px-6
 export const metadata: Metadata = {
   title: "Fidéliser & Faire revenir vos clients · Lastchance",
   description:
-    "Passeport fidélité Apple/Google Wallet, Calendrier quotidien et salons de jeu Duo & Bande pour installer une habitude durable.",
+    "Passeport fidélité dans Google Wallet, Calendrier quotidien et salons de jeu Duo & Bande pour installer une habitude durable.",
 };
 
 const clubTier = PLAN_TIERS.find((t) => t.id === "engagement") ?? PLAN_TIERS[1];
@@ -84,7 +84,7 @@ export default function FideliserPage() {
             className="k-card rise-in mx-auto mt-6 max-w-2xl rounded-2xl p-5 text-base font-bold leading-relaxed text-k-body shadow-sm"
             style={{ animationDelay: "140ms" }}
           >
-            Fini les cartes de fidélité en carton oubliées au fond d&apos;une poche. Proposez un passeport moderne directement dans Apple Wallet et Google Wallet, un rituel quotidien avec le calendrier à surprises, et des jeux complices à table.
+            Fini les cartes de fidélité en carton oubliées au fond d&apos;une poche. Proposez un passeport moderne enregistré directement dans le smartphone de vos clients, un rituel quotidien avec le calendrier à surprises, et des jeux complices à table.
           </p>
 
           <div
@@ -126,7 +126,7 @@ export default function FideliserPage() {
                       Passeport Fidélité
                     </h3>
                     <p className="mt-2 text-xs font-black uppercase tracking-wider text-k-orange-text">
-                      Apple Wallet & Google Wallet
+                      Passeport dans Google Wallet
                     </p>
                     <p className="mt-3 text-sm font-bold leading-relaxed text-k-body">
                       Un passeport dématérialisé que vos clients enregistrent en un clic dans leur smartphone. Cumul de visites, paliers de statut et notifications discrètes pour les inciter à revenir.

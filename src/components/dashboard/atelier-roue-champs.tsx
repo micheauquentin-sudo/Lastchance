@@ -9,6 +9,7 @@ import {
 } from "@/components/dashboard/atelier-mecaniques";
 import type { EtatDefi } from "@/components/dashboard/atelier-roue-defi";
 import { cn } from "@/lib/utils";
+import { PHRASE_LIMITE_PAR_APPAREIL } from "@/lib/limite-participation";
 import {
   isClientReportedSkillGameType,
   isSecretSkillGameType,
@@ -494,11 +495,17 @@ export function ChampLimite({
         resume="Une fois, par jour, par semaine ?"
         className="mt-2"
       >
-        « Une seule fois » convient à une opération courte : chaque client joue
-        une fois pour toute la campagne. « 1 fois par jour » fait revenir —
+        « Une seule fois » convient à une opération courte : chaque appareil
+        joue une fois pour toute la campagne. « 1 fois par jour » fait revenir —
         c&apos;est le réglage des bars et boulangeries. « Illimité »
         n&apos;est là que pour vos essais : en boutique, le même téléphone
         viderait vos stocks en quelques minutes.
+        {" "}
+        {/* MÊME PHRASE que l’avertissement des lots de forte valeur
+            (`PHRASES_GARDE_LOT.limite_contournable`) : le commerçant règle ici
+            une limite dont il doit connaître la portée AVANT de choisir, et pas
+            seulement quand il pose un lot à plus de 20 €. */}
+        {PHRASE_LIMITE_PAR_APPAREIL}
       </InfoBulle>
     </div>
   );

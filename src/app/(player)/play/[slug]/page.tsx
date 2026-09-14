@@ -34,7 +34,7 @@ import { PlayBackdrop } from "@/components/wheel/play-backdrop";
 import { PageOpenBeacon } from "@/components/page-open-beacon";
 import { SkipLink } from "@/components/ui/skip-link";
 import { isSkillGameType } from "@/lib/validations/skill";
-import type { Organization } from "@/types/database";
+import type { Organization, PlayLimit } from "@/types/database";
 
 /** Client service_role tel qu'exposé par un contexte de jeu valide. */
 type PlayAdminClient = Extract<PlayContext, { ok: true }>["admin"];
@@ -60,6 +60,12 @@ interface RevealExperienceProps {
    * son propre programme.
    */
   shareEnabled: boolean;
+  /**
+   * Limite de participation de la roue servie (`wheels.play_limit`). PUBLIQUE
+   * et non secrète : le pied d’écran de jeu l’annonce au joueur, et c’est le
+   * serveur seul qui l’applique (`perform_atomic_spin`).
+   */
+  playLimit: PlayLimit | null;
 }
 
 /**
@@ -194,6 +200,7 @@ export default async function PlayPage({
       claimConfig={claimConfig}
       style={style}
       shareEnabled={ctx.campaign.share_enabled !== false}
+      playLimit={ctx.wheel.play_limit ?? null}
     />
   ) : (
     // Roue (ou game_type inconnu) : parcours par défaut.
@@ -207,6 +214,7 @@ export default async function PlayPage({
       referral={referral}
       organizationId={ctx.organization.id}
       shareEnabled={ctx.campaign.share_enabled !== false}
+      playLimit={ctx.wheel.play_limit ?? null}
     />
   );
 

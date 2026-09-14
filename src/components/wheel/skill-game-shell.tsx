@@ -14,8 +14,9 @@ import { ShareInvite } from "./share-invite";
 import { TurnstileGate } from "./turnstile-gate";
 import { turnstileClientEnabled } from "./turnstile-widget";
 import { gameIdle } from "@/lib/game-idle";
+import { mentionJeu } from "@/lib/limite-participation";
 import type { SkillAttempt, SkillChallengePublic } from "@/lib/skill";
-import type { GameType } from "@/types/database";
+import type { GameType, PlayLimit } from "@/types/database";
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 
 type Phase = "idle" | "challenge" | "won" | "lost" | "blocked";
@@ -58,6 +59,7 @@ export function SkillGameShell({
   style,
   shareEnabled,
   gameType,
+  playLimit = null,
   renderChallenge,
 }: {
   slug: string;
@@ -78,6 +80,13 @@ export function SkillGameShell({
    * découlent (`gameIdle`), comme pour GameShell.
    */
   gameType: GameType;
+  /**
+   * Limite de participation de la roue (`wheels.play_limit`) : ce que le pied
+   * d’écran annonce au joueur. PUBLIC et non secret — le serveur la réapplique
+   * seul (`perform_atomic_spin`), l’écran ne fait que la DIRE. `null` =
+   * inconnue : la ligne ne promet alors aucune limite.
+   */
+  playLimit?: PlayLimit | null;
   /**
    * Phase de jeu spécifique : reçoit la vue PUBLIQUE du défi, une fonction
    * `submit` (à appeler avec la tentative construite) et l'état `pending` de la
@@ -320,7 +329,7 @@ export function SkillGameShell({
           )}
 
           <p className={`mt-4 text-[11px] font-mono ${playText.muted(kermesse)}`}>
-            Réussissez le défi pour tenter un lot · un jeu par personne
+            {mentionJeu("Réussissez le défi pour tenter un lot", playLimit)}
           </p>
           <DiscoverFooter kermesse={kermesse} />
         </GameIdleScreen>

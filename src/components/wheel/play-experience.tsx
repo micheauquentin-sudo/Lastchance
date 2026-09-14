@@ -29,6 +29,8 @@ import { WheelPointer, WheelSvg, type WheelSegment } from "./wheel-svg";
 import { CartoonBurst } from "./cartoon-burst";
 import { fontFamily } from "@/lib/fonts";
 import { gameIdle } from "@/lib/game-idle";
+import { mentionJeu } from "@/lib/limite-participation";
+import type { PlayLimit } from "@/types/database";
 import { readShareSource } from "@/lib/share-source";
 import {
   lireOuCreerNonceTirage,
@@ -78,6 +80,7 @@ export function PlayExperience({
   referral = null,
   organizationId = null,
   shareEnabled,
+  playLimit = null,
 }: {
   slug: string;
   organizationName: string;
@@ -101,6 +104,13 @@ export function PlayExperience({
    * (`referral`), qui garde sa propre case.
    */
   shareEnabled: boolean;
+  /**
+   * Limite de participation de la roue (`wheels.play_limit`) : ce que le pied
+   * d’écran annonce au joueur. PUBLIC et non secret — le serveur la réapplique
+   * seul (`perform_atomic_spin`), l’écran ne fait que la DIRE. `null` =
+   * inconnue : la ligne ne promet alors aucune limite.
+   */
+  playLimit?: PlayLimit | null;
 }) {  const isCartoon = style.cartoonAnimations;
   // Réduction des animations : durée du spin écourtée À LA SOURCE pour
   // que la transition CSS (WheelSvg) et le timer de révélation du
@@ -428,7 +438,7 @@ export function PlayExperience({
           )}
 
           <p className={`mt-4 text-[11px] font-mono ${playText.muted(kermesse)}`}>
-            Résultat calculé côté serveur · un jeu par personne
+            {mentionJeu("Résultat calculé côté serveur", playLimit)}
           </p>
           <DiscoverFooter kermesse={kermesse} />
         </div>
