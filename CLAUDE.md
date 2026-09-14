@@ -152,12 +152,11 @@ en suspens — séquentiel, **et le dire** plutôt que de laisser croire que la
 question n'a pas été posée.
 
 ## Last Updated
-- **Date**: 2026-09-06
-- **Dernier chantier**: **Stabilisation avant production** (PR #365 `60ef99c5`, #366, ADR-175 à 182). TROIS audits successifs — Claude Opus 5, GPT-5.6 Sol, un release gate — fusionnés, et **chaque affirmation rouverte dans le code**. Zéro faux positif, trois constats mal calibrés, une reco commune écartée, neuf constats hors audits.
-  Fermé : outillage local en routes de prod ; `redeem_ticket_or` autorisait via `p_actor` ; secrets porteurs vers PostHog (ADR-179) ; newsletter malgré `collect_email=false` ; tirage aveugle au statut de campagne (ADR-176) ; `addon_rendez_vous` absent de `getUserAndOrg` ; consentement SMS transactionnel (ADR-177) ; en-têtes du site (ADR-180) ; Ticket d'Or expiré affiché **et non remettable en caisse** ; **tirage direct non idempotent** (ADR-182).
-  Décisions assumées, non des oublis : rotation du cookie anonyme (ADR-178) et succès client-reporté de reflex/gauge (ADR-175). Refus argumenté du check stock (ADR-181), qui révèle le même défaut dans `quizzes_reward_bounds_check`.
-  Migrations → `20261214120000` (213). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7653, pgTAP 6518.
-  **Reste ouvert** : secret SMS legacy (`/api/health`, ~7j) ; garde statistique du moteur SQL ; parité `lot-tirable.ts` ; RLS ligne-à-ligne ; E2E QR->`/play` ; Google Wallet, capacité live.
+- **Date**: 2026-09-14
+- **Dernier chantier**: **Réponse au release gate** (6 commits, base `4afc42e1` : `748f0480`…`869715e7`, ADR-183). Cadence de supervision (`reap_ops_worker_runs` toutes les 5 min) ; libellés `play_limit` véridiques (appareil, pas personne) ; findings moyens M1/M2 fermés (garde ACL balayante : 380 `SECURITY DEFINER` de `public`, zéro exécutable par `anon`) ; avertissement Vite éteint à la cause réelle, pas devinée.
+  Trois constats d'audit mal calibrés, consignés comme tels plutôt que corrigés en silence (détail : `docs/journal.md`). ADR-183 : contournabilité de `play_limit` par cookie anonyme, décision assumée.
+  Migrations → `20261220120000` (218). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7713, pgTAP 58/58 + 741/741.
+  **Reste ouvert (hors code)** : DNS, Google Wallet, `CRON_SECRET` GitHub, capacité live (`docs/bugs.md`).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés

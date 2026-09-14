@@ -1,8 +1,33 @@
 # Roadmap — Lastchance
 
-## V1.78 — Budget atomique, soirées sous charge et reliquats de production (🟠 prêt localement, 2026-09-14)
+## V1.79 — Réponse au release gate : supervision, véracité des libellés, ACL (✅ 2026-09-14)
 
-**Livré dans la branche** `chantier/reliquats-post-production` : réservation
+**Objectif** : fermer les deux findings réels d'un audit de release gate (M1,
+M2) et véracité de `play_limit`, sans étendre le mécanisme d'ancrage par IP
+que l'audit recommandait (ADR-183). 6 commits sur `main` : cadence de
+réconciliation des runs orphelins portée à 5 min (migration
+`20261220120000_reap_ops_worker_runs.sql`, 218 migrations), `/api/health`
+importe `FREQUENT_WORKERS` au lieu d'une liste dupliquée et nomme aussi le
+worker exigé absent du registre (M2), garde ACL balayante sur toutes les
+fonctions `SECURITY DEFINER` de `public` × `anon` (M1), libellés
+`play_limit` véridiques (appareil, pas « personne » ; illimité distingué)
+câblés sur les 4 écrans de jeu via 13 enveloppes, retrait des promesses
+Apple Wallet côté passeport de fidélité, cause réelle de l'avertissement Vite
+corrigée (`.mts` + `import.meta.dirname`).
+
+**Preuves** : typecheck, lint, casts/sql/migrations:check, build verts ;
+Vitest 7713 tests / 435 fichiers ; pgTAP `ops_monitoring` 58/58 et
+`security_acl` 741/741 ; types générés sans diff ; garde ACL vérifiée armée
+avec une fonction témoin (rollback).
+
+**Reste hors code** : DNS `lastchance.app`/`app.lastchance.app`, secrets
+Google Wallet, `CRON_SECRET` en secret GitHub, capacité de production non
+certifiée par le banc local — voir `docs/bugs.md` et `docs/codex-handoff.md`.
+
+## V1.78 — Budget atomique, soirées sous charge et reliquats de production (✅ fusionné, PR #375 `4afc42e1`, 2026-09-14)
+
+**Livré dans la branche** `chantier/reliquats-post-production`, fusionnée
+depuis : réservation
 atomique du budget au tirage et libération à expiration, compteurs de polling
 pondérés et lectures simultanées coalisées, banc événement 100/250/500,
 vérification d'un émetteur Google Wallet réel, correctif de couleur des équipes
@@ -16,13 +41,10 @@ un vrai rôle éditeur. La mesure locale ne certifie pas une capacité
 production : Realtime réduit normalement le polling, alors que le banc exerce
 des clients continus.
 
-**Ordre restant obligatoire** : appliquer en production
-`20261216120000_budget_reservation_atomique.sql`, puis
-`20261218120000_rate_limit_pondere.sql`, puis
-`20261219120000_campaign_budget_acl.sql` ; valider la base ; seulement ensuite
-fusionner la PR et laisser Vercel déployer. Restent hors code : trois secrets
-Google Wallet et la correction DNS GoDaddy → Vercel. L'API Gateway Supabase est
-actuellement dégradée et doit retrouver un état sain avant le verdict final.
+**Fusionné depuis (2026-09-14, PR #375, `4afc42e1`)** : les trois migrations
+sont commitées sur `main`. Restent hors code, sans lien avec le dépôt : trois
+secrets Google Wallet et la correction DNS GoDaddy → Vercel — voir V1.79
+ci-dessus et `docs/bugs.md`.
 
 ## V1.77 — Stabilisation avant production : les constats croisés de deux audits, vérifiés puis fermés (✅ 2026-09-06, PR #365, commit squash `60ef99c5`)
 
@@ -932,7 +954,7 @@ qu'une server action y écrit. Une garde générique (croiser
 `information_schema.column_privileges` avec les colonnes citées dans
 `src/actions/`) reste une piste, pas une décision prise (`docs/bugs.md`).
 
-## V1.68 — Générateur de questions, et le partage remis à sa place (2026-08-28, non poussé)
+## V1.68 — Générateur de questions, et le partage remis à sa place (2026-08-28, poussé le 2026-08-28 — `a9d25721`, PR #222)
 
 **Objectif** : rendre le Créateur de quiz et le Mode événement live utilisables
 sans saisir cent questions à la main, et permettre de jouer entre amis un soir

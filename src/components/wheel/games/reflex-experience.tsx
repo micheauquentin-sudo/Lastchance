@@ -2,6 +2,7 @@
 
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
+import type { PlayLimit } from "@/types/database";
 import { SkillGameShell } from "../skill-game-shell";
 import { ReflexChallenge } from "./reflex-challenge";
 
@@ -19,6 +20,7 @@ export function ReflexExperience({
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style,
   shareEnabled,
+  playLimit = null,
 }: {
   slug: string;
   organizationName: string;
@@ -28,6 +30,8 @@ export function ReflexExperience({
   style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
+  /** Limite de participation annoncée au joueur (`wheels.play_limit`). */
+  playLimit?: PlayLimit | null;
 }) {
   const kermesse = playOnLightSurface(style);
 
@@ -40,6 +44,7 @@ export function ReflexExperience({
       claimConfig={claimConfig}
       style={style}
       shareEnabled={shareEnabled}
+      playLimit={playLimit}
       gameType="reflex"
       renderChallenge={(challenge, submit, pending) =>
         challenge.gameType === "reflex" ? (

@@ -10083,6 +10083,10 @@ export type Database = {
         Args: { p_player_token_hash?: string; p_quiz_id: string }
         Returns: Json
       }
+      reap_ops_worker_runs: {
+        Args: { p_stale_after_minutes?: number }
+        Returns: number
+      }
       record_experience_event: {
         Args: {
           p_basket_cents?: number

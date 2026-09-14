@@ -300,5 +300,85 @@ select ok(
   'anon ne purge pas le journal des workers'
 );
 
+-- ── reap_ops_worker_runs : la réconciliation, appelable seule ─
+-- Le geste existait déjà, enfermé dans purge_ops_worker_runs et
+-- joué UNE fois par jour : une exécution interrompue mentait
+-- « running » jusqu'à dix-huit heures. Il est extrait pour tourner
+-- à cadence courte sans le balayage de rétention (20261220120000).
+insert into public.ops_worker_runs (worker, status, started_at) values
+  ('purge-data', 'running', now() - interval '2 hours'),
+  ('purge-data', 'running', now() - interval '5 minutes');
+
+select is(
+  public.reap_ops_worker_runs(60),
+  1,
+  'reap_ops_worker_runs retourne le nombre d''exécutions réconciliées'
+);
+select results_eq(
+  $$select status, error_code, completed_at is not null, duration_ms > 0
+      from public.ops_worker_runs
+     where worker = 'purge-data'
+       and started_at < now() - interval '90 minutes'
+       and started_at > now() - interval '3 hours'$$,
+  $$values ('failed'::text, 'run_abandoned'::text, true, true)$$,
+  'un running de 2 h est refermé en failed/run_abandoned, horodaté et chronométré'
+);
+select results_eq(
+  $$select status, error_code, completed_at, duration_ms
+      from public.ops_worker_runs
+     where worker = 'purge-data'
+       and started_at > now() - interval '10 minutes'$$,
+  $$values ('running'::text, null::text, null::timestamptz, null::integer)$$,
+  'un running de 5 min n''est PAS touché : le seuil borne bien la réconciliation'
+);
+select results_eq(
+  $$select status, error_code from public.ops_worker_runs
+     where worker = 'purge-data' and status = 'succeeded'$$,
+  $$values ('succeeded'::text, null::text)$$,
+  'une exécution déjà terminée reste intacte — seul running est réconcilié'
+);
+
+-- Le retour est un COMPTE, pas un booléen : deux abandons à la fois.
+insert into public.ops_worker_runs (worker, status, started_at) values
+  ('purge-data', 'running', now() - interval '4 hours'),
+  ('purge-data', 'running', now() - interval '6 hours');
+select is(
+  public.reap_ops_worker_runs(60),
+  2,
+  'deux exécutions abandonnées sont réconciliées en un appel, et comptées'
+);
+select is(
+  public.reap_ops_worker_runs(60),
+  0,
+  'un second passage ne réconcilie rien : le geste est idempotent'
+);
+select is(
+  (select count(*) from public.ops_worker_runs
+    where worker = 'purge-data' and status = 'running'),
+  1::bigint,
+  'le seul running restant est celui qui n''a pas atteint le seuil'
+);
+
+-- purge_ops_worker_runs délègue désormais : une seule implémentation.
+insert into public.ops_worker_runs (worker, status, started_at)
+values ('purge-data', 'running', now() - interval '3 hours');
+select results_eq(
+  $$select reaped from public.purge_ops_worker_runs(30, 60)$$,
+  $$values (1)$$,
+  'purge_ops_worker_runs referme toujours autant en déléguant à reap'
+);
+
+select ok(
+  has_function_privilege('service_role', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'),
+  'le serveur peut réconcilier les exécutions abandonnées'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'),
+  'les commerçants ne réconcilient pas le journal des workers'
+);
+select ok(
+  not has_function_privilege('anon', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'),
+  'anon ne réconcilie pas le journal des workers'
+);
 select finish();
 rollback;

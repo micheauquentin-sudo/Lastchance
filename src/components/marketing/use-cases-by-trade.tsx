@@ -156,7 +156,7 @@ const TRADES: readonly TradeScenario[] = [
     painPoint: "Les cartes de fidélité en carton perdues ou oubliées, les rendez-vous manqués et le temps perdu à rappeler les clients pour reprendre rendez-vous.",
     recommendedModules: [
       {
-        name: "Passeport Apple & Google Wallet",
+        name: "Passeport dans Google Wallet",
         role: "Votre carte de fidélité installée dans le smartphone du client avec solde de points et notifications.",
         why: "Zéro carte plastique à imprimer, toujours dans la poche du client, image de marque ultra-moderne.",
         href: "/fideliser",
@@ -180,7 +180,7 @@ const TRADES: readonly TradeScenario[] = [
         href: "/fideliser",
       },
     ],
-    concreteSituation: "Après son soin, votre client pose son téléphone sur votre borne caisse : son passeport Wallet est tamponné en un bip, et un rappel pour son prochain créneau dans 4 semaines lui est proposé.",
+    concreteSituation: "Après son soin, votre client pose son téléphone sur votre borne caisse : son passeport Google Wallet est tamponné en un bip, et un rappel pour son prochain créneau dans 4 semaines lui est proposé.",
     expectedBenefit: "Un prochain rendez-vous proposé avant que le client quitte le salon, et des relances qui partent sans vous.",
     offerTag: `Formule recommandée : Le Club (${prixOffre("engagement")} €/mois) ou Sur Place (${prixOffre("place")} €/mois)`,
   },

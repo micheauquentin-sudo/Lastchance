@@ -37,14 +37,50 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Réponse au release gate — supervision, véracité, ACL (2026-09-14)
+
+**Terrain.** 6 commits sur `main`, non poussés, base `4afc42e1` (PR #375
+fusionnée depuis) : `748f0480` (cadence de réconciliation des runs orphelins,
+`/api/health` importe `FREQUENT_WORKERS`), `41aff5b1` (migration
+`20261220120000_reap_ops_worker_runs.sql`, 218 migrations), `a530efb7`
+(véracité des libellés `play_limit`, retrait des promesses Apple Wallet),
+`2abcd487` (M2 : la sonde nomme aussi le worker exigé absent du registre),
+`da1e4fbc` (M1 : garde ACL balayante sur `SECURITY DEFINER` × `anon`),
+`869715e7` (cause réelle de l'avertissement Vite : `.mts` + `import.meta.dirname`).
+
+**Écarté.** Le plafond IP bloquant sur le tirage (ADR-178) n'a pas été étendu
+à une garde par identité de joueur : borner par IP est faux pour ce produit
+(Wi-Fi de commerce partagé, fond d'ADR-032). Voir ADR-183, qui tranche que le
+défaut réel était le DISCOURS (« un jeu par personne » affiché
+inconditionnellement) et non le mécanisme, corrigé par `a530efb7`.
+
+**Fini quand.** `npx vitest run src/lib/claude-md-budget.test.ts` vert ;
+typecheck/lint/casts:sql:migrations:check/build verts ; Vitest 7713/435,
+pgTAP `ops_monitoring` 58/58 et `security_acl` 741/741 verts ; types générés
+sans diff. Atteint le 2026-09-14, hors ce qui reste listé plus bas.
+
+**Reste ouvert, n'appartient qu'à l'utilisateur.** DNS `lastchance.app`
+toujours parké GoDaddy, `app.lastchance.app` NXDOMAIN — et la production
+annonce `lastchance-mu.vercel.app` comme domaine canonique
+(`NEXT_PUBLIC_APP_URL`, figée à la compilation, 79 consommateurs) : corriger
+le DNS seul sans rebuild laisserait QR codes et e-mails publier l'ancienne
+adresse. Les trois `GOOGLE_WALLET_*` restent absentes de Vercel Production.
+`CRON_SECRET` absent des secrets GitHub — prouvé par le run `34789893078`
+(`production-health.yml`, 2026-09-13 23:30, `CRON_SECRET:` vide, HTTP 503) ;
+les trois runs suivants (2026-09-14) sont verts, incident resté
+indiagnosticable. Le banc de capacité local (100/250/500) ne certifie pas la
+production, il le dit lui-même (`scripts/capacity-bench.mjs:126` refuse
+délibérément une cible de production).
+
 ## Reliquats post-production — préflight sécurité renforcé (2026-09-14)
 
-**État Git vérifié.** Le code runtime validé de
-`chantier/reliquats-post-production` se termine au SHA runtime `8148c981`, au-dessus de
-`origin/main` (`aea0908b`) ; le présent suivi documentaire vient après. La PR
-`#375` reste ouverte avant sa nouvelle CI. L'arbre Windows d'entrée conserve les modifications de
-l'utilisateur dans `AGENTS.md` et trois images non suivies sous
-`site/public/images/game-world/` ; elles ne font pas partie du lot.
+**État Git vérifié.** La PR `#375` (`chantier/reliquats-post-production`) est
+FUSIONNÉE sur `main` (`4afc42e1`) ; le SHA runtime `8148c981` cité ci-dessous
+est donc périmé, comme l'état « PR reste ouverte ». Le head Supabase de
+PRODUCTION n'est **pas vérifiable depuis ce contexte** (git ne le montre pas) :
+ne pas l'affirmer comme fait avant relevé direct. La partie DÉPÔT du
+« Bloqué avant fusion » ci-dessous est close ; seule la partie infrastructure
+(Google Wallet, DNS, santé prod) reste ouverte, reprise ci-dessus.
 
 **Corrections terminées.** Le budget des gains est désormais réservé dans la
 transaction qui émet le spin, figé sur la ligne gagnante, transféré au montant
@@ -80,12 +116,10 @@ workers n'ont pas retrouvé une exécution saine. Realtime événementiel est bi
 actif. Le domaine `lastchance.app` pointe encore vers le parking GoDaddy et non
 vers Vercel ; `app.lastchance.app` ne résout pas.
 
-**Bloqué avant fusion.** La production Supabase est encore au head
-`20261215120000`. L'autorisation de migration et de fusion a été reçue le
-2026-09-14, mais la sonde de production répond encore `503` et la nouvelle CI
-du correctif ACL doit être verte. Ensuite les migrations `20261216120000`,
-`20261218120000` puis `20261219120000` doivent être appliquées et vérifiées
-**avant** le code qui en dépend. Google Wallet exige
+**Bloqué avant fusion — périmé côté dépôt (2026-09-14) : la PR est fusionnée
+(`4afc42e1`), les migrations listées ci-dessous sont commitées sur `main`.**
+Le head Supabase de PRODUCTION n'est pas vérifiable depuis ce contexte ; ne
+pas affirmer qu'il est ou n'est pas à jour sans relevé direct. Google Wallet exige
 encore `GOOGLE_WALLET_ISSUER_ID`, `GOOGLE_WALLET_CLIENT_EMAIL` et
 `GOOGLE_WALLET_PRIVATE_KEY` dans Vercel, puis un passage réel du vérificateur.
 Le DNS doit être corrigé chez GoDaddy (`A` apex vers la cible recommandée par

@@ -106,7 +106,7 @@ const OBJECTIVES: readonly ObjectiveData[] = [
     ctaText: "Découvrir les 3 modules de fidélisation →",
     modules: [
       {
-        name: "Passeport Apple & Google Wallet",
+        name: "Passeport dans Google Wallet",
         badge: "Zéro carte plastique",
         contains: "Carte de fidélité dématérialisée dans le wallet du smartphone, solde de visites et notifications.",
         situation: "À chaque passage en caisse : le client présente son smartphone, validé en 1 bip.",
@@ -398,7 +398,7 @@ function LoyaltyDemo() {
             </span>
             <div>
               <p className="text-xs font-black text-k-ink">Passeport Gourmand</p>
-              <p className="text-[10px] font-bold text-k-muted">Ajouté dans Apple & Google Wallet</p>
+              <p className="text-[10px] font-bold text-k-muted">Enregistré dans Google Wallet</p>
             </div>
           </div>
           <span className="rounded-full bg-k-green/20 px-2.5 py-0.5 text-[11px] font-black text-k-ink">

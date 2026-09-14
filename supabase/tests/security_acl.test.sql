@@ -103,6 +103,12 @@ select ok(not has_table_privilege('anon', 'public.ops_worker_definitions', 'SELE
 select ok(has_table_privilege('service_role', 'public.ops_worker_definitions', 'UPDATE'), 'server can enrol a worker without a migration');
 select ok(has_function_privilege('service_role', 'public.purge_ops_worker_runs(integer,integer)', 'EXECUTE'), 'server can prune the worker journal');
 select ok(not has_function_privilege('authenticated', 'public.purge_ops_worker_runs(integer,integer)', 'EXECUTE'), 'merchant cannot prune the worker journal');
+-- Le refermage extrait de la purge (20261220120000) : même journal, même
+-- geste, mais à cadence courte. Il écrit `failed` à la place d'un worker —
+-- une porte marchande ou anonyme y falsifierait l'état de santé de l'ops.
+select ok(has_function_privilege('service_role', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'), 'server can reap abandoned worker runs');
+select ok(not has_function_privilege('authenticated', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'), 'merchant cannot reap abandoned worker runs');
+select ok(not has_function_privilege('anon', 'public.reap_ops_worker_runs(integer)', 'EXECUTE'), 'anon cannot reap abandoned worker runs');
 select ok(has_function_privilege('service_role', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'only server can submit a public prediction');
 select ok(not has_function_privilege('authenticated', 'public.submit_contest_prediction(uuid,uuid,uuid,integer,integer)', 'EXECUTE'), 'merchant cannot impersonate a contest player');
 select ok(has_function_privilege('authenticated', 'public.set_contest_match_result(uuid,uuid,integer,integer,text,integer,integer)', 'EXECUTE'), 'editor can use the guarded result RPC');
@@ -1009,6 +1015,64 @@ select ok(not exists (
   where n.nspname = 'public' and d.defaclobjtype = 'f'
     and acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
 ), 'future public functions do not grant PUBLIC execute');
+
+-- ── SECURITY DEFINER × anon : LA RÈGLE, PAS LA LIGNE À LIGNE ──
+--
+-- Ce fichier prouve fonction par fonction que `anon` n'exécute pas les RPC
+-- sensibles, et quarante-quatre autres fichiers de tests font de même, chacun
+-- pour son module. Aucun ne dit la RÈGLE — `grep -rn prosecdef supabase/tests/` ne
+-- trouvait, avant cette ligne, aucune assertion balayante. Ce qui manquait
+-- n'est donc pas un droit, c'est la garde : une fonction NEUVE, ou une
+-- fonction existante rouverte par un `create or replace` distrait dans une
+-- autre migration — le `revoke` ne survit pas à un remplacement qui l'oublie —
+-- ne rougissait nulle part. Constaté sur `reap_ops_worker_runs`
+-- (20261220120000) : droits corrects le jour de la livraison, et rien pour
+-- garantir qu'ils le restent.
+--
+-- Une fonction `security definer` s'exécute avec les droits de son
+-- PROPRIÉTAIRE. `anon` est le rôle du visiteur non authentifié : lui accorder
+-- EXECUTE sur l'une d'elles, c'est lui prêter le propriétaire de la base pour
+-- la durée de l'appel — et la RLS avec, puisque le propriétaire la contourne.
+-- Le parcours joueur de ce dépôt ne passe JAMAIS par là : il passe par le
+-- serveur en `service_role` (cf. les « anon cannot call ... directly »
+-- ci-dessus). C'est une architecture, et cette assertion est ce qui l'empêche
+-- de dériver sans bruit.
+--
+-- ── EXCEPTIONS ──
+-- Aucune, et c'est MESURÉ, pas supposé : sur les 380 fonctions `security
+-- definer` de `public`, ZÉRO est aujourd'hui exécutable par `anon` — pas plus
+-- que les non-definer, d'ailleurs : `anon` ne détient EXECUTE sur RIEN dans
+-- `public`. L'attendu est donc la chaîne vide. Si une exception devait naître
+-- un jour, elle s'écrit ICI, nommée et justifiée en une ligne — jamais
+-- absorbée en silence par un attendu qu'on aurait élargi.
+--
+-- L'échec NOMME les fautives avec leur signature complète (`regprocedure`) :
+-- de quoi écrire le `revoke` sans avoir à les chercher. Ni `prokind` ni
+-- `proargtypes` ne filtrent — une PROCÉDURE `security definer` ouverte à
+-- `anon` serait exactement le même prêt de propriétaire.
+select is(
+  (select coalesce(string_agg(p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text), '')
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prosecdef
+      and has_function_privilege('anon', p.oid, 'EXECUTE')),
+  '',
+  'aucune fonction SECURITY DEFINER de public n''est exécutable par anon'
+);
+-- CONTRÔLE DE PORTÉE, même raison que les 110 tables ci-dessous : sans lui, la
+-- règle serait verte sur un ensemble vide le jour où la jointure se casserait
+-- en silence. 380 mesurées ; le seuil garde volontairement de la marge — cette
+-- garde porte sur une RÈGLE, pas sur un compte, et un `drop function` légitime
+-- ne doit pas la faire rougir.
+select cmp_ok(
+  (select count(*)::int
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prosecdef),
+  '>=', 350,
+  'la règle porte bien sur les ~380 fonctions SECURITY DEFINER du schéma, pas sur un ensemble vide'
+);
 
 -- ── RLS : le CATALOGUE remplace la liste tenue à la main ─────
 --

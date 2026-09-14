@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 const OBJECTIVES = [
   { href: "/attirer", label: "Acquérir", desc: "15 jeux instantanés & Parrainage", dot: "bg-k-orange" },
   { href: "/faire-venir", label: "Créer du trafic", desc: "Chasse au QR & Réservation", dot: "bg-k-yellow" },
-  { href: "/fideliser", label: "Fidéliser", desc: "Passeport Wallet & Calendrier", dot: "bg-k-pink" },
+  { href: "/fideliser", label: "Fidéliser", desc: "Passeport Google Wallet & Calendrier", dot: "bg-k-pink" },
   { href: "/animer", label: "Animer en direct", desc: "Événements live & Pronostics", dot: "bg-k-blue" },
 ] as const;
 

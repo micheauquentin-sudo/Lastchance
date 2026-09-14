@@ -7,6 +7,7 @@ import { IP_CLIENT_INCONNUE, clientIpFromHeaders } from "@/lib/request-ip";
 import { authorizeCronRequest } from "@/lib/timing-safe";
 import { famillesSurRepli } from "@/lib/token-secrets";
 import { turnstileRequired } from "@/lib/turnstile";
+import { FREQUENT_WORKERS } from "@/lib/worker-health";
 
 /**
  * Health check : GET /api/health
@@ -44,6 +45,16 @@ interface CheckResult {
   status: "ok" | "error";
   latency_ms: number;
   error?: string;
+}
+
+/**
+ * Le contrôle des workers rend une information de PLUS que les autres : le
+ * nom des workers que le registre déclare en mauvaise santé. Voir
+ * `checkWorkers` pour le motif — et noter que cette liste ne sort JAMAIS du
+ * bloc `checks`, donc jamais sans preuve de `CRON_SECRET`.
+ */
+interface WorkersCheckResult extends CheckResult {
+  unhealthy_workers?: string[];
 }
 
 async function checkDatabase(): Promise<CheckResult> {
@@ -96,7 +107,7 @@ async function checkDatabase(): Promise<CheckResult> {
   }
 }
 
-async function checkWorkers(): Promise<CheckResult> {
+async function checkWorkers(): Promise<WorkersCheckResult> {
   const start = Date.now();
   // Les workers fréquents sont une exigence de production. En local et dans
   // les previews de test, Supabase/Vault peut volontairement être absent.
@@ -131,18 +142,69 @@ async function checkWorkers(): Promise<CheckResult> {
       };
     }
     const rows = (await res.json()) as Array<{ worker?: string; healthy?: boolean }>;
-    const required = new Set(["jobs", "sync-contests"]);
+    // SOURCE UNIQUE, et non une liste recopiée. Cette route portait les deux
+    // noms de workers en dur dans un `Set` littéral alors que
+    // `FREQUENT_WORKERS` disait déjà exactement cela, avec le motif écrit à
+    // côté : ajouter un worker à cadence courte au registre ne changeait rien
+    // ici, et personne ne l'aurait vu. Un test relie désormais les deux, et il
+    // interdit qu'un nom de worker reparaisse dans ce fichier — commentaire
+    // compris, sinon la garde serait contournable par inattention.
+    // `Set<string>` plutôt que le tableau typé : la comparaison porte sur un
+    // nom venu de la base, qui n'est pas un `WorkerName` tant qu'on ne l'a pas
+    // reconnu.
+    const required = new Set<string>(FREQUENT_WORKERS);
     const healthy = rows.filter(
       (row) => row.healthy === true && row.worker && required.has(row.worker),
     );
+    // CE QUE LA SONDE JETAIT. Les lignes hors `required` étaient filtrées et
+    // perdues : un worker quotidien rouge — purge RGPD, tirages jackpot,
+    // rapport hebdomadaire — restait invisible ici comme ailleurs. On le
+    // NOMME sans le laisser gouverner le verdict : basculer la sonde en 503
+    // sur un worker hebdomadaire ferait déclarer la plateforme indisponible
+    // pour une dégradation de supervision, et le moniteur apprendrait à
+    // ignorer l'alarme.
+    //
+    // ── ET CE QU'IL JETAIT ENCORE (revue sécu M2) ────────────────
+    //
+    // Cette liste se construisait sur les lignes RENDUES par
+    // `ops_workers_health()`, qui n'en rend une que pour les définitions
+    // `where d.enabled`. Un worker exigé mais DÉSACTIVÉ au registre — ou
+    // absent de `ops_worker_definitions` — n'apparaissait donc dans aucune
+    // ligne : la sonde basculait bien en 503 (`healthy.length` n'atteint pas
+    // `required.size`, le sens sûr), mais `unhealthy_workers` ressortait VIDE.
+    // L'exploitant qui prouve connaître `CRON_SECRET` pour diagnostiquer
+    // n'obtenait aucun nom, précisément dans le seul cas où le nom compte :
+    // la supervision n'est pas tombée, elle a été éteinte. On complète donc
+    // avec les exigés ABSENTS des lignes, sans doublon et dans un ordre
+    // déterministe — lignes d'abord, exigés manquants ensuite, dans l'ordre
+    // du registre applicatif.
+    const vus = new Set<string>();
+    const unhealthyWorkers: string[] = [];
+    for (const row of rows) {
+      if (row.worker && row.healthy !== true && !vus.has(row.worker)) {
+        vus.add(row.worker);
+        unhealthyWorkers.push(row.worker);
+      }
+    }
+    for (const worker of required) {
+      if (vus.has(worker)) continue;
+      if (rows.some((row) => row.worker === worker)) continue;
+      vus.add(worker);
+      unhealthyWorkers.push(worker);
+    }
     if (healthy.length !== required.size) {
       return {
         status: "error",
         latency_ms: latency,
         error: "Workers non opérationnels",
+        unhealthy_workers: unhealthyWorkers,
       };
     }
-    return { status: "ok", latency_ms: latency };
+    return {
+      status: "ok",
+      latency_ms: latency,
+      unhealthy_workers: unhealthyWorkers,
+    };
   } catch {
     return {
       status: "error",
@@ -263,6 +325,12 @@ export async function GET(request: Request) {
             uptime_s: Math.round(process.uptime()),
             checks: {
               database,
+              /* `workers.unhealthy_workers` NOMME les workers que le registre
+               * déclare en défaut. C'est de la topologie d'exploitation —
+               * quels traitements de fond existent, et lequel est tombé : le
+               * même oracle de posture que `security_configuration.error`, et
+               * il reste donc du même côté de `CRON_SECRET`. Le corps public
+               * n'apprend rien de plus qu'avant ce correctif. */
               workers,
               security_configuration: securityConfiguration,
               /* Familles de jetons adossées au repli `SPIN_TOKEN_SECRET`.

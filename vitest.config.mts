@@ -19,8 +19,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "server-only": path.resolve(__dirname, "./src/test/server-only-stub.ts"),
-      "@": path.resolve(__dirname, "./src"),
+      "server-only": path.resolve(import.meta.dirname, "./src/test/server-only-stub.ts"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
 });

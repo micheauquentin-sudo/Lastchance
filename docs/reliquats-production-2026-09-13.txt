@@ -1,7 +1,14 @@
 LASTCHANCE — RELIQUATS AVANT LIVRAISON
 État vérifié le 14 septembre 2026
 
-VERDICT
+[ARCHIVE — périmé le 2026-09-14, corrigé dans docs/codex-handoff.md]
+Le VERDICT et l'ORDRE DE LIVRAISON ci-dessous sont dépassés : la PR #375 a
+été fusionnée sur main (commit 4afc42e1), les trois migrations listées au
+point 2 à 4 de l'ORDRE DE LIVRAISON sont commitées. Les points 3 (Google
+Wallet), 9 (DNS) et l'état de santé production restent ouverts — voir
+docs/codex-handoff.md et docs/bugs.md pour l'état à jour.
+
+VERDICT (fichier d'origine, périmé — voir avis ci-dessus)
 Le code est prêt localement et poussé sur la branche
 chantier/reliquats-post-production au SHA runtime 8148c981.
 Il n'est pas encore sur main : trois migrations de production doivent être

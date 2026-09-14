@@ -2,6 +2,7 @@
 
 import { playOnLightSurface, type WheelStyle } from "@/lib/wheel-style";
 import type { ClaimConfig } from "../claim-form";
+import type { PlayLimit } from "@/types/database";
 import { SkillGameShell } from "../skill-game-shell";
 import { RpsChallenge } from "./rps-challenge";
 
@@ -20,6 +21,7 @@ export function RpsExperience({
   claimConfig = { collectEmail: true, collectPhone: false, codeTtlSeconds: null },
   style,
   shareEnabled,
+  playLimit = null,
 }: {
   slug: string;
   organizationName: string;
@@ -29,6 +31,8 @@ export function RpsExperience({
   style: WheelStyle;
   /** Le commerçant propose-t-il le partage du jeu après la partie ? */
   shareEnabled: boolean;
+  /** Limite de participation annoncée au joueur (`wheels.play_limit`). */
+  playLimit?: PlayLimit | null;
 }) {
   const kermesse = playOnLightSurface(style);
 
@@ -41,6 +45,7 @@ export function RpsExperience({
       claimConfig={claimConfig}
       style={style}
       shareEnabled={shareEnabled}
+      playLimit={playLimit}
       gameType="rps"
       renderChallenge={(_challenge, submit, pending) => (
         <RpsChallenge onSubmit={submit} pending={pending} kermesse={kermesse} />

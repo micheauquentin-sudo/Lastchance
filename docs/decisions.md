@@ -1480,7 +1480,8 @@ d'origine bit pour bit : un championnat existant ne voit aucune différence.
 
 ## ADR-039 : Place de marché de campagnes — catalogue en code, modèles privés en base
 **Date** : 2026-07-25
-**Status** : Accepted — **construit et validé, NON POUSSÉ / NON DÉPLOYÉ à ce jour**
+**Status** : Accepted — construit et validé, poussé et livré depuis (migration
+`20260802120000`, loin derrière la tête `20261220120000` ; vérifié 2026-09-14)
 **Context** : demande client — un commerçant qui crée une campagne part d'une page
 blanche et doit tout paramétrer (visuel, mécanique, textes, lots, règles, durée).
 Il doit pouvoir partir d'un MODÈLE. Dix modèles étaient demandés :
@@ -1617,10 +1618,10 @@ sont fermés par construction plutôt que par du contrôle. Tout le reste réuti
 l'existant tel quel (éditeur de campagne, éditeur de lots, roue, thèmes).
 
 **Consequences** :
-- **NON POUSSÉ / NON DÉPLOYÉ** — les 5 commits (`ed50271` → `4457b20`) sont
-  LOCAUX et la migration `20260802120000` n'est pas appliquée en production.
-  EXPECTED_MIGRATION vaut déjà `20260802120000` : il faudra pousser migration et
-  code ensemble. C'est le seul chantier du projet dans cet état.
+- **Poussé et livré depuis** — les 5 commits (`ed50271` → `4457b20`) sont sur
+  `origin/main` et la migration `20260802120000` est loin derrière la tête
+  actuelle (`20261220120000`, vérifié 2026-09-14) : appliquée en production
+  depuis longtemps.
 - **Résidus assumés** (revue GO, suivi docs/bugs.md, priorité basse) :
   - un blueprint **PRIVÉ** peut décrire une roue sans lot perdant ou à gagnant
     illimité — le CATALOGUE, lui, respecte ADR-031 (testé). Pas une escalade : le
@@ -1653,8 +1654,9 @@ l'existant tel quel (éditeur de campagne, éditeur de lots, roue, thèmes).
 
 ## ADR-040 : Créateur de quiz — module DÉDIÉ, 4 formes de réponse, 5 modes de récompense
 **Date** : 2026-07-25
-**Status** : Accepted — **construit, QA verte, revue sécurité passée de « GO
-conditionnel » à corrigé ; NON POUSSÉ / NON DÉPLOYÉ à ce jour**
+**Status** : Accepted — construit, QA verte, revue sécurité passée de « GO
+conditionnel » à corrigé ; poussé et livré depuis (migration `20260803120000`,
+loin derrière la tête `20261220120000` ; vérifié 2026-09-14)
 **Context** : demande client — un **créateur de quiz** jouable depuis un QR ou un
 lien, en LIBRE-SERVICE. Usages visés : restaurant (questions sur la cuisine),
 cave / bar (dégustation), salon professionnel (les exposants), boutique
@@ -1847,12 +1849,10 @@ produit (7 modèles, et plus demain) par le CATALOGUE d'interface, pas par le
 schéma.
 
 **Consequences** :
-- **NON POUSSÉ / NON DÉPLOYÉ** — les 6 commits (`cb92b19` → `fe1e57b`) sont
-  LOCAUX et la migration `20260803120000` n'est pas appliquée en production.
-  `EXPECTED_MIGRATION` vaut déjà `20260803120000` : migration et code devront
-  être poussés ensemble. C'est **le seul chantier du projet dans cet état** ; la
-  place de marché de campagnes (ADR-039), qui l'était encore le 2026-07-25, a
-  depuis été poussée.
+- **Poussé et livré depuis** — les 6 commits (`cb92b19` → `fe1e57b`) sont sur
+  `origin/main` et la migration `20260803120000` est loin derrière la tête
+  actuelle (`20261220120000`, vérifié 2026-09-14) : appliquée en production
+  depuis longtemps ; comme la place de marché de campagnes (ADR-039).
 - **Un défaut de PRODUCTION a été corrigé au passage** (`b483740`, hors périmètre
   du quiz) : la base portait **8 addons**, le back-office n'en exposait que **6**
   et `src/lib/admin/data.ts` ne LISAIT même pas les deux manquantes. Conséquence
@@ -1988,10 +1988,10 @@ montant commercial non validé n'est codé dans l'application.
 ## ADR-043 : Encaissement en caisse — module unifié à 9 sources, une seule colonne de vérité (`redeemed_at`), TTL divergent par famille
 **Date** : 2026-07-25
 **Status** : Accepted — commité sur `main` (commits `e310606` → `f873b77`,
-migration `20260804120000`, `EXPECTED_MIGRATION` bumpé) mais **NON POUSSÉ au
-2026-07-25** (`origin/main` = `eb3193d`), donc migration non appliquée en
-production. **Les assertions pgTAP n'ont jamais été exécutées** (ni Docker ni CLI Supabase disponibles) : elles ne
-seront prouvées qu'au job `database-security` de la CI.
+migration `20260804120000`) et **poussé et livré depuis** — la migration est
+loin derrière la tête actuelle (`20261220120000`, vérifié 2026-09-14),
+appliquée en production depuis longtemps. Les assertions pgTAP ont depuis été
+exécutées à de nombreuses reprises en CI (`database-security`).
 
 **Context** : les pronostics émettaient déjà un code de retrait. `finalize_contest`
 pose `contest_awards.code` au format `PRONO-…`, le joueur le voit sur
@@ -11415,3 +11415,63 @@ tranche), 7 sur `src/lib/spin-nonce.ts` dont le stockage qui lève, et une garde
 de population sur les trois shells. Mutation-testés : 9 des 10 premiers
 rougissent au retrait de `p_idempotency_key`, et le test d'`outcomeUnknown`
 rougit au retrait du drapeau.
+
+## ADR-183 — Effacer le cookie anonyme reste possible : le blocker n°1 de l'audit release gate est refusé, la véracité du libellé était le vrai défaut
+
+**Date** : 2026-09-14
+**Statut** : Accepté
+
+**Contexte** : un audit de release gate classe BLOQUANTE la contournabilité de
+`play_limit` par effacement du cookie `lc-anonymous-player` — un joueur qui
+supprime son cookie se présente au tirage suivant comme un nouveau joueur, et
+peut donc rejouer indéfiniment un module annoncé « un jeu par personne ». La
+recommandation implicite d'un tel classement est un ancrage par IP.
+
+**Décision** : NE PAS border `play_limit` par IP. Le mécanisme reste identique
+à avant ce chantier — un cookie anonyme, contournable par qui l'efface. Ce qui
+a changé (`a530efb7`) est le LIBELLÉ : `src/lib/limite-participation.ts`
+fabrique désormais un texte qui dit ce que la garde fait réellement, câblé
+jusqu'aux 4 écrans de jeu via les 13 enveloppes de
+`src/components/wheel/games/`, plutôt qu'une phrase fixe.
+
+**Justification** : border par IP est activement FAUX pour ce produit — la
+roue se joue depuis le Wi-Fi d'un commerce, où tous les vrais clients
+partagent une adresse (fond d'ADR-032, `docs/decisions.md:795` : un seau
+`failClosed` sur une clé partagée dans un parcours public est un
+INTERRUPTEUR, pas une garde). ADR-178 a déjà rouvert PARTIELLEMENT cette
+règle pour un plafond de DÉBIT large et fail-open sur l'IP (1500/min/roue) —
+pas pour distinguer les joueurs d'un même réseau entre eux, ce qu'un ancrage
+IP par personne ferait à coup sûr.
+
+Le défaut réel n'était pas le mécanisme mais le DISCOURS, sur deux points :
+« un jeu par personne » s'affichait INCONDITIONNELLEMENT, donc était faux dès
+qu'une campagne était configurée en `play_limit = 'unlimited'` (le cas que
+ADR-175 borne côté reflex/gauge, sans toucher au texte affiché) ; et
+« personne » désignait en réalité un APPAREIL (le cookie), pas un individu —
+deux personnes au même foyer sur le même téléphone partagent une seule
+tentative, deux navigateurs du même joueur en donnent deux. `a530efb7`
+corrige les deux : le libellé distingue désormais illimité/limité et dit
+« appareil », pas « personne ».
+
+**Ce qui reste la voie d'ancrage fort, et continue d'être recommandé** :
+quand un commerçant veut une vraie garantie par personne sur un lot de
+valeur, elle existe déjà et n'est pas remise en cause ici — le Ticket d'Or
+remis au comptoir (`src/lib/ticket-or.ts`, vérification humaine à la
+restitution) et le refus SERVEUR des lots ≥ 20 € sur identité faible
+(`src/lib/lot-forte-valeur.ts`). C'est la ligne que documentait déjà
+ADR-175 (dette de fond « rotation du cookie anonyme ») et ADR-178 (le
+plafond IP rend la rotation coûteuse, pas l'identité fiable) — reprise sans
+changement dans `docs/bugs.md`, entrée « rotation du cookie anonyme :
+`play_limit` reste contournable », qui reste OUVERTE en tant que décision
+produit assumée.
+
+**Conséquences** : `play_limit` continue de décrire une limite par APPAREIL,
+pas par personne, et le reste tant qu'aucune identité forte n'est demandée au
+joueur. Un lot de valeur unitaire élevée ne doit pas être adossé à `play_limit`
+seul — c'est déjà la règle écrite dans `docs/bugs.md` et elle n'a pas bougé.
+Ce chantier ferme l'écart entre ce que l'interface promettait et ce que le
+système garantit, pas l'écart entre ce que le système garantit et une identité
+vérifiée — ce second écart reste un choix produit, pas un oubli.
+
+**Vérifications** : suite `limite-participation`/`skill`/`campaign-templates`,
+typecheck, eslint.
