@@ -473,3 +473,41 @@ ci-dessus qui fait foi, pas celui du §4.
 - Slugs inconnus : chaque slug invalide crée une entrée de cache ISR
   30 s (page « Oups »). Bruit borné (petites entrées, expiration), à
   surveiller si un scan massif d'URLs apparaît dans les logs.
+
+---
+
+## Banc soirée live 100 / 250 / 500 — mesure locale du 2026-09-14
+
+Un release gate a classé « aucune capacité réelle de production à 100/250/500
+joueurs simultanés n'est certifiée ». Le banc a été **joué** plutôt que laissé
+en constat : `scripts/bench-event-local.sh`, sur build de production, base
+Supabase locale réelle, SHA `4afc42e1`.
+
+Chaque palier ouvre **autant de workers HTTP que de joueurs**, tous frappant
+`getEventState` sans temps mort. C'est plus dur que le parcours réel, où le
+navigateur retombe sur un sondage toutes les 2,5 s.
+
+| Joueurs simultanés | req/s | p50 | p95 | p99 | max | erreurs |
+|---|---|---|---|---|---|---|
+| 100 | 46 | 1 001 ms | 8 535 ms | 8 828 ms | 8 892 ms | **0,0 %** |
+| 250 | 52 | 1 258 ms | 10 992 ms | 11 448 ms | 11 537 ms | **0,0 %** |
+| 500 | 60 | 3 397 ms | 14 271 ms | 14 810 ms | 14 996 ms | **0,0 %** |
+
+**Ce que cela prouve.** La correction tient sous charge : aucune requête perdue,
+aucune erreur, à aucun palier. Le débit ne s'effondre pas — il monte encore
+légèrement de 100 à 500, signe que la file absorbe au lieu de rompre.
+
+**Ce que cela ne prouve PAS, et il faut le dire.** Ce n'est pas une
+certification de production. La mesure vient d'une seule machine qui porte à la
+fois Next.js, Postgres et les 500 clients ; la latence observée est donc
+largement celle de cette contention locale, pas celle de Vercel `fra1` devant
+Supabase. Les colonnes « région » et « cache HIT » sont vides pour la même
+raison. La p95 à 8,5 s dès 100 joueurs est un plafond de banc, pas un chiffre
+de production — mais elle n'est pas non plus réfutée par ce banc.
+
+**Pourquoi la production n'a pas été mesurée.** `scripts/capacity-bench.mjs`
+**refuse délibérément** une cible qui ressemble à un hôte de production
+(`scripts/capacity-bench.mjs:126`). Certifier la capacité réelle demande donc
+un banc contre un déploiement de préproduction porté par la même
+infrastructure, et une décision explicite du propriétaire — pas un contournement
+de cette garde.
