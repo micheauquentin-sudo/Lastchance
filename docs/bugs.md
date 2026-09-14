@@ -2,25 +2,30 @@
 
 ## Notes
 
-- **2026-09-13 — livraison V1.78 non fusionnée.** Deux défauts applicatifs sont
-  corrigés sur `chantier/reliquats-post-production` : le budget n'était débité
-  qu'au claim (course possible entre gains simultanés), et les équipes sportives
-  inconnues produisaient `hsl(...)` alors que la contrainte SQL exige
-  `#RRGGBB`. Les tests et builds locaux sont verts. La livraison reste bloquée
-  par l'ordre migration-avant-code : production au head `20261215120000`, lot
-  attendu au head `20261219120000`.
+- **2026-09-13 — livraison V1.78 : FUSIONNÉE depuis (PR #375, `4afc42e1`).**
+  Note d'origine périmée : elle disait la livraison bloquée en attente de
+  fusion ; elle est fusionnée sur `main`, migrations commitées jusqu'à
+  `20261220120000` (218). Contenu applicatif d'origine conservé : le budget
+  n'était débité qu'au claim (course possible entre gains simultanés), et les
+  équipes sportives inconnues produisaient `hsl(...)` alors que la contrainte
+  SQL exige `#RRGGBB` — les deux corrigés.
 - **2026-09-14 — préflight budget : ACL trop large corrigée avant production.**
   Le re-grant historique de `campaigns` laissait un éditeur authentifié écrire
   `budget_spent_cents`. Un PATCH direct pouvait remettre le compteur à zéro et
   rendre du budget aux tirages. La migration `20261219120000` retire uniquement
   ce droit ; le plafond marchand reste éditable et un contre-test joue l'attaque
   sous un vrai rôle `authenticated`.
-- **2026-09-13 — incidents externes encore ouverts.** Le healthcheck Vercel
-  répond `503` pendant que les workers reçoivent des `Gateway Timeout` depuis
-  l'API Supabase ; la base elle-même est saine et non saturée, et le statut
-  Supabase signale l'API Gateway dégradée. `lastchance.app` sert toujours un
-  parking GoDaddy au lieu du déploiement Vercel. Google Wallet n'est pas
-  activable sans les trois identifiants d'émetteur absents de Vercel.
+- **2026-09-14 — réponse au release gate : quatre points restent hors dépôt,
+  vérifiés à cette date.** (1) DNS : `lastchance.app` sert toujours un parking
+  GoDaddy, `app.lastchance.app` est NXDOMAIN, et la production annonce
+  `lastchance-mu.vercel.app` comme domaine canonique dans robots.txt/sitemap
+  via `NEXT_PUBLIC_APP_URL` (`src/lib/env.ts:18-19`, 79 consommateurs, figée à
+  la compilation) — corriger le DNS seul sans rebuild laisserait QR codes et
+  e-mails publier l'ancienne adresse. (2) Google Wallet : les trois
+  `GOOGLE_WALLET_*` restent absentes de Vercel Production ; `npm run
+  wallet:verify:google` existe pour vérifier une fois posées. (3)
+  `CRON_SECRET` toujours absent des secrets GitHub — voir entrée dédiée
+  plus bas. (4) Capacité live : mesure locale seulement, voir entrée VEN-2.
 
 - **2026-08-19 — `event-remote-cycle.spec.ts` sous mobile-safari : timeout
   global, pas une attente précise.** Run CI 32206711952 (SHA 41c7345,
@@ -3496,7 +3501,7 @@ révélation, serveur-autoritatif) était passée sans bloquant et est déployé
   deux portes : (a) `unlimited` INTERDIT pour les jeux à secret (verrou produit +
   sécurité) ; (b) `succeeded` retiré de la réponse cliente.
 
-### Pronostics génériques — revue sécurité (2026-07-24, NON DÉPLOYÉ)
+### Pronostics génériques — revue sécurité (2026-07-24, livré depuis)
 
 Verdict : **NO-GO conditionnel → 2 findings de non-régression corrigés → GO**
 (`f3c5752`), QA verte. Le volet générique était GO franc (verrouillage
@@ -3504,10 +3509,10 @@ serveur-autoritatif sérialisé sous `for update`, non-fuite du résultat démon
 sur un point de passage unique `publicCorrectAnswer`, validation de forme en base,
 multi-tenant, ADR-032). Le blocage portait entièrement sur la NON-RÉGRESSION
 football. Voir ADR-038. **Au 2026-07-24 le chantier était construit et validé mais
-NON POUSSÉ ; au 2026-07-25 ses 8 commits sont présents sur `origin/main`** —
-l'application effective de la migration `20260801120000` en production n'a pas été
-revérifiée. Le seul chantier NON POUSSÉ est désormais la place de marché de
-campagnes (ci-dessous).
+NON POUSSÉ ; au 2026-07-25 ses 8 commits sont présents sur `origin/main`**.
+↳ **Livré depuis, vérifié le 2026-09-14** : la migration `20260801120000` est
+loin derrière la tête actuelle (`20261220120000`, 218 migrations) — appliquée
+en production depuis longtemps, comme toute migration antérieure au head.
 
 - **Backfill `locks_at = kickoff_at` figeant la fenêtre des matchs (ÉLEVÉ)** —
   trouvé/résolu 2026-07-24 (`f3c5752`). La migration recopiait `kickoff_at` dans
@@ -3529,14 +3534,16 @@ campagnes (ci-dessous).
   côté UI le champ est masqué pour le modèle football. Test pgTAP « date par
   défaut ignorée » + 5 tests TS.
 
-### Place de marché de campagnes — revue sécurité (2026-07-25, NON DÉPLOYÉ)
+### Place de marché de campagnes — revue sécurité (2026-07-25, livré depuis)
 
 Verdict : **GO, 0 finding bloquant — 1 MOYEN corrigé** (`4457b20`), QA verte. Les
 trois invariants d'innocuité (brouillon inerte, aucun envoi, multi-tenant par la
 session) tiennent et sont vérifiés sur l'ACTION, seul endroit qui écrit. Voir
 ADR-039. Chantier construit et validé, **poussé sur `origin/main` le 2026-07-25**
-(5 commits `ed50271` → `4457b20`) ; l'application effective de la migration
-`20260802120000` en production n'a pas été revérifiée.
+(5 commits `ed50271` → `4457b20`).
+↳ **Livré depuis, vérifié le 2026-09-14** : la migration `20260802120000` est
+loin derrière la tête actuelle (`20261220120000`, 218 migrations) — appliquée
+en production depuis longtemps, comme toute migration antérieure au head.
 
 - **Secrets des jeux de défi lisibles par un CAISSIER via le blueprint d'un
   modèle privé (MOYEN)** — trouvé/résolu 2026-07-25 (`4457b20`). Le blueprint
@@ -3557,16 +3564,17 @@ ADR-039. Chantier construit et validé, **poussé sur `origin/main` le 2026-07-2
   `security_acl.test.sql`. INFO du même correctif : `budget_cents` en `min(1)`
   (le CHECK SQL `campaigns.budget_cents > 0` rejetait un 0 accepté par Zod).
 
-### Créateur de quiz — revue sécurité (2026-07-25, NON POUSSÉ / NON DÉPLOYÉ)
+### Créateur de quiz — revue sécurité (2026-07-25, livré depuis)
 
 Verdict : **GO CONDITIONNEL → tout corrigé** (`fe1e57b`) — 1 ÉLEVÉ bloquant,
 1 ÉLEVÉ, 3 MOYEN, QA verte (1116 tests ✓). Les six invariants du module
 (non-fuite de la bonne réponse en 3 couches, chronomètre serveur inforgeable,
 réponse unique et immuable, tirage idempotent, stock fini obligatoire,
-multi-tenant / ADR-032) ont été confirmés SAINS. Voir ADR-040. **Chantier
-construit et validé mais NON POUSSÉ / NON DÉPLOYÉ** (6 commits locaux `cb92b19` →
-`fe1e57b`, migration `20260803120000` non appliquée en production) — seul chantier
-du projet dans cet état.
+multi-tenant / ADR-032) ont été confirmés SAINS. Voir ADR-040. Chantier
+construit et validé (6 commits `cb92b19` → `fe1e57b`).
+↳ **Livré depuis, vérifié le 2026-09-14** : la migration `20260803120000` est
+loin derrière la tête actuelle (`20261220120000`, 218 migrations) — appliquée
+en production depuis longtemps.
 
 - **Lot émis SANS aucune réponse en mode `instant` (ÉLEVÉ, BLOQUANT)** —
   trouvé/résolu 2026-07-25 (`fe1e57b`). `finish_quiz` calculait `v_answered` mais
@@ -3653,10 +3661,13 @@ remettre le lot**. Voir ADR-043. Commits `e310606` → `f873b77` sur `main`.
   C'est le trou réel du chantier. Les 1 147 tests unitaires, le typecheck, le
   lint et le build ont bien été exécutés et sont verts.
 
-### Méta-progression — revue sécurité (2026-07-26, NON POUSSÉ)
+### Méta-progression — revue sécurité (2026-07-26, livré depuis)
 
 Verdict : **GO conditionnel**, **aucun CRITIQUE ni ÉLEVÉ**. Voir ADR-044.
 Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
+↳ **Livré depuis, vérifié le 2026-09-14** : `chantier/audit-3` est fusionné et
+ses migrations sont loin derrière la tête actuelle (`20261220120000`, 218
+migrations) — appliquées en production depuis longtemps.
 
 - **Seau `failClosed` composé sur un `organizationId` fourni par le client
   (MOYEN, M1)** — trouvé/résolu 2026-07-26. Chaque UUID inventé par un
@@ -4849,6 +4860,13 @@ Commits `8a4324f` → `793100a` sur `chantier/audit-3`.
     des trois est tombé, et il faudra aller le chercher à la main. Geste
     propriétaire : poser le secret `CRON_SECRET` dans le dépôt GitHub avec la
     valeur déjà en service côté Vercel.
+    ↳ **Toujours ABSENT, vérifié le 2026-09-14.** Le run `34789893078` du
+    même workflow montre encore `CRON_SECRET:` vide dans l'environnement du
+    runner, et un échec HTTP 503 (« Production non saine ») sans pouvoir dire
+    lequel des trois volets était tombé (2026-09-13 23:30). Les trois runs
+    suivants (2026-09-14, 01:39/07:08/14:14) sont verts : incident transitoire,
+    resté indiagnosticable faute du secret. Rien de codé ne peut fermer ce
+    point — geste propriétaire uniquement.
 
 - **Dix branches `chantier/*` encore sur `origin`**, alors que `CLAUDE.md`
   affirmait « aucune branche de chantier » — constaté 2026-08-22 (audit des
@@ -5486,6 +5504,12 @@ la pile visée, dos à dos, un seul build et un seul état de base ; (2) mettre 
 jour `docs/perf-report.md` §7 avec la mesure neuve ; (3) refaire les cinq
 points de la dérivation sur `PlanLimits` — c’est seulement là que 250 (ou
 autre chose) deviendra une capacité qualifiée.
+
+↳ **Toujours OUVERT, vérifié le 2026-09-14.** Le banc local 100/250/500
+(`scripts/capacity-bench.mjs`) tourné pendant la réponse au release gate
+mesure la pile locale et refuse délibérément une cible de production
+(`:126`) — à consigner comme mesure locale, jamais comme certification de la
+capacité en production.
 
 **Divergence assumée avec la base.** `event_participant_capacity()` accorde
 toujours 500 à `live`/`full` : le catalogue promet donc MOINS que ce que le
