@@ -18,8 +18,13 @@
  *
  * Le mécanisme, lui, n'est PAS à corriger : borner par IP couperait le Wi-Fi
  * partagé d'un commerce entier (ADR-032, ADR-175, ADR-178). C'est la PHRASE qui
- * doit dire ce que le code fait — « appareil », et seulement quand une limite
+ * doit dire ce que le code fait — « navigateur », et seulement quand une limite
  * existe.
+ *
+ * Et « navigateur », PAS « appareil » : un cookie est de portée navigateur. Un
+ * second navigateur, une fenêtre privée ou un second profil du MÊME téléphone
+ * portent des identités différentes. Dire « par appareil » surpromettrait donc
+ * exactement comme « par personne », en plus petit.
  *
  * ── MODULE PUR, SANS IMPORT DE VALEUR ──
  *
@@ -40,7 +45,7 @@ import type { PlayLimit } from "@/types/database";
  * le commerçant ne doit pas lire deux descriptions différentes de la même
  * limite selon l'écran où il se trouve.
  */
-export const PHRASE_LIMITE_PAR_APPAREIL =
+export const PHRASE_LIMITE_PAR_NAVIGATEUR =
   "Cette limite repose sur le navigateur du joueur : en effaçant ses données, il peut rejouer.";
 
 /**
@@ -53,9 +58,9 @@ export const PHRASE_LIMITE_PAR_APPAREIL =
  * mention disparaît, et la ligne se referme sur ce qui reste vrai.
  */
 const PHRASES: Record<PlayLimit, string | null> = {
-  once: "un seul jeu par appareil",
-  daily: "un jeu par jour et par appareil",
-  weekly: "un jeu par semaine et par appareil",
+  once: "un seul jeu par navigateur",
+  daily: "un jeu par jour et par navigateur",
+  weekly: "un jeu par semaine et par navigateur",
   unlimited: null,
 };
 
