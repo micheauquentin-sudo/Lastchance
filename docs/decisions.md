@@ -11487,7 +11487,9 @@ typecheck, eslint.
 ## ADR-184 — La garde de valeur des tours offerts est applicative, composée comme la publication, posée avant la RPC
 
 **Date** : 2026-09-15
-**Statut** : Accepté
+**Statut** : Supplanté partiellement par ADR-185 pour la couche SQL et les
+tours offerts ; les gardes applicatives et leur ordre avant RPC restent
+acceptés.
 
 **Contexte** : un second passage du release gate confirme le constat de
 l'audit — `lotInterditAvecIdentiteFaible` manquait sur les cinq chemins de
@@ -11532,3 +11534,47 @@ oubli, au même titre que pour `perform_atomic_spin`.
 **Vérifications** : suite ciblée sur les cinq tours offerts et sur
 `updatePrize`/`controleLotsAvantPublication` (test rejoué contre l'ancienne
 logique : rouge, puis vert), typecheck, lint, build.
+
+
+## ADR-185 — L'invariant de valeur est transactionnel ; les données historiques restent intactes mais leurs tours offerts échouent fermés
+
+**Date** : 2026-09-15
+**Statut** : Accepté
+
+**Contexte** : le contre-audit d'ADR-184 a démontré deux courses que la garde
+applicative seule ne ferme pas. Une revalorisation peut gagner entre la lecture
+de `updatePrize` et son écriture, et le scheduler peut armer une campagne sûre
+puis l'activer après qu'un lot a été rendu interdit. Le préflight production en
+lecture seule compte aussi 22 lots tirables à valeur inconnue ou `>= 20 €`,
+répartis sur 7 campagnes déjà actives. Les suspendre automatiquement aurait un
+impact marchand qui n'est pas autorisé par une livraison de code.
+
+**Décision** : la migration `20261221120000` impose l'état futur en base. Les
+mutations de `campaigns`, `wheels` et `prizes` prennent les verrous parents dans
+un ordre stable puis une contrainte différée valide l'état final ; activation
+manuelle et scheduler refusent toute campagne interdite. Les cinq sources de
+tours offerts (`calendar`, `loyalty`, `quiz`, `referral`, `reserver_wait`) sont
+en plus gardées au `BEFORE INSERT` de `spins`. Ce point commun est exécuté avant
+la validation du grant ; une exception annule aussi le décrément de stock et le
+reste de la RPC. Les 22 lignes historiques ne sont ni modifiées ni suspendues :
+leurs gardes applicatives restent en place et leurs tours offerts échouent
+fermés dans PostgreSQL.
+
+**Justification** : `service_role` n'est pas un acteur public, mais c'est bien
+le rôle utilisé par les actions serveur. Dire qu'il « possède déjà la base » ne
+répond donc ni à une course entre deux actions légitimes, ni à la parité entre
+RPC équivalentes. Une contrainte centrale évite cinq copies divergentes et le
+trigger commun protège les données historiques sans mutation commerciale.
+
+**Conséquences** : un marchand ne peut plus publier, planifier, revaloriser,
+réapprovisionner ou relier un lot qui rendrait une campagne active incompatible
+avec l'identité navigateur. Un joueur ne perd pas un tour offert sur une
+configuration historique interdite : toute la transaction est annulée. Les 7
+campagnes historiques doivent être régularisées par décision produit, mais ne
+constituent plus un chemin de consommation silencieuse des cinq grants.
+
+**Vérifications** : replay LF des 219 migrations ; pgTAP ciblé 24/24 sur base
+vide puis semée ; suite CI SQL 109 fichiers / 6 586 tests ; vraie RPC Calendar
+avec rollback conjoint stock/grant/spin ; quatre courses PostgreSQL à deux
+sessions (activation contre revalorisation, insert et relink, scheduler contre
+revalorisation), une seule transaction admise et postcondition interdite à 0.

@@ -4,6 +4,29 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-15 — Reprise Codex : invariant atomique de valeur, ADR-185
+
+La reprise du lot Claude a démontré que les gardes applicatives d'ADR-184
+laissaient deux courses : une revalorisation concurrente avec `updatePrize`, et
+une activation planifiée après modification du catalogue. Le correctif ajoute
+la migration `20261221120000` : verrous parents ordonnés, contraintes différées
+sur campagnes/roues/lots, revalidation du scheduler et garde commune au
+`BEFORE INSERT` de `spins` pour les cinq sources offertes. Une vraie RPC
+Calendar prouve que le refus annule ensemble le stock, le spin et le grant.
+
+Le préflight production en lecture seule a trouvé 22 lots interdits dans 7
+campagnes actives. Aucune donnée commerciale n'a été modifiée ou suspendue. Le
+garde SQL des tours offerts protège ces lignes historiques ; l'invariant empêche
+la création de nouveaux états actifs interdits. ADR-185 supplante donc la
+partie « pas de SQL » d'ADR-184, sans retirer les gardes applicatives.
+
+**Preuves** : replay WSL LF des 219 migrations ; pgTAP ciblé 24/24 vide puis
+semé ; suite SQL CI 109 fichiers / 6 586 tests ; quatre courses deux sessions,
+une seule transaction admise et état final interdit à 0 ; types générés ;
+typecheck, lint sans erreur, casts:check, ciblé 206/206 et Vitest complet
+7 760/7 760, build Next 16 (66 pages) verts. Le lint conserve un avertissement
+préexistant hors lot dans `scripts/build-backdrop-frames.mjs`.
+
 ## 2026-09-15 — Second release gate : garde de valeur des tours offerts, ADR-184
 
 7 commits sur `main`, base `5a3d77eb` : `a197129a`, `4412826e`, `d6234811`,

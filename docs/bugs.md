@@ -2,6 +2,15 @@
 
 ## Notes
 
+- **2026-09-15 — courses de valeur d'ADR-184 fermées en base, legacy
+  inventorié sans mutation (ADR-185).** Le préflight production en lecture
+  seule compte 22 lots tirables à valeur inconnue ou `>= 20 €`, répartis sur 7
+  campagnes actives. Ils n'ont pas été suspendus ni réécrits. Les cinq tours
+  offerts échouent désormais dans PostgreSQL avant validation du grant, avec
+  rollback du stock/spin/grant ; les mutations futures et le scheduler ne
+  peuvent plus produire un nouvel état actif interdit. La régularisation
+  commerciale de ces 7 campagnes reste une décision produit distincte.
+
 - **2026-09-13 — livraison V1.78 : FUSIONNÉE depuis (PR #375, `4afc42e1`).**
   Note d'origine périmée : elle disait la livraison bloquée en attente de
   fusion ; elle est fusionnée sur `main`, migrations commitées jusqu'à

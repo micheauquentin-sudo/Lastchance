@@ -37,7 +37,43 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Reprise Codex — invariant atomique de valeur (2026-09-15)
+
+**Terrain.** Le lot du second release gate a été repris depuis la base
+`5a3d77eb` sur `chantier/release-gate-valeur-atomique`. Le contre-audit a
+démontré deux courses laissées par ADR-184 : `updatePrize` pouvait lire un état
+sûr puis écrire après une activation concurrente, et le scheduler pouvait
+activer une campagne dont le catalogue avait changé. La migration
+`20261221120000_campaign_prize_value_invariant.sql` centralise l'invariant :
+verrous parents ordonnés, contraintes différées sur campagnes/roues/lots,
+revalidation du scheduler et garde du `BEFORE INSERT` de `spins` pour
+`calendar`, `loyalty`, `quiz`, `referral` et `reserver_wait`. ADR-185.
+
+**Production observée, non modifiée.** Le préflight service-role en lecture
+seule compte 22 lots tirables à valeur inconnue ou `>= 20 €` dans 7 campagnes
+actives. Aucune ligne n'a été modifiée et aucune campagne n'a été suspendue. Le
+nouveau garde SQL refuse les cinq tours offerts avant validation du grant ; les
+gardes applicatives restent. La régularisation commerciale de ces campagnes
+est une décision produit séparée.
+
+**Fini quand.** Atteint localement : 219 migrations rejouées en WSL/LF ; pgTAP
+invariant 24/24 sur base vide puis semée ; liste CI 109 fichiers / 6 586 tests ;
+quatre courses PostgreSQL deux sessions avec une transaction refusée et zéro
+état actif interdit final ; types Supabase régénérés ; typecheck, lint sans
+erreur, casts:check, 206 tests ciblés, Vitest complet 7 760/7 760 et build Next
+16 (66 pages) verts. Reste au contrat de livraison : PR protégée, migration
+distante avant application, fusion puis six jobs requis et santé production sur
+le SHA exact.
+
+**Écarté.** Suspendre automatiquement les 7 campagnes historiques : impact
+commerçant non autorisé et données métier à ne pas réécrire silencieusement.
+Dupliquer la garde dans cinq grosses RPC : un trigger transactionnel commun sur
+leur insertion `spins` ferme le débit du grant avec une seule source de vérité.
+
 ## Second release gate — garde de valeur des tours offerts (2026-09-15)
+
+> État historique du lot Claude avant contre-audit. La décision « application
+> seulement » ci-dessous est supplantée par ADR-185 et par la section précédente.
 
 **Terrain.** 7 commits sur `main`, non poussés, base `5a3d77eb` : `a197129a`
 (`updatePrize` refuse d'aggraver un lot vers une valeur interdite sur

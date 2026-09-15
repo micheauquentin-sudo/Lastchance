@@ -1,5 +1,27 @@
 # Roadmap — Lastchance
 
+## V1.81 — Invariant atomique de valeur des lots (✅ 2026-09-15)
+
+**Objectif** : fermer les courses restantes d'ADR-184 entre garde applicative,
+revalorisation et activation planifiée, sans muter les données marchandes
+historiques. La migration `20261221120000` verrouille et valide en base les
+activations, inserts, revalorisations, réapprovisionnements et reliages de
+roues/lots. Le scheduler revalide chaque candidate sous verrou. Un garde commun
+au `BEFORE INSERT` de `spins` protège aussi les cinq sources de tours offerts et
+annule toute la RPC, grant compris. ADR-185 supplante la partie « application
+seulement » d'ADR-184.
+
+**Préflight production** : 22 lots interdits répartis sur 7 campagnes actives,
+inventoriés en lecture seule. Aucune campagne ni aucun lot n'a été suspendu,
+revalorisé ou supprimé. Ces lignes restent protégées par les gardes
+applicatives et, pour les cinq tours offerts, par le nouveau trigger SQL.
+
+**Preuves locales** : 219 migrations rejouées ; pgTAP invariant 24/24 sur base
+vide et semée ; liste SQL CI 109 fichiers / 6 586 tests ; quatre courses réelles
+à deux sessions avec un seul gagnant et zéro état actif interdit final ; types
+Supabase régénérés ; typecheck, lint sans erreur, casts:check, 206 tests ciblés,
+Vitest complet 7 760/7 760 et build Next 16 (66 pages) verts.
+
 ## V1.80 — Second release gate : garde de valeur des tours offerts (✅ 2026-09-15)
 
 **Objectif** : fermer le constat exact de l'audit — `lotInterditAvecIdentiteFaible`

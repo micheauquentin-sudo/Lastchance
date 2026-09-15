@@ -153,9 +153,19 @@ question n'a pas été posée.
 
 ## Last Updated
 - **Date**: 2026-09-15
-- **Dernier chantier**: **Second release gate** (7 commits, base `5a3d77eb` : `a197129a`…`17f0c5a2`, ADR-184). L'audit avait raison sur l'absence de garde de valeur aux cinq tours offerts ; l'enquête a trouvé deux trous de plus, dont un non vu par l'audit — `controleLotsAvantPublication` ne lisait que la première roue d'une campagne, pas la roue cible des tours offerts. Garde `estGagnantTirable && lotInterditAvecIdentiteFaible` posée AVANT la RPC (ADR-184, assumée applicative, pas SQL). ADR-183 corrigé : « navigateur », pas « appareil » ; Ticket d'Or nuancé (unicité par le geste du commerçant, pas la technique).
-  Migrations → `20261220120000` (218, inchangé). Verts : typecheck, lint, casts/sql/migrations:check, build, Vitest 7760/7760 (437 fichiers), `git diff --check` 0.
-  **Reste ouvert** : DNS, Google Wallet, `CRON_SECRET` GitHub, capacité live (`docs/bugs.md`).
+- **Dernier chantier**: **Reprise Codex du second release gate** (ADR-185). Le
+  contre-audit a démontré les courses `updatePrize`/activation et
+  scheduler/revalorisation laissées par la garde applicative d'ADR-184. La
+  migration `20261221120000` impose l'invariant sous verrous et contraintes
+  différées, et protège les cinq RPC offertes avant validation du grant. Le
+  préflight production compte 22 lots concernés dans 7 campagnes actives ;
+  aucune donnée commerciale n'a été modifiée ou suspendue.
+  Verts locaux : reset 219 migrations, pgTAP ciblé 24/24 vide et semé, pgTAP CI
+  109 fichiers / 6 586 tests, quatre courses deux sessions, types générés,
+  typecheck, lint sans erreur, casts:check, ciblé 206/206, Vitest 7 760/7 760,
+  build Next 16 (66 pages).
+  **Reste ouvert** : régularisation commerciale des 7 campagnes legacy, DNS,
+  Google Wallet, `CRON_SECRET` GitHub, capacité live (`docs/bugs.md`).
 > **L'historique complet des chantiers vit dans [`docs/journal.md`](./docs/journal.md).**
 > Il en a été extrait le 2026-08-05 : il pesait **39 062 tokens sur les 42 971 de
 > ce fichier — 91 %** — et grossissait d'environ 5 500 tokens par chantier, payés
