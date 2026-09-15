@@ -60,6 +60,10 @@ values
   ('ef000000-0000-4000-8000-000000000008', 'ef000000-0000-4000-8000-000000000001',
    'ef000000-0000-4000-8000-000000000006', 'Perdu (jamais tiré)', 0, true, 1, null);
 
+update public.prizes set value_cents = 500
+ where wheel_id = 'ef000000-0000-4000-8000-000000000006'
+   and not is_losing;
+
 -- Programme actif : seuil 3, plafond 10, fenêtre 30 j. PARRAIN = spin (stock
 -- illimité, borné par la roue), FILLEUL = lot (stock 1 → out_of_stock au 2e),
 -- COFFRE = lot (stock 5).
@@ -485,6 +489,13 @@ values
    'ef000000-0000-4000-8000-0000000000e2', 'Lot à stock fini', 100, false, 0, 25),
   ('ef000000-0000-4000-8000-0000000000e5', 'ef000000-0000-4000-8000-000000000001',
    'ef000000-0000-4000-8000-0000000000e2', 'Perdu (poids 0)', 0, true, 1, null);
+
+update public.prizes set value_cents = 500
+ where wheel_id in (
+   'ef000000-0000-4000-8000-0000000000e1',
+   'ef000000-0000-4000-8000-0000000000e2',
+   'ef000000-0000-4000-8000-0000000000e9'
+ ) and not is_losing;
 
 insert into public.referral_programs (id, campaign_id, organization_id, enabled)
 values ('ef000000-0000-4000-8000-0000000000e6',

@@ -58,6 +58,10 @@ values
   ('ca000000-0000-4000-8000-000000000008', 'ca000000-0000-4000-8000-000000000001',
    'ca000000-0000-4000-8000-000000000006', 'Perdu (jamais tiré)', 0, true, 1, null);
 
+update public.prizes set value_cents = 500
+ where wheel_id = 'ca000000-0000-4000-8000-000000000006'
+   and not is_losing;
+
 -- Calendrier principal actif : day_count=3, cases content / lot / spin toutes
 -- ouvrables. unlock_at = DÉBUT du jour civil Europe/Paris (pas `now() - 1h`) :
 -- calendar_reminder_targets filtre les cases « qui se déverrouillent AUJOURD'HUI »

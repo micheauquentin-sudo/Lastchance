@@ -27,11 +27,11 @@
  *
  * ── CE QU'IL NE FAIT PAS, ET C'EST DÉLIBÉRÉ ───────────────────────
  *
- * Il n'INTERDIT rien. Aucun `addIssue` ne s'appuie dessus, ni dans
- * `updateWheelSchema` ni ailleurs : des campagnes tournent aujourd'hui chez des
- * commerçants qui n'ont jamais vu cette règle, et un blocage rétroactif les
- * casserait sans préavis pour un risque que le stock des lots borne déjà. C'est
- * un AVERTISSEMENT — le commerçant reste seul juge de son économie.
+ * Il ne décide aucun droit à lui seul : il expose le prédicat pur et les
+ * messages partagés. Les actions serveur l'utilisent pour refuser les
+ * mutations dangereuses, tandis que l'invariant PostgreSQL ferme les courses
+ * entre lecture et écriture. Le commerçant garde le choix entre renseigner une
+ * valeur sous le seuil et utiliser un parcours à identité vérifiée.
  *
  * L'ancrage d'éligibilité que la règle appelle en creux existe par ailleurs :
  * le Ticket d'Or (`src/lib/ticket-or.ts`), remis au comptoir, tiré une fois,
@@ -63,9 +63,8 @@ export interface LotValeurUnitaire {
   /**
    * `number | null` — la colonne est nullable (`prizes.value_cents`). Un lot
    * dont la valeur n'est pas renseignée n'est pas un lot « sans valeur » : c'est
-   * un lot dont on NE SAIT RIEN. On n'avertit pas sur une inconnue, sous peine
-   * de peindre en rouge la moitié des roues existantes, où la colonne n'a
-   * jamais été remplie.
+   * un lot dont on NE SAIT RIEN. Le verdict échoue donc fermé tant que cette
+   * valeur n'est pas renseignée.
    */
   value_cents: number | null;
   is_losing: boolean;

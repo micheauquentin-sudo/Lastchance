@@ -63,6 +63,10 @@ values
   ('fa000000-0000-4000-8000-000000000008', 'fa000000-0000-4000-8000-000000000001',
    'fa000000-0000-4000-8000-000000000006', 'Perdu (jamais tiré)', 0, true, 1, null);
 
+update public.prizes set value_cents = 500
+ where wheel_id = 'fa000000-0000-4000-8000-000000000006'
+   and not is_losing;
+
 -- ══ Quiz 1 — mode threshold (3 bonnes réponses), stock FINI = 1 ══
 -- Les 7 modèles d'UI du besoin produit sur les 4 types moteur.
 insert into public.quizzes (

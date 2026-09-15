@@ -98,14 +98,17 @@ values ('f0b00000-0000-4000-8000-000000000005',
 
 -- Un SEUL lot gagnant par roue, à stock fini : le tirage devient déterministe
 -- et le stock devient une preuve comptable.
-insert into public.prizes (id, organization_id, wheel_id, label, stock, weight, is_active, is_losing)
+insert into public.prizes (
+  id, organization_id, wheel_id, label, stock, weight, is_active, is_losing,
+  value_cents
+)
 values
   ('f0b00000-0000-4000-8000-000000000010', 'f0b00000-0000-4000-8000-000000000001',
-   'f0b00000-0000-4000-8000-000000000003', 'Lot hebdo TAP', 5, 100, true, false),
+   'f0b00000-0000-4000-8000-000000000003', 'Lot hebdo TAP', 5, 100, true, false, 500),
   ('f0b00000-0000-4000-8000-000000000011', 'f0b00000-0000-4000-8000-000000000001',
-   'f0b00000-0000-4000-8000-000000000004', 'Lot unique TAP', 5, 100, true, false),
+   'f0b00000-0000-4000-8000-000000000004', 'Lot unique TAP', 5, 100, true, false, 500),
   ('f0b00000-0000-4000-8000-000000000012', 'f0b00000-0000-4000-8000-000000000001',
-   'f0b00000-0000-4000-8000-000000000005', 'Lot libre TAP', 10, 100, true, false);
+   'f0b00000-0000-4000-8000-000000000005', 'Lot libre TAP', 10, 100, true, false, 500);
 
 -- ── Le schéma porte bien la clé d'idempotence ────────────────
 select has_column('public', 'spins', 'idempotency_key',
@@ -332,6 +335,11 @@ insert into public.campaigns (id, organization_id, name, status, code_ttl_second
 values ('f0b00000-0000-4000-8000-000000000007',
         'f0b00000-0000-4000-8000-000000000006', 'Campagne Voisine', 'active', 300);
 
+-- Les ALTER TABLE ci-dessous exigent qu'aucun evenement de trigger differe ne
+-- reste en attente sur campaigns. Les fixtures actives sont maintenant sures,
+-- donc on peut forcer leur controle avant de demonter temporairement les FK.
+set constraints campaigns_prize_value_invariant, prizes_campaign_value_invariant immediate;
+
 alter table public.wheels drop constraint wheels_campaign_org_fk;
 alter table public.spins drop constraint spins_campaign_org_fk;
 -- La réservation budgétaire vérifie aussi la chaîne campagne/organisation.
@@ -348,9 +356,12 @@ values ('f0b00000-0000-4000-8000-000000000008',
         'f0b00000-0000-4000-8000-000000000001',
         'f0b00000-0000-4000-8000-000000000007', 'Roue rompue TAP', 'unlimited');
 
-insert into public.prizes (id, organization_id, wheel_id, label, stock, weight, is_active, is_losing)
+insert into public.prizes (
+  id, organization_id, wheel_id, label, stock, weight, is_active, is_losing,
+  value_cents
+)
 values ('f0b00000-0000-4000-8000-000000000013', 'f0b00000-0000-4000-8000-000000000001',
-        'f0b00000-0000-4000-8000-000000000008', 'Lot rompu TAP', 5, 100, true, false);
+        'f0b00000-0000-4000-8000-000000000008', 'Lot rompu TAP', 5, 100, true, false, 500);
 
 -- Le spin reste cohérent avec sa propre roue et son propre lot : c'est ce qui
 -- permet aux deux FK composites restantes de `spins` de tenir pendant que la
