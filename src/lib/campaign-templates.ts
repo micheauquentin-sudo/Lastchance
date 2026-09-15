@@ -408,7 +408,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
         {
           moment: "annonce",
           subject: "Un cadeau à ouvrir chaque jour jusqu'à Noël",
-          body: "Bonjour,\n\nChaque jour de décembre, un coffre vous attend en boutique : chocolats, remises, emballages offerts et bons d'achat. Une ouverture par jour et par personne.\n\nJoyeuses fêtes !",
+          body: "Bonjour,\n\nChaque jour de décembre, un coffre vous attend en boutique : chocolats, remises, emballages offerts et bons d'achat. Une ouverture par jour et par navigateur.\n\nJoyeuses fêtes !",
         },
         {
           moment: "gagnant",
@@ -489,7 +489,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
       visual: { preset: "fiesta" },
       game: { game_type: "memory", skill_config: null },
       prizes: [
-        winning("−20 % sur votre achat", "Notre remise d'anniversaire, une fois par personne.", "#ef4444", 20, 100),
+        winning("−20 % sur votre achat", "Notre remise d'anniversaire, une seule fois par navigateur.", "#ef4444", 20, 100),
         winning("Une part de gâteau offerte", "On souffle les bougies avec vous.", "#facc15", 25, 120),
         winning("Bon d'achat de 10 €", "Valable sur votre prochaine visite.", "#22c55e", 10, 50),
         winning("Le cadeau surprise", "Un lot choisi par l'équipe.", "#f97316", 5, 20),
@@ -700,7 +700,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
         {
           moment: "annonce",
           subject: "Les soldes commencent — et votre remise aussi",
-          body: "Bonjour,\n\nPendant toutes les soldes, tirez une carte en magasin et découvrez une remise supplémentaire. Une carte par semaine et par personne.\n\nÀ très vite en boutique !",
+          body: "Bonjour,\n\nPendant toutes les soldes, tirez une carte en magasin et découvrez une remise supplémentaire. Une carte par semaine et par navigateur.\n\nÀ très vite en boutique !",
         },
         {
           moment: "gagnant",

@@ -1,3 +1,6 @@
+begin;
+set constraints prizes_campaign_value_invariant deferred;
+
 -- ============================================================
 -- Seed E2E déterministe (Supabase local uniquement).
 --
@@ -2126,3 +2129,5 @@ on conflict (organization_id) do nothing;
 insert into public.bande_settings (organization_id, pack)
 values ('e2e10000-0000-4000-8000-000000000001', 'amis')
 on conflict (organization_id) do nothing;
+
+commit;

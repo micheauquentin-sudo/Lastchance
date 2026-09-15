@@ -103,11 +103,37 @@ vi.mock("@/lib/player-identity", () => ({
   bridgeOfferedSpinToCampaign: () => Promise.resolve(),
 }));
 
-/** Client admin minimal : seul `rpc` est emprunté par ces chemins. */
+/**
+ * Client admin minimal. `rpc` est l'essentiel de ce que ces chemins empruntent
+ * — mais plus le seul depuis que `consumeCalendarSpin` résout la roue CIBLE de
+ * la case AVANT la RPC, pour la garde de valeur sous identité faible
+ * (`src/lib/lot-forte-valeur.ts`).
+ *
+ * Sans `from`, cet appel levait un TypeError que le `try` du module avale : ce
+ * fichier mesurait alors un refus générique au lieu du pont, et rougissait sur
+ * un défaut qui n'existe pas. Le double ne rend AUCUNE ligne — jeton inconnu,
+ * donc aucune roue résolue, donc aucun refus : la garde a son propre harnais
+ * (`offered-spin-bridge.test.ts`), celui-ci ne doit ni l'éprouver ni la
+ * contrarier.
+ */
 const admin = {
   rpc(name: string, args: Record<string, unknown>) {
     etat.appels.push({ name, args });
     return Promise.resolve({ data: etat.rpc[name] ?? null, error: null });
+  },
+  from() {
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      limit: () => builder,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+      then: (
+        onFulfilled: (v: { data: unknown; error: null }) => unknown,
+        onRejected?: (e: unknown) => unknown,
+      ) =>
+        Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected),
+    };
+    return builder;
   },
 };
 

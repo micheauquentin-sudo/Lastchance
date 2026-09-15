@@ -59,14 +59,14 @@ export function DataRetentionForm({ months }: { months: number | null }) {
       {/*
         CE RÉGLAGE A UNE CONSÉQUENCE QUE PERSONNE NE DEVINE : la purge
         anonymise les participations, or c'est sur elles que repose la limite
-        « une seule fois par personne » d'une roue. Passé le délai, un joueur
+        « un seul jeu par navigateur » d'une roue. Passé le délai, un joueur
         déjà venu redevient inconnu et rejoue. Le commerçant qui règle 12 mois
         croit régler une durée d'archivage ; il règle aussi la mémoire de ses
         propres limites de jeu. Le dire ici coûte une ligne.
       */}
       <p id="retention-anonymisation" className="max-w-prose text-xs text-zinc-500">
-        Au-delà de cette durée, les parties sont anonymisées : les limites « une
-        seule fois par personne » repartent de zéro pour un joueur qui revient
+        Au-delà de cette durée, les parties sont anonymisées : les limites « un
+        seul jeu par navigateur » repartent de zéro pour un joueur qui revient
         après ce délai.
       </p>
     </form>

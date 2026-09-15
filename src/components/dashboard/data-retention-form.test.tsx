@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * LE RÉGLAGE DIT MOINS QUE CE QU'IL FAIT.
  *
  * La purge nocturne (`/api/cron/purge-data`) n'archive pas : elle ANONYMISE les
- * participations. Or la limite « une seule fois par personne » d'une roue
+ * participations. Or la limite « un seul jeu par navigateur » d'une roue
  * (`play_limit = 'once'`) se vérifie contre ces mêmes participations. La
  * garantie n'est donc pas « une fois, jamais plus » mais « une fois PAR PÉRIODE
  * DE CONSERVATION » : un joueur qui revient après le délai rejoue, et le
@@ -33,7 +33,7 @@ describe("DataRetentionForm — l'aveu sur les limites de jeu", () => {
     const aide = document.getElementById("retention-anonymisation");
     expect(aide, "la phrase d'aide a disparu").not.toBeNull();
     expect(aide!.textContent).toContain("anonymisées");
-    expect(aide!.textContent).toContain("une seule fois par personne");
+    expect(aide!.textContent).toContain("un seul jeu par navigateur");
     expect(aide!.textContent).toContain("repartent de zéro");
   });
 

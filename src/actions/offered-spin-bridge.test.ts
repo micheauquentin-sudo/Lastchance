@@ -46,6 +46,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * commerçant a dotée. C'est exactement le patron des quatre autres, donc
  * exactement le même défaut à attraper : la liste ci-dessous a été portée à
  * cinq, et c'est le geste que la garde textuelle ne sait pas faire toute seule.
+ *
+ * ── ET LE MÊME HARNAIS PORTE DÉSORMAIS LA GARDE DE VALEUR ───
+ *
+ * Le second `describe` de ce fichier éprouve `lotInterditAvecIdentiteFaible`
+ * sur les CINQ mêmes chemins. Il vit ici et pas dans un fichier à lui pour une
+ * raison mécanique : les deux questions se posent sur la même exécution réelle
+ * des cinq actions, contre les mêmes doubles. Un second harnais aurait signé
+ * pour deux jeux de fixtures qui divergent au premier ajustement — exactement
+ * ce que l'en-tête de `lot-forte-valeur.ts` refuse pour le seuil lui-même.
  * ════════════════════════════════════════════════════════════ */
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
@@ -63,22 +72,83 @@ const REFERRAL_SLUG = "chez-marcel";
 const WAIT_SESSION_ID = "99999999-9999-4999-8999-999999999999";
 /** Empreinte du cookie joueur — 64 hexa, la forme exigée par les RPC RES-4. */
 const EMPREINTE = "a".repeat(64);
+/** Le second lot, celui dont ces tests font varier la valeur. */
+const LOT_TESTE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-const { state, ADMIN, bridgeMock, ensureMock } = vi.hoisted(() => {
+/**
+ * Le lot NOMINAL de la roue cible : gagnant, tirable, largement sous le seuil
+ * de 20 €. C'est lui que la RPC prétend avoir tiré (`PRIZE_ID`), donc il doit
+ * rester présent dans TOUS les cas — y compris ceux qui ajoutent un lot interdit
+ * à côté de lui.
+ */
+const LOT_NOMINAL = {
+  id: PRIZE_ID,
+  label: "Un café offert",
+  description: "",
+  position: 1,
+  created_at: "2026-01-01T00:00:00.000Z",
+  is_active: true,
+  is_losing: false,
+  weight: 10,
+  stock: null as number | null,
+  value_cents: 500 as number | null,
+};
+
+/** Un second lot sur la MÊME roue, dont ces tests font varier la valeur. */
+function lotVoisin(surcharge: {
+  is_losing?: boolean;
+  value_cents?: number | null;
+}) {
+  return {
+    ...LOT_NOMINAL,
+    id: LOT_TESTE_ID,
+    label: "Lot voisin",
+    position: 2,
+    ...surcharge,
+  };
+}
+
+const { state, ADMIN, bridgeMock, ensureMock, securityMock } = vi.hoisted(() => {
+  const PRIZE_ID = "77777777-7777-4777-8777-777777777777";
+  const WHEEL_ID = "66666666-6666-4666-8666-666666666666";
+  const ORG_ID = "11111111-1111-4111-8111-111111111111";
+  const CAMPAIGN_ID = "22222222-2222-4222-8222-222222222222";
+  const QUEUE_ENTRY_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
   const state = {
-    /** Issue rendue par les quatre RPC `consume_*_spin_grant`. */
+    /** Issue rendue par les cinq RPC `consume_*_spin_grant`. */
     grant: {} as Record<string, unknown>,
     /** Noms des RPC appelées, dans l'ordre — prémisse des assertions. */
     rpcCalls: [] as string[],
+    /**
+     * Les lots de la roue CIBLE. Une seule liste sert les deux lectures du
+     * chemin : celle de la garde de valeur (avant la RPC) et celle de
+     * `enrichSpinPrize` (après) — comme en base, où il n'y a qu'une table.
+     */
+    lots: [] as Array<Record<string, unknown>>,
     reset() {
       state.grant = {
         state: "spun",
-        spin_id: SPIN_ID,
+        spin_id: "88888888-8888-4888-8888-888888888888",
         wheel_id: WHEEL_ID,
         prize_id: PRIZE_ID,
         is_losing: false,
       };
       state.rpcCalls = [];
+      state.lots = [
+        {
+          id: PRIZE_ID,
+          label: "Un café offert",
+          description: "",
+          position: 1,
+          created_at: "2026-01-01T00:00:00.000Z",
+          is_active: true,
+          is_losing: false,
+          weight: 10,
+          stock: null,
+          value_cents: 500,
+        },
+      ];
     },
   };
 
@@ -87,6 +157,12 @@ const { state, ADMIN, bridgeMock, ensureMock } = vi.hoisted(() => {
    * rendent, et c'est lui qu'on s'attend à voir arriver au pont. Comparer
    * l'identité de l'objet est ce qui distingue « le pont reçoit le client du
    * contexte » de « le pont reçoit un client fabriqué au passage ».
+   *
+   * Il est AIGUILLÉ PAR TABLE, et pas seulement par forme d'appel : la garde de
+   * valeur résout la roue cible par le jeton d'octroi (l'ouverture du
+   * calendrier, le versement de fidélité, le quiz, la session d'attente), donc
+   * un double qui rendrait `null` partout la ferait retomber sur « aucune roue
+   * résolue » et ne prouverait plus rien.
    */
   const ADMIN = {
     rpc: (name: string) => {
@@ -97,36 +173,48 @@ const { state, ADMIN, bridgeMock, ensureMock } = vi.hoisted(() => {
       const filters: Record<string, unknown> = {};
       const builder = {
         select: () => builder,
+        limit: () => builder,
         eq: (column: string, value: unknown) => {
           filters[column] = value;
           return builder;
         },
-        maybeSingle: () =>
-          Promise.resolve({
-            data:
-              table === "spins"
-                ? { wheel_id: WHEEL_ID, prize_id: PRIZE_ID, is_losing: false }
-                : null,
+        maybeSingle: () => {
+          // Une ligne par table, telle que la RPC la relirait pour résoudre la
+          // roue cible du tour offert.
+          const lignes: Record<string, unknown> = {
+            spins: { wheel_id: WHEEL_ID, prize_id: PRIZE_ID, is_losing: false },
+            calendar_openings: { calendar_days: { target_wheel_id: WHEEL_ID } },
+            loyalty_rewards: {
+              loyalty_milestones: { target_wheel_id: WHEEL_ID },
+            },
+            quizzes: { target_wheel_id: WHEEL_ID },
+            reservation_wait_sessions: {
+              organization_id: ORG_ID,
+              queue_entry_id: QUEUE_ENTRY_ID,
+              reservation_id: null,
+            },
+            reservation_queue_entries: {
+              reservation_queues: { wait_pause_campaign_id: CAMPAIGN_ID },
+            },
+          };
+          return Promise.resolve({
+            data: lignes[table] ?? null,
             error: null,
-          }),
+          });
+        },
         then: (
           onFulfilled: (v: { data: unknown; error: unknown }) => unknown,
           onRejected?: (e: unknown) => unknown,
         ) => {
-          // La seule lecture en liste du chemin : les lots de la roue cible,
-          // pour l'index et le libellé rendus au joueur.
+          // Les deux lectures EN LISTE du chemin : les lots de la roue cible
+          // (index et libellé rendus au joueur, et garde de valeur), et les
+          // roues de la campagne avec leurs lots (parrainage, Pause Chance).
           const data =
             table === "prizes"
-              ? [
-                  {
-                    id: PRIZE_ID,
-                    label: "Un café offert",
-                    description: "",
-                    position: 1,
-                    created_at: "2026-01-01T00:00:00.000Z",
-                  },
-                ]
-              : [];
+              ? state.lots
+              : table === "wheels"
+                ? [{ id: WHEEL_ID, prizes: state.lots }]
+                : [];
           return Promise.resolve({ data, error: null }).then(onFulfilled, onRejected);
         },
       };
@@ -139,6 +227,7 @@ const { state, ADMIN, bridgeMock, ensureMock } = vi.hoisted(() => {
     ADMIN,
     bridgeMock: vi.fn(() => Promise.resolve()),
     ensureMock: vi.fn(() => Promise.resolve()),
+    securityMock: vi.fn(),
   };
 });
 
@@ -173,7 +262,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ADMIN }));
 vi.mock("@/lib/monitoring", () => ({
   monitored: <T,>(_name: string, fn: () => T) => fn(),
   reportError: vi.fn(),
-  reportSecurityEvent: vi.fn(),
+  reportSecurityEvent: securityMock,
   recordCounter: vi.fn(),
 }));
 vi.mock("@/lib/request-ip", async (importOriginal) => ({
@@ -206,14 +295,17 @@ vi.mock("@/lib/rate-limit", () => ({
 }));
 
 // ── Les quatre contextes d'action : tous rendent LE MÊME client admin ──
+// Leur FORME est celle des contextes réels (`calendarId`/`organizationId`, et
+// non `calendar: { … }`) : la garde de valeur lit ces champs, un double aux noms
+// approximatifs la ferait porter sur `undefined` sans rien faire rougir.
 vi.mock("@/lib/calendar-context", () => ({
   calendarTokenCookieName: (id: string) => `lc-cal-${id}`,
   loadCalendarActionContext: () =>
     Promise.resolve({
       ok: true,
       admin: ADMIN,
-      calendar: { id: CALENDAR_ID, organization_id: ORG_ID },
-      organization: { id: ORG_ID },
+      calendarId: CALENDAR_ID,
+      organizationId: ORG_ID,
     }),
 }));
 vi.mock("@/lib/loyalty-context", () => ({
@@ -222,8 +314,11 @@ vi.mock("@/lib/loyalty-context", () => ({
     Promise.resolve({
       ok: true,
       admin: ADMIN,
-      program: { id: PROGRAM_ID, min_stamp_interval_seconds: 60 },
-      organization: { id: ORG_ID },
+      program: {
+        id: PROGRAM_ID,
+        organization_id: ORG_ID,
+        min_stamp_interval_seconds: 60,
+      },
     }),
 }));
 vi.mock("@/lib/quiz-context", () => ({
@@ -233,8 +328,9 @@ vi.mock("@/lib/quiz-context", () => ({
     Promise.resolve({
       ok: true,
       admin: ADMIN,
-      quiz: { id: QUIZ_ID, organization_id: ORG_ID },
-      organization: { id: ORG_ID },
+      quizId: QUIZ_ID,
+      organizationId: ORG_ID,
+      rewardMode: "threshold",
     }),
 }));
 vi.mock("@/lib/referral-context", () => ({
@@ -245,7 +341,8 @@ vi.mock("@/lib/referral-context", () => ({
       ok: true,
       admin: ADMIN,
       campaignId: CAMPAIGN_ID,
-      organization: { id: ORG_ID },
+      organizationId: ORG_ID,
+      programId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
     }),
   loadReferralPublicContext: vi.fn(),
 }));
@@ -270,41 +367,51 @@ import { consumeReferralSpin } from "./referral";
 import { consumeReserverWaitSpin } from "./reserver";
 
 /**
- * Les quatre modules d'offre, joués pour de vrai. Chacun rend l'issue typée du
+ * Les cinq modules d'offre, joués pour de vrai. Chacun rend l'issue typée du
  * tour ; on n'inspecte ici que `claimToken` (la condition sous laquelle une
  * participation peut naître, donc sous laquelle le pont DOIT être posé).
+ *
+ * `etiquette` est le champ `module` que chaque chemin joint à son événement de
+ * sécurité : c'est ce qui permet au tableau de bord de distinguer LEQUEL des
+ * cinq a refusé, là où le nom d'événement, lui, reste celui du tirage direct.
  */
 const MODULES: Array<{
   nom: string;
   rpc: string;
+  etiquette: string;
   jouer: () => Promise<{ ok: boolean; data?: { claimToken: string | null } }>;
 }> = [
   {
     nom: "calendrier",
     rpc: "consume_calendar_spin_grant",
+    etiquette: "calendar",
     jouer: () =>
       consumeCalendarSpin({ calendarId: CALENDAR_ID, grantToken: GRANT_TOKEN }),
   },
   {
     nom: "fidélité",
     rpc: "consume_loyalty_spin_grant",
+    etiquette: "loyalty",
     jouer: () =>
       consumeLoyaltySpin({ programId: PROGRAM_ID, grantToken: GRANT_TOKEN }),
   },
   {
     nom: "quiz",
     rpc: "consume_quiz_spin_grant",
+    etiquette: "quiz",
     jouer: () => consumeQuizSpin({ quizId: QUIZ_ID, grantToken: GRANT_TOKEN }),
   },
   {
     nom: "parrainage",
     rpc: "consume_referral_spin_grant",
+    etiquette: "referral",
     jouer: () =>
       consumeReferralSpin({ slug: REFERRAL_SLUG, grantToken: GRANT_TOKEN }),
   },
   {
     nom: "attente active",
     rpc: "consume_reserver_wait_spin_grant",
+    etiquette: "reserver_wait",
     jouer: () =>
       consumeReserverWaitSpin({
         sessionId: WAIT_SESSION_ID,
@@ -371,6 +478,109 @@ describe("tour offert — le pont `campaign` est réellement APPELÉ", () => {
       expect(res.ok).toBe(true);
       expect(res.data?.claimToken).toBeNull();
       expect(bridgeMock).not.toHaveBeenCalled();
+    },
+  );
+});
+
+/* ════════════════════════════════════════════════════════════
+ * LA GARDE DE VALEUR SOUS IDENTITÉ FAIBLE, SUR LES CINQ CHEMINS
+ *
+ * `lotInterditAvecIdentiteFaible` était appelée sur QUATRE sites — le tirage
+ * direct (`play.ts`), les deux du jeu d'adresse (`skill.ts`) et la publication
+ * (`campaigns.ts`) — et sur AUCUN des cinq tours offerts. Or les cinq portent
+ * une identité de cookie, exactement celle que la règle refuse, et les cinq RPC
+ * de tirage ne filtrent que `is_active`, `weight` et `stock` : un lot à 200 €
+ * s'y redistribuait à chaque cookie neuf.
+ *
+ * ── LES QUATRE CAS, ET CE QUE CHACUN INTERDIT ───────────────
+ *
+ *  1. Lot gagnant À 20 € pile → refus. Le seuil est INCLUSIF, et un lot calibré
+ *     pile sur la limite est le cas le plus probable, pas le plus rare.
+ *  2. Lot gagnant SANS VALEUR → refus. Une valeur absente ne prouve jamais
+ *     qu'on est sous le seuil : défaut fermé.
+ *  3. Lot gagnant à 19,99 € → le tour se déroule. Sans ce cas, une garde qui
+ *     refuserait TOUT passerait les deux premiers.
+ *  4. Lot PERDANT sans valeur → le tour se déroule. Un perdant ne fait rien
+ *     gagner, donc ne crée aucune valeur à retirer ; le confondre avec le cas 2
+ *     casserait toutes les roues du dépôt, dont les segments « Pas de chance »
+ *     n'ont évidemment pas de prix.
+ *
+ * ── ET L'ASSERTION QUI PORTE TOUT LE SENS ───────────────────
+ *
+ * `state.rpcCalls` ne doit PAS contenir la RPC de consommation. Le joueur a
+ * mérité son tour : refuser APRÈS l'avoir consommé lui ferait payer une erreur
+ * de configuration du commerçant, et le grant serait perdu pour de bon. C'est
+ * la seule chose que « le refus est avant la RPC » veut dire, et c'est
+ * vérifiable ici et nulle part ailleurs.
+ * ════════════════════════════════════════════════════════════ */
+
+describe("tour offert — lot de forte valeur refusé sous identité faible", () => {
+  it.each(MODULES)(
+    "$nom : un lot gagnant à 20 € est refusé SANS consommer le grant",
+    async ({ rpc, etiquette, jouer }) => {
+      state.lots = [LOT_NOMINAL, lotVoisin({ value_cents: 2000 })];
+
+      const res = await jouer();
+
+      expect(res.ok).toBe(false);
+      // LE CŒUR DU LOT : le grant n'est pas brûlé.
+      expect(state.rpcCalls).not.toContain(rpc);
+      expect(bridgeMock).not.toHaveBeenCalled();
+      // Même nom d'événement que le tirage direct — un seul compteur pour une
+      // seule règle — plus l'étiquette qui dit LEQUEL des cinq a refusé.
+      expect(securityMock).toHaveBeenCalledWith(
+        "spin_lot_identite_faible_refuse",
+        expect.objectContaining({ module: etiquette }),
+      );
+    },
+  );
+
+  it.each(MODULES)(
+    "$nom : un lot gagnant SANS valeur est refusé (défaut fermé)",
+    async ({ rpc, jouer }) => {
+      state.lots = [LOT_NOMINAL, lotVoisin({ value_cents: null })];
+
+      const res = await jouer();
+
+      expect(res.ok).toBe(false);
+      expect(state.rpcCalls).not.toContain(rpc);
+      expect(bridgeMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(MODULES)(
+    "$nom : un lot gagnant à 19,99 € laisse le tour se dérouler",
+    async ({ rpc, jouer }) => {
+      state.lots = [LOT_NOMINAL, lotVoisin({ value_cents: 1999 })];
+
+      const res = await jouer();
+
+      expect(res.ok).toBe(true);
+      expect(state.rpcCalls).toContain(rpc);
+      expect(res.data?.claimToken).toBeTruthy();
+      expect(securityMock).not.toHaveBeenCalledWith(
+        "spin_lot_identite_faible_refuse",
+        expect.anything(),
+      );
+    },
+  );
+
+  it.each(MODULES)(
+    "$nom : un lot PERDANT sans valeur ne déclenche aucun refus",
+    async ({ rpc, jouer }) => {
+      state.lots = [
+        LOT_NOMINAL,
+        lotVoisin({ is_losing: true, value_cents: null }),
+      ];
+
+      const res = await jouer();
+
+      expect(res.ok).toBe(true);
+      expect(state.rpcCalls).toContain(rpc);
+      expect(securityMock).not.toHaveBeenCalledWith(
+        "spin_lot_identite_faible_refuse",
+        expect.anything(),
+      );
     },
   );
 });

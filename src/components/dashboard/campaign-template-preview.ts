@@ -60,9 +60,9 @@ const GAME_LABELS: Record<string, string> = {
 
 /** Libellés des limites de participation (miroir de `LIMITS`). */
 const LIMIT_LABELS: Record<string, string> = {
-  once: "1 participation par appareil",
-  daily: "1 participation par jour",
-  weekly: "1 participation par semaine",
+  once: "1 participation par navigateur",
+  daily: "1 participation par jour et par navigateur",
+  weekly: "1 participation par semaine et par navigateur",
   unlimited: "Participations illimitées",
 };
 

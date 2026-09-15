@@ -148,6 +148,10 @@ insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losi
   ('ca000000-0000-4000-8000-000000000024', 'ca000000-0000-4000-8000-000000000001',
    'ca000000-0000-4000-8000-000000000022', 'Perdu (jamais tiré)', 0, true, 1, null);
 
+update public.prizes set value_cents = 500
+ where wheel_id = 'ca000000-0000-4000-8000-000000000022'
+   and not is_losing;
+
 -- Paliers du programme A : lot à 2 visites (stock 1), spin à 3 visites
 -- (stock 5 : sur un palier `spin`, le stock compte les GRANTS ÉMIS).
 insert into public.loyalty_milestones (
@@ -908,6 +912,10 @@ insert into public.prizes (id, organization_id, wheel_id, label, weight, is_losi
    'ca000000-0000-4000-8000-000000000062', 'Lot borné', 100, false, 0, 5),
   ('ca000000-0000-4000-8000-000000000064', 'ca000000-0000-4000-8000-000000000001',
    'ca000000-0000-4000-8000-000000000062', 'Perdu (jamais tiré)', 0, true, 1, null);
+
+update public.prizes set value_cents = 500
+ where wheel_id = 'ca000000-0000-4000-8000-000000000062'
+   and not is_losing;
 
 insert into public.campaigns (id, organization_id, name, status)
 values ('ca000000-0000-4000-8000-000000000071',

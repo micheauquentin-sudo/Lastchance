@@ -127,6 +127,10 @@ values
   ('4f22e000-0000-4000-8000-000000000504', '4f22e000-0000-4000-8000-00000000000a',
    '4f22e000-0000-4000-8000-000000000502', 'Perdu (jamais tiré)', 0, true, 1, null);
 
+update public.prizes set value_cents = 500
+ where wheel_id = '4f22e000-0000-4000-8000-000000000502'
+   and not is_losing;
+
 -- CAMPAGNE TOUT ILLIMITÉ : un seul lot, gagnant, à stock `null`. BORNE 2 doit
 -- l'exclure — donc `no_prize`, et le jeton NON consommé.
 insert into public.campaigns (id, organization_id, name, status)

@@ -8735,6 +8735,10 @@ export type Database = {
         Args: { p_campaign_id: string; p_organization_id: string }
         Returns: boolean
       }
+      campaign_has_prize_requiring_verified_identity: {
+        Args: { p_campaign_id: string }
+        Returns: boolean
+      }
       campaign_has_winning_prize: {
         Args: { p_campaign_id: string; p_organization_id: string }
         Returns: boolean
@@ -9957,6 +9961,16 @@ export type Database = {
           source_type: string
           status: string
         }[]
+      }
+      prize_requires_verified_identity: {
+        Args: {
+          p_is_active: boolean
+          p_is_losing: boolean
+          p_stock: number
+          p_value_cents: number
+          p_weight: number
+        }
+        Returns: boolean
       }
       prune_rate_limits: {
         Args: { p_older_than_seconds?: number }

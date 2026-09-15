@@ -2,6 +2,15 @@
 
 ## Notes
 
+- **2026-09-15 — courses de valeur d'ADR-184 fermées en base, legacy
+  inventorié sans mutation (ADR-185).** Le préflight production en lecture
+  seule compte 22 lots tirables à valeur inconnue ou `>= 20 €`, répartis sur 7
+  campagnes actives. Ils n'ont pas été suspendus ni réécrits. Les cinq tours
+  offerts échouent désormais dans PostgreSQL avant validation du grant, avec
+  rollback du stock/spin/grant ; les mutations futures et le scheduler ne
+  peuvent plus produire un nouvel état actif interdit. La régularisation
+  commerciale de ces 7 campagnes reste une décision produit distincte.
+
 - **2026-09-13 — livraison V1.78 : FUSIONNÉE depuis (PR #375, `4afc42e1`).**
   Note d'origine périmée : elle disait la livraison bloquée en attente de
   fusion ; elle est fusionnée sur `main`, migrations commitées jusqu'à
@@ -26,6 +35,22 @@
   wallet:verify:google` existe pour vérifier une fois posées. (3)
   `CRON_SECRET` toujours absent des secrets GitHub — voir entrée dédiée
   plus bas. (4) Capacité live : mesure locale seulement, voir entrée VEN-2.
+- **2026-09-15 — second release gate : garde de valeur des tours offerts,
+  trois trous fermés, dont un non vu par l'audit (ADR-184).** L'audit
+  affirmait `lotInterditAvecIdentiteFaible` absente des cinq tours offerts
+  (calendrier, quiz, fidélité, parrainage, Pause Chance) — exact, corrigé
+  AVANT la RPC de tirage sur la roue CIBLE. L'enquête a trouvé deux trous
+  supplémentaires, non vus par l'audit : `updatePrize` sans garde
+  (revalorisation d'un lot après publication) et `controleLotsAvantPublication`
+  qui ne lisait que la PREMIÈRE roue d'une campagne (`.limit(1)`) — un lot
+  cher sur une deuxième roue passait la publication sans revalorisation. Les
+  quatre points ci-dessus (DNS, Google Wallet, `CRON_SECRET`, capacité)
+  restent hors dépôt, revérifiés à cette date sans changement. `git diff
+  --check` du chantier précédent (79 « espaces finaux » sur 11 fichiers) est
+  RECALIBRÉ : ce sont des CR de fin de ligne (`git -c core.whitespace=cr-at-eol
+  diff --check` ramène le compte à zéro), déjà présents en CRLF avant ce
+  chantier, exposés en y touchant plutôt que créés par lui — les seuls 11 sur
+  1379 fichiers `.ts`/`.tsx` du dépôt, désormais ramenés en LF.
 
 - **2026-08-19 — `event-remote-cycle.spec.ts` sous mobile-safari : timeout
   global, pas une attente précise.** Run CI 32206711952 (SHA 41c7345,

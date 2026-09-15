@@ -5,7 +5,9 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUserAndOrg } from "@/lib/auth";
 import { anonymousPlayerKey } from "@/lib/anonymous-player";
-import { monitored, reportError } from "@/lib/monitoring";
+import { lotInterditAvecIdentiteFaible } from "@/lib/lot-forte-valeur";
+import { estGagnantTirable } from "@/lib/lot-tirable";
+import { monitored, reportError, reportSecurityEvent } from "@/lib/monitoring";
 import {
   hasReferralAccess,
   loadReferralActionContext,
@@ -372,6 +374,74 @@ async function enrichSpinPrize(
 }
 
 /**
+ * Les cinq colonnes de `prizes` dont depend la garde de valeur du tour offert :
+ * les quatre de la tirabilite (`src/lib/lot-tirable.ts`) plus la valeur
+ * unitaire. Un lot que le tirage ne peut pas sortir n'a aucune valeur a retirer.
+ */
+type LotGardeValeur = {
+  is_active: boolean;
+  is_losing: boolean;
+  weight: number;
+  stock: number | null;
+  value_cents: number | null;
+};
+
+/** Un lot de cette roue est-il interdit sous une identite navigateur ? */
+function contientLotInterdit(lots: readonly LotGardeValeur[]): boolean {
+  return lots.some(
+    (lot) => estGagnantTirable(lot) && lotInterditAvecIdentiteFaible(lot),
+  );
+}
+
+/* ── LA GARDE DE VALEUR DU TOUR OFFERT (miroir de `spinWheelInner`) ──
+ *
+ * L'identite de ce chemin est un cookie que le joueur peut effacer : c'est
+ * exactement l'identite FAIBLE a laquelle `lotInterditAvecIdentiteFaible`
+ * refuse d'adosser un lot gagnant de 20 € ou plus — ou dont la valeur n'est pas
+ * renseignee, qui ne prouve jamais qu'on est sous le seuil.
+ * `src/actions/play.ts` posait cette garde sur le tirage DIRECT ; les cinq
+ * chemins de tour OFFERT ne la posaient nulle part, ni ici ni dans leur RPC —
+ * dont le filtre de tirage ne regarde que `is_active`, `weight` et `stock`.
+ * Un lot a 200 € adosse a un versement de parrainage se redistribuait donc a chaque cookie neuf.
+ *
+ * ── LA ROUE REGARDEE EST LA ROUE CIBLE, PAS LA PREMIERE DE LA CAMPAGNE ──
+ *
+ * Le parrainage ne tire pas sur une roue nommee : `consume_referral_spin_grant`
+ * parcourt les roues de la campagne DANS L'ORDRE et retient la premiere dont le
+ * creneau est ouvert A CET INSTANT. Rejouer ce choix ici le ferait sur une autre
+ * horloge que la sienne, et un decalage d'une seconde suffirait a garder la
+ * mauvaise roue. On regarde donc TOUTES les roues de la campagne : c'est plus
+ * large que la roue tiree, jamais plus etroit, et c'est la seule lecture qui ne
+ * depend pas du moment ou on la fait.
+ *
+ * ── ET AVANT LA RPC, JAMAIS APRES ──
+ *
+ * La RPC CONSOMME le grant dans la transaction du tirage : refuser apres elle
+ * brulerait un tour que le joueur a merite, pour une erreur de configuration du
+ * COMMERCANT. Le refus est donc pose avant tout appel, et le grant reste
+ * jouable des que la valeur du lot est corrigee.
+ *
+ * Defaut FERME sur une lecture en erreur — on ne distribue pas ce qu'on ne sait
+ * pas borner. Jeton inconnu : aucune roue resolue, on laisse la RPC repondre
+ * << indisponible >> comme elle l'a toujours fait ; elle ne consommera rien.
+ */
+async function campagneContientLotInterdit(
+  admin: ReturnType<typeof createAdminClient>,
+  campaignId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("wheels")
+    .select(
+      "id, prizes!prizes_wheel_id_fkey(is_active, is_losing, weight, stock, value_cents)",
+    )
+    .eq("campaign_id", campaignId)
+    .eq("organization_id", organizationId);
+  if (error || data === null) return true;
+  return data.some((roue) => contientLotInterdit(roue.prizes ?? []));
+}
+
+/**
  * Consomme un tour de roue offert (versement `spin` d'un parrainage). Échange le
  * grant_token contre un tirage atomique sur la roue ACTIVE de la campagne via
  * consume_referral_spin_grant, puis, pour un gain non perdant, signe un jeton
@@ -410,6 +480,17 @@ async function consumeSpinInner(
 
     // Clé PARTAGÉE (campagne + IP) : fail-OPEN, observabilité seule.
     await observeReferralPressure(campaignId, clientIpFromHeaders(await headers()));
+
+    // GARDE DE VALEUR — avant la RPC, donc avant toute consommation du grant.
+    if (
+      await campagneContientLotInterdit(ctx.admin, campaignId, ctx.organizationId)
+    ) {
+      reportSecurityEvent("spin_lot_identite_faible_refuse", {
+        module: "referral",
+        campaign_id: campaignId,
+      });
+      return { ok: false, error: SPIN_UNAVAILABLE };
+    }
 
     const { data, error } = await ctx.admin.rpc("consume_referral_spin_grant", {
       p_campaign_id: campaignId,
