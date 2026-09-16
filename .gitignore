@@ -132,6 +132,4 @@ public/frames/
 site/public/backdrop/
 site/scripts/
 scripts/build-backdrop-frames.mjs
-scripts/gel-page-v2.mjs
-scripts/gel-temoin-v2.mjs
 scripts/scan-reseau.ps1
