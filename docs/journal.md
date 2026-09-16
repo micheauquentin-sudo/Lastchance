@@ -44,6 +44,15 @@ Google Wallet ciblés ; deux contre-revues `SHIP` ; typecheck ; lint sans erreur
 Next 16, 66 pages, vert. Le harnais ne peut jamais rendre un GO automatique :
 il reste `NON_QUALIFIABLE` jusqu'à la revue du soak multi-campagne.
 
+**Livraison** : PR `#380` fusionnée dans `main` au SHA
+`0a9d96e58a8466657981cf0dfef76153bd6deff6` ; run CI post-fusion
+`35043508305` entièrement vert ; déploiement Vercel production
+`dpl_8c622xAi3ReWoNJqtCBVmmXYxzgi` `READY` sur ce SHA ; contrôles de santé
+`35043633871` et `35043698816` verts, puis `/api/health` relu en HTTP 200 avec
+Realtime actif. Cette livraison ferme le lot code, pas les trois gestes
+propriétaire encore requis pour le domaine, l'émetteur Wallet et la cible de
+capacité facturable.
+
 ## 2026-09-15 — Reprise Codex : invariant atomique de valeur, ADR-185
 
 La reprise du lot Claude a démontré que les gardes applicatives d'ADR-184
