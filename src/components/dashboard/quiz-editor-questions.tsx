@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   createQuizQuestion,
   deleteQuizQuestion,
@@ -467,10 +468,12 @@ export function QuestionForm({
               : "Lien d'une image déjà en ligne (https)."}
           </p>
           {shape.imageFeatured && imageUrl.trim() !== "" && (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
+            <Image
               src={imageUrl}
               alt="Aperçu de l'image de la question"
+              width={640}
+              height={360}
+              unoptimized
               className="mt-2 max-h-40 rounded-xl border-2 border-k-ink object-contain"
             />
           )}
