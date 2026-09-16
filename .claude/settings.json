@@ -112,15 +112,18 @@
         "vercel-release": "Vercel : variables d'environnement, previews, deploiements production, domaines, logs, promotions et rollbacks",
         "qa-verify": "Typecheck, lint, tests Vitest, E2E Playwright, build ; ecrit et repare les tests ; valide apres chaque chantier ; couvre aussi site/ via npm --prefix site (qui n'a pas encore de runner de test)",
         "security-review": "Revue securite en lecture seule : isolation multi-tenant, RLS, endpoints publics, webhooks, tokens, crons",
-        "docs-scribe": "Documentation : docs/, CLAUDE.md, ADR, bugs connus, etat de session .claude/state/"
+        "docs-scribe": "Documentation : docs/, CLAUDE.md, ADR et bugs connus ; maintient seulement les pointeurs legacy .claude/state/"
       },
       "cross_cutting_rule": "Une tache qui traverse plusieurs perimetres est decoupee : chaque agent traite sa part, qa-verify valide l'ensemble, puis vercel-release livre uniquement sur demande explicite."
     },
-    "context_source": ".claude/state",
-    "state_tracking": {
-      "project_state": ".claude/state/project-state.md",
-      "checkpoint": ".claude/state/checkpoint.md",
-      "memory": ".claude/state/memory.md"
+    "context_source": "docs/codex-handoff.md",
+    "active_context": {
+      "handoff": "docs/codex-handoff.md",
+      "roadmap": "docs/roadmap.md",
+      "bugs": "docs/bugs.md",
+      "decisions": "docs/decisions.md",
+      "journal": "docs/journal.md",
+      "expected_migration": "src/lib/release.ts#EXPECTED_MIGRATION"
     },
     "documentation": {
       "overview": "CLAUDE.md",
@@ -161,7 +164,7 @@
       "business_logic": "[future: to be defined]",
       "documentation": "docs/",
       "configuration": ".claude/",
-      "state": ".claude/state/"
+      "legacy_state_redirects": ".claude/state/"
     },
     "commit_messages": {
       "format": "[TYPE] Brief description",
@@ -179,7 +182,8 @@
       "architecture_decisions": "docs/decisions.md",
       "roadmap": "docs/roadmap.md",
       "bugs": "docs/bugs.md",
-      "session_notes": ".claude/state/memory.md"
+      "journal": "docs/journal.md",
+      "active_handoff": "docs/codex-handoff.md"
     }
   }
 }

@@ -1,32 +1,43 @@
 # Architecture Decisions - Lastchance
 
-## ADR-001: Project Initialization with Memory System
+## ADR-001: Sources actives du contexte projet
 **Date**: 2026-07-06
-**Status**: Accepted
-**Context**: Starting fresh project needed structure for context preservation
+**Status**: Accepted — revised 2026-09-16
+**Context**: Le système initial du projet répartissait le contexte courant entre
+trois fichiers `.claude/state/` et la documentation. Les états ont fini par
+recopier des jalons et décisions périmés tout en restant chargés comme contexte,
+créant plusieurs versions concurrentes de l'état du projet.
 
 **Decision**: 
-Implement a Claude Code-based memory system with:
-- State tracking files in `.claude/state/`
-- Checkpoint system for milestones
-- Continuous memory for cross-session context
-- Documentation-first approach
+Le point d'entrée actif est `docs/codex-handoff.md`. Les informations durables
+restent dans leurs sources spécialisées : `docs/roadmap.md` pour la livraison,
+`docs/bugs.md` pour les écarts, `docs/decisions.md` pour les ADR et
+`docs/journal.md` pour l'historique. Pour une migration, la seule valeur à lire
+est `EXPECTED_MIGRATION` dans `src/lib/release.ts`.
+
+`project-state.md`, `checkpoint.md` et `memory.md` dans `.claude/state/` sont
+conservés uniquement comme redirections de compatibilité et ne reçoivent plus
+de décisions, jalons ni notes de session.
 
 **Rationale**:
-- Maintains project context across Claude Code sessions
-- Clear audit trail of decisions and changes
-- Supports long-term project sustainability
-- Enables smooth handoffs and context transfer
+- Évite la divergence entre copies concurrentes du contexte.
+- Préserve l'audit trail dans les documents déjà dédiés à chaque type de fait.
+- Garde la reprise inter-session courte, exacte et accessible à tous les outils.
 
 **Consequences**:
-- State files become single source of truth for project status
-- Requires disciplined updates to memory files
-- Enables better context preservation than git alone
+- Les états `.claude/state/` ne sont plus une source de vérité ni une obligation
+  de maintenance ; les consignes et réglages doivent pointer vers les documents
+  actifs.
+- Toute mise à jour de contexte doit viser le document spécialisé pertinent,
+  avec `docs/codex-handoff.md` comme index actif.
 
 **References**:
-- [Project State](../state/project-state.md)
-- [Checkpoint](../state/checkpoint.md)
-- [Memory](../state/memory.md)
+- [Transmission active](./codex-handoff.md)
+- [Roadmap](./roadmap.md)
+- [Bugs](./bugs.md)
+- [Décisions](./decisions.md)
+- [Journal](./journal.md)
+- [Constante de migration](../src/lib/release.ts)
 
 ---
 
