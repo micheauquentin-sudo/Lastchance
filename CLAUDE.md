@@ -14,11 +14,10 @@ choix de ses agents et de son organisation de travail.
 
 *Cette ligne ne porte plus l'historique des livraisons.* Elle l'a porté pendant une semaine, sous forme d'une trentaine de corrections « ↳ » empilées, dont plusieurs se contredisaient — et un audit y a confirmé trois modules encore décrits comme « NON POUSSÉ / NON DÉPLOYÉ » alors qu'ils tournaient en production. Un document qui raconte l'histoire de son propre retard finit par mentir sur le présent. **Pour l'état de livraison : [`docs/roadmap.md`](./docs/roadmap.md). Pour ce qui est cassé : [`docs/bugs.md`](./docs/bugs.md). Pour le pourquoi des choix : [`docs/decisions.md`](./docs/decisions.md).**
 
-**Branch** : `main`, sur **les deux dépôts**, arbres propres. Le distant garde
-des branches de chantier fusionnées en squash (reliquats) ; deux ne le sont pas
-— `claude/merchant-mvp-build-w8j7et` (archive) et `chantier/cache-etat-event`
-(WIP jamais proposé, `docs/bugs.md`).
-Le dépôt de référence est `~/workspaces/lastchance` (WSL) — voir la section
+**État Git** : ne pas l'épingler ici. Avant toute intervention, exécuter
+`git status --short --branch` dans le worktree réellement choisi ; la branche,
+les modifications locales et les worktrees actifs sont volatils. Le dépôt de
+référence est `~/workspaces/lastchance` (WSL) — voir la section
 « Environnement d'exécution » ci-dessous.
 
 *Aucun numéro de migration épinglé ici non plus, et pour la même raison que les

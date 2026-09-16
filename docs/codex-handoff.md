@@ -26,8 +26,12 @@
 - Codex ne lance plus Claude Code, ne lit plus ses sessions et ne modifie pas
   ses réglages.
 - Claude intervient seulement à la demande directe de l'utilisateur dans VS
-  Code. Avant d'agir, il lit ce document, `CLAUDE.md`, les états
-  `.claude/state/`, puis vérifie `git status --short`.
+  Code. Avant d'agir, il lit ce document, puis seulement les sections utiles de
+  `docs/roadmap.md`, `docs/bugs.md`, `docs/decisions.md` et `docs/journal.md` ;
+  il lit `EXPECTED_MIGRATION` dans `src/lib/release.ts` si le périmètre touche
+  les migrations, puis vérifie `git status --short`. `CLAUDE.md` apporte les
+  règles propres à Claude ; `.claude/state/` ne contient plus que des
+  redirections de compatibilité.
 - Claude choisit et coordonne lui-même ses agents selon ses règles existantes.
   Codex ne lui impose ni agent, ni modèle, ni séquencement d'exécution.
 - Claude exécute le besoin demandé par l'utilisateur en tenant compte de ce
@@ -1077,8 +1081,11 @@ API Uber/Deliveroo et le jeu de déduction sociale « La Nuit des Masques ».
 
 ### Garde-fous de reprise
 
-- Lire `CLAUDE.md`, les états `.claude/state/`, ce fichier et `git status` ;
-  noter le SHA de base et créer un worktree propre par lot.
+- Lire ce fichier, `CLAUDE.md`, puis les sections utiles de `roadmap.md`,
+  `bugs.md`, `decisions.md` et `journal.md` ; lire `EXPECTED_MIGRATION` dans
+  `src/lib/release.ts` pour une migration, puis vérifier `git status`. Les
+  fichiers `.claude/state/` sont seulement des redirections de compatibilité.
+  Noter le SHA de base et créer un worktree propre par lot.
 - Ne pas reprendre `comp_access` comme droit à tous les modules. Aucun statut
   public ne doit être modifiable via PostgREST sans garde SQL effective.
 - Une aide UI, QR, IA ou carte équipe ne vaut jamais autorisation : actions,
@@ -1757,9 +1764,11 @@ testé au niveau SQL.
 
 ### Préparation et isolation obligatoires
 
-1. Lire à nouveau `CLAUDE.md`, les états `.claude/state/`, ce handoff et le
-   statut Git avant toute modification. Définir dans le compte-rendu le SHA de
-   départ réellement utilisé.
+1. Lire à nouveau ce handoff, `CLAUDE.md` et les sections utiles de `roadmap.md`,
+   `bugs.md`, `decisions.md` et `journal.md`, puis le statut Git avant toute
+   modification. Pour une migration, lire aussi `EXPECTED_MIGRATION` dans
+   `src/lib/release.ts`. Les fichiers `.claude/state/` ne sont pas une source
+   d'état. Définir dans le compte-rendu le SHA de départ réellement utilisé.
 2. Ne jamais écrire dans `chantier/derniers-ouverts`, ni modifier les fichiers
    déjà modifiés par l'utilisateur ou un autre agent. Créer un worktree/branche
    isolé depuis un SHA explicitement choisi après assemblage du chantier en

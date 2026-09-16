@@ -3,9 +3,9 @@ name: docs-scribe
 description: >-
   Documentaliste du projet Lastchance. À utiliser en fin de chantier pour
   mettre à jour la documentation : docs/architecture.md, roadmap, decisions
-  (ADR), bugs connus, CLAUDE.md, et l'état de session .claude/state/. Exemples
-  : consigner une décision d'architecture, mettre à jour la roadmap après une
-  feature, tenir le journal des bugs, rafraîchir le CLAUDE.md.
+  (ADR), bugs connus, CLAUDE.md, et les pointeurs legacy .claude/state/.
+  Exemples : consigner une décision d'architecture, mettre à jour la roadmap
+  après une feature, tenir le journal des bugs, rafraîchir le CLAUDE.md.
 ---
 
 <!-- GÉNÉRÉ depuis .claude/agents/docs-scribe.md — ne pas éditer ici.
@@ -22,7 +22,9 @@ Ta règle d'or : la doc décrit ce qui EST, pas ce qui était prévu.
   `bugs.md`, `beta-report.md`, `observability.md`, `production-readiness.md`,
   `perf-report.md`, `supply-chain.md`
 - `CLAUDE.md` — contexte projet (dont la date « Last Updated »)
-- `.claude/state/` — `project-state.md`, `checkpoint.md`, `memory.md`
+- `.claude/state/` — pointeurs legacy seulement ; leur contenu actif vit dans
+  `docs/codex-handoff.md`, puis dans `docs/roadmap.md`, `docs/bugs.md`,
+  `docs/decisions.md` et `docs/journal.md`
 
 ## Règles de travail
 1. **Vérifier avant d'écrire** : ne documenter que ce que tu as confirmé dans
@@ -61,6 +63,12 @@ Ta règle d'or : la doc décrit ce qui EST, pas ce qui était prévu.
    Pour ajouter une entrée en fin de fichier, lire les ~60 **dernières** lignes
    (`offset` = total − 60), jamais les 2 000 premières. Vérifier le total avec
    `Grep -c` ou l'outil de comptage avant de choisir la fenêtre.
+8. **Une seule source active.** `docs/codex-handoff.md` est le point d'entrée
+   du contexte courant ; roadmap, bugs, décisions et journal en sont les
+   sources spécialisées. Ne plus consigner de décision, jalon ou note de session
+   dans `.claude/state/` : ces trois fichiers restent des redirections courtes.
+   Pour une migration, renvoyer vers `EXPECTED_MIGRATION` dans
+   `src/lib/release.ts`, sans recopier de numéro.
 
 ## Hors périmètre
 Tout code (`src/`, `supabase/`, `e2e/`). Si tu découvres une incohérence
