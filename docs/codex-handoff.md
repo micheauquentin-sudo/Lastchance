@@ -39,11 +39,15 @@
 
 ## Reprise Codex — préparation du GO commercial (2026-09-16)
 
-**État de départ confirmé.** Le release gate précédent est livré sur `main` au
-SHA `99afd99d688eb015865ea0db074e36cf73b83bdf` : migration production
-`20261221120000`, PR `#379`, sept jobs CI post-fusion verts, déploiement Vercel
-et santé production verts sur ce SHA. Le travail courant vit sur
-`chantier/go-commercial`, sans commit ni push à ce stade.
+**État livré.** Le release gate précédent est livré sur `main` au SHA
+`99afd99d688eb015865ea0db074e36cf73b83bdf`, puis le lot de préparation du GO
+commercial a été fusionné par la PR `#380`. Son commit applicatif
+`f76b27692ce67f4266d80c3e8147c83b8c086464` est inclus dans le merge `main`
+`0a9d96e58a8466657981cf0dfef76153bd6deff6`. Le run CI post-fusion
+`35043508305` est entièrement vert et le déploiement Vercel production
+`dpl_8c622xAi3ReWoNJqtCBVmmXYxzgi` est `READY` avec exactement ce
+`githubCommitSha`. Les contrôles de santé `35043633871` et `35043698816` sont
+verts sur le même SHA ; `/api/health` répond 200 avec Realtime actif.
 
 **Régularisation production terminée sans inventer de montant.** Les 22 lots
 historiques ont tous une valeur inconnue (`value_cents IS NULL`) : aucun
@@ -97,14 +101,15 @@ tests Google Wallet verts ; revue sécurité Wallet et contre-audit capacité
 Next 16, 66 pages, verts. Le build journalise des connexions refusées vers
 `localhost:3000` dans son post-traitement, mais termine avec code 0.
 
-**Fini quand.** (1) Les deux A records GoDaddy résolvent vers Vercel, TLS est
+**État de sortie.** La partie dépôt du point (4) est terminée : diff validé,
+PR fusionnée, CI et santé reliées au SHA exact. Le GO commercial reste ouvert
+jusqu'à ce que (1) les deux A records GoDaddy résolvent vers Vercel, TLS soit
 valide, `NEXT_PUBLIC_APP_URL=https://lastchance.app` est redéployée et les URL
 publiques sont relues ; (2) le propriétaire configure l'émetteur Google et les
 trois secrets directement dans Vercel, puis le vérificateur et deux vrais pass
 de test passent ; (3) une cible de capacité isolée, payante, et un plan Vercel
-commercial sont autorisés, puis
-le rapport contient HTTP sémantique, Realtime et ressources ; (4) le diff local
-est validé, livré par PR, puis CI et santé sont reliées au SHA exact.
+commercial sont autorisés, puis le rapport contient HTTP sémantique, Realtime
+et ressources.
 
 **Écarté.** Inventer des valeurs historiques ; charger les campagnes clientes
 actives ; qualifier la capacité avec le seul débit HTTP ; publier une clé
