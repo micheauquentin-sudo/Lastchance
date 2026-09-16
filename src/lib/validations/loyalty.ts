@@ -9,6 +9,7 @@ import {
   entierRequis,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -679,8 +680,6 @@ export const loyaltyCounterCodeSchema = z.object({
  * Code de retrait présenté en caisse (FIDELITE-XXXXXXXX). Casse et espaces
  * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL).
  */
-export const loyaltyRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^FIDELITE-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const loyaltyRedeemCodeSchema = createRedeemCodeSchema(
+  /^FIDELITE-[A-HJ-NP-Z2-9]{8}$/,
+);

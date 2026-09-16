@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 
 /**
  * Code de RETRAIT d'un lot de Ticket d'Or présenté en caisse (TICKET-XXXXXXXX).
@@ -11,8 +11,6 @@ import { z } from "zod";
  * (`CODE_TICKET`, `src/lib/ticket-or.ts`) et n'ouvre que le droit de jouer.
  * Accepter sa forme ici ferait valider en caisse un ticket jamais tiré.
  */
-export const ticketOrRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^TICKET-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const ticketOrRedeemCodeSchema = createRedeemCodeSchema(
+  /^TICKET-[A-HJ-NP-Z2-9]{8}$/,
+);

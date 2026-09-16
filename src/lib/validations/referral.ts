@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -192,8 +193,6 @@ export const saveReferralProgramSchema = z.object({
  * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
  * calendarRedeemCodeSchema / eventRedeemCodeSchema.
  */
-export const referralRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^PARRAIN-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const referralRedeemCodeSchema = createRedeemCodeSchema(
+  /^PARRAIN-[A-HJ-NP-Z2-9]{8}$/,
+);

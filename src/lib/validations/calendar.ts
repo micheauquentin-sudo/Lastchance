@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { texteOptionnel } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 import { FOND_CHOIX } from "@/lib/fonds-ecran";
 
@@ -396,8 +397,6 @@ export const getCalendarStateSchema = z.object({
  * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
  * jackpotRedeemCodeSchema / eventRedeemCodeSchema.
  */
-export const calendarRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^CADEAU-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const calendarRedeemCodeSchema = createRedeemCodeSchema(
+  /^CADEAU-[A-HJ-NP-Z2-9]{8}$/,
+);

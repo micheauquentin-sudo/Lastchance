@@ -5,6 +5,7 @@ import {
   nonRenduVaut,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -340,8 +341,6 @@ export const getJackpotStateSchema = z.object({
  * Code de retrait présenté en caisse (JACKPOT-XXXXXXXX). Casse et espaces
  * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL).
  */
-export const jackpotRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^JACKPOT-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const jackpotRedeemCodeSchema = createRedeemCodeSchema(
+  /^JACKPOT-[A-HJ-NP-Z2-9]{8}$/,
+);

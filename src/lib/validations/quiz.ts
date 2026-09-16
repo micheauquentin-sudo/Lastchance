@@ -29,6 +29,7 @@ import {
   nombreRequis,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -898,11 +899,9 @@ export const getQuizLeaderboardSchema = z.object({
  * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
  * calendarRedeemCodeSchema / referralRedeemCodeSchema.
  */
-export const quizRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^QUIZ-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const quizRedeemCodeSchema = createRedeemCodeSchema(
+  /^QUIZ-[A-HJ-NP-Z2-9]{8}$/,
+);
 
 // ────────────────────────────────────────────────────────────
 // Générateur de questions (banque thématique)

@@ -5,6 +5,7 @@ import {
   isAllowedPlayerAlias,
 } from "@/lib/player-alias";
 import { entierRequis } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import { codeTtlDaysSchema } from "@/lib/validations/reward-expiry";
 
 // ────────────────────────────────────────────────────────────
@@ -366,11 +367,9 @@ export const EVENT_ANSWER_MEANING_HINT =
  * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
  * jackpotRedeemCodeSchema.
  */
-export const eventRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^EVENT-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const eventRedeemCodeSchema = createRedeemCodeSchema(
+  /^EVENT-[A-HJ-NP-Z2-9]{8}$/,
+);
 
 // ────────────────────────────────────────────────────────────
 // Générateur de questions (banque thématique partagée avec le quiz)
