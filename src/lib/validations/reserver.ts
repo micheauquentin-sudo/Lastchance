@@ -6,6 +6,7 @@ import {
   nonRenduVaut,
   texteOptionnel,
 } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import {
   QUEUE_DISPLAY_NAME_INPUT_MAX,
   QUEUE_DISPLAY_NAME_MAX,
@@ -1272,11 +1273,9 @@ export const stockOfferStateSchema = z.object({
  * tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir strict de
  * `contestRedeemCodeSchema`.
  */
-export const stockHoldRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(RESERVER_STOCK_CODE_PATTERN, "Code de retrait invalide");
+export const stockHoldRedeemCodeSchema = createRedeemCodeSchema(
+  RESERVER_STOCK_CODE_PATTERN,
+);
 
 // ────────────────────────────────────────────────────────────
 // Les horaires récurrents (RDV-1)

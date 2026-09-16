@@ -11,6 +11,7 @@ import {
   texteOptionnel,
   videSiNonRendu,
 } from "@/lib/validations/champ-formulaire";
+import { createRedeemCodeSchema } from "@/lib/validations/redeem-code";
 import {
   DEFAULT_EVENT_KIND,
   EVENT_KIND_PATTERN,
@@ -218,11 +219,9 @@ export const updateContestSchema = z.object({
  * autour tolérés ; l'alphabet exclut I/O/0/1 (miroir du CHECK SQL). Miroir
  * strict de quizRedeemCodeSchema / referralRedeemCodeSchema.
  */
-export const contestRedeemCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .regex(/^PRONO-[A-HJ-NP-Z2-9]{8}$/, "Code de retrait invalide");
+export const contestRedeemCodeSchema = createRedeemCodeSchema(
+  /^PRONO-[A-HJ-NP-Z2-9]{8}$/,
+);
 
 export const updateContestScoringSchema = z.object({
   id: z.string().uuid(),
