@@ -37,6 +37,80 @@
   prouvée comme faite passe dans **Terminé** ; seules les lignes non réalisées
   restent dans **À exécuter** ou **Bloqué**.
 
+## Reprise Codex — préparation du GO commercial (2026-09-16)
+
+**État de départ confirmé.** Le release gate précédent est livré sur `main` au
+SHA `99afd99d688eb015865ea0db074e36cf73b83bdf` : migration production
+`20261221120000`, PR `#379`, sept jobs CI post-fusion verts, déploiement Vercel
+et santé production verts sur ce SHA. Le travail courant vit sur
+`chantier/go-commercial`, sans commit ni push à ce stade.
+
+**Régularisation production terminée sans inventer de montant.** Les 22 lots
+historiques ont tous une valeur inconnue (`value_cents IS NULL`) : aucun
+montant réel ne pouvait être déduit honnêtement. L'opération auditée
+`5540c744-82df-475e-abf2-7003503165cc` a donc passé exactement les 7 campagnes
+concernées de `active` à `paused`, dans une transaction `SERIALIZABLE` avec
+verrous et comparaison avant écriture. Les valeurs, poids, stocks et états des
+22 lots sont inchangés ; leur hash avant/après est identique et une nouvelle
+session compte zéro campagne active dangereuse. Une sauvegarde technique à ACL
+restreinte existe hors dépôt dans `production-backups/`, SHA-256
+`a2b4e9b773232b4444f4f29e2ca81e5ee5c1d3c9abb3c49b24d7fea38b626aaa`.
+Réactiver exige d'abord les valeurs réelles du commerçant ou le retrait des
+lots inconnus du tirage : ne jamais remplacer silencieusement `NULL` par 1 999.
+
+**Domaine préparé côté Vercel, bloqué au registrar.** `lastchance.app`,
+`www.lastchance.app` et désormais `app.lastchance.app` sont rattachés au projet
+Vercel. GoDaddy reste toutefois autoritaire (`ns43/ns44.domaincontrol.com`) :
+l'apex sert encore `3.33.130.190` / `15.197.148.33` et `app` est NXDOMAIN.
+Vercel demande exactement `A @ → 76.76.21.21` et
+`A app → 76.76.21.21`. Ne pas changer `NEXT_PUBLIC_APP_URL`, redéployer ou
+demander le certificat avant que ces deux enregistrements ne résolvent.
+
+**Google Wallet durci localement, validation réelle bloquée par les accès.**
+Les JWT de gain et de fidélité utilisent maintenant l'origine HTTP(S)
+canonique de `NEXT_PUBLIC_APP_URL` dans `origins` et refusent un autre
+protocole ; la référence Google exige bien le protocole et le domaine, sans
+chemin. Les tests ciblent les deux pass. Les trois variables `GOOGLE_WALLET_ISSUER_ID`,
+`GOOGLE_WALLET_CLIENT_EMAIL`, `GOOGLE_WALLET_PRIVATE_KEY` restent absentes de
+Vercel Production et Preview ; aucun compte émetteur ni compte de service
+autorisé n'est accessible depuis cette session. La clé privée ne doit jamais
+être collée dans ce document ou dans un terminal partagé.
+
+**Capacité en cours de qualification.** La santé publique répond 200 et annonce
+Realtime actif. Le smoke HTTP production a confirmé le cache et les latences,
+mais sa saturation de `/api/health` était le plafond volontaire `healthIp`
+60/minute, pas une panne de capacité. Il ne mesure ni propagation Realtime, ni
+CPU/RAM/connexions Supabase. Un préflight fail-closed et un mode de charge
+cadencé sont maintenant implémentés et contre-audités sur cette branche ; ils
+refusent tout GO automatique, y compris avec un fichier de métriques déclaré.
+Aucun GO de capacité ne doit être
+prononcé sans environnement isolé, métriques de ressources, palier 100 puis
+250 joueurs et soak de 30 minutes. L'API Vercel confirme en outre que l'équipe
+est encore au plan `hobby`, réservé par Vercel à l'usage personnel non
+commercial : le passage commercial exige aussi une décision de facturation Pro
+du propriétaire.
+
+**Validation locale du lot.** Syntaxe Node/Bash, 6/6 tests du harnais et 24/24
+tests Google Wallet verts ; revue sécurité Wallet et contre-audit capacité
+`SHIP`. Puis typecheck, lint sans erreur (un avertissement préexistant dans
+`build-backdrop-frames.mjs`), Vitest complet 437 fichiers / 7 762 tests et build
+Next 16, 66 pages, verts. Le build journalise des connexions refusées vers
+`localhost:3000` dans son post-traitement, mais termine avec code 0.
+
+**Fini quand.** (1) Les deux A records GoDaddy résolvent vers Vercel, TLS est
+valide, `NEXT_PUBLIC_APP_URL=https://lastchance.app` est redéployée et les URL
+publiques sont relues ; (2) le propriétaire configure l'émetteur Google et les
+trois secrets directement dans Vercel, puis le vérificateur et deux vrais pass
+de test passent ; (3) une cible de capacité isolée, payante, et un plan Vercel
+commercial sont autorisés, puis
+le rapport contient HTTP sémantique, Realtime et ressources ; (4) le diff local
+est validé, livré par PR, puis CI et santé sont reliées au SHA exact.
+
+**Écarté.** Inventer des valeurs historiques ; charger les campagnes clientes
+actives ; qualifier la capacité avec le seul débit HTTP ; publier une clé
+Google dans Git ou la conversation ; changer de nameservers et risquer les
+MX/TXT alors que deux A records suffisent.
+
 ## Reprise Codex — invariant atomique de valeur (2026-09-15)
 
 **Terrain.** Le lot du second release gate a été repris depuis la base

@@ -1,5 +1,27 @@
 # Roadmap — Lastchance
 
+## V1.82 — Préparation du GO commercial (🟡 en cours, 2026-09-16)
+
+**Sécurisé en production** : les 7 campagnes portant les 22 lots à valeur
+inconnue sont en pause atomique ; aucune valeur, aucun poids et aucun stock
+n'ont été inventés ou réécrits. Elles ne pourront être réactivées qu'après
+confirmation des valeurs réelles ou retrait des lots inconnus du tirage.
+
+**Préparé dans le dépôt et chez Vercel** : `app.lastchance.app` est attaché au
+projet ; les deux JWT Google Wallet normalisent l'URL canonique en origine
+HTTP(S) sans chemin pour `origins`, conformément au format Google. Le banc
+de capacité est renforcé pour séparer débit HTTP, réponses métier, Realtime et
+métriques de ressources au lieu de transformer un smoke en certification.
+
+**Dépendances propriétaires encore requises** : deux A records GoDaddy vers
+`76.76.21.21`, puis changement de `NEXT_PUBLIC_APP_URL` et redéploiement ;
+création/autorisation du compte de service dans le vrai émetteur Google Wallet
+et pose des trois secrets directement dans Vercel ; autorisation d'un
+environnement de capacité isolé et facturable avec métriques, ainsi que le
+passage du plan Vercel `hobby` à un plan autorisant l'usage commercial. Tant que ces
+trois gestes ne sont pas accomplis et vérifiés, le verdict commercial reste
+NO-GO même si la bêta privée demeure exploitable.
+
 ## V1.81 — Invariant atomique de valeur des lots (✅ 2026-09-15)
 
 **Objectif** : fermer les courses restantes d'ADR-184 entre garde applicative,

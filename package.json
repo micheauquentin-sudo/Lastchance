@@ -21,6 +21,8 @@
     "test:production-health": "node --test scripts/verify-production-health.test.mjs",
     "production:health": "node scripts/verify-production-health.mjs",
     "capacity:bench": "node scripts/capacity-bench.mjs",
+    "capacity:preflight": "bash scripts/event-capacity-preflight.sh",
+    "test:capacity": "node --test scripts/capacity-bench.test.mjs",
     "security:audit-db": "supabase test db supabase/tests/security_acl.test.sql",
     "assets:fonds": "node scripts/optimiser-fonds.mjs",
     "bundle:mesure": "node scripts/mesurer-bundle.mjs",

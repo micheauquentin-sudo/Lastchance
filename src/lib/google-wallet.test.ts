@@ -11,8 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * doit s'en apercevoir autrement que par un bouton absent.
  */
 
-const { buildGoogleWalletLoyaltySaveUrl, pushGoogleWalletLoyaltyBalance, googleWalletLoyaltyObjectSuffix } =
-  await import("@/lib/google-wallet");
+const {
+  buildGoogleWalletSaveUrl,
+  buildGoogleWalletLoyaltySaveUrl,
+  pushGoogleWalletLoyaltyBalance,
+  googleWalletLoyaltyObjectSuffix,
+} = await import("@/lib/google-wallet");
 
 /** Une vraie paire RSA : la signature est réellement calculée, pas simulée. */
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -95,6 +99,40 @@ describe("buildGoogleWalletLoyaltySaveUrl — sans configuration", () => {
 
 describe("buildGoogleWalletLoyaltySaveUrl — configuré", () => {
   beforeEach(configurer);
+
+  it("déclare l'origine HTTP avec protocole et port pour les deux pass", () => {
+    const gain = buildGoogleWalletSaveUrl({
+      organizationName: "Café des Sports",
+      prizeLabel: "Café offert",
+      redeemCode: "GAIN-123",
+    });
+    const fidelite = buildGoogleWalletLoyaltySaveUrl(CARTE);
+
+    expect(payloadDe(gain as string).origins).toEqual([
+      "http://localhost:3000",
+    ]);
+    expect(payloadDe(fidelite as string).origins).toEqual([
+      "http://localhost:3000",
+    ]);
+  });
+
+  it("refuse une APP_URL qui n'est pas HTTP(S)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "ftp://lastchance.app/fichier");
+    vi.resetModules();
+    const { buildGoogleWalletSaveUrl: buildAvecUrlInvalide } = await import(
+      "@/lib/google-wallet"
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(
+      buildAvecUrlInvalide({
+        organizationName: "Café des Sports",
+        prizeLabel: "Café offert",
+        redeemCode: "GAIN-123",
+      }),
+    ).toBeNull();
+    expect(error).toHaveBeenCalled();
+  });
 
   it("signe un lien « save to wallet » portant une classe et un objet", () => {
     const url = buildGoogleWalletLoyaltySaveUrl(CARTE);

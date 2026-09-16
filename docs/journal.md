@@ -4,6 +4,46 @@ Ce fichier porte l'**historique complet** des chantiers de Lastchance, du plus
 récent au plus ancien. Il a été extrait verbatim de la section `## Last Updated`
 de [`CLAUDE.md`](../CLAUDE.md) le 2026-08-05.
 
+## 2026-09-16 — Reprise des quatre conditions du GO commercial
+
+La régularisation des 22 lots historiques n'a pas inventé de prix : toutes les
+valeurs sont inconnues. Une transaction production `SERIALIZABLE`, auditée sous
+l'identifiant `5540c744-82df-475e-abf2-7003503165cc`, a mis en pause les 7
+campagnes concernées. Les poids, stocks, activations et valeurs des lots sont
+identiques avant/après ; une relecture indépendante compte zéro campagne active
+dangereuse. La sauvegarde technique hors dépôt est protégée par ACL et vérifiée
+par SHA-256.
+
+Côté domaine, les trois noms sont attachés au projet Vercel et
+`app.lastchance.app` a été ajouté. Le registrar GoDaddy reste toutefois la
+source de vérité : l'apex sert encore le parking, `app` est NXDOMAIN. Il reste
+au détenteur du compte à remplacer l'apex par `A 76.76.21.21` et créer
+`A app 76.76.21.21`, sans toucher aux MX/TXT ; seulement ensuite l'URL publique
+pourra être figée au build et le certificat relu.
+
+La référence JWT Google Wallet a permis de trancher une ambiguïté des exemples :
+`origins` porte une origine HTTP(S) complète, sans chemin. Les deux familles de
+pass normalisent désormais `NEXT_PUBLIC_APP_URL` avec `URL.origin` et refusent
+un autre protocole. La revue sécurité est verte. La validation réelle reste
+impossible tant que l'émetteur, le compte de service autorisé et les trois
+variables Vercel ne sont pas fournis directement par le propriétaire.
+
+Enfin, le smoke production a confirmé une santé 200 et Realtime actif, mais a
+aussi montré qu'un débit HTTP sans métriques métier et ressources ne certifie
+rien : `/api/health` applique volontairement 60 requêtes/minute/IP. Le chantier
+renforce donc le banc par cadence joueur, validation sémantique, run-id,
+préflight fail-closed et exigence de preuves Realtime/CPU/RAM/connexions. La
+qualification finale attend une cible isolée et facturable autorisée. L'équipe
+Vercel est par ailleurs encore au plan `hobby`, réservé par les conditions
+Vercel à l'usage personnel non commercial ; son upgrade est un geste financier
+du propriétaire, pas une mutation à déduire d'un audit technique.
+
+**Preuves du lot dépôt** : syntaxe Node/Bash ; 6 tests capacité et 24 tests
+Google Wallet ciblés ; deux contre-revues `SHIP` ; typecheck ; lint sans erreur
+(un warning préexistant) ; Vitest complet 437 fichiers / 7 762 tests ; build
+Next 16, 66 pages, vert. Le harnais ne peut jamais rendre un GO automatique :
+il reste `NON_QUALIFIABLE` jusqu'à la revue du soak multi-campagne.
+
 ## 2026-09-15 — Reprise Codex : invariant atomique de valeur, ADR-185
 
 La reprise du lot Claude a démontré que les gardes applicatives d'ADR-184
