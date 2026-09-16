@@ -6,12 +6,16 @@
 set -euo pipefail
 
 BUILD=1
-RESET=1
+RESET=0
 DUREE=8
+MODE="cadence"
 for argument in "$@"; do
   case "$argument" in
     --no-build) BUILD=0 ;;
     --no-reset) RESET=0 ;;
+    --reset) RESET=1 ;;
+    --stress) MODE="stress" ;;
+    --cadence) MODE="cadence" ;;
     --duree=*) DUREE="${argument#*=}" ;;
   esac
 done
@@ -106,6 +110,7 @@ ACTION_ID="$(node -e '
 export BENCH_EVENT_ACTION_ID="$ACTION_ID"
 export BENCH_EVENT_SESSION_ID="$SESSION_ID"
 export BENCH_EVENT_CODE="$CODE"
+export BENCH_EVENT_EXPECTED_PHASE="question_active"
 
 PIDS=()
 cleanup() {
@@ -165,12 +170,21 @@ SQL
     exit 1
   fi
 
-  echo "Palier population=$population, concurrence=$population"
+  RUN_ID="local-event-${population}-$(date -u +%Y%m%dT%H%M%SZ)"
+  CHARGE_ARGS=(--mode "$MODE")
+  if [[ "$MODE" = "cadence" ]]; then
+    CHARGE_ARGS+=(--joueurs "$population" --intervalle-ms 2500)
+  else
+    CHARGE_ARGS+=(--paliers "$population")
+  fi
+
+  echo "Palier population=$population, mode=$MODE, run=$RUN_ID"
   node scripts/capacity-bench.mjs \
     --url "http://localhost:$PORT" \
     --scenarios event \
     --ecrire \
-    --paliers "$population" \
+    --run-id "$RUN_ID" \
+    "${CHARGE_ARGS[@]}" \
     --duree "$DUREE" \
     --warmup 2 \
     --timeout 15000 \
@@ -179,8 +193,16 @@ SQL
   node -e '
     const report = require(`./test-results/capacity-event-${process.argv[1]}.json`);
     const result = report.scenarios.event?.[0];
-    if (!result || result.tauxErreur !== 0 || result.erreursReseau !== 0) {
-      console.error("Palier invalide : erreurs HTTP ou reseau detectees.", result);
+    const cadenceHorsSeuil = result?.mode === "cadence" && (
+      result.reqParS < result.cibleReqParS * 0.98
+      || result.latence?.p95 > 1000
+      || result.latence?.p99 > 2500
+      || result.retardEmission?.p95 > 100
+    );
+    if (!result || result.tauxErreur !== 0 || result.erreursReseau !== 0
+        || result.erreursSemantiques !== 0 || result.abandonnees !== 0
+        || cadenceHorsSeuil) {
+      console.error("Palier invalide : erreurs, débit, latence ou ponctualité hors seuil.", result);
       process.exit(1);
     }
   ' "$population"

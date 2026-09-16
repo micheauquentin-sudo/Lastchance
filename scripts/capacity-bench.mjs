@@ -56,13 +56,14 @@
 // Options : --paliers 25,50,100  --duree 20  --warmup 3  --json rapport.json
 // ============================================================
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
 // ─────────────────────────────────────────────────────────────
 // Arguments
 // ─────────────────────────────────────────────────────────────
 
-function lireArgs(argv) {
+export function lireArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
@@ -84,12 +85,14 @@ function lireArgs(argv) {
 
 const args = lireArgs(process.argv.slice(2));
 
-function entierPositif(valeur, defaut, min, max) {
+export function entierPositif(valeur, defaut, min, max) {
   const n = Number.parseInt(String(valeur ?? ""), 10);
   if (!Number.isFinite(n)) return defaut;
   return Math.min(Math.max(n, min), max);
 }
 
+const EST_POINT_ENTREE = Boolean(process.argv[1])
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
 const BASE_URL = String(args.url ?? process.env.BENCH_URL ?? "").replace(/\/+$/, "");
 const SLUG = args.slug ? String(args.slug) : null;
 const DUREE_S = entierPositif(args.duree, 20, 3, 900);
@@ -98,30 +101,122 @@ const SOAK_S = args.soak ? entierPositif(args.soak, 300, 30, 7200) : null;
 const ECRIRE = args.ecrire === true;
 const PRODUCTION_OK = args.production === true;
 const SORTIE_JSON = args.json ? String(args.json) : null;
+const FICHIER_METRIQUES = args.metrics ? String(args.metrics) : null;
 const TIMEOUT_MS = entierPositif(args.timeout, 15_000, 1000, 120_000);
+const MAX_EN_VOL = entierPositif(args["max-en-vol"], 2_000, 1, 20_000);
+const MODE = String(args.mode ?? "stress");
+const INTERVALLE_JOUEUR_MS = entierPositif(
+  args["intervalle-ms"],
+  2_500,
+  100,
+  120_000,
+);
+const RUN_ID = String(
+  args["run-id"]
+    ?? process.env.BENCH_RUN_ID
+    ?? `local-${new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14)}-${process.pid}`,
+);
 
 const PALIERS = String(args.paliers ?? "25,50,100")
   .split(",")
   .map((p) => entierPositif(p.trim(), 0, 1, 2000))
   .filter((p) => p > 0);
 
-if (!BASE_URL) {
+function listeNombres(value, min, max) {
+  if (value === undefined || value === null || value === "") return [];
+  return String(value)
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item >= min && item <= max);
+}
+
+/**
+ * Construit les cibles OPEN-LOOP. Une population sans `--rps` est traduite par
+ * sa cadence navigateur : joueurs / intervalle. Si les deux sont fournis, leur
+ * cardinalité et leur cohérence sont vérifiées au lieu de choisir silencieusement.
+ */
+export function construireCiblesCadence({ joueurs, rps, intervalleMs = 2_500 }) {
+  const populations = listeNombres(joueurs, 1, 100_000).map(Math.trunc);
+  const debits = listeNombres(rps, 0.01, 10_000);
+
+  if (populations.length === 0 && debits.length === 0) {
+    throw new Error("Le mode cadence exige --joueurs ou --rps.");
+  }
+  if (populations.length > 0 && debits.length > 0 && populations.length !== debits.length) {
+    throw new Error("--joueurs et --rps doivent porter le même nombre de valeurs.");
+  }
+
+  const taille = Math.max(populations.length, debits.length);
+  return Array.from({ length: taille }, (_, index) => {
+    const population = populations[index] ?? null;
+    const derive = population === null ? null : (population * 1_000) / intervalleMs;
+    const cible = debits[index] ?? derive;
+    if (cible === null || !Number.isFinite(cible) || cible <= 0) {
+      throw new Error("Débit cadencé invalide.");
+    }
+    if (derive !== null && debits[index] !== undefined) {
+      const ecartRelatif = Math.abs(debits[index] - derive) / derive;
+      if (ecartRelatif > 0.01) {
+        throw new Error(
+          `--rps ${debits[index]} contredit ${population} joueurs / ${intervalleMs} ms (${derive.toFixed(2)} req/s).`,
+        );
+      }
+    }
+    return {
+      joueurs: population,
+      cibleReqParS: Number(cible.toFixed(3)),
+      intervalleMs: population === null ? null : intervalleMs,
+    };
+  });
+}
+
+const CIBLES_CADENCE = MODE === "cadence"
+  ? construireCiblesCadence({
+      joueurs: args.joueurs,
+      rps: args.rps,
+      intervalleMs: INTERVALLE_JOUEUR_MS,
+    })
+  : [];
+
+if (EST_POINT_ENTREE && !BASE_URL) {
   console.error(
     "Usage : node scripts/capacity-bench.mjs --url https://exemple.vercel.app [options]\n" +
+      "        [--mode stress --paliers 25,50,100]\n" +
+      "        [--mode cadence --joueurs 100,500 --intervalle-ms 2500]\n" +
       "        (ou BENCH_URL=… dans l'environnement)",
   );
+  process.exit(2);
+}
+
+if (EST_POINT_ENTREE && MODE !== "stress" && MODE !== "cadence") {
+  console.error("Refus : --mode doit valoir `stress` ou `cadence`.");
+  process.exit(2);
+}
+
+if (EST_POINT_ENTREE && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(RUN_ID)) {
+  console.error("Refus : --run-id doit contenir 1 à 64 caractères sûrs [A-Za-z0-9._-].");
   process.exit(2);
 }
 
 // Un hôte de production ne se vise pas par accident. La liste est volontairement
 // grossière : mieux vaut un faux positif qui demande un drapeau explicite qu'un
 // banc de 100 connexions lâché sur les clients d'un commerçant.
-const SEMBLE_PRODUCTION =
-  /lastchance-mu\.vercel\.app|lastchance\.[a-z]+$|^https:\/\/(www\.)?lastchance/i.test(
-    BASE_URL,
-  ) || args.production === true;
+export function sembleProduction(url) {
+  try {
+    const host = new URL(String(url)).hostname.toLowerCase();
+    return host === "lastchance.app"
+      || host === "www.lastchance.app"
+      || host === "app.lastchance.app"
+      || host === "lastchance-mu.vercel.app"
+      || host === "lastchance-micheau.vercel.app";
+  } catch {
+    return false;
+  }
+}
 
-if (SEMBLE_PRODUCTION && !PRODUCTION_OK) {
+const SEMBLE_PRODUCTION = sembleProduction(BASE_URL) || args.production === true;
+
+if (EST_POINT_ENTREE && SEMBLE_PRODUCTION && !PRODUCTION_OK) {
   console.error(
     `\nRefus : « ${BASE_URL} » ressemble à un hôte de PRODUCTION.\n` +
       "Ce banc génère de la charge réelle sur Vercel et Supabase.\n" +
@@ -199,6 +294,34 @@ function pseudoAlea() {
   graine ^= graine >>> 17;
   graine ^= graine << 5;
   return ((graine >>> 0) % 100000) / 100000;
+}
+
+/**
+ * Une Server Action peut répondre HTTP 200 tout en rendant un état métier
+ * indisponible. Le banc événement ne compte donc un succès que si le flux RSC
+ * contient l'état `ok`, la bonne session et, lorsqu'elle est annoncée par le
+ * préflight, la phase attendue.
+ */
+export function validerReponseEvenement({
+  status,
+  body,
+  sessionId,
+  phaseAttendue = null,
+}) {
+  if (!Number.isInteger(status) || status < 200 || status >= 300) {
+    return { ok: false, raison: `http_${status}` };
+  }
+  const texte = String(body ?? "").replaceAll('\\"', '"');
+  if (!texte.includes('"state":"ok"')) {
+    return { ok: false, raison: "etat_non_ok" };
+  }
+  if (!sessionId || !texte.includes(`"id":"${sessionId}"`)) {
+    return { ok: false, raison: "mauvaise_session" };
+  }
+  if (phaseAttendue && !texte.includes(`"phase":"${phaseAttendue}"`)) {
+    return { ok: false, raison: "mauvaise_phase" };
+  }
+  return { ok: true, raison: null };
 }
 
 const SCENARIOS = {
@@ -283,11 +406,11 @@ const SCENARIOS = {
     //
     // L'offre vend 1 000 participants simultanés. Ce que 1 000 joueurs
     // produisent réellement n'est pas 1 000 requêtes : c'est un
-    // RAFRAÎCHISSEMENT CONTINU. `eventPollDelay` fixe la cadence à 2 500 ms
-    // par joueur pendant une question quand Realtime n'est pas connecté —
-    // et Realtime est ABSENT de la production (aucune variable
-    // `EVENTS_REALTIME_ENABLED`). Donc 1 000 / 2,5 s = **400 req/s
-    // soutenues** sur `getEventState`, pendant toute la durée des questions.
+    // RAFRAÎCHISSEMENT CONTINU. Quand Realtime est connecté, le repli sonde
+    // toutes les 30 s ; s'il tombe, `eventPollDelay` revient à 2 500 ms pendant
+    // une question. Le mode cadencé doit donc mesurer les DEUX régimes : charge
+    // nominale et pire cas sans Realtime, sans prétendre que l'un remplace la
+    // mesure des messages Realtime eux-mêmes.
     //
     // C'est ce chiffre-là qu'il faut confronter à la capacité mesurée, et
     // non le nombre de joueurs. Ce scénario appelle la même server action
@@ -322,6 +445,13 @@ const SCENARIOS = {
         ]),
       },
     }),
+    valider: ({ status, body }) =>
+      validerReponseEvenement({
+        status,
+        body,
+        sessionId: process.env.BENCH_EVENT_SESSION_ID,
+        phaseAttendue: process.env.BENCH_EVENT_EXPECTED_PHASE ?? null,
+      }),
   },
   spin: {
     ecrit: true,
@@ -419,78 +549,299 @@ function scenariosRetenus() {
 // Moteur de charge
 // ─────────────────────────────────────────────────────────────
 
-/**
- * N ouvriers tirent des requêtes en boucle pendant `dureeMs`. Le débit n'est
- * donc pas imposé (pas de cadence fixe) : on mesure ce que la pile encaisse,
- * pas ce qu'on lui impose — une cadence fixe transformerait une saturation en
- * file d'attente invisible.
- */
-async function jouerPalier(scenario, concurrence, dureeMs, mesures) {
-  const latences = [];
-  const statuts = new Map();
-  const regions = new Map();
-  const cache = new Map();
-  let erreursReseau = 0;
-  let octets = 0;
+function incrementer(carte, cle) {
+  carte.set(cle, (carte.get(cle) ?? 0) + 1);
+}
 
+function creerCollecteur() {
+  return {
+    latences: [],
+    retardsEmission: [],
+    statuts: new Map(),
+    regions: new Map(),
+    cache: new Map(),
+    raisonsSemantiques: new Map(),
+    erreursReseau: 0,
+    erreursSemantiques: 0,
+    succes: 0,
+    octets: 0,
+    abandonnees: 0,
+    maxEnVolObserve: 0,
+  };
+}
+
+async function executerRequete(scenario, mesures, collecte) {
+  const { url, init } = scenario.requete();
+  const debut = performance.now();
+  try {
+    const res = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: {
+        ...(init.headers ?? {}),
+        "user-agent": `lastchance-capacity-bench/${RUN_ID}`,
+        "x-lastchance-bench-run": RUN_ID,
+      },
+    });
+    const classe = `${Math.floor(res.status / 100)}xx`;
+    incrementer(collecte.statuts, classe);
+
+    // `x-vercel-id` porte « edge::region::id » : la région d'EXÉCUTION est
+    // l'avant-dernier segment. C'est la preuve directe de l'épinglage fra1.
+    const vid = res.headers.get("x-vercel-id");
+    if (vid) {
+      const segments = vid.split("::");
+      const region = segments.length >= 2 ? segments.at(-2) : segments[0];
+      incrementer(collecte.regions, region);
+    }
+    const etatCache = res.headers.get("x-vercel-cache");
+    if (etatCache) incrementer(collecte.cache, etatCache);
+
+    let semantiqueOk = res.ok;
+    if (scenario.sonde) {
+      await scenario.sonde(res, mesures);
+    } else if (scenario.valider) {
+      const corps = await res.text();
+      collecte.octets += Buffer.byteLength(corps);
+      const verdict = scenario.valider({ status: res.status, body: corps });
+      semantiqueOk = verdict.ok;
+      if (!verdict.ok) {
+        collecte.erreursSemantiques += 1;
+        incrementer(collecte.raisonsSemantiques, verdict.raison ?? "inconnue");
+      }
+    } else {
+      const corps = await res.arrayBuffer();
+      collecte.octets += corps.byteLength;
+    }
+    if (res.ok && semantiqueOk) collecte.succes += 1;
+    collecte.latences.push(performance.now() - debut);
+  } catch {
+    collecte.erreursReseau += 1;
+    collecte.latences.push(performance.now() - debut);
+  }
+}
+
+function finaliserPalier(collecte, dureeReelleS, complement) {
+  const terminees = collecte.latences.length;
+  const total = terminees + collecte.abandonnees;
+  return {
+    ...complement,
+    total,
+    terminees,
+    dureeS: Number(dureeReelleS.toFixed(1)),
+    reqParS: Number((terminees / dureeReelleS).toFixed(1)),
+    tauxErreur: total === 0
+      ? 1
+      : Number((1 - collecte.succes / total).toFixed(4)),
+    erreursReseau: collecte.erreursReseau,
+    erreursSemantiques: collecte.erreursSemantiques,
+    raisonsSemantiques: Object.fromEntries(collecte.raisonsSemantiques),
+    abandonnees: collecte.abandonnees,
+    maxEnVolObserve: collecte.maxEnVolObserve,
+    statuts: Object.fromEntries(collecte.statuts),
+    regions: Object.fromEntries(collecte.regions),
+    cache: Object.fromEntries(collecte.cache),
+    kojets: Math.round(collecte.octets / 1024),
+    latence: resumer(collecte.latences),
+    retardEmission: resumer(collecte.retardsEmission),
+  };
+}
+
+/**
+ * N ouvriers tirent des requêtes en boucle pendant `dureeMs`. Ce mode fermé
+ * cherche le plafond de la pile ; il ne représente PAS une population réelle.
+ */
+async function jouerPalierStress(scenario, concurrence, dureeMs, mesures) {
+  const collecte = creerCollecteur();
   const finAt = performance.now() + dureeMs;
 
   async function ouvrier() {
     while (performance.now() < finAt) {
-      const { url, init } = scenario.requete();
-      const debut = performance.now();
-      try {
-        const res = await fetch(url, {
-          ...init,
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-          headers: { ...(init.headers ?? {}), "user-agent": "lastchance-capacity-bench" },
-        });
-        const classe = `${Math.floor(res.status / 100)}xx`;
-        statuts.set(classe, (statuts.get(classe) ?? 0) + 1);
-
-        // `x-vercel-id` porte « edge::region::id » : la région d'EXÉCUTION est
-        // l'avant-dernier segment. C'est la preuve directe de l'épinglage fra1.
-        const vid = res.headers.get("x-vercel-id");
-        if (vid) {
-          const segments = vid.split("::");
-          const region = segments.length >= 2 ? segments.at(-2) : segments[0];
-          regions.set(region, (regions.get(region) ?? 0) + 1);
-        }
-        const etatCache = res.headers.get("x-vercel-cache");
-        if (etatCache) cache.set(etatCache, (cache.get(etatCache) ?? 0) + 1);
-
-        if (scenario.sonde) {
-          await scenario.sonde(res, mesures);
-        } else {
-          const corps = await res.arrayBuffer();
-          octets += corps.byteLength;
-        }
-        latences.push(performance.now() - debut);
-      } catch {
-        erreursReseau += 1;
-        latences.push(performance.now() - debut);
-      }
+      await executerRequete(scenario, mesures, collecte);
     }
   }
 
   const debutReel = performance.now();
+  collecte.maxEnVolObserve = concurrence;
   await Promise.all(Array.from({ length: concurrence }, () => ouvrier()));
   const dureeReelleS = (performance.now() - debutReel) / 1000;
-
-  const total = latences.length;
-  const ok = statuts.get("2xx") ?? 0;
-  return {
+  return finaliserPalier(collecte, dureeReelleS, {
+    mode: "stress",
     concurrence,
-    total,
-    dureeS: Number(dureeReelleS.toFixed(1)),
-    reqParS: Math.round(total / dureeReelleS),
-    tauxErreur: total === 0 ? 1 : Number((1 - ok / total).toFixed(4)),
-    erreursReseau,
-    statuts: Object.fromEntries(statuts),
-    regions: Object.fromEntries(regions),
-    cache: Object.fromEntries(cache),
-    kojets: Math.round(octets / 1024),
-    latence: resumer(latences),
+    joueurs: null,
+    cibleReqParS: null,
+  });
+}
+
+function attendre(ms) {
+  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Mode OPEN-LOOP : les émissions suivent une horloge indépendante des réponses.
+ * Une pile lente accumule donc des requêtes en vol, puis des abandons explicites
+ * à `--max-en-vol`, au lieu de réduire silencieusement le débit généré.
+ */
+async function jouerPalierCadence(scenario, cible, dureeMs, mesures) {
+  const collecte = creerCollecteur();
+  const enVol = new Set();
+  const debutReel = performance.now();
+  const finEmission = debutReel + dureeMs;
+  const periodeMs = 1_000 / cible.cibleReqParS;
+  let prochaineEmission = debutReel;
+
+  while (prochaineEmission < finEmission) {
+    await attendre(prochaineEmission - performance.now());
+    collecte.retardsEmission.push(Math.max(0, performance.now() - prochaineEmission));
+    if (enVol.size >= MAX_EN_VOL) {
+      collecte.abandonnees += 1;
+    } else {
+      const requete = executerRequete(scenario, mesures, collecte)
+        .finally(() => enVol.delete(requete));
+      enVol.add(requete);
+      collecte.maxEnVolObserve = Math.max(collecte.maxEnVolObserve, enVol.size);
+    }
+    prochaineEmission += periodeMs;
+  }
+
+  await Promise.allSettled(enVol);
+  const dureeReelleS = (performance.now() - debutReel) / 1000;
+  return finaliserPalier(collecte, dureeReelleS, {
+    mode: "cadence",
+    concurrence: null,
+    joueurs: cible.joueurs,
+    cibleReqParS: cible.cibleReqParS,
+    intervalleMs: cible.intervalleMs,
+  });
+}
+
+const METRIQUES_OBLIGATOIRES = ["realtime", "cpu", "ram", "database"];
+
+/**
+ * Les mesures HTTP ne voient ni les sockets Realtime ni les ressources des
+ * fournisseurs. Un dossier de preuve exige donc un fichier externe corrélé au
+ * même run. Ce fichier reste déclaratif : même complet, il ne prononce jamais
+ * à lui seul un GO de production.
+ */
+export function evaluerMetriquesObligatoires(metriques, runId) {
+  if (!metriques || typeof metriques !== "object") {
+    return {
+      verdict: "NON_QUALIFIABLE",
+      manquantes: [...METRIQUES_OBLIGATOIRES],
+      raison: "fichier_de_metriques_absent_ou_invalide",
+      details: {},
+    };
+  }
+  if (metriques.run_id !== runId) {
+    return {
+      verdict: "NON_QUALIFIABLE",
+      manquantes: [...METRIQUES_OBLIGATOIRES],
+      raison: "run_id_des_metriques_incompatible",
+      details: {},
+    };
+  }
+
+  const manquantes = METRIQUES_OBLIGATOIRES.filter((nom) => {
+    const valeur = metriques[nom];
+    return !valeur
+      || typeof valeur !== "object"
+      || (valeur.status !== "go" && valeur.status !== "no_go")
+      || typeof valeur.source !== "string"
+      || valeur.source.trim().length === 0;
+  });
+  const details = Object.fromEntries(
+    METRIQUES_OBLIGATOIRES.filter((nom) => metriques[nom])
+      .map((nom) => {
+        const valeur = metriques[nom];
+        return [nom, {
+          status: valeur.status ?? null,
+          source: typeof valeur.source === "string" ? valeur.source : null,
+          observed: typeof valeur.observed === "number" ? valeur.observed : null,
+          limit: typeof valeur.limit === "number" ? valeur.limit : null,
+          unit: typeof valeur.unit === "string" ? valeur.unit : null,
+        }];
+      }),
+  );
+  if (manquantes.length > 0) {
+    return {
+      verdict: "NON_QUALIFIABLE",
+      manquantes,
+      raison: "metriques_obligatoires_incompletes",
+      details,
+    };
+  }
+
+  const enEchec = METRIQUES_OBLIGATOIRES.filter(
+    (nom) => metriques[nom].status === "no_go",
+  );
+  return {
+    verdict: enEchec.length > 0 ? "NO_GO" : "EVIDENCE_COMPLETE",
+    manquantes: [],
+    enEchec,
+    raison: enEchec.length > 0 ? "metriques_hors_seuil" : null,
+    details,
+  };
+}
+
+async function chargerMetriques() {
+  if (!FICHIER_METRIQUES) return null;
+  try {
+    return JSON.parse(await readFile(FICHIER_METRIQUES, "utf8"));
+  } catch (error) {
+    console.error(`Métriques illisibles (${FICHIER_METRIQUES}) : ${error.message}`);
+    return null;
+  }
+}
+
+export function qualifierRapport(rapport, metriques, runId = RUN_ID) {
+  const qualificationMetriques = evaluerMetriquesObligatoires(metriques, runId);
+  const erreursHttp = Object.values(rapport.scenarios)
+    .flat()
+    .some((palier) => palier.tauxErreur > 0 || palier.abandonnees > 0);
+
+  if (erreursHttp) {
+    return {
+      verdict: "NO_GO",
+      raison: "erreurs_http_reseau_semantiques_ou_emissions_abandonnees",
+      metriques: qualificationMetriques,
+    };
+  }
+  const paliersEvent = rapport.scenarios.event ?? [];
+  if (paliersEvent.length === 0) {
+    return {
+      verdict: "NON_QUALIFIABLE",
+      raison: "scenario_event_absent",
+      metriques: qualificationMetriques,
+    };
+  }
+  const horsSeuil = paliersEvent.some((palier) =>
+    palier.mode !== "cadence"
+      || typeof palier.cibleReqParS !== "number"
+      || palier.reqParS < palier.cibleReqParS * 0.98
+      || palier.latence?.p95 > 1_000
+      || palier.latence?.p99 > 2_500
+      || palier.retardEmission?.p95 > 100
+  );
+  if (horsSeuil) {
+    return {
+      verdict: "NO_GO",
+      raison: "debit_latence_ou_ponctualite_hors_seuil",
+      metriques: qualificationMetriques,
+    };
+  }
+  if (qualificationMetriques.verdict === "NO_GO") {
+    return {
+      verdict: "NO_GO",
+      raison: qualificationMetriques.raison,
+      metriques: qualificationMetriques,
+    };
+  }
+  return {
+    verdict: "NON_QUALIFIABLE",
+    raison: qualificationMetriques.verdict === "EVIDENCE_COMPLETE"
+      ? "revue_humaine_soak_multicampagne_requise"
+      : qualificationMetriques.raison,
+    metriques: qualificationMetriques,
   };
 }
 
@@ -506,13 +857,18 @@ function ligneTableau(r) {
   const cacheTotal = Object.values(r.cache).reduce((a, b) => a + b, 0);
   const partCache = cacheTotal > 0 ? `${Math.round((cacheHit / cacheTotal) * 100)}%` : "—";
   return {
-    conn: r.concurrence,
+    mode: r.mode ?? "stress",
+    charge: r.mode === "cadence"
+      ? `${r.joueurs ?? "—"} joueurs`
+      : `${r.concurrence} conn`,
+    cible: r.cibleReqParS ?? "max",
     "req/s": r.reqParS,
     p50: l.p50 ?? "—",
     p95: l.p95 ?? "—",
     p99: l.p99 ?? "—",
     max: l.max ?? "—",
     err: `${(r.tauxErreur * 100).toFixed(1)}%`,
+    abandons: r.abandonnees ?? 0,
     région: regionDominante,
     "cache HIT": partCache,
   };
@@ -529,13 +885,14 @@ function rendreMarkdown(rapport) {
 
   for (const [nom, paliers] of Object.entries(rapport.scenarios)) {
     lignes.push(`## ${nom} — ${SCENARIOS[nom]?.description ?? ""}`, "");
-    lignes.push("| conn | req/s | p50 | p95 | p99 | max | erreurs | région | cache HIT |");
-    lignes.push("|---|---|---|---|---|---|---|---|---|");
+    lignes.push("| mode | charge | cible req/s | req/s | p50 | p95 | p99 | max | erreurs | abandons | région | cache HIT |");
+    lignes.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
     for (const r of paliers) {
       const t = ligneTableau(r);
       lignes.push(
-        `| ${t.conn} | ${t["req/s"]} | ${t.p50} | ${t.p95} | ${t.p99} | ${t.max} `
-          + `| ${t.err} | ${t.région} | ${t["cache HIT"]} |`,
+        `| ${t.mode} | ${t.charge} | ${t.cible} | ${t["req/s"]} | ${t.p50} | ${t.p95} `
+          + `| ${t.p99} | ${t.max} | ${t.err} | ${t.abandons} | ${t.région} `
+          + `| ${t["cache HIT"]} |`,
       );
     }
     lignes.push("");
@@ -559,6 +916,30 @@ function rendreMarkdown(rapport) {
     lignes.push("");
   }
 
+  lignes.push(
+    "## Qualification",
+    "",
+    `Verdict : **${rapport.qualification?.verdict ?? "NON_QUALIFIABLE"}**.`,
+    "",
+  );
+  const metriques = rapport.qualification?.metriques;
+  if (metriques?.manquantes?.length > 0) {
+    lignes.push(
+      `Métriques obligatoires absentes ou invalides : ${metriques.manquantes.join(", ")}.`,
+      "Le banc HTTP ne mesure pas à lui seul Realtime, CPU, RAM ni les connexions DB.",
+      "",
+    );
+  }
+  lignes.push("| métrique | statut | observé | limite | unité | source |", "|---|---|---|---|---|---|");
+  for (const nom of METRIQUES_OBLIGATOIRES) {
+    const detail = metriques?.details?.[nom] ?? {};
+    lignes.push(
+      `| ${nom} | ${detail.status ?? "absent"} | ${detail.observed ?? "—"} `
+        + `| ${detail.limit ?? "—"} | ${detail.unit ?? "—"} | ${detail.source ?? "—"} |`,
+    );
+  }
+  lignes.push("");
+
   return lignes.join("\n");
 }
 
@@ -574,21 +955,31 @@ async function main() {
   }
 
   console.log(`\nCible   : ${BASE_URL}`);
+  console.log(`Run     : ${RUN_ID}`);
   console.log(`Scénarios : ${retenus.map(([n]) => n).join(", ")}`);
-  console.log(
-    SOAK_S
-      ? `Mode    : endurance, ${SOAK_S} s à ${PALIERS[0]} connexions`
-      : `Mode    : paliers ${PALIERS.join("/")} × ${DUREE_S} s`,
-  );
+  if (MODE === "cadence") {
+    const cibles = CIBLES_CADENCE.map(
+      (cible) => `${cible.joueurs ?? "—"} joueurs / ${cible.cibleReqParS} req/s`,
+    );
+    console.log(`Mode    : cadence OPEN-LOOP ${cibles.join(" · ")}`);
+  } else {
+    console.log(
+      SOAK_S
+        ? `Mode    : stress fermé, endurance ${SOAK_S} s à ${PALIERS[0]} connexions`
+        : `Mode    : stress fermé ${PALIERS.join("/")} connexions × ${DUREE_S} s`,
+    );
+  }
   console.log("");
 
   const mesures = { db: [], workers: [] };
   const rapport = {
     cible: BASE_URL,
+    runId: RUN_ID,
     date: new Date().toISOString(),
     dureeS: SOAK_S ?? DUREE_S,
     warmupS: WARMUP_S,
-    mode: SOAK_S ? "soak" : "paliers",
+    execution: SOAK_S ? "soak" : "paliers",
+    mode: MODE,
     scenarios: {},
   };
 
@@ -599,17 +990,33 @@ async function main() {
       // La chauffe est JETÉE : sans elle, le démarrage à froid d'une fonction
       // serverless (mesuré à ~1,9 s sur ce projet) écrase le p99 d'un palier
       // entier et rend deux campagnes incomparables.
-      await jouerPalier(scenario, Math.min(PALIERS[0], 10), WARMUP_S * 1000, {
-        db: [],
-        workers: [],
-      });
+      const mesuresChauffe = { db: [], workers: [] };
+      if (MODE === "cadence") {
+        await jouerPalierCadence(
+          scenario,
+          CIBLES_CADENCE[0],
+          WARMUP_S * 1000,
+          mesuresChauffe,
+        );
+      } else {
+        await jouerPalierStress(
+          scenario,
+          Math.min(PALIERS[0], 10),
+          WARMUP_S * 1000,
+          mesuresChauffe,
+        );
+      }
     }
 
-    const paliers = SOAK_S ? [PALIERS[0]] : PALIERS;
+    const paliers = MODE === "cadence"
+      ? (SOAK_S ? [CIBLES_CADENCE[0]] : CIBLES_CADENCE)
+      : (SOAK_S ? [PALIERS[0]] : PALIERS);
     const resultats = [];
-    for (const concurrence of paliers) {
+    for (const palier of paliers) {
       const dureeMs = (SOAK_S ?? DUREE_S) * 1000;
-      const r = await jouerPalier(scenario, concurrence, dureeMs, mesures);
+      const r = MODE === "cadence"
+        ? await jouerPalierCadence(scenario, palier, dureeMs, mesures)
+        : await jouerPalierStress(scenario, palier, dureeMs, mesures);
       resultats.push(r);
       console.table([ligneTableau(r)]);
     }
@@ -644,6 +1051,17 @@ async function main() {
     console.log(`Régions d'exécution observées : ${[...regionsVues].join(", ")}`);
   }
 
+  const metriques = await chargerMetriques();
+  rapport.qualification = qualifierRapport(rapport, metriques);
+  console.log(`Qualification : ${rapport.qualification.verdict}`);
+  if (rapport.qualification.metriques.manquantes.length > 0) {
+    console.log(
+      "  Métriques obligatoires absentes : "
+        + rapport.qualification.metriques.manquantes.join(", "),
+    );
+    console.log("  Aucun GO possible avec le seul banc HTTP.");
+  }
+
   if (SORTIE_JSON) {
     await writeFile(SORTIE_JSON, JSON.stringify(rapport, null, 2), "utf8");
     console.log(`\nRapport JSON écrit : ${SORTIE_JSON}`);
@@ -662,7 +1080,9 @@ async function main() {
   console.log("");
 }
 
-main().catch((err) => {
-  console.error("Banc interrompu :", err);
-  process.exit(1);
-});
+if (EST_POINT_ENTREE) {
+  main().catch((err) => {
+    console.error("Banc interrompu :", err);
+    process.exit(1);
+  });
+}

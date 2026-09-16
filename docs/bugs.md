@@ -2,6 +2,21 @@
 
 ## Notes
 
+- **2026-09-16 — reliquats GO commercial repris.** Les 7 campagnes historiques
+  sont maintenant en pause sûre en production : 22 lots toujours
+  `value_cents IS NULL`, poids/stocks/activation inchangés, zéro campagne
+  active dangereuse après commit. Côté domaine, les trois noms sont attachés
+  au projet Vercel mais GoDaddy sert toujours son parking à l'apex et `app` est
+  NXDOMAIN ; deux A records vers `76.76.21.21` restent à poser par le détenteur
+  du registrar. Les JWT Google Wallet valident désormais localement l'origine
+  HTTP(S) canonique exigée dans `origins`, avec tests, mais aucune validation réelle ne
+  peut avoir lieu tant que l'émetteur et les trois variables `GOOGLE_WALLET_*`
+  ne sont pas configurés. La qualification capacité reste ouverte jusqu'à une
+  cible isolée et des métriques Realtime/CPU/RAM/connexions ; un smoke HTTP seul
+  ne constitue pas un GO. L'équipe Vercel est encore au plan `hobby`, réservé
+  par Vercel à l'usage personnel non commercial ; l'ouverture commerciale
+  exige une décision de facturation du propriétaire.
+
 - **2026-09-15 — courses de valeur d'ADR-184 fermées en base, legacy
   inventorié sans mutation (ADR-185).** Le préflight production en lecture
   seule compte 22 lots tirables à valeur inconnue ou `>= 20 €`, répartis sur 7
