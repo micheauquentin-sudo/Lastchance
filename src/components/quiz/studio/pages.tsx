@@ -11,13 +11,17 @@ import {
   quizThemeTokens,
 } from "@/components/quiz/quiz-theme";
 import {
+  QuizShareSettings,
+} from "@/components/dashboard/quiz-editor";
+import {
   QuestionForm,
   QuizQuestionsEditor,
-  QuizShareSettings,
-  type DashboardQuiz,
-  type DashboardQuizQuestion,
-  type QuizWheelOption,
-} from "@/components/dashboard/quiz-editor";
+} from "@/components/dashboard/quiz-editor-questions";
+import type {
+  DashboardQuiz,
+  DashboardQuizQuestion,
+  QuizWheelOption,
+} from "@/components/dashboard/quiz-editor-types";
 import { spinWheelIssue } from "@/components/dashboard/loyalty-settings-presets";
 import {
   QUIZ_INTRO_MAX,

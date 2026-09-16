@@ -10,7 +10,7 @@ import type {
   DashboardQuiz,
   DashboardQuizQuestion,
   QuizWheelOption,
-} from "@/components/dashboard/quiz-editor";
+} from "@/components/dashboard/quiz-editor-types";
 import type { QuizOption, QuizQuestionType } from "@/lib/quiz";
 
 export const metadata: Metadata = { title: "Mon studio — quiz" };

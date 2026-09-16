@@ -2,7 +2,7 @@ import { codeTtlDaysInitial } from "@/components/dashboard/code-ttl-days-field";
 import type {
   DashboardQuiz,
   QuizWheelOption,
-} from "@/components/dashboard/quiz-editor";
+} from "@/components/dashboard/quiz-editor-types";
 import type { QuizRewardMode, QuizTheme } from "@/lib/quiz";
 
 /**

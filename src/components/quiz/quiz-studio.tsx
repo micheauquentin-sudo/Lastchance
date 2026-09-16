@@ -9,10 +9,12 @@ import { CoquilleStudio } from "@/components/studio/coquille";
 import { useEnregistrementDepuisEtat } from "@/components/studio/use-enregistrement-etat";
 import {
   QuizStatusControls,
-  type DashboardQuiz,
-  type DashboardQuizQuestion,
-  type QuizWheelOption,
 } from "@/components/dashboard/quiz-editor";
+import type {
+  DashboardQuiz,
+  DashboardQuizQuestion,
+  QuizWheelOption,
+} from "@/components/dashboard/quiz-editor-types";
 import { AtelierQuizVerification } from "@/components/dashboard/atelier-quiz-verification";
 import type { EntreeVerificationQuiz } from "@/lib/activation/quiz";
 import type { ActionResult } from "@/lib/utils";

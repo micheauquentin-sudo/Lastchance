@@ -45,7 +45,7 @@ import {
 import type {
   DashboardQuiz,
   DashboardQuizQuestion,
-} from "@/components/dashboard/quiz-editor";
+} from "@/components/dashboard/quiz-editor-types";
 
 /**
  * LA CHARGE UTILE DU STUDIO DU QUIZ EST COMPLÈTE, SUR SES HUIT ÉTAPES.
