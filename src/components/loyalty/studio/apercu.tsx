@@ -8,7 +8,7 @@ import {
   EntetePasseport,
   SoldePanel,
   TierPanel,
-} from "@/components/loyalty/loyalty-passport";
+} from "@/components/loyalty/loyalty-passport-presentation";
 import {
   loyaltyPointsGoal,
   loyaltyTierProgress,
@@ -35,15 +35,11 @@ import type { EtatFidelite } from "@/components/loyalty/studio/etat";
  * `TierPanel`, `BoutiquePaliers` — dans le VRAI `PlayerPageShell`, avec le même
  * `pageStyle` et le même fond que `/passeport/[programId]`.
  *
- * Le composant joueur entier (`LoyaltyPassport`) n'était PAS montable tel quel,
- * et la liste de ce qu'il importe le dit : `stampLoyaltyVisit`,
- * `getLoyaltyCheckinToken`, `spendLoyaltyPoints`, `obtenirCodeParrainage`,
- * `reclamerParrainagePasseport`, plus Turnstile et un état construit côté
- * serveur (`LoyaltyPassportState`, `LoyaltyCommerceView`, le fuseau, les roues
- * préchargées). Le monter aurait fait entrer tout le parcours joueur dans un
- * écran de réglages. Les quatre blocs, eux, se composent sans une ligne
- * d'adaptation — trois sont des fonctions pures de leurs props, et le quatrième
- * n'a qu'un chemin serveur, coupé par `apercu`.
+ * Le composant joueur entier (`LoyaltyPassport`) n'est pas montable tel quel :
+ * il porte les formulaires de tampon, les actions de dépense et les données
+ * d'identité du joueur. Les quatre blocs viennent donc directement du module
+ * présentiel : le conteneur lui injecte l'échange côté joueur, tandis que le
+ * Studio ne fournit aucune action.
  *
  * ── L'ÉTAT MONTRÉ EST CELUI D'UN CLIENT QUI ARRIVE, ET RIEN N'EST INVENTÉ ──
  *
@@ -159,7 +155,6 @@ export function ApercuPasseportStudio({
                invite alors à valider une première visite, et c'est ce que le
                commerçant doit voir. */
             hasPassport={false}
-            onEchange={() => {}}
           />
         </div>
       </PlayerPageShell>
