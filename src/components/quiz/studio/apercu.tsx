@@ -6,7 +6,7 @@ import { PlayerPageShell } from "@/components/ui/player-page-shell";
 import { QuizQuestionCard } from "@/components/quiz/quiz-question-card";
 import { quizThemeTokens } from "@/components/quiz/quiz-theme";
 import { fondPourQuizTheme } from "@/lib/fonds-ecran";
-import type { DashboardQuizQuestion } from "@/components/dashboard/quiz-editor";
+import type { DashboardQuizQuestion } from "@/components/dashboard/quiz-editor-types";
 import type { QuizPlayableQuestion } from "@/lib/quiz";
 import type { EtatQuiz } from "@/components/quiz/studio/etat";
 

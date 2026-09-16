@@ -6,16 +6,20 @@ import { APP_URL } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import {
-  QuizDrawCard,
-  QuizQuestionsEditor,
-  QuizRewardEditor,
   QuizSettings,
   QuizShareSettings,
   QuizStatusControls,
-  type DashboardQuiz,
-  type DashboardQuizQuestion,
-  type QuizWheelOption,
 } from "@/components/dashboard/quiz-editor";
+import { QuizQuestionsEditor } from "@/components/dashboard/quiz-editor-questions";
+import {
+  QuizDrawCard,
+  QuizRewardEditor,
+} from "@/components/dashboard/quiz-editor-rewards";
+import type {
+  DashboardQuiz,
+  DashboardQuizQuestion,
+  QuizWheelOption,
+} from "@/components/dashboard/quiz-editor-types";
 import {
   etapeVoisine,
   numeroEtape,
