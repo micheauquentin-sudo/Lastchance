@@ -31,21 +31,21 @@
   "dependencies": {
     "@sentry/nextjs": "10.74.0",
     "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.110.8",
+    "@supabase/supabase-js": "^2.117.2",
     "html-to-image": "1.11.13",
     "jsqr": "^1.4.0",
-    "next": "16.3.5",
-    "passkit-generator": "^3.6.0",
-    "posthog-js": "^1.430.3",
+    "next": "16.3.8",
+    "passkit-generator": "^3.6.1",
+    "posthog-js": "^1.435.6",
     "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "resend": "^6.28.0",
+    "resend": "^6.32.0",
     "server-only": "^0.0.1",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "stripe": "22.6.2",
     "tesseract.js": "^7.0.0",
-    "zod": "^4.6.4"
+    "zod": "^4.6.5"
   },
   "overrides": {
     "postcss": "^8.5.25",
@@ -65,7 +65,7 @@
     "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
-    "@testing-library/dom": "^10.4.1",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26",
     "@types/pngjs": "^6.0.5",
@@ -73,14 +73,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "16.3.8",
     "happy-dom": "^20.14.5",
     "local-ssl-proxy": "^2.0.5",
     "pngjs": "^7.0.0",
-    "supabase": "^2.117.0",
+    "supabase": "^2.119.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5",
     "vitest": "4.1.11",
-    "wait-on": "^9.1.0"
+    "wait-on": "^9.5.1"
   }
 }
