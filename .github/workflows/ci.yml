@@ -198,7 +198,7 @@ jobs:
 
       - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.117.0
 
       - name: Démarrer Supabase et appliquer toutes les migrations
         run: supabase start
@@ -267,7 +267,7 @@ jobs:
 
       - uses: supabase/setup-cli@v3
         with:
-          version: latest
+          version: 2.117.0
 
       - name: Démarrer Supabase (migrations appliquées)
         run: supabase start

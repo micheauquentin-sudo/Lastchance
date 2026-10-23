@@ -129,7 +129,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   box-shadow: var(--shadow-lift);
 }
 .pop-btn-yellow { background: var(--yellow); color: var(--ink); }
-.pop-btn-pink { background: var(--pink); color: #ffffff; }
+.pop-btn-pink { background: var(--pink); color: var(--ink); }
 .pop-btn-mint { background: var(--mint); color: var(--ink); }
 .pop-btn-ink { background: var(--ink); color: #ffffff; }
 .pop-btn-white { background: #ffffff; color: var(--ink); }
@@ -792,7 +792,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 0.15rem 0.5rem;
 }
 .voucher-code-pill small { font-size: 0.58rem; font-weight: 800; display: block; }
-.voucher-code-pill code { font: 800 0.88rem var(--fun-font); color: var(--pink-hot); }
+.voucher-code-pill code { font: 800 0.88rem var(--fun-font); color: var(--ink); }
 .voucher-valid-stamp {
   background: var(--mint);
   border: 1.5px solid var(--ink);
@@ -983,7 +983,11 @@ header, main, section, footer { position: relative; z-index: 2; }
   padding: 3.6rem 0;
 }
 .section-narrow { max-width: 860px; }
-.section-script { font: 700 1.6rem/1 var(--script); color: var(--pink-hot); margin: 0 0 0.35rem; }
+.section-script { font: 700 1.6rem/1 var(--script); color: #6b114d; margin: 0 0 0.35rem; }
+.clog-yellow-manifesto .section-script,
+.manifesto-wrap > .section-script { color: #50133c; }
+.clog-lavender-split .section-script,
+.lavender-copy > .section-script { color: #3b0d45; }
 .section-title { margin-bottom: 1.6rem; }
 .section-top {
   display: flex;

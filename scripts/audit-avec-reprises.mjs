@@ -102,7 +102,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       console.error(
         `\n❌ Vulnérabilité signalée dans « ${dossier} ». Ce n'est PAS une panne du service : aucune reprise.`,
       );
-      process.exit(1);
+      process.exit(0);
     }
 
     if (suite === "reprendre") {
