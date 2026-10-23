@@ -138,6 +138,7 @@ function playArcadeSound(type: "hover" | "click" | "shuffle") {
   try {
     const AudioContextClass =
       window.AudioContext ||
+      // unsafe-cast-justification: repli Safari webkitAudioContext
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
