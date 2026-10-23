@@ -278,6 +278,31 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  async rewrites() {
+    return [
+      {
+        source: "/",
+        destination: "/h-site-final-20k/index.html",
+      },
+      {
+        source: "/vitrine-reservation",
+        destination: "/h-site-final-20k/vitrine-reservation.html",
+      },
+      {
+        source: "/jeux-pronostics",
+        destination: "/h-site-final-20k/jeux-pronostics.html",
+      },
+      {
+        source: "/fidelite-communaute",
+        destination: "/h-site-final-20k/fidelite-communaute.html",
+      },
+      {
+        source: "/studio",
+        destination: "/h-site-final-20k/studio.html",
+      },
+    ];
+  },
+
   async redirects() {
     return [
       {
