@@ -53,6 +53,10 @@ export default async function proxy(request: NextRequest) {
   // ── Domaine admin : ne sert QUE le back-office ──
   // Tout ce qui n'est pas /admin (ni asset, déjà exclu par le matcher)
   // est renvoyé vers /admin. L'app commerçant n'apparaît pas ici.
+  if (!onAdminHost && pathname === "/") {
+    return NextResponse.rewrite(new URL("/h-site-final-20k/index.html", request.url));
+  }
+
   if (onAdminHost && !pathname.startsWith("/admin")) {
     const url = request.nextUrl.clone();
     url.pathname = "/admin";
