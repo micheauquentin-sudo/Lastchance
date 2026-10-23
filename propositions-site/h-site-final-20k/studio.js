@@ -1433,7 +1433,6 @@
       modal.hidden = true;
     });
   }
-  }
 
   /* ── UTILITAIRES D'ÉCHAPPEMENT HTML ── */
   function escapeHtml(s) {
