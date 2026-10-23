@@ -144,7 +144,7 @@ header, main, section, footer { position: relative; z-index: 2; }
   transform: rotate(-1.3deg);
 }
 .pop-mark-yellow { background: var(--yellow); color: var(--ink); }
-.pop-mark-pink { background: var(--pink); color: #ffffff; }
+.pop-mark-pink { background: var(--pink); color: var(--ink); }
 
 /* ── BARRE DE NAVIGATION ÉPURÉE & LARGE ── */
 .header-nav {
